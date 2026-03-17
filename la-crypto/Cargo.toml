@@ -1,0 +1,46 @@
+[package]
+name = "la-crypto"
+version = "0.1.0"
+description = "Scripture-forged cryptographic foundation for Light Architects"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+# Key derivation (HKDF-SHA256) + HMAC
+hkdf = "0.12"
+hmac = "0.12"
+sha2 = "0.10"
+
+# Authenticated encryption (AES-256-GCM)
+aes-gcm = "0.10"
+
+# Digital signatures (Ed25519)
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+
+# Secret handling — zeroize on drop, redacted Debug
+secrecy = { version = "0.10", features = ["serde"] }
+zeroize = { version = "1", features = ["derive"] }
+
+# Constant-time comparison (compiler-barrier-safe, survives LTO)
+subtle = "2"
+
+# CSPRNG
+rand = "0.8"
+
+# Serialization (config files, secret stores)
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+# Error handling
+thiserror = "2"
+
+# Native macOS Keychain API (avoids CLI argument exposure)
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true
