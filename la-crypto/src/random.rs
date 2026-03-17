@@ -3,6 +3,15 @@
 use rand::RngCore;
 
 /// Generate `len` bytes of cryptographic randomness.
+///
+/// # Examples
+///
+/// ```
+/// use la_crypto::random::generate_bytes;
+///
+/// let bytes = generate_bytes(32);
+/// assert_eq!(bytes.len(), 32);
+/// ```
 #[must_use]
 pub fn generate_bytes(len: usize) -> Vec<u8> {
     let mut bytes = vec![0u8; len];
@@ -11,6 +20,16 @@ pub fn generate_bytes(len: usize) -> Vec<u8> {
 }
 
 /// Generate `len` random bytes and return as a hex-encoded string.
+///
+/// # Examples
+///
+/// ```
+/// use la_crypto::random::generate_hex;
+///
+/// let hex = generate_hex(16);
+/// assert_eq!(hex.len(), 32); // 16 bytes = 32 hex chars
+/// assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
+/// ```
 #[must_use]
 pub fn generate_hex(len: usize) -> String {
     let bytes = generate_bytes(len);
@@ -20,6 +39,15 @@ pub fn generate_hex(len: usize) -> String {
 /// Generate a 96-bit (12-byte) nonce suitable for AES-256-GCM.
 ///
 /// Each nonce MUST be unique per (key, message) pair. Never reuse nonces.
+///
+/// # Examples
+///
+/// ```
+/// use la_crypto::random::generate_nonce;
+///
+/// let nonce = generate_nonce();
+/// assert_eq!(nonce.len(), 12);
+/// ```
 #[must_use]
 pub fn generate_nonce() -> [u8; 12] {
     let mut nonce = [0u8; 12];
@@ -42,7 +70,8 @@ pub(crate) fn hex_encode(bytes: &[u8]) -> String {
 /// Used by downstream modules and tests for hash verification.
 #[allow(dead_code)]
 pub(crate) fn hex_decode(hex: &str) -> Option<Vec<u8>> {
-    if !hex.len().is_multiple_of(2) {
+    #[allow(clippy::incompatible_msrv)] // is_multiple_of requires 1.87, MSRV is 1.85
+    if hex.len() % 2 != 0 {
         return None;
     }
     let mut bytes = Vec::with_capacity(hex.len() / 2);

@@ -34,6 +34,17 @@ pub struct SealedData {
 /// (96-bit CSPRNG). The `associated_data` (AAD) is authenticated but not
 /// encrypted — the receiver must supply the same AAD to decrypt.
 ///
+/// # Examples
+///
+/// ```
+/// use la_crypto::encrypt::{seal, open};
+///
+/// let key = [0x42u8; 32];
+/// let sealed = seal(&key, b"secret message", b"context").expect("seal");
+/// let plain = open(&key, &sealed, b"context").expect("open");
+/// assert_eq!(plain, b"secret message");
+/// ```
+///
 /// # Errors
 ///
 /// Returns [`CryptoError::Encryption`] if the AES-GCM cipher fails.
@@ -61,6 +72,17 @@ pub fn seal(key: &[u8; 32], plaintext: &[u8], associated_data: &[u8]) -> Result<
 ///
 /// The caller must supply the same `associated_data` (AAD) that was used
 /// during encryption. Returns the original plaintext on success.
+///
+/// # Examples
+///
+/// ```
+/// use la_crypto::encrypt::{seal, open};
+///
+/// let key = [0x42u8; 32];
+/// let sealed = seal(&key, b"hello", b"aad").expect("seal");
+/// let plain = open(&key, &sealed, b"aad").expect("open");
+/// assert_eq!(plain, b"hello");
+/// ```
 ///
 /// # Errors
 ///

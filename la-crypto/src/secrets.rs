@@ -90,7 +90,7 @@ impl Default for KeychainStore {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "keychain"))]
 impl SecretStore for KeychainStore {
     fn get(&self, key: &str) -> Result<Option<SecretString>> {
         use security_framework::passwords;
@@ -129,7 +129,7 @@ impl SecretStore for KeychainStore {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(all(target_os = "macos", feature = "keychain")))]
 impl SecretStore for KeychainStore {
     fn get(&self, _key: &str) -> Result<Option<SecretString>> {
         Err(CryptoError::SecretStore(
@@ -342,21 +342,23 @@ impl SecretStore for EnvStore {
         }
     }
 
-    #[allow(clippy::disallowed_methods)]
+    #[allow(unsafe_code, clippy::disallowed_methods)]
     fn set(&self, key: &str, value: &str) -> Result<()> {
         let var_name = self.env_key(key);
-        // SAFETY-NOTE: set_var is not thread-safe; intended for testing only.
-        // Using unsafe wrapper required by Rust 2024 edition.
+        // SAFETY: set_var is not thread-safe; intended for testing only.
+        // Required by Rust 2024 edition. The env-store feature flag lets
+        // consumers opt out of this unsafe code entirely.
         unsafe {
             std::env::set_var(&var_name, value);
         }
         Ok(())
     }
 
-    #[allow(clippy::disallowed_methods)]
+    #[allow(unsafe_code, clippy::disallowed_methods)]
     fn delete(&self, key: &str) -> Result<()> {
         let var_name = self.env_key(key);
-        // SAFETY-NOTE: remove_var is not thread-safe; intended for testing only.
+        // SAFETY: remove_var is not thread-safe; intended for testing only.
+        // Required by Rust 2024 edition.
         unsafe {
             std::env::remove_var(&var_name);
         }
@@ -374,6 +376,18 @@ impl SecretStore for EnvStore {
 ///
 /// Returns `Ok(None)` if no store contains the key.
 ///
+/// # Examples
+///
+/// ```
+/// use la_crypto::secrets::{resolve_secret, FileStore, SecretStore};
+///
+/// let dir = tempfile::tempdir().expect("tmpdir");
+/// let store = FileStore::with_path(dir.path().join("secrets.toml"));
+/// store.set("api-key", "sk_test_123").expect("set");
+/// let val = resolve_secret("api-key", &[&store]).expect("resolve");
+/// assert!(val.is_some());
+/// ```
+///
 /// # Errors
 ///
 /// Returns the first error encountered from any store.
@@ -390,6 +404,18 @@ pub fn resolve_secret(key: &str, stores: &[&dyn SecretStore]) -> Result<Option<S
 ///
 /// Uses [`crate::random::generate_hex`] for cryptographically secure
 /// random generation.
+///
+/// # Examples
+///
+/// ```
+/// use la_crypto::secrets::{auto_generate_and_persist, FileStore, SecretStore};
+/// use secrecy::ExposeSecret;
+///
+/// let dir = tempfile::tempdir().expect("tmpdir");
+/// let store = FileStore::with_path(dir.path().join("secrets.toml"));
+/// let secret = auto_generate_and_persist("pepper", &store, 32).expect("gen");
+/// assert_eq!(secret.expose_secret().len(), 64); // 32 bytes = 64 hex chars
+/// ```
 ///
 /// # Errors
 ///

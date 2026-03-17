@@ -13,6 +13,16 @@ use crate::verses::Verse;
 /// Sign `message` with an Ed25519 signing key.
 ///
 /// Returns the 64-byte Ed25519 signature. The signing key is not consumed.
+///
+/// # Examples
+///
+/// ```
+/// use la_crypto::sign::{keypair_from_seed, sign, verify};
+///
+/// let (sk, vk) = keypair_from_seed(&[0xABu8; 32]);
+/// let sig = sign(&sk, b"hello");
+/// assert!(verify(&vk, b"hello", &sig));
+/// ```
 #[must_use]
 pub fn sign(signing_key: &SigningKey, message: &[u8]) -> Signature {
     signing_key.sign(message)
@@ -23,6 +33,17 @@ pub fn sign(signing_key: &SigningKey, message: &[u8]) -> Signature {
 /// Returns `true` if the signature is valid, `false` otherwise.
 /// Verification failure is a boolean result — not an error — because
 /// invalid signatures are an expected condition (e.g., tampered data).
+///
+/// # Examples
+///
+/// ```
+/// use la_crypto::sign::{keypair_from_seed, sign, verify};
+///
+/// let (sk, vk) = keypair_from_seed(&[0xABu8; 32]);
+/// let sig = sign(&sk, b"message");
+/// assert!(verify(&vk, b"message", &sig));
+/// assert!(!verify(&vk, b"tampered", &sig));
+/// ```
 #[must_use]
 pub fn verify(verifying_key: &VerifyingKey, message: &[u8], signature: &Signature) -> bool {
     verifying_key.verify(message, signature).is_ok()
@@ -35,6 +56,18 @@ pub fn verify(verifying_key: &VerifyingKey, message: &[u8], signature: &Signatur
 ///
 /// The returned tuple is `(signing_key, verifying_key)` where the
 /// verifying key is the public half suitable for distribution.
+///
+/// # Examples
+///
+/// ```
+/// use la_crypto::sign::keypair_from_seed;
+///
+/// let seed = [0x42u8; 32];
+/// let (sk, vk) = keypair_from_seed(&seed);
+/// // Same seed always produces the same keys.
+/// let (sk2, _) = keypair_from_seed(&seed);
+/// assert_eq!(sk.to_bytes(), sk2.to_bytes());
+/// ```
 #[must_use]
 pub fn keypair_from_seed(seed: &[u8; 32]) -> (SigningKey, VerifyingKey) {
     let signing_key = SigningKey::from_bytes(seed);

@@ -19,6 +19,17 @@ type HmacSha256 = Hmac<Sha256>;
 /// The pepper is a [`SecretString`] to enforce secret handling. The output
 /// is a lowercase hex string suitable for database storage.
 ///
+/// # Examples
+///
+/// ```
+/// use la_crypto::hash::hmac_hash;
+/// use secrecy::SecretString;
+///
+/// let pepper = SecretString::from("my-pepper");
+/// let hash = hmac_hash(&pepper, b"hello world").expect("hmac");
+/// assert_eq!(hash.len(), 64); // SHA-256 = 64 hex chars
+/// ```
+///
 /// # Errors
 ///
 /// Returns [`CryptoError::HmacInit`] if the HMAC key is rejected (should
@@ -36,6 +47,18 @@ pub fn hmac_hash(pepper: &SecretString, data: &[u8]) -> Result<String> {
 /// Computes the HMAC of `data` with `pepper` and compares it against
 /// `expected_hex` using [`crate::compare::constant_time_eq`] to prevent
 /// timing side-channels.
+///
+/// # Examples
+///
+/// ```
+/// use la_crypto::hash::{hmac_hash, hmac_verify};
+/// use secrecy::SecretString;
+///
+/// let pepper = SecretString::from("my-pepper");
+/// let hash = hmac_hash(&pepper, b"data").expect("hmac");
+/// let valid = hmac_verify(&pepper, b"data", &hash).expect("verify");
+/// assert!(valid);
+/// ```
 ///
 /// # Errors
 ///
@@ -60,6 +83,18 @@ pub fn hmac_verify(pepper: &SecretString, data: &[u8], expected_hex: &str) -> Re
 /// - `body`: the raw request body bytes
 /// - `timestamp`: Unix epoch seconds as a string (e.g., `"1700000000"`)
 ///
+/// # Examples
+///
+/// ```
+/// use la_crypto::hash::{webhook_sign, webhook_verify};
+/// use secrecy::SecretString;
+///
+/// let secret = SecretString::from("whsec_test");
+/// let sig = webhook_sign(&secret, b"{\"event\":\"ok\"}", "1700000000")
+///     .expect("sign");
+/// assert!(sig.starts_with("t=1700000000,v1="));
+/// ```
+///
 /// # Errors
 ///
 /// Returns [`CryptoError::HmacInit`] if HMAC initialization fails.
@@ -83,6 +118,19 @@ pub fn webhook_sign(secret: &SecretString, body: &[u8], timestamp: &str) -> Resu
 ///   - `None` = skip timestamp check entirely (disabled)
 ///   - `Some(300)` = 300-second tolerance window
 ///   - `Some(0)` = zero tolerance (only accept timestamps matching the current second)
+///
+/// # Examples
+///
+/// ```
+/// use la_crypto::hash::{webhook_sign, webhook_verify};
+/// use secrecy::SecretString;
+///
+/// let secret = SecretString::from("whsec_test");
+/// let sig = webhook_sign(&secret, b"body", "1700000000").expect("sign");
+/// // None = skip timestamp check (useful in tests)
+/// let valid = webhook_verify(&secret, b"body", &sig, None).expect("verify");
+/// assert!(valid);
+/// ```
 ///
 /// # Errors
 ///

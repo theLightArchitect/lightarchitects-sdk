@@ -11,8 +11,11 @@ use rand::seq::SliceRandom;
 /// making it a cryptographic component of the key's identity.
 #[derive(Debug, Clone)]
 pub struct Verse {
+    /// Scripture reference (e.g., `"John 3:16"`).
     pub reference: &'static str,
+    /// Full verse text from the 1611 KJV.
     pub text: &'static str,
+    /// Doctrinal category (e.g., `"atonement"`, `"trinity"`).
     pub doctrine: &'static str,
 }
 
@@ -72,6 +75,7 @@ static FALLBACK_VERSE: Verse = Verse {
 //   8. Second Coming & Eschatology      17. Spiritual Warfare & Protection
 //   9. Creation & Sovereignty
 
+/// The complete curated collection of 147 KJV verses used for key derivation.
 pub static VERSES: &[Verse] = &[
     // ── 1. Trinity & Nature of God ────────────────────────────────────────
     Verse {

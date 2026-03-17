@@ -154,6 +154,20 @@ fn crc32_checksum(data: &[u8]) -> u32 {
 /// The pepper serves as the HKDF salt, `ikm` is the input keying material,
 /// and the verse + purpose form the `info` parameter for domain separation.
 ///
+/// # Examples
+///
+/// ```
+/// use la_crypto::derive::derive_key;
+/// use la_crypto::verses::find_verse;
+/// use secrecy::SecretString;
+///
+/// let pepper = SecretString::from("my-pepper");
+/// let verse = find_verse("John 1:1").expect("verse exists");
+/// let key = derive_key(&pepper, b"input-material", verse, "api-key")
+///     .expect("derivation succeeds");
+/// assert_eq!(key.as_bytes().len(), 32);
+/// ```
+///
 /// # Errors
 ///
 /// Returns [`CryptoError::HkdfExpand`] if HKDF expansion fails (e.g., if
@@ -179,6 +193,20 @@ pub fn derive_key(
 /// The key body is derived via [`derive_key`] using a random verse and the
 /// purpose `"api-key:{env}"`. A CRC32 checksum of the body is appended for
 /// quick client-side validation.
+///
+/// # Examples
+///
+/// ```
+/// use la_crypto::derive::derive_api_key;
+/// use la_crypto::verses::find_verse;
+/// use secrecy::{ExposeSecret, SecretString};
+///
+/// let pepper = SecretString::from("my-pepper");
+/// let verse = find_verse("John 3:16").expect("verse exists");
+/// let key = derive_api_key(&pepper, "prod", verse).expect("key");
+/// assert!(key.raw.expose_secret().starts_with("lak_prod_"));
+/// assert!(!key.hash.is_empty());
+/// ```
 ///
 /// # Fields in the returned [`DerivedKey`]
 ///
@@ -242,6 +270,18 @@ fn extract_last_four(s: &str) -> String {
 /// reference, verse text, and purpose used in derivation — enabling audit
 /// logging and deterministic re-derivation.
 ///
+/// # Examples
+///
+/// ```
+/// use la_crypto::derive::derive_encryption_key;
+/// use secrecy::SecretString;
+///
+/// let pepper = SecretString::from("my-pepper");
+/// let dk = derive_encryption_key(&pepper, "vault").expect("key");
+/// assert_eq!(dk.as_bytes().len(), 32);
+/// assert_eq!(dk.purpose, "encryption:vault");
+/// ```
+///
 /// # Errors
 ///
 /// Returns [`CryptoError::HkdfExpand`] if HKDF expansion fails.
@@ -267,6 +307,18 @@ pub fn derive_encryption_key(pepper: &SecretString, context: &str) -> Result<Ver
 /// for use as the Ed25519 secret key seed (see
 /// `ed25519_dalek::SigningKey::from_bytes`), plus the verse reference,
 /// verse text, and purpose used in derivation.
+///
+/// # Examples
+///
+/// ```
+/// use la_crypto::derive::derive_signing_key;
+/// use secrecy::SecretString;
+///
+/// let pepper = SecretString::from("my-pepper");
+/// let dk = derive_signing_key(&pepper, "evidence-chain").expect("key");
+/// assert_eq!(dk.as_bytes().len(), 32);
+/// assert_eq!(dk.purpose, "signing:evidence-chain");
+/// ```
 ///
 /// # Errors
 ///

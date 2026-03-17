@@ -14,6 +14,15 @@ use subtle::ConstantTimeEq;
 /// The length comparison itself is not constant-time, but this is
 /// acceptable because HMAC outputs and key hashes are always fixed-length
 /// (the length carries no secret information).
+///
+/// # Examples
+///
+/// ```
+/// use la_crypto::compare::constant_time_eq;
+///
+/// assert!(constant_time_eq(b"secret", b"secret"));
+/// assert!(!constant_time_eq(b"secret", b"tamper"));
+/// ```
 #[must_use]
 pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {

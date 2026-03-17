@@ -6,13 +6,58 @@ members = [
 
 [workspace.package]
 edition = "2024"
+rust-version = "1.85"
 authors = ["KFT <kft@lightarchitects.io>"]
 license = "Proprietary"
+repository = "https://github.com/TheLightArchitects/la-sdk"
 
 [workspace.lints.clippy]
 pedantic = { level = "deny" }
+
+[workspace.lints.rust]
+missing_docs = "deny"
+unsafe_code = "deny"
+
+# ── Centralized Dependencies ──────────────────────────────────────────────────
+# All version specs live here. Member crates use `dep.workspace = true`.
+# This prevents version drift when multiple crates share dependencies.
+
+[workspace.dependencies]
+# Crypto primitives (RustCrypto ecosystem)
+hkdf = "0.12"
+hmac = "0.12"
+sha2 = "0.10"
+aes-gcm = "0.10"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+subtle = "2"
+
+# Secret handling
+secrecy = { version = "0.10", features = ["serde"] }
+zeroize = { version = "1", features = ["derive"] }
+
+# CSPRNG
+rand = "0.8"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+# Error handling
+thiserror = "2"
+
+# Platform-specific
+security-framework = "3"
+
+# Dev/test
+tempfile = "3"
+proptest = "1"
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [profile.release]
 lto = true
 codegen-units = 1
 strip = true
+
+[profile.bench]
+lto = true
+codegen-units = 1

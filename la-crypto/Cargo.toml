@@ -3,44 +3,43 @@ name = "la-crypto"
 version = "0.1.0"
 description = "Scripture-forged cryptographic foundation for Light Architects"
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["keychain", "env-store"]
+## macOS Keychain backend for SecretStore (native security-framework API).
+keychain = ["dep:security-framework"]
+## Environment variable backend for SecretStore (uses unsafe set_var/remove_var).
+env-store = []
 
 [dependencies]
-# Key derivation (HKDF-SHA256) + HMAC
-hkdf = "0.12"
-hmac = "0.12"
-sha2 = "0.10"
+hkdf.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+aes-gcm.workspace = true
+ed25519-dalek.workspace = true
+subtle.workspace = true
+secrecy.workspace = true
+zeroize.workspace = true
+rand.workspace = true
+serde.workspace = true
+toml.workspace = true
+thiserror.workspace = true
 
-# Authenticated encryption (AES-256-GCM)
-aes-gcm = "0.10"
-
-# Digital signatures (Ed25519)
-ed25519-dalek = { version = "2", features = ["rand_core"] }
-
-# Secret handling — zeroize on drop, redacted Debug
-secrecy = { version = "0.10", features = ["serde"] }
-zeroize = { version = "1", features = ["derive"] }
-
-# Constant-time comparison (compiler-barrier-safe, survives LTO)
-subtle = "2"
-
-# CSPRNG
-rand = "0.8"
-
-# Serialization (config files, secret stores)
-serde = { version = "1", features = ["derive"] }
-toml = "0.8"
-
-# Error handling
-thiserror = "2"
-
-# Native macOS Keychain API (avoids CLI argument exposure)
 [target.'cfg(target_os = "macos")'.dependencies]
-security-framework = "3"
+security-framework = { workspace = true, optional = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile.workspace = true
+proptest.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "crypto"
+harness = false
 
 [lints]
 workspace = true
