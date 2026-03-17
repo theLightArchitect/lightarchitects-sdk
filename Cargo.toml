@@ -6,7 +6,7 @@ members = [
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.87"
 authors = ["KFT <kft@lightarchitects.io>"]
 license = "Proprietary"
 repository = "https://github.com/TheLightArchitects/la-sdk"

@@ -63,6 +63,8 @@ pub trait SecretStore {
 /// return [`CryptoError::SecretStore`] errors.
 pub struct KeychainStore {
     /// The Keychain service name used for all entries.
+    /// Read by the `SecretStore` impl (macOS-only via `security-framework`).
+    #[allow(dead_code)]
     service: String,
 }
 

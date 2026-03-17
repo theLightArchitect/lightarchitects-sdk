@@ -2,14 +2,15 @@
 # Run: cargo deny check
 # Docs: https://embarkstudios.github.io/cargo-deny/
 
+[graph]
+targets = []
+all-features = true
+
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "warn"
-notice = "warn"
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
 
 [licenses]
-unlicensed = "deny"
 allow = [
     "MIT",
     "Apache-2.0",
@@ -19,20 +20,13 @@ allow = [
     "Unicode-3.0",
     "Unicode-DFS-2016",
 ]
-# Our crate is proprietary — that's fine, we only check dependencies.
-exceptions = [
-    { allow = ["OpenSSL"], crate = "ring" },
-]
 
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
 highlight = "all"
-# Deny known-problematic crates
-deny = []
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
