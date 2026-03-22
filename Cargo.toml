@@ -1,7 +1,19 @@
 [workspace]
 resolver = "2"
 members = [
-    "la-crypto",
+    "l-arc-crypto",
+    "l-arc-core",
+    "l-arc-auth",      # Auth — API key validation, 3-tier degradation
+    # Added as crates are built in subsequent phases:
+    "l-arc-soul",      # Phase 4
+    "l-arc-corso",     # Phase 5
+    "l-arc-arena",     # keen-forging-hydra: MCP training arena
+    "l-arc-eva",       # Phase 6
+    "l-arc-quantum",   # Phase 7
+    "l-arc-seraph",   # Phase 8
+    "l-arc-ayin",    # Phase 9
+    "l-arc",          # Phase 10 (umbrella)
+    "l-arc-cli",      # Phase 11
 ]
 
 [workspace.package]
@@ -9,10 +21,15 @@ edition = "2024"
 rust-version = "1.87"
 authors = ["KFT <kft@lightarchitects.io>"]
 license = "Proprietary"
+publish = false
 repository = "https://github.com/TheLightArchitects/la-sdk"
 
 [workspace.lints.clippy]
-pedantic = { level = "deny" }
+pedantic = { level = "deny", priority = -1 }
+# SDK ergonomics exceptions — individual allows override the group at priority 0.
+must_use_candidate = "allow"       # SDK builder returns are caller's choice
+module_name_repetitions = "allow"  # SoulClient in l_arc_soul is intentional
+needless_pass_by_value = "allow"   # JSON Value args are conventionally taken by value
 
 [workspace.lints.rust]
 missing_docs = "deny"
@@ -23,7 +40,7 @@ unsafe_code = "deny"
 # This prevents version drift when multiple crates share dependencies.
 
 [workspace.dependencies]
-# Crypto primitives (RustCrypto ecosystem)
+# ── Crypto (l-arc-crypto) ─────────────────────────────────────────────────────
 hkdf = "0.12"
 hmac = "0.12"
 sha2 = "0.10"
@@ -31,27 +48,47 @@ aes-gcm = "0.10"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 subtle = "2"
 
-# Secret handling
+# ── Secret handling ───────────────────────────────────────────────────────────
 secrecy = { version = "0.10", features = ["serde"] }
 zeroize = { version = "1", features = ["derive"] }
 
-# CSPRNG
+# ── Async runtime (l-arc-core + sibling clients) ─────────────────────────────
+# Minimal feature set — consumers extend via their own Cargo.toml if needed.
+# io-util: BufReader/BufWriter for stdio framing
+# process: tokio::process::Command for MCP binary spawning
+# sync: Mutex for process handle
+# time: sleep/timeout for retry and call timeout
+tokio = { version = "1", features = ["io-util", "macros", "process", "rt", "rt-multi-thread", "sync", "time"] }
+
+# ── CSPRNG ────────────────────────────────────────────────────────────────────
 rand = "0.8"
 
-# Serialization
+# ── Serialization ─────────────────────────────────────────────────────────────
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 toml = "0.8"
 
-# Error handling
+# ── Error handling ────────────────────────────────────────────────────────────
 thiserror = "2"
 
-# Platform-specific
+# ── Observability ─────────────────────────────────────────────────────────────
+tracing = "0.1"
+
+# ── Platform-specific ─────────────────────────────────────────────────────────
 security-framework = "3"
 
-# Dev/test
+# ── Arena (l-arc-arena) ──────────────────────────────────────────────────────
+clap = { version = "4", features = ["derive"] }
+serde_yaml = "0.9"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+uuid = { version = "1", features = ["v4", "serde"] }
+indicatif = "0.17"
+
+# ── Dev/test ──────────────────────────────────────────────────────────────────
 tempfile = "3"
 proptest = "1"
 criterion = { version = "0.5", features = ["html_reports"] }
+tokio-test = "0.4"
 
 [profile.release]
 lto = true

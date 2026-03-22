@@ -1,0 +1,9 @@
+# Global ownership — KFT reviews all changes
+* @TheLightArchitects/kft
+
+# Crypto crate — stricter review requirement
+/l-arc-crypto/ @TheLightArchitects/kft
+
+# CI/CD and dependency changes
+/.github/ @TheLightArchitects/kft
+/deny.toml @TheLightArchitects/kft

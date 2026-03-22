@@ -1,0 +1,21 @@
+[package]
+name = "l-arc-seraph"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Typed client for the SERAPH MCP server (penTools, 18 actions, Content-Length framing)."
+
+[lints]
+workspace = true
+
+[dependencies]
+l-arc-core = { path = "../l-arc-core" }
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

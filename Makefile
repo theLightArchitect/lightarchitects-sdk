@@ -1,7 +1,7 @@
-# la-sdk — Light Architects SDK workspace
+# l-arc-sdk — Light Architects SDK workspace
 # Standard Light Architects Makefile targets
 
-.PHONY: help quality test build fix push clean
+.PHONY: help quality test build doc fix push clean
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -24,6 +24,9 @@ fix: ## Auto-fix formatting and clippy issues
 
 push: quality ## Quality gates + git push
 	git push
+
+doc: ## Build and open documentation
+	cargo doc --workspace --no-deps --open
 
 clean: ## Clean build artifacts
 	cargo clean

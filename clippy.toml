@@ -1,0 +1,2 @@
+# Cyclomatic complexity limit — enforces the 60-line / complexity<=10 standard.
+cognitive-complexity-threshold = 10

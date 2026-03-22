@@ -1,0 +1,32 @@
+[package]
+name = "l-arc-ayin"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Feature-gated AYIN observability wrapper for l-arc-sdk transports."
+
+[lints]
+workspace = true
+
+[features]
+## Enable AYIN trace-span instrumentation on every MCP call.
+##
+## Without this feature, `ObservableTransport<T>` is a zero-cost newtype that
+## delegates directly to the inner transport with no additional allocations or
+## I/O. Enable it when you want span traces in `~/.soul/helix/ayin/`.
+observe = ["dep:ayin", "dep:tokio"]
+
+[dependencies]
+l-arc-core = { path = "../l-arc-core" }
+serde_json.workspace = true
+tracing.workspace = true
+
+# Optional — only pulled in when `observe` feature is active.
+ayin = { path = "/Users/kft/Projects/AYIN/AYIN-DEV/ayin", optional = true }
+tokio = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

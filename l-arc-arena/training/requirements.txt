@@ -1,0 +1,18 @@
+# L-ARC Arena Training Dependencies
+# Install: pip install -r requirements.txt
+
+# Core ML frameworks
+torch>=2.4.0
+transformers>=4.46.0
+trl>=0.14.0
+peft>=0.14.0
+datasets>=3.0.0
+
+# Training utilities
+accelerate>=1.0.0
+bitsandbytes>=0.44.0
+wandb>=0.18.0
+
+# Data processing
+jsonlines>=4.0.0
+numpy>=1.26.0

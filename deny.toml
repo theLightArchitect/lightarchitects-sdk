@@ -1,4 +1,4 @@
-# cargo-deny configuration for la-sdk
+# cargo-deny configuration for l-arc-sdk
 # Run: cargo deny check
 # Docs: https://embarkstudios.github.io/cargo-deny/
 

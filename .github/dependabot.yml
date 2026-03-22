@@ -1,0 +1,21 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      rustcrypto:
+        patterns:
+          - "hkdf"
+          - "hmac"
+          - "sha2"
+          - "aes-gcm"
+          - "subtle"
+          - "ed25519-dalek"
+      secret-handling:
+        patterns:
+          - "secrecy"
+          - "zeroize"
+    open-pull-requests-limit: 5
