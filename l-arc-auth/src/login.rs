@@ -28,8 +28,8 @@ struct CallbackParams {
 /// Returns [`AuthError::LoginTimeout`] if no callback is received within the timeout.
 /// Returns [`AuthError::Io`] if the key cannot be saved.
 pub async fn auth_login(config: &AuthConfig) -> Result<String, AuthError> {
-    // Generate a random state parameter for CSRF protection
-    let state = generate_state();
+    // Generate a cryptographically secure state parameter for CSRF protection
+    let state = generate_state()?;
 
     // Bind to 127.0.0.1 on ephemeral port (RFC 8252 §8.3: NOT localhost, NOT 0.0.0.0)
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -136,32 +136,11 @@ fn handle_callback(params: CallbackParams, expected_state: &str) -> Result<Strin
     }
 }
 
-fn generate_state() -> String {
-    use sha2::{Digest, Sha256};
-    let random_bytes: [u8; 32] = rand_bytes();
-    let mut hasher = Sha256::new();
-    hasher.update(random_bytes);
-    hex::encode(hasher.finalize())[..16].to_string()
-}
-
-fn rand_bytes() -> [u8; 32] {
-    use sha2::Digest;
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-
-    let mut bytes = [0u8; 32];
-    // Use process ID + time as entropy source (adequate for state parameter)
-    let combined = format!(
-        "{seed}{}{}",
-        std::process::id(),
-        seed.wrapping_mul(6_364_136_223_846_793_005)
-    );
-    let hash = sha2::Sha256::digest(combined.as_bytes());
-    bytes.copy_from_slice(&hash);
-    bytes
+fn generate_state() -> Result<String, AuthError> {
+    let mut bytes = [0u8; 16];
+    getrandom::getrandom(&mut bytes)
+        .map_err(|e| AuthError::LoginFailed(format!("CSPRNG unavailable: {e}")))?;
+    Ok(hex::encode(bytes))
 }
 
 const CALLBACK_HTML: &str = r#"<!DOCTYPE html>

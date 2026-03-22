@@ -217,6 +217,10 @@ pub(crate) async fn connect_stdio(
     config: &ServerConfig,
 ) -> Result<Mutex<StdioConnection>, DiscoveryError> {
     let command_str = config.command.as_deref().unwrap_or_default();
+    // Note: split_whitespace cannot handle binary paths containing spaces.
+    // This is a known limitation of the string-based command format.
+    // Users with space-containing paths should use a wrapper script.
+    // Command::new() uses execve(2) directly — no shell interpolation occurs.
     let parts: Vec<&str> = command_str.split_whitespace().collect();
     if parts.is_empty() {
         return Err(DiscoveryError::SpawnFailed {

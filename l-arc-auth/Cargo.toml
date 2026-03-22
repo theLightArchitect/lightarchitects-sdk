@@ -48,9 +48,12 @@ axum = { version = "0.8", features = ["macros"], optional = true }
 # Browser opener (used by auth login)
 open = { version = "5", optional = true }
 
+# CSPRNG for PKCE state parameter generation (already a transitive dep via sha2/ring)
+getrandom = { version = "0.2", optional = true }
+
 [features]
 default = []
-cli = ["clap", "open", "axum"]
+cli = ["clap", "open", "axum", "getrandom"]
 
 [dev-dependencies]
 tokio-test.workspace = true
