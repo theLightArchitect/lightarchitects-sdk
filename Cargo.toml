@@ -22,7 +22,7 @@ rust-version = "1.87"
 authors = ["KFT <kft@lightarchitects.io>"]
 license = "Proprietary"
 publish = false
-repository = "https://github.com/TheLightArchitects/la-sdk"
+repository = "https://github.com/TheLightArchitects/l-arc-sdk"
 
 [workspace.lints.clippy]
 pedantic = { level = "deny", priority = -1 }
