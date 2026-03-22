@@ -65,7 +65,7 @@ pub struct EvaClient<T: Transport> {
 impl<T: Transport> EvaClient<T> {
     /// Construct a client from an already-connected transport.
     ///
-    /// Intended for testing — pass a [`l_arc_core::MockTransport`] to exercise
+    /// Intended for testing — pass a mock transport to exercise
     /// all methods without spawning a real EVA binary.
     pub fn from_transport(transport: T, retry: RetryConfig) -> Self {
         Self {

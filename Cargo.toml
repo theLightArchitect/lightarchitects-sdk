@@ -73,6 +73,7 @@ thiserror = "2"
 
 # ── Observability ─────────────────────────────────────────────────────────────
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # ── Platform-specific ─────────────────────────────────────────────────────────
 security-framework = "3"

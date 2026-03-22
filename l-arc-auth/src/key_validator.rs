@@ -70,14 +70,14 @@ impl KeyValidator {
         let key_hash = Self::hash_key(key);
 
         // Check local cache first
-        if let Some(cache) = self.read_cache()? {
-            if cache.key_hash == key_hash {
-                if Utc::now() < cache.expires_at {
-                    debug!("Using cached validation (expires {})", cache.expires_at);
-                    return Ok((AuthTier::Valid, cache));
-                }
-                debug!("Cache expired, re-validating...");
+        if let Some(cache) = self.read_cache()?
+            && cache.key_hash == key_hash
+        {
+            if Utc::now() < cache.expires_at {
+                debug!("Using cached validation (expires {})", cache.expires_at);
+                return Ok((AuthTier::Valid, cache));
             }
+            debug!("Cache expired, re-validating...");
         }
 
         // Call the validation endpoint
@@ -132,28 +132,28 @@ impl KeyValidator {
         original_error: AuthError,
     ) -> Result<(AuthTier, KeyCache), AuthError> {
         // Read existing cache to check grace resets
-        if let Some(mut cache) = self.read_cache().ok().flatten() {
-            if cache.key_hash == key_hash {
-                if cache.grace_resets >= self.config.max_grace_resets {
-                    return Err(AuthError::GraceExhausted {
-                        max: self.config.max_grace_resets,
-                    });
-                }
-
-                // Grant grace period: extend expiry by 1 hour, increment reset counter
-                cache.grace_resets += 1;
-                cache.expires_at = Utc::now() + chrono::Duration::hours(1);
-                if let Err(e) = self.write_cache(&cache) {
-                    warn!("Failed to update grace period cache: {e}");
-                }
-
-                let resets_remaining = self.config.max_grace_resets - cache.grace_resets;
-                warn!(
-                    "Grace period granted ({} resets remaining)",
-                    resets_remaining
-                );
-                return Ok((AuthTier::GracePeriod { resets_remaining }, cache));
+        if let Some(mut cache) = self.read_cache().ok().flatten()
+            && cache.key_hash == key_hash
+        {
+            if cache.grace_resets >= self.config.max_grace_resets {
+                return Err(AuthError::GraceExhausted {
+                    max: self.config.max_grace_resets,
+                });
             }
+
+            // Grant grace period: extend expiry by 1 hour, increment reset counter
+            cache.grace_resets += 1;
+            cache.expires_at = Utc::now() + chrono::Duration::hours(1);
+            if let Err(e) = self.write_cache(&cache) {
+                warn!("Failed to update grace period cache: {e}");
+            }
+
+            let resets_remaining = self.config.max_grace_resets - cache.grace_resets;
+            warn!(
+                "Grace period granted ({} resets remaining)",
+                resets_remaining
+            );
+            return Ok((AuthTier::GracePeriod { resets_remaining }, cache));
         }
 
         // No cache at all — can't grant grace period

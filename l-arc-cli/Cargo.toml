@@ -11,15 +11,14 @@ description = "Command-line interface for the Light Architects SDK."
 [[bin]]
 name = "l-arc"
 path = "src/main.rs"
+doc = false
 
 [lints]
 workspace = true
 
 [dependencies]
-l-arc      = { path = "../l-arc",      features = ["full"] }
+l-arc      = { path = "../l-arc",      features = ["full", "tracing-fmt"] }
 l-arc-core = { path = "../l-arc-core" }
 clap            = { workspace = true }
 serde_json      = { workspace = true }
 tokio           = { workspace = true, features = ["rt-multi-thread", "macros"] }
-tracing         = { workspace = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }

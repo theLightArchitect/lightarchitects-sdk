@@ -86,7 +86,7 @@ pub fn keypair_from_seed(seed: &[u8; 32]) -> (SigningKey, VerifyingKey) {
 ///
 /// # Errors
 ///
-/// Returns [`CryptoError::HkdfExpand`] if key derivation fails.
+/// Returns [`crate::CryptoError::HkdfExpand`] if key derivation fails.
 pub fn sign_with_verse(
     pepper: &SecretString,
     verse: &Verse,

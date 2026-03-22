@@ -23,7 +23,7 @@
 //!
 //! | Module | Purpose |
 //! |--------|---------|
-//! | [`derive`] | HKDF key derivation with verse-based domain separation |
+//! | `derive` | HKDF key derivation with verse-based domain separation |
 //! | [`hash`] | HMAC-SHA256 hashing and webhook signatures |
 //! | [`encrypt`] | AES-256-GCM authenticated encryption |
 //! | [`sign`] | Ed25519 digital signatures |

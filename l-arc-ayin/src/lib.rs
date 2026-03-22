@@ -1,7 +1,7 @@
 //! Feature-gated AYIN observability wrapper for l-arc-sdk transports.
 //!
 //! `l-arc-ayin` wraps any [`l_arc_core::transport::Transport`] in an
-//! [`ObservableTransport`] that optionally records a [`TraceSpan`] for every
+//! [`ObservableTransport`] that optionally records a `TraceSpan` for every
 //! MCP tool call.
 //!
 //! # Feature flag
@@ -32,7 +32,8 @@
 //! # Ok(()) }
 //! ```
 //!
-//! [`TraceSpan`]: ayin::span::TraceSpan
+// Note: TraceSpan lives in the `ayin` crate (AYIN-DEV workspace), which is an
+// optional path dependency. Links to it are elided in rustdoc to keep CI clean.
 
 use l_arc_core::error::SdkError;
 use l_arc_core::jsonrpc::{JsonRpcRequest, JsonRpcResponse};

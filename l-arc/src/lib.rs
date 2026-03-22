@@ -14,7 +14,7 @@
 //! | `eva` | [`eva::EvaClient`] |
 //! | `quantum` | [`quantum::QuantumClient`] |
 //! | `seraph` | [`seraph::SeraphClient`] |
-//! | `ayin` | [`ayin::ObservableTransport`] |
+//! | `ayin` | `ayin::ObservableTransport` |
 //!
 //! # Quick start
 //!
@@ -36,6 +36,42 @@
 //! let quantum = QuantumClient::builder().build().await?;
 //! # Ok(()) }
 //! ```
+
+// ── Tracing initializer ───────────────────────────────────────────────────────
+
+/// Initialise a `tracing-subscriber` fmt subscriber with an `EnvFilter`.
+///
+/// Reads `RUST_LOG` to control log levels (e.g. `RUST_LOG=l_arc=debug`).
+/// Applies a compact, human-readable format suitable for CLI and development use.
+///
+/// Call once at the start of `main`. Subsequent calls are silently ignored by
+/// `tracing-subscriber`'s global subscriber guard.
+///
+/// # Feature gate
+///
+/// Requires the `tracing-fmt` feature:
+///
+/// ```toml
+/// l-arc = { path = "...", features = ["tracing-fmt"] }
+/// ```
+///
+/// # Example
+///
+/// ```no_run
+/// l_arc::init_tracing();
+/// // tracing macros now route to stdout
+/// ```
+#[cfg(feature = "tracing-fmt")]
+pub fn init_tracing() {
+    use tracing::Level;
+    use tracing_subscriber::{EnvFilter, fmt};
+
+    // RUST_LOG controls per-module overrides; WARN is the global default so
+    // DEBUG/INFO noise from transitive deps stays silent unless opted-in.
+    let filter = EnvFilter::from_default_env().add_directive(Level::WARN.into());
+
+    fmt().with_env_filter(filter).with_target(true).init();
+}
 
 // ── Core wire protocol — always available ─────────────────────────────────────
 

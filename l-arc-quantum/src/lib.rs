@@ -12,7 +12,8 @@
 //! structured-JSON responses in the QUANTUM protocol.
 //!
 //! QUANTUM is the only sibling that requires an `mcp-server` subcommand when
-//! spawned. The builder handles this automatically via [`SiblingId::Quantum`].
+//! spawned. The builder handles this automatically via the `Quantum` variant of
+//! [`l_arc_core::SiblingId`].
 //!
 //! # Quick start
 //!

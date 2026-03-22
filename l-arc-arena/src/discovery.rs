@@ -3,6 +3,8 @@
 //! Connects to arbitrary MCP servers via stdio or HTTP transport, performs
 //! the MCP initialize handshake, calls `tools/list` with pagination support,
 //! and populates a [`ToolRegistry`] with discovered tool schemas.
+//!
+//! [`ToolRegistry`]: crate::discovery::ToolRegistry
 
 use std::collections::HashMap;
 use std::path::Path;

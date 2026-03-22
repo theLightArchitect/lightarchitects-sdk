@@ -9,11 +9,13 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use std::pin::Pin;
+
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::Mutex;
 
-use crate::constants::{MAX_RESPONSE_BYTES, MCP_PROTOCOL_VERSION};
+use crate::constants::{MAX_CONTENT_LENGTH_HEADERS, MAX_RESPONSE_BYTES, MCP_PROTOCOL_VERSION};
 use crate::error::{ProtocolError, SdkError, TransportError};
 use crate::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 use crate::sibling::{McpFraming, SiblingId};
@@ -219,14 +221,20 @@ async fn read_response(
     Ok(response)
 }
 
-async fn read_newline_frame(stdout: &mut BufReader<ChildStdout>) -> Result<String, SdkError> {
-    // Read byte-by-byte via fill_buf/consume so we can enforce MAX_RESPONSE_BYTES
-    // *before* extending our local buffer. A plain `read_line` would buffer
-    // arbitrarily large data first and check the size only after allocation.
+/// Read one newline-delimited JSON frame from `reader`.
+///
+/// Enforces [`MAX_RESPONSE_BYTES`] *before* extending the local buffer on every
+/// `fill_buf` iteration — never allocates beyond the limit. Usable with any
+/// `AsyncBufRead + Unpin` reader, including `BufReader<ChildStdout>` in
+/// production and `BufReader<&[u8]>` in tests.
+async fn read_newline_frame<R>(reader: &mut R) -> Result<String, SdkError>
+where
+    R: AsyncBufRead + Unpin,
+{
     let mut buf: Vec<u8> = Vec::with_capacity(256);
     loop {
         let (consume_len, done) = {
-            let available = stdout.fill_buf().await.map_err(TransportError::from)?;
+            let available = reader.fill_buf().await.map_err(TransportError::from)?;
             if available.is_empty() {
                 break; // EOF before newline — return what we have
             }
@@ -240,7 +248,9 @@ async fn read_newline_frame(stdout: &mut BufReader<ChildStdout>) -> Result<Strin
             buf.extend_from_slice(&available[..n]);
             (n, newline_pos.is_some())
         }; // `available` borrow released here
-        stdout.consume(consume_len);
+        // `consume` is on the `AsyncBufRead` trait (requires `Pin<&mut Self>`).
+        // `Pin::new(&mut *reader)` is safe because `R: Unpin`.
+        Pin::new(&mut *reader).consume(consume_len);
         if done {
             break;
         }
@@ -249,18 +259,34 @@ async fn read_newline_frame(stdout: &mut BufReader<ChildStdout>) -> Result<Strin
         .map_err(|e| SdkError::Protocol(ProtocolError::MalformedJson(e.to_string())))
 }
 
-async fn read_content_length_frame(
-    stdout: &mut BufReader<ChildStdout>,
-) -> Result<String, SdkError> {
+/// Read one `Content-Length`-framed JSON message from `reader`.
+///
+/// Parses LSP-style headers (`Content-Length: N\r\n\r\n`) then reads exactly N
+/// bytes. Enforces [`MAX_RESPONSE_BYTES`] and [`MAX_CONTENT_LENGTH_HEADERS`]
+/// before any allocation. Usable with any `AsyncBufRead + Unpin` reader.
+async fn read_content_length_frame<R>(reader: &mut R) -> Result<String, SdkError>
+where
+    R: AsyncBufRead + Unpin,
+{
     let mut content_length: Option<usize> = None;
+    let mut header_count: usize = 0;
 
-    // Read headers until blank line.
+    // Read headers until blank line.  Cap at MAX_CONTENT_LENGTH_HEADERS to
+    // prevent a malicious or malfunctioning server from forcing unbounded
+    // memory allocation during the header-parsing phase.
     loop {
+        if header_count >= MAX_CONTENT_LENGTH_HEADERS {
+            return Err(SdkError::Protocol(ProtocolError::UnexpectedShape(format!(
+                "server sent more than {MAX_CONTENT_LENGTH_HEADERS} headers \
+                     in a Content-Length frame — possible protocol violation"
+            ))));
+        }
         let mut line = String::new();
-        stdout
+        reader
             .read_line(&mut line)
             .await
             .map_err(TransportError::from)?;
+        header_count = header_count.saturating_add(1);
         let trimmed = line.trim();
         if trimmed.is_empty() {
             break;
@@ -293,11 +319,221 @@ async fn read_content_length_frame(
     }
 
     let mut buf = vec![0u8; len];
-    stdout
+    reader
         .read_exact(&mut buf)
         .await
         .map_err(TransportError::from)?;
 
     String::from_utf8(buf)
         .map_err(|e| SdkError::Protocol(ProtocolError::MalformedJson(e.to_string())))
+}
+
+// ── Adversarial framing tests ─────────────────────────────────────────────────
+//
+// These unit tests exercise the framing functions directly with crafted byte
+// sequences that a malicious or malfunctioning MCP binary might send.  All
+// tests use `BufReader<&[u8]>` as the reader, which satisfies `AsyncBufRead +
+// Unpin` — no real child process is required.
+#[cfg(test)]
+mod tests {
+    use std::fmt::Write as _;
+
+    use super::*;
+
+    fn make_reader(data: &[u8]) -> BufReader<&[u8]> {
+        BufReader::new(data)
+    }
+
+    // ── Newline-frame adversarial tests ───────────────────────────────────────
+
+    /// A response larger than `MAX_RESPONSE_BYTES` with no newline must be
+    /// rejected with `ResponseTooLarge` *before* the buffer is fully allocated.
+    #[tokio::test]
+    async fn newline_frame_rejects_oversized_response() {
+        let oversized = vec![b'x'; MAX_RESPONSE_BYTES + 1];
+        let mut reader = make_reader(&oversized);
+        let err = read_newline_frame(&mut reader)
+            .await
+            .expect_err("must fail");
+        assert!(
+            matches!(
+                err,
+                SdkError::Protocol(ProtocolError::ResponseTooLarge { .. })
+            ),
+            "expected ResponseTooLarge, got {err:?}"
+        );
+    }
+
+    /// A newline frame containing invalid UTF-8 bytes must be rejected with
+    /// `MalformedJson`.
+    #[tokio::test]
+    async fn newline_frame_rejects_invalid_utf8() {
+        let mut data = b"{\"ok\":".to_vec();
+        data.extend_from_slice(&[0xFF, 0xFE]); // invalid UTF-8
+        data.push(b'\n');
+        let mut reader = make_reader(&data);
+        let err = read_newline_frame(&mut reader)
+            .await
+            .expect_err("must fail");
+        assert!(
+            matches!(err, SdkError::Protocol(ProtocolError::MalformedJson(_))),
+            "expected MalformedJson, got {err:?}"
+        );
+    }
+
+    /// A well-formed newline frame must pass through cleanly.
+    #[tokio::test]
+    async fn newline_frame_accepts_valid_json() {
+        let data = b"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":null}\n";
+        let mut reader = make_reader(data);
+        let s = read_newline_frame(&mut reader)
+            .await
+            .expect("should succeed");
+        assert!(s.contains("jsonrpc"));
+    }
+
+    // ── Content-Length frame adversarial tests ────────────────────────────────
+
+    /// A `Content-Length` value larger than `MAX_RESPONSE_BYTES` must be
+    /// rejected without allocating the body.
+    #[tokio::test]
+    async fn content_length_rejects_oversized_declared_length() {
+        let too_big = MAX_RESPONSE_BYTES + 1;
+        let header = format!("Content-Length: {too_big}\r\n\r\n");
+        let mut reader = make_reader(header.as_bytes());
+        let err = read_content_length_frame(&mut reader)
+            .await
+            .expect_err("must fail");
+        assert!(
+            matches!(
+                err,
+                SdkError::Protocol(ProtocolError::ResponseTooLarge { .. })
+            ),
+            "expected ResponseTooLarge, got {err:?}"
+        );
+    }
+
+    /// `Content-Length: 0` must be rejected — an empty response body is a
+    /// protocol violation (responses always carry a JSON-RPC body).
+    #[tokio::test]
+    async fn content_length_rejects_zero() {
+        let mut reader = make_reader(b"Content-Length: 0\r\n\r\n");
+        let err = read_content_length_frame(&mut reader)
+            .await
+            .expect_err("must fail");
+        assert!(
+            matches!(err, SdkError::Protocol(ProtocolError::UnexpectedShape(_))),
+            "expected UnexpectedShape, got {err:?}"
+        );
+    }
+
+    /// Headers without a `Content-Length` before the blank line must be
+    /// rejected.
+    #[tokio::test]
+    async fn content_length_rejects_missing_header() {
+        let mut reader = make_reader(b"X-Custom: value\r\n\r\n");
+        let err = read_content_length_frame(&mut reader)
+            .await
+            .expect_err("must fail");
+        assert!(
+            matches!(err, SdkError::Protocol(ProtocolError::UnexpectedShape(_))),
+            "expected UnexpectedShape (missing CL), got {err:?}"
+        );
+    }
+
+    /// A non-numeric `Content-Length` value must be rejected.
+    #[tokio::test]
+    async fn content_length_rejects_non_numeric_value() {
+        let mut reader = make_reader(b"Content-Length: abc\r\n\r\n");
+        let err = read_content_length_frame(&mut reader)
+            .await
+            .expect_err("must fail");
+        assert!(
+            matches!(err, SdkError::Protocol(ProtocolError::UnexpectedShape(_))),
+            "expected UnexpectedShape (non-numeric CL), got {err:?}"
+        );
+    }
+
+    /// A negative `Content-Length` value must be rejected — `usize` parse
+    /// fails on a leading `-`.
+    #[tokio::test]
+    async fn content_length_rejects_negative_value() {
+        let mut reader = make_reader(b"Content-Length: -1\r\n\r\n");
+        let err = read_content_length_frame(&mut reader)
+            .await
+            .expect_err("must fail");
+        assert!(
+            matches!(err, SdkError::Protocol(ProtocolError::UnexpectedShape(_))),
+            "expected UnexpectedShape (negative CL), got {err:?}"
+        );
+    }
+
+    /// More than `MAX_CONTENT_LENGTH_HEADERS` header lines before the blank
+    /// line must be rejected.
+    #[tokio::test]
+    async fn content_length_rejects_too_many_headers() {
+        // One extra header past the cap: the guard fires when header_count
+        // reaches MAX_CONTENT_LENGTH_HEADERS before seeing the blank line.
+        let mut data = String::new();
+        for i in 0..=MAX_CONTENT_LENGTH_HEADERS {
+            write!(data, "X-Extra-{i}: value\r\n").unwrap();
+        }
+        data.push_str("\r\n");
+        let mut reader = make_reader(data.as_bytes());
+        let err = read_content_length_frame(&mut reader)
+            .await
+            .expect_err("must fail");
+        assert!(
+            matches!(err, SdkError::Protocol(ProtocolError::UnexpectedShape(_))),
+            "expected UnexpectedShape (too many headers), got {err:?}"
+        );
+    }
+
+    /// A body declared by `Content-Length` that contains invalid UTF-8 bytes
+    /// must be rejected with `MalformedJson`.
+    #[tokio::test]
+    async fn content_length_rejects_invalid_utf8_body() {
+        let mut data = b"Content-Length: 4\r\n\r\n".to_vec();
+        data.extend_from_slice(&[0xFF, 0xFE, 0xFD, 0xFC]); // 4 invalid bytes
+        let mut reader = make_reader(&data);
+        let err = read_content_length_frame(&mut reader)
+            .await
+            .expect_err("must fail");
+        assert!(
+            matches!(err, SdkError::Protocol(ProtocolError::MalformedJson(_))),
+            "expected MalformedJson, got {err:?}"
+        );
+    }
+
+    /// A well-formed `Content-Length` frame must pass through cleanly.
+    #[tokio::test]
+    async fn content_length_accepts_valid_json_body() {
+        let body = r#"{"jsonrpc":"2.0","id":1,"result":null}"#;
+        let frame = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
+        let mut reader = make_reader(frame.as_bytes());
+        let s = read_content_length_frame(&mut reader)
+            .await
+            .expect("should succeed");
+        assert!(s.contains("jsonrpc"));
+    }
+
+    /// Exactly `MAX_CONTENT_LENGTH_HEADERS` non-CL header lines, then the
+    /// blank line — the cap guard does NOT fire (count == cap, not > cap) but
+    /// the response is rejected for a missing `Content-Length`.
+    #[tokio::test]
+    async fn content_length_exactly_at_cap_missing_cl_rejected() {
+        let mut data = String::new();
+        for i in 0..MAX_CONTENT_LENGTH_HEADERS {
+            write!(data, "X-Junk-{i}: value\r\n").unwrap();
+        }
+        data.push_str("\r\n");
+        let mut reader = make_reader(data.as_bytes());
+        let err = read_content_length_frame(&mut reader)
+            .await
+            .expect_err("must fail — no Content-Length");
+        assert!(
+            matches!(err, SdkError::Protocol(ProtocolError::UnexpectedShape(_))),
+            "expected UnexpectedShape (missing CL), got {err:?}"
+        );
+    }
 }

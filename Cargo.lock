@@ -1227,6 +1227,8 @@ dependencies = [
  "l-arc-quantum",
  "l-arc-seraph",
  "l-arc-soul",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1291,8 +1293,6 @@ dependencies = [
  "l-arc-core",
  "serde_json",
  "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

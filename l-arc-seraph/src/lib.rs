@@ -14,7 +14,8 @@
 //! structured-JSON responses in the SERAPH protocol.
 //!
 //! SERAPH uses `Content-Length` header framing (not newline-delimited JSON).
-//! [`StdioTransport`] handles this automatically via [`SiblingId::Seraph`].
+//! [`l_arc_core::StdioTransport`] handles this automatically via the `Seraph`
+//! variant of [`l_arc_core::SiblingId`].
 //!
 //! **All operations require prior authorisation.** Every call is scope-governed
 //! by SERAPH's 5-gate `ScopeGovernor` (TTL → target → tool → concurrent → domain).

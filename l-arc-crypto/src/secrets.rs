@@ -24,7 +24,7 @@ pub trait SecretStore {
     /// Retrieve the value associated with `key`, or `None` if absent.
     ///
     /// Returns a [`SecretString`] to prevent accidental logging or display
-    /// of secret material. Use [`ExposeSecret::expose_secret`] when the
+    /// of secret material. Use `expose_secret()` from the `secrecy` crate when the
     /// raw value is needed.
     ///
     /// # Errors
