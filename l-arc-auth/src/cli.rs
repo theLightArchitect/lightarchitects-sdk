@@ -15,8 +15,12 @@ pub enum AuthCommand {
 }
 
 impl AuthCommand {
-    /// Execute the auth subcommand. Returns `Ok(true)` if handled (caller should exit),
-    /// `Ok(false)` if not an auth command (caller should continue to MCP server).
+    /// Execute the auth subcommand.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::LoginFailed`] or [`AuthError::LoginTimeout`] if `login` fails.
+    /// Returns [`AuthError::Io`] if `logout` cannot remove local state.
     pub async fn run(&self, config: &AuthConfig) -> Result<(), crate::AuthError> {
         match self {
             Self::Login => match auth_login(config).await {

@@ -55,6 +55,7 @@ impl Default for AuthConfig {
 
 impl AuthConfig {
     /// Create config with a custom API base URL (for testing or self-hosted).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.api_base_url = url.into();
         self

@@ -60,6 +60,12 @@ impl KeyValidator {
 
     /// Validate a key, using cache when available.
     /// Returns the auth tier indicating how to proceed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::ValidationFailed`] if the server rejects the key.
+    /// Returns [`AuthError::GraceExhausted`] if the endpoint is unreachable and grace resets are exhausted.
+    /// Returns [`AuthError::Http`] or [`AuthError::Io`] on network or filesystem failures.
     pub async fn validate(&self, key: &str) -> Result<(AuthTier, KeyCache), AuthError> {
         let key_hash = Self::hash_key(key);
 
@@ -173,6 +179,10 @@ impl KeyValidator {
     }
 
     /// Remove the local cache file.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::Io`] if the cache file exists but cannot be removed.
     pub fn clear_cache(&self) -> Result<(), AuthError> {
         let path = &self.config.cache_file_path;
         if path.exists() {

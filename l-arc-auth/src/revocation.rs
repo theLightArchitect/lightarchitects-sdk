@@ -28,6 +28,12 @@ impl RevocationWatcher {
     }
 
     /// Poll the revocations endpoint and update the local list.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::Http`] if the request fails.
+    /// Returns [`AuthError::Json`] if the response cannot be deserialized.
+    /// Returns [`AuthError::Io`] if the local revocation file cannot be written.
     pub async fn poll(&self) -> Result<usize, AuthError> {
         let url = format!("{}/api/revocations", self.config.api_base_url);
 
@@ -71,6 +77,10 @@ impl RevocationWatcher {
     }
 
     /// Remove the local revocation file.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::Io`] if the file exists but cannot be removed.
     pub fn clear(&self) -> Result<(), AuthError> {
         let path = &self.config.revoked_file_path;
         if path.exists() {
@@ -98,7 +108,11 @@ impl RevocationWatcher {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let contents: String = list.iter().map(|s| format!("{s}\n")).collect();
+        let contents: String = list.iter().fold(String::new(), |mut acc, s| {
+            acc.push_str(s);
+            acc.push('\n');
+            acc
+        });
         std::fs::write(path, contents)?;
         Ok(())
     }

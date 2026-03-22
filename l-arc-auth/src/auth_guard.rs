@@ -10,8 +10,8 @@ use tracing::{error, info, warn};
 ///
 /// ## Tiers
 ///
-/// - **A (NoKey)**: No key found → BLOCK (server should refuse to start)
-/// - **B (GracePeriod)**: Expired cache + endpoint down → WARN (limited resets)
+/// - **A (`NoKey`)**: No key found → BLOCK (server should refuse to start)
+/// - **B (`GracePeriod`)**: Expired cache + endpoint down → WARN (limited resets)
 /// - **C (Valid)**: Fresh cache or live validation → ALLOW
 pub struct AuthGuard {
     config: AuthConfig,
@@ -35,6 +35,13 @@ impl AuthGuard {
     ///
     /// Returns `(AuthTier, KeyCache)` on success (tiers B and C),
     /// or `AuthError` on hard failure (tier A or exhausted grace).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::NoKeyFound`] if no API key is present.
+    /// Returns [`AuthError::KeyRevoked`] if the key is on the revocation list.
+    /// Returns [`AuthError::ValidationFailed`] if the server rejects the key.
+    /// Returns [`AuthError::GraceExhausted`] if grace period resets are exhausted.
     pub async fn check(&self) -> Result<(AuthTier, KeyCache), AuthError> {
         // Step 1: Read the key
         let key = match KeyReader::read(&self.config) {
@@ -127,46 +134,47 @@ impl AuthGuard {
         println!("────────────────────────────");
 
         // Key presence
-        match KeyReader::read(config) {
-            Ok(key) => {
-                let prefix = if key.len() >= 8 { &key[..8] } else { &key };
-                println!("Key:       found (prefix: {prefix}...)");
-                println!("Key file:  {}", config.key_file_path.display());
+        if let Ok(key) = KeyReader::read(config) {
+            let prefix = if key.len() >= 8 { &key[..8] } else { &key };
+            println!("Key:       found (prefix: {prefix}...)");
+            println!("Key file:  {}", config.key_file_path.display());
 
-                // Check cache
-                let validator = KeyValidator::new(config.clone());
-                match validator.validate(&key).await {
-                    Ok((tier, cache)) => {
-                        println!("Tier:      {}", cache.tier);
-                        println!("User ID:   {}", cache.user_id);
-                        println!("Validated: {}", cache.validated_at);
-                        println!("Expires:   {}", cache.expires_at);
-                        match tier {
-                            AuthTier::Valid => println!("Status:    VALID"),
-                            AuthTier::GracePeriod { resets_remaining } => {
-                                println!(
-                                    "Status:    GRACE PERIOD ({resets_remaining} resets remaining)"
-                                );
-                            }
-                            AuthTier::NoKey => println!("Status:    NO KEY"),
+            // Check cache
+            let validator = KeyValidator::new(config.clone());
+            match validator.validate(&key).await {
+                Ok((tier, cache)) => {
+                    println!("Tier:      {}", cache.tier);
+                    println!("User ID:   {}", cache.user_id);
+                    println!("Validated: {}", cache.validated_at);
+                    println!("Expires:   {}", cache.expires_at);
+                    match tier {
+                        AuthTier::Valid => println!("Status:    VALID"),
+                        AuthTier::GracePeriod { resets_remaining } => {
+                            println!(
+                                "Status:    GRACE PERIOD ({resets_remaining} resets remaining)"
+                            );
                         }
-                    }
-                    Err(e) => {
-                        println!("Status:    ERROR — {e}");
+                        AuthTier::NoKey => println!("Status:    NO KEY"),
                     }
                 }
+                Err(e) => {
+                    println!("Status:    ERROR — {e}");
+                }
             }
-            Err(_) => {
-                println!("Key:       NOT FOUND");
-                println!("Key file:  {}", config.key_file_path.display());
-                println!("Status:    NOT AUTHENTICATED");
-                println!();
-                println!("Run `{{binary}} auth login` to authenticate.");
-            }
+        } else {
+            println!("Key:       NOT FOUND");
+            println!("Key file:  {}", config.key_file_path.display());
+            println!("Status:    NOT AUTHENTICATED");
+            println!();
+            println!("Run `{{binary}} auth login` to authenticate.");
         }
     }
 
     /// Remove local auth state. Used by `{binary} auth logout`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::Io`] if the key file, cache file, or revocation file cannot be removed.
     pub fn logout(config: &AuthConfig) -> Result<(), AuthError> {
         KeyReader::remove(config)?;
 

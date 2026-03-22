@@ -21,6 +21,12 @@ struct CallbackParams {
 /// 2. Opens the browser to lightarchitects.io/auth/cli with PKCE state parameter
 /// 3. Waits for the callback with the API key
 /// 4. Saves the key locally
+///
+/// # Errors
+///
+/// Returns [`AuthError::LoginFailed`] if the callback server cannot bind or the browser flow fails.
+/// Returns [`AuthError::LoginTimeout`] if no callback is received within the timeout.
+/// Returns [`AuthError::Io`] if the key cannot be saved.
 pub async fn auth_login(config: &AuthConfig) -> Result<String, AuthError> {
     // Generate a random state parameter for CSRF protection
     let state = generate_state();
@@ -86,7 +92,7 @@ pub async fn auth_login(config: &AuthConfig) -> Result<String, AuthError> {
         result = rx => {
             result.map_err(|_| AuthError::LoginFailed("Callback channel closed".to_string()))??
         }
-        _ = tokio::time::sleep(timeout) => {
+        () = tokio::time::sleep(timeout) => {
             return Err(AuthError::LoginTimeout { seconds: timeout.as_secs() });
         }
         result = server.into_future() => {
@@ -151,7 +157,7 @@ fn rand_bytes() -> [u8; 32] {
     let combined = format!(
         "{seed}{}{}",
         std::process::id(),
-        seed.wrapping_mul(6364136223846793005)
+        seed.wrapping_mul(6_364_136_223_846_793_005)
     );
     let hash = sha2::Sha256::digest(combined.as_bytes());
     bytes.copy_from_slice(&hash);

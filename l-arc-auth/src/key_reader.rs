@@ -9,6 +9,11 @@ pub struct KeyReader;
 
 impl KeyReader {
     /// Read the API key. Returns the raw key string.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::NoKeyFound`] if the `LA_API_KEY` env var is unset or empty
+    /// and the key file is absent or empty.
     pub fn read(config: &AuthConfig) -> Result<String, AuthError> {
         // Priority 1: Environment variable
         if let Ok(key) = std::env::var("LA_API_KEY") {
@@ -42,6 +47,10 @@ impl KeyReader {
     }
 
     /// Save an API key to the local file.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::Io`] if the parent directory cannot be created or the file cannot be written.
     pub fn save(config: &AuthConfig, key: &str) -> Result<(), AuthError> {
         if let Some(parent) = config.key_file_path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -62,6 +71,10 @@ impl KeyReader {
     }
 
     /// Remove the local API key file.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::Io`] if the file exists but cannot be removed.
     pub fn remove(config: &AuthConfig) -> Result<(), AuthError> {
         if config.key_file_path.exists() {
             std::fs::remove_file(&config.key_file_path)?;
