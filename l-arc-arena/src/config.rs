@@ -1,7 +1,7 @@
 //! Arena configuration parsing and validation.
 //!
 //! The [`ArenaConfig`](crate::config::ArenaConfig) struct is the user's entry point — it deserializes from
-//! a YAML file and drives the entire arena pipeline. Configuration includes
+//! a JSON file and drives the entire arena pipeline. Configuration includes
 //! model endpoint, MCP server definitions, exercise parameters, and output
 //! format selection.
 
@@ -12,29 +12,34 @@ use serde::{Deserialize, Serialize};
 
 use crate::scoring::RewardConfig;
 
-/// Top-level arena configuration, deserialized from user YAML.
+/// Top-level arena configuration, deserialized from user JSON.
 ///
 /// # Example
 ///
-/// ```yaml
-/// model:
-///   endpoint: "https://my-model.example.com/v1"
-///   api_key_env: "MY_MODEL_API_KEY"
-///   name: "my-fine-tuned-llama"
-///
-/// mcp_servers:
-///   - name: "my-database"
-///     command: "npx @my-org/db-mcp-server"
-///     transport: stdio
-///
-/// exercises:
-///   types: [tool-selection, parameter-filling, multi-step-chain]
-///   count: 500
-///   difficulty: [easy, medium, hard]
-///
-/// output:
-///   formats: [sft, dpo, rl]
-///   path: ./training-data/
+/// ```json
+/// {
+///   "model": {
+///     "endpoint": "https://my-model.example.com/v1",
+///     "api_key_env": "MY_MODEL_API_KEY",
+///     "name": "my-fine-tuned-llama"
+///   },
+///   "mcp_servers": [
+///     {
+///       "name": "my-database",
+///       "command": "npx @my-org/db-mcp-server",
+///       "transport": "stdio"
+///     }
+///   ],
+///   "exercises": {
+///     "types": ["tool-selection", "parameter-filling", "multi-step-chain"],
+///     "count": 500,
+///     "difficulty": ["easy", "medium", "hard"]
+///   },
+///   "output": {
+///     "formats": ["sft", "dpo", "rl"],
+///     "path": "./training-data/"
+///   }
+/// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArenaConfig {
@@ -242,16 +247,16 @@ pub enum ConfigError {
     /// Failed to read the configuration file.
     #[error("failed to read config file: {0}")]
     Io(#[from] std::io::Error),
-    /// Failed to parse YAML configuration.
-    #[error("failed to parse YAML config: {0}")]
-    Yaml(#[from] serde_yaml::Error),
+    /// Failed to parse JSON configuration.
+    #[error("failed to parse JSON config: {0}")]
+    Json(#[from] serde_json::Error),
     /// Configuration validation failed.
     #[error("config validation failed: {0}")]
     Validation(String),
 }
 
 impl ArenaConfig {
-    /// Load and validate configuration from a YAML file.
+    /// Load and validate configuration from a JSON file.
     ///
     /// # Errors
     ///
@@ -259,7 +264,7 @@ impl ArenaConfig {
     /// validation.
     pub fn from_file(path: &Path) -> Result<Self, ConfigError> {
         let contents = std::fs::read_to_string(path)?;
-        let config: Self = serde_yaml::from_str(&contents)?;
+        let config: Self = serde_json::from_str(&contents)?;
         config.validate()?;
         Ok(config)
     }
@@ -354,32 +359,19 @@ impl ArenaConfig {
 mod tests {
     use super::*;
 
-    fn minimal_config_yaml() -> &'static str {
-        r#"
-model:
-  endpoint: "http://localhost:8080/v1"
-  name: "test-model"
-
-mcp_servers:
-  - name: "test-server"
-    command: "echo hello"
-    transport: stdio
-
-exercises:
-  types: [tool-selection]
-  count: 10
-  difficulty: [easy]
-
-output:
-  formats: [sft]
-  path: ./out/
-"#
+    fn minimal_config_json() -> &'static str {
+        r#"{
+  "model": { "endpoint": "http://localhost:8080/v1", "name": "test-model" },
+  "mcp_servers": [{ "name": "test-server", "command": "echo hello", "transport": "stdio" }],
+  "exercises": { "types": ["tool-selection"], "count": 10, "difficulty": ["easy"] },
+  "output": { "formats": ["sft"], "path": "./out/" }
+}"#
     }
 
     #[test]
     fn parses_minimal_config() {
         let config: ArenaConfig =
-            serde_yaml::from_str(minimal_config_yaml()).expect("should parse");
+            serde_json::from_str(minimal_config_json()).expect("should parse");
         assert_eq!(config.model.name, "test-model");
         assert_eq!(config.mcp_servers.len(), 1);
         assert_eq!(config.exercises.count, 10);
@@ -388,65 +380,39 @@ output:
 
     #[test]
     fn validates_empty_servers() {
-        let yaml = r#"
-model:
-  endpoint: "http://localhost:8080/v1"
-  name: "test"
-mcp_servers: []
-exercises:
-  types: [tool-selection]
-  count: 10
-  difficulty: [easy]
-output:
-  formats: [sft]
-  path: ./out/
-"#;
-        let config: ArenaConfig = serde_yaml::from_str(yaml).expect("should parse");
+        let json = r#"{
+  "model": { "endpoint": "http://localhost:8080/v1", "name": "test" },
+  "mcp_servers": [],
+  "exercises": { "types": ["tool-selection"], "count": 10, "difficulty": ["easy"] },
+  "output": { "formats": ["sft"], "path": "./out/" }
+}"#;
+        let config: ArenaConfig = serde_json::from_str(json).expect("should parse");
         let err = config.validate().expect_err("should fail");
         assert!(err.to_string().contains("at least one MCP server"));
     }
 
     #[test]
     fn validates_stdio_requires_command() {
-        let yaml = r#"
-model:
-  endpoint: "http://localhost:8080/v1"
-  name: "test"
-mcp_servers:
-  - name: "bad"
-    transport: stdio
-exercises:
-  types: [tool-selection]
-  count: 10
-  difficulty: [easy]
-output:
-  formats: [sft]
-  path: ./out/
-"#;
-        let config: ArenaConfig = serde_yaml::from_str(yaml).expect("should parse");
+        let json = r#"{
+  "model": { "endpoint": "http://localhost:8080/v1", "name": "test" },
+  "mcp_servers": [{ "name": "bad", "transport": "stdio" }],
+  "exercises": { "types": ["tool-selection"], "count": 10, "difficulty": ["easy"] },
+  "output": { "formats": ["sft"], "path": "./out/" }
+}"#;
+        let config: ArenaConfig = serde_json::from_str(json).expect("should parse");
         let err = config.validate().expect_err("should fail");
         assert!(err.to_string().contains("no command"));
     }
 
     #[test]
     fn validates_cross_server_needs_two_servers() {
-        let yaml = r#"
-model:
-  endpoint: "http://localhost:8080/v1"
-  name: "test"
-mcp_servers:
-  - name: "only-one"
-    command: "echo"
-    transport: stdio
-exercises:
-  types: [cross-server]
-  count: 10
-  difficulty: [easy]
-output:
-  formats: [sft]
-  path: ./out/
-"#;
-        let config: ArenaConfig = serde_yaml::from_str(yaml).expect("should parse");
+        let json = r#"{
+  "model": { "endpoint": "http://localhost:8080/v1", "name": "test" },
+  "mcp_servers": [{ "name": "only-one", "command": "echo", "transport": "stdio" }],
+  "exercises": { "types": ["cross-server"], "count": 10, "difficulty": ["easy"] },
+  "output": { "formats": ["sft"], "path": "./out/" }
+}"#;
+        let config: ArenaConfig = serde_json::from_str(json).expect("should parse");
         let err = config.validate().expect_err("should fail");
         assert!(err.to_string().contains("at least 2 MCP servers"));
     }
@@ -454,7 +420,7 @@ output:
     #[test]
     fn default_values_applied() {
         let config: ArenaConfig =
-            serde_yaml::from_str(minimal_config_yaml()).expect("should parse");
+            serde_json::from_str(minimal_config_json()).expect("should parse");
         assert_eq!(config.model.max_tokens, 2048);
         assert!((config.model.temperature - 0.7).abs() < f32::EPSILON);
         assert!(config.output.include_reasoning);
@@ -464,26 +430,20 @@ output:
 
     #[test]
     fn exercise_types_deserialize_kebab_case() {
-        let yaml = r#"
-model:
-  endpoint: "http://localhost/v1"
-  name: "test"
-mcp_servers:
-  - name: "a"
-    command: "echo"
-    transport: stdio
-  - name: "b"
-    command: "echo"
-    transport: stdio
-exercises:
-  types: [tool-selection, parameter-filling, multi-step-chain, error-recovery, distractor, no-tool-needed, cross-server]
-  count: 100
-  difficulty: [easy, medium, hard]
-output:
-  formats: [sft, dpo, rl]
-  path: ./out/
-"#;
-        let config: ArenaConfig = serde_yaml::from_str(yaml).expect("should parse");
+        let json = r#"{
+  "model": { "endpoint": "http://localhost/v1", "name": "test" },
+  "mcp_servers": [
+    { "name": "a", "command": "echo", "transport": "stdio" },
+    { "name": "b", "command": "echo", "transport": "stdio" }
+  ],
+  "exercises": {
+    "types": ["tool-selection", "parameter-filling", "multi-step-chain", "error-recovery", "distractor", "no-tool-needed", "cross-server"],
+    "count": 100,
+    "difficulty": ["easy", "medium", "hard"]
+  },
+  "output": { "formats": ["sft", "dpo", "rl"], "path": "./out/" }
+}"#;
+        let config: ArenaConfig = serde_json::from_str(json).expect("should parse");
         assert_eq!(config.exercises.types.len(), 7);
         assert_eq!(config.output.formats.len(), 3);
         config.validate().expect("should validate");

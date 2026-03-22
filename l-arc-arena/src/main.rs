@@ -160,7 +160,7 @@ fn run_pipeline(config_path: &std::path::Path, dry_run: bool, verbose: u8) -> Ex
 
     if dry_run {
         println!("l-arc-arena: dry-run — writing exercise manifest only");
-        let manifest_path = arena_config.output.path.join("exercise_manifest.yaml");
+        let manifest_path = arena_config.output.path.join("exercise_manifest.json");
         if let Err(e) = std::fs::create_dir_all(&arena_config.output.path) {
             eprintln!("l-arc-arena: failed to create output dir: {e}");
             return ExitCode::FAILURE;

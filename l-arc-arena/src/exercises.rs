@@ -689,15 +689,15 @@ fn difficulty_slug(d: Difficulty) -> &'static str {
     }
 }
 
-/// Serialize exercises to YAML for compatibility with mcp-agent-gym scenarios.
+/// Serialize exercises to JSON for mcp-agent-gym scenarios.
 ///
 /// # Errors
 ///
 /// Returns an error if serialization fails.
 pub fn write_manifest(exercises: &[Exercise], path: &std::path::Path) -> Result<(), String> {
-    let yaml = serde_yaml::to_string(exercises)
+    let json = serde_json::to_string_pretty(exercises)
         .map_err(|e| format!("failed to serialize exercises: {e}"))?;
-    std::fs::write(path, yaml).map_err(|e| format!("failed to write manifest: {e}"))?;
+    std::fs::write(path, json).map_err(|e| format!("failed to write manifest: {e}"))?;
     Ok(())
 }
 
