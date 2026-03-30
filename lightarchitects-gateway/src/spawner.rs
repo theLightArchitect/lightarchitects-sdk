@@ -169,11 +169,17 @@ pub async fn call_sibling(
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 /// Spawn the sibling binary with stdin/stdout pipes.
+///
+/// Sets `LIGHTARCHITECTS_AUTOMATED=1` in the child environment so siblings
+/// know they are being called from the gateway (not interactively). This
+/// signals HITL gates to auto-approve or skip — there is no human at the
+/// other end of a subprocess pipe.
 fn spawn_sibling(binary_path: &std::path::Path, sibling_name: &str) -> Result<Child, GatewayError> {
     Command::new(binary_path)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit())
+        .env("LIGHTARCHITECTS_AUTOMATED", "1")
         .spawn()
         .map_err(|e| GatewayError::SpawnFailed {
             sibling: sibling_name.to_owned(),
