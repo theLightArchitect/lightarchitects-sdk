@@ -39,6 +39,9 @@ async fn main() {
         )
         .init();
 
+    // Generate a per-startup automation nonce for HITL bypass hardening.
+    lightarchitects_gateway::spawner::init_automation_token();
+
     let raw_args: Vec<String> = std::env::args().skip(1).collect();
     let (config_path, args) = parse_config_flag(raw_args);
 

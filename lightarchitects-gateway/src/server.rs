@@ -249,12 +249,12 @@ async fn dispatch(
 ) -> Result<Value, GatewayError> {
     match tool_name {
         "tools" => core_tools::meta::run(params, config).await,
-        "lightarchitects_read" => core_tools::read::run(params),
-        "lightarchitects_write" => core_tools::write::run(params),
-        "lightarchitects_edit" => core_tools::edit::run(params),
+        "lightarchitects_read" => core_tools::read::run(params, config),
+        "lightarchitects_write" => core_tools::write::run(params, config),
+        "lightarchitects_edit" => core_tools::edit::run(params, config),
         "lightarchitects_bash" => core_tools::bash::run(params).await,
-        "lightarchitects_search" => core_tools::search::run(params).await,
-        "lightarchitects_glob" => core_tools::glob::run(params).await,
+        "lightarchitects_search" => core_tools::search::run(params, config).await,
+        "lightarchitects_glob" => core_tools::glob::run(params, config).await,
         "lightarchitects_discover" => core_tools::discover::run(params, config),
         "lightarchitects_ask_user" => core_tools::ask_user::run(params),
         "lightarchitects_orchestrate" => core_tools::orchestrate::run(params, config).await,

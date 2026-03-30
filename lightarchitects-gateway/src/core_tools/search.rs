@@ -3,7 +3,8 @@
 use serde_json::{Value, json};
 use tokio::process::Command;
 
-use crate::config::expand_tilde;
+use crate::config::GatewayConfig;
+use crate::core_tools::security;
 use crate::error::GatewayError;
 
 /// Execute `lightarchitects_search`.
@@ -20,11 +21,18 @@ use crate::error::GatewayError;
 ///
 /// Returns [`GatewayError::MissingParam`] when `pattern` is absent, and
 /// [`GatewayError::Subprocess`] when the search process cannot be spawned.
-pub async fn run(params: Value) -> Result<Value, GatewayError> {
+pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, GatewayError> {
     let pattern = params["pattern"]
         .as_str()
         .ok_or(GatewayError::MissingParam("pattern"))?;
-    let search_path = params["path"].as_str().map(expand_tilde);
+
+    // Security: validate the search path if provided.
+    let search_path = if let Some(p) = params["path"].as_str() {
+        Some(security::validate_path(p, config)?)
+    } else {
+        None
+    };
+
     let glob_filter = params["glob"].as_str();
     let case_insensitive = params["case_insensitive"].as_bool().unwrap_or(false);
 
@@ -116,20 +124,29 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn test_config() -> GatewayConfig {
+        GatewayConfig::default()
+    }
+
     #[tokio::test]
     async fn missing_pattern_is_error() {
-        let result = run(json!({})).await;
+        let cfg = test_config();
+        let result = run(json!({}), &cfg).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn search_returns_text_content() {
+        let cfg = test_config();
         // Search for a pattern that almost certainly exists on any dev machine.
-        let result = run(json!({
-            "pattern": "Cargo",
-            "path": "/Users/kft/Projects/lightarchitects-sdk",
-            "glob": "*.toml"
-        }))
+        let result = run(
+            json!({
+                "pattern": "Cargo",
+                "path": "/Users/kft/Projects/lightarchitects-sdk",
+                "glob": "*.toml"
+            }),
+            &cfg,
+        )
         .await
         .expect("run");
         assert!(result["content"][0]["type"].as_str() == Some("text"));

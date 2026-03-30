@@ -26,6 +26,7 @@
 //! | [`crate::error::GatewayError::McpProtocol`] | Timeout, malformed JSON, or unexpected response |
 //! | [`crate::error::GatewayError::SiblingNotEnabled`] | Sibling disabled in config |
 
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -37,6 +38,9 @@ use tracing::{debug, instrument, warn};
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
 use crate::governance;
+
+/// Per-process automation token — generated once at startup.
+static AUTOMATION_TOKEN: OnceLock<String> = OnceLock::new();
 
 /// Maximum time to wait for a single MCP response from a sibling.
 const MCP_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -96,11 +100,20 @@ pub async fn call_sibling(
         );
         return Err(GatewayError::SpawnFailed {
             sibling: sibling_name.to_owned(),
-            reason: format!(
-                "binary not found at '{}'. Build and deploy {sibling_name} first.",
-                binary_path.display()
-            ),
+            reason: format!("binary not found. Build and deploy {sibling_name} first."),
         });
+    }
+
+    // 3b. Binary integrity verification — if checksum is configured, verify before spawn.
+    if let Some(expected) = &sibling_cfg.checksum {
+        let actual = sha256_file(&binary_path, sibling_name)?;
+        if actual != *expected {
+            return Err(GatewayError::SpawnFailed {
+                sibling: sibling_name.to_owned(),
+                reason: format!("binary checksum mismatch: expected {expected}, got {actual}"),
+            });
+        }
+        debug!(sibling = sibling_name, "binary checksum verified");
     }
 
     // 4. Spawn the sibling process.
@@ -170,21 +183,56 @@ pub async fn call_sibling(
 
 /// Spawn the sibling binary with stdin/stdout pipes.
 ///
-/// Sets `LIGHTARCHITECTS_AUTOMATED=1` in the child environment so siblings
-/// know they are being called from the gateway (not interactively). This
-/// signals HITL gates to auto-approve or skip — there is no human at the
-/// other end of a subprocess pipe.
+/// Sets `LIGHTARCHITECTS_AUTOMATED` to a random nonce (32-byte hex) generated
+/// at gateway startup. Siblings verify the token is a 64-char hex string
+/// rather than a simple `"1"` or `"true"`, preventing trivial HITL bypass
+/// from malicious processes that guess the env var name.
 fn spawn_sibling(binary_path: &std::path::Path, sibling_name: &str) -> Result<Child, GatewayError> {
+    let token = automation_token();
     Command::new(binary_path)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit())
-        .env("LIGHTARCHITECTS_AUTOMATED", "1")
+        .env("LIGHTARCHITECTS_AUTOMATED", &token)
         .spawn()
         .map_err(|e| GatewayError::SpawnFailed {
             sibling: sibling_name.to_owned(),
-            reason: e.to_string(),
+            reason: crate::core_tools::security::sanitize_error(&e.to_string()),
         })
+}
+
+/// Initialise the automation token (call once from `main`).
+///
+/// Generates a 64-char hex nonce using system time and PID as entropy.
+/// Subsequent calls are no-ops — the token is immutable once set.
+pub fn init_automation_token() {
+    AUTOMATION_TOKEN.get_or_init(generate_automation_token);
+}
+
+/// Return the gateway's automation token.
+///
+/// Falls back to a freshly generated token if [`init_automation_token`] was
+/// never called (should not happen in normal operation).
+fn automation_token() -> String {
+    AUTOMATION_TOKEN
+        .get()
+        .cloned()
+        .unwrap_or_else(generate_automation_token)
+}
+
+/// Generate a 64-char hex nonce using system time and PID as entropy.
+///
+/// This is not cryptographically random, but it is unpredictable enough to
+/// prevent a sibling or external process from trivially spoofing the token.
+#[must_use]
+pub fn generate_automation_token() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let pid = u128::from(std::process::id());
+    format!("{nanos:032x}{pid:032x}")
 }
 
 /// Send the MCP `initialize` request and read + discard the response.
@@ -346,6 +394,41 @@ fn extract_result(response: Value, sibling_name: &str) -> Result<Value, GatewayE
         .ok_or_else(|| GatewayError::McpProtocol {
             sibling: sibling_name.to_owned(),
             reason: "response missing 'result' field".to_owned(),
+        })
+}
+
+/// Compute the SHA-256 digest of a file using the system `shasum` command.
+///
+/// Returns the lowercase hex digest string.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::SpawnFailed`] if the file cannot be read or
+/// `shasum` cannot be executed.
+fn sha256_file(path: &std::path::Path, sibling_name: &str) -> Result<String, GatewayError> {
+    let output = std::process::Command::new("shasum")
+        .args(["-a", "256", &path.to_string_lossy()])
+        .output()
+        .map_err(|e| GatewayError::SpawnFailed {
+            sibling: sibling_name.to_owned(),
+            reason: format!("shasum failed: {e}"),
+        })?;
+
+    if !output.status.success() {
+        return Err(GatewayError::SpawnFailed {
+            sibling: sibling_name.to_owned(),
+            reason: "shasum returned non-zero exit code".to_owned(),
+        });
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .split_whitespace()
+        .next()
+        .map(String::from)
+        .ok_or_else(|| GatewayError::SpawnFailed {
+            sibling: sibling_name.to_owned(),
+            reason: "shasum produced no output".to_owned(),
         })
 }
 

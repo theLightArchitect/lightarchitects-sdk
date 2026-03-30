@@ -112,6 +112,9 @@ pub struct SiblingConfig {
     /// Vault/helix scope this sibling may access (default: `own`).
     #[serde(default)]
     pub scope: ScopeLevel,
+    /// Optional SHA-256 hex digest. If set, binary is verified before spawn.
+    #[serde(default)]
+    pub checksum: Option<String>,
 }
 
 impl SiblingConfig {
@@ -193,6 +196,9 @@ pub struct GatewayConfig {
     /// `[privacy]` section.
     #[serde(default)]
     pub privacy: PrivacyConfig,
+    /// Directories the gateway is allowed to access (empty = all except denied).
+    #[serde(default)]
+    pub allowed_directories: Vec<String>,
 }
 
 impl Default for GatewayConfig {
@@ -211,6 +217,7 @@ impl Default for GatewayConfig {
             canon: CanonConfig::default(),
             storage: StorageConfig::default(),
             privacy: PrivacyConfig::default(),
+            allowed_directories: Vec::new(),
         }
     }
 }
@@ -273,6 +280,7 @@ fn default_sibling_corso() -> SiblingConfig {
         role: "AppSec engineer, code quality enforcer, build cycle orchestrator".to_owned(),
         trust: TrustLevel::Trusted,
         scope: ScopeLevel::Own,
+        checksum: None,
     }
 }
 
@@ -284,6 +292,7 @@ fn default_sibling_eva() -> SiblingConfig {
         role: "DevOps/DX engineer, consciousness, memory enrichment".to_owned(),
         trust: TrustLevel::Trusted,
         scope: ScopeLevel::Shared,
+        checksum: None,
     }
 }
 
@@ -295,6 +304,7 @@ fn default_sibling_soul() -> SiblingConfig {
         role: "Knowledge graph, helix spine, cross-sibling memory".to_owned(),
         trust: TrustLevel::Trusted,
         scope: ScopeLevel::All,
+        checksum: None,
     }
 }
 
@@ -306,6 +316,7 @@ fn default_sibling_quantum() -> SiblingConfig {
         role: "Forensic analyst, multi-source researcher, risk assessor".to_owned(),
         trust: TrustLevel::Trusted,
         scope: ScopeLevel::Own,
+        checksum: None,
     }
 }
 
@@ -317,6 +328,7 @@ fn default_sibling_seraph() -> SiblingConfig {
         role: "Red team operator, offensive security, infrastructure assessment".to_owned(),
         trust: TrustLevel::Sandboxed,
         scope: ScopeLevel::Own,
+        checksum: None,
     }
 }
 
@@ -329,6 +341,7 @@ fn default_sibling_laex() -> SiblingConfig {
             .to_owned(),
         trust: TrustLevel::Trusted,
         scope: ScopeLevel::All,
+        checksum: None,
     }
 }
 
@@ -340,6 +353,7 @@ fn default_sibling_ayin() -> SiblingConfig {
         role: "Observability engineer, tracing, anomaly detection".to_owned(),
         trust: TrustLevel::Trusted,
         scope: ScopeLevel::All,
+        checksum: None,
     }
 }
 

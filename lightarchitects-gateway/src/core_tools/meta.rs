@@ -190,12 +190,12 @@ async fn dispatch_core(
     config: &GatewayConfig,
 ) -> Result<Value, GatewayError> {
     match action {
-        "read" => read::run(params),
-        "write" => write::run(params),
-        "edit" => edit::run(params),
+        "read" => read::run(params, config),
+        "write" => write::run(params, config),
+        "edit" => edit::run(params, config),
         "bash" => bash::run(params).await,
-        "search" => search::run(params).await,
-        "glob" => glob::run(params).await,
+        "search" => search::run(params, config).await,
+        "glob" => glob::run(params, config).await,
         "discover" => discover::run(params, config),
         "ask_user" => ask_user::run(params),
         "canon_check" => canon_check::run(params, config),
@@ -272,10 +272,13 @@ mod tests {
         let result = run(json!({"action": "guard", "params": {}}), &cfg).await;
         // Either spawns CORSO or fails with SpawnFailed — NOT UnknownTool.
         match result {
-            Ok(_) => {}                                 // CORSO responded (binary exists)
-            Err(GatewayError::SpawnFailed { .. }) => {} // Expected — binary path issue in test
-            Err(GatewayError::McpProtocol { .. }) => {} // Expected — CORSO might not respond
-            Err(GatewayError::Governance { .. }) => {}  // Expected — possible governance block
+            // CORSO responded, or binary/protocol/governance issue — all expected.
+            Ok(_)
+            | Err(
+                GatewayError::SpawnFailed { .. }
+                | GatewayError::McpProtocol { .. }
+                | GatewayError::Governance { .. },
+            ) => {}
             Err(other) => panic!("unexpected error: {other:?}"),
         }
     }

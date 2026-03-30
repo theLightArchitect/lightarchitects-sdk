@@ -82,6 +82,9 @@ pub struct ChatResponse {
 /// Build Ollama-format tool definitions from the gateway's core tools.
 ///
 /// These are the tools the model can call during a spar exercise.
+/// Only read-only tools are exposed — write, edit, and bash are blocked
+/// in spar mode to prevent training exercises from modifying files or
+/// executing arbitrary commands.
 pub fn gateway_tool_defs() -> Vec<Value> {
     vec![
         tool_def(
@@ -93,42 +96,6 @@ pub fn gateway_tool_defs() -> Vec<Value> {
                     "path": {"type": "string", "description": "File path to read"}
                 },
                 "required": ["path"]
-            }),
-        ),
-        tool_def(
-            "write",
-            "Create or overwrite a file",
-            json!({
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "File path"},
-                    "content": {"type": "string", "description": "File content"}
-                },
-                "required": ["path", "content"]
-            }),
-        ),
-        tool_def(
-            "edit",
-            "Replace a string in a file",
-            json!({
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "File path"},
-                    "old_string": {"type": "string", "description": "String to find"},
-                    "new_string": {"type": "string", "description": "Replacement string"}
-                },
-                "required": ["path", "old_string", "new_string"]
-            }),
-        ),
-        tool_def(
-            "bash",
-            "Execute a shell command",
-            json!({
-                "type": "object",
-                "properties": {
-                    "command": {"type": "string", "description": "Shell command to execute"}
-                },
-                "required": ["command"]
             }),
         ),
         tool_def(
@@ -189,7 +156,12 @@ pub async fn chat(
     tools: Option<Vec<Value>>,
     ollama_url: Option<&str>,
 ) -> Result<ChatResponse, GatewayError> {
-    let url = format!("{}/api/chat", ollama_url.unwrap_or(DEFAULT_OLLAMA_URL));
+    let base = ollama_url.unwrap_or(DEFAULT_OLLAMA_URL);
+
+    // Security: validate that the Ollama endpoint is localhost-only.
+    super::security::validate_local_url(base)?;
+
+    let url = format!("{base}/api/chat");
 
     let body = ChatRequest {
         model: model.to_owned(),
@@ -234,7 +206,11 @@ pub async fn chat(
 
 /// Check if Ollama is reachable.
 pub async fn health(ollama_url: Option<&str>) -> bool {
-    let url = format!("{}/api/tags", ollama_url.unwrap_or(DEFAULT_OLLAMA_URL));
+    let base = ollama_url.unwrap_or(DEFAULT_OLLAMA_URL);
+    if super::security::validate_local_url(base).is_err() {
+        return false;
+    }
+    let url = format!("{base}/api/tags");
     reqwest::get(&url)
         .await
         .is_ok_and(|r| r.status().is_success())
@@ -247,9 +223,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn gateway_tool_defs_has_six_tools() {
+    fn gateway_tool_defs_has_three_readonly_tools() {
         let tools = gateway_tool_defs();
-        assert_eq!(tools.len(), 6);
+        assert_eq!(tools.len(), 3);
+        let names: Vec<&str> = tools
+            .iter()
+            .filter_map(|t| t["function"]["name"].as_str())
+            .collect();
+        assert!(names.contains(&"read"));
+        assert!(names.contains(&"search"));
+        assert!(names.contains(&"glob"));
+        // write, edit, bash must NOT be present.
+        assert!(!names.contains(&"write"));
+        assert!(!names.contains(&"edit"));
+        assert!(!names.contains(&"bash"));
     }
 
     #[test]

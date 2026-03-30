@@ -2,7 +2,8 @@
 
 use serde_json::{Value, json};
 
-use crate::config::expand_tilde;
+use crate::config::GatewayConfig;
+use crate::core_tools::security;
 use crate::error::GatewayError;
 
 /// Execute `lightarchitects_edit`.
@@ -21,7 +22,7 @@ use crate::error::GatewayError;
 /// - [`GatewayError::EditNotFound`] — `old_string` does not appear in the file.
 /// - [`GatewayError::EditNotUnique`] — `old_string` matches more than once
 ///   and `replace_all` is `false`.
-pub fn run(params: Value) -> Result<Value, GatewayError> {
+pub fn run(params: Value, config: &GatewayConfig) -> Result<Value, GatewayError> {
     let path_str = params["path"]
         .as_str()
         .ok_or(GatewayError::MissingParam("path"))?;
@@ -33,9 +34,11 @@ pub fn run(params: Value) -> Result<Value, GatewayError> {
         .ok_or(GatewayError::MissingParam("new_string"))?;
     let replace_all = params["replace_all"].as_bool().unwrap_or(false);
 
-    let path = expand_tilde(path_str);
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| GatewayError::File(format!("{}: {e}", path.display())))?;
+    // Security: validate write path boundaries before any I/O.
+    let canonical = security::validate_write_path(path_str, config)?;
+
+    let content = std::fs::read_to_string(&canonical)
+        .map_err(|e| GatewayError::File(format!("{}: {e}", canonical.display())))?;
 
     let count = content.matches(old_string).count();
     if count == 0 {
@@ -52,15 +55,15 @@ pub fn run(params: Value) -> Result<Value, GatewayError> {
         content.replacen(old_string, new_string, 1)
     };
 
-    std::fs::write(&path, &new_content)
-        .map_err(|e| GatewayError::File(format!("{}: {e}", path.display())))?;
+    std::fs::write(&canonical, &new_content)
+        .map_err(|e| GatewayError::File(format!("{}: {e}", canonical.display())))?;
 
     let replacements = if replace_all { count } else { 1 };
     let result = json!({
         "content": [{
             "type": "text",
             "text": serde_json::to_string(&json!({
-                "path": path.display().to_string(),
+                "path": canonical.display().to_string(),
                 "replacements": replacements
             }))?
         }]
@@ -74,17 +77,25 @@ mod tests {
     use serde_json::json;
     use std::io::Write as _;
 
+    fn test_config() -> GatewayConfig {
+        GatewayConfig::default()
+    }
+
     #[test]
     fn replaces_single_occurrence() {
         let mut tmp = tempfile::NamedTempFile::new().expect("tmp");
         write!(tmp, "foo bar foo").expect("write");
+        let cfg = test_config();
         // Only one occurrence expected — should fail with not-unique.
         // Use a string that appears exactly once:
-        run(json!({
-            "path": tmp.path().to_str().unwrap(),
-            "old_string": "bar",
-            "new_string": "baz"
-        }))
+        run(
+            json!({
+                "path": tmp.path().to_str().unwrap(),
+                "old_string": "bar",
+                "new_string": "baz"
+            }),
+            &cfg,
+        )
         .expect("run");
         let content = std::fs::read_to_string(tmp.path()).expect("read");
         assert_eq!(content, "foo baz foo");
@@ -94,12 +105,16 @@ mod tests {
     fn replace_all_flag_replaces_all() {
         let mut tmp = tempfile::NamedTempFile::new().expect("tmp");
         write!(tmp, "a a a").expect("write");
-        run(json!({
-            "path": tmp.path().to_str().unwrap(),
-            "old_string": "a",
-            "new_string": "b",
-            "replace_all": true
-        }))
+        let cfg = test_config();
+        run(
+            json!({
+                "path": tmp.path().to_str().unwrap(),
+                "old_string": "a",
+                "new_string": "b",
+                "replace_all": true
+            }),
+            &cfg,
+        )
         .expect("run");
         let content = std::fs::read_to_string(tmp.path()).expect("read");
         assert_eq!(content, "b b b");
@@ -109,11 +124,15 @@ mod tests {
     fn not_unique_without_replace_all_is_error() {
         let mut tmp = tempfile::NamedTempFile::new().expect("tmp");
         write!(tmp, "x x").expect("write");
-        let result = run(json!({
-            "path": tmp.path().to_str().unwrap(),
-            "old_string": "x",
-            "new_string": "y"
-        }));
+        let cfg = test_config();
+        let result = run(
+            json!({
+                "path": tmp.path().to_str().unwrap(),
+                "old_string": "x",
+                "new_string": "y"
+            }),
+            &cfg,
+        );
         assert!(matches!(result, Err(GatewayError::EditNotUnique { .. })));
     }
 
@@ -121,11 +140,15 @@ mod tests {
     fn not_found_is_error() {
         let mut tmp = tempfile::NamedTempFile::new().expect("tmp");
         write!(tmp, "hello").expect("write");
-        let result = run(json!({
-            "path": tmp.path().to_str().unwrap(),
-            "old_string": "missing",
-            "new_string": "replacement"
-        }));
+        let cfg = test_config();
+        let result = run(
+            json!({
+                "path": tmp.path().to_str().unwrap(),
+                "old_string": "missing",
+                "new_string": "replacement"
+            }),
+            &cfg,
+        );
         assert!(matches!(result, Err(GatewayError::EditNotFound)));
     }
 }

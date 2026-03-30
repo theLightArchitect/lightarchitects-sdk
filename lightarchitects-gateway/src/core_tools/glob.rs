@@ -3,7 +3,8 @@
 use serde_json::{Value, json};
 use tokio::process::Command;
 
-use crate::config::expand_tilde;
+use crate::config::GatewayConfig;
+use crate::core_tools::security;
 use crate::error::GatewayError;
 
 /// Execute `lightarchitects_glob`.
@@ -18,13 +19,18 @@ use crate::error::GatewayError;
 ///
 /// Returns [`GatewayError::MissingParam`] when `pattern` is absent, and
 /// [`GatewayError::Subprocess`] when `find` cannot be spawned.
-pub async fn run(params: Value) -> Result<Value, GatewayError> {
+pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, GatewayError> {
     let pattern = params["pattern"]
         .as_str()
         .ok_or(GatewayError::MissingParam("pattern"))?;
-    let base = params["path"]
-        .as_str()
-        .map_or_else(|| ".".to_owned(), |p| expand_tilde(p).display().to_string());
+
+    // Security: validate the base path if provided.
+    let base = if let Some(p) = params["path"].as_str() {
+        let canonical = security::validate_path(p, config)?;
+        canonical.display().to_string()
+    } else {
+        ".".to_owned()
+    };
 
     // Extract a bare filename pattern from glob syntax, e.g. "**/*.rs" → "*.rs".
     let name_pattern = extract_name_pattern(pattern);
@@ -63,6 +69,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn test_config() -> GatewayConfig {
+        GatewayConfig::default()
+    }
+
     #[test]
     fn extract_name_pattern_strips_prefix() {
         assert_eq!(extract_name_pattern("**/*.rs"), "*.rs");
@@ -72,16 +82,21 @@ mod tests {
 
     #[tokio::test]
     async fn missing_pattern_is_error() {
-        let result = run(json!({})).await;
+        let cfg = test_config();
+        let result = run(json!({}), &cfg).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn finds_toml_files_in_workspace() {
-        let result = run(json!({
-            "pattern": "*.toml",
-            "path": "/Users/kft/Projects/lightarchitects-sdk"
-        }))
+        let cfg = test_config();
+        let result = run(
+            json!({
+                "pattern": "*.toml",
+                "path": "/Users/kft/Projects/lightarchitects-sdk"
+            }),
+            &cfg,
+        )
         .await
         .expect("run");
         let text = result["content"][0]["text"].as_str().unwrap();

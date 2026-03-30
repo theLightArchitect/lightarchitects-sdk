@@ -96,7 +96,9 @@ async fn get_conversations(params: &Value) -> Result<Value, GatewayError> {
 /// Perform a `GET` request and return the parsed JSON body.
 ///
 /// Connection errors produce a helpful message referencing the AYIN `LaunchAgent`.
+/// Validates that the URL targets localhost before making the request.
 async fn http_get(url: &str) -> Result<Value, GatewayError> {
+    super::security::validate_local_url(url)?;
     let client = Client::builder()
         .timeout(AYIN_TIMEOUT)
         .build()

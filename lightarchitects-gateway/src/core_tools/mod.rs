@@ -24,6 +24,7 @@ pub mod ollama;
 pub mod orchestrate;
 pub mod read;
 pub mod search;
+pub mod security;
 pub mod write;
 
 use serde_json::{Value, json};

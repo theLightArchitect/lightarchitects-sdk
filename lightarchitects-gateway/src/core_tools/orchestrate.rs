@@ -363,7 +363,7 @@ mod tests {
     fn all_sdk_routable_actions_route_correctly() {
         // Enable all siblings.
         let mut cfg = GatewayConfig::default();
-        for (_, sib) in cfg.siblings.iter_mut() {
+        for sib in cfg.siblings.values_mut() {
             sib.enabled = true;
         }
 
@@ -464,7 +464,7 @@ mod tests {
     #[test]
     fn collision_priority_research() {
         let mut cfg = GatewayConfig::default();
-        for (_, sib) in cfg.siblings.iter_mut() {
+        for sib in cfg.siblings.values_mut() {
             sib.enabled = true;
         }
         // "research" → QUANTUM (higher priority than SOUL).
@@ -474,7 +474,7 @@ mod tests {
     #[test]
     fn collision_priority_search_routes_to_soul() {
         let mut cfg = GatewayConfig::default();
-        for (_, sib) in cfg.siblings.iter_mut() {
+        for sib in cfg.siblings.values_mut() {
             sib.enabled = true;
         }
         // "search" is a SOUL action. CORSO has "search_code" but not bare "search".

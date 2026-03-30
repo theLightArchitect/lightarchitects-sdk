@@ -811,18 +811,25 @@ async fn run_spar_loop(
 /// Execute a tool call from the spar loop against the gateway's core handlers.
 ///
 /// Returns the tool result as a string (for feeding back to the model).
-/// Sandboxed: only core tools (read/write/edit/bash/search/glob) are available.
+/// Sandboxed: only read-only tools (read, search, glob) are available.
+/// Write, edit, and bash are blocked — training exercises must not modify files
+/// or execute arbitrary commands.
 async fn execute_tool_for_spar(tool_name: &str, args: Value) -> String {
-    use super::{bash, edit, glob, read, search, write};
+    use super::{glob, read, search};
+    use crate::config::GatewayConfig;
+
+    let config = GatewayConfig::default();
 
     let result = match tool_name {
-        "read" => read::run(args),
-        "write" => write::run(args),
-        "edit" => edit::run(args),
-        "bash" => bash::run(args).await,
-        "search" => search::run(args).await,
-        "glob" => glob::run(args).await,
-        _ => return format!("Unknown tool: {tool_name}"),
+        "read" => read::run(args, &config),
+        "search" => search::run(args, &config).await,
+        "glob" => glob::run(args, &config).await,
+        _ => {
+            return format!(
+                "Tool '{tool_name}' is not available in spar mode. \
+                 Only read, search, and glob are permitted."
+            );
+        }
     };
 
     match result {
