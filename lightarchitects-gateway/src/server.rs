@@ -9,12 +9,22 @@ use crate::error::GatewayError;
 
 // ── Tool schema definitions ───────────────────────────────────────────────────
 
-/// Build the full list of tool definitions returned by `tools/list`.
+/// Tool definitions returned by `tools/list` — only the unified `tools` meta-tool.
 ///
-/// Each entry follows the MCP tool-info schema:
-/// `{name, description, inputSchema: {type, properties, required}}`.
+/// Individual `lightarchitects_*` tools are still routable via `tools/call` for
+/// backward compatibility (CLI use, direct invocation), but they are not
+/// advertised in the MCP tool list.
 #[must_use]
 pub fn tool_definitions() -> Vec<Value> {
+    vec![meta_tool_def()]
+}
+
+/// All tool definitions including individual `lightarchitects_*` tools.
+///
+/// Used internally by the dispatch table and validation tests — NOT exposed
+/// via `tools/list`.
+#[must_use]
+pub fn all_tool_definitions() -> Vec<Value> {
     let mut tools = vec![meta_tool_def()];
     tools.extend(file_tool_defs());
     tools.extend(platform_tool_defs());
@@ -26,7 +36,7 @@ pub fn tool_definitions() -> Vec<Value> {
 fn meta_tool_def() -> Value {
     json!({
         "name": "tools",
-        "description": "Light Architects gateway — single entry point for all operations. Use action='list' to discover available actions.\n\nCore actions (handled by gateway):\n• read — Read file contents. params: {path, offset?, limit?}\n• write — Create/overwrite file. params: {path, content}\n• edit — String replacement. params: {path, old_string, new_string, replace_all?}\n• bash — Execute shell command. params: {command, timeout_ms?, cwd?}\n• search — Ripgrep file search. params: {pattern, path?, glob?, case_insensitive?}\n• glob — Find files by pattern. params: {pattern, path?}\n• discover — Gateway version, tools, sibling status. params: none\n• ask_user — Prompt user for input. params: {question, options?}\n• initialize — Setup wizard. params: {step?}\n• import — Import from external systems. params: {source, path?, format?}\n\nSibling actions (auto-routed by action keyword):\n• guard, scout, hunt, chase, fetch, chow, sniff → CORSO\n• memory, teach, ideate, visualize, bible → EVA\n• helix, stats, converse, vault, read_note, write_note → SOUL\n• scan, sweep, probe, theorize, verify, investigate → QUANTUM\n• scope, recon, pentest, strike, report → SERAPH\n• trace_query, trace_search, metrics, anomaly, topology → AYIN\n• harness, forge, spar, judge, triumph, inspect, unleash, check, trial, summon, canon_check, canon_evaluate → LÆX\n\nPass 'sibling' only to override auto-routing when action names collide.",
+        "description": "Light Architects gateway — single entry point for all operations. Use action='list' to discover available actions.\n\nCore actions (handled by gateway):\n• read — Read file contents. params: {path, offset?, limit?}\n• write — Create/overwrite file. params: {path, content}\n• edit — String replacement. params: {path, old_string, new_string, replace_all?}\n• bash — Execute shell command. params: {command, timeout_ms?, cwd?}\n• search — Ripgrep file search. params: {pattern, path?, glob?, case_insensitive?}\n• glob — Find files by pattern. params: {pattern, path?}\n• discover — Gateway version, tools, sibling status. params: none\n• ask_user — Prompt user for input. params: {question, options?}\n• initialize — Setup wizard. params: {step?}\n• import — Import from external systems. params: {source, path?, format?}\n• canon_check — Validate a decision against the canon registry. params: {decision, verbose?}\n• canon_evaluate — Evaluate a canon candidate against 5-criteria framework. params: {candidate}\n\nSibling actions (auto-routed by action keyword):\n• guard, scout, hunt, chase, fetch, chow, sniff → CORSO\n• memory, teach, ideate, visualize, bible → EVA\n• helix, stats, converse, vault, read_note, write_note → SOUL\n• scan, sweep, probe, theorize, verify, investigate → QUANTUM\n• scope, recon, pentest, strike, report → SERAPH\n• trace_query, trace_search, metrics, anomaly, topology → AYIN\n\nPass 'sibling' only to override auto-routing when action names collide.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -41,7 +51,7 @@ fn meta_tool_def() -> Value {
                 "sibling": {
                     "type": "string",
                     "description": "Optional: override auto-routing to force a specific sibling (corso, eva, soul, quantum, seraph, ayin).",
-                    "enum": ["corso", "eva", "soul", "quantum", "seraph", "ayin", "laex"]
+                    "enum": ["corso", "eva", "soul", "quantum", "seraph", "ayin"]
                 }
             },
             "required": ["action"]
@@ -79,7 +89,7 @@ fn platform_tool_defs() -> Vec<Value> {
                     "sibling": {
                         "type": "string",
                         "description": "Target sibling (optional — auto-routes if omitted).",
-                        "enum": ["corso", "eva", "soul", "quantum", "seraph", "ayin", "laex"]
+                        "enum": ["corso", "eva", "soul", "quantum", "seraph", "ayin"]
                     },
                     "params": {
                         "type": "object",
@@ -272,13 +282,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tool_definitions_has_fourteen_entries() {
-        assert_eq!(tool_definitions().len(), 14);
+    fn tool_definitions_has_one_entry() {
+        assert_eq!(tool_definitions().len(), 1);
+        assert_eq!(tool_definitions()[0]["name"], "tools");
+    }
+
+    #[test]
+    fn all_tool_definitions_has_fourteen_entries() {
+        assert_eq!(all_tool_definitions().len(), 14);
     }
 
     #[test]
     fn all_tool_names_valid() {
-        for tool in tool_definitions() {
+        for tool in all_tool_definitions() {
             let name = tool["name"].as_str().unwrap();
             assert!(
                 name == "tools" || name.starts_with("lightarchitects_"),
@@ -301,12 +317,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handle_tools_list_returns_all_tools() {
+    async fn handle_tools_list_returns_single_meta_tool() {
         let cfg = GatewayConfig::default();
         let req = json!({"jsonrpc":"2.0","id":2,"method":"tools/list"});
         let resp = handle_line(&req.to_string(), &cfg).await.unwrap();
         let tools = resp["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 14);
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["name"], "tools");
     }
 
     #[tokio::test]

@@ -10,8 +10,9 @@ use std::process::{Command, Stdio};
 /// Path to the compiled `lightarchitects` binary, resolved by Cargo at compile time.
 const GATEWAY_BIN: &str = env!("CARGO_BIN_EXE_lightarchitects");
 
-/// Expected number of tools exposed by the gateway.
-const EXPECTED_TOOL_COUNT: usize = 14;
+/// Expected number of tools exposed by the gateway via `tools/list`.
+/// Only the unified `tools` meta-tool is advertised.
+const EXPECTED_TOOL_COUNT: usize = 1;
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -57,7 +58,7 @@ fn mcp_full_protocol_round_trip() {
     );
     assert_eq!(init_resp["result"]["serverInfo"]["name"], "lightarchitects");
 
-    // ── Step 2: tools/list ────────────────────────────────────────────────────
+    // ── Step 2: tools/list (single meta-tool only) ─────────────────────────
     let list_resp = rpc(
         &mut stdin,
         &mut reader,
@@ -72,13 +73,10 @@ fn mcp_full_protocol_round_trip() {
         "expected {EXPECTED_TOOL_COUNT} tools, got {}",
         tools.len()
     );
-    for tool in tools {
-        let name = tool["name"].as_str().expect("tool name must be a string");
-        assert!(
-            name == "tools" || name.starts_with("lightarchitects_"),
-            "tool '{name}' has invalid name"
-        );
-    }
+    assert_eq!(
+        tools[0]["name"], "tools",
+        "the single advertised tool must be 'tools'"
+    );
 
     // ── Step 3: tools/call lightarchitects_discover ───────────────────────────
     let call_resp = rpc(

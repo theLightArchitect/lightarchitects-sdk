@@ -12,8 +12,8 @@
 use serde_json::{Value, json};
 
 use super::{
-    arena, ask_user, bash, canon_check, canon_evaluate, discover, edit, glob, import_adapter,
-    initialize, orchestrate, read, search, text_result, write,
+    ask_user, bash, canon_check, canon_evaluate, discover, edit, glob, import_adapter, initialize,
+    orchestrate, read, search, text_result, write,
 };
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
@@ -32,23 +32,15 @@ const CORE_ACTIONS: &[&str] = &[
     "ask_user",
     "initialize",
     "import",
-];
-
-/// Actions that route to LÆX when enabled, but fall back to gateway's local
-/// Arena handler when LÆX is disabled or its binary is unavailable.
-const LAEX_FALLBACK_ACTIONS: &[&str] = &[
-    "harness",
-    "forge",
-    "spar",
-    "judge",
-    "triumph",
-    "inspect",
-    "unleash",
-    "check",
-    "trial",
-    "summon",
     "canon_check",
     "canon_evaluate",
+];
+
+/// Arena action names — not available in this release.
+/// Kept as a const for clear unavailability messaging.
+const ARENA_ACTIONS: &[&str] = &[
+    "harness", "forge", "spar", "judge", "triumph", "inspect", "unleash", "check", "trial",
+    "summon",
 ];
 
 /// Check whether `action` is a core action (handled by the gateway itself).
@@ -84,24 +76,12 @@ fn list_actions(config: &GatewayConfig) -> Result<Value, GatewayError> {
             "glob":           "Find files matching a pattern (pattern, path?)",
             "discover":       "Report gateway version, tools, and sibling status",
             "ask_user":       "Present a question to the user (question, options?)",
+            "canon_check":    "Validate a decision against the canon registry (decision, verbose?)",
+            "canon_evaluate": "Evaluate a canon candidate against 5-criteria framework (candidate)",
         },
         "setup": {
             "initialize":     "Interactive gateway setup wizard (step?)",
             "import":         "Import content from external systems (source, path?, format?)",
-        },
-        "arena": {
-            "harness":        "Register a base model + configure Arena runtime (model, runtime?)",
-            "forge":          "Generate training exercises from skill templates (skills, count, difficulty?)",
-            "spar":           "Execute exercises against the model, collect traces (session_id?)",
-            "judge":          "Score traces with multi-dimensional rewards (session_id?)",
-            "triumph":        "Export scored data as training format (format, output?)",
-            "inspect":        "Validate corpus against quality gates (corpus)",
-            "unleash":        "Submit a training job (provider, gpu?, config?)",
-            "check":          "Check progress of generation or training (job_id?)",
-            "trial":          "Run evals on a trained model (model, benchmarks?)",
-            "summon":         "Deploy trained model to Arena routing config (model, name?)",
-            "canon_check":    "Validate a decision against the canon registry (decision, verbose?)",
-            "canon_evaluate": "Evaluate a canon candidate against 5-criteria framework (candidate)",
         },
         "siblings": sibling_actions,
         "routing": {
@@ -114,8 +94,6 @@ fn list_actions(config: &GatewayConfig) -> Result<Value, GatewayError> {
                 {"action": "theorize",  "routes_to": "quantum"},
                 {"action": "recon",     "routes_to": "seraph"},
                 {"action": "metrics",   "routes_to": "ayin"},
-                {"action": "forge",     "routes_to": "laex"},
-                {"action": "summon",    "routes_to": "laex"},
             ],
         },
     });
@@ -160,30 +138,12 @@ pub async fn run(arguments: Value, config: &GatewayConfig) -> Result<Value, Gate
         return dispatch_core(&action, params, config).await;
     }
 
-    // 3. LÆX/Arena actions — try orchestrate (binary) first, fall back to local handlers.
-    //    When LÆX binary is available, it handles the action.
-    //    When unavailable, the gateway's built-in Arena handlers take over.
-    if LAEX_FALLBACK_ACTIONS.contains(&action.as_str()) {
-        let mut orchestrate_params = serde_json::Map::new();
-        orchestrate_params.insert("action".to_owned(), Value::String(action.clone()));
-        if let Some(sibling) = arguments.get("sibling") {
-            orchestrate_params.insert("sibling".to_owned(), sibling.clone());
-        }
-        orchestrate_params.insert("params".to_owned(), params.clone());
-
-        match orchestrate::run(Value::Object(orchestrate_params), config).await {
-            Ok(result) => return Ok(result),
-            Err(_) => {
-                // LÆX binary not available — fall back to local handler.
-                // Canon actions go through dispatch_core; Arena actions through arena module.
-                return match action.as_str() {
-                    "canon_check" | "canon_evaluate" => {
-                        dispatch_core(&action, params, config).await
-                    }
-                    _ => arena::dispatch(&action, params).await,
-                };
-            }
-        }
+    // 3. Arena actions — not available in this release.
+    if ARENA_ACTIONS.contains(&action.as_str()) {
+        return Ok(text_result(
+            "Arena actions are not available in this release. \
+             They will be enabled when the Arena binary ships.",
+        ));
     }
 
     // 4. Everything else — forward through orchestrate.
@@ -237,10 +197,19 @@ mod tests {
         assert!(!is_core_action("guard"));
         assert!(!is_core_action("helix"));
         assert!(!is_core_action("forge"));
-        // canon_check is a LÆX fallback action, not core
-        assert!(!is_core_action("canon_check"));
-        assert!(LAEX_FALLBACK_ACTIONS.contains(&"canon_check"));
-        assert!(LAEX_FALLBACK_ACTIONS.contains(&"canon_evaluate"));
+        // canon_check and canon_evaluate are now gateway-native core actions.
+        assert!(is_core_action("canon_check"));
+        assert!(is_core_action("canon_evaluate"));
+    }
+
+    #[test]
+    fn arena_actions_not_core() {
+        for action in ARENA_ACTIONS {
+            assert!(
+                !is_core_action(action),
+                "arena action '{action}' should not be a core action"
+            );
+        }
     }
 
     #[test]
@@ -295,7 +264,14 @@ mod tests {
         let result = run(json!({"action": "list"}), &cfg).await.unwrap();
         let text = result["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("core"), "list should include core section");
-        assert!(text.contains("canon"), "list should include canon section");
+        assert!(
+            text.contains("canon_check"),
+            "list should include canon_check in core"
+        );
+        assert!(
+            !text.contains("\"arena\""),
+            "list should not include arena section"
+        );
     }
 
     #[tokio::test]
@@ -320,5 +296,18 @@ mod tests {
             Err(GatewayError::SiblingNotEnabled(_)) => {} // Also acceptable
             Err(other) => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn arena_action_returns_unavailable_message() {
+        let cfg = GatewayConfig::default();
+        let result = run(json!({"action": "forge", "params": {}}), &cfg)
+            .await
+            .unwrap();
+        let text = result["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.contains("not available in this release"),
+            "arena actions should return unavailability message, got: {text}"
+        );
     }
 }

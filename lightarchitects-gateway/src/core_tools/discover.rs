@@ -123,7 +123,17 @@ pub fn run(_params: Value, config: &GatewayConfig) -> Result<Value, GatewayError
     let mut siblings_map = serde_json::Map::new();
 
     for (name, cfg) in &config.siblings {
-        let entry = if cfg.enabled {
+        let entry = if name == "laex" {
+            // LÆX is always reported as "preview" — Arena routing is disconnected
+            // until the Arena binary ships.
+            json!({
+                "enabled": cfg.enabled,
+                "status": "preview",
+                "role": sibling_role(name),
+                "capabilities": sibling_capabilities(name),
+                "note": "Arena actions are not available in this release. They will be enabled when the Arena binary ships.",
+            })
+        } else if cfg.enabled {
             let found = binary_exists(&cfg.binary);
             let status = if found {
                 "binary_found"

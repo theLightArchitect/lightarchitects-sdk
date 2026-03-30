@@ -110,23 +110,9 @@ const ROUTING_TABLE: &[RouteEntry] = &[
         ],
         sibling: "ayin",
     },
-    RouteEntry {
-        keywords: &[
-            "harness",
-            "forge",
-            "spar",
-            "judge",
-            "triumph",
-            "inspect",
-            "unleash",
-            "check",
-            "trial",
-            "summon",
-            "canon_check",
-            "canon_evaluate",
-        ],
-        sibling: "laex",
-    },
+    // NOTE: LÆX/Arena routing removed in HB-6. Arena actions return a clear
+    // unavailability message via meta.rs. canon_check and canon_evaluate are
+    // gateway-native core actions. Arena code is preserved for when the binary ships.
 ];
 
 /// Resolve the best sibling for `action` given the current config.
@@ -293,30 +279,15 @@ mod tests {
     }
 
     #[test]
-    fn auto_route_maps_forge_to_laex() {
+    fn auto_route_returns_none_for_arena_actions() {
+        // Arena actions are no longer in the routing table (HB-6).
         let mut cfg = GatewayConfig::default();
         if let Some(l) = cfg.siblings.get_mut("laex") {
             l.enabled = true;
         }
-        assert_eq!(auto_route("forge", &cfg), Some("laex"));
-    }
-
-    #[test]
-    fn auto_route_maps_summon_to_laex() {
-        let mut cfg = GatewayConfig::default();
-        if let Some(l) = cfg.siblings.get_mut("laex") {
-            l.enabled = true;
-        }
-        assert_eq!(auto_route("summon", &cfg), Some("laex"));
-    }
-
-    #[test]
-    fn auto_route_maps_canon_check_to_laex() {
-        let mut cfg = GatewayConfig::default();
-        if let Some(l) = cfg.siblings.get_mut("laex") {
-            l.enabled = true;
-        }
-        assert_eq!(auto_route("canon_check", &cfg), Some("laex"));
+        assert_eq!(auto_route("forge", &cfg), None);
+        assert_eq!(auto_route("summon", &cfg), None);
+        assert_eq!(auto_route("canon_check", &cfg), None);
     }
 
     #[test]
