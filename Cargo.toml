@@ -1,19 +1,21 @@
 [workspace]
 resolver = "2"
 members = [
-    "l-arc-crypto",
-    "l-arc-core",
-    "l-arc-auth",      # Auth — API key validation, 3-tier degradation
+    "lightarchitects-crypto",
+    "lightarchitects-core",
+    "lightarchitects-auth",      # Auth — API key validation, 3-tier degradation
+    "lightarchitects-gateway",   # Phase 6: MCP Gateway binary (Tasks 6.1, 6.4)
     # Added as crates are built in subsequent phases:
-    "l-arc-soul",      # Phase 4
-    "l-arc-corso",     # Phase 5
-    "l-arc-arena",     # keen-forging-hydra: MCP training arena
-    "l-arc-eva",       # Phase 6
-    "l-arc-quantum",   # Phase 7
-    "l-arc-seraph",   # Phase 8
-    "l-arc-ayin",    # Phase 9
-    "l-arc",          # Phase 10 (umbrella)
-    "l-arc-cli",      # Phase 11
+    "lightarchitects-soul",      # Phase 4
+    "lightarchitects-corso",     # Phase 5
+    "lightarchitects-arena",     # keen-forging-hydra: MCP training arena
+    "lightarchitects-oracle",    # Multi-model mathematical verification oracle
+    "lightarchitects-eva",       # Phase 6
+    "lightarchitects-quantum",   # Phase 7
+    "lightarchitects-seraph",   # Phase 8
+    "lightarchitects-ayin",    # Phase 9
+    "lightarchitects",          # Phase 10 (umbrella)
+    "lightarchitects-cli",      # Phase 11
 ]
 
 [workspace.package]
@@ -28,7 +30,7 @@ repository = "https://github.com/TheLightArchitects/l-arc-sdk"
 pedantic = { level = "deny", priority = -1 }
 # SDK ergonomics exceptions — individual allows override the group at priority 0.
 must_use_candidate = "allow"       # SDK builder returns are caller's choice
-module_name_repetitions = "allow"  # SoulClient in l_arc_soul is intentional
+module_name_repetitions = "allow"  # SoulClient in lightarchitects_soul is intentional
 needless_pass_by_value = "allow"   # JSON Value args are conventionally taken by value
 
 [workspace.lints.rust]
@@ -40,7 +42,7 @@ unsafe_code = "deny"
 # This prevents version drift when multiple crates share dependencies.
 
 [workspace.dependencies]
-# ── Crypto (l-arc-crypto) ─────────────────────────────────────────────────────
+# ── Crypto (lightarchitects-crypto) ─────────────────────────────────────────────────────
 hkdf = "0.12"
 hmac = "0.12"
 sha2 = "0.10"
@@ -52,7 +54,7 @@ subtle = "2"
 secrecy = { version = "0.10", features = ["serde"] }
 zeroize = { version = "1", features = ["derive"] }
 
-# ── Async runtime (l-arc-core + sibling clients) ─────────────────────────────
+# ── Async runtime (lightarchitects-core + sibling clients) ─────────────────────────────
 # Minimal feature set — consumers extend via their own Cargo.toml if needed.
 # io-util: BufReader/BufWriter for stdio framing
 # process: tokio::process::Command for MCP binary spawning
@@ -78,7 +80,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # ── Platform-specific ─────────────────────────────────────────────────────────
 security-framework = "3"
 
-# ── Arena (l-arc-arena) ──────────────────────────────────────────────────────
+# ── Conductor / Arena ──────────────────────────────────────────────────────────────────
+chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 uuid = { version = "1", features = ["v4", "serde"] }

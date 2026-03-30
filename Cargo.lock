@@ -1217,175 +1217,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "l-arc"
-version = "0.1.0"
-dependencies = [
- "l-arc-ayin",
- "l-arc-core",
- "l-arc-corso",
- "l-arc-eva",
- "l-arc-quantum",
- "l-arc-seraph",
- "l-arc-soul",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "l-arc-arena"
-version = "0.1.0"
-dependencies = [
- "clap",
- "indicatif",
- "l-arc-core",
- "rand 0.8.5",
- "reqwest",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-test",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "l-arc-auth"
-version = "0.1.0"
-dependencies = [
- "axum",
- "chrono",
- "clap",
- "dirs",
- "getrandom 0.2.17",
- "hex",
- "open",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-test",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "l-arc-ayin"
-version = "0.1.0"
-dependencies = [
- "ayin",
- "l-arc-core",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "l-arc-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "l-arc",
- "l-arc-core",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "l-arc-core"
-version = "0.1.0"
-dependencies = [
- "rand 0.8.5",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-test",
- "tracing",
-]
-
-[[package]]
-name = "l-arc-corso"
-version = "0.1.0"
-dependencies = [
- "l-arc-core",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "l-arc-crypto"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "criterion",
- "ed25519-dalek",
- "hkdf",
- "hmac",
- "proptest",
- "rand 0.8.5",
- "secrecy",
- "security-framework",
- "serde",
- "sha2",
- "subtle",
- "tempfile",
- "thiserror",
- "toml",
- "zeroize",
-]
-
-[[package]]
-name = "l-arc-eva"
-version = "0.1.0"
-dependencies = [
- "l-arc-core",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "l-arc-quantum"
-version = "0.1.0"
-dependencies = [
- "l-arc-core",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "l-arc-seraph"
-version = "0.1.0"
-dependencies = [
- "l-arc-core",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "l-arc-soul"
-version = "0.1.0"
-dependencies = [
- "l-arc-core",
- "serde",
- "serde_json",
- "tokio",
- "tokio-test",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1410,6 +1241,208 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1744e39d1d6a9948f4f388969627434e31128196de472883b39f148769bfe30a"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "lightarchitects"
+version = "0.1.0"
+dependencies = [
+ "lightarchitects-ayin",
+ "lightarchitects-core",
+ "lightarchitects-corso",
+ "lightarchitects-eva",
+ "lightarchitects-quantum",
+ "lightarchitects-seraph",
+ "lightarchitects-soul",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "lightarchitects-arena"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "indicatif",
+ "lightarchitects-core",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "lightarchitects-auth"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "clap",
+ "dirs",
+ "getrandom 0.2.17",
+ "hex",
+ "open",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "lightarchitects-ayin"
+version = "0.1.0"
+dependencies = [
+ "ayin",
+ "lightarchitects-core",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "lightarchitects-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "lightarchitects",
+ "lightarchitects-core",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "lightarchitects-core"
+version = "0.1.0"
+dependencies = [
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "tracing",
+]
+
+[[package]]
+name = "lightarchitects-corso"
+version = "0.1.0"
+dependencies = [
+ "lightarchitects-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "lightarchitects-crypto"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "criterion",
+ "ed25519-dalek",
+ "hkdf",
+ "hmac",
+ "proptest",
+ "rand 0.8.5",
+ "secrecy",
+ "security-framework",
+ "serde",
+ "sha2",
+ "subtle",
+ "tempfile",
+ "thiserror",
+ "toml",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
+name = "lightarchitects-eva"
+version = "0.1.0"
+dependencies = [
+ "lightarchitects-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "lightarchitects-gateway"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "lightarchitects-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "lightarchitects-oracle"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "security-framework",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "lightarchitects-quantum"
+version = "0.1.0"
+dependencies = [
+ "lightarchitects-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "lightarchitects-seraph"
+version = "0.1.0"
+dependencies = [
+ "lightarchitects-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "lightarchitects-soul"
+version = "0.1.0"
+dependencies = [
+ "lightarchitects-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-test",
 ]
 
 [[package]]
