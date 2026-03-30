@@ -12,8 +12,8 @@
 use serde_json::{Value, json};
 
 use super::{
-    ask_user, bash, canon_check, canon_evaluate, discover, edit, glob, import_adapter, initialize,
-    orchestrate, read, search, text_result, write,
+    ask_user, ayin_http, bash, canon_check, canon_evaluate, discover, edit, glob, import_adapter,
+    initialize, orchestrate, read, search, text_result, write,
 };
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
@@ -51,17 +51,21 @@ fn is_core_action(action: &str) -> bool {
 // ── List action ───────────────────────────────────────────────────────────────
 
 /// Build the action catalog for `action: "list"`.
+///
+/// Sibling action lists are generated from SDK enums — not hardcoded.
 fn list_actions(config: &GatewayConfig) -> Result<Value, GatewayError> {
-    let mut sibling_actions = serde_json::Map::new();
+    let mut sibling_section = serde_json::Map::new();
 
     for (name, cfg) in &config.siblings {
         let status = if cfg.enabled { "enabled" } else { "disabled" };
-        sibling_actions.insert(
+        let actions = orchestrate::routable_actions_for(name);
+        sibling_section.insert(
             name.clone(),
             json!({
                 "status": status,
                 "role": cfg.role,
                 "tool_name": cfg.tool_name,
+                "actions": actions,
             }),
         );
     }
@@ -83,17 +87,26 @@ fn list_actions(config: &GatewayConfig) -> Result<Value, GatewayError> {
             "initialize":     "Interactive gateway setup wizard (step?)",
             "import":         "Import content from external systems (source, path?, format?)",
         },
-        "siblings": sibling_actions,
+        "siblings": sibling_section,
+        "ayin": {
+            "note": "AYIN actions use HTTP transport to localhost:3742 (not MCP subprocess).",
+            "sessions":      "List all trace sessions",
+            "spans":         "Load TraceSpan data for a session (actor, date)",
+            "conversations": "Load conversation/decision traces (date)",
+        },
         "routing": {
             "note": "Non-core actions auto-route to the correct sibling by action keyword. Pass 'sibling' only to override when ambiguous.",
+            "priority": "QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN",
+            "total_routable_actions": orchestrate::total_routable_action_count(),
             "examples": [
                 {"action": "guard",     "routes_to": "corso"},
                 {"action": "scout",     "routes_to": "corso"},
-                {"action": "memory",    "routes_to": "eva"},
+                {"action": "visualize", "routes_to": "eva"},
                 {"action": "helix",     "routes_to": "soul"},
-                {"action": "theorize",  "routes_to": "quantum"},
-                {"action": "recon",     "routes_to": "seraph"},
-                {"action": "metrics",   "routes_to": "ayin"},
+                {"action": "triage",    "routes_to": "quantum"},
+                {"action": "research",  "routes_to": "quantum (priority over soul)"},
+                {"action": "status",    "routes_to": "seraph"},
+                {"action": "sessions",  "routes_to": "ayin (HTTP)"},
             ],
         },
     });
@@ -146,7 +159,16 @@ pub async fn run(arguments: Value, config: &GatewayConfig) -> Result<Value, Gate
         ));
     }
 
-    // 4. Everything else — forward through orchestrate.
+    // 4. AYIN actions — HTTP transport, not MCP subprocess.
+    //    AYIN runs as a LaunchAgent HTTP server at localhost:3742. Intercept
+    //    its routable actions here to avoid the subprocess spawner (which
+    //    would fail because AYIN's binary is an HTTP server, not an MCP
+    //    stdio server).
+    if ayin_http::is_ayin_action(&action) {
+        return ayin_http::dispatch(&action, params).await;
+    }
+
+    // 5. Everything else — forward through orchestrate.
     //    Build the orchestrate params: {action, sibling?, params}.
     let mut orchestrate_params = serde_json::Map::new();
     orchestrate_params.insert("action".to_owned(), Value::String(action));
@@ -308,6 +330,68 @@ mod tests {
         assert!(
             text.contains("not available in this release"),
             "arena actions should return unavailability message, got: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn ayin_sessions_dispatches_via_http() {
+        let cfg = GatewayConfig::default();
+        let result = run(json!({"action": "sessions"}), &cfg).await;
+        match result {
+            Ok(_) => {} // AYIN is running — response is valid
+            Err(GatewayError::Internal(msg)) => {
+                // AYIN not running — verify clear error, not UnknownTool
+                assert!(
+                    msg.contains("AYIN"),
+                    "error should reference AYIN, got: {msg}"
+                );
+            }
+            Err(other) => panic!("expected AYIN HTTP error, got: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn ayin_spans_requires_params() {
+        let cfg = GatewayConfig::default();
+        let err = run(json!({"action": "spans"}), &cfg).await.unwrap_err();
+        assert!(
+            matches!(err, GatewayError::MissingParam("actor")),
+            "expected MissingParam(actor), got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn ayin_conversations_requires_date() {
+        let cfg = GatewayConfig::default();
+        let err = run(json!({"action": "conversations"}), &cfg)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, GatewayError::MissingParam("date")),
+            "expected MissingParam(date), got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn ayin_action_not_treated_as_core() {
+        // AYIN actions should not be in the core action list.
+        assert!(!is_core_action("sessions"));
+        assert!(!is_core_action("spans"));
+        assert!(!is_core_action("conversations"));
+    }
+
+    #[tokio::test]
+    async fn list_includes_ayin_section() {
+        let cfg = GatewayConfig::default();
+        let result = run(json!({"action": "list"}), &cfg).await.unwrap();
+        let text = result["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.contains("ayin"),
+            "list catalog should include ayin section"
+        );
+        assert!(
+            text.contains("sessions"),
+            "list catalog should include sessions action"
         );
     }
 }

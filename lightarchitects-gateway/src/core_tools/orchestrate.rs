@@ -1,142 +1,182 @@
 //! `lightarchitects_orchestrate` — route a request to an enabled sibling.
 //!
-//! When `sibling` is omitted, the action keyword is matched against the
-//! auto-routing table to select the best sibling. When both match, the
-//! first enabled sibling in the table wins; the caller can always override
-//! by specifying `sibling` explicitly.
+//! Routing is driven by the canonical action enums in the SDK sibling crates.
+//! When `sibling` is omitted, the action string is parsed against each sibling's
+//! enum in priority order. When both match, the first enabled sibling wins; the
+//! caller can always override by specifying `sibling` explicitly.
 //!
-//! Disabled siblings return a structured JSON error (not a protocol error)
-//! so the model can handle the case gracefully — usually by falling back to
-//! core tools or informing the user.
+//! Priority order: QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN.
+//! This ensures QUANTUM's `research` wins over SOUL's, and CORSO's domain-heavy
+//! actions come before SOUL's generic names (search, query, stats).
 
 use serde_json::{Value, json};
+
+use lightarchitects_ayin::AyinAction;
+use lightarchitects_corso::CorsoAction;
+use lightarchitects_eva::EvaAction;
+use lightarchitects_quantum::QuantumAction;
+use lightarchitects_seraph::SeraphAction;
+use lightarchitects_soul::SoulAction;
 
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
 use crate::spawner::call_sibling;
 
-// ── Auto-routing table ─────────────────────────────────────────────────────────
+// ── Auto-routing via SDK enums ───────────────────────────────────────────────
 
-/// Auto-routing entry — maps an action keyword to a canonical sibling name.
-struct RouteEntry {
-    keywords: &'static [&'static str],
-    sibling: &'static str,
+/// Sibling routing entry: name, parse-and-check function.
+struct SiblingRoute {
+    name: &'static str,
+    matches: fn(&str) -> bool,
 }
 
-/// The auto-routing table, evaluated in order.
+/// Check whether `action` parses as a routable action for the given enum.
+fn is_routable_quantum(action: &str) -> bool {
+    action
+        .parse::<QuantumAction>()
+        .is_ok_and(|a| a.is_gateway_routable())
+}
+
+/// Check whether `action` parses as a routable CORSO action.
+fn is_routable_corso(action: &str) -> bool {
+    action
+        .parse::<CorsoAction>()
+        .is_ok_and(|a| a.is_gateway_routable())
+}
+
+/// Check whether `action` parses as a routable SERAPH action.
+fn is_routable_seraph(action: &str) -> bool {
+    action
+        .parse::<SeraphAction>()
+        .is_ok_and(|a| a.is_gateway_routable())
+}
+
+/// Check whether `action` parses as a routable EVA action.
+fn is_routable_eva(action: &str) -> bool {
+    action
+        .parse::<EvaAction>()
+        .is_ok_and(|a| a.is_gateway_routable())
+}
+
+/// Check whether `action` parses as a routable SOUL action.
+fn is_routable_soul(action: &str) -> bool {
+    action
+        .parse::<SoulAction>()
+        .is_ok_and(|a| a.is_gateway_routable())
+}
+
+/// Check whether `action` parses as a routable AYIN action.
+fn is_routable_ayin(action: &str) -> bool {
+    action
+        .parse::<AyinAction>()
+        .is_ok_and(|a| a.is_gateway_routable())
+}
+
+/// Priority-ordered sibling routing table.
 ///
-/// When an action matches multiple entries (e.g., "trace" matches QUANTUM and
-/// AYIN), the first enabled sibling wins. The model can always disambiguate
-/// by specifying `sibling` explicitly.
-const ROUTING_TABLE: &[RouteEntry] = &[
-    RouteEntry {
-        keywords: &[
-            "build", "guard", "fetch", "chase", "hunt", "chow", "deploy", "quality", "lint",
-            "audit", "sniff", "scout",
-        ],
-        sibling: "corso",
+/// Order: QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN.
+///
+/// Rationale:
+/// - QUANTUM first: its `research` must win over SOUL's `research`.
+/// - CORSO second: domain-heavy security/ops actions.
+/// - SERAPH third: pentest investigation actions.
+/// - EVA fourth: creative/consciousness actions.
+/// - SOUL fifth: generic vault names (search, query, stats) only match if
+///   no other sibling claims them.
+/// - AYIN last: observability (sessions, spans, conversations).
+const SIBLING_ROUTES: &[SiblingRoute] = &[
+    SiblingRoute {
+        name: "quantum",
+        matches: is_routable_quantum,
     },
-    RouteEntry {
-        keywords: &[
-            "memory",
-            "teach",
-            "ideate",
-            "research",
-            "speak",
-            "consciousness",
-            "enrich",
-            "visualize",
-            "visualise",
-            "bible",
-        ],
-        sibling: "eva",
+    SiblingRoute {
+        name: "corso",
+        matches: is_routable_corso,
     },
-    RouteEntry {
-        keywords: &[
-            "query",
-            "search",
-            "helix",
-            "stats",
-            "converse",
-            "vault",
-            "knowledge",
-            "dialogue",
-            "read_note",
-            "write_note",
-            "list_notes",
-        ],
-        sibling: "soul",
+    SiblingRoute {
+        name: "seraph",
+        matches: is_routable_seraph,
     },
-    RouteEntry {
-        keywords: &[
-            "scan",
-            "sweep",
-            "probe",
-            "theorize",
-            "verify",
-            "investigate",
-            "evidence",
-            "hypothesis",
-        ],
-        sibling: "quantum",
+    SiblingRoute {
+        name: "eva",
+        matches: is_routable_eva,
     },
-    RouteEntry {
-        // "trace" appears before AYIN's trace_query so QUANTUM wins for bare "trace".
-        keywords: &["trace"],
-        sibling: "quantum",
+    SiblingRoute {
+        name: "soul",
+        matches: is_routable_soul,
     },
-    RouteEntry {
-        keywords: &[
-            "scope",
-            "recon",
-            "pentest",
-            "exploit",
-            "analyze",
-            "strike",
-            "report",
-            "engagement",
-        ],
-        sibling: "seraph",
+    SiblingRoute {
+        name: "ayin",
+        matches: is_routable_ayin,
     },
-    RouteEntry {
-        keywords: &[
-            "trace_query",
-            "trace_search",
-            "metrics",
-            "anomaly",
-            "topology",
-            "observe",
-            "dashboard",
-        ],
-        sibling: "ayin",
-    },
-    // NOTE: LÆX/Arena routing removed in HB-6. Arena actions return a clear
-    // unavailability message via meta.rs. canon_check and canon_evaluate are
-    // gateway-native core actions. Arena code is preserved for when the binary ships.
 ];
 
 /// Resolve the best sibling for `action` given the current config.
 ///
-/// Returns `Some(sibling_name)` for the first enabled sibling whose keyword
-/// list contains `action`, or `None` if no match is found.
+/// Parses `action` against each sibling's canonical enum in priority order
+/// (QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN). Returns `Some(name)`
+/// for the first enabled sibling whose enum recognises `action` as routable,
+/// or `None` if no match is found.
 fn auto_route<'a>(action: &str, config: &'a GatewayConfig) -> Option<&'a str> {
-    for entry in ROUTING_TABLE {
-        if entry.keywords.contains(&action) {
-            // Check if the sibling is enabled in config.
-            if config
-                .siblings
-                .get(entry.sibling)
-                .is_some_and(|s| s.enabled)
-            {
-                return Some(entry.sibling);
+    for route in SIBLING_ROUTES {
+        if (route.matches)(action) {
+            if let Some(cfg) = config.siblings.get(route.name) {
+                if cfg.enabled {
+                    return Some(route.name);
+                }
             }
-            // Sibling disabled — continue to next entry (allows fallback).
+            // Sibling disabled or absent — continue to next (allows fallback).
         }
     }
     None
 }
 
-// ── Disabled-sibling response ──────────────────────────────────────────────────
+/// Return the total number of gateway-routable actions across all siblings.
+#[must_use]
+pub fn total_routable_action_count() -> usize {
+    QuantumAction::ALL_ROUTABLE.len()
+        + CorsoAction::ALL_ROUTABLE.len()
+        + SeraphAction::ALL_ROUTABLE.len()
+        + EvaAction::ALL_ROUTABLE.len()
+        + SoulAction::ALL_ROUTABLE.len()
+        + AyinAction::ALL_ROUTABLE.len()
+}
+
+/// Collect all routable action names for a given sibling.
+///
+/// Returns an empty slice for unknown sibling names.
+#[must_use]
+pub fn routable_actions_for(sibling: &str) -> Vec<&'static str> {
+    match sibling {
+        "quantum" => QuantumAction::ALL_ROUTABLE
+            .iter()
+            .map(QuantumAction::as_str)
+            .collect(),
+        "corso" => CorsoAction::ALL_ROUTABLE
+            .iter()
+            .map(CorsoAction::as_str)
+            .collect(),
+        "seraph" => SeraphAction::ALL_ROUTABLE
+            .iter()
+            .map(SeraphAction::as_str)
+            .collect(),
+        "eva" => EvaAction::ALL_ROUTABLE
+            .iter()
+            .map(EvaAction::as_str)
+            .collect(),
+        "soul" => SoulAction::ALL_ROUTABLE
+            .iter()
+            .map(SoulAction::as_str)
+            .collect(),
+        "ayin" => AyinAction::ALL_ROUTABLE
+            .iter()
+            .map(AyinAction::as_str)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+// ── Disabled-sibling response ────────────────────────────────────────────────
 
 /// Build the structured "sibling not enabled" error payload.
 ///
@@ -177,7 +217,7 @@ fn no_route_response(action: &str) -> Value {
     })
 }
 
-// ── Main handler ───────────────────────────────────────────────────────────────
+// ── Main handler ─────────────────────────────────────────────────────────────
 
 /// Execute `lightarchitects_orchestrate`.
 ///
@@ -222,7 +262,7 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
             }
         }
         None => {
-            // Auto-route by action keyword.
+            // Auto-route by action keyword via SDK enums.
             match auto_route(&action, config) {
                 Some(name) => name.to_owned(),
                 None => return Ok(no_route_response(&action)),
@@ -234,7 +274,7 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
     call_sibling(&target_sibling, &action, forward_params, config).await
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────────────
+// ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -260,16 +300,16 @@ mod tests {
     }
 
     #[test]
-    fn auto_route_maps_memory_to_eva() {
+    fn auto_route_maps_visualize_to_eva() {
         let cfg = GatewayConfig::default();
-        assert_eq!(auto_route("memory", &cfg), Some("eva"));
+        assert_eq!(auto_route("visualize", &cfg), Some("eva"));
     }
 
     #[test]
     fn auto_route_returns_none_for_disabled_sibling() {
         let cfg = GatewayConfig::default();
-        // QUANTUM is disabled in default config.
-        assert_eq!(auto_route("scan", &cfg), None);
+        // QUANTUM is disabled in default config; "triage" is QUANTUM-only.
+        assert_eq!(auto_route("triage", &cfg), None);
     }
 
     #[test]
@@ -280,7 +320,7 @@ mod tests {
 
     #[test]
     fn auto_route_returns_none_for_arena_actions() {
-        // Arena actions are no longer in the routing table (HB-6).
+        // Arena actions are not in any SDK enum.
         let mut cfg = GatewayConfig::default();
         if let Some(l) = cfg.siblings.get_mut("laex") {
             l.enabled = true;
@@ -291,14 +331,187 @@ mod tests {
     }
 
     #[test]
-    fn auto_route_prefers_quantum_for_bare_trace() {
+    fn auto_route_prefers_quantum_for_research() {
         let mut cfg = GatewayConfig::default();
-        // Enable QUANTUM and AYIN to test priority.
+        // Enable QUANTUM to test priority over SOUL.
         if let Some(q) = cfg.siblings.get_mut("quantum") {
             q.enabled = true;
         }
-        // "trace" should route to QUANTUM (comes before AYIN in table).
+        // "research" exists in both QUANTUM and SOUL.
+        // QUANTUM has higher priority and should win.
+        assert_eq!(auto_route("research", &cfg), Some("quantum"));
+    }
+
+    #[test]
+    fn auto_route_research_falls_back_to_soul_when_quantum_disabled() {
+        let cfg = GatewayConfig::default();
+        // QUANTUM is disabled in default config; SOUL is enabled.
+        assert_eq!(auto_route("research", &cfg), Some("soul"));
+    }
+
+    #[test]
+    fn auto_route_prefers_quantum_for_trace() {
+        let mut cfg = GatewayConfig::default();
+        if let Some(q) = cfg.siblings.get_mut("quantum") {
+            q.enabled = true;
+        }
+        // "trace" is a QUANTUM workflow action.
         assert_eq!(auto_route("trace", &cfg), Some("quantum"));
+    }
+
+    #[test]
+    fn all_sdk_routable_actions_route_correctly() {
+        // Enable all siblings.
+        let mut cfg = GatewayConfig::default();
+        for (_, sib) in cfg.siblings.iter_mut() {
+            sib.enabled = true;
+        }
+
+        // Verify every routable action for each sibling resolves to the
+        // correct sibling (accounting for priority — some actions may route
+        // to a higher-priority sibling instead).
+        let expected: &[(&str, &[&str])] = &[
+            (
+                "quantum",
+                &[
+                    "triage", "sweep", "trace", "probe", "theorize", "verify", "close", "quick",
+                    "research",
+                ],
+            ),
+            (
+                "corso",
+                &[
+                    "sniff",
+                    "guard",
+                    "fetch",
+                    "chase",
+                    "scout",
+                    "code_review",
+                    "generate_code",
+                    "search_code",
+                    "find_symbol",
+                    "get_outline",
+                    "get_references",
+                    "analyze_architecture",
+                    "prove",
+                    "optimize",
+                    "deploy",
+                    "rollback",
+                    "manage_logs",
+                    "strike",
+                    "watch",
+                ],
+            ),
+            (
+                "seraph",
+                &[
+                    "status",
+                    "investigate_start",
+                    "investigate_advance",
+                    "investigate_close",
+                    "investigate_report",
+                    "vault_sync",
+                ],
+            ),
+            (
+                "eva",
+                &[
+                    "visualize",
+                    "ideate",
+                    "bible_search",
+                    "bible_reflect",
+                    "teach",
+                    "remember",
+                    "crystallize",
+                    "celebrate",
+                    "mindfulness",
+                ],
+            ),
+            (
+                "soul",
+                &[
+                    "read_note",
+                    "write_note",
+                    "list_notes",
+                    "manifest",
+                    "ingest",
+                    "search",
+                    "helix",
+                    "query",
+                    "query_frontmatter",
+                    "stats",
+                    "voice",
+                    "converse",
+                    "chat",
+                    // "research" routes to QUANTUM (higher priority).
+                ],
+            ),
+            ("ayin", &["sessions", "spans", "conversations"]),
+        ];
+
+        for &(sibling, actions) in expected {
+            for &action in actions {
+                let result = auto_route(action, &cfg);
+                assert_eq!(
+                    result,
+                    Some(sibling),
+                    "action '{action}' should route to '{sibling}', got {result:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn collision_priority_research() {
+        let mut cfg = GatewayConfig::default();
+        for (_, sib) in cfg.siblings.iter_mut() {
+            sib.enabled = true;
+        }
+        // "research" → QUANTUM (higher priority than SOUL).
+        assert_eq!(auto_route("research", &cfg), Some("quantum"));
+    }
+
+    #[test]
+    fn collision_priority_search_routes_to_soul() {
+        let mut cfg = GatewayConfig::default();
+        for (_, sib) in cfg.siblings.iter_mut() {
+            sib.enabled = true;
+        }
+        // "search" is a SOUL action. CORSO has "search_code" but not bare "search".
+        assert_eq!(auto_route("search", &cfg), Some("soul"));
+    }
+
+    #[test]
+    fn total_routable_count_matches_sdk_enums() {
+        // 9 + 19 + 6 + 9 + 14 + 3 = 60
+        let total = total_routable_action_count();
+        assert_eq!(
+            total,
+            QuantumAction::ALL_ROUTABLE.len()
+                + CorsoAction::ALL_ROUTABLE.len()
+                + SeraphAction::ALL_ROUTABLE.len()
+                + EvaAction::ALL_ROUTABLE.len()
+                + SoulAction::ALL_ROUTABLE.len()
+                + AyinAction::ALL_ROUTABLE.len(),
+        );
+    }
+
+    #[test]
+    fn routable_actions_for_corso_matches_enum() {
+        let actions = routable_actions_for("corso");
+        assert_eq!(actions.len(), CorsoAction::ALL_ROUTABLE.len());
+        for &expected in CorsoAction::ALL_ROUTABLE {
+            assert!(
+                actions.contains(&expected.as_str()),
+                "missing CORSO action: {}",
+                expected.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn routable_actions_for_unknown_is_empty() {
+        assert!(routable_actions_for("nonexistent").is_empty());
     }
 
     #[tokio::test]
@@ -313,7 +526,7 @@ mod tests {
         let cfg = GatewayConfig::default();
         // QUANTUM is disabled in default config.
         let result = run(
-            json!({"action": "scan", "sibling": "quantum", "params": {}}),
+            json!({"action": "triage", "sibling": "quantum", "params": {}}),
             &cfg,
         )
         .await

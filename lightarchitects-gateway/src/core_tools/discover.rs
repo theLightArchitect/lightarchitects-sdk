@@ -23,58 +23,13 @@ const CORE_TOOLS: &[&str] = &[
     "lightarchitects_ask_user",
 ];
 
-/// Sibling capability map — capabilities declared in the gateway config + known
-/// sibling tool surfaces, used when the sibling binary is not running.
+/// Sibling capabilities — generated from SDK action enums.
 ///
-/// Keyed by canonical sibling name (lowercase).
-fn sibling_capabilities(name: &str) -> &'static [&'static str] {
-    match name {
-        "corso" => &["build", "guard", "fetch", "chase", "hunt", "chow", "speak"],
-        "eva" => &[
-            "build", "memory", "teach", "ideate", "research", "speak", "bible",
-        ],
-        "soul" => &["query", "search", "helix", "stats", "speak", "converse"],
-        "quantum" => &[
-            "scan",
-            "sweep",
-            "trace",
-            "probe",
-            "theorize",
-            "verify",
-            "investigate",
-        ],
-        "seraph" => &[
-            "scope",
-            "recon",
-            "pentest",
-            "strike",
-            "report",
-            "engagement",
-        ],
-        "ayin" => &[
-            "trace_query",
-            "trace_search",
-            "metrics",
-            "anomaly",
-            "topology",
-            "export",
-        ],
-        "laex" => &[
-            "harness",
-            "forge",
-            "spar",
-            "judge",
-            "triumph",
-            "inspect",
-            "unleash",
-            "check",
-            "trial",
-            "summon",
-            "canon_check",
-            "canon_evaluate",
-        ],
-        _ => &[],
-    }
+/// Returns the list of gateway-routable action names for a known sibling.
+/// Falls back to an empty list for unknown sibling names.
+fn sibling_capabilities(name: &str) -> Vec<&'static str> {
+    use super::orchestrate::routable_actions_for;
+    routable_actions_for(name)
 }
 
 /// Sibling role descriptions (authoritative — matches the CLAUDE.md roles).

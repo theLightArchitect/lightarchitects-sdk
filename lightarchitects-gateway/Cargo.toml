@@ -17,6 +17,12 @@ workspace = true
 
 [dependencies]
 lightarchitects-core = { path = "../lightarchitects-core" }
+lightarchitects-corso = { path = "../lightarchitects-corso" }
+lightarchitects-eva = { path = "../lightarchitects-eva" }
+lightarchitects-soul = { path = "../lightarchitects-soul" }
+lightarchitects-quantum = { path = "../lightarchitects-quantum" }
+lightarchitects-seraph = { path = "../lightarchitects-seraph" }
+lightarchitects-ayin = { path = "../lightarchitects-ayin" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
