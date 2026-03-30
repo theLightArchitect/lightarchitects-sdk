@@ -46,6 +46,8 @@
 //! # Ok(()) }
 //! ```
 
+/// Canonical SERAPH action enum — pentest orchestration and investigation.
+pub mod actions;
 mod client;
 mod content;
 /// Evidence chain accumulator and engagement logging.
@@ -64,6 +66,7 @@ mod types;
 
 // ── Public API surface ──────────────────────────────────────────────────────
 
+pub use actions::SeraphAction;
 pub use client::{SeraphClient, SeraphClientBuilder};
 pub use evidence::{EvidenceChain, EvidenceEntry, engagement_log};
 pub use params::{

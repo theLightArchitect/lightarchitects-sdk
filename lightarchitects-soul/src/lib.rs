@@ -32,6 +32,8 @@
 //! # Ok(()) }
 //! ```
 
+/// Canonical SOUL action enum — vault operations, queries, voice, research.
+pub mod actions;
 mod client;
 mod helix;
 mod query;
@@ -39,6 +41,7 @@ mod types;
 
 // ── Public API surface ────────────────────────────────────────────────────────
 
+pub use actions::SoulAction;
 pub use client::{SoulClient, SoulClientBuilder};
 pub use helix::{HelixBuilder, HelixEntry};
 pub use query::{QueryBuilder, QueryResult};

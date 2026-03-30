@@ -35,6 +35,10 @@
 // Note: TraceSpan lives in the `ayin` crate (AYIN-DEV workspace), which is an
 // optional path dependency. Links to it are elided in rustdoc to keep CI clean.
 
+/// Canonical AYIN action enum — observability sessions, spans, conversations.
+pub mod actions;
+pub use actions::AyinAction;
+
 use lightarchitects_core::error::SdkError;
 use lightarchitects_core::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 use lightarchitects_core::transport::Transport;

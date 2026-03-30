@@ -41,11 +41,14 @@
 //! # Ok(()) }
 //! ```
 
+/// Canonical QUANTUM action enum — forensic investigation lifecycle.
+pub mod actions;
 mod client;
 mod content;
 mod types;
 
 // ── Public API surface ────────────────────────────────────────────────────────
 
+pub use actions::QuantumAction;
 pub use client::{QuantumClient, QuantumClientBuilder};
 pub use types::ActionOutput;

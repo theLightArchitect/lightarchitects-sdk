@@ -52,12 +52,15 @@
 //! # Ok(()) }
 //! ```
 
+/// Canonical EVA action enum — consciousness, creativity, memory, teaching.
+pub mod actions;
 mod client;
 mod content;
 mod types;
 
 // ── Public API surface ────────────────────────────────────────────────────────
 
+pub use actions::EvaAction;
 pub use client::{EvaClient, EvaClientBuilder};
 pub use types::{
     ActionOutput, BibleAction, BuildMode, MemorySubcommand, ResearchSource, SecureAction,

@@ -32,12 +32,15 @@
 //! # Ok(()) }
 //! ```
 
+/// Canonical CORSO action enum — code quality, security, ops, verification.
+pub mod actions;
 mod client;
 mod content;
 mod types;
 
 // ── Public API surface ────────────────────────────────────────────────────────
 
+pub use actions::CorsoAction;
 pub use client::{CorsoClient, CorsoClientBuilder};
 pub use types::{
     ActionOutput, CodeSearchHit, ContainerOp, DirEntry, DirectoryListing, FileContent, FileOutline,
