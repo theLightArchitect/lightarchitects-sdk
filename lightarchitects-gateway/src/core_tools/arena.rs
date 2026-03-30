@@ -24,6 +24,7 @@
 // Arena computes pass-rates and exercise counts — precision loss is acceptable.
 #![allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
@@ -187,20 +188,9 @@ fn forge(params: Value) -> Result<Value, GatewayError> {
     std::fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)
         .map_err(|e| GatewayError::Internal(format!("failed to write session manifest: {e}")))?;
 
-    // Discover available tools from the gateway for exercise templates
     let tool_surface = discover_tool_surface();
-
-    // Generate exercise templates
     let exercises = generate_exercises(&tool_surface, count, difficulty, &skills);
-
-    let exercises_path = session_dir.join("exercises.jsonl");
-    let mut exercises_content = String::new();
-    for exercise in &exercises {
-        exercises_content.push_str(&serde_json::to_string(exercise)?);
-        exercises_content.push('\n');
-    }
-    std::fs::write(&exercises_path, &exercises_content)
-        .map_err(|e| GatewayError::Internal(format!("failed to write exercises: {e}")))?;
+    let exercises_path = write_exercises_jsonl(&session_dir, &exercises)?;
 
     Ok(text_result(serde_json::to_string_pretty(&json!({
         "status": "forged",
@@ -211,6 +201,19 @@ fn forge(params: Value) -> Result<Value, GatewayError> {
         "exercises_path": exercises_path.display().to_string(),
         "next": "Run `tools {action: \"spar\"}` to execute exercises against your model",
     }))?))
+}
+
+/// Serialize exercises to a JSONL file inside the session directory.
+fn write_exercises_jsonl(session_dir: &Path, exercises: &[Value]) -> Result<PathBuf, GatewayError> {
+    let path = session_dir.join("exercises.jsonl");
+    let mut content = String::new();
+    for exercise in exercises {
+        content.push_str(&serde_json::to_string(exercise)?);
+        content.push('\n');
+    }
+    std::fs::write(&path, &content)
+        .map_err(|e| GatewayError::Internal(format!("failed to write exercises: {e}")))?;
+    Ok(path)
 }
 
 /// Discover the gateway's tool surface for exercise generation.
@@ -228,45 +231,387 @@ fn discover_tool_surface() -> Vec<Value> {
     ]
 }
 
-/// Generate exercise templates from the tool surface.
+/// An exercise template from the Training Standard taxonomy.
+struct ExerciseTemplate {
+    description: &'static str,
+    exercise_type: &'static str,
+    expected_tools: &'static [&'static str],
+    steps: u64,
+}
+
+/// Templates across the 4 Training Standard exercise types.
+const EXERCISE_TEMPLATES: &[ExerciseTemplate] = &[
+    // ── Type 1: Recall (easy) — single-tool invocation ──
+    ExerciseTemplate {
+        description: "Read the contents of {path}",
+        exercise_type: "recall",
+        expected_tools: &["read"],
+        steps: 1,
+    },
+    ExerciseTemplate {
+        description: "Search for all Rust files containing 'pub fn' in the current directory",
+        exercise_type: "recall",
+        expected_tools: &["search"],
+        steps: 1,
+    },
+    ExerciseTemplate {
+        description: "List all .toml files in the project",
+        exercise_type: "recall",
+        expected_tools: &["glob"],
+        steps: 1,
+    },
+    ExerciseTemplate {
+        description: "Run 'ls -la' to list directory contents",
+        exercise_type: "recall",
+        expected_tools: &["bash"],
+        steps: 1,
+    },
+    ExerciseTemplate {
+        description: "Find all Markdown files under the docs directory",
+        exercise_type: "recall",
+        expected_tools: &["glob"],
+        steps: 1,
+    },
+    ExerciseTemplate {
+        description: "Write the text 'hello world' to {path}",
+        exercise_type: "recall",
+        expected_tools: &["write"],
+        steps: 1,
+    },
+    ExerciseTemplate {
+        description: "Search for files containing 'TODO' in the codebase",
+        exercise_type: "recall",
+        expected_tools: &["search"],
+        steps: 1,
+    },
+    ExerciseTemplate {
+        description: "Read the project's Cargo.toml to check its dependencies",
+        exercise_type: "recall",
+        expected_tools: &["read"],
+        steps: 1,
+    },
+    ExerciseTemplate {
+        description: "Run 'git status' to check the working tree",
+        exercise_type: "recall",
+        expected_tools: &["bash"],
+        steps: 1,
+    },
+    ExerciseTemplate {
+        description: "Find all .rs files in the src/ directory",
+        exercise_type: "recall",
+        expected_tools: &["glob"],
+        steps: 1,
+    },
+    // ── Type 2: Situational (medium) — multi-step with judgment ──
+    ExerciseTemplate {
+        description: "A test is failing with 'cannot find module'. Find the import statement and check if the file exists.",
+        exercise_type: "situational",
+        expected_tools: &["search", "read"],
+        steps: 2,
+    },
+    ExerciseTemplate {
+        description: "The build is slow. Search for any functions over 100 lines that might need refactoring.",
+        exercise_type: "situational",
+        expected_tools: &["search", "bash"],
+        steps: 2,
+    },
+    ExerciseTemplate {
+        description: "Check if there are any TODO comments in the codebase and list them with file locations.",
+        exercise_type: "situational",
+        expected_tools: &["search", "glob"],
+        steps: 2,
+    },
+    ExerciseTemplate {
+        description: "Find all files that import 'serde' and verify they have the correct feature flags in Cargo.toml.",
+        exercise_type: "situational",
+        expected_tools: &["search", "read"],
+        steps: 2,
+    },
+    ExerciseTemplate {
+        description: "A user reports a config file isn't loading. Read the config file and check if it has valid syntax.",
+        exercise_type: "situational",
+        expected_tools: &["read", "bash"],
+        steps: 2,
+    },
+    ExerciseTemplate {
+        description: "Check how many lines of Rust code are in the project by counting .rs files and their line counts.",
+        exercise_type: "situational",
+        expected_tools: &["glob", "bash"],
+        steps: 2,
+    },
+    ExerciseTemplate {
+        description: "Find all test files in the project and report which ones have no test functions defined.",
+        exercise_type: "situational",
+        expected_tools: &["glob", "search"],
+        steps: 2,
+    },
+    ExerciseTemplate {
+        description: "Determine if the project uses any deprecated APIs by searching for '#[deprecated]' annotations.",
+        exercise_type: "situational",
+        expected_tools: &["search", "read"],
+        steps: 2,
+    },
+    ExerciseTemplate {
+        description: "List all public functions in {path} and check if they all have doc comments.",
+        exercise_type: "situational",
+        expected_tools: &["read", "search"],
+        steps: 2,
+    },
+    ExerciseTemplate {
+        description: "Find any .unwrap() calls in production code (not test files) and report their locations.",
+        exercise_type: "situational",
+        expected_tools: &["search", "glob"],
+        steps: 2,
+    },
+    // ── Type 3: Trigger (medium-hard) — recognizing WHEN to use tools ──
+    ExerciseTemplate {
+        description: "Review this error message: 'thread panicked at index out of bounds: len is 3 but index is 5'. Find the source file and identify the problematic array access.",
+        exercise_type: "trigger",
+        expected_tools: &["search", "read"],
+        steps: 3,
+    },
+    ExerciseTemplate {
+        description: "A CI pipeline reports 'unused import' warnings. Find them and fix the imports by editing the files.",
+        exercise_type: "trigger",
+        expected_tools: &["search", "read", "edit"],
+        steps: 3,
+    },
+    ExerciseTemplate {
+        description: "A user reports the config file isn't being read. Investigate by reading the config and checking the code that loads it.",
+        exercise_type: "trigger",
+        expected_tools: &["read", "search"],
+        steps: 3,
+    },
+    ExerciseTemplate {
+        description: "The application crashes on startup with 'file not found'. Investigate which file is missing and verify the expected path.",
+        exercise_type: "trigger",
+        expected_tools: &["search", "read", "glob"],
+        steps: 3,
+    },
+    ExerciseTemplate {
+        description: "A function is returning wrong results. Read the function, trace its logic, and identify the bug.",
+        exercise_type: "trigger",
+        expected_tools: &["search", "read"],
+        steps: 3,
+    },
+    ExerciseTemplate {
+        description: "Disk space is running low. Find the largest files in the project and determine which can be safely removed.",
+        exercise_type: "trigger",
+        expected_tools: &["bash", "glob"],
+        steps: 3,
+    },
+    ExerciseTemplate {
+        description: "A dependency version conflict is suspected. Read the lockfile and Cargo.toml to identify duplicated dependencies.",
+        exercise_type: "trigger",
+        expected_tools: &["read", "bash"],
+        steps: 3,
+    },
+    ExerciseTemplate {
+        description: "Tests pass locally but fail in CI. Check if there are environment-specific paths or assumptions in the test files.",
+        exercise_type: "trigger",
+        expected_tools: &["search", "read", "glob"],
+        steps: 3,
+    },
+    // ── Type 4: Cross-skill (hard) — multi-tool chains requiring planning ──
+    ExerciseTemplate {
+        description: "Find all security-related TODOs in the codebase, read the files they're in, then write a summary report to {path}.",
+        exercise_type: "cross_skill",
+        expected_tools: &["search", "read", "write"],
+        steps: 4,
+    },
+    ExerciseTemplate {
+        description: "Search for deprecated API calls, read each file to understand the usage, then suggest replacements in a new file.",
+        exercise_type: "cross_skill",
+        expected_tools: &["search", "read", "write"],
+        steps: 4,
+    },
+    ExerciseTemplate {
+        description: "Find the largest source files, read their outlines, and identify functions that exceed the 60-line limit.",
+        exercise_type: "cross_skill",
+        expected_tools: &["bash", "read", "search"],
+        steps: 4,
+    },
+    ExerciseTemplate {
+        description: "Audit the codebase for .unwrap() calls, read surrounding context, determine risk level, and write a report to {path}.",
+        exercise_type: "cross_skill",
+        expected_tools: &["search", "read", "write"],
+        steps: 4,
+    },
+    ExerciseTemplate {
+        description: "Find all configuration files, read their contents, verify consistency across environments, and report discrepancies.",
+        exercise_type: "cross_skill",
+        expected_tools: &["glob", "read", "bash", "write"],
+        steps: 4,
+    },
+    ExerciseTemplate {
+        description: "Map the module dependency graph by reading mod.rs files, tracing imports, and writing the graph to {path}.",
+        exercise_type: "cross_skill",
+        expected_tools: &["glob", "read", "write"],
+        steps: 4,
+    },
+    ExerciseTemplate {
+        description: "Find all error handling patterns in the codebase, categorize them, and write a style guide for consistent error handling.",
+        exercise_type: "cross_skill",
+        expected_tools: &["search", "read", "write"],
+        steps: 4,
+    },
+    ExerciseTemplate {
+        description: "Profile build times by running cargo build with timing, reading the output, and identifying the slowest crates.",
+        exercise_type: "cross_skill",
+        expected_tools: &["bash", "read", "search"],
+        steps: 4,
+    },
+    ExerciseTemplate {
+        description: "Find all public API surface (pub fn, pub struct), check documentation coverage, and generate a coverage report.",
+        exercise_type: "cross_skill",
+        expected_tools: &["search", "glob", "bash", "write"],
+        steps: 4,
+    },
+    ExerciseTemplate {
+        description: "Search for hardcoded paths in source files, read each to understand the context, and create a configuration template.",
+        exercise_type: "cross_skill",
+        expected_tools: &["search", "read", "write"],
+        steps: 4,
+    },
+];
+
+/// Generate exercise templates from the tool surface using the Training Standard taxonomy.
 fn generate_exercises(
     tools: &[Value],
     count: u64,
     difficulty: &str,
     skills: &[String],
 ) -> Vec<Value> {
-    let mut exercises = Vec::new();
-    let steps_per_exercise: u64 = match difficulty {
-        "easy" => 1,
-        "hard" => 4,
-        _ => 2, // medium
-    };
+    let selected = select_templates(difficulty, count);
+    let tool_names: Vec<&str> = tools.iter().filter_map(|t| t["tool"].as_str()).collect();
 
-    for i in 0..count {
-        let tool_idx = (i as usize) % tools.len();
-        let tool = &tools[tool_idx];
+    selected
+        .into_iter()
+        .enumerate()
+        .map(|(i, tmpl)| build_exercise(i, tmpl, &tool_names, difficulty, skills))
+        .collect()
+}
 
-        let exercise = json!({
-            "id": format!("ex-{i:04}"),
-            "difficulty": difficulty,
-            "steps": steps_per_exercise,
-            "target_tool": tool["tool"],
-            "description": format!(
-                "Use {} to {}",
-                tool["tool"].as_str().unwrap_or("unknown"),
-                tool["description"].as_str().unwrap_or("perform action")
-            ),
-            "skills": if skills.is_empty() { json!(null) } else { json!(skills) },
-            "expected_tool_calls": [{
-                "tool": tool["tool"],
-                "params_template": tool["params"],
-            }],
-        });
+/// Select templates matching the difficulty distribution.
+fn select_templates(difficulty: &str, count: u64) -> Vec<&'static ExerciseTemplate> {
+    let (recall, situational, trigger, cross_skill) = templates_by_type();
 
-        exercises.push(exercise);
+    let mut selected = Vec::new();
+    let n = count as usize;
+
+    for i in 0..n {
+        let tmpl = pick_template_for_slot(
+            i,
+            n,
+            difficulty,
+            &recall,
+            &situational,
+            &trigger,
+            &cross_skill,
+        );
+        selected.push(tmpl);
     }
+    selected
+}
 
-    exercises
+/// Partition templates by exercise type.
+fn templates_by_type() -> (
+    Vec<&'static ExerciseTemplate>,
+    Vec<&'static ExerciseTemplate>,
+    Vec<&'static ExerciseTemplate>,
+    Vec<&'static ExerciseTemplate>,
+) {
+    let mut recall = Vec::new();
+    let mut situational = Vec::new();
+    let mut trigger = Vec::new();
+    let mut cross_skill = Vec::new();
+
+    for t in EXERCISE_TEMPLATES {
+        match t.exercise_type {
+            "recall" => recall.push(t),
+            "situational" => situational.push(t),
+            "trigger" => trigger.push(t),
+            _ => cross_skill.push(t),
+        }
+    }
+    (recall, situational, trigger, cross_skill)
+}
+
+/// Pick a template for a given slot index based on difficulty distribution.
+///
+/// Distribution: easy=100% recall, medium=40/40/20, hard=20/40/40.
+fn pick_template_for_slot<'a>(
+    idx: usize,
+    total: usize,
+    difficulty: &str,
+    recall: &[&'a ExerciseTemplate],
+    situational: &[&'a ExerciseTemplate],
+    trigger: &[&'a ExerciseTemplate],
+    cross_skill: &[&'a ExerciseTemplate],
+) -> &'a ExerciseTemplate {
+    let pct = if total == 0 { 0 } else { (idx * 100) / total };
+
+    match difficulty {
+        "easy" => recall[idx % recall.len()],
+        "hard" => match pct {
+            0..20 => situational[idx % situational.len()],
+            20..60 => trigger[idx % trigger.len()],
+            _ => cross_skill[idx % cross_skill.len()],
+        },
+        _ => match pct {
+            // medium (default)
+            0..40 => recall[idx % recall.len()],
+            40..80 => situational[idx % situational.len()],
+            _ => trigger[idx % trigger.len()],
+        },
+    }
+}
+
+/// Build a single exercise JSON value from a template.
+fn build_exercise(
+    idx: usize,
+    tmpl: &ExerciseTemplate,
+    tool_names: &[&str],
+    difficulty: &str,
+    skills: &[String],
+) -> Value {
+    let desc = fill_placeholders(tmpl.description, idx);
+    let expected: Vec<Value> = tmpl
+        .expected_tools
+        .iter()
+        .filter(|t| tool_names.contains(t))
+        .map(|t| json!({"tool": *t}))
+        .collect();
+
+    json!({
+        "id": format!("ex-{idx:04}"),
+        "difficulty": difficulty,
+        "exercise_type": tmpl.exercise_type,
+        "steps": tmpl.steps,
+        "target_tool": tmpl.expected_tools.first().copied().unwrap_or("read"),
+        "description": desc,
+        "skills": if skills.is_empty() { json!(null) } else { json!(skills) },
+        "expected_tool_calls": expected,
+    })
+}
+
+/// Replace `{path}` and `{tool}` placeholders with concrete values.
+fn fill_placeholders(template: &str, idx: usize) -> String {
+    let paths = [
+        "~/.lightarchitects/config.toml",
+        "src/lib.rs",
+        "Cargo.toml",
+        "~/.arena/reports/audit.md",
+        "src/main.rs",
+        "tests/integration.rs",
+        "~/.arena/reports/summary.md",
+        "README.md",
+    ];
+    let tool_names = ["read", "write", "search", "glob", "bash", "edit"];
+
+    template
+        .replace("{path}", paths[idx % paths.len()])
+        .replace("{tool}", tool_names[idx % tool_names.len()])
 }
 
 // ── Action: spar ──────────────────────────────────────────────────────────────
@@ -569,20 +914,29 @@ fn judge(params: Value) -> Result<Value, GatewayError> {
 }
 
 /// Load exercise definitions keyed by id for expected-tool-call lookups.
-fn load_exercise_map(session_dir: &Path) -> std::collections::HashMap<String, Value> {
-    let path = session_dir.join("exercises.jsonl");
-    let mut map = std::collections::HashMap::new();
-    let Ok(content) = std::fs::read_to_string(&path) else {
+fn load_exercise_map(session_dir: &Path) -> HashMap<String, Value> {
+    load_jsonl_map(&session_dir.join("exercises.jsonl"), "id")
+}
+
+/// Load a JSONL file into a `HashMap` keyed by the given field.
+fn load_jsonl_map(path: &Path, key_field: &str) -> HashMap<String, Value> {
+    let mut map = HashMap::new();
+    let Ok(content) = std::fs::read_to_string(path) else {
         return map;
     };
     for line in content.lines() {
-        if let Ok(ex) = serde_json::from_str::<Value>(line) {
-            if let Some(id) = ex["id"].as_str() {
-                map.insert(id.to_owned(), ex);
+        if let Ok(val) = serde_json::from_str::<Value>(line) {
+            if let Some(id) = val[key_field].as_str() {
+                map.insert(id.to_owned(), val);
             }
         }
     }
     map
+}
+
+/// Load trace data keyed by `exercise_id`.
+fn load_trace_map(session_dir: &Path) -> HashMap<String, Value> {
+    load_jsonl_map(&session_dir.join("traces.jsonl"), "exercise_id")
 }
 
 /// Dangerous bash patterns that should never appear in tool calls.
@@ -783,12 +1137,15 @@ fn write_scored_results(
 
 // ── Action: triumph ───────────────────────────────────────────────────────────
 
-/// Export scored data as a training format.
+/// Export scored data as a training format using real trace data.
+///
+/// Reads `traces.jsonl` and `exercises.jsonl` alongside `scored.jsonl` to
+/// reconstruct full conversations instead of emitting placeholders.
 ///
 /// Params:
 /// - `session_id` (optional): Export a specific session.
 /// - `format` (optional): "chatml" (default), "alpaca", "dpo"
-/// - `output` (optional): Output path (default: ~/.arena/exports/)
+/// - `output` (optional): Output path (default: `~/.arena/exports/`)
 /// - `min_score` (optional): Minimum aggregate score to include (default: 0.5)
 fn triumph(params: Value) -> Result<Value, GatewayError> {
     let session_id = find_session(&params, "forge")?;
@@ -813,55 +1170,23 @@ fn triumph(params: Value) -> Result<Value, GatewayError> {
     let scored_content = std::fs::read_to_string(&scored_path)
         .map_err(|e| GatewayError::Internal(format!("failed to read scores: {e}")))?;
 
-    ensure_dir(&exports_path())?;
+    // Load traces and exercises for real conversation reconstruction.
+    let trace_map = load_trace_map(&session_dir);
+    let exercise_map = load_exercise_map(&session_dir);
 
+    ensure_dir(&exports_path())?;
     let output_file = params.get("output").and_then(Value::as_str).map_or_else(
         || exports_path().join(format!("{session_id}-{format}.jsonl")),
         expand_tilde,
     );
 
-    let mut exported = 0_usize;
-    let mut output = String::new();
-
-    for line in scored_content.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let scored: Value = serde_json::from_str(line).unwrap_or(json!({}));
-        let score = scored["aggregate"].as_f64().unwrap_or(0.0);
-
-        if score < min_score {
-            continue;
-        }
-
-        let row = match format {
-            "chatml" => json!({
-                "messages": [
-                    {"role": "system", "content": "You are a helpful assistant with access to tools."},
-                    {"role": "user", "content": format!("Exercise: {}", scored["exercise_id"].as_str().unwrap_or("?"))},
-                    {"role": "assistant", "content": "I'll help with that."},
-                ],
-                "score": score,
-            }),
-            "alpaca" => json!({
-                "instruction": format!("Exercise: {}", scored["exercise_id"].as_str().unwrap_or("?")),
-                "input": "",
-                "output": "I'll help with that.",
-                "score": score,
-            }),
-            "dpo" => json!({
-                "prompt": format!("Exercise: {}", scored["exercise_id"].as_str().unwrap_or("?")),
-                "chosen": "I'll help with that.",
-                "rejected": "I don't know.",
-                "score": score,
-            }),
-            _ => json!({"raw": scored}),
-        };
-
-        output.push_str(&serde_json::to_string(&row)?);
-        output.push('\n');
-        exported += 1;
-    }
+    let (output, exported) = export_scored_rows(
+        &scored_content,
+        format,
+        min_score,
+        &trace_map,
+        &exercise_map,
+    )?;
 
     std::fs::write(&output_file, &output)
         .map_err(|e| GatewayError::Internal(format!("failed to write export: {e}")))?;
@@ -875,6 +1200,179 @@ fn triumph(params: Value) -> Result<Value, GatewayError> {
         "output_path": output_file.display().to_string(),
         "next": "Run `tools {action: \"inspect\"}` to validate, or `tools {action: \"unleash\"}` to train",
     }))?))
+}
+
+/// Iterate scored entries, convert each to the requested export format.
+fn export_scored_rows(
+    scored_content: &str,
+    format: &str,
+    min_score: f64,
+    trace_map: &HashMap<String, Value>,
+    exercise_map: &HashMap<String, Value>,
+) -> Result<(String, usize), GatewayError> {
+    let mut buf = String::new();
+    let mut exported = 0_usize;
+
+    // For DPO, collect failed traces for "rejected" pairing.
+    let failed_traces: HashMap<&str, &Value> = if format == "dpo" {
+        collect_failed_traces(trace_map)
+    } else {
+        HashMap::new()
+    };
+
+    for line in scored_content.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let scored: Value = serde_json::from_str(line).unwrap_or(json!({}));
+        let score = scored["aggregate"].as_f64().unwrap_or(0.0);
+        if score < min_score {
+            continue;
+        }
+
+        let ex_id = scored["exercise_id"].as_str().unwrap_or("");
+        let Some(trace) = trace_map.get(ex_id) else {
+            continue;
+        };
+        let Some(exercise) = exercise_map.get(ex_id) else {
+            continue;
+        };
+        // Skip traces with errors.
+        if trace["error"].as_str().is_some_and(|e| !e.is_empty()) {
+            continue;
+        }
+
+        let row = match format {
+            "chatml" => build_chatml_row(exercise, trace, score),
+            "alpaca" => build_alpaca_row(exercise, trace, score),
+            "dpo" => build_dpo_row(exercise, trace, score, &failed_traces),
+            _ => Some(json!({"raw": scored})),
+        };
+
+        if let Some(r) = row {
+            buf.push_str(&serde_json::to_string(&r)?);
+            buf.push('\n');
+            exported += 1;
+        }
+    }
+    Ok((buf, exported))
+}
+
+/// Collect traces where `completed == false` for DPO "rejected" pairing.
+fn collect_failed_traces(trace_map: &HashMap<String, Value>) -> HashMap<&str, &Value> {
+    trace_map
+        .iter()
+        .filter(|(_, t)| !t["completed"].as_bool().unwrap_or(true))
+        .map(|(k, v)| (k.as_str(), v))
+        .collect()
+}
+
+/// Build a `ChatML` training row from real trace data.
+fn build_chatml_row(exercise: &Value, trace: &Value, score: f64) -> Option<Value> {
+    let description = exercise["description"].as_str()?;
+    let final_resp = trace["final_response"].as_str().unwrap_or("");
+    let tool_calls = trace["tool_calls"].as_array();
+
+    let mut messages = vec![
+        json!({"role": "system", "content": "You are a helpful assistant with access to tools."}),
+        json!({"role": "user", "content": description}),
+    ];
+
+    // Insert tool call / tool result message pairs.
+    if let Some(calls) = tool_calls {
+        for tc in calls {
+            messages.push(build_tool_call_message(tc));
+            messages.push(build_tool_result_message(tc));
+        }
+    }
+
+    // Final assistant response.
+    if !final_resp.is_empty() {
+        messages.push(json!({"role": "assistant", "content": final_resp}));
+    }
+
+    Some(json!({"messages": messages, "score": score}))
+}
+
+/// Build the assistant message containing a tool call in `ChatML` format.
+fn build_tool_call_message(tc: &Value) -> Value {
+    let name = tc["tool"].as_str().unwrap_or("unknown");
+    json!({
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [{
+            "type": "function",
+            "function": {"name": name, "arguments": tc["arguments"]},
+        }],
+    })
+}
+
+/// Build the tool result message (results not stored — mark as executed).
+fn build_tool_result_message(tc: &Value) -> Value {
+    let name = tc["tool"].as_str().unwrap_or("unknown");
+    json!({
+        "role": "tool",
+        "name": name,
+        "content": "(tool result not stored \u{2014} mark as executed)",
+    })
+}
+
+/// Build an Alpaca training row from real trace data.
+fn build_alpaca_row(exercise: &Value, trace: &Value, score: f64) -> Option<Value> {
+    let description = exercise["description"].as_str()?;
+    let final_resp = trace["final_response"].as_str().unwrap_or("");
+    let tool_calls = trace["tool_calls"].as_array();
+
+    // Build output that includes tool call context.
+    let mut output_parts = Vec::new();
+    if let Some(calls) = tool_calls {
+        for tc in calls {
+            let name = tc["tool"].as_str().unwrap_or("unknown");
+            let args = tc["arguments"].to_string();
+            output_parts.push(format!("[Called {name}({args})]"));
+        }
+    }
+    if !final_resp.is_empty() {
+        output_parts.push(final_resp.to_owned());
+    }
+
+    Some(json!({
+        "instruction": description,
+        "input": "",
+        "output": output_parts.join("\n"),
+        "score": score,
+    }))
+}
+
+/// Build a DPO training row: chosen = completed trace, rejected = failed trace.
+///
+/// Returns `None` if no failed trace exists for this exercise (skip DPO pair).
+fn build_dpo_row(
+    exercise: &Value,
+    chosen_trace: &Value,
+    score: f64,
+    failed_traces: &HashMap<&str, &Value>,
+) -> Option<Value> {
+    let description = exercise["description"].as_str()?;
+    let ex_id = exercise["id"].as_str().unwrap_or("");
+
+    // DPO requires a rejected counterpart.
+    let rejected = failed_traces.get(ex_id)?;
+    let chosen_resp = chosen_trace["final_response"]
+        .as_str()
+        .unwrap_or("")
+        .to_owned();
+    let rejected_resp = rejected["final_response"]
+        .as_str()
+        .unwrap_or("(failed to complete)")
+        .to_owned();
+
+    Some(json!({
+        "prompt": description,
+        "chosen": chosen_resp,
+        "rejected": rejected_resp,
+        "score": score,
+    }))
 }
 
 // ── Action: inspect ───────────────────────────────────────────────────────────
@@ -930,7 +1428,9 @@ fn inspect(params: Value) -> Result<Value, GatewayError> {
 
         // Gate 3: Non-empty content
         if has_messages {
-            let msgs = row["messages"].as_array().unwrap();
+            let Some(msgs) = row["messages"].as_array() else {
+                continue;
+            };
             if msgs.is_empty() {
                 issues.push(
                     json!({"line": i + 1, "gate": "content", "error": "empty messages array"}),
@@ -1361,7 +1861,7 @@ async fn bench_tool_use(model: &str, ollama_url: Option<&str>) -> Result<Value, 
 }
 
 /// Build an exercise map from a vector of exercise values.
-fn build_exercise_map_from_vec(exercises: &[Value]) -> std::collections::HashMap<String, Value> {
+fn build_exercise_map_from_vec(exercises: &[Value]) -> HashMap<String, Value> {
     exercises
         .iter()
         .filter_map(|ex| ex["id"].as_str().map(|id| (id.to_owned(), ex.clone())))
@@ -1371,7 +1871,7 @@ fn build_exercise_map_from_vec(exercises: &[Value]) -> std::collections::HashMap
 /// Parse trace output lines and score each against the exercise map.
 fn score_traces_from_output(
     traces_output: &str,
-    exercise_map: &std::collections::HashMap<String, Value>,
+    exercise_map: &HashMap<String, Value>,
 ) -> Vec<Value> {
     traces_output
         .lines()
@@ -1588,10 +2088,16 @@ mod tests {
     #[test]
     fn generate_exercises_respects_difficulty() {
         let tools = discover_tool_surface();
-        let easy = generate_exercises(&tools, 1, "easy", &[]);
-        let hard = generate_exercises(&tools, 1, "hard", &[]);
-        assert_eq!(easy[0]["steps"], 1);
-        assert_eq!(hard[0]["steps"], 4);
+        let easy = generate_exercises(&tools, 5, "easy", &[]);
+        let hard = generate_exercises(&tools, 10, "hard", &[]);
+        // All easy exercises are recall (1 step).
+        assert!(easy.iter().all(|e| e["steps"] == 1));
+        // Hard exercises have a mix: situational (2), trigger (3), cross_skill (4).
+        let hard_steps: Vec<u64> = hard.iter().filter_map(|e| e["steps"].as_u64()).collect();
+        assert!(
+            hard_steps.iter().any(|&s| s >= 3),
+            "hard should include multi-step exercises"
+        );
     }
 
     #[tokio::test]
@@ -1622,5 +2128,111 @@ mod tests {
     async fn summon_requires_model_param() {
         let err = dispatch("summon", json!({})).await.unwrap_err();
         assert!(matches!(err, GatewayError::MissingParam("model")));
+    }
+
+    #[test]
+    fn exercises_have_exercise_type_field() {
+        let tools = discover_tool_surface();
+        let medium = generate_exercises(&tools, 10, "medium", &[]);
+        let types: Vec<&str> = medium
+            .iter()
+            .filter_map(|e| e["exercise_type"].as_str())
+            .collect();
+        // Medium should have recall and situational at minimum.
+        assert!(types.contains(&"recall"), "medium must include recall");
+        assert!(
+            types.contains(&"situational"),
+            "medium must include situational"
+        );
+    }
+
+    #[test]
+    fn exercises_have_real_descriptions() {
+        let tools = discover_tool_surface();
+        let exercises = generate_exercises(&tools, 5, "easy", &[]);
+        for ex in &exercises {
+            let desc = ex["description"].as_str().unwrap_or("");
+            // No exercise should be trivial "Use X to Y" anymore.
+            assert!(
+                !desc.starts_with("Use ") || desc.len() > 30,
+                "exercise description should be non-trivial: {desc}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_chatml_row_reconstructs_conversation() {
+        let exercise = json!({
+            "id": "ex-0001",
+            "description": "Read the contents of Cargo.toml",
+        });
+        let trace = json!({
+            "exercise_id": "ex-0001",
+            "completed": true,
+            "tool_calls": [{"tool": "read", "arguments": {"path": "Cargo.toml"}}],
+            "final_response": "The file contains workspace configuration.",
+            "error": null,
+        });
+
+        let row = build_chatml_row(&exercise, &trace, 0.85).unwrap();
+        let msgs = row["messages"].as_array().unwrap();
+
+        // system + user + tool_call assistant + tool result + final assistant = 5
+        assert_eq!(msgs.len(), 5);
+        assert_eq!(msgs[0]["role"], "system");
+        assert_eq!(msgs[1]["role"], "user");
+        assert_eq!(msgs[1]["content"], "Read the contents of Cargo.toml");
+        assert_eq!(msgs[2]["role"], "assistant");
+        assert!(msgs[2]["tool_calls"].is_array());
+        assert_eq!(msgs[3]["role"], "tool");
+        assert_eq!(msgs[4]["role"], "assistant");
+        assert_eq!(
+            msgs[4]["content"],
+            "The file contains workspace configuration."
+        );
+        assert_eq!(row["score"], 0.85);
+    }
+
+    #[test]
+    fn build_alpaca_row_includes_tool_context() {
+        let exercise = json!({"id": "ex-0001", "description": "Search for TODOs"});
+        let trace = json!({
+            "exercise_id": "ex-0001",
+            "completed": true,
+            "tool_calls": [{"tool": "search", "arguments": {"pattern": "TODO"}}],
+            "final_response": "Found 3 TODOs.",
+            "error": null,
+        });
+
+        let row = build_alpaca_row(&exercise, &trace, 0.9).unwrap();
+        assert_eq!(row["instruction"], "Search for TODOs");
+        let output = row["output"].as_str().unwrap();
+        assert!(
+            output.contains("search"),
+            "output should reference tool calls"
+        );
+        assert!(output.contains("Found 3 TODOs."));
+    }
+
+    #[test]
+    fn build_dpo_row_skips_without_rejected() {
+        let exercise = json!({"id": "ex-0001", "description": "Read a file"});
+        let trace = json!({
+            "exercise_id": "ex-0001",
+            "completed": true,
+            "final_response": "Success",
+        });
+        let failed: HashMap<&str, &Value> = HashMap::new();
+
+        // No failed trace => DPO row should be None.
+        let row = build_dpo_row(&exercise, &trace, 0.8, &failed);
+        assert!(row.is_none());
+    }
+
+    #[test]
+    fn fill_placeholders_substitutes_path() {
+        let result = fill_placeholders("Read {path} now", 0);
+        assert!(!result.contains("{path}"), "placeholder should be replaced");
+        assert!(result.contains("config.toml") || result.contains("lib.rs"));
     }
 }
