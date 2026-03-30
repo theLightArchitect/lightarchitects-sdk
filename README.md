@@ -1,39 +1,39 @@
-# l-arc-sdk
+# lightarchitects-sdk
 
 Unified Rust SDK for the Light Architects sibling ecosystem — typed, ergonomic clients for SOUL, CORSO, EVA, QUANTUM, and SERAPH via stdio JSON-RPC.
 
-> Internal use only. External API consumers go through the [IronClaw REST gateway](https://github.com/TheLightArchitects/l-arc).
+> Internal use only. External API consumers go through the [IronClaw REST gateway](https://github.com/TheLightArchitects/lightarchitects).
 
 ## Workspace Crates
 
 | Crate | Purpose |
 |-------|---------|
-| [`l-arc-crypto`](./l-arc-crypto/) | Crypto foundation: HKDF, HMAC, AES-256-GCM, Ed25519, SecretStore |
-| [`l-arc-core`](./l-arc-core/) | Wire protocol, stdio transport, retry, error types |
-| [`l-arc-soul`](./l-arc-soul/) | SOUL typed client (`soulTools`, 23 actions) |
-| [`l-arc-corso`](./l-arc-corso/) | CORSO typed client (`corsoTools`, 26 actions) |
-| [`l-arc-eva`](./l-arc-eva/) | EVA typed client (8 actions, dual-path adapter) |
-| [`l-arc-quantum`](./l-arc-quantum/) | QUANTUM typed client (`qsTools`, 13 actions) |
-| [`l-arc-seraph`](./l-arc-seraph/) | SERAPH typed client (`penTools`, 18 actions) |
-| [`l-arc-ayin`](./l-arc-ayin/) | AYIN observability wrapper (feature = `"observe"`) |
-| [`l-arc`](./l-arc/) | Umbrella crate — re-exports all sibling clients |
-| [`l-arc-cli`](./l-arc-cli/) | CLI binary: `larc ping`, `larc health`, `larc version` |
+| [`lightarchitects-crypto`](./lightarchitects-crypto/) | Crypto foundation: HKDF, HMAC, AES-256-GCM, Ed25519, SecretStore |
+| [`lightarchitects-core`](./lightarchitects-core/) | Wire protocol, stdio transport, retry, error types |
+| [`lightarchitects-soul`](./lightarchitects-soul/) | SOUL typed client (`soulTools`, 23 actions) |
+| [`lightarchitects-corso`](./lightarchitects-corso/) | CORSO typed client (`corsoTools`, 26 actions) |
+| [`lightarchitects-eva`](./lightarchitects-eva/) | EVA typed client (8 actions, dual-path adapter) |
+| [`lightarchitects-quantum`](./lightarchitects-quantum/) | QUANTUM typed client (`qsTools`, 13 actions) |
+| [`lightarchitects-seraph`](./lightarchitects-seraph/) | SERAPH typed client (`penTools`, 18 actions) |
+| [`lightarchitects-ayin`](./lightarchitects-ayin/) | AYIN observability wrapper (feature = `"observe"`) |
+| [`lightarchitects`](./lightarchitects/) | Umbrella crate — re-exports all sibling clients |
+| [`lightarchitects-cli`](./lightarchitects-cli/) | CLI binary: `lightarchitects ping`, `lightarchitects health`, `lightarchitects version` |
 
 ## Usage
 
 ```toml
 # Cargo.toml — all sibling clients
-l-arc = { git = "https://github.com/TheLightArchitects/l-arc-sdk", features = ["full"] }
+lightarchitects = { git = "https://github.com/TheLightArchitects/l-arc-sdk", features = ["full"] }
 
 # Only what you need
-l-arc = { git = "https://github.com/TheLightArchitects/l-arc-sdk", features = ["soul", "quantum"] }
+lightarchitects = { git = "https://github.com/TheLightArchitects/l-arc-sdk", features = ["soul", "quantum"] }
 ```
 
 ```rust
-use l_arc::soul::SoulClient;
+use lightarchitects::soul::SoulClient;
 
 #[tokio::main]
-async fn main() -> Result<(), l_arc_core::SdkError> {
+async fn main() -> Result<(), lightarchitects_core::SdkError> {
     let client = SoulClient::builder().build().await?;
 
     let entries = client
@@ -73,7 +73,7 @@ client.helix()                // Level 2: per-call fluent builder
   .call().await?              // JSON-RPC → response
 ```
 
-The transport layer (`l-arc-core`) handles framing (newline or `Content-Length`), retry with exponential backoff, and typed error mapping. SERAPH is the only sibling using `Content-Length` framing — configured automatically.
+The transport layer (`lightarchitects-core`) handles framing (newline or `Content-Length`), retry with exponential backoff, and typed error mapping. SERAPH is the only sibling using `Content-Length` framing — configured automatically.
 
 ## Security
 

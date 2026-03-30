@@ -2,7 +2,7 @@
 * @TheLightArchitects/kft
 
 # Crypto crate — stricter review requirement
-/l-arc-crypto/ @TheLightArchitects/kft
+/lightarchitects-crypto/ @TheLightArchitects/kft
 
 # CI/CD and dependency changes
 /.github/ @TheLightArchitects/kft

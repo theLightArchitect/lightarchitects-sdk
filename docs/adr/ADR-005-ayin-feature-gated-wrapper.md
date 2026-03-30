@@ -6,11 +6,11 @@
 
 ## Context
 
-The AYIN observability system (`AYIN-DEV`) records `TraceSpan` data for every MCP tool call. The question is how to integrate AYIN instrumentation into `l-arc-sdk` without making it mandatory or adding overhead for callers who don't need it.
+The AYIN observability system (`AYIN-DEV`) records `TraceSpan` data for every MCP tool call. The question is how to integrate AYIN instrumentation into `lightarchitects-sdk` without making it mandatory or adding overhead for callers who don't need it.
 
 ## Decision
 
-`l-arc-ayin` is a thin wrapper crate controlled by a `observe` Cargo feature:
+`lightarchitects-ayin` is a thin wrapper crate controlled by a `observe` Cargo feature:
 
 - **Without `observe`**: `ObservableTransport<T> = T` — a zero-cost type alias. The compiler eliminates the wrapper entirely.
 - **With `observe`**: `ObservableTransport<T>` wraps `T` and writes a `TraceSpan` via a `tokio::spawn` fire-and-forget after each `send()`.
@@ -26,6 +26,6 @@ This follows the precedent set by SOUL depending on the `ayin` crate as an optio
 
 ## Consequences
 
-- Callers that want AYIN tracing add `features = ["observe"]` to their `l-arc-ayin` dependency.
-- The `l-arc` umbrella crate exposes `features = ["ayin"]` which includes `l-arc-ayin` with no sub-features — observability is opt-in even within the umbrella.
+- Callers that want AYIN tracing add `features = ["observe"]` to their `lightarchitects-ayin` dependency.
+- The `lightarchitects` umbrella crate exposes `features = ["ayin"]` which includes `lightarchitects-ayin` with no sub-features — observability is opt-in even within the umbrella.
 - If a span write fails (e.g., AYIN not running), the error is silently dropped — trace I/O is best-effort.

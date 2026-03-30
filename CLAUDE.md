@@ -6,15 +6,15 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Project Overview
 
-**l-arc-sdk** — the Light Architects unified Rust SDK. Typed, ergonomic clients for all five MCP siblings (SOUL, CORSO, EVA, QUANTUM, SERAPH) via stdio JSON-RPC. Internal use only; external consumers go through the IronClaw REST gateway (`l-arc/sdk/`).
+**lightarchitects-sdk** — the Light Architects unified Rust SDK. Typed, ergonomic clients for all five MCP siblings (SOUL, CORSO, EVA, QUANTUM, SERAPH) via stdio JSON-RPC. Internal use only; external consumers go through the Arena REST gateway (`lightarchitects/sdk/`).
 
 **Build**: `steady-forging-lynx` (CORSO pipeline, LARGE tier)
-**GitHub**: `TheLightArchitects/l-arc-sdk` (private)
+**GitHub**: `TheLightArchitects/lightarchitects-sdk` (private)
 
 ## Workspace Structure
 
 ```
-l-arc-sdk/
+lightarchitects-sdk/
 ├── Cargo.toml              # Workspace root (centralized deps, workspace lints)
 ├── deny.toml               # cargo-deny: license + security policy
 ├── rustfmt.toml            # fmt: edition 2024, max_width 100
@@ -23,20 +23,20 @@ l-arc-sdk/
 ├── .github/
 │   ├── workflows/ci.yml    # Quality gates + tests (macOS + Linux) + MSRV + audit + deny
 │   ├── dependabot.yml      # Weekly Cargo dep updates (RustCrypto group, secret-handling group)
-│   ├── CODEOWNERS          # KFT reviews all; l-arc-crypto requires stricter review
+│   ├── CODEOWNERS          # KFT reviews all; lightarchitects-crypto requires stricter review
 │   └── PULL_REQUEST_TEMPLATE.md
 ├── .githooks/pre-commit    # fmt + clippy gate (install: git config core.hooksPath .githooks)
 │
-├── l-arc-crypto/           # Phase 3 — Crypto foundation (HKDF, HMAC, AES-256-GCM, Ed25519, SecretStore)
-├── l-arc-core/             # Phase 3 — Wire protocol, transport, error types, retry (stdio JSON-RPC)
-├── l-arc-soul/             # Phase 4 — SOUL typed client (soulTools, 23 actions)
-├── l-arc-corso/            # Phase 5 — CORSO typed client (corsoTools, 26 actions)
-├── l-arc-eva/              # Phase 6 — EVA typed client (9 tools via dual-path adapter)
-├── l-arc-quantum/          # Phase 7 — QUANTUM typed client (qsTools, 13 actions)
-├── l-arc-seraph/           # Phase 8 — SERAPH typed client (penTools, 18 actions, SSH feature)
-├── l-arc-ayin/             # Phase 9 — AYIN observability wrapper (feature = "observe")
-├── l-arc/                  # Phase 10 — Umbrella crate (re-exports all sibling clients)
-└── l-arc-cli/              # Phase 11 — CLI binary (sibling ping, health, version)
+├── lightarchitects-crypto/           # Phase 3 — Crypto foundation (HKDF, HMAC, AES-256-GCM, Ed25519, SecretStore)
+├── lightarchitects-core/             # Phase 3 — Wire protocol, transport, error types, retry (stdio JSON-RPC)
+├── lightarchitects-soul/             # Phase 4 — SOUL typed client (soulTools, 23 actions)
+├── lightarchitects-corso/            # Phase 5 — CORSO typed client (corsoTools, 26 actions)
+├── lightarchitects-eva/              # Phase 6 — EVA typed client (9 tools via dual-path adapter)
+├── lightarchitects-quantum/          # Phase 7 — QUANTUM typed client (qsTools, 13 actions)
+├── lightarchitects-seraph/           # Phase 8 — SERAPH typed client (penTools, 18 actions, SSH feature)
+├── lightarchitects-ayin/             # Phase 9 — AYIN observability wrapper (feature = "observe")
+├── lightarchitects/                  # Phase 10 — Umbrella crate (re-exports all sibling clients)
+└── lightarchitects-cli/              # Phase 11 — CLI binary (sibling ping, health, version)
 ```
 
 ## Build Commands
@@ -66,7 +66,7 @@ cargo deny check
 
 ## Architecture
 
-### Transport Layer (l-arc-core)
+### Transport Layer (lightarchitects-core)
 
 ```
 McpTransport trait
@@ -105,7 +105,7 @@ let result = client
 
 ### EVA Dual-Path Design
 
-EVA exposes 9 individual tools (not a single orchestrator). l-arc-eva provides:
+EVA exposes 9 individual tools (not a single orchestrator). lightarchitects-eva provides:
 - **Orchestrator adapter**: `client.action("speak", params)` — routes to any of the 9 tools
 - **Individual tool methods**: `client.speak()`, `client.visualize()`, etc. — typed, ergonomic
 
@@ -113,7 +113,7 @@ Both paths are available. Orchestrator path enables uniform treatment; individua
 
 ### AYIN Observability
 
-`l-arc-ayin` is a thin wrapper, NOT an absorb of the ayin crate.
+`lightarchitects-ayin` is a thin wrapper, NOT an absorb of the ayin crate.
 
 ```rust
 // Feature-gated: feature = "observe"
@@ -121,7 +121,7 @@ let transport = ObservableTransport::new(base_transport, span_factory);
 // Without feature: ObservableTransport<T> = T (zero overhead, zero dep)
 ```
 
-Pattern from IronClaw: SOUL depends on AYIN with `optional = true`.
+Pattern from Arena: SOUL depends on AYIN with `optional = true`.
 
 ## Key Design Decisions (from Phase 1 research)
 
@@ -129,7 +129,7 @@ Pattern from IronClaw: SOUL depends on AYIN with `optional = true`.
 |----------|--------|-----------|
 | rmcp dependency | NO | mcp_pool.rs is battle-tested; avoids rmcp API churn |
 | EVA transport | Dual-path | 9 tools → orchestrator adapter + typed methods |
-| AYIN | Depend, not absorb | Feature-gated thin wrapper; IronClaw precedent |
+| AYIN | Depend, not absorb | Feature-gated thin wrapper; Arena precedent |
 | Error hierarchy | thiserror, no HTTP codes | Stdio transport ≠ HTTP; clean domain errors |
 | Builder pattern | Two-level (octocrab) | Client construction ≠ call construction |
 | Retry | TransportError only | Tool errors are not transient; don't retry logic |
@@ -148,19 +148,22 @@ Canonical: `~/.soul/helix/user/standards/builders-cookbook.md`
 
 ## SDK Naming Rules
 
-- Crate names: `l-arc-{name}` (hyphen, no underscore prefix)
-- Module paths in Rust: `l_arc_{name}` (Rust converts hyphens automatically)
+- Crate names: `lightarchitects-{name}` (hyphen, no underscore prefix)
+- Module paths in Rust: `lightarchitects_{name}` (Rust converts hyphens automatically)
+- CLI binary name: `lightarchitects` (subcommands: `ping`, `health`, `version`)
+- Environment variables (system overrides): `LIGHTARCHITECTS_{SIBLING}_BIN` (e.g. `LIGHTARCHITECTS_SOUL_BIN`)
+- Brand name in user-facing strings/docs: `Light Architects` (long form) or `LÆX` (when referring to the L-ARC product name)
 - API types use **engineering terms only**: `tags` not `emotions`, `dimensions` not `strands`, `weight` not `significance`
 - The helix data can contain those personality fields — the SDK types stay neutral
 
 ## Adding a New Crate
 
-1. Create `l-arc-{name}/` with `Cargo.toml` + `src/lib.rs`
+1. Create `lightarchitects-{name}/` with `Cargo.toml` + `src/lib.rs`
 2. Add to `[workspace] members` in root `Cargo.toml` (uncomment the stub)
 3. Use `dep.workspace = true` for all shared deps
 4. Set `[lints] workspace = true`
 5. Add `#![doc = include_str!("../README.md")]` or crate-level doc comment
-6. Register in `l-arc` umbrella crate (`Phase 10`)
+6. Register in `lightarchitects` umbrella crate (`Phase 10`)
 
 ## Hook Installation
 

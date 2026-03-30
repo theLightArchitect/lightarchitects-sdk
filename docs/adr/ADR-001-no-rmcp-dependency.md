@@ -10,14 +10,14 @@
 
 ## Decision
 
-`l-arc-sdk` does not depend on `rmcp`. The MCP stdio transport is implemented directly in `l-arc-core` using `tokio::process::Command`, `BufReader<ChildStdout>`, and `ChildStdin`.
+`lightarchitects-sdk` does not depend on `rmcp`. The MCP stdio transport is implemented directly in `lightarchitects-core` using `tokio::process::Command`, `BufReader<ChildStdout>`, and `ChildStdin`.
 
 ## Rationale
 
 1. **API stability**: `rmcp` was undergoing frequent changes at evaluation time. An SDK is a contract; we cannot let an unstable upstream break our API.
 2. **Trust the battle-tested path**: The `mcp_pool.rs` pattern in the sibling binaries works in production. Re-implementing it cleanly is lower risk than adopting a new crate.
-3. **Minimal footprint**: `l-arc-core` has only 5 production dependencies. Adding `rmcp` would introduce its full dependency tree.
-4. **Security**: Every dependency is a supply chain exposure. The STRIDE threat model for `l-arc-sdk` prefers minimal deps.
+3. **Minimal footprint**: `lightarchitects-core` has only 5 production dependencies. Adding `rmcp` would introduce its full dependency tree.
+4. **Security**: Every dependency is a supply chain exposure. The STRIDE threat model for `lightarchitects-sdk` prefers minimal deps.
 
 ## Consequences
 

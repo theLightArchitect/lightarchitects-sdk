@@ -1,4 +1,4 @@
-# cargo-deny configuration for l-arc-sdk
+# cargo-deny configuration for lightarchitects-sdk
 # Run: cargo deny check
 # Docs: https://embarkstudios.github.io/cargo-deny/
 
@@ -11,7 +11,7 @@ db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 
 # RUSTSEC-2025-0119: number_prefix crate unmaintained.
-# Only reaches us via l-arc-arena → indicatif. l-arc-arena is an ML training
+# Only reaches us via lightarchitects-arena → indicatif. lightarchitects-arena is an ML training
 # utility crate not used by the core SDK. No upgrade path exists upstream.
 ignore = ["RUSTSEC-2025-0119"]
 
@@ -23,7 +23,7 @@ allow = [
     "BSD-3-Clause",
     "ISC",
     "Unicode-3.0",
-    # MPL-2.0 (file-level copyleft only): option-ext, reached via l-arc-auth → dirs.
+    # MPL-2.0 (file-level copyleft only): option-ext, reached via lightarchitects-auth → dirs.
     # Acceptable for internal tooling; does not affect library consumers.
     "MPL-2.0",
     # CDLA-Permissive-2.0: webpki-roots TLS root certificates (permissive, data-only).
@@ -39,79 +39,79 @@ allow = [
 # All are private, internal-only, and not published to any registry.
 
 [[licenses.clarify]]
-name = "l-arc"
+name = "lightarchitects"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
 
 [[licenses.clarify]]
-name = "l-arc-core"
+name = "lightarchitects-core"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
 
 [[licenses.clarify]]
-name = "l-arc-crypto"
+name = "lightarchitects-crypto"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
 
 [[licenses.clarify]]
-name = "l-arc-soul"
+name = "lightarchitects-soul"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
 
 [[licenses.clarify]]
-name = "l-arc-corso"
+name = "lightarchitects-corso"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
 
 [[licenses.clarify]]
-name = "l-arc-eva"
+name = "lightarchitects-eva"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
 
 [[licenses.clarify]]
-name = "l-arc-quantum"
+name = "lightarchitects-quantum"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
 
 [[licenses.clarify]]
-name = "l-arc-seraph"
+name = "lightarchitects-seraph"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
 
 [[licenses.clarify]]
-name = "l-arc-ayin"
+name = "lightarchitects-ayin"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
 
 [[licenses.clarify]]
-name = "l-arc-cli"
+name = "lightarchitects-cli"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
 
 [[licenses.clarify]]
-name = "l-arc-arena"
+name = "lightarchitects-arena"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
 
 [[licenses.clarify]]
-name = "l-arc-auth"
+name = "lightarchitects-auth"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
 
 # ── External path dependencies ────────────────────────────────────────────────
-# AYIN lives outside the l-arc-sdk workspace but is referenced as a path dep.
+# AYIN lives outside the lightarchitects-sdk workspace but is referenced as a path dep.
 
 [[licenses.clarify]]
 name = "ayin"
@@ -121,7 +121,7 @@ license-files = []
 
 [bans]
 multiple-versions = "warn"
-# Workspace path deps (`path = "../l-arc-core"`) have no version spec; cargo-deny
+# Workspace path deps (`path = "../lightarchitects-core"`) have no version spec; cargo-deny
 # treats these as wildcards. For an internal-only, never-published SDK this is
 # standard practice — downgrade to warn so the check doesn't block CI.
 wildcards = "warn"

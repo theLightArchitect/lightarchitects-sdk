@@ -2,7 +2,7 @@
 
 **Build**: steady-forging-lynx
 **Date**: 2026-03-22
-**Scope**: l-arc-sdk workspace (l-arc-core, l-arc-{soul,corso,eva,quantum,seraph,ayin,crypto,cli,arena,auth}, l-arc umbrella)
+**Scope**: lightarchitects-sdk workspace (lightarchitects-core, lightarchitects-{soul,corso,eva,quantum,seraph,ayin,crypto,cli,arena,auth}, lightarchitects umbrella)
 **Auditor**: CORSO GUARD + manual review
 **Verdict**: PASS — zero HIGH or CRITICAL findings
 
@@ -41,7 +41,7 @@ and no external-facing API. The attack surface is:
 
 | ID | Threat | Vector | Severity | Mitigation |
 |----|--------|--------|----------|------------|
-| R1 | No SDK-level request audit trail | Requests and responses are not logged by the SDK | INFO | Intentional: SDK logs at `tracing::debug!`. Production audit trails use the AYIN observability layer (`l-arc-ayin`), which wraps the transport and emits structured spans. |
+| R1 | No SDK-level request audit trail | Requests and responses are not logged by the SDK | INFO | Intentional: SDK logs at `tracing::debug!`. Production audit trails use the AYIN observability layer (`lightarchitects-ayin`), which wraps the transport and emits structured spans. |
 
 ### I — Information Disclosure
 
@@ -80,8 +80,8 @@ warning: 1 allowed warning found
 
 **RUSTSEC-2025-0119** (`number_prefix 0.4.0` — unmaintained):
 - Severity: **WARNING** (not a CVE)
-- Reach: `l-arc-arena` → `indicatif` → `number_prefix`
-- `l-arc-arena` is an ML training utility crate, not part of the core SDK
+- Reach: `lightarchitects-arena` → `indicatif` → `number_prefix`
+- `lightarchitects-arena` is an ML training utility crate, not part of the core SDK
 - No safe upgrade path exists upstream
 - **Decision**: ACCEPTED. Added to `deny.toml` ignore list with documented rationale.
 
@@ -92,10 +92,10 @@ advisories ok, bans ok, licenses ok, sources ok
 ```
 
 **Licenses added to allow list**:
-- `MPL-2.0`: `option-ext 0.2.0` via `dirs` (l-arc-auth only). File-level copyleft; does not affect SDK consumers.
+- `MPL-2.0`: `option-ext 0.2.0` via `dirs` (lightarchitects-auth only). File-level copyleft; does not affect SDK consumers.
 - `CDLA-Permissive-2.0`: `webpki-roots 1.0.6` (TLS certificate roots). Permissive, data-only license.
 
-**Internal crate licensing**: All l-arc-* and ayin crates use `LicenseRef-LA-Proprietary` with `[[licenses.clarify]]` entries. None are published to crates.io.
+**Internal crate licensing**: All lightarchitects-* and ayin crates use `LicenseRef-LA-Proprietary` with `[[licenses.clarify]]` entries. None are published to crates.io.
 
 ---
 
@@ -140,11 +140,11 @@ Every production dependency is justified:
 | `serde` / `serde_json` | JSON-RPC serialization |
 | `thiserror` | Error type derivation (library-style errors) |
 | `tracing` | Structured diagnostics on tool dispatch |
-| `aes-gcm`, `ed25519-dalek`, `hkdf`, `hmac`, `sha2` | l-arc-crypto only; RustCrypto ecosystem |
+| `aes-gcm`, `ed25519-dalek`, `hkdf`, `hmac`, `sha2` | lightarchitects-crypto only; RustCrypto ecosystem |
 | `zeroize`, `secrecy` | Secret management — defence against memory scraping |
 | `rand` | Cryptographic random generation |
-| `clap` | CLI arg parsing (l-arc-cli only) |
-| `proptest` | Property-based tests (l-arc-crypto dev) |
+| `clap` | CLI arg parsing (lightarchitects-cli only) |
+| `proptest` | Property-based tests (lightarchitects-crypto dev) |
 
 No "bloat" dependencies found. All deps are feature-gated where applicable.
 
@@ -157,7 +157,7 @@ No "bloat" dependencies found. All deps are feature-gated where applicable.
 | F1 | MEDIUM | Binary path not signature-verified | ACCEPTED (user-level access required) |
 | F2 | LOW | Content-Length header loop unbounded | FIXED (MAX_CONTENT_LENGTH_HEADERS = 32) |
 | F3 | INFO | API key env inheritance (intentional) | DOCUMENTED |
-| F4 | LOW | number_prefix unmaintained (RUSTSEC-2025-0119) | ACCEPTED (l-arc-arena only, no CVE) |
+| F4 | LOW | number_prefix unmaintained (RUSTSEC-2025-0119) | ACCEPTED (lightarchitects-arena only, no CVE) |
 | F5 | INFO | MPL-2.0 / CDLA-Permissive-2.0 licenses | MITIGATED (allow list updated) |
 
 **Zero HIGH or CRITICAL findings.**

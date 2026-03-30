@@ -87,6 +87,9 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 uuid = { version = "1", features = ["v4", "serde"] }
 indicatif = "0.17"
 
+# ── SSH transport (SERAPH remote execution) ──────────────────────────────────
+russh = "0.57"
+
 # ── Dev/test ──────────────────────────────────────────────────────────────────
 tempfile = "3"
 proptest = "1"
