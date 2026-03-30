@@ -74,6 +74,10 @@ pub enum GatewayError {
     #[error("invalid parameter: {0}")]
     InvalidParam(String),
 
+    /// An internal operation failed with a descriptive message.
+    #[error("internal error: {0}")]
+    Internal(String),
+
     /// An MCP protocol exchange with a sibling failed.
     #[error("MCP protocol error for sibling '{sibling}': {reason}")]
     McpProtocol {

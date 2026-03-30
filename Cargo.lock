@@ -1387,6 +1387,7 @@ dependencies = [
  "chrono",
  "clap",
  "lightarchitects-core",
+ "reqwest",
  "serde",
  "serde_json",
  "tempfile",
