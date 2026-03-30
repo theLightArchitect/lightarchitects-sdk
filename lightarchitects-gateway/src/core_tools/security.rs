@@ -54,10 +54,15 @@ pub fn validate_path(path: &str, config: &GatewayConfig) -> Result<PathBuf, Gate
     check_denied_components(&canonical)?;
 
     // If allowed_directories configured, enforce boundary.
+    // Canonicalize each allowed path to prevent symlink escape attacks.
     if !config.allowed_directories.is_empty() {
         let in_allowed = config.allowed_directories.iter().any(|allowed| {
-            let allowed_path = expand_tilde(allowed);
-            canonical.starts_with(&allowed_path)
+            let allowed_expanded = expand_tilde(allowed);
+            allowed_expanded
+                .canonicalize()
+                .map_or(false, |allowed_canonical| {
+                    canonical.starts_with(&allowed_canonical)
+                })
         });
         if !in_allowed {
             return Err(GatewayError::File(
@@ -219,14 +224,17 @@ pub fn validate_local_url(url: &str) -> Result<(), GatewayError> {
         ));
     }
 
-    let is_local = url.starts_with("http://127.0.0.1")
-        || url.starts_with("https://127.0.0.1")
-        || url.starts_with("http://localhost")
-        || url.starts_with("https://localhost")
-        || url.starts_with("http://[::1]")
-        || url.starts_with("https://[::1]")
-        || url.starts_with("http://0.0.0.0")
-        || url.starts_with("https://0.0.0.0");
+    // Check for localhost with strict delimiter matching.
+    // "http://127.0.0.1:8080" is OK but "http://127.0.0.1.evil.com" is NOT.
+    // After the host, the next char must be ':', '/', or end-of-string.
+    let is_local = is_local_prefix(url, "http://127.0.0.1")
+        || is_local_prefix(url, "https://127.0.0.1")
+        || is_local_prefix(url, "http://localhost")
+        || is_local_prefix(url, "https://localhost")
+        || is_local_prefix(url, "http://[::1]")
+        || is_local_prefix(url, "https://[::1]")
+        || is_local_prefix(url, "http://0.0.0.0")
+        || is_local_prefix(url, "https://0.0.0.0");
 
     if !is_local {
         return Err(GatewayError::Internal(
@@ -236,6 +244,23 @@ pub fn validate_local_url(url: &str) -> Result<(), GatewayError> {
     }
 
     Ok(())
+}
+
+/// Check if a URL starts with a local prefix AND the next character is a valid
+/// URL delimiter (`:`, `/`, `?`, or end-of-string). Prevents hostname spoofing
+/// like `http://127.0.0.1.evil.com` which would pass a naive `starts_with()`.
+fn is_local_prefix(url: &str, prefix: &str) -> bool {
+    if !url.starts_with(prefix) {
+        return false;
+    }
+    // Check the character immediately after the prefix.
+    match url.as_bytes().get(prefix.len()) {
+        None => true,       // URL is exactly the prefix
+        Some(b':') => true, // Port follows (e.g., :8080)
+        Some(b'/') => true, // Path follows (e.g., /api)
+        Some(b'?') => true, // Query follows
+        _ => false,         // Something else (e.g., .evil.com)
+    }
 }
 
 // ── File size limit ──────────────────────────────────────────────────────────
