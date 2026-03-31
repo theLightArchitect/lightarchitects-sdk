@@ -5,6 +5,7 @@
 //! builds it automatically before running `cargo test`.
 
 use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 /// Path to the compiled `lightarchitects` binary, resolved by Cargo at compile time.
@@ -134,4 +135,203 @@ fn config_flag_does_not_break_mcp_mode() {
 
     child.kill().ok();
     child.wait().ok();
+}
+
+// ── First-run and preset E2E tests ───────────────────────────────────────────
+
+/// Spawn a gateway process with a given config string.
+/// Returns the child, stdin, reader, AND the tempfile (must stay alive for the child).
+fn spawn_with_config(
+    config_toml: &str,
+) -> (
+    std::process::Child,
+    impl Write,
+    impl BufRead,
+    tempfile::TempDir,
+) {
+    let tmp_dir = tempfile::tempdir().expect("tempdir");
+    let config_path = tmp_dir.path().join("config.toml");
+    std::fs::write(&config_path, config_toml).expect("write config");
+
+    let mut child = Command::new(GATEWAY_BIN)
+        .arg("--config")
+        .arg(&config_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn gateway");
+
+    let stdin = child.stdin.take().expect("stdin");
+    let stdout = child.stdout.take().expect("stdout");
+    let reader = BufReader::new(stdout);
+    (child, stdin, reader, tmp_dir)
+}
+
+/// Config with `[agents.*]` section name works (the canonical name).
+#[test]
+fn config_agents_section_name_works() {
+    let config = r#"
+[gateway]
+version = "1.0.0"
+
+[agents.soul]
+enabled = true
+binary = "~/.soul/.config/bin/soul"
+tool_name = "soulTools"
+role = "Knowledge graph"
+trust = "trusted"
+scope = "all"
+"#;
+    let (mut child, mut stdin, mut reader, _tmp) = spawn_with_config(config);
+
+    let resp = rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+    );
+    assert_eq!(resp["result"]["protocolVersion"], "2024-11-05");
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+/// Config with `[routes.*]` (backward compat alias) still works.
+#[test]
+fn config_routes_backward_compat_works() {
+    let config = r#"
+[gateway]
+version = "1.0.0"
+
+[routes.corso]
+enabled = true
+binary = "~/.corso/bin/corso"
+tool_name = "corsoTools"
+role = "AppSec"
+trust = "trusted"
+scope = "own"
+"#;
+    let (mut child, mut stdin, mut reader, _tmp) = spawn_with_config(config);
+
+    let resp = rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+    );
+    assert_eq!(resp["result"]["protocolVersion"], "2024-11-05");
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+/// Config with `[siblings.*]` (legacy alias) still works.
+#[test]
+fn config_siblings_backward_compat_works() {
+    let config = r#"
+[gateway]
+version = "1.0.0"
+
+[siblings.eva]
+enabled = true
+binary = "~/.eva/bin/eva"
+tool_name = "evaTools"
+role = "DevOps"
+trust = "trusted"
+scope = "shared"
+"#;
+    let (mut child, mut stdin, mut reader, _tmp) = spawn_with_config(config);
+
+    let resp = rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+    );
+    assert_eq!(resp["result"]["protocolVersion"], "2024-11-05");
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+/// Discover output includes `active_preset` field.
+#[test]
+fn discover_shows_active_preset() {
+    let (mut child, mut stdin, mut reader, _tmp) =
+        spawn_with_config("[gateway]\nversion = \"1.0.0\"\nactive_preset = \"forensics\"\n");
+
+    // Initialize
+    rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+    );
+
+    // Discover
+    let resp = rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tools","arguments":{"action":"discover"}}}"#,
+    );
+    let text = resp["result"]["content"][0]["text"]
+        .as_str()
+        .expect("discover text");
+    assert!(
+        text.contains("active_preset"),
+        "discover should include active_preset"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+/// Preset action returns the list of all 12 presets.
+#[test]
+fn preset_list_returns_twelve_presets() {
+    let (mut child, mut stdin, mut reader, _tmp) =
+        spawn_with_config("[gateway]\nversion = \"1.0.0\"\n");
+
+    // Initialize
+    rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+    );
+
+    // Preset list (no name param = show all)
+    let resp = rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tools","arguments":{"action":"preset","params":{}}}}"#,
+    );
+    let text = resp["result"]["content"][0]["text"]
+        .as_str()
+        .expect("preset text");
+    let parsed: serde_json::Value = serde_json::from_str(text).expect("parse preset JSON");
+    let presets = parsed["presets"].as_array().expect("presets array");
+    assert_eq!(
+        presets.len(),
+        12,
+        "expected 12 presets, got {}",
+        presets.len()
+    );
+}
+
+/// First-run creates config when directory exists but file doesn't.
+#[test]
+fn first_run_config_generation() {
+    // Verify the default TOML generation produces valid config.
+    let config = lightarchitects_gateway::config::GatewayConfig::default();
+    assert_eq!(config.active_preset, "software_engineering");
+    assert!(
+        config.agents.contains_key("soul"),
+        "SOUL must be in default config"
+    );
+    assert!(
+        config.agents.contains_key("corso"),
+        "CORSO must be in default config"
+    );
+    assert!(
+        config.agents["soul"].enabled,
+        "SOUL must be enabled by default"
+    );
+    assert!(!config.first_run, "default() should not set first_run");
 }

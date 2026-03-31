@@ -9,7 +9,7 @@
 //! | Level | Restriction |
 //! |---|---|
 //! | `Trusted` | No restrictions — agent may execute any action. |
-//! | `Sandboxed` | Destructive or system-level actions are blocked (`bash`, `deploy`, `pentest`, `strike`, `exploit`, `execute`, `rm`). |
+//! | `Sandboxed` | Destructive or system-level actions are blocked by exact name (see `SANDBOXED_BLOCKLIST`). |
 //! | `Untrusted` | Only read-class actions are permitted (`read`, `query`, `search`, `helix`, `stats`, `health`). |
 //!
 //! # Scope model
@@ -29,9 +29,30 @@ use crate::error::GatewayError;
 
 /// Actions blocked for `Sandboxed` routes.
 ///
-/// These are system-modifying or potentially destructive action keywords.
+/// Each entry is an exact canonical action name (no substring matching).
+/// Grouped by source:
+///
+/// - **Core**: `bash` (shell execution).
+/// - **CORSO**: `deploy`, `rollback`, `strike`, `write_file`.
+/// - **SERAPH internal wings** (defense-in-depth; these are scope-gated in the
+///   SERAPH binary, but blocked here as a second enforcement layer):
+///   `execute`, `detonate`, `capture`, `scan`, `osint`, `monitor`, `orchestrate`.
 const SANDBOXED_BLOCKLIST: &[&str] = &[
-    "bash", "deploy", "pentest", "strike", "exploit", "execute", "rm", "delete", "drop",
+    // Core
+    "bash",
+    // CORSO — destructive / system-modifying
+    "deploy",
+    "rollback",
+    "strike",
+    "write_file",
+    // SERAPH — internal scope-gated wing actions (defense-in-depth)
+    "execute",
+    "detonate",
+    "capture",
+    "scan",
+    "osint",
+    "monitor",
+    "orchestrate",
 ];
 
 /// Actions permitted for `Untrusted` routes (allowlist — everything else is denied).
@@ -62,7 +83,7 @@ pub fn check_trust(agent: &str, trust: TrustLevel, action: &str) -> Result<(), G
         TrustLevel::Sandboxed => {
             let blocked = SANDBOXED_BLOCKLIST
                 .iter()
-                .any(|&blocked_kw| action.contains(blocked_kw));
+                .any(|&blocked_action| action == blocked_action);
             if blocked {
                 Err(GatewayError::Governance {
                     agent: agent.to_owned(),
@@ -191,6 +212,32 @@ mod tests {
         assert!(check_trust("eva", TrustLevel::Sandboxed, "deploy").is_err());
         assert!(check_trust("eva", TrustLevel::Sandboxed, "bash").is_err());
         assert!(check_trust("eva", TrustLevel::Sandboxed, "strike").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "rollback").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "execute").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "detonate").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "capture").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "scan").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "osint").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "monitor").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "orchestrate").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "write_file").is_err());
+    }
+
+    #[test]
+    fn sandboxed_uses_exact_match_no_false_positives() {
+        // These contain blocklisted words as substrings but are NOT blocked.
+        // "undeploy" contains "deploy" — must NOT be blocked.
+        assert!(check_trust("soul", TrustLevel::Sandboxed, "undeploy").is_ok());
+        // "redeploy" contains "deploy" — must NOT be blocked.
+        assert!(check_trust("soul", TrustLevel::Sandboxed, "redeploy").is_ok());
+        // "execute_query" contains "execute" — must NOT be blocked.
+        assert!(check_trust("soul", TrustLevel::Sandboxed, "execute_query").is_ok());
+        // "confirm" contains "rm" (old substring bug) — must NOT be blocked.
+        assert!(check_trust("soul", TrustLevel::Sandboxed, "confirm").is_ok());
+        // "bash_history" contains "bash" — must NOT be blocked.
+        assert!(check_trust("soul", TrustLevel::Sandboxed, "bash_history").is_ok());
+        // "scanner" contains "scan" — must NOT be blocked.
+        assert!(check_trust("soul", TrustLevel::Sandboxed, "scanner").is_ok());
     }
 
     #[test]

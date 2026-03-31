@@ -1,22 +1,15 @@
-//! Entry point for the `lightarchitects` MCP gateway binary.
+//! Entry point for the `lightarchitects` unified gateway binary.
 //!
-//! When invoked with no arguments (or only `--config <path>`): runs as an MCP server over stdio.
-//! When invoked with subcommands: dispatches a CLI subcommand and exits.
-//!
-//! # Flags
+//! Three operating modes:
 //!
 //! ```text
-//! --config <path>   Load config from <path> instead of ~/.lightarchitects/config.toml
-//! ```
-//!
-//! # CLI subcommands
-//!
-//! ```text
+//! lightarchitects                           MCP server (Claude Code, stdio)
+//! lightarchitects serve                     Arena (HTTP API + scheduler + agents)
+//! lightarchitects serve --agent eva         Single agent heartbeat loop
+//! lightarchitects conductor <cmd>           LVL8 autonomous task queue
 //! lightarchitects routes                    List enabled agents
-//! lightarchitects canon list                List ratified canons
-//! lightarchitects canon check <decision>    Check decision against canon
-//! lightarchitects initialize <step>         Run setup wizard step
-//! lightarchitects initialize <step> <preset>
+//! lightarchitects canon list|check          Canon operations
+//! lightarchitects initialize <step>         Setup wizard
 //! ```
 
 use lightarchitects_gateway::{
@@ -30,19 +23,60 @@ use std::path::PathBuf;
 
 #[tokio::main]
 async fn main() {
-    // Initialise tracing to stderr so it does not pollute the MCP stdout stream.
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(tracing::Level::INFO.into()),
-        )
-        .init();
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
 
-    // Generate a per-startup automation nonce for HITL bypass hardening.
+    // Check for --agent flag early (agent mode uses JSON logging, not fmt)
+    let agent_mode = raw_args
+        .iter()
+        .position(|a| a == "--agent")
+        .and_then(|i| raw_args.get(i + 1).cloned());
+
+    // Arena modes (serve, --agent) use JSON tracing; MCP mode uses fmt to stderr
+    let is_arena = raw_args.first().map_or(false, |a| a == "serve") || agent_mode.is_some();
+
+    if is_arena {
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::from_default_env().add_directive(
+                    "arena=info"
+                        .parse()
+                        .unwrap_or_else(|_| tracing::Level::INFO.into()),
+                ),
+            )
+            .json()
+            .init();
+    } else {
+        // MCP mode: human-readable logs to stderr (doesn't pollute stdio)
+        tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::from_default_env()
+                    .add_directive(tracing::Level::INFO.into()),
+            )
+            .init();
+    }
+
+    // Agent mode: lightweight, no gateway config needed
+    if let Some(ref agent_name) = agent_mode {
+        if let Err(e) = lightarchitects_gateway::arena::run_agent(agent_name).await {
+            tracing::error!(agent = %agent_name, error = %e, "Agent failed");
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    // Serve mode: Arena orchestrator
+    if raw_args.first().map_or(false, |a| a == "serve") {
+        if let Err(e) = lightarchitects_gateway::arena::run_serve().await {
+            tracing::error!(error = %e, "Arena serve failed");
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    // MCP + CLI modes: need gateway config
     lightarchitects_gateway::spawner::init_automation_token();
 
-    let raw_args: Vec<String> = std::env::args().skip(1).collect();
     let (config_path, args) = parse_config_flag(raw_args);
 
     let config = match load_config(config_path) {
@@ -53,11 +87,10 @@ async fn main() {
         }
     };
 
-    // Initialise the active preset from the config file.
     lightarchitects_gateway::core_tools::preset::init_from_config(&config.active_preset);
 
     if args.is_empty() {
-        // MCP server mode.
+        // MCP server mode (default — no args)
         tracing::info!(
             version = env!("CARGO_PKG_VERSION"),
             preset = %config.active_preset,
@@ -70,7 +103,7 @@ async fn main() {
             std::process::exit(1);
         }
     } else {
-        // CLI mode.
+        // CLI subcommand
         if let Err(e) = cli_dispatch(&args, &config).await {
             eprintln!("Error: {e}");
             std::process::exit(1);
@@ -78,9 +111,8 @@ async fn main() {
     }
 }
 
-/// Strip `--config <path>` from `args`, returning the override path and remaining args.
-///
-/// If `--config` appears multiple times, the last occurrence wins.
+// ── Config helpers ───────────────────────────────────────────────────────────
+
 fn parse_config_flag(args: Vec<String>) -> (Option<PathBuf>, Vec<String>) {
     let mut iter = args.into_iter();
     let mut config_path: Option<PathBuf> = None;
@@ -95,7 +127,6 @@ fn parse_config_flag(args: Vec<String>) -> (Option<PathBuf>, Vec<String>) {
     (config_path, remaining)
 }
 
-/// Load [`GatewayConfig`] from an explicit path, or the default `~/.lightarchitects/config.toml`.
 fn load_config(path: Option<PathBuf>) -> Result<GatewayConfig, GatewayError> {
     match path {
         Some(p) => GatewayConfig::load_from(&p),
@@ -103,9 +134,8 @@ fn load_config(path: Option<PathBuf>) -> Result<GatewayConfig, GatewayError> {
     }
 }
 
-// ── CLI dispatch ──────────────────────────────────────────────────────────────
+// ── CLI dispatch ────────────────────────────────────────────────────────────
 
-/// Dispatch a CLI subcommand and print the result to stdout.
 async fn cli_dispatch(args: &[String], config: &GatewayConfig) -> Result<(), GatewayError> {
     match args.first().map(String::as_str) {
         Some("routes" | "siblings") => cli_route_list(config),
@@ -116,12 +146,13 @@ async fn cli_dispatch(args: &[String], config: &GatewayConfig) -> Result<(), Gat
             eprintln!(
                 "Unknown subcommand: {unknown}\n\n\
                  Usage:\n  \
-                   lightarchitects routes\n  \
-                   lightarchitects canon list\n  \
-                   lightarchitects canon check <decision>\n  \
-                   lightarchitects conductor <start|stop|status|add|logs>\n  \
-                   lightarchitects initialize <step> [preset]\n  \
-                   lightarchitects initialize <step> [preset] [vault_path]"
+                   lightarchitects                            MCP server (Claude Code)\n  \
+                   lightarchitects serve                      Arena (HTTP + agents)\n  \
+                   lightarchitects serve --agent <name>       Single agent heartbeat\n  \
+                   lightarchitects conductor <start|stop|..>  LVL8 task queue\n  \
+                   lightarchitects routes                     List enabled agents\n  \
+                   lightarchitects canon list|check <text>    Canon operations\n  \
+                   lightarchitects initialize <step> [preset] Setup wizard"
             );
             Err(GatewayError::UnknownTool(unknown.to_owned()))
         }
@@ -129,7 +160,6 @@ async fn cli_dispatch(args: &[String], config: &GatewayConfig) -> Result<(), Gat
     }
 }
 
-/// Print the list of enabled agents.
 fn cli_route_list(config: &GatewayConfig) -> Result<(), GatewayError> {
     let result = core_tools::discover::run(json!({}), config)?;
     let text = result["content"][0]["text"].as_str().unwrap_or("");
@@ -137,11 +167,9 @@ fn cli_route_list(config: &GatewayConfig) -> Result<(), GatewayError> {
     Ok(())
 }
 
-/// Dispatch canon subcommands: `list` or `check <decision>`.
 fn cli_canon(args: &[String], config: &GatewayConfig) -> Result<(), GatewayError> {
     match args.get(1).map(String::as_str) {
         Some("list") => {
-            // canon check with an empty decision returns just the headers.
             let result = core_tools::canon_check::run(json!({"decision": "(list)"}), config)?;
             let text = result["content"][0]["text"].as_str().unwrap_or("");
             println!("{text}");
@@ -162,7 +190,6 @@ fn cli_canon(args: &[String], config: &GatewayConfig) -> Result<(), GatewayError
     }
 }
 
-/// Dispatch the initialize wizard: `initialize <step> [preset] [vault_path]`.
 async fn cli_initialize(args: &[String], config: &GatewayConfig) -> Result<(), GatewayError> {
     let step = args.get(1).ok_or(GatewayError::MissingParam("step"))?;
     let preset = args.get(2).map_or("software_engineering", String::as_str);

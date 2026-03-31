@@ -26,28 +26,57 @@ pub fn run(params: Value, config: &GatewayConfig) -> Result<Value, GatewayError>
         .as_str()
         .ok_or(GatewayError::MissingParam("content"))?;
 
-    // Security: validate write path boundaries before any I/O.
-    // For new files, the parent must exist for canonicalize to work.
-    // Create parents first, then validate the resolved path.
+    // Security: ALL validation MUST complete before any filesystem mutation.
+    // Flow: expand → validate → create dirs → write.
     let expanded = crate::config::expand_tilde(path_str);
+
+    if expanded.exists() {
+        // Existing file: full canonicalize + write-denied check.
+        security::validate_write_path(path_str, config)?;
+    } else {
+        // New file: validate without requiring the path to exist.
+        // 1. Check denied components on the raw expanded path (no I/O needed).
+        // 2. Check write-denied patterns on the full target path.
+        // 3. If allowed_directories is configured, find the nearest existing
+        //    ancestor, canonicalize it, and verify it falls within bounds.
+        let path_str_lossy = expanded.to_string_lossy();
+        security::check_write_denied(&path_str_lossy)?;
+
+        if let Some(parent) = expanded.parent() {
+            let parent_str = parent.to_string_lossy();
+            // validate_path on the nearest existing ancestor handles:
+            //   - denied component checks (raw + canonical)
+            //   - allowed_directories boundary enforcement
+            // Walk up from the parent to find an ancestor that exists so
+            // canonicalize succeeds (required by validate_path).
+            let mut ancestor = parent.to_path_buf();
+            while !ancestor.exists() {
+                // Check each segment we'd create for both denied patterns
+                // AND denied path components (.ssh, .gnupg, .aws, etc.).
+                security::check_write_denied(&ancestor.to_string_lossy())?;
+                security::check_denied_components(&ancestor)?;
+                match ancestor.parent() {
+                    Some(p) if !p.as_os_str().is_empty() => ancestor = p.to_path_buf(),
+                    _ => break,
+                }
+            }
+            if ancestor.exists() {
+                let ancestor_str = ancestor.to_string_lossy();
+                security::validate_path(&ancestor_str, config)?;
+            }
+
+            // Also run check_write_denied on the parent as a whole.
+            security::check_write_denied(&parent_str)?;
+        }
+    }
+
+    // All validation passed — now safe to create parent directories.
     if let Some(parent) = expanded.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent).map_err(|e| {
                 GatewayError::File(format!("create dirs {}: {e}", parent.display()))
             })?;
         }
-    }
-
-    // For new files, validate the parent directory path since the file
-    // doesn't exist yet for canonicalize. For existing files, validate directly.
-    if expanded.exists() {
-        security::validate_write_path(path_str, config)?;
-    } else if let Some(parent) = expanded.parent() {
-        let parent_str = parent.to_string_lossy();
-        security::validate_path(&parent_str, config)?;
-        // Also check the filename against write-denied patterns.
-        let path_str_lossy = expanded.to_string_lossy();
-        security::check_write_denied(&path_str_lossy)?;
     }
 
     let bytes = content.len();

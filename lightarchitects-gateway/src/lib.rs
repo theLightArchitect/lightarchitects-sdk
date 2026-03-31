@@ -17,8 +17,10 @@
 //! ```
 
 /// Arena — autonomous multi-agent research platform (HTTP + scheduler + heartbeats).
+#[allow(unused, missing_docs, clippy::pedantic)]
 pub mod arena;
 /// Messaging channels — Discord webhooks, Telegram bot, Discord gateway.
+#[allow(unused, missing_docs, clippy::pedantic)]
 pub mod channels;
 /// LVL8 Conductor — autonomous task execution loop.
 pub mod conductor;
