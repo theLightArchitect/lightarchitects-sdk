@@ -132,7 +132,7 @@ pub(crate) fn default_configs(ollama_endpoint: &str) -> Vec<ModelConfig> {
             },
             #[cfg(not(target_os = "macos"))]
             key_source: KeySource::EnvVar("MISTRAL_API_KEY"),
-            max_tokens: 4096,
+            max_tokens: 8192,
             prompt_prefix: "Write Lean 4 proofs using Mathlib. Mark unproven gaps with `sorry` \
                            and explain what's missing. Be precise about preconditions.\n\n",
         },
@@ -143,7 +143,7 @@ pub(crate) fn default_configs(ollama_endpoint: &str) -> Vec<ModelConfig> {
             endpoint: format!("{ollama_endpoint}/v1"),
             model_name: "deepseek-v3.2:cloud",
             key_source: KeySource::None,
-            max_tokens: 4096,
+            max_tokens: 8192,
             prompt_prefix: "You are a mathematician. Provide rigorous step-by-step derivations. \
                            Show all intermediate steps. State assumptions explicitly. \
                            If a claim is false, explain WHY with a counterexample.\n\n",
@@ -155,7 +155,7 @@ pub(crate) fn default_configs(ollama_endpoint: &str) -> Vec<ModelConfig> {
             endpoint: format!("{ollama_endpoint}/v1"),
             model_name: "qwen3.5:cloud",
             key_source: KeySource::None,
-            max_tokens: 4096,
+            max_tokens: 8192,
             prompt_prefix: "You are a numerical analyst. Check bounds, verify inequalities, \
                            test edge cases with specific numbers. When given a claimed bound, \
                            try to find inputs that VIOLATE it. If it holds, prove it tightly.\n\n",
@@ -167,7 +167,7 @@ pub(crate) fn default_configs(ollama_endpoint: &str) -> Vec<ModelConfig> {
             endpoint: format!("{ollama_endpoint}/v1"),
             model_name: "kimi-k2-thinking:cloud",
             key_source: KeySource::None,
-            max_tokens: 4096,
+            max_tokens: 8192,
             prompt_prefix: "Think step by step about this mathematical problem. Consider \
                            all edge cases. If the claim is true, find the tightest bound. \
                            If false, provide the simplest counterexample.\n\n",
@@ -179,7 +179,7 @@ pub(crate) fn default_configs(ollama_endpoint: &str) -> Vec<ModelConfig> {
             endpoint: format!("{ollama_endpoint}/v1"),
             model_name: "cogito-2.1:671b-cloud",
             key_source: KeySource::None,
-            max_tokens: 4096,
+            max_tokens: 8192,
             prompt_prefix: "You are a reasoning specialist. Analyze this mathematical claim. \
                            Structure your analysis as: (1) Restate the claim precisely, \
                            (2) Identify assumptions, (3) Prove or disprove, (4) State confidence.\n\n",

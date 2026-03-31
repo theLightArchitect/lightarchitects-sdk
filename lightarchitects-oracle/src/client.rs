@@ -265,7 +265,11 @@ struct ChatUsage {
     completion_tokens: u32,
 }
 
-/// Call a single model endpoint.
+/// Call a single model endpoint with streaming.
+///
+/// Uses SSE streaming (`stream: true`) to avoid HTTP timeouts on long proofs.
+/// Parses `data: {...}` lines, concatenating `delta.content` chunks.
+/// Falls back to non-streaming if the response isn't SSE-formatted.
 async fn call_single_model(
     http: &Client,
     endpoint: &str,
@@ -278,6 +282,8 @@ async fn call_single_model(
         "model": model_name,
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
+        "temperature": 0.3,
+        "stream": true,
     });
 
     let mut req = http
@@ -290,17 +296,63 @@ async fn call_single_model(
         }
     }
 
-    let resp: ChatResponse = req.send().await?.json().await?;
+    let resp = req.send().await?;
+    let full_body = resp.text().await?;
 
-    let content = resp
-        .choices
-        .first()
-        .and_then(|c| c.message.content.clone())
-        .unwrap_or_default();
+    // Try SSE streaming format first: lines starting with "data: "
+    let mut content = String::new();
+    let mut tokens_in: u32 = 0;
+    let mut tokens_out: u32 = 0;
+    let mut found_sse = false;
 
-    let (tokens_in, tokens_out) = resp
-        .usage
-        .map_or((0, 0), |u| (u.prompt_tokens, u.completion_tokens));
+    for line in full_body.lines() {
+        let trimmed = line.trim();
+        if trimmed == "data: [DONE]" {
+            break;
+        }
+        if let Some(json_str) = trimmed.strip_prefix("data: ") {
+            found_sse = true;
+            let Ok(chunk) = serde_json::from_str::<serde_json::Value>(json_str) else {
+                continue;
+            };
+            // Extract delta content
+            if let Some(delta) = chunk
+                .get("choices")
+                .and_then(|c| c.get(0))
+                .and_then(|c| c.get("delta"))
+                .and_then(|d| d.get("content"))
+                .and_then(serde_json::Value::as_str)
+            {
+                content.push_str(delta);
+            }
+            // Extract usage from final chunk (some providers include it)
+            if let Some(usage) = chunk.get("usage") {
+                tokens_in = usage
+                    .get("prompt_tokens")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0) as u32;
+                tokens_out = usage
+                    .get("completion_tokens")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0) as u32;
+            }
+        }
+    }
+
+    // Fallback: if no SSE lines found, parse as regular JSON response
+    if !found_sse {
+        if let Ok(resp_json) = serde_json::from_str::<ChatResponse>(&full_body) {
+            content = resp_json
+                .choices
+                .first()
+                .and_then(|c| c.message.content.clone())
+                .unwrap_or_default();
+            if let Some(usage) = resp_json.usage {
+                tokens_in = usage.prompt_tokens;
+                tokens_out = usage.completion_tokens;
+            }
+        }
+    }
 
     Ok((content, tokens_in, tokens_out))
 }
