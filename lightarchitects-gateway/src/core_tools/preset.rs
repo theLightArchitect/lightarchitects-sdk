@@ -356,14 +356,14 @@ mod tests {
         use crate::config::{GatewayConfig, TrustLevel};
 
         let cfg = GatewayConfig::default();
-        let seraph_trust_before = cfg.routes.get("seraph").map(|c| c.trust);
+        let seraph_trust_before = cfg.agents.get("seraph").map(|c| c.trust);
 
         // Simulate switching presets — the Preset struct has no trust/scope fields.
         let _security = find_preset("security").unwrap();
         let _lean = find_preset("lean").unwrap();
 
         // Config is unchanged — presets don't mutate it.
-        let seraph_trust_after = cfg.routes.get("seraph").map(|c| c.trust);
+        let seraph_trust_after = cfg.agents.get("seraph").map(|c| c.trust);
         assert_eq!(seraph_trust_before, seraph_trust_after);
         assert_eq!(seraph_trust_before, Some(TrustLevel::Sandboxed));
     }

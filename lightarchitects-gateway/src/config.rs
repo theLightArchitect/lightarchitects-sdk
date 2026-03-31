@@ -27,16 +27,16 @@ pub fn expand_tilde(path: &str) -> PathBuf {
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
-/// Trust level assigned to a route's tool calls.
+/// Trust level assigned to an agent's tool calls.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TrustLevel {
-    /// Full trust: route may access all resources.
+    /// Full trust: agent may access all resources.
     #[default]
     Trusted,
-    /// Sandboxed: route operates in an isolated context.
+    /// Sandboxed: agent operates in an isolated context.
     Sandboxed,
-    /// Untrusted: route output is treated as user-supplied data.
+    /// Untrusted: agent output is treated as user-supplied data.
     Untrusted,
 }
 
@@ -96,21 +96,21 @@ impl Default for GatewaySection {
     }
 }
 
-/// Per-route configuration block.
+/// Per-agent configuration block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RouteConfig {
-    /// Whether this route is active.
+pub struct AgentConfig {
+    /// Whether this agent is active.
     pub enabled: bool,
-    /// Path to the route's MCP binary (may contain `~/`).
+    /// Path to the agent's MCP binary (may contain `~/`).
     pub binary: String,
-    /// The MCP tool name exposed by this route (e.g. `"corsoTools"`).
+    /// The MCP tool name exposed by this agent (e.g. `"corsoTools"`).
     pub tool_name: String,
-    /// Human-readable description of the route's role.
+    /// Human-readable description of the agent's role.
     pub role: String,
-    /// Trust level for this route's tool calls (default: `trusted`).
+    /// Trust level for this agent's tool calls (default: `trusted`).
     #[serde(default)]
     pub trust: TrustLevel,
-    /// Vault/helix scope this route may access (default: `own`).
+    /// Vault/helix scope this agent may access (default: `own`).
     #[serde(default)]
     pub scope: ScopeLevel,
     /// Optional SHA-256 hex digest. If set, binary is verified before spawn.
@@ -118,7 +118,7 @@ pub struct RouteConfig {
     pub checksum: Option<String>,
 }
 
-impl RouteConfig {
+impl AgentConfig {
     /// Resolve the binary path with `~` expansion.
     #[must_use]
     pub fn binary_path(&self) -> PathBuf {
@@ -185,10 +185,10 @@ pub struct GatewayConfig {
     /// `[gateway]` section.
     #[serde(default)]
     pub gateway: GatewaySection,
-    /// `[routes.*]` sections, keyed by route name.
-    /// Backward compat: `[routes.*]` is accepted as an alias during deserialization.
-    #[serde(default, alias = "routes")]
-    pub routes: HashMap<String, RouteConfig>,
+    /// `[agents.*]` sections, keyed by agent name.
+    /// Backward compat: `[agents.*]` and `[siblings.*]` accepted as aliases.
+    #[serde(default, alias = "routes", alias = "siblings")]
+    pub agents: HashMap<String, AgentConfig>,
     /// `[canon]` section.
     #[serde(default)]
     pub canon: CanonConfig,
@@ -219,17 +219,17 @@ fn default_preset_name() -> String {
 
 impl Default for GatewayConfig {
     fn default() -> Self {
-        let mut routes = HashMap::new();
-        routes.insert("corso".to_owned(), default_route_corso());
-        routes.insert("eva".to_owned(), default_route_eva());
-        routes.insert("soul".to_owned(), default_route_soul());
-        routes.insert("quantum".to_owned(), default_route_quantum());
-        routes.insert("seraph".to_owned(), default_route_seraph());
-        routes.insert("ayin".to_owned(), default_route_ayin());
-        routes.insert("laex".to_owned(), default_route_laex());
+        let mut agents = HashMap::new();
+        agents.insert("corso".to_owned(), default_agent_corso());
+        agents.insert("eva".to_owned(), default_agent_eva());
+        agents.insert("soul".to_owned(), default_agent_soul());
+        agents.insert("quantum".to_owned(), default_agent_quantum());
+        agents.insert("seraph".to_owned(), default_agent_seraph());
+        agents.insert("ayin".to_owned(), default_agent_ayin());
+        agents.insert("laex".to_owned(), default_agent_laex());
         Self {
             gateway: GatewaySection::default(),
-            routes,
+            agents,
             canon: CanonConfig::default(),
             storage: StorageConfig::default(),
             privacy: PrivacyConfig::default(),
@@ -324,22 +324,22 @@ impl GatewayConfig {
         let _ = write!(toml, "active_preset = \"{}\"\n\n", cfg.active_preset);
 
         for name in &["ayin", "corso", "eva", "quantum", "seraph", "soul"] {
-            if let Some(route_cfg) = cfg.routes.get(*name) {
+            if let Some(agent_cfg) = cfg.agents.get(*name) {
                 let _ = write!(
                     toml,
-                    "[routes.{name}]\n\
+                    "[agents.{name}]\n\
                      enabled = {enabled}\n\
                      binary = \"{binary}\"\n\
                      tool_name = \"{tool_name}\"\n\
                      role = \"{role}\"\n\
                      trust = \"{trust}\"\n\
                      scope = \"{scope}\"\n\n",
-                    enabled = route_cfg.enabled,
-                    binary = route_cfg.binary,
-                    tool_name = route_cfg.tool_name,
-                    role = route_cfg.role,
-                    trust = format!("{:?}", route_cfg.trust).to_lowercase(),
-                    scope = format!("{:?}", route_cfg.scope).to_lowercase(),
+                    enabled = agent_cfg.enabled,
+                    binary = agent_cfg.binary,
+                    tool_name = agent_cfg.tool_name,
+                    role = agent_cfg.role,
+                    trust = format!("{:?}", agent_cfg.trust).to_lowercase(),
+                    scope = format!("{:?}", agent_cfg.scope).to_lowercase(),
                 );
             }
         }
@@ -372,11 +372,11 @@ impl GatewayConfig {
         Ok(cfg)
     }
 
-    /// Return only the enabled routes, in deterministic (sorted-by-name) order.
+    /// Return only the enabled agents, in deterministic (sorted-by-name) order.
     #[must_use]
-    pub fn enabled_routes(&self) -> Vec<(&str, &RouteConfig)> {
-        let mut pairs: Vec<(&str, &RouteConfig)> = self
-            .routes
+    pub fn enabled_agents(&self) -> Vec<(&str, &AgentConfig)> {
+        let mut pairs: Vec<(&str, &AgentConfig)> = self
+            .agents
             .iter()
             .filter(|(_, cfg)| cfg.enabled)
             .map(|(name, cfg)| (name.as_str(), cfg))
@@ -386,10 +386,10 @@ impl GatewayConfig {
     }
 }
 
-// ── Default route constructors ──────────────────────────────────────────────
+// ── Default agent constructors ──────────────────────────────────────────────
 
-fn default_route_corso() -> RouteConfig {
-    RouteConfig {
+fn default_agent_corso() -> AgentConfig {
+    AgentConfig {
         enabled: true,
         binary: "~/.corso/bin/corso".to_owned(),
         tool_name: "corsoTools".to_owned(),
@@ -400,8 +400,8 @@ fn default_route_corso() -> RouteConfig {
     }
 }
 
-fn default_route_eva() -> RouteConfig {
-    RouteConfig {
+fn default_agent_eva() -> AgentConfig {
+    AgentConfig {
         enabled: true,
         binary: "~/.eva/bin/eva".to_owned(),
         tool_name: "evaTools".to_owned(),
@@ -412,20 +412,20 @@ fn default_route_eva() -> RouteConfig {
     }
 }
 
-fn default_route_soul() -> RouteConfig {
-    RouteConfig {
+fn default_agent_soul() -> AgentConfig {
+    AgentConfig {
         enabled: true,
         binary: "~/.soul/.config/bin/soul".to_owned(),
         tool_name: "soulTools".to_owned(),
-        role: "Knowledge graph, helix spine, cross-route memory".to_owned(),
+        role: "Knowledge graph, helix spine, cross-agent memory".to_owned(),
         trust: TrustLevel::Trusted,
         scope: ScopeLevel::All,
         checksum: None,
     }
 }
 
-fn default_route_quantum() -> RouteConfig {
-    RouteConfig {
+fn default_agent_quantum() -> AgentConfig {
+    AgentConfig {
         enabled: false,
         binary: "~/.quantum/bin/quantum-q".to_owned(),
         tool_name: "quantumTools".to_owned(),
@@ -436,8 +436,8 @@ fn default_route_quantum() -> RouteConfig {
     }
 }
 
-fn default_route_seraph() -> RouteConfig {
-    RouteConfig {
+fn default_agent_seraph() -> AgentConfig {
+    AgentConfig {
         enabled: false,
         binary: "~/.seraph/bin/seraph".to_owned(),
         tool_name: "seraphTools".to_owned(),
@@ -448,8 +448,8 @@ fn default_route_seraph() -> RouteConfig {
     }
 }
 
-fn default_route_laex() -> RouteConfig {
-    RouteConfig {
+fn default_agent_laex() -> AgentConfig {
+    AgentConfig {
         enabled: false,
         binary: "~/.arena/bin/arena".to_owned(),
         tool_name: "arenaTools".to_owned(),
@@ -461,8 +461,8 @@ fn default_route_laex() -> RouteConfig {
     }
 }
 
-fn default_route_ayin() -> RouteConfig {
-    RouteConfig {
+fn default_agent_ayin() -> AgentConfig {
+    AgentConfig {
         enabled: true,
         binary: "~/.ayin/bin/ayin".to_owned(),
         tool_name: "ayinTools".to_owned(),
@@ -481,9 +481,9 @@ mod tests {
     use std::io::Write as _;
 
     #[test]
-    fn default_config_has_four_enabled_routes() {
+    fn default_config_has_four_enabled_agents() {
         let cfg = GatewayConfig::default();
-        let enabled = cfg.enabled_routes();
+        let enabled = cfg.enabled_agents();
         // ayin, corso, eva, soul → 4
         assert_eq!(enabled.len(), 4);
     }
@@ -519,7 +519,7 @@ mod tests {
 [gateway]
 version = "1.0.0"
 
-[routes.corso]
+[agents.corso]
 enabled = true
 binary = "~/.corso/bin/corso"
 tool_name = "corsoTools"
@@ -542,16 +542,16 @@ tier = "local"
         tmp.write_all(toml_content.as_bytes()).expect("write");
         let cfg = GatewayConfig::load_from(tmp.path()).expect("load");
         assert_eq!(cfg.gateway.version, "1.0.0");
-        assert_eq!(cfg.routes.len(), 1);
-        assert!(cfg.routes["corso"].enabled);
+        assert_eq!(cfg.agents.len(), 1);
+        assert!(cfg.agents["corso"].enabled);
         assert_eq!(cfg.storage.backend, StorageBackend::Sqlite);
         assert_eq!(cfg.privacy.tier, PrivacyTier::Local);
     }
 
     #[test]
-    fn enabled_routes_are_sorted() {
+    fn enabled_agents_are_sorted() {
         let cfg = GatewayConfig::default();
-        let names: Vec<&str> = cfg.enabled_routes().iter().map(|(n, _)| *n).collect();
+        let names: Vec<&str> = cfg.enabled_agents().iter().map(|(n, _)| *n).collect();
         let mut sorted = names.clone();
         sorted.sort_unstable();
         assert_eq!(names, sorted);

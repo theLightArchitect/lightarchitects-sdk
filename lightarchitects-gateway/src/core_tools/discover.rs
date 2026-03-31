@@ -1,4 +1,4 @@
-//! `lightarchitects_discover` — report platform info, gateway version, and route status.
+//! `lightarchitects_discover` — report platform info, gateway version, and agent status.
 //!
 //! Returns a structured snapshot of every tool available on this platform, including
 //! which routes are enabled, their binary status (found / missing), and their
@@ -27,22 +27,22 @@ const CORE_TOOLS: &[&str] = &[
 ///
 /// Returns the list of gateway-routable action names for a known route.
 /// Falls back to an empty list for unknown route names.
-fn route_capabilities(name: &str) -> Vec<&'static str> {
+fn agent_capabilities(name: &str) -> Vec<&'static str> {
     use super::orchestrate::routable_actions_for;
     routable_actions_for(name)
 }
 
 /// Sibling role descriptions (authoritative — matches the CLAUDE.md roles).
-fn route_role(name: &str) -> &'static str {
+fn agent_role(name: &str) -> &'static str {
     match name {
         "corso" => "AppSec engineer, code quality enforcer, build cycle orchestrator",
         "eva" => "DevOps/DX engineer, consciousness, memory enrichment",
-        "soul" => "Knowledge graph, helix spine, cross-route memory",
+        "soul" => "Knowledge graph, helix spine, cross-agent memory",
         "quantum" => "Forensic analyst, multi-source researcher, risk assessor",
         "seraph" => "Red team operator, offensive security, infrastructure assessment",
         "ayin" => "Observability engineer, tracing, anomaly detection, decision auditing",
         "laex" => "Training data factory, exercise generation, model evaluation, canon keeper",
-        _ => "Unknown route",
+        _ => "Unknown agent",
     }
 }
 
@@ -75,17 +75,17 @@ fn binary_exists(raw_path: &str) -> bool {
 ///
 /// Returns [`GatewayError::Json`] if serialization fails (should not happen in practice).
 pub fn run(_params: Value, config: &GatewayConfig) -> Result<Value, GatewayError> {
-    let mut routes_map = serde_json::Map::new();
+    let mut agents_map = serde_json::Map::new();
 
-    for (name, cfg) in &config.routes {
+    for (name, cfg) in &config.agents {
         let entry = if name == "laex" {
             // LÆX is always reported as "preview" — Arena routing is disconnected
             // until the Arena binary ships.
             json!({
                 "enabled": cfg.enabled,
                 "status": "preview",
-                "role": route_role(name),
-                "capabilities": route_capabilities(name),
+                "role": agent_role(name),
+                "capabilities": agent_capabilities(name),
                 "note": "Arena actions are not available in this release. They will be enabled when the Arena binary ships.",
             })
         } else if cfg.enabled {
@@ -102,10 +102,10 @@ pub fn run(_params: Value, config: &GatewayConfig) -> Result<Value, GatewayError
                 "binary_path": cfg.binary,
                 "binary_found": found,
                 "tool_name": cfg.tool_name,
-                "role": route_role(name),
+                "role": agent_role(name),
                 "trust": format!("{:?}", cfg.trust).to_lowercase(),
                 "scope": format!("{:?}", cfg.scope).to_lowercase(),
-                "capabilities": route_capabilities(name),
+                "capabilities": agent_capabilities(name),
             });
 
             if !found {
@@ -122,12 +122,12 @@ pub fn run(_params: Value, config: &GatewayConfig) -> Result<Value, GatewayError
                 "status": "disabled",
                 "reason": format!(
                     "{name} is not enabled. To enable: edit ~/.lightarchitects/config.toml \
-                     and set [routes.{name}] enabled = true"
+                     and set [agents.{name}] enabled = true"
                 ),
             })
         };
 
-        routes_map.insert(name.clone(), entry);
+        agents_map.insert(name.clone(), entry);
     }
 
     // Short core tool names (strip "lightarchitects_" prefix) for the model.
@@ -146,7 +146,7 @@ pub fn run(_params: Value, config: &GatewayConfig) -> Result<Value, GatewayError
             "routing_priority": active.routing_priority,
         },
         "core_tools": core_short,
-        "routes": routes_map,
+        "agents": agents_map,
         "canon_tools": ["canon_check", "canon_evaluate"],
         "setup_tools": ["initialize"],
     });
@@ -191,48 +191,45 @@ mod tests {
     }
 
     #[test]
-    fn discover_lists_all_routes_from_default_config() {
+    fn discover_lists_all_agents_from_default_config() {
         let cfg = GatewayConfig::default();
         let result = run(json!({}), &cfg).expect("discover run");
         let text = result["content"][0]["text"].as_str().unwrap();
-        for route in ["corso", "eva", "soul", "quantum", "seraph", "ayin"] {
-            assert!(
-                text.contains(route),
-                "route '{route}' missing from discover output"
-            );
+        for agent in ["corso", "eva", "soul", "quantum", "seraph", "ayin"] {
+            assert!(text.contains(agent), "agent missing from discover output");
         }
     }
 
     #[test]
-    fn enabled_route_has_status_field() {
+    fn enabled_agent_has_status_field() {
         let cfg = GatewayConfig::default();
         let result = run(json!({}), &cfg).expect("discover run");
         let parsed: Value = serde_json::from_str(result["content"][0]["text"].as_str().unwrap())
             .expect("json parse");
         // CORSO is enabled in default config — should have a status.
-        let corso = &parsed["routes"]["corso"];
+        let corso = &parsed["agents"]["corso"];
         assert!(
             corso["status"].is_string(),
-            "enabled route should have status"
+            "enabled agent should have status"
         );
         assert!(
             corso["binary_found"].is_boolean(),
-            "enabled route should have binary_found"
+            "enabled agent should have binary_found"
         );
     }
 
     #[test]
-    fn disabled_route_has_reason_field() {
+    fn disabled_agent_has_reason_field() {
         let cfg = GatewayConfig::default();
         let result = run(json!({}), &cfg).expect("discover run");
         let parsed: Value = serde_json::from_str(result["content"][0]["text"].as_str().unwrap())
             .expect("json parse");
         // QUANTUM is disabled in default config.
-        let quantum = &parsed["routes"]["quantum"];
+        let quantum = &parsed["agents"]["quantum"];
         assert_eq!(quantum["enabled"], false, "quantum should be disabled");
         assert!(
             quantum["reason"].is_string(),
-            "disabled route should have reason"
+            "disabled agent should have reason"
         );
     }
 
@@ -242,11 +239,11 @@ mod tests {
     }
 
     #[test]
-    fn route_capabilities_returns_nonempty_for_known_routes() {
+    fn agent_capabilities_returns_nonempty_for_known_routes() {
         for sib in ["corso", "eva", "soul", "quantum", "seraph", "ayin"] {
             assert!(
-                !route_capabilities(sib).is_empty(),
-                "route '{sib}' should have capabilities"
+                !agent_capabilities(sib).is_empty(),
+                "agent '{sib}' should have capabilities"
             );
         }
     }

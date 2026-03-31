@@ -3,7 +3,7 @@
 //! Adapters:
 //! - `obsidian` / `markdown`: scan a directory tree for `.md` files and
 //!   extract H1 titles from frontmatter.
-//! - `mcp`: generate a `[routes.<name>]` TOML block for adding a custom route.
+//! - `mcp`: generate a `[agents.<name>]` TOML block for adding a custom agent.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -102,7 +102,7 @@ fn extract_md_title(path: &Path) -> Option<String> {
         .map(|l| l.trim_start_matches('#').trim().to_owned())
 }
 
-/// Generate a `[routes.<name>]` TOML block for a custom route.
+/// Generate a `[agents.<name>]` TOML block for a custom agent.
 fn generate_mcp_block(params: &Value) -> Result<Value, GatewayError> {
     let name = params["name"]
         .as_str()
@@ -112,7 +112,7 @@ fn generate_mcp_block(params: &Value) -> Result<Value, GatewayError> {
     let role = params["role"].as_str().unwrap_or("");
 
     let mut block = String::new();
-    let _ = writeln!(block, "[routes.{name}]");
+    let _ = writeln!(block, "[agents.{name}]");
     let _ = writeln!(block, "enabled = true");
     let _ = writeln!(block, "binary = \"{binary}\"");
     let _ = writeln!(block, "tool_name = \"{tool_name}\"");
@@ -159,7 +159,7 @@ mod tests {
         )
         .expect("run");
         let block = result["toml_block"].as_str().unwrap();
-        assert!(block.contains("[routes.mybot]"));
+        assert!(block.contains("[agents.mybot]"));
         assert!(block.contains("enabled = true"));
         assert!(block.contains("botTools"));
     }

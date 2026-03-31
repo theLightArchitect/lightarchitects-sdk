@@ -12,7 +12,7 @@
 //! # CLI subcommands
 //!
 //! ```text
-//! lightarchitects routes                    List enabled routes
+//! lightarchitects routes                    List enabled agents
 //! lightarchitects canon list                List ratified canons
 //! lightarchitects canon check <decision>    Check decision against canon
 //! lightarchitects initialize <step>         Run setup wizard step
@@ -62,7 +62,7 @@ async fn main() {
             version = env!("CARGO_PKG_VERSION"),
             preset = %config.active_preset,
             first_run = config.first_run,
-            routes = config.enabled_routes().len(),
+            routes = config.enabled_agents().len(),
             "lightarchitects gateway starting"
         );
         if let Err(e) = server::run(&config).await {
@@ -129,7 +129,7 @@ async fn cli_dispatch(args: &[String], config: &GatewayConfig) -> Result<(), Gat
     }
 }
 
-/// Print the list of enabled routes.
+/// Print the list of enabled agents.
 fn cli_route_list(config: &GatewayConfig) -> Result<(), GatewayError> {
     let result = core_tools::discover::run(json!({}), config)?;
     let text = result["content"][0]["text"].as_str().unwrap_or("");
