@@ -28,7 +28,7 @@ use super::arena_config::{AgentBackendKind, Config};
 /// A handle to a running agent process.
 #[derive(Debug, Clone)]
 pub struct AgentHandle {
-    /// Sibling name (e.g., "eva", "corso", "exodus").
+    /// Sibling name (e.g., "eva", "corso", "laex").
     // Read by lifecycle methods (stop/status/restart) — not yet wired to supervisor.
     #[allow(dead_code)]
     pub sibling: String,

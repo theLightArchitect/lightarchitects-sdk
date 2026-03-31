@@ -495,9 +495,9 @@ pub async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let mut siblings = state.pool.health().await;
 
     // Add placeholder siblings not in the MCP pool
-    if state.config.siblings.exodus.is_none() {
+    if state.config.siblings.laex.is_none() {
         siblings
-            .entry("exodus".to_owned())
+            .entry("laex".to_owned())
             .or_insert(crate::arena::mcp_pool::SiblingHealth {
                 status: "not_configured",
             });
@@ -523,14 +523,12 @@ pub async fn larc_chat(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    let (Some(url), Some(token)) = (
-        &state.config.exodus_endpoint_url,
-        &state.config.exodus_hf_token,
-    ) else {
+    let (Some(url), Some(token)) = (&state.config.laex_endpoint_url, &state.config.laex_hf_token)
+    else {
         return rest_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "larc_not_configured",
-            "Exodus endpoint not configured (set EXODUS_ENDPOINT_URL and EXODUS_HF_TOKEN)",
+            "Laex endpoint not configured (set LAEX_ENDPOINT_URL and LAEX_HF_TOKEN)",
         );
     };
 

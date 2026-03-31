@@ -75,12 +75,12 @@ pub struct Config {
     /// Arena data directory (default: `~/.arena`).
     pub data_dir: PathBuf,
     /// Light Architects Genesis HuggingFace Inference Endpoint URL.
-    /// Reads `EXODUS_ENDPOINT_URL` (preferred) or `LARC_ENDPOINT_URL` (legacy).
-    pub exodus_endpoint_url: Option<String>,
-    /// HuggingFace token for Exodus endpoint auth.
-    /// Reads `EXODUS_HF_TOKEN` (preferred) or `LARC_HF_TOKEN` (legacy).
+    /// Reads `LAEX_ENDPOINT_URL` (preferred) or `LARC_ENDPOINT_URL` (legacy).
+    pub laex_endpoint_url: Option<String>,
+    /// HuggingFace token for Laex endpoint auth.
+    /// Reads `LAEX_HF_TOKEN` (preferred) or `LARC_HF_TOKEN` (legacy).
     /// Stored as `SecretString` — zeroized on drop, never logged.
-    pub exodus_hf_token: Option<SecretString>,
+    pub laex_hf_token: Option<SecretString>,
     /// Agent backend — how sibling agents are spawned (native/docker/sandbox).
     pub agent_backend: AgentBackendKind,
     /// Docker image for DockerBackend (from `ARENA_DOCKER_IMAGE`).
@@ -101,12 +101,12 @@ pub struct SiblingBinaries {
     pub soul: PathBuf,
     pub quantum: PathBuf,
     pub seraph: PathBuf,
-    /// Exodus (LÆX) model — placeholder, no binary yet (Ollama Cloud inference TBD).
-    pub exodus: Option<PathBuf>,
+    /// Laex (LÆX) model — placeholder, no binary yet (Ollama Cloud inference TBD).
+    pub laex: Option<PathBuf>,
 }
 
 /// Valid sibling names — used for input validation.
-pub const VALID_SIBLINGS: &[&str] = &["corso", "eva", "soul", "quantum", "seraph", "exodus"];
+pub const VALID_SIBLINGS: &[&str] = &["corso", "eva", "soul", "quantum", "seraph", "laex"];
 
 impl SiblingBinaries {
     /// Resolve binary paths — env vars override, then fall back to home defaults.
@@ -121,7 +121,7 @@ impl SiblingBinaries {
             soul: env_or_path("SOUL_BIN", &home.join(".soul/.config/bin/soul")),
             quantum: env_or_path("QUANTUM_BIN", &home.join(".quantum/bin/quantum-q")),
             seraph: env_or_path("SERAPH_BIN", &home.join(".seraph/bin/seraph")),
-            exodus: std::env::var("EXODUS_BIN")
+            laex: std::env::var("LAEX_BIN")
                 .or_else(|_| std::env::var("LARC_BIN"))
                 .ok()
                 .map(PathBuf::from),
@@ -217,10 +217,10 @@ impl Config {
             alert_threshold,
             routines_path,
             data_dir,
-            exodus_endpoint_url: std::env::var("EXODUS_ENDPOINT_URL")
+            laex_endpoint_url: std::env::var("LAEX_ENDPOINT_URL")
                 .or_else(|_| std::env::var("LARC_ENDPOINT_URL"))
                 .ok(),
-            exodus_hf_token: std::env::var("EXODUS_HF_TOKEN")
+            laex_hf_token: std::env::var("LAEX_HF_TOKEN")
                 .or_else(|_| std::env::var("LARC_HF_TOKEN"))
                 .ok()
                 .map(SecretString::from),
@@ -264,15 +264,15 @@ impl std::fmt::Debug for Config {
             .field("routines_path", &self.routines_path)
             .field("data_dir", &self.data_dir)
             .field(
-                "exodus_endpoint_url",
-                &self.exodus_endpoint_url.as_ref().map(|u| {
+                "laex_endpoint_url",
+                &self.laex_endpoint_url.as_ref().map(|u| {
                     let preview: String = u.chars().take(30).collect();
                     format!("{preview}...")
                 }),
             )
             .field(
-                "exodus_hf_token",
-                &self.exodus_hf_token.as_ref().map(|_| "[REDACTED]"),
+                "laex_hf_token",
+                &self.laex_hf_token.as_ref().map(|_| "[REDACTED]"),
             )
             .field("agent_backend", &self.agent_backend)
             .field("docker_image", &self.docker_image)

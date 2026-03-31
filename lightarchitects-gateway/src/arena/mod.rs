@@ -57,7 +57,7 @@ pub struct AppState {
 const MAX_BODY_SIZE: usize = 1_048_576;
 
 /// Agent names for the multi-agent architecture.
-const AGENT_NAMES: &[&str] = &["eva", "corso", "quantum", "seraph", "ayin", "exodus"];
+const AGENT_NAMES: &[&str] = &["eva", "corso", "quantum", "seraph", "ayin", "laex"];
 
 // ── Public entry points ──────────────────────────────────────────────────
 
@@ -264,8 +264,8 @@ async fn init_mcp_pool(
     paths.insert("soul".into(), config.siblings.soul.clone());
     paths.insert("quantum".into(), config.siblings.quantum.clone());
     paths.insert("seraph".into(), config.siblings.seraph.clone());
-    if let Some(ref exodus_path) = config.siblings.exodus {
-        paths.insert("exodus".into(), exodus_path.clone());
+    if let Some(ref laex_path) = config.siblings.laex {
+        paths.insert("laex".into(), laex_path.clone());
     }
 
     let mut pool = mcp_pool::McpPool::new(paths);
