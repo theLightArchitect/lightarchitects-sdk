@@ -70,7 +70,7 @@ impl Channels {
             "quantum",
             "seraph",
             "ayin",
-            "l-arc",
+            "exodus",
             "conductor",
             "research",
             "proposals",
@@ -385,7 +385,7 @@ fn collect_secret_blocklist() -> Vec<String> {
         "ARENA_PEPPER",
         "ANTHROPIC_API_KEY",
         "LLM_API_KEY",
-        "LARC_HF_TOKEN",
+        "EXODUS_HF_TOKEN",
     ];
     let mut blocklist: Vec<String> = KNOWN_SECRET_VARS
         .iter()

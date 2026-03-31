@@ -21,10 +21,10 @@ Individual sibling clients are feature-gated so you only compile what you use:
 
 ```toml
 # Cargo.toml — all sibling clients
-lightarchitects = { git = "https://github.com/TheLightArchitects/l-arc-sdk", features = ["full"] }
+lightarchitects = { git = "https://github.com/TheLightArchitects/lightarchitects-sdk", features = ["full"] }
 
 # Only what you need
-lightarchitects = { git = "https://github.com/TheLightArchitects/l-arc-sdk", features = ["soul", "quantum"] }
+lightarchitects = { git = "https://github.com/TheLightArchitects/lightarchitects-sdk", features = ["soul", "quantum"] }
 ```
 
 ```rust

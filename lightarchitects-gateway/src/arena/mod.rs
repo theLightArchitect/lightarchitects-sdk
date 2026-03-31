@@ -264,8 +264,8 @@ async fn init_mcp_pool(
     paths.insert("soul".into(), config.siblings.soul.clone());
     paths.insert("quantum".into(), config.siblings.quantum.clone());
     paths.insert("seraph".into(), config.siblings.seraph.clone());
-    if let Some(ref l_arc_path) = config.siblings.l_arc {
-        paths.insert("l-arc".into(), l_arc_path.clone());
+    if let Some(ref exodus_path) = config.siblings.exodus {
+        paths.insert("exodus".into(), exodus_path.clone());
     }
 
     let mut pool = mcp_pool::McpPool::new(paths);

@@ -85,7 +85,7 @@ impl LlmClient {
             }
             LlmBackend::OpenAi => {
                 let url = std::env::var("LLM_API_URL")
-                    .or_else(|_| std::env::var("LARC_ENDPOINT_URL"))
+                    .or_else(|_| std::env::var("EXODUS_ENDPOINT_URL"))
                     .unwrap_or_else(|_| "http://localhost:8080".into());
                 let model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "genesis".into());
                 (url, model)
@@ -93,7 +93,7 @@ impl LlmClient {
         };
 
         let api_key = std::env::var("LLM_API_KEY")
-            .or_else(|_| std::env::var("LARC_HF_TOKEN"))
+            .or_else(|_| std::env::var("EXODUS_HF_TOKEN"))
             .ok()
             .map(Zeroizing::new);
 
