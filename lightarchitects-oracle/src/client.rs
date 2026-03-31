@@ -327,14 +327,20 @@ async fn call_single_model(
             }
             // Extract usage from final chunk (some providers include it)
             if let Some(usage) = chunk.get("usage") {
-                tokens_in = usage
-                    .get("prompt_tokens")
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(0) as u32;
-                tokens_out = usage
-                    .get("completion_tokens")
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(0) as u32;
+                tokens_in = u32::try_from(
+                    usage
+                        .get("prompt_tokens")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0),
+                )
+                .unwrap_or(u32::MAX);
+                tokens_out = u32::try_from(
+                    usage
+                        .get("completion_tokens")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0),
+                )
+                .unwrap_or(u32::MAX);
             }
         }
     }
