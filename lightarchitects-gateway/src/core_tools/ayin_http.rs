@@ -54,6 +54,46 @@ pub fn is_ayin_action(action: &str) -> bool {
         .is_ok_and(|a| a.is_gateway_routable())
 }
 
+// ── URL segment validation ───────────────────────────────────────────────────
+
+/// Validate that a user-supplied value is safe for interpolation into a URL path
+/// segment.
+///
+/// Allows only alphanumeric characters, hyphens (`-`), underscores (`_`), and
+/// dots (`.`). Rejects `/`, `..`, `?`, `#`, `%`, and any other characters that
+/// could cause path traversal or endpoint injection.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::InvalidParam`] with a descriptive message when the
+/// value contains forbidden characters.
+fn validate_url_segment(value: &str, param_name: &str) -> Result<(), GatewayError> {
+    if value.is_empty() {
+        return Err(GatewayError::InvalidParam(format!(
+            "'{param_name}' must not be empty"
+        )));
+    }
+
+    if value.contains("..") {
+        return Err(GatewayError::InvalidParam(format!(
+            "'{param_name}' contains path traversal sequence '..'"
+        )));
+    }
+
+    let is_safe = value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
+
+    if !is_safe {
+        return Err(GatewayError::InvalidParam(format!(
+            "'{param_name}' contains forbidden characters — \
+             only alphanumeric, hyphens, underscores, and dots are allowed"
+        )));
+    }
+
+    Ok(())
+}
+
 // ── Endpoint handlers ────────────────────────────────────────────────────────
 
 /// `GET /api/sessions` — list all trace sessions.
@@ -74,6 +114,9 @@ async fn get_spans(params: &Value) -> Result<Value, GatewayError> {
         .and_then(Value::as_str)
         .ok_or(GatewayError::MissingParam("date"))?;
 
+    validate_url_segment(actor, "actor")?;
+    validate_url_segment(date, "date")?;
+
     let url = format!("{AYIN_BASE_URL}/api/spans/{actor}/{date}");
     let body = http_get(&url).await?;
     format_response(body)
@@ -85,6 +128,8 @@ async fn get_conversations(params: &Value) -> Result<Value, GatewayError> {
         .get("date")
         .and_then(Value::as_str)
         .ok_or(GatewayError::MissingParam("date"))?;
+
+    validate_url_segment(date, "date")?;
 
     let url = format!("{AYIN_BASE_URL}/api/conversations/{date}");
     let body = http_get(&url).await?;
@@ -214,6 +259,103 @@ mod tests {
         assert!(
             matches!(err, GatewayError::MissingParam("date")),
             "expected MissingParam(date), got {err:?}"
+        );
+    }
+
+    // ── URL segment validation ──────────────────────────────────────────
+
+    #[test]
+    fn validate_url_segment_accepts_safe_values() {
+        assert!(validate_url_segment("claude", "actor").is_ok());
+        assert!(validate_url_segment("2026-03-30", "date").is_ok());
+        assert!(validate_url_segment("eva_session.1", "actor").is_ok());
+        assert!(validate_url_segment("corso-build-42", "actor").is_ok());
+    }
+
+    #[test]
+    fn validate_url_segment_rejects_path_traversal() {
+        let err = validate_url_segment("../../admin", "actor").unwrap_err();
+        assert!(
+            matches!(err, GatewayError::InvalidParam(ref s) if s.contains("path traversal")),
+            "expected InvalidParam with traversal message, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_url_segment_rejects_slash() {
+        let err = validate_url_segment("foo/bar", "actor").unwrap_err();
+        assert!(
+            matches!(err, GatewayError::InvalidParam(ref s) if s.contains("forbidden")),
+            "expected InvalidParam with forbidden message, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_url_segment_rejects_query_and_fragment() {
+        let err = validate_url_segment("date?admin=true", "date").unwrap_err();
+        assert!(
+            matches!(err, GatewayError::InvalidParam(_)),
+            "expected InvalidParam, got {err:?}"
+        );
+
+        let err = validate_url_segment("date#frag", "date").unwrap_err();
+        assert!(
+            matches!(err, GatewayError::InvalidParam(_)),
+            "expected InvalidParam, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_url_segment_rejects_percent_encoding() {
+        let err = validate_url_segment("..%2f..%2fadmin", "actor").unwrap_err();
+        assert!(
+            matches!(err, GatewayError::InvalidParam(_)),
+            "expected InvalidParam, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_url_segment_rejects_empty() {
+        let err = validate_url_segment("", "actor").unwrap_err();
+        assert!(
+            matches!(err, GatewayError::InvalidParam(ref s) if s.contains("empty")),
+            "expected InvalidParam with empty message, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_spans_rejects_traversal_in_actor() {
+        let err = dispatch(
+            "spans",
+            json!({"actor": "../../admin", "date": "2026-03-30"}),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(err, GatewayError::InvalidParam(ref s) if s.contains("actor")),
+            "expected InvalidParam for actor, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_spans_rejects_traversal_in_date() {
+        let err = dispatch("spans", json!({"actor": "claude", "date": "../secrets"}))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, GatewayError::InvalidParam(ref s) if s.contains("date")),
+            "expected InvalidParam for date, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_conversations_rejects_traversal_in_date() {
+        let err = dispatch("conversations", json!({"date": "../../admin"}))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, GatewayError::InvalidParam(ref s) if s.contains("date")),
+            "expected InvalidParam for date, got {err:?}"
         );
     }
 }

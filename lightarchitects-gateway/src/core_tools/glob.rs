@@ -37,6 +37,8 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
 
     let mut cmd = Command::new("find");
     cmd.arg(&base);
+    // Limit traversal depth to prevent runaway scans on large trees.
+    cmd.arg("-maxdepth").arg("20");
     cmd.arg("-name").arg(name_pattern);
     // Exclude hidden dirs and common build dirs for ergonomics.
     cmd.stdout(std::process::Stdio::piped());

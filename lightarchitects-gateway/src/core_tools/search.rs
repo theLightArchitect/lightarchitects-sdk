@@ -74,6 +74,8 @@ async fn run_rg(
 ) -> Result<String, GatewayError> {
     let mut cmd = Command::new("rg");
     cmd.arg("--line-number");
+    // Cap output to prevent unbounded result sets from large repos.
+    cmd.arg("--max-count").arg("1000");
     if case_insensitive {
         cmd.arg("--ignore-case");
     }

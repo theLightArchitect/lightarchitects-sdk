@@ -20,7 +20,7 @@ use lightarchitects_soul::SoulAction;
 
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
-use crate::spawner::call_route;
+use crate::spawner::call_agent;
 
 // ── Auto-routing via SDK enums ───────────────────────────────────────────────
 
@@ -135,7 +135,7 @@ fn auto_route_with_priority<'a>(
     for &name in priority {
         if let Some(route) = SIBLING_ROUTES.iter().find(|r| r.name == name) {
             if (route.matches)(action) {
-                if let Some(cfg) = config.routes.get(route.name) {
+                if let Some(cfg) = config.agents.get(route.name) {
                     if cfg.enabled {
                         return Some(route.name);
                     }
@@ -150,7 +150,7 @@ fn auto_route_with_priority<'a>(
             continue; // Already checked in phase 1.
         }
         if (route.matches)(action) {
-            if let Some(cfg) = config.routes.get(route.name) {
+            if let Some(cfg) = config.agents.get(route.name) {
                 if cfg.enabled {
                     return Some(route.name);
                 }
@@ -161,7 +161,7 @@ fn auto_route_with_priority<'a>(
     None
 }
 
-/// Return the total number of gateway-routable actions across all routes.
+/// Return the total number of gateway-routable actions across all agents.
 #[must_use]
 pub fn total_routable_action_count() -> usize {
     QuantumAction::ALL_ROUTABLE.len()
@@ -176,8 +176,8 @@ pub fn total_routable_action_count() -> usize {
 ///
 /// Returns an empty slice for unknown route names.
 #[must_use]
-pub fn routable_actions_for(route: &str) -> Vec<&'static str> {
-    match route {
+pub fn routable_actions_for(agent: &str) -> Vec<&'static str> {
+    match agent {
         "quantum" => QuantumAction::ALL_ROUTABLE
             .iter()
             .map(QuantumAction::as_str)
@@ -208,38 +208,38 @@ pub fn routable_actions_for(route: &str) -> Vec<&'static str> {
 
 // ── Disabled-route response ────────────────────────────────────────────────
 
-/// Build the structured "route not enabled" error payload.
+/// Build the structured "agent not enabled" error payload.
 ///
 /// This is returned as a successful MCP tool result (not a JSON-RPC error)
 /// so the model can inspect and handle it gracefully.
-fn disabled_response(route: &str) -> Value {
+fn disabled_response(agent: &str) -> Value {
     json!({
         "content": [{
             "type": "text",
             "text": serde_json::to_string_pretty(&json!({
-                "error": "route_not_enabled",
-                "route": route,
+                "error": "agent_not_enabled",
+                "agent": agent,
                 "message": format!(
-                    "{route} is not enabled. To enable: edit ~/.lightarchitects/config.toml \
-                     and set [routes.{route}] enabled = true"
+                    "{agent} is not enabled. To enable: edit ~/.lightarchitects/config.toml \
+                     and set [agents.{agent}] enabled = true"
                 ),
-                "alternative": "Use lightarchitects_bash to run tools directly, or enable the target."
+                "alternative": "Use lightarchitects_bash to run tools directly, or enable the agent."
             })).unwrap_or_default()
         }]
     })
 }
 
-/// Build a "no route found" payload when auto-routing fails.
-fn no_route_response(action: &str) -> Value {
+/// Build a "no agent found" payload when auto-routing fails.
+fn no_agent_response(action: &str) -> Value {
     json!({
         "content": [{
             "type": "text",
             "text": serde_json::to_string_pretty(&json!({
-                "error": "no_route",
+                "error": "no_agent",
                 "action": action,
                 "message": format!(
                     "No enabled target matched action '{action}'. \
-                     Specify 'route' explicitly or enable a target that handles this action."
+                     Specify 'agent' explicitly or enable a target that handles this action."
                 ),
                 "hint": "Use lightarchitects_discover to see which routes are available."
             })).unwrap_or_default()
@@ -254,13 +254,13 @@ fn no_route_response(action: &str) -> Value {
 /// Routes the `action` + `params` to the appropriate route, either by explicit
 /// `route` parameter or via the auto-routing table.
 ///
-/// Returns the route's raw MCP tool result, or a structured error payload if
-/// the route is disabled or no route matches.
+/// Returns the agent's raw MCP tool result, or a structured error payload if
+/// the route is disabled or no agent matches.
 ///
 /// # Errors
 ///
 /// Returns [`GatewayError`] only for protocol-level failures (spawn, I/O, JSON).
-/// Logical errors (disabled route, no route) are returned as successful payloads
+/// Logical errors (disabled agent, no agent) are returned as successful payloads
 /// so the model can handle them gracefully.
 pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, GatewayError> {
     let action = match params.get("action").and_then(Value::as_str) {
@@ -272,7 +272,7 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
 
     // Extract explicit route override (optional).
     let explicit_route = params
-        .get("route")
+        .get("agent")
         .and_then(Value::as_str)
         .map(str::to_owned);
 
@@ -286,7 +286,7 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
     let target_route = match explicit_route.as_deref() {
         Some(name) => {
             // Explicit route — validate it exists and is enabled.
-            match config.routes.get(name) {
+            match config.agents.get(name) {
                 Some(cfg) if cfg.enabled => name.to_owned(),
                 Some(_) | None => return Ok(disabled_response(name)),
             }
@@ -295,13 +295,13 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
             // Auto-route by action keyword via SDK enums.
             match auto_route(&action, config) {
                 Some(name) => name.to_owned(),
-                None => return Ok(no_route_response(&action)),
+                None => return Ok(no_agent_response(&action)),
             }
         }
     };
 
     // Delegate to the subprocess spawner.
-    call_route(&target_route, &action, forward_params, config).await
+    call_agent(&target_route, &action, forward_params, config).await
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -336,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn auto_route_returns_none_for_disabled_route() {
+    fn auto_route_returns_none_for_disabled_agent() {
         let cfg = GatewayConfig::default();
         // QUANTUM is disabled in default config; "triage" is QUANTUM-only.
         assert_eq!(auto_route("triage", &cfg), None);
@@ -352,7 +352,7 @@ mod tests {
     fn auto_route_returns_none_for_arena_actions() {
         // Arena actions are not in any SDK enum.
         let mut cfg = GatewayConfig::default();
-        if let Some(l) = cfg.routes.get_mut("laex") {
+        if let Some(l) = cfg.agents.get_mut("laex") {
             l.enabled = true;
         }
         assert_eq!(auto_route("forge", &cfg), None);
@@ -363,7 +363,7 @@ mod tests {
     #[test]
     fn auto_route_prefers_quantum_for_research_in_full_preset() {
         let mut cfg = GatewayConfig::default();
-        if let Some(q) = cfg.routes.get_mut("quantum") {
+        if let Some(q) = cfg.agents.get_mut("quantum") {
             q.enabled = true;
         }
         // "research" exists in both QUANTUM and SOUL.
@@ -385,7 +385,7 @@ mod tests {
     #[test]
     fn auto_route_prefers_quantum_for_trace_in_full_preset() {
         let mut cfg = GatewayConfig::default();
-        if let Some(q) = cfg.routes.get_mut("quantum") {
+        if let Some(q) = cfg.agents.get_mut("quantum") {
             q.enabled = true;
         }
         let full = super::super::preset::find_preset("full").unwrap();
@@ -400,7 +400,7 @@ mod tests {
     fn all_sdk_routable_actions_route_correctly_with_full_preset() {
         // Enable all teammates and use the full preset priority.
         let mut cfg = GatewayConfig::default();
-        for sib in cfg.routes.values_mut() {
+        for sib in cfg.agents.values_mut() {
             sib.enabled = true;
         }
 
@@ -502,7 +502,7 @@ mod tests {
     #[test]
     fn collision_priority_research_full_preset() {
         let mut cfg = GatewayConfig::default();
-        for sib in cfg.routes.values_mut() {
+        for sib in cfg.agents.values_mut() {
             sib.enabled = true;
         }
         let full = super::super::preset::find_preset("full").unwrap();
@@ -524,7 +524,7 @@ mod tests {
     #[test]
     fn collision_priority_search_routes_to_soul() {
         let mut cfg = GatewayConfig::default();
-        for sib in cfg.routes.values_mut() {
+        for sib in cfg.agents.values_mut() {
             sib.enabled = true;
         }
         // "search" is a SOUL action. CORSO has "search_code" but not bare "search".
@@ -572,26 +572,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn orchestrate_disabled_route_returns_structured_payload() {
+    async fn orchestrate_disabled_agent_returns_structured_payload() {
         let cfg = GatewayConfig::default();
         // QUANTUM is disabled in default config.
         let result = run(
-            json!({"action": "triage", "route": "quantum", "params": {}}),
+            json!({"action": "triage", "agent": "quantum", "params": {}}),
             &cfg,
         )
         .await
         .unwrap();
         let text = result["content"][0]["text"].as_str().unwrap();
-        assert!(text.contains("route_not_enabled"), "expected error payload");
-        assert!(text.contains("quantum"), "expected route name in payload");
+        assert!(text.contains("agent_not_enabled"), "expected error payload");
+        assert!(text.contains("quantum"), "expected agent name in payload");
     }
 
     #[tokio::test]
-    async fn orchestrate_no_route_returns_structured_payload() {
+    async fn orchestrate_no_agent_returns_structured_payload() {
         let cfg = GatewayConfig::default();
         let result = run(json!({"action": "frobnicate"}), &cfg).await.unwrap();
         let text = result["content"][0]["text"].as_str().unwrap();
-        assert!(text.contains("no_route"), "expected no_route error");
+        assert!(text.contains("no_agent"), "expected no_agent error");
         assert!(text.contains("frobnicate"), "expected action in payload");
     }
 }

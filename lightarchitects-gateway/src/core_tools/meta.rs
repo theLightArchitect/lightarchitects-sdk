@@ -1,4 +1,4 @@
-//! `tools` — unified meta-tool following the route pattern.
+//! `tools` — unified meta-tool following the agent pattern.
 //!
 //! One tool, one schema: `{action, params, route?}`. Core actions (read, write,
 //! bash, etc.) dispatch to the gateway's own handlers. Everything else auto-routes
@@ -20,7 +20,7 @@ use crate::error::GatewayError;
 
 // ── Core action names ─────────────────────────────────────────────────────────
 
-/// Actions handled directly by the gateway (no route needed).
+/// Actions handled directly by the gateway (no agent needed).
 const CORE_ACTIONS: &[&str] = &[
     "read",
     "write",
@@ -55,12 +55,12 @@ fn is_core_action(action: &str) -> bool {
 ///
 /// Sibling action lists are generated from SDK enums — not hardcoded.
 fn list_actions(config: &GatewayConfig) -> Result<Value, GatewayError> {
-    let mut route_section = serde_json::Map::new();
+    let mut agent_section = serde_json::Map::new();
 
-    for (name, cfg) in &config.routes {
+    for (name, cfg) in &config.agents {
         let status = if cfg.enabled { "enabled" } else { "disabled" };
         let actions = orchestrate::routable_actions_for(name);
-        route_section.insert(
+        agent_section.insert(
             name.clone(),
             json!({
                 "status": status,
@@ -79,7 +79,7 @@ fn list_actions(config: &GatewayConfig) -> Result<Value, GatewayError> {
             "bash":           "Execute a shell command (command, timeout_ms?, cwd?)",
             "search":         "Search file contents via ripgrep (pattern, path?, glob?, case_insensitive?)",
             "glob":           "Find files matching a pattern (pattern, path?)",
-            "discover":       "Report gateway version, tools, and route status",
+            "discover":       "Report gateway version, tools, and agent status",
             "ask_user":       "Present a question to the user (question, options?)",
             "canon_check":    "Validate a decision against the canon registry (decision, verbose?)",
             "canon_evaluate": "Evaluate a canon candidate against 5-criteria framework (candidate)",
@@ -89,7 +89,7 @@ fn list_actions(config: &GatewayConfig) -> Result<Value, GatewayError> {
             "initialize":     "Interactive gateway setup wizard (step?)",
             "import":         "Import content from external systems (source, path?, format?)",
         },
-        "routes": route_section,
+        "routes": agent_section,
         "ayin": {
             "note": "AYIN actions use HTTP transport to localhost:3742 (not MCP subprocess).",
             "sessions":      "List all trace sessions",
@@ -97,7 +97,7 @@ fn list_actions(config: &GatewayConfig) -> Result<Value, GatewayError> {
             "conversations": "Load conversation/decision traces (date)",
         },
         "routing": {
-            "note": "Non-core actions auto-route to the correct target by action keyword. Pass 'route' to override when ambiguous.",
+            "note": "Non-core actions auto-route to the correct target by action keyword. Pass 'agent' to override when ambiguous.",
             "active_preset": preset::active_preset_name(),
             "priority": preset::active_routing_priority(),
             "total_routable_actions": orchestrate::total_routable_action_count(),
@@ -177,8 +177,8 @@ pub async fn run(arguments: Value, config: &GatewayConfig) -> Result<Value, Gate
     orchestrate_params.insert("action".to_owned(), Value::String(action));
 
     // Forward explicit route override if provided.
-    if let Some(route) = arguments.get("route") {
-        orchestrate_params.insert("route".to_owned(), route.clone());
+    if let Some(agent) = arguments.get("agent") {
+        orchestrate_params.insert("agent".to_owned(), agent.clone());
     }
 
     orchestrate_params.insert("params".to_owned(), params);
@@ -309,7 +309,7 @@ mod tests {
         // Explicit route should be forwarded to orchestrate.
         // Using a disabled target to get a predictable error.
         let result = run(
-            json!({"action": "scan", "route": "quantum", "params": {}}),
+            json!({"action": "scan", "agent": "quantum", "params": {}}),
             &cfg,
         )
         .await;
@@ -319,10 +319,10 @@ mod tests {
                 let text = v["content"][0]["text"].as_str().unwrap_or("");
                 assert!(
                     text.contains("not_enabled") || text.contains("disabled"),
-                    "expected disabled route response"
+                    "expected disabled agent response"
                 );
             }
-            Err(GatewayError::RouteNotEnabled(_)) => {} // Also acceptable
+            Err(GatewayError::AgentNotEnabled(_)) => {} // Also acceptable
             Err(other) => panic!("unexpected error: {other:?}"),
         }
     }

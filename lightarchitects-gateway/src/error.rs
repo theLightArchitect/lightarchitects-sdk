@@ -44,24 +44,24 @@ pub enum GatewayError {
         count: usize,
     },
 
-    /// A governance policy (trust or scope) blocked the route action.
-    #[error("governance error for route '{route}': {reason}")]
+    /// A governance policy (trust or scope) blocked the agent action.
+    #[error("governance error for agent '{agent}': {reason}")]
     Governance {
-        /// Name of the route whose action was blocked.
-        route: String,
+        /// Name of the agent whose action was blocked.
+        agent: String,
         /// Human-readable explanation of the policy violation.
         reason: String,
     },
 
-    /// A route is not enabled in the gateway config.
-    #[error("route '{0}' is not enabled in config")]
-    RouteNotEnabled(String),
+    /// An agent is not enabled in the gateway config.
+    #[error("agent '{0}' is not enabled in config")]
+    AgentNotEnabled(String),
 
-    /// A route binary could not be spawned (process spawn failure).
-    #[error("failed to spawn route '{route}': {reason}")]
+    /// An agent binary could not be spawned (process spawn failure).
+    #[error("failed to spawn agent '{agent}': {reason}")]
     SpawnFailed {
-        /// Route name.
-        route: String,
+        /// Agent name.
+        agent: String,
         /// Underlying error description.
         reason: String,
     },
@@ -78,11 +78,11 @@ pub enum GatewayError {
     #[error("internal error: {0}")]
     Internal(String),
 
-    /// An MCP protocol exchange with a route failed.
-    #[error("MCP protocol error for route '{route}': {reason}")]
+    /// An MCP protocol exchange with an agent failed.
+    #[error("MCP protocol error for agent '{agent}': {reason}")]
     McpProtocol {
-        /// Route name.
-        route: String,
+        /// Agent name.
+        agent: String,
         /// Error description.
         reason: String,
     },

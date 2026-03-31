@@ -237,8 +237,27 @@ impl<T: Transport> CorsoClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or CORSO rejects the request.
+    /// Research and knowledge retrieval via the FETCH domain.
+    ///
+    /// `depth` controls research thoroughness:
+    /// - `"quick"` — keyword match only, skips Context7 docs lookup.
+    /// - `"deep"` (default) — full research including Context7 library docs.
     pub async fn fetch(&self, query: &str) -> Result<ActionOutput, SdkError> {
-        let params = serde_json::json!({ "action": "fetch", "params": { "query": query } });
+        self.fetch_with_depth(query, "deep").await
+    }
+
+    /// Research with explicit depth control.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or CORSO rejects the request.
+    pub async fn fetch_with_depth(
+        &self,
+        query: &str,
+        depth: &str,
+    ) -> Result<ActionOutput, SdkError> {
+        let params =
+            serde_json::json!({ "action": "fetch", "params": { "query": query, "depth": depth } });
         let raw = self.inner.call_tool("corsoTools", params).await?;
         Ok(ActionOutput {
             output: unwrap_text(raw)?,

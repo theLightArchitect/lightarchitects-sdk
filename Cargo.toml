@@ -75,17 +75,33 @@ thiserror = "2"
 
 # ── Observability ─────────────────────────────────────────────────────────────
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # ── Platform-specific ─────────────────────────────────────────────────────────
 security-framework = "3"
 
 # ── Conductor / Arena ──────────────────────────────────────────────────────────────────
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
 clap = { version = "4", features = ["derive"] }
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"], default-features = false }
 uuid = { version = "1", features = ["v4", "serde"] }
 indicatif = "0.17"
+
+# ── Arena (HTTP gateway + scheduler + heartbeat agents) ───────────────────────
+axum = "0.8"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+governor = "0.6"
+rusqlite = { version = "0.32", features = ["bundled"] }
+cron = "0.15"
+notify = "6"
+dirs-next = "2.0"
+dashmap = "6"
+futures-util = "0.3"
+tokio-tungstenite = "0.26"
+libc = "0.2"
+anyhow = "1"
 
 # ── SSH transport (SERAPH remote execution) ──────────────────────────────────
 russh = "0.57"

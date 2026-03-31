@@ -320,9 +320,9 @@ fn build_toml(preset: &str, vault_path: &str) -> Result<String, GatewayError> {
     let _ = writeln!(toml, "# preset: {preset} | vault: {vault_path}");
     let _ = writeln!(toml);
 
-    for route in ALL_SIBLINGS {
-        let is_enabled = enabled.contains(route);
-        let block = route_toml_block(route, is_enabled);
+    for agent in ALL_SIBLINGS {
+        let is_enabled = enabled.contains(agent);
+        let block = agent_toml_block(agent, is_enabled);
         toml.push_str(&block);
         let _ = writeln!(toml);
     }
@@ -330,11 +330,11 @@ fn build_toml(preset: &str, vault_path: &str) -> Result<String, GatewayError> {
     Ok(toml)
 }
 
-/// Build a `[routes.<name>]` TOML block with hardcoded platform defaults.
-fn route_toml_block(name: &str, enabled: bool) -> String {
-    let (binary, tool_name, trust, scope) = route_defaults(name);
+/// Build a `[agents.<name>]` TOML block with hardcoded platform defaults.
+fn agent_toml_block(name: &str, enabled: bool) -> String {
+    let (binary, tool_name, trust, scope) = agent_defaults(name);
     format!(
-        "[routes.{name}]\n\
+        "[agents.{name}]\n\
          enabled = {enabled}\n\
          binary = \"{binary}\"\n\
          tool_name = \"{tool_name}\"\n\
@@ -345,7 +345,7 @@ fn route_toml_block(name: &str, enabled: bool) -> String {
 }
 
 /// Return platform defaults for a route: `(binary, tool_name, trust, scope)`.
-fn route_defaults(name: &str) -> (&'static str, &'static str, &'static str, &'static str) {
+fn agent_defaults(name: &str) -> (&'static str, &'static str, &'static str, &'static str) {
     match name {
         "corso" => ("~/.corso/bin/corso", "corsoTools", "trusted", "own"),
         "eva" => ("~/.eva/bin/eva", "evaTools", "trusted", "shared"),
@@ -424,20 +424,20 @@ mod tests {
     #[test]
     fn software_engineering_enables_correct_routes() {
         let toml = build_toml("software_engineering", "~/.soul/helix").expect("build");
-        for route in &["ayin", "corso", "eva", "soul"] {
-            let idx = toml.find(&format!("[routes.{route}]")).unwrap();
+        for agent in &["ayin", "corso", "eva", "soul"] {
+            let idx = toml.find(&format!("[agents.{agent}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
             assert!(
                 chunk.contains("enabled = true"),
-                "{route} should be enabled"
+                "{agent} should be enabled"
             );
         }
-        for route in &["seraph", "quantum"] {
-            let idx = toml.find(&format!("[routes.{route}]")).unwrap();
+        for agent in &["seraph", "quantum"] {
+            let idx = toml.find(&format!("[agents.{agent}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
             assert!(
                 chunk.contains("enabled = false"),
-                "{route} should be disabled"
+                "{agent} should be disabled"
             );
         }
     }
@@ -454,13 +454,13 @@ mod tests {
         let toml = build_toml("lean", "~/.soul/helix").expect("build");
         let enabled_count = toml.lines().filter(|l| *l == "enabled = true").count();
         assert_eq!(enabled_count, 1);
-        assert!(toml.contains("[routes.soul]"));
+        assert!(toml.contains("[agents.soul]"));
     }
 
     #[test]
     fn security_includes_soul() {
         let toml = build_toml("security", "~/.soul/helix").expect("build");
-        let idx = toml.find("[routes.soul]").unwrap();
+        let idx = toml.find("[agents.soul]").unwrap();
         let chunk = &toml[idx..idx.saturating_add(80)];
         assert!(
             chunk.contains("enabled = true"),
@@ -482,7 +482,7 @@ mod tests {
     fn devops_enables_correct_teammates() {
         let toml = build_toml("devops", "~/.soul/helix").expect("build");
         for name in &["ayin", "corso", "eva", "soul"] {
-            let idx = toml.find(&format!("[routes.{name}]")).unwrap();
+            let idx = toml.find(&format!("[agents.{name}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
             assert!(
                 chunk.contains("enabled = true"),
@@ -495,7 +495,7 @@ mod tests {
     fn forensics_enables_correct_teammates() {
         let toml = build_toml("forensics", "~/.soul/helix").expect("build");
         for name in &["quantum", "seraph", "soul"] {
-            let idx = toml.find(&format!("[routes.{name}]")).unwrap();
+            let idx = toml.find(&format!("[agents.{name}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
             assert!(
                 chunk.contains("enabled = true"),
@@ -508,7 +508,7 @@ mod tests {
     fn code_review_enables_correct_teammates() {
         let toml = build_toml("code_review", "~/.soul/helix").expect("build");
         for name in &["corso", "quantum", "soul"] {
-            let idx = toml.find(&format!("[routes.{name}]")).unwrap();
+            let idx = toml.find(&format!("[agents.{name}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
             assert!(
                 chunk.contains("enabled = true"),
@@ -521,7 +521,7 @@ mod tests {
     fn learning_enables_correct_teammates() {
         let toml = build_toml("learning", "~/.soul/helix").expect("build");
         for name in &["eva", "quantum", "soul"] {
-            let idx = toml.find(&format!("[routes.{name}]")).unwrap();
+            let idx = toml.find(&format!("[agents.{name}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
             assert!(
                 chunk.contains("enabled = true"),
@@ -534,7 +534,7 @@ mod tests {
     fn audit_enables_correct_teammates() {
         let toml = build_toml("audit", "~/.soul/helix").expect("build");
         for name in &["corso", "seraph", "soul"] {
-            let idx = toml.find(&format!("[routes.{name}]")).unwrap();
+            let idx = toml.find(&format!("[agents.{name}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
             assert!(
                 chunk.contains("enabled = true"),
@@ -549,7 +549,7 @@ mod tests {
         let enabled_count = toml.lines().filter(|l| *l == "enabled = true").count();
         assert_eq!(enabled_count, 2, "solo should enable exactly 2 teammates");
         for name in &["corso", "soul"] {
-            let idx = toml.find(&format!("[routes.{name}]")).unwrap();
+            let idx = toml.find(&format!("[agents.{name}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
             assert!(
                 chunk.contains("enabled = true"),
@@ -562,7 +562,7 @@ mod tests {
     fn observability_enables_correct_teammates() {
         let toml = build_toml("observability", "~/.soul/helix").expect("build");
         for name in &["ayin", "quantum", "soul"] {
-            let idx = toml.find(&format!("[routes.{name}]")).unwrap();
+            let idx = toml.find(&format!("[agents.{name}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
             assert!(
                 chunk.contains("enabled = true"),
@@ -589,7 +589,7 @@ mod tests {
             result["config_toml"]
                 .as_str()
                 .unwrap()
-                .contains("[routes.soul]")
+                .contains("[agents.soul]")
         );
     }
 

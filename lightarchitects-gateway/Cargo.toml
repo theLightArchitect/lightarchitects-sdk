@@ -1,12 +1,12 @@
 [package]
 name = "lightarchitects-gateway"
-version = "0.1.0"
+version = "0.3.0"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Light Architects MCP Gateway — unified tool interface for all siblings."
+description = "Light Architects unified gateway — MCP server, Arena HTTP API, and autonomous agent runtime."
 
 [[bin]]
 name = "lightarchitects"
@@ -16,6 +16,7 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
+# ── Workspace sibling clients ─────────────────────────────────────────────────
 lightarchitects-core = { path = "../lightarchitects-core" }
 lightarchitects-corso = { path = "../lightarchitects-corso" }
 lightarchitects-eva = { path = "../lightarchitects-eva" }
@@ -23,6 +24,9 @@ lightarchitects-soul = { path = "../lightarchitects-soul" }
 lightarchitects-quantum = { path = "../lightarchitects-quantum" }
 lightarchitects-seraph = { path = "../lightarchitects-seraph" }
 lightarchitects-ayin = { path = "../lightarchitects-ayin" }
+lightarchitects-crypto = { path = "../lightarchitects-crypto" }
+
+# ── Shared (both MCP + Arena modes) ──────────────────────────────────────────
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
@@ -32,7 +36,31 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }
+chrono-tz = { workspace = true }
 reqwest = { workspace = true }
+uuid = { workspace = true }
+dirs-next = { workspace = true }
+
+# ── Arena mode (HTTP gateway + scheduler + heartbeat agents) ──────────────────
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+governor = { workspace = true }
+rusqlite = { workspace = true }
+cron = { workspace = true }
+notify = { workspace = true }
+dashmap = { workspace = true }
+futures-util = { workspace = true }
+tokio-tungstenite = { workspace = true }
+libc = { workspace = true }
+anyhow = { workspace = true }
+secrecy = { workspace = true }
+zeroize = { workspace = true }
+subtle = { workspace = true }
+
+# ── Platform-specific ─────────────────────────────────────────────────────────
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

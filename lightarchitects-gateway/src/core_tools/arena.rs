@@ -225,9 +225,9 @@ fn discover_tool_surface() -> Vec<Value> {
         json!({"tool": "bash", "description": "Execute shell command", "params": ["command"]}),
         json!({"tool": "search", "description": "Search file contents", "params": ["pattern"]}),
         json!({"tool": "glob", "description": "Find files by pattern", "params": ["pattern"]}),
-        json!({"tool": "guard", "description": "Security scan", "params": ["path"], "route": "corso"}),
-        json!({"tool": "helix", "description": "Query knowledge graph", "params": ["route"], "route": "soul"}),
-        json!({"tool": "memory", "description": "Memory operations", "params": ["query"], "route": "eva"}),
+        json!({"tool": "guard", "description": "Security scan", "params": ["path"], "agent": "corso"}),
+        json!({"tool": "helix", "description": "Query knowledge graph", "params": ["agent"], "agent": "soul"}),
+        json!({"tool": "memory", "description": "Memory operations", "params": ["query"], "agent": "eva"}),
     ]
 }
 

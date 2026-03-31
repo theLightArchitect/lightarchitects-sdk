@@ -1,15 +1,15 @@
-//! Scope governance — trust and scope enforcement for route orchestration.
+//! Scope governance — trust and scope enforcement for agent orchestration.
 //!
-//! Called by `lightarchitects_orchestrate` before any route subprocess is spawned.
-//! The governance layer is the *first* enforcement layer; route-side checks
+//! Called by `lightarchitects_orchestrate` before any agent subprocess is spawned.
+//! The governance layer is the *first* enforcement layer; agent-side checks
 //! remain in place as a second layer.
 //!
 //! # Trust model
 //!
 //! | Level | Restriction |
 //! |---|---|
-//! | `Trusted` | No restrictions — route may execute any action. |
-//! | `Sandboxed` | Destructive or system-level actions are blocked (`bash`, `deploy`, `pentest`, `strike`, `exploit`, `execute`, `rm`). |
+//! | `Trusted` | No restrictions — agent may execute any action. |
+//! | `Sandboxed` | Destructive or system-level actions are blocked by exact name (see `SANDBOXED_BLOCKLIST`). |
 //! | `Untrusted` | Only read-class actions are permitted (`read`, `query`, `search`, `helix`, `stats`, `health`). |
 //!
 //! # Scope model
@@ -17,8 +17,8 @@
 //! | Level | Restriction |
 //! |---|---|
 //! | `All` | No path restrictions. |
-//! | `Shared` | `path` params must be within the route's namespace or `user/`/`shared/`. |
-//! | `Own` | `path` params must be within the route's own namespace only. |
+//! | `Shared` | `path` params must be within the agent's namespace or `user/`/`shared/`. |
+//! | `Own` | `path` params must be within the agent's own namespace only. |
 
 use serde_json::Value;
 
@@ -29,9 +29,30 @@ use crate::error::GatewayError;
 
 /// Actions blocked for `Sandboxed` routes.
 ///
-/// These are system-modifying or potentially destructive action keywords.
+/// Each entry is an exact canonical action name (no substring matching).
+/// Grouped by source:
+///
+/// - **Core**: `bash` (shell execution).
+/// - **CORSO**: `deploy`, `rollback`, `strike`, `write_file`.
+/// - **SERAPH internal wings** (defense-in-depth; these are scope-gated in the
+///   SERAPH binary, but blocked here as a second enforcement layer):
+///   `execute`, `detonate`, `capture`, `scan`, `osint`, `monitor`, `orchestrate`.
 const SANDBOXED_BLOCKLIST: &[&str] = &[
-    "bash", "deploy", "pentest", "strike", "exploit", "execute", "rm", "delete", "drop",
+    // Core
+    "bash",
+    // CORSO — destructive / system-modifying
+    "deploy",
+    "rollback",
+    "strike",
+    "write_file",
+    // SERAPH — internal scope-gated wing actions (defense-in-depth)
+    "execute",
+    "detonate",
+    "capture",
+    "scan",
+    "osint",
+    "monitor",
+    "orchestrate",
 ];
 
 /// Actions permitted for `Untrusted` routes (allowlist — everything else is denied).
@@ -56,19 +77,17 @@ const UNTRUSTED_ALLOWLIST: &[&str] = &[
 ///
 /// Returns [`GatewayError::Governance`] when the action is not permitted at the
 /// route's trust level.
-pub fn check_trust(route: &str, trust: TrustLevel, action: &str) -> Result<(), GatewayError> {
+pub fn check_trust(agent: &str, trust: TrustLevel, action: &str) -> Result<(), GatewayError> {
     match trust {
         TrustLevel::Trusted => Ok(()),
         TrustLevel::Sandboxed => {
-            let blocked = SANDBOXED_BLOCKLIST
-                .iter()
-                .any(|&blocked_kw| action.contains(blocked_kw));
+            let blocked = SANDBOXED_BLOCKLIST.contains(&action);
             if blocked {
                 Err(GatewayError::Governance {
-                    route: route.to_owned(),
+                    agent: agent.to_owned(),
                     reason: format!(
-                        "action '{action}' is not permitted for sandboxed route '{route}'. \
-                         Sandboxed routes cannot perform destructive or system-level actions."
+                        "action '{action}' is not permitted for sandboxed agent '{agent}'. \
+                         Sandboxed agents cannot perform destructive or system-level actions."
                     ),
                 })
             } else {
@@ -81,9 +100,9 @@ pub fn check_trust(route: &str, trust: TrustLevel, action: &str) -> Result<(), G
                 Ok(())
             } else {
                 Err(GatewayError::Governance {
-                    route: route.to_owned(),
+                    agent: agent.to_owned(),
                     reason: format!(
-                        "action '{action}' is not permitted for untrusted route '{route}'. \
+                        "action '{action}' is not permitted for untrusted agent '{agent}'. \
                          Only read-class actions are allowed: {UNTRUSTED_ALLOWLIST:?}"
                     ),
                 })
@@ -94,7 +113,7 @@ pub fn check_trust(route: &str, trust: TrustLevel, action: &str) -> Result<(), G
 
 // ── Scope enforcement ──────────────────────────────────────────────────────────
 
-/// Namespaces accessible under `Shared` scope (in addition to the route's own).
+/// Namespaces accessible under `Shared` scope (in addition to the agent's own).
 const SHARED_NAMESPACES: &[&str] = &["user/", "shared/"];
 
 /// Enforce scope level for a route calling an action with the given params.
@@ -106,7 +125,7 @@ const SHARED_NAMESPACES: &[&str] = &["user/", "shared/"];
 /// # Errors
 ///
 /// Returns [`GatewayError::Governance`] when the path falls outside the allowed scope.
-pub fn check_scope(route: &str, scope: ScopeLevel, params: &Value) -> Result<(), GatewayError> {
+pub fn check_scope(agent: &str, scope: ScopeLevel, params: &Value) -> Result<(), GatewayError> {
     // Scope only applies when params contain a helix `path` field.
     let path = match params.get("path").and_then(Value::as_str) {
         Some(p) if p.contains('/') => p,
@@ -116,30 +135,30 @@ pub fn check_scope(route: &str, scope: ScopeLevel, params: &Value) -> Result<(),
     match scope {
         ScopeLevel::All => Ok(()),
         ScopeLevel::Shared => {
-            let own_prefix = format!("{route}/");
+            let own_prefix = format!("{agent}/");
             if path.starts_with(&own_prefix)
                 || SHARED_NAMESPACES.iter().any(|ns| path.starts_with(ns))
             {
                 Ok(())
             } else {
                 Err(GatewayError::Governance {
-                    route: route.to_owned(),
+                    agent: agent.to_owned(),
                     reason: format!(
-                        "path '{path}' is outside the allowed scope for '{route}' (Shared). \
+                        "path '{path}' is outside the allowed scope for '{agent}' (Shared). \
                          Allowed: '{own_prefix}', 'user/', 'shared/'."
                     ),
                 })
             }
         }
         ScopeLevel::Own => {
-            let own_prefix = format!("{route}/");
+            let own_prefix = format!("{agent}/");
             if path.starts_with(&own_prefix) {
                 Ok(())
             } else {
                 Err(GatewayError::Governance {
-                    route: route.to_owned(),
+                    agent: agent.to_owned(),
                     reason: format!(
-                        "path '{path}' is outside the allowed scope for '{route}' (Own). \
+                        "path '{path}' is outside the allowed scope for '{agent}' (Own). \
                          Allowed: '{own_prefix}'."
                     ),
                 })
@@ -160,14 +179,14 @@ pub fn check_scope(route: &str, scope: ScopeLevel, params: &Value) -> Result<(),
 ///
 /// Returns the first [`GatewayError::Governance`] encountered.
 pub fn enforce(
-    route: &str,
+    agent: &str,
     trust: TrustLevel,
     scope: ScopeLevel,
     action: &str,
     params: &Value,
 ) -> Result<(), GatewayError> {
-    check_trust(route, trust, action)?;
-    check_scope(route, scope, params)?;
+    check_trust(agent, trust, action)?;
+    check_scope(agent, scope, params)?;
     Ok(())
 }
 
@@ -191,6 +210,32 @@ mod tests {
         assert!(check_trust("eva", TrustLevel::Sandboxed, "deploy").is_err());
         assert!(check_trust("eva", TrustLevel::Sandboxed, "bash").is_err());
         assert!(check_trust("eva", TrustLevel::Sandboxed, "strike").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "rollback").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "execute").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "detonate").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "capture").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "scan").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "osint").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "monitor").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "orchestrate").is_err());
+        assert!(check_trust("eva", TrustLevel::Sandboxed, "write_file").is_err());
+    }
+
+    #[test]
+    fn sandboxed_uses_exact_match_no_false_positives() {
+        // These contain blocklisted words as substrings but are NOT blocked.
+        // "undeploy" contains "deploy" — must NOT be blocked.
+        assert!(check_trust("soul", TrustLevel::Sandboxed, "undeploy").is_ok());
+        // "redeploy" contains "deploy" — must NOT be blocked.
+        assert!(check_trust("soul", TrustLevel::Sandboxed, "redeploy").is_ok());
+        // "execute_query" contains "execute" — must NOT be blocked.
+        assert!(check_trust("soul", TrustLevel::Sandboxed, "execute_query").is_ok());
+        // "confirm" contains "rm" (old substring bug) — must NOT be blocked.
+        assert!(check_trust("soul", TrustLevel::Sandboxed, "confirm").is_ok());
+        // "bash_history" contains "bash" — must NOT be blocked.
+        assert!(check_trust("soul", TrustLevel::Sandboxed, "bash_history").is_ok());
+        // "scanner" contains "scan" — must NOT be blocked.
+        assert!(check_trust("soul", TrustLevel::Sandboxed, "scanner").is_ok());
     }
 
     #[test]
