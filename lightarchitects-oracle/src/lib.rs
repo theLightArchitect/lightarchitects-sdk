@@ -21,7 +21,7 @@
 //! | Model | Role | Strength |
 //! |-------|------|----------|
 //! | Leanstral | `formal_proof` | Machine-checkable Lean 4 proofs |
-//! | DeepSeek | `derivation` | Step-by-step mathematical reasoning |
+//! | `DeepSeek` | `derivation` | Step-by-step mathematical reasoning |
 //! | Qwen | `numerical` | Bounds checking, counterexample search |
 //! | Kimi | `reasoning` | Deep thinking, edge case analysis |
 //! | Cogito | `reasoning` | Structured analysis with confidence |
@@ -43,7 +43,7 @@
 //!     .await?;
 //!
 //! for finding in &verdict.findings {
-//!     println!("{}: {} ({})", finding.model, finding.status, finding.role);
+//!     println!("{}: {:?} ({:?})", finding.model, finding.status, finding.role);
 //! }
 //! println!("Consensus: {:?}", verdict.consensus);
 //! # Ok(())

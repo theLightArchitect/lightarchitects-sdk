@@ -44,24 +44,24 @@ pub enum GatewayError {
         count: usize,
     },
 
-    /// A governance policy (trust or scope) blocked the sibling action.
-    #[error("governance error for sibling '{sibling}': {reason}")]
+    /// A governance policy (trust or scope) blocked the route action.
+    #[error("governance error for route '{route}': {reason}")]
     Governance {
-        /// Name of the sibling whose action was blocked.
-        sibling: String,
+        /// Name of the route whose action was blocked.
+        route: String,
         /// Human-readable explanation of the policy violation.
         reason: String,
     },
 
-    /// A sibling is not enabled in the gateway config.
-    #[error("sibling '{0}' is not enabled in config")]
-    SiblingNotEnabled(String),
+    /// A route is not enabled in the gateway config.
+    #[error("route '{0}' is not enabled in config")]
+    RouteNotEnabled(String),
 
-    /// A sibling binary could not be spawned (process spawn failure).
-    #[error("failed to spawn sibling '{sibling}': {reason}")]
+    /// A route binary could not be spawned (process spawn failure).
+    #[error("failed to spawn route '{route}': {reason}")]
     SpawnFailed {
-        /// Sibling name.
-        sibling: String,
+        /// Route name.
+        route: String,
         /// Underlying error description.
         reason: String,
     },
@@ -78,11 +78,11 @@ pub enum GatewayError {
     #[error("internal error: {0}")]
     Internal(String),
 
-    /// An MCP protocol exchange with a sibling failed.
-    #[error("MCP protocol error for sibling '{sibling}': {reason}")]
+    /// An MCP protocol exchange with a route failed.
+    #[error("MCP protocol error for route '{route}': {reason}")]
     McpProtocol {
-        /// Sibling name.
-        sibling: String,
+        /// Route name.
+        route: String,
         /// Error description.
         reason: String,
     },

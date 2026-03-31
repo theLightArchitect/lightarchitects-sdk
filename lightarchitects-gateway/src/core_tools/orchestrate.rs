@@ -1,9 +1,9 @@
-//! `lightarchitects_orchestrate` — route a request to an enabled sibling.
+//! `lightarchitects_orchestrate` — route a request to an enabled route.
 //!
-//! Routing is driven by the canonical action enums in the SDK sibling crates.
-//! When `sibling` is omitted, the action string is parsed against each sibling's
-//! enum in priority order. When both match, the first enabled sibling wins; the
-//! caller can always override by specifying `sibling` explicitly.
+//! Routing is driven by the canonical action enums in the SDK route crates.
+//! When `route` is omitted, the action string is parsed against each route's
+//! enum in priority order. When both match, the first enabled route wins; the
+//! caller can always override by specifying `route` explicitly.
 //!
 //! Priority order: QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN.
 //! This ensures QUANTUM's `research` wins over SOUL's, and CORSO's domain-heavy
@@ -20,7 +20,7 @@ use lightarchitects_soul::SoulAction;
 
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
-use crate::spawner::call_sibling;
+use crate::spawner::call_route;
 
 // ── Auto-routing via SDK enums ───────────────────────────────────────────────
 
@@ -72,7 +72,7 @@ fn is_routable_ayin(action: &str) -> bool {
         .is_ok_and(|a| a.is_gateway_routable())
 }
 
-/// Priority-ordered sibling routing table.
+/// Priority-ordered route routing table.
 ///
 /// Order: QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN.
 ///
@@ -82,7 +82,7 @@ fn is_routable_ayin(action: &str) -> bool {
 /// - SERAPH third: pentest investigation actions.
 /// - EVA fourth: creative/consciousness actions.
 /// - SOUL fifth: generic vault names (search, query, stats) only match if
-///   no other sibling claims them.
+///   no other route claims them.
 /// - AYIN last: observability (sessions, spans, conversations).
 const SIBLING_ROUTES: &[SiblingRoute] = &[
     SiblingRoute {
@@ -111,27 +111,57 @@ const SIBLING_ROUTES: &[SiblingRoute] = &[
     },
 ];
 
-/// Resolve the best sibling for `action` given the current config.
+/// Resolve the best teammate for `action` given the current config.
 ///
-/// Parses `action` against each sibling's canonical enum in priority order
-/// (QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN). Returns `Some(name)`
-/// for the first enabled sibling whose enum recognises `action` as routable,
-/// or `None` if no match is found.
+/// Uses the active preset's routing priority order. Falls back to the
+/// static `SIBLING_ROUTES` order for teammates not in the preset's list.
+///
+/// Returns `Some(name)` for the first enabled teammate whose enum
+/// recognises `action` as routable, or `None` if no match is found.
 fn auto_route<'a>(action: &str, config: &'a GatewayConfig) -> Option<&'a str> {
+    auto_route_with_priority(action, config, super::preset::active_routing_priority())
+}
+
+/// Inner routing function that accepts an explicit priority order.
+///
+/// Tries each name in `priority` first, then falls back to any remaining
+/// teammates in the static `SIBLING_ROUTES` order.
+fn auto_route_with_priority<'a>(
+    action: &str,
+    config: &'a GatewayConfig,
+    priority: &[&str],
+) -> Option<&'a str> {
+    // Phase 1: check teammates in preset priority order.
+    for &name in priority {
+        if let Some(route) = SIBLING_ROUTES.iter().find(|r| r.name == name) {
+            if (route.matches)(action) {
+                if let Some(cfg) = config.routes.get(route.name) {
+                    if cfg.enabled {
+                        return Some(route.name);
+                    }
+                }
+            }
+        }
+    }
+
+    // Phase 2: fallback to static order for teammates NOT in the preset.
     for route in SIBLING_ROUTES {
+        if priority.contains(&route.name) {
+            continue; // Already checked in phase 1.
+        }
         if (route.matches)(action) {
-            if let Some(cfg) = config.siblings.get(route.name) {
+            if let Some(cfg) = config.routes.get(route.name) {
                 if cfg.enabled {
                     return Some(route.name);
                 }
             }
-            // Sibling disabled or absent — continue to next (allows fallback).
         }
     }
+
     None
 }
 
-/// Return the total number of gateway-routable actions across all siblings.
+/// Return the total number of gateway-routable actions across all routes.
 #[must_use]
 pub fn total_routable_action_count() -> usize {
     QuantumAction::ALL_ROUTABLE.len()
@@ -142,12 +172,12 @@ pub fn total_routable_action_count() -> usize {
         + AyinAction::ALL_ROUTABLE.len()
 }
 
-/// Collect all routable action names for a given sibling.
+/// Collect all routable action names for a given route.
 ///
-/// Returns an empty slice for unknown sibling names.
+/// Returns an empty slice for unknown route names.
 #[must_use]
-pub fn routable_actions_for(sibling: &str) -> Vec<&'static str> {
-    match sibling {
+pub fn routable_actions_for(route: &str) -> Vec<&'static str> {
+    match route {
         "quantum" => QuantumAction::ALL_ROUTABLE
             .iter()
             .map(QuantumAction::as_str)
@@ -176,24 +206,24 @@ pub fn routable_actions_for(sibling: &str) -> Vec<&'static str> {
     }
 }
 
-// ── Disabled-sibling response ────────────────────────────────────────────────
+// ── Disabled-route response ────────────────────────────────────────────────
 
-/// Build the structured "sibling not enabled" error payload.
+/// Build the structured "route not enabled" error payload.
 ///
 /// This is returned as a successful MCP tool result (not a JSON-RPC error)
 /// so the model can inspect and handle it gracefully.
-fn disabled_response(sibling: &str) -> Value {
+fn disabled_response(route: &str) -> Value {
     json!({
         "content": [{
             "type": "text",
             "text": serde_json::to_string_pretty(&json!({
-                "error": "sibling_not_enabled",
-                "sibling": sibling,
+                "error": "route_not_enabled",
+                "route": route,
                 "message": format!(
-                    "{sibling} is not enabled. To enable: edit ~/.lightarchitects/config.toml \
-                     and set [siblings.{sibling}] enabled = true"
+                    "{route} is not enabled. To enable: edit ~/.lightarchitects/config.toml \
+                     and set [routes.{route}] enabled = true"
                 ),
-                "alternative": "Use lightarchitects_bash to run tools directly, or enable the sibling."
+                "alternative": "Use lightarchitects_bash to run tools directly, or enable the target."
             })).unwrap_or_default()
         }]
     })
@@ -208,10 +238,10 @@ fn no_route_response(action: &str) -> Value {
                 "error": "no_route",
                 "action": action,
                 "message": format!(
-                    "No enabled sibling matched action '{action}'. \
-                     Specify 'sibling' explicitly or enable a sibling that handles this action."
+                    "No enabled target matched action '{action}'. \
+                     Specify 'route' explicitly or enable a target that handles this action."
                 ),
-                "hint": "Use lightarchitects_discover to see which siblings are available."
+                "hint": "Use lightarchitects_discover to see which routes are available."
             })).unwrap_or_default()
         }]
     })
@@ -221,16 +251,16 @@ fn no_route_response(action: &str) -> Value {
 
 /// Execute `lightarchitects_orchestrate`.
 ///
-/// Routes the `action` + `params` to the appropriate sibling, either by explicit
-/// `sibling` parameter or via the auto-routing table.
+/// Routes the `action` + `params` to the appropriate route, either by explicit
+/// `route` parameter or via the auto-routing table.
 ///
-/// Returns the sibling's raw MCP tool result, or a structured error payload if
-/// the sibling is disabled or no route matches.
+/// Returns the route's raw MCP tool result, or a structured error payload if
+/// the route is disabled or no route matches.
 ///
 /// # Errors
 ///
 /// Returns [`GatewayError`] only for protocol-level failures (spawn, I/O, JSON).
-/// Logical errors (disabled sibling, no route) are returned as successful payloads
+/// Logical errors (disabled route, no route) are returned as successful payloads
 /// so the model can handle them gracefully.
 pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, GatewayError> {
     let action = match params.get("action").and_then(Value::as_str) {
@@ -240,9 +270,9 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
         }
     };
 
-    // Extract explicit sibling override (optional).
-    let explicit_sibling = params
-        .get("sibling")
+    // Extract explicit route override (optional).
+    let explicit_route = params
+        .get("route")
         .and_then(Value::as_str)
         .map(str::to_owned);
 
@@ -252,11 +282,11 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
         .cloned()
         .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
-    // Resolve target sibling.
-    let target_sibling = match explicit_sibling.as_deref() {
+    // Resolve target route.
+    let target_route = match explicit_route.as_deref() {
         Some(name) => {
-            // Explicit sibling — validate it exists and is enabled.
-            match config.siblings.get(name) {
+            // Explicit route — validate it exists and is enabled.
+            match config.routes.get(name) {
                 Some(cfg) if cfg.enabled => name.to_owned(),
                 Some(_) | None => return Ok(disabled_response(name)),
             }
@@ -271,7 +301,7 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
     };
 
     // Delegate to the subprocess spawner.
-    call_sibling(&target_sibling, &action, forward_params, config).await
+    call_route(&target_route, &action, forward_params, config).await
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -306,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn auto_route_returns_none_for_disabled_sibling() {
+    fn auto_route_returns_none_for_disabled_route() {
         let cfg = GatewayConfig::default();
         // QUANTUM is disabled in default config; "triage" is QUANTUM-only.
         assert_eq!(auto_route("triage", &cfg), None);
@@ -322,7 +352,7 @@ mod tests {
     fn auto_route_returns_none_for_arena_actions() {
         // Arena actions are not in any SDK enum.
         let mut cfg = GatewayConfig::default();
-        if let Some(l) = cfg.siblings.get_mut("laex") {
+        if let Some(l) = cfg.routes.get_mut("laex") {
             l.enabled = true;
         }
         assert_eq!(auto_route("forge", &cfg), None);
@@ -331,15 +361,18 @@ mod tests {
     }
 
     #[test]
-    fn auto_route_prefers_quantum_for_research() {
+    fn auto_route_prefers_quantum_for_research_in_full_preset() {
         let mut cfg = GatewayConfig::default();
-        // Enable QUANTUM to test priority over SOUL.
-        if let Some(q) = cfg.siblings.get_mut("quantum") {
+        if let Some(q) = cfg.routes.get_mut("quantum") {
             q.enabled = true;
         }
         // "research" exists in both QUANTUM and SOUL.
-        // QUANTUM has higher priority and should win.
-        assert_eq!(auto_route("research", &cfg), Some("quantum"));
+        // In the full preset, QUANTUM has higher priority and should win.
+        let full = super::super::preset::find_preset("full").unwrap();
+        assert_eq!(
+            auto_route_with_priority("research", &cfg, full.routing_priority),
+            Some("quantum")
+        );
     }
 
     #[test]
@@ -350,26 +383,31 @@ mod tests {
     }
 
     #[test]
-    fn auto_route_prefers_quantum_for_trace() {
+    fn auto_route_prefers_quantum_for_trace_in_full_preset() {
         let mut cfg = GatewayConfig::default();
-        if let Some(q) = cfg.siblings.get_mut("quantum") {
+        if let Some(q) = cfg.routes.get_mut("quantum") {
             q.enabled = true;
         }
-        // "trace" is a QUANTUM workflow action.
-        assert_eq!(auto_route("trace", &cfg), Some("quantum"));
+        let full = super::super::preset::find_preset("full").unwrap();
+        // "trace" is a QUANTUM workflow action — routes correctly in full preset.
+        assert_eq!(
+            auto_route_with_priority("trace", &cfg, full.routing_priority),
+            Some("quantum")
+        );
     }
 
     #[test]
-    fn all_sdk_routable_actions_route_correctly() {
-        // Enable all siblings.
+    fn all_sdk_routable_actions_route_correctly_with_full_preset() {
+        // Enable all teammates and use the full preset priority.
         let mut cfg = GatewayConfig::default();
-        for sib in cfg.siblings.values_mut() {
+        for sib in cfg.routes.values_mut() {
             sib.enabled = true;
         }
 
-        // Verify every routable action for each sibling resolves to the
-        // correct sibling (accounting for priority — some actions may route
-        // to a higher-priority sibling instead).
+        let full = super::super::preset::find_preset("full").unwrap();
+
+        // Verify every routable action for each teammate resolves correctly
+        // under the full preset's priority (QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN).
         let expected: &[(&str, &[&str])] = &[
             (
                 "quantum",
@@ -443,38 +481,50 @@ mod tests {
                     "voice",
                     "converse",
                     "chat",
-                    // "research" routes to QUANTUM (higher priority).
+                    // "research" routes to QUANTUM (higher priority in full preset).
                 ],
             ),
             ("ayin", &["sessions", "spans", "conversations"]),
         ];
 
-        for &(sibling, actions) in expected {
+        for &(teammate, actions) in expected {
             for &action in actions {
-                let result = auto_route(action, &cfg);
+                let result = auto_route_with_priority(action, &cfg, full.routing_priority);
                 assert_eq!(
                     result,
-                    Some(sibling),
-                    "action '{action}' should route to '{sibling}', got {result:?}"
+                    Some(teammate),
+                    "action '{action}' should route to '{teammate}', got {result:?}"
                 );
             }
         }
     }
 
     #[test]
-    fn collision_priority_research() {
+    fn collision_priority_research_full_preset() {
         let mut cfg = GatewayConfig::default();
-        for sib in cfg.siblings.values_mut() {
+        for sib in cfg.routes.values_mut() {
             sib.enabled = true;
         }
-        // "research" → QUANTUM (higher priority than SOUL).
-        assert_eq!(auto_route("research", &cfg), Some("quantum"));
+        let full = super::super::preset::find_preset("full").unwrap();
+        // "research" → QUANTUM (higher priority than SOUL in full preset).
+        assert_eq!(
+            auto_route_with_priority("research", &cfg, full.routing_priority),
+            Some("quantum")
+        );
+    }
+
+    #[test]
+    fn default_preset_routes_research_to_soul() {
+        // Default preset is software_engineering which doesn't include QUANTUM.
+        // "research" falls back to SOUL.
+        let cfg = GatewayConfig::default();
+        assert_eq!(auto_route("research", &cfg), Some("soul"));
     }
 
     #[test]
     fn collision_priority_search_routes_to_soul() {
         let mut cfg = GatewayConfig::default();
-        for sib in cfg.siblings.values_mut() {
+        for sib in cfg.routes.values_mut() {
             sib.enabled = true;
         }
         // "search" is a SOUL action. CORSO has "search_code" but not bare "search".
@@ -522,21 +572,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn orchestrate_disabled_sibling_returns_structured_payload() {
+    async fn orchestrate_disabled_route_returns_structured_payload() {
         let cfg = GatewayConfig::default();
         // QUANTUM is disabled in default config.
         let result = run(
-            json!({"action": "triage", "sibling": "quantum", "params": {}}),
+            json!({"action": "triage", "route": "quantum", "params": {}}),
             &cfg,
         )
         .await
         .unwrap();
         let text = result["content"][0]["text"].as_str().unwrap();
-        assert!(
-            text.contains("sibling_not_enabled"),
-            "expected error payload"
-        );
-        assert!(text.contains("quantum"), "expected sibling name in payload");
+        assert!(text.contains("route_not_enabled"), "expected error payload");
+        assert!(text.contains("quantum"), "expected route name in payload");
     }
 
     #[tokio::test]

@@ -1,6 +1,6 @@
 //! Sibling subprocess spawner and MCP proxy.
 //!
-//! Each call to [`call_sibling`](crate::spawner::call_sibling) spawns a fresh child process for the target sibling,
+//! Each call to [`call_route`](crate::spawner::call_route) spawns a fresh child process for the target route,
 //! performs the MCP `initialize` handshake, sends a `tools/call` request, and returns
 //! the result. The child process is killed when it drops out of scope.
 //!
@@ -12,7 +12,7 @@
 //!
 //! # MCP framing
 //!
-//! All siblings (CORSO, EVA, SOUL, QUANTUM, SERAPH, AYIN) use newline-delimited
+//! All routes (CORSO, EVA, SOUL, QUANTUM, SERAPH, AYIN) use newline-delimited
 //! JSON-RPC 2.0 over stdio — one JSON object per line, no Content-Length framing.
 //! SERAPH uses Content-Length framing in production, but its Mac bridge (the MCP
 //! binary Claude Code uses) speaks newline-framed stdio. This spawner uses newline
@@ -24,7 +24,7 @@
 //! |---|---|
 //! | [`crate::error::GatewayError::SpawnFailed`] | Binary not found or OS spawn error |
 //! | [`crate::error::GatewayError::McpProtocol`] | Timeout, malformed JSON, or unexpected response |
-//! | [`crate::error::GatewayError::SiblingNotEnabled`] | Sibling disabled in config |
+//! | [`crate::error::GatewayError::RouteNotEnabled`] | Sibling disabled in config |
 
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -42,16 +42,16 @@ use crate::governance;
 /// Per-process automation token — generated once at startup.
 static AUTOMATION_TOKEN: OnceLock<String> = OnceLock::new();
 
-/// Maximum time to wait for a single MCP response from a sibling.
+/// Maximum time to wait for a single MCP response from a route.
 const MCP_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Minimum JSON-RPC id to use for the `tools/call` request.
 const CALL_ID: u64 = 2;
 
-/// Spawn a sibling binary, execute one MCP `tools/call`, and return the result.
+/// Spawn a route binary, execute one MCP `tools/call`, and return the result.
 ///
-/// The sibling is identified by `sibling_name`. The `action` field is forwarded
-/// inside the sibling's tool arguments alongside any extra `params`.
+/// The route is identified by `route_name`. The `action` field is forwarded
+/// inside the route's tool arguments alongside any extra `params`.
 ///
 /// # Governance
 ///
@@ -60,71 +60,71 @@ const CALL_ID: u64 = 2;
 ///
 /// # Errors
 ///
-/// - [`GatewayError::SiblingNotEnabled`] — sibling not enabled in config.
+/// - [`GatewayError::RouteNotEnabled`] — route not enabled in config.
 /// - [`GatewayError::Governance`] — trust or scope check failed.
 /// - [`GatewayError::SpawnFailed`] — binary not found or OS spawn error.
 /// - [`GatewayError::McpProtocol`] — handshake or response parsing failure.
-#[instrument(skip(config, params), fields(sibling = sibling_name, action))]
-pub async fn call_sibling(
-    sibling_name: &str,
+#[instrument(skip(config, params), fields(route = route_name, action, preset = %crate::core_tools::preset::active_preset_name()))]
+pub async fn call_route(
+    route_name: &str,
     action: &str,
     params: Value,
     config: &GatewayConfig,
 ) -> Result<Value, GatewayError> {
-    // 1. Lookup sibling config — reject early if not present or disabled.
-    let sibling_cfg = config
-        .siblings
-        .get(sibling_name)
-        .ok_or_else(|| GatewayError::SiblingNotEnabled(sibling_name.to_owned()))?;
+    // 1. Lookup route config — reject early if not present or disabled.
+    let route_cfg = config
+        .routes
+        .get(route_name)
+        .ok_or_else(|| GatewayError::RouteNotEnabled(route_name.to_owned()))?;
 
-    if !sibling_cfg.enabled {
-        return Err(GatewayError::SiblingNotEnabled(sibling_name.to_owned()));
+    if !route_cfg.enabled {
+        return Err(GatewayError::RouteNotEnabled(route_name.to_owned()));
     }
 
     // 2. Governance: trust + scope enforcement before any subprocess is created.
     governance::enforce(
-        sibling_name,
-        sibling_cfg.trust,
-        sibling_cfg.scope,
+        route_name,
+        route_cfg.trust,
+        route_cfg.scope,
         action,
         &params,
     )?;
 
     // 3. Resolve binary path and verify existence (QUANTUM B1 recommendation).
-    let binary_path = sibling_cfg.binary_path();
+    let binary_path = route_cfg.binary_path();
     if !binary_path.is_file() {
         warn!(
-            sibling = sibling_name,
+            route = route_name,
             path = %binary_path.display(),
-            "sibling binary not found"
+            "route binary not found"
         );
         return Err(GatewayError::SpawnFailed {
-            sibling: sibling_name.to_owned(),
-            reason: format!("binary not found. Build and deploy {sibling_name} first."),
+            route: route_name.to_owned(),
+            reason: format!("binary not found. Build and deploy {route_name} first."),
         });
     }
 
     // 3b. Binary integrity verification — if checksum is configured, verify before spawn.
-    if let Some(expected) = &sibling_cfg.checksum {
-        let actual = sha256_file(&binary_path, sibling_name)?;
+    if let Some(expected) = &route_cfg.checksum {
+        let actual = sha256_file(&binary_path, route_name)?;
         if actual != *expected {
             return Err(GatewayError::SpawnFailed {
-                sibling: sibling_name.to_owned(),
+                route: route_name.to_owned(),
                 reason: format!("binary checksum mismatch: expected {expected}, got {actual}"),
             });
         }
-        debug!(sibling = sibling_name, "binary checksum verified");
+        debug!(route = route_name, "binary checksum verified");
     }
 
-    // 4. Spawn the sibling process.
-    let mut child = spawn_sibling(&binary_path, sibling_name)?;
+    // 4. Spawn the route process.
+    let mut child = spawn_route(&binary_path, route_name)?;
 
     // 5. Take stdin/stdout handles before executing — these are moved into helpers.
     let stdin = child
         .stdin
         .take()
         .ok_or_else(|| GatewayError::McpProtocol {
-            sibling: sibling_name.to_owned(),
+            route: route_name.to_owned(),
             reason: "failed to open stdin pipe".to_owned(),
         })?;
 
@@ -132,7 +132,7 @@ pub async fn call_sibling(
         .stdout
         .take()
         .ok_or_else(|| GatewayError::McpProtocol {
-            sibling: sibling_name.to_owned(),
+            route: route_name.to_owned(),
             reason: "failed to open stdout pipe".to_owned(),
         })?;
 
@@ -140,7 +140,7 @@ pub async fn call_sibling(
     let mut reader = BufReader::new(stdout);
 
     // 6. MCP initialize handshake.
-    mcp_initialize(&mut writer, &mut reader, sibling_name).await?;
+    mcp_initialize(&mut writer, &mut reader, route_name).await?;
 
     // 7. Build the tools/call arguments: {action, params}.
     let mut arguments = serde_json::Map::new();
@@ -153,7 +153,7 @@ pub async fn call_sibling(
         }
     }
 
-    let tool_name = sibling_cfg.tool_name.clone();
+    let tool_name = route_cfg.tool_name.clone();
 
     // 8. Send tools/call.
     let call_req = json!({
@@ -166,14 +166,14 @@ pub async fn call_sibling(
         }
     });
 
-    debug!(sibling = sibling_name, tool = %tool_name, "sending tools/call");
-    write_line(&mut writer, &call_req, sibling_name).await?;
+    debug!(route = route_name, tool = %tool_name, "sending tools/call");
+    write_line(&mut writer, &call_req, route_name).await?;
 
     // 9. Read the tools/call response.
-    let response = read_response(&mut reader, CALL_ID, sibling_name).await?;
+    let response = read_response(&mut reader, CALL_ID, route_name).await?;
 
     // 10. Extract result or propagate error.
-    let result = extract_result(response, sibling_name)?;
+    let result = extract_result(response, route_name)?;
 
     // Child drops here — the OS SIGKILL handles cleanup.
     Ok(result)
@@ -181,13 +181,13 @@ pub async fn call_sibling(
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-/// Spawn the sibling binary with stdin/stdout pipes.
+/// Spawn the route binary with stdin/stdout pipes.
 ///
 /// Sets `LIGHTARCHITECTS_AUTOMATED` to a random nonce (32-byte hex) generated
 /// at gateway startup. Siblings verify the token is a 64-char hex string
 /// rather than a simple `"1"` or `"true"`, preventing trivial HITL bypass
 /// from malicious processes that guess the env var name.
-fn spawn_sibling(binary_path: &std::path::Path, sibling_name: &str) -> Result<Child, GatewayError> {
+fn spawn_route(binary_path: &std::path::Path, route_name: &str) -> Result<Child, GatewayError> {
     let token = automation_token();
     Command::new(binary_path)
         .stdin(std::process::Stdio::piped())
@@ -196,7 +196,7 @@ fn spawn_sibling(binary_path: &std::path::Path, sibling_name: &str) -> Result<Ch
         .env("LIGHTARCHITECTS_AUTOMATED", &token)
         .spawn()
         .map_err(|e| GatewayError::SpawnFailed {
-            sibling: sibling_name.to_owned(),
+            route: route_name.to_owned(),
             reason: crate::core_tools::security::sanitize_error(&e.to_string()),
         })
 }
@@ -223,7 +223,7 @@ fn automation_token() -> String {
 /// Generate a 64-char hex nonce using system time and PID as entropy.
 ///
 /// This is not cryptographically random, but it is unpredictable enough to
-/// prevent a sibling or external process from trivially spoofing the token.
+/// prevent a route or external process from trivially spoofing the token.
 #[must_use]
 pub fn generate_automation_token() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -239,7 +239,7 @@ pub fn generate_automation_token() -> String {
 async fn mcp_initialize(
     writer: &mut tokio::io::BufWriter<tokio::process::ChildStdin>,
     reader: &mut BufReader<tokio::process::ChildStdout>,
-    sibling_name: &str,
+    route_name: &str,
 ) -> Result<(), GatewayError> {
     let init_req = json!({
         "jsonrpc": "2.0",
@@ -255,17 +255,17 @@ async fn mcp_initialize(
         }
     });
 
-    write_line(writer, &init_req, sibling_name).await?;
+    write_line(writer, &init_req, route_name).await?;
 
     // Read the initialize response — we don't validate capabilities here.
-    let _init_response = read_response(reader, 1, sibling_name).await?;
+    let _init_response = read_response(reader, 1, route_name).await?;
 
     // Send the initialized notification (required by MCP spec before tools/call).
     let initialized = json!({
         "jsonrpc": "2.0",
         "method": "notifications/initialized"
     });
-    write_line(writer, &initialized, sibling_name).await?;
+    write_line(writer, &initialized, route_name).await?;
 
     Ok(())
 }
@@ -274,7 +274,7 @@ async fn mcp_initialize(
 async fn write_line(
     writer: &mut tokio::io::BufWriter<tokio::process::ChildStdin>,
     value: &Value,
-    sibling_name: &str,
+    route_name: &str,
 ) -> Result<(), GatewayError> {
     let mut line = serde_json::to_string(value).map_err(GatewayError::Json)?;
     line.push('\n');
@@ -283,7 +283,7 @@ async fn write_line(
         .write_all(line.as_bytes())
         .await
         .map_err(|e| GatewayError::McpProtocol {
-            sibling: sibling_name.to_owned(),
+            route: route_name.to_owned(),
             reason: format!("write error: {e}"),
         })?;
 
@@ -291,7 +291,7 @@ async fn write_line(
         .flush()
         .await
         .map_err(|e| GatewayError::McpProtocol {
-            sibling: sibling_name.to_owned(),
+            route: route_name.to_owned(),
             reason: format!("flush error: {e}"),
         })?;
 
@@ -305,7 +305,7 @@ async fn write_line(
 async fn read_response(
     reader: &mut BufReader<tokio::process::ChildStdout>,
     expected_id: u64,
-    sibling_name: &str,
+    route_name: &str,
 ) -> Result<Value, GatewayError> {
     let mut line = String::new();
 
@@ -316,14 +316,14 @@ async fn read_response(
                 .read_line(&mut line)
                 .await
                 .map_err(|e| GatewayError::McpProtocol {
-                    sibling: sibling_name.to_owned(),
+                    route: route_name.to_owned(),
                     reason: format!("read error: {e}"),
                 })?;
 
             if n == 0 {
                 return Err(GatewayError::McpProtocol {
-                    sibling: sibling_name.to_owned(),
-                    reason: "sibling closed stdout unexpectedly".to_owned(),
+                    route: route_name.to_owned(),
+                    reason: "route closed stdout unexpectedly".to_owned(),
                 });
             }
 
@@ -335,10 +335,7 @@ async fn read_response(
             let value: Value = if let Ok(v) = serde_json::from_str(trimmed) {
                 v
             } else {
-                debug!(
-                    sibling = sibling_name,
-                    "skipping non-JSON line from sibling"
-                );
+                debug!(route = route_name, "skipping non-JSON line from route");
                 continue;
             };
 
@@ -349,10 +346,7 @@ async fn read_response(
                 }
                 Some(Value::Number(_)) => {
                     // A response for a different id — not expected but skip it.
-                    debug!(
-                        sibling = sibling_name,
-                        "skipping response for unexpected id"
-                    );
+                    debug!(route = route_name, "skipping response for unexpected id");
                 }
                 _ => {
                     // Notification — skip.
@@ -365,7 +359,7 @@ async fn read_response(
     match result {
         Ok(inner) => inner,
         Err(_) => Err(GatewayError::McpProtocol {
-            sibling: sibling_name.to_owned(),
+            route: route_name.to_owned(),
             reason: format!(
                 "timed out waiting for response ({}s)",
                 MCP_RESPONSE_TIMEOUT.as_secs()
@@ -376,10 +370,10 @@ async fn read_response(
 
 /// Extract the `result` field from a successful JSON-RPC response, or convert
 /// a JSON-RPC error response into a [`GatewayError::McpProtocol`].
-fn extract_result(response: Value, sibling_name: &str) -> Result<Value, GatewayError> {
+fn extract_result(response: Value, route_name: &str) -> Result<Value, GatewayError> {
     if let Some(error) = response.get("error") {
         return Err(GatewayError::McpProtocol {
-            sibling: sibling_name.to_owned(),
+            route: route_name.to_owned(),
             reason: error
                 .get("message")
                 .and_then(Value::as_str)
@@ -392,7 +386,7 @@ fn extract_result(response: Value, sibling_name: &str) -> Result<Value, GatewayE
         .get("result")
         .cloned()
         .ok_or_else(|| GatewayError::McpProtocol {
-            sibling: sibling_name.to_owned(),
+            route: route_name.to_owned(),
             reason: "response missing 'result' field".to_owned(),
         })
 }
@@ -405,18 +399,18 @@ fn extract_result(response: Value, sibling_name: &str) -> Result<Value, GatewayE
 ///
 /// Returns [`GatewayError::SpawnFailed`] if the file cannot be read or
 /// `shasum` cannot be executed.
-fn sha256_file(path: &std::path::Path, sibling_name: &str) -> Result<String, GatewayError> {
+fn sha256_file(path: &std::path::Path, route_name: &str) -> Result<String, GatewayError> {
     let output = std::process::Command::new("shasum")
         .args(["-a", "256", &path.to_string_lossy()])
         .output()
         .map_err(|e| GatewayError::SpawnFailed {
-            sibling: sibling_name.to_owned(),
+            route: route_name.to_owned(),
             reason: format!("shasum failed: {e}"),
         })?;
 
     if !output.status.success() {
         return Err(GatewayError::SpawnFailed {
-            sibling: sibling_name.to_owned(),
+            route: route_name.to_owned(),
             reason: "shasum returned non-zero exit code".to_owned(),
         });
     }
@@ -427,7 +421,7 @@ fn sha256_file(path: &std::path::Path, sibling_name: &str) -> Result<String, Gat
         .next()
         .map(String::from)
         .ok_or_else(|| GatewayError::SpawnFailed {
-            sibling: sibling_name.to_owned(),
+            route: route_name.to_owned(),
             reason: "shasum produced no output".to_owned(),
         })
 }
@@ -440,39 +434,39 @@ mod tests {
     use crate::config::GatewayConfig;
 
     #[tokio::test]
-    async fn call_sibling_fails_for_unknown_sibling() {
+    async fn call_route_fails_for_unknown_route() {
         let cfg = GatewayConfig::default();
-        let err = call_sibling("nonexistent", "query", json!({}), &cfg)
+        let err = call_route("nonexistent", "query", json!({}), &cfg)
             .await
             .unwrap_err();
         assert!(
-            matches!(err, GatewayError::SiblingNotEnabled(_)),
-            "expected SiblingNotEnabled, got {err:?}"
+            matches!(err, GatewayError::RouteNotEnabled(_)),
+            "expected RouteNotEnabled, got {err:?}"
         );
     }
 
     #[tokio::test]
-    async fn call_sibling_fails_for_disabled_sibling() {
+    async fn call_route_fails_for_disabled_route() {
         let cfg = GatewayConfig::default();
         // QUANTUM is disabled in default config.
-        let err = call_sibling("quantum", "scan", json!({}), &cfg)
+        let err = call_route("quantum", "scan", json!({}), &cfg)
             .await
             .unwrap_err();
         assert!(
-            matches!(err, GatewayError::SiblingNotEnabled(_)),
-            "expected SiblingNotEnabled for disabled sibling, got {err:?}"
+            matches!(err, GatewayError::RouteNotEnabled(_)),
+            "expected RouteNotEnabled for disabled route, got {err:?}"
         );
     }
 
     #[tokio::test]
-    async fn call_sibling_fails_gracefully_when_binary_missing() {
+    async fn call_route_fails_gracefully_when_binary_missing() {
         // Override the binary path to a path that is guaranteed not to exist,
         // making the test deterministic regardless of local deployment state.
         let mut cfg = GatewayConfig::default();
-        if let Some(c) = cfg.siblings.get_mut("corso") {
+        if let Some(c) = cfg.routes.get_mut("corso") {
             c.binary = "/nonexistent/path/corso-binary-absent".to_owned();
         }
-        let err = call_sibling("corso", "guard", json!({}), &cfg)
+        let err = call_route("corso", "guard", json!({}), &cfg)
             .await
             .unwrap_err();
         // Either SpawnFailed (binary missing) or Governance — both are acceptable.

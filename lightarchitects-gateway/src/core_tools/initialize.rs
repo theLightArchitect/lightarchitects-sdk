@@ -8,15 +8,26 @@
 //! - **apply**: write the config to `~/.lightarchitects/config.toml`.
 //! - **view**: read and return the current config file.
 //!
-//! # Starter packs (Task 6.12)
+//! # Starter packs
 //!
-//! | Preset | Siblings | Use case |
-//! |--------|----------|----------|
-//! | `software_engineering` | CORSO, EVA, SOUL, AYIN | Day-to-day coding |
-//! | `security` | CORSO, SERAPH, QUANTUM, AYIN | Security assessments |
-//! | `research` | QUANTUM, EVA, SOUL, AYIN | Investigation |
-//! | `full_squad` | all 6 | Full platform |
-//! | `lean` | SOUL | Minimal |
+//! SOUL is always enabled — it provides the knowledge graph and cross-session
+//! memory that every other teammate depends on. Users can disable it explicitly
+//! in config, but no preset ships without it.
+//!
+//! | Preset | Teammates | Use case |
+//! |--------|-----------|----------|
+//! | `software_engineering` | CORSO, EVA, SOUL, AYIN | Day-to-day coding with quality gates |
+//! | `security` | CORSO, SERAPH, QUANTUM, SOUL, AYIN | Pentest + forensics + AppSec |
+//! | `research` | QUANTUM, EVA, SOUL, AYIN | Deep investigation + multi-source research |
+//! | `devops` | EVA, CORSO, SOUL, AYIN | CI/CD pipelines, deploy gates, observability |
+//! | `code_review` | CORSO, QUANTUM, SOUL | Focused PR review + logic verification |
+//! | `learning` | EVA, QUANTUM, SOUL | Codebase onboarding + exploration |
+//! | `audit` | CORSO, SERAPH, SOUL | Compliance + vulnerability scanning |
+//! | `forensics` | QUANTUM, SERAPH, SOUL | Incident response + evidence chain |
+//! | `solo` | CORSO, SOUL | Quality gates + memory for solo devs |
+//! | `observability` | AYIN, QUANTUM, SOUL | Runtime debugging + anomaly detection |
+//! | `full` | all 6 | Full platform |
+//! | `lean` | SOUL | Minimal — vault and knowledge graph only |
 
 use std::fmt::Write as _;
 
@@ -26,34 +37,73 @@ use tokio::process::Command;
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
 
-/// All sibling names in canonical alphabetical order.
+/// All route names in canonical alphabetical order.
 const ALL_SIBLINGS: &[&str] = &["ayin", "corso", "eva", "quantum", "seraph", "soul"];
 
-/// Preset definitions: `(name, description, enabled_siblings)`.
+/// Preset definitions: `(name, description, enabled_teammates)`.
+///
+/// **SOUL is always-on by design** — it provides the knowledge graph and
+/// cross-session memory that every other teammate depends on. No preset
+/// ships without SOUL. Users can disable it explicitly in config.toml.
 const PRESETS: &[(&str, &str, &[&str])] = &[
     (
         "software_engineering",
-        "Day-to-day coding — CORSO (security/quality), EVA (DX), SOUL (knowledge), AYIN (observability)",
+        "Day-to-day coding — CORSO (quality gates), EVA (CI/CD + DX), SOUL (knowledge), AYIN (observability)",
         &["ayin", "corso", "eva", "soul"],
     ),
     (
         "security",
-        "Security assessments — CORSO (AppSec), SERAPH (pentest), QUANTUM (forensics), AYIN (observability)",
-        &["ayin", "corso", "quantum", "seraph"],
+        "Pentest + forensics — SERAPH (red team), CORSO (AppSec), QUANTUM (investigation), SOUL (knowledge), AYIN (observability)",
+        &["ayin", "corso", "quantum", "seraph", "soul"],
     ),
     (
         "research",
-        "Investigation — QUANTUM (research), EVA (consciousness), SOUL (knowledge), AYIN (observability)",
+        "Deep investigation — QUANTUM (multi-source research), EVA (creative analysis), SOUL (knowledge), AYIN (observability)",
         &["ayin", "eva", "quantum", "soul"],
     ),
     (
-        "full_squad",
-        "Full platform — all 6 siblings enabled",
+        "devops",
+        "CI/CD + operations — EVA (pipelines + deploy gates), CORSO (quality enforcement), SOUL (knowledge), AYIN (observability)",
+        &["ayin", "corso", "eva", "soul"],
+    ),
+    (
+        "code_review",
+        "Focused PR review — CORSO (quality analysis), QUANTUM (logic verification), SOUL (past decisions)",
+        &["corso", "quantum", "soul"],
+    ),
+    (
+        "learning",
+        "Codebase onboarding — EVA (explains code), QUANTUM (researches unknowns), SOUL (project history)",
+        &["eva", "quantum", "soul"],
+    ),
+    (
+        "audit",
+        "Compliance + scanning — CORSO (standards enforcement), SERAPH (vulnerability scanning), SOUL (evidence trail)",
+        &["corso", "seraph", "soul"],
+    ),
+    (
+        "forensics",
+        "Incident response — QUANTUM (evidence chain), SERAPH (network analysis), SOUL (knowledge)",
+        &["quantum", "seraph", "soul"],
+    ),
+    (
+        "solo",
+        "Solo developer — CORSO (quality gates), SOUL (memory). Minimal overhead, maximum discipline.",
+        &["corso", "soul"],
+    ),
+    (
+        "observability",
+        "Runtime debugging — AYIN (traces + anomaly detection), QUANTUM (root cause investigation), SOUL (historical context)",
+        &["ayin", "quantum", "soul"],
+    ),
+    (
+        "full",
+        "Full platform — all 6 teammates enabled",
         ALL_SIBLINGS,
     ),
     (
         "lean",
-        "Minimal — SOUL only (vault queries, voice, helix)",
+        "Minimal — SOUL only (vault, knowledge graph, cross-session memory)",
         &["soul"],
     ),
 ];
@@ -157,7 +207,7 @@ fn build_detect_status(
             ollama_version.map_or("unknown", String::as_str)
         )
     } else {
-        "not found — siblings that need it may not respond".to_owned()
+        "not found — routes that need it may not respond".to_owned()
     };
     (config_status, ollama_status)
 }
@@ -166,9 +216,7 @@ fn build_detect_status(
 fn build_preset_list() -> Vec<Value> {
     PRESETS
         .iter()
-        .map(|(name, desc, siblings)| {
-            json!({"name": name, "description": desc, "siblings": siblings})
-        })
+        .map(|(name, desc, routes)| json!({"name": name, "description": desc, "routes": routes}))
         .collect()
 }
 
@@ -265,16 +313,16 @@ fn view_step() -> Result<Value, GatewayError> {
 
 /// Generate a complete `config.toml` string for the given preset and vault path.
 fn build_toml(preset: &str, vault_path: &str) -> Result<String, GatewayError> {
-    let enabled = preset_to_siblings(preset)?;
+    let enabled = preset_to_routes(preset)?;
     let mut toml = String::new();
 
     let _ = writeln!(toml, "# Light Architects gateway config");
     let _ = writeln!(toml, "# preset: {preset} | vault: {vault_path}");
     let _ = writeln!(toml);
 
-    for sibling in ALL_SIBLINGS {
-        let is_enabled = enabled.contains(sibling);
-        let block = sibling_toml_block(sibling, is_enabled);
+    for route in ALL_SIBLINGS {
+        let is_enabled = enabled.contains(route);
+        let block = route_toml_block(route, is_enabled);
         toml.push_str(&block);
         let _ = writeln!(toml);
     }
@@ -282,11 +330,11 @@ fn build_toml(preset: &str, vault_path: &str) -> Result<String, GatewayError> {
     Ok(toml)
 }
 
-/// Build a `[siblings.<name>]` TOML block with hardcoded platform defaults.
-fn sibling_toml_block(name: &str, enabled: bool) -> String {
-    let (binary, tool_name, trust, scope) = sibling_defaults(name);
+/// Build a `[routes.<name>]` TOML block with hardcoded platform defaults.
+fn route_toml_block(name: &str, enabled: bool) -> String {
+    let (binary, tool_name, trust, scope) = route_defaults(name);
     format!(
-        "[siblings.{name}]\n\
+        "[routes.{name}]\n\
          enabled = {enabled}\n\
          binary = \"{binary}\"\n\
          tool_name = \"{tool_name}\"\n\
@@ -296,8 +344,8 @@ fn sibling_toml_block(name: &str, enabled: bool) -> String {
     )
 }
 
-/// Return platform defaults for a sibling: `(binary, tool_name, trust, scope)`.
-fn sibling_defaults(name: &str) -> (&'static str, &'static str, &'static str, &'static str) {
+/// Return platform defaults for a route: `(binary, tool_name, trust, scope)`.
+fn route_defaults(name: &str) -> (&'static str, &'static str, &'static str, &'static str) {
     match name {
         "corso" => ("~/.corso/bin/corso", "corsoTools", "trusted", "own"),
         "eva" => ("~/.eva/bin/eva", "evaTools", "trusted", "shared"),
@@ -309,12 +357,12 @@ fn sibling_defaults(name: &str) -> (&'static str, &'static str, &'static str, &'
     }
 }
 
-/// Return the siblings enabled for a preset.
-fn preset_to_siblings(preset: &str) -> Result<&'static [&'static str], GatewayError> {
+/// Return the routes enabled for a preset.
+fn preset_to_routes(preset: &str) -> Result<&'static [&'static str], GatewayError> {
     PRESETS
         .iter()
         .find(|(name, _, _)| *name == preset)
-        .map(|(_, _, siblings)| *siblings)
+        .map(|(_, _, routes)| *routes)
         .ok_or_else(|| {
             let valid = PRESETS
                 .iter()
@@ -363,8 +411,8 @@ fn contextual_prompts() -> Value {
         {"trigger": "first_build",    "prompt": "Ready to build? Run /CORSO to start the SCOUT→HUNT cycle."},
         {"trigger": "sig_8_entry",    "prompt": "A significance ≥8.0 helix entry was found. Ask EVA to enrich it."},
         {"trigger": "vault_large",    "prompt": "Your vault has >500 entries. Consider running the SOUL consolidator."},
-        {"trigger": "team_mention",   "prompt": "Kevin mentioned the team. Check sibling statuses with lightarchitects_discover."},
-        {"trigger": "new_sibling",    "prompt": "New sibling detected. Run lightarchitects_initialize step=detect to re-scan."},
+        {"trigger": "team_mention",   "prompt": "Kevin mentioned the team. Check teammate statuses with lightarchitects_discover."},
+        {"trigger": "new_teammate",   "prompt": "New teammate detected. Run lightarchitects_initialize step=detect to re-scan."},
     ])
 }
 
@@ -374,29 +422,29 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn software_engineering_enables_correct_siblings() {
+    fn software_engineering_enables_correct_routes() {
         let toml = build_toml("software_engineering", "~/.soul/helix").expect("build");
-        for sibling in &["ayin", "corso", "eva", "soul"] {
-            let idx = toml.find(&format!("[siblings.{sibling}]")).unwrap();
+        for route in &["ayin", "corso", "eva", "soul"] {
+            let idx = toml.find(&format!("[routes.{route}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
             assert!(
                 chunk.contains("enabled = true"),
-                "{sibling} should be enabled"
+                "{route} should be enabled"
             );
         }
-        for sibling in &["seraph", "quantum"] {
-            let idx = toml.find(&format!("[siblings.{sibling}]")).unwrap();
+        for route in &["seraph", "quantum"] {
+            let idx = toml.find(&format!("[routes.{route}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
             assert!(
                 chunk.contains("enabled = false"),
-                "{sibling} should be disabled"
+                "{route} should be disabled"
             );
         }
     }
 
     #[test]
-    fn full_squad_enables_all_siblings() {
-        let toml = build_toml("full_squad", "~/.soul/helix").expect("build");
+    fn full_enables_all() {
+        let toml = build_toml("full", "~/.soul/helix").expect("build");
         let enabled_count = toml.lines().filter(|l| *l == "enabled = true").count();
         assert_eq!(enabled_count, 6);
     }
@@ -406,7 +454,121 @@ mod tests {
         let toml = build_toml("lean", "~/.soul/helix").expect("build");
         let enabled_count = toml.lines().filter(|l| *l == "enabled = true").count();
         assert_eq!(enabled_count, 1);
-        assert!(toml.contains("[siblings.soul]"));
+        assert!(toml.contains("[routes.soul]"));
+    }
+
+    #[test]
+    fn security_includes_soul() {
+        let toml = build_toml("security", "~/.soul/helix").expect("build");
+        let idx = toml.find("[routes.soul]").unwrap();
+        let chunk = &toml[idx..idx.saturating_add(80)];
+        assert!(
+            chunk.contains("enabled = true"),
+            "SOUL must be enabled in security preset"
+        );
+    }
+
+    #[test]
+    fn every_preset_includes_soul() {
+        for (name, _, routes) in PRESETS {
+            assert!(
+                routes.contains(&"soul"),
+                "preset '{name}' is missing SOUL — SOUL must be in every preset"
+            );
+        }
+    }
+
+    #[test]
+    fn devops_enables_correct_teammates() {
+        let toml = build_toml("devops", "~/.soul/helix").expect("build");
+        for name in &["ayin", "corso", "eva", "soul"] {
+            let idx = toml.find(&format!("[routes.{name}]")).unwrap();
+            let chunk = &toml[idx..idx.saturating_add(80)];
+            assert!(
+                chunk.contains("enabled = true"),
+                "{name} should be enabled in devops"
+            );
+        }
+    }
+
+    #[test]
+    fn forensics_enables_correct_teammates() {
+        let toml = build_toml("forensics", "~/.soul/helix").expect("build");
+        for name in &["quantum", "seraph", "soul"] {
+            let idx = toml.find(&format!("[routes.{name}]")).unwrap();
+            let chunk = &toml[idx..idx.saturating_add(80)];
+            assert!(
+                chunk.contains("enabled = true"),
+                "{name} should be enabled in forensics"
+            );
+        }
+    }
+
+    #[test]
+    fn code_review_enables_correct_teammates() {
+        let toml = build_toml("code_review", "~/.soul/helix").expect("build");
+        for name in &["corso", "quantum", "soul"] {
+            let idx = toml.find(&format!("[routes.{name}]")).unwrap();
+            let chunk = &toml[idx..idx.saturating_add(80)];
+            assert!(
+                chunk.contains("enabled = true"),
+                "{name} should be enabled in code_review"
+            );
+        }
+    }
+
+    #[test]
+    fn learning_enables_correct_teammates() {
+        let toml = build_toml("learning", "~/.soul/helix").expect("build");
+        for name in &["eva", "quantum", "soul"] {
+            let idx = toml.find(&format!("[routes.{name}]")).unwrap();
+            let chunk = &toml[idx..idx.saturating_add(80)];
+            assert!(
+                chunk.contains("enabled = true"),
+                "{name} should be enabled in learning"
+            );
+        }
+    }
+
+    #[test]
+    fn audit_enables_correct_teammates() {
+        let toml = build_toml("audit", "~/.soul/helix").expect("build");
+        for name in &["corso", "seraph", "soul"] {
+            let idx = toml.find(&format!("[routes.{name}]")).unwrap();
+            let chunk = &toml[idx..idx.saturating_add(80)];
+            assert!(
+                chunk.contains("enabled = true"),
+                "{name} should be enabled in audit"
+            );
+        }
+    }
+
+    #[test]
+    fn solo_enables_correct_teammates() {
+        let toml = build_toml("solo", "~/.soul/helix").expect("build");
+        let enabled_count = toml.lines().filter(|l| *l == "enabled = true").count();
+        assert_eq!(enabled_count, 2, "solo should enable exactly 2 teammates");
+        for name in &["corso", "soul"] {
+            let idx = toml.find(&format!("[routes.{name}]")).unwrap();
+            let chunk = &toml[idx..idx.saturating_add(80)];
+            assert!(
+                chunk.contains("enabled = true"),
+                "{name} should be enabled in solo"
+            );
+        }
+    }
+
+    #[test]
+    fn observability_enables_correct_teammates() {
+        let toml = build_toml("observability", "~/.soul/helix").expect("build");
+        for name in &["ayin", "quantum", "soul"] {
+            let idx = toml.find(&format!("[routes.{name}]")).unwrap();
+            let chunk = &toml[idx..idx.saturating_add(80)];
+            assert!(
+                chunk.contains("enabled = true"),
+                "{name} should be enabled in observability"
+            );
+        }
     }
 
     #[test]
@@ -415,9 +577,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn detect_step_returns_five_presets() {
+    async fn detect_step_returns_twelve_presets() {
         let result = detect_step().await.expect("detect");
-        assert_eq!(result["presets"].as_array().unwrap().len(), 5);
+        assert_eq!(result["presets"].as_array().unwrap().len(), 12);
     }
 
     #[tokio::test]
@@ -427,7 +589,7 @@ mod tests {
             result["config_toml"]
                 .as_str()
                 .unwrap()
-                .contains("[siblings.soul]")
+                .contains("[routes.soul]")
         );
     }
 

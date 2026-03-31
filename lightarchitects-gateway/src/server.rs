@@ -32,11 +32,11 @@ pub fn all_tool_definitions() -> Vec<Value> {
     tools
 }
 
-/// The unified `tools` meta-tool — single entry point following the sibling pattern.
+/// The unified `tools` meta-tool — single entry point following the route pattern.
 fn meta_tool_def() -> Value {
     json!({
         "name": "tools",
-        "description": "Light Architects gateway — single entry point for all operations. Use action='list' to discover all 60+ available actions.\n\nCore actions (handled by gateway):\n• read — Read file contents. params: {path, offset?, limit?}\n• write — Create/overwrite file. params: {path, content}\n• edit — String replacement. params: {path, old_string, new_string, replace_all?}\n• bash — Execute shell command. params: {command, timeout_ms?, cwd?}\n• search — Ripgrep file search. params: {pattern, path?, glob?, case_insensitive?}\n• glob — Find files by pattern. params: {pattern, path?}\n• discover — Gateway version, tools, sibling status. params: none\n• ask_user — Prompt user for input. params: {question, options?}\n• initialize — Setup wizard. params: {step?}\n• import — Import from external systems. params: {source, path?, format?}\n• canon_check — Validate a decision against the canon registry. params: {decision, verbose?}\n• canon_evaluate — Evaluate a canon candidate against 5-criteria framework. params: {candidate}\n\nSibling actions (auto-routed by SDK action enums, priority: QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN):\n• CORSO (19): sniff, guard, fetch, chase, scout, code_review, generate_code, search_code, find_symbol, get_outline, get_references, analyze_architecture, prove, optimize, deploy, rollback, manage_logs, strike, watch\n• EVA (9): visualize, ideate, bible_search, bible_reflect, teach, remember, crystallize, celebrate, mindfulness\n• SOUL (14): read_note, write_note, list_notes, manifest, ingest, search, helix, query, query_frontmatter, stats, voice, converse, chat, research\n• QUANTUM (9): triage, sweep, trace, probe, theorize, verify, close, quick, research\n• SERAPH (6): status, investigate_start, investigate_advance, investigate_close, investigate_report, vault_sync\n• AYIN (3): sessions, spans, conversations\n\nCollisions: 'research' routes to QUANTUM (priority). Pass 'sibling' to override.",
+        "description": "Light Architects gateway — single entry point for all operations. Use action='list' to discover all 60+ available actions.\n\nCore actions (handled by gateway):\n• read — Read file contents. params: {path, offset?, limit?}\n• write — Create/overwrite file. params: {path, content}\n• edit — String replacement. params: {path, old_string, new_string, replace_all?}\n• bash — Execute shell command. params: {command, timeout_ms?, cwd?}\n• search — Ripgrep file search. params: {pattern, path?, glob?, case_insensitive?}\n• glob — Find files by pattern. params: {pattern, path?}\n• discover — Gateway version, tools, route status. params: none\n• ask_user — Prompt user for input. params: {question, options?}\n• initialize — Setup wizard. params: {step?}\n• import — Import from external systems. params: {source, path?, format?}\n• canon_check — Validate a decision against the canon registry. params: {decision, verbose?}\n• canon_evaluate — Evaluate a canon candidate against 5-criteria framework. params: {candidate}\n\nRouted actions (auto-routed by SDK action enums, priority: QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN):\n• CORSO (19): sniff, guard, fetch, chase, scout, code_review, generate_code, search_code, find_symbol, get_outline, get_references, analyze_architecture, prove, optimize, deploy, rollback, manage_logs, strike, watch\n• EVA (9): visualize, ideate, bible_search, bible_reflect, teach, remember, crystallize, celebrate, mindfulness\n• SOUL (14): read_note, write_note, list_notes, manifest, ingest, search, helix, query, query_frontmatter, stats, voice, converse, chat, research\n• QUANTUM (9): triage, sweep, trace, probe, theorize, verify, close, quick, research\n• SERAPH (6): status, investigate_start, investigate_advance, investigate_close, investigate_report, vault_sync\n• AYIN (3): sessions, spans, conversations\n\nCollisions: 'research' routes to QUANTUM (priority). Pass 'route' to override.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -48,9 +48,9 @@ fn meta_tool_def() -> Value {
                     "type": "object",
                     "description": "Parameters for the selected action."
                 },
-                "sibling": {
+                "route": {
                     "type": "string",
-                    "description": "Optional: override auto-routing to force a specific sibling (corso, eva, soul, quantum, seraph, ayin).",
+                    "description": "Optional: override auto-routing to force a specific target (corso, eva, soul, quantum, seraph, ayin).",
                     "enum": ["corso", "eva", "soul", "quantum", "seraph", "ayin"]
                 }
             },
@@ -74,11 +74,11 @@ fn file_tool_defs() -> Vec<Value> {
 /// Platform tool definitions: discover, `ask_user`, orchestrate.
 fn platform_tool_defs() -> Vec<Value> {
     vec![
-        json!({"name": "lightarchitects_discover", "description": "Report gateway version, available core tools, and sibling status.", "inputSchema": {"type": "object", "properties": {}}}),
+        json!({"name": "lightarchitects_discover", "description": "Report gateway version, available core tools, and route status.", "inputSchema": {"type": "object", "properties": {}}}),
         json!({"name": "lightarchitects_ask_user", "description": "Present a question to the user. Writes to stderr so the host can intercept and collect a response.", "inputSchema": {"type": "object", "properties": {"question": {"type": "string", "description": "Question to ask the user."}, "options": {"type": "array", "items": {"type": "string"}, "description": "Optional list of allowed answer choices."}}, "required": ["question"]}}),
         json!({
             "name": "lightarchitects_orchestrate",
-            "description": "Route a request to a Light Architects sibling (CORSO, EVA, SOUL, QUANTUM, SERAPH, AYIN). Auto-routes by action keyword if sibling is not specified. Returns a structured error when the target sibling is not enabled.",
+            "description": "Route a request to a Light Architects target (CORSO, EVA, SOUL, QUANTUM, SERAPH, AYIN). Auto-routes by action keyword if route is not specified. Returns a structured error when the target is not enabled.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -86,14 +86,14 @@ fn platform_tool_defs() -> Vec<Value> {
                         "type": "string",
                         "description": "Action to perform, e.g. 'guard', 'memory', 'query', 'helix', 'scan', 'metrics'."
                     },
-                    "sibling": {
+                    "route": {
                         "type": "string",
-                        "description": "Target sibling (optional — auto-routes if omitted).",
+                        "description": "Target to route to (optional — auto-routes if omitted).",
                         "enum": ["corso", "eva", "soul", "quantum", "seraph", "ayin"]
                     },
                     "params": {
                         "type": "object",
-                        "description": "Action-specific parameters forwarded to the sibling's MCP tool."
+                        "description": "Action-specific parameters forwarded to the target's MCP tool."
                     }
                 },
                 "required": ["action"]
@@ -108,7 +108,7 @@ fn squad_tool_defs() -> Vec<Value> {
         json!({"name": "lightarchitects_canon_check", "description": "Check a decision or proposed action against all ratified Light Architects canons. Returns a structured payload for evaluating alignment, conflicts, and gaps.", "inputSchema": {"type": "object", "properties": {"decision": {"type": "string", "description": "The decision or proposed action to evaluate against canon."}, "verbose": {"type": "boolean", "description": "Include raw canon registry content alongside headers (default false)."}}, "required": ["decision"]}}),
         json!({"name": "lightarchitects_canon_evaluate", "description": "Return the 5-criteria evaluation framework for a proposed canon candidate: convergent_evidence, biblical_grounding, decision_shaping, pressure_tested, kevin_ratifies.", "inputSchema": {"type": "object", "properties": {"candidate": {"type": "string", "description": "The proposed canon statement to evaluate."}}, "required": ["candidate"]}}),
         json!({"name": "lightarchitects_initialize", "description": "Interactive setup wizard for the Light Architects squad. Steps: detect (environment scan), draft (generate config from preset), apply (write config to disk), view (read current config).", "inputSchema": {"type": "object", "properties": {"step": {"type": "string", "description": "Wizard step to run.", "enum": ["detect", "draft", "apply", "view"]}, "preset": {"type": "string", "description": "Starter pack name (for draft/apply). Options: software_engineering, security, research, full_squad, lean.", "enum": ["software_engineering", "security", "research", "full_squad", "lean"]}, "vault_path": {"type": "string", "description": "Vault root path override (for draft/apply, default ~/.soul/helix)."}, "dry_run": {"type": "boolean", "description": "Preview without writing to disk (for apply, default false)."}}, "required": ["step"]}}),
-        json!({"name": "lightarchitects_import", "description": "Import content from external systems. Adapters: obsidian/markdown (scan directory for .md files, extract H1 titles), mcp (generate a [siblings.<name>] TOML block for a custom sibling).", "inputSchema": {"type": "object", "properties": {"adapter": {"type": "string", "description": "Import adapter to use.", "enum": ["obsidian", "markdown", "mcp"]}, "path": {"type": "string", "description": "Directory to scan (required for obsidian/markdown adapters)."}, "name": {"type": "string", "description": "New sibling name (required for mcp adapter)."}, "binary": {"type": "string", "description": "Binary path for the new sibling (optional, for mcp adapter)."}, "tool_name": {"type": "string", "description": "MCP tool name for the new sibling (optional, for mcp adapter)."}, "role": {"type": "string", "description": "Human-readable description of the sibling role (optional, for mcp adapter)."}}, "required": ["adapter"]}}),
+        json!({"name": "lightarchitects_import", "description": "Import content from external systems. Adapters: obsidian/markdown (scan directory for .md files, extract H1 titles), mcp (generate a [routes.<name>] TOML block for a custom route).", "inputSchema": {"type": "object", "properties": {"adapter": {"type": "string", "description": "Import adapter to use.", "enum": ["obsidian", "markdown", "mcp"]}, "path": {"type": "string", "description": "Directory to scan (required for obsidian/markdown adapters)."}, "name": {"type": "string", "description": "New route name (required for mcp adapter)."}, "binary": {"type": "string", "description": "Binary path for the new route (optional, for mcp adapter)."}, "tool_name": {"type": "string", "description": "MCP tool name for the new route (optional, for mcp adapter)."}, "role": {"type": "string", "description": "Human-readable description of the route's role (optional, for mcp adapter)."}}, "required": ["adapter"]}}),
     ]
 }
 

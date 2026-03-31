@@ -1,14 +1,14 @@
-//! Scope governance — trust and scope enforcement for sibling orchestration.
+//! Scope governance — trust and scope enforcement for route orchestration.
 //!
-//! Called by `lightarchitects_orchestrate` before any sibling subprocess is spawned.
-//! The governance layer is the *first* enforcement layer; sibling-side checks
+//! Called by `lightarchitects_orchestrate` before any route subprocess is spawned.
+//! The governance layer is the *first* enforcement layer; route-side checks
 //! remain in place as a second layer.
 //!
 //! # Trust model
 //!
 //! | Level | Restriction |
 //! |---|---|
-//! | `Trusted` | No restrictions — sibling may execute any action. |
+//! | `Trusted` | No restrictions — route may execute any action. |
 //! | `Sandboxed` | Destructive or system-level actions are blocked (`bash`, `deploy`, `pentest`, `strike`, `exploit`, `execute`, `rm`). |
 //! | `Untrusted` | Only read-class actions are permitted (`read`, `query`, `search`, `helix`, `stats`, `health`). |
 //!
@@ -17,8 +17,8 @@
 //! | Level | Restriction |
 //! |---|---|
 //! | `All` | No path restrictions. |
-//! | `Shared` | `path` params must be within the sibling's namespace or `user/`/`shared/`. |
-//! | `Own` | `path` params must be within the sibling's own namespace only. |
+//! | `Shared` | `path` params must be within the route's namespace or `user/`/`shared/`. |
+//! | `Own` | `path` params must be within the route's own namespace only. |
 
 use serde_json::Value;
 
@@ -27,14 +27,14 @@ use crate::error::GatewayError;
 
 // ── Trust enforcement ──────────────────────────────────────────────────────────
 
-/// Actions blocked for `Sandboxed` siblings.
+/// Actions blocked for `Sandboxed` routes.
 ///
 /// These are system-modifying or potentially destructive action keywords.
 const SANDBOXED_BLOCKLIST: &[&str] = &[
     "bash", "deploy", "pentest", "strike", "exploit", "execute", "rm", "delete", "drop",
 ];
 
-/// Actions permitted for `Untrusted` siblings (allowlist — everything else is denied).
+/// Actions permitted for `Untrusted` routes (allowlist — everything else is denied).
 const UNTRUSTED_ALLOWLIST: &[&str] = &[
     "read",
     "query",
@@ -55,8 +55,8 @@ const UNTRUSTED_ALLOWLIST: &[&str] = &[
 /// # Errors
 ///
 /// Returns [`GatewayError::Governance`] when the action is not permitted at the
-/// sibling's trust level.
-pub fn check_trust(sibling: &str, trust: TrustLevel, action: &str) -> Result<(), GatewayError> {
+/// route's trust level.
+pub fn check_trust(route: &str, trust: TrustLevel, action: &str) -> Result<(), GatewayError> {
     match trust {
         TrustLevel::Trusted => Ok(()),
         TrustLevel::Sandboxed => {
@@ -65,10 +65,10 @@ pub fn check_trust(sibling: &str, trust: TrustLevel, action: &str) -> Result<(),
                 .any(|&blocked_kw| action.contains(blocked_kw));
             if blocked {
                 Err(GatewayError::Governance {
-                    sibling: sibling.to_owned(),
+                    route: route.to_owned(),
                     reason: format!(
-                        "action '{action}' is not permitted for sandboxed sibling '{sibling}'. \
-                         Sandboxed siblings cannot perform destructive or system-level actions."
+                        "action '{action}' is not permitted for sandboxed route '{route}'. \
+                         Sandboxed routes cannot perform destructive or system-level actions."
                     ),
                 })
             } else {
@@ -81,9 +81,9 @@ pub fn check_trust(sibling: &str, trust: TrustLevel, action: &str) -> Result<(),
                 Ok(())
             } else {
                 Err(GatewayError::Governance {
-                    sibling: sibling.to_owned(),
+                    route: route.to_owned(),
                     reason: format!(
-                        "action '{action}' is not permitted for untrusted sibling '{sibling}'. \
+                        "action '{action}' is not permitted for untrusted route '{route}'. \
                          Only read-class actions are allowed: {UNTRUSTED_ALLOWLIST:?}"
                     ),
                 })
@@ -94,10 +94,10 @@ pub fn check_trust(sibling: &str, trust: TrustLevel, action: &str) -> Result<(),
 
 // ── Scope enforcement ──────────────────────────────────────────────────────────
 
-/// Namespaces accessible under `Shared` scope (in addition to the sibling's own).
+/// Namespaces accessible under `Shared` scope (in addition to the route's own).
 const SHARED_NAMESPACES: &[&str] = &["user/", "shared/"];
 
-/// Enforce scope level for a sibling calling an action with the given params.
+/// Enforce scope level for a route calling an action with the given params.
 ///
 /// When the params contain a `path` string that looks like a helix namespace path
 /// (contains `/`), the scope is checked. Params without a `path` field pass
@@ -106,7 +106,7 @@ const SHARED_NAMESPACES: &[&str] = &["user/", "shared/"];
 /// # Errors
 ///
 /// Returns [`GatewayError::Governance`] when the path falls outside the allowed scope.
-pub fn check_scope(sibling: &str, scope: ScopeLevel, params: &Value) -> Result<(), GatewayError> {
+pub fn check_scope(route: &str, scope: ScopeLevel, params: &Value) -> Result<(), GatewayError> {
     // Scope only applies when params contain a helix `path` field.
     let path = match params.get("path").and_then(Value::as_str) {
         Some(p) if p.contains('/') => p,
@@ -116,30 +116,30 @@ pub fn check_scope(sibling: &str, scope: ScopeLevel, params: &Value) -> Result<(
     match scope {
         ScopeLevel::All => Ok(()),
         ScopeLevel::Shared => {
-            let own_prefix = format!("{sibling}/");
+            let own_prefix = format!("{route}/");
             if path.starts_with(&own_prefix)
                 || SHARED_NAMESPACES.iter().any(|ns| path.starts_with(ns))
             {
                 Ok(())
             } else {
                 Err(GatewayError::Governance {
-                    sibling: sibling.to_owned(),
+                    route: route.to_owned(),
                     reason: format!(
-                        "path '{path}' is outside the allowed scope for '{sibling}' (Shared). \
+                        "path '{path}' is outside the allowed scope for '{route}' (Shared). \
                          Allowed: '{own_prefix}', 'user/', 'shared/'."
                     ),
                 })
             }
         }
         ScopeLevel::Own => {
-            let own_prefix = format!("{sibling}/");
+            let own_prefix = format!("{route}/");
             if path.starts_with(&own_prefix) {
                 Ok(())
             } else {
                 Err(GatewayError::Governance {
-                    sibling: sibling.to_owned(),
+                    route: route.to_owned(),
                     reason: format!(
-                        "path '{path}' is outside the allowed scope for '{sibling}' (Own). \
+                        "path '{path}' is outside the allowed scope for '{route}' (Own). \
                          Allowed: '{own_prefix}'."
                     ),
                 })
@@ -160,14 +160,14 @@ pub fn check_scope(sibling: &str, scope: ScopeLevel, params: &Value) -> Result<(
 ///
 /// Returns the first [`GatewayError::Governance`] encountered.
 pub fn enforce(
-    sibling: &str,
+    route: &str,
     trust: TrustLevel,
     scope: ScopeLevel,
     action: &str,
     params: &Value,
 ) -> Result<(), GatewayError> {
-    check_trust(sibling, trust, action)?;
-    check_scope(sibling, scope, params)?;
+    check_trust(route, trust, action)?;
+    check_scope(route, scope, params)?;
     Ok(())
 }
 
@@ -223,13 +223,13 @@ mod tests {
     }
 
     #[test]
-    fn scope_own_allows_sibling_path() {
+    fn scope_own_allows_route_path() {
         let params = json!({"path": "corso/builds/foo"});
         assert!(check_scope("corso", ScopeLevel::Own, &params).is_ok());
     }
 
     #[test]
-    fn scope_own_blocks_other_sibling_path() {
+    fn scope_own_blocks_other_route_path() {
         let params = json!({"path": "eva/entries/personal"});
         assert!(check_scope("corso", ScopeLevel::Own, &params).is_err());
     }
@@ -241,7 +241,7 @@ mod tests {
     }
 
     #[test]
-    fn scope_shared_blocks_other_sibling() {
+    fn scope_shared_blocks_other_route() {
         let params = json!({"path": "seraph/scope.toml"});
         assert!(check_scope("corso", ScopeLevel::Shared, &params).is_err());
     }

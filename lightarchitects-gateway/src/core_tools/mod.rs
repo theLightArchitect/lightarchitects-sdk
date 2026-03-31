@@ -22,6 +22,7 @@ pub mod initialize;
 pub mod meta;
 pub mod ollama;
 pub mod orchestrate;
+pub mod preset;
 pub mod read;
 pub mod search;
 pub mod security;

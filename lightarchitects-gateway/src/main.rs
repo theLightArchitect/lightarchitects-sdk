@@ -12,7 +12,7 @@
 //! # CLI subcommands
 //!
 //! ```text
-//! lightarchitects siblings                  List enabled siblings
+//! lightarchitects routes                    List enabled routes
 //! lightarchitects canon list                List ratified canons
 //! lightarchitects canon check <decision>    Check decision against canon
 //! lightarchitects initialize <step>         Run setup wizard step
@@ -53,11 +53,16 @@ async fn main() {
         }
     };
 
+    // Initialise the active preset from the config file.
+    lightarchitects_gateway::core_tools::preset::init_from_config(&config.active_preset);
+
     if args.is_empty() {
         // MCP server mode.
         tracing::info!(
             version = env!("CARGO_PKG_VERSION"),
-            siblings = config.enabled_siblings().len(),
+            preset = %config.active_preset,
+            first_run = config.first_run,
+            routes = config.enabled_routes().len(),
             "lightarchitects gateway starting"
         );
         if let Err(e) = server::run(&config).await {
@@ -103,7 +108,7 @@ fn load_config(path: Option<PathBuf>) -> Result<GatewayConfig, GatewayError> {
 /// Dispatch a CLI subcommand and print the result to stdout.
 async fn cli_dispatch(args: &[String], config: &GatewayConfig) -> Result<(), GatewayError> {
     match args.first().map(String::as_str) {
-        Some("siblings") => cli_sibling_list(config),
+        Some("routes" | "siblings") => cli_route_list(config),
         Some("canon") => cli_canon(args, config),
         Some("conductor") => lightarchitects_gateway::conductor::dispatch(&args[1..]).await,
         Some("initialize" | "init") => cli_initialize(args, config).await,
@@ -111,7 +116,7 @@ async fn cli_dispatch(args: &[String], config: &GatewayConfig) -> Result<(), Gat
             eprintln!(
                 "Unknown subcommand: {unknown}\n\n\
                  Usage:\n  \
-                   lightarchitects siblings\n  \
+                   lightarchitects routes\n  \
                    lightarchitects canon list\n  \
                    lightarchitects canon check <decision>\n  \
                    lightarchitects conductor <start|stop|status|add|logs>\n  \
@@ -124,8 +129,8 @@ async fn cli_dispatch(args: &[String], config: &GatewayConfig) -> Result<(), Gat
     }
 }
 
-/// Print the list of enabled siblings.
-fn cli_sibling_list(config: &GatewayConfig) -> Result<(), GatewayError> {
+/// Print the list of enabled routes.
+fn cli_route_list(config: &GatewayConfig) -> Result<(), GatewayError> {
     let result = core_tools::discover::run(json!({}), config)?;
     let text = result["content"][0]["text"].as_str().unwrap_or("");
     println!("{text}");

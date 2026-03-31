@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub enum ModelId {
     /// Mistral Leanstral — Lean 4 formal theorem proving.
     Leanstral,
-    /// DeepSeek V3.2 — step-by-step mathematical derivation.
+    /// `DeepSeek` V3.2 — step-by-step mathematical derivation.
     Deepseek,
     /// Qwen 3.5 — numerical reasoning and bounds checking.
     Qwen,
@@ -35,9 +35,9 @@ pub enum ModelRole {
 /// Determines which models to dispatch to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OracleMode {
-    /// Prove a property: Leanstral (proof) + DeepSeek (derivation) + Qwen (numerical).
+    /// Prove a property: Leanstral (proof) + `DeepSeek` (derivation) + Qwen (numerical).
     Prove,
-    /// Optimize an algorithm: DeepSeek (derivation) + Qwen (numerical) + Kimi (reasoning).
+    /// Optimize an algorithm: `DeepSeek` (derivation) + Qwen (numerical) + Kimi (reasoning).
     Optimize,
     /// Full fleet: all available models.
     Full,

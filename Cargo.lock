@@ -1915,6 +1915,7 @@ version = "0.1.0"
 dependencies = [
  "ayin",
  "lightarchitects-core",
+ "serde",
  "serde_json",
  "tokio",
  "tracing",
@@ -1995,7 +1996,13 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
+ "lightarchitects-ayin",
  "lightarchitects-core",
+ "lightarchitects-corso",
+ "lightarchitects-eva",
+ "lightarchitects-quantum",
+ "lightarchitects-seraph",
+ "lightarchitects-soul",
  "reqwest",
  "serde",
  "serde_json",

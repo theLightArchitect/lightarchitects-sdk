@@ -102,7 +102,7 @@ pub struct OracleQuery<'a> {
     models: Option<Vec<ModelId>>,
 }
 
-impl<'a> OracleQuery<'a> {
+impl OracleQuery<'_> {
     /// Set the oracle mode (default: [`OracleMode::Prove`]).
     #[must_use]
     pub fn mode(mut self, mode: OracleMode) -> Self {

@@ -60,9 +60,7 @@ pub fn validate_path(path: &str, config: &GatewayConfig) -> Result<PathBuf, Gate
             let allowed_expanded = expand_tilde(allowed);
             allowed_expanded
                 .canonicalize()
-                .map_or(false, |allowed_canonical| {
-                    canonical.starts_with(&allowed_canonical)
-                })
+                .is_ok_and(|allowed_canonical| canonical.starts_with(&allowed_canonical))
         });
         if !in_allowed {
             return Err(GatewayError::File(
@@ -254,13 +252,10 @@ fn is_local_prefix(url: &str, prefix: &str) -> bool {
         return false;
     }
     // Check the character immediately after the prefix.
-    match url.as_bytes().get(prefix.len()) {
-        None => true,       // URL is exactly the prefix
-        Some(b':') => true, // Port follows (e.g., :8080)
-        Some(b'/') => true, // Path follows (e.g., /api)
-        Some(b'?') => true, // Query follows
-        _ => false,         // Something else (e.g., .evil.com)
-    }
+    matches!(
+        url.as_bytes().get(prefix.len()),
+        None | Some(b':' | b'/' | b'?')
+    )
 }
 
 // ── File size limit ──────────────────────────────────────────────────────────

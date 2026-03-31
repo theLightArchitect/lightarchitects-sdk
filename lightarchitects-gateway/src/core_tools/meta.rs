@@ -1,8 +1,8 @@
-//! `tools` — unified meta-tool following the sibling pattern.
+//! `tools` — unified meta-tool following the route pattern.
 //!
-//! One tool, one schema: `{action, params, sibling?}`. Core actions (read, write,
+//! One tool, one schema: `{action, params, route?}`. Core actions (read, write,
 //! bash, etc.) dispatch to the gateway's own handlers. Everything else auto-routes
-//! to the correct sibling via the orchestrate routing table. The `sibling` param is
+//! to the correct route via the orchestrate routing table. The `route` param is
 //! optional — only needed to disambiguate the rare action-name collision (e.g.,
 //! "search" = core ripgrep vs SOUL vault search).
 //!
@@ -13,14 +13,14 @@ use serde_json::{Value, json};
 
 use super::{
     ask_user, ayin_http, bash, canon_check, canon_evaluate, discover, edit, glob, import_adapter,
-    initialize, orchestrate, read, search, text_result, write,
+    initialize, orchestrate, preset, read, search, text_result, write,
 };
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
 
 // ── Core action names ─────────────────────────────────────────────────────────
 
-/// Actions handled directly by the gateway (no sibling needed).
+/// Actions handled directly by the gateway (no route needed).
 const CORE_ACTIONS: &[&str] = &[
     "read",
     "write",
@@ -34,6 +34,7 @@ const CORE_ACTIONS: &[&str] = &[
     "import",
     "canon_check",
     "canon_evaluate",
+    "preset",
 ];
 
 /// Arena action names — not available in this release.
@@ -54,12 +55,12 @@ fn is_core_action(action: &str) -> bool {
 ///
 /// Sibling action lists are generated from SDK enums — not hardcoded.
 fn list_actions(config: &GatewayConfig) -> Result<Value, GatewayError> {
-    let mut sibling_section = serde_json::Map::new();
+    let mut route_section = serde_json::Map::new();
 
-    for (name, cfg) in &config.siblings {
+    for (name, cfg) in &config.routes {
         let status = if cfg.enabled { "enabled" } else { "disabled" };
         let actions = orchestrate::routable_actions_for(name);
-        sibling_section.insert(
+        route_section.insert(
             name.clone(),
             json!({
                 "status": status,
@@ -78,16 +79,17 @@ fn list_actions(config: &GatewayConfig) -> Result<Value, GatewayError> {
             "bash":           "Execute a shell command (command, timeout_ms?, cwd?)",
             "search":         "Search file contents via ripgrep (pattern, path?, glob?, case_insensitive?)",
             "glob":           "Find files matching a pattern (pattern, path?)",
-            "discover":       "Report gateway version, tools, and sibling status",
+            "discover":       "Report gateway version, tools, and route status",
             "ask_user":       "Present a question to the user (question, options?)",
             "canon_check":    "Validate a decision against the canon registry (decision, verbose?)",
             "canon_evaluate": "Evaluate a canon candidate against 5-criteria framework (candidate)",
+            "preset":         "Switch or view the active preset archetype (name?). Changes routing priority.",
         },
         "setup": {
             "initialize":     "Interactive gateway setup wizard (step?)",
             "import":         "Import content from external systems (source, path?, format?)",
         },
-        "siblings": sibling_section,
+        "routes": route_section,
         "ayin": {
             "note": "AYIN actions use HTTP transport to localhost:3742 (not MCP subprocess).",
             "sessions":      "List all trace sessions",
@@ -95,8 +97,9 @@ fn list_actions(config: &GatewayConfig) -> Result<Value, GatewayError> {
             "conversations": "Load conversation/decision traces (date)",
         },
         "routing": {
-            "note": "Non-core actions auto-route to the correct sibling by action keyword. Pass 'sibling' only to override when ambiguous.",
-            "priority": "QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN",
+            "note": "Non-core actions auto-route to the correct target by action keyword. Pass 'route' to override when ambiguous.",
+            "active_preset": preset::active_preset_name(),
+            "priority": preset::active_routing_priority(),
             "total_routable_actions": orchestrate::total_routable_action_count(),
             "examples": [
                 {"action": "guard",     "routes_to": "corso"},
@@ -123,7 +126,7 @@ fn list_actions(config: &GatewayConfig) -> Result<Value, GatewayError> {
 /// 2. Core action name → dispatch to the gateway's own handler.
 /// 3. Everything else → forward through the orchestrate auto-routing table.
 ///
-/// The `sibling` and `params` fields are extracted and forwarded as needed.
+/// The `route` and `params` fields are extracted and forwarded as needed.
 ///
 /// # Errors
 ///
@@ -169,13 +172,13 @@ pub async fn run(arguments: Value, config: &GatewayConfig) -> Result<Value, Gate
     }
 
     // 5. Everything else — forward through orchestrate.
-    //    Build the orchestrate params: {action, sibling?, params}.
+    //    Build the orchestrate params: {action, route?, params}.
     let mut orchestrate_params = serde_json::Map::new();
     orchestrate_params.insert("action".to_owned(), Value::String(action));
 
-    // Forward explicit sibling override if provided.
-    if let Some(sibling) = arguments.get("sibling") {
-        orchestrate_params.insert("sibling".to_owned(), sibling.clone());
+    // Forward explicit route override if provided.
+    if let Some(route) = arguments.get("route") {
+        orchestrate_params.insert("route".to_owned(), route.clone());
     }
 
     orchestrate_params.insert("params".to_owned(), params);
@@ -202,6 +205,7 @@ async fn dispatch_core(
         "canon_evaluate" => canon_evaluate::run(params, config),
         "initialize" => initialize::run(params, config).await,
         "import" => import_adapter::run(params, config),
+        "preset" => preset::run(params),
         _ => Err(GatewayError::UnknownTool(action.to_owned())),
     }
 }
@@ -240,7 +244,7 @@ mod tests {
         let result = list_actions(&cfg).expect("list");
         let text = result["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("read"), "core actions missing");
-        assert!(text.contains("siblings"), "siblings missing");
+        assert!(text.contains("routes"), "routes missing");
         assert!(text.contains("routing"), "routing examples missing");
     }
 
@@ -300,12 +304,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sibling_override_forwarded() {
+    async fn route_override_forwarded() {
         let cfg = GatewayConfig::default();
-        // Explicit sibling should be forwarded to orchestrate.
-        // Using a disabled sibling to get a predictable error.
+        // Explicit route should be forwarded to orchestrate.
+        // Using a disabled target to get a predictable error.
         let result = run(
-            json!({"action": "scan", "sibling": "quantum", "params": {}}),
+            json!({"action": "scan", "route": "quantum", "params": {}}),
             &cfg,
         )
         .await;
@@ -315,10 +319,10 @@ mod tests {
                 let text = v["content"][0]["text"].as_str().unwrap_or("");
                 assert!(
                     text.contains("not_enabled") || text.contains("disabled"),
-                    "expected disabled sibling response"
+                    "expected disabled route response"
                 );
             }
-            Err(GatewayError::SiblingNotEnabled(_)) => {} // Also acceptable
+            Err(GatewayError::RouteNotEnabled(_)) => {} // Also acceptable
             Err(other) => panic!("unexpected error: {other:?}"),
         }
     }

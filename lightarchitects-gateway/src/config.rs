@@ -1,6 +1,7 @@
 //! Gateway configuration: typed schema and loader for `~/.lightarchitects/config.toml`.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -26,20 +27,20 @@ pub fn expand_tilde(path: &str) -> PathBuf {
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
-/// Trust level assigned to a sibling's tool calls.
+/// Trust level assigned to a route's tool calls.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TrustLevel {
-    /// Full trust: sibling may access all resources.
+    /// Full trust: route may access all resources.
     #[default]
     Trusted,
-    /// Sandboxed: sibling operates in an isolated context.
+    /// Sandboxed: route operates in an isolated context.
     Sandboxed,
-    /// Untrusted: sibling output is treated as user-supplied data.
+    /// Untrusted: route output is treated as user-supplied data.
     Untrusted,
 }
 
-/// Scope of helix/vault access for a sibling.
+/// Scope of helix/vault access for a route.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ScopeLevel {
@@ -95,21 +96,21 @@ impl Default for GatewaySection {
     }
 }
 
-/// Per-sibling configuration block.
+/// Per-route configuration block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SiblingConfig {
-    /// Whether this sibling is active.
+pub struct RouteConfig {
+    /// Whether this route is active.
     pub enabled: bool,
-    /// Path to the sibling's MCP binary (may contain `~/`).
+    /// Path to the route's MCP binary (may contain `~/`).
     pub binary: String,
-    /// The MCP tool name exposed by this sibling (e.g. `"corsoTools"`).
+    /// The MCP tool name exposed by this route (e.g. `"corsoTools"`).
     pub tool_name: String,
-    /// Human-readable description of the sibling's role.
+    /// Human-readable description of the route's role.
     pub role: String,
-    /// Trust level for this sibling's tool calls (default: `trusted`).
+    /// Trust level for this route's tool calls (default: `trusted`).
     #[serde(default)]
     pub trust: TrustLevel,
-    /// Vault/helix scope this sibling may access (default: `own`).
+    /// Vault/helix scope this route may access (default: `own`).
     #[serde(default)]
     pub scope: ScopeLevel,
     /// Optional SHA-256 hex digest. If set, binary is verified before spawn.
@@ -117,7 +118,7 @@ pub struct SiblingConfig {
     pub checksum: Option<String>,
 }
 
-impl SiblingConfig {
+impl RouteConfig {
     /// Resolve the binary path with `~` expansion.
     #[must_use]
     pub fn binary_path(&self) -> PathBuf {
@@ -184,9 +185,10 @@ pub struct GatewayConfig {
     /// `[gateway]` section.
     #[serde(default)]
     pub gateway: GatewaySection,
-    /// `[siblings.*]` sections, keyed by sibling name.
-    #[serde(default)]
-    pub siblings: HashMap<String, SiblingConfig>,
+    /// `[routes.*]` sections, keyed by route name.
+    /// Backward compat: `[routes.*]` is accepted as an alias during deserialization.
+    #[serde(default, alias = "routes")]
+    pub routes: HashMap<String, RouteConfig>,
     /// `[canon]` section.
     #[serde(default)]
     pub canon: CanonConfig,
@@ -199,25 +201,41 @@ pub struct GatewayConfig {
     /// Directories the gateway is allowed to access (empty = all except denied).
     #[serde(default)]
     pub allowed_directories: Vec<String>,
+    /// Active preset archetype (default: "`software_engineering`").
+    /// Controls routing priority order. Can be switched at runtime via
+    /// `tools {action: "preset", params: {name: "..."}}`.
+    #[serde(default = "default_preset_name")]
+    pub active_preset: String,
+    /// True when the config was auto-generated on first run (not serialized).
+    /// Used by `discover` to signal that the user should be prompted to choose
+    /// a preset and review the default configuration.
+    #[serde(skip)]
+    pub first_run: bool,
+}
+
+fn default_preset_name() -> String {
+    "software_engineering".to_owned()
 }
 
 impl Default for GatewayConfig {
     fn default() -> Self {
-        let mut siblings = HashMap::new();
-        siblings.insert("corso".to_owned(), default_sibling_corso());
-        siblings.insert("eva".to_owned(), default_sibling_eva());
-        siblings.insert("soul".to_owned(), default_sibling_soul());
-        siblings.insert("quantum".to_owned(), default_sibling_quantum());
-        siblings.insert("seraph".to_owned(), default_sibling_seraph());
-        siblings.insert("ayin".to_owned(), default_sibling_ayin());
-        siblings.insert("laex".to_owned(), default_sibling_laex());
+        let mut routes = HashMap::new();
+        routes.insert("corso".to_owned(), default_route_corso());
+        routes.insert("eva".to_owned(), default_route_eva());
+        routes.insert("soul".to_owned(), default_route_soul());
+        routes.insert("quantum".to_owned(), default_route_quantum());
+        routes.insert("seraph".to_owned(), default_route_seraph());
+        routes.insert("ayin".to_owned(), default_route_ayin());
+        routes.insert("laex".to_owned(), default_route_laex());
         Self {
             gateway: GatewaySection::default(),
-            siblings,
+            routes,
             canon: CanonConfig::default(),
             storage: StorageConfig::default(),
             privacy: PrivacyConfig::default(),
             allowed_directories: Vec::new(),
+            active_preset: default_preset_name(),
+            first_run: false,
         }
     }
 }
@@ -237,9 +255,107 @@ impl GatewayConfig {
             .join(".lightarchitects")
             .join("config.toml");
         if !path.exists() {
-            return Ok(Self::default());
+            return Self::create_default(&path);
         }
         Self::load_from(&path)
+    }
+
+    /// Create a default config file and return the config with `first_run: true`.
+    ///
+    /// Writes a `software_engineering` preset config to `~/.lightarchitects/config.toml`.
+    /// On write failure, logs a warning and returns the in-memory default instead
+    /// (the gateway can still run without a persisted config).
+    #[allow(clippy::unnecessary_wraps)]
+    fn create_default(path: &Path) -> Result<Self, GatewayError> {
+        let cfg = Self {
+            first_run: true,
+            ..Self::default()
+        };
+
+        // Generate TOML from the initialize module's build_toml (reuse existing logic).
+        // Fallback: if that fails, use a minimal hand-written config.
+        let toml_content = Self::default_toml();
+
+        if let Some(parent) = path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                tracing::warn!(
+                    path = %parent.display(),
+                    error = %e,
+                    "could not create config directory — using in-memory defaults"
+                );
+                return Ok(cfg);
+            }
+        }
+
+        match std::fs::write(path, &toml_content) {
+            Ok(()) => {
+                tracing::info!(
+                    path = %path.display(),
+                    preset = "software_engineering",
+                    "first run — created default config"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "could not write default config — using in-memory defaults"
+                );
+            }
+        }
+
+        Ok(cfg)
+    }
+
+    /// Generate the default config TOML string.
+    fn default_toml() -> String {
+        let cfg = Self::default();
+        let mut toml = String::from(
+            "# Light Architects gateway config — auto-generated on first run.\n\
+             # Preset: software_engineering (CORSO, EVA, SOUL, AYIN enabled).\n\
+             # Customize by editing this file or using: tools {action: \"preset\", params: {name: \"...\"}}\n\
+             #\n\
+             # Available presets: software_engineering, security, research, devops,\n\
+             #   code_review, learning, audit, forensics, solo, observability, full, lean\n\n\
+             [gateway]\n\
+             version = \"1.0.0\"\n\n",
+        );
+
+        let _ = write!(toml, "active_preset = \"{}\"\n\n", cfg.active_preset);
+
+        for name in &["ayin", "corso", "eva", "quantum", "seraph", "soul"] {
+            if let Some(route_cfg) = cfg.routes.get(*name) {
+                let _ = write!(
+                    toml,
+                    "[routes.{name}]\n\
+                     enabled = {enabled}\n\
+                     binary = \"{binary}\"\n\
+                     tool_name = \"{tool_name}\"\n\
+                     role = \"{role}\"\n\
+                     trust = \"{trust}\"\n\
+                     scope = \"{scope}\"\n\n",
+                    enabled = route_cfg.enabled,
+                    binary = route_cfg.binary,
+                    tool_name = route_cfg.tool_name,
+                    role = route_cfg.role,
+                    trust = format!("{:?}", route_cfg.trust).to_lowercase(),
+                    scope = format!("{:?}", route_cfg.scope).to_lowercase(),
+                );
+            }
+        }
+
+        toml.push_str(
+            "[canon]\n\
+             registry = \"~/.soul/helix/user/standards/canon.md\"\n\
+             auto_check = true\n\n\
+             [storage]\n\
+             backend = \"sqlite\"\n\
+             path = \"~/.soul/\"\n\n\
+             [privacy]\n\
+             tier = \"local\"\n",
+        );
+
+        toml
     }
 
     /// Load from an explicit path (primarily for testing).
@@ -256,11 +372,11 @@ impl GatewayConfig {
         Ok(cfg)
     }
 
-    /// Return only the enabled siblings, in deterministic (sorted-by-name) order.
+    /// Return only the enabled routes, in deterministic (sorted-by-name) order.
     #[must_use]
-    pub fn enabled_siblings(&self) -> Vec<(&str, &SiblingConfig)> {
-        let mut pairs: Vec<(&str, &SiblingConfig)> = self
-            .siblings
+    pub fn enabled_routes(&self) -> Vec<(&str, &RouteConfig)> {
+        let mut pairs: Vec<(&str, &RouteConfig)> = self
+            .routes
             .iter()
             .filter(|(_, cfg)| cfg.enabled)
             .map(|(name, cfg)| (name.as_str(), cfg))
@@ -270,10 +386,10 @@ impl GatewayConfig {
     }
 }
 
-// ── Default sibling constructors ──────────────────────────────────────────────
+// ── Default route constructors ──────────────────────────────────────────────
 
-fn default_sibling_corso() -> SiblingConfig {
-    SiblingConfig {
+fn default_route_corso() -> RouteConfig {
+    RouteConfig {
         enabled: true,
         binary: "~/.corso/bin/corso".to_owned(),
         tool_name: "corsoTools".to_owned(),
@@ -284,8 +400,8 @@ fn default_sibling_corso() -> SiblingConfig {
     }
 }
 
-fn default_sibling_eva() -> SiblingConfig {
-    SiblingConfig {
+fn default_route_eva() -> RouteConfig {
+    RouteConfig {
         enabled: true,
         binary: "~/.eva/bin/eva".to_owned(),
         tool_name: "evaTools".to_owned(),
@@ -296,20 +412,20 @@ fn default_sibling_eva() -> SiblingConfig {
     }
 }
 
-fn default_sibling_soul() -> SiblingConfig {
-    SiblingConfig {
+fn default_route_soul() -> RouteConfig {
+    RouteConfig {
         enabled: true,
         binary: "~/.soul/.config/bin/soul".to_owned(),
         tool_name: "soulTools".to_owned(),
-        role: "Knowledge graph, helix spine, cross-sibling memory".to_owned(),
+        role: "Knowledge graph, helix spine, cross-route memory".to_owned(),
         trust: TrustLevel::Trusted,
         scope: ScopeLevel::All,
         checksum: None,
     }
 }
 
-fn default_sibling_quantum() -> SiblingConfig {
-    SiblingConfig {
+fn default_route_quantum() -> RouteConfig {
+    RouteConfig {
         enabled: false,
         binary: "~/.quantum/bin/quantum-q".to_owned(),
         tool_name: "quantumTools".to_owned(),
@@ -320,8 +436,8 @@ fn default_sibling_quantum() -> SiblingConfig {
     }
 }
 
-fn default_sibling_seraph() -> SiblingConfig {
-    SiblingConfig {
+fn default_route_seraph() -> RouteConfig {
+    RouteConfig {
         enabled: false,
         binary: "~/.seraph/bin/seraph".to_owned(),
         tool_name: "seraphTools".to_owned(),
@@ -332,8 +448,8 @@ fn default_sibling_seraph() -> SiblingConfig {
     }
 }
 
-fn default_sibling_laex() -> SiblingConfig {
-    SiblingConfig {
+fn default_route_laex() -> RouteConfig {
+    RouteConfig {
         enabled: false,
         binary: "~/.arena/bin/arena".to_owned(),
         tool_name: "arenaTools".to_owned(),
@@ -345,8 +461,8 @@ fn default_sibling_laex() -> SiblingConfig {
     }
 }
 
-fn default_sibling_ayin() -> SiblingConfig {
-    SiblingConfig {
+fn default_route_ayin() -> RouteConfig {
+    RouteConfig {
         enabled: true,
         binary: "~/.ayin/bin/ayin".to_owned(),
         tool_name: "ayinTools".to_owned(),
@@ -365,9 +481,9 @@ mod tests {
     use std::io::Write as _;
 
     #[test]
-    fn default_config_has_four_enabled_siblings() {
+    fn default_config_has_four_enabled_routes() {
         let cfg = GatewayConfig::default();
-        let enabled = cfg.enabled_siblings();
+        let enabled = cfg.enabled_routes();
         // ayin, corso, eva, soul → 4
         assert_eq!(enabled.len(), 4);
     }
@@ -403,7 +519,7 @@ mod tests {
 [gateway]
 version = "1.0.0"
 
-[siblings.corso]
+[routes.corso]
 enabled = true
 binary = "~/.corso/bin/corso"
 tool_name = "corsoTools"
@@ -426,16 +542,16 @@ tier = "local"
         tmp.write_all(toml_content.as_bytes()).expect("write");
         let cfg = GatewayConfig::load_from(tmp.path()).expect("load");
         assert_eq!(cfg.gateway.version, "1.0.0");
-        assert_eq!(cfg.siblings.len(), 1);
-        assert!(cfg.siblings["corso"].enabled);
+        assert_eq!(cfg.routes.len(), 1);
+        assert!(cfg.routes["corso"].enabled);
         assert_eq!(cfg.storage.backend, StorageBackend::Sqlite);
         assert_eq!(cfg.privacy.tier, PrivacyTier::Local);
     }
 
     #[test]
-    fn enabled_siblings_are_sorted() {
+    fn enabled_routes_are_sorted() {
         let cfg = GatewayConfig::default();
-        let names: Vec<&str> = cfg.enabled_siblings().iter().map(|(n, _)| *n).collect();
+        let names: Vec<&str> = cfg.enabled_routes().iter().map(|(n, _)| *n).collect();
         let mut sorted = names.clone();
         sorted.sort_unstable();
         assert_eq!(names, sorted);
