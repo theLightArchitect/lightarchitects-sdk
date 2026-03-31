@@ -26,6 +26,7 @@
 //! | [`crate::error::GatewayError::McpProtocol`] | Timeout, malformed JSON, or unexpected response |
 //! | [`crate::error::GatewayError::AgentNotEnabled`] | Sibling disabled in config |
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -119,7 +120,7 @@ pub async fn call_agent(
     }
 
     // 4. Spawn the route process.
-    let mut child = spawn_agent(&binary_path, agent_name)?;
+    let mut child = spawn_agent(&binary_path, agent_name, &config.api_keys)?;
 
     // 5. Take stdin/stdout handles before executing — these are moved into helpers.
     let stdin = child
@@ -199,18 +200,28 @@ pub async fn call_agent(
 /// at gateway startup. Siblings verify the token is a 64-char hex string
 /// rather than a simple `"1"` or `"true"`, preventing trivial HITL bypass
 /// from malicious processes that guess the env var name.
-fn spawn_agent(binary_path: &std::path::Path, agent_name: &str) -> Result<Child, GatewayError> {
+fn spawn_agent(
+    binary_path: &std::path::Path,
+    agent_name: &str,
+    api_keys: &HashMap<String, String>,
+) -> Result<Child, GatewayError> {
     let token = automation_token();
-    Command::new(binary_path)
-        .stdin(std::process::Stdio::piped())
+    let mut cmd = Command::new(binary_path);
+    cmd.stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit())
-        .env("LIGHTARCHITECTS_AUTOMATED", &token)
-        .spawn()
-        .map_err(|e| GatewayError::SpawnFailed {
-            agent: agent_name.to_owned(),
-            reason: crate::core_tools::security::sanitize_error(&e.to_string()),
-        })
+        .env("LIGHTARCHITECTS_AUTOMATED", &token);
+    // Inject API keys from keys.toml — only when not already present in the
+    // process environment (env vars from .mcp.json always take priority).
+    for (k, v) in api_keys {
+        if std::env::var(k).is_err() {
+            cmd.env(k, v);
+        }
+    }
+    cmd.spawn().map_err(|e| GatewayError::SpawnFailed {
+        agent: agent_name.to_owned(),
+        reason: crate::core_tools::security::sanitize_error(&e.to_string()),
+    })
 }
 
 /// Initialise the automation token (call once from `main`).

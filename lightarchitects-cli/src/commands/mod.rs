@@ -5,6 +5,7 @@ pub mod corso;
 pub mod eva;
 pub mod quantum;
 pub mod seraph;
+pub mod setup;
 pub mod soul;
 pub mod status;
 
@@ -53,6 +54,12 @@ pub enum Commands {
     Status,
     /// Show the resolved binary-path configuration.
     Config,
+    /// Interactive API key configuration wizard.
+    ///
+    /// Prompts for required, recommended, and optional API keys and writes
+    /// them to `~/.lightarchitects/keys.toml` (owner-only, chmod 600).
+    /// The gateway injects these into sibling processes at spawn time.
+    Setup,
 }
 
 /// Route a parsed command to its executor.
@@ -75,5 +82,6 @@ pub async fn dispatch(cmd: Commands, cfg: &CliConfig, mode: OutputMode) -> Resul
             config::execute(cfg, mode);
             Ok(())
         }
+        Commands::Setup => setup::execute(mode),
     }
 }

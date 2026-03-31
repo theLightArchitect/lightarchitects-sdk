@@ -211,6 +211,15 @@ pub struct GatewayConfig {
     /// a preset and review the default configuration.
     #[serde(skip)]
     pub first_run: bool,
+    /// API keys loaded from `~/.lightarchitects/keys.toml`.
+    ///
+    /// Not serialized to `config.toml` — lives in a separate credentials file
+    /// so that the main config can be shared without exposing secrets.
+    /// The spawner injects these into sibling processes at spawn time, but
+    /// only for keys that are not already present in the process environment
+    /// (env vars from `.mcp.json` always take priority).
+    #[serde(skip)]
+    pub api_keys: HashMap<String, String>,
 }
 
 fn default_preset_name() -> String {
@@ -236,6 +245,7 @@ impl Default for GatewayConfig {
             allowed_directories: Vec::new(),
             active_preset: default_preset_name(),
             first_run: false,
+            api_keys: HashMap::new(),
         }
     }
 }
@@ -251,13 +261,15 @@ impl GatewayConfig {
     /// or parsed.
     pub fn load() -> Result<Self, GatewayError> {
         let home = std::env::var_os("HOME").ok_or(GatewayError::Config(ConfigError::NoHome))?;
-        let path = PathBuf::from(home)
-            .join(".lightarchitects")
-            .join("config.toml");
-        if !path.exists() {
-            return Self::create_default(&path);
-        }
-        Self::load_from(&path)
+        let home_path = PathBuf::from(&home);
+        let config_path = home_path.join(".lightarchitects").join("config.toml");
+        let mut cfg = if config_path.exists() {
+            Self::load_from(&config_path)?
+        } else {
+            Self::create_default(&config_path)?
+        };
+        cfg.api_keys = load_api_keys(&home_path);
+        Ok(cfg)
     }
 
     /// Create a default config file and return the config with `first_run: true`.
@@ -470,6 +482,72 @@ fn default_agent_ayin() -> AgentConfig {
         trust: TrustLevel::Trusted,
         scope: ScopeLevel::All,
         checksum: None,
+    }
+}
+
+// ── API key loader ────────────────────────────────────────────────────────────
+
+/// All key names that may be stored in the OS keychain or `keys.toml`.
+///
+/// Must stay in sync with `lightarchitects_cli::commands::setup::KEY_SPECS`.
+/// Used to probe the OS keyring during gateway startup.
+const KNOWN_API_KEYS: &[&str] = &[
+    "ANTHROPIC_API_KEY",
+    "ELEVENLABS_API_KEY",
+    "OLLAMA_API_KEY",
+    "OLLAMA_CLOUD_API_KEY", // alias — same credential, different sibling name
+    "PERPLEXITY_API_KEY",
+    "BRAVE_API_KEY",
+    "HF_TOKEN",
+    "EXA_API_KEY",
+    "TAVILY_API_KEY",
+    "CARTESIA_API_KEY",
+    "OPENAI_API_KEY",
+];
+
+/// Load API keys from both the OS keyring and `~/.lightarchitects/keys.toml`.
+///
+/// Priority order (highest to lowest):
+/// 1. OS keyring — set explicitly by `lightarchitects setup`
+/// 2. `keys.toml` — file-based fallback
+///
+/// Returns an empty map if neither source is available — siblings degrade
+/// gracefully without credentials.
+///
+/// The spawner in turn only injects these into sibling processes when the
+/// corresponding env var is not already set in the current process, so
+/// `.mcp.json` env values always take precedence over everything here.
+fn load_api_keys(home: &Path) -> HashMap<String, String> {
+    let mut keys = load_keys_file(home);
+    overlay_keyring(&mut keys);
+    keys
+}
+
+/// Read `~/.lightarchitects/keys.toml` into a map.
+///
+/// Returns an empty map if the file does not exist or cannot be parsed.
+fn load_keys_file(home: &Path) -> HashMap<String, String> {
+    let path = home.join(".lightarchitects").join("keys.toml");
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return HashMap::new();
+    };
+    toml::from_str::<HashMap<String, String>>(&content).unwrap_or_default()
+}
+
+/// Query each known key from the OS keyring and overlay `keys`.
+///
+/// Silently skips on headless systems (e.g. Khadas without Secret Service)
+/// and when a key has no entry — missing keyring access is not an error.
+fn overlay_keyring(keys: &mut HashMap<String, String>) {
+    for &name in KNOWN_API_KEYS {
+        let Ok(entry) = keyring::Entry::new("lightarchitects", name) else {
+            continue;
+        };
+        let Ok(value) = entry.get_password() else {
+            // NoEntry (not stored) and NoStorageAccess (headless) are both normal.
+            continue;
+        };
+        keys.insert(name.to_owned(), value);
     }
 }
 
