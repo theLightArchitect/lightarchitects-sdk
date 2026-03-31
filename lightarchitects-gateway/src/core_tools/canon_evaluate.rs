@@ -99,7 +99,12 @@ fn build_evaluate_payload(candidate: &str, existing_count: usize) -> Value {
                  All 5 must pass for canon elevation.\n\
                  Kevin's ratification is the final gate.\n\
                  \n\
-                 Criteria: {criteria_names}"
+                 Criteria: {criteria_names}\n\
+                 \n\
+                 Note: This returns a blank evaluation template (scores are null). \
+                 The gateway does not score candidates — it provides the 5-criteria \
+                 framework for the caller to fill in. Automated scoring requires \
+                 the LÆX model (not available in v1)."
             )
         }],
         "criteria": criteria,

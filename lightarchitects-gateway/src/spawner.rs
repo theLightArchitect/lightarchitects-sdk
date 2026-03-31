@@ -27,13 +27,13 @@
 //! | [`crate::error::GatewayError::AgentNotEnabled`] | Sibling disabled in config |
 
 use std::sync::OnceLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::time::timeout;
-use tracing::{debug, instrument, warn};
+use tracing::{debug, info, instrument, warn};
 
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
@@ -71,6 +71,8 @@ pub async fn call_agent(
     params: Value,
     config: &GatewayConfig,
 ) -> Result<Value, GatewayError> {
+    let call_start = Instant::now();
+
     // 1. Lookup agent config — reject early if not present or disabled.
     let agent_cfg = config
         .agents
@@ -174,6 +176,16 @@ pub async fn call_agent(
 
     // 10. Extract result or propagate error.
     let result = extract_result(response, agent_name)?;
+
+    // 11. Emit timing event for AYIN observability (SB-6).
+    let elapsed_ms = u64::try_from(call_start.elapsed().as_millis()).unwrap_or(u64::MAX);
+    info!(
+        route = agent_name,
+        action,
+        preset = %crate::core_tools::preset::active_preset_name(),
+        elapsed_ms,
+        "agent call completed"
+    );
 
     // Child drops here — the OS SIGKILL handles cleanup.
     Ok(result)

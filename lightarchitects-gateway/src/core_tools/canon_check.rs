@@ -65,7 +65,13 @@ fn build_check_payload(
          {header_list}\n\
          \n\
          Evaluate the decision against each canon. \
-         Flag conflicts, alignments, or gaps."
+         Flag conflicts, alignments, or gaps.\n\
+         \n\
+         Note: This is file-based pattern matching against the canon registry \
+         (~/.soul/helix/user/standards/canon.md). It extracts headers and \
+         presents them for review — it does not perform reasoning-grade \
+         evaluation. Full semantic analysis requires the LÆX model \
+         (not available in v1)."
     );
 
     if verbose {

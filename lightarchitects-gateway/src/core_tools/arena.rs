@@ -872,12 +872,32 @@ fn resolve_model(params: &Value) -> Result<String, GatewayError> {
 }
 
 // ── Action: judge ─────────────────────────────────────────────────────────────
+//
+// SB-4: Judge scoring is UNCALIBRATED in v1. The 8-dimension scoring produces
+// numbers but their meaningfulness has not been validated against real Ollama
+// traces.
+//
+// Calibration deferred: requires running actual spar exercises against live
+// models and verifying the score distribution produces meaningful variance.
+//
+// Hardcoded thresholds that need calibration:
+//   - pass/fail: aggregate >= 0.6  (score_trace)
+//   - efficiency: 1.0 at expected count, 0.0 at 2x  (score_efficiency)
+//   - explanation quality: >10 chars = 1.0  (score_explanation)
+//   - min_score export filter: default 0.5  (triumph)
+// ─────────────────────────────────────────────────────────────────────────────
 
 /// Score traces with multi-dimensional rewards.
+///
+/// **SB-4 — UNCALIBRATED**: The 8-dimension scoring produces numbers but their
+/// meaningfulness has not been validated against real Ollama traces. Calibration
+/// deferred: requires running actual spar exercises against live models and
+/// verifying the score distribution produces meaningful variance.
 ///
 /// Params:
 /// - `session_id` (optional): Score a specific session. If omitted, uses latest.
 fn judge(params: Value) -> Result<Value, GatewayError> {
+    tracing::warn!("Judge scoring is uncalibrated — scores are indicative only");
     let session_id = find_session(&params, "forge")?;
     let session_dir = sessions_path().join(&session_id);
 
@@ -963,6 +983,12 @@ const BASH_BLOCKLIST: &[&str] = &[
 ];
 
 /// Score a single trace on 8 dimensions. Returns the JSON score entry.
+///
+/// **SB-4 — UNCALIBRATED**: All dimension scores and the aggregate pass
+/// threshold (`>= 0.6`) are heuristic values that have not been validated
+/// against real Ollama model traces. The 8 dimensions are:
+/// `tool_selection`, `param_accuracy`, `task_completion`, `efficiency`,
+/// `safety`, `format_compliance`, `error_handling`, `explanation_quality`.
 fn score_trace(trace: &Value, exercise: &Value) -> Value {
     let tool_calls = trace["tool_calls"].as_array();
     let completed = trace["completed"].as_bool().unwrap_or(false);
@@ -1893,6 +1919,9 @@ fn score_traces_from_output(
 }
 
 /// Compute average scores across all 8 dimensions.
+///
+/// **SB-4 — UNCALIBRATED**: See [`score_trace`] — dimension weights are uniform
+/// (simple average) and thresholds are heuristic.
 fn compute_aggregate_scores(scores: &[Value]) -> serde_json::Map<String, Value> {
     let dims = [
         "tool_selection",

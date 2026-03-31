@@ -149,6 +149,11 @@ pub fn run(_params: Value, config: &GatewayConfig) -> Result<Value, GatewayError
         "agents": agents_map,
         "canon_tools": ["canon_check", "canon_evaluate"],
         "setup_tools": ["initialize"],
+        "observability": {
+            "tracing": "Gateway emits tracing spans with agent, action, preset fields",
+            "stderr": "Set RUST_LOG=info to see timing in stderr",
+            "ayin_dashboard": "AYIN dashboard at localhost:3742 (when running)",
+        },
     });
 
     // Signal first-run so the LLM can prompt the user to choose a preset.
