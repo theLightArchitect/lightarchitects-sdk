@@ -206,7 +206,7 @@ impl AgentContext {
             self.conversation_history.len()
         );
         for (i, entry) in self.conversation_history.iter().rev().take(3).enumerate() {
-            let _ = write!(result, "{}. {entry}...\n", i.saturating_add(1));
+            let _ = writeln!(result, "{}. {entry}...", i.saturating_add(1));
         }
         if let Some(ref thread) = self.current_thread {
             let _ = write!(
@@ -330,15 +330,7 @@ pub async fn run_single_agent(
         }
 
         match run_heartbeat(
-            agent_name,
-            &data_dir.to_path_buf(),
-            llm,
-            channels,
-            supervisor,
-            mcp_pool,
-            &signal,
-            energy,
-            &mut ctx,
+            agent_name, data_dir, llm, channels, supervisor, mcp_pool, &signal, energy, &mut ctx,
         )
         .await
         {
@@ -1226,10 +1218,9 @@ fn post_discord_output(
     // Prefer ### DISCORD section if present, otherwise post the full output.
     // Truncate to 1900 chars (Discord's 2000-char limit minus tag overhead).
     let content = extract_section(response, "DISCORD").unwrap_or_else(|| {
-        let output = extract_section(response, "OUTPUT")
+        extract_section(response, "OUTPUT")
             .or_else(|| extract_section(response, "FINAL_OUTPUT"))
-            .unwrap_or_else(|| response.to_owned());
-        output
+            .unwrap_or_else(|| response.to_owned())
     });
 
     if content.trim().is_empty() {

@@ -3,15 +3,15 @@
 //! Loads from environment variables with sensible defaults for local development.
 
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use secrecy::{ExposeSecret, SecretString};
 
 /// Read a path from an env var, falling back to a default.
-fn env_or_path(var: &str, default: &PathBuf) -> PathBuf {
+fn env_or_path(var: &str, default: &Path) -> PathBuf {
     std::env::var(var)
         .map(PathBuf::from)
-        .unwrap_or_else(|_| default.clone())
+        .unwrap_or_else(|_| default.to_path_buf())
 }
 
 /// Agent backend selection — controls how sibling agent processes are spawned.

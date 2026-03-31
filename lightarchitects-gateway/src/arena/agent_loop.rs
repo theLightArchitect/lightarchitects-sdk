@@ -202,7 +202,7 @@ fn extract_tool_call(response: &str) -> Option<ToolCall> {
     } else {
         // Fallback: find outermost braces or brackets
         let trimmed = after.trim();
-        let brace_start = trimmed.find(|c: char| c == '{' || c == '[')?;
+        let brace_start = trimmed.find(['{', '['])?;
         let bracket = trimmed.as_bytes().get(brace_start)?;
         let closing = if *bracket == b'[' { ']' } else { '}' };
         let brace_end = trimmed.rfind(closing)?;

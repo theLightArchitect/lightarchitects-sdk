@@ -81,9 +81,7 @@ pub fn check_trust(agent: &str, trust: TrustLevel, action: &str) -> Result<(), G
     match trust {
         TrustLevel::Trusted => Ok(()),
         TrustLevel::Sandboxed => {
-            let blocked = SANDBOXED_BLOCKLIST
-                .iter()
-                .any(|&blocked_action| action == blocked_action);
+            let blocked = SANDBOXED_BLOCKLIST.contains(&action);
             if blocked {
                 Err(GatewayError::Governance {
                     agent: agent.to_owned(),

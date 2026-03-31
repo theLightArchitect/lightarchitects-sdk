@@ -1049,12 +1049,10 @@ fn prune_old_vault_files(shared_dir: &Path) {
                 .and_then(|m| m.modified())
                 .unwrap_or(std::time::SystemTime::now());
 
-            if modified < cutoff {
-                if std::fs::create_dir_all(&archive_dir).is_ok() {
-                    let dest = archive_dir.join(entry.file_name());
-                    if std::fs::rename(entry.path(), &dest).is_ok() {
-                        tracing::debug!(file = %entry.file_name().to_string_lossy(), "Archived old vault file");
-                    }
+            if modified < cutoff && std::fs::create_dir_all(&archive_dir).is_ok() {
+                let dest = archive_dir.join(entry.file_name());
+                if std::fs::rename(entry.path(), &dest).is_ok() {
+                    tracing::debug!(file = %entry.file_name().to_string_lossy(), "Archived old vault file");
                 }
             }
         }
@@ -1103,10 +1101,8 @@ fn rotate_heartbeat_logs(data_dir: &Path) {
             .and_then(|m| m.modified())
             .unwrap_or(std::time::SystemTime::now());
 
-        if modified < cutoff {
-            if std::fs::remove_file(entry.path()).is_ok() {
-                tracing::info!(file = %name, "Rotated old heartbeat log");
-            }
+        if modified < cutoff && std::fs::remove_file(entry.path()).is_ok() {
+            tracing::info!(file = %name, "Rotated old heartbeat log");
         }
     }
 }

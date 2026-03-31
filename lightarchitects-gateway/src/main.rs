@@ -32,7 +32,7 @@ async fn main() {
         .and_then(|i| raw_args.get(i + 1).cloned());
 
     // Arena modes (serve, --agent) use JSON tracing; MCP mode uses fmt to stderr
-    let is_arena = raw_args.first().map_or(false, |a| a == "serve") || agent_mode.is_some();
+    let is_arena = raw_args.first().is_some_and(|a| a == "serve") || agent_mode.is_some();
 
     if is_arena {
         tracing_subscriber::fmt()
@@ -66,7 +66,7 @@ async fn main() {
     }
 
     // Serve mode: Arena orchestrator
-    if raw_args.first().map_or(false, |a| a == "serve") {
+    if raw_args.first().is_some_and(|a| a == "serve") {
         if let Err(e) = lightarchitects_gateway::arena::run_serve().await {
             tracing::error!(error = %e, "Arena serve failed");
             std::process::exit(1);

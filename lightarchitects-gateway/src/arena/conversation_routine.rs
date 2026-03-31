@@ -16,7 +16,7 @@
 //! 2. Reads and parses frontmatter to extract the `significance` field.
 //! 3. Only if `significance >= threshold` (default 8.0) fires the
 //!    `canon-evaluation` routine.
-//! External writes that lack valid YAML frontmatter are silently dropped.
+//!    External writes that lack valid YAML frontmatter are silently dropped.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -376,8 +376,26 @@ async fn process_helix_event(
 }
 
 /// Validate that a path is strictly under the helix root (no traversal).
+///
+/// Uses lexical normalization (no filesystem access) so `..` components are
+/// resolved before the prefix check — preventing path traversal attacks.
 fn is_under_helix_root(path: &Path, helix_root: &Path) -> bool {
-    path.starts_with(helix_root)
+    normalize_lexical(path).starts_with(normalize_lexical(helix_root))
+}
+
+/// Lexically normalize a path by resolving `.` and `..` without filesystem access.
+fn normalize_lexical(path: &Path) -> PathBuf {
+    let mut components = Vec::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                components.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => components.push(other),
+        }
+    }
+    components.iter().collect()
 }
 
 /// Extract the `significance` field from YAML frontmatter (between `---` fences).

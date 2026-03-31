@@ -5,7 +5,7 @@
 //! builds it automatically before running `cargo test`.
 
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+
 use std::process::{Command, Stdio};
 
 /// Path to the compiled `lightarchitects` binary, resolved by Cargo at compile time.
@@ -286,7 +286,7 @@ fn discover_shows_active_preset() {
 /// Preset action returns the list of all 12 presets.
 #[test]
 fn preset_list_returns_twelve_presets() {
-    let (mut child, mut stdin, mut reader, _tmp) =
+    let (_child, mut stdin, mut reader, _tmp) =
         spawn_with_config("[gateway]\nversion = \"1.0.0\"\n");
 
     // Initialize
