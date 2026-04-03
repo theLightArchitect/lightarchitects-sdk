@@ -12,7 +12,7 @@ use std::time::Duration;
 use std::pin::Pin;
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout};
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use tokio::sync::Mutex;
 
 use crate::constants::{MAX_CONTENT_LENGTH_HEADERS, MAX_RESPONSE_BYTES, MCP_PROTOCOL_VERSION};
@@ -85,9 +85,11 @@ impl StdioTransport {
         let mut cmd = tokio::process::Command::new(binary_path);
         cmd.stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            // Inherit stderr so sibling tracing logs reach the parent's diagnostics.
-            // Callers that need a clean stderr can redirect before spawning.
-            .stderr(std::process::Stdio::inherit());
+            // Capture stderr to prevent sibling startup logs from bleeding through
+            // ratatui's alternate screen buffer. Lines are forwarded to the parent's
+            // tracing logger at debug level under the "mcp::child" target, so they
+            // are visible in the log file with RUST_LOG=debug but not on the terminal.
+            .stderr(std::process::Stdio::piped());
 
         if let Some(subcommand) = sibling.mcp_subcommand() {
             cmd.arg(subcommand);
@@ -108,6 +110,9 @@ impl StdioTransport {
             .take()
             .ok_or_else(|| SdkError::Config("child stdout unavailable".to_owned()))?;
 
+        // Take stderr before `child` is moved into `StdioInner`.
+        let child_stderr: Option<ChildStderr> = child.stderr.take();
+
         let transport = Self {
             inner: Arc::new(Mutex::new(StdioInner {
                 _child: child,
@@ -118,6 +123,14 @@ impl StdioTransport {
             timeout,
             sibling,
         };
+
+        // Forward child stderr to the parent's tracing logger (non-blocking).
+        // Lines arrive at `debug` level under the "mcp::child" target — invisible
+        // at the default `info` level but captured in the log file with RUST_LOG=debug.
+        // `SiblingId` is `Copy` so the capture is cheap.
+        if let Some(stderr) = child_stderr {
+            tokio::spawn(forward_stderr(stderr, sibling));
+        }
 
         // Complete the MCP initialize handshake.
         let init = JsonRpcRequest::initialize(0, MCP_PROTOCOL_VERSION);
@@ -154,6 +167,31 @@ impl Transport for StdioTransport {
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
+
+/// Read lines from a child process's stderr and forward them to the parent's
+/// tracing logger at `DEBUG` level under the `"mcp::child"` target.
+///
+/// This prevents sibling startup messages from bleeding through ratatui's
+/// alternate screen buffer while preserving crash diagnostics in the log file.
+/// ANSI escape sequences and ASCII control characters are stripped before
+/// logging to prevent log-injection via crafted stderr output.
+async fn forward_stderr(stderr: ChildStderr, sibling: SiblingId) {
+    use tokio::io::AsyncBufReadExt as _;
+    let reader = tokio::io::BufReader::new(stderr);
+    let mut lines = reader.lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        // Strip ASCII control characters (< 0x20, excluding space) to prevent
+        // ANSI escape sequences and terminal control codes from reaching the log.
+        let clean: String = line.chars().filter(|c| !c.is_ascii_control()).collect();
+        if !clean.is_empty() {
+            tracing::debug!(
+                target: "mcp::child",
+                sibling = ?sibling,
+                "{clean}"
+            );
+        }
+    }
+}
 
 async fn write_request(inner: &mut StdioInner, serialized: &str) -> Result<(), SdkError> {
     match inner.framing {
