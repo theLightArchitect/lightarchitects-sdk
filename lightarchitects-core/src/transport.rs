@@ -180,9 +180,20 @@ async fn forward_stderr(stderr: ChildStderr, sibling: SiblingId) {
     let reader = tokio::io::BufReader::new(stderr);
     let mut lines = reader.lines();
     while let Ok(Some(line)) = lines.next_line().await {
-        // Strip ASCII control characters (< 0x20, excluding space) to prevent
-        // ANSI escape sequences and terminal control codes from reaching the log.
+        // Strip ASCII control characters to prevent ANSI escape sequences from
+        // reaching the log. Cap at 4 KiB to guard against misbehaving siblings
+        // that write pathologically long single lines.
+        const MAX_LINE: usize = 4096;
         let clean: String = line.chars().filter(|c| !c.is_ascii_control()).collect();
+        let clean = if clean.len() > MAX_LINE {
+            format!(
+                "{}…[truncated {} bytes]",
+                &clean[..MAX_LINE],
+                clean.len() - MAX_LINE
+            )
+        } else {
+            clean
+        };
         if !clean.is_empty() {
             tracing::debug!(
                 target: "mcp::child",
