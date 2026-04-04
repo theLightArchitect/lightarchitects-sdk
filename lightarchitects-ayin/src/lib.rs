@@ -39,6 +39,17 @@
 pub mod actions;
 pub use actions::AyinAction;
 
+/// Conversation-level JSONL tracing with automatic pivot detection.
+///
+/// [`CognitivePhase`] is always available (no feature gate). [`ConversationTracer`]
+/// and related types are noop stubs unless the `conversations` feature is enabled.
+pub mod conversation;
+pub use conversation::CognitivePhase;
+pub use conversation::ConversationTracer;
+
+#[cfg(feature = "conversations")]
+pub use conversation::{ConversationError, PivotCheckResult, PivotRecord, PivotState, ToolRecord};
+
 use lightarchitects_core::error::SdkError;
 use lightarchitects_core::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 use lightarchitects_core::transport::Transport;

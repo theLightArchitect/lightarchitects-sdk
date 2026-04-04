@@ -19,6 +19,13 @@ workspace = true
 ## I/O. Enable it when you want span traces in `~/.soul/helix/ayin/`.
 observe = ["dep:ayin", "dep:tokio"]
 
+## Enable conversation-level JSONL tracing with pivot detection.
+##
+## Provides `ConversationTracer` and `PivotDetector` for recording tool calls,
+## errors, and automatic pivot detection to `~/.soul/helix/ayin/conversations/`.
+## Without this feature all types are zero-cost noops.
+conversations = ["dep:tokio", "dep:thiserror"]
+
 [dependencies]
 lightarchitects-core = { path = "../lightarchitects-core" }
 serde.workspace = true
@@ -28,6 +35,7 @@ tracing.workspace = true
 # Optional — only pulled in when `observe` feature is active.
 ayin = { path = "/Users/kft/Projects/AYIN/AYIN-DEV/ayin", optional = true }
 tokio = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }

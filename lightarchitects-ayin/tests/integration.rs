@@ -147,3 +147,89 @@ async fn noop_is_usable_as_transport_impl() {
     fn assert_transport<T: Transport>(_: T) {}
     assert_transport(ObservableTransport::new(MockTransport::default()));
 }
+
+// ── ConversationTracer noop path ──────────────────────────────────────────────
+//
+// When the `conversations` feature is disabled (the default in the test
+// profile), `ConversationTracer` is a zero-cost noop — all methods return
+// `Ok(())` with no file I/O.  These tests verify the noop compiles and that
+// the public API is stable.
+
+use lightarchitects_ayin::{CognitivePhase, ConversationTracer};
+
+#[test]
+fn cognitive_phase_from_tool_explore() {
+    assert_eq!(CognitivePhase::from_tool("Read"), CognitivePhase::Explore);
+    assert_eq!(CognitivePhase::from_tool("Grep"), CognitivePhase::Explore);
+    assert_eq!(CognitivePhase::from_tool("Glob"), CognitivePhase::Explore);
+    assert_eq!(CognitivePhase::from_tool("LS"), CognitivePhase::Explore);
+}
+
+#[test]
+fn cognitive_phase_from_tool_execute() {
+    assert_eq!(CognitivePhase::from_tool("Edit"), CognitivePhase::Execute);
+    assert_eq!(CognitivePhase::from_tool("Write"), CognitivePhase::Execute);
+    assert_eq!(
+        CognitivePhase::from_tool("NotebookEdit"),
+        CognitivePhase::Execute
+    );
+}
+
+#[test]
+fn cognitive_phase_from_tool_verify() {
+    assert_eq!(CognitivePhase::from_tool("Bash"), CognitivePhase::Verify);
+}
+
+#[test]
+fn cognitive_phase_from_tool_deliver() {
+    assert_eq!(CognitivePhase::from_tool("Agent"), CognitivePhase::Deliver);
+    assert_eq!(
+        CognitivePhase::from_tool("mcp__SOUL__soulTools"),
+        CognitivePhase::Deliver
+    );
+    assert_eq!(CognitivePhase::from_tool("Skill"), CognitivePhase::Deliver);
+}
+
+#[test]
+fn cognitive_phase_ordering_is_correct() {
+    // Explore < Execute < Verify < Deliver (for Rule 2 backtrack detection).
+    assert!(CognitivePhase::Explore < CognitivePhase::Execute);
+    assert!(CognitivePhase::Execute < CognitivePhase::Verify);
+    assert!(CognitivePhase::Verify < CognitivePhase::Deliver);
+}
+
+#[tokio::test]
+async fn noop_tracer_new_returns_ok() {
+    let mut tracer = ConversationTracer::new("req-test-001");
+    let result = tracer
+        .record_tool("Read", "file: /tmp/test.rs", true, None, "42 lines", 10)
+        .await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn noop_tracer_with_dir_returns_ok() {
+    let mut tracer = ConversationTracer::with_dir("req-test-002", "/tmp/ayin-test");
+    let result = tracer
+        .record_tool(
+            "Bash",
+            "cmd: cargo test",
+            false,
+            Some("FAILED".to_owned()),
+            "",
+            500,
+        )
+        .await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn noop_tracer_multiple_calls_ok() {
+    let mut tracer = ConversationTracer::new("req-test-003");
+    for i in 0_u64..5 {
+        tracer
+            .record_tool("Grep", "pattern: fn main", true, None, "1 match", i * 10)
+            .await
+            .expect("noop tracer should not error");
+    }
+}
