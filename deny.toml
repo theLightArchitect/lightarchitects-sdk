@@ -13,7 +13,13 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 # RUSTSEC-2025-0119: number_prefix crate unmaintained.
 # Only reaches us via lightarchitects-arena → indicatif. lightarchitects-arena is an ML training
 # utility crate not used by the core SDK. No upgrade path exists upstream.
-ignore = ["RUSTSEC-2025-0119"]
+#
+# RUSTSEC-2023-0071: rsa Marvin Attack (timing side-channel, CVSS 5.9).
+# Transitive via russh 0.60.0 → rsa v0.10.0-rc.17. The rsa crate maintainers have not
+# released a fixed version; there is no upgrade path available. russh is a direct
+# dependency of lightarchitects-seraph for SSH transport. Risk accepted: the seraph
+# SSH channel is internal, not exposed to untrusted endpoints. Revisit when rsa publishes a fix.
+ignore = ["RUSTSEC-2025-0119", "RUSTSEC-2023-0071"]
 
 [licenses]
 allow = [
