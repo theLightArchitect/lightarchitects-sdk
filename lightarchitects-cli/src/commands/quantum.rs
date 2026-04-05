@@ -74,7 +74,7 @@ pub async fn execute(
         .await?;
 
     let output = match cmd {
-        QuantumCommand::Scan { subject } => client.scan(&subject).await?.output,
+        QuantumCommand::Scan { subject } => client.triage(&subject).await?.output,
         QuantumCommand::Sweep { subject } => client.sweep(&subject).await?.output,
         QuantumCommand::Trace { subject } => client.trace(&subject).await?.output,
         QuantumCommand::Probe { subject } => client.probe(&subject).await?.output,

@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as FmtWrite;
 use std::io::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
 use lightarchitects_core::SdkError;
@@ -475,7 +475,7 @@ fn read_voice_engine_provider(content: &str) -> String {
 /// Check whether a Soul voice provider key is available.
 ///
 /// Checks environment variable first, then `~/.soul/config/<key_file>`.
-fn credential_status(home: &PathBuf, key_file: &str, env_var: &str) -> &'static str {
+fn credential_status(home: &Path, key_file: &str, env_var: &str) -> &'static str {
     if std::env::var(env_var).is_ok() {
         "set via env"
     } else if home.join(".soul").join("config").join(key_file).exists() {
@@ -486,7 +486,7 @@ fn credential_status(home: &PathBuf, key_file: &str, env_var: &str) -> &'static 
 }
 
 /// Check whether `MISTRAL_API_KEY` is available (env, keys.toml, or keychain).
-fn mistral_credential_status(home: &PathBuf) -> &'static str {
+fn mistral_credential_status(home: &Path) -> &'static str {
     if std::env::var("MISTRAL_API_KEY").is_ok() {
         return "set via env";
     }
