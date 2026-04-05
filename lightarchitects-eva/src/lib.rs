@@ -28,7 +28,7 @@
 //! let lesson = client
 //!     .teach(TeachMode::Explain, "lifetimes in Rust", SkillLevel::Intermediate)
 //!     .await?;
-//! println!("{}", lesson.output);
+//! println!("{}", lesson.content);
 //!
 //! // Visualize (may return image data)
 //! let viz = client.visualize("a neural network diagram", None).await?;
@@ -38,7 +38,19 @@
 //! }
 //!
 //! // Record a win
-//! client.celebrate("shipped the SDK completeness build").await?;
+//! let win = client.celebrate("shipped the SDK completeness build").await?;
+//! println!("{}", win.celebration_message);
+//!
+//! // Fluent ideate builder
+//! use lightarchitects_eva::IdeatePhase;
+//! let plan = client
+//!     .ideate_builder("design a plugin system")
+//!     .phase(IdeatePhase::Document)
+//!     .context("Rust, no dynamic dispatch in hot path")
+//!     .session_id("sess-abc123")
+//!     .call()
+//!     .await?;
+//! println!("{}", plan.phase_5_documentation);
 //!
 //! // Generic adapter
 //! let out = client
@@ -52,10 +64,18 @@
 pub mod actions;
 mod client;
 mod content;
+/// Fluent builder for the `ideate` action.
+pub mod ideate;
 mod types;
 
 // ── Public API surface ────────────────────────────────────────────────────────
 
 pub use actions::EvaAction;
 pub use client::{EvaClient, EvaClientBuilder};
-pub use types::{ActionOutput, SkillLevel, TeachMode, VisualizeOutput};
+pub use ideate::{IdeateBuilder, IdeatePhase, OutputFormat};
+pub use types::{
+    ActionOutput, BibleReflectResult, BibleSearchResult, CelebrateResult, CelebrationScripture,
+    CrystallizeResult, EvaMarkers, IdeateMetadata, IdeateResult, MemoryEntry, MemoryQueryMetadata,
+    MindfulnessResult, RememberResult, ScriptureRecommendation, SkillLevel, TeachMode, TeachResult,
+    VerseHit, VisualizeOutput, WinStatistics,
+};

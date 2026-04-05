@@ -33,6 +33,14 @@ pub enum SdkError {
     /// SDK or client configuration error.
     #[error("config: {0}")]
     Config(String),
+
+    /// Scope constraint violated — the requested target, tool, or domain
+    /// failed SDK-side validation before dispatch.
+    ///
+    /// The message does **not** include the rejected target verbatim.
+    /// The raw target is logged at `WARN` level with a hash for audit trails.
+    #[error("scope violation: {0}")]
+    ScopeViolation(String),
 }
 
 /// Errors at the stdio / process layer.

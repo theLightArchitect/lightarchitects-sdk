@@ -11,6 +11,7 @@ description = "Light Architects unified gateway — MCP server, Arena HTTP API, 
 [[bin]]
 name = "lightarchitects"
 path = "src/main.rs"
+doc = false
 
 [lints]
 workspace = true

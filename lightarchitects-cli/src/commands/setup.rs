@@ -5,9 +5,11 @@
 //! - Keys only:      `lightarchitects setup keys`
 //! - Single key:     `lightarchitects setup keys --key MISTRAL_API_KEY`
 //! - Voice only:     `lightarchitects setup voice`
+//! - SERAPH scope:   `lightarchitects setup seraph`
 //!
 //! Keys are written to `~/.lightarchitects/keys.toml` (chmod 600).
 //! Voice provider is set via `soul.toml [voice.engine] provider`.
+//! SERAPH scope is written to `~/.seraph/scope.toml` (chmod 600).
 
 use std::collections::BTreeMap;
 use std::fmt::Write as FmtWrite;
@@ -16,6 +18,7 @@ use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
 use lightarchitects_core::SdkError;
+use lightarchitects_seraph::scope::{ScopeConstraint, ScopeDomain};
 
 use crate::output::OutputMode;
 
@@ -38,6 +41,26 @@ pub enum SetupComponent {
     /// Interactively select the TTS provider (`ElevenLabs` / `Cartesia` / `Voxtral`)
     /// and verify that the required credentials and voice IDs are in place.
     Voice,
+    /// Configure SERAPH engagement scope (`~/.seraph/scope.toml`).
+    ///
+    /// Prompts for an authorized target, tool, and engagement domain, validates
+    /// each input through `ScopeConstraint::new()`, then writes
+    /// `~/.seraph/scope.toml` with `0600` permissions using an atomic
+    /// tmp-file + rename pattern.
+    ///
+    /// If `~/.seraph/scope.toml` already exists and is valid TOML, the wizard
+    /// prints the current target and exits without overwriting.  Pass `--force`
+    /// to re-run the wizard even when a valid scope file is present.
+    ///
+    /// Allowed tools include: nmap, masscan, nuclei, nikto, gobuster, rustscan,
+    /// tshark, tcpdump, theHarvester, and the full SERAPH wings/services list.
+    ///
+    /// Allowed domains: web, network, cloud, physical, social.
+    Seraph {
+        /// Overwrite an existing `~/.seraph/scope.toml` without prompting.
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 // ── Key catalogue ─────────────────────────────────────────────────────────────
@@ -281,15 +304,18 @@ fn prompt_storage_backend() -> Result<KeysStorage, SdkError> {
 pub fn execute(component: Option<SetupComponent>, _mode: OutputMode) -> Result<(), SdkError> {
     match component {
         None => {
-            // Full wizard: keys first, then voice
+            // Full wizard: keys → voice → SERAPH scope
             println!("\n  Light Architects Full Setup");
             println!("  ─────────────────────────────────────────────");
             run_keys_wizard(None)?;
             println!();
-            run_voice_wizard()
+            run_voice_wizard()?;
+            println!();
+            run_seraph_scope_wizard(false)
         }
         Some(SetupComponent::Keys { key }) => run_keys_wizard(key.as_deref()),
         Some(SetupComponent::Voice) => run_voice_wizard(),
+        Some(SetupComponent::Seraph { force }) => run_seraph_scope_wizard(force),
     }
 }
 
@@ -545,6 +571,313 @@ fn update_soul_toml_provider(
     Ok(())
 }
 
+// ── SERAPH scope wizard ───────────────────────────────────────────────────────
+
+/// Resolve `~/.seraph/scope.toml`.
+fn seraph_scope_path() -> Result<PathBuf, SdkError> {
+    Ok(home_dir()?.join(".seraph").join("scope.toml"))
+}
+
+/// Return `true` when the file at `path` exists and parses as valid TOML.
+fn is_valid_toml_file(path: &Path) -> bool {
+    std::fs::read_to_string(path)
+        .map(|s| toml::from_str::<toml::Value>(&s).is_ok())
+        .unwrap_or(false)
+}
+
+/// Parse the first `target` value from a `[[scope]]` array in a TOML string.
+///
+/// Returns `None` if the field is absent or the TOML is malformed.
+fn extract_scope_target(content: &str) -> Option<String> {
+    let val: toml::Value = toml::from_str(content).ok()?;
+    val.get("scope")?
+        .as_array()?
+        .first()?
+        .get("target")?
+        .as_str()
+        .map(ToOwned::to_owned)
+}
+
+/// Return `true` when the address string appears to be a publicly routable
+/// IPv4/IPv6 address or hostname — i.e. not RFC 1918, not RFC 5737 (TEST-NET),
+/// not RFC 6598 (CGN), not RFC 4193 (ULA), and not link-local.
+///
+/// This is a heuristic — it does not perform DNS resolution.  It is used only
+/// to trigger a confirmation prompt, never to block a valid target.
+fn looks_like_public_address(target: &str) -> bool {
+    // Strip protocol prefix if present (e.g. "https://example.com").
+    let host = target
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .unwrap_or(target);
+
+    // Private IPv4 ranges: 10/8, 172.16/12, 192.168/16.
+    if host.starts_with("10.") || host.starts_with("192.168.") || is_in_172_16_range(host) {
+        return false;
+    }
+    // RFC 5737 TEST-NET (documentation ranges).
+    if host.starts_with("192.0.2.")
+        || host.starts_with("198.51.100.")
+        || host.starts_with("203.0.113.")
+    {
+        return false;
+    }
+    // RFC 6598 shared address space (carrier-grade NAT).
+    if host.starts_with("100.") {
+        if let Some(second) = host.split('.').nth(1) {
+            if let Ok(n) = second.parse::<u8>() {
+                if (64..=127).contains(&n) {
+                    return false;
+                }
+            }
+        }
+    }
+    // Link-local IPv4 (169.254/16) and loopback (handled by ScopeConstraint).
+    if host.starts_with("169.254.") || host.starts_with("127.") {
+        return false;
+    }
+    // IPv6 ULA (fc00::/7) and link-local (fe80::/10).
+    let lower = host.to_lowercase();
+    if lower.starts_with("fc") || lower.starts_with("fd") || lower.starts_with("fe80") {
+        return false;
+    }
+    // If it looks like a bare IPv4 address, anything not caught above is public.
+    // If it looks like a domain (contains a dot, no leading digit context matched),
+    // treat it as potentially public.
+    true
+}
+
+/// Check whether a dotted-quad string falls in the 172.16.0.0/12 range.
+fn is_in_172_16_range(host: &str) -> bool {
+    let mut parts = host.split('.');
+    let a: Option<u8> = parts.next().and_then(|s| s.parse().ok());
+    let b: Option<u8> = parts.next().and_then(|s| s.parse().ok());
+    match (a, b) {
+        (Some(172), Some(b)) => (16..=31).contains(&b),
+        _ => false,
+    }
+}
+
+/// Parse a `ScopeDomain` from a user-supplied string (case-insensitive).
+fn parse_domain(s: &str) -> Option<ScopeDomain> {
+    match s.trim().to_lowercase().as_str() {
+        "web" => Some(ScopeDomain::Web),
+        "network" => Some(ScopeDomain::Network),
+        "cloud" => Some(ScopeDomain::Cloud),
+        "physical" => Some(ScopeDomain::Physical),
+        "social" => Some(ScopeDomain::Social),
+        _ => None,
+    }
+}
+
+/// Prompt the user for a non-empty trimmed line of input.
+fn prompt_line(prompt: &str) -> Result<String, SdkError> {
+    print!("{prompt}");
+    std::io::stdout()
+        .flush()
+        .map_err(|e| SdkError::Config(format!("stdout flush: {e}")))?;
+    let mut buf = String::new();
+    std::io::stdin()
+        .read_line(&mut buf)
+        .map_err(|e| SdkError::Config(format!("failed to read input: {e}")))?;
+    Ok(buf.trim().to_owned())
+}
+
+/// Prompt for a yes/no question; returns `true` only on explicit "y" or "Y".
+fn prompt_yes_no(question: &str) -> Result<bool, SdkError> {
+    let answer = prompt_line(question)?;
+    Ok(matches!(answer.as_str(), "y" | "Y"))
+}
+
+/// Write `content` to `path` using an atomic tmp-file + rename pattern.
+///
+/// The temporary file is created in the same directory as `path` to guarantee
+/// that rename is atomic (same filesystem).  Permissions are set to `0600`
+/// before rename so the file is never world-readable even transiently.
+///
+/// # Errors
+///
+/// Returns [`SdkError::Config`] on any filesystem error.
+fn atomic_write_0600(path: &Path, content: &str) -> Result<(), SdkError> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| SdkError::Config(format!("scope path has no parent: {}", path.display())))?;
+
+    std::fs::create_dir_all(parent)
+        .map_err(|e| SdkError::Config(format!("cannot create {}: {e}", parent.display())))?;
+
+    // Write to a sibling temp file first.
+    let tmp_path = path.with_extension("toml.tmp");
+    std::fs::write(&tmp_path, content)
+        .map_err(|e| SdkError::Config(format!("cannot write tmp file: {e}")))?;
+
+    // Restrict permissions before the rename so the final path is never
+    // world-readable even briefly.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| SdkError::Config(format!("cannot chmod tmp file: {e}")))?;
+    }
+
+    std::fs::rename(&tmp_path, path)
+        .map_err(|e| SdkError::Config(format!("cannot rename tmp to scope.toml: {e}")))?;
+
+    Ok(())
+}
+
+/// Render the `scope.toml` content from validated fields.
+fn render_scope_toml(target: &str, tool: &str, domain: &str) -> String {
+    format!(
+        "# SERAPH scope authorization — generated by lightarchitects setup\n\
+         # Edit manually to add multiple targets or tools\n\
+         \n\
+         [[scope]]\n\
+         target = {target_toml}\n\
+         tool = {tool_toml}\n\
+         domain = {domain_toml}\n",
+        target_toml = toml::Value::String(target.to_owned()),
+        tool_toml = toml::Value::String(tool.to_owned()),
+        domain_toml = toml::Value::String(domain.to_owned()),
+    )
+}
+
+/// Run the SERAPH scope setup wizard.
+///
+/// If `~/.seraph/scope.toml` already exists and is valid TOML, prints the
+/// current target and returns immediately unless `force` is `true`.
+///
+/// The wizard prompts for target, tool, and domain, validates each through
+/// [`ScopeConstraint::new`], warns on public addresses, then writes
+/// `~/.seraph/scope.toml` via atomic tmp+rename with `0600` permissions.
+fn run_seraph_scope_wizard(force: bool) -> Result<(), SdkError> {
+    let scope_path = seraph_scope_path()?;
+
+    println!("\n  SERAPH Scope Setup");
+    println!("  ─────────────────────────────────────────────");
+    println!("  Configures the authorized engagement scope for SERAPH pentest operations.");
+    println!("  Written to: {}", scope_path.display());
+    println!("  Permissions: 0600 (owner read/write only)\n");
+
+    // Idempotency check.
+    if !force && scope_path.exists() && is_valid_toml_file(&scope_path) {
+        let existing = std::fs::read_to_string(&scope_path).unwrap_or_default();
+        let target_display =
+            extract_scope_target(&existing).unwrap_or_else(|| "<multiple targets>".to_owned());
+        println!("  SERAPH scope: configured (target: {target_display})");
+        println!("  Pass `--force` to reconfigure.");
+        return Ok(());
+    }
+
+    // Ask if the user wants to set up scope now (in full-wizard mode this
+    // is the first prompt; in --force or missing-file mode we proceed).
+    if scope_path.exists() && !force {
+        // File exists but failed TOML validation — warn and continue.
+        println!("  ! scope.toml exists but is not valid TOML — re-running wizard.");
+    } else if !scope_path.exists() {
+        let proceed = prompt_yes_no("  SERAPH scope not configured. Set up now? [y/N]: ")?;
+        if !proceed {
+            println!("  Skipped. Run `lightarchitects setup seraph` to configure later.");
+            return Ok(());
+        }
+    }
+
+    // Collect and validate each field — re-prompt on validation failure.
+    let target = prompt_scope_target()?;
+    let tool = prompt_scope_tool()?;
+    let domain_str = prompt_scope_domain()?;
+
+    // Build ScopeConstraint to run full SDK-side validation.
+    let domain = parse_domain(&domain_str)
+        .ok_or_else(|| SdkError::Config(format!("unrecognised domain '{domain_str}'")))?;
+    // This validates target (shell metacharacters, null bytes, localhost)
+    // and tool (allowlist).  Errors here indicate a logic bug since we
+    // already validated interactively, but we propagate rather than panic.
+    let _constraint = ScopeConstraint::new(&target, &tool, domain)
+        .map_err(|e| SdkError::Config(format!("scope validation failed: {e}")))?;
+
+    let content = render_scope_toml(&target, &tool, &domain_str);
+    atomic_write_0600(&scope_path, &content)?;
+
+    println!("\n  ✓ SERAPH scope written to {}", scope_path.display());
+    println!("  ✓ Permissions: 0600");
+    println!("  Run `lightarchitects seraph status` to verify the SERAPH binary is present.\n");
+    Ok(())
+}
+
+/// Prompt for an authorized target with re-prompt loop on validation failure.
+fn prompt_scope_target() -> Result<String, SdkError> {
+    loop {
+        let target = prompt_line(
+            "  Authorized target (domain or IP CIDR, e.g. example.com or 10.0.0.0/8):\n  > ",
+        )?;
+        if target.is_empty() {
+            println!("  Target cannot be empty.");
+            continue;
+        }
+        // Pre-validate via ScopeConstraint (we pass a known-good tool for this check).
+        match ScopeConstraint::new(&target, "nmap", ScopeDomain::Network) {
+            Ok(_) => {}
+            Err(e) => {
+                println!("  Invalid target: {e}");
+                continue;
+            }
+        }
+        // Public address warning.
+        if looks_like_public_address(&target) {
+            println!(
+                "\n  Warning: target appears to be a public address. \
+                 Confirm this is an authorized engagement target."
+            );
+            let confirmed = prompt_yes_no("  Confirm? [y/N]: ")?;
+            if !confirmed {
+                println!("  Enter a different target.");
+                continue;
+            }
+        }
+        return Ok(target);
+    }
+}
+
+/// Prompt for an authorized tool with re-prompt loop on validation failure.
+fn prompt_scope_tool() -> Result<String, SdkError> {
+    println!(
+        "\n  Authorized tool allowlist hint:\n  \
+         nmap, masscan, rustscan, nuclei, nikto, gobuster, whatweb,\n  \
+         tshark, tcpdump, theHarvester, osint, scan, analyze, capture,\n  \
+         monitor, execute, detonate, orchestrate, impacket-<name>, ..."
+    );
+    loop {
+        let tool = prompt_line("  Authorized tool:\n  > ")?;
+        if tool.is_empty() {
+            println!("  Tool cannot be empty.");
+            continue;
+        }
+        match ScopeConstraint::new("192.168.1.1", &tool, ScopeDomain::Network) {
+            Ok(_) => return Ok(tool),
+            Err(e) => {
+                println!("  Invalid tool: {e}");
+            }
+        }
+    }
+}
+
+/// Prompt for an engagement domain with re-prompt loop on invalid input.
+fn prompt_scope_domain() -> Result<String, SdkError> {
+    loop {
+        let domain =
+            prompt_line("\n  Engagement domain [web/network/cloud/physical/social]:\n  > ")?;
+        if parse_domain(&domain).is_some() {
+            return Ok(domain.trim().to_lowercase());
+        }
+        println!(
+            "  Invalid domain '{domain}'. Choose one of: web, network, cloud, physical, social."
+        );
+    }
+}
+
 // ── Writers ───────────────────────────────────────────────────────────────────
 
 /// Write each key to the OS keychain under the `"lightarchitects"` service.
@@ -591,4 +924,271 @@ fn write_keys_file(
     }
 
     Ok(())
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[allow(unsafe_code)]
+mod tests {
+    use super::*;
+
+    // ── SERAPH scope helpers ─────────────────────────────────────────────────
+
+    #[test]
+    fn render_scope_toml_produces_valid_toml_with_expected_fields() {
+        let content = render_scope_toml("10.0.0.0/8", "nmap", "network");
+        // Must parse as valid TOML.
+        let val: toml::Value =
+            toml::from_str(&content).expect("render_scope_toml output is not valid TOML");
+        // [[scope]] must exist with target, tool, domain.
+        let scope_arr = val
+            .get("scope")
+            .and_then(|v| v.as_array())
+            .expect("[[scope]] array missing");
+        let first = scope_arr.first().expect("[[scope]] array is empty");
+        assert_eq!(
+            first.get("target").and_then(|v| v.as_str()),
+            Some("10.0.0.0/8")
+        );
+        assert_eq!(first.get("tool").and_then(|v| v.as_str()), Some("nmap"));
+        assert_eq!(
+            first.get("domain").and_then(|v| v.as_str()),
+            Some("network")
+        );
+    }
+
+    #[test]
+    fn render_scope_toml_contains_expected_comment_header() {
+        let content = render_scope_toml("192.168.1.0/24", "nuclei", "web");
+        assert!(
+            content.contains("SERAPH scope authorization"),
+            "missing header comment"
+        );
+        assert!(
+            content.contains("lightarchitects setup"),
+            "missing attribution comment"
+        );
+    }
+
+    #[test]
+    fn extract_scope_target_returns_first_target() {
+        let toml_str = "[[scope]]\ntarget = \"10.0.0.1\"\ntool = \"nmap\"\ndomain = \"network\"\n";
+        let target = extract_scope_target(toml_str).expect("should parse target");
+        assert_eq!(target, "10.0.0.1");
+    }
+
+    #[test]
+    fn extract_scope_target_returns_none_on_malformed_toml() {
+        assert!(extract_scope_target("not = [valid toml").is_none());
+    }
+
+    #[test]
+    fn extract_scope_target_returns_none_on_missing_scope_key() {
+        let toml_str = "[other]\nfoo = \"bar\"\n";
+        assert!(extract_scope_target(toml_str).is_none());
+    }
+
+    #[test]
+    fn is_valid_toml_file_returns_false_for_nonexistent_path() {
+        let p = std::path::Path::new("/tmp/lightarchitects_test_nonexistent_scope.toml");
+        assert!(!is_valid_toml_file(p));
+    }
+
+    #[test]
+    fn is_valid_toml_file_returns_true_for_valid_toml() {
+        let tmp = tempfile::NamedTempFile::new().expect("tempfile");
+        std::fs::write(tmp.path(), "key = \"value\"\n").expect("write");
+        assert!(is_valid_toml_file(tmp.path()));
+    }
+
+    #[test]
+    fn is_valid_toml_file_returns_false_for_invalid_toml() {
+        let tmp = tempfile::NamedTempFile::new().expect("tempfile");
+        std::fs::write(tmp.path(), "not = [valid toml").expect("write");
+        assert!(!is_valid_toml_file(tmp.path()));
+    }
+
+    // ── atomic_write_0600 ───────────────────────────────────────────────────
+
+    #[test]
+    fn atomic_write_0600_creates_file_with_correct_content() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("scope.toml");
+        atomic_write_0600(&path, "target = \"10.0.0.1\"\n").expect("write should succeed");
+        let content = std::fs::read_to_string(&path).expect("read back");
+        assert_eq!(content, "target = \"10.0.0.1\"\n");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn atomic_write_0600_sets_0600_permissions() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("scope.toml");
+        atomic_write_0600(&path, "# test\n").expect("write");
+        let meta = std::fs::metadata(&path).expect("metadata");
+        let mode = meta.permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "scope.toml must be 0600, got {mode:#o}");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn atomic_write_0600_not_world_readable() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("scope.toml");
+        atomic_write_0600(&path, "# test\n").expect("write");
+        let meta = std::fs::metadata(&path).expect("metadata");
+        let mode = meta.permissions().mode();
+        // No world read (bit 4), no world write (bit 2), no world exec (bit 1).
+        assert_eq!(
+            mode & 0o007,
+            0,
+            "scope.toml must not be world-readable: mode={mode:#o}"
+        );
+        // No group read/write/exec either.
+        assert_eq!(
+            mode & 0o070,
+            0,
+            "scope.toml must not be group-readable: mode={mode:#o}"
+        );
+    }
+
+    #[test]
+    fn atomic_write_0600_is_idempotent_overwrite() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("scope.toml");
+        atomic_write_0600(&path, "first = true\n").expect("first write");
+        atomic_write_0600(&path, "second = true\n").expect("second write");
+        let content = std::fs::read_to_string(&path).expect("read");
+        assert_eq!(content, "second = true\n");
+    }
+
+    // ── Public address detection ─────────────────────────────────────────────
+
+    #[test]
+    fn public_address_detection_private_ranges_are_not_public() {
+        for private in &[
+            "10.0.0.1",
+            "10.255.255.255",
+            "172.16.0.1",
+            "172.31.255.255",
+            "192.168.1.1",
+            "192.168.0.0/16",
+        ] {
+            assert!(
+                !looks_like_public_address(private),
+                "{private} should not be flagged as public"
+            );
+        }
+    }
+
+    #[test]
+    fn public_address_detection_rfc5737_not_public() {
+        for doc in &["192.0.2.1", "198.51.100.1", "203.0.113.1"] {
+            assert!(
+                !looks_like_public_address(doc),
+                "{doc} (RFC5737) should not be flagged as public"
+            );
+        }
+    }
+
+    #[test]
+    fn public_address_detection_public_domain_flagged() {
+        assert!(
+            looks_like_public_address("example.com"),
+            "public domain should be flagged"
+        );
+    }
+
+    #[test]
+    fn public_address_detection_https_prefix_stripped() {
+        // 192.168.x.x behind https:// should still not be public.
+        assert!(!looks_like_public_address("https://192.168.1.1/api"));
+        // A public domain behind https:// should still be flagged.
+        assert!(looks_like_public_address("https://evil.corp/shell"));
+    }
+
+    // ── Domain parsing ───────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_domain_accepts_all_valid_domains() {
+        use lightarchitects_seraph::scope::ScopeDomain;
+        assert_eq!(parse_domain("web"), Some(ScopeDomain::Web));
+        assert_eq!(parse_domain("network"), Some(ScopeDomain::Network));
+        assert_eq!(parse_domain("cloud"), Some(ScopeDomain::Cloud));
+        assert_eq!(parse_domain("physical"), Some(ScopeDomain::Physical));
+        assert_eq!(parse_domain("social"), Some(ScopeDomain::Social));
+    }
+
+    #[test]
+    fn parse_domain_is_case_insensitive() {
+        use lightarchitects_seraph::scope::ScopeDomain;
+        assert_eq!(parse_domain("WEB"), Some(ScopeDomain::Web));
+        assert_eq!(parse_domain("Network"), Some(ScopeDomain::Network));
+    }
+
+    #[test]
+    fn parse_domain_rejects_unknown() {
+        assert!(parse_domain("recon").is_none());
+        assert!(parse_domain("").is_none());
+        assert!(parse_domain("internet").is_none());
+    }
+
+    // ── is_in_172_16_range ───────────────────────────────────────────────────
+
+    #[test]
+    fn is_in_172_16_range_boundaries() {
+        assert!(is_in_172_16_range("172.16.0.1"));
+        assert!(is_in_172_16_range("172.31.255.255"));
+        assert!(!is_in_172_16_range("172.15.0.1"));
+        assert!(!is_in_172_16_range("172.32.0.1"));
+        assert!(!is_in_172_16_range("10.0.0.1"));
+    }
+
+    // ── Full scope write + read roundtrip ────────────────────────────────────
+
+    #[test]
+    #[cfg(unix)]
+    fn scope_write_roundtrip_produces_valid_toml_with_0600_perms() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join(".seraph").join("scope.toml");
+
+        let content = render_scope_toml("192.168.1.0/24", "nmap", "network");
+        atomic_write_0600(&path, &content).expect("write");
+
+        // 1. File must exist and be valid TOML.
+        assert!(is_valid_toml_file(&path), "written file is not valid TOML");
+
+        // 2. Permissions must be 0600.
+        let mode = std::fs::metadata(&path)
+            .expect("metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600, "expected 0600, got {mode:#o}");
+
+        // 3. Target must round-trip correctly.
+        let raw = std::fs::read_to_string(&path).expect("read");
+        let extracted = extract_scope_target(&raw).expect("target should be present");
+        assert_eq!(extracted, "192.168.1.0/24");
+    }
+
+    // ── HOME-override: seraph_scope_path ─────────────────────────────────────
+
+    #[test]
+    fn seraph_scope_path_uses_home_env() {
+        // SAFETY: test-only; isolated environment variable mutation.
+        unsafe { std::env::set_var("HOME", "/tmp/test_home_la") };
+        let p = seraph_scope_path().expect("should succeed with HOME set");
+        assert_eq!(
+            p,
+            std::path::PathBuf::from("/tmp/test_home_la/.seraph/scope.toml")
+        );
+        // Restore — do not leave test pollution.
+        unsafe { std::env::remove_var("HOME") };
+    }
 }

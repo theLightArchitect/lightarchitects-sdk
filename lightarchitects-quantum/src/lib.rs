@@ -26,7 +26,7 @@
 //!     .build()
 //!     .await?;
 //!
-//! // Stateful investigation via QuantumInvestigation
+//! // Stateful investigation via [`QuantumInvestigation`]
 //! let mut inv = QuantumInvestigation::new(&client, "auth token refresh failures");
 //! inv.triage().await?;
 //! inv.sweep().await?;
@@ -35,7 +35,7 @@
 //! let report = inv.close("NTP drift confirmed — clock skew on node-3").await?;
 //! println!("{}", report.output);
 //!
-//! // Or call client methods directly
+//! // Or call client methods directly (each returns a per-action typed result)
 //! let evidence = client.triage("unexpected 502s on gateway").await?;
 //! println!("{}", evidence.output);
 //! # Ok(()) }
@@ -47,11 +47,16 @@ mod client;
 mod content;
 /// Stateful driver for the QUANTUM forensic investigation lifecycle.
 pub mod investigation;
-mod types;
+/// Response types and investigation state tracking.
+pub mod types;
 
 // ── Public API surface ────────────────────────────────────────────────────────
 
 pub use actions::QuantumAction;
 pub use client::{QuantumClient, QuantumClientBuilder};
 pub use investigation::{InvestigationPhase, QuantumInvestigation};
-pub use types::ActionOutput;
+pub use types::{
+    ActionOutput, CloseResult, DiscoverResult, HelixResult, InvestigationState, ListResult,
+    MAX_ADVANCE_STEPS, PhaseRecord, ProbeResult, QuickResult, ResearchResult, SweepResult,
+    TheorizeResult, TraceResult, TriageResult, VerifyResult, WorkflowResult,
+};

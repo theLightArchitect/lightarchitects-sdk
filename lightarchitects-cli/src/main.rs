@@ -16,9 +16,12 @@ use output::OutputMode;
 #[derive(Parser)]
 #[command(name = "lightarchitects", version, about)]
 struct Cli {
-    /// Output raw JSON instead of formatted text.
-    #[arg(long, global = true)]
-    json: bool,
+    /// Output format: `text` (default) or `json`.
+    ///
+    /// `json` serializes the typed response struct via `serde_json` and redacts
+    /// fields whose key matches: `api_key`, token, secret, password, credential.
+    #[arg(long = "output-format", global = true, default_value = "text")]
+    output_format: OutputMode,
 
     #[command(subcommand)]
     command: commands::Commands,
@@ -30,11 +33,7 @@ async fn main() {
 
     let cli = Cli::parse();
     let cfg = CliConfig::resolve();
-    let mode = if cli.json {
-        OutputMode::Json
-    } else {
-        OutputMode::Human
-    };
+    let mode = cli.output_format;
 
     if let Err(err) = commands::dispatch(cli.command, &cfg, mode).await {
         eprintln!("error: {err}");

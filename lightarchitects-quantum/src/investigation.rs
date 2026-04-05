@@ -159,8 +159,10 @@ impl<'a, T: Transport> QuantumInvestigation<'a, T> {
                 self.phase
             )));
         }
-        let out = self.client.triage(&self.subject).await?;
-        self.steps.push(out);
+        let result = self.client.triage(&self.subject).await?;
+        self.steps.push(ActionOutput {
+            output: result.output,
+        });
         self.phase = InvestigationPhase::Triaged;
         Ok(self.steps.last().expect("just pushed"))
     }
@@ -175,8 +177,10 @@ impl<'a, T: Transport> QuantumInvestigation<'a, T> {
     /// Returns a transport error if QUANTUM rejects the call.
     pub async fn sweep(&mut self) -> Result<&ActionOutput, SdkError> {
         self.require_past_initial("sweep")?;
-        let out = self.client.sweep(&self.subject).await?;
-        self.steps.push(out);
+        let result = self.client.sweep(&self.subject).await?;
+        self.steps.push(ActionOutput {
+            output: result.output,
+        });
         self.phase = InvestigationPhase::Swept;
         Ok(self.steps.last().expect("just pushed"))
     }
@@ -191,8 +195,10 @@ impl<'a, T: Transport> QuantumInvestigation<'a, T> {
     /// Returns a transport error if QUANTUM rejects the call.
     pub async fn trace(&mut self) -> Result<&ActionOutput, SdkError> {
         self.require_past_initial("trace")?;
-        let out = self.client.trace(&self.subject).await?;
-        self.steps.push(out);
+        let result = self.client.trace(&self.subject).await?;
+        self.steps.push(ActionOutput {
+            output: result.output,
+        });
         self.phase = InvestigationPhase::Traced;
         Ok(self.steps.last().expect("just pushed"))
     }
@@ -208,8 +214,10 @@ impl<'a, T: Transport> QuantumInvestigation<'a, T> {
     /// Returns a transport error if QUANTUM rejects the call.
     pub async fn probe(&mut self, target: &str) -> Result<&ActionOutput, SdkError> {
         self.require_past_initial("probe")?;
-        let out = self.client.probe(target).await?;
-        self.steps.push(out);
+        let result = self.client.probe(target).await?;
+        self.steps.push(ActionOutput {
+            output: result.output,
+        });
         self.phase = InvestigationPhase::Probed;
         Ok(self.steps.last().expect("just pushed"))
     }
@@ -225,8 +233,10 @@ impl<'a, T: Transport> QuantumInvestigation<'a, T> {
     /// Returns a transport error if QUANTUM rejects the call.
     pub async fn theorize(&mut self, context: Option<&str>) -> Result<&ActionOutput, SdkError> {
         self.require_past_initial("theorize")?;
-        let out = self.client.theorize(&self.subject, context).await?;
-        self.steps.push(out);
+        let result = self.client.theorize(&self.subject, context).await?;
+        self.steps.push(ActionOutput {
+            output: result.output,
+        });
         self.phase = InvestigationPhase::Theorized;
         Ok(self.steps.last().expect("just pushed"))
     }
@@ -241,8 +251,10 @@ impl<'a, T: Transport> QuantumInvestigation<'a, T> {
     /// Returns a transport error if QUANTUM rejects the call.
     pub async fn verify(&mut self, hypothesis: &str) -> Result<&ActionOutput, SdkError> {
         self.require_past_initial("verify")?;
-        let out = self.client.verify(hypothesis).await?;
-        self.steps.push(out);
+        let result = self.client.verify(hypothesis).await?;
+        self.steps.push(ActionOutput {
+            output: result.output,
+        });
         self.phase = InvestigationPhase::Verified;
         Ok(self.steps.last().expect("just pushed"))
     }
@@ -267,8 +279,10 @@ impl<'a, T: Transport> QuantumInvestigation<'a, T> {
                 "investigation is already closed".to_owned(),
             ));
         }
-        let out = self.client.close(summary).await?;
-        self.steps.push(out);
+        let result = self.client.close(summary).await?;
+        self.steps.push(ActionOutput {
+            output: result.output,
+        });
         self.phase = InvestigationPhase::Closed;
         Ok(self.steps.last().expect("just pushed"))
     }

@@ -36,7 +36,9 @@
 pub mod actions;
 mod client;
 mod helix;
+pub mod ingest;
 mod query;
+pub mod research;
 mod types;
 
 // ── Public API surface ────────────────────────────────────────────────────────
@@ -44,10 +46,13 @@ mod types;
 pub use actions::SoulAction;
 pub use client::{SoulClient, SoulClientBuilder};
 pub use helix::{HelixBuilder, HelixEntry};
+pub use ingest::{ContentType, IngestBuilder};
 pub use query::{QueryBuilder, QueryResult};
+pub use research::{DepthLevel, ResearchBuilder, ResearchSource};
 pub use types::{
     ChatMessage, ChatResult, ConvergenceEntry, ConvergenceResult, ConverseResult, FrontmatterMatch,
-    HealthReport, IngestResult, LinksResult, ManifestContent, NoteContent, NoteEntry, NoteList,
-    NoteWritten, QueryFrontmatterResult, QueryHit, RawQueryResult, RelateResult, ResearchResult,
-    SearchHit, SpeakResult, StatsReport, TagSyncReport, ValidateReport,
+    HealthReport, IngestReport, IngestResult, LinksResult, ManifestContent, NoteContent, NoteEntry,
+    NoteList, NoteWritten, QueryFrontmatterResult, QueryHit, RawQueryResult, RelateResult,
+    ResearchResult, ScriptTurn, SearchHit, SiblingPrompt, SpeakResult, StatsReport, TagSyncReport,
+    ValidateReport, VoiceAudioFile, VoiceProfileEntry, VoiceResult,
 };

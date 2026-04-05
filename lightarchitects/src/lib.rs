@@ -145,8 +145,8 @@ pub mod seraph {
 
 /// AYIN observability transport wrapper (requires `ayin` feature).
 ///
-/// The `ayin` feature provides [`ObservableTransport`] for instrumenting MCP calls.
-/// The `ayin-http` feature additionally provides [`AyinClient`] for querying the
+/// The `ayin` feature provides `ObservableTransport` for instrumenting MCP calls.
+/// The `ayin-http` feature additionally provides `AyinClient` for querying the
 /// AYIN viewer REST API at `localhost:3742`.
 #[cfg(feature = "ayin")]
 pub mod ayin {

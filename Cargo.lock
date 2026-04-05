@@ -2405,8 +2405,10 @@ dependencies = [
  "keyring",
  "lightarchitects",
  "lightarchitects-core",
+ "lightarchitects-seraph",
  "rpassword",
  "serde_json",
+ "tempfile",
  "tokio",
  "toml",
 ]

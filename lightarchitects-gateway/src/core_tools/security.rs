@@ -9,7 +9,7 @@
 //!
 //! # Bash blocklist — defense-in-depth only
 //!
-//! The [`BASH_BLOCKLIST`] uses substring matching and is **not** a primary
+//! The bash blocklist uses substring matching and is **not** a primary
 //! security boundary.  A determined attacker can bypass substring checks via
 //! encoding, variable expansion, or whitespace tricks.  The blocklist exists
 //! as a **defense-in-depth** layer to catch accidental or low-sophistication
@@ -210,7 +210,7 @@ const BASH_BLOCKLIST: &[&str] = &[
     "eval\t", // eval with tab separator
 ];
 
-/// Returns `true` if `command` matches any pattern in [`BASH_BLOCKLIST`].
+/// Returns `true` if `command` matches any pattern in the bash blocklist.
 #[must_use]
 pub fn is_blocked_command(command: &str) -> bool {
     let lower = command.to_lowercase();

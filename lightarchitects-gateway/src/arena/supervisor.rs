@@ -1,8 +1,8 @@
 //! Process supervisor — proactive child monitoring with exponential backoff.
 //!
-//! Polls each sibling's health every [`POLL_INTERVAL`] via `McpPool::is_alive`.
+//! Polls each sibling's health every 10 seconds via `McpPool::is_alive`.
 //! Dead siblings are restarted with exponential backoff (5 s → 60 s cap).
-//! Backoff resets after [`HEALTHY_RESET`] of uninterrupted uptime.
+//! Backoff resets after 300 seconds of uninterrupted uptime.
 //! Consecutive failure counts are exposed for the alerting module.
 
 use std::collections::HashMap;

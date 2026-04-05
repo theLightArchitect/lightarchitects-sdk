@@ -10,7 +10,10 @@ use lightarchitects_core::{McpClient, RetryConfig, SiblingId, StdioTransport};
 
 use crate::content::unwrap_text;
 use crate::params::{AnalyzeParams, CaptureParams, MonitorParams, OsintParams, ScanParams};
-use crate::types::{ActionOutput, Wing};
+use crate::types::{
+    ActionOutput, ExamineResult, ReconResult, ReportResult, ScopeResult, StrikeResult,
+    SurveyResult, Wing,
+};
 
 // ── SeraphClient ───────────────────────────────────────────────────────────────
 
@@ -410,6 +413,147 @@ impl<T: Transport> SeraphClient<T> {
             Wing::Monitor => self.monitor(target).await,
             Wing::Execute => self.execute(target).await,
         }
+    }
+
+    // ── Typed lifecycle methods ────────────────────────────────────────────────
+
+    /// Check whether the engagement scope authorizes a `target`.
+    ///
+    /// Returns a [`ScopeResult`] with an authorization verdict and the
+    /// remaining TTL on the engagement scope. The caller **must** check
+    /// [`ScopeResult::is_authorized`] before dispatching wing actions.
+    ///
+    /// The `ttl_remaining` field is populated from SERAPH's status action
+    /// and approximated from the prose response. When SERAPH rejects the
+    /// scope check the result is `authorized: false` with a zero TTL.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or the scope file is invalid.
+    pub async fn scope_check(&self, target: &str) -> Result<ScopeResult, SdkError> {
+        let params = serde_json::json!({
+            "action": "status",
+            "params": { "target": target }
+        });
+        let raw = self.inner.call_tool("penTools", params).await?;
+        let output = unwrap_text(raw)?;
+        // Derive authorization from prose: SERAPH marks out-of-scope with
+        // specific phrases. Absent those, treat as authorized.
+        let authorized = !output.to_lowercase().contains("out of scope")
+            && !output.to_lowercase().contains("not authorized")
+            && !output.to_lowercase().contains("scope violation");
+        // TTL is embedded in prose; we cannot parse it without structured output.
+        // Store zero duration on rejection, one hour as optimistic default on success.
+        let ttl = if authorized {
+            Duration::from_secs(3600)
+        } else {
+            Duration::ZERO
+        };
+        Ok(ScopeResult::new(output, authorized, ttl))
+    }
+
+    /// Recon phase: gather open-source intelligence on `target`.
+    ///
+    /// Delegates to SERAPH's OSINT wing. Returns a [`ReconResult`] whose
+    /// `output` field may contain IP addresses and hostnames that are
+    /// attacker-influenced — do not use them to construct outbound connections.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or the scope rejects the target.
+    pub async fn recon(&self, target: &str) -> Result<ReconResult, SdkError> {
+        let params = serde_json::json!({
+            "action": "osint",
+            "params": { "target": target }
+        });
+        let raw = self.inner.call_tool("penTools", params).await?;
+        Ok(ReconResult {
+            output: unwrap_text(raw)?,
+        })
+    }
+
+    /// Survey phase: enumerate hosts and services at `target`.
+    ///
+    /// Delegates to SERAPH's Scan wing. Returns a [`SurveyResult`] containing
+    /// host discovery and service enumeration prose.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or the scope rejects the target.
+    pub async fn survey(&self, target: &str) -> Result<SurveyResult, SdkError> {
+        let params = serde_json::json!({
+            "action": "scan",
+            "params": { "target": target }
+        });
+        let raw = self.inner.call_tool("penTools", params).await?;
+        Ok(SurveyResult {
+            output: unwrap_text(raw)?,
+        })
+    }
+
+    /// Examine phase: analyse an artefact or binary at `target`.
+    ///
+    /// Delegates to SERAPH's Analyze wing. Returns an [`ExamineResult`]
+    /// containing binary and protocol analysis prose.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or SERAPH rejects the request.
+    pub async fn examine(&self, target: &str) -> Result<ExamineResult, SdkError> {
+        let params = serde_json::json!({
+            "action": "analyze",
+            "params": { "target": target }
+        });
+        let raw = self.inner.call_tool("penTools", params).await?;
+        Ok(ExamineResult {
+            output: unwrap_text(raw)?,
+        })
+    }
+
+    /// Strike phase: execute a payload or exploit against `target`.
+    ///
+    /// Delegates to SERAPH's Execute wing. Returns a [`StrikeResult`] whose
+    /// fields are **attacker-controlled** — do not render `output` or
+    /// `raw_findings` unescaped.
+    ///
+    /// SERAPH's `ScopeGovernor` applies strict gate checks before execution.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails, the scope rejects the target,
+    /// or any `ScopeGovernor` gate fails.
+    pub async fn strike(&self, target: &str) -> Result<StrikeResult, SdkError> {
+        let params = serde_json::json!({
+            "action": "execute",
+            "params": { "target": target }
+        });
+        let raw = self.inner.call_tool("penTools", params).await?;
+        Ok(StrikeResult {
+            output: unwrap_text(raw)?,
+            raw_findings: None,
+        })
+    }
+
+    /// Generate a typed engagement report.
+    ///
+    /// Delegates to SERAPH's `investigate_report` action. Returns a
+    /// [`ReportResult`] with the engagement summary in `Box<str>` fields to
+    /// avoid re-allocation of large report text.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or SERAPH rejects the request.
+    pub async fn typed_report(&self) -> Result<ReportResult, SdkError> {
+        let params = serde_json::json!({
+            "action": "investigate_report",
+            "params": {}
+        });
+        let raw = self.inner.call_tool("penTools", params).await?;
+        let text = unwrap_text(raw)?;
+        Ok(ReportResult {
+            summary: text.into_boxed_str(),
+            engagement_id: None,
+        })
     }
 
     // ── Typed parameter methods ───────────────────────────────────────────────

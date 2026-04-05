@@ -45,7 +45,13 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
         )
         .await?
     } else {
-        run_grep(pattern, search_path.as_deref(), case_insensitive).await?
+        run_grep(
+            pattern,
+            search_path.as_deref(),
+            glob_filter,
+            case_insensitive,
+        )
+        .await?
     };
 
     Ok(json!({
@@ -97,15 +103,26 @@ async fn run_rg(
 }
 
 /// Fallback: GNU/BSD grep with `-rn`.
+///
+/// Supports glob filtering via `--include` (supported on both macOS BSD grep
+/// and GNU grep). Glob patterns like `*.toml` are passed directly; `rg`-style
+/// negation patterns (`!...`) are silently ignored since grep has no equivalent.
 async fn run_grep(
     pattern: &str,
     path: Option<&std::path::Path>,
+    glob: Option<&str>,
     case_insensitive: bool,
 ) -> Result<String, GatewayError> {
     let mut cmd = Command::new("grep");
     cmd.arg("-rn");
     if case_insensitive {
         cmd.arg("-i");
+    }
+    // Apply file-glob filter when present and not a negation pattern.
+    if let Some(g) = glob {
+        if !g.starts_with('!') {
+            cmd.arg(format!("--include={g}"));
+        }
     }
     cmd.arg(pattern);
     if let Some(p) = path {

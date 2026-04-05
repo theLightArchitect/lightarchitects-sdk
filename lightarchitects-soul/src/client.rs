@@ -11,10 +11,14 @@ use lightarchitects_core::transport::Transport;
 use lightarchitects_core::{McpClient, RetryConfig, SiblingId, StdioTransport};
 
 use crate::helix::HelixBuilder;
+use crate::ingest::IngestBuilder;
 use crate::query::QueryBuilder;
+use crate::research::ResearchBuilder;
 use crate::types::{
-    ConverseResult, HealthReport, LinksResult, NoteContent, NoteList, NoteWritten, RelateResult,
-    SearchHit, SpeakResult, StatsReport, TagSyncReport, ValidateReport,
+    ChatResult, ConvergenceResult, ConverseResult, HealthReport, IngestResult, LinksResult,
+    ManifestContent, NoteContent, NoteList, NoteWritten, QueryFrontmatterResult, RelateResult,
+    ResearchResult, SearchHit, SpeakResult, StatsReport, TagSyncReport, ValidateReport,
+    VoiceResult,
 };
 
 // ── SoulClient ────────────────────────────────────────────────────────────────
@@ -160,7 +164,7 @@ impl<T: Transport> SoulClient<T> {
         value: Option<&str>,
         path: Option<&str>,
         limit: Option<u32>,
-    ) -> Result<Value, SdkError> {
+    ) -> Result<QueryFrontmatterResult, SdkError> {
         let mut p = serde_json::json!({ "field": field, "operator": operator });
         if let Some(value) = value {
             p["value"] = value.into();
@@ -172,7 +176,8 @@ impl<T: Transport> SoulClient<T> {
             p["limit"] = limit.into();
         }
         let params = serde_json::json!({ "action": "query_frontmatter", "params": p });
-        self.inner.call_tool("soulTools", params).await
+        let raw = self.inner.call_tool("soulTools", params).await?;
+        serde_json::from_value(raw).map_err(SdkError::from)
     }
 
     // ── Helix & RAG query (fluent builders) ───────────────────────────────────
@@ -189,6 +194,35 @@ impl<T: Transport> SoulClient<T> {
     /// Chain optional filters then call `.call().await` to execute.
     pub fn query(&self, query: impl Into<String>) -> QueryBuilder<'_, T> {
         QueryBuilder::new(&self.inner, query)
+    }
+
+    /// Start a fluent ingest builder for a validated vault path.
+    ///
+    /// The `path` is expanded and validated against the vault root (`~/.soul/`)
+    /// during this call. See [`IngestBuilder`] for details.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SdkError::Config`] if `$HOME` is unset, the path contains null
+    /// bytes, traversal components, or falls outside the vault root.
+    pub fn ingest_builder(&self, path: &str) -> Result<IngestBuilder<'_, T>, SdkError> {
+        IngestBuilder::with_path(&self.inner, path)
+    }
+
+    /// Start a fluent research builder for the given query string.
+    ///
+    /// The `query` is validated for null bytes and control characters during
+    /// this call. See [`ResearchBuilder`] for details.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SdkError::Config`] if `query` contains null bytes or ASCII
+    /// control characters other than tab and newline.
+    pub fn research_builder(
+        &self,
+        query: impl Into<String>,
+    ) -> Result<ResearchBuilder<'_, T>, SdkError> {
+        ResearchBuilder::new(&self.inner, query)
     }
 
     // ── Vault health & metadata ───────────────────────────────────────────────
@@ -226,9 +260,10 @@ impl<T: Transport> SoulClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails.
-    pub async fn manifest(&self) -> Result<Value, SdkError> {
+    pub async fn manifest(&self) -> Result<ManifestContent, SdkError> {
         let params = serde_json::json!({ "action": "manifest", "params": {} });
-        self.inner.call_tool("soulTools", params).await
+        let raw = self.inner.call_tool("soulTools", params).await?;
+        serde_json::from_value(raw).map_err(SdkError::from)
     }
 
     /// Validate helix entries against the canonical template.
@@ -333,9 +368,10 @@ impl<T: Transport> SoulClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails.
-    pub async fn voice(&self, params_inner: Value) -> Result<Value, SdkError> {
+    pub async fn voice(&self, params_inner: Value) -> Result<VoiceResult, SdkError> {
         let params = serde_json::json!({ "action": "voice", "params": params_inner });
-        self.inner.call_tool("soulTools", params).await
+        let raw = self.inner.call_tool("soulTools", params).await?;
+        serde_json::from_value(raw).map_err(SdkError::from)
     }
 
     /// Run the text-to-dialogue stitching pipeline (multi-speaker audio).
@@ -345,9 +381,10 @@ impl<T: Transport> SoulClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails.
-    pub async fn dialogue(&self, params_inner: Value) -> Result<Value, SdkError> {
+    pub async fn dialogue(&self, params_inner: Value) -> Result<VoiceResult, SdkError> {
         let params = serde_json::json!({ "action": "dialogue", "params": params_inner });
-        self.inner.call_tool("soulTools", params).await
+        let raw = self.inner.call_tool("soulTools", params).await?;
+        serde_json::from_value(raw).map_err(SdkError::from)
     }
 
     /// Interact with the multi-sibling conversation engine.
@@ -358,11 +395,16 @@ impl<T: Transport> SoulClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails.
-    pub async fn chat(&self, sub_action: &str, params_inner: Value) -> Result<Value, SdkError> {
+    pub async fn chat(
+        &self,
+        sub_action: &str,
+        params_inner: Value,
+    ) -> Result<ChatResult, SdkError> {
         let mut p = params_inner;
         p["sub_action"] = sub_action.into();
         let params = serde_json::json!({ "action": "chat", "params": p });
-        self.inner.call_tool("soulTools", params).await
+        let raw = self.inner.call_tool("soulTools", params).await?;
+        serde_json::from_value(raw).map_err(SdkError::from)
     }
 
     // ── Knowledge graph ───────────────────────────────────────────────────────
@@ -375,9 +417,10 @@ impl<T: Transport> SoulClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails.
-    pub async fn ingest(&self, params_inner: Value) -> Result<Value, SdkError> {
+    pub async fn ingest(&self, params_inner: Value) -> Result<IngestResult, SdkError> {
         let params = serde_json::json!({ "action": "ingest", "params": params_inner });
-        self.inner.call_tool("soulTools", params).await
+        let raw = self.inner.call_tool("soulTools", params).await?;
+        serde_json::from_value(raw).map_err(SdkError::from)
     }
 
     /// Query N-way convergences (shared experiences across siblings).
@@ -394,7 +437,7 @@ impl<T: Transport> SoulClient<T> {
         min_weight: Option<f64>,
         min_participants: Option<u32>,
         limit: Option<u32>,
-    ) -> Result<Value, SdkError> {
+    ) -> Result<ConvergenceResult, SdkError> {
         let mut p = serde_json::json!({});
         if let Some(ids) = helix_ids {
             p["helix_ids"] = ids.to_vec().into();
@@ -409,7 +452,8 @@ impl<T: Transport> SoulClient<T> {
             p["limit"] = limit.into();
         }
         let params = serde_json::json!({ "action": "convergences", "params": p });
-        self.inner.call_tool("soulTools", params).await
+        let raw = self.inner.call_tool("soulTools", params).await?;
+        serde_json::from_value(raw).map_err(SdkError::from)
     }
 
     /// Create an explicit directed link between two helix steps.
@@ -480,7 +524,7 @@ impl<T: Transport> SoulClient<T> {
         query: Option<&str>,
         mode: Option<&str>,
         extra_params: Option<Value>,
-    ) -> Result<Value, SdkError> {
+    ) -> Result<ResearchResult, SdkError> {
         let mut p = extra_params.unwrap_or_else(|| serde_json::json!({}));
         if let Some(q) = query {
             p["query"] = q.into();
@@ -489,7 +533,8 @@ impl<T: Transport> SoulClient<T> {
             p["mode"] = m.into();
         }
         let params = serde_json::json!({ "action": "research", "params": p });
-        self.inner.call_tool("soulTools", params).await
+        let raw = self.inner.call_tool("soulTools", params).await?;
+        serde_json::from_value(raw).map_err(SdkError::from)
     }
 }
 

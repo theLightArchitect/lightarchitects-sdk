@@ -78,10 +78,13 @@ pub use params::{
 };
 #[cfg(feature = "ssh")]
 pub use pool::{PoolConfig, SessionPool};
-pub use scope::EngagementScope;
+pub use scope::{EngagementScope, ScopeConstraint, ScopeDomain};
 #[cfg(feature = "ssh")]
 pub use ssh::{
     CallbackPassphraseProvider, EnvPassphraseProvider, FilePassphraseProvider,
     KeyPassphraseProvider, SshSession, SshSessionBuilder,
 };
-pub use types::{ActionOutput, Wing};
+pub use types::{
+    ActionOutput, ExamineResult, ReconResult, ReportResult, ScopeResult, StrikeResult,
+    SurveyResult, Wing,
+};

@@ -286,3 +286,40 @@ async fn exhausted_queue_returns_config_error() {
         "expected Config error, got: {err:?}"
     );
 }
+
+#[tokio::test]
+async fn sweep_tool_error_surfaces_as_sdk_tool_error() {
+    let mock = MockTransport::default();
+    // Scenario: QUANTUM sweep rejected due to scope constraint.
+    mock.push_error_envelope("sweep: evidence pool locked — active investigation required");
+    let err = client(mock).sweep("auth failures").await.unwrap_err();
+    assert!(
+        matches!(err, SdkError::Tool(_)),
+        "expected Tool error, got: {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn theorize_rpc_error_surfaces_as_protocol_error() {
+    let mock = MockTransport::default();
+    // Scenario: JSON-RPC protocol error (QUANTUM server process crashed mid-response).
+    mock.push_rpc_error(-32_603, "internal error");
+    let err = client(mock).theorize("JWT expiry", None).await.unwrap_err();
+    assert!(
+        matches!(err, SdkError::Protocol(_)),
+        "expected Protocol error, got: {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn research_exhausted_queue_returns_config_error() {
+    let mock = MockTransport::default(); // No responses queued.
+    let err = client(mock)
+        .research("Rust async cancellation")
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, SdkError::Config(_)),
+        "expected Config error, got: {err:?}"
+    );
+}

@@ -1,7 +1,7 @@
 //! Telegram alerting — fire-and-forget HTTP notifications for supervisor events.
 //!
 //! Sends alerts to a Telegram chat via the Bot API. Rate-limited to prevent
-//! spamming: at most one alert per sibling per [`RATE_LIMIT_WINDOW`].
+//! spamming: at most one alert per sibling per 300-second rate-limit window.
 //! Failures are logged but never block the supervisor loop.
 
 use std::collections::HashMap;

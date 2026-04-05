@@ -2,6 +2,14 @@
 //!
 //! Build an [`EngagementScope`], call [`EngagementScope::install`] to write it
 //! to the expected path, then construct a [`crate::SeraphClient`].
+//!
+//! # SDK-side scope validation
+//!
+//! [`self::ScopeConstraint`] provides compile-time ergonomics for validating targets
+//! and tools **before** dispatch. It does not replicate SERAPH's 5-gate server-side
+//! `ScopeGovernor` — it is an SDK-level guard that rejects obviously invalid or
+//! dangerous inputs (shell metacharacters, localhost targets, unknown tools)
+//! before any network or IPC call is made.
 
 use std::path::PathBuf;
 
@@ -105,6 +113,263 @@ fn scope_path() -> Result<PathBuf, SdkError> {
     Ok(PathBuf::from(home).join(".seraph").join("scope.toml"))
 }
 
+// ── ScopeDomain ─────────────────────────────────────────────────────────────
+
+/// Pentest engagement domain — constrains which class of targets is in scope.
+///
+/// This enum is `#[non_exhaustive]` so that future SERAPH engagement types can
+/// be added without a breaking change to downstream SDK consumers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ScopeDomain {
+    /// Web application targets (HTTP/HTTPS, APIs, web services).
+    Web,
+    /// Network infrastructure targets (hosts, CIDR ranges, ports).
+    Network,
+    /// Cloud platform targets (AWS, GCP, Azure, container registries).
+    Cloud,
+    /// Physical access / hardware targets (`IoT`, embedded, serial).
+    Physical,
+    /// Social engineering targets (phishing simulation, vishing).
+    Social,
+}
+
+// ── ScopeConstraint ──────────────────────────────────────────────────────────
+
+/// Canonical SERAPH tool names — allowlist for SDK-side validation.
+///
+/// Sourced from the SERAPH wings and services implementations.
+const KNOWN_SERAPH_TOOLS: &[&str] = &[
+    // Wings
+    "capture",
+    "scan",
+    "analyze",
+    "osint",
+    "monitor",
+    "execute",
+    // Services
+    "detonate",
+    "orchestrate",
+    "knowledge_search",
+    "knowledge_read",
+    "knowledge_stats",
+    // Investigation lifecycle
+    "investigate_start",
+    "investigate_advance",
+    "investigate_close",
+    "investigate_report",
+    // Utilities
+    "vault_sync",
+    "speak",
+    "status",
+    // Wing-level tools (sub-dispatch names accepted by scan/analyze wings)
+    "nmap",
+    "masscan",
+    "rustscan",
+    "nikto",
+    "gobuster",
+    "nuclei",
+    "whatweb",
+    "tcpdump",
+    "tshark",
+    "theHarvester",
+    "file",
+    "strings",
+    "objdump",
+    "ghidra",
+    "binwalk",
+    "volatility3",
+    "ss",
+    "ncat",
+    "nc",
+    "socat",
+    "chisel",
+    "ligolo-ng",
+    "msfvenom",
+];
+
+/// Shell metacharacters that must not appear in scope targets.
+const SHELL_METACHARS: &[char] = &[';', '&', '|', '`', '$', '>', '<'];
+
+/// SDK-side scope constraint. Validates target, tool, and domain before dispatch.
+///
+/// `ScopeConstraint` is an ergonomic guard that rejects obviously invalid or
+/// dangerous inputs **before** any IPC call to SERAPH. It does **not** replicate
+/// SERAPH's server-side 5-gate `ScopeGovernor` — the server enforces TTL, target
+/// allowlisting, concurrent limits, and domain constraints independently.
+///
+/// # Construction
+///
+/// Use [`ScopeConstraint::new`] — the only constructor. All validation is
+/// performed at construction time, not at dispatch time.
+///
+/// # Security constraints
+///
+/// - `#[non_exhaustive]` — allows adding validation fields in future SDK versions
+///   without breaking downstream consumers.
+/// - No public fields — callers cannot bypass validation by constructing directly.
+/// - Does not implement `Serialize` — prevents scope constraint data from
+///   appearing in logs or wire payloads.
+///
+/// # Example
+///
+/// ```rust
+/// use lightarchitects_seraph::scope::{ScopeConstraint, ScopeDomain};
+///
+/// let constraint = ScopeConstraint::new("192.168.1.0/24", "nmap", ScopeDomain::Network)
+///     .expect("valid constraint");
+///
+/// assert_eq!(constraint.target(), "192.168.1.0/24");
+/// assert_eq!(constraint.tool(), "nmap");
+/// ```
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub struct ScopeConstraint {
+    target: String,
+    tool: String,
+    domain: ScopeDomain,
+}
+
+impl ScopeConstraint {
+    /// Only constructor — enforces all invariants at construction time.
+    ///
+    /// # Validation
+    ///
+    /// - `target`: rejects shell metacharacters (`;`, `&`, `|`, `` ` ``, `$`, `>`, `<`)
+    ///   and null bytes. Rejects localhost addresses (`localhost`, `127.0.0.1`, `::1`)
+    ///   unless the `testing` cfg flag is set.
+    /// - `tool`: allowlisted against known SERAPH tool names.
+    ///
+    /// Rejected target strings are **not** included in the error message verbatim —
+    /// they are hashed and emitted via `tracing::warn!` for audit logging.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SdkError::ScopeViolation`] if any validation constraint is violated.
+    pub fn new(
+        target: impl Into<String>,
+        tool: impl Into<String>,
+        domain: ScopeDomain,
+    ) -> Result<Self, SdkError> {
+        let target = target.into();
+        let tool = tool.into();
+
+        validate_target(&target)?;
+        validate_tool(&tool)?;
+
+        Ok(Self {
+            target,
+            tool,
+            domain,
+        })
+    }
+
+    /// The validated target string.
+    #[must_use]
+    pub fn target(&self) -> &str {
+        &self.target
+    }
+
+    /// The validated tool name.
+    #[must_use]
+    pub fn tool(&self) -> &str {
+        &self.tool
+    }
+
+    /// The engagement domain.
+    #[must_use]
+    pub fn domain(&self) -> &ScopeDomain {
+        &self.domain
+    }
+}
+
+/// Validate a scope target string.
+///
+/// Rejects shell metacharacters, null bytes, and localhost addresses.
+/// The raw target is never included in the returned error — it is hashed
+/// and logged at WARN level for audit trails.
+fn validate_target(target: &str) -> Result<(), SdkError> {
+    // Reject null bytes — not renderable and may bypass downstream checks.
+    if target.contains('\0') {
+        tracing::warn!(
+            target_hash = %simple_hash(target),
+            "scope target rejected: contains null byte"
+        );
+        return Err(SdkError::ScopeViolation(
+            "target contains null byte".to_owned(),
+        ));
+    }
+
+    // Reject shell metacharacters that could enable injection attacks.
+    for ch in SHELL_METACHARS {
+        if target.contains(*ch) {
+            tracing::warn!(
+                target_hash = %simple_hash(target),
+                rejected_char = %ch,
+                "scope target rejected: shell metacharacter"
+            );
+            return Err(SdkError::ScopeViolation(format!(
+                "target contains shell metacharacter '{ch}'"
+            )));
+        }
+    }
+
+    // Reject localhost targets — localhost is not a valid pentest target.
+    // This constraint exists in both production and test mode. Tests that need
+    // to verify scope rejection behaviour use non-routable RFC-5737 addresses
+    // (e.g. 192.0.2.1) or private CIDR ranges (192.168.x.x, 10.x.x.x).
+    if is_localhost(target) {
+        tracing::warn!(
+            target_hash = %simple_hash(target),
+            "scope target rejected: localhost address"
+        );
+        return Err(SdkError::ScopeViolation(
+            "localhost targets are not permitted".to_owned(),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Returns `true` if the target is a localhost address.
+fn is_localhost(target: &str) -> bool {
+    let lower = target.to_lowercase();
+    lower == "localhost"
+        || lower.starts_with("localhost:")
+        || lower.starts_with("127.")
+        || lower == "::1"
+        || lower.starts_with("[::1]")
+}
+
+/// Validate a tool name against the known SERAPH tool allowlist.
+fn validate_tool(tool: &str) -> Result<(), SdkError> {
+    if KNOWN_SERAPH_TOOLS.contains(&tool) {
+        return Ok(());
+    }
+    // Allow impacket-* prefix — matches SERAPH execute wing dispatch.
+    if tool.starts_with("impacket-") && !tool.contains(SHELL_METACHARS) {
+        return Ok(());
+    }
+    Err(SdkError::ScopeViolation(format!(
+        "tool '{tool}' is not in the SERAPH allowlist"
+    )))
+}
+
+/// Compute a simple FNV-1a 32-bit hash of a string for audit logging.
+///
+/// This is intentionally a non-cryptographic hash — its purpose is to produce
+/// a stable, short identifier for log correlation without exposing the raw value.
+fn simple_hash(s: &str) -> u32 {
+    const FNV_OFFSET: u32 = 2_166_136_261;
+    const FNV_PRIME: u32 = 16_777_619;
+    let mut hash = FNV_OFFSET;
+    for byte in s.bytes() {
+        hash ^= u32::from(byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -180,5 +445,95 @@ authorized_by = "tester"
 "#;
         let parsed: EngagementScope = toml::from_str(toml_str).unwrap();
         assert_eq!(parsed.max_concurrent_scans, 3);
+    }
+
+    // ── ScopeConstraint tests ────────────────────────────────────────────────
+
+    #[test]
+    fn scope_constraint_valid_input_accepted() {
+        let c = ScopeConstraint::new("192.168.1.0/24", "nmap", ScopeDomain::Network);
+        assert!(c.is_ok(), "valid target/tool/domain should be accepted");
+        let c = c.unwrap();
+        assert_eq!(c.target(), "192.168.1.0/24");
+        assert_eq!(c.tool(), "nmap");
+        assert_eq!(c.domain(), &ScopeDomain::Network);
+    }
+
+    #[test]
+    fn scope_constraint_shell_metachar_rejected() {
+        for metachar in &[";", "&", "|", "`", "$", ">", "<"] {
+            let target = format!("192.168.1.1{metachar}id");
+            let result = ScopeConstraint::new(&target, "nmap", ScopeDomain::Network);
+            assert!(
+                result.is_err(),
+                "target with metachar '{metachar}' should be rejected"
+            );
+            let err = result.unwrap_err();
+            // Error message must NOT contain the raw target.
+            assert!(
+                !err.to_string().contains("192.168.1.1"),
+                "error message must not expose raw target: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn scope_constraint_localhost_rejected() {
+        for localhost in &["localhost", "127.0.0.1", "127.0.0.2", "::1", "[::1]"] {
+            let result = ScopeConstraint::new(*localhost, "nmap", ScopeDomain::Network);
+            assert!(
+                result.is_err(),
+                "localhost target '{localhost}' should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn scope_constraint_null_byte_rejected() {
+        let target = "192.168.1.1\0suffix";
+        let result = ScopeConstraint::new(target, "nmap", ScopeDomain::Network);
+        assert!(result.is_err(), "null byte in target should be rejected");
+    }
+
+    #[test]
+    fn scope_constraint_unknown_tool_rejected() {
+        let result = ScopeConstraint::new("192.168.1.1", "metasploit", ScopeDomain::Network);
+        assert!(result.is_err(), "unknown tool should be rejected");
+        let err = result.unwrap_err().to_string();
+        // Error message may include the tool name (it is not attacker-controlled here).
+        assert!(err.contains("metasploit") || err.contains("allowlist"));
+    }
+
+    #[test]
+    fn scope_constraint_impacket_prefix_accepted() {
+        let result = ScopeConstraint::new(
+            "DOMAIN/user:pass@10.0.0.1",
+            "impacket-secretsdump",
+            ScopeDomain::Network,
+        );
+        assert!(result.is_ok(), "impacket-* tools should be accepted");
+    }
+
+    #[test]
+    fn scope_constraint_web_domain_accepted() {
+        let result = ScopeConstraint::new("https://example.com", "nuclei", ScopeDomain::Web);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn simple_hash_is_deterministic() {
+        assert_eq!(simple_hash("test"), simple_hash("test"));
+        assert_ne!(simple_hash("test"), simple_hash("other"));
+    }
+
+    #[test]
+    fn scope_result_must_use_is_authorized() {
+        use crate::types::ScopeResult;
+        use std::time::Duration;
+        let r = ScopeResult::new("authorized".to_owned(), true, Duration::from_secs(3600));
+        assert!(r.is_authorized());
+        let r2 = ScopeResult::new("rejected".to_owned(), false, Duration::ZERO);
+        assert!(!r2.is_authorized());
+        assert_eq!(r2.ttl_remaining(), Duration::ZERO);
     }
 }

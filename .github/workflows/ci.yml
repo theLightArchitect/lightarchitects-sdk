@@ -43,6 +43,50 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --no-default-features
 
+  test-features:
+    name: Feature-combination tests
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Feature none (core only)
+        run: cargo test --workspace --no-default-features
+      - name: Feature soul
+        run: cargo test --no-default-features --features soul -p lightarchitects
+      - name: Feature corso
+        run: cargo test --no-default-features --features corso -p lightarchitects
+      - name: Feature eva
+        run: cargo test --no-default-features --features eva -p lightarchitects
+      - name: Feature quantum
+        run: cargo test --no-default-features --features quantum -p lightarchitects
+      - name: Feature seraph
+        run: cargo test --no-default-features --features seraph -p lightarchitects
+      - name: Feature ayin
+        run: cargo test --no-default-features --features ayin -p lightarchitects
+      - name: Feature ayin-http
+        run: cargo test --no-default-features --features ayin-http -p lightarchitects
+      - name: Feature full
+        run: cargo test --features full -p lightarchitects
+      - name: Feature all
+        run: cargo test --workspace --all-features
+      - name: Security gate — no reqwest without ayin-http
+        run: |
+          result=$(cargo tree --no-default-features -p lightarchitects 2>/dev/null | grep reqwest || true)
+          if [ -n "$result" ]; then
+            echo "FAIL: reqwest present without any feature enabled"
+            echo "$result"
+            exit 1
+          fi
+      - name: Security gate — reqwest present with ayin-http
+        run: |
+          result=$(cargo tree --features ayin-http -p lightarchitects 2>/dev/null | grep reqwest || true)
+          if [ -z "$result" ]; then
+            echo "FAIL: reqwest absent even with ayin-http feature enabled"
+            exit 1
+          fi
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest

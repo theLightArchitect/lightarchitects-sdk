@@ -255,3 +255,37 @@ async fn exhausted_queue_returns_config_error() {
         "expected Config error, got: {err:?}"
     );
 }
+
+#[tokio::test]
+async fn osint_tool_error_surfaces_as_sdk_tool_error() {
+    let mock = MockTransport::default();
+    // Scenario: OSINT rejected because the target is outside the engagement scope.
+    mock.push_error_envelope("osint: target 'external.com' not in engagement scope");
+    let err = client(mock).osint("external.com", None).await.unwrap_err();
+    assert!(
+        matches!(err, SdkError::Tool(_)),
+        "expected Tool error, got: {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn execute_rpc_error_surfaces_as_protocol_error() {
+    let mock = MockTransport::default();
+    // Scenario: JSON-RPC protocol error (SERAPH binary exited unexpectedly).
+    mock.push_rpc_error(-32_700, "parse error");
+    let err = client(mock).execute("staging-01").await.unwrap_err();
+    assert!(
+        matches!(err, SdkError::Protocol(_)),
+        "expected Protocol error, got: {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn wing_capture_exhausted_queue_returns_config_error() {
+    let mock = MockTransport::default(); // No responses queued.
+    let err = client(mock).wing(Wing::Capture, "eth0").await.unwrap_err();
+    assert!(
+        matches!(err, SdkError::Config(_)),
+        "expected Config error, got: {err:?}"
+    );
+}

@@ -153,7 +153,7 @@ pub fn active_routing_priority() -> &'static [&'static str] {
 /// # Errors
 ///
 /// Returns [`GatewayError::InvalidParam`] for unknown preset names.
-/// Returns [`GatewayError::GovernanceViolation`] if switching would
+/// Returns [`GatewayError::Governance`] if switching would
 /// disable a security teammate that was enabled in the previous preset.
 pub fn set_active_preset(name: &str) -> Result<&'static Preset, GatewayError> {
     let new_preset = find_preset(name).ok_or_else(|| {

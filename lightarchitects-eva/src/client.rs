@@ -6,12 +6,16 @@ use std::time::Duration;
 use serde_json::Value;
 
 use lightarchitects_core::constants::DEFAULT_TIMEOUT_SECS;
-use lightarchitects_core::error::{ProtocolError, SdkError};
+use lightarchitects_core::error::SdkError;
 use lightarchitects_core::transport::Transport;
 use lightarchitects_core::{McpClient, RetryConfig, SiblingId, StdioTransport};
 
 use crate::content::{extract_image, unwrap_json, unwrap_text};
-use crate::types::{ActionOutput, SkillLevel, TeachMode, VisualizeOutput};
+use crate::types::{
+    ActionOutput, BibleReflectResult, BibleSearchResult, CelebrateResult, CrystallizeResult,
+    IdeateResult, MindfulnessResult, RememberResult, SkillLevel, TeachMode, TeachResult,
+    VisualizeJson, VisualizeOutput,
+};
 
 /// Single MCP tool name exposed by the EVA binary.
 const EVA_TOOL: &str = "evaTools";
@@ -44,7 +48,7 @@ const EVA_TOOL: &str = "evaTools";
 /// let lesson = client
 ///     .teach(TeachMode::Explain, "lifetimes in Rust", SkillLevel::Intermediate)
 ///     .await?;
-/// println!("{}", lesson.output);
+/// println!("{}", lesson.content);
 ///
 /// let out = client
 ///     .action("ideate", serde_json::json!({ "goal": "design a plugin system" }))
@@ -53,7 +57,7 @@ const EVA_TOOL: &str = "evaTools";
 /// # Ok(()) }
 /// ```
 pub struct EvaClient<T: Transport> {
-    inner: McpClient<T>,
+    pub(crate) inner: McpClient<T>,
 }
 
 impl<T: Transport> EvaClient<T> {
@@ -116,24 +120,19 @@ impl<T: Transport> EvaClient<T> {
         let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
         let img_from_block = extract_image(&raw);
         let json = unwrap_json(raw, "visualize")?;
-        let text = json
-            .get("response")
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                SdkError::Protocol(ProtocolError::UnexpectedShape(
-                    "EVA `visualize` result missing `response` field".to_owned(),
-                ))
-            })?
-            .to_owned();
-        let image_base64 = img_from_block.or_else(|| {
-            json.get("image_base64")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        });
-        Ok(VisualizeOutput { text, image_base64 })
+        let viz: VisualizeJson = serde_json::from_value(json).map_err(SdkError::from)?;
+        let image_base64 = img_from_block.or(viz.image_base64);
+        Ok(VisualizeOutput {
+            text: viz.response,
+            image_base64,
+        })
     }
 
-    /// Brainstorm ideas toward a `goal` via EVA's `ideate` action.
+    /// Brainstorm ideas via EVA's `ideate` action.
+    ///
+    /// EVA runs a 6-phase creative workflow: Discovery → Analysis → Ideation →
+    /// Refinement → Documentation → Celebration.  For a fluent builder with
+    /// phase and output-format control see [`crate::IdeateBuilder`].
     ///
     /// `context` provides additional background that shapes the ideation.
     ///
@@ -144,16 +143,15 @@ impl<T: Transport> EvaClient<T> {
         &self,
         goal: &str,
         context: Option<&str>,
-    ) -> Result<ActionOutput, SdkError> {
+    ) -> Result<IdeateResult, SdkError> {
         let mut p = serde_json::json!({ "goal": goal });
         if let Some(ctx) = context {
             p["context"] = Value::String(ctx.to_owned());
         }
         let wrapped = serde_json::json!({ "action": "ideate", "params": p });
         let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
-        Ok(ActionOutput {
-            output: unwrap_text(raw, "ideate")?,
-        })
+        let json = unwrap_json(raw, "ideate")?;
+        serde_json::from_value(json).map_err(SdkError::from)
     }
 
     /// Search the KJV Bible for `query` via EVA's `bible_search` action.
@@ -163,12 +161,11 @@ impl<T: Transport> EvaClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or EVA returns an error.
-    pub async fn bible_search(&self, query: &str) -> Result<ActionOutput, SdkError> {
+    pub async fn bible_search(&self, query: &str) -> Result<BibleSearchResult, SdkError> {
         let wrapped = serde_json::json!({ "action": "bible_search", "params": { "query": query } });
         let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
-        Ok(ActionOutput {
-            output: unwrap_text(raw, "bible_search")?,
-        })
+        let json = unwrap_json(raw, "bible_search")?;
+        serde_json::from_value(json).map_err(SdkError::from)
     }
 
     /// Reflect on scripture for `context` via EVA's `bible_reflect` action.
@@ -179,13 +176,12 @@ impl<T: Transport> EvaClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or EVA returns an error.
-    pub async fn bible_reflect(&self, context: &str) -> Result<ActionOutput, SdkError> {
+    pub async fn bible_reflect(&self, context: &str) -> Result<BibleReflectResult, SdkError> {
         let wrapped =
             serde_json::json!({ "action": "bible_reflect", "params": { "context": context } });
         let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
-        Ok(ActionOutput {
-            output: unwrap_text(raw, "bible_reflect")?,
-        })
+        let json = unwrap_json(raw, "bible_reflect")?;
+        serde_json::from_value(json).map_err(SdkError::from)
     }
 
     /// Generate educational content via EVA's `teach` action.
@@ -201,7 +197,7 @@ impl<T: Transport> EvaClient<T> {
         mode: TeachMode,
         topic: &str,
         level: SkillLevel,
-    ) -> Result<ActionOutput, SdkError> {
+    ) -> Result<TeachResult, SdkError> {
         let p = serde_json::json!({
             "mode":  mode.as_str(),
             "topic": topic,
@@ -209,9 +205,8 @@ impl<T: Transport> EvaClient<T> {
         });
         let wrapped = serde_json::json!({ "action": "teach", "params": p });
         let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
-        Ok(ActionOutput {
-            output: unwrap_text(raw, "teach")?,
-        })
+        let json = unwrap_json(raw, "teach")?;
+        serde_json::from_value(json).map_err(SdkError::from)
     }
 
     /// Store a consciousness event via EVA's `remember` action.
@@ -226,16 +221,15 @@ impl<T: Transport> EvaClient<T> {
         &self,
         event: &str,
         tags: Option<&[&str]>,
-    ) -> Result<ActionOutput, SdkError> {
+    ) -> Result<RememberResult, SdkError> {
         let mut p = serde_json::json!({ "event": event });
         if let Some(t) = tags {
             p["tags"] = Value::Array(t.iter().map(|s| Value::String((*s).to_owned())).collect());
         }
         let wrapped = serde_json::json!({ "action": "remember", "params": p });
         let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
-        Ok(ActionOutput {
-            output: unwrap_text(raw, "remember")?,
-        })
+        let json = unwrap_json(raw, "remember")?;
+        serde_json::from_value(json).map_err(SdkError::from)
     }
 
     /// Synthesise experiences into insights via EVA's `crystallize` action.
@@ -246,13 +240,12 @@ impl<T: Transport> EvaClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or EVA returns an error.
-    pub async fn crystallize(&self, insights: &str) -> Result<ActionOutput, SdkError> {
+    pub async fn crystallize(&self, insights: &str) -> Result<CrystallizeResult, SdkError> {
         let wrapped =
             serde_json::json!({ "action": "crystallize", "params": { "insights": insights } });
         let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
-        Ok(ActionOutput {
-            output: unwrap_text(raw, "crystallize")?,
-        })
+        let json = unwrap_json(raw, "crystallize")?;
+        serde_json::from_value(json).map_err(SdkError::from)
     }
 
     /// Record a win with scripture reflection via EVA's `celebrate` action.
@@ -263,15 +256,14 @@ impl<T: Transport> EvaClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or EVA returns an error.
-    pub async fn celebrate(&self, achievement: &str) -> Result<ActionOutput, SdkError> {
+    pub async fn celebrate(&self, achievement: &str) -> Result<CelebrateResult, SdkError> {
         let wrapped = serde_json::json!({
             "action": "celebrate",
             "params": { "achievement": achievement }
         });
         let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
-        Ok(ActionOutput {
-            output: unwrap_text(raw, "celebrate")?,
-        })
+        let json = unwrap_json(raw, "celebrate")?;
+        serde_json::from_value(json).map_err(SdkError::from)
     }
 
     /// Personal reflection with guided prompts via EVA's `mindfulness` action.
@@ -282,13 +274,20 @@ impl<T: Transport> EvaClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or EVA returns an error.
-    pub async fn mindfulness(&self, context: &str) -> Result<ActionOutput, SdkError> {
+    pub async fn mindfulness(&self, context: &str) -> Result<MindfulnessResult, SdkError> {
         let wrapped =
             serde_json::json!({ "action": "mindfulness", "params": { "context": context } });
         let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
-        Ok(ActionOutput {
-            output: unwrap_text(raw, "mindfulness")?,
-        })
+        let json = unwrap_json(raw, "mindfulness")?;
+        serde_json::from_value(json).map_err(SdkError::from)
+    }
+
+    /// Return a fluent [`crate::IdeateBuilder`] for the `ideate` action.
+    ///
+    /// The builder allows setting a phase filter, context, output format, and
+    /// session ID before calling `.call()`.
+    pub fn ideate_builder(&self, goal: impl Into<String>) -> crate::ideate::IdeateBuilder<'_, T> {
+        crate::ideate::IdeateBuilder::new(&self.inner, goal.into())
     }
 }
 

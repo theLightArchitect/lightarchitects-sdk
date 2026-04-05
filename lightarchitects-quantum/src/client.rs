@@ -9,7 +9,10 @@ use lightarchitects_core::transport::Transport;
 use lightarchitects_core::{McpClient, RetryConfig, SiblingId, StdioTransport};
 
 use crate::content::unwrap_text;
-use crate::types::ActionOutput;
+use crate::types::{
+    CloseResult, DiscoverResult, HelixResult, ListResult, ProbeResult, QuickResult, ResearchResult,
+    SweepResult, TheorizeResult, TraceResult, TriageResult, VerifyResult, WorkflowResult,
+};
 
 // ── QuantumClient ──────────────────────────────────────────────────────────────
 
@@ -94,7 +97,7 @@ impl<T: Transport> QuantumClient<T> {
     ///
     /// Returns an error if the transport fails or QUANTUM rejects the request.
     #[deprecated(since = "0.2.0", note = "use `triage()` instead")]
-    pub async fn scan(&self, subject: &str) -> Result<ActionOutput, SdkError> {
+    pub async fn scan(&self, subject: &str) -> Result<TriageResult, SdkError> {
         self.triage(subject).await
     }
 
@@ -106,13 +109,13 @@ impl<T: Transport> QuantumClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or QUANTUM rejects the request.
-    pub async fn triage(&self, subject: &str) -> Result<ActionOutput, SdkError> {
+    pub async fn triage(&self, subject: &str) -> Result<TriageResult, SdkError> {
         let params = serde_json::json!({
             "action": "triage",
             "params": { "subject": subject }
         });
         let raw = self.inner.call_tool("qsTools", params).await?;
-        Ok(ActionOutput {
+        Ok(TriageResult {
             output: unwrap_text(raw)?,
         })
     }
@@ -125,13 +128,13 @@ impl<T: Transport> QuantumClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or QUANTUM rejects the request.
-    pub async fn sweep(&self, subject: &str) -> Result<ActionOutput, SdkError> {
+    pub async fn sweep(&self, subject: &str) -> Result<SweepResult, SdkError> {
         let params = serde_json::json!({
             "action": "sweep",
             "params": { "subject": subject }
         });
         let raw = self.inner.call_tool("qsTools", params).await?;
-        Ok(ActionOutput {
+        Ok(SweepResult {
             output: unwrap_text(raw)?,
         })
     }
@@ -144,13 +147,13 @@ impl<T: Transport> QuantumClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or QUANTUM rejects the request.
-    pub async fn trace(&self, subject: &str) -> Result<ActionOutput, SdkError> {
+    pub async fn trace(&self, subject: &str) -> Result<TraceResult, SdkError> {
         let params = serde_json::json!({
             "action": "trace",
             "params": { "subject": subject }
         });
         let raw = self.inner.call_tool("qsTools", params).await?;
-        Ok(ActionOutput {
+        Ok(TraceResult {
             output: unwrap_text(raw)?,
         })
     }
@@ -163,13 +166,13 @@ impl<T: Transport> QuantumClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or QUANTUM rejects the request.
-    pub async fn probe(&self, target: &str) -> Result<ActionOutput, SdkError> {
+    pub async fn probe(&self, target: &str) -> Result<ProbeResult, SdkError> {
         let params = serde_json::json!({
             "action": "probe",
             "params": { "target": target }
         });
         let raw = self.inner.call_tool("qsTools", params).await?;
-        Ok(ActionOutput {
+        Ok(ProbeResult {
             output: unwrap_text(raw)?,
         })
     }
@@ -187,14 +190,14 @@ impl<T: Transport> QuantumClient<T> {
         &self,
         subject: &str,
         context: Option<&str>,
-    ) -> Result<ActionOutput, SdkError> {
+    ) -> Result<TheorizeResult, SdkError> {
         let mut p = serde_json::json!({ "subject": subject });
         if let Some(ctx) = context {
             p["context"] = serde_json::Value::String(ctx.to_owned());
         }
         let params = serde_json::json!({ "action": "theorize", "params": p });
         let raw = self.inner.call_tool("qsTools", params).await?;
-        Ok(ActionOutput {
+        Ok(TheorizeResult {
             output: unwrap_text(raw)?,
         })
     }
@@ -208,13 +211,13 @@ impl<T: Transport> QuantumClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or QUANTUM rejects the request.
-    pub async fn verify(&self, hypothesis: &str) -> Result<ActionOutput, SdkError> {
+    pub async fn verify(&self, hypothesis: &str) -> Result<VerifyResult, SdkError> {
         let params = serde_json::json!({
             "action": "verify",
             "params": { "hypothesis": hypothesis }
         });
         let raw = self.inner.call_tool("qsTools", params).await?;
-        Ok(ActionOutput {
+        Ok(VerifyResult {
             output: unwrap_text(raw)?,
         })
     }
@@ -227,13 +230,13 @@ impl<T: Transport> QuantumClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or QUANTUM rejects the request.
-    pub async fn close(&self, summary: &str) -> Result<ActionOutput, SdkError> {
+    pub async fn close(&self, summary: &str) -> Result<CloseResult, SdkError> {
         let params = serde_json::json!({
             "action": "close",
             "params": { "summary": summary }
         });
         let raw = self.inner.call_tool("qsTools", params).await?;
-        Ok(ActionOutput {
+        Ok(CloseResult {
             output: unwrap_text(raw)?,
         })
     }
@@ -249,13 +252,13 @@ impl<T: Transport> QuantumClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or QUANTUM rejects the request.
-    pub async fn quick(&self, subject: &str) -> Result<ActionOutput, SdkError> {
+    pub async fn quick(&self, subject: &str) -> Result<QuickResult, SdkError> {
         let params = serde_json::json!({
             "action": "quick",
             "params": { "subject": subject }
         });
         let raw = self.inner.call_tool("qsTools", params).await?;
-        Ok(ActionOutput {
+        Ok(QuickResult {
             output: unwrap_text(raw)?,
         })
     }
@@ -269,13 +272,13 @@ impl<T: Transport> QuantumClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or QUANTUM rejects the request.
-    pub async fn research(&self, topic: &str) -> Result<ActionOutput, SdkError> {
+    pub async fn research(&self, topic: &str) -> Result<ResearchResult, SdkError> {
         let params = serde_json::json!({
             "action": "research",
             "params": { "topic": topic }
         });
         let raw = self.inner.call_tool("qsTools", params).await?;
-        Ok(ActionOutput {
+        Ok(ResearchResult {
             output: unwrap_text(raw)?,
         })
     }
@@ -290,18 +293,14 @@ impl<T: Transport> QuantumClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or QUANTUM rejects the request.
-    pub async fn helix(
-        &self,
-        query: &str,
-        sibling: Option<&str>,
-    ) -> Result<ActionOutput, SdkError> {
+    pub async fn helix(&self, query: &str, sibling: Option<&str>) -> Result<HelixResult, SdkError> {
         let mut p = serde_json::json!({ "query": query });
         if let Some(s) = sibling {
             p["sibling"] = serde_json::Value::String(s.to_owned());
         }
         let params = serde_json::json!({ "action": "helix", "params": p });
         let raw = self.inner.call_tool("qsTools", params).await?;
-        Ok(ActionOutput {
+        Ok(HelixResult {
             output: unwrap_text(raw)?,
         })
     }
@@ -314,13 +313,13 @@ impl<T: Transport> QuantumClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or QUANTUM rejects the request.
-    pub async fn discover(&self, target: &str) -> Result<ActionOutput, SdkError> {
+    pub async fn discover(&self, target: &str) -> Result<DiscoverResult, SdkError> {
         let params = serde_json::json!({
             "action": "discover",
             "params": { "target": target }
         });
         let raw = self.inner.call_tool("qsTools", params).await?;
-        Ok(ActionOutput {
+        Ok(DiscoverResult {
             output: unwrap_text(raw)?,
         })
     }
@@ -333,13 +332,13 @@ impl<T: Transport> QuantumClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or QUANTUM rejects the request.
-    pub async fn list(&self) -> Result<ActionOutput, SdkError> {
+    pub async fn list(&self) -> Result<ListResult, SdkError> {
         let params = serde_json::json!({
             "action": "list",
             "params": {}
         });
         let raw = self.inner.call_tool("qsTools", params).await?;
-        Ok(ActionOutput {
+        Ok(ListResult {
             output: unwrap_text(raw)?,
         })
     }
@@ -353,13 +352,13 @@ impl<T: Transport> QuantumClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or QUANTUM rejects the request.
-    pub async fn workflow(&self, name: &str) -> Result<ActionOutput, SdkError> {
+    pub async fn workflow(&self, name: &str) -> Result<WorkflowResult, SdkError> {
         let params = serde_json::json!({
             "action": "workflow",
             "params": { "name": name }
         });
         let raw = self.inner.call_tool("qsTools", params).await?;
-        Ok(ActionOutput {
+        Ok(WorkflowResult {
             output: unwrap_text(raw)?,
         })
     }

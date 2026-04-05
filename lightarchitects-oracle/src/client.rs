@@ -46,7 +46,7 @@ impl OracleClientBuilder {
     ///
     /// # Errors
     ///
-    /// Returns [`OracleError::Http`] if the HTTP client cannot be constructed.
+    /// Returns an HTTP client construction error if `reqwest` cannot be initialised.
     pub fn build(self) -> Result<OracleClient, OracleError> {
         let http = Client::builder().timeout(self.timeout).build()?;
 
@@ -122,8 +122,8 @@ impl OracleQuery<'_> {
     ///
     /// # Errors
     ///
-    /// Returns [`OracleError`] if no models are configured. Individual model
-    /// failures are captured as [`FindingStatus::Error`] in the verdict, not
+    /// Returns a configuration error if no models are selected. Individual model
+    /// failures are captured in the verdict's `FindingStatus` field, not
     /// as top-level errors.
     pub async fn call(self) -> Result<OracleVerdict, OracleError> {
         let model_ids = self.models.unwrap_or_else(|| ModelId::for_mode(self.mode));

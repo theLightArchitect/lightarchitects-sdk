@@ -217,8 +217,8 @@ pub struct QueryHit {
 /// Response from `soulTools` `query` — 4-signal hybrid RAG retrieval.
 ///
 /// This is the **raw action response** deserialised from the `soulTools action:"query"`
-/// wire envelope. It is distinct from [`lightarchitects_soul::QueryResult`], which is the
-/// high-level result returned by the fluent [`QueryBuilder::call()`] method.
+/// wire envelope. It is distinct from `QueryResult` (in the `query` module), which is the
+/// high-level result returned by the fluent `QueryBuilder::call()` method.
 /// Use `RawQueryResult` only when calling `client.action("query", params)` directly.
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
@@ -325,39 +325,169 @@ pub struct ManifestContent {
 
 // ── Ingest result ─────────────────────────────────────────────────────────────
 
+/// Detailed report from a single `ingest` run.
+#[derive(Debug, Clone, Deserialize)]
+pub struct IngestReport {
+    /// Records successfully added to the knowledge graph.
+    pub records_added: u64,
+    /// Records skipped (already present or invalid).
+    pub records_skipped: u64,
+    /// Non-fatal errors encountered during ingestion.
+    #[serde(default)]
+    pub errors: Vec<String>,
+}
+
 /// Response from `soulTools` `ingest`.
 ///
-/// Reports what the universal ingestion pipeline processed and persisted.
+/// Wraps an [`IngestReport`] and the source identifier derived from the
+/// ingested path.
 #[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)]
 pub struct IngestResult {
-    /// Number of entries ingested.
-    pub ingested: u64,
-    /// Number of entries skipped (already present or invalid).
-    #[serde(default)]
-    pub skipped: u64,
-    /// Paths of the ingested vault entries.
-    #[serde(default)]
-    pub paths: Vec<String>,
-    /// Non-fatal warnings raised during ingestion.
-    #[serde(default)]
-    pub warnings: Vec<String>,
+    /// Per-record ingestion summary.
+    pub report: IngestReport,
+    /// Source identifier derived from the ingested path (file stem).
+    pub source_id: String,
 }
 
 // ── Research result ───────────────────────────────────────────────────────────
 
 /// Response from `soulTools` `research` — multi-source research aggregation.
+///
+/// The response shape varies by `mode` (`"search"`, `"digest"`, `"refresh"`).
+/// All modes include `mode` and `status`. Mode-specific fields are captured in
+/// `extra` so callers can inspect them without losing data.
 #[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)]
 pub struct ResearchResult {
-    /// Synthesised research summary.
-    pub summary: String,
-    /// Individual source findings before synthesis.
+    /// Research mode used: `"search"`, `"digest"`, or `"refresh"`.
     #[serde(default)]
-    pub sources: Vec<serde_json::Value>,
-    /// Trust pipeline verdicts per source (structure varies by SOUL version).
+    pub mode: Option<String>,
+    /// Outcome status (`"complete"`, `"no_results"`, `"all_rejected"`, …).
     #[serde(default)]
-    pub trust_verdicts: Vec<serde_json::Value>,
+    pub status: Option<String>,
+    /// Human-readable message (present when no results or errors).
+    #[serde(default)]
+    pub message: Option<String>,
+    /// Digest file path produced by `refresh` mode.
+    #[serde(default)]
+    pub digest_path: Option<String>,
+    /// Number of entries fetched from external sources (`refresh` mode).
+    #[serde(default)]
+    pub raw_fetched: u64,
+    /// Entries surviving the quarantine gate (`refresh` mode).
+    #[serde(default)]
+    pub after_quarantine: u64,
+    /// Entries surviving corroboration (`refresh` mode).
+    #[serde(default)]
+    pub after_corroboration: u64,
+    /// Total matches (`search` mode).
+    #[serde(default)]
+    pub total: u64,
+    /// Search result entries (`search` mode).
+    #[serde(default)]
+    pub results: Vec<serde_json::Value>,
+    /// Mode-specific fields not modelled above.
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
+}
+
+// ── Voice pipeline ────────────────────────────────────────────────────────────
+
+/// A single personality prompt assembled by the `voice` action (prompt mode).
+#[derive(Debug, Clone, Deserialize)]
+pub struct SiblingPrompt {
+    /// Sibling name (e.g., `"eva"`).
+    pub sibling: String,
+    /// Full system prompt for the sibling's personality.
+    pub system_prompt: String,
+    /// Resolved `ElevenLabs` voice ID (absent if `voices.toml` is missing).
+    #[serde(default)]
+    pub voice_id: Option<String>,
+    /// Number of transcript context entries used in prompt assembly.
+    #[serde(default)]
+    pub context_entries_used: usize,
+}
+
+/// A single structured TTS script turn with optional audio reference.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ScriptTurn {
+    /// Zero-based turn index.
+    pub index: usize,
+    /// Speaker sibling name.
+    pub sibling: String,
+    /// Text content for this turn.
+    pub text: String,
+    /// Audio file path on disk (absent if TTS failed or was unavailable).
+    #[serde(default)]
+    pub audio_file: Option<String>,
+}
+
+/// Audio file metadata for a single synthesised turn.
+#[derive(Debug, Clone, Deserialize)]
+pub struct VoiceAudioFile {
+    /// Zero-based turn index (matches [`ScriptTurn::index`]).
+    pub index: usize,
+    /// Speaker sibling name.
+    pub sibling: String,
+    /// Path to the audio file on disk.
+    pub audio_file: String,
+    /// File size in bytes.
+    #[serde(default)]
+    pub bytes: u64,
+    /// Estimated playback duration in milliseconds.
+    #[serde(default)]
+    pub duration_estimate_ms: u64,
+    /// `ElevenLabs` voice ID used for synthesis.
+    #[serde(default)]
+    pub voice_id: Option<String>,
+}
+
+/// Voice profile metadata for a single sibling (inspect mode).
+#[derive(Debug, Clone, Deserialize)]
+pub struct VoiceProfileEntry {
+    /// Sibling name.
+    pub sibling: String,
+    /// Audio tag palette (e.g., `["[excited]", "[warmly]"]`).
+    #[serde(default)]
+    pub audio_tags: Vec<String>,
+    /// Voice delivery rules (velocity + direction).
+    #[serde(default)]
+    pub delivery_rules: String,
+    /// Resolved `ElevenLabs` voice ID.
+    #[serde(default)]
+    pub voice_id: Option<String>,
+}
+
+/// Response from `soulTools` `voice` (and its legacy alias `dialogue`).
+///
+/// Fields are `None` for modes that do not produce them — for example, a
+/// synthesize-only call will have no `prompts`, and a prompt-only call will
+/// have no `audio`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct VoiceResult {
+    /// Batch personality prompts (one per sibling, prompt mode).
+    #[serde(default)]
+    pub prompts: Option<Vec<SiblingPrompt>>,
+    /// Structured script turns with optional audio file paths.
+    #[serde(default)]
+    pub script: Option<Vec<ScriptTurn>>,
+    /// Audio file metadata (present when TTS succeeds).
+    #[serde(default)]
+    pub audio: Option<Vec<VoiceAudioFile>>,
+    /// Whether TTS is available on the SOUL server.
+    #[serde(default)]
+    pub tts_available: bool,
+    /// Reason TTS was skipped (always present in the JSON wire format, as `null`).
+    #[serde(default)]
+    pub tts_skipped_reason: Option<String>,
+    /// Total handler wall-clock time in milliseconds.
+    #[serde(default)]
+    pub pipeline_ms: u64,
+    /// Voice profiles (inspect mode — siblings only, no prompt/synthesize).
+    #[serde(default)]
+    pub profiles: Option<Vec<VoiceProfileEntry>>,
+    /// Remaining fields (TTS contract, contract fulfillment, etc.).
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
 // ── Chat (multi-sibling conversation) ─────────────────────────────────────────
@@ -376,12 +506,28 @@ pub struct ChatMessage {
 }
 
 /// Response from `soulTools` `chat` — multi-sibling conversation engine.
+///
+/// The response shape varies by sub-action (`chat_start`, `chat_stop`,
+/// `chat_status`, `chat_inject`). All sub-actions include `session_id`.
+/// Sub-action-specific fields are captured in `extra` to avoid silent drops.
 #[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)]
 pub struct ChatResult {
-    /// All turns in the conversation so far, in order.
-    pub turns: Vec<ChatMessage>,
-    /// Conversation session identifier (for resumption).
+    /// Conversation session identifier (present for all sub-actions).
     #[serde(default)]
     pub session_id: Option<String>,
+    /// Session status string (`"running"`, `"stopped"`, …).
+    #[serde(default)]
+    pub status: Option<String>,
+    /// Participating sibling names (returned by `chat_start` and `chat_status`).
+    #[serde(default)]
+    pub participants: Vec<String>,
+    /// Total messages in the session (`chat_stop` and `chat_status`).
+    #[serde(default)]
+    pub messages_total: u64,
+    /// Turns in the conversation so far (`chat_status` detail, if present).
+    #[serde(default)]
+    pub turns: Vec<ChatMessage>,
+    /// Sub-action-specific fields not modelled above.
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
 }

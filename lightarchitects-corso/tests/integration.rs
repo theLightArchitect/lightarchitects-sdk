@@ -400,3 +400,43 @@ async fn exhausted_queue_returns_config_error() {
         "expected Config error, got: {err:?}"
     );
 }
+
+#[tokio::test]
+async fn write_file_tool_error_surfaces_as_sdk_tool_error() {
+    let mock = MockTransport::default();
+    // Scenario: write blocked because destination path is read-only.
+    mock.push_tool_error("write failed: /src/lib.rs is read-only");
+    let err = client(mock)
+        .write_file("/src/lib.rs", "fn main() {}")
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, SdkError::Tool(_)),
+        "expected Tool error, got: {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn sniff_rpc_error_surfaces_as_protocol_error() {
+    let mock = MockTransport::default();
+    // Scenario: JSON-RPC protocol error from the CORSO server (e.g. invalid method).
+    mock.push_rpc_error(-32_601, "method not found");
+    let err = client(mock).sniff("/src/client.rs").await.unwrap_err();
+    assert!(
+        matches!(err, SdkError::Protocol(_)),
+        "expected Protocol error, got: {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn generate_code_exhausted_queue_returns_config_error() {
+    let mock = MockTransport::default(); // No responses queued.
+    let err = client(mock)
+        .generate_code("implement a ring buffer")
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, SdkError::Config(_)),
+        "expected Config error, got: {err:?}"
+    );
+}

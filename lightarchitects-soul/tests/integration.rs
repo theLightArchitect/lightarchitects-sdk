@@ -460,3 +460,51 @@ async fn exhausted_queue_returns_config_error() {
         "expected Config error, got: {err:?}"
     );
 }
+
+#[tokio::test]
+async fn write_note_rpc_error_surfaces_as_protocol_error() {
+    let mock = MockTransport::default();
+    // SOUL uses direct JSON-RPC (no content-block wrapper), so a server-side
+    // failure is always delivered as a JSON-RPC error object → SdkError::Protocol.
+    // Scenario: vault rejects the write because the path already exists.
+    mock.push_error(-32_000, "vault write failed: path already exists");
+    let err = client(mock)
+        .write_note("helix/eva/entries/conflict.md", "content")
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, SdkError::Protocol(_)),
+        "expected Protocol error, got: {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn helix_builder_error_envelope_surfaces_correctly() {
+    let mock = MockTransport::default();
+    // Push a JSON-RPC error to simulate the SOUL server rejecting the helix
+    // query (e.g. invalid filter combination or vault offline).
+    mock.push_error(-32_001, "helix query failed: Neo4j unavailable");
+    let err = client(mock)
+        .helix()
+        .sibling("eva")
+        .call()
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, SdkError::Protocol(_)),
+        "expected Protocol error from helix builder, got: {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn search_exhausted_queue_returns_config_error() {
+    let mock = MockTransport::default(); // No responses queued.
+    let err = client(mock)
+        .search("some pattern", None, false, None)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, SdkError::Config(_)),
+        "expected Config error, got: {err:?}"
+    );
+}

@@ -385,7 +385,7 @@ impl McpPool {
 
     /// Kill and respawn a crashed sibling (rate-limited to prevent storms).
     ///
-    /// Public so the [`supervisor`] can trigger respawns proactively.
+    /// Public so the supervisor module can trigger respawns proactively.
     pub async fn respawn(
         &self,
         sibling: &str,

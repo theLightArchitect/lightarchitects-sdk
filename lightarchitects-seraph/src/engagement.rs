@@ -126,7 +126,7 @@ impl<'a, T: Transport> SeraphEngagement<'a, T> {
 
     /// Accumulated findings in chronological order.
     ///
-    /// Named `findings` (vs `steps` in [`lightarchitects_quantum::QuantumInvestigation`])
+    /// Named `findings` (vs `steps` in the QUANTUM investigation driver)
     /// to reflect SERAPH's red-team domain: each call accumulates adversarial evidence,
     /// not generic investigation steps.
     #[must_use]

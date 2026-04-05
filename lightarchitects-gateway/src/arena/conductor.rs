@@ -5,7 +5,7 @@
 //! devotional rotation, and sibling activity aggregation.
 //!
 //! The conductor does NOT dispatch work to siblings — it curates the board.
-//! Siblings choose their own work via interest scoring in [`heartbeat`].
+//! Siblings choose their own work via interest scoring in the heartbeat loop.
 
 use std::fmt::Write as _;
 use std::path::Path;

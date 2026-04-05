@@ -6,8 +6,8 @@
 //!
 //! # Entry Points
 //!
-//! - [`run_serve`] — Orchestrator mode: HTTP API + scheduler + spawn agent processes
-//! - [`run_agent`] — Single-agent mode: one sibling's heartbeat loop
+//! - `run_serve` — Orchestrator mode: HTTP API + scheduler + spawn agent processes
+//! - `run_agent` — Single-agent mode: one sibling's heartbeat loop
 
 pub mod agent_loop;
 pub mod alerting;
