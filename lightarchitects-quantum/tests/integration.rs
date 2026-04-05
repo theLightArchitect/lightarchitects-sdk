@@ -113,7 +113,7 @@ fn client(mock: MockTransport) -> QuantumClient<MockTransport> {
 async fn scan_returns_prose() {
     let mock = MockTransport::default();
     mock.push_text("Initial scan complete — 3 signals detected in auth subsystem.");
-    let out = client(mock).scan("auth failures").await.unwrap();
+    let out = client(mock).triage("auth failures").await.unwrap();
     assert!(out.output.contains("3 signals"));
 }
 
@@ -259,7 +259,7 @@ async fn workflow_executes_named_sequence() {
 async fn tool_error_envelope_surfaces_as_sdk_tool_error() {
     let mock = MockTransport::default();
     mock.push_error_envelope("scope violation: target not authorised");
-    let err = client(mock).scan("192.168.99.1").await.unwrap_err();
+    let err = client(mock).triage("192.168.99.1").await.unwrap_err();
     assert!(
         matches!(err, SdkError::Tool(_)),
         "expected Tool error, got: {err:?}"
@@ -270,7 +270,7 @@ async fn tool_error_envelope_surfaces_as_sdk_tool_error() {
 async fn rpc_error_surfaces_as_protocol_error() {
     let mock = MockTransport::default();
     mock.push_rpc_error(-32_600, "invalid request");
-    let err = client(mock).scan("test").await.unwrap_err();
+    let err = client(mock).triage("test").await.unwrap_err();
     assert!(
         matches!(err, SdkError::Protocol(_)),
         "expected Protocol error, got: {err:?}"
