@@ -163,15 +163,19 @@ pub async fn execute(
 /// independently — this is the SDK-level first gate.
 fn validate_target_if_required(cmd: &SeraphCommand) -> Result<(), SdkError> {
     let target = match cmd {
-        SeraphCommand::Recon { target }
+        SeraphCommand::Capture { target }
+        | SeraphCommand::Scan { target }
+        | SeraphCommand::Analyze { target }
+        | SeraphCommand::Monitor { target }
+        | SeraphCommand::Execute { target }
+        | SeraphCommand::Recon { target }
         | SeraphCommand::Survey { target }
         | SeraphCommand::Examine { target }
+        | SeraphCommand::Osint { target, .. }
         | SeraphCommand::Strike { target, .. } => target.as_str(),
-        // Other commands bypass SDK-level validation (they use their own arg names).
+        // Non-target commands: no validation required.
         _ => return Ok(()),
     };
 
-    // Use "scan" as the representative tool — it's in the SERAPH allowlist and
-    // appropriate for a generic pre-flight check. The actual tool is SERAPH-side.
     ScopeConstraint::new(target, "scan", ScopeDomain::Network).map(|_| ())
 }

@@ -22,6 +22,7 @@ use std::time::Duration;
 /// Maps to the 6 SERAPH offensive wings. Each wing represents a distinct
 /// attack-surface capability within an authorised engagement.
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub enum Wing {
     /// Packet capture and traffic interception.
     Capture,

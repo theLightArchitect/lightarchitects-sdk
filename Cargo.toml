@@ -106,7 +106,7 @@ libc = "0.2"
 anyhow = "1"
 
 # ── SSH transport (SERAPH remote execution) ──────────────────────────────────
-russh = "0.57"
+russh = "0.60"
 
 # ── Dev/test ──────────────────────────────────────────────────────────────────
 tempfile = "3"

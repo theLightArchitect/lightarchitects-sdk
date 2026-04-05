@@ -103,10 +103,6 @@ pub struct QuantumInvestigation<'a, T: Transport> {
     steps: Vec<ActionOutput>,
 }
 
-// Each phase method returns `self.steps.last().expect(...)` after a push — the
-// expect is structurally unreachable. Suppress the pedantic lint rather than
-// adding spurious `# Panics` sections to every method.
-#[allow(clippy::missing_panics_doc)]
 impl<'a, T: Transport> QuantumInvestigation<'a, T> {
     /// Create a new investigation for `subject`.
     ///
@@ -164,7 +160,7 @@ impl<'a, T: Transport> QuantumInvestigation<'a, T> {
             output: result.output,
         });
         self.phase = InvestigationPhase::Triaged;
-        Ok(self.steps.last().expect("just pushed"))
+        Self::last_or_err(&self.steps)
     }
 
     /// Phase 2 — broad evidence collection (`sweep`).
@@ -182,7 +178,7 @@ impl<'a, T: Transport> QuantumInvestigation<'a, T> {
             output: result.output,
         });
         self.phase = InvestigationPhase::Swept;
-        Ok(self.steps.last().expect("just pushed"))
+        Self::last_or_err(&self.steps)
     }
 
     /// Phase 3 — evidence chain tracing (`trace`).
@@ -200,7 +196,7 @@ impl<'a, T: Transport> QuantumInvestigation<'a, T> {
             output: result.output,
         });
         self.phase = InvestigationPhase::Traced;
-        Ok(self.steps.last().expect("just pushed"))
+        Self::last_or_err(&self.steps)
     }
 
     /// Phase 4 — deep probe of a specific `target`.
@@ -219,7 +215,7 @@ impl<'a, T: Transport> QuantumInvestigation<'a, T> {
             output: result.output,
         });
         self.phase = InvestigationPhase::Probed;
-        Ok(self.steps.last().expect("just pushed"))
+        Self::last_or_err(&self.steps)
     }
 
     /// Phase 5 — hypothesis generation from accumulated evidence.
@@ -238,7 +234,7 @@ impl<'a, T: Transport> QuantumInvestigation<'a, T> {
             output: result.output,
         });
         self.phase = InvestigationPhase::Theorized;
-        Ok(self.steps.last().expect("just pushed"))
+        Self::last_or_err(&self.steps)
     }
 
     /// Phase 6 — verify `hypothesis` against available evidence.
@@ -256,7 +252,7 @@ impl<'a, T: Transport> QuantumInvestigation<'a, T> {
             output: result.output,
         });
         self.phase = InvestigationPhase::Verified;
-        Ok(self.steps.last().expect("just pushed"))
+        Self::last_or_err(&self.steps)
     }
 
     /// Phase 7 — close investigation with `summary` and produce final report.
@@ -284,10 +280,19 @@ impl<'a, T: Transport> QuantumInvestigation<'a, T> {
             output: result.output,
         });
         self.phase = InvestigationPhase::Closed;
-        Ok(self.steps.last().expect("just pushed"))
+        Self::last_or_err(&self.steps)
     }
 
     // ── Internal helpers ───────────────────────────────────────────────────────
+
+    /// Returns a reference to the last element, or an error if the collection
+    /// is unexpectedly empty. Used after a `push()` call where the collection
+    /// cannot logically be empty — avoids `.expect()` in production code.
+    fn last_or_err(slice: &[ActionOutput]) -> Result<&ActionOutput, SdkError> {
+        slice.last().ok_or_else(|| {
+            SdkError::Config("investigation step collection was unexpectedly empty".to_owned())
+        })
+    }
 
     fn require_past_initial(&self, method: &str) -> Result<(), SdkError> {
         if self.phase == InvestigationPhase::Initial {

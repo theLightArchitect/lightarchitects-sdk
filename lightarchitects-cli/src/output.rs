@@ -13,6 +13,7 @@ use serde_json::Value;
 
 /// Sensitive key patterns — case-insensitive substring match against JSON object keys.
 const SENSITIVE_PATTERNS: &[&str] = &[
+    "api-key",
     "api_key",
     "apikey",
     "token",

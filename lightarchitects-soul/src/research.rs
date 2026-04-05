@@ -15,7 +15,7 @@
 //!     .source(ResearchSource::Vault)
 //!     .source(ResearchSource::ArXiv)
 //!     .depth(DepthLevel::Deep)
-//!     .strand("meaning")
+//!     .strand("meaning")?
 //!     .call()
 //!     .await?;
 //!
@@ -32,6 +32,7 @@ use crate::types::ResearchResult;
 
 /// Research source variants supported by the SOUL research pipeline.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ResearchSource {
     /// SOUL vault digests (pre-ingested research notes).
     Vault,
@@ -60,6 +61,7 @@ impl ResearchSource {
 
 /// Research depth: how broadly the pipeline searches and corroborates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DepthLevel {
     /// Shallow search — fast, vault-only or limited external fetch.
     Shallow,
@@ -151,9 +153,32 @@ impl<'a, T: Transport> ResearchBuilder<'a, T> {
     }
 
     /// Restrict research to entries matching a specific strand dimension.
-    pub fn strand(mut self, strand: impl Into<String>) -> Self {
-        self.strand = Some(strand.into());
-        self
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SdkError::Config`] if `strand` is empty, exceeds 128 characters,
+    /// or contains control characters.
+    pub fn strand(mut self, strand: impl Into<String>) -> Result<Self, SdkError> {
+        let strand: String = strand.into();
+        if strand.is_empty() {
+            return Err(SdkError::Config("strand must not be empty".to_owned()));
+        }
+        if strand.len() > 128 {
+            return Err(SdkError::Config(
+                "strand must not exceed 128 characters".to_owned(),
+            ));
+        }
+        if strand.bytes().any(|b| b < 0x20)
+            || strand
+                .chars()
+                .any(|c| c == '\x7F' || ('\u{0080}'..='\u{009F}').contains(&c))
+        {
+            return Err(SdkError::Config(
+                "strand contains control character".to_owned(),
+            ));
+        }
+        self.strand = Some(strand);
+        Ok(self)
     }
 
     /// Execute the research query and return the [`ResearchResult`].
@@ -192,8 +217,9 @@ impl<'a, T: Transport> ResearchBuilder<'a, T> {
 
 // ── Query validation ──────────────────────────────────────────────────────────
 
-/// Reject queries containing null bytes or ASCII control characters other than
-/// tab (`\t`, 0x09) and newline (`\n`, 0x0A).
+/// Reject queries containing null bytes, ASCII control characters other than
+/// tab (`\t`, 0x09) and newline (`\n`, 0x0A), U+007F (DEL), or C1 controls
+/// (U+0080–U+009F).
 fn validate_query(query: &str) -> Result<(), SdkError> {
     for byte in query.bytes() {
         if byte < 0x20 && byte != 0x09 && byte != 0x0A {
@@ -201,6 +227,16 @@ fn validate_query(query: &str) -> Result<(), SdkError> {
                 "research query must not contain ASCII control characters (found 0x{byte:02X})"
             )));
         }
+    }
+    // Check DEL (U+007F) and C1 controls (U+0080–U+009F) via char iteration
+    // to avoid false-positive matches against UTF-8 continuation bytes.
+    if query
+        .chars()
+        .any(|c| c == '\x7F' || ('\u{0080}'..='\u{009F}').contains(&c))
+    {
+        return Err(SdkError::Config(
+            "research query contains invalid control character".to_owned(),
+        ));
     }
     Ok(())
 }

@@ -37,6 +37,7 @@ const VAULT_ROOT_SUFFIX: &str = "/.soul/";
 ///
 /// Controls which ingestor the pipeline uses for the target path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ContentType {
     /// Markdown vault entry (`.md` file or vault directory).
     MarkdownNote,

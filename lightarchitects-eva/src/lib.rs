@@ -47,7 +47,7 @@
 //!     .ideate_builder("design a plugin system")
 //!     .phase(IdeatePhase::Document)
 //!     .context("Rust, no dynamic dispatch in hot path")
-//!     .session_id("sess-abc123")
+//!     .session_id("sess-abc123")?
 //!     .call()
 //!     .await?;
 //! println!("{}", plan.phase_5_documentation);

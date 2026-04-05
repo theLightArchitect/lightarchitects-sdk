@@ -178,7 +178,7 @@ pub struct PhaseRecord {
 /// state.advance(InvestigationPhase::Triaged, "Found 3 signals in auth subsystem").unwrap();
 /// state.advance(InvestigationPhase::Swept, "Expanded to 12 correlated signals").unwrap();
 ///
-/// assert_eq!(state.evidence_count, 2);
+/// assert_eq!(state.evidence_count(), 2);
 /// assert_eq!(state.history().len(), 2);
 /// println!("{state}");
 /// ```
@@ -191,9 +191,9 @@ pub struct PhaseRecord {
 #[derive(Debug, Clone)]
 pub struct InvestigationState {
     /// Current investigation phase.
-    pub phase: InvestigationPhase,
+    phase: InvestigationPhase,
     /// Number of phases advanced so far.
-    pub evidence_count: u32,
+    evidence_count: u32,
     /// Confidence estimate in the current investigation (0.0–1.0).
     ///
     /// Set by the caller — QUANTUM does not emit a structured confidence value.
@@ -263,6 +263,12 @@ impl InvestigationState {
     pub fn phase(&self) -> &InvestigationPhase {
         &self.phase
     }
+
+    /// Number of phases advanced so far.
+    #[must_use]
+    pub fn evidence_count(&self) -> u32 {
+        self.evidence_count
+    }
 }
 
 impl fmt::Display for InvestigationState {
@@ -288,7 +294,7 @@ mod tests {
     fn new_starts_in_initial_phase() {
         let state = InvestigationState::new();
         assert_eq!(*state.phase(), InvestigationPhase::Initial);
-        assert_eq!(state.evidence_count, 0);
+        assert_eq!(state.evidence_count(), 0);
         assert_eq!(state.confidence, 0.0);
         assert!(state.history().is_empty());
     }
@@ -298,7 +304,7 @@ mod tests {
     fn default_matches_new() {
         let a = InvestigationState::new();
         let b = InvestigationState::default();
-        assert_eq!(a.evidence_count, b.evidence_count);
+        assert_eq!(a.evidence_count(), b.evidence_count());
         assert_eq!(a.confidence, b.confidence);
     }
 
@@ -309,7 +315,7 @@ mod tests {
             .advance(InvestigationPhase::Triaged, "3 signals found")
             .unwrap();
         assert_eq!(*state.phase(), InvestigationPhase::Triaged);
-        assert_eq!(state.evidence_count, 1);
+        assert_eq!(state.evidence_count(), 1);
         assert_eq!(state.history().len(), 1);
         assert_eq!(state.history()[0].summary, "3 signals found");
     }
@@ -326,7 +332,7 @@ mod tests {
         state
             .advance(InvestigationPhase::Theorized, "theory formed")
             .unwrap();
-        assert_eq!(state.evidence_count, 3);
+        assert_eq!(state.evidence_count(), 3);
         assert_eq!(state.history().len(), 3);
         assert_eq!(*state.phase(), InvestigationPhase::Theorized);
     }

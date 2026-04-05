@@ -13,7 +13,7 @@
 //!     .ideate_builder("design a plugin system")
 //!     .phase(IdeatePhase::Discover)
 //!     .context("Must support hot-reload and sandboxed execution")
-//!     .session_id("sess-abc123")
+//!     .session_id("sess-abc123")?
 //!     .call()
 //!     .await?;
 //!
@@ -67,6 +67,7 @@ impl IdeatePhase {
 }
 
 /// Requested output format hint for the `ideate` action.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OutputFormat {
     /// Flowing prose narrative (default).
@@ -116,7 +117,7 @@ impl OutputFormat {
 ///     .phase(IdeatePhase::Document)
 ///     .context("Rust, no runtime alloc in hot path")
 ///     .output_format(OutputFormat::Structured)
-///     .session_id("sess-xyz789")
+///     .session_id("sess-xyz789")?
 ///     .call()
 ///     .await?;
 ///
@@ -177,18 +178,20 @@ impl<'a, T: Transport> IdeateBuilder<'a, T> {
 
     /// Attach a session identifier for tracing and correlation.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `id` contains characters other than ASCII alphanumerics or
-    /// hyphens.  Valid examples: `"sess-abc123"`, `"user-42-req-7"`.
-    pub fn session_id(mut self, id: impl Into<String>) -> Self {
+    /// Returns [`SdkError::Config`] if `id` contains characters other than
+    /// ASCII alphanumerics or hyphens.  Valid examples: `"sess-abc123"`,
+    /// `"user-42-req-7"`.
+    pub fn session_id(mut self, id: impl Into<String>) -> Result<Self, SdkError> {
         let id: String = id.into();
-        assert!(
-            id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
-            "session_id must contain only ASCII alphanumerics and hyphens, got: {id:?}"
-        );
+        if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            return Err(SdkError::Config(
+                "session_id must contain only ASCII alphanumerics and hyphens".to_owned(),
+            ));
+        }
         self.session_id = Some(id);
-        self
+        Ok(self)
     }
 
     /// Execute the `ideate` action and return the structured result.

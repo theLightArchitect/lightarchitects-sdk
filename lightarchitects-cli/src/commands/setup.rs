@@ -763,7 +763,8 @@ fn run_seraph_scope_wizard(force: bool) -> Result<(), SdkError> {
 
     // Idempotency check.
     if !force && scope_path.exists() && is_valid_toml_file(&scope_path) {
-        let existing = std::fs::read_to_string(&scope_path).unwrap_or_default();
+        let existing = std::fs::read_to_string(&scope_path)
+            .map_err(|e| SdkError::Config(format!("cannot read scope file: {e}")))?;
         let target_display =
             extract_scope_target(&existing).unwrap_or_else(|| "<multiple targets>".to_owned());
         println!("  SERAPH scope: configured (target: {target_display})");
@@ -911,17 +912,7 @@ fn write_keys_file(
         let _ = writeln!(content, "{k} = {}", toml::Value::String(v.clone()));
     }
 
-    std::fs::write(path, &content)
-        .map_err(|e| SdkError::Config(format!("cannot write keys.toml: {e}")))?;
-
-    // Restrict to owner-only read/write (0600) — this file contains credentials.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        let perms = std::fs::Permissions::from_mode(0o600);
-        std::fs::set_permissions(path, perms)
-            .map_err(|e| SdkError::Config(format!("cannot set file permissions: {e}")))?;
-    }
+    atomic_write_0600(path, &content)?;
 
     Ok(())
 }

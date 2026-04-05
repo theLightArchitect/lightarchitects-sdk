@@ -217,6 +217,7 @@ async fn ideate_builder_returns_typed_result() {
         .context("Rust, no dynamic dispatch")
         .output_format(OutputFormat::Structured)
         .session_id("sess-abc123")
+        .unwrap()
         .call()
         .await
         .unwrap();
@@ -254,14 +255,14 @@ async fn ideate_builder_phase_filters_propagate() {
 }
 
 #[tokio::test]
-#[should_panic(expected = "session_id must contain only ASCII alphanumerics and hyphens")]
-async fn ideate_builder_panics_on_invalid_session_id() {
+async fn ideate_builder_returns_err_on_invalid_session_id() {
     let mock = MockTransport::default();
     let c = client(mock);
-    // This should panic immediately at .session_id() call time
-    let _ = c
+    // session_id now returns Err instead of panicking
+    let result = c
         .ideate_builder("goal")
         .session_id("invalid session id with spaces!");
+    assert!(result.is_err(), "expected Err for invalid session_id");
 }
 
 // ── remember ──────────────────────────────────────────────────────────────────

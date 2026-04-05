@@ -33,6 +33,7 @@ const fn default_max_concurrent() -> u8 {
 /// # Example
 ///
 /// ```no_run
+/// # fn example() -> Result<(), lightarchitects_core::SdkError> {
 /// use chrono::Utc;
 /// use lightarchitects_seraph::scope::EngagementScope;
 ///
@@ -45,7 +46,8 @@ const fn default_max_concurrent() -> u8 {
 ///     authorized_by: "kevin".into(),
 ///     max_concurrent_scans: 3,
 /// };
-/// scope.install().unwrap();
+/// scope.install()?;
+/// # Ok(()) }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngagementScope {
@@ -300,6 +302,22 @@ fn validate_target(target: &str) -> Result<(), SdkError> {
         ));
     }
 
+    // Reject ASCII control characters (0x01-0x1F excl. null handled above, 0x7F DEL,
+    // and C1 controls 0x80-0x9F) which have no valid use in a network target
+    // and may confuse downstream parsers.
+    if target
+        .bytes()
+        .any(|b| b < 0x20 || b == 0x7F || (0x80..=0x9F).contains(&b))
+    {
+        tracing::warn!(
+            target_hash = %simple_hash(target),
+            "scope target rejected: contains control character"
+        );
+        return Err(SdkError::ScopeViolation(
+            "target contains control character".to_owned(),
+        ));
+    }
+
     // Reject shell metacharacters that could enable injection attacks.
     for ch in SHELL_METACHARS {
         if target.contains(*ch) {
@@ -339,6 +357,9 @@ fn is_localhost(target: &str) -> bool {
         || lower.starts_with("127.")
         || lower == "::1"
         || lower.starts_with("[::1]")
+        || lower == "0:0:0:0:0:0:0:1"
+        || lower == "::ffff:127.0.0.1"
+        || lower.starts_with("::ffff:127.")
 }
 
 /// Validate a tool name against the known SERAPH tool allowlist.
@@ -355,16 +376,17 @@ fn validate_tool(tool: &str) -> Result<(), SdkError> {
     )))
 }
 
-/// Compute a simple FNV-1a 32-bit hash of a string for audit logging.
+/// Compute a simple FNV-1a 64-bit hash of a string for audit logging.
 ///
 /// This is intentionally a non-cryptographic hash — its purpose is to produce
 /// a stable, short identifier for log correlation without exposing the raw value.
-fn simple_hash(s: &str) -> u32 {
-    const FNV_OFFSET: u32 = 2_166_136_261;
-    const FNV_PRIME: u32 = 16_777_619;
+/// 64-bit variant reduces collision probability vs the 32-bit form.
+fn simple_hash(s: &str) -> u64 {
+    const FNV_OFFSET: u64 = 14_695_981_039_346_656_037;
+    const FNV_PRIME: u64 = 1_099_511_628_211;
     let mut hash = FNV_OFFSET;
     for byte in s.bytes() {
-        hash ^= u32::from(byte);
+        hash ^= u64::from(byte);
         hash = hash.wrapping_mul(FNV_PRIME);
     }
     hash
