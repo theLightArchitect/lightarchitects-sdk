@@ -83,6 +83,9 @@ impl EngagementScope {
     /// Write the scope to `~/.seraph/scope.toml`, creating the directory if
     /// needed.
     ///
+    /// Uses an atomic tmp-file + chmod + rename sequence so the scope file is
+    /// never visible with incorrect permissions (no TOCTOU window).
+    ///
     /// # Errors
     ///
     /// Returns [`SdkError::Config`] on file-system errors or if `$HOME` is
@@ -98,12 +101,7 @@ impl EngagementScope {
             })?;
         }
         let toml = self.to_toml()?;
-        std::fs::write(&path, toml).map_err(|e| {
-            SdkError::Config(format!(
-                "failed to write scope file {}: {e}",
-                path.display()
-            ))
-        })?;
+        write_scope_atomic(&path, &toml)?;
         Ok(path)
     }
 }
@@ -113,6 +111,54 @@ fn scope_path() -> Result<PathBuf, SdkError> {
     let home = std::env::var("HOME")
         .map_err(|_| SdkError::Config("HOME environment variable not set".to_owned()))?;
     Ok(PathBuf::from(home).join(".seraph").join("scope.toml"))
+}
+
+/// Write `content` to `path` atomically with 0600 permissions.
+///
+/// Steps: write to `<path>.tmp` → chmod 0600 → rename to `<path>`.
+/// The file is never visible at the final path with world-readable permissions.
+fn write_scope_atomic(path: &PathBuf, content: &str) -> Result<(), SdkError> {
+    use std::io::Write as _;
+
+    let tmp = path.with_extension("toml.tmp");
+
+    let mut f = std::fs::File::create(&tmp).map_err(|e| {
+        SdkError::Config(format!(
+            "failed to create tmp scope file {}: {e}",
+            tmp.display()
+        ))
+    })?;
+    f.write_all(content.as_bytes()).map_err(|e| {
+        SdkError::Config(format!(
+            "failed to write tmp scope file {}: {e}",
+            tmp.display()
+        ))
+    })?;
+    f.sync_all().map_err(|e| {
+        SdkError::Config(format!(
+            "failed to sync tmp scope file {}: {e}",
+            tmp.display()
+        ))
+    })?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)).map_err(|e| {
+            SdkError::Config(format!(
+                "failed to set 0600 permissions on {}: {e}",
+                tmp.display()
+            ))
+        })?;
+    }
+
+    std::fs::rename(&tmp, path).map_err(|e| {
+        SdkError::Config(format!(
+            "failed to rename {} → {}: {e}",
+            tmp.display(),
+            path.display()
+        ))
+    })
 }
 
 // ── ScopeDomain ─────────────────────────────────────────────────────────────
