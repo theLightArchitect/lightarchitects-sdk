@@ -26,6 +26,15 @@ observe = ["dep:ayin", "dep:tokio"]
 ## Without this feature all types are zero-cost noops.
 conversations = ["dep:tokio", "dep:thiserror"]
 
+## Enable HTTP client for querying the AYIN viewer REST API.
+##
+## Provides `AyinClient` which wraps the viewer's two endpoints:
+## - `GET /api/sessions`     → list trace actors + dates
+## - `GET /api/spans/:actor/:date` → retrieve spans for a session
+##
+## Requires the AYIN viewer to be running (LaunchAgent at `localhost:3742`).
+http-client = ["dep:reqwest", "dep:tokio"]
+
 [dependencies]
 lightarchitects-core = { path = "../lightarchitects-core" }
 serde.workspace = true
@@ -36,6 +45,7 @@ tracing.workspace = true
 ayin = { path = "/Users/kft/Projects/AYIN/AYIN-DEV/ayin", optional = true }
 tokio = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }

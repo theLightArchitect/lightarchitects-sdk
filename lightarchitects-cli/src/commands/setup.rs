@@ -1,19 +1,44 @@
-//! `lightarchitects setup` — interactive API key configuration wizard.
+//! `lightarchitects setup` — interactive configuration wizard.
 //!
-//! Walks through required, recommended, and optional API keys tier by tier.
-//! For each key, prints the sign-up URL and prompts with hidden input.
+//! Supports component-scoped setup:
+//! - Full wizard:    `lightarchitects setup`
+//! - Keys only:      `lightarchitects setup keys`
+//! - Single key:     `lightarchitects setup keys --key MISTRAL_API_KEY`
+//! - Voice only:     `lightarchitects setup voice`
+//!
 //! Keys are written to `~/.lightarchitects/keys.toml` (chmod 600).
-//! The gateway reads this file at startup and injects keys into sibling
-//! processes for any key not already present in the process environment.
+//! Voice provider is set via `soul.toml [voice.engine] provider`.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as FmtWrite;
 use std::io::Write as _;
 use std::path::PathBuf;
 
+use clap::Subcommand;
 use lightarchitects_core::SdkError;
 
 use crate::output::OutputMode;
+
+// ── Component subcommands ─────────────────────────────────────────────────────
+
+/// Which component to configure interactively.
+#[derive(Debug, Subcommand)]
+pub enum SetupComponent {
+    /// Configure API keys (required, recommended, optional).
+    ///
+    /// Without `--key`, walks through all tiers.
+    /// With `--key NAME`, prompts for that single key only.
+    Keys {
+        /// Configure a single named key (e.g. `MISTRAL_API_KEY`).
+        #[arg(long)]
+        key: Option<String>,
+    },
+    /// Configure voice synthesis provider and sibling voice profiles.
+    ///
+    /// Interactively select the TTS provider (`ElevenLabs` / `Cartesia` / `Voxtral`)
+    /// and verify that the required credentials and voice IDs are in place.
+    Voice,
+}
 
 // ── Key catalogue ─────────────────────────────────────────────────────────────
 
@@ -132,7 +157,92 @@ static KEY_SPECS: &[KeySpec] = &[
         signup_url: "https://platform.openai.com/api-keys",
         alias: None,
     },
+    KeySpec {
+        env_var: "MISTRAL_API_KEY",
+        description: "Mistral — Voxtral TTS voice synthesis (zero-shot voice cloning, 9 languages)",
+        used_by: "SOUL",
+        tier: Tier::Optional,
+        signup_url: "https://console.mistral.ai/api-keys",
+        alias: None,
+    },
 ];
+
+// ── Private helpers ───────────────────────────────────────────────────────────
+
+fn home_dir() -> Result<PathBuf, SdkError> {
+    std::env::var("HOME")
+        .map(PathBuf::from)
+        .map_err(|_| SdkError::Config("HOME environment variable is not set".to_owned()))
+}
+
+fn load_keys_file(path: &std::path::Path) -> Result<BTreeMap<String, String>, SdkError> {
+    if !path.exists() {
+        return Ok(BTreeMap::new());
+    }
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| SdkError::Config(format!("cannot read keys.toml: {e}")))?;
+    toml::from_str(&content).map_err(|e| SdkError::Config(format!("keys.toml is malformed: {e}")))
+}
+
+/// Write the key map to `path` (or keychain) and print a confirmation line.
+fn save_keys(
+    storage: KeysStorage,
+    keys_path: &std::path::Path,
+    keys: &BTreeMap<String, String>,
+) -> Result<(), SdkError> {
+    match storage {
+        KeysStorage::File => {
+            write_keys_file(keys_path, keys)?;
+            println!("  ✓ Keys written to {}", keys_path.display());
+        }
+        KeysStorage::Keyring => match try_write_to_keyring(keys) {
+            Ok(()) => println!("  ✓ Keys saved to OS Keychain."),
+            Err(e) => {
+                println!("  ! Keychain unavailable ({e}) — falling back to keys.toml.");
+                write_keys_file(keys_path, keys)?;
+                println!("  ✓ Keys written to {}", keys_path.display());
+            }
+        },
+    }
+    Ok(())
+}
+
+/// Display a prompt for a single key and update `keys` if the user enters a value.
+///
+/// Returns `true` when the user entered a non-empty value (key was written).
+fn prompt_key_spec(spec: &KeySpec, keys: &mut BTreeMap<String, String>) -> Result<bool, SdkError> {
+    let in_env = std::env::var(spec.env_var).is_ok();
+    let in_keys = keys.contains_key(spec.env_var);
+    let status = if in_env {
+        " [set via environment]"
+    } else if in_keys {
+        " [already configured]"
+    } else {
+        ""
+    };
+
+    println!();
+    println!("  {}{}  ({})", spec.env_var, status, spec.used_by);
+    println!("  {}", spec.description);
+    println!("  Get yours → {}", spec.signup_url);
+    print!("  > ");
+    std::io::stdout()
+        .flush()
+        .map_err(|e| SdkError::Config(format!("stdout flush: {e}")))?;
+
+    let value = rpassword::read_password()
+        .map_err(|e| SdkError::Config(format!("failed to read input: {e}")))?;
+
+    if value.is_empty() {
+        return Ok(false);
+    }
+
+    if let Some(alias) = spec.alias {
+        keys.insert(alias.to_owned(), value.clone());
+    }
+    keys.insert(spec.env_var.to_owned(), value);
+    Ok(true)
+}
 
 // ── Storage backend prompt ────────────────────────────────────────────────────
 
@@ -163,28 +273,40 @@ fn prompt_storage_backend() -> Result<KeysStorage, SdkError> {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-/// Run the interactive setup wizard.
-///
-/// Reads existing keys from `~/.lightarchitects/keys.toml`, prompts for any
-/// missing or to-be-updated keys (hidden input), and writes the result back.
+/// Route to the appropriate setup wizard based on the optional component.
 ///
 /// # Errors
 ///
-/// Returns [`SdkError::Config`] if the keys file cannot be read or written.
-pub fn execute(_mode: OutputMode) -> Result<(), SdkError> {
-    let home = std::env::var("HOME")
-        .map(PathBuf::from)
-        .map_err(|_| SdkError::Config("HOME environment variable is not set".to_owned()))?;
-    let keys_path = home.join(".lightarchitects").join("keys.toml");
+/// Returns [`SdkError::Config`] if any configuration cannot be read or written.
+pub fn execute(component: Option<SetupComponent>, _mode: OutputMode) -> Result<(), SdkError> {
+    match component {
+        None => {
+            // Full wizard: keys first, then voice
+            println!("\n  Light Architects Full Setup");
+            println!("  ─────────────────────────────────────────────");
+            run_keys_wizard(None)?;
+            println!();
+            run_voice_wizard()
+        }
+        Some(SetupComponent::Keys { key }) => run_keys_wizard(key.as_deref()),
+        Some(SetupComponent::Voice) => run_voice_wizard(),
+    }
+}
 
-    // Load existing keys (if any) — preserve anything already configured.
-    let mut keys: BTreeMap<String, String> = if keys_path.exists() {
-        let content = std::fs::read_to_string(&keys_path)
-            .map_err(|e| SdkError::Config(format!("cannot read keys.toml: {e}")))?;
-        toml::from_str(&content).unwrap_or_default()
-    } else {
-        BTreeMap::new()
-    };
+// ── Keys wizard ───────────────────────────────────────────────────────────────
+
+/// Run the API keys wizard.
+///
+/// When `single_key` is `Some("KEY_NAME")`, delegates to [`run_single_key_wizard`].
+/// When `None`, walks all tiers (required → recommended → optional).
+fn run_keys_wizard(single_key: Option<&str>) -> Result<(), SdkError> {
+    if let Some(key_name) = single_key {
+        return run_single_key_wizard(key_name);
+    }
+
+    let home = home_dir()?;
+    let keys_path = home.join(".lightarchitects").join("keys.toml");
+    let mut keys = load_keys_file(&keys_path)?;
 
     println!("\n  Light Architects Setup");
     println!("  ─────────────────────────────────────────────");
@@ -206,38 +328,9 @@ pub fn execute(_mode: OutputMode) -> Result<(), SdkError> {
         println!("  ── {tier_label} ─────────────────────────────");
 
         for spec in KEY_SPECS.iter().filter(|s| s.tier == tier) {
-            let in_env = std::env::var(spec.env_var).is_ok();
-            let in_keys = keys.contains_key(spec.env_var);
-            let status = if in_env {
-                " [set via environment]"
-            } else if in_keys {
-                " [already configured]"
-            } else {
-                ""
-            };
-
-            println!();
-            println!("  {}{}  ({})", spec.env_var, status, spec.used_by);
-            println!("  {}", spec.description);
-            println!("  Get yours → {}", spec.signup_url);
-            print!("  > ");
-            std::io::stdout()
-                .flush()
-                .map_err(|e| SdkError::Config(format!("stdout flush: {e}")))?;
-
-            let value = rpassword::read_password()
-                .map_err(|e| SdkError::Config(format!("failed to read input: {e}")))?;
-
-            if value.is_empty() {
-                continue;
+            if prompt_key_spec(spec, &mut keys)? {
+                any_written = true;
             }
-
-            // Mirror to alias before moving value.
-            if let Some(alias) = spec.alias {
-                keys.insert(alias.to_owned(), value.clone());
-            }
-            keys.insert(spec.env_var.to_owned(), value);
-            any_written = true;
         }
         println!();
     }
@@ -247,22 +340,207 @@ pub fn execute(_mode: OutputMode) -> Result<(), SdkError> {
         return Ok(());
     }
 
-    match storage {
-        KeysStorage::File => {
-            write_keys_file(&keys_path, &keys)?;
-            println!("  ✓ Keys written to {}", keys_path.display());
+    save_keys(storage, &keys_path, &keys)?;
+    println!("  Run `lightarchitects status` to verify sibling binaries are present.\n");
+    Ok(())
+}
+
+/// Prompt for a single named key and write it to the chosen storage backend.
+fn run_single_key_wizard(key_name: &str) -> Result<(), SdkError> {
+    let home = home_dir()?;
+    let keys_path = home.join(".lightarchitects").join("keys.toml");
+    let mut keys = load_keys_file(&keys_path)?;
+
+    let spec = KEY_SPECS
+        .iter()
+        .find(|s| s.env_var.eq_ignore_ascii_case(key_name))
+        .ok_or_else(|| {
+            SdkError::Config(format!(
+                "unknown key '{key_name}'. \
+                 Run `lightarchitects setup keys` to walk all keys."
+            ))
+        })?;
+
+    println!("\n  Light Architects Setup — {}", spec.env_var);
+    println!("  ─────────────────────────────────────────────");
+    println!("  Input is hidden — paste your key and press Enter.\n");
+
+    let storage = prompt_storage_backend()?;
+    println!();
+
+    let written = prompt_key_spec(spec, &mut keys)?;
+
+    if !written {
+        println!("  No changes.");
+        return Ok(());
+    }
+
+    save_keys(storage, &keys_path, &keys)?;
+    println!("  Run `lightarchitects status` to verify sibling binaries are present.\n");
+    Ok(())
+}
+
+// ── Voice wizard ──────────────────────────────────────────────────────────────
+
+/// Run the interactive voice provider wizard.
+///
+/// Reads the current provider from `~/.soul/config/soul.toml [voice.engine]`,
+/// shows credential status for each provider, and writes the user's selection
+/// back to `soul.toml` without disturbing comments or other settings.
+fn run_voice_wizard() -> Result<(), SdkError> {
+    let home = home_dir()?;
+    let soul_toml = home.join(".soul").join("config").join("soul.toml");
+
+    let content = std::fs::read_to_string(&soul_toml)
+        .map_err(|e| SdkError::Config(format!("cannot read soul.toml: {e}")))?;
+    let current = read_voice_engine_provider(&content);
+
+    let el = credential_status(&home, "elevenlabs.key", "ELEVENLABS_API_KEY");
+    let ca = credential_status(&home, "cartesia.key", "CARTESIA_API_KEY");
+    let vx = mistral_credential_status(&home);
+
+    println!("\n  Voice Provider Setup");
+    println!("  ─────────────────────────────────────────────");
+    println!("  Current provider: {current}");
+    println!();
+    println!("  1. ElevenLabs   — premium neural voices, audio tags, multi-language  [{el}]");
+    println!("  2. Cartesia     — instant voice clones, <150ms latency               [{ca}]");
+    println!("  3. Voxtral      — Mistral zero-shot voice cloning, 9 languages       [{vx}]");
+    println!("  4. Auto         — best available (Voxtral → ElevenLabs → Cartesia)");
+    println!("  5. Disabled     — silence all voice synthesis");
+    println!("  6. Keep current  [{current}]  [default]");
+
+    print!("\n  Choice [6]: ");
+    std::io::stdout()
+        .flush()
+        .map_err(|e| SdkError::Config(format!("stdout flush: {e}")))?;
+
+    let mut input = String::new();
+    std::io::stdin()
+        .read_line(&mut input)
+        .map_err(|e| SdkError::Config(format!("failed to read choice: {e}")))?;
+
+    let new_provider = match input.trim() {
+        "1" => "elevenlabs",
+        "2" => "cartesia",
+        "3" => "voxtral",
+        "4" => "auto",
+        "5" => "disabled",
+        _ => {
+            println!("  No change.");
+            return Ok(());
         }
-        KeysStorage::Keyring => match try_write_to_keyring(&keys) {
-            Ok(()) => println!("  ✓ Keys saved to OS Keychain."),
-            Err(e) => {
-                println!("  ! Keychain unavailable ({e}) — falling back to keys.toml.");
-                write_keys_file(&keys_path, &keys)?;
-                println!("  ✓ Keys written to {}", keys_path.display());
-            }
-        },
+    };
+
+    if new_provider == current.as_str() {
+        println!("  Provider unchanged.");
+        return Ok(());
+    }
+
+    update_soul_toml_provider(&soul_toml, &content, new_provider)?;
+    println!("  ✓ Voice provider set to: {new_provider}");
+
+    if new_provider == "voxtral" && vx == "NOT configured" {
+        println!(
+            "  ℹ  MISTRAL_API_KEY not found. \
+             Run `lightarchitects setup keys --key MISTRAL_API_KEY` to add it."
+        );
     }
 
     println!("  Run `lightarchitects status` to verify sibling binaries are present.\n");
+    Ok(())
+}
+
+/// Extract the `provider` value from `[voice.engine]` in a `soul.toml` string.
+///
+/// Falls back to `"elevenlabs"` if the section or key is absent.
+fn read_voice_engine_provider(content: &str) -> String {
+    let mut in_engine = false;
+    for line in content.lines() {
+        let t = line.trim();
+        if t.starts_with('[') {
+            in_engine = t == "[voice.engine]";
+        }
+        if in_engine && t.starts_with("provider") {
+            if let Some(raw) = t.split('=').nth(1) {
+                // Strip optional inline comment: `"elevenlabs"  # comment` → `elevenlabs`
+                let without_comment = raw.split_once('#').map_or(raw, |(v, _)| v);
+                return without_comment.trim().trim_matches('"').to_owned();
+            }
+        }
+    }
+    "elevenlabs".to_owned()
+}
+
+/// Check whether a Soul voice provider key is available.
+///
+/// Checks environment variable first, then `~/.soul/config/<key_file>`.
+fn credential_status(home: &PathBuf, key_file: &str, env_var: &str) -> &'static str {
+    if std::env::var(env_var).is_ok() {
+        "set via env"
+    } else if home.join(".soul").join("config").join(key_file).exists() {
+        "key file found"
+    } else {
+        "NOT configured"
+    }
+}
+
+/// Check whether `MISTRAL_API_KEY` is available (env, keys.toml, or keychain).
+fn mistral_credential_status(home: &PathBuf) -> &'static str {
+    if std::env::var("MISTRAL_API_KEY").is_ok() {
+        return "set via env";
+    }
+    let path = home.join(".lightarchitects").join("keys.toml");
+    if let Ok(c) = std::fs::read_to_string(&path) {
+        if c.contains("MISTRAL_API_KEY") {
+            return "keys.toml found";
+        }
+    }
+    "NOT configured"
+}
+
+/// Rewrite the `provider` field in `[voice.engine]` without disturbing comments.
+///
+/// Performs a targeted line-by-line substitution so the rest of `soul.toml`
+/// (comments, spacing, other sections) is preserved exactly.
+fn update_soul_toml_provider(
+    path: &std::path::Path,
+    content: &str,
+    new_provider: &str,
+) -> Result<(), SdkError> {
+    let mut in_engine = false;
+    let mut replaced = false;
+    let mut out = String::with_capacity(content.len());
+
+    for line in content.lines() {
+        let t = line.trim();
+        if t.starts_with('[') {
+            in_engine = t == "[voice.engine]";
+        }
+        if in_engine && !replaced && t.starts_with("provider") {
+            // Preserve inline comment if present.
+            let comment = line
+                .find('#')
+                .map(|i| format!("  #{}", &line[i + 1..]))
+                .unwrap_or_default();
+            write!(out, "provider = \"{new_provider}\"").expect("write to String is infallible");
+            out.push_str(&comment);
+            out.push('\n');
+            replaced = true;
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+
+    if !replaced {
+        return Err(SdkError::Config(
+            "[voice.engine] provider not found in soul.toml — is the file well-formed?".to_owned(),
+        ));
+    }
+
+    std::fs::write(path, out)
+        .map_err(|e| SdkError::Config(format!("cannot update soul.toml: {e}")))?;
 
     Ok(())
 }

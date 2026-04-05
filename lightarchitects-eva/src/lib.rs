@@ -1,9 +1,8 @@
 //! Typed client for EVA's `evaTools` MCP orchestrator.
 //!
-//! EVA exposes a single MCP tool (`evaTools`) with 8 actions — `visualize`,
-//! `ideate`, `memory`, `build`, `research`, `bible`, `secure`, and `teach` —
-//! matching the orchestrator pattern used by CORSO (`corsoTools`) and QUANTUM
-//! (`qsTools`).
+//! EVA exposes a single MCP tool (`evaTools`) with 9 actions:
+//! `visualize`, `ideate`, `bible_search`, `bible_reflect`, `teach`,
+//! `remember`, `crystallize`, `celebrate`, `mindfulness`.
 //!
 //! This crate provides two call paths:
 //!
@@ -20,31 +19,28 @@
 //! # Quick start
 //!
 //! ```no_run
-//! use lightarchitects_eva::{EvaClient, BuildMode, TeachMode, SkillLevel, ResearchSource};
+//! use lightarchitects_eva::{EvaClient, TeachMode, SkillLevel};
 //!
 //! # async fn example() -> Result<(), lightarchitects_core::SdkError> {
 //! let client = EvaClient::builder().build().await?;
 //!
-//! // Typed method: teach a concept
+//! // Teach a concept
 //! let lesson = client
 //!     .teach(TeachMode::Explain, "lifetimes in Rust", SkillLevel::Intermediate)
 //!     .await?;
 //! println!("{}", lesson.output);
 //!
-//! // Typed method: code review
-//! let review = client
-//!     .build(BuildMode::Review, Some("fn foo() { panic!() }"), Some("rust"))
-//!     .await?;
-//! println!("{}", review.output);
-//!
-//! // Typed method: visualize (returns image data when EVA generates one)
+//! // Visualize (may return image data)
 //! let viz = client.visualize("a neural network diagram", None).await?;
 //! println!("{}", viz.text);
 //! if let Some(b64) = viz.image_base64 {
 //!     println!("Image bytes: {}", b64.len());
 //! }
 //!
-//! // Generic adapter: call any EVA tool by name
+//! // Record a win
+//! client.celebrate("shipped the SDK completeness build").await?;
+//!
+//! // Generic adapter
 //! let out = client
 //!     .action("ideate", serde_json::json!({ "goal": "design a plugin system" }))
 //!     .await?;
@@ -62,7 +58,4 @@ mod types;
 
 pub use actions::EvaAction;
 pub use client::{EvaClient, EvaClientBuilder};
-pub use types::{
-    ActionOutput, BibleAction, BuildMode, MemorySubcommand, ResearchSource, SecureAction,
-    SkillLevel, TeachMode, VisualizeOutput,
-};
+pub use types::{ActionOutput, SkillLevel, TeachMode, VisualizeOutput};

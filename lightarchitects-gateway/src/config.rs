@@ -503,6 +503,7 @@ const KNOWN_API_KEYS: &[&str] = &[
     "TAVILY_API_KEY",
     "CARTESIA_API_KEY",
     "OPENAI_API_KEY",
+    "MISTRAL_API_KEY",
 ];
 
 /// Load API keys from both the OS keyring and `~/.lightarchitects/keys.toml`.

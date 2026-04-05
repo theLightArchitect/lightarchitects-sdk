@@ -50,6 +50,8 @@
 pub mod actions;
 mod client;
 mod content;
+/// Stateful driver for the SERAPH investigation lifecycle.
+pub mod engagement;
 /// Evidence chain accumulator and engagement logging.
 pub mod evidence;
 /// Typed parameter builders for SERAPH wing actions.
@@ -68,6 +70,7 @@ mod types;
 
 pub use actions::SeraphAction;
 pub use client::{SeraphClient, SeraphClientBuilder};
+pub use engagement::{EngagementPhase, SeraphEngagement};
 pub use evidence::{EvidenceChain, EvidenceEntry, engagement_log};
 pub use params::{
     AnalyzeParams, AnalyzeType, CaptureParams, MonitorAction, MonitorParams, OsintParams,

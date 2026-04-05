@@ -36,4 +36,6 @@ pub use config::{Config, ConfigBuilder, RetryConfig};
 pub use error::{ProtocolError, SdkError, ToolError, TransportError};
 pub use jsonrpc::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 pub use sibling::{McpFraming, SiblingId};
+#[cfg(any(test, feature = "test-utils"))]
+pub use transport::MockTransport;
 pub use transport::{StdioTransport, Transport};

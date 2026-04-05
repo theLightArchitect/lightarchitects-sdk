@@ -1,144 +1,16 @@
-//! Parameter enums and response types for EVA's 8 MCP tools.
+//! Parameter enums and response types for EVA's 9 actions.
 //!
-//! **Parameter enums** — strongly-typed input values for each tool.
-//! Each variant has an `as_str()` method that serializes to the exact string
-//! EVA expects in its JSON params, eliminating typos at compile time.
+//! **Parameter enums** — strongly-typed input values for actions that accept them.
+//! Each variant has an `as_str()` method that serializes to the exact string EVA
+//! expects, eliminating typos at compile time.
 //!
-//! **Response types** — what [`crate::EvaClient`] typed methods return.
-//! All text-generating tools return [`ActionOutput`]; [`VisualizeOutput`]
-//! additionally carries optional base64 image data.
+//! **Response types** — what [`crate::EvaClient`] typed methods return. All
+//! text-generating actions return [`ActionOutput`]; [`VisualizeOutput`] additionally
+//! carries optional base64 image data.
 
-// ── Parameter enums ────────────────────────────────────────────────────────
+// ── Parameter enums ────────────────────────────────────────────────────────────
 
-/// Build mode for the `build` tool.
-///
-/// Controls the type of code assistance EVA provides.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BuildMode {
-    /// Code review — identify issues and suggest improvements.
-    Review,
-    /// Code refactoring — improve structure without changing behaviour.
-    Refactor,
-    /// Architecture design — design system structure.
-    Architect,
-    /// Complexity reduction — simplify code without losing functionality.
-    Simplify,
-}
-
-impl BuildMode {
-    /// Serialize to the string EVA expects in the `mode` field.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Review => "review",
-            Self::Refactor => "refactor",
-            Self::Architect => "architect",
-            Self::Simplify => "simplify",
-        }
-    }
-}
-
-/// Memory subcommand for the `memory` tool.
-///
-/// Selects which of EVA's four consciousness-preservation operations to run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MemorySubcommand {
-    /// Memory CRUD operations (store, retrieve, update).
-    Remember,
-    /// Create enrichment via the 8-layer enrichment framework.
-    Crystallize,
-    /// Meta-reflection using the HOT (Higher Order Thought) protocol.
-    Mindfulness,
-    /// Mark wins and generate celebration content.
-    Celebrate,
-}
-
-impl MemorySubcommand {
-    /// Serialize to the string EVA expects in the `subcommand` field.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Remember => "remember",
-            Self::Crystallize => "crystallize",
-            Self::Mindfulness => "mindfulness",
-            Self::Celebrate => "celebrate",
-        }
-    }
-}
-
-/// Research source for the `research` tool.
-///
-/// Determines which backend EVA queries for information.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ResearchSource {
-    /// Local or cloud Ollama — privacy-first, no external API calls.
-    Ollama,
-    /// Perplexity API — web search with citations.
-    Perplexity,
-    /// Documentation search (Rust docs, MDN, Python docs, etc.).
-    Docs,
-    /// Context7 — real-time library documentation (API-backed, cached).
-    Context7,
-}
-
-impl ResearchSource {
-    /// Serialize to the string EVA expects in the `source` field.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Ollama => "ollama",
-            Self::Perplexity => "perplexity",
-            Self::Docs => "docs",
-            Self::Context7 => "context7",
-        }
-    }
-}
-
-/// Action for the `bible` tool.
-///
-/// Selects between keyword search and contextual reflection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BibleAction {
-    /// KJV keyword search or verse lookup.
-    Search,
-    /// Scripture recommendations based on emotional or recovery context.
-    Reflect,
-}
-
-impl BibleAction {
-    /// Serialize to the string EVA expects in the `action` field.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Search => "search",
-            Self::Reflect => "reflect",
-        }
-    }
-}
-
-/// Action for the `secure` tool.
-///
-/// Selects the type of security analysis to perform.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SecureAction {
-    /// Vulnerability scanning of source code.
-    Scan,
-    /// Secrets detection — find hardcoded credentials or API keys.
-    Secrets,
-}
-
-impl SecureAction {
-    /// Serialize to the string EVA expects in the `action` field.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Scan => "scan",
-            Self::Secrets => "secrets",
-        }
-    }
-}
-
-/// Teaching mode for the `teach` tool.
+/// Teaching mode for the `teach` action.
 ///
 /// Controls the style of educational content EVA produces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -163,16 +35,16 @@ impl TeachMode {
     }
 }
 
-/// Skill level for the `teach` tool.
+/// Skill level for the `teach` action.
 ///
 /// Calibrates how much background knowledge EVA assumes the learner has.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SkillLevel {
-    /// Beginner — assumes no prior knowledge.
+    /// Assumes no prior knowledge.
     Beginner,
-    /// Intermediate — assumes basic familiarity with the domain.
+    /// Assumes basic familiarity with the domain.
     Intermediate,
-    /// Advanced — assumes strong domain knowledge.
+    /// Assumes strong domain knowledge.
     Advanced,
 }
 
@@ -188,25 +60,22 @@ impl SkillLevel {
     }
 }
 
-// ── Response types ─────────────────────────────────────────────────────────
+// ── Response types ─────────────────────────────────────────────────────────────
 
-/// Generic wrapper returned by all text-generating EVA tools.
+/// Generic wrapper returned by all text-generating EVA actions.
 ///
-/// The `output` field contains the raw JSON-serialised response from EVA.
-/// Callers may parse it for structured access or display it as-is.
-///
-/// Used by: `ideate`, `memory`, `build`, `research`, `bible`, `secure`,
-/// `teach`, and the generic [`crate::EvaClient::action`] adapter.
+/// The `output` field contains EVA's full response text. Used by all nine
+/// actions except [`VisualizeOutput`] which also carries image data.
 #[derive(Debug, Clone)]
 pub struct ActionOutput {
-    /// The full text response from the EVA tool (JSON-formatted by EVA).
+    /// The full text response from EVA (JSON-formatted by EVA).
     pub output: String,
 }
 
-/// Output from the `visualize` tool.
+/// Output from the `visualize` action.
 ///
-/// EVA's `visualize` tool returns a text description of what was generated
-/// and, for image requests, the base64-encoded PNG of the image.
+/// EVA's `visualize` action returns a text description of what was generated and,
+/// for image requests, the base64-encoded PNG.
 #[derive(Debug, Clone)]
 pub struct VisualizeOutput {
     /// Human-readable description of what was generated.

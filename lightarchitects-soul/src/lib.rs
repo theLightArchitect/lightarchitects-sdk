@@ -46,6 +46,8 @@ pub use client::{SoulClient, SoulClientBuilder};
 pub use helix::{HelixBuilder, HelixEntry};
 pub use query::{QueryBuilder, QueryResult};
 pub use types::{
-    ConverseResult, HealthReport, LinksResult, NoteContent, NoteEntry, NoteList, NoteWritten,
-    RelateResult, SearchHit, SpeakResult, StatsReport, TagSyncReport, ValidateReport,
+    ChatMessage, ChatResult, ConvergenceEntry, ConvergenceResult, ConverseResult, FrontmatterMatch,
+    HealthReport, IngestResult, LinksResult, ManifestContent, NoteContent, NoteEntry, NoteList,
+    NoteWritten, QueryFrontmatterResult, QueryHit, RawQueryResult, RelateResult, ResearchResult,
+    SearchHit, SpeakResult, StatsReport, TagSyncReport, ValidateReport,
 };

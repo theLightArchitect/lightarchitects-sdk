@@ -54,12 +54,21 @@ pub enum Commands {
     Status,
     /// Show the resolved binary-path configuration.
     Config,
-    /// Interactive API key configuration wizard.
+    /// Interactive configuration wizard.
     ///
-    /// Prompts for required, recommended, and optional API keys and writes
-    /// them to `~/.lightarchitects/keys.toml` (owner-only, chmod 600).
-    /// The gateway injects these into sibling processes at spawn time.
-    Setup,
+    /// Run `setup` alone for the full wizard, or specify a component:
+    ///
+    /// ```text
+    /// lightarchitects setup           # Full wizard (keys + voice)
+    /// lightarchitects setup keys      # API keys only
+    /// lightarchitects setup keys --key MISTRAL_API_KEY  # Single key
+    /// lightarchitects setup voice     # Voice provider + sibling voices
+    /// ```
+    Setup {
+        /// Component to configure (omit for full wizard).
+        #[command(subcommand)]
+        component: Option<setup::SetupComponent>,
+    },
 }
 
 /// Route a parsed command to its executor.
@@ -82,6 +91,6 @@ pub async fn dispatch(cmd: Commands, cfg: &CliConfig, mode: OutputMode) -> Resul
             config::execute(cfg, mode);
             Ok(())
         }
-        Commands::Setup => setup::execute(mode),
+        Commands::Setup { component } => setup::execute(component, mode),
     }
 }

@@ -184,3 +184,204 @@ pub struct LinksResult {
     #[serde(default)]
     pub incoming: Vec<serde_json::Value>,
 }
+
+// ── Hybrid RAG query ──────────────────────────────────────────────────────────
+
+/// A single result from `soulTools` `query` (4-signal hybrid RAG retrieval).
+///
+/// The score reflects the combined RRF (Reciprocal Rank Fusion) weight across
+/// BM25 keyword, semantic embedding, graph proximity, and temporal signals.
+// Fields populated by serde deserialization — accessed by consumers (lÆx0-cli, Arena),
+// not by this crate directly. Allow dead_code to keep the build warning-free.
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct QueryHit {
+    /// Vault-relative path of the matching entry.
+    pub path: String,
+    /// Combined RRF relevance score.
+    pub score: f64,
+    /// Helix significance weight of the entry.
+    #[serde(default)]
+    pub significance: Option<f64>,
+    /// Human-readable title of the entry.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Short excerpt or summary of the entry content.
+    #[serde(default)]
+    pub excerpt: Option<String>,
+    /// Sibling the entry belongs to (e.g. `"eva"`, `"corso"`).
+    #[serde(default)]
+    pub sibling: Option<String>,
+}
+
+/// Response from `soulTools` `query` — 4-signal hybrid RAG retrieval.
+///
+/// This is the **raw action response** deserialised from the `soulTools action:"query"`
+/// wire envelope. It is distinct from [`lightarchitects_soul::QueryResult`], which is the
+/// high-level result returned by the fluent [`QueryBuilder::call()`] method.
+/// Use `RawQueryResult` only when calling `client.action("query", params)` directly.
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct RawQueryResult {
+    /// Ranked hits, most relevant first.
+    pub hits: Vec<QueryHit>,
+    /// Number of candidates evaluated before ranking.
+    #[serde(default)]
+    pub candidates_evaluated: u64,
+    /// Which retrieval signals contributed to this result.
+    #[serde(default)]
+    pub signals_used: Vec<String>,
+}
+
+// ── Frontmatter query ─────────────────────────────────────────────────────────
+
+/// A single entry matched by `soulTools` `query_frontmatter`.
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct FrontmatterMatch {
+    /// Vault-relative path of the matched entry.
+    pub path: String,
+    /// The frontmatter field value that matched.
+    #[serde(default)]
+    pub matched_value: serde_json::Value,
+    /// Human-readable title of the entry.
+    #[serde(default)]
+    pub title: Option<String>,
+}
+
+/// Response from `soulTools` `query_frontmatter`.
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct QueryFrontmatterResult {
+    /// Entries whose frontmatter matched the query.
+    pub matches: Vec<FrontmatterMatch>,
+    /// Total count (may exceed `matches.len()` when truncated).
+    pub count: usize,
+}
+
+// ── Convergences ──────────────────────────────────────────────────────────────
+
+/// A convergent pair returned by `soulTools` `convergences`.
+///
+/// Convergences are entries from different siblings that resonate on shared
+/// strands, themes, or emotional signatures.
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct ConvergenceEntry {
+    /// Path of the first entry in the convergent pair.
+    pub path_a: String,
+    /// Path of the second entry in the convergent pair.
+    pub path_b: String,
+    /// Sibling that owns `path_a`.
+    #[serde(default)]
+    pub sibling_a: Option<String>,
+    /// Sibling that owns `path_b`.
+    #[serde(default)]
+    pub sibling_b: Option<String>,
+    /// Shared strands, themes, or resonance tags driving the convergence.
+    #[serde(default)]
+    pub shared_dimensions: Vec<String>,
+    /// Convergence strength score in `[0.0, 1.0]`.
+    #[serde(default)]
+    pub strength: f64,
+}
+
+/// Response from `soulTools` `convergences`.
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct ConvergenceResult {
+    /// Convergent entry pairs, strongest first.
+    pub convergences: Vec<ConvergenceEntry>,
+    /// Total pairs evaluated.
+    #[serde(default)]
+    pub pairs_evaluated: u64,
+}
+
+// ── Vault manifest ────────────────────────────────────────────────────────────
+
+/// Response from `soulTools` `manifest`.
+///
+/// Describes the vault's canonical scaffold — sibling spines, entry counts,
+/// and schema version.
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct ManifestContent {
+    /// Vault schema version string.
+    #[serde(default)]
+    pub schema_version: Option<String>,
+    /// Total entry count across all siblings.
+    #[serde(default)]
+    pub total_entries: u64,
+    /// Per-sibling entry counts (`"eva"` → count, …).
+    #[serde(default)]
+    pub sibling_counts: std::collections::HashMap<String, u64>,
+    /// Absolute path to the vault root.
+    #[serde(default)]
+    pub vault_root: Option<String>,
+    /// Raw manifest JSON for fields not yet modelled here.
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
+}
+
+// ── Ingest result ─────────────────────────────────────────────────────────────
+
+/// Response from `soulTools` `ingest`.
+///
+/// Reports what the universal ingestion pipeline processed and persisted.
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct IngestResult {
+    /// Number of entries ingested.
+    pub ingested: u64,
+    /// Number of entries skipped (already present or invalid).
+    #[serde(default)]
+    pub skipped: u64,
+    /// Paths of the ingested vault entries.
+    #[serde(default)]
+    pub paths: Vec<String>,
+    /// Non-fatal warnings raised during ingestion.
+    #[serde(default)]
+    pub warnings: Vec<String>,
+}
+
+// ── Research result ───────────────────────────────────────────────────────────
+
+/// Response from `soulTools` `research` — multi-source research aggregation.
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct ResearchResult {
+    /// Synthesised research summary.
+    pub summary: String,
+    /// Individual source findings before synthesis.
+    #[serde(default)]
+    pub sources: Vec<serde_json::Value>,
+    /// Trust pipeline verdicts per source (structure varies by SOUL version).
+    #[serde(default)]
+    pub trust_verdicts: Vec<serde_json::Value>,
+}
+
+// ── Chat (multi-sibling conversation) ─────────────────────────────────────────
+
+/// A single turn in a `soulTools` `chat` session.
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct ChatMessage {
+    /// Speaker — sibling name (e.g. `"eva"`) or `"user"`.
+    pub speaker: String,
+    /// Message content.
+    pub content: String,
+    /// Turn index within the conversation (0-based).
+    #[serde(default)]
+    pub turn: u32,
+}
+
+/// Response from `soulTools` `chat` — multi-sibling conversation engine.
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct ChatResult {
+    /// All turns in the conversation so far, in order.
+    pub turns: Vec<ChatMessage>,
+    /// Conversation session identifier (for resumption).
+    #[serde(default)]
+    pub session_id: Option<String>,
+}

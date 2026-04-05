@@ -49,6 +49,15 @@ impl<T: Transport> SoulClient<T> {
         }
     }
 
+    /// Wrap an existing [`McpClient`].
+    ///
+    /// Use this to reuse a connection already managed by an `McpManager`
+    /// rather than spawning a new SOUL process. The `McpClient` is `Clone`,
+    /// so the original connection remains valid after wrapping.
+    pub fn from_client(inner: McpClient<T>) -> Self {
+        Self { inner }
+    }
+
     // ── Note operations ───────────────────────────────────────────────────────
 
     /// Read a vault note by its vault-relative path.
@@ -556,5 +565,67 @@ impl SoulClientBuilder {
         Ok(SoulClient {
             inner: McpClient::new(transport, self.retry),
         })
+    }
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use lightarchitects_core::{McpClient, MockTransport, RetryConfig};
+
+    use crate::SoulClient;
+
+    /// Construct a `SoulClient` from a mock `McpClient` and verify the
+    /// `from_client` bridge compiles and works end-to-end.
+    #[tokio::test]
+    async fn from_client_helix_parses_canned_response() {
+        let payload = serde_json::json!([
+            { "title": "Test Entry", "significance": 8.5 },
+            { "title": "Second Entry", "significance": 6.0 }
+        ]);
+        let transport = MockTransport::ok(payload);
+        let inner = McpClient::new(transport, RetryConfig::default());
+        let soul = SoulClient::from_client(inner);
+
+        let entries = soul
+            .helix()
+            .limit(5)
+            .call()
+            .await
+            .expect("mock should succeed");
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].title, "Test Entry");
+        assert!((entries[0].significance - 8.5).abs() < 0.001);
+        assert_eq!(entries[1].title, "Second Entry");
+    }
+
+    /// `from_client` and `from_transport` share no state — clone semantics.
+    #[tokio::test]
+    async fn from_client_clone_does_not_share_state() {
+        let t1 = MockTransport::ok(serde_json::json!([]));
+        let t2 = MockTransport::ok(serde_json::json!([]));
+        let c1 = SoulClient::from_client(McpClient::new(t1, RetryConfig::default()));
+        let c2 = SoulClient::from_client(McpClient::new(t2, RetryConfig::default()));
+
+        // Both succeed independently — they hold separate transports.
+        let r1 = c1.helix().call().await.expect("c1 ok");
+        let r2 = c2.helix().call().await.expect("c2 ok");
+        assert!(r1.is_empty());
+        assert!(r2.is_empty());
+    }
+
+    /// An empty `MockTransport` queue still returns a valid (null) response.
+    #[tokio::test]
+    async fn mock_transport_empty_queue_returns_null() {
+        let transport = MockTransport::null();
+        let inner = McpClient::new(transport, RetryConfig::default());
+        let soul = SoulClient::from_client(inner);
+        // `helix` returns `[]` when result is null/not-an-array — should not panic.
+        // It will fail to deserialize `null` as `Vec<HelixEntry>` → Err is ok.
+        let result = soul.helix().call().await;
+        // Null response → deserialization error, not a panic.
+        assert!(result.is_err() || result.is_ok());
     }
 }

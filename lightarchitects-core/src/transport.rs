@@ -377,6 +377,106 @@ where
         .map_err(|e| SdkError::Protocol(ProtocolError::MalformedJson(e.to_string())))
 }
 
+// ── MockTransport ────────────────────────────────────────────────────────────
+//
+// A test-only `Transport` implementation driven by a pre-programmed response
+// queue.  Enabled by the `test-utils` feature flag so cross-crate tests can
+// import it:
+//
+//   [dev-dependencies]
+//   lightarchitects-core = { path = "...", features = ["test-utils"] }
+//
+// Usage:
+//
+//   let soul = SoulClient::from_client(McpClient::new(
+//       MockTransport::ok(serde_json::json!([{"title": "Test", "significance": 8.0}])),
+//       RetryConfig::default(),
+//   ));
+//   let entries = soul.helix().limit(1).call().await.unwrap();
+//
+/// Test transport backed by a pre-programmed response queue.
+///
+/// Enabled by the `test-utils` feature so cross-crate tests can import
+/// [`MockTransport`] without activating it in production builds.
+#[cfg(any(test, feature = "test-utils"))]
+pub mod mock {
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
+    use crate::error::SdkError;
+    use crate::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
+    use crate::transport::Transport;
+
+    /// Test transport backed by a pre-programmed [`JsonRpcResponse`] queue.
+    ///
+    /// Each call to [`Transport::send`] pops the next response from the queue.
+    /// When the queue is empty, returns a generic `null` result so tests that
+    /// don't need to inspect the response can still drive call chains.
+    ///
+    /// Cheap to `Clone` — the queue is shared via `Arc<Mutex<_>>`.
+    #[derive(Clone)]
+    pub struct MockTransport {
+        responses: std::sync::Arc<Mutex<VecDeque<JsonRpcResponse>>>,
+    }
+
+    impl MockTransport {
+        /// Create a transport with a pre-built response queue.
+        pub fn new(responses: Vec<JsonRpcResponse>) -> Self {
+            Self {
+                responses: std::sync::Arc::new(Mutex::new(VecDeque::from(responses))),
+            }
+        }
+
+        /// Create a transport that returns a single successful `result` payload.
+        ///
+        /// Useful when you need exactly one call to succeed and don't care about
+        /// subsequent calls.
+        pub fn ok(result: serde_json::Value) -> Self {
+            Self::new(vec![JsonRpcResponse {
+                jsonrpc: "2.0".to_owned(),
+                id: Some(1),
+                result: Some(result),
+                error: None,
+            }])
+        }
+
+        /// Create a transport that always returns `null` (queue never drains).
+        pub fn null() -> Self {
+            Self::new(vec![])
+        }
+    }
+
+    impl Transport for MockTransport {
+        fn send(
+            &self,
+            req: JsonRpcRequest,
+        ) -> impl std::future::Future<Output = Result<JsonRpcResponse, SdkError>> + Send + '_
+        {
+            // No await points inside — safe to hold std::sync::MutexGuard.
+            let response = {
+                let mut queue = self
+                    .responses
+                    .lock()
+                    .expect("infallible: MockTransport mutex not poisoned");
+                queue.pop_front().unwrap_or_else(|| JsonRpcResponse {
+                    jsonrpc: "2.0".to_owned(),
+                    id: Some(req.id),
+                    result: Some(serde_json::Value::Null),
+                    error: None,
+                })
+            };
+            // Echo the request id so McpClient correlation checks pass.
+            let mut resp = response;
+            resp.id = Some(req.id);
+            std::future::ready(Ok(resp))
+        }
+    }
+}
+
+// Re-export `MockTransport` at the crate root when `test-utils` is enabled.
+#[cfg(any(test, feature = "test-utils"))]
+pub use mock::MockTransport;
+
 // ── Adversarial framing tests ─────────────────────────────────────────────────
 //
 // These unit tests exercise the framing functions directly with crafted byte

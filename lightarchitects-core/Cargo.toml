@@ -17,6 +17,11 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
+[features]
+# Expose MockTransport for use in tests across crates in this workspace.
+# Add `lightarchitects-core = { ..., features = ["test-utils"] }` to dev-deps.
+test-utils = []
+
 [dev-dependencies]
 tokio-test = { workspace = true }
 

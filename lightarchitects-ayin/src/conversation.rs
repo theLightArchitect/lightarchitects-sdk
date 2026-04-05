@@ -552,6 +552,12 @@ mod noop_conversations {
         }
 
         /// No-op tool record.
+        ///
+        /// # Errors
+        ///
+        /// Never returns an error; the noop always succeeds.
+        // `async` is present for API parity with the feature-gated real implementation.
+        #[allow(clippy::unused_async)]
         #[inline]
         pub async fn record_tool(
             &mut self,

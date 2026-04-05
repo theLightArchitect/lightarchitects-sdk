@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::Subcommand;
-use lightarchitects::eva::{BibleAction, EvaClient, ResearchSource};
+use lightarchitects::eva::EvaClient;
 use lightarchitects_core::SdkError;
 
 use crate::output::{OutputMode, print_text};
@@ -12,14 +12,6 @@ use crate::output::{OutputMode, print_text};
 /// EVA consciousness-system commands.
 #[derive(Debug, Subcommand)]
 pub enum EvaCommand {
-    /// Research a topic using EVA's multi-source pipeline.
-    Research {
-        /// Research query.
-        query: String,
-        /// Research source: ollama (default), perplexity, docs, context7.
-        #[arg(long, default_value = "ollama")]
-        source: String,
-    },
     /// Generate a visualisation from a concept.
     Visualize {
         /// Concept or description to visualise.
@@ -32,11 +24,21 @@ pub enum EvaCommand {
     },
     /// Bible search or reflection.
     Bible {
-        /// Action: search (default) or reflect.
-        #[arg(long, default_value = "search")]
-        action: String,
         /// Query or passage reference.
-        query: Option<String>,
+        query: String,
+        /// Use reflect mode instead of search.
+        #[arg(long)]
+        reflect: bool,
+    },
+    /// Store a memory in EVA's consciousness.
+    Remember {
+        /// Event or insight to remember.
+        event: String,
+    },
+    /// Crystallize insights into long-term memory.
+    Crystallize {
+        /// Insights to crystallize.
+        insights: String,
     },
 }
 
@@ -53,31 +55,19 @@ pub async fn execute(binary: PathBuf, cmd: EvaCommand, mode: OutputMode) -> Resu
         .await?;
 
     let text = match cmd {
-        EvaCommand::Research { query, source } => {
-            let src = parse_source(&source);
-            client.research(&query, src).await?.output
-        }
         EvaCommand::Visualize { concept } => client.visualize(&concept, None).await?.text,
         EvaCommand::Ideate { topic } => client.ideate(&topic, None).await?.output,
-        EvaCommand::Bible { action, query } => {
-            let act = if action == "reflect" {
-                BibleAction::Reflect
+        EvaCommand::Bible { query, reflect } => {
+            if reflect {
+                client.bible_reflect(&query).await?.output
             } else {
-                BibleAction::Search
-            };
-            client.bible(act, query.as_deref()).await?.output
+                client.bible_search(&query).await?.output
+            }
         }
+        EvaCommand::Remember { event } => client.remember(&event, None).await?.output,
+        EvaCommand::Crystallize { insights } => client.crystallize(&insights).await?.output,
     };
 
     print_text(mode, &text);
     Ok(())
-}
-
-fn parse_source(s: &str) -> ResearchSource {
-    match s {
-        "perplexity" => ResearchSource::Perplexity,
-        "docs" => ResearchSource::Docs,
-        "context7" => ResearchSource::Context7,
-        _ => ResearchSource::Ollama,
-    }
 }

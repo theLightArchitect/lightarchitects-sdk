@@ -4,7 +4,7 @@
 //! a complete forensic investigation cycle:
 //!
 //! ```text
-//! SCAN → SWEEP → TRACE → PROBE → THEORIZE → VERIFY → CLOSE
+//! TRIAGE → SWEEP → TRACE → PROBE → THEORIZE → VERIFY → CLOSE
 //!   └── utilities: quick, research, helix, discover, list, workflow
 //! ```
 //!
@@ -18,7 +18,7 @@
 //! # Quick start
 //!
 //! ```no_run
-//! use lightarchitects_quantum::QuantumClient;
+//! use lightarchitects_quantum::{QuantumClient, QuantumInvestigation};
 //!
 //! # async fn example() -> Result<(), lightarchitects_core::SdkError> {
 //! let client = QuantumClient::builder()
@@ -26,18 +26,18 @@
 //!     .build()
 //!     .await?;
 //!
-//! // Begin a forensic investigation
-//! let evidence = client.scan("auth token refresh intermittent failures").await?;
-//! println!("{}", evidence.output);
-//!
-//! // Form and verify a hypothesis
-//! let theory = client.theorize("clock skew causing JWT expiry errors", None).await?;
-//! let verdict = client.verify("clock skew is the root cause").await?;
-//! println!("{}", verdict.output);
-//!
-//! // Close the investigation
-//! let report = client.close("Clock skew confirmed — NTP drift on node-3").await?;
+//! // Stateful investigation via QuantumInvestigation
+//! let mut inv = QuantumInvestigation::new(&client, "auth token refresh failures");
+//! inv.triage().await?;
+//! inv.sweep().await?;
+//! inv.theorize(None).await?;
+//! inv.verify("clock skew is the root cause").await?;
+//! let report = inv.close("NTP drift confirmed — clock skew on node-3").await?;
 //! println!("{}", report.output);
+//!
+//! // Or call client methods directly
+//! let evidence = client.triage("unexpected 502s on gateway").await?;
+//! println!("{}", evidence.output);
 //! # Ok(()) }
 //! ```
 
@@ -45,10 +45,13 @@
 pub mod actions;
 mod client;
 mod content;
+/// Stateful driver for the QUANTUM forensic investigation lifecycle.
+pub mod investigation;
 mod types;
 
 // ── Public API surface ────────────────────────────────────────────────────────
 
 pub use actions::QuantumAction;
 pub use client::{QuantumClient, QuantumClientBuilder};
+pub use investigation::{InvestigationPhase, QuantumInvestigation};
 pub use types::ActionOutput;

@@ -66,6 +66,14 @@ impl<T: Transport> QuantumClient<T> {
         }
     }
 
+    /// Wrap an existing [`McpClient`].
+    ///
+    /// Use this to reuse a connection already managed by an `McpManager`.
+    /// The `McpClient` is `Clone`, so the original connection remains valid.
+    pub fn from_client(inner: McpClient<T>) -> Self {
+        Self { inner }
+    }
+
     // ── Investigation cycle actions ─────────────────────────────────────────────
 
     /// Begin an initial evidence scan for `subject`.
@@ -77,9 +85,30 @@ impl<T: Transport> QuantumClient<T> {
     /// # Errors
     ///
     /// Returns an error if the transport fails or QUANTUM rejects the request.
+    /// Alias for [`QuantumClient::triage`] — preserved for backward compatibility.
+    ///
+    /// Prefer `triage()` in new code. Both methods call the `triage` action
+    /// (the server-side `scan` alias is accepted but deprecated).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or QUANTUM rejects the request.
+    #[deprecated(since = "0.2.0", note = "use `triage()` instead")]
     pub async fn scan(&self, subject: &str) -> Result<ActionOutput, SdkError> {
+        self.triage(subject).await
+    }
+
+    /// Phase 1 — initial evidence discovery (`triage`).
+    ///
+    /// Entry point of the QUANTUM investigation cycle. Collects first-pass
+    /// evidence from logs, helix data, and available signals for `subject`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or QUANTUM rejects the request.
+    pub async fn triage(&self, subject: &str) -> Result<ActionOutput, SdkError> {
         let params = serde_json::json!({
-            "action": "scan",
+            "action": "triage",
             "params": { "subject": subject }
         });
         let raw = self.inner.call_tool("qsTools", params).await?;
@@ -428,5 +457,33 @@ impl QuantumClientBuilder {
         };
         let transport = StdioTransport::connect(SiblingId::Quantum, &path, self.timeout).await?;
         Ok(QuantumClient::from_transport(transport, self.retry))
+    }
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use lightarchitects_core::{McpClient, MockTransport, RetryConfig};
+
+    use crate::QuantumClient;
+
+    /// `from_client` routes `research()` through the mock transport.
+    #[tokio::test]
+    async fn from_client_research_parses_prose_response() {
+        let payload = serde_json::json!({
+            "content": [{ "type": "text", "text": "Investigation complete: Rust ownership is safe." }],
+            "isError": false
+        });
+        let transport = MockTransport::ok(payload);
+        let inner = McpClient::new(transport, RetryConfig::default());
+        let quantum = QuantumClient::from_client(inner);
+
+        let result = quantum.research("Rust ownership").await.expect("mock ok");
+        assert!(
+            result.output.contains("Investigation complete"),
+            "got: {}",
+            result.output
+        );
     }
 }

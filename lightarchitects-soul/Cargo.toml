@@ -17,6 +17,7 @@ tokio = { workspace = true }
 
 [dev-dependencies]
 tokio-test = { workspace = true }
+lightarchitects-core = { path = "../lightarchitects-core", features = ["test-utils"] }
 
 [lints]
 workspace = true

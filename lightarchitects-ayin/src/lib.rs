@@ -50,6 +50,13 @@ pub use conversation::ConversationTracer;
 #[cfg(feature = "conversations")]
 pub use conversation::{ConversationError, PivotCheckResult, PivotRecord, PivotState, ToolRecord};
 
+// ── HTTP client (feature-gated) ───────────────────────────────────────────────
+
+#[cfg(feature = "http-client")]
+mod client;
+#[cfg(feature = "http-client")]
+pub use client::{AyinClient, SessionEntry, SessionList, SpanList, SpanRecord};
+
 use lightarchitects_core::error::SdkError;
 use lightarchitects_core::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 use lightarchitects_core::transport::Transport;

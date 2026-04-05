@@ -15,6 +15,8 @@
 //! lightarchitects-arena train --method sft --data ./training-data/
 //! ```
 
+/// AYIN trace → SFT exporter (reads real session traces, emits ChatML JSONL).
+pub mod ayin_exporter;
 /// Arena configuration parsing and validation.
 pub mod config;
 /// MCP server auto-discovery and tool registry.

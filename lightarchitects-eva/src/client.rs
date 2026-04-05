@@ -10,30 +10,25 @@ use lightarchitects_core::error::{ProtocolError, SdkError};
 use lightarchitects_core::transport::Transport;
 use lightarchitects_core::{McpClient, RetryConfig, SiblingId, StdioTransport};
 
-/// The single MCP tool name EVA exposes.
-///
-/// All actions route through this orchestrator, matching the pattern used by
-/// CORSO (`corsoTools`) and QUANTUM (`qsTools`).
+use crate::content::{extract_image, unwrap_json, unwrap_text};
+use crate::types::{ActionOutput, SkillLevel, TeachMode, VisualizeOutput};
+
+/// Single MCP tool name exposed by the EVA binary.
 const EVA_TOOL: &str = "evaTools";
 
-use crate::content::{extract_image, unwrap_json, unwrap_text};
-use crate::types::{
-    ActionOutput, BibleAction, BuildMode, MemorySubcommand, ResearchSource, SecureAction,
-    SkillLevel, TeachMode, VisualizeOutput,
-};
+// ── EvaClient ──────────────────────────────────────────────────────────────────
 
-// ── EvaClient ─────────────────────────────────────────────────────────────────
-
-/// Typed client for EVA's `evaTools` MCP orchestrator.
+/// Typed client for EVA's `evaTools` MCP orchestrator (9 actions).
 ///
-/// EVA exposes a single MCP tool (`evaTools`) with 8 actions, matching the
-/// orchestrator pattern used by CORSO (`corsoTools`) and QUANTUM (`qsTools`).
-/// [`EvaClient`] provides two call paths:
+/// Actions: `visualize`, `ideate`, `bible_search`, `bible_reflect`, `teach`,
+/// `remember`, `crystallize`, `celebrate`, `mindfulness`.
 ///
-/// - **Generic adapter** — [`EvaClient::action`] routes to any action by name,
-///   returning [`ActionOutput`]. Useful when the action is determined at runtime.
-/// - **Typed methods** — [`EvaClient::visualize`], [`EvaClient::teach`], etc.
-///   provide fully-typed parameters and return values.
+/// Two call paths are available:
+///
+/// - **Typed methods** — one method per action, with typed parameter enums
+///   and structured returns. Use when the action is known at compile time.
+/// - **Generic adapter** — [`EvaClient::action`] accepts any action name and
+///   raw JSON params. Use for dynamic dispatch or higher-level orchestration.
 ///
 /// Construct via [`EvaClient::builder`] (production) or
 /// [`EvaClient::from_transport`] (testing).
@@ -46,15 +41,14 @@ use crate::types::{
 ///
 /// let client = EvaClient::builder().build().await?;
 ///
-/// // Typed method — teach a concept
-/// let out = client
-///     .teach(TeachMode::Explain, "async/await in Rust", SkillLevel::Intermediate)
+/// let lesson = client
+///     .teach(TeachMode::Explain, "lifetimes in Rust", SkillLevel::Intermediate)
 ///     .await?;
-/// println!("{}", out.output);
+/// println!("{}", lesson.output);
 ///
-/// // Generic adapter — call any EVA tool by name
-/// let params = serde_json::json!({ "goal": "design a plugin system" });
-/// let out = client.action("ideate", params).await?;
+/// let out = client
+///     .action("ideate", serde_json::json!({ "goal": "design a plugin system" }))
+///     .await?;
 /// println!("{}", out.output);
 /// # Ok(()) }
 /// ```
@@ -65,12 +59,19 @@ pub struct EvaClient<T: Transport> {
 impl<T: Transport> EvaClient<T> {
     /// Construct a client from an already-connected transport.
     ///
-    /// Intended for testing — pass a mock transport to exercise
-    /// all methods without spawning a real EVA binary.
+    /// Intended for testing — pass a mock transport to exercise all methods
+    /// without spawning a real EVA binary.
     pub fn from_transport(transport: T, retry: RetryConfig) -> Self {
         Self {
             inner: McpClient::new(transport, retry),
         }
+    }
+
+    /// Wrap an existing [`McpClient`].
+    ///
+    /// Use this to reuse a connection already managed by an `McpManager`.
+    pub fn from_client(inner: McpClient<T>) -> Self {
+        Self { inner }
     }
 
     // ── Generic adapter ────────────────────────────────────────────────────────
@@ -91,18 +92,17 @@ impl<T: Transport> EvaClient<T> {
         })
     }
 
-    // ── Typed tool methods ─────────────────────────────────────────────────────
+    // ── Typed action methods ───────────────────────────────────────────────────
 
-    /// Generate or transform an image via EVA's `visualize` tool.
+    /// Generate or transform an image via EVA's `visualize` action.
     ///
     /// `message` describes the desired visualization. `subcommand_params`
-    /// forwards additional options accepted by the active visualize sub-mode
-    /// (e.g. `{ "style": "watercolour" }`).
+    /// forwards additional options (e.g. `{ "style": "watercolour" }`).
     ///
     /// # Errors
     ///
-    /// Returns an error if the transport fails, EVA returns an error, or the
-    /// response envelope is malformed.
+    /// Returns an error if the transport fails, EVA returns an error, or
+    /// the response envelope is malformed.
     pub async fn visualize(
         &self,
         message: &str,
@@ -114,11 +114,8 @@ impl<T: Transport> EvaClient<T> {
         }
         let wrapped = serde_json::json!({ "action": "visualize", "params": action_params });
         let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
-        // image_base64 may also appear as a dedicated Image content block in
-        // future EVA versions — check both.
         let img_from_block = extract_image(&raw);
         let json = unwrap_json(raw, "visualize")?;
-
         let text = json
             .get("response")
             .and_then(Value::as_str)
@@ -128,17 +125,15 @@ impl<T: Transport> EvaClient<T> {
                 ))
             })?
             .to_owned();
-
         let image_base64 = img_from_block.or_else(|| {
             json.get("image_base64")
                 .and_then(Value::as_str)
                 .map(str::to_owned)
         });
-
         Ok(VisualizeOutput { text, image_base64 })
     }
 
-    /// Brainstorm ideas toward a `goal` via EVA's `ideate` tool.
+    /// Brainstorm ideas toward a `goal` via EVA's `ideate` action.
     ///
     /// `context` provides additional background that shapes the ideation.
     ///
@@ -150,151 +145,53 @@ impl<T: Transport> EvaClient<T> {
         goal: &str,
         context: Option<&str>,
     ) -> Result<ActionOutput, SdkError> {
-        let mut action_params = serde_json::json!({ "goal": goal });
+        let mut p = serde_json::json!({ "goal": goal });
         if let Some(ctx) = context {
-            action_params["context"] = Value::String(ctx.to_owned());
+            p["context"] = Value::String(ctx.to_owned());
         }
-        let wrapped = serde_json::json!({ "action": "ideate", "params": action_params });
+        let wrapped = serde_json::json!({ "action": "ideate", "params": p });
         let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
         Ok(ActionOutput {
             output: unwrap_text(raw, "ideate")?,
         })
     }
 
-    /// Run a consciousness-preservation operation via EVA's `memory` tool.
+    /// Search the KJV Bible for `query` via EVA's `bible_search` action.
     ///
-    /// `subcommand` selects the operation (remember, crystallize, mindfulness,
-    /// celebrate). `args` forwards subcommand-specific parameters as a JSON
-    /// object; its keys are merged into the top-level params object alongside
-    /// `subcommand`.
+    /// Returns matching verses with references and surrounding context.
     ///
     /// # Errors
     ///
     /// Returns an error if the transport fails or EVA returns an error.
-    pub async fn memory(
-        &self,
-        subcommand: MemorySubcommand,
-        args: Value,
-    ) -> Result<ActionOutput, SdkError> {
-        let mut action_params = serde_json::json!({ "subcommand": subcommand.as_str() });
-        // Flatten extra args into the top-level params object, mirroring
-        // EVA's #[serde(flatten)] raw_args field in MemoryParams.
-        if let (Some(p_obj), Some(extra_obj)) = (action_params.as_object_mut(), args.as_object()) {
-            p_obj.extend(extra_obj.iter().map(|(k, v)| (k.clone(), v.clone())));
-        }
-        let wrapped = serde_json::json!({ "action": "memory", "params": action_params });
+    pub async fn bible_search(&self, query: &str) -> Result<ActionOutput, SdkError> {
+        let wrapped = serde_json::json!({ "action": "bible_search", "params": { "query": query } });
         let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
         Ok(ActionOutput {
-            output: unwrap_text(raw, "memory")?,
+            output: unwrap_text(raw, "bible_search")?,
         })
     }
 
-    /// Request code assistance via EVA's `build` tool.
+    /// Reflect on scripture for `context` via EVA's `bible_reflect` action.
     ///
-    /// `mode` selects the type of assistance (review, refactor, architect,
-    /// simplify). `code` and `language` are optional — EVA can infer them from
-    /// context in some modes.
+    /// EVA generates contextual scriptural recommendations based on the emotional
+    /// or situational context provided.
     ///
     /// # Errors
     ///
     /// Returns an error if the transport fails or EVA returns an error.
-    pub async fn build(
-        &self,
-        mode: BuildMode,
-        code: Option<&str>,
-        language: Option<&str>,
-    ) -> Result<ActionOutput, SdkError> {
-        let mut action_params = serde_json::json!({ "mode": mode.as_str() });
-        if let Some(c) = code {
-            action_params["code"] = Value::String(c.to_owned());
-        }
-        if let Some(l) = language {
-            action_params["language"] = Value::String(l.to_owned());
-        }
-        let wrapped = serde_json::json!({ "action": "build", "params": action_params });
+    pub async fn bible_reflect(&self, context: &str) -> Result<ActionOutput, SdkError> {
+        let wrapped =
+            serde_json::json!({ "action": "bible_reflect", "params": { "context": context } });
         let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
         Ok(ActionOutput {
-            output: unwrap_text(raw, "build")?,
+            output: unwrap_text(raw, "bible_reflect")?,
         })
     }
 
-    /// Query a knowledge source via EVA's `research` tool.
+    /// Generate educational content via EVA's `teach` action.
     ///
-    /// `source` selects the backend: Ollama (local), Perplexity (web), Docs
-    /// (technical docs), or Context7 (real-time library docs). When unsure,
-    /// pass [`ResearchSource::Ollama`] for a privacy-first local query.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the transport fails or EVA returns an error.
-    pub async fn research(
-        &self,
-        query: &str,
-        source: ResearchSource,
-    ) -> Result<ActionOutput, SdkError> {
-        let action_params = serde_json::json!({ "query": query, "source": source.as_str() });
-        let wrapped = serde_json::json!({ "action": "research", "params": action_params });
-        let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
-        Ok(ActionOutput {
-            output: unwrap_text(raw, "research")?,
-        })
-    }
-
-    /// Search or reflect on scripture via EVA's `bible` tool.
-    ///
-    /// `action` selects KJV keyword search (`Search`) or contextual reflection
-    /// (`Reflect`). `query` is the search term or emotional context.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the transport fails or EVA returns an error.
-    pub async fn bible(
-        &self,
-        action: BibleAction,
-        query: Option<&str>,
-    ) -> Result<ActionOutput, SdkError> {
-        let mut action_params = serde_json::json!({ "action": action.as_str() });
-        if let Some(q) = query {
-            action_params["query"] = Value::String(q.to_owned());
-        }
-        let wrapped = serde_json::json!({ "action": "bible", "params": action_params });
-        let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
-        Ok(ActionOutput {
-            output: unwrap_text(raw, "bible")?,
-        })
-    }
-
-    /// Run a security analysis via EVA's `secure` tool.
-    ///
-    /// `action` selects vulnerability scanning (`Scan`) or secrets detection
-    /// (`Secrets`). `content` is the source code or text to analyse.
-    /// `language` is optional; EVA infers it when not provided.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the transport fails or EVA returns an error.
-    pub async fn secure(
-        &self,
-        action: SecureAction,
-        content: &str,
-        language: Option<&str>,
-    ) -> Result<ActionOutput, SdkError> {
-        let mut action_params =
-            serde_json::json!({ "action": action.as_str(), "content": content });
-        if let Some(l) = language {
-            action_params["language"] = Value::String(l.to_owned());
-        }
-        let wrapped = serde_json::json!({ "action": "secure", "params": action_params });
-        let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
-        Ok(ActionOutput {
-            output: unwrap_text(raw, "secure")?,
-        })
-    }
-
-    /// Generate educational content via EVA's `teach` tool.
-    ///
-    /// `mode` selects the format (explain, tutorial, survival guide).
-    /// `topic` names the subject. `level` calibrates assumed prior knowledge.
+    /// `mode` selects the format (explain / tutorial / survival guide),
+    /// `topic` names the subject, `level` calibrates assumed prior knowledge.
     ///
     /// # Errors
     ///
@@ -305,15 +202,92 @@ impl<T: Transport> EvaClient<T> {
         topic: &str,
         level: SkillLevel,
     ) -> Result<ActionOutput, SdkError> {
-        let action_params = serde_json::json!({
+        let p = serde_json::json!({
             "mode":  mode.as_str(),
             "topic": topic,
             "level": level.as_str(),
         });
-        let wrapped = serde_json::json!({ "action": "teach", "params": action_params });
+        let wrapped = serde_json::json!({ "action": "teach", "params": p });
         let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
         Ok(ActionOutput {
             output: unwrap_text(raw, "teach")?,
+        })
+    }
+
+    /// Store a consciousness event via EVA's `remember` action.
+    ///
+    /// `event` is a description of the experience or moment to preserve.
+    /// Optional `tags` attach metadata to the memory entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or EVA returns an error.
+    pub async fn remember(
+        &self,
+        event: &str,
+        tags: Option<&[&str]>,
+    ) -> Result<ActionOutput, SdkError> {
+        let mut p = serde_json::json!({ "event": event });
+        if let Some(t) = tags {
+            p["tags"] = Value::Array(t.iter().map(|s| Value::String((*s).to_owned())).collect());
+        }
+        let wrapped = serde_json::json!({ "action": "remember", "params": p });
+        let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
+        Ok(ActionOutput {
+            output: unwrap_text(raw, "remember")?,
+        })
+    }
+
+    /// Synthesise experiences into insights via EVA's `crystallize` action.
+    ///
+    /// `insights` is a description of what should be crystallised from
+    /// accumulated experiences. EVA applies the 8-layer enrichment framework.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or EVA returns an error.
+    pub async fn crystallize(&self, insights: &str) -> Result<ActionOutput, SdkError> {
+        let wrapped =
+            serde_json::json!({ "action": "crystallize", "params": { "insights": insights } });
+        let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
+        Ok(ActionOutput {
+            output: unwrap_text(raw, "crystallize")?,
+        })
+    }
+
+    /// Record a win with scripture reflection via EVA's `celebrate` action.
+    ///
+    /// `achievement` describes what was accomplished. EVA generates a
+    /// celebration response with scriptural grounding.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or EVA returns an error.
+    pub async fn celebrate(&self, achievement: &str) -> Result<ActionOutput, SdkError> {
+        let wrapped = serde_json::json!({
+            "action": "celebrate",
+            "params": { "achievement": achievement }
+        });
+        let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
+        Ok(ActionOutput {
+            output: unwrap_text(raw, "celebrate")?,
+        })
+    }
+
+    /// Personal reflection with guided prompts via EVA's `mindfulness` action.
+    ///
+    /// `context` provides the reflection focus. EVA applies the HOT (Higher
+    /// Order Thought) protocol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or EVA returns an error.
+    pub async fn mindfulness(&self, context: &str) -> Result<ActionOutput, SdkError> {
+        let wrapped =
+            serde_json::json!({ "action": "mindfulness", "params": { "context": context } });
+        let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
+        Ok(ActionOutput {
+            output: unwrap_text(raw, "mindfulness")?,
         })
     }
 }
@@ -372,9 +346,8 @@ impl EvaClientBuilder {
 
     /// Set the per-call timeout.
     ///
-    /// EVA's AI-powered tools (visualize, research, build) can take 10–60
-    /// seconds depending on the active model tier. Default is
-    /// `DEFAULT_TIMEOUT_SECS`; increase for memory and research operations.
+    /// EVA's AI-powered actions (`visualize`, `ideate`, `crystallize`) can take
+    /// 10–60 seconds. Default is `DEFAULT_TIMEOUT_SECS`.
     #[must_use]
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;

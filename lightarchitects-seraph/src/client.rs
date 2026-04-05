@@ -281,7 +281,7 @@ impl<T: Transport> SeraphClient<T> {
     /// Returns an error if the transport fails or SERAPH rejects the request.
     pub async fn start_investigation(&self, target: &str) -> Result<ActionOutput, SdkError> {
         let params = serde_json::json!({
-            "action": "start",
+            "action": "investigate_start",
             "params": { "target": target }
         });
         let raw = self.inner.call_tool("penTools", params).await?;
@@ -297,7 +297,7 @@ impl<T: Transport> SeraphClient<T> {
     /// Returns an error if the transport fails or SERAPH rejects the request.
     pub async fn advance_investigation(&self, finding: &str) -> Result<ActionOutput, SdkError> {
         let params = serde_json::json!({
-            "action": "advance",
+            "action": "investigate_advance",
             "params": { "finding": finding }
         });
         let raw = self.inner.call_tool("penTools", params).await?;
@@ -313,7 +313,7 @@ impl<T: Transport> SeraphClient<T> {
     /// Returns an error if the transport fails or SERAPH rejects the request.
     pub async fn close_investigation(&self) -> Result<ActionOutput, SdkError> {
         let params = serde_json::json!({
-            "action": "close",
+            "action": "investigate_close",
             "params": {}
         });
         let raw = self.inner.call_tool("penTools", params).await?;
@@ -329,7 +329,7 @@ impl<T: Transport> SeraphClient<T> {
     /// Returns an error if the transport fails or SERAPH rejects the request.
     pub async fn report(&self) -> Result<ActionOutput, SdkError> {
         let params = serde_json::json!({
-            "action": "report",
+            "action": "investigate_report",
             "params": {}
         });
         let raw = self.inner.call_tool("penTools", params).await?;

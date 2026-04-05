@@ -90,9 +90,12 @@ pub mod core {
 #[cfg(feature = "soul")]
 pub mod soul {
     pub use lightarchitects_soul::{
-        ConverseResult, HealthReport, HelixBuilder, HelixEntry, LinksResult, NoteContent,
-        NoteEntry, NoteList, NoteWritten, QueryBuilder, QueryResult, RelateResult, SearchHit,
-        SoulClient, SoulClientBuilder, SpeakResult, StatsReport, TagSyncReport, ValidateReport,
+        ChatMessage, ChatResult, ConvergenceEntry, ConvergenceResult, ConverseResult,
+        FrontmatterMatch, HealthReport, HelixBuilder, HelixEntry, IngestResult, LinksResult,
+        ManifestContent, NoteContent, NoteEntry, NoteList, NoteWritten, QueryBuilder,
+        QueryFrontmatterResult, QueryHit, QueryResult, RawQueryResult, RelateResult,
+        ResearchResult, SearchHit, SoulClient, SoulClientBuilder, SpeakResult, StatsReport,
+        TagSyncReport, ValidateReport,
     };
 }
 
@@ -114,8 +117,7 @@ pub mod corso {
 #[cfg(feature = "eva")]
 pub mod eva {
     pub use lightarchitects_eva::{
-        ActionOutput, BibleAction, BuildMode, EvaClient, EvaClientBuilder, MemorySubcommand,
-        ResearchSource, SecureAction, SkillLevel, TeachMode, VisualizeOutput,
+        ActionOutput, EvaClient, EvaClientBuilder, SkillLevel, TeachMode, VisualizeOutput,
     };
 }
 
@@ -124,7 +126,9 @@ pub mod eva {
 /// QUANTUM investigation-toolkit client (requires `quantum` feature).
 #[cfg(feature = "quantum")]
 pub mod quantum {
-    pub use lightarchitects_quantum::{ActionOutput, QuantumClient, QuantumClientBuilder};
+    pub use lightarchitects_quantum::{
+        ActionOutput, InvestigationPhase, QuantumClient, QuantumClientBuilder, QuantumInvestigation,
+    };
 }
 
 // ── SERAPH ────────────────────────────────────────────────────────────────────
@@ -132,13 +136,26 @@ pub mod quantum {
 /// SERAPH pentest-orchestration client (requires `seraph` feature).
 #[cfg(feature = "seraph")]
 pub mod seraph {
-    pub use lightarchitects_seraph::{ActionOutput, SeraphClient, SeraphClientBuilder, Wing};
+    pub use lightarchitects_seraph::{
+        ActionOutput, EngagementPhase, SeraphClient, SeraphClientBuilder, SeraphEngagement, Wing,
+    };
 }
 
 // ── AYIN ─────────────────────────────────────────────────────────────────────
 
 /// AYIN observability transport wrapper (requires `ayin` feature).
+///
+/// The `ayin` feature provides [`ObservableTransport`] for instrumenting MCP calls.
+/// The `ayin-http` feature additionally provides [`AyinClient`] for querying the
+/// AYIN viewer REST API at `localhost:3742`.
 #[cfg(feature = "ayin")]
 pub mod ayin {
     pub use lightarchitects_ayin::ObservableTransport;
+
+    /// HTTP client for the AYIN viewer REST API (requires `ayin-http` feature).
+    ///
+    /// Queries `GET /api/sessions` and `GET /api/spans/:actor/:date` on the AYIN
+    /// viewer running at `localhost:3742`.
+    #[cfg(feature = "ayin-http")]
+    pub use lightarchitects_ayin::{AyinClient, SessionEntry, SessionList, SpanList, SpanRecord};
 }

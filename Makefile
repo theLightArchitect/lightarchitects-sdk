@@ -24,6 +24,7 @@ deploy: quality ## Quality gates + build + deploy gateway to ~/.lightarchitects/
 	cargo build --release -p lightarchitects-gateway
 	mkdir -p "$(dir $(GATEWAY_BIN))"
 	cp target/release/lightarchitects "$(GATEWAY_BIN)"
+	codesign --force --sign - "$(GATEWAY_BIN)"
 	@printf '{\n  "mcpServers": {\n    "lightarchitects": {\n      "command": "%s"\n    }\n  }\n}\n' \
 		"$(HOME)/.lightarchitects/bin/lightarchitects" \
 		> "$(HOME)/.lightarchitects/lightarchitects.mcp.json"
@@ -34,6 +35,7 @@ deploy-fast: ## Build + deploy gateway without quality gates
 	cargo build --release -p lightarchitects-gateway
 	mkdir -p "$(dir $(GATEWAY_BIN))"
 	cp target/release/lightarchitects "$(GATEWAY_BIN)"
+	codesign --force --sign - "$(GATEWAY_BIN)"
 	@printf '{\n  "mcpServers": {\n    "lightarchitects": {\n      "command": "%s"\n    }\n  }\n}\n' \
 		"$(HOME)/.lightarchitects/bin/lightarchitects" \
 		> "$(HOME)/.lightarchitects/lightarchitects.mcp.json"

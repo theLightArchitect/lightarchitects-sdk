@@ -2,8 +2,7 @@
 //!
 //! EVA's MCP wire format wraps every tool result in the standard content-block
 //! envelope: `{"content": [{"type": "text", "text": "..."}], "isError": false}`.
-//! The `text` field always contains `serde_json::to_string_pretty(&result)` —
-//! the full JSON result struct from EVA's orchestrator.
+//! The `text` field always contains the prose or JSON string from EVA's orchestrator.
 //!
 //! Each test pushes a pre-baked response, calls the typed client method, and
 //! asserts on the returned value.
@@ -15,10 +14,7 @@ use std::time::Duration;
 use lightarchitects_core::jsonrpc::{JsonRpcError, JsonRpcResponse};
 use lightarchitects_core::transport::Transport;
 use lightarchitects_core::{JsonRpcRequest, RetryConfig, SdkError};
-use lightarchitects_eva::{
-    BibleAction, BuildMode, EvaClient, MemorySubcommand, ResearchSource, SecureAction, SkillLevel,
-    TeachMode,
-};
+use lightarchitects_eva::{EvaClient, SkillLevel, TeachMode};
 
 // ── MockTransport ─────────────────────────────────────────────────────────────
 
@@ -176,141 +172,97 @@ async fn ideate_with_context() {
     assert_eq!(out.output, "contextual brainstorm result");
 }
 
-// ── memory ────────────────────────────────────────────────────────────────────
+// ── remember ──────────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn memory_remember_returns_output() {
+async fn remember_returns_output() {
     let mock = MockTransport::default();
     mock.push_text(r#"{"stored": true, "entry_id": "abc"}"#);
 
     let out = client(mock)
-        .memory(
-            MemorySubcommand::Remember,
-            serde_json::json!({ "content": "Today I learned about lifetimes." }),
-        )
+        .remember("Today I learned about lifetimes.", None)
         .await
         .unwrap();
     assert!(out.output.contains("stored"));
 }
 
 #[tokio::test]
-async fn memory_crystallize_returns_output() {
+async fn remember_with_tags() {
+    let mock = MockTransport::default();
+    mock.push_text("tagged entry stored");
+
+    let out = client(mock)
+        .remember("breakthrough on async", Some(&["rust", "async"]))
+        .await
+        .unwrap();
+    assert!(out.output.contains("tagged"));
+}
+
+// ── crystallize ───────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn crystallize_returns_output() {
     let mock = MockTransport::default();
     mock.push_text("crystallized entry");
 
     let out = client(mock)
-        .memory(MemorySubcommand::Crystallize, serde_json::Value::Null)
+        .crystallize("Key insight: ownership prevents data races.")
         .await
         .unwrap();
     assert_eq!(out.output, "crystallized entry");
 }
 
-// ── build ─────────────────────────────────────────────────────────────────────
+// ── celebrate ─────────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn build_review_returns_output() {
+async fn celebrate_returns_output() {
     let mock = MockTransport::default();
-    mock.push_text("Code looks clean. No `.unwrap()` calls found.");
+    mock.push_text("Well done! Another milestone reached.");
 
     let out = client(mock)
-        .build(
-            BuildMode::Review,
-            Some("fn foo() -> i32 { 42 }"),
-            Some("rust"),
-        )
+        .celebrate("First 1000 users milestone")
         .await
         .unwrap();
-    assert!(out.output.contains("clean"));
+    assert!(out.output.contains("milestone"));
 }
+
+// ── mindfulness ───────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn build_without_code_or_language() {
+async fn mindfulness_returns_output() {
     let mock = MockTransport::default();
-    mock.push_text("Architecture looks reasonable.");
+    mock.push_text("Take a breath. The code will wait.");
 
     let out = client(mock)
-        .build(BuildMode::Architect, None, None)
+        .mindfulness("feeling overwhelmed with the refactor")
         .await
         .unwrap();
-    assert!(out.output.contains("Architecture"));
+    assert!(out.output.contains("breath"));
 }
 
-// ── research ──────────────────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn research_ollama_returns_output() {
-    let mock = MockTransport::default();
-    mock.push_text(r#"{"answer": "Lifetimes prevent dangling references."}"#);
-
-    let out = client(mock)
-        .research("what are Rust lifetimes?", ResearchSource::Ollama)
-        .await
-        .unwrap();
-    assert!(out.output.contains("Lifetimes"));
-}
-
-#[tokio::test]
-async fn research_context7_returns_output() {
-    let mock = MockTransport::default();
-    mock.push_text("Context7 doc result for tokio");
-
-    let out = client(mock)
-        .research("tokio runtime docs", ResearchSource::Context7)
-        .await
-        .unwrap();
-    assert!(out.output.contains("tokio"));
-}
-
-// ── bible ─────────────────────────────────────────────────────────────────────
+// ── bible_search ──────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn bible_search_returns_verse() {
     let mock = MockTransport::default();
     mock.push_text(r#"{"verse": "John 3:16", "text": "For God so loved..."}"#);
 
-    let out = client(mock)
-        .bible(BibleAction::Search, Some("God so loved"))
-        .await
-        .unwrap();
+    let out = client(mock).bible_search("God so loved").await.unwrap();
     assert!(out.output.contains("John 3:16"));
 }
 
+// ── bible_reflect ─────────────────────────────────────────────────────────────
+
 #[tokio::test]
-async fn bible_reflect_without_query() {
+async fn bible_reflect_returns_output() {
     let mock = MockTransport::default();
     mock.push_text("Scripture for recovery: Psalm 23.");
 
     let out = client(mock)
-        .bible(BibleAction::Reflect, None)
+        .bible_reflect("feeling anxious about the deadline")
         .await
         .unwrap();
     assert!(out.output.contains("Psalm 23"));
-}
-
-// ── secure ────────────────────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn secure_scan_returns_findings() {
-    let mock = MockTransport::default();
-    mock.push_text(r#"{"findings": [], "severity": "none"}"#);
-
-    let out = client(mock)
-        .secure(SecureAction::Scan, "fn foo() { let x = 1; }", Some("rust"))
-        .await
-        .unwrap();
-    assert!(out.output.contains("findings"));
-}
-
-#[tokio::test]
-async fn secure_secrets_without_language() {
-    let mock = MockTransport::default();
-    mock.push_text("No hardcoded secrets found.");
-
-    let out = client(mock)
-        .secure(SecureAction::Secrets, "API_KEY=test-only", None)
-        .await
-        .unwrap();
-    assert!(out.output.contains("No hardcoded"));
 }
 
 // ── teach ─────────────────────────────────────────────────────────────────────
@@ -376,28 +328,19 @@ async fn teach_tool_error_propagates() {
 }
 
 #[tokio::test]
-async fn research_rpc_error_propagates() {
+async fn bible_search_rpc_error_propagates() {
     let mock = MockTransport::default();
     mock.push_rpc_error(-32_601, "method not found");
 
-    let err = client(mock)
-        .research("anything", ResearchSource::Perplexity)
-        .await
-        .unwrap_err();
+    let err = client(mock).bible_search("anything").await.unwrap_err();
     assert!(matches!(err, SdkError::Protocol(_)));
 }
 
 #[tokio::test]
-async fn memory_tool_error_carries_tool_name() {
+async fn remember_tool_error_carries_tool_name() {
     let mock = MockTransport::default();
     mock.push_tool_error("vault write failed");
 
-    let err = client(mock)
-        .memory(MemorySubcommand::Celebrate, serde_json::Value::Null)
-        .await
-        .unwrap_err();
-    match err {
-        SdkError::Tool(e) => assert_eq!(e.tool, "memory"),
-        other => panic!("expected Tool error, got {other:?}"),
-    }
+    let err = client(mock).remember("a memory", None).await.unwrap_err();
+    assert!(matches!(err, SdkError::Tool(ref e) if e.tool == "remember"));
 }

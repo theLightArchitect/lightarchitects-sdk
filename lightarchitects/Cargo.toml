@@ -29,6 +29,11 @@ quantum = ["dep:lightarchitects-quantum"]
 seraph = ["dep:lightarchitects-seraph"]
 ## AYIN observability transport wrapper (requires `ayin` feature on `lightarchitects-ayin`).
 ayin = ["dep:lightarchitects-ayin"]
+## AYIN HTTP viewer client — adds `AyinClient` for querying the AYIN viewer REST API.
+##
+## Activates the `http-client` feature on `lightarchitects-ayin`. Requires the AYIN
+## viewer LaunchAgent to be running at `localhost:3742`.
+ayin-http = ["ayin", "lightarchitects-ayin/http-client"]
 
 [dependencies]
 ## Core wire protocol, transport, error types — always present.

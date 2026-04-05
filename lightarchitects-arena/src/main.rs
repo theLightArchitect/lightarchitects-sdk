@@ -1,10 +1,11 @@
 //! `lightarchitects-arena` CLI — plug-and-play training data factory for MCP tool-use LLMs.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
+use lightarchitects_arena::ayin_exporter::{AyinExportConfig, export_ayin_sft};
 use lightarchitects_arena::config::ArenaConfig;
 use lightarchitects_arena::discovery;
 use lightarchitects_arena::exercises::{self, GeneratorConfig};
@@ -38,6 +39,21 @@ enum Command {
         /// Path to the arena configuration YAML file.
         #[arg(short, long)]
         config: PathBuf,
+    },
+    /// Export AYIN session traces as SFT training data.
+    ExportAyin {
+        /// Output `.jsonl` path.
+        #[arg(short, long, default_value = "ayin_sft.jsonl")]
+        output: PathBuf,
+        /// Minimum tool calls per conversation example (lower = more examples).
+        #[arg(long, default_value_t = 2)]
+        min_tools: usize,
+        /// Include sibling traces that resulted in errors (skipped by default).
+        #[arg(long, default_value_t = false)]
+        include_errors: bool,
+        /// Suppress pivot reasoning from assistant turns.
+        #[arg(long, default_value_t = false)]
+        no_pivots: bool,
     },
     /// Train a model using arena-generated training data.
     Train {
@@ -89,6 +105,12 @@ fn main() -> ExitCode {
             verbose,
         } => run_pipeline(&config, dry_run, verbose),
         Command::Discover { config } => run_discover(&config),
+        Command::ExportAyin {
+            output,
+            min_tools,
+            include_errors,
+            no_pivots,
+        } => run_export_ayin(&output, min_tools, include_errors, no_pivots),
         Command::Train {
             method,
             data,
@@ -96,6 +118,42 @@ fn main() -> ExitCode {
             model,
             lora_rank,
         } => run_train(method, &data, rl_algo, model.as_deref(), lora_rank),
+    }
+}
+
+fn run_export_ayin(
+    output: &Path,
+    min_tools: usize,
+    include_errors: bool,
+    no_pivots: bool,
+) -> ExitCode {
+    let default = AyinExportConfig::default();
+    let config = AyinExportConfig {
+        output_path: output.to_path_buf(),
+        min_tool_calls: min_tools,
+        skip_error_traces: !include_errors,
+        include_pivots: !no_pivots,
+        ..default
+    };
+
+    println!(
+        "lightarchitects-arena export-ayin: reading from\n  {}\n  {}",
+        config.conversations_dir.display(),
+        config.sibling_traces_dir.display()
+    );
+
+    match export_ayin_sft(&config) {
+        Ok(count) => {
+            println!(
+                "lightarchitects-arena export-ayin: wrote {count} example(s) to {}",
+                output.display()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("lightarchitects-arena export-ayin: error: {e}");
+            ExitCode::FAILURE
+        }
     }
 }
 

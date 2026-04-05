@@ -59,6 +59,34 @@ impl<T: Transport> CorsoClient<T> {
         }
     }
 
+    /// Wrap an existing [`McpClient`].
+    ///
+    /// Use this to reuse a connection already managed by an `McpManager`.
+    /// The `McpClient` is `Clone`, so the original connection remains valid.
+    pub fn from_client(inner: McpClient<T>) -> Self {
+        Self { inner }
+    }
+
+    /// Generic action dispatch.
+    ///
+    /// Use when no typed method exists for the CORSO action you need (e.g.
+    /// `"hunt"`, `"scout"`). Returns the AI-generated prose output.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or CORSO rejects the action.
+    pub async fn action(
+        &self,
+        action: &str,
+        params: serde_json::Value,
+    ) -> Result<ActionOutput, SdkError> {
+        let wrapped = serde_json::json!({ "action": action, "params": params });
+        let raw = self.inner.call_tool("corsoTools", wrapped).await?;
+        Ok(ActionOutput {
+            output: unwrap_text(raw)?,
+        })
+    }
+
     // ── Filesystem actions ─────────────────────────────────────────────────────
 
     /// Read a file by path. Optional `encoding` selects the read mode (e.g.
@@ -615,5 +643,56 @@ impl CorsoClientBuilder {
         };
         let transport = StdioTransport::connect(SiblingId::Corso, &path, self.timeout).await?;
         Ok(CorsoClient::from_transport(transport, self.retry))
+    }
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use lightarchitects_core::{McpClient, MockTransport, RetryConfig};
+
+    use crate::CorsoClient;
+
+    /// `from_client` delegates to inner — `guard` round-trip through mock.
+    #[tokio::test]
+    async fn from_client_guard_parses_prose_response() {
+        // CORSO wraps responses in a ToolCallResult envelope: { content: [...], isError: false }
+        let payload = serde_json::json!({
+            "content": [{ "type": "text", "text": "No vulnerabilities found." }],
+            "isError": false
+        });
+        let transport = MockTransport::ok(payload);
+        let inner = McpClient::new(transport, RetryConfig::default());
+        let corso = CorsoClient::from_client(inner);
+
+        let result = corso.guard(".").await.expect("mock should succeed");
+        assert!(
+            result.output.contains("No vulnerabilities"),
+            "got: {}",
+            result.output
+        );
+    }
+
+    /// Generic `action()` escape hatch routes through corsoTools correctly.
+    #[tokio::test]
+    async fn action_escape_hatch_routes_hunt() {
+        let payload = serde_json::json!({
+            "content": [{ "type": "text", "text": "Build complete." }],
+            "isError": false
+        });
+        let transport = MockTransport::ok(payload);
+        let inner = McpClient::new(transport, RetryConfig::default());
+        let corso = CorsoClient::from_client(inner);
+
+        let result = corso
+            .action("hunt", serde_json::json!({ "cwd": "." }))
+            .await
+            .expect("mock should succeed");
+        assert!(
+            result.output.contains("Build complete"),
+            "got: {}",
+            result.output
+        );
     }
 }
