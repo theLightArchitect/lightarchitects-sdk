@@ -10,7 +10,7 @@ description = "Typed client for the SERAPH MCP server (penTools, 18 actions, Con
 
 [features]
 default = []
-ssh = ["dep:russh", "dep:zeroize", "dep:tokio"]
+ssh = ["dep:openssh", "dep:zeroize", "dep:tokio"]
 
 [lints]
 workspace = true
@@ -24,7 +24,7 @@ chrono.workspace = true
 toml.workspace = true
 
 # SSH transport for remote SERAPH instances (Khadas Edge 2 Pro)
-russh = { workspace = true, optional = true }
+openssh = { workspace = true, optional = true }
 # Zero-on-drop for SSH key material
 zeroize = { workspace = true, optional = true }
 # Async runtime for SSH session pool and exec_via_ssh

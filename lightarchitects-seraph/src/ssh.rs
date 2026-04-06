@@ -11,18 +11,25 @@
 //! ED2P LAN round-trip is ~0.3 ms so the overhead is acceptable for interactive
 //! pentest use.
 //!
+//! This module uses the [`openssh`] crate, which delegates to the system `ssh`
+//! binary and its ControlMaster multiplexing. Passphrase-protected keys are
+//! handled transparently by `ssh-agent` or the macOS Keychain — there is no
+//! inline passphrase injection hook. The [`KeyPassphraseProvider`] types remain
+//! available as standalone utilities (e.g., for other credential workflows) but
+//! are no longer wired into [`SshSession`] directly.
+//!
 //! # Key handling
 //!
-//! Private key bytes are wrapped in [`zeroize::Zeroizing`] wherever they exist
-//! in memory, ensuring the heap region is zeroed when the wrapper is dropped.
-//! Passphrase material is likewise wrapped.
+//! Private key material never passes through this crate at runtime. The system
+//! `ssh` binary handles all key loading. The [`zeroize`] dependency is retained
+//! for the [`KeyPassphraseProvider`] implementations, which zero passphrase
+//! strings on drop when used in other contexts.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use russh::ChannelMsg;
-use russh::client;
-use russh::keys::{PrivateKeyWithHashAlg, decode_secret_key};
+use openssh::{KnownHosts, SessionBuilder, Stdio};
+use tokio::io::AsyncWriteExt as _;
 use tokio::runtime::Runtime;
 use zeroize::Zeroizing;
 
@@ -34,6 +41,10 @@ use lightarchitects_core::error::SdkError;
 ///
 /// All passphrase material is returned inside [`Zeroizing<String>`] so the heap
 /// bytes are zeroed on drop regardless of the caller's error path.
+///
+/// These providers are available as standalone utilities. Note that [`SshSession`]
+/// does not accept a passphrase provider — the `openssh` crate delegates key
+/// decryption to the system `ssh-agent` or macOS Keychain.
 pub trait KeyPassphraseProvider: Send + Sync {
     /// Retrieve the passphrase.
     ///
@@ -130,16 +141,18 @@ impl KeyPassphraseProvider for CallbackPassphraseProvider {
 ///
 /// Required fields: `host`, `user`, `key_path`. Port defaults to 22.
 ///
+/// Passphrase-protected keys are decrypted by `ssh-agent` or the macOS Keychain
+/// — no inline passphrase provider is needed or accepted.
+///
 /// # Example
 ///
 /// ```no_run
-/// use lightarchitects_seraph::ssh::{SshSessionBuilder, EnvPassphraseProvider};
+/// use lightarchitects_seraph::ssh::SshSessionBuilder;
 ///
 /// let session = SshSessionBuilder::new()
 ///     .host("10.129.155.20")
 ///     .user("khadas")
-///     .key_path("/path/to/encrypted_key")
-///     .passphrase_provider(EnvPassphraseProvider::new("SERAPH_SSH_PASSPHRASE"))
+///     .key_path("/path/to/key")
 ///     .build()
 ///     .unwrap();
 /// ```
@@ -148,7 +161,6 @@ pub struct SshSessionBuilder {
     port: u16,
     user: Option<String>,
     key_path: Option<PathBuf>,
-    passphrase_provider: Option<Arc<dyn KeyPassphraseProvider>>,
 }
 
 impl Default for SshSessionBuilder {
@@ -166,7 +178,6 @@ impl SshSessionBuilder {
             port: 22,
             user: None,
             key_path: None,
-            passphrase_provider: None,
         }
     }
 
@@ -198,13 +209,6 @@ impl SshSessionBuilder {
         self
     }
 
-    /// Set a passphrase provider for encrypted SSH keys (optional).
-    #[must_use]
-    pub fn passphrase_provider(mut self, provider: impl KeyPassphraseProvider + 'static) -> Self {
-        self.passphrase_provider = Some(Arc::new(provider));
-        self
-    }
-
     /// Consume the builder and produce an [`SshSession`].
     ///
     /// # Errors
@@ -229,7 +233,6 @@ impl SshSessionBuilder {
             port: self.port,
             user,
             key_path,
-            passphrase_provider: self.passphrase_provider,
             runtime: Arc::new(runtime),
         })
     }
@@ -239,18 +242,23 @@ impl SshSessionBuilder {
 
 /// Configuration for SSH-backed remote command execution against a SERAPH host.
 ///
-/// Each call opens a fresh SSH connection. The tokio `Runtime` is shared via
-/// `Arc` across clone boundaries.
+/// Each call opens a fresh SSH connection via the system `ssh` binary (through
+/// the [`openssh`] crate's `ControlMaster` multiplexing). The tokio `Runtime` is
+/// shared via `Arc` across clone boundaries.
 ///
-/// Supports both unencrypted and passphrase-protected SSH keys. Set a
-/// [`KeyPassphraseProvider`] via [`SshSession::builder`] to unlock encrypted
-/// keys.
+/// Passphrase-protected keys are handled transparently by `ssh-agent` or the
+/// macOS Keychain. There is no inline passphrase injection — configure key
+/// access through your SSH agent before calling [`run`](SshSession::run).
+///
+/// Server host keys are accepted on first use (`StrictHostKeyChecking=no`),
+/// which is appropriate for the Khadas ED2P on a dedicated private LAN.
+/// Production deployments on public networks should pin a fingerprint via
+/// `~/.ssh/known_hosts` and use [`KnownHosts::Strict`].
 pub struct SshSession {
     host: String,
     port: u16,
     user: String,
     key_path: PathBuf,
-    passphrase_provider: Option<Arc<dyn KeyPassphraseProvider>>,
     runtime: Arc<Runtime>,
 }
 
@@ -261,10 +269,6 @@ impl std::fmt::Debug for SshSession {
             .field("port", &self.port)
             .field("user", &self.user)
             .field("key_path", &self.key_path)
-            .field(
-                "passphrase_provider",
-                &self.passphrase_provider.as_ref().map(|_| "<provider>"),
-            )
             .finish_non_exhaustive()
     }
 }
@@ -276,7 +280,7 @@ impl SshSession {
         SshSessionBuilder::new()
     }
 
-    /// Build an SSH session configuration (simple constructor, no passphrase).
+    /// Build an SSH session configuration (simple constructor).
     ///
     /// Does **not** open a connection at construction time.
     ///
@@ -296,14 +300,13 @@ impl SshSession {
             port,
             user: user.into(),
             key_path: key_path.as_ref().to_path_buf(),
-            passphrase_provider: None,
             runtime: Arc::new(runtime),
         })
     }
 
     /// Default connection parameters for the Khadas Edge 2 Pro on the dev LAN.
     ///
-    /// Key path defaults to `~/.ssh/id_ed25519`. No passphrase provider is set.
+    /// Key path defaults to `~/.ssh/id_ed25519`.
     ///
     /// # Errors
     ///
@@ -316,30 +319,22 @@ impl SshSession {
         Self::new("10.129.155.20", 22, "khadas", key_path)
     }
 
-    /// Resolve the passphrase (if a provider is configured).
-    fn resolve_passphrase(&self) -> Result<Option<Zeroizing<String>>, SdkError> {
-        match &self.passphrase_provider {
-            Some(provider) => Ok(Some(provider.get_passphrase()?)),
-            None => Ok(None),
-        }
-    }
-
     /// Run a remote shell command and return its stdout as a `String`.
     ///
     /// Opens a fresh SSH connection for the call and closes it afterwards.
     ///
     /// # Errors
     ///
-    /// Returns [`SdkError::Config`] on key load, connect, or auth failures.
+    /// Returns [`SdkError::Config`] on connect, auth, or execution failures,
+    /// or if the remote command exits with a non-zero status.
     pub fn run(&self, command: &str) -> Result<String, SdkError> {
         let host = self.host.clone();
         let port = self.port;
         let user = self.user.clone();
         let key_path = self.key_path.clone();
-        let passphrase = self.resolve_passphrase()?;
         let command = command.to_owned();
         self.runtime.block_on(async move {
-            run_via_ssh(&host, port, &user, &key_path, passphrase, &command, None).await
+            run_via_openssh(&host, port, &user, &key_path, &command, None).await
         })
     }
 
@@ -356,145 +351,80 @@ impl SshSession {
         let port = self.port;
         let user = self.user.clone();
         let key_path = self.key_path.clone();
-        let passphrase = self.resolve_passphrase()?;
         let command = command.to_owned();
         self.runtime.block_on(async move {
-            run_via_ssh(
-                &host,
-                port,
-                &user,
-                &key_path,
-                passphrase,
-                &command,
-                Some(stdin_data),
-            )
-            .await
+            run_via_openssh(&host, port, &user, &key_path, &command, Some(stdin_data)).await
         })
-    }
-}
-
-// ── Server key handler ──────────────────────────────────────────────────────
-
-/// `russh` client handler -- accepts any server key (trust-on-first-use).
-///
-/// Accepting any key is appropriate for the Khadas ED2P on a dedicated
-/// private LAN where MITM risk is negligible. Production deployments on
-/// public networks should verify against a pinned fingerprint.
-struct KhadasHandler;
-
-impl client::Handler for KhadasHandler {
-    type Error = russh::Error;
-
-    async fn check_server_key(
-        &mut self,
-        _server_public_key: &russh::keys::PublicKey,
-    ) -> Result<bool, Self::Error> {
-        Ok(true)
     }
 }
 
 // ── Async transport ─────────────────────────────────────────────────────────
 
-/// Open an SSH connection, run `command`, optionally write `stdin_data` to its
-/// stdin, close stdin, collect stdout, and return it as a `String`.
-async fn run_via_ssh(
+/// Open an SSH connection, run `command` through the remote shell, optionally
+/// write `stdin_data` to its stdin, collect stdout, and return it as a `String`.
+///
+/// Accepts any server host key (`StrictHostKeyChecking=no`) — appropriate for
+/// the Khadas ED2P on a dedicated private LAN. Production deployments on public
+/// networks should pin a fingerprint.
+async fn run_via_openssh(
     host: &str,
     port: u16,
     user: &str,
     key_path: &Path,
-    passphrase: Option<Zeroizing<String>>,
     command: &str,
     stdin_data: Option<Vec<u8>>,
 ) -> Result<String, SdkError> {
-    // Read PEM into Zeroizing<String> -- zeroed on drop even if parsing fails.
-    let key_pem = Zeroizing::new(
-        std::fs::read_to_string(key_path)
-            .map_err(|e| SdkError::Config(format!("read key at {}: {e}", key_path.display())))?,
-    );
+    let mut builder = SessionBuilder::default();
+    builder.user(user.to_owned());
+    builder.port(port);
+    builder.keyfile(key_path);
+    builder.known_hosts_check(KnownHosts::Accept);
 
-    let passphrase_str: Option<&str> = passphrase.as_deref().map(String::as_str);
-    let has_passphrase = passphrase_str.is_some();
-    let key = decode_secret_key(&key_pem, passphrase_str).map_err(|e| {
-        if has_passphrase {
-            SdkError::Config(format!(
-                "wrong passphrase for SSH key at {}",
-                key_path.display()
-            ))
-        } else {
-            SdkError::Config(format!("parse key at {}: {e}", key_path.display()))
+    let session = builder
+        .connect(host)
+        .await
+        .map_err(|e| SdkError::Config(format!("SSH connect {host}:{port}: {e}")))?;
+
+    let output = if let Some(data) = stdin_data {
+        let mut child = session
+            .shell(command)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .await
+            .map_err(|e| SdkError::Config(format!("SSH spawn: {e}")))?;
+
+        if let Some(stdin) = child.stdin().take() {
+            let mut stdin = stdin;
+            stdin
+                .write_all(&data)
+                .await
+                .map_err(|e| SdkError::Config(format!("SSH write stdin: {e}")))?;
+            // Drop stdin to signal EOF to the remote process.
+            drop(stdin);
         }
-    })?;
-    let key_with_alg = PrivateKeyWithHashAlg::new(Arc::new(key), None);
 
-    let config = Arc::new(client::Config::default());
-    let addr = (host, port);
+        child
+            .wait_with_output()
+            .await
+            .map_err(|e| SdkError::Config(format!("SSH wait: {e}")))?
+    } else {
+        session
+            .shell(command)
+            .output()
+            .await
+            .map_err(|e| SdkError::Config(format!("SSH exec: {e}")))?
+    };
 
-    let mut handle = client::connect(config, addr, KhadasHandler)
-        .await
-        .map_err(|e| SdkError::Config(format!("connect {host}:{port}: {e}")))?;
-
-    let auth_result = handle
-        .authenticate_publickey(user, key_with_alg)
-        .await
-        .map_err(|e| SdkError::Config(format!("authenticate_publickey for '{user}': {e}")))?;
-
-    if !auth_result.success() {
+    if !output.status.success() {
+        let code = output.status.code().unwrap_or(-1);
         return Err(SdkError::Config(format!(
-            "public-key auth rejected for user '{user}'"
+            "SSH command exited with code {code}"
         )));
     }
 
-    let mut channel = handle
-        .channel_open_session()
-        .await
-        .map_err(|e| SdkError::Config(format!("channel_open_session: {e}")))?;
-
-    channel
-        .exec(true, command)
-        .await
-        .map_err(|e| SdkError::Config(format!("SSH channel exec: {e}")))?;
-
-    // Pipe stdin data if provided, then signal EOF.
-    if let Some(data) = stdin_data {
-        let reader = std::io::Cursor::new(data);
-        channel
-            .data(reader)
-            .await
-            .map_err(|e| SdkError::Config(format!("write stdin: {e}")))?;
-    }
-    channel
-        .eof()
-        .await
-        .map_err(|e| SdkError::Config(format!("eof: {e}")))?;
-
-    // Collect stdout and wait for exit status.
-    let mut stdout = Vec::new();
-    let mut exit_code: Option<u32> = None;
-
-    loop {
-        match channel.wait().await {
-            Some(ChannelMsg::Data { data }) => stdout.extend_from_slice(&data),
-            Some(ChannelMsg::ExitStatus { exit_status }) => {
-                exit_code = Some(exit_status);
-            }
-            Some(ChannelMsg::Eof) | None => break,
-            _ => {}
-        }
-    }
-
-    let _ = handle
-        .disconnect(russh::Disconnect::ByApplication, "", "")
-        .await;
-
-    if let Some(code) = exit_code {
-        if code != 0 {
-            return Err(SdkError::Config(format!(
-                "SSH command exited with code {code}"
-            )));
-        }
-    }
-
-    String::from_utf8(stdout)
+    String::from_utf8(output.stdout)
         .map_err(|e| SdkError::Config(format!("stdout is not valid UTF-8: {e}")))
 }
 
@@ -519,12 +449,6 @@ mod tests {
             "SshSession construction failed: {:?}",
             session.err()
         );
-    }
-
-    #[test]
-    fn ssh_session_new_has_no_passphrase_provider() {
-        let session = SshSession::new("host", 22, "user", "/dev/null").unwrap();
-        assert!(session.passphrase_provider.is_none());
     }
 
     #[test]
@@ -598,31 +522,12 @@ mod tests {
     }
 
     #[test]
-    fn builder_with_env_provider() {
-        unsafe { std::env::set_var("_SERAPH_SDK_TEST_PP", "test-passphrase") };
-        let session = SshSession::builder()
-            .host("10.0.0.1")
-            .user("admin")
-            .key_path("/dev/null")
-            .passphrase_provider(EnvPassphraseProvider::new("_SERAPH_SDK_TEST_PP"))
-            .build()
-            .unwrap();
-        assert!(session.passphrase_provider.is_some());
-        unsafe { std::env::remove_var("_SERAPH_SDK_TEST_PP") };
-    }
-
-    #[test]
-    fn builder_with_callback_provider() {
-        let session = SshSession::builder()
-            .host("10.0.0.1")
-            .user("admin")
-            .key_path("/dev/null")
-            .passphrase_provider(CallbackPassphraseProvider::new(Box::new(|| {
-                Ok("my-passphrase".to_owned())
-            })))
-            .build()
-            .unwrap();
-        assert!(session.passphrase_provider.is_some());
+    fn builder_default_matches_new() {
+        let builder = SshSessionBuilder::default();
+        assert_eq!(builder.port, 22);
+        assert!(builder.host.is_none());
+        assert!(builder.user.is_none());
+        assert!(builder.key_path.is_none());
     }
 
     #[test]
@@ -677,38 +582,5 @@ mod tests {
         }));
         let result = provider.get_passphrase();
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn resolve_passphrase_none_when_no_provider() {
-        let session = SshSession::new("host", 22, "user", "/dev/null").unwrap();
-        let pp = session.resolve_passphrase().unwrap();
-        assert!(pp.is_none());
-    }
-
-    #[test]
-    fn resolve_passphrase_some_when_provider_set() {
-        unsafe { std::env::set_var("_SERAPH_SDK_TEST_RESOLVE", "pass123") };
-        let session = SshSession::builder()
-            .host("host")
-            .user("user")
-            .key_path("/dev/null")
-            .passphrase_provider(EnvPassphraseProvider::new("_SERAPH_SDK_TEST_RESOLVE"))
-            .build()
-            .unwrap();
-        let pp = session.resolve_passphrase().unwrap();
-        assert!(pp.is_some());
-        assert_eq!(&*pp.unwrap(), "pass123");
-        unsafe { std::env::remove_var("_SERAPH_SDK_TEST_RESOLVE") };
-    }
-
-    #[test]
-    fn builder_default_matches_new() {
-        let builder = SshSessionBuilder::default();
-        assert_eq!(builder.port, 22);
-        assert!(builder.host.is_none());
-        assert!(builder.user.is_none());
-        assert!(builder.key_path.is_none());
-        assert!(builder.passphrase_provider.is_none());
     }
 }

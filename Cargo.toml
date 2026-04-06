@@ -106,7 +106,7 @@ libc = "0.2"
 anyhow = "1"
 
 # ── SSH transport (SERAPH remote execution) ──────────────────────────────────
-russh = "0.60"
+openssh = { version = "0.11", features = ["process-mux"] }
 
 # ── Dev/test ──────────────────────────────────────────────────────────────────
 tempfile = "3"
