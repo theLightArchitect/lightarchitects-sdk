@@ -3,6 +3,8 @@
 //! These tests exercise the complete cryptographic pipeline end-to-end:
 //! pepper → derive → hash/encrypt/sign → verify.
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use lightarchitects_crypto::compare::constant_time_eq;
 use lightarchitects_crypto::derive::{
     derive_api_key, derive_encryption_key, derive_key, derive_signing_key,

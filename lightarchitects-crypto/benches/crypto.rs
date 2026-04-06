@@ -1,6 +1,6 @@
 //! Criterion benchmarks for la-crypto core operations.
 
-#![allow(missing_docs)]
+#![allow(missing_docs, clippy::expect_used, clippy::unwrap_used)]
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use lightarchitects_crypto::compare::constant_time_eq;
