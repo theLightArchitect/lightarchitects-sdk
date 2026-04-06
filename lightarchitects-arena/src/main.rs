@@ -175,7 +175,13 @@ fn run_pipeline(config_path: &std::path::Path, dry_run: bool, verbose: u8) -> Ex
 
     // Step 1: Discover tools from MCP servers.
     println!("lightarchitects-arena: discovering tools...");
-    let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("lightarchitects-arena: failed to create tokio runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
     let registry = match rt.block_on(discovery::discover_all(&arena_config.mcp_servers)) {
         Ok(r) => r,
         Err(e) => {
@@ -263,7 +269,13 @@ fn run_discover(config_path: &std::path::Path) -> ExitCode {
         arena_config.mcp_servers.len()
     );
 
-    let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("lightarchitects-arena: failed to create tokio runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
     let registry = match rt.block_on(discovery::discover_all(&arena_config.mcp_servers)) {
         Ok(r) => r,
         Err(e) => {

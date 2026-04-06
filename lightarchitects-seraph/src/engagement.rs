@@ -154,7 +154,9 @@ impl<'a, T: Transport> SeraphEngagement<'a, T> {
         let out = self.client.start_investigation(&self.target).await?;
         self.findings.push(out);
         self.phase = EngagementPhase::Started;
-        Ok(self.findings.last().expect("just pushed"))
+        self.findings
+            .last()
+            .ok_or_else(|| SdkError::Config("findings unexpectedly empty after push".to_owned()))
     }
 
     /// Advance the investigation with a new `finding` (`investigate_advance`).
@@ -187,7 +189,9 @@ impl<'a, T: Transport> SeraphEngagement<'a, T> {
         let out = self.client.advance_investigation(finding).await?;
         self.findings.push(out);
         self.phase = EngagementPhase::Advancing { step_count };
-        Ok(self.findings.last().expect("just pushed"))
+        self.findings
+            .last()
+            .ok_or_else(|| SdkError::Config("findings unexpectedly empty after push".to_owned()))
     }
 
     /// Close the investigation (`investigate_close`).
@@ -211,7 +215,9 @@ impl<'a, T: Transport> SeraphEngagement<'a, T> {
         let out = self.client.close_investigation().await?;
         self.findings.push(out);
         self.phase = EngagementPhase::Closed;
-        Ok(self.findings.last().expect("just pushed"))
+        self.findings
+            .last()
+            .ok_or_else(|| SdkError::Config("findings unexpectedly empty after push".to_owned()))
     }
 
     /// Generate the final engagement report (`investigate_report`).
@@ -232,7 +238,9 @@ impl<'a, T: Transport> SeraphEngagement<'a, T> {
         let out = self.client.report().await?;
         self.findings.push(out);
         self.phase = EngagementPhase::Reported;
-        Ok(self.findings.last().expect("just pushed"))
+        self.findings
+            .last()
+            .ok_or_else(|| SdkError::Config("findings unexpectedly empty after push".to_owned()))
     }
 }
 

@@ -12,7 +12,7 @@
 //! SERAPH scope is written to `~/.seraph/scope.toml` (chmod 600).
 
 use std::collections::BTreeMap;
-use std::fmt::Write as FmtWrite;
+use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -549,7 +549,7 @@ fn update_soul_toml_provider(
                 .find('#')
                 .map(|i| format!("  #{}", &line[i + 1..]))
                 .unwrap_or_default();
-            write!(out, "provider = \"{new_provider}\"").expect("write to String is infallible");
+            let _ = write!(out, "provider = \"{new_provider}\"");
             out.push_str(&comment);
             out.push('\n');
             replaced = true;

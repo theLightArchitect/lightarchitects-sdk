@@ -399,6 +399,7 @@ where
 /// Enabled by the `test-utils` feature so cross-crate tests can import
 /// [`MockTransport`] without activating it in production builds.
 #[cfg(any(test, feature = "test-utils"))]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 pub mod mock {
     use std::collections::VecDeque;
     use std::sync::Mutex;

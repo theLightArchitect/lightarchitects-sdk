@@ -136,6 +136,8 @@ pub fn active_preset() -> &'static Preset {
     let name = active_preset_name();
     find_preset(&name).unwrap_or_else(|| {
         // Fallback to default if active preset name is invalid.
+        // INVARIANT: DEFAULT_PRESET is a compile-time constant guaranteed to exist in ALL_PRESETS.
+        #[allow(clippy::expect_used)]
         find_preset(DEFAULT_PRESET).expect("default preset must exist")
     })
 }
