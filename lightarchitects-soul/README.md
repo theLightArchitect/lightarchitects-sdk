@@ -45,4 +45,4 @@ All 23 `soulTools` actions are available via typed methods:
 
 ## Transport
 
-Spawns the SOUL binary (`~/.soul/.config/bin/soul`) via `StdioTransport` with newline-delimited JSON-RPC framing. Includes automatic retry (3 attempts, exponential backoff) for transient transport errors.
+Spawns the SOUL binary (`~/lightarchitects/soul/bin/soul`) via `StdioTransport` with newline-delimited JSON-RPC framing. Includes automatic retry (3 attempts, exponential backoff) for transient transport errors.

@@ -5,6 +5,7 @@
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
+use lightarchitects_core::paths;
 use secrecy::{ExposeSecret, SecretString};
 
 /// Read a path from an env var, falling back to a default.
@@ -113,14 +114,18 @@ impl SiblingBinaries {
     ///
     /// Container-friendly: set `CORSO_BIN`, `EVA_BIN`, etc. to override.
     fn from_home() -> Result<Self, Box<dyn std::error::Error>> {
-        let home = dirs_next::home_dir()
-            .ok_or("Cannot determine home directory — set sibling paths via env vars")?;
         Ok(Self {
-            corso: env_or_path("CORSO_BIN", &home.join(".corso/bin/corso")),
-            eva: env_or_path("EVA_BIN", &home.join(".eva/bin/eva")),
-            soul: env_or_path("SOUL_BIN", &home.join(".soul/.config/bin/soul")),
-            quantum: env_or_path("QUANTUM_BIN", &home.join(".quantum/bin/quantum-q")),
-            seraph: env_or_path("SERAPH_BIN", &home.join(".seraph/bin/seraph")),
+            corso: env_or_path("CORSO_BIN", &paths::corso_or_fallback().join("bin/corso")),
+            eva: env_or_path("EVA_BIN", &paths::eva_or_fallback().join("bin/eva")),
+            soul: env_or_path("SOUL_BIN", &paths::soul_or_fallback().join("bin/soul")),
+            quantum: env_or_path(
+                "QUANTUM_BIN",
+                &paths::quantum_or_fallback().join("bin/quantum-q"),
+            ),
+            seraph: env_or_path(
+                "SERAPH_BIN",
+                &paths::seraph_or_fallback().join("bin/seraph"),
+            ),
             laex: std::env::var("LAEX_BIN")
                 .or_else(|_| std::env::var("LARC_BIN"))
                 .ok()
@@ -191,7 +196,7 @@ impl Config {
 
         let helix_output_dir = std::env::var("ARENA_HELIX_OUTPUT")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| home.join(".soul/helix/chat/transcripts"));
+            .unwrap_or_else(|_| paths::helix_root_or_fallback().join("chat/transcripts"));
 
         let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "localhost:11434".into());
 

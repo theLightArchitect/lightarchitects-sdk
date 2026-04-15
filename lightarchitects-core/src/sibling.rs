@@ -1,5 +1,7 @@
 //! Sibling identity: binary paths, framing protocol, and MCP subcommands.
 
+use crate::paths;
+
 /// Wire-framing protocol used by the stdio transport.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum McpFraming {
@@ -27,19 +29,24 @@ pub enum SiblingId {
 impl SiblingId {
     /// Default binary path resolved from `$HOME`.
     ///
-    /// Returns `None` if the `HOME` environment variable is not set.
+    /// Returns `None` if the canonical LA root cannot be resolved.
     #[must_use]
     pub fn default_binary_path(&self) -> Option<std::path::PathBuf> {
-        let home = std::env::var_os("HOME")?;
-        let base = std::path::PathBuf::from(home);
-        let rel = match self {
-            Self::Soul => ".soul/.config/bin/soul",
-            Self::Corso => ".corso/bin/corso",
-            Self::Eva => ".eva/bin/eva",
-            Self::Quantum => ".quantum/bin/quantum-q",
-            Self::Seraph => ".seraph/bin/seraph",
+        let runtime_root = match self {
+            Self::Soul => paths::soul()?,
+            Self::Corso => paths::corso()?,
+            Self::Eva => paths::eva()?,
+            Self::Quantum => paths::quantum()?,
+            Self::Seraph => paths::seraph()?,
         };
-        Some(base.join(rel))
+        let rel = match self {
+            Self::Soul => "bin/soul",
+            Self::Corso => "bin/corso",
+            Self::Eva => "bin/eva",
+            Self::Quantum => "bin/quantum-q",
+            Self::Seraph => "bin/seraph",
+        };
+        Some(runtime_root.join(rel))
     }
 
     /// MCP subcommand to pass to the binary, if required.
@@ -86,6 +93,22 @@ impl SiblingId {
             Self::Quantum => "QUANTUM",
             Self::Seraph => "SERAPH",
         }
+    }
+
+    /// All five canonical LA siblings in discovery order.
+    ///
+    /// Use this to iterate known siblings when building default server lists.
+    /// AYIN is intentionally absent — it runs as an HTTP viewer (`localhost:3742`),
+    /// not a stdio MCP server.
+    #[must_use]
+    pub fn all_la() -> &'static [Self] {
+        &[
+            Self::Soul,
+            Self::Corso,
+            Self::Eva,
+            Self::Quantum,
+            Self::Seraph,
+        ]
     }
 }
 

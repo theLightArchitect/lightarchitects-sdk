@@ -147,14 +147,14 @@ active_preset = "software_engineering"
 
 [routes.corso]
 enabled = true
-binary = "~/.corso/bin/corso"
+binary = "~/lightarchitects/corso/bin/corso"
 tool_name = "corsoTools"
 trust = "trusted"
 scope = "own"
 
 [routes.soul]
 enabled = true
-binary = "~/.soul/.config/bin/soul"
+binary = "~/lightarchitects/soul/bin/soul"
 tool_name = "soulTools"
 trust = "trusted"
 scope = "all"

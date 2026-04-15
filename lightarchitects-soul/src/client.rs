@@ -5,11 +5,13 @@ use std::time::Duration;
 
 use serde_json::Value;
 
+use lightarchitects_core::auth::AuthChecker;
 use lightarchitects_core::constants::DEFAULT_TIMEOUT_SECS;
 use lightarchitects_core::error::SdkError;
 use lightarchitects_core::transport::Transport;
-use lightarchitects_core::{McpClient, RetryConfig, SiblingId, StdioTransport};
+use lightarchitects_core::{AuthProvider, McpClient, RetryConfig, SiblingId, StdioTransport};
 
+use crate::graphrag_ingest::GraphRagIngestBuilder;
 use crate::helix::HelixBuilder;
 use crate::ingest::IngestBuilder;
 use crate::query::QueryBuilder;
@@ -198,7 +200,7 @@ impl<T: Transport> SoulClient<T> {
 
     /// Start a fluent ingest builder for a validated vault path.
     ///
-    /// The `path` is expanded and validated against the vault root (`~/.soul/`)
+    /// The `path` is expanded and validated against the vault root (`~/lightarchitects/soul/`)
     /// during this call. See [`IngestBuilder`] for details.
     ///
     /// # Errors
@@ -207,6 +209,37 @@ impl<T: Transport> SoulClient<T> {
     /// bytes, traversal components, or falls outside the vault root.
     pub fn ingest_builder(&self, path: &str) -> Result<IngestBuilder<'_, T>, SdkError> {
         IngestBuilder::with_path(&self.inner, path)
+    }
+
+    /// Start a fluent `GraphRAG` ingestion builder.
+    ///
+    /// Parses a document (file or inline text) into entities and relations,
+    /// then writes them to the SOUL knowledge graph. Requires Neo4j.
+    ///
+    /// Chain [`GraphRagIngestBuilder::source`] (required) and optional
+    /// [`GraphRagIngestBuilder::domain`], [`GraphRagIngestBuilder::sibling`],
+    /// [`GraphRagIngestBuilder::dry_run`] before calling `.call().await`.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # async fn example(client: lightarchitects_soul::SoulClient<lightarchitects_core::StdioTransport>)
+    /// # -> Result<(), lightarchitects_core::SdkError> {
+    /// use lightarchitects_soul::IngestSource;
+    ///
+    /// let result = client
+    ///     .graphrag_ingest()
+    ///     .source(IngestSource::File("/path/to/doc.md".into()))
+    ///     .domain("research")
+    ///     .sibling("eva")
+    ///     .call()
+    ///     .await?;
+    ///
+    /// println!("{} nodes created", result.nodes_created);
+    /// # Ok(()) }
+    /// ```
+    pub fn graphrag_ingest(&self) -> GraphRagIngestBuilder<'_, T> {
+        GraphRagIngestBuilder::new(&self.inner)
     }
 
     /// Start a fluent research builder for the given query string.
@@ -532,7 +565,7 @@ impl<T: Transport> SoulClient<T> {
         if let Some(m) = mode {
             p["mode"] = m.into();
         }
-        let params = serde_json::json!({ "action": "research", "params": p });
+        let params = serde_json::json!({ "action": "soul_search", "params": p });
         let raw = self.inner.call_tool("soulTools", params).await?;
         serde_json::from_value(raw).map_err(SdkError::from)
     }
@@ -556,6 +589,7 @@ pub struct SoulClientBuilder {
     binary_path: Option<PathBuf>,
     timeout: Duration,
     retry: RetryConfig,
+    auth: Option<AuthChecker>,
 }
 
 impl Default for SoulClientBuilder {
@@ -564,6 +598,7 @@ impl Default for SoulClientBuilder {
             binary_path: None,
             timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
             retry: RetryConfig::default(),
+            auth: None,
         }
     }
 }
@@ -571,7 +606,7 @@ impl Default for SoulClientBuilder {
 impl SoulClientBuilder {
     /// Override the path to the SOUL MCP binary.
     ///
-    /// Defaults to `~/.soul/.config/bin/soul` when `None`.
+    /// Defaults to `~/lightarchitects/soul/bin/soul` when `None`.
     #[must_use]
     pub fn binary_path(mut self, path: impl Into<PathBuf>) -> Self {
         self.binary_path = Some(path.into());
@@ -592,10 +627,27 @@ impl SoulClientBuilder {
         self
     }
 
+    /// Attach an auth provider to gate connection behind a key check.
+    ///
+    /// The provider's [`AuthProvider::check_connect`] is called during
+    /// [`build`][Self::build] **before** the SOUL binary is spawned. A hard
+    /// auth failure returns [`SdkError::Auth`] and no process is opened.
+    ///
+    /// The production implementation is `lightarchitects_auth::AuthGuard`.
+    #[must_use]
+    pub fn auth(mut self, provider: impl AuthProvider) -> Self {
+        self.auth = Some(AuthChecker::from_provider(provider));
+        self
+    }
+
     /// Spawn the SOUL binary and complete the MCP handshake.
+    ///
+    /// If an auth provider was set via [`.auth()`][Self::auth], the auth check
+    /// runs first. A hard failure returns [`SdkError::Auth`] without spawning.
     ///
     /// # Errors
     ///
+    /// Returns [`SdkError::Auth`] if the auth check fails hard.
     /// Returns [`SdkError::Config`] if `$HOME` is unset and no explicit binary
     /// path was provided. Returns a transport error if the binary cannot be
     /// spawned or the MCP handshake fails.
@@ -606,7 +658,9 @@ impl SoulClientBuilder {
                 SdkError::Config("$HOME is not set — provide an explicit binary_path".to_owned())
             })?,
         };
-        let transport = StdioTransport::connect(SiblingId::Soul, &path, self.timeout).await?;
+        let transport =
+            StdioTransport::connect(SiblingId::Soul, &path, self.timeout, self.auth.as_ref())
+                .await?;
         Ok(SoulClient {
             inner: McpClient::new(transport, self.retry),
         })
@@ -616,6 +670,7 @@ impl SoulClientBuilder {
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use lightarchitects_core::{McpClient, MockTransport, RetryConfig};
 

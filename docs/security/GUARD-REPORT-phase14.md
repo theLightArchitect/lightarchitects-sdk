@@ -27,7 +27,7 @@ and no external-facing API. The attack surface is:
 
 | ID | Threat | Vector | Severity | Mitigation |
 |----|--------|--------|----------|------------|
-| S1 | Binary impersonation | Attacker with filesystem write access replaces `~/.soul/.config/bin/soul` with a malicious binary | MEDIUM | Requires home-dir write access (user-level compromise). No codesign verification in SDK. Mitigation: OS file permissions (`chmod 755`, owned by user). |
+| S1 | Binary impersonation | Attacker with filesystem write access replaces `~/lightarchitects/soul/bin/soul` with a malicious binary | MEDIUM | Requires home-dir write access (user-level compromise). No codesign verification in SDK. Mitigation: OS file permissions (`chmod 755`, owned by user). |
 | S2 | Response ID injection | Malicious binary sends a response with a different `id` to correlate to a different request | LOW | ID correlation enforced in `read_response`: mismatched IDs return `ProtocolError::IdMismatch` and are rejected. |
 
 ### T — Tampering

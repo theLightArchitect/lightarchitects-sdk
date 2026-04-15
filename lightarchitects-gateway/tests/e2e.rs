@@ -177,7 +177,7 @@ version = "1.0.0"
 
 [agents.soul]
 enabled = true
-binary = "~/.soul/.config/bin/soul"
+binary = "~/lightarchitects/soul/bin/soul"
 tool_name = "soulTools"
 role = "Knowledge graph"
 trust = "trusted"
@@ -205,7 +205,7 @@ version = "1.0.0"
 
 [routes.corso]
 enabled = true
-binary = "~/.corso/bin/corso"
+binary = "~/lightarchitects/corso/bin/corso"
 tool_name = "corsoTools"
 role = "AppSec"
 trust = "trusted"
@@ -233,7 +233,7 @@ version = "1.0.0"
 
 [siblings.eva]
 enabled = true
-binary = "~/.eva/bin/eva"
+binary = "~/lightarchitects/eva/bin/eva"
 tool_name = "evaTools"
 role = "DevOps"
 trust = "trusted"

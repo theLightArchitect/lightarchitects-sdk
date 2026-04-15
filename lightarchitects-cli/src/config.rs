@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use lightarchitects_core::paths;
+
 /// Resolved binary paths for all MCP siblings.
 ///
 /// Each path can be overridden via environment variable:
@@ -26,21 +28,26 @@ impl CliConfig {
     /// install locations under `$HOME`.
     #[must_use]
     pub fn resolve() -> Self {
-        let home = dirs_next().unwrap_or_else(|| PathBuf::from("/tmp"));
         Self {
             soul: env_or(
                 "LIGHTARCHITECTS_SOUL_BIN",
-                home.join(".soul/.config/bin/soul"),
+                paths::soul_or_fallback().join("bin/soul"),
             ),
-            corso: env_or("LIGHTARCHITECTS_CORSO_BIN", home.join(".corso/bin/corso")),
-            eva: env_or("LIGHTARCHITECTS_EVA_BIN", home.join(".eva/bin/eva")),
+            corso: env_or(
+                "LIGHTARCHITECTS_CORSO_BIN",
+                paths::corso_or_fallback().join("bin/corso"),
+            ),
+            eva: env_or(
+                "LIGHTARCHITECTS_EVA_BIN",
+                paths::eva_or_fallback().join("bin/eva"),
+            ),
             quantum: env_or(
                 "LIGHTARCHITECTS_QUANTUM_BIN",
-                home.join(".quantum/bin/quantum-q"),
+                paths::quantum_or_fallback().join("bin/quantum-q"),
             ),
             seraph: env_or(
                 "LIGHTARCHITECTS_SERAPH_BIN",
-                home.join(".seraph/bin/seraph"),
+                paths::seraph_or_fallback().join("bin/seraph"),
             ),
         }
     }
@@ -67,8 +74,4 @@ impl CliConfig {
 
 fn env_or(var: &str, default: PathBuf) -> PathBuf {
     std::env::var(var).map(PathBuf::from).unwrap_or(default)
-}
-
-fn dirs_next() -> Option<PathBuf> {
-    std::env::var("HOME").ok().map(PathBuf::from)
 }

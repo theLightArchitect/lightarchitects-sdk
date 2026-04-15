@@ -96,12 +96,12 @@ Each teammate is a separate MCP binary. Build the ones you need:
 
 | Teammate | Build | Deploy Path |
 |----------|-------|-------------|
-| CORSO | `cd CORSO/MCP/CORSO-DEV && make deploy` | `~/.corso/bin/corso` |
-| EVA | `cd EVA/MCP/EVA-DEV/eva && make deploy` | `~/.eva/bin/eva` |
-| SOUL | `cd SOUL/SOUL-DEV && make deploy` | `~/.soul/.config/bin/soul` |
-| QUANTUM | `cd QUANTUM/MCP/QUANTUM-DEV && cargo make deploy` | `~/.quantum/bin/quantum-q` |
-| SERAPH | `cd SERAPH/MCP/SERAPH-DEV && make deploy-mac` | `~/.seraph/bin/seraph` |
-| AYIN | `cd AYIN/AYIN-DEV && make deploy` | `~/.ayin/bin/ayin` (HTTP, not MCP) |
+| CORSO | `cd CORSO/MCP/CORSO-DEV && make deploy` | `~/lightarchitects/corso/bin/corso` |
+| EVA | `cd EVA/MCP/EVA-DEV/eva && make deploy` | `~/lightarchitects/eva/bin/eva` |
+| SOUL | `cd SOUL/SOUL-DEV && make deploy` | `~/lightarchitects/soul/bin/soul` |
+| QUANTUM | `cd QUANTUM/MCP/QUANTUM-DEV && cargo make deploy` | `~/lightarchitects/quantum/bin/quantum-q` |
+| SERAPH | `cd SERAPH/MCP/SERAPH-DEV && make deploy-mac` | `~/lightarchitects/seraph/bin/seraph` |
+| AYIN | `cd AYIN/AYIN-DEV && make deploy` | `~/lightarchitects/ayin/bin/ayin` (HTTP, not MCP) |
 
 The gateway checks for binaries at startup. Missing binaries show as `"binary_missing"` in `discover` output — the gateway still works, those teammates just won't respond.
 

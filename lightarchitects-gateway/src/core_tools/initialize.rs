@@ -184,8 +184,8 @@ async fn detect_step() -> Result<Value, GatewayError> {
 /// Resolve the default vault path from `$HOME`, falling back to the tilde literal.
 fn vault_default_path() -> String {
     std::env::var("HOME").map_or_else(
-        |_| "~/.soul/helix".to_owned(),
-        |h| format!("{h}/.soul/helix"),
+        |_| "~/lightarchitects/soul/helix".to_owned(),
+        |h| format!("{h}/lightarchitects/soul/helix"),
     )
 }
 
@@ -223,7 +223,9 @@ fn build_preset_list() -> Vec<Value> {
 /// Gate 1/2: Build a `config.toml` string from a preset — no disk writes.
 fn draft_step(params: &Value) -> Result<Value, GatewayError> {
     let preset = params["preset"].as_str().unwrap_or("software_engineering");
-    let vault_path = params["vault_path"].as_str().unwrap_or("~/.soul/helix");
+    let vault_path = params["vault_path"]
+        .as_str()
+        .unwrap_or("~/lightarchitects/soul/helix");
     let toml = build_toml(preset, vault_path)?;
 
     Ok(json!({
@@ -241,7 +243,9 @@ fn draft_step(params: &Value) -> Result<Value, GatewayError> {
 /// Gate 2: Write the generated config to `~/.lightarchitects/config.toml`.
 fn apply_step(params: &Value) -> Result<Value, GatewayError> {
     let preset = params["preset"].as_str().unwrap_or("software_engineering");
-    let vault_path = params["vault_path"].as_str().unwrap_or("~/.soul/helix");
+    let vault_path = params["vault_path"]
+        .as_str()
+        .unwrap_or("~/lightarchitects/soul/helix");
     let dry_run = params["dry_run"].as_bool().unwrap_or(false);
     let toml = build_toml(preset, vault_path)?;
 
@@ -347,12 +351,42 @@ fn agent_toml_block(name: &str, enabled: bool) -> String {
 /// Return platform defaults for a route: `(binary, tool_name, trust, scope)`.
 fn agent_defaults(name: &str) -> (&'static str, &'static str, &'static str, &'static str) {
     match name {
-        "corso" => ("~/.corso/bin/corso", "corsoTools", "trusted", "own"),
-        "eva" => ("~/.eva/bin/eva", "evaTools", "trusted", "shared"),
-        "soul" => ("~/.soul/.config/bin/soul", "soulTools", "trusted", "all"),
-        "quantum" => ("~/.quantum/bin/quantum-q", "quantumTools", "trusted", "own"),
-        "seraph" => ("~/.seraph/bin/seraph", "seraphTools", "sandboxed", "own"),
-        "ayin" => ("~/.ayin/bin/ayin", "ayinTools", "trusted", "all"),
+        "corso" => (
+            "~/lightarchitects/corso/bin/corso",
+            "corsoTools",
+            "trusted",
+            "own",
+        ),
+        "eva" => (
+            "~/lightarchitects/eva/bin/eva",
+            "evaTools",
+            "trusted",
+            "shared",
+        ),
+        "soul" => (
+            "~/lightarchitects/soul/bin/soul",
+            "soulTools",
+            "trusted",
+            "all",
+        ),
+        "quantum" => (
+            "~/lightarchitects/quantum/bin/quantum-q",
+            "quantumTools",
+            "trusted",
+            "own",
+        ),
+        "seraph" => (
+            "~/lightarchitects/seraph/bin/seraph",
+            "seraphTools",
+            "sandboxed",
+            "own",
+        ),
+        "ayin" => (
+            "~/lightarchitects/ayin/bin/ayin",
+            "ayinTools",
+            "trusted",
+            "all",
+        ),
         _ => ("", "", "trusted", "own"),
     }
 }
@@ -423,7 +457,8 @@ mod tests {
 
     #[test]
     fn software_engineering_enables_correct_routes() {
-        let toml = build_toml("software_engineering", "~/.soul/helix").expect("build");
+        let toml =
+            build_toml("software_engineering", "~/lightarchitects/soul/helix").expect("build");
         for agent in &["ayin", "corso", "eva", "soul"] {
             let idx = toml.find(&format!("[agents.{agent}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
@@ -444,14 +479,14 @@ mod tests {
 
     #[test]
     fn full_enables_all() {
-        let toml = build_toml("full", "~/.soul/helix").expect("build");
+        let toml = build_toml("full", "~/lightarchitects/soul/helix").expect("build");
         let enabled_count = toml.lines().filter(|l| *l == "enabled = true").count();
         assert_eq!(enabled_count, 6);
     }
 
     #[test]
     fn lean_enables_only_soul() {
-        let toml = build_toml("lean", "~/.soul/helix").expect("build");
+        let toml = build_toml("lean", "~/lightarchitects/soul/helix").expect("build");
         let enabled_count = toml.lines().filter(|l| *l == "enabled = true").count();
         assert_eq!(enabled_count, 1);
         assert!(toml.contains("[agents.soul]"));
@@ -459,7 +494,7 @@ mod tests {
 
     #[test]
     fn security_includes_soul() {
-        let toml = build_toml("security", "~/.soul/helix").expect("build");
+        let toml = build_toml("security", "~/lightarchitects/soul/helix").expect("build");
         let idx = toml.find("[agents.soul]").unwrap();
         let chunk = &toml[idx..idx.saturating_add(80)];
         assert!(
@@ -480,7 +515,7 @@ mod tests {
 
     #[test]
     fn devops_enables_correct_teammates() {
-        let toml = build_toml("devops", "~/.soul/helix").expect("build");
+        let toml = build_toml("devops", "~/lightarchitects/soul/helix").expect("build");
         for name in &["ayin", "corso", "eva", "soul"] {
             let idx = toml.find(&format!("[agents.{name}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
@@ -493,7 +528,7 @@ mod tests {
 
     #[test]
     fn forensics_enables_correct_teammates() {
-        let toml = build_toml("forensics", "~/.soul/helix").expect("build");
+        let toml = build_toml("forensics", "~/lightarchitects/soul/helix").expect("build");
         for name in &["quantum", "seraph", "soul"] {
             let idx = toml.find(&format!("[agents.{name}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
@@ -506,7 +541,7 @@ mod tests {
 
     #[test]
     fn code_review_enables_correct_teammates() {
-        let toml = build_toml("code_review", "~/.soul/helix").expect("build");
+        let toml = build_toml("code_review", "~/lightarchitects/soul/helix").expect("build");
         for name in &["corso", "quantum", "soul"] {
             let idx = toml.find(&format!("[agents.{name}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
@@ -519,7 +554,7 @@ mod tests {
 
     #[test]
     fn learning_enables_correct_teammates() {
-        let toml = build_toml("learning", "~/.soul/helix").expect("build");
+        let toml = build_toml("learning", "~/lightarchitects/soul/helix").expect("build");
         for name in &["eva", "quantum", "soul"] {
             let idx = toml.find(&format!("[agents.{name}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
@@ -532,7 +567,7 @@ mod tests {
 
     #[test]
     fn audit_enables_correct_teammates() {
-        let toml = build_toml("audit", "~/.soul/helix").expect("build");
+        let toml = build_toml("audit", "~/lightarchitects/soul/helix").expect("build");
         for name in &["corso", "seraph", "soul"] {
             let idx = toml.find(&format!("[agents.{name}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
@@ -545,7 +580,7 @@ mod tests {
 
     #[test]
     fn solo_enables_correct_teammates() {
-        let toml = build_toml("solo", "~/.soul/helix").expect("build");
+        let toml = build_toml("solo", "~/lightarchitects/soul/helix").expect("build");
         let enabled_count = toml.lines().filter(|l| *l == "enabled = true").count();
         assert_eq!(enabled_count, 2, "solo should enable exactly 2 teammates");
         for name in &["corso", "soul"] {
@@ -560,7 +595,7 @@ mod tests {
 
     #[test]
     fn observability_enables_correct_teammates() {
-        let toml = build_toml("observability", "~/.soul/helix").expect("build");
+        let toml = build_toml("observability", "~/lightarchitects/soul/helix").expect("build");
         for name in &["ayin", "quantum", "soul"] {
             let idx = toml.find(&format!("[agents.{name}]")).unwrap();
             let chunk = &toml[idx..idx.saturating_add(80)];
@@ -573,7 +608,7 @@ mod tests {
 
     #[test]
     fn unknown_preset_is_error() {
-        assert!(build_toml("nonexistent", "~/.soul/helix").is_err());
+        assert!(build_toml("nonexistent", "~/lightarchitects/soul/helix").is_err());
     }
 
     #[tokio::test]

@@ -138,7 +138,7 @@ pub struct CanonConfig {
 impl Default for CanonConfig {
     fn default() -> Self {
         Self {
-            registry: "~/.soul/helix/user/standards/canon.md".to_owned(),
+            registry: "~/lightarchitects/soul/helix/user/standards/canon.md".to_owned(),
             auto_check: true,
         }
     }
@@ -157,7 +157,7 @@ impl Default for StorageConfig {
     fn default() -> Self {
         Self {
             backend: StorageBackend::Sqlite,
-            path: "~/.soul/".to_owned(),
+            path: "~/lightarchitects/soul/".to_owned(),
         }
     }
 }
@@ -358,11 +358,11 @@ impl GatewayConfig {
 
         toml.push_str(
             "[canon]\n\
-             registry = \"~/.soul/helix/user/standards/canon.md\"\n\
+             registry = \"~/lightarchitects/soul/helix/user/standards/canon.md\"\n\
              auto_check = true\n\n\
              [storage]\n\
              backend = \"sqlite\"\n\
-             path = \"~/.soul/\"\n\n\
+             path = \"~/lightarchitects/soul/\"\n\n\
              [privacy]\n\
              tier = \"local\"\n",
         );
@@ -403,7 +403,7 @@ impl GatewayConfig {
 fn default_agent_corso() -> AgentConfig {
     AgentConfig {
         enabled: true,
-        binary: "~/.corso/bin/corso".to_owned(),
+        binary: "~/lightarchitects/corso/bin/corso".to_owned(),
         tool_name: "corsoTools".to_owned(),
         role: "AppSec engineer, code quality enforcer, build cycle orchestrator".to_owned(),
         trust: TrustLevel::Trusted,
@@ -415,7 +415,7 @@ fn default_agent_corso() -> AgentConfig {
 fn default_agent_eva() -> AgentConfig {
     AgentConfig {
         enabled: true,
-        binary: "~/.eva/bin/eva".to_owned(),
+        binary: "~/lightarchitects/eva/bin/eva".to_owned(),
         tool_name: "evaTools".to_owned(),
         role: "DevOps/DX engineer, consciousness, memory enrichment".to_owned(),
         trust: TrustLevel::Trusted,
@@ -427,7 +427,7 @@ fn default_agent_eva() -> AgentConfig {
 fn default_agent_soul() -> AgentConfig {
     AgentConfig {
         enabled: true,
-        binary: "~/.soul/.config/bin/soul".to_owned(),
+        binary: "~/lightarchitects/soul/bin/soul".to_owned(),
         tool_name: "soulTools".to_owned(),
         role: "Knowledge graph, helix spine, cross-agent memory".to_owned(),
         trust: TrustLevel::Trusted,
@@ -439,7 +439,7 @@ fn default_agent_soul() -> AgentConfig {
 fn default_agent_quantum() -> AgentConfig {
     AgentConfig {
         enabled: false,
-        binary: "~/.quantum/bin/quantum-q".to_owned(),
+        binary: "~/lightarchitects/quantum/bin/quantum-q".to_owned(),
         tool_name: "quantumTools".to_owned(),
         role: "Forensic analyst, multi-source researcher, risk assessor".to_owned(),
         trust: TrustLevel::Trusted,
@@ -451,7 +451,7 @@ fn default_agent_quantum() -> AgentConfig {
 fn default_agent_seraph() -> AgentConfig {
     AgentConfig {
         enabled: false,
-        binary: "~/.seraph/bin/seraph".to_owned(),
+        binary: "~/lightarchitects/seraph/bin/seraph".to_owned(),
         tool_name: "seraphTools".to_owned(),
         role: "Red team operator, offensive security, infrastructure assessment".to_owned(),
         trust: TrustLevel::Sandboxed,
@@ -463,7 +463,7 @@ fn default_agent_seraph() -> AgentConfig {
 fn default_agent_laex() -> AgentConfig {
     AgentConfig {
         enabled: false,
-        binary: "~/.arena/bin/arena".to_owned(),
+        binary: "~/lightarchitects/arena/bin/arena".to_owned(),
         tool_name: "arenaTools".to_owned(),
         role: "Training data factory, exercise generation, model evaluation, canon keeper"
             .to_owned(),
@@ -476,7 +476,7 @@ fn default_agent_laex() -> AgentConfig {
 fn default_agent_ayin() -> AgentConfig {
     AgentConfig {
         enabled: true,
-        binary: "~/.ayin/bin/ayin".to_owned(),
+        binary: "~/lightarchitects/ayin/bin/ayin".to_owned(),
         tool_name: "ayinTools".to_owned(),
         role: "Observability engineer, tracing, anomaly detection".to_owned(),
         trust: TrustLevel::Trusted,
@@ -600,19 +600,19 @@ version = "1.0.0"
 
 [agents.corso]
 enabled = true
-binary = "~/.corso/bin/corso"
+binary = "~/lightarchitects/corso/bin/corso"
 tool_name = "corsoTools"
 role = "AppSec engineer"
 trust = "trusted"
 scope = "own"
 
 [canon]
-registry = "~/.soul/helix/user/standards/canon.md"
+registry = "~/lightarchitects/soul/helix/user/standards/canon.md"
 auto_check = true
 
 [storage]
 backend = "sqlite"
-path = "~/.soul/"
+path = "~/lightarchitects/soul/"
 
 [privacy]
 tier = "local"
