@@ -16,6 +16,9 @@ members = [
     "lightarchitects-ayin",    # Phase 9
     "lightarchitects",          # Phase 10 (umbrella)
     "lightarchitects-cli",      # Phase 11
+    "lightarchitects-helix",    # Task #49: helix graph backend (soul-helix shim)
+    "lightarchitects-turnlog",  # Tier-1 ephemeral transactional log for conversational agents
+    "lightarchitects-webshell", # luminous-weaving-nautilus: local web GUI for active coding agent
 ]
 
 [workspace.package]
@@ -65,7 +68,7 @@ zeroize = { version = "1", features = ["derive"] }
 # process: tokio::process::Command for MCP binary spawning
 # sync: Mutex for process handle
 # time: sleep/timeout for retry and call timeout
-tokio = { version = "1", features = ["io-util", "macros", "process", "rt", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["fs", "io-std", "io-util", "macros", "process", "rt", "rt-multi-thread", "sync", "time"] }
 
 # ── CSPRNG ────────────────────────────────────────────────────────────────────
 rand = "0.8"
@@ -100,7 +103,7 @@ axum = "0.8"
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 governor = "0.6"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled", "vtab"] }
 cron = "0.15"
 notify = "6"
 dirs-next = "2.0"
@@ -113,11 +116,24 @@ anyhow = "1"
 # ── SSH transport (SERAPH remote execution) ──────────────────────────────────
 openssh = { version = "0.11", features = ["process-mux"] }
 
+# ── Helix graph backend (lightarchitects-helix + absorbed graph-engine) ──────
+neo4rs    = { version = "0.8", features = ["json"] }
+walkdir   = "2"
+moka      = { version = "0.12", features = ["future"] }
+regex     = "1"
+serde_yaml = "0.9"
+fastembed = { version = "5", optional = false }
+
 # ── Dev/test ──────────────────────────────────────────────────────────────────
 tempfile = "3"
 proptest = "1"
+pretty_assertions = "1"
 criterion = { version = "0.5", features = ["html_reports"] }
 tokio-test = "0.4"
+mockito = "1"
+
+# ── External path deps (portable relative paths from workspace root) ──────────
+ayin = { path = "../AYIN/AYIN-DEV/ayin" }
 
 [profile.release]
 lto = true

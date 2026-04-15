@@ -10,9 +10,12 @@
 //! - [`SiblingId`] / [`McpFraming`] — per-sibling binary path and framing
 //! - [`SdkError`] — unified error hierarchy
 //! - [`Config`] / [`RetryConfig`] — client and retry configuration
+//! - [`McpHandler`] / [`McpServerLoop`] — server-side stdio transport primitive
 
 /// MCP action types returned by `tools/list`.
 pub mod action;
+/// Connection-time authentication provider and type-erased checker.
+pub mod auth;
 /// Generic retry-aware MCP client.
 pub mod client;
 /// Client and retry configuration.
@@ -23,6 +26,10 @@ pub mod constants;
 pub mod error;
 /// JSON-RPC 2.0 request and response types.
 pub mod jsonrpc;
+/// Canonical Light Architects filesystem path resolution.
+pub mod paths;
+/// Server-side stdio transport primitive for MCP servers.
+pub mod server;
 /// Sibling identity: binary paths, framing, and subcommands.
 pub mod sibling;
 /// Async transport trait and stdio implementation.
@@ -31,10 +38,12 @@ pub mod transport;
 // ── Convenience re-exports ────────────────────────────────────────────────────
 
 pub use action::{ToolInfo, ToolsListResponse};
+pub use auth::{AuthChecker, AuthProvider, AuthStatus};
 pub use client::McpClient;
 pub use config::{Config, ConfigBuilder, RetryConfig};
 pub use error::{ProtocolError, SdkError, ToolError, TransportError};
 pub use jsonrpc::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
+pub use server::{McpHandler, McpServerLoop, ServerError};
 pub use sibling::{McpFraming, SiblingId};
 #[cfg(any(test, feature = "test-utils"))]
 pub use transport::MockTransport;
