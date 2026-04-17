@@ -163,3 +163,129 @@ impl std::fmt::Display for OracleVerdict {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::oracle::models::{ModelId, ModelRole};
+    use std::time::Duration;
+
+    fn ok_finding(model: ModelId, role: ModelRole, content: &str) -> Finding {
+        Finding {
+            model,
+            role,
+            display: model.to_string(),
+            status: FindingStatus::Ok,
+            content: content.to_string(),
+            elapsed: Duration::from_millis(100),
+            tokens_in: 10,
+            tokens_out: 20,
+        }
+    }
+
+    fn err_finding(model: ModelId, role: ModelRole) -> Finding {
+        Finding {
+            model,
+            role,
+            display: model.to_string(),
+            status: FindingStatus::Error("timeout".to_string()),
+            content: String::new(),
+            elapsed: Duration::from_millis(50),
+            tokens_in: 0,
+            tokens_out: 0,
+        }
+    }
+
+    #[test]
+    fn insufficient_when_zero_ok_findings() {
+        let findings = vec![
+            err_finding(ModelId::Deepseek, ModelRole::Derivation),
+            err_finding(ModelId::Qwen, ModelRole::Numerical),
+        ];
+        assert_eq!(
+            OracleVerdict::compute_consensus(&findings),
+            Consensus::Insufficient
+        );
+    }
+
+    #[test]
+    fn insufficient_when_exactly_one_ok_finding() {
+        let findings = vec![
+            ok_finding(ModelId::Deepseek, ModelRole::Derivation, "true"),
+            err_finding(ModelId::Qwen, ModelRole::Numerical),
+        ];
+        assert_eq!(
+            OracleVerdict::compute_consensus(&findings),
+            Consensus::Insufficient
+        );
+    }
+
+    #[test]
+    fn unanimous_when_all_ok_and_no_conflict_signals() {
+        let findings = vec![
+            ok_finding(ModelId::Deepseek, ModelRole::Derivation, "The bound holds."),
+            ok_finding(
+                ModelId::Qwen,
+                ModelRole::Numerical,
+                "No counterexample found.",
+            ),
+        ];
+        assert_eq!(
+            OracleVerdict::compute_consensus(&findings),
+            Consensus::Unanimous
+        );
+    }
+
+    #[test]
+    fn majority_when_some_ok_some_err_no_conflict() {
+        let findings = vec![
+            ok_finding(
+                ModelId::Deepseek,
+                ModelRole::Derivation,
+                "Derivation complete.",
+            ),
+            ok_finding(ModelId::Qwen, ModelRole::Numerical, "Checks out."),
+            err_finding(ModelId::Leanstral, ModelRole::FormalProof),
+        ];
+        assert_eq!(
+            OracleVerdict::compute_consensus(&findings),
+            Consensus::Majority
+        );
+    }
+
+    #[test]
+    fn disagreement_when_positive_and_negative_signals_both_present() {
+        let findings = vec![
+            ok_finding(
+                ModelId::Deepseek,
+                ModelRole::Derivation,
+                "This is proven and verified. QED.",
+            ),
+            ok_finding(
+                ModelId::Qwen,
+                ModelRole::Numerical,
+                "This is false — counterexample at x=0.",
+            ),
+        ];
+        assert_eq!(
+            OracleVerdict::compute_consensus(&findings),
+            Consensus::Disagreement
+        );
+    }
+
+    #[test]
+    fn display_includes_verdict_header() {
+        let verdict = OracleVerdict {
+            prompt: "test".to_string(),
+            findings: vec![],
+            consensus: Consensus::Insufficient,
+            total_elapsed: Duration::from_secs(1),
+            models_ok: 0,
+            models_total: 2,
+        };
+        let text = format!("{verdict}");
+        assert!(text.contains("Oracle Verdict"));
+        assert!(text.contains("Insufficient"));
+    }
+}

@@ -122,3 +122,140 @@ impl RevocationWatcher {
 struct RevocationResponse {
     revoked: Vec<String>,
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn isolated(dir: &TempDir, api_url: &str) -> AuthConfig {
+        AuthConfig {
+            api_base_url: api_url.to_string(),
+            key_file_path: dir.path().join("la-api-key"),
+            cache_file_path: dir.path().join("la-key-cache.json"),
+            revoked_file_path: dir.path().join("la-revoked"),
+            cache_ttl: std::time::Duration::from_secs(3600),
+            refresh_interval: std::time::Duration::from_secs(3000),
+            revocation_poll_interval: std::time::Duration::from_secs(300),
+            max_grace_resets: 3,
+            login_timeout: std::time::Duration::from_secs(60),
+        }
+    }
+
+    #[test]
+    fn is_revoked_false_when_no_list_exists() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir, "http://127.0.0.1:1");
+        let watcher = RevocationWatcher::new(cfg);
+        assert!(!watcher.is_revoked("la-abc123"));
+    }
+
+    #[test]
+    fn is_revoked_true_for_listed_prefix() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir, "http://127.0.0.1:1");
+        std::fs::write(&cfg.revoked_file_path, "la-badke\nla-rogue1\n").unwrap();
+        let watcher = RevocationWatcher::new(cfg);
+        assert!(watcher.is_revoked("la-badke"));
+        assert!(watcher.is_revoked("la-rogue1"));
+    }
+
+    #[test]
+    fn is_revoked_false_for_unlisted_prefix() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir, "http://127.0.0.1:1");
+        std::fs::write(&cfg.revoked_file_path, "la-badke\n").unwrap();
+        let watcher = RevocationWatcher::new(cfg);
+        assert!(!watcher.is_revoked("la-goodk1")); // different prefix
+    }
+
+    #[test]
+    fn clear_removes_revocation_file() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir, "http://127.0.0.1:1");
+        std::fs::write(&cfg.revoked_file_path, "la-badke\n").unwrap();
+        assert!(cfg.revoked_file_path.exists());
+        RevocationWatcher::new(cfg.clone()).clear().unwrap();
+        assert!(!cfg.revoked_file_path.exists());
+    }
+
+    #[test]
+    fn clear_is_noop_when_file_absent() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir, "http://127.0.0.1:1");
+        RevocationWatcher::new(cfg).clear().unwrap();
+    }
+
+    #[test]
+    fn revoked_list_round_trip_via_file() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir, "http://127.0.0.1:1");
+        let watcher = RevocationWatcher::new(cfg);
+        let list: std::collections::HashSet<String> = ["la-prefix1", "la-prefix2"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        watcher.write_revoked_list(&list).unwrap();
+        let read = watcher.read_revoked_list().unwrap();
+        assert_eq!(read, list);
+    }
+
+    #[tokio::test]
+    async fn poll_updates_local_revocation_list() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/revocations")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"revoked":["la-badke1","la-badke2"]}"#)
+            .create_async()
+            .await;
+
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir, &server.url());
+        let watcher = RevocationWatcher::new(cfg);
+        let count = watcher.poll().await.unwrap();
+        assert_eq!(count, 2);
+        assert!(watcher.is_revoked("la-badke1"));
+        assert!(watcher.is_revoked("la-badke2"));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn poll_merges_with_existing_revocation_list() {
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock("GET", "/api/revocations")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"revoked":["la-new123"]}"#)
+            .create_async()
+            .await;
+
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir, &server.url());
+        // Pre-populate with an existing entry
+        std::fs::write(&cfg.revoked_file_path, "la-old456\n").unwrap();
+        let watcher = RevocationWatcher::new(cfg);
+        watcher.poll().await.unwrap();
+        // Both entries must be present
+        assert!(watcher.is_revoked("la-old456"));
+        assert!(watcher.is_revoked("la-new123"));
+    }
+
+    #[tokio::test]
+    async fn poll_non_success_status_returns_zero() {
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock("GET", "/api/revocations")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir, &server.url());
+        let count = RevocationWatcher::new(cfg).poll().await.unwrap();
+        assert_eq!(count, 0);
+    }
+}

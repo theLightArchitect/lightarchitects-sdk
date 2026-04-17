@@ -83,3 +83,88 @@ impl KeyReader {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn isolated(dir: &TempDir) -> AuthConfig {
+        AuthConfig {
+            key_file_path: dir.path().join("la-api-key"),
+            cache_file_path: dir.path().join("la-key-cache.json"),
+            revoked_file_path: dir.path().join("la-revoked"),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn read_from_file_returns_trimmed_key() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir);
+        std::fs::write(&cfg.key_file_path, "  la-test-key-abc\n").unwrap();
+        assert_eq!(KeyReader::read(&cfg).unwrap(), "la-test-key-abc");
+    }
+
+    #[test]
+    fn missing_file_returns_no_key_found() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir);
+        // No file written — must return NoKeyFound
+        assert!(matches!(
+            KeyReader::read(&cfg),
+            Err(AuthError::NoKeyFound { .. })
+        ));
+    }
+
+    #[test]
+    fn whitespace_only_file_returns_no_key_found() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir);
+        std::fs::write(&cfg.key_file_path, "   \n  \n").unwrap();
+        assert!(matches!(
+            KeyReader::read(&cfg),
+            Err(AuthError::NoKeyFound { .. })
+        ));
+    }
+
+    #[test]
+    fn save_creates_nested_dirs_and_writes_key() {
+        let dir = TempDir::new().unwrap();
+        let cfg = AuthConfig {
+            key_file_path: dir.path().join("nested/dir/la-api-key"),
+            cache_file_path: dir.path().join("la-key-cache.json"),
+            revoked_file_path: dir.path().join("la-revoked"),
+            ..Default::default()
+        };
+        KeyReader::save(&cfg, "save-test-key").unwrap();
+        let contents = std::fs::read_to_string(&cfg.key_file_path).unwrap();
+        assert_eq!(contents.trim(), "save-test-key");
+    }
+
+    #[test]
+    fn save_then_read_round_trip() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir);
+        KeyReader::save(&cfg, "round-trip-key").unwrap();
+        assert_eq!(KeyReader::read(&cfg).unwrap(), "round-trip-key");
+    }
+
+    #[test]
+    fn remove_deletes_existing_file() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir);
+        std::fs::write(&cfg.key_file_path, "some-key").unwrap();
+        assert!(cfg.key_file_path.exists());
+        KeyReader::remove(&cfg).unwrap();
+        assert!(!cfg.key_file_path.exists());
+    }
+
+    #[test]
+    fn remove_is_noop_when_file_absent() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir);
+        KeyReader::remove(&cfg).unwrap(); // no file — should not error
+    }
+}

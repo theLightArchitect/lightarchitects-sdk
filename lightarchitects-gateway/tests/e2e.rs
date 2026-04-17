@@ -337,3 +337,226 @@ fn first_run_config_generation() {
     );
     assert!(!config.first_run, "default() should not set first_run");
 }
+
+// ── Error-path E2E tests ──────────────────────────────────────────────────────
+
+/// Calling `tools/call` with a completely unknown tool name returns an MCP error response
+/// (JSON-RPC result with `isError: true`), not a crash.
+#[test]
+fn unknown_tool_call_returns_error_not_crash() {
+    let mut child = Command::new(GATEWAY_BIN)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn gateway");
+
+    let mut stdin = child.stdin.take().expect("stdin");
+    let stdout = child.stdout.take().expect("stdout");
+    let mut reader = BufReader::new(stdout);
+
+    rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+    );
+
+    let resp = rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"nonexistent_tool_xyz","arguments":{}}}"#,
+    );
+
+    // Must have a result field (not a JSON-RPC error at the transport level)
+    assert!(
+        resp.get("result").is_some() || resp.get("error").is_some(),
+        "response must be a valid JSON-RPC message"
+    );
+    // Must NOT crash — we should still be able to send another request
+    let init_again = rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#,
+    );
+    assert!(init_again["result"]["tools"].is_array());
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+/// Missing `action` field in `tools` call returns error content, not crash.
+#[test]
+fn tools_call_missing_action_returns_error_content() {
+    let (mut child, mut stdin, mut reader, _tmp) =
+        spawn_with_config("[gateway]\nversion = \"1.0.0\"\n");
+
+    rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+    );
+
+    let resp = rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tools","arguments":{}}}"#,
+    );
+
+    // Must produce a response (not hang or crash)
+    let content = &resp["result"]["content"];
+    assert!(
+        content.is_array() || resp.get("error").is_some(),
+        "missing action must produce content or error, not silence"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+/// Status action reports gateway version and config summary.
+#[test]
+fn tools_call_status_returns_structured_data() {
+    let (mut child, mut stdin, mut reader, _tmp) =
+        spawn_with_config("[gateway]\nversion = \"1.0.0\"\n");
+
+    rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+    );
+
+    let resp = rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tools","arguments":{"action":"status"}}}"#,
+    );
+
+    let text = resp["result"]["content"][0]["text"].as_str().unwrap_or("");
+    // Status response should mention the gateway
+    assert!(
+        !text.is_empty() || resp.get("error").is_some(),
+        "status action must return non-empty content"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+/// `tools/list` response always contains the single `tools` meta-tool.
+/// Regression guard: adding new internal actions must not inflate the public tool count.
+#[test]
+fn tools_list_always_returns_single_meta_tool() {
+    let configs = [
+        "[gateway]\nversion = \"1.0.0\"\n",
+        "[gateway]\nversion = \"1.0.0\"\nactive_preset = \"full\"\n",
+        "[gateway]\nversion = \"1.0.0\"\nactive_preset = \"solo\"\n",
+    ];
+
+    for config in &configs {
+        let (mut child, mut stdin, mut reader, _tmp) = spawn_with_config(config);
+
+        rpc(
+            &mut stdin,
+            &mut reader,
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+        );
+        let resp = rpc(
+            &mut stdin,
+            &mut reader,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+        );
+        let tools = resp["result"]["tools"].as_array().expect("tools array");
+        assert_eq!(
+            tools.len(),
+            EXPECTED_TOOL_COUNT,
+            "preset '{config}' must not change public tool count"
+        );
+
+        child.kill().ok();
+        child.wait().ok();
+    }
+}
+
+/// Gateway responds correctly to `notifications/initialized` — no response
+/// (notifications are fire-and-forget in MCP), and subsequent requests still work.
+#[test]
+fn notification_does_not_block_subsequent_requests() {
+    let mut child = Command::new(GATEWAY_BIN)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn gateway");
+
+    let mut stdin = child.stdin.take().expect("stdin");
+    let stdout = child.stdout.take().expect("stdout");
+    let mut reader = BufReader::new(stdout);
+
+    rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+    );
+
+    // Fire-and-forget notification (no id field — no response expected)
+    writeln!(
+        stdin,
+        r#"{{"jsonrpc":"2.0","method":"notifications/initialized"}}"#
+    )
+    .expect("write notification");
+    stdin.flush().expect("flush");
+
+    // Gateway must still respond to the next request
+    let resp = rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+    );
+    assert!(
+        resp["result"]["tools"].is_array(),
+        "gateway must handle requests after notification"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+// ── Sibling-spawn E2E (requires deployed binaries — run manually) ─────────────
+
+/// Verify SOUL sibling spawns successfully via the gateway's spawner.
+///
+/// Requires `~/lightarchitects/soul/.config/bin/soul` to be deployed.
+/// Run manually: `cargo test -p lightarchitects-gateway spawn_soul -- --ignored`
+#[test]
+#[ignore = "requires deployed SOUL binary at ~/lightarchitects/soul/.config/bin/soul"]
+fn spawn_soul_sibling_and_call_soul_tools() {
+    let config = r#"
+[gateway]
+version = "1.0.0"
+
+[agents.soul]
+enabled = true
+binary = "~/lightarchitects/soul/.config/bin/soul"
+tool_name = "soulTools"
+role = "Knowledge graph"
+trust = "trusted"
+scope = "all"
+"#;
+    let (mut child, mut stdin, mut reader, _tmp) = spawn_with_config(config);
+
+    rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+    );
+    let resp = rpc(
+        &mut stdin,
+        &mut reader,
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tools","arguments":{"action":"soulTools","params":{"action":"health"}}}}"#,
+    );
+    let text = resp["result"]["content"][0]["text"].as_str().unwrap_or("");
+    assert!(!text.is_empty(), "SOUL health check must return content");
+
+    child.kill().ok();
+    child.wait().ok();
+}

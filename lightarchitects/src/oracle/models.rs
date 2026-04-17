@@ -186,3 +186,46 @@ pub(crate) fn default_configs(ollama_endpoint: &str) -> Vec<ModelConfig> {
         },
     ]
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prove_mode_selects_leanstral_deepseek_qwen() {
+        let ids = ModelId::for_mode(OracleMode::Prove);
+        assert_eq!(
+            ids,
+            vec![ModelId::Leanstral, ModelId::Deepseek, ModelId::Qwen]
+        );
+    }
+
+    #[test]
+    fn optimize_mode_selects_derivation_numerical_reasoning() {
+        let ids = ModelId::for_mode(OracleMode::Optimize);
+        assert_eq!(ids, vec![ModelId::Deepseek, ModelId::Qwen, ModelId::Kimi]);
+    }
+
+    #[test]
+    fn full_mode_selects_all_five_models() {
+        let ids = ModelId::for_mode(OracleMode::Full);
+        assert_eq!(ids.len(), 5);
+        assert!(ids.contains(&ModelId::Leanstral));
+        assert!(ids.contains(&ModelId::Cogito));
+    }
+
+    #[test]
+    fn custom_mode_returns_empty_vec() {
+        assert!(ModelId::for_mode(OracleMode::Custom).is_empty());
+    }
+
+    #[test]
+    fn model_id_display_matches_api_names() {
+        assert_eq!(ModelId::Leanstral.to_string(), "leanstral");
+        assert_eq!(ModelId::Deepseek.to_string(), "deepseek");
+        assert_eq!(ModelId::Qwen.to_string(), "qwen");
+        assert_eq!(ModelId::Kimi.to_string(), "kimi");
+        assert_eq!(ModelId::Cogito.to_string(), "cogito");
+    }
+}
