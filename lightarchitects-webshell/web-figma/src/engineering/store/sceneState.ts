@@ -12,6 +12,15 @@ export interface StrandActivationEvent {
   timestamp: string;
 }
 
+/** A trace span summary from AYIN, forwarded via SSE. */
+export interface AyinSpanEvent {
+  id: string;
+  actor: string;
+  action: string;
+  timestamp: string;
+  durationMs: number;
+}
+
 /** AYIN connection lifecycle status. */
 export type AyinConnStatus = 'connected' | 'reconnecting' | 'offline';
 

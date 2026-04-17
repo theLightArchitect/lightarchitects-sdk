@@ -8,6 +8,29 @@ import React, { createContext, useContext, useReducer, useMemo, useCallback } fr
 import type { EngineeringState, StrandActivationEvent, AyinConnStatus } from './sceneState';
 import { INITIAL_STATE, BUF_LEN } from './sceneState';
 import { useEventSource } from '../hooks/useEventSource';
+import { useSceneStore } from '../../app/store';
+
+// Y range matches web-figma/src/app/helix-math.ts (tMin=-35, tMax=15).
+const Y_MIN = -35;
+const Y_MAX = 15;
+
+// Sibling → hex colour (mirrors AppLayout.tsx ACTORS).
+const ACTOR_COLORS: Record<string, string> = {
+  soul:    '#7C3AED',
+  eva:     '#FF1493',
+  corso:   '#00BFFF',
+  quantum: '#B44AFF',
+  seraph:  '#FF0040',
+  larc:    '#F59E0B',
+  'l-arc': '#F59E0B',
+  ayin:    '#FF6D00',
+};
+
+// Rail assignment: 0 = left strand, 1 = right strand.
+const RAIL_BY_ACTOR: Record<string, number> = {
+  soul: 0, eva: 0, corso: 0, quantum: 0,
+  seraph: 1, larc: 1, 'l-arc': 1, ayin: 1,
+};
 
 type Action =
   | { kind: 'SET_AYIN'; status: AyinConnStatus }
@@ -43,8 +66,26 @@ export function EngineeringProvider({ children }: { children: React.ReactNode })
   const [state, dispatch] = useReducer(reduce, INITIAL_STATE);
 
   useEventSource({
-    onAyinStatus: useCallback((status) => dispatch({ kind: 'SET_AYIN', status }), []),
+    onAyinStatus: useCallback((status: AyinConnStatus) => {
+      dispatch({ kind: 'SET_AYIN', status });
+      // Bridge: mirror AYIN connection status into the Figma Make Zustand store.
+      useSceneStore.getState().setAyinStatus(status);
+    }, []),
     onStrandActivation: useCallback((event) => dispatch({ kind: 'STRAND', event }), []),
+    onAyinSpan: useCallback((span) => {
+      // Bridge: add a real helix step from each AYIN trace span.
+      const actor = span.actor.toLowerCase();
+      useSceneStore.getState().addStep({
+        id:      span.id,
+        y:       Y_MIN + Math.random() * (Y_MAX - Y_MIN),
+        railIdx: RAIL_BY_ACTOR[actor] ?? (span.id.charCodeAt(0) % 2),
+        color:   ACTOR_COLORS[actor] ?? '#94a3b8',
+      });
+    }, []),
+    onHelixEntry: useCallback(() => {
+      // Bridge: helix vault write → spawn a retrieval orb in the scene.
+      useSceneStore.getState().spawnOrb();
+    }, []),
   });
 
   const value = useMemo<ContextValue>(

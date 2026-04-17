@@ -6,11 +6,15 @@
 // ============================================================================
 
 import { useEffect, useRef } from 'react';
-import type { StrandActivationEvent, AyinConnStatus } from '../store/sceneState';
+import type { StrandActivationEvent, AyinSpanEvent, AyinConnStatus } from '../store/sceneState';
 
 export interface EventCallbacks {
   onStrandActivation: (event: StrandActivationEvent) => void;
   onAyinStatus: (status: AyinConnStatus) => void;
+  /** Called for every ayin_span event (e.g. to add a helix step). */
+  onAyinSpan?: (span: AyinSpanEvent) => void;
+  /** Called for every helix_entry event (e.g. to spawn a retrieval orb). */
+  onHelixEntry?: () => void;
 }
 
 /** Reads token from URL hash then sessionStorage; strips hash from URL bar. */
@@ -50,6 +54,16 @@ function handleLine(line: string, cb: EventCallbacks): void {
       : status === 'reconnecting' ? 'reconnecting'
       : 'offline',
     );
+  } else if (type === 'ayin_span' && cb.onAyinSpan) {
+    cb.onAyinSpan({
+      id: String(msg['id'] ?? crypto.randomUUID()),
+      actor: String(msg['actor'] ?? 'unknown'),
+      action: String(msg['action'] ?? ''),
+      timestamp: String(msg['timestamp'] ?? ''),
+      durationMs: Number(msg['duration_ms'] ?? 0),
+    });
+  } else if (type === 'helix_entry' && cb.onHelixEntry) {
+    cb.onHelixEntry();
   }
 }
 
