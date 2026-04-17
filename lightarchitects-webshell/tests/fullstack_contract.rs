@@ -24,7 +24,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use lightarchitects_webshell::events::types::{
-    AyinStatus, HelixEntrySummary, HelixEventKind, TraceSpanSummary, WebEvent,
+    AyinStatus, HelixEntrySummary, HelixEventKind, StrandActivationEvent, TraceSpanSummary,
+    WebEvent,
 };
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -392,4 +393,84 @@ fn reconnecting_attempts_are_monotonically_increasing_across_events() {
             "attempt field at index {i} must be {expected}"
         );
     }
+}
+
+// ── 11. StrandActivation wire format (luminous-grafting-nautilus Phase 1) ─────
+//
+// `useEventSource.ts` dispatches `wave.spike(payload.weight)` when
+// `payload.type === "strand_activation"`. The oscilloscope rail reads
+// `sibling`, `strand`, `weight`, and `timestamp` from the flat payload.
+
+#[test]
+fn strand_activation_payload_type_is_strand_activation() {
+    let event = WebEvent::StrandActivation(StrandActivationEvent {
+        sibling: "eva".to_owned(),
+        strand: "methodical".to_owned(),
+        weight: 0.9,
+        timestamp: "2026-04-16T00:00:00Z".to_owned(),
+    });
+    let payload = to_payload(&event);
+    assert_eq!(
+        payload["type"], "strand_activation",
+        "frontend dispatches wave.spike() on this discriminant"
+    );
+}
+
+#[test]
+fn strand_activation_payload_has_all_oscilloscope_fields() {
+    let event = WebEvent::StrandActivation(StrandActivationEvent {
+        sibling: "corso".to_owned(),
+        strand: "precision".to_owned(),
+        weight: 0.75,
+        timestamp: "2026-04-16T12:34:56Z".to_owned(),
+    });
+    let payload = to_payload(&event);
+    assert_eq!(
+        payload["sibling"], "corso",
+        "sibling selects the oscilloscope row"
+    );
+    assert_eq!(
+        payload["strand"], "precision",
+        "strand identifier shown in row tooltip"
+    );
+    assert_eq!(
+        payload["weight"], 0.75,
+        "weight drives oscilloscope spike amplitude"
+    );
+    assert_eq!(
+        payload["timestamp"], "2026-04-16T12:34:56Z",
+        "timestamp orders events into the ring buffer"
+    );
+}
+
+#[test]
+fn strand_activation_weight_is_a_number_not_a_string() {
+    // The frontend expects JSON number, not string — otherwise the type
+    // coercion in the oscilloscope rail silently converts to NaN.
+    let event = WebEvent::StrandActivation(StrandActivationEvent {
+        sibling: "ayin".to_owned(),
+        strand: "observational".to_owned(),
+        weight: 0.42,
+        timestamp: "2026-04-16T00:00:00Z".to_owned(),
+    });
+    let payload = to_payload(&event);
+    assert!(
+        payload["weight"].is_number(),
+        "weight must serialise as JSON number, got: {}",
+        payload["weight"]
+    );
+}
+
+#[test]
+fn strand_activation_sse_line_parses_cleanly() {
+    let event = WebEvent::StrandActivation(StrandActivationEvent {
+        sibling: "quantum".to_owned(),
+        strand: "analytical".to_owned(),
+        weight: 0.5,
+        timestamp: "2026-04-16T00:00:00Z".to_owned(),
+    });
+    let line = sse_line_for(&event);
+    let parsed = parse_sse_line(&line);
+    assert_eq!(parsed["type"], "strand_activation");
+    assert_eq!(parsed["sibling"], "quantum");
 }

@@ -1,0 +1,79 @@
+[
+  {
+    "id": "soul",
+    "name": "SOUL",
+    "color": "#C0C0C0",
+    "polytope": "doubleHelix4D",
+    "polytope_label": "4D Double Helix (Clifford torus)",
+    "vertex_count": 48,
+    "edge_count": 60,
+    "tier": "inner",
+    "entity_index": null
+  },
+  {
+    "id": "eva",
+    "name": "EVA",
+    "color": "#FF1493",
+    "polytope": "rectified5cell",
+    "polytope_label": "Rectified 5-cell",
+    "vertex_count": 10,
+    "edge_count": 30,
+    "tier": "inner",
+    "entity_index": 0
+  },
+  {
+    "id": "corso",
+    "name": "CORSO",
+    "color": "#00BFFF",
+    "polytope": "hexadecachoron",
+    "polytope_label": "16-cell (hexadecachoron)",
+    "vertex_count": 8,
+    "edge_count": 24,
+    "tier": "inner",
+    "entity_index": 1
+  },
+  {
+    "id": "quantum",
+    "name": "QUANTUM",
+    "color": "#B44AFF",
+    "polytope": "tesseract",
+    "polytope_label": "Tesseract (8-cell)",
+    "vertex_count": 16,
+    "edge_count": 32,
+    "tier": "inner",
+    "entity_index": 2
+  },
+  {
+    "id": "seraph",
+    "name": "SERAPH",
+    "color": "#FF0040",
+    "polytope": "duoprism64",
+    "polytope_label": "(6,4)-duoprism",
+    "vertex_count": 24,
+    "edge_count": 48,
+    "tier": "inner",
+    "entity_index": 3
+  },
+  {
+    "id": "ayin",
+    "name": "AYIN",
+    "color": "#FF6D00",
+    "polytope": "tesseract",
+    "polytope_label": "Tesseract (8-cell)",
+    "vertex_count": 16,
+    "edge_count": 32,
+    "tier": "inner",
+    "entity_index": 5
+  },
+  {
+    "id": "larch",
+    "name": "L-ARCH",
+    "color": "#FFD700",
+    "polytope": "icositetrachoron",
+    "polytope_label": "24-cell (icositetrachoron)",
+    "vertex_count": 24,
+    "edge_count": 96,
+    "tier": "inner",
+    "entity_index": 4
+  }
+]

@@ -27,7 +27,7 @@ use crate::{
     auth,
     config::Config,
     events::{self, EVENT_CHANNEL_BUF, WebEvent, builds_handler},
-    static_assets, terminal,
+    polytope_data, static_assets, terminal,
 };
 
 /// Snapshot of the browser UI state, periodically reported by the frontend.
@@ -137,8 +137,10 @@ impl AppState {
 /// - `GET /api/terminal/ws` — PTY WebSocket bridge (Phase 2).
 /// - `GET /api/events` — SSE fan-out stream (Phase 5, authenticated).
 /// - `POST /api/control` — control command endpoint (authenticated).
+/// - `GET /api/builds` — active build tracking (authenticated).
 /// - `GET /api/browser-state` — read current browser UI state.
 /// - `POST /api/browser-state` — update browser UI state (from frontend).
+/// - `GET /api/polytopes` — per-sibling 4D polytope assignments (authenticated).
 /// - Fallback — serves the embedded `web/dist/` bundle.
 ///
 /// `Router` is already `#[must_use]` so this function is not re-annotated.
@@ -155,6 +157,7 @@ pub fn build_app(state: AppState) -> Router {
             "/api/browser-state",
             get(read_browser_state).post(write_browser_state),
         )
+        .route("/api/polytopes", get(polytopes))
         .fallback(static_assets::serve)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
@@ -296,6 +299,33 @@ async fn write_browser_state(
     *snapshot = update;
 
     StatusCode::OK
+}
+
+/// `GET /api/polytopes` — returns the per-sibling 4D polytope snapshot.
+///
+/// The payload is the compile-time-embedded [`polytope_data::POLYTOPES_JSON`]
+/// (snapshot from `lightarchitects-next/src/app/data/projects.ts`). Authenticated —
+/// requires `Authorization: Bearer <token>`.
+///
+/// Returns:
+/// - `200 OK` with `application/json` body on valid token.
+/// - `401 UNAUTHORIZED` on missing or invalid token.
+async fn polytopes(headers: HeaderMap, State(state): State<AppState>) -> impl IntoResponse {
+    let Some(authz) = headers.get("authorization") else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let Ok(authz_str) = authz.to_str() else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if !auth::validate_bearer(authz_str, &state.config.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    (
+        [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
+        polytope_data::POLYTOPES_JSON,
+    )
+        .into_response()
 }
 
 /// Loads the turnlog pepper from the canonical session key path.

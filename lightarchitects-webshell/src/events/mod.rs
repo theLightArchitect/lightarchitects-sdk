@@ -22,10 +22,14 @@ pub mod builds_handler;
 pub mod control;
 pub mod helix_watcher;
 pub mod sse_handler;
+pub mod strand;
 pub mod types;
 
 pub use ayin_client::{AyinClient, EVENT_CHANNEL_BUF};
 pub use builds_handler::builds_handler;
 pub use control::control_handler;
 pub use helix_watcher::HelixWatcher;
-pub use types::{BuildEventKind, BuildUpdateEvent, ControlCommand, WebEvent};
+pub use strand::{parse_strand_activations, window_aggregate};
+pub use types::{
+    BuildEventKind, BuildUpdateEvent, ControlCommand, StrandActivationEvent, WebEvent,
+};

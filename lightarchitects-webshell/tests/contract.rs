@@ -168,3 +168,82 @@ async fn auth_check_401_body_does_not_contain_token() {
         "token must not appear in 401 body: {body}"
     );
 }
+
+// --- /api/polytopes (luminous-grafting-nautilus Phase 1) ---------------------
+
+#[tokio::test]
+async fn polytopes_requires_authorization() {
+    let resp = make_app()
+        .oneshot(Request::get("/api/polytopes").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn polytopes_rejects_wrong_token() {
+    let resp = make_app()
+        .oneshot(
+            Request::get("/api/polytopes")
+                .header("authorization", "Bearer wrong")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn polytopes_accepts_valid_token_and_returns_json_array() {
+    let resp = make_app()
+        .oneshot(
+            Request::get("/api/polytopes")
+                .header("authorization", format!("Bearer {TOKEN}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        ct.contains("application/json"),
+        "unexpected content-type: {ct}"
+    );
+    let body = body_string(resp).await;
+    let parsed: serde_json::Value = serde_json::from_str(&body).expect("body must be valid JSON");
+    let arr = parsed.as_array().expect("body must be a JSON array");
+    assert!(!arr.is_empty(), "polytope snapshot must not be empty");
+    // Spot-check: every entry has the documented fields.
+    for entry in arr {
+        assert!(entry.get("id").is_some(), "entry missing id: {entry}");
+        assert!(entry.get("color").is_some(), "entry missing color: {entry}");
+        assert!(
+            entry.get("polytope").is_some(),
+            "entry missing polytope: {entry}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn polytopes_401_body_does_not_contain_token() {
+    let resp = make_app()
+        .oneshot(
+            Request::get("/api/polytopes")
+                .header("authorization", "Bearer wrong")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = body_string(resp).await;
+    assert!(
+        !body.contains(TOKEN),
+        "token must not appear in 401 body: {body}"
+    );
+}

@@ -32,6 +32,31 @@ pub enum WebEvent {
     /// A control command from an external process (e.g. Claude Code)
     /// forwarded to the browser for UI state mutation.
     Control(ControlCommand),
+    /// A strand activation derived from an AYIN span's metadata.
+    ///
+    /// Emitted by the AYIN client alongside [`WebEvent::AyinSpan`] when the
+    /// span's metadata contains a `strand_activations` array. One event per
+    /// strand, so a span touching three strands produces three events.
+    StrandActivation(StrandActivationEvent),
+}
+
+/// A single strand activation derived from an AYIN span.
+///
+/// Produced by the strand parser in [`crate::events::strand`]. The parser
+/// is the validation boundary — `weight` is always clamped to `[0.0, 1.0]`
+/// before construction, so downstream consumers can trust the value.
+#[derive(Debug, Clone, Serialize)]
+pub struct StrandActivationEvent {
+    /// Sibling identifier, e.g. `"eva"`, `"corso"`. Taken verbatim from
+    /// the source span's `actor` field.
+    pub sibling: String,
+    /// Strand name, e.g. `"methodical"`, `"contextual"`. Taken from the
+    /// `strand_activations[].strand` field of the source span's metadata.
+    pub strand: String,
+    /// Activation magnitude in `[0.0, 1.0]`. Clamped by the parser.
+    pub weight: f32,
+    /// ISO-8601 UTC timestamp, mirrored from the source span.
+    pub timestamp: String,
 }
 
 /// Describes a new or modified helix vault entry detected by the filesystem watcher.
@@ -283,5 +308,20 @@ mod tests {
         let kind = BuildEventKind::Modified;
         let json = serde_json::to_string(&kind).unwrap();
         assert_eq!(json, r#""modified""#);
+    }
+
+    #[test]
+    fn strand_activation_has_type_tag_and_flat_fields() {
+        let event = WebEvent::StrandActivation(StrandActivationEvent {
+            sibling: "eva".to_owned(),
+            strand: "methodical".to_owned(),
+            weight: 0.9,
+            timestamp: "2026-04-16T00:00:00Z".to_owned(),
+        });
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains(r#""type":"strand_activation""#), "{json}");
+        assert!(json.contains(r#""sibling":"eva""#), "{json}");
+        assert!(json.contains(r#""strand":"methodical""#), "{json}");
+        assert!(json.contains(r#""weight":0.9"#), "{json}");
     }
 }
