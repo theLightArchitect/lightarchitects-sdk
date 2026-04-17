@@ -6,6 +6,7 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = false
 description = "Typed client for the SERAPH MCP server (penTools, 18 actions, Content-Length framing)."
 
 [features]

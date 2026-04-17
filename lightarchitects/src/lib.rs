@@ -8,12 +8,11 @@
 //!
 //! | Feature | Enables |
 //! |---------|---------|
-//! | `full` | All sibling clients (SOUL, CORSO, EVA, QUANTUM, SERAPH) |
+//! | `full` | All published sibling clients (SOUL, CORSO, EVA, QUANTUM) |
 //! | `soul` | [`soul::SoulClient`] |
 //! | `corso` | [`corso::CorsoClient`] |
 //! | `eva` | [`eva::EvaClient`] |
 //! | `quantum` | [`quantum::QuantumClient`] |
-//! | `seraph` | [`seraph::SeraphClient`] |
 //! | `ayin` | `ayin::ObservableTransport` |
 //!
 //! # Quick start
@@ -79,9 +78,44 @@ pub fn init_tracing() {
 ///
 /// Re-exports the full `lightarchitects-core` public API. Use this module for
 /// [`SdkError`][core::SdkError], [`StdioTransport`][core::StdioTransport],
-/// and [`RetryConfig`][core::RetryConfig].
+/// [`RetryConfig`][core::RetryConfig], and the [`AuthProvider`][core::AuthProvider] trait.
 pub mod core {
-    pub use lightarchitects_core::{McpClient, RetryConfig, SdkError, SiblingId, StdioTransport};
+    pub use lightarchitects_core::{
+        // Auth types — always available (trait + type-erased wrapper)
+        AuthChecker,
+        AuthProvider,
+        AuthStatus,
+        McpClient,
+        RetryConfig,
+        SdkError,
+        SiblingId,
+        StdioTransport,
+    };
+}
+
+// ── Auth guard — opt-in (`auth` feature) ─────────────────────────────────────
+
+/// Concrete auth guard — 3-tier key validation with grace-period degradation.
+///
+/// Requires the `auth` feature. Provides [`AuthGuard`][auth::AuthGuard], which
+/// implements [`core::AuthProvider`] and can be passed to `.auth()` on any
+/// sibling client builder.
+///
+/// # Example
+///
+/// ```no_run
+/// # #[cfg(all(feature = "auth", feature = "soul"))]
+/// # async fn example() -> Result<(), lightarchitects_core::SdkError> {
+/// use lightarchitects::auth::AuthGuard;
+/// use lightarchitects::soul::SoulClient;
+///
+/// let guard = AuthGuard::new(Default::default());
+/// let client = SoulClient::builder().auth(guard).build().await?;
+/// # Ok(()) }
+/// ```
+#[cfg(feature = "auth")]
+pub mod auth {
+    pub use lightarchitects_auth::{AuthConfig, AuthGuard, AuthTier};
 }
 
 // ── SOUL ──────────────────────────────────────────────────────────────────────
@@ -89,14 +123,74 @@ pub mod core {
 /// SOUL knowledge-graph client (requires `soul` feature).
 #[cfg(feature = "soul")]
 pub mod soul {
+    // ── Client entry point ────────────────────────────────────────────────────
+    pub use lightarchitects_soul::{SoulAction, SoulClient, SoulClientBuilder};
+
+    // ── Fluent query builders ─────────────────────────────────────────────────
     pub use lightarchitects_soul::{
-        ChatMessage, ChatResult, ConvergenceEntry, ConvergenceResult, ConverseResult,
-        FrontmatterMatch, HealthReport, HelixBuilder, HelixEntry, IngestResult, LinksResult,
-        ManifestContent, NoteContent, NoteEntry, NoteList, NoteWritten, QueryBuilder,
-        QueryFrontmatterResult, QueryHit, QueryResult, RawQueryResult, RelateResult,
-        ResearchResult, SearchHit, SoulClient, SoulClientBuilder, SpeakResult, StatsReport,
-        TagSyncReport, ValidateReport,
+        GraphRagIngestBuilder, HelixBuilder, IngestBuilder, QueryBuilder, ResearchBuilder,
     };
+
+    // ── Builder parameter types ───────────────────────────────────────────────
+    pub use lightarchitects_soul::{
+        ContentType, DepthLevel, IngestSource, ResearchSource, TextFormat,
+    };
+
+    // ── Query / retrieval result types ────────────────────────────────────────
+    pub use lightarchitects_soul::{
+        ConvergenceEntry, ConvergenceResult, FrontmatterMatch, HelixEntry, IngestReport,
+        IngestResult, LinksResult, QueryFrontmatterResult, QueryHit, QueryResult, RawQueryResult,
+        RelateResult, ResearchResult, SearchHit, StatsReport,
+    };
+
+    // ── Note / vault result types ─────────────────────────────────────────────
+    pub use lightarchitects_soul::{
+        ManifestContent, NoteContent, NoteEntry, NoteList, NoteWritten, TagSyncReport,
+        ValidateReport,
+    };
+
+    // ── Voice / conversation result types ─────────────────────────────────────
+    pub use lightarchitects_soul::{
+        ChatMessage, ChatResult, ConverseResult, GraphRagIngestResult, HealthReport, ScriptTurn,
+        SiblingPrompt, SpeakResult, VoiceAudioFile, VoiceProfileEntry, VoiceResult,
+    };
+}
+
+// ── Helix — Neo4j graph backend ───────────────────────────────────────────────
+
+/// Neo4j graph backend — [`HelixStore`][helix::HelixStore] and the 5 helix
+/// primitives (requires `helix` feature).
+///
+/// # Quick start
+///
+/// ```no_run
+/// # #[cfg(feature = "helix")]
+/// # async fn example() -> Result<(), lightarchitects_helix::HelixStoreError> {
+/// use lightarchitects::helix::HelixStore;
+///
+/// let store = HelixStore::connect("bolt://localhost:7687", "neo4j", "password").await?;
+/// let hits = store.search("consciousness").top(10).call().await?;
+/// # Ok(()) }
+/// ```
+#[cfg(feature = "helix")]
+pub mod helix {
+    // ── Ergonomic entry point ─────────────────────────────────────────────────
+    pub use lightarchitects_helix::{HelixSearchBuilder, HelixStore, HelixStoreError};
+
+    // ── Offline entry point (re-exported here for convenience) ───────────────
+    pub use lightarchitects_soul::{SearchBuilder, SoulDb, SoulError};
+
+    // ── 5 helix primitives ────────────────────────────────────────────────────
+    pub use lightarchitects_helix::{
+        Helix, HelixLink, HelixOrderingMode, SharedExperience, Step, Strand,
+    };
+
+    // ── Neo4j database trait + implementation ─────────────────────────────────
+    pub use lightarchitects_helix::{HelixDb, HelixDbError, HelixNeo4j, Neo4jConfig};
+
+    // ── Search + retrieval types ──────────────────────────────────────────────
+    pub use lightarchitects_helix::{ScoredResult, SearchOptions};
+    pub use lightarchitects_soul::{RetrievalHit, RetrievalSignal};
 }
 
 // ── CORSO ─────────────────────────────────────────────────────────────────────
@@ -128,16 +222,6 @@ pub mod eva {
 pub mod quantum {
     pub use lightarchitects_quantum::{
         ActionOutput, InvestigationPhase, QuantumClient, QuantumClientBuilder, QuantumInvestigation,
-    };
-}
-
-// ── SERAPH ────────────────────────────────────────────────────────────────────
-
-/// SERAPH pentest-orchestration client (requires `seraph` feature).
-#[cfg(feature = "seraph")]
-pub mod seraph {
-    pub use lightarchitects_seraph::{
-        ActionOutput, EngagementPhase, SeraphClient, SeraphClientBuilder, SeraphEngagement, Wing,
     };
 }
 

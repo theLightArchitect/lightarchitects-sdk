@@ -31,7 +31,7 @@ lightarchitects-sdk/
 ├── lightarchitects-crypto/           # Phase 3 — Crypto foundation (HKDF, HMAC, AES-256-GCM, Ed25519, SecretStore)
 ├── lightarchitects-core/             # Phase 3 — Wire protocol, transport, error types, retry (stdio JSON-RPC)
 ├── lightarchitects-auth/             # Auth — API key validation, 3-tier degradation (NoKey/GracePeriod/Valid)
-├── lightarchitects-gateway/          # Gateway binary — 3 modes: MCP (stdio), Arena (HTTP), Conductor (LVL8 loop)
+├── lightarchitects-gateway/          # Gateway binary — 3 modes: MCP (stdio), Arena (HTTP), Conductor (task queue)
 ├── lightarchitects-soul/             # Phase 4 — SOUL typed client (soulTools, 23 actions)
 ├── lightarchitects-corso/            # Phase 5 — CORSO typed client (corsoTools, 26 actions)
 ├── lightarchitects-arena/            # Training data factory for MCP tool-use LLMs (discover→generate→score→export)
@@ -41,7 +41,7 @@ lightarchitects-sdk/
 ├── lightarchitects-seraph/           # Phase 8 — SERAPH typed client (penTools, 18 actions, SSH feature)
 ├── lightarchitects-ayin/             # Phase 9 — AYIN observability wrapper (feature = "observe")
 ├── lightarchitects/                  # Phase 10 — Umbrella crate (re-exports all sibling clients, feature-gated)
-├── lightarchitects-cli/              # Phase 11 — CLI binary (sibling ping, health, version)
+# Phase 11 (lightarchitects-cli) merged into lightarchitects-gateway
 └── lightarchitects-helix/            # Task #49 — Neo4j graph backend (HelixDb, 5 primitives, hybrid 4-signal RRF retrieval)
 ```
 
@@ -131,7 +131,7 @@ Single binary with three operating modes:
 
 - **MCP mode** (default): stdio JSON-RPC server for Claude Code — proxies to sibling subprocesses
 - **Arena mode** (`serve`): HTTP API + scheduler + autonomous heartbeat agents
-- **Conductor mode** (`conductor`): LVL8 autonomous task execution loop
+- **Conductor mode** (`conductor`): autonomous task execution loop
 
 Modules: `server`, `spawner` (sibling subprocess pool), `governance` (trust + scope), `conductor`, `arena`, `channels` (Discord/Telegram webhooks), `core_tools`.
 
@@ -220,13 +220,12 @@ All sibling clients are opt-in. `core` module (wire protocol, errors, transport)
 
 | Feature | Enables |
 |---------|---------|
-| `full` | All 5 sibling clients (SOUL, CORSO, EVA, QUANTUM, SERAPH) |
+| `full` | All published sibling clients (SOUL, CORSO, EVA, QUANTUM) — seraph excluded (internal only) |
 | `soul` | `soul::SoulClient` |
 | `helix` | `helix::HelixStore` + 5 primitives + `HelixNeo4j` (implies `soul`) |
 | `corso` | `corso::CorsoClient` |
 | `eva` | `eva::EvaClient` |
 | `quantum` | `quantum::QuantumClient` |
-| `seraph` | `seraph::SeraphClient` |
 | `ayin` | `ayin::ObservableTransport` |
 | `ayin-http` | `ayin::AyinClient` — HTTP client for AYIN viewer at `localhost:3742` (implies `ayin`) |
 | `auth` | `auth::AuthGuard` — 3-tier key validation |
@@ -274,7 +273,7 @@ Canonical: `~/lightarchitects/soul/helix/user/standards/builders-cookbook.md`
 
 - Crate names: `lightarchitects-{name}` (hyphen, no underscore prefix)
 - Module paths in Rust: `lightarchitects_{name}` (Rust converts hyphens automatically)
-- CLI binary name: `lightarchitects` (subcommands: `ping`, `health`, `version`)
+- CLI binary name: `lightarchitects` (subcommands: MCP server, arena, conductor, soul, corso, eva, quantum, seraph, status, config, builds, setup, webshell)
 - Environment variables (system overrides): `LIGHTARCHITECTS_{SIBLING}_BIN` (e.g. `LIGHTARCHITECTS_SOUL_BIN`)
 - Brand name in user-facing strings/docs: `Light Architects` (long form) or `LÆX` (product name)
 - API types use **engineering terms only**: `tags` not `emotions`, `dimensions` not `strands`, `weight` not `significance`

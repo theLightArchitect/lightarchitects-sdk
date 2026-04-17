@@ -6,6 +6,7 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = false
 description = "Local web GUI shell for the active coding agent. Embeds a PTY-hosted agent session (Claude Code by default) alongside a 3D session-helix panel. Build: luminous-weaving-nautilus."
 
 [[bin]]

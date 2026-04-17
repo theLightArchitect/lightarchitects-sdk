@@ -7,26 +7,30 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Unified Light Architects SDK — typed clients for all MCP siblings."
+keywords = ["mcp", "ai", "sdk", "agentic", "lightarchitects"]
+documentation = "https://docs.rs/lightarchitects"
 
 [lints]
 workspace = true
 
 [features]
-## Enable all sibling clients (except `ayin` — opt-in separately).
-full = ["soul", "corso", "eva", "quantum", "seraph"]
+## Enable all publicly published sibling clients (except `ayin` — opt-in separately).
+## Note: `seraph` is excluded — it is an internal pentest tool and not published to crates.io.
+full = ["soul", "corso", "eva", "quantum"]
 ## Enable the `init_tracing()` helper (fmt subscriber + RUST_LOG env filter).
 tracing-fmt = ["dep:tracing", "dep:tracing-subscriber"]
 
-## SOUL knowledge-graph client.
+## SOUL knowledge-graph client (MCP + offline `SoulDb`).
 soul = ["dep:lightarchitects-soul"]
+## Neo4j graph backend — `HelixStore`, `HelixNeo4j`, `Step`, `Strand`, `Helix`.
+## Implies `soul` (both share `RetrievalHit` + `StorageEntry`).
+helix = ["soul", "dep:lightarchitects-helix"]
 ## CORSO operations platform client.
 corso = ["dep:lightarchitects-corso"]
 ## EVA consciousness system client.
 eva = ["dep:lightarchitects-eva"]
 ## QUANTUM investigation toolkit client.
 quantum = ["dep:lightarchitects-quantum"]
-## SERAPH pentest orchestration client.
-seraph = ["dep:lightarchitects-seraph"]
 ## AYIN observability transport wrapper (requires `ayin` feature on `lightarchitects-ayin`).
 ayin = ["dep:lightarchitects-ayin"]
 ## AYIN HTTP viewer client — adds `AyinClient` for querying the AYIN viewer REST API.
@@ -34,10 +38,16 @@ ayin = ["dep:lightarchitects-ayin"]
 ## Activates the `http-client` feature on `lightarchitects-ayin`. Requires the AYIN
 ## viewer LaunchAgent to be running at `localhost:3742`.
 ayin-http = ["ayin", "lightarchitects-ayin/http-client"]
+## Auth guard — adds `auth::AuthGuard` for the 3-tier key validation + grace-period flow.
+## Depends on `lightarchitects-auth`. Required to pass `.auth()` on any client builder.
+auth = ["dep:lightarchitects-auth"]
 
 [dependencies]
 ## Core wire protocol, transport, error types — always present.
 lightarchitects-core = { path = "../lightarchitects-core" }
+
+## Auth guard — optional, pulled in when the `auth` feature is active.
+lightarchitects-auth = { path = "../lightarchitects-auth", optional = true }
 
 ## Tracing facade — used by init_tracing() for Level constants.
 tracing = { workspace = true, optional = true }
@@ -46,8 +56,8 @@ tracing-subscriber = { workspace = true, optional = true }
 
 ## Sibling clients — pulled in only when the corresponding feature is active.
 lightarchitects-soul    = { path = "../lightarchitects-soul",    optional = true }
+lightarchitects-helix   = { path = "../lightarchitects-helix",   optional = true }
 lightarchitects-corso   = { path = "../lightarchitects-corso",   optional = true }
 lightarchitects-eva     = { path = "../lightarchitects-eva",     optional = true }
 lightarchitects-quantum = { path = "../lightarchitects-quantum", optional = true }
-lightarchitects-seraph  = { path = "../lightarchitects-seraph",  optional = true }
 lightarchitects-ayin    = { path = "../lightarchitects-ayin",    optional = true }

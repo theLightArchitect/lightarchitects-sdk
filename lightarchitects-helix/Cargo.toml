@@ -1,0 +1,70 @@
+[package]
+name = "lightarchitects-helix"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Neo4j graph backend for the Light Architects helix knowledge graph (HelixDb, 5 primitives, hybrid 4-signal RRF retrieval)"
+publish = false
+keywords = ["neo4j", "knowledge-graph", "rag", "ai", "graph"]
+documentation = "https://docs.rs/lightarchitects-helix"
+
+[dependencies]
+# lightarchitects-soul provides StorageEntry and RetrievalHit for the HelixStore API.
+lightarchitects-soul = { path = "../lightarchitects-soul", features = ["search", "embedding-ollama"] }
+# lightarchitects-core provides canonical path resolution.
+lightarchitects-core = { path = "../lightarchitects-core" }
+# SecretString for Neo4j password handling.
+secrecy = { workspace = true }
+# Async trait support.
+async-trait = "0.1"
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+futures-util = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+# HTTP client for cloud embedding providers
+reqwest = { workspace = true }
+# Regex for wikilink parsing
+regex = { workspace = true }
+# graph module deps (feature-gated)
+neo4rs = { workspace = true, optional = true }
+walkdir = { workspace = true, optional = true }
+# In-process ONNX embedding (optional, behind fastembed feature)
+fastembed = { workspace = true, optional = true }
+# helix foundation types
+chrono = { workspace = true }
+uuid = { workspace = true }
+moka = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio-test = { workspace = true }
+pretty_assertions = "1"
+proptest = { workspace = true }
+uuid = { workspace = true }
+tokio = { workspace = true }
+
+[features]
+default = ["neo4j"]
+## Enable the signal-diversity reranker pass after RRF fusion.
+## Boosts results that appear across multiple retrieval signals,
+## penalizes single-signal results. No external model required.
+rerank = []
+## Enable in-process ONNX embedding via FastEmbed (no HTTP server required).
+## Downloads model files to ~/.cache/fastembed_cache/ on first use.
+fastembed = ["dep:fastembed"]
+## Enable Neo4jBackend using the neo4rs Bolt driver.
+neo4j = ["dep:neo4rs"]
+## Enable FileBackend for markdown vault as graph.
+file = ["dep:walkdir"]
+## Enable DualBackend (synchronized File + Neo4j).
+dual = ["neo4j", "file"]
+
+[lints]
+workspace = true

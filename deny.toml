@@ -34,133 +34,13 @@ allow = [
     "NCSA",
     # CC0-1.0: notify (public domain dedication, permissive).
     "CC0-1.0",
-    # Light Architects proprietary license — used by all internal workspace crates
-    # and the AYIN path dependency. These are never published to crates.io.
+    # LicenseRef-LA-Proprietary: CORSO workspace sub-crates only (corso-sandbox-bridge,
+    # corso-server, corso-trinity, corso-trinity-core). All SDK workspace crates and
+    # the AYIN path dep are now Apache-2.0 and do not need this entry.
     "LicenseRef-LA-Proprietary",
 ]
 
-# ── Internal workspace crates ─────────────────────────────────────────────────
-# These crates use `license = "Proprietary"` which is not a valid SPDX expression.
-# cargo-deny cannot auto-detect the license, so we clarify it here.
-# All are private, internal-only, and not published to any registry.
-
-[[licenses.clarify]]
-name = "lightarchitects"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-core"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-crypto"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-soul"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-corso"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-eva"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-quantum"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-seraph"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-ayin"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-arena"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-auth"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-webshell"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-turnlog"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-gateway"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-helix"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-oracle"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-# ── AYIN workspace sub-crates ─────────────────────────────────────────────────
-
-[[licenses.clarify]]
-name = "ayin-core"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "ayin-engine"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "ayin-mcp"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-# ── CORSO workspace sub-crates ────────────────────────────────────────────────
+# ── CORSO workspace sub-crates (still Proprietary — not yet relicensed) ───────
 
 [[licenses.clarify]]
 name = "corso-sandbox-bridge"
@@ -182,39 +62,6 @@ license-files = []
 
 [[licenses.clarify]]
 name = "corso-trinity-core"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "voice-engine"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "soul-engine"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "neural-engine"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "soul"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-# ── External path dependencies ────────────────────────────────────────────────
-# AYIN lives outside the lightarchitects-sdk workspace but is referenced as a path dep.
-
-[[licenses.clarify]]
-name = "ayin"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
