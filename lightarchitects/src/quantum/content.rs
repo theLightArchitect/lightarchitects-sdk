@@ -58,6 +58,7 @@ pub fn unwrap_text(value: Value) -> Result<String, SdkError> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

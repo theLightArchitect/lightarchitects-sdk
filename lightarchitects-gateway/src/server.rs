@@ -278,6 +278,7 @@ fn error_response(id: Value, code: i64, message: &str) -> Value {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

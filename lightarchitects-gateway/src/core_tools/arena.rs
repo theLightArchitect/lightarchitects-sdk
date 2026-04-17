@@ -2101,6 +2101,7 @@ fn find_session(params: &Value, prefix: &str) -> Result<String, GatewayError> {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

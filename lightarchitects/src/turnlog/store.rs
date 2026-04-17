@@ -40,9 +40,7 @@ impl StoreLayout {
     /// Returns `None` if the home directory cannot be resolved.
     #[must_use]
     pub fn default_for_user() -> Option<Self> {
-        Some(Self::new(
-            crate::core::paths::laex0()?.join("turnlog"),
-        ))
+        Some(Self::new(crate::core::paths::laex0()?.join("turnlog")))
     }
 
     /// Root directory.

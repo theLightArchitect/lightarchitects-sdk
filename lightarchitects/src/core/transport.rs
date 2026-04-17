@@ -16,7 +16,9 @@ use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use tokio::sync::Mutex;
 
 use crate::core::auth::{AuthChecker, AuthStatus};
-use crate::core::constants::{MAX_CONTENT_LENGTH_HEADERS, MAX_RESPONSE_BYTES, MCP_PROTOCOL_VERSION};
+use crate::core::constants::{
+    MAX_CONTENT_LENGTH_HEADERS, MAX_RESPONSE_BYTES, MCP_PROTOCOL_VERSION,
+};
 use crate::core::error::{ProtocolError, SdkError, TransportError};
 use crate::core::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 use crate::core::sibling::{McpFraming, SiblingId};

@@ -287,7 +287,10 @@ impl<T: Transport> EvaClient<T> {
     ///
     /// The builder allows setting a phase filter, context, output format, and
     /// session ID before calling `.call()`.
-    pub fn ideate_builder(&self, goal: impl Into<String>) -> crate::eva::ideate::IdeateBuilder<'_, T> {
+    pub fn ideate_builder(
+        &self,
+        goal: impl Into<String>,
+    ) -> crate::eva::ideate::IdeateBuilder<'_, T> {
         crate::eva::ideate::IdeateBuilder::new(&self.inner, goal.into())
     }
 }

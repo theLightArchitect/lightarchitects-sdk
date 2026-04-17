@@ -46,8 +46,8 @@
 //! [..]        hmac_prev bytes (32 bytes, hex-decoded)
 //! ```
 
-use ayin::TraceSpan;
 use crate::crypto::hash::hmac_hash;
+use ayin::TraceSpan;
 use secrecy::{ExposeSecret, SecretSlice, SecretString};
 use serde::{Deserialize, Serialize};
 
@@ -289,9 +289,8 @@ pub fn derive_session_key(
 
     let hk = hkdf::Hkdf::<sha2::Sha256>::new(Some(&salt), pepper.expose_secret());
     let mut okm = [0u8; SESSION_KEY_BYTES];
-    hk.expand(info.as_bytes(), &mut okm).map_err(|e| {
-        TurnLogError::Crypto(crate::crypto::CryptoError::HmacInit(e.to_string()))
-    })?;
+    hk.expand(info.as_bytes(), &mut okm)
+        .map_err(|e| TurnLogError::Crypto(crate::crypto::CryptoError::HmacInit(e.to_string())))?;
 
     // Wrap as SecretString by hex-encoding the 32 bytes; hmac_hash takes a
     // SecretString so the downstream API is uniform with la-crypto's pattern.

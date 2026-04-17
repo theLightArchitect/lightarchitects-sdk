@@ -570,6 +570,7 @@ pub async fn discover_all(servers: &[ServerConfig]) -> Result<ToolRegistry, Disc
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

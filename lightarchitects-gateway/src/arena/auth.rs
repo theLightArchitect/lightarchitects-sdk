@@ -326,6 +326,7 @@ fn error_response(status: StatusCode, code: &str, message: &str) -> Response {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

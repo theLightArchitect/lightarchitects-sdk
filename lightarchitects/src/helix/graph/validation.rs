@@ -111,6 +111,7 @@ pub fn is_safe_identifier(s: &str) -> bool {
 // ============================================================================
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

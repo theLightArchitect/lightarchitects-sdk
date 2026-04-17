@@ -441,6 +441,7 @@ fn simple_hash(s: &str) -> u64 {
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #[allow(unsafe_code)]
 mod tests {
     use super::*;

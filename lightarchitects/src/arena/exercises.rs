@@ -702,6 +702,7 @@ pub fn write_manifest(exercises: &[Exercise], path: &std::path::Path) -> Result<
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

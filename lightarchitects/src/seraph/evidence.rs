@@ -173,6 +173,7 @@ fn evidence_dir(scope_id: &str) -> Result<PathBuf, SdkError> {
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #[allow(unsafe_code)]
 mod tests {
     use super::*;

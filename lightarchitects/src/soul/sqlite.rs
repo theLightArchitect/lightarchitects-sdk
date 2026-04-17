@@ -32,7 +32,9 @@ use rusqlite::{Connection, OptionalExtension, params};
 use tokio::sync::Mutex;
 use tracing::instrument;
 
-use crate::soul::storage::{EntryFilter, StorageBackend, StorageEntry, StorageError, StorageSearchHit};
+use crate::soul::storage::{
+    EntryFilter, StorageBackend, StorageEntry, StorageError, StorageSearchHit,
+};
 
 // ============================================================================
 // DDL — schema statements run in order during migration

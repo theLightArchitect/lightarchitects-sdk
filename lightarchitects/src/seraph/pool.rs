@@ -19,8 +19,8 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
-use crate::seraph::ssh::SshSession;
 use crate::core::error::SdkError;
+use crate::seraph::ssh::SshSession;
 
 /// Hard upper bound for `max_sessions`.
 const MAX_SESSIONS_CEILING: usize = 8;

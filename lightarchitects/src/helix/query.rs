@@ -278,7 +278,10 @@ mod tests {
     #[test]
     fn test_depth_clamped() {
         let q = HelixQuery::new().depth(99);
-        assert_eq!(q.effective_depth(), crate::helix::types::MAX_TRAVERSAL_DEPTH);
+        assert_eq!(
+            q.effective_depth(),
+            crate::helix::types::MAX_TRAVERSAL_DEPTH
+        );
     }
 
     #[test]

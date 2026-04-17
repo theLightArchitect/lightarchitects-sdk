@@ -562,6 +562,7 @@ pub fn write_report(report: &EvalReport, output_path: &Path) -> Result<(), Expor
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::arena::config::OutputFormat;

@@ -3,7 +3,7 @@
 //! A single crate containing all LA building blocks: wire protocol, crypto,
 //! auth, sibling clients (SOUL, CORSO, EVA, QUANTUM, SERAPH, AYIN), and
 //! advanced capabilities (Arena training factory, Oracle, Helix graph backend,
-//! TurnLog ephemeral log).
+//! `TurnLog` ephemeral log).
 //!
 //! License: AGPL-3.0. Commercial licenses available from Light Architects.
 

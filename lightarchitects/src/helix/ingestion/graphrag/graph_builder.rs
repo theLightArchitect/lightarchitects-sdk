@@ -23,7 +23,9 @@ use chrono::Utc;
 use tracing::{debug, instrument, warn};
 
 use crate::helix::db::HelixDb;
-use crate::helix::types::{Helix, HelixLink, HelixOrderingMode, LinkType, MAX_TRAVERSAL_DEPTH, Step};
+use crate::helix::types::{
+    Helix, HelixLink, HelixOrderingMode, LinkType, MAX_TRAVERSAL_DEPTH, Step,
+};
 
 use super::{
     IngestionReport,
@@ -458,7 +460,7 @@ mod tests {
         };
         let meta = build_step_metadata("src", &seg, &entity, None);
         // domain key absent or null
-        assert!(meta.get("domain").map_or(true, serde_json::Value::is_null));
+        assert!(meta.get("domain").is_none_or(serde_json::Value::is_null));
     }
 
     #[test]

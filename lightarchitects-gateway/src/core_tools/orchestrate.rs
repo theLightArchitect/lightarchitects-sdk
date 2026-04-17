@@ -337,6 +337,7 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::config::GatewayConfig;

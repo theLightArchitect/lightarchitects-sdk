@@ -844,6 +844,7 @@ fn write_file_tool(args: &serde_json::Value, _data_dir: Option<&Path>) -> String
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use std::fs;

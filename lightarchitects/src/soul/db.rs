@@ -125,9 +125,9 @@ impl SoulDb {
     pub fn with_fastembed(self) -> Result<Self, SoulError> {
         use crate::soul::embedding::fastembed::{FastEmbedModel, FastEmbedProvider};
         let provider = FastEmbedProvider::try_new(FastEmbedModel::Default).map_err(|e| {
-            SoulError::Storage(crate::soul::storage::StorageError::InvalidArgument(format!(
-                "FastEmbed init: {e}"
-            )))
+            SoulError::Storage(crate::soul::storage::StorageError::InvalidArgument(
+                format!("FastEmbed init: {e}"),
+            ))
         })?;
         self.with_embedding(Arc::new(provider))
     }
@@ -147,9 +147,9 @@ impl SoulDb {
     ) -> Result<Self, SoulError> {
         use crate::soul::embedding::fastembed::FastEmbedProvider;
         let provider = FastEmbedProvider::try_new(model).map_err(|e| {
-            SoulError::Storage(crate::soul::storage::StorageError::InvalidArgument(format!(
-                "FastEmbed init: {e}"
-            )))
+            SoulError::Storage(crate::soul::storage::StorageError::InvalidArgument(
+                format!("FastEmbed init: {e}"),
+            ))
         })?;
         self.with_embedding(Arc::new(provider))
     }
@@ -171,9 +171,9 @@ impl SoulDb {
             ..OllamaConfig::default()
         };
         let provider = OllamaEmbeddingProvider::new(config).map_err(|e| {
-            SoulError::Storage(crate::soul::storage::StorageError::InvalidArgument(format!(
-                "Ollama provider: {e}"
-            )))
+            SoulError::Storage(crate::soul::storage::StorageError::InvalidArgument(
+                format!("Ollama provider: {e}"),
+            ))
         })?;
         self.with_embedding(Arc::new(provider))
     }

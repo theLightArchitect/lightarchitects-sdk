@@ -353,8 +353,10 @@ pub trait HelixDb: Send + Sync {
     /// Execute arbitrary Cypher (for GDS procedures, etc.).
     ///
     /// Returns the raw records. Use sparingly — prefer typed methods.
-    async fn execute_cypher(&self, cypher: &str)
-    -> Result<Vec<crate::helix::graph::Record>, HelixDbError>;
+    async fn execute_cypher(
+        &self,
+        cypher: &str,
+    ) -> Result<Vec<crate::helix::graph::Record>, HelixDbError>;
 
     /// Execute parameterized Cypher with named `$param` placeholders.
     ///
@@ -1862,7 +1864,9 @@ impl HelixNeo4j {
         })
     }
 
-    fn record_to_shared_experience(record: &crate::helix::graph::Record) -> Option<SharedExperience> {
+    fn record_to_shared_experience(
+        record: &crate::helix::graph::Record,
+    ) -> Option<SharedExperience> {
         let id = record.get("id")?.as_str()?.to_owned();
         let weight = record
             .get("weight")

@@ -448,6 +448,7 @@ fn sha256_file(path: &std::path::Path, agent_name: &str) -> Result<String, Gatew
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::config::GatewayConfig;
