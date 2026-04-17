@@ -14,36 +14,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Workspace Structure
 
+**feat/monolith-option-a**: All 14 library crates consolidated into a single `lightarchitects` crate (AGPL-3.0, `publish = false`). Workspace has 3 members:
+
 ```
 lightarchitects-sdk/
-├── Cargo.toml              # Workspace root (centralized deps, workspace lints)
-├── deny.toml               # cargo-deny: license + security policy
-├── rustfmt.toml            # fmt: edition 2024, max_width 100
-├── clippy.toml             # clippy: cognitive-complexity-threshold 10
-├── Makefile                # Standard LA targets: quality / test / build / doc / fix / push
-├── .github/
-│   ├── workflows/ci.yml    # Quality gates + tests (macOS + Linux) + MSRV + audit + deny
-│   ├── dependabot.yml      # Weekly Cargo dep updates (RustCrypto group, secret-handling group)
-│   ├── CODEOWNERS          # KFT reviews all; lightarchitects-crypto requires stricter review
-│   └── PULL_REQUEST_TEMPLATE.md
-├── .githooks/pre-commit    # fmt + clippy gate (install: git config core.hooksPath .githooks)
-│
-├── lightarchitects-crypto/           # Phase 3 — Crypto foundation (HKDF, HMAC, AES-256-GCM, Ed25519, SecretStore)
-├── lightarchitects-core/             # Phase 3 — Wire protocol, transport, error types, retry (stdio JSON-RPC)
-├── lightarchitects-auth/             # Auth — API key validation, 3-tier degradation (NoKey/GracePeriod/Valid)
-├── lightarchitects-gateway/          # Gateway binary — 3 modes: MCP (stdio), Arena (HTTP), Conductor (task queue)
-├── lightarchitects-soul/             # Phase 4 — SOUL typed client (soulTools, 23 actions)
-├── lightarchitects-corso/            # Phase 5 — CORSO typed client (corsoTools, 26 actions)
-├── lightarchitects-arena/            # Training data factory for MCP tool-use LLMs (discover→generate→score→export)
-├── lightarchitects-oracle/           # Multi-model mathematical verification oracle (parallel Lean/DeepSeek/Qwen/Kimi)
-├── lightarchitects-eva/              # Phase 6 — EVA typed client (9 tools via dual-path adapter)
-├── lightarchitects-quantum/          # Phase 7 — QUANTUM typed client (qsTools, 13 actions)
-├── lightarchitects-seraph/           # Phase 8 — SERAPH typed client (penTools, 18 actions, SSH feature)
-├── lightarchitects-ayin/             # Phase 9 — AYIN observability wrapper (feature = "observe")
-├── lightarchitects/                  # Phase 10 — Umbrella crate (re-exports all sibling clients, feature-gated)
-# Phase 11 (lightarchitects-cli) merged into lightarchitects-gateway
-└── lightarchitects-helix/            # Task #49 — Neo4j graph backend (HelixDb, 5 primitives, hybrid 4-signal RRF retrieval)
+├── Cargo.toml                    # Workspace root — 3 members only
+├── lightarchitects/              # Unified SDK library (AGPL-3.0, publish = false)
+│   ├── Cargo.toml                # All external deps + feature flags merged here
+│   └── src/
+│       ├── lib.rs                # Top-level pub mod declarations
+│       ├── core/                 # Wire protocol, transport, error types, retry
+│       ├── crypto/               # HKDF, HMAC, AES-256-GCM, Ed25519, SecretStore
+│       ├── auth/                 # API key validation, 3-tier degradation
+│       ├── soul/                 # SOUL typed client (soulTools, 23 actions)
+│       ├── corso/                # CORSO typed client (corsoTools, 26 actions)
+│       ├── eva/                  # EVA typed client (9 tools via dual-path adapter)
+│       ├── quantum/              # QUANTUM typed client (qsTools, 13 actions)
+│       ├── seraph/               # SERAPH typed client (penTools, 18 actions)
+│       ├── ayin/                 # AYIN observability wrapper
+│       ├── arena/                # Training data factory
+│       ├── oracle/               # Multi-model mathematical verification
+│       ├── helix/                # Neo4j graph backend (HelixDb, 5 primitives)
+│       └── turnlog/              # Ephemeral transactional log
+├── lightarchitects-gateway/      # Binary: MCP server + Arena HTTP + Conductor
+└── lightarchitects-webshell/     # Binary: local web GUI (PTY + 3D helix panel)
 ```
+
+Old individual crate directories (`lightarchitects-core/`, `lightarchitects-soul/`, etc.) are preserved on disk as reference but are **not workspace members**. Downstream projects using path deps to these still compile until the dirs are deleted.
 
 ## Build Commands
 
@@ -51,14 +48,13 @@ lightarchitects-sdk/
 # Quality gates (MANDATORY before commit)
 make quality        # fmt --check + clippy (pedantic) + test
 
-# Individual gates
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
+# Individual gates (use -p flags — --all recurses into preserved legacy dirs)
+cargo fmt -p lightarchitects -p lightarchitects-gateway -p lightarchitects-webshell -- --check
+cargo clippy -p lightarchitects -p lightarchitects-gateway -p lightarchitects-webshell --all-targets --all-features -- -D warnings
+cargo test -p lightarchitects -p lightarchitects-gateway -p lightarchitects-webshell --all-features
 
 # Run a single test
-cargo test -p lightarchitects-soul test_name
-cargo test -p lightarchitects-core newline_frame_rejects_oversized
+cargo test -p lightarchitects test_name
 
 # Fix issues
 make fix            # auto-fix fmt + clippy
