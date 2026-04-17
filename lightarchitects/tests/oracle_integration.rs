@@ -106,7 +106,10 @@ async fn model_error_captured_in_finding_not_top_level() {
         .await
         .expect("verdict must succeed even when model connection fails");
 
-    assert_eq!(verdict.models_ok, 0, "connection refused must not count as ok");
+    assert_eq!(
+        verdict.models_ok, 0,
+        "connection refused must not count as ok"
+    );
     assert!(
         matches!(verdict.findings[0].status, FindingStatus::Error(_)),
         "transport failure must produce FindingStatus::Error"
