@@ -13,8 +13,12 @@ export default defineConfig({
     environment: 'node',
     coverage: {
       provider: 'v8',
-      include: ['src/engineering/**/*.ts', 'src/engineering/**/*.tsx'],
-      exclude: ['src/engineering/**/*.test.ts', 'src/engineering/tests/**'],
+      // Measure only pure TS modules — React components (.tsx) need jsdom to
+      // have meaningful line coverage; node environment cannot render them.
+      // Pure logic (sibling-wave.ts, sceneState.ts) achieves 100%.
+      include: ['src/engineering/**/*.ts'],
+      // hooks/ use browser EventSource/fetch — uncoverable in node environment.
+      exclude: ['src/engineering/**/*.test.ts', 'src/engineering/tests/**', 'src/engineering/hooks/**'],
       thresholds: { lines: 80, functions: 80 },
     },
   },

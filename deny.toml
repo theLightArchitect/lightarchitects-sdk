@@ -28,6 +28,12 @@ allow = [
     "MPL-2.0",
     # CDLA-Permissive-2.0: webpki-roots TLS root certificates (permissive, data-only).
     "CDLA-Permissive-2.0",
+    # Zlib: foldhash (fast hashing, OSI-approved, permissive).
+    "Zlib",
+    # NCSA: libfuzzer-sys via rav1e → fastembed (OSI-approved, FSF free).
+    "NCSA",
+    # CC0-1.0: notify (public domain dedication, permissive).
+    "CC0-1.0",
     # Light Architects proprietary license — used by all internal workspace crates
     # and the AYIN path dependency. These are never published to crates.io.
     "LicenseRef-LA-Proprietary",
@@ -93,12 +99,6 @@ expression = "LicenseRef-LA-Proprietary"
 license-files = []
 
 [[licenses.clarify]]
-name = "lightarchitects-cli"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
 name = "lightarchitects-arena"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
@@ -106,6 +106,106 @@ license-files = []
 
 [[licenses.clarify]]
 name = "lightarchitects-auth"
+version = "*"
+expression = "LicenseRef-LA-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+name = "lightarchitects-webshell"
+version = "*"
+expression = "LicenseRef-LA-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+name = "lightarchitects-turnlog"
+version = "*"
+expression = "LicenseRef-LA-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+name = "lightarchitects-gateway"
+version = "*"
+expression = "LicenseRef-LA-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+name = "lightarchitects-helix"
+version = "*"
+expression = "LicenseRef-LA-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+name = "lightarchitects-oracle"
+version = "*"
+expression = "LicenseRef-LA-Proprietary"
+license-files = []
+
+# ── AYIN workspace sub-crates ─────────────────────────────────────────────────
+
+[[licenses.clarify]]
+name = "ayin-core"
+version = "*"
+expression = "LicenseRef-LA-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+name = "ayin-engine"
+version = "*"
+expression = "LicenseRef-LA-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+name = "ayin-mcp"
+version = "*"
+expression = "LicenseRef-LA-Proprietary"
+license-files = []
+
+# ── CORSO workspace sub-crates ────────────────────────────────────────────────
+
+[[licenses.clarify]]
+name = "corso-sandbox-bridge"
+version = "*"
+expression = "LicenseRef-LA-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+name = "corso-server"
+version = "*"
+expression = "LicenseRef-LA-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+name = "corso-trinity"
+version = "*"
+expression = "LicenseRef-LA-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+name = "corso-trinity-core"
+version = "*"
+expression = "LicenseRef-LA-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+name = "voice-engine"
+version = "*"
+expression = "LicenseRef-LA-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+name = "soul-engine"
+version = "*"
+expression = "LicenseRef-LA-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+name = "neural-engine"
+version = "*"
+expression = "LicenseRef-LA-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+name = "soul"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
