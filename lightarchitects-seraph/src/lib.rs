@@ -19,7 +19,7 @@
 //!
 //! **All operations require prior authorisation.** Every call is scope-governed
 //! by SERAPH's 5-gate `ScopeGovernor` (TTL -> target -> tool -> concurrent -> domain).
-//! Ensure `~/.seraph/scope.toml` is configured with a valid engagement before use.
+//! Ensure `~/lightarchitects/seraph/scope.toml` is configured with a valid engagement before use.
 //!
 //! # Quick start
 //!
@@ -59,7 +59,7 @@ pub mod params;
 /// SSH session pool for reusing connections across calls.
 #[cfg(feature = "ssh")]
 pub mod pool;
-/// Engagement scope management (`~/.seraph/scope.toml`).
+/// Engagement scope management (`~/lightarchitects/seraph/scope.toml`).
 pub mod scope;
 /// SSH transport for remote SERAPH instances.
 #[cfg(feature = "ssh")]

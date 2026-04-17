@@ -88,7 +88,7 @@ mod observe_impl {
         /// Wrap `inner` and record AYIN spans using the `lightarchitects-sdk` actor.
         ///
         /// Spans are written to the default AYIN store path
-        /// (`~/.soul/helix/ayin/traces/`).
+        /// (`~/lightarchitects/soul/helix/ayin/traces/`).
         #[must_use]
         pub fn new(inner: T) -> Self {
             Self {

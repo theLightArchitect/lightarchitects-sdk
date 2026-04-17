@@ -21,7 +21,7 @@
 //! # Schema
 //!
 //! Records match the v2 schema defined in
-//! `~/.soul/helix/ayin/conversations/SCHEMA.md`.
+//! `~/lightarchitects/soul/helix/ayin/conversations/SCHEMA.md`.
 //!
 //! # `CognitivePhase` is always compiled
 //!
@@ -79,6 +79,7 @@ impl CognitivePhase {
 mod conversations_impl {
     use std::path::{Path, PathBuf};
 
+    use lightarchitects_core::paths;
     use serde::{Deserialize, Serialize};
     use thiserror::Error;
     use tokio::fs::OpenOptions;
@@ -313,7 +314,7 @@ mod conversations_impl {
 
     impl ConversationTracer {
         /// Create a tracer writing to the default AYIN conversations directory
-        /// (`~/.soul/helix/ayin/conversations/`).
+        /// (`~/lightarchitects/soul/helix/ayin/conversations/`).
         ///
         /// Returns an error if the home directory cannot be resolved.
         #[must_use]
@@ -408,8 +409,7 @@ mod conversations_impl {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     fn default_conversations_dir() -> PathBuf {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
-        PathBuf::from(home).join(".soul/helix/ayin/conversations")
+        paths::helix_root_or_fallback().join("ayin/conversations")
     }
 
     /// Append one JSON record followed by a newline to `path`.

@@ -4,7 +4,7 @@ use tracing::debug;
 
 /// Reads the API key from environment variable or local file.
 ///
-/// Priority: `LA_API_KEY` env var > `~/.soul/config/la-api-key` file
+/// Priority: `LA_API_KEY` env var > `~/lightarchitects/soul/config/la-api-key` file
 pub struct KeyReader;
 
 impl KeyReader {

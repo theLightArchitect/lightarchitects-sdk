@@ -1,4 +1,4 @@
-//! Engagement scope management — Rust mirror of `~/.seraph/scope.toml`.
+//! Engagement scope management — Rust mirror of `~/lightarchitects/seraph/scope.toml`.
 //!
 //! Build an [`EngagementScope`], call [`EngagementScope::install`] to write it
 //! to the expected path, then construct a [`crate::SeraphClient`].
@@ -25,7 +25,7 @@ const fn default_max_concurrent() -> u8 {
 
 // ── EngagementScope ─────────────────────────────────────────────────────────
 
-/// Rust representation of `~/.seraph/scope.toml`.
+/// Rust representation of `~/lightarchitects/seraph/scope.toml`.
 ///
 /// Build a scope, call [`EngagementScope::install`] to write it to the
 /// expected path, then construct a [`crate::SeraphClient`].
@@ -69,7 +69,7 @@ pub struct EngagementScope {
 }
 
 impl EngagementScope {
-    /// Serialize to TOML suitable for writing to `~/.seraph/scope.toml`.
+    /// Serialize to TOML suitable for writing to `~/lightarchitects/seraph/scope.toml`.
     ///
     /// # Errors
     ///
@@ -80,7 +80,7 @@ impl EngagementScope {
             .map_err(|e| SdkError::Config(format!("failed to serialize scope to TOML: {e}")))
     }
 
-    /// Write the scope to `~/.seraph/scope.toml`, creating the directory if
+    /// Write the scope to `~/lightarchitects/seraph/scope.toml`, creating the directory if
     /// needed.
     ///
     /// Uses an atomic tmp-file + chmod + rename sequence so the scope file is
@@ -106,11 +106,11 @@ impl EngagementScope {
     }
 }
 
-/// Resolve `~/.seraph/scope.toml`.
+/// Resolve `~/lightarchitects/seraph/scope.toml`.
 fn scope_path() -> Result<PathBuf, SdkError> {
-    let home = std::env::var("HOME")
-        .map_err(|_| SdkError::Config("HOME environment variable not set".to_owned()))?;
-    Ok(PathBuf::from(home).join(".seraph").join("scope.toml"))
+    lightarchitects_core::paths::seraph()
+        .map(|p| p.join("scope.toml"))
+        .ok_or_else(|| SdkError::Config("HOME environment variable not set".to_owned()))
 }
 
 /// Write `content` to `path` atomically with 0600 permissions.

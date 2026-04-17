@@ -8,10 +8,10 @@
 //! ```no_run
 //! # async fn example(client: lightarchitects_soul::SoulClient<lightarchitects_core::StdioTransport>)
 //! # -> Result<(), lightarchitects_core::SdkError> {
-//! use lightarchitects_soul::ingest::ContentType;
+//! use lightarchitects_soul::ContentType;
 //!
 //! let result = client
-//!     .ingest_builder("~/.soul/helix/eva/entries/my-entry.md")?
+//!     .ingest_builder("~/lightarchitects/soul/helix/eva/entries/my-entry.md")?
 //!     .content_type(ContentType::MarkdownNote)
 //!     .sibling("eva")
 //!     .call()
@@ -29,7 +29,7 @@ use crate::types::IngestResult;
 // ── Vault root (compile-time constant) ────────────────────────────────────────
 
 /// Relative vault root suffix appended to `$HOME` for path validation.
-const VAULT_ROOT_SUFFIX: &str = "/.soul/";
+const VAULT_ROOT_SUFFIX: &str = "/lightarchitects/soul/";
 
 // ── ContentType ───────────────────────────────────────────────────────────────
 
@@ -69,7 +69,7 @@ impl ContentType {
 /// # Path security
 ///
 /// [`IngestBuilder::with_path`] rejects any path that does not resolve to a
-/// location within `~/.soul/` after tilde expansion. This prevents callers from
+/// location within `~/lightarchitects/soul/` after tilde expansion. This prevents callers from
 /// accidentally (or deliberately) ingesting content outside the vault root.
 ///
 /// # Example
@@ -77,10 +77,10 @@ impl ContentType {
 /// ```no_run
 /// # async fn example(client: lightarchitects_soul::SoulClient<lightarchitects_core::StdioTransport>)
 /// # -> Result<(), lightarchitects_core::SdkError> {
-/// use lightarchitects_soul::ingest::ContentType;
+/// use lightarchitects_soul::ContentType;
 ///
 /// let result = client
-///     .ingest_builder("~/.soul/helix/corso/entries/plan.md")?
+///     .ingest_builder("~/lightarchitects/soul/helix/corso/entries/plan.md")?
 ///     .content_type(ContentType::HelixEntry)
 ///     .sibling("corso")
 ///     .call()
@@ -102,7 +102,7 @@ impl<'a, T: Transport> IngestBuilder<'a, T> {
     /// Create a builder with the given (validated) ingestion path.
     ///
     /// Tilde (`~`) is expanded to the value of `$HOME`. The expanded path must
-    /// start with `$HOME/.soul/` — any other prefix is rejected.
+    /// start with `$HOME/lightarchitects/soul/` — any other prefix is rejected.
     ///
     /// # Errors
     ///
@@ -170,7 +170,7 @@ impl<'a, T: Transport> IngestBuilder<'a, T> {
 
 // ── Path validation ───────────────────────────────────────────────────────────
 
-/// Expand a tilde prefix and verify the path is within `~/.soul/`.
+/// Expand a tilde prefix and verify the path is within `~/lightarchitects/soul/`.
 ///
 /// Takes an explicit `home` argument so callers (including tests) can inject
 /// any home directory without requiring environment mutation.
@@ -200,9 +200,12 @@ fn validate_vault_path(path: &str, home: &str) -> Result<String, SdkError> {
     };
 
     let vault_root = format!("{home}{VAULT_ROOT_SUFFIX}");
-    if !expanded.starts_with(&vault_root) {
+    // Use Path::starts_with for component-aware comparison (not just string prefix).
+    // This guards against a future accidental removal of the trailing slash in
+    // VAULT_ROOT_SUFFIX that would allow ~/.soul-adjacent/ to pass a string check.
+    if !std::path::Path::new(&expanded).starts_with(std::path::Path::new(&vault_root)) {
         return Err(SdkError::Config(format!(
-            "ingest path must be within ~/.soul/ (got: {expanded})"
+            "ingest path must be within ~/lightarchitects/soul/ (got: {expanded})"
         )));
     }
 
@@ -212,6 +215,7 @@ fn validate_vault_path(path: &str, home: &str) -> Result<String, SdkError> {
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -229,7 +233,10 @@ mod tests {
         let result = validate_vault_path("/home/user/Projects/evil.md", HOME);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("~/.soul/"), "message was: {msg}");
+        assert!(
+            msg.contains("~/lightarchitects/soul/"),
+            "message was: {msg}"
+        );
     }
 
     #[test]
@@ -244,15 +251,35 @@ mod tests {
 
     #[test]
     fn accepts_tilde_path() {
-        let result = validate_vault_path("~/.soul/helix/eva/entry.md", HOME);
+        let result = validate_vault_path("~/lightarchitects/soul/helix/eva/entry.md", HOME);
         assert!(result.is_ok(), "{result:?}");
-        assert_eq!(result.unwrap(), "/home/user/.soul/helix/eva/entry.md");
+        assert_eq!(
+            result.unwrap(),
+            "/home/user/lightarchitects/soul/helix/eva/entry.md"
+        );
     }
 
     #[test]
     fn accepts_absolute_vault_path() {
-        let result = validate_vault_path("/home/user/.soul/helix/corso/plan.md", HOME);
+        let result =
+            validate_vault_path("/home/user/lightarchitects/soul/helix/corso/plan.md", HOME);
         assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
+    fn rejects_adjacent_directory_false_prefix() {
+        // /home/user/lightarchitects/soul-adjacent/ starts with
+        // "/home/user/lightarchitects/soul" (string prefix) but NOT with
+        // "/home/user/lightarchitects/soul/" (path component boundary).
+        // Verifies the Path::starts_with check catches this; guards against a future
+        // accidental removal of the trailing slash from VAULT_ROOT_SUFFIX.
+        let result = validate_vault_path("/home/user/lightarchitects/soul-adjacent/evil.md", HOME);
+        assert!(result.is_err(), "adjacent directory must be rejected");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("~/lightarchitects/soul/"),
+            "message was: {msg}"
+        );
     }
 
     #[test]

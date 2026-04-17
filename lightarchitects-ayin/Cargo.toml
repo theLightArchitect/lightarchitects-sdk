@@ -7,6 +7,8 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Feature-gated AYIN observability wrapper for lightarchitects-sdk transports."
+keywords = ["mcp", "observability", "tracing", "sdk", "ayin"]
+documentation = "https://docs.rs/lightarchitects-ayin"
 
 [lints]
 workspace = true
@@ -16,13 +18,13 @@ workspace = true
 ##
 ## Without this feature, `ObservableTransport<T>` is a zero-cost newtype that
 ## delegates directly to the inner transport with no additional allocations or
-## I/O. Enable it when you want span traces in `~/.soul/helix/ayin/`.
+## I/O. Enable it when you want span traces in `~/lightarchitects/soul/helix/ayin/`.
 observe = ["dep:ayin", "dep:tokio"]
 
 ## Enable conversation-level JSONL tracing with pivot detection.
 ##
 ## Provides `ConversationTracer` and `PivotDetector` for recording tool calls,
-## errors, and automatic pivot detection to `~/.soul/helix/ayin/conversations/`.
+## errors, and automatic pivot detection to `~/lightarchitects/soul/helix/ayin/conversations/`.
 ## Without this feature all types are zero-cost noops.
 conversations = ["dep:tokio", "dep:thiserror"]
 
@@ -42,7 +44,7 @@ serde_json.workspace = true
 tracing.workspace = true
 
 # Optional — only pulled in when `observe` feature is active.
-ayin = { path = "/Users/kft/Projects/AYIN/AYIN-DEV/ayin", optional = true }
+ayin = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }

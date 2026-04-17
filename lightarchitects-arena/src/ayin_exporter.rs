@@ -2,7 +2,7 @@
 //!
 //! Reconstructs `ChatML` SFT training examples from two AYIN data sources:
 //!
-//! **Source A — Conversation traces** (`~/.soul/helix/ayin/conversations/*.jsonl`)
+//! **Source A — Conversation traces** (`~/lightarchitects/soul/helix/ayin/conversations/*.jsonl`)
 //!
 //! Each JSONL file contains a chronological stream of typed events for every
 //! tool call Claude made during that session.  Events are grouped by
@@ -10,7 +10,7 @@
 //! cycles.  When `pivot` events are present their `reason` text is interleaved
 //! into the assistant turn, teaching the model error-recovery reasoning.
 //!
-//! **Source B — Sibling tool traces** (`~/.soul/helix/ayin/traces/{sibling}/{date}/*.json`)
+//! **Source B — Sibling tool traces** (`~/lightarchitects/soul/helix/ayin/traces/{sibling}/{date}/*.json`)
 //!
 //! Each JSON file is one MCP tool invocation.  A synthetic user message is
 //! constructed from the action name and metadata; the assistant turn describes
@@ -53,9 +53,9 @@ struct AyinSftExample {
 /// Configuration for the AYIN → SFT export pipeline.
 #[derive(Debug, Clone)]
 pub struct AyinExportConfig {
-    /// `~/.soul/helix/ayin/conversations/` — JSONL conversation files.
+    /// `~/lightarchitects/soul/helix/ayin/conversations/` — JSONL conversation files.
     pub conversations_dir: PathBuf,
-    /// `~/.soul/helix/ayin/traces/` — per-sibling JSON trace files.
+    /// `~/lightarchitects/soul/helix/ayin/traces/` — per-sibling JSON trace files.
     pub sibling_traces_dir: PathBuf,
     /// Output `.jsonl` path.
     pub output_path: PathBuf,

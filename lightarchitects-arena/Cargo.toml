@@ -6,8 +6,8 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Plug-and-play training data factory for MCP tool-use language models"
 publish = false
+description = "Plug-and-play training data factory for MCP tool-use language models"
 
 [[bin]]
 name = "lightarchitects-arena"

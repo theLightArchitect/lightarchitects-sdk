@@ -29,28 +29,38 @@ struct MockTransport {
 }
 
 impl MockTransport {
+    fn responses_guard(
+        &self,
+    ) -> std::sync::MutexGuard<'_, VecDeque<Result<JsonRpcResponse, SdkError>>> {
+        match self.responses.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
+    fn received_ids_guard(&self) -> std::sync::MutexGuard<'_, Vec<u64>> {
+        match self.received_ids.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
     /// Enqueue a successful result response.
     fn push_ok(&self, result: serde_json::Value) {
-        self.responses
-            .lock()
-            .expect("mock lock")
+        self.responses_guard()
             .push_back(Ok(make_ok_response(result)));
     }
 
     /// Enqueue a JSON-RPC error response (transport succeeds, tool fails).
     fn push_rpc_error(&self, code: i64, message: &str) {
-        self.responses
-            .lock()
-            .expect("mock lock")
+        self.responses_guard()
             .push_back(Ok(make_rpc_error_response(code, message)));
     }
 
     /// Enqueue a retryable [`TransportError::Io`] error.
     fn push_io_error(&self) {
         let err = TransportError::Io(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
-        self.responses
-            .lock()
-            .expect("mock lock")
+        self.responses_guard()
             .push_back(Err(SdkError::Transport(err)));
     }
 
@@ -60,40 +70,31 @@ impl MockTransport {
             binary: "mock".to_owned(),
             source: std::io::Error::from(std::io::ErrorKind::NotFound),
         };
-        self.responses
-            .lock()
-            .expect("mock lock")
+        self.responses_guard()
             .push_back(Err(SdkError::Transport(err)));
     }
 
     /// How many times `send` was called across all clones of this transport.
     fn call_count(&self) -> usize {
-        self.received_ids.lock().expect("mock lock").len()
+        self.received_ids_guard().len()
     }
 
     /// All request ids received, in the order they arrived.
     fn received_ids(&self) -> Vec<u64> {
-        self.received_ids.lock().expect("mock lock").clone()
+        self.received_ids_guard().clone()
     }
 }
 
 impl Transport for MockTransport {
     async fn send(&self, request: JsonRpcRequest) -> Result<JsonRpcResponse, SdkError> {
         // Record id — both locks are released before any suspension point.
-        self.received_ids
-            .lock()
-            .expect("mock lock")
-            .push(request.id);
+        self.received_ids_guard().push(request.id);
 
-        self.responses
-            .lock()
-            .expect("mock lock")
-            .pop_front()
-            .unwrap_or_else(|| {
-                Err(SdkError::Config(
-                    "MockTransport: response queue exhausted".to_owned(),
-                ))
-            })
+        self.responses_guard().pop_front().unwrap_or_else(|| {
+            Err(SdkError::Config(
+                "MockTransport: response queue exhausted".to_owned(),
+            ))
+        })
     }
 }
 
@@ -153,8 +154,10 @@ async fn call_tool_success() {
         .call_tool("soulTools", serde_json::json!({"action": "helix"}))
         .await;
 
-    assert!(result.is_ok(), "expected Ok, got {result:?}");
-    assert_eq!(result.expect("ok"), serde_json::json!({"status": "ok"}));
+    assert_eq!(
+        result.as_ref().ok(),
+        Some(&serde_json::json!({"status": "ok"}))
+    );
     assert_eq!(mock.call_count(), 1);
 }
 
@@ -262,8 +265,10 @@ async fn list_tools_deserializes_correctly() {
     }));
     let client = McpClient::new(mock, no_retry());
 
-    let tools = client.list_tools().await.expect("list_tools failed");
+    let tools_result = client.list_tools().await;
 
+    assert!(tools_result.is_ok(), "list_tools failed: {tools_result:?}");
+    let tools = tools_result.ok().unwrap_or_default();
     assert_eq!(tools.len(), 2);
     assert_eq!(tools[0].name, "soulTools");
     assert_eq!(tools[1].name, "corsoTools");
@@ -281,18 +286,22 @@ async fn clone_shares_id_counter() {
     let client_a = McpClient::new(mock.clone(), no_retry());
     let client_b = client_a.clone(); // shares Arc<AtomicU64> with client_a
 
-    client_a
-        .call_tool("soulTools", serde_json::json!({}))
-        .await
-        .expect("a — call 1");
-    client_b
-        .call_tool("soulTools", serde_json::json!({}))
-        .await
-        .expect("b — call 1");
-    client_a
-        .call_tool("soulTools", serde_json::json!({}))
-        .await
-        .expect("a — call 2");
+    let primary_call_result = client_a.call_tool("soulTools", serde_json::json!({})).await;
+    let clone_call_result = client_b.call_tool("soulTools", serde_json::json!({})).await;
+    let followup_call_result = client_a.call_tool("soulTools", serde_json::json!({})).await;
+
+    assert!(
+        primary_call_result.is_ok(),
+        "a — call 1 failed: {primary_call_result:?}"
+    );
+    assert!(
+        clone_call_result.is_ok(),
+        "b — call 1 failed: {clone_call_result:?}"
+    );
+    assert!(
+        followup_call_result.is_ok(),
+        "a — call 2 failed: {followup_call_result:?}"
+    );
 
     let ids = mock.received_ids();
     assert_eq!(ids.len(), 3, "all three calls must reach the mock");

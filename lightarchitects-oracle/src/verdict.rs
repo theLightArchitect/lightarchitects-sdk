@@ -81,7 +81,7 @@ impl OracleVerdict {
     ///
     /// This is a heuristic — true consensus analysis requires the caller
     /// (Claude) to read the content and synthesize.
-    pub(crate) fn compute_consensus(findings: &[Finding]) -> Consensus {
+    pub fn compute_consensus(findings: &[Finding]) -> Consensus {
         let ok_count = findings
             .iter()
             .filter(|f| f.status == FindingStatus::Ok)

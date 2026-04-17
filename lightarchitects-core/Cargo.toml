@@ -7,7 +7,8 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Wire protocol, stdio transport, retry, and error types for the lightarchitects SDK"
-publish = false
+keywords = ["mcp", "ai", "sdk", "async", "transport"]
+documentation = "https://docs.rs/lightarchitects-core"
 
 [dependencies]
 rand = { workspace = true }
@@ -16,6 +17,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+async-trait = "0.1"
 
 [features]
 # Expose MockTransport for use in tests across crates in this workspace.

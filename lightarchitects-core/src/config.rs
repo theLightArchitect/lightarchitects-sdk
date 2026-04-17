@@ -68,7 +68,7 @@ impl ConfigBuilder {
     /// spawn failure later.
     pub fn build(self) -> Result<Config, SdkError> {
         // Use `is_file()` rather than `exists()` so that directory paths (e.g.
-        // passing `~/.corso/bin/` instead of `~/.corso/bin/corso`) are caught
+        // passing `~/lightarchitects/corso/bin/` instead of `~/lightarchitects/corso/bin/corso`) are caught
         // here as a config error rather than being deferred to spawn time where
         // they would burn the full retry budget before failing.
         if !self.binary_path.is_file() {

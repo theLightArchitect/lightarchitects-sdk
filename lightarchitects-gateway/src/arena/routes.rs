@@ -11,7 +11,7 @@ use serde_json::Value;
 
 use super::compat::{ApiError, ErrorCode};
 use super::compat::{JsonRpcRequestExt, JsonRpcResponseExt};
-use lightarchitects_core::jsonrpc::JsonRpcRequest;
+use lightarchitects::core::jsonrpc::JsonRpcRequest;
 
 use super::AppState;
 use super::arena_config::VALID_SIBLINGS;
@@ -606,8 +606,8 @@ fn sanitize_error_message(msg: &str) -> String {
 
 /// Sanitize a JSON-RPC response — strip internal details from error messages.
 fn sanitize_jsonrpc_response(
-    mut response: lightarchitects_core::jsonrpc::JsonRpcResponse,
-) -> lightarchitects_core::jsonrpc::JsonRpcResponse {
+    mut response: lightarchitects::core::jsonrpc::JsonRpcResponse,
+) -> lightarchitects::core::jsonrpc::JsonRpcResponse {
     if let Some(ref mut error) = response.error {
         error.message = sanitize_error_message(&error.message);
         // Note: SDK JsonRpcError has no `data` field (stripped during migration).

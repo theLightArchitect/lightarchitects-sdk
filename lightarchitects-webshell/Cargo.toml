@@ -15,10 +15,10 @@ path = "src/main.rs"
 
 [dependencies]
 # Canonical path resolution (unified-forging-vault Phase 1 helper)
-lightarchitects-core = { path = "../lightarchitects-core" }
+lightarchitects = { path = "../lightarchitects" }
 
 # Tier-1 ephemeral transactional log (unified-forging-turnlog)
-lightarchitects-turnlog = { path = "../lightarchitects-turnlog" }
+
 
 # Async runtime — "signal" for graceful shutdown; "ws" feature of axum adds tungstenite transitively
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }

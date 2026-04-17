@@ -334,7 +334,7 @@ async fn generate_code_returns_output() {
 #[tokio::test]
 async fn deploy_returns_status() {
     let mock = MockTransport::default();
-    mock.push_text("Deploy succeeded: corso v2.0.0 → ~/.corso/bin/corso");
+    mock.push_text("Deploy succeeded: corso v2.0.0 → ~/lightarchitects/corso/bin/corso");
 
     let out = client(mock).deploy("corso").await.unwrap();
     assert!(out.output.contains("Deploy succeeded"));

@@ -1,24 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "lightarchitects-crypto",
-    "lightarchitects-core",
-    "lightarchitects-auth",      # Auth — API key validation, 3-tier degradation
-    "lightarchitects-gateway",   # Phase 6: MCP Gateway binary (Tasks 6.1, 6.4)
-    # Added as crates are built in subsequent phases:
-    "lightarchitects-soul",      # Phase 4
-    "lightarchitects-corso",     # Phase 5
-    "lightarchitects-arena",     # keen-forging-hydra: MCP training arena
-    "lightarchitects-oracle",    # Multi-model mathematical verification oracle
-    "lightarchitects-eva",       # Phase 6
-    "lightarchitects-quantum",   # Phase 7
-    "lightarchitects-seraph",   # Phase 8
-    "lightarchitects-ayin",    # Phase 9
-    "lightarchitects",          # Phase 10 (umbrella)
-    # Phase 11 (lightarchitects-cli) merged into lightarchitects-gateway
-    "lightarchitects-helix",    # Task #49: helix graph backend (soul-helix shim)
-    "lightarchitects-turnlog",  # Tier-1 ephemeral transactional log for conversational agents
-    "lightarchitects-webshell", # luminous-weaving-nautilus: local web GUI for active coding agent
+    "lightarchitects",          # Unified SDK — all clients + advanced capabilities
+    "lightarchitects-gateway",  # Binary: MCP server + Arena HTTP + Conductor
+    "lightarchitects-webshell", # Binary: local web GUI (PTY + 3D helix panel)
 ]
 
 [workspace.package]

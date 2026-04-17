@@ -1,3 +1,6 @@
+use lightarchitects_core::SdkError;
+use lightarchitects_core::auth::{AuthProvider, AuthStatus};
+
 use crate::{
     AuthConfig, AuthError, AuthTier, KeyCache, KeyReader, KeyValidator, RevocationWatcher,
 };
@@ -188,5 +191,58 @@ impl AuthGuard {
         info!("Logged out — key, cache, and revocation list cleared");
         println!("Logged out successfully.");
         Ok(())
+    }
+}
+
+// ── AuthProvider impl ─────────────────────────────────────────────────────────
+
+/// `AuthGuard` implements [`AuthProvider`] from `lightarchitects-core`.
+///
+/// Maps the three-tier degradation model onto the SDK's two-outcome model:
+///
+/// | `AuthTier`     | `AuthStatus` returned                |
+/// |----------------|--------------------------------------|
+/// | `Valid`        | `AuthStatus::Valid`                  |
+/// | `GracePeriod`  | `AuthStatus::Degraded { message }`   |
+/// | `NoKey`        | `Err(SdkError::Auth(...))`           |
+///
+/// Key revocation and validation failure also map to `Err(SdkError::Auth)`.
+impl AuthProvider for AuthGuard {
+    async fn check_connect(&self) -> Result<AuthStatus, SdkError> {
+        match self.check().await {
+            Ok((AuthTier::Valid, cache)) => {
+                info!(
+                    user_id = %cache.user_id,
+                    tier = %cache.tier,
+                    expires = %cache.expires_at,
+                    "auth check passed"
+                );
+                Ok(AuthStatus::Valid)
+            }
+            Ok((AuthTier::GracePeriod { resets_remaining }, cache)) => {
+                warn!(
+                    user_id = %cache.user_id,
+                    resets_remaining,
+                    "auth degraded — validation endpoint unreachable, grace period active"
+                );
+                Ok(AuthStatus::Degraded {
+                    message: format!(
+                        "validation endpoint unreachable — grace period active \
+                         ({resets_remaining} resets remaining)"
+                    ),
+                })
+            }
+            Ok((AuthTier::NoKey, _)) => Err(SdkError::Auth("no API key found".to_owned())),
+            Err(AuthError::NoKeyFound { path }) => {
+                Err(SdkError::Auth(format!("no API key found (checked {path})")))
+            }
+            Err(AuthError::KeyRevoked) => {
+                Err(SdkError::Auth("API key has been revoked".to_owned()))
+            }
+            Err(AuthError::GraceExhausted { .. }) => Err(SdkError::Auth(
+                "auth grace period exhausted — re-authenticate to continue".to_owned(),
+            )),
+            Err(e) => Err(SdkError::Auth(e.to_string())),
+        }
     }
 }

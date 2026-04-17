@@ -45,7 +45,8 @@ async fn binary_path_shell_metacharacters_cannot_execute() {
     // Path with shell injection payload. If execve'd literally, the OS
     // looks for a file literally named "/nonexistent; echo PWNED" — not found.
     let malicious = std::path::Path::new("/nonexistent-binary; echo PWNED");
-    let result = StdioTransport::connect(SiblingId::Soul, malicious, Duration::from_secs(1)).await;
+    let result =
+        StdioTransport::connect(SiblingId::Soul, malicious, Duration::from_secs(1), None).await;
     assert!(
         matches!(
             result,
@@ -70,7 +71,7 @@ async fn binary_path_with_null_byte_fails_cleanly() {
     let os_str = OsStr::from_bytes(path_str.as_bytes());
     let path = std::path::Path::new(os_str);
 
-    let result = StdioTransport::connect(SiblingId::Soul, path, Duration::from_secs(1)).await;
+    let result = StdioTransport::connect(SiblingId::Soul, path, Duration::from_secs(1), None).await;
     assert!(
         matches!(
             result,

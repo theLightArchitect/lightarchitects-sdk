@@ -15,6 +15,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufR
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use tokio::sync::Mutex;
 
+use crate::auth::{AuthChecker, AuthStatus};
 use crate::constants::{MAX_CONTENT_LENGTH_HEADERS, MAX_RESPONSE_BYTES, MCP_PROTOCOL_VERSION};
 use crate::error::{ProtocolError, SdkError, TransportError};
 use crate::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
@@ -81,7 +82,26 @@ impl StdioTransport {
         sibling: SiblingId,
         binary_path: &Path,
         timeout: Duration,
+        auth: Option<&AuthChecker>,
     ) -> Result<Self, SdkError> {
+        // ── Auth check BEFORE spawning ─────────────────────────────────────────
+        // If auth fails hard (SdkError::Auth), we return immediately — no process
+        // is ever opened. This is the correct security model: deny access before
+        // the trust boundary opens, not after.
+        if let Some(checker) = auth {
+            match checker.check().await? {
+                AuthStatus::Valid => {
+                    tracing::debug!(sibling = ?sibling, "auth check passed");
+                }
+                AuthStatus::Degraded { ref message } => {
+                    tracing::warn!(
+                        sibling = ?sibling,
+                        "auth degraded — spawning with reduced confidence: {message}"
+                    );
+                }
+            }
+        }
+
         let mut cmd = tokio::process::Command::new(binary_path);
         cmd.stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -502,15 +522,13 @@ mod tests {
     async fn newline_frame_rejects_oversized_response() {
         let oversized = vec![b'x'; MAX_RESPONSE_BYTES + 1];
         let mut reader = make_reader(&oversized);
-        let err = read_newline_frame(&mut reader)
-            .await
-            .expect_err("must fail");
+        let result = read_newline_frame(&mut reader).await;
         assert!(
             matches!(
-                err,
-                SdkError::Protocol(ProtocolError::ResponseTooLarge { .. })
+                result,
+                Err(SdkError::Protocol(ProtocolError::ResponseTooLarge { .. }))
             ),
-            "expected ResponseTooLarge, got {err:?}"
+            "expected ResponseTooLarge, got {result:?}"
         );
     }
 
@@ -522,12 +540,13 @@ mod tests {
         data.extend_from_slice(&[0xFF, 0xFE]); // invalid UTF-8
         data.push(b'\n');
         let mut reader = make_reader(&data);
-        let err = read_newline_frame(&mut reader)
-            .await
-            .expect_err("must fail");
+        let result = read_newline_frame(&mut reader).await;
         assert!(
-            matches!(err, SdkError::Protocol(ProtocolError::MalformedJson(_))),
-            "expected MalformedJson, got {err:?}"
+            matches!(
+                result,
+                Err(SdkError::Protocol(ProtocolError::MalformedJson(_)))
+            ),
+            "expected MalformedJson, got {result:?}"
         );
     }
 
@@ -536,10 +555,11 @@ mod tests {
     async fn newline_frame_accepts_valid_json() {
         let data = b"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":null}\n";
         let mut reader = make_reader(data);
-        let s = read_newline_frame(&mut reader)
-            .await
-            .expect("should succeed");
-        assert!(s.contains("jsonrpc"));
+        let result = read_newline_frame(&mut reader).await;
+        assert!(
+            matches!(result.as_ref(), Ok(frame) if frame.contains("jsonrpc")),
+            "expected success, got {result:?}"
+        );
     }
 
     // ── Content-Length frame adversarial tests ────────────────────────────────
@@ -551,15 +571,13 @@ mod tests {
         let too_big = MAX_RESPONSE_BYTES + 1;
         let header = format!("Content-Length: {too_big}\r\n\r\n");
         let mut reader = make_reader(header.as_bytes());
-        let err = read_content_length_frame(&mut reader)
-            .await
-            .expect_err("must fail");
+        let result = read_content_length_frame(&mut reader).await;
         assert!(
             matches!(
-                err,
-                SdkError::Protocol(ProtocolError::ResponseTooLarge { .. })
+                result,
+                Err(SdkError::Protocol(ProtocolError::ResponseTooLarge { .. }))
             ),
-            "expected ResponseTooLarge, got {err:?}"
+            "expected ResponseTooLarge, got {result:?}"
         );
     }
 
@@ -568,12 +586,13 @@ mod tests {
     #[tokio::test]
     async fn content_length_rejects_zero() {
         let mut reader = make_reader(b"Content-Length: 0\r\n\r\n");
-        let err = read_content_length_frame(&mut reader)
-            .await
-            .expect_err("must fail");
+        let result = read_content_length_frame(&mut reader).await;
         assert!(
-            matches!(err, SdkError::Protocol(ProtocolError::UnexpectedShape(_))),
-            "expected UnexpectedShape, got {err:?}"
+            matches!(
+                result,
+                Err(SdkError::Protocol(ProtocolError::UnexpectedShape(_)))
+            ),
+            "expected UnexpectedShape, got {result:?}"
         );
     }
 
@@ -582,12 +601,13 @@ mod tests {
     #[tokio::test]
     async fn content_length_rejects_missing_header() {
         let mut reader = make_reader(b"X-Custom: value\r\n\r\n");
-        let err = read_content_length_frame(&mut reader)
-            .await
-            .expect_err("must fail");
+        let result = read_content_length_frame(&mut reader).await;
         assert!(
-            matches!(err, SdkError::Protocol(ProtocolError::UnexpectedShape(_))),
-            "expected UnexpectedShape (missing CL), got {err:?}"
+            matches!(
+                result,
+                Err(SdkError::Protocol(ProtocolError::UnexpectedShape(_)))
+            ),
+            "expected UnexpectedShape (missing CL), got {result:?}"
         );
     }
 
@@ -595,12 +615,13 @@ mod tests {
     #[tokio::test]
     async fn content_length_rejects_non_numeric_value() {
         let mut reader = make_reader(b"Content-Length: abc\r\n\r\n");
-        let err = read_content_length_frame(&mut reader)
-            .await
-            .expect_err("must fail");
+        let result = read_content_length_frame(&mut reader).await;
         assert!(
-            matches!(err, SdkError::Protocol(ProtocolError::UnexpectedShape(_))),
-            "expected UnexpectedShape (non-numeric CL), got {err:?}"
+            matches!(
+                result,
+                Err(SdkError::Protocol(ProtocolError::UnexpectedShape(_)))
+            ),
+            "expected UnexpectedShape (non-numeric CL), got {result:?}"
         );
     }
 
@@ -609,12 +630,13 @@ mod tests {
     #[tokio::test]
     async fn content_length_rejects_negative_value() {
         let mut reader = make_reader(b"Content-Length: -1\r\n\r\n");
-        let err = read_content_length_frame(&mut reader)
-            .await
-            .expect_err("must fail");
+        let result = read_content_length_frame(&mut reader).await;
         assert!(
-            matches!(err, SdkError::Protocol(ProtocolError::UnexpectedShape(_))),
-            "expected UnexpectedShape (negative CL), got {err:?}"
+            matches!(
+                result,
+                Err(SdkError::Protocol(ProtocolError::UnexpectedShape(_)))
+            ),
+            "expected UnexpectedShape (negative CL), got {result:?}"
         );
     }
 
@@ -626,16 +648,17 @@ mod tests {
         // reaches MAX_CONTENT_LENGTH_HEADERS before seeing the blank line.
         let mut data = String::new();
         for i in 0..=MAX_CONTENT_LENGTH_HEADERS {
-            write!(data, "X-Extra-{i}: value\r\n").unwrap();
+            assert!(write!(data, "X-Extra-{i}: value\r\n").is_ok());
         }
         data.push_str("\r\n");
         let mut reader = make_reader(data.as_bytes());
-        let err = read_content_length_frame(&mut reader)
-            .await
-            .expect_err("must fail");
+        let result = read_content_length_frame(&mut reader).await;
         assert!(
-            matches!(err, SdkError::Protocol(ProtocolError::UnexpectedShape(_))),
-            "expected UnexpectedShape (too many headers), got {err:?}"
+            matches!(
+                result,
+                Err(SdkError::Protocol(ProtocolError::UnexpectedShape(_)))
+            ),
+            "expected UnexpectedShape (too many headers), got {result:?}"
         );
     }
 
@@ -646,12 +669,13 @@ mod tests {
         let mut data = b"Content-Length: 4\r\n\r\n".to_vec();
         data.extend_from_slice(&[0xFF, 0xFE, 0xFD, 0xFC]); // 4 invalid bytes
         let mut reader = make_reader(&data);
-        let err = read_content_length_frame(&mut reader)
-            .await
-            .expect_err("must fail");
+        let result = read_content_length_frame(&mut reader).await;
         assert!(
-            matches!(err, SdkError::Protocol(ProtocolError::MalformedJson(_))),
-            "expected MalformedJson, got {err:?}"
+            matches!(
+                result,
+                Err(SdkError::Protocol(ProtocolError::MalformedJson(_)))
+            ),
+            "expected MalformedJson, got {result:?}"
         );
     }
 
@@ -661,10 +685,11 @@ mod tests {
         let body = r#"{"jsonrpc":"2.0","id":1,"result":null}"#;
         let frame = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
         let mut reader = make_reader(frame.as_bytes());
-        let s = read_content_length_frame(&mut reader)
-            .await
-            .expect("should succeed");
-        assert!(s.contains("jsonrpc"));
+        let result = read_content_length_frame(&mut reader).await;
+        assert!(
+            matches!(result.as_ref(), Ok(frame) if frame.contains("jsonrpc")),
+            "expected success, got {result:?}"
+        );
     }
 
     /// Exactly `MAX_CONTENT_LENGTH_HEADERS` non-CL header lines, then the
@@ -674,16 +699,17 @@ mod tests {
     async fn content_length_exactly_at_cap_missing_cl_rejected() {
         let mut data = String::new();
         for i in 0..MAX_CONTENT_LENGTH_HEADERS {
-            write!(data, "X-Junk-{i}: value\r\n").unwrap();
+            assert!(write!(data, "X-Junk-{i}: value\r\n").is_ok());
         }
         data.push_str("\r\n");
         let mut reader = make_reader(data.as_bytes());
-        let err = read_content_length_frame(&mut reader)
-            .await
-            .expect_err("must fail — no Content-Length");
+        let result = read_content_length_frame(&mut reader).await;
         assert!(
-            matches!(err, SdkError::Protocol(ProtocolError::UnexpectedShape(_))),
-            "expected UnexpectedShape (missing CL), got {err:?}"
+            matches!(
+                result,
+                Err(SdkError::Protocol(ProtocolError::UnexpectedShape(_)))
+            ),
+            "expected UnexpectedShape (missing CL), got {result:?}"
         );
     }
 }

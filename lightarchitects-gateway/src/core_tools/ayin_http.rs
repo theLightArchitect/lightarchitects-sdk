@@ -50,7 +50,7 @@ pub async fn dispatch(action: &str, params: Value) -> Result<Value, GatewayError
 #[must_use]
 pub fn is_ayin_action(action: &str) -> bool {
     action
-        .parse::<lightarchitects_ayin::AyinAction>()
+        .parse::<lightarchitects::ayin::AyinAction>()
         .is_ok_and(|a| a.is_gateway_routable())
 }
 

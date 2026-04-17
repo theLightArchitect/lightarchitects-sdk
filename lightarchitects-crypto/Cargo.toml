@@ -7,6 +7,8 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+keywords = ["cryptography", "aes-gcm", "ed25519", "hkdf", "mcp"]
+documentation = "https://docs.rs/lightarchitects-crypto"
 
 [features]
 default = ["keychain", "env-store"]

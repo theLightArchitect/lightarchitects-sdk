@@ -3,10 +3,11 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use lightarchitects_core::auth::AuthChecker;
 use lightarchitects_core::constants::DEFAULT_TIMEOUT_SECS;
 use lightarchitects_core::error::{SdkError, ToolError};
 use lightarchitects_core::transport::Transport;
-use lightarchitects_core::{McpClient, RetryConfig, SiblingId, StdioTransport};
+use lightarchitects_core::{AuthProvider, McpClient, RetryConfig, SiblingId, StdioTransport};
 
 use crate::content::{unwrap_json, unwrap_text};
 use crate::types::{
@@ -560,7 +561,7 @@ impl<T: Transport> CorsoClient<T> {
 
 impl CorsoClient<StdioTransport> {
     /// Create a builder for constructing a production [`CorsoClient`] backed by
-    /// the CORSO binary (`~/.corso/bin/corso` by default).
+    /// the CORSO binary (`~/lightarchitects/corso/bin/corso` by default).
     #[must_use]
     pub fn builder() -> CorsoClientBuilder {
         CorsoClientBuilder::default()
@@ -586,6 +587,7 @@ pub struct CorsoClientBuilder {
     binary_path: Option<PathBuf>,
     timeout: Duration,
     retry: RetryConfig,
+    auth: Option<AuthChecker>,
 }
 
 impl Default for CorsoClientBuilder {
@@ -594,6 +596,7 @@ impl Default for CorsoClientBuilder {
             binary_path: None,
             timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
             retry: RetryConfig::default(),
+            auth: None,
         }
     }
 }
@@ -601,7 +604,7 @@ impl Default for CorsoClientBuilder {
 impl CorsoClientBuilder {
     /// Override the path to the CORSO binary.
     ///
-    /// Defaults to `~/.corso/bin/corso` (resolved by [`SiblingId::Corso`]).
+    /// Defaults to `~/lightarchitects/corso/bin/corso` (resolved by [`SiblingId::Corso`]).
     #[must_use]
     pub fn binary_path(mut self, path: impl Into<PathBuf>) -> Self {
         self.binary_path = Some(path.into());
@@ -627,10 +630,21 @@ impl CorsoClientBuilder {
         self
     }
 
+    /// Attach an auth provider to gate connection behind a key check.
+    ///
+    /// Called during [`build`][Self::build] before the CORSO binary spawns.
+    /// Hard failure returns [`SdkError::Auth`]; no process is opened.
+    #[must_use]
+    pub fn auth(mut self, provider: impl AuthProvider) -> Self {
+        self.auth = Some(AuthChecker::from_provider(provider));
+        self
+    }
+
     /// Spawn the CORSO binary and complete the MCP handshake.
     ///
     /// # Errors
     ///
+    /// Returns [`SdkError::Auth`] if the auth check fails hard.
     /// Returns [`SdkError::Config`] if `$HOME` is unset and no explicit binary
     /// path was provided. Returns a transport error if the binary cannot be
     /// spawned or the MCP handshake fails.
@@ -641,7 +655,9 @@ impl CorsoClientBuilder {
                 SdkError::Config("$HOME is not set — provide an explicit binary_path".to_owned())
             })?,
         };
-        let transport = StdioTransport::connect(SiblingId::Corso, &path, self.timeout).await?;
+        let transport =
+            StdioTransport::connect(SiblingId::Corso, &path, self.timeout, self.auth.as_ref())
+                .await?;
         Ok(CorsoClient::from_transport(transport, self.retry))
     }
 }

@@ -47,15 +47,8 @@ helix = ["inline-soul"]
 workspace = true
 
 [dependencies]
-# ── Workspace sibling clients ─────────────────────────────────────────────────
-lightarchitects-core = { path = "../lightarchitects-core" }
-lightarchitects-corso = { path = "../lightarchitects-corso" }
-lightarchitects-eva = { path = "../lightarchitects-eva" }
-lightarchitects-soul = { path = "../lightarchitects-soul" }
-lightarchitects-quantum = { path = "../lightarchitects-quantum" }
-lightarchitects-seraph = { path = "../lightarchitects-seraph" }
-lightarchitects-ayin = { path = "../lightarchitects-ayin" }
-lightarchitects-crypto = { path = "../lightarchitects-crypto" }
+# ── Unified SDK (replaces all individual sibling crate deps) ──────────────────
+lightarchitects = { path = "../lightarchitects" }
 
 # ── Inline handler dependencies (optional, feature-gated) ───────────────────────
 ayin-mcp = { path = "/Users/kft/Projects/AYIN/AYIN-DEV/ayin-mcp", optional = true }

@@ -1,11 +1,11 @@
-//! Routine scheduler — cron-based dispatch for conductor and conversation routines.
+//! Routine scheduler — cron-based dispatch for curator and conversation routines.
 //!
 //! Reads `routines.json` (Khadas) or `routines-mac.json` (Mac/Docker) at startup.
 //! Evaluates cron expressions every minute and dispatches matching routines.
 //! Also handles event-driven dispatch from the helix significance-spike watcher.
 //!
 //! Routine types:
-//! - `"conductor"`: deterministic bulletin-board cycle (no LLM, existing behavior)
+//! - `"curator"`: deterministic bulletin-board cycle (no LLM, existing behavior)
 //! - `"conversation"`: multi-sibling conversation via Ollama (headless, transcript output)
 
 use std::path::Path;
@@ -24,14 +24,14 @@ use super::supervisor::SupervisorHandle;
 use crate::channels::Channels;
 
 use super::compat::{JsonRpcRequestExt, JsonRpcResponseExt};
-use lightarchitects_core::jsonrpc::JsonRpcRequest;
+use lightarchitects::core::jsonrpc::JsonRpcRequest;
 
 /// How often to check for due routines.
 const TICK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
-// ── Legacy routines.json types (Khadas conductor) ─────────────────────────
+// ── Legacy routines.json types (Khadas curator) ─────────────────────────
 
-/// A scheduled routine from legacy `routines.json` (conductor-only).
+/// A scheduled routine from legacy `routines.json` (curator-only).
 #[derive(Debug, Deserialize)]
 struct LegacyRoutineConfig {
     name: String,
@@ -63,7 +63,7 @@ struct ParsedRoutine {
     name: String,
     /// Parsed cron schedule. `None` for event-driven routines.
     schedule: Option<Schedule>,
-    /// Fallback MCP message (conductor routines only).
+    /// Fallback MCP message (curator routines only).
     message: String,
     /// Routine kind — determines dispatch path.
     kind: ParsedRoutineKind,
@@ -71,8 +71,8 @@ struct ParsedRoutine {
 
 /// Dispatch kind for a parsed routine.
 enum ParsedRoutineKind {
-    /// Deterministic conductor cycle.
-    Conductor,
+    /// Deterministic curator cycle.
+    Curator,
     /// Multi-sibling conversation via Ollama.
     Conversation(ConversationRoutineConfig),
 }
@@ -166,7 +166,7 @@ pub fn spawn_spike_handler(
 
 // ── Routine loading ───────────────────────────────────────────────────────
 
-/// Load routines from the legacy `routines.json` format (conductor-only).
+/// Load routines from the legacy `routines.json` format (curator-only).
 fn load_legacy_routines(
     path: &Path,
 ) -> Result<Vec<ParsedRoutine>, Box<dyn std::error::Error + Send + Sync>> {
@@ -191,7 +191,7 @@ fn load_legacy_routines(
                     name: routine.name,
                     schedule: Some(schedule),
                     message: routine.message,
-                    kind: ParsedRoutineKind::Conductor,
+                    kind: ParsedRoutineKind::Curator,
                 });
             }
             Err(e) => {
@@ -258,7 +258,7 @@ fn build_routine_kind(entry: &MacRoutineEntry) -> ParsedRoutineKind {
     if entry.kind == "conversation" {
         ParsedRoutineKind::Conversation(entry.to_conversation_config())
     } else {
-        ParsedRoutineKind::Conductor
+        ParsedRoutineKind::Curator
     }
 }
 
@@ -295,7 +295,7 @@ async fn run_loop(
     }
 }
 
-/// Dispatch a single routine — routes to conductor or conversation handler.
+/// Dispatch a single routine — routes to curator or conversation handler.
 async fn dispatch_routine(
     routine: &ParsedRoutine,
     pool: &McpPool,
@@ -307,8 +307,8 @@ async fn dispatch_routine(
     tracing::info!(routine = %routine.name, "Dispatching routine");
 
     match &routine.kind {
-        ParsedRoutineKind::Conductor => {
-            dispatch_conductor(routine, pool, supervisor, channels, data_dir).await;
+        ParsedRoutineKind::Curator => {
+            dispatch_curator(routine, pool, supervisor, channels, data_dir).await;
         }
         ParsedRoutineKind::Conversation(conv_config) => {
             dispatch_conversation(routine, conv_config, config).await;
@@ -316,23 +316,23 @@ async fn dispatch_routine(
     }
 }
 
-/// Dispatch a conductor cycle (no LLM, deterministic).
-async fn dispatch_conductor(
+/// Dispatch a curator cycle (no LLM, deterministic).
+async fn dispatch_curator(
     routine: &ParsedRoutine,
     pool: &McpPool,
     supervisor: &SupervisorHandle,
     channels: &Channels,
     data_dir: &Path,
 ) {
-    match super::conductor::run_cycle(data_dir, channels) {
+    match super::curator::run_cycle(data_dir, channels) {
         Ok(()) => {
-            tracing::info!(routine = %routine.name, "Conductor cycle complete");
+            tracing::info!(routine = %routine.name, "Curator cycle complete");
         }
         Err(e) => {
-            tracing::error!(routine = %routine.name, error = %e, "Conductor cycle failed");
-            channels.post_telegram(&format!("Conductor {} failed: {}", routine.name, e));
+            tracing::error!(routine = %routine.name, error = %e, "Curator cycle failed");
+            channels.post_telegram(&format!("Curator {} failed: {}", routine.name, e));
 
-            // Fallback: MCP dispatch to SOUL if conductor fails
+            // Fallback: MCP dispatch to SOUL if curator fails
             if supervisor.is_healthy("soul").await {
                 let request = JsonRpcRequest::tools_call(
                     0,

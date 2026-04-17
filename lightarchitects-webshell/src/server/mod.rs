@@ -333,7 +333,7 @@ async fn polytopes(headers: HeaderMap, State(state): State<AppState>) -> impl In
 /// Returns an empty secret if the key file is missing or unreadable —
 /// turnlog will be disabled gracefully for the session.
 fn load_turnlog_pepper() -> secrecy::SecretSlice<u8> {
-    let Some(path) = lightarchitects_core::paths::session_key() else {
+    let Some(path) = lightarchitects::core::paths::session_key() else {
         tracing::warn!(target: "turnlog", "Session key path unavailable — turnlog disabled");
         return secrecy::SecretSlice::from(vec![]);
     };

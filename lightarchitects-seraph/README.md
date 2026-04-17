@@ -11,7 +11,7 @@ Investigation: start_investigation | advance_investigation | close_investigation
 Utilities:     vault_sync | speak | status
 ```
 
-> **Authorization required.** Every call is scope-governed by SERAPH's 5-gate `ScopeGovernor` (TTL → target → tool → concurrent → domain). Ensure `~/.seraph/scope.toml` is configured with a valid engagement before use.
+> **Authorization required.** Every call is scope-governed by SERAPH's 5-gate `ScopeGovernor` (TTL → target → tool → concurrent → domain). Ensure `~/lightarchitects/seraph/scope.toml` is configured with a valid engagement before use.
 
 ## Quick Start
 

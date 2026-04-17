@@ -3,6 +3,8 @@
 //! Each test injects canned JSON-RPC responses that mirror what the real SOUL
 //! binary returns, then asserts the typed return values are correctly decoded.
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -182,7 +184,7 @@ async fn health_decodes_connected_status() {
         "edge_count": 3400,
         "latency_ms": 1.8,
         "backend": "neo4j",
-        "vault_root": "/Users/kft/.soul"
+        "vault_root": "/Users/kft/lightarchitects/soul"
     }));
 
     let h = client(mock).health().await.unwrap();

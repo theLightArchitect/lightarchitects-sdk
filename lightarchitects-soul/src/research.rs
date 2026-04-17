@@ -8,7 +8,7 @@
 //! ```no_run
 //! # async fn example(client: lightarchitects_soul::SoulClient<lightarchitects_core::StdioTransport>)
 //! # -> Result<(), lightarchitects_core::SdkError> {
-//! use lightarchitects_soul::research::{DepthLevel, ResearchSource};
+//! use lightarchitects_soul::{DepthLevel, ResearchSource};
 //!
 //! let result = client
 //!     .research_builder("consciousness and identity")?
@@ -100,7 +100,7 @@ impl DepthLevel {
 /// ```no_run
 /// # async fn example(client: lightarchitects_soul::SoulClient<lightarchitects_core::StdioTransport>)
 /// # -> Result<(), lightarchitects_core::SdkError> {
-/// use lightarchitects_soul::research::{DepthLevel, ResearchSource};
+/// use lightarchitects_soul::{DepthLevel, ResearchSource};
 ///
 /// let result = client
 ///     .research_builder("LLM alignment safety")?
@@ -209,7 +209,7 @@ impl<'a, T: Transport> ResearchBuilder<'a, T> {
             p["strand"] = strand.as_str().into();
         }
 
-        let params = serde_json::json!({ "action": "research", "params": p });
+        let params = serde_json::json!({ "action": "soul_search", "params": p });
         let raw = self.inner.call_tool("soulTools", params).await?;
         serde_json::from_value(raw).map_err(SdkError::from)
     }
@@ -244,6 +244,7 @@ fn validate_query(query: &str) -> Result<(), SdkError> {
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

@@ -5,7 +5,7 @@
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
-use lightarchitects_core::paths;
+use lightarchitects::core::paths;
 use secrecy::{ExposeSecret, SecretString};
 
 /// Read a path from an env var, falling back to a default.

@@ -50,7 +50,7 @@ fn build_prompt(task: &Task, guardrails: &str) -> String {
     };
 
     format!(
-        r"You are executing an autonomous LVL8 task. Use the Light Architects orchestrator (lightarchitects:orchestrator) to classify and route this task to the appropriate domain agent(s). If the orchestrator is unavailable, fall back to direct tool use.
+        r"You are executing an autonomous conductor task. Use the Light Architects orchestrator (lightarchitects:orchestrator) to classify and route this task to the appropriate domain agent(s). If the orchestrator is unavailable, fall back to direct tool use.
 
 TASK: {title}
 PROJECT: {project}
@@ -58,7 +58,7 @@ PROJECT: {project}
 {prompt}
 
 WORKFLOW:
-1. Create a git branch: lvl8/{id}
+1. Create a git branch: conductor/{id}
 2. Execute the task using appropriate meta-skills (/BUILD, /RESEARCH, /SECURE, etc.)
 3. Run quality gates: cargo fmt, cargo clippy --all-targets -- -D warnings, cargo test
 4. If quality gates pass, commit with a descriptive message
@@ -68,7 +68,7 @@ WORKFLOW:
 
 CONSTRAINTS:
 - If stuck after 3 attempts on the same error, STOP and report the blocker
-- All work on the lvl8/{id} branch — never modify main directly
+- All work on the conductor/{id} branch — never modify main directly
 - Follow Builders Cookbook standards (no unwrap, no panic, complexity <= 10, 60-line functions)
 - Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> in every commit",
         title = task.title,

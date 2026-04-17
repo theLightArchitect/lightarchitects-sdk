@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use lightarchitects_core::paths;
+
 /// Configuration for the Light Architects auth system.
 #[derive(Debug, Clone)]
 pub struct AuthConfig {
@@ -34,10 +36,7 @@ pub struct AuthConfig {
 
 impl Default for AuthConfig {
     fn default() -> Self {
-        let soul_config = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".soul")
-            .join("config");
+        let soul_config = paths::soul_or_fallback().join("config");
 
         Self {
             api_base_url: "https://lightarchitects.io".to_string(),

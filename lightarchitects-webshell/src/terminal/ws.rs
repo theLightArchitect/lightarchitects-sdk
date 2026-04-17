@@ -92,7 +92,7 @@ pub async fn ws_handler(
         };
         session::run_session(socket, config, guard).await;
         if let Some(tl) = turnlog {
-            tl.close(lightarchitects_turnlog::EndReason::Complete).await;
+            tl.close(lightarchitects::turnlog::EndReason::Complete).await;
         }
     })
 }

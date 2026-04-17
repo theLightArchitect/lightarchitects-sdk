@@ -41,6 +41,14 @@ pub enum SdkError {
     /// The raw target is logged at `WARN` level with a hash for audit trails.
     #[error("scope violation: {0}")]
     ScopeViolation(String),
+
+    /// Authentication failure — no key, revoked key, or exhausted grace period.
+    ///
+    /// Returned by [`crate::StdioTransport::connect`] when an [`crate::auth::AuthChecker`]
+    /// is present and the auth check returns a hard failure. No subprocess is
+    /// spawned when this error is returned.
+    #[error("auth: {0}")]
+    Auth(String),
 }
 
 /// Errors at the stdio / process layer.

@@ -56,4 +56,4 @@ mod verdict;
 
 pub use client::{OracleClient, OracleClientBuilder, OracleQuery};
 pub use models::{ModelId, ModelRole, OracleMode};
-pub use verdict::{Consensus, Finding, OracleVerdict};
+pub use verdict::{Consensus, Finding, FindingStatus, OracleVerdict};

@@ -11,15 +11,17 @@
 
 use serde_json::{Value, json};
 
-use lightarchitects_ayin::AyinAction;
-use lightarchitects_corso::CorsoAction;
-use lightarchitects_eva::EvaAction;
-use lightarchitects_quantum::QuantumAction;
-use lightarchitects_seraph::SeraphAction;
-use lightarchitects_soul::SoulAction;
+use lightarchitects::ayin::AyinAction;
+use lightarchitects::corso::CorsoAction;
+use lightarchitects::eva::EvaAction;
+use lightarchitects::quantum::QuantumAction;
+use lightarchitects::seraph::SeraphAction;
+use lightarchitects::soul::SoulAction;
 
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
+
+#[cfg(feature = "spawner")]
 use crate::spawner::call_agent;
 
 // ── Auto-routing via SDK enums ───────────────────────────────────────────────
@@ -300,8 +302,36 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
         }
     };
 
-    // Delegate to the subprocess spawner.
-    call_agent(&target_route, &action, forward_params, config).await
+    // ── Dual-path dispatch ──────────────────────────────────────────────────
+    // 1. Try in-process handler (compile-time feature gate + runtime config).
+    // 2. Fall back to subprocess spawn (current behaviour).
+
+    #[cfg(any(
+        feature = "inline-ayin",
+        feature = "inline-corso",
+        feature = "inline-eva",
+        feature = "inline-soul",
+        feature = "inline-quantum",
+    ))]
+    if let Some(registry) = crate::handlers::registry() {
+        if let Some(handler) = registry.get(&target_route) {
+            return handler
+                .call(&action, forward_params)
+                .await
+                .map_err(GatewayError::from);
+        }
+    }
+
+    #[cfg(feature = "spawner")]
+    {
+        return call_agent(&target_route, &action, forward_params, config).await;
+    }
+
+    // No inline handler matched and spawner is not compiled in.
+    #[cfg(not(feature = "spawner"))]
+    {
+        Err(GatewayError::AgentNotEnabled(target_route))
+    }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -361,13 +391,12 @@ mod tests {
     }
 
     #[test]
-    fn auto_route_prefers_quantum_for_research_in_full_preset() {
+    fn auto_route_research_routes_to_quantum() {
         let mut cfg = GatewayConfig::default();
         if let Some(q) = cfg.agents.get_mut("quantum") {
             q.enabled = true;
         }
-        // "research" exists in both QUANTUM and SOUL.
-        // In the full preset, QUANTUM has higher priority and should win.
+        // "research" belongs exclusively to QUANTUM since soul_search rename.
         let full = super::super::preset::find_preset("full").unwrap();
         assert_eq!(
             auto_route_with_priority("research", &cfg, full.routing_priority),
@@ -376,10 +405,10 @@ mod tests {
     }
 
     #[test]
-    fn auto_route_research_falls_back_to_soul_when_quantum_disabled() {
+    fn auto_route_soul_search_routes_to_soul() {
         let cfg = GatewayConfig::default();
-        // QUANTUM is disabled in default config; SOUL is enabled.
-        assert_eq!(auto_route("research", &cfg), Some("soul"));
+        // "soul_search" is SOUL's renamed research action — no collision.
+        assert_eq!(auto_route("soul_search", &cfg), Some("soul"));
     }
 
     #[test]
@@ -481,7 +510,7 @@ mod tests {
                     "voice",
                     "converse",
                     "chat",
-                    // "research" routes to QUANTUM (higher priority in full preset).
+                    "soul_search",
                 ],
             ),
             ("ayin", &["sessions", "spans", "conversations"]),
@@ -500,13 +529,13 @@ mod tests {
     }
 
     #[test]
-    fn collision_priority_research_full_preset() {
+    fn research_routes_to_quantum_full_preset() {
         let mut cfg = GatewayConfig::default();
         for sib in cfg.agents.values_mut() {
             sib.enabled = true;
         }
         let full = super::super::preset::find_preset("full").unwrap();
-        // "research" → QUANTUM (higher priority than SOUL in full preset).
+        // "research" belongs to QUANTUM only — no collision since soul_search rename.
         assert_eq!(
             auto_route_with_priority("research", &cfg, full.routing_priority),
             Some("quantum")
@@ -514,11 +543,11 @@ mod tests {
     }
 
     #[test]
-    fn default_preset_routes_research_to_soul() {
-        // Default preset is software_engineering which doesn't include QUANTUM.
-        // "research" falls back to SOUL.
+    fn soul_search_routes_to_soul_default_preset() {
+        // Default preset (software_engineering) includes SOUL.
+        // "soul_search" is SOUL's renamed research action.
         let cfg = GatewayConfig::default();
-        assert_eq!(auto_route("research", &cfg), Some("soul"));
+        assert_eq!(auto_route("soul_search", &cfg), Some("soul"));
     }
 
     #[test]

@@ -18,7 +18,7 @@ pub trait JsonRpcRequestExt {
     fn new(id: u64, method: impl Into<String>, params: Option<serde_json::Value>) -> Self;
 }
 
-impl JsonRpcRequestExt for lightarchitects_core::jsonrpc::JsonRpcRequest {
+impl JsonRpcRequestExt for lightarchitects::core::jsonrpc::JsonRpcRequest {
     fn new(id: u64, method: impl Into<String>, params: Option<serde_json::Value>) -> Self {
         Self {
             jsonrpc: "2.0",
@@ -35,7 +35,7 @@ pub trait JsonRpcResponseExt {
     fn is_error(&self) -> bool;
 }
 
-impl JsonRpcResponseExt for lightarchitects_core::jsonrpc::JsonRpcResponse {
+impl JsonRpcResponseExt for lightarchitects::core::jsonrpc::JsonRpcResponse {
     fn is_error(&self) -> bool {
         self.error.is_some()
     }

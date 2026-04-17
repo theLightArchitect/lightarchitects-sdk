@@ -38,7 +38,7 @@ use crate::error::GatewayError;
 
 /// Arena data root directory.
 fn arena_root() -> PathBuf {
-    expand_tilde("~/.arena")
+    expand_tilde("~/lightarchitects/arena")
 }
 
 /// Models registry file.
@@ -601,10 +601,10 @@ fn fill_placeholders(template: &str, idx: usize) -> String {
         "~/.lightarchitects/config.toml",
         "src/lib.rs",
         "Cargo.toml",
-        "~/.arena/reports/audit.md",
+        "~/lightarchitects/arena/reports/audit.md",
         "src/main.rs",
         "tests/integration.rs",
-        "~/.arena/reports/summary.md",
+        "~/lightarchitects/arena/reports/summary.md",
         "README.md",
     ];
     let tool_names = ["read", "write", "search", "glob", "bash", "edit"];
@@ -1178,7 +1178,7 @@ fn write_scored_results(
 /// Params:
 /// - `session_id` (optional): Export a specific session.
 /// - `format` (optional): "chatml" (default), "alpaca", "dpo"
-/// - `output` (optional): Output path (default: `~/.arena/exports/`)
+/// - `output` (optional): Output path (default: `~/lightarchitects/arena/exports/`)
 /// - `min_score` (optional): Minimum aggregate score to include (default: 0.5)
 fn triumph(params: Value) -> Result<Value, GatewayError> {
     let session_id = find_session(&params, "forge")?;
@@ -1598,7 +1598,7 @@ fn unleash_local(
     let script = params
         .get("script")
         .and_then(Value::as_str)
-        .unwrap_or("~/.arena/train.py");
+        .unwrap_or("~/lightarchitects/arena/train.py");
     let script_path = expand_tilde(script);
 
     let log_dir = arena_root().join("jobs").join("logs");
@@ -1639,7 +1639,9 @@ async fn unleash_runpod(
     let api_key = std::env::var("RUNPOD_API_KEY")
         .or_else(|_| read_env_file("RUNPOD_API_KEY"))
         .map_err(|_| {
-            GatewayError::Internal("RUNPOD_API_KEY not set. Set in env or ~/.arena/.env".to_owned())
+            GatewayError::Internal(
+                "RUNPOD_API_KEY not set. Set in env or ~/lightarchitects/arena/.env".to_owned(),
+            )
         })?;
 
     let gpu_type = gpu.unwrap_or("NVIDIA H100 80GB HBM3");
@@ -1713,7 +1715,7 @@ async fn unleash_unsloth(
     }))
 }
 
-/// Read a key from `~/.arena/.env` file (`KEY=VALUE` format).
+/// Read a key from `~/lightarchitects/arena/.env` file (`KEY=VALUE` format).
 fn read_env_file(key: &str) -> Result<String, String> {
     let env_path = arena_root().join(".env");
     let content =
@@ -2103,9 +2105,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn arena_root_is_under_home() {
+    fn arena_root_points_to_lightarchitects_arena() {
         let root = arena_root();
-        assert!(root.to_string_lossy().contains(".arena"));
+        assert!(root.to_string_lossy().contains("lightarchitects/arena"));
     }
 
     #[test]

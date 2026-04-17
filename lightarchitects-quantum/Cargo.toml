@@ -7,6 +7,8 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Typed client for the QUANTUM MCP server (qsTools, 13 actions)."
+keywords = ["mcp", "ai", "investigation", "sdk", "quantum"]
+documentation = "https://docs.rs/lightarchitects-quantum"
 
 [lints]
 workspace = true

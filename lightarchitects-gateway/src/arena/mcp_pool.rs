@@ -15,7 +15,7 @@ use tokio::process::{Child, ChildStdout, Command};
 use tokio::sync::Mutex;
 
 use super::compat::{JsonRpcRequestExt, JsonRpcResponseExt};
-use lightarchitects_core::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
+use lightarchitects::core::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 
 /// Timeout for any single MCP call (including lock acquisition + I/O).
 const MCP_CALL_TIMEOUT: Duration = Duration::from_secs(30);

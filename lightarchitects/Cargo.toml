@@ -4,60 +4,118 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
-license.workspace = true
+license = "AGPL-3.0"
 repository.workspace = true
-description = "Unified Light Architects SDK — typed clients for all MCP siblings."
+description = "Unified Light Architects SDK — core, clients, arena, oracle, helix, turnlog."
 keywords = ["mcp", "ai", "sdk", "agentic", "lightarchitects"]
-documentation = "https://docs.rs/lightarchitects"
+publish = false
 
 [lints]
 workspace = true
 
+# Enable all sub-features by default so all modules compile unconditionally.
+# Refine into opt-in feature flags once the monolith compiles cleanly.
 [features]
-## Enable all publicly published sibling clients (except `ayin` — opt-in separately).
-## Note: `seraph` is excluded — it is an internal pentest tool and not published to crates.io.
-full = ["soul", "corso", "eva", "quantum"]
-## Enable the `init_tracing()` helper (fmt subscriber + RUST_LOG env filter).
-tracing-fmt = ["dep:tracing", "dep:tracing-subscriber"]
+default = [
+    "sqlite", "search", "ingestion", "compaction",
+    "cypher", "embedding-ollama", "embedding-fastembed", "embedding-llama-cpp",
+    "observe", "conversations", "http-client",
+    "neo4j", "file", "dual", "fastembed", "rerank",
+    "ssh", "cli",
+]
+sqlite               = []
+search               = []
+ingestion            = []
+compaction           = []
+cypher               = []
+embedding-ollama     = []
+embedding-fastembed  = []
+embedding-llama-cpp  = []
+observe              = []
+conversations        = []
+http-client          = []
+neo4j                = []
+file                 = []
+dual                 = ["neo4j", "file"]
+fastembed            = []
+rerank               = []
+ssh                  = []
+cli                  = []
+keychain             = []
+text2cypher          = []
+test-utils           = []
 
-## SOUL knowledge-graph client (MCP + offline `SoulDb`).
-soul = ["dep:lightarchitects-soul"]
-## Neo4j graph backend — `HelixStore`, `HelixNeo4j`, `Step`, `Strand`, `Helix`.
-## Implies `soul` (both share `RetrievalHit` + `StorageEntry`).
-helix = ["soul", "dep:lightarchitects-helix"]
-## CORSO operations platform client.
-corso = ["dep:lightarchitects-corso"]
-## EVA consciousness system client.
-eva = ["dep:lightarchitects-eva"]
-## QUANTUM investigation toolkit client.
-quantum = ["dep:lightarchitects-quantum"]
-## AYIN observability transport wrapper (requires `ayin` feature on `lightarchitects-ayin`).
-ayin = ["dep:lightarchitects-ayin"]
-## AYIN HTTP viewer client — adds `AyinClient` for querying the AYIN viewer REST API.
-##
-## Activates the `http-client` feature on `lightarchitects-ayin`. Requires the AYIN
-## viewer LaunchAgent to be running at `localhost:3742`.
-ayin-http = ["ayin", "lightarchitects-ayin/http-client"]
-## Auth guard — adds `auth::AuthGuard` for the 3-tier key validation + grace-period flow.
-## Depends on `lightarchitects-auth`. Required to pass `.auth()` on any client builder.
-auth = ["dep:lightarchitects-auth"]
+# ── Always-on external deps (union of all 13 merged crates) ──────────────────
 
 [dependencies]
-## Core wire protocol, transport, error types — always present.
-lightarchitects-core = { path = "../lightarchitects-core" }
+# Core runtime
+rand        = { workspace = true }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+serde_yaml  = { workspace = true }
+toml        = { workspace = true }
+thiserror   = { workspace = true }
+tokio       = { workspace = true }
+tracing     = { workspace = true }
+async-trait = "0.1"
 
-## Auth guard — optional, pulled in when the `auth` feature is active.
-lightarchitects-auth = { path = "../lightarchitects-auth", optional = true }
+# Crypto
+hkdf          = { workspace = true }
+hmac          = { workspace = true }
+sha2          = { workspace = true }
+aes-gcm       = { workspace = true }
+ed25519-dalek = { workspace = true }
+subtle        = { workspace = true }
+secrecy       = { workspace = true }
+zeroize       = { workspace = true }
 
-## Tracing facade — used by init_tracing() for Level constants.
-tracing = { workspace = true, optional = true }
-## Tracing subscriber — pulled in only when `tracing-fmt` feature is active.
-tracing-subscriber = { workspace = true, optional = true }
+# Auth
+reqwest  = { workspace = true }
+dirs     = "6"
+hex      = "0.4"
+chrono   = { workspace = true }
+url      = "2"
 
-## Sibling clients — pulled in only when the corresponding feature is active.
-lightarchitects-soul    = { path = "../lightarchitects-soul",    optional = true }
-lightarchitects-helix   = { path = "../lightarchitects-helix",   optional = true }
-lightarchitects-corso   = { path = "../lightarchitects-corso",   optional = true }
-lightarchitects-eva     = { path = "../lightarchitects-eva",     optional = true }
-lightarchitects-quantum = { path = "../lightarchitects-quantum", optional = true }
-lightarchitects-ayin    = { path = "../lightarchitects-ayin",    optional = true }
+# Common
+uuid         = { workspace = true }
+futures-util = { workspace = true }
+regex        = { workspace = true }
+moka         = { workspace = true }
+walkdir      = { workspace = true }
+fs2          = { workspace = true }
+
+# Helix graph backend
+neo4rs    = { workspace = true }
+fastembed = { workspace = true }
+
+# Arena
+indicatif = { workspace = true }
+clap      = { workspace = true }
+
+# Ayin / Turnlog observability
+ayin = { workspace = true }
+
+# Auth CLI feature (axum OAuth callback, browser open, getrandom)
+axum     = { workspace = true }
+open     = { version = "5" }
+getrandom = { version = "0.2" }
+
+# SERAPH SSH transport
+openssh = { workspace = true }
+
+# SOUL SQLite backend
+rusqlite = { workspace = true }
+
+# macOS keychain (crypto keychain feature)
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = { workspace = true }
+
+[dev-dependencies]
+tokio          = { workspace = true, features = ["macros", "rt", "test-util"] }
+tokio-test     = { workspace = true }
+tempfile       = { workspace = true }
+proptest       = { workspace = true }
+pretty_assertions = { workspace = true }
+mockito        = { workspace = true }
+criterion      = { workspace = true }
+serde_json     = { workspace = true }

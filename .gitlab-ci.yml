@@ -1,0 +1,524 @@
+# Light Architects — GitLab CI for lightarchitects-sdk
+# Adapted from the Universal Template for a 15-crate workspace library + gateway binary.
+#
+# Differences from single-binary sibling template:
+#   - quality:  workspace-wide (--workspace --all-features)
+#   - build:    gateway binary only (lightarchitects-gateway)
+#   - test:     unit + feature-isolation + doc tests + semver
+#   - red-team: runs against the gateway binary
+#   - smoke:    MCP handshake against the gateway binary
+#
+# Required CI/CD secrets (set in GitLab project settings):
+#   SOUL_GIT_TOKEN:  GitLab deploy token (only if NEEDS_SOUL=true)
+#
+# "Prove all things" — 1 Thessalonians 5:21
+
+stages:
+  - quality
+  - build
+  - security
+  - sibling-scan
+  - red-team
+  - test
+  - blast-score
+  - smoke-test
+  - deploy-gate
+  - artifact
+
+image: rust:1.89-slim
+
+variables:
+  CARGO_HOME: "${CI_PROJECT_DIR}/.cargo"
+  RUSTFLAGS: "-D warnings"
+  # ── Per-repo overrides ──
+  PROJECT_NAME: "lightarchitects-sdk"
+  BINARY_NAME: "lightarchitects"
+  BINARY_CRATE: "lightarchitects-gateway"
+  NEEDS_SOUL: "false"
+  SELF_SCAN: "false"
+  CROSS_BUILD: "false"
+  PERSONA_TESTS: "false"
+  TEST_FLAGS: "--all-features"
+  CLIPPY_FLAGS: "--workspace --all-targets --all-features"
+  CARGO_MAKE: "false"
+  # ── SDK-specific ──
+  CORSO_GUARD: "false"
+  QUANTUM_SCAN: "false"
+  SERAPH_SURVEY: "false"
+
+cache:
+  key: "${CI_COMMIT_REF_SLUG}"
+  paths:
+    - .cargo/registry/
+    - .cargo/git/
+    - target/
+
+before_script:
+  - |
+    if [ "${NEEDS_SOUL}" = "true" ] && [ -n "${SOUL_GIT_TOKEN:-}" ]; then
+      git config --global credential.helper store
+      echo "https://gitlab-ci-token:${SOUL_GIT_TOKEN}@gitlab.com" > ~/.git-credentials
+    fi
+
+# ══════════════════════════════════════════════════════════
+# QUALITY
+# ══════════════════════════════════════════════════════════
+
+quality:fmt:
+  stage: quality
+  script:
+    - rustup component add rustfmt
+    - cargo fmt --all -- --check
+
+quality:clippy:
+  stage: quality
+  script:
+    - rustup component add clippy
+    - cargo clippy ${CLIPPY_FLAGS} -- -D warnings
+
+quality:banned-patterns:
+  stage: quality
+  script:
+    - |
+      echo "Scanning for banned patterns across workspace..."
+      FOUND=0
+      for f in $(find . -name '*.rs' -not -path '*/target/*' -not -path '*/tests/*' -not -path '*/benches/*'); do
+        # .unwrap() outside comments
+        if grep -nP '(?<!//).*\.\s*unwrap\s*\(' "$f" 2>/dev/null | grep -v '^\s*//'; then
+          echo "WARN: .unwrap() in $f"
+          FOUND=1
+        fi
+        # panic!
+        if grep -nP '(?<!//).*\bpanic!\s*\(' "$f" 2>/dev/null | grep -v '^\s*//'; then
+          echo "WARN: panic! in $f"
+          FOUND=1
+        fi
+      done
+      if [ "$FOUND" -eq 1 ]; then
+        echo "Banned patterns found — review required"
+      fi
+  allow_failure: true
+
+quality:msrv:
+  stage: quality
+  image: rust:1.87-slim
+  script:
+    - cargo check --workspace --all-features
+
+# ══════════════════════════════════════════════════════════
+# BUILD
+# ══════════════════════════════════════════════════════════
+
+build:release:
+  stage: build
+  script:
+    - cargo build --release --bin ${BINARY_NAME}
+  artifacts:
+    paths:
+      - target/release/${BINARY_NAME}
+    expire_in: 7 days
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "pipeline"'
+
+build:workspace:
+  stage: build
+  script:
+    - cargo build --workspace --release
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# ══════════════════════════════════════════════════════════
+# SECURITY
+# ══════════════════════════════════════════════════════════
+
+security:audit:
+  stage: security
+  script:
+    - cargo install cargo-audit --locked 2>/dev/null || true
+    - cargo audit
+  allow_failure: false
+
+security:deny:
+  stage: security
+  script:
+    - cargo install cargo-deny --locked 2>/dev/null || true
+    - cargo deny check advisories licenses
+  allow_failure: true
+
+security:secrets-scan:
+  stage: security
+  script:
+    - |
+      echo "Scanning for secrets across workspace..."
+      PATTERNS="sk-ant-api|ANTHROPIC_API_KEY\s*=|PRIVATE KEY|eyJ[A-Za-z0-9_-]+\.eyJ"
+      if grep -rEi "$PATTERNS" --include='*.rs' --include='*.toml' --include='*.json' \
+          --exclude-dir=target --exclude-dir=.cargo 2>/dev/null; then
+        echo "BLOCKED: Potential secrets found in source"
+        exit 1
+      fi
+      echo "Clean — no secrets detected"
+  allow_failure: false
+
+# ══════════════════════════════════════════════════════════
+# SIBLING SCAN — each sibling contributes a gate
+# ══════════════════════════════════════════════════════════
+
+sibling:corso-guard:
+  stage: sibling-scan
+  script:
+    - |
+      if [ -f "corso" ]; then
+        CORSO_BIN="./corso"
+      else
+        echo "CORSO binary not available — skipping"
+        exit 0
+      fi
+      echo "CORSO guard scanning $(pwd)..."
+      printf '%s\n%s\n' \
+        '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci-guard","version":"1.0"}}}' \
+        '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"corsoTools","arguments":{"action":"guard","params":{"path":"."}}}}' \
+        | timeout 30 "$CORSO_BIN" 2>/dev/null \
+        | python3 -c "
+      import json, sys
+      for line in sys.stdin:
+          line = line.strip()
+          if not line: continue
+          try:
+              resp = json.loads(line)
+              content = resp.get('result',{}).get('content',[{}])[0].get('text','')
+              if content:
+                  print(content[:3000])
+                  if 'CRITICAL' in content.upper():
+                      sys.exit(1)
+          except (json.JSONDecodeError, KeyError, IndexError):
+              continue
+      "
+  rules:
+    - if: '$CORSO_GUARD == "true"'
+  allow_failure: false
+
+sibling:seraph-exposure:
+  stage: sibling-scan
+  script:
+    - |
+      echo "SERAPH exposure scan — checking for data leaks across workspace..."
+      FOUND=0
+      # Memory vault / consciousness data references
+      if grep -rE '\.obsidian-vaults|EVA-MEMORY-VAULT|/memories/' --include='*.rs' --exclude-dir=target 2>/dev/null; then
+        echo "FINDING: Memory vault references in source code"
+        FOUND=1
+      fi
+      # Hardcoded user paths
+      if grep -rE '/Users/kft|/home/khadas' --include='*.rs' --exclude-dir=target 2>/dev/null \
+          | grep -v '^\s*//' | grep -v '#\[test\]'; then
+        echo "FINDING: Hardcoded user paths in production source"
+        FOUND=1
+      fi
+      # PII patterns
+      if grep -rEi 'email.*=.*@|password\s*=\s*"' --include='*.rs' --exclude-dir=target 2>/dev/null \
+          | grep -v '^\s*//'; then
+        echo "FINDING: Potential PII or credential patterns"
+        FOUND=1
+      fi
+      if [ "$FOUND" -eq 0 ]; then
+        echo "SERAPH exposure: clean"
+      else
+        echo "SERAPH exposure: ${FOUND} finding(s) — review recommended"
+      fi
+  rules:
+    - if: '$SERAPH_SURVEY == "true"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  allow_failure: true
+
+# ══════════════════════════════════════════════════════════
+# RED TEAM (adversarial scan — gateway binary)
+# ══════════════════════════════════════════════════════════
+
+red-team:adversarial:
+  stage: red-team
+  script:
+    - |
+      echo "=== Red Team: Input Fuzzing ==="
+      # Malformed JSON — must not panic
+      RESP=$(echo '{"not valid' | timeout 5 ./target/release/${BINARY_NAME} 2>/dev/null || echo "")
+      if echo "$RESP" | grep -qi "panic\|stack trace"; then
+        echo "CRITICAL: Panic on malformed JSON"
+        exit 1
+      fi
+      # Missing fields
+      RESP=$(echo '{"jsonrpc":"2.0","id":1}' | timeout 5 ./target/release/${BINARY_NAME} 2>/dev/null || echo "")
+      if echo "$RESP" | grep -qi "panic\|unwrap"; then
+        echo "CRITICAL: Panic on missing fields"
+        exit 1
+      fi
+      echo "=== Red Team: Injection Probes ==="
+      # Path traversal
+      RESP=$(echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"test","arguments":{"path":"../../../../etc/passwd"}}}' \
+        | timeout 5 ./target/release/${BINARY_NAME} 2>/dev/null || echo "")
+      if echo "$RESP" | grep -q "root:"; then
+        echo "CRITICAL: Path traversal succeeded"
+        exit 1
+      fi
+      echo "=== Red Team: Secret Exposure ==="
+      if strings ./target/release/${BINARY_NAME} 2>/dev/null | grep -qEi 'sk-ant-api|ANTHROPIC_API_KEY=|-----BEGIN.*PRIVATE'; then
+        echo "CRITICAL: Embedded secrets in binary"
+        exit 1
+      fi
+      echo "=== Red Team: Error Disclosure ==="
+      RESP=$(echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"nonexistent","arguments":{}}}' \
+        | timeout 5 ./target/release/${BINARY_NAME} 2>/dev/null || echo "")
+      if echo "$RESP" | grep -qEi 'at src/|\.rs:\d|thread.*panicked'; then
+        echo "HIGH: Error leaks source paths"
+      fi
+      echo "Red team scan complete"
+  dependencies:
+    - build:release
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  allow_failure: true
+
+# ══════════════════════════════════════════════════════════
+# TEST
+# ══════════════════════════════════════════════════════════
+
+test:unit:
+  stage: test
+  script:
+    - cargo test --workspace ${TEST_FLAGS}
+
+test:doc:
+  stage: test
+  script:
+    - cargo test --workspace --doc
+
+test:features:
+  stage: test
+  script:
+    - |
+      echo "=== Feature: none (core only) ==="
+      cargo test --workspace --no-default-features
+      echo "=== Feature: soul ==="
+      cargo test --no-default-features --features soul -p lightarchitects
+      echo "=== Feature: corso ==="
+      cargo test --no-default-features --features corso -p lightarchitects
+      echo "=== Feature: eva ==="
+      cargo test --no-default-features --features eva -p lightarchitects
+      echo "=== Feature: quantum ==="
+      cargo test --no-default-features --features quantum -p lightarchitects
+      echo "=== Feature: seraph ==="
+      cargo test --no-default-features --features seraph -p lightarchitects
+      echo "=== Feature: ayin ==="
+      cargo test --no-default-features --features ayin -p lightarchitects
+      echo "=== Feature: ayin-http ==="
+      cargo test --no-default-features --features ayin-http -p lightarchitects
+      echo "=== Feature: full ==="
+      cargo test --features full -p lightarchitects
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+test:security-gates:
+  stage: test
+  script:
+    - |
+      echo "=== Security gate: no reqwest without ayin-http ==="
+      result=$(cargo tree --no-default-features -p lightarchitects 2>/dev/null | grep reqwest || true)
+      if [ -n "$result" ]; then
+        echo "FAIL: reqwest present without any feature enabled"
+        echo "$result"
+        exit 1
+      fi
+      echo "=== Security gate: reqwest present with ayin-http ==="
+      result=$(cargo tree --features ayin-http -p lightarchitects 2>/dev/null | grep reqwest || true)
+      if [ -z "$result" ]; then
+        echo "FAIL: reqwest absent even with ayin-http feature enabled"
+        exit 1
+      fi
+      echo "Security gates PASSED"
+
+test:semver:
+  stage: test
+  script:
+    - cargo install cargo-semver-checks --locked 2>/dev/null || true
+    - cargo semver-checks --all-features
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  allow_failure: true
+
+# ══════════════════════════════════════════════════════════
+# BLAST SCORE (BCRA-lite — risk assessment)
+# ══════════════════════════════════════════════════════════
+
+blast-score:assess:
+  stage: blast-score
+  script:
+    - |
+      BASELINE=$(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~20")
+      echo "Blast Score — baseline: ${BASELINE}"
+      DEP_CHANGES=$(git diff "$BASELINE" -- '**/Cargo.toml' 'Cargo.toml' 2>/dev/null | grep -c '^+.*=' || echo "0")
+      UNSAFE_COUNT=$(git diff "$BASELINE" -- '*.rs' 2>/dev/null | grep -c '^+.*unsafe' || echo "0")
+      API_CHANGES=$(git diff "$BASELINE" -- '*.rs' 2>/dev/null | grep -cE '^\+.*pub\s+(fn|struct|enum|trait|type|mod)' || echo "0")
+      LINES_CHANGED=$(git diff --stat "$BASELINE" 2>/dev/null | tail -1 | grep -oP '\d+ insertion' | grep -oP '\d+' || echo "0")
+      TEST_ADDED=$(git diff "$BASELINE" -- 'tests/**' '**/tests/**' 2>/dev/null | grep -c '^+.*#\[test\]' || echo "0")
+      TEST_REMOVED=$(git diff "$BASELINE" -- 'tests/**' '**/tests/**' 2>/dev/null | grep -c '^-.*#\[test\]' || echo "0")
+      CRATE_COUNT=$(grep -c 'members' Cargo.toml || echo "15")
+      echo "  Dependencies: ${DEP_CHANGES} changes"
+      echo "  Unsafe blocks: ${UNSAFE_COUNT} new"
+      echo "  Public API changes: ${API_CHANGES}"
+      echo "  Lines changed: ${LINES_CHANGED}"
+      echo "  Tests: +${TEST_ADDED} -${TEST_REMOVED}"
+      echo "  Workspace crates: ${CRATE_COUNT}"
+      # SDK workspace threshold: higher dep tolerance (15 crates), same unsafe ceiling
+      if [ "$UNSAFE_COUNT" -gt 5 ]; then
+        echo "HALT: ${UNSAFE_COUNT} new unsafe blocks — manual review required"
+        exit 1
+      fi
+      if [ "$DEP_CHANGES" -gt 50 ]; then
+        echo "RED: major dependency changes across workspace — review required"
+        exit 1
+      fi
+      echo "Blast score: GREEN"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  allow_failure: true
+
+# ══════════════════════════════════════════════════════════
+# SMOKE TEST (pre-prod MCP verification — gateway binary)
+# ══════════════════════════════════════════════════════════
+
+smoke-test:mcp:
+  stage: smoke-test
+  script:
+    - |
+      BINARY="./target/release/${BINARY_NAME}"
+      echo "MCP Smoke Test — ${BINARY_NAME} (gateway)"
+      # Test 1: binary exists
+      test -f "$BINARY" && test -x "$BINARY" || { echo "FAIL: binary missing"; exit 1; }
+      # Test 2: size check (<20MB)
+      SIZE=$(stat -c%s "$BINARY" 2>/dev/null || stat -f%z "$BINARY" 2>/dev/null || echo "0")
+      SIZE_MB=$((SIZE / 1024 / 1024))
+      echo "  Size: ${SIZE_MB}MB"
+      test "$SIZE_MB" -lt 20 || { echo "FAIL: binary too large (${SIZE_MB}MB)"; exit 1; }
+      # Test 3: MCP initialize handshake
+      RESP=$(echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"1.0"}}}' \
+        | timeout 10 "$BINARY" 2>/dev/null || echo "")
+      if echo "$RESP" | grep -q '"result"'; then
+        echo "  initialize: OK"
+      else
+        echo "FAIL: initialize handshake failed"
+        exit 1
+      fi
+      # Test 4: tools/list
+      RESP=$(printf '%s\n%s\n' \
+        '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"1.0"}}}' \
+        '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+        | timeout 10 "$BINARY" 2>/dev/null || echo "")
+      if echo "$RESP" | grep -q '"jsonrpc"'; then
+        TOOL_COUNT=$(echo "$RESP" | grep -o '"name"' | wc -l)
+        echo "  tools/list: OK (${TOOL_COUNT} tools)"
+      else
+        echo "FAIL: tools/list returned invalid response"
+        exit 1
+      fi
+      echo "Smoke test PASSED"
+  dependencies:
+    - build:release
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  allow_failure: false
+
+# ══════════════════════════════════════════════════════════
+# EVA: DEPLOY GATE (HITL — DevOps & Developer Experience)
+# ══════════════════════════════════════════════════════════
+
+eva:deploy-gate:
+  stage: deploy-gate
+  script:
+    - |
+      echo "==============================================="
+      echo "  EVA -- Deploy Gate"
+      echo "==============================================="
+      echo ""
+      echo "Pipeline Summary for ${PROJECT_NAME}:"
+      echo "  Commit:  ${CI_COMMIT_SHORT_SHA} -- ${CI_COMMIT_MESSAGE}"
+      echo "  Branch:  ${CI_COMMIT_BRANCH}"
+      echo "  Author:  ${CI_COMMIT_AUTHOR}"
+      echo "  Pipeline: #${CI_PIPELINE_ID}"
+      echo ""
+
+      echo "-- Stage Results --"
+      echo "  Quality:    passed (reached this stage)"
+      echo "  Build:      ${BINARY_NAME} gateway compiled"
+      echo "  Security:   audit + deny + secrets scan"
+      echo "  Tests:      unit + features + doc + security-gates"
+
+      echo ""
+      echo "-- What Changed --"
+      git diff --stat HEAD~1 2>/dev/null | tail -10 || echo "  (first commit or shallow clone)"
+
+      echo ""
+      echo "-- Developer Experience --"
+
+      # Binary size
+      if [ -f "./target/release/${BINARY_NAME}" ]; then
+        SIZE=$(stat -c%s "./target/release/${BINARY_NAME}" 2>/dev/null || stat -f%z "./target/release/${BINARY_NAME}" 2>/dev/null || echo "0")
+        SIZE_MB=$((SIZE / 1024 / 1024))
+        echo "  Gateway binary size: ${SIZE_MB}MB"
+      fi
+
+      # Workspace crate count
+      CRATE_COUNT=$(cargo metadata --format-version=1 --no-deps 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)['packages']))" 2>/dev/null || echo "?")
+      echo "  Workspace crates: ${CRATE_COUNT}"
+
+      # Dependency freshness
+      if [ -f "Cargo.lock" ]; then
+        LOCK_MOD=$(stat -c%Y Cargo.lock 2>/dev/null || stat -f%m Cargo.lock 2>/dev/null || echo "0")
+        NOW=$(date +%s)
+        AGE_DAYS=$(( (NOW - LOCK_MOD) / 86400 ))
+        echo "  Cargo.lock age: ${AGE_DAYS} days"
+      fi
+
+      # TODO count
+      TODO_COUNT=$(grep -rc 'TODO\|FIXME' --include='*.rs' --exclude-dir=target 2>/dev/null | awk -F: '{s+=$2} END {print s+0}')
+      echo "  TODOs/FIXMEs: ${TODO_COUNT}"
+
+      echo ""
+      echo "==============================================="
+      echo "  Ready to ship. Approve to create artifact."
+      echo "==============================================="
+  dependencies:
+    - build:release
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: false
+
+# ══════════════════════════════════════════════════════════
+# ARTIFACT (provenance + binary)
+# ══════════════════════════════════════════════════════════
+
+artifact:provenance:
+  stage: artifact
+  script:
+    - |
+      cat > provenance.txt <<PROV
+      PROJECT: ${PROJECT_NAME}
+      COMMIT: ${CI_COMMIT_SHA}
+      SHORT: ${CI_COMMIT_SHORT_SHA}
+      PIPELINE: ${CI_PIPELINE_ID}
+      BUILT: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+      SHA256: $(sha256sum target/release/${BINARY_NAME} | cut -d' ' -f1)
+      PROV
+      cat provenance.txt
+  artifacts:
+    paths:
+      - provenance.txt
+      - target/release/${BINARY_NAME}
+    expire_in: 30 days
+  dependencies:
+    - build:release
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'

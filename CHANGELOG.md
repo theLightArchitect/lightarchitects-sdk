@@ -7,6 +7,12 @@ This project uses semantic versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING**: `lightarchitects-cli` crate removed from workspace. All CLI subcommands (soul, corso, eva, quantum, seraph, status, config, builds, setup, webshell) merged into `lightarchitects-gateway`. The single `lightarchitects` binary now handles both MCP server mode and CLI subcommands.
+- Renamed `LVL8`/`lvl8` strings to `conductor` throughout `lightarchitects-gateway`. Config file: `lvl8.toml` → `conductor.toml` (backward-compatible: `lvl8.toml` still loads with deprecation warning). PID/metrics filenames similarly renamed. Branch prefix: `lvl8/{id}` → `conductor/{id}`. CLI prompt text updated.
+- Renamed `arena/conductor.rs` → `arena/curator.rs` to resolve naming collision with the top-level conductor module. The arena curator curates the bulletin board (deterministic, zero LLM); the conductor runs the task queue (spawns Claude Code subprocesses). All `ParsedRoutineKind::Conductor` → `Curator` references updated.
+
 ### Added
 
 **Build: steady-forging-lynx (LARGE tier)**

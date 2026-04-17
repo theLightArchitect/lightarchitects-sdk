@@ -4,7 +4,7 @@
 //! preserving chronological order for audit logging or QUANTUM handoff.
 //!
 //! [`engagement_log`] writes individual results to the evidence directory at
-//! `~/.seraph/evidence/{scope_id}/{timestamp}-{wing}.json`.
+//! `~/lightarchitects/seraph/evidence/{scope_id}/{timestamp}-{wing}.json`.
 
 use std::path::PathBuf;
 
@@ -128,7 +128,7 @@ impl EvidenceChain {
 
 /// Write an [`EvidenceEntry`] to the evidence directory.
 ///
-/// Creates `~/.seraph/evidence/{scope_id}/` if it does not exist, then writes
+/// Creates `~/lightarchitects/seraph/evidence/{scope_id}/` if it does not exist, then writes
 /// `{recorded_at}-{action}.json` with the entry serialized as pretty JSON.
 ///
 /// When no `scope_id` is set on the entry, falls back to `"unscoped"`.
@@ -163,14 +163,11 @@ pub fn engagement_log(entry: &EvidenceEntry) -> Result<PathBuf, SdkError> {
     Ok(path)
 }
 
-/// Resolve `~/.seraph/evidence/{scope_id}/`.
+/// Resolve `~/lightarchitects/seraph/evidence/{scope_id}/`.
 fn evidence_dir(scope_id: &str) -> Result<PathBuf, SdkError> {
-    let home = std::env::var("HOME")
-        .map_err(|_| SdkError::Config("HOME environment variable not set".to_owned()))?;
-    Ok(PathBuf::from(home)
-        .join(".seraph")
-        .join("evidence")
-        .join(scope_id))
+    lightarchitects_core::paths::seraph()
+        .map(|p| p.join("evidence").join(scope_id))
+        .ok_or_else(|| SdkError::Config("HOME environment variable not set".to_owned()))
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────

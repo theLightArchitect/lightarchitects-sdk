@@ -21,7 +21,7 @@ use super::queue::{TaskQueue, TaskStatus};
 /// Per-task error signature history for gutter detection.
 type GutterMap = HashMap<String, Vec<u64>>;
 
-/// Cumulative metrics exported to `lvl8.metrics.json`.
+/// Cumulative metrics exported to `conductor.metrics.json`.
 #[derive(Debug, Default, Serialize)]
 struct Metrics {
     completed: u64,

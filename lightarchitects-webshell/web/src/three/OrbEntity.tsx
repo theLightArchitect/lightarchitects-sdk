@@ -16,6 +16,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { getPrimaryFrame } from '../helix-math';
 import { useSceneStore } from '../store/sceneState';
+import { useShallow } from 'zustand/react/shallow';
 import {
   orbPositionFromPath,
   waypointPulseIntensity,
@@ -112,8 +113,10 @@ function HitRing({ orbId, waypoint }: { orbId: string; waypoint: OrbWaypoint }) 
 /** Renders one orb + all its hit rings. */
 function OrbGroup({ orbId }: { orbId: string }) {
   // Read the waypoints once at mount — they don't change after spawn.
+  // useShallow prevents infinite re-renders from the .find()?.waypoints ?? []
+  // pattern (Zustand v5 uses Object.is; new array references trigger re-renders).
   const waypoints = useSceneStore(
-    (s) => s.orbQueue.find((o) => o.id === orbId)?.waypoints ?? [],
+    useShallow((s) => s.orbQueue.find((o) => o.id === orbId)?.waypoints ?? []),
   );
   const hitWaypoints = waypoints.filter((wp) => wp.isPulse);
 
@@ -131,7 +134,9 @@ function OrbGroup({ orbId }: { orbId: string }) {
 
 /** Ticks orb elapsed time and renders all active orbs + their hit rings. */
 export function OrbLayer() {
-  const orbIds = useSceneStore((s) => s.orbQueue.map((o) => o.id));
+  // useShallow prevents infinite re-renders from .map() creating new array
+  // references on every selector call (Zustand v5 Object.is comparison).
+  const orbIds = useSceneStore(useShallow((s) => s.orbQueue.map((o) => o.id)));
   const tickOrbs = useSceneStore((s) => s.tickOrbs);
 
   // Advance elapsed time for all orbs every frame.

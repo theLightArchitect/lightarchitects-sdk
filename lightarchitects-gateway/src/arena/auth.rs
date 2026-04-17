@@ -13,7 +13,7 @@ use axum::extract::State;
 use axum::http::{Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use lightarchitects_crypto::hash::hmac_hash;
+use lightarchitects::crypto::hash::hmac_hash;
 use rusqlite::Connection;
 use secrecy::SecretString;
 use serde_json::json;

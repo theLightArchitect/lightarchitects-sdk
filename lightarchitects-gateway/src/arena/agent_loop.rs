@@ -9,13 +9,14 @@
 //! Phase 2 tools: `write_file` (vault persistence).
 
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use super::compat::JsonRpcResponseExt;
 use super::llm::LlmClient;
 use super::mcp_pool::McpPool;
-use lightarchitects_core::jsonrpc::JsonRpcRequest;
+use lightarchitects::core::jsonrpc::JsonRpcRequest;
+use lightarchitects::core::paths;
 
 /// Maximum iterations per agent loop (prevents runaway).
 const MAX_ITERATIONS: u32 = 5;
@@ -686,13 +687,15 @@ fn read_file_tool(args: &serde_json::Value, data_dir: Option<&Path>) -> String {
     // Security: only allow paths under shared/ or helix vault
     let resolved = if path_str.starts_with("shared/") {
         base.join(path_str)
-    } else if path_str.starts_with("helix/") || path_str.starts_with("~/.soul/helix/") {
-        let home = dirs_next::home_dir().unwrap_or_default();
+    } else if path_str.starts_with("helix/")
+        || path_str.starts_with("~/lightarchitects/soul/helix/")
+    {
+        let helix_root = paths::helix_root_or_fallback();
         let clean = path_str
-            .strip_prefix("~/.soul/")
+            .strip_prefix("~/lightarchitects/soul/")
             .or_else(|| path_str.strip_prefix("helix/"))
             .unwrap_or(path_str);
-        home.join(".soul/helix").join(clean)
+        helix_root.join(clean)
     } else {
         return format!("Error: path '{path_str}' not allowed. Only shared/ and helix/ paths.");
     };
@@ -707,8 +710,7 @@ fn read_file_tool(args: &serde_json::Value, data_dir: Option<&Path>) -> String {
     let allowed_base = if path_str.starts_with("shared/") {
         std::fs::canonicalize(base).unwrap_or_else(|_| base.to_path_buf())
     } else {
-        let home = dirs_next::home_dir().unwrap_or_default();
-        let helix = home.join(".soul").join("helix");
+        let helix = paths::helix_root_or_fallback();
         std::fs::canonicalize(&helix).unwrap_or(helix)
     };
 
@@ -733,7 +735,7 @@ fn read_file_tool(args: &serde_json::Value, data_dir: Option<&Path>) -> String {
 /// Maximum bytes allowed per `write_file` call.
 const WRITE_FILE_MAX_BYTES: usize = 32_768;
 
-/// Allowed vault write prefixes (relative to `~/.soul/helix/`).
+/// Allowed vault write prefixes (relative to `~/lightarchitects/soul/helix/`).
 const WRITE_ALLOWED_PREFIXES: &[&str] = &[
     "shared/thinktank/",
     "shared/research/summaries/",
@@ -766,7 +768,7 @@ fn write_file_tool(args: &serde_json::Value, _data_dir: Option<&Path>) -> String
     // Normalize path — strip absolute prefixes, resolve to helix-relative
     let clean = path_str
         .strip_prefix("/home/khadas/.soul/helix/")
-        .or_else(|| path_str.strip_prefix("~/.soul/helix/"))
+        .or_else(|| path_str.strip_prefix("~/lightarchitects/soul/helix/"))
         .or_else(|| path_str.strip_prefix("helix/"))
         .unwrap_or(path_str);
 
@@ -796,8 +798,7 @@ fn write_file_tool(args: &serde_json::Value, _data_dir: Option<&Path>) -> String
         return "Error: only .md files can be written.".into();
     }
 
-    let home = dirs_next::home_dir().unwrap_or_default();
-    let full_path = home.join(".soul/helix").join(clean);
+    let full_path = paths::helix_root_or_fallback().join(clean);
 
     // Create parent directory
     if let Some(parent) = full_path.parent() {
@@ -809,7 +810,7 @@ fn write_file_tool(args: &serde_json::Value, _data_dir: Option<&Path>) -> String
     // Security: canonicalize the parent after creation to resolve any symlinks,
     // then verify the canonical path stays within the helix vault root.
     // `contains("..")` above is bypassed by symlinks — canonicalize closes that gap.
-    let helix_base = home.join(".soul/helix");
+    let helix_base = paths::helix_root_or_fallback();
     let canonical_base = std::fs::canonicalize(&helix_base).unwrap_or(helix_base);
     let Some(canonical_parent) = full_path
         .parent()

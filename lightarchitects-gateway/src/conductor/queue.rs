@@ -206,7 +206,7 @@ mod tests {
                 Task {
                     id: "t-med".into(),
                     title: "Medium priority".into(),
-                    project: "LVL8".into(),
+                    project: "conductor".into(),
                     prompt: "Do the other thing".into(),
                     status: TaskStatus::Pending,
                     source: "github".into(),
@@ -220,7 +220,7 @@ mod tests {
                 Task {
                     id: "t-done".into(),
                     title: "Already done".into(),
-                    project: "LVL8".into(),
+                    project: "conductor".into(),
                     prompt: "Was done".into(),
                     status: TaskStatus::Completed,
                     source: "manual".into(),

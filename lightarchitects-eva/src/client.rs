@@ -5,10 +5,11 @@ use std::time::Duration;
 
 use serde_json::Value;
 
+use lightarchitects_core::auth::AuthChecker;
 use lightarchitects_core::constants::DEFAULT_TIMEOUT_SECS;
 use lightarchitects_core::error::SdkError;
 use lightarchitects_core::transport::Transport;
-use lightarchitects_core::{McpClient, RetryConfig, SiblingId, StdioTransport};
+use lightarchitects_core::{AuthProvider, McpClient, RetryConfig, SiblingId, StdioTransport};
 
 use crate::content::{extract_image, unwrap_json, unwrap_text};
 use crate::types::{
@@ -295,7 +296,7 @@ impl<T: Transport> EvaClient<T> {
 
 impl EvaClient<StdioTransport> {
     /// Create a builder for constructing a production [`EvaClient`] backed by
-    /// the EVA binary (`~/.eva/bin/eva` by default).
+    /// the EVA binary (`~/lightarchitects/eva/bin/eva` by default).
     #[must_use]
     pub fn builder() -> EvaClientBuilder {
         EvaClientBuilder::default()
@@ -321,6 +322,7 @@ pub struct EvaClientBuilder {
     binary_path: Option<PathBuf>,
     timeout: Duration,
     retry: RetryConfig,
+    auth: Option<AuthChecker>,
 }
 
 impl Default for EvaClientBuilder {
@@ -329,6 +331,7 @@ impl Default for EvaClientBuilder {
             binary_path: None,
             timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
             retry: RetryConfig::default(),
+            auth: None,
         }
     }
 }
@@ -336,7 +339,7 @@ impl Default for EvaClientBuilder {
 impl EvaClientBuilder {
     /// Override the path to the EVA binary.
     ///
-    /// Defaults to `~/.eva/bin/eva` (resolved by [`SiblingId::Eva`]).
+    /// Defaults to `~/lightarchitects/eva/bin/eva` (resolved by [`SiblingId::Eva`]).
     #[must_use]
     pub fn binary_path(mut self, path: impl Into<PathBuf>) -> Self {
         self.binary_path = Some(path.into());
@@ -360,6 +363,18 @@ impl EvaClientBuilder {
         self
     }
 
+    /// Attach an [`AuthProvider`] to gate connection on a successful auth check.
+    ///
+    /// The check runs before spawning the EVA process. On hard failure
+    /// (no key, revoked) the build returns [`SdkError::Auth`] without
+    /// opening a subprocess. On [`AuthStatus::Degraded`] the build
+    /// proceeds with a warning log.
+    #[must_use]
+    pub fn auth(mut self, provider: impl AuthProvider) -> Self {
+        self.auth = Some(AuthChecker::from_provider(provider));
+        self
+    }
+
     /// Spawn the EVA binary and complete the MCP handshake.
     ///
     /// # Errors
@@ -374,7 +389,9 @@ impl EvaClientBuilder {
                 SdkError::Config("$HOME is not set — provide an explicit binary_path".to_owned())
             })?,
         };
-        let transport = StdioTransport::connect(SiblingId::Eva, &path, self.timeout).await?;
+        let transport =
+            StdioTransport::connect(SiblingId::Eva, &path, self.timeout, self.auth.as_ref())
+                .await?;
         Ok(EvaClient::from_transport(transport, self.retry))
     }
 }

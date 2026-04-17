@@ -11,6 +11,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { useEventSource } from './hooks/useEventSource';
 import { TerminalPane } from './components/Terminal/TerminalPane';
 import { HelixScene } from './three/HelixScene';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 export default function App() {
   // SSE connection — dispatches into Zustand, HelixScene reads from store.
@@ -43,9 +44,49 @@ export default function App() {
         }}
       />
 
-      {/* Right: 3D helix scene */}
+      {/* Right: 3D helix scene (isolated error boundary — terminal stays live if 3D fails) */}
       <Panel defaultSize={50} minSize={15} id="helix">
-        <HelixScene />
+        <ErrorBoundary
+          fallback={(error, reset) => (
+            <div style={{
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: '#0a0a0f',
+              color: '#64748b',
+              fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+              fontSize: '0.75rem',
+              padding: '1rem',
+              textAlign: 'center',
+            }}>
+              <div style={{ color: '#94a3b8', marginBottom: '0.5rem' }}>
+                Helix unavailable
+              </div>
+              <div style={{ marginBottom: '0.75rem' }}>
+                {error.message}
+              </div>
+              <button
+                onClick={reset}
+                style={{
+                  background: '#1e293b',
+                  border: '1px solid #334155',
+                  color: '#94a3b8',
+                  padding: '0.25rem 0.75rem',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '0.7rem',
+                  fontFamily: 'inherit',
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+        >
+          <HelixScene />
+        </ErrorBoundary>
       </Panel>
     </PanelGroup>
   );
