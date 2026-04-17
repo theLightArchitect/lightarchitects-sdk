@@ -2,7 +2,7 @@
 //!
 //! This module handles the `"conversation"` routine type in `routines.json`/`routines-mac.json`.
 //! It drives soul-chat's `ConversationOrchestrator` in headless (no-TTS) mode,
-//! writing transcripts to `~/.soul/helix/chat/transcripts/auto-{date}.md`.
+//! writing transcripts to `~/lightarchitects/soul/helix/chat/transcripts/auto-{date}.md`.
 //!
 //! The Ollama AI backend is used exclusively — no Anthropic API calls in auto mode.
 //! Host is configurable via `OLLAMA_HOST` (defaults to `localhost:11434`; use
@@ -10,7 +10,7 @@
 //!
 //! # Helix significance watcher
 //!
-//! A background task watches `~/.soul/helix/` via the `notify` crate. When a new
+//! A background task watches `~/lightarchitects/soul/helix/` via the `notify` crate. When a new
 //! file is written (or modified), the watcher:
 //! 1. Validates the path is under the configured helix root.
 //! 2. Reads and parses frontmatter to extract the `significance` field.
@@ -438,7 +438,7 @@ pub struct MacRoutinesFile {
 pub struct MacRoutineEntry {
     /// Unique ID.
     pub id: String,
-    /// Routine type: `"conversation"` or `"conductor"`.
+    /// Routine type: `"conversation"` or `"curator"`.
     #[serde(rename = "type")]
     pub kind: String,
     /// Cron schedule (5-field, UTC). Absent for event-triggered routines.

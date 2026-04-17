@@ -17,7 +17,6 @@ Unified Rust SDK for the Light Architects sibling ecosystem — typed, ergonomic
 | [`lightarchitects-seraph`](./lightarchitects-seraph/) | SERAPH typed client (`penTools`, 18 actions) |
 | [`lightarchitects-ayin`](./lightarchitects-ayin/) | AYIN observability wrapper (feature = `"observe"`) |
 | [`lightarchitects`](./lightarchitects/) | Umbrella crate — re-exports all sibling clients |
-| [`lightarchitects-cli`](./lightarchitects-cli/) | CLI binary: `lightarchitects ping`, `lightarchitects health`, `lightarchitects version` |
 
 ## Usage
 
@@ -90,7 +89,7 @@ The SDK is a local-process stdio JSON-RPC client. The attack surface and mitigat
 - `clippy::pedantic` as errors
 - All public items documented (`missing_docs = deny`)
 - Cyclomatic complexity ≤ 10, functions ≤ 60 lines
-- Canonical reference: `~/.soul/helix/user/standards/builders-cookbook.md`
+- Canonical reference: `~/lightarchitects/soul/helix/user/standards/builders-cookbook.md`
 
 ## License
 

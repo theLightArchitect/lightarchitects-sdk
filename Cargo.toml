@@ -1,32 +1,16 @@
 [workspace]
 resolver = "2"
 members = [
-    "lightarchitects-crypto",
-    "lightarchitects-core",
-    "lightarchitects-auth",      # Auth — API key validation, 3-tier degradation
-    "lightarchitects-gateway",   # Phase 6: MCP Gateway binary (Tasks 6.1, 6.4)
-    # Added as crates are built in subsequent phases:
-    "lightarchitects-soul",      # Phase 4
-    "lightarchitects-corso",     # Phase 5
-    "lightarchitects-arena",     # keen-forging-hydra: MCP training arena
-    "lightarchitects-oracle",    # Multi-model mathematical verification oracle
-    "lightarchitects-eva",       # Phase 6
-    "lightarchitects-quantum",   # Phase 7
-    "lightarchitects-seraph",   # Phase 8
-    "lightarchitects-ayin",    # Phase 9
-    "lightarchitects",          # Phase 10 (umbrella)
-    "lightarchitects-cli",      # Phase 11
-    "lightarchitects-helix",    # Task #49: helix graph backend (soul-helix shim)
-    "lightarchitects-turnlog",  # Tier-1 ephemeral transactional log for conversational agents
-    "lightarchitects-webshell", # luminous-weaving-nautilus: local web GUI for active coding agent
+    "lightarchitects",          # Unified SDK — all clients + advanced capabilities
+    "lightarchitects-gateway",  # Binary: MCP server + Arena HTTP + Conductor
+    "lightarchitects-webshell", # Binary: local web GUI (PTY + 3D helix panel)
 ]
 
 [workspace.package]
 edition = "2024"
 rust-version = "1.87"
 authors = ["KFT <kft@lightarchitects.io>"]
-license = "Proprietary"
-publish = false
+license = "Apache-2.0"
 repository = "https://github.com/TheLightArchitects/lightarchitects-sdk"
 
 [workspace.lints.clippy]
@@ -94,6 +78,7 @@ chrono-tz = "0.10"
 clap = { version = "4", features = ["derive"] }
 reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"], default-features = false }
 uuid = { version = "1", features = ["v4", "serde"] }
+fs2 = { version = "0.4" }
 indicatif = "0.17"
 rpassword = "7"
 keyring = { version = "3", features = ["sync-secret-service", "vendored", "crypto-rust"] }

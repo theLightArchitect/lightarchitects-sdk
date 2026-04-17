@@ -6,6 +6,8 @@
 
 use std::path::Path;
 
+use lightarchitects::core::paths;
+
 /// Scan output text for file-like references and verify they exist.
 ///
 /// Returns `(cleaned_text, hallucination_count)`.
@@ -85,20 +87,24 @@ fn resolve_reference(reference: &str, data_dir: &Path) -> bool {
         return true;
     }
 
-    // Try relative to data_dir (~/.arena/)
+    // Try relative to data_dir (~/lightarchitects/arena/)
     if data_dir.join(reference).exists() {
         return true;
     }
 
     // Try relative to helix vault
-    let home = dirs_next::home_dir().unwrap_or_default();
-    let helix = home.join(".soul/helix");
+    let helix = paths::helix_root_or_fallback();
     if helix.join(reference).exists() {
         return true;
     }
 
     // Try stripping common prefixes
-    for prefix in &["helix/", "shared/", "~/.soul/helix/", "~/.soul/"] {
+    for prefix in &[
+        "helix/",
+        "shared/",
+        "~/lightarchitects/soul/helix/",
+        "~/lightarchitects/soul/",
+    ] {
         if let Some(stripped) = reference.strip_prefix(prefix) {
             if helix.join(stripped).exists() || data_dir.join(stripped).exists() {
                 return true;
@@ -289,7 +295,7 @@ fn has_bare_arxiv_id(text: &str) -> bool {
 ///
 /// CVE IDs follow the pattern `CVE-YYYY-NNNN+` where YYYY is 1999-2099
 /// and the numeric suffix is 4+ digits. We validate format only — we don't
-/// hit the NVD API to confirm existence (the conductor already fetched
+/// hit the NVD API to confirm existence (the curator already fetched
 /// real CVEs into the feed, so the model is citing from that feed).
 fn has_verified_cve(text: &str) -> bool {
     let upper = text.to_uppercase();

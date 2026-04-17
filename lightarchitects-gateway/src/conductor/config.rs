@@ -1,19 +1,44 @@
-//! LVL8 conductor configuration.
+//! Conductor configuration.
 //!
-//! Config resolves from `~/.lightarchitects/lvl8.toml`. All relative paths in the
+//! Config resolves from `~/.lightarchitects/conductor.toml`. All relative paths in the
 //! config are resolved against `~/.lightarchitects/` as the base directory.
 
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-/// The LVL8 config directory under the user's home.
+/// The conductor config directory under the user's home.
 const CONFIG_DIR: &str = ".lightarchitects";
 
-/// The LVL8 config file name.
-const CONFIG_FILE: &str = "lvl8.toml";
+/// The conductor config file name.
+const CONFIG_FILE: &str = "conductor.toml";
 
-/// Top-level LVL8 configuration, parsed from `lvl8.toml`.
+/// Legacy config file name (pre-renaming, loaded as fallback).
+const LEGACY_CONFIG_FILE: &str = "lvl8.toml";
+
+/// Resolve the config path, falling back to the legacy `lvl8.toml` name.
+///
+/// If `conductor.toml` exists, it is used. If not but `lvl8.toml` exists, a
+/// deprecation warning is logged and the legacy path is returned. Otherwise
+/// the new path is returned (even if absent — `load` handles the missing case).
+fn resolve_config_path(base: &Path) -> PathBuf {
+    let new_path = base.join(CONFIG_FILE);
+    if new_path.exists() {
+        return new_path;
+    }
+    let old_path = base.join(LEGACY_CONFIG_FILE);
+    if old_path.exists() {
+        tracing::warn!(
+            new = %new_path.display(),
+            old = %old_path.display(),
+            "legacy config found — rename to conductor.toml"
+        );
+        return old_path;
+    }
+    new_path
+}
+
+/// Top-level conductor configuration, parsed from `conductor.toml`.
 #[derive(Debug, Deserialize)]
 pub struct Config {
     /// Loop behaviour.
@@ -117,7 +142,7 @@ impl Default for PathsConfig {
 /// Security constraints for autonomous execution.
 #[derive(Debug, Deserialize, Default)]
 pub struct SecurityConfig {
-    /// Project directories LVL8 is allowed to execute in.
+    /// Project directories the conductor is allowed to execute in.
     /// Empty list = unrestricted (NOT recommended).
     #[serde(default)]
     pub allowed_projects: Vec<String>,
@@ -141,7 +166,7 @@ impl SecurityConfig {
 }
 
 impl Config {
-    /// Resolve the config file from `~/.lightarchitects/lvl8.toml`.
+    /// Resolve the config file from `~/.lightarchitects/conductor.toml`.
     ///
     /// Falls back to defaults if the file is absent. All relative paths in the
     /// config are resolved against `~/.lightarchitects/`.
@@ -151,7 +176,7 @@ impl Config {
     /// Returns an error if the file exists but cannot be read or parsed.
     pub fn resolve() -> Result<Self, ConfigError> {
         let base_dir = dirs_home().join(CONFIG_DIR);
-        let config_path = base_dir.join(CONFIG_FILE);
+        let config_path = resolve_config_path(&base_dir);
         let mut config = Self::load(&config_path)?;
         config.base_dir = base_dir;
         config.resolve_paths();
@@ -191,19 +216,19 @@ impl Config {
     /// PID file path for daemon management.
     #[must_use]
     pub fn pid_path(&self) -> PathBuf {
-        self.base_dir.join("lvl8.pid")
+        self.base_dir.join("conductor.pid")
     }
 
     /// Heartbeat file path.
     #[must_use]
     pub fn heartbeat_path(&self) -> PathBuf {
-        self.base_dir.join("lvl8.heartbeat")
+        self.base_dir.join("conductor.heartbeat")
     }
 
     /// Metrics export path.
     #[must_use]
     pub fn metrics_path(&self) -> PathBuf {
-        self.base_dir.join("lvl8.metrics.json")
+        self.base_dir.join("conductor.metrics.json")
     }
 }
 
@@ -269,6 +294,7 @@ fn dirs_home() -> PathBuf {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -341,7 +367,7 @@ mod tests {
 
     #[test]
     fn load_missing_file_returns_defaults() {
-        let config = Config::load(Path::new("/nonexistent/lvl8.toml"));
+        let config = Config::load(Path::new("/nonexistent/conductor.toml"));
         assert!(config.is_ok());
         let config = config.expect("defaults");
         assert_eq!(config.conductor.wip_limit, 1);
@@ -352,7 +378,7 @@ mod tests {
     #[test]
     fn load_valid_toml() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("lvl8.toml");
+        let path = dir.path().join("conductor.toml");
         std::fs::write(
             &path,
             r#"
@@ -387,15 +413,15 @@ allowed_projects = ["SOUL/SOUL-DEV"]
         };
         assert_eq!(
             config.pid_path(),
-            PathBuf::from("/home/test/.lightarchitects/lvl8.pid")
+            PathBuf::from("/home/test/.lightarchitects/conductor.pid")
         );
         assert_eq!(
             config.heartbeat_path(),
-            PathBuf::from("/home/test/.lightarchitects/lvl8.heartbeat")
+            PathBuf::from("/home/test/.lightarchitects/conductor.heartbeat")
         );
         assert_eq!(
             config.metrics_path(),
-            PathBuf::from("/home/test/.lightarchitects/lvl8.metrics.json")
+            PathBuf::from("/home/test/.lightarchitects/conductor.metrics.json")
         );
     }
 

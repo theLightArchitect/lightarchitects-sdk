@@ -8,12 +8,11 @@ Individual sibling clients are feature-gated so you only compile what you use:
 
 | Feature | Enables |
 |---------|---------|
-| `full` | All sibling clients (SOUL, CORSO, EVA, QUANTUM, SERAPH) |
+| `full` | All published sibling clients (SOUL, CORSO, EVA, QUANTUM) |
 | `soul` | `soul::SoulClient` |
 | `corso` | `corso::CorsoClient` |
 | `eva` | `eva::EvaClient` |
 | `quantum` | `quantum::QuantumClient` |
-| `seraph` | `seraph::SeraphClient` |
 | `ayin` | `ayin::ObservableTransport` |
 | `tracing-fmt` | Initialises a `tracing-subscriber` fmt subscriber (for CLI/apps) |
 

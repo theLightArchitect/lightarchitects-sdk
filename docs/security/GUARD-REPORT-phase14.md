@@ -143,7 +143,7 @@ Every production dependency is justified:
 | `aes-gcm`, `ed25519-dalek`, `hkdf`, `hmac`, `sha2` | lightarchitects-crypto only; RustCrypto ecosystem |
 | `zeroize`, `secrecy` | Secret management — defence against memory scraping |
 | `rand` | Cryptographic random generation |
-| `clap` | CLI arg parsing (lightarchitects-cli only) |
+| `clap` | CLI arg parsing (lightarchitects-gateway CLI module) |
 | `proptest` | Property-based tests (lightarchitects-crypto dev) |
 
 No "bloat" dependencies found. All deps are feature-gated where applicable.

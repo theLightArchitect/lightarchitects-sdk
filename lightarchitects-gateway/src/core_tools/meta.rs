@@ -107,7 +107,8 @@ fn list_actions(config: &GatewayConfig) -> Result<Value, GatewayError> {
                 {"action": "visualize", "routes_to": "eva"},
                 {"action": "helix",     "routes_to": "soul"},
                 {"action": "triage",    "routes_to": "quantum"},
-                {"action": "research",  "routes_to": "quantum (priority over soul)"},
+                {"action": "research",  "routes_to": "quantum"},
+                {"action": "soul_search", "routes_to": "soul"},
                 {"action": "status",    "routes_to": "seraph"},
                 {"action": "sessions",  "routes_to": "ayin (HTTP)"},
             ],
@@ -213,6 +214,7 @@ async fn dispatch_core(
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

@@ -173,6 +173,7 @@ pub fn run(_params: Value, config: &GatewayConfig) -> Result<Value, GatewayError
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

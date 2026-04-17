@@ -3,11 +3,11 @@
 //!
 //! After closing the writer, the adapter spawns a background task that
 //! promotes eligible entries (`reflection`, `session_paused`) to the
-//! SOUL helix via [`lightarchitects_turnlog::promote_session`].
+//! SOUL helix via [`lightarchitects::turnlog::promote_session`].
 
 use ayin::span::{Actor, TraceContext, TraceOutcome};
-use lightarchitects_turnlog::promotion::SiblingPromoter;
-use lightarchitects_turnlog::{EndReason, StoreLayout, TurnLogWriter, promote_session};
+use lightarchitects::turnlog::promotion::SiblingPromoter;
+use lightarchitects::turnlog::{EndReason, StoreLayout, TurnLogWriter, promote_session};
 use secrecy::SecretSlice;
 use std::path::PathBuf;
 use tracing::info;

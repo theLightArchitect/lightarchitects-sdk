@@ -245,13 +245,13 @@ fn automation_token() -> String {
 
 /// Generate a 64-char hex automation token using CSPRNG entropy.
 ///
-/// Uses `lightarchitects_crypto::random::generate_hex` which sources 32 bytes
+/// Uses `lightarchitects::crypto::random::generate_hex` which sources 32 bytes
 /// from the OS CSPRNG (`rand::thread_rng` backed by `getrandom`). This is
 /// safe for HITL gate tokens — an attacker on the same host cannot predict
 /// or reconstruct the value.
 #[must_use]
 pub fn generate_automation_token() -> String {
-    lightarchitects_crypto::random::generate_hex(32)
+    lightarchitects::crypto::random::generate_hex(32)
 }
 
 /// Send the MCP `initialize` request and read + discard the response.
@@ -448,6 +448,7 @@ fn sha256_file(path: &std::path::Path, agent_name: &str) -> Result<String, Gatew
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::config::GatewayConfig;

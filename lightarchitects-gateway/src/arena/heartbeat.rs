@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{Timelike, Utc};
+use lightarchitects::core::paths;
 use serde::{Deserialize, Serialize};
 
 use super::llm::LlmClient;
@@ -100,7 +101,7 @@ impl AgentContext {
         };
 
         // Load recent thinktank output by this sibling
-        let thinktank = home.join(".soul/helix/shared/thinktank");
+        let thinktank = paths::helix_root_or_fallback().join("shared/thinktank");
         if let Ok(entries) = std::fs::read_dir(&thinktank) {
             let mut files: Vec<_> = entries
                 .filter_map(std::result::Result::ok)
@@ -873,7 +874,7 @@ fn classify_staging_category(content: &str) -> StagingCategory {
 /// Write output to staging instead of the live bulletin board.
 ///
 /// Siblings write to `shared/bulletin/staging/{sibling}-{category}.md`.
-/// The conductor promotes staging to the live board after validation.
+/// The curator promotes staging to the live board after validation.
 fn write_to_staging(data_dir: &Path, sibling: &str, content: &str) {
     let staging_dir = data_dir.join("shared/bulletin/staging");
     let _ = std::fs::create_dir_all(&staging_dir);
@@ -919,10 +920,7 @@ fn persist_to_vault(sibling: &str, content: &str) {
         return;
     }
 
-    let Some(home) = dirs_next::home_dir() else {
-        return;
-    };
-    let vault = home.join(".soul/helix");
+    let vault = paths::helix_root_or_fallback();
 
     let category = classify_staging_category(content);
     let date = Utc::now().format("%Y-%m-%d").to_string();

@@ -28,93 +28,40 @@ allow = [
     "MPL-2.0",
     # CDLA-Permissive-2.0: webpki-roots TLS root certificates (permissive, data-only).
     "CDLA-Permissive-2.0",
-    # Light Architects proprietary license — used by all internal workspace crates
-    # and the AYIN path dependency. These are never published to crates.io.
+    # Zlib: foldhash (fast hashing, OSI-approved, permissive).
+    "Zlib",
+    # NCSA: libfuzzer-sys via rav1e → fastembed (OSI-approved, FSF free).
+    "NCSA",
+    # CC0-1.0: notify (public domain dedication, permissive).
+    "CC0-1.0",
+    # LicenseRef-LA-Proprietary: CORSO workspace sub-crates only (corso-sandbox-bridge,
+    # corso-server, corso-trinity, corso-trinity-core). All SDK workspace crates and
+    # the AYIN path dep are now Apache-2.0 and do not need this entry.
     "LicenseRef-LA-Proprietary",
 ]
 
-# ── Internal workspace crates ─────────────────────────────────────────────────
-# These crates use `license = "Proprietary"` which is not a valid SPDX expression.
-# cargo-deny cannot auto-detect the license, so we clarify it here.
-# All are private, internal-only, and not published to any registry.
+# ── CORSO workspace sub-crates (still Proprietary — not yet relicensed) ───────
 
 [[licenses.clarify]]
-name = "lightarchitects"
+name = "corso-sandbox-bridge"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
 
 [[licenses.clarify]]
-name = "lightarchitects-core"
+name = "corso-server"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
 
 [[licenses.clarify]]
-name = "lightarchitects-crypto"
+name = "corso-trinity"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []
 
 [[licenses.clarify]]
-name = "lightarchitects-soul"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-corso"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-eva"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-quantum"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-seraph"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-ayin"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-cli"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-arena"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-[[licenses.clarify]]
-name = "lightarchitects-auth"
-version = "*"
-expression = "LicenseRef-LA-Proprietary"
-license-files = []
-
-# ── External path dependencies ────────────────────────────────────────────────
-# AYIN lives outside the lightarchitects-sdk workspace but is referenced as a path dep.
-
-[[licenses.clarify]]
-name = "ayin"
+name = "corso-trinity-core"
 version = "*"
 expression = "LicenseRef-LA-Proprietary"
 license-files = []

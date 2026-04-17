@@ -6,6 +6,7 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = false
 description = "Local web GUI shell for the active coding agent. Embeds a PTY-hosted agent session (Claude Code by default) alongside a 3D session-helix panel. Build: luminous-weaving-nautilus."
 
 [[bin]]
@@ -14,10 +15,10 @@ path = "src/main.rs"
 
 [dependencies]
 # Canonical path resolution (unified-forging-vault Phase 1 helper)
-lightarchitects-core = { path = "../lightarchitects-core" }
+lightarchitects = { path = "../lightarchitects" }
 
 # Tier-1 ephemeral transactional log (unified-forging-turnlog)
-lightarchitects-turnlog = { path = "../lightarchitects-turnlog" }
+
 
 # Async runtime — "signal" for graceful shutdown; "ws" feature of axum adds tungstenite transitively
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }

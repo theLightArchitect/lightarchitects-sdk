@@ -50,7 +50,7 @@ pub async fn dispatch(action: &str, params: Value) -> Result<Value, GatewayError
 #[must_use]
 pub fn is_ayin_action(action: &str) -> bool {
     action
-        .parse::<lightarchitects_ayin::AyinAction>()
+        .parse::<lightarchitects::ayin::AyinAction>()
         .is_ok_and(|a| a.is_gateway_routable())
 }
 
@@ -185,6 +185,7 @@ fn format_response(body: Value) -> Result<Value, GatewayError> {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use serde_json::json;
 

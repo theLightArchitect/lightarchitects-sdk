@@ -29,6 +29,7 @@ use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
 use tracing::{debug, info, warn};
 
+use super::strand::parse_strand_activations;
 use super::types::{AyinStatus, TraceSpanSummary, WebEvent};
 
 /// AYIN viewer SSE endpoint (local only).
@@ -144,6 +145,13 @@ fn dispatch_event(event_text: &str, tx: &broadcast::Sender<WebEvent>) {
         };
         match serde_json::from_str::<TraceSpanSummary>(data) {
             Ok(span) => {
+                // Extract strand activations BEFORE moving the span into
+                // the AyinSpan variant, so each activation can fan out as
+                // its own WebEvent. Empty when the span has none, so the
+                // hot path stays cheap.
+                for activation in parse_strand_activations(&span) {
+                    let _ = tx.send(WebEvent::StrandActivation(activation));
+                }
                 let _ = tx.send(WebEvent::AyinSpan(span));
             }
             Err(e) => {
@@ -237,6 +245,46 @@ mod tests {
         let (tx, mut rx) = broadcast::channel(16);
         dispatch_event("event: span\nid: 1", &tx);
         assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn dispatch_event_emits_strand_activations_before_span() {
+        let (tx, mut rx) = broadcast::channel(16);
+        let span_json = serde_json::json!({
+            "id": "00000000-0000-0000-0000-000000000002",
+            "actor": "eva",
+            "action": "rag.query",
+            "timestamp": "2026-04-16T00:00:00Z",
+            "duration_ms": 15,
+            "outcome": "success",
+            "metadata": {
+                "strand_activations": [
+                    { "strand": "methodical", "weight": 0.9 },
+                    { "strand": "contextual", "weight": 0.6 },
+                ]
+            }
+        })
+        .to_string();
+        dispatch_event(&format!("data: {span_json}"), &tx);
+
+        // Expect exactly 3 events: 2 StrandActivation + 1 AyinSpan, in that order.
+        let first = rx.try_recv().unwrap();
+        let second = rx.try_recv().unwrap();
+        let third = rx.try_recv().unwrap();
+        assert!(matches!(first, WebEvent::StrandActivation(_)));
+        assert!(matches!(second, WebEvent::StrandActivation(_)));
+        assert!(matches!(third, WebEvent::AyinSpan(_)));
+        assert!(rx.try_recv().is_err(), "no extra events expected");
+    }
+
+    #[test]
+    fn dispatch_event_without_strand_activations_emits_only_span() {
+        let (tx, mut rx) = broadcast::channel(16);
+        let event_text = format!("data: {}", sample_span_json());
+        dispatch_event(&event_text, &tx);
+        let event = rx.try_recv().unwrap();
+        assert!(matches!(event, WebEvent::AyinSpan(_)));
+        assert!(rx.try_recv().is_err(), "no StrandActivation expected");
     }
 
     // ── drain_events ──────────────────────────────────────────────────────────

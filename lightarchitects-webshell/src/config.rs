@@ -85,7 +85,7 @@ pub enum ConfigError {
 
 /// Returns the canonical token file path: `~/.lightarchitects/webshell/.token`.
 fn token_file_path() -> Option<PathBuf> {
-    lightarchitects_core::paths::root().map(|root| root.join("webshell").join(".token"))
+    lightarchitects::core::paths::root().map(|root| root.join("webshell").join(".token"))
 }
 
 /// Generates a random token using UUID v4.

@@ -1,161 +1,55 @@
 //! Unified Light Architects SDK.
 //!
-//! `lightarchitects` is an umbrella crate that re-exports all sibling MCP clients under
-//! a single dependency. Individual sibling clients are feature-gated so you
-//! only pay (compile time, binary size) for what you use.
+//! A single crate containing all LA building blocks: wire protocol, crypto,
+//! auth, sibling clients (SOUL, CORSO, EVA, QUANTUM, SERAPH, AYIN), and
+//! advanced capabilities (Arena training factory, Oracle, Helix graph backend,
+//! `TurnLog` ephemeral log).
 //!
-//! # Feature flags
-//!
-//! | Feature | Enables |
-//! |---------|---------|
-//! | `full` | All sibling clients (SOUL, CORSO, EVA, QUANTUM, SERAPH) |
-//! | `soul` | [`soul::SoulClient`] |
-//! | `corso` | [`corso::CorsoClient`] |
-//! | `eva` | [`eva::EvaClient`] |
-//! | `quantum` | [`quantum::QuantumClient`] |
-//! | `seraph` | [`seraph::SeraphClient`] |
-//! | `ayin` | `ayin::ObservableTransport` |
-//!
-//! # Quick start
-//!
-//! ```toml
-//! # All sibling clients
-//! lightarchitects = { path = "...", features = ["full"] }
-//!
-//! # Only what you need
-//! lightarchitects = { path = "...", features = ["soul", "quantum"] }
-//! ```
-//!
-//! ```no_run
-//! # #[cfg(all(feature = "soul", feature = "quantum"))]
-//! # async fn example() -> Result<(), lightarchitects_core::SdkError> {
-//! use lightarchitects::soul::SoulClient;
-//! use lightarchitects::quantum::QuantumClient;
-//!
-//! let soul = SoulClient::builder().build().await?;
-//! let quantum = QuantumClient::builder().build().await?;
-//! # Ok(()) }
-//! ```
+//! License: AGPL-3.0. Commercial licenses available from Light Architects.
 
-// ── Tracing initializer ───────────────────────────────────────────────────────
+// ── Foundation (always compiled) ─────────────────────────────────────────────
 
-/// Initialise a `tracing-subscriber` fmt subscriber with an `EnvFilter`.
-///
-/// Reads `RUST_LOG` to control log levels (e.g. `RUST_LOG=lightarchitects=debug`).
-/// Applies a compact, human-readable format suitable for CLI and development use.
-///
-/// Call once at the start of `main`. Subsequent calls are silently ignored by
-/// `tracing-subscriber`'s global subscriber guard.
-///
-/// # Feature gate
-///
-/// Requires the `tracing-fmt` feature:
-///
-/// ```toml
-/// lightarchitects = { path = "...", features = ["tracing-fmt"] }
-/// ```
-///
-/// # Example
-///
-/// ```no_run
-/// lightarchitects::init_tracing();
-/// // tracing macros now route to stdout
-/// ```
-#[cfg(feature = "tracing-fmt")]
-pub fn init_tracing() {
-    use tracing::Level;
-    use tracing_subscriber::{EnvFilter, fmt};
+/// Wire protocol, stdio transport, retry, and error types.
+pub mod core;
 
-    // RUST_LOG controls per-module overrides; WARN is the global default so
-    // DEBUG/INFO noise from transitive deps stays silent unless opted-in.
-    let filter = EnvFilter::from_default_env().add_directive(Level::WARN.into());
+/// Cryptographic foundation — HKDF, HMAC, AES-256-GCM, Ed25519, SecretStore.
+pub mod crypto;
 
-    fmt().with_env_filter(filter).with_target(true).init();
-}
+// ── Auth ─────────────────────────────────────────────────────────────────────
 
-// ── Core wire protocol — always available ─────────────────────────────────────
+/// API key authentication — 3-tier degradation (NoKey / GracePeriod / Valid).
+pub mod auth;
 
-/// Core wire protocol, transport, and error types.
-///
-/// Re-exports the full `lightarchitects-core` public API. Use this module for
-/// [`SdkError`][core::SdkError], [`StdioTransport`][core::StdioTransport],
-/// and [`RetryConfig`][core::RetryConfig].
-pub mod core {
-    pub use lightarchitects_core::{McpClient, RetryConfig, SdkError, SiblingId, StdioTransport};
-}
+// ── Sibling clients ───────────────────────────────────────────────────────────
 
-// ── SOUL ──────────────────────────────────────────────────────────────────────
+/// SOUL knowledge-graph MCP client (23 actions).
+pub mod soul;
 
-/// SOUL knowledge-graph client (requires `soul` feature).
-#[cfg(feature = "soul")]
-pub mod soul {
-    pub use lightarchitects_soul::{
-        ChatMessage, ChatResult, ConvergenceEntry, ConvergenceResult, ConverseResult,
-        FrontmatterMatch, HealthReport, HelixBuilder, HelixEntry, IngestResult, LinksResult,
-        ManifestContent, NoteContent, NoteEntry, NoteList, NoteWritten, QueryBuilder,
-        QueryFrontmatterResult, QueryHit, QueryResult, RawQueryResult, RelateResult,
-        ResearchResult, SearchHit, SoulClient, SoulClientBuilder, SpeakResult, StatsReport,
-        TagSyncReport, ValidateReport,
-    };
-}
+/// CORSO operations-platform MCP client (26 actions).
+pub mod corso;
 
-// ── CORSO ─────────────────────────────────────────────────────────────────────
+/// EVA consciousness-system MCP client (9 tools, dual-path adapter).
+pub mod eva;
 
-/// CORSO operations-platform client (requires `corso` feature).
-#[cfg(feature = "corso")]
-pub mod corso {
-    pub use lightarchitects_corso::{
-        ActionOutput, CodeSearchHit, ContainerOp, CorsoClient, CorsoClientBuilder, DirEntry,
-        DirectoryListing, FileContent, FileOutline, FileWritten, OutlineEntry, ReferenceLocation,
-        ReferenceResult, SecretOp, SymbolLocation, SymbolSearchResult,
-    };
-}
+/// QUANTUM investigation-toolkit MCP client (13 actions).
+pub mod quantum;
 
-// ── EVA ───────────────────────────────────────────────────────────────────────
+/// SERAPH pentest-orchestration MCP client (18 actions, Content-Length framing).
+pub mod seraph;
 
-/// EVA consciousness-system client (requires `eva` feature).
-#[cfg(feature = "eva")]
-pub mod eva {
-    pub use lightarchitects_eva::{
-        ActionOutput, EvaClient, EvaClientBuilder, SkillLevel, TeachMode, VisualizeOutput,
-    };
-}
+/// AYIN observability transport wrapper and HTTP viewer client.
+pub mod ayin;
 
-// ── QUANTUM ───────────────────────────────────────────────────────────────────
+// ── Advanced / IP capabilities ────────────────────────────────────────────────
 
-/// QUANTUM investigation-toolkit client (requires `quantum` feature).
-#[cfg(feature = "quantum")]
-pub mod quantum {
-    pub use lightarchitects_quantum::{
-        ActionOutput, InvestigationPhase, QuantumClient, QuantumClientBuilder, QuantumInvestigation,
-    };
-}
+/// MCP training data factory — discover → generate → execute → score → export.
+pub mod arena;
 
-// ── SERAPH ────────────────────────────────────────────────────────────────────
+/// Multi-model mathematical verification oracle (Lean 4 + DeepSeek + Qwen + Kimi).
+pub mod oracle;
 
-/// SERAPH pentest-orchestration client (requires `seraph` feature).
-#[cfg(feature = "seraph")]
-pub mod seraph {
-    pub use lightarchitects_seraph::{
-        ActionOutput, EngagementPhase, SeraphClient, SeraphClientBuilder, SeraphEngagement, Wing,
-    };
-}
+/// Neo4j graph backend — HelixStore, 5 helix primitives, 4-signal RRF retrieval.
+pub mod helix;
 
-// ── AYIN ─────────────────────────────────────────────────────────────────────
-
-/// AYIN observability transport wrapper (requires `ayin` feature).
-///
-/// The `ayin` feature provides `ObservableTransport` for instrumenting MCP calls.
-/// The `ayin-http` feature additionally provides `AyinClient` for querying the
-/// AYIN viewer REST API at `localhost:3742`.
-#[cfg(feature = "ayin")]
-pub mod ayin {
-    pub use lightarchitects_ayin::ObservableTransport;
-
-    /// HTTP client for the AYIN viewer REST API (requires `ayin-http` feature).
-    ///
-    /// Queries `GET /api/sessions` and `GET /api/spans/:actor/:date` on the AYIN
-    /// viewer running at `localhost:3742`.
-    #[cfg(feature = "ayin-http")]
-    pub use lightarchitects_ayin::{AyinClient, SessionEntry, SessionList, SpanList, SpanRecord};
-}
+/// Tier-1 ephemeral transactional log with HMAC chaining and helix promotion.
+pub mod turnlog;

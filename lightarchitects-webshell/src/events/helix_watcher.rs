@@ -1,6 +1,6 @@
 //! Filesystem watcher — helix vault fallback event source.
 //!
-//! Watches the helix root returned by [`lightarchitects_core::paths::helix_root`]
+//! Watches the helix root returned by [`lightarchitects::core::paths::helix_root`]
 //! for new and modified `.md` files inside any `entries/` subdirectory, and
 //! emits [`WebEvent::HelixEntry`] events on the shared broadcast channel.
 //!
@@ -19,7 +19,7 @@
 //!
 //! # Helix root missing
 //!
-//! If [`lightarchitects_core::paths::helix_root`] returns `None` (the vault
+//! If [`lightarchitects::core::paths::helix_root`] returns `None` (the vault
 //! is not set up yet), [`HelixWatcher::spawn`] logs at `WARN` and returns
 //! without panicking.  The SSE stream continues with AYIN-only events.
 
@@ -51,7 +51,7 @@ impl HelixWatcher {
     /// `WARN` and returns without spawning.  Callers do not need to handle the
     /// unavailable case — the system degrades gracefully to AYIN-only events.
     pub fn spawn(tx: broadcast::Sender<WebEvent>) {
-        let Some(root) = lightarchitects_core::paths::helix_root() else {
+        let Some(root) = lightarchitects::core::paths::helix_root() else {
             warn!("helix_root unavailable — filesystem watcher not started");
             return;
         };

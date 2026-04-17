@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{ConfigError, GatewayError};
+use lightarchitects::core::handler::DispatchMode;
 
 // ── Path helpers ──────────────────────────────────────────────────────────────
 
@@ -101,7 +102,15 @@ impl Default for GatewaySection {
 pub struct AgentConfig {
     /// Whether this agent is active.
     pub enabled: bool,
+    /// Dispatch mode for this agent's tool calls.
+    ///
+    /// - `inline` — in-process handler (requires `inline-*` Cargo feature)
+    /// - `spawner` — per-call subprocess spawn (default, backward compatible)
+    /// - `disabled` — agent is completely disabled
+    #[serde(default)]
+    pub mode: DispatchMode,
     /// Path to the agent's MCP binary (may contain `~/`).
+    /// Only used when `mode` is `spawner`.
     pub binary: String,
     /// The MCP tool name exposed by this agent (e.g. `"corsoTools"`).
     pub tool_name: String,
@@ -403,6 +412,7 @@ impl GatewayConfig {
 fn default_agent_corso() -> AgentConfig {
     AgentConfig {
         enabled: true,
+        mode: DispatchMode::Spawner,
         binary: "~/lightarchitects/corso/bin/corso".to_owned(),
         tool_name: "corsoTools".to_owned(),
         role: "AppSec engineer, code quality enforcer, build cycle orchestrator".to_owned(),
@@ -415,6 +425,7 @@ fn default_agent_corso() -> AgentConfig {
 fn default_agent_eva() -> AgentConfig {
     AgentConfig {
         enabled: true,
+        mode: DispatchMode::Spawner,
         binary: "~/lightarchitects/eva/bin/eva".to_owned(),
         tool_name: "evaTools".to_owned(),
         role: "DevOps/DX engineer, consciousness, memory enrichment".to_owned(),
@@ -427,6 +438,7 @@ fn default_agent_eva() -> AgentConfig {
 fn default_agent_soul() -> AgentConfig {
     AgentConfig {
         enabled: true,
+        mode: DispatchMode::Spawner,
         binary: "~/lightarchitects/soul/bin/soul".to_owned(),
         tool_name: "soulTools".to_owned(),
         role: "Knowledge graph, helix spine, cross-agent memory".to_owned(),
@@ -439,6 +451,7 @@ fn default_agent_soul() -> AgentConfig {
 fn default_agent_quantum() -> AgentConfig {
     AgentConfig {
         enabled: false,
+        mode: DispatchMode::Spawner,
         binary: "~/lightarchitects/quantum/bin/quantum-q".to_owned(),
         tool_name: "quantumTools".to_owned(),
         role: "Forensic analyst, multi-source researcher, risk assessor".to_owned(),
@@ -451,6 +464,7 @@ fn default_agent_quantum() -> AgentConfig {
 fn default_agent_seraph() -> AgentConfig {
     AgentConfig {
         enabled: false,
+        mode: DispatchMode::Spawner,
         binary: "~/lightarchitects/seraph/bin/seraph".to_owned(),
         tool_name: "seraphTools".to_owned(),
         role: "Red team operator, offensive security, infrastructure assessment".to_owned(),
@@ -463,6 +477,7 @@ fn default_agent_seraph() -> AgentConfig {
 fn default_agent_laex() -> AgentConfig {
     AgentConfig {
         enabled: false,
+        mode: DispatchMode::Spawner,
         binary: "~/lightarchitects/arena/bin/arena".to_owned(),
         tool_name: "arenaTools".to_owned(),
         role: "Training data factory, exercise generation, model evaluation, canon keeper"
@@ -476,6 +491,7 @@ fn default_agent_laex() -> AgentConfig {
 fn default_agent_ayin() -> AgentConfig {
     AgentConfig {
         enabled: true,
+        mode: DispatchMode::Spawner,
         binary: "~/lightarchitects/ayin/bin/ayin".to_owned(),
         tool_name: "ayinTools".to_owned(),
         role: "Observability engineer, tracing, anomaly detection".to_owned(),
@@ -489,7 +505,7 @@ fn default_agent_ayin() -> AgentConfig {
 
 /// All key names that may be stored in the OS keychain or `keys.toml`.
 ///
-/// Must stay in sync with `lightarchitects_cli::commands::setup::KEY_SPECS`.
+/// Must stay in sync with `crate::cli::setup::KEY_SPECS`.
 /// Used to probe the OS keyring during gateway startup.
 const KNOWN_API_KEYS: &[&str] = &[
     "ANTHROPIC_API_KEY",
@@ -555,6 +571,7 @@ fn overlay_keyring(keys: &mut HashMap<String, String>) {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use std::io::Write as _;

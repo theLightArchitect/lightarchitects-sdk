@@ -1,8 +1,12 @@
-//! Embedded static assets served from `web/dist/`.
+//! Embedded static assets served from `web-figma/dist/`.
 //!
-//! During Phase 1 there is only a placeholder `index.html`. The full React
-//! frontend lands in Phase 6 and gets baked into this embed at compile time
-//! via [`rust_embed`] so the webshell ships as a single self-contained binary.
+//! The primary SPA is the Figma Make aesthetic shell (`web-figma/`).
+//! Its built bundle is baked into the binary at compile time via
+//! [`rust_embed`] so the webshell ships as a single self-contained artifact.
+//!
+//! The legacy `web/` tree (pre-luminous-grafting-nautilus engineering
+//! frontend) remains in the repo for git-history reference and is retired
+//! entirely at Phase 7. It is no longer embedded.
 
 use axum::{
     body::Body,
@@ -11,10 +15,10 @@ use axum::{
 };
 use rust_embed::Embed;
 
-/// Embedded static asset bundle. Includes every file under `web/dist/`
+/// Embedded static asset bundle. Includes every file under `web-figma/dist/`
 /// relative to this crate's root.
 #[derive(Embed)]
-#[folder = "web/dist/"]
+#[folder = "web-figma/dist/"]
 pub struct Assets;
 
 /// Serves a static asset by request path.

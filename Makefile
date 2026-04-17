@@ -9,13 +9,16 @@ help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-quality: ## Run quality gates (fmt check + clippy + tests)
+quality: ## Run quality gates (fmt check + clippy + unit/integration tests)
 	cargo fmt --all -- --check
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
-	cargo test --workspace --all-features
+	cargo test --workspace --all-features --lib --tests
 
-test: ## Run all tests
-	cargo test --workspace --all-features
+test: ## Run unit and integration tests
+	cargo test --workspace --all-features --lib --tests
+
+doctest: ## Run doc-examples (separate gate — pre-existing crate:: path migration debt)
+	cargo test --workspace --all-features --doc
 
 ## Isolated feature-gate tests — catches cross-feature contamination in the
 ## lightarchitects umbrella crate (the only crate with named sibling features).

@@ -1,5 +1,6 @@
 //! Error types for the `lightarchitects-gateway` crate.
 
+use lightarchitects::core::handler::HandlerError;
 use thiserror::Error;
 
 /// Top-level gateway error, covering all failure modes.
@@ -66,7 +67,7 @@ pub enum GatewayError {
         reason: String,
     },
 
-    /// A conductor (LVL8) operation failed.
+    /// A conductor operation failed.
     #[error("conductor error: {0}")]
     Conductor(String),
 
@@ -107,4 +108,30 @@ pub enum ConfigError {
     /// The HOME environment variable is not set.
     #[error("HOME environment variable is not set")]
     NoHome,
+}
+
+impl From<HandlerError> for GatewayError {
+    /// Map an in-process handler error to the appropriate gateway error.
+    ///
+    /// This mapping preserves the most specific gateway error variant for each
+    /// handler error, so that downstream consumers (MCP error responses, AYIN
+    /// observability events) see the same error categories regardless of whether
+    /// the call went through the spawner or the inline handler.
+    fn from(err: HandlerError) -> Self {
+        match err {
+            HandlerError::UnknownAction { action, .. } => Self::UnknownTool(action),
+            HandlerError::InvalidParams { message, .. } => Self::InvalidParam(message),
+            // Both NotInitialized and ServiceError map to McpProtocol —
+            // they represent the same class of error as a subprocess MCP
+            // protocol failure.
+            HandlerError::NotInitialized { handler, message }
+            | HandlerError::ServiceError {
+                handler, message, ..
+            } => Self::McpProtocol {
+                agent: handler,
+                reason: message,
+            },
+            HandlerError::Internal { message, .. } => Self::Internal(message),
+        }
+    }
 }

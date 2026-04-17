@@ -6,3 +6,10 @@
 # Webshell frontend build artifacts
 lightarchitects-webshell/web/dist/
 lightarchitects-webshell/web/node_modules/
+
+# Webshell Figma Make aesthetic shell build artifacts (luminous-grafting-nautilus)
+lightarchitects-webshell/web-figma/dist/
+lightarchitects-webshell/web-figma/node_modules/
+# Vite/Tailwind local caches
+lightarchitects-webshell/web-figma/.vite/
+lightarchitects-webshell/web-figma/.turbo/

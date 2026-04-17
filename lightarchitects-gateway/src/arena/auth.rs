@@ -13,7 +13,7 @@ use axum::extract::State;
 use axum::http::{Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use lightarchitects_crypto::hash::hmac_hash;
+use lightarchitects::crypto::hash::hmac_hash;
 use rusqlite::Connection;
 use secrecy::SecretString;
 use serde_json::json;
@@ -326,6 +326,7 @@ fn error_response(status: StatusCode, code: &str, message: &str) -> Response {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

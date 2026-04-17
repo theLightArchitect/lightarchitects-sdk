@@ -68,7 +68,7 @@ fn build_check_payload(
          Flag conflicts, alignments, or gaps.\n\
          \n\
          Note: This is file-based pattern matching against the canon registry \
-         (~/.soul/helix/user/standards/canon.md). It extracts headers and \
+         (~/lightarchitects/soul/helix/user/standards/canon.md). It extracts headers and \
          presents them for review — it does not perform reasoning-grade \
          evaluation. Full semantic analysis requires the LÆX model \
          (not available in v1)."
@@ -83,6 +83,7 @@ fn build_check_payload(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use serde_json::json;

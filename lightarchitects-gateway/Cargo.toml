@@ -6,6 +6,7 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = false
 description = "Light Architects unified gateway — MCP server, Arena HTTP API, and autonomous agent runtime."
 
 [[bin]]
@@ -13,24 +14,56 @@ name = "lightarchitects"
 path = "src/main.rs"
 doc = false
 
+[features]
+default = ["spawner"]
+
+## Subprocess spawn mode (current behaviour). Retained as fallback even when
+## inline handlers are enabled so that agents configured as `mode = "spawner"`
+## still work.
+spawner = []
+
+## In-process sibling handlers — compile handler logic directly into the binary
+## instead of spawning a subprocess per call. Each flag gates one handler and
+## its optional dependency.
+inline-ayin = ["dep:ayin-mcp", "dep:ayin-core", "dep:ayin-engine"]
+inline-corso = ["dep:corso-server", "dep:corso-trinity-core"]
+inline-eva = []
+inline-soul = []
+inline-quantum = []
+# inline-seraph intentionally omitted — SERAPH stays spawner-only for process
+# isolation (offensive security tools must not crash the gateway).
+
+## Convenience: enable all five inline handlers at once.
+inline-all = [
+    "inline-ayin", "inline-corso", "inline-eva",
+    "inline-soul", "inline-quantum",
+]
+
+## SOUL heavy dependencies (Neo4j + fastembed). Without this, the SOUL handler
+## uses the filesystem vault backend only — no graph database or embeddings.
+helix = ["inline-soul"]
+
 [lints]
 workspace = true
 
 [dependencies]
-# ── Workspace sibling clients ─────────────────────────────────────────────────
-lightarchitects-core = { path = "../lightarchitects-core" }
-lightarchitects-corso = { path = "../lightarchitects-corso" }
-lightarchitects-eva = { path = "../lightarchitects-eva" }
-lightarchitects-soul = { path = "../lightarchitects-soul" }
-lightarchitects-quantum = { path = "../lightarchitects-quantum" }
-lightarchitects-seraph = { path = "../lightarchitects-seraph" }
-lightarchitects-ayin = { path = "../lightarchitects-ayin" }
-lightarchitects-crypto = { path = "../lightarchitects-crypto" }
+# ── Unified SDK (replaces all individual sibling crate deps) ──────────────────
+lightarchitects = { path = "../lightarchitects" }
+
+# ── Inline handler dependencies (optional, feature-gated) ───────────────────────
+ayin-mcp = { path = "/Users/kft/Projects/AYIN/AYIN-DEV/ayin-mcp", optional = true }
+ayin-core = { path = "/Users/kft/Projects/AYIN/AYIN-DEV/ayin-core", optional = true }
+ayin-engine = { path = "/Users/kft/Projects/AYIN/AYIN-DEV/ayin-engine", optional = true }
+corso-server = { path = "/Users/kft/Projects/CORSO/MCP/CORSO-DEV/crates/corso-server", optional = true }
+corso-trinity-core = { path = "/Users/kft/Projects/CORSO/MCP/CORSO-DEV/crates/core", optional = true }
 
 # ── Shared (both MCP + Arena modes) ──────────────────────────────────────────
+async-trait = "0.1"
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 toml = { workspace = true }
+rpassword = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["io-std", "signal", "fs"] }
 tracing = { workspace = true }

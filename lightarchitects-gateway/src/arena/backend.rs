@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 
+use lightarchitects::core::paths;
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
@@ -73,7 +74,7 @@ pub struct AgentConfig {
     pub ollama_host: String,
     /// Soul helix mount source path (read-only for agents).
     pub soul_path: PathBuf,
-    /// Arena data mount source path (read-write for conductor, read-only for agents).
+    /// Arena data mount source path (read-write for curator, read-only for agents).
     pub arena_path: PathBuf,
     /// Sandbox profiles directory (created by SandboxBackend at runtime).
     pub sandbox_profiles_dir: PathBuf,
@@ -85,11 +86,9 @@ impl AgentConfig {
     /// # Errors
     /// Returns error if the home directory cannot be resolved.
     pub fn from_config(config: &Config) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let home = dirs_next::home_dir()
-            .ok_or("Cannot determine home directory — set SOUL_PATH and ARENA_PATH env vars")?;
         let soul_path = std::env::var("SOUL_PATH")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| home.join(".soul"));
+            .unwrap_or_else(|_| paths::soul_or_fallback());
         let arena_path = std::env::var("ARENA_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| config.data_dir.clone());
@@ -413,8 +412,8 @@ async fn docker_restart(handle: &AgentHandle, config: &AgentConfig) -> Result<Ag
 
 /// Spawns agents via macOS `sandbox-exec` with a minimal filesystem profile.
 ///
-/// The profile allows read/write access to `~/.soul/`, `~/.arena/`, `~/.ayin/logs/`.
-/// Raw sockets are denied. The profile is written to `~/.arena/sandbox-profiles/{sibling}.sb`
+/// The profile allows read/write access to `~/lightarchitects/soul/`, `~/lightarchitects/arena/`, `~/lightarchitects/ayin/logs/`.
+/// Raw sockets are denied. The profile is written to `~/lightarchitects/arena/sandbox-profiles/{sibling}.sb`
 /// at spawn time and reused on subsequent restarts.
 pub struct SandboxBackend;
 
@@ -429,13 +428,13 @@ const SANDBOX_PROFILE_TEMPLATE: &str = r#"(version 1)
 (allow process-fork)
 (allow signal (target self))
 
-; Allow file reads under ~/.soul, ~/.arena, ~/.ayin
+; Allow file reads under ~/lightarchitects/soul, ~/lightarchitects/arena, ~/lightarchitects/ayin
 (allow file-read*
   (subpath "{soul_path}")
   (subpath "{arena_path}")
   (subpath "{ayin_logs_path}"))
 
-; Allow file writes under ~/.soul and ~/.arena only
+; Allow file writes under ~/lightarchitects/soul and ~/lightarchitects/arena only
 (allow file-write*
   (subpath "{soul_path}")
   (subpath "{arena_path}"))
@@ -497,9 +496,7 @@ impl AgentBackend for SandboxBackend {
 /// Write the sandbox profile for a sibling, return the profile path.
 #[allow(dead_code)] // called by sandbox_spawn — lifecycle API, not yet wired
 fn write_sandbox_profile(sibling: &str, config: &AgentConfig) -> Result<PathBuf, String> {
-    let home = dirs_next::home_dir()
-        .ok_or_else(|| "SandboxBackend: cannot resolve home directory".to_owned())?;
-    let ayin_logs_path = home.join(".ayin/logs");
+    let ayin_logs_path = paths::ayin_or_fallback().join("logs");
 
     let profile = SANDBOX_PROFILE_TEMPLATE
         .replace("{soul_path}", &config.soul_path.to_string_lossy())

@@ -44,7 +44,7 @@ pub async fn builds_handler(
     }
 
     // Resolve the active.yaml path.
-    let Some(helix_root) = lightarchitects_core::paths::helix_root() else {
+    let Some(helix_root) = lightarchitects::core::paths::helix_root() else {
         warn!("helix_root unavailable — cannot serve /api/builds");
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };

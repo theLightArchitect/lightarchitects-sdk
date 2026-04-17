@@ -15,8 +15,8 @@ pub mod arena_config;
 pub mod auth;
 pub mod backend;
 pub mod compat;
-pub mod conductor;
 pub mod conversation_routine;
+pub mod curator;
 pub mod grounding;
 pub mod heartbeat;
 pub mod llm;
@@ -30,6 +30,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use lightarchitects::core::paths;
 use secrecy::{ExposeSecret, SecretString};
 use tokio::sync::watch;
 
@@ -116,9 +117,7 @@ pub async fn run_serve() -> Result<(), Box<dyn std::error::Error>> {
 
     // Spawn helix significance watcher for canon-evaluation trigger
     let (spike_tx, spike_rx) = tokio::sync::mpsc::channel(32);
-    let helix_root = dirs_next::home_dir()
-        .map(|h| h.join(".soul/helix"))
-        .unwrap_or_else(|| PathBuf::from("/root/.soul/helix"));
+    let helix_root = paths::helix_root_or_fallback();
     match conversation_routine::spawn_helix_watcher(
         helix_root,
         config.significance_spike_threshold,

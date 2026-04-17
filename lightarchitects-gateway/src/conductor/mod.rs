@@ -1,4 +1,4 @@
-//! LVL8 Conductor — autonomous task execution loop embedded in the gateway.
+//! Conductor — autonomous task execution loop embedded in the gateway.
 //!
 //! Provides the `conductor` subcommand group for the `lightarchitects` binary:
 //!

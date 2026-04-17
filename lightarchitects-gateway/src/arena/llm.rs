@@ -36,7 +36,7 @@ enum LlmBackend {
 ///
 /// Contains a shared semaphore (`permits = 1`) that serializes all LLM calls.
 /// On 16 GB Khadas, concurrent requests cause queue collisions and OOM.
-/// Every caller — heartbeats, conductor, agent loop — acquires the permit
+/// Every caller — heartbeats, curator, agent loop — acquires the permit
 /// before making a request, so only one is in-flight at a time.
 pub struct LlmClient {
     client: reqwest::Client,
