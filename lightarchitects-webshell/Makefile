@@ -11,6 +11,8 @@ DEPLOY_DIR     := $(HOME)/lightarchitects/webshell/bin
 WEB_DIR        := web
 WEB_FIGMA_DIR  := web-figma
 SYMLINK        := $(HOME)/.local/bin/webshell
+# Cargo workspace root is one level up; binary is placed there by cargo.
+CARGO_TARGET   := ../target/release/$(BINARY)
 
 help: ## Show available targets
 	@echo ""
@@ -41,13 +43,13 @@ build: ## Build release binary (requires web/dist/ to be current)
 	@echo "Building $(BINARY)…"
 	@cargo build --release -p lightarchitects-webshell --quiet
 
-test: ## Run Rust test suite
-	@cargo test --workspace --quiet
+test: ## Run Rust test suite (webshell crate only)
+	@cargo test -p lightarchitects-webshell --quiet
 
-quality: ## Check code quality: fmt + clippy + Rust tests + TS tests
+quality: ## Check code quality: fmt + clippy + Rust tests + TS tests (webshell scope)
 	@cargo fmt -- --check
-	@cargo clippy --workspace --all-targets -- -D warnings
-	@cargo test --workspace --quiet
+	@cargo clippy -p lightarchitects-webshell --all-targets -- -D warnings
+	@cargo test -p lightarchitects-webshell --quiet
 	@cd $(WEB_DIR) && pnpm test
 
 fix: ## Auto-fix fmt and clippy issues
@@ -66,7 +68,7 @@ deploy: web web-figma quality ## Build both frontends + quality gates + deploy t
 	@if [ -f "$(DEPLOY_DIR)/$(BINARY)" ]; then \
 		cp -f "$(DEPLOY_DIR)/$(BINARY)" "$(DEPLOY_DIR)/$(BINARY).bak"; \
 	fi
-	@cp target/release/$(BINARY) $(DEPLOY_DIR)/$(BINARY).tmp
+	@cp $(CARGO_TARGET) $(DEPLOY_DIR)/$(BINARY).tmp
 	@mv -f $(DEPLOY_DIR)/$(BINARY).tmp $(DEPLOY_DIR)/$(BINARY)
 	@chmod +x $(DEPLOY_DIR)/$(BINARY)
 	@codesign -fs - $(DEPLOY_DIR)/$(BINARY) 2>/dev/null || echo "WARNING: codesign failed (non-blocking)"
@@ -84,7 +86,7 @@ deploy-fast: ## Deploy without quality gates (assumes web/dist/ is current)
 	@if [ -f "$(DEPLOY_DIR)/$(BINARY)" ]; then \
 		cp -f "$(DEPLOY_DIR)/$(BINARY)" "$(DEPLOY_DIR)/$(BINARY).bak"; \
 	fi
-	@cp target/release/$(BINARY) $(DEPLOY_DIR)/$(BINARY).tmp
+	@cp $(CARGO_TARGET) $(DEPLOY_DIR)/$(BINARY).tmp
 	@mv -f $(DEPLOY_DIR)/$(BINARY).tmp $(DEPLOY_DIR)/$(BINARY)
 	@chmod +x $(DEPLOY_DIR)/$(BINARY)
 	@codesign -fs - $(DEPLOY_DIR)/$(BINARY) 2>/dev/null || echo "WARNING: codesign failed (non-blocking)"

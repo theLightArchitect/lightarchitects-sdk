@@ -212,6 +212,7 @@ fn is_timestamp_fresh(timestamp: u64, tolerance_secs: u64) -> bool {
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

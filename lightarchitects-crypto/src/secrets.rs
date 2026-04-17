@@ -468,6 +468,7 @@ pub fn auto_generate_and_persist(
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use secrecy::ExposeSecret;
 

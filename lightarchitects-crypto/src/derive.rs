@@ -339,6 +339,7 @@ pub fn derive_signing_key(pepper: &SecretString, context: &str) -> Result<VerseD
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::verses::find_verse;
