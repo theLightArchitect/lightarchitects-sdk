@@ -532,9 +532,9 @@ dependencies = [
 name = "ayin"
 version = "0.1.0"
 dependencies = [
+ "ayin-core",
  "chrono",
  "dashmap 6.1.0",
- "lightarchitects-core",
  "regex",
  "serde",
  "serde_json",
@@ -564,7 +564,6 @@ dependencies = [
  "async-trait",
  "ayin-core",
  "chrono",
- "lightarchitects-core",
  "rusqlite",
  "serde",
  "serde_json",
@@ -582,8 +581,7 @@ dependencies = [
  "ayin-engine",
  "chrono",
  "clap",
- "lightarchitects-core",
- "lightarchitects-turnlog",
+ "lightarchitects",
  "secrecy 0.10.3",
  "serde",
  "serde_json",
@@ -1128,9 +1126,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "lightarchitects-auth",
- "lightarchitects-core",
- "lightarchitects-turnlog",
+ "lightarchitects",
  "neural-engine",
  "once_cell",
  "prometheus",
@@ -1179,7 +1175,7 @@ dependencies = [
  "hmac",
  "hostname",
  "ipnet",
- "lightarchitects-core",
+ "lightarchitects",
  "neural-engine",
  "once_cell",
  "parking_lot",
@@ -1212,7 +1208,7 @@ dependencies = [
  "async-trait",
  "dirs 5.0.1",
  "dotenvy",
- "lightarchitects-core",
+ "lightarchitects",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -3148,60 +3144,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lightarchitects-auth"
-version = "0.1.0"
-dependencies = [
- "axum",
- "chrono",
- "clap",
- "dirs 6.0.0",
- "getrandom 0.2.17",
- "hex",
- "lightarchitects-core",
- "open",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "lightarchitects-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "lightarchitects-crypto"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "ed25519-dalek",
- "hkdf",
- "hmac",
- "rand 0.8.5",
- "secrecy 0.10.3",
- "serde",
- "sha2",
- "subtle",
- "thiserror 2.0.18",
- "toml",
- "tracing",
- "zeroize",
-]
-
-[[package]]
 name = "lightarchitects-gateway"
 version = "0.3.0"
 dependencies = [
@@ -3246,27 +3188,6 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "zeroize",
-]
-
-[[package]]
-name = "lightarchitects-turnlog"
-version = "0.1.0"
-dependencies = [
- "ayin",
- "chrono",
- "fs2",
- "hkdf",
- "lightarchitects-core",
- "lightarchitects-crypto",
- "rand 0.8.5",
- "secrecy 0.10.3",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
 ]
 
 [[package]]
@@ -5713,7 +5634,7 @@ dependencies = [
  "chrono",
  "dirs 5.0.1",
  "fs2",
- "lightarchitects-core",
+ "lightarchitects",
  "serde",
  "serde_json",
  "shellexpand",
@@ -5730,7 +5651,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "hmac",
- "lightarchitects-core",
+ "lightarchitects",
  "secrecy 0.10.3",
  "serde",
  "serde_json",
@@ -6783,7 +6704,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "fs2",
- "lightarchitects-core",
+ "lightarchitects",
  "reqwest",
  "serde",
  "serde_json",
