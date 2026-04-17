@@ -97,7 +97,7 @@ export function AppLayout() {
   }, []);
 
   return (
-    <div className="w-screen h-screen overflow-hidden bg-[#0a0a0f] text-[#e2e8f0] font-['JetBrains_Mono',monospace]">
+    <div className="w-screen h-screen overflow-hidden bg-[#0a0a0f] text-[#e2e8f0] font-['JetBrains_Mono',monospace]" aria-label="FIGMA-SYNC-PROBE-001">
       <PanelGroup direction="horizontal">
         {/* Terminal panel */}
         <Panel defaultSize={50} minSize={15}>
