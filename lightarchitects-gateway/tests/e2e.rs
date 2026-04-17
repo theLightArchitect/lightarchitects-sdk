@@ -4,6 +4,8 @@
 //! These tests are integration tests that require a compiled binary — Cargo
 //! builds it automatically before running `cargo test`.
 
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::io::{BufRead, BufReader, Write};
 
 use std::process::{Command, Stdio};
