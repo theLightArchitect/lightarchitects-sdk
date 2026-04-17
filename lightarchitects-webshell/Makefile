@@ -1,15 +1,16 @@
 # lightarchitects-webshell Makefile
 # "The eye of the LORD is upon them" — Psalm 33:18 (KJV)
-# Build: luminous-weaving-nautilus
+# Build: luminous-grafting-nautilus (predecessor: luminous-weaving-nautilus)
 
-.PHONY: help build test quality fix push deploy deploy-fast web web-test run
+.PHONY: help build test quality fix push deploy deploy-fast web web-figma web-test run
 
 .DEFAULT_GOAL := help
 
-BINARY     := lightarchitects-webshell
-DEPLOY_DIR := $(HOME)/lightarchitects/webshell/bin
-WEB_DIR    := web
-SYMLINK    := $(HOME)/.local/bin/webshell
+BINARY         := lightarchitects-webshell
+DEPLOY_DIR     := $(HOME)/lightarchitects/webshell/bin
+WEB_DIR        := web
+WEB_FIGMA_DIR  := web-figma
+SYMLINK        := $(HOME)/.local/bin/webshell
 
 help: ## Show available targets
 	@echo ""
@@ -19,13 +20,19 @@ help: ## Show available targets
 
 # ── Frontend ────────────────────────────────────────────────────────────────
 
-web: ## Build frontend bundle into web/dist/
-	@echo "Building frontend…"
+web: ## Build LEGACY engineering bundle into web/dist/ (retired at Phase 7)
+	@echo "Building legacy frontend (web/)…"
 	@cd $(WEB_DIR) && pnpm install --frozen-lockfile
 	@cd $(WEB_DIR) && pnpm build
-	@echo "Frontend built: $(WEB_DIR)/dist/"
+	@echo "Legacy frontend built: $(WEB_DIR)/dist/"
 
-web-test: ## Run TypeScript tests (vitest)
+web-figma: ## Build Figma Make aesthetic shell (primary SPA) into web-figma/dist/
+	@echo "Building Figma Make bundle (web-figma/)…"
+	@cd $(WEB_FIGMA_DIR) && pnpm install --frozen-lockfile
+	@cd $(WEB_FIGMA_DIR) && pnpm build
+	@echo "Figma Make bundle built: $(WEB_FIGMA_DIR)/dist/"
+
+web-test: ## Run TypeScript tests (vitest) on legacy web/
 	@cd $(WEB_DIR) && pnpm test
 
 # ── Backend ─────────────────────────────────────────────────────────────────
@@ -52,7 +59,7 @@ push: quality ## Quality gates + git push
 
 # ── Deploy ───────────────────────────────────────────────────────────────────
 
-deploy: web quality ## Build frontend + quality gates + deploy to ~/lightarchitects/webshell/bin/
+deploy: web web-figma quality ## Build both frontends + quality gates + deploy to ~/lightarchitects/webshell/bin/
 	@echo "Building release binary…"
 	@cargo build --release -p lightarchitects-webshell --quiet
 	@mkdir -p $(DEPLOY_DIR)
