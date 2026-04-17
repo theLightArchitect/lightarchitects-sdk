@@ -2,3 +2,7 @@
 *.swp
 *.swo
 .DS_Store
+
+# Webshell frontend build artifacts
+lightarchitects-webshell/web/dist/
+lightarchitects-webshell/web/node_modules/

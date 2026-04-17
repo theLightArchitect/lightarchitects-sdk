@@ -1,0 +1,90 @@
+[package]
+name = "lightarchitects-webshell"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Local web GUI shell for the active coding agent. Embeds a PTY-hosted agent session (Claude Code by default) alongside a 3D session-helix panel. Build: luminous-weaving-nautilus."
+
+[[bin]]
+name = "lightarchitects-webshell"
+path = "src/main.rs"
+
+[dependencies]
+# Canonical path resolution (unified-forging-vault Phase 1 helper)
+lightarchitects-core = { path = "../lightarchitects-core" }
+
+# Tier-1 ephemeral transactional log (unified-forging-turnlog)
+lightarchitects-turnlog = { path = "../lightarchitects-turnlog" }
+
+# Async runtime — "signal" for graceful shutdown; "ws" feature of axum adds tungstenite transitively
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
+
+# Web framework. "ws" feature adds tungstenite-based WebSocket upgrade for Phase 2 PTY bridge.
+axum = { workspace = true, features = ["ws", "macros"] }
+
+# Stream/sink combinators for split WebSocket (SinkExt::send + StreamExt::next).
+futures-util.workspace = true
+
+# Middleware — CORS for dev, trace for request logging
+tower-http = { workspace = true, features = ["cors", "trace"] }
+
+# Embedded static assets — `web/dist/` baked into the binary at compile time.
+# "mime-guess" feature enables `EmbeddedFile::metadata().mimetype()`.
+rust-embed = { version = "8", features = ["mime-guess"] }
+
+# Constant-time HMAC byte comparison (avoids timing side-channels)
+constant_time_eq = "0.3"
+
+# PTY terminal bridge (Phase 2).
+# 0.9 is the current stable release; pre_exec handles setsid+TIOCSCTTY natively (plan RG1-A1).
+portable-pty = "0.9"
+
+# CLI args via derive
+clap = { workspace = true }
+
+# HTTP client — "stream" feature enables Response::bytes_stream() for SSE consumption
+# (Phase 3 AYIN SSE client). Workspace provides version + rustls-tls + json.
+reqwest = { workspace = true, features = ["stream"] }
+
+# Filesystem watcher — Phase 4 helix vault fallback event source.
+notify.workspace = true
+
+# Serialization
+serde = { workspace = true }
+serde_json.workspace = true
+serde_yaml.workspace = true
+
+# Errors
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Turnlog pepper
+secrecy.workspace = true
+
+# Trace spans (schema: every log event IS an ayin::TraceSpan)
+ayin.workspace = true
+uuid.workspace = true
+
+# OS keyring — macOS Keychain / Linux Secret Service for token persistence.
+keyring = { workspace = true }
+
+# Safe SIGTERM on Unix (workspace unsafe_code = "deny" forbids libc::kill directly).
+# "signal" feature: nix::sys::signal::{kill, Signal}.
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.29", features = ["signal"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
+# Integration-test HTTP harness — oneshot exercises the real router stack.
+tower = { version = "0.4", features = ["util"] }
+http-body-util = "0.1"
+
+[lints]
+workspace = true

@@ -1,0 +1,324 @@
+//! Axum server: app construction, shared state, routes, run loop.
+//!
+//! Phase 1 wires three concerns: a liveness probe, an auth-check endpoint
+//! that exercises the HMAC comparator, and a rust-embed static-asset
+//! fallback serving the frontend bundle.
+//!
+//! Phase 2 adds `/api/terminal/ws` (PTY WebSocket bridge).
+//! Phase 3/5 will add `/api/events` (SSE fan-out).
+
+use std::{
+    net::SocketAddr,
+    sync::{Arc, atomic::AtomicUsize},
+};
+
+use axum::{
+    Json, Router,
+    extract::State,
+    http::{HeaderMap, HeaderValue, Method, StatusCode, header},
+    response::IntoResponse,
+    routing::{get, post},
+};
+use tokio::sync::{RwLock, broadcast};
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tracing::info;
+
+use crate::{
+    auth,
+    config::Config,
+    events::{self, EVENT_CHANNEL_BUF, WebEvent, builds_handler},
+    static_assets, terminal,
+};
+
+/// Snapshot of the browser UI state, periodically reported by the frontend.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BrowserStateSnapshot {
+    /// Viewport width in pixels.
+    pub viewport_width: u32,
+    /// Viewport height in pixels.
+    pub viewport_height: u32,
+    /// Terminal panel size in percent.
+    pub terminal_size_percent: u8,
+    /// Helix panel size in percent.
+    pub helix_size_percent: u8,
+    /// Currently focused panel identifier.
+    pub active_panel: String,
+    /// Helix 3D scene zoom level.
+    pub helix_zoom: f32,
+    /// Number of visible helix steps.
+    pub helix_step_count: usize,
+}
+
+impl Default for BrowserStateSnapshot {
+    fn default() -> Self {
+        Self {
+            viewport_width: 0,
+            viewport_height: 0,
+            terminal_size_percent: 50,
+            helix_size_percent: 50,
+            active_panel: String::from("terminal"),
+            helix_zoom: 5.0,
+            helix_step_count: 0,
+        }
+    }
+}
+
+/// Shared application state threaded into every handler.
+///
+/// Cloning is cheap — both inner values live behind [`Arc`]s, and
+/// [`broadcast::Sender`] is itself a cheaply-clonable handle.
+#[derive(Clone)]
+pub struct AppState {
+    /// Resolved config: port, `host_cmd`, cwd, token.
+    pub config: Arc<Config>,
+    /// Turnlog pepper — loaded once at startup from session key.
+    pub turnlog_pepper: Arc<secrecy::SecretSlice<u8>>,
+    /// Number of active PTY sessions (max [`terminal::ws::MAX_SESSIONS`]).
+    pub session_count: Arc<AtomicUsize>,
+    /// Broadcast sender for internal [`WebEvent`]s.
+    ///
+    /// The Phase-5 SSE handler calls [`broadcast::Sender::subscribe`] on
+    /// this to obtain a per-connection [`broadcast::Receiver`].
+    pub event_tx: broadcast::Sender<WebEvent>,
+    /// Latest browser UI state, updated periodically by the frontend.
+    pub browser_state: Arc<RwLock<BrowserStateSnapshot>>,
+    /// Cached build tracking data (active.yaml mtime + JSON bytes).
+    pub builds_cache: events::builds_handler::Cache,
+}
+
+impl AppState {
+    /// Constructs a new state from a resolved [`Config`] and spawns the
+    /// background AYIN SSE subscription task.
+    #[must_use]
+    pub fn new(config: Config) -> Self {
+        let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_BUF);
+        events::AyinClient::spawn(event_tx.clone());
+        events::HelixWatcher::spawn(event_tx.clone());
+        let pepper = load_turnlog_pepper();
+        Self {
+            config: Arc::new(config),
+            turnlog_pepper: Arc::new(pepper),
+            session_count: Arc::new(AtomicUsize::new(0)),
+            event_tx,
+            browser_state: Arc::new(RwLock::new(BrowserStateSnapshot::default())),
+            builds_cache: builds_handler::build_cache(),
+        }
+    }
+
+    /// Constructs a state for integration tests without spawning background tasks.
+    ///
+    /// Keeps tests hermetic — no AYIN connection attempts, no filesystem
+    /// watcher, no external dependencies.  The broadcast channel is still
+    /// wired so tests can publish synthetic events by calling
+    /// `state.event_tx.send(...)` directly.
+    ///
+    /// # For testing only
+    ///
+    /// This constructor is intended exclusively for integration test harnesses.
+    /// Use [`AppState::new`] in production code.
+    #[must_use]
+    pub fn for_test(config: Config) -> Self {
+        let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_BUF);
+        Self {
+            config: Arc::new(config),
+            turnlog_pepper: Arc::new(secrecy::SecretSlice::from(vec![])),
+            session_count: Arc::new(AtomicUsize::new(0)),
+            event_tx,
+            browser_state: Arc::new(RwLock::new(BrowserStateSnapshot::default())),
+            builds_cache: builds_handler::build_cache(),
+        }
+    }
+}
+
+/// Builds the Axum router with all routes wired.
+///
+/// - `GET /api/health` — liveness probe (unauthenticated).
+/// - `GET /api/auth-check` — validates `Authorization: Bearer <token>`.
+/// - `GET /api/terminal/ws` — PTY WebSocket bridge (Phase 2).
+/// - `GET /api/events` — SSE fan-out stream (Phase 5, authenticated).
+/// - `POST /api/control` — control command endpoint (authenticated).
+/// - `GET /api/browser-state` — read current browser UI state.
+/// - `POST /api/browser-state` — update browser UI state (from frontend).
+/// - Fallback — serves the embedded `web/dist/` bundle.
+///
+/// `Router` is already `#[must_use]` so this function is not re-annotated.
+pub fn build_app(state: AppState) -> Router {
+    let cors = build_cors(state.config.port);
+    Router::new()
+        .route("/api/health", get(health))
+        .route("/api/auth-check", get(auth_check))
+        .route("/api/terminal/ws", get(terminal::ws::ws_handler))
+        .route("/api/events", get(events::sse_handler::sse_handler))
+        .route("/api/control", post(events::control_handler))
+        .route("/api/builds", get(builds_handler::builds_handler))
+        .route(
+            "/api/browser-state",
+            get(read_browser_state).post(write_browser_state),
+        )
+        .fallback(static_assets::serve)
+        .layer(cors)
+        .layer(TraceLayer::new_for_http())
+        .with_state(state)
+}
+
+/// Constructs a CORS layer that restricts allowed origins to localhost only.
+///
+/// This is a local-dev-only tool — binding to 127.0.0.1 narrows the attack
+/// surface, but an explicit origin allowlist prevents arbitrary origins from
+/// reading the authenticated SSE stream via a malicious browser tab.
+///
+/// Allowed origins:
+/// - `http://localhost:<port>` — production (same-origin serving)
+/// - `http://127.0.0.1:<port>` — same binary, loopback alias
+/// - `http://localhost:5173` — Vite dev server during frontend development
+fn build_cors(port: u16) -> CorsLayer {
+    let allowed_origins: Vec<HeaderValue> = [
+        format!("http://localhost:{port}"),
+        format!("http://127.0.0.1:{port}"),
+        "http://localhost:5173".to_owned(),
+    ]
+    .iter()
+    .filter_map(|s| s.parse().ok())
+    .collect();
+
+    CorsLayer::new()
+        .allow_origin(allowed_origins)
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT])
+}
+
+/// Errors surfaced by the server's main run loop.
+#[derive(Debug, thiserror::Error)]
+pub enum ServerError {
+    /// Failed to bind the TCP listener to the configured port.
+    #[error("failed to bind webshell server on 127.0.0.1:{port}: {source}")]
+    Bind {
+        /// Port that failed to bind.
+        port: u16,
+        /// Underlying IO error.
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// Server exited with an IO error mid-run.
+    #[error("webshell server exited with error: {0}")]
+    Serve(#[source] std::io::Error),
+}
+
+/// Starts the webshell server on `127.0.0.1:<port>` and blocks until it exits.
+///
+/// # Errors
+///
+/// - [`ServerError::Bind`] if the TCP listener cannot bind to the configured port.
+/// - [`ServerError::Serve`] if the server exits with an IO error mid-run.
+pub async fn run(config: Config) -> Result<(), ServerError> {
+    let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
+    let state = AppState::new(config);
+    let app = build_app(state);
+
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .map_err(|source| ServerError::Bind {
+            port: addr.port(),
+            source,
+        })?;
+
+    info!(bind = %addr, "webshell server listening");
+
+    axum::serve(listener, app).await.map_err(ServerError::Serve)
+}
+
+/// `GET /api/health` — unauthenticated liveness probe.
+async fn health() -> impl IntoResponse {
+    (StatusCode::OK, "ok")
+}
+
+/// `GET /api/auth-check` — validates `Authorization: Bearer <token>`.
+///
+/// Responds 200 on match, 401 on mismatch or missing header.
+async fn auth_check(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let Some(authz) = headers.get("authorization") else {
+        return StatusCode::UNAUTHORIZED;
+    };
+
+    let Ok(authz_str) = authz.to_str() else {
+        return StatusCode::UNAUTHORIZED;
+    };
+
+    if auth::validate_bearer(authz_str, &state.config.token) {
+        StatusCode::OK
+    } else {
+        StatusCode::UNAUTHORIZED
+    }
+}
+
+/// `GET /api/browser-state` — returns the latest browser UI state snapshot.
+///
+/// Authenticated — requires a valid `Authorization: Bearer <token>` header.
+async fn read_browser_state(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let Some(authz) = headers.get("authorization") else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let Ok(authz_str) = authz.to_str() else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if !auth::validate_bearer(authz_str, &state.config.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    let snapshot = state.browser_state.read().await;
+    Json(snapshot.clone()).into_response()
+}
+
+/// `POST /api/browser-state` — updates the browser UI state snapshot.
+///
+/// Called periodically by the frontend to report current viewport, panel
+/// sizes, zoom level, etc. Authenticated — requires a valid bearer token.
+async fn write_browser_state(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(update): Json<BrowserStateSnapshot>,
+) -> impl IntoResponse {
+    let Some(authz) = headers.get("authorization") else {
+        return StatusCode::UNAUTHORIZED;
+    };
+    let Ok(authz_str) = authz.to_str() else {
+        return StatusCode::UNAUTHORIZED;
+    };
+    if !auth::validate_bearer(authz_str, &state.config.token) {
+        return StatusCode::UNAUTHORIZED;
+    }
+
+    let mut snapshot = state.browser_state.write().await;
+    *snapshot = update;
+
+    StatusCode::OK
+}
+
+/// Loads the turnlog pepper from the canonical session key path.
+///
+/// Returns an empty secret if the key file is missing or unreadable —
+/// turnlog will be disabled gracefully for the session.
+fn load_turnlog_pepper() -> secrecy::SecretSlice<u8> {
+    let Some(path) = lightarchitects_core::paths::session_key() else {
+        tracing::warn!(target: "turnlog", "Session key path unavailable — turnlog disabled");
+        return secrecy::SecretSlice::from(vec![]);
+    };
+    match std::fs::read(&path) {
+        Ok(bytes) if !bytes.is_empty() => {
+            tracing::info!(target: "turnlog", "Turnlog pepper loaded ({} bytes)", bytes.len());
+            secrecy::SecretSlice::from(bytes)
+        }
+        Ok(_) => {
+            tracing::warn!(target: "turnlog", "Session key empty — turnlog disabled");
+            secrecy::SecretSlice::from(vec![])
+        }
+        Err(e) => {
+            tracing::warn!(target: "turnlog", "Failed to read session key: {e} — turnlog disabled");
+            secrecy::SecretSlice::from(vec![])
+        }
+    }
+}

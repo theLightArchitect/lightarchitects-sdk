@@ -1,5 +1,6 @@
 //! Top-level command dispatch for the `lightarchitects` CLI.
 
+pub mod builds;
 pub mod config;
 pub mod corso;
 pub mod eva;
@@ -8,6 +9,7 @@ pub mod seraph;
 pub mod setup;
 pub mod soul;
 pub mod status;
+pub mod webshell;
 
 use clap::Subcommand;
 use lightarchitects_core::SdkError;
@@ -44,7 +46,7 @@ pub enum Commands {
     },
     /// SERAPH pentest-orchestration commands.
     ///
-    /// All commands require an active engagement scope in `~/.seraph/scope.toml`.
+    /// All commands require an active engagement scope in `~/lightarchitects/seraph/scope.toml`.
     Seraph {
         /// Which SERAPH operation to run.
         #[command(subcommand)]
@@ -69,6 +71,18 @@ pub enum Commands {
         #[command(subcommand)]
         component: Option<setup::SetupComponent>,
     },
+    /// Build portfolio — show project tiers and status from the SOUL vault.
+    Builds {
+        /// Which builds operation to run.
+        #[command(subcommand)]
+        cmd: builds::BuildsCommand,
+    },
+    /// Webshell — local web GUI for the active coding agent.
+    Webshell {
+        /// Which webshell operation to run.
+        #[command(subcommand)]
+        cmd: webshell::WebshellCommand,
+    },
 }
 
 /// Route a parsed command to its executor.
@@ -92,5 +106,7 @@ pub async fn dispatch(cmd: Commands, cfg: &CliConfig, mode: OutputMode) -> Resul
             Ok(())
         }
         Commands::Setup { component } => setup::execute(component, mode),
+        Commands::Builds { cmd } => builds::execute(cmd, mode),
+        Commands::Webshell { cmd } => webshell::execute(cfg.webshell.clone(), cmd).await,
     }
 }
