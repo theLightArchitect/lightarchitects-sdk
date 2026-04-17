@@ -66,3 +66,44 @@ Log findings here as further write-path rows when those probes run.
 ## Phase 1.5 verdict
 
 **Partition integrity: VERIFIED for this probe.** Ready to proceed to Phase 2 (scaffold engineering chrome) and Phase 3 (wire real data via EngineeringProvider).
+
+---
+
+## Phase 6 — Aesthetic constants reference (2026-04-17)
+
+All visual parameters live in `src/imports/Hero3D.tsx` (Figma territory). Kevin tunes
+them via Figma Make; they sync into this file on publish. Current baseline values:
+
+| Parameter | File | Line | Value |
+|-----------|------|------|-------|
+| Bloom threshold | Hero3D.tsx | 78 | 0.25 |
+| Bloom strength | Hero3D.tsx | 79 | 1.1 |
+| Bloom radius | Hero3D.tsx | 80 | 0.6 |
+| Fog color | Hero3D.tsx | 55 | 0x000000 (black) |
+| Fog density | Hero3D.tsx | 55 | 0.06 |
+| Fine dust count | Hero3D.tsx | 89 | 600 |
+| Fine dust size | Hero3D.tsx | 116 | 0.05 |
+| Fine dust base opacity | Hero3D.tsx | 118 | 0.25 (×0.3 at full focus) |
+| Bokeh count | Hero3D.tsx | 129 | 30 |
+| Bokeh size | Hero3D.tsx | 147 | 0.12 |
+| Bokeh base opacity | Hero3D.tsx | 149 | 0.05 (×0.2 at full focus) |
+| Agent count | Hero3D.tsx | 618 | 60 |
+| Agent size | Hero3D.tsx | 696 | 0.18 |
+| Bokeh drift speed | Hero3D.tsx | 787 | 0.001/frame |
+
+**Tuning surface**: all values are plain JS constants — change them in Figma Make and
+publish. The engineering layer (`src/engineering/`) reads none of these; no engineering
+changes required when aesthetic constants change.
+
+## Phase 6 sync regression gate
+
+After every Figma Make round-trip, run:
+
+```bash
+# Clone or pull latest upstream first:
+gh repo clone TheLightArchitects/Lightarchitectmockcli /tmp/lamockcli-check
+# Run the check:
+./scripts/figma-sync-check.sh /tmp/lamockcli-check
+```
+
+Exit 0 = partition intact. Exit 1 = HALT and escalate.
