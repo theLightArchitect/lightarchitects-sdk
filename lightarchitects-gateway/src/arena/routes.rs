@@ -103,9 +103,30 @@ pub async fn rest_action(
         );
     }
 
-    // Reassemble the request to extract the JSON body via axum's extractor.
+    // Read body bytes first. DefaultBodyLimit fires here with PAYLOAD_TOO_LARGE when
+    // the body exceeds MAX_BODY_SIZE — inspecting the rejection status lets us return
+    // 413 instead of letting the JSON extractor swallow it as a generic 400.
     let reassembled = axum::http::Request::from_parts(parts, body);
-    let Json(json_body): Json<Value> = match Json::from_request(reassembled, &()).await {
+    let raw_bytes: axum::body::Bytes =
+        match axum::body::Bytes::from_request(reassembled, &()).await {
+            Ok(b) => b,
+            Err(e) => {
+                return if e.into_response().status() == StatusCode::PAYLOAD_TOO_LARGE {
+                    rest_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        "body_too_large",
+                        "Request body exceeds 1 MB limit",
+                    )
+                } else {
+                    rest_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_body",
+                        "Failed to read request body",
+                    )
+                };
+            }
+        };
+    let json_body: Value = match serde_json::from_slice::<Value>(&raw_bytes) {
         Ok(v) => v,
         Err(_) => {
             return rest_error(
