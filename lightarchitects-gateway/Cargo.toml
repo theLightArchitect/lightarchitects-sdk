@@ -51,11 +51,11 @@ workspace = true
 lightarchitects = { path = "../lightarchitects" }
 
 # ── Inline handler dependencies (optional, feature-gated) ───────────────────────
-ayin-mcp = { path = "/Users/kft/Projects/AYIN/AYIN-DEV/ayin-mcp", optional = true }
-ayin-core = { path = "/Users/kft/Projects/AYIN/AYIN-DEV/ayin-core", optional = true }
-ayin-engine = { path = "/Users/kft/Projects/AYIN/AYIN-DEV/ayin-engine", optional = true }
-corso-server = { path = "/Users/kft/Projects/CORSO/MCP/CORSO-DEV/crates/corso-server", optional = true }
-corso-trinity-core = { path = "/Users/kft/Projects/CORSO/MCP/CORSO-DEV/crates/core", optional = true }
+ayin-mcp = { git = "https://github.com/TheLightArchitects/AYIN.git", optional = true }
+ayin-core = { git = "https://github.com/TheLightArchitects/AYIN.git", optional = true }
+ayin-engine = { git = "https://github.com/TheLightArchitects/AYIN.git", optional = true }
+corso-server = { git = "https://github.com/TheLightArchitects/CORSO.git", optional = true }
+corso-trinity-core = { git = "https://github.com/TheLightArchitects/CORSO.git", optional = true }
 
 # ── Shared (both MCP + Arena modes) ──────────────────────────────────────────
 async-trait = "0.1"
