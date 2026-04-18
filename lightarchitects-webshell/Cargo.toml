@@ -69,8 +69,6 @@ tracing-subscriber.workspace = true
 # Turnlog pepper
 secrecy.workspace = true
 
-# Trace spans (schema: every log event IS an ayin::TraceSpan)
-ayin.workspace = true
 uuid.workspace = true
 
 # OS keyring — macOS Keychain / Linux Secret Service for token persistence.

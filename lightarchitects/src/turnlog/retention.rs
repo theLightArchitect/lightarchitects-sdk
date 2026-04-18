@@ -14,8 +14,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use ayin::TraceSpan;
-use ayin::span::{Actor, TraceOutcome};
+use crate::ayin::span::TraceSpan;
+use crate::ayin::span::{Actor, TraceOutcome};
 use chrono::{NaiveDate, Utc};
 use secrecy::SecretSlice;
 use tracing::warn;

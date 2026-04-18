@@ -215,8 +215,8 @@ impl Query {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use crate::ayin::span::{Actor, TraceContext, TraceOutcome};
     use crate::turnlog::entry::TurnEntry;
-    use ayin::span::{Actor, TraceContext, TraceOutcome};
 
     fn make_entry(seq: u64, action: &str, parent_seq: Option<u64>) -> TurnEntry {
         let span = TraceContext::new(Actor::claude(), action)

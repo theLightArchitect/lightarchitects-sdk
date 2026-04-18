@@ -32,8 +32,15 @@
 //! # Ok(()) }
 //! ```
 //!
-// Note: TraceSpan lives in the `ayin` crate (AYIN-DEV workspace), which is an
-// optional path dependency. Links to it are elided in rustdoc to keep CI clean.
+/// Trace span types and builder — [`TraceSpan`], [`Actor`], [`TraceContext`].
+pub mod span;
+pub use span::{
+    Actor, DecisionPoint, Sibling, StrandActivation, TraceContext, TraceOutcome, TraceSpan,
+};
+
+/// Error types for the trace engine.
+pub mod error;
+pub use error::TraceError;
 
 /// Canonical AYIN action enum — observability sessions, spans, conversations.
 pub mod actions;
@@ -65,35 +72,30 @@ use crate::core::transport::Transport;
 
 #[cfg(feature = "observe")]
 mod observe_impl {
-    use std::sync::Arc;
+    use std::path::PathBuf;
 
-    use ayin::span::{Actor, TraceContext, TraceOutcome};
-    use ayin::store::TraceStore;
+    use crate::ayin::span::{Actor, TraceContext, TraceOutcome, TraceSpan};
 
     use super::{JsonRpcRequest, JsonRpcResponse, SdkError, Transport};
 
-    /// Transport wrapper that records an AYIN [`ayin::span::TraceSpan`] for
-    /// every MCP call.
+    /// Transport wrapper that records an AYIN [`TraceSpan`] for every MCP call.
     ///
     /// Construct via [`ObservableTransport::new`]. Spans are written
     /// asynchronously — a `tokio::spawn` fire-and-forget ensures trace I/O
     /// never blocks the caller.
     pub struct ObservableTransport<T: Transport> {
         inner: T,
-        store: Arc<TraceStore>,
         actor: Actor,
     }
 
     impl<T: Transport> ObservableTransport<T> {
         /// Wrap `inner` and record AYIN spans using the `lightarchitects-sdk` actor.
         ///
-        /// Spans are written to the default AYIN store path
-        /// (`~/lightarchitects/soul/helix/ayin/traces/`).
+        /// Spans are written to `~/lightarchitects/soul/helix/ayin/traces/`.
         #[must_use]
         pub fn new(inner: T) -> Self {
             Self {
                 inner,
-                store: Arc::new(TraceStore::with_defaults()),
                 actor: Actor::new("lightarchitects-sdk"),
             }
         }
@@ -103,7 +105,6 @@ mod observe_impl {
         pub fn with_actor(inner: T, actor: impl Into<String>) -> Self {
             Self {
                 inner,
-                store: Arc::new(TraceStore::with_defaults()),
                 actor: Actor::new(actor),
             }
         }
@@ -121,21 +122,46 @@ mod observe_impl {
 
             // Build and persist the span asynchronously — never blocks the caller.
             let ctx = TraceContext::new(self.actor.clone(), &action).outcome(outcome);
-            let store = Arc::clone(&self.store);
             tokio::spawn(async move {
                 match ctx.finish() {
-                    Ok(span) => {
-                        if let Err(e) = store.write(&span).await {
-                            tracing::warn!(error = %e, "AYIN trace write failed");
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!(error = %e, "AYIN span build failed");
-                    }
+                    Ok(span) => write_span(&span).await,
+                    Err(e) => tracing::warn!(error = %e, "AYIN span build failed"),
                 }
             });
 
             result
+        }
+    }
+
+    /// Write a span as JSON to the AYIN traces directory.
+    ///
+    /// Path: `~/lightarchitects/soul/helix/ayin/traces/{actor}/{YYYY-MM-DD}/{HH-MM-SS}-{action}-{id8}.json`
+    async fn write_span(span: &TraceSpan) {
+        let base = dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("lightarchitects/soul/helix/ayin/traces");
+        let dir = base
+            .join(span.actor.as_str())
+            .join(span.timestamp.format("%Y-%m-%d").to_string());
+        if let Err(e) = tokio::fs::create_dir_all(&dir).await {
+            tracing::warn!(error = %e, "AYIN trace dir create failed");
+            return;
+        }
+        let safe_action = span.action.replace('/', "_");
+        let id8 = &span.id.to_string()[..8];
+        let name = format!(
+            "{}-{}-{}.json",
+            span.timestamp.format("%H-%M-%S"),
+            safe_action,
+            id8
+        );
+        match serde_json::to_vec(span) {
+            Ok(bytes) => {
+                if let Err(e) = tokio::fs::write(dir.join(name), bytes).await {
+                    tracing::warn!(error = %e, "AYIN trace write failed");
+                }
+            }
+            Err(e) => tracing::warn!(error = %e, "AYIN span serialize failed"),
         }
     }
 }

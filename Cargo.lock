@@ -1116,7 +1116,6 @@ version = "2.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "ayin",
  "chrono",
  "clap",
  "corso-sandbox-bridge",
@@ -3099,7 +3098,6 @@ dependencies = [
  "aes-gcm",
  "async-trait",
  "axum",
- "ayin",
  "chrono",
  "clap",
  "criterion",
@@ -3196,7 +3194,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
- "ayin",
  "clap",
  "constant_time_eq",
  "futures-util",

@@ -5,7 +5,7 @@
 //! promotes eligible entries (`reflection`, `session_paused`) to the
 //! SOUL helix via [`lightarchitects::turnlog::promote_session`].
 
-use ayin::span::{Actor, TraceContext, TraceOutcome};
+use lightarchitects::ayin::span::{Actor, TraceContext, TraceOutcome};
 use lightarchitects::turnlog::promotion::SiblingPromoter;
 use lightarchitects::turnlog::{EndReason, StoreLayout, TurnLogWriter, promote_session};
 use secrecy::SecretSlice;

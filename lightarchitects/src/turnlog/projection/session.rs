@@ -107,7 +107,7 @@ impl SessionProjection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ayin::span::{Actor, TraceOutcome};
+    use crate::ayin::span::{Actor, TraceOutcome};
     use chrono::Utc;
     use uuid::Uuid;
 
@@ -115,7 +115,7 @@ mod tests {
         TurnEntry {
             seq: 0,
             parent_seq: None,
-            span: ayin::TraceSpan {
+            span: crate::ayin::span::TraceSpan {
                 id: Uuid::new_v4(),
                 parent_id: None,
                 session_id: Some(session_id.to_owned()),

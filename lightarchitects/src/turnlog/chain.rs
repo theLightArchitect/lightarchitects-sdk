@@ -33,7 +33,7 @@
 //! # Canonical byte layout
 //!
 //! The hash input is an explicit byte concatenation pinned by [`FORMAT_VERSION`].
-//! The payload is the serialised [`ayin::TraceSpan`] (serde_json default encoding —
+//! The payload is the serialised [`crate::ayin::span::TraceSpan`] (serde_json default encoding —
 //! BTreeMap key order is deterministic in serde_json 1.x, which is load-bearing here).
 //! The outer entry fields are bound byte-by-byte, independently of serde_json.
 //!
@@ -42,12 +42,12 @@
 //! [1..9]      seq (u64 big-endian)
 //! [9..17]     parent_seq (u64 big-endian, u64::MAX when None)
 //! [17..25]    ts_ns (i64 big-endian, from span.timestamp)
-//! [25..]      span JSON (UTF-8, serialised ayin::TraceSpan)
+//! [25..]      span JSON (UTF-8, serialised crate::ayin::span::TraceSpan)
 //! [..]        hmac_prev bytes (32 bytes, hex-decoded)
 //! ```
 
+use crate::ayin::span::TraceSpan;
 use crate::crypto::hash::hmac_hash;
-use ayin::TraceSpan;
 use secrecy::{ExposeSecret, SecretSlice, SecretString};
 use serde::{Deserialize, Serialize};
 
@@ -402,7 +402,7 @@ pub(crate) fn build_and_sign(
 /// Do NOT remove — they are a wiring-contract exit gate (`phase_1_5_to_2`).
 #[cfg(test)]
 mod proptest_chain {
-    use ayin::span::{Actor, TraceContext, TraceOutcome};
+    use crate::ayin::span::{Actor, TraceContext, TraceOutcome};
     use proptest::prelude::*;
 
     use super::*;
@@ -493,7 +493,7 @@ mod proptest_chain {
             // this: it reads the stored JSON back to a `TurnEntry` and calls
             // `signable_bytes`, which re-serialises the span.
             let bytes1 = serde_json::to_vec(&span).unwrap();
-            let span2: ayin::TraceSpan = serde_json::from_slice(&bytes1).unwrap();
+            let span2: crate::ayin::span::TraceSpan = serde_json::from_slice(&bytes1).unwrap();
             let bytes2 = serde_json::to_vec(&span2).unwrap();
             prop_assert_eq!(
                 bytes1,
@@ -507,7 +507,7 @@ mod proptest_chain {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
-    use ayin::span::{Actor, TraceContext, TraceOutcome};
+    use crate::ayin::span::{Actor, TraceContext, TraceOutcome};
 
     use super::*;
 

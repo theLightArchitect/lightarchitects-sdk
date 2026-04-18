@@ -446,7 +446,7 @@ impl TurnLogReader {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
-    use ayin::span::{Actor, TraceContext, TraceOutcome};
+    use crate::ayin::span::{Actor, TraceContext, TraceOutcome};
 
     use super::*;
     use crate::turnlog::writer::{EndReason, TurnLogWriter};
@@ -455,7 +455,7 @@ mod tests {
         SecretSlice::from(vec![0xA5_u8; 32])
     }
 
-    fn user_span(session_id: &str, msg: &str) -> ayin::TraceSpan {
+    fn user_span(session_id: &str, msg: &str) -> crate::ayin::span::TraceSpan {
         TraceContext::new(Actor::claude(), "turn.user")
             .session_id(session_id)
             .outcome(TraceOutcome::Continue)

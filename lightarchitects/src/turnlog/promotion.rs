@@ -466,9 +466,9 @@ mod tests {
 
     #[tokio::test]
     async fn promote_session_writes_helix_entry_for_reflection() {
+        use crate::ayin::span::{Actor, TraceContext, TraceOutcome};
         use crate::turnlog::EndReason;
         use crate::turnlog::writer::TurnLogWriter;
-        use ayin::span::{Actor, TraceContext, TraceOutcome};
 
         let dir = tempfile::tempdir().expect("tmpdir");
         let layout = StoreLayout::new(dir.path().to_path_buf());
@@ -533,7 +533,7 @@ mod tests {
 
     #[test]
     fn extract_body_prefers_memo_body_over_content() {
-        use ayin::span::{Actor, TraceContext, TraceOutcome};
+        use crate::ayin::span::{Actor, TraceContext, TraceOutcome};
 
         let span = TraceContext::new(Actor::new("test"), "session_paused")
             .session_id("x")

@@ -24,8 +24,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use ayin::TraceSpan;
-use ayin::span::{Actor, TraceContext, TraceOutcome};
+use crate::ayin::span::TraceSpan;
+use crate::ayin::span::{Actor, TraceContext, TraceOutcome};
 use secrecy::{SecretSlice, SecretString};
 use serde::{Deserialize, Serialize};
 use tokio::fs::{File, OpenOptions};
@@ -492,7 +492,7 @@ fn make_span(session_id: &str, action: &str, metadata: serde_json::Value) -> Tra
         .unwrap_or_else(|e| {
             warn!(target: "turnlog", "span construction failed for {action}: {e}; using fallback");
             // Construct a minimal span directly when the builder fails (should never happen).
-            ayin::TraceSpan {
+            TraceSpan {
                 id: uuid::Uuid::new_v4(),
                 parent_id: None,
                 session_id: Some(session_id.to_owned()),

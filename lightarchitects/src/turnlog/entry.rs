@@ -34,7 +34,7 @@
 //!   [`ayin::TraceSpan`], not to a custom byte layout — AYIN and turnlog share
 //!   the same span encoding.
 
-use ayin::TraceSpan;
+use crate::ayin::span::TraceSpan;
 use serde::{Deserialize, Serialize};
 
 // ── Top-level entry ─────────────────────────────────────────────────────────────
@@ -193,7 +193,7 @@ impl EntryKind {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
-    use ayin::span::{Actor, TraceContext, TraceOutcome};
+    use crate::ayin::span::{Actor, TraceContext, TraceOutcome};
 
     use super::*;
 
