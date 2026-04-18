@@ -1,7 +1,7 @@
 //! Storage backend abstraction for helix entries.
 //!
 //! Defines [`StorageBackend`] — the trait that abstracts over filesystem,
-//! [`SQLite`][crate::soul::sqlite::SqliteBackend], Neo4j, and dual-write backends.
+//! [`SQLite`][lightarchitects::soul::sqlite::SqliteBackend], Neo4j, and dual-write backends.
 //! All implementations must be `Send + Sync + 'static` for use with Tokio.
 //!
 //! # `StorageEntry` vs. `HelixEntry`
@@ -9,7 +9,7 @@
 //! [`StorageEntry`] is the flat storage representation used by the backend trait.
 //! It maps directly to a `SQLite` row or a markdown vault file.
 //!
-//! [`HelixEntry`][crate::soul::HelixEntry] is the **MCP client response type** — what
+//! [`HelixEntry`][lightarchitects::soul::HelixEntry] is the **MCP client response type** — what
 //! the MCP server returns over JSON-RPC. The two types have different shapes:
 //! `StorageEntry` carries raw storage fields (`id`, `created_at`, `content`);
 //! `HelixEntry` carries the fields relevant to the query caller.
@@ -17,9 +17,9 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use crate::soul::storage::{EntryFilter, StorageBackend};
+//! use lightarchitects::soul::storage::{EntryFilter, StorageBackend};
 //! # use std::sync::Arc;
-//! # async fn example<B: StorageBackend>(backend: Arc<B>) -> Result<(), crate::soul::storage::StorageError> {
+//! # async fn example<B: StorageBackend>(backend: Arc<B>) -> Result<(), lightarchitects::soul::storage::StorageError> {
 //! let filter = EntryFilter::default().with_sibling("eva").with_significance_min(7.0);
 //! let entries = backend.query(&filter).await?;
 //! # Ok(())
@@ -82,7 +82,7 @@ pub enum StorageError {
 /// # Naming
 ///
 /// This type is named `StorageEntry` (not `HelixEntry`) to avoid ambiguity
-/// with [`crate::soul::HelixEntry`], the MCP client response type returned by
+/// with [`lightarchitects::soul::HelixEntry`], the MCP client response type returned by
 /// the running SOUL MCP server over JSON-RPC.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageEntry {
@@ -275,7 +275,7 @@ impl EntryFilter {
 /// A single line match from full-text storage search.
 ///
 /// Returned by [`StorageBackend::search`]. Named `StorageSearchHit` to avoid
-/// shadowing [`crate::soul::SearchHit`], the MCP client response type.
+/// shadowing [`lightarchitects::soul::SearchHit`], the MCP client response type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageSearchHit {
     /// Relative path of the entry containing the match.

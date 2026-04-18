@@ -14,8 +14,8 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use crate::helix::cache::{HelixCache, HelixCacheConfig};
-//! use crate::helix::search::SearchOptions;
+//! use lightarchitects::helix::cache::{HelixCache, HelixCacheConfig};
+//! use lightarchitects::helix::search::SearchOptions;
 //!
 //! # async fn example() {
 //! let cache = HelixCache::new(&HelixCacheConfig::default());

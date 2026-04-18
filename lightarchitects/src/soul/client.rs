@@ -33,8 +33,8 @@ use crate::soul::types::{
 /// # Example
 ///
 /// ```no_run
-/// # async fn example() -> Result<(), crate::core::SdkError> {
-/// use crate::soul::SoulClient;
+/// # async fn example() -> Result<(), lightarchitects::core::SdkError> {
+/// use lightarchitects::soul::SoulClient;
 ///
 /// let client = SoulClient::builder().build().await?;
 /// let entries = client.helix().sibling("eva").significance_min(7.0).call().await?;
@@ -223,9 +223,9 @@ impl<T: Transport> SoulClient<T> {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example(client: crate::soul::SoulClient<crate::core::StdioTransport>)
-    /// # -> Result<(), crate::core::SdkError> {
-    /// use crate::soul::IngestSource;
+    /// # async fn example(client: lightarchitects::soul::SoulClient<lightarchitects::core::StdioTransport>)
+    /// # -> Result<(), lightarchitects::core::SdkError> {
+    /// use lightarchitects::soul::IngestSource;
     ///
     /// let result = client
     ///     .graphrag_ingest()
@@ -633,7 +633,7 @@ impl SoulClientBuilder {
     /// [`build`][Self::build] **before** the SOUL binary is spawned. A hard
     /// auth failure returns [`SdkError::Auth`] and no process is opened.
     ///
-    /// The production implementation is `crate::auth::AuthGuard`.
+    /// The production implementation is `lightarchitects::auth::AuthGuard`.
     #[must_use]
     pub fn auth(mut self, provider: impl AuthProvider) -> Self {
         self.auth = Some(AuthChecker::from_provider(provider));

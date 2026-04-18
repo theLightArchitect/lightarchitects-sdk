@@ -16,7 +16,7 @@
 //! ```rust,no_run
 //! # #[cfg(feature = "embedding-fastembed")]
 //! # fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! use crate::soul::embedding::fastembed::{FastEmbedModel, FastEmbedProvider};
+//! use lightarchitects::soul::embedding::fastembed::{FastEmbedModel, FastEmbedProvider};
 //!
 //! let provider = FastEmbedProvider::try_new(FastEmbedModel::Default)?;
 //! # Ok(())

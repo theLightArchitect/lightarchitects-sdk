@@ -11,7 +11,7 @@
 //! ```rust,no_run
 //! # #[cfg(feature = "embedding-llama-cpp")]
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! use crate::soul::embedding::llama_cpp::LlamaCppEmbeddingProvider;
+//! use lightarchitects::soul::embedding::llama_cpp::LlamaCppEmbeddingProvider;
 //!
 //! let provider = LlamaCppEmbeddingProvider::new("http://localhost:8080");
 //! # Ok(())

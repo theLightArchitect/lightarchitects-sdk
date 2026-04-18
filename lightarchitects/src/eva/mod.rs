@@ -19,9 +19,9 @@
 //! # Quick start
 //!
 //! ```no_run
-//! use crate::eva::{EvaClient, TeachMode, SkillLevel};
+//! use lightarchitects::eva::{EvaClient, TeachMode, SkillLevel};
 //!
-//! # async fn example() -> Result<(), crate::core::SdkError> {
+//! # async fn example() -> Result<(), lightarchitects::core::SdkError> {
 //! let client = EvaClient::builder().build().await?;
 //!
 //! // Teach a concept
@@ -42,7 +42,7 @@
 //! println!("{}", win.celebration_message);
 //!
 //! // Fluent ideate builder
-//! use crate::eva::IdeatePhase;
+//! use lightarchitects::eva::IdeatePhase;
 //! let plan = client
 //!     .ideate_builder("design a plugin system")
 //!     .phase(IdeatePhase::Document)

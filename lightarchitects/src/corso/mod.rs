@@ -11,9 +11,9 @@
 //! # Quick start
 //!
 //! ```no_run
-//! use crate::corso::CorsoClient;
+//! use lightarchitects::corso::CorsoClient;
 //!
-//! # async fn example() -> Result<(), crate::core::SdkError> {
+//! # async fn example() -> Result<(), lightarchitects::core::SdkError> {
 //! let client = CorsoClient::builder().build().await?;
 //!
 //! // Structured response: read a source file

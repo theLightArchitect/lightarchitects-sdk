@@ -44,7 +44,7 @@ pub enum TurnLogError {
     #[error("genesis block missing for session {0}")]
     MissingGenesis(String),
 
-    /// Serializing or deserializing a [`crate::turnlog::TurnEntry`] or span failed.
+    /// Serializing or deserializing a [`lightarchitects::turnlog::TurnEntry`] or span failed.
     #[error("serialization error: {0}")]
     Serialize(#[from] serde_json::Error),
 

@@ -19,8 +19,8 @@ impl AuthCommand {
     ///
     /// # Errors
     ///
-    /// Returns [`crate::auth::AuthError::LoginFailed`] or [`crate::auth::AuthError::LoginTimeout`] if `login` fails.
-    /// Returns [`crate::auth::AuthError::Io`] if `logout` cannot remove local state.
+    /// Returns [`lightarchitects::auth::AuthError::LoginFailed`] or [`lightarchitects::auth::AuthError::LoginTimeout`] if `login` fails.
+    /// Returns [`lightarchitects::auth::AuthError::Io`] if `logout` cannot remove local state.
     pub async fn run(&self, config: &AuthConfig) -> Result<(), crate::auth::AuthError> {
         match self {
             Self::Login => match auth_login(config).await {

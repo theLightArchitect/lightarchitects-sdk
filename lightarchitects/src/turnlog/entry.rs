@@ -30,7 +30,7 @@
 //! * Action tag is stable — never renamed between protocol versions.
 //! * `metadata` field is a `serde_json::Value` with BTreeMap-backed objects —
 //!   key order is deterministic, which is load-bearing for HMAC chain integrity.
-//! * [`crate::turnlog::chain::signable_bytes`] binds the HMAC to the serialised
+//! * [`lightarchitects::turnlog::chain::signable_bytes`] binds the HMAC to the serialised
 //!   [`ayin::TraceSpan`], not to a custom byte layout — AYIN and turnlog share
 //!   the same span encoding.
 
@@ -91,7 +91,7 @@ impl TurnEntry {
 
     /// Whether this entry is a candidate for Tier-2 helix promotion.
     ///
-    /// Policy-driven promotion lives in [`crate::turnlog::promotion`]. This method
+    /// Policy-driven promotion lives in [`lightarchitects::turnlog::promotion`]. This method
     /// identifies entries that are *eligible* for consideration.
     #[must_use]
     pub fn is_helix_promotable(&self) -> bool {

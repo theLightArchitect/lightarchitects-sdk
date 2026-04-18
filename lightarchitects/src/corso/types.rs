@@ -16,7 +16,7 @@ use serde::Deserialize;
 
 // ── Operation enums ───────────────────────────────────────────────────────────
 
-/// Sub-operation for [`crate::corso::CorsoClient::container_manage`].
+/// Sub-operation for [`lightarchitects::corso::CorsoClient::container_manage`].
 ///
 /// Using an enum rather than a raw `&str` prevents typos from reaching CORSO
 /// and documents the complete set of supported operations at compile time.
@@ -48,7 +48,7 @@ impl ContainerOp {
     }
 }
 
-/// Sub-operation for [`crate::corso::CorsoClient::secret_manage`].
+/// Sub-operation for [`lightarchitects::corso::CorsoClient::secret_manage`].
 ///
 /// `Set` requires a `value`; `Get` and `Delete` ignore it. The client
 /// enforces this at the call site rather than inside CORSO.

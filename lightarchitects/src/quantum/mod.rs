@@ -13,14 +13,14 @@
 //!
 //! QUANTUM is the only sibling that requires an `mcp-server` subcommand when
 //! spawned. The builder handles this automatically via the `Quantum` variant of
-//! [`crate::core::SiblingId`].
+//! [`lightarchitects::core::SiblingId`].
 //!
 //! # Quick start
 //!
 //! ```no_run
-//! use crate::quantum::{QuantumClient, QuantumInvestigation};
+//! use lightarchitects::quantum::{QuantumClient, QuantumInvestigation};
 //!
-//! # async fn example() -> Result<(), crate::core::SdkError> {
+//! # async fn example() -> Result<(), lightarchitects::core::SdkError> {
 //! let client = QuantumClient::builder()
 //!     .timeout(std::time::Duration::from_secs(120))
 //!     .build()

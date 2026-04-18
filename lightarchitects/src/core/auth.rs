@@ -1,7 +1,7 @@
 //! Connection-time authentication provider.
 //!
 //! Defines the [`AuthProvider`] trait and the type-erased [`AuthChecker`]
-//! wrapper used by [`crate::core::StdioTransport::connect`].
+//! wrapper used by [`lightarchitects::core::StdioTransport::connect`].
 //!
 //! ## Design
 //!
@@ -53,7 +53,7 @@ pub enum AuthStatus {
 
 /// Provides connection-time authentication for sibling MCP clients.
 ///
-/// Implement this trait to gate [`crate::core::StdioTransport::connect`] behind an
+/// Implement this trait to gate [`lightarchitects::core::StdioTransport::connect`] behind an
 /// auth check. `lightarchitects-auth` provides [`AuthGuard`] as the production
 /// implementation.
 ///
@@ -66,8 +66,8 @@ pub enum AuthStatus {
 /// # Example
 ///
 /// ```no_run
-/// # use crate::core::auth::{AuthProvider, AuthStatus};
-/// # use crate::core::SdkError;
+/// # use lightarchitects::core::auth::{AuthProvider, AuthStatus};
+/// # use lightarchitects::core::SdkError;
 /// struct AlwaysValid;
 ///
 /// impl AuthProvider for AlwaysValid {
@@ -99,7 +99,7 @@ type CheckFn =
 /// Type-erased, [`Clone`]-able wrapper around any [`AuthProvider`].
 ///
 /// Produced by [`AuthChecker::from_provider`]. Stored in sibling client
-/// builders and passed to [`crate::core::StdioTransport::connect`]. No generic
+/// builders and passed to [`lightarchitects::core::StdioTransport::connect`]. No generic
 /// parameter is required — the underlying provider is fully erased.
 #[derive(Clone)]
 pub struct AuthChecker(Arc<CheckFn>);

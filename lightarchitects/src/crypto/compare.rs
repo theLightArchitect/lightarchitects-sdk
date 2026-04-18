@@ -18,7 +18,7 @@ use subtle::ConstantTimeEq;
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::compare::constant_time_eq;
+/// use lightarchitects::crypto::compare::constant_time_eq;
 ///
 /// assert!(constant_time_eq(b"secret", b"secret"));
 /// assert!(!constant_time_eq(b"secret", b"tamper"));

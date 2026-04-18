@@ -7,8 +7,8 @@
 //! # Example
 //!
 //! ```no_run
-//! use crate::turnlog::{TurnLogReader, StoreLayout, query::Query};
-//! use crate::turnlog::entry::EntryKind;
+//! use lightarchitects::turnlog::{TurnLogReader, StoreLayout, query::Query};
+//! use lightarchitects::turnlog::entry::EntryKind;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let reader = TurnLogReader::new(StoreLayout::new("/tmp/turnlog".into()));
@@ -124,7 +124,7 @@ impl Query {
     ///
     /// # Errors
     ///
-    /// Returns [`crate::turnlog::error::TurnLogError`] if the session file cannot be
+    /// Returns [`lightarchitects::turnlog::error::TurnLogError`] if the session file cannot be
     /// read or parsed.
     pub async fn run(&self, reader: &TurnLogReader) -> Result<Vec<TurnEntry>> {
         let entries = reader.read_all(&self.session_id).await?;

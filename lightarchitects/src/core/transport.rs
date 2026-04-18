@@ -41,7 +41,7 @@ pub trait Transport: Send + Sync + 'static {
     ///
     /// Returns an error if the transport fails at the I/O, framing, or
     /// serialization layer. Tool-level logical errors arrive as
-    /// [`crate::core::error::ProtocolError::RpcError`] inside an otherwise-successful
+    /// [`lightarchitects::core::error::ProtocolError::RpcError`] inside an otherwise-successful
     /// response — unwrap with [`JsonRpcResponse::into_result`].
     fn send(
         &self,

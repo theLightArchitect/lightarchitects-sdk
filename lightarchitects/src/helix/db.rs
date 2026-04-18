@@ -500,7 +500,7 @@ impl HelixConfig {
         })
     }
 
-    /// Build a [`crate::helix::cache::HelixCacheConfig`] from this config.
+    /// Build a [`lightarchitects::helix::cache::HelixCacheConfig`] from this config.
     #[must_use]
     pub fn cache_config(&self) -> crate::helix::cache::HelixCacheConfig {
         crate::helix::cache::HelixCacheConfig::default()
@@ -649,7 +649,7 @@ impl HelixNeo4j {
     ///
     /// neo4rs 0.8 does not expose connection pool statistics (active
     /// connections, idle connections, wait queue depth). The pool size
-    /// is fixed at [`crate::helix::graph::DEFAULT_POOL_SIZE`].
+    /// is fixed at [`lightarchitects::helix::graph::DEFAULT_POOL_SIZE`].
     ///
     /// This method returns the configured pool size. If neo4rs adds
     /// pool introspection in a future version, this method will be

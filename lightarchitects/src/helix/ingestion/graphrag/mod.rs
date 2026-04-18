@@ -13,12 +13,12 @@
 //! # Usage
 //!
 //! ```no_run
-//! use crate::helix::ingestion::graphrag::{
+//! use lightarchitects::helix::ingestion::graphrag::{
 //!     DocumentIngestor, DocumentIngestorConfig, IngestSource, DocumentFormat,
 //! };
-//! use crate::helix::ingestion::IngestionSource;
+//! use lightarchitects::helix::ingestion::IngestionSource;
 //!
-//! # async fn example(db: &impl crate::helix::HelixDb) -> Result<(), Box<dyn std::error::Error>> {
+//! # async fn example(db: &impl lightarchitects::helix::HelixDb) -> Result<(), Box<dyn std::error::Error>> {
 //! let config = DocumentIngestorConfig {
 //!     source: IngestSource::File("/path/to/paper.md".into()),
 //!     owner: "user".into(),

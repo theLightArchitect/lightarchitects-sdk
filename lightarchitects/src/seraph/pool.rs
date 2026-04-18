@@ -41,7 +41,7 @@ const DEFAULT_HEALTH_CHECK_INTERVAL_SECS: u64 = 60;
 /// Use the builder pattern to customise values:
 ///
 /// ```rust
-/// use crate::seraph::pool::PoolConfig;
+/// use lightarchitects::seraph::pool::PoolConfig;
 ///
 /// let config = PoolConfig::new()
 ///     .with_max_sessions(6)

@@ -12,7 +12,7 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use crate::soul::embedding::{EmbeddingProvider, EmbeddingResult};
+//! use lightarchitects::soul::embedding::{EmbeddingProvider, EmbeddingResult};
 //! use std::sync::Arc;
 //!
 //! # async fn example(provider: Arc<dyn EmbeddingProvider>) -> EmbeddingResult<()> {
@@ -125,7 +125,7 @@ impl PrivacyLevel {
 /// mock provider for tests. All live in `soul-helix` as server infrastructure.
 ///
 /// SDK consumers implement this trait to plug in custom embedding backends
-/// when using [`crate::soul::SqliteBackend`] for offline semantic search.
+/// when using [`lightarchitects::soul::SqliteBackend`] for offline semantic search.
 #[async_trait]
 pub trait EmbeddingProvider: Send + Sync {
     /// Generate embeddings for a batch of texts.

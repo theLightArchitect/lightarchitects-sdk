@@ -1,7 +1,7 @@
 //! FTS5 query expression builder.
 //!
 //! Converts a natural-language query into a `SQLite` FTS5 OR-expression suitable
-//! for passing to [`crate::soul::storage::StorageBackend::search_bm25`].
+//! for passing to [`lightarchitects::soul::storage::StorageBackend::search_bm25`].
 //!
 //! # Algorithm
 //!
@@ -41,7 +41,7 @@ const STOP_WORDS: &[&str] = &[
 /// # Examples
 ///
 /// ```
-/// use crate::soul::pipeline::fts5_or_expr;
+/// use lightarchitects::soul::pipeline::fts5_or_expr;
 ///
 /// let expr = fts5_or_expr("consciousness and identity breakthroughs");
 /// assert!(!expr.is_empty());

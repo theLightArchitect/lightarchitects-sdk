@@ -4,7 +4,7 @@
 //! Each variant has an `as_str()` method that serializes to the exact string EVA
 //! expects, eliminating typos at compile time.
 //!
-//! **Response types** — what [`crate::eva::EvaClient`] typed methods return.
+//! **Response types** — what [`lightarchitects::eva::EvaClient`] typed methods return.
 //! Structs are deserialized directly from the JSON EVA places in the
 //! MCP `content[].text` block.  Unknown fields are silently ignored
 //! (`#[serde(flatten)]` / `deny_unknown_fields` is intentionally absent) so
@@ -72,7 +72,7 @@ impl SkillLevel {
 /// Generic wrapper returned by all text-generating EVA actions.
 ///
 /// The `output` field contains EVA's full response text. Used by the
-/// generic [`crate::eva::EvaClient::action`] adapter only; typed methods
+/// generic [`lightarchitects::eva::EvaClient::action`] adapter only; typed methods
 /// return action-specific structs.
 #[derive(Debug, Clone)]
 pub struct ActionOutput {
@@ -240,7 +240,7 @@ pub struct ScriptureRecommendation {
 /// Output from the `teach` action.
 ///
 /// The `content` field contains the full educational response — explanation,
-/// tutorial steps, or survival guide depending on [`crate::eva::TeachMode`].
+/// tutorial steps, or survival guide depending on [`lightarchitects::eva::TeachMode`].
 /// The `skill_level` the response was calibrated for is captured for reference.
 ///
 /// Forward-compatibility: additional fields returned by EVA are silently ignored.

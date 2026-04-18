@@ -16,7 +16,7 @@
 //! # Examples
 //!
 //! ```rust
-//! use crate::soul::cypher::{CypherGenerator, GraphSchema, NodeType, RelType, StaticCypherGenerator};
+//! use lightarchitects::soul::cypher::{CypherGenerator, GraphSchema, NodeType, RelType, StaticCypherGenerator};
 //!
 //! let schema = GraphSchema {
 //!     node_types: vec![NodeType {
@@ -98,7 +98,7 @@ pub enum CypherError {
 /// # Example
 ///
 /// ```rust
-/// # use crate::soul::cypher::{CypherQuery, CypherGenerator, GraphSchema, NodeType, StaticCypherGenerator};
+/// # use lightarchitects::soul::cypher::{CypherQuery, CypherGenerator, GraphSchema, NodeType, StaticCypherGenerator};
 /// let schema = GraphSchema {
 ///     node_types: vec![NodeType { label: "Step".into(), properties: vec![] }],
 ///     rel_types: vec![],
@@ -503,8 +503,8 @@ mod tests {
 ///
 /// ```rust,no_run
 /// # #[cfg(feature = "text2cypher")]
-/// # async fn example() -> Result<(), crate::soul::cypher::CypherError> {
-/// use crate::soul::cypher::{
+/// # async fn example() -> Result<(), lightarchitects::soul::cypher::CypherError> {
+/// use lightarchitects::soul::cypher::{
 ///     AsyncCypherGenerator, GraphSchema, LlmCypherConfig, LlmCypherGenerator,
 /// };
 ///
@@ -512,9 +512,9 @@ mod tests {
 ///     helix_id: Some("bench-xyz".into()),
 ///     ..LlmCypherConfig::default()
 /// };
-/// let gen = LlmCypherGenerator::new(config).expect("client build");
+/// let generator = LlmCypherGenerator::new(config).expect("client build");
 /// let schema = GraphSchema { node_types: vec![], rel_types: vec![] };
-/// let cq = gen.generate_async(&schema, "how many times did I go to the gym?").await?;
+/// let cq = generator.generate_async(&schema, "how many times did I go to the gym?").await?;
 /// println!("{}", cq.cypher);
 /// # Ok(()) }
 /// ```

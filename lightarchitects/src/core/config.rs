@@ -87,8 +87,8 @@ impl ConfigBuilder {
 
 /// Exponential back-off retry policy for transient transport errors.
 ///
-/// Only [`crate::core::error::TransportError::Timeout`] and
-/// [`crate::core::error::TransportError::Io`] are retried; tool errors are never
+/// Only [`lightarchitects::core::error::TransportError::Timeout`] and
+/// [`lightarchitects::core::error::TransportError::Io`] are retried; tool errors are never
 /// retried because they represent intentional remote failures.
 #[derive(Debug, Clone)]
 pub struct RetryConfig {

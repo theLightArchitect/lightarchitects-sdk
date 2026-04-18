@@ -1,14 +1,14 @@
 //! Fluent builder for the `soulTools` `research` action.
 //!
-//! Create a builder via [`crate::soul::SoulClient::research_builder`], configure it,
+//! Create a builder via [`lightarchitects::soul::SoulClient::research_builder`], configure it,
 //! then call `.call().await` to execute.
 //!
 //! # Example
 //!
 //! ```no_run
-//! # async fn example(client: crate::soul::SoulClient<crate::core::StdioTransport>)
-//! # -> Result<(), crate::core::SdkError> {
-//! use crate::soul::{DepthLevel, ResearchSource};
+//! # async fn example(client: lightarchitects::soul::SoulClient<lightarchitects::core::StdioTransport>)
+//! # -> Result<(), lightarchitects::core::SdkError> {
+//! use lightarchitects::soul::{DepthLevel, ResearchSource};
 //!
 //! let result = client
 //!     .research_builder("consciousness and identity")?
@@ -98,9 +98,9 @@ impl DepthLevel {
 /// # Example
 ///
 /// ```no_run
-/// # async fn example(client: crate::soul::SoulClient<crate::core::StdioTransport>)
-/// # -> Result<(), crate::core::SdkError> {
-/// use crate::soul::{DepthLevel, ResearchSource};
+/// # async fn example(client: lightarchitects::soul::SoulClient<lightarchitects::core::StdioTransport>)
+/// # -> Result<(), lightarchitects::core::SdkError> {
+/// use lightarchitects::soul::{DepthLevel, ResearchSource};
 ///
 /// let result = client
 ///     .research_builder("LLM alignment safety")?

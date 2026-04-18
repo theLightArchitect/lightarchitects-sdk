@@ -1,7 +1,7 @@
 //! Engagement scope management — Rust mirror of `~/lightarchitects/seraph/scope.toml`.
 //!
 //! Build an [`EngagementScope`], call [`EngagementScope::install`] to write it
-//! to the expected path, then construct a [`crate::seraph::SeraphClient`].
+//! to the expected path, then construct a [`lightarchitects::seraph::SeraphClient`].
 //!
 //! # SDK-side scope validation
 //!
@@ -28,14 +28,14 @@ const fn default_max_concurrent() -> u8 {
 /// Rust representation of `~/lightarchitects/seraph/scope.toml`.
 ///
 /// Build a scope, call [`EngagementScope::install`] to write it to the
-/// expected path, then construct a [`crate::seraph::SeraphClient`].
+/// expected path, then construct a [`lightarchitects::seraph::SeraphClient`].
 ///
 /// # Example
 ///
 /// ```no_run
-/// # fn example() -> Result<(), crate::core::SdkError> {
+/// # fn example() -> Result<(), lightarchitects::core::SdkError> {
 /// use chrono::Utc;
-/// use crate::seraph::scope::EngagementScope;
+/// use lightarchitects::seraph::scope::EngagementScope;
 ///
 /// let scope = EngagementScope {
 ///     engagement_id: "ENG-001".into(),
@@ -262,7 +262,7 @@ const SHELL_METACHARS: &[char] = &[';', '&', '|', '`', '$', '>', '<'];
 /// # Example
 ///
 /// ```rust
-/// use crate::seraph::scope::{ScopeConstraint, ScopeDomain};
+/// use lightarchitects::seraph::scope::{ScopeConstraint, ScopeDomain};
 ///
 /// let constraint = ScopeConstraint::new("192.168.1.0/24", "nmap", ScopeDomain::Network)
 ///     .expect("valid constraint");

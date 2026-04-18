@@ -29,7 +29,7 @@
 //! # Example
 //!
 //! ```rust
-//! use crate::helix::canon::{
+//! use lightarchitects::helix::canon::{
 //!     canon_check, default_gates, CanonContext, CanonVerdict,
 //! };
 //!
@@ -430,7 +430,7 @@ pub fn default_gates() -> Vec<Box<dyn CanonGate>> {
 /// Call this function before phase transitions:
 ///
 /// ```rust
-/// use crate::helix::canon::{canon_check, default_gates, CanonContext};
+/// use lightarchitects::helix::canon::{canon_check, default_gates, CanonContext};
 ///
 /// let gates = default_gates();
 /// let ctx = CanonContext::new()

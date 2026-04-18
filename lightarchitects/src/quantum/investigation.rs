@@ -20,8 +20,8 @@
 //! # Example
 //!
 //! ```no_run
-//! # async fn example() -> Result<(), crate::core::SdkError> {
-//! use crate::quantum::{QuantumClient, QuantumInvestigation};
+//! # async fn example() -> Result<(), lightarchitects::core::SdkError> {
+//! use lightarchitects::quantum::{QuantumClient, QuantumInvestigation};
 //!
 //! let client = QuantumClient::builder()
 //!     .timeout(std::time::Duration::from_secs(120))

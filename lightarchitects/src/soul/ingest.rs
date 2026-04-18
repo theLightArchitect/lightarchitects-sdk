@@ -1,14 +1,14 @@
 //! Fluent builder for the `soulTools` `ingest` action.
 //!
-//! Create a builder via [`crate::soul::SoulClient::ingest_builder`], configure it,
+//! Create a builder via [`lightarchitects::soul::SoulClient::ingest_builder`], configure it,
 //! then call `.call().await` to execute.
 //!
 //! # Example
 //!
 //! ```no_run
-//! # async fn example(client: crate::soul::SoulClient<crate::core::StdioTransport>)
-//! # -> Result<(), crate::core::SdkError> {
-//! use crate::soul::ContentType;
+//! # async fn example(client: lightarchitects::soul::SoulClient<lightarchitects::core::StdioTransport>)
+//! # -> Result<(), lightarchitects::core::SdkError> {
+//! use lightarchitects::soul::ContentType;
 //!
 //! let result = client
 //!     .ingest_builder("~/lightarchitects/soul/helix/eva/entries/my-entry.md")?
@@ -75,9 +75,9 @@ impl ContentType {
 /// # Example
 ///
 /// ```no_run
-/// # async fn example(client: crate::soul::SoulClient<crate::core::StdioTransport>)
-/// # -> Result<(), crate::core::SdkError> {
-/// use crate::soul::ContentType;
+/// # async fn example(client: lightarchitects::soul::SoulClient<lightarchitects::core::StdioTransport>)
+/// # -> Result<(), lightarchitects::core::SdkError> {
+/// use lightarchitects::soul::ContentType;
 ///
 /// let result = client
 ///     .ingest_builder("~/lightarchitects/soul/helix/corso/entries/plan.md")?

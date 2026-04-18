@@ -1,11 +1,11 @@
 //! Fluent builder for the `soulTools` `query` action (4-signal hybrid RAG).
 //!
-//! Create a builder via [`SoulClient::query`][crate::soul::client::SoulClient::query]
+//! Create a builder via [`SoulClient::query`][lightarchitects::soul::client::SoulClient::query]
 //! and supply the search query string. All other parameters are optional.
 //!
 //! ```no_run
-//! # async fn example(client: crate::soul::SoulClient<crate::core::StdioTransport>)
-//! # -> Result<(), crate::core::SdkError> {
+//! # async fn example(client: lightarchitects::soul::SoulClient<lightarchitects::core::StdioTransport>)
+//! # -> Result<(), lightarchitects::core::SdkError> {
 //! let result = client.query("consciousness and identity")
 //!     .strand("meaning")
 //!     .significance_min(6.0)
@@ -35,7 +35,7 @@ pub struct QueryResult {
 
 /// Fluent builder for the `soulTools` `query` action.
 ///
-/// Constructed via [`SoulClient::query`][crate::soul::client::SoulClient::query].
+/// Constructed via [`SoulClient::query`][lightarchitects::soul::client::SoulClient::query].
 pub struct QueryBuilder<'a, T: Transport> {
     inner: &'a McpClient<T>,
     query: String,

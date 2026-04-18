@@ -1,6 +1,6 @@
 //! File backend adapter — markdown vault as a graph.
 //!
-//! Implements [`GraphStore`](crate::helix::GraphStore) by treating SOUL's
+//! Implements [`GraphStore`](lightarchitects::helix::GraphStore) by treating SOUL's
 //! Obsidian-compatible markdown vault as a knowledge graph:
 //!
 //! - **Files → Nodes**: Each `.md` file becomes a `Note` node. Frontmatter
@@ -163,7 +163,7 @@ impl FileBackend {
 
     /// Return all edges from the in-memory index as [`BatchRelationship`] values.
     ///
-    /// Used by [`DualBackend::sync()`](crate::helix::dual::DualBackend::sync) to
+    /// Used by [`DualBackend::sync()`](lightarchitects::helix::dual::DualBackend::sync) to
     /// replicate file-backend relationships into Neo4j.
     pub async fn all_edges(&self) -> Vec<BatchRelationship> {
         let index = self.index.read().await;

@@ -7,7 +7,7 @@
 
 /// Schema description for the **`LongMemEval` ephemeral bench helix**.
 ///
-/// Used in [`LlmCypherGenerator`](crate::soul::cypher::llm::LlmCypherGenerator)
+/// Used in [`LlmCypherGenerator`](lightarchitects::soul::cypher::llm::LlmCypherGenerator)
 /// system prompts when generating retrieval queries for the `LongMemEval`
 /// benchmark. Each bench question gets its own ephemeral helix — all
 /// sessions are stored as `Step` nodes inside it.

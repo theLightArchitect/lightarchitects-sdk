@@ -118,7 +118,7 @@ tokio-test = "0.4"
 mockito = "1"
 
 # ── External path deps (portable relative paths from workspace root) ──────────
-ayin = { path = "../AYIN/AYIN-DEV/ayin" }
+ayin = { path = "../AYIN/AYIN-DEV/ayin", version = "0.1" }
 
 [profile.release]
 lto = true

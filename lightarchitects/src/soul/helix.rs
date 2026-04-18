@@ -1,11 +1,11 @@
 //! Fluent builder for the `soulTools` `helix` action.
 //!
-//! Create a builder via [`SoulClient::helix`][crate::soul::client::SoulClient::helix]
+//! Create a builder via [`SoulClient::helix`][lightarchitects::soul::client::SoulClient::helix]
 //! then chain filter methods before calling `.call().await`.
 //!
 //! ```no_run
-//! # async fn example(client: crate::soul::SoulClient<crate::core::StdioTransport>)
-//! # -> Result<(), crate::core::SdkError> {
+//! # async fn example(client: lightarchitects::soul::SoulClient<lightarchitects::core::StdioTransport>)
+//! # -> Result<(), lightarchitects::core::SdkError> {
 //! let entries = client.helix()
 //!     .sibling("eva")
 //!     .strand("relational")
@@ -53,7 +53,7 @@ pub struct HelixEntry {
 
 /// Fluent builder for the `soulTools` `helix` action.
 ///
-/// Constructed via [`SoulClient::helix`][crate::soul::client::SoulClient::helix].
+/// Constructed via [`SoulClient::helix`][lightarchitects::soul::client::SoulClient::helix].
 /// All filter methods consume and return `self` for chaining.
 pub struct HelixBuilder<'a, T: Transport> {
     inner: &'a McpClient<T>,

@@ -1,6 +1,6 @@
 //! Neo4j backend via Bolt protocol.
 //!
-//! Implements [`GraphStore`](crate::helix::GraphStore) using [`neo4rs`] for
+//! Implements [`GraphStore`](lightarchitects::helix::GraphStore) using [`neo4rs`] for
 //! Neo4j Community Edition. All queries use parameterized Cypher —
 //! labels and relationship types are validated against allowlists
 //! before interpolation (they cannot be parameterized in Cypher).
@@ -14,7 +14,7 @@
 //! # Batch Operations
 //!
 //! Bulk inserts use transactional batching to minimize round-trips.
-//! Batch size is configurable via [`crate::helix::DEFAULT_BATCH_SIZE`].
+//! Batch size is configurable via [`lightarchitects::helix::DEFAULT_BATCH_SIZE`].
 
 use std::collections::{BTreeMap, HashMap};
 

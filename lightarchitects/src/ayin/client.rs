@@ -89,7 +89,7 @@ pub struct SpanList {
 /// ```no_run
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use crate::ayin::AyinClient;
+/// use lightarchitects::ayin::AyinClient;
 ///
 /// let client = AyinClient::new();
 /// let sessions = client.sessions().await?;

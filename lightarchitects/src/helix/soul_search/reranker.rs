@@ -22,8 +22,8 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use crate::helix::soul_search::reranker::{Reranker, RerankerConfig};
-//! use crate::helix::soul_search::hybrid::FusedResult;
+//! use lightarchitects::helix::soul_search::reranker::{Reranker, RerankerConfig};
+//! use lightarchitects::helix::soul_search::hybrid::FusedResult;
 //!
 //! let reranker = Reranker::new(RerankerConfig::default());
 //! let fused_results: Vec<FusedResult> = vec![]; // populated from hybrid RRF retrieval

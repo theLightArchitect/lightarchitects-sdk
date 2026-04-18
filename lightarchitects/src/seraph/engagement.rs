@@ -14,8 +14,8 @@
 //! # Example
 //!
 //! ```no_run
-//! # async fn example() -> Result<(), crate::core::SdkError> {
-//! use crate::seraph::{SeraphClient, SeraphEngagement};
+//! # async fn example() -> Result<(), lightarchitects::core::SdkError> {
+//! use lightarchitects::seraph::{SeraphClient, SeraphEngagement};
 //!
 //! let client = SeraphClient::builder()
 //!     .timeout(std::time::Duration::from_secs(120))

@@ -157,8 +157,8 @@ fn crc32_checksum(data: &[u8]) -> u32 {
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::derive::derive_key;
-/// use crate::crypto::verses::find_verse;
+/// use lightarchitects::crypto::derive::derive_key;
+/// use lightarchitects::crypto::verses::find_verse;
 /// use secrecy::SecretString;
 ///
 /// let pepper = SecretString::from("my-pepper");
@@ -197,8 +197,8 @@ pub fn derive_key(
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::derive::derive_api_key;
-/// use crate::crypto::verses::find_verse;
+/// use lightarchitects::crypto::derive::derive_api_key;
+/// use lightarchitects::crypto::verses::find_verse;
 /// use secrecy::{ExposeSecret, SecretString};
 ///
 /// let pepper = SecretString::from("my-pepper");
@@ -273,7 +273,7 @@ fn extract_last_four(s: &str) -> String {
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::derive::derive_encryption_key;
+/// use lightarchitects::crypto::derive::derive_encryption_key;
 /// use secrecy::SecretString;
 ///
 /// let pepper = SecretString::from("my-pepper");
@@ -311,7 +311,7 @@ pub fn derive_encryption_key(pepper: &SecretString, context: &str) -> Result<Ver
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::derive::derive_signing_key;
+/// use lightarchitects::crypto::derive::derive_signing_key;
 /// use secrecy::SecretString;
 ///
 /// let pepper = SecretString::from("my-pepper");

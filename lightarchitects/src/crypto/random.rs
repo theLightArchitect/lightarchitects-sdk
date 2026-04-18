@@ -7,7 +7,7 @@ use rand::RngCore;
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::random::generate_bytes;
+/// use lightarchitects::crypto::random::generate_bytes;
 ///
 /// let bytes = generate_bytes(32);
 /// assert_eq!(bytes.len(), 32);
@@ -24,7 +24,7 @@ pub fn generate_bytes(len: usize) -> Vec<u8> {
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::random::generate_hex;
+/// use lightarchitects::crypto::random::generate_hex;
 ///
 /// let hex = generate_hex(16);
 /// assert_eq!(hex.len(), 32); // 16 bytes = 32 hex chars
@@ -43,7 +43,7 @@ pub fn generate_hex(len: usize) -> String {
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::random::generate_nonce;
+/// use lightarchitects::crypto::random::generate_nonce;
 ///
 /// let nonce = generate_nonce();
 /// assert_eq!(nonce.len(), 12);

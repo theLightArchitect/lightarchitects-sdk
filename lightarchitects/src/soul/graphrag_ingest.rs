@@ -10,9 +10,9 @@
 //! # Example — file ingestion
 //!
 //! ```no_run
-//! # async fn example(client: crate::soul::SoulClient<crate::core::StdioTransport>)
-//! # -> Result<(), crate::core::SdkError> {
-//! use crate::soul::IngestSource;
+//! # async fn example(client: lightarchitects::soul::SoulClient<lightarchitects::core::StdioTransport>)
+//! # -> Result<(), lightarchitects::core::SdkError> {
+//! use lightarchitects::soul::IngestSource;
 //!
 //! let result = client
 //!     .graphrag_ingest()
@@ -29,9 +29,9 @@
 //! # Example — inline text ingestion
 //!
 //! ```no_run
-//! # async fn example(client: crate::soul::SoulClient<crate::core::StdioTransport>)
-//! # -> Result<(), crate::core::SdkError> {
-//! use crate::soul::{IngestSource, TextFormat};
+//! # async fn example(client: lightarchitects::soul::SoulClient<lightarchitects::core::StdioTransport>)
+//! # -> Result<(), lightarchitects::core::SdkError> {
+//! use lightarchitects::soul::{IngestSource, TextFormat};
 //!
 //! let result = client
 //!     .graphrag_ingest()
@@ -105,7 +105,7 @@ pub enum IngestSource {
 
 /// Fluent builder for the `soulTools` `graphrag_ingest` action.
 ///
-/// Created via [`crate::soul::SoulClient::graphrag_ingest`]. Chain optional
+/// Created via [`lightarchitects::soul::SoulClient::graphrag_ingest`]. Chain optional
 /// configuration methods then call `.call().await` to execute.
 pub struct GraphRagIngestBuilder<'a, T: Transport> {
     inner: &'a McpClient<T>,

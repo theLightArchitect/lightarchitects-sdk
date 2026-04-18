@@ -17,7 +17,7 @@ use crate::crypto::verses::Verse;
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::sign::{keypair_from_seed, sign, verify};
+/// use lightarchitects::crypto::sign::{keypair_from_seed, sign, verify};
 ///
 /// let (sk, vk) = keypair_from_seed(&[0xABu8; 32]);
 /// let sig = sign(&sk, b"hello");
@@ -37,7 +37,7 @@ pub fn sign(signing_key: &SigningKey, message: &[u8]) -> Signature {
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::sign::{keypair_from_seed, sign, verify};
+/// use lightarchitects::crypto::sign::{keypair_from_seed, sign, verify};
 ///
 /// let (sk, vk) = keypair_from_seed(&[0xABu8; 32]);
 /// let sig = sign(&sk, b"message");
@@ -52,7 +52,7 @@ pub fn verify(verifying_key: &VerifyingKey, message: &[u8], signature: &Signatur
 /// Derive a deterministic Ed25519 keypair from a 32-byte seed.
 ///
 /// The same seed always produces the same keypair. Use this with output
-/// from [`crate::crypto::derive::derive_signing_key`] or any 32-byte secret.
+/// from [`lightarchitects::crypto::derive::derive_signing_key`] or any 32-byte secret.
 ///
 /// The returned tuple is `(signing_key, verifying_key)` where the
 /// verifying key is the public half suitable for distribution.
@@ -60,7 +60,7 @@ pub fn verify(verifying_key: &VerifyingKey, message: &[u8], signature: &Signatur
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::sign::keypair_from_seed;
+/// use lightarchitects::crypto::sign::keypair_from_seed;
 ///
 /// let seed = [0x42u8; 32];
 /// let (sk, vk) = keypair_from_seed(&seed);
@@ -78,7 +78,7 @@ pub fn keypair_from_seed(seed: &[u8; 32]) -> (SigningKey, VerifyingKey) {
 /// Derive a signing key from a pepper + verse, sign the message, and return
 /// both the signature and the public (verifying) key.
 ///
-/// Uses [`crate::crypto::derive::derive_key`] with a random IKM and the purpose
+/// Uses [`lightarchitects::crypto::derive::derive_key`] with a random IKM and the purpose
 /// `"signing"` for domain separation. The derived seed is zeroized on drop.
 ///
 /// The caller needs the returned [`VerifyingKey`] for later verification,
@@ -86,7 +86,7 @@ pub fn keypair_from_seed(seed: &[u8; 32]) -> (SigningKey, VerifyingKey) {
 ///
 /// # Errors
 ///
-/// Returns [`crate::crypto::CryptoError::HkdfExpand`] if key derivation fails.
+/// Returns [`lightarchitects::crypto::CryptoError::HkdfExpand`] if key derivation fails.
 pub fn sign_with_verse(
     pepper: &SecretString,
     verse: &Verse,

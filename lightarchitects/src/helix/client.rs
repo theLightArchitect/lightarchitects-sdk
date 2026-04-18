@@ -7,8 +7,8 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use crate::helix::client::HelixClient;
-//! use crate::helix::db::{HelixConfig, HelixDb};
+//! use lightarchitects::helix::client::HelixClient;
+//! use lightarchitects::helix::db::{HelixConfig, HelixDb};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = HelixConfig::from_env()?;

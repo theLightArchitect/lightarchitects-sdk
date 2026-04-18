@@ -4,7 +4,7 @@
 //!
 //! The chain is keyed by a **per-session secret** derived from a **store-level
 //! pepper** via HKDF. The pepper lives at `~/lightarchitects/laex0/.session-key`
-//! (configurable via [`crate::turnlog::store::StoreLayout`]), loaded once at process startup.
+//! (configurable via [`lightarchitects::turnlog::store::StoreLayout`]), loaded once at process startup.
 //!
 //! Per-session key derivation (HKDF-SHA256):
 //!
@@ -123,7 +123,7 @@ impl GenesisBlock {
     /// Compute and set `hmac_genesis` on a partially-built genesis block.
     ///
     /// # Errors
-    /// Propagates crypto errors from `crate::crypto::hash`.
+    /// Propagates crypto errors from `lightarchitects::crypto::hash`.
     pub fn sign(&mut self, session_key: &SecretString) -> Result<()> {
         let bytes = self.signable_bytes();
         self.hmac_genesis = hmac_hash(session_key, &bytes)?;
@@ -203,7 +203,7 @@ pub(crate) fn signable_bytes(entry: &TurnEntry) -> Result<Vec<u8>> {
 /// for seq=0, or the previous entry's `hmac_self` otherwise).
 ///
 /// # Errors
-/// Propagates from [`signable_bytes`] and `crate::crypto::hash`.
+/// Propagates from [`signable_bytes`] and `lightarchitects::crypto::hash`.
 pub(crate) fn sign_entry(entry: &mut TurnEntry, session_key: &SecretString) -> Result<()> {
     let bytes = signable_bytes(entry)?;
     entry.hmac_self = hmac_hash(session_key, &bytes)?;

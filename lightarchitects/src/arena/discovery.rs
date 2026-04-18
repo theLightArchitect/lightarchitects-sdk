@@ -4,7 +4,7 @@
 //! the MCP initialize handshake, calls `tools/list` with pagination support,
 //! and populates a [`ToolRegistry`] with discovered tool schemas.
 //!
-//! [`ToolRegistry`]: crate::arena::discovery::ToolRegistry
+//! [`ToolRegistry`]: lightarchitects::arena::discovery::ToolRegistry
 
 use std::collections::HashMap;
 use std::path::Path;

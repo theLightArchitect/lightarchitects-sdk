@@ -29,7 +29,7 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use crate::oracle::{OracleClient, OracleMode};
+//! use lightarchitects::oracle::{OracleClient, OracleMode};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let oracle = OracleClient::builder()

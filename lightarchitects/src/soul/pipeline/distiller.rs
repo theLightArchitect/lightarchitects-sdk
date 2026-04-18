@@ -2,7 +2,7 @@
 //! context string suitable for LLM consumption.
 //!
 //! [`RetrievalDistiller`] sorts, deduplicates, truncates, and formats
-//! [`RetrievalHit`][crate::soul::pipeline::RetrievalHit] results into a
+//! [`RetrievalHit`][lightarchitects::soul::pipeline::RetrievalHit] results into a
 //! [`DistilledContext`] ready for prompt injection.
 
 use std::collections::HashSet;

@@ -43,8 +43,8 @@ impl<T: Transport> McpClient<T> {
     /// Send a raw JSON-RPC request, retrying on transient transport errors.
     ///
     /// Applies the retry policy from [`RetryConfig`]: only
-    /// [`crate::core::error::TransportError::Io`] and
-    /// [`crate::core::error::TransportError::Timeout`] are retried — tool errors
+    /// [`lightarchitects::core::error::TransportError::Io`] and
+    /// [`lightarchitects::core::error::TransportError::Timeout`] are retried — tool errors
     /// propagate immediately.
     ///
     /// # Idempotency requirement

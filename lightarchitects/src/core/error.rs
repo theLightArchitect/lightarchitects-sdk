@@ -44,7 +44,7 @@ pub enum SdkError {
 
     /// Authentication failure — no key, revoked key, or exhausted grace period.
     ///
-    /// Returned by [`crate::core::StdioTransport::connect`] when an [`crate::auth::AuthChecker`]
+    /// Returned by [`lightarchitects::core::StdioTransport::connect`] when an [`lightarchitects::auth::AuthChecker`]
     /// is present and the auth check returns a hard failure. No subprocess is
     /// spawned when this error is returned.
     #[error("auth: {0}")]
@@ -54,7 +54,7 @@ pub enum SdkError {
 /// Errors at the stdio / process layer.
 ///
 /// Only [`TransportError::Timeout`] and [`TransportError::Io`] are retried by
-/// [`crate::core::config::RetryConfig`]. [`TransportError::ProcessSpawn`] and
+/// [`lightarchitects::core::config::RetryConfig`]. [`TransportError::ProcessSpawn`] and
 /// [`TransportError::ProcessExit`] are terminal — retrying the same binary will
 /// not help.
 #[derive(Debug, Error)]
@@ -127,7 +127,7 @@ pub enum ProtocolError {
         received: u64,
     },
 
-    /// Response exceeded [`crate::core::constants::MAX_RESPONSE_BYTES`].
+    /// Response exceeded [`lightarchitects::core::constants::MAX_RESPONSE_BYTES`].
     #[error("response exceeded maximum size ({max_bytes} bytes)")]
     ResponseTooLarge {
         /// The configured maximum in bytes.

@@ -147,7 +147,7 @@ impl KeyPassphraseProvider for CallbackPassphraseProvider {
 /// # Example
 ///
 /// ```no_run
-/// use crate::seraph::ssh::SshSessionBuilder;
+/// use lightarchitects::seraph::ssh::SshSessionBuilder;
 ///
 /// let session = SshSessionBuilder::new()
 ///     .host("10.129.155.20")

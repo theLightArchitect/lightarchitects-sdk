@@ -8,7 +8,7 @@
 //!
 //! All types in this module are **compile-time opt-in** via the `conversations`
 //! Cargo feature. When the feature is disabled every public type degrades to a
-//! zero-cost noop — the same pattern used by [`crate::ayin::ObservableTransport`].
+//! zero-cost noop — the same pattern used by [`lightarchitects::ayin::ObservableTransport`].
 //!
 //! ```toml
 //! # No tracing (default — zero cost)

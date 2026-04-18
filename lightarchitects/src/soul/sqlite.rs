@@ -1,6 +1,6 @@
 //! `SQLite` storage backend for helix entries.
 //!
-//! Implements [`StorageBackend`][crate::soul::storage::StorageBackend] using a
+//! Implements [`StorageBackend`][lightarchitects::soul::storage::StorageBackend] using a
 //! bundled `SQLite` database with `FTS5` full-text search. The database is
 //! created on first open; all migrations run automatically via
 //! [`SqliteBackend::open`].

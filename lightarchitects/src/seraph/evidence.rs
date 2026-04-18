@@ -70,7 +70,7 @@ impl EvidenceEntry {
 /// # Example
 ///
 /// ```no_run
-/// use crate::seraph::evidence::{EvidenceChain, EvidenceEntry};
+/// use lightarchitects::seraph::evidence::{EvidenceChain, EvidenceEntry};
 ///
 /// let mut chain = EvidenceChain::new();
 /// chain.append(EvidenceEntry::new("scan", "192.168.1.0/24", "12 hosts discovered"));

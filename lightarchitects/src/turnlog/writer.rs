@@ -16,7 +16,7 @@
 //!
 //! On crash: whatever was last `sync_data`'d survives. Partial un-synced
 //! writes in the OS page cache may be lost. The chain makes torn tails
-//! detectable — [`crate::turnlog::chain::verify_chain`] fails at the seq of the
+//! detectable — [`lightarchitects::turnlog::chain::verify_chain`] fails at the seq of the
 //! first bad entry rather than silently accepting a truncated file.
 
 use std::path::PathBuf;
@@ -103,7 +103,7 @@ impl TurnLogWriter {
     ///
     /// `pepper` is the store-level secret (typically loaded from
     /// `~/lightarchitects/laex0/.session-key` via
-    /// [`crate::core::paths::session_key`]).
+    /// [`lightarchitects::core::paths::session_key`]).
     /// An HKDF-derived per-session key is held only inside the background task.
     ///
     /// # Errors
@@ -309,7 +309,7 @@ impl TurnLogWriter {
     }
 
     /// Write a `session_paused` span. File stays in `active/`;
-    /// [`crate::turnlog::reader::TurnLogReader`] will surface it as a resumable session.
+    /// [`lightarchitects::turnlog::reader::TurnLogReader`] will surface it as a resumable session.
     ///
     /// The writer task continues running — callers must still call [`Self::close`]
     /// afterwards to fully shut down. Pause followed by close is the

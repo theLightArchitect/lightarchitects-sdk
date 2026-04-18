@@ -16,11 +16,11 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use crate::soul::pipeline::RetrievalPipeline;
-//! use crate::soul::sqlite::SqliteBackend;
+//! use lightarchitects::soul::pipeline::RetrievalPipeline;
+//! use lightarchitects::soul::sqlite::SqliteBackend;
 //! use std::sync::Arc;
 //!
-//! # async fn example() -> Result<(), crate::soul::pipeline::PipelineError> {
+//! # async fn example() -> Result<(), lightarchitects::soul::pipeline::PipelineError> {
 //! let backend = SqliteBackend::open_in_memory()?;
 //! let pipeline = RetrievalPipeline::builder()
 //!     .storage(Arc::new(backend))

@@ -31,8 +31,8 @@ const MAX_WRITE_BYTES: usize = 10 * 1024 * 1024;
 /// # Example
 ///
 /// ```no_run
-/// # async fn example() -> Result<(), crate::core::SdkError> {
-/// use crate::corso::CorsoClient;
+/// # async fn example() -> Result<(), lightarchitects::core::SdkError> {
+/// use lightarchitects::corso::CorsoClient;
 ///
 /// let client = CorsoClient::builder().build().await?;
 ///
@@ -573,8 +573,8 @@ impl CorsoClient<StdioTransport> {
 /// Builder for [`CorsoClient`] backed by a live CORSO binary.
 ///
 /// ```no_run
-/// # async fn example() -> Result<(), crate::core::SdkError> {
-/// use crate::corso::CorsoClient;
+/// # async fn example() -> Result<(), lightarchitects::core::SdkError> {
+/// use lightarchitects::corso::CorsoClient;
 /// use std::time::Duration;
 ///
 /// let client = CorsoClient::builder()

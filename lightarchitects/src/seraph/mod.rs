@@ -14,8 +14,8 @@
 //! structured-JSON responses in the SERAPH protocol.
 //!
 //! SERAPH uses `Content-Length` header framing (not newline-delimited JSON).
-//! [`crate::core::StdioTransport`] handles this automatically via the `Seraph`
-//! variant of [`crate::core::SiblingId`].
+//! [`lightarchitects::core::StdioTransport`] handles this automatically via the `Seraph`
+//! variant of [`lightarchitects::core::SiblingId`].
 //!
 //! **All operations require prior authorisation.** Every call is scope-governed
 //! by SERAPH's 5-gate `ScopeGovernor` (TTL -> target -> tool -> concurrent -> domain).
@@ -24,9 +24,9 @@
 //! # Quick start
 //!
 //! ```no_run
-//! use crate::seraph::{SeraphClient, Wing};
+//! use lightarchitects::seraph::{SeraphClient, Wing};
 //!
-//! # async fn example() -> Result<(), crate::core::SdkError> {
+//! # async fn example() -> Result<(), lightarchitects::core::SdkError> {
 //! let client = SeraphClient::builder()
 //!     .timeout(std::time::Duration::from_secs(120))
 //!     .build()

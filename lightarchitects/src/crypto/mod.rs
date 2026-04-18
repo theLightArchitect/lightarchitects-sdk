@@ -8,8 +8,8 @@
 //! ## Quick Start
 //!
 //! ```rust
-//! use crate::crypto::derive::derive_key;
-//! use crate::crypto::verses::find_verse;
+//! use lightarchitects::crypto::derive::derive_key;
+//! use lightarchitects::crypto::verses::find_verse;
 //! use secrecy::SecretString;
 //!
 //! let pepper = SecretString::from("my-secret-pepper");

@@ -6,8 +6,8 @@
 //! # Examples
 //!
 //! ```rust
-//! use crate::soul::embedding::mock::MockEmbeddingProvider;
-//! use crate::soul::embedding::EmbeddingProvider;
+//! use lightarchitects::soul::embedding::mock::MockEmbeddingProvider;
+//! use lightarchitects::soul::embedding::EmbeddingProvider;
 //!
 //! let provider = MockEmbeddingProvider::nomic();
 //! assert_eq!(provider.dimensions(), 768);

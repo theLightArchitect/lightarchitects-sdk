@@ -1,13 +1,13 @@
 //! Fluent builder for the `evaTools` `ideate` action.
 //!
-//! Create a builder via [`EvaClient::ideate_builder`][crate::eva::EvaClient::ideate_builder]
+//! Create a builder via [`EvaClient::ideate_builder`][lightarchitects::eva::EvaClient::ideate_builder]
 //! then chain optional filter methods before calling `.call().await`.
 //!
 //! ```no_run
 //! # async fn example(
-//! #     client: crate::eva::EvaClient<crate::core::StdioTransport>,
-//! # ) -> Result<(), crate::core::SdkError> {
-//! use crate::eva::IdeatePhase;
+//! #     client: lightarchitects::eva::EvaClient<lightarchitects::core::StdioTransport>,
+//! # ) -> Result<(), lightarchitects::core::SdkError> {
+//! use lightarchitects::eva::IdeatePhase;
 //!
 //! let result = client
 //!     .ideate_builder("design a plugin system")
@@ -100,7 +100,7 @@ impl OutputFormat {
 
 /// Fluent builder for the `evaTools` `ideate` action.
 ///
-/// Constructed via [`EvaClient::ideate_builder`][crate::eva::EvaClient::ideate_builder].
+/// Constructed via [`EvaClient::ideate_builder`][lightarchitects::eva::EvaClient::ideate_builder].
 /// All setter methods consume and return `self` for chaining.
 /// The builder allocates nothing until [`.call()`][IdeateBuilder::call] is invoked.
 ///
@@ -108,9 +108,9 @@ impl OutputFormat {
 ///
 /// ```no_run
 /// # async fn example(
-/// #     client: crate::eva::EvaClient<crate::core::StdioTransport>,
-/// # ) -> Result<(), crate::core::SdkError> {
-/// use crate::eva::{IdeatePhase, OutputFormat};
+/// #     client: lightarchitects::eva::EvaClient<lightarchitects::core::StdioTransport>,
+/// # ) -> Result<(), lightarchitects::core::SdkError> {
+/// use lightarchitects::eva::{IdeatePhase, OutputFormat};
 ///
 /// let result = client
 ///     .ideate_builder("build a search index")
@@ -137,7 +137,7 @@ pub struct IdeateBuilder<'a, T: Transport> {
 impl<'a, T: Transport> IdeateBuilder<'a, T> {
     /// Create a builder for the given `goal`.
     ///
-    /// Prefer constructing via [`EvaClient::ideate_builder`][crate::eva::EvaClient::ideate_builder].
+    /// Prefer constructing via [`EvaClient::ideate_builder`][lightarchitects::eva::EvaClient::ideate_builder].
     pub(crate) fn new(inner: &'a McpClient<T>, goal: String) -> Self {
         Self {
             inner,

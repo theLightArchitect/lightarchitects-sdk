@@ -37,8 +37,8 @@ use crate::quantum::types::{
 /// # Example
 ///
 /// ```no_run
-/// # async fn example() -> Result<(), crate::core::SdkError> {
-/// use crate::quantum::QuantumClient;
+/// # async fn example() -> Result<(), lightarchitects::core::SdkError> {
+/// use lightarchitects::quantum::QuantumClient;
 ///
 /// let client = QuantumClient::builder().build().await?;
 ///
@@ -384,8 +384,8 @@ impl QuantumClient<StdioTransport> {
 /// Builder for [`QuantumClient`] backed by a live QUANTUM binary.
 ///
 /// ```no_run
-/// # async fn example() -> Result<(), crate::core::SdkError> {
-/// use crate::quantum::QuantumClient;
+/// # async fn example() -> Result<(), lightarchitects::core::SdkError> {
+/// use lightarchitects::quantum::QuantumClient;
 /// use std::time::Duration;
 ///
 /// let client = QuantumClient::builder()

@@ -17,7 +17,7 @@ use std::time::Duration;
 
 // ── Operation enums ───────────────────────────────────────────────────────────
 
-/// Wing selection for [`crate::seraph::SeraphClient::execute`].
+/// Wing selection for [`lightarchitects::seraph::SeraphClient::execute`].
 ///
 /// Maps to the 6 SERAPH offensive wings. Each wing represents a distinct
 /// attack-surface capability within an authorised engagement.

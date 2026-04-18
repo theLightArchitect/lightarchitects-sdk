@@ -7,8 +7,8 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use crate::helix::query::HelixQuery;
-//! use crate::helix::types::HelixOrderingMode;
+//! use lightarchitects::helix::query::HelixQuery;
+//! use lightarchitects::helix::types::HelixOrderingMode;
 //!
 //! let (cypher, params) = HelixQuery::new()
 //!     .owner("eva")
@@ -132,7 +132,7 @@ impl HelixQuery {
         self
     }
 
-    /// Maximum drill-down depth, capped at [`crate::helix::types::MAX_TRAVERSAL_DEPTH`].
+    /// Maximum drill-down depth, capped at [`lightarchitects::helix::types::MAX_TRAVERSAL_DEPTH`].
     #[must_use]
     pub fn depth(mut self, depth: u8) -> Self {
         self.depth = Some(depth.min(crate::helix::types::MAX_TRAVERSAL_DEPTH));

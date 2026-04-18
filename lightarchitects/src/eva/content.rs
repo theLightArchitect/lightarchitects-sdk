@@ -19,7 +19,7 @@
 //! 8 EVA tools.
 //!
 //! [`unwrap_text`] extracts `content[].text` as a raw string — used by the
-//! generic [`crate::eva::EvaClient::action`] adapter which returns [`crate::eva::ActionOutput`].
+//! generic [`lightarchitects::eva::EvaClient::action`] adapter which returns [`lightarchitects::eva::ActionOutput`].
 //!
 //! [`extract_image`] scans content blocks for an `Image` block — forward
 //! compatibility only; EVA currently embeds images inside the JSON text block.

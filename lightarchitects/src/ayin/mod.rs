@@ -1,6 +1,6 @@
 //! Feature-gated AYIN observability wrapper for lightarchitects-sdk transports.
 //!
-//! `lightarchitects-ayin` wraps any [`crate::core::transport::Transport`] in an
+//! `lightarchitects-ayin` wraps any [`lightarchitects::core::transport::Transport`] in an
 //! [`ObservableTransport`] that optionally records a `TraceSpan` for every
 //! MCP tool call.
 //!
@@ -21,10 +21,10 @@
 //! # Usage
 //!
 //! ```no_run
-//! use crate::ayin::ObservableTransport;
-//! use crate::core::StdioTransport;
+//! use lightarchitects::ayin::ObservableTransport;
+//! use lightarchitects::core::StdioTransport;
 //!
-//! # async fn example() -> Result<(), crate::core::SdkError> {
+//! # async fn example() -> Result<(), lightarchitects::core::SdkError> {
 //! // Works identically with or without the `observe` feature.
 //! // When `observe` is active, every send() writes a TraceSpan to AYIN.
 //! let transport: ObservableTransport<StdioTransport> =

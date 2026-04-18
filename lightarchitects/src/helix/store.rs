@@ -2,14 +2,14 @@
 //!
 //! The primary entry point for Neo4j graph operations.
 //! Exposes the same `search()` / `ingest()` API as
-//! [`crate::soul::SoulDb`] so callers can swap backends without
+//! [`lightarchitects::soul::SoulDb`] so callers can swap backends without
 //! rewriting business logic.
 //!
 //! # Examples
 //!
 //! ```rust,no_run
-//! # async fn example() -> Result<(), crate::helix::HelixStoreError> {
-//! use crate::helix::HelixStore;
+//! # async fn example() -> Result<(), lightarchitects::helix::HelixStoreError> {
+//! use lightarchitects::helix::HelixStore;
 //!
 //! let store = HelixStore::connect("bolt://localhost:7687", "neo4j", "password").await?;
 //! let hits = store.search("consciousness").top(10).call().await?;
@@ -49,7 +49,7 @@ impl From<crate::helix::HelixDbError> for HelixStoreError {
 /// Neo4j-backed knowledge store.
 ///
 /// Exposes the same `search()` / `ingest()` surface as
-/// [`crate::soul::SoulDb`]. Use this type when your application
+/// [`lightarchitects::soul::SoulDb`]. Use this type when your application
 /// requires full graph retrieval — 4-signal `RRF`, graph traversal, and
 /// helix primitives.
 pub struct HelixStore {
@@ -142,7 +142,7 @@ impl HelixStore {
     ///
     /// Uses BM25 fulltext search (`step-fulltext` Lucene index).
     /// Results are returned as [`RetrievalHit`] — the same type as
-    /// [`crate::soul::SoulDb::search`] — enabling backend-agnostic
+    /// [`lightarchitects::soul::SoulDb::search`] — enabling backend-agnostic
     /// retrieval code.
     #[must_use]
     pub fn search<'a>(&'a self, query: &'a str) -> HelixSearchBuilder<'a> {

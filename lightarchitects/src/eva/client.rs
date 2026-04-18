@@ -41,8 +41,8 @@ const EVA_TOOL: &str = "evaTools";
 /// # Example
 ///
 /// ```no_run
-/// # async fn example() -> Result<(), crate::core::SdkError> {
-/// use crate::eva::{EvaClient, TeachMode, SkillLevel};
+/// # async fn example() -> Result<(), lightarchitects::core::SdkError> {
+/// use lightarchitects::eva::{EvaClient, TeachMode, SkillLevel};
 ///
 /// let client = EvaClient::builder().build().await?;
 ///
@@ -133,7 +133,7 @@ impl<T: Transport> EvaClient<T> {
     ///
     /// EVA runs a 6-phase creative workflow: Discovery → Analysis → Ideation →
     /// Refinement → Documentation → Celebration.  For a fluent builder with
-    /// phase and output-format control see [`crate::eva::IdeateBuilder`].
+    /// phase and output-format control see [`lightarchitects::eva::IdeateBuilder`].
     ///
     /// `context` provides additional background that shapes the ideation.
     ///
@@ -283,7 +283,7 @@ impl<T: Transport> EvaClient<T> {
         serde_json::from_value(json).map_err(SdkError::from)
     }
 
-    /// Return a fluent [`crate::eva::IdeateBuilder`] for the `ideate` action.
+    /// Return a fluent [`lightarchitects::eva::IdeateBuilder`] for the `ideate` action.
     ///
     /// The builder allows setting a phase filter, context, output format, and
     /// session ID before calling `.call()`.
@@ -311,8 +311,8 @@ impl EvaClient<StdioTransport> {
 /// Builder for [`EvaClient`] backed by a live EVA binary.
 ///
 /// ```no_run
-/// # async fn example() -> Result<(), crate::core::SdkError> {
-/// use crate::eva::EvaClient;
+/// # async fn example() -> Result<(), lightarchitects::core::SdkError> {
+/// use lightarchitects::eva::EvaClient;
 /// use std::time::Duration;
 ///
 /// let client = EvaClient::builder()

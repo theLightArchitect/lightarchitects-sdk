@@ -37,8 +37,8 @@ use crate::seraph::types::{
 /// # Example
 ///
 /// ```no_run
-/// # async fn example() -> Result<(), crate::core::SdkError> {
-/// use crate::seraph::{SeraphClient, Wing};
+/// # async fn example() -> Result<(), lightarchitects::core::SdkError> {
+/// use lightarchitects::seraph::{SeraphClient, Wing};
 ///
 /// let client = SeraphClient::builder()
 ///     .timeout(std::time::Duration::from_secs(120))
@@ -683,8 +683,8 @@ impl SeraphClient<StdioTransport> {
 /// Builder for [`SeraphClient`] backed by the live SERAPH Mac bridge binary.
 ///
 /// ```no_run
-/// # async fn example() -> Result<(), crate::core::SdkError> {
-/// use crate::seraph::SeraphClient;
+/// # async fn example() -> Result<(), lightarchitects::core::SdkError> {
+/// use lightarchitects::seraph::SeraphClient;
 /// use std::time::Duration;
 ///
 /// let client = SeraphClient::builder()

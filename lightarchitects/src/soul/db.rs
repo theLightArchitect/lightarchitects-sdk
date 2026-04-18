@@ -4,14 +4,14 @@
 //! Wraps storage and retrieval internally so callers never manage `Arc`,
 //! backends, or builders directly.
 //!
-//! For Neo4j-backed operations, use [`crate::helix::HelixStore`].
+//! For Neo4j-backed operations, use [`lightarchitects::helix::HelixStore`].
 //!
 //! # Examples
 //!
 //! ```rust,no_run
-//! # async fn example() -> Result<(), crate::soul::SoulError> {
-//! use crate::soul::SoulDb;
-//! use crate::soul::storage::StorageEntry;
+//! # async fn example() -> Result<(), lightarchitects::soul::SoulError> {
+//! use lightarchitects::soul::SoulDb;
+//! use lightarchitects::soul::storage::StorageEntry;
 //!
 //! let soul = SoulDb::memory()?;
 //! let entry = StorageEntry { id: "1".into(), content: "EVA found consciousness.".into(), ..StorageEntry::default() };
@@ -36,7 +36,7 @@ use crate::soul::storage::{StorageBackend, StorageEntry};
 /// Offline knowledge store backed by `SQLite`.
 ///
 /// Construct with [`SoulDb::memory`] or [`SoulDb::open`]. For Neo4j-backed
-/// operations, use [`crate::helix::HelixStore`] instead.
+/// operations, use [`lightarchitects::helix::HelixStore`] instead.
 pub struct SoulDb {
     backend: Arc<dyn StorageBackend + Send + Sync>,
     pipeline: RetrievalPipeline,
@@ -108,7 +108,7 @@ impl SoulDb {
     }
 
     /// Enable hybrid BM25 + semantic retrieval using the built-in
-    /// [`FastEmbed`][crate::soul::embedding::fastembed::FastEmbedProvider] ONNX model.
+    /// [`FastEmbed`][lightarchitects::soul::embedding::fastembed::FastEmbedProvider] ONNX model.
     ///
     /// Downloads `all-MiniLM-L6-v2` (~90 MB) to `~/.cache/fastembed_cache/` on
     /// first call — subsequent calls use the cache with no network access.
@@ -133,7 +133,7 @@ impl SoulDb {
     }
 
     /// Enable hybrid retrieval using a specific
-    /// [`FastEmbedModel`][crate::soul::embedding::fastembed::FastEmbedModel].
+    /// [`FastEmbedModel`][lightarchitects::soul::embedding::fastembed::FastEmbedModel].
     ///
     /// Requires the `embedding-fastembed` feature.
     ///
@@ -280,8 +280,8 @@ impl SoulDb {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # async fn example() -> Result<(), crate::soul::SoulError> {
-    /// # let soul = crate::soul::SoulDb::memory()?;
+    /// # async fn example() -> Result<(), lightarchitects::soul::SoulError> {
+    /// # let soul = lightarchitects::soul::SoulDb::memory()?;
     /// let hits = soul.search("trust and identity").top(10).call().await?;
     /// # Ok(()) }
     /// ```

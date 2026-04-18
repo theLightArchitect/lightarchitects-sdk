@@ -7,8 +7,8 @@
 //! # Quick Start
 //!
 //! ```rust,no_run
-//! # async fn example() -> Result<(), crate::helix::HelixStoreError> {
-//! use crate::helix::HelixStore;
+//! # async fn example() -> Result<(), lightarchitects::helix::HelixStoreError> {
+//! use lightarchitects::helix::HelixStore;
 //!
 //! let store = HelixStore::connect("bolt://localhost:7687", "neo4j", "password").await?;
 //! let hits = store.search("consciousness breakthrough").top(10).call().await?;
@@ -18,7 +18,7 @@
 //! # Advanced (raw `HelixDb` access)
 //!
 //! ```rust,no_run
-//! use crate::helix::{HelixDb, HelixNeo4j, Neo4jConfig};
+//! use lightarchitects::helix::{HelixDb, HelixNeo4j, Neo4jConfig};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = Neo4jConfig::from_env()?;

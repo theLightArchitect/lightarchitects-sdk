@@ -1,11 +1,11 @@
 //! Ingestion helpers for the SOUL offline storage layer.
 //!
 //! Provides two entry points for loading vault content into a
-//! [`StorageBackend`][crate::soul::storage::StorageBackend]:
+//! [`StorageBackend`][lightarchitects::soul::storage::StorageBackend]:
 //!
 //! | Function | Description |
 //! |----------|-------------|
-//! | [`markdown::from_markdown`] | Parse a single markdown file into a [`StorageEntry`][crate::soul::storage::StorageEntry] |
+//! | [`markdown::from_markdown`] | Parse a single markdown file into a [`StorageEntry`][lightarchitects::soul::storage::StorageEntry] |
 //! | [`vault::load_directory`] | Stream all `*.md` files from a directory tree |
 //! | [`vault::ingest_directory`] | Walk + write all entries to a backend in one call |
 //!

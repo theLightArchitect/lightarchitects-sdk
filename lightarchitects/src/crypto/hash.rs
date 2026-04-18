@@ -22,7 +22,7 @@ type HmacSha256 = Hmac<Sha256>;
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::hash::hmac_hash;
+/// use lightarchitects::crypto::hash::hmac_hash;
 /// use secrecy::SecretString;
 ///
 /// let pepper = SecretString::from("my-pepper");
@@ -45,13 +45,13 @@ pub fn hmac_hash(pepper: &SecretString, data: &[u8]) -> Result<String> {
 /// Verify an HMAC-SHA256 hash using constant-time comparison.
 ///
 /// Computes the HMAC of `data` with `pepper` and compares it against
-/// `expected_hex` using [`crate::crypto::compare::constant_time_eq`] to prevent
+/// `expected_hex` using [`lightarchitects::crypto::compare::constant_time_eq`] to prevent
 /// timing side-channels.
 ///
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::hash::{hmac_hash, hmac_verify};
+/// use lightarchitects::crypto::hash::{hmac_hash, hmac_verify};
 /// use secrecy::SecretString;
 ///
 /// let pepper = SecretString::from("my-pepper");
@@ -86,7 +86,7 @@ pub fn hmac_verify(pepper: &SecretString, data: &[u8], expected_hex: &str) -> Re
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::hash::{webhook_sign, webhook_verify};
+/// use lightarchitects::crypto::hash::{webhook_sign, webhook_verify};
 /// use secrecy::SecretString;
 ///
 /// let secret = SecretString::from("whsec_test");
@@ -122,7 +122,7 @@ pub fn webhook_sign(secret: &SecretString, body: &[u8], timestamp: &str) -> Resu
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::hash::{webhook_sign, webhook_verify};
+/// use lightarchitects::crypto::hash::{webhook_sign, webhook_verify};
 /// use secrecy::SecretString;
 ///
 /// let secret = SecretString::from("whsec_test");

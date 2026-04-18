@@ -30,14 +30,14 @@ pub struct SealedData {
 
 /// Encrypt `plaintext` with AES-256-GCM using the given 32-byte key.
 ///
-/// The nonce is generated internally via [`crate::crypto::random::generate_nonce`]
+/// The nonce is generated internally via [`lightarchitects::crypto::random::generate_nonce`]
 /// (96-bit CSPRNG). The `associated_data` (AAD) is authenticated but not
 /// encrypted — the receiver must supply the same AAD to decrypt.
 ///
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::encrypt::{seal, open};
+/// use lightarchitects::crypto::encrypt::{seal, open};
 ///
 /// let key = [0x42u8; 32];
 /// let sealed = seal(&key, b"secret message", b"context").expect("seal");
@@ -76,7 +76,7 @@ pub fn seal(key: &[u8; 32], plaintext: &[u8], associated_data: &[u8]) -> Result<
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::encrypt::{seal, open};
+/// use lightarchitects::crypto::encrypt::{seal, open};
 ///
 /// let key = [0x42u8; 32];
 /// let sealed = seal(&key, b"hello", b"aad").expect("seal");
@@ -104,7 +104,7 @@ pub fn open(key: &[u8; 32], sealed: &SealedData, associated_data: &[u8]) -> Resu
 
 /// Derive an encryption key from a pepper + verse, then seal the plaintext.
 ///
-/// Uses [`crate::crypto::derive::derive_key`] with a random IKM and the purpose
+/// Uses [`lightarchitects::crypto::derive::derive_key`] with a random IKM and the purpose
 /// `"encryption"` for domain separation. The derived key is zeroized on drop.
 ///
 /// Returns both the [`SealedData`] and the [`DerivedBytes`] key so the caller

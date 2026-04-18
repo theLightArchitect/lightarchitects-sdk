@@ -25,7 +25,7 @@
 //! # #[tokio::main]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use ayin::span::{Actor, TraceContext, TraceOutcome};
-//! use crate::turnlog::{TurnLogWriter, StoreLayout, EndReason};
+//! use lightarchitects::turnlog::{TurnLogWriter, StoreLayout, EndReason};
 //! use secrecy::SecretSlice;
 //! use std::path::PathBuf;
 //!

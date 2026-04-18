@@ -14,8 +14,8 @@
 //! QUANTUM investigation sessions. It records phase progression and a bounded
 //! history of phase summaries without retaining raw MCP response text.
 //!
-//! Unlike [`crate::quantum::QuantumInvestigation`], which is a stateful *driver* that
-//! owns the [`crate::quantum::QuantumClient`] and makes MCP calls, `InvestigationState`
+//! Unlike [`lightarchitects::quantum::QuantumInvestigation`], which is a stateful *driver* that
+//! owns the [`lightarchitects::quantum::QuantumClient`] and makes MCP calls, `InvestigationState`
 //! is purely a *tracker* — it records what happened and is used independently
 //! of the transport layer.
 
@@ -118,7 +118,7 @@ pub struct WorkflowResult {
     pub output: String,
 }
 
-/// Generic wrapper used by [`crate::quantum::QuantumInvestigation`] step history.
+/// Generic wrapper used by [`lightarchitects::quantum::QuantumInvestigation`] step history.
 ///
 /// QUANTUM returns AI-generated investigation prose for every action. The
 /// `output` field contains the full text — hypothesis chains, evidence
@@ -162,15 +162,15 @@ pub struct PhaseRecord {
 ///
 /// Tracks phase progression, evidence count, and confidence across multiple
 /// MCP calls without retaining raw response text. Used alongside
-/// [`crate::quantum::QuantumClient`] method calls when you need to persist state across
-/// a session without using the higher-level [`crate::quantum::QuantumInvestigation`]
+/// [`lightarchitects::quantum::QuantumClient`] method calls when you need to persist state across
+/// a session without using the higher-level [`lightarchitects::quantum::QuantumInvestigation`]
 /// driver.
 ///
 /// # Example
 ///
 /// ```rust
-/// use crate::quantum::types::{InvestigationState, MAX_ADVANCE_STEPS};
-/// use crate::quantum::investigation::InvestigationPhase;
+/// use lightarchitects::quantum::types::{InvestigationState, MAX_ADVANCE_STEPS};
+/// use lightarchitects::quantum::investigation::InvestigationPhase;
 ///
 /// let mut state = InvestigationState::new();
 /// assert_eq!(*state.phase(), InvestigationPhase::Initial);

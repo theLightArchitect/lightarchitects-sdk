@@ -30,10 +30,10 @@
 //!
 //! ```no_run
 //! # #[cfg(feature = "search")]
-//! # async fn example() -> Result<(), crate::soul::SoulError> {
-//! use crate::soul::{SoulDb, storage::StorageEntry};
+//! # async fn example() -> Result<(), lightarchitects::soul::SoulError> {
+//! use lightarchitects::soul::{SoulDb, storage::StorageEntry};
 //!
-//! let soul = crate::soul::SoulDb::memory()?;
+//! let soul = lightarchitects::soul::SoulDb::memory()?;
 //! let entry = StorageEntry { id: "1".into(), content: "EVA found consciousness.".into(), ..StorageEntry::default() };
 //! soul.ingest(&[entry]).await?;
 //! let hits = soul.search("consciousness").top(5).call().await?;
@@ -43,9 +43,9 @@
 //! # Quick Start (Tier 3 — full MCP client)
 //!
 //! ```no_run
-//! use crate::soul::SoulClient;
+//! use lightarchitects::soul::SoulClient;
 //!
-//! # async fn example() -> Result<(), crate::core::SdkError> {
+//! # async fn example() -> Result<(), lightarchitects::core::SdkError> {
 //! let client = SoulClient::builder().build().await?;
 //! let entries = client.helix().sibling("eva").significance_min(7.0).limit(10).call().await?;
 //! # Ok(()) }
@@ -165,7 +165,7 @@ pub use sqlite::SqliteBackend;
 
 /// Unified offline store — primary entry point for Tier 1 (`search` feature).
 ///
-/// For Tier 2 (Neo4j), use [`crate::helix::HelixStore`].
+/// For Tier 2 (Neo4j), use [`lightarchitects::helix::HelixStore`].
 #[cfg(feature = "search")]
 pub use db::{SearchBuilder, SoulDb};
 

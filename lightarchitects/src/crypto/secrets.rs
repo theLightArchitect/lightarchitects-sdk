@@ -414,7 +414,7 @@ impl SecretStore for EnvStore {
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::secrets::{resolve_secret, FileStore, SecretStore};
+/// use lightarchitects::crypto::secrets::{resolve_secret, FileStore, SecretStore};
 ///
 /// let dir = tempfile::tempdir().expect("tmpdir");
 /// let store = FileStore::with_path(dir.path().join("secrets.toml"));
@@ -437,13 +437,13 @@ pub fn resolve_secret(key: &str, stores: &[&dyn SecretStore]) -> Result<Option<S
 
 /// Generate a random hex secret of `len` bytes and persist it to `store`.
 ///
-/// Uses [`crate::crypto::random::generate_hex`] for cryptographically secure
+/// Uses [`lightarchitects::crypto::random::generate_hex`] for cryptographically secure
 /// random generation.
 ///
 /// # Examples
 ///
 /// ```
-/// use crate::crypto::secrets::{auto_generate_and_persist, FileStore, SecretStore};
+/// use lightarchitects::crypto::secrets::{auto_generate_and_persist, FileStore, SecretStore};
 /// use secrecy::ExposeSecret;
 ///
 /// let dir = tempfile::tempdir().expect("tmpdir");

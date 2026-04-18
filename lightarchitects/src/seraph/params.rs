@@ -1,7 +1,7 @@
 //! Typed parameter builders for SERAPH wing actions.
 //!
 //! Each struct maps to the `params` field of a `penTools` JSON-RPC call.
-//! Callers fill in the struct using builder methods; [`crate::seraph::SeraphClient`]
+//! Callers fill in the struct using builder methods; [`lightarchitects::seraph::SeraphClient`]
 //! serializes it via the `_typed` methods (e.g. `scan_typed`, `capture_typed`).
 //!
 //! All optional fields use `skip_serializing_if = "Option::is_none"` so only

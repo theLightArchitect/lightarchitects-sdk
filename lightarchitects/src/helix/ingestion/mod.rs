@@ -6,7 +6,7 @@
 //!
 //! # Watermarking
 //!
-//! Each source is tracked via a [`SourceWatermark`](crate::helix::types::SourceWatermark)
+//! Each source is tracked via a [`SourceWatermark`](lightarchitects::helix::types::SourceWatermark)
 //! node in Neo4j. Incremental re-runs only process new/modified content.
 //! SHA-256 content hashes prevent re-ingestion of unchanged files.
 
@@ -96,7 +96,7 @@ pub trait IngestionSource: Send + Sync {
 /// For non-graph ingestors, only [`records_added`] is used and the graph
 /// counters remain zero.
 ///
-/// [`GraphBuilder`]: crate::helix::ingestion::graphrag::GraphBuilder
+/// [`GraphBuilder`]: lightarchitects::helix::ingestion::graphrag::GraphBuilder
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct IngestionReport {
     /// Number of new records (steps, strands, links) created.
