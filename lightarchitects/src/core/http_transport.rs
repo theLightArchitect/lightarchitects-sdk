@@ -172,13 +172,14 @@ impl HttpTransportBuilder {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
     #[test]
     fn builder_rejects_empty_api_key() {
-        let err = HttpTransport::builder(SiblingId::Soul).build().unwrap_err();
-        assert!(matches!(err, SdkError::Config(_)));
+        let result = HttpTransport::builder(SiblingId::Soul).build();
+        assert!(matches!(result, Err(SdkError::Config(_))));
     }
 
     #[test]

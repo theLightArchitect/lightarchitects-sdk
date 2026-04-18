@@ -63,10 +63,9 @@ impl SiblingId {
     /// Wire-framing protocol used by this sibling's stdio transport.
     #[must_use]
     pub fn framing(&self) -> McpFraming {
-        match self {
-            Self::Seraph => McpFraming::ContentLength,
-            _ => McpFraming::Newline,
-        }
+        // All siblings write plain newline-delimited JSON via McpServerLoop::write_value.
+        // McpFraming::ContentLength on the server only controls the READ side (auto-detect).
+        McpFraming::Newline
     }
 
     /// Name of the MCP orchestrator tool exposed by this sibling, if any.
@@ -117,17 +116,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn seraph_uses_content_length() {
-        assert_eq!(SiblingId::Seraph.framing(), McpFraming::ContentLength);
-    }
-
-    #[test]
-    fn all_others_use_newline() {
+    fn all_siblings_use_newline() {
         for sibling in [
             SiblingId::Soul,
             SiblingId::Corso,
             SiblingId::Eva,
             SiblingId::Quantum,
+            SiblingId::Seraph,
         ] {
             assert_eq!(
                 sibling.framing(),
