@@ -1,15 +1,13 @@
 # lightarchitects-webshell Makefile
 # "The eye of the LORD is upon them" — Psalm 33:18 (KJV)
-# Build: luminous-grafting-nautilus (predecessor: luminous-weaving-nautilus)
 
-.PHONY: help build test quality fix push deploy deploy-fast web web-figma web-test run
+.PHONY: help build test quality fix push deploy deploy-fast mockcli run
 
 .DEFAULT_GOAL := help
 
 BINARY         := lightarchitects-webshell
 DEPLOY_DIR     := $(HOME)/lightarchitects/webshell/bin
-WEB_DIR        := web
-WEB_FIGMA_DIR  := web-figma
+MOCKCLI_DIR    := $(HOME)/Projects/Lightarchitectmockcli
 SYMLINK        := $(HOME)/.local/bin/webshell
 # Cargo workspace root is one level up; binary is placed there by cargo.
 CARGO_TARGET   := ../target/release/$(BINARY)
@@ -22,35 +20,26 @@ help: ## Show available targets
 
 # ── Frontend ────────────────────────────────────────────────────────────────
 
-web: ## Build LEGACY engineering bundle into web/dist/ (retired at Phase 7)
-	@echo "Building legacy frontend (web/)…"
-	@cd $(WEB_DIR) && pnpm install --frozen-lockfile
-	@cd $(WEB_DIR) && pnpm build
-	@echo "Legacy frontend built: $(WEB_DIR)/dist/"
-
-web-figma: ## Build Figma Make aesthetic shell (primary SPA) into web-figma/dist/
-	@echo "Building Figma Make bundle (web-figma/)…"
-	@cd $(WEB_FIGMA_DIR) && pnpm install --frozen-lockfile
-	@cd $(WEB_FIGMA_DIR) && pnpm build
-	@echo "Figma Make bundle built: $(WEB_FIGMA_DIR)/dist/"
-
-web-test: ## Run TypeScript tests (vitest) on legacy web/
-	@cd $(WEB_DIR) && pnpm test
+mockcli: ## Build Svelte Mockcli frontend into Lightarchitectmockcli/dist/ (embedded by rust-embed)
+	@echo "Building Mockcli frontend…"
+	@cd $(MOCKCLI_DIR) && pnpm install --frozen-lockfile
+	@cd $(MOCKCLI_DIR) && pnpm build
+	@echo "Mockcli built: $(MOCKCLI_DIR)/dist/"
 
 # ── Backend ─────────────────────────────────────────────────────────────────
 
-build: ## Build release binary (requires web/dist/ to be current)
+build: ## Build release binary (requires Mockcli dist/ to be current)
 	@echo "Building $(BINARY)…"
 	@cargo build --release -p lightarchitects-webshell --quiet
 
 test: ## Run Rust test suite (webshell crate only)
 	@cargo test -p lightarchitects-webshell --quiet
 
-quality: ## Check code quality: fmt + clippy + Rust tests + TS tests (webshell scope)
+quality: ## Check code quality: fmt + clippy + Rust tests + Mockcli tests
 	@cargo fmt -- --check
 	@cargo clippy -p lightarchitects-webshell --all-targets -- -D warnings
 	@cargo test -p lightarchitects-webshell --quiet
-	@cd $(WEB_DIR) && pnpm test
+	@cd $(MOCKCLI_DIR) && pnpm test:run
 
 fix: ## Auto-fix fmt and clippy issues
 	@cargo fmt
@@ -61,7 +50,7 @@ push: quality ## Quality gates + git push
 
 # ── Deploy ───────────────────────────────────────────────────────────────────
 
-deploy: web web-figma quality ## Build both frontends + quality gates + deploy to ~/lightarchitects/webshell/bin/
+deploy: mockcli quality ## Build Mockcli + quality gates + deploy to ~/lightarchitects/webshell/bin/
 	@echo "Building release binary…"
 	@cargo build --release -p lightarchitects-webshell --quiet
 	@mkdir -p $(DEPLOY_DIR)
@@ -79,7 +68,7 @@ deploy: web web-figma quality ## Build both frontends + quality gates + deploy t
 	@echo "Symlink:  $(SYMLINK) → $(DEPLOY_DIR)/$(BINARY)"
 	@echo "Launch:   webshell"
 
-deploy-fast: ## Deploy without quality gates (assumes web/dist/ is current)
+deploy-fast: ## Deploy without quality gates (assumes Mockcli dist/ is current)
 	@echo "Building release binary (fast)…"
 	@cargo build --release -p lightarchitects-webshell --quiet
 	@mkdir -p $(DEPLOY_DIR)

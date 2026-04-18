@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project uses semantic versioning.
 
+## [Unreleased] — Build: option-a-and-do-replicated-goose
+
+### Added
+
+**lightarchitects-gateway**
+- `src/core_tools/ui.rs` — 6 new meta-tool subactions (`ui_set_active_build`, `ui_focus_pillar`, `ui_flag_finding`, `ui_refresh_sitrep`, `ui_update_conductor`, `ui_notify`) dispatched via `LA_GUI_URL` + `LA_BUILD_ID` + `LA_NOTIFY_TOKEN` env vars
+- SSRF guard on `LA_GUI_URL` (localhost-only); silent degradation when env vars absent returns `{"degraded":true}`
+- 6 unit tests + 4 integration tests for ui module
+
+**lightarchitects-webshell**
+- Multi-build PTY session registry (`BuildSession`, `BuildRegistry`) — `DashMap<Uuid, Arc<BuildSession>>`
+- `AgentSession::ClaudeCode(ClaudeBackend)` nested enum — `Anthropic` and `Ollama(OllamaConfig)`; Codex reserved for Phase 2
+- Per-build routes: `POST /api/builds`, `GET /api/builds/:id`, `GET /api/builds/:id/events` (SSE), `GET /api/builds/:id/terminal/ws` (PTY), `POST /api/builds/:id/notify` (gateway push)
+- Constant-time per-build notify token (`subtle::ConstantTimeEq`); global Bearer explicitly rejected on `/notify`
+- `src/mcp_config.rs` — atomic `.mcp.json` writer injecting `lightarchitects-gui-bridge` MCP server entry into each build's CWD
+- `src/mock_data.rs` — 15 stub routes (reads return plausible empty JSON; writes return 501) for Mockcli frontend screens
+- `WebEvent::GatewayNotify { payload }` variant — serialized as `{"type":"gateway_notify","payload":{...}}`
+- Per-build `build_spawn_env` injects `LA_GUI_URL`, `LA_BUILD_ID`, `LA_NOTIFY_TOKEN` + Ollama `ANTHROPIC_*` overrides
+- 18 new integration tests across `phase_c_wire.rs`, `phase_d_stubs.rs`, `phase_e_multi_build.rs`, `phase_e_auth_profile.rs`
+
+**Lightarchitectmockcli (frontend)**
+- `src/lib/auth.ts` — `resolveToken()` from URL hash (strips hash after read), `authHeaders()` helper
+- Bearer `Authorization` header on all API requests + WebSocket subprotocol
+- `src/lib/ws.ts` rewritten — per-build URL, binary frames (arraybuffer), `sendText`/`sendResize`
+- `src/lib/sse.ts` — per-build URL, auth header, `gateway_notify` → `selectedPillar` dispatch
+- `src/screens/Copilot.svelte` — CHAT | TERMINAL toggle; xterm.js `$effect` with FitAddon + ResizeObserver; per-build WS + SSE on connect
+- `src/components/OllamaConfigModal.svelte` — Ollama Cloud baseUrl/model/apiKey config modal
+- `src/components/StatusBar.svelte` — auth profile indicator pill
+- 7 auth tests + 10 WS tests via vitest
+
+### Changed
+
+**lightarchitects-webshell**
+- Embedded frontend swapped: `web-figma/dist/` (React) → `../../Lightarchitectmockcli/dist/` (Svelte)
+- `web-figma/` directory deleted (hard swap; recoverable via git)
+- `scripts/figma-sync-check.sh` removed (no longer applicable)
+- `Makefile`: `web-figma` target replaced by `mockcli` target; `quality` now runs `pnpm test:run` in Mockcli
+
+---
+
 ## [0.1.0] - 2026-04-17
 
 ### Changed

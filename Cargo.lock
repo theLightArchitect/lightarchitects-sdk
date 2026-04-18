@@ -1125,7 +1125,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "lightarchitects 0.2.0",
+ "lightarchitects 0.2.0 (git+https://github.com/TheLightArchitects/lightarchitects-sdk.git)",
  "neural-engine",
  "once_cell",
  "prometheus",
@@ -1134,7 +1134,7 @@ dependencies = [
  "secrecy 0.10.3",
  "serde",
  "serde_json",
- "soul 0.1.0",
+ "soul",
  "soul-engine",
  "thiserror 1.0.69",
  "tokio",
@@ -1185,7 +1185,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
- "soul 0.1.0 (git+https://github.com/TheLightArchitects/SOUL.git)",
+ "soul",
  "soul-engine",
  "subtle",
  "sysinfo",
@@ -3602,7 +3602,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "soul 0.1.0 (git+https://github.com/TheLightArchitects/SOUL.git)",
+ "soul",
  "thiserror 1.0.69",
  "tokio",
  "toml",
@@ -5674,23 +5674,6 @@ dependencies = [
 [[package]]
 name = "soul"
 version = "0.1.0"
-dependencies = [
- "chrono",
- "dirs 5.0.1",
- "fs2",
- "lightarchitects 0.2.0 (git+https://github.com/TheLightArchitects/lightarchitects-sdk.git)",
- "serde",
- "serde_json",
- "shellexpand",
- "thiserror 1.0.69",
- "toml",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "soul"
-version = "0.1.0"
 source = "git+https://github.com/TheLightArchitects/SOUL.git#b0a2bece0fb21532aacbf9a90a3f9d87bb8e51ff"
 dependencies = [
  "chrono",
@@ -5717,7 +5700,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "soul 0.1.0 (git+https://github.com/TheLightArchitects/SOUL.git)",
+ "soul",
  "thiserror 1.0.69",
  "tokio",
  "toml",
@@ -6768,7 +6751,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "soul 0.1.0 (git+https://github.com/TheLightArchitects/SOUL.git)",
+ "soul",
  "thiserror 1.0.69",
  "tokio",
  "toml",

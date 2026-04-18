@@ -9,8 +9,9 @@
 > independent licensing review. See [Licensing](#licensing) below.
 
 A local web GUI shell for the active coding agent. Embeds a live PTY-hosted
-agent session (Claude Code by default) alongside a 3D session-helix panel
-that grows in real time as the agent works.
+Claude Code session (or Ollama Cloud alternative) alongside the Svelte Mockcli
+frontend. The coding agent can manipulate the UI directly via `ui_*` MCP tools
+published by `lightarchitects-gateway`.
 
 ```
 ┌─────────────────────────┬──────────────────────────┐
@@ -42,15 +43,19 @@ on `~/lightarchitects/soul/helix/` for new vault entries.
 
 ## Quick Start
 
-### 1. Build the frontend bundle
+### 1. Build the Mockcli frontend
 
-The Rust binary embeds `web/dist/` at compile time. Build it first:
+The Rust binary embeds `~/Projects/Lightarchitectmockcli/dist/` at compile time via `rust-embed`. Build it first:
 
 ```bash
-cd web
-pnpm install
+cd ~/Projects/Lightarchitectmockcli
+pnpm install --frozen-lockfile
 pnpm build
-cd ..
+```
+
+Or use the Makefile shortcut from the webshell crate root:
+```bash
+make mockcli
 ```
 
 ### 2. Build and deploy the binary
@@ -124,10 +129,15 @@ lightarchitects-webshell`).
 lightarchitects-webshell [OPTIONS]
 
 Options:
-  --port <PORT>         Port to listen on [default: 8733]
-  --host-cmd <CMD>      Command to run in the PTY [default: claude]
-  --cwd <PATH>          Working directory for the host command [default: $HOME]
-  -h, --help            Print help
+  --port <PORT>              Port to listen on [default: 8733]
+  --host-cmd <CMD>           Command to run in the PTY [default: claude]
+  --cwd <PATH>               Working directory for the host command [default: $HOME]
+  --agent <TEMPLATE>         Default claude --agent template (e.g. corso, eva)
+  --backend <anthropic|ollama>  Claude backend [default: anthropic]
+  --ollama-base-url <URL>    Ollama Anthropic-compat base URL
+  --ollama-model <MODEL>     Ollama model name (e.g. qwen3-coder:480b-cloud)
+  --ollama-key <KEY>         Ollama auth token (stored in platform data dir)
+  -h, --help                 Print help
 ```
 
 Environment variables:
@@ -137,6 +147,17 @@ Environment variables:
 | `LIGHTARCHITECTS_WEBSHELL_TOKEN` | HMAC auth token (required for auth endpoints) |
 | `RUST_LOG` | Log level: `error`, `warn`, `info`, `debug`, `trace` |
 | `LIGHTARCHITECTS_HOME` | Override `~/lightarchitects/` root path |
+
+Per-PTY env vars injected into each spawned Claude Code process:
+
+| Variable | Purpose |
+|---|---|
+| `LA_GUI_URL` | Webshell base URL — gateway reads this to POST notify events |
+| `LA_BUILD_ID` | UUID of this build session |
+| `LA_NOTIFY_TOKEN` | Per-build HMAC token for `POST /api/builds/:id/notify` |
+| `ANTHROPIC_BASE_URL` | Set only for Ollama backend — Anthropic-compat endpoint |
+| `ANTHROPIC_MODEL` | Set only for Ollama backend |
+| `ANTHROPIC_AUTH_TOKEN` | Set only for Ollama backend — never logged |
 
 ---
 
@@ -161,65 +182,69 @@ curl -H "Authorization: Bearer $LIGHTARCHITECTS_WEBSHELL_TOKEN" http://localhost
 # 200 OK
 ```
 
-### `GET /api/events`
-
-Server-Sent Events stream. Requires auth. Streams `WebEvent` payloads as
-`data: {json}\n\n`.
+### Multi-build routes (new in v0.2.0)
 
 ```bash
-curl -N -H "Authorization: Bearer $LIGHTARCHITECTS_WEBSHELL_TOKEN" http://localhost:8733/api/events
+# Create a build session (returns build_id)
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"cwd":"/tmp/myproject"}' \
+  http://localhost:8733/api/builds
+
+# Get build details (no notify_token — delivered only via LA_NOTIFY_TOKEN env)
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8733/api/builds/<id>
+
+# Per-build SSE — streams WebEvent payloads for one build
+curl -N -H "Authorization: Bearer $TOKEN" http://localhost:8733/api/builds/<id>/events
+
+# Per-build PTY WebSocket (binary frames = PTY I/O; text = resize JSON)
+ws://localhost:8733/api/builds/<id>/terminal/ws
+Sec-WebSocket-Protocol: bearer.<token>
+
+# Gateway notify endpoint — used by lightarchitects-gateway ui_* tools
+curl -X POST -H "x-la-notify-token: <per-build-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"focus_pillar","pillar":"ARCH"}' \
+  http://localhost:8733/api/builds/<id>/notify
 ```
 
-Event types:
+### `GET /api/events`
 
-| `type` | Payload | Description |
-|---|---|---|
-| `ayin_span` | `{id, actor, action, timestamp, duration_ms, outcome}` | AYIN trace span |
-| `ayin_status` | `{status: connected\|disconnected\|reconnecting, attempt?}` | AYIN connection lifecycle |
-| `helix_entry` | `{path, event_kind: created\|modified}` | Vault file event (FS watcher) |
-| `lag` | `{skipped: N}` | Broadcast channel lag (N events dropped) |
-
-### `GET /api/terminal/ws`
-
-PTY WebSocket bridge. Requires auth via sub-protocol `Bearer.<token>`. Raw
-byte stream — send bytes to stdin, receive bytes from stdout/stderr.
-
-```
-ws://localhost:8733/api/terminal/ws
-Sec-WebSocket-Protocol: Bearer.<token>
-```
-
-Concurrency cap: 4 simultaneous sessions. A 5th connection receives `503`.
+Global SSE stream (legacy, pre-multi-build). Requires auth.
 
 ### `GET /*`
 
-Serves the embedded `web/dist/` bundle. Unknown paths fall back to
-`index.html` to support React Router client-side routing.
+Serves the embedded Mockcli `dist/` bundle. Unknown paths fall back to
+`index.html` for Svelte client-side routing.
+
+**Security**: the `x-la-notify-token` is per-build and distinct from the global
+Bearer token. Using the global Bearer on a `/notify` endpoint returns `401` —
+this prevents browser-held credentials from forging gateway events.
 
 ---
 
 ## Development
 
 ```bash
-# Run all quality gates (Rust + TypeScript)
+# Run all quality gates (Rust + Mockcli TypeScript)
 make quality
 
-# Run Rust tests only
-cargo test --workspace
+# Rust tests only
+cargo test -p lightarchitects-webshell
 
-# Run TypeScript tests only
-cd web && pnpm test
+# Mockcli TypeScript tests only
+cd ~/Projects/Lightarchitectmockcli && pnpm test:run
 
 # Auto-fix fmt + clippy
 make fix
 
-# Build frontend in watch mode
-cd web && pnpm dev
+# Mockcli dev server (proxies /api/* to :8733)
+cd ~/Projects/Lightarchitectmockcli && LA_BACKEND_URL=http://localhost:8733 pnpm dev
 ```
 
-The backend recompiles with `cargo run -p lightarchitects-webshell`. Frontend
-changes in `web/src/` are hot-reloaded by Vite's dev server at `:5173`. For
-end-to-end dev, run both simultaneously and proxy the Vite dev server.
+For end-to-end dev: run the webshell binary (`make run`) in one terminal, and the
+Mockcli dev server (above) in another — the Vite proxy forwards all `/api/*` calls to
+the live Axum server while HMR keeps the frontend hot-reloaded.
 
 ---
 
@@ -229,28 +254,26 @@ end-to-end dev, run both simultaneously and proxy the Vite dev server.
 lightarchitects-webshell/
 ├── src/
 │   ├── main.rs              # CLI entry point (clap)
-│   ├── config.rs            # Config struct + Cli → Config
-│   ├── auth.rs              # HMAC Bearer validation (constant-time)
-│   ├── static_assets.rs     # rust-embed SPA handler
-│   ├── server/mod.rs        # Axum router, AppState, run loop
+│   ├── config.rs            # Config struct + AgentSession enum (ClaudeCode × {Anthropic, Ollama})
+│   ├── auth.rs              # Bearer + constant-time notify token validation
+│   ├── session.rs           # BuildSession + BuildRegistry (DashMap<Uuid, Arc<BuildSession>>)
+│   ├── mcp_config.rs        # Atomic .mcp.json writer (lightarchitects-gui-bridge)
+│   ├── mock_data.rs         # Phase D stub routes (reads + 501 writes)
+│   ├── static_assets.rs     # rust-embed SPA handler (embeds Mockcli dist/)
+│   ├── server/mod.rs        # Axum router, AppState, CORS, run loop
 │   ├── terminal/
-│   │   ├── mod.rs           # PTY types re-export
-│   │   ├── session.rs       # PtySession (portable-pty wrapper)
-│   │   └── ws.rs            # WebSocket handler + concurrency cap
+│   │   ├── session.rs       # run_session — PTY spawn + env/argv injection
+│   │   └── ws.rs            # Global + per-build WS handlers
 │   └── events/
-│       ├── mod.rs           # WebEvent + broadcast channel
-│       ├── types.rs         # WebEvent, TraceSpanSummary, AyinStatus
-│       ├── ayin_client.rs   # AYIN SSE → broadcast (with reconnect)
-│       ├── helix_watcher.rs # notify FS watcher → broadcast
-│       └── sse_handler.rs   # GET /api/events SSE fan-out
-└── web/
-    ├── src/
-    │   ├── App.tsx           # Split-pane layout
-    │   ├── store/sceneState.ts  # Zustand store
-    │   ├── hooks/useEventSource.ts  # SSE → store dispatch
-    │   ├── three/            # 3D scene (R3F + Three.js)
-    │   └── components/Terminal/  # xterm.js wrapper
-    └── dist/                 # Embedded in binary at compile time
+│       ├── types.rs         # WebEvent (GatewayNotify, AyinSpan, HelixEntry, …)
+│       ├── notify.rs        # POST /api/builds/:id/notify handler
+│       ├── builds_handler.rs# POST /api/builds + GET /api/builds/:id
+│       ├── sse_handler.rs   # Global + per-build SSE fan-out
+│       ├── ayin_client.rs   # AYIN SSE → broadcast
+│       └── helix_watcher.rs # FS watcher → broadcast
+└── ~/Projects/Lightarchitectmockcli/   ← embedded at compile time via rust-embed
+    ├── src/                 # Svelte 5 + Tailwind frontend
+    └── dist/                # Built bundle (pnpm build → make mockcli)
 ```
 
 ---

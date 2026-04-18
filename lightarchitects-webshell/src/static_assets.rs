@@ -1,12 +1,14 @@
-//! Embedded static assets served from `web-figma/dist/`.
+//! Embedded static assets served from `Lightarchitectmockcli/dist/`.
 //!
-//! The primary SPA is the Figma Make aesthetic shell (`web-figma/`).
+//! The SPA is the Svelte Mockcli frontend (`~/Projects/Lightarchitectmockcli`).
 //! Its built bundle is baked into the binary at compile time via
 //! [`rust_embed`] so the webshell ships as a single self-contained artifact.
 //!
-//! The legacy `web/` tree (pre-luminous-grafting-nautilus engineering
-//! frontend) remains in the repo for git-history reference and is retired
-//! entirely at Phase 7. It is no longer embedded.
+//! To rebuild after frontend changes:
+//! ```bash
+//! cd ~/Projects/Lightarchitectmockcli && pnpm build
+//! cd ~/Projects/lightarchitects-sdk/lightarchitects-webshell && cargo build --release
+//! ```
 
 use axum::{
     body::Body,
@@ -15,18 +17,16 @@ use axum::{
 };
 use rust_embed::Embed;
 
-/// Embedded static asset bundle. Includes every file under `web-figma/dist/`
-/// relative to this crate's root.
+/// Embedded static asset bundle — every file under `Lightarchitectmockcli/dist/`.
 #[derive(Embed)]
-#[folder = "web-figma/dist/"]
+#[folder = "../../Lightarchitectmockcli/dist/"]
 pub struct Assets;
 
 /// Serves a static asset by request path.
 ///
 /// - Empty path (`/`) resolves to `index.html`.
 /// - Known asset paths (found in the embedded bundle) are served directly.
-/// - Unknown paths fall back to `index.html` to support client-side routing
-///   (React Router picks up the path and renders the correct component).
+/// - Unknown paths fall back to `index.html` to support Svelte client-side routing.
 /// - Returns 404 only when `index.html` itself is not found in the bundle
 ///   (which means the frontend was not compiled before the binary was built).
 /// - MIME types come from `rust-embed`'s built-in guesser.
@@ -45,10 +45,8 @@ pub async fn serve(uri: Uri) -> Response {
             .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
     }
 
-    // SPA fallback: serve index.html for unknown paths so React Router can
-    // handle them client-side.  This is the standard pattern for SPAs served
-    // from a static file server — the server hands every unmatched path to the
-    // frontend and lets the JS router decide what to render.
+    // SPA fallback: serve index.html for unknown paths so the Svelte router
+    // handles them client-side.
     if let Some(index) = Assets::get("index.html") {
         return Response::builder()
             .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
