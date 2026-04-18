@@ -159,11 +159,10 @@ impl McpPool {
             });
         }
 
-        let framing = if name == "seraph" {
-            McpFraming::ContentLength
-        } else {
-            McpFraming::Newline
-        };
+        // All siblings (including SERAPH) respond with plain newline-delimited JSON
+        // via McpServerLoop::write_value — Content-Length framing is only used on
+        // the SERAPH server's READ side (auto-detect). Use Newline for all spawned processes.
+        let framing = McpFraming::Newline;
 
         let mut process = McpProcess {
             child,
