@@ -26,6 +26,7 @@ pub mod preset;
 pub mod read;
 pub mod search;
 pub mod security;
+pub mod ui;
 pub mod write;
 
 use serde_json::{Value, json};

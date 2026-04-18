@@ -31,6 +31,7 @@ fn make_app() -> axum::Router {
         port: 8733,
         host_cmd: OsString::from("echo"),
         cwd: Some(PathBuf::from("/tmp")),
+        ..Default::default()
     };
     let cfg = Config::resolve_with_token(cli, Some(TOKEN.to_owned())).unwrap();
     build_app(AppState::for_test(cfg))
@@ -105,6 +106,7 @@ fn appstate_can_be_created_and_dropped() {
         port: 8733,
         host_cmd: OsString::from("echo"),
         cwd: Some(PathBuf::from("/tmp")),
+        ..Default::default()
     };
     let cfg = Config::resolve_with_token(cli, Some(TOKEN.to_owned())).unwrap();
     // for_test does not spawn background tasks so no Tokio runtime is required.

@@ -38,6 +38,20 @@ pub enum WebEvent {
     /// span's metadata contains a `strand_activations` array. One event per
     /// strand, so a span touching three strands produces three events.
     StrandActivation(StrandActivationEvent),
+    /// A UI event forwarded from the `lightarchitects-gateway` MCP server's
+    /// `ui.*` tools.
+    ///
+    /// The gateway POSTs a raw JSON body to `/api/builds/:id/notify` —
+    /// authenticated via `X-LA-Notify-Token` — and the webshell wraps that
+    /// body in this variant before broadcasting it on the per-build SSE
+    /// channel. The frontend reads `msg.type === "gateway_notify"` then
+    /// dispatches on the inner `msg.payload.type` (e.g. `"focus_pillar"`).
+    GatewayNotify {
+        /// Raw gateway body verbatim — frontend unwraps `.payload.type`
+        /// to dispatch (`focus_pillar`, `flag_finding`, `refresh_sitrep`,
+        /// `update_conductor`, `set_active_build`, `notify`).
+        payload: serde_json::Value,
+    },
 }
 
 /// A single strand activation derived from an AYIN span.
@@ -308,6 +322,23 @@ mod tests {
         let kind = BuildEventKind::Modified;
         let json = serde_json::to_string(&kind).unwrap();
         assert_eq!(json, r#""modified""#);
+    }
+
+    #[test]
+    fn gateway_notify_wraps_raw_json_under_payload() {
+        let event = WebEvent::GatewayNotify {
+            payload: serde_json::json!({"type": "focus_pillar", "pillar": "ARCH"}),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(
+            json.contains(r#""type":"gateway_notify""#),
+            "outer tag must be gateway_notify: {json}"
+        );
+        // Parse back and confirm `payload.type` is preserved for the frontend
+        // to dispatch on (e.g. `msg.payload.type === "focus_pillar"`).
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["payload"]["type"], "focus_pillar");
+        assert_eq!(parsed["payload"]["pillar"], "ARCH");
     }
 
     #[test]

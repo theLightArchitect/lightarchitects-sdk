@@ -24,7 +24,7 @@
 use std::{convert::Infallible, sync::Arc};
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{
         IntoResponse, Response,
@@ -34,6 +34,7 @@ use axum::{
 use futures_util::stream;
 use tokio::sync::broadcast::{self, error::RecvError};
 use tracing::warn;
+use uuid::Uuid;
 
 use crate::{auth, events::WebEvent, server::AppState};
 
@@ -52,6 +53,47 @@ pub async fn sse_handler(headers: HeaderMap, State(state): State<AppState>) -> R
 
     let token: Arc<str> = Arc::from(state.config.token.as_str());
     let rx = state.event_tx.subscribe();
+
+    let event_stream = stream::unfold((rx, token), drive_stream);
+
+    Sse::new(event_stream)
+        .keep_alive(KeepAlive::default())
+        .into_response()
+}
+
+/// `GET /api/builds/:id/events` — per-build SSE fan-out (Phase C).
+///
+/// Mirrors [`sse_handler`] but subscribes to the per-build
+/// `BuildSession::event_tx` instead of the global channel. Authenticates
+/// with the same global Bearer token (the browser already holds it from
+/// the hash-fragment handshake), then looks up the build by UUID.
+///
+/// - `404 Not Found` if `build_id` is unknown.
+/// - `401 Unauthorized` on missing or invalid bearer.
+/// - Otherwise an SSE stream over [`WebEvent`]s for that build.
+pub async fn sse_build_handler(
+    Path(build_id): Path<Uuid>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Response {
+    let authz = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if !auth::validate_bearer(authz, &state.config.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    let Some(session) = state.builds.get(build_id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    // Subscribe to this build's channel *before* returning — the stream's
+    // first `.recv()` is lazy, but the `Receiver` itself is active from now,
+    // so any event sent on `event_tx` after this line reaches this client.
+    let token: Arc<str> = Arc::from(state.config.token.as_str());
+    let rx = session.event_tx.subscribe();
 
     let event_stream = stream::unfold((rx, token), drive_stream);
 

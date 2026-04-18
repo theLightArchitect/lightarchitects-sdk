@@ -24,8 +24,11 @@
 pub mod auth;
 pub mod config;
 pub mod events;
+pub mod mcp_config;
+pub mod mock_data;
 pub mod polytope_data;
 pub mod server;
+pub mod session;
 pub mod static_assets;
 pub mod terminal;
 pub mod turnlog;

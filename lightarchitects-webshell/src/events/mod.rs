@@ -21,6 +21,7 @@ pub mod ayin_client;
 pub mod builds_handler;
 pub mod control;
 pub mod helix_watcher;
+pub mod notify;
 pub mod sse_handler;
 pub mod strand;
 pub mod types;

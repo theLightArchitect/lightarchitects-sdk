@@ -21,10 +21,11 @@ use std::sync::{
 };
 
 use axum::{
-    extract::{State, ws::WebSocketUpgrade},
+    extract::{Path, State, ws::WebSocketUpgrade},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
+use uuid::Uuid;
 
 use crate::{auth, server::AppState, terminal::session};
 use secrecy::ExposeSecret;
@@ -90,11 +91,58 @@ pub async fn ws_handler(
                 .ok()
                 .flatten()
         };
-        session::run_session(socket, config, guard).await;
+        session::run_session(socket, config, None, guard).await;
         if let Some(tl) = turnlog {
             tl.close(lightarchitects::turnlog::EndReason::Complete)
                 .await;
         }
+    })
+}
+
+/// Axum handler for `GET /api/builds/:id/terminal/ws` (Phase C).
+///
+/// Same auth + concurrency contract as [`ws_handler`], but the PTY is bound
+/// to a specific build session in the registry. The session's env vars
+/// (`LA_BUILD_ID`, `LA_NOTIFY_TOKEN`, `LA_GUI_URL`, optional `ANTHROPIC_*`)
+/// and CLI arguments (`--agent`, `--add-dir`, `-n …`, model/prompt/tools
+/// overrides) are threaded through on spawn.
+///
+/// Status codes:
+/// - `401 Unauthorized` — missing/invalid `Sec-WebSocket-Protocol: bearer.…`.
+/// - `404 Not Found` — `:id` is not in [`crate::session::BuildRegistry`].
+/// - `503 Service Unavailable` — global PTY session cap reached
+///   (see [`MAX_SESSIONS`]; the global and per-build routes share the cap).
+/// - `101 Switching Protocols` — WebSocket upgrade on success.
+pub async fn ws_build_handler(
+    Path(build_id): Path<Uuid>,
+    ws: WebSocketUpgrade,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Response {
+    let subproto = headers
+        .get("sec-websocket-protocol")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if !auth::validate_ws_subprotocol(subproto, &state.config.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    let Some(session) = state.builds.get(build_id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    let Some(guard) = try_claim_session(&state.session_count) else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [("x-webshell-reason", "session-cap")],
+        )
+            .into_response();
+    };
+
+    let config = Arc::clone(&state.config);
+    ws.on_upgrade(move |socket| async move {
+        session::run_session(socket, config, Some(session), guard).await;
     })
 }
 

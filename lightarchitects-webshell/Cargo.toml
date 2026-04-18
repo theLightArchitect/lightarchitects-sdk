@@ -71,6 +71,9 @@ secrecy.workspace = true
 
 uuid.workspace = true
 
+# Per-build session registry (concurrent map, deadlock-safe clone-out API).
+dashmap = { workspace = true }
+
 # OS keyring — macOS Keychain / Linux Secret Service for token persistence.
 keyring = { workspace = true }
 

@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 
 use super::{
     ask_user, ayin_http, bash, canon_check, canon_evaluate, discover, edit, glob, import_adapter,
-    initialize, orchestrate, preset, read, search, text_result, write,
+    initialize, orchestrate, preset, read, search, text_result, ui, write,
 };
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
@@ -96,6 +96,15 @@ fn list_actions(config: &GatewayConfig) -> Result<Value, GatewayError> {
             "spans":         "Load TraceSpan data for a session (actor, date)",
             "conversations": "Load conversation/decision traces (date)",
         },
+        "ui": {
+            "note": "UI actions post events to the Platform GUI (webshell). Feature-gated by LA_GUI_URL / LA_BUILD_ID / LA_NOTIFY_TOKEN env vars — silently no-op when unset.",
+            "ui_set_active_build":  "Switch the GUI's focused build (build_id)",
+            "ui_focus_pillar":      "Highlight a pillar in the conductor view (pillar: ARCH|SEC|QUAL|PERF|TEST|DOC|OPS)",
+            "ui_flag_finding":      "Append a finding to the SITREP (severity, message, file?)",
+            "ui_refresh_sitrep":    "Nudge the GUI to re-fetch SITREP data",
+            "ui_update_conductor":  "Update the conductor queue display (queue?)",
+            "ui_notify":            "Show a generic notification toast (message, level?)",
+        },
         "routing": {
             "note": "Non-core actions auto-route to the correct target by action keyword. Pass 'agent' to override when ambiguous.",
             "active_preset": preset::active_preset_name(),
@@ -170,6 +179,14 @@ pub async fn run(arguments: Value, config: &GatewayConfig) -> Result<Value, Gate
     //    stdio server).
     if ayin_http::is_ayin_action(&action) {
         return ayin_http::dispatch(&action, params).await;
+    }
+
+    // 5. UI actions — HTTP transport to the Platform GUI (webshell).
+    //    Feature-gated by LA_GUI_URL / LA_BUILD_ID / LA_NOTIFY_TOKEN env vars
+    //    which webshell sets when spawning Claude in a PTY. Silent degradation
+    //    when env vars absent (headless Claude sessions just no-op).
+    if ui::is_ui_action(&action) {
+        return ui::dispatch(&action, params).await;
     }
 
     // 5. Everything else — forward through orchestrate.

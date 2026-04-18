@@ -34,7 +34,7 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, instrument, warn};
 
-use crate::{config::Config, terminal::ws::SessionGuard};
+use crate::{config::Config, mcp_config, session::BuildSession, terminal::ws::SessionGuard};
 
 /// Size of the blocking read buffer for PTY stdout.
 const PTY_BUF: usize = 4096;
@@ -62,16 +62,36 @@ enum ClientMessage {
 /// The `_guard` is dropped when this future resolves, decrementing the
 /// shared session counter. Errors are logged; the caller does not need to
 /// inspect the outcome.
+///
+/// ## `build` parameter
+///
+/// - `None` → legacy single-shot mode (`/api/terminal/ws`): spawn the
+///   configured `host_cmd` in the `Config.cwd` with only `TOKEN_ENV`.
+/// - `Some(session)` → per-build mode (`/api/builds/:id/terminal/ws`):
+///   spawn in `session.cwd`, append `session.build_argv()` arguments,
+///   inject `session.build_spawn_env(gui_url)` (adds `LA_BUILD_ID`,
+///   `LA_NOTIFY_TOKEN`, `LA_GUI_URL`, and `ANTHROPIC_*` overrides for
+///   Ollama backends), and write a project-scoped `.mcp.json` registering
+///   the local gateway as `lightarchitects-gui-bridge`.
 #[instrument(skip_all, name = "pty_session")]
-pub async fn run_session(socket: WebSocket, config: Arc<Config>, _guard: SessionGuard) {
-    if let Err(e) = run_inner(socket, &config).await {
+pub async fn run_session(
+    socket: WebSocket,
+    config: Arc<Config>,
+    build: Option<Arc<BuildSession>>,
+    _guard: SessionGuard,
+) {
+    if let Err(e) = run_inner(socket, &config, build.as_deref()).await {
         warn!(error = %e, "PTY session terminated with error");
     }
 }
 
 /// Core session logic extracted for testability and to keep `run_session`'s
 /// error handling separate from the I/O machinery.
-async fn run_inner(socket: WebSocket, config: &Config) -> Result<(), anyhow::Error> {
+async fn run_inner(
+    socket: WebSocket,
+    config: &Config,
+    build: Option<&BuildSession>,
+) -> Result<(), anyhow::Error> {
     // ── 1. Open PTY pair ──────────────────────────────────────────────────────
     let pty_sys = native_pty_system();
     let pair = pty_sys.openpty(PtySize {
@@ -86,9 +106,26 @@ async fn run_inner(socket: WebSocket, config: &Config) -> Result<(), anyhow::Err
 
     // ── 2. Spawn host command ─────────────────────────────────────────────────
     let mut host_builder = CommandBuilder::new(&config.host_cmd);
-    host_builder.cwd(&config.cwd);
-    // Expose the auth token to the child process so it can call the control API.
+    // Expose the webshell auth token so the child can call `/api/control`.
     host_builder.env(crate::config::TOKEN_ENV, &config.token);
+
+    if let Some(session) = build {
+        // Per-build mode: cwd from session, argv + env vars from BuildSession,
+        // and a project-scoped `.mcp.json` registering the gateway under
+        // `lightarchitects-gui-bridge`.
+        host_builder.cwd(&session.cwd);
+        for arg in session.build_argv() {
+            host_builder.arg(arg);
+        }
+        let gui_url = format!("http://127.0.0.1:{}", config.port);
+        for (k, v) in session.build_spawn_env(&gui_url) {
+            host_builder.env(k, v);
+        }
+        maybe_write_mcp_json(session, &gui_url);
+    } else {
+        // Legacy single-shot mode: use the globally configured cwd.
+        host_builder.cwd(&config.cwd);
+    }
     let child = slave.spawn_command(host_builder)?;
 
     // Close the slave fd in the parent.  The child has its own copy; closing
@@ -157,6 +194,33 @@ async fn run_inner(socket: WebSocket, config: &Config) -> Result<(), anyhow::Err
     terminate_child(pid, &mut *killer).await;
     info!("PTY session closed");
     Ok(())
+}
+
+/// Resolve the gateway binary path and attempt to write a project-scoped
+/// `.mcp.json` into the build's cwd. Silently skips on any resolution or
+/// I/O failure — the round trip still works via the user's global MCP
+/// registration; the local `.mcp.json` just names this instance distinctly
+/// so its env vars (`LA_BUILD_ID`, `LA_NOTIFY_TOKEN`, `LA_GUI_URL`) reach
+/// the right gateway process.
+fn maybe_write_mcp_json(session: &BuildSession, gui_url: &str) {
+    let Some(root) = lightarchitects::core::paths::root() else {
+        debug!("no LA root — skipping .mcp.json write");
+        return;
+    };
+    let gateway_bin = root.join("bin").join("lightarchitects");
+    if !gateway_bin.is_file() {
+        debug!(path = %gateway_bin.display(), "gateway binary not deployed — skipping .mcp.json write");
+        return;
+    }
+    let build_id = session.build_id.to_string();
+    let notify_hex = session.notify_token_hex();
+    match mcp_config::write_mcp_json(&session.cwd, &gateway_bin, gui_url, &build_id, &notify_hex) {
+        Ok(path) => info!(path = %path.display(), "wrote project-scoped .mcp.json"),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            warn!(error = %e, "refused to overwrite existing .mcp.json");
+        }
+        Err(e) => warn!(error = %e, "failed to write .mcp.json — continuing without"),
+    }
 }
 
 /// Spawns a blocking thread that reads PTY stdout and forwards chunks to `tx`.

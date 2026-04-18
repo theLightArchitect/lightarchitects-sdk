@@ -15,7 +15,7 @@ use std::{
 use axum::{
     Json, Router,
     extract::State,
-    http::{HeaderMap, HeaderValue, Method, StatusCode, header},
+    http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header},
     response::IntoResponse,
     routing::{get, post},
 };
@@ -27,7 +27,9 @@ use crate::{
     auth,
     config::Config,
     events::{self, EVENT_CHANNEL_BUF, WebEvent, builds_handler},
-    polytope_data, static_assets, terminal,
+    mock_data, polytope_data,
+    session::BuildRegistry,
+    static_assets, terminal,
 };
 
 /// Snapshot of the browser UI state, periodically reported by the frontend.
@@ -84,6 +86,12 @@ pub struct AppState {
     pub browser_state: Arc<RwLock<BrowserStateSnapshot>>,
     /// Cached build tracking data (active.yaml mtime + JSON bytes).
     pub builds_cache: events::builds_handler::Cache,
+    /// Per-build session registry (Phase C).
+    ///
+    /// Keys are UUIDs minted at `POST /api/builds`; values are
+    /// `Arc<BuildSession>` clones returned by [`BuildRegistry::get`] —
+    /// safe to hold across `.await` (no `DashMap` ref guard escapes).
+    pub builds: Arc<BuildRegistry>,
 }
 
 impl AppState {
@@ -102,6 +110,7 @@ impl AppState {
             event_tx,
             browser_state: Arc::new(RwLock::new(BrowserStateSnapshot::default())),
             builds_cache: builds_handler::build_cache(),
+            builds: Arc::new(BuildRegistry::new()),
         }
     }
 
@@ -126,6 +135,7 @@ impl AppState {
             event_tx,
             browser_state: Arc::new(RwLock::new(BrowserStateSnapshot::default())),
             builds_cache: builds_handler::build_cache(),
+            builds: Arc::new(BuildRegistry::new()),
         }
     }
 }
@@ -152,12 +162,67 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/terminal/ws", get(terminal::ws::ws_handler))
         .route("/api/events", get(events::sse_handler::sse_handler))
         .route("/api/control", post(events::control_handler))
-        .route("/api/builds", get(builds_handler::builds_handler))
+        .route(
+            "/api/builds",
+            get(builds_handler::builds_handler).post(builds_handler::create_build_handler),
+        )
+        .route(
+            "/api/builds/{id}",
+            get(builds_handler::build_details_handler),
+        )
+        .route(
+            "/api/builds/{id}/events",
+            get(events::sse_handler::sse_build_handler),
+        )
+        .route(
+            "/api/builds/{id}/notify",
+            post(events::notify::notify_handler),
+        )
+        .route(
+            "/api/builds/{id}/terminal/ws",
+            get(terminal::ws::ws_build_handler),
+        )
         .route(
             "/api/browser-state",
             get(read_browser_state).post(write_browser_state),
         )
         .route("/api/polytopes", get(polytopes))
+        // ── Phase D stub routes (Mockcli frontend expectations) ─────────────
+        .route("/api/workspaces", get(mock_data::list_workspaces))
+        .route("/api/workspaces/{id}", get(mock_data::get_workspace))
+        .route("/api/meta-skills", get(mock_data::list_meta_skills))
+        .route("/api/siblings", get(mock_data::get_sibling_status))
+        .route("/api/sitrep", get(mock_data::get_sitrep))
+        .route("/api/conductor/status", get(mock_data::get_conductor_status))
+        .route("/api/arena/status", get(mock_data::get_arena_status))
+        .route(
+            "/api/builds/{id}/findings",
+            get(mock_data::list_findings),
+        )
+        .route(
+            "/api/builds/{id}/notes",
+            get(mock_data::get_notes).put(mock_data::update_notes),
+        )
+        .route(
+            "/api/builds/{id}/artifacts",
+            get(mock_data::list_artifacts).post(mock_data::upload_artifact),
+        )
+        .route(
+            "/api/builds/{id}/gates/{pillar}",
+            get(mock_data::get_gate_status),
+        )
+        .route(
+            "/api/builds/{id}/pillars/{pillar}",
+            post(mock_data::trigger_pillar),
+        )
+        .route(
+            "/api/builds/{id}/copilot",
+            post(mock_data::copilot_chat),
+        )
+        .route(
+            "/api/builds/{id}/dispatch",
+            post(mock_data::dispatch_sibling),
+        )
         .fallback(static_assets::serve)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
@@ -184,10 +249,21 @@ fn build_cors(port: u16) -> CorsLayer {
     .filter_map(|s| s.parse().ok())
     .collect();
 
+    // `x-la-notify-token` is the per-build shared-secret header the gateway
+    // uses to POST events to `/api/builds/:id/notify`. The gateway runs
+    // server-side (reqwest ignores CORS), so allowing it globally is purely
+    // to unblock browser-side testing/debug; the production browser never
+    // holds this token and so never sends it.
+    let notify_header: HeaderName = HeaderName::from_static("x-la-notify-token");
     CorsLayer::new()
         .allow_origin(allowed_origins)
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
-        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT])
+        .allow_headers([
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            header::ACCEPT,
+            notify_header,
+        ])
 }
 
 /// Errors surfaced by the server's main run loop.
