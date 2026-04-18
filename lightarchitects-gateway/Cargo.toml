@@ -23,10 +23,12 @@ default = ["spawner"]
 spawner = []
 
 ## In-process sibling handlers — compile handler logic directly into the binary
-## instead of spawning a subprocess per call. Each flag gates one handler and
-## its optional dependency.
-inline-ayin = ["dep:ayin-mcp", "dep:ayin-core", "dep:ayin-engine"]
-inline-corso = ["dep:corso-server", "dep:corso-trinity-core"]
+## instead of spawning a subprocess per call.
+## NOTE: inline-ayin and inline-corso deps removed — ayin-core/engine/mcp and
+## corso-server/trinity-core not yet published. Re-add when those crates are
+## available on crates.io or GitHub.
+inline-ayin = []
+inline-corso = []
 inline-eva = []
 inline-soul = []
 inline-quantum = []
@@ -49,13 +51,6 @@ workspace = true
 [dependencies]
 # ── Unified SDK (replaces all individual sibling crate deps) ──────────────────
 lightarchitects = { path = "../lightarchitects" }
-
-# ── Inline handler dependencies (optional, feature-gated) ───────────────────────
-ayin-mcp = { git = "https://github.com/TheLightArchitects/AYIN.git", optional = true }
-ayin-core = { git = "https://github.com/TheLightArchitects/AYIN.git", optional = true }
-ayin-engine = { git = "https://github.com/TheLightArchitects/AYIN.git", optional = true }
-corso-server = { git = "https://github.com/TheLightArchitects/CORSO.git", optional = true }
-corso-trinity-core = { git = "https://github.com/TheLightArchitects/CORSO.git", optional = true }
 
 # ── Shared (both MCP + Arena modes) ──────────────────────────────────────────
 async-trait = "0.1"
