@@ -29,7 +29,7 @@ pub async fn execute(
         .ok_or_else(|| GatewayError::AgentNotEnabled("quantum".into()))?
         .binary_path();
 
-    let client: QuantumClient<StdioTransport> = QuantumClient::builder()
+    let client: QuantumClient<StdioTransport> = QuantumClient::local_builder()
         .binary_path(binary)
         .timeout(Duration::from_secs(120))
         .build()

@@ -6,7 +6,7 @@ use crate::core::paths;
 /// Configuration for the Light Architects auth system.
 #[derive(Debug, Clone)]
 pub struct AuthConfig {
-    /// Base URL for lightarchitects.io API
+    /// Base URL for lightarchitects.ai API
     pub api_base_url: String,
 
     /// Path to the local API key file
@@ -39,7 +39,7 @@ impl Default for AuthConfig {
         let soul_config = paths::soul_or_fallback().join("config");
 
         Self {
-            api_base_url: "https://lightarchitects.io".to_string(),
+            api_base_url: "https://lightarchitects.ai".to_string(),
             key_file_path: soul_config.join("la-api-key"),
             cache_file_path: soul_config.join("la-key-cache.json"),
             revoked_file_path: soul_config.join("la-revoked"),

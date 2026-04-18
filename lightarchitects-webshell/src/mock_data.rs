@@ -75,7 +75,10 @@ fn not_implemented(
 // ── Reads (return plausible empty JSON) ──────────────────────────────────────
 
 /// `GET /api/workspaces` — stub empty list.
-pub async fn list_workspaces(headers: HeaderMap, State(state): State<AppState>) -> impl IntoResponse {
+pub async fn list_workspaces(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
     ok_json(&headers, &state, json!([]))
 }
 
@@ -99,7 +102,10 @@ pub async fn get_workspace(
 }
 
 /// `GET /api/meta-skills` — stub empty list.
-pub async fn list_meta_skills(headers: HeaderMap, State(state): State<AppState>) -> impl IntoResponse {
+pub async fn list_meta_skills(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
     ok_json(&headers, &state, json!([]))
 }
 
@@ -182,11 +188,7 @@ pub async fn get_notes(
     headers: HeaderMap,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    ok_json(
-        &headers,
-        &state,
-        json!({"content": "", "updated_at": null}),
-    )
+    ok_json(&headers, &state, json!({"content": "", "updated_at": null}))
 }
 
 /// `GET /api/builds/:id/artifacts` — stub empty artifact list.
@@ -224,7 +226,11 @@ pub async fn trigger_pillar(
     headers: HeaderMap,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    not_implemented(&headers, &state, "pillar trigger requires CORSO dispatcher integration")
+    not_implemented(
+        &headers,
+        &state,
+        "pillar trigger requires CORSO dispatcher integration",
+    )
 }
 
 /// `POST /api/builds/:id/artifacts` — stub 501 until artifact store lands.
@@ -251,7 +257,11 @@ pub async fn copilot_chat(
     headers: HeaderMap,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    not_implemented(&headers, &state, "copilot routing not yet implemented — use PTY for now")
+    not_implemented(
+        &headers,
+        &state,
+        "copilot routing not yet implemented — use PTY for now",
+    )
 }
 
 /// `POST /api/builds/:id/dispatch` — stub 501 until SQUAD dispatcher lands.
@@ -260,7 +270,11 @@ pub async fn dispatch_sibling(
     headers: HeaderMap,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    not_implemented(&headers, &state, "sibling dispatch requires SQUAD integration")
+    not_implemented(
+        &headers,
+        &state,
+        "sibling dispatch requires SQUAD integration",
+    )
 }
 
 #[cfg(test)]
@@ -280,7 +294,9 @@ mod tests {
 
     #[test]
     fn sibling_status_payload_has_all_seven_siblings() {
-        let expected = ["claude", "eva", "corso", "quantum", "seraph", "ayin", "soul"];
+        let expected = [
+            "claude", "eva", "corso", "quantum", "seraph", "ayin", "soul",
+        ];
         // Reconstruct the body the handler returns to validate shape.
         let siblings = json!([
             {"id": "claude", "status": "idle"},
@@ -294,10 +310,7 @@ mod tests {
         let arr = siblings.as_array().unwrap();
         assert_eq!(arr.len(), 7);
         for id in expected {
-            assert!(
-                arr.iter().any(|s| s["id"] == id),
-                "missing sibling: {id}"
-            );
+            assert!(arr.iter().any(|s| s["id"] == id), "missing sibling: {id}");
         }
     }
 

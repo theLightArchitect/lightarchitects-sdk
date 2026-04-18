@@ -40,10 +40,7 @@ use crate::seraph::types::{
 /// # async fn example() -> Result<(), lightarchitects::core::SdkError> {
 /// use lightarchitects::seraph::{SeraphClient, Wing};
 ///
-/// let client = SeraphClient::builder()
-///     .timeout(std::time::Duration::from_secs(120))
-///     .build()
-///     .await?;
+/// let client = SeraphClient::builder().api_key("la_your_key_here").build()?;
 ///
 /// // Check engagement status and scope
 /// let status = client.status().await?;
@@ -670,37 +667,29 @@ impl<T: Transport> SeraphClient<T> {
 // ── Production builder entry point ─────────────────────────────────────────────
 
 impl SeraphClient<StdioTransport> {
-    /// Create a builder for constructing a production [`SeraphClient`] backed
-    /// by the SERAPH Mac bridge binary (`~/lightarchitects/seraph/bin/seraph` by default).
+    /// Create a [`SeraphLocalBuilder`] for local dev mode (spawns the SERAPH Mac bridge directly).
+    ///
+    /// Prefer [`SeraphClient::builder`] for the cloud API path.
     #[must_use]
-    pub fn builder() -> SeraphClientBuilder {
-        SeraphClientBuilder::default()
+    pub fn local_builder() -> SeraphLocalBuilder {
+        SeraphLocalBuilder::default()
     }
 }
 
-// ── SeraphClientBuilder ────────────────────────────────────────────────────────
+// ── SeraphLocalBuilder ────────────────────────────────────────────────────────
 
-/// Builder for [`SeraphClient`] backed by the live SERAPH Mac bridge binary.
+/// Builder for [`SeraphClient<StdioTransport>`] — local dev mode.
 ///
-/// ```no_run
-/// # async fn example() -> Result<(), lightarchitects::core::SdkError> {
-/// use lightarchitects::seraph::SeraphClient;
-/// use std::time::Duration;
-///
-/// let client = SeraphClient::builder()
-///     .timeout(Duration::from_secs(120))  // pentest ops can take time
-///     .build()
-///     .await?;
-/// # Ok(()) }
-/// ```
-pub struct SeraphClientBuilder {
+/// Spawns the SERAPH Mac bridge binary from the filesystem. Use [`SeraphClient::builder`]
+/// for the cloud API path instead.
+pub struct SeraphLocalBuilder {
     binary_path: Option<PathBuf>,
     timeout: Duration,
     retry: RetryConfig,
     auth: Option<AuthChecker>,
 }
 
-impl Default for SeraphClientBuilder {
+impl Default for SeraphLocalBuilder {
     fn default() -> Self {
         Self {
             binary_path: None,
@@ -711,7 +700,7 @@ impl Default for SeraphClientBuilder {
     }
 }
 
-impl SeraphClientBuilder {
+impl SeraphLocalBuilder {
     /// Override the path to the SERAPH Mac bridge binary.
     ///
     /// Defaults to `~/lightarchitects/seraph/bin/seraph` (resolved by [`SiblingId::Seraph`]).
@@ -770,6 +759,96 @@ impl SeraphClientBuilder {
         let transport =
             StdioTransport::connect(SiblingId::Seraph, &path, self.timeout, self.auth.as_ref())
                 .await?;
+        Ok(SeraphClient::from_transport(transport, self.retry))
+    }
+}
+
+// ── Cloud builder (HTTP transport) ────────────────────────────────────────────
+
+#[cfg(feature = "http-client")]
+impl SeraphClient<crate::core::HttpTransport> {
+    /// Create a [`SeraphClientBuilder`] targeting the Light Architects cloud API.
+    ///
+    /// This is the default production path — SERAPH's business logic runs on the
+    /// gateway; the SDK sends typed JSON-RPC calls over HTTPS.
+    pub fn builder() -> SeraphClientBuilder {
+        SeraphClientBuilder::default()
+    }
+}
+
+/// Builder for [`SeraphClient`] backed by the Light Architects cloud API.
+///
+/// ```no_run
+/// # fn example() -> Result<(), lightarchitects::core::SdkError> {
+/// use lightarchitects::seraph::SeraphClient;
+///
+/// let client = SeraphClient::builder()
+///     .api_key("la_your_key_here")
+///     .build()?;
+/// # Ok(()) }
+/// ```
+#[cfg(feature = "http-client")]
+pub struct SeraphClientBuilder {
+    api_key: String,
+    base_url: String,
+    timeout: Duration,
+    retry: RetryConfig,
+}
+
+#[cfg(feature = "http-client")]
+impl Default for SeraphClientBuilder {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            base_url: crate::core::DEFAULT_BASE_URL.to_owned(),
+            timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
+            retry: RetryConfig::default(),
+        }
+    }
+}
+
+#[cfg(feature = "http-client")]
+impl SeraphClientBuilder {
+    /// Set the API key (required).
+    #[must_use]
+    pub fn api_key(mut self, key: impl Into<String>) -> Self {
+        self.api_key = key.into();
+        self
+    }
+
+    /// Override the gateway base URL (default: `https://api.lightarchitects.ai`).
+    #[must_use]
+    pub fn base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = url.into();
+        self
+    }
+
+    /// Override the per-call timeout. Defaults to [`DEFAULT_TIMEOUT_SECS`].
+    #[must_use]
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// Override the retry policy. Defaults to [`RetryConfig::default`].
+    #[must_use]
+    pub fn retry(mut self, retry: RetryConfig) -> Self {
+        self.retry = retry;
+        self
+    }
+
+    /// Build the [`SeraphClient`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SdkError::Config`] if the API key is empty or the HTTP
+    /// client cannot be constructed.
+    pub fn build(self) -> Result<SeraphClient<crate::core::HttpTransport>, SdkError> {
+        let transport = crate::core::HttpTransport::builder(SiblingId::Seraph)
+            .api_key(self.api_key)
+            .base_url(self.base_url)
+            .timeout(self.timeout)
+            .build()?;
         Ok(SeraphClient::from_transport(transport, self.retry))
     }
 }

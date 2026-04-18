@@ -581,7 +581,7 @@ dependencies = [
  "ayin-engine",
  "chrono",
  "clap",
- "lightarchitects",
+ "lightarchitects 0.2.0",
  "secrecy 0.10.3",
  "serde",
  "serde_json",
@@ -1125,7 +1125,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "lightarchitects",
+ "lightarchitects 0.2.0",
  "neural-engine",
  "once_cell",
  "prometheus",
@@ -1134,7 +1134,7 @@ dependencies = [
  "secrecy 0.10.3",
  "serde",
  "serde_json",
- "soul",
+ "soul 0.1.0",
  "soul-engine",
  "thiserror 1.0.69",
  "tokio",
@@ -1174,7 +1174,7 @@ dependencies = [
  "hmac",
  "hostname",
  "ipnet",
- "lightarchitects",
+ "lightarchitects 0.2.0 (git+https://github.com/TheLightArchitects/lightarchitects-sdk.git)",
  "neural-engine",
  "once_cell",
  "parking_lot",
@@ -1185,7 +1185,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
- "soul",
+ "soul 0.1.0 (git+https://github.com/TheLightArchitects/SOUL.git)",
  "soul-engine",
  "subtle",
  "sysinfo",
@@ -1207,7 +1207,7 @@ dependencies = [
  "async-trait",
  "dirs 5.0.1",
  "dotenvy",
- "lightarchitects",
+ "lightarchitects 0.2.0 (git+https://github.com/TheLightArchitects/lightarchitects-sdk.git)",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -3093,7 +3093,7 @@ dependencies = [
 
 [[package]]
 name = "lightarchitects"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aes-gcm",
  "async-trait",
@@ -3142,6 +3142,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightarchitects"
+version = "0.2.0"
+source = "git+https://github.com/TheLightArchitects/lightarchitects-sdk.git#c19e4ff13879f4aa9c91a6408e8005276c923c44"
+dependencies = [
+ "aes-gcm",
+ "async-trait",
+ "axum",
+ "chrono",
+ "clap",
+ "dirs 6.0.0",
+ "ed25519-dalek",
+ "fastembed",
+ "fs2",
+ "futures-util",
+ "getrandom 0.2.17",
+ "hex",
+ "hkdf",
+ "hmac",
+ "indicatif",
+ "moka",
+ "neo4rs",
+ "open",
+ "openssh",
+ "rand 0.8.5",
+ "regex",
+ "reqwest",
+ "rusqlite",
+ "secrecy 0.10.3",
+ "security-framework 3.7.0",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "subtle",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml",
+ "tracing",
+ "url",
+ "uuid",
+ "walkdir",
+ "zeroize",
+]
+
+[[package]]
 name = "lightarchitects-gateway"
 version = "0.3.0"
 dependencies = [
@@ -3163,7 +3208,7 @@ dependencies = [
  "governor",
  "keyring",
  "libc",
- "lightarchitects",
+ "lightarchitects 0.2.0",
  "notify",
  "reqwest",
  "rpassword",
@@ -3196,10 +3241,11 @@ dependencies = [
  "axum",
  "clap",
  "constant_time_eq",
+ "dashmap 6.1.0",
  "futures-util",
  "http-body-util",
  "keyring",
- "lightarchitects",
+ "lightarchitects 0.2.0",
  "nix 0.29.0",
  "notify",
  "portable-pty",
@@ -3550,12 +3596,13 @@ dependencies = [
 [[package]]
 name = "neural-engine"
 version = "0.1.0"
+source = "git+https://github.com/TheLightArchitects/SOUL.git#b0a2bece0fb21532aacbf9a90a3f9d87bb8e51ff"
 dependencies = [
  "async-trait",
  "reqwest",
  "serde",
  "serde_json",
- "soul",
+ "soul 0.1.0 (git+https://github.com/TheLightArchitects/SOUL.git)",
  "thiserror 1.0.69",
  "tokio",
  "toml",
@@ -5631,7 +5678,24 @@ dependencies = [
  "chrono",
  "dirs 5.0.1",
  "fs2",
- "lightarchitects",
+ "lightarchitects 0.2.0 (git+https://github.com/TheLightArchitects/lightarchitects-sdk.git)",
+ "serde",
+ "serde_json",
+ "shellexpand",
+ "thiserror 1.0.69",
+ "toml",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "soul"
+version = "0.1.0"
+source = "git+https://github.com/TheLightArchitects/SOUL.git#b0a2bece0fb21532aacbf9a90a3f9d87bb8e51ff"
+dependencies = [
+ "chrono",
+ "dirs 5.0.1",
+ "fs2",
  "serde",
  "serde_json",
  "shellexpand",
@@ -5644,16 +5708,16 @@ dependencies = [
 [[package]]
 name = "soul-engine"
 version = "0.1.0"
+source = "git+https://github.com/TheLightArchitects/SOUL.git#b0a2bece0fb21532aacbf9a90a3f9d87bb8e51ff"
 dependencies = [
  "async-trait",
  "chrono",
  "hmac",
- "lightarchitects",
  "secrecy 0.10.3",
  "serde",
  "serde_json",
  "sha2",
- "soul",
+ "soul 0.1.0 (git+https://github.com/TheLightArchitects/SOUL.git)",
  "thiserror 1.0.69",
  "tokio",
  "toml",
@@ -6696,16 +6760,15 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "voice-engine"
 version = "0.2.0"
+source = "git+https://github.com/TheLightArchitects/SOUL.git#b0a2bece0fb21532aacbf9a90a3f9d87bb8e51ff"
 dependencies = [
  "async-trait",
- "base64 0.22.1",
  "chrono",
  "fs2",
- "lightarchitects",
  "reqwest",
  "serde",
  "serde_json",
- "soul",
+ "soul 0.1.0 (git+https://github.com/TheLightArchitects/SOUL.git)",
  "thiserror 1.0.69",
  "tokio",
  "toml",

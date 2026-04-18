@@ -6,7 +6,7 @@ use clap::Subcommand;
 /// Usage: `{binary} auth login|status|logout`
 #[derive(Debug, Subcommand)]
 pub enum AuthCommand {
-    /// Authenticate via browser (opens lightarchitects.io/auth/cli)
+    /// Authenticate via browser (opens lightarchitects.ai/auth/cli)
     Login,
     /// Show current authentication status
     Status,

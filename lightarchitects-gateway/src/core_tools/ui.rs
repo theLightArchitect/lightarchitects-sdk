@@ -242,12 +242,7 @@ fn required_str<'a>(params: &'a Value, key: &'static str) -> Result<&'a str, Gat
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    unsafe_code
-)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, unsafe_code)]
 mod tests {
     use super::*;
 
@@ -333,11 +328,7 @@ mod tests {
 
     #[test]
     fn event_notify_with_explicit_level() {
-        let ev = build_event(
-            "ui_notify",
-            &json!({"level": "warn", "message": "careful"}),
-        )
-        .unwrap();
+        let ev = build_event("ui_notify", &json!({"level": "warn", "message": "careful"})).unwrap();
         assert_eq!(ev["level"], "warn");
     }
 

@@ -202,7 +202,8 @@ mod tests {
         0x1a, 0x1b,
     ];
 
-    const SAMPLE_HEX_LOWER: &str = "deadbeef000102030405060708090a0b0c0d0e0f101112131415161718191a1b";
+    const SAMPLE_HEX_LOWER: &str =
+        "deadbeef000102030405060708090a0b0c0d0e0f101112131415161718191a1b";
 
     #[test]
     fn notify_token_accepts_matching_lowercase_hex() {

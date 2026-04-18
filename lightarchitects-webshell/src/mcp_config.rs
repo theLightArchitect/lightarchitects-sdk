@@ -204,7 +204,10 @@ mod tests {
             "build-001",
             "token-hex",
         );
-        assert!(second.is_ok(), "idempotent write should succeed: {second:?}");
+        assert!(
+            second.is_ok(),
+            "idempotent write should succeed: {second:?}"
+        );
 
         cleanup(&cwd);
     }
@@ -230,7 +233,10 @@ mod tests {
             "token-2",
         );
         assert!(second.is_err(), "should refuse overwrite");
-        assert_eq!(second.unwrap_err().kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(
+            second.unwrap_err().kind(),
+            std::io::ErrorKind::AlreadyExists
+        );
 
         cleanup(&cwd);
     }

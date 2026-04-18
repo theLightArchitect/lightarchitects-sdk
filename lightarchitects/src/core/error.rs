@@ -85,16 +85,23 @@ pub enum TransportError {
         /// Exit status (`None` means killed by signal).
         status: Option<i32>,
     },
+
+    /// HTTP transport failure (network error, non-2xx status, or decode error).
+    ///
+    /// Used by [`crate::core::HttpTransport`] when communicating with the
+    /// remote gateway instead of a local stdio binary.
+    #[error("HTTP error: {0}")]
+    Http(String),
 }
 
 impl TransportError {
     /// Returns `true` if retrying this error may succeed.
     ///
-    /// Only [`TransportError::Io`] and [`TransportError::Timeout`] are
-    /// considered retryable. Spawn failures and unexpected exits are terminal.
+    /// Only [`TransportError::Io`], [`TransportError::Timeout`], and
+    /// [`TransportError::Http`] are considered retryable.
     #[must_use]
     pub fn is_retryable(&self) -> bool {
-        matches!(self, Self::Io(_) | Self::Timeout { .. })
+        matches!(self, Self::Io(_) | Self::Timeout { .. } | Self::Http(_))
     }
 }
 

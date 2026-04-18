@@ -6,7 +6,7 @@
 //! ## Key Components
 //!
 //! - [`KeyReader`]: Reads API key from env var or file
-//! - [`KeyValidator`]: Validates key against lightarchitects.io with caching
+//! - [`KeyValidator`]: Validates key against lightarchitects.ai with caching
 //! - [`RevocationWatcher`]: Polls for revoked keys
 //! - [`AuthConfig`]: Configuration for the auth system
 //! - `auth_login`: Browser-based PKCE auth flow (feature: `cli`)

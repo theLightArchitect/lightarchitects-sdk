@@ -53,8 +53,8 @@ async fn get(path: &str, with_auth: bool) -> (StatusCode, serde_json::Value) {
         .unwrap();
     let status = resp.status();
     let body = to_bytes(resp.into_body(), 1024 * 64).await.unwrap();
-    let json = serde_json::from_slice::<serde_json::Value>(&body)
-        .unwrap_or(serde_json::Value::Null);
+    let json =
+        serde_json::from_slice::<serde_json::Value>(&body).unwrap_or(serde_json::Value::Null);
     (status, json)
 }
 

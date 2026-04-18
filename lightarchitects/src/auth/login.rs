@@ -18,7 +18,7 @@ struct CallbackParams {
 /// Run the browser-based auth login flow.
 ///
 /// 1. Binds to 127.0.0.1 on an ephemeral port
-/// 2. Opens the browser to lightarchitects.io/auth/cli with PKCE state parameter
+/// 2. Opens the browser to lightarchitects.ai/auth/cli with PKCE state parameter
 /// 3. Waits for the callback with the API key
 /// 4. Saves the key locally
 ///

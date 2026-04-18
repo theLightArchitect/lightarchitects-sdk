@@ -36,7 +36,7 @@ use crate::soul::types::{
 /// # async fn example() -> Result<(), lightarchitects::core::SdkError> {
 /// use lightarchitects::soul::SoulClient;
 ///
-/// let client = SoulClient::builder().build().await?;
+/// let client = SoulClient::builder().api_key("la_your_key_here").build()?;
 /// let entries = client.helix().sibling("eva").significance_min(7.0).call().await?;
 /// # Ok(()) }
 /// ```
@@ -574,25 +574,28 @@ impl<T: Transport> SoulClient<T> {
 // ── SoulClient construction (production path) ─────────────────────────────────
 
 impl SoulClient<StdioTransport> {
-    /// Create a [`SoulClientBuilder`] using default settings.
-    pub fn builder() -> SoulClientBuilder {
-        SoulClientBuilder::default()
+    /// Create a [`SoulLocalBuilder`] for local dev mode (spawns the SOUL binary directly).
+    ///
+    /// Prefer [`SoulClient::builder`] for the cloud API path.
+    pub fn local_builder() -> SoulLocalBuilder {
+        SoulLocalBuilder::default()
     }
 }
 
-// ── SoulClientBuilder ─────────────────────────────────────────────────────────
+// ── SoulLocalBuilder ─────────────────────────────────────────────────────────
 
-/// Builder for [`SoulClient<StdioTransport>`].
+/// Builder for [`SoulClient<StdioTransport>`] — local dev mode.
 ///
-/// Resolves the SOUL binary path from `$HOME` when none is provided.
-pub struct SoulClientBuilder {
+/// Spawns the SOUL binary from the filesystem. Use [`SoulClient::builder`] for
+/// the cloud API path instead.
+pub struct SoulLocalBuilder {
     binary_path: Option<PathBuf>,
     timeout: Duration,
     retry: RetryConfig,
     auth: Option<AuthChecker>,
 }
 
-impl Default for SoulClientBuilder {
+impl Default for SoulLocalBuilder {
     fn default() -> Self {
         Self {
             binary_path: None,
@@ -603,7 +606,7 @@ impl Default for SoulClientBuilder {
     }
 }
 
-impl SoulClientBuilder {
+impl SoulLocalBuilder {
     /// Override the path to the SOUL MCP binary.
     ///
     /// Defaults to `~/lightarchitects/soul/bin/soul` when `None`.
@@ -664,6 +667,98 @@ impl SoulClientBuilder {
         Ok(SoulClient {
             inner: McpClient::new(transport, self.retry),
         })
+    }
+}
+
+// ── Cloud builder (HTTP transport) ────────────────────────────────────────────
+
+#[cfg(feature = "http-client")]
+impl SoulClient<crate::core::HttpTransport> {
+    /// Create a [`SoulClientBuilder`] targeting the Light Architects cloud API.
+    ///
+    /// This is the default production path — SOUL's business logic runs on the
+    /// gateway; the SDK sends typed JSON-RPC calls over HTTPS.
+    pub fn builder() -> SoulClientBuilder {
+        SoulClientBuilder::default()
+    }
+}
+
+/// Builder for [`SoulClient`] backed by the Light Architects cloud API.
+///
+/// ```no_run
+/// # fn example() -> Result<(), lightarchitects::core::SdkError> {
+/// use lightarchitects::soul::SoulClient;
+///
+/// let client = SoulClient::builder()
+///     .api_key("la_your_key_here")
+///     .build()?;
+/// # Ok(()) }
+/// ```
+#[cfg(feature = "http-client")]
+pub struct SoulClientBuilder {
+    api_key: String,
+    base_url: String,
+    timeout: Duration,
+    retry: RetryConfig,
+}
+
+#[cfg(feature = "http-client")]
+impl Default for SoulClientBuilder {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            base_url: crate::core::DEFAULT_BASE_URL.to_owned(),
+            timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
+            retry: RetryConfig::default(),
+        }
+    }
+}
+
+#[cfg(feature = "http-client")]
+impl SoulClientBuilder {
+    /// Set the API key (required).
+    ///
+    /// Keys follow the `la_` prefix format issued by `api.lightarchitects.ai`.
+    #[must_use]
+    pub fn api_key(mut self, key: impl Into<String>) -> Self {
+        self.api_key = key.into();
+        self
+    }
+
+    /// Override the gateway base URL (default: `https://api.lightarchitects.ai`).
+    #[must_use]
+    pub fn base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = url.into();
+        self
+    }
+
+    /// Override the per-call timeout. Defaults to [`DEFAULT_TIMEOUT_SECS`].
+    #[must_use]
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// Override the retry policy. Defaults to [`RetryConfig::default`].
+    #[must_use]
+    pub fn retry(mut self, retry: RetryConfig) -> Self {
+        self.retry = retry;
+        self
+    }
+
+    /// Build the [`SoulClient`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SdkError::Config`] if the API key is empty or the HTTP
+    /// client cannot be constructed.
+    pub fn build(self) -> Result<SoulClient<crate::core::HttpTransport>, SdkError> {
+        let transport = crate::core::HttpTransport::builder(SiblingId::Soul)
+            .api_key(self.api_key)
+            .base_url(self.base_url)
+            .timeout(self.timeout)
+            .build()?;
+        Ok(SoulClient::from_transport(transport, self.retry))
     }
 }
 

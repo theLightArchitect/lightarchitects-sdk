@@ -205,12 +205,9 @@ async fn wire_dispatch_degrades_silently_when_env_unset() {
         std::env::remove_var("LA_NOTIFY_TOKEN");
     }
 
-    let result = lightarchitects_gateway::core_tools::ui::dispatch(
-        "ui_refresh_sitrep",
-        json!({}),
-    )
-    .await
-    .expect("dispatch ok (silent degradation)");
+    let result = lightarchitects_gateway::core_tools::ui::dispatch("ui_refresh_sitrep", json!({}))
+        .await
+        .expect("dispatch ok (silent degradation)");
 
     let text = result["content"][0]["text"]
         .as_str()

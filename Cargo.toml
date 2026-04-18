@@ -9,8 +9,8 @@ members = [
 [workspace.package]
 edition = "2024"
 rust-version = "1.87"
-authors = ["KFT <kft@lightarchitects.io>"]
-license = "Apache-2.0"
+authors = ["KFT <kf.tan@lightarchitects.io>"]
+license = "MPL-2.0"
 repository = "https://github.com/TheLightArchitects/lightarchitects-sdk"
 
 [workspace.lints.clippy]

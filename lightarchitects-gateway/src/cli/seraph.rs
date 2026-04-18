@@ -30,7 +30,7 @@ pub async fn execute(
         .ok_or_else(|| GatewayError::AgentNotEnabled("seraph".into()))?
         .binary_path();
 
-    let client: SeraphClient<StdioTransport> = SeraphClient::builder()
+    let client: SeraphClient<StdioTransport> = SeraphClient::local_builder()
         .binary_path(binary)
         .timeout(Duration::from_secs(180))
         .build()

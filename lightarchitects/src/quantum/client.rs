@@ -40,7 +40,7 @@ use crate::quantum::types::{
 /// # async fn example() -> Result<(), lightarchitects::core::SdkError> {
 /// use lightarchitects::quantum::QuantumClient;
 ///
-/// let client = QuantumClient::builder().build().await?;
+/// let client = QuantumClient::builder().api_key("la_your_key_here").build()?;
 ///
 /// // Begin an investigation
 /// let evidence = client.scan("unexpected auth failures in prod").await?;
@@ -368,40 +368,30 @@ impl<T: Transport> QuantumClient<T> {
 // ── Production builder entry point ─────────────────────────────────────────────
 
 impl QuantumClient<StdioTransport> {
-    /// Create a builder for constructing a production [`QuantumClient`] backed
-    /// by the QUANTUM binary (`~/lightarchitects/quantum/bin/quantum-q` by default).
+    /// Create a [`QuantumLocalBuilder`] for local dev mode (spawns the QUANTUM binary directly).
     ///
-    /// The builder automatically passes the required `mcp-server` subcommand
-    /// to the binary. QUANTUM is the only sibling that requires a subcommand.
+    /// Prefer [`QuantumClient::builder`] for the cloud API path.
+    /// Note: the local builder automatically passes the required `mcp-server` subcommand.
     #[must_use]
-    pub fn builder() -> QuantumClientBuilder {
-        QuantumClientBuilder::default()
+    pub fn local_builder() -> QuantumLocalBuilder {
+        QuantumLocalBuilder::default()
     }
 }
 
-// ── QuantumClientBuilder ───────────────────────────────────────────────────────
+// ── QuantumLocalBuilder ───────────────────────────────────────────────────────
 
-/// Builder for [`QuantumClient`] backed by a live QUANTUM binary.
+/// Builder for [`QuantumClient<StdioTransport>`] — local dev mode.
 ///
-/// ```no_run
-/// # async fn example() -> Result<(), lightarchitects::core::SdkError> {
-/// use lightarchitects::quantum::QuantumClient;
-/// use std::time::Duration;
-///
-/// let client = QuantumClient::builder()
-///     .timeout(Duration::from_secs(120))  // investigations can take time
-///     .build()
-///     .await?;
-/// # Ok(()) }
-/// ```
-pub struct QuantumClientBuilder {
+/// Spawns the QUANTUM binary from the filesystem. Use [`QuantumClient::builder`] for
+/// the cloud API path instead.
+pub struct QuantumLocalBuilder {
     binary_path: Option<PathBuf>,
     timeout: Duration,
     retry: RetryConfig,
     auth: Option<AuthChecker>,
 }
 
-impl Default for QuantumClientBuilder {
+impl Default for QuantumLocalBuilder {
     fn default() -> Self {
         Self {
             binary_path: None,
@@ -412,7 +402,7 @@ impl Default for QuantumClientBuilder {
     }
 }
 
-impl QuantumClientBuilder {
+impl QuantumLocalBuilder {
     /// Override the path to the QUANTUM binary.
     ///
     /// Defaults to `~/lightarchitects/quantum/bin/quantum-q` (resolved by [`SiblingId::Quantum`]).
@@ -471,6 +461,96 @@ impl QuantumClientBuilder {
         let transport =
             StdioTransport::connect(SiblingId::Quantum, &path, self.timeout, self.auth.as_ref())
                 .await?;
+        Ok(QuantumClient::from_transport(transport, self.retry))
+    }
+}
+
+// ── Cloud builder (HTTP transport) ────────────────────────────────────────────
+
+#[cfg(feature = "http-client")]
+impl QuantumClient<crate::core::HttpTransport> {
+    /// Create a [`QuantumClientBuilder`] targeting the Light Architects cloud API.
+    ///
+    /// This is the default production path — QUANTUM's business logic runs on the
+    /// gateway; the SDK sends typed JSON-RPC calls over HTTPS.
+    pub fn builder() -> QuantumClientBuilder {
+        QuantumClientBuilder::default()
+    }
+}
+
+/// Builder for [`QuantumClient`] backed by the Light Architects cloud API.
+///
+/// ```no_run
+/// # fn example() -> Result<(), lightarchitects::core::SdkError> {
+/// use lightarchitects::quantum::QuantumClient;
+///
+/// let client = QuantumClient::builder()
+///     .api_key("la_your_key_here")
+///     .build()?;
+/// # Ok(()) }
+/// ```
+#[cfg(feature = "http-client")]
+pub struct QuantumClientBuilder {
+    api_key: String,
+    base_url: String,
+    timeout: Duration,
+    retry: RetryConfig,
+}
+
+#[cfg(feature = "http-client")]
+impl Default for QuantumClientBuilder {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            base_url: crate::core::DEFAULT_BASE_URL.to_owned(),
+            timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
+            retry: RetryConfig::default(),
+        }
+    }
+}
+
+#[cfg(feature = "http-client")]
+impl QuantumClientBuilder {
+    /// Set the API key (required).
+    #[must_use]
+    pub fn api_key(mut self, key: impl Into<String>) -> Self {
+        self.api_key = key.into();
+        self
+    }
+
+    /// Override the gateway base URL (default: `https://api.lightarchitects.ai`).
+    #[must_use]
+    pub fn base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = url.into();
+        self
+    }
+
+    /// Override the per-call timeout. Defaults to [`DEFAULT_TIMEOUT_SECS`].
+    #[must_use]
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// Override the retry policy. Defaults to [`RetryConfig::default`].
+    #[must_use]
+    pub fn retry(mut self, retry: RetryConfig) -> Self {
+        self.retry = retry;
+        self
+    }
+
+    /// Build the [`QuantumClient`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SdkError::Config`] if the API key is empty or the HTTP
+    /// client cannot be constructed.
+    pub fn build(self) -> Result<QuantumClient<crate::core::HttpTransport>, SdkError> {
+        let transport = crate::core::HttpTransport::builder(SiblingId::Quantum)
+            .api_key(self.api_key)
+            .base_url(self.base_url)
+            .timeout(self.timeout)
+            .build()?;
         Ok(QuantumClient::from_transport(transport, self.retry))
     }
 }

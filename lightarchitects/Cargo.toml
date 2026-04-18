@@ -1,6 +1,6 @@
 [package]
 name = "lightarchitects"
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -8,6 +8,12 @@ license.workspace = true
 repository.workspace = true
 description = "Unified Light Architects SDK — core, clients, arena, oracle, helix, turnlog."
 keywords = ["mcp", "ai", "sdk", "agentic", "lightarchitects"]
+categories = ["development-tools", "network-programming", "api-bindings"]
+documentation = "https://docs.rs/lightarchitects"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true

@@ -29,7 +29,7 @@ pub async fn execute(
         .ok_or_else(|| GatewayError::AgentNotEnabled("soul".into()))?
         .binary_path();
 
-    let client: SoulClient<StdioTransport> = SoulClient::builder()
+    let client: SoulClient<StdioTransport> = SoulClient::local_builder()
         .binary_path(binary)
         .timeout(Duration::from_secs(60))
         .build()

@@ -24,6 +24,9 @@ pub mod config;
 pub mod constants;
 /// SDK error hierarchy.
 pub mod error;
+/// HTTP transport — connects the SDK to the Light Architects cloud gateway.
+#[cfg(feature = "http-client")]
+pub mod http_transport;
 /// JSON-RPC 2.0 request and response types.
 pub mod jsonrpc;
 /// Canonical Light Architects filesystem path resolution.
@@ -42,6 +45,8 @@ pub use auth::{AuthChecker, AuthProvider, AuthStatus};
 pub use client::McpClient;
 pub use config::{Config, ConfigBuilder, RetryConfig};
 pub use error::{ProtocolError, SdkError, ToolError, TransportError};
+#[cfg(feature = "http-client")]
+pub use http_transport::{DEFAULT_BASE_URL, HttpTransport, HttpTransportBuilder};
 pub use jsonrpc::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 pub use server::{McpHandler, McpServerLoop, ServerError};
 pub use sibling::{McpFraming, SiblingId};

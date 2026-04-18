@@ -28,7 +28,7 @@ pub async fn execute(
         .ok_or_else(|| GatewayError::AgentNotEnabled("corso".into()))?
         .binary_path();
 
-    let client: CorsoClient<StdioTransport> = CorsoClient::builder()
+    let client: CorsoClient<StdioTransport> = CorsoClient::local_builder()
         .binary_path(binary)
         .timeout(Duration::from_secs(120))
         .build()

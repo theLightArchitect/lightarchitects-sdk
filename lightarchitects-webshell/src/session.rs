@@ -314,7 +314,8 @@ mod tests {
         let hex = s.notify_token_hex();
         assert_eq!(hex.len(), 64, "32 bytes → 64 hex chars");
         assert!(
-            hex.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+            hex.chars()
+                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
             "must be lowercase hex: {hex}"
         );
     }
@@ -325,7 +326,10 @@ mod tests {
     fn argv_anthropic_no_template_has_add_dir_and_name() {
         let s = BuildSession::new(PathBuf::from("/tmp/build-1"), anthropic_session());
         let argv = s.build_argv();
-        assert!(!argv.iter().any(|a| a == "--agent"), "no template → no --agent");
+        assert!(
+            !argv.iter().any(|a| a == "--agent"),
+            "no template → no --agent"
+        );
         assert!(argv.iter().any(|a| a == "--add-dir"));
         assert!(argv.iter().any(|a| a == "/tmp/build-1"));
         assert!(argv.iter().any(|a| a == "-n"));
@@ -337,7 +341,10 @@ mod tests {
         let mut s = BuildSession::new(PathBuf::from("/tmp"), anthropic_session());
         s.claude_agent_template = Some("corso".to_owned());
         let argv = s.build_argv();
-        let idx = argv.iter().position(|a| a == "--agent").expect("--agent present");
+        let idx = argv
+            .iter()
+            .position(|a| a == "--agent")
+            .expect("--agent present");
         assert_eq!(argv[idx + 1], "corso");
     }
 
@@ -352,8 +359,14 @@ mod tests {
         let argv = s.build_argv();
         assert!(argv.windows(2).any(|w| w == ["--model", "opus"]));
         assert!(argv.windows(2).any(|w| w == ["--system-prompt", "sp"]));
-        assert!(argv.windows(2).any(|w| w == ["--append-system-prompt", "asp"]));
-        assert!(argv.windows(2).any(|w| w == ["--allowedTools", "Read Grep"]));
+        assert!(
+            argv.windows(2)
+                .any(|w| w == ["--append-system-prompt", "asp"])
+        );
+        assert!(
+            argv.windows(2)
+                .any(|w| w == ["--allowedTools", "Read Grep"])
+        );
         assert!(argv.windows(2).any(|w| w == ["--disallowedTools", "Bash"]));
     }
 
@@ -374,11 +387,12 @@ mod tests {
     fn env_ollama_has_anthropic_overrides() {
         let s = BuildSession::new(PathBuf::from("/tmp"), ollama_session());
         let env = s.build_spawn_env("http://localhost:8733");
-        let map: std::collections::HashMap<_, _> = env
-            .iter()
-            .map(|(k, v)| (k.as_str(), v.as_str()))
-            .collect();
-        assert_eq!(map.get("ANTHROPIC_BASE_URL"), Some(&"http://localhost:11434"));
+        let map: std::collections::HashMap<_, _> =
+            env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        assert_eq!(
+            map.get("ANTHROPIC_BASE_URL"),
+            Some(&"http://localhost:11434")
+        );
         assert_eq!(map.get("ANTHROPIC_AUTH_TOKEN"), Some(&"ollama-secret-xyz"));
         assert_eq!(map.get("ANTHROPIC_MODEL"), Some(&"qwen3-coder:480b-cloud"));
     }
@@ -387,7 +401,9 @@ mod tests {
     fn env_la_build_id_matches_session_uuid() {
         let s = BuildSession::new(PathBuf::from("/tmp"), anthropic_session());
         let env = s.build_spawn_env("http://localhost:8733");
-        let build_id_val = env.iter().find_map(|(k, v)| (k == "LA_BUILD_ID").then_some(v.as_str()));
+        let build_id_val = env
+            .iter()
+            .find_map(|(k, v)| (k == "LA_BUILD_ID").then_some(v.as_str()));
         assert_eq!(build_id_val, Some(s.build_id.to_string().as_str()));
     }
 
@@ -407,7 +423,10 @@ mod tests {
     #[test]
     fn registry_insert_and_get() {
         let reg = BuildRegistry::new();
-        let session = Arc::new(BuildSession::new(PathBuf::from("/tmp"), anthropic_session()));
+        let session = Arc::new(BuildSession::new(
+            PathBuf::from("/tmp"),
+            anthropic_session(),
+        ));
         let id = session.build_id;
         reg.insert(Arc::clone(&session));
         assert_eq!(reg.len(), 1);
@@ -418,7 +437,10 @@ mod tests {
     #[test]
     fn registry_remove_empties() {
         let reg = BuildRegistry::new();
-        let session = Arc::new(BuildSession::new(PathBuf::from("/tmp"), anthropic_session()));
+        let session = Arc::new(BuildSession::new(
+            PathBuf::from("/tmp"),
+            anthropic_session(),
+        ));
         let id = session.build_id;
         reg.insert(session);
         reg.remove(id);
@@ -428,8 +450,14 @@ mod tests {
     #[test]
     fn registry_snapshot_returns_all_sessions() {
         let reg = BuildRegistry::new();
-        let a = Arc::new(BuildSession::new(PathBuf::from("/tmp"), anthropic_session()));
-        let b = Arc::new(BuildSession::new(PathBuf::from("/tmp"), anthropic_session()));
+        let a = Arc::new(BuildSession::new(
+            PathBuf::from("/tmp"),
+            anthropic_session(),
+        ));
+        let b = Arc::new(BuildSession::new(
+            PathBuf::from("/tmp"),
+            anthropic_session(),
+        ));
         reg.insert(Arc::clone(&a));
         reg.insert(Arc::clone(&b));
         let snap = reg.snapshot();
@@ -443,14 +471,24 @@ mod tests {
     fn registry_concurrent_isolation_via_uuids() {
         // Two separate builds have independent event channels.
         let reg = BuildRegistry::new();
-        let a = Arc::new(BuildSession::new(PathBuf::from("/tmp/a"), anthropic_session()));
-        let b = Arc::new(BuildSession::new(PathBuf::from("/tmp/b"), anthropic_session()));
+        let a = Arc::new(BuildSession::new(
+            PathBuf::from("/tmp/a"),
+            anthropic_session(),
+        ));
+        let b = Arc::new(BuildSession::new(
+            PathBuf::from("/tmp/b"),
+            anthropic_session(),
+        ));
         reg.insert(Arc::clone(&a));
         reg.insert(Arc::clone(&b));
         // Independent subscriber counts prove separate channels.
         assert_eq!(a.event_tx.receiver_count(), 0);
         let _rx_a = a.event_tx.subscribe();
         assert_eq!(a.event_tx.receiver_count(), 1);
-        assert_eq!(b.event_tx.receiver_count(), 0, "B's channel must be independent");
+        assert_eq!(
+            b.event_tx.receiver_count(),
+            0,
+            "B's channel must be independent"
+        );
     }
 }

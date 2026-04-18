@@ -29,7 +29,7 @@ pub async fn execute(
         .ok_or_else(|| GatewayError::AgentNotEnabled("eva".into()))?
         .binary_path();
 
-    let client: EvaClient<StdioTransport> = EvaClient::builder()
+    let client: EvaClient<StdioTransport> = EvaClient::local_builder()
         .binary_path(binary)
         .timeout(Duration::from_secs(120))
         .build()

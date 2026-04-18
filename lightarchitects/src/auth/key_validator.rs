@@ -34,7 +34,7 @@ pub struct ValidationResult {
     pub error: Option<String>,
 }
 
-/// Validates API keys against lightarchitects.io with local caching.
+/// Validates API keys against lightarchitects.ai with local caching.
 pub struct KeyValidator {
     config: AuthConfig,
     client: reqwest::Client,

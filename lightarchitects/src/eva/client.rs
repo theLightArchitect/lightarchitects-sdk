@@ -44,7 +44,7 @@ const EVA_TOOL: &str = "evaTools";
 /// # async fn example() -> Result<(), lightarchitects::core::SdkError> {
 /// use lightarchitects::eva::{EvaClient, TeachMode, SkillLevel};
 ///
-/// let client = EvaClient::builder().build().await?;
+/// let client = EvaClient::builder().api_key("la_your_key_here").build()?;
 ///
 /// let lesson = client
 ///     .teach(TeachMode::Explain, "lifetimes in Rust", SkillLevel::Intermediate)
@@ -298,37 +298,29 @@ impl<T: Transport> EvaClient<T> {
 // ── Production builder entry point ────────────────────────────────────────────
 
 impl EvaClient<StdioTransport> {
-    /// Create a builder for constructing a production [`EvaClient`] backed by
-    /// the EVA binary (`~/lightarchitects/eva/bin/eva` by default).
+    /// Create a [`EvaLocalBuilder`] for local dev mode (spawns the EVA binary directly).
+    ///
+    /// Prefer [`EvaClient::builder`] for the cloud API path.
     #[must_use]
-    pub fn builder() -> EvaClientBuilder {
-        EvaClientBuilder::default()
+    pub fn local_builder() -> EvaLocalBuilder {
+        EvaLocalBuilder::default()
     }
 }
 
-// ── EvaClientBuilder ──────────────────────────────────────────────────────────
+// ── EvaLocalBuilder ──────────────────────────────────────────────────────────
 
-/// Builder for [`EvaClient`] backed by a live EVA binary.
+/// Builder for [`EvaClient<StdioTransport>`] — local dev mode.
 ///
-/// ```no_run
-/// # async fn example() -> Result<(), lightarchitects::core::SdkError> {
-/// use lightarchitects::eva::EvaClient;
-/// use std::time::Duration;
-///
-/// let client = EvaClient::builder()
-///     .timeout(Duration::from_secs(60))
-///     .build()
-///     .await?;
-/// # Ok(()) }
-/// ```
-pub struct EvaClientBuilder {
+/// Spawns the EVA binary from the filesystem. Use [`EvaClient::builder`] for
+/// the cloud API path instead.
+pub struct EvaLocalBuilder {
     binary_path: Option<PathBuf>,
     timeout: Duration,
     retry: RetryConfig,
     auth: Option<AuthChecker>,
 }
 
-impl Default for EvaClientBuilder {
+impl Default for EvaLocalBuilder {
     fn default() -> Self {
         Self {
             binary_path: None,
@@ -339,7 +331,7 @@ impl Default for EvaClientBuilder {
     }
 }
 
-impl EvaClientBuilder {
+impl EvaLocalBuilder {
     /// Override the path to the EVA binary.
     ///
     /// Defaults to `~/lightarchitects/eva/bin/eva` (resolved by [`SiblingId::Eva`]).
@@ -395,6 +387,96 @@ impl EvaClientBuilder {
         let transport =
             StdioTransport::connect(SiblingId::Eva, &path, self.timeout, self.auth.as_ref())
                 .await?;
+        Ok(EvaClient::from_transport(transport, self.retry))
+    }
+}
+
+// ── Cloud builder (HTTP transport) ────────────────────────────────────────────
+
+#[cfg(feature = "http-client")]
+impl EvaClient<crate::core::HttpTransport> {
+    /// Create a [`EvaClientBuilder`] targeting the Light Architects cloud API.
+    ///
+    /// This is the default production path — EVA's business logic runs on the
+    /// gateway; the SDK sends typed JSON-RPC calls over HTTPS.
+    pub fn builder() -> EvaClientBuilder {
+        EvaClientBuilder::default()
+    }
+}
+
+/// Builder for [`EvaClient`] backed by the Light Architects cloud API.
+///
+/// ```no_run
+/// # fn example() -> Result<(), lightarchitects::core::SdkError> {
+/// use lightarchitects::eva::EvaClient;
+///
+/// let client = EvaClient::builder()
+///     .api_key("la_your_key_here")
+///     .build()?;
+/// # Ok(()) }
+/// ```
+#[cfg(feature = "http-client")]
+pub struct EvaClientBuilder {
+    api_key: String,
+    base_url: String,
+    timeout: Duration,
+    retry: RetryConfig,
+}
+
+#[cfg(feature = "http-client")]
+impl Default for EvaClientBuilder {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            base_url: crate::core::DEFAULT_BASE_URL.to_owned(),
+            timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
+            retry: RetryConfig::default(),
+        }
+    }
+}
+
+#[cfg(feature = "http-client")]
+impl EvaClientBuilder {
+    /// Set the API key (required).
+    #[must_use]
+    pub fn api_key(mut self, key: impl Into<String>) -> Self {
+        self.api_key = key.into();
+        self
+    }
+
+    /// Override the gateway base URL (default: `https://api.lightarchitects.ai`).
+    #[must_use]
+    pub fn base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = url.into();
+        self
+    }
+
+    /// Override the per-call timeout. Defaults to [`DEFAULT_TIMEOUT_SECS`].
+    #[must_use]
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// Override the retry policy. Defaults to [`RetryConfig::default`].
+    #[must_use]
+    pub fn retry(mut self, retry: RetryConfig) -> Self {
+        self.retry = retry;
+        self
+    }
+
+    /// Build the [`EvaClient`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SdkError::Config`] if the API key is empty or the HTTP
+    /// client cannot be constructed.
+    pub fn build(self) -> Result<EvaClient<crate::core::HttpTransport>, SdkError> {
+        let transport = crate::core::HttpTransport::builder(SiblingId::Eva)
+            .api_key(self.api_key)
+            .base_url(self.base_url)
+            .timeout(self.timeout)
+            .build()?;
         Ok(EvaClient::from_transport(transport, self.retry))
     }
 }
