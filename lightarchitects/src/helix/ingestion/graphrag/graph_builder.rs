@@ -242,6 +242,7 @@ impl<'db> GraphBuilder<'db> {
             expires: None, // permanent — GraphRAG entities are not TTL-scoped
             created_at: Utc::now(),
             metadata: meta,
+            vault_path: None,
         };
         // M-3: upsert_step instead of create_step so MERGE match ≠ new node.
         let (id, was_created) = self.db.upsert_step(&step).await?;

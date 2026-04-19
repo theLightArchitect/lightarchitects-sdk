@@ -82,7 +82,12 @@ impl MarkdownVaultIngester {
             return Ok(());
         }
 
-        let step = Self::build_step(&fm, body, helix_id);
+        let vault_path = path
+            .strip_prefix(&self.vault_root)
+            .ok()
+            .and_then(|rel| rel.to_str())
+            .map(str::to_owned);
+        let step = Self::build_step(&fm, body, helix_id, vault_path);
         let (step_id, was_created) = db.upsert_step(&step).await.map_err(|e| {
             IngestionError::Parse(format!(
                 "Failed to upsert step from {}: {e}",
@@ -108,8 +113,16 @@ impl MarkdownVaultIngester {
         Ok(())
     }
 
-    /// Build a `Step` from parsed frontmatter and body.
-    fn build_step(fm: &frontmatter::Frontmatter, body: &str, helix_id: &str) -> Step {
+    /// Build a `Step` from parsed frontmatter, body, and vault-relative path.
+    ///
+    /// `vault_path` is the file path relative to the vault root, used for
+    /// wikilink resolution in `create_link` (path-slug fallback).
+    fn build_step(
+        fm: &frontmatter::Frontmatter,
+        body: &str,
+        helix_id: &str,
+        vault_path: Option<String>,
+    ) -> Step {
         let step_date = fm
             .date
             .as_deref()
@@ -127,6 +140,7 @@ impl MarkdownVaultIngester {
             expires: None,
             created_at: Utc::now(),
             metadata: Self::build_metadata(fm),
+            vault_path,
         }
     }
 

@@ -114,6 +114,7 @@ impl LogIngester {
                 expires: None,
                 created_at: Utc::now(),
                 metadata: serde_json::json!({"severity": severity, "source_type": "log"}),
+                vault_path: None,
             };
             match db.upsert_step(&step).await {
                 Ok((_, true)) => report.records_added += 1,
@@ -148,6 +149,7 @@ impl LogIngester {
                 expires: None,
                 created_at: Utc::now(),
                 metadata: serde_json::json!({"source_type": "log", "chunk": chunk_idx + 1}),
+                vault_path: None,
             };
             match db.upsert_step(&step).await {
                 Ok((_, true)) => report.records_added += 1,
@@ -339,6 +341,7 @@ impl IngestionSource for JsonIngester {
                 expires: None,
                 created_at: Utc::now(),
                 metadata: serde_json::json!({"source_type": "json", "index": idx}),
+                vault_path: None,
             };
 
             match db.upsert_step(&step).await {

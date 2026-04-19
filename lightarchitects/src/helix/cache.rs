@@ -226,6 +226,7 @@ mod tests {
             expires: None,
             created_at: chrono::Utc::now(),
             metadata: serde_json::Value::Null,
+            vault_path: None,
         }
     }
 

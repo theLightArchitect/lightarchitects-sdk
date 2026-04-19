@@ -918,28 +918,58 @@ impl HelixDb for HelixNeo4j {
 
     #[instrument(skip(self, link), fields(neo4j.operation = "create_link"))]
     async fn create_link(&self, link: &HelixLink) -> Result<String, HelixDbError> {
-        let mut props = BTreeMap::new();
-        props.insert(
-            "link_type".into(),
-            serde_json::json!(link.link_type.to_string()),
-        );
-        props.insert("strength".into(), serde_json::json!(link.strength));
-        if let Some(ref raw) = link.raw_wikilink {
-            props.insert("raw_wikilink".into(), serde_json::json!(raw));
-        }
-        if link.metadata != serde_json::Value::Null {
-            props.insert(
-                "metadata".into(),
-                serde_json::json!(link.metadata.to_string()),
-            );
-        }
+        let rel_id = uuid::Uuid::new_v4().to_string();
+        let link_type = link.link_type.to_string();
+        let raw_wikilink = link.raw_wikilink.as_deref().unwrap_or("");
+        let metadata_str = if link.metadata == serde_json::Value::Null {
+            String::new()
+        } else {
+            link.metadata.to_string()
+        };
 
-        let id = self
-            .backend
-            .create_relationship(&link.source_id, &link.target_id, "LINKS_TO", props)
-            .await?;
+        // Two-stage target resolution:
+        //   Stage 1: match target by its UUID `id` property (normal steps).
+        //   Stage 2: if stage 1 finds nothing, match by vault_path suffix
+        //            (Obsidian wikilinks carry path slugs, not UUIDs).
+        // Using OPTIONAL MATCH + COALESCE keeps this a single round-trip.
+        let cypher = "MATCH (a:Step {id: $source_id}) \
+             OPTIONAL MATCH (b1:Step {id: $target_id}) \
+             OPTIONAL MATCH (b2:Step) \
+               WHERE b1 IS NULL \
+                 AND b2.vault_path IS NOT NULL \
+                 AND b2.vault_path ENDS WITH $target_id \
+             WITH a, coalesce(b1, b2) AS b \
+             WHERE b IS NOT NULL \
+             MERGE (a)-[r:LINKS_TO]->(b) \
+               ON CREATE SET r.id = $rel_id, \
+                             r.link_type = $link_type, \
+                             r.strength = $strength, \
+                             r.raw_wikilink = $raw_wikilink, \
+                             r.metadata = $metadata \
+             RETURN r.id AS id";
 
-        Ok(id)
+        let mut params: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+        params.insert("source_id".into(), serde_json::json!(&link.source_id));
+        params.insert("target_id".into(), serde_json::json!(&link.target_id));
+        params.insert("rel_id".into(), serde_json::json!(&rel_id));
+        params.insert("link_type".into(), serde_json::json!(link_type));
+        params.insert("strength".into(), serde_json::json!(link.strength));
+        params.insert("raw_wikilink".into(), serde_json::json!(raw_wikilink));
+        params.insert("metadata".into(), serde_json::json!(metadata_str));
+
+        let records = self.timed_execute("create_link", cypher, params).await?;
+
+        records
+            .first()
+            .and_then(|r| r.get("id"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                HelixDbError::NotFound(format!(
+                    "create_link: no matching target for '{}'",
+                    link.target_id
+                ))
+            })
     }
 
     #[instrument(skip(self, experience, participant_step_ids), fields(neo4j.operation = "create_shared_experience"))]
@@ -1265,10 +1295,12 @@ impl HelixDb for HelixNeo4j {
                                     s.content = $content, s.significance = $sig, \
                                     s.step_date = $step_date, s.step_index = $step_index, \
                                     s.expires = $expires, s.entry_type = $entry_type, \
+                                    s.vault_path = $vault_path, \
                                     s.created_at = datetime(), s._created = true \
                       ON MATCH SET  s.title = $title, s.significance = $sig, \
                                     s.step_index = $step_index, s.expires = $expires, \
                                     s.entry_type = $entry_type, \
+                                    s.vault_path = $vault_path, \
                                     s._created = false \
                       RETURN s.id AS id, s._created AS created";
 
@@ -1296,6 +1328,14 @@ impl HelixDb for HelixNeo4j {
                 .get("entry_type")
                 .cloned()
                 .unwrap_or(serde_json::Value::Null),
+        );
+        // vault_path enables wikilink slug resolution in create_link.
+        // Null for steps created outside the markdown vault pipeline.
+        params.insert(
+            "vault_path".into(),
+            step.vault_path
+                .as_deref()
+                .map_or(serde_json::Value::Null, |p| serde_json::json!(p)),
         );
 
         let records = self.timed_execute("upsert_step", cypher, params).await?;
@@ -1859,6 +1899,10 @@ impl HelixNeo4j {
             .and_then(serde_json::Value::as_str)
             .and_then(|s| serde_json::from_str(s).ok())
             .unwrap_or(serde_json::Value::Null);
+        let vault_path = record
+            .get("vault_path")
+            .and_then(serde_json::Value::as_str)
+            .map(String::from);
 
         Some(Step {
             id,
@@ -1872,6 +1916,7 @@ impl HelixNeo4j {
             expires,
             created_at,
             metadata,
+            vault_path,
         })
     }
 

@@ -128,6 +128,7 @@ impl IngestionSource for ChatTranscriptIngester {
                     "turn": idx + 1,
                     "source_type": "chat_transcript",
                 }),
+                vault_path: None,
             };
 
             let (step_id, was_created) = match db.upsert_step(&step).await {
@@ -183,6 +184,7 @@ impl IngestionSource for ChatTranscriptIngester {
                         "source_type": "preference_extraction",
                         "parent_step_id": step_id,
                     }),
+                    vault_path: None,
                 };
 
                 match db.upsert_step(&pref_step).await {

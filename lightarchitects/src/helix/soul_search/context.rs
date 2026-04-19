@@ -151,6 +151,7 @@ mod tests {
             community_id: None,
             expires: None,
             metadata: serde_json::json!({"owner": "eva"}),
+            vault_path: None,
         }
     }
 

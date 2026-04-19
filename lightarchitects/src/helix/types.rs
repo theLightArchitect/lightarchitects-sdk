@@ -271,6 +271,15 @@ pub struct Step {
     /// Arbitrary metadata (domain-specific attributes).
     #[serde(default)]
     pub metadata: serde_json::Value,
+    /// Vault-relative path for wikilink resolution (e.g. `"eva/identity.md"`).
+    ///
+    /// Set at ingestion time from the markdown file path relative to the
+    /// vault root. Used by [`HelixDb::create_link`] to resolve Obsidian
+    /// wikilinks whose target is a path slug rather than a UUID.
+    ///
+    /// `None` for steps created outside the markdown vault pipeline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vault_path: Option<String>,
 }
 
 impl Step {
@@ -580,6 +589,7 @@ mod tests {
             expires: None,
             created_at: Utc::now(),
             metadata: serde_json::json!({"resonance": ["wonder", "joy"]}),
+            vault_path: None,
         };
 
         let json = serde_json::to_string(&step).expect("serialize");
@@ -610,6 +620,7 @@ mod tests {
             expires: None,
             created_at: Utc::now(),
             metadata: serde_json::Value::Null,
+            vault_path: None,
         };
         assert!(step.is_permanent());
         assert!(!step.is_expired());
@@ -632,6 +643,7 @@ mod tests {
             expires: Some(past),
             created_at: Utc::now(),
             metadata: serde_json::Value::Null,
+            vault_path: None,
         };
         assert!(!expired.is_permanent());
         assert!(expired.is_expired());
@@ -650,6 +662,7 @@ mod tests {
             expires: Some(future),
             created_at: Utc::now(),
             metadata: serde_json::Value::Null,
+            vault_path: None,
         };
         assert!(!fresh.is_permanent());
         assert!(!fresh.is_expired());
@@ -669,6 +682,7 @@ mod tests {
             expires: None,
             created_at: Utc::now(),
             metadata: serde_json::Value::Null,
+            vault_path: None,
         };
         let json = serde_json::to_string(&step).expect("serialize");
         // skip_serializing_if = "Option::is_none" — expires must not appear in JSON
@@ -694,6 +708,7 @@ mod tests {
             expires: Some(deadline),
             created_at: Utc::now(),
             metadata: serde_json::Value::Null,
+            vault_path: None,
         };
         let json = serde_json::to_string(&step).expect("serialize");
         assert!(

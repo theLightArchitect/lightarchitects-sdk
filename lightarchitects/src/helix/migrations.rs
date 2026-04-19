@@ -9,6 +9,8 @@
 //!   v4:    Lucene fulltext index (step-fulltext)
 //!   v5:    HNSW vector indexes (semantic 768-dim + structural 128-dim)
 //!   v6:    Fix Step uniqueness: drop false `day_step_unique`, add (`content_hash`, `helix_id`) constraint
+//!   v7:    Step.expires index for read-side freshness gate
+//!   v8:    `Step.vault_path` index for wikilink slug resolution
 
 use crate::helix::graph::schema::Migration;
 
@@ -96,9 +98,24 @@ const V6_STATEMENTS: &[&str] = &[
 const V7_STATEMENTS: &[&str] =
     &["CREATE INDEX step_expires_idx IF NOT EXISTS FOR (s:Step) ON (s.expires)"];
 
+// ── Migration v8: vault_path index ───────────────────────────────────
+
+/// v8 adds a property index on `Step.vault_path` for efficient wikilink
+/// slug resolution in `create_link`.
+///
+/// `create_link` uses `b.vault_path ENDS WITH $slug` as a fallback when
+/// the primary UUID MATCH finds no target node. Without this index, that
+/// predicate triggers a full Step scan; with it, Neo4j narrows to nodes
+/// that have a non-null `vault_path` before evaluating the suffix filter.
+///
+/// Non-unique because multiple Step revisions could theoretically share a
+/// path (dedup key is `content_hash + helix_id`, not path).
+const V8_STATEMENTS: &[&str] =
+    &["CREATE INDEX step_vault_path_idx IF NOT EXISTS FOR (s:Step) ON (s.vault_path)"];
+
 // ── Public API ────────────────────────────────────────────────────────
 
-/// All helix migrations (v3-v7), ordered by version.
+/// All helix migrations (v3-v8), ordered by version.
 ///
 /// These extend graph-engine's core migrations (v1-v2).
 /// Use [`helix_pending_migrations`] to filter by already-applied versions.
@@ -127,6 +144,11 @@ pub const HELIX_MIGRATIONS: &[Migration] = &[
         version: 7,
         description: "Add step_expires_idx for read-side freshness gate (RULE 1 Amendment)",
         statements: V7_STATEMENTS,
+    },
+    Migration {
+        version: 8,
+        description: "Add step_vault_path_idx for efficient wikilink slug resolution in create_link",
+        statements: V8_STATEMENTS,
     },
 ];
 
@@ -280,22 +302,23 @@ mod tests {
     #[test]
     fn test_pending_all() {
         let pending = helix_pending_migrations(&[]);
-        assert_eq!(pending.len(), 5, "All 5 helix migrations pending");
+        assert_eq!(pending.len(), 6, "All 6 helix migrations pending");
     }
 
     #[test]
     fn test_pending_partial() {
         let pending = helix_pending_migrations(&[3]);
-        assert_eq!(pending.len(), 4, "v4, v5, v6, and v7 pending");
+        assert_eq!(pending.len(), 5, "v4, v5, v6, v7, and v8 pending");
         assert_eq!(pending[0].version, 4);
         assert_eq!(pending[1].version, 5);
         assert_eq!(pending[2].version, 6);
         assert_eq!(pending[3].version, 7);
+        assert_eq!(pending[4].version, 8);
     }
 
     #[test]
     fn test_pending_none() {
-        let pending = helix_pending_migrations(&[3, 4, 5, 6, 7]);
+        let pending = helix_pending_migrations(&[3, 4, 5, 6, 7, 8]);
         assert!(pending.is_empty(), "No pending migrations");
     }
 

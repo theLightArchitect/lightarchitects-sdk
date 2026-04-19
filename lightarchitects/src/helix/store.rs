@@ -123,6 +123,7 @@ impl HelixStore {
                 expires: None,
                 created_at: entry.created_at,
                 metadata: serde_json::Value::Null,
+                vault_path: None,
             };
 
             self.db

@@ -137,6 +137,7 @@ impl IngestionSource for PlanIngester {
                 "source_type": "plan",
                 "plan_path": self.plan_path.display().to_string(),
             }),
+            vault_path: None,
         };
         let (_, was_created) = db
             .upsert_step(&root_step)
@@ -163,6 +164,7 @@ impl IngestionSource for PlanIngester {
                 expires: None,
                 created_at: Utc::now(),
                 metadata: serde_json::json!({"phase_number": idx + 1}),
+                vault_path: None,
             };
             match db.upsert_step(&phase_step).await {
                 Ok((_, true)) => report.records_added += 1,
