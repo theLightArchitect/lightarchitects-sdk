@@ -35,6 +35,8 @@ pub struct MarkdownVaultIngester {
     vault_root: PathBuf,
     /// Sibling name (e.g., "eva", "corso").
     sibling: String,
+    /// Cap on total entries processed (for incremental testing).
+    max_entries: Option<usize>,
 }
 
 impl MarkdownVaultIngester {
@@ -44,7 +46,15 @@ impl MarkdownVaultIngester {
         Self {
             vault_root: vault_root.into(),
             sibling: sibling.into(),
+            max_entries: None,
         }
+    }
+
+    /// Cap the number of markdown entries processed (useful before a full 800-entry run).
+    #[must_use]
+    pub fn with_max_entries(mut self, n: usize) -> Self {
+        self.max_entries = Some(n);
+        self
     }
 
     /// Returns the sibling root directory path (walks entire subtree).
@@ -63,6 +73,14 @@ impl MarkdownVaultIngester {
     ) -> Result<(), IngestionError> {
         let content = tokio::fs::read_to_string(path).await?;
         let (fm, body) = frontmatter::parse(&content);
+
+        // Hub nodes (strands, epochs, resonance hubs) are structural catalog nodes.
+        // Ingesting them as :Step nodes would pollute the graph; they're already
+        // represented via :Strand and :Helix relationships.
+        if fm.entry_type.as_deref() == Some("hub") {
+            report.records_skipped = report.records_skipped.saturating_add(1);
+            return Ok(());
+        }
 
         let step = Self::build_step(&fm, body, helix_id);
         let (step_id, was_created) = db.upsert_step(&step).await.map_err(|e| {
@@ -131,6 +149,11 @@ impl MarkdownVaultIngester {
         // PrivacyLevel::from_metadata gate can read it.
         if let Some(privacy) = &fm.privacy {
             meta.insert("privacy".into(), serde_json::json!(privacy));
+        }
+        // entry_type: mirrored into metadata so upsert_step can write it as a
+        // first-class Neo4j property without requiring a Step struct field change.
+        if let Some(et) = &fm.entry_type {
+            meta.insert("entry_type".into(), serde_json::json!(et));
         }
         serde_json::Value::Object(meta)
     }
@@ -320,6 +343,13 @@ impl MarkdownVaultIngester {
                 }
                 Box::pin(self.walk_recursive(&path, db, helix_id, report)).await?;
             } else if file_type.is_file() && is_markdown(&path) {
+                // Honour max_entries cap: stop once added+skipped reaches the limit.
+                if self.max_entries.is_some_and(|max| {
+                    report.records_added.saturating_add(report.records_skipped)
+                        >= u64::try_from(max).unwrap_or(u64::MAX)
+                }) {
+                    return Ok(());
+                }
                 if let Err(e) = self.ingest_file(&path, db, helix_id, report).await {
                     report.errors.push(format!("{}: {e}", path.display()));
                 }

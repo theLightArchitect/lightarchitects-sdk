@@ -1264,10 +1264,11 @@ impl HelixDb for HelixNeo4j {
                       ON CREATE SET s.id = $id, s.title = $title, \
                                     s.content = $content, s.significance = $sig, \
                                     s.step_date = $step_date, s.step_index = $step_index, \
-                                    s.expires = $expires, \
+                                    s.expires = $expires, s.entry_type = $entry_type, \
                                     s.created_at = datetime(), s._created = true \
                       ON MATCH SET  s.title = $title, s.significance = $sig, \
                                     s.step_index = $step_index, s.expires = $expires, \
+                                    s.entry_type = $entry_type, \
                                     s._created = false \
                       RETURN s.id AS id, s._created AS created";
 
@@ -1285,6 +1286,16 @@ impl HelixDb for HelixNeo4j {
             step.expires.map_or(serde_json::Value::Null, |exp| {
                 serde_json::json!(exp.to_rfc3339())
             }),
+        );
+        // entry_type is stored in Step.metadata by the ingestion pipeline and mirrored
+        // here as a first-class Neo4j property to enable Cypher queries like:
+        // MATCH (s:Step {entry_type: 'build_plan'}) RETURN s
+        params.insert(
+            "entry_type".into(),
+            step.metadata
+                .get("entry_type")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
         );
 
         let records = self.timed_execute("upsert_step", cypher, params).await?;

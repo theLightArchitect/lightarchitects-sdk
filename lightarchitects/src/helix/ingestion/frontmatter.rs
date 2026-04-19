@@ -68,6 +68,14 @@ pub struct Frontmatter {
     /// ---
     /// ```
     pub privacy: Option<String>,
+    /// Semantic entry type for graph queries.
+    ///
+    /// Deserializes from `type:` (the vault's primary key) with `entry_type:` as a
+    /// forward-compatible alias. `type` is a Rust keyword so the field is named
+    /// `entry_type` in code. Values: `"hub"`, `"experience"`, `"reference"`,
+    /// `"milestone"`, `"convergence"`, `"growth-summary"`, `"journal"`, etc.
+    #[serde(rename = "type", alias = "entry_type", default)]
+    pub entry_type: Option<String>,
     /// Catch-all for extra fields.
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
@@ -374,7 +382,37 @@ mod tests {
     }
 
     #[test]
-    fn test_oversized_frontmatter_skipped_gracefully() {
+    fn test_parse_type_field_mapped_to_entry_type() {
+        let md = "---\ntitle: A hub\ntype: hub\n---\nContent.";
+        let (fm, _) = parse(md);
+        assert_eq!(
+            fm.entry_type.as_deref(),
+            Some("hub"),
+            "YAML `type:` must deserialize into entry_type field"
+        );
+    }
+
+    #[test]
+    fn test_parse_entry_type_alias_accepted() {
+        let md = "---\ntitle: A future entry\nentry_type: experience\n---\nContent.";
+        let (fm, _) = parse(md);
+        assert_eq!(
+            fm.entry_type.as_deref(),
+            Some("experience"),
+            "`entry_type:` alias must also deserialize correctly"
+        );
+    }
+
+    #[test]
+    fn test_parse_type_experience_and_significance() {
+        let md = "---\nsibling: corso\ntype: experience\nsignificance: 7.5\n---\nBody.";
+        let (fm, _) = parse(md);
+        assert_eq!(fm.entry_type.as_deref(), Some("experience"));
+        assert_eq!(fm.significance, Some(7.5));
+    }
+
+    #[test]
+    fn test_parse_oversized_frontmatter_skipped_gracefully() {
         // A frontmatter block exceeding 64 KiB is rejected without calling serde_yaml.
         // This guards against YAML anchor DoS ("billion laughs") attacks.
         let huge_yaml = "a: ".repeat(25_000); // ~75 KiB, well above 64 KiB limit
