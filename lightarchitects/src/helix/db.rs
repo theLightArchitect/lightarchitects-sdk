@@ -931,13 +931,18 @@ impl HelixDb for HelixNeo4j {
         //   Stage 1: match target by its UUID `id` property (normal steps).
         //   Stage 2: if stage 1 finds nothing, match by vault_path suffix
         //            (Obsidian wikilinks carry path slugs, not UUIDs).
-        // Using OPTIONAL MATCH + COALESCE keeps this a single round-trip.
+        //
+        // Obsidian wikilinks omit the `.md` extension (e.g. `[[eva/identity]]`)
+        // while `Step.vault_path` always stores it (`"eva/identity.md"`).
+        // Matching both variants in a single OPTIONAL MATCH keeps this a
+        // single round-trip and covers already-suffixed references too.
         let cypher = "MATCH (a:Step {id: $source_id}) \
              OPTIONAL MATCH (b1:Step {id: $target_id}) \
              OPTIONAL MATCH (b2:Step) \
                WHERE b1 IS NULL \
                  AND b2.vault_path IS NOT NULL \
-                 AND b2.vault_path ENDS WITH $target_id \
+                 AND (b2.vault_path ENDS WITH $target_id \
+                      OR b2.vault_path ENDS WITH $target_id_md) \
              WITH a, coalesce(b1, b2) AS b \
              WHERE b IS NOT NULL \
              MERGE (a)-[r:LINKS_TO]->(b) \
@@ -948,9 +953,18 @@ impl HelixDb for HelixNeo4j {
                              r.metadata = $metadata \
              RETURN r.id AS id";
 
+        // Compute the `.md`-suffixed variant so Obsidian wikilinks like
+        // `[[eva/identity]]` resolve against `vault_path = "eva/identity.md"`.
+        let target_id_md = if link.target_id.ends_with(".md") {
+            link.target_id.clone()
+        } else {
+            format!("{}.md", link.target_id)
+        };
+
         let mut params: BTreeMap<String, serde_json::Value> = BTreeMap::new();
         params.insert("source_id".into(), serde_json::json!(&link.source_id));
         params.insert("target_id".into(), serde_json::json!(&link.target_id));
+        params.insert("target_id_md".into(), serde_json::json!(&target_id_md));
         params.insert("rel_id".into(), serde_json::json!(&rel_id));
         params.insert("link_type".into(), serde_json::json!(link_type));
         params.insert("strength".into(), serde_json::json!(link.strength));

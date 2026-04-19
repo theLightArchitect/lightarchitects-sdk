@@ -37,6 +37,15 @@ pub struct MarkdownVaultIngester {
     sibling: String,
     /// Cap on total entries processed (for incremental testing).
     max_entries: Option<usize>,
+    /// Re-run wikilink resolution on content-hash-skipped Steps.
+    ///
+    /// When `false` (default), an unchanged entry short-circuits the
+    /// per-file pipeline — skipping strand, wikilink, and attachment writes.
+    /// Set `true` to re-invoke only `create_wikilinks` on skipped Steps so
+    /// previously unresolvable `[[wikilinks]]` can be materialised without
+    /// wiping the graph. Useful after a deploy that added wikilink
+    /// resolution logic (e.g. Phase 11.5 `vault_path` fallback).
+    force_wikilinks: bool,
 }
 
 impl MarkdownVaultIngester {
@@ -47,6 +56,7 @@ impl MarkdownVaultIngester {
             vault_root: vault_root.into(),
             sibling: sibling.into(),
             max_entries: None,
+            force_wikilinks: false,
         }
     }
 
@@ -54,6 +64,17 @@ impl MarkdownVaultIngester {
     #[must_use]
     pub fn with_max_entries(mut self, n: usize) -> Self {
         self.max_entries = Some(n);
+        self
+    }
+
+    /// Re-run wikilink resolution on Steps skipped by content-hash dedup.
+    ///
+    /// Leaves Step content, strands, and attachments untouched. Only
+    /// `create_wikilinks` is re-invoked — which is idempotent because
+    /// [`HelixDb::create_link`] uses a single MERGE under the hood.
+    #[must_use]
+    pub fn with_force_wikilinks(mut self, force: bool) -> Self {
+        self.force_wikilinks = force;
         self
     }
 
@@ -99,6 +120,14 @@ impl MarkdownVaultIngester {
             report.records_added += 1;
         } else {
             report.records_skipped += 1;
+            if self.force_wikilinks {
+                // Step body is unchanged (content-hash match), but wikilinks may
+                // have been added/modified or previously failed to resolve.
+                // Re-run wikilink resolution only; strand/convergence/attachment
+                // writes stay idempotent so they don't need re-execution.
+                self.create_wikilinks(db, &step_id, body, &fm.links, report)
+                    .await;
+            }
             return Ok(());
         }
 
