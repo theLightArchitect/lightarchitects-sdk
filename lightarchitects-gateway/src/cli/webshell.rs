@@ -84,10 +84,7 @@ pub async fn execute(config: &GatewayConfig, args: &[String]) -> Result<(), Gate
             eprintln!("Available: start, control, status");
             Err(GatewayError::UnknownTool(other.to_owned()))
         }
-        None => {
-            eprintln!("Usage: lightarchitects webshell <start|control|status>");
-            Ok(())
-        }
+        None => start_server(config, 8733, "claude", None),
     }
 }
 

@@ -17,7 +17,7 @@ use axum::{
 };
 use rust_embed::Embed;
 
-/// Embedded static asset bundle — every file under `Lightarchitectmockcli/dist/`.
+/// Embedded static asset bundle — every file under the Svelte Mockcli `dist/`.
 #[derive(Embed)]
 #[folder = "../../Lightarchitectmockcli/dist/"]
 pub struct Assets;

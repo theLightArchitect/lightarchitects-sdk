@@ -105,7 +105,7 @@ async fn wire_create_then_details_then_notify_then_sse_roundtrip() {
         .unwrap();
     assert_eq!(details["build_id"], json!(build_id_str));
     assert_eq!(details["cwd"], json!("/tmp"));
-    assert_eq!(details["agent"]["kind"], "claude_code");
+    assert_eq!(details["agent"]["kind"], "lightarchitects");
     assert_eq!(details["agent"]["backend"], "anthropic");
     assert!(details.get("notify_token").is_none());
 

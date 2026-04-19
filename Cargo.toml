@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "lightarchitects",          # Unified SDK — all clients + advanced capabilities
+    "lightarchitects-server",   # Server-side facade: auth, arena, helix, turnlog, oracle
     "lightarchitects-gateway",  # Binary: MCP server + Arena HTTP + Conductor
     "lightarchitects-webshell", # Binary: local web GUI (PTY + 3D helix panel)
 ]

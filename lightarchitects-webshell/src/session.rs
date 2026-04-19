@@ -23,10 +23,11 @@ use std::{
 };
 
 use dashmap::DashMap;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 use uuid::Uuid;
 
-use crate::config::{AgentSession, ClaudeBackend};
+use crate::config::{AgentSession, ClaudeBackend, CodexBackend};
+use crate::copilot::CopilotProcess;
 use crate::events::types::WebEvent;
 
 /// Channel capacity for per-build SSE broadcasts.
@@ -35,6 +36,13 @@ use crate::events::types::WebEvent;
 /// cause the sender to lag receivers into a cold-start. 256 is generous for
 /// typical event rates (tool calls, build gates).
 pub const EVENT_CHANNEL_BUF: usize = 256;
+
+/// Broadcast ring-buffer capacity for raw PTY stdout bytes.
+///
+/// Each slot holds one read chunk (up to 4 KiB). 1 024 slots ≈ 4 MiB
+/// worst-case in-flight across all subscribers; this is comfortably within
+/// memory budget while giving a slow browser tab time to drain.
+pub const PTY_OUTPUT_CHANNEL_CAP: usize = 1024;
 
 /// Per-build session — owned by `Arc` inside `BuildRegistry`.
 pub struct BuildSession {
@@ -70,6 +78,33 @@ pub struct BuildSession {
     /// via `portable-pty`'s Drop impl, so removing a session from the
     /// registry is sufficient to clean up its child process.
     pub child_killer: StdMutex<Option<Box<dyn portable_pty::ChildKiller + Send>>>,
+    /// Persistent copilot subprocess (Anthropic backend only).
+    ///
+    /// `None` until the first copilot message; spawned lazily by `call_anthropic`.
+    /// The tokio mutex serializes turns and keeps the process alive between HTTP
+    /// requests. Dropped with the session → SIGKILL via `kill_on_drop(true)`.
+    pub copilot_proc: tokio::sync::Mutex<Option<CopilotProcess>>,
+
+    // ── Persistent PTY fields (populated on first WS connect) ──────────────
+    /// Broadcast channel for raw PTY stdout bytes.
+    ///
+    /// All connected WebSocket sessions subscribe here. When no subscribers
+    /// are attached the ring-buffer overwrites stale data — the process keeps
+    /// running regardless. New subscribers receive output from the point of
+    /// subscription onward.
+    pub pty_output_tx: broadcast::Sender<Vec<u8>>,
+    /// PTY stdin sender — `None` until the PTY process has been started.
+    ///
+    /// Each WebSocket connection clones this sender; all write to the same
+    /// PTY stdin pipe via a single writer task.
+    pub pty_input_tx: tokio::sync::Mutex<Option<mpsc::Sender<Vec<u8>>>>,
+    /// PTY master fd for terminal resize — `None` until PTY is started.
+    pub pty_master: StdMutex<Option<Box<dyn portable_pty::MasterPty + Send>>>,
+    /// Fires when the PTY child process exits.
+    ///
+    /// All active `attach_ws` loops select on `notified()` so they can
+    /// send a Close frame and exit cleanly.
+    pub pty_exited: Arc<tokio::sync::Notify>,
 }
 
 impl BuildSession {
@@ -85,6 +120,7 @@ impl BuildSession {
         let build_id = Uuid::new_v4();
         let notify_token = Self::random_notify_token();
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_BUF);
+        let (pty_output_tx, _) = broadcast::channel(PTY_OUTPUT_CHANNEL_CAP);
 
         Self {
             build_id,
@@ -99,6 +135,11 @@ impl BuildSession {
             notify_token,
             event_tx,
             child_killer: StdMutex::new(None),
+            copilot_proc: tokio::sync::Mutex::new(None),
+            pty_output_tx,
+            pty_input_tx: tokio::sync::Mutex::new(None),
+            pty_master: StdMutex::new(None),
+            pty_exited: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
@@ -133,7 +174,7 @@ impl BuildSession {
     pub fn build_argv(&self) -> Vec<String> {
         let mut argv: Vec<String> = Vec::new();
         match &self.agent {
-            AgentSession::ClaudeCode(_) => {
+            AgentSession::Lightarchitects(_) => {
                 if let Some(tmpl) = &self.claude_agent_template {
                     argv.push("--agent".to_owned());
                     argv.push(tmpl.clone());
@@ -145,6 +186,13 @@ impl BuildSession {
                 if let Some(model) = &self.model {
                     argv.push("--model".to_owned());
                     argv.push(model.clone());
+                } else if let AgentSession::Lightarchitects(ClaudeBackend::OllamaLaunch(lc)) =
+                    &self.agent
+                {
+                    // OllamaLaunch stores its model in the backend config, not self.model.
+                    // We must pass --model so claude doesn't fall back to api.anthropic.com.
+                    argv.push("--model".to_owned());
+                    argv.push(lc.model.clone());
                 }
                 if let Some(sp) = &self.system_prompt {
                     argv.push("--system-prompt".to_owned());
@@ -163,20 +211,23 @@ impl BuildSession {
                     argv.push(dt.clone());
                 }
             }
+            AgentSession::Codex(cfg) => {
+                argv.push("-m".to_owned());
+                argv.push(cfg.model.clone());
+            }
+            AgentSession::LightarchitectsNative(_) => {}
         }
         argv
     }
 
     /// Build the env-var list injected into the spawned child process.
     ///
-    /// Always included:
-    /// - `LA_BUILD_ID` — this session's UUID.
-    /// - `LA_NOTIFY_TOKEN` — hex-encoded 32-byte random token (gateway posts this).
-    /// - `LA_GUI_URL` — webshell base URL (the gateway's `ui.*` tools POST here).
+    /// Always included: `LA_BUILD_ID`, `LA_NOTIFY_TOKEN`, `LA_GUI_URL`.
     ///
     /// Backend-specific:
-    /// - `Anthropic` → no additional env (Claude uses its normal auth).
-    /// - `Ollama` → `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_MODEL`.
+    /// - `Lightarchitects(Anthropic)` → no extra vars.
+    /// - `Lightarchitects(OllamaLaunch)` / `Codex(OllamaLaunch)` → Ollama routing vars.
+    /// - `Lightarchitects(Ollama)` → Anthropic-compat HTTP vars (stateless backend).
     #[must_use]
     pub fn build_spawn_env(&self, gui_url: &str) -> Vec<(String, String)> {
         let mut env = vec![
@@ -185,11 +236,33 @@ impl BuildSession {
             ("LA_GUI_URL".to_owned(), gui_url.to_owned()),
         ];
         match &self.agent {
-            AgentSession::ClaudeCode(ClaudeBackend::Anthropic) => {}
-            AgentSession::ClaudeCode(ClaudeBackend::Ollama(oc)) => {
+            AgentSession::Lightarchitects(ClaudeBackend::Anthropic)
+            | AgentSession::LightarchitectsNative(_) => {}
+            AgentSession::Lightarchitects(ClaudeBackend::OllamaLaunch(lc)) => {
+                // Replicates what `ollama launch claude --model <model>` injects.
+                env.push(("ANTHROPIC_BASE_URL".to_owned(), lc.base_url.clone()));
+                env.push(("ANTHROPIC_AUTH_TOKEN".to_owned(), "ollama".to_owned()));
+                env.push(("ANTHROPIC_API_KEY".to_owned(), String::new()));
+                // Pin all Claude tier models to the same Ollama model so
+                // internal model-switching doesn't escape to api.anthropic.com.
+                env.push((
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL".to_owned(),
+                    lc.model.clone(),
+                ));
+                env.push(("ANTHROPIC_DEFAULT_OPUS_MODEL".to_owned(), lc.model.clone()));
+                env.push(("ANTHROPIC_DEFAULT_HAIKU_MODEL".to_owned(), lc.model.clone()));
+            }
+            AgentSession::Lightarchitects(ClaudeBackend::Ollama(oc)) => {
                 env.push(("ANTHROPIC_BASE_URL".to_owned(), oc.base_url.clone()));
                 env.push(("ANTHROPIC_AUTH_TOKEN".to_owned(), oc.auth_token.clone()));
                 env.push(("ANTHROPIC_MODEL".to_owned(), oc.model.clone()));
+            }
+            AgentSession::Codex(cfg) => {
+                if let CodexBackend::OllamaLaunch(lc) = &cfg.backend {
+                    // Replicates what `ollama launch codex --model <model>` injects.
+                    env.push(("OPENAI_BASE_URL".to_owned(), format!("{}/v1", lc.base_url)));
+                    env.push(("OPENAI_API_KEY".to_owned(), "ollama".to_owned()));
+                }
             }
         }
         env
@@ -281,11 +354,11 @@ mod tests {
     use crate::config::OllamaConfig;
 
     fn anthropic_session() -> AgentSession {
-        AgentSession::ClaudeCode(ClaudeBackend::Anthropic)
+        AgentSession::Lightarchitects(ClaudeBackend::Anthropic)
     }
 
     fn ollama_session() -> AgentSession {
-        AgentSession::ClaudeCode(ClaudeBackend::Ollama(OllamaConfig {
+        AgentSession::Lightarchitects(ClaudeBackend::Ollama(OllamaConfig {
             base_url: "http://localhost:11434".to_owned(),
             model: "qwen3-coder:480b-cloud".to_owned(),
             auth_token: "ollama-secret-xyz".to_owned(),
@@ -489,6 +562,20 @@ mod tests {
             b.event_tx.receiver_count(),
             0,
             "B's channel must be independent"
+        );
+    }
+
+    #[test]
+    fn build_argv_native_is_empty() {
+        use crate::config::LightarchitectsNativeConfig;
+        let sess = BuildSession::new(
+            PathBuf::from("/tmp"),
+            AgentSession::LightarchitectsNative(LightarchitectsNativeConfig::default()),
+        );
+        assert!(
+            sess.build_argv().is_empty(),
+            "LightarchitectsNative must not pass claude-specific flags: {:?}",
+            sess.build_argv()
         );
     }
 }

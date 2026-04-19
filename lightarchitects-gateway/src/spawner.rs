@@ -146,15 +146,10 @@ pub async fn call_agent(
     mcp_initialize(&mut writer, &mut reader, agent_name).await?;
 
     // 7. Build the tools/call arguments: {action, params}.
+    // CORSO expects {"action": "...", "params": {...}} — params are nested, not flattened.
     let mut arguments = serde_json::Map::new();
     arguments.insert("action".to_owned(), Value::String(action.to_owned()));
-
-    // Merge params into arguments (flattened — same level as action).
-    if let Value::Object(extra) = params {
-        for (k, v) in extra {
-            arguments.insert(k, v);
-        }
-    }
+    arguments.insert("params".to_owned(), params);
 
     let tool_name = agent_cfg.tool_name.clone();
 

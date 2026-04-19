@@ -201,7 +201,7 @@ pub struct BuildResponse {
 /// Sanitised view of [`AgentSession`] — omits Ollama `auth_token`.
 #[derive(Debug, Serialize)]
 pub struct AgentDescriptor {
-    /// Agent binary family, e.g. `"claude_code"`.
+    /// Agent binary family, e.g. `"lightarchitects"`, `"codex"`.
     pub kind: &'static str,
     /// Backend routing (e.g. `"anthropic"`, `"ollama"`).
     pub backend: &'static str,
@@ -213,13 +213,28 @@ impl AgentDescriptor {
     #[must_use]
     pub fn from_session(agent: &AgentSession) -> Self {
         match agent {
-            AgentSession::ClaudeCode(ClaudeBackend::Anthropic) => Self {
-                kind: "claude_code",
+            AgentSession::Lightarchitects(ClaudeBackend::Anthropic) => Self {
+                kind: "lightarchitects",
                 backend: "anthropic",
             },
-            AgentSession::ClaudeCode(ClaudeBackend::Ollama(_)) => Self {
-                kind: "claude_code",
+            AgentSession::Lightarchitects(ClaudeBackend::OllamaLaunch(_)) => Self {
+                kind: "lightarchitects",
+                backend: "ollama_launch",
+            },
+            AgentSession::Lightarchitects(ClaudeBackend::Ollama(_)) => Self {
+                kind: "lightarchitects",
                 backend: "ollama",
+            },
+            AgentSession::Codex(cfg) => Self {
+                kind: "codex",
+                backend: match &cfg.backend {
+                    crate::config::CodexBackend::OpenAi => "openai",
+                    crate::config::CodexBackend::OllamaLaunch(_) => "ollama_launch",
+                },
+            },
+            AgentSession::LightarchitectsNative(_) => Self {
+                kind: "lightarchitects_native",
+                backend: "native",
             },
         }
     }
@@ -249,10 +264,8 @@ pub async fn create_build_handler(
         return StatusCode::UNAUTHORIZED.into_response();
     }
 
-    // Use the server's configured default agent session — per-build
-    // agent/backend overrides are deferred past Phase C to keep the POST
-    // body minimal until we have UI to configure them.
-    let agent = state.config.agent.clone();
+    // Use the active agent session (updated live by /api/setup/save).
+    let agent = state.active_agent.read().await.clone();
     let mut session = BuildSession::new(body.cwd.clone(), agent);
     session.claude_agent_template = body
         .claude_agent_template
@@ -324,8 +337,9 @@ mod tests {
 
     #[test]
     fn agent_descriptor_redacts_anthropic() {
-        let d = AgentDescriptor::from_session(&AgentSession::ClaudeCode(ClaudeBackend::Anthropic));
-        assert_eq!(d.kind, "claude_code");
+        let d =
+            AgentDescriptor::from_session(&AgentSession::Lightarchitects(ClaudeBackend::Anthropic));
+        assert_eq!(d.kind, "lightarchitects");
         assert_eq!(d.backend, "anthropic");
     }
 
@@ -337,7 +351,7 @@ mod tests {
             model: "qwen3-coder:480b-cloud".to_owned(),
             auth_token: "sk-super-secret".to_owned(),
         };
-        let sess = AgentSession::ClaudeCode(ClaudeBackend::Ollama(oc));
+        let sess = AgentSession::Lightarchitects(ClaudeBackend::Ollama(oc));
         let d = AgentDescriptor::from_session(&sess);
         let json = serde_json::to_string(&d).unwrap();
         assert!(
@@ -362,7 +376,7 @@ mod tests {
         let resp = BuildResponse {
             build_id: Uuid::new_v4(),
             cwd: PathBuf::from("/tmp"),
-            agent: AgentDescriptor::from_session(&AgentSession::ClaudeCode(
+            agent: AgentDescriptor::from_session(&AgentSession::Lightarchitects(
                 ClaudeBackend::Anthropic,
             )),
             claude_agent_template: None,
@@ -395,5 +409,16 @@ mod tests {
         assert_eq!(req.claude_agent_template.as_deref(), Some("corso"));
         assert_eq!(req.model.as_deref(), Some("opus"));
         assert_eq!(req.allowed_tools.as_deref(), Some("Read Grep"));
+    }
+
+    #[test]
+    fn agent_descriptor_lightarchitects_native() {
+        use crate::config::LightarchitectsNativeConfig;
+        let sess = AgentSession::LightarchitectsNative(LightarchitectsNativeConfig::default());
+        let d = AgentDescriptor::from_session(&sess);
+        assert_eq!(d.kind, "lightarchitects_native");
+        assert_eq!(d.backend, "native");
+        let json = serde_json::to_string(&d).unwrap();
+        assert!(!json.contains("laex0"), "binary path must not leak: {json}");
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! The flow under test:
 //!
-//! 1. Webshell starts with `Config.agent = ClaudeCode(<backend>)`.
+//! 1. Webshell starts with `Config.agent = Lightarchitects(<backend>)`.
 //! 2. A `POST /api/builds` creates a `BuildSession` that inherits the
 //!    Config's backend.
 //! 3. When the PTY spawns, `run_session` calls `BuildSession::build_spawn_env`
@@ -89,7 +89,7 @@ fn env_map(pairs: &[(String, String)]) -> HashMap<&str, &str> {
 
 #[tokio::test]
 async fn anthropic_build_injects_la_vars_only() {
-    let cfg = cfg_with_agent(AgentSession::ClaudeCode(ClaudeBackend::Anthropic));
+    let cfg = cfg_with_agent(AgentSession::Lightarchitects(ClaudeBackend::Anthropic));
     let (base, builds) = spawn_server_with(cfg).await;
     let id = post_build(&base, "/tmp/anth").await;
 
@@ -122,7 +122,9 @@ async fn ollama_build_injects_anthropic_overrides() {
         model: "qwen3-coder:480b-cloud".to_owned(),
         auth_token: "sk-test-ollama".to_owned(),
     };
-    let cfg = cfg_with_agent(AgentSession::ClaudeCode(ClaudeBackend::Ollama(oc.clone())));
+    let cfg = cfg_with_agent(AgentSession::Lightarchitects(ClaudeBackend::Ollama(
+        oc.clone(),
+    )));
     let (base, builds) = spawn_server_with(cfg).await;
     let id = post_build(&base, "/tmp/ollama").await;
 
@@ -155,7 +157,7 @@ async fn build_details_endpoint_redacts_ollama_auth_token() {
         model: "qwen3-coder:480b-cloud".to_owned(),
         auth_token: "sk-MUST-NOT-LEAK".to_owned(),
     };
-    let cfg = cfg_with_agent(AgentSession::ClaudeCode(ClaudeBackend::Ollama(oc)));
+    let cfg = cfg_with_agent(AgentSession::Lightarchitects(ClaudeBackend::Ollama(oc)));
     let (base, _builds) = spawn_server_with(cfg).await;
     let id = post_build(&base, "/tmp/ollama-leak-test").await;
 
@@ -185,7 +187,7 @@ async fn build_details_endpoint_redacts_ollama_auth_token() {
 
 #[tokio::test]
 async fn per_build_overrides_show_up_in_argv() {
-    let cfg = cfg_with_agent(AgentSession::ClaudeCode(ClaudeBackend::Anthropic));
+    let cfg = cfg_with_agent(AgentSession::Lightarchitects(ClaudeBackend::Anthropic));
     let (base, builds) = spawn_server_with(cfg).await;
 
     // Create with all optional overrides — this exercises the full

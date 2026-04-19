@@ -1,19 +1,26 @@
 //! Per-connection PTY session lifecycle.
 //!
-//! [`run_session`] is the public entry point called by the WebSocket handler
-//! after a successful upgrade. It:
+//! ## Persistent PTY (per-build mode)
 //!
-//! 1. Opens a PTY pair via [`portable_pty::native_pty_system`].
-//! 2. Spawns the configured host command (`claude` by default) into the slave.
-//! 3. Drops the slave fd in the parent — the child owns its copy.
-//! 4. Bridges bytes bidirectionally:
-//!    - PTY stdout → WebSocket binary frames (via `spawn_blocking` reader task).
-//!    - WebSocket binary frames → PTY stdin (via `spawn_blocking` writer task).
-//!    - WebSocket JSON text frames → PTY resize via [`ClientMessage`].
-//! 5. On WS close or child exit: SIGTERM → 2 s wait → SIGKILL → reap.
+//! When a `build` session is supplied, the PTY process lives for the lifetime
+//! of the `BuildSession`, not the WebSocket connection.
 //!
-//! `portable-pty`'s `pre_exec` handles `setsid()` + `TIOCSCTTY` natively
-//! (plan ref RG1-A1), so we need no session-leadership code of our own.
+//! ```text
+//! first WS connect  → ensure_pty_started() → spawns claude, wires channels
+//! WS disconnect     → attach_ws() returns   → child keeps running
+//! second WS connect → ensure_pty_started() no-op → attach_ws() resumes output
+//! child exits       → pty_exited notified   → all WS subscribers close
+//! ```
+//!
+//! The PTY stdout bytes are broadcast on `BuildSession::pty_output_tx`. Each
+//! connected WebSocket subscribes independently; missed frames (e.g. while no
+//! tab is open) are silently dropped from the ring-buffer — the child process
+//! is unaffected.
+//!
+//! ## Legacy mode
+//!
+//! `GET /api/terminal/ws` (no build id) uses the old single-shot behaviour:
+//! PTY spawned on connect, killed on disconnect.
 //!
 //! ## Frame format
 //!
@@ -31,7 +38,7 @@ use std::{
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{SinkExt, StreamExt};
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{debug, info, instrument, warn};
 
 use crate::{config::Config, mcp_config, session::BuildSession, terminal::ws::SessionGuard};
@@ -59,20 +66,11 @@ enum ClientMessage {
 
 /// Runs one PTY session for the lifetime of `socket`.
 ///
+/// - `Some(session)` → persistent mode: PTY stays alive across WS reconnects.
+/// - `None` → legacy single-shot mode: PTY tied to WS lifetime.
+///
 /// The `_guard` is dropped when this future resolves, decrementing the
-/// shared session counter. Errors are logged; the caller does not need to
-/// inspect the outcome.
-///
-/// ## `build` parameter
-///
-/// - `None` → legacy single-shot mode (`/api/terminal/ws`): spawn the
-///   configured `host_cmd` in the `Config.cwd` with only `TOKEN_ENV`.
-/// - `Some(session)` → per-build mode (`/api/builds/:id/terminal/ws`):
-///   spawn in `session.cwd`, append `session.build_argv()` arguments,
-///   inject `session.build_spawn_env(gui_url)` (adds `LA_BUILD_ID`,
-///   `LA_NOTIFY_TOKEN`, `LA_GUI_URL`, and `ANTHROPIC_*` overrides for
-///   Ollama backends), and write a project-scoped `.mcp.json` registering
-///   the local gateway as `lightarchitects-gui-bridge`.
+/// shared session counter.
 #[instrument(skip_all, name = "pty_session")]
 pub async fn run_session(
     socket: WebSocket,
@@ -80,13 +78,158 @@ pub async fn run_session(
     build: Option<Arc<BuildSession>>,
     _guard: SessionGuard,
 ) {
-    if let Err(e) = run_inner(socket, &config, build.as_deref()).await {
+    let result = if let Some(session) = build {
+        run_persistent(socket, &config, &session).await
+    } else {
+        // Legacy path — no session, PTY dies with WS.
+        run_inner(socket, &config, None).await
+    };
+    if let Err(e) = result {
         warn!(error = %e, "PTY session terminated with error");
     }
+    info!("PTY session closed");
 }
 
-/// Core session logic extracted for testability and to keep `run_session`'s
-/// error handling separate from the I/O machinery.
+// ── Persistent-mode helpers ───────────────────────────────────────────────────
+
+/// Persistent PTY entry point: ensure the child is running, then attach WS.
+async fn run_persistent(
+    socket: WebSocket,
+    config: &Config,
+    session: &BuildSession,
+) -> Result<(), anyhow::Error> {
+    ensure_pty_started(session, config).await?;
+    attach_ws(socket, session).await
+}
+
+/// Start the PTY process for `session` if it is not already running.
+///
+/// Idempotent — a concurrent second call will block on the mutex and
+/// observe `is_some()` once the first call completes.
+async fn ensure_pty_started(session: &BuildSession, config: &Config) -> Result<(), anyhow::Error> {
+    let mut pty_in_guard = session.pty_input_tx.lock().await;
+    if pty_in_guard.is_some() {
+        return Ok(()); // already running
+    }
+
+    // ── Open PTY pair ─────────────────────────────────────────────────────────
+    let pty_sys = native_pty_system();
+    let pair = pty_sys.openpty(PtySize {
+        rows: 24,
+        cols: 80,
+        pixel_width: 0,
+        pixel_height: 0,
+    })?;
+    let master = pair.master;
+    let slave = pair.slave;
+
+    // ── Build command ─────────────────────────────────────────────────────────
+    let mut host_builder = CommandBuilder::new(&config.host_cmd);
+    host_builder.env(crate::config::TOKEN_ENV, &config.token);
+    host_builder.cwd(&session.cwd);
+    for arg in session.build_argv() {
+        host_builder.arg(arg);
+    }
+    let gui_url = format!("http://127.0.0.1:{}", config.port);
+    for (k, v) in session.build_spawn_env(&gui_url) {
+        host_builder.env(k, v);
+    }
+    maybe_write_mcp_json(session, &gui_url);
+
+    let child = slave.spawn_command(host_builder)?;
+    drop(slave);
+
+    // ── Wire up I/O ───────────────────────────────────────────────────────────
+    let pty_reader = master.try_clone_reader()?;
+    let pty_writer = master.take_writer()?;
+
+    // Grab the killer before moving master into the session.
+    let killer = child.clone_killer();
+
+    // Store master for resize; store killer for cleanup.
+    #[allow(clippy::unwrap_used)]
+    {
+        *session.pty_master.lock().unwrap() = Some(master);
+        *session.child_killer.lock().unwrap() = Some(killer);
+    }
+
+    let (pty_in_tx, pty_in_rx) = mpsc::channel::<Vec<u8>>(128);
+
+    // PTY stdout → broadcast channel (shared across WS subscribers).
+    let output_tx = session.pty_output_tx.clone();
+    let exited = Arc::clone(&session.pty_exited);
+    spawn_broadcast_reader(pty_reader, output_tx, exited);
+
+    // PTY stdin ← mpsc channel (each WS connection sends a clone of pty_in_tx).
+    spawn_pty_writer(pty_writer, pty_in_rx);
+
+    *pty_in_guard = Some(pty_in_tx);
+    Ok(())
+}
+
+/// Attach one WebSocket to a running PTY session.
+///
+/// Returns when the WS closes or the PTY child exits. Does NOT kill the child.
+async fn attach_ws(socket: WebSocket, session: &BuildSession) -> Result<(), anyhow::Error> {
+    let mut pty_rx = session.pty_output_tx.subscribe();
+
+    // Clone the stdin sender so this WS can write to the shared PTY stdin.
+    let pty_in_tx: Option<mpsc::Sender<Vec<u8>>> = {
+        let guard = session.pty_input_tx.lock().await;
+        guard.as_ref().cloned()
+    };
+
+    let (mut ws_sink, mut ws_stream) = socket.split();
+    let exited = Arc::clone(&session.pty_exited);
+
+    loop {
+        tokio::select! {
+            // PTY stdout → browser
+            maybe_bytes = pty_rx.recv() => {
+                match maybe_bytes {
+                    Ok(bytes) => {
+                        if ws_sink.send(Message::Binary(bytes.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    // Lagged: ring-buffer overflow — skip missed frames.
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    // Sender dropped — reader task exited, child is gone.
+                    Err(broadcast::error::RecvError::Closed) => {
+                        let _ = ws_sink.send(Message::Close(None)).await;
+                        break;
+                    }
+                }
+            }
+
+            // Browser → PTY
+            maybe_msg = ws_stream.next() => {
+                match maybe_msg {
+                    None | Some(Ok(Message::Close(_)) | Err(_)) => break,
+                    Some(Ok(Message::Binary(b))) => {
+                        if let Some(ref tx) = pty_in_tx {
+                            let _ = tx.send(b.to_vec()).await;
+                        }
+                    }
+                    Some(Ok(Message::Text(t))) => {
+                        apply_control_message_session(session, &t);
+                    }
+                    Some(Ok(Message::Ping(_) | Message::Pong(_))) => {}
+                }
+            }
+
+            // Child exited — close gracefully
+            () = exited.notified() => {
+                let _ = ws_sink.send(Message::Close(None)).await;
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Core session logic for the legacy (no-build) path.
 async fn run_inner(
     socket: WebSocket,
     config: &Config,
@@ -106,13 +249,9 @@ async fn run_inner(
 
     // ── 2. Spawn host command ─────────────────────────────────────────────────
     let mut host_builder = CommandBuilder::new(&config.host_cmd);
-    // Expose the webshell auth token so the child can call `/api/control`.
     host_builder.env(crate::config::TOKEN_ENV, &config.token);
 
     if let Some(session) = build {
-        // Per-build mode: cwd from session, argv + env vars from BuildSession,
-        // and a project-scoped `.mcp.json` registering the gateway under
-        // `lightarchitects-gui-bridge`.
         host_builder.cwd(&session.cwd);
         for arg in session.build_argv() {
             host_builder.arg(arg);
@@ -123,13 +262,9 @@ async fn run_inner(
         }
         maybe_write_mcp_json(session, &gui_url);
     } else {
-        // Legacy single-shot mode: use the globally configured cwd.
         host_builder.cwd(&config.cwd);
     }
     let child = slave.spawn_command(host_builder)?;
-
-    // Close the slave fd in the parent.  The child has its own copy; closing
-    // ours ensures the master side sees EOF when the child exits.
     drop(slave);
 
     let pid = child.process_id();
@@ -139,15 +274,12 @@ async fn run_inner(
     let pty_reader = master.try_clone_reader()?;
     let pty_writer = master.take_writer()?;
 
-    // PTY stdout → channel → WS (bounded: back-pressure if browser is slow)
     let (pty_out_tx, mut pty_out_rx) = mpsc::channel::<Vec<u8>>(128);
-    // WS binary → channel → PTY stdin
     let (pty_in_tx, pty_in_rx) = mpsc::channel::<Vec<u8>>(128);
-    // Child exit notification
     let (exit_tx, exit_rx) = oneshot::channel::<()>();
 
     // ── 4. Blocking background tasks ─────────────────────────────────────────
-    spawn_pty_reader(pty_reader, pty_out_tx);
+    spawn_mpsc_reader(pty_reader, pty_out_tx);
     spawn_pty_writer(pty_writer, pty_in_rx);
     spawn_child_waiter(child, exit_tx);
 
@@ -157,15 +289,12 @@ async fn run_inner(
 
     loop {
         tokio::select! {
-            // PTY stdout → browser as binary frames
             maybe_bytes = pty_out_rx.recv() => {
                 let Some(bytes) = maybe_bytes else { break };
                 if ws_sink.send(Message::Binary(bytes.into())).await.is_err() {
                     break;
                 }
             }
-
-            // Browser → PTY (binary bytes) or control (JSON text)
             maybe_msg = ws_stream.next() => {
                 match maybe_msg {
                     None | Some(Ok(Message::Close(_)) | Err(_)) => break,
@@ -175,12 +304,9 @@ async fn run_inner(
                     Some(Ok(Message::Text(t))) => {
                         apply_control_message(&*master, &t);
                     }
-                    // Ping/Pong frames: tungstenite handles Ping→Pong echo; no action needed.
                     Some(Ok(Message::Ping(_) | Message::Pong(_))) => {}
                 }
             }
-
-            // Child exited — send Close frame and end the loop
             _ = &mut exit_rx => {
                 let _ = ws_sink.send(Message::Close(None)).await;
                 break;
@@ -188,20 +314,16 @@ async fn run_inner(
         }
     }
 
-    // ── 6. Shutdown: SIGTERM → 2 s → SIGKILL ─────────────────────────────────
-    // Drop the write channel so the PTY writer task drains and exits cleanly.
+    // ── 6. Shutdown ───────────────────────────────────────────────────────────
     drop(pty_in_tx);
     terminate_child(pid, &mut *killer).await;
-    info!("PTY session closed");
     Ok(())
 }
 
-/// Resolve the gateway binary path and attempt to write a project-scoped
-/// `.mcp.json` into the build's cwd. Silently skips on any resolution or
-/// I/O failure — the round trip still works via the user's global MCP
-/// registration; the local `.mcp.json` just names this instance distinctly
-/// so its env vars (`LA_BUILD_ID`, `LA_NOTIFY_TOKEN`, `LA_GUI_URL`) reach
-/// the right gateway process.
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+/// Write the project-scoped `.mcp.json` for a build session. Silently skips
+/// on any I/O or resolution failure.
 fn maybe_write_mcp_json(session: &BuildSession, gui_url: &str) {
     let Some(root) = lightarchitects::core::paths::root() else {
         debug!("no LA root — skipping .mcp.json write");
@@ -223,11 +345,33 @@ fn maybe_write_mcp_json(session: &BuildSession, gui_url: &str) {
     }
 }
 
-/// Spawns a blocking thread that reads PTY stdout and forwards chunks to `tx`.
-///
-/// The task exits when the PTY fd returns EOF (child closed) or the channel
-/// is closed (session dropped).
-fn spawn_pty_reader(reader: Box<dyn Read + Send>, tx: mpsc::Sender<Vec<u8>>) {
+/// PTY reader for persistent mode: forwards bytes to the broadcast channel.
+/// Calls `exited.notify_waiters()` on EOF so WS subscribers can close.
+fn spawn_broadcast_reader(
+    reader: Box<dyn Read + Send>,
+    tx: broadcast::Sender<Vec<u8>>,
+    exited: Arc<tokio::sync::Notify>,
+) {
+    drop(tokio::task::spawn_blocking(move || {
+        let mut reader = reader;
+        let mut buf = [0u8; PTY_BUF];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    // Ignore Err(NoReceivers) — the process stays alive even
+                    // when no WS tab is open.
+                    let _ = tx.send(buf[..n].to_vec());
+                }
+            }
+        }
+        exited.notify_waiters();
+        debug!("PTY broadcast reader task exited");
+    }));
+}
+
+/// PTY reader for legacy mode: forwards bytes to an mpsc channel.
+fn spawn_mpsc_reader(reader: Box<dyn Read + Send>, tx: mpsc::Sender<Vec<u8>>) {
     drop(tokio::task::spawn_blocking(move || {
         let mut reader = reader;
         let mut buf = [0u8; PTY_BUF];
@@ -245,9 +389,7 @@ fn spawn_pty_reader(reader: Box<dyn Read + Send>, tx: mpsc::Sender<Vec<u8>>) {
     }));
 }
 
-/// Spawns a blocking thread that receives bytes from `rx` and writes to the PTY.
-///
-/// The task exits when `rx` is closed (channel dropped from the async side).
+/// Blocking writer task: drains `rx` into the PTY stdin.
 fn spawn_pty_writer(writer: Box<dyn Write + Send>, rx: mpsc::Receiver<Vec<u8>>) {
     drop(tokio::task::spawn_blocking(move || {
         let mut writer = writer;
@@ -256,17 +398,13 @@ fn spawn_pty_writer(writer: Box<dyn Write + Send>, rx: mpsc::Receiver<Vec<u8>>) 
             if writer.write_all(&bytes).is_err() {
                 break;
             }
-            // Flush to avoid buffering latency on interactive keystrokes.
             let _ = writer.flush();
         }
         debug!("PTY writer task exited");
     }));
 }
 
-/// Spawns a blocking thread that waits for `child` to exit.
-///
-/// Sends on `tx` when the wait completes so the async event loop can issue
-/// a graceful WS Close frame.
+/// Blocking waiter task: sends on `tx` when the child exits.
 fn spawn_child_waiter(child: Box<dyn portable_pty::Child + Send>, tx: oneshot::Sender<()>) {
     drop(tokio::task::spawn_blocking(move || {
         let mut child = child;
@@ -276,14 +414,16 @@ fn spawn_child_waiter(child: Box<dyn portable_pty::Child + Send>, tx: oneshot::S
     }));
 }
 
-/// Parses a JSON control text frame and applies it to the PTY.
-///
-/// Unknown or malformed JSON is silently ignored — the browser may send
-/// frames from a newer client against an older server.
-///
-/// Takes `dyn MasterPty + Send` because `PtyPair::master` is
-/// `Box<dyn MasterPty + Send>` and the `+ Send` marker is part of the
-/// concrete vtable pointer type.
+/// Apply a JSON control frame in persistent mode (resize via session's master).
+fn apply_control_message_session(session: &BuildSession, msg: &str) {
+    #[allow(clippy::unwrap_used)]
+    let guard = session.pty_master.lock().unwrap();
+    if let Some(ref master) = *guard {
+        apply_control_message(master.as_ref(), msg);
+    }
+}
+
+/// Parse and apply a JSON control frame to a PTY master.
 fn apply_control_message(master: &(dyn MasterPty + Send), msg: &str) {
     match serde_json::from_str::<ClientMessage>(msg) {
         Ok(ClientMessage::Resize { cols, rows }) => {
@@ -298,10 +438,7 @@ fn apply_control_message(master: &(dyn MasterPty + Send), msg: &str) {
     }
 }
 
-/// Sends SIGTERM to the child process, waits 2 seconds, then SIGKILL.
-///
-/// On non-Unix platforms there is no SIGTERM concept; the function falls
-/// back directly to `killer.kill()` (SIGKILL via `portable-pty`).
+/// SIGTERM → 2 s → SIGKILL (legacy mode only).
 async fn terminate_child(pid: Option<u32>, killer: &mut dyn portable_pty::ChildKiller) {
     #[cfg(unix)]
     {
@@ -312,8 +449,6 @@ async fn terminate_child(pid: Option<u32>, killer: &mut dyn portable_pty::ChildK
 
         if let Some(raw_pid) = pid {
             if let Ok(signed_pid) = i32::try_from(raw_pid) {
-                // SIGTERM gives the host command a chance to flush state before
-                // we forcibly remove it with SIGKILL below.
                 let _ = kill(Pid::from_raw(signed_pid), Signal::SIGTERM);
             }
         }
@@ -321,7 +456,6 @@ async fn terminate_child(pid: Option<u32>, killer: &mut dyn portable_pty::ChildK
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
     }
 
-    // Force-kill anything still running (no-op if already exited).
     let _ = killer.kill();
 }
 
@@ -360,7 +494,6 @@ mod tests {
 
     #[test]
     fn client_message_resize_missing_field_is_error() {
-        // "cols" present but "rows" absent — must fail cleanly.
         let json = r#"{"type":"resize","cols":80}"#;
         assert!(serde_json::from_str::<ClientMessage>(json).is_err());
     }

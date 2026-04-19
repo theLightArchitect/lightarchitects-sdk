@@ -95,7 +95,7 @@ mod tests {
     fn anthropic_session() -> Arc<BuildSession> {
         Arc::new(BuildSession::new(
             PathBuf::from("/tmp"),
-            AgentSession::ClaudeCode(ClaudeBackend::Anthropic),
+            AgentSession::Lightarchitects(ClaudeBackend::Anthropic),
         ))
     }
 

@@ -1,8 +1,9 @@
 //! CORSO inline handler — in-process Trinity pipeline dispatch.
 //!
-//! Wraps CORSO's `ToolRouter::execute_tool` as direct function calls instead
-//! of spawning the `corso` binary as a subprocess. The Trinity pipeline
-//! (RUACH → IESOUS → ADONAI) runs entirely in-process.
+//! Placeholder implementation. The real inline handler requires `corso-server`
+//! and `corso-trinity-core` crates, which are not yet published to crates.io.
+//! Until those crates are available, this handler stubs the interface so that
+//! `--all-features` compiles cleanly.
 //!
 //! # Heavy dependencies
 //!
@@ -10,14 +11,15 @@
 //! neural-engine, voice-engine, tree-sitter (5 grammars), and prometheus.
 //! These add significant compile time and binary size, which is why this
 //! handler is gated behind the `inline-corso` feature flag.
-
-use std::sync::OnceLock;
+//!
+//! Re-enable the real implementation by:
+//! 1. Adding `corso-server` and `corso-trinity-core` to `lightarchitects-gateway/Cargo.toml`
+//!    under `[dependencies]` with `optional = true` and the `inline-corso` feature.
+//! 2. Restoring the full dispatch logic from git history.
 
 use async_trait::async_trait;
-use corso_server::router::ToolRouter;
-use corso_trinity_core::CorsoError;
 use lightarchitects::core::handler::{HandlerConfig, HandlerError, SiblingHandler};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::config::GatewayConfig;
 
@@ -57,27 +59,14 @@ const CORSO_ACTIONS: &[&str] = &[
     "manage_logs",
 ];
 
-/// In-process CORSO handler.
-///
-/// Holds a [`ToolRouter`] instance that wraps the full Trinity pipeline.
-/// `ToolRouter::new()` initializes `RuachAgent`, `IesousAgent`, `AdonaiAgent`,
-/// plus helpers (Cherubim, sandbox client, tree-sitter cache). This is done
-/// once at gateway startup in [`initialize`](SiblingHandler::initialize).
-pub struct CorsoHandler {
-    router: OnceLock<ToolRouter>,
-}
+/// In-process CORSO handler (stub — real impl requires unpublished deps).
+pub struct CorsoHandler;
 
 impl CorsoHandler {
     /// Create a new CORSO handler from gateway config.
-    ///
-    /// The `ToolRouter` is not initialized here — it's deferred to
-    /// [`initialize`](SiblingHandler::initialize) because it can fail
-    /// on missing Trinity configuration.
     #[must_use]
     pub fn new(_config: &GatewayConfig) -> Self {
-        Self {
-            router: OnceLock::new(),
-        }
+        Self
     }
 }
 
@@ -91,55 +80,17 @@ impl SiblingHandler for CorsoHandler {
         CORSO_ACTIONS
     }
 
-    async fn call(&self, action: &str, params: Value) -> Result<Value, HandlerError> {
+    async fn call(&self, action: &str, _params: Value) -> Result<Value, HandlerError> {
         if !CORSO_ACTIONS.contains(&action) {
             return Err(HandlerError::unknown_action("corso", action));
         }
-
-        let router = self
-            .router
-            .get()
-            .ok_or_else(|| HandlerError::not_initialized("corso", "ToolRouter not initialized"))?;
-
-        match router.execute_tool(action, params).await {
-            Ok(response_text) => Ok(json!({
-                "content": [{
-                    "type": "text",
-                    "text": response_text,
-                }]
-            })),
-            Err(CorsoError::ToolNotFound(name)) => {
-                Err(HandlerError::unknown_action("corso", &name))
-            }
-            Err(CorsoError::SecurityValidation(msg)) => {
-                Err(HandlerError::service_error("corso", action, msg))
-            }
-            Err(CorsoError::InvalidInput(msg)) => {
-                Err(HandlerError::invalid_params("corso", action, msg))
-            }
-            Err(e) => Err(HandlerError::service_error("corso", action, e.to_string())),
-        }
+        Err(HandlerError::not_initialized(
+            "corso",
+            "inline-corso handler not yet available — corso-server/trinity-core not published",
+        ))
     }
 
     async fn initialize(&self, _config: &HandlerConfig) -> Result<(), HandlerError> {
-        // ToolRouter::new() initializes RuachAgent, IesousAgent, AdonaiAgent,
-        // CherubimHelper, sandbox client, and tree-sitter cache.
-        let router = ToolRouter::new().map_err(|e| {
-            HandlerError::not_initialized("corso", format!("ToolRouter init failed: {e}"))
-        })?;
-
-        if self.router.set(router).is_err() {
-            // initialize() called twice — programming error, not runtime.
-            // Log but don't panic (matches registry.rs pattern).
-            tracing::error!("CorsoHandler::initialize called more than once — this is a bug");
-        }
-
-        Ok(())
-    }
-
-    async fn shutdown(&self) -> Result<(), HandlerError> {
-        // ToolRouter has no explicit shutdown — its Arc<RuachAgent> etc.
-        // drop naturally when the handler is dropped.
         Ok(())
     }
 }
@@ -162,7 +113,6 @@ mod tests {
     fn actions_includes_canonical_routes() {
         let binding = handler();
         let actions = binding.actions();
-        // Core routes from each domain
         assert!(actions.contains(&"read_file"));
         assert!(actions.contains(&"guard"));
         assert!(actions.contains(&"sniff"));
@@ -180,18 +130,24 @@ mod tests {
     #[tokio::test]
     async fn call_returns_error_for_unknown_action() {
         let handler = handler();
-        let result = handler.call("nonexistent_tool", json!({})).await;
+        let result = handler
+            .call("nonexistent_tool", serde_json::json!({}))
+            .await;
         assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(matches!(err, HandlerError::UnknownAction { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            HandlerError::UnknownAction { .. }
+        ));
     }
 
     #[tokio::test]
-    async fn call_returns_error_when_not_initialized() {
+    async fn call_returns_not_initialized_for_known_action() {
         let handler = handler();
-        let result = handler.call("guard", json!({})).await;
+        let result = handler.call("guard", serde_json::json!({})).await;
         assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(matches!(err, HandlerError::NotInitialized { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            HandlerError::NotInitialized { .. }
+        ));
     }
 }
