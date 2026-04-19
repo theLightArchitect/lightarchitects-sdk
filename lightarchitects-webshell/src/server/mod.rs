@@ -25,11 +25,12 @@ use tracing::info;
 
 use crate::{
     auth,
-    config::Config,
+    config::{AgentSession, Config},
+    copilot,
     events::{self, EVENT_CHANNEL_BUF, WebEvent, builds_handler},
-    mock_data, polytope_data,
+    polytope_data, real_data,
     session::BuildRegistry,
-    static_assets, terminal,
+    setup, static_assets, terminal,
 };
 
 /// Snapshot of the browser UI state, periodically reported by the frontend.
@@ -92,6 +93,21 @@ pub struct AppState {
     /// `Arc<BuildSession>` clones returned by [`BuildRegistry::get`] —
     /// safe to hold across `.await` (no `DashMap` ref guard escapes).
     pub builds: Arc<BuildRegistry>,
+    /// Active agent session — updated live by `POST /api/setup/save`.
+    ///
+    /// Initially set to `config.agent`; all new [`BuildSession`]s read this
+    /// field so backend switches take effect immediately without restarting
+    /// the server.  Existing sessions keep their original [`AgentSession`].
+    pub active_agent: Arc<RwLock<AgentSession>>,
+    /// `SOUL` persistence handle — Phase 10.1. Opened at startup against
+    /// `~/lightarchitects/soul/helix.db` (`SQLite` backend). `None` when the
+    /// file doesn't exist or fails to open; the webshell degrades to
+    /// filesystem-only reads in that case.
+    ///
+    /// This is the **same backend** the `SOUL` `MCP` plugin writes through, so
+    /// entries ingested from Claude Code are immediately visible here without
+    /// an extra fetch layer.
+    pub soul_store: Option<Arc<crate::memory::persistence::SoulPersistence>>,
 }
 
 impl AppState {
@@ -103,6 +119,37 @@ impl AppState {
         events::AyinClient::spawn(event_tx.clone());
         events::HelixWatcher::spawn(event_tx.clone());
         let pepper = load_turnlog_pepper();
+        let active_agent = Arc::new(RwLock::new(config.agent.clone()));
+        let soul_store = Some(Arc::new(crate::memory::persistence::SoulPersistence::open()));
+
+        // Phase 11.1 — auto-backfill SQLite from filesystem on startup.
+        // Phase 11.3 — attach Neo4j if WEBSHELL_NEO4J_URI is set + reachable.
+        // Both are fire-and-forget so server boot doesn't wait on I/O.
+        if let Some(soul) = soul_store.clone() {
+            let soul_for_backfill = soul.clone();
+            tokio::spawn(async move {
+                let Some(backend) = soul_for_backfill.sqlite_arc() else {
+                    return;
+                };
+                if crate::memory::backfill::sqlite_needs_backfill(
+                    &backend,
+                    soul_for_backfill.helix_root(),
+                )
+                .await
+                {
+                    let report =
+                        crate::memory::backfill::run(soul_for_backfill.helix_root(), &backend)
+                            .await;
+                    tracing::info!(
+                        target: "soul",
+                        scanned = report.scanned,
+                        written = report.written,
+                        "startup backfill complete"
+                    );
+                }
+            });
+            tokio::spawn(soul.try_attach_neo4j());
+        }
         Self {
             config: Arc::new(config),
             turnlog_pepper: Arc::new(pepper),
@@ -111,6 +158,8 @@ impl AppState {
             browser_state: Arc::new(RwLock::new(BrowserStateSnapshot::default())),
             builds_cache: builds_handler::build_cache(),
             builds: Arc::new(BuildRegistry::new()),
+            active_agent,
+            soul_store,
         }
     }
 
@@ -128,6 +177,7 @@ impl AppState {
     #[must_use]
     pub fn for_test(config: Config) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_BUF);
+        let active_agent = Arc::new(RwLock::new(config.agent.clone()));
         Self {
             config: Arc::new(config),
             turnlog_pepper: Arc::new(secrecy::SecretSlice::from(vec![])),
@@ -136,6 +186,8 @@ impl AppState {
             browser_state: Arc::new(RwLock::new(BrowserStateSnapshot::default())),
             builds_cache: builds_handler::build_cache(),
             builds: Arc::new(BuildRegistry::new()),
+            active_agent,
+            soul_store: None,
         }
     }
 }
@@ -151,7 +203,7 @@ impl AppState {
 /// - `GET /api/browser-state` — read current browser UI state.
 /// - `POST /api/browser-state` — update browser UI state (from frontend).
 /// - `GET /api/polytopes` — per-sibling 4D polytope assignments (authenticated).
-/// - Fallback — serves the embedded `web/dist/` bundle.
+/// - Fallback — serves the embedded `../../Lightarchitectmockcli/dist/` bundle.
 ///
 /// `Router` is already `#[must_use]` so this function is not re-annotated.
 pub fn build_app(state: AppState) -> Router {
@@ -187,42 +239,73 @@ pub fn build_app(state: AppState) -> Router {
             get(read_browser_state).post(write_browser_state),
         )
         .route("/api/polytopes", get(polytopes))
-        // ── Phase D stub routes (Mockcli frontend expectations) ─────────────
-        .route("/api/workspaces", get(mock_data::list_workspaces))
-        .route("/api/workspaces/{id}", get(mock_data::get_workspace))
-        .route("/api/meta-skills", get(mock_data::list_meta_skills))
-        .route("/api/siblings", get(mock_data::get_sibling_status))
-        .route("/api/sitrep", get(mock_data::get_sitrep))
-        .route("/api/conductor/status", get(mock_data::get_conductor_status))
-        .route("/api/arena/status", get(mock_data::get_arena_status))
+        // ── Phase 9.5 / 10.5 SOUL vault hybrid memory routes ─────────────────
+        .route("/api/soul/search", get(events::soul_routes::search_handler))
+        .route(
+            "/api/soul/entries/{*path}",
+            get(events::soul_routes::entry_handler),
+        )
+        .route(
+            "/api/soul/memory/hot",
+            get(events::soul_routes::hot_memory_handler),
+        )
+        .route(
+            "/api/soul/memory/cold",
+            get(events::soul_routes::cold_memory_handler),
+        )
+        .route(
+            "/api/soul/health",
+            get(events::soul_routes::health_handler),
+        )
+        .route(
+            "/api/soul/reindex",
+            post(events::soul_routes::reindex_handler),
+        )
+        .route(
+            "/api/soul/relationships/{*entry_id}",
+            get(events::soul_routes::relationships_handler),
+        )
+        // ── Phase 9.8–9.10: real-data handlers (replaces mock_data::*) ──────
+        .route("/api/workspaces", get(real_data::list_workspaces))
+        .route("/api/workspaces/{id}", get(real_data::get_workspace))
+        .route("/api/meta-skills", get(real_data::list_meta_skills))
+        .route("/api/siblings", get(real_data::get_sibling_status))
+        .route("/api/sitrep", get(real_data::get_sitrep))
+        .route("/api/conductor/status", get(real_data::get_conductor_status))
+        .route("/api/arena/status", get(real_data::get_arena_status))
         .route(
             "/api/builds/{id}/findings",
-            get(mock_data::list_findings),
+            get(real_data::list_findings),
         )
         .route(
             "/api/builds/{id}/notes",
-            get(mock_data::get_notes).put(mock_data::update_notes),
+            get(real_data::get_notes).put(real_data::update_notes),
         )
         .route(
             "/api/builds/{id}/artifacts",
-            get(mock_data::list_artifacts).post(mock_data::upload_artifact),
+            get(real_data::list_artifacts).post(real_data::upload_artifact),
         )
         .route(
             "/api/builds/{id}/gates/{pillar}",
-            get(mock_data::get_gate_status),
+            get(real_data::get_gate_status),
         )
         .route(
             "/api/builds/{id}/pillars/{pillar}",
-            post(mock_data::trigger_pillar),
+            post(real_data::trigger_pillar),
         )
         .route(
             "/api/builds/{id}/copilot",
-            post(mock_data::copilot_chat),
+            post(copilot::copilot_chat_handler),
         )
         .route(
             "/api/builds/{id}/dispatch",
-            post(mock_data::dispatch_sibling),
+            post(real_data::dispatch_sibling),
         )
+        // ── Setup / backend-switch routes ────────────────────────────────────
+        .route("/api/setup/info", get(setup::setup_info))
+        .route("/api/setup/models", get(setup::setup_models))
+        .route("/api/setup/save", post(setup::setup_save))
+        .route("/api/setup/reset", axum::routing::delete(setup::setup_reset))
         .fallback(static_assets::serve)
         .layer(cors)
         .layer(TraceLayer::new_for_http())

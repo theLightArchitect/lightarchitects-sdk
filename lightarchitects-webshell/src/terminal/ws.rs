@@ -77,26 +77,35 @@ pub async fn ws_handler(
     let config = Arc::clone(&state.config);
 
     // Auth and cap checks pass — perform the WebSocket upgrade.
+    // Echo the subprotocol back (RFC 6455 §4.1 — browsers reject if omitted).
     // The session task owns `guard`; dropping it decrements the count.
-    ws.on_upgrade(move |socket| async move {
-        let pepper = Arc::clone(&state.turnlog_pepper);
-        let session_id = uuid::Uuid::new_v4().to_string();
-        let cwd = config.cwd.clone();
-        let host_cmd_str = config.host_cmd.clone().into_string().unwrap_or_default();
-        let turnlog = if pepper.expose_secret().is_empty() {
-            None
-        } else {
-            crate::turnlog::WebshellTurnLog::open(session_id, cwd, &host_cmd_str, &pepper)
+    ws.protocols([subproto.to_owned()])
+        .on_upgrade(move |socket| async move {
+            let pepper = Arc::clone(&state.turnlog_pepper);
+            let session_id = uuid::Uuid::new_v4().to_string();
+            let cwd = config.cwd.clone();
+            let host_cmd_str = config.host_cmd.clone().into_string().unwrap_or_default();
+            let turnlog = if pepper.expose_secret().is_empty() {
+                None
+            } else {
+                crate::turnlog::WebshellTurnLog::open(
+                    session_id,
+                    cwd,
+                    &host_cmd_str,
+                    &pepper,
+                    Some(state.event_tx.clone()),
+                    state.soul_store.clone(),
+                )
                 .await
                 .ok()
                 .flatten()
-        };
-        session::run_session(socket, config, None, guard).await;
-        if let Some(tl) = turnlog {
-            tl.close(lightarchitects::turnlog::EndReason::Complete)
-                .await;
-        }
-    })
+            };
+            session::run_session(socket, config, None, guard).await;
+            if let Some(tl) = turnlog {
+                tl.close(lightarchitects::turnlog::EndReason::Complete)
+                    .await;
+            }
+        })
 }
 
 /// Axum handler for `GET /api/builds/:id/terminal/ws` (Phase C).
@@ -141,9 +150,11 @@ pub async fn ws_build_handler(
     };
 
     let config = Arc::clone(&state.config);
-    ws.on_upgrade(move |socket| async move {
-        session::run_session(socket, config, Some(session), guard).await;
-    })
+    // Echo the subprotocol back (RFC 6455 §4.1).
+    ws.protocols([subproto.to_owned()])
+        .on_upgrade(move |socket| async move {
+            session::run_session(socket, config, Some(session), guard).await;
+        })
 }
 
 /// Attempts to atomically claim one session slot.

@@ -95,10 +95,10 @@ fn ayin_status_payload_type_is_ayin_status() {
 /// `useEventSource.ts` dispatches `spawnOrb()` when `payload.type === "helix_entry"`.
 #[test]
 fn helix_entry_payload_type_is_helix_entry() {
-    let event = WebEvent::HelixEntry(HelixEntrySummary {
-        path: "eva/entries/day-42.md".to_owned(),
-        event_kind: HelixEventKind::Created,
-    });
+    let event = WebEvent::HelixEntry(HelixEntrySummary::minimal(
+        "eva/entries/day-42.md".to_owned(),
+        HelixEventKind::Created,
+    ));
     let payload = to_payload(&event);
     assert_eq!(
         payload["type"], "helix_entry",
@@ -228,10 +228,10 @@ fn ayin_status_reconnecting_has_attempt_field() {
 
 #[test]
 fn helix_entry_payload_has_path_and_event_kind() {
-    let event = WebEvent::HelixEntry(HelixEntrySummary {
-        path: "eva/entries/day-100.md".to_owned(),
-        event_kind: HelixEventKind::Modified,
-    });
+    let event = WebEvent::HelixEntry(HelixEntrySummary::minimal(
+        "eva/entries/day-100.md".to_owned(),
+        HelixEventKind::Modified,
+    ));
     let payload = to_payload(&event);
     assert_eq!(
         payload["path"], "eva/entries/day-100.md",

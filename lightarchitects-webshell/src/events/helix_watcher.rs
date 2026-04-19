@@ -127,27 +127,61 @@ fn process_event(
             .to_string();
 
         // Route: build tracking files → BuildUpdate, vault entries → HelixEntry.
+        //
+        // `tokio::broadcast::Sender::send` returns `Err` when there are zero
+        // active subscribers — this is transient, NOT a channel closure. The
+        // channel only truly closes when the sender itself drops. We swallow
+        // send errors so the watcher keeps running between browser connects.
         if is_build_file(&path) {
             let entry = BuildUpdateEvent {
                 path: rel_path,
                 event_kind: event_kind.1,
             };
-            if tx.send(WebEvent::BuildUpdate(entry)).is_err() {
-                return false; // channel closed
-            }
+            let _ = tx.send(WebEvent::BuildUpdate(entry));
         } else if is_helix_entry(&path) {
-            let entry = HelixEntrySummary {
-                path: rel_path,
-                event_kind: event_kind.0,
-            };
-            if tx.send(WebEvent::HelixEntry(entry)).is_err() {
-                return false; // channel closed
-            }
+            // Parse front-matter synchronously (we're already in a spawn_blocking
+            // task) to enrich the event with sibling/significance/strands.
+            // Malformed or absent front-matter degrades to None fields.
+            let entry = build_enriched_summary(&rel_path, &path, event_kind.0);
+            let _ = tx.send(WebEvent::HelixEntry(entry));
         }
         // Other file types are silently ignored.
     }
 
     true
+}
+
+/// Build a front-matter-enriched `HelixEntrySummary` from a helix entry file.
+///
+/// Reads the file synchronously and parses the YAML front-matter. All
+/// enrichment fields are optional — failure at any step falls back to the
+/// minimal `{path, event_kind}` shape so the SSE stream never loses events
+/// over a malformed file.
+fn build_enriched_summary(
+    rel_path: &str,
+    abs_path: &Path,
+    event_kind: HelixEventKind,
+) -> HelixEntrySummary {
+    let (fields, excerpt) = std::fs::read_to_string(abs_path)
+        .ok()
+        .map(|src| crate::memory::frontmatter::parse(&src))
+        .unwrap_or_default();
+
+    let sibling_from_path = rel_path
+        .split('/')
+        .next()
+        .map(str::to_owned)
+        .filter(|s| !s.is_empty());
+
+    HelixEntrySummary {
+        path: rel_path.to_owned(),
+        event_kind,
+        sibling: fields.sibling.or(sibling_from_path),
+        significance: fields.significance,
+        strands: fields.strands,
+        content_excerpt: excerpt,
+        created_at: fields.created_at,
+    }
 }
 
 /// Returns `true` if `path` is a `*.md` file inside an `entries/` directory.
@@ -228,10 +262,8 @@ mod tests {
 
     #[test]
     fn helix_entry_summary_serialises_relative_path_and_kind() {
-        let entry = HelixEntrySummary {
-            path: "eva/entries/day-1.md".to_owned(),
-            event_kind: HelixEventKind::Created,
-        };
+        let entry =
+            HelixEntrySummary::minimal("eva/entries/day-1.md".to_owned(), HelixEventKind::Created);
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains("eva/entries/day-1.md"), "{json}");
         assert!(json.contains("created"), "{json}");
@@ -239,12 +271,58 @@ mod tests {
 
     #[test]
     fn helix_entry_summary_modified_kind_serialises() {
-        let entry = HelixEntrySummary {
-            path: "corso/entries/build.md".to_owned(),
-            event_kind: HelixEventKind::Modified,
-        };
+        let entry = HelixEntrySummary::minimal(
+            "corso/entries/build.md".to_owned(),
+            HelixEventKind::Modified,
+        );
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains("modified"), "{json}");
+    }
+
+    // ── Front-matter enrichment (Phase 9.3) ───────────────────────────────────
+
+    #[tokio::test]
+    async fn enriched_summary_populated_from_real_file() {
+        use tokio::io::AsyncWriteExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let file_path = tmp.path().join("entry.md");
+        let mut f = tokio::fs::File::create(&file_path).await.unwrap();
+        f.write_all(
+            b"---\nid: x\ndate: 2026-04-19\nsibling: eva\nsignificance: 8.0\nstrands:\n  - Methodical\n---\n\nBody excerpt goes here.",
+        )
+        .await
+        .unwrap();
+        f.flush().await.unwrap();
+        drop(f);
+
+        let enriched =
+            build_enriched_summary("eva/entries/entry.md", &file_path, HelixEventKind::Created);
+        assert_eq!(enriched.path, "eva/entries/entry.md");
+        assert_eq!(enriched.sibling.as_deref(), Some("eva"));
+        assert_eq!(enriched.significance, Some(0.8));
+        assert_eq!(enriched.strands, vec!["methodical"]);
+        assert!(
+            enriched
+                .content_excerpt
+                .as_deref()
+                .unwrap()
+                .starts_with("Body excerpt")
+        );
+        assert_eq!(enriched.created_at.as_deref(), Some("2026-04-19T00:00:00Z"));
+    }
+
+    #[tokio::test]
+    async fn enriched_summary_degrades_gracefully_on_missing_file() {
+        let enriched = build_enriched_summary(
+            "corso/entries/absent.md",
+            std::path::Path::new("/nonexistent-xyz-123"),
+            HelixEventKind::Modified,
+        );
+        assert_eq!(enriched.path, "corso/entries/absent.md");
+        // Sibling derived from the path's first segment when the file is missing.
+        assert_eq!(enriched.sibling.as_deref(), Some("corso"));
+        assert!(enriched.significance.is_none());
+        assert!(enriched.strands.is_empty());
     }
 
     // ── is_build_file ────────────────────────────────────────────────────────

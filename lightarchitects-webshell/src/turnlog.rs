@@ -3,19 +3,25 @@
 //!
 //! After closing the writer, the adapter spawns a background task that
 //! promotes eligible entries (`reflection`, `session_paused`) to the
-//! SOUL helix via [`lightarchitects::turnlog::promote_session`].
+//! `SOUL` helix via [`lightarchitects::turnlog::promote_session`].
 
 use lightarchitects::ayin::span::{Actor, TraceContext, TraceOutcome};
 use lightarchitects::turnlog::promotion::SiblingPromoter;
 use lightarchitects::turnlog::{EndReason, StoreLayout, TurnLogWriter, promote_session};
 use secrecy::SecretSlice;
 use std::path::PathBuf;
+use tokio::sync::broadcast;
 use tracing::info;
+
+use crate::events::types::WebEvent;
+use crate::memory::BroadcastingPromoter;
+use crate::memory::persistence::SoulPersistence;
+use std::sync::Arc;
 
 /// Session turnlog handle with post-close helix promotion.
 ///
 /// `enable_promotion` controls whether [`Self::close`] spawns a background
-/// task to promote eligible entries to the SOUL helix. Set to `true` for
+/// task to promote eligible entries to the `SOUL` helix. Set to `true` for
 /// production sessions and `false` for integration tests that write to
 /// tempdirs and must not touch `~/lightarchitects/soul/`.
 #[derive(Clone)]
@@ -27,16 +33,32 @@ pub struct WebshellTurnLog {
     layout: StoreLayout,
     /// When true, `close()` spawns a background helix promotion task.
     enable_promotion: bool,
+    /// Optional SSE broadcast channel for `soul_promotion` events.
+    /// When set, post-close promotion uses a [`BroadcastingPromoter`] wrapper
+    /// so successful Hot→Cold transitions surface in real time on `/api/events`.
+    event_tx: Option<broadcast::Sender<WebEvent>>,
+    /// Optional `SOUL` persistence handle for Phase 10.3 dual-write into the
+    /// `helix.db` `SQLite` table. When `Some`, the promoter writes every
+    /// successful helix entry into `SOUL` `SQLite` so subsequent `SOUL` `MCP`
+    /// queries see it immediately.
+    soul: Option<Arc<SoulPersistence>>,
 }
 
 impl WebshellTurnLog {
     /// Open a new session turnlog.
+    ///
+    /// `event_tx` is the shared SSE broadcast channel — when `Some`, successful
+    /// Hot→Cold promotions on `close()` publish `WebEvent::SoulPromotion`.
+    /// `soul` is the shared `SOUL` persistence handle — when `Some`, the
+    /// promoter also writes every successful helix entry into `SOUL` `SQLite`.
     #[allow(clippy::missing_errors_doc)]
     pub async fn open(
         session_id: String,
         project_root: PathBuf,
         host_cmd: &str,
         pepper: &SecretSlice<u8>,
+        event_tx: Option<broadcast::Sender<WebEvent>>,
+        soul: Option<Arc<SoulPersistence>>,
     ) -> anyhow::Result<Option<Self>> {
         let Some(layout) = StoreLayout::default_for_user() else {
             tracing::warn!(target: "turnlog", "Cannot determine turnlog directory — skipping");
@@ -62,6 +84,8 @@ impl WebshellTurnLog {
                     actor: Actor::new("webshell"),
                     layout,
                     enable_promotion: true,
+                    event_tx,
+                    soul,
                 }))
             }
             Err(e) => {
@@ -98,6 +122,8 @@ impl WebshellTurnLog {
             actor: Actor::new("webshell"),
             layout: layout.clone(),
             enable_promotion: false,
+            event_tx: None,
+            soul: None,
         })
     }
 
@@ -119,6 +145,10 @@ impl WebshellTurnLog {
     }
 
     /// Close the session log gracefully and promote eligible entries to helix.
+    ///
+    /// When `event_tx` is present, the promoter is wrapped in a
+    /// [`BroadcastingPromoter`] so each successful Hot→Cold promotion emits a
+    /// `WebEvent::SoulPromotion` on the SSE stream.
     pub async fn close(self, reason: EndReason) {
         if let Err(e) = self.writer.close(reason).await {
             tracing::warn!(target: "turnlog", error = %e, "Failed to close TurnLogWriter");
@@ -128,9 +158,22 @@ impl WebshellTurnLog {
         if self.enable_promotion {
             let layout = self.layout;
             let session_id = self.session_id;
+            let event_tx = self.event_tx;
+            let soul = self.soul;
             tokio::spawn(async move {
-                let promoter = SiblingPromoter::default_for_user("webshell");
-                promote_session(&layout, &session_id, &promoter).await;
+                let base = SiblingPromoter::default_for_user("webshell");
+                match event_tx {
+                    Some(tx) => {
+                        let mut bridged = BroadcastingPromoter::new(base, tx);
+                        if let Some(soul) = soul {
+                            bridged = bridged.with_soul(soul);
+                        }
+                        promote_session(&layout, &session_id, &bridged).await;
+                    }
+                    None => {
+                        promote_session(&layout, &session_id, &base).await;
+                    }
+                }
             });
         }
     }

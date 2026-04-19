@@ -17,7 +17,7 @@
 //!
 //! ## Redaction
 //!
-//! The HMAC bearer token is stripped from every JSON payload before it
+//! The HMAC bearer token is stripped from every `JSON` payload before it
 //! reaches the browser (defense against accidental self-embedding).  Full
 //! PII redaction (paths, API keys) is added in the Phase-9 hardening pass.
 
@@ -92,10 +92,16 @@ pub async fn sse_build_handler(
     // Subscribe to this build's channel *before* returning — the stream's
     // first `.recv()` is lazy, but the `Receiver` itself is active from now,
     // so any event sent on `event_tx` after this line reaches this client.
+    //
+    // Also subscribe to the global AppState broadcast so helix_entry,
+    // soul_promotion, ayin_span, etc. reach per-build listeners (Phase 10
+    // fix — the UI uses the per-build stream for all SSE, so it must see
+    // both channels).
     let token: Arc<str> = Arc::from(state.config.token.as_str());
-    let rx = session.event_tx.subscribe();
+    let session_rx = session.event_tx.subscribe();
+    let global_rx = state.event_tx.subscribe();
 
-    let event_stream = stream::unfold((rx, token), drive_stream);
+    let event_stream = stream::unfold((session_rx, global_rx, token), drive_multiplex_stream);
 
     Sse::new(event_stream)
         .keep_alive(KeepAlive::default())
@@ -130,6 +136,63 @@ async fn drive_stream(
                 warn!(skipped = n, "SSE subscriber lagged — events dropped");
                 let payload = format!(r#"{{"type":"lag","skipped":{n}}}"#);
                 return Some((Ok(Event::default().data(payload)), (rx, token)));
+            }
+            Err(RecvError::Closed) => return None,
+        }
+    }
+}
+
+/// Multiplexed state-machine step for the per-build SSE stream.
+///
+/// Fans in both the session-scoped channel (PTY notifications + gateway
+/// notifies) and the global `AppState` broadcast (`helix_entry`, `soul_promotion`,
+/// ayin spans) so the browser receives every event on one stream.
+///
+/// `tokio::select!` races both receivers; whichever resolves first emits the
+/// next event. Closing the session channel is a hard exit; closing the global
+/// channel is not — the global channel may outlive any single build.
+#[allow(clippy::future_not_send)]
+async fn drive_multiplex_stream(
+    state: (
+        broadcast::Receiver<WebEvent>,
+        broadcast::Receiver<WebEvent>,
+        Arc<str>,
+    ),
+) -> Option<(
+    Result<Event, Infallible>,
+    (
+        broadcast::Receiver<WebEvent>,
+        broadcast::Receiver<WebEvent>,
+        Arc<str>,
+    ),
+)> {
+    let (mut session_rx, mut global_rx, token) = state;
+    loop {
+        let event = tokio::select! {
+            r = session_rx.recv() => r,
+            r = global_rx.recv() => r,
+        };
+        match event {
+            Ok(ev) => {
+                let data = match serde_json::to_string(&ev) {
+                    Ok(s) => redact(&s, &token),
+                    Err(e) => {
+                        warn!(error = %e, "failed to serialise WebEvent for SSE");
+                        continue;
+                    }
+                };
+                return Some((
+                    Ok(Event::default().data(data)),
+                    (session_rx, global_rx, token),
+                ));
+            }
+            Err(RecvError::Lagged(n)) => {
+                warn!(skipped = n, "per-build SSE lagged");
+                let payload = format!(r#"{{"type":"lag","skipped":{n}}}"#);
+                return Some((
+                    Ok(Event::default().data(payload)),
+                    (session_rx, global_rx, token),
+                ));
             }
             Err(RecvError::Closed) => return None,
         }

@@ -1,16 +1,13 @@
-//! Phase D stub-route smoke tests.
+//! Phase 9.8–9.10 real-data route smoke tests.
 //!
-//! These tests exist to defend the *contract* the Mockcli frontend expects
-//! on first render: every screen makes a handful of `/api/*` fetches, and
-//! all of them MUST respond with either well-formed JSON or a deliberate
-//! error. Silent 404s would show up as console errors in the browser.
-//!
-//! We don't test the real shape of the data — that's what the stubs are
-//! for. We test:
+//! Supersedes the prior "stub" tests — handlers in `src/real_data.rs` now
+//! read from live filesystem sources. These tests defend the *contract* the
+//! Mockcli frontend relies on at first render:
 //!
 //! 1. Auth is enforced on every route (401 without Bearer).
-//! 2. Reads return 200 + valid JSON.
-//! 3. Writes return 501 + a structured `{error, reason}` body.
+//! 2. Reads return 200 + valid JSON (content may be empty when sources are absent).
+//! 3. Writes that still aren't wired to a backend return 501; writes that
+//!    enqueue into the conductor return 202.
 //!
 //! Uses `tower::ServiceExt::oneshot` — no TCP bind, no flaky network.
 
@@ -94,10 +91,11 @@ async fn all_stub_reads_require_bearer() {
 // ── Read stubs ───────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn workspaces_stub_returns_empty_array() {
+async fn workspaces_returns_array() {
     let (status, body) = get("/api/workspaces", true).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, serde_json::json!([]));
+    // Phase 9.8: real scan of ~/Projects/ — length is host-dependent.
+    assert!(body.is_array(), "workspaces must be an array");
 }
 
 #[tokio::test]
@@ -108,12 +106,19 @@ async fn siblings_stub_returns_seven_entries() {
 }
 
 #[tokio::test]
-async fn sitrep_stub_reports_all_pillars_green() {
+async fn sitrep_reports_all_seven_pillars() {
     let (status, body) = get("/api/sitrep", true).await;
     assert_eq!(status, StatusCode::OK);
+    // Phase 9.8: SITREP derives pillar colour from live sibling state — colour
+    // is host-dependent but the pillar *keys* must always exist so the UI
+    // renders a seven-dot grid without `undefined` gaps.
     for p in ["arch", "sec", "qual", "perf", "test", "doc", "ops"] {
-        assert_eq!(body["pillars"][p]["state"], "green");
+        assert!(
+            body["pillars"][p]["state"].is_string(),
+            "pillar {p} must expose a string `state`"
+        );
     }
+    assert!(body["status"].is_string());
 }
 
 #[tokio::test]
@@ -132,19 +137,39 @@ async fn build_scoped_reads_stub_well_formed() {
 // ── Write stubs ──────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn write_stubs_return_501_not_implemented() {
+async fn write_contracts_have_expected_semantics() {
     let b = Uuid::new_v4();
-    let writes = [
-        format!("/api/builds/{b}/pillars/arch"),
-        format!("/api/builds/{b}/artifacts"),
-        format!("/api/builds/{b}/copilot"),
-        format!("/api/builds/{b}/dispatch"),
-    ];
-    for w in &writes {
-        assert_eq!(
-            post(w).await,
-            StatusCode::NOT_IMPLEMENTED,
-            "write {w} should be 501"
-        );
-    }
+    // Phase 9.10: pillars + dispatch enqueue to the conductor → 202 Accepted.
+    assert_eq!(
+        post(&format!("/api/builds/{b}/pillars/arch")).await,
+        StatusCode::ACCEPTED,
+        "pillar enqueue should be 202"
+    );
+    assert_eq!(
+        post(&format!("/api/builds/{b}/dispatch")).await,
+        StatusCode::ACCEPTED,
+        "sibling dispatch enqueue should be 202"
+    );
+    // Artifact upload is still Phase 10 work.
+    assert_eq!(
+        post(&format!("/api/builds/{b}/artifacts")).await,
+        StatusCode::NOT_IMPLEMENTED,
+        "artifact upload should be 501"
+    );
+}
+
+#[tokio::test]
+async fn copilot_returns_404_for_unknown_build() {
+    let b = Uuid::new_v4();
+    let resp = make_app()
+        .oneshot(
+            Request::post(format!("/api/builds/{b}/copilot"))
+                .header("authorization", format!("Bearer {TOKEN}"))
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"message":"hello"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

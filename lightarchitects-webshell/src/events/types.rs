@@ -4,6 +4,7 @@
 //! verbatim as `data:` payloads on the SSE stream the browser subscribes
 //! to via `GET /api/events` (Phase 5).
 
+use crate::memory::types::PromotionEvent;
 use serde::{Deserialize, Serialize};
 
 /// Broadcast event emitted by the webshell backend.
@@ -38,6 +39,14 @@ pub enum WebEvent {
     /// span's metadata contains a `strand_activations` array. One event per
     /// strand, so a span touching three strands produces three events.
     StrandActivation(StrandActivationEvent),
+    /// A hot memo was promoted to the cold helix tier.
+    ///
+    /// Emitted by `BroadcastingPromoter` in [`crate::memory::promoter_bridge`]
+    /// when `SiblingPromoter::promote` returns `PromotionOutcome::Promoted`.
+    /// The frontend uses this to optimistically move the memo from the
+    /// `hotMemory` store to `coldMemory` and to trigger an orb-spawn animation
+    /// in the 3D scene.
+    SoulPromotion(PromotionEvent),
     /// A UI event forwarded from the `lightarchitects-gateway` MCP server's
     /// `ui.*` tools.
     ///
@@ -74,12 +83,35 @@ pub struct StrandActivationEvent {
 }
 
 /// Describes a new or modified helix vault entry detected by the filesystem watcher.
+///
+/// Phase 9.3 enriched this shape with front-matter fields so the Svelte webshell
+/// can render real memory tiles without a secondary fetch. All enrichment fields
+/// are best-effort — a malformed or missing YAML front-matter still produces a
+/// valid event with the core `path` + `event_kind`, and `None`/empty values
+/// elsewhere.
 #[derive(Debug, Clone, Serialize)]
 pub struct HelixEntrySummary {
     /// Path relative to the helix root (e.g. `"eva/entries/day-42.md"`).
     pub path: String,
     /// What triggered this event.
     pub event_kind: HelixEventKind,
+    /// Owning sibling derived from the path's top-level directory or the
+    /// front-matter `sibling:` field (front-matter wins).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sibling: Option<String>,
+    /// Significance score from front-matter. Normalised to `[0.0, 1.0]`:
+    /// values between 0 and 10 in the YAML are divided by 10 on ingest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub significance: Option<f32>,
+    /// Strand tags from the front-matter `strands:` list (lowercased).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub strands: Vec<String>,
+    /// First 280 chars of the body (excluding front-matter), for UI hover preview.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_excerpt: Option<String>,
+    /// ISO-8601 UTC timestamp from front-matter `date:` or file mtime fallback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
 }
 
 /// Filesystem event kind that produced a [`HelixEntrySummary`].
@@ -90,6 +122,25 @@ pub enum HelixEventKind {
     Created,
     /// An existing vault entry file was modified.
     Modified,
+}
+
+impl HelixEntrySummary {
+    /// Build a minimal summary — used when the file can't be read or parsed.
+    ///
+    /// Enrichment fields default to `None` / empty. The Svelte frontend is
+    /// responsible for rendering a graceful fallback when fields are absent.
+    #[must_use]
+    pub fn minimal(path: String, event_kind: HelixEventKind) -> Self {
+        Self {
+            path,
+            event_kind,
+            sibling: None,
+            significance: None,
+            strands: Vec::new(),
+            content_excerpt: None,
+            created_at: None,
+        }
+    }
 }
 
 /// Describes a build tracking file change detected in the `corso/builds/` directory.
@@ -287,10 +338,8 @@ mod tests {
 
     #[test]
     fn helix_entry_event_has_type_tag() {
-        let entry = HelixEntrySummary {
-            path: "eva/entries/day-1.md".to_owned(),
-            event_kind: HelixEventKind::Created,
-        };
+        let entry =
+            HelixEntrySummary::minimal("eva/entries/day-1.md".to_owned(), HelixEventKind::Created);
         let event = WebEvent::HelixEntry(entry);
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains(r#""type":"helix_entry""#), "{json}");

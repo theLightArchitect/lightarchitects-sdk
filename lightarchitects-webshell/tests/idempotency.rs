@@ -31,10 +31,10 @@ fn web_event_span_serialises_identically_twice() {
 
 #[test]
 fn web_event_helix_entry_serialises_identically_twice() {
-    let event = WebEvent::HelixEntry(HelixEntrySummary {
-        path: "eva/entries/2026-04-13-identity.md".to_owned(),
-        event_kind: HelixEventKind::Created,
-    });
+    let event = WebEvent::HelixEntry(HelixEntrySummary::minimal(
+        "eva/entries/2026-04-13-identity.md".to_owned(),
+        HelixEventKind::Created,
+    ));
     let first = serde_json::to_string(&event).unwrap();
     let second = serde_json::to_string(&event).unwrap();
     assert_eq!(first, second);
