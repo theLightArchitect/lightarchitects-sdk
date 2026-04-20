@@ -30,9 +30,15 @@ use axum::{
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::path::{Path as StdPath, PathBuf};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use crate::{auth, server::AppState};
+use crate::{
+    auth,
+    events::types::{PillarUpdateEvent, WebEvent},
+    server::AppState,
+};
 
 /// Resolve the user's home directory without introducing a dep on `dirs`.
 /// Mirrors the pattern in `lightarchitects::core::paths`.
@@ -562,8 +568,33 @@ fn unknown_gate(pillar: &str) -> Value {
     })
 }
 
-/// `POST /api/builds/:id/pillars/:pillar` — enqueues a pillar run.
-/// Phase 9.10 leaves the actual `corso` CLI shell-out for Phase 10.
+/// Translate a CORSO pillar name into `(subcommand, objective_prefix)`.
+///
+/// The 7 pillars (arch · sec · qual · perf · test · doc · ops) don't map 1:1
+/// to `corso` subcommand names, so this adapter encodes the canonical
+/// mapping derived from the cookbook (`mcp-runtime.yaml`) and command
+/// semantics. Unknown pillars return `None` → 400.
+fn pillar_to_corso(pillar: &str) -> Option<(&'static str, &'static str)> {
+    match pillar {
+        "arch" => Some(("arch", "Architecture review of this build")),
+        "sec" => Some(("guard", "Security audit of this build")),
+        "qual" => Some(("review", "Code quality review of this build")),
+        "perf" => Some(("chase", "Performance analysis of this build")),
+        "test" => Some(("review", "Test coverage review of this build")),
+        "doc" => Some(("docs", "Documentation completeness of this build")),
+        "ops" => Some(("health", "Operational readiness of this build")),
+        _ => None,
+    }
+}
+
+/// `POST /api/builds/:id/pillars/:pillar` — spawn `corso <cmd>` and stream.
+///
+/// Phase 15: real execution replaces the 202-queued stub. The HTTP call
+/// returns 202 immediately while a detached tokio task runs the subprocess,
+/// emits [`WebEvent::PillarUpdate`] events per stdout line, and persists the
+/// final JSON payload to `~/lightarchitects/corso/builds/{id}/pillar-{p}.json`.
+///
+/// See [`pillar_to_corso`] for the pillar→subcommand mapping.
 pub async fn trigger_pillar(
     Path((id, pillar)): Path<(Uuid, String)>,
     headers: HeaderMap,
@@ -572,16 +603,160 @@ pub async fn trigger_pillar(
     if !is_authed(&headers, &state.config.token) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
+    let Some((subcommand, objective)) = pillar_to_corso(&pillar) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "unknown_pillar", "pillar": pillar })),
+        )
+            .into_response();
+    };
+    let Some(session) = state.builds.get(id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "build_not_found" })),
+        )
+            .into_response();
+    };
+    let cwd = session.cwd.clone();
+    let event_tx = state.event_tx.clone();
+    let build_id = id.to_string();
+    let pillar_owned = pillar.clone();
+    tokio::spawn(run_pillar(
+        build_id.clone(),
+        pillar_owned,
+        subcommand,
+        objective.to_owned(),
+        cwd,
+        event_tx,
+    ));
     (
         StatusCode::ACCEPTED,
         Json(json!({
-            "build_id": id.to_string(),
+            "build_id": build_id,
             "pillar": pillar,
-            "status": "queued",
-            "note": "conductor enqueue (shell-out deferred to Phase 10)"
+            "subcommand": subcommand,
+            "status": "spawned",
         })),
     )
         .into_response()
+}
+
+/// Detached runner — spawns `corso <subcommand> --format json <objective>`,
+/// streams stdout as `WebEvent::PillarUpdate` events, and writes a final
+/// `pillar-{p}.json` artifact. Never returns an error to the caller; all
+/// failures are surfaced via the `completed` event with a non-zero
+/// `exit_code` and a diagnostic `line` just before.
+async fn run_pillar(
+    build_id: String,
+    pillar: String,
+    subcommand: &'static str,
+    objective: String,
+    cwd: PathBuf,
+    event_tx: broadcast::Sender<WebEvent>,
+) {
+    let _ = event_tx.send(WebEvent::PillarUpdate(PillarUpdateEvent {
+        build_id: build_id.clone(),
+        pillar: pillar.clone(),
+        phase: "started".to_owned(),
+        line: Some(format!("corso {subcommand} --format json")),
+        exit_code: None,
+        artifact: None,
+    }));
+
+    let mut command = tokio::process::Command::new("corso");
+    command
+        .arg(subcommand)
+        .arg("--format")
+        .arg("json")
+        .arg("--skip-clarify")
+        .arg(&objective)
+        .current_dir(&cwd)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+
+    let mut child = match command.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = event_tx.send(WebEvent::PillarUpdate(PillarUpdateEvent {
+                build_id,
+                pillar,
+                phase: "completed".to_owned(),
+                line: Some(format!("spawn failed: {e}")),
+                exit_code: Some(-1),
+                artifact: None,
+            }));
+            return;
+        }
+    };
+
+    let Some(stdout_pipe) = child.stdout.take() else {
+        let _ = event_tx.send(WebEvent::PillarUpdate(PillarUpdateEvent {
+            build_id,
+            pillar,
+            phase: "completed".to_owned(),
+            line: Some("stdout unavailable".to_owned()),
+            exit_code: Some(-1),
+            artifact: None,
+        }));
+        return;
+    };
+    let mut stdout_lines = BufReader::new(stdout_pipe).lines();
+
+    let mut collected = String::new();
+    while let Ok(Some(line)) = stdout_lines.next_line().await {
+        collected.push_str(&line);
+        collected.push('\n');
+        let _ = event_tx.send(WebEvent::PillarUpdate(PillarUpdateEvent {
+            build_id: build_id.clone(),
+            pillar: pillar.clone(),
+            phase: "output".to_owned(),
+            line: Some(line),
+            exit_code: None,
+            artifact: None,
+        }));
+    }
+
+    let status = child.wait().await;
+    let exit_code = status
+        .as_ref()
+        .ok()
+        .and_then(std::process::ExitStatus::code)
+        .unwrap_or(-1);
+
+    // Persist a best-effort pillar-{name}.json artifact.
+    let artifact_rel = format!("pillar-{pillar}.json");
+    let artifact_abs = home_dir()
+        .map(|h| h.join("lightarchitects/corso/builds").join(&build_id))
+        .map(|d| d.join(&artifact_rel));
+    let persisted = if let Some(path) = artifact_abs.as_ref() {
+        let parsed: Value = serde_json::from_str(collected.trim()).unwrap_or_else(|_| {
+            json!({
+                "pillar": pillar,
+                "status": if exit_code == 0 { "ok" } else { "error" },
+                "exit_code": exit_code,
+                "stdout": collected,
+            })
+        });
+        if let Some(parent) = path.parent() {
+            let _ = tokio::fs::create_dir_all(parent).await;
+        }
+        tokio::fs::write(path, serde_json::to_vec_pretty(&parsed).unwrap_or_default())
+            .await
+            .is_ok()
+    } else {
+        false
+    };
+
+    let _ = event_tx.send(WebEvent::PillarUpdate(PillarUpdateEvent {
+        build_id,
+        pillar,
+        phase: "completed".to_owned(),
+        line: None,
+        exit_code: Some(exit_code),
+        artifact: if persisted { Some(artifact_rel) } else { None },
+    }));
 }
 
 // ── Copilot + dispatch (pass-through stubs, kept for compat) ────────────────

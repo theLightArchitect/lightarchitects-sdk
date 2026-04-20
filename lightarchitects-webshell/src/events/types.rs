@@ -61,6 +61,37 @@ pub enum WebEvent {
         /// `update_conductor`, `set_active_build`, `notify`).
         payload: serde_json::Value,
     },
+    /// Streaming progress from a real CORSO pillar run (Phase 15).
+    ///
+    /// Emitted by [`crate::real_data::trigger_pillar`] as the `corso <cmd>`
+    /// subprocess produces output. Three phases per run:
+    ///   * `phase: "started"`   — before spawn (single event)
+    ///   * `phase: "output"`    — one event per stdout line
+    ///   * `phase: "completed"` — final event with exit status + artifact path
+    PillarUpdate(PillarUpdateEvent),
+}
+
+/// Incremental pillar-run update broadcast over SSE (Phase 15).
+///
+/// The frontend subscribes on the per-build SSE channel and matches on
+/// `build_id` + `pillar` to update the matching UI card.
+#[derive(Debug, Clone, Serialize)]
+pub struct PillarUpdateEvent {
+    /// Build this pillar run belongs to.
+    pub build_id: String,
+    /// Pillar name (`arch`, `sec`, `qual`, `perf`, `test`, `doc`, `ops`).
+    pub pillar: String,
+    /// Lifecycle marker — `started` · `output` · `completed`.
+    pub phase: String,
+    /// One line of stdout when `phase == "output"`; omitted otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<String>,
+    /// Process exit code when `phase == "completed"`; omitted otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    /// Relative artifact path (e.g. `pillar-arch.json`) when completed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact: Option<String>,
 }
 
 /// A single strand activation derived from an AYIN span.

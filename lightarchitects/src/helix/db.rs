@@ -980,7 +980,10 @@ impl HelixDb for HelixNeo4j {
 
         // Compute the `.md`-suffixed variant so Obsidian wikilinks like
         // `[[eva/identity]]` resolve against `vault_path = "eva/identity.md"`.
-        let target_id_md = if link.target_id.ends_with(".md") {
+        let target_id_md = if std::path::Path::new(&link.target_id)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+        {
             link.target_id.clone()
         } else {
             format!("{}.md", link.target_id)
@@ -1041,7 +1044,10 @@ impl HelixDb for HelixNeo4j {
         //      — this lets `plan_ids: [foo]` resolve to the canonical plan
         //      target at `corso/builds/foo/plan.md` without callers having
         //      to know the full path.
-        let target_id_md = if target_id.ends_with(".md") {
+        let target_id_md = if std::path::Path::new(target_id)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+        {
             target_id.to_owned()
         } else {
             format!("{target_id}.md")
@@ -1068,7 +1074,10 @@ impl HelixDb for HelixNeo4j {
         params.insert("source_id".into(), serde_json::json!(source_id));
         params.insert("target_id".into(), serde_json::json!(target_id));
         params.insert("target_id_md".into(), serde_json::json!(&target_id_md));
-        params.insert("target_plan_path".into(), serde_json::json!(&target_plan_path));
+        params.insert(
+            "target_plan_path".into(),
+            serde_json::json!(&target_plan_path),
+        );
         params.insert("rel_id".into(), serde_json::json!(&rel_id));
 
         let records = self

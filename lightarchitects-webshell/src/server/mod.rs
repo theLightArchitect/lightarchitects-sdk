@@ -206,6 +206,7 @@ impl AppState {
 /// - Fallback — serves the embedded `../../Lightarchitectmockcli/dist/` bundle.
 ///
 /// `Router` is already `#[must_use]` so this function is not re-annotated.
+#[allow(clippy::too_many_lines)]
 pub fn build_app(state: AppState) -> Router {
     let cors = build_cors(state.config.port);
     Router::new()

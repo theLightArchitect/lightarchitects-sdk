@@ -283,14 +283,14 @@ impl MarkdownVaultIngester {
     ///
     /// Maps vault front-matter fields to Neo4j typed relationships:
     ///
-    /// | Entry kind                    | Front-matter field   | Edge type           |
-    /// |-------------------------------|----------------------|---------------------|
-    /// | review / scrum-assessment     | `plan_ids: [..]`     | REVIEWS_PLAN        |
-    /// | lesson                        | `source_entry_id`    | LESSON_FROM_ENTRY   |
-    /// | plan                          | `build_id`           | PLAN_FOR_BUILD      |
+    /// | Entry kind                    | Front-matter field   | Edge type             |
+    /// |-------------------------------|----------------------|-----------------------|
+    /// | review / scrum-assessment     | `plan_ids: [..]`     | `REVIEWS_PLAN`        |
+    /// | lesson                        | `source_entry_id`    | `LESSON_FROM_ENTRY`   |
+    /// | plan                          | `build_id`           | `PLAN_FOR_BUILD`      |
     ///
     /// Targets are resolved via [`HelixDb::create_typed_relationship`]'s
-    /// two-stage lookup (UUID → vault_path suffix), so callers can use
+    /// two-stage lookup (UUID → `vault_path` suffix), so callers can use
     /// slugs like `unified-forging-vault` that resolve once a corresponding
     /// plan Step is ingested. Unresolved targets are logged but not fatal —
     /// `MERGE (a)-[r]->(b) WHERE b IS NOT NULL` is a silent no-op when the

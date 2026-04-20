@@ -70,7 +70,7 @@ pub struct ColdMemoryQuery {
 #[derive(Debug, Deserialize)]
 pub struct EdgeListQuery {
     /// Maximum edges to return. Server caps at 5,000 to bound Three.js
-    /// draw-call cost on the Hero3D scene. Default 500.
+    /// draw-call cost on the `Hero3D` scene. Default 500.
     #[serde(default)]
     pub limit: Option<u16>,
 }
@@ -102,7 +102,7 @@ pub struct ConvergenceParticipant {
     pub sibling: String,
 }
 
-/// One `SharedExperience` projected for the MemoryDrawer convergence view.
+/// One `SharedExperience` projected for the `MemoryDrawer` convergence view.
 #[derive(Debug, Serialize)]
 pub struct ConvergenceSummary {
     /// `SharedExperience` UUID.
@@ -132,7 +132,7 @@ pub struct ConvergenceListResponse {
     pub total: u64,
 }
 
-/// One `:LINKS_TO` edge as rendered by Hero3D: source + target vault paths.
+/// One `:LINKS_TO` edge as rendered by `Hero3D`: source + target vault paths.
 ///
 /// Vault paths keep the response front-end-actionable (color derivation +
 /// sibling placement live in the Svelte scene, not the server).
@@ -427,7 +427,7 @@ fn empty_graph_response(entry_id: &str) -> serde_json::Value {
     })
 }
 
-/// `GET /api/soul/edges` — Phase 12 bulk `:LINKS_TO` edges for Hero3D.
+/// `GET /api/soul/edges` — Phase 12 bulk `:LINKS_TO` edges for `Hero3D`.
 ///
 /// Returns up to `limit` (default 500, cap 5,000) vault-path pairs so the
 /// Svelte scene can draw a persistent bloom-lit line between each pair of
@@ -489,16 +489,8 @@ pub async fn edges_handler(
             .filter_map(|r| {
                 let source = r.get("source").and_then(|v| v.as_str())?.to_owned();
                 let target = r.get("target").and_then(|v| v.as_str())?.to_owned();
-                let source_sibling = source
-                    .split('/')
-                    .next()
-                    .unwrap_or_default()
-                    .to_owned();
-                let target_sibling = target
-                    .split('/')
-                    .next()
-                    .unwrap_or_default()
-                    .to_owned();
+                let source_sibling = source.split('/').next().unwrap_or_default().to_owned();
+                let target_sibling = target.split('/').next().unwrap_or_default().to_owned();
                 Some(EdgeSummary {
                     source,
                     target,
@@ -516,7 +508,7 @@ pub async fn edges_handler(
     let total = total_result
         .ok()
         .and_then(|rows| rows.into_iter().next())
-        .and_then(|r| r.get("n").and_then(|v| v.as_u64()))
+        .and_then(|r| r.get("n").and_then(serde_json::Value::as_u64))
         .unwrap_or(0);
 
     Json(EdgeListResponse { edges, total }).into_response()
@@ -530,6 +522,7 @@ pub async fn edges_handler(
 /// hasn't populated any convergences yet (the usual case on a fresh vault
 /// — `GET /api/soul/convergences` + UI empty state "no convergences yet").
 #[allow(clippy::missing_panics_doc)]
+#[allow(clippy::too_many_lines)]
 pub async fn convergences_handler(
     headers: axum::http::HeaderMap,
     State(state): State<AppState>,
@@ -582,7 +575,9 @@ pub async fn convergences_handler(
     list_params.insert("min_p".into(), serde_json::json!(i64::from(min_p)));
     list_params.insert("limit".into(), serde_json::json!(i64::from(limit)));
 
-    let list_result = db.execute_cypher_with_params(list_cypher, list_params).await;
+    let list_result = db
+        .execute_cypher_with_params(list_cypher, list_params)
+        .await;
     let total_result = db
         .execute_cypher_with_params(
             "MATCH (se:SharedExperience) RETURN count(se) AS n",
@@ -607,10 +602,7 @@ pub async fn convergences_handler(
                     .and_then(|v| v.as_str())
                     .unwrap_or("declared")
                     .to_owned();
-                let label = row
-                    .get("label")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_owned);
+                let label = row.get("label").and_then(|v| v.as_str()).map(str::to_owned);
                 let created_at = row
                     .get("created_at")
                     .and_then(|v| v.as_str())
@@ -621,10 +613,7 @@ pub async fn convergences_handler(
                     .into_iter()
                     .filter_map(|p| {
                         let step_id = p.get("step_id")?.as_str()?.to_owned();
-                        let title = p
-                            .get("title")
-                            .and_then(|v| v.as_str())
-                            .map(str::to_owned);
+                        let title = p.get("title").and_then(|v| v.as_str()).map(str::to_owned);
                         let vault_path = p
                             .get("vault_path")
                             .and_then(|v| v.as_str())
@@ -650,10 +639,8 @@ pub async fn convergences_handler(
                         })
                     })
                     .collect();
-                let mut siblings: Vec<String> = participants
-                    .iter()
-                    .map(|p| p.sibling.clone())
-                    .collect();
+                let mut siblings: Vec<String> =
+                    participants.iter().map(|p| p.sibling.clone()).collect();
                 siblings.sort();
                 siblings.dedup();
                 Some(ConvergenceSummary {
@@ -677,7 +664,7 @@ pub async fn convergences_handler(
     let total = total_result
         .ok()
         .and_then(|rows| rows.into_iter().next())
-        .and_then(|r| r.get("n").and_then(|v| v.as_u64()))
+        .and_then(|r| r.get("n").and_then(serde_json::Value::as_u64))
         .unwrap_or(0);
 
     Json(ConvergenceListResponse {

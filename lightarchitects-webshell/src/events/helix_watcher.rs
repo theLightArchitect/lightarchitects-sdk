@@ -261,7 +261,11 @@ fn infer_kind_from_path(rel_path: &str) -> Option<&'static str> {
     if rel_path.contains("/standards/") || rel_path.starts_with("standards/") {
         return Some("standard");
     }
-    if rel_path.rsplit('/').next().is_some_and(|n| n.starts_with("SCRUM-")) {
+    if rel_path
+        .rsplit('/')
+        .next()
+        .is_some_and(|n| n.starts_with("SCRUM-"))
+    {
         return Some("review");
     }
     if rel_path.ends_with("/plan.md") && rel_path.contains("corso/builds/") {
