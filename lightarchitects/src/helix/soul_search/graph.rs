@@ -6,7 +6,9 @@
 //! All fractal traversal uses quantified path patterns with inline predicates
 //! and depth bound `{1,7}` (capped by [`MAX_TRAVERSAL_DEPTH`]).
 
-use tracing::instrument;
+use std::collections::HashMap;
+
+use tracing::{instrument, warn};
 
 use crate::helix::db::{HelixDb, HelixDbError};
 use crate::helix::types::MAX_TRAVERSAL_DEPTH;
@@ -112,8 +114,93 @@ impl GraphSearcher {
             }
         }
 
+        let results = blend_with_pagerank(db, results).await;
         Ok(results)
     }
+}
+
+// ============================================================================
+// GDS PageRank blending (Phase 20b.2)
+// ============================================================================
+
+/// Blend distance-based graph scores with GDS PageRank centrality.
+///
+/// When GDS is available and the `helix-projection` exists, fetches PageRank
+/// for every step in `results` and applies:
+///
+/// ```text
+/// combined = 0.5 * norm_pr + 0.5 * dist_score
+/// norm_pr  = raw_pr / (1.0 + raw_pr)   // maps [0, +∞) → [0, 1)
+/// ```
+///
+/// Falls back silently to the original distance scores when:
+/// - GDS plugin is absent (`CALL gds.version()` fails)
+/// - The `helix-projection` does not exist (consolidation hasn't run yet)
+/// - No PageRank scores are returned for the result set
+async fn blend_with_pagerank(db: &dyn HelixDb, mut results: Vec<ScoredId>) -> Vec<ScoredId> {
+    if results.is_empty() {
+        return results;
+    }
+
+    // Phase 1 — GDS availability probe.
+    if db
+        .execute_cypher("CALL gds.version() YIELD gdsVersion RETURN gdsVersion")
+        .await
+        .is_err()
+    {
+        return results;
+    }
+
+    // Phase 2 — fetch PageRank for the exact step IDs in the result set.
+    let step_ids: Vec<&str> = results.iter().map(|r| r.step_id.as_str()).collect();
+    let mut params = std::collections::BTreeMap::new();
+    params.insert("step_ids".into(), serde_json::json!(step_ids));
+
+    let cypher = "CALL gds.pageRank.stream('helix-projection', \
+                  {maxIterations: 20, dampingFactor: 0.85}) \
+                  YIELD nodeId, score \
+                  WITH gds.util.asNode(nodeId) AS node, score \
+                  WHERE node.id IN $step_ids \
+                  RETURN node.id AS step_id, score";
+
+    let pr_records = match db.execute_cypher_with_params(cypher, params).await {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(
+                error = %e,
+                "PageRank stream failed (projection absent?) — keeping distance scores"
+            );
+            return results;
+        }
+    };
+
+    let pr_map: HashMap<String, f64> = pr_records
+        .iter()
+        .filter_map(|r| {
+            let id = r.fields.get("step_id")?.as_str()?.to_owned();
+            let raw = r.fields.get("score")?.as_f64()?;
+            Some((id, raw))
+        })
+        .collect();
+
+    if pr_map.is_empty() {
+        return results;
+    }
+
+    // Phase 3 — blend and re-sort.
+    for result in &mut results {
+        if let Some(&raw_pr) = pr_map.get(&result.step_id) {
+            let norm_pr = raw_pr / (1.0 + raw_pr);
+            result.score = 0.5 * norm_pr + 0.5 * result.score;
+        }
+    }
+
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    results
 }
 
 // ============================================================================
@@ -426,5 +513,19 @@ mod tests {
         assert!((1.0_f64 / (1.0 + 0.0) - 1.0).abs() < f64::EPSILON);
         assert!((1.0_f64 / (1.0 + 1.0) - 0.5).abs() < f64::EPSILON);
         assert!((1.0_f64 / (1.0 + 9.0) - 0.1).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_pagerank_norm_formula() {
+        // norm_pr = raw / (1 + raw) maps [0, +∞) → [0, 1)
+        assert!((0.0_f64 / (1.0 + 0.0_f64)).abs() < f64::EPSILON); // 0.0
+        assert!((1.0_f64 / (1.0 + 1.0_f64) - 0.5).abs() < f64::EPSILON); // 0.5
+        assert!(99.0_f64 / (1.0 + 99.0_f64) < 1.0); // bounded below 1.0
+
+        // Blend formula: combined = 0.5 * norm_pr + 0.5 * dist_score
+        // dist_score=0.5 (distance=1), raw_pr=1.0 (norm_pr=0.5) → blended=0.5
+        let norm_pr = 1.0_f64 / (1.0 + 1.0_f64);
+        let blended = 0.5 * norm_pr + 0.5 * 0.5_f64;
+        assert!((blended - 0.5).abs() < f64::EPSILON);
     }
 }
