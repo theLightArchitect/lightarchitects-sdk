@@ -134,7 +134,25 @@ async fn poll_once(
         if seen.contains(&signature) {
             continue;
         }
-        seen.insert(signature);
+        seen.insert(signature.clone());
+
+        // Phase 19c.1 — also materialize this convergence as a
+        // :SharedExperience node in the graph so downstream queries
+        // (Phase 13.3 convergences tab, /api/soul/convergences) can
+        // read it via the normal SharedExperience surface. The id is
+        // derived from the signature so re-runs MERGE-dedup across
+        // process restarts — no duplicate :SharedExperience emitted
+        // for the same (strand, sibling-set) tuple.
+        if let Err(e) =
+            materialize_convergence(db.as_ref(), &signature, strand, &siblings, &memo_ids).await
+        {
+            warn!(
+                target: "soul.convergence",
+                error = %e,
+                signature = %signature,
+                "materialize_convergence failed — SSE event still sent"
+            );
+        }
 
         let event = StrandConvergenceEvent {
             strand: strand.to_owned(),
@@ -168,6 +186,76 @@ fn signature_for(strand: &str, siblings: &[String]) -> String {
     let mut sorted: Vec<&str> = siblings.iter().map(String::as_str).collect();
     sorted.sort_unstable();
     format!("{strand}::{}", sorted.join(","))
+}
+
+/// Phase 19c.1 — MERGE a `:SharedExperience` node for this convergence and
+/// link each participating `:HotMemo` via `PARTICIPATES_IN`.
+///
+/// `id` is derived from the signature (prefixed with `se-conv-`) so
+/// re-runs MERGE-dedup across process restarts — the detector's
+/// in-memory `seen` set handles per-process dedup, this handles
+/// cross-process.
+///
+/// `weight` encodes participation strength: `sibling_count / 7.0` clamped
+/// to `[0.0, 1.0]`. Three-sibling convergence scores ~0.43; a full
+/// seven-sibling squad-wide convergence scores 1.0.
+///
+/// `discovered_by` is set to `declared` — the closest existing variant
+/// to a rule-based cross-sibling strand detector (Louvain is topology-
+/// based and `embedding_ann` is similarity-based).
+async fn materialize_convergence(
+    db: &dyn HelixDb,
+    signature: &str,
+    strand: &str,
+    siblings: &[String],
+    memo_ids: &[String],
+) -> Result<(), String> {
+    let se_id = format!("se-conv-{}", stable_slug(signature));
+    let participant_count = siblings.len();
+    #[allow(clippy::cast_precision_loss)]
+    let weight = (participant_count as f64 / 7.0).clamp(0.0, 1.0);
+    let label = format!("Strand convergence: {strand} ({participant_count} siblings)");
+
+    let cypher = "MERGE (se:SharedExperience {id: $se_id}) \
+         ON CREATE SET se.weight = $weight, \
+                       se.participant_count = $count, \
+                       se.discovered_by = 'declared', \
+                       se.label = $label, \
+                       se.created_at = datetime($created_at) \
+         WITH se \
+         UNWIND $memo_ids AS mid \
+         MATCH (h:HotMemo {id: mid}) \
+         MERGE (h)-[:PARTICIPATES_IN]->(se)";
+
+    let memo_ids_json: Vec<serde_json::Value> =
+        memo_ids.iter().map(|m| serde_json::json!(m)).collect();
+    let mut params = std::collections::BTreeMap::new();
+    params.insert("se_id".into(), serde_json::json!(se_id));
+    params.insert("weight".into(), serde_json::json!(weight));
+    let count_i64 = i64::try_from(participant_count).unwrap_or(i64::MAX);
+    params.insert("count".into(), serde_json::json!(count_i64));
+    params.insert("label".into(), serde_json::json!(label));
+    params.insert(
+        "created_at".into(),
+        serde_json::json!(Utc::now().to_rfc3339()),
+    );
+    params.insert("memo_ids".into(), serde_json::json!(memo_ids_json));
+
+    db.execute_cypher_with_params(cypher, params)
+        .await
+        .map(|_| ())
+        .map_err(|e| format!("cypher: {e}"))
+}
+
+/// Deterministic slug for a `:SharedExperience.id` derived from a
+/// convergence signature. Replaces non-alphanumerics with `-` so the id
+/// stays readable (no escape-hell in Neo4j filters) while preserving
+/// signature→id bijection within the limits of a URL-safe charset.
+fn stable_slug(signature: &str) -> String {
+    signature
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
 }
 
 #[cfg(test)]
@@ -217,5 +305,19 @@ mod tests {
     #[test]
     fn min_participants_is_three() {
         assert_eq!(MIN_PARTICIPANTS, 3);
+    }
+
+    #[test]
+    fn stable_slug_preserves_alphanumerics() {
+        assert_eq!(
+            stable_slug("analytical::corso,eva,webshell"),
+            "analytical--corso-eva-webshell"
+        );
+    }
+
+    #[test]
+    fn stable_slug_is_deterministic() {
+        // Same input → same slug across runs.
+        assert_eq!(stable_slug("x::a,b,c"), stable_slug("x::a,b,c"));
     }
 }

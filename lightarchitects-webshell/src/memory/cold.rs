@@ -38,11 +38,12 @@ pub async fn snapshot_cold(
 /// Same as [`snapshot_cold`] but with an explicit cap override.
 ///
 /// Phase 16 compaction needs to scan the whole vault deterministically —
-/// SQLite query ordering isn't stable between back-to-back calls without
-/// an ORDER BY, which made preview and apply disagree on the candidate
-/// set. The fs walker is alphabetically deterministic (siblings sorted
-/// + files within each entries dir sorted), so compaction routes through
-/// here with a huge cap to bypass that nondeterminism entirely.
+/// `SQLite` query ordering isn't stable between back-to-back calls
+/// without an `ORDER BY`, which made preview and apply disagree on the
+/// candidate set. The fs walker is alphabetically deterministic
+/// (siblings sorted, files within each entries dir sorted), so
+/// compaction routes through here with a huge cap to bypass that
+/// nondeterminism entirely.
 pub async fn snapshot_cold_capped(
     helix_root: &Path,
     sibling_filter: Option<&str>,
