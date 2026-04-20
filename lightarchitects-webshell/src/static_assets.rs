@@ -1,12 +1,13 @@
-//! Embedded static assets served from `Lightarchitectmockcli/dist/`.
+//! Embedded static assets served from `lightarchitects-webshell-ui/dist/`.
+//! Rebuilt: 2026-04-20 — BUG-004/005/006 fixes.
 //!
-//! The SPA is the Svelte Mockcli frontend (`~/Projects/Lightarchitectmockcli`).
+//! The SPA is the Svelte Mockcli frontend (`~/Projects/lightarchitects-webshell-ui`).
 //! Its built bundle is baked into the binary at compile time via
 //! [`rust_embed`] so the webshell ships as a single self-contained artifact.
 //!
 //! To rebuild after frontend changes:
 //! ```bash
-//! cd ~/Projects/Lightarchitectmockcli && pnpm build
+//! cd ~/Projects/lightarchitects-webshell-ui && pnpm build
 //! cd ~/Projects/lightarchitects-sdk/lightarchitects-webshell && cargo build --release
 //! ```
 
@@ -19,7 +20,7 @@ use rust_embed::Embed;
 
 /// Embedded static asset bundle — every file under the Svelte Mockcli `dist/`.
 #[derive(Embed)]
-#[folder = "../../Lightarchitectmockcli/dist/"]
+#[folder = "../lightarchitects-webshell-ui/dist/"]
 pub struct Assets;
 
 /// Serves a static asset by request path.

@@ -15,7 +15,13 @@ path = "src/main.rs"
 
 [dependencies]
 # Canonical path resolution (unified-forging-vault Phase 1 helper)
-lightarchitects = { path = "../lightarchitects" }
+lightarchitects = { path = "../lightarchitects", features = [
+    "credentials",
+    "providers-anthropic",
+    "providers-openai",
+    "credentials-display-names",
+    "credentials-detailed-locator",
+] }
 
 # Tier-1 ephemeral transactional log (unified-forging-turnlog)
 
@@ -32,7 +38,7 @@ futures-util.workspace = true
 # Middleware — CORS for dev, trace for request logging
 tower-http = { workspace = true, features = ["cors", "trace"] }
 
-# Embedded static assets — `../../Lightarchitectmockcli/dist/` baked into the binary at compile time.
+# Embedded static assets — `../lightarchitects-webshell-ui/dist/` baked into the binary at compile time.
 # "mime-guess" feature enables `EmbeddedFile::metadata().mimetype()`.
 rust-embed = { version = "8", features = ["mime-guess"] }
 

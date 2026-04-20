@@ -1,13 +1,13 @@
 # lightarchitects-webshell Makefile
 # "The eye of the LORD is upon them" — Psalm 33:18 (KJV)
 
-.PHONY: help build test quality fix push deploy deploy-fast mockcli run
+.PHONY: help build test quality fix push deploy deploy-fast ui run
 
 .DEFAULT_GOAL := help
 
 BINARY         := lightarchitects-webshell
-DEPLOY_DIR     := $(HOME)/lightarchitects/webshell/bin
-MOCKCLI_DIR    := $(HOME)/Projects/Lightarchitectmockcli
+DEPLOY_DIR     := $(HOME)/.lightarchitects/bin
+UI_DIR         := ../lightarchitects-webshell-ui
 SYMLINK        := $(HOME)/.local/bin/webshell
 # Cargo workspace root is one level up; binary is placed there by cargo.
 CARGO_TARGET   := ../target/release/$(BINARY)
@@ -20,22 +20,24 @@ help: ## Show available targets
 
 # ── Frontend ────────────────────────────────────────────────────────────────
 
-mockcli: ## Build Svelte Mockcli frontend into Lightarchitectmockcli/dist/ (embedded by rust-embed)
-	@echo "Building Mockcli frontend…"
-	@cd $(MOCKCLI_DIR) && pnpm install --frozen-lockfile
-	@cd $(MOCKCLI_DIR) && pnpm build
-	@echo "Mockcli built: $(MOCKCLI_DIR)/dist/"
+ui: ## Build Svelte frontend into lightarchitects-webshell-ui/dist/ (embedded by rust-embed)
+	@echo "Building webshell UI…"
+	@cd $(UI_DIR) && pnpm install --frozen-lockfile
+	@cd $(UI_DIR) && pnpm build
+	@echo "UI built: $(UI_DIR)/dist/"
+
+ui: ui ## Alias for 'ui' (legacy name)
 
 # ── Backend ─────────────────────────────────────────────────────────────────
 
-build: ## Build release binary (requires Mockcli dist/ to be current)
+build: ## Build release binary (requires webshell UI dist/ to be current)
 	@echo "Building $(BINARY)…"
 	@cargo build --release -p lightarchitects-webshell --quiet
 
 test: ## Run Rust test suite (webshell crate only)
 	@cargo test -p lightarchitects-webshell --quiet
 
-quality: ## Check code quality: fmt + clippy + Rust tests + Mockcli tests
+quality: ## Check code quality: fmt + clippy + Rust tests + webshell UI tests
 	@cargo fmt -- --check
 	@cargo clippy -p lightarchitects-webshell --all-targets -- -D warnings
 	@cargo test -p lightarchitects-webshell --quiet
@@ -50,7 +52,7 @@ push: quality ## Quality gates + git push
 
 # ── Deploy ───────────────────────────────────────────────────────────────────
 
-deploy: mockcli quality ## Build Mockcli + quality gates + deploy to ~/lightarchitects/webshell/bin/
+deploy: ui quality ## Build UI + quality gates + deploy to ~/.lightarchitects/bin/
 	@echo "Building release binary…"
 	@cargo build --release -p lightarchitects-webshell --quiet
 	@mkdir -p $(DEPLOY_DIR)
@@ -68,7 +70,7 @@ deploy: mockcli quality ## Build Mockcli + quality gates + deploy to ~/lightarch
 	@echo "Symlink:  $(SYMLINK) → $(DEPLOY_DIR)/$(BINARY)"
 	@echo "Launch:   webshell"
 
-deploy-fast: ## Deploy without quality gates (assumes Mockcli dist/ is current)
+deploy-fast: ## Deploy without quality gates (assumes webshell UI dist/ is current)
 	@echo "Building release binary (fast)…"
 	@cargo build --release -p lightarchitects-webshell --quiet
 	@mkdir -p $(DEPLOY_DIR)

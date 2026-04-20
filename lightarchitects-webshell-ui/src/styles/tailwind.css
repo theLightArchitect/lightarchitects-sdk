@@ -1,0 +1,4 @@
+@import 'tailwindcss' source(none);
+@source '../../src/**/*.{js,ts,svelte}';
+
+@import 'tw-animate-css';

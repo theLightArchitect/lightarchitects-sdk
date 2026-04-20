@@ -30,7 +30,7 @@ use crate::{
     events::{self, EVENT_CHANNEL_BUF, WebEvent, builds_handler},
     polytope_data, real_data,
     session::BuildRegistry,
-    setup, static_assets, terminal,
+    session_fork, setup, static_assets, terminal,
 };
 
 /// Snapshot of the browser UI state, periodically reported by the frontend.
@@ -303,7 +303,7 @@ impl AppState {
 /// - `GET /api/browser-state` — read current browser UI state.
 /// - `POST /api/browser-state` — update browser UI state (from frontend).
 /// - `GET /api/polytopes` — per-sibling 4D polytope assignments (authenticated).
-/// - Fallback — serves the embedded `../../Lightarchitectmockcli/dist/` bundle.
+/// - Fallback — serves the embedded `../lightarchitects-webshell-ui/dist/` bundle.
 ///
 /// `Router` is already `#[must_use]` so this function is not re-annotated.
 #[allow(clippy::too_many_lines)]
@@ -427,6 +427,8 @@ pub fn build_app(state: AppState) -> Router {
             "/api/builds/{id}/dispatch",
             post(real_data::dispatch_sibling),
         )
+        // ── Session fork (webshell → terminal handoff) ───────────────────────
+        .route("/api/session/fork", post(session_fork::fork_handler))
         // ── Setup / backend-switch routes ────────────────────────────────────
         .route("/api/setup/info", get(setup::setup_info))
         .route("/api/setup/models", get(setup::setup_models))
