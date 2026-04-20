@@ -164,9 +164,15 @@ impl AppState {
             // Neo4j attach completes, so the populator's `soul.neo4j_arc()`
             // lookup succeeds on the fast path.
             let soul_for_embed = soul.clone();
+            let tx_for_convergence = event_tx.clone();
             tokio::spawn(async move {
                 soul_for_embed.clone().try_attach_neo4j().await;
-                crate::memory::embedder::spawn(soul_for_embed);
+                crate::memory::embedder::spawn(soul_for_embed.clone());
+                // Phase 19b.2 — cross-sibling strand convergence detector.
+                // Runs in parallel with the embedder; both poll the graph
+                // on their own cadences (embedder = one-shot at boot;
+                // convergence = every 60s).
+                crate::memory::convergence::spawn(soul_for_embed, tx_for_convergence);
             });
         }
         Self {

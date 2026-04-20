@@ -69,6 +69,32 @@ pub enum WebEvent {
     ///   * `phase: "output"`    — one event per stdout line
     ///   * `phase: "completed"` — final event with exit status + artifact path
     PillarUpdate(PillarUpdateEvent),
+    /// Phase 19b.2 — cross-sibling strand convergence detected.
+    ///
+    /// Emitted by the convergence detector when three or more distinct
+    /// siblings activate the same strand within the active hot window.
+    /// The UI renders this as a "convergence" pulse in `Helix3D` and an
+    /// entry in the convergences tab. Graph materialization of the
+    /// convergence (a `:SharedExperience` node + `:PARTICIPATES_IN` edges)
+    /// is deferred to Phase 19c / 20.
+    StrandConvergence(StrandConvergenceEvent),
+}
+
+/// Cross-sibling strand convergence event (Phase 19b.2).
+///
+/// Fired when a strand hits the configured minimum-participants threshold
+/// (default 3). `memo_ids` reference the `:HotMemo` nodes that triggered
+/// the convergence; the UI can deep-link back to each.
+#[derive(Debug, Clone, Serialize)]
+pub struct StrandConvergenceEvent {
+    /// Strand name, lowercased (e.g. `"analytical"`).
+    pub strand: String,
+    /// Distinct sibling names currently activating this strand.
+    pub siblings: Vec<String>,
+    /// `:HotMemo.id` values that participated in the convergence.
+    pub memo_ids: Vec<String>,
+    /// ISO-8601 UTC timestamp of detection.
+    pub detected_at: String,
 }
 
 /// Incremental pillar-run update broadcast over SSE (Phase 15).

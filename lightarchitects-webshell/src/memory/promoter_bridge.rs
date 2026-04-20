@@ -16,7 +16,8 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use chrono::Utc;
+use chrono::{Duration, Utc};
+use lightarchitects::helix::HelixDb;
 use lightarchitects::turnlog::promotion::{
     HelixPromoter, PromotionCandidate, PromotionError, PromotionOutcome, PromotionReason,
 };
@@ -26,6 +27,13 @@ use tracing::warn;
 use crate::events::types::WebEvent;
 use crate::memory::persistence::SoulPersistence;
 use crate::memory::types::{MemoryTier, PromotionEvent};
+
+/// Default TTL applied to the `:HotMemo` side of the `MATERIALIZED_FROM`
+/// lineage edge written at promotion time. Mirrors Phase 18B's
+/// `HOT_MEMO_TTL_SECS`. A hot memo still gets a TTL even though the Step it
+/// materialised into is permanent — if the hot side ever expires out of
+/// retrieval, the edge remains and Step lineage stays queryable.
+const LINEAGE_HOT_TTL_SECS: i64 = 24 * 60 * 60;
 
 /// Wrap any [`HelixPromoter`] to additionally emit
 /// [`WebEvent::SoulPromotion`] on each successful promotion AND dual-write
@@ -72,6 +80,11 @@ impl<P: HelixPromoter> HelixPromoter for BroadcastingPromoter<P> {
         let memo_id = format!("{}:{}", candidate.session_id, candidate.entry.seq);
         let sibling = candidate.entry.span.actor.to_string();
         let significance = significance_from_reason(&candidate.reason);
+        // Phase 19b — snapshot candidate fields needed for the MATERIALIZED_FROM
+        // edge before ownership transfers to the inner promoter.
+        let memo_content = extract_hot_content(&candidate);
+        let memo_strands = extract_hot_strands(&candidate);
+        let memo_created_at = candidate.entry.span.timestamp;
         let tx = self.tx.clone();
         let soul = self.soul.clone();
 
@@ -105,6 +118,42 @@ impl<P: HelixPromoter> HelixPromoter for BroadcastingPromoter<P> {
                             path = %rel_path,
                             "dual-write: couldn't read newly-written file"
                         );
+                    }
+
+                    // Phase 19b.1 — write the MATERIALIZED_FROM lineage edge
+                    // on the graph side. Non-fatal: the filesystem + SQLite
+                    // dual-write above remains the source of truth. Edge
+                    // write requires the Neo4j tier to be attached AND the
+                    // promoted markdown to carry a UUID `id:` in its
+                    // front-matter (the canonical path since Phase 9).
+                    if let Some(step_id) = read_step_id_from_frontmatter(helix_path).await {
+                        if let Some(neo4j) = soul.neo4j_arc().await {
+                            let expires = memo_created_at + Duration::seconds(LINEAGE_HOT_TTL_SECS);
+                            let params = build_lineage_params(
+                                &step_id,
+                                &memo_id,
+                                &sibling,
+                                &memo_content,
+                                f64::from(significance),
+                                &memo_strands,
+                                memo_created_at,
+                                expires,
+                                &rel_path,
+                            );
+                            if let Err(e) = neo4j
+                                .helix_db()
+                                .execute_cypher_with_params(LINEAGE_CYPHER, params)
+                                .await
+                            {
+                                warn!(
+                                    target: "soul.lineage",
+                                    error = %e,
+                                    step_id = %step_id,
+                                    memo_id = %memo_id,
+                                    "MATERIALIZED_FROM edge write failed"
+                                );
+                            }
+                        }
                     }
                 }
 
@@ -206,6 +255,110 @@ fn significance_from_reason(reason: &PromotionReason) -> f32 {
         _ => 0.7,
     };
     raw as f32
+}
+
+// ── Phase 19b.1 — MATERIALIZED_FROM lineage edge helpers ──────────────────
+
+/// Combined Cypher that MERGEs the `:HotMemo` node, ensures a minimal `:Step`
+/// exists (the SOUL ingester will enrich its properties later), and then
+/// MERGEs the `MATERIALIZED_FROM` edge between them.
+///
+/// All three statements run in a single Bolt round-trip so the invariant
+/// "every promoted Step has a `MATERIALIZED_FROM` edge" holds atomically from
+/// the graph's perspective — the edge cannot exist without both endpoints.
+const LINEAGE_CYPHER: &str = "\
+    MERGE (h:HotMemo {id: $memo_id}) \
+      ON CREATE SET h.sibling = $sibling, \
+                    h.content = $content, \
+                    h.significance = $significance, \
+                    h.strands = $strands, \
+                    h.created_at = datetime($created_at), \
+                    h.expires = datetime($expires) \
+    WITH h \
+    MERGE (s:Step {id: $step_id}) \
+      ON CREATE SET s.vault_path = $vault_path, \
+                    s.content = $content, \
+                    s.created_at = datetime($created_at) \
+    MERGE (s)-[r:MATERIALIZED_FROM]->(h) \
+      ON CREATE SET r.id = randomUUID() \
+    RETURN r.id AS id";
+
+/// Build the parameter map for [`LINEAGE_CYPHER`].
+#[allow(clippy::too_many_arguments)]
+fn build_lineage_params(
+    step_id: &str,
+    memo_id: &str,
+    sibling: &str,
+    content: &str,
+    significance: f64,
+    strands: &[String],
+    created_at: chrono::DateTime<Utc>,
+    expires: chrono::DateTime<Utc>,
+    vault_path: &str,
+) -> std::collections::BTreeMap<String, serde_json::Value> {
+    let mut p = std::collections::BTreeMap::new();
+    p.insert("memo_id".into(), serde_json::json!(memo_id));
+    p.insert("step_id".into(), serde_json::json!(step_id));
+    p.insert("sibling".into(), serde_json::json!(sibling));
+    p.insert("content".into(), serde_json::json!(content));
+    p.insert("significance".into(), serde_json::json!(significance));
+    let strands_json: Vec<serde_json::Value> =
+        strands.iter().map(|s| serde_json::json!(s)).collect();
+    p.insert("strands".into(), serde_json::json!(strands_json));
+    p.insert(
+        "created_at".into(),
+        serde_json::json!(created_at.to_rfc3339()),
+    );
+    p.insert("expires".into(), serde_json::json!(expires.to_rfc3339()));
+    p.insert("vault_path".into(), serde_json::json!(vault_path));
+    p
+}
+
+/// Parse the just-written promoted markdown file and extract the UUID from
+/// its `id:` front-matter field. Returns `None` when the file is unreadable
+/// or the YAML doesn't carry an `id`.
+async fn read_step_id_from_frontmatter(abs_path: &std::path::Path) -> Option<String> {
+    let raw = tokio::fs::read_to_string(abs_path).await.ok()?;
+    let (fields, _) = crate::memory::frontmatter::parse(&raw);
+    fields
+        .raw
+        .get("id")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+}
+
+/// Short summary of the hot memo's content for the `:HotMemo.content`
+/// property — prefers explicit metadata fields over the raw action name.
+fn extract_hot_content(candidate: &PromotionCandidate) -> String {
+    const MAX: usize = 280;
+    let meta = &candidate.entry.span.metadata;
+    for key in ["memo_body", "summary", "content", "message"] {
+        if let Some(s) = meta.get(key).and_then(serde_json::Value::as_str) {
+            let mut out: String = s.chars().take(MAX).collect();
+            if s.chars().count() > MAX {
+                out.push('…');
+            }
+            return out;
+        }
+    }
+    format!("[{}]", candidate.entry.span.action)
+}
+
+/// Strand tags lifted off the span metadata, lowercased. Returns an empty
+/// vec if absent.
+fn extract_hot_strands(candidate: &PromotionCandidate) -> Vec<String> {
+    candidate
+        .entry
+        .span
+        .metadata
+        .get("strands")
+        .and_then(serde_json::Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_lowercase))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
