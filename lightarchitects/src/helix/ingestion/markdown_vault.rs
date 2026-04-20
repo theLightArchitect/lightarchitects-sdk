@@ -123,9 +123,12 @@ impl MarkdownVaultIngester {
             if self.force_wikilinks {
                 // Step body is unchanged (content-hash match), but wikilinks may
                 // have been added/modified or previously failed to resolve.
-                // Re-run wikilink resolution only; strand/convergence/attachment
-                // writes stay idempotent so they don't need re-execution.
+                // Re-run wikilink resolution + typed output edges — both are
+                // idempotent (MERGE) so re-invocation is safe on skipped Steps.
+                // Strand/convergence/attachment writes stay untouched.
                 self.create_wikilinks(db, &step_id, body, &fm.links, report)
+                    .await;
+                self.create_typed_output_edges(db, &step_id, &fm, report)
                     .await;
             }
             return Ok(());
@@ -136,6 +139,8 @@ impl MarkdownVaultIngester {
         self.create_wikilinks(db, &step_id, body, &fm.links, report)
             .await;
         self.create_convergences(db, &step_id, &fm.convergence, report)
+            .await;
+        self.create_typed_output_edges(db, &step_id, &fm, report)
             .await;
         self.scan_attachments(db, &step_id, path, report).await;
 
@@ -270,6 +275,78 @@ impl MarkdownVaultIngester {
                 report
                     .errors
                     .push(format!("fm link create failed ({}): {e}", lr.target));
+            }
+        }
+    }
+
+    /// Phase 14.2 — materialise typed sibling-output edges from front-matter.
+    ///
+    /// Maps vault front-matter fields to Neo4j typed relationships:
+    ///
+    /// | Entry kind                    | Front-matter field   | Edge type           |
+    /// |-------------------------------|----------------------|---------------------|
+    /// | review / scrum-assessment     | `plan_ids: [..]`     | REVIEWS_PLAN        |
+    /// | lesson                        | `source_entry_id`    | LESSON_FROM_ENTRY   |
+    /// | plan                          | `build_id`           | PLAN_FOR_BUILD      |
+    ///
+    /// Targets are resolved via [`HelixDb::create_typed_relationship`]'s
+    /// two-stage lookup (UUID → vault_path suffix), so callers can use
+    /// slugs like `unified-forging-vault` that resolve once a corresponding
+    /// plan Step is ingested. Unresolved targets are logged but not fatal —
+    /// `MERGE (a)-[r]->(b) WHERE b IS NOT NULL` is a silent no-op when the
+    /// target doesn't exist yet.
+    async fn create_typed_output_edges(
+        &self,
+        db: &dyn HelixDb,
+        step_id: &str,
+        fm: &frontmatter::Frontmatter,
+        report: &mut IngestionReport,
+    ) {
+        let kind = fm.entry_type.as_deref().unwrap_or("");
+
+        // REVIEWS_PLAN — scrum assessments + reviews point at their reviewed plans.
+        if matches!(kind, "review" | "scrum-assessment" | "scrum") {
+            if let Some(plan_ids) = fm.extra.get("plan_ids").and_then(|v| v.as_array()) {
+                for pid in plan_ids.iter().filter_map(|v| v.as_str()) {
+                    if let Err(e) = db
+                        .create_typed_relationship(step_id, pid, "REVIEWS_PLAN")
+                        .await
+                    {
+                        report
+                            .errors
+                            .push(format!("REVIEWS_PLAN failed ({pid}): {e}"));
+                    }
+                }
+            }
+        }
+
+        // LESSON_FROM_ENTRY — lessons carry a pointer to the source entry
+        // they were extracted from. `source_entry_id` is the target UUID or
+        // vault-path slug.
+        if kind == "lesson" {
+            if let Some(src) = fm.extra.get("source_entry_id").and_then(|v| v.as_str()) {
+                if let Err(e) = db
+                    .create_typed_relationship(step_id, src, "LESSON_FROM_ENTRY")
+                    .await
+                {
+                    report
+                        .errors
+                        .push(format!("LESSON_FROM_ENTRY failed ({src}): {e}"));
+                }
+            }
+        }
+
+        // PLAN_FOR_BUILD — build plans reference the build they plan for.
+        if kind == "plan" {
+            if let Some(build_id) = fm.extra.get("build_id").and_then(|v| v.as_str()) {
+                if let Err(e) = db
+                    .create_typed_relationship(step_id, build_id, "PLAN_FOR_BUILD")
+                    .await
+                {
+                    report
+                        .errors
+                        .push(format!("PLAN_FOR_BUILD failed ({build_id}): {e}"));
+                }
             }
         }
     }

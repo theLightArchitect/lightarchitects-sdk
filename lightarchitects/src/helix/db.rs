@@ -86,6 +86,24 @@ pub trait HelixDb: Send + Sync {
     /// Create a link between two steps.
     async fn create_link(&self, link: &HelixLink) -> Result<String, HelixDbError>;
 
+    /// Phase 14.2 — create a typed relationship between two steps.
+    ///
+    /// Same source/target resolution as [`HelixDb::create_link`] (UUID first,
+    /// `vault_path` suffix fallback with `.md` variant) but writes a
+    /// differently-labeled relationship in Neo4j. The label must appear in
+    /// [`HELIX_REL_TYPES`]; unknown labels return `HelixDbError::Validation`.
+    ///
+    /// Idempotent via `MERGE`: re-creating an existing `source→rel_type→target`
+    /// triple returns the existing relationship's id. Used by the markdown
+    /// vault ingester to materialise `PLAN_FOR_BUILD`, `REVIEWS_PLAN`, and
+    /// `LESSON_FROM_ENTRY` edges when front-matter advertises them.
+    async fn create_typed_relationship(
+        &self,
+        source_id: &str,
+        target_id: &str,
+        rel_type: &str,
+    ) -> Result<String, HelixDbError>;
+
     /// Create a shared experience node with participant step IDs.
     async fn create_shared_experience(
         &self,
@@ -554,6 +572,13 @@ pub const HELIX_REL_TYPES: &[&str] = &[
     "HAS_ATTACHMENT",
     "CHUNK_OF",
     "INGESTED_FROM",
+    // Phase 14.2 — typed sibling-output edges.
+    // PLAN_FOR_BUILD:    plan → build (from a plan.md under corso/builds/<id>/)
+    // REVIEWS_PLAN:      review/scrum-assessment → plan (from plan_ids field)
+    // LESSON_FROM_ENTRY: lesson → source entry (from source_entry_id field)
+    "PLAN_FOR_BUILD",
+    "REVIEWS_PLAN",
+    "LESSON_FROM_ENTRY",
 ];
 
 // ============================================================================
@@ -982,6 +1007,82 @@ impl HelixDb for HelixNeo4j {
                 HelixDbError::NotFound(format!(
                     "create_link: no matching target for '{}'",
                     link.target_id
+                ))
+            })
+    }
+
+    #[instrument(
+        skip(self),
+        fields(neo4j.operation = "create_typed_relationship", rel_type = %rel_type)
+    )]
+    async fn create_typed_relationship(
+        &self,
+        source_id: &str,
+        target_id: &str,
+        rel_type: &str,
+    ) -> Result<String, HelixDbError> {
+        // Defence-in-depth: refuse any label that isn't on the compile-time
+        // allowlist. Neo4j doesn't accept relationship labels as bind
+        // parameters, so `rel_type` MUST be interpolated into the Cypher
+        // string — allowlist membership is the only thing standing between
+        // this call site and Cypher injection.
+        if !HELIX_REL_TYPES.contains(&rel_type) {
+            return Err(HelixDbError::Validation(format!(
+                "create_typed_relationship: rel_type '{rel_type}' not in HELIX_REL_TYPES allowlist"
+            )));
+        }
+
+        let rel_id = uuid::Uuid::new_v4().to_string();
+
+        // Three-variant target resolution for typed edges:
+        //   1. UUID direct match (`b1` on id)
+        //   2. Obsidian wikilink suffix (`ENDS WITH target_id` / `.md`)
+        //   3. Phase 14.2 plan-slug shape: `.../{target_id}/plan.md`
+        //      — this lets `plan_ids: [foo]` resolve to the canonical plan
+        //      target at `corso/builds/foo/plan.md` without callers having
+        //      to know the full path.
+        let target_id_md = if target_id.ends_with(".md") {
+            target_id.to_owned()
+        } else {
+            format!("{target_id}.md")
+        };
+        let target_plan_path = format!("/{target_id}/plan.md");
+
+        let cypher = format!(
+            "MATCH (a:Step {{id: $source_id}}) \
+             OPTIONAL MATCH (b1:Step {{id: $target_id}}) \
+             OPTIONAL MATCH (b2:Step) \
+               WHERE b1 IS NULL \
+                 AND b2.vault_path IS NOT NULL \
+                 AND (b2.vault_path ENDS WITH $target_id \
+                      OR b2.vault_path ENDS WITH $target_id_md \
+                      OR b2.vault_path ENDS WITH $target_plan_path) \
+             WITH a, coalesce(b1, b2) AS b \
+             WHERE b IS NOT NULL \
+             MERGE (a)-[r:{rel_type}]->(b) \
+               ON CREATE SET r.id = $rel_id \
+             RETURN r.id AS id"
+        );
+
+        let mut params: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+        params.insert("source_id".into(), serde_json::json!(source_id));
+        params.insert("target_id".into(), serde_json::json!(target_id));
+        params.insert("target_id_md".into(), serde_json::json!(&target_id_md));
+        params.insert("target_plan_path".into(), serde_json::json!(&target_plan_path));
+        params.insert("rel_id".into(), serde_json::json!(&rel_id));
+
+        let records = self
+            .timed_execute("create_typed_relationship", &cypher, params)
+            .await?;
+
+        records
+            .first()
+            .and_then(|r| r.get("id"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                HelixDbError::NotFound(format!(
+                    "create_typed_relationship: no matching target for '{target_id}' ({rel_type})"
                 ))
             })
     }
