@@ -272,9 +272,24 @@ pub async fn search_handler(
             false,
         ),
         SearchMode::Hybrid => {
+            // Phase 20a — 4-signal RRF fusion. Every signal ranks over
+            // the same candidate pool; RRF collapses the four rankings
+            // into a single list. Signals that return empty (e.g. graph
+            // when Neo4j is absent) are silently dropped from the fusion
+            // so retrieval degrades gracefully without a full failure.
             let bm25_ranked = rank_bm25(&candidates, pattern, 50);
             let sem_ranked = rank_semantic(&state, &candidates, pattern, 50).await;
-            (rrf_fuse(&bm25_ranked, &sem_ranked, limit), true)
+            let graph_ranked = rank_graph(&state, &candidates, 50).await;
+            let recency_ranked = rank_recency(&candidates, 50);
+            let fused = rrf_fuse_n(
+                &[bm25_ranked, sem_ranked, graph_ranked, recency_ranked],
+                limit,
+            );
+            // Phase 20a flips rrf_used permanently to true for hybrid —
+            // the fusion path is the canonical hybrid contract now, not
+            // a "was RRF actually applied" telemetry flag. Clients that
+            // want "did the graph contribute" can query /api/soul/health.
+            (fused, true)
         }
     };
 
@@ -465,24 +480,27 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b.iter()).take(len).map(|(x, y)| x * y).sum()
 }
 
-/// Reciprocal-rank fusion over two ranked path lists.
+/// N-way reciprocal-rank fusion — Phase 20a generalisation.
 ///
 /// Formula: `score(path) = Σ 1 / (k + rank_i(path))` where `k = 60` is the
-/// canonical constant (Cormack, Clarke, Büttcher 2009).
+/// canonical constant (Cormack, Clarke, Büttcher 2009). Ties break by
+/// descending score, then lexical path.
 ///
-/// Ties break by descending score, then lexical path.
-fn rrf_fuse(bm25: &[String], semantic: &[String], limit: usize) -> Vec<String> {
+/// Accepts any number of ranked lists and fuses them with the same `k=60`
+/// constant. Empty signals contribute nothing — they drop out of the
+/// fusion silently. This is the retrieval contract for hybrid mode:
+/// however many of the four signals (bm25 / semantic / graph / recency)
+/// happen to return results, the response is still a coherent fused
+/// ranking.
+fn rrf_fuse_n(signals: &[Vec<String>], limit: usize) -> Vec<String> {
     const K: f32 = 60.0;
     let mut scores: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
-    for (rank, path) in bm25.iter().enumerate() {
-        #[allow(clippy::cast_precision_loss)]
-        let r = (rank + 1) as f32;
-        *scores.entry(path.clone()).or_insert(0.0) += 1.0 / (K + r);
-    }
-    for (rank, path) in semantic.iter().enumerate() {
-        #[allow(clippy::cast_precision_loss)]
-        let r = (rank + 1) as f32;
-        *scores.entry(path.clone()).or_insert(0.0) += 1.0 / (K + r);
+    for signal in signals {
+        for (rank, path) in signal.iter().enumerate() {
+            #[allow(clippy::cast_precision_loss)]
+            let r = (rank + 1) as f32;
+            *scores.entry(path.clone()).or_insert(0.0) += 1.0 / (K + r);
+        }
     }
     let mut ranked: Vec<(String, f32)> = scores.into_iter().collect();
     ranked.sort_by(|a, b| {
@@ -491,6 +509,100 @@ fn rrf_fuse(bm25: &[String], semantic: &[String], limit: usize) -> Vec<String> {
             .then_with(|| a.0.cmp(&b.0))
     });
     ranked.into_iter().map(|(p, _)| p).take(limit).collect()
+}
+
+/// Phase 20a — graph-walk signal.
+///
+/// Ranks candidates by their structural centrality in the graph: outgoing
+/// `:LINKS_TO`, incoming `:LINKS_TO`, and `:MATERIALIZED_FROM` all count
+/// as edges. A Step that's referenced from many places (or references
+/// many) is more retrieval-worthy even when lexical/semantic signals tie.
+///
+/// Returns the candidate `vault_path`s sorted by descending connectivity.
+/// When Neo4j is unavailable, returns an empty vec — `rrf_fuse_n` handles
+/// that cleanly by silently dropping the signal.
+async fn rank_graph(state: &AppState, candidates: &[ContextMemo], limit: usize) -> Vec<String> {
+    let Some(soul) = state.soul_store.as_ref() else {
+        return Vec::new();
+    };
+    let Some(neo4j) = soul.neo4j_arc().await else {
+        return Vec::new();
+    };
+    let db = neo4j.helix_db();
+
+    let paths: Vec<String> = candidates
+        .iter()
+        .filter_map(|m| m.source_path.clone())
+        .collect();
+    if paths.is_empty() {
+        return Vec::new();
+    }
+
+    let mut params: std::collections::BTreeMap<String, serde_json::Value> =
+        std::collections::BTreeMap::new();
+    params.insert("paths".into(), serde_json::json!(paths));
+
+    // Degree = links-out + links-in + materialized-from (all from/to this
+    // Step). `coalesce(..., 0)` keeps isolated Steps in the result set at
+    // score 0 rather than dropping them — lets the fused rank still pick
+    // up a Step by its other signals.
+    let cypher = "MATCH (s:Step) \
+         WHERE s.vault_path IN $paths \
+         OPTIONAL MATCH (s)-[out:LINKS_TO]->() \
+         WITH s, count(out) AS outgoing \
+         OPTIONAL MATCH (s)<-[inc:LINKS_TO]-() \
+         WITH s, outgoing, count(inc) AS incoming \
+         OPTIONAL MATCH (s)-[mat:MATERIALIZED_FROM]->() \
+         WITH s, outgoing + incoming + count(mat) AS degree \
+         RETURN s.vault_path AS path, degree \
+         ORDER BY degree DESC, s.vault_path ASC";
+    let records = match db.execute_cypher_with_params(cypher, params).await {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(target: "soul.search.graph", error = %e, "graph-walk query failed");
+            return Vec::new();
+        }
+    };
+
+    records
+        .into_iter()
+        .filter_map(|r| r.get("path").and_then(|v| v.as_str()).map(str::to_owned))
+        .take(limit)
+        .collect()
+}
+
+/// Phase 20a — recency signal.
+///
+/// Exponential decay on the candidate's `created_at` timestamp:
+/// `score = exp(-age_days / RECENCY_TAU_DAYS)`. Newer Steps rank higher.
+/// Pure Rust — no graph round-trip — so this signal is always available
+/// whenever the cold walker returned anything.
+///
+/// `RECENCY_TAU_DAYS = 30` puts the half-life at ~21 days. An entry from
+/// today scores ~1.0; a month-old entry scores ~0.37; a year-old one
+/// scores ~5e-6 and rarely survives fusion against fresher candidates.
+fn rank_recency(candidates: &[ContextMemo], limit: usize) -> Vec<String> {
+    const RECENCY_TAU_DAYS: f64 = 30.0;
+    let now = chrono::Utc::now();
+    let mut scored: Vec<(f64, String)> = candidates
+        .iter()
+        .filter_map(|m| {
+            let path = m.source_path.clone()?;
+            let created = chrono::DateTime::parse_from_rfc3339(&m.created_at)
+                .ok()?
+                .with_timezone(&chrono::Utc);
+            #[allow(clippy::cast_precision_loss)]
+            let age_days = (now - created).num_seconds() as f64 / 86_400.0;
+            let score = (-age_days.max(0.0) / RECENCY_TAU_DAYS).exp();
+            Some((score, path))
+        })
+        .collect();
+    scored.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.1.cmp(&b.1))
+    });
+    scored.into_iter().map(|(_, p)| p).take(limit).collect()
 }
 
 /// `GET /api/soul/entries/*path` — read one helix entry.
@@ -1123,7 +1235,7 @@ mod tests {
     fn rrf_fuse_merges_ranks_from_both_sources() {
         let bm25 = vec!["a.md".to_owned(), "b.md".to_owned()];
         let sem = vec!["b.md".to_owned(), "c.md".to_owned()];
-        let fused = rrf_fuse(&bm25, &sem, 10);
+        let fused = rrf_fuse_n(&[bm25, sem], 10);
         // b.md appears in both rankings and should rank first after fusion.
         assert_eq!(fused[0], "b.md");
         assert_eq!(fused.len(), 3);
@@ -1133,8 +1245,83 @@ mod tests {
     fn rrf_fuse_respects_limit() {
         let bm25 = vec!["a.md".into(), "b.md".into(), "c.md".into(), "d.md".into()];
         let sem = vec!["a.md".into(), "b.md".into()];
-        let fused = rrf_fuse(&bm25, &sem, 2);
+        let fused = rrf_fuse_n(&[bm25, sem], 2);
         assert_eq!(fused.len(), 2);
+    }
+
+    // ── Phase 20a — 4-signal RRF fusion ────────────────────────────────────
+
+    #[test]
+    fn rrf_fuse_n_four_signals_prefers_universally_ranked_paths() {
+        // A path that appears in all 4 signals should outrank any path
+        // that only appears in 1 — RRF's canonical contract.
+        let bm25 = vec!["universal.md".into(), "a.md".into()];
+        let sem = vec!["universal.md".into(), "b.md".into()];
+        let graph = vec!["universal.md".into(), "c.md".into()];
+        let recency = vec!["universal.md".into(), "d.md".into()];
+        let fused = rrf_fuse_n(&[bm25, sem, graph, recency], 10);
+        assert_eq!(
+            fused[0], "universal.md",
+            "path in all 4 signals ranks first"
+        );
+    }
+
+    #[test]
+    fn rrf_fuse_n_drops_empty_signals_silently() {
+        // Graceful degradation: an empty signal (e.g. graph when Neo4j
+        // is down) still lets the remaining signals fuse correctly.
+        let bm25 = vec!["a.md".into(), "b.md".into()];
+        let sem = vec!["b.md".into(), "c.md".into()];
+        let graph: Vec<String> = Vec::new();
+        let recency: Vec<String> = Vec::new();
+        let fused = rrf_fuse_n(&[bm25, sem, graph, recency], 10);
+        // Same result as the 2-signal case — empty signals contribute 0.
+        assert_eq!(fused[0], "b.md");
+        assert_eq!(fused.len(), 3);
+    }
+
+    #[test]
+    fn rank_recency_orders_newer_first() {
+        use chrono::{Duration, Utc};
+        let now = Utc::now();
+        let stamp_old = (now - Duration::days(200)).to_rfc3339();
+        let stamp_mid = (now - Duration::days(10)).to_rfc3339();
+        let stamp_new = (now - Duration::hours(1)).to_rfc3339();
+
+        let candidates = vec![
+            {
+                let mut m = memo("old.md", "eva", "old");
+                m.created_at = stamp_old;
+                m
+            },
+            {
+                let mut m = memo("mid.md", "eva", "mid");
+                m.created_at = stamp_mid;
+                m
+            },
+            {
+                let mut m = memo("new.md", "eva", "new");
+                m.created_at = stamp_new;
+                m
+            },
+        ];
+        let ranked = rank_recency(&candidates, 10);
+        assert_eq!(
+            ranked,
+            vec![
+                "new.md".to_owned(),
+                "mid.md".to_owned(),
+                "old.md".to_owned()
+            ]
+        );
+    }
+
+    #[test]
+    fn rank_recency_skips_unparseable_timestamps() {
+        let mut m = memo("bad.md", "eva", "bad");
+        m.created_at = "not-a-date".to_owned();
+        let ranked = rank_recency(&[m], 10);
+        assert!(ranked.is_empty(), "unparseable dates drop out silently");
     }
 
     #[test]
