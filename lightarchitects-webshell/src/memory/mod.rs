@@ -1,19 +1,20 @@
-//! Hybrid memory module — hot (turnlog active sessions) + cold (helix entries on disk).
+//! Hybrid memory module — hot (Neo4j `:HotMemo` tier) + cold (helix entries on disk).
 //!
 //! Phase 9 SOUL integration. Hot and cold are the two tiers of the SOUL vault
-//! memory model: hot lives in the ephemeral transactional log ([`lightarchitects::turnlog`]),
+//! memory model: hot lives in the Neo4j `:HotMemo` graph tier (Phase 18c),
 //! cold lives in the helix filesystem at `~/lightarchitects/soul/helix/{sibling}/entries/`.
 //!
-//! The HTTP surface in [`crate::events::soul_routes`] (Phase 9.5) consumes
-//! [`hot::snapshot_hot`] and the cold reader to serve the Svelte webshell's
-//! `MemoryDrawer` component.
+//! The HTTP surface in [`crate::events::soul_routes`] (Phase 9.5) serves the
+//! Svelte webshell's `MemoryDrawer` component. As of Phase 18c Step 3 the hot
+//! path reads exclusively from Neo4j; [`hot::snapshot_hot`] remains for tests
+//! and NDJSON archive inspection but is no longer on the hot serving path.
 //!
 //! # Design boundary
 //!
-//! Hot memos are projections of [`lightarchitects::turnlog::entry::TurnEntry`] —
-//! they drop the HMAC chain fields to keep the wire payload small. The full
-//! `TurnEntry` is still readable from the NDJSON file when chain verification
-//! is needed (not needed for UI display).
+//! Hot memos are projections of [`lightarchitects::helix::types::HotMemo`] —
+//! HMAC chain fields (`hmac_prev`, `hmac_self`) are present on the Neo4j node
+//! but dropped at the `ContextMemo` projection layer to keep the wire payload
+//! small. Full chain verification uses the `:NEXT` graph walk (Phase 18c Step 2).
 
 pub mod backfill;
 pub mod cold;

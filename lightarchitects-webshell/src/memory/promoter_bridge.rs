@@ -266,6 +266,10 @@ fn significance_from_reason(reason: &PromotionReason) -> f32 {
 /// All three statements run in a single Bolt round-trip so the invariant
 /// "every promoted Step has a `MATERIALIZED_FROM` edge" holds atomically from
 /// the graph's perspective — the edge cannot exist without both endpoints.
+// Phase 18c Step 3 — ON CREATE SET extended with session_id / seq so promotion-
+// created HotMemo nodes carry chain fields and don't confuse :NEXT edge matching.
+// seq=0 is correct for promotion-materialised nodes (they have no seq in the
+// NDJSON turnlog sense; they originate from the helix promotion pipeline).
 const LINEAGE_CYPHER: &str = "\
     MERGE (h:HotMemo {id: $memo_id}) \
       ON CREATE SET h.sibling = $sibling, \
@@ -273,7 +277,9 @@ const LINEAGE_CYPHER: &str = "\
                     h.significance = $significance, \
                     h.strands = $strands, \
                     h.created_at = datetime($created_at), \
-                    h.expires = datetime($expires) \
+                    h.expires = datetime($expires), \
+                    h.session_id = $memo_id, \
+                    h.seq = 0 \
     WITH h \
     MERGE (s:Step {id: $step_id}) \
       ON CREATE SET s.vault_path = $vault_path, \
