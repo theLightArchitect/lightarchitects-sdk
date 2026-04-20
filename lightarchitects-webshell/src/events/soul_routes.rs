@@ -21,14 +21,13 @@ use axum::{
     response::IntoResponse,
 };
 use lightarchitects::soul::embedding::EmbeddingProvider;
-use lightarchitects::turnlog::StoreLayout;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use crate::{
     auth,
     memory::{
-        cold, frontmatter, hot,
+        cold, frontmatter,
         types::{ContextMemo, EnrichedEntry},
     },
     server::AppState,
@@ -673,20 +672,17 @@ fn hot_memos_to_context(
         .collect()
 }
 
-/// `GET /api/soul/memory/hot` — Phase-18c Neo4j-first hot-tier handler.
+/// `GET /api/soul/memory/hot` — Phase-18c Neo4j-only hot-tier handler.
 ///
-/// Read order:
-///   1. If Neo4j is attached and has live `:HotMemo` nodes, return them
-///      (Neo4j-first path — Phase 18c). The TTL gate on `expires` ensures
-///      stale entries drop out automatically.
-///   2. Otherwise fall back to NDJSON scan via [`hot::snapshot_hot`]
-///      (always-present safety net — not deleted until Phase 18c Step 3,
-///      which requires 7-day telemetry confirmation first).
-///   3. If Neo4j was the source, the Phase-18B dual-write loop runs as a
-///      no-op (`MERGE` on already-existing nodes). This keeps Neo4j warm for
-///      the next read even if the session produces new entries before the
-///      next `hot_memory_handler` call.
-///   3. Respond with the NDJSON snapshot — the UI contract is unchanged.
+/// Read order (Phase 18c Step 3 — NDJSON bridge burned):
+///   1. If Neo4j is attached and has live `:HotMemo` nodes, return them.
+///      TTL gate on `expires` ensures stale entries drop automatically.
+///   2. If Neo4j is unavailable or returned no nodes, return an empty list
+///      and emit a telemetry warning.  The NDJSON safety-net fallback was
+///      removed in Phase 18c Step 3 after 7-day dual-write stability was
+///      confirmed.
+///   3. Phase-18B dual-write loop runs fire-and-forget after the read to
+///      keep Neo4j warm for the next read.
 ///
 /// The `:HotMemo` nodes carry a `expires = created_at + HOT_MEMO_TTL_SECS`
 /// property so [`HelixDb::query_hot_memos`] can TTL-gate without a compaction
@@ -700,25 +696,41 @@ pub async fn hot_memory_handler(
     if let Err(status) = check_auth(&headers, &state.config.token) {
         return status.into_response();
     }
-    let Some(layout) = StoreLayout::default_for_user() else {
-        return Json(MemoryListResponse { memos: Vec::new() }).into_response();
-    };
     let limit = q.limit.unwrap_or(50).min(200) as usize;
 
-    // Phase 18c — Neo4j-first read; NDJSON fallback when graph absent or empty.
+    // Phase 18c Step 3 — Neo4j only; NDJSON bridge removed.
+    // Fallback is empty list + telemetry warn so operators know if Neo4j drops.
     let memos = if let Some(soul) = state.soul_store.as_ref() {
         if let Some(neo4j) = soul.neo4j_arc().await {
             let db = neo4j.helix_db();
             #[allow(clippy::cast_possible_truncation)]
             match db.query_hot_memos(None, limit as u32).await {
                 Ok(hot_memos) if !hot_memos.is_empty() => hot_memos_to_context(hot_memos),
-                _ => hot::snapshot_hot(&layout, limit).await,
+                Ok(_) => {
+                    tracing::debug!(
+                        target: "soul.hot_memory",
+                        "Neo4j returned 0 HotMemo nodes — session may have no memos yet"
+                    );
+                    Vec::new()
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "soul.hot_memory",
+                        error = %e,
+                        "query_hot_memos failed — returning empty (NDJSON bridge removed)"
+                    );
+                    Vec::new()
+                }
             }
         } else {
-            hot::snapshot_hot(&layout, limit).await
+            tracing::warn!(
+                target: "soul.hot_memory",
+                "neo4j_arc unavailable — returning empty (NDJSON bridge removed)"
+            );
+            Vec::new()
         }
     } else {
-        hot::snapshot_hot(&layout, limit).await
+        Vec::new()
     };
 
     // Phase 18B — dual-write each projected memo into Neo4j's :HotMemo tier
