@@ -748,10 +748,36 @@ pub async fn health_handler(
         }
     }
 
+    // Wikilink health — the count of `:LINKS_TO` edges in the graph is a
+    // proxy for "resolved wikilinks". `unresolved` would require re-parsing
+    // all entries to detect broken refs; that's expensive so we expose it as
+    // `null` and annotate the API-surface gap. Neo4j offline → both null.
+    let wikilinks_resolved: Option<i64> = if tiers.neo4j {
+        if let Some(s) = state.soul_store.as_ref() {
+            if let Some(neo4j) = s.neo4j_arc().await {
+                let db = neo4j.helix_db();
+                let cypher = "MATCH ()-[r:LINKS_TO]->() RETURN count(r) AS n";
+                let params = std::collections::BTreeMap::new();
+                match db.execute_cypher_with_params(cypher, params).await {
+                    Ok(rows) => rows
+                        .first()
+                        .and_then(|r| r.get("n"))
+                        .and_then(serde_json::Value::as_i64),
+                    Err(_) => None,
+                }
+            } else { None }
+        } else { None }
+    } else { None };
+
     Json(serde_json::json!({
         "tiers": tiers,
         "counts": counts,
         "bolt_uri": std::env::var("WEBSHELL_NEO4J_URI").unwrap_or_default(),
+        "wikilinks": {
+            "resolved": wikilinks_resolved,
+            "unresolved": serde_json::Value::Null,
+            "note": "unresolved count requires re-ingest; resolved reflects current :LINKS_TO edge count"
+        }
     }))
     .into_response()
 }
@@ -1465,4 +1491,87 @@ mod tests {
         let c = vec![0.8, -0.6, 0.0];
         assert!(cosine_similarity(&a, &c).abs() < 1e-5);
     }
+}
+
+// ── /api/debug/parity ─────────────────────────────────────────────────────────
+
+/// Response body for `GET /api/debug/parity`.
+#[derive(Debug, Serialize)]
+pub struct ParityReport {
+    /// Number of `Step` nodes in `Neo4j` (`None` when `Neo4j` tier absent).
+    pub neo4j_count: Option<i64>,
+    /// Number of entries in `SQLite` (`None` when `SQLite` tier absent).
+    pub sqlite_count: Option<usize>,
+    /// `|neo4j_count - sqlite_count|`, or `null` when either tier is absent.
+    pub divergence: Option<i64>,
+    /// Whether `SOUL_DISABLE_SQLITE_WRITES` is currently set.
+    pub writes_disabled: bool,
+}
+
+/// `GET /api/debug/parity` — Phase 20b.3 pre-drop verification.
+///
+/// Compares the `Step` count in `Neo4j` against the entry count in `SQLite`.
+/// A `divergence` of 0 confirms both tiers are in sync before dropping the
+/// webshell `SQLite` write path.
+///
+/// Requires a valid Bearer token.
+pub async fn parity_handler(
+    headers: axum::http::HeaderMap,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    if let Err(status) = check_auth(&headers, &state.config.token) {
+        return status.into_response();
+    }
+
+    let soul = state.soul_store.as_ref();
+
+    // Query Neo4j step count.
+    let neo4j_count = if let Some(soul) = soul {
+        if let Some(neo4j) = soul.neo4j_arc().await {
+            match neo4j
+                .helix_db()
+                .execute_cypher("MATCH (s:Step) RETURN count(s) AS cnt")
+                .await
+            {
+                Ok(rows) => rows
+                    .first()
+                    .and_then(|r| r.fields.get("cnt"))
+                    .and_then(serde_json::Value::as_i64),
+                Err(e) => {
+                    warn!(target: "parity", error = %e, "Neo4j count query failed");
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Query SQLite entry count.
+    let sqlite_count = if let Some(soul) = soul {
+        match soul
+            .query_sqlite(&lightarchitects::soul::storage::EntryFilter::default())
+            .await
+        {
+            Some(Ok(entries)) => Some(entries.len()),
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    #[allow(clippy::cast_possible_wrap)]
+    let divergence = neo4j_count
+        .zip(sqlite_count.map(|n| n as i64))
+        .map(|(neo4j, sqlite)| (neo4j - sqlite).abs());
+
+    Json(ParityReport {
+        neo4j_count,
+        sqlite_count,
+        divergence,
+        writes_disabled: crate::memory::persistence::SoulPersistence::sqlite_writes_disabled(),
+    })
+    .into_response()
 }

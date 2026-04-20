@@ -38,6 +38,15 @@ use tracing::{info, warn};
 /// Missing var = filesystem+`SQLite` tier only. Connection failure = logged
 /// WARN + filesystem+`SQLite` only; never blocks startup.
 const NEO4J_URI_ENV: &str = "WEBSHELL_NEO4J_URI";
+
+/// Env var that disables `SQLite` dual-writes when set to any value.
+///
+/// Set `SOUL_DISABLE_SQLITE_WRITES=1` to skip [`SoulPersistence::write_entry`]
+/// calls without recompiling. Used to verify `SOUL` `MCP` read parity before
+/// permanently dropping the webshell write path (Phase 20b.3).
+///
+/// The `SOUL` `MCP` plugin's own read path from `helix.db` is unaffected.
+pub const DISABLE_SQLITE_WRITES_ENV: &str = "SOUL_DISABLE_SQLITE_WRITES";
 const NEO4J_USER_ENV: &str = "WEBSHELL_NEO4J_USER";
 const NEO4J_PASS_ENV: &str = "WEBSHELL_NEO4J_PASS";
 
@@ -240,14 +249,24 @@ impl SoulPersistence {
     /// Dual-write: insert or update a promoted entry into `SQLite`.
     ///
     /// Best-effort — on error, the filesystem write still stands. Returns
-    /// `Ok(true)` when written, `Ok(false)` when `SQLite` isn't available.
+    /// `Ok(true)` when written, `Ok(false)` when `SQLite` isn't available or
+    /// when [`DISABLE_SQLITE_WRITES_ENV`] is set (Phase 20b.3 gate).
     #[allow(clippy::missing_errors_doc)]
     pub async fn write_entry(&self, entry: &StorageEntry) -> Result<bool, StorageError> {
+        if std::env::var(DISABLE_SQLITE_WRITES_ENV).is_ok() {
+            return Ok(false);
+        }
         let Some(backend) = self.sqlite.as_ref() else {
             return Ok(false);
         };
         backend.write_entry(entry).await?;
         Ok(true)
+    }
+
+    /// Whether `SQLite` writes are currently disabled via env var.
+    #[must_use]
+    pub fn sqlite_writes_disabled() -> bool {
+        std::env::var(DISABLE_SQLITE_WRITES_ENV).is_ok()
     }
 
     /// Phase 11.1 — walk the filesystem helix and upsert every entry into

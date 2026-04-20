@@ -146,13 +146,10 @@ impl AppState {
         // Phase 19c.2 — hot-reloadable promotion policy.
         // Gracefully absent when the YAML file doesn't exist yet.
         let (promotion_policy, policy_watcher) =
-            lightarchitects::turnlog::PolicyWatcher::default_path().map_or(
-                (None, None),
-                |p| {
-                    let (h, w) = lightarchitects::turnlog::PolicyWatcher::spawn(&p);
-                    (Some(h), Some(std::sync::Arc::new(w)))
-                },
-            );
+            lightarchitects::turnlog::PolicyWatcher::default_path().map_or((None, None), |p| {
+                let (h, w) = lightarchitects::turnlog::PolicyWatcher::spawn(&p);
+                (Some(h), Some(std::sync::Arc::new(w)))
+            });
 
         // Phase 11.1 — auto-backfill SQLite from filesystem on startup.
         // Phase 11.3 — attach Neo4j if WEBSHELL_NEO4J_URI is set + reachable.
@@ -388,6 +385,11 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/soul/convergences",
             get(events::soul_routes::convergences_handler),
+        )
+        // ── Phase 20b.3: parity verification endpoint ─────────────────────
+        .route(
+            "/api/debug/parity",
+            get(events::soul_routes::parity_handler),
         )
         // ── Phase 9.8–9.10: real-data handlers (replaces mock_data::*) ──────
         .route("/api/workspaces", get(real_data::list_workspaces))
