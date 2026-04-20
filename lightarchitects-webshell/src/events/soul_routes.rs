@@ -1134,6 +1134,39 @@ pub async fn cold_memory_handler(
     Json(MemoryListResponse { memos }).into_response()
 }
 
+/// Phase 16a — `POST /api/soul/compaction/preview`
+///
+/// Request body: a [`RetentionPolicy`] JSON payload (see
+/// [`crate::memory::compaction::RetentionPolicy`] for the tagged-enum shape).
+/// Response: a [`CompactionSummary`] listing candidates without touching
+/// the filesystem. The permanent guard is applied unconditionally so
+/// self-defining entries and significance ≥ 0.9 memos never appear in
+/// the candidate list regardless of policy.
+#[allow(clippy::missing_panics_doc)]
+pub async fn compaction_preview_handler(
+    headers: axum::http::HeaderMap,
+    State(state): State<AppState>,
+    Json(policy): Json<crate::memory::compaction::RetentionPolicy>,
+) -> impl IntoResponse {
+    if let Err(status) = check_auth(&headers, &state.config.token) {
+        return status.into_response();
+    }
+
+    // Reuse whichever cold source is active — SoulPersistence when the
+    // SQLite tier is up (richer metadata, includes self_defining), else
+    // filesystem walk as a fallback.
+    let memos: Vec<ContextMemo> = if let Some(soul) = state.soul_store.as_ref() {
+        cold::snapshot_cold_via_soul(soul, None, 10_000).await
+    } else if let Some(helix_root) = lightarchitects::core::paths::helix_root() {
+        cold::snapshot_cold(&helix_root, None, 10_000).await
+    } else {
+        Vec::new()
+    };
+
+    let summary = crate::memory::compaction::classify_for_compaction(&memos, &policy);
+    Json(summary).into_response()
+}
+
 // Silence unused-import warnings in stubs where serde imports are aspirational.
 #[allow(dead_code)]
 fn _frontmatter_linked() {

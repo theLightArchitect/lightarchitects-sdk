@@ -17,6 +17,7 @@
 
 pub mod backfill;
 pub mod cold;
+pub mod compaction;
 pub mod convergence;
 pub mod embedder;
 pub mod enrich;

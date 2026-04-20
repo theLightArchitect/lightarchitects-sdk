@@ -340,6 +340,12 @@ pub fn build_app(state: AppState) -> Router {
             "/api/soul/reindex",
             post(events::soul_routes::reindex_handler),
         )
+        // Phase 16a — compaction preview (dry-run). Destructive `apply`
+        // endpoint ships with the Svelte panel in Phase 16b.
+        .route(
+            "/api/soul/compaction/preview",
+            post(events::soul_routes::compaction_preview_handler),
+        )
         .route(
             "/api/soul/relationships/{*entry_id}",
             get(events::soul_routes::relationships_handler),
