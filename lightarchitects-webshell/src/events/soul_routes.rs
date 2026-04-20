@@ -1155,16 +1155,116 @@ pub async fn compaction_preview_handler(
     // Reuse whichever cold source is active — SoulPersistence when the
     // SQLite tier is up (richer metadata, includes self_defining), else
     // filesystem walk as a fallback.
-    let memos: Vec<ContextMemo> = if let Some(soul) = state.soul_store.as_ref() {
-        cold::snapshot_cold_via_soul(soul, None, 10_000).await
-    } else if let Some(helix_root) = lightarchitects::core::paths::helix_root() {
-        cold::snapshot_cold(&helix_root, None, 10_000).await
-    } else {
-        Vec::new()
+    // Compaction must scan the ENTIRE cold tier deterministically so
+    // preview and apply agree on the candidate set. Route through the
+    // fs walker (alphabetical sibling + file order) with a huge cap —
+    // the SQLite path isn't deterministic back-to-back without ORDER BY.
+    let Some(helix_root) = lightarchitects::core::paths::helix_root() else {
+        return Json(crate::memory::compaction::CompactionSummary {
+            total_scanned: 0,
+            candidates: Vec::new(),
+            permanent_skipped: 0,
+            policy,
+        })
+        .into_response();
     };
+    let memos: Vec<ContextMemo> =
+        cold::snapshot_cold_capped(&helix_root, None, 10_000, 10_000).await;
 
     let summary = crate::memory::compaction::classify_for_compaction(&memos, &policy);
     Json(summary).into_response()
+}
+
+/// Phase 16b — `POST /api/soul/compaction/apply`
+///
+/// Destructive counterpart to [`compaction_preview_handler`]. Re-classifies
+/// the current cold snapshot against `policy`, then moves each candidate
+/// markdown file from its current path to
+/// `{helix_root}/.compacted/{YYYY-MM-DD}/{original-relative-path}`.
+///
+/// Moves, not deletes — the .compacted/ directory is a recovery tier. A
+/// future Phase 16c could add a restore endpoint or a periodic prune.
+///
+/// Returns a [`CompactionSummary`] describing what was moved. The
+/// permanent guard is still applied — apply classifies freshly before
+/// acting, so a protected entry can never slip through even if the
+/// preview was stale.
+#[allow(clippy::missing_panics_doc)]
+pub async fn compaction_apply_handler(
+    headers: axum::http::HeaderMap,
+    State(state): State<AppState>,
+    Json(policy): Json<crate::memory::compaction::RetentionPolicy>,
+) -> impl IntoResponse {
+    if let Err(status) = check_auth(&headers, &state.config.token) {
+        return status.into_response();
+    }
+
+    let Some(helix_root) = lightarchitects::core::paths::helix_root() else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+
+    // Re-classify at apply time — the Phase-16 invariant is that apply
+    // consumes the SAME classify() output that preview did. This only
+    // holds when the snapshot is deterministic; the fs walker
+    // (`snapshot_cold_capped`) is alphabetical and therefore stable,
+    // whereas the SQLite path isn't ordered without an explicit ORDER BY.
+    // Both preview and apply route through the fs walker for this reason.
+    let memos: Vec<ContextMemo> =
+        cold::snapshot_cold_capped(&helix_root, None, 10_000, 10_000).await;
+
+    let summary = crate::memory::compaction::classify_for_compaction(&memos, &policy);
+    let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let compacted_root = helix_root.join(".compacted").join(&date);
+
+    // Move each candidate file. Failures are per-entry: a file that can't
+    // be moved stays in place and the summary returns to the caller with
+    // whatever was successfully compacted so far. Nothing is silently
+    // dropped — every move either completes or logs.
+    let mut moved_paths = Vec::new();
+    for candidate in &summary.candidates {
+        let source = helix_root.join(&candidate.path);
+        let dest = compacted_root.join(&candidate.path);
+        if let Some(parent) = dest.parent() {
+            if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                warn!(
+                    target: "soul.compaction",
+                    error = %e,
+                    path = %candidate.path,
+                    "failed to create .compacted parent directory"
+                );
+                continue;
+            }
+        }
+        match tokio::fs::rename(&source, &dest).await {
+            Ok(()) => moved_paths.push(candidate.path.clone()),
+            Err(e) => warn!(
+                target: "soul.compaction",
+                error = %e,
+                from = %source.display(),
+                to = %dest.display(),
+                "compaction apply: rename failed — file left in place"
+            ),
+        }
+    }
+
+    // Echo a summary limited to what actually moved so the UI can render
+    // an accurate "42 of 50 rolled up" report instead of assuming full
+    // success.
+    let moved_set: std::collections::HashSet<&str> =
+        moved_paths.iter().map(String::as_str).collect();
+    let moved_candidates: Vec<_> = summary
+        .candidates
+        .into_iter()
+        .filter(|c| moved_set.contains(c.path.as_str()))
+        .collect();
+    let response = crate::memory::compaction::CompactionSummary {
+        total_scanned: summary.total_scanned,
+        candidates: moved_candidates,
+        permanent_skipped: summary.permanent_skipped,
+        policy: summary.policy,
+    };
+
+    Json(response).into_response()
 }
 
 // Silence unused-import warnings in stubs where serde imports are aspirational.

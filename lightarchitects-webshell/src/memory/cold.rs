@@ -32,7 +32,24 @@ pub async fn snapshot_cold(
     sibling_filter: Option<&str>,
     limit: usize,
 ) -> Vec<ContextMemo> {
-    let limit = limit.min(DEFAULT_LIMIT_CAP);
+    snapshot_cold_capped(helix_root, sibling_filter, limit, DEFAULT_LIMIT_CAP).await
+}
+
+/// Same as [`snapshot_cold`] but with an explicit cap override.
+///
+/// Phase 16 compaction needs to scan the whole vault deterministically —
+/// SQLite query ordering isn't stable between back-to-back calls without
+/// an ORDER BY, which made preview and apply disagree on the candidate
+/// set. The fs walker is alphabetically deterministic (siblings sorted
+/// + files within each entries dir sorted), so compaction routes through
+/// here with a huge cap to bypass that nondeterminism entirely.
+pub async fn snapshot_cold_capped(
+    helix_root: &Path,
+    sibling_filter: Option<&str>,
+    limit: usize,
+    cap: usize,
+) -> Vec<ContextMemo> {
+    let limit = limit.min(cap);
     let siblings = match sibling_filter {
         Some(s) => vec![s.to_owned()],
         None => discover_siblings(helix_root).await,
@@ -62,7 +79,23 @@ pub async fn snapshot_cold_via_soul(
     sibling_filter: Option<&str>,
     limit: usize,
 ) -> Vec<ContextMemo> {
-    let limit = limit.min(DEFAULT_LIMIT_CAP);
+    snapshot_cold_via_soul_capped(soul, sibling_filter, limit, DEFAULT_LIMIT_CAP).await
+}
+
+/// Same as [`snapshot_cold_via_soul`] but with an explicit cap override.
+///
+/// Compaction preview needs to scan the *whole* cold tier, not just the
+/// newest 500 entries — a 2020-dated low-significance entry must be visible
+/// even when it would never surface in a UI paginated view. Callers that
+/// need full-vault visibility pass a large `cap` (e.g. `usize::MAX`); the
+/// UI path sticks with [`DEFAULT_LIMIT_CAP`] via the shorter alias above.
+pub async fn snapshot_cold_via_soul_capped(
+    soul: &SoulPersistence,
+    sibling_filter: Option<&str>,
+    limit: usize,
+    cap: usize,
+) -> Vec<ContextMemo> {
+    let limit = limit.min(cap);
 
     let mut sqlite_memos: Vec<ContextMemo> = Vec::new();
     if soul.has_sqlite() {
