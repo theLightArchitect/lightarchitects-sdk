@@ -236,7 +236,7 @@ pub enum BuildEventKind {
 ///
 /// `outcome` and `metadata` are kept as raw [`serde_json::Value`] to avoid
 /// coupling this crate to the AYIN type definitions.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TraceSpanSummary {
     /// Span UUID as a hyphenated lowercase string (e.g. `"00112233-…"`).
     pub id: String,
@@ -256,6 +256,14 @@ pub struct TraceSpanSummary {
     /// Arbitrary extra data forwarded verbatim. Absent when null.
     #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
     pub metadata: serde_json::Value,
+    /// Top-level strand activations as emitted by AYIN's native `TraceSpan`.
+    ///
+    /// AYIN puts this at the top level of every span it writes. Older code
+    /// paths may still embed the field under `metadata.strand_activations`
+    /// for test-fixture compatibility, so the parser checks both locations
+    /// (top-level wins). Empty when absent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub strand_activations: Vec<serde_json::Value>,
 }
 
 /// AYIN connection lifecycle status.
@@ -346,6 +354,7 @@ mod tests {
             duration_ms: 10,
             outcome: serde_json::Value::String("success".to_owned()),
             metadata: serde_json::Value::Null,
+            strand_activations: Vec::new(),
         };
         let event = WebEvent::AyinSpan(span);
         let json = serde_json::to_string(&event).unwrap();
@@ -366,6 +375,7 @@ mod tests {
             duration_ms: 0,
             outcome: serde_json::json!("success"),
             metadata: serde_json::Value::Null,
+            strand_activations: Vec::new(),
         };
         let json = serde_json::to_string(&span).unwrap();
         assert!(
@@ -385,6 +395,7 @@ mod tests {
             duration_ms: 0,
             outcome: serde_json::json!("success"),
             metadata: serde_json::Value::Null,
+            strand_activations: Vec::new(),
         };
         let json = serde_json::to_string(&span).unwrap();
         assert!(

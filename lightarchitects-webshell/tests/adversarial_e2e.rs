@@ -129,6 +129,7 @@ fn xss_payload_in_action_field_round_trips_cleanly() {
         duration_ms: 0,
         outcome: serde_json::Value::Null,
         metadata: serde_json::Value::Null,
+        ..Default::default()
     });
     let json = serde_json::to_string(&event).unwrap();
 
@@ -172,6 +173,7 @@ fn redact_handles_512_char_token() {
         duration_ms: 1,
         outcome: serde_json::Value::Null,
         metadata: serde_json::Value::Null,
+        ..Default::default()
     });
     // Build a router using the long token and verify the SSE handler would
     // redact it.  We test the redact logic directly via the public types.

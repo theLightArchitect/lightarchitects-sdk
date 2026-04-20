@@ -42,11 +42,19 @@ use super::types::{StrandActivationEvent, TraceSpanSummary};
 /// the returned vector.
 #[must_use]
 pub fn parse_strand_activations(span: &TraceSpanSummary) -> Vec<StrandActivationEvent> {
-    let Some(arr) = span
+    // Prefer AYIN's top-level field (what real spans carry). Fall back to the
+    // legacy `metadata.strand_activations` shape used by older test fixtures.
+    // Bug fix (2026-04-20): top-level was being dropped by serde into the
+    // catch-all `metadata: serde_json::Value` — which never contained it,
+    // so no strand_activation events ever fired from real AYIN traces.
+    let arr_from_top_level: Option<Vec<&serde_json::Value>> =
+        (!span.strand_activations.is_empty()).then(|| span.strand_activations.iter().collect());
+    let arr_from_metadata: Option<Vec<&serde_json::Value>> = span
         .metadata
         .get("strand_activations")
         .and_then(|v| v.as_array())
-    else {
+        .map(|a| a.iter().collect());
+    let Some(arr) = arr_from_top_level.or(arr_from_metadata) else {
         return Vec::new();
     };
 
@@ -136,6 +144,23 @@ mod tests {
             duration_ms: 10,
             outcome: json!("success"),
             metadata,
+            strand_activations: Vec::new(),
+        }
+    }
+
+    /// Helper: build a span with `strand_activations` at top level (AYIN's real wire shape).
+    #[allow(dead_code)]
+    fn span_with_top_level(arr: Vec<serde_json::Value>) -> TraceSpanSummary {
+        TraceSpanSummary {
+            id: "00000000-0000-0000-0000-000000000002".to_owned(),
+            parent_id: None,
+            actor: "corso".to_owned(),
+            action: "tool.call".to_owned(),
+            timestamp: "2026-04-20T00:00:00Z".to_owned(),
+            duration_ms: 5,
+            outcome: json!("success"),
+            metadata: serde_json::Value::Null,
+            strand_activations: arr,
         }
     }
 
@@ -143,6 +168,35 @@ mod tests {
     fn parse_returns_empty_when_metadata_lacks_strand_activations() {
         let span = span_with_metadata(serde_json::Value::Null);
         assert!(parse_strand_activations(&span).is_empty());
+    }
+
+    #[test]
+    fn parse_reads_top_level_strand_activations() {
+        // Bug fix 2026-04-20: AYIN emits strand_activations at top level
+        // of TraceSpan, not under metadata. Verify the parser reads there.
+        let span = span_with_top_level(vec![
+            json!({ "strand": "precision", "weight": 0.8 }),
+            json!({ "strand": "analytical", "weight": 0.5 }),
+        ]);
+        let events = parse_strand_activations(&span);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].strand, "precision");
+        assert!((events[0].weight - 0.8).abs() < 1e-3);
+        assert_eq!(events[0].sibling, "corso");
+    }
+
+    #[test]
+    fn parse_prefers_top_level_over_metadata() {
+        // If both present, top level wins (closer to wire truth).
+        let mut span = span_with_top_level(vec![
+            json!({ "strand": "from_top", "weight": 0.9 }),
+        ]);
+        span.metadata = json!({
+            "strand_activations": [{ "strand": "from_meta", "weight": 0.1 }]
+        });
+        let events = parse_strand_activations(&span);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].strand, "from_top");
     }
 
     #[test]

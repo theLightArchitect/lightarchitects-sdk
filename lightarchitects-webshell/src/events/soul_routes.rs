@@ -634,14 +634,47 @@ pub async fn entry_handler(
 /// replace this with a per-sibling + per-strand decay curve.
 const HOT_MEMO_TTL_SECS: i64 = 24 * 60 * 60;
 
-/// `GET /api/soul/memory/hot` — Phase-18B dual-write hot-tier handler.
+/// Project a `Vec<`[`lightarchitects::helix::types::HotMemo`]`>` into
+/// [`ContextMemo`] display structs for the `MemoryDrawer`.
+///
+/// Used by [`hot_memory_handler`] when reading from the Neo4j tier (Phase 18c).
+fn hot_memos_to_context(
+    hot_memos: Vec<lightarchitects::helix::types::HotMemo>,
+) -> Vec<ContextMemo> {
+    use crate::memory::types::MemoryTier;
+    hot_memos
+        .into_iter()
+        .map(|m| ContextMemo {
+            id: m.id,
+            tier: MemoryTier::Hot,
+            content: m.content,
+            #[allow(clippy::cast_possible_truncation)]
+            significance: m.significance as f32,
+            sibling: m.sibling,
+            strands: m.strands,
+            created_at: m.created_at.to_rfc3339(),
+            source_path: Some("neo4j:HotMemo".to_owned()),
+            resonance: Vec::new(),
+            themes: Vec::new(),
+            self_defining: false,
+            entry_type: None,
+        })
+        .collect()
+}
+
+/// `GET /api/soul/memory/hot` — Phase-18c Neo4j-first hot-tier handler.
 ///
 /// Read order:
-///   1. Walk NDJSON via [`hot::snapshot_hot`] — always the ground truth.
-///   2. If Neo4j is attached, `MERGE` each memo into a `:HotMemo` node so
-///      subsequent graph-native queries (Phase 20) see them without waiting
-///      for a separate promotion pass. Failures here are non-fatal: the
-///      handler still returns the filesystem projection.
+///   1. If Neo4j is attached and has live `:HotMemo` nodes, return them
+///      (Neo4j-first path — Phase 18c). The TTL gate on `expires` ensures
+///      stale entries drop out automatically.
+///   2. Otherwise fall back to NDJSON scan via [`hot::snapshot_hot`]
+///      (always-present safety net — not deleted until Phase 18c Step 3,
+///      which requires 7-day telemetry confirmation first).
+///   3. If Neo4j was the source, the Phase-18B dual-write loop runs as a
+///      no-op (`MERGE` on already-existing nodes). This keeps Neo4j warm for
+///      the next read even if the session produces new entries before the
+///      next `hot_memory_handler` call.
 ///   3. Respond with the NDJSON snapshot — the UI contract is unchanged.
 ///
 /// The `:HotMemo` nodes carry a `expires = created_at + HOT_MEMO_TTL_SECS`
@@ -660,7 +693,22 @@ pub async fn hot_memory_handler(
         return Json(MemoryListResponse { memos: Vec::new() }).into_response();
     };
     let limit = q.limit.unwrap_or(50).min(200) as usize;
-    let memos = hot::snapshot_hot(&layout, limit).await;
+
+    // Phase 18c — Neo4j-first read; NDJSON fallback when graph absent or empty.
+    let memos = if let Some(soul) = state.soul_store.as_ref() {
+        if let Some(neo4j) = soul.neo4j_arc().await {
+            let db = neo4j.helix_db();
+            #[allow(clippy::cast_possible_truncation)]
+            match db.query_hot_memos(None, limit as u32).await {
+                Ok(hot_memos) if !hot_memos.is_empty() => hot_memos_to_context(hot_memos),
+                _ => hot::snapshot_hot(&layout, limit).await,
+            }
+        } else {
+            hot::snapshot_hot(&layout, limit).await
+        }
+    } else {
+        hot::snapshot_hot(&layout, limit).await
+    };
 
     // Phase 18B — dual-write each projected memo into Neo4j's :HotMemo tier
     // when the graph is attached. Fire-and-forget: errors don't block the

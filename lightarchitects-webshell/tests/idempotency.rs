@@ -23,6 +23,7 @@ fn web_event_span_serialises_identically_twice() {
         duration_ms: 42,
         outcome: serde_json::Value::Null,
         metadata: serde_json::Value::Null,
+        ..Default::default()
     });
     let first = serde_json::to_string(&event).unwrap();
     let second = serde_json::to_string(&event).unwrap();

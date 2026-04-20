@@ -73,6 +73,7 @@ fn ayin_span_payload_type_is_ayin_span() {
         duration_ms: 12,
         outcome: serde_json::json!("success"),
         metadata: serde_json::Value::Null,
+        ..Default::default()
     });
     let payload = to_payload(&event);
     assert_eq!(
@@ -123,6 +124,7 @@ fn ayin_span_payload_has_all_addstep_fields() {
         duration_ms: 42,
         outcome: serde_json::json!("success"),
         metadata: serde_json::Value::Null,
+        ..Default::default()
     });
     let payload = to_payload(&event);
 
@@ -161,6 +163,7 @@ fn ayin_span_optional_parent_id_absent_when_null() {
         duration_ms: 5,
         outcome: serde_json::Value::Null,
         metadata: serde_json::Value::Null,
+        ..Default::default()
     });
     let payload = to_payload(&event);
     // `skip_serializing_if = "Option::is_none"` means absent key, not JSON null.
@@ -182,6 +185,7 @@ fn ayin_span_parent_id_present_when_set() {
         duration_ms: 1,
         outcome: serde_json::Value::Null,
         metadata: serde_json::Value::Null,
+        ..Default::default()
     });
     let payload = to_payload(&event);
     assert_eq!(
@@ -303,6 +307,7 @@ fn token_embedded_in_span_metadata_is_redacted_in_json() {
         duration_ms: 1,
         outcome: serde_json::Value::Null,
         metadata: serde_json::json!({ "auth_header": format!("Bearer {token}") }),
+        ..Default::default()
     });
     let json = serde_json::to_string(&event).unwrap();
 
@@ -332,6 +337,7 @@ fn null_metadata_is_omitted_from_sse_payload() {
         duration_ms: 0,
         outcome: serde_json::Value::Null,
         metadata: serde_json::Value::Null, // must be omitted
+        ..Default::default()
     });
     let json = serde_json::to_string(&event).unwrap();
     assert!(
@@ -359,6 +365,7 @@ fn five_distinct_span_payloads_have_distinct_ids() {
                 duration_ms: i,
                 outcome: serde_json::Value::Null,
                 metadata: serde_json::Value::Null,
+                ..Default::default()
             });
             to_payload(&event)["id"].as_str().unwrap().to_owned()
         })
