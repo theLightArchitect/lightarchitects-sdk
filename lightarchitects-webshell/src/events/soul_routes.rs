@@ -634,6 +634,17 @@ pub async fn entry_handler(
 /// replace this with a per-sibling + per-strand decay curve.
 const HOT_MEMO_TTL_SECS: i64 = 24 * 60 * 60;
 
+/// Extract `(session_id, seq)` from a [`ContextMemo`] id.
+///
+/// The id convention is `"{session_id}:{seq}"` — an integer seq suffix
+/// separated by a colon from the UUID-style session identifier.
+/// Falls back to `(id, 0)` for legacy ids that don't follow this format.
+fn parse_session_seq(id: &str) -> (String, u64) {
+    id.rsplit_once(':')
+        .and_then(|(sid, seq_str)| seq_str.parse::<u64>().ok().map(|seq| (sid.to_owned(), seq)))
+        .unwrap_or_else(|| (id.to_owned(), 0))
+}
+
 /// Project a `Vec<`[`lightarchitects::helix::types::HotMemo`]`>` into
 /// [`ContextMemo`] display structs for the `MemoryDrawer`.
 ///
@@ -724,6 +735,7 @@ pub async fn hot_memory_handler(
                     };
                     let created_at = created_at.with_timezone(&chrono::Utc);
                     let expires = created_at + chrono::Duration::seconds(HOT_MEMO_TTL_SECS);
+                    let (session_id, seq) = parse_session_seq(&m.id);
                     let hot = lightarchitects::helix::types::HotMemo {
                         id: m.id.clone(),
                         sibling: m.sibling.clone(),
@@ -732,6 +744,10 @@ pub async fn hot_memory_handler(
                         strands: m.strands.clone(),
                         created_at,
                         expires,
+                        session_id,
+                        seq,
+                        hmac_prev: None,
+                        hmac_self: None,
                     };
                     if let Err(e) = db.create_hot_memo(&hot).await {
                         tracing::debug!(

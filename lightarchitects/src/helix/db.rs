@@ -1697,13 +1697,28 @@ impl HelixDb for HelixNeo4j {
         &self,
         memo: &crate::helix::types::HotMemo,
     ) -> Result<(), HelixDbError> {
+        // Chain fields: prev_seq is NULL for genesis memos (seq=0) so the
+        // OPTIONAL MATCH finds nothing and the FOREACH is a safe no-op.
+        let prev_seq: serde_json::Value = memo
+            .seq
+            .checked_sub(1)
+            .and_then(|n| i64::try_from(n).ok())
+            .map_or(serde_json::Value::Null, |n| serde_json::json!(n));
         let cypher = "MERGE (h:HotMemo {id: $id}) \
              SET h.sibling = $sibling, \
                  h.content = $content, \
                  h.significance = $significance, \
                  h.strands = $strands, \
                  h.created_at = datetime($created_at), \
-                 h.expires = datetime($expires)";
+                 h.expires = datetime($expires), \
+                 h.session_id = $session_id, \
+                 h.seq = $seq, \
+                 h.hmac_prev = $hmac_prev, \
+                 h.hmac_self = $hmac_self \
+             WITH h \
+             OPTIONAL MATCH (prev:HotMemo {session_id: $session_id, seq: $prev_seq}) \
+             FOREACH (p IN CASE WHEN prev IS NOT NULL THEN [prev] ELSE [] END | \
+               MERGE (p)-[:NEXT]->(h))";
         let strands_json: Vec<serde_json::Value> =
             memo.strands.iter().map(|s| serde_json::json!(s)).collect();
         let mut params = BTreeMap::new();
@@ -1719,6 +1734,24 @@ impl HelixDb for HelixNeo4j {
         params.insert(
             "expires".into(),
             serde_json::json!(memo.expires.to_rfc3339()),
+        );
+        params.insert("session_id".into(), serde_json::json!(memo.session_id));
+        params.insert(
+            "seq".into(),
+            i64::try_from(memo.seq).map_or(serde_json::Value::Null, |n| serde_json::json!(n)),
+        );
+        params.insert("prev_seq".into(), prev_seq);
+        params.insert(
+            "hmac_prev".into(),
+            memo.hmac_prev
+                .as_deref()
+                .map_or(serde_json::Value::Null, |s| serde_json::json!(s)),
+        );
+        params.insert(
+            "hmac_self".into(),
+            memo.hmac_self
+                .as_deref()
+                .map_or(serde_json::Value::Null, |s| serde_json::json!(s)),
         );
         self.timed_execute("create_hot_memo", cypher, params)
             .await?;
@@ -1739,7 +1772,11 @@ impl HelixDb for HelixNeo4j {
              RETURN h.id AS id, h.sibling AS sibling, h.content AS content, \
                     h.significance AS significance, h.strands AS strands, \
                     toString(h.created_at) AS created_at, \
-                    toString(h.expires) AS expires \
+                    toString(h.expires) AS expires, \
+                    coalesce(h.session_id, '') AS session_id, \
+                    coalesce(h.seq, 0) AS seq, \
+                    h.hmac_prev AS hmac_prev, \
+                    h.hmac_self AS hmac_self \
              ORDER BY h.created_at DESC \
              LIMIT $limit";
         let mut params = BTreeMap::new();
@@ -1791,6 +1828,23 @@ impl HelixDb for HelixNeo4j {
             let (Some(created_at), Some(expires)) = (created_at, expires) else {
                 continue;
             };
+            let session_id = r
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_owned();
+            let seq = r
+                .get("seq")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0);
+            let hmac_prev = r
+                .get("hmac_prev")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let hmac_self = r
+                .get("hmac_self")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             out.push(crate::helix::types::HotMemo {
                 id: id.to_owned(),
                 sibling: sibling.to_owned(),
@@ -1799,6 +1853,10 @@ impl HelixDb for HelixNeo4j {
                 strands,
                 created_at,
                 expires,
+                session_id,
+                seq,
+                hmac_prev,
+                hmac_self,
             });
         }
         Ok(out)

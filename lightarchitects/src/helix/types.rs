@@ -394,6 +394,20 @@ pub struct HotMemo {
     /// TTL gate — reads filter via `h.expires > datetime()`. Unlike `Step`,
     /// this field is mandatory for `HotMemo`: everything here is ephemeral.
     pub expires: DateTime<Utc>,
+    /// Session identifier — shared across all memos in one turn sequence.
+    /// Extracted from the `id` field (format `"{session_id}:{seq}"`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub session_id: String,
+    /// Monotonic sequence number within the session — 0-based.
+    /// Used to order `:NEXT` chain edges in Neo4j.
+    #[serde(default)]
+    pub seq: u64,
+    /// HMAC of the previous memo's canonical form — `None` for genesis (seq=0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hmac_prev: Option<String>,
+    /// HMAC of this memo's own canonical form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hmac_self: Option<String>,
 }
 
 // ============================================================================

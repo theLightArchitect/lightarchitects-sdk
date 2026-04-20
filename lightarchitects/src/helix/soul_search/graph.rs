@@ -123,9 +123,9 @@ impl GraphSearcher {
 // GDS PageRank blending (Phase 20b.2)
 // ============================================================================
 
-/// Blend distance-based graph scores with GDS PageRank centrality.
+/// Blend distance-based graph scores with GDS `PageRank` centrality.
 ///
-/// When GDS is available and the `helix-projection` exists, fetches PageRank
+/// When GDS is available and the `helix-projection` exists, fetches `PageRank`
 /// for every step in `results` and applies:
 ///
 /// ```text
@@ -136,7 +136,7 @@ impl GraphSearcher {
 /// Falls back silently to the original distance scores when:
 /// - GDS plugin is absent (`CALL gds.version()` fails)
 /// - The `helix-projection` does not exist (consolidation hasn't run yet)
-/// - No PageRank scores are returned for the result set
+/// - No `PageRank` scores are returned for the result set
 async fn blend_with_pagerank(db: &dyn HelixDb, mut results: Vec<ScoredId>) -> Vec<ScoredId> {
     if results.is_empty() {
         return results;
@@ -520,7 +520,8 @@ mod tests {
         // norm_pr = raw / (1 + raw) maps [0, +∞) → [0, 1)
         assert!((0.0_f64 / (1.0 + 0.0_f64)).abs() < f64::EPSILON); // 0.0
         assert!((1.0_f64 / (1.0 + 1.0_f64) - 0.5).abs() < f64::EPSILON); // 0.5
-        assert!(99.0_f64 / (1.0 + 99.0_f64) < 1.0); // bounded below 1.0
+        let near_one = 99.0_f64 / (1.0 + 99.0_f64);
+        assert!(near_one > 0.98 && near_one < 1.0, "large raw_pr should normalize near 1.0");
 
         // Blend formula: combined = 0.5 * norm_pr + 0.5 * dist_score
         // dist_score=0.5 (distance=1), raw_pr=1.0 (norm_pr=0.5) → blended=0.5
