@@ -66,6 +66,41 @@ pub struct ColdMemoryQuery {
     pub limit: Option<u16>,
 }
 
+/// Query parameters for `GET /api/soul/edges` — Phase 12 static lineage.
+#[derive(Debug, Deserialize)]
+pub struct EdgeListQuery {
+    /// Maximum edges to return. Server caps at 5,000 to bound Three.js
+    /// draw-call cost on the Hero3D scene. Default 500.
+    #[serde(default)]
+    pub limit: Option<u16>,
+}
+
+/// One `:LINKS_TO` edge as rendered by Hero3D: source + target vault paths.
+///
+/// Vault paths keep the response front-end-actionable (color derivation +
+/// sibling placement live in the Svelte scene, not the server).
+#[derive(Debug, Serialize)]
+pub struct EdgeSummary {
+    /// Source Step's `vault_path` (e.g. `"eva/entries/day-0122.md"`).
+    pub source: String,
+    /// Target Step's `vault_path` (e.g. `"eva/identity.md"`).
+    pub target: String,
+    /// First path segment of `source` — used as the source sibling color key.
+    pub source_sibling: String,
+    /// First path segment of `target` — used as the target sibling color key.
+    pub target_sibling: String,
+}
+
+/// Response from `GET /api/soul/edges`.
+#[derive(Debug, Serialize)]
+pub struct EdgeListResponse {
+    /// Edges (up to the requested limit, bounded server-side).
+    pub edges: Vec<EdgeSummary>,
+    /// Total edge count reported by Neo4j for the client to optionally
+    /// show "showing 500/2804" indicators.
+    pub total: u64,
+}
+
 // ── Response shapes ─────────────────────────────────────────────────────────
 
 /// Response from `GET /api/soul/search`.
@@ -333,6 +368,101 @@ fn empty_graph_response(entry_id: &str) -> serde_json::Value {
         "relation": "backlinks",
         "neighbors": [],
     })
+}
+
+/// `GET /api/soul/edges` — Phase 12 bulk `:LINKS_TO` edges for Hero3D.
+///
+/// Returns up to `limit` (default 500, cap 5,000) vault-path pairs so the
+/// Svelte scene can draw a persistent bloom-lit line between each pair of
+/// sibling rings. When the `Neo4j` tier is absent the response is
+/// 200 with an empty edge list + `total: 0` (same degrade-gracefully
+/// pattern as `/api/soul/relationships`).
+#[allow(clippy::missing_panics_doc)]
+pub async fn edges_handler(
+    headers: axum::http::HeaderMap,
+    State(state): State<AppState>,
+    Query(params): Query<EdgeListQuery>,
+) -> impl IntoResponse {
+    if let Err(status) = check_auth(&headers, &state.config.token) {
+        return status.into_response();
+    }
+    let limit = params.limit.unwrap_or(500).min(5_000);
+    let Some(soul) = state.soul_store.as_ref() else {
+        return Json(EdgeListResponse {
+            edges: Vec::new(),
+            total: 0,
+        })
+        .into_response();
+    };
+    let Some(neo4j) = soul.neo4j_arc().await else {
+        return Json(EdgeListResponse {
+            edges: Vec::new(),
+            total: 0,
+        })
+        .into_response();
+    };
+
+    let db = neo4j.helix_db();
+
+    // Pull edges + total in the same round-trip. Both Steps must have
+    // `vault_path` populated; edges whose endpoints predate Phase 11.5 are
+    // skipped (they can't be placed on a sibling ring without a path).
+    let mut params_map: std::collections::BTreeMap<String, serde_json::Value> =
+        std::collections::BTreeMap::new();
+    params_map.insert("limit".into(), serde_json::json!(i64::from(limit)));
+
+    let edges_cypher = "MATCH (a:Step)-[:LINKS_TO]->(b:Step) \
+         WHERE a.vault_path IS NOT NULL AND b.vault_path IS NOT NULL \
+         RETURN a.vault_path AS source, b.vault_path AS target \
+         LIMIT $limit";
+
+    let edges_result = db
+        .execute_cypher_with_params(edges_cypher, params_map.clone())
+        .await;
+    let total_result = db
+        .execute_cypher_with_params(
+            "MATCH ()-[r:LINKS_TO]->() RETURN count(r) AS n",
+            std::collections::BTreeMap::new(),
+        )
+        .await;
+
+    let edges: Vec<EdgeSummary> = match edges_result {
+        Ok(records) => records
+            .into_iter()
+            .filter_map(|r| {
+                let source = r.get("source").and_then(|v| v.as_str())?.to_owned();
+                let target = r.get("target").and_then(|v| v.as_str())?.to_owned();
+                let source_sibling = source
+                    .split('/')
+                    .next()
+                    .unwrap_or_default()
+                    .to_owned();
+                let target_sibling = target
+                    .split('/')
+                    .next()
+                    .unwrap_or_default()
+                    .to_owned();
+                Some(EdgeSummary {
+                    source,
+                    target,
+                    source_sibling,
+                    target_sibling,
+                })
+            })
+            .collect(),
+        Err(e) => {
+            warn!(target: "soul", error = %e, "edges_handler: list edges failed");
+            Vec::new()
+        }
+    };
+
+    let total = total_result
+        .ok()
+        .and_then(|rows| rows.into_iter().next())
+        .and_then(|r| r.get("n").and_then(|v| v.as_u64()))
+        .unwrap_or(0);
+
+    Json(EdgeListResponse { edges, total }).into_response()
 }
 
 /// `POST /api/soul/reindex` — force a filesystem→`SQLite` backfill.

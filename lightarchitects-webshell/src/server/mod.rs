@@ -265,6 +265,10 @@ pub fn build_app(state: AppState) -> Router {
             "/api/soul/relationships/{*entry_id}",
             get(events::soul_routes::relationships_handler),
         )
+        .route(
+            "/api/soul/edges",
+            get(events::soul_routes::edges_handler),
+        )
         // ── Phase 9.8–9.10: real-data handlers (replaces mock_data::*) ──────
         .route("/api/workspaces", get(real_data::list_workspaces))
         .route("/api/workspaces/{id}", get(real_data::get_workspace))
