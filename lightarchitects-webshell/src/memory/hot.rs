@@ -32,6 +32,7 @@ const CONTENT_MAX_CHARS: usize = 200;
 ///
 /// If the volume grows, the natural next step is a broadcast channel listener
 /// that tails each active session; that's explicitly out of scope for Phase 9.
+#[doc(hidden)] // Phase 18c Step 3: no longer on the hot-tier serving path; kept for tests + NDJSON archive inspection
 pub async fn snapshot_hot(layout: &StoreLayout, limit: usize) -> Vec<ContextMemo> {
     let reader = TurnLogReader::new(layout.clone());
     let Ok(session_ids) = reader.list_active().await else {
