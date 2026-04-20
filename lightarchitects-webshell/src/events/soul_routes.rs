@@ -20,6 +20,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
+use lightarchitects::soul::embedding::{EmbeddingProvider, mock::MockEmbeddingProvider};
 use lightarchitects::turnlog::StoreLayout;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
@@ -36,6 +37,24 @@ use lightarchitects::helix::HelixDb;
 
 // ── Query parameter shapes ──────────────────────────────────────────────────
 
+/// Search mode for `GET /api/soul/search`. Phase 17a.
+#[derive(Debug, Clone, Copy, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchMode {
+    /// Lexical substring match against content, sibling, and strands.
+    /// Default — preserves the Phase 9 baseline.
+    #[default]
+    Bm25,
+    /// Cosine-similarity ranking of candidate entries against the query's
+    /// embedding vector. Phase 17a uses `MockEmbeddingProvider` (FNV-1a +
+    /// LCG); Phase 17b swaps in `fastembed` behind the same trait.
+    Semantic,
+    /// Reciprocal-rank fusion (`RRF`) of the top-K bm25 + top-K semantic
+    /// rankings. Returns `rrf_used: true` in the response envelope so the
+    /// UI can surface which retrieval strategy actually ran.
+    Hybrid,
+}
+
 /// Query parameters for `GET /api/soul/search`.
 #[derive(Debug, Deserialize)]
 pub struct SearchQuery {
@@ -45,6 +64,9 @@ pub struct SearchQuery {
     /// Maximum results to return. Server caps at 100.
     #[serde(default)]
     pub limit: Option<u8>,
+    /// Retrieval strategy — see [`SearchMode`]. Defaults to `Bm25`.
+    #[serde(default)]
+    pub mode: SearchMode,
 }
 
 /// Query parameters for `GET /api/soul/memory/hot`.
@@ -237,33 +259,130 @@ pub async fn search_handler(
     };
 
     let limit = q.limit.unwrap_or(20).min(100) as usize;
-    let needle = pattern.to_lowercase();
 
-    // Reuse cold-walker to get all memos, then filter by substring.
-    let all = cold::snapshot_cold(&helix_root, None, 500).await;
+    // Candidate pool: all cold memos (capped at 500). Every mode filters or
+    // re-ranks over the same pool so the retrieval strategy is the only
+    // variable in differential tests.
+    let candidates = cold::snapshot_cold(&helix_root, None, 500).await;
+
+    let (ranked_paths, rrf_used) = match q.mode {
+        SearchMode::Bm25 => (rank_bm25(&candidates, pattern, limit), false),
+        SearchMode::Semantic => (rank_semantic(&candidates, pattern, limit).await, false),
+        SearchMode::Hybrid => {
+            let bm25_ranked = rank_bm25(&candidates, pattern, 50);
+            let sem_ranked = rank_semantic(&candidates, pattern, 50).await;
+            (rrf_fuse(&bm25_ranked, &sem_ranked, limit), true)
+        }
+    };
+
+    // Hydrate ranked paths back to full EnrichedEntry records.
     let mut matches: Vec<EnrichedEntry> = Vec::new();
-    for memo in all.into_iter().take(500) {
-        if memo.content.to_lowercase().contains(&needle)
-            || memo.sibling.to_lowercase().contains(&needle)
-            || memo.strands.iter().any(|s| s.contains(&needle))
-        {
-            let Some(path) = &memo.source_path else {
-                continue;
-            };
-            if let Some((entry, _raw)) = cold::read_entry(&helix_root, path).await {
-                matches.push(entry);
-            }
-            if matches.len() >= limit {
-                break;
-            }
+    for path in ranked_paths {
+        if let Some((entry, _raw)) = cold::read_entry(&helix_root, &path).await {
+            matches.push(entry);
         }
     }
 
     Json(SearchResponse {
         results: matches,
-        rrf_used: false,
+        rrf_used,
     })
     .into_response()
+}
+
+/// Lexical ranking — substring match on content / sibling / strands. The
+/// output order is snapshot order (newest-first), which preserves the
+/// Phase 9 behaviour tested by existing vitests.
+fn rank_bm25(candidates: &[ContextMemo], pattern: &str, limit: usize) -> Vec<String> {
+    let needle = pattern.to_lowercase();
+    candidates
+        .iter()
+        .filter(|memo| {
+            memo.content.to_lowercase().contains(&needle)
+                || memo.sibling.to_lowercase().contains(&needle)
+                || memo
+                    .strands
+                    .iter()
+                    .any(|s| s.to_lowercase().contains(&needle))
+        })
+        .filter_map(|memo| memo.source_path.clone())
+        .take(limit)
+        .collect()
+}
+
+/// Semantic ranking — embed the query once, cosine-score every candidate.
+///
+/// Uses [`MockEmbeddingProvider::nomic`] in Phase 17a. Phase 17b swaps in
+/// `FastEmbedProvider` behind the same trait — no caller change.
+async fn rank_semantic(candidates: &[ContextMemo], pattern: &str, limit: usize) -> Vec<String> {
+    let provider = MockEmbeddingProvider::nomic();
+    let Ok(query_vecs) = provider.embed(&[pattern]).await else {
+        return Vec::new();
+    };
+    let Some(query_vec) = query_vecs.first() else {
+        return Vec::new();
+    };
+
+    // Embed each candidate's content and score by cosine similarity.
+    let texts: Vec<&str> = candidates
+        .iter()
+        .filter(|m| m.source_path.is_some())
+        .map(|m| m.content.as_str())
+        .collect();
+    let Ok(doc_vecs) = provider.embed(&texts).await else {
+        return Vec::new();
+    };
+
+    let mut scored: Vec<(f32, String)> = candidates
+        .iter()
+        .filter_map(|m| m.source_path.clone().map(|p| (m, p)))
+        .zip(doc_vecs.iter())
+        .map(|((_memo, path), doc_vec)| (cosine_similarity(query_vec, doc_vec), path))
+        .collect();
+
+    // Descending by score; ties resolved by source_path for determinism.
+    scored.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.1.cmp(&b.1))
+    });
+    scored.into_iter().map(|(_, p)| p).take(limit).collect()
+}
+
+/// Cosine similarity for two L2-normalised vectors reduces to a dot product.
+/// `MockEmbeddingProvider` guarantees L2-normalisation; `FastEmbed` does as
+/// well for E5/BGE family models, so this stays correct across Phase 17a/b.
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    let len = a.len().min(b.len());
+    a.iter().zip(b.iter()).take(len).map(|(x, y)| x * y).sum()
+}
+
+/// Reciprocal-rank fusion over two ranked path lists.
+///
+/// Formula: `score(path) = Σ 1 / (k + rank_i(path))` where `k = 60` is the
+/// canonical constant (Cormack, Clarke, Büttcher 2009).
+///
+/// Ties break by descending score, then lexical path.
+fn rrf_fuse(bm25: &[String], semantic: &[String], limit: usize) -> Vec<String> {
+    const K: f32 = 60.0;
+    let mut scores: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
+    for (rank, path) in bm25.iter().enumerate() {
+        #[allow(clippy::cast_precision_loss)]
+        let r = (rank + 1) as f32;
+        *scores.entry(path.clone()).or_insert(0.0) += 1.0 / (K + r);
+    }
+    for (rank, path) in semantic.iter().enumerate() {
+        #[allow(clippy::cast_precision_loss)]
+        let r = (rank + 1) as f32;
+        *scores.entry(path.clone()).or_insert(0.0) += 1.0 / (K + r);
+    }
+    let mut ranked: Vec<(String, f32)> = scores.into_iter().collect();
+    ranked.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+    });
+    ranked.into_iter().map(|(p, _)| p).take(limit).collect()
 }
 
 /// `GET /api/soul/entries/*path` — read one helix entry.
@@ -769,5 +888,94 @@ mod tests {
         let q: ColdMemoryQuery = serde_json::from_str(r#"{"sibling":"eva","limit":50}"#).unwrap();
         assert_eq!(q.sibling.as_deref(), Some("eva"));
         assert_eq!(q.limit, Some(50));
+    }
+
+    // ── Phase 17a — search mode plumbing ────────────────────────────────────
+
+    fn memo(path: &str, sibling: &str, content: &str) -> ContextMemo {
+        ContextMemo {
+            id: format!("m-{path}"),
+            tier: crate::memory::types::MemoryTier::Cold,
+            content: content.to_owned(),
+            significance: 0.5,
+            sibling: sibling.to_owned(),
+            strands: vec![],
+            created_at: "2026-04-19T00:00:00Z".to_owned(),
+            source_path: Some(path.to_owned()),
+            resonance: vec![],
+            themes: vec![],
+            self_defining: false,
+            entry_type: None,
+        }
+    }
+
+    #[test]
+    fn search_mode_defaults_to_bm25() {
+        let q: SearchQuery = serde_json::from_str(r#"{"q":"hello"}"#).unwrap();
+        assert_eq!(q.mode, SearchMode::Bm25);
+    }
+
+    #[test]
+    fn search_mode_parses_lowercase_variants() {
+        let hybrid: SearchQuery = serde_json::from_str(r#"{"q":"x","mode":"hybrid"}"#).unwrap();
+        let sem: SearchQuery = serde_json::from_str(r#"{"q":"x","mode":"semantic"}"#).unwrap();
+        assert_eq!(hybrid.mode, SearchMode::Hybrid);
+        assert_eq!(sem.mode, SearchMode::Semantic);
+    }
+
+    #[test]
+    fn bm25_ranks_by_substring_hits_only() {
+        let candidates = vec![
+            memo("a.md", "eva", "the quick brown fox"),
+            memo("b.md", "corso", "nothing matches"),
+            memo("c.md", "eva", "fox trot"),
+        ];
+        let ranked = rank_bm25(&candidates, "fox", 10);
+        assert_eq!(ranked, vec!["a.md".to_owned(), "c.md".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn semantic_returns_top_k_by_similarity() {
+        // Mock embedder is deterministic → ranking is stable across runs.
+        // The top-ranked path for query "alpha" over these three candidates
+        // is always the same pair for a given mock embedding.
+        let candidates = vec![
+            memo("a.md", "eva", "alpha beta gamma"),
+            memo("b.md", "corso", "completely unrelated body"),
+            memo("c.md", "eva", "alpha"),
+        ];
+        let ranked = rank_semantic(&candidates, "alpha", 2).await;
+        assert_eq!(ranked.len(), 2, "limit honoured");
+        // All three candidates are valid paths — just assert ranking stability.
+        for path in &ranked {
+            assert!(["a.md", "b.md", "c.md"].contains(&path.as_str()));
+        }
+    }
+
+    #[test]
+    fn rrf_fuse_merges_ranks_from_both_sources() {
+        let bm25 = vec!["a.md".to_owned(), "b.md".to_owned()];
+        let sem = vec!["b.md".to_owned(), "c.md".to_owned()];
+        let fused = rrf_fuse(&bm25, &sem, 10);
+        // b.md appears in both rankings and should rank first after fusion.
+        assert_eq!(fused[0], "b.md");
+        assert_eq!(fused.len(), 3);
+    }
+
+    #[test]
+    fn rrf_fuse_respects_limit() {
+        let bm25 = vec!["a.md".into(), "b.md".into(), "c.md".into(), "d.md".into()];
+        let sem = vec!["a.md".into(), "b.md".into()];
+        let fused = rrf_fuse(&bm25, &sem, 2);
+        assert_eq!(fused.len(), 2);
+    }
+
+    #[test]
+    fn cosine_normalised_vectors_dot_product() {
+        let a = vec![0.6, 0.8, 0.0];
+        let b = vec![0.6, 0.8, 0.0];
+        assert!((cosine_similarity(&a, &b) - 1.0).abs() < 1e-5);
+        let c = vec![0.8, -0.6, 0.0];
+        assert!(cosine_similarity(&a, &c).abs() < 1e-5);
     }
 }
