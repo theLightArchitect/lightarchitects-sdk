@@ -118,6 +118,20 @@ pub struct IngestionReport {
     pub nodes_added: u64,
     /// Number of relation edges (`HelixLink`s) created by the graph builder.
     pub edges_added: u64,
+    /// Phase 11.5 follow-up — wikilinks whose target Step resolved
+    /// (either by UUID match, `vault_path` suffix, or `.md`-variant suffix).
+    /// A resolved wikilink means a `:LINKS_TO` relationship was `MERGE`d.
+    #[serde(default)]
+    pub wikilinks_resolved: u64,
+    /// Phase 11.5 follow-up — wikilinks whose target Step could NOT be
+    /// located in the graph. Typically caused by forward references
+    /// (target not yet ingested) or typos in vault path slugs.
+    ///
+    /// Computed as the count of [`HelixDbError::NotFound`] responses from
+    /// `create_link` during the wikilinks pass; other error variants still
+    /// land in [`errors`].
+    #[serde(default)]
+    pub wikilinks_unresolved: u64,
 }
 
 impl IngestionReport {
@@ -142,6 +156,12 @@ impl IngestionReport {
         self.records_skipped = self.records_skipped.saturating_add(other.records_skipped);
         self.nodes_added = self.nodes_added.saturating_add(other.nodes_added);
         self.edges_added = self.edges_added.saturating_add(other.edges_added);
+        self.wikilinks_resolved = self
+            .wikilinks_resolved
+            .saturating_add(other.wikilinks_resolved);
+        self.wikilinks_unresolved = self
+            .wikilinks_unresolved
+            .saturating_add(other.wikilinks_unresolved);
         self.errors.extend(other.errors.iter().cloned());
     }
 }
@@ -221,6 +241,7 @@ mod tests {
             nodes_added: 8,
             edges_added: 3,
             errors: vec!["err1".into()],
+            ..Default::default()
         };
         let b = IngestionReport {
             records_added: 5,
@@ -237,5 +258,23 @@ mod tests {
         assert_eq!(a.nodes_added, 12);
         assert_eq!(a.edges_added, 5);
         assert_eq!(a.errors.len(), 2);
+    }
+
+    #[test]
+    fn test_report_merge_wikilink_counters() {
+        // Phase 11.5 follow-up — verify wikilinks_resolved/unresolved merge correctly.
+        let mut a = IngestionReport {
+            wikilinks_resolved: 10,
+            wikilinks_unresolved: 2,
+            ..Default::default()
+        };
+        let b = IngestionReport {
+            wikilinks_resolved: 5,
+            wikilinks_unresolved: 3,
+            ..Default::default()
+        };
+        a.merge(&b);
+        assert_eq!(a.wikilinks_resolved, 15);
+        assert_eq!(a.wikilinks_unresolved, 5);
     }
 }

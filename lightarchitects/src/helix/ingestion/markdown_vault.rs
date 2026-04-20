@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use chrono::{NaiveDate, Utc};
 use tracing::instrument;
 
-use crate::helix::db::HelixDb;
+use crate::helix::db::{HelixDb, HelixDbError};
 use crate::helix::types::{
     DiscoveryMethod, HelixLink, HelixOrderingMode, LinkType, SharedExperience, Step,
     StrandMembership,
@@ -235,6 +235,23 @@ impl MarkdownVaultIngester {
     }
 
     /// Create wikilinks from content and frontmatter links.
+    ///
+    /// Phase 11.5 follow-up (AYIN): the function is span-instrumented and
+    /// classifies `create_link` failures so telemetry can quantify
+    /// resolution success without scanning the `errors` vec:
+    ///
+    /// * `Ok(_)` → [`IngestionReport::wikilinks_resolved`] += 1
+    /// * [`HelixDbError::NotFound`] → [`IngestionReport::wikilinks_unresolved`] += 1
+    ///   (benign — target not ingested yet, or typo)
+    /// * any other `Err` → pushed to [`IngestionReport::errors`] (real failure)
+    #[instrument(
+        skip(self, db, body, fm_links, report),
+        fields(
+            step_id = %step_id,
+            inline_wikilinks = wikilink::extract(body).len(),
+            fm_links = fm_links.len(),
+        )
+    )]
     async fn create_wikilinks(
         &self,
         db: &dyn HelixDb,
@@ -253,11 +270,13 @@ impl MarkdownVaultIngester {
                 raw_wikilink: Some(wl.raw),
                 metadata: serde_json::Value::Object(serde_json::Map::new()),
             };
-            if let Err(e) = db.create_link(&link).await {
-                report
-                    .errors
-                    .push(format!("wikilink create failed ({}): {e}", wl.target));
-            }
+            record_link_outcome(
+                db.create_link(&link).await,
+                LinkSource::Inline,
+                step_id,
+                &wl.target,
+                report,
+            );
         }
 
         // Typed links from frontmatter
@@ -271,11 +290,13 @@ impl MarkdownVaultIngester {
                 raw_wikilink: None,
                 metadata: serde_json::Value::Object(serde_json::Map::new()),
             };
-            if let Err(e) = db.create_link(&link).await {
-                report
-                    .errors
-                    .push(format!("fm link create failed ({}): {e}", lr.target));
-            }
+            record_link_outcome(
+                db.create_link(&link).await,
+                LinkSource::Frontmatter,
+                step_id,
+                &lr.target,
+                report,
+            );
         }
     }
 
@@ -515,6 +536,59 @@ fn parse_link_type(s: Option<&str>) -> LinkType {
 // Tests
 // ============================================================================
 
+/// Where a link came from — shapes the telemetry warning emitted on
+/// unresolved targets so logs differentiate inline `[[slug]]` references
+/// from declared `links:` front-matter entries.
+#[derive(Debug, Clone, Copy)]
+enum LinkSource {
+    /// Inline `[[target]]` wikilink parsed from the markdown body.
+    Inline,
+    /// Entry in the front-matter `links:` list.
+    Frontmatter,
+}
+
+/// Phase 11.5 follow-up (AYIN) — classify a `create_link` result and update
+/// the ingestion report accordingly.
+///
+/// Split out as a pure function so it can be unit-tested without
+/// implementing the full `HelixDb` trait. See `mod tests` below.
+fn record_link_outcome(
+    result: Result<String, HelixDbError>,
+    source: LinkSource,
+    step_id: &str,
+    target: &str,
+    report: &mut IngestionReport,
+) {
+    match result {
+        Ok(_) => {
+            report.wikilinks_resolved = report.wikilinks_resolved.saturating_add(1);
+        }
+        Err(HelixDbError::NotFound(_)) => {
+            let kind = match source {
+                LinkSource::Inline => "inline",
+                LinkSource::Frontmatter => "frontmatter",
+            };
+            tracing::warn!(
+                target: "helix.wikilink",
+                source_id = %step_id,
+                target_slug = %target,
+                source_kind = kind,
+                "link target not found — left unresolved"
+            );
+            report.wikilinks_unresolved = report.wikilinks_unresolved.saturating_add(1);
+        }
+        Err(e) => {
+            let kind = match source {
+                LinkSource::Inline => "wikilink",
+                LinkSource::Frontmatter => "fm link",
+            };
+            report
+                .errors
+                .push(format!("{kind} create failed ({target}): {e}"));
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -553,6 +627,108 @@ mod tests {
         assert_eq!(
             ing.sibling_dir(),
             PathBuf::from("/home/user/.soul/helix/eva")
+        );
+    }
+
+    // ── Phase 11.5 follow-up — wikilink outcome classifier tests ─────────
+
+    #[test]
+    fn record_link_outcome_resolved_increments_resolved() {
+        let mut report = IngestionReport::default();
+        record_link_outcome(
+            Ok("rel-uuid".to_owned()),
+            LinkSource::Inline,
+            "src-1",
+            "eva/identity",
+            &mut report,
+        );
+        assert_eq!(report.wikilinks_resolved, 1);
+        assert_eq!(report.wikilinks_unresolved, 0);
+        assert!(report.errors.is_empty());
+    }
+
+    #[test]
+    fn record_link_outcome_not_found_is_benign_unresolved() {
+        // NotFound is the "target doesn't exist yet" / "typo in slug" path —
+        // it MUST bump `wikilinks_unresolved` and NOT push to `errors`,
+        // otherwise every forward reference in the vault looks like a bug.
+        let mut report = IngestionReport::default();
+        record_link_outcome(
+            Err(HelixDbError::NotFound(
+                "no matching target for 'eva/missing'".to_owned(),
+            )),
+            LinkSource::Inline,
+            "src-1",
+            "eva/missing",
+            &mut report,
+        );
+        assert_eq!(report.wikilinks_unresolved, 1);
+        assert_eq!(report.wikilinks_resolved, 0);
+        assert!(
+            report.errors.is_empty(),
+            "NotFound must not fall through to errors vec"
+        );
+    }
+
+    #[test]
+    fn record_link_outcome_other_error_pushes_to_errors() {
+        // Genuine failures (connection error, validation, etc.) still land
+        // in the errors vec so they surface in the IngestionReport summary.
+        let mut report = IngestionReport::default();
+        record_link_outcome(
+            Err(HelixDbError::Validation("bad link spec".to_owned())),
+            LinkSource::Frontmatter,
+            "src-1",
+            "target",
+            &mut report,
+        );
+        assert_eq!(report.wikilinks_resolved, 0);
+        assert_eq!(report.wikilinks_unresolved, 0);
+        assert_eq!(report.errors.len(), 1, "Validation must surface as error");
+        assert!(
+            report.errors[0].contains("fm link create failed"),
+            "frontmatter source labelled correctly: {:?}",
+            report.errors
+        );
+    }
+
+    #[test]
+    fn record_link_outcome_source_kind_labels_errors_distinctly() {
+        // Inline wikilink failures and frontmatter link failures are labelled
+        // differently so operators can attribute bad slugs back to their
+        // source in the vault (body prose vs explicit `links:`).
+        let mut report = IngestionReport::default();
+        record_link_outcome(
+            Err(HelixDbError::Validation("x".into())),
+            LinkSource::Inline,
+            "s",
+            "t",
+            &mut report,
+        );
+        record_link_outcome(
+            Err(HelixDbError::Validation("y".into())),
+            LinkSource::Frontmatter,
+            "s",
+            "t",
+            &mut report,
+        );
+        assert_eq!(report.errors.len(), 2);
+        assert!(report.errors[0].contains("wikilink create failed"));
+        assert!(report.errors[1].contains("fm link create failed"));
+    }
+
+    #[test]
+    fn record_link_outcome_saturates_on_counter_overflow() {
+        // Defence in depth: even at u64::MAX the counter stays well-defined.
+        let mut report = IngestionReport {
+            wikilinks_resolved: u64::MAX,
+            ..Default::default()
+        };
+        record_link_outcome(Ok("rel".into()), LinkSource::Inline, "s", "t", &mut report);
+        assert_eq!(
+            report.wikilinks_resolved,
+            u64::MAX,
+            "saturating_add caps at max"
         );
     }
 }
