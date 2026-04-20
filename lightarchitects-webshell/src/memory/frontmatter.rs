@@ -45,6 +45,12 @@ pub struct FrontMatterFields {
     pub strands: Vec<String>,
     /// ISO-8601 UTC timestamp — from front-matter `date:` (promoted to RFC3339).
     pub created_at: Option<String>,
+    /// Typed classification from front-matter `type:` — Phase 14.1.
+    ///
+    /// Populated from the YAML `type:` key. Common canonical values:
+    /// `entry`, `plan`, `standard`, `review`, `lesson`, `reference`,
+    /// `scrum-assessment`. `None` when the field is absent.
+    pub entry_type: Option<String>,
     /// Raw front-matter YAML as a JSON value (null when absent or malformed).
     pub raw: serde_json::Value,
 }
@@ -100,6 +106,10 @@ pub fn parse(source: &str) -> (FrontMatterFields, Option<String>) {
                 date.to_owned()
             }
         }),
+        entry_type: raw
+            .get("type")
+            .and_then(|v| v.as_str())
+            .map(str::to_lowercase),
         raw,
     };
 

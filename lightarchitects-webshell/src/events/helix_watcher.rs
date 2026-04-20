@@ -138,10 +138,12 @@ fn process_event(
                 event_kind: event_kind.1,
             };
             let _ = tx.send(WebEvent::BuildUpdate(entry));
-        } else if is_helix_entry(&path) {
+        } else if is_helix_entry(&path) || is_sibling_output(&path) {
             // Parse front-matter synchronously (we're already in a spawn_blocking
-            // task) to enrich the event with sibling/significance/strands.
-            // Malformed or absent front-matter degrades to None fields.
+            // task) to enrich the event with sibling/significance/strands/kind.
+            // Phase 14.1 broadens beyond `entries/` to also include standards,
+            // reviews, and plans; kind is inferred from front-matter `type:`
+            // or the path shape when front-matter is absent.
             let entry = build_enriched_summary(&rel_path, &path, event_kind.0);
             let _ = tx.send(WebEvent::HelixEntry(entry));
         }
@@ -173,6 +175,14 @@ fn build_enriched_summary(
         .map(str::to_owned)
         .filter(|s| !s.is_empty());
 
+    // Phase 14.1 — classify by front-matter `type:` first, with a
+    // conservative path-based fallback so pre-existing files without
+    // a `type:` frontmatter still get classified.
+    let kind = fields
+        .entry_type
+        .clone()
+        .or_else(|| infer_kind_from_path(rel_path).map(str::to_owned));
+
     HelixEntrySummary {
         path: rel_path.to_owned(),
         event_kind,
@@ -181,6 +191,7 @@ fn build_enriched_summary(
         strands: fields.strands,
         content_excerpt: excerpt,
         created_at: fields.created_at,
+        kind,
     }
 }
 
@@ -192,6 +203,74 @@ fn is_helix_entry(path: &Path) -> bool {
         return false;
     }
     path.components().any(|c| c.as_os_str() == "entries")
+}
+
+/// Returns `true` if `path` is a Phase 14 sibling output:
+/// standard, review, or plan. These are `.md` files outside the
+/// `entries/` tree that still belong in the zettelkasten.
+///
+/// Matched shapes (any path depth):
+///   - `user/standards/*.md`       — Standards
+///   - `SCRUM-*.md` (anywhere)     — Reviews
+///   - `plan.md` directly under a `corso/builds/*/` directory
+fn is_sibling_output(path: &Path) -> bool {
+    if path.extension().and_then(|e| e.to_str()) != Some("md") {
+        return false;
+    }
+
+    // Standard: anywhere under a `standards/` dir.
+    if path.components().any(|c| c.as_os_str() == "standards") {
+        return true;
+    }
+
+    // Review: filename starts with "SCRUM-".
+    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+        if name.starts_with("SCRUM-") {
+            return true;
+        }
+    }
+
+    // Plan: `plan.md` under `corso/builds/`.
+    if path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n == "plan.md")
+    {
+        let mut saw_corso = false;
+        let mut saw_builds = false;
+        for c in path.components() {
+            if c.as_os_str() == "corso" {
+                saw_corso = true;
+            }
+            if saw_corso && c.as_os_str() == "builds" {
+                saw_builds = true;
+            }
+        }
+        if saw_builds {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Infer the Phase-14 kind from a vault-relative path when front-matter
+/// lacks an explicit `type:` field. Conservative: returns `None` rather
+/// than guess when the path doesn't match a canonical shape.
+fn infer_kind_from_path(rel_path: &str) -> Option<&'static str> {
+    if rel_path.contains("/standards/") || rel_path.starts_with("standards/") {
+        return Some("standard");
+    }
+    if rel_path.rsplit('/').next().is_some_and(|n| n.starts_with("SCRUM-")) {
+        return Some("review");
+    }
+    if rel_path.ends_with("/plan.md") && rel_path.contains("corso/builds/") {
+        return Some("plan");
+    }
+    if rel_path.contains("/entries/") {
+        return Some("entry");
+    }
+    None
 }
 
 /// Returns `true` if `path` is a build tracking file inside `corso/builds/`.

@@ -112,6 +112,14 @@ pub struct HelixEntrySummary {
     /// ISO-8601 UTC timestamp from front-matter `date:` or file mtime fallback.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
+    /// Typed classification — Phase 14.1. Populated from the front-matter
+    /// `type:` field when present; otherwise inferred from the path shape.
+    ///
+    /// Canonical values recognised by the UI: `entry`, `plan`, `standard`,
+    /// `review`, `lesson`, `reference`. Unknown types are passed through as
+    /// lowercase strings so new categories don't require a frontend deploy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 /// Filesystem event kind that produced a [`HelixEntrySummary`].
@@ -139,6 +147,7 @@ impl HelixEntrySummary {
             strands: Vec::new(),
             content_excerpt: None,
             created_at: None,
+            kind: None,
         }
     }
 }
