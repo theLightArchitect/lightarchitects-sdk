@@ -20,7 +20,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use lightarchitects::soul::embedding::{EmbeddingProvider, mock::MockEmbeddingProvider};
+use lightarchitects::soul::embedding::EmbeddingProvider;
 use lightarchitects::turnlog::StoreLayout;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
@@ -267,10 +267,13 @@ pub async fn search_handler(
 
     let (ranked_paths, rrf_used) = match q.mode {
         SearchMode::Bm25 => (rank_bm25(&candidates, pattern, limit), false),
-        SearchMode::Semantic => (rank_semantic(&candidates, pattern, limit).await, false),
+        SearchMode::Semantic => (
+            rank_semantic(&state, &candidates, pattern, limit).await,
+            false,
+        ),
         SearchMode::Hybrid => {
             let bm25_ranked = rank_bm25(&candidates, pattern, 50);
-            let sem_ranked = rank_semantic(&candidates, pattern, 50).await;
+            let sem_ranked = rank_semantic(&state, &candidates, pattern, 50).await;
             (rrf_fuse(&bm25_ranked, &sem_ranked, limit), true)
         }
     };
@@ -310,12 +313,26 @@ fn rank_bm25(candidates: &[ContextMemo], pattern: &str, limit: usize) -> Vec<Str
         .collect()
 }
 
-/// Semantic ranking — embed the query once, cosine-score every candidate.
+/// Semantic ranking — Phase 17b.
 ///
-/// Uses [`MockEmbeddingProvider::nomic`] in Phase 17a. Phase 17b swaps in
-/// `FastEmbedProvider` behind the same trait — no caller change.
-async fn rank_semantic(candidates: &[ContextMemo], pattern: &str, limit: usize) -> Vec<String> {
-    let provider = MockEmbeddingProvider::nomic();
+/// Query flow:
+///   1. Embed the query via [`AppState::embedding`] (`FastEmbed` real when
+///      available, `MockEmbedding` fallback).
+///   2. Fetch pre-computed doc vectors from Neo4j where possible — the
+///      boot-time populator writes `Step.embedding` for every Step with a
+///      `vault_path`. This lets us cosine-score 700+ docs in ~1ms without
+///      re-embedding content every query.
+///   3. When Neo4j is absent OR no pre-computed vectors exist for the
+///      candidate pool, fall back to Phase-17a behaviour: embed each
+///      candidate at query time. Slower with real `FastEmbed` (~1.5s per
+///      500 docs) but correct.
+async fn rank_semantic(
+    state: &AppState,
+    candidates: &[ContextMemo],
+    pattern: &str,
+    limit: usize,
+) -> Vec<String> {
+    let provider = state.embedding().await;
     let Ok(query_vecs) = provider.embed(&[pattern]).await else {
         return Vec::new();
     };
@@ -323,12 +340,104 @@ async fn rank_semantic(candidates: &[ContextMemo], pattern: &str, limit: usize) 
         return Vec::new();
     };
 
-    // Embed each candidate's content and score by cosine similarity.
+    // Fast path — pre-computed vectors from Neo4j.
+    if let Some(scored) = rank_semantic_from_neo4j(state, candidates, query_vec, limit).await {
+        if !scored.is_empty() {
+            return scored;
+        }
+    }
+
+    // Fallback — embed candidate bodies at query time.
+    rank_semantic_embedding_at_query(provider.as_ref(), candidates, query_vec, limit).await
+}
+
+/// Try to score candidates using pre-computed `Step.embedding` values.
+///
+/// Returns `None` when Neo4j isn't attached. Returns an empty `Some(vec![])`
+/// when Neo4j is up but no matching Steps have embeddings — the caller then
+/// falls back to the at-query-time path.
+async fn rank_semantic_from_neo4j(
+    state: &AppState,
+    candidates: &[ContextMemo],
+    query_vec: &[f32],
+    limit: usize,
+) -> Option<Vec<String>> {
+    let soul = state.soul_store.as_ref()?;
+    let neo4j = soul.neo4j_arc().await?;
+    let db = neo4j.helix_db();
+
+    // Candidate paths — the ones we already walked on disk. We restrict
+    // the Neo4j query to this pool so cosine ranking stays consistent
+    // with what bm25 + the UI are seeing.
+    let paths: Vec<String> = candidates
+        .iter()
+        .filter_map(|m| m.source_path.clone())
+        .collect();
+    if paths.is_empty() {
+        return Some(Vec::new());
+    }
+
+    let mut params: std::collections::BTreeMap<String, serde_json::Value> =
+        std::collections::BTreeMap::new();
+    params.insert("paths".into(), serde_json::json!(paths));
+
+    let cypher = "MATCH (s:Step) \
+        WHERE s.vault_path IN $paths AND s.embedding IS NOT NULL \
+        RETURN s.vault_path AS path, s.embedding AS embedding";
+    let records = db.execute_cypher_with_params(cypher, params).await.ok()?;
+
+    let mut scored: Vec<(f32, String)> = Vec::with_capacity(records.len());
+    for r in records {
+        let Some(path) = r.get("path").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(arr) = r.get("embedding").and_then(|v| v.as_array()) else {
+            continue;
+        };
+        let doc_vec: Vec<f32> = arr
+            .iter()
+            .filter_map(|v| {
+                v.as_f64().map(|f| {
+                    #[allow(clippy::cast_possible_truncation)]
+                    let x = f as f32;
+                    x
+                })
+            })
+            .collect();
+        if doc_vec.is_empty() {
+            continue;
+        }
+        let score = cosine_similarity(query_vec, &doc_vec);
+        scored.push((score, path.to_owned()));
+    }
+
+    scored.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.1.cmp(&b.1))
+    });
+    Some(scored.into_iter().map(|(_, p)| p).take(limit).collect())
+}
+
+/// Phase-17a fallback — embed candidate bodies at query time.
+///
+/// Used when Neo4j is unavailable OR no Steps have pre-computed embeddings
+/// yet (e.g. the populator is still running on first boot). Slower with
+/// real `FastEmbed` but still produces content-aware rankings.
+async fn rank_semantic_embedding_at_query(
+    provider: &(dyn EmbeddingProvider + Send + Sync),
+    candidates: &[ContextMemo],
+    query_vec: &[f32],
+    limit: usize,
+) -> Vec<String> {
     let texts: Vec<&str> = candidates
         .iter()
         .filter(|m| m.source_path.is_some())
         .map(|m| m.content.as_str())
         .collect();
+    if texts.is_empty() {
+        return Vec::new();
+    }
     let Ok(doc_vecs) = provider.embed(&texts).await else {
         return Vec::new();
     };
@@ -340,7 +449,6 @@ async fn rank_semantic(candidates: &[ContextMemo], pattern: &str, limit: usize) 
         .map(|((_memo, path), doc_vec)| (cosine_similarity(query_vec, doc_vec), path))
         .collect();
 
-    // Descending by score; ties resolved by source_path for determinism.
     scored.sort_by(|a, b| {
         b.0.partial_cmp(&a.0)
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -869,6 +977,7 @@ fn _frontmatter_linked() {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use lightarchitects::soul::embedding::mock::MockEmbeddingProvider;
 
     #[test]
     fn search_query_default_limit_absent() {
@@ -935,18 +1044,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn semantic_returns_top_k_by_similarity() {
-        // Mock embedder is deterministic → ranking is stable across runs.
-        // The top-ranked path for query "alpha" over these three candidates
-        // is always the same pair for a given mock embedding.
+    async fn semantic_embedding_at_query_returns_top_k() {
+        // Direct-test the Phase-17a fallback path (no AppState / Neo4j
+        // needed). With a deterministic MockEmbeddingProvider, ranking is
+        // stable across runs. Phase-17b's fast path is exercised
+        // end-to-end in the headed Playwright gate instead.
         let candidates = vec![
             memo("a.md", "eva", "alpha beta gamma"),
             memo("b.md", "corso", "completely unrelated body"),
             memo("c.md", "eva", "alpha"),
         ];
-        let ranked = rank_semantic(&candidates, "alpha", 2).await;
+        let provider = MockEmbeddingProvider::nomic();
+        let query_vec = provider.embed(&["alpha"]).await.unwrap();
+        let ranked =
+            rank_semantic_embedding_at_query(&provider, &candidates, &query_vec[0], 2).await;
         assert_eq!(ranked.len(), 2, "limit honoured");
-        // All three candidates are valid paths — just assert ranking stability.
         for path in &ranked {
             assert!(["a.md", "b.md", "c.md"].contains(&path.as_str()));
         }

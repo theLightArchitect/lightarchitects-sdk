@@ -108,6 +108,17 @@ pub struct AppState {
     /// entries ingested from Claude Code are immediately visible here without
     /// an extra fetch layer.
     pub soul_store: Option<Arc<crate::memory::persistence::SoulPersistence>>,
+    /// Phase 17b — lazily-initialised embedding provider used by the
+    /// semantic/hybrid search paths. First call from `search_handler`
+    /// boots `FastEmbedProvider::try_new(Default)` on the blocking pool;
+    /// subsequent calls reuse the cached Arc. Initialization failure
+    /// silently degrades to [`MockEmbeddingProvider`] — the search path
+    /// stays available even if ONNX or the cache directory is broken.
+    pub embedding_provider: Arc<
+        tokio::sync::OnceCell<
+            Arc<dyn lightarchitects::soul::embedding::EmbeddingProvider + Send + Sync>,
+        >,
+    >,
 }
 
 impl AppState {
@@ -148,7 +159,15 @@ impl AppState {
                     );
                 }
             });
-            tokio::spawn(soul.try_attach_neo4j());
+            // Phase 11.3 — attach Neo4j first (populator needs it).
+            // Phase 17b — spawn boot-time embedding populator AFTER the
+            // Neo4j attach completes, so the populator's `soul.neo4j_arc()`
+            // lookup succeeds on the fast path.
+            let soul_for_embed = soul.clone();
+            tokio::spawn(async move {
+                soul_for_embed.clone().try_attach_neo4j().await;
+                crate::memory::embedder::spawn(soul_for_embed);
+            });
         }
         Self {
             config: Arc::new(config),
@@ -160,7 +179,59 @@ impl AppState {
             builds: Arc::new(BuildRegistry::new()),
             active_agent,
             soul_store,
+            embedding_provider: Arc::new(tokio::sync::OnceCell::new()),
         }
+    }
+
+    /// Phase 17b — lazily-initialised embedding provider for the search path.
+    ///
+    /// First call spawns `FastEmbedProvider::try_new(Default)` on the tokio
+    /// blocking pool (~4s cold start). On success the Arc is cached in
+    /// [`Self::embedding_provider`] and reused for subsequent queries. On
+    /// failure (no cache writable, ONNX missing, download refused) the
+    /// error is logged once and a [`MockEmbeddingProvider`] is cached in
+    /// its place so the semantic path remains operational.
+    pub async fn embedding(
+        &self,
+    ) -> Arc<dyn lightarchitects::soul::embedding::EmbeddingProvider + Send + Sync> {
+        use lightarchitects::soul::embedding::{
+            EmbeddingProvider,
+            fastembed::{FastEmbedModel, FastEmbedProvider},
+            mock::MockEmbeddingProvider,
+        };
+        self.embedding_provider
+            .get_or_init(|| async {
+                let provider: Arc<dyn EmbeddingProvider + Send + Sync> =
+                    match tokio::task::spawn_blocking(|| {
+                        FastEmbedProvider::try_new(FastEmbedModel::Default)
+                    })
+                    .await
+                    {
+                        Ok(Ok(p)) => {
+                            tracing::info!(target: "soul.embed", "search-path FastEmbed ready");
+                            Arc::new(p)
+                        }
+                        Ok(Err(e)) => {
+                            tracing::warn!(
+                                target: "soul.embed",
+                                error = %e,
+                                "FastEmbed init failed — falling back to MockEmbeddingProvider"
+                            );
+                            Arc::new(MockEmbeddingProvider::nomic())
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                target: "soul.embed",
+                                error = %e,
+                                "FastEmbed join failed — falling back to MockEmbeddingProvider"
+                            );
+                            Arc::new(MockEmbeddingProvider::nomic())
+                        }
+                    };
+                provider
+            })
+            .await
+            .clone()
     }
 
     /// Constructs a state for integration tests without spawning background tasks.
@@ -188,6 +259,7 @@ impl AppState {
             builds: Arc::new(BuildRegistry::new()),
             active_agent,
             soul_store: None,
+            embedding_provider: Arc::new(tokio::sync::OnceCell::new()),
         }
     }
 }

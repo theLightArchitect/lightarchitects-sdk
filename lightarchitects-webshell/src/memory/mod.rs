@@ -17,6 +17,7 @@
 
 pub mod backfill;
 pub mod cold;
+pub mod embedder;
 pub mod enrich;
 pub mod frontmatter;
 pub mod hot;
