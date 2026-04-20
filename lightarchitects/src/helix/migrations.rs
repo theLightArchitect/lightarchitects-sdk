@@ -11,6 +11,7 @@
 //!   v6:    Fix Step uniqueness: drop false `day_step_unique`, add (`content_hash`, `helix_id`) constraint
 //!   v7:    Step.expires index for read-side freshness gate
 //!   v8:    `Step.vault_path` index for wikilink slug resolution
+//!   v9:    `:HotMemo` tier — Tier-1 ephemeral memos with TTL (Phase 18 dual-write)
 
 use crate::helix::graph::schema::Migration;
 
@@ -113,6 +114,26 @@ const V7_STATEMENTS: &[&str] =
 const V8_STATEMENTS: &[&str] =
     &["CREATE INDEX step_vault_path_idx IF NOT EXISTS FOR (s:Step) ON (s.vault_path)"];
 
+// ── Migration v9: HotMemo tier (Phase 18) ────────────────────────────
+
+/// v9 introduces the `:HotMemo` node label — Tier-1 ephemeral memories
+/// persisted alongside the NDJSON turnlog (dual-write) during Phase 18B.
+///
+/// On promotion to the cold tier, a `:HotMemo` carries a `MATERIALIZED_FROM`
+/// edge from the newly-created `:Step` back to its originating memo. This
+/// preserves the full hot→cold lineage without collapsing the two tiers.
+///
+/// Indexes:
+///   * unique `id` — the hot memo's `{session_id}:{seq}` identifier
+///   * `sibling`   — filters the hot list by owning sibling
+///   * `expires`   — serves the TTL read-gate (`WHERE h.expires > datetime()`)
+const V9_STATEMENTS: &[&str] = &[
+    "CREATE CONSTRAINT hot_memo_id_unique IF NOT EXISTS FOR (h:HotMemo) REQUIRE h.id IS UNIQUE",
+    "CREATE INDEX hot_memo_sibling_idx IF NOT EXISTS FOR (h:HotMemo) ON (h.sibling)",
+    "CREATE INDEX hot_memo_expires_idx IF NOT EXISTS FOR (h:HotMemo) ON (h.expires)",
+    "CREATE INDEX hot_memo_created_idx IF NOT EXISTS FOR (h:HotMemo) ON (h.created_at)",
+];
+
 // ── Public API ────────────────────────────────────────────────────────
 
 /// All helix migrations (v3-v8), ordered by version.
@@ -149,6 +170,11 @@ pub const HELIX_MIGRATIONS: &[Migration] = &[
         version: 8,
         description: "Add step_vault_path_idx for efficient wikilink slug resolution in create_link",
         statements: V8_STATEMENTS,
+    },
+    Migration {
+        version: 9,
+        description: "Add :HotMemo label — Tier-1 ephemeral memories (Phase 18 dual-write)",
+        statements: V9_STATEMENTS,
     },
 ];
 
@@ -302,23 +328,24 @@ mod tests {
     #[test]
     fn test_pending_all() {
         let pending = helix_pending_migrations(&[]);
-        assert_eq!(pending.len(), 6, "All 6 helix migrations pending");
+        assert_eq!(pending.len(), 7, "All 7 helix migrations pending");
     }
 
     #[test]
     fn test_pending_partial() {
         let pending = helix_pending_migrations(&[3]);
-        assert_eq!(pending.len(), 5, "v4, v5, v6, v7, and v8 pending");
+        assert_eq!(pending.len(), 6, "v4, v5, v6, v7, v8, and v9 pending");
         assert_eq!(pending[0].version, 4);
         assert_eq!(pending[1].version, 5);
         assert_eq!(pending[2].version, 6);
         assert_eq!(pending[3].version, 7);
         assert_eq!(pending[4].version, 8);
+        assert_eq!(pending[5].version, 9);
     }
 
     #[test]
     fn test_pending_none() {
-        let pending = helix_pending_migrations(&[3, 4, 5, 6, 7, 8]);
+        let pending = helix_pending_migrations(&[3, 4, 5, 6, 7, 8, 9]);
         assert!(pending.is_empty(), "No pending migrations");
     }
 

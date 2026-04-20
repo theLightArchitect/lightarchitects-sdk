@@ -367,6 +367,35 @@ pub struct SharedExperience {
     pub created_at: DateTime<Utc>,
 }
 
+/// Phase 18 — a Tier-1 ephemeral memo, stored in Neo4j alongside the NDJSON
+/// turnlog (dual-write). Converted to a `:Step` when the promotion threshold
+/// is crossed, with a `MATERIALIZED_FROM` edge preserving the lineage.
+///
+/// Unlike [`Step`], a `HotMemo` has a mandatory `expires` TTL. Read queries
+/// gate on `h.expires > datetime()` so stale session memos drop out of
+/// retrieval without an explicit compaction pass.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HotMemo {
+    /// Stable identifier — conventionally `"{session_id}:{seq}"` matching
+    /// the NDJSON turnlog projection so hot→cold reconciliation is a pure
+    /// id-equality check.
+    pub id: String,
+    /// Owning sibling (`"corso"`, `"eva"`, `"webshell"`, …). Indexed.
+    pub sibling: String,
+    /// One-line summary — usually the first line of the reflection body.
+    pub content: String,
+    /// Promotion-threshold score, 0.0-1.0.
+    pub significance: f64,
+    /// Strand tags — small list, dimensionality-free.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub strands: Vec<String>,
+    /// When the underlying session turn happened.
+    pub created_at: DateTime<Utc>,
+    /// TTL gate — reads filter via `h.expires > datetime()`. Unlike `Step`,
+    /// this field is mandatory for `HotMemo`: everything here is ephemeral.
+    pub expires: DateTime<Utc>,
+}
+
 // ============================================================================
 // Supporting Types
 // ============================================================================

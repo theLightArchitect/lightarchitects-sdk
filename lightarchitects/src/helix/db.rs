@@ -266,6 +266,36 @@ pub trait HelixDb: Send + Sync {
         Ok(())
     }
 
+    /// Phase 18 — upsert a Tier-1 ephemeral `:HotMemo` node.
+    ///
+    /// `MERGE` on `id` so repeated writes (NDJSON replay, retry-on-network)
+    /// are idempotent. Properties are overwritten on every call so a later
+    /// promotion pipeline can bump significance / extend strands without
+    /// creating a second hot node.
+    ///
+    /// Default implementation returns `Ok(())` — backends without graph
+    /// support silently no-op so webshell dual-write never errors out when
+    /// the Neo4j tier is absent.
+    async fn create_hot_memo(
+        &self,
+        _memo: &crate::helix::types::HotMemo,
+    ) -> Result<(), HelixDbError> {
+        Ok(())
+    }
+
+    /// Phase 18 — list hot memos, newest-first, filtered by TTL.
+    ///
+    /// The default implementation returns an empty vec; the `HelixNeo4j`
+    /// backend runs a `MATCH (h:HotMemo) WHERE h.expires > datetime() …`
+    /// query keyed off [`crate::helix::migrations`] v9 indexes.
+    async fn query_hot_memos(
+        &self,
+        _sibling: Option<&str>,
+        _limit: u32,
+    ) -> Result<Vec<crate::helix::types::HotMemo>, HelixDbError> {
+        Ok(Vec::new())
+    }
+
     /// Batch-assign steps to a named strand — single UNWIND round-trip.
     ///
     /// Domain-agnostic: `strand_name` is caller-defined (e.g. `"preference"`,
@@ -579,6 +609,9 @@ pub const HELIX_REL_TYPES: &[&str] = &[
     "PLAN_FOR_BUILD",
     "REVIEWS_PLAN",
     "LESSON_FROM_ENTRY",
+    // Phase 18 — hot→cold lineage edge.
+    // MATERIALIZED_FROM: step (cold) → hot_memo (promoted source).
+    "MATERIALIZED_FROM",
 ];
 
 // ============================================================================
@@ -1657,6 +1690,118 @@ impl HelixDb for HelixNeo4j {
         self.timed_execute("set_step_embedding", cypher, params)
             .await?;
         Ok(())
+    }
+
+    #[instrument(skip(self, memo), fields(neo4j.operation = "create_hot_memo", id = %memo.id))]
+    async fn create_hot_memo(
+        &self,
+        memo: &crate::helix::types::HotMemo,
+    ) -> Result<(), HelixDbError> {
+        let cypher = "MERGE (h:HotMemo {id: $id}) \
+             SET h.sibling = $sibling, \
+                 h.content = $content, \
+                 h.significance = $significance, \
+                 h.strands = $strands, \
+                 h.created_at = datetime($created_at), \
+                 h.expires = datetime($expires)";
+        let strands_json: Vec<serde_json::Value> =
+            memo.strands.iter().map(|s| serde_json::json!(s)).collect();
+        let mut params = BTreeMap::new();
+        params.insert("id".into(), serde_json::json!(memo.id));
+        params.insert("sibling".into(), serde_json::json!(memo.sibling));
+        params.insert("content".into(), serde_json::json!(memo.content));
+        params.insert("significance".into(), serde_json::json!(memo.significance));
+        params.insert("strands".into(), serde_json::json!(strands_json));
+        params.insert(
+            "created_at".into(),
+            serde_json::json!(memo.created_at.to_rfc3339()),
+        );
+        params.insert(
+            "expires".into(),
+            serde_json::json!(memo.expires.to_rfc3339()),
+        );
+        self.timed_execute("create_hot_memo", cypher, params)
+            .await?;
+        Ok(())
+    }
+
+    #[instrument(skip(self), fields(neo4j.operation = "query_hot_memos", limit = limit))]
+    async fn query_hot_memos(
+        &self,
+        sibling: Option<&str>,
+        limit: u32,
+    ) -> Result<Vec<crate::helix::types::HotMemo>, HelixDbError> {
+        // Filter by sibling when supplied; always gate on the TTL so expired
+        // memos drop out of the list without requiring a compaction pass.
+        let cypher = "MATCH (h:HotMemo) \
+             WHERE h.expires > datetime() \
+               AND ($sibling IS NULL OR h.sibling = $sibling) \
+             RETURN h.id AS id, h.sibling AS sibling, h.content AS content, \
+                    h.significance AS significance, h.strands AS strands, \
+                    toString(h.created_at) AS created_at, \
+                    toString(h.expires) AS expires \
+             ORDER BY h.created_at DESC \
+             LIMIT $limit";
+        let mut params = BTreeMap::new();
+        params.insert(
+            "sibling".into(),
+            sibling.map_or(serde_json::Value::Null, |s| serde_json::json!(s)),
+        );
+        params.insert("limit".into(), serde_json::json!(i64::from(limit)));
+
+        let records = self
+            .timed_execute("query_hot_memos", cypher, params)
+            .await?;
+        let mut out = Vec::with_capacity(records.len());
+        for r in records {
+            let Some(id) = r.get("id").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let Some(sibling) = r.get("sibling").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let content = r
+                .get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_owned();
+            let significance = r
+                .get("significance")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0);
+            let strands: Vec<String> = r
+                .get("strands")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let created_at = r
+                .get("created_at")
+                .and_then(|v| v.as_str())
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc));
+            let expires = r
+                .get("expires")
+                .and_then(|v| v.as_str())
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc));
+            let (Some(created_at), Some(expires)) = (created_at, expires) else {
+                continue;
+            };
+            out.push(crate::helix::types::HotMemo {
+                id: id.to_owned(),
+                sibling: sibling.to_owned(),
+                content,
+                significance,
+                strands,
+                created_at,
+                expires,
+            });
+        }
+        Ok(out)
     }
 
     #[instrument(skip(self, steps), fields(neo4j.operation = "batch_upsert_steps", count = steps.len()))]

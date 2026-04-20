@@ -516,7 +516,25 @@ pub async fn entry_handler(
     }
 }
 
-/// `GET /api/soul/memory/hot` — snapshot of active-session turnlog memos.
+/// Default TTL for a newly-materialised `:HotMemo` — 24 hours from `created_at`.
+///
+/// Phase 18B ships with a fixed TTL; Phase 19's promotion-policy engine will
+/// replace this with a per-sibling + per-strand decay curve.
+const HOT_MEMO_TTL_SECS: i64 = 24 * 60 * 60;
+
+/// `GET /api/soul/memory/hot` — Phase-18B dual-write hot-tier handler.
+///
+/// Read order:
+///   1. Walk NDJSON via [`hot::snapshot_hot`] — always the ground truth.
+///   2. If Neo4j is attached, `MERGE` each memo into a `:HotMemo` node so
+///      subsequent graph-native queries (Phase 20) see them without waiting
+///      for a separate promotion pass. Failures here are non-fatal: the
+///      handler still returns the filesystem projection.
+///   3. Respond with the NDJSON snapshot — the UI contract is unchanged.
+///
+/// The `:HotMemo` nodes carry a `expires = created_at + HOT_MEMO_TTL_SECS`
+/// property so [`HelixDb::query_hot_memos`] can TTL-gate without a compaction
+/// pass. Phase 19 will replace the fixed TTL with a per-sibling decay curve.
 #[allow(clippy::missing_panics_doc)]
 pub async fn hot_memory_handler(
     headers: axum::http::HeaderMap,
@@ -531,6 +549,43 @@ pub async fn hot_memory_handler(
     };
     let limit = q.limit.unwrap_or(50).min(200) as usize;
     let memos = hot::snapshot_hot(&layout, limit).await;
+
+    // Phase 18B — dual-write each projected memo into Neo4j's :HotMemo tier
+    // when the graph is attached. Fire-and-forget: errors don't block the
+    // response. Idempotent via MERGE on `id`.
+    if let Some(soul) = state.soul_store.as_ref() {
+        if let Some(neo4j) = soul.neo4j_arc().await {
+            let memos_to_sync = memos.clone();
+            tokio::spawn(async move {
+                let db = neo4j.helix_db();
+                for m in &memos_to_sync {
+                    let Ok(created_at) = chrono::DateTime::parse_from_rfc3339(&m.created_at) else {
+                        continue;
+                    };
+                    let created_at = created_at.with_timezone(&chrono::Utc);
+                    let expires = created_at + chrono::Duration::seconds(HOT_MEMO_TTL_SECS);
+                    let hot = lightarchitects::helix::types::HotMemo {
+                        id: m.id.clone(),
+                        sibling: m.sibling.clone(),
+                        content: m.content.clone(),
+                        significance: f64::from(m.significance),
+                        strands: m.strands.clone(),
+                        created_at,
+                        expires,
+                    };
+                    if let Err(e) = db.create_hot_memo(&hot).await {
+                        tracing::debug!(
+                            target: "soul.hot_sync",
+                            id = %m.id,
+                            error = %e,
+                            "create_hot_memo failed — filesystem remains authoritative"
+                        );
+                    }
+                }
+            });
+        }
+    }
+
     Json(MemoryListResponse { memos }).into_response()
 }
 
