@@ -61,6 +61,7 @@
 pub mod chain;
 pub mod entry;
 pub mod error;
+pub mod policy;
 pub mod projection;
 pub mod promotion;
 pub mod query;
@@ -71,9 +72,11 @@ pub mod writer;
 
 pub use entry::{EntryKind, TurnEntry};
 pub use error::{Result, TurnLogError};
+pub use policy::{PolicyHandle, PolicyWatcher, PromotionPolicy, SiblingPolicy};
 pub use promotion::{
     HelixPromoter, PromotionCandidate, PromotionOutcome, PromotionReason, SiblingPromoter,
-    promote_session, promote_session_with_pepper,
+    promote_session, promote_session_with_pepper, promote_session_with_policy,
+    promote_session_with_policy_and_pepper,
 };
 pub use reader::{ResumableSession, SessionSummary, TurnLogReader};
 pub use store::StoreLayout;

@@ -91,14 +91,25 @@ impl TurnEntry {
 
     /// Whether this entry is a candidate for Tier-2 helix promotion.
     ///
-    /// Policy-driven promotion lives in [`lightarchitects::turnlog::promotion`]. This method
-    /// identifies entries that are *eligible* for consideration.
+    /// Uses the compile-time [`crate::turnlog::promotion::SIGNIFICANCE_AUTO_FLOOR`].
+    /// For policy-aware callers that read the floor from a hot-reloadable YAML
+    /// config, use [`Self::is_helix_promotable_with_floor`] instead.
     #[must_use]
     pub fn is_helix_promotable(&self) -> bool {
-        // Phase 19a: extend eligibility to Phase-19 typed triggers plus the
-        // generic "significance-threshold" path. An entry qualifies when its
-        // kind is a known promotable class, OR when its metadata declares a
-        // significance value at or above the floor (`SIGNIFICANCE_AUTO_FLOOR`).
+        self.is_helix_promotable_with_floor(crate::turnlog::promotion::SIGNIFICANCE_AUTO_FLOOR)
+    }
+
+    /// Whether this entry is a candidate for Tier-2 helix promotion given a
+    /// specific significance `floor`.
+    ///
+    /// An entry qualifies when its kind is a known promotable class
+    /// (`Reflection`, `SessionPaused`, `BuildComplete`, `ScrumVerdict`), OR
+    /// when its metadata declares `significance >= floor`.
+    ///
+    /// This is the floor-parameterised variant used by policy-aware promotion
+    /// paths (see [`crate::turnlog::policy::PromotionPolicy::floor_for`]).
+    #[must_use]
+    pub fn is_helix_promotable_with_floor(&self, floor: f64) -> bool {
         let kind = self.kind();
         if matches!(
             kind,
@@ -113,7 +124,7 @@ impl TurnEntry {
             .metadata
             .get("significance")
             .and_then(serde_json::Value::as_f64)
-            .is_some_and(|v| v >= crate::turnlog::promotion::SIGNIFICANCE_AUTO_FLOOR)
+            .is_some_and(|v| v >= floor)
     }
 }
 

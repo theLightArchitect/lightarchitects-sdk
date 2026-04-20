@@ -108,6 +108,16 @@ pub struct AppState {
     /// entries ingested from Claude Code are immediately visible here without
     /// an extra fetch layer.
     pub soul_store: Option<Arc<crate::memory::persistence::SoulPersistence>>,
+    /// Phase 19c.2 — hot-reloadable promotion policy handle.
+    ///
+    /// `None` when the policy YAML could not be resolved (e.g. `HOME` unavailable).
+    /// Threads through to `WebshellTurnLog::with_policy` at session open so
+    /// promotion floors stay current without a server restart.
+    pub promotion_policy: Option<lightarchitects::turnlog::PolicyHandle>,
+    /// Keeps the `notify` file-system subscription alive for the lifetime of the
+    /// server.  Intentionally not exposed — callers read through `promotion_policy`.
+    /// Wrapped in `Arc` so `AppState` can derive `Clone` (watcher itself is not `Clone`).
+    _policy_watcher: Option<std::sync::Arc<lightarchitects::turnlog::PolicyWatcher>>,
     /// Phase 17b — lazily-initialised embedding provider used by the
     /// semantic/hybrid search paths. First call from `search_handler`
     /// boots `FastEmbedProvider::try_new(Default)` on the blocking pool;
@@ -132,6 +142,17 @@ impl AppState {
         let pepper = load_turnlog_pepper();
         let active_agent = Arc::new(RwLock::new(config.agent.clone()));
         let soul_store = Some(Arc::new(crate::memory::persistence::SoulPersistence::open()));
+
+        // Phase 19c.2 — hot-reloadable promotion policy.
+        // Gracefully absent when the YAML file doesn't exist yet.
+        let (promotion_policy, policy_watcher) =
+            lightarchitects::turnlog::PolicyWatcher::default_path().map_or(
+                (None, None),
+                |p| {
+                    let (h, w) = lightarchitects::turnlog::PolicyWatcher::spawn(&p);
+                    (Some(h), Some(std::sync::Arc::new(w)))
+                },
+            );
 
         // Phase 11.1 — auto-backfill SQLite from filesystem on startup.
         // Phase 11.3 — attach Neo4j if WEBSHELL_NEO4J_URI is set + reachable.
@@ -185,6 +206,8 @@ impl AppState {
             builds: Arc::new(BuildRegistry::new()),
             active_agent,
             soul_store,
+            promotion_policy,
+            _policy_watcher: policy_watcher,
             embedding_provider: Arc::new(tokio::sync::OnceCell::new()),
         }
     }
@@ -265,6 +288,8 @@ impl AppState {
             builds: Arc::new(BuildRegistry::new()),
             active_agent,
             soul_store: None,
+            promotion_policy: None,
+            _policy_watcher: None,
             embedding_provider: Arc::new(tokio::sync::OnceCell::new()),
         }
     }

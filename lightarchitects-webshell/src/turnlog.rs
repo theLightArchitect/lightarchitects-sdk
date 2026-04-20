@@ -7,7 +7,9 @@
 
 use lightarchitects::ayin::span::{Actor, TraceContext, TraceOutcome};
 use lightarchitects::turnlog::promotion::SiblingPromoter;
-use lightarchitects::turnlog::{EndReason, StoreLayout, TurnLogWriter, promote_session};
+use lightarchitects::turnlog::{
+    EndReason, PolicyHandle, StoreLayout, TurnLogWriter, promote_session_with_policy,
+};
 use secrecy::SecretSlice;
 use std::path::PathBuf;
 use tokio::sync::broadcast;
@@ -42,6 +44,12 @@ pub struct WebshellTurnLog {
     /// successful helix entry into `SOUL` `SQLite` so subsequent `SOUL` `MCP`
     /// queries see it immediately.
     soul: Option<Arc<SoulPersistence>>,
+    /// Phase 19c.2 — hot-reloadable promotion policy handle.
+    ///
+    /// When `Some`, `close()` uses the policy's per-sibling significance floor
+    /// instead of the compile-time `SIGNIFICANCE_AUTO_FLOOR` constant.
+    /// `None` falls back to the compile-time default.
+    policy: Option<PolicyHandle>,
 }
 
 impl WebshellTurnLog {
@@ -86,6 +94,7 @@ impl WebshellTurnLog {
                     enable_promotion: true,
                     event_tx,
                     soul,
+                    policy: None,
                 }))
             }
             Err(e) => {
@@ -124,7 +133,18 @@ impl WebshellTurnLog {
             enable_promotion: false,
             event_tx: None,
             soul: None,
+            policy: None,
         })
+    }
+
+    /// Attach a hot-reloadable promotion policy (Phase 19c.2).
+    ///
+    /// When set, [`Self::close`] uses the policy's per-sibling significance
+    /// floor instead of the compile-time constant.
+    #[must_use]
+    pub fn with_policy(mut self, policy: PolicyHandle) -> Self {
+        self.policy = Some(policy);
+        self
     }
 
     /// Append a PTY session event (tool call, span, etc.).
@@ -160,6 +180,7 @@ impl WebshellTurnLog {
             let session_id = self.session_id;
             let event_tx = self.event_tx;
             let soul = self.soul;
+            let policy = self.policy;
             tokio::spawn(async move {
                 let base = SiblingPromoter::default_for_user("webshell");
                 match event_tx {
@@ -168,10 +189,24 @@ impl WebshellTurnLog {
                         if let Some(soul) = soul {
                             bridged = bridged.with_soul(soul);
                         }
-                        promote_session(&layout, &session_id, &bridged).await;
+                        promote_session_with_policy(
+                            &layout,
+                            &session_id,
+                            &bridged,
+                            "webshell",
+                            policy.as_ref(),
+                        )
+                        .await;
                     }
                     None => {
-                        promote_session(&layout, &session_id, &base).await;
+                        promote_session_with_policy(
+                            &layout,
+                            &session_id,
+                            &base,
+                            "webshell",
+                            policy.as_ref(),
+                        )
+                        .await;
                     }
                 }
             });

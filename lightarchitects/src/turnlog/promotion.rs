@@ -375,6 +375,191 @@ pub async fn promote_session_with_pepper<P: HelixPromoter>(
     }
 }
 
+// ── Policy-aware promotion ────────────────────────────────────────────────────
+
+/// Like [`promote_session_with_pepper`] but reads the significance floor from a
+/// hot-reloadable [`crate::turnlog::policy::PolicyHandle`].
+///
+/// `sibling` is the sibling name (e.g. `"webshell"`, `"corso"`) used to look up
+/// per-sibling overrides in the policy.  `policy = None` falls back to the
+/// compile-time [`SIGNIFICANCE_AUTO_FLOOR`].
+pub async fn promote_session_with_policy<P: HelixPromoter>(
+    layout: &StoreLayout,
+    session_id: &str,
+    promoter: &P,
+    sibling: &str,
+    policy: Option<&crate::turnlog::policy::PolicyHandle>,
+) {
+    promote_session_with_policy_and_pepper(layout, session_id, promoter, sibling, policy, None)
+        .await;
+}
+
+/// Full policy-aware promotion with optional HMAC pepper for chain verification.
+///
+/// Combines the per-sibling significance floor from `policy` with the optional
+/// HMAC chain verification from `pepper`.  When both are `None` this is
+/// equivalent to [`promote_session`].
+pub async fn promote_session_with_policy_and_pepper<P: HelixPromoter>(
+    layout: &StoreLayout,
+    session_id: &str,
+    promoter: &P,
+    sibling: &str,
+    policy: Option<&crate::turnlog::policy::PolicyHandle>,
+    pepper: Option<&secrecy::SecretSlice<u8>>,
+) {
+    // Read the effective floor once; the lock is released immediately.
+    let floor = policy
+        .and_then(|p| p.read().ok())
+        .map_or(SIGNIFICANCE_AUTO_FLOOR, |guard| guard.floor_for(sibling));
+
+    let reader = TurnLogReader::new(layout.clone());
+
+    let entries = if let Some(pepper) = pepper {
+        match reader.read_all_verified(session_id, pepper).await {
+            Ok((entries, _last_seq)) => entries,
+            Err(e) => {
+                warn!(
+                    target: "turnlog",
+                    %e,
+                    session_id,
+                    "promote(policy): ended session failed chain verification — skipping"
+                );
+                return;
+            }
+        }
+    } else {
+        match reader.read_all(session_id).await {
+            Ok(entries) => entries,
+            Err(e) => {
+                warn!(
+                    target: "turnlog",
+                    %e,
+                    session_id,
+                    "promote(policy): failed to read ended session — skipping"
+                );
+                return;
+            }
+        }
+    };
+
+    let mut promotion_count = 0u32;
+
+    for entry in entries {
+        if !entry.is_helix_promotable_with_floor(floor) {
+            continue;
+        }
+
+        let marker = layout.promoted_marker_path(session_id, entry.seq);
+        if marker.exists() {
+            continue;
+        }
+
+        let seq = entry.seq;
+        let reason = promotion_reason_for_with_floor(&entry, floor);
+        let candidate = PromotionCandidate {
+            entry,
+            session_id: session_id.to_owned(),
+            project_root: PathBuf::from("."),
+            reason,
+            window: None,
+        };
+
+        match promoter.promote(candidate).await {
+            Ok(PromotionOutcome::Promoted { helix_path }) => {
+                if let Err(e) =
+                    tokio::fs::write(&marker, helix_path.to_string_lossy().as_bytes()).await
+                {
+                    warn!(target: "turnlog", %e, session_id, seq, "promote(policy): failed to write marker");
+                } else {
+                    promotion_count += 1;
+                }
+            }
+            Ok(PromotionOutcome::Declined { reason }) => {
+                tracing::debug!(target: "turnlog", session_id, seq, reason, "promote(policy): declined");
+            }
+            Err(e) => {
+                warn!(target: "turnlog", %e, session_id, seq, "promote(policy): error");
+            }
+        }
+    }
+
+    if promotion_count > 0 {
+        info!(
+            target: "turnlog",
+            session_id,
+            promotion_count,
+            floor,
+            "helix entries written after session close (policy-aware)"
+        );
+    }
+}
+
+/// Like [`promotion_reason_for`] but uses `floor` instead of [`SIGNIFICANCE_AUTO_FLOOR`].
+fn promotion_reason_for_with_floor(entry: &TurnEntry, floor: f64) -> PromotionReason {
+    use crate::turnlog::entry::EntryKind;
+    match entry.kind() {
+        EntryKind::BuildComplete => {
+            let build_id = entry
+                .span
+                .metadata
+                .get("build_id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("(unknown)")
+                .to_owned();
+            let status = entry
+                .span
+                .metadata
+                .get("status")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("completed")
+                .to_owned();
+            PromotionReason::BuildComplete { build_id, status }
+        }
+        EntryKind::ScrumVerdict => {
+            let plan_ids = entry
+                .span
+                .metadata
+                .get("plan_ids")
+                .and_then(serde_json::Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+            PromotionReason::ScrumVerdict { plan_ids }
+        }
+        EntryKind::SessionPaused => PromotionReason::PausedMemo,
+        EntryKind::Reflection => {
+            let weight = entry
+                .span
+                .metadata
+                .get("weight")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(7.0);
+            PromotionReason::SignificantReflection { weight }
+        }
+        _ => {
+            if let Some(observed) = entry
+                .span
+                .metadata
+                .get("significance")
+                .and_then(serde_json::Value::as_f64)
+            {
+                if observed >= floor {
+                    return PromotionReason::SignificanceAbove {
+                        threshold: floor,
+                        observed,
+                    };
+                }
+            }
+            PromotionReason::AutoDetected {
+                detector: "turnlog_promotion",
+            }
+        }
+    }
+}
+
 // ── Atomic write ─────────────────────────────────────────────────────────────
 
 /// Derive significance, entry type, and representative strands from the reason.

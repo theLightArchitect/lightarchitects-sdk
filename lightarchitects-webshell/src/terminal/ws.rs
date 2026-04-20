@@ -88,7 +88,7 @@ pub async fn ws_handler(
             let turnlog = if pepper.expose_secret().is_empty() {
                 None
             } else {
-                crate::turnlog::WebshellTurnLog::open(
+                let tl = crate::turnlog::WebshellTurnLog::open(
                     session_id,
                     cwd,
                     &host_cmd_str,
@@ -98,7 +98,15 @@ pub async fn ws_handler(
                 )
                 .await
                 .ok()
-                .flatten()
+                .flatten();
+                // Phase 19c.2 — attach hot-reload policy when available.
+                tl.map(|t| {
+                    if let Some(policy) = state.promotion_policy.clone() {
+                        t.with_policy(policy)
+                    } else {
+                        t
+                    }
+                })
             };
             session::run_session(socket, config, None, guard).await;
             if let Some(tl) = turnlog {
