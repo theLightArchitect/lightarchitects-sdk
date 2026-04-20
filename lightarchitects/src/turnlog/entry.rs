@@ -95,10 +95,25 @@ impl TurnEntry {
     /// identifies entries that are *eligible* for consideration.
     #[must_use]
     pub fn is_helix_promotable(&self) -> bool {
-        matches!(
-            self.kind(),
-            EntryKind::Reflection | EntryKind::SessionPaused
-        )
+        // Phase 19a: extend eligibility to Phase-19 typed triggers plus the
+        // generic "significance-threshold" path. An entry qualifies when its
+        // kind is a known promotable class, OR when its metadata declares a
+        // significance value at or above the floor (`SIGNIFICANCE_AUTO_FLOOR`).
+        let kind = self.kind();
+        if matches!(
+            kind,
+            EntryKind::Reflection
+                | EntryKind::SessionPaused
+                | EntryKind::BuildComplete
+                | EntryKind::ScrumVerdict
+        ) {
+            return true;
+        }
+        self.span
+            .metadata
+            .get("significance")
+            .and_then(serde_json::Value::as_f64)
+            .is_some_and(|v| v >= crate::turnlog::promotion::SIGNIFICANCE_AUTO_FLOOR)
     }
 }
 
@@ -138,6 +153,12 @@ pub enum EntryKind {
     SessionResumed,
     /// Clean session shutdown (`session_ended`).
     SessionEnded,
+    /// CORSO build finished — Phase 19 typed trigger (`build_complete`).
+    /// Carries `build_id`, `status`, `plan_ids` in span metadata.
+    BuildComplete,
+    /// SCRUM review verdict — Phase 19 typed trigger (`scrum_verdict`).
+    /// Carries `plan_ids: [...]` in span metadata for REVIEWS_PLAN edge wire-up.
+    ScrumVerdict,
     /// Any action not matched by the variants above.
     Other(String),
 }
@@ -160,6 +181,8 @@ impl EntryKind {
             "session_paused" => Self::SessionPaused,
             "session_resumed" => Self::SessionResumed,
             "session_ended" => Self::SessionEnded,
+            "build_complete" => Self::BuildComplete,
+            "scrum_verdict" => Self::ScrumVerdict,
             other => Self::Other(other.to_owned()),
         }
     }
@@ -183,6 +206,8 @@ impl EntryKind {
             Self::SessionPaused => "session_paused",
             Self::SessionResumed => "session_resumed",
             Self::SessionEnded => "session_ended",
+            Self::BuildComplete => "build_complete",
+            Self::ScrumVerdict => "scrum_verdict",
             Self::Other(s) => s.as_str(),
         }
     }

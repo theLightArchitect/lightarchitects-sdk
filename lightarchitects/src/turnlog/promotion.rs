@@ -37,6 +37,13 @@ pub struct PromotionCandidate {
     pub window: Option<Vec<TurnEntry>>,
 }
 
+/// Significance floor for the `SignificanceAbove` trigger (Phase 19a).
+///
+/// An entry with `metadata.significance >= SIGNIFICANCE_AUTO_FLOOR` auto-
+/// promotes even when its [`EntryKind`] isn't in the explicit promotable list.
+/// Matches the Builders Cookbook ≥7.0 "enrich" threshold.
+pub const SIGNIFICANCE_AUTO_FLOOR: f64 = 7.0;
+
 /// Why a candidate was surfaced for promotion.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -54,6 +61,33 @@ pub enum PromotionReason {
     AutoDetected {
         /// Name of the detector that surfaced this candidate.
         detector: &'static str,
+    },
+    /// Phase 19a — CORSO build finished. The span carries `build_id`,
+    /// `status`, and the associated plan slug(s); downstream wiring creates
+    /// a `:Step` with `entry_type = "build-outcome"` and a `PLAN_FOR_BUILD`
+    /// edge when the plan target resolves.
+    BuildComplete {
+        /// CORSO build identifier (UUID or slug).
+        build_id: String,
+        /// Exit status — `"passed"`, `"failed"`, `"cancelled"`, etc.
+        status: String,
+    },
+    /// Phase 19a — SCRUM assessment verdict. Promotes as a `Review` Step
+    /// with `REVIEWS_PLAN` edges back to each referenced plan id.
+    ScrumVerdict {
+        /// Plan identifiers referenced by the review's front-matter.
+        plan_ids: Vec<String>,
+    },
+    /// Phase 19a — generic significance-threshold trigger. Catches any entry
+    /// whose metadata declares `significance >= threshold`, even when its
+    /// kind wouldn't otherwise qualify. `threshold` is the floor applied;
+    /// `observed` is the entry's actual value (both useful for telemetry
+    /// + the promoted Step's frontmatter).
+    SignificanceAbove {
+        /// The cutoff applied at classification time.
+        threshold: f64,
+        /// The observed value from the entry's metadata.
+        observed: f64,
     },
 }
 
@@ -159,10 +193,51 @@ impl HelixPromoter for SiblingPromoter {
 
 // ── Session promotion ─────────────────────────────────────────────────────────
 
-/// Derive a [`PromotionReason`] from an entry's semantic kind.
+/// Derive a [`PromotionReason`] from an entry's semantic kind + metadata.
+///
+/// Phase 19a ordering:
+///   1. `BuildComplete` / `ScrumVerdict` — explicit typed triggers beat
+///      generic thresholds so their richer Step frontmatter (build_id,
+///      plan_ids) doesn't get overwritten by a `SignificantReflection` fallback.
+///   2. `SessionPaused` — intrinsic promotion.
+///   3. `Reflection` — weight-keyed significance.
+///   4. `significance >= SIGNIFICANCE_AUTO_FLOOR` in metadata — generic
+///      threshold trigger.
+///   5. `AutoDetected` — last-resort detector label.
 fn promotion_reason_for(entry: &TurnEntry) -> PromotionReason {
     use crate::turnlog::entry::EntryKind;
     match entry.kind() {
+        EntryKind::BuildComplete => {
+            let build_id = entry
+                .span
+                .metadata
+                .get("build_id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("(unknown)")
+                .to_owned();
+            let status = entry
+                .span
+                .metadata
+                .get("status")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("completed")
+                .to_owned();
+            PromotionReason::BuildComplete { build_id, status }
+        }
+        EntryKind::ScrumVerdict => {
+            let plan_ids = entry
+                .span
+                .metadata
+                .get("plan_ids")
+                .and_then(serde_json::Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+            PromotionReason::ScrumVerdict { plan_ids }
+        }
         EntryKind::SessionPaused => PromotionReason::PausedMemo,
         EntryKind::Reflection => {
             let weight = entry
@@ -173,9 +248,26 @@ fn promotion_reason_for(entry: &TurnEntry) -> PromotionReason {
                 .unwrap_or(7.0);
             PromotionReason::SignificantReflection { weight }
         }
-        _ => PromotionReason::AutoDetected {
-            detector: "turnlog_promotion",
-        },
+        _ => {
+            // Generic threshold fallback — an `Other(_)` or `Span` entry that
+            // explicitly declares high significance still promotes.
+            if let Some(observed) = entry
+                .span
+                .metadata
+                .get("significance")
+                .and_then(serde_json::Value::as_f64)
+            {
+                if observed >= SIGNIFICANCE_AUTO_FLOOR {
+                    return PromotionReason::SignificanceAbove {
+                        threshold: SIGNIFICANCE_AUTO_FLOOR,
+                        observed,
+                    };
+                }
+            }
+            PromotionReason::AutoDetected {
+                detector: "turnlog_promotion",
+            }
+        }
     }
 }
 
@@ -286,6 +378,20 @@ pub async fn promote_session_with_pepper<P: HelixPromoter>(
 // ── Atomic write ─────────────────────────────────────────────────────────────
 
 /// Derive significance, entry type, and representative strands from the reason.
+///
+/// Entry types map to the UI's typed-output taxonomy (`MemoryDrawer` kind
+/// chips, Phase 14.3) and to the graph-side typed-edge classifier
+/// (`REVIEWS_PLAN` / `PLAN_FOR_BUILD`, Phase 14.2):
+///
+/// | Reason                 | Entry type      | Sig  | Typed edge             |
+/// |------------------------|-----------------|------|------------------------|
+/// | `PausedMemo`           | `experience`    | 6.0  | —                      |
+/// | `SignificantReflection`| `experience`    | wt.  | —                      |
+/// | `UserFlagged`          | `milestone`     | 7.5  | —                      |
+/// | `AutoDetected`         | `experience`    | 7.0  | —                      |
+/// | `BuildComplete`        | `build-outcome` | 7.2  | `PLAN_FOR_BUILD` later |
+/// | `ScrumVerdict`         | `review`        | 7.5  | `REVIEWS_PLAN` later   |
+/// | `SignificanceAbove`    | `experience`    | obs. | —                      |
 fn classify_reason(reason: &PromotionReason) -> (f64, &'static str, &'static [&'static str]) {
     match reason {
         PromotionReason::PausedMemo => (6.0, "experience", &["Methodical", "Contextual"]),
@@ -294,6 +400,13 @@ fn classify_reason(reason: &PromotionReason) -> (f64, &'static str, &'static [&'
         }
         PromotionReason::UserFlagged => (7.5, "milestone", &["Candid", "Collaborative"]),
         PromotionReason::AutoDetected { .. } => (7.0, "experience", &["Analytical", "Precision"]),
+        PromotionReason::BuildComplete { .. } => {
+            (7.2, "build-outcome", &["Methodical", "Precision"])
+        }
+        PromotionReason::ScrumVerdict { .. } => (7.5, "review", &["Candid", "Analytical"]),
+        PromotionReason::SignificanceAbove { observed, .. } => {
+            (*observed, "experience", &["Analytical", "Contextual"])
+        }
     }
 }
 
@@ -438,6 +551,148 @@ mod tests {
         let (sig, entry_type, _) = classify_reason(&PromotionReason::UserFlagged);
         assert!((sig - 7.5).abs() < f64::EPSILON);
         assert_eq!(entry_type, "milestone");
+    }
+
+    // ── Phase 19a — typed promotion triggers ─────────────────────────────
+
+    #[test]
+    fn classify_reason_build_complete_is_build_outcome() {
+        let r = PromotionReason::BuildComplete {
+            build_id: "b1".into(),
+            status: "passed".into(),
+        };
+        let (sig, kind, strands) = classify_reason(&r);
+        assert!((sig - 7.2).abs() < f64::EPSILON);
+        assert_eq!(kind, "build-outcome");
+        assert!(strands.contains(&"Methodical"));
+    }
+
+    #[test]
+    fn classify_reason_scrum_verdict_is_review_with_candid_strand() {
+        let r = PromotionReason::ScrumVerdict {
+            plan_ids: vec!["unified-forging-vault".into()],
+        };
+        let (sig, kind, strands) = classify_reason(&r);
+        assert!((sig - 7.5).abs() < f64::EPSILON);
+        assert_eq!(kind, "review");
+        assert!(strands.contains(&"Candid"));
+    }
+
+    #[test]
+    fn classify_reason_significance_above_passes_observed_value_through() {
+        // Observed value drives the resulting Step significance verbatim.
+        let r = PromotionReason::SignificanceAbove {
+            threshold: 7.0,
+            observed: 9.3,
+        };
+        let (sig, kind, _) = classify_reason(&r);
+        assert!((sig - 9.3).abs() < f64::EPSILON);
+        assert_eq!(kind, "experience");
+    }
+
+    #[test]
+    fn significance_auto_floor_matches_enrich_threshold() {
+        // Builders Cookbook calls ≥7.0 the "enrich" line. Our SIGNIFICANCE_AUTO_FLOOR
+        // must match so auto-promotion and enrich-trigger semantics align.
+        assert!((SIGNIFICANCE_AUTO_FLOOR - 7.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn promotion_reason_for_recognises_build_complete() {
+        use crate::ayin::span::{Actor, TraceContext, TraceOutcome};
+        use crate::turnlog::entry::{EntryKind, TurnEntry};
+
+        let span = TraceContext::new(Actor::new("corso"), "build_complete")
+            .session_id("s-build-1")
+            .outcome(TraceOutcome::Continue)
+            .metadata(serde_json::json!({
+                "build_id": "phase-19a-test",
+                "status": "passed",
+            }))
+            .finish()
+            .expect("build_complete span");
+        let entry = TurnEntry {
+            seq: 0,
+            parent_seq: None,
+            span,
+            hmac_prev: "0".repeat(64),
+            hmac_self: "0".repeat(64),
+        };
+        assert!(matches!(entry.kind(), EntryKind::BuildComplete));
+        assert!(
+            entry.is_helix_promotable(),
+            "BuildComplete must be promotable"
+        );
+
+        match promotion_reason_for(&entry) {
+            PromotionReason::BuildComplete { build_id, status } => {
+                assert_eq!(build_id, "phase-19a-test");
+                assert_eq!(status, "passed");
+            }
+            other => panic!("expected BuildComplete, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn promotion_reason_for_significance_above_floor_auto_promotes() {
+        // A span with action="span" (normally non-promotable) gets picked up
+        // when metadata.significance >= SIGNIFICANCE_AUTO_FLOOR.
+        use crate::ayin::span::{Actor, TraceContext, TraceOutcome};
+        use crate::turnlog::entry::TurnEntry;
+
+        let span = TraceContext::new(Actor::new("eva"), "span")
+            .session_id("s-sig-1")
+            .outcome(TraceOutcome::Continue)
+            .metadata(serde_json::json!({ "significance": 8.4 }))
+            .finish()
+            .expect("high-sig span");
+        let entry = TurnEntry {
+            seq: 0,
+            parent_seq: None,
+            span,
+            hmac_prev: "0".repeat(64),
+            hmac_self: "0".repeat(64),
+        };
+        assert!(
+            entry.is_helix_promotable(),
+            "significance≥floor entry must be promotable"
+        );
+        match promotion_reason_for(&entry) {
+            PromotionReason::SignificanceAbove {
+                threshold,
+                observed,
+            } => {
+                assert!((threshold - SIGNIFICANCE_AUTO_FLOOR).abs() < f64::EPSILON);
+                assert!((observed - 8.4).abs() < f64::EPSILON);
+            }
+            other => panic!("expected SignificanceAbove, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn promotion_reason_for_low_significance_span_not_promotable() {
+        // Ensure the threshold really gates — a 6.9-significance span is NOT
+        // promotable.
+        use crate::ayin::span::{Actor, TraceContext, TraceOutcome};
+        use crate::turnlog::entry::TurnEntry;
+
+        let span = TraceContext::new(Actor::new("eva"), "span")
+            .session_id("s-low-1")
+            .outcome(TraceOutcome::Continue)
+            .metadata(serde_json::json!({ "significance": 6.9 }))
+            .finish()
+            .expect("low-sig span");
+        let entry = TurnEntry {
+            seq: 0,
+            parent_seq: None,
+            span,
+            hmac_prev: "0".repeat(64),
+            hmac_self: "0".repeat(64),
+        };
+        assert!(
+            !entry.is_helix_promotable(),
+            "significance<floor must NOT be promotable"
+        );
     }
 
     #[test]
