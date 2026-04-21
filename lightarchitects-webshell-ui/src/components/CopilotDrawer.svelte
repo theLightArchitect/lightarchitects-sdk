@@ -305,11 +305,21 @@
     spikeSibling(sibling);
     addMessage('system', prompt ? `Dispatching ${sibling.toUpperCase()} with: "${prompt}"` : `Dispatching ${sibling.toUpperCase()}`);
     const buildId = $currentBuildId;
-    if (buildId) api.dispatchSibling(buildId, sibling, sibling, prompt ?? '').catch(() => {});
-    mockStream(
-      `${sibling.toUpperCase()} activated. ${buildId ? `Build ${buildId}` : 'No active build — standing by.'}`,
-      sibling,
-    );
+    if (!buildId) {
+      addMessage('system', `No active build — cannot dispatch to ${sibling.toUpperCase()}.`);
+      return;
+    }
+    api.dispatchSibling(buildId, sibling, sibling, prompt ?? '')
+      .then((result) => {
+        if (result.response) {
+          addMessage('assistant', result.response, sibling);
+        } else {
+          addMessage('system', `${sibling.toUpperCase()} returned no output.`);
+        }
+      })
+      .catch((err) => {
+        addMessage('system', `${sibling.toUpperCase()} dispatch failed: ${err?.message ?? 'unknown error'}`);
+      });
   }
 
   // Auto-scroll

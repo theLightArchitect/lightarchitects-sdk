@@ -768,18 +768,65 @@ pub fn copilot_chat(_id: Uuid, _headers: HeaderMap, _state: AppState) -> axum::r
     StatusCode::NOT_IMPLEMENTED.into_response()
 }
 
-/// `POST /api/builds/:id/dispatch`.
+/// Request body for `POST /api/builds/:id/dispatch`.
+#[derive(Debug, serde::Deserialize)]
+pub struct DispatchRequest {
+    /// Target sibling name (e.g. "soul", "eva", "corso").
+    pub sibling: String,
+    /// Agent identifier (usually same as sibling).
+    #[allow(dead_code)]
+    pub agent: Option<String>,
+    /// The user's prompt to route to the sibling.
+    pub prompt: String,
+}
+
+/// `POST /api/builds/:id/dispatch` — route prompt through the copilot
+/// session scoped to a specific sibling's tools.
+///
+/// Uses the same `call_subprocess` path as the copilot chat, but wraps
+/// the prompt with sibling routing context so Claude naturally invokes
+/// the target sibling's MCP tools (e.g. `soulTools`, `corsoTools`).
 pub async fn dispatch_sibling(
-    Path(_id): Path<Uuid>,
+    Path(id): Path<Uuid>,
     headers: HeaderMap,
     State(state): State<AppState>,
+    Json(body): Json<DispatchRequest>,
 ) -> impl IntoResponse {
     if !is_authed(&headers, &state.config.token) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    (
-        StatusCode::ACCEPTED,
-        Json(json!({"status": "queued", "note": "dispatch enqueue (Phase 10)"})),
-    )
-        .into_response()
+    let Some(session) = state.builds.get(id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "build_not_found" })),
+        )
+            .into_response();
+    };
+    let sibling_upper = body.sibling.to_uppercase();
+    let dispatch_prompt = format!(
+        "[Dispatch to {sibling_upper}]\n\
+         You are dispatching a task to the {sibling_upper} sibling. \
+         Use {sibling_upper}'s MCP tools ({}Tools) to answer this request. \
+         Respond with the actual result — not a summary of what you would do.\n\n\
+         {}", body.sibling, body.prompt,
+    );
+    let result =
+        crate::copilot::call_subprocess_public(&dispatch_prompt, &session.copilot_proc, &session)
+            .await;
+    match result {
+        Ok(text) => (
+            StatusCode::OK,
+            Json(json!({ "sibling": body.sibling, "response": text })),
+        )
+            .into_response(),
+        Err(reason) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "error": "dispatch_failed",
+                "sibling": body.sibling,
+                "reason": reason,
+            })),
+        )
+            .into_response(),
+    }
 }

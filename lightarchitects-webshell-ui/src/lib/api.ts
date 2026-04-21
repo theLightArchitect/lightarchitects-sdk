@@ -86,7 +86,7 @@ export const api = {
 
   // Dispatch
   dispatchSibling: (buildId: string, sibling: string, agent: string, prompt: string) =>
-    request<unknown>(`/builds/${buildId}/dispatch`, {
+    request<{ sibling: string; response: string }>(`/builds/${buildId}/dispatch`, {
       method: 'POST',
       body: JSON.stringify({ sibling, agent, prompt }),
     }),

@@ -55,6 +55,22 @@ pub struct CopilotProcess {
     _child: Option<Child>,
 }
 
+impl CopilotProcess {
+    /// Seed a copilot slot with a pre-existing session UUID so the next
+    /// turn resumes that conversation (`claude --resume <id>` or
+    /// `codex exec resume <id>`). No subprocess is spawned — Lightarchitects
+    /// and Codex backends re-spawn per turn and only need `session_id`.
+    #[must_use]
+    pub fn seed_from_session_id(session_id: String) -> Self {
+        Self {
+            session_id: Some(session_id),
+            stdin: None,
+            stdout: None,
+            _child: None,
+        }
+    }
+}
+
 /// `POST /api/builds/:id/copilot` — dispatch to subprocess or HTTP backend.
 pub async fn copilot_chat_handler(
     Path(id): Path<Uuid>,
@@ -143,6 +159,15 @@ async fn run_print_turn(
     c.arg("--verbose");
     c.arg("--dangerously-skip-permissions");
     c.arg("--print").arg("-p").arg(message);
+    // Pin the child's working directory to the build's cwd. This matters
+    // critically for `--resume <id>`: claude derives the on-disk session
+    // file path from the cwd's project hash, so a child spawned in the
+    // wrong directory will look in the wrong project folder and exit 1
+    // when the UUID isn't found. Turn-to-turn continuity within a single
+    // webshell run works with inherited cwd by accident; session-sync
+    // (resuming a session created in a different process tree) exposes
+    // the need to set it explicitly.
+    c.current_dir(&session.cwd);
     c.env_remove("ANTHROPIC_API_KEY");
     match backend {
         ClaudeBackend::OllamaLaunch(lc) => {
@@ -229,6 +254,11 @@ async fn run_codex_turn(
             c.env("OPENAI_API_KEY", "ollama");
         }
     }
+    // Pin the child's working directory to the build's cwd — same reason
+    // as run_print_turn: `codex exec resume <id>` looks up the session
+    // file relative to the current project, so cwd must match what the
+    // session was originally created in.
+    c.current_dir(&session.cwd);
     c.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -351,6 +381,16 @@ fn spawn_copilot(session: &BuildSession) -> Result<CopilotProcess, String> {
 /// # Errors
 ///
 /// Returns a descriptive string on spawn failure, process death, or missing result.
+/// Public entry point for dispatch — routes a prompt through the copilot
+/// subprocess. Same as the internal `call_subprocess` used by `copilot_chat_handler`.
+pub async fn call_subprocess_public(
+    message: &str,
+    proc_lock: &tokio::sync::Mutex<Option<CopilotProcess>>,
+    session: &BuildSession,
+) -> Result<String, String> {
+    call_subprocess(message, proc_lock, session).await
+}
+
 async fn call_subprocess(
     message: &str,
     proc_lock: &tokio::sync::Mutex<Option<CopilotProcess>>,
