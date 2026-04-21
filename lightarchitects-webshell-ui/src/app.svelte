@@ -8,6 +8,7 @@
   import CopilotDrawer from './components/CopilotDrawer.svelte';
   import MemoryDrawer from './components/MemoryDrawer.svelte';
   import AmbientParticles from './components/AmbientParticles.svelte';
+  import HelixTooltip from './components/HelixTooltip.svelte';
   import { ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen } from '$lib/stores';
   import { setupComplete, step, loadSetupInfo } from '$lib/setup';
   import { connectGlobalSSE, disconnectGlobalSSE } from '$lib/sse';
@@ -157,4 +158,5 @@
   <CommandPalette />
   <CopilotDrawer />
   <MemoryDrawer />
+  <HelixTooltip />
 </div>

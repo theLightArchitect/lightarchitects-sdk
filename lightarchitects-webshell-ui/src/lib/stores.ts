@@ -85,6 +85,19 @@ export const memoryDrawerOpen = writable<boolean>(false);
 /** Per-sibling entry counts from /api/soul/health. Null until fetched. */
 export const vaultCounts = writable<Record<string, number> | null>(null);
 
+// --- Helix interaction state ---
+
+/** Currently hovered active node in the helix — drives tooltip. */
+export const activeHelixNode = writable<{
+  sibling: string;
+  path: string;
+  significance: number;
+  excerpt: string;
+  screenX: number;
+  screenY: number;
+} | null>(null);
+
+
 // --- Activity feed (Phase 20) ---
 
 /** Rolling window of live activity events (copilot stream + AYIN spans). Newest-first. */
@@ -150,6 +163,12 @@ export const focusedSibling = writable<SiblingId | null>(null);
 // --- Copilot ---
 export const copilotMessages = writable<CopilotMessage[]>([]);
 export const copilotLoading = writable<boolean>(false);
+
+/** Whether a build is actively running — drives Layer 2 helix dim effect. */
+export const buildFocusActive = derived(
+  [copilotLoading, currentBuildId],
+  ([$loading, $buildId]) => $loading && Boolean($buildId),
+);
 
 /** Build context string injected into copilot prompts */
 export function buildBuildContext(

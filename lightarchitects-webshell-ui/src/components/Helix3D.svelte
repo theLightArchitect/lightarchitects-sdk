@@ -11,7 +11,7 @@
   import type { HelixEntity } from '$lib/helix/helix-math';
   import { HelixPolytopeManager } from '$lib/helix/helix-polytopes';
   import { HelixInteraction } from '$lib/helix/helix-interaction';
-  import { helixEntries, promotionFeed, waves, activityFeed, copilotLoading, vaultCounts } from '$lib/stores';
+  import { helixEntries, promotionFeed, waves, activityFeed, copilotLoading, vaultCounts, activeHelixNode, buildFocusActive } from '$lib/stores';
   import type { SoulPromotionPayload } from '$lib/types';
   import { api } from '$lib/api';
 
@@ -594,6 +594,84 @@
     const agentMat = new THREE.PointsMaterial({ size: 0.18, sizeAttenuation: true, map: glowTexture, transparent: true, opacity: 1.0, vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false });
     group.add(new THREE.Points(agentGeo, agentMat));
 
+    // 6. ACTIVE SESSION NODES — Layer 1 overlay
+    // Collider spheres spawned for each helix_entry SSE event. These are the
+    // only interactive nodes in the helix — dormant vault entries are too
+    // small and numerous to raycast against.
+    const activeNodeGroup = new THREE.Group();
+    group.add(activeNodeGroup);
+    const activeNodeRaycaster = new THREE.Raycaster();
+    const activeNodeMouse = new THREE.Vector2();
+    interface ActiveNode {
+      mesh: THREE.Mesh;
+      glow: THREE.Points;
+      sibling: string;
+      path: string;
+      significance: number;
+      excerpt: string;
+      bornAt: number;
+    }
+    const activeNodes: ActiveNode[] = [];
+    const ACTIVE_NODE_TTL_MS = 30_000; // 30s visibility
+
+    /** Pending helix_entry events to spawn as active nodes. */
+    const pendingActiveNodes: import('$lib/types').HelixEntrySsePayload[] = [];
+
+    // Watch for new helix entries — queue them for spawn in the render loop.
+    let lastHelixLen = 0;
+
+    function spawnActiveNode(entry: import('$lib/types').HelixEntrySsePayload) {
+      const sibIdx = entities.findIndex(e => e.id === entry.sibling);
+      if (sibIdx < 0) return;
+
+      // Place at a deterministic Y position from the path hash
+      let h = 0x811c9dc5 >>> 0;
+      for (let i = 0; i < entry.path.length; i++) {
+        h ^= entry.path.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+      }
+      const y = 2.3 + (-4.6) * (h / 0xffffffff);
+      const pos = getEntityCenter(sibIdx, y).E;
+
+      const color = new THREE.Color(entities[sibIdx].color);
+      const sig = entry.significance ?? 5.0;
+      const radius = 0.04 + (sig / 10) * 0.06; // 0.04–0.10
+
+      // Invisible collider sphere for raycasting
+      const geo = new THREE.SphereGeometry(radius * 3, 8, 8);
+      const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.copy(pos);
+      mesh.userData = { activeNode: true, index: activeNodes.length };
+      activeNodeGroup.add(mesh);
+
+      // Visible glow point
+      const glowGeo = new THREE.BufferGeometry();
+      glowGeo.setAttribute('position', new THREE.Float32BufferAttribute([pos.x, pos.y, pos.z], 3));
+      glowGeo.setAttribute('color', new THREE.Float32BufferAttribute([color.r * 2, color.g * 2, color.b * 2], 3));
+      const glowMat = new THREE.PointsMaterial({
+        size: radius * 4,
+        sizeAttenuation: true,
+        vertexColors: true,
+        transparent: true,
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        map: glowTexture,
+      });
+      const glow = new THREE.Points(glowGeo, glowMat);
+      group.add(glow);
+
+      activeNodes.push({
+        mesh, glow,
+        sibling: entry.sibling ?? 'unknown',
+        path: entry.path,
+        significance: sig,
+        excerpt: entry.content_excerpt ?? '',
+        bornAt: performance.now(),
+      });
+    }
+
     // --- Camera control ---
     let pointerX = 0, pointerY = 0;
     const cameraControl = { targetX: 0, targetY: 0, targetZ: 5.5, targetRotX: 0, targetRotZ: 0, lookAt: new THREE.Vector3(0, 0, 0), lerpSpeed: 0.03, scrollLocked: false };
@@ -604,6 +682,34 @@
       cameraControl.targetY = -(pointerY - 0.5) * 2.0;
       cameraControl.targetRotX = (pointerY - 0.5) * 0.15;
       cameraControl.targetRotZ = (pointerX - 0.5) * 0.15;
+
+      // Active node raycasting — only check colliders in activeNodeGroup
+      if (activeNodes.length > 0) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        activeNodeMouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        activeNodeMouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        activeNodeRaycaster.setFromCamera(activeNodeMouse, camera);
+        const colliders = activeNodes.map(n => n.mesh);
+        const hits = activeNodeRaycaster.intersectObjects(colliders);
+        if (hits.length > 0) {
+          const idx = hits[0].object.userData.index as number;
+          const node = activeNodes[idx];
+          if (node) {
+            renderer.domElement.style.cursor = 'pointer';
+            activeHelixNode.set({
+              sibling: node.sibling,
+              path: node.path,
+              significance: node.significance,
+              excerpt: node.excerpt,
+              screenX: event.clientX,
+              screenY: event.clientY,
+            });
+          }
+        } else {
+          renderer.domElement.style.cursor = 'default';
+          activeHelixNode.set(null);
+        }
+      }
     };
     window.addEventListener('mousemove', handleMouseMove);
 
@@ -792,6 +898,40 @@
       const bloomTarget = $copilotLoading ? 1.6 : 1.0;
       bloomPass.strength += (bloomTarget - bloomPass.strength) * 0.03;
 
+      // Layer 1 — drain pending active session nodes
+      const entries = $helixEntries;
+      if (entries.length > lastHelixLen) {
+        const fresh = entries.slice(0, entries.length - lastHelixLen);
+        for (const e of fresh) spawnActiveNode(e);
+        lastHelixLen = entries.length;
+      }
+
+      // Layer 1 — GC expired active nodes (fade out over last 3s of TTL)
+      for (let i = activeNodes.length - 1; i >= 0; i--) {
+        const age = now - activeNodes[i].bornAt;
+        if (age >= ACTIVE_NODE_TTL_MS) {
+          activeNodeGroup.remove(activeNodes[i].mesh);
+          activeNodes[i].mesh.geometry.dispose();
+          (activeNodes[i].mesh.material as THREE.Material).dispose();
+          group.remove(activeNodes[i].glow);
+          activeNodes[i].glow.geometry.dispose();
+          (activeNodes[i].glow.material as THREE.Material).dispose();
+          activeNodes.splice(i, 1);
+          // Re-index userData for raycasting
+          for (let j = 0; j < activeNodes.length; j++) {
+            activeNodes[j].mesh.userData.index = j;
+          }
+        } else if (age > ACTIVE_NODE_TTL_MS - 3000) {
+          // Fade out in the last 3s
+          const fadeT = (ACTIVE_NODE_TTL_MS - age) / 3000;
+          (activeNodes[i].glow.material as THREE.PointsMaterial).opacity = fadeT;
+        }
+      }
+
+      // Layer 2 — dim baseline when build is actively thinking
+      const dimTarget = $buildFocusActive ? 0.3 : 1.0;
+      fineDustMat.opacity = 0.25 * dimTarget;
+
       // Phase 20: pulse decays toward baseline; every activity event re-spikes.
       // Decay 0.96 at 60fps ≈ 1.0s half-life. Multiplier 0.025 gives 8× speed
       // boost at peak — clearly visible rotation acceleration.
@@ -913,6 +1053,15 @@
       cancelAnimationFrame(animationFrameId);
       interaction.dispose();
       polytopeManager.dispose();
+      // Dispose active session nodes
+      for (const n of activeNodes) {
+        n.mesh.geometry.dispose();
+        (n.mesh.material as THREE.Material).dispose();
+        n.glow.geometry.dispose();
+        (n.glow.material as THREE.Material).dispose();
+      }
+      activeNodes.length = 0;
+      activeHelixNode.set(null);
       renderer.dispose();
       glowTexture.dispose();
       fineDustGeom.dispose();
