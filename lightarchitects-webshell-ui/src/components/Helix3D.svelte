@@ -717,6 +717,21 @@
     renderer.domElement.style.pointerEvents = 'auto';
     const interaction = new HelixInteraction(camera, renderer.domElement, cameraControl, polytopeManager, () => group.position.y);
 
+    // Active node click → dispatch detail panel event
+    renderer.domElement.addEventListener('click', () => {
+      const hovered = $activeHelixNode;
+      if (hovered) {
+        window.dispatchEvent(new CustomEvent('helix-node-click', {
+          detail: {
+            sibling: hovered.sibling,
+            path: hovered.path,
+            significance: hovered.significance,
+            excerpt: hovered.excerpt,
+          },
+        }));
+      }
+    });
+
     const clock = new THREE.Clock();
     let animationFrameId: number;
     const currentGroupY = { value: -2.0 };
