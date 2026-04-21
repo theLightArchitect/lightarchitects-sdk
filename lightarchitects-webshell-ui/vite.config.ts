@@ -47,6 +47,20 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    proxy: {
+      '/api': {
+        target: BACKEND_URL,
+        changeOrigin: true,
+        ws: true,
+      },
+      '/ws': {
+        target: BACKEND_URL,
+        changeOrigin: true,
+        ws: true,
+      },
+    },
+  },
   test: {
     // Unit tests use jsdom for DOM APIs
     environment: 'jsdom',

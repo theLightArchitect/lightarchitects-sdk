@@ -31,11 +31,14 @@
 
   async function advance() {
     if (advanced) return;
+    // If loadSetupInfo() already resolved and set step='done', don't override.
+    if (get(step) === 'done') return;
     advanced = true;
     visible = false;
     const skipped = await tryAutoSkip();
     if (skipped) return; // autoCompleteFromInherited already set step to 'init'
-    setTimeout(() => step.set('backend'), 600);
+    // Guard again — loadSetupInfo() may have resolved during tryAutoSkip().
+    setTimeout(() => { if (get(step) !== 'done') step.set('backend'); }, 600);
   }
 
   // 600-cell polytope (lifted verbatim from cappy-cortex/cappy-web/src/components/LoadingSplash.svelte)

@@ -87,6 +87,8 @@
 
   onMount(() => {
     loadSetupInfo(); // check setup state before anything else
+    // E2E hook — lets Playwright bypass setup flow by setting stores directly.
+    (window as any).__e2e = { setupComplete, step };
     startWaveTick();
     ayinStatus.set('reconnecting');
     loadScreen(window.location.hash.slice(1) || '/');
