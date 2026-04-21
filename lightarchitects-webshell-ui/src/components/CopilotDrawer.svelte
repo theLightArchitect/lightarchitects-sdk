@@ -374,6 +374,9 @@
   class="fixed bottom-0 left-0 right-0 z-30 flex flex-col"
   style="height: {open ? heightPx + 'px' : '32px'}; transition: height 0.18s ease;"
 >
+  <!-- Top edge gradient — helix colors bleed into the drawer border -->
+  <div class="h-px shrink-0 w-full" style="background: linear-gradient(90deg, transparent, rgba(255,215,0,0.3) 30%, rgba(255,20,147,0.2) 70%, transparent);"></div>
+
   <!-- Drag handle (only when open) -->
   {#if open}
     <div
@@ -618,11 +621,12 @@
                   {#if hint.args}<span class="text-[#334155]">{hint.args}</span>{/if}
                 </div>
               {/if}
-              <!-- Composite oscilloscope -->
+              <!-- Composite oscilloscope — glows gold when copilot is thinking -->
               <canvas
                 bind:this={oscillatorEl}
                 width={800}
                 height={48}
+                class={$copilotLoading ? 'oscilloscope-active' : ''}
                 style="width:100%;height:24px;display:block;border-radius:4px;margin-bottom:6px;opacity:0.85;"
               ></canvas>
               <div class="flex gap-2 relative">
@@ -803,5 +807,12 @@
   @keyframes tesseract-pulse-thinking {
     0%, 100% { box-shadow: 0 0 6px rgba(255, 215, 0, 0.3); }
     50% { box-shadow: 0 0 18px rgba(255, 215, 0, 0.6), 0 0 32px rgba(255, 215, 0, 0.2); }
+  }
+
+  /* Oscilloscope active state — bottom border glow frames it as "live" */
+  .oscilloscope-active {
+    border-bottom: 1px solid rgba(255, 215, 0, 0.25);
+    box-shadow: 0 2px 8px rgba(255, 215, 0, 0.15);
+    transition: border-color 0.3s, box-shadow 0.3s;
   }
 </style>

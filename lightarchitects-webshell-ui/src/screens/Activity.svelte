@@ -155,7 +155,7 @@
           {#each copilotEvents as event, idx (idx)}
             <button
               onclick={() => toggleExpand(idx)}
-              class="w-full text-left px-2 py-1 rounded hover:bg-[#1e293b]/50 transition-colors group"
+              class="w-full text-left px-2 py-1 rounded hover:bg-[#1e293b]/50 transition-colors group event-arrive"
             >
               <div class="flex items-center gap-2">
                 <span class="text-[9px] text-[#475569] font-mono shrink-0">{formatTime(event.timestamp)}</span>
@@ -201,8 +201,11 @@
 </div>
 
 {#snippet treeNode(node: TreeNode)}
-  <div class="py-0.5" style="padding-left: {node.depth * 16}px">
-    <div class="flex items-center gap-1.5 px-1.5 py-0.5 rounded hover:bg-[#1e293b]/50 transition-colors">
+  <div class="py-0.5 event-arrive" style="padding-left: {node.depth * 16}px">
+    <div class="flex items-center gap-1.5 px-1.5 py-0.5 rounded hover:bg-[#1e293b]/50 transition-colors relative">
+      {#if node.depth > 0}
+        <span class="tree-connector absolute left-0 top-0 bottom-0 w-px" style="margin-left: {(node.depth - 1) * 16 + 4}px;"></span>
+      {/if}
       {#if node.children.length > 0}
         <span class="text-[9px] text-[#FFD700]/30">├</span>
       {:else}
@@ -227,3 +230,24 @@
     {@render treeNode(child)}
   {/each}
 {/snippet}
+
+<style>
+  /* Event arrival flash — GPU-composited background fade */
+  :global(.event-arrive) {
+    animation: event-arrive 1.5s ease-out;
+  }
+  @keyframes event-arrive {
+    0% { background: rgba(255, 215, 0, 0.08); }
+    100% { background: transparent; }
+  }
+
+  /* Tree connector — animated gradient line that "grows" downward */
+  :global(.tree-connector) {
+    background: linear-gradient(180deg, rgba(255, 215, 0, 0.25) 0%, rgba(255, 215, 0, 0.05) 100%);
+    animation: tree-grow 0.6s ease-out;
+  }
+  @keyframes tree-grow {
+    0% { transform: scaleY(0); transform-origin: top; }
+    100% { transform: scaleY(1); transform-origin: top; }
+  }
+</style>

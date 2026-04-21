@@ -10,7 +10,7 @@
   } from '$lib/helix/helix-math';
   import { HelixPolytopeManager } from '$lib/helix/helix-polytopes';
   import { HelixInteraction } from '$lib/helix/helix-interaction';
-  import { helixEntries, promotionFeed, waves, activityFeed } from '$lib/stores';
+  import { helixEntries, promotionFeed, waves, activityFeed, copilotLoading } from '$lib/stores';
   import type { SoulPromotionPayload } from '$lib/types';
   import { api } from '$lib/api';
 
@@ -768,6 +768,12 @@
       }
 
       const focusIntensity = interaction.getFocusIntensity();
+
+      // Phase 2b — bloom coupling: helix "breathes harder" while copilot thinks.
+      // Lerp bloom strength toward target at ~3% per frame (smooth 0.5s ramp).
+      const bloomTarget = $copilotLoading ? 1.6 : 1.0;
+      bloomPass.strength += (bloomTarget - bloomPass.strength) * 0.03;
+
       // Phase 20: pulse decays toward baseline; every activity event re-spikes.
       // Decay 0.96 at 60fps ≈ 1.0s half-life. Multiplier 0.025 gives 8× speed
       // boost at peak — clearly visible rotation acceleration.
@@ -901,7 +907,7 @@
   });
 </script>
 
-<div style="width:100%;height:100%;background:#000;position:relative;">
+<div style="width:100%;height:100%;background:#000;position:relative;box-shadow: -30px 0 60px rgba(255,215,0,0.05), -15px 0 30px rgba(255,20,147,0.03);">
   <!-- Three.js renderer mounts its <canvas> into this bound div. Keep it
        sibling to the overlays rather than a parent so Svelte's {#if} block
        DOM reconciliation doesn't get confused by Three.js DOM mutations. -->
@@ -910,14 +916,14 @@
   {#if $helixEntries.length > 0}
     <div
       class="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-1 rounded-full
-             bg-[#7C3AED]/20 border border-[#7C3AED] pointer-events-none
+             bg-[#FFD700]/20 border border-[#FFD700] pointer-events-none
              animate-pulse z-10"
       data-testid="helix-orb-pulse"
       data-orb-count={$helixEntries.length}
       data-pulse-key={pulseKey}
     >
-      <span class="w-1.5 h-1.5 rounded-full bg-[#a855f7]"></span>
-      <span class="text-[9px] font-mono text-[#a855f7]">+{$helixEntries.length}</span>
+      <span class="w-1.5 h-1.5 rounded-full bg-[#FFD700]"></span>
+      <span class="text-[9px] font-mono text-[#FFD700]">+{$helixEntries.length}</span>
     </div>
   {/if}
 
@@ -930,12 +936,12 @@
     >
       {#each lineage as pulse (pulse.id)}
         <div
-          class="flex items-center gap-1.5 px-1.5 py-0.5 rounded border border-[#a855f7]/40
-                 bg-[#7C3AED]/10 text-[9px] font-mono text-[#c4b5fd]"
+          class="flex items-center gap-1.5 px-1.5 py-0.5 rounded border border-[#FFD700]/40
+                 bg-[#FFD700]/10 text-[9px] font-mono text-[#FFD700]/80"
         >
-          <span class="w-1 h-1 rounded-full bg-[#ec4899] animate-ping"></span>
+          <span class="w-1 h-1 rounded-full bg-[#FFD700] animate-ping"></span>
           <span>hot→cold</span>
-          <span class="text-[#a78bfa]">{pulse.sibling}</span>
+          <span class="text-[#FFD700]/70">{pulse.sibling}</span>
         </div>
       {/each}
     </div>

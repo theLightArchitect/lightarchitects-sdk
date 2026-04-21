@@ -7,6 +7,7 @@
   import SetupFlow from './screens/setup/SetupFlow.svelte';
   import CopilotDrawer from './components/CopilotDrawer.svelte';
   import MemoryDrawer from './components/MemoryDrawer.svelte';
+  import AmbientParticles from './components/AmbientParticles.svelte';
   import { ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen } from '$lib/stores';
   import { setupComplete, step, loadSetupInfo } from '$lib/setup';
   import { connectGlobalSSE, disconnectGlobalSSE } from '$lib/sse';
@@ -106,7 +107,9 @@
 <div class="w-screen h-screen overflow-hidden bg-[#0a0a0f] text-[#e2e8f0] font-['JetBrains_Mono',monospace]" class:hidden={!$setupComplete || $step !== 'done'}>
   <div class="flex" style="height: calc(100vh - {$drawerHeightPx}px);">
     <!-- Left: Main content area -->
-    <div class="flex-1 flex flex-col overflow-hidden">
+    <div class="flex-1 flex flex-col overflow-hidden relative">
+      <!-- Ambient particles — drifting helix-palette dots behind content -->
+      <AmbientParticles />
       <!-- Top navigation strip -->
       <nav class="flex items-center gap-1 px-3 py-1.5 border-b border-[#1e293b] bg-[#0a0a0f] shrink-0 overflow-x-auto">
         {#each NAV_ITEMS as item}
