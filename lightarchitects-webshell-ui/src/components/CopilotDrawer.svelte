@@ -40,8 +40,6 @@
   let terminalEl: HTMLDivElement | undefined = $state();
   let sharedBuildId = $state<string | null>(null);
   let cwd = $derived($serverCwd);
-  let connecting = $state(false);
-  let connectError = $state<string | null>(null);
   let showOllamaModal = $state(false);
   let input = $state('');
   let showSuggestions = $state(false);
@@ -175,17 +173,11 @@
     return () => disconnectSSE();
   });
 
-  async function connectTerminal() {
-    connecting = true;
-    connectError = null;
-    try { await ensureBuild(); }
-    catch (err) { connectError = err instanceof Error ? err.message : 'Failed to create build'; }
-    finally { connecting = false; }
-  }
-
-  // xterm.js lifecycle — runs only in terminal mode with a live build
+  // xterm.js lifecycle — connects immediately when terminal mode opens.
+  // Uses build-bound PTY if a build exists, otherwise standalone PTY
+  // (inherits server CWD from the parent coding session).
   $effect(() => {
-    if (mode !== 'terminal' || !terminalEl || !sharedBuildId || !open) return;
+    if (mode !== 'terminal' || !terminalEl || !open) return;
 
     const term = new Terminal({
       cursorBlink: true,
@@ -486,44 +478,16 @@
   {#if open}
     <div class="flex-1 flex overflow-hidden bg-[#0a0a0f] min-h-0">
 
-      <!-- ── TERMINAL MODE ── -->
+      <!-- ── TERMINAL MODE — pure PTY, opens immediately in inherited CWD ── -->
       {#if mode === 'terminal'}
         <div class="flex-1 flex flex-col overflow-hidden min-h-0">
-          {#if !sharedBuildId}
-            <div class="flex items-center gap-3 px-4 py-2 border-b border-[#1e293b] bg-[#0f172a] shrink-0">
-              <span class="text-[10px] text-[#64748b]">Profile</span>
-              <select
-                bind:value={$authProfile}
-                class="bg-[#111827] border border-[#1e293b] rounded px-2 py-1 text-[11px] text-[#e2e8f0] outline-none focus:border-[#FFD700]/60"
-              >
-                <option value="anthropic">Anthropic</option>
-                <option value="ollama">Ollama Cloud</option>
-              </select>
-              {#if $authProfile === 'ollama'}
-                <button onclick={() => { showOllamaModal = true; }} class="text-[10px] text-[#6366F1] hover:text-[#818CF8]">⚙</button>
-              {/if}
-              <span class="text-[10px] text-[#64748b]">CWD</span>
-              <input type="text" bind:value={cwd} placeholder="/tmp"
-                class="w-40 bg-[#111827] border border-[#1e293b] rounded px-2 py-1 text-[11px] text-[#e2e8f0] outline-none focus:border-[#FFD700]/60"
-              />
-              <button
-                onclick={connectTerminal}
-                disabled={connecting}
-                class="px-3 py-1 bg-[#D4A017] text-[#0a0a0f] text-[11px] font-semibold rounded hover:bg-[#FFD700] hover:shadow-[0_0_8px_rgba(255,215,0,0.4)] disabled:opacity-50 transition-all"
-              >{connecting ? 'Connecting…' : 'Connect'}</button>
-              {#if connectError}
-                <span class="text-[10px] text-red-400">{connectError}</span>
-              {/if}
-            </div>
-          {:else}
-            <div class="flex items-center gap-2 px-4 py-1.5 border-b border-[#1e293b] bg-[#0f172a] shrink-0">
-              <div class="w-1.5 h-1.5 rounded-full bg-green-500" style="box-shadow: 0 0 4px #22c55e"></div>
-              <span class="text-[9px] text-[#64748b] font-mono">build {sharedBuildId.slice(0, 8)}… · {cwd}</span>
-              <div class="flex-1"></div>
-              <button onclick={() => { sharedBuildId = null; terminalConnected.set(false); }}
-                class="text-[9px] text-[#475569] hover:text-red-400 transition-colors">Disconnect</button>
-            </div>
-          {/if}
+          <div class="flex items-center gap-2 px-4 py-1.5 border-b border-[#1e293b] bg-[#0f172a] shrink-0">
+            <div class="w-1.5 h-1.5 rounded-full {$terminalConnected ? 'bg-green-500' : 'bg-[#475569]'}" style="box-shadow: 0 0 4px {$terminalConnected ? '#22c55e' : 'transparent'}"></div>
+            <span class="text-[9px] text-[#64748b] font-mono">{$terminalConnected ? 'PTY live' : 'connecting…'} · {cwd}</span>
+            {#if sharedBuildId}
+              <span class="text-[9px] text-[#475569] font-mono">· build {sharedBuildId.slice(0, 8)}…</span>
+            {/if}
+          </div>
           <div bind:this={terminalEl} class="flex-1 overflow-hidden bg-[#0a0a0a] min-h-0" style="font-family: monospace; contain: strict;"></div>
         </div>
 

@@ -12,10 +12,10 @@ export class TerminalWS {
   private onOpen: (() => void) | null = null;
   private onClose: (() => void) | null = null;
   private manualClose = false;
-  private buildId: string;
+  private buildId: string | null;
 
   constructor(
-    buildId: string,
+    buildId: string | null,
     messageHandler: (data: Uint8Array) => void,
     openHandler?: () => void,
     closeHandler?: () => void,
@@ -35,7 +35,11 @@ export class TerminalWS {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${proto}//${window.location.host}/api/builds/${this.buildId}/terminal/ws`;
+    // Use build-bound PTY if a build exists, otherwise standalone PTY (inherits server CWD)
+    const path = this.buildId
+      ? `/api/builds/${this.buildId}/terminal/ws`
+      : '/api/terminal/ws';
+    const url = `${proto}//${window.location.host}${path}`;
     const token = getToken() ?? '';
     // Bearer token delivered via Sec-WebSocket-Protocol subprotocol header —
     // the webshell validates it before upgrading the connection.
