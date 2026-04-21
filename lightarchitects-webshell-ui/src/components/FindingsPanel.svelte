@@ -113,7 +113,7 @@
                 </span>
                 {#if finding.file}
                   <button
-                    class="text-[10px] text-[#7C3AED] hover:text-[#9F67FF] font-mono truncate transition-colors"
+                    class="text-[10px] text-[#FFD700] hover:text-[#9F67FF] font-mono truncate transition-colors"
                     onclick={(e) => { e.stopPropagation(); onFileClick?.(finding.file!, finding.line); }}
                     title="{finding.file}{finding.line ? `:${finding.line}` : ''}"
                   >
@@ -152,7 +152,7 @@
     {#if hasMore || showAll}
       <div class="px-4 py-2 border-t border-[#1e293b] text-center">
         <button
-          class="text-[10px] text-[#7C3AED] hover:text-[#9F67FF] transition-colors"
+          class="text-[10px] text-[#FFD700] hover:text-[#9F67FF] transition-colors"
           onclick={() => showAll = !showAll}
         >
           {showAll ? 'Show less' : `+ ${findings.length - maxDisplay} more findings`}

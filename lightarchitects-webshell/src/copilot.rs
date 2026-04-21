@@ -138,6 +138,10 @@ fn parse_turn_end(line: &str, _session: &BuildSession) -> Option<String> {
 /// Turn 2+ (`prev_session_id` is `Some`): `--resume <id>` continues the prior conversation
 /// from disk — giving full multi-turn context without a persistent subprocess.
 ///
+/// Streams intermediate events (`assistant`, `tool_use`, `tool_result`) to the
+/// per-build `event_tx` as `WebEvent::CopilotActivity` so the Activity tab
+/// can render live progress.
+///
 /// # Errors
 ///
 /// Returns a descriptive string on spawn failure, non-zero exit, or missing result event.
@@ -187,32 +191,174 @@ async fn run_print_turn(
     c.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    let output = c.output().await.map_err(|e| format!("spawn claude: {e}"))?;
+    let mut child = c.spawn().map_err(|e| format!("spawn claude: {e}"))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "claude stdout unavailable".to_owned())?;
+    let mut reader = BufReader::new(stdout).lines();
+
     let mut result_text: Option<String> = None;
     let mut found_session_id: Option<String> = None;
+    let build_id = session.build_id.to_string();
 
-    for line in stdout.lines() {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
-            if let Some(id) = val["session_id"].as_str() {
-                found_session_id = Some(id.to_owned());
-            }
-            if val["type"].as_str() == Some("result") && val["subtype"].as_str() == Some("success")
-            {
-                result_text = Some(val["result"].as_str().unwrap_or("").to_owned());
-            }
+    while let Some(line) = reader
+        .next_line()
+        .await
+        .map_err(|e| format!("read stdout: {e}"))?
+    {
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+
+        if let Some(id) = val["session_id"].as_str() {
+            found_session_id = Some(id.to_owned());
+        }
+
+        let event_type = val["type"].as_str().unwrap_or("unknown");
+
+        // Broadcast activity event for the Activity tab
+        let summary = extract_activity_summary(&val);
+        let _ = session
+            .event_tx
+            .send(crate::events::WebEvent::CopilotActivity(
+                crate::events::types::CopilotActivityEvent {
+                    build_id: build_id.clone(),
+                    kind: event_type.to_owned(),
+                    summary,
+                    raw: val.clone(),
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                },
+            ));
+
+        // Emit AYIN span for tool calls so they appear in the AYIN SPANS column
+        if event_type == "content_block_start"
+            && val["content_block"]["type"].as_str() == Some("tool_use")
+        {
+            let tool_name = val["content_block"]["name"].as_str().unwrap_or("unknown");
+            let _ = session.event_tx.send(crate::events::WebEvent::AyinSpan(
+                crate::events::types::TraceSpanSummary {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    parent_id: None,
+                    actor: "eva".to_owned(),
+                    action: format!("tool.{tool_name}"),
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    duration_ms: 0, // updated on content_block_stop if we track it
+                    outcome: serde_json::json!("started"),
+                    metadata: serde_json::json!({ "build_id": build_id }),
+                    strand_activations: Vec::new(),
+                },
+            ));
+        }
+
+        if event_type == "result" && val["subtype"].as_str() == Some("success") {
+            result_text = Some(val["result"].as_str().unwrap_or("").to_owned());
         }
     }
 
+    // Wait for the child to exit so we can check status
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("wait claude: {e}"))?;
+
     result_text.map(|t| (t, found_session_id)).ok_or_else(|| {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.trim().is_empty() {
-            format!("no result event in claude output (exit {})", output.status)
+        if status.success() {
+            "no result event in claude output".to_owned()
         } else {
-            format!("claude: {}", stderr.trim())
+            format!("claude exited with status {status}")
         }
     })
+}
+
+/// Extract a human-readable summary from a stream-json event for the Activity tab.
+fn extract_activity_summary(val: &serde_json::Value) -> Option<String> {
+    let event_type = val["type"].as_str()?;
+    match event_type {
+        "assistant" => {
+            // Thinking or text content
+            val["message"]["content"].as_array().and_then(|blocks| {
+                blocks.iter().find_map(|b| {
+                    if b["type"].as_str() == Some("thinking") {
+                        let t = b["thinking"].as_str().unwrap_or("");
+                        Some(format!("Thinking: {}", &t[..t.len().min(500)]))
+                    } else if b["type"].as_str() == Some("text") {
+                        let t = b["text"].as_str().unwrap_or("");
+                        Some(format!("Text: {}", &t[..t.len().min(500)]))
+                    } else {
+                        None
+                    }
+                })
+            })
+        }
+        "content_block_start" => {
+            let block = &val["content_block"];
+            match block["type"].as_str() {
+                Some("thinking") => Some("Thinking...".to_owned()),
+                Some("tool_use") => {
+                    let name = block["name"].as_str().unwrap_or("unknown");
+                    Some(format!("Tool: {name}"))
+                }
+                Some("text") => Some("Generating text...".to_owned()),
+                _ => None,
+            }
+        }
+        "content_block_delta" => {
+            let delta = &val["delta"];
+            match delta["type"].as_str() {
+                Some("thinking_delta") => {
+                    let t = delta["thinking"].as_str().unwrap_or("");
+                    if t.len() > 80 {
+                        Some(format!("{}...", &t[..80]))
+                    } else {
+                        Some(t.to_owned())
+                    }
+                }
+                Some("input_json_delta") => {
+                    let partial = delta["partial_json"].as_str().unwrap_or("");
+                    if partial.len() > 100 {
+                        Some(format!("Input: {}...", &partial[..100]))
+                    } else if !partial.is_empty() {
+                        Some(format!("Input: {partial}"))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        }
+        "result" => Some("Turn complete".to_owned()),
+        _ => None,
+    }
+}
+
+/// Extract a human-readable summary from a Codex `--json` NDJSON event.
+fn extract_codex_activity_summary(val: &serde_json::Value) -> Option<String> {
+    let event_type = val["type"].as_str()?;
+    match event_type {
+        "thread.started" => Some("Thread started".to_owned()),
+        "item.completed" => {
+            let item_type = val["item"]["type"].as_str().unwrap_or("unknown");
+            match item_type {
+                "agent_message" => {
+                    let t = val["item"]["text"].as_str().unwrap_or("");
+                    Some(format!("Agent: {}", &t[..t.len().min(200)]))
+                }
+                "tool_call" => {
+                    let name = val["item"]["name"].as_str().unwrap_or("unknown");
+                    Some(format!("Tool: {name}"))
+                }
+                _ => Some(format!("Item: {item_type}")),
+            }
+        }
+        "turn.completed" => Some("Turn complete".to_owned()),
+        "turn.failed" => {
+            let msg = val["error"]["message"].as_str().unwrap_or("unknown");
+            Some(format!("Failed: {msg}"))
+        }
+        _ => None,
+    }
 }
 
 /// Spawn one turn of `codex exec` for `Codex` backends.
@@ -221,6 +367,9 @@ async fn run_print_turn(
 /// --dangerously-bypass-approvals-and-sandbox -m <model>`.
 /// Turn 2+ (`prev_session_id` is `Some`): `codex exec resume <id> "message" --json ...`.
 /// Session continuity via `thread_id` extracted from `{"type":"thread.started"}` event.
+///
+/// Streams intermediate events to the per-build `event_tx` as
+/// `WebEvent::CopilotActivity` for the Activity tab.
 ///
 /// # Errors
 ///
@@ -263,43 +412,71 @@ async fn run_codex_turn(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    let output = c.output().await.map_err(|e| format!("spawn codex: {e}"))?;
+    let mut child = c.spawn().map_err(|e| format!("spawn codex: {e}"))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "codex stdout unavailable".to_owned())?;
+    let mut reader = BufReader::new(stdout).lines();
+
     let mut thread_id: Option<String> = None;
     let mut text = String::new();
     let mut turn_done = false;
     let mut turn_error: Option<String> = None;
+    let build_id = session.build_id.to_string();
 
-    for line in stdout.lines() {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
-            if val["type"].as_str() == Some("thread.started") {
-                if let Some(id) = val["thread_id"].as_str() {
-                    thread_id = Some(id.to_owned());
-                }
-            }
-            if val["type"].as_str() == Some("item.completed")
-                && val["item"]["type"].as_str() == Some("agent_message")
-            {
-                if let Some(t) = val["item"]["text"].as_str() {
-                    if !text.is_empty() {
-                        text.push('\n');
-                    }
-                    text.push_str(t);
-                }
-            }
-            if val["type"].as_str() == Some("turn.completed") {
-                turn_done = true;
-            }
-            // turn.failed: surface the model/API error directly.
-            if val["type"].as_str() == Some("turn.failed") {
-                let msg = val["error"]["message"]
-                    .as_str()
-                    .unwrap_or("unknown turn failure");
-                turn_error = Some(msg.to_owned());
+    while let Some(line) = reader
+        .next_line()
+        .await
+        .map_err(|e| format!("read stdout: {e}"))?
+    {
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+
+        let event_type = val["type"].as_str().unwrap_or("unknown");
+
+        // Broadcast activity event for the Activity tab
+        let summary = extract_codex_activity_summary(&val);
+        let _ = session
+            .event_tx
+            .send(crate::events::WebEvent::CopilotActivity(
+                crate::events::types::CopilotActivityEvent {
+                    build_id: build_id.clone(),
+                    kind: event_type.to_owned(),
+                    summary,
+                    raw: val.clone(),
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                },
+            ));
+
+        if event_type == "thread.started" {
+            if let Some(id) = val["thread_id"].as_str() {
+                thread_id = Some(id.to_owned());
             }
         }
+        if event_type == "item.completed" && val["item"]["type"].as_str() == Some("agent_message") {
+            if let Some(t) = val["item"]["text"].as_str() {
+                if !text.is_empty() {
+                    text.push('\n');
+                }
+                text.push_str(t);
+            }
+        }
+        if event_type == "turn.completed" {
+            turn_done = true;
+        }
+        if event_type == "turn.failed" {
+            let msg = val["error"]["message"]
+                .as_str()
+                .unwrap_or("unknown turn failure");
+            turn_error = Some(msg.to_owned());
+        }
     }
+
+    // Wait for the child to exit
+    let status = child.wait().await.map_err(|e| format!("wait codex: {e}"))?;
 
     if let Some(err) = turn_error {
         return Err(format!("codex turn failed: {err}"));
@@ -307,12 +484,7 @@ async fn run_codex_turn(
     if turn_done {
         Ok((text, thread_id))
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(if stderr.trim().is_empty() {
-            format!("no turn.completed in codex output (exit {})", output.status)
-        } else {
-            format!("codex: {}", stderr.trim())
-        })
+        Err(format!("no turn.completed in codex output (exit {status})"))
     }
 }
 
@@ -391,12 +563,19 @@ pub async fn call_subprocess_public(
     call_subprocess(message, proc_lock, session).await
 }
 
+#[allow(clippy::too_many_lines)]
 async fn call_subprocess(
     message: &str,
     proc_lock: &tokio::sync::Mutex<Option<CopilotProcess>>,
     session: &BuildSession,
 ) -> Result<String, String> {
     let mut guard = proc_lock.lock().await;
+
+    let actor = match &session.agent {
+        AgentSession::Lightarchitects(_) | AgentSession::LightarchitectsNative(_) => "eva",
+        AgentSession::Codex(_) => "codex",
+    };
+    let (span_id, start, start_ts) = emit_turn_start_span(session, actor, message);
 
     // Per-turn path for Lightarchitects (claude --print + disk-persistent sessions).
     if matches!(&session.agent, AgentSession::Lightarchitects(_)) {
@@ -418,6 +597,16 @@ async fn call_subprocess(
                 _child: None,
             });
         }
+
+        // Emit turn-complete AYIN span
+        emit_turn_complete_span(
+            session,
+            &span_id,
+            actor,
+            &start_ts,
+            start.elapsed(),
+            "success",
+        );
 
         return Ok(text);
     }
@@ -442,6 +631,16 @@ async fn call_subprocess(
                 _child: None,
             });
         }
+
+        // Emit turn-complete AYIN span
+        emit_turn_complete_span(
+            session,
+            &span_id,
+            actor,
+            &start_ts,
+            start.elapsed(),
+            "success",
+        );
 
         return Ok(text);
     }
@@ -537,4 +736,60 @@ async fn call_ollama(
         .as_str()
         .map(str::to_owned)
         .ok_or_else(|| "unexpected Ollama response shape".to_owned())
+}
+
+/// Emit a turn-start AYIN span and return `(span_id, Instant, timestamp)` for
+/// the caller to pass to [`emit_turn_complete_span`] when the turn finishes.
+fn emit_turn_start_span(
+    session: &BuildSession,
+    actor: &str,
+    message: &str,
+) -> (String, std::time::Instant, String) {
+    let span_id = uuid::Uuid::new_v4().to_string();
+    let start = std::time::Instant::now();
+    let start_ts = chrono::Utc::now().to_rfc3339();
+    let _ = session.event_tx.send(crate::events::WebEvent::AyinSpan(
+        crate::events::types::TraceSpanSummary {
+            id: span_id.clone(),
+            parent_id: None,
+            actor: actor.to_owned(),
+            action: "copilot.turn.started".to_owned(),
+            timestamp: start_ts.clone(),
+            duration_ms: 0,
+            outcome: serde_json::json!("pending"),
+            metadata: serde_json::json!({
+                "message_preview": &message[..message.len().min(200)],
+                "build_id": session.build_id.to_string(),
+            }),
+            strand_activations: Vec::new(),
+        },
+    ));
+    (span_id, start, start_ts)
+}
+
+/// Emit a turn-complete AYIN span with real duration measurement.
+fn emit_turn_complete_span(
+    session: &BuildSession,
+    parent_span_id: &str,
+    actor: &str,
+    start_ts: &str,
+    elapsed: std::time::Duration,
+    outcome: &str,
+) {
+    let _ = session.event_tx.send(crate::events::WebEvent::AyinSpan(
+        crate::events::types::TraceSpanSummary {
+            id: uuid::Uuid::new_v4().to_string(),
+            parent_id: Some(parent_span_id.to_owned()),
+            actor: actor.to_owned(),
+            action: "copilot.turn.completed".to_owned(),
+            timestamp: start_ts.to_owned(),
+            duration_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
+            outcome: serde_json::json!(outcome),
+            metadata: serde_json::json!({
+                "build_id": session.build_id.to_string(),
+                "duration_s": format!("{:.1}", elapsed.as_secs_f64()),
+            }),
+            strand_activations: Vec::new(),
+        },
+    ));
 }

@@ -78,14 +78,14 @@
   <div class="px-4 py-1.5 border-b border-[#1e293b] flex gap-2">
     <button
       class="text-[9px] px-2 py-0.5 rounded transition-colors
-        {!showAcknowledged ? 'bg-[#7C3AED]/10 text-[#7C3AED]' : 'text-[#64748b] hover:text-[#94a3b8]'}"
+        {!showAcknowledged ? 'bg-[#FFD700]/10 text-[#FFD700]' : 'text-[#64748b] hover:text-[#94a3b8]'}"
       onclick={() => showAcknowledged = false}
     >
       Unacknowledged
     </button>
     <button
       class="text-[9px] px-2 py-0.5 rounded transition-colors
-        {showAcknowledged ? 'bg-[#7C3AED]/10 text-[#7C3AED]' : 'text-[#64748b] hover:text-[#94a3b8]'}"
+        {showAcknowledged ? 'bg-[#FFD700]/10 text-[#FFD700]' : 'text-[#64748b] hover:text-[#94a3b8]'}"
       onclick={() => showAcknowledged = true}
     >
       All
@@ -134,7 +134,7 @@
                 <span>{formatTime(alert.timestamp)}</span>
                 {#if alert.buildId}
                   <span>&middot;</span>
-                  <span class="text-[#7C3AED]">{alert.buildId.slice(-8)}</span>
+                  <span class="text-[#FFD700]">{alert.buildId.slice(-8)}</span>
                 {/if}
                 {#if alert.siblingId}
                   <span>&middot;</span>
@@ -150,7 +150,7 @@
 
   {#if $alerts.length > maxDisplay}
     <div class="px-4 py-2 border-t border-[#1e293b] text-center">
-      <button class="text-[10px] text-[#7C3AED] hover:text-[#9F67FF] transition-colors">
+      <button class="text-[10px] text-[#FFD700] hover:text-[#9F67FF] transition-colors">
         + {$alerts.length - maxDisplay} more alerts
       </button>
     </div>

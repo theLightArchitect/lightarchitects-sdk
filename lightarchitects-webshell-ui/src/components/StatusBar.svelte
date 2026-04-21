@@ -23,7 +23,7 @@
   <div class="w-px h-3 bg-[#334155] mx-1"></div>
 
   <!-- HELIX indicator -->
-  <div class="w-[7px] h-[7px] rounded-full shrink-0 bg-[#8B5CF6]" style="box-shadow: 0 0 4px #8B5CF6"></div>
+  <div class="w-[7px] h-[7px] rounded-full shrink-0 bg-[#FFD700]" style="box-shadow: 0 0 6px #FFD700"></div>
   <span class="text-[11px] text-[#94a3b8] font-mono leading-none">HELIX</span>
 
   <div class="w-px h-3 bg-[#334155] mx-1"></div>

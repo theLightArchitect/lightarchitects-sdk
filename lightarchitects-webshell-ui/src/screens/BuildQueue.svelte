@@ -25,7 +25,7 @@
   <!-- Ambient polytope decoration -->
   <div class="absolute inset-0 overflow-hidden pointer-events-none -z-10">
     <div class="absolute -top-20 -right-20">
-      <PolytopeDecor type="icositetrachoron" color="#7C3AED" size={400} opacity={0.03} speed={0.05} />
+      <PolytopeDecor type="icositetrachoron" color="#FFD700" size={400} opacity={0.03} speed={0.05} />
     </div>
     <div class="absolute -bottom-20 -left-20">
       <PolytopeDecor type="tesseract" color="#FF1493" size={300} opacity={0.04} speed={0.08} />
@@ -55,7 +55,7 @@
         </button>
       </div>
       <button
-        class="px-4 py-1.5 bg-[#7C3AED] text-white text-xs rounded hover:bg-[#6D28D9] transition-colors"
+        class="px-4 py-1.5 bg-[#D4A017] text-[#0a0a0f] text-xs font-semibold rounded hover:bg-[#FFD700] hover:shadow-[0_0_10px_rgba(255,215,0,0.4)] transition-all"
         onclick={newBuild}
       >
         + New Build

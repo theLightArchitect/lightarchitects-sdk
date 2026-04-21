@@ -57,6 +57,8 @@ export interface SetupInfo {
    * session left off.
    */
   resume_session?: string | null;
+  /** Working directory the webshell was launched from. */
+  cwd: string;
 }
 
 export interface SaveRequest {
@@ -93,6 +95,9 @@ export const settingsOpen = writable<boolean>(false);
  */
 export const pendingResumeSessionId = writable<string | null>(null);
 
+/** Working directory from the webshell's launch context — used as default CWD for builds. */
+export const serverCwd = writable<string>('/tmp');
+
 // --- Actions ---
 export async function loadSetupInfo(): Promise<void> {
   setupLoading.set(true);
@@ -106,6 +111,9 @@ export async function loadSetupInfo(): Promise<void> {
     persistedConfig.set(data.config ?? null);
     if (data.resume_session) {
       pendingResumeSessionId.set(data.resume_session);
+    }
+    if (data.cwd) {
+      serverCwd.set(data.cwd);
     }
     step.set(data.setup_complete ? 'done' : 'splash');
     if (data.setup_complete && data.config) {

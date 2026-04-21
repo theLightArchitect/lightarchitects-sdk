@@ -150,7 +150,7 @@
           {#each build.pillars as gate}
             <button
               class="text-[10px] px-2 py-1 rounded border transition-colors
-                {$selectedPillar === gate.pillar ? 'border-[#7C3AED] bg-[#7C3AED]/10 text-white' : 'border-[#1e293b] text-[#64748b] hover:border-[#334155]'}"
+                {$selectedPillar === gate.pillar ? 'border-[#FFD700] bg-[#FFD700]/10 text-white' : 'border-[#1e293b] text-[#64748b] hover:border-[#334155]'}"
               style="{$selectedPillar === gate.pillar ? `color: ${PILLAR_COLORS[gate.pillar]}` : ''}"
               onclick={() => selectPillar(gate.pillar)}
             >

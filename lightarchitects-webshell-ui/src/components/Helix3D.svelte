@@ -10,7 +10,7 @@
   } from '$lib/helix/helix-math';
   import { HelixPolytopeManager } from '$lib/helix/helix-polytopes';
   import { HelixInteraction } from '$lib/helix/helix-interaction';
-  import { helixEntries, promotionFeed, waves } from '$lib/stores';
+  import { helixEntries, promotionFeed, waves, activityFeed } from '$lib/stores';
   import type { SoulPromotionPayload } from '$lib/types';
   import { api } from '$lib/api';
 
@@ -32,6 +32,20 @@
   const pendingStaticEdges: StaticEdgeSpec[] = [];
 
   let container: HTMLDivElement;
+
+  // Phase 20 — pulse intensity for helix rotation. Spiked on every new
+  // activity event (not just start-of-turn), decays exponentially each frame.
+  // Tracks feed length so each new event re-spikes the pulse — matching the
+  // lÆx0-cli SiblingWave.spike() pattern.
+  let helixPulse = 0;
+  let lastActivityLen = 0;
+  $effect(() => {
+    const len = $activityFeed.length;
+    if (len > lastActivityLen) {
+      helixPulse = 1.0;
+      lastActivityLen = len;
+    }
+  });
 
   // Phase 9.7 — live helix_entry → orb-spawn counter. `orbCount` is derived
   // from the store length so reactivity flows straight from SSE to DOM.
@@ -754,7 +768,12 @@
       }
 
       const focusIntensity = interaction.getFocusIntensity();
-      group.rotation.y += 0.0006 * (1.0 - focusIntensity * 0.95);
+      // Phase 20: pulse decays toward baseline; every activity event re-spikes.
+      // Decay 0.96 at 60fps ≈ 1.0s half-life. Multiplier 0.025 gives 8× speed
+      // boost at peak — clearly visible rotation acceleration.
+      helixPulse *= 0.96;
+      const rotationSpeed = 0.003 + helixPulse * 0.025;
+      group.rotation.y += rotationSpeed * (1.0 - focusIntensity * 0.95);
 
       fineDustMat.opacity = 0.25 * (1.0 - focusIntensity * 0.7);
       bokehMat.opacity = 0.05 * (1.0 - focusIntensity * 0.8);

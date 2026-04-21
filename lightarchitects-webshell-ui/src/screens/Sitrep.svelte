@@ -42,7 +42,7 @@
   <!-- Ambient polytope decoration -->
   <div class="absolute inset-0 overflow-hidden pointer-events-none -z-10">
     <div class="absolute -top-20 -right-20">
-      <PolytopeDecor type="icositetrachoron" color="#7C3AED" size={400} opacity={0.03} speed={0.05} />
+      <PolytopeDecor type="icositetrachoron" color="#FFD700" size={400} opacity={0.03} speed={0.05} />
     </div>
     <div class="absolute -bottom-20 -left-20">
       <PolytopeDecor type="hexadecachoron" color="#00BFFF" size={300} opacity={0.04} speed={0.08} />

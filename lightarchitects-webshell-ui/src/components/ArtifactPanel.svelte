@@ -21,7 +21,7 @@
 
   const ARTIFACT_TYPE_COLORS: Record<Artifact['type'], string> = {
     log: '#3b82f6',
-    report: '#8b5cf6',
+    report: '#FFD700',
     coverage: '#22c55e',
     audit: '#ef4444',
     binary: '#6b7280',
@@ -66,7 +66,7 @@
       {#if onUpload}
         <button
           onclick={onUpload}
-          class="text-[10px] px-2 py-0.5 rounded bg-[#7C3AED]/10 text-[#7C3AED] hover:bg-[#7C3AED]/20 transition-colors"
+          class="text-[10px] px-2 py-0.5 rounded bg-[#FFD700]/10 text-[#FFD700] hover:bg-[#FFD700]/20 transition-colors"
         >
           + Upload
         </button>
@@ -78,7 +78,7 @@
   <div class="px-4 py-1.5 border-b border-[#1e293b] flex gap-1">
     <button
       class="text-[9px] px-2 py-0.5 rounded transition-colors
-        {typeFilter === 'all' ? 'bg-[#7C3AED]/10 text-[#7C3AED]' : 'text-[#475569] hover:text-[#94a3b8]'}"
+        {typeFilter === 'all' ? 'bg-[#FFD700]/10 text-[#FFD700]' : 'text-[#475569] hover:text-[#94a3b8]'}"
       onclick={() => typeFilter = 'all'}
     >
       All
@@ -108,7 +108,7 @@
         {@const isSelected = selectedId === artifact.id}
         <button
           class="w-full text-left px-4 py-2 flex items-start gap-3 transition-colors
-            {isSelected ? 'bg-[#7C3AED]/5' : 'hover:bg-[#0d1117]'}"
+            {isSelected ? 'bg-[#FFD700]/5' : 'hover:bg-[#0d1117]'}"
           onclick={() => onArtifactClick?.(artifact)}
         >
           <!-- Type badge -->

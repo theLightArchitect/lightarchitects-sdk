@@ -78,6 +78,12 @@ pub enum WebEvent {
     /// convergence (a `:SharedExperience` node + `:PARTICIPATES_IN` edges)
     /// is deferred to Phase 19c / 20.
     StrandConvergence(StrandConvergenceEvent),
+    /// Live copilot subprocess activity streamed during a turn.
+    ///
+    /// Emitted by `run_print_turn` / `run_codex_turn` for each intermediate
+    /// `stream-json` event (thinking, `tool_use`, `tool_result`, etc.). The
+    /// frontend Activity tab renders these as a live feed.
+    CopilotActivity(CopilotActivityEvent),
 }
 
 /// Cross-sibling strand convergence event (Phase 19b.2).
@@ -95,6 +101,27 @@ pub struct StrandConvergenceEvent {
     pub memo_ids: Vec<String>,
     /// ISO-8601 UTC timestamp of detection.
     pub detected_at: String,
+}
+
+/// Live copilot activity event streamed during a turn (Phase 20 — Activity tab).
+///
+/// Maps 1:1 to `stream-json` NDJSON lines from `claude --print --verbose`.
+/// The frontend Activity tab renders these as a collapsible live feed with
+/// verbose/auditable detail levels.
+#[derive(Debug, Clone, Serialize)]
+pub struct CopilotActivityEvent {
+    /// Build this activity belongs to.
+    pub build_id: String,
+    /// Event category from the stream-json line's `type` field.
+    /// Known values: `assistant`, `tool_use`, `tool_result`, `result`, `system`, `error`.
+    pub kind: String,
+    /// Human-readable summary (first 500 chars of content/thinking/tool name).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// Full raw JSON line for verbose/auditable mode.
+    pub raw: serde_json::Value,
+    /// ISO-8601 UTC timestamp of when this event was received.
+    pub timestamp: String,
 }
 
 /// Incremental pillar-run update broadcast over SSE (Phase 15).

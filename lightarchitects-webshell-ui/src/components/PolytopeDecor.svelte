@@ -12,7 +12,7 @@
 
   let {
     type = 'icositetrachoron',
-    color = '#7C3AED',
+    color = '#FFD700',
     size = 300,
     opacity = 0.04,
     speed = 0.1,

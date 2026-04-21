@@ -10,13 +10,13 @@ import {
   conductorTasks, arenaStatus, alerts, selectedPillar,
   copilotMessages, copilotLoading,
   helixEntries, promotionFeed, hotMemory, coldMemory,
-  appendPillarUpdate,
+  appendPillarUpdate, appendActivity, activityActive,
 } from './stores';
 import { spikeSibling } from './stores';
 import type {
   SiblingId, Build, Finding, ConductorTask, ArenaAgent,
   HelixEntrySsePayload, SoulPromotionPayload, ContextMemo,
-  PillarUpdatePayload,
+  PillarUpdatePayload, CopilotActivityEvent, AyinSpanEvent,
 } from './types';
 
 /** Maximum helix_entry events retained in the rolling window store. */
@@ -281,6 +281,25 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
       });
       if (resp.done) {
         copilotLoading.set(false);
+      }
+      break;
+    }
+    case 'copilot_activity': {
+      // Phase 20 — live copilot subprocess stream-json events (thinking, tool_use, etc.)
+      const payload = event as unknown as CopilotActivityEvent & { type: 'copilot_activity' };
+      appendActivity({ source: 'copilot', event: payload });
+      activityActive.set(payload.kind !== 'result');
+      // Also spike the sibling wave for visual feedback
+      spikeSibling('eva');
+      break;
+    }
+    case 'ayin_span': {
+      // Phase 20 — AYIN trace spans (MCP tool timing, decisions)
+      const span = event as unknown as AyinSpanEvent & { type: 'ayin_span' };
+      appendActivity({ source: 'ayin', span });
+      // Spike the actor's sibling wave
+      if (span.actor) {
+        spikeSibling(span.actor as SiblingId);
       }
       break;
     }

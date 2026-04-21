@@ -13,7 +13,8 @@
   import SiblingDispatch from './SiblingDispatch.svelte';
   import OllamaConfigModal from './OllamaConfigModal.svelte';
   import SettingsOverlay from './SettingsOverlay.svelte';
-  import { settingsOpen, pendingResumeSessionId } from '$lib/setup';
+  import PolytopeIcon from './PolytopeIcon.svelte';
+  import { settingsOpen, pendingResumeSessionId, serverCwd } from '$lib/setup';
   import { renderMarkdown } from '$lib/markdown';
   import type { CopilotMessage, SiblingId } from '$lib/types';
   import { Terminal } from '@xterm/xterm';
@@ -21,7 +22,7 @@
 
   // --- Drawer state ---
   let open = $state(false);
-  let heightPx = $state(420);
+  let heightPx = $state(350);
   const MIN_HEIGHT = 180;
   const MAX_HEIGHT_RATIO = 0.85;
 
@@ -38,12 +39,13 @@
   let mode = $state<'chat' | 'terminal'>('chat');
   let terminalEl: HTMLDivElement | undefined = $state();
   let sharedBuildId = $state<string | null>(null);
-  let cwd = $state('/tmp');
+  let cwd = $derived($serverCwd);
   let connecting = $state(false);
   let connectError = $state<string | null>(null);
   let showOllamaModal = $state(false);
   let input = $state('');
   let showSuggestions = $state(false);
+  let tesseractOpen = $state(false);
   let messagesEl: HTMLDivElement | undefined = $state();
   let oscillatorEl: HTMLCanvasElement | undefined = $state();
 
@@ -73,7 +75,7 @@
       const wave = waveData[sid];
       const samples = wave?.samples ?? [];
       if (samples.length === 0) continue;
-      const color = (SIBLING_COLORS as Record<string, string>)[sid] ?? '#7C3AED';
+      const color = (SIBLING_COLORS as Record<string, string>)[sid] ?? '#FFD700';
       const step = w / samples.length;
       ctx.beginPath();
       ctx.strokeStyle = color;
@@ -189,7 +191,7 @@
       cursorBlink: true,
       fontSize: 13,
       fontFamily: 'monospace',
-      theme: { background: '#0a0a0a', foreground: '#e2e8f0', cursor: '#7C3AED', selectionBackground: '#7C3AED44' },
+      theme: { background: '#0a0a0a', foreground: '#e2e8f0', cursor: '#FFD700', selectionBackground: '#FFD70044' },
     });
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -267,17 +269,18 @@
     input = '';
     showSuggestions = false;
     const { command, args } = parseCommand(text);
-    if (command) {
+
+    // Control commands (clear, focus, navigate, etc.) execute locally — no copilot turn.
+    if (command && ['clear', 'focus', 'navigate', 'notify', 'terminal', 'settings', 'theme', 'panel'].includes(command.name)) {
       addMessage('system', `/${command.name} ${args}`.trim());
       if (command.name === 'clear') { copilotMessages.set([]); return; }
-      try {
-        await command.execute(args);
-        mockStream(`Dispatched /${command.name}${args ? ` with "${args}"` : ''}. Context: ${$currentBuildId ? `build ${$currentBuildId}` : 'no active build'}.`);
-      } catch (err) {
-        addMessage('system', `Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-      }
+      try { await command.execute(args); }
+      catch (err) { addMessage('system', `Error: ${err instanceof Error ? err.message : 'Unknown error'}`); }
       return;
     }
+
+    // Everything else (including meta-skill QUICK actions like /build, /secure, /research)
+    // routes through the copilot subprocess for real agent execution.
     addMessage('user', text);
     copilotLoading.set(true);
     let buildId: string | null = null;
@@ -374,7 +377,7 @@
   <!-- Drag handle (only when open) -->
   {#if open}
     <div
-      class="h-1 bg-[#1e293b] hover:bg-[#7C3AED] focus:bg-[#7C3AED] cursor-ns-resize shrink-0 transition-colors outline-none focus:ring-1 focus:ring-[#7C3AED]"
+      class="h-1 bg-[#1e293b] hover:bg-[#FFD700] focus:bg-[#FFD700] cursor-ns-resize shrink-0 transition-colors outline-none focus:ring-1 focus:ring-[#FFD700]"
       onmousedown={onDragStart}
       onkeydown={onSeparatorKeydown}
       role="separator"
@@ -394,23 +397,23 @@
       <div class="flex rounded overflow-hidden border border-[#1e293b] shrink-0">
         <button
           onclick={() => { mode = 'chat'; }}
-          class="text-[9px] px-2 py-0.5 transition-colors {mode === 'chat' ? 'bg-[#7C3AED] text-white' : 'bg-transparent text-[#64748b] hover:text-[#e2e8f0]'}"
+          class="text-[9px] px-2 py-0.5 transition-colors {mode === 'chat' ? 'bg-[#D4A017] text-[#0a0a0f] font-semibold shadow-[0_0_6px_rgba(255,215,0,0.3)]' : 'bg-transparent text-[#64748b] hover:text-[#FFD700]'}"
         >CHAT</button>
         <button
           onclick={() => { mode = 'terminal'; }}
-          class="text-[9px] px-2 py-0.5 transition-colors {mode === 'terminal' ? 'bg-[#7C3AED] text-white' : 'bg-transparent text-[#64748b] hover:text-[#e2e8f0]'}"
+          class="text-[9px] px-2 py-0.5 transition-colors {mode === 'terminal' ? 'bg-[#D4A017] text-[#0a0a0f] font-semibold shadow-[0_0_6px_rgba(255,215,0,0.3)]' : 'bg-transparent text-[#64748b] hover:text-[#FFD700]'}"
         >TERMINAL</button>
       </div>
     {/if}
 
-    <!-- Identity pill -->
+    <!-- Identity pill — EVA is the copilot persona -->
     <button
       onclick={() => { open = !open; }}
       aria-expanded={open}
       class="flex items-center gap-1.5 text-[10px] text-[#94a3b8] hover:text-[#e2e8f0] transition-colors"
     >
-      <span class="text-[#7C3AED] font-semibold">⌨</span>
-      <span>Copilot</span>
+      <span class="text-[#FFD700] font-semibold" style="text-shadow: 0 0 8px rgba(255,215,0,0.5);">⌨</span>
+      <span>EVA</span>
       {#if sharedBuildId}
         <span class="text-[#22c55e]">●</span>
         <span class="text-[#475569] font-mono">{sharedBuildId.slice(0, 7)}</span>
@@ -443,7 +446,7 @@
           disabled={!canFork || forking}
           class="text-[9px] px-1.5 py-0.5 rounded border transition-colors
                  {canFork && !forking
-                   ? 'text-[#7C3AED] border-[#7C3AED]/40 hover:bg-[#7C3AED]/10'
+                   ? 'text-[#FFD700] border-[#FFD700]/40 hover:bg-[#FFD700]/10 shadow-[0_0_6px_rgba(255,215,0,0.2)]'
                    : 'text-[#475569] border-[#1e293b] cursor-not-allowed opacity-50'}"
           title={canFork
             ? 'Fork this conversation to a terminal (claude --resume / codex exec resume)'
@@ -488,7 +491,7 @@
               <span class="text-[10px] text-[#64748b]">Profile</span>
               <select
                 bind:value={$authProfile}
-                class="bg-[#111827] border border-[#1e293b] rounded px-2 py-1 text-[11px] text-[#e2e8f0] outline-none focus:border-[#7C3AED]"
+                class="bg-[#111827] border border-[#1e293b] rounded px-2 py-1 text-[11px] text-[#e2e8f0] outline-none focus:border-[#FFD700]/60"
               >
                 <option value="anthropic">Anthropic</option>
                 <option value="ollama">Ollama Cloud</option>
@@ -498,12 +501,12 @@
               {/if}
               <span class="text-[10px] text-[#64748b]">CWD</span>
               <input type="text" bind:value={cwd} placeholder="/tmp"
-                class="w-40 bg-[#111827] border border-[#1e293b] rounded px-2 py-1 text-[11px] text-[#e2e8f0] outline-none focus:border-[#7C3AED]"
+                class="w-40 bg-[#111827] border border-[#1e293b] rounded px-2 py-1 text-[11px] text-[#e2e8f0] outline-none focus:border-[#FFD700]/60"
               />
               <button
                 onclick={connectTerminal}
                 disabled={connecting}
-                class="px-3 py-1 bg-[#7C3AED] text-white text-[11px] rounded hover:bg-[#6D28D9] disabled:opacity-50"
+                class="px-3 py-1 bg-[#D4A017] text-[#0a0a0f] text-[11px] font-semibold rounded hover:bg-[#FFD700] hover:shadow-[0_0_8px_rgba(255,215,0,0.4)] disabled:opacity-50 transition-all"
               >{connecting ? 'Connecting…' : 'Connect'}</button>
               {#if connectError}
                 <span class="text-[10px] text-red-400">{connectError}</span>
@@ -534,7 +537,7 @@
               </div>
             {:else if forkResult}
               {#if forkResult.launched}
-                <div class="px-3 py-1.5 border-b border-[#7C3AED]/40 bg-[#7C3AED]/10 flex items-center gap-2 shrink-0">
+                <div class="px-3 py-1.5 border-b border-[#FFD700]/30 bg-[#FFD700]/5 flex items-center gap-2 shrink-0">
                   <span class="text-[10px] text-[#A78BFA]">↗ Opened in Terminal ({forkResult.platform}). Conversation continues in both places — same session.</span>
                   <div class="flex-1"></div>
                   <button onclick={dismissForkResult} class="text-[10px] text-[#A78BFA]/70 hover:text-[#A78BFA]">✕</button>
@@ -567,7 +570,7 @@
                 {#each $copilotMessages as msg (msg.id)}
                   <div class="flex {msg.role === 'user' ? 'justify-end' : msg.role === 'system' ? 'justify-center' : 'justify-start'}">
                     <div class="max-w-[80%] px-3 py-1.5 rounded-lg text-xs chat-bubble
-                      {msg.role === 'user' ? 'bg-[#7C3AED] text-white' :
+                      {msg.role === 'user' ? 'bg-[#D4A017]/90 text-[#0a0a0f]' :
                        msg.role === 'system' ? 'bg-[#1e293b]/50 text-[#64748b] border border-[#1e293b]' :
                        'bg-[#111827] border border-[#1e293b] text-[#e2e8f0]'}">
                       {#if msg.sibling}
@@ -599,7 +602,7 @@
                 <div class="absolute bottom-full left-3 right-3 mb-1 bg-[#0a0a0a] border border-[#1e293b] rounded-lg overflow-hidden shadow-xl z-10 max-h-40 overflow-y-auto">
                   {#each matchingCommands as cmd}
                     <button class="w-full text-left px-3 py-1.5 text-xs hover:bg-[#1e293b] flex items-baseline gap-2" onclick={() => selectCommand(cmd.name)}>
-                      <span class="text-[#7C3AED] font-mono">/{cmd.name}</span>
+                      <span class="text-[#FFD700] font-mono">/{cmd.name}</span>
                       <span class="text-[#64748b] flex-1">{cmd.description}</span>
                       {#if cmd.args}<span class="text-[#334155]">{cmd.args}</span>{/if}
                     </button>
@@ -610,7 +613,7 @@
               {#if input.startsWith('/') && matchingCommands.length > 0}
                 {@const hint = matchingCommands[0]}
                 <div class="text-[9px] text-[#475569] mb-1 flex items-center gap-2">
-                  <span class="text-[#7C3AED]">/{hint.name}</span>
+                  <span class="text-[#FFD700]">/{hint.name}</span>
                   <span>{hint.description}</span>
                   {#if hint.args}<span class="text-[#334155]">{hint.args}</span>{/if}
                 </div>
@@ -622,7 +625,15 @@
                 height={48}
                 style="width:100%;height:24px;display:block;border-radius:4px;margin-bottom:6px;opacity:0.85;"
               ></canvas>
-              <div class="flex gap-2">
+              <div class="flex gap-2 relative">
+                <!-- Tesseract command palette trigger — left of input, helix gold glow -->
+                <button
+                  onclick={() => { tesseractOpen = !tesseractOpen; }}
+                  class="{$copilotLoading ? 'tesseract-glow-thinking' : 'tesseract-glow'} w-9 h-9 flex items-center justify-center rounded-lg shrink-0 transition-all duration-200 {tesseractOpen ? 'border border-[#FFD700] bg-[#FFD700]/15 shadow-[0_0_14px_rgba(255,215,0,0.5)]' : 'border border-[#1e293b] hover:border-[#FFD700]/50 hover:shadow-[0_0_8px_rgba(255,215,0,0.25)]'}"
+                  title="Command palette"
+                >
+                  <PolytopeIcon type="tesseract" color={tesseractOpen ? '#FFD700' : '#D4A017'} size={22} />
+                </button>
                 <input
                   type="text"
                   bind:value={input}
@@ -631,34 +642,36 @@
                   onfocus={() => { if (input.startsWith('/')) showSuggestions = true; }}
                   onblur={() => { setTimeout(() => { showSuggestions = false; }, 200); }}
                   placeholder="Type a message or /command…"
-                  class="flex-1 bg-[#111827] border border-[#1e293b] rounded px-3 py-1.5 text-xs text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#7C3AED] transition-colors"
+                  class="flex-1 bg-[#111827] border border-[#1e293b] rounded px-3 py-1.5 text-xs text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#FFD700]/60 transition-colors"
                 />
                 <button
                   onclick={sendMessage}
                   disabled={$copilotLoading}
-                  class="px-3 py-1.5 bg-[#7C3AED] text-white text-xs rounded hover:bg-[#6D28D9] disabled:opacity-50 transition-colors"
+                  class="px-3 py-1.5 bg-[#D4A017] text-[#0a0a0f] text-xs font-semibold rounded hover:bg-[#FFD700] disabled:opacity-50 transition-colors"
                 >Send</button>
-              </div>
-            </div>
-          </div>
 
-          <!-- Sidebar: dispatch + context (hidden when narrow) -->
-          <div class="w-[180px] border-l border-[#1e293b] p-3 flex flex-col gap-3 overflow-y-auto shrink-0 hidden lg:flex">
-            <div>
-              <h3 class="text-[9px] font-medium text-[#64748b] mb-2">DISPATCH</h3>
-              <SiblingDispatch onDispatch={handleDispatch} selectedSibling={$focusedSibling} />
-            </div>
-            <div>
-              <h3 class="text-[9px] font-medium text-[#64748b] mb-1">CONTEXT</h3>
-              <pre class="text-[8px] text-[#475569] bg-[#0a0a0a] border border-[#1e293b] rounded p-1.5 whitespace-pre-wrap max-h-28 overflow-y-auto">{contextString}</pre>
-            </div>
-            <div>
-              <h3 class="text-[9px] font-medium text-[#64748b] mb-1">QUICK</h3>
-              <div class="space-y-0.5">
-                {#each ['/build', '/secure', '/research', '/review', '/observe'] as cmd}
-                  <button onclick={() => { input = cmd + ' '; }}
-                    class="w-full text-left text-[9px] px-2 py-0.5 rounded bg-[#111827] border border-[#1e293b] hover:border-[#334155] text-[#94a3b8] transition-colors">{cmd}</button>
-                {/each}
+                <!-- Tesseract popover — DISPATCH / CONTEXT / QUICK -->
+                {#if tesseractOpen}
+                  <div class="absolute bottom-full left-0 mb-2 w-[280px] bg-[#0d1117] border border-[#FFD700]/20 rounded-lg shadow-[0_0_20px_rgba(255,215,0,0.1)] p-3 flex flex-col gap-3 z-50">
+                    <div>
+                      <h3 class="text-[9px] font-medium text-[#64748b] mb-2">DISPATCH</h3>
+                      <SiblingDispatch onDispatch={(sib, prompt) => { tesseractOpen = false; handleDispatch(sib, prompt); }} selectedSibling={$focusedSibling} />
+                    </div>
+                    <div>
+                      <h3 class="text-[9px] font-medium text-[#64748b] mb-1">CONTEXT</h3>
+                      <pre class="text-[8px] text-[#475569] bg-[#0a0a0a] border border-[#1e293b] rounded p-1.5 whitespace-pre-wrap max-h-28 overflow-y-auto">{contextString}</pre>
+                    </div>
+                    <div>
+                      <h3 class="text-[9px] font-medium text-[#64748b] mb-1">QUICK</h3>
+                      <div class="flex flex-wrap gap-1">
+                        {#each ['/build', '/secure', '/research', '/review', '/observe'] as cmd}
+                          <button onclick={() => { input = cmd + ' '; tesseractOpen = false; }}
+                            class="text-[9px] px-2 py-0.5 rounded bg-[#111827] border border-[#1e293b] hover:border-[#FFD700]/50 text-[#94a3b8] hover:text-[#FFD700] transition-colors">{cmd}</button>
+                        {/each}
+                      </div>
+                    </div>
+                  </div>
+                {/if}
               </div>
             </div>
           </div>
@@ -696,8 +709,8 @@
     font-style: italic;
   }
   :global(.chat-md-content code) {
-    background: rgba(124, 58, 237, 0.15);
-    color: #c4b5fd;
+    background: rgba(255, 215, 0, 0.08);
+    color: #FFD700;
     padding: 0.1em 0.35em;
     border-radius: 3px;
     font-family: 'SF Mono', Menlo, Consolas, monospace;
@@ -741,12 +754,12 @@
   :global(.chat-md-content h3) { font-size: 1em; }
   :global(.chat-md-content h4) { font-size: 0.95em; }
   :global(.chat-md-content a) {
-    color: #a78bfa;
+    color: #FFD700;
     text-decoration: underline;
     text-underline-offset: 2px;
   }
   :global(.chat-md-content a:hover) {
-    color: #c4b5fd;
+    color: #FFD700;
   }
   :global(.chat-md-content blockquote) {
     border-left: 2px solid #334155;
@@ -773,5 +786,22 @@
   :global(.chat-md-content th) {
     background: #0a0a0f;
     font-weight: 600;
+  }
+
+  /* Tesseract button — ambient gold glow pulse matching the helix energy */
+  .tesseract-glow {
+    animation: tesseract-pulse 3s ease-in-out infinite;
+  }
+  /* Faster, brighter pulse when copilot is thinking */
+  .tesseract-glow-thinking {
+    animation: tesseract-pulse-thinking 1.2s ease-in-out infinite;
+  }
+  @keyframes tesseract-pulse {
+    0%, 100% { box-shadow: 0 0 4px rgba(255, 215, 0, 0.15); }
+    50% { box-shadow: 0 0 12px rgba(255, 215, 0, 0.4), 0 0 24px rgba(255, 215, 0, 0.12); }
+  }
+  @keyframes tesseract-pulse-thinking {
+    0%, 100% { box-shadow: 0 0 6px rgba(255, 215, 0, 0.3); }
+    50% { box-shadow: 0 0 18px rgba(255, 215, 0, 0.6), 0 0 32px rgba(255, 215, 0, 0.2); }
   }
 </style>

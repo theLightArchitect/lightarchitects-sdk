@@ -181,7 +181,7 @@
   }
 
   function siblingColor(sibling: string): string {
-    return (SIBLING_COLORS as Record<string, string>)[sibling] ?? '#7C3AED';
+    return (SIBLING_COLORS as Record<string, string>)[sibling] ?? '#FFD700';
   }
 
   $effect(() => {
@@ -299,17 +299,17 @@
     <!-- Tabs -->
     <div class="flex border-b border-[#1e293b] text-xs">
       <button
-        class="flex-1 py-2 transition-colors {tab === 'hot' ? 'bg-[#7C3AED] text-white' : 'text-[#94a3b8] hover:bg-[#111827]'}"
+        class="flex-1 py-2 transition-colors {tab === 'hot' ? 'bg-[#FFD700] text-white' : 'text-[#94a3b8] hover:bg-[#111827]'}"
         onclick={() => { tab = 'hot'; searchResults = null; }}
         data-testid="memory-tab-hot"
       >Hot (turnlog)</button>
       <button
-        class="flex-1 py-2 transition-colors {tab === 'cold' ? 'bg-[#7C3AED] text-white' : 'text-[#94a3b8] hover:bg-[#111827]'}"
+        class="flex-1 py-2 transition-colors {tab === 'cold' ? 'bg-[#FFD700] text-white' : 'text-[#94a3b8] hover:bg-[#111827]'}"
         onclick={() => { tab = 'cold'; searchResults = null; }}
         data-testid="memory-tab-cold"
       >Cold (helix)</button>
       <button
-        class="flex-1 py-2 transition-colors {tab === 'convergences' ? 'bg-[#7C3AED] text-white' : 'text-[#94a3b8] hover:bg-[#111827]'}"
+        class="flex-1 py-2 transition-colors {tab === 'convergences' ? 'bg-[#FFD700] text-white' : 'text-[#94a3b8] hover:bg-[#111827]'}"
         onclick={() => { tab = 'convergences'; searchResults = null; }}
         data-testid="memory-tab-convergences"
       >Convergences</button>
@@ -325,8 +325,8 @@
             data-active={searchMode === m}
             class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded
                    {searchMode === m
-                     ? 'bg-[#7C3AED] text-white'
-                     : 'bg-[#111827] border border-[#1e293b] text-[#94a3b8] hover:border-[#7C3AED]'}"
+                     ? 'bg-[#FFD700] text-white'
+                     : 'bg-[#111827] border border-[#1e293b] text-[#94a3b8] hover:border-[#FFD700]'}"
           >{m}</button>
         {/each}
         {#if rrfUsed}
@@ -345,7 +345,7 @@
         data-testid="search-input"
         class="w-full bg-[#111827] border border-[#1e293b] rounded px-2 py-1.5
                text-xs text-[#e2e8f0] placeholder-[#475569] outline-none
-               focus:border-[#7C3AED]"
+               focus:border-[#FFD700]"
       />
     </div>
 
@@ -360,14 +360,14 @@
       >
         <button
           class="text-[9px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-medium transition-colors
-                 {activeKinds === null ? 'bg-[#7C3AED] text-white' : 'bg-[#1e293b] text-[#64748b] hover:text-white'}"
+                 {activeKinds === null ? 'bg-[#FFD700] text-white' : 'bg-[#1e293b] text-[#64748b] hover:text-white'}"
           onclick={clearKindFilter}
           data-testid="kind-filter-all"
         >all</button>
         {#each availableKinds as k}
           <button
             class="text-[9px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-medium transition-colors
-                   {activeKinds?.has(k) ? 'bg-[#7C3AED] text-white' : 'bg-[#1e293b] text-[#a78bfa] hover:text-white'}"
+                   {activeKinds?.has(k) ? 'bg-[#FFD700] text-white' : 'bg-[#1e293b] text-[#FFD700] hover:text-white'}"
             onclick={() => toggleKind(k)}
             data-testid="kind-filter-{k}"
           >{k}</button>
@@ -397,7 +397,7 @@
                 <span class="text-[11px] text-[#e2e8f0] truncate">
                   {conv.label ?? `Convergence ${conv.id.slice(0, 8)}`}
                 </span>
-                <span class="text-[9px] text-[#a78bfa] whitespace-nowrap ml-2">
+                <span class="text-[9px] text-[#FFD700] whitespace-nowrap ml-2">
                   w {conv.weight.toFixed(2)}
                 </span>
               </div>
@@ -418,7 +418,7 @@
               </div>
               <!-- Expandable participant list -->
               <details class="mt-1">
-                <summary class="cursor-pointer text-[9px] text-[#7c3aed] hover:text-[#a78bfa]">
+                <summary class="cursor-pointer text-[9px] text-[#FFD700] hover:text-[#FFD700]">
                   participants
                 </summary>
                 <div class="mt-1 space-y-0.5">
@@ -495,7 +495,7 @@
                      so only non-entry kinds get a chip to keep the row quiet. -->
                 <span
                   class="text-[8px] px-1 py-0.5 rounded-sm uppercase tracking-wide
-                         bg-[#1e293b] text-[#a78bfa] font-medium"
+                         bg-[#1e293b] text-[#FFD700] font-medium"
                   data-testid="kind-chip"
                 >{memo.entry_type}</span>
               {/if}
@@ -565,7 +565,7 @@
               <span class="text-[9px] text-[#475569]">THEMES</span>
               <div class="flex flex-wrap gap-1 mt-1">
                 {#each selected.memo.themes as theme}
-                  <span class="px-1.5 py-0.5 rounded bg-[#3b0764]/40 border border-[#7C3AED]/30 text-[9px] text-[#c4b5fd]">{theme}</span>
+                  <span class="px-1.5 py-0.5 rounded bg-[#3b0764]/40 border border-[#FFD700]/30 text-[9px] text-[#c4b5fd]">{theme}</span>
                 {/each}
               </div>
             </div>
@@ -608,7 +608,7 @@
                 {#each relatedNeighbors as neighbor (neighbor.id)}
                   <button
                     class="px-1.5 py-0.5 rounded border border-[#334155] bg-[#111827]
-                           text-[9px] text-[#94a3b8] hover:border-[#7C3AED] transition-colors
+                           text-[9px] text-[#94a3b8] hover:border-[#FFD700] transition-colors
                            max-w-[180px] truncate"
                     title={neighbor.id}
                     onclick={() => {
@@ -639,7 +639,7 @@
 
     <!-- Promotion feed strip -->
     {#if $promotionFeed.length > 0}
-      <div class="px-3 py-1.5 border-t border-[#1e293b] bg-[#7C3AED]/10">
+      <div class="px-3 py-1.5 border-t border-[#1e293b] bg-[#FFD700]/10">
         <span class="text-[9px] text-[#a855f7]">
           ↑ {$promotionFeed.length} recent promotion{$promotionFeed.length === 1 ? '' : 's'}
         </span>

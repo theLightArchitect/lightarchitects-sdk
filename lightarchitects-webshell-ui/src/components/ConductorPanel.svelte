@@ -55,7 +55,7 @@
       <span class="text-[10px] text-[#64748b]">Queue Depth:</span>
       <div class="flex-1 h-1.5 bg-[#1e293b] rounded-full overflow-hidden">
         <div
-          class="h-full bg-gradient-to-r from-[#3b82f6] to-[#7C3AED] transition-all"
+          class="h-full bg-gradient-to-r from-[#3b82f6] to-[#FFD700] transition-all"
           style="width: {Math.min($conductorStats.queueDepth * 10, 100)}%"
         ></div>
       </div>
@@ -118,7 +118,7 @@
 
   {#if $conductorTasks.length > maxDisplay}
     <div class="px-4 py-2 border-t border-[#1e293b] text-center">
-      <button class="text-[10px] text-[#7C3AED] hover:text-[#9F67FF] transition-colors">
+      <button class="text-[10px] text-[#FFD700] hover:text-[#9F67FF] transition-colors">
         + {$conductorTasks.length - maxDisplay} more tasks
       </button>
     </div>

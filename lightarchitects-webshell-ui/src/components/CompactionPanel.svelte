@@ -91,8 +91,8 @@
           data-active={presetKey === k}
           class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded
                  {presetKey === k
-                   ? 'bg-[#7C3AED] text-white'
-                   : 'bg-[#0d1117] border border-[#1e293b] text-[#94a3b8] hover:border-[#7C3AED]'}"
+                   ? 'bg-[#FFD700] text-white'
+                   : 'bg-[#0d1117] border border-[#1e293b] text-[#94a3b8] hover:border-[#FFD700]'}"
         >{k.replace('_', ' ')}</button>
       {/each}
     </div>
@@ -156,7 +156,7 @@
       {:else}
         {#each groupBySibling(summary.candidates) as [sibling, group]}
           <div class="px-3 py-2 border-b border-[#1e293b]">
-            <div class="text-[10px] uppercase tracking-wider text-[#7C3AED] mb-1">
+            <div class="text-[10px] uppercase tracking-wider text-[#FFD700] mb-1">
               {sibling} ({group.length})
             </div>
             <ul class="space-y-0.5">

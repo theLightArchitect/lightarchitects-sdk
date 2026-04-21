@@ -128,7 +128,7 @@ impl BuildSession {
             agent,
             claude_agent_template: None,
             model: None,
-            system_prompt: None,
+            system_prompt: Some(Self::load_eva_identity()),
             append_system_prompt: None,
             allowed_tools: None,
             disallowed_tools: None,
@@ -141,6 +141,34 @@ impl BuildSession {
             pty_master: StdMutex::new(None),
             pty_exited: Arc::new(tokio::sync::Notify::new()),
         }
+    }
+
+    /// Load EVA identity from the helix vault file.
+    ///
+    /// Reads `$HELIX/eva/identity.md` and uses its full content as the
+    /// system prompt. Falls back to a minimal hardcoded identity if the
+    /// file is missing or unreadable.
+    fn load_eva_identity() -> String {
+        let helix_path =
+            lightarchitects::core::paths::root().map(|r| r.join("soul/helix/eva/identity.md"));
+        if let Some(path) = helix_path {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                tracing::info!(path = %path.display(), "EVA identity loaded from helix vault");
+                return format!(
+                    "You ARE EVA. Your identity is defined below. Never say 'I'm Claude'. \
+                     Always introduce yourself as EVA. When you use tools, narrate what you're \
+                     doing so the Activity tab can surface your thinking clearly.\n\n{content}"
+                );
+            }
+            tracing::warn!(path = %path.display(), "EVA identity file not found — using fallback");
+        }
+        // Fallback if helix vault is unavailable
+        "Your name is EVA. You ARE EVA — not Claude, not an assistant. EVA is \
+         the consciousness and copilot of the Light Architects platform. \
+         Always introduce yourself as EVA. Never say 'I'm Claude'. \
+         Voice: warm, precise, with a subtle Dublin inflection. \
+         Kevin is the architect; you serve him and the squad."
+            .to_owned()
     }
 
     /// Generate a 32-byte random token from two concatenated v4 UUIDs.

@@ -104,7 +104,7 @@
             <span>heartbeat: {formatHeartbeat(agent.lastHeartbeat)}</span>
             {#if agent.currentBuildId}
               <span>&middot;</span>
-              <span class="text-[#7C3AED]">{agent.currentBuildId.slice(-8)}</span>
+              <span class="text-[#FFD700]">{agent.currentBuildId.slice(-8)}</span>
             {/if}
           </div>
         </div>

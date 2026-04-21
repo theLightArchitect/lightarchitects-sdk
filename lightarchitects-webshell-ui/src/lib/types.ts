@@ -196,7 +196,42 @@ export type EventType =
   | 'sibling_status'
   | 'gateway_notify'
   | 'copilot_response'
+  | 'copilot_activity'
+  | 'control'
   | 'soul_promotion';
+
+// --- Activity tab (Phase 20) ---
+
+/** Live copilot subprocess event streamed during a turn. */
+export interface CopilotActivityEvent {
+  build_id: string;
+  /** Event category: assistant, content_block_start, content_block_delta, tool_use, result, etc. */
+  kind: string;
+  /** Human-readable summary (first ~200 chars of content). */
+  summary?: string;
+  /** Full raw JSON for verbose/auditable mode. */
+  raw: unknown;
+  /** ISO-8601 timestamp. */
+  timestamp: string;
+}
+
+/** AYIN trace span forwarded from the backend. */
+export interface AyinSpanEvent {
+  id: string;
+  parent_id?: string;
+  actor: string;
+  action: string;
+  timestamp: string;
+  duration_ms: number;
+  outcome: unknown;
+  metadata?: unknown;
+  strand_activations?: unknown[];
+}
+
+/** Unified Activity feed entry — either a copilot event or an AYIN span. */
+export type ActivityEntry =
+  | { source: 'copilot'; event: CopilotActivityEvent }
+  | { source: 'ayin'; span: AyinSpanEvent };
 
 // --- SOUL vault hybrid memory (Phase 9) ---
 

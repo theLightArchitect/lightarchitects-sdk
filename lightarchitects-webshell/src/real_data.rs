@@ -803,12 +803,15 @@ pub async fn dispatch_sibling(
             .into_response();
     };
     let sibling_upper = body.sibling.to_uppercase();
+    // Load sibling identity from helix vault if available
+    let identity_block = load_sibling_identity(&body.sibling);
     let dispatch_prompt = format!(
         "[Dispatch to {sibling_upper}]\n\
-         You are dispatching a task to the {sibling_upper} sibling. \
+         {identity_block}\
          Use {sibling_upper}'s MCP tools ({}Tools) to answer this request. \
          Respond with the actual result — not a summary of what you would do.\n\n\
-         {}", body.sibling, body.prompt,
+         {}",
+        body.sibling, body.prompt,
     );
     let result =
         crate::copilot::call_subprocess_public(&dispatch_prompt, &session.copilot_proc, &session)
@@ -829,4 +832,23 @@ pub async fn dispatch_sibling(
         )
             .into_response(),
     }
+}
+
+/// Load a sibling's identity from `$HELIX/<sibling>/identity.md`.
+///
+/// Returns the identity content prefixed with a header, or an empty string
+/// if the file is missing. This allows each sibling dispatch to carry the
+/// sibling's personality, voice, and role context.
+fn load_sibling_identity(sibling: &str) -> String {
+    let path = lightarchitects::core::paths::root()
+        .map(|r| r.join(format!("soul/helix/{sibling}/identity.md")));
+    if let Some(path) = path {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            return format!(
+                "You are {sibling_upper}. Your identity:\n{content}\n\n",
+                sibling_upper = sibling.to_uppercase(),
+            );
+        }
+    }
+    String::new()
 }

@@ -122,7 +122,7 @@
   <!-- Ambient polytope decoration -->
   <div class="absolute inset-0 overflow-hidden pointer-events-none -z-10">
     <div class="absolute -top-20 -left-20">
-      <PolytopeDecor type="icositetrachoron" color="#7C3AED" size={350} opacity={0.03} speed={0.05} />
+      <PolytopeDecor type="icositetrachoron" color="#FFD700" size={350} opacity={0.03} speed={0.05} />
     </div>
     <div class="absolute -bottom-20 -right-20">
       <PolytopeDecor type="duoprism64" color="#FF0040" size={300} opacity={0.03} speed={0.07} />
@@ -151,7 +151,7 @@
             {#each Object.entries(SOURCE_CONFIG) as [key, cfg]}
               <button
                 class="p-3 rounded-lg border text-left transition-colors
-                  {form.source === key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-[#1e293b] hover:border-[#334155] bg-[#111827]'}"
+                  {form.source === key ? 'border-[#FFD700] bg-[#FFD700]/5' : 'border-[#1e293b] hover:border-[#334155] bg-[#111827]'}"
                 onclick={() => setSource(key as IntakeSource)}
               >
                 <div class="flex items-center gap-2 mb-1">
@@ -175,10 +175,10 @@
               value={form.repoPath}
               oninput={(e) => { intakeForm.update(f => ({ ...f, repoPath: (e.target as HTMLInputElement).value })); }}
               placeholder="org/repo or local path"
-              class="flex-1 bg-[#111827] border border-[#1e293b] rounded px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#7C3AED]"
+              class="flex-1 bg-[#111827] border border-[#1e293b] rounded px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#FFD700]"
             />
             <button
-              class="px-3 py-2 text-xs rounded border border-[#1e293b] text-[#64748b] hover:border-[#7C3AED] hover:text-[#7C3AED] transition-colors"
+              class="px-3 py-2 text-xs rounded border border-[#1e293b] text-[#64748b] hover:border-[#FFD700] hover:text-[#FFD700] transition-colors"
               onclick={prefetchRepo}
               disabled={prefetching || !form.repoPath.trim()}
             >
@@ -210,7 +210,7 @@
             oninput={(e) => { intakeForm.update(f => ({ ...f, description: (e.target as HTMLTextAreaElement).value })); }}
             placeholder="Describe what this build should accomplish..."
             rows="3"
-            class="w-full bg-[#111827] border border-[#1e293b] rounded px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#7C3AED] resize-y"
+            class="w-full bg-[#111827] border border-[#1e293b] rounded px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#FFD700] resize-y"
           ></textarea>
         </div>
 
@@ -225,7 +225,7 @@
 
               <button
                 class="p-3 rounded-lg border text-left transition-colors
-                  {isSelected ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-[#1e293b] hover:border-[#334155] bg-[#111827]'}"
+                  {isSelected ? 'border-[#FFD700] bg-[#FFD700]/5' : 'border-[#1e293b] hover:border-[#334155] bg-[#111827]'}"
                 onclick={() => setMetaSkill(card.skill)}
               >
                 <div class="flex items-center gap-2 mb-1.5">
@@ -345,7 +345,7 @@
 
         <!-- Submit -->
         <button
-          class="w-full px-6 py-3 bg-[#7C3AED] text-white text-sm rounded-lg hover:bg-[#6D28D9] transition-colors font-medium disabled:opacity-50"
+          class="w-full px-6 py-3 bg-[#FFD700] text-white text-sm rounded-lg hover:bg-[#D4A017] transition-colors font-medium disabled:opacity-50"
           onclick={submit}
           disabled={submitting}
         >

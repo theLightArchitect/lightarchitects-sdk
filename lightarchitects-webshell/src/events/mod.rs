@@ -33,5 +33,6 @@ pub use control::control_handler;
 pub use helix_watcher::HelixWatcher;
 pub use strand::{parse_strand_activations, window_aggregate};
 pub use types::{
-    BuildEventKind, BuildUpdateEvent, ControlCommand, StrandActivationEvent, WebEvent,
+    BuildEventKind, BuildUpdateEvent, ControlCommand, CopilotActivityEvent, StrandActivationEvent,
+    WebEvent,
 };

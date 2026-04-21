@@ -74,8 +74,8 @@
       theme: {
         background: '#0a0a0a',
         foreground: '#e2e8f0',
-        cursor: '#7C3AED',
-        selectionBackground: '#7C3AED44',
+        cursor: '#FFD700',
+        selectionBackground: '#FFD70044',
       },
     });
     const fitAddon = new FitAddon();
@@ -314,11 +314,11 @@
     <div class="flex rounded overflow-hidden border border-[#1e293b]">
       <button
         onclick={() => { mode = 'chat'; }}
-        class="text-[10px] px-3 py-1 transition-colors {mode === 'chat' ? 'bg-[#7C3AED] text-white' : 'bg-[#111827] text-[#64748b] hover:text-[#e2e8f0]'}"
+        class="text-[10px] px-3 py-1 transition-colors {mode === 'chat' ? 'bg-[#FFD700] text-white' : 'bg-[#111827] text-[#64748b] hover:text-[#e2e8f0]'}"
       >CHAT</button>
       <button
         onclick={() => { mode = 'terminal'; }}
-        class="text-[10px] px-3 py-1 transition-colors {mode === 'terminal' ? 'bg-[#7C3AED] text-white' : 'bg-[#111827] text-[#64748b] hover:text-[#e2e8f0]'}"
+        class="text-[10px] px-3 py-1 transition-colors {mode === 'terminal' ? 'bg-[#FFD700] text-white' : 'bg-[#111827] text-[#64748b] hover:text-[#e2e8f0]'}"
       >TERMINAL</button>
     </div>
     {#if mode === 'chat'}
@@ -358,7 +358,7 @@
           <span class="text-[10px] text-[#64748b]">Profile</span>
           <select
             bind:value={$authProfile}
-            class="bg-[#111827] border border-[#1e293b] rounded px-2 py-1 text-[11px] text-[#e2e8f0] outline-none focus:border-[#7C3AED] transition-colors"
+            class="bg-[#111827] border border-[#1e293b] rounded px-2 py-1 text-[11px] text-[#e2e8f0] outline-none focus:border-[#FFD700] transition-colors"
           >
             <option value="anthropic">Anthropic</option>
             <option value="ollama">Ollama Cloud</option>
@@ -376,12 +376,12 @@
             type="text"
             bind:value={cwd}
             placeholder="/tmp"
-            class="w-32 sm:w-48 bg-[#111827] border border-[#1e293b] rounded px-2 py-1 text-[11px] text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#7C3AED] transition-colors"
+            class="w-32 sm:w-48 bg-[#111827] border border-[#1e293b] rounded px-2 py-1 text-[11px] text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#FFD700] transition-colors"
           />
           <button
             onclick={connectTerminal}
             disabled={connecting}
-            class="px-3 py-1 bg-[#7C3AED] text-white text-[11px] rounded hover:bg-[#6D28D9] disabled:opacity-50 transition-colors"
+            class="px-3 py-1 bg-[#FFD700] text-white text-[11px] rounded hover:bg-[#D4A017] disabled:opacity-50 transition-colors"
           >
             {connecting ? 'Connecting…' : 'Connect'}
           </button>
@@ -436,7 +436,7 @@
             <div class="flex {msg.role === 'user' ? 'justify-end' : msg.role === 'system' ? 'justify-center' : 'justify-start'}">
               <div
                 class="max-w-[80%] px-3 py-2 rounded-lg text-sm
-                  {msg.role === 'user' ? 'bg-[#7C3AED] text-white' :
+                  {msg.role === 'user' ? 'bg-[#FFD700] text-white' :
                     msg.role === 'system' ? 'bg-[#1e293b]/50 text-[#64748b] text-xs border border-[#1e293b]' :
                     'bg-[#111827] border border-[#1e293b] text-[#e2e8f0]'}"
               >
@@ -468,7 +468,7 @@
                 class="w-full text-left px-3 py-2 text-xs hover:bg-[#1e293b] transition-colors flex items-baseline gap-2"
                 onclick={() => selectCommand(cmd.name)}
               >
-                <span class="text-[#7C3AED] font-mono">/{cmd.name}</span>
+                <span class="text-[#FFD700] font-mono">/{cmd.name}</span>
                 {#if cmd.alias}
                   <span class="text-[#475569]">({cmd.alias.join(', ')})</span>
                 {/if}
@@ -490,12 +490,12 @@
             onfocus={() => { if (input.startsWith('/')) showSuggestions = true; }}
             onblur={() => { setTimeout(() => showSuggestions = false, 200); }}
             placeholder="Type a message or /command…"
-            class="flex-1 bg-[#111827] border border-[#1e293b] rounded px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#7C3AED] transition-colors"
+            class="flex-1 bg-[#111827] border border-[#1e293b] rounded px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#FFD700] transition-colors"
           />
           <button
             onclick={sendMessage}
             disabled={$copilotLoading}
-            class="px-4 py-2 bg-[#7C3AED] text-white text-sm rounded hover:bg-[#6D28D9] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            class="px-4 py-2 bg-[#FFD700] text-white text-sm rounded hover:bg-[#D4A017] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Send
           </button>

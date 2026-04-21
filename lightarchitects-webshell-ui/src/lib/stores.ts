@@ -80,6 +80,23 @@ export const promotionFeed = writable<SoulPromotionPayload[]>([]);
 /** UI toggle for the MemoryDrawer overlay. */
 export const memoryDrawerOpen = writable<boolean>(false);
 
+// --- Activity feed (Phase 20) ---
+
+/** Rolling window of live activity events (copilot stream + AYIN spans). Newest-first. */
+const ACTIVITY_WINDOW = 500;
+export const activityFeed = writable<import('./types').ActivityEntry[]>([]);
+
+/** Whether the copilot is actively processing (streaming events). */
+export const activityActive = writable<boolean>(false);
+
+/** @internal Exposed for sse.ts — appends an activity entry, capped at window size. */
+export function appendActivity(entry: import('./types').ActivityEntry): void {
+  activityFeed.update(list => {
+    const next = [entry, ...list];
+    return next.length > ACTIVITY_WINDOW ? next.slice(0, ACTIVITY_WINDOW) : next;
+  });
+}
+
 /**
  * Rolling pillar-run event stream (Phase 15) — newest-first. Every pillar
  * subprocess emits `started` + N × `output` + `completed`. UI components

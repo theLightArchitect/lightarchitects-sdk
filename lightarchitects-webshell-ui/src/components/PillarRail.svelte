@@ -47,7 +47,7 @@
   <div class="flex items-stretch gap-2">
     {#each pillars as gate, i}
       <button
-        class="flex-1 text-center rounded-lg transition-all {selected === gate.pillar ? 'ring-1 ring-[#7C3AED] bg-[#7C3AED]/5' : 'hover:bg-[#111827]'}"
+        class="flex-1 text-center rounded-lg transition-all {selected === gate.pillar ? 'ring-1 ring-[#FFD700] bg-[#FFD700]/5' : 'hover:bg-[#111827]'}"
         onclick={() => onPillarClick?.(gate.pillar)}
       >
         <!-- Pillar label -->

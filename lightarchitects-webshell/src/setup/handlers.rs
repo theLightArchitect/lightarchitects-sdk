@@ -28,23 +28,28 @@ fn home_dir() -> Option<std::path::PathBuf> {
 /// Auth status for Claude Code (Anthropic) backend.
 #[derive(Debug, Clone, Serialize)]
 pub struct ClaudeAuthStatus {
-    /// `~/.claude/` contains at least one `.json` file (OAuth tokens).
+    /// Credentials present in macOS Keychain (canonical probe via SDK).
     pub has_keychain_auth: bool,
     /// `ANTHROPIC_API_KEY` is set and not a placeholder value.
     pub has_api_key: bool,
-    /// Resolved login method.
+    /// Resolved login method (`keychain` / `file` / `api_key` / `none`).
     pub login_method: String,
+    /// Human-readable source (e.g. `"macOS Keychain (Claude Code-credentials)"`,
+    /// `"~/.claude/.credentials.json"`, `"ANTHROPIC_API_KEY env"`).
+    pub login_source: String,
 }
 
 /// Auth status for Codex (`OpenAI`) backend.
 #[derive(Debug, Clone, Serialize)]
 pub struct CodexAuthStatus {
-    /// `~/.codex/auth.json` or similar auth file is present.
+    /// Credentials present at canonical location (file or keyring).
     pub has_keychain_auth: bool,
     /// `OPENAI_API_KEY` is set.
     pub has_api_key: bool,
-    /// Resolved login method.
+    /// Resolved login method (`file` / `keychain` / `api_key` / `none`).
     pub login_method: String,
+    /// Human-readable source (e.g. `"~/.codex/auth.json"`, `"OPENAI_API_KEY env"`).
+    pub login_source: String,
 }
 
 /// Connectivity status for the Ollama backend.
@@ -76,6 +81,19 @@ pub struct SetupInfoResponse {
     pub config: Option<SetupConfig>,
     /// Live auth detection results.
     pub auth_status: AuthStatus,
+    /// Session UUID pre-seeded via `--resume-session <id>`, if any.
+    ///
+    /// The frontend reads this on boot and forwards it as
+    /// `resume_session_id` on its first `POST /api/builds` so the next
+    /// copilot turn invokes `claude --resume <id>` (or
+    /// `codex exec resume <id>`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resume_session: Option<String>,
+    /// Working directory the webshell was launched from.
+    ///
+    /// The frontend should use this as the default CWD for new builds
+    /// so the copilot operates on the correct project (not `/tmp`).
+    pub cwd: String,
 }
 
 /// A single model option returned by `GET /api/setup/models`.
@@ -127,74 +145,87 @@ pub struct ModelsQuery {
     pub base_url: Option<String>,
 }
 
-// ── Auth detection (filesystem heuristics — no network) ──────────────────────
+// ── Auth detection (canonical via SDK credentials module) ────────────────────
 
-/// Detect Claude Code auth state from the filesystem and env.
-fn detect_claude_auth() -> ClaudeAuthStatus {
-    let home = home_dir();
+/// Format a detailed locator as a human-readable source string.
+///
+/// Safe to render in UI; the SDK's own `Debug` impl redacts these fields,
+/// but rendering to user-chosen UI is explicitly allowed.
+fn format_source(dl: &lightarchitects::credentials::DetailedLocator) -> String {
+    use lightarchitects::credentials::DetailedLocator;
+    match dl {
+        DetailedLocator::Absent => "none".to_owned(),
+        DetailedLocator::Keychain { service, .. } => {
+            format!("macOS Keychain ({service})")
+        }
+        DetailedLocator::File { path } => path.display().to_string(),
+        DetailedLocator::Env { var } => format!("{var} env"),
+    }
+}
 
-    let has_keychain_auth = home.as_ref().is_some_and(|h| {
-        let claude_dir = h.join(".claude");
-        claude_dir.is_dir()
-            && std::fs::read_dir(&claude_dir)
-                .map(|mut d| {
-                    d.any(|e| {
-                        e.ok()
-                            .and_then(|e| e.path().extension().map(|x| x == "json"))
-                            .unwrap_or(false)
-                    })
-                })
-                .unwrap_or(false)
-    });
+fn login_method_from(dl: &lightarchitects::credentials::DetailedLocator) -> &'static str {
+    use lightarchitects::credentials::DetailedLocator;
+    match dl {
+        DetailedLocator::Absent => "none",
+        DetailedLocator::Keychain { .. } => "keychain",
+        DetailedLocator::File { .. } => "file",
+        DetailedLocator::Env { .. } => "api_key",
+    }
+}
+
+/// Detect Claude Code auth state via the SDK credentials registry.
+async fn detect_claude_auth() -> ClaudeAuthStatus {
+    let registry = lightarchitects::credentials::default_registry();
+    let dl = match registry
+        .probe_detailed(lightarchitects::credentials::ANTHROPIC_CLI)
+        .await
+    {
+        Some(Ok(dl)) => dl,
+        _ => lightarchitects::credentials::DetailedLocator::Absent,
+    };
 
     let has_api_key = std::env::var("ANTHROPIC_API_KEY")
         .map(|k| !k.is_empty() && k != "your_anthropic_key_here")
         .unwrap_or(false);
-
-    let login_method = if has_keychain_auth {
-        "oauth".to_owned()
-    } else if has_api_key {
-        "api_key".to_owned()
-    } else {
-        "none".to_owned()
-    };
+    let has_keychain_auth = matches!(
+        dl,
+        lightarchitects::credentials::DetailedLocator::Keychain { .. }
+            | lightarchitects::credentials::DetailedLocator::File { .. }
+    );
 
     ClaudeAuthStatus {
         has_keychain_auth,
         has_api_key,
-        login_method,
+        login_method: login_method_from(&dl).to_owned(),
+        login_source: format_source(&dl),
     }
 }
 
-/// Detect Codex auth state from the filesystem and env.
-fn detect_codex_auth() -> CodexAuthStatus {
-    let home = home_dir();
-
-    let has_keychain_auth = home.as_ref().is_some_and(|h| {
-        let codex_dir = h.join(".codex");
-        codex_dir.join("auth.json").exists()
-            || (codex_dir.is_dir()
-                && std::fs::read_dir(&codex_dir)
-                    .map(|mut d| d.any(|e| e.is_ok()))
-                    .unwrap_or(false))
-    });
+/// Detect Codex auth state via the SDK credentials registry.
+async fn detect_codex_auth() -> CodexAuthStatus {
+    let registry = lightarchitects::credentials::default_registry();
+    let dl = match registry
+        .probe_detailed(lightarchitects::credentials::OPENAI_CLI)
+        .await
+    {
+        Some(Ok(dl)) => dl,
+        _ => lightarchitects::credentials::DetailedLocator::Absent,
+    };
 
     let has_api_key = std::env::var("OPENAI_API_KEY")
         .map(|k| !k.is_empty())
         .unwrap_or(false);
-
-    let login_method = if has_keychain_auth {
-        "chatgpt".to_owned()
-    } else if has_api_key {
-        "api_key".to_owned()
-    } else {
-        "none".to_owned()
-    };
+    let has_keychain_auth = matches!(
+        dl,
+        lightarchitects::credentials::DetailedLocator::Keychain { .. }
+            | lightarchitects::credentials::DetailedLocator::File { .. }
+    );
 
     CodexAuthStatus {
         has_keychain_auth,
         has_api_key,
-        login_method,
+        login_method: login_method_from(&dl).to_owned(),
+        login_source: format_source(&dl),
     }
 }
 
@@ -356,12 +387,12 @@ fn agent_session_from_save(req: &SaveRequest) -> Option<crate::config::AgentSess
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 /// `GET /api/setup/info` — returns setup state + auth detection (unauthenticated).
-pub async fn setup_info(State(_state): State<AppState>) -> impl IntoResponse {
+pub async fn setup_info(State(state): State<AppState>) -> impl IntoResponse {
     let setup_complete = Config::is_setup_complete();
     let config = Config::load_setup();
 
-    let claude = detect_claude_auth();
-    let codex = detect_codex_auth();
+    let claude = detect_claude_auth().await;
+    let codex = detect_codex_auth().await;
     let ollama_url = config
         .as_ref()
         .and_then(|c| c.ollama_base_url.clone())
@@ -378,6 +409,8 @@ pub async fn setup_info(State(_state): State<AppState>) -> impl IntoResponse {
         setup_complete,
         config,
         auth_status,
+        resume_session: state.config.resume_session.clone(),
+        cwd: state.config.cwd.to_string_lossy().into_owned(),
     })
     .into_response()
 }

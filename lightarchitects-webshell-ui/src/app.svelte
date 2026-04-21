@@ -16,6 +16,7 @@
 
   // Lazy-loaded screens (code-split per route)
   const screenModules = {
+    Activity:   () => import('./screens/Activity.svelte'),
     BuildQueue: () => import('./screens/BuildQueue.svelte'),
     Workspace:  () => import('./screens/Workspace.svelte'),
     Intake:     () => import('./screens/Intake.svelte'),
@@ -28,6 +29,7 @@
   let screenLoading = $state(true);
 
   function resolveScreenKey(path: string): keyof typeof screenModules {
+    if (path === '/activity') return 'Activity';
     if (path.startsWith('/workspace')) return 'Workspace';
     if (path === '/intake') return 'Intake';
     if (path === '/sitrep') return 'Sitrep';
@@ -57,9 +59,10 @@
   let showHelix = $state(true);
 
   const NAV_ITEMS = [
-    { label: 'Queue',  hash: '/'       },
-    { label: 'Intake', hash: '/intake' },
-    { label: 'Sitrep', hash: '/sitrep' },
+    { label: 'Activity', hash: '/activity' },
+    { label: 'Queue',    hash: '/'         },
+    { label: 'Intake',   hash: '/intake'   },
+    { label: 'Sitrep',   hash: '/sitrep'   },
   ];
 
   function navigate(hash: string) {
@@ -109,20 +112,20 @@
         {#each NAV_ITEMS as item}
           <button
             onclick={() => navigate(item.hash)}
-            class="shrink-0 px-3 py-1 text-[11px] rounded transition-colors {isActive(item.hash) ? 'bg-[#1e293b] text-[#e2e8f0]' : 'text-[#475569] hover:text-[#94a3b8]'}"
+            class="shrink-0 px-3 py-1 text-[11px] rounded transition-all {isActive(item.hash) ? 'bg-[#FFD700]/15 text-[#FFD700] shadow-[0_0_8px_rgba(255,215,0,0.2)] border border-[#FFD700]/30' : 'text-[#475569] hover:text-[#FFD700] border border-transparent'}"
           >{item.label}</button>
         {/each}
         <div class="ml-auto shrink-0 flex items-center gap-2">
           <button
             onclick={() => memoryDrawerOpen.update(v => !v)}
-            class="px-2 py-1 text-[11px] text-[#475569] hover:text-[#94a3b8] transition-colors"
+            class="px-2 py-1 text-[11px] text-[#475569] hover:text-[#FFD700] transition-colors"
             title="Memory drawer (Cmd+M)"
             data-testid="memory-toggle"
           >{$memoryDrawerOpen ? 'Close Memory' : 'Memory'}</button>
           <div class="hidden lg:flex items-center gap-2">
             <button
               onclick={() => { showHelix = !showHelix; }}
-              class="px-2 py-1 text-[11px] text-[#475569] hover:text-[#94a3b8] transition-colors"
+              class="px-2 py-1 text-[11px] text-[#475569] hover:text-[#FFD700] transition-colors"
             >{showHelix ? 'Hide 3D' : 'Show 3D'}</button>
           </div>
         </div>
@@ -131,7 +134,7 @@
       {#if screenLoading}
         <div class="flex-1 flex items-center justify-center">
           <div class="flex items-center gap-3">
-            <div class="w-4 h-4 border-2 border-[#7C3AED] border-t-transparent rounded-full animate-spin"></div>
+            <div class="w-4 h-4 border-2 border-[#FFD700] border-t-transparent rounded-full animate-spin shadow-[0_0_6px_rgba(255,215,0,0.4)]"></div>
             <span class="text-xs text-[#64748b]">Loading...</span>
           </div>
         </div>

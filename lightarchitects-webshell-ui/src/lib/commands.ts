@@ -4,8 +4,10 @@
 
 import { api } from './api';
 import { currentBuildId, commandPaletteOpen, copilotMessages } from './stores';
+import { serverCwd } from './setup';
 import type { MetaSkill, SiblingId } from './types';
 import { META_SKILLS, SIBLINGS } from './types';
+import { get } from 'svelte/store';
 
 export interface SlashCommand {
   name: string;
@@ -22,7 +24,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description: `Start ${skill} meta-skill cycle`,
     args: '[project]',
     execute: async (args: string) => {
-      await api.createBuild({ cwd: '/tmp', metaSkill: skill, target: args });
+      await api.createBuild({ cwd: get(serverCwd), metaSkill: skill, target: args });
       currentBuildId.set(null); // will be set by SSE
     },
   })),
