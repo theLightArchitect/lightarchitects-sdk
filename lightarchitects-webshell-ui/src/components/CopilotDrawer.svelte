@@ -488,7 +488,15 @@
               <span class="text-[9px] text-[#475569] font-mono">· build {sharedBuildId.slice(0, 8)}…</span>
             {/if}
           </div>
-          <div bind:this={terminalEl} class="flex-1 overflow-hidden bg-[#0a0a0a] min-h-0" style="font-family: monospace; contain: strict;"></div>
+          {#if !$terminalConnected}
+            <div class="flex-1 flex items-center justify-center bg-[#0a0a0a]">
+              <div class="flex items-center gap-3">
+                <div class="w-3 h-3 border-2 border-[#FFD700] border-t-transparent rounded-full animate-spin"></div>
+                <span class="text-[11px] text-[#475569] font-mono">Connecting to PTY at {cwd}…</span>
+              </div>
+            </div>
+          {/if}
+          <div bind:this={terminalEl} class="overflow-hidden bg-[#0a0a0a] min-h-0 {$terminalConnected ? 'flex-1' : 'h-0'}" style="font-family: monospace; contain: strict;"></div>
         </div>
 
       <!-- ── CHAT MODE ── -->
