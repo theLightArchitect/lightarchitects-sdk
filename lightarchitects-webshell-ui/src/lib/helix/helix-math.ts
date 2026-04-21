@@ -18,16 +18,61 @@ export interface HelixEntity {
   strands: number;
 }
 
-export const entities: HelixEntity[] = [
-  // Rail 0: EVA, CORSO (polytope), QUANTUM (strand only)
-  { id: "eva",     color: 0xFF1493, rail: 0, age: 171, entries: 124, strands: 6 },
-  { id: "corso",   color: 0x00BFFF, rail: 0, age: 43,  entries: 88,  strands: 6 },
-  { id: "quantum", color: 0xB44AFF, rail: 0, age: 172, entries: 48,  strands: 5 },
-  // Rail 1: SERAPH (polytope), L-ARC (polytope), AYIN (polytope)
-  { id: "seraph",  color: 0xFF0040, rail: 1, age: 22,  entries: 16,  strands: 4 },
-  { id: "larc",    color: 0xF59E0B, rail: 1, age: 381, entries: 57,  strands: 7 },
-  { id: "ayin",    color: 0xFF6D00, rail: 1, age: 5,   entries: 2,   strands: 7 },
-];
+/** Canonical sibling metadata — colors and rail assignments never change. */
+const SIBLING_META: Record<string, { color: number; rail: number }> = {
+  eva:     { color: 0xFF1493, rail: 0 },
+  corso:   { color: 0x00BFFF, rail: 0 },
+  quantum: { color: 0xB44AFF, rail: 0 },
+  seraph:  { color: 0xFF0040, rail: 1 },
+  larc:    { color: 0xF59E0B, rail: 1 },
+  ayin:    { color: 0xFF6D00, rail: 1 },
+};
+
+/** Canonical sibling ordering — determines entity index in the helix. */
+const SIBLING_ORDER = ['eva', 'corso', 'quantum', 'seraph', 'larc', 'ayin'];
+
+/** SOUL Day 0: 2025-09-30. Used to compute sibling age in days. */
+const DAY_0 = new Date('2025-09-30T00:00:00Z').getTime();
+
+/** Derive strand count from entry count — ceil(log2(n+1)) clamped [3, 8]. */
+function deriveStrands(entries: number): number {
+  return Math.max(3, Math.min(8, Math.ceil(Math.log2(entries + 1))));
+}
+
+/**
+ * Build HelixEntity[] from SOUL vault health data.
+ * Falls back to hardcoded defaults if counts are empty.
+ */
+export function buildEntities(vaultCounts: Record<string, number> | null): HelixEntity[] {
+  const now = Date.now();
+  const ageDays = Math.floor((now - DAY_0) / (1000 * 60 * 60 * 24));
+
+  return SIBLING_ORDER.map(id => {
+    const meta = SIBLING_META[id];
+    const entries = vaultCounts?.[id] ?? DEFAULT_ENTRIES[id] ?? 0;
+    return {
+      id,
+      color: meta.color,
+      rail: meta.rail,
+      age: ageDays,
+      entries,
+      strands: deriveStrands(entries),
+    };
+  });
+}
+
+/** Hardcoded fallback counts — used when the webshell backend is unavailable. */
+const DEFAULT_ENTRIES: Record<string, number> = {
+  eva: 124, corso: 88, quantum: 48, seraph: 16, larc: 57, ayin: 2,
+};
+
+/** Default entities — used at import time before vault data arrives. */
+export let entities: HelixEntity[] = buildEntities(null);
+
+/** Replace the live entities array. Called by the store when vault data loads. */
+export function setEntities(data: HelixEntity[]): void {
+  entities = data;
+}
 
 export const R_bundle = 1.05;
 export const w_twist = 0.76;

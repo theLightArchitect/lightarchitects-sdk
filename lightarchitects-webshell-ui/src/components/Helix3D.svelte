@@ -4,13 +4,14 @@
   import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
   import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
   import {
-    tMin, tMax, entities,
+    tMin, tMax,
     getFade, getPrimaryFrame, getEntityCenter, getMiniAnchorFrame,
-    getSubStrandPos, seededRandom,
+    getSubStrandPos, seededRandom, buildEntities, setEntities,
   } from '$lib/helix/helix-math';
+  import type { HelixEntity } from '$lib/helix/helix-math';
   import { HelixPolytopeManager } from '$lib/helix/helix-polytopes';
   import { HelixInteraction } from '$lib/helix/helix-interaction';
-  import { helixEntries, promotionFeed, waves, activityFeed, copilotLoading } from '$lib/stores';
+  import { helixEntries, promotionFeed, waves, activityFeed, copilotLoading, vaultCounts } from '$lib/stores';
   import type { SoulPromotionPayload } from '$lib/types';
   import { api } from '$lib/api';
 
@@ -32,6 +33,19 @@
   const pendingStaticEdges: StaticEdgeSpec[] = [];
 
   let container: HTMLDivElement;
+
+  // --- Reactive entities from SOUL vault ---
+  // When vault health data arrives, rebuild the entities array and bump
+  // the generation counter to trigger a full scene rebuild.
+  let helixGeneration = $state(0);
+  let entities: HelixEntity[] = buildEntities(null);
+  $effect(() => {
+    const counts = $vaultCounts;
+    const newEntities = buildEntities(counts);
+    setEntities(newEntities);
+    entities = newEntities;
+    helixGeneration += 1;
+  });
 
   // Phase 20 — pulse intensity for helix rotation. Spiked on every new
   // activity event (not just start-of-turn), decays exponentially each frame.
@@ -178,6 +192,10 @@
 
   $effect(() => {
     if (!container) return;
+    // Read helixGeneration to establish dependency — when vault data
+    // arrives, this entire effect re-runs and rebuilds the scene with
+    // real entity counts from the SOUL vault.
+    void helixGeneration;
 
     const width = container.clientWidth;
     const height = container.clientHeight;

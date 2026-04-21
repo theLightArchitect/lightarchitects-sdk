@@ -80,6 +80,11 @@ export const promotionFeed = writable<SoulPromotionPayload[]>([]);
 /** UI toggle for the MemoryDrawer overlay. */
 export const memoryDrawerOpen = writable<boolean>(false);
 
+// --- SOUL vault health (drives helix entity data) ---
+
+/** Per-sibling entry counts from /api/soul/health. Null until fetched. */
+export const vaultCounts = writable<Record<string, number> | null>(null);
+
 // --- Activity feed (Phase 20) ---
 
 /** Rolling window of live activity events (copilot stream + AYIN spans). Newest-first. */
@@ -333,13 +338,14 @@ export function spikeSibling(id: SiblingId): void {
 // --- Live data initialization (called on app mount) ---
 export async function initializeStores(): Promise<void> {
   try {
-    const [ws, conductor, arena, siblings, hot, cold] = await Promise.allSettled([
+    const [ws, conductor, arena, siblings, hot, cold, soulHealth] = await Promise.allSettled([
       api.listWorkspaces(),
       api.getConductor(),
       api.getArena(),
       api.getSiblingStatus(),
       api.getHotMemory(),
       api.getColdMemory(),
+      api.getSoulHealth(),
     ]);
     if (ws.status === 'fulfilled') workspaces.set(ws.value);
     if (conductor.status === 'fulfilled') {
@@ -352,6 +358,9 @@ export async function initializeStores(): Promise<void> {
     }
     if (hot.status === 'fulfilled') hotMemory.set(hot.value);
     if (cold.status === 'fulfilled') coldMemory.set(cold.value);
+    if (soulHealth.status === 'fulfilled') {
+      vaultCounts.set(soulHealth.value.counts);
+    }
   } catch {
     // Server offline — stores remain at empty defaults
   }
