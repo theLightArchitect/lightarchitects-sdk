@@ -75,6 +75,15 @@ export const setupComplete = writable<boolean>(false);
 export const setupLoading = writable<boolean>(false);
 export const setupError = writable<string | null>(null);
 
+/**
+ * Resolves once `loadSetupInfo()` has completed (success or failure).
+ * SplashStep awaits this to avoid the 2.5s blind timer race.
+ */
+let _resolveSetupInfo: (() => void) | null = null;
+export const setupInfoLoaded: Promise<void> = new Promise((resolve) => {
+  _resolveSetupInfo = resolve;
+});
+
 export const selectedBackend = writable<string | null>(null);
 export const selectedAgent = writable<string | null>(null);
 export const selectedModel = writable<string | null>(null);
@@ -127,6 +136,8 @@ export async function loadSetupInfo(): Promise<void> {
     setupError.set(String(e));
   } finally {
     setupLoading.set(false);
+    _resolveSetupInfo?.();
+    _resolveSetupInfo = null;
   }
 }
 

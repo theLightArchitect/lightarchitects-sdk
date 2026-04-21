@@ -15,6 +15,7 @@
   import SettingsOverlay from './SettingsOverlay.svelte';
   import PolytopeIcon from './PolytopeIcon.svelte';
   import { settingsOpen, pendingResumeSessionId, serverCwd } from '$lib/setup';
+  import { saveSettingsDebounced } from '$lib/settings-persistence';
   import { renderMarkdown } from '$lib/markdown';
   import type { CopilotMessage, SiblingId } from '$lib/types';
   import { Terminal } from '@xterm/xterm';
@@ -339,7 +340,7 @@
     heightPx = Math.min(maxH, Math.max(MIN_HEIGHT, dragStartH + delta));
   }
 
-  function onDragEnd() { dragging = false; }
+  function onDragEnd() { dragging = false; saveSettingsDebounced(); }
 
   function onSeparatorKeydown(e: KeyboardEvent) {
     const step = 20;

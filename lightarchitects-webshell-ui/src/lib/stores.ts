@@ -11,6 +11,7 @@ import type {
   IntakeSource, Priority, BuildRequest, MetaSkillCard, MetaSkill,
   AuthProfile, OllamaConfig,
   ContextMemo, HelixEntrySsePayload, SoulPromotionPayload, PillarUpdatePayload,
+  SupervisorAlert,
 } from './types';
 import { SiblingWave, SIBLINGS, PILLARS } from './types';
 
@@ -113,6 +114,22 @@ export function appendActivity(entry: import('./types').ActivityEntry): void {
     const next = [entry, ...list];
     return next.length > ACTIVITY_WINDOW ? next.slice(0, ACTIVITY_WINDOW) : next;
   });
+}
+
+// --- Supervisor decision alerts (Phase 21) ---
+
+/** Rolling window of supervisor decision alerts (CORSO guard/alpha/quality gate verdicts). Newest-first. */
+const SUPERVISOR_ALERTS_WINDOW = 200;
+export const supervisorAlerts = writable<SupervisorAlert[]>([]);
+
+/** @internal Exposed for sse.ts — appends a supervisor alert and mirrors it into the activity feed. */
+export function appendSupervisorAlert(alert: SupervisorAlert): void {
+  supervisorAlerts.update(list => {
+    const next = [alert, ...list];
+    return next.length > SUPERVISOR_ALERTS_WINDOW ? next.slice(0, SUPERVISOR_ALERTS_WINDOW) : next;
+  });
+  // Also inject into the unified activity feed so it renders inline
+  appendActivity({ source: 'supervisor', alert });
 }
 
 /**
@@ -326,6 +343,7 @@ const META_SKILL_DESCRIPTIONS: Record<string, string> = {
 import { META_SKILL_TO_SIBLING } from './design-tokens';
 import { PILLAR_ACTIONS as PILLAR_ACTIONS_TYPE } from './types';
 import { api } from './api';
+import { loadPersistedSettings } from './settings-persistence';
 
 export const META_SKILL_CARDS: MetaSkillCard[] = Object.entries(PILLAR_ACTIONS_TYPE).map(([skill, actions]) => ({
   skill: skill as MetaSkill,
@@ -377,6 +395,10 @@ export function spikeSibling(id: SiblingId): void {
 
 // --- Live data initialization (called on app mount) ---
 export async function initializeStores(): Promise<void> {
+  // Restore persisted UI settings (drawer height, panel visibility, etc.)
+  // before fetching live data so the layout is correct immediately.
+  await loadPersistedSettings();
+
   try {
     const [ws, conductor, arena, siblings, hot, cold, soulHealth] = await Promise.allSettled([
       api.listWorkspaces(),

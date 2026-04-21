@@ -198,7 +198,8 @@ export type EventType =
   | 'copilot_response'
   | 'copilot_activity'
   | 'control'
-  | 'soul_promotion';
+  | 'soul_promotion'
+  | 'supervisor_decision';
 
 // --- Activity tab (Phase 20) ---
 
@@ -228,10 +229,28 @@ export interface AyinSpanEvent {
   strand_activations?: unknown[];
 }
 
-/** Unified Activity feed entry — either a copilot event or an AYIN span. */
+/** Supervisor decision verdict — gate pass/fail/warn from CORSO alpha, guard, quality. */
+export type SupervisorVerdict = 'PASS' | 'FAIL' | 'WARN';
+
+/** Supervisor gate type — which CORSO gate produced this decision. */
+export type SupervisorGate = 'guard' | 'alpha' | 'quality' | 'canon';
+
+/** A supervisor decision alert surfaced from CORSO gate evaluations. */
+export interface SupervisorAlert {
+  id: string;
+  timestamp: number;
+  sibling: string;
+  gate: SupervisorGate;
+  verdict: SupervisorVerdict;
+  message: string;
+  details?: string;
+}
+
+/** Unified Activity feed entry — copilot event, AYIN span, or supervisor alert. */
 export type ActivityEntry =
   | { source: 'copilot'; event: CopilotActivityEvent }
-  | { source: 'ayin'; span: AyinSpanEvent };
+  | { source: 'ayin'; span: AyinSpanEvent }
+  | { source: 'supervisor'; alert: SupervisorAlert };
 
 // --- SOUL vault hybrid memory (Phase 9) ---
 

@@ -11,6 +11,7 @@ import {
   copilotMessages, copilotLoading, buildFocusActive,
   helixEntries, promotionFeed, hotMemory, coldMemory,
   appendPillarUpdate, appendActivity, activityActive,
+  appendSupervisorAlert,
   tagBuildAccess,
 } from './stores';
 import { spikeSibling } from './stores';
@@ -19,7 +20,71 @@ import type {
   SiblingId, Build, Finding, ConductorTask, ArenaAgent,
   HelixEntrySsePayload, SoulPromotionPayload, ContextMemo,
   PillarUpdatePayload, CopilotActivityEvent, AyinSpanEvent,
+  SupervisorAlert, SupervisorGate, SupervisorVerdict,
 } from './types';
+
+/** Gate-action keywords that identify supervisor decisions in AYIN spans. */
+const SUPERVISOR_GATE_ACTIONS = new Set<string>(['guard', 'alpha', 'quality', 'canon']);
+
+/**
+ * Extract a supervisor decision from an AYIN span, if it represents one.
+ * Returns null if the span is not a supervisor gate event.
+ */
+function extractSupervisorAlert(span: AyinSpanEvent): SupervisorAlert | null {
+  // Only CORSO spans can be supervisor decisions
+  if (span.actor !== 'corso') return null;
+
+  // Check if the action matches a known gate
+  const actionLower = (span.action ?? '').toLowerCase();
+  let gate: SupervisorGate | null = null;
+  for (const g of SUPERVISOR_GATE_ACTIONS) {
+    if (actionLower === g || actionLower.startsWith(g + '_') || actionLower.startsWith(g + ':') || actionLower.includes('_' + g)) {
+      gate = g as SupervisorGate;
+      break;
+    }
+  }
+  if (!gate) return null;
+
+  // Determine verdict from outcome
+  const outcome = span.outcome;
+  let verdict: SupervisorVerdict = 'PASS';
+  let message = '';
+  let details: string | undefined;
+
+  if (typeof outcome === 'string') {
+    const lower = outcome.toLowerCase();
+    if (lower.includes('fail') || lower.includes('block') || lower.includes('reject') || lower.includes('denied')) {
+      verdict = 'FAIL';
+    } else if (lower.includes('warn')) {
+      verdict = 'WARN';
+    }
+    message = outcome;
+  } else if (outcome && typeof outcome === 'object') {
+    const obj = outcome as Record<string, unknown>;
+    const status = String(obj.status ?? obj.verdict ?? obj.result ?? '').toLowerCase();
+    if (status.includes('fail') || status.includes('block') || status.includes('reject') || status.includes('denied')) {
+      verdict = 'FAIL';
+    } else if (status.includes('warn')) {
+      verdict = 'WARN';
+    }
+    message = String(obj.message ?? obj.summary ?? obj.reason ?? `${gate.toUpperCase()} gate ${verdict}`).slice(0, 500);
+    details = obj.details ? String(obj.details).slice(0, 4096) : undefined;
+  }
+
+  if (!message) {
+    message = `CORSO ${gate.toUpperCase()}: ${verdict}`;
+  }
+
+  return {
+    id: `sv-${span.id}`,
+    timestamp: new Date(span.timestamp).getTime() || Date.now(),
+    sibling: span.actor,
+    gate,
+    verdict,
+    message,
+    details,
+  };
+}
 
 /** Maximum helix_entry events retained in the rolling window store. */
 const HELIX_ENTRIES_WINDOW = 500;
@@ -307,6 +372,40 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
       if (span.actor) {
         spikeSibling(span.actor as SiblingId);
       }
+      // Phase 21 — detect supervisor decisions embedded in AYIN spans
+      const supervisorAlert = extractSupervisorAlert(span);
+      if (supervisorAlert) {
+        appendSupervisorAlert(supervisorAlert);
+      }
+      break;
+    }
+    case 'supervisor_decision': {
+      // Phase 21 — dedicated supervisor decision event (direct from CORSO)
+      const payload = event as unknown as {
+        type: 'supervisor_decision';
+        id?: string;
+        sibling?: string;
+        gate?: string;
+        verdict?: string;
+        message?: string;
+        details?: string;
+        timestamp?: string;
+      };
+      const gate = (payload.gate ?? 'guard').toLowerCase();
+      const validGates = new Set(['guard', 'alpha', 'quality', 'canon']);
+      const verdict = (payload.verdict ?? 'PASS').toUpperCase();
+      const validVerdicts = new Set(['PASS', 'FAIL', 'WARN']);
+      const alert: SupervisorAlert = {
+        id: payload.id ?? `sv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        timestamp: payload.timestamp ? new Date(payload.timestamp).getTime() : Date.now(),
+        sibling: payload.sibling ?? 'corso',
+        gate: (validGates.has(gate) ? gate : 'guard') as SupervisorGate,
+        verdict: (validVerdicts.has(verdict) ? verdict : 'PASS') as SupervisorVerdict,
+        message: (payload.message ?? `CORSO ${gate.toUpperCase()}: ${verdict}`).slice(0, 500),
+        details: payload.details ? String(payload.details).slice(0, 4096) : undefined,
+      };
+      appendSupervisorAlert(alert);
+      spikeSibling('corso');
       break;
     }
     default:

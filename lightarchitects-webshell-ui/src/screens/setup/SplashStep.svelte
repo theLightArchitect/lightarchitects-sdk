@@ -1,11 +1,12 @@
 <script lang="ts">
   import * as THREE from 'three';
   import { get } from 'svelte/store';
-  import { step, authStatus, autoCompleteFromInherited } from '$lib/setup';
+  import { step, authStatus, autoCompleteFromInherited, setupInfoLoaded } from '$lib/setup';
 
   let canvas: HTMLCanvasElement;
   let visible = $state(true);
   let advanced = false;
+  let autoAdvanceFired = false;
 
   /**
    * Auto-skip path: when /api/setup/info reports a canonical credential source
@@ -36,9 +37,37 @@
     advanced = true;
     visible = false;
     const skipped = await tryAutoSkip();
-    if (skipped) return; // autoCompleteFromInherited already set step to 'init'
+    if (skipped) return; // autoCompleteFromInherited already set step to 'done'
     // Guard again — loadSetupInfo() may have resolved during tryAutoSkip().
     setTimeout(() => { if (get(step) !== 'done') step.set('backend'); }, 600);
+  }
+
+  /**
+   * Primary auto-advance: wait for loadSetupInfo() to resolve, then decide.
+   * If setup is already complete (credentials inherited), dismiss splash
+   * immediately. Otherwise try credential-based auto-skip, then fall back to
+   * the manual Backend step. A 3s safety timeout prevents hanging if the
+   * network is slow.
+   */
+  async function autoAdvance() {
+    // Race: wait for setup info OR a 3s safety timeout
+    const resolved = await Promise.race([
+      setupInfoLoaded.then(() => true as const),
+      new Promise<false>((r) => setTimeout(() => r(false), 3000)),
+    ]);
+
+    if (advanced) return; // user tapped during the wait
+
+    if (resolved && get(step) === 'done') {
+      // loadSetupInfo() already set step='done' — credentials inherited.
+      // Dismiss splash immediately (the fade-out transition handles the visual).
+      advanced = true;
+      visible = false;
+      return;
+    }
+
+    // Setup info loaded but not complete, or timed out — run normal advance
+    advance();
   }
 
   // 600-cell polytope (lifted verbatim from cappy-cortex/cappy-web/src/components/LoadingSplash.svelte)
@@ -150,11 +179,15 @@
     }
     animate();
 
-    // Auto-advance after 2.5s
-    const timer = setTimeout(advance, 2500);
+    // Auto-advance: wait for loadSetupInfo() to resolve, then decide.
+    // Replaces the fixed 2.5s timer — skips in <1s when setup is already complete.
+    // One-shot guard: $effect may re-run if canvas rebinds; autoAdvance is not idempotent.
+    if (!autoAdvanceFired) {
+      autoAdvanceFired = true;
+      autoAdvance();
+    }
 
     return () => {
-      clearTimeout(timer);
       cancelAnimationFrame(animId);
       renderer.dispose();
     };

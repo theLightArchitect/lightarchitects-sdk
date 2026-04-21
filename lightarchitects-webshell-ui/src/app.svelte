@@ -11,8 +11,26 @@
   import HelixTooltip from './components/HelixTooltip.svelte';
   import HelixDetailPanel from './components/HelixDetailPanel.svelte';
   import { ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen } from '$lib/stores';
-  import { setupComplete, step, loadSetupInfo } from '$lib/setup';
+  import { setupComplete, step, loadSetupInfo, selectedBackend, selectedModel, selectedAgent } from '$lib/setup';
   import { connectGlobalSSE, disconnectGlobalSSE } from '$lib/sse';
+  import { saveSettingsDebounced } from '$lib/settings-persistence';
+
+  // Track persisted stores — save on any change after initial load.
+  let settingsInitialized = false;
+  $effect(() => {
+    // Read all persisted store values to establish subscriptions
+    void $drawerHeightPx;
+    void $memoryDrawerOpen;
+    void $selectedBackend;
+    void $selectedModel;
+    void $selectedAgent;
+    // Skip the first run (initial load / hydration from persisted settings)
+    if (!settingsInitialized) {
+      settingsInitialized = true;
+      return;
+    }
+    saveSettingsDebounced();
+  });
 
   // Route store — simple hash-based routing for SPA
   export const currentRoute = writable<string>(window.location.hash.slice(1) || '/');
@@ -94,14 +112,14 @@
     loadScreen(window.location.hash.slice(1) || '/');
     initializeStores(); // non-blocking; errors caught internally
     connectGlobalSSE(); // Phase 10.9 — global helix_entry / soul_promotion / strand_activation stream
+    window.addEventListener('hashchange', handleHashChange);
 
     return () => {
       stopWaveTick();
       disconnectGlobalSSE();
+      window.removeEventListener('hashchange', handleHashChange);
     };
   });
-
-  window.addEventListener('hashchange', handleHashChange);
 </script>
 
 {#if !$setupComplete || $step !== 'done'}

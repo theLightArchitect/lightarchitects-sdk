@@ -4,6 +4,7 @@
     persistedConfig, availableModels, loadModels, saveSetup, setupLoading,
     ollamaBaseUrlInput,
   } from '$lib/setup';
+  import { saveSettingsDebounced } from '$lib/settings-persistence';
 
   const backends = [
     { id: 'anthropic', agent: 'lightarchitects', label: 'Claude Code' },
@@ -34,6 +35,7 @@
     selectedAgent.set(agent);
     selectedModel.set(pickedModel);
     await saveSetup();
+    saveSettingsDebounced();
     toast = `Switched to ${pickedBackend}`;
     setTimeout(() => { toast = null; settingsOpen.set(false); }, 4000);
   }
