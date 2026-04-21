@@ -170,6 +170,27 @@ export const buildFocusActive = derived(
   ([$loading, $buildId]) => $loading && Boolean($buildId),
 );
 
+/**
+ * Vault paths accessed during the current build — Layer 2 highlight set.
+ * Populated by SSE handler: helix_entry events that arrive while
+ * copilotLoading + currentBuildId are both truthy get tagged.
+ */
+export const buildAccessedPaths = writable<Set<string>>(new Set());
+
+/** @internal Called by SSE handler when a helix_entry arrives during a build. */
+export function tagBuildAccess(path: string): void {
+  buildAccessedPaths.update(s => {
+    const next = new Set(s);
+    next.add(path);
+    return next;
+  });
+}
+
+/** Reset build-accessed paths when a new build starts. */
+export function resetBuildAccess(): void {
+  buildAccessedPaths.set(new Set());
+}
+
 /** Build context string injected into copilot prompts */
 export function buildBuildContext(
   build: Build | null,

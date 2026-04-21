@@ -8,11 +8,13 @@ import { authHeaders } from './auth';
 import {
   ayinStatus, siblingHealth, waves, builds, findings,
   conductorTasks, arenaStatus, alerts, selectedPillar,
-  copilotMessages, copilotLoading,
+  copilotMessages, copilotLoading, buildFocusActive,
   helixEntries, promotionFeed, hotMemory, coldMemory,
   appendPillarUpdate, appendActivity, activityActive,
+  tagBuildAccess,
 } from './stores';
 import { spikeSibling } from './stores';
+import { get } from 'svelte/store';
 import type {
   SiblingId, Build, Finding, ConductorTask, ArenaAgent,
   HelixEntrySsePayload, SoulPromotionPayload, ContextMemo,
@@ -206,6 +208,10 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
         const next = [payload, ...list];
         return next.length > HELIX_ENTRIES_WINDOW ? next.slice(0, HELIX_ENTRIES_WINDOW) : next;
       });
+      // Layer 2 — tag entries that arrive during an active build
+      if (get(buildFocusActive)) {
+        tagBuildAccess(payload.path);
+      }
       break;
     }
     case 'soul_promotion': {

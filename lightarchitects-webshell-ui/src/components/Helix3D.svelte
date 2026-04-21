@@ -11,7 +11,7 @@
   import type { HelixEntity } from '$lib/helix/helix-math';
   import { HelixPolytopeManager } from '$lib/helix/helix-polytopes';
   import { HelixInteraction } from '$lib/helix/helix-interaction';
-  import { helixEntries, promotionFeed, waves, activityFeed, copilotLoading, vaultCounts, activeHelixNode, buildFocusActive } from '$lib/stores';
+  import { helixEntries, promotionFeed, waves, activityFeed, copilotLoading, vaultCounts, activeHelixNode, buildFocusActive, buildAccessedPaths } from '$lib/stores';
   import type { SoulPromotionPayload } from '$lib/types';
   import { api } from '$lib/api';
 
@@ -944,8 +944,20 @@
       }
 
       // Layer 2 — dim baseline when build is actively thinking
-      const dimTarget = $buildFocusActive ? 0.3 : 1.0;
+      const isBuildActive = $buildFocusActive;
+      const dimTarget = isBuildActive ? 0.3 : 1.0;
       fineDustMat.opacity = 0.25 * dimTarget;
+
+      // Layer 2 — build-accessed nodes glow 2× brighter
+      if (isBuildActive) {
+        const accessed = $buildAccessedPaths;
+        for (const n of activeNodes) {
+          const mat = n.glow.material as THREE.PointsMaterial;
+          if (accessed.has(n.path)) {
+            mat.size = 0.6; // 2× default
+          }
+        }
+      }
 
       // Phase 20: pulse decays toward baseline; every activity event re-spikes.
       // Decay 0.96 at 60fps ≈ 1.0s half-life. Multiplier 0.025 gives 8× speed
