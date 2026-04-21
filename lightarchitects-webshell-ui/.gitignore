@@ -4,3 +4,5 @@ coverage/
 .pnpm-store/
 *.local
 .DS_Store
+test-results/
+playwright-report/

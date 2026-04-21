@@ -10,7 +10,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "quality": "vitest run --coverage && vite build"
+    "quality": "vitest run --coverage && vite build",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@threlte/core": "^8.5.9",
@@ -30,6 +31,7 @@
     "tw-animate-css": "^1.3.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@tailwindcss/vite": "^4.1.12",
     "@testing-library/svelte": "^5.3.1",

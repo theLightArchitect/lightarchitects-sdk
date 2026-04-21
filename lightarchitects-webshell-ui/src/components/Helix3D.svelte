@@ -30,6 +30,14 @@
     sourceSibling: string;
     targetSibling: string;
   };
+  type StaticEdge = {
+    line: THREE.Line;
+    material: THREE.LineBasicMaterial;
+    source: string;
+    target: string;
+    baseOpacity: number;
+    targetOpacity: number;
+  };
   const pendingStaticEdges: StaticEdgeSpec[] = [];
 
   let container: HTMLDivElement;
@@ -798,7 +806,7 @@
 
     // Phase 12ext — persistent static-edge state. Unlike promotion lineage,
     // these never expire; they encode the structural :LINKS_TO graph.
-    const activeStaticEdges: THREE.Line[] = [];
+    const activeStaticEdges: StaticEdge[] = [];
 
     // Deterministic vault-path → Y coord hash so two runs place the same
     // Step at the same visual altitude. Uses FNV-1a over UTF-16 code units
@@ -857,7 +865,11 @@
       });
       const line = new THREE.Line(geo, mat);
       group.add(line);
-      activeStaticEdges.push(line);
+      activeStaticEdges.push({
+        line, material: mat,
+        source: spec.source, target: spec.target,
+        baseOpacity: 0.65, targetOpacity: 0.65,
+      });
 
       if (typeof window !== 'undefined') {
         (window as unknown as { __helix3DStaticEdgeCount: number })
@@ -957,6 +969,26 @@
             mat.size = 0.6; // 2× default
           }
         }
+      }
+
+      // Layer 1.5 — edge highlighting on hover. When a session node is
+      // hovered, brighten all :LINKS_TO edges that touch its vault path.
+      // Lerp 0.08/frame ≈ 130ms transition at 60fps.
+      const hoveredPath = $activeHelixNode?.path ?? null;
+      for (const edge of activeStaticEdges) {
+        const hit = hoveredPath !== null
+          && (edge.source === hoveredPath || edge.target === hoveredPath);
+        edge.targetOpacity = hit ? 1.0 : edge.baseOpacity;
+        edge.material.opacity += (edge.targetOpacity - edge.material.opacity) * 0.08;
+        // Brightness boost via material.color (multiplier on vertex colors)
+        const targetBright = hit ? 1.8 : 1.0;
+        const cur = edge.material.color.r;
+        edge.material.color.setScalar(cur + (targetBright - cur) * 0.08);
+      }
+      if (typeof window !== 'undefined') {
+        (window as unknown as { __helix3DHighlightedEdgeCount: number })
+          .__helix3DHighlightedEdgeCount =
+            activeStaticEdges.filter(e => e.material.opacity > e.baseOpacity + 0.01).length;
       }
 
       // Phase 20: pulse decays toward baseline; every activity event re-spikes.
