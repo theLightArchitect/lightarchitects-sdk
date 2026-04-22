@@ -92,7 +92,7 @@
               {#if phase.description}
                 <p class="text-[9px] text-[#94a3b8] leading-relaxed">{phase.description}</p>
               {/if}
-              {#if phase.files.length > 0}
+              {#if phase.files?.length > 0}
                 <div class="space-y-0.5">
                   {#each phase.files as file}
                     <div class="text-[9px] font-mono text-[#64748b] truncate" title={file}>{file}</div>

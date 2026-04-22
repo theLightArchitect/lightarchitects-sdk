@@ -314,6 +314,7 @@ export interface EnrichedHelixEntry {
   content_excerpt?: string;
   created_at?: string;
   frontmatter_raw?: Record<string, unknown>;
+  entry_type?: string;
 }
 
 /**

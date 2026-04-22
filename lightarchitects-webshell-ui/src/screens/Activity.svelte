@@ -2,7 +2,7 @@
   import { activityFeed, activityActive, supervisorAlerts } from '$lib/stores';
   import type { ActivityEntry, CopilotActivityEvent, AyinSpanEvent, SupervisorAlert } from '$lib/types';
   import { getAgentRole, ROLE_COLORS, ROLE_BG, type AgentRole } from '$lib/roles';
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
 
   // --- Verbose mode toggle ---
   let verbose = $state(false);
@@ -59,22 +59,24 @@
   let lastAlertCount = $state(0);
   $effect(() => {
     const currentCount = inlineAlerts.length;
-    if (currentCount > lastAlertCount) {
-      const newAlerts = inlineAlerts.slice(0, currentCount - lastAlertCount);
-      const hasNewFail = newAlerts.some(a => a.verdict === 'FAIL');
-      for (const a of newAlerts) {
-        if (a.verdict === 'FAIL') {
-          expandedAlerts = new Set([...expandedAlerts, a.id]);
+    untrack(() => {
+      if (currentCount > lastAlertCount) {
+        const newAlerts = inlineAlerts.slice(0, currentCount - lastAlertCount);
+        const hasNewFail = newAlerts.some(a => a.verdict === 'FAIL');
+        for (const a of newAlerts) {
+          if (a.verdict === 'FAIL') {
+            expandedAlerts = new Set([...expandedAlerts, a.id]);
+          }
+        }
+        if (hasNewFail) {
+          tick().then(() => {
+            const failEl = document.querySelector('[data-supervisor-fail]');
+            if (failEl) failEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          });
         }
       }
-      if (hasNewFail) {
-        tick().then(() => {
-          const failEl = document.querySelector('[data-supervisor-fail]');
-          if (failEl) failEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        });
-      }
-    }
-    lastAlertCount = currentCount;
+      lastAlertCount = currentCount;
+    });
   });
 
   // --- Helpers for supervisor alert rendering ---

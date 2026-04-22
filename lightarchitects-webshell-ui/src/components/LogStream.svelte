@@ -42,7 +42,7 @@
     if (autoScroll && container) {
       // Use requestAnimationFrame to ensure DOM has updated
       requestAnimationFrame(() => {
-        container.scrollTop = container.scrollHeight;
+        if (container) container.scrollTop = container.scrollHeight;
       });
     }
   });

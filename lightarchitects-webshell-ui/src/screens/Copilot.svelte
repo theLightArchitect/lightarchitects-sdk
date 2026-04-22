@@ -291,7 +291,7 @@
     $copilotMessages;
     if (messagesEl) {
       requestAnimationFrame(() => {
-        messagesEl.scrollTop = messagesEl.scrollHeight;
+        if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
       });
     }
   });

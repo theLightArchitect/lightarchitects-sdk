@@ -507,6 +507,7 @@ export function connectGlobalSSE(): void {
   fetch('/api/events', { signal, headers: authHeaders() })
     .then(async (response) => {
       if (!response.ok || !response.body) return;
+      _resetGlobalBackoff();
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -527,20 +528,41 @@ export function connectGlobalSSE(): void {
           }
         }
       }
-      // Stream ended (server restart, network blip) — reconnect after delay.
+      // Stream ended (server restart, network blip) — reconnect with backoff.
       if (!signal.aborted) {
-        setTimeout(() => connectGlobalSSE(), 5000);
+        _scheduleGlobalReconnect();
       }
     })
     .catch((err) => {
       // Reconnect unless deliberately aborted.
       if (err?.name !== 'AbortError' && !signal.aborted) {
-        setTimeout(() => connectGlobalSSE(), 5000);
+        _scheduleGlobalReconnect();
       }
     });
 }
 
+let globalReconnectDelay = 1000;
+let globalReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+const GLOBAL_MAX_BACKOFF = 30_000;
+
+function _scheduleGlobalReconnect(): void {
+  if (globalReconnectTimer) clearTimeout(globalReconnectTimer);
+  globalReconnectTimer = setTimeout(() => {
+    globalReconnectTimer = null;
+    globalReconnectDelay = Math.min(globalReconnectDelay * 2, GLOBAL_MAX_BACKOFF);
+    connectGlobalSSE();
+  }, globalReconnectDelay);
+}
+
+function _resetGlobalBackoff(): void {
+  globalReconnectDelay = 1000;
+}
+
 export function disconnectGlobalSSE(): void {
+  if (globalReconnectTimer) {
+    clearTimeout(globalReconnectTimer);
+    globalReconnectTimer = null;
+  }
   if (globalAbort) {
     globalAbort.abort();
     globalAbort = null;

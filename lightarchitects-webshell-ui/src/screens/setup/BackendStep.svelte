@@ -55,7 +55,7 @@
       return ollama.reachable ? 'Reachable ✓' : null;
     }
     const status = $authStatus[b.authKey];
-    return (status as Record<string,unknown>)[b.authField] ? b.authBadge : null;
+    return (status as unknown as Record<string,unknown>)[b.authField] ? b.authBadge : null;
   }
 </script>
 
@@ -72,7 +72,7 @@
         onclick={() => pick(b.id, b.agent)}
       >
         <div class="card-polytope">
-          <PolytopeIcon type={b.polytopeType} size={120} />
+          <PolytopeIcon type={b.polytopeType} size={120} color="#64748b" />
         </div>
         <div class="card-info">
           <div class="card-label">{b.label}</div>

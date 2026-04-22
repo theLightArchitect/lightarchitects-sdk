@@ -23,7 +23,7 @@
   }
 
   function statusColor(status: BuildStatus): string {
-    return STATUS_COLORS[status] ?? '#6b7280';
+    return (STATUS_COLORS as Record<string, string>)[status] ?? '#6b7280';
   }
 
   let displayedBuilds = $derived($builds.slice(0, maxDisplay));
