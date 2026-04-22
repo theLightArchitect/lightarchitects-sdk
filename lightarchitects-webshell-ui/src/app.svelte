@@ -10,6 +10,7 @@
   import AmbientParticles from './components/AmbientParticles.svelte';
   import HelixTooltip from './components/HelixTooltip.svelte';
   import HelixDetailPanel from './components/HelixDetailPanel.svelte';
+  import ScrumReport from './components/ScrumReport.svelte';
   import { ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen } from '$lib/stores';
   import { setupComplete, step, loadSetupInfo, selectedBackend, selectedModel, selectedAgent } from '$lib/setup';
   import { connectGlobalSSE, disconnectGlobalSSE } from '$lib/sse';
@@ -181,4 +182,5 @@
   <MemoryDrawer />
   <HelixTooltip />
   <HelixDetailPanel />
+  <ScrumReport />
 </div>

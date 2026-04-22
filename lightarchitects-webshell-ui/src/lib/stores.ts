@@ -12,6 +12,9 @@ import type {
   AuthProfile, OllamaConfig,
   ContextMemo, HelixEntrySsePayload, SoulPromotionPayload, PillarUpdatePayload,
   SupervisorAlert,
+  ActivePlan, PlanPhase, PlanPhaseStatus,
+  ScrumReport,
+  TrainingConfig, TrainingRun, ScoringDimension,
 } from './types';
 import { SiblingWave, SIBLINGS, PILLARS } from './types';
 
@@ -57,6 +60,18 @@ export const conductorTasks = writable<ConductorTask[]>([]);
 // --- Arena status ---
 const DEFAULT_ARENA: ArenaStatus = { activeRoutines: 0, queuedRoutines: 0, agents: [], lastUpdate: '' };
 export const arenaStatus = writable<ArenaStatus>(DEFAULT_ARENA);
+
+// --- Arena training ---
+const DEFAULT_WEIGHTS: Record<ScoringDimension, number> = {
+  correctness: 50, completeness: 50, efficiency: 50, style: 50,
+  security: 50, robustness: 50, clarity: 50, innovation: 50,
+};
+export const trainingConfig = writable<TrainingConfig>({
+  exerciseType: '',
+  weights: { ...DEFAULT_WEIGHTS },
+  datasetSource: 'current_project',
+});
+export const trainingRun = writable<TrainingRun | null>(null);
 
 // --- Alerts ---
 export const alerts = writable<Alert[]>([]);
@@ -130,6 +145,30 @@ export function appendSupervisorAlert(alert: SupervisorAlert): void {
   });
   // Also inject into the unified activity feed so it renders inline
   appendActivity({ source: 'supervisor', alert });
+}
+
+// --- CORSO scout plan (PlanView) ---
+
+/** Active CORSO scout plan — drives the PlanView component on the Workspace screen. */
+export const activePlan = writable<ActivePlan | null>(null);
+
+/** Latest /SCRUM report — drives the ScrumReport overlay. Null = dismissed / no report. */
+export const latestScrumReport = writable<ScrumReport | null>(null);
+
+/**
+ * Update a single phase within the active plan without replacing the entire object.
+ * If the plan id doesn't match, the update is silently ignored.
+ */
+export function updatePlanPhase(planId: string, phaseId: number, status: PlanPhaseStatus): void {
+  activePlan.update(plan => {
+    if (!plan || plan.id !== planId) return plan;
+    return {
+      ...plan,
+      phases: plan.phases.map(p =>
+        p.id === phaseId ? { ...p, status } : p
+      ),
+    };
+  });
 }
 
 /**

@@ -8,6 +8,7 @@ import type {
   ConductorTask, ArenaStatus, BuildResponse,
   ContextMemo, EnrichedHelixEntry,
   RetentionPolicy, CompactionSummary,
+  TrainingConfig, TrainingRun,
 } from './types';
 import type { SetupInfo, ModelOption, SaveRequest } from './setup';
 
@@ -97,6 +98,12 @@ export const api = {
   getConductor:     () => request<{ nodes: ConductorTask[]; edges: unknown[]; queue_depth: number }>('/conductor/status'),
   getArena:         () => request<ArenaStatus>('/arena/status'),
   getMetaSkills:    () => request<unknown[]>('/meta-skills'),
+
+  // Arena training
+  startTraining:    (config: TrainingConfig) =>
+    request<{ run_id: string }>('/arena/train', { method: 'POST', body: JSON.stringify(config) }),
+  getTrainingStatus: (runId: string) =>
+    request<TrainingRun>(`/arena/train/${runId}`),
 
   // Auth & health
   healthCheck:     () => request<{ status: string }>('/health'),

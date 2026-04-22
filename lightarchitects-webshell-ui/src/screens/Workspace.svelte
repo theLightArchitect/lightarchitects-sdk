@@ -13,6 +13,7 @@
   import ArtifactPanel from '$lib/../components/ArtifactPanel.svelte';
   import BuildNotes from '$lib/../components/BuildNotes.svelte';
   import PolytopeDecor from '$lib/../components/PolytopeDecor.svelte';
+  import PlanView from '$lib/../components/PlanView.svelte';
 
   let build = $derived($activeBuild);
 
@@ -118,6 +119,9 @@
     <div class="flex-1 flex overflow-hidden">
       <!-- Left: Pillar rail + detail + panels -->
       <div class="flex-1 overflow-y-auto p-6 space-y-4">
+        <!-- CORSO scout plan tracker (renders only when an active plan exists) -->
+        <PlanView />
+
         <!-- Build header with polytope -->
         <div class="flex items-center gap-3">
           <PolytopeIcon type={polyType} color={polyColor} size={36} />

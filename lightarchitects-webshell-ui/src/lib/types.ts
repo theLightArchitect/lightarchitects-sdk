@@ -199,7 +199,29 @@ export type EventType =
   | 'copilot_activity'
   | 'control'
   | 'soul_promotion'
-  | 'supervisor_decision';
+  | 'supervisor_decision'
+  | 'plan_update'
+  | 'scrum_report'
+  | 'training_progress';
+
+// --- CORSO scout plan (PlanView) ---
+
+export type PlanPhaseStatus = 'pending' | 'active' | 'complete' | 'failed';
+
+export interface PlanPhase {
+  id: number;
+  title: string;
+  status: PlanPhaseStatus;
+  files: string[];
+  description: string;
+}
+
+export interface ActivePlan {
+  id: string;
+  title: string;
+  phases: PlanPhase[];
+  createdAt: number;
+}
 
 // --- Activity tab (Phase 20) ---
 
@@ -387,6 +409,29 @@ export interface OllamaConfig {
   apiKey: string;
 }
 
+// --- Scrum Report (squad review output) ---
+
+export type ScrumFindingCategory = 'good' | 'gap' | 'fix';
+export type ScrumSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+
+export interface ScrumFinding {
+  sibling: string;
+  category: ScrumFindingCategory;
+  severity?: ScrumSeverity;
+  text: string;
+  file?: string;
+  line?: number;
+}
+
+export interface ScrumReport {
+  id: string;
+  title: string;
+  timestamp: number;
+  findings: ScrumFinding[];
+  consensus?: string;
+  conflicts?: string[];
+}
+
 export interface SSEEvent {
   type: EventType;
   data: unknown;
@@ -427,6 +472,47 @@ export interface ArenaStatus {
   queuedRoutines: number;
   agents: ArenaAgent[];
   lastUpdate: string;
+}
+
+// --- Arena Training ---
+
+export type ExerciseType =
+  | 'code_review'
+  | 'bug_fix'
+  | 'refactor'
+  | 'test_gen'
+  | 'architecture'
+  | 'security_audit'
+  | 'optimization';
+
+export type DatasetSource = 'current_project' | 'helix_history' | 'custom_path';
+
+export type ScoringDimension =
+  | 'correctness'
+  | 'completeness'
+  | 'efficiency'
+  | 'style'
+  | 'security'
+  | 'robustness'
+  | 'clarity'
+  | 'innovation';
+
+export interface TrainingConfig {
+  exerciseType: ExerciseType | '';
+  weights: Record<ScoringDimension, number>;
+  datasetSource: DatasetSource;
+  customPath?: string;
+}
+
+export type TrainingRunStatus = 'configuring' | 'running' | 'complete' | 'failed';
+
+export interface TrainingRun {
+  id: string;
+  status: TrainingRunStatus;
+  progress: number;
+  startedAt?: number;
+  completedAt?: number;
+  results?: { score: number; exercises: number; passed: number };
 }
 
 // --- Platform Alerts ---

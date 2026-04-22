@@ -13,6 +13,9 @@ import {
   appendPillarUpdate, appendActivity, activityActive,
   appendSupervisorAlert,
   tagBuildAccess,
+  activePlan, updatePlanPhase,
+  latestScrumReport,
+  trainingRun,
 } from './stores';
 import { spikeSibling } from './stores';
 import { get } from 'svelte/store';
@@ -21,6 +24,9 @@ import type {
   HelixEntrySsePayload, SoulPromotionPayload, ContextMemo,
   PillarUpdatePayload, CopilotActivityEvent, AyinSpanEvent,
   SupervisorAlert, SupervisorGate, SupervisorVerdict,
+  ActivePlan, PlanPhaseStatus,
+  ScrumReport, ScrumFinding,
+  TrainingRun, TrainingRunStatus,
 } from './types';
 
 /** Gate-action keywords that identify supervisor decisions in AYIN spans. */
@@ -408,6 +414,74 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
       spikeSibling('corso');
       break;
     }
+    case 'plan_update': {
+      // CORSO scout plan — full plan or phase-level update.
+      // Full plan: { plan: ActivePlan }
+      // Phase update: { plan_id: string, phase_id: number, status: PlanPhaseStatus }
+      const payload = event.data as Record<string, unknown>;
+      if (payload.plan && typeof payload.plan === 'object') {
+        // Full plan replacement — validate minimum shape
+        const p = payload.plan as Record<string, unknown>;
+        if (typeof p.id === 'string' && typeof p.title === 'string' && Array.isArray(p.phases)) {
+          activePlan.set(payload.plan as ActivePlan);
+        }
+      } else if (
+        typeof payload.plan_id === 'string' &&
+        typeof payload.phase_id === 'number' &&
+        typeof payload.status === 'string'
+      ) {
+        // Incremental phase status update
+        updatePlanPhase(
+          payload.plan_id,
+          payload.phase_id,
+          payload.status as PlanPhaseStatus,
+        );
+      }
+      break;
+    }
+    case 'scrum_report': {
+      // /SCRUM output — structured squad review report
+      const payload = event.data as Record<string, unknown>;
+      const report: ScrumReport = {
+        id: String(payload.id ?? `scrum-${Date.now()}`),
+        title: String(payload.title ?? 'Squad Review'),
+        timestamp: typeof payload.timestamp === 'number' ? payload.timestamp : Date.now(),
+        findings: Array.isArray(payload.findings)
+          ? (payload.findings as Record<string, unknown>[]).map(f => ({
+              sibling: String(f.sibling ?? 'unknown'),
+              category: (['good', 'gap', 'fix'].includes(String(f.category)) ? String(f.category) : 'gap') as ScrumFinding['category'],
+              severity: f.severity && ['critical', 'high', 'medium', 'low', 'info'].includes(String(f.severity))
+                ? String(f.severity) as ScrumFinding['severity'] : undefined,
+              text: String(f.text ?? ''),
+              file: f.file ? String(f.file) : undefined,
+              line: typeof f.line === 'number' ? f.line : undefined,
+            }))
+          : [],
+        consensus: payload.consensus ? String(payload.consensus) : undefined,
+        conflicts: Array.isArray(payload.conflicts) ? (payload.conflicts as unknown[]).map(String) : undefined,
+      };
+      latestScrumReport.set(report);
+      spikeSibling('corso');
+      break;
+    }
+    case 'training_progress': {
+      const payload = event.data as {
+        id?: string;
+        status?: TrainingRunStatus;
+        progress?: number;
+        results?: { score: number; exercises: number; passed: number };
+      };
+      trainingRun.update(current => {
+        if (!current || (payload.id && current.id !== payload.id)) return current;
+        const updated: TrainingRun = { ...current };
+        if (payload.status !== undefined) updated.status = payload.status;
+        if (payload.progress !== undefined) updated.progress = payload.progress;
+        if (payload.results !== undefined) updated.results = payload.results;
+        if (payload.status === 'complete') updated.completedAt = Date.now();
+        return updated;
+      });
+      break;
+    }
     default:
       break;
   }
@@ -453,9 +527,16 @@ export function connectGlobalSSE(): void {
           }
         }
       }
+      // Stream ended (server restart, network blip) — reconnect after delay.
+      if (!signal.aborted) {
+        setTimeout(() => connectGlobalSSE(), 5000);
+      }
     })
-    .catch(() => {
-      // Silent — reconnect on next call.
+    .catch((err) => {
+      // Reconnect unless deliberately aborted.
+      if (err?.name !== 'AbortError' && !signal.aborted) {
+        setTimeout(() => connectGlobalSSE(), 5000);
+      }
     });
 }
 
