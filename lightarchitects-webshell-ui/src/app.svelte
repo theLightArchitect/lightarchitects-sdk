@@ -125,9 +125,8 @@
 
 {#if !$setupComplete || $step !== 'done'}
   <SetupFlow />
-{/if}
-
-<div class="w-screen h-screen overflow-hidden bg-[#0a0a0f] text-[#e2e8f0] font-['JetBrains_Mono',monospace]" class:hidden={!$setupComplete || $step !== 'done'}>
+{:else}
+<div class="w-screen h-screen overflow-hidden bg-[#0a0a0f] text-[#e2e8f0] font-['JetBrains_Mono',monospace]">
   <div class="flex" style="height: calc(100vh - {$drawerHeightPx}px);">
     <!-- Left: Main content area -->
     <div class="flex-1 flex flex-col overflow-hidden relative">
@@ -184,3 +183,4 @@
   <HelixDetailPanel />
   <ScrumReport />
 </div>
+{/if}
