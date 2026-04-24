@@ -83,6 +83,54 @@ export const w_nano = 4.0;
 export const R_pico = 0.025;
 export const w_pico = 20.0;
 
+// --- Chronological Y mapping ---
+
+/** Visible Y range for data nodes (padded from helix edges to avoid fade). */
+const Y_DATA_MIN = -2.3;
+const Y_DATA_MAX = 2.3;
+
+/**
+ * SOUL Day 0 timestamp — the epoch for the helix timeline.
+ * Entries before this date clamp to Y_DATA_MIN.
+ */
+const HELIX_EPOCH = new Date('2025-09-30T00:00:00Z').getTime();
+
+/**
+ * Map an ISO date string to a Y coordinate on the helix.
+ * Newest entries → top (Y_DATA_MAX), oldest → bottom (Y_DATA_MIN).
+ * Falls back to hash-based positioning if date is missing/invalid.
+ */
+export function dateToY(dateStr: string | undefined, fallbackPath?: string): number {
+  if (dateStr) {
+    const ts = new Date(dateStr).getTime();
+    if (!Number.isNaN(ts)) {
+      const now = Date.now();
+      // Normalize to [0, 1] within the epoch→now range
+      const t = Math.max(0, Math.min(1, (ts - HELIX_EPOCH) / (now - HELIX_EPOCH)));
+      return Y_DATA_MIN + t * (Y_DATA_MAX - Y_DATA_MIN);
+    }
+  }
+  // Fallback: extract date from vault path (e.g., "corso/entries/2026-04-18-slug.md")
+  if (fallbackPath) {
+    const match = fallbackPath.match(/(\d{4}-\d{2}-\d{2})/);
+    if (match) {
+      return dateToY(match[1]);
+    }
+  }
+  // Final fallback: FNV-1a hash (deterministic but not chronological)
+  return vaultPathToYHash(fallbackPath ?? dateStr ?? '');
+}
+
+/** FNV-1a hash → Y coordinate (legacy, used as fallback). */
+function vaultPathToYHash(path: string): number {
+  let h = 0x811c9dc5 >>> 0;
+  for (let i = 0; i < path.length; i++) {
+    h ^= path.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return Y_DATA_MIN + (Y_DATA_MAX - Y_DATA_MIN) * (h / 0xffffffff);
+}
+
 // --- Position Functions ---
 
 export function getFade(y: number): number {

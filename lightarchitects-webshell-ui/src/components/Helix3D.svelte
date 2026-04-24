@@ -6,7 +6,7 @@
   import {
     tMin, tMax,
     getFade, getPrimaryFrame, getEntityCenter, getMiniAnchorFrame,
-    getSubStrandPos, seededRandom, buildEntities, setEntities,
+    getSubStrandPos, seededRandom, buildEntities, setEntities, dateToY,
   } from '$lib/helix/helix-math';
   import type { HelixEntity } from '$lib/helix/helix-math';
   import { HelixPolytopeManager } from '$lib/helix/helix-polytopes';
@@ -632,13 +632,9 @@
       const sibIdx = entities.findIndex(e => e.id === entry.sibling);
       if (sibIdx < 0) return;
 
-      // Place at a deterministic Y position from the path hash
-      let h = 0x811c9dc5 >>> 0;
-      for (let i = 0; i < entry.path.length; i++) {
-        h ^= entry.path.charCodeAt(i);
-        h = Math.imul(h, 0x01000193) >>> 0;
-      }
-      const y = 2.3 + (-4.6) * (h / 0xffffffff);
+      // Chronological Y: newest at top, oldest at bottom.
+      // Falls back to hash if no date available.
+      const y = dateToY(entry.created_at, entry.path);
       const pos = getEntityCenter(sibIdx, y).E;
 
       const color = new THREE.Color(entities[sibIdx].color);
@@ -808,19 +804,11 @@
     // these never expire; they encode the structural :LINKS_TO graph.
     const activeStaticEdges: StaticEdge[] = [];
 
-    // Deterministic vault-path → Y coord hash so two runs place the same
-    // Step at the same visual altitude. Uses FNV-1a over UTF-16 code units
-    // then maps to [yStart, yEnd].
+    // Chronological vault-path → Y coord. Extracts date from path
+    // (e.g., "corso/entries/2026-04-18-slug.md") for chronological ordering.
+    // Falls back to hash if no date found in the path.
     function vaultPathToY(path: string): number {
-      let h = 0x811c9dc5 >>> 0;
-      for (let i = 0; i < path.length; i++) {
-        h ^= path.charCodeAt(i);
-        h = Math.imul(h, 0x01000193) >>> 0;
-      }
-      const frac = (h / 0xffffffff); // [0, 1]
-      const yStart = 2.3;
-      const yEnd = -2.3;
-      return yStart + (yEnd - yStart) * frac;
+      return dateToY(undefined, path);
     }
 
     function spawn3DStaticEdge(spec: StaticEdgeSpec) {
