@@ -222,8 +222,10 @@
     const width = container.clientWidth;
     const height = container.clientHeight;
 
+    const skin = $activeSkin;
+
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(hexToNum($activeSkin.atmosphere.backgroundColor), $activeSkin.glow.fogDensity);
+    scene.fog = new THREE.FogExp2(hexToNum(skin.atmosphere.backgroundColor), skin.glow.fogDensity);
 
     const glowTexture = createGlowTexture();
 
@@ -323,7 +325,6 @@
     };
 
     // Resolve entity colors from the active skin (with canonical + hash fallbacks)
-    const skin = $activeSkin;
     const entityColors = entities.map(e => {
       const hex = resolveSiblingColor(skin, e.id);
       return new THREE.Color(hexToNum(hex));
