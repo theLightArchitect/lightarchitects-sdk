@@ -7,8 +7,9 @@ import {
   saveSettingsDebounced,
   type PersistedSettings,
 } from '$lib/settings-persistence';
-import { drawerHeightPx, memoryDrawerOpen } from '$lib/stores';
+import { drawerHeightPx, memoryDrawerOpen, activeSkin } from '$lib/stores';
 import { selectedBackend, selectedModel, selectedAgent } from '$lib/setup';
+import { DEFAULT_SKIN } from '$lib/helix-skin';
 
 const LS_KEY = 'la_webshell_settings';
 
@@ -37,6 +38,7 @@ describe('collectSettings', () => {
 
     const result = collectSettings();
     expect(result).toEqual({
+      activeSkin: { ...DEFAULT_SKIN },
       drawerHeightPx: 400,
       memoryDrawerOpen: true,
       selectedBackend: 'anthropic',

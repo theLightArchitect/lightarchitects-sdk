@@ -5,8 +5,9 @@
 
 import { get } from 'svelte/store';
 import { api } from './api';
-import { drawerHeightPx, memoryDrawerOpen } from './stores';
+import { drawerHeightPx, memoryDrawerOpen, activeSkin } from './stores';
 import { selectedBackend, selectedModel, selectedAgent } from './setup';
+import { DEFAULT_SKIN, type HelixSkin } from '$lib/helix-skin';
 
 /** localStorage key used when the backend API is unreachable. */
 const LS_KEY = 'la_webshell_settings';
@@ -18,6 +19,7 @@ export interface PersistedSettings {
   selectedBackend?: string | null;
   selectedModel?: string | null;
   selectedAgent?: string | null;
+  activeSkin?: HelixSkin;
 }
 
 // --- Debounce timer handle ---
@@ -32,6 +34,7 @@ export function collectSettings(): PersistedSettings {
     selectedBackend: get(selectedBackend),
     selectedModel: get(selectedModel),
     selectedAgent: get(selectedAgent),
+    activeSkin: get(activeSkin),
   };
 }
 
@@ -95,6 +98,18 @@ export function applySettings(settings: PersistedSettings): void {
   }
   if (typeof settings.selectedAgent === 'string' && settings.selectedAgent && get(selectedAgent) === null) {
     selectedAgent.set(settings.selectedAgent);
+  }
+  // Restore helix skin — merge with DEFAULT_SKIN to fill any missing fields
+  // added in newer versions of the schema.
+  if (settings.activeSkin && typeof settings.activeSkin === 'object' && settings.activeSkin.version === 1) {
+    activeSkin.set({
+      ...DEFAULT_SKIN,
+      ...settings.activeSkin,
+      colors: { ...DEFAULT_SKIN.colors, ...(settings.activeSkin.colors ?? {}) },
+      glow: { ...DEFAULT_SKIN.glow, ...(settings.activeSkin.glow ?? {}) },
+      atmosphere: { ...DEFAULT_SKIN.atmosphere, ...(settings.activeSkin.atmosphere ?? {}) },
+      rails: { ...DEFAULT_SKIN.rails, ...(settings.activeSkin.rails ?? {}) },
+    });
   }
 }
 

@@ -54,6 +54,7 @@ push: quality ## Quality gates + git push
 
 deploy: ui quality ## Build UI + quality gates + deploy to ~/.lightarchitects/bin/
 	@echo "Building release binary…"
+	@touch src/static_assets.rs  # force cargo to re-embed dist/ via rust-embed
 	@cargo build --release -p lightarchitects-webshell --quiet
 	@mkdir -p $(DEPLOY_DIR)
 	@if [ -f "$(DEPLOY_DIR)/$(BINARY)" ]; then \
@@ -72,6 +73,7 @@ deploy: ui quality ## Build UI + quality gates + deploy to ~/.lightarchitects/bi
 
 deploy-fast: ## Deploy without quality gates (assumes webshell UI dist/ is current)
 	@echo "Building release binary (fast)…"
+	@touch src/static_assets.rs  # force cargo to re-embed dist/
 	@cargo build --release -p lightarchitects-webshell --quiet
 	@mkdir -p $(DEPLOY_DIR)
 	@if [ -f "$(DEPLOY_DIR)/$(BINARY)" ]; then \

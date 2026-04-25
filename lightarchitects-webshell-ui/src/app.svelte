@@ -11,7 +11,7 @@
   import HelixTooltip from './components/HelixTooltip.svelte';
   import HelixDetailPanel from './components/HelixDetailPanel.svelte';
   import ScrumReport from './components/ScrumReport.svelte';
-  import { ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen } from '$lib/stores';
+  import { ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen, activeSkin } from '$lib/stores';
   import { setupComplete, step, loadSetupInfo, selectedBackend, selectedModel, selectedAgent } from '$lib/setup';
   import { connectGlobalSSE, disconnectGlobalSSE } from '$lib/sse';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
@@ -25,6 +25,7 @@
     void $selectedBackend;
     void $selectedModel;
     void $selectedAgent;
+    void $activeSkin;
     // Skip the first run (initial load / hydration from persisted settings)
     if (!settingsInitialized) {
       settingsInitialized = true;
