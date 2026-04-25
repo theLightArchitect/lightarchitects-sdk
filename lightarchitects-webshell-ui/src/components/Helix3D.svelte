@@ -11,6 +11,7 @@
   import type { HelixEntity } from '$lib/helix/helix-math';
   import { HelixPolytopeManager } from '$lib/helix/helix-polytopes';
   import { HelixInteraction } from '$lib/helix/helix-interaction';
+  import { get } from 'svelte/store';
   import { helixEntries, promotionFeed, waves, activityFeed, copilotLoading, vaultCounts, activeHelixNode, buildFocusActive, buildAccessedPaths, activeSkin } from '$lib/stores';
   import { resolveSiblingColor, hexToNum } from '$lib/helix-skin';
   import type { SoulPromotionPayload } from '$lib/types';
@@ -222,7 +223,11 @@
     const width = container.clientWidth;
     const height = container.clientHeight;
 
-    const skin = $activeSkin;
+    // Non-reactive read — the skin tracker $effect bumps helixGeneration
+    // on skin change, which is the sole trigger for scene rebuilds.
+    // Using $activeSkin here would make this $effect depend on the skin
+    // store directly, causing double-rebuilds and thread-blocking.
+    const skin = get(activeSkin);
 
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(hexToNum(skin.atmosphere.backgroundColor), skin.glow.fogDensity);
