@@ -2,27 +2,133 @@
 
 > Last updated: 2026-04-25 | Stable build: squishy-munching-tome
 
-## Current Stable (v0.2.0) — What Ships Today
+---
 
-### Working Features
-- 5 screens: Activity, Build Queue, Intake, Sitrep, Workspace
-- 3D helix visualization (Three.js + UnrealBloomPass, polytopes, orbs, strands, edges)
-- Copilot drawer (chat + terminal, slash commands, sibling dispatch)
-- Setup flow (Splash → Backend → Auth → Model → Init)
-- 40+ REST/WS/SSE API endpoints
-- SOUL vault integration (search, memory, health, compaction)
-- Skin system (5 presets, export/import)
-- Settings persistence (debounced, cached snapshot merge)
-- E2E test suite (12 verify tests, 48+ canonical tests)
-- HMAC auth (OS keyring, constant-time validation)
+## Current Stable (v0.2.0) — Feature Inventory by Section
 
-### Known Limitations
-- No intermediate copilot events (only final result from agent)
-- No context usage visibility (compaction is invisible)
-- Activity feed is generic (tool calls not individually tracked)
-- Conductor/Arena panels show status only (no interactive management)
-- Single-user local mode only (no multi-user, no remote access)
-- No CI/CD integration (manual deploy via `make deploy`)
+### Activity Tab
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Live span feed (AYIN events) | Stable | Generic spans only |
+| Supervisor alerts (FAIL/WARN/PASS) | Stable | Auto-expand FAIL alerts |
+| Verbose mode toggle | Stable | Filters system events |
+| Alert expansion tracking | Stable | Per-alert expand/collapse |
+
+### Build Queue Tab
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Build card/list view | Stable | Toggle between layouts |
+| Build stats (active/pending/completed/failed) | Stable | Real-time via SSE |
+| Polytope decorations per meta-skill | Stable | 4D shapes map to skill type |
+| New Build button | Stable | Links to Intake |
+
+### Intake Tab
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Source selection (Manual/GitHub/Cargo Audit/Discovery) | Stable | UI-only, no dispatch yet |
+| Meta-skill picker with polytope icons | Stable | BUILD/RESEARCH/DEPLOY/SECURE/OPTIMIZE/ONBOARD/PLAN/REVIEW |
+| Priority selector (High/Medium/Low) | Stable | |
+| Description + repo path input | Stable | |
+| Prefetch metadata | Stable | |
+
+### Sitrep Tab
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Build portfolio summary | Stable | Grid of active builds |
+| Sibling health (7 siblings) | Stable | CORSO/EVA/SOUL/QUANTUM/SERAPH/AYIN/LÆX |
+| Conductor queue status | Stable | Task count + DAG depth |
+| Arena status | Stable | Training run metrics |
+| Alerts panel | Stable | Aggregated across builds |
+| Compaction panel | Stable | Dry-run + apply controls |
+
+### Workspace Tab
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Pillar rail (7 pillars) | Stable | ARCH/SEC/QUAL/PERF/TEST/DOC/OPS |
+| Hierarchy navigation | Stable | Module/crate tree |
+| Findings panel | Stable | Expand/collapse, verify action |
+| Log stream | Stable | Real-time build logs |
+| Sibling dispatch | Stable | Pick SQUAD member + prompt |
+| Artifact panel | Stable | File upload/view |
+| Build notes (markdown) | Stable | Rich editor with preview |
+| Plan view | Stable | Multi-phase tracking |
+
+### 3D Helix
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Three.js + UnrealBloomPass | Stable | Post-processing glow |
+| Polytope manager (4D shapes) | Stable | Per-sibling assignment |
+| Orb spawn counter | Stable | SSE helix_entry events |
+| Strand fusion (wave amplitudes) | Stable | Phase 10.9 |
+| Promotion lineage edges | Stable | Phase 12, 3s TTL |
+| Static :LINKS_TO edges | Stable | Phase 12ext, Neo4j |
+| Click → detail panel | Stable | Entry + graph neighbors |
+| Hover → tooltip | Stable | Significance + excerpt |
+| Activity pulse rotation | Stable | Exponential decay |
+| Scene disposal on rebuild | Stable | traverse + dispose pattern |
+
+### Copilot Drawer
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Chat mode | Stable | Markdown rendering |
+| Terminal mode (xterm.js) | Stable | PTY WebSocket bridge |
+| Slash commands | Stable | /build, /research, /deploy, sibling names |
+| Sibling dispatch UI | Stable | Pick member + prompt |
+| Oscilloscope canvas | Stable | Composite wave visualization |
+| Keyboard shortcut (Ctrl+`) | Stable | Toggle open/close |
+| Settings overlay | Stable | Backend/model/agent switcher |
+| Ollama config modal | Stable | Base URL, model, auth |
+
+### Skin System
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Dynamic sibling colors | Stable | Any number of siblings |
+| Glow controls (bloom strength/radius/threshold) | Stable | Slider-based |
+| Atmosphere (background, ambient, dust, bokeh) | Stable | Full customization |
+| Rails (opacity, color, cross-rungs, node size) | Stable | Fine-grained control |
+| 5 presets (Default/Midnight/Ember/Arctic/Neon) | Stable | One-click apply |
+| Export/import (.helix-skin.json) | Stable | Community sharing |
+
+### Memory Drawer
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Hot memory display | Stable | Context memos |
+| Cold memory display | Stable | Archived entries |
+| Toggle (Cmd+M or button) | Stable | data-testid="memory-toggle" |
+
+### Command Palette
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Cmd+K launcher | Stable | Searchable slash commands |
+| Fuzzy matching | Stable | |
+
+### Setup Flow
+| Feature | Status | Notes |
+|---------|--------|-------|
+| 600-cell polytope splash | Stable | Three.Timer animation |
+| Backend selection (Anthropic/OpenAI/Ollama) | Stable | 3 providers |
+| Auth (keychain/API key/Ollama test) | Stable | Auto-detect existing creds |
+| Model selection | Stable | Filtered by backend |
+| Auto-skip for inherited credentials | Stable | Credential detection |
+
+### Backend API (40+ endpoints)
+| Category | Endpoints | Status |
+|----------|-----------|--------|
+| Auth | /auth-check, /setup/info, /setup/save, /setup/reset, /setup/models | Stable |
+| Builds | /builds (CRUD), /builds/:id/events, /builds/:id/terminal/ws, /builds/:id/notify | Stable |
+| SOUL | /soul/search, /soul/entries, /soul/memory, /soul/health, /soul/edges, /soul/convergences, /soul/compaction | Stable |
+| Browser State | /browser-state (GET/POST) | Stable |
+| Platform | /workspaces, /meta-skills, /siblings, /sitrep, /conductor/status, /arena/status | Stable |
+| Control | /control (FocusPanel/NavigateTo/Notify/OpenTerminal/OpenSettings/ToggleTheme) | Stable |
+| Session | /session/fork | Stable |
+
+### Settings Persistence
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Debounced save (500ms) | Stable | store.subscribe() pattern |
+| Cached BrowserStateSnapshot merge | Stable | Preserves server fields |
+| localStorage fallback | Stable | Offline resilience |
+| Auth header on POST | Stable | Bearer token included |
 
 ---
 
@@ -30,39 +136,62 @@
 
 Goal: Usable by the Light Architects team for daily development with full agent visibility.
 
-### M1: AYIN Trace Integration (ref: squishy-dancing-thimble.md)
-- [ ] **Phase A**: lÆx0 rich event emission — ToolStart/ToolEnd/Thinking/Context NDJSON events
-- [ ] **Phase B**: SDK ToolRecord/PivotRecord span_ref cross-reference
-- [ ] **Phase C**: Slim turnlog to integrity chain (span-reference only, ~100 bytes/entry)
-- [ ] **Phase D**: Webshell context visibility — ContextBar component, contextUsage store
-- [ ] **Phase E**: Post-compact restoration bridge (L3 detection → file/plan re-injection)
+### Activity Tab — MVP
+- [ ] Intermediate event rendering (individual tool calls, not just final results)
+- [ ] Context usage bar derived from compact.* AYIN spans
+- [ ] Thinking/reasoning visibility in span tree
+- [ ] Per-tool duration and success/failure badges
 
-### M2: Copilot Maturity
-- [ ] Intermediate event rendering (tool calls, thinking, context pressure live in chat)
-- [ ] Session persistence across page reloads (reconnect to existing PTY)
-- [ ] Multi-session support (multiple concurrent copilot tabs)
-- [ ] EVA persona integration (copilot identity = EVA, not generic Claude)
-- [ ] Command history persistence (across sessions, not just in-memory)
+### Build Queue Tab — MVP
+- [ ] Build creation from Intake → actual SQUAD dispatch
+- [ ] Live pillar gate progress indicators
+- [ ] Build filtering/sorting (by status, date, sibling)
 
-### M3: Build Pipeline UX
-- [ ] Build creation from Intake form → actual SQUAD dispatch (currently UI-only)
-- [ ] Build progress tracking with live pillar gate updates
-- [ ] Findings panel with inline code view and verify/dismiss actions
-- [ ] Plan view with phase completion tracking
-- [ ] Build artifact download/preview
+### Intake Tab — MVP
+- [ ] Form submission → POST /api/builds → PTY session spawn
+- [ ] GitHub repo auto-detection (clone URL → meta-skill suggestion)
+- [ ] Template builds (pre-filled for common patterns)
 
-### M4: Helix Enhancements
-- [ ] Chronological Y-axis ordering (dateToY already implemented in helix-math.ts)
-- [ ] Cross-entry edge highlighting on hover (lerp opacity + brightness)
-- [ ] Convergence node visualization (Phase 19b.2 — cross-sibling clusters)
-- [ ] Helix search integration (type-to-filter nodes)
-- [ ] Mobile/tablet responsive layout (currently desktop-only, lg breakpoint)
+### Sitrep Tab — MVP
+- [ ] Interactive conductor queue (reorder, cancel, priority)
+- [ ] Arena run management (start, stop, view results)
+- [ ] Compaction scheduling (auto-compact at threshold)
 
-### M5: Testing & Quality
-- [ ] Restore helix-specific E2E tests (orb count, lineage, strand waves — deleted files)
-- [ ] HAR capture in canonical test suite (recordHar in beforeAll)
-- [ ] Visual regression tests (screenshot comparison for helix, skin presets)
-- [ ] Performance benchmarks (WebGL context count, frame rate, memory)
+### Workspace Tab — MVP
+- [ ] Inline code view in findings (syntax highlighted)
+- [ ] Finding verify/dismiss with backend persistence
+- [ ] Plan view phase completion tracking
+- [ ] Artifact download/preview in browser
+- [ ] Build notes auto-save
+
+### 3D Helix — MVP
+- [ ] Chronological Y-axis (dateToY — already implemented)
+- [ ] Cross-entry edge highlighting on hover
+- [ ] Convergence node visualization (Phase 19b.2)
+- [ ] Helix search (type-to-filter nodes)
+- [ ] Mobile/tablet responsive layout
+
+### Copilot — MVP
+- [ ] Session persistence across page reloads
+- [ ] Multi-session support (concurrent tabs)
+- [ ] EVA persona integration (identity, voice, memory)
+- [ ] Command history persistence (cross-session)
+- [ ] Context pressure indicator (ContextBar component)
+
+### AYIN Trace Integration — MVP (ref: squishy-dancing-thimble.md)
+- [ ] Phase A: lÆx0 rich NDJSON events (ToolStart/End, Thinking, Context)
+- [ ] Phase B: SDK ToolRecord/PivotRecord span_ref cross-reference
+- [ ] Phase C: Slim turnlog to integrity chain (~100 bytes/entry)
+- [ ] Phase D: ContextBar + contextUsage store
+- [ ] Phase E: Post-compact restoration bridge (L3 → file re-injection)
+
+### Testing — MVP (M5)
+- [ ] Comprehensive E2E tests for all 33 components
+- [ ] API endpoint coverage (40+ endpoints mocked + asserted)
+- [ ] Helix-specific tests (orb count, lineage, strand waves, WebGL)
+- [ ] HAR capture in canonical test suite
+- [ ] Visual regression tests (screenshot comparison)
+- [ ] Performance benchmarks (frame rate, memory, context count)
 
 ---
 
@@ -70,77 +199,76 @@ Goal: Usable by the Light Architects team for daily development with full agent 
 
 Goal: Installable by external developers. Reliable, documented, secure.
 
-### P1: Authentication & Multi-User
-- [ ] OAuth2 / SSO integration (GitHub, GitLab)
-- [ ] User sessions with role-based access (admin, developer, viewer)
-- [ ] Token rotation and expiry (currently static HMAC)
-- [ ] Rate limiting on API endpoints
-- [ ] CORS policy hardening (currently allows localhost only)
+### Authentication & Multi-User
+- [ ] OAuth2 / SSO (GitHub, GitLab)
+- [ ] Role-based access (admin, developer, viewer)
+- [ ] Token rotation and expiry
+- [ ] Rate limiting
+- [ ] CORS hardening
 
-### P2: Deployment & Distribution
+### Deployment & Distribution
 - [ ] Homebrew formula / cargo install
-- [ ] Docker container with embedded binary
-- [ ] Auto-update mechanism (version check + download)
-- [ ] CI/CD pipeline (GitHub Actions: lint → test → build → release)
-- [ ] Signed releases (code signing for macOS, checksums for Linux)
+- [ ] Docker container
+- [ ] Auto-update mechanism
+- [ ] CI/CD pipeline (GitHub Actions)
+- [ ] Signed releases (macOS codesign, Linux checksums)
 
-### P3: Reliability
-- [ ] Graceful degradation when SOUL/Neo4j/AYIN unavailable (currently errors)
-- [ ] WebSocket reconnection with exponential backoff
-- [ ] SSE heartbeat and automatic reconnect
-- [ ] Error boundary components (Svelte error boundaries per screen)
+### Reliability
+- [ ] Graceful degradation (SOUL/Neo4j/AYIN unavailable)
+- [ ] WebSocket reconnection (exponential backoff)
+- [ ] SSE heartbeat + auto-reconnect
+- [ ] Error boundary components (per screen)
 - [ ] Crash reporting (opt-in telemetry)
 
-### P4: Performance
-- [ ] Three.js scene optimization (instanced meshes, LOD for distant nodes)
-- [ ] Virtual scrolling for Activity/Queue (currently renders all items)
-- [ ] Service Worker for offline capability
-- [ ] Bundle size optimization (three.js tree-shaking, code splitting)
-- [ ] WebGPU renderer option (Three.js r170+ TSL)
+### Performance
+- [ ] Instanced meshes + LOD for helix
+- [ ] Virtual scrolling (Activity, Queue)
+- [ ] Service Worker (offline)
+- [ ] Bundle size optimization (tree-shaking)
+- [ ] WebGPU renderer option (Three.js TSL)
 
-### P5: Documentation
+### Documentation
 - [ ] User guide with screenshots
-- [ ] API reference (OpenAPI spec from Axum routes)
-- [ ] Svelte 5 patterns guide (untrack, {#key}, subscribe vs $effect)
-- [ ] Architecture decision records (ADRs)
+- [ ] OpenAPI spec (from Axum routes)
+- [ ] Svelte 5 patterns guide (untrack, {#key}, subscribe)
+- [ ] Architecture decision records
 - [ ] Contributing guide
 
-### P6: Platform Integrations
-- [ ] GitHub PR/issue linking from build findings
-- [ ] Slack/Discord notifications for build completion
-- [ ] VS Code extension (webshell panel)
+### Platform Integrations
+- [ ] GitHub PR/issue linking
+- [ ] Slack/Discord notifications
+- [ ] VS Code extension
 - [ ] JetBrains plugin
-- [ ] CLI companion (`lightarchitects webshell` subcommand with auto-open)
+- [ ] CLI companion (`lightarchitects webshell`)
 
 ---
 
 ## Dependency Graph
 
 ```
-v0.2.0 (Stable) ─── current
+v0.2.0 (Stable) ─── current ← YOU ARE HERE
   │
-  ├── M1 (AYIN Traces) ──── requires lÆx0 changes (parallel)
-  ├── M2 (Copilot)     ──── depends on M1 (context events)
-  ├── M3 (Build UX)    ──── independent
-  ├── M4 (Helix)       ──── independent
-  └── M5 (Testing)     ──── independent
+  ├── AYIN Traces ──── requires lÆx0 changes (parallel)
+  ├── Copilot     ──── depends on AYIN (context events)
+  ├── Build UX    ──── independent
+  ├── Helix       ──── independent
+  └── Testing     ──── independent (start now)
   │
-  v0.3.0 (MVP) ─── all M-items complete
+  v0.3.0 (MVP) ─── all sections complete
   │
-  ├── P1 (Auth)        ──── independent
-  ├── P2 (Distribution) ── depends on P1 (signed releases)
-  ├── P3 (Reliability)  ── independent
-  ├── P4 (Performance)  ── independent
-  ├── P5 (Docs)         ── depends on stable API (P1+P3)
-  └── P6 (Integrations) ── depends on P1+P2
+  ├── Auth + Distribution ──── sequential
+  ├── Reliability          ──── independent
+  ├── Performance          ──── independent
+  ├── Docs                 ──── depends on stable API
+  └── Integrations         ──── depends on Auth + Distribution
   │
-  v1.0.0 (PROD) ─── all P-items complete
+  v1.0.0 (PROD) ─── all sections complete
 ```
 
-## Priority Order (recommended)
+## Priority Order
 
-1. **M1** — AYIN traces (highest value: makes agent execution visible)
-2. **M3** — Build pipeline UX (makes the Queue/Intake/Workspace screens functional)
-3. **M2** — Copilot maturity (EVA persona, session persistence)
-4. **M4** — Helix enhancements (visual polish)
-5. **M5** — Testing (safety net for all the above)
+1. **AYIN Traces** — highest value (makes agent execution visible)
+2. **Build UX** — makes Queue/Intake/Workspace functional end-to-end
+3. **Testing** — safety net for everything above (start in parallel)
+4. **Copilot** — EVA persona, session persistence
+5. **Helix** — visual polish and interaction refinements
