@@ -33,5 +33,6 @@ pub mod server;
 pub mod session;
 pub mod setup;
 pub mod static_assets;
+pub mod session_fork;
 pub mod terminal;
 pub mod turnlog;

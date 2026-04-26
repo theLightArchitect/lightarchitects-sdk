@@ -5,12 +5,27 @@
 
 import { get } from 'svelte/store';
 import { api } from './api';
-import { drawerHeightPx, memoryDrawerOpen, activeSkin } from './stores';
+import { authHeaders } from './auth';
+import { drawerHeightPx, memoryDrawerOpen } from './stores';
 import { selectedBackend, selectedModel, selectedAgent } from './setup';
-import { DEFAULT_SKIN, type HelixSkin } from '$lib/helix-skin';
 
 /** localStorage key used when the backend API is unreachable. */
 const LS_KEY = 'la_webshell_settings';
+
+/**
+ * Cached BrowserStateSnapshot from the server. Merged with UI settings on
+ * each POST so we don't overwrite server-managed fields (helix_zoom,
+ * helix_step_count, etc.) with hardcoded defaults.
+ */
+let cachedSnapshot: Record<string, unknown> = {
+  viewport_width: 0,
+  viewport_height: 0,
+  terminal_size_percent: 50,
+  helix_size_percent: 50,
+  active_panel: 'terminal',
+  helix_zoom: 5.0,
+  helix_step_count: 0,
+};
 
 /** Shape of persisted UI settings. Never includes tokens or API keys. */
 export interface PersistedSettings {
@@ -19,7 +34,6 @@ export interface PersistedSettings {
   selectedBackend?: string | null;
   selectedModel?: string | null;
   selectedAgent?: string | null;
-  activeSkin?: HelixSkin;
 }
 
 // --- Debounce timer handle ---
@@ -34,7 +48,6 @@ export function collectSettings(): PersistedSettings {
     selectedBackend: get(selectedBackend),
     selectedModel: get(selectedModel),
     selectedAgent: get(selectedAgent),
-    activeSkin: get(activeSkin),
   };
 }
 
@@ -51,9 +64,22 @@ async function persistSettings(settings: PersistedSettings): Promise<void> {
     // Storage quota exceeded or private browsing — silently ignore
   }
 
-  // Attempt backend persistence
+  // Attempt backend persistence — use raw fetch() rather than api.postBrowserState()
+  // because api.request() throws on non-2xx, and that throw propagates through
+  // void-called promises into Svelte 5's $effect chain.
+  // Merge UI settings into cachedSnapshot so we don't overwrite server-managed
+  // fields (helix_zoom, helix_step_count, etc.) with hardcoded defaults.
   try {
-    await api.postBrowserState(settings);
+    await fetch('/api/browser-state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({
+        ...cachedSnapshot,
+        viewport_width: window.innerWidth,
+        viewport_height: window.innerHeight,
+        ...settings,
+      }),
+    });
   } catch {
     // Backend unreachable — localStorage fallback is already in place
   }
@@ -99,18 +125,6 @@ export function applySettings(settings: PersistedSettings): void {
   if (typeof settings.selectedAgent === 'string' && settings.selectedAgent && get(selectedAgent) === null) {
     selectedAgent.set(settings.selectedAgent);
   }
-  // Restore helix skin — merge with DEFAULT_SKIN to fill any missing fields
-  // added in newer versions of the schema.
-  if (settings.activeSkin && typeof settings.activeSkin === 'object' && settings.activeSkin.version === 1) {
-    activeSkin.set({
-      ...DEFAULT_SKIN,
-      ...settings.activeSkin,
-      colors: { ...DEFAULT_SKIN.colors, ...(settings.activeSkin.colors ?? {}) },
-      glow: { ...DEFAULT_SKIN.glow, ...(settings.activeSkin.glow ?? {}) },
-      atmosphere: { ...DEFAULT_SKIN.atmosphere, ...(settings.activeSkin.atmosphere ?? {}) },
-      rails: { ...DEFAULT_SKIN.rails, ...(settings.activeSkin.rails ?? {}) },
-    });
-  }
 }
 
 /**
@@ -122,9 +136,11 @@ export async function loadPersistedSettings(): Promise<void> {
 
   // Try backend API first
   try {
-    const state = await api.getBrowserState() as PersistedSettings | null;
+    const state = await api.getBrowserState() as Record<string, unknown> | null;
     if (state && typeof state === 'object') {
-      settings = state;
+      // Cache the full snapshot so future POSTs preserve server-managed fields
+      cachedSnapshot = { ...cachedSnapshot, ...state };
+      settings = state as unknown as PersistedSettings;
     }
   } catch {
     // Backend unreachable — fall through to localStorage

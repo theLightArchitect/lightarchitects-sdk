@@ -50,24 +50,29 @@
    * network is slow.
    */
   async function autoAdvance() {
-    // Race: wait for setup info OR a 3s safety timeout
-    const resolved = await Promise.race([
-      setupInfoLoaded.then(() => true as const),
-      new Promise<false>((r) => setTimeout(() => r(false), 3000)),
-    ]);
+    try {
+      // Race: wait for setup info OR a 3s safety timeout
+      const resolved = await Promise.race([
+        setupInfoLoaded.then(() => true as const),
+        new Promise<false>((r) => setTimeout(() => r(false), 3000)),
+      ]);
 
-    if (advanced) return; // user tapped during the wait
+      if (advanced) return; // user tapped during the wait
 
-    if (resolved && get(step) === 'done') {
-      // loadSetupInfo() already set step='done' — credentials inherited.
-      // Dismiss splash immediately (the fade-out transition handles the visual).
-      advanced = true;
-      visible = false;
-      return;
+      if (resolved && get(step) === 'done') {
+        // loadSetupInfo() already set step='done' — credentials inherited.
+        // Dismiss splash immediately (the fade-out transition handles the visual).
+        advanced = true;
+        visible = false;
+        return;
+      }
+
+      // Setup info loaded but not complete, or timed out — run normal advance
+      advance();
+    } catch (e) {
+      console.error('[SplashStep] autoAdvance error:', e);
+      advance();
     }
-
-    // Setup info loaded but not complete, or timed out — run normal advance
-    advance();
   }
 
   // 600-cell polytope (lifted verbatim from cappy-cortex/cappy-web/src/components/LoadingSplash.svelte)
@@ -151,12 +156,13 @@
     scene.add(new THREE.Points(nodeGeo, new THREE.PointsMaterial({ color: 0xffcc44, size: 0.045, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })));
 
     const projected3D: THREE.Vector3[] = Array.from({ length: nVerts }, () => new THREE.Vector3());
-    const clock = new THREE.Clock();
+    const timer = new THREE.Timer();
     let animId: number;
 
     function animate() {
       animId = requestAnimationFrame(animate);
-      const t = clock.getElapsedTime();
+      timer.update();
+      const t = timer.getElapsed();
       for (let i = 0; i < nVerts; i++) {
         let v = rotZW(baseVerts[i], t * 0.42);
         v = rotXW(v, t * 0.25); v = rotYW(v, t * 0.12);
@@ -179,15 +185,11 @@
     }
     animate();
 
-    // Auto-advance: wait for loadSetupInfo() to resolve, then decide.
-    // Replaces the fixed 2.5s timer — skips in <1s when setup is already complete.
-    // One-shot guard: $effect may re-run if canvas rebinds; autoAdvance is not idempotent.
-    if (!autoAdvanceFired) {
-      autoAdvanceFired = true;
-      autoAdvance();
-    }
+    // Auto-advance after 2.5s — plain timer, plain advance, no async promises.
+    const autoTimer = setTimeout(() => advance(), 2500);
 
     return () => {
+      clearTimeout(autoTimer);
       cancelAnimationFrame(animId);
       renderer.dispose();
     };

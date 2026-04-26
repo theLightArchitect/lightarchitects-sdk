@@ -77,14 +77,16 @@ export function hashColor(_name: string): string {
 }
 
 /** Resolve a sibling's color from a skin, with canonical + hash fallbacks. */
-export function resolveSiblingColor(skin: HelixSkin, siblingId: string): string {
+export function resolveSiblingColor(skin: HelixSkin | undefined | null, siblingId: string): string {
+  if (!skin) return CANONICAL_COLORS[siblingId] ?? NEW_SIBLING_COLOR;
   return skin.colors[siblingId]
     ?? CANONICAL_COLORS[siblingId]
     ?? hashColor(siblingId);
 }
 
 /** Convert hex string to 0xRRGGBB number for Three.js. */
-export function hexToNum(hex: string): number {
+export function hexToNum(hex: string | undefined | null): number {
+  if (!hex) return 0x000000;
   if (hex.startsWith('#')) return parseInt(hex.slice(1), 16);
   if (hex.startsWith('hsl')) {
     // Parse HSL and convert — simple approximation for Three.js

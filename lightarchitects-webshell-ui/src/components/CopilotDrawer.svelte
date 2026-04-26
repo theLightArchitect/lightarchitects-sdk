@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
   import {
     copilotMessages, copilotLoading, currentBuildId, activeBuild,
     findings, selectedPillar, focusedSibling, spikeSibling,
@@ -27,8 +28,14 @@
   const MIN_HEIGHT = 180;
   const MAX_HEIGHT_RATIO = 0.85;
 
-  // Publish drawer height to layout so content area can compensate
-  $effect(() => { drawerHeightPx.set(open ? heightPx : 32); });
+  // Publish drawer height to layout so content area can compensate.
+  // Guard: only write when value actually changes to avoid triggering
+  // the settings-persistence $effect in app.svelte (which re-reads this
+  // store), creating a reactive cycle → effect_update_depth_exceeded.
+  $effect(() => {
+    const next = open ? heightPx : 32;
+    if (get(drawerHeightPx) !== next) drawerHeightPx.set(next);
+  });
 
   // Clamp heightPx on window resize so drawer doesn't overflow small screens
   function onWindowResize() {
@@ -364,6 +371,7 @@
 
 <!-- Drawer container -->
 <div
+  data-testid="copilot-drawer"
   class="fixed bottom-0 left-0 right-0 z-30 flex flex-col"
   style="height: {open ? heightPx + 'px' : '32px'}; transition: height 0.18s ease;"
 >

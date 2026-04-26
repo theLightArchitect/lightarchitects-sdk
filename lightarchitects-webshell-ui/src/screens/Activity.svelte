@@ -56,7 +56,7 @@
   }
 
   // --- Auto-expand FAIL alerts and scroll them into view ---
-  let lastAlertCount = $state(0);
+  let lastAlertCount = 0;
   $effect(() => {
     const currentCount = inlineAlerts.length;
     untrack(() => {

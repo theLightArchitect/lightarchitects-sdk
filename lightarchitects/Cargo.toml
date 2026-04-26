@@ -49,6 +49,12 @@ cli                  = []
 keychain             = []
 text2cypher          = []
 test-utils           = []
+credentials          = []
+providers-anthropic  = ["credentials"]
+providers-openai     = ["credentials"]
+providers-google     = ["credentials"]
+credentials-display-names    = ["credentials"]
+credentials-detailed-locator = ["credentials"]
 
 # ── Always-on external deps (union of all 13 merged crates) ──────────────────
 

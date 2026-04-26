@@ -16,7 +16,6 @@ import type {
   ScrumReport,
   TrainingConfig, TrainingRun, ScoringDimension,
 } from './types';
-import { DEFAULT_SKIN, type HelixSkin } from '$lib/helix-skin';
 import { SiblingWave, SIBLINGS, PILLARS } from './types';
 
 // --- Connection status ---
@@ -285,9 +284,6 @@ export const commandPaletteOpen = writable(false);
 export const terminalConnected = writable(false);
 export const authProfile = writable<AuthProfile>('anthropic');
 export const ollamaConfig = writable<OllamaConfig | null>(null);
-
-// --- Helix skin (3D theme) ---
-export const activeSkin = writable<HelixSkin>({ ...DEFAULT_SKIN });
 
 // --- Derived: active build ---
 export const activeBuild = derived(

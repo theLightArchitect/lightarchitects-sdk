@@ -409,7 +409,7 @@ pub async fn setup_info(State(state): State<AppState>) -> impl IntoResponse {
         setup_complete,
         config,
         auth_status,
-        resume_session: state.config.resume_session.clone(),
+        resume_session: None,
         cwd: state.config.cwd.to_string_lossy().into_owned(),
     })
     .into_response()

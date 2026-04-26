@@ -11,28 +11,17 @@
   import HelixTooltip from './components/HelixTooltip.svelte';
   import HelixDetailPanel from './components/HelixDetailPanel.svelte';
   import ScrumReport from './components/ScrumReport.svelte';
-  import { ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen, activeSkin } from '$lib/stores';
+  import { ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen } from '$lib/stores';
   import { setupComplete, step, loadSetupInfo, selectedBackend, selectedModel, selectedAgent } from '$lib/setup';
   import { connectGlobalSSE, disconnectGlobalSSE } from '$lib/sse';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
 
   // Track persisted stores — save on any change after initial load.
-  let settingsInitialized = false;
-  $effect(() => {
-    // Read all persisted store values to establish subscriptions
-    void $drawerHeightPx;
-    void $memoryDrawerOpen;
-    void $selectedBackend;
-    void $selectedModel;
-    void $selectedAgent;
-    void $activeSkin;
-    // Skip the first run (initial load / hydration from persisted settings)
-    if (!settingsInitialized) {
-      settingsInitialized = true;
-      return;
-    }
-    saveSettingsDebounced();
-  });
+  // Uses store.subscribe() instead of $effect to avoid Svelte 5's reactive
+  // signal graph entirely. $effect + store reads creates a hub node that
+  // triggers effect_update_depth_exceeded when any other effect writes to
+  // these stores during the same rendering cycle.
+  let settingsUnsubs: (() => void)[] = [];
 
   // Route store — simple hash-based routing for SPA
   export const currentRoute = writable<string>(window.location.hash.slice(1) || '/');
@@ -81,6 +70,9 @@
 
   let showHelix = $state(true);
 
+  // Derived condition for setup gate — explicit dependency tracking in Svelte 5
+  const setupDone = $derived($setupComplete && $step === 'done');
+
   const NAV_ITEMS = [
     { label: 'Activity', hash: '/activity' },
     { label: 'Queue',    hash: '/'         },
@@ -108,23 +100,45 @@
   onMount(() => {
     loadSetupInfo(); // check setup state before anything else
     // E2E hook — lets Playwright bypass setup flow by setting stores directly.
-    (window as any).__e2e = { setupComplete, step };
+    // Guarded by DEV so it's tree-shaken in production builds (CORSO sec review).
+    if (import.meta.env.DEV) {
+      (window as any).__e2e = { setupComplete, step };
+    }
     startWaveTick();
     ayinStatus.set('reconnecting');
     loadScreen(window.location.hash.slice(1) || '/');
-    initializeStores(); // non-blocking; errors caught internally
+    const initializeStoresPromise = initializeStores(); // non-blocking; errors caught internally
     connectGlobalSSE(); // Phase 10.9 — global helix_entry / soul_promotion / strand_activation stream
     window.addEventListener('hashchange', handleHashChange);
+
+    // Subscribe to persisted stores. .subscribe() fires synchronously with
+    // the current value — the `initialized` flag ensures we skip those AND
+    // skip the writes from initializeStores() → loadPersistedSettings() →
+    // applySettings(), which would otherwise trigger a redundant POST of
+    // the just-loaded settings back to the server.
+    let initialized = false;
+    const trigger = () => { if (initialized) saveSettingsDebounced(); };
+    settingsUnsubs = [
+      drawerHeightPx.subscribe(trigger),
+      memoryDrawerOpen.subscribe(trigger),
+      selectedBackend.subscribe(trigger),
+      selectedModel.subscribe(trigger),
+      selectedAgent.subscribe(trigger),
+    ];
+    // Only enable persistence after initializeStores finishes loading
+    // persisted settings — prevents redundant write-back on startup.
+    initializeStoresPromise.then(() => { initialized = true; });
 
     return () => {
       stopWaveTick();
       disconnectGlobalSSE();
+      settingsUnsubs.forEach(fn => fn());
       window.removeEventListener('hashchange', handleHashChange);
     };
   });
 </script>
 
-{#if !$setupComplete || $step !== 'done'}
+{#if !setupDone}
   <SetupFlow />
 {:else}
 <div class="w-screen h-screen overflow-hidden bg-[#0a0a0f] text-[#e2e8f0] font-['JetBrains_Mono',monospace]">
@@ -165,7 +179,9 @@
           </div>
         </div>
       {:else if ActiveScreen}
-        <ActiveScreen />
+        {#key ActiveScreen}
+          <svelte:component this={ActiveScreen} />
+        {/key}
       {/if}
     </div>
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import * as THREE from 'three';
   import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
   import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -6,14 +7,12 @@
   import {
     tMin, tMax,
     getFade, getPrimaryFrame, getEntityCenter, getMiniAnchorFrame,
-    getSubStrandPos, seededRandom, buildEntities, setEntities, dateToY,
+    getSubStrandPos, seededRandom, buildEntities, setEntities,
   } from '$lib/helix/helix-math';
   import type { HelixEntity } from '$lib/helix/helix-math';
   import { HelixPolytopeManager } from '$lib/helix/helix-polytopes';
   import { HelixInteraction } from '$lib/helix/helix-interaction';
-  import { get } from 'svelte/store';
-  import { helixEntries, promotionFeed, waves, activityFeed, copilotLoading, vaultCounts, activeHelixNode, buildFocusActive, buildAccessedPaths, activeSkin } from '$lib/stores';
-  import { resolveSiblingColor, hexToNum } from '$lib/helix-skin';
+  import { helixEntries, promotionFeed, waves, activityFeed, copilotLoading, vaultCounts, activeHelixNode, buildFocusActive, buildAccessedPaths } from '$lib/stores';
   import type { SoulPromotionPayload } from '$lib/types';
   import { api } from '$lib/api';
 
@@ -54,20 +53,7 @@
     const newEntities = buildEntities(counts);
     setEntities(newEntities);
     entities = newEntities;
-    helixGeneration += 1;
-  });
-
-  // --- Reactive skin — when $activeSkin changes, rebuild the scene so
-  // baked vertex colors, node sizes, palettes, and atmosphere update.
-  // We track the skin reference; Svelte stores produce a new object on
-  // every .set(), so reference equality works for change detection.
-  let lastSkinRef: unknown = null;
-  $effect(() => {
-    const skin = $activeSkin;
-    if (lastSkinRef !== null && skin !== lastSkinRef) {
-      helixGeneration += 1;
-    }
-    lastSkinRef = skin;
+    helixGeneration = untrack(() => helixGeneration) + 1;
   });
 
   // Phase 20 — pulse intensity for helix rotation. Spiked on every new
@@ -94,7 +80,7 @@
   $effect(() => {
     const len = $helixEntries.length;
     if (len > lastSeenEntries) {
-      pulseKey += 1;
+      pulseKey = untrack(() => pulseKey) + 1;
       lastSeenEntries = len;
       if (typeof window !== 'undefined') {
         (window as unknown as { __helixOrbCount: number }).__helixOrbCount = len;
@@ -223,14 +209,8 @@
     const width = container.clientWidth;
     const height = container.clientHeight;
 
-    // Non-reactive read — the skin tracker $effect bumps helixGeneration
-    // on skin change, which is the sole trigger for scene rebuilds.
-    // Using $activeSkin here would make this $effect depend on the skin
-    // store directly, causing double-rebuilds and thread-blocking.
-    const skin = get(activeSkin);
-
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(hexToNum(skin.atmosphere.backgroundColor), skin.glow.fogDensity);
+    scene.fog = new THREE.FogExp2(0x000000, 0.06);
 
     const glowTexture = createGlowTexture();
 
@@ -241,24 +221,30 @@
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setSize(width, height);
-    renderer.setClearColor(hexToNum(skin.atmosphere.backgroundColor));
     while (container.firstChild) container.removeChild(container.firstChild);
     container.appendChild(renderer.domElement);
 
     const renderScene = new RenderPass(scene, camera);
     const composer = new EffectComposer(renderer);
     composer.addPass(renderScene);
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), skin.glow.bloomStrength, skin.glow.bloomRadius, skin.glow.bloomThreshold);
-    bloomPass.threshold = skin.glow.bloomThreshold;
-    bloomPass.strength = skin.glow.bloomStrength;
-    bloomPass.radius = skin.glow.bloomRadius;
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 1.0, 0.6, 0.25);
+    bloomPass.threshold = 0.25;
+    bloomPass.strength = 1.1;
+    bloomPass.radius = 0.6;
     composer.addPass(bloomPass);
 
     // --- Atmospheric dust ---
     const dustGroup = new THREE.Group();
     scene.add(dustGroup);
 
-    const palette = skin.atmosphere.dustPalette.map(h => new THREE.Color(hexToNum(h)));
+    const palette = [
+      new THREE.Color(0xFF1493),
+      new THREE.Color(0x00BFFF),
+      new THREE.Color(0xB44AFF),
+      new THREE.Color(0xFFD700),
+      new THREE.Color(0xFF6D00),
+      new THREE.Color(0xffffff),
+    ];
 
     const fineDustCount = 600;
     const fineDustGeom = new THREE.BufferGeometry();
@@ -274,7 +260,7 @@
     fineDustGeom.setAttribute('position', new THREE.BufferAttribute(fineDustPos, 3));
     fineDustGeom.setAttribute('color', new THREE.BufferAttribute(fineDustCol, 3));
     const fineDustMat = new THREE.PointsMaterial({
-      size: 0.05, transparent: true, opacity: skin.glow.dustOpacity, vertexColors: true,
+      size: 0.05, transparent: true, opacity: 0.25, vertexColors: true,
       blending: THREE.AdditiveBlending, depthWrite: false, map: glowTexture,
     });
     dustGroup.add(new THREE.Points(fineDustGeom, fineDustMat));
@@ -283,24 +269,23 @@
     const bokehGeom = new THREE.BufferGeometry();
     const bokehPos = new Float32Array(bokehCount * 3);
     const bokehCol = new Float32Array(bokehCount * 3);
-    const bokehPalette = skin.atmosphere.bokehPalette.map(h => new THREE.Color(hexToNum(h)));
     for (let i = 0; i < bokehCount; i++) {
       bokehPos[i*3] = (Math.random() - 0.5) * 20;
       bokehPos[i*3+1] = (Math.random() - 0.5) * 20;
       bokehPos[i*3+2] = (Math.random() - 0.5) * 8 - 4;
-      const col = bokehPalette[Math.floor(Math.random() * bokehPalette.length)];
+      const col = palette[Math.floor(Math.random() * 3)];
       bokehCol[i*3] = col.r; bokehCol[i*3+1] = col.g; bokehCol[i*3+2] = col.b;
     }
     bokehGeom.setAttribute('position', new THREE.BufferAttribute(bokehPos, 3));
     bokehGeom.setAttribute('color', new THREE.BufferAttribute(bokehCol, 3));
     const bokehMat = new THREE.PointsMaterial({
-      size: skin.glow.bokehSize, transparent: true, opacity: skin.glow.bokehOpacity, vertexColors: true,
+      size: 0.12, transparent: true, opacity: 0.05, vertexColors: true,
       blending: THREE.AdditiveBlending, depthWrite: false, map: glowTexture,
     });
     const bokehSystem = new THREE.Points(bokehGeom, bokehMat);
     dustGroup.add(bokehSystem);
 
-    scene.add(new THREE.AmbientLight(hexToNum(skin.atmosphere.ambientLightColor), skin.atmosphere.ambientLightIntensity));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.15));
 
     const group = new THREE.Group();
     scene.add(group);
@@ -329,11 +314,7 @@
       }));
     };
 
-    // Resolve entity colors from the active skin (with canonical + hash fallbacks)
-    const entityColors = entities.map(e => {
-      const hex = resolveSiblingColor(skin, e.id);
-      return new THREE.Color(hexToNum(hex));
-    });
+    const entityColors = entities.map(e => new THREE.Color(e.color));
 
     // 1. PRIMARY RAILS
     const numSegments = 800;
@@ -354,7 +335,6 @@
     // 2. MICRO STRANDS
     const domPos: number[] = [], domCol: number[] = [];
     const mRailPos: number[] = [], mRailCol: number[] = [];
-    const strandBright = skin.rails.strandBrightness;
     const microSegments = 3500;
     for (let i = 0; i < microSegments; i++) {
       const t1 = tMin + (tMax - tMin) * (i / microSegments);
@@ -367,7 +347,7 @@
         const col = new THREE.Color().setHSL(hsl.h, Math.min(hsl.s * 1.2, 1.0), Math.min(hsl.l * 1.5, 0.7));
         const breathe1 = Math.sin(t1 * 0.5 + s * 1.7) * 0.1 + 0.9;
         const breathe2 = Math.sin(t2 * 0.5 + s * 1.7) * 0.1 + 0.9;
-        const baseOpacity = (0.8 + 0.2 * ageFactor) * strandBright;
+        const baseOpacity = 0.8 + 0.2 * ageFactor;
         const op1 = baseOpacity * breathe1 * getFade(t1);
         const op2 = baseOpacity * breathe2 * getFade(t2);
         const numM0 = Math.ceil(entity.strands / 2), numM1 = Math.floor(entity.strands / 2);
@@ -430,10 +410,9 @@
         }
       }
     }
-    const nss = skin.rails.nodeSizeScale;
-    group.add(makePoints(mNodesPos, mNodesCol, 0.06 * nss, 0.9));
-    group.add(makePoints(mNodesBrightPos, mNodesBrightCol, 0.12 * nss, 1.0));
-    group.add(makePoints(mNodesHaloPos, mNodesHaloCol, 0.25 * nss, skin.rails.haloOpacity));
+    group.add(makePoints(mNodesPos, mNodesCol, 0.06, 0.9));
+    group.add(makePoints(mNodesBrightPos, mNodesBrightCol, 0.12, 1.0));
+    group.add(makePoints(mNodesHaloPos, mNodesHaloCol, 0.25, 0.4));
 
     // 4. STEPS & RUNGS
     const pStepPos: number[] = [], pStepCol: number[] = [];
@@ -654,9 +633,13 @@
       const sibIdx = entities.findIndex(e => e.id === entry.sibling);
       if (sibIdx < 0) return;
 
-      // Chronological Y: newest at top, oldest at bottom.
-      // Falls back to hash if no date available.
-      const y = dateToY(entry.created_at, entry.path);
+      // Place at a deterministic Y position from the path hash
+      let h = 0x811c9dc5 >>> 0;
+      for (let i = 0; i < entry.path.length; i++) {
+        h ^= entry.path.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+      }
+      const y = 2.3 + (-4.6) * (h / 0xffffffff);
       const pos = getEntityCenter(sibIdx, y).E;
 
       const color = new THREE.Color(entities[sibIdx].color);
@@ -758,7 +741,7 @@
       }
     });
 
-    const clock = new THREE.Clock();
+    const timer = new THREE.Timer();
     let animationFrameId: number;
     const currentGroupY = { value: -2.0 };
 
@@ -826,11 +809,19 @@
     // these never expire; they encode the structural :LINKS_TO graph.
     const activeStaticEdges: StaticEdge[] = [];
 
-    // Chronological vault-path → Y coord. Extracts date from path
-    // (e.g., "corso/entries/2026-04-18-slug.md") for chronological ordering.
-    // Falls back to hash if no date found in the path.
+    // Deterministic vault-path → Y coord hash so two runs place the same
+    // Step at the same visual altitude. Uses FNV-1a over UTF-16 code units
+    // then maps to [yStart, yEnd].
     function vaultPathToY(path: string): number {
-      return dateToY(undefined, path);
+      let h = 0x811c9dc5 >>> 0;
+      for (let i = 0; i < path.length; i++) {
+        h ^= path.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+      }
+      const frac = (h / 0xffffffff); // [0, 1]
+      const yStart = 2.3;
+      const yEnd = -2.3;
+      return yStart + (yEnd - yStart) * frac;
     }
 
     function spawn3DStaticEdge(spec: StaticEdgeSpec) {
@@ -889,7 +880,8 @@
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
-      const time = clock.getElapsedTime();
+      timer.update();
+      const time = timer.getElapsed();
 
       // Phase 12 — drain pending promotion-lineage spawns + tween opacity
       // on live ones. Done first so a new line renders at full opacity on
@@ -932,12 +924,8 @@
 
       // Phase 2b — bloom coupling: helix "breathes harder" while copilot thinks.
       // Lerp bloom strength toward target at ~3% per frame (smooth 0.5s ramp).
-      // Skin-driven: copilot thinking lerp target is 1.45× baseline.
-      const skinGlow = $activeSkin.glow;
-      const bloomTarget = $copilotLoading ? skinGlow.bloomStrength * 1.45 : skinGlow.bloomStrength;
+      const bloomTarget = $copilotLoading ? 1.6 : 1.0;
       bloomPass.strength += (bloomTarget - bloomPass.strength) * 0.03;
-      bloomPass.radius = skinGlow.bloomRadius;
-      bloomPass.threshold = skinGlow.bloomThreshold;
 
       // Layer 1 — drain pending active session nodes
       const entries = $helixEntries;
@@ -1012,11 +1000,9 @@
       const rotationSpeed = 0.003 + helixPulse * 0.025;
       group.rotation.y += rotationSpeed * (1.0 - focusIntensity * 0.95);
 
-      fineDustMat.opacity = skinGlow.dustOpacity * (1.0 - focusIntensity * 0.7);
-      bokehMat.opacity = skinGlow.bokehOpacity * (1.0 - focusIntensity * 0.8);
-      bokehMat.size = skinGlow.bokehSize;
-      agentMat.opacity = skinGlow.nodeGlow * (1.0 - focusIntensity * 0.8);
-      (scene.fog as THREE.FogExp2).density = skinGlow.fogDensity;
+      fineDustMat.opacity = 0.25 * (1.0 - focusIntensity * 0.7);
+      bokehMat.opacity = 0.05 * (1.0 - focusIntensity * 0.8);
+      agentMat.opacity = 0.95 * (1.0 - focusIntensity * 0.8);
 
       dustGroup.rotation.y -= 0.0002 * (1.0 - focusIntensity * 0.9);
       dustGroup.rotation.x += 0.0001 * (1.0 - focusIntensity * 0.9);
@@ -1137,6 +1123,32 @@
       }
       activeNodes.length = 0;
       activeHelixNode.set(null);
+      // Dispose all scene graph children (rails, strands, entity nodes,
+      // steps, cross-connects, convergence particles, etc.) to prevent
+      // GPU memory leaks on helixGeneration rebuilds.
+      function disposeObject3D(obj: THREE.Object3D) {
+        obj.traverse((child: any) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (child.material.map) child.material.map.dispose();
+            child.material.dispose();
+          }
+        });
+      }
+      disposeObject3D(group);
+      disposeObject3D(outerPolytopeGroup);
+      // Dispose persistent edge geometries
+      for (const edge of activeStaticEdges) {
+        edge.line.geometry.dispose();
+        edge.material.dispose();
+      }
+      activeStaticEdges.length = 0;
+      // Dispose unexpired lineage lines
+      for (const ll of activeLineageLines) {
+        ll.line.geometry.dispose();
+        ll.material.dispose();
+      }
+      activeLineageLines.length = 0;
       renderer.dispose();
       glowTexture.dispose();
       fineDustGeom.dispose();

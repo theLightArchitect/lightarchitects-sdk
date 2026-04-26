@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project uses semantic versioning.
 
+## [0.2.0] — 2026-04-25 — Stable Build: squishy-munching-tome
+
+### Added
+
+**lightarchitects-webshell v0.2.0 — Full Platform GUI**
+- 5 main screens: Activity (live span feed + alerts), Build Queue (card/list view), Intake (build request form), Sitrep (platform situation report), Workspace (detailed build view)
+- 33 composable Svelte 5 components covering UI infrastructure, 3D visualization, build management, agent interaction, and configuration
+- 40+ REST + WebSocket endpoints: builds, SOUL vault search/compaction, sibling dispatch, conductor queue, arena status, browser state, agent control
+- 6-step setup flow: Splash → Backend → Auth → Model → Init with auto-skip for inherited credentials
+- PTY terminal support: portable-pty with WebSocket bridge, per-build sessions, SIGTERM→SIGKILL cleanup
+- SSE event system: global broadcast (256-buffer), AYIN MCP client, helix filesystem watcher, strand activation events
+- SOUL vault integration: SQLite backend with optional Neo4j attach, FastEmbed + ONNX search, hybrid BM25/embedding/RRF fusion, compaction with dry-run + apply
+- Conductor task queue DAG visualization with real-time depth monitoring
+- Arena training data factory status (discover → generate → execute → score → export)
+- HMAC-based auth: constant-time Bearer token validation, OS keyring persistence, auto-generation on first run
+
+**lightarchitects-webshell-ui v0.2.0 — Svelte 5 + Three.js**
+- 3D helix visualization: Three.js + UnrealBloomPass, polytope manager (4D shapes), orb-spawn counter, strand fusion, promotion lineage edges, static :LINKS_TO edges from Neo4j
+- Helix interactions: click → detail panel (entry + graph neighbors), hover → tooltip, activity pulse rotation, zoom/pan controls
+- Copilot drawer: dual-mode (chat + terminal), slash commands, sibling dispatch, oscilloscope canvas, markdown rendering
+- Skin system: dynamic sibling colors, glow/atmosphere/rails controls, 5 presets (Default, Midnight, Ember, Arctic, Neon), export/import .helix-skin.json
+- Memory drawer: hot/cold memory display with toggle
+- Command palette: Cmd+K searchable slash command launcher
+- Settings persistence: debounced write to backend + localStorage fallback, cached BrowserStateSnapshot merge (preserves server-managed fields)
+- Ambient particles: drifting helix-palette dots behind content
+- Scrum report overlay
+- Comprehensive E2E test suite: 48+ tests in headed Chrome with HAR capture
+
+### Fixed
+
+**Svelte 5 reactivity**
+- `effect_update_depth_exceeded` — `$state` variables using `+=` inside `$effect` blocks create read+write cycles. Fixed with `untrack()` from Svelte to break the read dependency (`helixGeneration`, `pulseKey` in Helix3D.svelte)
+- Settings persistence `$effect` hub node — replaced with `store.subscribe()` in `onMount` to bypass Svelte 5's reactive signal graph entirely
+- CopilotDrawer `drawerHeightPx.set()` guard — only writes when value actually changes to prevent cross-component reactive cycles
+- `lastAlertCount` in Activity.svelte changed from `$state(0)` to plain `let` — was a refactor trap inside `untrack()` blocks
+- Tab navigation: Svelte 5 doesn't re-mount component when `$state` changes between truthy values — added `{#key ActiveScreen}` + `<svelte:component>` for forced re-mount
+- Splash gate: replaced inline multi-store condition with `$derived(setupDone)` for reliable dependency tracking
+- Settings initialization race: deferred `initialized = true` to `initializeStores().then()` to prevent redundant POST of just-loaded settings
+
+**API contract**
+- POST `/api/browser-state` returned 422 — frontend sent `PersistedSettings` shape but backend expects `BrowserStateSnapshot` with `viewport_width`, `viewport_height`, etc. Fixed with cached snapshot merge pattern
+- Raw `fetch()` POST missing `Authorization: Bearer` header — added `...authHeaders()` to headers
+
+**Three.js**
+- `THREE.Clock` deprecated → `THREE.Timer` (both SplashStep and Helix3D)
+- GPU memory leak on `helixGeneration` rebuild — added `disposeObject3D()` traversal for group, outerPolytopeGroup, activeStaticEdges, activeLineageLines in cleanup
+
+**Security**
+- `window.__e2e` hook exposed unconditionally — guarded with `import.meta.env.DEV` (tree-shaken in production)
+
+---
+
 ## [Unreleased] — Build: option-a-and-do-replicated-goose
 
 ### Added
