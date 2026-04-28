@@ -1962,6 +1962,121 @@ test.describe('Comprehensive webshell E2E', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // 45. Responsive Viewport — Helix3D collapse + nav toggle
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('45. Responsive Viewport', () => {
+    test('mobile 375x667 does not crash', async () => {
+      await page.setViewportSize({ width: 375, height: 667 });
+      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.waitForTimeout(1500);
+      const appLen = await page.evaluate(() => document.getElementById('app')?.textContent?.length ?? 0);
+      expect(appLen).toBeGreaterThan(0);
+    });
+
+    test('mobile 375x667 hides inline Helix3D panel', async () => {
+      // Below 1024 the inline right-rail panel must not render — overlay only.
+      await page.setViewportSize({ width: 375, height: 667 });
+      await page.waitForTimeout(800);
+      const inlineExists = await page.locator('[data-testid="helix-panel-inline"]').count();
+      expect(inlineExists).toBe(0);
+    });
+
+    test('mobile 375x667 toggle reveals Helix3D as overlay', async () => {
+      // Default: overlay closed. Click the Show 3D View toggle → overlay
+      // appears. Click Close 3D View on the overlay itself → overlay gone.
+      await page.setViewportSize({ width: 375, height: 667 });
+      await page.waitForTimeout(800);
+
+      // Overlay is closed at first paint after a resize-down.
+      const initial = await page.locator('[data-testid="helix-panel-overlay"]').count();
+      expect(initial).toBe(0);
+
+      // Toggle button shows "Show 3D View" — click it.
+      const toggle = page.locator('[data-testid="helix-toggle"]');
+      await expect(toggle).toBeVisible();
+      await expect(toggle).toHaveText(/Show 3D View/);
+      await toggle.click();
+      await page.waitForTimeout(400);
+
+      // Overlay is now mounted.
+      const afterOpen = await page.locator('[data-testid="helix-panel-overlay"]').count();
+      expect(afterOpen).toBe(1);
+
+      // Close via the overlay's own close button.
+      await page.locator('[data-testid="helix-overlay-close"]').click();
+      await page.waitForTimeout(400);
+      const afterClose = await page.locator('[data-testid="helix-panel-overlay"]').count();
+      expect(afterClose).toBe(0);
+    });
+
+    test('mobile 375x667 layout stacks vertically', async () => {
+      // The flex container should be flex-col at <768. We verify by
+      // reading the computed flex-direction — Tailwind `flex-col` resolves
+      // to "column", `md:flex-row` only kicks in at >=768.
+      await page.setViewportSize({ width: 375, height: 667 });
+      await page.waitForTimeout(500);
+      const direction = await page.evaluate(() => {
+        const inner = document.querySelector('main, [class*="flex-col"][class*="md:flex-row"]') as HTMLElement | null;
+        return inner ? getComputedStyle(inner).flexDirection : 'NOT_FOUND';
+      });
+      expect(direction).toBe('column');
+    });
+
+    test('tablet 768x1024 nav is usable', async () => {
+      await page.setViewportSize({ width: 768, height: 1024 });
+      await page.waitForTimeout(500);
+      const navVisible = await page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll('nav button'));
+        return buttons.length > 0;
+      });
+      expect(navVisible).toBe(true);
+    });
+
+    test('tablet 768x1024 still hides inline Helix3D panel', async () => {
+      // Tablet falls below the 1024 desktop breakpoint, so the inline
+      // panel must remain hidden; toggle still shows overlay.
+      await page.setViewportSize({ width: 768, height: 1024 });
+      await page.waitForTimeout(800);
+      const inlineExists = await page.locator('[data-testid="helix-panel-inline"]').count();
+      expect(inlineExists).toBe(0);
+      // Toggle is visible (it was previously gated by `hidden lg:flex`).
+      await expect(page.locator('[data-testid="helix-toggle"]')).toBeVisible();
+    });
+
+    test('desktop 1440x900 shows inline Helix3D panel by default', async () => {
+      // At >=1024 the inline panel renders and the overlay does not.
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.waitForTimeout(800);
+      const inlineExists = await page.locator('[data-testid="helix-panel-inline"]').count();
+      expect(inlineExists).toBe(1);
+      const overlayExists = await page.locator('[data-testid="helix-panel-overlay"]').count();
+      expect(overlayExists).toBe(0);
+    });
+
+    test('desktop 1440x900 toggle hides and re-shows inline panel', async () => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.waitForTimeout(500);
+      const toggle = page.locator('[data-testid="helix-toggle"]');
+      await expect(toggle).toHaveText(/Hide 3D View/);
+      await toggle.click();
+      await page.waitForTimeout(300);
+      expect(await page.locator('[data-testid="helix-panel-inline"]').count()).toBe(0);
+      await expect(toggle).toHaveText(/Show 3D View/);
+      await toggle.click();
+      await page.waitForTimeout(300);
+      expect(await page.locator('[data-testid="helix-panel-inline"]').count()).toBe(1);
+    });
+
+    test('restore viewport to 1440x900', async () => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.waitForTimeout(500);
+      const appLen = await page.evaluate(() => document.getElementById('app')?.textContent?.length ?? 0);
+      expect(appLen).toBeGreaterThan(0);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // 33. Console health (post-expansion)
   // ═══════════════════════════════════════════════════════════════════════════
 
