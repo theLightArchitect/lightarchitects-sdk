@@ -54,6 +54,9 @@ pub mod helix;
 /// Tier-1 ephemeral transactional log with HMAC chaining and helix promotion.
 pub mod turnlog;
 
+/// LASDLC — execution phases, build tiers, quality dimensions.
+pub mod lasdlc;
+
 /// External CLI credential detection — Claude Code, Codex, Gemini.
 #[cfg(feature = "credentials")]
 pub mod credentials;

@@ -17,7 +17,7 @@ use axum::{
     extract::State,
     http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header},
     response::IntoResponse,
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use tokio::sync::{RwLock, broadcast};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -318,6 +318,15 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/builds",
             get(builds_handler::builds_handler).post(builds_handler::create_build_handler),
+        )
+        .route("/api/lasdlc", get(builds_handler::lasdlc_meta_handler))
+        .route(
+            "/api/builds/plan",
+            post(builds_handler::create_plan_handler),
+        )
+        .route(
+            "/api/builds/plan/{codename}",
+            put(builds_handler::update_plan_handler),
         )
         .route(
             "/api/builds/{id}",

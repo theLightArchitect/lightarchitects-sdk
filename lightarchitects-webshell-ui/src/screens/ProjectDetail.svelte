@@ -1,0 +1,259 @@
+<script lang="ts">
+  import { builds, currentBuildId } from '$lib/stores';
+  import { SIBLING_COLORS, getMetaSkillPolytope, getMetaSkillColor } from '$lib/design-tokens';
+  import type { Build } from '$lib/types';
+  import type { PlanPhaseStatus } from '$lib/types';
+  import PhaseTimeline from '$lib/../components/PhaseTimeline.svelte';
+  import PolytopeIcon from '$lib/../components/PolytopeIcon.svelte';
+  import PolytopeDecor from '$lib/../components/PolytopeDecor.svelte';
+
+  // Map pillar index to LASDLC phase name for the PhaseTimeline
+  const PILLAR_TO_LASDLC = ['Plan', 'Research', 'Implement', 'Harden', 'Verify', 'Ship', 'Learn'];
+
+  // Get project ID from hash: #/project/Projects-lightarchitects-sdk-lightarchitects-webshell-ui
+  let projectId = $derived(window.location.hash.replace('#/project/', ''));
+
+  // Denormalize project ID back to path segments for filtering
+  let pathSegments = $derived(projectId.split('-'));
+
+  // Filter builds for this project
+  let projectBuilds = $derived(
+    $builds.filter((b: Build) => {
+      // Match by workspace path segments or build ID prefix
+      const wsPath = b.workspaceId ?? '';
+      const normalizedId = projectId.toLowerCase();
+      const normalizedWs = wsPath.toLowerCase().replace(/[\/~]/g, '-').replace(/^-+/, '');
+      return normalizedWs.includes(normalizedId) ||
+             normalizedId.includes(normalizedWs) ||
+             b.id.startsWith(projectId) ||
+             projectId.includes(b.id.split('/')[0] ?? '');
+    })
+  );
+
+  // Sort: in_progress first, then by priority
+  let sortedBuilds = $derived(
+    [...projectBuilds].sort((a: Build, b: Build) => {
+      const statusOrder: Record<string, number> = {
+        in_progress: 0, queued: 1, paused: 2, completed: 3, failed: 4,
+      };
+      const sa = statusOrder[a.status] ?? 5;
+      const sb = statusOrder[b.status] ?? 5;
+      if (sa !== sb) return sa - sb;
+      // Secondary sort by priority
+      const prioOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+      const pa = prioOrder[a.priority ?? ''] ?? 3;
+      const pb = prioOrder[b.priority ?? ''] ?? 3;
+      return pa - pb;
+    })
+  );
+
+  // Project display name — last meaningful segment
+  let projectName = $derived(() => {
+    const parts = projectId.split('-');
+    return parts[parts.length - 1] ?? projectId;
+  });
+
+  // Full path reconstruction for display
+  let projectPath = $derived(
+    '~/' + projectId.replace(/-/g, '/')
+  );
+
+  // Stats
+  let stats = $derived({
+    total: projectBuilds.length,
+    active: projectBuilds.filter((b: Build) => b.status === 'in_progress').length,
+    planned: projectBuilds.filter((b: Build) => b.status === 'queued').length,
+    completed: projectBuilds.filter((b: Build) => b.status === 'completed').length,
+  });
+
+  // Navigate to a build workspace
+  function openBuild(buildId: string) {
+    currentBuildId.set(buildId);
+    window.location.hash = `/workspace/${buildId}`;
+  }
+
+  // Navigate back to queue
+  function goBack() {
+    window.location.hash = '/';
+  }
+
+  // Navigate to intake
+  function newPlan() {
+    window.location.hash = '/intake';
+  }
+
+  // Build phase data for PhaseTimeline
+  function buildPhases(build: Build): { id: number; title: string; status: PlanPhaseStatus }[] {
+    return build.pillars.map((p, i) => ({
+      id: i + 1,
+      title: PILLAR_TO_LASDLC[i] ?? p.pillar,
+      status: p.status === 'passed'
+        ? 'complete'
+        : p.status === 'in_progress'
+          ? 'active'
+          : p.status === 'failed'
+            ? 'failed'
+            : 'pending',
+    }));
+  }
+
+  // Priority badge styling
+  function priorityBadge(priority: string | undefined): { label: string; color: string; bg: string } {
+    switch (priority) {
+      case 'high': return { label: 'HIGH', color: '#ef4444', bg: '#ef444420' };
+      case 'medium': return { label: 'MED', color: '#f59e0b', bg: '#f59e0b20' };
+      case 'low': return { label: 'LOW', color: '#22c55e', bg: '#22c55e20' };
+      default: return { label: '---', color: '#475569', bg: '#47556920' };
+    }
+  }
+
+  // Status label styling
+  function statusStyle(status: string): { bg: string; fg: string } {
+    switch (status) {
+      case 'in_progress': return { bg: '#22c55e20', fg: '#22c55e' };
+      case 'completed': return { bg: '#3b82f620', fg: '#3b82f6' };
+      case 'failed': return { bg: '#ef444420', fg: '#ef4444' };
+      case 'paused': return { bg: '#f59e0b20', fg: '#f59e0b' };
+      default: return { bg: '#64748b20', fg: '#64748b' };
+    }
+  }
+</script>
+
+<div class="h-full flex flex-col relative overflow-hidden">
+  <!-- Ambient polytope decoration -->
+  <div class="absolute inset-0 overflow-hidden pointer-events-none -z-10">
+    <div class="absolute -top-16 -right-16">
+      <PolytopeDecor type="hexadecachoron" color="#00BFFF" size={350} opacity={0.03} speed={0.04} />
+    </div>
+    <div class="absolute -bottom-16 -left-16">
+      <PolytopeDecor type="pentachoron" color="#B44AFF" size={280} opacity={0.03} speed={0.06} />
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="flex items-center justify-between flex-wrap gap-y-2 px-4 md:px-6 py-3 border-b border-[#1e293b]">
+    <div class="flex flex-col gap-0.5">
+      <div class="flex items-center gap-2">
+        <button
+          class="text-[#64748b] hover:text-[#FFD700] transition-colors text-sm"
+          onclick={goBack}
+          title="Back to Build Queue"
+        >
+          &larr; Projects
+        </button>
+        <span class="text-[#334155]">/</span>
+        <h1 class="text-lg font-semibold tracking-wide">{projectName()}</h1>
+      </div>
+      <span class="text-[10px] text-[#475569] font-mono pl-0.5">{projectPath}</span>
+    </div>
+    <button
+      class="px-4 py-1.5 bg-[#D4A017] text-[#0a0a0f] text-xs font-semibold rounded hover:bg-[#FFD700] hover:shadow-[0_0_10px_rgba(255,215,0,0.4)] transition-all"
+      onclick={newPlan}
+    >
+      + New Plan
+    </button>
+  </header>
+
+  <!-- Stat strip -->
+  <div class="flex items-center flex-wrap gap-x-4 gap-y-1 px-4 md:px-6 py-2 bg-[#0d0d14] border-b border-[#1e293b] text-xs">
+    <span class="text-[#94a3b8]">{stats.total} plans</span>
+    <span class="text-[#22c55e]">{stats.active} in progress</span>
+    <span class="text-[#64748b]">{stats.planned} planned</span>
+    <span class="text-[#3b82f6]">{stats.completed} completed</span>
+  </div>
+
+  <!-- Plan roadmap (vertical list) -->
+  <div class="flex-1 overflow-y-auto p-4 md:p-6">
+    {#if sortedBuilds.length === 0}
+      <div class="flex flex-col items-center justify-center h-full text-[#475569]">
+        <p class="text-lg mb-2">No plans for this project</p>
+        <p class="text-sm">Create a new build plan with <kbd class="bg-[#1e293b] px-2 py-0.5 rounded text-xs">/build</kbd></p>
+      </div>
+    {:else}
+      <div class="flex flex-col gap-3 max-w-4xl mx-auto">
+        {#each sortedBuilds as build, idx}
+          {@const polyType = getMetaSkillPolytope(build.metaSkill)}
+          {@const polyColor = getMetaSkillColor(build.metaSkill)}
+          {@const phases = buildPhases(build)}
+          {@const prio = priorityBadge(build.priority)}
+          {@const sstyle = statusStyle(build.status)}
+
+          <!-- Dependency connector line -->
+          {#if idx > 0 && build.blockedBy && build.blockedBy.length > 0}
+            <div class="flex items-center justify-center">
+              <div class="w-px h-6 bg-[#334155]"></div>
+            </div>
+          {/if}
+
+          <!-- Plan card -->
+          <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+          <div
+            class="bg-[#111827] border border-[#1e293b] rounded-lg p-4 cursor-pointer hover:border-[#334155] hover:shadow-[0_0_12px_rgba(255,215,0,0.05)] transition-all group"
+            onclick={() => openBuild(build.id)}
+            onkeydown={(e) => { if (e.key === 'Enter') openBuild(build.id); }}
+          >
+            <!-- Row 1: Priority badge + Name + Status -->
+            <div class="flex items-start gap-3">
+              <!-- Priority badge -->
+              <span
+                class="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5"
+                style="color: {prio.color}; background-color: {prio.bg}; border: 1px solid {prio.color}30;"
+              >
+                P{build.priority === 'high' ? '1' : build.priority === 'medium' ? '2' : '3'} {prio.label}
+              </span>
+
+              <!-- Polytope + Name block -->
+              <div class="flex items-center gap-2 flex-1 min-w-0">
+                <div class="flex-shrink-0">
+                  <PolytopeIcon type={polyType} color={polyColor} size={28} />
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="font-semibold text-sm truncate">{build.name}</span>
+                    <span
+                      class="text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 font-mono"
+                      style="background-color: {sstyle.bg}; color: {sstyle.fg}"
+                    >
+                      {build.status.replace('_', ' ')}
+                    </span>
+                  </div>
+                  <!-- Description -->
+                  <p class="text-[11px] text-[#64748b] mt-0.5 line-clamp-2">
+                    {build.description ?? 'No description'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Row 2: PhaseTimeline -->
+            <div class="mt-3 mb-2 pl-10">
+              <PhaseTimeline {phases} compact={true} />
+            </div>
+
+            <!-- Row 3: Siblings + blocked-by -->
+            <div class="flex items-center justify-between text-[9px] pl-10">
+              <div class="flex items-center gap-1">
+                {#if build.siblings && build.siblings.length > 0}
+                  {#each build.siblings as sib}
+                    <span
+                      class="px-1.5 py-0.5 rounded font-mono uppercase border"
+                      style="color: {SIBLING_COLORS[sib.toLowerCase()] ?? '#8B5CF6'}; border-color: {SIBLING_COLORS[sib.toLowerCase()] ?? '#8B5CF6'}30; opacity: 0.9"
+                    >
+                      {sib}
+                    </span>
+                  {/each}
+                {/if}
+              </div>
+              {#if build.blockedBy && build.blockedBy.length > 0}
+                <span class="text-[#ef4444] flex items-center gap-1" title="Blocked by: {build.blockedBy.join(', ')}">
+                  <span class="text-[11px]">&#x26D4;</span>
+                  blocks: {build.blockedBy.join(', ')}
+                </span>
+              {/if}
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
+</div>

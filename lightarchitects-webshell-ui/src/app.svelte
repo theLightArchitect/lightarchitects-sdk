@@ -11,7 +11,12 @@
   import HelixTooltip from './components/HelixTooltip.svelte';
   import HelixDetailPanel from './components/HelixDetailPanel.svelte';
   import ScrumReport from './components/ScrumReport.svelte';
-  import { ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen } from '$lib/stores';
+  import {
+    ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen,
+    builds, currentBuildId, findings, logEntries, artifacts, conductorTasks, arenaStatus, alerts,
+    activePlan, latestScrumReport, hotMemory, coldMemory, activeHelixNode, selectedPillar,
+    expandedFindings, supervisorAlerts, siblingHealth, copilotMessages,
+  } from '$lib/stores';
   import { setupComplete, step, loadSetupInfo, selectedBackend, selectedModel, selectedAgent } from '$lib/setup';
   import { connectGlobalSSE, disconnectGlobalSSE } from '$lib/sse';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
@@ -28,11 +33,12 @@
 
   // Lazy-loaded screens (code-split per route)
   const screenModules = {
-    Activity:   () => import('./screens/Activity.svelte'),
-    BuildQueue: () => import('./screens/BuildQueue.svelte'),
-    Workspace:  () => import('./screens/Workspace.svelte'),
-    Intake:     () => import('./screens/Intake.svelte'),
-    Sitrep:     () => import('./screens/Sitrep.svelte'),
+    Activity:      () => import('./screens/Activity.svelte'),
+    BuildQueue:    () => import('./screens/BuildQueue.svelte'),
+    Workspace:     () => import('./screens/Workspace.svelte'),
+    Intake:        () => import('./screens/Intake.svelte'),
+    Sitrep:        () => import('./screens/Sitrep.svelte'),
+    ProjectDetail: () => import('./screens/ProjectDetail.svelte'),
   };
 
   type ScreenModule = { default: any };
@@ -45,6 +51,7 @@
     if (path.startsWith('/workspace')) return 'Workspace';
     if (path === '/intake') return 'Intake';
     if (path === '/sitrep') return 'Sitrep';
+    if (path.startsWith('/project/')) return 'ProjectDetail';
     return 'BuildQueue';
   }
 
@@ -102,7 +109,15 @@
     // E2E hook — lets Playwright bypass setup flow by setting stores directly.
     // Guarded by DEV so it's tree-shaken in production builds (CORSO sec review).
     if (import.meta.env.DEV) {
-      (window as any).__e2e = { setupComplete, step };
+      (window as any).__e2e = {
+        setupComplete, step,
+        // Stores for E2E data injection (Workspace, ScrumReport, Helix, etc.)
+        builds, currentBuildId, findings, logEntries, artifacts,
+        conductorTasks, arenaStatus, alerts, activePlan,
+        latestScrumReport, hotMemory, coldMemory, activeHelixNode,
+        selectedPillar, expandedFindings, supervisorAlerts,
+        siblingHealth, copilotMessages,
+      };
     }
     startWaveTick();
     ayinStatus.set('reconnecting');

@@ -324,6 +324,354 @@ pub async fn build_details_handler(
     (StatusCode::OK, Json(resp)).into_response()
 }
 
+// ── Plan CRUD (Phase 25 — build plan lifecycle) ──────────────────────────────
+
+/// Request body for `POST /api/builds/plan` — creates a tracked build plan.
+///
+/// Writes an entry to `active.yaml` and scaffolds a per-build manifest
+/// directory under `helix/corso/builds/{codename}/`.
+#[derive(Debug, Deserialize)]
+pub struct CreatePlanRequest {
+    /// Human-readable build plan name.
+    pub name: String,
+    /// Adjective-gerund-noun codename (auto-generated if absent).
+    #[serde(default)]
+    pub codename: Option<String>,
+    /// Semver target version (e.g., "0.3.0").
+    pub version: String,
+    /// Repository path for this build.
+    pub path: String,
+    /// Free-form build description.
+    pub description: String,
+    /// Meta-skill: "/BUILD", "/RESEARCH", "/SECURE", etc.
+    pub meta_skill: String,
+    /// Priority: "high", "medium", or "low".
+    pub priority: String,
+    /// Intake source: "manual", "github", "audit", or "discovery".
+    pub source: String,
+    /// Primary language (defaults to "rust+typescript").
+    #[serde(default)]
+    pub language: Option<String>,
+    /// Assigned sibling IDs.
+    #[serde(default)]
+    pub siblings: Vec<String>,
+    /// Codenames of builds that block this plan.
+    #[serde(default)]
+    pub blocked_by: Option<Vec<String>>,
+    /// Codenames of builds that this plan blocks.
+    #[serde(default)]
+    pub blocks: Option<Vec<String>>,
+    /// Phase detail with mandatory exit gates (raw JSON → YAML).
+    #[serde(default)]
+    pub phase_detail: Vec<serde_json::Value>,
+    /// Pre-flight checks (Section 0 of template v2).
+    #[serde(default)]
+    pub pre_flight: Vec<serde_json::Value>,
+    /// Close-out steps (Section 5 of template v2).
+    #[serde(default)]
+    pub close_out: Vec<serde_json::Value>,
+    /// Active domain gate categories for this build.
+    #[serde(default)]
+    pub domain_gates: Vec<String>,
+    /// Agentic SDLC configuration (Section 6 of template v2).
+    #[serde(default)]
+    pub agentic: Option<serde_json::Value>,
+    /// Build tier (1=production through 5=planned).
+    #[serde(default)]
+    pub tier: Option<u8>,
+}
+
+/// `POST /api/builds/plan` — create a tracked build plan entry.
+///
+/// Appends to `active.yaml` atomically (write-to-temp + rename). Invalidates
+/// the builds cache so the next `GET /api/builds` reflects the new entry.
+#[allow(clippy::missing_panics_doc)]
+pub async fn create_plan_handler(
+    headers: axum::http::HeaderMap,
+    State(state): State<AppState>,
+    Json(body): Json<CreatePlanRequest>,
+) -> impl IntoResponse {
+    let authz = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if !auth::validate_bearer(authz, &state.config.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    // Soft-validate LASDLC phase names (warn, don't reject)
+    let valid_phase_prefixes = ["Plan", "Research", "Implement", "Harden", "Verify", "Ship", "Learn"];
+    for phase in &body.phase_detail {
+        if let Some(title) = phase.get("title").and_then(|v| v.as_str()) {
+            let has_valid_prefix = valid_phase_prefixes.iter().any(|p| title.starts_with(p));
+            if !has_valid_prefix {
+                tracing::debug!(title = %title, "phase title does not match LASDLC naming — allowed but non-standard");
+            }
+        }
+    }
+
+    // Resolve helix root and active.yaml path.
+    let Some(helix_root) = lightarchitects::core::paths::helix_root() else {
+        warn!("helix_root unavailable — cannot create plan");
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let active_path = helix_root.join("corso").join("builds").join("active.yaml");
+
+    // Read current active.yaml.
+    let current = match std::fs::read_to_string(&active_path) {
+        Ok(c) => c,
+        Err(e) => {
+            warn!(error = %e, "failed to read active.yaml for plan creation");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    // Generate codename if not provided.
+    let codename = body.codename.unwrap_or_else(|| {
+        use std::time::SystemTime;
+        let seed = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        // Simple deterministic codename from timestamp hash
+        let adjectives = ["keen", "swift", "bold", "bright", "steady", "fierce", "noble", "radiant"];
+        let gerunds = ["forging", "weaving", "tracking", "mining", "bridging", "sealing", "nesting", "scribing"];
+        let nouns = ["hawk", "eagle", "wolf", "phoenix", "raven", "spider", "falcon", "viper"];
+        let a = adjectives[(seed as usize) % adjectives.len()];
+        let g = gerunds[((seed >> 8) as usize) % gerunds.len()];
+        let n = nouns[((seed >> 16) as usize) % nouns.len()];
+        format!("{a}-{g}-{n}")
+    });
+
+    // Build the YAML entry for active.yaml.
+    let mut entry = serde_yaml::Mapping::new();
+    entry.insert("name".into(), body.name.clone().into());
+    entry.insert("codename".into(), codename.clone().into());
+    entry.insert("version".into(), body.version.into());
+    entry.insert("tier".into(), serde_yaml::Value::Number(body.tier.unwrap_or(3).into()));
+    entry.insert("status".into(), "planned".into());
+    entry.insert("path".into(), body.path.into());
+    entry.insert("binary".into(), "~/.lightarchitects/webshell/bin/lightarchitects-webshell".into());
+    entry.insert("deploy".into(), "make deploy".into());
+    entry.insert("language".into(), body.language.unwrap_or_else(|| "rust+typescript".to_owned()).into());
+    entry.insert("description".into(), body.description.into());
+    entry.insert("meta_skill".into(), body.meta_skill.into());
+    entry.insert("priority".into(), body.priority.into());
+
+    if !body.siblings.is_empty() {
+        let siblings: Vec<serde_yaml::Value> = body.siblings.into_iter().map(|s| s.into()).collect();
+        entry.insert("siblings".into(), serde_yaml::Value::Sequence(siblings));
+    }
+    if let Some(blocked) = body.blocked_by {
+        if !blocked.is_empty() {
+            let blocked_vals: Vec<serde_yaml::Value> = blocked.into_iter().map(|s| s.into()).collect();
+            entry.insert("blocked_by".into(), serde_yaml::Value::Sequence(blocked_vals));
+        }
+    }
+    if let Some(blocks) = body.blocks {
+        if !blocks.is_empty() {
+            let block_vals: Vec<serde_yaml::Value> = blocks.into_iter().map(|s| s.into()).collect();
+            entry.insert("blocks".into(), serde_yaml::Value::Sequence(block_vals));
+        }
+    }
+
+    // Phase detail — store as raw YAML values
+    let phases_count = body.phase_detail.len();
+    if !body.phase_detail.is_empty() {
+        entry.insert("phases".into(), serde_yaml::Value::Number(serde_yaml::Number::from(phases_count as u64)));
+        entry.insert("current_phase".into(), serde_yaml::Value::Number(0u64.into()));
+        entry.insert("phase_status".into(), "PLANNED".into());
+
+        // Convert JSON phase_detail to YAML
+        let phase_yaml: Vec<serde_yaml::Value> = body.phase_detail.iter().filter_map(|v| {
+            serde_yaml::to_value(v).ok()
+        }).collect();
+        if !phase_yaml.is_empty() {
+            entry.insert("phase_detail".into(), serde_yaml::Value::Sequence(phase_yaml));
+        }
+    }
+
+    // Append to active.yaml — read existing YAML, add entry, write atomically.
+    let mut yaml_value: serde_yaml::Value = match serde_yaml::from_str(&current) {
+        Ok(v) => v,
+        Err(e) => {
+            warn!(error = %e, "failed to parse active.yaml");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    if let Some(builds) = yaml_value.get_mut("builds").and_then(|v| v.as_sequence_mut()) {
+        builds.push(serde_yaml::Value::Mapping(entry));
+    } else {
+        warn!("active.yaml missing 'builds' sequence");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    // Write atomically: temp file → rename.
+    let tmp_path = active_path.with_extension("yaml.tmp");
+    let yaml_str = match serde_yaml::to_string(&yaml_value) {
+        Ok(s) => s,
+        Err(e) => {
+            warn!(error = %e, "failed to serialize updated active.yaml");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    if let Err(e) = std::fs::write(&tmp_path, &yaml_str) {
+        warn!(error = %e, "failed to write temp active.yaml");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    if let Err(e) = std::fs::rename(&tmp_path, &active_path) {
+        warn!(error = %e, "failed to rename temp active.yaml");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    // Invalidate builds cache so next GET reflects the new entry.
+    #[allow(clippy::unwrap_used)]
+    {
+        *state.builds_cache.lock().unwrap() = None;
+    }
+
+    // Scaffold per-build manifest directory.
+    let manifest_dir = helix_root.join("corso").join("builds").join(&codename);
+    let _ = std::fs::create_dir_all(&manifest_dir);
+    let manifest_path = manifest_dir.join("manifest.yaml");
+    if !manifest_path.exists() {
+        let scaffold = format!(
+            "schema_version: \"1.1\"\nplan_id: \"{codename}\"\nstatus: planned\ntier: PLANNED\ncreated: \"{now}\"\nupdated: \"{now}\"\n\ngates:\n  triage: {{ passed: false }}\n  requirements: {{ passed: false }}\n  context: {{ passed: false }}\n  plan: {{ passed: false }}\n  scrum: {{ passed: false }}\n\nphases: []\n",
+            codename = codename,
+            now = chrono::Utc::now().to_rfc3339(),
+        );
+        let _ = std::fs::write(&manifest_path, scaffold);
+    }
+
+    info!(codename = %codename, "plan created in active.yaml");
+
+    let resp = serde_json::json!({
+        "codename": codename,
+        "build_id": codename,
+        "phases": phases_count,
+    });
+    (StatusCode::OK, Json(resp)).into_response()
+}
+
+/// `PUT /api/builds/plan/{codename}` — update plan status, phase, or gate results.
+///
+/// Partial update — only provided fields are merged into the active.yaml entry.
+#[allow(clippy::missing_panics_doc)]
+pub async fn update_plan_handler(
+    Path(codename): Path<String>,
+    headers: axum::http::HeaderMap,
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let authz = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if !auth::validate_bearer(authz, &state.config.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    let Some(helix_root) = lightarchitects::core::paths::helix_root() else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let active_path = helix_root.join("corso").join("builds").join("active.yaml");
+
+    let current = match std::fs::read_to_string(&active_path) {
+        Ok(c) => c,
+        Err(e) => {
+            warn!(error = %e, "failed to read active.yaml for plan update");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let mut yaml_value: serde_yaml::Value = match serde_yaml::from_str(&current) {
+        Ok(v) => v,
+        Err(e) => {
+            warn!(error = %e, "failed to parse active.yaml");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    // Find the entry by codename and merge updates.
+    let mut found = false;
+    if let Some(builds) = yaml_value.get_mut("builds").and_then(|v| v.as_sequence_mut()) {
+        for build in builds.iter_mut() {
+            if let Some(cn) = build.get("codename").and_then(|v| v.as_str()) {
+                if cn == codename {
+                    found = true;
+                    // Merge provided fields
+                    if let (Some(mapping), Ok(updates)) = (
+                        build.as_mapping_mut(),
+                        serde_yaml::to_value(&body),
+                    ) {
+                        if let Some(update_map) = updates.as_mapping() {
+                            for (k, v) in update_map {
+                                mapping.insert(k.clone(), v.clone());
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    if !found {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    // Write atomically.
+    let tmp_path = active_path.with_extension("yaml.tmp");
+    let yaml_str = match serde_yaml::to_string(&yaml_value) {
+        Ok(s) => s,
+        Err(e) => {
+            warn!(error = %e, "failed to serialize updated active.yaml");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+    if let Err(e) = std::fs::write(&tmp_path, &yaml_str) {
+        warn!(error = %e, "failed to write temp active.yaml");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    if let Err(e) = std::fs::rename(&tmp_path, &active_path) {
+        warn!(error = %e, "failed to rename temp active.yaml");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    // Invalidate cache.
+    #[allow(clippy::unwrap_used)]
+    {
+        *state.builds_cache.lock().unwrap() = None;
+    }
+
+    info!(codename = %codename, "plan updated in active.yaml");
+    (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+}
+
+/// `GET /api/lasdlc` — returns LASDLC framework metadata (phases, tiers, dimensions).
+///
+/// Public (no auth required) — serves static framework configuration for the UI.
+pub async fn lasdlc_meta_handler() -> impl IntoResponse {
+    let meta = serde_json::json!({
+        "framework": "LASDLC",
+        "version": "1.0.0",
+        "phases": ["Plan", "Research", "Implement", "Harden", "Verify", "Ship", "Learn"],
+        "tiers": {
+            "SMALL": ["Plan", "Implement", "Verify", "Ship"],
+            "MEDIUM": ["Plan", "Research", "Implement", "Verify", "Ship", "Learn"],
+            "LARGE": ["Plan", "Research", "Implement", "Harden", "Verify", "Ship", "Learn"]
+        },
+        "quality_dimensions": ["Architecture", "Security", "Quality", "Performance", "Testing", "Documentation", "Operations"],
+        "template": "LASDLC-TEMPLATE-v1.yaml",
+        "spec": "helix/user/standards/lasdlc-spec.md"
+    });
+    (StatusCode::OK, Json(meta))
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

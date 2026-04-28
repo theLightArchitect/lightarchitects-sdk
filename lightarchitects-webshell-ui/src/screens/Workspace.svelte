@@ -14,6 +14,8 @@
   import BuildNotes from '$lib/../components/BuildNotes.svelte';
   import PolytopeDecor from '$lib/../components/PolytopeDecor.svelte';
   import PlanView from '$lib/../components/PlanView.svelte';
+  import PhaseTimeline from '$lib/../components/PhaseTimeline.svelte';
+  import QualityGateDash from '$lib/../components/QualityGateDash.svelte';
 
   let build = $derived($activeBuild);
 
@@ -85,6 +87,15 @@
   let buildArtifacts = $derived(
     build ? $artifacts.filter(a => a.buildId === build.id) : []
   );
+
+  // Synthesize LASDLC phases from build pillars for PhaseTimeline
+  let synthesizedPhases = $derived(
+    build ? build.pillars.map((p, i) => ({
+      id: i + 1,
+      title: p.pillar,
+      status: p.status === 'passed' ? 'complete' as const : p.status === 'in_progress' ? 'active' as const : p.status === 'failed' ? 'failed' as const : 'pending' as const
+    })) : []
+  );
 </script>
 
 <div class="h-full flex flex-col relative overflow-hidden">
@@ -140,6 +151,14 @@
             </p>
           </div>
         </div>
+
+        <!-- LASDLC Phase Timeline (primary display) -->
+        {#if synthesizedPhases.length > 0}
+          <PhaseTimeline phases={synthesizedPhases} />
+        {/if}
+
+        <!-- LASDLC Quality Gate Dashboard (7 dimensions) -->
+        <QualityGateDash />
 
         <!-- Pillar rail (clickable) -->
         <PillarRail

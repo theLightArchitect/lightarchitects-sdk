@@ -47,9 +47,29 @@ export interface Build {
   updatedAt: string;
   modules: Module[];
   siblingDispatches: SiblingDispatch[];
+  // Extended fields from active.yaml portfolio entries
+  description?: string;
+  priority?: Priority;
+  siblings?: string[];
+  blockedBy?: string[];
+  blocks?: string[];
+  path?: string;
+  tier?: number;
 }
 
 export type BuildStatus = 'queued' | 'in_progress' | 'completed' | 'failed' | 'paused';
+
+/** Project group — aggregates builds by project path */
+export interface ProjectGroup {
+  id: string;
+  name: string;
+  path: string;
+  project?: Build;
+  plans: Build[];
+  planCount: number;
+  activePlanCount: number;
+  progress: number;
+}
 
 export interface Module {
   id: string;
@@ -81,8 +101,77 @@ export const META_SKILLS: MetaSkill[] = [
   '/ONBOARD', '/OPTIMIZE', '/REFLECT', '/ENRICH',
 ];
 
-/** Per-skill action labels for each pillar */
-export const PILLAR_ACTIONS: Record<MetaSkill, Record<Pillar, string>> = {
+// --- LASDLC Framework (v1.0) ────────────────────────────────────────────────
+// Three orthogonal axes: Execution Phases × Quality Gates × Agent Topology
+// Spec: helix/user/standards/lasdlc-spec.md
+// Template: helix/corso/builds/LASDLC-TEMPLATE-v1.yaml
+
+/** LASDLC execution phases — sequential work order */
+export type ExecutionPhase = 'Plan' | 'Research' | 'Implement' | 'Harden' | 'Verify' | 'Ship' | 'Learn';
+
+/** All 7 LASDLC execution phases in order */
+export const EXECUTION_PHASES: ExecutionPhase[] = ['Plan', 'Research', 'Implement', 'Harden', 'Verify', 'Ship', 'Learn'];
+
+/** Build complexity tier — determines which phases are active */
+export type BuildTier = 'SMALL' | 'MEDIUM' | 'LARGE';
+
+/** Phase sets per tier (tier telescoping) */
+export const TIER_PHASES: Record<BuildTier, ExecutionPhase[]> = {
+  SMALL:  ['Plan', 'Implement', 'Verify', 'Ship'],
+  MEDIUM: ['Plan', 'Research', 'Implement', 'Verify', 'Ship', 'Learn'],
+  LARGE:  ['Plan', 'Research', 'Implement', 'Harden', 'Verify', 'Ship', 'Learn'],
+};
+
+/** 7 quality dimensions — checked IN PARALLEL at every phase boundary */
+export type QualityDimension = 'Architecture' | 'Security' | 'Quality' | 'Performance' | 'Testing' | 'Documentation' | 'Operations';
+
+/** Quality dimension abbreviations for compact display */
+export const QUALITY_DIMENSION_ABBREV: Record<QualityDimension, string> = {
+  Architecture: 'A', Security: 'S', Quality: 'Q', Performance: 'P',
+  Testing: 'T', Documentation: 'D', Operations: 'O',
+};
+
+/** All 7 quality dimensions */
+export const QUALITY_DIMENSIONS: QualityDimension[] = [
+  'Architecture', 'Security', 'Quality', 'Performance', 'Testing', 'Documentation', 'Operations',
+];
+
+/** Quality dimension result at a gate boundary */
+export interface QualityDimensionResult {
+  dimension: QualityDimension;
+  status: 'passed' | 'pending' | 'failed' | 'waived';
+  criteria_passed: number;
+  criteria_total: number;
+  evaluated_by?: string;
+}
+
+/** Agent assignment within a phase (file-ownership partitioning) */
+export interface AgentAssignment {
+  id: string;
+  sibling: SiblingId;
+  owns: string[];                    // files with exclusive write access
+  functions: string[];               // file::function targets
+  tools: string[];                   // allowed tool names
+  budget: number;                    // max token consumption
+  depends_on: string[];              // agent IDs that must complete first
+  status: 'queued' | 'running' | 'complete' | 'failed';
+}
+
+/** File-function map for planning granularity */
+export interface FileFunctionMap {
+  [filePath: string]: {
+    create?: string[];               // new functions to add
+    modify?: string[];               // existing functions to change
+    delete?: string[];               // functions to remove
+  };
+}
+
+// --- Quality Gate Labels (per-skill action names for CORSO gate evaluation) ---
+// NOTE: These are quality dimension labels, NOT execution phases.
+// CORSO uses these action names when evaluating gates at each phase boundary.
+
+/** Per-skill quality gate action labels (what CORSO calls each dimension check) */
+export const QUALITY_GATE_LABELS: Record<MetaSkill, Record<Pillar, string>> = {
   '/BUILD':        { ARCH: 'SCOUT',  SEC: 'FETCH',  QUAL: 'SNIFF',  PERF: 'GUARD',  TEST: 'CHASE',  DOC: 'HUNT',   OPS: 'SCRUM' },
   '/RESEARCH':     { ARCH: 'SCAN',   SEC: 'SWEEP',  QUAL: 'TRACE',  PERF: 'PROBE',  TEST: 'THEORIZE', DOC: 'VERIFY', OPS: 'CLOSE' },
   '/SECURE':       { ARCH: 'RECON',  SEC: 'SURVEY', QUAL: 'EXAMINE',PERF: 'STRIKE', TEST: 'REPORT', DOC: 'REMEDIATE', OPS: 'CLOSE' },
@@ -96,6 +185,9 @@ export const PILLAR_ACTIONS: Record<MetaSkill, Record<Pillar, string>> = {
   '/REFLECT':      { ARCH: 'SCAN',   SEC: 'SWEEP',  QUAL: 'TRACE',  PERF: 'PROBE',  TEST: 'THEORIZE', DOC: 'VERIFY', OPS: 'CLOSE' },
   '/ENRICH':       { ARCH: 'SCAN',   SEC: 'SWEEP',  QUAL: 'TRACE',  PERF: 'PROBE',  TEST: 'THEORIZE', DOC: 'VERIFY', OPS: 'CLOSE' },
 };
+
+// Backward-compat alias — consumers are being migrated to QUALITY_GATE_LABELS.
+export const PILLAR_ACTIONS = QUALITY_GATE_LABELS;
 
 // --- Siblings ---
 
@@ -206,7 +298,7 @@ export type EventType =
 
 // --- CORSO scout plan (PlanView) ---
 
-export type PlanPhaseStatus = 'pending' | 'active' | 'complete' | 'failed';
+export type PlanPhaseStatus = 'pending' | 'active' | 'complete' | 'failed' | 'skipped';
 
 export interface PlanPhase {
   id: number;
@@ -221,6 +313,159 @@ export interface ActivePlan {
   title: string;
   phases: PlanPhase[];
   createdAt: number;
+}
+
+// --- Build Plan System (Phase 25 — schema v1.1) ---
+// Full lifecycle: pre-flight → phases with mandatory exit gates → close-out
+// Covers: 7 CORSO pillars, 9 domain gates, agentic SDLC, research enrichment
+
+/** Gate types — maps to LASDLC-TEMPLATE-v1.yaml Section 3 (inter-phase gates) */
+export type GateType =
+  | 'quality'       // fmt, clippy, tests, test_ratchet
+  | 'structural'    // ownership_drift, contract_drift, boundary_drift
+  | 'testing'       // unit, contract, integration, roundtrip, real_world
+  | 'security'      // injection, permission_bypass, scope_escape, redaction
+  | 'complexity'    // no O(n²), cyclomatic ≤ 10, function ≤ 60 lines
+  | 'clean_room'    // no code copying, attribution
+  | 'custom';       // user-defined criteria
+
+/** Single criterion within a gate */
+export interface GateCriterion {
+  id: string;                        // e.g., 'fmt_clean', 'tests_pass'
+  label: string;                     // human-readable description
+  type: 'automated' | 'manual';     // automated = skill/command, manual = HITL checkbox
+  passed: boolean;
+  evidence?: string;                 // artifact path, log excerpt, or URL
+}
+
+/** Gate status lifecycle */
+export type GateStatus = 'pending' | 'passed' | 'failed' | 'waived' | 'blocked';
+
+/** Exit gate — mandatory between every work phase */
+export interface ExitGate {
+  type: GateType;
+  criteria: GateCriterion[];
+  status: GateStatus;
+  evaluated_by?: string;             // 'corso' | 'seraph' | 'quantum' | 'human'
+  evaluated_at?: string;             // ISO-8601
+  hitl_required?: boolean;           // if true, cannot auto-pass
+  skill?: string;                    // '/GATE' | '/SECURE' | '/TESTING' | '/WIRING'
+  fallback_command?: string;         // e.g., "cargo fmt --check && cargo clippy -D warnings"
+}
+
+/** Research enrichment attached to a phase */
+export interface PhaseResearch {
+  context7_refs?: string[];          // library doc references
+  security_findings?: string[];      // SERAPH scan results
+  prior_art?: string[];              // QUANTUM research
+  enriched_at?: string;              // ISO-8601
+  enriched_by?: string;              // 'quantum' | 'seraph' | 'context7'
+}
+
+/** Work phase with mandatory exit gate */
+export interface PhaseWithGates {
+  id: number;
+  title: string;
+  status: PlanPhaseStatus;
+  description: string;
+  items?: string[];                  // task checklist
+  files_expected?: string[];         // files this phase touches
+  deliverables?: string[];           // what this phase produces
+  meta_skill?: MetaSkill;            // override per-phase
+  assigned_sibling?: string;         // SQUAD member for this phase
+  research?: PhaseResearch;          // populated by enrichment
+  exit_gate: ExitGate;              // MANDATORY — enforced by validator
+}
+
+/** 9 domain gate categories (opt-in per build based on what it touches) */
+export type DomainGateCategory =
+  | 'security'        // auth, network, file I/O, user input
+  | 'ui_ux'           // frontend changes
+  | 'dx'              // SDK/API ergonomics
+  | 'optimization'    // hot paths, performance
+  | 'proofing'        // determinism, idempotency, serialization
+  | 'research'        // new libs/patterns
+  | 'observability'   // tracing, logging
+  | 'memory'          // event/vault operations
+  | 'retrieval';      // search/indexing
+
+/** Pre-flight check (Section 0 of template v2) */
+export interface PreFlightCheck {
+  id: string;                        // '0a' through '0k'
+  label: string;
+  blocking: boolean;
+  status: 'pending' | 'passed' | 'failed' | 'skipped';
+  skill?: string;                    // '/PLAN', '/RESEARCH', '/RISK-ANALYSIS'
+  fallback_command?: string;
+  output?: string;                   // result or artifact path
+}
+
+/** Close-out step (Section 5 of template v2) */
+export interface CloseOutStep {
+  id: string;                        // '5a' through '5f'
+  label: string;
+  status: 'pending' | 'complete' | 'skipped';
+  skill?: string;                    // '/REFLECT', '/ENRICH', '/SCRUM', '/DEPLOY'
+  output?: string;
+}
+
+/** Agentic SDLC configuration (Section 6 of template v2) */
+export interface AgenticConfig {
+  /** File-ownership partitioning (Canon XXIII) */
+  agent_composition?: string;
+  /** Token estimate per phase */
+  context_budget?: string;
+  /** ExecutionPolicy per phase */
+  tool_permissions?: string;
+  /** LLM retry, MCP fallback, context overflow strategy */
+  fallback_chains?: string;
+  /** What requires HITL vs autonomous */
+  hitl_protocol?: string;
+}
+
+/** Full build plan — complete lifecycle with pre-flight, gated phases, close-out */
+export interface BuildPlan {
+  // Identity
+  name: string;
+  codename: string;                  // adjective-gerund-noun
+  version: string;                   // semver target
+  description: string;
+
+  // Classification
+  meta_skill: MetaSkill;
+  priority: Priority;
+  source: IntakeSource;
+  tier: number;                      // 1–5 (project maturity)
+  build_tier?: BuildTier;            // LASDLC complexity: SMALL | MEDIUM | LARGE
+  status: 'planned' | 'in_progress' | 'complete' | 'failed' | 'archived';
+
+  // Project
+  path: string;                      // repository path
+  language?: string;
+  binary?: string;
+  deploy?: string;
+
+  // Lifecycle — full gated pipeline
+  pre_flight: PreFlightCheck[];      // Section 0 (11 checks)
+  phase_detail: PhaseWithGates[];    // Sections 1-4 (phases with mandatory exit gates)
+  domain_gates: DomainGateCategory[]; // Which domain gates are active for this build
+  close_out: CloseOutStep[];          // Section 5 (6 steps)
+  agentic?: AgenticConfig;            // Section 6 (agentic SDLC)
+
+  // Progress tracking
+  phases: number;                    // total phase count
+  current_phase: number;
+  phase_status: string;              // human-readable current status
+
+  // Dependencies
+  siblings: string[];
+  blocked_by?: string[];             // codenames of blocking builds
+  blocks?: string[];                 // codenames this blocks
+
+  // Dates
+  created_date?: string;
+  completed_date?: string;
+  plan?: string;                     // path to .claude/plans/*.md
 }
 
 // --- Activity tab (Phase 20) ---

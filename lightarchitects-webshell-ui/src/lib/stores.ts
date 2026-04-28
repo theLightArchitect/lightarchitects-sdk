@@ -291,6 +291,9 @@ export const activeBuild = derived(
   ([$builds, $id]) => $id ? $builds.find(b => b.id === $id) ?? null : null
 );
 
+// --- Derived: project groups (LASDLC — groups builds by project path) ---
+export const projectGroups = derived(builds, ($builds) => groupByProject($builds));
+
 // --- Derived: build stats ---
 export const buildStats = derived(builds, ($builds) => ({
   total: $builds.length,
@@ -383,6 +386,7 @@ import { META_SKILL_TO_SIBLING } from './design-tokens';
 import { PILLAR_ACTIONS as PILLAR_ACTIONS_TYPE } from './types';
 import { api } from './api';
 import { loadPersistedSettings } from './settings-persistence';
+import { mapPortfolioBuilds, groupByProject } from './build-mapper';
 
 export const META_SKILL_CARDS: MetaSkillCard[] = Object.entries(PILLAR_ACTIONS_TYPE).map(([skill, actions]) => ({
   skill: skill as MetaSkill,
@@ -400,6 +404,14 @@ export const intakeForm = writable<BuildRequest>({
   repoPath: '',
   description: '',
 });
+
+// --- Plan Builder state (Phase 25) ---
+/** Toggle between quick build and plan builder mode in Intake */
+export const planBuilderMode = writable<boolean>(false);
+
+/** Active plan being built/edited in Intake Plan Builder */
+export const planBuilderDraft = writable<import('./types').BuildPlan | null>(null);
+
 let waveInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startWaveTick(): void {
@@ -439,7 +451,7 @@ export async function initializeStores(): Promise<void> {
   await loadPersistedSettings();
 
   try {
-    const [ws, conductor, arena, siblings, hot, cold, soulHealth] = await Promise.allSettled([
+    const [ws, conductor, arena, siblings, hot, cold, soulHealth, buildsResult] = await Promise.allSettled([
       api.listWorkspaces(),
       api.getConductor(),
       api.getArena(),
@@ -447,6 +459,7 @@ export async function initializeStores(): Promise<void> {
       api.getHotMemory(),
       api.getColdMemory(),
       api.getSoulHealth(),
+      api.listBuilds(),
     ]);
     if (ws.status === 'fulfilled') workspaces.set(ws.value);
     if (conductor.status === 'fulfilled') {
@@ -461,6 +474,9 @@ export async function initializeStores(): Promise<void> {
     if (cold.status === 'fulfilled') coldMemory.set(cold.value);
     if (soulHealth.status === 'fulfilled') {
       vaultCounts.set(soulHealth.value.counts);
+    }
+    if (buildsResult.status === 'fulfilled') {
+      builds.set(mapPortfolioBuilds(buildsResult.value));
     }
   } catch {
     // Server offline — stores remain at empty defaults

@@ -119,6 +119,29 @@ export const api = {
   control: (command: string, payload?: unknown) =>
     request<unknown>('/control', { method: 'POST', body: JSON.stringify({ command, ...(payload as Record<string, unknown> ?? {}) }) }),
 
+  // ── Build Plans (Phase 25 — plan lifecycle) ────────────────────────────
+  /** Create a new build plan entry in active.yaml + scaffold manifest */
+  createPlan: (plan: unknown) =>
+    request<{ codename: string; build_id: string }>('/builds/plan', { method: 'POST', body: JSON.stringify(plan) }),
+
+  /** Update an existing plan (phase status, gate results, research) */
+  updatePlan: (codename: string, updates: unknown) =>
+    request<{ ok: boolean }>(`/builds/plan/${codename}`, { method: 'PUT', body: JSON.stringify(updates) }),
+
+  /** Enrich a plan phase with research (QUANTUM/SERAPH/Context7) */
+  enrichPhase: (codename: string, phaseId: number, researchType: string, query?: string) =>
+    request<{ findings: string[] }>(`/builds/plan/${codename}/research`, {
+      method: 'POST',
+      body: JSON.stringify({ phase_id: phaseId, research_type: researchType, query }),
+    }),
+
+  /** Evaluate exit gate criteria for a plan phase */
+  evaluateGate: (codename: string, phaseId: number, autoEvaluate: boolean, overrides?: unknown[]) =>
+    request<{ status: string; criteria: unknown[] }>(`/builds/plan/${codename}/gate/${phaseId}`, {
+      method: 'POST',
+      body: JSON.stringify({ auto_evaluate: autoEvaluate, criteria_overrides: overrides }),
+    }),
+
   // Setup
   setupInfo: () =>
     request<SetupInfo>('/setup/info'),
