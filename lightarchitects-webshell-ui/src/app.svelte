@@ -75,7 +75,31 @@
     }
   }
 
+  // Responsive viewport state — drives Helix3D panel layout decisions.
+  // At desktop (>=1024) the panel is the right-hand sibling of the main
+  // content (current default). Below 1024 the panel is hidden and the
+  // toggle button reveals it as a full-screen overlay so the WebGL scene
+  // gets readable real estate. At <768 the page itself stacks vertically.
+  // BREAKPOINTS tokens come from $lib/design-tokens.
+  type ViewportCategory = 'mobile' | 'tablet' | 'desktop';
+  let viewport = $state<ViewportCategory>('desktop');
   let showHelix = $state(true);
+
+  function categorizeViewport(width: number): ViewportCategory {
+    if (width < 768) return 'mobile';
+    if (width < 1024) return 'tablet';
+    return 'desktop';
+  }
+
+  function syncViewport() {
+    const next = categorizeViewport(window.innerWidth);
+    if (next === viewport) return;
+    viewport = next;
+    // Auto-collapse the helix panel when leaving desktop so users on
+    // resize-down don't get a forced overlay; auto-restore on entering
+    // desktop because that is where the panel "lives" by default.
+    showHelix = next === 'desktop';
+  }
 
   // Derived condition for setup gate — explicit dependency tracking in Svelte 5
   const setupDone = $derived($setupComplete && $step === 'done');
@@ -105,6 +129,12 @@
   }
 
   onMount(() => {
+    // Initialize responsive viewport before first render so layout
+    // matches the current window width (avoids a desktop-default flash
+    // on small screens). Listener stays for live resize tracking.
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+
     loadSetupInfo(); // check setup state before anything else
     // E2E hook — lets Playwright bypass setup flow by setting stores directly.
     // Guarded by DEV so it's tree-shaken in production builds (CORSO sec review).
@@ -149,6 +179,7 @@
       disconnectGlobalSSE();
       settingsUnsubs.forEach(fn => fn());
       window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('resize', syncViewport);
     };
   });
 </script>
@@ -157,7 +188,11 @@
   <SetupFlow />
 {:else}
 <div class="w-screen h-screen overflow-hidden bg-[#0a0a0f] text-[#e2e8f0] font-['JetBrains_Mono',monospace]">
-  <div class="flex" style="height: calc(100vh - {$drawerHeightPx}px);">
+  <!-- Responsive container:
+         <768  : flex-col       (vertical stack — single-column flow)
+         >=768 : flex-row       (side-by-side) — at 768..1023 the helix panel
+                                still hides; at >=1024 it renders inline. -->
+  <div class="flex flex-col md:flex-row" style="height: calc(100vh - {$drawerHeightPx}px);">
     <!-- Left: Main content area -->
     <div class="flex-1 flex flex-col overflow-hidden relative">
       <!-- Ambient particles — drifting helix-palette dots behind content -->
@@ -177,12 +212,15 @@
             title="Memory drawer (Cmd+M)"
             data-testid="memory-toggle"
           >{$memoryDrawerOpen ? 'Close Memory' : 'Memory'}</button>
-          <div class="hidden lg:flex items-center gap-2">
-            <button
-              onclick={() => { showHelix = !showHelix; }}
-              class="px-2 py-1 text-[11px] text-[#475569] hover:text-[#FFD700] transition-colors"
-            >{showHelix ? 'Hide 3D' : 'Show 3D'}</button>
-          </div>
+          <!-- 3D View toggle — visible at every viewport.
+               Desktop (>=1024): toggles the inline right-hand panel.
+               Tablet/mobile  : toggles a full-screen overlay so the WebGL
+                                bloom pass gets readable real estate. -->
+          <button
+            onclick={() => { showHelix = !showHelix; }}
+            class="px-2 py-1 text-[11px] text-[#475569] hover:text-[#FFD700] transition-colors"
+            data-testid="helix-toggle"
+          >{showHelix ? 'Hide 3D View' : 'Show 3D View'}</button>
         </div>
       </nav>
 
@@ -200,13 +238,31 @@
       {/if}
     </div>
 
-    <!-- Right: 3D Helix panel — CSS hides below lg (1024px); JS toggle controls at lg+ -->
-    {#if showHelix}
-      <div class="hidden lg:block lg:w-[35%] xl:w-[40%] min-w-[200px] max-w-[600px] relative border-l border-[#1e293b]">
+    <!-- Desktop (>=1024): inline right-hand panel — original behavior. -->
+    {#if showHelix && viewport === 'desktop'}
+      <div class="lg:block lg:w-[35%] xl:w-[40%] min-w-[200px] max-w-[600px] relative border-l border-[#1e293b]" data-testid="helix-panel-inline">
         <Helix3D />
       </div>
     {/if}
   </div>
+
+  <!-- Tablet/mobile overlay — full-screen Helix3D drawer.
+       Rendered outside the flex container so it sits on top of all layout
+       at high z-index. Includes a close button (top-right) since on
+       narrow screens the nav toggle may be off-screen behind a scroll. -->
+  {#if showHelix && viewport !== 'desktop'}
+    <div
+      class="fixed inset-0 z-40 bg-[#0a0a0f]"
+      data-testid="helix-panel-overlay"
+    >
+      <button
+        onclick={() => { showHelix = false; }}
+        class="absolute top-3 right-3 z-50 px-3 py-1.5 text-[11px] rounded bg-[#1e293b] text-[#FFD700] hover:bg-[#FFD700]/15 border border-[#FFD700]/30 shadow-[0_0_8px_rgba(255,215,0,0.2)]"
+        data-testid="helix-overlay-close"
+      >Close 3D View</button>
+      <Helix3D />
+    </div>
+  {/if}
   <StatusBar />
   <CommandPalette />
   <CopilotDrawer />
