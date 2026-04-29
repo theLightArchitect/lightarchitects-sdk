@@ -68,6 +68,18 @@ export const LAYOUT = {
   terminalMinHeight: 200,
 } as const;
 
+// --- Responsive breakpoints (px) ---
+// Aligned with Tailwind v4 defaults: tokens here exist so TypeScript / JS
+// callers (matchMedia, resize observers) share one source of truth with the
+// `md:` and `lg:` Tailwind utilities used in markup.
+//   mobile (<768)        : single-column stack (no helix panel)
+//   tablet (768..1023)   : two-row layout, helix hidden behind toggle
+//   desktop (>=1024)     : side-by-side, helix panel visible (current default)
+export const BREAKPOINTS = {
+  mobile:  768,   // Tailwind `md`
+  desktop: 1024,  // Tailwind `lg`
+} as const;
+
 // --- Typography ---
 export const TYPO = {
   fontFamily: "'JetBrains Mono', monospace",
