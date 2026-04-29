@@ -616,7 +616,12 @@ fn synthesize_assistant_turn(
             let dialogue: String = turns
                 .iter()
                 .filter_map(|turn| {
-                    let sib = turn.get("sibling").and_then(|s| s.as_str())?;
+                    // Accept `agent:` (canonical) or legacy `sibling:` —
+                    // older trace JSONs in the corpus still use the latter.
+                    let sib = turn
+                        .get("agent")
+                        .and_then(|s| s.as_str())
+                        .or_else(|| turn.get("sibling").and_then(|s| s.as_str()))?;
                     let text = turn.get("text").and_then(|t| t.as_str())?;
                     Some(format!("[{}] {}", sib.to_uppercase(), text))
                 })
