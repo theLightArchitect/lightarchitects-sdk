@@ -1,0 +1,51 @@
+[package]
+name = "lightarchitects-server"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Light Architects server-side modules — auth, arena, helix, turnlog, oracle."
+keywords = ["mcp", "ai", "server", "lightarchitects", "helix"]
+categories = ["development-tools", "network-programming"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lints]
+workspace = true
+
+# Mirror the feature flags relevant to server-side modules.
+# Consumers enable only what they need — avoids pulling ONNX / Neo4j / fastembed
+# when only auth or arena is required.
+[features]
+default = ["auth", "arena", "oracle", "turnlog"]
+
+## API key authentication (no heavy deps).
+auth    = []
+
+## Training data factory (requires LLM endpoint).
+arena   = []
+
+## Neo4j graph backend — HelixStore, 5 primitives, 4-signal RRF retrieval.
+## Pulls in neo4j + rusqlite + moka + walkdir.
+helix   = ["lightarchitects/neo4j", "lightarchitects/sqlite", "lightarchitects/search"]
+
+## Ephemeral transactional log with HMAC chaining and helix promotion.
+turnlog = []
+
+## Multi-model mathematical verification oracle.
+oracle  = []
+
+## fastembed embedding provider (ONNX Runtime — ~100 MB model download on first use).
+## Only enable if you need local-first embeddings without Ollama.
+fastembed = ["helix", "lightarchitects/fastembed", "lightarchitects/embedding-fastembed"]
+
+[dependencies]
+# Re-export the unified SDK — server modules live inside it.
+# lightarchitects-server is a thin facade that exposes the server-only subset
+# so downstream crates don't need to enable every feature of the full SDK.
+lightarchitects = { path = "../lightarchitects" }
