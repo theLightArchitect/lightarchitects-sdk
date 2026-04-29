@@ -275,7 +275,7 @@
     }
 
     addMessage('assistant',
-      `${sibling.toUpperCase()} sibling activated. ` +
+      `${sibling.toUpperCase()} agent activated. ` +
       `${buildId ? `Operating on build ${buildId}` : 'No active build — standing by for assignment.'} ` +
       `I'll coordinate the ${sibling} cycle and report findings here.`,
       sibling,
@@ -322,7 +322,7 @@
       >TERMINAL</button>
     </div>
     {#if mode === 'chat'}
-      <span class="hidden sm:inline text-xs text-[#64748b]">AI Assistant · Routes to sibling via orchestrator</span>
+      <span class="hidden sm:inline text-xs text-[#64748b]">AI Assistant · Routes to agent via orchestrator</span>
     {:else}
       <span class="hidden sm:inline text-xs text-[#64748b]">PTY · Claude Code in a real terminal</span>
     {/if}

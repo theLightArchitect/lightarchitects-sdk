@@ -444,7 +444,7 @@
             <span class="text-[10px] text-[#334155]">
               SharedExperience nodes are populated by the nightly<br />
               `soul-consolidator` via Louvain community detection.<br />
-              Run it once to see cross-sibling moments here.
+              Run it once to see cross-Squad moments here.
             </span>
           </div>
         {/if}
@@ -533,7 +533,7 @@
             <span class="font-mono text-[10px] text-[#94a3b8]">{selected.memo.source_path ?? selected.memo.id}</span>
           </div>
           <div class="flex items-center gap-2">
-            <span class="text-[9px] text-[#475569]">SIBLING</span>
+            <span class="text-[9px] text-[#475569]">AGENT</span>
             <span style="color: {siblingColor(selected.memo.sibling)}">{selected.memo.sibling}</span>
             {#if selected.memo.self_defining}
               <span
