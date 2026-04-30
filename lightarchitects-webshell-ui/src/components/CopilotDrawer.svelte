@@ -608,7 +608,7 @@
                 width={800}
                 height={48}
                 class={$copilotLoading ? 'oscilloscope-active' : ''}
-                style="width:100%;height:24px;display:block;border-radius:4px;margin-bottom:6px;opacity:0.85;"
+                style="width:100%;height:24px;display:block;border-radius:var(--la-radius-sm);margin-bottom:6px;opacity:0.85;"
               ></canvas>
               <div class="flex gap-2 relative">
                 <!-- Tesseract command palette trigger — left of input, helix gold glow -->
@@ -697,15 +697,15 @@
     background: rgba(255, 215, 0, 0.08);
     color: #FFD700;
     padding: 0.1em 0.35em;
-    border-radius: 3px;
-    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    border-radius: var(--la-radius-sm);
+    font-family: var(--la-font-mono);
     font-size: 0.92em;
     word-break: break-word;
   }
   :global(.chat-md-content pre) {
     background: #0a0a0f;
     border: 1px solid #1e293b;
-    border-radius: 4px;
+    border-radius: var(--la-radius-sm);
     padding: 8px 10px;
     margin: 0.4em 0;
     overflow-x: auto;

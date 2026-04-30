@@ -1,0 +1,88 @@
+/* ============================================================================
+   LA Design Tokens — aegis Wave 1 foundation
+   ----------------------------------------------------------------------------
+   Single source of truth for typography stack, radius scale, dim states, and
+   destructive-action tokens. Imported globally from styles/index.css.
+
+   Closes formatting-audit findings 1, 4, 5, 7, 12 simultaneously across every
+   screen, AND seeds destructive-action contract (task #14, hoisted to wave 1
+   per quantum Q-6 — diff-preview #47 in wave 2 USES destructive styling).
+   ============================================================================ */
+
+:root {
+  /* ── Typography stack ──────────────────────────────────────────────────── */
+  /* Chrome (nav, buttons, labels, headings): humanist sans for legibility    */
+  --la-font-chrome: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Mono (data, IDs, hashes, counts, timestamps, code blocks)                */
+  --la-font-mono:   "Berkeley Mono", "JetBrains Mono", ui-monospace, "SF Mono",
+                    Menlo, Consolas, monospace;
+
+  /* ── Radius scale (3-step) ─────────────────────────────────────────────── */
+  /* Chips, inputs, segmented-control inner pills                             */
+  --la-radius-sm: 2px;
+  /* Buttons, status pills, toggle backgrounds                                */
+  --la-radius-md: 6px;
+  /* Cards, panels, drawer surfaces                                           */
+  --la-radius-lg: 10px;
+
+  /* ── Dim / zero-state ──────────────────────────────────────────────────── */
+  /* Used when a counter reads 0 — prevents zero-noise from competing for     */
+  /* attention with non-zero counts. Apply via [data-zero="true"].            */
+  --la-text-dim:   #5A6470;
+  --la-text-mute:  #9CA3AF;
+  --la-text-body:  #E2E8F0;
+
+  /* ── Destructive-action tokens (task #14) ──────────────────────────────── */
+  /* For Cancel, Delete, Reset, Discard — anything that loses user work.      */
+  /* Diff-preview #47 (wave 2) and Cancel/Undo toasts will consume these.     */
+  --la-danger-bg:      #2A0F12;  /* deep maroon — surface tint */
+  --la-danger-stroke:  #DC2626;  /* red-600 — outline */
+  --la-danger-text:    #FCA5A5;  /* red-300 — body text on dark */
+  --la-danger-glow:    rgba(220, 38, 38, 0.35);
+
+  /* ── Focus ring (a11y groundwork — #11 wave 4 will use these) ──────────── */
+  --la-focus-ring:        #FFD700;  /* yellow accent matches brand */
+  --la-focus-ring-width:  1px;
+  --la-focus-ring-offset: 2px;
+
+  /* ── Animation / motion ────────────────────────────────────────────────── */
+  --la-transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --la-transition-med:  200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --la-transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Zero-state utility ────────────────────────────────────────────────────
+   Apply to count elements: <span class="la-count" data-zero="true">0</span>.
+   When the count is non-zero, drop the data-zero attribute and the element
+   gets full chroma. Counter strips become quiet at idle, loud when active.
+   ============================================================================ */
+.la-count[data-zero="true"] {
+  color: var(--la-text-dim);
+}
+
+/* ── Focus ring (consume the token everywhere a focusable lives) ──────────
+   Buttons, inputs, links, role="button" — apply this baseline. Components
+   may override for specialized treatments (e.g., destructive focus uses
+   --la-danger-stroke instead).
+   ============================================================================ */
+:focus-visible {
+  outline: var(--la-focus-ring-width) solid var(--la-focus-ring);
+  outline-offset: var(--la-focus-ring-offset);
+}
+
+/* ── Destructive utility classes ──────────────────────────────────────────
+   For consumers that want token-driven destructive styling without per-call
+   inline styles. Wave 2 diff-preview will use these.
+   ============================================================================ */
+.la-destructive {
+  background: var(--la-danger-bg);
+  border: 1px solid var(--la-danger-stroke);
+  color: var(--la-danger-text);
+}
+.la-destructive:hover {
+  box-shadow: 0 0 0 3px var(--la-danger-glow);
+}
+.la-destructive:focus-visible {
+  outline: var(--la-focus-ring-width) solid var(--la-danger-stroke);
+  outline-offset: var(--la-focus-ring-offset);
+}
