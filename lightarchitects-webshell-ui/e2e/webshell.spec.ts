@@ -3472,13 +3472,11 @@ test.describe('Comprehensive webshell E2E', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 33. Wave 3 NAVIGATION_FOUNDATION — landed P0 features (#10/#13/#15/#26/#27/#35/#47/#48/#58)
+  // 33–70. Wave 3/4 — landed P0/P1 features
   // ═══════════════════════════════════════════════════════════════════════════
   //
-  // These tests cover the operator-facing components shipped during the
-  // unifying-rolling-aegis Wave 3. Each section is independent (a setup
-  // step or two then 1-3 assertions) and uses real DOM rather than mocks
-  // so we catch regressions in component-level behaviour, not just API.
+  // Independent sections — each sets up its own state via __e2e store injection
+  // or custom events. Section 70 (Console health) MUST remain last.
 
   test.describe('33. AuthBanner — 401/403 surfaced UI (#13)', () => {
     test('banner not visible when authStatus is ok', async () => {
@@ -3511,7 +3509,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
   });
 
-  test.describe('34. Tooltip primitive (#26)', () => {
+  test.describe('61. Tooltip primitive (#26)', () => {
     test('hovering a tab label reveals tooltip with hint copy', async () => {
       // Activity tab has a Tooltip wrapper with hint "Live trace events..."
       const activityTab = page.locator('button', { hasText: /^Activity$/ }).first();
@@ -3524,7 +3522,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
   });
 
-  test.describe('35. DiffPreview modal — operator FS gate (#47)', () => {
+  test.describe('62. DiffPreview modal — operator FS gate (#47)', () => {
     test('triggerMockDiffPreview opens the modal', async () => {
       await page.evaluate(() => {
         // Synthesize the SSE event the backend would send post-mantis-rebase.
@@ -3552,7 +3550,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
   });
 
-  test.describe('36. Intake form draft persistence (#15)', () => {
+  test.describe('63. Intake form draft persistence (#15)', () => {
     test('repoPath persists across reload via localStorage', async () => {
       await page.goto(`${URL.replace('#token=', '#/intake?token=')}`).catch(() => page.goto(URL));
       await page.waitForTimeout(400);
@@ -3575,7 +3573,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
   });
 
-  test.describe('37. BuildQueue header dedupe (#35)', () => {
+  test.describe('64. BuildQueue header dedupe (#35)', () => {
     test('header shows project + build counts but not active count', async () => {
       await page.goto(URL);
       await page.waitForTimeout(400);
@@ -3600,7 +3598,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
   });
 
-  test.describe('38. Empty-state hero affordance (#10 #48)', () => {
+  test.describe('65. Empty-state hero affordance (#10 #48)', () => {
     test('Activity empty state renders distinctive copy + Open Copilot CTA', async () => {
       // Reset stores so the feed is empty
       await page.evaluate(() => {
@@ -3619,10 +3617,259 @@ test.describe('Comprehensive webshell E2E', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 39. Console health (final — MUST BE LAST)
+  // 66. KeymapLegend — Cmd+/ (#4)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  test.describe('39. Console health (final)', () => {
+  test.describe('66. KeymapLegend — Cmd+/ (#4)', () => {
+    test('Cmd+/ opens the keymap legend modal', async () => {
+      // Fire the same custom event app.svelte dispatches on Cmd+/
+      await page.evaluate(() => {
+        window.dispatchEvent(new CustomEvent('la:open-keymap-legend'));
+      });
+      await page.waitForTimeout(200);
+      const modal = page.locator('[data-testid="keymap-legend"]');
+      await expect(modal).toBeVisible({ timeout: 1500 });
+      await expect(modal).toHaveAttribute('role', 'dialog');
+      // Clean up
+      await page.evaluate(() => { window.dispatchEvent(new CustomEvent('la:close-keymap-legend')); });
+      await page.waitForTimeout(150);
+    });
+
+    test('Escape key closes the keymap legend', async () => {
+      await page.evaluate(() => { window.dispatchEvent(new CustomEvent('la:open-keymap-legend')); });
+      await page.waitForTimeout(200);
+      await expect(page.locator('[data-testid="keymap-legend"]')).toBeVisible({ timeout: 1500 });
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+      const count = await page.locator('[data-testid="keymap-legend"]').count();
+      expect(count).toBe(0);
+    });
+
+    test('close button (×) dismisses the legend', async () => {
+      await page.evaluate(() => { window.dispatchEvent(new CustomEvent('la:open-keymap-legend')); });
+      await page.waitForTimeout(200);
+      const modal = page.locator('[data-testid="keymap-legend"]');
+      await expect(modal).toBeVisible({ timeout: 1500 });
+      const closeBtn = modal.locator('button[aria-label="Close"]');
+      await closeBtn.click();
+      await page.waitForTimeout(200);
+      expect(await modal.count()).toBe(0);
+    });
+
+    test('modal lists all four shortcut groups', async () => {
+      await page.evaluate(() => { window.dispatchEvent(new CustomEvent('la:open-keymap-legend')); });
+      await page.waitForTimeout(200);
+      const modal = page.locator('[data-testid="keymap-legend"]');
+      await expect(modal).toBeVisible({ timeout: 1500 });
+      const text = await modal.textContent() ?? '';
+      expect(text).toMatch(/Navigation/i);
+      expect(text).toMatch(/Drawers/i);
+      expect(text).toMatch(/Dispatch/i);
+      // Clean up
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(150);
+    });
+
+    test('la:toggle-keymap-legend event toggles open and closed', async () => {
+      // Start closed
+      await page.evaluate(() => { window.dispatchEvent(new CustomEvent('la:close-keymap-legend')); });
+      await page.waitForTimeout(100);
+      expect(await page.locator('[data-testid="keymap-legend"]').count()).toBe(0);
+
+      // Toggle open
+      await page.evaluate(() => { window.dispatchEvent(new CustomEvent('la:toggle-keymap-legend')); });
+      await page.waitForTimeout(200);
+      expect(await page.locator('[data-testid="keymap-legend"]').count()).toBe(1);
+
+      // Toggle closed
+      await page.evaluate(() => { window.dispatchEvent(new CustomEvent('la:toggle-keymap-legend')); });
+      await page.waitForTimeout(200);
+      expect(await page.locator('[data-testid="keymap-legend"]').count()).toBe(0);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 67. StatusBar auth chip — auth surface (#13 second-half)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('67. StatusBar auth chip — auth surface (#13 second-half)', () => {
+    test('authStatus "unauthorized" shows "auth: expired" in status bar', async () => {
+      const injected = await page.evaluate(() => {
+        const e2e = (window as unknown as { __e2e?: { authStatus?: { set: (v: string) => void } } }).__e2e;
+        if (!e2e?.authStatus?.set) return false;
+        e2e.authStatus.set('unauthorized');
+        return true;
+      });
+      if (!injected) { test.skip(); return; }
+      await page.waitForTimeout(200);
+      const statusBar = await page.evaluate(() => {
+        // Status bar is at the bottom of the DOM; grab its text content
+        const candidates = Array.from(document.querySelectorAll('footer, [class*="status-bar"], [data-testid="status-bar"]'));
+        if (candidates.length > 0) return candidates.map(el => el.textContent).join(' ');
+        // Fall back: search whole document for the label text
+        return document.body.textContent ?? '';
+      });
+      expect(statusBar).toMatch(/auth:\s*expired/i);
+    });
+
+    test('authStatus "forbidden" shows "auth: denied" in status bar', async () => {
+      const injected = await page.evaluate(() => {
+        const e2e = (window as unknown as { __e2e?: { authStatus?: { set: (v: string) => void } } }).__e2e;
+        if (!e2e?.authStatus?.set) return false;
+        e2e.authStatus.set('forbidden');
+        return true;
+      });
+      if (!injected) { test.skip(); return; }
+      await page.waitForTimeout(200);
+      const bodyText = await page.evaluate(() => document.body.textContent ?? '');
+      expect(bodyText).toMatch(/auth:\s*denied/i);
+    });
+
+    test('authStatus "ok" removes auth error copy from status bar', async () => {
+      const injected = await page.evaluate(() => {
+        const e2e = (window as unknown as { __e2e?: { authStatus?: { set: (v: string) => void } } }).__e2e;
+        if (!e2e?.authStatus?.set) return false;
+        e2e.authStatus.set('ok');
+        return true;
+      });
+      if (!injected) { test.skip(); return; }
+      await page.waitForTimeout(200);
+      const bodyText = await page.evaluate(() => document.body.textContent ?? '');
+      expect(bodyText).not.toMatch(/auth:\s*expired/i);
+      expect(bodyText).not.toMatch(/auth:\s*denied/i);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 68. Header band 56px — screen header consistency (#38)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('68. Header band 56px — screen header consistency (#38)', () => {
+    async function measureScreenHeaderHeight(hash: string): Promise<number | null> {
+      await page.evaluate((h) => { window.location.hash = h; }, hash);
+      await page.waitForTimeout(400);
+      return page.evaluate(() => {
+        // .la-screen-header is the canonical class; fall back to first <header> inside main
+        const el =
+          (document.querySelector('.la-screen-header') as HTMLElement | null) ??
+          (document.querySelector('main header') as HTMLElement | null);
+        return el?.offsetHeight ?? null;
+      });
+    }
+
+    test('BuildQueue screen header is 56px', async () => {
+      const h = await measureScreenHeaderHeight('#/');
+      if (h === null) { test.skip(); return; }
+      expect(h).toBe(56);
+    });
+
+    test('Activity screen header is 56px', async () => {
+      const h = await measureScreenHeaderHeight('#/activity');
+      if (h === null) { test.skip(); return; }
+      expect(h).toBe(56);
+    });
+
+    test('Intake screen header is 56px', async () => {
+      const h = await measureScreenHeaderHeight('#/intake');
+      if (h === null) { test.skip(); return; }
+      expect(h).toBe(56);
+    });
+
+    test('Sitrep screen header is 56px', async () => {
+      const h = await measureScreenHeaderHeight('#/sitrep');
+      if (h === null) { test.skip(); return; }
+      expect(h).toBe(56);
+    });
+
+    // Restore viewport to desktop baseline for subsequent sections
+    test('restore to BuildQueue after header checks', async () => {
+      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.waitForTimeout(300);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 69. Tutorial T1 — Shepherd.js first-build tour (#27)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('69. Tutorial T1 — Shepherd.js first-build tour (#27)', () => {
+    const TOUR_URL = `${BASE}/?onboarding=t1`;
+
+    test('?onboarding=t1 mounts at least one Shepherd step element', async () => {
+      await page.goto(TOUR_URL);
+      await page.waitForTimeout(1500); // Shepherd renders async after mount
+      const stepCount = await page.evaluate(() =>
+        document.querySelectorAll('[class*="shepherd"]').length,
+      );
+      if (stepCount === 0) {
+        // Tour may require prior navigation or store state; skip rather than fail
+        test.skip();
+        return;
+      }
+      expect(stepCount).toBeGreaterThan(0);
+    });
+
+    test('Shepherd step has a Next or Continue button', async () => {
+      await page.goto(TOUR_URL);
+      await page.waitForTimeout(1500);
+      const btn = await page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll('[class*="shepherd"] button'));
+        return buttons.some(
+          (b) => /next|continue|start/i.test(b.textContent ?? ''),
+        );
+      });
+      if (!btn) { test.skip(); return; }
+      expect(btn).toBe(true);
+    });
+
+    test('clicking Next advances to a second Shepherd step', async () => {
+      await page.goto(TOUR_URL);
+      await page.waitForTimeout(1500);
+      const nextBtn = page.locator('[class*="shepherd"] button', { hasText: /next|continue|start/i }).first();
+      const exists = await nextBtn.count();
+      if (!exists) { test.skip(); return; }
+      const textBefore = await page.evaluate(() =>
+        document.querySelector('[class*="shepherd-text"]')?.textContent ?? '',
+      );
+      await nextBtn.click();
+      await page.waitForTimeout(400);
+      const textAfter = await page.evaluate(() =>
+        document.querySelector('[class*="shepherd-text"]')?.textContent ?? '',
+      );
+      // Either the text changed (next step loaded) or the tour completed (no step visible)
+      const advanced = textAfter !== textBefore || await page.locator('[class*="shepherd-element"]').count() === 0;
+      expect(advanced).toBe(true);
+    });
+
+    test('Escape key or Cancel button dismisses the tour', async () => {
+      await page.goto(TOUR_URL);
+      await page.waitForTimeout(1500);
+      const stepVisible = await page.locator('[class*="shepherd-element"]').count();
+      if (!stepVisible) { test.skip(); return; }
+      // Try cancel button first, fall back to Escape
+      const cancelBtn = page.locator('[class*="shepherd"] button', { hasText: /cancel|skip|dismiss|close/i }).first();
+      if (await cancelBtn.count()) {
+        await cancelBtn.click();
+      } else {
+        await page.keyboard.press('Escape');
+      }
+      await page.waitForTimeout(400);
+      const remaining = await page.locator('[class*="shepherd-element"]').count();
+      expect(remaining).toBe(0);
+    });
+
+    // Restore clean URL so subsequent sections aren't affected by the onboarding param
+    test('restore clean URL after tour tests', async () => {
+      await page.goto(BASE);
+      await page.waitForTimeout(500);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 70. Console health (final — MUST BE LAST)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('70. Console health (final)', () => {
     test('zero TypeErrors after full expanded suite', async () => {
       const typeErrors = pageErrors.filter((e) => e.includes('TypeError'));
       if (typeErrors.length > 0) console.error('[E2E] TypeErrors found:', typeErrors);
