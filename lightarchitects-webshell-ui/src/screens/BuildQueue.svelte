@@ -137,9 +137,22 @@
   <!-- Build list/cards -->
   <div class="flex-1 overflow-y-auto p-6">
     {#if $builds.length === 0}
-      <div class="flex flex-col items-center justify-center h-full text-[#475569]">
-        <p class="text-lg mb-2">No active builds</p>
-        <p class="text-sm">Start a new build with <kbd class="bg-[#1e293b] px-2 py-0.5 rounded text-xs">/build</kbd></p>
+      <div class="flex flex-col items-center justify-center h-full gap-4 text-center">
+        <div class="space-y-2 max-w-md">
+          <p class="text-lg text-[#94a3b8]">No builds in flight.</p>
+          <p class="text-sm text-[#64748b] leading-snug">
+            The squad is idle. Spin up a build and the agents will get to work — pillar-by-pillar, gated, observable.
+          </p>
+        </div>
+        <button
+          class="px-4 py-2 bg-[#d4a017] text-[#0a0a0f] text-sm font-semibold rounded hover:bg-[#f0c040] hover:shadow-[0_0_18px_rgba(255,215,0,0.5)] transition-all"
+          onclick={newBuild}
+        >
+          + New Build
+        </button>
+        <p class="text-[10px] text-[#475569]">
+          or press <kbd class="bg-[#1e293b] px-1.5 py-0.5 rounded">⌘K</kbd> → <kbd class="bg-[#1e293b] px-1.5 py-0.5 rounded">/build</kbd>
+        </p>
       </div>
     {:else if viewMode === 'card'}
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

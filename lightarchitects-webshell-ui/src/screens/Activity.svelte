@@ -272,8 +272,16 @@
       </div>
       <div class="flex-1 overflow-y-auto px-2 py-1 space-y-0.5">
         {#if copilotEvents.length === 0 && inlineAlerts.length === 0}
-          <div class="flex items-center justify-center h-full">
-            <span class="text-[11px] text-[#475569]">No activity yet — send a message in the copilot to see live events</span>
+          <div class="flex flex-col items-center justify-center h-full gap-3 px-6 text-center">
+            <p class="text-[12px] text-[#94a3b8] max-w-xs leading-snug">
+              Each strand here is one agent's memory of you. <span class="text-[#475569]">Start a conversation in Copilot — the helix will record it.</span>
+            </p>
+            <button
+              class="px-3 py-1.5 text-[10px] font-medium border border-[#FFD700]/40 text-[#FFD700] rounded hover:bg-[#FFD700]/10 hover:border-[#FFD700] transition-colors"
+              onclick={() => window.dispatchEvent(new CustomEvent('la:open-copilot'))}
+            >
+              Open Copilot <span class="ml-1 text-[#FFD700]/60">⌃`</span>
+            </button>
           </div>
         {:else}
           <!-- Supervisor alerts rendered at top (newest first, inline with feed) -->

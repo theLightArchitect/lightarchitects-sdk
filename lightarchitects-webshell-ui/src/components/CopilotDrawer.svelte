@@ -360,6 +360,17 @@
   function onGlobalKeydown(e: KeyboardEvent) {
     if (e.key === '`' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); open = !open; }
   }
+
+  // Custom event bridge — empty-state CTAs in other screens dispatch
+  // `la:open-copilot` instead of importing/refactoring this drawer's local
+  // open state. Idempotent: re-dispatching while already open is a no-op.
+  // Registered via $effect (not svelte:window on:) because Svelte's
+  // SvelteWindowAttributes doesn't recognise our custom event name.
+  $effect(() => {
+    const handler = () => { if (!open) open = true; };
+    window.addEventListener('la:open-copilot', handler);
+    return () => window.removeEventListener('la:open-copilot', handler);
+  });
 </script>
 
 <svelte:window
