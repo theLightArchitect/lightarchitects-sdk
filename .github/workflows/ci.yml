@@ -5,27 +5,46 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel in-progress runs on the same branch — prevents duplicate billing
+# when pushing multiple commits quickly
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  quality:
-    name: Quality Gates
-    runs-on: macos-latest
+  # ──────────────────────────────────────────────
+  # Rust quality gates (Linux only — saves 10x macOS multiplier)
+  # ──────────────────────────────────────────────
+  rust-quality:
+    name: Rust Quality
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      # Workspace integrity — fails the build if a workspace member is declared
+      # but its source isn't tracked (the bug class that produced PRs #4/#5/#7/#8
+      # in the 2026-04-28 session). cargo metadata fails fast on missing members;
+      # both feature combos catch feature-gated module-source gaps. No github.event
+      # interpolation here — pure static cargo commands.
+      - name: Workspace integrity (cargo metadata + build per feature combo)
+        run: |
+          cargo metadata --format-version 1 --no-deps > /dev/null
+          cargo build --workspace --no-default-features
+          cargo build --workspace --all-features
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-  test-macos:
-    name: Tests (macOS)
-    runs-on: macos-latest
-    needs: quality
+  rust-test:
+    name: Rust Tests
+    runs-on: ubuntu-latest
+    needs: rust-quality
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -33,76 +52,88 @@ jobs:
       - run: cargo test --workspace --all-features
       - run: cargo test --workspace --doc
 
-  test-linux:
-    name: Tests (Linux, no-default-features)
+  rust-features:
+    name: Feature Combos
     runs-on: ubuntu-latest
-    needs: quality
+    needs: rust-quality
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --no-default-features
-
-  test-features:
-    name: Feature-combination tests
-    runs-on: ubuntu-latest
-    needs: quality
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Feature none (core only)
+      - name: Core only (no features)
         run: cargo test --workspace --no-default-features
-      - name: Feature soul
-        run: cargo test --no-default-features --features soul -p lightarchitects
-      - name: Feature corso
-        run: cargo test --no-default-features --features corso -p lightarchitects
-      - name: Feature eva
-        run: cargo test --no-default-features --features eva -p lightarchitects
-      - name: Feature quantum
-        run: cargo test --no-default-features --features quantum -p lightarchitects
-      - name: Feature seraph
-        run: cargo test --no-default-features --features seraph -p lightarchitects
-      - name: Feature ayin
-        run: cargo test --no-default-features --features ayin -p lightarchitects
-      - name: Feature ayin-http
-        run: cargo test --no-default-features --features ayin-http -p lightarchitects
-      - name: Feature full
+      - name: Individual sibling features
+        run: |
+          for feat in soul corso eva quantum seraph ayin ayin-http; do
+            echo "::group::Feature: $feat"
+            cargo test --no-default-features --features "$feat" -p lightarchitects
+            echo "::endgroup::"
+          done
+      - name: Full features
         run: cargo test --features full -p lightarchitects
-      - name: Feature all
-        run: cargo test --workspace --all-features
-      - name: Security gate — no reqwest without ayin-http
+      - name: Security gate — reqwest isolation
         run: |
           result=$(cargo tree --no-default-features -p lightarchitects 2>/dev/null | grep reqwest || true)
           if [ -n "$result" ]; then
             echo "FAIL: reqwest present without any feature enabled"
-            echo "$result"
             exit 1
           fi
-      - name: Security gate — reqwest present with ayin-http
-        run: |
           result=$(cargo tree --features ayin-http -p lightarchitects 2>/dev/null | grep reqwest || true)
           if [ -z "$result" ]; then
-            echo "FAIL: reqwest absent even with ayin-http feature enabled"
+            echo "FAIL: reqwest absent with ayin-http enabled"
             exit 1
           fi
 
+  # ──────────────────────────────────────────────
+  # Frontend quality gates
+  # ──────────────────────────────────────────────
+  frontend-quality:
+    name: Frontend Quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lightarchitects-webshell-ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: lightarchitects-webshell-ui/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck (svelte-check)
+        run: npx svelte-check --tsconfig ./tsconfig.json
+      - name: Unit tests
+        run: pnpm test:run
+      - name: Build
+        run: pnpm build
+
+  # ──────────────────────────────────────────────
+  # Security (push to main only — not every PR)
+  # ──────────────────────────────────────────────
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-audit --locked
       - run: cargo audit
 
   deny:
     name: Dependency Check
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
 
+  # ──────────────────────────────────────────────
+  # Semver (PRs only)
+  # ──────────────────────────────────────────────
   semver:
     name: Semver Check
     runs-on: ubuntu-latest
@@ -117,9 +148,13 @@ jobs:
         with:
           feature-group: all-features
 
+  # ──────────────────────────────────────────────
+  # MSRV (push to main only — not every PR)
+  # ──────────────────────────────────────────────
   msrv:
     name: MSRV (1.87)
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.87.0

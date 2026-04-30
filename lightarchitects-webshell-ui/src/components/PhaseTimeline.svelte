@@ -109,7 +109,8 @@
         <span
           class="text-[10px] mx-0.5"
           style="color: {separatorColor(i)}"
-        >\u2500\u25B8</span>
+          aria-hidden="true"
+        >&rarr;</span>
       {/if}
     {/each}
   </div>

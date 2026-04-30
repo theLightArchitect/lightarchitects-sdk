@@ -1,0 +1,53 @@
+Community Data License Agreement Permissive 2.0 (CDLA-Permissive-2.0)
+
+This is a license agreement that sets out the terms under which You may
+Use and Share the Data.
+
+1.0 Definitions
+
+"Data" means the material received under this Agreement, including any
+material You may create that is Derived from such material.
+
+"Data Provider" means the individual or entity that offers the Data under
+this Agreement.
+
+"Derived" means any material that is based on Data, including any
+transformation or modification of the Data.
+
+"Share" means to provide Data to others, including by transmission,
+publication, or other means.
+
+"Use" means to do anything with Data that, without permission, would
+infringe the intellectual property rights in the Data.
+
+"You" means the individual or entity exercising permissions under this
+Agreement.
+
+2.0 Grant of License
+
+Subject to the terms and conditions of this Agreement, the Data Provider
+grants You a worldwide, royalty-free, non-exclusive license to Use and
+Share the Data.
+
+3.0 Conditions
+
+Your Use and Share of the Data is subject to the following conditions:
+
+(a) You must include a copy of, or the Uniform Resource Identifier (URI)
+    for, this Agreement with every copy of the Data You Share.
+
+(b) You must not misrepresent the source of the Data or modify it in a
+    way that could mislead others about its source.
+
+4.0 No Warranty
+
+THE DATA IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED INCLUDING, WITHOUT
+LIMITATION, ANY WARRANTIES OR CONDITIONS OF TITLE, NON-INFRINGEMENT,
+MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+
+5.0 Limitation of Liability
+
+IN NO EVENT SHALL THE DATA PROVIDER BE LIABLE TO YOU FOR ANY DIRECT,
+INDIRECT, SPECIAL, INCIDENTAL, CONSEQUENTIAL, PUNITIVE, OR EXEMPLARY
+DAMAGES ARISING OUT OF THIS AGREEMENT OR THE USE OF THE DATA.

@@ -206,6 +206,7 @@
             <select
               class="text-[8px] bg-transparent outline-none cursor-pointer"
               style="color: {color}"
+              aria-label="Phase {phase.id} status"
               value={phase.status}
               onclick={(e) => e.stopPropagation()}
               onchange={(e) => advancePhaseStatus(phase.id, (e.target as HTMLSelectElement).value as PlanPhaseStatus)}
