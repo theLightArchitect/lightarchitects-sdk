@@ -13,22 +13,23 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::{ffi::OsString, path::PathBuf};
+use std::{ffi::OsString, path::PathBuf, sync::Arc};
 
 use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode},
 };
 use lightarchitects_webshell::{
-    config::{Cli, Config},
+    config::{AgentSession, ClaudeBackend, Cli, Config},
     server::{AppState, build_app},
+    session::BuildSession,
 };
 use tower::ServiceExt;
 use uuid::Uuid;
 
 const TOKEN: &str = "phase-d-test-token";
 
-fn make_app() -> axum::Router {
+fn make_state() -> AppState {
     let cli = Cli {
         port: 8733,
         host_cmd: OsString::from("echo"),
@@ -36,7 +37,27 @@ fn make_app() -> axum::Router {
         ..Default::default()
     };
     let cfg = Config::resolve_with_token(cli, Some(TOKEN.to_owned())).unwrap();
-    build_app(AppState::for_test(cfg))
+    AppState::for_test(cfg)
+}
+
+fn make_app() -> axum::Router {
+    build_app(make_state())
+}
+
+/// Build an app that has a single registered `BuildSession`. Returns the
+/// app + the session's UUID so callers can hit build-scoped routes that gate
+/// on `state.builds.get(id)` (Phase 15+ — see `real_data::trigger_pillar`).
+/// Used by `write_contracts_have_expected_semantics` to test the success
+/// path of the pillar/dispatch enqueue routes.
+fn make_app_with_registered_build() -> (axum::Router, Uuid) {
+    let state = make_state();
+    let session = Arc::new(BuildSession::new(
+        PathBuf::from("/tmp"),
+        AgentSession::Lightarchitects(ClaudeBackend::Anthropic),
+    ));
+    let build_id = session.build_id;
+    state.builds.insert(session);
+    (build_app(state), build_id)
 }
 
 async fn get(path: &str, with_auth: bool) -> (StatusCode, serde_json::Value) {
@@ -55,19 +76,8 @@ async fn get(path: &str, with_auth: bool) -> (StatusCode, serde_json::Value) {
     (status, json)
 }
 
-async fn post(path: &str) -> StatusCode {
-    let resp = make_app()
-        .oneshot(
-            Request::post(path)
-                .header("authorization", format!("Bearer {TOKEN}"))
-                .header("content-type", "application/json")
-                .body(Body::from("{}"))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    resp.status()
-}
+// (post() helper removed when write_contracts_have_expected_semantics
+// migrated to post_on() with pre-registered builds — #84.)
 
 // ── Auth enforcement ─────────────────────────────────────────────────────────
 
@@ -138,23 +148,52 @@ async fn build_scoped_reads_stub_well_formed() {
 
 // ── Write stubs ──────────────────────────────────────────────────────────────
 
+/// POST against an app that has the given build pre-registered. Necessary
+/// because Phase 15+ `trigger_pillar` / dispatch handlers gate on
+/// `state.builds.get(id)` and 404 on unknown builds.
+async fn post_on(app: axum::Router, path: &str) -> StatusCode {
+    let resp = app
+        .oneshot(
+            Request::post(path)
+                .header("authorization", format!("Bearer {TOKEN}"))
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    resp.status()
+}
+
 #[tokio::test]
 async fn write_contracts_have_expected_semantics() {
-    let b = Uuid::new_v4();
-    // Phase 9.10: pillars + dispatch enqueue to the conductor → 202 Accepted.
+    // Originally written for Phase 9.10 stubs where any UUID got 202 with an
+    // empty body. Phase 15+ promoted these to real execution paths — pillar
+    // and dispatch now require a registered build, and dispatch validates
+    // its JSON body (sibling + prompt fields). The contract assertions below
+    // reflect the *current* semantics; see #84 for the migration record.
+    let (app1, b) = make_app_with_registered_build();
     assert_eq!(
-        post(&format!("/api/builds/{b}/pillars/arch")).await,
+        post_on(app1, &format!("/api/builds/{b}/pillars/arch")).await,
         StatusCode::ACCEPTED,
-        "pillar enqueue should be 202"
+        "pillar enqueue should be 202 for a registered build"
     );
+
+    // Dispatch with an empty body fails JSON validation → 422. Asserting 422
+    // (not 202) keeps this a fast contract test — driving the success path
+    // would spawn a copilot subprocess, which is slow + flaky in CI. The
+    // 422 still proves the route is wired and body parsing is enforced.
+    let (app2, b) = make_app_with_registered_build();
     assert_eq!(
-        post(&format!("/api/builds/{b}/dispatch")).await,
-        StatusCode::ACCEPTED,
-        "sibling dispatch enqueue should be 202"
+        post_on(app2, &format!("/api/builds/{b}/dispatch")).await,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "dispatch with empty body should 422 (route wired, body required)"
     );
-    // Artifact upload is still Phase 10 work.
+
+    // Artifact upload is still Phase 10 work — 501 regardless of build state.
+    let (app3, b) = make_app_with_registered_build();
     assert_eq!(
-        post(&format!("/api/builds/{b}/artifacts")).await,
+        post_on(app3, &format!("/api/builds/{b}/artifacts")).await,
         StatusCode::NOT_IMPLEMENTED,
         "artifact upload should be 501"
     );
