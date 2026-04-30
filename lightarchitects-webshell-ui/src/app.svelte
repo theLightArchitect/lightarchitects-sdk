@@ -276,18 +276,21 @@
                Desktop (>=1024): toggles the inline right-hand panel.
                Tablet/mobile  : toggles a full-screen overlay so the WebGL
                                 bloom pass gets readable real estate. -->
-          <button
-            onclick={() => { showHelix = !showHelix; }}
-            class="px-2 py-1 text-[11px] text-[#475569] hover:text-[#FFD700] transition-colors"
-            data-testid="helix-toggle"
-          >{showHelix ? 'Hide 3D View' : 'Show 3D View'}</button>
-          <button
-            onclick={() => { window.dispatchEvent(new CustomEvent('la:toggle-helix-legend')); }}
-            class="px-1.5 py-1 text-[11px] text-[#334155] hover:text-[#f0c040] transition-colors rounded"
-            aria-label="What is the Helix?"
-            data-testid="helix-legend-trigger"
-            title="What is the Helix?"
-          >?</button>
+          <Tooltip content="Toggle the 3D knowledge graph panel — live helix of agent memory strands" side="bottom">
+            <button
+              onclick={() => { showHelix = !showHelix; }}
+              class="px-2 py-1 text-[11px] text-[#475569] hover:text-[#FFD700] transition-colors"
+              data-testid="helix-toggle"
+            >{showHelix ? 'Hide 3D View' : 'Show 3D View'}</button>
+          </Tooltip>
+          <Tooltip content="What is the Helix? — color map of agents and LASDLC quality gates" side="bottom">
+            <button
+              onclick={() => { window.dispatchEvent(new CustomEvent('la:toggle-helix-legend')); }}
+              class="px-1.5 py-1 text-[11px] text-[#334155] hover:text-[#f0c040] transition-colors rounded"
+              aria-label="What is the Helix?"
+              data-testid="helix-legend-trigger"
+            >?</button>
+          </Tooltip>
         </div>
       </nav>
 

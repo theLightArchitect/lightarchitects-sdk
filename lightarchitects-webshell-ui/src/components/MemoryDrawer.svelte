@@ -191,6 +191,8 @@
       if (!healthTimer) {
         healthTimer = setInterval(pollHealth, 30_000);
       }
+      // T2 — Memory Drawer triad guided tour. Fires on first open only.
+      import('$lib/tutorial').then(({ runTutorial }) => runTutorial('t2'));
     } else if (healthTimer) {
       clearInterval(healthTimer);
       healthTimer = null;
@@ -258,7 +260,7 @@
     data-testid="memory-drawer"
   >
     <!-- Header -->
-    <div class="flex items-center justify-between px-4 py-3 border-b border-[#1e293b]">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-[#1e293b]" data-onboarding="memory-header">
       <div class="flex items-center gap-2">
         <span class="text-sm font-semibold text-[#e2e8f0]">Memory</span>
         <span class="text-[10px] text-[#64748b]">hot ({$hotMemory.length}) · cold ({$coldMemory.length})</span>
@@ -270,6 +272,7 @@
             class="flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-[#1e293b] bg-[#0d1117]"
             title="Persistence tiers (fs / sqlite / neo4j)"
             data-testid="tier-badge"
+            data-onboarding="memory-tier-badge"
           >
             <span
               class="w-1.5 h-1.5 rounded-full"
@@ -297,26 +300,29 @@
     </div>
 
     <!-- Tabs -->
-    <div class="flex border-b border-[#1e293b] text-xs">
+    <div class="flex border-b border-[#1e293b] text-xs" data-onboarding="memory-tabs">
       <button
         class="flex-1 py-2 transition-colors {tab === 'hot' ? 'bg-[#FFD700] text-white' : 'text-[#94a3b8] hover:bg-[#111827]'}"
         onclick={() => { tab = 'hot'; searchResults = null; }}
         data-testid="memory-tab-hot"
+        data-onboarding="memory-tab-hot"
       >Hot (turnlog)</button>
       <button
         class="flex-1 py-2 transition-colors {tab === 'cold' ? 'bg-[#FFD700] text-white' : 'text-[#94a3b8] hover:bg-[#111827]'}"
         onclick={() => { tab = 'cold'; searchResults = null; }}
         data-testid="memory-tab-cold"
+        data-onboarding="memory-tab-cold"
       >Cold (helix)</button>
       <button
         class="flex-1 py-2 transition-colors {tab === 'convergences' ? 'bg-[#FFD700] text-white' : 'text-[#94a3b8] hover:bg-[#111827]'}"
         onclick={() => { tab = 'convergences'; searchResults = null; }}
         data-testid="memory-tab-convergences"
+        data-onboarding="memory-tab-convergences"
       >Convergences</button>
     </div>
 
     <!-- Search (Phase 17a: segmented mode control + input + rrf_used badge) -->
-    <div class="px-3 py-2 border-b border-[#1e293b]" data-testid="search-block">
+    <div class="px-3 py-2 border-b border-[#1e293b]" data-testid="search-block" data-onboarding="memory-search">
       <div class="flex gap-1 mb-1.5" data-testid="search-mode-row">
         {#each (['bm25', 'semantic', 'hybrid'] as const) as m}
           <button

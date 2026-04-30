@@ -73,7 +73,8 @@ export function runTutorial(id: TutorialId, force = false): Tour | null {
 function buildTour(id: TutorialId): Tour | null {
   switch (id) {
     case 't1': return tutorialT1FirstBuild();
-    // T2-T6 land in follow-up tasks (#29, #30, #31)
+    case 't2': return tutorialT2MemoryDrawer();
+    // T3-T6 land in follow-up tasks (#30, #31)
     default: return null;
   }
 }
@@ -137,6 +138,75 @@ function tutorialT1FirstBuild(): Tour {
     title: 'Launch',
     text: 'Hit Create when ready. The squad picks it up, runs the phase pipeline, and you\'ll see the trace stream in Activity.',
     attachTo: { element: '[data-onboarding="intake-submit"]', on: 'top' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Got it', action: () => tour.complete(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  return tour;
+}
+
+function tutorialT2MemoryDrawer(): Tour {
+  const tour = new Shepherd.Tour({
+    useModalOverlay: true,
+    defaultStepOptions: {
+      classes: 'la-shepherd',
+      scrollTo: { behavior: 'smooth', block: 'center' },
+      cancelIcon: { enabled: true },
+    },
+  });
+
+  tour.addStep({
+    id: 't2-intro',
+    title: 'Memory — Three Tiers',
+    text: `<p>The Memory drawer shows what each squad agent remembers. There are three views: <strong>Hot</strong>, <strong>Cold</strong>, and <strong>Convergences</strong>.</p>
+           <p>Press <kbd>Esc</kbd> any time to dismiss.</p>`,
+    attachTo: { element: '[data-onboarding="memory-header"]', on: 'left' },
+    buttons: [
+      { text: 'Skip', action: () => tour.cancel(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't2-hot',
+    title: 'Hot Memory (Turnlog)',
+    text: `<p><strong>Hot</strong> is the active session context — what the agent is working through right now. Entries live here transiently and are promoted to Cold when they reach significance ≥7.0.</p>`,
+    attachTo: { element: '[data-onboarding="memory-tab-hot"]', on: 'bottom' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't2-cold',
+    title: 'Cold Memory (Helix)',
+    text: `<p><strong>Cold</strong> is long-term memory — the SOUL helix vault. Each entry has a significance score (0–10) and is classified by type (entry, plan, standard, lesson…). Click any row to read the full markdown.</p>`,
+    attachTo: { element: '[data-onboarding="memory-tab-cold"]', on: 'bottom' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't2-convergences',
+    title: 'Convergences',
+    text: `<p><strong>Convergences</strong> are cross-agent shared moments — events where two or more agents arrived at related conclusions. Detected nightly by the SOUL consolidator via Louvain community detection.</p>`,
+    attachTo: { element: '[data-onboarding="memory-tab-convergences"]', on: 'bottom' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't2-search',
+    title: 'Search the Vault',
+    text: `<p>Search across all cold entries. Three modes: <strong>BM25</strong> (keyword), <strong>Semantic</strong> (embedding-based), <strong>Hybrid</strong> (RRF fusion of both). Look for the RRF badge — it means results were blended from multiple retrieval signals.</p>`,
+    attachTo: { element: '[data-onboarding="memory-search"]', on: 'bottom' },
     buttons: [
       { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
       { text: 'Got it', action: () => tour.complete(), classes: 'la-shepherd-primary' },

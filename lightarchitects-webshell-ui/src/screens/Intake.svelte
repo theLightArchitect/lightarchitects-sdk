@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { intakeForm, META_SKILL_CARDS, builds, planBuilderMode, planBuilderDraft } from '$lib/stores';
+  import { intakeForm, META_SKILL_CARDS, builds, currentBuildId, planBuilderMode, planBuilderDraft } from '$lib/stores';
   import { getMetaSkillPolytope, getMetaSkillColor, SIBLING_COLORS } from '$lib/design-tokens';
   import { api } from '$lib/api';
-  import type { MetaSkill, IntakeSource, Priority, SiblingId, PhaseWithGates, GateType, BuildPlan, BuildTier } from '$lib/types';
+  import type { MetaSkill, IntakeSource, Priority, SiblingId, PhaseWithGates, GateType, BuildPlan, BuildTier, BuildResponse } from '$lib/types';
   import { generateDefaultPlan, generatePreFlight, generateCloseOut, generateAgenticConfig, suggestDomainGates, DEFAULT_GATE_CRITERIA } from '$lib/plan-templates';
   import { generateCodename } from '$lib/codename';
   import { validateBuildPlan } from '$lib/build-plan-schema';
@@ -161,8 +161,9 @@
     if (!validateForm()) return;
     if (checkDedupe()) return;
     submitting = true;
+    let newBuildId: string | null = null;
     try {
-      await api.createBuild({
+      const resp: BuildResponse = await api.createBuild({
         cwd: form.repoPath || '.',
         metaSkill: form.metaSkill,
         source: form.source,
@@ -170,13 +171,14 @@
         repoPath: form.repoPath,
         description: form.description,
       });
-    } catch {
-      // Backend unavailable — local mock creation
-      const newBuild = {
-        id: `build-${Date.now().toString(36)}`,
+      newBuildId = resp.build_id;
+      // Seed the builds store so activeBuild resolves immediately in Workspace.
+      const stub = {
+        id: resp.build_id,
         workspaceId: 'ws-001',
         name: form.description || form.repoPath.split('/').pop() || 'New Build',
         metaSkill: form.metaSkill,
+        path: form.repoPath || '.',
         status: 'queued' as const,
         pillars: [],
         currentPillar: 'ARCH' as const,
@@ -186,9 +188,29 @@
         modules: [],
         siblingDispatches: [],
       };
-      builds.update(b => [...b, newBuild]);
+      builds.update(b => [stub, ...b.filter(x => x.id !== stub.id)]);
+    } catch {
+      // Backend unavailable — local mock so the user can still explore Workspace.
+      const mockId = `build-${Date.now().toString(36)}`;
+      newBuildId = mockId;
+      const newBuild = {
+        id: mockId,
+        workspaceId: 'ws-001',
+        name: form.description || form.repoPath.split('/').pop() || 'New Build',
+        metaSkill: form.metaSkill,
+        path: form.repoPath || '.',
+        status: 'queued' as const,
+        pillars: [],
+        currentPillar: 'ARCH' as const,
+        confidence: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        modules: [],
+        siblingDispatches: [],
+      };
+      builds.update(b => [newBuild, ...b]);
     }
-    // Reset form and navigate
+    // Reset form
     intakeForm.set({
       metaSkill: '/BUILD',
       source: 'manual',
@@ -200,7 +222,13 @@
     dedupeWarning = null;
     forceCreate = false;
     submitting = false;
-    window.location.hash = '/';
+    // Navigate directly to Workspace for the new build.
+    if (newBuildId) {
+      currentBuildId.set(newBuildId);
+      window.location.hash = '/workspace';
+    } else {
+      window.location.hash = '/';
+    }
   }
 
   function formatPillarFlow(actions: Record<string, string>): string {

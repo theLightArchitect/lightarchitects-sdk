@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { activeBuild, builds, currentBuildId, focusedSibling, spikeSibling, findings, logEntries, selectedPillar, expandedFindings, artifacts, buildNotes } from '$lib/stores';
+  import { activeBuild, builds, currentBuildId, focusedSibling, spikeSibling, findings, logEntries, selectedPillar, expandedFindings, artifacts, buildNotes, copilotMessages } from '$lib/stores';
+  import type { CopilotMessage } from '$lib/types';
   import { PILLAR_COLORS, PILLARS, SIBLING_COLORS, getMetaSkillPolytope, getMetaSkillColor } from '$lib/design-tokens';
   import { SIBLINGS, PILLAR_ACTIONS, type SiblingId, type Pillar } from '$lib/types';
   import { api } from '$lib/api';
@@ -27,11 +28,42 @@
   function dispatchSibling(sib: SiblingId, prompt?: string) {
     focusedSibling.set(sib);
     spikeSibling(sib);
-    if (build) {
-      api.dispatchSibling(build.id, sib, sib, prompt ?? '').catch(() => {
-        // Backend unavailable — visual spike still works
+    if (!build) return;
+
+    const userPrompt = prompt ?? '';
+    // Append user message immediately so the drawer shows intent.
+    const userMsg: CopilotMessage = {
+      id: `dispatch-user-${Date.now()}`,
+      role: 'user',
+      content: `[→ ${sib.toUpperCase()}] ${userPrompt}`,
+      sibling: sib,
+      timestamp: new Date().toISOString(),
+    };
+    copilotMessages.update(ms => [...ms, userMsg]);
+    // Open the Copilot drawer so the response is visible.
+    window.dispatchEvent(new CustomEvent('la:open-copilot'));
+
+    api.dispatchSibling(build.id, sib, sib, userPrompt)
+      .then(resp => {
+        const assistantMsg: CopilotMessage = {
+          id: `dispatch-resp-${Date.now()}`,
+          role: 'assistant',
+          content: (resp as { response?: string }).response ?? '(no response)',
+          sibling: sib,
+          timestamp: new Date().toISOString(),
+        };
+        copilotMessages.update(ms => [...ms, assistantMsg]);
+      })
+      .catch(() => {
+        const errMsg: CopilotMessage = {
+          id: `dispatch-err-${Date.now()}`,
+          role: 'system',
+          content: `[${sib.toUpperCase()}] Dispatch failed — agent unavailable`,
+          sibling: sib,
+          timestamp: new Date().toISOString(),
+        };
+        copilotMessages.update(ms => [...ms, errMsg]);
       });
-    }
   }
 
   // Derived: findings for current build, optionally filtered by selected pillar

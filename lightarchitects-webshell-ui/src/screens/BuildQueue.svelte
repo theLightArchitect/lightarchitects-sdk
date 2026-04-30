@@ -8,6 +8,7 @@
   import QualityGateDash from '$lib/../components/QualityGateDash.svelte';
   import PolytopeIcon from '$lib/../components/PolytopeIcon.svelte';
   import PolytopeDecor from '$lib/../components/PolytopeDecor.svelte';
+  import Tooltip from '$lib/../components/Tooltip.svelte';
 
   // View mode
   let viewMode = $state<'list' | 'card'>('card');
@@ -110,19 +111,22 @@
           List
         </button>
       </div>
-      <button
-        class="px-3 py-1.5 bg-[#1e293b] text-[#94a3b8] text-xs rounded hover:bg-[#334155] hover:text-white transition-all"
-        onclick={() => downloadRoadmap($builds)}
-        title="Export roadmap as standalone HTML"
-      >
-        Export
-      </button>
-      <button
-        class="px-4 py-1.5 bg-[#d4a017] text-[#0a0a0f] text-xs font-semibold rounded hover:bg-[#f0c040] hover:shadow-[0_0_10px_rgba(255,215,0,0.4)] transition-all"
-        onclick={newBuild}
-      >
-        + New Build
-      </button>
+      <Tooltip content="Export the full build roadmap as a standalone, shareable HTML file" side="bottom">
+        <button
+          class="px-3 py-1.5 bg-[#1e293b] text-[#94a3b8] text-xs rounded hover:bg-[#334155] hover:text-white transition-all"
+          onclick={() => downloadRoadmap($builds)}
+        >
+          Export
+        </button>
+      </Tooltip>
+      <Tooltip content="Start a new build — opens the Intake form to describe your task" side="bottom">
+        <button
+          class="px-4 py-1.5 bg-[#d4a017] text-[#0a0a0f] text-xs font-semibold rounded hover:bg-[#f0c040] hover:shadow-[0_0_10px_rgba(255,215,0,0.4)] transition-all"
+          onclick={newBuild}
+        >
+          + New Build
+        </button>
+      </Tooltip>
     </div>
   </header>
 
@@ -205,6 +209,15 @@
           </div>
         {/each}
 
+        <!-- Inline New Build card — always last in grid (#12) -->
+        <button
+          data-testid="buildqueue-new-build-card"
+          class="bg-[#0d1117] border border-dashed border-[#FFD700]/20 rounded-lg p-3 flex flex-col items-center justify-center gap-2 hover:border-[#FFD700]/50 hover:bg-[#FFD700]/5 transition-colors min-h-[120px]"
+          onclick={newBuild}
+        >
+          <span class="text-2xl text-[#FFD700]/40 leading-none">+</span>
+          <span class="text-[10px] text-[#475569]">New Build</span>
+        </button>
       </div>
 
       <!-- Hidden: individual build cards available via project drill-down -->

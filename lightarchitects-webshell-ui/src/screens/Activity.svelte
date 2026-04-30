@@ -3,6 +3,8 @@
   import type { ActivityEntry, CopilotActivityEvent, AyinSpanEvent, SupervisorAlert } from '$lib/types';
   import { getAgentRole, ROLE_COLORS, ROLE_BG, type AgentRole } from '$lib/roles';
   import { tick, untrack } from 'svelte';
+  import Tooltip from '$lib/../components/Tooltip.svelte';
+  import ActivityFilter from '$lib/../components/ActivityFilter.svelte';
 
   // --- Verbose mode toggle ---
   let verbose = $state(false);
@@ -239,27 +241,27 @@
       {copilotEvents.length} events{systemCount > 0 && !showSystem ? ` (+${systemCount} system)` : ''} · {ayinSpans.length} spans{#if inlineAlerts.length > 0} · <span class="{alertStats.fail > 0 ? 'text-[#ef4444]' : alertStats.warn > 0 ? 'text-[#f59e0b]' : 'text-[#22c55e]'}">{inlineAlerts.length} gate{inlineAlerts.length !== 1 ? 's' : ''}</span>{/if}
     </span>
     <div class="ml-auto flex items-center gap-2">
-      <button
-        onclick={() => { showSystem = !showSystem; }}
-        class="text-[10px] px-2 py-0.5 {showSystem ? 'text-[#e2e8f0] bg-[#1e293b]' : 'text-[#475569]'} hover:text-[#e2e8f0] border border-[#1e293b] rounded transition-colors"
-      >{showSystem ? 'Hide System' : 'Show System'}</button>
-      <label class="flex items-center gap-1.5 cursor-pointer">
-        <input type="checkbox" bind:checked={verbose} class="sr-only peer" />
-        <div class="w-7 h-4 bg-[#1e293b] peer-checked:bg-[#FFD700] rounded-full relative transition-colors">
-          <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-[#e2e8f0] rounded-full transition-transform peer-checked:translate-x-3"></div>
-        </div>
-        <span class="text-[10px] text-[#94a3b8]">Verbose</span>
-      </label>
-      <button
-        onclick={() => { activityFeed.set([]); lastAlertCount = 0; }}
-        class="text-[10px] px-2 py-0.5 text-[#475569] hover:text-[#e2e8f0] border border-[#1e293b] rounded transition-colors"
-      >Clear</button>
+      <ActivityFilter
+        bind:showSystem
+        bind:verbose
+        onclear={() => { activityFeed.set([]); lastAlertCount = 0; }}
+      />
       <!-- Persistent Open Copilot CTA — visible regardless of feed state (#36) -->
-      <button
-        data-testid="activity-open-copilot"
-        class="text-[10px] px-2 py-0.5 text-[#FFD700] border border-[#FFD700]/30 rounded hover:bg-[#FFD700]/10 transition-colors"
-        onclick={() => window.dispatchEvent(new CustomEvent('la:open-copilot'))}
-      >Copilot ⌃`</button>
+      <Tooltip content="Open the EVA copilot to start or continue a conversation with your AI squad" side="bottom">
+        <button
+          data-testid="activity-open-copilot"
+          class="text-[10px] px-2 py-0.5 text-[#FFD700] border border-[#FFD700]/30 rounded hover:bg-[#FFD700]/10 transition-colors"
+          onclick={() => window.dispatchEvent(new CustomEvent('la:open-copilot'))}
+        >Copilot ⌃`</button>
+      </Tooltip>
+      <!-- Inline New Build CTA — proximity to running activity (#12) -->
+      <Tooltip content="Start a new build — opens the Intake form to describe your task" side="bottom">
+        <button
+          data-testid="activity-new-build"
+          class="text-[10px] px-2 py-0.5 bg-[#d4a017] text-[#0a0a0f] font-semibold rounded hover:bg-[#f0c040] transition-colors"
+          onclick={() => { window.location.hash = '/intake'; }}
+        >+ Build</button>
+      </Tooltip>
     </div>
   </header>
 
