@@ -1,9 +1,9 @@
 //! Build script — embeds frontend dist + emits version metadata for OPS-1a.
 //!
 //! Two responsibilities:
-//! 1. `cargo:rerun-if-changed=../dist/` — invalidates rust_embed cache when
+//! 1. `cargo:rerun-if-changed=../dist/` — invalidates `rust_embed` cache when
 //!    Svelte build output changes (canonical mechanism after task #49 cleanup).
-//! 2. Emit WEBSHELL_GIT_SHA + WEBSHELL_BUILD_DATE + UI_BUNDLE_HASH env vars
+//! 2. Emit `WEBSHELL_GIT_SHA` + `WEBSHELL_BUILD_DATE` + `UI_BUNDLE_HASH` env vars
 //!    that `src/version.rs` consumes for `--version` output (OPS-1a).
 
 use std::process::Command;
@@ -45,8 +45,7 @@ fn build_date_utc() -> String {
         .output()
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_owned())
-        .unwrap_or_else(|| "unknown".to_owned())
+        .map_or_else(|| "unknown".to_owned(), |s| s.trim().to_owned())
 }
 
 /// Returns short hash of `dist/index.html` — the canonical UI-bundle fingerprint.

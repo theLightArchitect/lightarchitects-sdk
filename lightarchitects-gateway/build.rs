@@ -1,4 +1,4 @@
-//! Build script — emits GIT_SHA + BUILD_DATE for `--version` injection (OPS-1a).
+//! Build script — emits `GIT_SHA` + `BUILD_DATE` for `--version` injection (OPS-1a).
 //!
 //! Aegis Wave 1 — closes ops audit O-1 CRITICAL ship-flip condition.
 //! Without git-sha + build-date, ops-side `--version` only knows Cargo package
@@ -43,6 +43,5 @@ fn build_date_utc() -> String {
         .output()
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_owned())
-        .unwrap_or_else(|| "unknown".to_owned())
+        .map_or_else(|| "unknown".to_owned(), |s| s.trim().to_owned())
 }

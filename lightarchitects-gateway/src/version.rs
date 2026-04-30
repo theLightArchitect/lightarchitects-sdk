@@ -1,7 +1,7 @@
 //! Version string for `lightarchitects --version` (OPS-1a).
 //!
 //! Format: `lightarchitects-gateway 0.3.0 (sha:abc1234, built:2026-04-30)`.
-//! GIT_SHA + BUILD_DATE are baked at compile time by `build.rs`.
+//! `GIT_SHA` + `BUILD_DATE` are baked at compile time by `build.rs`.
 
 /// Returns the long-form version string for `--version` output.
 #[must_use]
@@ -14,7 +14,7 @@ pub fn long() -> String {
     )
 }
 
-/// Returns the short-form version (just SemVer + sha) for log lines.
+/// Returns the short-form version (just `SemVer` + sha) for log lines.
 #[must_use]
 pub fn short() -> String {
     format!(
