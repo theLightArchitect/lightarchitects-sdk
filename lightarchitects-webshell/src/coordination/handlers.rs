@@ -111,10 +111,12 @@ pub async fn list_tasks(headers: HeaderMap, State(state): State<AppState>) -> im
         return StatusCode::UNAUTHORIZED.into_response();
     }
     let queue_path = queue_path();
-    let queue = read_queue(&queue_path).unwrap_or_else(|_| OnDiskQueue {
-        version: default_version(),
-        tasks: Vec::new(),
-    });
+    let queue = read_queue_async(queue_path)
+        .await
+        .unwrap_or_else(|_| OnDiskQueue {
+            version: default_version(),
+            tasks: Vec::new(),
+        });
 
     let pending_count = queue.tasks.iter().filter(|t| t.status == "pending").count();
     let in_progress_count = queue
@@ -150,9 +152,11 @@ pub async fn list_tasks(headers: HeaderMap, State(state): State<AppState>) -> im
 /// # Errors
 ///
 /// Returns an error string if the queue cannot be read, serialised, or written.
-pub fn enqueue_dispatch(id: &str, title: &str, prompt: &str) -> Result<(), String> {
+pub async fn enqueue_dispatch(id: &str, title: &str, prompt: &str) -> Result<(), String> {
+    // Hold the lock for the full read → check → write cycle (HIGH H-88).
+    let _guard = queue_lock().lock().await;
     let queue_path = queue_path();
-    let mut queue = match read_queue(&queue_path) {
+    let mut queue = match read_queue_async(queue_path.clone()).await {
         Ok(q) => q,
         Err(QueueIoError::Missing) => OnDiskQueue {
             version: default_version(),
@@ -181,23 +185,25 @@ pub fn enqueue_dispatch(id: &str, title: &str, prompt: &str) -> Result<(), Strin
         output_log: None,
     };
     queue.tasks.push(task);
-    write_queue(&queue_path, &queue)
+    write_queue_async(queue_path, queue).await
 }
 
 /// Mark a dispatch queue entry as `"completed"`.
 ///
 /// Called by [`crate::dispatch::executor`] after [`crate::dispatch::types::DispatchEvent::Complete`]
 /// is broadcast. No-op if the entry is missing (cancelled or queue absent).
-pub fn complete_dispatch(id: &str) {
+pub async fn complete_dispatch(id: &str) {
+    // Hold the lock for the full read → modify → write cycle (HIGH H-88).
+    let _guard = queue_lock().lock().await;
     let queue_path = queue_path();
-    let Ok(mut queue) = read_queue(&queue_path) else {
+    let Ok(mut queue) = read_queue_async(queue_path.clone()).await else {
         return;
     };
     if let Some(task) = queue.tasks.iter_mut().find(|t| t.id == id) {
         task.status = "completed".into();
         task.finished = Some(now_rfc3339());
     }
-    if let Err(e) = write_queue(&queue_path, &queue) {
+    if let Err(e) = write_queue_async(queue_path, queue).await {
         tracing::warn!(dispatch_id = %id, error = %e, "Failed to mark dispatch completed in queue");
     }
 }
@@ -215,8 +221,10 @@ pub async fn add_task(
         return (StatusCode::BAD_REQUEST, reason).into_response();
     }
 
+    // Hold the lock for the full read → push → write cycle (HIGH H-88).
+    let _queue_guard = queue_lock().lock().await;
     let queue_path = queue_path();
-    let mut queue = match read_queue(&queue_path) {
+    let mut queue = match read_queue_async(queue_path.clone()).await {
         Ok(q) => q,
         Err(QueueIoError::Missing) => OnDiskQueue {
             version: default_version(),
@@ -246,7 +254,7 @@ pub async fn add_task(
     };
     queue.tasks.push(task);
 
-    if let Err(e) = write_queue(&queue_path, &queue) {
+    if let Err(e) = write_queue_async(queue_path, queue).await {
         tracing::warn!(error = %e, "queue write failed on add_task");
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
@@ -275,10 +283,18 @@ pub async fn claim_task(
         )
             .into_response();
     }
+    // Cap claimant length to prevent OOM via a crafted request (MED H-91).
+    if req.claimant.len() > 200 {
+        return (
+            StatusCode::BAD_REQUEST,
+            "claimant exceeds 200-character limit".to_owned(),
+        )
+            .into_response();
+    }
     // Serialize the read-check-write cycle to prevent TOCTOU double-claim (HIGH H-TOCTOU).
     let _queue_guard = queue_lock().lock().await;
     let queue_path = queue_path();
-    let Ok(mut queue) = read_queue(&queue_path) else {
+    let Ok(mut queue) = read_queue_async(queue_path.clone()).await else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let Some(task) = queue.tasks.iter_mut().find(|t| t.id == id) else {
@@ -291,7 +307,7 @@ pub async fn claim_task(
     task.status = "in_progress".into();
     task.started = Some(now.clone());
     task.source = format!("claimed:{}", req.claimant);
-    if let Err(e) = write_queue(&queue_path, &queue) {
+    if let Err(e) = write_queue_async(queue_path, queue).await {
         tracing::warn!(error = %e, "queue write failed on claim_task");
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
@@ -445,6 +461,13 @@ fn read_queue(path: &Path) -> Result<OnDiskQueue, QueueIoError> {
     serde_json::from_str(&content).map_err(|e| QueueIoError::Parse(e.to_string()))
 }
 
+/// Async wrapper — offloads blocking file I/O to a thread pool (MED H-90).
+async fn read_queue_async(path: PathBuf) -> Result<OnDiskQueue, QueueIoError> {
+    tokio::task::spawn_blocking(move || read_queue(&path))
+        .await
+        .unwrap_or_else(|_| Err(QueueIoError::Read("blocking task panicked".to_owned())))
+}
+
 fn write_queue(path: &Path, queue: &OnDiskQueue) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -454,6 +477,13 @@ fn write_queue(path: &Path, queue: &OnDiskQueue) -> Result<(), String> {
     std::fs::write(&tmp, body.as_bytes()).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Async wrapper — offloads blocking file I/O to a thread pool (MED H-90).
+async fn write_queue_async(path: PathBuf, queue: OnDiskQueue) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || write_queue(&path, &queue))
+        .await
+        .unwrap_or_else(|_| Err("blocking task panicked".to_owned()))
 }
 
 fn read_sessions_dir(dir: &Path) -> Option<Vec<ChatSessionSummary>> {

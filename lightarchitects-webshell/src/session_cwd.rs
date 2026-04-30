@@ -22,6 +22,15 @@ use std::{
 
 use serde_json::Value;
 
+/// Return `true` when `id` is safe to use as a filename component.
+///
+/// Session IDs are UUIDs (hex digits + hyphens, ≤36 chars).  Rejects any
+/// input containing path separators, null bytes, newlines, or non-ASCII
+/// to prevent path traversal via a crafted session ID (HIGH H-89).
+fn is_safe_session_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 36 && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+}
+
 /// Walk `~/.claude/projects/*/<session_id>.jsonl` and read the first
 /// `cwd` field we encounter. Returns `None` if the session file can't be
 /// found or if no record contains a `cwd` field (fresh session, never
@@ -32,6 +41,10 @@ use serde_json::Value;
 /// `attachment` records. We cap reading at 50 lines to stay cheap.
 #[must_use]
 pub fn derive_cwd_for_claude_session(session_id: &str) -> Option<PathBuf> {
+    if !is_safe_session_id(session_id) {
+        tracing::warn!(session_id = %session_id, "derive_cwd: rejected unsafe session_id");
+        return None;
+    }
     let home = std::env::var_os("HOME")?;
     let projects_root = PathBuf::from(home).join(".claude").join("projects");
     let filename = format!("{session_id}.jsonl");
@@ -119,6 +132,43 @@ mod tests {
     #[test]
     fn derive_returns_none_for_nonexistent_session() {
         let result = derive_cwd_for_claude_session("00000000-0000-0000-0000-000000000000");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn is_safe_session_id_accepts_valid_uuid() {
+        assert!(is_safe_session_id("9a8b7c6d-1234-5678-abcd-ef0123456789"));
+    }
+
+    #[test]
+    fn is_safe_session_id_rejects_path_traversal() {
+        assert!(!is_safe_session_id("../../../etc/passwd"));
+    }
+
+    #[test]
+    fn is_safe_session_id_rejects_newline() {
+        assert!(!is_safe_session_id("abc\ndef"));
+    }
+
+    #[test]
+    fn is_safe_session_id_rejects_null_byte() {
+        assert!(!is_safe_session_id("abc\0def"));
+    }
+
+    #[test]
+    fn is_safe_session_id_rejects_empty() {
+        assert!(!is_safe_session_id(""));
+    }
+
+    #[test]
+    fn is_safe_session_id_rejects_overlong() {
+        let long = "a".repeat(37);
+        assert!(!is_safe_session_id(&long));
+    }
+
+    #[test]
+    fn derive_rejects_traversal_session_id() {
+        let result = derive_cwd_for_claude_session("../../../etc/passwd");
         assert!(result.is_none());
     }
 }

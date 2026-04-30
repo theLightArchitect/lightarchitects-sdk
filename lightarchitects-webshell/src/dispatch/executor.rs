@@ -117,7 +117,7 @@ pub async fn execute(
 
     // Squad Comms persistence (C2): enqueue so the dispatch appears in the task dashboard.
     let title: String = task_text.chars().take(80).collect();
-    if let Err(e) = crate::coordination::enqueue_dispatch(id.as_str(), &title, &task_text) {
+    if let Err(e) = crate::coordination::enqueue_dispatch(id.as_str(), &title, &task_text).await {
         tracing::warn!(dispatch_id = %id, error = %e, "Failed to persist dispatch to conductor queue");
     }
 
@@ -179,7 +179,7 @@ async fn run_agents(
     let _ = tx.send(DispatchEvent::Complete { elapsed_ms });
 
     // Squad Comms persistence (C2): mark queue entry completed.
-    crate::coordination::complete_dispatch(id.as_str());
+    crate::coordination::complete_dispatch(id.as_str()).await;
 
     // Clean up registry entry.
     let mut reg = registry.lock().await;
