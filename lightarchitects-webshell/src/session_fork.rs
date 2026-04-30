@@ -110,11 +110,32 @@ pub async fn fork_handler(
             .into_response();
     };
 
+    // Guard against newlines or shell metacharacters in session_id / cwd that
+    // would break the AppleScript string or inject shell commands (LOW H-92).
+    // session_id is a UUID from internal state, but cwd comes from the
+    // user's working directory and may contain unexpected characters.
+    if session_id.contains(['\n', '\r', '"', '\'', '\\']) {
+        warn!(session_id = %session_id, "fork: rejected session_id with shell-unsafe chars");
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "invalid_session_id" })),
+        )
+            .into_response();
+    }
+
     // Build the resume command for the build's agent family.
     // Prefix with `cd <cwd>` so the terminal opens in the build's working
     // directory — critical because `claude --resume` derives the session
     // file path from the CWD's project hash.
     let cwd_str = session.cwd.to_string_lossy();
+    if cwd_str.contains(['\n', '\r', '"', '\'']) {
+        warn!(cwd = %cwd_str, "fork: rejected cwd with shell-unsafe chars");
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "invalid_cwd" })),
+        )
+            .into_response();
+    }
     let (agent_label, command) = match session.agent.kind() {
         AgentKind::Lightarchitects | AgentKind::LightarchitectsNative => (
             match session.agent {

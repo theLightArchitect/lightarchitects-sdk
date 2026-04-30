@@ -6,6 +6,7 @@ use tracing::instrument;
 use crate::config::GatewayConfig;
 use crate::core_tools;
 use crate::error::GatewayError;
+use crate::squad_comms;
 
 // ── Tool schema definitions ───────────────────────────────────────────────────
 
@@ -104,12 +105,21 @@ fn platform_tool_defs() -> Vec<Value> {
 
 /// Squad tool definitions: `canon_check`, `canon_evaluate`, initialize, import.
 fn squad_tool_defs() -> Vec<Value> {
-    vec![
+    let mut tools = vec![
+        // ── Squad Comms (5 actions, Phase 3 agent-C) ──────────────────────────
+        json!({"name": "lightarchitects_squad_comms_list_tasks", "description": "List the current conductor task queue snapshot. Returns all tasks with status, counts, and daemon health. Delegates to the webshell /api/coordination/tasks endpoint.", "inputSchema": {"type": "object", "properties": {}}}),
+        json!({"name": "lightarchitects_squad_comms_add_task", "description": "Append a task to the conductor queue. Delegates to the webshell /api/coordination/tasks/add endpoint.", "inputSchema": {"type": "object", "properties": {"title": {"type": "string", "description": "Human-readable task title."}, "project": {"type": "string", "description": "Project path relative to ~/Projects/."}, "prompt": {"type": "string", "description": "Agent prompt for the task (max 4000 chars)."}, "priority": {"type": "string", "enum": ["high", "medium", "low"], "description": "Priority (default: medium)."}}, "required": ["title", "project", "prompt"]}}),
+        json!({"name": "lightarchitects_squad_comms_claim_task", "description": "Soft-claim a task in the conductor queue, annotating it with the claiming agent's source label. Delegates to the webshell /api/coordination/tasks/claim/:id endpoint.", "inputSchema": {"type": "object", "properties": {"id": {"type": "string", "description": "Task ID to claim (e.g. manual-20260429-170935)."}, "source": {"type": "string", "description": "Claiming agent identifier."}}, "required": ["id"]}}),
+        json!({"name": "lightarchitects_squad_comms_task_logs", "description": "Fetch the last 200 lines of a task's execution log. Delegates to the webshell /api/coordination/tasks/:id/logs endpoint.", "inputSchema": {"type": "object", "properties": {"id": {"type": "string", "description": "Task ID."}}, "required": ["id"]}}),
+        json!({"name": "lightarchitects_squad_comms_chat_inject", "description": "Inject a message into a soul-chat session. Delegates to the webshell /api/coordination/chat/inject endpoint.", "inputSchema": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Target chat session ID."}, "message": {"type": "string", "description": "Message text to inject."}, "sender": {"type": "string", "description": "Sender label (e.g. agent name)."}}, "required": ["session_id", "message"]}}),
+    ];
+    tools.extend(vec![
         json!({"name": "lightarchitects_canon_check", "description": "Check a decision against all ratified Light Architects canons. Returns canon headers from the registry file for the caller to evaluate — this is file-based extraction, not AI reasoning. Full semantic evaluation requires the LÆX model (not available in v1).", "inputSchema": {"type": "object", "properties": {"decision": {"type": "string", "description": "The decision or proposed action to evaluate against canon."}, "verbose": {"type": "boolean", "description": "Include raw canon registry content alongside headers (default false)."}}, "required": ["decision"]}}),
         json!({"name": "lightarchitects_canon_evaluate", "description": "Return a blank 5-criteria evaluation template for a proposed canon candidate: convergent_evidence, biblical_grounding, decision_shaping, pressure_tested, kevin_ratifies. Scores are null — the gateway provides the framework, not the evaluation. Automated scoring requires the LÆX model (not available in v1).", "inputSchema": {"type": "object", "properties": {"candidate": {"type": "string", "description": "The proposed canon statement to evaluate."}}, "required": ["candidate"]}}),
         json!({"name": "lightarchitects_initialize", "description": "Interactive setup wizard for the Light Architects squad. Steps: detect (environment scan), draft (generate config from preset), apply (write config to disk), view (read current config).", "inputSchema": {"type": "object", "properties": {"step": {"type": "string", "description": "Wizard step to run.", "enum": ["detect", "draft", "apply", "view"]}, "preset": {"type": "string", "description": "Starter pack name (for draft/apply). Options: software_engineering, security, research, full_squad, lean.", "enum": ["software_engineering", "security", "research", "full_squad", "lean"]}, "vault_path": {"type": "string", "description": "Vault root path override (for draft/apply, default ~/lightarchitects/soul/helix)."}, "dry_run": {"type": "boolean", "description": "Preview without writing to disk (for apply, default false)."}}, "required": ["step"]}}),
         json!({"name": "lightarchitects_import", "description": "Import content from external systems. Adapters: obsidian/markdown (scan directory for .md files, extract H1 titles), mcp (generate a [agents.<name>] TOML block for a custom agent).", "inputSchema": {"type": "object", "properties": {"adapter": {"type": "string", "description": "Import adapter to use.", "enum": ["obsidian", "markdown", "mcp"]}, "path": {"type": "string", "description": "Directory to scan (required for obsidian/markdown adapters)."}, "name": {"type": "string", "description": "New agent name (required for mcp adapter)."}, "binary": {"type": "string", "description": "Binary path for the new agent (optional, for mcp adapter)."}, "tool_name": {"type": "string", "description": "MCP tool name for the new agent (optional, for mcp adapter)."}, "role": {"type": "string", "description": "Human-readable description of the agent's role (optional, for mcp adapter)."}}, "required": ["adapter"]}}),
-    ]
+    ]);
+    tools
 }
 
 // ── MCP server loop ───────────────────────────────────────────────────────────
@@ -262,6 +272,12 @@ async fn dispatch(
         "lightarchitects_canon_evaluate" => core_tools::canon_evaluate::run(params, config),
         "lightarchitects_initialize" => core_tools::initialize::run(params, config).await,
         "lightarchitects_import" => core_tools::import_adapter::run(params, config),
+        // Squad Comms — thin HTTP wrappers delegating to the webshell coordination API.
+        "lightarchitects_squad_comms_list_tasks" => squad_comms::list_tasks(params, config).await,
+        "lightarchitects_squad_comms_add_task" => squad_comms::add_task(params, config).await,
+        "lightarchitects_squad_comms_claim_task" => squad_comms::claim_task(params, config).await,
+        "lightarchitects_squad_comms_task_logs" => squad_comms::task_logs(params, config).await,
+        "lightarchitects_squad_comms_chat_inject" => squad_comms::chat_inject(params, config).await,
         _ => Err(GatewayError::UnknownTool(tool_name.to_owned())),
     }
 }
@@ -289,8 +305,9 @@ mod tests {
     }
 
     #[test]
-    fn all_tool_definitions_has_fourteen_entries() {
-        assert_eq!(all_tool_definitions().len(), 14);
+    fn all_tool_definitions_has_nineteen_entries() {
+        // 1 meta + 6 file + 3 platform + 9 squad (5 squad_comms + 4 original)
+        assert_eq!(all_tool_definitions().len(), 19);
     }
 
     #[test]

@@ -1,0 +1,206 @@
+//! Squad Comms MCP actions — thin HTTP wrappers delegating to the webshell
+//! `/api/coordination/*` endpoints.
+//!
+//! Each action reads the webshell token from the standard token file, then
+//! makes an authenticated HTTP request to the webshell process running on
+//! `http://localhost:8733`.  Responses are forwarded as-is to the MCP caller.
+//!
+//! # Actions
+//!
+//! - `list_tasks`  — `GET  /api/coordination/tasks`
+//! - `add_task`    — `POST /api/coordination/tasks/add`
+//! - `claim_task`  — `POST /api/coordination/tasks/claim/:id`
+//! - `task_logs`   — `GET  /api/coordination/tasks/:id/logs`
+//! - `chat_inject` — `POST /api/coordination/chat/inject`
+//!
+//! # Error handling
+//!
+//! If the webshell is not running, a clear error message is returned to the
+//! MCP caller — no panic, no unwrap (BC-1).
+
+use serde_json::{Value, json};
+
+use crate::config::GatewayConfig;
+use crate::error::GatewayError;
+
+/// Base URL for the local webshell server.
+const WEBSHELL_BASE: &str = "http://localhost:8733";
+
+/// Read the webshell bearer token from the canonical token file.
+///
+/// Returns an empty string if the token file is missing or unreadable —
+/// callers will receive a 401 from the webshell, which is surfaced clearly.
+fn read_webshell_token() -> String {
+    let path = dirs_next::home_dir()
+        .map(|h| h.join(".lightarchitects").join("webshell").join(".token"))
+        .unwrap_or_default();
+    std::fs::read_to_string(&path)
+        .map(|s| s.trim().to_owned())
+        .unwrap_or_default()
+}
+
+/// Make a GET request to the webshell and return the JSON body.
+async fn webshell_get(path: &str, config: &GatewayConfig) -> Result<Value, GatewayError> {
+    let _ = config; // reserved for future per-agent URL config
+    let token = read_webshell_token();
+    let url = format!("{WEBSHELL_BASE}{path}");
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&url)
+        .bearer_auth(&token)
+        .send()
+        .await
+        .map_err(|e| {
+            GatewayError::InvalidRequest(format!(
+                "webshell unreachable at {url} — is lightarchitects-webshell running? ({e})"
+            ))
+        })?;
+
+    let status = resp.status();
+    let body: Value = resp.json().await.unwrap_or(Value::Null);
+
+    if !status.is_success() {
+        return Err(GatewayError::InvalidRequest(format!(
+            "webshell returned {status} for {url}: {}",
+            body
+        )));
+    }
+
+    Ok(body)
+}
+
+/// Make a POST request to the webshell and return the JSON body.
+async fn webshell_post(
+    path: &str,
+    payload: Value,
+    config: &GatewayConfig,
+) -> Result<Value, GatewayError> {
+    let _ = config;
+    let token = read_webshell_token();
+    let url = format!("{WEBSHELL_BASE}{path}");
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&url)
+        .bearer_auth(&token)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| {
+            GatewayError::InvalidRequest(format!(
+                "webshell unreachable at {url} — is lightarchitects-webshell running? ({e})"
+            ))
+        })?;
+
+    let status = resp.status();
+    let body: Value = resp.json().await.unwrap_or(Value::Null);
+
+    if !status.is_success() {
+        return Err(GatewayError::InvalidRequest(format!(
+            "webshell returned {status} for {url}: {}",
+            body
+        )));
+    }
+
+    Ok(body)
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+
+/// `lightarchitects_squad_comms_list_tasks` — list task queue snapshot.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::InvalidRequest`] if the webshell is unreachable.
+pub async fn list_tasks(
+    _params: Value,
+    config: &GatewayConfig,
+) -> Result<Value, GatewayError> {
+    webshell_get("/api/coordination/tasks", config).await
+}
+
+/// `lightarchitects_squad_comms_add_task` — append a task to the queue.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::MissingParam`] for missing required fields.
+/// Returns [`GatewayError::InvalidRequest`] if the webshell is unreachable.
+pub async fn add_task(params: Value, config: &GatewayConfig) -> Result<Value, GatewayError> {
+    let title = params["title"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("title"))?
+        .to_owned();
+    let project = params["project"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("project"))?
+        .to_owned();
+    let prompt = params["prompt"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("prompt"))?
+        .to_owned();
+    let priority = params["priority"].as_str().unwrap_or("medium").to_owned();
+
+    let payload = json!({
+        "title": title,
+        "project": project,
+        "prompt": prompt,
+        "priority": priority
+    });
+
+    webshell_post("/api/coordination/tasks/add", payload, config).await
+}
+
+/// `lightarchitects_squad_comms_claim_task` — soft-claim a task.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::MissingParam`] for missing `id`.
+/// Returns [`GatewayError::InvalidRequest`] if the webshell is unreachable.
+pub async fn claim_task(params: Value, config: &GatewayConfig) -> Result<Value, GatewayError> {
+    let id = params["id"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("id"))?;
+    let source = params["source"].as_str().unwrap_or("gateway");
+    let payload = json!({ "source": source });
+    webshell_post(&format!("/api/coordination/tasks/claim/{id}"), payload, config).await
+}
+
+/// `lightarchitects_squad_comms_task_logs` — fetch last 200 lines of a task log.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::MissingParam`] for missing `id`.
+/// Returns [`GatewayError::InvalidRequest`] if the webshell is unreachable.
+pub async fn task_logs(params: Value, config: &GatewayConfig) -> Result<Value, GatewayError> {
+    let id = params["id"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("id"))?;
+    webshell_get(&format!("/api/coordination/tasks/{id}/logs"), config).await
+}
+
+/// `lightarchitects_squad_comms_chat_inject` — inject a chat message.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::MissingParam`] for missing required fields.
+/// Returns [`GatewayError::InvalidRequest`] if the webshell is unreachable.
+pub async fn chat_inject(params: Value, config: &GatewayConfig) -> Result<Value, GatewayError> {
+    let session_id = params["session_id"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("session_id"))?
+        .to_owned();
+    let message = params["message"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("message"))?
+        .to_owned();
+    let sender = params["sender"].as_str().unwrap_or("gateway").to_owned();
+
+    let payload = json!({
+        "session_id": session_id,
+        "message": message,
+        "sender": sender
+    });
+
+    webshell_post("/api/coordination/chat/inject", payload, config).await
+}

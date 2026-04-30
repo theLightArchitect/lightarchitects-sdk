@@ -19,14 +19,15 @@ use axum::{
     response::IntoResponse,
     routing::{get, post, put},
 };
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{Mutex, RwLock, broadcast};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
 use crate::{
     auth,
     config::{AgentSession, Config},
-    copilot,
+    coordination, copilot,
+    dispatch::{self, DispatchRegistry},
     events::{self, EVENT_CHANNEL_BUF, WebEvent, builds_handler},
     polytope_data, real_data,
     session::BuildRegistry,
@@ -129,6 +130,13 @@ pub struct AppState {
             Arc<dyn lightarchitects::soul::embedding::EmbeddingProvider + Send + Sync>,
         >,
     >,
+
+    /// Active Squad Dispatch registry.
+    ///
+    /// Stores in-flight dispatch handles keyed by [`dispatch::DispatchId`].
+    /// Guarded by a `Mutex` — each registry operation is a short critical
+    /// section with no long-held locks (MED M-4).
+    pub dispatch_registry: Arc<Mutex<DispatchRegistry>>,
 }
 
 impl AppState {
@@ -206,6 +214,7 @@ impl AppState {
             promotion_policy,
             _policy_watcher: policy_watcher,
             embedding_provider: Arc::new(tokio::sync::OnceCell::new()),
+            dispatch_registry: Arc::new(Mutex::new(DispatchRegistry::new())),
         }
     }
 
@@ -288,6 +297,7 @@ impl AppState {
             promotion_policy: None,
             _policy_watcher: None,
             embedding_provider: Arc::new(tokio::sync::OnceCell::new()),
+            dispatch_registry: Arc::new(Mutex::new(DispatchRegistry::new())),
         }
     }
 }
@@ -443,6 +453,37 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/setup/models", get(setup::setup_models))
         .route("/api/setup/save", post(setup::setup_save))
         .route("/api/setup/reset", axum::routing::delete(setup::setup_reset))
+        // ── Squad Comms (coordination) routes ───────────────────────────────
+        .route(
+            "/api/coordination/tasks",
+            get(coordination::list_tasks),
+        )
+        .route(
+            "/api/coordination/tasks/add",
+            post(coordination::add_task),
+        )
+        .route(
+            "/api/coordination/tasks/claim/{id}",
+            post(coordination::claim_task),
+        )
+        .route(
+            "/api/coordination/tasks/{id}/logs",
+            get(coordination::task_logs),
+        )
+        .route(
+            "/api/coordination/chat/sessions",
+            get(coordination::chat_sessions),
+        )
+        .route(
+            "/api/coordination/chat/inject",
+            post(coordination::chat_inject),
+        )
+        .route(
+            "/api/coordination/chat/stream",
+            get(coordination::chat_stream),
+        )
+        // ── Squad Dispatch routes — all Bearer-authenticated (HIGH H-5) ─────
+        .merge(dispatch::dispatch_router())
         .fallback(static_assets::serve)
         .layer(cors)
         .layer(TraceLayer::new_for_http())

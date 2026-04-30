@@ -75,6 +75,10 @@ pub enum GatewayError {
     #[error("invalid parameter: {0}")]
     InvalidParam(String),
 
+    /// A request body or parameter was structurally invalid.
+    #[error("invalid request: {0}")]
+    InvalidRequest(String),
+
     /// An internal operation failed with a descriptive message.
     #[error("internal error: {0}")]
     Internal(String),

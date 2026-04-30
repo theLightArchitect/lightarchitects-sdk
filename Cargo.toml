@@ -2,9 +2,15 @@
 resolver = "2"
 members = [
     "lightarchitects",          # Unified SDK — all clients + advanced capabilities
-    "lightarchitects-server",   # Server-side facade: auth, arena, helix, turnlog, oracle
-    "lightarchitects-gateway",  # Binary: MCP server + Arena HTTP + Conductor
+    # lightarchitects-gateway excluded: worktree lockfile collision (same pkg at two local paths)
+    # "lightarchitects-gateway",  # Binary: MCP server + Arena HTTP + Conductor
     "lightarchitects-webshell", # Binary: local web GUI (PTY + 3D helix panel)
+]
+exclude = [
+    # Excluded from worktree workspace due to lockfile collision (parent path lightarchitects
+    # v0.2.0 conflicts with worktree path lightarchitects v0.2.0 — cargo cannot resolve
+    # two local packages with identical name+version in one workspace).
+    "lightarchitects-gateway",
 ]
 
 [workspace.package]
@@ -118,6 +124,12 @@ criterion = { version = "0.5", features = ["html_reports"] }
 tokio-test = "0.4"
 mockito = "1"
 
+
+# ── Patch section (MED M-6 lockfile collision fix) ────────────────────────────
+# CORSO's optional deps reference lightarchitects from git.  We redirect to the
+# local path so the workspace lockfile has a single canonical source.
+[patch."https://github.com/TheLightArchitects/lightarchitects-sdk.git"]
+lightarchitects = { path = "lightarchitects" }
 
 [profile.release]
 lto = true

@@ -23,6 +23,16 @@ lightarchitects = { path = "../lightarchitects", features = [
     "credentials-detailed-locator",
 ] }
 
+# Aho-Corasick multi-pattern substring matching for the task classifier (HIGH H-8, no ReDoS).
+aho-corasick = "1"
+
+# Squad Dispatch TeamManager path-dep (C-1 fix — added when lockfile collision resolved).
+# CRITICAL C-1: LHS key MUST be the package name "laex0", not "laex0_cli".
+# The lib is imported as `laex0_cli::*` at use-sites (lib name in lightarchitects-cli/Cargo.toml).
+# Path dep gated on lockfile collision resolution (MED M-6 — ayin v0.1.0 in both vendor dirs).
+# To enable: uncomment the line below and enable the "team-manager" feature.
+# laex0 = { path = "../../../../../lightarchitects-cli", package = "laex0", optional = true }
+
 # Tier-1 ephemeral transactional log (unified-forging-turnlog)
 
 
@@ -93,11 +103,16 @@ nix = { version = "0.29", features = ["signal"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
+criterion = { version = "0.5", features = ["html_reports"] }
 # Integration-test HTTP harness — oneshot exercises the real router stack.
 tower = { version = "0.4", features = ["util"] }
 http-body-util = "0.1"
-# Tempdir for memory module tests (snapshot_hot against a fresh turnlog root).
+# Tempdir for memory module tests + coordination/sse test isolation.
 tempfile = { workspace = true }
+
+[[bench]]
+name = "classifier"
+harness = false
 
 [lints]
 workspace = true
