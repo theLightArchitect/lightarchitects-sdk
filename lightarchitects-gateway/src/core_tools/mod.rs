@@ -27,6 +27,7 @@ pub mod read;
 pub mod search;
 pub mod security;
 pub mod ui;
+pub mod webshell_launch;
 pub mod write;
 
 use serde_json::{Value, json};
