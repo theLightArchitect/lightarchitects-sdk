@@ -9,6 +9,19 @@
  */
 import type { Page } from '@playwright/test';
 
+// ─── Squad Dispatch fixtures ──────────────────────────────────────────────────
+
+/** Stable dispatch ID used across all Squad Dispatch E2E tests. */
+export const E2E_DISPATCH_ID = 'e2e-dispatch-001';
+
+/** Pre-built SSE body: Engineer Solo dry-run completes in ~42 ms. */
+export const MOCK_SSE_STREAM = [
+  { PerAgentState: { agent: 'Engineer', state: 'Running', message: '[DRY] Engineer running on: refactor auth service' } },
+  { MailboxMessage: { agent: 'Engineer', text: 'Engineer acknowledged task (dry-run).' } },
+  { PerAgentState: { agent: 'Engineer', state: 'Complete', message: null } },
+  { Complete: { elapsed_ms: 42 } },
+].map((e) => `data: ${JSON.stringify(e)}\n\n`).join('');
+
 // ─── Mock Build (Workspace screen injection via __e2e stores) ─────────────────
 
 export const MOCK_BUILD = {
@@ -255,5 +268,40 @@ export async function registerMocks(page: Page): Promise<void> {
         platform: 'darwin',
       }),
     }),
+  );
+
+  // ── Squad Dispatch endpoints ──────────────────────────────────────────────────
+  // Classify: returns Engineer Solo for any task ≥8 chars.
+  await page.route('**/api/dispatch/classify', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        agents: ['Engineer'],
+        mode: 'Solo',
+        rationale: 'refactor keyword → Engineer',
+      }),
+    }),
+  );
+  // Execute: returns a stable synthetic dispatch ID.
+  await page.route('**/api/dispatch/execute', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ dispatch_id: E2E_DISPATCH_ID }),
+    }),
+  );
+  // SSE stream: pre-built text/event-stream body (fetch ReadableStream reader).
+  await page.route(`**/api/dispatch/status/${E2E_DISPATCH_ID}`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      headers: { 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
+      body: MOCK_SSE_STREAM,
+    }),
+  );
+  // Cancel: best-effort; always 200.
+  await page.route('**/api/dispatch/cancel/**', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }),
   );
 }
