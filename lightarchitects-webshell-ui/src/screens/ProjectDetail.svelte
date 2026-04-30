@@ -1,11 +1,28 @@
 <script lang="ts">
   import { builds, currentBuildId } from '$lib/stores';
-  import { SIBLING_COLORS, getMetaSkillPolytope, getMetaSkillColor } from '$lib/design-tokens';
+  import { SIBLING_COLORS, ROADMAP, getMetaSkillPolytope, getMetaSkillColor } from '$lib/design-tokens';
   import type { Build } from '$lib/types';
   import type { PlanPhaseStatus } from '$lib/types';
   import PhaseTimeline from '$lib/../components/PhaseTimeline.svelte';
   import PolytopeIcon from '$lib/../components/PolytopeIcon.svelte';
   import PolytopeDecor from '$lib/../components/PolytopeDecor.svelte';
+  import KanbanBoard from '$lib/../components/KanbanBoard.svelte';
+  import ParticleCanvas from '$lib/../components/ParticleCanvas.svelte';
+  import BuildDetailPanel from '$lib/../components/BuildDetailPanel.svelte';
+
+  // View mode
+  let viewMode = $state<'list' | 'kanban'>('list');
+
+  // Detail panel state
+  let selectedBuild = $state<Build | null>(null);
+
+  function openDetailPanel(build: Build) {
+    selectedBuild = build;
+  }
+
+  function closeDetailPanel() {
+    selectedBuild = null;
+  }
 
   // Map pillar index to LASDLC phase name for the PhaseTimeline
   const PILLAR_TO_LASDLC = ['Plan', 'Research', 'Implement', 'Harden', 'Verify', 'Ship', 'Learn'];
@@ -16,17 +33,17 @@
   // Denormalize project ID back to path segments for filtering
   let pathSegments = $derived(projectId.split('-'));
 
-  // Filter builds for this project
+  // Filter builds for this project — match by path (same logic as groupByProject)
   let projectBuilds = $derived(
     $builds.filter((b: Build) => {
-      // Match by workspace path segments or build ID prefix
-      const wsPath = b.workspaceId ?? '';
-      const normalizedId = projectId.toLowerCase();
-      const normalizedWs = wsPath.toLowerCase().replace(/[\/~]/g, '-').replace(/^-+/, '');
-      return normalizedWs.includes(normalizedId) ||
-             normalizedId.includes(normalizedWs) ||
-             b.id.startsWith(projectId) ||
-             projectId.includes(b.id.split('/')[0] ?? '');
+      const rawPath = b.path ?? b.name;
+      // Normalize path the same way groupByProject does: strip ~/, take first 3 segments
+      const cleaned = rawPath.replace(/^~\//, '').replace(/\/$/, '');
+      const parts = cleaned.split('/');
+      const key = parts.slice(0, Math.min(parts.length, 3)).join('/');
+      // Convert to ID the same way: replace / with -
+      const buildGroupId = key.replace(/\//g, '-');
+      return buildGroupId === projectId || projectId.includes(buildGroupId) || buildGroupId.includes(projectId);
     })
   );
 
@@ -48,10 +65,9 @@
   );
 
   // Project display name — last meaningful segment
-  let projectName = $derived(() => {
-    const parts = projectId.split('-');
-    return parts[parts.length - 1] ?? projectId;
-  });
+  let projectName = $derived(
+    projectId.split('-').at(-1) ?? projectId
+  );
 
   // Full path reconstruction for display
   let projectPath = $derived(
@@ -120,38 +136,74 @@
 </script>
 
 <div class="h-full flex flex-col relative overflow-hidden">
-  <!-- Ambient polytope decoration -->
-  <div class="absolute inset-0 overflow-hidden pointer-events-none -z-10">
-    <div class="absolute -top-16 -right-16">
-      <PolytopeDecor type="hexadecachoron" color="#00BFFF" size={350} opacity={0.03} speed={0.04} />
+  <!-- Background layer — particle canvas in Kanban mode, polytope in list mode -->
+  {#if viewMode === 'kanban'}
+    <div class="absolute inset-0 overflow-hidden pointer-events-none" style="z-index: 0;">
+      <ParticleCanvas />
+      <!-- Grid overlay -->
+      <div class="absolute inset-0" style="
+        background-image: linear-gradient(rgba(240,192,64,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(240,192,64,0.02) 1px, transparent 1px);
+        background-size: 60px 60px;
+        mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black 30%, transparent 70%);
+        -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black 30%, transparent 70%);
+      "></div>
+      <!-- Ambient glow circles -->
+      <div class="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full opacity-[0.04]" style="background: radial-gradient(circle, {ROADMAP.accent}, transparent 70%); animation: ambientDrift1 20s ease-in-out infinite;"></div>
+      <div class="absolute -bottom-40 -right-40 w-[600px] h-[600px] rounded-full opacity-[0.03]" style="background: radial-gradient(circle, #60a5fa, transparent 70%); animation: ambientDrift2 25s ease-in-out infinite;"></div>
+      <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full opacity-[0.02]" style="background: radial-gradient(circle, #a78bfa, transparent 70%); animation: ambientPulse 15s ease-in-out infinite;"></div>
     </div>
-    <div class="absolute -bottom-16 -left-16">
-      <PolytopeDecor type="pentachoron" color="#B44AFF" size={280} opacity={0.03} speed={0.06} />
+  {:else}
+    <div class="absolute inset-0 overflow-hidden pointer-events-none -z-10">
+      <div class="absolute -top-16 -right-16">
+        <PolytopeDecor type="hexadecachoron" color="#4ECDC4" size={350} opacity={0.03} speed={0.04} />
+      </div>
+      <div class="absolute -bottom-16 -left-16">
+        <PolytopeDecor type="pentachoron" color="#96CEB4" size={280} opacity={0.03} speed={0.06} />
+      </div>
     </div>
-  </div>
+  {/if}
 
   <!-- Header -->
   <header class="flex items-center justify-between flex-wrap gap-y-2 px-4 md:px-6 py-3 border-b border-[#1e293b]">
     <div class="flex flex-col gap-0.5">
       <div class="flex items-center gap-2">
         <button
-          class="text-[#64748b] hover:text-[#FFD700] transition-colors text-sm"
+          class="text-[#64748b] hover:text-[#f0c040] transition-colors text-sm"
           onclick={goBack}
           title="Back to Build Queue"
         >
           &larr; Projects
         </button>
         <span class="text-[#334155]">/</span>
-        <h1 class="text-lg font-semibold tracking-wide">{projectName()}</h1>
+        <h1 class="text-lg font-semibold tracking-wide">{projectName}</h1>
       </div>
       <span class="text-[10px] text-[#475569] font-mono pl-0.5">{projectPath}</span>
     </div>
-    <button
-      class="px-4 py-1.5 bg-[#D4A017] text-[#0a0a0f] text-xs font-semibold rounded hover:bg-[#FFD700] hover:shadow-[0_0_10px_rgba(255,215,0,0.4)] transition-all"
-      onclick={newPlan}
-    >
-      + New Plan
-    </button>
+    <div class="flex items-center gap-3">
+      <!-- View toggle -->
+      <div class="flex bg-[#1e293b] rounded overflow-hidden">
+        <button
+          class="px-3 py-1 text-xs {viewMode === 'list' ? 'bg-[#334155] text-white' : 'text-[#64748b]'}"
+          onclick={() => { viewMode = 'list'; }}
+          data-testid="view-toggle-list"
+        >
+          List
+        </button>
+        <button
+          class="px-3 py-1 text-xs {viewMode === 'kanban' ? 'bg-[#334155] text-white' : 'text-[#64748b]'}"
+          onclick={() => { viewMode = 'kanban'; }}
+          data-testid="view-toggle-kanban"
+        >
+          Kanban
+        </button>
+      </div>
+      <button
+        class="px-4 py-1.5 bg-[#D4A017] text-[#0a0a0f] text-xs font-semibold rounded hover:bg-[#FFD700] hover:shadow-[0_0_10px_rgba(255,215,0,0.4)] transition-all"
+        onclick={newPlan}
+      >
+        + New Plan
+      </button>
+    </div>
   </header>
 
   <!-- Stat strip -->
@@ -162,13 +214,15 @@
     <span class="text-[#3b82f6]">{stats.completed} completed</span>
   </div>
 
-  <!-- Plan roadmap (vertical list) -->
+  <!-- Plan roadmap -->
   <div class="flex-1 overflow-y-auto p-4 md:p-6">
     {#if sortedBuilds.length === 0}
       <div class="flex flex-col items-center justify-center h-full text-[#475569]">
         <p class="text-lg mb-2">No plans for this project</p>
         <p class="text-sm">Create a new build plan with <kbd class="bg-[#1e293b] px-2 py-0.5 rounded text-xs">/build</kbd></p>
       </div>
+    {:else if viewMode === 'kanban'}
+      <KanbanBoard builds={sortedBuilds} onOpenBuild={openBuild} onSelectBuild={openDetailPanel} />
     {:else}
       <div class="flex flex-col gap-3 max-w-4xl mx-auto">
         {#each sortedBuilds as build, idx}
@@ -256,4 +310,26 @@
       </div>
     {/if}
   </div>
+
+  <!-- Build Detail Panel (slide-in on card click in Kanban mode) -->
+  <BuildDetailPanel
+    build={selectedBuild}
+    onClose={closeDetailPanel}
+    onOpenWorkspace={(id) => { closeDetailPanel(); openBuild(id); }}
+  />
 </div>
+
+<style>
+  @keyframes ambientDrift1 {
+    0%, 100% { transform: translate(0, 0); }
+    50% { transform: translate(30px, 20px); }
+  }
+  @keyframes ambientDrift2 {
+    0%, 100% { transform: translate(0, 0); }
+    50% { transform: translate(-20px, -30px); }
+  }
+  @keyframes ambientPulse {
+    0%, 100% { opacity: 0.02; transform: translate(-50%, -50%) scale(1); }
+    50% { opacity: 0.04; transform: translate(-50%, -50%) scale(1.1); }
+  }
+</style>

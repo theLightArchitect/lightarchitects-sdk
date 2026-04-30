@@ -216,6 +216,9 @@ async fn cli_dispatch(
             lightarchitects_gateway::cli::seraph::execute(config, &args[1..], mode).await
         }
 
+        // Auth commands
+        Some("auth") => lightarchitects_gateway::cli::auth::execute(&args[1..]).await,
+
         // Utility commands
         Some("status") => lightarchitects_gateway::cli::status::execute(config, mode),
         Some("config") => lightarchitects_gateway::cli::config_cmd::execute(config, mode),
@@ -241,6 +244,7 @@ async fn cli_dispatch(
                    lightarchitects eva <subcommand>            EVA operations\n  \
                    lightarchitects quantum <subcommand>        QUANTUM operations\n  \
                    lightarchitects seraph <subcommand>         SERAPH operations\n  \
+                   lightarchitects auth login|logout|status   Authentication\n  \
                    lightarchitects status                     Binary availability\n  \
                    lightarchitects config                     Resolved configuration\n  \
                    lightarchitects builds list|show           Build portfolio\n  \

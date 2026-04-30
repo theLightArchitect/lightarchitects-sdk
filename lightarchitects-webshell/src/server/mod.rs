@@ -404,7 +404,7 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/workspaces", get(real_data::list_workspaces))
         .route("/api/workspaces/{id}", get(real_data::get_workspace))
         .route("/api/meta-skills", get(real_data::list_meta_skills))
-        .route("/api/siblings", get(real_data::get_sibling_status))
+        .route("/api/siblings", get(real_data::get_squad_status))
         .route("/api/sitrep", get(real_data::get_sitrep))
         .route("/api/conductor/status", get(real_data::get_conductor_status))
         .route("/api/arena/status", get(real_data::get_arena_status))

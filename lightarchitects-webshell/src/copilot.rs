@@ -32,7 +32,7 @@ use crate::{
 /// Resolve a binary name to its full path by checking known install locations.
 /// Falls back to the bare name (relies on PATH) if not found in known locations.
 pub fn resolve_binary(name: &str) -> String {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/kft".to_owned());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
     let candidates: Vec<String> = match name {
         "claude" => vec![
             format!("{home}/.local/bin/claude"),
@@ -52,6 +52,11 @@ pub fn resolve_binary(name: &str) -> String {
             format!("{home}/.local/bin/laex0"),
             format!("{home}/.lightarchitects/bin/laex0"),
             "/usr/local/bin/laex0".to_owned(),
+        ],
+        "lightarchitects" => vec![
+            format!("{home}/.lightarchitects/bin/lightarchitects"),
+            format!("{home}/.local/bin/lightarchitects"),
+            "/usr/local/bin/lightarchitects".to_owned(),
         ],
         _ => vec![],
     };
@@ -76,24 +81,39 @@ pub fn resolve_binary(name: &str) -> String {
 /// Resolve an Anthropic API key for the `LightArchitects` CLI subprocess.
 ///
 /// Priority:
-/// 1. OS keychain entry stored by `/api/setup/save` (service: "lightarchitects-webshell-setup", account: "anthropic")
-/// 2. Claude Code credentials file (`~/.claude/.credentials.json`)
-/// 3. `ANTHROPIC_API_KEY` env var (if not a placeholder)
+/// 1. Keychain `"lightarchitects"/"anthropic"` — canonical namespace (new writes always go here)
+/// 2. Keychain `"lightarchitects-webshell-setup"/"anthropic"` — legacy fallback during migration
+/// 3. Claude Code credentials file (`~/.claude/.credentials.json`)
+/// 4. `ANTHROPIC_API_KEY` env var (if not a placeholder)
 ///
 /// Returns `None` if no valid key found — the CLI will fall back to its own resolution.
 fn resolve_api_key_for_native() -> Option<String> {
-    // 1. Keychain (stored by webshell setup flow)
-    if let Ok(entry) = keyring::Entry::new("lightarchitects-webshell-setup", "anthropic") {
+    // 1. Canonical keychain namespace ("lightarchitects") — new writes land here.
+    if let Ok(entry) = keyring::Entry::new("lightarchitects", "anthropic") {
         if let Ok(key) = entry.get_password() {
             if !key.is_empty() && !key.contains("placeholder") && !key.contains("your_") {
-                tracing::debug!("resolve_api_key_for_native: found key in OS keychain");
+                tracing::debug!(
+                    "resolve_api_key_for_native: found key in keychain (lightarchitects/anthropic)"
+                );
                 return Some(key);
             }
         }
     }
 
-    // 2. Claude Code credentials file
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/kft".to_owned());
+    // 2. Legacy keychain namespace — coexists until a future migration command cleans it up.
+    if let Ok(entry) = keyring::Entry::new("lightarchitects-webshell-setup", "anthropic") {
+        if let Ok(key) = entry.get_password() {
+            if !key.is_empty() && !key.contains("placeholder") && !key.contains("your_") {
+                tracing::debug!(
+                    "resolve_api_key_for_native: found key in legacy keychain (lightarchitects-webshell-setup/anthropic)"
+                );
+                return Some(key);
+            }
+        }
+    }
+
+    // 3. Claude Code credentials file
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
     let creds_path = std::path::Path::new(&home)
         .join(".claude")
         .join(".credentials.json");
@@ -108,7 +128,7 @@ fn resolve_api_key_for_native() -> Option<String> {
         }
     }
 
-    // 3. Environment variable (if not a placeholder)
+    // 4. Environment variable (if not a placeholder)
     if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
         if !key.is_empty() && !key.contains("your_") && key.starts_with("sk-ant-") {
             tracing::debug!("resolve_api_key_for_native: found key in env ANTHROPIC_API_KEY");
@@ -124,25 +144,10 @@ fn resolve_api_key_for_native() -> Option<String> {
 /// Subprocess spawns (claude, corso, codex) need these paths even if the
 /// webshell server was launched from a minimal environment (e.g., `LaunchAgent`).
 pub fn augmented_path() -> String {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/kft".to_owned());
-    let current = std::env::var("PATH").unwrap_or_default();
-    let extra = [
-        format!("{home}/.local/bin"),
-        format!("{home}/.bun/bin"),
-        format!("{home}/lightarchitects/corso/bin"),
-        format!("{home}/lightarchitects/eva/bin"),
-        format!("{home}/lightarchitects/soul/.config/bin"),
-        format!("{home}/lightarchitects/quantum/bin"),
-        format!("{home}/lightarchitects/seraph/bin"),
-        format!("{home}/lightarchitects/ayin/bin"),
-        "/usr/local/bin".to_owned(),
-    ];
-    let mut parts: Vec<&str> = extra.iter().map(String::as_str).collect();
-    parts.extend(current.split(':'));
-    // Deduplicate while preserving order
-    let mut seen = std::collections::HashSet::new();
-    parts.retain(|p| !p.is_empty() && seen.insert(*p));
-    parts.join(":")
+    use lightarchitects::{core::paths, squad_registry::SquadRegistry};
+    let la_home = paths::root_or_fallback();
+    let registry = SquadRegistry::load(&la_home);
+    paths::augmented_path(&registry)
 }
 
 /// JSON body for `POST /api/builds/:id/copilot`.
