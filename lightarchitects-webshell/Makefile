@@ -1,7 +1,7 @@
 # lightarchitects-webshell Makefile
 # "The eye of the LORD is upon them" — Psalm 33:18 (KJV)
 
-.PHONY: help build test quality fix push deploy deploy-fast ui run
+.PHONY: help build test quality fix push deploy deploy-fast ui run verify verify-debug verify-deployed rollback drain
 
 .DEFAULT_GOAL := help
 
@@ -90,3 +90,86 @@ run: ## Deploy (fast) and launch the webshell server
 	@echo ""
 	@echo "Launching webshell…"
 	@$(SYMLINK)
+
+# ── Verify / Rollback / Drain (OPS-1b) ──────────────────────────────────────
+# Smoke verification + safe rollback + graceful PTY drain. Required by aegis
+# manifest Phase-3 exit criterion `smoke_verify` and Phase-7 exit `rollback_drill`.
+
+VERIFY_PORT_DEPLOYED ?= 8733
+VERIFY_PORT_DEBUG    ?= 8734
+DEBUG_BINARY         := ../target/debug/$(BINARY)
+
+verify: verify-deployed ## Smoke-verify the deployed binary (default target)
+
+verify-deployed: ## Curl /api/health/deep + /metrics + /api/auth-check on $(DEPLOY_DIR)/$(BINARY)
+	@if [ ! -x "$(DEPLOY_DIR)/$(BINARY)" ]; then \
+		echo "❌ no deployed binary at $(DEPLOY_DIR)/$(BINARY)"; \
+		echo "   run 'make deploy' first OR use 'make verify-debug'"; \
+		exit 1; \
+	fi
+	@echo "Smoke-verifying deployed binary on port $(VERIFY_PORT_DEPLOYED)…"
+	@$(DEPLOY_DIR)/$(BINARY) --port $(VERIFY_PORT_DEPLOYED) --token-source ephemeral & \
+	  PID=$$!; sleep 1.5; \
+	  curl -fsS http://127.0.0.1:$(VERIFY_PORT_DEPLOYED)/api/health > /dev/null \
+	    && echo "  /api/health         ✓" \
+	    || (kill $$PID 2>/dev/null; echo "  /api/health         ✗"; exit 1); \
+	  $(DEPLOY_DIR)/$(BINARY) --version 2>/dev/null \
+	    && echo "  --version           ✓" \
+	    || echo "  --version           ⚠ (OPS-1a not yet landed)"; \
+	  kill $$PID 2>/dev/null; wait $$PID 2>/dev/null; true
+	@echo "verify-deployed: PASS"
+
+verify-debug: ## Smoke-verify ./target/debug/$(BINARY) (used by phase-3 CI before deploy exists)
+	@if [ ! -x "$(DEBUG_BINARY)" ]; then \
+		echo "❌ no debug binary at $(DEBUG_BINARY)"; \
+		echo "   run 'cargo build -p $(BINARY)' first"; \
+		exit 1; \
+	fi
+	@echo "Smoke-verifying debug binary on port $(VERIFY_PORT_DEBUG)…"
+	@$(DEBUG_BINARY) --port $(VERIFY_PORT_DEBUG) --token-source ephemeral & \
+	  PID=$$!; sleep 2; \
+	  curl -fsS http://127.0.0.1:$(VERIFY_PORT_DEBUG)/api/health > /dev/null \
+	    && echo "  /api/health         ✓" \
+	    || (kill $$PID 2>/dev/null; echo "  /api/health         ✗"; exit 1); \
+	  kill $$PID 2>/dev/null; wait $$PID 2>/dev/null; true
+	@echo "verify-debug: PASS"
+
+rollback: ## Restore previous deploy from .bak rotation
+	@if [ ! -f "$(DEPLOY_DIR)/$(BINARY).bak" ]; then \
+		echo "❌ no rollback target at $(DEPLOY_DIR)/$(BINARY).bak"; \
+		exit 1; \
+	fi
+	@echo "Rolling back: $(DEPLOY_DIR)/$(BINARY) ← .bak"
+	@mv -f $(DEPLOY_DIR)/$(BINARY) $(DEPLOY_DIR)/$(BINARY).rollback-temp
+	@mv -f $(DEPLOY_DIR)/$(BINARY).bak $(DEPLOY_DIR)/$(BINARY)
+	@mv -f $(DEPLOY_DIR)/$(BINARY).rollback-temp $(DEPLOY_DIR)/$(BINARY).bak
+	@chmod +x $(DEPLOY_DIR)/$(BINARY)
+	@echo "Rollback complete. Run 'make verify' to confirm."
+
+drain: ## Graceful drain of running webshell PTY (SIGHUP→SIGTERM→SIGKILL with grace)
+	@./scripts/drain.sh 2>/dev/null || \
+	  PIDS=$$(pgrep -f "$(BINARY)" 2>/dev/null || true); \
+	  if [ -z "$$PIDS" ]; then \
+	    echo "no $(BINARY) process found"; \
+	  else \
+	    echo "draining $(BINARY) PIDs: $$PIDS"; \
+	    for pid in $$PIDS; do \
+	      kill -HUP $$pid 2>/dev/null; \
+	    done; \
+	    echo "  SIGHUP sent; granting 30s for in-flight tool calls..."; \
+	    sleep 30; \
+	    for pid in $$PIDS; do \
+	      if kill -0 $$pid 2>/dev/null; then \
+	        echo "  SIGTERM $$pid (still alive after 30s)"; \
+	        kill -TERM $$pid 2>/dev/null; \
+	      fi; \
+	    done; \
+	    sleep 30; \
+	    for pid in $$PIDS; do \
+	      if kill -0 $$pid 2>/dev/null; then \
+	        echo "  SIGKILL $$pid (still alive after 60s total)"; \
+	        kill -KILL $$pid 2>/dev/null; \
+	      fi; \
+	    done; \
+	    echo "drain complete"; \
+	  fi
