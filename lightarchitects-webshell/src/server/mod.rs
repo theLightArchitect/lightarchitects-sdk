@@ -866,3 +866,140 @@ fn load_turnlog_pepper() -> secrecy::SecretSlice<u8> {
         }
     }
 }
+
+// ── walk_files unit tests ─────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod walk_tests {
+    use super::walk_files;
+    use std::fs;
+
+    /// Create a temp directory tree and return its path.
+    /// Caller must clean up with `fs::remove_dir_all`.
+    fn make_tree(name: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("la_walk_test_{name}"));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn empty_query_returns_all_files() {
+        let root = make_tree("empty_q");
+        fs::write(root.join("a.rs"), "").unwrap();
+        fs::write(root.join("b.ts"), "").unwrap();
+        let results = walk_files(&root, "");
+        assert!(results.contains(&"a.rs".to_owned()), "{results:?}");
+        assert!(results.contains(&"b.ts".to_owned()), "{results:?}");
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn query_filters_by_filename_substring() {
+        let root = make_tree("filter_q");
+        fs::write(root.join("main.rs"), "").unwrap();
+        fs::write(root.join("lib.rs"), "").unwrap();
+        fs::write(root.join("config.toml"), "").unwrap();
+        let results = walk_files(&root, "rs");
+        assert!(
+            results.iter().all(|p| std::path::Path::new(p)
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("rs"))),
+            "{results:?}"
+        );
+        assert_eq!(results.len(), 2);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn query_is_case_insensitive() {
+        let root = make_tree("case_q");
+        fs::write(root.join("README.md"), "").unwrap();
+        fs::write(root.join("other.txt"), "").unwrap();
+        let results = walk_files(&root, "readme");
+        assert_eq!(results.len(), 1);
+        assert!(results[0].to_lowercase().contains("readme"));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn results_are_relative_paths() {
+        let root = make_tree("rel_paths");
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src").join("main.rs"), "").unwrap();
+        let results = walk_files(&root, "main");
+        assert_eq!(results, vec!["src/main.rs".to_owned()]);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn skip_dirs_are_excluded() {
+        let root = make_tree("skip_dirs");
+        // Files in skip dirs should not appear
+        for skip in &["target", "node_modules", ".git"] {
+            fs::create_dir_all(root.join(skip)).unwrap();
+            fs::write(root.join(skip).join("skip_me.rs"), "").unwrap();
+        }
+        fs::write(root.join("keep_me.rs"), "").unwrap();
+        let results = walk_files(&root, "");
+        assert!(results.contains(&"keep_me.rs".to_owned()), "{results:?}");
+        assert!(
+            !results.iter().any(|p| p.contains("skip_me")),
+            "{results:?}"
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn hidden_files_are_excluded() {
+        let root = make_tree("hidden");
+        fs::write(root.join(".hidden_file"), "").unwrap();
+        fs::write(root.join("visible.rs"), "").unwrap();
+        let results = walk_files(&root, "");
+        assert!(!results.iter().any(|p| p.starts_with('.')), "{results:?}");
+        assert!(results.contains(&"visible.rs".to_owned()), "{results:?}");
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn max_results_cap_is_honoured() {
+        let root = make_tree("max_results");
+        for i in 0..60_u8 {
+            fs::write(root.join(format!("file_{i:03}.rs")), "").unwrap();
+        }
+        let results = walk_files(&root, "");
+        assert!(results.len() <= 50, "got {} results", results.len());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn deep_tree_respects_depth_limit() {
+        let root = make_tree("depth_limit");
+        // Create a chain 8 dirs deep with a file at the bottom
+        let mut p = root.clone();
+        for i in 0..8_u8 {
+            p = p.join(format!("level_{i}"));
+            fs::create_dir_all(&p).unwrap();
+        }
+        fs::write(p.join("deep.rs"), "").unwrap();
+        // Shallow file should be found; deep file should not (depth > 5)
+        fs::write(root.join("shallow.rs"), "").unwrap();
+        let results = walk_files(&root, "");
+        assert!(results.contains(&"shallow.rs".to_owned()), "{results:?}");
+        assert!(
+            !results.iter().any(|p| p.contains("deep.rs")),
+            "{results:?}"
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn no_results_when_no_match() {
+        let root = make_tree("no_match");
+        fs::write(root.join("foo.rs"), "").unwrap();
+        let results = walk_files(&root, "zzznomatch");
+        assert!(results.is_empty(), "{results:?}");
+        fs::remove_dir_all(&root).unwrap();
+    }
+}
