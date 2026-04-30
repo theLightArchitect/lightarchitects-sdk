@@ -49,7 +49,7 @@ pub enum EnrichError {
 /// that `SiblingPromoter` writes:
 ///
 /// ```yaml
-/// sibling: {sibling}
+/// agent: {agent}
 /// significance: {0.0-1.0}
 /// strands: [...]
 /// created_at: {ISO-8601}
@@ -73,8 +73,11 @@ pub fn enrich(memo: &ContextMemo) -> Result<EnrichedEntry, EnrichError> {
 
     let excerpt = truncate_chars(&memo.content, EXCERPT_MAX_CHARS);
 
+    // Emit the new canonical `agent:` key. Readers in this crate (and in
+    // soul-mcp) accept either key during the migration window, so old corpora
+    // continue to parse without modification.
     let frontmatter_raw = serde_json::json!({
-        "sibling": memo.sibling,
+        "agent": memo.sibling,
         "significance": memo.significance,
         "strands": memo.strands,
         "created_at": memo.created_at,
@@ -160,7 +163,10 @@ mod tests {
         // Use 0.75 — exactly representable in f32, avoids f32→f64 coercion drift
         // that makes 0.9f32 serialize as 0.8999999761581421.
         let entry = enrich(&memo(0.75)).unwrap();
-        assert_eq!(entry.frontmatter_raw["sibling"], "corso");
+        // Canonical `agent:` key (Build #3+ templates).
+        assert_eq!(entry.frontmatter_raw["agent"], "corso");
+        // Legacy `sibling:` is no longer emitted by this writer.
+        assert!(entry.frontmatter_raw.get("sibling").is_none());
         assert_eq!(entry.frontmatter_raw["significance"], 0.75);
         assert_eq!(entry.frontmatter_raw["strands"][0], "methodical");
     }

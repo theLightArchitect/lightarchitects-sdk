@@ -37,7 +37,12 @@ const EXCERPT_MAX_CHARS: usize = 280;
 /// should treat missing fields as non-fatal.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FrontMatterFields {
-    /// Owning sibling.
+    /// Owning agent identifier.
+    ///
+    /// Populated from the YAML `agent:` key (canonical, Build #3+ templates),
+    /// or from legacy `sibling:` when `agent:` is absent. Field name kept as
+    /// `sibling` to avoid rippling renames through SDK consumers — see
+    /// `feedback_sibling_to_squad` for the canonical agent terminology rule.
     pub sibling: Option<String>,
     /// Significance in `[0.0, 1.0]` (rescaled from the YAML `0..10` convention).
     pub significance: Option<f32>,
@@ -80,9 +85,11 @@ pub fn parse(source: &str) -> (FrontMatterFields, Option<String>) {
         .unwrap_or(serde_json::Value::Null);
 
     let fields = FrontMatterFields {
+        // Read `agent:` first (canonical), fall back to legacy `sibling:`.
         sibling: raw
-            .get("sibling")
+            .get("agent")
             .and_then(|v| v.as_str())
+            .or_else(|| raw.get("sibling").and_then(|v| v.as_str()))
             .map(str::to_owned),
         significance: raw
             .get("significance")
@@ -213,6 +220,23 @@ mod tests {
         let (fields, body) = parse(src);
         assert!(fields.sibling.is_none());
         assert!(body.is_some());
+    }
+
+    #[test]
+    fn parses_agent_key_canonical() {
+        // Build #3 templates ship `agent:` — readers must accept it.
+        let src = "---\nid: x\ndate: 2026-04-19\nagent: corso\nsignificance: 7.0\n---\nbody";
+        let (fields, _) = parse(src);
+        assert_eq!(fields.sibling.as_deref(), Some("corso"));
+    }
+
+    #[test]
+    fn agent_takes_precedence_over_sibling_when_both_present() {
+        // During the migration window an entry may carry both keys.
+        // `agent:` is canonical and wins.
+        let src = "---\nagent: eva\nsibling: corso\n---\nbody";
+        let (fields, _) = parse(src);
+        assert_eq!(fields.sibling.as_deref(), Some("eva"));
     }
 
     #[test]

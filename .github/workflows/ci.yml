@@ -28,6 +28,16 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      # Workspace integrity — fails the build if a workspace member is declared
+      # but its source isn't tracked (the bug class that produced PRs #4/#5/#7/#8
+      # in the 2026-04-28 session). cargo metadata fails fast on missing members;
+      # both feature combos catch feature-gated module-source gaps. No github.event
+      # interpolation here — pure static cargo commands.
+      - name: Workspace integrity (cargo metadata + build per feature combo)
+        run: |
+          cargo metadata --format-version 1 --no-deps > /dev/null
+          cargo build --workspace --no-default-features
+          cargo build --workspace --all-features
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 

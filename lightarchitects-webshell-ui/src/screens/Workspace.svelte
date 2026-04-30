@@ -239,11 +239,11 @@
       <div class="w-[320px] border-l border-[#1e293b] overflow-y-auto p-4 space-y-3 hidden lg:block">
         <div class="bg-[#111827] border border-[#1e293b] rounded-lg p-3">
           <h3 class="text-xs font-medium text-[#64748b] mb-2">CONTEXT</h3>
-          <p class="text-xs text-[#475569]">Build configuration, CLAUDE.md, active sibling dispatches</p>
+          <p class="text-xs text-[#475569]">Build configuration, CLAUDE.md, active Squad dispatches</p>
         </div>
 
         <div class="bg-[#111827] border border-[#1e293b] rounded-lg p-3">
-          <h3 class="text-xs font-medium text-[#64748b] mb-2">SIBLING DISPATCH</h3>
+          <h3 class="text-xs font-medium text-[#64748b] mb-2">SQUAD DISPATCH</h3>
           <SiblingDispatch onDispatch={dispatchSibling} selectedSibling={$focusedSibling} />
         </div>
 

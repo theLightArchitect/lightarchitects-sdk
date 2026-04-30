@@ -33,7 +33,7 @@
     switch (source) {
       case 'webhook': return 'WEB';
       case 'system': return 'SYS';
-      case 'sibling': return 'SIB';
+      case 'sibling': return 'SQD';
       case 'arena': return 'ARN';
     }
   }

@@ -1794,7 +1794,15 @@ impl HelixDb for HelixNeo4j {
             let Some(id) = r.get("id").and_then(|v| v.as_str()) else {
                 continue;
             };
-            let Some(sibling) = r.get("sibling").and_then(|v| v.as_str()) else {
+            // Accept the canonical `agent:` column or legacy `sibling:` —
+            // the cypher above selects `h.sibling AS sibling`, but downstream
+            // record producers may switch to `agent:` once the cold-write
+            // side migrates fully.
+            let Some(sibling) = r
+                .get("agent")
+                .and_then(|v| v.as_str())
+                .or_else(|| r.get("sibling").and_then(|v| v.as_str()))
+            else {
                 continue;
             };
             let content = r

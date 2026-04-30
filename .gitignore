@@ -14,3 +14,9 @@ lightarchitects-webshell/web-figma/node_modules/
 # Vite/Tailwind local caches
 lightarchitects-webshell/web-figma/.vite/
 lightarchitects-webshell/web-figma/.turbo/
+
+# Local caches and test artifacts
+.fastembed_cache/
+.firecrawl/
+lightarchitects-webshell-ui/.firecrawl/
+lightarchitects-webshell/tests/e2e/test-results/

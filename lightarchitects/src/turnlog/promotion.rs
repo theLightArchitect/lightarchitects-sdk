@@ -622,8 +622,11 @@ fn build_frontmatter(
         .map(|s| format!("  - {s}"))
         .collect::<Vec<_>>()
         .join("\n");
+    // Emit canonical `agent:` key. Readers (frontmatter.rs, soul-mcp validate
+    // /formatters) accept both `agent:` and `sibling:` during the migration
+    // window — see feedback_sibling_to_squad.
     format!(
-        "---\nid: {id}\ndate: {date}\nsibling: {sibling}\ntype: {entry_type}\n\
+        "---\nid: {id}\ndate: {date}\nagent: {sibling}\ntype: {entry_type}\n\
          significance: {significance:.1}\nstrands:\n{strands_yaml}\n\
          resonance: {{}}\nthemes: []\nepoch: genesis\n---\n"
     )
@@ -889,7 +892,7 @@ mod tests {
     }
 
     #[test]
-    fn build_frontmatter_contains_sibling() {
+    fn build_frontmatter_contains_agent() {
         let id = Uuid::new_v4();
         let fm = build_frontmatter(
             &id,
@@ -899,7 +902,10 @@ mod tests {
             7.0,
             &["Methodical"],
         );
-        assert!(fm.contains("sibling: seraph"));
+        // Canonical `agent:` key (Build #3+ templates).
+        assert!(fm.contains("agent: seraph"));
+        // Legacy `sibling:` is no longer emitted.
+        assert!(!fm.contains("\nsibling: "));
         assert!(fm.contains("significance: 7.0"));
         assert!(fm.contains("type: experience"));
     }

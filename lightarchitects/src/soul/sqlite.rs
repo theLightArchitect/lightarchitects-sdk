@@ -230,10 +230,15 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<StorageEntry> {
     let frontmatter =
         frontmatter_str.and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
 
+    // Accept either `agent` (canonical) or legacy `sibling` column. Most
+    // schemas in the wild still use `sibling`; we read agent first and fall
+    // back so a future column rename is a no-op for callers.
+    let agent: String = row.get("agent").or_else(|_| row.get("sibling"))?;
+
     Ok(StorageEntry {
         id: row.get("id")?,
         path: row.get("path")?,
-        sibling: row.get("sibling")?,
+        sibling: agent,
         date,
         entry_type: row.get("entry_type")?,
         significance: row.get("significance")?,

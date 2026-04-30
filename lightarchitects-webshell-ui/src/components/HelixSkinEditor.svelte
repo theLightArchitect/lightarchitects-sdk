@@ -237,7 +237,7 @@
             class="add-custom-input"
             type="text"
             bind:value={newSiblingId}
-            placeholder="sibling id"
+            placeholder="agent id"
           />
           <input
             type="color"
