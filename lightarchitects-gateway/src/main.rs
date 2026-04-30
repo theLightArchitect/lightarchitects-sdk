@@ -36,6 +36,13 @@ use std::path::PathBuf;
 async fn main() {
     let raw_args: Vec<String> = std::env::args().skip(1).collect();
 
+    // --version / -V → print and exit 0 (OPS-1a). Must come BEFORE any tracing
+    // setup so output is clean for ops scripts that parse `--version` stdout.
+    if raw_args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("{}", lightarchitects_gateway::version::long());
+        std::process::exit(0);
+    }
+
     // Check for --agent flag early (agent mode uses JSON logging, not fmt)
     let agent_mode = raw_args
         .iter()

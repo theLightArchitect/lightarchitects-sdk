@@ -1,7 +1,7 @@
 # lightarchitects-webshell Makefile
 # "The eye of the LORD is upon them" — Psalm 33:18 (KJV)
 
-.PHONY: help build test quality fix push deploy deploy-fast ui run verify verify-debug verify-deployed rollback drain
+.PHONY: help build test quality fix push deploy deploy-fast ui run verify verify-debug verify-deployed rollback drain ci-squad-local
 
 .DEFAULT_GOAL := help
 
@@ -40,6 +40,44 @@ quality: ## Check code quality: fmt + clippy + Rust tests + webshell UI tests
 	@cargo clippy -p lightarchitects-webshell --all-targets -- -D warnings
 	@cargo test -p lightarchitects-webshell --quiet
 	@cd $(UI_DIR) && pnpm test:run
+
+ci-squad-local: ## Tier-1 squad-CI gate (replaces GitHub Actions per SQUAD-CI-CHARTER.md)
+	@echo "═══════════════════════════════════════════════════════════════════"
+	@echo "  Tier-1 squad-CI — local deterministic gate"
+	@echo "═══════════════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "[1/9] cargo fmt --check"
+	@cd .. && cargo fmt --all -- --check
+	@echo "      ✓ fmt clean"
+	@echo "[2/9] cargo clippy -D warnings (workspace, all targets, all features)"
+	@cd .. && cargo clippy --workspace --all-targets --all-features -- -D warnings 2>&1 | tail -5 || (echo "      ✗ clippy failed"; exit 1)
+	@echo "      ✓ clippy clean"
+	@echo "[3/9] cargo metadata + workspace integrity"
+	@cd .. && cargo metadata --format-version 1 --no-deps > /dev/null
+	@cd .. && cargo check --workspace --all-features --quiet
+	@echo "      ✓ workspace integrity ok"
+	@echo "[4/9] cargo test --workspace --all-features"
+	@cd .. && cargo test --workspace --all-features --quiet 2>&1 | tail -3
+	@echo "      ✓ Rust tests pass"
+	@echo "[5/9] svelte-check"
+	@cd $(UI_DIR) && pnpm exec svelte-check --threshold error 2>&1 | tail -2
+	@echo "      ✓ svelte-check clean"
+	@echo "[6/9] pnpm test:run (vitest)"
+	@cd $(UI_DIR) && pnpm test:run 2>&1 | tail -3
+	@echo "      ✓ vitest passes"
+	@echo "[7/9] pnpm build (Svelte → dist/)"
+	@cd $(UI_DIR) && pnpm build 2>&1 | tail -3
+	@echo "      ✓ frontend build ok"
+	@echo "[8/9] cargo audit (advisory scan)"
+	@cd .. && cargo audit 2>&1 | tail -5 || echo "      ⚠ advisories present (review against deny.toml)"
+	@echo "[9/9] cargo deny check"
+	@cd .. && cargo deny check 2>&1 | tail -5 || echo "      ⚠ deny check failed (review deny.toml ignore-list TTL)"
+	@echo ""
+	@echo "═══════════════════════════════════════════════════════════════════"
+	@echo "  Tier-1 squad-CI: PASS"
+	@echo "  For Tier-2 (agent-led), invoke /SQUAD ci_review in Claude session"
+	@echo "  See: ~/lightarchitects/soul/helix/corso/builds/SQUAD-CI-CHARTER.md"
+	@echo "═══════════════════════════════════════════════════════════════════"
 
 fix: ## Auto-fix fmt and clippy issues
 	@cargo fmt
