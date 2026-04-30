@@ -42,6 +42,7 @@
     <textarea
       bind:value={task}
       {disabled}
+      data-testid="dispatch-task-input"
       placeholder="Describe the task for the squad… (⌘↩ to dispatch)"
       rows={4}
       class="w-full bg-[#0f172a] border rounded px-3 py-2 text-[11px] text-[#e2e8f0]
@@ -69,6 +70,7 @@
         type="checkbox"
         bind:checked={dry}
         {disabled}
+        data-testid="dispatch-dry-toggle"
         class="accent-[#f59e0b] w-3 h-3"
       />
       <span class="text-[10px] text-[#94a3b8]">Dry run</span>
@@ -78,6 +80,7 @@
     <button
       onclick={submit}
       disabled={!canSubmit}
+      data-testid="dispatch-submit"
       class="px-3 py-1 text-[10px] font-medium rounded transition-colors
              {canSubmit
                ? 'bg-[#3b82f6] text-white hover:bg-[#2563eb]'

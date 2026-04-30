@@ -43,6 +43,7 @@ test.describe('Comprehensive webshell E2E', () => {
         mode: 'full',
       },
     });
+    await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
     page = await context.newPage();
 
     // ---- Error capture ----
@@ -97,6 +98,8 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.afterAll(async () => {
     await page?.waitForTimeout(2000);
+    // Flush trace before closing context
+    try { await context?.tracing.stop({ path: 'test-results/webshell-e2e-trace.zip' }); } catch (e) { console.warn('[E2E] Tracing stop warning:', (e as Error).message); }
     // Close context first to flush HAR file (wrapped in try/catch for artifact race)
     try { await context?.close(); } catch (e) { console.warn('[E2E] Context close warning:', (e as Error).message); }
     try { await browser?.close(); } catch (e) { console.warn('[E2E] Browser close warning:', (e as Error).message); }
@@ -3615,6 +3618,134 @@ test.describe('Comprehensive webshell E2E', () => {
       const hasCTA = /open\s+copilot/i.test(text);
       // At least the CTA should be visible; copy is also expected
       expect(hasCTA || hasStrandCopy).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 40. Accessibility — WCAG 2.1 AA (axe-core)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('40. Accessibility (WCAG 2.1 AA)', () => {
+    test('Queue screen: no WCAG 2.1 AA violations', async () => {
+      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
+      const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa'])
+        .exclude('[data-testid="helix-canvas"]') // WebGL canvas — no ARIA role expected
+        .analyze();
+      if (results.violations.length > 0) {
+        console.warn('[E2E][a11y] Queue violations:', results.violations.map((v) => `${v.id}: ${v.description}`));
+      }
+      expect(results.violations).toHaveLength(0);
+    });
+
+    test('Activity screen: no WCAG 2.1 AA violations', async () => {
+      await page.evaluate(() => { window.location.hash = '#/activity'; });
+      await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
+      const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa'])
+        .exclude('[data-testid="helix-canvas"]')
+        .analyze();
+      if (results.violations.length > 0) {
+        console.warn('[E2E][a11y] Activity violations:', results.violations.map((v) => `${v.id}: ${v.description}`));
+      }
+      expect(results.violations).toHaveLength(0);
+    });
+
+    test('Sitrep screen: no WCAG 2.1 AA violations', async () => {
+      await page.evaluate(() => { window.location.hash = '#/sitrep'; });
+      await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
+      const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa'])
+        .exclude('[data-testid="helix-canvas"]')
+        .analyze();
+      if (results.violations.length > 0) {
+        console.warn('[E2E][a11y] Sitrep violations:', results.violations.map((v) => `${v.id}: ${v.description}`));
+      }
+      expect(results.violations).toHaveLength(0);
+    });
+
+    test('Intake screen: no WCAG 2.1 AA violations', async () => {
+      await page.evaluate(() => { window.location.hash = '#/intake'; });
+      await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
+      const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa'])
+        .exclude('[data-testid="helix-canvas"]')
+        .analyze();
+      if (results.violations.length > 0) {
+        console.warn('[E2E][a11y] Intake violations:', results.violations.map((v) => `${v.id}: ${v.description}`));
+      }
+      expect(results.violations).toHaveLength(0);
+    });
+
+    test('Squad Dispatch screen: no WCAG 2.1 AA violations', async () => {
+      await page.evaluate(() => { window.location.hash = '#/squad-dispatch'; });
+      await page.waitForFunction(
+        () => !!document.querySelector('[data-testid="dispatch-task-input"]'),
+        { timeout: 10_000 },
+      );
+      const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa'])
+        .exclude('[data-testid="helix-canvas"]')
+        .analyze();
+      if (results.violations.length > 0) {
+        console.warn('[E2E][a11y] Squad Dispatch violations:', results.violations.map((v) => `${v.id}: ${v.description}`));
+      }
+      expect(results.violations).toHaveLength(0);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 41. Visual regression — toHaveScreenshot baselines
+  //
+  // First run: snapshots are created in e2e/snapshots/.
+  // Subsequent runs: pixel-diff against baseline (threshold: 0.1%).
+  // Update baselines: npx playwright test --update-snapshots
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('41. Visual regression (screenshot baselines)', () => {
+    test('Queue screen baseline', async () => {
+      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
+      // Mask dynamic elements (timestamps, live counters) before diffing.
+      await expect(page).toHaveScreenshot('queue-screen.png', {
+        animations: 'disabled',
+        mask: [
+          page.locator('time'),
+          page.locator('[data-testid="helix-canvas"]'),
+        ],
+        maxDiffPixelRatio: 0.001,
+      });
+    });
+
+    test('Activity screen baseline', async () => {
+      await page.evaluate(() => { window.location.hash = '#/activity'; });
+      await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
+      await expect(page).toHaveScreenshot('activity-screen.png', {
+        animations: 'disabled',
+        mask: [
+          page.locator('time'),
+          page.locator('[data-testid="helix-canvas"]'),
+          page.locator('[data-testid="oscillator"]'),
+        ],
+        maxDiffPixelRatio: 0.001,
+      });
+    });
+
+    test('Squad Dispatch idle baseline', async () => {
+      await page.evaluate(() => { window.location.hash = '#/squad-dispatch'; });
+      await page.waitForFunction(
+        () => !!document.querySelector('[data-testid="dispatch-task-input"]'),
+        { timeout: 10_000 },
+      );
+      await expect(page).toHaveScreenshot('squad-dispatch-idle.png', {
+        animations: 'disabled',
+        mask: [
+          page.locator('time'),
+          page.locator('[data-testid="helix-canvas"]'),
+        ],
+        maxDiffPixelRatio: 0.001,
+      });
     });
   });
 

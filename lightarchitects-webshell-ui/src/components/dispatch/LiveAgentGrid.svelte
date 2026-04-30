@@ -55,7 +55,11 @@
       {@const live = agentStates.get(agent)}
       {@const lastMsg = live?.messages.at(-1)}
 
-      <div class="rounded border p-2 flex flex-col gap-1 {stateBg(live?.state)}">
+      <div
+        class="rounded border p-2 flex flex-col gap-1 {stateBg(live?.state)}"
+        data-testid="agent-card-{agent.toLowerCase()}"
+        data-agent-state={live?.state ?? 'pending'}
+      >
         <div class="flex items-center justify-between gap-1">
           <span class="text-[10px] font-medium" style="color: {color}">
             {DOMAIN_AGENT_LABELS[agent]}
