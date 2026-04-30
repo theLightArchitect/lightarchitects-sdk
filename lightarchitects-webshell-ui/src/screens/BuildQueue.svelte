@@ -88,7 +88,11 @@
   <header class="flex items-center justify-between flex-wrap gap-y-2 px-4 md:px-6 py-3 border-b border-[#1e293b]">
     <div class="flex items-center gap-3">
       <h1 class="text-lg font-semibold tracking-wide">Build Queue</h1>
-      <span class="text-xs text-[#64748b]">{$projectGroups.length} projects · {$buildStats.total} builds · {$buildStats.inProgress} active</span>
+      <span class="text-xs text-[#64748b]">
+        {$projectGroups.length} {$projectGroups.length === 1 ? 'project' : 'projects'}
+        ·
+        {$buildStats.total} {$buildStats.total === 1 ? 'build' : 'builds'}
+      </span>
     </div>
     <div class="flex items-center gap-3">
       <!-- View toggle -->
