@@ -24,6 +24,10 @@
   let validationErrors = $state<string[]>([]);
   let expandedPhase = $state<number | null>(null);
   let newItemText = $state('');
+  // True when the user has edited any phase since the last regenerate. We use
+  // it to gate destructive ops (TIER change, meta-skill change) so plan edits
+  // aren't silently discarded — see #58.
+  let phasesModified = $state(false);
 
   // Source type config
   const SOURCE_CONFIG: Record<IntakeSource, { label: string; icon: string; desc: string }> = {
@@ -55,9 +59,26 @@
     previewData = null;
   }
 
-  // Meta-skill selection
+  // Meta-skill selection. In plan mode, changing meta-skill regenerates the
+  // phase template — confirm first if the user has unsaved edits.
   function setMetaSkill(skill: MetaSkill) {
+    if ($planBuilderMode && phasesModified && !confirmDiscardPhases('meta-skill')) {
+      return;
+    }
     intakeForm.update(f => ({ ...f, metaSkill: skill }));
+    if ($planBuilderMode) {
+      planPhases = generateDefaultPlan(skill, planTier);
+      phasesModified = false;
+    }
+  }
+
+  // Show a confirm dialog when a destructive plan-template regen is about to
+  // run with unsaved phase edits. Returns true on confirm. (window.confirm is
+  // a placeholder — a proper modal is a v0.3.1 polish task.)
+  function confirmDiscardPhases(trigger: 'tier' | 'meta-skill'): boolean {
+    return window.confirm(
+      `Changing the ${trigger} will regenerate the phase template and discard your current edits.\n\nContinue?`,
+    );
   }
 
   // Priority selection
@@ -145,14 +166,12 @@
     planPhases = generateDefaultPlan(form.metaSkill, planTier);
     planCodename = generateCodename();
     planName = form.description || form.repoPath.split('/').pop() || 'New Build Plan';
+    phasesModified = false;
   }
 
-  // Re-generate when meta-skill changes in plan mode
-  $effect(() => {
-    if ($planBuilderMode) {
-      planPhases = generateDefaultPlan(form.metaSkill, planTier);
-    }
-  });
+  // NOTE: an earlier $effect regenerated planPhases on every meta-skill change,
+  // silently discarding user edits (#58). Regen now happens explicitly inside
+  // setMetaSkill + the TIER click handler, both gated by confirmDiscardPhases.
 
   function togglePhaseExpand(id: number) {
     expandedPhase = expandedPhase === id ? null : id;
@@ -164,12 +183,14 @@
       p.id === phaseId ? { ...p, items: [...(p.items ?? []), newItemText.trim()] } : p
     );
     newItemText = '';
+    phasesModified = true;
   }
 
   function removePhaseItem(phaseId: number, idx: number) {
     planPhases = planPhases.map(p =>
       p.id === phaseId ? { ...p, items: (p.items ?? []).filter((_, i) => i !== idx) } : p
     );
+    phasesModified = true;
   }
 
   function changeGateType(phaseId: number, gateType: GateType) {
@@ -184,6 +205,7 @@
         },
       };
     });
+    phasesModified = true;
   }
 
   function addCustomCriterion(phaseId: number, label: string, type: 'automated' | 'manual') {
@@ -198,6 +220,7 @@
         },
       };
     });
+    phasesModified = true;
   }
 
   function removeCriterion(phaseId: number, criterionId: string) {
@@ -211,6 +234,18 @@
         },
       };
     });
+    phasesModified = true;
+  }
+
+  // TIER change handler — gated by confirmDiscardPhases when phasesModified.
+  function setPlanTier(tier: BuildTier) {
+    if (tier === planTier) return;
+    if (phasesModified && !confirmDiscardPhases('tier')) {
+      return;
+    }
+    planTier = tier;
+    planPhases = generateDefaultPlan(form.metaSkill, tier);
+    phasesModified = false;
   }
 
   async function submitPlan() {
@@ -470,7 +505,7 @@
                 <button
                   class="px-2 py-0.5 text-[9px] rounded border transition-colors
                     {planTier === tier ? 'border-[#FFD700] bg-[#FFD700]/10 text-[#FFD700]' : 'border-[#1e293b] text-[#475569] hover:border-[#334155]'}"
-                  onclick={() => { planTier = tier; planPhases = generateDefaultPlan(form.metaSkill, tier); }}
+                  onclick={() => setPlanTier(tier)}
                 >
                   {tier} ({tier === 'SMALL' ? '4' : tier === 'MEDIUM' ? '6' : '7'})
                 </button>
