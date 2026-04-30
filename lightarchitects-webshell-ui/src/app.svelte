@@ -15,6 +15,7 @@
   import AuthBanner from './components/AuthBanner.svelte';
   import DiffPreview from './components/DiffPreview.svelte';
   import KeymapLegend from './components/KeymapLegend.svelte';
+  import HelixLegend from './components/HelixLegend.svelte';
   import {
     ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen,
     builds, currentBuildId, findings, logEntries, artifacts, conductorTasks, arenaStatus, alerts,
@@ -241,6 +242,7 @@
 <DiffPreview />
 <!-- Keymap legend modal — Cmd+/ toggles, Esc dismisses (#4). -->
 <KeymapLegend />
+<HelixLegend />
 <div class="w-screen h-screen overflow-hidden bg-[#0a0a0f] text-[#e2e8f0] font-['JetBrains_Mono',monospace]">
   <!-- Responsive container:
          <768  : flex-col       (vertical stack — single-column flow)
@@ -279,6 +281,13 @@
             class="px-2 py-1 text-[11px] text-[#475569] hover:text-[#FFD700] transition-colors"
             data-testid="helix-toggle"
           >{showHelix ? 'Hide 3D View' : 'Show 3D View'}</button>
+          <button
+            onclick={() => { window.dispatchEvent(new CustomEvent('la:toggle-helix-legend')); }}
+            class="px-1.5 py-1 text-[11px] text-[#334155] hover:text-[#f0c040] transition-colors rounded"
+            aria-label="What is the Helix?"
+            data-testid="helix-legend-trigger"
+            title="What is the Helix?"
+          >?</button>
         </div>
       </nav>
 

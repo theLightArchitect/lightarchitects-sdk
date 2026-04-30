@@ -3617,6 +3617,73 @@ test.describe('Comprehensive webshell E2E', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // 71. HelixLegend — ? button + entity/pillar color map (#39)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('71. HelixLegend — ? button + entity/pillar color map (#39)', () => {
+    test('helix-legend-trigger button is present in nav', async () => {
+      const btn = page.locator('[data-testid="helix-legend-trigger"]');
+      await expect(btn).toBeVisible({ timeout: 2000 });
+    });
+
+    test('clicking ? trigger opens the helix legend modal', async () => {
+      const btn = page.locator('[data-testid="helix-legend-trigger"]');
+      if (!await btn.count()) { test.skip(); return; }
+      await btn.click();
+      await page.waitForTimeout(200);
+      const modal = page.locator('[data-testid="helix-legend"]');
+      await expect(modal).toBeVisible({ timeout: 1500 });
+      await expect(modal).toHaveAttribute('role', 'dialog');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(150);
+    });
+
+    test('la:open-helix-legend event opens the modal', async () => {
+      await page.evaluate(() => { window.dispatchEvent(new CustomEvent('la:open-helix-legend')); });
+      await page.waitForTimeout(200);
+      const modal = page.locator('[data-testid="helix-legend"]');
+      await expect(modal).toBeVisible({ timeout: 1500 });
+      await page.evaluate(() => { window.dispatchEvent(new CustomEvent('la:close-helix-legend')); });
+      await page.waitForTimeout(150);
+    });
+
+    test('modal lists agent strand names', async () => {
+      await page.evaluate(() => { window.dispatchEvent(new CustomEvent('la:open-helix-legend')); });
+      await page.waitForTimeout(200);
+      const modal = page.locator('[data-testid="helix-legend"]');
+      await expect(modal).toBeVisible({ timeout: 1500 });
+      const text = await modal.textContent() ?? '';
+      expect(text).toMatch(/SOUL/i);
+      expect(text).toMatch(/CORSO/i);
+      expect(text).toMatch(/AYIN/i);
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(150);
+    });
+
+    test('modal lists LASDLC pillars', async () => {
+      await page.evaluate(() => { window.dispatchEvent(new CustomEvent('la:open-helix-legend')); });
+      await page.waitForTimeout(200);
+      const modal = page.locator('[data-testid="helix-legend"]');
+      await expect(modal).toBeVisible({ timeout: 1500 });
+      const text = await modal.textContent() ?? '';
+      expect(text).toMatch(/Architecture/i);
+      expect(text).toMatch(/Security/i);
+      expect(text).toMatch(/Operations/i);
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(150);
+    });
+
+    test('Esc closes the helix legend', async () => {
+      await page.evaluate(() => { window.dispatchEvent(new CustomEvent('la:open-helix-legend')); });
+      await page.waitForTimeout(200);
+      await expect(page.locator('[data-testid="helix-legend"]')).toBeVisible({ timeout: 1500 });
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+      expect(await page.locator('[data-testid="helix-legend"]').count()).toBe(0);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // 66. KeymapLegend — Cmd+/ (#4)
   // ═══════════════════════════════════════════════════════════════════════════
 
