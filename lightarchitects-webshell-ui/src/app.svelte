@@ -14,6 +14,7 @@
   import Tooltip from './components/Tooltip.svelte';
   import AuthBanner from './components/AuthBanner.svelte';
   import DiffPreview from './components/DiffPreview.svelte';
+  import KeymapLegend from './components/KeymapLegend.svelte';
   import {
     ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen,
     builds, currentBuildId, findings, logEntries, artifacts, conductorTasks, arenaStatus, alerts,
@@ -175,11 +176,17 @@
     // restores it — this guard catches accidental closes / nav-aways.
     window.addEventListener('beforeunload', beforeUnloadGuard);
 
-    // Cmd/Ctrl+K → Squad Dispatch (global hotkey, C3).
+    // Global hotkeys.
+    //   Cmd/Ctrl+K → Squad Dispatch (#32 / fc0d27e — power-user shortcut).
+    //   Cmd/Ctrl+/ → toggle KeymapLegend (#4 — discoverability surface).
     function handleGlobalKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key === 'k') {
         e.preventDefault();
         navigate('/squad-dispatch');
+      } else if (e.key === '/') {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('la:toggle-keymap-legend'));
       }
     }
     window.addEventListener('keydown', handleGlobalKey);
@@ -232,6 +239,8 @@
      Listens for `la:fs-mutation-pending` events; backend interception layer
      follows once mantis Phase 3 rebases on main (filed per #88-#92). -->
 <DiffPreview />
+<!-- Keymap legend modal — Cmd+/ toggles, Esc dismisses (#4). -->
+<KeymapLegend />
 <div class="w-screen h-screen overflow-hidden bg-[#0a0a0f] text-[#e2e8f0] font-['JetBrains_Mono',monospace]">
   <!-- Responsive container:
          <768  : flex-col       (vertical stack — single-column flow)
