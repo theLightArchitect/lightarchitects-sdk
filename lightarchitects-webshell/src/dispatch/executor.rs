@@ -10,13 +10,13 @@
 //! 3. Enforces DRY-RUN by checking `dry` before any write-capable path
 //!    (HIGH H-9).
 //!
-//! # Phase note
+//! # TeamManager
 //!
-//! The `lightarchitects-cli` `TeamManager` integration is out of scope until
-//! Phase 3 Wave 3 B2 completion and the path-dep wiring is resolved.  This
-//! executor provides the full API contract and event semantics; the actual
-//! `TeamManager` call-site is marked with `TODO(team-manager)` for the
-//! integration wave.
+//! Full `TeamManager` lifecycle tracking is gated behind the `team-manager`
+//! Cargo feature, which requires publishing `laex0` to crates.io or a
+//! documented workspace-rule exception (SDK CLAUDE.md: "No External Path Deps").
+//! The real subprocess path (`dry = false`) is already wired — agents spawn
+//! `claude --print -p` via `tokio::process::Command` regardless of feature flag.
 
 use std::sync::Arc;
 
@@ -140,7 +140,7 @@ pub async fn execute(
     Ok(())
 }
 
-/// Drive all agents to completion, broadcasting state transitions.
+/// Drive all agents to completion concurrently, broadcasting state transitions.
 #[tracing::instrument(skip(task, tx, registry, _mode), fields(dispatch_id = %id))]
 async fn run_agents(
     task: String,
@@ -153,8 +153,8 @@ async fn run_agents(
 ) {
     let started = std::time::Instant::now();
 
+    // Emit Running for all agents synchronously before spawning, preserving event order.
     for agent in &agents {
-        // Transition → Running.
         let _ = tx.send(DispatchEvent::PerAgentState {
             agent: *agent,
             state: AgentState::Running,
@@ -165,11 +165,19 @@ async fn run_agents(
                 task.chars().take(40).collect::<String>()
             )),
         });
+    }
 
-        // TODO(team-manager): replace simulated work with TeamManager::spawn_teammate.
-        // The actual integration requires the laex0 path-dep (C-1).
-        // For now, signal the agent is complete after acknowledging the task.
-        spawn_teammate_stub(*agent, &task, dry, &tx).await;
+    // Spawn all agent tasks concurrently via JoinSet (not sequential loop).
+    let mut set: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
+    for &agent in &agents {
+        let tx_c = tx.clone();
+        let task_c = task.clone();
+        set.spawn(spawn_teammate(agent, task_c, dry, tx_c));
+    }
+    while let Some(result) = set.join_next().await {
+        if let Err(e) = result {
+            tracing::warn!(error = %e, "agent task panicked");
+        }
     }
 
     // SAFE: u64 holds ~584 million years of milliseconds; no dispatch runs that long.
@@ -186,40 +194,119 @@ async fn run_agents(
     reg.remove(&id);
 }
 
-/// Stub implementation of teammate spawning.
+/// Spawn a single domain agent teammate and broadcast events.
 ///
-/// Sends a `MailboxMessage` and then transitions the agent to `Complete`.
+/// - `dry = true`: 10ms simulation — no external calls, no API usage.
+/// - `dry = false`: spawns `claude --print -p "[agent] task"` as a subprocess,
+///   streams stdout line-by-line as `MailboxMessage` events, applies a 5-minute
+///   timeout. The process is resolved via PATH; if not found, emits `Failed`.
 ///
-/// # TODO(team-manager)
+/// # Permission model (H-9)
 ///
-/// Replace with `TeamManager::spawn_teammate` once the `laex0` path-dep (C-1)
-/// is wired into `lightarchitects-webshell/Cargo.toml`.  The permission model
-/// (H-9) will be enforced by injecting a `ToolPermissionToken` with
-/// `write_allowed = agent.may_write() && !dry`.
-#[tracing::instrument(skip(tx, _task), fields(agent = %agent))]
-async fn spawn_teammate_stub(
+/// Write-capable paths are only reached when `dry = false`.  Future
+/// `TeamManager` lifecycle tracking (register_member / set_handle / mark_done)
+/// is gated behind the `team-manager` Cargo feature.
+#[tracing::instrument(skip(tx, task), fields(agent = %agent))]
+async fn spawn_teammate(
     agent: DomainAgent,
-    _task: &str,
+    task: String,
     dry: bool,
-    tx: &broadcast::Sender<DispatchEvent>,
+    tx: broadcast::Sender<DispatchEvent>,
 ) {
-    let _ = tx.send(DispatchEvent::MailboxMessage {
-        agent,
-        text: format!(
-            "{} acknowledged task{}.",
+    if dry {
+        let _ = tx.send(DispatchEvent::MailboxMessage {
             agent,
-            if dry { " (dry-run)" } else { "" }
-        ),
-    });
+            text: format!("{agent} acknowledged task (dry-run)."),
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        let _ = tx.send(DispatchEvent::PerAgentState {
+            agent,
+            state: AgentState::Complete,
+            message: None,
+        });
+        return;
+    }
 
-    // Simulate work — replaced by real agent execution in Wave 3 B2.
-    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    // Real subprocess path.
+    let Some(claude_path) = which_claude() else {
+        tracing::warn!(%agent, "claude binary not found on PATH");
+        let _ = tx.send(DispatchEvent::PerAgentState {
+            agent,
+            state: AgentState::Failed,
+            message: Some("claude binary not found — ensure it is on PATH".to_owned()),
+        });
+        return;
+    };
 
-    let _ = tx.send(DispatchEvent::PerAgentState {
-        agent,
-        state: AgentState::Complete,
-        message: None,
-    });
+    let prompt = format!("[{agent}] {task}");
+    let mut child = match tokio::process::Command::new(&claude_path)
+        .args(["--print", "-p", &prompt])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = tx.send(DispatchEvent::PerAgentState {
+                agent,
+                state: AgentState::Failed,
+                message: Some(format!("spawn failed: {e}")),
+            });
+            return;
+        }
+    };
+
+    // Stream stdout as mailbox messages.
+    if let Some(stdout) = child.stdout.take() {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let mut lines = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if !line.trim().is_empty() {
+                let _ = tx.send(DispatchEvent::MailboxMessage { agent, text: line });
+            }
+        }
+    }
+
+    // Apply 5-minute hard timeout; kill on expiry.
+    match tokio::time::timeout(std::time::Duration::from_secs(300), child.wait()).await {
+        Ok(Ok(status)) if status.success() => {
+            let _ = tx.send(DispatchEvent::PerAgentState {
+                agent,
+                state: AgentState::Complete,
+                message: None,
+            });
+        }
+        Ok(Ok(status)) => {
+            let _ = tx.send(DispatchEvent::PerAgentState {
+                agent,
+                state: AgentState::Failed,
+                message: Some(format!("exited with {status}")),
+            });
+        }
+        Ok(Err(e)) => {
+            let _ = tx.send(DispatchEvent::PerAgentState {
+                agent,
+                state: AgentState::Failed,
+                message: Some(format!("wait error: {e}")),
+            });
+        }
+        Err(_elapsed) => {
+            let _ = child.kill().await;
+            let _ = tx.send(DispatchEvent::PerAgentState {
+                agent,
+                state: AgentState::Failed,
+                message: Some("agent timed out after 5 minutes".to_owned()),
+            });
+        }
+    }
+}
+
+/// Resolve the `claude` binary path via `PATH`.
+fn which_claude() -> Option<std::path::PathBuf> {
+    let path_var = std::env::var_os("PATH").unwrap_or_default();
+    std::env::split_paths(&path_var)
+        .map(|dir| dir.join("claude"))
+        .find(|p| p.exists())
 }
 
 /// Cancel an active dispatch.

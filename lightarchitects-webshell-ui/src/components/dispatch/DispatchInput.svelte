@@ -37,7 +37,7 @@
   }
 </script>
 
-<div class="flex flex-col gap-2">
+<div class="flex flex-col gap-2" data-testid="dispatch-input">
   <div class="relative">
     <textarea
       bind:value={task}

@@ -90,6 +90,7 @@
 <div
   bind:this={scrollEl}
   onscroll={handleScroll}
+  data-testid="mailbox-stream"
   class="h-full overflow-y-auto font-mono text-[9px] leading-relaxed space-y-0.5
          scrollbar-thin scrollbar-thumb-[#1e293b]"
 >

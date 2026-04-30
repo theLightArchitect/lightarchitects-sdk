@@ -249,7 +249,7 @@
     </div>
 
     {#if isLive || isTerminalPhase}
-      <div class="px-3 py-2 border-b border-[#0f172a]">
+      <div class="px-3 py-2 border-b border-[#0f172a]" data-testid="task-dag-toggle">
         <div class="flex items-center justify-between mb-1">
           <span class="text-[9px] text-[#475569] uppercase tracking-wider">Pipeline</span>
         </div>
