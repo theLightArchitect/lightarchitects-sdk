@@ -17,12 +17,16 @@ import type {
   TrainingConfig, TrainingRun, ScoringDimension,
 } from './types';
 import { SiblingWave, SIBLINGS, PILLARS } from './types';
+import { DEFAULT_SKIN, type HelixSkin } from './helix-skin';
 
 // --- Connection status ---
 export const ayinStatus = writable<'connected' | 'reconnecting' | 'offline'>('reconnecting');
 
 // --- Auth status — set by SSE on 401/403; drives AuthBanner (#13) ---
 export const authStatus = writable<'ok' | 'unauthorized' | 'forbidden'>('ok');
+
+// --- Helix skin (3D visual customization, persisted via setup/save) ---
+export const activeSkin = writable<HelixSkin>(DEFAULT_SKIN);
 
 // --- Drawer layout offset (px) — updated by CopilotDrawer so layout can compensate ---
 export const drawerHeightPx = writable<number>(32);

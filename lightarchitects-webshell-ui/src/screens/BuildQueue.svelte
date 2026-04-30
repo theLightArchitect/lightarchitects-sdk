@@ -239,8 +239,8 @@
             <!-- Row 3: Siblings + status -->
             <div class="flex items-center justify-between text-[9px]">
               <div class="flex items-center gap-0.5">
-                {#if build.siblings && build.siblings.length > 0}
-                  {#each build.siblings.slice(0, 3) as sib}
+                {#if (build.siblings?.length ?? 0) > 0}
+                  {#each (build.siblings ?? []).slice(0, 3) as sib}
                     <span
                       class="px-1 py-0 rounded font-mono uppercase"
                       style="color: {SIBLING_COLORS[sib] ?? '#8B5CF6'}; opacity: 0.8"
@@ -248,13 +248,13 @@
                       {sib.slice(0, 2)}
                     </span>
                   {/each}
-                  {#if build.siblings.length > 3}
-                    <span class="text-[#475569]">+{build.siblings.length - 3}</span>
+                  {#if (build.siblings?.length ?? 0) > 3}
+                    <span class="text-[#475569]">+{(build.siblings?.length ?? 0) - 3}</span>
                   {/if}
                 {/if}
               </div>
-              {#if build.blockedBy && build.blockedBy.length > 0}
-                <span class="text-[#ef4444] truncate max-w-[120px]" title="blocked by: {build.blockedBy.join(', ')}">
+              {#if (build.blockedBy?.length ?? 0) > 0}
+                <span class="text-[#ef4444] truncate max-w-[120px]" title="blocked by: {(build.blockedBy ?? []).join(', ')}">
                   blocked
                 </span>
               {:else}

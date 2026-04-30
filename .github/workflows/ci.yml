@@ -1,9 +1,10 @@
 name: CI
+# DISABLED 2026-04-30 per user directive ("don't let github CI be an option anymore").
+# Triggered manually only; no automatic runs.
+# Source of truth is now LOCAL: make quality + LA squad agents.
+# To re-enable: restore push/pull_request triggers AFTER billing + branch-protection alternatives ready.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 # Cancel in-progress runs on the same branch — prevents duplicate billing
 # when pushing multiple commits quickly
