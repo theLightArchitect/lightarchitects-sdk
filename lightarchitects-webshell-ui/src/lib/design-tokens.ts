@@ -12,11 +12,26 @@ export type SiblingId = typeof SIBLINGS[number];
 export const SIBLING_COLORS: Record<string, string> = {
   soul:    '#f0c040',  // gold
   eva:     '#FF6B9D',  // soft pink
-  corso:   '#4ECDC4',  // teal
-  quantum: '#96CEB4',  // sage
+  corso:   '#00BFFF',  // blue (was #4ECDC4 teal — aligned to roadmap palette)
+  quantum: '#B44AFF',  // purple (was #96CEB4 sage — aligned to roadmap palette)
   seraph:  '#FFEAA7',  // cream
   larc:    '#F59E0B',  // amber
   ayin:    '#FF6D00',  // orange
+};
+
+// --- Domain agent colors (Squad Dispatch UI — public surface, vocabulary canon) ---
+// Maps capability domains used on public-facing dispatch surfaces.
+// Hues intentionally echo SIBLING_COLORS so the two palettes feel related.
+export const DOMAIN_AGENT_COLORS: Record<string, string> = {
+  engineer:     '#00BFFF',  // blue   — mirrors corso  (aegis canonical; was teal pre-90fdfae)
+  quality:      '#B44AFF',  // purple — mirrors quantum (aegis canonical; was sage pre-90fdfae)
+  security:     '#FFEAA7',  // cream  — mirrors seraph
+  ops:          '#FF6D00',  // orange — mirrors ayin
+  researcher:   '#A78BFA',  // violet — distinct
+  knowledge:    '#f0c040',  // gold   — mirrors soul
+  performance:  '#60A5FA',  // blue   — distinct
+  testing:      '#34D399',  // emerald — distinct
+  documentation: '#94A3B8', // slate  — distinct
 };
 
 // --- Tier colors ---

@@ -11,12 +11,16 @@
   import HelixTooltip from './components/HelixTooltip.svelte';
   import HelixDetailPanel from './components/HelixDetailPanel.svelte';
   import ScrumReport from './components/ScrumReport.svelte';
+  import Tooltip from './components/Tooltip.svelte';
+  import AuthBanner from './components/AuthBanner.svelte';
   import {
     ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen,
     builds, currentBuildId, findings, logEntries, artifacts, conductorTasks, arenaStatus, alerts,
     activePlan, latestScrumReport, hotMemory, coldMemory, activeHelixNode, selectedPillar,
     expandedFindings, supervisorAlerts, siblingHealth, copilotMessages,
+    intakeFormDirty,
   } from '$lib/stores';
+  import { get } from 'svelte/store';
   import { setupComplete, step, loadSetupInfo, selectedBackend, selectedModel, selectedAgent } from '$lib/setup';
   import { connectGlobalSSE, disconnectGlobalSSE } from '$lib/sse';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
@@ -39,6 +43,7 @@
     Intake:        () => import('./screens/Intake.svelte'),
     Sitrep:        () => import('./screens/Sitrep.svelte'),
     ProjectDetail: () => import('./screens/ProjectDetail.svelte'),
+    SquadDispatch: () => import('./screens/SquadDispatch.svelte'),
   };
 
   type ScreenModule = { default: any };
@@ -52,6 +57,7 @@
     if (path === '/intake') return 'Intake';
     if (path === '/sitrep') return 'Sitrep';
     if (path.startsWith('/project/')) return 'ProjectDetail';
+    if (path === '/squad-dispatch') return 'SquadDispatch';
     return 'BuildQueue';
   }
 
@@ -104,11 +110,16 @@
   // Derived condition for setup gate — explicit dependency tracking in Svelte 5
   const setupDone = $derived($setupComplete && $step === 'done');
 
+  // Tab order optimised for read-before-write (#32): operators land on
+  // Activity (live state), then can scan Sitrep (squad health) or Queue
+  // (existing builds) before reaching Intake (new build — write action).
+  // Squad Dispatch appended last — a power-user action (Cmd+K shortcut).
   const NAV_ITEMS = [
-    { label: 'Activity', hash: '/activity' },
-    { label: 'Queue',    hash: '/'         },
-    { label: 'Intake',   hash: '/intake'   },
-    { label: 'Sitrep',   hash: '/sitrep'   },
+    { label: 'Activity', hash: '/activity',      hint: 'Live trace events from running agents' },
+    { label: 'Sitrep',   hash: '/sitrep',         hint: 'Squad health snapshot — agent status, alerts, uptime' },
+    { label: 'Queue',    hash: '/',               hint: 'All builds — past, in-flight, and queued' },
+    { label: 'Intake',   hash: '/intake',         hint: 'Start a new build (Quick or Plan mode)' },
+    { label: 'Squad',    hash: '/squad-dispatch', hint: 'Dispatch agents by domain — Engineer, Security, Researcher, Ops (Cmd+K)' },
   ];
 
   function navigate(hash: string) {
@@ -156,6 +167,20 @@
     connectGlobalSSE(); // Phase 10.9 — global helix_entry / soul_promotion / strand_activation stream
     window.addEventListener('hashchange', handleHashChange);
 
+    // Warn the operator before unload if they have unsaved Intake form data.
+    // The draft is also auto-persisted to localStorage (#15), so refresh
+    // restores it — this guard catches accidental closes / nav-aways.
+    window.addEventListener('beforeunload', beforeUnloadGuard);
+
+    // Cmd/Ctrl+K → Squad Dispatch (global hotkey, C3).
+    function handleGlobalKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        navigate('/squad-dispatch');
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKey);
+
     // Subscribe to persisted stores. .subscribe() fires synchronously with
     // the current value — the `initialized` flag ensures we skip those AND
     // skip the writes from initializeStores() → loadPersistedSettings() →
@@ -180,13 +205,26 @@
       settingsUnsubs.forEach(fn => fn());
       window.removeEventListener('hashchange', handleHashChange);
       window.removeEventListener('resize', syncViewport);
+      window.removeEventListener('beforeunload', beforeUnloadGuard);
+      window.removeEventListener('keydown', handleGlobalKey);
     };
   });
+
+  // Module-scope so the listener identity stays stable across mount/unmount.
+  function beforeUnloadGuard(event: BeforeUnloadEvent) {
+    if (!get(intakeFormDirty)) return;
+    // Browsers ignore custom strings since 2018 (Chrome 51+, Firefox 44+) and
+    // show their own dialog. We just need preventDefault + returnValue set.
+    event.preventDefault();
+    event.returnValue = '';
+  }
 </script>
 
 {#if !setupDone}
   <SetupFlow />
 {:else}
+<!-- Auth banner — top-of-screen affordance on 401/403 from SSE (#13). -->
+<AuthBanner />
 <div class="w-screen h-screen overflow-hidden bg-[#0a0a0f] text-[#e2e8f0] font-['JetBrains_Mono',monospace]">
   <!-- Responsive container:
          <768  : flex-col       (vertical stack — single-column flow)
@@ -200,18 +238,22 @@
       <!-- Top navigation strip -->
       <nav class="flex items-center gap-1 px-3 py-1.5 border-b border-[#1e293b] bg-[#0a0a0f] shrink-0 overflow-x-auto">
         {#each NAV_ITEMS as item}
-          <button
-            onclick={() => navigate(item.hash)}
-            class="shrink-0 px-3 py-1 text-[11px] rounded transition-all {isActive(item.hash) ? 'bg-[#FFD700]/15 text-[#FFD700] shadow-[0_0_8px_rgba(255,215,0,0.2)] border border-[#FFD700]/30' : 'text-[#475569] hover:text-[#FFD700] border border-transparent'}"
-          >{item.label}</button>
+          <Tooltip content={item.hint} side="bottom">
+            <button
+              onclick={() => navigate(item.hash)}
+              class="shrink-0 px-3 py-1 text-[11px] rounded transition-all {isActive(item.hash) ? 'bg-[#FFD700]/15 text-[#FFD700] shadow-[0_0_8px_rgba(255,215,0,0.2)] border border-[#FFD700]/30' : 'text-[#475569] hover:text-[#FFD700] border border-transparent'}"
+            >{item.label}</button>
+          </Tooltip>
         {/each}
         <div class="ml-auto shrink-0 flex items-center gap-2">
-          <button
-            onclick={() => memoryDrawerOpen.update(v => !v)}
-            class="px-2 py-1 text-[11px] text-[#475569] hover:text-[#FFD700] transition-colors"
-            title="Memory drawer (Cmd+M)"
-            data-testid="memory-toggle"
-          >{$memoryDrawerOpen ? 'Close Memory' : 'Memory'}</button>
+          <Tooltip content="Hot · Cold · Convergences — what each agent remembers (Cmd+M)" side="bottom">
+            <button
+              onclick={() => memoryDrawerOpen.update(v => !v)}
+              class="px-2 py-1 text-[11px] text-[#475569] hover:text-[#FFD700] transition-colors"
+              title="Memory drawer (Cmd+M)"
+              data-testid="memory-toggle"
+            >{$memoryDrawerOpen ? 'Close Memory' : 'Memory'}</button>
+          </Tooltip>
           <!-- 3D View toggle — visible at every viewport.
                Desktop (>=1024): toggles the inline right-hand panel.
                Tablet/mobile  : toggles a full-screen overlay so the WebGL

@@ -21,6 +21,9 @@ import { SiblingWave, SIBLINGS, PILLARS } from './types';
 // --- Connection status ---
 export const ayinStatus = writable<'connected' | 'reconnecting' | 'offline'>('reconnecting');
 
+// --- Auth status — set by SSE on 401/403; drives AuthBanner (#13) ---
+export const authStatus = writable<'ok' | 'unauthorized' | 'forbidden'>('ok');
+
 // --- Drawer layout offset (px) — updated by CopilotDrawer so layout can compensate ---
 export const drawerHeightPx = writable<number>(32);
 
@@ -397,13 +400,49 @@ export const META_SKILL_CARDS: MetaSkillCard[] = Object.entries(PILLAR_ACTIONS_T
 }));
 
 // --- Intake form state ---
-export const intakeForm = writable<BuildRequest>({
+const INTAKE_FORM_DEFAULT: BuildRequest = {
   metaSkill: '/BUILD',
   source: 'manual',
   priority: 'medium',
   repoPath: '',
   description: '',
-});
+};
+const INTAKE_DRAFT_KEY = 'la.intake.draft';
+
+function isIntakeFormEmpty(f: BuildRequest): boolean {
+  return (f.repoPath ?? '').trim() === '' && (f.description ?? '').trim() === '';
+}
+
+function loadIntakeDraft(): BuildRequest {
+  if (typeof localStorage === 'undefined') return INTAKE_FORM_DEFAULT;
+  try {
+    const stored = localStorage.getItem(INTAKE_DRAFT_KEY);
+    if (!stored) return INTAKE_FORM_DEFAULT;
+    const parsed = JSON.parse(stored) as Partial<BuildRequest>;
+    return { ...INTAKE_FORM_DEFAULT, ...parsed };
+  } catch {
+    return INTAKE_FORM_DEFAULT;
+  }
+}
+
+export const intakeForm = writable<BuildRequest>(loadIntakeDraft());
+
+if (typeof localStorage !== 'undefined') {
+  intakeForm.subscribe(form => {
+    try {
+      if (isIntakeFormEmpty(form)) {
+        localStorage.removeItem(INTAKE_DRAFT_KEY);
+      } else {
+        localStorage.setItem(INTAKE_DRAFT_KEY, JSON.stringify(form));
+      }
+    } catch {
+      /* localStorage write failed — draft is in-memory only */
+    }
+  });
+}
+
+/** True when intakeForm has user-typed content; drives beforeunload guard (#15). */
+export const intakeFormDirty = derived(intakeForm, $f => !isIntakeFormEmpty($f));
 
 // --- Plan Builder state (Phase 25) ---
 /** Toggle between quick build and plan builder mode in Intake */
