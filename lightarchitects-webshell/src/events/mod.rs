@@ -22,7 +22,8 @@ pub mod builds_handler;
 pub mod control;
 pub mod helix_watcher;
 pub mod notify;
-pub mod soul_routes;
+pub mod soul; // task #51 split target — see events/soul/mod.rs
+pub mod soul_routes; // shim during partial-split window; re-exports from soul::*
 pub mod sse_handler;
 pub mod strand;
 pub mod types;

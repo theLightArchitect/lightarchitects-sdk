@@ -19,8 +19,6 @@
 /// Arena — autonomous multi-agent research platform (HTTP + scheduler + heartbeats).
 #[allow(unused, missing_docs, clippy::pedantic)]
 pub mod arena;
-/// Build-time version metadata (CARGO_PKG_VERSION + git-sha + build-date).
-pub mod version;
 /// Messaging channels — Discord webhooks, Telegram bot, Discord gateway.
 #[allow(unused, missing_docs, clippy::pedantic)]
 pub mod channels;
@@ -47,3 +45,5 @@ pub mod server;
 /// all sibling calls go through in-process handlers.
 #[cfg(feature = "spawner")]
 pub mod spawner;
+/// Build-time version metadata (CARGO_PKG_VERSION + git-sha + build-date).
+pub mod version;
