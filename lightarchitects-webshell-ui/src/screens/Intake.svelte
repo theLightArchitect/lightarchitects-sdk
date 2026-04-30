@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { intakeForm, META_SKILL_CARDS, builds, planBuilderMode, planBuilderDraft } from '$lib/stores';
   import { getMetaSkillPolytope, getMetaSkillColor, SIBLING_COLORS } from '$lib/design-tokens';
   import { api } from '$lib/api';
@@ -6,9 +7,21 @@
   import { generateDefaultPlan, generatePreFlight, generateCloseOut, generateAgenticConfig, suggestDomainGates, DEFAULT_GATE_CRITERIA } from '$lib/plan-templates';
   import { generateCodename } from '$lib/codename';
   import { validateBuildPlan } from '$lib/build-plan-schema';
+  import { runTutorial, consumeOnboardingParam } from '$lib/tutorial';
   import PolytopeIcon from '$lib/../components/PolytopeIcon.svelte';
   import PolytopeDecor from '$lib/../components/PolytopeDecor.svelte';
   import PhaseTimeline from '$lib/../components/PhaseTimeline.svelte';
+
+  // Tutorial T1 — auto-fires on first visit; re-trigger via ?onboarding=t1.
+  // Runs after a tick so the DOM is settled and Shepherd can attach to the
+  // [data-onboarding="..."] target elements.
+  onMount(() => {
+    const forced = consumeOnboardingParam();
+    setTimeout(() => {
+      if (forced === 't1') runTutorial('t1', true);
+      else runTutorial('t1');
+    }, 250);
+  });
 
   let form = $derived($intakeForm);
   let submitting = $state(false);
@@ -352,7 +365,7 @@
     <h1 class="text-lg font-semibold">New Build</h1>
     <span class="text-xs text-[#64748b]">Intake</span>
     <!-- Plan Builder mode toggle -->
-    <div class="ml-auto flex items-center gap-2">
+    <div class="ml-auto flex items-center gap-2" data-onboarding="intake-mode-toggle">
       <button
         class="px-3 py-1 text-[10px] rounded transition-colors
           {!isPlanMode ? 'bg-[#FFD700]/15 text-[#FFD700] border border-[#FFD700]/30' : 'text-[#475569] border border-transparent hover:text-[#FFD700]'}"
@@ -372,7 +385,7 @@
       <div class="lg:col-span-2 space-y-6">
 
         <!-- Source selection -->
-        <div>
+        <div data-onboarding="intake-source">
           <h2 class="text-xs font-medium text-[#64748b] mb-3">SOURCE</h2>
           <div class="grid grid-cols-4 gap-2">
             {#each Object.entries(SOURCE_CONFIG) as [key, cfg]}
@@ -442,7 +455,7 @@
         </div>
 
         <!-- Meta-skill selection -->
-        <div>
+        <div data-onboarding="intake-meta-skill">
           <h2 class="text-xs font-medium text-[#64748b] mb-3">META-SKILL</h2>
           <div class="grid grid-cols-3 gap-2">
             {#each META_SKILL_CARDS as card (card.skill)}
@@ -739,6 +752,7 @@
 
         <!-- Submit -->
         <button
+          data-onboarding="intake-submit"
           class="w-full px-6 py-3 bg-[#FFD700] text-white text-sm rounded-lg hover:bg-[#D4A017] transition-colors font-medium disabled:opacity-50"
           onclick={isPlanMode ? submitPlan : submit}
           disabled={submitting}

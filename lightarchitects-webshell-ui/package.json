@@ -24,6 +24,7 @@
     "dompurify": "^3.4.0",
     "lucide-svelte": "^0.487.0",
     "marked": "^15.0.0",
+    "shepherd.js": "^15.2.2",
     "svelte": "^5.0.0",
     "svelte-routing": "^2.0.0",
     "tailwind-merge": "^3.2.0",
