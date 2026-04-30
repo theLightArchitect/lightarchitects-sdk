@@ -28,7 +28,7 @@ use axum::{
     response::IntoResponse,
 };
 use serde_json::Value;
-use tracing::debug;
+use tracing::{debug, warn};
 use uuid::Uuid;
 
 use crate::{auth, events::WebEvent, server::AppState};
@@ -55,14 +55,34 @@ pub async fn notify_handler(
 
     // Extract the notify-token header. Missing header is a flat 401 so an
     // attacker cannot probe for the existence of the header name itself.
+    //
+    // SEC-5: log auth failures so silent probes are observable. Only safe
+    // fields are logged — the raw token, the expected token, and the header
+    // value never appear in logs, only the header length (which leaks
+    // nothing useful to an attacker who already chose it).
     let Some(provided) = headers
         .get(NOTIFY_TOKEN_HEADER)
         .and_then(|v| v.to_str().ok())
     else {
+        warn!(
+            target: "auth",
+            event = "notify_auth_failure",
+            reason = "missing_header",
+            build_id = %build_id,
+            "rejected gateway notify with no X-LA-Notify-Token header",
+        );
         return StatusCode::UNAUTHORIZED.into_response();
     };
 
     if !auth::validate_notify_token(provided, &session.notify_token) {
+        warn!(
+            target: "auth",
+            event = "notify_auth_failure",
+            reason = "invalid_token",
+            build_id = %build_id,
+            header_length = provided.len(),
+            "rejected gateway notify with invalid X-LA-Notify-Token (token value not logged)",
+        );
         return StatusCode::UNAUTHORIZED.into_response();
     }
 
