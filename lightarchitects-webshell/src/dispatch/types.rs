@@ -195,6 +195,12 @@ pub enum DispatchEvent {
         state: AgentState,
         /// Optional human-readable message.
         message: Option<String>,
+        /// Files touched by this agent so far (populated by `TeamManager` when available).
+        files_touched: Option<u32>,
+        /// Approximate input + output tokens consumed (populated when available).
+        token_count: Option<u32>,
+        /// Milliseconds since this agent's task started (populated on terminal transitions).
+        elapsed_ms: Option<u64>,
     },
     /// A chat message from an agent (forwarded from Squad Comms mailbox).
     MailboxMessage {

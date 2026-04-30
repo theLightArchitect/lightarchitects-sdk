@@ -154,6 +154,8 @@ async fn run_agents(
     let started = std::time::Instant::now();
 
     for agent in &agents {
+        let agent_started = std::time::Instant::now();
+
         // Transition → Running.
         let _ = tx.send(DispatchEvent::PerAgentState {
             agent: *agent,
@@ -164,12 +166,15 @@ async fn run_agents(
                 agent,
                 task.chars().take(40).collect::<String>()
             )),
+            files_touched: None,
+            token_count: None,
+            elapsed_ms: None,
         });
 
         // TODO(team-manager): replace simulated work with TeamManager::spawn_teammate.
         // The actual integration requires the laex0 path-dep (C-1).
         // For now, signal the agent is complete after acknowledging the task.
-        spawn_teammate_stub(*agent, &task, dry, &tx).await;
+        spawn_teammate_stub(*agent, &task, dry, &tx, agent_started).await;
     }
 
     // SAFE: u64 holds ~584 million years of milliseconds; no dispatch runs that long.
@@ -196,12 +201,13 @@ async fn run_agents(
 /// is wired into `lightarchitects-webshell/Cargo.toml`.  The permission model
 /// (H-9) will be enforced by injecting a `ToolPermissionToken` with
 /// `write_allowed = agent.may_write() && !dry`.
-#[tracing::instrument(skip(tx, _task), fields(agent = %agent))]
+#[tracing::instrument(skip(tx, _task, started), fields(agent = %agent))]
 async fn spawn_teammate_stub(
     agent: DomainAgent,
     _task: &str,
     dry: bool,
     tx: &broadcast::Sender<DispatchEvent>,
+    started: std::time::Instant,
 ) {
     let _ = tx.send(DispatchEvent::MailboxMessage {
         agent,
@@ -215,10 +221,17 @@ async fn spawn_teammate_stub(
     // Simulate work — replaced by real agent execution in Wave 3 B2.
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
+    // SAFE: u64 holds ~584 million years of ms; no agent runs that long.
+    #[allow(clippy::cast_possible_truncation)]
+    let agent_elapsed = started.elapsed().as_millis() as u64;
+
     let _ = tx.send(DispatchEvent::PerAgentState {
         agent,
         state: AgentState::Complete,
         message: None,
+        files_touched: None,
+        token_count: None,
+        elapsed_ms: Some(agent_elapsed),
     });
 }
 

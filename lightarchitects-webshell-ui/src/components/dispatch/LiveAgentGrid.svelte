@@ -73,11 +73,18 @@
           <p class="text-[9px] text-[#334155]">—</p>
         {/if}
 
-        {#if live && live.messages.length > 1}
-          <span class="text-[8px] text-[#475569]">
-            {live.messages.length} messages
+        <!-- Live metric strip: FILES · TOK · MS -->
+        <div class="flex items-center gap-2 mt-0.5 font-mono">
+          <span class="text-[8px] text-[#475569]" title="Files touched">
+            <span class="text-[#334155]">FILES </span>{live?.files_touched ?? '—'}
           </span>
-        {/if}
+          <span class="text-[8px] text-[#475569]" title="Tokens used">
+            <span class="text-[#334155]">TOK </span>{live?.token_count ?? '—'}
+          </span>
+          <span class="text-[8px] text-[#475569]" title="Elapsed milliseconds">
+            <span class="text-[#334155]">MS </span>{live?.elapsed_ms ?? '—'}
+          </span>
+        </div>
       </div>
     {/each}
   </div>

@@ -34,7 +34,14 @@ export interface Classification {
 // ── DispatchEvent union (mirrors Rust enum) ───────────────────────────────────
 
 export interface PerAgentStateEvent {
-  PerAgentState: { agent: DomainAgent; state: AgentState; message: string | null };
+  PerAgentState: {
+    agent: DomainAgent;
+    state: AgentState;
+    message: string | null;
+    files_touched: number | null;
+    token_count: number | null;
+    elapsed_ms: number | null;
+  };
 }
 
 export interface MailboxMessageEvent {
@@ -61,6 +68,12 @@ export interface AgentLiveState {
   agent: DomainAgent;
   state: AgentState;
   messages: string[];
+  /** Files written/read by this agent (populated when TeamManager reports it). */
+  files_touched?: number;
+  /** Approximate token count (input + output) for this agent's run. */
+  token_count?: number;
+  /** Milliseconds from agent start to latest state transition. */
+  elapsed_ms?: number;
 }
 
 // ── History entry ─────────────────────────────────────────────────────────────

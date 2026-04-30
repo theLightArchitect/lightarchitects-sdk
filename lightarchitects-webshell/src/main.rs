@@ -13,7 +13,7 @@ use std::process::ExitCode;
 use clap::Parser;
 use lightarchitects_webshell::{
     config::{Cli, Config, TokenSource},
-    server,
+    server::{self, ServerError},
 };
 use tracing::error;
 use tracing_subscriber::EnvFilter;
@@ -45,7 +45,7 @@ async fn main() -> ExitCode {
     // The browser frontend reads this from the URL hash and stores it
     // in sessionStorage for subsequent WebSocket/SSE connections.
     let port = config.port;
-    let token = &config.token;
+    let token = config.token.clone();
     let token_preview = if token.len() > 8 {
         format!("{}…{}", &token[..4], &token[token.len() - 4..])
     } else {
@@ -67,9 +67,35 @@ async fn main() -> ExitCode {
     eprintln!("  Keychain: ~/.lightarchitects/webshell/.token");
     eprintln!();
 
-    if let Err(e) = server::run(config).await {
-        error!(error = %e, "webshell server exited with error");
-        return ExitCode::FAILURE;
+    match server::run_with_port_retry(config).await {
+        Ok(bound_port) => {
+            if bound_port != port {
+                // A fallback port was used — re-print the access URL with the
+                // actual port so the user knows where to connect.
+                eprintln!();
+                eprintln!("  Note: port {port} was in use — started on port {bound_port}");
+                eprintln!("  Open in your browser:");
+                eprintln!("    http://localhost:{bound_port}#token={token}");
+                eprintln!();
+            }
+        }
+        Err(ServerError::PortInUse { first_port, tried }) => {
+            eprintln!();
+            eprintln!("  ERROR: port {first_port} (and {tried} fallback(s)) are all in use.");
+            eprintln!();
+            eprintln!("  To diagnose:");
+            eprintln!("    lsof -i :{first_port}");
+            eprintln!();
+            eprintln!("  To use a different port:");
+            eprintln!("    lightarchitects-webshell --port <PORT>");
+            eprintln!();
+            error!(first_port, tried, "all ports in retry window are in use");
+            return ExitCode::FAILURE;
+        }
+        Err(e) => {
+            error!(error = %e, "webshell server exited with error");
+            return ExitCode::FAILURE;
+        }
     }
 
     ExitCode::SUCCESS

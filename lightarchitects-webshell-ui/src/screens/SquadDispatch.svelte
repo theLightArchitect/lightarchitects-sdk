@@ -128,13 +128,17 @@
 
   function applyEvent(e: DispatchEvent) {
     if ('PerAgentState' in e) {
-      const { agent, state, message } = e.PerAgentState;
+      const { agent, state, message, files_touched, token_count, elapsed_ms } = e.PerAgentState;
+      const prev = agentStates.get(agent);
       agentStates = new Map(agentStates).set(agent, {
         agent,
         state,
         messages: message
-          ? [...(agentStates.get(agent)?.messages ?? []), message]
-          : (agentStates.get(agent)?.messages ?? []),
+          ? [...(prev?.messages ?? []), message]
+          : (prev?.messages ?? []),
+        files_touched: files_touched ?? prev?.files_touched,
+        token_count:   token_count   ?? prev?.token_count,
+        elapsed_ms:    elapsed_ms    ?? prev?.elapsed_ms,
       });
     } else if ('MailboxMessage' in e) {
       const { agent, text } = e.MailboxMessage;
@@ -143,6 +147,9 @@
         agent,
         state: existing?.state ?? 'running',
         messages: [...(existing?.messages ?? []), text],
+        files_touched: existing?.files_touched,
+        token_count:   existing?.token_count,
+        elapsed_ms:    existing?.elapsed_ms,
       });
     }
   }
@@ -207,6 +214,10 @@
     if (classifyTimer) clearTimeout(classifyTimer);
   });
 
+  $effect(() => {
+    import('$lib/tutorial').then(({ runTutorial }) => runTutorial('t6'));
+  });
+
   const isLive = $derived(phase === 'streaming');
   const isTerminalPhase = $derived(phase === 'complete' || phase === 'error');
 </script>
@@ -231,16 +242,18 @@
         {/if}
       </div>
 
-      <DispatchInput
-        bind:task
-        bind:dry
-        disabled={isLive}
-        onSubmit={dispatch}
-        onTaskChange={(t) => { task = t; }}
-      />
+      <div data-onboarding="dispatch-input">
+        <DispatchInput
+          bind:task
+          bind:dry
+          disabled={isLive}
+          onSubmit={dispatch}
+          onTaskChange={(t) => { task = t; }}
+        />
+      </div>
     </div>
 
-    <div class="px-3 py-2 border-b border-[#0f172a]">
+    <div class="px-3 py-2 border-b border-[#0f172a]" data-onboarding="dispatch-agent-selector">
       <AgentSelector
         bind:selected={selectedAgents}
         {classification}
@@ -282,7 +295,7 @@
   <div class="flex flex-col flex-1 min-w-0 overflow-hidden">
 
     <!-- Agent cards -->
-    <div class="px-3 pt-3 pb-2 border-b border-[#0f172a]">
+    <div class="px-3 pt-3 pb-2 border-b border-[#0f172a]" data-onboarding="dispatch-live-grid">
       <p class="text-[9px] text-[#475569] uppercase tracking-wider mb-2">Live agents</p>
       <LiveAgentGrid agents={isLive || isTerminalPhase ? selectedAgents : []} {agentStates} />
     </div>
@@ -296,7 +309,7 @@
     {/if}
 
     <!-- Mailbox stream -->
-    <div class="flex-1 min-h-0 relative px-3 py-2">
+    <div class="flex-1 min-h-0 relative px-3 py-2" data-onboarding="dispatch-mailbox">
       <p class="text-[9px] text-[#475569] uppercase tracking-wider mb-1">Event stream</p>
       <div class="h-full">
         <MailboxStream {events} />
@@ -305,7 +318,7 @@
   </div>
 
   <!-- ── Right rail: history ── -->
-  <div class="w-52 flex-shrink-0 border-l border-[#0f172a] overflow-y-auto">
+  <div class="w-52 flex-shrink-0 border-l border-[#0f172a] overflow-y-auto" data-onboarding="dispatch-history">
     <HistoryRail
       {history}
       onSelect={replayFromHistory}

@@ -496,19 +496,25 @@ pub fn build_app(state: AppState) -> Router {
 /// surface, but an explicit origin allowlist prevents arbitrary origins from
 /// reading the authenticated SSE stream via a malicious browser tab.
 ///
+/// The Vite dev-server origin (`localhost:5173`) is included in debug builds
+/// only; release binaries serve the pre-built bundle from the same port and
+/// must not accept cross-origin requests from other local ports.
+///
 /// Allowed origins:
 /// - `http://localhost:<port>` — production (same-origin serving)
 /// - `http://127.0.0.1:<port>` — same binary, loopback alias
-/// - `http://localhost:5173` — Vite dev server during frontend development
+/// - `http://localhost:5173` — Vite dev server (**debug builds only**)
 fn build_cors(port: u16) -> CorsLayer {
-    let allowed_origins: Vec<HeaderValue> = [
+    let mut origins: Vec<String> = vec![
         format!("http://localhost:{port}"),
         format!("http://127.0.0.1:{port}"),
-        "http://localhost:5173".to_owned(),
-    ]
-    .iter()
-    .filter_map(|s| s.parse().ok())
-    .collect();
+    ];
+    // Vite dev server origin: present only in debug builds so that release
+    // binaries cannot be cross-origin requested from an arbitrary port.
+    #[cfg(debug_assertions)]
+    origins.push("http://localhost:5173".to_owned());
+
+    let allowed_origins: Vec<HeaderValue> = origins.iter().filter_map(|s| s.parse().ok()).collect();
 
     // `x-la-notify-token` is the per-build shared-secret header the gateway
     // uses to POST events to `/api/builds/:id/notify`. The gateway runs
@@ -540,6 +546,18 @@ pub enum ServerError {
         source: std::io::Error,
     },
 
+    /// Every port in the auto-retry range was busy.
+    ///
+    /// Carries the first port that was tried (the one the user configured)
+    /// so the caller can emit a diagnostic pointing at the right address.
+    #[error("port 127.0.0.1:{first_port} (and {tried} fallback(s)) are all in use")]
+    PortInUse {
+        /// The port originally requested via config / `--port`.
+        first_port: u16,
+        /// Number of fallback ports that were also tried.
+        tried: u8,
+    },
+
     /// Server exited with an IO error mid-run.
     #[error("webshell server exited with error: {0}")]
     Serve(#[source] std::io::Error),
@@ -566,6 +584,71 @@ pub async fn run(config: Config) -> Result<(), ServerError> {
     info!(bind = %addr, "webshell server listening");
 
     axum::serve(listener, app).await.map_err(ServerError::Serve)
+}
+
+/// Maximum number of sequential ports tried beyond the configured port.
+const PORT_RETRY_LIMIT: u8 = 3;
+
+/// Starts the webshell server, automatically retrying on adjacent ports when
+/// the configured port is already in use (`EADDRINUSE`).
+///
+/// On success, returns the port that was actually bound so the caller can
+/// update the startup banner.  On failure, returns [`ServerError::PortInUse`]
+/// when all retried ports were busy, or [`ServerError::Bind`] for other bind
+/// failures.
+///
+/// # Errors
+///
+/// - [`ServerError::PortInUse`] when every port in the retry window is busy.
+/// - [`ServerError::Bind`] when the port is available but binding fails for
+///   another reason (e.g., permission denied on port < 1024).
+/// - [`ServerError::Serve`] if the server exits with an IO error mid-run.
+pub async fn run_with_port_retry(config: Config) -> Result<u16, ServerError> {
+    use std::io::ErrorKind;
+
+    let first_port = config.port;
+
+    for attempt in 0..=PORT_RETRY_LIMIT {
+        // SAFE: `attempt` ≤ PORT_RETRY_LIMIT ≤ 3; first_port is u16. In the
+        // pathological case where first_port is near u16::MAX, wrapping_add
+        // avoids a panic; the resulting port will fail to bind anyway.
+        let port = first_port.wrapping_add(u16::from(attempt));
+        let mut try_config = config.clone();
+        try_config.port = port;
+
+        let addr = SocketAddr::from(([127, 0, 0, 1], port));
+        match tokio::net::TcpListener::bind(addr).await {
+            Ok(listener) => {
+                let state = AppState::new(try_config);
+                let app = build_app(state);
+                info!(bind = %addr, "webshell server listening");
+                axum::serve(listener, app)
+                    .await
+                    .map_err(ServerError::Serve)?;
+                return Ok(port);
+            }
+            Err(e) if e.kind() == ErrorKind::AddrInUse => {
+                if attempt < PORT_RETRY_LIMIT {
+                    info!(
+                        port,
+                        next = port.wrapping_add(1),
+                        "port in use, trying next port"
+                    );
+                } else {
+                    return Err(ServerError::PortInUse {
+                        first_port,
+                        tried: PORT_RETRY_LIMIT,
+                    });
+                }
+            }
+            Err(source) => {
+                return Err(ServerError::Bind { port, source });
+            }
+        }
+    }
+
+    // Unreachable: the loop above always returns in the final iteration.
+    unreachable!("port retry loop exhausted without returning")
 }
 
 /// `GET /api/health` — unauthenticated liveness probe.

@@ -74,7 +74,8 @@ function buildTour(id: TutorialId): Tour | null {
   switch (id) {
     case 't1': return tutorialT1FirstBuild();
     case 't2': return tutorialT2MemoryDrawer();
-    // T3-T6 land in follow-up tasks (#30, #31)
+    case 't6': return tutorialT6SquadDispatch();
+    // T3-T5 land in follow-up task (#31)
     default: return null;
   }
 }
@@ -207,6 +208,97 @@ function tutorialT2MemoryDrawer(): Tour {
     title: 'Search the Vault',
     text: `<p>Search across all cold entries. Three modes: <strong>BM25</strong> (keyword), <strong>Semantic</strong> (embedding-based), <strong>Hybrid</strong> (RRF fusion of both). Look for the RRF badge — it means results were blended from multiple retrieval signals.</p>`,
     attachTo: { element: '[data-onboarding="memory-search"]', on: 'bottom' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Got it', action: () => tour.complete(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  return tour;
+}
+
+function tutorialT6SquadDispatch(): Tour {
+  const tour = new Shepherd.Tour({
+    useModalOverlay: true,
+    defaultStepOptions: {
+      classes: 'la-shepherd',
+      scrollTo: { behavior: 'smooth', block: 'center' },
+      cancelIcon: { enabled: true },
+    },
+  });
+
+  tour.addStep({
+    id: 't6-welcome',
+    title: 'Squad Dispatch',
+    text: `<p>Squad Dispatch lets you send a task to multiple domain agents at once — engineer, testing, quality, security, and more — and watch them run in parallel.</p>
+           <p>This 45-second walkthrough covers the key controls and the write-path safety gate. Press <kbd>Esc</kbd> to dismiss.</p>`,
+    buttons: [
+      { text: 'Skip', action: () => tour.cancel(), classes: 'la-shepherd-secondary' },
+      { text: 'Start', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't6-input',
+    title: 'Describe the task',
+    text: 'Type your task here. As you type, the classifier runs in ~5ms and highlights which agents are most relevant — no LLM call needed.',
+    attachTo: { element: '[data-onboarding="dispatch-input"]', on: 'right' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't6-agents',
+    title: 'Agent selector',
+    text: 'The classifier auto-selects agents, but you can toggle any of the 9 domain agents manually. Only ticked agents are dispatched.',
+    attachTo: { element: '[data-onboarding="dispatch-agent-selector"]', on: 'right' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't6-write-path',
+    title: 'Write-path safety — Dry Run',
+    text: `<p>The <strong>Dry Run</strong> toggle (in the task input area) is your safety gate. When enabled, agents <em>plan</em> the work but make no file changes.</p>
+           <p>Always use Dry Run when exploring a task for the first time — review the plan, then re-dispatch without Dry Run to execute.</p>`,
+    attachTo: { element: '[data-onboarding="dispatch-input"]', on: 'right' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't6-live-grid',
+    title: 'Live agent grid',
+    text: 'Once dispatched, each selected agent gets a card here showing its current state, the last message it sent, and live metrics — files touched, tokens used, elapsed time.',
+    attachTo: { element: '[data-onboarding="dispatch-live-grid"]', on: 'left' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't6-mailbox',
+    title: 'Event stream',
+    text: 'Inter-agent messages and state transitions stream here in real time. If an agent requests input from another, you\'ll see that exchange reflected here.',
+    attachTo: { element: '[data-onboarding="dispatch-mailbox"]', on: 'left' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't6-history',
+    title: 'Dispatch history',
+    text: 'Previous dispatches are saved here. Click any entry to pre-fill the task and agents — useful for re-running a dry-run as a live dispatch.',
+    attachTo: { element: '[data-onboarding="dispatch-history"]', on: 'left' },
     buttons: [
       { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
       { text: 'Got it', action: () => tour.complete(), classes: 'la-shepherd-primary' },
