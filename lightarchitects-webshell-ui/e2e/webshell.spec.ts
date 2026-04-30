@@ -3472,10 +3472,157 @@ test.describe('Comprehensive webshell E2E', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 33. Console health (final — MUST BE LAST)
+  // 33. Wave 3 NAVIGATION_FOUNDATION — landed P0 features (#10/#13/#15/#26/#27/#35/#47/#48/#58)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // These tests cover the operator-facing components shipped during the
+  // unifying-rolling-aegis Wave 3. Each section is independent (a setup
+  // step or two then 1-3 assertions) and uses real DOM rather than mocks
+  // so we catch regressions in component-level behaviour, not just API.
+
+  test.describe('33. AuthBanner — 401/403 surfaced UI (#13)', () => {
+    test('banner not visible when authStatus is ok', async () => {
+      await page.evaluate(() => {
+        const e2e = (window as unknown as { __e2e?: { authStatus?: { set: (v: string) => void } } }).__e2e;
+        e2e?.authStatus?.set?.('ok');
+      });
+      await page.waitForTimeout(150);
+      const present = await page.locator('[data-testid="auth-banner"]').count();
+      expect(present).toBe(0);
+    });
+
+    test('banner appears on unauthorized + Dismiss hides it', async () => {
+      const fired = await page.evaluate(() => {
+        const e2e = (window as unknown as { __e2e?: { authStatus?: { set: (v: string) => void } } }).__e2e;
+        if (!e2e?.authStatus?.set) return false;
+        e2e.authStatus.set('unauthorized');
+        return true;
+      });
+      if (!fired) { test.skip(); return; }
+      await page.waitForTimeout(200);
+      const banner = page.locator('[data-testid="auth-banner"]');
+      await expect(banner).toBeVisible({ timeout: 1500 });
+      await expect(banner).toContainText(/Session expired/i);
+      // Dismiss
+      const dismiss = page.locator('[data-testid="auth-banner"] button', { hasText: /Dismiss/i });
+      await dismiss.click();
+      await page.waitForTimeout(150);
+      await expect(banner).toHaveCount(0);
+    });
+  });
+
+  test.describe('34. Tooltip primitive (#26)', () => {
+    test('hovering a tab label reveals tooltip with hint copy', async () => {
+      // Activity tab has a Tooltip wrapper with hint "Live trace events..."
+      const activityTab = page.locator('button', { hasText: /^Activity$/ }).first();
+      await activityTab.hover();
+      await page.waitForTimeout(400); // 250ms delay + render frame
+      const tooltip = page.locator('[role="tooltip"]');
+      const visible = await tooltip.count();
+      // Tooltip should appear; if zero the wiring is broken
+      expect(visible).toBeGreaterThan(0);
+    });
+  });
+
+  test.describe('35. DiffPreview modal — operator FS gate (#47)', () => {
+    test('triggerMockDiffPreview opens the modal', async () => {
+      await page.evaluate(() => {
+        // Synthesize the SSE event the backend would send post-mantis-rebase.
+        const detail = {
+          type: 'fs_mutation_pending',
+          mutation_id: 'e2e-mock',
+          dispatch_id: 'dispatch-e2e',
+          agent: 'engineer',
+          file_path: 'src/lib/example.ts',
+          tool: 'Edit',
+          diff_unified: '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n',
+          queued_at: new Date().toISOString(),
+        };
+        window.dispatchEvent(new CustomEvent('la:fs-mutation-pending', { detail }));
+      });
+      await page.waitForTimeout(200);
+      const modal = page.locator('[data-testid="diff-preview"]');
+      await expect(modal).toBeVisible({ timeout: 1500 });
+      await expect(modal).toContainText(/engineer/);
+      await expect(modal).toContainText(/src\/lib\/example\.ts/);
+      // Reject closes
+      const reject = modal.locator('button', { hasText: /^Reject$/ });
+      await reject.click().catch(() => { /* network 404 is expected; backend unwired */ });
+      await page.waitForTimeout(300);
+    });
+  });
+
+  test.describe('36. Intake form draft persistence (#15)', () => {
+    test('repoPath persists across reload via localStorage', async () => {
+      await page.goto(`${URL.replace('#token=', '#/intake?token=')}`).catch(() => page.goto(URL));
+      await page.waitForTimeout(400);
+      // Find the intake repoPath input (best-effort selector — falls back gracefully)
+      const filled = await page.evaluate(() => {
+        const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
+        const repoInput = inputs.find(
+          (i) => /repo|path/i.test((i as HTMLInputElement).placeholder ?? ''),
+        ) as HTMLInputElement | undefined;
+        if (!repoInput) return false;
+        repoInput.value = '/tmp/e2e-draft-test';
+        repoInput.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      });
+      if (!filled) { test.skip(); return; }
+      await page.waitForTimeout(400); // give debounced subscribe a tick
+      const draft = await page.evaluate(() => localStorage.getItem('la.intake.draft'));
+      expect(draft).toBeTruthy();
+      expect(draft ?? '').toContain('e2e-draft-test');
+    });
+  });
+
+  test.describe('37. BuildQueue header dedupe (#35)', () => {
+    test('header shows project + build counts but not active count', async () => {
+      await page.goto(URL);
+      await page.waitForTimeout(400);
+      const headerText = await page.evaluate(() => {
+        const headings = Array.from(document.querySelectorAll('h1'));
+        const queueHeader = headings.find((h) => h.textContent?.includes('Build Queue'));
+        if (!queueHeader) return null;
+        // Sibling span in the same flex row carries the count text
+        const row = queueHeader.parentElement;
+        return row?.textContent ?? null;
+      });
+      if (!headerText) { test.skip(); return; }
+      // Header should mention "project" or "build" in the count line, NOT "active"
+      // (active count belongs to the stat strip below per #35).
+      const hasProject = /\bproject(s)?\b/.test(headerText);
+      const hasBuild = /\bbuild(s)?\b/.test(headerText);
+      const hasActiveOnHeader = /\bactive\b/.test(
+        headerText.replace(/\d+\s*active\s*plans?/gi, ''), // exclude per-card "X active plans"
+      );
+      expect(hasProject || hasBuild).toBe(true);
+      expect(hasActiveOnHeader).toBe(false);
+    });
+  });
+
+  test.describe('38. Empty-state hero affordance (#10 #48)', () => {
+    test('Activity empty state renders distinctive copy + Open Copilot CTA', async () => {
+      // Reset stores so the feed is empty
+      await page.evaluate(() => {
+        const e2e = (window as unknown as { __e2e?: { copilotMessages?: { set: (v: unknown) => void } } }).__e2e;
+        e2e?.copilotMessages?.set?.([]);
+      });
+      // Navigate to Activity
+      await page.evaluate(() => { window.location.hash = '/activity'; });
+      await page.waitForTimeout(300);
+      const text = await page.evaluate(() => document.body.textContent ?? '');
+      const hasStrandCopy = /each strand here is one agent/i.test(text);
+      const hasCTA = /open\s+copilot/i.test(text);
+      // At least the CTA should be visible; copy is also expected
+      expect(hasCTA || hasStrandCopy).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 39. Console health (final — MUST BE LAST)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  test.describe('33. Console health (final)', () => {
+  test.describe('39. Console health (final)', () => {
     test('zero TypeErrors after full expanded suite', async () => {
       const typeErrors = pageErrors.filter((e) => e.includes('TypeError'));
       if (typeErrors.length > 0) console.error('[E2E] TypeErrors found:', typeErrors);

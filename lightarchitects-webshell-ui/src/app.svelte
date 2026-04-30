@@ -19,7 +19,7 @@
     builds, currentBuildId, findings, logEntries, artifacts, conductorTasks, arenaStatus, alerts,
     activePlan, latestScrumReport, hotMemory, coldMemory, activeHelixNode, selectedPillar,
     expandedFindings, supervisorAlerts, siblingHealth, copilotMessages,
-    intakeFormDirty,
+    intakeFormDirty, authStatus,
   } from '$lib/stores';
   import { get } from 'svelte/store';
   import { setupComplete, step, loadSetupInfo, selectedBackend, selectedModel, selectedAgent } from '$lib/setup';
@@ -159,6 +159,8 @@
         latestScrumReport, hotMemory, coldMemory, activeHelixNode,
         selectedPillar, expandedFindings, supervisorAlerts,
         siblingHealth, copilotMessages,
+        // Wave 3 P0s: AuthBanner status (#13), Intake dirty state (#15)
+        authStatus, intakeFormDirty,
       };
     }
     startWaveTick();
