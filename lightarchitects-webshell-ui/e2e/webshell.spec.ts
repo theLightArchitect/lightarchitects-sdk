@@ -32,16 +32,21 @@ test.describe('Comprehensive webshell E2E', () => {
   const failedRequests: { url: string; status: number }[] = [];
 
   test.beforeAll(async () => {
+    const harReplay = !!process.env.PLAYWRIGHT_HAR_REPLAY;
+
     browser = await chromium.launch({
       headless: false,
       channel: 'chrome',
     });
     context = await browser.newContext({
       viewport: { width: 1440, height: 900 },
-      recordHar: {
-        path: 'test-results/webshell-e2e.har',
-        mode: 'full',
-      },
+      // Record HAR on live runs; skip in replay mode (we're consuming an existing HAR).
+      ...(harReplay ? {} : {
+        recordHar: {
+          path: 'test-results/webshell-e2e.har',
+          mode: 'full',
+        },
+      }),
     });
     await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
     page = await context.newPage();
@@ -58,8 +63,19 @@ test.describe('Comprehensive webshell E2E', () => {
         failedRequests.push({ url: res.url(), status: res.status() });
     });
 
-    // ---- Register mocks (setup + browser-state only; SOUL/siblings hit real backend) ----
-    await registerMocks(page);
+    if (harReplay) {
+      // Offline/CI mode: replay all API calls from the previously recorded HAR.
+      // Run with: PLAYWRIGHT_HAR_REPLAY=1 npx playwright test
+      // Record first with a live run to generate test-results/webshell-e2e.har.
+      await context.routeFromHAR('test-results/webshell-e2e.har', {
+        url: '**/api/**',
+        update: false,
+      });
+      console.log('[E2E] HAR replay mode — API calls served from test-results/webshell-e2e.har');
+    } else {
+      // ---- Register mocks (setup + browser-state only; SOUL/siblings hit real backend) ----
+      await registerMocks(page);
+    }
 
     // ---- Navigate ----
     await page.goto(URL, { waitUntil: 'commit' });
