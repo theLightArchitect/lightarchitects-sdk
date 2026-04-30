@@ -235,6 +235,9 @@ async fn cli_dispatch(
             lightarchitects_gateway::cli::webshell::execute(config, &args[1..]).await
         }
 
+        // Squad Comms subcommand — delegates to webshell coordination API.
+        Some("squad-comms") => cli_squad_comms(&args[1..], config).await,
+
         Some(unknown) => {
             eprintln!(
                 "Unknown subcommand: {unknown}\n\n\
@@ -256,7 +259,8 @@ async fn cli_dispatch(
                    lightarchitects config                     Resolved configuration\n  \
                    lightarchitects builds list|show           Build portfolio\n  \
                    lightarchitects setup keys|voice|seraph    Configuration wizard\n  \
-                   lightarchitects webshell start|control|status  Web GUI"
+                   lightarchitects webshell start|control|status  Web GUI\n  \
+                   lightarchitects squad-comms tasks|add|claim|logs|inject  Squad Comms"
             );
             Err(GatewayError::UnknownTool(unknown.to_owned()))
         }
@@ -292,6 +296,88 @@ fn cli_canon(args: &[String], config: &GatewayConfig) -> Result<(), GatewayError
             Err(GatewayError::MissingParam("canon subcommand"))
         }
     }
+}
+
+/// `lightarchitects squad-comms <sub>` — Squad Comms CLI dispatcher.
+///
+/// Delegates to webshell coordination API via HTTP.  Requires the webshell to
+/// be running (`lightarchitects webshell start`).
+///
+/// Sub-actions:
+///   tasks                  — list task queue snapshot
+///   add <title> <project> <prompt> [priority]  — append a task
+///   claim <id> [source]    — soft-claim a task
+///   logs <id>              — fetch task logs
+///   inject <session_id> <message> [sender]  — inject a chat message
+async fn cli_squad_comms(args: &[String], config: &GatewayConfig) -> Result<(), GatewayError> {
+    let result = match args.first().map(String::as_str) {
+        Some("tasks") => {
+            lightarchitects_gateway::squad_comms::list_tasks(serde_json::json!({}), config).await?
+        }
+        Some("add") => {
+            let title = args.get(1).ok_or(GatewayError::MissingParam("title"))?;
+            let project = args.get(2).ok_or(GatewayError::MissingParam("project"))?;
+            let prompt = args.get(3).ok_or(GatewayError::MissingParam("prompt"))?;
+            let priority = args.get(4).map_or("medium", String::as_str);
+            lightarchitects_gateway::squad_comms::add_task(
+                serde_json::json!({
+                    "title": title,
+                    "project": project,
+                    "prompt": prompt,
+                    "priority": priority,
+                }),
+                config,
+            )
+            .await?
+        }
+        Some("claim") => {
+            let id = args.get(1).ok_or(GatewayError::MissingParam("id"))?;
+            let source = args.get(2).map_or("cli", String::as_str);
+            lightarchitects_gateway::squad_comms::claim_task(
+                serde_json::json!({ "id": id, "source": source }),
+                config,
+            )
+            .await?
+        }
+        Some("logs") => {
+            let id = args.get(1).ok_or(GatewayError::MissingParam("id"))?;
+            lightarchitects_gateway::squad_comms::task_logs(
+                serde_json::json!({ "id": id }),
+                config,
+            )
+            .await?
+        }
+        Some("inject") => {
+            let session_id = args.get(1).ok_or(GatewayError::MissingParam("session_id"))?;
+            let message = args.get(2).ok_or(GatewayError::MissingParam("message"))?;
+            let sender = args.get(3).map_or("cli", String::as_str);
+            lightarchitects_gateway::squad_comms::chat_inject(
+                serde_json::json!({
+                    "session_id": session_id,
+                    "message": message,
+                    "sender": sender,
+                }),
+                config,
+            )
+            .await?
+        }
+        Some(sub) => return Err(GatewayError::UnknownTool(format!("squad-comms {sub}"))),
+        None => {
+            eprintln!(
+                "Usage:\n  \
+                   lightarchitects squad-comms tasks\n  \
+                   lightarchitects squad-comms add <title> <project> <prompt> [priority]\n  \
+                   lightarchitects squad-comms claim <id> [source]\n  \
+                   lightarchitects squad-comms logs <id>\n  \
+                   lightarchitects squad-comms inject <session_id> <message> [sender]"
+            );
+            return Err(GatewayError::MissingParam("squad-comms subcommand"));
+        }
+    };
+    let pretty = serde_json::to_string_pretty(&result)
+        .unwrap_or_else(|_| result.to_string());
+    println!("{pretty}");
+    Ok(())
 }
 
 async fn cli_initialize(args: &[String], config: &GatewayConfig) -> Result<(), GatewayError> {

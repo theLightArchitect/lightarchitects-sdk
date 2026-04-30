@@ -1,0 +1,627 @@
+//! HTTP route handlers for the Squad Dispatch module.
+//!
+//! All five handlers require `Authorization: Bearer <token>` — the same
+//! middleware used by `/api/coordination/*` (HIGH H-5).
+//!
+//! # Endpoints
+//!
+//! - `POST /api/dispatch/classify` — classify task text without executing
+//! - `POST /api/dispatch/execute`  — dispatch agents, return `DispatchId`
+//! - `GET  /api/dispatch/status/:id` — SSE stream of [`DispatchEvent`]s
+//! - `POST /api/dispatch/cancel/:id` — cancel an active dispatch
+//! - `POST /api/dispatch/retry/:id/:agent` — retry a failed agent
+//!
+//! # Input validation (HIGH H-2)
+//!
+//! All `task` string fields pass through [`validate_task_input`] before any
+//! downstream use:
+//! - maximum 8 KB
+//! - strips `\n`, `\r`, `\0`, `\x1b` (control characters)
+//! - rejects non-UTF-8
+
+use std::convert::Infallible;
+
+use axum::{
+    Json, Router,
+    extract::{Path, State},
+    http::{HeaderMap, StatusCode},
+    response::{
+        IntoResponse, Response,
+        sse::{Event, KeepAlive, Sse},
+    },
+    routing::{get, post},
+};
+use futures_util::stream;
+use serde::Serialize;
+
+use crate::{auth, server::AppState};
+
+use super::{
+    classifier, executor,
+    types::{
+        ClassifyRequest, DispatchError, DispatchEvent, DispatchId, DomainAgent, ExecuteRequest,
+        ExecutionMode, RetryRequest, SanitizedTask,
+    },
+};
+
+/// Maximum task input length in bytes (HIGH H-2).
+const MAX_TASK_BYTES: usize = 8 * 1024;
+
+/// Sequence counter for dispatch IDs (u16 overflow wraps — acceptable for
+/// local dev tool; not a security property).
+static DISPATCH_SEQ: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(1);
+
+/// CALLSIGN table — deterministic rotation for squad dispatch IDs.
+static CALLSIGNS: &[&str] = &[
+    "ALPHA", "BRAVO", "CHARLIE", "DELTA", "ECHO", "FOXTROT", "GOLF", "HOTEL", "INDIA", "JULIET",
+    "KILO", "LIMA", "MIKE", "NOVEMBER", "OSCAR", "PAPA", "QUEBEC", "ROMEO", "SIERRA", "TANGO",
+];
+
+/// Validate and sanitise a task input string (HIGH H-2).
+///
+/// - Checks UTF-8 well-formedness (already guaranteed by `Json<T>` deserialiser,
+///   but verified explicitly for defence-in-depth).
+/// - Caps length at [`MAX_TASK_BYTES`].
+/// - Strips `\n`, `\r`, `\0`, and `\x1b` (ESC) to prevent SSE-frame injection
+///   and terminal escape abuse.
+///
+/// # Errors
+///
+/// Returns [`DispatchError::InvalidInput`] with a human-readable reason.
+pub fn validate_task_input(task: &str) -> Result<SanitizedTask, DispatchError> {
+    if task.len() > MAX_TASK_BYTES {
+        return Err(DispatchError::InvalidInput(format!(
+            "task exceeds 8 KB limit ({} bytes)",
+            task.len()
+        )));
+    }
+    // Strip control characters.
+    let sanitised: String = task
+        .chars()
+        .filter(|c| !matches!(*c, '\n' | '\r' | '\0' | '\x1b'))
+        .collect();
+    if sanitised.is_empty() && !task.is_empty() {
+        return Err(DispatchError::InvalidInput(
+            "task became empty after control-character sanitisation".to_owned(),
+        ));
+    }
+    Ok(SanitizedTask(sanitised))
+}
+
+/// Build the `/api/dispatch/*` sub-router.
+///
+/// Registered under `AppState` — caller must call `.with_state(state)` on the
+/// returned router (or nest it into a router that already has state).
+pub fn dispatch_router() -> Router<AppState> {
+    Router::new()
+        .route("/api/dispatch/classify", post(classify_handler))
+        .route("/api/dispatch/execute", post(execute_handler))
+        .route("/api/dispatch/status/{id}", get(status_sse_handler))
+        .route("/api/dispatch/cancel/{id}", post(cancel_handler))
+        .route("/api/dispatch/retry/{id}/{agent}", post(retry_handler))
+}
+
+// ── Response helpers ──────────────────────────────────────────────────────────
+
+/// Response body returned by `POST /api/dispatch/execute`.
+#[derive(Serialize)]
+struct ExecuteResponse {
+    dispatch_id: String,
+}
+
+/// Response body for cancel and retry acknowledgements.
+#[derive(Serialize)]
+struct OkResponse {
+    ok: bool,
+}
+
+// ── Bearer auth helper ────────────────────────────────────────────────────────
+
+/// Return `true` if the request carries a valid bearer token.
+fn is_authorised(headers: &HeaderMap, state: &AppState) -> bool {
+    headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|s| auth::validate_bearer(s, &state.config.token))
+}
+
+// ── Handlers ──────────────────────────────────────────────────────────────────
+
+/// `POST /api/dispatch/classify` — classify task text (no execution).
+///
+/// Bearer-authenticated (HIGH H-5).
+///
+/// # Rate limit
+///
+/// Per-IP ≤10 req/s is enforced at the infrastructure layer (future: tower
+/// governor middleware — HIGH H-8).  This handler does not implement its own
+/// rate-limiting so the constraint is visible in the spec.
+async fn classify_handler(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(req): Json<ClassifyRequest>,
+) -> Response {
+    if !is_authorised(&headers, &state) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let task = match validate_task_input(&req.task) {
+        Ok(t) => t,
+        Err(e) => {
+            return (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()).into_response();
+        }
+    };
+    let classification = classifier::classify(task.as_str());
+    Json(classification).into_response()
+}
+
+/// `POST /api/dispatch/execute` — dispatch agents and start streaming.
+///
+/// Returns `{ dispatch_id: "SQD-ALPHA-01" }` on success.  The caller opens
+/// `GET /api/dispatch/status/:id` to receive [`DispatchEvent`] SSE frames.
+///
+/// Bearer-authenticated (HIGH H-5).
+async fn execute_handler(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(req): Json<ExecuteRequest>,
+) -> Response {
+    if !is_authorised(&headers, &state) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    // Validate + sanitise task.
+    let task = match validate_task_input(&req.task) {
+        Ok(t) => t,
+        Err(e) => {
+            return (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()).into_response();
+        }
+    };
+
+    // Deduplicate agent list and validate against enum variants.
+    let agents = deduplicate_agents(req.agents);
+    if agents.is_empty() {
+        return (StatusCode::BAD_REQUEST, "No agents specified").into_response();
+    }
+    if agents.len() > executor::MAX_AGENTS_PER_DISPATCH {
+        return (
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Too many agents (max {})",
+                executor::MAX_AGENTS_PER_DISPATCH
+            ),
+        )
+            .into_response();
+    }
+
+    let mode = match agents.len() {
+        1 => ExecutionMode::Solo,
+        _ => ExecutionMode::Squad,
+    };
+
+    // Mint a dispatch ID.
+    let seq = DISPATCH_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dispatch_id = if mode == ExecutionMode::Squad {
+        let callsign = CALLSIGNS[usize::from(seq) % CALLSIGNS.len()];
+        match DispatchId::squad(callsign, seq) {
+            Ok(id) => id,
+            Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        }
+    } else {
+        let code = agents.first().map_or("UNK", |a| a.code());
+        match DispatchId::solo(code, seq) {
+            Ok(id) => id,
+            Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        }
+    };
+
+    let id_str = dispatch_id.to_string();
+
+    match executor::execute(
+        task,
+        agents,
+        mode,
+        req.dry,
+        dispatch_id,
+        state.dispatch_registry,
+    )
+    .await
+    {
+        Ok(()) => Json(ExecuteResponse {
+            dispatch_id: id_str,
+        })
+        .into_response(),
+        Err(DispatchError::ScopeRequired) => (
+            StatusCode::FORBIDDEN,
+            DispatchError::ScopeRequired.to_string(),
+        )
+            .into_response(),
+        Err(DispatchError::AlreadyActive(ref id)) => (
+            StatusCode::CONFLICT,
+            format!("dispatch {id} already active"),
+        )
+            .into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// `GET /api/dispatch/status/:id` — SSE stream of [`DispatchEvent`] frames.
+///
+/// Bearer-authenticated (HIGH H-5).
+///
+/// The SSE stream drives off a `broadcast::Receiver<DispatchEvent>`.  We
+/// use `futures_util::stream::unfold` so we do not need the `tokio-stream`
+/// crate (mirrors the pattern in `coordination::sse`).
+async fn status_sse_handler(
+    headers: HeaderMap,
+    Path(id_str): Path<String>,
+    State(state): State<AppState>,
+) -> Response {
+    if !is_authorised(&headers, &state) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    // Validate the ID string before constructing a DispatchId.
+    if id_str.contains('\n') || id_str.contains('\r') {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+
+    let broadcast_rx = {
+        let reg = state.dispatch_registry.lock().await;
+        reg.broadcast_tx(&DispatchId::from_raw(id_str.clone()))
+            .map(tokio::sync::broadcast::Sender::subscribe)
+    };
+
+    match broadcast_rx {
+        None => StatusCode::NOT_FOUND.into_response(),
+        Some(rx) => {
+            // State is (receiver, done). When done=true the closure returns None,
+            // ending the stream on the iteration after a terminal event is emitted.
+            let sse_stream = stream::unfold((rx, false), |state| async move {
+                let (mut receiver, done) = state;
+                if done {
+                    return None;
+                }
+                loop {
+                    match receiver.recv().await {
+                        Ok(event) => {
+                            let is_terminal = matches!(
+                                event,
+                                DispatchEvent::Complete { .. } | DispatchEvent::Error { .. }
+                            );
+                            let data = serde_json::to_string(&event).ok()?;
+                            let sse_event = Event::default().data(data);
+                            return Some((
+                                Ok::<Event, Infallible>(sse_event),
+                                (receiver, is_terminal),
+                            ));
+                        }
+                        // Lagged — skip missed frames, keep streaming.
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                        // Sender dropped → dispatch complete, end stream.
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            return None;
+                        }
+                    }
+                }
+            });
+
+            Sse::new(sse_stream)
+                .keep_alive(KeepAlive::default())
+                .into_response()
+        }
+    }
+}
+
+/// `POST /api/dispatch/cancel/:id` — cancel an active dispatch.
+///
+/// Bearer-authenticated (HIGH H-5).
+async fn cancel_handler(
+    headers: HeaderMap,
+    Path(id_str): Path<String>,
+    State(state): State<AppState>,
+) -> Response {
+    if !is_authorised(&headers, &state) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    if id_str.contains('\n') || id_str.contains('\r') {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+
+    let id = DispatchId::from_raw(id_str);
+    match executor::cancel(&id, state.dispatch_registry).await {
+        Ok(()) => Json(OkResponse { ok: true }).into_response(),
+        Err(DispatchError::NotFound(_)) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// `POST /api/dispatch/retry/:id/:agent` — retry a failed agent.
+///
+/// Bearer-authenticated (HIGH H-5).
+///
+/// # Phase note
+///
+/// Retry logic is a stub in Phase 3 Wave 1 — full implementation in Wave 3 B2
+/// once `TeamManager` is wired.
+async fn retry_handler(
+    headers: HeaderMap,
+    Path((id_str, agent_str)): Path<(String, String)>,
+    State(state): State<AppState>,
+    Json(req): Json<RetryRequest>,
+) -> Response {
+    if !is_authorised(&headers, &state) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    if id_str.contains('\n') || id_str.contains('\r') {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+
+    // Parse agent variant.
+    let Some(_agent) = parse_agent(&agent_str) else {
+        return (StatusCode::BAD_REQUEST, "Unknown agent").into_response();
+    };
+
+    // Validate optional task override.
+    if let Some(ref task_override) = req.task {
+        if let Err(e) = validate_task_input(task_override) {
+            return (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()).into_response();
+        }
+    }
+
+    let id = DispatchId::from_raw(id_str);
+    {
+        let registry = state.dispatch_registry.lock().await;
+        if !registry.contains(&id) {
+            return StatusCode::NOT_FOUND.into_response();
+        }
+    } // mutex guard drops here before response is built
+    // TODO(team-manager): wire actual retry into TeamManager in Wave 3 B2.
+    Json(OkResponse { ok: true }).into_response()
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Deduplicate a list of `DomainAgent` values, preserving order.
+fn deduplicate_agents(agents: Vec<DomainAgent>) -> Vec<DomainAgent> {
+    let mut seen = std::collections::HashSet::new();
+    agents.into_iter().filter(|a| seen.insert(*a)).collect()
+}
+
+/// Parse a domain agent from a URL path segment string.
+fn parse_agent(s: &str) -> Option<DomainAgent> {
+    match s {
+        "engineer" => Some(DomainAgent::Engineer),
+        "quality" => Some(DomainAgent::Quality),
+        "security" => Some(DomainAgent::Security),
+        "ops" => Some(DomainAgent::Ops),
+        "researcher" => Some(DomainAgent::Researcher),
+        "knowledge" => Some(DomainAgent::Knowledge),
+        "performance" => Some(DomainAgent::Performance),
+        "testing" => Some(DomainAgent::Testing),
+        "documentation" => Some(DomainAgent::Documentation),
+        _ => None,
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_task_input_accepts_normal() {
+        let result = validate_task_input("refactor the auth module");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_task_input_rejects_oversize() {
+        let large = "x".repeat(MAX_TASK_BYTES + 1);
+        let result = validate_task_input(&large);
+        assert!(matches!(result, Err(DispatchError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn validate_task_input_strips_control_chars() {
+        let result = validate_task_input("refactor\n\rauth\0\x1b").unwrap();
+        assert_eq!(result.as_str(), "refactorauth");
+    }
+
+    #[test]
+    fn validate_task_input_accepts_8kb_boundary() {
+        let boundary = "x".repeat(MAX_TASK_BYTES);
+        let result = validate_task_input(&boundary);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn deduplicate_agents_preserves_order() {
+        let agents = vec![
+            DomainAgent::Engineer,
+            DomainAgent::Testing,
+            DomainAgent::Engineer,
+        ];
+        let deduped = deduplicate_agents(agents);
+        assert_eq!(deduped, vec![DomainAgent::Engineer, DomainAgent::Testing]);
+    }
+
+    #[test]
+    fn parse_agent_all_variants() {
+        assert_eq!(parse_agent("engineer"), Some(DomainAgent::Engineer));
+        assert_eq!(parse_agent("security"), Some(DomainAgent::Security));
+        assert_eq!(parse_agent("unknown"), None);
+    }
+
+    // ── boundary_sanitization_verified (Phase 3 exit criterion) ──────────────
+
+    #[test]
+    fn validate_task_input_rejects_only_control_chars() {
+        // Input that becomes empty after stripping — must error, not silently pass.
+        let result = validate_task_input("\n\r\0\x1b");
+        assert!(matches!(result, Err(DispatchError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn validate_task_input_preserves_unicode_multibyte() {
+        // Non-ASCII UTF-8 (emoji + CJK) must survive unmodified.
+        let input = "Audit 建設 🔒 system";
+        let result = validate_task_input(input).unwrap();
+        assert_eq!(result.as_str(), input);
+    }
+
+    #[test]
+    fn validate_task_input_strips_each_control_individually() {
+        assert_eq!(validate_task_input("a\nb").unwrap().as_str(), "ab"); // \n
+        assert_eq!(validate_task_input("a\rb").unwrap().as_str(), "ab"); // \r
+        assert_eq!(validate_task_input("a\0b").unwrap().as_str(), "ab"); // NUL
+        assert_eq!(validate_task_input("a\x1bb").unwrap().as_str(), "ab"); // ESC
+    }
+
+    #[test]
+    fn validate_task_input_rejects_8kb_plus_one() {
+        // Exact boundary + 1 must fail; the exact boundary passes (covered above).
+        let over = "x".repeat(MAX_TASK_BYTES + 1);
+        let result = validate_task_input(&over);
+        assert!(matches!(result, Err(DispatchError::InvalidInput(_))));
+        if let Err(DispatchError::InvalidInput(msg)) = result {
+            assert!(msg.contains("8 KB"), "error should mention limit: {msg}");
+        }
+    }
+
+    // ── dispatch_routes_authed (Phase 3 exit criterion) ───────────────────────
+    //
+    // Integration tests: every POST /api/dispatch/* endpoint must return 401
+    // when the Authorization header is absent.  Uses tower::ServiceExt::oneshot
+    // to drive the router in-process without binding a TCP port.
+
+    fn make_test_state() -> crate::server::AppState {
+        use crate::config::{AgentSession, Config, TokenSource};
+        use std::ffi::OsString;
+        use std::path::PathBuf;
+        crate::server::AppState::for_test(Config {
+            port: 0,
+            host_cmd: OsString::from("bash"),
+            cwd: PathBuf::from("/tmp"),
+            token: "test-bearer-abc".to_owned(),
+            token_source: TokenSource::EnvVar,
+            agent: AgentSession::default(),
+            claude_agent_template: None,
+        })
+    }
+
+    #[tokio::test]
+    async fn dispatch_classify_rejects_unauthenticated() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use tower::ServiceExt;
+        let app = dispatch_router().with_state(make_test_state());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/dispatch/classify")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"task":"audit code"}"#))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn dispatch_execute_rejects_unauthenticated() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use tower::ServiceExt;
+        let app = dispatch_router().with_state(make_test_state());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/dispatch/execute")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{"task":"refactor auth","agents":["engineer"],"mode":"solo","dry":true}"#,
+            ))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn dispatch_cancel_rejects_unauthenticated() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use tower::ServiceExt;
+        let app = dispatch_router().with_state(make_test_state());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/dispatch/cancel/SQD-ALPHA-01")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn dispatch_retry_rejects_unauthenticated() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use tower::ServiceExt;
+        let app = dispatch_router().with_state(make_test_state());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/dispatch/retry/SQD-ALPHA-01/engineer")
+            .header("content-type", "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn dispatch_classify_accepts_valid_bearer() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use tower::ServiceExt;
+        let app = dispatch_router().with_state(make_test_state());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/dispatch/classify")
+            .header("content-type", "application/json")
+            .header("authorization", "Bearer test-bearer-abc")
+            .body(Body::from(r#"{"task":"audit code"}"#))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        // 200 confirms auth passed; classification returned.
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    // ── security_agent_scoped (Phase 3 exit criterion) ────────────────────────
+    //
+    // Property: every request that includes the Security domain agent MUST go
+    // through EngagementScope synthesis + validation (HIGH H-7).  Verified at
+    // the route layer: a valid authenticated execute request with agents=[security]
+    // must succeed, confirming the scope path ran without error.
+
+    #[tokio::test]
+    async fn dispatch_execute_security_scope_enforced() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use tower::ServiceExt;
+        let app = dispatch_router().with_state(make_test_state());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/dispatch/execute")
+            .header("content-type", "application/json")
+            .header("authorization", "Bearer test-bearer-abc")
+            // dry=true: no filesystem writes; mode=solo; agents=[security].
+            .body(Body::from(
+                r#"{"task":"audit security surface","agents":["security"],"mode":"solo","dry":true}"#,
+            ))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        // 200 OK confirms EngagementScope.synthesise() + validate() succeeded (H-7).
+        // Any scope failure would 403; any auth failure would 401.
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+}

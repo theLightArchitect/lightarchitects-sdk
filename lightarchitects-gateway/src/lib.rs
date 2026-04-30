@@ -38,6 +38,8 @@ pub mod governance;
 pub mod handlers;
 /// MCP server loop and tool dispatch.
 pub mod server;
+/// Squad Comms MCP actions — HTTP delegation to the webshell coordination API.
+pub mod squad_comms;
 /// Sibling subprocess spawner and MCP proxy.
 ///
 /// Only compiled when the `spawner` feature is enabled (default).

@@ -295,8 +295,8 @@ pub struct Cli {
     #[arg(long)]
     pub ollama_key: Option<String>,
 
-    /// Name of a Claude Code agent template to launch (e.g., `corso`, `eva`,
-    /// `soul`, `quantum`, `seraph`). Maps to `claude --agent <name>` on spawn.
+    /// Name of a Claude Code agent template to launch (e.g., `engineer`, `quality`,
+    /// `security`, `ops`, `researcher`). Maps to `claude --agent <name>` on spawn.
     /// Only applies when `--agent=claude-code` (currently the only option).
     ///
     /// Singleton templates are registered in Claude's agent registry
@@ -347,7 +347,7 @@ pub struct Config {
     pub token_source: TokenSource,
     /// Default agent session (kind + backend) for new build sessions.
     pub agent: AgentSession,
-    /// Optional Claude Code agent template name (e.g., `corso`, `eva`, `soul`).
+    /// Optional Claude Code agent template name (e.g., `engineer`, `quality`, `security`).
     ///
     /// Applied as `claude --agent <name>` only when `agent` is `Lightarchitects`.
     /// Codex sessions ignore this field (Phase 2 will introduce a
