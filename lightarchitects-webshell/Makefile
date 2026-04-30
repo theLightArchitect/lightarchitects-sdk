@@ -26,8 +26,6 @@ ui: ## Build Svelte frontend into lightarchitects-webshell-ui/dist/ (embedded by
 	@cd $(UI_DIR) && pnpm build
 	@echo "UI built: $(UI_DIR)/dist/"
 
-ui: ui ## Alias for 'ui' (legacy name)
-
 # ── Backend ─────────────────────────────────────────────────────────────────
 
 build: ## Build release binary (requires webshell UI dist/ to be current)
@@ -41,7 +39,7 @@ quality: ## Check code quality: fmt + clippy + Rust tests + webshell UI tests
 	@cargo fmt -- --check
 	@cargo clippy -p lightarchitects-webshell --all-targets -- -D warnings
 	@cargo test -p lightarchitects-webshell --quiet
-	@cd $(MOCKCLI_DIR) && pnpm test:run
+	@cd $(UI_DIR) && pnpm test:run
 
 fix: ## Auto-fix fmt and clippy issues
 	@cargo fmt
