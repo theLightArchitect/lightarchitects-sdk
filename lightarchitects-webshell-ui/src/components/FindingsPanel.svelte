@@ -53,7 +53,7 @@
 
 <div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
   <div class="px-4 py-2 border-b border-[#1e293b] flex items-center justify-between">
-    <h3 class="text-xs font-medium text-[#64748b]">FINDINGS</h3>
+    <h3 class="text-xs font-medium text-[#94a3b8]">FINDINGS</h3>
     <span class="text-[10px] text-[#475569]">{findings.length} total</span>
   </div>
 

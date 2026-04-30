@@ -124,7 +124,7 @@
 <div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
   <!-- Header -->
   <div class="px-4 py-2 border-b border-[#1e293b] flex items-center justify-between">
-    <h3 class="text-xs font-medium text-[#64748b]">ARENA STATUS</h3>
+    <h3 class="text-xs font-medium text-[#94a3b8]">ARENA STATUS</h3>
     <div class="flex items-center gap-3 text-[10px]">
       <span class="text-[#22c55e]">{$arenaStats.activeAgents} active</span>
       <span class="text-[#6b7280]">{$arenaStats.idleAgents} idle</span>
@@ -213,7 +213,7 @@
       onclick={() => showTraining = !showTraining}
     >
       <div class="flex items-center gap-2">
-        <h3 class="text-xs font-medium text-[#64748b]">AGENT TRAINING</h3>
+        <h3 class="text-xs font-medium text-[#94a3b8]">AGENT TRAINING</h3>
         <span class="text-[8px] px-1.5 py-0.5 rounded bg-[#FFD700]/10 text-[#FFD700] font-semibold">Pro</span>
       </div>
       <svg

@@ -248,12 +248,18 @@
         <div class="w-7 h-4 bg-[#1e293b] peer-checked:bg-[#FFD700] rounded-full relative transition-colors">
           <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-[#e2e8f0] rounded-full transition-transform peer-checked:translate-x-3"></div>
         </div>
-        <span class="text-[10px] text-[#64748b]">Verbose</span>
+        <span class="text-[10px] text-[#94a3b8]">Verbose</span>
       </label>
       <button
         onclick={() => { activityFeed.set([]); lastAlertCount = 0; }}
         class="text-[10px] px-2 py-0.5 text-[#475569] hover:text-[#e2e8f0] border border-[#1e293b] rounded transition-colors"
       >Clear</button>
+      <!-- Persistent Open Copilot CTA — visible regardless of feed state (#36) -->
+      <button
+        data-testid="activity-open-copilot"
+        class="text-[10px] px-2 py-0.5 text-[#FFD700] border border-[#FFD700]/30 rounded hover:bg-[#FFD700]/10 transition-colors"
+        onclick={() => window.dispatchEvent(new CustomEvent('la:open-copilot'))}
+      >Copilot ⌃`</button>
     </div>
   </header>
 
@@ -284,10 +290,25 @@
             </button>
           </div>
         {:else}
-          <!-- Supervisor alerts rendered at top (newest first, inline with feed) -->
+          <!-- Gate verdict sub-section — separated from agent events when both present (#36) -->
+          {#if inlineAlerts.length > 0}
+            <div class="sticky top-0 z-10 flex items-center gap-2 py-1 px-2 bg-[#0a0a0f]/90 backdrop-blur-sm">
+              <span class="text-[9px] font-mono text-[#94a3b8] uppercase tracking-widest">Gate Verdicts</span>
+              <div class="flex-1 h-px bg-[#1e293b]"></div>
+              <span class="text-[9px] font-mono {alertStats.fail > 0 ? 'text-[#ef4444]' : alertStats.warn > 0 ? 'text-[#f59e0b]' : 'text-[#22c55e]'}">{inlineAlerts.length}</span>
+            </div>
+          {/if}
           {#each inlineAlerts as alert (alert.id)}
             {@render supervisorAlertCard(alert)}
           {/each}
+          <!-- Agent events sub-section — only show header when alerts are also visible -->
+          {#if inlineAlerts.length > 0 && copilotEvents.length > 0}
+            <div class="flex items-center gap-2 py-1 px-2 mt-1">
+              <span class="text-[9px] font-mono text-[#94a3b8] uppercase tracking-widest">Agent Events</span>
+              <div class="flex-1 h-px bg-[#1e293b]"></div>
+              <span class="text-[9px] font-mono text-[#475569]">{copilotEvents.length}</span>
+            </div>
+          {/if}
           {#each copilotEvents as event, idx (idx)}
             {@const evRole = copilotEventRole(event.kind)}
             <button

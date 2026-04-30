@@ -493,35 +493,52 @@ export async function initializeStores(): Promise<void> {
   // before fetching live data so the layout is correct immediately.
   await loadPersistedSettings();
 
-  try {
-    const [ws, conductor, arena, siblings, hot, cold, soulHealth, buildsResult] = await Promise.allSettled([
-      api.listWorkspaces(),
-      api.getConductor(),
-      api.getArena(),
-      api.getSiblingStatus(),
-      api.getHotMemory(),
-      api.getColdMemory(),
-      api.getSoulHealth(),
-      api.listBuilds(),
-    ]);
-    if (ws.status === 'fulfilled') workspaces.set(ws.value);
-    if (conductor.status === 'fulfilled') {
-      conductorTasks.set((conductor.value as { nodes: ConductorTask[] }).nodes ?? []);
+  const [ws, conductor, arena, siblings, hot, cold, soulHealth, buildsResult] = await Promise.allSettled([
+    api.listWorkspaces(),
+    api.getConductor(),
+    api.getArena(),
+    api.getSiblingStatus(),
+    api.getHotMemory(),
+    api.getColdMemory(),
+    api.getSoulHealth(),
+    api.listBuilds(),
+  ]);
+
+  // Log API failures so operators can debug connectivity without reloading DevTools.
+  const apiNames = ['workspaces', 'conductor', 'arena', 'siblings', 'hotMemory', 'coldMemory', 'soulHealth', 'builds'];
+  [ws, conductor, arena, siblings, hot, cold, soulHealth, buildsResult].forEach((r, i) => {
+    if (r.status === 'rejected') {
+      console.warn(`[stores] ${apiNames[i]} fetch failed:`, r.reason);
     }
-    if (arena.status === 'fulfilled') arenaStatus.set({ ...arena.value, agents: arena.value.agents ?? [] });
-    if (siblings.status === 'fulfilled') {
+  });
+
+  // Apply fulfilled results — each guarded individually so a data-processing
+  // error in one store doesn't silently abort the rest.
+  if (ws.status === 'fulfilled') {
+    try { workspaces.set(ws.value); } catch (e) { console.error('[stores] workspaces.set failed:', e); }
+  }
+  if (conductor.status === 'fulfilled') {
+    try { conductorTasks.set((conductor.value as { nodes: ConductorTask[] }).nodes ?? []); } catch (e) { console.error('[stores] conductorTasks.set failed:', e); }
+  }
+  if (arena.status === 'fulfilled') {
+    try { arenaStatus.set({ ...arena.value, agents: arena.value.agents ?? [] }); } catch (e) { console.error('[stores] arenaStatus.set failed:', e); }
+  }
+  if (siblings.status === 'fulfilled') {
+    try {
       const healthMap = Object.fromEntries(siblings.value.map(s => [s.id, s])) as Record<SiblingId, SiblingHealth>;
       siblingHealth.set(healthMap);
-    }
-    if (hot.status === 'fulfilled') hotMemory.set(hot.value);
-    if (cold.status === 'fulfilled') coldMemory.set(cold.value);
-    if (soulHealth.status === 'fulfilled') {
-      vaultCounts.set(soulHealth.value.counts);
-    }
-    if (buildsResult.status === 'fulfilled') {
-      builds.set(mapPortfolioBuilds(buildsResult.value));
-    }
-  } catch {
-    // Server offline — stores remain at empty defaults
+    } catch (e) { console.error('[stores] siblingHealth.set failed:', e); }
+  }
+  if (hot.status === 'fulfilled') {
+    try { hotMemory.set(hot.value); } catch (e) { console.error('[stores] hotMemory.set failed:', e); }
+  }
+  if (cold.status === 'fulfilled') {
+    try { coldMemory.set(cold.value); } catch (e) { console.error('[stores] coldMemory.set failed:', e); }
+  }
+  if (soulHealth.status === 'fulfilled') {
+    try { vaultCounts.set(soulHealth.value.counts); } catch (e) { console.error('[stores] vaultCounts.set failed:', e); }
+  }
+  if (buildsResult.status === 'fulfilled') {
+    try { builds.set(mapPortfolioBuilds(buildsResult.value)); } catch (e) { console.error('[stores] builds.set failed:', e); }
   }
 }

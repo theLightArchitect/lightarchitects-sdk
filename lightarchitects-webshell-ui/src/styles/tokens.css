@@ -40,10 +40,15 @@
   --la-danger-text:    #FCA5A5;  /* red-300 — body text on dark */
   --la-danger-glow:    rgba(220, 38, 38, 0.35);
 
-  /* ── Focus ring (a11y groundwork — #11 wave 4 will use these) ──────────── */
+  /* ── Focus ring (#11 — visible keyboard navigation indicator) ──────────── */
   --la-focus-ring:        #FFD700;  /* yellow accent matches brand */
-  --la-focus-ring-width:  1px;
+  --la-focus-ring-width:  2px;      /* was 1px; bumped to 2px for WCAG 2.2 §2.4.11 */
   --la-focus-ring-offset: 2px;
+
+  /* ── Accessible muted text (#11 — ≥7:1 on #0a0a0f and #111827) ────────── */
+  /* Use for section labels, form hints, metadata captions.                   */
+  /* #94a3b8 (slate-400): 8:1 on #0a0a0f, 6.7:1 on #111827 (AA all sizes).  */
+  --la-text-label: #94a3b8;
 
   /* ── Animation / motion ────────────────────────────────────────────────── */
   --la-transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);

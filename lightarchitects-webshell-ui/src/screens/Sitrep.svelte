@@ -36,6 +36,40 @@
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
     return `${Math.floor(seconds / 86400)}d`;
   }
+
+  // --- Heartbeat staleness & relative timestamps (#61) ---
+
+  // Reactive wall-clock tick — updates every 10s so staleness badges stay current.
+  let now = $state(Date.now());
+  $effect(() => {
+    const id = setInterval(() => { now = Date.now(); }, 10_000);
+    return () => clearInterval(id);
+  });
+
+  function heartbeatAge(lastHeartbeat: string | undefined): number {
+    if (!lastHeartbeat) return Infinity;
+    return (now - new Date(lastHeartbeat).getTime()) / 1000;
+  }
+
+  // 'fresh' (<30s) | 'stale' (30s–120s, amber) | 'dead' (>120s, red)
+  function staleness(lastHeartbeat: string | undefined): 'fresh' | 'stale' | 'dead' {
+    const age = heartbeatAge(lastHeartbeat);
+    if (age < 30) return 'fresh';
+    if (age < 120) return 'stale';
+    return 'dead';
+  }
+
+  function formatAgo(lastHeartbeat: string | undefined): string {
+    const age = heartbeatAge(lastHeartbeat);
+    if (!isFinite(age)) return 'never';
+    if (age < 60)   return `${Math.floor(age)}s ago`;
+    if (age < 3600) return `${Math.floor(age / 60)}m ago`;
+    return `${Math.floor(age / 3600)}h ago`;
+  }
+
+  // Per-card expand state — keyed by sibling id.
+  let expanded = $state<Record<string, boolean>>({});
+  function toggle(sib: string) { expanded[sib] = !expanded[sib]; }
 </script>
 
 <div class="h-full flex flex-col relative overflow-hidden">
@@ -98,10 +132,13 @@
         <!-- Sibling Health Cards (7 siblings) -->
         <div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
           <div class="px-4 py-2 border-b border-[#1e293b] flex items-center justify-between">
-            <h3 class="text-xs font-medium text-[#64748b]">SQUAD HEALTH</h3>
-            <span class="text-[10px] text-[#6b7280]">
-              {Object.values(health).filter(h => h.status === 'online').length}/7 online
-            </span>
+            <h3 class="text-xs font-medium text-[#94a3b8]">SQUAD HEALTH</h3>
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] text-[#6b7280]">
+                {Object.values(health).filter(h => h.status === 'online').length}/7 online
+              </span>
+              <span class="text-[9px] text-[#334155]">· {new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+            </div>
           </div>
           <div class="p-3 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
             {#each SIBLINGS as sib}
@@ -109,32 +146,73 @@
               {@const color = SIBLING_COLORS[sib] ?? '#6b7280'}
               {@const statusColor = h?.status ? STATUS_COLORS[h.status] : '#6b7280'}
               {@const dispatchCount = dispatchCounts[sib as SiblingId] ?? 0}
+              {@const stale = staleness(h?.lastHeartbeat)}
 
-              <div class="bg-[#0d1117] border border-[#1e293b] rounded-lg p-3 text-center">
-                <div class="flex items-center justify-center gap-2 mb-2">
-                  <div class="relative">
-                    <div
-                      class="w-2 h-2 rounded-full"
-                      style="background-color: {statusColor}; {h?.status === 'online' ? `box-shadow: 0 0 4px ${statusColor}` : ''}"
-                    ></div>
-                    {#if h?.status === 'online'}
-                      <div
-                        class="absolute inset-0 w-2 h-2 rounded-full animate-ping"
-                        style="background-color: {statusColor}; opacity: 0.4"
-                      ></div>
-                    {/if}
+              <div class="bg-[#0d1117] border border-[#1e293b] rounded-lg overflow-hidden transition-all">
+                <!-- Card header — always visible -->
+                <button
+                  onclick={() => toggle(sib)}
+                  class="w-full p-3 text-left flex flex-col items-center gap-1 hover:bg-[#1e293b]/40 transition-colors cursor-pointer"
+                  aria-expanded={expanded[sib]}
+                  aria-label="Toggle {sib} details"
+                >
+                  <div class="flex items-center justify-between w-full">
+                    <div class="flex items-center gap-1.5">
+                      <div class="relative">
+                        <div
+                          class="w-2 h-2 rounded-full"
+                          style="background-color: {statusColor}; {h?.status === 'online' ? `box-shadow: 0 0 4px ${statusColor}` : ''}"
+                        ></div>
+                        {#if h?.status === 'online'}
+                          <div
+                            class="absolute inset-0 w-2 h-2 rounded-full animate-ping"
+                            style="background-color: {statusColor}; opacity: 0.4"
+                          ></div>
+                        {/if}
+                      </div>
+                      <span class="text-[10px] font-semibold" style="color: {color}">{sib.toUpperCase()}</span>
+                    </div>
+                    <!-- Chevron -->
+                    <svg
+                      class="w-2.5 h-2.5 text-[#475569] transition-transform {expanded[sib] ? 'rotate-180' : ''}"
+                      viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"
+                    >
+                      <path d="M2 3.5 5 6.5 8 3.5" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
                   </div>
-                  <span class="text-[10px] font-semibold" style="color: {color}">{sib.toUpperCase()}</span>
-                </div>
-                <div class="text-[9px] text-[#64748b] mb-1">{h?.status ?? 'unknown'}</div>
-                <div class="text-[9px] text-[#475569]">
-                  uptime: {h?.uptime ? formatUptime(h.uptime) : '--'}
-                </div>
-                {#if dispatchCount > 0}
-                  <div class="mt-1">
+
+                  <div class="text-[9px] text-[#64748b]">{h?.status ?? 'unknown'}</div>
+                  <div class="text-[9px] text-[#475569]">
+                    {h?.uptime ? formatUptime(h.uptime) : '--'}
+                  </div>
+
+                  <!-- Staleness badge (amber = stale, red = dead) -->
+                  {#if stale !== 'fresh'}
+                    <span
+                      class="text-[8px] px-1.5 py-0.5 rounded-full mt-0.5 {stale === 'stale' ? 'bg-[#f59e0b]/20 text-[#f59e0b]' : 'bg-[#ef4444]/20 text-[#ef4444]'}"
+                    >{formatAgo(h?.lastHeartbeat)}</span>
+                  {/if}
+
+                  {#if dispatchCount > 0}
                     <span class="text-[8px] px-1.5 py-0.5 rounded-full bg-[#3b82f6]/20 text-[#3b82f6]">
                       {dispatchCount} active
                     </span>
+                  {/if}
+                </button>
+
+                <!-- Expanded detail row -->
+                {#if expanded[sib]}
+                  <div class="px-3 pb-3 border-t border-[#1e293b] pt-2 space-y-1.5">
+                    <div class="text-[8px] text-[#475569]">
+                      hb: <span class="{stale === 'fresh' ? 'text-[#22c55e]' : stale === 'stale' ? 'text-[#f59e0b]' : 'text-[#ef4444]'}">{formatAgo(h?.lastHeartbeat)}</span>
+                    </div>
+                    {#if h?.capabilities?.length}
+                      <div class="flex flex-wrap gap-1">
+                        {#each h.capabilities as cap}
+                          <span class="text-[7px] px-1 py-0.5 rounded bg-[#1e293b] text-[#64748b]">{cap}</span>
+                        {/each}
+                      </div>
+                    {/if}
                   </div>
                 {/if}
               </div>

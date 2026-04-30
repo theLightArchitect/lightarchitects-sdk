@@ -253,13 +253,13 @@
     <div class="flex-1 flex flex-col overflow-hidden relative">
       <!-- Ambient particles — drifting helix-palette dots behind content -->
       <AmbientParticles />
-      <!-- Top navigation strip -->
-      <nav class="flex items-center gap-1 px-3 py-1.5 border-b border-[#1e293b] bg-[#0a0a0f] shrink-0 overflow-x-auto">
+      <!-- Top navigation strip — underline-only active indicator (#23) -->
+      <nav class="flex items-stretch gap-1 px-3 border-b border-[#1e293b] bg-[#0a0a0f] shrink-0 overflow-x-auto">
         {#each NAV_ITEMS as item}
           <Tooltip content={item.hint} side="bottom">
             <button
               onclick={() => navigate(item.hash)}
-              class="shrink-0 px-3 py-1 text-[11px] rounded transition-all {isActive(item.hash) ? 'bg-[#FFD700]/15 text-[#FFD700] shadow-[0_0_8px_rgba(255,215,0,0.2)] border border-[#FFD700]/30' : 'text-[#475569] hover:text-[#FFD700] border border-transparent'}"
+              class="shrink-0 px-3 text-[11px] transition-all self-stretch flex items-center border-b-2 {isActive(item.hash) ? 'border-[#FFD700] text-[#FFD700]' : 'border-transparent text-[#475569] hover:text-[#94a3b8]'}"
             >{item.label}</button>
           </Tooltip>
         {/each}

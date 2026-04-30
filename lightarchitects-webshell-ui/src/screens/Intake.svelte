@@ -29,6 +29,43 @@
   let prefetching = $state(false);
   let isPlanMode = $derived($planBuilderMode);
 
+  // Per-field inline validation errors — only populated on submit attempt.
+  let fieldErrors = $state<{ description?: string; repoPath?: string }>({});
+
+  // Dedupe warning: set when a matching in-flight build is detected pre-submit.
+  // null = no duplicate; non-null = show "already queued" warning + "Create anyway" option.
+  let dedupeWarning = $state<{ buildId: string; status: string } | null>(null);
+  let forceCreate = $state(false);
+
+  // Validate form fields. Returns true if valid.
+  function validateForm(): boolean {
+    const errs: typeof fieldErrors = {};
+    const desc = (form.description ?? '').trim();
+    if (!desc) {
+      errs.description = 'Description is required.';
+    } else if (desc.length < 8) {
+      errs.description = 'Description is too short — describe what you want built.';
+    }
+    fieldErrors = errs;
+    return Object.keys(errs).length === 0;
+  }
+
+  // Check whether a queued/running build already exists for this repo + meta-skill combo.
+  function checkDedupe(): boolean {
+    if (forceCreate) return false;
+    const repoKey = form.repoPath.trim() || '.';
+    const existing = $builds.find(b =>
+      b.metaSkill === form.metaSkill &&
+      (b.path ?? '.') === repoKey &&
+      (b.status === 'queued' || b.status === 'in_progress'),
+    );
+    if (existing) {
+      dedupeWarning = { buildId: existing.id, status: existing.status };
+      return true;
+    }
+    return false;
+  }
+
   // Plan Builder state
   let planTier = $state<BuildTier>('MEDIUM');
   let planPhases = $state<PhaseWithGates[]>([]);
@@ -121,6 +158,8 @@
 
   // Submit build
   async function submit() {
+    if (!validateForm()) return;
+    if (checkDedupe()) return;
     submitting = true;
     try {
       await api.createBuild({
@@ -157,6 +196,9 @@
       repoPath: '',
       description: '',
     });
+    fieldErrors = {};
+    dedupeWarning = null;
+    forceCreate = false;
     submitting = false;
     window.location.hash = '/';
   }
@@ -262,6 +304,8 @@
   }
 
   async function submitPlan() {
+    if (!validateForm()) return;
+    if (checkDedupe()) return;
     submitting = true;
     validationErrors = [];
 
@@ -386,7 +430,7 @@
 
         <!-- Source selection -->
         <div data-onboarding="intake-source">
-          <h2 class="text-xs font-medium text-[#64748b] mb-3">SOURCE</h2>
+          <h2 class="text-xs font-medium text-[#94a3b8] mb-3">SOURCE</h2>
           <div class="grid grid-cols-4 gap-2">
             {#each Object.entries(SOURCE_CONFIG) as [key, cfg]}
               <button
@@ -408,7 +452,7 @@
 
         <!-- Repository path -->
         <div>
-          <h2 class="text-xs font-medium text-[#64748b] mb-3">REPOSITORY</h2>
+          <h2 class="text-xs font-medium text-[#94a3b8] mb-3">REPOSITORY</h2>
           <div class="flex gap-2">
             <input
               type="text"
@@ -444,19 +488,27 @@
 
         <!-- Build description -->
         <div>
-          <h2 class="text-xs font-medium text-[#64748b] mb-3">DESCRIPTION</h2>
+          <h2 class="text-xs font-medium text-[#94a3b8] mb-3">DESCRIPTION</h2>
           <textarea
             value={form.description}
-            oninput={(e) => { intakeForm.update(f => ({ ...f, description: (e.target as HTMLTextAreaElement).value })); }}
+            oninput={(e) => {
+              intakeForm.update(f => ({ ...f, description: (e.target as HTMLTextAreaElement).value }));
+              if (fieldErrors.description) fieldErrors = { ...fieldErrors, description: undefined as string | undefined };
+            }}
             placeholder="Describe what this build should accomplish..."
             rows="3"
-            class="w-full bg-[#111827] border border-[#1e293b] rounded px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#FFD700] resize-y"
+            class="w-full bg-[#111827] border rounded px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#475569] outline-none resize-y
+              {fieldErrors.description ? 'border-[#ef4444] focus:border-[#ef4444]' : 'border-[#1e293b] focus:border-[#FFD700]'}"
+            data-testid="intake-description"
           ></textarea>
+          {#if fieldErrors.description}
+            <p class="mt-1 text-[10px] text-[#ef4444]" data-testid="intake-description-error">{fieldErrors.description}</p>
+          {/if}
         </div>
 
         <!-- Meta-skill selection -->
         <div data-onboarding="intake-meta-skill">
-          <h2 class="text-xs font-medium text-[#64748b] mb-3">META-SKILL</h2>
+          <h2 class="text-xs font-medium text-[#94a3b8] mb-3">META-SKILL</h2>
           <div class="grid grid-cols-3 gap-2">
             {#each META_SKILL_CARDS as card (card.skill)}
               {@const polyType = getMetaSkillPolytope(card.skill)}
@@ -480,7 +532,7 @@
 
         <!-- Priority -->
         <div>
-          <h2 class="text-xs font-medium text-[#64748b] mb-3">PRIORITY</h2>
+          <h2 class="text-xs font-medium text-[#94a3b8] mb-3">PRIORITY</h2>
           <div class="flex gap-2">
             {#each Object.entries(PRIORITY_CONFIG) as [key, cfg]}
               {@const isActive = form.priority === key}
@@ -499,7 +551,7 @@
         {#if isPlanMode}
           <div>
             <div class="flex items-center justify-between mb-3">
-              <h2 class="text-xs font-medium text-[#64748b]">PHASES + GATES</h2>
+              <h2 class="text-xs font-medium text-[#94a3b8]">PHASES + GATES</h2>
               <div class="flex items-center gap-2">
                 <input
                   type="text"
@@ -634,7 +686,7 @@
         <!-- Selected meta-skill detail -->
         <div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
           <div class="px-4 py-2 border-b border-[#1e293b]">
-            <h3 class="text-xs font-medium text-[#64748b]">SELECTED META-SKILL</h3>
+            <h3 class="text-xs font-medium text-[#94a3b8]">SELECTED META-SKILL</h3>
           </div>
           <div class="p-4">
             <div class="flex items-center gap-3 mb-3">
@@ -665,7 +717,7 @@
         <!-- SQUAD auto-assignment -->
         <div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
           <div class="px-4 py-2 border-b border-[#1e293b]">
-            <h3 class="text-xs font-medium text-[#64748b]">SQUAD ASSIGNMENT</h3>
+            <h3 class="text-xs font-medium text-[#94a3b8]">SQUAD ASSIGNMENT</h3>
           </div>
           <div class="p-4">
             <div class="flex items-center gap-3 mb-3">
@@ -691,7 +743,7 @@
         <!-- Build summary -->
         <div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
           <div class="px-4 py-2 border-b border-[#1e293b]">
-            <h3 class="text-xs font-medium text-[#64748b]">SUMMARY</h3>
+            <h3 class="text-xs font-medium text-[#94a3b8]">SUMMARY</h3>
           </div>
           <div class="p-4 space-y-2">
             <div class="flex items-center justify-between text-[10px]">
@@ -719,7 +771,7 @@
         {#if isPlanMode}
           <div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
             <div class="px-4 py-2 border-b border-[#1e293b]">
-              <h3 class="text-xs font-medium text-[#64748b]">PLAN LIFECYCLE</h3>
+              <h3 class="text-xs font-medium text-[#94a3b8]">PLAN LIFECYCLE</h3>
             </div>
             <div class="p-3 space-y-1.5">
               <div class="flex items-center gap-2 text-[9px]">
@@ -750,9 +802,39 @@
           </div>
         {/if}
 
+        <!-- Dedupe warning — inline, shown before submit button when a duplicate is detected -->
+        {#if dedupeWarning}
+          <div class="bg-[#f59e0b]/10 border border-[#f59e0b]/40 rounded-lg p-3" data-testid="intake-dedupe-warning">
+            <div class="flex items-start gap-2">
+              <span class="text-[#f59e0b] text-sm shrink-0">⚠</span>
+              <div class="flex-1">
+                <p class="text-[11px] text-[#f59e0b] font-medium mb-1">Duplicate detected</p>
+                <p class="text-[10px] text-[#94a3b8]">
+                  A <span class="font-mono text-[#e2e8f0]">{form.metaSkill}</span> build
+                  {form.repoPath ? `for <span class="font-mono text-[#e2e8f0]">${form.repoPath}</span>` : ''}
+                  is already <span class="text-[#f59e0b]">{dedupeWarning.status}</span>
+                  (ID: <span class="font-mono">{dedupeWarning.buildId}</span>).
+                </p>
+                <div class="flex gap-2 mt-2">
+                  <button
+                    class="px-3 py-1 text-[10px] rounded border border-[#f59e0b]/40 text-[#f59e0b] hover:bg-[#f59e0b]/10 transition-colors"
+                    onclick={() => { window.location.hash = '/'; }}
+                  >View existing</button>
+                  <button
+                    class="px-3 py-1 text-[10px] rounded border border-[#64748b]/40 text-[#64748b] hover:border-[#94a3b8] hover:text-[#94a3b8] transition-colors"
+                    data-testid="intake-force-create"
+                    onclick={() => { forceCreate = true; dedupeWarning = null; }}
+                  >Create anyway</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        {/if}
+
         <!-- Submit -->
         <button
           data-onboarding="intake-submit"
+          data-testid="intake-submit"
           class="w-full px-6 py-3 bg-[#FFD700] text-white text-sm rounded-lg hover:bg-[#D4A017] transition-colors font-medium disabled:opacity-50"
           onclick={isPlanMode ? submitPlan : submit}
           disabled={submitting}

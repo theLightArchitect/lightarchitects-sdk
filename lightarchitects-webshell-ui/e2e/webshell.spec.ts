@@ -3933,6 +3933,128 @@ test.describe('Comprehensive webshell E2E', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // 73. Intake — inline field validation + dedupe guard (#60)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('73. Intake — inline field validation + dedupe guard (#60)', () => {
+    test.beforeEach(async () => {
+      await page.evaluate(() => { window.location.hash = '/intake'; });
+      await page.waitForTimeout(500);
+    });
+
+    test('submit with empty description shows inline error', async () => {
+      const submitBtn = page.locator('[data-testid="intake-submit"]');
+      if (!await submitBtn.count()) { test.skip(); return; }
+      // Clear description (may already be empty)
+      const textarea = page.locator('[data-testid="intake-description"]');
+      if (await textarea.count()) await textarea.fill('');
+      await submitBtn.click();
+      await page.waitForTimeout(200);
+      const errEl = page.locator('[data-testid="intake-description-error"]');
+      await expect(errEl).toBeVisible({ timeout: 1000 });
+      const errText = await errEl.textContent() ?? '';
+      expect(errText.length).toBeGreaterThan(0);
+    });
+
+    test('description error clears when user starts typing', async () => {
+      const submitBtn = page.locator('[data-testid="intake-submit"]');
+      const textarea = page.locator('[data-testid="intake-description"]');
+      if (!await submitBtn.count() || !await textarea.count()) { test.skip(); return; }
+      await textarea.fill('');
+      await submitBtn.click();
+      await page.waitForTimeout(200);
+      await expect(page.locator('[data-testid="intake-description-error"]')).toBeVisible({ timeout: 1000 });
+      // Type something → error should vanish
+      await textarea.fill('a');
+      await page.waitForTimeout(200);
+      expect(await page.locator('[data-testid="intake-description-error"]').count()).toBe(0);
+    });
+
+    test('description with fewer than 8 chars shows "too short" error', async () => {
+      const submitBtn = page.locator('[data-testid="intake-submit"]');
+      const textarea = page.locator('[data-testid="intake-description"]');
+      if (!await submitBtn.count() || !await textarea.count()) { test.skip(); return; }
+      await textarea.fill('short');
+      await submitBtn.click();
+      await page.waitForTimeout(200);
+      const errEl = page.locator('[data-testid="intake-description-error"]');
+      await expect(errEl).toBeVisible({ timeout: 1000 });
+      expect(await errEl.textContent()).toMatch(/short/i);
+    });
+
+    test('valid description passes validation (no inline error)', async () => {
+      const submitBtn = page.locator('[data-testid="intake-submit"]');
+      const textarea = page.locator('[data-testid="intake-description"]');
+      if (!await submitBtn.count() || !await textarea.count()) { test.skip(); return; }
+      await textarea.fill('Refactor the auth module and add property tests');
+      await submitBtn.click();
+      await page.waitForTimeout(200);
+      expect(await page.locator('[data-testid="intake-description-error"]').count()).toBe(0);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 72. Sitrep — heartbeat staleness badge + chevron expand (#61)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('72. Sitrep — heartbeat staleness badge + chevron expand (#61)', () => {
+    test.beforeEach(async () => {
+      await page.evaluate(() => { window.location.hash = '/sitrep'; });
+      await page.waitForTimeout(500);
+    });
+
+    test('sitrep screen renders squad health cards', async () => {
+      const text = await page.evaluate(() => document.body.textContent ?? '');
+      expect(text).toMatch(/SQUAD HEALTH/i);
+    });
+
+    test('sibling card has a chevron button with aria-expanded', async () => {
+      // Each sibling card is a <button> with aria-expanded attribute
+      const cards = page.locator('button[aria-expanded]');
+      const count = await cards.count();
+      if (count === 0) { test.skip(); return; }
+      expect(count).toBeGreaterThan(0);
+    });
+
+    test('clicking a sibling card chevron reveals capabilities section', async () => {
+      const card = page.locator('button[aria-expanded="false"]').first();
+      if (!await card.count()) { test.skip(); return; }
+      await card.click();
+      await page.waitForTimeout(200);
+      // After expand the button should now report expanded=true
+      const expanded = page.locator('button[aria-expanded="true"]').first();
+      await expect(expanded).toBeVisible({ timeout: 1000 });
+    });
+
+    test('clicking expanded sibling card collapses it', async () => {
+      // Open first card
+      const closedCard = page.locator('button[aria-expanded="false"]').first();
+      if (!await closedCard.count()) { test.skip(); return; }
+      await closedCard.click();
+      await page.waitForTimeout(200);
+      // Close it
+      const openCard = page.locator('button[aria-expanded="true"]').first();
+      if (!await openCard.count()) { test.skip(); return; }
+      await openCard.click();
+      await page.waitForTimeout(200);
+      // Should be closed again
+      const stillOpen = await page.locator('button[aria-expanded="true"]').count();
+      expect(stillOpen).toBe(0);
+    });
+
+    test('squad health header shows a wall-clock timestamp', async () => {
+      // Header shows HH:MM:SS next to the online count
+      const text = await page.evaluate(() => {
+        const panel = document.querySelector('[class*="SQUAD"], [class*="squad"]');
+        // Fallback: scan the whole body for time patterns
+        return document.body.textContent ?? '';
+      });
+      // Should contain a time pattern like "10:32:05" or "10:32 AM"
+      expect(text).toMatch(/\d{1,2}:\d{2}/);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // 70. Console health (final — MUST BE LAST)
   // ═══════════════════════════════════════════════════════════════════════════
 

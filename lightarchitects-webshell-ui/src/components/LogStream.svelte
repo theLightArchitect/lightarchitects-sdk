@@ -51,7 +51,7 @@
 <div class="bg-[#0a0a12] border border-[#1e293b] rounded-lg overflow-hidden flex flex-col" style="min-height: 200px;">
   <!-- Header -->
   <div class="px-4 py-2 border-b border-[#1e293b] flex items-center justify-between bg-[#111827]">
-    <h3 class="text-xs font-medium text-[#64748b]">LOG STREAM</h3>
+    <h3 class="text-xs font-medium text-[#94a3b8]">LOG STREAM</h3>
     <div class="flex items-center gap-2">
       <span class="text-[10px] text-[#475569]">{entries.length} entries</span>
       <button

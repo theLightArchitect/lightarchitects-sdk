@@ -32,7 +32,7 @@
 <div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
   <!-- Header -->
   <div class="px-4 py-2 border-b border-[#1e293b] flex items-center justify-between">
-    <h3 class="text-xs font-medium text-[#64748b]">BUILD PORTFOLIO</h3>
+    <h3 class="text-xs font-medium text-[#94a3b8]">BUILD PORTFOLIO</h3>
     <div class="flex items-center gap-3 text-[10px]">
       <span class="text-[#3b82f6]">{$buildStats.inProgress} active</span>
       <span class="text-[#94a3b8]">{$buildStats.completed} done</span>

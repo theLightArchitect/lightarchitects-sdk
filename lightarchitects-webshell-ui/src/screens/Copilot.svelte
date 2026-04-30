@@ -514,7 +514,7 @@
     <!-- Sibling dispatch sidebar -->
     <div class="w-[220px] border-l border-[#1e293b] p-4 flex flex-col gap-4 hidden lg:flex">
       <div>
-        <h3 class="text-xs font-medium text-[#64748b] mb-3">DISPATCH</h3>
+        <h3 class="text-xs font-medium text-[#94a3b8] mb-3">DISPATCH</h3>
         <SiblingDispatch
           onDispatch={handleDispatch}
           selectedSibling={$focusedSibling}
@@ -522,12 +522,12 @@
       </div>
 
       <div>
-        <h3 class="text-xs font-medium text-[#64748b] mb-2">CONTEXT</h3>
+        <h3 class="text-xs font-medium text-[#94a3b8] mb-2">CONTEXT</h3>
         <pre class="text-[9px] text-[#475569] bg-[#0a0a0a] border border-[#1e293b] rounded p-2 whitespace-pre-wrap max-h-40 overflow-y-auto">{contextString}</pre>
       </div>
 
       <div>
-        <h3 class="text-xs font-medium text-[#64748b] mb-2">QUICK COMMANDS</h3>
+        <h3 class="text-xs font-medium text-[#94a3b8] mb-2">QUICK COMMANDS</h3>
         <div class="space-y-1">
           {#each ['/build', '/secure', '/research', '/review', '/observe'] as cmd}
             <button

@@ -73,7 +73,7 @@
 
 <div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden" data-testid="compaction-panel">
   <div class="px-4 py-2 border-b border-[#1e293b] flex items-center justify-between">
-    <h3 class="text-xs font-medium text-[#64748b]">COLD-TIER COMPACTION</h3>
+    <h3 class="text-xs font-medium text-[#94a3b8]">COLD-TIER COMPACTION</h3>
     {#if summary}
       <span class="text-[10px] text-[#10b981]" data-testid="permanent-skipped-badge">
         {summary.permanent_skipped} protected
