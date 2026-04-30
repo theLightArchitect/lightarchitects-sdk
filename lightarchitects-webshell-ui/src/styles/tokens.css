@@ -49,6 +49,19 @@
   --la-transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
   --la-transition-med:  200ms cubic-bezier(0.4, 0, 0.2, 1);
   --la-transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ── Drawer chrome (#34 token-level pass) ──────────────────────────────────
+     CopilotDrawer (bottom, push) and MemoryDrawer (right, overlay) consume
+     these so visual chrome stays consistent without forcing an architectural
+     refactor of either model. Full primitive unification deferred to v0.3.1. */
+  --la-drawer-z:        30;                          /* z-index — above content, below modal stack */
+  --la-drawer-bg:       #0d1117;                     /* surface */
+  --la-drawer-border:   #1e293b;                     /* 1px stroke */
+  --la-drawer-shadow:   0 -4px 16px rgba(0, 0, 0, 0.4),
+                        0 0 0 1px rgba(255, 215, 0, 0.05);
+  --la-drawer-padding:  12px;
+  --la-scrim-color:     rgba(10, 10, 15, 0.62);      /* used by overlay drawers */
+  --la-scrim-blur:      2px;
 }
 
 /* ── Zero-state utility ────────────────────────────────────────────────────
