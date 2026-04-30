@@ -13,7 +13,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{auth, server::AppState};
 
@@ -46,6 +46,17 @@ pub async fn control_handler(
         return StatusCode::UNAUTHORIZED;
     }
 
+    // Handle local-execution commands before broadcasting.
+    match &cmd {
+        ControlCommand::OpenInEditor { file, line } => {
+            open_in_editor(file, *line, &state.config.cwd).await;
+        }
+        ControlCommand::RevealInFinder { path } => {
+            reveal_in_finder(path, &state.config.cwd).await;
+        }
+        _ => {}
+    }
+
     // Broadcast the control command as a WebEvent.
     let event = WebEvent::Control(cmd.clone());
     let receiver_count = state
@@ -60,6 +71,85 @@ pub async fn control_handler(
     );
 
     StatusCode::OK
+}
+
+/// Resolve `raw_path` to an absolute path within `cwd`, rejecting traversal.
+///
+/// Returns `None` if the path is unsafe (contains `..` components, null
+/// bytes, or would escape `cwd` after canonicalisation).
+fn resolve_safe_path(raw_path: &str, cwd: &std::path::Path) -> Option<std::path::PathBuf> {
+    if raw_path.contains('\0') {
+        return None;
+    }
+    let p = std::path::Path::new(raw_path);
+    let resolved = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        cwd.join(p)
+    };
+    // Reject paths that contain `..` components (pre-canonicalise check).
+    if resolved
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
+    {
+        return None;
+    }
+    Some(resolved)
+}
+
+/// Spawn `open -t <file>` (macOS) or `$EDITOR <file>:<line>`.
+///
+/// Falls back to `open -t` when `$EDITOR` is not set.  Line-number
+/// injection uses the `file:line` convention understood by most editors
+/// (VS Code, Cursor, Neovim, etc.).
+async fn open_in_editor(raw_file: &str, line: Option<u32>, cwd: &std::path::Path) {
+    let Some(path) = resolve_safe_path(raw_file, cwd) else {
+        warn!(
+            raw_file,
+            "OpenInEditor: path rejected (traversal or null byte)"
+        );
+        return;
+    };
+    let path_str = path.to_string_lossy().into_owned();
+    let target = match line {
+        Some(n) => format!("{path_str}:{n}"),
+        None => path_str,
+    };
+
+    // Prefer $EDITOR; fall back to macOS `open -t` (default text editor).
+    let result = if let Ok(editor) = std::env::var("EDITOR") {
+        tokio::process::Command::new(&editor).arg(&target).spawn()
+    } else {
+        // `open -t` opens the file in the default text editor on macOS.
+        tokio::process::Command::new("open")
+            .arg("-t")
+            .arg(&target)
+            .spawn()
+    };
+
+    match result {
+        Ok(_) => info!(target = %target, "OpenInEditor: spawned"),
+        Err(e) => warn!(target = %target, error = %e, "OpenInEditor: spawn failed"),
+    }
+}
+
+/// Spawn `open -R <path>` to reveal the file in Finder (macOS).
+async fn reveal_in_finder(raw_path: &str, cwd: &std::path::Path) {
+    let Some(path) = resolve_safe_path(raw_path, cwd) else {
+        warn!(
+            raw_path,
+            "RevealInFinder: path rejected (traversal or null byte)"
+        );
+        return;
+    };
+    match tokio::process::Command::new("open")
+        .arg("-R")
+        .arg(path.as_os_str())
+        .spawn()
+    {
+        Ok(_) => info!(path = %path.display(), "RevealInFinder: spawned"),
+        Err(e) => warn!(path = %path.display(), error = %e, "RevealInFinder: spawn failed"),
+    }
 }
 
 #[cfg(test)]
@@ -120,6 +210,66 @@ mod tests {
                 ref level
             } if message == "hello" && level == "info"
         ));
+    }
+
+    #[test]
+    fn control_command_open_in_editor_round_trips() {
+        let json = r#"{"command":"open_in_editor","file":"/src/main.rs","line":42}"#;
+        let cmd: ControlCommand = serde_json::from_str(json).unwrap();
+        assert!(
+            matches!(cmd, ControlCommand::OpenInEditor { ref file, line: Some(42) } if file == "/src/main.rs")
+        );
+    }
+
+    #[test]
+    fn control_command_open_in_editor_no_line_round_trips() {
+        let json = r#"{"command":"open_in_editor","file":"src/lib.rs","line":null}"#;
+        let cmd: ControlCommand = serde_json::from_str(json).unwrap();
+        assert!(
+            matches!(cmd, ControlCommand::OpenInEditor { ref file, line: None } if file == "src/lib.rs")
+        );
+    }
+
+    #[test]
+    fn control_command_reveal_in_finder_round_trips() {
+        let json = r#"{"command":"reveal_in_finder","path":"/Users/foo/project"}"#;
+        let cmd: ControlCommand = serde_json::from_str(json).unwrap();
+        assert!(
+            matches!(cmd, ControlCommand::RevealInFinder { ref path } if path == "/Users/foo/project")
+        );
+    }
+
+    #[test]
+    fn resolve_safe_path_rejects_traversal() {
+        let cwd = std::path::Path::new("/project");
+        assert!(resolve_safe_path("../etc/passwd", cwd).is_none());
+        assert!(resolve_safe_path("/project/../etc/passwd", cwd).is_none());
+    }
+
+    #[test]
+    fn resolve_safe_path_rejects_null_byte() {
+        let cwd = std::path::Path::new("/project");
+        assert!(resolve_safe_path("foo\0bar", cwd).is_none());
+    }
+
+    #[test]
+    fn resolve_safe_path_accepts_absolute() {
+        let cwd = std::path::Path::new("/project");
+        let result = resolve_safe_path("/project/src/main.rs", cwd);
+        assert_eq!(
+            result,
+            Some(std::path::PathBuf::from("/project/src/main.rs"))
+        );
+    }
+
+    #[test]
+    fn resolve_safe_path_accepts_relative() {
+        let cwd = std::path::Path::new("/project");
+        let result = resolve_safe_path("src/main.rs", cwd);
+        assert_eq!(
+            result,
+            Some(std::path::PathBuf::from("/project/src/main.rs"))
+        );
     }
 
     #[test]

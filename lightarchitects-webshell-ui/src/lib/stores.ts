@@ -224,8 +224,47 @@ export const waves = writable<Record<string, SiblingWave>>(
 export const focusedSibling = writable<SiblingId | null>(null);
 
 // --- Copilot ---
-export const copilotMessages = writable<CopilotMessage[]>([]);
+const COPILOT_HISTORY_KEY = 'la_copilot_history';
+const HISTORY_CAP = 200;
+
+function loadCopilotHistory(): CopilotMessage[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(COPILOT_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as CopilotMessage[]).slice(-HISTORY_CAP) : [];
+  } catch {
+    return [];
+  }
+}
+
+export const copilotMessages = writable<CopilotMessage[]>(loadCopilotHistory());
 export const copilotLoading = writable<boolean>(false);
+
+/** Clears conversation history from the store and localStorage. */
+export function clearCopilotHistory(): void {
+  copilotMessages.set([]);
+  try { localStorage.removeItem(COPILOT_HISTORY_KEY); } catch { /* quota */ }
+}
+
+// Persist copilotMessages to localStorage on every change (debounced, cap 200).
+let _historyTimer: ReturnType<typeof setTimeout> | null = null;
+copilotMessages.subscribe(msgs => {
+  if (typeof window === 'undefined') return;
+  if (_historyTimer !== null) clearTimeout(_historyTimer);
+  _historyTimer = setTimeout(() => {
+    _historyTimer = null;
+    try {
+      const toSave = msgs.slice(-HISTORY_CAP);
+      if (toSave.length === 0) {
+        localStorage.removeItem(COPILOT_HISTORY_KEY);
+      } else {
+        localStorage.setItem(COPILOT_HISTORY_KEY, JSON.stringify(toSave));
+      }
+    } catch { /* storage quota exceeded — silently ignore */ }
+  }, 300);
+});
 
 /** Whether a build is actively running — drives Layer 2 helix dim effect. */
 export const buildFocusActive = derived(

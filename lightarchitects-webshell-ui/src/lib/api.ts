@@ -119,6 +119,9 @@ export const api = {
   control: (command: string, payload?: unknown) =>
     request<unknown>('/control', { method: 'POST', body: JSON.stringify({ command, ...(payload as Record<string, unknown> ?? {}) }) }),
 
+  // File listing for @-file autocomplete
+  listFiles: (q: string) => request<string[]>(`/files?q=${encodeURIComponent(q)}`),
+
   // ── Build Plans (Phase 25 — plan lifecycle) ────────────────────────────
   /** Create a new build plan entry in active.yaml + scaffold manifest */
   createPlan: (plan: unknown) =>

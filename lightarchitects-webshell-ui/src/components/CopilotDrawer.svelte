@@ -5,6 +5,7 @@
     findings, selectedPillar, focusedSibling, spikeSibling,
     buildBuildContext, authProfile, ollamaConfig, terminalConnected,
     builds, siblingHealth, arenaStats, alertStats, drawerHeightPx, waves,
+    clearCopilotHistory,
   } from '$lib/stores';
   import { SIBLING_COLORS } from '$lib/design-tokens';
   import { api } from '$lib/api';
@@ -52,8 +53,150 @@
   let input = $state('');
   let showSuggestions = $state(false);
   let tesseractOpen = $state(false);
+  let searchQuery = $state('');
+  let showSearch = $state(false);
   let messagesEl: HTMLDivElement | undefined = $state();
   let oscillatorEl: HTMLCanvasElement | undefined = $state();
+
+  // History search — filter by case-insensitive substring match on content
+  const filteredMessages = $derived(
+    searchQuery.trim()
+      ? $copilotMessages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase()))
+      : $copilotMessages
+  );
+
+  // --- @-file autocomplete ---
+  let atSuggestions = $state<string[]>([]);
+  let atQuery = $state('');
+  let atSuggestionIndex = $state(0);
+  let atFetchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function extractAtQuery(val: string): string | null {
+    const m = val.match(/@([\w./\-]*)$/);
+    return m ? m[1] : null;
+  }
+
+  function handleInputExtended() {
+    showSuggestions = input.startsWith('/');
+    const q = extractAtQuery(input);
+    if (q !== null) {
+      atQuery = q;
+      if (atFetchTimer !== null) clearTimeout(atFetchTimer);
+      atFetchTimer = setTimeout(async () => {
+        try {
+          const results = await api.listFiles(q);
+          atSuggestions = results;
+          atSuggestionIndex = 0;
+        } catch { atSuggestions = []; }
+      }, 200);
+    } else {
+      atSuggestions = [];
+      atQuery = '';
+    }
+  }
+
+  function acceptAtSuggestion(path: string) {
+    input = input.replace(/@[\w./\-]*$/, `@${path} `);
+    atSuggestions = [];
+    atQuery = '';
+  }
+
+  function handleInputKeydownExtended(e: KeyboardEvent) {
+    if (atSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); atSuggestionIndex = (atSuggestionIndex + 1) % atSuggestions.length; return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); atSuggestionIndex = (atSuggestionIndex - 1 + atSuggestions.length) % atSuggestions.length; return; }
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        if (atSuggestions[atSuggestionIndex]) { e.preventDefault(); acceptAtSuggestion(atSuggestions[atSuggestionIndex]); return; }
+      }
+      if (e.key === 'Escape') { atSuggestions = []; return; }
+    }
+    handleKeydown(e);
+  }
+
+  // --- Paste image ---
+  function handlePaste(e: ClipboardEvent) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) continue;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const tag = `[image: ${file.name || 'clipboard'}]`;
+          input = input ? `${input} ${tag}` : tag;
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+    }
+  }
+
+  // --- Drag-drop file ---
+  let dragOver = $state(false);
+
+  function handleDragOver(e: DragEvent) { e.preventDefault(); dragOver = true; }
+  function handleDragLeave() { dragOver = false; }
+
+  function handleDrop(e: DragEvent) {
+    e.preventDefault();
+    dragOver = false;
+    const files = e.dataTransfer?.files;
+    if (!files?.length) return;
+    for (const file of files) {
+      if (file.type.startsWith('image/')) {
+        const tag = `[image: ${file.name}]`;
+        input = input ? `${input} ${tag}` : tag;
+      } else if (file.size < 64 * 1024) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const text = reader.result as string;
+          const snippet = text.slice(0, 2000);
+          const tag = `\`\`\`\n// ${file.name}\n${snippet}${text.length > 2000 ? '\n…(truncated)' : ''}\n\`\`\``;
+          input = input ? `${input}\n${tag}` : tag;
+        };
+        reader.readAsText(file);
+      }
+    }
+  }
+
+  // --- Copy-code-block Svelte action ---
+  // Attaches a "Copy" button to every <pre><code> block in the node's subtree.
+  // Re-runs on DOM mutations so dynamically rendered markdown is covered.
+  function codeBlockCopy(node: HTMLElement) {
+    function attach() {
+      node.querySelectorAll('pre').forEach(pre => {
+        if (pre.querySelector('.la-copy-btn')) return; // already attached
+        const btn = document.createElement('button');
+        btn.className = 'la-copy-btn';
+        btn.textContent = 'Copy';
+        btn.style.cssText = [
+          'position:absolute', 'top:4px', 'right:4px',
+          'font-size:9px', 'padding:1px 6px',
+          'background:rgba(255,215,0,0.08)', 'color:#FFD700',
+          'border:1px solid rgba(255,215,0,0.2)', 'border-radius:3px',
+          'cursor:pointer', 'transition:background 0.15s',
+        ].join(';');
+        btn.addEventListener('mouseenter', () => { btn.style.background = 'rgba(255,215,0,0.18)'; });
+        btn.addEventListener('mouseleave', () => { btn.style.background = 'rgba(255,215,0,0.08)'; });
+        btn.addEventListener('click', () => {
+          const code = pre.querySelector('code')?.textContent ?? pre.textContent ?? '';
+          navigator.clipboard.writeText(code).then(() => {
+            btn.textContent = 'Copied!';
+            setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+          }).catch(() => {});
+        });
+        pre.style.position = 'relative';
+        pre.appendChild(btn);
+      });
+    }
+
+    attach();
+    const observer = new MutationObserver(attach);
+    observer.observe(node, { childList: true, subtree: true });
+    return { destroy() { observer.disconnect(); } };
+  }
 
   // Render composite oscilloscope from all sibling waves
   $effect(() => {
@@ -273,7 +416,7 @@
     // Control commands (clear, focus, navigate, etc.) execute locally — no copilot turn.
     if (command && ['clear', 'focus', 'navigate', 'notify', 'terminal', 'settings', 'theme', 'panel'].includes(command.name)) {
       addMessage('system', `/${command.name} ${args}`.trim());
-      if (command.name === 'clear') { copilotMessages.set([]); return; }
+      if (command.name === 'clear') { clearCopilotHistory(); searchQuery = ''; showSearch = false; return; }
       try { await command.execute(args); }
       catch (err) { addMessage('system', `Error: ${err instanceof Error ? err.message : 'Unknown error'}`); }
       return;
@@ -356,9 +499,15 @@
     else if (e.key === 'ArrowDown') { e.preventDefault(); heightPx = Math.max(MIN_HEIGHT, heightPx - step); }
   }
 
-  // Global keyboard shortcut: Ctrl+` to toggle
+  // Global keyboard shortcuts
   function onGlobalKeydown(e: KeyboardEvent) {
     if (e.key === '`' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); open = !open; }
+    // Ctrl+F inside the open drawer toggles history search
+    if (e.key === 'f' && (e.ctrlKey || e.metaKey) && open && mode === 'chat') {
+      e.preventDefault();
+      showSearch = !showSearch;
+      if (!showSearch) searchQuery = '';
+    }
   }
 
   // Custom event bridge — empty-state CTAs in other screens dispatch
@@ -468,7 +617,14 @@
             : 'Send at least one message before forking to a terminal'}
         >{forking ? 'Forking…' : '↗ Fork to Terminal'}</button>
         <button
-          onclick={() => copilotMessages.set([])}
+          onclick={() => { showSearch = !showSearch; if (!showSearch) searchQuery = ''; }}
+          class="text-[9px] px-1.5 py-0.5 rounded border transition-colors
+            {showSearch ? 'text-[#FFD700] border-[#FFD700]/40 bg-[#FFD700]/10' : 'text-[#475569] border-[#1e293b] hover:text-[#e2e8f0]'}"
+          title="Search history (Ctrl+F)"
+          aria-label="Toggle history search"
+        >⌕</button>
+        <button
+          onclick={() => { clearCopilotHistory(); searchQuery = ''; showSearch = false; }}
           class="text-[9px] text-[#475569] hover:text-[#e2e8f0] px-1.5 py-0.5 rounded border border-[#1e293b] transition-colors"
         >Clear</button>
       {/if}
@@ -550,7 +706,41 @@
                 </div>
               {/if}
             {/if}
-            <div bind:this={messagesEl} class="flex-1 overflow-y-auto p-3 space-y-2" role="log" aria-label="Chat messages" aria-live="polite">
+            {#if showSearch}
+              <div class="flex items-center gap-2 px-3 py-1.5 border-b border-[#1e293b] bg-[#0a0a0f] shrink-0">
+                <span class="text-[10px] text-[#475569]">⌕</span>
+                <!-- svelte-ignore a11y_autofocus -->
+                <input
+                  type="text"
+                  bind:value={searchQuery}
+                  autofocus
+                  placeholder="Search history…"
+                  class="flex-1 bg-transparent text-xs text-[#e2e8f0] placeholder:text-[#334155] outline-none font-mono"
+                  onkeydown={(e) => { if (e.key === 'Escape') { showSearch = false; searchQuery = ''; } }}
+                />
+                {#if searchQuery}
+                  <span class="text-[9px] text-[#475569]">
+                    {filteredMessages.length}/{$copilotMessages.length}
+                  </span>
+                {/if}
+                <button
+                  onclick={() => { showSearch = false; searchQuery = ''; }}
+                  class="text-[9px] text-[#475569] hover:text-[#e2e8f0]"
+                  aria-label="Close search"
+                >✕</button>
+              </div>
+            {/if}
+            <div
+              bind:this={messagesEl}
+              class="flex-1 overflow-y-auto p-3 space-y-2 transition-colors {dragOver ? 'bg-[#FFD700]/5 ring-1 ring-inset ring-[#FFD700]/20' : ''}"
+              role="log"
+              aria-label="Chat messages"
+              aria-live="polite"
+              ondragover={handleDragOver}
+              ondragleave={handleDragLeave}
+              ondrop={handleDrop}
+              use:codeBlockCopy
+            >
               {#if $copilotMessages.length === 0}
                 <div class="flex flex-col items-center justify-center h-full text-[#475569] gap-2">
                   <p class="text-xs">Start a conversation · Use <kbd class="bg-[#1e293b] px-1 rounded">/</kbd> for slash commands</p>
@@ -561,8 +751,12 @@
                     {/each}
                   </div>
                 </div>
+              {:else if filteredMessages.length === 0}
+                <div class="flex flex-col items-center justify-center h-full text-[#475569] gap-1">
+                  <p class="text-xs">No messages match "<span class="text-[#64748b] font-mono">{searchQuery}</span>"</p>
+                </div>
               {:else}
-                {#each $copilotMessages as msg (msg.id)}
+                {#each filteredMessages as msg (msg.id)}
                   <div class="flex {msg.role === 'user' ? 'justify-end' : msg.role === 'system' ? 'justify-center' : 'justify-start'}">
                     <div class="max-w-[80%] px-3 py-1.5 rounded-lg text-xs chat-bubble
                       {msg.role === 'user' ? 'bg-[#D4A017]/90 text-[#0a0a0f]' :
@@ -633,13 +827,26 @@
                 <input
                   type="text"
                   bind:value={input}
-                  onkeydown={handleKeydown}
-                  oninput={handleInput}
+                  onkeydown={handleInputKeydownExtended}
+                  oninput={handleInputExtended}
+                  onpaste={handlePaste}
                   onfocus={() => { if (input.startsWith('/')) showSuggestions = true; }}
-                  onblur={() => { setTimeout(() => { showSuggestions = false; }, 200); }}
-                  placeholder="Type a message or /command…"
+                  onblur={() => { setTimeout(() => { showSuggestions = false; atSuggestions = []; }, 200); }}
+                  placeholder="Type a message or /command… · @ for files"
                   class="flex-1 bg-[#111827] border border-[#1e293b] rounded px-3 py-1.5 text-xs text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#FFD700]/60 transition-colors"
                 />
+                <!-- @-file autocomplete dropdown -->
+                {#if atSuggestions.length > 0}
+                  <div class="absolute bottom-full left-0 right-0 mb-1 bg-[#0d1117] border border-[#FFD700]/20 rounded shadow-lg max-h-48 overflow-y-auto z-50">
+                    {#each atSuggestions as suggestion, i}
+                      <button
+                        class="w-full text-left px-3 py-1.5 text-[10px] font-mono transition-colors
+                          {i === atSuggestionIndex ? 'bg-[#FFD700]/10 text-[#FFD700]' : 'text-[#94a3b8] hover:bg-[#1e293b]'}"
+                        onmousedown={(e) => { e.preventDefault(); acceptAtSuggestion(suggestion); }}
+                      >{suggestion}</button>
+                    {/each}
+                  </div>
+                {/if}
                 <button
                   onclick={sendMessage}
                   disabled={$copilotLoading}

@@ -107,12 +107,14 @@
     ));
   }
 
-  // File click handler
+  // Open a file in the system editor via /api/control OpenInEditor.
   function handleFileClick(file: string, line?: number) {
-    // In production, this would open the file in the editor via /api/control
-    api.control('NavigateTo', { file, line }).catch(() => {
-      // Backend unavailable — could fall back to hash routing
-    });
+    api.control('OpenInEditor', { file, line: line ?? null }).catch(() => {});
+  }
+
+  // Reveal a file in Finder via /api/control RevealInFinder.
+  function handleFileReveal(file: string) {
+    api.control('RevealInFinder', { path: file }).catch(() => {});
   }
 
   // Derived: build artifacts
@@ -233,6 +235,7 @@
           onToggleExpand={toggleFindingExpand}
           onVerify={verifyFinding}
           onFileClick={handleFileClick}
+          onReveal={handleFileReveal}
         />
 
         <!-- Modules -->

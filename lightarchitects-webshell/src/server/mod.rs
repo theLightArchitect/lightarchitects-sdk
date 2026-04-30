@@ -484,6 +484,8 @@ pub fn build_app(state: AppState) -> Router {
         )
         // ── Squad Dispatch routes — all Bearer-authenticated (HIGH H-5) ─────
         .merge(dispatch::dispatch_router())
+        // ── File listing for @-file autocomplete ─────────────────────────────
+        .route("/api/files", get(list_files_handler))
         .fallback(static_assets::serve)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
@@ -649,6 +651,100 @@ pub async fn run_with_port_retry(config: Config) -> Result<u16, ServerError> {
 
     // Unreachable: the loop above always returns in the final iteration.
     unreachable!("port retry loop exhausted without returning")
+}
+
+// ── File listing — @-file autocomplete support ───────────────────────────────
+
+use axum::extract::Query as AxumQuery;
+
+/// `GET /api/files?q=<query>` — returns relative paths under `cwd` matching
+/// the query string.
+///
+/// Results are capped at 50, walk depth at 5. Hidden dirs and common
+/// build-artifact dirs (`target`, `node_modules`, `.git`, etc.) are skipped.
+/// Requires `Authorization: Bearer <token>`.
+async fn list_files_handler(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxumQuery(params): AxumQuery<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let Some(authz) = headers.get("authorization") else {
+        return (StatusCode::UNAUTHORIZED, Json(Vec::<String>::new()));
+    };
+    let Ok(authz_str) = authz.to_str() else {
+        return (StatusCode::UNAUTHORIZED, Json(Vec::<String>::new()));
+    };
+    if !auth::validate_bearer(authz_str, &state.config.token) {
+        return (StatusCode::UNAUTHORIZED, Json(Vec::<String>::new()));
+    }
+
+    let query = params
+        .get("q")
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
+    let cwd = state.config.cwd.clone();
+    let matches = tokio::task::spawn_blocking(move || walk_files(&cwd, &query))
+        .await
+        .unwrap_or_default();
+    (StatusCode::OK, Json(matches))
+}
+
+/// BFS walk of `root` collecting relative paths whose filename contains `query`.
+///
+/// Caps at 50 results and depth 5. Skips hidden entries and common
+/// build-artifact directories.
+fn walk_files(root: &std::path::Path, query: &str) -> Vec<String> {
+    const MAX_DEPTH: usize = 5;
+    const MAX_RESULTS: usize = 50;
+    const SKIP_DIRS: &[&str] = &[
+        "target",
+        "node_modules",
+        ".git",
+        ".svelte-kit",
+        "dist",
+        "__pycache__",
+        ".cargo",
+        "build",
+        "out",
+    ];
+
+    let mut queue: std::collections::VecDeque<(std::path::PathBuf, usize)> =
+        std::collections::VecDeque::new();
+    queue.push_back((root.to_path_buf(), 0));
+    let mut results: Vec<String> = Vec::new();
+
+    while let Some((dir, depth)) = queue.pop_front() {
+        if depth > MAX_DEPTH {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let raw_name = entry.file_name();
+            let name = raw_name.to_string_lossy();
+            if name.starts_with('.') {
+                continue;
+            }
+            if path.is_dir() {
+                if SKIP_DIRS.contains(&name.as_ref()) {
+                    continue;
+                }
+                queue.push_back((path, depth + 1));
+            } else if path.is_file() {
+                if query.is_empty() || name.to_lowercase().contains(&*query) {
+                    if let Ok(rel) = path.strip_prefix(root) {
+                        results.push(rel.to_string_lossy().into_owned());
+                        if results.len() >= MAX_RESULTS {
+                            return results;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    results
 }
 
 /// `GET /api/health` — unauthenticated liveness probe.

@@ -353,6 +353,24 @@ pub enum ControlCommand {
         /// Severity level: `"info"`, `"warn"`, `"error"`.
         level: String,
     },
+    /// Open a local file in the system default editor (or the editor
+    /// referenced by the `$EDITOR` env var if set).
+    ///
+    /// The backend executes this locally and also broadcasts the event so
+    /// SSE listeners can observe file-open activity.
+    OpenInEditor {
+        /// Absolute or workspace-relative file path.
+        file: String,
+        /// Optional 1-based line number to jump to.
+        line: Option<u32>,
+    },
+    /// Reveal a local path in the system file manager (Finder on macOS).
+    ///
+    /// The backend executes this locally and also broadcasts the event.
+    RevealInFinder {
+        /// Absolute or workspace-relative path to reveal.
+        path: String,
+    },
 }
 
 #[cfg(test)]

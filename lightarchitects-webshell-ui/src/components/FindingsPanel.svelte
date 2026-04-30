@@ -9,6 +9,7 @@
     onToggleExpand?: (id: string) => void;
     onVerify?: (id: string) => void;
     onFileClick?: (file: string, line?: number) => void;
+    onReveal?: (file: string) => void;
   }
 
   let {
@@ -18,6 +19,7 @@
     onToggleExpand,
     onVerify,
     onFileClick,
+    onReveal,
   }: Props = $props();
 
   function severityColor(severity: Finding['severity']): string {
@@ -115,9 +117,17 @@
                   <button
                     class="text-[10px] text-[#FFD700] hover:text-[#9F67FF] font-mono truncate transition-colors"
                     onclick={(e) => { e.stopPropagation(); onFileClick?.(finding.file!, finding.line); }}
-                    title="{finding.file}{finding.line ? `:${finding.line}` : ''}"
+                    title="Open {finding.file}{finding.line ? `:${finding.line}` : ''} in editor"
                   >
                     {finding.file}{finding.line ? `:${finding.line}` : ''}
+                  </button>
+                  <button
+                    class="text-[9px] text-[#475569] hover:text-[#94a3b8] transition-colors px-1 shrink-0"
+                    onclick={(e) => { e.stopPropagation(); onReveal?.(finding.file!); }}
+                    title="Reveal in Finder"
+                    aria-label="Reveal {finding.file} in Finder"
+                  >
+                    ⌘
                   </button>
                 {/if}
               </div>
