@@ -356,8 +356,8 @@
     </div>
   </div>
 
-  <!-- Header -->
-  <header class="flex items-center gap-3 px-6 py-3 border-b border-[#1e293b]">
+  <!-- Header (#38 — fixed 56px band shared across all top-level screens) -->
+  <header class="la-screen-header flex items-center gap-3 px-6 border-b border-[#1e293b]">
     <button onclick={() => { window.location.hash = '/'; }} class="text-[#64748b] hover:text-white text-xs">
       ← Queue
     </button>

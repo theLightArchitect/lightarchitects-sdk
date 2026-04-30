@@ -224,8 +224,8 @@
 </script>
 
 <div class="flex-1 flex flex-col overflow-hidden h-full">
-  <!-- Header bar -->
-  <div class="flex items-center gap-3 px-4 py-2 border-b border-[#1e293b] shrink-0">
+  <!-- Header bar (#38 — fixed 56px band shared across all top-level screens) -->
+  <header class="la-screen-header flex items-center gap-3 px-4 border-b border-[#1e293b]">
     <div class="flex items-center gap-2">
       {#if $activityActive}
         <div class="w-2 h-2 rounded-full bg-[#22c55e] animate-pulse"></div>
@@ -255,7 +255,7 @@
         class="text-[10px] px-2 py-0.5 text-[#475569] hover:text-[#e2e8f0] border border-[#1e293b] rounded transition-colors"
       >Clear</button>
     </div>
-  </div>
+  </header>
 
   <!-- Two-column layout -->
   <div class="flex-1 flex overflow-hidden">

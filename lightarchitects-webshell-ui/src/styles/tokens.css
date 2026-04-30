@@ -62,6 +62,12 @@
   --la-drawer-padding:  12px;
   --la-scrim-color:     rgba(10, 10, 15, 0.62);      /* used by overlay drawers */
   --la-scrim-blur:      2px;
+
+  /* ── Screen header band (#38) ──────────────────────────────────────────────
+     Every top-level screen (Activity, Sitrep, Queue, Intake, Squad, Workspace)
+     uses a 56px-fixed header band so the page-title baseline + tab strip below
+     never jumps when switching screens. Apply via `.la-screen-header`. */
+  --la-header-height: 56px;
 }
 
 /* ── Zero-state utility ────────────────────────────────────────────────────
@@ -71,6 +77,17 @@
    ============================================================================ */
 .la-count[data-zero="true"] {
   color: var(--la-text-dim);
+}
+
+/* ── Screen header band (#38) ──────────────────────────────────────────────
+   Apply to the top-of-screen <header> on every screen so the title strip
+   stays at a consistent height. Use alongside Tailwind utilities for the
+   layout (flex, gap, padding-x, border-b). The fixed height prevents the
+   1-2px reflow that happens when one screen wraps and another doesn't.
+   ============================================================================ */
+.la-screen-header {
+  height: var(--la-header-height);
+  flex-shrink: 0;
 }
 
 /* ── Focus ring (consume the token everywhere a focusable lives) ──────────

@@ -84,8 +84,8 @@
     </div>
   </div>
 
-  <!-- Header -->
-  <header class="flex items-center justify-between flex-wrap gap-y-2 px-4 md:px-6 py-3 border-b border-[#1e293b]">
+  <!-- Header (#38 — fixed 56px band shared across all top-level screens) -->
+  <header class="la-screen-header flex items-center justify-between gap-x-3 px-4 md:px-6 border-b border-[#1e293b]">
     <div class="flex items-center gap-3">
       <h1 class="text-lg font-semibold tracking-wide">Build Queue</h1>
       <span class="text-xs text-[#64748b]">
