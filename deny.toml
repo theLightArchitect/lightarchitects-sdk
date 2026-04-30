@@ -10,10 +10,27 @@ all-features = true
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 
-# RUSTSEC-2025-0119: number_prefix crate unmaintained.
-# Only reaches us via lightarchitects-arena → indicatif. lightarchitects-arena is an ML training
-# utility crate not used by the core SDK. No upgrade path exists upstream.
-ignore = ["RUSTSEC-2025-0119"]
+# All entries below: no safe upgrade available (verified 2026-04-30).
+# These are transitive deps we do not own. Each entry documents the chain and why we cannot fix it.
+ignore = [
+    # number_prefix: unmaintained, via lightarchitects-arena → indicatif. ML utility crate only.
+    "RUSTSEC-2025-0119",
+    # core2: all versions yanked (maintainer abandoned), via fastembed → image → ravif → rav1e →
+    # bitstream-io. No upgrade path — fastembed 5.13.4 still pulls this chain. Track for fastembed
+    # v6 or a fastembed alternative that drops the AV1 image codec dependency.
+    "RUSTSEC-2026-0105",
+    # backoff: unmaintained, via neo4rs → backoff. neo4rs has no upstream fix yet. Alternative:
+    # replace backoff with backon once neo4rs ≥0.9 releases (tracks this upstream).
+    "RUSTSEC-2025-0012",
+    # instant: unmaintained, via neo4rs → backoff → instant. Same neo4rs chain as RUSTSEC-2025-0012.
+    "RUSTSEC-2024-0384",
+    # paste: no longer maintained, via neo4rs + fastembed → tokenizers + rav1e.
+    # Three separate chains; no upstream fixes available.
+    "RUSTSEC-2024-0436",
+    # rustls-pemfile: unmaintained (archived), via neo4rs + bollard → testcontainers (dev-dep).
+    # No upgrade path for neo4rs; testcontainers is dev-only.
+    "RUSTSEC-2025-0134",
+]
 
 [licenses]
 allow = [
