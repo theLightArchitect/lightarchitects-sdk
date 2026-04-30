@@ -2,9 +2,13 @@ use crate::auth::{AuthConfig, AuthError};
 use std::path::Path;
 use tracing::debug;
 
-/// Reads the API key from environment variable or local file.
+/// Reads the LA API key via a three-tier priority chain.
 ///
-/// Priority: `LA_API_KEY` env var > `~/lightarchitects/soul/config/la-api-key` file
+/// | Priority | Source | Always active? |
+/// |----------|--------|----------------|
+/// | 1 | `LA_API_KEY` environment variable | Yes |
+/// | 2 | macOS Keychain (`lightarchitects` / `la-api-key`) | `keychain` feature + macOS only |
+/// | 3 | Key file at `config.key_file_path` | Yes |
 pub struct KeyReader;
 
 impl KeyReader {
@@ -12,10 +16,9 @@ impl KeyReader {
     ///
     /// # Errors
     ///
-    /// Returns [`AuthError::NoKeyFound`] if the `LA_API_KEY` env var is unset or empty
-    /// and the key file is absent or empty.
+    /// Returns [`AuthError::NoKeyFound`] if all priority sources are exhausted.
     pub fn read(config: &AuthConfig) -> Result<String, AuthError> {
-        // Priority 1: Environment variable
+        // Priority 1: Environment variable — always checked first.
         if let Ok(key) = std::env::var("LA_API_KEY") {
             let key = key.trim().to_string();
             if !key.is_empty() {
@@ -24,7 +27,33 @@ impl KeyReader {
             }
         }
 
-        // Priority 2: Local file
+        // Priority 2: macOS Keychain — only when `keychain` feature is enabled.
+        // Falls through silently on miss or error so Priority 3 always gets a chance.
+        #[cfg(all(target_os = "macos", feature = "keychain"))]
+        {
+            use crate::crypto::secrets::{KeychainStore, SecretStore};
+            use secrecy::ExposeSecret as _;
+
+            let store = KeychainStore::with_service("lightarchitects");
+            match store.get("la-api-key") {
+                Ok(Some(secret)) => {
+                    let key = secret.expose_secret().trim().to_string();
+                    if !key.is_empty() {
+                        debug!("API key loaded from macOS Keychain (lightarchitects/la-api-key)");
+                        return Ok(key);
+                    }
+                    debug!("Keychain entry lightarchitects/la-api-key is present but empty");
+                }
+                Ok(None) => {
+                    debug!("Keychain miss: lightarchitects/la-api-key not found");
+                }
+                Err(e) => {
+                    debug!("Keychain read error for lightarchitects/la-api-key: {e}");
+                }
+            }
+        }
+
+        // Priority 3: Key file.
         Self::read_from_file(&config.key_file_path)
     }
 
@@ -85,7 +114,7 @@ impl KeyReader {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, unsafe_code)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
@@ -166,5 +195,93 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let cfg = isolated(&dir);
         KeyReader::remove(&cfg).unwrap(); // no file — should not error
+    }
+
+    // ── Priority chain tests ──────────────────────────────────────────────────
+    // These tests validate the three-tier priority without requiring a live
+    // Keychain (Priority 2 is cfg-gated on target_os = "macos" + keychain feat).
+
+    #[test]
+    fn priority_1_env_var_wins_when_file_also_present() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir);
+        std::fs::write(&cfg.key_file_path, "file-key").unwrap();
+        // SAFETY: test-only env mutation; test is not parallel-sensitive here
+        // because LA_API_KEY is cleared at the end of the function.
+        unsafe { std::env::set_var("LA_API_KEY", "env-key") };
+        let result = KeyReader::read(&cfg);
+        unsafe { std::env::remove_var("LA_API_KEY") };
+        assert_eq!(result.unwrap(), "env-key");
+    }
+
+    #[test]
+    fn priority_1_env_var_trims_whitespace() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir);
+        unsafe { std::env::set_var("LA_API_KEY", "  padded-key\n") };
+        let result = KeyReader::read(&cfg);
+        unsafe { std::env::remove_var("LA_API_KEY") };
+        assert_eq!(result.unwrap(), "padded-key");
+    }
+
+    #[test]
+    fn priority_1_empty_env_falls_through_to_file() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir);
+        std::fs::write(&cfg.key_file_path, "file-key").unwrap();
+        unsafe { std::env::set_var("LA_API_KEY", "") };
+        let result = KeyReader::read(&cfg);
+        unsafe { std::env::remove_var("LA_API_KEY") };
+        // Empty env var → falls through to Priority 3 (file)
+        assert_eq!(result.unwrap(), "file-key");
+    }
+
+    #[test]
+    fn priority_1_whitespace_env_falls_through_to_file() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir);
+        std::fs::write(&cfg.key_file_path, "file-key-ws").unwrap();
+        unsafe { std::env::set_var("LA_API_KEY", "   ") };
+        let result = KeyReader::read(&cfg);
+        unsafe { std::env::remove_var("LA_API_KEY") };
+        assert_eq!(result.unwrap(), "file-key-ws");
+    }
+
+    #[test]
+    fn priority_3_file_used_when_no_env_and_no_keychain() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir);
+        // Ensure env absent (remove if accidentally set in test environment)
+        unsafe { std::env::remove_var("LA_API_KEY") };
+        std::fs::write(&cfg.key_file_path, "file-only-key").unwrap();
+        assert_eq!(KeyReader::read(&cfg).unwrap(), "file-only-key");
+    }
+
+    #[test]
+    fn all_sources_absent_returns_no_key_found() {
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir);
+        unsafe { std::env::remove_var("LA_API_KEY") };
+        // No file, no keychain entry — should error
+        assert!(matches!(
+            KeyReader::read(&cfg),
+            Err(AuthError::NoKeyFound { .. })
+        ));
+    }
+
+    #[test]
+    fn priority_chain_order_is_p1_then_p3_without_keychain() {
+        // Without keychain feature: chain is P1 → P3 with no P2 intervening.
+        // Verify both work in order.
+        let dir = TempDir::new().unwrap();
+        let cfg = isolated(&dir);
+        std::fs::write(&cfg.key_file_path, "chain-file-key").unwrap();
+
+        unsafe { std::env::remove_var("LA_API_KEY") };
+        assert_eq!(KeyReader::read(&cfg).unwrap(), "chain-file-key"); // P3
+
+        unsafe { std::env::set_var("LA_API_KEY", "chain-env-key") };
+        assert_eq!(KeyReader::read(&cfg).unwrap(), "chain-env-key"); // P1
+        unsafe { std::env::remove_var("LA_API_KEY") };
     }
 }

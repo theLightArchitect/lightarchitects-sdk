@@ -627,7 +627,6 @@ pub async fn entry_handler(
     }
 }
 
-
 /// Project a `Vec<`[`lightarchitects::helix::types::HotMemo`]`>` into
 /// [`ContextMemo`] display structs for the `MemoryDrawer`.
 ///
@@ -787,9 +786,15 @@ pub async fn health_handler(
                         .and_then(serde_json::Value::as_i64),
                     Err(_) => None,
                 }
-            } else { None }
-        } else { None }
-    } else { None };
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     Json(serde_json::json!({
         "tiers": tiers,

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { builds, buildStats, currentBuildId, projectGroups } from '$lib/stores';
   import { SIBLING_COLORS, getMetaSkillPolytope, getMetaSkillColor } from '$lib/design-tokens';
+  import { downloadRoadmap } from '$lib/roadmap-export';
   import type { Build, ProjectGroup } from '$lib/types';
   import type { PlanPhaseStatus } from '$lib/types';
   import PhaseTimeline from '$lib/../components/PhaseTimeline.svelte';
@@ -76,10 +77,10 @@
   <!-- Ambient polytope decoration -->
   <div class="absolute inset-0 overflow-hidden pointer-events-none -z-10">
     <div class="absolute -top-20 -right-20">
-      <PolytopeDecor type="icositetrachoron" color="#FFD700" size={400} opacity={0.03} speed={0.05} />
+      <PolytopeDecor type="icositetrachoron" color="#f0c040" size={400} opacity={0.03} speed={0.05} />
     </div>
     <div class="absolute -bottom-20 -left-20">
-      <PolytopeDecor type="tesseract" color="#FF1493" size={300} opacity={0.04} speed={0.08} />
+      <PolytopeDecor type="tesseract" color="#FF6B9D" size={300} opacity={0.04} speed={0.08} />
     </div>
   </div>
 
@@ -106,7 +107,14 @@
         </button>
       </div>
       <button
-        class="px-4 py-1.5 bg-[#D4A017] text-[#0a0a0f] text-xs font-semibold rounded hover:bg-[#FFD700] hover:shadow-[0_0_10px_rgba(255,215,0,0.4)] transition-all"
+        class="px-3 py-1.5 bg-[#1e293b] text-[#94a3b8] text-xs rounded hover:bg-[#334155] hover:text-white transition-all"
+        onclick={() => downloadRoadmap($builds)}
+        title="Export roadmap as standalone HTML"
+      >
+        Export
+      </button>
+      <button
+        class="px-4 py-1.5 bg-[#d4a017] text-[#0a0a0f] text-xs font-semibold rounded hover:bg-[#f0c040] hover:shadow-[0_0_10px_rgba(255,215,0,0.4)] transition-all"
         onclick={newBuild}
       >
         + New Build
@@ -168,7 +176,7 @@
             <div class="h-1 bg-[#1e293b] rounded-full overflow-hidden">
               <div
                 class="h-full rounded-full transition-all"
-                style="width: {Math.round(group.progress * 100)}%; background-color: {group.progress >= 1 ? '#22c55e' : group.activePlanCount > 0 ? '#FFD700' : '#475569'}"
+                style="width: {Math.round(group.progress * 100)}%; background-color: {group.progress >= 1 ? '#22c55e' : group.activePlanCount > 0 ? '#f0c040' : '#475569'}"
               ></div>
             </div>
 

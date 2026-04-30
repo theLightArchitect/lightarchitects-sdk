@@ -4,6 +4,8 @@
 //! debug logs, helix storage, and shared secret material. It performs no
 //! filesystem I/O and is safe to call from hot paths.
 
+use crate::squad_registry::SquadRegistry;
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
@@ -228,6 +230,45 @@ pub fn ayin_or_fallback() -> PathBuf {
 #[must_use]
 pub fn webshell_or_fallback() -> PathBuf {
     sibling_runtime_or_fallback("webshell")
+}
+
+/// Build an augmented `PATH` string for subprocess spawns.
+///
+/// Prepends binary directories derived from the [`SquadRegistry`] and standard
+/// LA tool paths ahead of the current `PATH`. Deduplicates while preserving
+/// order. Uses [`root_or_fallback`] — never relies on a hardcoded home path.
+///
+/// # Fixed additions (prepended before registry entries)
+///
+/// - `$HOME/.local/bin`
+/// - `$HOME/.bun/bin`
+/// - `/usr/local/bin`
+#[must_use]
+pub fn augmented_path(registry: &SquadRegistry) -> String {
+    let la_home = root_or_fallback();
+    let current = std::env::var("PATH").unwrap_or_default();
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
+
+    let mut parts: Vec<String> = vec![
+        format!("{home}/.local/bin"),
+        format!("{home}/.bun/bin"),
+        "/usr/local/bin".to_owned(),
+    ];
+
+    // Append the parent directory of each registry entry's binary.
+    for entry in &registry.entries {
+        let abs_bin = SquadRegistry::resolve_bin_path(&la_home, entry);
+        if let Some(parent) = abs_bin.parent() {
+            parts.push(parent.display().to_string());
+        }
+    }
+
+    // Append existing PATH entries after the prepend list.
+    parts.extend(current.split(':').map(str::to_owned));
+
+    let mut seen = HashSet::<String>::new();
+    parts.retain(|p| !p.is_empty() && seen.insert(p.clone()));
+    parts.join(":")
 }
 
 fn resolve_root(home: &Path, override_value: Option<&OsStr>) -> PathBuf {

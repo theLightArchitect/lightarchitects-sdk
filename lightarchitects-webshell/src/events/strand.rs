@@ -188,9 +188,7 @@ mod tests {
     #[test]
     fn parse_prefers_top_level_over_metadata() {
         // If both present, top level wins (closer to wire truth).
-        let mut span = span_with_top_level(vec![
-            json!({ "strand": "from_top", "weight": 0.9 }),
-        ]);
+        let mut span = span_with_top_level(vec![json!({ "strand": "from_top", "weight": 0.9 })]);
         span.metadata = json!({
             "strand_activations": [{ "strand": "from_meta", "weight": 0.1 }]
         });

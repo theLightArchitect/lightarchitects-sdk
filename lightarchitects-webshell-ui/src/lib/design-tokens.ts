@@ -8,16 +8,38 @@ import { type Polytope4DType } from './polytopes4d-canvas2d';
 export const SIBLINGS = ['soul', 'eva', 'corso', 'quantum', 'seraph', 'ayin', 'larc'] as const;
 export type SiblingId = typeof SIBLINGS[number];
 
-// --- Sibling colors ---
+// --- Sibling colors (roadmap-content.html palette) ---
 export const SIBLING_COLORS: Record<string, string> = {
-  soul:    '#7C3AED',
-  eva:     '#FF1493',
-  corso:   '#00BFFF',
-  quantum: '#B44AFF',
-  seraph:  '#FF0040',
-  larc:    '#F59E0B',
-  ayin:    '#FF6D00',
+  soul:    '#f0c040',  // gold
+  eva:     '#FF6B9D',  // soft pink
+  corso:   '#4ECDC4',  // teal
+  quantum: '#96CEB4',  // sage
+  seraph:  '#FFEAA7',  // cream
+  larc:    '#F59E0B',  // amber
+  ayin:    '#FF6D00',  // orange
 };
+
+// --- Tier colors ---
+export const TIER_COLORS: Record<number | string, string> = {
+  0:      '#ff4d6a',  // red — recon/hotfix
+  1:      '#fb923c',  // orange — small
+  2:      '#60a5fa',  // blue — medium
+  3:      '#a78bfa',  // purple — large
+  done:   '#4ade80',  // green — completed
+};
+
+// --- Roadmap visual constants (from roadmap-content.html) ---
+export const ROADMAP = {
+  bg:          '#050508',
+  glass:       'rgba(18, 18, 30, 0.55)',
+  glassBorder: 'rgba(42, 42, 58, 0.6)',
+  accent:      '#f0c040',
+  grid:        '#f0c040',
+  gridSize:    60,
+  blurCard:    'blur(20px) saturate(1.2)',
+  blurPanel:   'blur(32px) saturate(1.3)',
+  blurHeader:  'blur(12px)',
+} as const;
 
 // --- Pillar names ---
 export const PILLARS = ['ARCH', 'SEC', 'QUAL', 'PERF', 'TEST', 'DOC', 'OPS'] as const;

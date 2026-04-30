@@ -521,7 +521,10 @@ mod tests {
         assert!((0.0_f64 / (1.0 + 0.0_f64)).abs() < f64::EPSILON); // 0.0
         assert!((1.0_f64 / (1.0 + 1.0_f64) - 0.5).abs() < f64::EPSILON); // 0.5
         let near_one = 99.0_f64 / (1.0 + 99.0_f64);
-        assert!(near_one > 0.98 && near_one < 1.0, "large raw_pr should normalize near 1.0");
+        assert!(
+            near_one > 0.98 && near_one < 1.0,
+            "large raw_pr should normalize near 1.0"
+        );
 
         // Blend formula: combined = 0.5 * norm_pr + 0.5 * dist_score
         // dist_score=0.5 (distance=1), raw_pr=1.0 (norm_pr=0.5) → blended=0.5

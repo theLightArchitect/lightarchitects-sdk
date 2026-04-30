@@ -552,6 +552,7 @@
                     </span>
                     <select
                       class="bg-transparent text-[8px] text-[#475569] outline-none cursor-pointer"
+                      aria-label="Gate type for {phase.title}"
                       value={phase.exit_gate.type}
                       onchange={(e) => changeGateType(phase.id, (e.target as HTMLSelectElement).value as GateType)}
                     >

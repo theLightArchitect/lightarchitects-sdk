@@ -99,10 +99,12 @@ async fn workspaces_returns_array() {
 }
 
 #[tokio::test]
-async fn siblings_stub_returns_seven_entries() {
+async fn siblings_stub_returns_squad_entries() {
     let (status, body) = get("/api/siblings", true).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body.as_array().unwrap().len(), 7);
+    // SquadRegistry defaults: corso, eva, soul, quantum, seraph, ayin (6 entries).
+    // "claude" was removed — it has no LA binary and belongs to the agent layer, not the squad registry.
+    assert_eq!(body.as_array().unwrap().len(), 6);
 }
 
 #[tokio::test]

@@ -57,6 +57,9 @@ pub mod turnlog;
 /// LASDLC — execution phases, build tiers, quality dimensions.
 pub mod lasdlc;
 
+/// Runtime squad registry — TOML-driven inventory of squad members.
+pub mod squad_registry;
+
 /// External CLI credential detection — Claude Code, Codex, Gemini.
 #[cfg(feature = "credentials")]
 pub mod credentials;

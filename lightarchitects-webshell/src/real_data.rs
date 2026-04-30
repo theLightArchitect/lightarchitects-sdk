@@ -34,6 +34,8 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
+use lightarchitects::squad_registry::SquadRegistry;
+
 use crate::{
     auth,
     events::types::{PillarUpdateEvent, WebEvent},
@@ -155,29 +157,17 @@ async fn read_first_heading(path: &StdPath) -> Option<String> {
     None
 }
 
-// ── Siblings ────────────────────────────────────────────────────────────────
+// ── Squad ────────────────────────────────────────────────────────────────────
 
-/// Canonical sibling inventory — id + binary path + last-activity dir.
-const SIBLING_DEFS: &[(&str, &str, &str)] = &[
-    ("corso", "lightarchitects/corso/bin/corso", "corso"),
-    ("soul", "lightarchitects/soul/.config/bin/soul", "soul"),
-    ("eva", "lightarchitects/eva/bin/eva", "eva"),
-    (
-        "quantum",
-        "lightarchitects/quantum/bin/quantum-q",
-        "quantum",
-    ),
-    ("seraph", "lightarchitects/seraph/bin/seraph", "seraph"),
-    ("ayin", "lightarchitects/ayin/bin/ayin", "ayin"),
-    ("claude", "", "claude"),
-];
-
-/// `GET /api/siblings` — live sibling health derived from binary existence
+/// `GET /api/siblings` — live squad health derived from binary existence
 /// + recent helix activity. Status ladder:
 /// - `online`  → binary exists AND helix entry within last 24h
 /// - `active`  → binary exists but no recent helix activity
-/// - `offline` → binary missing (or, for `claude`, no helix activity at all)
-pub async fn get_sibling_status(
+/// - `offline` → binary missing
+///
+/// Inventory is driven by [`lightarchitects::squad_registry::SquadRegistry`];
+/// falls back to compiled-in defaults when `squad-registry.toml` is absent.
+pub async fn get_squad_status(
     headers: HeaderMap,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
@@ -188,20 +178,18 @@ pub async fn get_sibling_status(
     let Some(home) = home_dir() else {
         return (StatusCode::OK, Json(json!([]))).into_response();
     };
-    let helix_root = home.join("lightarchitects/soul/helix");
+    let la_home = home.join("lightarchitects");
+    let helix_root = la_home.join("soul/helix");
     let now = std::time::SystemTime::now();
     let day = std::time::Duration::from_secs(60 * 60 * 24);
 
+    let registry = SquadRegistry::load(&la_home);
     let mut out = Vec::new();
-    for (id, rel_bin, sibling_dir) in SIBLING_DEFS {
-        let bin_path = if rel_bin.is_empty() {
-            None
-        } else {
-            Some(home.join(rel_bin))
-        };
-        let binary_present = bin_path.as_ref().is_some_and(|p| p.is_file());
+    for entry in &registry.entries {
+        let bin_path = SquadRegistry::resolve_bin_path(&la_home, entry);
+        let binary_present = bin_path.is_file();
 
-        let entries_dir = helix_root.join(sibling_dir).join("entries");
+        let entries_dir = helix_root.join(&entry.helix_dir).join("entries");
         let last_activity = newest_mtime(&entries_dir).await;
         let recent = last_activity
             .and_then(|mt| now.duration_since(mt).ok())
@@ -216,9 +204,9 @@ pub async fn get_sibling_status(
         };
 
         out.push(json!({
-            "id": id,
+            "id": entry.id,
             "status": status,
-            "binary_path": bin_path.map(|p| p.to_string_lossy().into_owned()),
+            "binary_path": bin_path.to_string_lossy().into_owned(),
             "binary_present": binary_present,
             "last_activity": last_activity
                 .and_then(|mt| mt.duration_since(std::time::UNIX_EPOCH).ok())
@@ -264,16 +252,18 @@ pub async fn get_sitrep(headers: HeaderMap, State(state): State<AppState>) -> im
         )
             .into_response();
     };
-    let helix_root = home.join("lightarchitects/soul/helix");
+    let la_home = home.join("lightarchitects");
+    let helix_root = la_home.join("soul/helix");
     let now = std::time::SystemTime::now();
     let day = std::time::Duration::from_secs(60 * 60 * 24);
 
+    let registry = SquadRegistry::load(&la_home);
     let mut online = 0;
     let mut active = 0;
     let mut offline = 0;
-    for (_id, rel_bin, sibling_dir) in SIBLING_DEFS {
-        let bin_present = !rel_bin.is_empty() && home.join(rel_bin).is_file();
-        let entries_dir = helix_root.join(sibling_dir).join("entries");
+    for entry in &registry.entries {
+        let bin_present = SquadRegistry::resolve_bin_path(&la_home, entry).is_file();
+        let entries_dir = helix_root.join(&entry.helix_dir).join("entries");
         let recent = newest_mtime(&entries_dir)
             .await
             .and_then(|mt| now.duration_since(mt).ok())
@@ -646,6 +636,7 @@ pub async fn trigger_pillar(
 /// `pillar-{p}.json` artifact. Never returns an error to the caller; all
 /// failures are surfaced via the `completed` event with a non-zero
 /// `exit_code` and a diagnostic `line` just before.
+#[allow(clippy::too_many_lines)]
 async fn run_pillar(
     build_id: String,
     pillar: String,
@@ -663,14 +654,20 @@ async fn run_pillar(
         artifact: None,
     }));
 
-    let mut command = tokio::process::Command::new("corso");
+    let mut command = tokio::process::Command::new(crate::copilot::resolve_binary("corso"));
     command
+        .env("PATH", crate::copilot::augmented_path())
         .arg(subcommand)
         .arg("--format")
         .arg("json")
         .arg("--skip-clarify")
         .arg(&objective)
-        .current_dir(&cwd)
+        .current_dir({
+            if !cwd.is_dir() {
+                let _ = std::fs::create_dir_all(&cwd);
+            }
+            &cwd
+        })
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

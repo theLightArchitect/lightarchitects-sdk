@@ -36,7 +36,17 @@
     return `${Math.floor(diff / 3600000)}h`;
   }
 
-  let displayedTasks = $derived($conductorTasks.slice(0, maxDisplay));
+  let displayedTasks = $derived.by(() => {
+    const seen = new Set<string>();
+    const unique: ConductorTask[] = [];
+    for (const t of $conductorTasks) {
+      if (seen.has(t.id)) continue;
+      seen.add(t.id);
+      unique.push(t);
+      if (unique.length >= maxDisplay) break;
+    }
+    return unique;
+  });
 </script>
 
 <div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
@@ -72,7 +82,7 @@
   {:else}
     <div class="divide-y divide-[#1e293b]">
       {#each displayedTasks as task (task.id)}
-        {@const sibColor = SIBLING_COLORS[task.sibling] ?? '#6b7280'}
+        {@const sibColor = (task.sibling && SIBLING_COLORS[task.sibling]) ?? '#6b7280'}
         {@const stColor = statusColor(task.status)}
 
         <button
@@ -90,14 +100,14 @@
             class="flex-shrink-0 w-6 h-6 rounded flex items-center justify-center text-[8px] font-bold"
             style="background-color: {sibColor}20; color: {sibColor}"
           >
-            {task.sibling.slice(0, 2).toUpperCase()}
+            {(task.sibling ?? '??').slice(0, 2).toUpperCase()}
           </div>
 
           <!-- Task info -->
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
               <span class="text-[11px] text-[#e2e8f0]">{task.taskType}</span>
-              <span class="text-[9px] text-[#475569]">{task.buildId.slice(-8)}</span>
+              <span class="text-[9px] text-[#475569]">{(task.buildId ?? '').slice(-8)}</span>
             </div>
             <div class="text-[9px] text-[#475569]">
               {task.status === 'running' ? 'Started' : 'Queued'} {formatTime(task.startedAt ?? task.queuedAt)}

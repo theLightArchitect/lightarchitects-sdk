@@ -29,6 +29,127 @@ use crate::{
     session::BuildSession,
 };
 
+/// Resolve a binary name to its full path by checking known install locations.
+/// Falls back to the bare name (relies on PATH) if not found in known locations.
+pub fn resolve_binary(name: &str) -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
+    let candidates: Vec<String> = match name {
+        "claude" => vec![
+            format!("{home}/.local/bin/claude"),
+            format!("{home}/.claude/local/bin/claude"),
+            "/usr/local/bin/claude".to_owned(),
+        ],
+        "corso" => vec![
+            format!("{home}/lightarchitects/corso/bin/corso"),
+            "/usr/local/bin/corso".to_owned(),
+        ],
+        "codex" => vec![
+            format!("{home}/.local/bin/codex"),
+            "/opt/homebrew/bin/codex".to_owned(),
+            "/usr/local/bin/codex".to_owned(),
+        ],
+        "laex0" => vec![
+            format!("{home}/.local/bin/laex0"),
+            format!("{home}/.lightarchitects/bin/laex0"),
+            "/usr/local/bin/laex0".to_owned(),
+        ],
+        "lightarchitects" => vec![
+            format!("{home}/.lightarchitects/bin/lightarchitects"),
+            format!("{home}/.local/bin/lightarchitects"),
+            "/usr/local/bin/lightarchitects".to_owned(),
+        ],
+        _ => vec![],
+    };
+    for path in &candidates {
+        let p = std::path::Path::new(path);
+        let exists = p.exists();
+        let is_file = p.is_file();
+        tracing::info!(
+            "resolve_binary({name}): checking {path} → exists={exists}, is_file={is_file}"
+        );
+        if is_file {
+            tracing::info!("resolve_binary({name}) → {path}");
+            return path.clone();
+        }
+    }
+    tracing::warn!(
+        "resolve_binary({name}): not found in known locations, falling back to bare name"
+    );
+    name.to_owned()
+}
+
+/// Resolve an Anthropic API key for the `LightArchitects` CLI subprocess.
+///
+/// Priority:
+/// 1. Keychain `"lightarchitects"/"anthropic"` — canonical namespace (new writes always go here)
+/// 2. Keychain `"lightarchitects-webshell-setup"/"anthropic"` — legacy fallback during migration
+/// 3. Claude Code credentials file (`~/.claude/.credentials.json`)
+/// 4. `ANTHROPIC_API_KEY` env var (if not a placeholder)
+///
+/// Returns `None` if no valid key found — the CLI will fall back to its own resolution.
+fn resolve_api_key_for_native() -> Option<String> {
+    // 1. Canonical keychain namespace ("lightarchitects") — new writes land here.
+    if let Ok(entry) = keyring::Entry::new("lightarchitects", "anthropic") {
+        if let Ok(key) = entry.get_password() {
+            if !key.is_empty() && !key.contains("placeholder") && !key.contains("your_") {
+                tracing::debug!(
+                    "resolve_api_key_for_native: found key in keychain (lightarchitects/anthropic)"
+                );
+                return Some(key);
+            }
+        }
+    }
+
+    // 2. Legacy keychain namespace — coexists until a future migration command cleans it up.
+    if let Ok(entry) = keyring::Entry::new("lightarchitects-webshell-setup", "anthropic") {
+        if let Ok(key) = entry.get_password() {
+            if !key.is_empty() && !key.contains("placeholder") && !key.contains("your_") {
+                tracing::debug!(
+                    "resolve_api_key_for_native: found key in legacy keychain (lightarchitects-webshell-setup/anthropic)"
+                );
+                return Some(key);
+            }
+        }
+    }
+
+    // 3. Claude Code credentials file
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
+    let creds_path = std::path::Path::new(&home)
+        .join(".claude")
+        .join(".credentials.json");
+    if let Ok(content) = std::fs::read_to_string(&creds_path) {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(key) = json.get("primaryApiKey").and_then(|v| v.as_str()) {
+                if !key.is_empty() {
+                    tracing::debug!("resolve_api_key_for_native: found key in .credentials.json");
+                    return Some(key.to_owned());
+                }
+            }
+        }
+    }
+
+    // 4. Environment variable (if not a placeholder)
+    if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+        if !key.is_empty() && !key.contains("your_") && key.starts_with("sk-ant-") {
+            tracing::debug!("resolve_api_key_for_native: found key in env ANTHROPIC_API_KEY");
+            return Some(key);
+        }
+    }
+
+    tracing::warn!("resolve_api_key_for_native: no valid API key found for native CLI");
+    None
+}
+
+/// Build an augmented PATH that includes known binary install directories.
+/// Subprocess spawns (claude, corso, codex) need these paths even if the
+/// webshell server was launched from a minimal environment (e.g., `LaunchAgent`).
+pub fn augmented_path() -> String {
+    use lightarchitects::{core::paths, squad_registry::SquadRegistry};
+    let la_home = paths::root_or_fallback();
+    let registry = SquadRegistry::load(&la_home);
+    paths::augmented_path(&registry)
+}
+
 /// JSON body for `POST /api/builds/:id/copilot`.
 #[derive(Debug, Deserialize)]
 pub struct CopilotRequest {
@@ -145,6 +266,7 @@ fn parse_turn_end(line: &str, _session: &BuildSession) -> Option<String> {
 /// # Errors
 ///
 /// Returns a descriptive string on spawn failure, non-zero exit, or missing result event.
+#[allow(clippy::too_many_lines)]
 async fn run_print_turn(
     message: &str,
     session: &BuildSession,
@@ -154,7 +276,10 @@ async fn run_print_turn(
         return Err("run_print_turn: not a Lightarchitects session".to_owned());
     };
 
-    let mut c = tokio::process::Command::new("claude");
+    let resolved = resolve_binary("claude");
+    let mut c = tokio::process::Command::new(&resolved);
+    // Ensure child process has full PATH for dynamic libs and shebang resolution
+    c.env("PATH", augmented_path());
     for arg in session.build_argv() {
         c.arg(arg);
     }
@@ -171,6 +296,11 @@ async fn run_print_turn(
     // webshell run works with inherited cwd by accident; session-sync
     // (resuming a session created in a different process tree) exposes
     // the need to set it explicitly.
+    // Ensure cwd exists — spawn fails with misleading "No such file or directory"
+    // (referring to cwd, not the binary) if current_dir doesn't exist.
+    if !session.cwd.is_dir() {
+        let _ = std::fs::create_dir_all(&session.cwd);
+    }
     c.current_dir(&session.cwd);
     c.env_remove("ANTHROPIC_API_KEY");
     match backend {
@@ -383,7 +513,8 @@ async fn run_codex_turn(
         return Err("run_codex_turn: not a Codex session".to_owned());
     };
 
-    let mut c = tokio::process::Command::new("codex");
+    let mut c = tokio::process::Command::new(resolve_binary("codex"));
+    c.env("PATH", augmented_path());
     if let Some(id) = prev_session_id {
         c.arg("exec").arg("resume").arg(id).arg(message);
     } else {
@@ -407,6 +538,9 @@ async fn run_codex_turn(
     // as run_print_turn: `codex exec resume <id>` looks up the session
     // file relative to the current project, so cwd must match what the
     // session was originally created in.
+    if !session.cwd.is_dir() {
+        let _ = std::fs::create_dir_all(&session.cwd);
+    }
     c.current_dir(&session.cwd);
     c.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -488,7 +622,106 @@ async fn run_codex_turn(
     }
 }
 
+/// Per-turn execution for `LightArchitects` CLI (single-shot `run <prompt>` mode).
+///
+/// Spawns `laex0 run "<message>" --yes --cwd <path> --no-splash`, captures stdout,
+/// returns the final text output. Each turn is a fresh process — no session continuity
+/// (the CLI manages its own session files on disk).
+async fn run_native_turn(message: &str, session: &BuildSession) -> Result<String, String> {
+    let AgentSession::LightarchitectsNative(cfg) = &session.agent else {
+        return Err("run_native_turn: not a LightarchitectsNative session".to_owned());
+    };
+
+    let resolved = resolve_binary(&cfg.binary);
+    let mut c = tokio::process::Command::new(&resolved);
+    c.env("PATH", augmented_path());
+
+    // Inject credentials from webshell auth broker
+    if let Some(key) = resolve_api_key_for_native() {
+        c.env("ANTHROPIC_API_KEY", &key);
+    }
+
+    c.arg("run").arg(message).arg("--yes").arg("--no-splash");
+
+    if session.cwd.is_dir() {
+        c.arg("--cwd").arg(&session.cwd);
+    } else {
+        let _ = std::fs::create_dir_all(&session.cwd);
+        c.arg("--cwd").arg(&session.cwd);
+    }
+
+    c.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    tracing::info!("run_native_turn: spawning {} run ...", resolved);
+
+    let output = c.output().await.map_err(|e| format!("spawn laex0: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::warn!(
+            "run_native_turn: exit {:?}, stderr: {}",
+            output.status.code(),
+            &stderr[..stderr.len().min(500)]
+        );
+        // Still try to return stdout if it has content
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if !stdout.is_empty() {
+            return Ok(stdout);
+        }
+        return Err(format!(
+            "laex0 exited with {:?}: {}",
+            output.status.code(),
+            stderr.chars().take(200).collect::<String>()
+        ));
+    }
+
+    let raw = String::from_utf8_lossy(&output.stdout);
+    // Strip tracing log lines (start with ANSI escape \x1b[2m or timestamp pattern)
+    // and ANSI escape codes from the output. lÆx0 logs to stdout which pollutes the response.
+    let text: String = raw
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            // Skip tracing-style log lines (ISO timestamp + level)
+            if trimmed.starts_with('\x1b') && trimmed.contains("INFO") {
+                return false;
+            }
+            if trimmed.starts_with('\x1b') && trimmed.contains("WARN") {
+                return false;
+            }
+            if trimmed.starts_with('\x1b') && trimmed.contains("DEBUG") {
+                return false;
+            }
+            if trimmed.starts_with('\x1b') && trimmed.contains("ERROR") {
+                return false;
+            }
+            // Skip lines that are purely ANSI-escaped timestamps
+            if trimmed.starts_with("\x1b[2m2") {
+                return false;
+            }
+            !trimmed.is_empty()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_owned();
+
+    if text.is_empty() {
+        // Try stderr as fallback (some output may go there)
+        let stderr_text = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        if !stderr_text.is_empty() {
+            return Ok(stderr_text);
+        }
+        return Err("laex0 returned empty output (logs filtered)".to_owned());
+    }
+
+    Ok(text)
+}
+
 /// Spawn a persistent agent subprocess for the `LightarchitectsNative` backend.
+/// (Future: when the CLI supports NDJSON streaming mode)
 ///
 /// | Session | Binary | Extra env |
 /// |---------|--------|-----------|
@@ -500,12 +733,24 @@ async fn run_codex_turn(
 /// stdin/stdout handles are unavailable.
 fn spawn_copilot(session: &BuildSession) -> Result<CopilotProcess, String> {
     let mut cmd = match &session.agent {
-        // lÆx0 native binary — reads prompts from stdin, emits stream-json NDJSON.
-        // build_argv() is intentionally NOT passed: lÆx0 does not accept
-        // Claude Code-specific flags (--add-dir, --agent, --allowedTools).
+        // LightArchitects CLI (formerly lÆx0) — single-shot `run <prompt>` mode.
+        // The webshell acts as auth broker: resolves credentials from OS keychain
+        // (stored by /api/setup/save) and injects them into the subprocess env.
         AgentSession::LightarchitectsNative(cfg) => {
-            let mut c = tokio::process::Command::new(&cfg.binary);
-            c.arg("run").arg("--output-format").arg("stream-json");
+            let resolved = resolve_binary(&cfg.binary);
+            let mut c = tokio::process::Command::new(&resolved);
+            c.env("PATH", augmented_path());
+
+            // ── Auth broker: inject credentials from webshell keychain ──
+            // Priority: keychain entry from setup/save → SDK credential registry → env fallback
+            if let Some(key) = resolve_api_key_for_native() {
+                c.env("ANTHROPIC_API_KEY", &key);
+            }
+
+            c.arg("run").arg("--yes").arg("--no-splash");
+            if session.cwd.is_dir() {
+                c.arg("--cwd").arg(&session.cwd);
+            }
             c
         }
         _ => return Err("spawn_copilot called for non-persistent-subprocess backend".to_owned()),
@@ -645,7 +890,22 @@ async fn call_subprocess(
         return Ok(text);
     }
 
-    // Persistent subprocess path — LightarchitectsNative only.
+    // Per-turn path for LightArchitects CLI (single-shot `run <prompt>` mode).
+    // lÆx0 v0.1.0+ uses `laex0 run <prompt> --yes --cwd <path>` per turn.
+    if matches!(&session.agent, AgentSession::LightarchitectsNative(_)) {
+        let text = run_native_turn(message, session).await?;
+        emit_turn_complete_span(
+            session,
+            &span_id,
+            actor,
+            &start_ts,
+            start.elapsed(),
+            "success",
+        );
+        return Ok(text);
+    }
+
+    // Persistent subprocess path — future LightArchitects CLI versions with NDJSON streaming.
     if guard.is_none() {
         *guard = Some(spawn_copilot(session)?);
     }

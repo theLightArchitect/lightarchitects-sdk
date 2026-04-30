@@ -216,6 +216,9 @@ async fn cli_dispatch(
             lightarchitects_gateway::cli::seraph::execute(config, &args[1..], mode).await
         }
 
+        // Auth commands
+        Some("auth") => lightarchitects_gateway::cli::auth::execute(&args[1..]).await,
+
         // Utility commands
         Some("status") => lightarchitects_gateway::cli::status::execute(config, mode),
         Some("config") => lightarchitects_gateway::cli::config_cmd::execute(config, mode),
@@ -241,6 +244,7 @@ async fn cli_dispatch(
                    lightarchitects eva <subcommand>            EVA operations\n  \
                    lightarchitects quantum <subcommand>        QUANTUM operations\n  \
                    lightarchitects seraph <subcommand>         SERAPH operations\n  \
+                   lightarchitects auth login|logout|status   Authentication\n  \
                    lightarchitects status                     Binary availability\n  \
                    lightarchitects config                     Resolved configuration\n  \
                    lightarchitects builds list|show           Build portfolio\n  \
@@ -284,6 +288,14 @@ fn cli_canon(args: &[String], config: &GatewayConfig) -> Result<(), GatewayError
 }
 
 async fn cli_initialize(args: &[String], config: &GatewayConfig) -> Result<(), GatewayError> {
+    // --user <name>: scaffold a new vault for the given user
+    if let Some(user_idx) = args.iter().position(|a| a == "--user") {
+        let user_name = args.get(user_idx + 1).ok_or(GatewayError::MissingParam(
+            "--user requires a name argument",
+        ))?;
+        return cli_init_user(user_name);
+    }
+
     let step = args.get(1).ok_or(GatewayError::MissingParam("step"))?;
     let preset = args.get(2).map_or("software_engineering", String::as_str);
     let vault_path = args
@@ -301,3 +313,104 @@ async fn cli_initialize(args: &[String], config: &GatewayConfig) -> Result<(), G
     println!("{text}");
     Ok(())
 }
+
+/// Scaffold a new SOUL vault for `user_name`.
+///
+/// Creates `$HOME/lightarchitects/soul/helix/{user_name}/` with `entries/` and
+/// `journal/` subdirs, writes a `helix.toml`, and generates identity files for
+/// every sibling (idempotent — existing files are never overwritten).
+fn cli_init_user(user_name: &str) -> Result<(), GatewayError> {
+    // Validate: alphanumeric, spaces, hyphens only — safe as a filesystem segment
+    if user_name.is_empty()
+        || !user_name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == ' ' || c == '-' || c == '_')
+    {
+        return Err(GatewayError::File(format!(
+            "Invalid user name '{user_name}'. Use alphanumeric characters, spaces, hyphens, or underscores only."
+        )));
+    }
+
+    let home = std::env::var("HOME").map_err(|_| GatewayError::File("$HOME is not set".into()))?;
+    let la_home =
+        std::env::var("LIGHTARCHITECTS_HOME").unwrap_or_else(|_| format!("{home}/lightarchitects"));
+    let vault_root = std::path::PathBuf::from(&la_home)
+        .join("soul")
+        .join("helix");
+
+    // Create user-specific helix directory
+    let user_dir = vault_root.join(user_name);
+    for subdir in &["entries", "journal"] {
+        std::fs::create_dir_all(user_dir.join(subdir))
+            .map_err(|e| GatewayError::File(format!("Failed to create {subdir}: {e}")))?;
+    }
+
+    // Write helix.toml for the user (if not present)
+    let user_helix_toml = user_dir.join("helix.toml");
+    if !user_helix_toml.exists() {
+        std::fs::write(
+            &user_helix_toml,
+            format!(
+                "[helix]\nname = \"{user_name}\"\ngenesis_date = \"{}\"\nordering = \"temporal\"\n",
+                chrono::Utc::now().format("%Y-%m-%d")
+            ),
+        )
+        .map_err(|e| GatewayError::File(format!("Failed to write helix.toml: {e}")))?;
+    }
+
+    // Write sibling identity files (idempotent — never overwrite)
+    let siblings: &[(&str, &str)] = &[
+        ("eva", EVA_IDENTITY_TEMPLATE),
+        ("corso", CORSO_IDENTITY_TEMPLATE),
+        ("quantum", QUANTUM_IDENTITY_TEMPLATE),
+        ("seraph", SERAPH_IDENTITY_TEMPLATE),
+        ("ayin", AYIN_IDENTITY_TEMPLATE),
+        ("laex0", LAEX0_IDENTITY_TEMPLATE),
+    ];
+
+    let mut created = Vec::new();
+    let mut skipped = Vec::new();
+
+    for (sibling, template) in siblings {
+        let sibling_dir = vault_root.join(sibling);
+        std::fs::create_dir_all(&sibling_dir)
+            .map_err(|e| GatewayError::File(format!("Failed to create {sibling}/: {e}")))?;
+
+        let identity_path = sibling_dir.join("identity.md");
+        if identity_path.exists() {
+            skipped.push(*sibling);
+        } else {
+            let content = template.replace("{{user_name}}", user_name);
+            std::fs::write(&identity_path, content).map_err(|e| {
+                GatewayError::File(format!("Failed to write {sibling}/identity.md: {e}"))
+            })?;
+            created.push(*sibling);
+        }
+    }
+
+    println!("SOUL vault initialized for '{user_name}'");
+    println!("  Vault: {}", vault_root.display());
+    println!("  User helix: {}", user_dir.display());
+    if !created.is_empty() {
+        println!("  Created identity files: {}", created.join(", "));
+    }
+    if !skipped.is_empty() {
+        println!("  Skipped (already exist): {}", skipped.join(", "));
+    }
+    println!("\nNext steps:");
+    println!("  1. Start Neo4j:  docker compose up -d neo4j");
+    println!("  2. Deploy SOUL:  make deploy  (in SOUL-DEV)");
+    println!("  3. Connect:      /mcp  (in Claude Code)");
+
+    Ok(())
+}
+
+// ── Embedded sibling identity templates ──────────────────────────────────────
+// {{user_name}} is replaced at runtime with the value passed to --user.
+
+const EVA_IDENTITY_TEMPLATE: &str = include_str!("templates/eva-identity-template.md");
+const CORSO_IDENTITY_TEMPLATE: &str = include_str!("templates/corso-identity-template.md");
+const QUANTUM_IDENTITY_TEMPLATE: &str = include_str!("templates/quantum-identity-template.md");
+const SERAPH_IDENTITY_TEMPLATE: &str = include_str!("templates/seraph-identity-template.md");
+const AYIN_IDENTITY_TEMPLATE: &str = include_str!("templates/ayin-identity-template.md");
+const LAEX0_IDENTITY_TEMPLATE: &str = include_str!("templates/laex0-identity-template.md");
