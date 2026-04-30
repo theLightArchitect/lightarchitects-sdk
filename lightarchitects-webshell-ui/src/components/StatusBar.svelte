@@ -1,23 +1,39 @@
 <script lang="ts">
-  import { ayinStatus, builds, terminalConnected, authProfile } from '$lib/stores';
+  import { ayinStatus, builds, terminalConnected, authProfile, authStatus } from '$lib/stores';
   import { STATUS_COLORS } from '$lib/design-tokens';
 
+  // Auth state takes precedence over connection state — a 401/403 is a more
+  // urgent operator signal than "reconnecting" (#13 second-half: AuthBanner
+  // already covers the loud surface; this chip is the persistent at-a-glance).
+  let auth = $derived($authStatus);
   let status = $derived($ayinStatus);
   let buildCount = $derived($builds.length);
   let ptyColor = $derived($terminalConnected ? STATUS_COLORS.connected : STATUS_COLORS.offline);
   let ptyLabel = $derived($terminalConnected ? 'PTY live' : 'PTY off');
 
   const statusColor = (s: string) => STATUS_COLORS[s as keyof typeof STATUS_COLORS] ?? '#6b7280';
+
+  // Effective AYIN-chip color + label, factoring in auth state.
+  let ayinColor = $derived(auth !== 'ok' ? '#DC2626' : statusColor(status));
+  let ayinLabel = $derived(
+    auth === 'unauthorized' ? 'auth: expired' :
+    auth === 'forbidden'    ? 'auth: denied' :
+    status === 'connected'  ? `AYIN live · ${buildCount} builds` :
+    status === 'reconnecting' ? 'reconnecting…' :
+                                'AYIN offline'
+  );
 </script>
 
 <div class="absolute bottom-[12px] left-[12px] flex items-center gap-[6px] pointer-events-none z-10 bg-[#111827]/80 px-2 py-1 rounded backdrop-blur-sm border border-[#1e293b]">
-  <!-- AYIN status -->
+  <!-- AYIN status (also surfaces auth failures from sse.ts; banner offers recovery) -->
   <div
     class="w-[7px] h-[7px] rounded-full shrink-0"
-    style="background-color: {statusColor(status)}; box-shadow: 0 0 4px {statusColor(status)}"
+    style="background-color: {ayinColor}; box-shadow: 0 0 4px {ayinColor}"
   ></div>
-  <span class="text-[11px] text-[#94a3b8] font-mono leading-none">
-    {status === 'connected' ? `AYIN live · ${buildCount} builds` : status === 'reconnecting' ? 'reconnecting…' : 'AYIN offline'}
+  <span
+    class="text-[11px] font-mono leading-none {auth !== 'ok' ? 'text-[#FCA5A5]' : 'text-[#94a3b8]'}"
+  >
+    {ayinLabel}
   </span>
 
   <div class="w-px h-3 bg-[#334155] mx-1"></div>
