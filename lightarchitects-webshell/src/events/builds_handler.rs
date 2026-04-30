@@ -385,7 +385,7 @@ pub struct CreatePlanRequest {
 ///
 /// Appends to `active.yaml` atomically (write-to-temp + rename). Invalidates
 /// the builds cache so the next `GET /api/builds` reflects the new entry.
-#[allow(clippy::missing_panics_doc)]
+#[allow(clippy::missing_panics_doc, clippy::too_many_lines)]
 pub async fn create_plan_handler(
     headers: axum::http::HeaderMap,
     State(state): State<AppState>,
@@ -401,7 +401,15 @@ pub async fn create_plan_handler(
     }
 
     // Soft-validate LASDLC phase names (warn, don't reject)
-    let valid_phase_prefixes = ["Plan", "Research", "Implement", "Harden", "Verify", "Ship", "Learn"];
+    let valid_phase_prefixes = [
+        "Plan",
+        "Research",
+        "Implement",
+        "Harden",
+        "Verify",
+        "Ship",
+        "Learn",
+    ];
     for phase in &body.phase_detail {
         if let Some(title) = phase.get("title").and_then(|v| v.as_str()) {
             let has_valid_prefix = valid_phase_prefixes.iter().any(|p| title.starts_with(p));
@@ -435,9 +443,16 @@ pub async fn create_plan_handler(
             .unwrap_or_default()
             .as_nanos();
         // Simple deterministic codename from timestamp hash
-        let adjectives = ["keen", "swift", "bold", "bright", "steady", "fierce", "noble", "radiant"];
-        let gerunds = ["forging", "weaving", "tracking", "mining", "bridging", "sealing", "nesting", "scribing"];
-        let nouns = ["hawk", "eagle", "wolf", "phoenix", "raven", "spider", "falcon", "viper"];
+        let adjectives = [
+            "keen", "swift", "bold", "bright", "steady", "fierce", "noble", "radiant",
+        ];
+        let gerunds = [
+            "forging", "weaving", "tracking", "mining", "bridging", "sealing", "nesting",
+            "scribing",
+        ];
+        let nouns = [
+            "hawk", "eagle", "wolf", "phoenix", "raven", "spider", "falcon", "viper",
+        ];
         let a = adjectives[(seed as usize) % adjectives.len()];
         let g = gerunds[((seed >> 8) as usize) % gerunds.len()];
         let n = nouns[((seed >> 16) as usize) % nouns.len()];
@@ -449,29 +464,44 @@ pub async fn create_plan_handler(
     entry.insert("name".into(), body.name.clone().into());
     entry.insert("codename".into(), codename.clone().into());
     entry.insert("version".into(), body.version.into());
-    entry.insert("tier".into(), serde_yaml::Value::Number(body.tier.unwrap_or(3).into()));
+    entry.insert(
+        "tier".into(),
+        serde_yaml::Value::Number(body.tier.unwrap_or(3).into()),
+    );
     entry.insert("status".into(), "planned".into());
     entry.insert("path".into(), body.path.into());
-    entry.insert("binary".into(), "~/.lightarchitects/webshell/bin/lightarchitects-webshell".into());
+    entry.insert(
+        "binary".into(),
+        "~/.lightarchitects/webshell/bin/lightarchitects-webshell".into(),
+    );
     entry.insert("deploy".into(), "make deploy".into());
-    entry.insert("language".into(), body.language.unwrap_or_else(|| "rust+typescript".to_owned()).into());
+    entry.insert(
+        "language".into(),
+        body.language
+            .unwrap_or_else(|| "rust+typescript".to_owned())
+            .into(),
+    );
     entry.insert("description".into(), body.description.into());
     entry.insert("meta_skill".into(), body.meta_skill.into());
     entry.insert("priority".into(), body.priority.into());
 
     if !body.siblings.is_empty() {
-        let siblings: Vec<serde_yaml::Value> = body.siblings.into_iter().map(|s| s.into()).collect();
+        let siblings: Vec<serde_yaml::Value> = body.siblings.into_iter().map(Into::into).collect();
         entry.insert("siblings".into(), serde_yaml::Value::Sequence(siblings));
     }
     if let Some(blocked) = body.blocked_by {
         if !blocked.is_empty() {
-            let blocked_vals: Vec<serde_yaml::Value> = blocked.into_iter().map(|s| s.into()).collect();
-            entry.insert("blocked_by".into(), serde_yaml::Value::Sequence(blocked_vals));
+            let blocked_vals: Vec<serde_yaml::Value> =
+                blocked.into_iter().map(Into::into).collect();
+            entry.insert(
+                "blocked_by".into(),
+                serde_yaml::Value::Sequence(blocked_vals),
+            );
         }
     }
     if let Some(blocks) = body.blocks {
         if !blocks.is_empty() {
-            let block_vals: Vec<serde_yaml::Value> = blocks.into_iter().map(|s| s.into()).collect();
+            let block_vals: Vec<serde_yaml::Value> = blocks.into_iter().map(Into::into).collect();
             entry.insert("blocks".into(), serde_yaml::Value::Sequence(block_vals));
         }
     }
@@ -479,16 +509,27 @@ pub async fn create_plan_handler(
     // Phase detail — store as raw YAML values
     let phases_count = body.phase_detail.len();
     if !body.phase_detail.is_empty() {
-        entry.insert("phases".into(), serde_yaml::Value::Number(serde_yaml::Number::from(phases_count as u64)));
-        entry.insert("current_phase".into(), serde_yaml::Value::Number(0u64.into()));
+        entry.insert(
+            "phases".into(),
+            serde_yaml::Value::Number(serde_yaml::Number::from(phases_count as u64)),
+        );
+        entry.insert(
+            "current_phase".into(),
+            serde_yaml::Value::Number(0u64.into()),
+        );
         entry.insert("phase_status".into(), "PLANNED".into());
 
         // Convert JSON phase_detail to YAML
-        let phase_yaml: Vec<serde_yaml::Value> = body.phase_detail.iter().filter_map(|v| {
-            serde_yaml::to_value(v).ok()
-        }).collect();
+        let phase_yaml: Vec<serde_yaml::Value> = body
+            .phase_detail
+            .iter()
+            .filter_map(|v| serde_yaml::to_value(v).ok())
+            .collect();
         if !phase_yaml.is_empty() {
-            entry.insert("phase_detail".into(), serde_yaml::Value::Sequence(phase_yaml));
+            entry.insert(
+                "phase_detail".into(),
+                serde_yaml::Value::Sequence(phase_yaml),
+            );
         }
     }
 
@@ -501,7 +542,10 @@ pub async fn create_plan_handler(
         }
     };
 
-    if let Some(builds) = yaml_value.get_mut("builds").and_then(|v| v.as_sequence_mut()) {
+    if let Some(builds) = yaml_value
+        .get_mut("builds")
+        .and_then(|v| v.as_sequence_mut())
+    {
         builds.push(serde_yaml::Value::Mapping(entry));
     } else {
         warn!("active.yaml missing 'builds' sequence");
@@ -598,16 +642,18 @@ pub async fn update_plan_handler(
 
     // Find the entry by codename and merge updates.
     let mut found = false;
-    if let Some(builds) = yaml_value.get_mut("builds").and_then(|v| v.as_sequence_mut()) {
+    if let Some(builds) = yaml_value
+        .get_mut("builds")
+        .and_then(|v| v.as_sequence_mut())
+    {
         for build in builds.iter_mut() {
             if let Some(cn) = build.get("codename").and_then(|v| v.as_str()) {
                 if cn == codename {
                     found = true;
                     // Merge provided fields
-                    if let (Some(mapping), Ok(updates)) = (
-                        build.as_mapping_mut(),
-                        serde_yaml::to_value(&body),
-                    ) {
+                    if let (Some(mapping), Ok(updates)) =
+                        (build.as_mapping_mut(), serde_yaml::to_value(&body))
+                    {
                         if let Some(update_map) = updates.as_mapping() {
                             for (k, v) in update_map {
                                 mapping.insert(k.clone(), v.clone());

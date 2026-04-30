@@ -1,14 +1,14 @@
 //! Embedded static assets served from `lightarchitects-webshell-ui/dist/`.
-//! Rebuilt: 2026-04-20 — BUG-004/005/006 fixes.
 //!
-//! The SPA is the Svelte Mockcli frontend (`~/Projects/lightarchitects-webshell-ui`).
-//! Its built bundle is baked into the binary at compile time via
-//! [`rust_embed`] so the webshell ships as a single self-contained artifact.
+//! The SPA is the `lightarchitects-webshell-ui` Svelte frontend (canonical frontend
+//! at `lightarchitects-sdk/lightarchitects-webshell-ui/`). Its built bundle is baked
+//! into the binary at compile time via [`rust_embed`] so the webshell ships as a
+//! single self-contained artifact.
 //!
 //! To rebuild after frontend changes:
 //! ```bash
-//! cd ~/Projects/lightarchitects-webshell-ui && pnpm build
-//! cd ~/Projects/lightarchitects-sdk/lightarchitects-webshell && cargo build --release
+//! cd lightarchitects-sdk/lightarchitects-webshell-ui && pnpm build
+//! cd lightarchitects-sdk/lightarchitects-webshell && cargo build --release
 //! ```
 
 use axum::{

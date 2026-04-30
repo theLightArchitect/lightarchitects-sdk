@@ -646,6 +646,7 @@ pub async fn trigger_pillar(
 /// `pillar-{p}.json` artifact. Never returns an error to the caller; all
 /// failures are surfaced via the `completed` event with a non-zero
 /// `exit_code` and a diagnostic `line` just before.
+#[allow(clippy::too_many_lines)]
 async fn run_pillar(
     build_id: String,
     pillar: String,
@@ -663,14 +664,20 @@ async fn run_pillar(
         artifact: None,
     }));
 
-    let mut command = tokio::process::Command::new("corso");
+    let mut command = tokio::process::Command::new(crate::copilot::resolve_binary("corso"));
     command
+        .env("PATH", crate::copilot::augmented_path())
         .arg(subcommand)
         .arg("--format")
         .arg("json")
         .arg("--skip-clarify")
         .arg(&objective)
-        .current_dir(&cwd)
+        .current_dir({
+            if !cwd.is_dir() {
+                let _ = std::fs::create_dir_all(&cwd);
+            }
+            &cwd
+        })
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
