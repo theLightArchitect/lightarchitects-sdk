@@ -13,6 +13,7 @@
   import ScrumReport from './components/ScrumReport.svelte';
   import Tooltip from './components/Tooltip.svelte';
   import AuthBanner from './components/AuthBanner.svelte';
+  import DiffPreview from './components/DiffPreview.svelte';
   import {
     ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen,
     builds, currentBuildId, findings, logEntries, artifacts, conductorTasks, arenaStatus, alerts,
@@ -225,6 +226,10 @@
 {:else}
 <!-- Auth banner — top-of-screen affordance on 401/403 from SSE (#13). -->
 <AuthBanner />
+<!-- Diff-preview modal — operator-gated FS mutation flow (#47).
+     Listens for `la:fs-mutation-pending` events; backend interception layer
+     follows once mantis Phase 3 rebases on main (filed per #88-#92). -->
+<DiffPreview />
 <div class="w-screen h-screen overflow-hidden bg-[#0a0a0f] text-[#e2e8f0] font-['JetBrains_Mono',monospace]">
   <!-- Responsive container:
          <768  : flex-col       (vertical stack — single-column flow)

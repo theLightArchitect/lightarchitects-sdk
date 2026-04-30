@@ -294,7 +294,8 @@ export type EventType =
   | 'supervisor_decision'
   | 'plan_update'
   | 'scrum_report'
-  | 'training_progress';
+  | 'training_progress'
+  | 'fs_mutation_pending';
 
 // --- CORSO scout plan (PlanView) ---
 

@@ -482,6 +482,17 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
       });
       break;
     }
+    case 'fs_mutation_pending': {
+      // #47 — gate FS mutations behind operator approval. Forward as a custom
+      // DOM event; DiffPreview.svelte listens and opens the modal. The shape
+      // matches lib/diff-preview.ts::FsMutationPendingEvent.
+      window.dispatchEvent(
+        new CustomEvent('la:fs-mutation-pending', {
+          detail: { type: 'fs_mutation_pending', ...(event.data as Record<string, unknown>) },
+        }),
+      );
+      break;
+    }
     default:
       break;
   }
