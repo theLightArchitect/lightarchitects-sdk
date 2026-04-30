@@ -49,10 +49,10 @@ pub async fn control_handler(
     // Handle local-execution commands before broadcasting.
     match &cmd {
         ControlCommand::OpenInEditor { file, line } => {
-            open_in_editor(file, *line, &state.config.cwd).await;
+            open_in_editor(file, *line, &state.config.cwd);
         }
         ControlCommand::RevealInFinder { path } => {
-            reveal_in_finder(path, &state.config.cwd).await;
+            reveal_in_finder(path, &state.config.cwd);
         }
         _ => {}
     }
@@ -102,7 +102,7 @@ fn resolve_safe_path(raw_path: &str, cwd: &std::path::Path) -> Option<std::path:
 /// Falls back to `open -t` when `$EDITOR` is not set.  Line-number
 /// injection uses the `file:line` convention understood by most editors
 /// (VS Code, Cursor, Neovim, etc.).
-async fn open_in_editor(raw_file: &str, line: Option<u32>, cwd: &std::path::Path) {
+fn open_in_editor(raw_file: &str, line: Option<u32>, cwd: &std::path::Path) {
     let Some(path) = resolve_safe_path(raw_file, cwd) else {
         warn!(
             raw_file,
@@ -134,7 +134,7 @@ async fn open_in_editor(raw_file: &str, line: Option<u32>, cwd: &std::path::Path
 }
 
 /// Spawn `open -R <path>` to reveal the file in Finder (macOS).
-async fn reveal_in_finder(raw_path: &str, cwd: &std::path::Path) {
+fn reveal_in_finder(raw_path: &str, cwd: &std::path::Path) {
     let Some(path) = resolve_safe_path(raw_path, cwd) else {
         warn!(
             raw_path,

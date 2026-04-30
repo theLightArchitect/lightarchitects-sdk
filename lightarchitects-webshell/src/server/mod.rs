@@ -732,13 +732,11 @@ fn walk_files(root: &std::path::Path, query: &str) -> Vec<String> {
                     continue;
                 }
                 queue.push_back((path, depth + 1));
-            } else if path.is_file() {
-                if query.is_empty() || name.to_lowercase().contains(&*query) {
-                    if let Ok(rel) = path.strip_prefix(root) {
-                        results.push(rel.to_string_lossy().into_owned());
-                        if results.len() >= MAX_RESULTS {
-                            return results;
-                        }
+            } else if path.is_file() && (query.is_empty() || name.to_lowercase().contains(query)) {
+                if let Ok(rel) = path.strip_prefix(root) {
+                    results.push(rel.to_string_lossy().into_owned());
+                    if results.len() >= MAX_RESULTS {
+                        return results;
                     }
                 }
             }
