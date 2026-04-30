@@ -422,6 +422,7 @@ mod tests {
             false,
             id,
             registry,
+            vec![],
         )
         .await
         .unwrap();
@@ -439,6 +440,7 @@ mod tests {
             false,
             id,
             registry,
+            vec![],
         )
         .await
         .unwrap();
@@ -464,6 +466,7 @@ mod tests {
             true,
             id,
             registry,
+            vec![],
         )
         .await
         .unwrap();
@@ -484,6 +487,7 @@ mod tests {
                 true, // dry — no filesystem writes
                 id.clone(),
                 Arc::clone(&registry),
+                vec![],
             )
             .await;
             // Cancel immediately — removes from registry before run_agents can.
@@ -527,6 +531,7 @@ mod tests {
             true,
             id.clone(),
             Arc::clone(&registry),
+            vec![],
         )
         .await
         .unwrap();
@@ -573,6 +578,7 @@ mod tests {
             true,
             id.clone(),
             Arc::clone(&registry),
+            vec![],
         )
         .await
         .unwrap();
@@ -621,6 +627,7 @@ mod tests {
             true,
             id.clone(),
             Arc::clone(&registry),
+            vec![],
         )
         .await
         .unwrap();
@@ -669,6 +676,7 @@ mod tests {
             true,
             id,
             registry,
+            vec![],
         )
         .await
         .unwrap_err();
@@ -694,6 +702,7 @@ mod tests {
             true,
             id.clone(),
             Arc::clone(&registry),
+            vec![],
         )
         .await
         .unwrap();
