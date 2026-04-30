@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Pre-push hook: enforce Tier-1 squad-CI gate locally before any push.
+# Per SQUAD-CI-CHARTER.md (~/lightarchitects/soul/helix/corso/builds/SQUAD-CI-CHARTER.md).
+#
+# To install repo-wide for all developers:
+#   git config core.hooksPath .githooks
+#
+# To bypass for emergency push (logged):
+#   git push --no-verify
+#   (then immediately enrich SOUL helix with rationale via /SOUL save)
+#
+# Exit codes:
+#   0 — Tier-1 passed
+#   1 — Tier-1 failed (push blocked)
+#   2 — bypass (--no-verify); push allowed but logged
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+LOG="$REPO_ROOT/.git/squad-ci-push-log.txt"
+
+# Note: --no-verify bypasses this entire hook before it runs, so we can't
+# detect a bypass from inside it. The log entry below records all attempts
+# that DO reach the hook, which is the audit trail we want.
+
+echo "═══════════════════════════════════════════════════════════════════"
+echo "  pre-push: Tier-1 squad-CI gate"
+echo "  Charter: ~/lightarchitects/soul/helix/corso/builds/SQUAD-CI-CHARTER.md"
+echo "═══════════════════════════════════════════════════════════════════"
+echo ""
+
+cd "$REPO_ROOT"
+
+# Run the local gate
+if make -C lightarchitects-webshell ci-squad-local 2>&1 | tail -50; then
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════════"
+    echo "  pre-push: PASS — proceeding with push"
+    echo "═══════════════════════════════════════════════════════════════════"
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) PASS branch=$(git branch --show-current) sha=$(git rev-parse --short HEAD)" >> "$LOG"
+    exit 0
+else
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════════"
+    echo "  pre-push: FAIL — push BLOCKED"
+    echo "═══════════════════════════════════════════════════════════════════"
+    echo ""
+    echo "  Tier-1 squad-CI failed. Fix locally before pushing."
+    echo "  To bypass for emergency: git push --no-verify"
+    echo "  (then enrich SOUL helix with rationale via /SOUL save)"
+    echo ""
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) FAIL branch=$(git branch --show-current) sha=$(git rev-parse --short HEAD)" >> "$LOG"
+    exit 1
+fi
