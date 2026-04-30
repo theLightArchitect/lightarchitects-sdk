@@ -26,7 +26,7 @@ use super::{
     state::{DispatchHandle, DispatchRegistry},
     types::{
         AgentState, DispatchError, DispatchEvent, DispatchId, DomainAgent, ExecutionMode,
-        SanitizedTask,
+        FileAttachment, SanitizedTask,
     },
 };
 
@@ -87,7 +87,7 @@ impl EngagementScope {
 ///   already in the registry.
 /// - [`DispatchError::ChannelClosed`] — broadcast channel closed before the
 ///   first event could be sent.
-#[tracing::instrument(skip(task, registry), fields(dispatch_id = %id, agent_count = agents.len()))]
+#[tracing::instrument(skip(task, registry, attachments), fields(dispatch_id = %id, agent_count = agents.len()))]
 pub async fn execute(
     task: SanitizedTask,
     agents: Vec<DomainAgent>,
@@ -95,6 +95,7 @@ pub async fn execute(
     dry: bool,
     id: DispatchId,
     registry: Arc<Mutex<DispatchRegistry>>,
+    attachments: Vec<FileAttachment>,
 ) -> Result<(), DispatchError> {
     // H-7: check Security agent scope before registering.
     if agents.contains(&DomainAgent::Security) {
@@ -133,6 +134,7 @@ pub async fn execute(
             dispatch_id,
             broadcast_tx,
             reg_clone,
+            attachments,
         )
         .await;
     });
@@ -141,7 +143,7 @@ pub async fn execute(
 }
 
 /// Drive all agents to completion concurrently, broadcasting state transitions.
-#[tracing::instrument(skip(task, tx, registry, _mode), fields(dispatch_id = %id))]
+#[tracing::instrument(skip(task, tx, registry, _mode, attachments), fields(dispatch_id = %id))]
 async fn run_agents(
     task: String,
     agents: Vec<DomainAgent>,
@@ -150,6 +152,7 @@ async fn run_agents(
     id: DispatchId,
     tx: broadcast::Sender<DispatchEvent>,
     registry: Arc<Mutex<DispatchRegistry>>,
+    attachments: Vec<FileAttachment>,
 ) {
     let started = std::time::Instant::now();
 
@@ -172,7 +175,8 @@ async fn run_agents(
     for &agent in &agents {
         let tx_c = tx.clone();
         let task_c = task.clone();
-        set.spawn(spawn_teammate(agent, task_c, dry, tx_c));
+        let att_c = attachments.clone();
+        set.spawn(spawn_teammate(agent, task_c, dry, tx_c, att_c));
     }
     while let Some(result) = set.join_next().await {
         if let Err(e) = result {
@@ -206,12 +210,30 @@ async fn run_agents(
 /// Write-capable paths are only reached when `dry = false`.  Future
 /// `TeamManager` lifecycle tracking (`register_member` / `set_handle` / `mark_done`)
 /// is gated behind the `team-manager` Cargo feature.
-#[tracing::instrument(skip(tx, task), fields(agent = %agent))]
+/// Build the prompt string, optionally prepending an attached-files context block.
+fn build_prompt(agent: DomainAgent, task: &str, attachments: &[FileAttachment]) -> String {
+    if attachments.is_empty() {
+        return format!("[{agent}] {task}");
+    }
+    let mut prompt = format!("[{agent}]\n\n=== Attached Files ===\n");
+    for att in attachments {
+        prompt.push_str(&format!(
+            "\n--- {} ({}) ---\n{}\n",
+            att.name, att.path, att.content
+        ));
+    }
+    prompt.push_str("=== End Files ===\n\n");
+    prompt.push_str(task);
+    prompt
+}
+
+#[tracing::instrument(skip(tx, task, attachments), fields(agent = %agent))]
 async fn spawn_teammate(
     agent: DomainAgent,
     task: String,
     dry: bool,
     tx: broadcast::Sender<DispatchEvent>,
+    attachments: Vec<FileAttachment>,
 ) {
     if dry {
         let _ = tx.send(DispatchEvent::MailboxMessage {
@@ -238,7 +260,7 @@ async fn spawn_teammate(
         return;
     };
 
-    let prompt = format!("[{agent}] {task}");
+    let prompt = build_prompt(agent, &task, &attachments);
     let mut child = match tokio::process::Command::new(&claude_path)
         .args(["--print", "-p", &prompt])
         .stdout(std::process::Stdio::piped())

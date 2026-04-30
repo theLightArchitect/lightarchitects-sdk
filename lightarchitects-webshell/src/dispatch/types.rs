@@ -291,6 +291,17 @@ pub struct ClassifyRequest {
     pub task: String,
 }
 
+/// A file or folder entry attached to a dispatch request.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FileAttachment {
+    /// Display name / filename (e.g. `main.rs`).
+    pub name: String,
+    /// Relative path within the selection (e.g. `src/main.rs` for folder picks).
+    pub path: String,
+    /// UTF-8 text content, capped at 50 KB by the client.
+    pub content: String,
+}
+
 /// Request body for `POST /api/dispatch/execute`.
 #[derive(Debug, Deserialize)]
 pub struct ExecuteRequest {
@@ -301,6 +312,9 @@ pub struct ExecuteRequest {
     /// Dry-run mode — no filesystem writes (HIGH H-9).
     #[serde(default)]
     pub dry: bool,
+    /// Optional file/folder context attached by the user.
+    #[serde(default)]
+    pub attachments: Vec<FileAttachment>,
 }
 
 /// Request body for `POST /api/dispatch/retry/:id/:agent`.
