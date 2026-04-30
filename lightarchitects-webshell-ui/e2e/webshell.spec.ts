@@ -957,7 +957,9 @@ test.describe('Comprehensive webshell E2E', () => {
       const keepNewest = await page.locator('[data-testid="policy-keep_newest"]').count();
       const ageLimit = await page.locator('[data-testid="policy-age_limit"]').count();
       const sigTier = await page.locator('[data-testid="policy-significance_tier"]').count();
-      expect(keepNewest + ageLimit + sigTier).toBeGreaterThanOrEqual(3);
+      expect.soft(keepNewest).toBeGreaterThanOrEqual(1);
+      expect.soft(ageLimit).toBeGreaterThanOrEqual(1);
+      expect.soft(sigTier).toBeGreaterThanOrEqual(1);
     });
 
     test('switching policy changes input field', async () => {
@@ -1015,7 +1017,9 @@ test.describe('Comprehensive webshell E2E', () => {
       const bm25 = await page.locator('[data-testid="search-mode-bm25"]').count();
       const semantic = await page.locator('[data-testid="search-mode-semantic"]').count();
       const hybrid = await page.locator('[data-testid="search-mode-hybrid"]').count();
-      expect(bm25 + semantic + hybrid).toBeGreaterThanOrEqual(3);
+      expect.soft(bm25).toBeGreaterThanOrEqual(1);
+      expect.soft(semantic).toBeGreaterThanOrEqual(1);
+      expect.soft(hybrid).toBeGreaterThanOrEqual(1);
     });
 
     test('cold tab shows real vault entries', async () => {
@@ -1077,8 +1081,8 @@ test.describe('Comprehensive webshell E2E', () => {
         return res.ok ? await res.json() : null;
       }, BASE);
       expect(health).not.toBeNull();
-      expect(health.tiers.filesystem).toBe(true);
-      expect(health.tiers.sqlite).toBe(true);
+      expect.soft(health.tiers.filesystem).toBe(true);
+      expect.soft(health.tiers.sqlite).toBe(true);
     });
 
     test('SOUL health reports real entry counts', async () => {
@@ -1184,8 +1188,8 @@ test.describe('Comprehensive webshell E2E', () => {
       }, BASE);
       const claude = siblings.find((s: any) => s.id === 'claude');
       expect(claude).toBeDefined();
-      expect(claude.status).toBe('offline');
-      expect(claude.binary_present).toBe(false);
+      expect.soft(claude.status).toBe('offline');
+      expect.soft(claude.binary_present).toBe(false);
     });
 
     test('AYIN has recent activity timestamp', async () => {
@@ -1623,15 +1627,15 @@ test.describe('Comprehensive webshell E2E', () => {
         return res.ok ? await res.json() : null;
       }, BASE);
       expect(meta).not.toBeNull();
-      expect(meta.framework).toBe('LASDLC');
-      expect(meta.version).toBe('1.0.0');
-      expect(meta.phases).toHaveLength(7);
-      expect(meta.phases[0]).toBe('Plan');
-      expect(meta.phases[6]).toBe('Learn');
-      expect(meta.tiers.SMALL).toHaveLength(4);
-      expect(meta.tiers.MEDIUM).toHaveLength(6);
-      expect(meta.tiers.LARGE).toHaveLength(7);
-      expect(meta.quality_dimensions).toHaveLength(7);
+      expect.soft(meta.framework).toBe('LASDLC');
+      expect.soft(meta.version).toBe('1.0.0');
+      expect.soft(meta.phases).toHaveLength(7);
+      expect.soft(meta.phases[0]).toBe('Plan');
+      expect.soft(meta.phases[6]).toBe('Learn');
+      expect.soft(meta.tiers.SMALL).toHaveLength(4);
+      expect.soft(meta.tiers.MEDIUM).toHaveLength(6);
+      expect.soft(meta.tiers.LARGE).toHaveLength(7);
+      expect.soft(meta.quality_dimensions).toHaveLength(7);
     });
 
     test('reset to MEDIUM tier and Quick Build mode', async () => {
@@ -1920,8 +1924,8 @@ test.describe('Comprehensive webshell E2E', () => {
       const effectLoops = consoleErrors.filter(e => e.includes('effect_update_depth_exceeded'));
       if (typeErrors.length > 0) console.error('[E2E] TypeErrors during plan creation:', typeErrors);
       if (effectLoops.length > 0) console.error('[E2E] Effect loops during plan creation:', effectLoops);
-      expect(typeErrors).toHaveLength(0);
-      expect(effectLoops).toHaveLength(0);
+      expect.soft(typeErrors).toHaveLength(0);
+      expect.soft(effectLoops).toHaveLength(0);
     });
   });
 
@@ -2054,7 +2058,7 @@ test.describe('Comprehensive webshell E2E', () => {
       for (const col of columns) {
         const colEl = page.getByTestId(`kanban-column-${col}`);
         const exists = await colEl.isVisible().catch(() => false);
-        expect(exists).toBe(true);
+        expect.soft(exists).toBe(true);
       }
     });
 
@@ -2272,8 +2276,8 @@ test.describe('Comprehensive webshell E2E', () => {
         return r.ok ? await r.json() : null;
       }, BASE);
       if (!res) { test.skip(); return; }
-      expect(res).toHaveProperty('phases');
-      expect(res).toHaveProperty('tiers');
+      expect.soft(res).toHaveProperty('phases');
+      expect.soft(res).toHaveProperty('tiers');
     });
   });
 
@@ -3129,8 +3133,8 @@ test.describe('Comprehensive webshell E2E', () => {
       }
       const response = (res as any)?.response ?? '';
       console.log(`[E2E] Copilot response: "${response.slice(0, 100)}"`);
-      expect(response.length).toBeGreaterThan(0);
-      expect(response).toContain('4');
+      expect.soft(response.length).toBeGreaterThan(0);
+      expect.soft(response).toContain('4');
     }, { timeout: 60_000 });
 
     test('response is coherent (non-empty)', async () => {
