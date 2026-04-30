@@ -143,6 +143,7 @@ pub async fn execute(
 }
 
 /// Drive all agents to completion concurrently, broadcasting state transitions.
+#[allow(clippy::too_many_arguments)]
 #[tracing::instrument(skip(task, tx, registry, _mode, attachments), fields(dispatch_id = %id))]
 async fn run_agents(
     task: String,
@@ -217,10 +218,12 @@ fn build_prompt(agent: DomainAgent, task: &str, attachments: &[FileAttachment]) 
     }
     let mut prompt = format!("[{agent}]\n\n=== Attached Files ===\n");
     for att in attachments {
-        prompt.push_str(&format!(
+        use std::fmt::Write as _;
+        let _ = write!(
+            prompt,
             "\n--- {} ({}) ---\n{}\n",
             att.name, att.path, att.content
-        ));
+        );
     }
     prompt.push_str("=== End Files ===\n\n");
     prompt.push_str(task);
