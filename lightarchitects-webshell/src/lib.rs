@@ -37,3 +37,4 @@ pub mod setup;
 pub mod static_assets;
 pub mod terminal;
 pub mod turnlog;
+pub mod version;

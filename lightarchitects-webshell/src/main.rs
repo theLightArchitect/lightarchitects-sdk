@@ -20,6 +20,16 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    // --version / -V → print enriched version (sha + ui-bundle-hash + date) and
+    // exit 0. Must come BEFORE clap parsing because clap's derive `version`
+    // attribute only knows CARGO_PKG_VERSION; we want our build.rs-injected
+    // metadata too. (OPS-1a, ops audit O-1.)
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    if raw_args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("{}", lightarchitects_webshell::version::long());
+        return ExitCode::SUCCESS;
+    }
+
     init_tracing();
 
     let cli = Cli::parse();
