@@ -3449,13 +3449,16 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('submit dispatches and transitions to streaming phase', async () => {
-      // Enable dry-run so dispatch completes in ~10ms without spawning claude subprocess.
-      await page.evaluate(() => {
-        const labels = Array.from(document.querySelectorAll('label'));
-        const dryLabel = labels.find((l) => l.textContent?.includes('Dry run'));
-        const cb = dryLabel?.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
-        if (cb && !cb.checked) cb.click();
-      });
+      // Re-navigate defensively — HMR or prior test state can push the page away
+      // from #/squad-dispatch between serial tests.
+      await page.evaluate(() => { window.location.hash = '#/squad-dispatch'; });
+      await page.waitForSelector('h2:has-text("Squad Dispatch")', { timeout: 10_000 });
+      await page.waitForTimeout(400); // let classify debounce settle
+
+      // Enable dry-run via Playwright locator (more reliable than evaluate+DOM walk).
+      const dryCheckbox = page.locator('label').filter({ hasText: 'Dry run' }).locator('input[type="checkbox"]');
+      const isChecked = await dryCheckbox.isChecked().catch(() => false);
+      if (!isChecked) await dryCheckbox.check({ force: true }).catch(() => {});
 
       // Find and click the submit / Dispatch button
       const submitted = await page.evaluate(() => {
@@ -3468,7 +3471,7 @@ test.describe('Comprehensive webshell E2E', () => {
         return false;
       });
       if (!submitted) { test.skip(); return; }
-      // Streaming or complete phase should appear within 5 s
+      // Streaming or complete phase should appear within 8 s
       await page.waitForFunction(
         () => {
           const text = document.body.textContent ?? '';
