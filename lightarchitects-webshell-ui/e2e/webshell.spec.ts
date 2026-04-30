@@ -123,6 +123,24 @@ test.describe('Comprehensive webshell E2E', () => {
     try { await browser?.close(); } catch (e) { console.warn('[E2E] Browser close warning:', (e as Error).message); }
   });
 
+  // Per-test Playwright trace recording — screenshots + snapshots + sources.
+  // Each test gets its own .zip at test-results/traces/<slug>-<status>.zip.
+  test.beforeEach(async ({}, testInfo) => {
+    if (!context) return;
+    await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+    testInfo.annotations.push({ type: 'trace', description: testInfo.title });
+  });
+
+  test.afterEach(async ({}, testInfo) => {
+    if (!context) return;
+    const slug = testInfo.title
+      .replace(/[^a-z0-9]+/gi, '-')
+      .toLowerCase()
+      .slice(0, 60);
+    const status = testInfo.status ?? 'unknown';
+    await context.tracing.stop({ path: `test-results/traces/${slug}-${status}.zip` });
+  });
+
   // ═══════════════════════════════════════════���═══════════════════════════════
   // 1. Boot sequence
   // ═══════════════════════════��═══════════════════════════════════════════════
