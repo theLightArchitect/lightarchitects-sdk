@@ -48,16 +48,13 @@ async fn main() -> ExitCode {
         TokenSource::Ephemeral => "ephemeral",
     };
     eprintln!();
-    eprintln!("  ╔══════════════════════════════════════════════════════════════╗");
-    eprintln!("  ║  Light Architects — Webshell                                  ║");
-    eprintln!("  ║                                                              ║");
-    eprintln!("  ║  Open in your browser:                                       ║");
-    eprintln!("  ║                                                              ║");
-    eprintln!("  ║  http://localhost:{port}#token={token}    ║");
-    eprintln!("  ║                                                              ║");
-    eprintln!("  ║  Token: {token_preview}  (via {source_label})                    ║");
-    eprintln!("  ║  Keychain: ~/.lightarchitects/webshell/.token                ║");
-    eprintln!("  ╚══════════════════════════════════════════════════════════════╝");
+    eprintln!("Light Architects — Webshell");
+    eprintln!();
+    eprintln!("  Open in your browser:");
+    eprintln!("    http://localhost:{port}#token={token}");
+    eprintln!();
+    eprintln!("  Token:    {token_preview}  (via {source_label})");
+    eprintln!("  Keychain: ~/.lightarchitects/webshell/.token");
     eprintln!();
 
     if let Err(e) = server::run(config).await {
