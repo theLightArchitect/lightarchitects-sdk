@@ -1,0 +1,2428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SQD-DISPATCH · OPERATOR CONSOLE</title>
+<!--
+  SQUAD DISPATCH · Operator Console Design Concept
+  Aesthetic: Nocturnal Ops · Tactical Drafting
+  Reference: flight-deck telemetry, CAD frame, oscilloscope, ATC strip board.
+  Differentiator: agents as parallel HORIZONTAL RAILS, not a card grid.
+
+  Open this file directly in a browser. Type or edit the task, click DISPATCH.
+  Press R to reset. Press D to toggle DAG. Press 1-9 to toggle agents.
+  Cmd/Ctrl+Enter from textarea = dispatch.
+
+  All rendering uses safe DOM methods (no innerHTML on dynamic content).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@200;400;700;800&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   DESIGN TOKENS
+   ============================================================ */
+:root {
+  --bg-void:        #08090a;
+  --bg-frame:       #0c0d0e;
+  --bg-elev-1:      #111214;
+  --bg-elev-2:      #16181b;
+
+  --hair-faint:     #16181b;
+  --hair-base:      #25282d;
+  --hair-strong:    #3a3f47;
+
+  --text-mute:      #3e434a;
+  --text-dim:       #5d646e;
+  --text-base:      #8a929c;
+  --text-bright:    #d8dde4;
+  --text-stark:     #f6f7f8;
+
+  --agent-engineer:      #4d8eff;
+  --agent-quality:       #f5d440;
+  --agent-security:      #ff4d4d;
+  --agent-ops:           #d24df5;
+  --agent-researcher:    #4dff8e;
+  --agent-knowledge:     #4dffe6;
+  --agent-performance:   #ff8e3c;
+  --agent-testing:       #a874ff;
+  --agent-documentation: #ff7eb6;
+
+  --s-1: 4px;  --s-2: 8px;  --s-3: 12px;
+  --s-4: 16px; --s-5: 24px; --s-6: 32px;
+
+  --ease-mech: cubic-bezier(0.2, 0, 0.4, 1);
+  --t-snap:   80ms;
+  --t-base:  200ms;
+  --t-slow:  400ms;
+
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
+  --tk-loose: 0.18em;
+  --tk-mid:   0.08em;
+  --tk-tight: 0.02em;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: var(--bg-void);
+  color: var(--text-bright);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  font-feature-settings: "ss01", "ss02", "tnum";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+body::before {
+  content: ""; position: fixed; inset: 0;
+  background-image:
+    linear-gradient(to right, var(--hair-faint) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--hair-faint) 1px, transparent 1px);
+  background-size: 64px 64px;
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 0;
+}
+body::after {
+  content: ""; position: fixed; inset: 0;
+  background: radial-gradient(ellipse at 50% 40%, transparent 35%, rgba(0,0,0,0.6) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+::selection { background: var(--text-stark); color: var(--bg-void); }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--hair-strong); }
+
+/* ============================================================
+   FRAME
+   ============================================================ */
+.ops-frame {
+  position: relative;
+  z-index: 2;
+  width: 100vw; height: 100vh;
+  padding: var(--s-4);
+  display: grid;
+  grid-template-rows: 40px 36px auto 1fr 184px;
+  gap: var(--s-3);
+  transition: padding var(--t-base) var(--ease-mech);
+}
+.ops-frame.locking { padding: 14px; }
+
+.corner-bracket {
+  position: fixed; width: 12px; height: 12px;
+  border: 1px solid var(--text-stark);
+  pointer-events: none; z-index: 50;
+  transition: all var(--t-base) var(--ease-mech);
+}
+.corner-bracket.tl { top: 8px; left: 8px;   border-right: none; border-bottom: none; }
+.corner-bracket.tr { top: 8px; right: 8px;  border-left: none;  border-bottom: none; }
+.corner-bracket.bl { bottom: 8px; left: 8px;border-right: none; border-top: none; }
+.corner-bracket.br { bottom: 8px; right: 8px;border-left: none; border-top: none; }
+.locking ~ .corner-bracket { width: 18px; height: 18px; border-color: var(--agent-researcher); }
+
+/* ============================================================
+   HEADER
+   ============================================================ */
+.header-strip {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  border: 1px solid var(--hair-base);
+  padding: 0 var(--s-4);
+  height: 40px;
+  background: var(--bg-frame);
+}
+
+.reg-marks { display: flex; gap: var(--s-4); align-items: center; }
+.reg-mark {
+  display: flex; align-items: center; gap: var(--s-1);
+  font-size: 9px; font-weight: 700;
+  letter-spacing: var(--tk-loose);
+  color: var(--text-dim);
+}
+.reg-dot { width: 5px; height: 5px; background: var(--text-mute); flex-shrink: 0; }
+.reg-dot.live  { background: var(--agent-researcher); animation: heart 1.6s steps(2) infinite; }
+.reg-dot.warn  { background: var(--agent-performance); }
+.reg-dot.error { background: var(--agent-security); }
+
+@keyframes heart {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0.25; }
+}
+
+.header-title {
+  display: flex; align-items: baseline; gap: var(--s-3);
+  font-size: 11px; letter-spacing: var(--tk-loose);
+}
+.ti-id    { color: var(--text-mute); font-weight: 200; }
+.ti-name  { color: var(--text-stark); font-weight: 700; }
+.ti-sub   { color: var(--text-dim); font-weight: 200; }
+
+.header-tele {
+  display: flex; justify-content: flex-end; align-items: center;
+  gap: var(--s-5);
+  font-size: 10px; letter-spacing: var(--tk-mid);
+  color: var(--text-dim);
+}
+.header-tele .lbl { color: var(--text-mute); }
+.header-tele .val { color: var(--text-bright); font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   COMMAND BAR
+   ============================================================ */
+.command-bar { display: grid; grid-template-columns: 1fr 320px; gap: var(--s-3); }
+
+.cmd-shell, .cmd-action {
+  border: 1px solid var(--hair-base);
+  background: var(--bg-frame);
+  padding: var(--s-3) var(--s-4);
+  position: relative;
+}
+
+.cmd-label {
+  display: flex; align-items: center; gap: var(--s-2);
+  font-size: 9px; font-weight: 700;
+  letter-spacing: var(--tk-loose);
+  color: var(--text-dim); text-transform: uppercase;
+  margin-bottom: var(--s-3);
+}
+.cmd-label .idx { color: var(--text-mute); font-weight: 200; }
+.cmd-label .sep { flex: 1; height: 1px; background: var(--hair-faint); }
+
+.cmd-textarea {
+  background: transparent; border: none; outline: none;
+  width: 100%; height: 56px; resize: none;
+  color: var(--text-stark);
+  font-family: var(--font-mono);
+  font-size: 14px; line-height: 1.5;
+  letter-spacing: var(--tk-tight);
+  caret-color: var(--text-stark);
+  font-weight: 400;
+}
+.cmd-textarea::placeholder { color: var(--text-mute); font-style: italic; }
+.cmd-shell:focus-within { border-color: var(--text-stark); }
+
+/* Classifier strip */
+.classifier-strip {
+  display: grid; grid-template-columns: repeat(9, 1fr);
+  gap: var(--s-1);
+  margin-top: var(--s-3);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--hair-faint);
+}
+
+.cls-chip {
+  --c: var(--text-mute);
+  position: relative;
+  border: 1px solid var(--hair-base);
+  padding: 6px 4px 5px;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 2px;
+  cursor: pointer; background: transparent;
+  font-family: inherit;
+  transition: border-color var(--t-snap) var(--ease-mech),
+              background var(--t-snap) var(--ease-mech);
+}
+.cls-chip:hover { border-color: var(--hair-strong); }
+.cls-chip[data-classified="true"] {
+  border-color: color-mix(in srgb, var(--c) 40%, transparent);
+}
+.cls-chip[data-selected="true"] {
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 7%, transparent);
+}
+
+.cls-chip-code {
+  font-size: 9px; font-weight: 700;
+  letter-spacing: var(--tk-mid); color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+  transition: color var(--t-snap);
+}
+.cls-chip-name {
+  font-size: 7px; letter-spacing: var(--tk-loose);
+  color: var(--text-mute); text-transform: uppercase;
+  transition: color var(--t-snap);
+}
+.cls-chip[data-selected="true"] .cls-chip-code { color: var(--c); }
+.cls-chip[data-selected="true"] .cls-chip-name { color: var(--text-base); }
+.cls-chip[data-classified="true"]:not([data-selected="true"]) .cls-chip-code {
+  color: color-mix(in srgb, var(--c) 70%, var(--text-base));
+}
+
+.cls-chip[data-agent="engineer"]      { --c: var(--agent-engineer); }
+.cls-chip[data-agent="quality"]       { --c: var(--agent-quality); }
+.cls-chip[data-agent="security"]      { --c: var(--agent-security); }
+.cls-chip[data-agent="ops"]           { --c: var(--agent-ops); }
+.cls-chip[data-agent="researcher"]    { --c: var(--agent-researcher); }
+.cls-chip[data-agent="knowledge"]     { --c: var(--agent-knowledge); }
+.cls-chip[data-agent="performance"]   { --c: var(--agent-performance); }
+.cls-chip[data-agent="testing"]       { --c: var(--agent-testing); }
+.cls-chip[data-agent="documentation"] { --c: var(--agent-documentation); }
+
+.cls-chip-gate {
+  position: absolute; top: 3px; right: 4px;
+  font-size: 7px; font-weight: 700;
+  color: var(--text-mute); opacity: 0.6;
+}
+.cls-chip[data-selected="true"] .cls-chip-gate { color: var(--c); opacity: 1; }
+
+/* Dispatch action */
+.cmd-action { display: flex; flex-direction: column; }
+
+.cmd-action-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: var(--tk-loose);
+  color: var(--text-dim); margin-bottom: var(--s-2);
+}
+.cmd-action-state[data-state="armed"]  { color: var(--agent-researcher); }
+.cmd-action-state[data-state="firing"] { color: var(--agent-performance); }
+.cmd-action-state[data-state="active"] { color: var(--agent-knowledge); }
+
+.cmd-action-count {
+  display: flex; align-items: baseline; gap: var(--s-2);
+  margin: var(--s-3) 0;
+}
+.cmd-action-count-num {
+  font-size: 36px; font-weight: 200;
+  color: var(--text-stark);
+  font-variant-numeric: tabular-nums;
+  line-height: 1; letter-spacing: -0.02em;
+}
+.cmd-action-count-lbl {
+  font-size: 9px; font-weight: 700;
+  letter-spacing: var(--tk-loose); color: var(--text-dim);
+}
+
+.dispatch-btn {
+  background: var(--text-stark); color: var(--bg-void);
+  border: 1px solid var(--text-stark);
+  padding: 12px var(--s-4);
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 700;
+  letter-spacing: var(--tk-loose);
+  cursor: pointer;
+  transition: all var(--t-snap);
+  text-transform: uppercase;
+  display: flex; align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3); margin-top: auto;
+}
+.dispatch-btn:hover:not(:disabled) {
+  background: transparent; color: var(--text-stark);
+}
+.dispatch-btn:disabled {
+  background: var(--bg-elev-2); color: var(--text-mute);
+  border-color: var(--hair-base); cursor: not-allowed;
+}
+.dispatch-btn-arrow { font-size: 13px; font-weight: 200; }
+.dispatch-btn:active:not(:disabled) { transform: scale(0.985); }
+
+/* ============================================================
+   RAIL STAGE
+   ============================================================ */
+.rail-stage {
+  position: relative;
+  border: 1px solid var(--hair-base);
+  background: var(--bg-frame);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+
+.rail-stage-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: var(--tk-loose);
+  color: var(--text-dim);
+  padding: var(--s-2) var(--s-4);
+  border-bottom: 1px solid var(--hair-faint);
+  flex-shrink: 0;
+}
+.rail-stage-head .idx { color: var(--text-mute); font-weight: 200; }
+
+.view-toggle { display: flex; border: 1px solid var(--hair-base); }
+.view-toggle button {
+  background: transparent; border: none;
+  color: var(--text-dim);
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 9px; font-weight: 700;
+  letter-spacing: var(--tk-mid);
+  cursor: pointer;
+  border-right: 1px solid var(--hair-base);
+}
+.view-toggle button:last-child { border-right: none; }
+.view-toggle button.active {
+  color: var(--text-stark); background: var(--bg-elev-2);
+}
+
+.rails-wrap { position: relative; flex: 1; overflow: hidden; }
+
+.rails {
+  display: flex; flex-direction: column;
+  height: 100%; position: relative; z-index: 2;
+}
+
+.rail {
+  --rc: var(--text-mute);
+  display: grid;
+  grid-template-columns: 4px 142px 188px 1fr 152px 18px;
+  gap: var(--s-3);
+  align-items: center;
+  flex: 1; min-height: 52px;
+  border-bottom: 1px solid var(--hair-faint);
+  padding-right: var(--s-4);
+  position: relative; overflow: hidden;
+  transition: background var(--t-snap);
+}
+.rail:last-child { border-bottom: none; }
+.rail:hover { background: var(--bg-elev-1); }
+
+.rail-edge {
+  height: 100%; background: var(--rc);
+  opacity: 0.15; transform-origin: top;
+  transition: opacity var(--t-base);
+}
+.rail[data-state="dispatched"] .rail-edge,
+.rail[data-state="running"] .rail-edge {
+  opacity: 1;
+  animation: edge-breathe 2.4s ease-in-out infinite;
+}
+.rail[data-state="complete"] .rail-edge { opacity: 0.7; }
+.rail[data-state="failed"] .rail-edge   { background: var(--agent-security); opacity: 1; }
+
+@keyframes edge-breathe {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.65; }
+}
+
+.rail-scan { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
+.rail[data-state="running"] .rail-scan {
+  opacity: 1;
+  background: linear-gradient(90deg, transparent 0%, transparent 70%, color-mix(in srgb, var(--rc) 12%, transparent) 100%);
+  animation: scan-sweep 3.5s linear infinite;
+}
+@keyframes scan-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(0%); }
+}
+
+.rail[data-agent="engineer"]      { --rc: var(--agent-engineer); }
+.rail[data-agent="quality"]       { --rc: var(--agent-quality); }
+.rail[data-agent="security"]      { --rc: var(--agent-security); }
+.rail[data-agent="ops"]           { --rc: var(--agent-ops); }
+.rail[data-agent="researcher"]    { --rc: var(--agent-researcher); }
+.rail[data-agent="knowledge"]     { --rc: var(--agent-knowledge); }
+.rail[data-agent="performance"]   { --rc: var(--agent-performance); }
+.rail[data-agent="testing"]       { --rc: var(--agent-testing); }
+.rail[data-agent="documentation"] { --rc: var(--agent-documentation); }
+
+.rail[data-state="idle"] .rail-id-code,
+.rail[data-state="idle"] .rail-tool,
+.rail[data-state="idle"] .rail-metrics {
+  opacity: 0.32;
+}
+
+.rail-id { display: flex; flex-direction: column; gap: 1px; padding-left: var(--s-2); }
+.rail-id-code {
+  font-size: 11px; font-weight: 700;
+  letter-spacing: var(--tk-mid);
+  color: var(--text-base);
+  font-variant-numeric: tabular-nums;
+  transition: color var(--t-base);
+}
+.rail[data-state="dispatched"] .rail-id-code,
+.rail[data-state="running"]    .rail-id-code,
+.rail[data-state="complete"]   .rail-id-code { color: var(--rc); }
+.rail[data-state="failed"]     .rail-id-code { color: var(--agent-security); }
+
+.rail-id-name {
+  font-size: 8px; letter-spacing: var(--tk-loose);
+  color: var(--text-mute); text-transform: uppercase;
+}
+.rail-id-gate {
+  font-size: 7px; letter-spacing: var(--tk-loose);
+  color: var(--text-mute); opacity: 0.6; margin-top: 1px;
+}
+
+.phase-strip { display: flex; gap: 3px; }
+.phase-square {
+  width: 30px; height: 14px;
+  border: 1px solid var(--hair-base);
+  position: relative;
+  transition: border-color var(--t-snap);
+}
+.phase-square::after {
+  content: ""; position: absolute; inset: 0;
+  background: var(--rc); opacity: 0;
+  transition: opacity var(--t-snap) var(--ease-mech);
+}
+.phase-square::before {
+  content: ""; position: absolute;
+  width: 4px; height: 4px;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  background: var(--rc);
+  transition: transform var(--t-snap) var(--ease-mech);
+}
+.phase-square[data-status="active"]::after   { opacity: 0.9; animation: phase-flicker 0.8s steps(3) infinite; }
+.phase-square[data-status="active"]          { border-color: var(--rc); }
+.phase-square[data-status="complete"]        { border-color: var(--rc); }
+.phase-square[data-status="complete"]::before { transform: translate(-50%, -50%) scale(1); }
+
+@keyframes phase-flicker {
+  0%, 60%, 100% { opacity: 0.9; }
+  30%, 80%      { opacity: 0.5; }
+}
+
+.rail-tool {
+  display: flex; align-items: center; gap: var(--s-2);
+  font-size: 11px; color: var(--text-bright);
+  letter-spacing: var(--tk-tight);
+  white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.tool-action {
+  color: var(--rc); font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--tk-mid); font-size: 10px;
+}
+.tool-target { color: var(--text-bright); }
+.tool-cursor {
+  display: inline-block; width: 7px; height: 12px;
+  background: var(--text-stark);
+  margin-left: 4px; vertical-align: middle;
+  animation: cursor-blink 1s steps(2) infinite;
+}
+.rail[data-state="idle"]     .tool-cursor,
+.rail[data-state="complete"] .tool-cursor,
+.rail[data-state="failed"]   .tool-cursor { display: none; }
+
+@keyframes cursor-blink {
+  0%, 49%   { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+.rail-tool-empty {
+  color: var(--text-mute); font-style: italic;
+  letter-spacing: var(--tk-mid);
+  text-transform: uppercase; font-size: 10px;
+}
+
+.rail-metrics {
+  display: flex; gap: var(--s-3);
+  font-size: 10px; color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tk-mid);
+  justify-content: flex-end;
+}
+.rail-metric { display: flex; gap: 4px; }
+.rail-metric .lbl { color: var(--text-mute); font-size: 9px; }
+.rail-metric .val { color: var(--text-bright); font-weight: 700; }
+
+.rail-tail { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.status-pip { width: 8px; height: 8px; background: var(--text-mute); }
+.rail[data-state="dispatched"] .status-pip,
+.rail[data-state="running"] .status-pip {
+  background: var(--rc);
+  animation: pip-square 1s steps(2) infinite;
+  box-shadow: 0 0 6px var(--rc);
+}
+.rail[data-state="complete"] .status-pip {
+  background: var(--rc);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--rc) 40%, transparent);
+}
+.rail[data-state="failed"] .status-pip {
+  background: var(--agent-security);
+  animation: pip-square 0.4s steps(2) infinite;
+  box-shadow: 0 0 8px var(--agent-security);
+}
+@keyframes pip-square {
+  0%, 49%   { opacity: 1; }
+  50%, 100% { opacity: 0.2; }
+}
+
+.retry-btn {
+  display: none;
+  background: transparent;
+  border: 1px solid var(--agent-security);
+  color: var(--agent-security);
+  font-family: var(--font-mono);
+  font-size: 8px; font-weight: 700;
+  letter-spacing: var(--tk-mid);
+  padding: 1px 5px; cursor: pointer;
+  position: absolute;
+  top: 50%; right: 32px;
+  transform: translateY(-50%);
+}
+.rail[data-state="failed"] .retry-btn { display: block; }
+.retry-btn:hover { background: var(--agent-security); color: var(--bg-void); }
+
+.rail[data-just-dispatched="true"] .rail-edge {
+  animation: rail-fire 0.5s var(--ease-mech) backwards;
+}
+@keyframes rail-fire {
+  0%   { transform: scaleY(0); opacity: 0; }
+  60%  { transform: scaleY(1); opacity: 1; }
+  100% { opacity: 1; }
+}
+.rail[data-just-dispatched="true"] .phase-square:first-child {
+  animation: phase-pop 0.4s var(--ease-mech) backwards;
+  animation-delay: 0.2s;
+}
+@keyframes phase-pop {
+  0%   { transform: scale(0.8); opacity: 0; }
+  100% { transform: scale(1);   opacity: 1; }
+}
+
+/* DAG overlay */
+.dag-overlay {
+  position: absolute; inset: 0;
+  pointer-events: none; z-index: 5;
+  opacity: 0; transition: opacity var(--t-base);
+}
+.dag-overlay[data-visible="true"] { opacity: 1; }
+.dag-edge {
+  fill: none; stroke-width: 1;
+  stroke-dasharray: 3 4; opacity: 0.7;
+  animation: dag-march 1.6s linear infinite;
+}
+@keyframes dag-march {
+  to { stroke-dashoffset: -28; }
+}
+.dag-tap { fill: var(--bg-frame); stroke-width: 1; }
+
+/* Mailbox */
+.mailbox {
+  border: 1px solid var(--hair-base);
+  background: var(--bg-frame);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.mailbox-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: var(--tk-loose);
+  color: var(--text-dim);
+  padding: var(--s-2) var(--s-4);
+  border-bottom: 1px solid var(--hair-faint);
+  flex-shrink: 0;
+}
+.mailbox-head .idx { color: var(--text-mute); font-weight: 200; }
+.mailbox-head .ctr { color: var(--text-bright); font-variant-numeric: tabular-nums; }
+
+.mailbox-stream {
+  flex: 1; overflow-y: auto;
+  padding: var(--s-3) var(--s-4);
+  font-size: 11px; line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
+.mb-msg {
+  display: grid;
+  grid-template-columns: 100px 110px 16px 1fr;
+  gap: var(--s-3);
+  align-items: baseline;
+  padding: 1px 0;
+  animation: mb-in 0.32s var(--ease-mech) backwards;
+}
+@keyframes mb-in {
+  from { opacity: 0; transform: translateX(-3px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.mb-time  { color: var(--text-mute); font-size: 10px; }
+.mb-from  { font-weight: 700; font-size: 9px; letter-spacing: var(--tk-mid); text-transform: uppercase; text-align: right; }
+.mb-arrow { color: var(--text-mute); text-align: center; font-size: 11px; }
+.mb-body  { color: var(--text-bright); }
+.mb-to    { font-weight: 700; text-transform: uppercase; letter-spacing: var(--tk-mid); font-size: 9px; margin-right: var(--s-1); }
+
+.mb-empty {
+  color: var(--text-mute); font-size: 10px;
+  letter-spacing: var(--tk-loose);
+  text-transform: uppercase; text-align: center;
+  padding: var(--s-5); font-style: italic;
+}
+
+/* Overlays */
+.scanline {
+  position: fixed; top: 0; left: 0; right: 0;
+  height: 1px; background: var(--text-stark);
+  box-shadow: 0 0 12px var(--text-stark), 0 0 4px var(--text-stark);
+  z-index: 100; opacity: 0; pointer-events: none;
+}
+.scanline.fire { animation: scan-fire 0.7s linear; }
+@keyframes scan-fire {
+  0%   { opacity: 0; top: 0; }
+  10%  { opacity: 1; }
+  92%  { opacity: 1; }
+  100% { opacity: 0; top: 100vh; }
+}
+
+.flash {
+  position: fixed; inset: 0;
+  background: var(--text-stark);
+  opacity: 0; pointer-events: none; z-index: 99;
+}
+.flash.fire { animation: flash-pop 0.18s ease-out; }
+@keyframes flash-pop {
+  0%   { opacity: 0; }
+  20%  { opacity: 0.06; }
+  100% { opacity: 0; }
+}
+
+.help-bar {
+  position: fixed;
+  bottom: 24px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; gap: var(--s-4);
+  padding: 6px var(--s-4);
+  border: 1px solid var(--hair-base);
+  background: var(--bg-frame);
+  font-size: 9px; font-weight: 700;
+  letter-spacing: var(--tk-loose);
+  color: var(--text-dim);
+  z-index: 60; text-transform: uppercase;
+}
+.help-bar kbd {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--hair-base);
+  padding: 1px 5px;
+  font-family: inherit; font-size: 9px;
+  margin-right: 3px; color: var(--text-bright);
+}
+
+/* ============================================================
+   HISTORY RAIL
+   ============================================================ */
+.history-rail {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--s-3);
+  align-items: center;
+  border: 1px solid var(--hair-base);
+  background: var(--bg-frame);
+  padding: 0 var(--s-3) 0 var(--s-4);
+  height: 36px;
+  overflow: hidden;
+}
+
+.hr-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: var(--tk-loose);
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.hr-label .glyph { color: var(--text-mute); margin-right: 4px; }
+
+.hr-pills {
+  display: flex;
+  gap: var(--s-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0;
+  align-items: center;
+}
+.hr-pills::-webkit-scrollbar { display: none; }
+
+.hist-pill {
+  --pc: var(--text-mute);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 4px var(--s-2);
+  border: 1px solid var(--hair-base);
+  background: transparent;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--t-snap) var(--ease-mech);
+  height: 24px;
+}
+.hist-pill:hover {
+  border-color: var(--hair-strong);
+  background: var(--bg-elev-1);
+}
+.hist-pill[data-status="live"]      { --pc: var(--agent-knowledge); border-color: var(--pc); }
+.hist-pill[data-status="complete"]  { --pc: var(--agent-researcher); }
+.hist-pill[data-status="failed"]    { --pc: var(--agent-security); }
+.hist-pill[data-status="dry"]       { --pc: var(--agent-performance); }
+
+.hist-pip {
+  width: 5px; height: 5px;
+  background: var(--pc);
+}
+.hist-pill[data-status="live"] .hist-pip {
+  animation: pip-square 1s steps(2) infinite;
+  box-shadow: 0 0 6px var(--pc);
+}
+
+.hist-id {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: var(--tk-mid);
+  color: var(--text-bright);
+  font-variant-numeric: tabular-nums;
+}
+.hist-meta {
+  font-size: 9px;
+  font-weight: 200;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tk-mid);
+}
+
+.hr-clear {
+  background: transparent;
+  border: 1px solid var(--hair-base);
+  color: var(--text-dim);
+  padding: 4px 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: var(--tk-mid);
+  cursor: pointer;
+}
+.hr-clear:hover { color: var(--text-stark); border-color: var(--hair-strong); }
+
+.hr-empty {
+  color: var(--text-mute);
+  font-size: 9px;
+  letter-spacing: var(--tk-loose);
+  text-transform: uppercase;
+  font-style: italic;
+  padding: 0 var(--s-2);
+}
+
+/* ============================================================
+   PERMISSION BADGES (W / R) on chips + rails
+   ============================================================ */
+.cls-chip[data-perm]::after,
+.rail[data-perm] .perm-tag {
+  position: absolute;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.cls-chip[data-perm]::after {
+  content: attr(data-perm);
+  bottom: 3px; right: 4px;
+  color: var(--text-mute);
+  opacity: 0.55;
+}
+.cls-chip[data-perm="W"]::after { color: var(--agent-performance); opacity: 0.7; }
+.cls-chip[data-selected="true"][data-perm="W"]::after { opacity: 1; color: var(--agent-performance); }
+
+.rail .perm-tag {
+  position: absolute;
+  bottom: 3px; left: 12px;
+  font-size: 7px;
+  font-weight: 700;
+  color: var(--text-mute);
+  letter-spacing: 0;
+  pointer-events: none;
+}
+.rail[data-perm="W"] .perm-tag { color: var(--agent-performance); }
+.rail[data-state="idle"] .perm-tag { opacity: 0.4; }
+
+/* ============================================================
+   WRITE-PATH WARNING + DRY RUN + WORKTREE BANNER
+   ============================================================ */
+.cmd-warning {
+  display: none;
+  margin-top: var(--s-2);
+  padding: 6px var(--s-2);
+  border: 1px solid var(--agent-performance);
+  background: color-mix(in srgb, var(--agent-performance) 6%, transparent);
+  font-size: 9px;
+  letter-spacing: var(--tk-mid);
+  color: var(--text-bright);
+}
+.cmd-warning[data-show="true"] { display: block; }
+
+.cmd-warning-head {
+  display: flex; align-items: center; gap: var(--s-2);
+  font-weight: 700;
+  letter-spacing: var(--tk-loose);
+  color: var(--agent-performance);
+  font-size: 9px;
+}
+.cmd-warning-head .glyph { font-size: 11px; }
+
+.cmd-warning-body {
+  margin-top: 3px;
+  font-weight: 200;
+  color: var(--text-dim);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+.cmd-warning-body .branch {
+  color: var(--text-bright);
+  font-weight: 700;
+}
+
+.dry-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+  padding: 4px var(--s-2);
+  border: 1px solid var(--hair-base);
+  cursor: pointer;
+  user-select: none;
+  font-size: 9px;
+  letter-spacing: var(--tk-mid);
+  color: var(--text-dim);
+  transition: border-color var(--t-snap);
+}
+.dry-toggle:hover { border-color: var(--hair-strong); }
+.dry-toggle input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 11px; height: 11px;
+  border: 1px solid var(--hair-strong);
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  margin: 0;
+}
+.dry-toggle input:checked {
+  background: var(--agent-performance);
+  border-color: var(--agent-performance);
+}
+.dry-toggle input:checked::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  background: var(--bg-void);
+}
+.dry-toggle.armed { color: var(--agent-performance); border-color: var(--agent-performance); }
+.dry-toggle .lbl-strong { font-weight: 700; color: var(--text-bright); }
+
+/* Token estimate row */
+.cmd-estimate {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--s-2);
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--hair-faint);
+  font-size: 9px;
+  letter-spacing: var(--tk-mid);
+  color: var(--text-dim);
+}
+.cmd-estimate .lbl { color: var(--text-mute); }
+.cmd-estimate .val { color: var(--text-bright); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Dispatch button — write variant */
+.dispatch-btn[data-mode="write"] {
+  background: var(--agent-performance);
+  border-color: var(--agent-performance);
+}
+.dispatch-btn[data-mode="write"]:hover:not(:disabled) {
+  background: transparent;
+  color: var(--agent-performance);
+}
+.dispatch-btn[data-mode="dry"] {
+  background: transparent;
+  color: var(--agent-performance);
+  border-color: var(--agent-performance);
+}
+.dispatch-btn[data-mode="dry"]:hover:not(:disabled) {
+  background: var(--agent-performance);
+  color: var(--bg-void);
+}
+</style>
+</head>
+<body>
+
+<span class="corner-bracket tl"></span>
+<span class="corner-bracket tr"></span>
+<span class="corner-bracket bl"></span>
+<span class="corner-bracket br"></span>
+
+<div class="scanline" id="scanline"></div>
+<div class="flash" id="flash"></div>
+
+<div class="ops-frame" id="ops-frame">
+
+  <!-- HEADER -->
+  <header class="header-strip">
+    <div class="reg-marks">
+      <div class="reg-mark"><span class="reg-dot live"></span>SYS · OK</div>
+      <div class="reg-mark"><span class="reg-dot live"></span>NET · LOCAL</div>
+      <div class="reg-mark"><span class="reg-dot warn"></span>HELIX · 217</div>
+    </div>
+    <div class="header-title">
+      <span class="ti-id" id="ti-id">CON-04</span>
+      <span class="ti-name">SQUAD DISPATCH</span>
+      <span class="ti-sub" id="ti-sub">/ AWAITING ORDERS</span>
+    </div>
+    <div class="header-tele">
+      <span><span class="lbl">FRM </span><span class="val" id="frame">000142</span></span>
+      <span><span class="lbl">UTC </span><span class="val" id="clock">00:00:00.000</span></span>
+      <div class="reg-mark"><span class="reg-dot live"></span>OPS</div>
+    </div>
+  </header>
+
+  <!-- HISTORY RAIL -->
+  <section class="history-rail">
+    <div class="hr-label"><span class="glyph">↺</span>RECENT SQUADS</div>
+    <div class="hr-pills" id="history-pills">
+      <span class="hr-empty">— no prior dispatches in this session —</span>
+    </div>
+    <button class="hr-clear" id="history-clear">CLEAR</button>
+  </section>
+
+  <!-- COMMAND BAR -->
+  <section class="command-bar">
+
+    <div class="cmd-shell">
+      <div class="cmd-label">
+        <span class="idx">[ 01 ]</span>
+        <span>DISPATCH MISSION</span>
+        <span class="sep"></span>
+        <span class="idx" id="cls-status">9 GATES · 0 MATCHED</span>
+      </div>
+      <textarea
+        class="cmd-textarea" id="task-input"
+        spellcheck="false" autocorrect="off"
+      >refactor the authentication module and add property tests with security review</textarea>
+
+      <div class="classifier-strip" id="classifier">
+        <button class="cls-chip" data-agent="engineer">
+          <span class="cls-chip-gate">A</span>
+          <span class="cls-chip-code">ENG</span>
+          <span class="cls-chip-name">engineer</span>
+        </button>
+        <button class="cls-chip" data-agent="quality">
+          <span class="cls-chip-gate">Q</span>
+          <span class="cls-chip-code">QLT</span>
+          <span class="cls-chip-name">quality</span>
+        </button>
+        <button class="cls-chip" data-agent="security">
+          <span class="cls-chip-gate">S</span>
+          <span class="cls-chip-code">SEC</span>
+          <span class="cls-chip-name">security</span>
+        </button>
+        <button class="cls-chip" data-agent="ops">
+          <span class="cls-chip-gate">O</span>
+          <span class="cls-chip-code">OPS</span>
+          <span class="cls-chip-name">ops</span>
+        </button>
+        <button class="cls-chip" data-agent="researcher">
+          <span class="cls-chip-gate">R</span>
+          <span class="cls-chip-code">RES</span>
+          <span class="cls-chip-name">research</span>
+        </button>
+        <button class="cls-chip" data-agent="knowledge">
+          <span class="cls-chip-gate">K</span>
+          <span class="cls-chip-code">KNW</span>
+          <span class="cls-chip-name">knowledge</span>
+        </button>
+        <button class="cls-chip" data-agent="performance">
+          <span class="cls-chip-gate">P</span>
+          <span class="cls-chip-code">PRF</span>
+          <span class="cls-chip-name">perf</span>
+        </button>
+        <button class="cls-chip" data-agent="testing">
+          <span class="cls-chip-gate">T</span>
+          <span class="cls-chip-code">TST</span>
+          <span class="cls-chip-name">testing</span>
+        </button>
+        <button class="cls-chip" data-agent="documentation">
+          <span class="cls-chip-gate">D</span>
+          <span class="cls-chip-code">DOC</span>
+          <span class="cls-chip-name">docs</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="cmd-action">
+      <div class="cmd-action-head">
+        <span><span class="idx">[ 02 ]</span> <span id="cmd-mode-label">DISPATCH</span></span>
+        <span class="cmd-action-state" id="cmd-state" data-state="idle">● IDLE</span>
+      </div>
+      <div class="cmd-action-count">
+        <span class="cmd-action-count-num" id="dispatch-count">00</span>
+        <span class="cmd-action-count-lbl" id="dispatch-count-lbl">QUEUE<br>EMPTY</span>
+      </div>
+
+      <!-- Token + ETA estimate -->
+      <div class="cmd-estimate">
+        <span><span class="lbl">EST · </span><span class="val" id="est-tokens">0 TOK</span></span>
+        <span><span class="lbl">~</span><span class="val" id="est-time">0s</span></span>
+      </div>
+
+      <!-- Write-path warning + worktree path -->
+      <div class="cmd-warning" id="cmd-warning" data-show="false">
+        <div class="cmd-warning-head">
+          <span class="glyph">⚠</span>
+          <span id="warning-title">WRITE-PATH SQUAD</span>
+        </div>
+        <div class="cmd-warning-body">
+          → <span class="branch" id="warning-branch">feat/sqd-pending</span>
+          · <span id="warning-detail">N agents writing</span>
+        </div>
+      </div>
+
+      <!-- DRY RUN toggle -->
+      <label class="dry-toggle" id="dry-toggle">
+        <input type="checkbox" id="dry-run">
+        <span><span class="lbl-strong">DRY</span> · plan only, no writes</span>
+      </label>
+
+      <button class="dispatch-btn" id="dispatch-btn">
+        <span id="dispatch-label">DISPATCH</span>
+        <span class="dispatch-btn-arrow">▶</span>
+      </button>
+    </div>
+
+  </section>
+
+  <!-- RAIL STAGE — all 9 rails as static HTML -->
+  <section class="rail-stage">
+    <div class="rail-stage-head">
+      <span><span class="idx">[ 03 ]</span> <span id="rail-stage-label">EXECUTION STAGE · STANDBY</span></span>
+      <div class="view-toggle">
+        <button class="active" data-view="rails">RAILS</button>
+        <button data-view="dag">+ DAG</button>
+      </div>
+    </div>
+    <div class="rails-wrap">
+      <div class="rails" id="rails">
+        <!-- Each rail: edge | id | phases | tool | metrics | tail -->
+
+        <div class="rail" data-agent="engineer" data-state="idle">
+          <div class="rail-edge"></div>
+          <div class="rail-scan"></div>
+          <div class="rail-id">
+            <div class="rail-id-code">ENG/01</div>
+            <div class="rail-id-name">engineer</div>
+            <div class="rail-id-gate">GATE · A</div>
+          </div>
+          <div class="phase-strip">
+            <div class="phase-square" data-status="pending" title="CLASSIFY"></div>
+            <div class="phase-square" data-status="pending" title="PLAN"></div>
+            <div class="phase-square" data-status="pending" title="EXEC"></div>
+            <div class="phase-square" data-status="pending" title="VERIFY"></div>
+            <div class="phase-square" data-status="pending" title="REPORT"></div>
+          </div>
+          <div class="rail-tool"><span class="rail-tool-empty">— STANDBY</span></div>
+          <div class="rail-metrics">
+            <span class="rail-metric"><span class="lbl">FILES</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">TOK</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">MS</span><span class="val">0</span></span>
+          </div>
+          <div class="rail-tail"><span class="status-pip"></span></div>
+          <span class="perm-tag" aria-hidden="true"></span>
+          <button class="retry-btn" data-agent="engineer">RTY ↻</button>
+        </div>
+
+        <div class="rail" data-agent="quality" data-state="idle">
+          <div class="rail-edge"></div>
+          <div class="rail-scan"></div>
+          <div class="rail-id">
+            <div class="rail-id-code">QLT/02</div>
+            <div class="rail-id-name">quality</div>
+            <div class="rail-id-gate">GATE · Q</div>
+          </div>
+          <div class="phase-strip">
+            <div class="phase-square" data-status="pending" title="CLASSIFY"></div>
+            <div class="phase-square" data-status="pending" title="PLAN"></div>
+            <div class="phase-square" data-status="pending" title="EXEC"></div>
+            <div class="phase-square" data-status="pending" title="VERIFY"></div>
+            <div class="phase-square" data-status="pending" title="REPORT"></div>
+          </div>
+          <div class="rail-tool"><span class="rail-tool-empty">— STANDBY</span></div>
+          <div class="rail-metrics">
+            <span class="rail-metric"><span class="lbl">FILES</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">TOK</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">MS</span><span class="val">0</span></span>
+          </div>
+          <div class="rail-tail"><span class="status-pip"></span></div>
+          <span class="perm-tag" aria-hidden="true"></span>
+          <button class="retry-btn" data-agent="quality">RTY ↻</button>
+        </div>
+
+        <div class="rail" data-agent="security" data-state="idle">
+          <div class="rail-edge"></div>
+          <div class="rail-scan"></div>
+          <div class="rail-id">
+            <div class="rail-id-code">SEC/03</div>
+            <div class="rail-id-name">security</div>
+            <div class="rail-id-gate">GATE · S</div>
+          </div>
+          <div class="phase-strip">
+            <div class="phase-square" data-status="pending" title="CLASSIFY"></div>
+            <div class="phase-square" data-status="pending" title="PLAN"></div>
+            <div class="phase-square" data-status="pending" title="EXEC"></div>
+            <div class="phase-square" data-status="pending" title="VERIFY"></div>
+            <div class="phase-square" data-status="pending" title="REPORT"></div>
+          </div>
+          <div class="rail-tool"><span class="rail-tool-empty">— STANDBY</span></div>
+          <div class="rail-metrics">
+            <span class="rail-metric"><span class="lbl">FILES</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">TOK</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">MS</span><span class="val">0</span></span>
+          </div>
+          <div class="rail-tail"><span class="status-pip"></span></div>
+          <span class="perm-tag" aria-hidden="true"></span>
+          <button class="retry-btn" data-agent="security">RTY ↻</button>
+        </div>
+
+        <div class="rail" data-agent="ops" data-state="idle">
+          <div class="rail-edge"></div>
+          <div class="rail-scan"></div>
+          <div class="rail-id">
+            <div class="rail-id-code">OPS/04</div>
+            <div class="rail-id-name">ops</div>
+            <div class="rail-id-gate">GATE · O</div>
+          </div>
+          <div class="phase-strip">
+            <div class="phase-square" data-status="pending" title="CLASSIFY"></div>
+            <div class="phase-square" data-status="pending" title="PLAN"></div>
+            <div class="phase-square" data-status="pending" title="EXEC"></div>
+            <div class="phase-square" data-status="pending" title="VERIFY"></div>
+            <div class="phase-square" data-status="pending" title="REPORT"></div>
+          </div>
+          <div class="rail-tool"><span class="rail-tool-empty">— STANDBY</span></div>
+          <div class="rail-metrics">
+            <span class="rail-metric"><span class="lbl">FILES</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">TOK</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">MS</span><span class="val">0</span></span>
+          </div>
+          <div class="rail-tail"><span class="status-pip"></span></div>
+          <span class="perm-tag" aria-hidden="true"></span>
+          <button class="retry-btn" data-agent="ops">RTY ↻</button>
+        </div>
+
+        <div class="rail" data-agent="researcher" data-state="idle">
+          <div class="rail-edge"></div>
+          <div class="rail-scan"></div>
+          <div class="rail-id">
+            <div class="rail-id-code">RES/05</div>
+            <div class="rail-id-name">researcher</div>
+            <div class="rail-id-gate">GATE · R</div>
+          </div>
+          <div class="phase-strip">
+            <div class="phase-square" data-status="pending" title="CLASSIFY"></div>
+            <div class="phase-square" data-status="pending" title="PLAN"></div>
+            <div class="phase-square" data-status="pending" title="EXEC"></div>
+            <div class="phase-square" data-status="pending" title="VERIFY"></div>
+            <div class="phase-square" data-status="pending" title="REPORT"></div>
+          </div>
+          <div class="rail-tool"><span class="rail-tool-empty">— STANDBY</span></div>
+          <div class="rail-metrics">
+            <span class="rail-metric"><span class="lbl">FILES</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">TOK</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">MS</span><span class="val">0</span></span>
+          </div>
+          <div class="rail-tail"><span class="status-pip"></span></div>
+          <span class="perm-tag" aria-hidden="true"></span>
+          <button class="retry-btn" data-agent="researcher">RTY ↻</button>
+        </div>
+
+        <div class="rail" data-agent="knowledge" data-state="idle">
+          <div class="rail-edge"></div>
+          <div class="rail-scan"></div>
+          <div class="rail-id">
+            <div class="rail-id-code">KNW/06</div>
+            <div class="rail-id-name">knowledge</div>
+            <div class="rail-id-gate">GATE · K</div>
+          </div>
+          <div class="phase-strip">
+            <div class="phase-square" data-status="pending" title="CLASSIFY"></div>
+            <div class="phase-square" data-status="pending" title="PLAN"></div>
+            <div class="phase-square" data-status="pending" title="EXEC"></div>
+            <div class="phase-square" data-status="pending" title="VERIFY"></div>
+            <div class="phase-square" data-status="pending" title="REPORT"></div>
+          </div>
+          <div class="rail-tool"><span class="rail-tool-empty">— STANDBY</span></div>
+          <div class="rail-metrics">
+            <span class="rail-metric"><span class="lbl">FILES</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">TOK</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">MS</span><span class="val">0</span></span>
+          </div>
+          <div class="rail-tail"><span class="status-pip"></span></div>
+          <span class="perm-tag" aria-hidden="true"></span>
+          <button class="retry-btn" data-agent="knowledge">RTY ↻</button>
+        </div>
+
+        <div class="rail" data-agent="performance" data-state="idle">
+          <div class="rail-edge"></div>
+          <div class="rail-scan"></div>
+          <div class="rail-id">
+            <div class="rail-id-code">PRF/07</div>
+            <div class="rail-id-name">performance</div>
+            <div class="rail-id-gate">GATE · P</div>
+          </div>
+          <div class="phase-strip">
+            <div class="phase-square" data-status="pending" title="CLASSIFY"></div>
+            <div class="phase-square" data-status="pending" title="PLAN"></div>
+            <div class="phase-square" data-status="pending" title="EXEC"></div>
+            <div class="phase-square" data-status="pending" title="VERIFY"></div>
+            <div class="phase-square" data-status="pending" title="REPORT"></div>
+          </div>
+          <div class="rail-tool"><span class="rail-tool-empty">— STANDBY</span></div>
+          <div class="rail-metrics">
+            <span class="rail-metric"><span class="lbl">FILES</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">TOK</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">MS</span><span class="val">0</span></span>
+          </div>
+          <div class="rail-tail"><span class="status-pip"></span></div>
+          <span class="perm-tag" aria-hidden="true"></span>
+          <button class="retry-btn" data-agent="performance">RTY ↻</button>
+        </div>
+
+        <div class="rail" data-agent="testing" data-state="idle">
+          <div class="rail-edge"></div>
+          <div class="rail-scan"></div>
+          <div class="rail-id">
+            <div class="rail-id-code">TST/08</div>
+            <div class="rail-id-name">testing</div>
+            <div class="rail-id-gate">GATE · T</div>
+          </div>
+          <div class="phase-strip">
+            <div class="phase-square" data-status="pending" title="CLASSIFY"></div>
+            <div class="phase-square" data-status="pending" title="PLAN"></div>
+            <div class="phase-square" data-status="pending" title="EXEC"></div>
+            <div class="phase-square" data-status="pending" title="VERIFY"></div>
+            <div class="phase-square" data-status="pending" title="REPORT"></div>
+          </div>
+          <div class="rail-tool"><span class="rail-tool-empty">— STANDBY</span></div>
+          <div class="rail-metrics">
+            <span class="rail-metric"><span class="lbl">FILES</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">TOK</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">MS</span><span class="val">0</span></span>
+          </div>
+          <div class="rail-tail"><span class="status-pip"></span></div>
+          <span class="perm-tag" aria-hidden="true"></span>
+          <button class="retry-btn" data-agent="testing">RTY ↻</button>
+        </div>
+
+        <div class="rail" data-agent="documentation" data-state="idle">
+          <div class="rail-edge"></div>
+          <div class="rail-scan"></div>
+          <div class="rail-id">
+            <div class="rail-id-code">DOC/09</div>
+            <div class="rail-id-name">documentation</div>
+            <div class="rail-id-gate">GATE · D</div>
+          </div>
+          <div class="phase-strip">
+            <div class="phase-square" data-status="pending" title="CLASSIFY"></div>
+            <div class="phase-square" data-status="pending" title="PLAN"></div>
+            <div class="phase-square" data-status="pending" title="EXEC"></div>
+            <div class="phase-square" data-status="pending" title="VERIFY"></div>
+            <div class="phase-square" data-status="pending" title="REPORT"></div>
+          </div>
+          <div class="rail-tool"><span class="rail-tool-empty">— STANDBY</span></div>
+          <div class="rail-metrics">
+            <span class="rail-metric"><span class="lbl">FILES</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">TOK</span><span class="val">0</span></span>
+            <span class="rail-metric"><span class="lbl">MS</span><span class="val">0</span></span>
+          </div>
+          <div class="rail-tail"><span class="status-pip"></span></div>
+          <span class="perm-tag" aria-hidden="true"></span>
+          <button class="retry-btn" data-agent="documentation">RTY ↻</button>
+        </div>
+
+      </div>
+      <svg class="dag-overlay" id="dag" data-visible="false"></svg>
+    </div>
+  </section>
+
+  <!-- MAILBOX -->
+  <section class="mailbox">
+    <div class="mailbox-head">
+      <span><span class="idx">[ 04 ]</span> <span id="mailbox-label">MAILBOX · OFFLINE</span></span>
+      <span><span class="idx">MSG </span><span class="ctr" id="msg-counter">000</span></span>
+    </div>
+    <div class="mailbox-stream" id="mailbox">
+      <div class="mb-empty">— awaiting transmission —</div>
+    </div>
+  </section>
+
+</div>
+
+<div class="help-bar">
+  <span><kbd>⌘↵</kbd> dispatch</span>
+  <span><kbd>R</kbd> reset</span>
+  <span><kbd>D</kbd> toggle DAG</span>
+  <span><kbd>1-9</kbd> toggle agent</span>
+</div>
+
+<script>
+'use strict';
+
+// ============================================================
+// CONSTANTS
+// ============================================================
+const AGENTS = [
+  'engineer','quality','security','ops','researcher',
+  'knowledge','performance','testing','documentation'
+];
+
+const PHASES = ['CLASSIFY', 'PLAN', 'EXEC', 'VERIFY', 'REPORT'];
+
+const KEYWORDS = {
+  engineer:      ['refactor','build','implement','code','feature','fix','add','create','module','function','authentication','auth'],
+  quality:       ['review','quality','clean','improve','optimize','lint','clippy','standards'],
+  security:      ['security','vulnerability','audit','authentication','auth','secret','attack','token','jwt','crypto'],
+  ops:           ['deploy','ci','pipeline','docker','release','launchd','pre-commit','gate'],
+  researcher:    ['research','investigate','explore','compare','analyze','approach','options'],
+  knowledge:     ['knowledge','memory','helix','vault','onboard','context','recall','remember'],
+  performance:   ['performance','benchmark','profile','latency','memory','optimize','vram','throughput','speed'],
+  testing:       ['test','property','unit','integration','coverage','assert','proptest','suite','e2e','regression'],
+  documentation: ['document','docs','readme','guide','api','explain','rustdoc'],
+};
+
+const TOOL_PROFILES = {
+  engineer: [
+    ['READ','src/auth/mod.rs'],
+    ['EDIT','auth.rs:142'],
+    ['WRITE','src/auth/session.rs'],
+    ['EDIT','tests/auth_test.rs'],
+    ['DIFF','+47 −12 / 3 files'],
+  ],
+  quality: [
+    ['SCAN','workspace · clippy::pedantic'],
+    ['LINT','auth.rs · 2 warns'],
+    ['FMT','check · clean'],
+    ['RVW','diff · 14 files'],
+    ['PASS','0 errors / 0 warnings'],
+  ],
+  security: [
+    ['SCAN','auth/* · OWASP A07'],
+    ['AUDIT','session.rs · token entropy'],
+    ['HALT','scope.toml · NOT FOUND'],
+    ['ERR','scope authorization missing'],
+    ['ERR','scope authorization missing'],
+  ],
+  ops: [
+    ['CHECK','pre-commit gate'],
+    ['BUILD','cargo build --release'],
+    ['HOOK','launchd · soul-consolidator'],
+    ['STAGE','deploy candidate'],
+    ['DONE','gate · GREEN'],
+  ],
+  researcher: [
+    ['FETCH','docs · oauth2-rs / jsonwebtoken'],
+    ['CITE','rfc-6749 §4.1'],
+    ['DIFF','libs · jw favored 87%'],
+    ['SUMM','recommendation · jsonwebtoken'],
+    ['DONE','evidence chain · 14 nodes'],
+  ],
+  knowledge: [
+    ['QUERY','helix · auth-domain'],
+    ['ENRCH','8-layer · sig 7.4'],
+    ['LINK','shared/auth ↔ corso/builds'],
+    ['WRITE','$HELIX/auth/jwt-2026.md'],
+    ['DONE','1 entry preserved'],
+  ],
+  performance: [
+    ['BENCH','auth-flow · criterion'],
+    ['PROF','session-decode · 14μs'],
+    ['DIFF','baseline · −22%'],
+    ['CHECK','p99 budget · WITHIN'],
+    ['DONE','3 baselines pinned'],
+  ],
+  testing: [
+    ['DSGN','token_invariants · 5 props'],
+    ['WRITE','tests/property_tests.rs'],
+    ['EXEC','cargo test --all'],
+    ['CHECK','222 passed / 0 failed'],
+    ['DONE','pyramid · 6 suites'],
+  ],
+  documentation: [
+    ['SCAN','pub items · 12 missing'],
+    ['WRITE','/// rustdoc · session.rs'],
+    ['EXAMP','# Examples · 3 added'],
+    ['BUILD','cargo doc --no-deps'],
+    ['DONE','coverage · 100%'],
+  ],
+};
+
+const SAMPLE_MAIL = [
+  ['engineer','testing',      'auth.rs:142 needs property test coverage for token roundtrip'],
+  ['testing','engineer',      'noted — adding 3 prop tests for jwt invariants'],
+  ['security','engineer',     'scope.toml absent at workspace root — halting scan'],
+  ['researcher','engineer',   'oauth2-rs vs jsonwebtoken: jsonwebtoken wins on entropy + audit history'],
+  ['quality','engineer',      'clippy::pedantic flagged unwrap at session.rs:89'],
+  ['knowledge','researcher',  'helix entry created — jwt-decision-2026-04-29.md (sig 7.4)'],
+  ['testing','quality',       'all 14 new tests pass · 222 total in soul crate'],
+  ['engineer','documentation','session.rs public API stable — ready for rustdoc pass'],
+  ['documentation','engineer','rustdoc generated — 12 pub items + 3 examples'],
+  ['quality','security',      'no .unwrap() in production paths after fix'],
+  ['performance','engineer',  'session-decode at 14μs · −22% vs baseline · within budget'],
+  ['engineer','quality',      'final diff +47 −12 / 3 files · ready for review'],
+];
+
+const DAG_EDGES = [
+  ['researcher','engineer'],
+  ['knowledge','researcher'],
+  ['engineer','testing'],
+  ['engineer','quality'],
+  ['engineer','documentation'],
+  ['security','quality'],
+  ['testing','quality'],
+  ['quality','ops'],
+  ['performance','engineer'],
+];
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// ============================================================
+// PERMISSIONS · which agents touch the filesystem
+// ============================================================
+// W = write-path (modifies code, tests, docs, configs)
+// R = read-only  (audits, scans, research, retrieval)
+const PERMISSIONS = {
+  engineer:      'W',
+  quality:       'W',  // OPTIMIZE workflow can edit
+  security:      'R',
+  ops:           'W',  // build/deploy artifacts
+  researcher:    'R',
+  knowledge:     'R',  // helix reads dominate; writes are vault-side
+  performance:   'R',
+  testing:       'W',
+  documentation: 'W',
+};
+
+// Token + duration heuristic per agent (rough, demo-only)
+const COST_HINT = {
+  engineer:      { tok: 4200, ms: 18000 },
+  quality:       { tok: 1800, ms:  8000 },
+  security:      { tok: 1400, ms:  6000 },
+  ops:           { tok:  900, ms:  4000 },
+  researcher:    { tok: 3600, ms: 14000 },
+  knowledge:     { tok: 1200, ms:  5000 },
+  performance:   { tok: 2400, ms: 10000 },
+  testing:       { tok: 2800, ms: 12000 },
+  documentation: { tok: 1600, ms:  7000 },
+};
+
+const HISTORY_KEY = 'sqd-dispatch-history-v1';
+const HISTORY_MAX = 8;
+
+// ============================================================
+// STATE
+// ============================================================
+const state = {
+  classified: new Set(),
+  selected:   new Set(),
+  dispatched: false,
+  msgCount:   0,
+  timers:     [],
+  squadId:    null,   // populated on dispatch when mode === 'squad'
+  mode:       'idle', // 'idle' | 'solo' | 'squad'
+  dryRun:     false,
+  history:    [],
+  agentResults: {},   // populated as agents complete: { id: 'ok' | 'fail' }
+};
+
+// Phonetic codenames — squads get a callsign, not just a hex id
+const CALLSIGNS = [
+  'ECHO','BRAVO','SIERRA','TANGO','KILO','NOVA','RAVEN','ORION',
+  'AURORA','VEGA','HALO','VESPER','ATLAS','ZEPHYR','CASCADE','OBSIDIAN'
+];
+
+function genSquadId() {
+  const cs  = CALLSIGNS[Math.floor(Math.random() * CALLSIGNS.length)];
+  const num = Math.floor(Math.random() * 90 + 10);
+  return 'SQD-' + cs + '-' + num;
+}
+
+// ============================================================
+// INIT
+// ============================================================
+function init() {
+  decoratePermissions();
+  bindClassifierChips();
+  bindRetryButtons();
+  bindInput();
+  bindDispatch();
+  bindToggle();
+  bindKeys();
+  bindDryToggle();
+  bindHistoryClear();
+  startClock();
+  loadHistory();
+  classify();
+}
+
+// Tag every chip + rail with its permission level
+function decoratePermissions() {
+  document.querySelectorAll('.cls-chip').forEach(chip => {
+    chip.dataset.perm = PERMISSIONS[chip.dataset.agent] || 'R';
+  });
+  document.querySelectorAll('.rail').forEach(rail => {
+    const perm = PERMISSIONS[rail.dataset.agent] || 'R';
+    rail.dataset.perm = perm;
+    const tag = rail.querySelector('.perm-tag');
+    if (tag) tag.textContent = perm === 'W' ? 'WRITE' : 'READ';
+  });
+}
+
+function bindDryToggle() {
+  const cb = document.getElementById('dry-run');
+  const wrap = document.getElementById('dry-toggle');
+  cb.addEventListener('change', () => {
+    wrap.classList.toggle('armed', cb.checked);
+    renderDispatchCount();
+  });
+}
+
+function bindHistoryClear() {
+  document.getElementById('history-clear').addEventListener('click', () => {
+    try { localStorage.removeItem(HISTORY_KEY); } catch (e) {}
+    state.history = [];
+    renderHistory();
+  });
+}
+
+function bindClassifierChips() {
+  document.querySelectorAll('.cls-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const id = chip.dataset.agent;
+      if (state.selected.has(id)) state.selected.delete(id);
+      else state.selected.add(id);
+      renderChips();
+      renderDispatchCount();
+    });
+  });
+}
+
+function bindRetryButtons() {
+  document.querySelectorAll('.retry-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      retryAgent(btn.dataset.agent);
+    });
+  });
+}
+
+function bindInput() {
+  const input = document.getElementById('task-input');
+  let timer;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(classify, 180);
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      dispatch();
+    }
+  });
+}
+
+function bindDispatch() {
+  document.getElementById('dispatch-btn').addEventListener('click', dispatch);
+}
+
+function bindToggle() {
+  document.querySelectorAll('.view-toggle button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const dag = document.getElementById('dag');
+      if (btn.dataset.view === 'dag') {
+        dag.dataset.visible = 'true';
+        drawDAG();
+      } else {
+        dag.dataset.visible = 'false';
+      }
+    });
+  });
+}
+
+function bindKeys() {
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'TEXTAREA') return;
+    const k = e.key.toLowerCase();
+    if (k === 'r') reset();
+    else if (k === 'd') {
+      const dag = document.getElementById('dag');
+      const next = dag.dataset.visible === 'true' ? 'false' : 'true';
+      dag.dataset.visible = next;
+      document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
+      const view = next === 'true' ? 'dag' : 'rails';
+      document.querySelector('.view-toggle button[data-view="' + view + '"]').classList.add('active');
+      if (next === 'true') drawDAG();
+    } else if (k >= '1' && k <= '9') {
+      const idx = parseInt(k, 10) - 1;
+      const id = AGENTS[idx];
+      if (id) {
+        if (state.selected.has(id)) state.selected.delete(id);
+        else state.selected.add(id);
+        renderChips();
+        renderDispatchCount();
+      }
+    }
+  });
+}
+
+// ============================================================
+// CLASSIFICATION
+// ============================================================
+function classify() {
+  const text = document.getElementById('task-input').value.toLowerCase();
+  state.classified.clear();
+  Object.entries(KEYWORDS).forEach(([id, kws]) => {
+    if (kws.some(k => text.includes(k))) state.classified.add(id);
+  });
+  if (!state.dispatched) {
+    state.selected = new Set(state.classified);
+  }
+  renderChips();
+  renderDispatchCount();
+  document.getElementById('cls-status').textContent =
+    AGENTS.length + ' GATES · ' + state.classified.size + ' MATCHED';
+}
+
+function renderChips() {
+  document.querySelectorAll('.cls-chip').forEach(chip => {
+    const id = chip.dataset.agent;
+    chip.dataset.classified = state.classified.has(id) ? 'true' : 'false';
+    chip.dataset.selected   = state.selected.has(id)   ? 'true' : 'false';
+  });
+}
+
+function renderDispatchCount() {
+  const n = state.selected.size;
+  document.getElementById('dispatch-count').textContent = String(n).padStart(2, '0');
+
+  // Mode = idle | solo | squad
+  state.mode = n === 0 ? 'idle' : n === 1 ? 'solo' : 'squad';
+
+  const btn       = document.getElementById('dispatch-btn');
+  const lbl       = document.getElementById('dispatch-label');
+  const countLbl  = document.getElementById('dispatch-count-lbl');
+  const modeLbl   = document.getElementById('cmd-mode-label');
+  const stateLbl  = document.getElementById('cmd-state');
+
+  btn.disabled = n === 0 || state.dispatched;
+
+  if (state.dispatched) {
+    lbl.textContent = state.mode === 'squad' ? 'SQUAD IN FLIGHT' : 'AGENT IN FLIGHT';
+  } else if (n === 0) {
+    lbl.textContent = 'NO AGENTS';
+  } else if (n === 1) {
+    lbl.textContent = 'DISPATCH AGENT';
+  } else {
+    lbl.textContent = 'DISPATCH SQUAD';
+  }
+
+  // Count label — use safe DOM (no innerHTML)
+  while (countLbl.firstChild) countLbl.removeChild(countLbl.firstChild);
+  const lblTop = n === 0 ? 'QUEUE' : (n === 1 ? 'AGENT' : 'SQUAD');
+  const lblBot = n === 0 ? 'EMPTY' : 'QUEUED';
+  countLbl.appendChild(document.createTextNode(lblTop));
+  countLbl.appendChild(document.createElement('br'));
+  countLbl.appendChild(document.createTextNode(lblBot));
+
+  // Mode label in cmd-action-head
+  modeLbl.textContent = state.mode === 'squad' ? 'SQUAD' :
+                        state.mode === 'solo'  ? 'SOLO'  : 'DISPATCH';
+
+  // Read dry-run state
+  state.dryRun = document.getElementById('dry-run').checked;
+
+  // Count writers vs readers among selected
+  const writers = Array.from(state.selected).filter(a => PERMISSIONS[a] === 'W');
+  const writeCount = writers.length;
+  const isWriting = writeCount > 0 && !state.dryRun;
+
+  // State pill
+  if (!state.dispatched) {
+    if (n === 0) {
+      stateLbl.dataset.state = 'idle';
+      stateLbl.textContent = '● IDLE';
+    } else if (n === 1) {
+      stateLbl.dataset.state = 'armed';
+      stateLbl.textContent = state.dryRun ? '● SOLO · DRY' : '● SOLO READY';
+    } else {
+      stateLbl.dataset.state = 'armed';
+      stateLbl.textContent = state.dryRun ? '● SQUAD · DRY' : (isWriting ? '● SQUAD · WRITES' : '● SQUAD READY');
+    }
+  }
+
+  // Dispatch button mode (visual): dry > write > default
+  if (!state.dispatched) {
+    if (state.dryRun && n > 0) btn.dataset.mode = 'dry';
+    else if (isWriting)        btn.dataset.mode = 'write';
+    else                       btn.dataset.mode = '';
+
+    // Add suffix to label
+    if (state.dryRun && n > 0) {
+      lbl.textContent += ' · DRY';
+    } else if (isWriting && n >= 2) {
+      lbl.textContent += ' · WRITE';
+    }
+  }
+
+  // Write-path warning banner
+  const warn = document.getElementById('cmd-warning');
+  if (isWriting) {
+    warn.dataset.show = 'true';
+    document.getElementById('warning-title').textContent =
+      n === 1 ? 'WRITE-PATH AGENT' : 'WRITE-PATH SQUAD';
+
+    // Generate a forward-looking branch name (real impl: actual git branch)
+    const branchSeed = state.mode === 'squad' ? 'squad' : Array.from(state.selected)[0];
+    const hash = Math.floor(Math.random() * 0xfffff).toString(16).padStart(5, '0');
+    const branch = 'feat/sqd-' + branchSeed + '-' + hash;
+    document.getElementById('warning-branch').textContent =
+      state.dispatched && state.squadId
+        ? 'feat/sqd-' + state.squadId.toLowerCase().replace('sqd-', '')
+        : branch;
+
+    document.getElementById('warning-detail').textContent =
+      writeCount + ' WRITER' + (writeCount !== 1 ? 'S' : '') +
+      ' · isolated worktree';
+  } else if (state.dryRun && n > 0) {
+    warn.dataset.show = 'true';
+    document.getElementById('warning-title').textContent = 'DRY RUN · NO WRITES';
+    document.getElementById('warning-branch').textContent = '— no worktree —';
+    document.getElementById('warning-detail').textContent =
+      writeCount + ' would-be writer' + (writeCount !== 1 ? 's' : '') + ' · plan only';
+  } else {
+    warn.dataset.show = 'false';
+  }
+
+  // Token + ETA estimate
+  let totTok = 0;
+  let maxMs  = 0;  // wall-clock = max of agents (parallel)
+  let sumMs  = 0;  // for solo = sum
+  state.selected.forEach(a => {
+    const c = COST_HINT[a];
+    if (!c) return;
+    totTok += c.tok;
+    if (c.ms > maxMs) maxMs = c.ms;
+    sumMs += c.ms;
+  });
+  const wallMs = state.mode === 'squad' ? maxMs : sumMs;
+  const tokDisplay = totTok > 1000 ? (totTok / 1000).toFixed(1) + 'K TOK' : totTok + ' TOK';
+  const timeDisplay = wallMs >= 1000 ? Math.round(wallMs / 1000) + 's' : wallMs + 'ms';
+  document.getElementById('est-tokens').textContent = state.dryRun && n > 0 ? '~' + Math.round(totTok * 0.15) + ' TOK' : tokDisplay;
+  document.getElementById('est-time').textContent = state.dryRun && n > 0 ? Math.round(wallMs * 0.2 / 1000) + 's' : timeDisplay;
+
+  renderHeaderSub();
+  renderStageLabel();
+  renderMailboxLabel();
+}
+
+function renderHeaderSub() {
+  const sub = document.getElementById('ti-sub');
+  if (state.dispatched && state.squadId) {
+    sub.textContent = '/ ' + state.squadId + ' · ' + state.selected.size + ' RAILS ACTIVE';
+  } else if (state.dispatched) {
+    sub.textContent = '/ SOLO · ' + Array.from(state.selected)[0].toUpperCase();
+  } else if (state.mode === 'squad') {
+    sub.textContent = '/ SQUAD PENDING · ' + state.selected.size + ' QUEUED';
+  } else if (state.mode === 'solo') {
+    sub.textContent = '/ SOLO PENDING · ' + Array.from(state.selected)[0].toUpperCase();
+  } else {
+    sub.textContent = '/ AWAITING ORDERS';
+  }
+}
+
+function renderStageLabel() {
+  const lbl = document.getElementById('rail-stage-label');
+  if (state.dispatched && state.mode === 'squad') {
+    lbl.textContent = state.squadId + ' · TOPOLOGY · ' + state.selected.size + ' PARALLEL LANES';
+  } else if (state.dispatched) {
+    lbl.textContent = 'SOLO · ' + Array.from(state.selected)[0].toUpperCase() + ' · 1 LANE';
+  } else if (state.mode === 'idle') {
+    lbl.textContent = 'EXECUTION STAGE · STANDBY';
+  } else if (state.mode === 'solo') {
+    lbl.textContent = 'EXECUTION STAGE · 1 AGENT QUEUED · SOLO MODE';
+  } else {
+    lbl.textContent = 'EXECUTION STAGE · ' + state.selected.size + ' AGENTS QUEUED · SQUAD MODE';
+  }
+}
+
+function renderMailboxLabel() {
+  const lbl = document.getElementById('mailbox-label');
+  if (state.dispatched && state.mode === 'squad') {
+    lbl.textContent = state.squadId + ' · SQUAD MAILBOX · LIVE';
+  } else if (state.dispatched && state.mode === 'solo') {
+    lbl.textContent = 'SOLO · NO INTER-AGENT COMMS';
+  } else if (state.mode === 'squad') {
+    lbl.textContent = 'MAILBOX · ARMED FOR SQUAD COMMS';
+  } else if (state.mode === 'solo') {
+    lbl.textContent = 'MAILBOX · N/A IN SOLO MODE';
+  } else {
+    lbl.textContent = 'MAILBOX · OFFLINE';
+  }
+}
+
+// ============================================================
+// DISPATCH
+// ============================================================
+function dispatch() {
+  if (state.dispatched || state.selected.size === 0) return;
+  state.dispatched = true;
+
+  // Reset per-run results
+  state.agentResults = {};
+
+  // Assign Squad ID when mode is squad (2+ agents); solo runs get an AGT-* tag
+  if (state.mode === 'squad') {
+    state.squadId = genSquadId();
+  } else {
+    state.squadId = 'AGT-' + Array.from(state.selected)[0].slice(0, 3).toUpperCase() +
+      '-' + Math.floor(Math.random() * 90 + 10);
+  }
+
+  // Record live entry in history
+  recordLive(state.squadId, Array.from(state.selected));
+
+  const cmdState = document.getElementById('cmd-state');
+  cmdState.dataset.state = 'firing';
+  cmdState.textContent = state.mode === 'squad' ? '● SQUAD FIRING' : '● AGENT FIRING';
+  renderDispatchCount();
+
+  // Frame lock
+  document.getElementById('ops-frame').classList.add('locking');
+  setTimeout(() => document.getElementById('ops-frame').classList.remove('locking'), 360);
+
+  // Scanline + flash
+  const sl = document.getElementById('scanline');
+  const fl = document.getElementById('flash');
+  sl.classList.remove('fire'); fl.classList.remove('fire');
+  void sl.offsetWidth;
+  sl.classList.add('fire'); fl.classList.add('fire');
+
+  // Set non-selected to idle
+  document.querySelectorAll('.rail').forEach(rail => {
+    if (!state.selected.has(rail.dataset.agent)) {
+      rail.dataset.state = 'idle';
+    }
+  });
+
+  // Stagger activation
+  const order = AGENTS.filter(a => state.selected.has(a));
+  order.forEach((agent, i) => {
+    state.timers.push(setTimeout(() => activate(agent), 240 + i * 90));
+  });
+
+  // Clear mailbox
+  const stream = document.getElementById('mailbox');
+  while (stream.firstChild) stream.removeChild(stream.firstChild);
+
+  // Activation done → ACTIVE state
+  setTimeout(() => {
+    cmdState.dataset.state = 'active';
+    cmdState.textContent = state.mode === 'squad' ? '● SQUAD ACTIVE' : '● AGENT ACTIVE';
+    renderHeaderSub();
+    renderStageLabel();
+    renderMailboxLabel();
+  }, 240 + order.length * 90 + 200);
+
+  // Begin simulation
+  state.timers.push(setTimeout(() => simulate(order), 1100));
+}
+
+function activate(agentId) {
+  const rail = document.querySelector('.rail[data-agent="' + agentId + '"]');
+  rail.dataset.state = 'dispatched';
+  rail.dataset.justDispatched = 'true';
+  setTimeout(() => {
+    rail.dataset.state = 'running';
+    rail.dataset.justDispatched = 'false';
+    setPhase(agentId, 0, 'active');
+    setTool(agentId, 'INIT', 'context.load');
+  }, 200);
+}
+
+function simulate(order) {
+  order.forEach((agent, agentIdx) => {
+    const profile = TOOL_PROFILES[agent];
+    const baseDelay = agentIdx * 250;
+    const phaseDur = 1300;
+
+    PHASES.forEach((phase, pIdx) => {
+      const t = baseDelay + (pIdx + 1) * phaseDur + Math.random() * 280;
+      const tm = setTimeout(() => {
+        if (pIdx > 0) setPhase(agent, pIdx - 1, 'complete');
+        setPhase(agent, pIdx, 'active');
+        const tool = profile[pIdx];
+        if (tool) setTool(agent, tool[0], tool[1]);
+        bumpMetrics(agent, pIdx);
+        if (agent === 'security' && pIdx === 2) {
+          setTimeout(() => failAgent(agent), 600);
+        }
+      }, t);
+      state.timers.push(tm);
+    });
+
+    const finalT = baseDelay + (PHASES.length + 1) * phaseDur;
+    state.timers.push(setTimeout(() => {
+      const rail = document.querySelector('.rail[data-agent="' + agent + '"]');
+      if (rail.dataset.state !== 'failed') {
+        setPhase(agent, PHASES.length - 1, 'complete');
+        rail.dataset.state = 'complete';
+        const last = profile[profile.length - 1];
+        setTool(agent, last[0], last[1]);
+        state.agentResults[agent] = 'ok';
+      }
+      // After all agents finalize, promote history entry
+      maybeFinalizeRun();
+    }, finalT));
+  });
+
+  SAMPLE_MAIL.forEach((msg, i) => {
+    state.timers.push(setTimeout(() => {
+      if (state.selected.has(msg[0]) && state.selected.has(msg[1])) {
+        addMessage(msg[0], msg[1], msg[2]);
+      }
+    }, 1800 + i * 850));
+  });
+}
+
+function setPhase(agentId, pIdx, status) {
+  const rail = document.querySelector('.rail[data-agent="' + agentId + '"]');
+  const sq = rail.querySelectorAll('.phase-square')[pIdx];
+  if (sq) sq.dataset.status = status;
+}
+
+function setTool(agentId, action, target) {
+  const rail = document.querySelector('.rail[data-agent="' + agentId + '"]');
+  const tool = rail.querySelector('.rail-tool');
+
+  // Clear existing children
+  while (tool.firstChild) tool.removeChild(tool.firstChild);
+
+  const a = document.createElement('span');
+  a.className = 'tool-action';
+  a.textContent = action;
+
+  const t = document.createElement('span');
+  t.className = 'tool-target';
+  t.textContent = target;
+
+  const c = document.createElement('span');
+  c.className = 'tool-cursor';
+
+  tool.appendChild(a);
+  tool.appendChild(document.createTextNode(' '));
+  tool.appendChild(t);
+  tool.appendChild(c);
+}
+
+function bumpMetrics(agentId, pIdx) {
+  const rail = document.querySelector('.rail[data-agent="' + agentId + '"]');
+  const vals = rail.querySelectorAll('.rail-metric .val');
+
+  const f = parseInt(vals[0].textContent, 10) + Math.floor(Math.random() * 2 + (pIdx === 1 ? 1 : 0));
+  vals[0].textContent = f;
+
+  const tNow = parseFloat(vals[1].textContent) || 0;
+  const inc = Math.floor(Math.random() * 1200 + 400);
+  const total = (tNow * (vals[1].textContent.includes('K') ? 1000 : 1)) + inc;
+  vals[1].textContent = total > 1000 ? (total / 1000).toFixed(1) + 'K' : String(total);
+
+  vals[2].textContent = String(Math.floor(Math.random() * 1800 + 400));
+}
+
+function failAgent(agentId) {
+  const rail = document.querySelector('.rail[data-agent="' + agentId + '"]');
+  rail.dataset.state = 'failed';
+  setTool(agentId, 'ERR', 'scope.toml not found · scope-violation');
+  state.agentResults[agentId] = 'fail';
+}
+
+function maybeFinalizeRun() {
+  // Once every selected agent has a result, promote the history entry.
+  const allDone = Array.from(state.selected).every(a => state.agentResults[a]);
+  if (allDone && state.squadId) {
+    finalizeLive(state.squadId, state.agentResults);
+  }
+}
+
+function retryAgent(agentId) {
+  const rail = document.querySelector('.rail[data-agent="' + agentId + '"]');
+  rail.dataset.state = 'running';
+  rail.querySelectorAll('.phase-square').forEach((sq, i) => {
+    sq.dataset.status = i < 2 ? 'complete' : (i === 2 ? 'active' : 'pending');
+  });
+  setTool(agentId, 'RETRY', 'scope.toml · provisioning…');
+  state.timers.push(setTimeout(() => {
+    rail.dataset.state = 'complete';
+    rail.querySelectorAll('.phase-square').forEach(sq => sq.dataset.status = 'complete');
+    setTool(agentId, 'OK', 'scan complete · 0 violations');
+    state.agentResults[agentId] = 'ok';
+    maybeFinalizeRun();
+  }, 1800));
+}
+
+// ============================================================
+// MAILBOX (safe DOM, no innerHTML)
+// ============================================================
+function addMessage(from, to, body) {
+  const stream = document.getElementById('mailbox');
+  const t = new Date();
+  const time =
+    String(t.getHours()).padStart(2, '0') + ':' +
+    String(t.getMinutes()).padStart(2, '0') + ':' +
+    String(t.getSeconds()).padStart(2, '0') + '.' +
+    String(t.getMilliseconds()).padStart(3, '0');
+
+  const fromColor = 'var(--agent-' + from + ')';
+  const toColor   = 'var(--agent-' + to + ')';
+
+  const node = document.createElement('div');
+  node.className = 'mb-msg';
+
+  const sTime = document.createElement('span');
+  sTime.className = 'mb-time';
+  sTime.textContent = time;
+
+  const sFrom = document.createElement('span');
+  sFrom.className = 'mb-from';
+  sFrom.style.color = fromColor;
+  sFrom.textContent = from;
+
+  const sArrow = document.createElement('span');
+  sArrow.className = 'mb-arrow';
+  sArrow.textContent = '▸';
+
+  const sBody = document.createElement('span');
+  sBody.className = 'mb-body';
+
+  const sTo = document.createElement('span');
+  sTo.className = 'mb-to';
+  sTo.style.color = toColor;
+  sTo.textContent = to;
+
+  sBody.appendChild(sTo);
+  sBody.appendChild(document.createTextNode(' ' + body));
+
+  node.appendChild(sTime);
+  node.appendChild(sFrom);
+  node.appendChild(sArrow);
+  node.appendChild(sBody);
+
+  if (stream.firstChild) stream.insertBefore(node, stream.firstChild);
+  else stream.appendChild(node);
+
+  state.msgCount++;
+  document.getElementById('msg-counter').textContent = String(state.msgCount).padStart(3, '0');
+}
+
+// ============================================================
+// DAG OVERLAY (uses createElementNS — no innerHTML)
+// ============================================================
+function drawDAG() {
+  const svg = document.getElementById('dag');
+  const stage = document.querySelector('.rails-wrap');
+  const rect = stage.getBoundingClientRect();
+
+  svg.setAttribute('width',  String(rect.width));
+  svg.setAttribute('height', String(rect.height));
+  svg.setAttribute('viewBox', '0 0 ' + rect.width + ' ' + rect.height);
+
+  // Clear previous edges
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  // Tap points per rail
+  const taps = {};
+  AGENTS.forEach(a => {
+    if (!state.selected.has(a)) return;
+    const r = document.querySelector('.rail[data-agent="' + a + '"]');
+    const rb = r.getBoundingClientRect();
+    taps[a] = rb.top - rect.top + rb.height / 2;
+  });
+
+  const sideX  = rect.width - 36;
+  const innerX = rect.width - 90;
+
+  DAG_EDGES.forEach(([from, to]) => {
+    if (!(from in taps) || !(to in taps)) return;
+    const fy = taps[from];
+    const ty = taps[to];
+    const fc = 'var(--agent-' + from + ')';
+
+    const dy = ty > fy ? 8 : -8;
+    const d = [
+      'M ' + innerX + ' ' + fy,
+      'L ' + (sideX - 8) + ' ' + fy,
+      'Q ' + sideX + ' ' + fy + ' ' + sideX + ' ' + (fy + dy),
+      'L ' + sideX + ' ' + (ty - dy),
+      'Q ' + sideX + ' ' + ty + ' ' + (sideX - 8) + ' ' + ty,
+      'L ' + innerX + ' ' + ty,
+    ].join(' ');
+
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('class', 'dag-edge');
+    path.setAttribute('d', d);
+    path.setAttribute('stroke', fc);
+    svg.appendChild(path);
+
+    const tap1 = document.createElementNS(SVG_NS, 'circle');
+    tap1.setAttribute('class', 'dag-tap');
+    tap1.setAttribute('cx', String(innerX));
+    tap1.setAttribute('cy', String(fy));
+    tap1.setAttribute('r', '3');
+    tap1.setAttribute('stroke', fc);
+    svg.appendChild(tap1);
+
+    const tap2 = document.createElementNS(SVG_NS, 'circle');
+    tap2.setAttribute('class', 'dag-tap');
+    tap2.setAttribute('cx', String(innerX));
+    tap2.setAttribute('cy', String(ty));
+    tap2.setAttribute('r', '3');
+    tap2.setAttribute('stroke', fc);
+    svg.appendChild(tap2);
+  });
+}
+
+// ============================================================
+// HISTORY (persistent — localStorage in demo, conductor queue in prod)
+// ============================================================
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (raw) state.history = JSON.parse(raw);
+  } catch (e) { state.history = []; }
+  renderHistory();
+}
+
+function saveHistory() {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(state.history));
+  } catch (e) { /* quota / privacy mode — ignore */ }
+}
+
+function recordSquad(squadId, mode, agents, results, dryRun) {
+  const ok   = Object.values(results).filter(v => v === 'ok').length;
+  const fail = Object.values(results).filter(v => v === 'fail').length;
+  const t = new Date();
+  const time =
+    String(t.getHours()).padStart(2, '0') + ':' +
+    String(t.getMinutes()).padStart(2, '0');
+  const entry = {
+    id: squadId,
+    mode: mode,
+    agents: agents.slice(),
+    n: agents.length,
+    ok: ok,
+    fail: fail,
+    time: time,
+    dry: dryRun,
+    status: dryRun ? 'dry' : (fail > 0 ? 'failed' : 'complete'),
+    ts: Date.now(),
+  };
+  state.history.unshift(entry);
+  if (state.history.length > HISTORY_MAX) state.history = state.history.slice(0, HISTORY_MAX);
+  saveHistory();
+  renderHistory();
+}
+
+function recordLive(squadId, agents) {
+  // Mark current squad as live in the history
+  const t = new Date();
+  const time =
+    String(t.getHours()).padStart(2, '0') + ':' +
+    String(t.getMinutes()).padStart(2, '0');
+  state.history.unshift({
+    id: squadId,
+    mode: state.mode,
+    agents: agents.slice(),
+    n: agents.length,
+    ok: 0, fail: 0,
+    time: time,
+    dry: state.dryRun,
+    status: 'live',
+    ts: Date.now(),
+  });
+  if (state.history.length > HISTORY_MAX) state.history = state.history.slice(0, HISTORY_MAX);
+  saveHistory();
+  renderHistory();
+}
+
+function finalizeLive(squadId, results) {
+  // Promote 'live' entry → 'complete' or 'failed'
+  const entry = state.history.find(e => e.id === squadId && e.status === 'live');
+  if (!entry) return;
+  entry.ok   = Object.values(results).filter(v => v === 'ok').length;
+  entry.fail = Object.values(results).filter(v => v === 'fail').length;
+  entry.status = entry.dry ? 'dry' : (entry.fail > 0 ? 'failed' : 'complete');
+  saveHistory();
+  renderHistory();
+}
+
+function renderHistory() {
+  const wrap = document.getElementById('history-pills');
+  while (wrap.firstChild) wrap.removeChild(wrap.firstChild);
+
+  if (state.history.length === 0) {
+    const empty = document.createElement('span');
+    empty.className = 'hr-empty';
+    empty.textContent = '— no prior dispatches in this session —';
+    wrap.appendChild(empty);
+    return;
+  }
+
+  state.history.forEach(entry => {
+    const pill = document.createElement('div');
+    pill.className = 'hist-pill';
+    pill.dataset.status = entry.status;
+    pill.dataset.squadId = entry.id;
+    pill.title = entry.id + ' · ' + entry.agents.join(', ');
+
+    const pip = document.createElement('span');
+    pip.className = 'hist-pip';
+
+    const id = document.createElement('span');
+    id.className = 'hist-id';
+    id.textContent = entry.id;
+
+    const meta = document.createElement('span');
+    meta.className = 'hist-meta';
+    let metaText = entry.n + (entry.mode === 'squad' ? 'A' : '·SOLO') + ' · ';
+    if (entry.status === 'live')        metaText += 'LIVE · ' + entry.time;
+    else if (entry.status === 'dry')    metaText += 'DRY · ' + entry.time;
+    else                                metaText += entry.ok + '✓' + (entry.fail ? entry.fail + '✗' : '') + ' · ' + entry.time;
+    meta.textContent = metaText;
+
+    pill.appendChild(pip);
+    pill.appendChild(id);
+    pill.appendChild(meta);
+
+    pill.addEventListener('click', () => replayHistory(entry));
+
+    wrap.appendChild(pill);
+  });
+}
+
+// Click a history pill → drop a synthetic message into mailbox summarizing it.
+// In production this would open a detail modal with full timeline + diffs.
+function replayHistory(entry) {
+  const stream = document.getElementById('mailbox');
+
+  // Remove "awaiting" placeholder if present
+  const empty = stream.querySelector('.mb-empty');
+  if (empty) empty.remove();
+
+  const node = document.createElement('div');
+  node.className = 'mb-msg';
+
+  const sTime = document.createElement('span');
+  sTime.className = 'mb-time';
+  sTime.textContent = entry.time;
+
+  const sFrom = document.createElement('span');
+  sFrom.className = 'mb-from';
+  sFrom.style.color = 'var(--text-base)';
+  sFrom.textContent = '◀ replay';
+
+  const sArrow = document.createElement('span');
+  sArrow.className = 'mb-arrow';
+  sArrow.textContent = '▸';
+
+  const sBody = document.createElement('span');
+  sBody.className = 'mb-body';
+
+  const sTo = document.createElement('span');
+  sTo.className = 'mb-to';
+  sTo.style.color = 'var(--text-bright)';
+  sTo.textContent = entry.id;
+
+  const summary = ' · ' + entry.n + ' agents · ' +
+    entry.ok + ' ok · ' + entry.fail + ' fail' +
+    (entry.dry ? ' · DRY' : '') +
+    ' · agents: ' + entry.agents.join(', ');
+
+  sBody.appendChild(sTo);
+  sBody.appendChild(document.createTextNode(summary));
+
+  node.appendChild(sTime);
+  node.appendChild(sFrom);
+  node.appendChild(sArrow);
+  node.appendChild(sBody);
+
+  if (stream.firstChild) stream.insertBefore(node, stream.firstChild);
+  else stream.appendChild(node);
+}
+
+// ============================================================
+// CLOCK
+// ============================================================
+function startClock() {
+  let frame = 142;
+  setInterval(() => {
+    frame++;
+    document.getElementById('frame').textContent = String(frame).padStart(6, '0');
+  }, 1000 / 24);
+
+  function tick() {
+    const t = new Date();
+    const hh = String(t.getUTCHours()).padStart(2, '0');
+    const mm = String(t.getUTCMinutes()).padStart(2, '0');
+    const ss = String(t.getUTCSeconds()).padStart(2, '0');
+    const ms = String(t.getUTCMilliseconds()).padStart(3, '0');
+    document.getElementById('clock').textContent = hh + ':' + mm + ':' + ss + '.' + ms;
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+// ============================================================
+// RESET
+// ============================================================
+function reset() {
+  state.timers.forEach(clearTimeout);
+  state.timers = [];
+  state.dispatched = false;
+  state.msgCount = 0;
+  state.squadId = null;
+  state.mode = 'idle';
+
+  document.getElementById('msg-counter').textContent = '000';
+
+  // Restore mailbox empty state via DOM
+  const stream = document.getElementById('mailbox');
+  while (stream.firstChild) stream.removeChild(stream.firstChild);
+  const empty = document.createElement('div');
+  empty.className = 'mb-empty';
+  empty.textContent = '— awaiting transmission —';
+  stream.appendChild(empty);
+
+  document.getElementById('cmd-state').dataset.state = 'armed';
+  document.getElementById('cmd-state').textContent = '● ARMED';
+
+  document.querySelectorAll('.rail').forEach(rail => {
+    rail.dataset.state = 'idle';
+    rail.dataset.justDispatched = 'false';
+
+    const tool = rail.querySelector('.rail-tool');
+    while (tool.firstChild) tool.removeChild(tool.firstChild);
+    const empty = document.createElement('span');
+    empty.className = 'rail-tool-empty';
+    empty.textContent = '— STANDBY';
+    tool.appendChild(empty);
+
+    rail.querySelectorAll('.phase-square').forEach(sq => sq.dataset.status = 'pending');
+    rail.querySelectorAll('.rail-metric .val').forEach(v => v.textContent = '0');
+  });
+
+  classify();
+}
+
+init();
+</script>
+</body>
+</html>
