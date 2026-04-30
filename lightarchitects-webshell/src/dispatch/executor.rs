@@ -10,7 +10,7 @@
 //! 3. Enforces DRY-RUN by checking `dry` before any write-capable path
 //!    (HIGH H-9).
 //!
-//! # TeamManager
+//! # `TeamManager`
 //!
 //! Full `TeamManager` lifecycle tracking is gated behind the `team-manager`
 //! Cargo feature, which requires publishing `laex0` to crates.io or a
@@ -204,7 +204,7 @@ async fn run_agents(
 /// # Permission model (H-9)
 ///
 /// Write-capable paths are only reached when `dry = false`.  Future
-/// `TeamManager` lifecycle tracking (register_member / set_handle / mark_done)
+/// `TeamManager` lifecycle tracking (`register_member` / `set_handle` / `mark_done`)
 /// is gated behind the `team-manager` Cargo feature.
 #[tracing::instrument(skip(tx, task), fields(agent = %agent))]
 async fn spawn_teammate(
