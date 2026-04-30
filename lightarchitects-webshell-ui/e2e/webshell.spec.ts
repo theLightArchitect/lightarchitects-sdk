@@ -144,59 +144,52 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('2. Navigation', () => {
     test('all nav tabs render: Activity, Queue, Intake, Sitrep, Squad', async () => {
-      const text = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('nav button')).map((b) => b.textContent?.trim()),
-      );
-      expect(text).toContain('Activity');
-      expect(text).toContain('Queue');
-      expect(text).toContain('Intake');
-      expect(text).toContain('Sitrep');
-      expect(text).toContain('Squad');
+      // Web-first: role-based locators, expect.soft collects all failures before reporting
+      await expect.soft(page.getByRole('button', { name: 'Activity', exact: true })).toBeVisible();
+      await expect.soft(page.getByRole('button', { name: 'Queue',    exact: true })).toBeVisible();
+      await expect.soft(page.getByRole('button', { name: 'Intake',   exact: true })).toBeVisible();
+      await expect.soft(page.getByRole('button', { name: 'Sitrep',   exact: true })).toBeVisible();
+      await expect.soft(page.getByRole('button', { name: 'Squad',    exact: true })).toBeVisible();
     });
 
     test('Activity tab navigates via hash', async () => {
       await page.evaluate(() => { window.location.hash = '#/activity'; });
-      await page.waitForTimeout(1000);
-      expect(await page.evaluate(() => window.location.hash)).toBe('#/activity');
+      await page.waitForURL('**#/activity**', { timeout: 5_000 });
     });
 
     test('Queue tab navigates via hash', async () => {
       await page.evaluate(() => { window.location.hash = '#/'; });
-      await page.waitForTimeout(1000);
-      expect(await page.evaluate(() => window.location.hash)).toBe('#/');
+      await page.waitForURL(/\/#\/?$/, { timeout: 5_000 });
     });
 
     test('Intake tab navigates via hash', async () => {
       await page.evaluate(() => { window.location.hash = '#/intake'; });
-      await page.waitForTimeout(1000);
-      expect(await page.evaluate(() => window.location.hash)).toBe('#/intake');
+      await page.waitForURL('**#/intake**', { timeout: 5_000 });
     });
 
     test('Sitrep tab navigates via hash', async () => {
       await page.evaluate(() => { window.location.hash = '#/sitrep'; });
-      await page.waitForTimeout(1000);
-      expect(await page.evaluate(() => window.location.hash)).toBe('#/sitrep');
+      await page.waitForURL('**#/sitrep**', { timeout: 5_000 });
     });
 
     test('Squad tab navigates to /squad-dispatch via hash', async () => {
       await page.evaluate(() => { window.location.hash = '#/squad-dispatch'; });
-      await page.waitForTimeout(1000);
-      expect(await page.evaluate(() => window.location.hash)).toBe('#/squad-dispatch');
+      await page.waitForURL('**#/squad-dispatch**', { timeout: 5_000 });
     });
 
     test('Cmd+K shortcut navigates to /squad-dispatch from any tab', async () => {
       await page.evaluate(() => { window.location.hash = '#/activity'; });
-      await page.waitForTimeout(500);
+      await page.waitForURL('**#/activity**', { timeout: 5_000 });
       await page.keyboard.press('Meta+k');
-      await page.waitForTimeout(800);
-      expect(await page.evaluate(() => window.location.hash)).toBe('#/squad-dispatch');
+      await page.waitForURL('**#/squad-dispatch**', { timeout: 5_000 });
     });
 
     test('back to Queue (home)', async () => {
       await page.evaluate(() => { window.location.hash = '#/'; });
-      await page.waitForTimeout(1000);
-      const text = await page.evaluate(() => document.body.textContent ?? '');
-      expect(text.includes('Build Queue') || text.includes('No active builds')).toBe(true);
+      await page.waitForURL(/\/#\/?$/, { timeout: 5_000 });
+      await expect(
+        page.locator('text=Build Queue, text=No active builds').first(),
+      ).toBeVisible({ timeout: 5_000 });
     });
   });
 
@@ -3378,93 +3371,81 @@ test.describe('Comprehensive webshell E2E', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   test.describe('60. Squad Dispatch screen', () => {
+    const taskInput    = () => page.getByTestId('dispatch-task-input');
+    const submitBtn    = () => page.getByTestId('dispatch-submit');
+    const engineerBtn  = () => page.getByTestId('agent-btn-engineer');
+    const newDispatch  = () => page.getByRole('button', { name: 'New Dispatch', exact: true });
+    const heading      = () => page.locator('h2', { hasText: 'Squad Dispatch' });
+
     test('navigate to /squad-dispatch', async () => {
       await page.evaluate(() => { window.location.hash = '#/squad-dispatch'; });
-      await page.waitForSelector('h2:has-text("Squad Dispatch")', { timeout: 10_000 });
-      const hash = await page.evaluate(() => window.location.hash);
-      expect(hash).toBe('#/squad-dispatch');
+      await expect.soft(heading()).toBeVisible({ timeout: 10_000 });
+      await expect.soft(taskInput()).toBeVisible();
     });
 
     test('Squad Dispatch heading is visible', async () => {
-      const heading = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('h2')).some((h) => h.textContent?.includes('Squad Dispatch')),
-      );
-      expect(heading).toBe(true);
+      await expect(heading()).toBeVisible();
     });
 
     test('task textarea accepts input and triggers classify', async () => {
-      const textarea = await page.locator('textarea').first();
-      await textarea.fill('refactor auth service to use JWT tokens');
-      await page.waitForTimeout(600); // debounce settles
-      const val = await textarea.inputValue();
-      expect(val).toContain('refactor');
+      await taskInput().fill('refactor auth service to use JWT tokens');
+      // Web-first: wait for value to propagate (debounce) without polling sleep
+      await expect(taskInput()).toHaveValue(/refactor/);
     });
 
     test('Engineer agent appears after classify resolves', async () => {
-      // Classify mock returns Engineer — AgentSelector should show it
-      await page.waitForTimeout(500);
-      const hasEngineer = await page.evaluate(() =>
-        document.body.textContent?.includes('Engineer') ?? false,
-      );
-      expect(hasEngineer).toBe(true);
+      // Classify mock returns Engineer — web-first assertion retries until mounted
+      await expect(engineerBtn()).toBeVisible();
+    });
+
+    test('agent-btn aria-pressed reflects selection state', async () => {
+      // Engineer should be auto-selected after classify
+      await expect(engineerBtn()).toHaveAttribute('aria-pressed', 'true');
     });
 
     test('submit dispatches and transitions to streaming phase', async () => {
-      // Find and click the submit / Dispatch button
-      const submitted = await page.evaluate(() => {
-        const buttons = Array.from(document.querySelectorAll('button'));
-        const btn = buttons.find((b) => {
-          const t = b.textContent?.trim() ?? '';
-          return t === 'Dispatch' || t === 'Run' || b.type === 'submit';
-        });
-        if (btn) { btn.click(); return true; }
-        return false;
-      });
-      if (!submitted) { test.skip(); return; }
-      // Streaming or complete phase should appear within 5 s
-      await page.waitForFunction(
-        () => {
-          const text = document.body.textContent ?? '';
-          return text.includes('Cancel') || text.includes('Live agents') || text.includes('Done') || text.includes('✓');
-        },
-        { timeout: 8_000 },
+      await expect(submitBtn()).toBeEnabled();
+      await submitBtn().click();
+      // Streaming or complete phase — wait for either indicator
+      await expect(
+        page.locator('text=Cancel, text=Live agents, text=Done, text=✓').first(),
+      ).toBeVisible({ timeout: 8_000 }).catch(() =>
+        // Fallback: waitForFunction covers text rendered in nested spans
+        page.waitForFunction(
+          () => {
+            const t = document.body.textContent ?? '';
+            return t.includes('Cancel') || t.includes('Live agents') || t.includes('Done') || t.includes('✓');
+          },
+          { timeout: 8_000 },
+        ),
       );
     });
 
-    test('dispatch completes: ✓ Done badge or elapsed time visible', async () => {
+    test('dispatch completes: Done badge or elapsed time visible', async () => {
       await page.waitForFunction(
         () => {
-          const text = document.body.textContent ?? '';
-          return text.includes('Done') || text.includes('New Dispatch') || /\d+\.\d+s/.test(text);
+          const t = document.body.textContent ?? '';
+          return t.includes('Done') || t.includes('New Dispatch') || /\d+\.\d+s/.test(t);
         },
         { timeout: 10_000 },
       );
-      const complete = await page.evaluate(() => {
-        const text = document.body.textContent ?? '';
-        return text.includes('Done') || text.includes('New Dispatch') || /\d+\.\d+s/.test(text);
-      });
-      expect(complete).toBe(true);
+      // Soft assertions — all checked before first failure is reported
+      await expect.soft(
+        page.locator('text=Done, text=New Dispatch').first(),
+      ).toBeVisible({ timeout: 1_000 }).catch(() => { /* elapsed-time badge is also valid */ });
     });
 
     test('New Dispatch button resets to idle', async () => {
-      const reset = await page.evaluate(() => {
-        const btn = Array.from(document.querySelectorAll('button')).find(
-          (b) => b.textContent?.trim() === 'New Dispatch',
-        );
-        if (btn) { btn.click(); return true; }
-        return false;
-      });
-      if (!reset) { test.skip(); return; }
-      await page.waitForTimeout(400);
-      // SquadDispatch heading still visible (not navigated away)
-      const heading = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('h2')).some((h) => h.textContent?.includes('Squad Dispatch')),
-      );
-      expect(heading).toBe(true);
+      await expect(newDispatch()).toBeVisible({ timeout: 5_000 });
+      await newDispatch().click();
+      // After reset the form should return — heading + task input both visible
+      await expect.soft(heading()).toBeVisible();
+      await expect.soft(taskInput()).toBeVisible();
+      await expect.soft(taskInput()).toBeEmpty();
     });
 
     test(`dispatch history includes entry for ${E2E_DISPATCH_ID}`, async () => {
-      // History saved to localStorage — check key exists with non-empty array
+      // localStorage access still requires evaluate — no Playwright API for this
       const history = await page.evaluate((key) => {
         try { return JSON.parse(localStorage.getItem(key) ?? '[]'); }
         catch { return []; }
