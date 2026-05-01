@@ -216,6 +216,77 @@ pub enum DispatchEvent {
         /// Error message.
         message: String,
     },
+    /// Tool invocation telemetry emitted by an agent during its run.
+    ToolUsage {
+        /// Agent that invoked the tool.
+        agent: DomainAgent,
+        /// Dispatch run identifier.
+        run_id: String,
+        /// Tool name (e.g. `"context7"`, `"playwright"`, `"soul"`).
+        tool: String,
+        /// Tool-specific action (e.g. `"query-docs"`, `"browser_navigate"`).
+        action: String,
+        /// ISO 8601 timestamp.
+        timestamp: String,
+        /// Whether the tool call fired, was skipped, or failed.
+        status: ToolUsageStatus,
+        /// Round-trip latency in milliseconds (present when status is `fired`).
+        latency_ms: Option<u64>,
+    },
+}
+
+/// Status of a single tool invocation reported by an agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolUsageStatus {
+    /// Tool was called and completed.
+    Fired,
+    /// Tool was configured but not invoked (depth gate or not needed).
+    Skipped,
+    /// Tool call returned an error.
+    Failed,
+}
+
+/// Per-agent tool configuration injected by the operator at dispatch time.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AgentToolConfig {
+    /// Research depth — controls how many external sources the agent queries.
+    #[serde(default = "default_depth")]
+    pub depth: ResearchDepth,
+    /// Optional tools the operator enabled for this agent.
+    #[serde(default)]
+    pub optional_tools: Vec<String>,
+}
+
+/// Research depth levels with behavioral contracts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchDepth {
+    /// 1-2 sources; conclude on first STRONG evidence.
+    Standard,
+    /// ≥3 sources; must include Context7 + one of `{Firecrawl, HuggingFace}`.
+    Deep,
+    /// All three tiers queried or each explicitly flagged unavailable.
+    Exhaustive,
+}
+
+fn default_depth() -> ResearchDepth {
+    ResearchDepth::Standard
+}
+
+impl ResearchDepth {
+    /// Behavioral contract text injected into the agent prompt.
+    pub fn contract(self) -> &'static str {
+        match self {
+            Self::Standard => "Pull 1-2 sources; conclude on first STRONG evidence",
+            Self::Deep => {
+                "Pull ≥3 external sources; include Context7 + one of {Firecrawl, HuggingFace}"
+            }
+            Self::Exhaustive => {
+                "Query all three tiers (Context7, Firecrawl, HuggingFace) or explicitly flag each as unavailable"
+            }
+        }
+    }
 }
 
 /// Lifecycle state of a single domain agent within a dispatch.
@@ -316,6 +387,9 @@ pub struct ExecuteRequest {
     /// Optional file/folder context attached by the user.
     #[serde(default)]
     pub attachments: Vec<FileAttachment>,
+    /// Per-agent tool configuration from the operator's Tool Augmentation panel.
+    #[serde(default)]
+    pub tool_config: std::collections::HashMap<DomainAgent, AgentToolConfig>,
 }
 
 /// Request body for `POST /api/dispatch/retry/:id/:agent`.
