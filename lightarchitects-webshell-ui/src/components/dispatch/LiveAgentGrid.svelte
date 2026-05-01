@@ -14,15 +14,14 @@
   let { agents, agentStates = new Map(), onRetry }: Props = $props();
 
   const AGENT_META: Record<DomainAgent, { code: string; idx: string; gate: string }> = {
-    engineer:      { code: 'ENG', idx: '01', gate: 'A' },
-    quality:       { code: 'QLT', idx: '02', gate: 'Q' },
-    security:      { code: 'SEC', idx: '03', gate: 'S' },
-    ops:           { code: 'OPS', idx: '04', gate: 'O' },
-    researcher:    { code: 'RES', idx: '05', gate: 'R' },
-    knowledge:     { code: 'KNW', idx: '06', gate: 'K' },
-    performance:   { code: 'PRF', idx: '07', gate: 'P' },
-    testing:       { code: 'TST', idx: '08', gate: 'T' },
-    documentation: { code: 'DOC', idx: '09', gate: 'D' },
+    engineer:   { code: 'ENG', idx: '01', gate: 'A' },
+    quality:    { code: 'QLT', idx: '02', gate: 'Q' },
+    security:   { code: 'SEC', idx: '03', gate: 'S' },
+    ops:        { code: 'OPS', idx: '04', gate: 'O' },
+    researcher: { code: 'RES', idx: '05', gate: 'R' },
+    knowledge:  { code: 'KNW', idx: '06', gate: 'K' },
+    testing:    { code: 'TST', idx: '07', gate: 'T' },
+    squad:      { code: 'SQD', idx: '08', gate: 'SQ' },
   };
 
   const PHASES = ['CLASSIFY', 'PLAN', 'EXEC', 'VERIFY', 'REPORT'] as const;
@@ -124,15 +123,14 @@
 
 <style>
   /* per-agent color tokens */
-  .rail[data-agent="engineer"]      { --rc: var(--la-agent-engineer); }
-  .rail[data-agent="quality"]       { --rc: var(--la-agent-quality); }
-  .rail[data-agent="security"]      { --rc: var(--la-agent-security); }
-  .rail[data-agent="ops"]           { --rc: var(--la-agent-ops); }
-  .rail[data-agent="researcher"]    { --rc: var(--la-agent-researcher); }
-  .rail[data-agent="knowledge"]     { --rc: var(--la-agent-knowledge); }
-  .rail[data-agent="performance"]   { --rc: var(--la-agent-performance); }
-  .rail[data-agent="testing"]       { --rc: var(--la-agent-testing); }
-  .rail[data-agent="documentation"] { --rc: var(--la-agent-documentation); }
+  .rail[data-agent="engineer"]   { --rc: var(--la-agent-engineer); }
+  .rail[data-agent="quality"]    { --rc: var(--la-agent-quality); }
+  .rail[data-agent="security"]   { --rc: var(--la-agent-security); }
+  .rail[data-agent="ops"]        { --rc: var(--la-agent-ops); }
+  .rail[data-agent="researcher"] { --rc: var(--la-agent-researcher); }
+  .rail[data-agent="knowledge"]  { --rc: var(--la-agent-knowledge); }
+  .rail[data-agent="testing"]    { --rc: var(--la-agent-testing); }
+  .rail[data-agent="squad"]      { --rc: var(--la-agent-squad); }
 
   .rails {
     display: flex;

@@ -13,13 +13,12 @@ export type DomainAgent =
   | 'ops'
   | 'researcher'
   | 'knowledge'
-  | 'performance'
   | 'testing'
-  | 'documentation';
+  | 'squad';
 
 export const DOMAIN_AGENTS: DomainAgent[] = [
   'engineer', 'quality', 'security', 'ops', 'researcher',
-  'knowledge', 'performance', 'testing', 'documentation',
+  'knowledge', 'testing', 'squad',
 ];
 
 export type AgentState = 'pending' | 'running' | 'complete' | 'failed' | 'cancelled';
@@ -92,27 +91,25 @@ export interface DispatchHistoryEntry {
 // ── Colors (forward-compatible with DOMAIN_AGENT_COLORS from design-tokens C5) ─
 
 export const DOMAIN_AGENT_COLORS: Record<DomainAgent, string> = {
-  engineer:      '#4d8eff',
-  quality:       '#f5d440',
-  security:      '#ff4d4d',
-  ops:           '#d24df5',
-  researcher:    '#4dff8e',
-  knowledge:     '#4dffe6',
-  performance:   '#ff8e3c',
-  testing:       '#a874ff',
-  documentation: '#ff7eb6',
+  engineer:   '#4d8eff',
+  quality:    '#a874ff',
+  security:   '#ff4d4d',
+  ops:        '#ff8e3c',
+  researcher: '#4dffe6',
+  knowledge:  '#f5d440',
+  testing:    '#4dff8e',
+  squad:      '#ff7eb6',
 };
 
 export const DOMAIN_AGENT_LABELS: Record<DomainAgent, string> = {
-  engineer:      'Engineer',
-  quality:       'Quality',
-  security:      'Security',
-  ops:           'Ops',
-  researcher:    'Researcher',
-  knowledge:     'Knowledge',
-  performance:   'Performance',
-  testing:       'Testing',
-  documentation: 'Docs',
+  engineer:   'Engineer',
+  quality:    'Quality',
+  security:   'Security',
+  ops:        'Ops',
+  researcher: 'Researcher',
+  knowledge:  'Knowledge',
+  testing:    'Testing',
+  squad:      'Squad',
 };
 
 // ── File attachments ─────────────────────────────────────────────────────────
