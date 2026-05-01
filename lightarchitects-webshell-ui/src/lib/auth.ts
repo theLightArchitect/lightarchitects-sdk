@@ -1,8 +1,13 @@
 // ============================================================================
-// Auth — token resolution from URL hash + sessionStorage
+// Auth — token resolution from URL hash + sessionStorage, cookie upgrade
 // ============================================================================
 
 const SESSION_KEY = 'la_webshell_token';
+
+// When true, the browser holds an HttpOnly session cookie; no token lives in JS
+// memory and authHeaders() returns {} so fetch() sends the cookie automatically.
+let cookieMode = false;
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
  * Resolves the webshell Bearer token on page load.
@@ -22,13 +27,62 @@ export function resolveToken(): string | null {
   return sessionStorage.getItem(SESSION_KEY);
 }
 
-/** Returns the stored token, or null if the user has no session. */
+/** Returns the stored token, or null when unauthenticated or in cookie mode. */
 export function getToken(): string | null {
+  if (cookieMode) return null;
   return sessionStorage.getItem(SESSION_KEY);
 }
 
-/** Returns an Authorization header object, or an empty object when unauthenticated. */
+/** Returns an Authorization header object, or {} when in cookie mode or unauthenticated. */
 export function authHeaders(): { Authorization: string } | Record<string, never> {
+  if (cookieMode) return {};
   const token = getToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/**
+ * Exchanges a Bearer token for an HttpOnly session cookie.
+ *
+ * On success: sets cookieMode=true, clears sessionStorage, and starts the
+ * sliding-TTL refresh timer.  On failure (server unreachable, token rejected):
+ * silently leaves the existing Bearer flow intact — no disruption to the user.
+ */
+export async function initCookieSession(token: string): Promise<void> {
+  try {
+    const res = await fetch('/api/auth/exchange', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ token }),
+    });
+    if (!res.ok) return;
+    cookieMode = true;
+    sessionStorage.removeItem(SESSION_KEY);
+    scheduleRefresh();
+  } catch {
+    // Network failure — stay in bearer mode
+  }
+}
+
+/**
+ * Starts (or resets) the 30-minute sliding-TTL refresh timer.
+ *
+ * Each tick calls GET /api/auth/status, which validates the cookie and returns
+ * a refreshed Set-Cookie extending the TTL.  On 401, cookie mode is disabled;
+ * the user must re-authenticate on next page load.
+ */
+function scheduleRefresh(): void {
+  if (refreshTimer !== null) clearInterval(refreshTimer);
+  refreshTimer = setInterval(async () => {
+    try {
+      const res = await fetch('/api/auth/status', { credentials: 'same-origin' });
+      if (!res.ok) {
+        cookieMode = false;
+        clearInterval(refreshTimer!);
+        refreshTimer = null;
+      }
+    } catch {
+      // Network failure — keep trying next tick
+    }
+  }, 30 * 60 * 1000);
 }
