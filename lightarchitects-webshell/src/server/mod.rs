@@ -777,8 +777,11 @@ async fn auth_check(State(state): State<AppState>, headers: HeaderMap) -> impl I
 }
 
 /// Request body for `POST /api/auth/exchange`.
+///
+/// Carries the bare session token for exchange against an `HttpOnly` cookie.
 #[derive(serde::Deserialize)]
 struct TokenExchange {
+    /// The raw bearer token (no `Bearer ` prefix) to exchange for a cookie.
     token: String,
 }
 
@@ -821,7 +824,10 @@ async fn auth_status(State(state): State<AppState>, headers: HeaderMap) -> impl 
     }
     let cookie = auth::session_cookie_header(&state.config.token);
     match HeaderValue::from_str(&cookie) {
-        Ok(cookie_val) => (StatusCode::OK, [(header::SET_COOKIE, cookie_val)]).into_response(),
+        Ok(cookie_val) => {
+            tracing::debug!(target: "webshell", "Cookie session TTL refreshed");
+            (StatusCode::OK, [(header::SET_COOKIE, cookie_val)]).into_response()
+        }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }

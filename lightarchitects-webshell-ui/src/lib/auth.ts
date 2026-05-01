@@ -41,13 +41,15 @@ export function authHeaders(): { Authorization: string } | Record<string, never>
 }
 
 /**
- * Exchanges a Bearer token for an HttpOnly session cookie.
+ * Exchanges a Bearer token for an HttpOnly session cookie (v0.4.0).
  *
- * On success: sets cookieMode=true, clears sessionStorage, and starts the
- * sliding-TTL refresh timer.  On failure (server unreachable, token rejected):
- * silently leaves the existing Bearer flow intact — no disruption to the user.
+ * Idempotent — returns immediately if already in cookie mode.
+ * On success: sets cookieMode=true, clears sessionStorage, starts the
+ * sliding-TTL refresh timer, and registers a pagehide cleanup listener.
+ * On failure: silently leaves the existing Bearer flow intact.
  */
 export async function initCookieSession(token: string): Promise<void> {
+  if (cookieMode) return;
   try {
     const res = await fetch('/api/auth/exchange', {
       method: 'POST',
@@ -59,8 +61,9 @@ export async function initCookieSession(token: string): Promise<void> {
     cookieMode = true;
     sessionStorage.removeItem(SESSION_KEY);
     scheduleRefresh();
-  } catch {
-    // Network failure — stay in bearer mode
+    window.addEventListener('pagehide', stopRefresh, { once: true });
+  } catch (e) {
+    console.warn('[la-auth] Cookie exchange failed — staying in bearer mode', e);
   }
 }
 
@@ -73,16 +76,26 @@ export async function initCookieSession(token: string): Promise<void> {
  */
 function scheduleRefresh(): void {
   if (refreshTimer !== null) clearInterval(refreshTimer);
-  refreshTimer = setInterval(async () => {
+  // Capture id so the callback never needs a non-null assertion on refreshTimer.
+  const id = setInterval(async () => {
     try {
       const res = await fetch('/api/auth/status', { credentials: 'same-origin' });
       if (!res.ok) {
         cookieMode = false;
-        clearInterval(refreshTimer!);
+        clearInterval(id);
         refreshTimer = null;
       }
     } catch {
       // Network failure — keep trying next tick
     }
   }, 30 * 60 * 1000);
+  refreshTimer = id;
+}
+
+/** Clears the refresh timer — called on pagehide to avoid timer leaks. */
+function stopRefresh(): void {
+  if (refreshTimer !== null) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
 }

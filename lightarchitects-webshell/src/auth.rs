@@ -98,16 +98,16 @@ pub fn validate_raw_token(provided: &str, expected: &str) -> bool {
 
 /// Extracts the `la_session` value from a `Cookie` request header.
 ///
-/// Parses the standard `name1=val1; name2=val2` format.  The token body is
+/// Parses the standard `name1=val1; name2=val2` format using `split_once('=')`
+/// so the name match is an exact equality check — names that share `la_session`
+/// as a prefix (e.g. `la_session_extra`) are never matched.  The value body is
 /// returned verbatim — per RFC 6265 §4.2.1, cookie-value is an opaque byte
-/// sequence and must not be trimmed.
+/// sequence and `split_once` preserves any `=` padding in base64 values.
 #[must_use]
 pub fn extract_session_cookie(cookie_header: &str) -> Option<&str> {
     for pair in cookie_header.split(';') {
-        let pair = pair.trim();
-        if let Some(rest) = pair.strip_prefix(SESSION_COOKIE_NAME) {
-            let rest = rest.trim_start();
-            if let Some(val) = rest.strip_prefix('=') {
+        if let Some((name, val)) = pair.trim().split_once('=') {
+            if name == SESSION_COOKIE_NAME {
                 return Some(val);
             }
         }
@@ -130,16 +130,19 @@ pub fn validate_session_cookie(cookie_header: &str, expected_token: &str) -> boo
 /// Builds a `Set-Cookie` header value for the session cookie.
 ///
 /// Attributes: `HttpOnly` (blocks JS access), `SameSite=Strict` (blocks CSRF),
+/// `Secure` (RFC 6265bis — allowed on `localhost` HTTP by modern browsers),
 /// `Path=/`, `Max-Age=28800` (8-hour TTL).
 #[must_use]
 pub fn session_cookie_header(token: &str) -> String {
-    format!("{SESSION_COOKIE_NAME}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800")
+    format!(
+        "{SESSION_COOKIE_NAME}={token}; HttpOnly; SameSite=Strict; Secure; Path=/; Max-Age=28800"
+    )
 }
 
 /// Builds a `Set-Cookie` header value that immediately expires the session cookie.
 #[must_use]
 pub fn clear_session_cookie_header() -> &'static str {
-    "la_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
+    "la_session=; HttpOnly; SameSite=Strict; Secure; Path=/; Max-Age=0"
 }
 
 // ── Notify-token validation ─────────────────────────────────────────────────
@@ -322,11 +325,26 @@ mod tests {
     }
 
     #[test]
+    fn extract_cookie_empty_header() {
+        assert_eq!(extract_session_cookie(""), None);
+    }
+
+    #[test]
+    fn extract_cookie_base64_value_preserves_equals_padding() {
+        // base64 tokens may contain trailing `=`; split_once preserves them.
+        assert_eq!(
+            extract_session_cookie("la_session=abc=def=="),
+            Some("abc=def==")
+        );
+    }
+
+    #[test]
     fn session_cookie_header_format() {
         let h = session_cookie_header("abc");
         assert!(h.starts_with("la_session=abc"));
         assert!(h.contains("HttpOnly"));
         assert!(h.contains("SameSite=Strict"));
+        assert!(h.contains("Secure"));
         assert!(h.contains("Max-Age=28800"));
     }
 
@@ -335,6 +353,7 @@ mod tests {
         let h = clear_session_cookie_header();
         assert!(h.contains("Max-Age=0"));
         assert!(h.contains("HttpOnly"));
+        assert!(h.contains("Secure"));
     }
 
     // ── validate_notify_token ───────────────────────────────────────────────
