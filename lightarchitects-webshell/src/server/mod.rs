@@ -782,7 +782,7 @@ struct TokenExchange {
     token: String,
 }
 
-/// `POST /api/auth/exchange` — swaps a Bearer token for an HttpOnly session cookie.
+/// `POST /api/auth/exchange` — swaps a Bearer token for an `HttpOnly` session cookie.
 ///
 /// Unauthenticated endpoint — accepts a JSON body `{ "token": "<bare-token>" }`,
 /// validates it in constant time, then responds 200 with `Set-Cookie: la_session=...`.
@@ -805,7 +805,7 @@ async fn auth_exchange(
     }
 }
 
-/// `GET /api/auth/status` — validates the HttpOnly session cookie and refreshes its TTL.
+/// `GET /api/auth/status` — validates the `HttpOnly` session cookie and refreshes its TTL.
 ///
 /// Returns 200 with a refreshed `Set-Cookie` on success, 401 on missing or invalid cookie.
 /// Called every 30 minutes by the frontend to implement a sliding TTL.

@@ -82,7 +82,7 @@ pub fn validate_ws_subprotocol(subprotocol: &str, expected_token: &str) -> bool 
 
 // ── Cookie-based session auth (v0.4.0) ─────────────────────────────────────
 
-/// Name of the HttpOnly session cookie.
+/// Name of the `HttpOnly` session cookie.
 const SESSION_COOKIE_NAME: &str = "la_session";
 
 /// Validates a raw token (no scheme prefix) against the expected token in
