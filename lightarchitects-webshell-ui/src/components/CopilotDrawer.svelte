@@ -358,7 +358,11 @@
 
   // Global keyboard shortcut: Ctrl+` to toggle
   function onGlobalKeydown(e: KeyboardEvent) {
-    if (e.key === '`' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); open = !open; }
+    if (e.key === '`' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      open = !open;
+      if (!open) showSuggestions = false;
+    }
   }
 
   // Custom event bridge — empty-state CTAs in other screens dispatch

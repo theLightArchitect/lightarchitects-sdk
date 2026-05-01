@@ -40,8 +40,13 @@
         query = '';
       }
     }
+    function onHashChange() { commandPaletteOpen.set(false); query = ''; }
     window.addEventListener('keydown', onKeydown, { capture: true });
-    return () => window.removeEventListener('keydown', onKeydown, { capture: true });
+    window.addEventListener('hashchange', onHashChange);
+    return () => {
+      window.removeEventListener('keydown', onKeydown, { capture: true });
+      window.removeEventListener('hashchange', onHashChange);
+    };
   });
 </script>
 
