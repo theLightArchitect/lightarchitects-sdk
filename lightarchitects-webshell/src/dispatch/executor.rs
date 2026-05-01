@@ -232,6 +232,7 @@ fn build_prompt(agent: DomainAgent, task: &str, attachments: &[FileAttachment]) 
     prompt
 }
 
+#[allow(clippy::too_many_lines)]
 #[tracing::instrument(skip(tx, task, attachments), fields(agent = %agent))]
 async fn spawn_teammate(
     agent: DomainAgent,

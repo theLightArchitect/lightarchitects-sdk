@@ -82,7 +82,7 @@ pub async fn csp_report_handler(body: String) -> impl IntoResponse {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use axum::{Router, body::Body, http::Request, routing::get};

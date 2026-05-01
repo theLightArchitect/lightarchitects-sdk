@@ -535,9 +535,9 @@ mod tests {
     /// `lightarchitects-webshell-ui/src/lib/types.ts` to match before merging.
     ///
     /// The canonical FE set at time of writing (2026-04-30):
-    ///   ayin_span, ayin_status, helix_entry, build_update, control,
-    ///   strand_activation, soul_promotion, gateway_notify, pillar_update,
-    ///   strand_convergence, copilot_activity
+    ///   `ayin_span`, `ayin_status`, `helix_entry`, `build_update`, `control`,
+    ///   `strand_activation`, `soul_promotion`, `gateway_notify`, `pillar_update`,
+    ///   `strand_convergence`, `copilot_activity`
     #[test]
     fn sse_contract_all_web_event_variants_have_known_type_tags() {
         // Helper: extract the `type` field from a serialised WebEvent.
