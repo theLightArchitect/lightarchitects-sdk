@@ -3747,12 +3747,14 @@ test.describe('Comprehensive webshell E2E', () => {
     test('Queue screen baseline', async () => {
       await page.evaluate(() => { window.location.hash = '#/'; });
       await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
-      // Mask dynamic elements (timestamps, live counters) before diffing.
+      await page.waitForTimeout(1000);
+      // Mask all animated elements: canvas (helix + ambient particles), timestamps, copilot drawer stats.
       await expect(page).toHaveScreenshot('queue-screen.png', {
         animations: 'disabled',
         mask: [
           page.locator('time'),
-          page.locator('[data-testid="helix-canvas"]'),
+          page.locator('canvas'),
+          page.locator('[data-testid="copilot-drawer"]'),
         ],
         maxDiffPixelRatio: 0.001,
       });
@@ -3761,11 +3763,13 @@ test.describe('Comprehensive webshell E2E', () => {
     test('OPS screen baseline', async () => {
       await page.evaluate(() => { window.location.hash = '#/ops'; });
       await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
+      await page.waitForTimeout(1000);
       await expect(page).toHaveScreenshot('ops-screen.png', {
         animations: 'disabled',
         mask: [
           page.locator('time'),
-          page.locator('[data-testid="helix-canvas"]'),
+          page.locator('canvas'),
+          page.locator('[data-testid="copilot-drawer"]'),
         ],
         maxDiffPixelRatio: 0.001,
       });
@@ -3782,7 +3786,8 @@ test.describe('Comprehensive webshell E2E', () => {
         animations: 'disabled',
         mask: [
           page.locator('time'),
-          page.locator('[data-testid="helix-canvas"]'),
+          page.locator('canvas'),
+          page.locator('[data-testid="copilot-drawer"]'),
         ],
         maxDiffPixelRatio: 0.001,
       });
@@ -3794,7 +3799,11 @@ test.describe('Comprehensive webshell E2E', () => {
       await page.waitForTimeout(1000);
       await expect(page).toHaveScreenshot('intake-screen.png', {
         animations: 'disabled',
-        mask: [page.locator('time')],
+        mask: [
+          page.locator('time'),
+          page.locator('canvas'),
+          page.locator('[data-testid="copilot-drawer"]'),
+        ],
         maxDiffPixelRatio: 0.001,
       });
     });
@@ -3823,7 +3832,8 @@ test.describe('Comprehensive webshell E2E', () => {
         animations: 'disabled',
         mask: [
           page.locator('time'),
-          page.locator('[data-testid="helix-canvas"]'),
+          page.locator('canvas'),
+          page.locator('[data-testid="copilot-drawer"]'),
         ],
         maxDiffPixelRatio: 0.001,
       });
@@ -4264,7 +4274,16 @@ test.describe('Comprehensive webshell E2E', () => {
   test.describe('72. OPS — squad health heartbeat staleness + chevron expand (#61)', () => {
     test.beforeEach(async () => {
       await page.evaluate(() => { window.location.hash = '#/ops'; });
-      await page.waitForTimeout(500);
+      // Wait for OPS screen content — prior test may have triggered a concurrent
+      // loadScreen('/workspace') race; blind 500ms loses if BuildDetail finishes later.
+      await page.waitForFunction(
+        () => /SQUAD HEALTH/i.test(document.body.textContent ?? ''),
+        { timeout: 5000 }
+      ).catch(() => {
+        // Re-navigate if first attempt lost the loadScreen race
+        return page.evaluate(() => { window.location.hash = '#/ops'; });
+      });
+      await page.waitForTimeout(300);
     });
 
     test('sitrep screen renders squad health cards', async () => {
