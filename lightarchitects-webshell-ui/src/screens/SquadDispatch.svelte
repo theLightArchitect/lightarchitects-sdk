@@ -308,27 +308,66 @@
   <div class="dispatch-flash" aria-hidden="true"></div>
 {/if}
 
-<div class="sd-root" data-dispatching={isLive}>
+<div class="ops-frame" data-dispatching={isLive}>
 
-  <!-- ── Left rail: input + agent selector ── -->
-  <aside class="sd-rail sd-rail-left" aria-label="Dispatch controls">
-
-    <header class="sd-section-header">
-      <span class="sd-section-label">Squad Dispatch</span>
+  <!-- ── Row 1: Header strip ── -->
+  <header class="header-strip">
+    <div class="reg-marks">
+      <span class="reg-mark">
+        <span class="reg-dot {isLive ? 'live' : ''}" aria-hidden="true"></span>
+        SQD-DISPATCH
+      </span>
       {#if phase === 'classifying'}
-        <span class="sd-phase sd-phase-classifying">classifying…</span>
-      {:else if phase === 'streaming'}
-        <span class="sd-phase sd-phase-live">● live</span>
-      {:else if phase === 'complete'}
-        <span class="sd-phase sd-phase-ok">
-          ✓ {elapsedMs !== undefined ? `${(elapsedMs / 1000).toFixed(1)}s` : 'done'}
-        </span>
+        <span class="reg-mark"><span class="reg-dot warn" aria-hidden="true"></span> CLASSIFYING</span>
+      {:else if isLive}
+        <span class="reg-mark"><span class="reg-dot live" aria-hidden="true"></span> LIVE</span>
       {:else if phase === 'error'}
-        <span class="sd-phase sd-phase-err">✗ error</span>
+        <span class="reg-mark"><span class="reg-dot error" aria-hidden="true"></span> ERROR</span>
+      {:else if phase === 'complete'}
+        <span class="reg-mark">✓ COMPLETE</span>
       {/if}
-    </header>
+    </div>
+    <div class="header-title">
+      <span class="ti-id">SQD</span>
+      <span class="ti-name">SQUAD DISPATCH</span>
+      <span class="ti-sub">OPERATOR CONSOLE</span>
+    </div>
+    <div class="header-tele">
+      {#if elapsedMs !== undefined}
+        <span><span class="lbl">T· </span><span class="val">{(elapsedMs / 1000).toFixed(1)}s</span></span>
+      {/if}
+      <span><span class="lbl">AGENTS· </span><span class="val">{selectedAgents.length}</span></span>
+    </div>
+  </header>
 
-    <div class="sd-section-body" data-onboarding="dispatch-input" bind:this={inputSectionEl}>
+  <!-- ── Row 2: History pill strip ── -->
+  <div class="history-row" data-onboarding="dispatch-history" aria-label="Dispatch history">
+    <HistoryRail
+      {history}
+      onSelect={replayFromHistory}
+      onClear={clearHistory}
+    />
+  </div>
+
+  <!-- ── Row 3: Command bar ── -->
+  <section class="command-bar" aria-label="Dispatch controls">
+    <!-- task input + classifier chips + agent selector -->
+    <div class="cmd-shell" bind:this={inputSectionEl} data-onboarding="dispatch-input">
+      <div class="cmd-label">
+        <span class="idx">[ 01 ]</span>
+        <span>TASK SPECIFICATION</span>
+        <span class="sep"></span>
+        {#if phase === 'classifying'}
+          <span class="phase-badge phase-classifying">classifying…</span>
+        {:else if isLive}
+          <span class="phase-badge phase-live">● LIVE</span>
+        {:else if phase === 'complete'}
+          <span class="phase-badge phase-ok">✓ {elapsedMs !== undefined ? `${(elapsedMs / 1000).toFixed(1)}s` : 'DONE'}</span>
+        {:else if phase === 'error'}
+          <span class="phase-badge phase-err">✗ ERROR</span>
+        {/if}
+      </div>
+
       <DispatchInput
         bind:task
         bind:dry
@@ -337,231 +376,491 @@
         onSubmit={dispatch}
         onTaskChange={(t) => { task = t; }}
       />
-    </div>
 
-    {#if classification && task.trim().length >= 8}
-      <div class="sd-classifier-badge">
-        <div class="sd-classifier-agents">
+      {#if classification && task.trim().length >= 8}
+        <div class="classifier-badge">
           {#each classification.agents as agent}
             <span
-              class="sd-agent-pill"
+              class="cls-pill"
               style="color: var(--la-agent-{agent}); border-color: color-mix(in srgb, var(--la-agent-{agent}) 40%, transparent)"
             >
               {DOMAIN_AGENT_LABELS[agent]}
             </span>
           {/each}
+          {#if classification.rationale}
+            <span class="cls-rationale">
+              {classification.rationale.length > 80
+                ? classification.rationale.slice(0, 80) + '…'
+                : classification.rationale}
+            </span>
+          {/if}
         </div>
-        {#if classification.rationale}
-          <p class="sd-classifier-rationale">
-            {classification.rationale.length > 80
-              ? classification.rationale.slice(0, 80) + '…'
-              : classification.rationale}
-          </p>
-        {/if}
-      </div>
-    {/if}
+      {/if}
 
-    <div class="sd-section-body" data-onboarding="dispatch-agent-selector">
-      <AgentSelector
-        bind:selected={selectedAgents}
-        {classification}
-        disabled={isLive}
-      />
+      <div class="agent-selector-wrap" data-onboarding="dispatch-agent-selector">
+        <AgentSelector
+          bind:selected={selectedAgents}
+          {classification}
+          disabled={isLive}
+        />
+      </div>
     </div>
 
-    {#if isLive || isTerminalPhase}
-      <div class="sd-section-body" data-testid="task-dag-toggle">
-        <p class="sd-meta-label">Pipeline</p>
-        <TaskDAG agents={selectedAgents} {agentStates} />
+    <!-- action panel: telemetry + primary CTA -->
+    <div class="cmd-action">
+      <div class="cmd-action-head">
+        <span><span class="idx">[ 02 ]</span> DISPATCH</span>
+        <span
+          class="cmd-state"
+          class:state-armed={selectedAgents.length > 0 && !isLive && phase !== 'error'}
+          class:state-active={isLive}
+          class:state-err={phase === 'error'}
+        >
+          ● {isLive ? 'ACTIVE' : selectedAgents.length > 0 ? 'ARMED' : 'IDLE'}
+        </span>
       </div>
-    {/if}
 
-    <div class="sd-action-row">
+      <div class="cmd-count">
+        <span class="cmd-count-num">{String(selectedAgents.length).padStart(2, '0')}</span>
+        <span class="cmd-count-lbl">
+          AGENT{selectedAgents.length !== 1 ? 'S' : ''}<br>
+          {isLive ? 'RUNNING' : 'QUEUED'}
+        </span>
+      </div>
+
+      {#if errorMsg}
+        <p class="cmd-error-msg" role="alert">{errorMsg}</p>
+      {/if}
+
+      {#if isLive || isTerminalPhase}
+        <div class="cmd-dag-mini" data-testid="task-dag-toggle">
+          <TaskDAG agents={selectedAgents} {agentStates} />
+        </div>
+      {/if}
+
       {#if isLive}
-        <button class="sd-btn sd-btn-danger" onclick={cancel}>Cancel</button>
+        <button class="cmd-btn cmd-btn-cancel" onclick={cancel}>■ CANCEL</button>
       {:else if isTerminalPhase}
-        <button class="sd-btn sd-btn-ghost" onclick={reset}>New Dispatch</button>
+        <button class="cmd-btn cmd-btn-new" onclick={reset}>
+          <span>NEW DISPATCH</span>
+          <span>↺</span>
+        </button>
+      {:else}
+        <button
+          class="cmd-btn cmd-btn-dispatch"
+          disabled={selectedAgents.length === 0 || !task.trim()}
+          onclick={() => dispatch(task, dry, attachments)}
+        >
+          <span>DISPATCH</span>
+          <span class="dispatch-arrow">▶</span>
+        </button>
       {/if}
     </div>
-  </aside>
+  </section>
 
-  <!-- ── Centre: live agents + event stream ── -->
-  <main class="sd-centre" aria-label="Live agent workspace">
+  <!-- ── Row 4: Rail stage (horizontal agent rails) ── -->
+  <section class="rail-stage" aria-label="Live agent workspace">
+    <div class="rail-stage-head">
+      <span>
+        <span class="idx">[ 03 ]</span>
+        {#if isLive}EXECUTION STAGE · LIVE
+        {:else if isTerminalPhase}EXECUTION STAGE · COMPLETE
+        {:else}EXECUTION STAGE · STANDBY{/if}
+      </span>
+      <div class="view-toggle">
+        <button class="vt-btn vt-active" disabled>RAILS</button>
+        <button class="vt-btn" disabled>+ DAG</button>
+      </div>
+    </div>
 
-    <!-- Scanline sweep overlay — plays once per dispatch -->
     {#if scanlineActive}
       {#key scanlineKey}
         <div class="sd-scanline" aria-hidden="true"></div>
       {/key}
     {/if}
 
-    <section class="sd-agents-section" data-onboarding="dispatch-live-grid">
-      <p class="sd-meta-label">Live agents</p>
-      <LiveAgentGrid agents={isLive || isTerminalPhase ? selectedAgents : []} {agentStates} />
-    </section>
+    <div class="rails-wrap" data-onboarding="dispatch-live-grid">
+      <LiveAgentGrid agents={selectedAgents} {agentStates} />
+    </div>
+  </section>
 
-    {#if errorMsg}
-      <div class="sd-error-banner" role="alert">{errorMsg}</div>
-    {/if}
-
-    <section class="sd-stream-section" data-onboarding="dispatch-mailbox">
-      <p class="sd-meta-label">Event stream</p>
+  <!-- ── Row 5: Mailbox ── -->
+  <section class="mailbox" data-onboarding="dispatch-mailbox">
+    <div class="mailbox-head">
+      <span>
+        <span class="idx">[ 04 ]</span>
+        MAILBOX {isLive ? '· ONLINE' : '· OFFLINE'}
+      </span>
+      <span>
+        <span class="idx">MSG </span>
+        <span class="msg-ctr">{String(events.length).padStart(3, '0')}</span>
+      </span>
+    </div>
+    <div class="mailbox-body">
       <MailboxStream {events} />
-    </section>
-  </main>
-
-  <!-- ── Right rail: history ── -->
-  <aside class="sd-rail sd-rail-right" data-onboarding="dispatch-history" aria-label="Dispatch history">
-    <HistoryRail
-      {history}
-      onSelect={replayFromHistory}
-      onClear={clearHistory}
-    />
-  </aside>
+    </div>
+  </section>
 
 </div>
 
 <style>
-  /* ── Root shell ── */
-  .sd-root {
+  /* ── 5-row ops frame ── */
+  .ops-frame {
     position: relative;
-    display: flex;
+    width: 100%;
     height: 100%;
+    display: grid;
+    grid-template-rows: 40px 36px auto 1fr 184px;
     background: var(--la-bg-void);
     color: var(--la-text-bright);
     overflow: hidden;
     font-family: var(--la-font-chrome);
   }
 
-  /* ── Rails ── */
-  .sd-rail {
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0;
-    overflow-y: auto;
+  /* ── Row 1: header ── */
+  .header-strip {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--la-hair-base);
   }
-  .sd-rail-left  { width: 17rem; border-right: 1px solid var(--la-hair-base); }
-  .sd-rail-right { width: 13rem; border-left:  1px solid var(--la-hair-base); }
 
-  /* ── Centre column ── */
-  .sd-centre {
-    position: relative;
+  .reg-marks { display: flex; gap: 16px; align-items: center; }
+  .reg-mark {
     display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-width: 0;
+    align-items: center;
+    gap: 4px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    color: var(--la-text-dim);
+    text-transform: uppercase;
+  }
+  .reg-dot {
+    width: 5px;
+    height: 5px;
+    background: var(--la-text-mute);
+    flex-shrink: 0;
+    display: inline-block;
+  }
+  .reg-dot.live  { background: var(--la-agent-researcher); animation: heartbeat 1.6s steps(2) infinite; }
+  .reg-dot.warn  { background: var(--la-agent-performance); }
+  .reg-dot.error { background: var(--la-agent-security); }
+
+  @keyframes heartbeat {
+    0%, 50%   { opacity: 1; }
+    51%, 100% { opacity: 0.25; }
+  }
+
+  .header-title {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    justify-content: center;
+  }
+  .ti-id   { color: var(--la-text-mute); font-weight: 200; }
+  .ti-name { color: var(--la-text-stark); font-weight: 700; }
+  .ti-sub  { color: var(--la-text-dim); font-weight: 200; }
+
+  .header-tele {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 20px;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--la-text-dim);
+    font-family: var(--la-font-mono);
+  }
+  .header-tele .lbl { color: var(--la-text-mute); }
+  .header-tele .val { color: var(--la-text-bright); font-variant-numeric: tabular-nums; }
+
+  /* ── Row 2: history pill strip ── */
+  .history-row {
+    border-bottom: 1px solid var(--la-hair-base);
     overflow: hidden;
   }
 
-  /* ── Section primitives ── */
-  .sd-section-header {
+  /* ── Row 3: command bar ── */
+  .command-bar {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    border-bottom: 1px solid var(--la-hair-base);
+    overflow: hidden;
+  }
+
+  .cmd-shell {
+    border-right: 1px solid var(--la-hair-base);
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+  }
+
+  .cmd-label {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 12px 8px;
-    border-bottom: 1px solid var(--la-hair-base);
-    flex-shrink: 0;
-  }
-  .sd-section-label {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: var(--la-tk-loose);
-    text-transform: uppercase;
-    color: var(--la-text-stark);
-    flex: 1;
-  }
-  .sd-section-body {
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--la-hair-base);
-  }
-  .sd-agents-section {
-    padding: 10px 12px 8px;
-    border-bottom: 1px solid var(--la-hair-base);
-    flex-shrink: 0;
-  }
-  .sd-stream-section {
-    flex: 1;
-    min-height: 0;
-    padding: 8px 12px;
-    display: flex;
-    flex-direction: column;
-  }
-  .sd-meta-label {
     font-size: 9px;
-    letter-spacing: var(--la-tk-mid);
-    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.18em;
     color: var(--la-text-dim);
-    margin: 0 0 6px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .cmd-label .idx { color: var(--la-text-mute); font-weight: 200; }
+  .cmd-label .sep { flex: 1; height: 1px; background: var(--la-hair-base); }
+
+  .phase-badge {
+    font-size: 9px;
+    letter-spacing: 0.04em;
+    font-family: var(--la-font-mono);
+    flex-shrink: 0;
+  }
+  .phase-classifying { color: var(--la-agent-engineer); animation: pulse 1.2s ease-in-out infinite; }
+  .phase-live        { color: var(--la-agent-researcher); }
+  .phase-ok          { color: var(--la-agent-researcher); }
+  .phase-err         { color: var(--la-agent-security); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
   }
 
-  /* ── Phase badges ── */
-  .sd-phase {
+  .classifier-badge {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+  }
+  .cls-pill {
     font-size: 9px;
     font-family: var(--la-font-mono);
-    letter-spacing: 0.04em;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border: 1px solid;
+    border-radius: 2px;
   }
-  .sd-phase-classifying { color: var(--la-agent-engineer); animation: pulse 1.2s ease-in-out infinite; }
-  .sd-phase-live        { color: var(--la-agent-researcher); }
-  .sd-phase-ok          { color: var(--la-agent-researcher); }
-  .sd-phase-err         { color: var(--la-agent-security); }
+  .cls-rationale {
+    font-size: 9px;
+    color: var(--la-text-dim);
+    font-style: italic;
+    line-height: 1.4;
+    width: 100%;
+    margin: 0;
+  }
 
-  /* ── Action row ── */
-  .sd-action-row {
+  .agent-selector-wrap { flex: 1; min-height: 0; }
+
+  /* ── Action panel ── */
+  .cmd-action {
+    padding: 12px 16px;
     display: flex;
+    flex-direction: column;
     gap: 8px;
-    padding: 8px 12px;
-    margin-top: auto;
+    overflow-y: auto;
   }
-  .sd-btn {
-    flex: 1;
-    padding: 4px 0;
-    font-size: 10px;
-    font-family: var(--la-font-chrome);
-    border-radius: var(--la-radius-md);
-    border: 1px solid transparent;
+  .cmd-action-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    color: var(--la-text-dim);
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .cmd-action-head .idx { color: var(--la-text-mute); font-weight: 200; }
+
+  .cmd-state {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--la-text-dim);
+    font-family: var(--la-font-mono);
+  }
+  .cmd-state.state-armed  { color: var(--la-agent-researcher); }
+  .cmd-state.state-active { color: var(--la-agent-knowledge, var(--la-agent-researcher)); }
+  .cmd-state.state-err    { color: var(--la-agent-security); }
+
+  .cmd-count {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .cmd-count-num {
+    font-size: 36px;
+    font-weight: 200;
+    color: var(--la-text-stark);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-family: var(--la-font-mono);
+  }
+  .cmd-count-lbl {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    color: var(--la-text-dim);
+    line-height: 1.3;
+    text-transform: uppercase;
+  }
+
+  .cmd-error-msg {
+    font-size: 9px;
+    color: var(--la-agent-security);
+    padding: 4px 8px;
+    border: 1px solid color-mix(in srgb, var(--la-agent-security) 30%, transparent);
+    background: color-mix(in srgb, var(--la-agent-security) 8%, transparent);
+    line-height: 1.4;
+    margin: 0;
+  }
+
+  .cmd-dag-mini { flex: 1; min-height: 0; overflow: hidden; }
+
+  .cmd-btn {
+    flex-shrink: 0;
+    width: 100%;
+    padding: 12px 16px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
     cursor: pointer;
-    transition: all var(--la-t-snap) var(--la-ease-mech);
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: auto;
+    transition: all 80ms var(--la-ease-mech);
+    border: 1px solid;
   }
-  .sd-btn-danger {
-    background: var(--la-danger-bg);
-    border-color: var(--la-danger-stroke);
-    color: var(--la-danger-text);
+  .dispatch-arrow { font-size: 13px; font-weight: 200; }
+
+  .cmd-btn-dispatch {
+    background: var(--la-text-stark);
+    color: var(--la-bg-void);
+    border-color: var(--la-text-stark);
   }
-  .sd-btn-danger:hover { box-shadow: 0 0 0 2px var(--la-danger-glow); }
-  .sd-btn-ghost {
+  .cmd-btn-dispatch:hover:not(:disabled) {
     background: transparent;
-    border-color: var(--la-hair-strong);
+    color: var(--la-text-stark);
+  }
+  .cmd-btn-dispatch:disabled {
+    background: var(--la-bg-elev-2, #16181b);
+    color: var(--la-text-mute);
+    border-color: var(--la-hair-base);
+    cursor: not-allowed;
+  }
+  .cmd-btn-dispatch:active:not(:disabled) { transform: scale(0.985); }
+
+  .cmd-btn-cancel {
+    background: color-mix(in srgb, var(--la-agent-security) 10%, transparent);
+    color: var(--la-agent-security);
+    border-color: color-mix(in srgb, var(--la-agent-security) 50%, transparent);
+  }
+  .cmd-btn-cancel:hover {
+    background: color-mix(in srgb, var(--la-agent-security) 20%, transparent);
+    border-color: var(--la-agent-security);
+  }
+
+  .cmd-btn-new {
+    background: transparent;
     color: var(--la-text-base);
+    border-color: var(--la-hair-strong);
   }
-  .sd-btn-ghost:hover { border-color: var(--la-text-dim); color: var(--la-text-bright); }
+  .cmd-btn-new:hover { border-color: var(--la-text-dim); color: var(--la-text-bright); }
 
-  /* ── Error banner ── */
-  .sd-error-banner {
-    margin: 8px 12px 0;
-    padding: 6px 10px;
-    border-radius: var(--la-radius-md);
-    background: var(--la-danger-bg);
-    border: 1px solid var(--la-danger-stroke);
-    color: var(--la-danger-text);
-    font-size: 10px;
+  /* ── Row 4: rail stage ── */
+  .rail-stage {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--la-hair-base);
+    overflow: hidden;
   }
 
-  /* ── Cinematic: full-screen flash on dispatch ── */
+  .rail-stage-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    color: var(--la-text-dim);
+    padding: 6px 16px;
+    border-bottom: 1px solid var(--la-hair-base);
+    flex-shrink: 0;
+    text-transform: uppercase;
+  }
+  .rail-stage-head .idx { color: var(--la-text-mute); font-weight: 200; }
+
+  .view-toggle { display: flex; border: 1px solid var(--la-hair-base); }
+  .vt-btn {
+    background: transparent;
+    border: none;
+    border-right: 1px solid var(--la-hair-base);
+    color: var(--la-text-dim);
+    padding: 3px 10px;
+    font-family: inherit;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+  }
+  .vt-btn:last-child { border-right: none; }
+  .vt-btn.vt-active { color: var(--la-text-stark); }
+  .vt-btn:disabled { cursor: default; opacity: 0.7; }
+
+  .rails-wrap { flex: 1; overflow: hidden; position: relative; }
+
+  /* ── Row 5: mailbox ── */
+  .mailbox {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .mailbox-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    color: var(--la-text-dim);
+    padding: 6px 16px;
+    border-bottom: 1px solid var(--la-hair-base);
+    flex-shrink: 0;
+    text-transform: uppercase;
+  }
+  .mailbox-head .idx { color: var(--la-text-mute); font-weight: 200; }
+  .msg-ctr { color: var(--la-text-bright); font-variant-numeric: tabular-nums; font-family: var(--la-font-mono); }
+
+  .mailbox-body { flex: 1; overflow-y: auto; min-height: 0; }
+
+  /* ── cinematic dispatch flash ── */
   .dispatch-flash {
     position: fixed;
     inset: 0;
-    background: var(--la-agent-researcher);
+    background: var(--la-text-stark);
     pointer-events: none;
     z-index: 40;
     animation: dispatch-flash 0.45s var(--la-ease-mech) forwards;
   }
   @keyframes dispatch-flash {
     0%   { opacity: 0; }
-    15%  { opacity: 0.12; }
+    15%  { opacity: 0.06; }
     100% { opacity: 0; }
   }
 
-  /* ── Cinematic: scanline sweep in centre column ── */
+  /* ── scanline sweep through rail stage on dispatch ── */
   .sd-scanline {
     position: absolute;
     left: 0; right: 0;
@@ -586,43 +885,8 @@
     100% { top: calc(100% + 3px); opacity: 0; }
   }
 
-  /* ── Corner bracket pulse when dispatching ── */
-  [data-dispatching="true"] {
-    --corner-bracket-size: 18px;
-  }
-
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50%       { opacity: 0.4; }
-  }
-
-  /* ── Classifier badge ── */
-  .sd-classifier-badge {
-    padding: 6px 12px;
-    border-bottom: 1px solid var(--la-hair-base);
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .sd-classifier-agents {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-  .sd-agent-pill {
-    font-size: 9px;
-    font-family: var(--la-font-mono);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    padding: 1px 5px;
-    border-radius: 2px;
-    border: 1px solid;
-  }
-  .sd-classifier-rationale {
-    font-size: 9px;
-    color: var(--la-text-dim);
-    margin: 0;
-    line-height: 1.4;
-    font-style: italic;
   }
 </style>
