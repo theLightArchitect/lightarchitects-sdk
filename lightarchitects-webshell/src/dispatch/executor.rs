@@ -264,6 +264,9 @@ async fn spawn_teammate(
             agent,
             state: AgentState::Failed,
             message: Some("claude binary not found — ensure it is on PATH".to_owned()),
+            files_touched: None,
+            token_count: None,
+            elapsed_ms: None,
         });
         return;
     };
