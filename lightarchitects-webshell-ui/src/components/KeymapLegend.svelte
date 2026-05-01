@@ -198,7 +198,7 @@
     margin: 0;
     font-size: 13px;
     font-weight: 600;
-    color: #FFD700;
+    color: var(--la-focus-ring);
     letter-spacing: 0.02em;
     flex: 1;
   }
@@ -218,7 +218,7 @@
     border-radius: var(--la-radius-sm);
     transition: color var(--la-transition-fast), background var(--la-transition-fast);
   }
-  .legend-close:hover { color: var(--la-text-body); background: #1e293b; }
+  .legend-close:hover { color: var(--la-text-body); background: var(--la-bg-elev-2); }
 
   .legend-body {
     flex: 1;
@@ -247,7 +247,7 @@
   }
   .legend-row:hover:not(.static) td { background: rgba(255, 215, 0, 0.04); }
   .legend-row.capturing td { background: rgba(255, 215, 0, 0.08); }
-  .legend-row.overridden .legend-keys kbd { color: #4dff8e; border-color: rgba(77,255,142,0.4); }
+  .legend-row.overridden .legend-keys kbd { color: var(--la-agent-researcher); border-color: rgba(77,255,142,0.4); }
   .legend-row.static { cursor: default; }
 
   .legend-keys {
@@ -257,11 +257,11 @@
   .legend-keys kbd {
     display: inline-block;
     padding: 1px 6px;
-    background: #1e293b;
-    border: 1px solid #334155;
+    background: var(--la-bg-elev-2);
+    border: 1px solid var(--la-hair-strong);
     border-bottom-width: 2px;
     border-radius: var(--la-radius-sm);
-    color: #FFD700;
+    color: var(--la-focus-ring);
     font-family: var(--la-font-mono);
     font-size: 10px;
     transition: color var(--la-transition-fast), border-color var(--la-transition-fast);
@@ -278,7 +278,7 @@
 
   .capture-prompt {
     font-size: 10px;
-    color: #FFD700;
+    color: var(--la-focus-ring);
     font-family: var(--la-font-mono);
     letter-spacing: 0.06em;
     animation: blink 0.8s step-end infinite;
@@ -306,13 +306,13 @@
     text-align: right;
   }
   .legend-footer kbd {
-    background: #1e293b;
+    background: var(--la-bg-elev-2);
     padding: 1px 4px;
     border-radius: var(--la-radius-sm);
     font-family: var(--la-font-mono);
   }
   .capture-hint {
-    color: #FFD700;
+    color: var(--la-focus-ring);
     font-size: 10px;
   }
 

@@ -564,7 +564,7 @@
   <!-- Drag handle (only when open) -->
   {#if open}
     <div
-      class="h-1 bg-[#1e293b] hover:bg-[#FFD700] focus:bg-[#FFD700] cursor-ns-resize shrink-0 transition-colors outline-none focus:ring-1 focus:ring-[#FFD700]"
+      class="h-1 bg-[var(--la-drawer-border)] hover:bg-[var(--la-focus-ring)] focus:bg-[var(--la-focus-ring)] cursor-ns-resize shrink-0 transition-colors outline-none focus:ring-1 focus:ring-[var(--la-focus-ring)]"
       onmousedown={onDragStart}
       onkeydown={onSeparatorKeydown}
       role="slider"
@@ -578,17 +578,17 @@
   {/if}
 
   <!-- Toggle bar / header -->
-  <div class="flex items-center gap-2 px-3 bg-[#0d1117] border-t border-[#1e293b] shrink-0 h-8">
+  <div class="flex items-center gap-2 px-3 bg-[var(--la-drawer-bg)] border-t border-[var(--la-drawer-border)] shrink-0 h-8">
     <!-- Mode tabs (only when open) -->
     {#if open}
-      <div class="flex rounded overflow-hidden border border-[#1e293b] shrink-0">
+      <div class="flex rounded overflow-hidden border border-[var(--la-drawer-border)] shrink-0">
         <button
           onclick={() => { mode = 'chat'; }}
-          class="text-[9px] px-2 py-0.5 transition-colors {mode === 'chat' ? 'bg-[#D4A017] text-[#0a0a0f] font-semibold shadow-[0_0_6px_rgba(255,215,0,0.3)]' : 'bg-transparent text-[#64748b] hover:text-[#FFD700]'}"
+          class="text-[9px] px-2 py-0.5 transition-colors {mode === 'chat' ? 'bg-[var(--la-focus-ring)] text-[var(--la-bg-frame)] font-semibold shadow-[0_0_6px_rgba(255,215,0,0.3)]' : 'bg-transparent text-[var(--la-text-dim)] hover:text-[var(--la-focus-ring)]'}"
         >CHAT</button>
         <button
           onclick={() => { mode = 'terminal'; }}
-          class="text-[9px] px-2 py-0.5 transition-colors {mode === 'terminal' ? 'bg-[#D4A017] text-[#0a0a0f] font-semibold shadow-[0_0_6px_rgba(255,215,0,0.3)]' : 'bg-transparent text-[#64748b] hover:text-[#FFD700]'}"
+          class="text-[9px] px-2 py-0.5 transition-colors {mode === 'terminal' ? 'bg-[var(--la-focus-ring)] text-[var(--la-bg-frame)] font-semibold shadow-[0_0_6px_rgba(255,215,0,0.3)]' : 'bg-transparent text-[var(--la-text-dim)] hover:text-[var(--la-focus-ring)]'}"
         >TERMINAL</button>
       </div>
     {/if}
@@ -597,26 +597,26 @@
     <button
       onclick={() => { open = !open; }}
       aria-expanded={open}
-      class="flex items-center gap-1.5 text-[10px] text-[#94a3b8] hover:text-[#e2e8f0] transition-colors"
+      class="flex items-center gap-1.5 text-[10px] text-[var(--la-text-label)] hover:text-[var(--la-text-bright)] transition-colors"
     >
-      <span class="text-[#FFD700] font-semibold" style="text-shadow: 0 0 8px rgba(255,215,0,0.5);">⌨</span>
+      <span class="text-[var(--la-focus-ring)] font-semibold" style="text-shadow: 0 0 8px rgba(255,215,0,0.5);">⌨</span>
       <span>EVA</span>
       {#if sharedBuildId}
-        <span class="text-[#22c55e]">●</span>
-        <span class="text-[#475569] font-mono">{sharedBuildId.slice(0, 7)}</span>
+        <span class="text-[var(--la-agent-researcher)]">●</span>
+        <span class="text-[var(--la-text-dim)] font-mono">{sharedBuildId.slice(0, 7)}</span>
       {:else}
-        <span class="text-[#475569]">—</span>
+        <span class="text-[var(--la-text-dim)]">—</span>
       {/if}
     </button>
 
     <!-- Context badge -->
     {#if open}
-      <span class="text-[9px] text-[#475569] truncate max-w-[200px]">{contextBadge()}</span>
+      <span class="text-[9px] text-[var(--la-text-dim)] truncate max-w-[200px]">{contextBadge()}</span>
       <!-- Platform summary -->
-      <div class="flex items-center gap-2 text-[9px] text-[#475569]">
+      <div class="flex items-center gap-2 text-[9px] text-[var(--la-text-dim)]">
         <span>{$builds.length} builds</span>
         <span>·</span>
-        <span>{Object.values($siblingHealth).filter(h => h?.status === 'online').length}/7 siblings</span>
+        <span>{Object.values($siblingHealth).filter(h => h?.status === 'online').length}/7 agents</span>
         <span>·</span>
         <span>{$arenaStats.activeAgents} active</span>
         <span>·</span>
@@ -631,30 +631,30 @@
         <button
           onclick={forkToTerminal}
           disabled={!canFork || forking}
-          class="text-[9px] px-1.5 py-0.5 rounded border transition-colors
+          class="text-[9px] px-1.5 py-0.5 border transition-colors
                  {canFork && !forking
-                   ? 'text-[#FFD700] border-[#FFD700]/40 hover:bg-[#FFD700]/10 shadow-[0_0_6px_rgba(255,215,0,0.2)]'
-                   : 'text-[#475569] border-[#1e293b] cursor-not-allowed opacity-50'}"
+                   ? 'text-[var(--la-focus-ring)] border-[var(--la-focus-ring)]/40 hover:bg-[var(--la-focus-ring)]/10 shadow-[0_0_6px_rgba(255,215,0,0.2)]'
+                   : 'text-[var(--la-text-dim)] border-[var(--la-drawer-border)] cursor-not-allowed opacity-50'}"
           title={canFork
             ? 'Fork this conversation to a terminal (claude --resume / codex exec resume)'
             : 'Send at least one message before forking to a terminal'}
         >{forking ? 'Forking…' : '↗ Fork to Terminal'}</button>
         <button
           onclick={() => { showSearch = !showSearch; if (!showSearch) searchQuery = ''; }}
-          class="text-[9px] px-1.5 py-0.5 rounded border transition-colors
-            {showSearch ? 'text-[#FFD700] border-[#FFD700]/40 bg-[#FFD700]/10' : 'text-[#475569] border-[#1e293b] hover:text-[#e2e8f0]'}"
+          class="text-[9px] px-1.5 py-0.5 border transition-colors
+            {showSearch ? 'text-[var(--la-focus-ring)] border-[var(--la-focus-ring)]/40 bg-[var(--la-focus-ring)]/10' : 'text-[var(--la-text-dim)] border-[var(--la-drawer-border)] hover:text-[var(--la-text-bright)]'}"
           title="Search history (Ctrl+F)"
           aria-label="Toggle history search"
         >⌕</button>
         <button
           onclick={() => { clearCopilotHistory(); searchQuery = ''; showSearch = false; }}
-          class="text-[9px] text-[#475569] hover:text-[#e2e8f0] px-1.5 py-0.5 rounded border border-[#1e293b] transition-colors"
+          class="text-[9px] text-[var(--la-text-dim)] hover:text-[var(--la-text-bright)] px-1.5 py-0.5 border border-[var(--la-drawer-border)] transition-colors"
         >Clear</button>
       {/if}
       <div style="position: relative;">
         <button
           onclick={() => settingsOpen.update(v => !v)}
-          class="text-[10px] text-[#475569] hover:text-[#94a3b8] px-1.5 py-0.5 rounded border border-[#1e293b] transition-colors"
+          class="text-[10px] text-[var(--la-text-dim)] hover:text-[var(--la-text-label)] px-1.5 py-0.5 border border-[var(--la-drawer-border)] transition-colors"
           title="Switch backend / model (⚙)"
         >⚙</button>
         {#if $settingsOpen}
@@ -668,34 +668,34 @@
     <!-- Collapse/expand -->
     <button
       onclick={() => { open = !open; }}
-      class="text-[10px] text-[#475569] hover:text-[#e2e8f0] w-5 h-5 flex items-center justify-center transition-colors"
+      class="text-[10px] text-[var(--la-text-dim)] hover:text-[var(--la-text-bright)] w-5 h-5 flex items-center justify-center transition-colors"
       title="{open ? 'Collapse (Ctrl+`)' : 'Open Copilot (Ctrl+`)'}"
     >{open ? '▾' : '▴'}</button>
   </div>
 
   <!-- ── BODY (only when open) ───────────────────────────────── -->
   {#if open}
-    <div class="flex-1 flex overflow-hidden bg-[#0a0a0f] min-h-0">
+    <div class="flex-1 flex overflow-hidden bg-[var(--la-bg-frame)] min-h-0">
 
       <!-- ── TERMINAL MODE — pure PTY, opens immediately in inherited CWD ── -->
       {#if mode === 'terminal'}
         <div class="flex-1 flex flex-col overflow-hidden min-h-0">
-          <div class="flex items-center gap-2 px-4 py-1.5 border-b border-[#1e293b] bg-[#0f172a] shrink-0">
-            <div class="w-1.5 h-1.5 rounded-full {$terminalConnected ? 'bg-green-500' : 'bg-[#475569]'}" style="box-shadow: 0 0 4px {$terminalConnected ? '#22c55e' : 'transparent'}"></div>
-            <span class="text-[9px] text-[#64748b] font-mono">{$terminalConnected ? 'PTY live' : 'connecting…'} · {cwd}</span>
+          <div class="flex items-center gap-2 px-4 py-1.5 border-b border-[var(--la-drawer-border)] bg-[var(--la-bg-frame)] shrink-0">
+            <div class="w-1.5 h-1.5 rounded-full {$terminalConnected ? 'bg-green-500' : 'bg-[var(--la-text-dim)]'}" style="box-shadow: 0 0 4px {$terminalConnected ? '#22c55e' : 'transparent'}"></div>
+            <span class="text-[9px] text-[var(--la-text-dim)] font-mono">{$terminalConnected ? 'PTY live' : 'connecting…'} · {cwd}</span>
             {#if sharedBuildId}
-              <span class="text-[9px] text-[#475569] font-mono">· build {sharedBuildId.slice(0, 8)}…</span>
+              <span class="text-[9px] text-[var(--la-text-dim)] font-mono">· build {sharedBuildId.slice(0, 8)}…</span>
             {/if}
           </div>
           {#if !$terminalConnected}
-            <div class="flex-1 flex items-center justify-center bg-[#0a0a0a]">
+            <div class="flex-1 flex items-center justify-center bg-[var(--la-bg-void)]">
               <div class="flex items-center gap-3">
-                <div class="w-3 h-3 border-2 border-[#FFD700] border-t-transparent rounded-full animate-spin"></div>
-                <span class="text-[11px] text-[#475569] font-mono">Connecting to PTY at {cwd}…</span>
+                <div class="w-3 h-3 border-2 border-[var(--la-focus-ring)] border-t-transparent rounded-full animate-spin"></div>
+                <span class="text-[11px] text-[var(--la-text-dim)] font-mono">Connecting to PTY at {cwd}…</span>
               </div>
             </div>
           {/if}
-          <div bind:this={terminalEl} class="overflow-hidden bg-[#0a0a0a] min-h-0 {$terminalConnected ? 'flex-1' : 'h-0'}" style="font-family: monospace; contain: strict;"></div>
+          <div bind:this={terminalEl} class="overflow-hidden bg-[var(--la-bg-void)] min-h-0 {$terminalConnected ? 'flex-1' : 'h-0'}" style="font-family: monospace; contain: strict;"></div>
         </div>
 
       <!-- ── CHAT MODE ── -->
@@ -711,51 +711,51 @@
               </div>
             {:else if forkResult}
               {#if forkResult.launched}
-                <div class="px-3 py-1.5 border-b border-[#FFD700]/30 bg-[#FFD700]/5 flex items-center gap-2 shrink-0">
-                  <span class="text-[10px] text-[#A78BFA]">↗ Opened in Terminal ({forkResult.platform}). Conversation continues in both places — same session.</span>
+                <div class="px-3 py-1.5 border-b border-[var(--la-focus-ring)]/30 bg-[var(--la-focus-ring)]/5 flex items-center gap-2 shrink-0">
+                  <span class="text-[10px] text-[var(--la-agent-testing)]">↗ Opened in Terminal ({forkResult.platform}). Conversation continues in both places — same session.</span>
                   <div class="flex-1"></div>
-                  <button onclick={dismissForkResult} class="text-[10px] text-[#A78BFA]/70 hover:text-[#A78BFA]">✕</button>
+                  <button onclick={dismissForkResult} class="text-[10px] text-[var(--la-agent-testing)]/70 hover:text-[var(--la-agent-testing)]">✕</button>
                 </div>
               {:else}
-                <div class="px-3 py-1.5 border-b border-[#f59e0b]/40 bg-[#f59e0b]/10 flex items-start gap-2 shrink-0">
+                <div class="px-3 py-1.5 border-b border-[var(--la-agent-performance)]/40 bg-[var(--la-agent-performance)]/10 flex items-start gap-2 shrink-0">
                   <div class="flex-1">
-                    <div class="text-[10px] text-[#f59e0b] mb-1">
+                    <div class="text-[10px] text-[var(--la-agent-performance)] mb-1">
                       No native terminal launcher on <span class="font-mono">{forkResult.platform}</span> yet — run this in your terminal:
                     </div>
-                    <code class="text-[10px] text-[#e2e8f0] bg-[#0a0a0a] px-2 py-0.5 rounded border border-[#1e293b] font-mono select-all">{forkResult.command}</code>
+                    <code class="text-[10px] text-[var(--la-text-bright)] bg-[var(--la-bg-void)] px-2 py-0.5 rounded border border-[var(--la-drawer-border)] font-mono select-all">{forkResult.command}</code>
                   </div>
-                  <button onclick={copyForkCommand} class="text-[10px] text-[#f59e0b] hover:text-[#fbbf24] px-1.5 py-0.5 rounded border border-[#f59e0b]/40">Copy</button>
-                  <button onclick={dismissForkResult} class="text-[10px] text-[#f59e0b]/70 hover:text-[#f59e0b]">✕</button>
+                  <button onclick={copyForkCommand} class="text-[10px] text-[var(--la-agent-performance)] hover:text-[var(--la-agent-quality)] px-1.5 py-0.5 rounded border border-[var(--la-agent-performance)]/40">Copy</button>
+                  <button onclick={dismissForkResult} class="text-[10px] text-[var(--la-agent-performance)]/70 hover:text-[var(--la-agent-performance)]">✕</button>
                 </div>
               {/if}
             {/if}
             {#if showSearch}
-              <div class="flex items-center gap-2 px-3 py-1.5 border-b border-[#1e293b] bg-[#0a0a0f] shrink-0">
-                <span class="text-[10px] text-[#475569]">⌕</span>
+              <div class="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--la-drawer-border)] bg-[var(--la-bg-frame)] shrink-0">
+                <span class="text-[10px] text-[var(--la-text-dim)]">⌕</span>
                 <!-- svelte-ignore a11y_autofocus -->
                 <input
                   type="text"
                   bind:value={searchQuery}
                   autofocus
                   placeholder="Search history…"
-                  class="flex-1 bg-transparent text-xs text-[#e2e8f0] placeholder:text-[#334155] outline-none font-mono"
+                  class="flex-1 bg-transparent text-xs text-[var(--la-text-bright)] placeholder:text-[var(--la-hair-strong)] outline-none font-mono"
                   onkeydown={(e) => { if (e.key === 'Escape') { showSearch = false; searchQuery = ''; } }}
                 />
                 {#if searchQuery}
-                  <span class="text-[9px] text-[#475569]">
+                  <span class="text-[9px] text-[var(--la-text-dim)]">
                     {filteredMessages.length}/{$copilotMessages.length}
                   </span>
                 {/if}
                 <button
                   onclick={() => { showSearch = false; searchQuery = ''; }}
-                  class="text-[9px] text-[#475569] hover:text-[#e2e8f0]"
+                  class="text-[9px] text-[var(--la-text-dim)] hover:text-[var(--la-text-bright)]"
                   aria-label="Close search"
                 >✕</button>
               </div>
             {/if}
             <div
               bind:this={messagesEl}
-              class="flex-1 overflow-y-auto p-3 space-y-2 transition-colors {dragOver ? 'bg-[#FFD700]/5 ring-1 ring-inset ring-[#FFD700]/20' : ''}"
+              class="flex-1 overflow-y-auto p-3 space-y-2 transition-colors {dragOver ? 'bg-[var(--la-focus-ring)]/5 ring-1 ring-inset ring-[var(--la-focus-ring)]/20' : ''}"
               role="log"
               aria-label="Chat messages"
               aria-live="polite"
@@ -765,30 +765,30 @@
               use:codeBlockCopy
             >
               {#if $copilotMessages.length === 0}
-                <div class="flex flex-col items-center justify-center h-full text-[#475569] gap-2">
-                  <p class="text-xs">Start a conversation · Use <kbd class="bg-[#1e293b] px-1 rounded">/</kbd> for slash commands</p>
+                <div class="flex flex-col items-center justify-center h-full text-[var(--la-text-dim)] gap-2">
+                  <p class="text-xs">Start a conversation · Use <kbd class="bg-[var(--la-drawer-border)] px-1 rounded">/</kbd> for slash commands</p>
                   <div class="flex flex-wrap gap-1.5 justify-center">
                     {#each ['/build', '/secure', '/research', '/deploy', '/quality', '/clear'] as cmd}
                       <button onclick={() => { input = cmd + ' '; }}
-                        class="text-[10px] px-2 py-1 rounded bg-[#111827] border border-[#1e293b] hover:border-[#334155] transition-colors">{cmd}</button>
+                        class="text-[10px] px-2 py-1 rounded bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] hover:border-[var(--la-hair-strong)] transition-colors">{cmd}</button>
                     {/each}
                   </div>
                 </div>
               {:else if filteredMessages.length === 0}
-                <div class="flex flex-col items-center justify-center h-full text-[#475569] gap-1">
-                  <p class="text-xs">No messages match "<span class="text-[#64748b] font-mono">{searchQuery}</span>"</p>
+                <div class="flex flex-col items-center justify-center h-full text-[var(--la-text-dim)] gap-1">
+                  <p class="text-xs">No messages match "<span class="text-[var(--la-text-dim)] font-mono">{searchQuery}</span>"</p>
                 </div>
               {:else}
                 {#each filteredMessages as msg (msg.id)}
                   <div class="flex {msg.role === 'user' ? 'justify-end' : msg.role === 'system' ? 'justify-center' : 'justify-start'}">
                     <div class="max-w-[80%] px-3 py-1.5 rounded-lg text-xs chat-bubble
-                      {msg.role === 'user' ? 'bg-[#D4A017]/90 text-[#0a0a0f]' :
-                       msg.role === 'system' ? 'bg-[#1e293b]/50 text-[#64748b] border border-[#1e293b]' :
-                       'bg-[#111827] border border-[#1e293b] text-[#e2e8f0]'}">
+                      {msg.role === 'user' ? 'bg-[var(--la-focus-ring)]/90 text-[var(--la-bg-frame)]' :
+                       msg.role === 'system' ? 'bg-[var(--la-drawer-border)]/50 text-[var(--la-text-dim)] border border-[var(--la-drawer-border)]' :
+                       'bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] text-[var(--la-text-bright)]'}">
                       {#if msg.sibling}
                         {@const color = SIBLING_COLORS[msg.sibling] ?? '#6b7280'}
                         <span class="text-[10px] font-medium" style="color: {color}">{msg.sibling.toUpperCase()}</span>
-                        <span class="text-[#475569] mx-1">·</span>
+                        <span class="text-[var(--la-text-dim)] mx-1">·</span>
                       {/if}
                       {#if msg.role === 'user'}
                         <span class="chat-user-content">{msg.content}</span>
@@ -800,8 +800,8 @@
                 {/each}
                 {#if $copilotLoading}
                   <div class="flex justify-start">
-                    <div class="bg-[#111827] border border-[#1e293b] px-3 py-1.5 rounded-lg">
-                      <span class="text-[#475569] text-xs animate-pulse">Thinking…</span>
+                    <div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] px-3 py-1.5 rounded-lg">
+                      <span class="text-[var(--la-text-dim)] text-xs animate-pulse">Thinking…</span>
                     </div>
                   </div>
                 {/if}
@@ -809,21 +809,21 @@
             </div>
 
             <!-- Input -->
-            <div class="border-t border-[#1e293b] px-3 py-2 relative shrink-0" data-onboarding="copilot-input">
+            <div class="border-t border-[var(--la-drawer-border)] px-3 py-2 relative shrink-0" data-onboarding="copilot-input">
               {#if showSuggestions && matchingCommands.length > 0}
-                <div class="absolute bottom-full left-3 right-3 mb-1 bg-[#0a0a0a] border border-[#1e293b] rounded-lg overflow-hidden shadow-xl z-10 max-h-48 overflow-y-auto">
+                <div class="absolute bottom-full left-3 right-3 mb-1 bg-[var(--la-bg-void)] border border-[var(--la-drawer-border)] rounded-lg overflow-hidden shadow-xl z-10 max-h-48 overflow-y-auto">
                   {#each matchingCommands as cmd, i}
                     <button
                       class="w-full text-left px-3 py-1.5 text-xs flex items-baseline gap-2 transition-colors
-                             {i === slashSuggestionIndex ? 'bg-[#1e293b] text-[#e2e8f0]' : 'hover:bg-[#1e293b]/60'}"
+                             {i === slashSuggestionIndex ? 'bg-[var(--la-drawer-border)] text-[var(--la-text-bright)]' : 'hover:bg-[var(--la-drawer-border)]/60'}"
                       onclick={() => selectCommand(cmd.name)}
                     >
-                      <span class="text-[#FFD700] font-mono">/{cmd.name}</span>
-                      <span class="text-[#64748b] flex-1">{cmd.description}</span>
-                      {#if cmd.args}<span class="text-[#334155]">{cmd.args}</span>{/if}
+                      <span class="text-[var(--la-focus-ring)] font-mono">/{cmd.name}</span>
+                      <span class="text-[var(--la-text-dim)] flex-1">{cmd.description}</span>
+                      {#if cmd.args}<span class="text-[var(--la-hair-strong)]">{cmd.args}</span>{/if}
                     </button>
                   {/each}
-                  <div class="px-3 py-1 border-t border-[#1e293b] flex items-center gap-3 text-[9px] text-[#334155] select-none">
+                  <div class="px-3 py-1 border-t border-[var(--la-drawer-border)] flex items-center gap-3 text-[9px] text-[var(--la-hair-strong)] select-none">
                     <span>↑↓ navigate</span>
                     <span>↵ select</span>
                     <span>Esc dismiss</span>
@@ -833,10 +833,10 @@
               <!-- Hint bar for current command -->
               {#if input.startsWith('/') && matchingCommands.length > 0}
                 {@const hint = matchingCommands[0]}
-                <div class="text-[9px] text-[#475569] mb-1 flex items-center gap-2">
-                  <span class="text-[#FFD700]">/{hint.name}</span>
+                <div class="text-[9px] text-[var(--la-text-dim)] mb-1 flex items-center gap-2">
+                  <span class="text-[var(--la-focus-ring)]">/{hint.name}</span>
                   <span>{hint.description}</span>
-                  {#if hint.args}<span class="text-[#334155]">{hint.args}</span>{/if}
+                  {#if hint.args}<span class="text-[var(--la-hair-strong)]">{hint.args}</span>{/if}
                 </div>
               {/if}
               <!-- Composite oscilloscope — glows gold when copilot is thinking -->
@@ -851,7 +851,7 @@
                 <!-- Tesseract command palette trigger — left of input, helix gold glow -->
                 <button
                   onclick={() => { tesseractOpen = !tesseractOpen; }}
-                  class="{$copilotLoading ? 'tesseract-glow-thinking' : 'tesseract-glow'} w-9 h-9 flex items-center justify-center rounded-lg shrink-0 transition-all duration-200 {tesseractOpen ? 'border border-[#FFD700] bg-[#FFD700]/15 shadow-[0_0_14px_rgba(255,215,0,0.5)]' : 'border border-[#1e293b] hover:border-[#FFD700]/50 hover:shadow-[0_0_8px_rgba(255,215,0,0.25)]'}"
+                  class="{$copilotLoading ? 'tesseract-glow-thinking' : 'tesseract-glow'} w-9 h-9 flex items-center justify-center rounded-lg shrink-0 transition-all duration-200 {tesseractOpen ? 'border border-[var(--la-focus-ring)] bg-[var(--la-focus-ring)]/15 shadow-[0_0_14px_rgba(255,215,0,0.5)]' : 'border border-[var(--la-drawer-border)] hover:border-[var(--la-focus-ring)]/50 hover:shadow-[0_0_8px_rgba(255,215,0,0.25)]'}"
                   title="Command palette"
                 >
                   <PolytopeIcon type="tesseract" color={tesseractOpen ? '#FFD700' : '#D4A017'} size={22} />
@@ -865,15 +865,15 @@
                   onfocus={() => { if (input.startsWith('/')) showSuggestions = true; }}
                   onblur={() => { setTimeout(() => { showSuggestions = false; atSuggestions = []; }, 200); }}
                   placeholder="Type a message or /command… · @ for files"
-                  class="flex-1 bg-[#111827] border border-[#1e293b] rounded px-3 py-1.5 text-xs text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#FFD700]/60 transition-colors"
+                  class="flex-1 bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] rounded px-3 py-1.5 text-xs text-[var(--la-text-bright)] placeholder-[var(--la-text-dim)] outline-none focus:border-[var(--la-focus-ring)]/60 transition-colors"
                 />
                 <!-- @-file autocomplete dropdown -->
                 {#if atSuggestions.length > 0}
-                  <div class="absolute bottom-full left-0 right-0 mb-1 bg-[#0d1117] border border-[#FFD700]/20 rounded shadow-lg max-h-48 overflow-y-auto z-50">
+                  <div class="absolute bottom-full left-0 right-0 mb-1 bg-[var(--la-drawer-bg)] border border-[var(--la-focus-ring)]/20 rounded shadow-lg max-h-48 overflow-y-auto z-50">
                     {#each atSuggestions as suggestion, i}
                       <button
                         class="w-full text-left px-3 py-1.5 text-[10px] font-mono transition-colors
-                          {i === atSuggestionIndex ? 'bg-[#FFD700]/10 text-[#FFD700]' : 'text-[#94a3b8] hover:bg-[#1e293b]'}"
+                          {i === atSuggestionIndex ? 'bg-[var(--la-focus-ring)]/10 text-[var(--la-focus-ring)]' : 'text-[var(--la-text-label)] hover:bg-[var(--la-drawer-border)]'}"
                         onmousedown={(e) => { e.preventDefault(); acceptAtSuggestion(suggestion); }}
                       >{suggestion}</button>
                     {/each}
@@ -882,26 +882,26 @@
                 <button
                   onclick={sendMessage}
                   disabled={$copilotLoading}
-                  class="px-3 py-1.5 bg-[#D4A017] text-[#0a0a0f] text-xs font-semibold rounded hover:bg-[#FFD700] disabled:opacity-50 transition-colors"
+                  class="px-3 py-1.5 bg-[var(--la-focus-ring)] text-[var(--la-bg-frame)] text-xs font-semibold rounded hover:bg-[var(--la-focus-ring)] disabled:opacity-50 transition-colors"
                 >Send</button>
 
                 <!-- Tesseract popover — DISPATCH / CONTEXT / QUICK -->
                 {#if tesseractOpen}
-                  <div class="absolute bottom-full left-0 mb-2 w-[280px] bg-[#0d1117] border border-[#FFD700]/20 rounded-lg shadow-[0_0_20px_rgba(255,215,0,0.1)] p-3 flex flex-col gap-3 z-50">
+                  <div class="absolute bottom-full left-0 mb-2 w-[280px] bg-[var(--la-drawer-bg)] border border-[var(--la-focus-ring)]/20 rounded-lg shadow-[0_0_20px_rgba(255,215,0,0.1)] p-3 flex flex-col gap-3 z-50">
                     <div>
-                      <h3 class="text-[9px] font-medium text-[#64748b] mb-2">DISPATCH</h3>
+                      <h3 class="text-[9px] font-medium text-[var(--la-text-dim)] mb-2">DISPATCH</h3>
                       <SiblingDispatch onDispatch={(sib, prompt) => { tesseractOpen = false; handleDispatch(sib, prompt); }} selectedSibling={$focusedSibling} />
                     </div>
                     <div>
-                      <h3 class="text-[9px] font-medium text-[#64748b] mb-1">CONTEXT</h3>
-                      <pre class="text-[8px] text-[#475569] bg-[#0a0a0a] border border-[#1e293b] rounded p-1.5 whitespace-pre-wrap max-h-28 overflow-y-auto">{contextString}</pre>
+                      <h3 class="text-[9px] font-medium text-[var(--la-text-dim)] mb-1">CONTEXT</h3>
+                      <pre class="text-[8px] text-[var(--la-text-dim)] bg-[var(--la-bg-void)] border border-[var(--la-drawer-border)] rounded p-1.5 whitespace-pre-wrap max-h-28 overflow-y-auto">{contextString}</pre>
                     </div>
                     <div>
-                      <h3 class="text-[9px] font-medium text-[#64748b] mb-1">QUICK</h3>
+                      <h3 class="text-[9px] font-medium text-[var(--la-text-dim)] mb-1">QUICK</h3>
                       <div class="flex flex-wrap gap-1">
                         {#each ['/build', '/secure', '/research', '/review', '/observe'] as cmd}
                           <button onclick={() => { input = cmd + ' '; tesseractOpen = false; }}
-                            class="text-[9px] px-2 py-0.5 rounded bg-[#111827] border border-[#1e293b] hover:border-[#FFD700]/50 text-[#94a3b8] hover:text-[#FFD700] transition-colors">{cmd}</button>
+                            class="text-[9px] px-2 py-0.5 rounded bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] hover:border-[var(--la-focus-ring)]/50 text-[var(--la-text-label)] hover:text-[var(--la-focus-ring)] transition-colors">{cmd}</button>
                         {/each}
                       </div>
                     </div>
@@ -938,14 +938,14 @@
   }
   :global(.chat-md-content strong) {
     font-weight: 600;
-    color: #f1f5f9;
+    color: var(--la-text-stark);
   }
   :global(.chat-md-content em) {
     font-style: italic;
   }
   :global(.chat-md-content code) {
     background: rgba(255, 215, 0, 0.08);
-    color: #FFD700;
+    color: var(--la-focus-ring);
     padding: 0.1em 0.35em;
     border-radius: var(--la-radius-sm);
     font-family: var(--la-font-mono);
@@ -953,8 +953,8 @@
     word-break: break-word;
   }
   :global(.chat-md-content pre) {
-    background: #0a0a0f;
-    border: 1px solid #1e293b;
+    background: var(--la-bg-frame);
+    border: 1px solid var(--la-drawer-border);
     border-radius: var(--la-radius-sm);
     padding: 8px 10px;
     margin: 0.4em 0;
@@ -963,7 +963,7 @@
   }
   :global(.chat-md-content pre code) {
     background: transparent;
-    color: #e2e8f0;
+    color: var(--la-text-bright);
     padding: 0;
     font-size: inherit;
   }
@@ -981,7 +981,7 @@
   :global(.chat-md-content h4) {
     margin: 0.5em 0 0.3em 0;
     font-weight: 600;
-    color: #f1f5f9;
+    color: var(--la-text-stark);
     line-height: 1.3;
   }
   :global(.chat-md-content h1) { font-size: 1.15em; }
@@ -989,22 +989,22 @@
   :global(.chat-md-content h3) { font-size: 1em; }
   :global(.chat-md-content h4) { font-size: 0.95em; }
   :global(.chat-md-content a) {
-    color: #FFD700;
+    color: var(--la-focus-ring);
     text-decoration: underline;
     text-underline-offset: 2px;
   }
   :global(.chat-md-content a:hover) {
-    color: #FFD700;
+    color: var(--la-focus-ring);
   }
   :global(.chat-md-content blockquote) {
-    border-left: 2px solid #334155;
+    border-left: 2px solid var(--la-hair-strong);
     padding-left: 0.7em;
     margin: 0.4em 0;
-    color: #94a3b8;
+    color: var(--la-text-label);
   }
   :global(.chat-md-content hr) {
     border: none;
-    border-top: 1px solid #1e293b;
+    border-top: 1px solid var(--la-drawer-border);
     margin: 0.6em 0;
   }
   :global(.chat-md-content table) {
@@ -1014,12 +1014,12 @@
   }
   :global(.chat-md-content th),
   :global(.chat-md-content td) {
-    border: 1px solid #1e293b;
+    border: 1px solid var(--la-drawer-border);
     padding: 3px 6px;
     text-align: left;
   }
   :global(.chat-md-content th) {
-    background: #0a0a0f;
+    background: var(--la-bg-frame);
     font-weight: 600;
   }
 

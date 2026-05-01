@@ -93,7 +93,7 @@
     font-size: 14px;
   }
   .auth-banner-detail {
-    color: #FECACA;
+    color: var(--la-danger-text);
     opacity: 0.85;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -108,7 +108,7 @@
     padding: 4px 10px;
     font-size: 11px;
     font-family: inherit;
-    border-radius: var(--la-radius-md);
+    border-radius: 0;
     border: 1px solid var(--la-danger-stroke);
     background: transparent;
     color: var(--la-danger-text);
@@ -116,14 +116,14 @@
     transition: background var(--la-transition-fast), color var(--la-transition-fast);
   }
   .auth-banner-btn:hover {
-    background: rgba(220, 38, 38, 0.15);
+    background: color-mix(in srgb, var(--la-danger-stroke) 15%, transparent);
   }
   .auth-banner-btn.primary {
     background: var(--la-danger-stroke);
     color: #FFFFFF;
   }
   .auth-banner-btn.primary:hover {
-    background: #B91C1C;
+    background: var(--la-danger-stroke);
   }
   @keyframes auth-banner-slide {
     from { transform: translateY(-100%); opacity: 0; }

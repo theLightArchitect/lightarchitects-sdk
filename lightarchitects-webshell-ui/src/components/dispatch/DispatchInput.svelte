@@ -1,9 +1,12 @@
 <script lang="ts">
   import {
     type FileAttachment,
+    type DomainAgent,
+    type AgentToolConfig,
     MAX_ATTACHMENT_BYTES,
     MAX_TOTAL_BYTES,
   } from '$lib/dispatch';
+  import AgentToolConfigPanel from './AgentToolConfig.svelte';
 
   const MAX_BYTES = 8 * 1024;
 
@@ -12,7 +15,9 @@
     dry?: boolean;
     disabled?: boolean;
     attachments?: FileAttachment[];
-    onSubmit?: (task: string, dry: boolean, attachments: FileAttachment[]) => void;
+    selectedAgents?: DomainAgent[];
+    toolConfig?: Partial<Record<DomainAgent, AgentToolConfig>>;
+    onSubmit?: (task: string, dry: boolean, attachments: FileAttachment[], toolConfig: Partial<Record<DomainAgent, AgentToolConfig>>) => void;
     onTaskChange?: (task: string) => void;
   }
 
@@ -21,9 +26,13 @@
     dry = $bindable(false),
     disabled = false,
     attachments = $bindable<FileAttachment[]>([]),
+    selectedAgents = [],
+    toolConfig = $bindable<Partial<Record<DomainAgent, AgentToolConfig>>>({}),
     onSubmit,
     onTaskChange,
   }: Props = $props();
+
+  let toolConfigOpen = $state(false);
 
   let fileInput: HTMLInputElement | null = null;
   let folderInput: HTMLInputElement | null = null;
@@ -36,7 +45,7 @@
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && canSubmit) {
       e.preventDefault();
-      onSubmit?.(task.trim(), dry, attachments);
+      onSubmit?.(task.trim(), dry, attachments, toolConfig);
     }
   }
 
@@ -45,7 +54,7 @@
   }
 
   function submit() {
-    if (canSubmit) onSubmit?.(task.trim(), dry, attachments);
+    if (canSubmit) onSubmit?.(task.trim(), dry, attachments, toolConfig);
   }
 
   async function readFiles(files: FileList) {
@@ -96,20 +105,20 @@
       {disabled}
       placeholder="Describe the task for the squad… (⌘↩ to dispatch)"
       rows={4}
-      class="w-full bg-[#0f172a] border rounded px-3 py-2 text-[11px] text-[#e2e8f0]
-             placeholder-[#475569] outline-none resize-none font-mono leading-relaxed
+      class="w-full bg-[var(--la-bg-frame)] border rounded px-3 py-2 text-[11px] text-[var(--la-text-bright)]
+             placeholder-[var(--la-text-dim)] outline-none resize-none font-mono leading-relaxed
              transition-colors
              {overLimit
-               ? 'border-[#ef4444]'
+               ? 'border-[var(--la-danger-stroke)]'
                : disabled
-                 ? 'border-[#1e293b] opacity-50 cursor-not-allowed'
-                 : 'border-[#1e293b] focus:border-[#3b82f6]'}"
+                 ? 'border-[var(--la-drawer-border)] opacity-50 cursor-not-allowed'
+                 : 'border-[var(--la-drawer-border)] focus:border-[var(--la-agent-engineer)]'}"
       oninput={handleInput}
       onkeydown={handleKeydown}
     ></textarea>
     <span
       class="absolute bottom-1.5 right-2 text-[9px] tabular-nums
-             {overLimit ? 'text-[#ef4444]' : 'text-[#475569]'}"
+             {overLimit ? 'text-[var(--la-danger-stroke)]' : 'text-[var(--la-text-dim)]'}"
     >
       {byteCount} / {MAX_BYTES.toLocaleString()}B
     </span>
@@ -120,13 +129,13 @@
     <div class="flex flex-wrap gap-1" data-testid="attachment-chips">
       {#each attachments as att, i}
         <span class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px]
-                     bg-[#1e293b] border border-[#334155] text-[#94a3b8] font-mono">
+                     bg-[var(--la-drawer-border)] border border-[var(--la-hair-strong)] text-[var(--la-text-label)] font-mono">
           {att.name}
           {#if !disabled}
             <button
               type="button"
               onclick={() => removeAttachment(i)}
-              class="text-[#475569] hover:text-[#ef4444] leading-none"
+              class="text-[var(--la-text-dim)] hover:text-[var(--la-danger-stroke)] leading-none"
               aria-label="Remove {att.name}"
             >×</button>
           {/if}
@@ -136,7 +145,7 @@
   {/if}
 
   {#if attachError}
-    <p class="text-[9px] text-[#f59e0b]">{attachError}</p>
+    <p class="text-[9px] text-[var(--la-agent-performance)]">{attachError}</p>
   {/if}
 
   <!-- Hidden file inputs -->
@@ -158,6 +167,16 @@
     data-testid="folder-input"
   />
 
+  {#if toolConfigOpen && selectedAgents.length > 0}
+    <div class="mb-2">
+      <AgentToolConfigPanel
+        agents={selectedAgents}
+        bind:toolConfig
+        {disabled}
+      />
+    </div>
+  {/if}
+
   <div class="flex items-center justify-between gap-2">
     <label class="flex items-center gap-1.5 cursor-pointer select-none">
       <input
@@ -165,21 +184,37 @@
         type="checkbox"
         bind:checked={dry}
         {disabled}
-        class="accent-[#f59e0b] w-3 h-3"
+        class="accent-[var(--la-agent-performance)] w-3 h-3"
       />
-      <span class="text-[10px] text-[#94a3b8]">Dry run</span>
-      <span class="text-[9px] text-[#475569]">(no writes)</span>
+      <span class="text-[10px] text-[var(--la-text-label)]">Dry run</span>
+      <span class="text-[9px] text-[var(--la-text-dim)]">(no writes)</span>
     </label>
 
     <div class="flex items-center gap-1">
+      {#if selectedAgents.length > 0}
+        <!-- Tool config toggle -->
+        <button
+          type="button"
+          data-testid="dispatch-tool-config-toggle"
+          onclick={() => { toolConfigOpen = !toolConfigOpen; }}
+          {disabled}
+          title="Configure tools and research depth per agent"
+          class="px-2 py-1 text-[10px] rounded border transition-colors disabled:opacity-40 disabled:cursor-not-allowed
+                 {toolConfigOpen
+                   ? 'border-[var(--la-agent-engineer)] text-[var(--la-agent-engineer)]'
+                   : 'border-[var(--la-drawer-border)] text-[var(--la-text-dim)] hover:border-[var(--la-hair-strong)] hover:text-[var(--la-text-label)]'}"
+        >
+          🔧 Tools ({selectedAgents.length})
+        </button>
+      {/if}
       <!-- Attach files button -->
       <button
         type="button"
         onclick={() => fileInput?.click()}
         {disabled}
         title="Attach files"
-        class="px-2 py-1 text-[10px] rounded border border-[#1e293b]
-               text-[#475569] hover:border-[#334155] hover:text-[#94a3b8]
+        class="px-2 py-1 text-[10px] rounded border border-[var(--la-drawer-border)]
+               text-[var(--la-text-dim)] hover:border-[var(--la-hair-strong)] hover:text-[var(--la-text-label)]
                transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         + Files
@@ -190,8 +225,8 @@
         onclick={() => folderInput?.click()}
         {disabled}
         title="Attach folder"
-        class="px-2 py-1 text-[10px] rounded border border-[#1e293b]
-               text-[#475569] hover:border-[#334155] hover:text-[#94a3b8]
+        class="px-2 py-1 text-[10px] rounded border border-[var(--la-drawer-border)]
+               text-[var(--la-text-dim)] hover:border-[var(--la-hair-strong)] hover:text-[var(--la-text-label)]
                transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         + Folder
@@ -203,8 +238,8 @@
         disabled={!canSubmit}
         class="px-3 py-1 text-[10px] font-medium rounded transition-colors
                {canSubmit
-                 ? 'bg-[#3b82f6] text-white hover:bg-[#2563eb]'
-                 : 'bg-[#1e293b] text-[#475569] cursor-not-allowed'}"
+                 ? 'bg-[var(--la-agent-engineer)] text-white hover:bg-[var(--la-agent-engineer)]'
+                 : 'bg-[var(--la-drawer-border)] text-[var(--la-text-dim)] cursor-not-allowed'}"
       >
         {disabled ? 'Dispatching…' : 'Dispatch'}
       </button>
@@ -212,6 +247,6 @@
   </div>
 
   {#if overLimit}
-    <p class="text-[9px] text-[#ef4444]">Task exceeds 8 KB limit — trim before dispatching.</p>
+    <p class="text-[9px] text-[var(--la-danger-stroke)]">Task exceeds 8 KB limit — trim before dispatching.</p>
   {/if}
 </div>

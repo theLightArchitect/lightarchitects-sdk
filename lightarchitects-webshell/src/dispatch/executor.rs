@@ -25,8 +25,8 @@ use tokio::sync::{Mutex, broadcast};
 use super::{
     state::{DispatchHandle, DispatchRegistry},
     types::{
-        AgentState, DispatchError, DispatchEvent, DispatchId, DomainAgent, ExecutionMode,
-        FileAttachment, SanitizedTask,
+        AgentState, AgentToolConfig, DispatchError, DispatchEvent, DispatchId, DomainAgent,
+        ExecutionMode, FileAttachment, ResearchDepth, SanitizedTask,
     },
 };
 
@@ -87,7 +87,8 @@ impl EngagementScope {
 ///   already in the registry.
 /// - [`DispatchError::ChannelClosed`] — broadcast channel closed before the
 ///   first event could be sent.
-#[tracing::instrument(skip(task, registry, attachments), fields(dispatch_id = %id, agent_count = agents.len()))]
+#[allow(clippy::too_many_arguments, clippy::implicit_hasher)]
+#[tracing::instrument(skip(task, registry, attachments, tool_config), fields(dispatch_id = %id, agent_count = agents.len()))]
 pub async fn execute(
     task: SanitizedTask,
     agents: Vec<DomainAgent>,
@@ -96,6 +97,7 @@ pub async fn execute(
     id: DispatchId,
     registry: Arc<Mutex<DispatchRegistry>>,
     attachments: Vec<FileAttachment>,
+    tool_config: std::collections::HashMap<DomainAgent, AgentToolConfig>,
 ) -> Result<(), DispatchError> {
     // H-7: check Security agent scope before registering.
     if agents.contains(&DomainAgent::Security) {
@@ -135,6 +137,7 @@ pub async fn execute(
             broadcast_tx,
             reg_clone,
             attachments,
+            tool_config,
         )
         .await;
     });
@@ -143,8 +146,8 @@ pub async fn execute(
 }
 
 /// Drive all agents to completion concurrently, broadcasting state transitions.
-#[allow(clippy::too_many_arguments)]
-#[tracing::instrument(skip(task, tx, registry, _mode, attachments), fields(dispatch_id = %id))]
+#[allow(clippy::too_many_arguments, clippy::implicit_hasher)]
+#[tracing::instrument(skip(task, tx, registry, _mode, attachments, tool_config), fields(dispatch_id = %id))]
 async fn run_agents(
     task: String,
     agents: Vec<DomainAgent>,
@@ -154,6 +157,7 @@ async fn run_agents(
     tx: broadcast::Sender<DispatchEvent>,
     registry: Arc<Mutex<DispatchRegistry>>,
     attachments: Vec<FileAttachment>,
+    tool_config: std::collections::HashMap<DomainAgent, AgentToolConfig>,
 ) {
     let started = std::time::Instant::now();
 
@@ -180,7 +184,10 @@ async fn run_agents(
         let tx_c = tx.clone();
         let task_c = task.clone();
         let att_c = attachments.clone();
-        set.spawn(spawn_teammate(agent, task_c, dry, tx_c, att_c));
+        let cfg = tool_config
+            .get(&agent)
+            .map(|c| (c.depth, c.optional_tools.clone()));
+        set.spawn(spawn_teammate(agent, task_c, dry, tx_c, att_c, cfg));
     }
     while let Some(result) = set.join_next().await {
         if let Err(e) = result {
@@ -214,11 +221,38 @@ async fn run_agents(
 /// Write-capable paths are only reached when `dry = false`.  Future
 /// `TeamManager` lifecycle tracking (`register_member` / `set_handle` / `mark_done`)
 /// is gated behind the `team-manager` Cargo feature.
-fn build_prompt(agent: DomainAgent, task: &str, attachments: &[FileAttachment]) -> String {
-    if attachments.is_empty() {
-        return format!("[{agent}] {task}");
+fn build_prompt(
+    agent: DomainAgent,
+    task: &str,
+    attachments: &[FileAttachment],
+    tool_cfg: Option<(ResearchDepth, Vec<String>)>,
+) -> String {
+    let mut prompt = format!("[{agent}]");
+
+    // Inject tool config constraints if provided by the operator.
+    if let Some((depth, optional_tools)) = tool_cfg {
+        use std::fmt::Write as _;
+        let _ = write!(
+            prompt,
+            "\n\n## Tool Config (injected at dispatch)\nResearch depth: {}\n  Contract: {}\nOptional tools enabled: {}",
+            format!("{depth:?}").to_lowercase(),
+            depth.contract(),
+            if optional_tools.is_empty() {
+                "none".to_owned()
+            } else {
+                optional_tools.join(", ")
+            },
+        );
     }
-    let mut prompt = format!("[{agent}]\n\n=== Attached Files ===\n");
+
+    if attachments.is_empty() {
+        prompt.push('\n');
+        prompt.push('\n');
+        prompt.push_str(task);
+        return prompt;
+    }
+
+    prompt.push_str("\n\n=== Attached Files ===\n");
     for att in attachments {
         use std::fmt::Write as _;
         let _ = write!(
@@ -233,13 +267,14 @@ fn build_prompt(agent: DomainAgent, task: &str, attachments: &[FileAttachment]) 
 }
 
 #[allow(clippy::too_many_lines)]
-#[tracing::instrument(skip(tx, task, attachments), fields(agent = %agent))]
+#[tracing::instrument(skip(tx, task, attachments, tool_cfg), fields(agent = %agent))]
 async fn spawn_teammate(
     agent: DomainAgent,
     task: String,
     dry: bool,
     tx: broadcast::Sender<DispatchEvent>,
     attachments: Vec<FileAttachment>,
+    tool_cfg: Option<(ResearchDepth, Vec<String>)>,
 ) {
     if dry {
         let _ = tx.send(DispatchEvent::MailboxMessage {
@@ -272,7 +307,7 @@ async fn spawn_teammate(
         return;
     };
 
-    let prompt = build_prompt(agent, &task, &attachments);
+    let prompt = build_prompt(agent, &task, &attachments, tool_cfg);
     let mut child = match tokio::process::Command::new(&claude_path)
         .args(["--print", "-p", &prompt])
         .stdout(std::process::Stdio::piped())
@@ -412,6 +447,7 @@ mod tests {
             DispatchEvent::MailboxMessage { .. } => "mailbox",
             DispatchEvent::Complete { .. } => "complete",
             DispatchEvent::Error { .. } => "error",
+            DispatchEvent::ToolUsage { .. } => "tool_usage",
         }
     }
 
@@ -450,6 +486,7 @@ mod tests {
             id,
             registry,
             vec![],
+            std::collections::HashMap::default(),
         )
         .await
         .unwrap();
@@ -468,6 +505,7 @@ mod tests {
             id,
             registry,
             vec![],
+            std::collections::HashMap::default(),
         )
         .await
         .unwrap();
@@ -494,6 +532,7 @@ mod tests {
             id,
             registry,
             vec![],
+            std::collections::HashMap::default(),
         )
         .await
         .unwrap();
@@ -515,6 +554,7 @@ mod tests {
                 id.clone(),
                 Arc::clone(&registry),
                 vec![],
+                std::collections::HashMap::default(),
             )
             .await;
             // Cancel immediately — removes from registry before run_agents can.
@@ -559,6 +599,7 @@ mod tests {
             id.clone(),
             Arc::clone(&registry),
             vec![],
+            std::collections::HashMap::default(),
         )
         .await
         .unwrap();
@@ -606,6 +647,7 @@ mod tests {
             id.clone(),
             Arc::clone(&registry),
             vec![],
+            std::collections::HashMap::default(),
         )
         .await
         .unwrap();
@@ -654,6 +696,7 @@ mod tests {
             id.clone(),
             Arc::clone(&registry),
             vec![],
+            std::collections::HashMap::default(),
         )
         .await
         .unwrap();
@@ -703,6 +746,7 @@ mod tests {
             id,
             registry,
             vec![],
+            std::collections::HashMap::default(),
         )
         .await
         .unwrap_err();
@@ -729,6 +773,7 @@ mod tests {
             id.clone(),
             Arc::clone(&registry),
             vec![],
+            std::collections::HashMap::default(),
         )
         .await
         .unwrap();

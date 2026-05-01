@@ -19,14 +19,21 @@
     type AgentLiveState,
     type DispatchHistoryEntry,
     type FileAttachment,
+    type AgentToolConfig,
   } from '$lib/dispatch';
 
   import DispatchInput from '$lib/../components/dispatch/DispatchInput.svelte';
   import AgentSelector from '$lib/../components/dispatch/AgentSelector.svelte';
   import TaskDAG from '$lib/../components/dispatch/TaskDAG.svelte';
   import LiveAgentGrid from '$lib/../components/dispatch/LiveAgentGrid.svelte';
+  import AgentDetail from '$lib/../components/dispatch/AgentDetail.svelte';
   import MailboxStream from '$lib/../components/dispatch/MailboxStream.svelte';
   import HistoryRail from '$lib/../components/dispatch/HistoryRail.svelte';
+
+  // ── Props (forwarded from Dispatch.svelte route shell) ─────────────────────
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  let { runId }: { runId?: string } = $props();
 
   // ── State ──────────────────────────────────────────────────────────────────
 
@@ -39,11 +46,13 @@
   let classification = $state<Classification | null>(null);
   let dispatchId = $state<string | null>(null);
   let attachments = $state<FileAttachment[]>([]);
+  let toolConfig = $state<Partial<Record<DomainAgent, AgentToolConfig>>>({});
   let events = $state<DispatchEvent[]>([]);
   let agentStates = $state(new Map<DomainAgent, AgentLiveState>());
   let history = $state<DispatchHistoryEntry[]>(loadHistory());
   let errorMsg = $state<string | null>(null);
   let elapsedMs = $state<number | undefined>(undefined);
+  let selectedAgent = $state<DomainAgent | null>(null);
 
   let stopStream: (() => void) | null = null;
   let classifyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -53,7 +62,7 @@
   $effect(() => {
     const t = task;
     if (classifyTimer) clearTimeout(classifyTimer);
-    if (t.trim().length < 8 || phase === 'streaming') return;
+    if (t.trim().length < 8 || phase === 'streaming' || phase === 'complete' || phase === 'error') return;
 
     classifyTimer = setTimeout(async () => {
       try {
@@ -72,7 +81,12 @@
 
   // ── Dispatch ──────────────────────────────────────────────────────────────────
 
-  async function dispatch(taskText: string, isDry: boolean, atts: FileAttachment[] = []) {
+  async function dispatch(
+    taskText: string,
+    isDry: boolean,
+    atts: FileAttachment[] = [],
+    cfg: Partial<Record<DomainAgent, AgentToolConfig>> = {},
+  ) {
     if (selectedAgents.length === 0) return;
     errorMsg = null;
     events = [];
@@ -82,7 +96,7 @@
     let id: string;
     try {
       phase = 'streaming';
-      id = await executeDispatch(taskText, selectedAgents, isDry, atts);
+      id = await executeDispatch(taskText, selectedAgents, isDry, atts, cfg);
       dispatchId = id;
       triggerDispatchFX();
     } catch (e) {
@@ -144,6 +158,7 @@
         files_touched: files_touched ?? prev?.files_touched,
         token_count:   token_count   ?? prev?.token_count,
         elapsed_ms:    elapsed_ms    ?? prev?.elapsed_ms,
+        last_tool:     prev?.last_tool,
       });
     } else if ('MailboxMessage' in e) {
       const { agent, text } = e.MailboxMessage;
@@ -155,6 +170,19 @@
         files_touched: existing?.files_touched,
         token_count:   existing?.token_count,
         elapsed_ms:    existing?.elapsed_ms,
+        last_tool:     existing?.last_tool,
+      });
+    } else if ('ToolUsage' in e) {
+      const { agent, tool, action, status, latency_ms } = e.ToolUsage;
+      const existing = agentStates.get(agent);
+      agentStates = new Map(agentStates).set(agent, {
+        agent,
+        state:         existing?.state ?? 'running',
+        messages:      existing?.messages ?? [],
+        files_touched: existing?.files_touched,
+        token_count:   existing?.token_count,
+        elapsed_ms:    existing?.elapsed_ms,
+        last_tool:     { tool, action, status, latency_ms },
       });
     }
   }
@@ -201,6 +229,7 @@
     selectedAgents = [];
     classification = null;
     attachments = [];
+    toolConfig = {};
   }
 
   function replayFromHistory(entry: DispatchHistoryEntry) {
@@ -244,7 +273,7 @@
         group: 'Squad Dispatch',
         scope: 'squad-dispatch',
         matches: e => (e.metaKey || e.ctrlKey) && e.key === 'Enter',
-        handler: () => { if (phase !== 'streaming') dispatch(task, dry); },
+        handler: () => { if (phase !== 'streaming') dispatch(task, dry, attachments, toolConfig); },
       }),
       registerHotkey({
         id: 'squad-dispatch-dry',
@@ -372,6 +401,8 @@
         bind:task
         bind:dry
         bind:attachments
+        bind:toolConfig
+        selectedAgents={selectedAgents}
         disabled={isLive}
         onSubmit={dispatch}
         onTaskChange={(t) => { task = t; }}
@@ -449,7 +480,7 @@
         <button
           class="cmd-btn cmd-btn-dispatch"
           disabled={selectedAgents.length === 0 || !task.trim()}
-          onclick={() => dispatch(task, dry, attachments)}
+          onclick={() => dispatch(task, dry, attachments, toolConfig)}
         >
           <span>DISPATCH</span>
           <span class="dispatch-arrow">▶</span>
@@ -480,7 +511,20 @@
     {/if}
 
     <div class="rails-wrap" data-onboarding="dispatch-live-grid">
-      <LiveAgentGrid agents={selectedAgents} {agentStates} />
+      <LiveAgentGrid
+        agents={selectedAgents}
+        {agentStates}
+        onRetry={(agent) => { /* retry wired via dispatch */ void agent; }}
+        onSelect={(agent) => { selectedAgent = agent; }}
+      />
+      {#if selectedAgent !== null}
+        <AgentDetail
+          agent={selectedAgent}
+          live={agentStates.get(selectedAgent)}
+          onClose={() => { selectedAgent = null; }}
+          onRetry={(agent) => { selectedAgent = null; void agent; }}
+        />
+      {/if}
     </div>
   </section>
 

@@ -45,15 +45,15 @@
       data-onboarding={headerOnboarding}
     >
       <div class="flex items-center gap-2">
-        <span class="text-sm font-semibold text-[#e2e8f0]">{title}</span>
+        <span class="text-sm font-semibold text-[var(--la-text-bright)]">{title}</span>
         {#if subtitle}
-          <span class="text-[10px] text-[#64748b]">{subtitle}</span>
+          <span class="text-[10px] text-[var(--la-text-dim)]">{subtitle}</span>
         {/if}
       </div>
       <div class="flex items-center gap-2">
         {#if actions}{@render actions()}{/if}
         <button
-          class="text-[#64748b] hover:text-white text-lg leading-none"
+          class="text-[var(--la-text-dim)] hover:text-white text-lg leading-none"
           onclick={onclose}
           aria-label="Close {title}"
         >×</button>

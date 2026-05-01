@@ -119,17 +119,17 @@ describe('Phase 8: Claude GUI Control + Polish', () => {
   });
 
   describe('PolytopeDecor presence in screens', () => {
-    it('all screens can be imported', async () => {
-      const buildQueue = await import('$lib/../screens/BuildQueue.svelte');
-      const workspace = await import('$lib/../screens/Workspace.svelte');
+    it('all active screens can be imported', async () => {
+      const builds = await import('$lib/../screens/Builds.svelte');
+      const ops = await import('$lib/../screens/Ops.svelte');
       const intake = await import('$lib/../screens/Intake.svelte');
-      const sitrep = await import('$lib/../screens/Sitrep.svelte');
-      const copilot = await import('$lib/../screens/Copilot.svelte');
-      expect(buildQueue.default).toBeDefined();
-      expect(workspace.default).toBeDefined();
+      const helix = await import('$lib/../screens/Helix.svelte');
+      const dispatch = await import('$lib/../screens/Dispatch.svelte');
+      expect(builds.default).toBeDefined();
+      expect(ops.default).toBeDefined();
       expect(intake.default).toBeDefined();
-      expect(sitrep.default).toBeDefined();
-      expect(copilot.default).toBeDefined();
+      expect(helix.default).toBeDefined();
+      expect(dispatch.default).toBeDefined();
     });
   });
 
@@ -154,11 +154,11 @@ describe('Phase 8: Claude GUI Control + Polish', () => {
       expect(content).toContain('aria-label');
     });
 
-    it('Copilot messages have aria-live region', async () => {
+    it('CopilotDrawer messages have aria-live region', async () => {
       const fs = await import('fs');
       const path = await import('path');
       const content = fs.readFileSync(
-        path.resolve(process.cwd(), 'src/screens/Copilot.svelte'),
+        path.resolve(process.cwd(), 'src/components/CopilotDrawer.svelte'),
         'utf-8'
       );
       expect(content).toContain('aria-live');
@@ -166,14 +166,14 @@ describe('Phase 8: Claude GUI Control + Polish', () => {
   });
 
   describe('Responsive layout', () => {
-    it('Workspace right panel has responsive hide class', async () => {
+    it('app.svelte has 1024px breakpoint for Helix3D panel', async () => {
       const fs = await import('fs');
       const path = await import('path');
       const content = fs.readFileSync(
-        path.resolve(process.cwd(), 'src/screens/Workspace.svelte'),
+        path.resolve(process.cwd(), 'src/app.svelte'),
         'utf-8'
       );
-      expect(content).toContain('hidden lg:block');
+      expect(content).toContain('1024');
     });
 
     it('CommandPalette has max-width constraint', async () => {

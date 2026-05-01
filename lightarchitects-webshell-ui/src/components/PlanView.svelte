@@ -159,18 +159,18 @@
 
 <!-- Rich plan view (BuildPlan with gates) -->
 {#if hasDraft && draft}
-  <div class="bg-[#111827] border border-[#1e293b] rounded-lg p-3 mb-4">
+  <div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] rounded-lg p-3 mb-4">
     <!-- Plan header -->
     <div class="flex items-center gap-2 mb-2">
-      <span class="text-[10px] font-semibold tracking-wider text-[#FFD700] uppercase">Plan</span>
-      <span class="text-[11px] text-[#e2e8f0] font-medium flex-1">{draft.name}</span>
-      <span class="text-[8px] font-mono text-[#475569]">{draft.codename}</span>
+      <span class="text-[10px] font-semibold tracking-wider text-[var(--la-focus-ring)] uppercase">Plan</span>
+      <span class="text-[11px] text-[var(--la-text-bright)] font-medium flex-1">{draft.name}</span>
+      <span class="text-[8px] font-mono text-[var(--la-text-dim)]">{draft.codename}</span>
     </div>
 
     <!-- Pre-flight summary -->
     <div class="flex items-center gap-2 mb-2 px-1">
-      <span class="text-[8px] text-[#f59e0b]">PRE-FLIGHT</span>
-      <span class="text-[8px] text-[#475569]">
+      <span class="text-[8px] text-[var(--la-agent-performance)]">PRE-FLIGHT</span>
+      <span class="text-[8px] text-[var(--la-text-dim)]">
         {draft.pre_flight.filter(c => c.status === 'passed').length}/{draft.pre_flight.length} checks
       </span>
     </div>
@@ -191,15 +191,15 @@
           style="border-color: {isActive ? '#FFD700' + '40' : '#1e293b'}; {isActive ? 'box-shadow: 0 0 8px #FFD70020;' : ''}"
         >
           <button
-            class="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-[#1e293b]/40 transition-colors rounded"
+            class="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-[var(--la-drawer-border)]/40 transition-colors rounded"
             onclick={() => togglePhase(phase.id)}
           >
             <span class="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold"
               style="background-color: {color}20; color: {color}">{phase.id}</span>
             <span class="flex-shrink-0 text-[10px]" class:plan-pulse={isActive} style="color: {color}">{icon}</span>
-            <span class="text-[10px] text-[#e2e8f0] flex-1 truncate">{phase.title}</span>
+            <span class="text-[10px] text-[var(--la-text-bright)] flex-1 truncate">{phase.title}</span>
             {#if phase.assigned_sibling}
-              <span class="text-[8px] px-1 py-0.5 rounded bg-[#1e293b] text-[#94a3b8]">{phase.assigned_sibling}</span>
+              <span class="text-[8px] px-1 py-0.5 rounded bg-[var(--la-drawer-border)] text-[var(--la-text-label)]">{phase.assigned_sibling}</span>
             {/if}
 
             <!-- Status dropdown trigger -->
@@ -221,12 +221,12 @@
 
           {#if isExpanded}
             <div class="px-2 pb-2 pl-9 space-y-1.5">
-              <p class="text-[9px] text-[#94a3b8]">{phase.description}</p>
+              <p class="text-[9px] text-[var(--la-text-label)]">{phase.description}</p>
 
               <!-- Task items -->
               {#if phase.items && phase.items.length > 0}
                 {#each phase.items as item}
-                  <div class="flex items-center gap-1.5 text-[9px] text-[#64748b]">
+                  <div class="flex items-center gap-1.5 text-[9px] text-[var(--la-text-dim)]">
                     <span>□</span>
                     <span>{item}</span>
                   </div>
@@ -235,10 +235,10 @@
 
               <!-- Research enrichment -->
               {#if phase.research?.prior_art}
-                <div class="bg-[#0d1117] rounded p-2 mt-1">
-                  <span class="text-[8px] text-[#6366f1] font-medium">RESEARCH</span>
+                <div class="bg-[var(--la-drawer-bg)] rounded p-2 mt-1">
+                  <span class="text-[8px] text-[var(--la-agent-testing)] font-medium">RESEARCH</span>
                   {#each phase.research.prior_art as finding}
-                    <div class="text-[8px] text-[#94a3b8] mt-0.5">- {finding}</div>
+                    <div class="text-[8px] text-[var(--la-text-label)] mt-0.5">- {finding}</div>
                   {/each}
                 </div>
               {/if}
@@ -246,15 +246,15 @@
               <!-- Research trigger buttons -->
               <div class="flex gap-1 mt-1">
                 <button
-                  class="text-[8px] px-1.5 py-0.5 rounded border border-[#1e293b] text-[#64748b] hover:text-[#6366f1] hover:border-[#6366f1] transition-colors"
+                  class="text-[8px] px-1.5 py-0.5 rounded border border-[var(--la-drawer-border)] text-[var(--la-text-dim)] hover:text-[var(--la-agent-testing)] hover:border-[var(--la-agent-testing)] transition-colors"
                   onclick={() => enrichPhase(phase.id, 'general')}
                 >QUANTUM</button>
                 <button
-                  class="text-[8px] px-1.5 py-0.5 rounded border border-[#1e293b] text-[#64748b] hover:text-[#ef4444] hover:border-[#ef4444] transition-colors"
+                  class="text-[8px] px-1.5 py-0.5 rounded border border-[var(--la-drawer-border)] text-[var(--la-text-dim)] hover:text-[var(--la-danger-stroke)] hover:border-[var(--la-danger-stroke)] transition-colors"
                   onclick={() => enrichPhase(phase.id, 'security')}
                 >SERAPH</button>
                 <button
-                  class="text-[8px] px-1.5 py-0.5 rounded border border-[#1e293b] text-[#64748b] hover:text-[#06b6d4] hover:border-[#06b6d4] transition-colors"
+                  class="text-[8px] px-1.5 py-0.5 rounded border border-[var(--la-drawer-border)] text-[var(--la-text-dim)] hover:text-[var(--la-agent-knowledge)] hover:border-[var(--la-agent-knowledge)] transition-colors"
                   onclick={() => enrichPhase(phase.id, 'context7')}
                 >Context7</button>
               </div>
@@ -273,7 +273,7 @@
             <span class="text-[7px]" style="color: {gateStatusColor(phase.exit_gate.status)}">
               {phase.exit_gate.status}
             </span>
-            <span class="text-[7px] text-[#475569]">
+            <span class="text-[7px] text-[var(--la-text-dim)]">
               {phase.exit_gate.criteria.filter(c => c.passed).length}/{phase.exit_gate.criteria.length}
             </span>
             <div class="flex-1 h-px" style="background-color: {gateColor}20"></div>
@@ -287,7 +287,7 @@
                     <input
                       type="checkbox"
                       checked={criterion.passed}
-                      class="w-3 h-3 accent-[#22c55e]"
+                      class="w-3 h-3 accent-[var(--la-agent-researcher)]"
                       onchange={() => toggleCriterion(phase.id, criterion.id)}
                     />
                   {:else}
@@ -295,15 +295,15 @@
                       {criterion.passed ? '✓' : '○'}
                     </span>
                   {/if}
-                  <span class="text-[8px] {criterion.passed ? 'text-[#94a3b8]' : 'text-[#475569]'} flex-1">{criterion.label}</span>
-                  <span class="text-[7px] text-[#334155]">{criterion.type}</span>
+                  <span class="text-[8px] {criterion.passed ? 'text-[var(--la-text-label)]' : 'text-[var(--la-text-dim)]'} flex-1">{criterion.label}</span>
+                  <span class="text-[7px] text-[var(--la-hair-strong)]">{criterion.type}</span>
                 </div>
               {/each}
 
               <!-- Run automated gate button -->
               {#if phase.exit_gate.criteria.some(c => c.type === 'automated' && !c.passed)}
                 <button
-                  class="mt-1 text-[8px] px-2 py-0.5 rounded border border-[#1e293b] text-[#10b981] hover:bg-[#10b981]/10 transition-colors"
+                  class="mt-1 text-[8px] px-2 py-0.5 rounded border border-[var(--la-drawer-border)] text-[var(--la-agent-researcher)] hover:bg-[var(--la-agent-researcher)]/10 transition-colors"
                   onclick={() => runAutomatedGate(phase.id)}
                 >Run Automated Checks</button>
               {/if}
@@ -315,8 +315,8 @@
 
     <!-- Close-out summary -->
     <div class="flex items-center gap-2 mt-2 px-1">
-      <span class="text-[8px] text-[#06b6d4]">CLOSE-OUT</span>
-      <span class="text-[8px] text-[#475569]">
+      <span class="text-[8px] text-[var(--la-agent-knowledge)]">CLOSE-OUT</span>
+      <span class="text-[8px] text-[var(--la-text-dim)]">
         {draft.close_out.filter(s => s.status === 'complete').length}/{draft.close_out.length} steps
       </span>
     </div>
@@ -324,10 +324,10 @@
 
 <!-- Basic plan view (legacy ActivePlan without gates) -->
 {:else if plan}
-  <div class="bg-[#111827] border border-[#1e293b] rounded-lg p-3 mb-4">
+  <div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] rounded-lg p-3 mb-4">
     <div class="flex items-center gap-2 mb-2">
-      <span class="text-[10px] font-semibold tracking-wider text-[#FFD700] uppercase">Plan</span>
-      <span class="text-[11px] text-[#e2e8f0] font-medium">{plan.title}</span>
+      <span class="text-[10px] font-semibold tracking-wider text-[var(--la-focus-ring)] uppercase">Plan</span>
+      <span class="text-[11px] text-[var(--la-text-bright)] font-medium">{plan.title}</span>
     </div>
 
     <div class="space-y-1">
@@ -342,25 +342,25 @@
           style="border-color: {isActive ? '#FFD700' + '40' : '#1e293b'}; {isActive ? 'box-shadow: 0 0 8px #FFD70020;' : ''}"
         >
           <button
-            class="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-[#1e293b]/40 transition-colors rounded"
+            class="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-[var(--la-drawer-border)]/40 transition-colors rounded"
             onclick={() => togglePhase(phase.id)}
           >
             <span class="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold"
               style="background-color: {color}20; color: {color}">{phase.id}</span>
             <span class="flex-shrink-0 text-[10px]" class:plan-pulse={isActive} style="color: {color}">{icon}</span>
-            <span class="text-[10px] text-[#e2e8f0] flex-1 truncate">{phase.title}</span>
-            <span class="text-[9px] text-[#475569] flex-shrink-0 transition-transform" class:rotate-90={isExpanded}>&#9654;</span>
+            <span class="text-[10px] text-[var(--la-text-bright)] flex-1 truncate">{phase.title}</span>
+            <span class="text-[9px] text-[var(--la-text-dim)] flex-shrink-0 transition-transform" class:rotate-90={isExpanded}>&#9654;</span>
           </button>
 
           {#if isExpanded}
             <div class="px-2 pb-2 pl-9 space-y-1">
               {#if phase.description}
-                <p class="text-[9px] text-[#94a3b8] leading-relaxed">{phase.description}</p>
+                <p class="text-[9px] text-[var(--la-text-label)] leading-relaxed">{phase.description}</p>
               {/if}
               {#if phase.files?.length > 0}
                 <div class="space-y-0.5">
                   {#each phase.files as file}
-                    <div class="text-[9px] font-mono text-[#64748b] truncate" title={file}>{file}</div>
+                    <div class="text-[9px] font-mono text-[var(--la-text-dim)] truncate" title={file}>{file}</div>
                   {/each}
                 </div>
               {/if}

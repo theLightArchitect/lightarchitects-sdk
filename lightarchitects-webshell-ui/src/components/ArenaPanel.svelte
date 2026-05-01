@@ -129,36 +129,36 @@
   );
 </script>
 
-<div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
+<div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] rounded-lg overflow-hidden">
   <!-- Header -->
-  <div class="px-4 py-2 border-b border-[#1e293b] flex items-center justify-between">
-    <h3 class="text-xs font-medium text-[#94a3b8]">ARENA STATUS</h3>
+  <div class="px-4 py-2 border-b border-[var(--la-drawer-border)] flex items-center justify-between">
+    <h3 class="text-xs font-medium text-[var(--la-text-label)]">ARENA STATUS</h3>
     <div class="flex items-center gap-3 text-[10px]">
-      <span class="text-[#22c55e]">{$arenaStats.activeAgents} active</span>
-      <span class="text-[#6b7280]">{$arenaStats.idleAgents} idle</span>
+      <span class="text-[var(--la-agent-researcher)]">{$arenaStats.activeAgents} active</span>
+      <span class="text-[var(--la-text-base)]">{$arenaStats.idleAgents} idle</span>
     </div>
   </div>
 
   <!-- Routine counts -->
-  <div class="px-4 py-2 bg-[#0d1117] border-b border-[#1e293b] flex items-center gap-4">
+  <div class="px-4 py-2 bg-[var(--la-drawer-bg)] border-b border-[var(--la-drawer-border)] flex items-center gap-4">
     <div class="flex items-center gap-2">
-      <span class="text-[10px] text-[#64748b]">Active Routines:</span>
-      <span class="text-[12px] font-semibold text-[#22c55e]">{$arenaStatus.activeRoutines}</span>
+      <span class="text-[10px] text-[var(--la-text-dim)]">Active Routines:</span>
+      <span class="text-[12px] font-semibold text-[var(--la-agent-researcher)]">{$arenaStatus.activeRoutines}</span>
     </div>
     <div class="flex items-center gap-2">
-      <span class="text-[10px] text-[#64748b]">Queued:</span>
-      <span class="text-[12px] font-semibold text-[#f59e0b]">{$arenaStatus.queuedRoutines}</span>
+      <span class="text-[10px] text-[var(--la-text-dim)]">Queued:</span>
+      <span class="text-[12px] font-semibold text-[var(--la-agent-performance)]">{$arenaStatus.queuedRoutines}</span>
     </div>
   </div>
 
   <!-- Agent list -->
-  <div class="divide-y divide-[#1e293b]">
+  <div class="divide-y divide-[var(--la-drawer-border)]">
     {#each sortedAgents as agent (agent.id)}
       {@const sibColor = SIBLING_COLORS[agent.sibling] ?? '#6b7280'}
       {@const stColor = agentStatusColor(agent.status)}
 
       <button
-        class="w-full text-left px-4 py-2 flex items-center gap-3 hover:bg-[#0d1117] transition-colors"
+        class="w-full text-left px-4 py-2 flex items-center gap-3 hover:bg-[var(--la-drawer-bg)] transition-colors"
         onclick={() => onAgentClick?.(agent)}
       >
         <!-- Status pulse -->
@@ -186,7 +186,7 @@
         <!-- Agent info -->
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2">
-            <span class="text-[11px] text-[#e2e8f0]">{agent.id}</span>
+            <span class="text-[11px] text-[var(--la-text-bright)]">{agent.id}</span>
             <span
               class="text-[9px] px-1.5 py-0.5 rounded"
               style="background-color: {stColor}20; color: {stColor}"
@@ -194,17 +194,17 @@
               {agent.status}
             </span>
           </div>
-          <div class="flex items-center gap-2 text-[9px] text-[#475569]">
+          <div class="flex items-center gap-2 text-[9px] text-[var(--la-text-dim)]">
             <span>heartbeat: {formatHeartbeat(agent.lastHeartbeat)}</span>
             {#if agent.currentBuildId}
               <span>&middot;</span>
-              <span class="text-[#FFD700]">{agent.currentBuildId.slice(-8)}</span>
+              <span class="text-[var(--la-focus-ring)]">{agent.currentBuildId.slice(-8)}</span>
             {/if}
           </div>
         </div>
 
         <!-- Routine count -->
-        <div class="text-[10px] text-[#94a3b8]">
+        <div class="text-[10px] text-[var(--la-text-label)]">
           {agent.routineCount} routines
         </div>
       </button>
@@ -214,18 +214,18 @@
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <!-- AGENT TRAINING SECTION                                                -->
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
-  <div class="border-t border-[#1e293b]">
+  <div class="border-t border-[var(--la-drawer-border)]">
     <!-- Training section header -->
     <button
-      class="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[#0d1117] transition-colors"
+      class="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[var(--la-drawer-bg)] transition-colors"
       onclick={() => showTraining = !showTraining}
     >
       <div class="flex items-center gap-2">
-        <h3 class="text-xs font-medium text-[#94a3b8]">ARENA TRAINING</h3>
-        <span class="text-[8px] px-1.5 py-0.5 rounded bg-[#FFD700]/10 text-[#FFD700] font-semibold">Pro</span>
+        <h3 class="text-xs font-medium text-[var(--la-text-label)]">ARENA TRAINING</h3>
+        <span class="text-[8px] px-1.5 py-0.5 rounded bg-[var(--la-focus-ring)]/10 text-[var(--la-focus-ring)] font-semibold">Pro</span>
       </div>
       <svg
-        class="w-3 h-3 text-[#475569] transition-transform"
+        class="w-3 h-3 text-[var(--la-text-dim)] transition-transform"
         class:rotate-180={showTraining}
         viewBox="0 0 12 12"
         fill="none"
@@ -245,15 +245,15 @@
             <!-- Progress bar -->
             <div class="space-y-1">
               <div class="flex items-center justify-between">
-                <span class="text-[10px] text-[#94a3b8]">
+                <span class="text-[10px] text-[var(--la-text-label)]">
                   {isRunning ? 'Training in progress...' : isComplete ? 'Training complete' : 'Training failed'}
                 </span>
                 <div class="flex items-center gap-2">
-                  <span class="text-[10px] text-[#475569]">{elapsed}</span>
-                  <span class="text-[10px] font-mono text-[#e2e8f0]">{$trainingRun.progress}%</span>
+                  <span class="text-[10px] text-[var(--la-text-dim)]">{elapsed}</span>
+                  <span class="text-[10px] font-mono text-[var(--la-text-bright)]">{$trainingRun.progress}%</span>
                 </div>
               </div>
-              <div class="w-full h-1.5 bg-[#1e293b] rounded-full overflow-hidden">
+              <div class="w-full h-1.5 bg-[var(--la-drawer-border)] rounded-full overflow-hidden">
                 <div
                   class="h-full rounded-full transition-all duration-300"
                   style="width: {$trainingRun.progress}%; background: {isComplete ? '#22c55e' : isFailed ? '#ef4444' : 'linear-gradient(90deg, #FFD700, #f59e0b)'}"
@@ -265,9 +265,9 @@
             {#if isComplete && $trainingRun.results}
               {@const r = $trainingRun.results}
               {@const sc = scoreColor(r.score)}
-              <div class="bg-[#0d1117] rounded-lg p-3 space-y-2">
+              <div class="bg-[var(--la-drawer-bg)] rounded-lg p-3 space-y-2">
                 <div class="flex items-center justify-between">
-                  <span class="text-[10px] text-[#64748b]">Score</span>
+                  <span class="text-[10px] text-[var(--la-text-dim)]">Score</span>
                   <span
                     class="text-sm font-bold px-2 py-0.5 rounded"
                     style="background-color: {sc}20; color: {sc}"
@@ -276,24 +276,24 @@
                   </span>
                 </div>
                 <div class="flex items-center gap-4 text-[10px]">
-                  <span class="text-[#94a3b8]">Exercises: <span class="text-[#e2e8f0] font-medium">{r.exercises}</span></span>
-                  <span class="text-[#22c55e]">Passed: {r.passed}</span>
-                  <span class="text-[#ef4444]">Failed: {r.exercises - r.passed}</span>
+                  <span class="text-[var(--la-text-label)]">Exercises: <span class="text-[var(--la-text-bright)] font-medium">{r.exercises}</span></span>
+                  <span class="text-[var(--la-agent-researcher)]">Passed: {r.passed}</span>
+                  <span class="text-[var(--la-danger-stroke)]">Failed: {r.exercises - r.passed}</span>
                 </div>
               </div>
             {/if}
 
             <!-- Failed state -->
             {#if isFailed}
-              <div class="bg-[#ef4444]/10 border border-[#ef4444]/20 rounded px-3 py-2">
-                <span class="text-[10px] text-[#ef4444]">Training run failed. Check backend logs for details.</span>
+              <div class="bg-[var(--la-danger-stroke)]/10 border border-[var(--la-danger-stroke)]/20 rounded px-3 py-2">
+                <span class="text-[10px] text-[var(--la-danger-stroke)]">Training run failed. Check backend logs for details.</span>
               </div>
             {/if}
 
             <!-- Reset button -->
             {#if isComplete || isFailed}
               <button
-                class="w-full text-[10px] py-1.5 rounded bg-[#1e293b] text-[#94a3b8] hover:bg-[#1e293b]/80 hover:text-[#e2e8f0] transition-colors"
+                class="w-full text-[10px] py-1.5 rounded bg-[var(--la-drawer-border)] text-[var(--la-text-label)] hover:bg-[var(--la-drawer-border)]/80 hover:text-[var(--la-text-bright)] transition-colors"
                 onclick={handleReset}
               >
                 Configure New Run
@@ -307,20 +307,20 @@
 
             <!-- Exercise type selector -->
             <div class="space-y-1.5">
-              <span class="text-[10px] text-[#64748b] font-medium block">Exercise Type</span>
+              <span class="text-[10px] text-[var(--la-text-dim)] font-medium block">Exercise Type</span>
               <div class="grid grid-cols-2 gap-1.5">
                 {#each EXERCISE_TYPES as ex}
                   {@const selected = $trainingConfig.exerciseType === ex.value}
                   <button
-                    class="flex items-center gap-2 px-2.5 py-1.5 rounded text-left transition-colors border {selected ? 'border-amber-500/40 bg-amber-500/5' : 'border-[#1e293b] bg-[#0d1117] hover:border-[#334155]'}"
+                    class="flex items-center gap-2 px-2.5 py-1.5 rounded text-left transition-colors border {selected ? 'border-amber-500/40 bg-amber-500/5' : 'border-[var(--la-drawer-border)] bg-[var(--la-drawer-bg)] hover:border-[var(--la-hair-strong)]'}"
                     onclick={() => trainingConfig.update(c => ({ ...c, exerciseType: ex.value }))}
                   >
                     <span
-                      class="w-5 h-5 rounded flex items-center justify-center text-[8px] font-bold flex-shrink-0 {selected ? 'bg-amber-500/20 text-[#FFD700]' : 'bg-[#1e293b] text-[#64748b]'}"
+                      class="w-5 h-5 rounded flex items-center justify-center text-[8px] font-bold flex-shrink-0 {selected ? 'bg-amber-500/20 text-[var(--la-focus-ring)]' : 'bg-[var(--la-drawer-border)] text-[var(--la-text-dim)]'}"
                     >
                       {ex.icon}
                     </span>
-                    <span class="text-[10px] truncate {selected ? 'text-[#e2e8f0]' : 'text-[#94a3b8]'}">
+                    <span class="text-[10px] truncate {selected ? 'text-[var(--la-text-bright)]' : 'text-[var(--la-text-label)]'}">
                       {ex.label}
                     </span>
                   </button>
@@ -330,13 +330,14 @@
 
             <!-- Scoring weight sliders -->
             <div class="space-y-1.5">
-              <span class="text-[10px] text-[#64748b] font-medium block">Scoring Weights</span>
+              <span class="text-[10px] text-[var(--la-text-dim)] font-medium block">Scoring Weights</span>
               <div class="grid grid-cols-2 gap-x-3 gap-y-1">
                 {#each SCORING_DIMENSIONS as dim}
                   <div class="flex items-center gap-2">
-                    <span class="text-[9px] text-[#475569] w-[60px] truncate capitalize">{dim}</span>
+                    <span class="text-[9px] text-[var(--la-text-dim)] w-[60px] truncate capitalize">{dim}</span>
                     <input
                       type="range"
+                      aria-label={dim}
                       min="0"
                       max="100"
                       value={$trainingConfig.weights[dim]}
@@ -347,11 +348,11 @@
                           weights: { ...c.weights, [dim]: val },
                         }));
                       }}
-                      class="flex-1 h-1 appearance-none bg-[#1e293b] rounded-full accent-[#FFD700] cursor-pointer
+                      class="flex-1 h-1 appearance-none bg-[var(--la-drawer-border)] rounded-full accent-[var(--la-focus-ring)] cursor-pointer
                         [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5
-                        [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#FFD700]"
+                        [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[var(--la-focus-ring)]"
                     />
-                    <span class="text-[9px] text-[#64748b] w-5 text-right font-mono">{$trainingConfig.weights[dim]}</span>
+                    <span class="text-[9px] text-[var(--la-text-dim)] w-5 text-right font-mono">{$trainingConfig.weights[dim]}</span>
                   </div>
                 {/each}
               </div>
@@ -359,7 +360,7 @@
 
             <!-- Dataset source -->
             <div class="space-y-1.5">
-              <span class="text-[10px] text-[#64748b] font-medium block">Dataset Source</span>
+              <span class="text-[10px] text-[var(--la-text-dim)] font-medium block">Dataset Source</span>
               <div class="flex items-center gap-3">
                 {#each DATASET_SOURCES as src}
                   <label class="flex items-center gap-1.5 cursor-pointer">
@@ -369,9 +370,9 @@
                       value={src.value}
                       checked={$trainingConfig.datasetSource === src.value}
                       onchange={() => trainingConfig.update(c => ({ ...c, datasetSource: src.value }))}
-                      class="w-3 h-3 accent-[#FFD700]"
+                      class="w-3 h-3 accent-[var(--la-focus-ring)]"
                     />
-                    <span class="text-[10px] text-[#94a3b8]">{src.label}</span>
+                    <span class="text-[10px] text-[var(--la-text-label)]">{src.label}</span>
                   </label>
                 {/each}
               </div>
@@ -382,46 +383,46 @@
                   placeholder="/path/to/dataset"
                   value={$trainingConfig.customPath ?? ''}
                   oninput={(e) => trainingConfig.update(c => ({ ...c, customPath: (e.target as HTMLInputElement).value }))}
-                  class="w-full mt-1 px-2.5 py-1.5 text-[10px] bg-[#0d1117] border border-[#1e293b] rounded text-[#e2e8f0] placeholder-[#475569] focus:border-[#FFD700]/40 focus:outline-none"
+                  class="w-full mt-1 px-2.5 py-1.5 text-[10px] bg-[var(--la-drawer-bg)] border border-[var(--la-drawer-border)] rounded text-[var(--la-text-bright)] placeholder-[var(--la-text-dim)] focus:border-[var(--la-focus-ring)]/40 focus:outline-none"
                 />
               {/if}
             </div>
 
             <!-- Error display -->
             {#if trainingError}
-              <div class="bg-[#ef4444]/10 border border-[#ef4444]/20 rounded px-3 py-2">
-                <span class="text-[10px] text-[#ef4444]">{trainingError}</span>
+              <div class="bg-[var(--la-danger-stroke)]/10 border border-[var(--la-danger-stroke)]/20 rounded px-3 py-2">
+                <span class="text-[10px] text-[var(--la-danger-stroke)]">{trainingError}</span>
               </div>
             {/if}
 
             <!-- Cost gate preview -->
             {#if showCostGate}
-              <div class="bg-[#0d1117] border border-[#f59e0b]/30 rounded-lg p-3 space-y-2">
+              <div class="bg-[var(--la-drawer-bg)] border border-[var(--la-agent-performance)]/30 rounded-lg p-3 space-y-2">
                 <div class="flex items-center gap-2">
-                  <span class="text-[9px] px-1.5 py-0.5 rounded bg-[#f59e0b]/15 text-[#f59e0b] font-semibold">PREVIEW</span>
-                  <span class="text-[10px] text-[#94a3b8]">Estimated run</span>
+                  <span class="text-[9px] px-1.5 py-0.5 rounded bg-[var(--la-agent-performance)]/15 text-[var(--la-agent-performance)] font-semibold">PREVIEW</span>
+                  <span class="text-[10px] text-[var(--la-text-label)]">Estimated run</span>
                 </div>
                 <div class="grid grid-cols-3 gap-2 text-center">
                   <div>
-                    <div class="text-xs font-bold text-[#e2e8f0]">~10</div>
-                    <div class="text-[9px] text-[#475569]">exercises</div>
+                    <div class="text-xs font-bold text-[var(--la-text-bright)]">~10</div>
+                    <div class="text-[9px] text-[var(--la-text-dim)]">exercises</div>
                   </div>
                   <div>
-                    <div class="text-xs font-bold text-[#e2e8f0]">~8m</div>
-                    <div class="text-[9px] text-[#475569]">duration</div>
+                    <div class="text-xs font-bold text-[var(--la-text-bright)]">~8m</div>
+                    <div class="text-[9px] text-[var(--la-text-dim)]">duration</div>
                   </div>
                   <div>
-                    <div class="text-xs font-bold text-[#FFD700]">local</div>
-                    <div class="text-[9px] text-[#475569]">no API cost</div>
+                    <div class="text-xs font-bold text-[var(--la-focus-ring)]">local</div>
+                    <div class="text-[9px] text-[var(--la-text-dim)]">no API cost</div>
                   </div>
                 </div>
                 <div class="flex gap-2 pt-1">
                   <button
-                    class="flex-1 py-1.5 rounded text-[10px] bg-[#1e293b] text-[#94a3b8] hover:text-[#e2e8f0] transition-colors"
+                    class="flex-1 py-1.5 rounded text-[10px] bg-[var(--la-drawer-border)] text-[var(--la-text-label)] hover:text-[var(--la-text-bright)] transition-colors"
                     onclick={() => showCostGate = false}
                   >Cancel</button>
                   <button
-                    class="flex-1 py-1.5 rounded text-[10px] font-medium bg-gradient-to-r from-[#FFD700] to-[#f59e0b] text-[#0d1117] hover:brightness-110 transition-all"
+                    class="flex-1 py-1.5 rounded text-[10px] font-medium bg-gradient-to-r from-[var(--la-focus-ring)] to-[var(--la-agent-performance)] text-[var(--la-drawer-bg)] hover:brightness-110 transition-all"
                     onclick={confirmStartTraining}
                   >Confirm &amp; Run</button>
                 </div>
@@ -429,7 +430,7 @@
             {:else}
               <!-- Start button -->
               <button
-                class="w-full py-2 rounded text-[11px] font-medium transition-all {canStartTraining ? 'bg-gradient-to-r from-[#FFD700] to-[#f59e0b] text-[#0d1117] hover:brightness-110' : 'bg-[#1e293b] text-[#475569] cursor-not-allowed'}"
+                class="w-full py-2 rounded text-[11px] font-medium transition-all {canStartTraining ? 'bg-gradient-to-r from-[var(--la-focus-ring)] to-[var(--la-agent-performance)] text-[var(--la-drawer-bg)] hover:brightness-110' : 'bg-[var(--la-drawer-border)] text-[var(--la-text-dim)] cursor-not-allowed'}"
                 disabled={!canStartTraining}
                 onclick={requestStartTraining}
               >

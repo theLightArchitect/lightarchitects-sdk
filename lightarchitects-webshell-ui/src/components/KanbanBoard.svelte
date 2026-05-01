@@ -62,7 +62,7 @@
         >
           <div class="flex items-center gap-2">
             <span class="text-xs" style="color: {col.color}">{col.icon}</span>
-            <span class="text-xs font-semibold text-[#e2e8f0]">{col.label}</span>
+            <span class="text-xs font-semibold text-[var(--la-text-bright)]">{col.label}</span>
           </div>
           <span
             class="text-[9px] font-mono px-1.5 py-0.5 rounded-full"
@@ -76,8 +76,8 @@
         <div class="column-body">
           {#if col.builds.length === 0}
             <div class="empty-state">
-              <span class="text-lg text-[#334155] mb-1">{col.icon}</span>
-              <span class="text-[9px] text-[#475569]">No {col.label.toLowerCase()} builds</span>
+              <span class="text-lg text-[var(--la-hair-strong)] mb-1">{col.icon}</span>
+              <span class="text-[9px] text-[var(--la-text-dim)]">No {col.label.toLowerCase()} builds</span>
             </div>
           {:else}
             {#each col.builds as build, cardIdx (build.id)}
@@ -105,7 +105,7 @@
         </span>
       {/each}
     </div>
-    <span class="text-[9px] text-[#475569] font-mono">{progressPct}% complete</span>
+    <span class="text-[9px] text-[var(--la-text-dim)] font-mono">{progressPct}% complete</span>
   </div>
 </div>
 

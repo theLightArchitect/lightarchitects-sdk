@@ -29,14 +29,14 @@
   let displayedBuilds = $derived($builds.slice(0, maxDisplay));
 </script>
 
-<div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
+<div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] rounded-lg overflow-hidden">
   <!-- Header -->
-  <div class="px-4 py-2 border-b border-[#1e293b] flex items-center justify-between">
-    <h3 class="text-xs font-medium text-[#94a3b8]">BUILD PORTFOLIO</h3>
+  <div class="px-4 py-2 border-b border-[var(--la-drawer-border)] flex items-center justify-between">
+    <h3 class="text-xs font-medium text-[var(--la-text-label)]">BUILD PORTFOLIO</h3>
     <div class="flex items-center gap-3 text-[10px]">
-      <span class="text-[#3b82f6]">{$buildStats.inProgress} active</span>
-      <span class="text-[#94a3b8]">{$buildStats.completed} done</span>
-      <span class="text-[#6b7280]">{$buildStats.total} total</span>
+      <span class="text-[var(--la-agent-engineer)]">{$buildStats.inProgress} active</span>
+      <span class="text-[var(--la-text-label)]">{$buildStats.completed} done</span>
+      <span class="text-[var(--la-text-base)]">{$buildStats.total} total</span>
     </div>
   </div>
 
@@ -49,7 +49,7 @@
       {@const stColor = statusColor(build.status)}
 
       <button
-        class="bg-[#0d1117] border border-[#1e293b] rounded-lg p-3 text-left hover:border-[#334155] transition-colors"
+        class="bg-[var(--la-drawer-bg)] border border-[var(--la-drawer-border)] rounded-lg p-3 text-left hover:border-[var(--la-hair-strong)] transition-colors"
         aria-label="Open build: {build.name}"
         onclick={() => onBuildClick?.(build.id)}
       >
@@ -59,7 +59,7 @@
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
-              <span class="text-xs font-medium text-[#e2e8f0] truncate">{build.name}</span>
+              <span class="text-xs font-medium text-[var(--la-text-bright)] truncate">{build.name}</span>
               <span
                 class="text-[9px] px-1.5 py-0.5 rounded-full"
                 style="background-color: {stColor}20; color: {stColor}"
@@ -69,16 +69,16 @@
             </div>
             <div class="flex items-center gap-2 mt-1">
               <span class="text-[9px]" style="color: {polyColor}">{build.metaSkill}</span>
-              <span class="text-[9px] text-[#475569]">{formatTime(build.updatedAt)}</span>
+              <span class="text-[9px] text-[var(--la-text-dim)]">{formatTime(build.updatedAt)}</span>
             </div>
           </div>
         </div>
 
         <!-- Progress -->
-        <div class="flex items-center gap-2 text-[10px] text-[#475569] mb-2">
+        <div class="flex items-center gap-2 text-[10px] text-[var(--la-text-dim)] mb-2">
           <span>{build.currentPillar}</span>
           <span>{progress}/7</span>
-          <span class="ml-auto text-[#94a3b8]">{Math.round(build.confidence * 100)}%</span>
+          <span class="ml-auto text-[var(--la-text-label)]">{Math.round(build.confidence * 100)}%</span>
         </div>
 
         <PillarRail pillars={build.pillars} compact={true} />
@@ -87,8 +87,8 @@
   </div>
 
   {#if $builds.length > maxDisplay}
-    <div class="px-4 py-2 border-t border-[#1e293b] text-center">
-      <button class="text-[10px] text-[#FFD700] hover:text-[#9F67FF] transition-colors">
+    <div class="px-4 py-2 border-t border-[var(--la-drawer-border)] text-center">
+      <button class="text-[10px] text-[var(--la-focus-ring)] hover:text-[var(--la-agent-testing)] transition-colors">
         + {$builds.length - maxDisplay} more builds
       </button>
     </div>

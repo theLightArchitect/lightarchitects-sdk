@@ -16,18 +16,22 @@
   import DiffPreview from './components/DiffPreview.svelte';
   import KeymapLegend from './components/KeymapLegend.svelte';
   import HelixLegend from './components/HelixLegend.svelte';
+  import CornerBrackets from '$lib/components/CornerBrackets.svelte';
+  import ProjectPicker from './components/ProjectPicker.svelte';
+  import ActiveBuildsChip from './components/ActiveBuildsChip.svelte';
   import {
     ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen,
     builds, currentBuildId, findings, logEntries, artifacts, conductorTasks, arenaStatus, alerts,
     activePlan, latestScrumReport, hotMemory, coldMemory, activeHelixNode, selectedPillar,
     expandedFindings, supervisorAlerts, siblingHealth, copilotMessages,
-    intakeFormDirty, authStatus,
+    intakeFormDirty, authStatus, commandPaletteOpen,
   } from '$lib/stores';
   import { get } from 'svelte/store';
   import { setupComplete, step, loadSetupInfo, selectedBackend, selectedModel, selectedAgent } from '$lib/setup';
   import { connectGlobalSSE, disconnectGlobalSSE } from '$lib/sse';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
   import { registerHotkey, dispatchHotkey } from '$lib/hotkeyRegistry';
+  import { matchRoute, applyRedirects, navigate } from '$lib/routes';
 
   // Track persisted stores — save on any change after initial load.
   // Uses store.subscribe() instead of $effect to avoid Svelte 5's reactive
@@ -41,13 +45,13 @@
 
   // Lazy-loaded screens (code-split per route)
   const screenModules = {
-    Activity:      () => import('./screens/Activity.svelte'),
-    BuildQueue:    () => import('./screens/BuildQueue.svelte'),
-    Workspace:     () => import('./screens/Workspace.svelte'),
+    Ops:           () => import('./screens/Ops.svelte'),
+    Dispatch:      () => import('./screens/Dispatch.svelte'),
+    Builds:        () => import('./screens/Builds.svelte'),
     Intake:        () => import('./screens/Intake.svelte'),
-    Sitrep:        () => import('./screens/Sitrep.svelte'),
+    Helix:         () => import('./screens/Helix.svelte'),
+    BuildDetail:   () => import('./screens/BuildDetail.svelte'),
     ProjectDetail: () => import('./screens/ProjectDetail.svelte'),
-    SquadDispatch: () => import('./screens/SquadDispatch.svelte'),
   };
 
   type ScreenModule = { default: any };
@@ -56,13 +60,7 @@
   let screenLoading = $state(true);
 
   function resolveScreenKey(path: string): keyof typeof screenModules {
-    if (path === '/activity') return 'Activity';
-    if (path.startsWith('/workspace')) return 'Workspace';
-    if (path === '/intake') return 'Intake';
-    if (path === '/sitrep') return 'Sitrep';
-    if (path.startsWith('/project/')) return 'ProjectDetail';
-    if (path === '/squad-dispatch') return 'SquadDispatch';
-    return 'BuildQueue';
+    return matchRoute(path).screen;
   }
 
   async function loadScreen(path: string) {
@@ -75,7 +73,7 @@
       console.error('Failed to load screen:', key, err);
       // Fallback: try direct import
       try {
-        const mod: ScreenModule = await screenModules['BuildQueue']();
+        const mod: ScreenModule = await screenModules['Builds']();
         ActiveScreen = mod.default;
       } catch {
         ActiveScreen = null;
@@ -137,30 +135,27 @@
   // Derived condition for setup gate — explicit dependency tracking in Svelte 5
   const setupDone = $derived($setupComplete && $step === 'done');
 
-  // Tab order optimised for read-before-write (#32): operators land on
-  // Activity (live state), then can scan Sitrep (squad health) or Queue
-  // (existing builds) before reaching Intake (new build — write action).
-  // Squad Dispatch appended last — a power-user action (Cmd+K shortcut).
+  // 4-tab nav: OPS (live ops), DISPATCH (agent dispatch), BUILDS (build queue), HELIX (knowledge graph)
+  // Tab order: read-heavy surfaces first (Ops → Builds), write/power-user last (Dispatch).
   const NAV_ITEMS = [
-    { label: 'Activity', hash: '/activity',      hint: 'Live trace events from running agents',                                         separator: false },
-    { label: 'Sitrep',   hash: '/sitrep',         hint: 'Squad health snapshot — agent status, alerts, uptime',                         separator: false },
-    { label: 'Queue',    hash: '/',               hint: 'All builds — past, in-flight, and queued',                                     separator: false },
-    { label: 'Intake',   hash: '/intake',         hint: 'Start a new build (Quick or Plan mode)',                                       separator: false },
-    { label: 'Squad',    hash: '/squad-dispatch', hint: 'Dispatch agents by domain — Engineer, Security, Researcher, Ops (Cmd+K)',      separator: true  },
+    { label: 'OPS',      hash: '/ops',      hint: 'Live agent activity, alerts, and squad health',                    separator: false },
+    { label: 'DISPATCH', hash: '/dispatch', hint: 'Dispatch agents by domain — Engineer, Security, Ops (Cmd+K)',      separator: false },
+    { label: 'BUILDS',   hash: '/builds',   hint: 'All builds — past, in-flight, and queued',                         separator: false },
+    { label: 'HELIX',    hash: '/helix',    hint: 'Knowledge graph — agent memory strands and quality gates',          separator: false },
   ];
-
-  function navigate(hash: string) {
-    window.location.hash = hash;
-  }
 
   let activeRoute = $derived($currentRoute);
 
   function isActive(hash: string): boolean {
-    if (hash === '/') return activeRoute === '/' || activeRoute === '';
+    // /builds is the default landing — active on both '/' and '/builds*' and '/workspace*'
+    if (hash === '/builds') {
+      return activeRoute === '/' || activeRoute === '' || activeRoute.startsWith('/builds') || activeRoute.startsWith('/workspace');
+    }
     return activeRoute.startsWith(hash);
   }
 
   function handleHashChange() {
+    applyRedirects();
     const path = window.location.hash.slice(1) || '/';
     currentRoute.set(path);
     loadScreen(path);
@@ -187,10 +182,26 @@
         siblingHealth, copilotMessages,
         // Wave 3 P0s: AuthBanner status (#13), Intake dirty state (#15)
         authStatus, intakeFormDirty,
+        // §11 command palette — Cmd+K conflicts with dispatch nav, use store for tests
+        commandPaletteOpen,
       };
+      // §57.9b — value snapshot for EvidenceCollector.captureStoreSnapshot().
+      // Returns current store values (not reactive objects) so Playwright can
+      // serialize the state at the moment of a test assertion.
+      (window as any).__e2e_stores = () => ({
+        builds: get(builds),
+        siblingHealth: get(siblingHealth),
+        copilotMessages: get(copilotMessages),
+        ayinStatus: get(ayinStatus),
+        alerts: get(alerts),
+        currentBuildId: get(currentBuildId),
+        selectedPillar: get(selectedPillar),
+        authStatus: get(authStatus),
+      });
     }
     startWaveTick();
     ayinStatus.set('reconnecting');
+    applyRedirects();
     loadScreen(window.location.hash.slice(1) || '/');
     const initializeStoresPromise = initializeStores(); // non-blocking; errors caught internally
     connectGlobalSSE(); // Phase 10.9 — global helix_entry / soul_promotion / strand_activation stream
@@ -208,11 +219,11 @@
       registerHotkey({
         id: 'global-squad-dispatch',
         keys: ['⌘', 'K'],
-        label: 'Open Squad Dispatch',
+        label: 'Open Dispatch',
         group: 'Navigation',
         scope: 'global',
         matches: e => (e.metaKey || e.ctrlKey) && e.key === 'k',
-        handler: () => navigate('/squad-dispatch'),
+        handler: () => navigate('/dispatch'),
       }),
       registerHotkey({
         id: 'global-keymap-legend',
@@ -226,47 +237,38 @@
       registerHotkey({
         id: 'global-tab-1',
         keys: ['1'],
-        label: 'Go to Activity',
+        label: 'Go to Ops',
         group: 'Navigation',
         scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '1' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
-        handler: () => navigate('/activity'),
+        handler: () => navigate('/ops'),
       }),
       registerHotkey({
         id: 'global-tab-2',
         keys: ['2'],
-        label: 'Go to Sitrep',
+        label: 'Go to Dispatch',
         group: 'Navigation',
         scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '2' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
-        handler: () => navigate('/sitrep'),
+        handler: () => navigate('/dispatch'),
       }),
       registerHotkey({
         id: 'global-tab-3',
         keys: ['3'],
-        label: 'Go to Queue',
+        label: 'Go to Builds',
         group: 'Navigation',
         scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '3' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
-        handler: () => navigate('/'),
+        handler: () => navigate('/builds'),
       }),
       registerHotkey({
         id: 'global-tab-4',
         keys: ['4'],
-        label: 'Go to Intake',
+        label: 'Go to Helix',
         group: 'Navigation',
         scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '4' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
-        handler: () => navigate('/intake'),
-      }),
-      registerHotkey({
-        id: 'global-tab-5',
-        keys: ['5'],
-        label: 'Go to Squad Dispatch',
-        group: 'Navigation',
-        scope: 'global',
-        matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '5' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
-        handler: () => navigate('/squad-dispatch'),
+        handler: () => navigate('/helix'),
       }),
       registerHotkey({
         id: 'global-copilot',
@@ -345,14 +347,10 @@
 <!-- Keymap legend modal — Cmd+/ toggles, Esc dismisses (#4). -->
 <KeymapLegend />
 <HelixLegend />
-<!-- Corner brackets — fixed-position tactical frame (#99 AES-3).
-     CSS lives in tokens.css .corner-bracket rules.
-     Animate to researcher-green during active dispatch via data-dispatching. -->
-<div class="corner-bracket tl" aria-hidden="true"></div>
-<div class="corner-bracket tr" aria-hidden="true"></div>
-<div class="corner-bracket bl" aria-hidden="true"></div>
-<div class="corner-bracket br" aria-hidden="true"></div>
-<div class="w-screen h-screen overflow-hidden bg-[#08090a] text-[var(--la-text-bright)] font-['JetBrains_Mono',monospace]">
+<!-- Corner brackets — fixed-position tactical frame.
+     data-dispatching prop animates to researcher-green during active dispatch. -->
+<CornerBrackets />
+<div class="w-screen h-screen overflow-hidden bg-[var(--la-bg-void)] text-[var(--la-text-bright)]">
   <!-- Responsive container:
          <768  : flex-col       (vertical stack — single-column flow)
          >=768 : flex-row       (side-by-side) — at 768..1023 the helix panel
@@ -364,10 +362,8 @@
       <AmbientParticles />
       <!-- Top navigation strip — underline-only active indicator (#23) -->
       <nav class="flex items-stretch gap-1 px-3 border-b border-[#1e293b] bg-[#0a0a0f] shrink-0 overflow-x-auto">
+        <ProjectPicker />
         {#each NAV_ITEMS as item}
-          {#if item.separator}
-            <span class="self-center text-[#1e293b] select-none px-0.5" aria-hidden="true">·</span>
-          {/if}
           <Tooltip content={item.hint} side="bottom">
             <button
               onclick={() => navigate(item.hash)}
@@ -376,6 +372,7 @@
           </Tooltip>
         {/each}
         <div class="ml-auto shrink-0 flex items-center gap-2">
+          <ActiveBuildsChip />
           <Tooltip content="Hot · Cold · Convergences — what each agent remembers (Cmd+M)" side="bottom">
             <button
               onclick={() => memoryDrawerOpen.update(v => !v)}

@@ -48,14 +48,14 @@
   });
 </script>
 
-<div class="bg-[#0a0a12] border border-[#1e293b] rounded-lg overflow-hidden flex flex-col" style="min-height: 200px;">
+<div class="bg-[var(--la-bg-frame)] border border-[var(--la-drawer-border)] rounded-lg overflow-hidden flex flex-col" style="min-height: 200px;">
   <!-- Header -->
-  <div class="px-4 py-2 border-b border-[#1e293b] flex items-center justify-between bg-[#111827]">
-    <h3 class="text-xs font-medium text-[#94a3b8]">LOG STREAM</h3>
+  <div class="px-4 py-2 border-b border-[var(--la-drawer-border)] flex items-center justify-between bg-[var(--la-bg-elev-1)]">
+    <h3 class="text-xs font-medium text-[var(--la-text-label)]">LOG STREAM</h3>
     <div class="flex items-center gap-2">
-      <span class="text-[10px] text-[#475569]">{entries.length} entries</span>
+      <span class="text-[10px] text-[var(--la-text-dim)]">{entries.length} entries</span>
       <button
-        class="text-[10px] px-2 py-0.5 rounded border border-[#1e293b] text-[#64748b] hover:text-white hover:border-[#334155] transition-colors"
+        class="text-[10px] px-2 py-0.5 rounded border border-[var(--la-drawer-border)] text-[var(--la-text-dim)] hover:text-white hover:border-[var(--la-hair-strong)] transition-colors"
         onclick={() => { if (container) container.scrollTop = container.scrollHeight; }}
       >
         Scroll to bottom
@@ -70,21 +70,21 @@
   >
     {#if displayed.length === 0}
       <div class="px-4 py-6 text-center">
-        <p class="text-[#475569]">Waiting for build output...</p>
-        <p class="text-[10px] text-[#334155] mt-1">Logs will stream here when the build starts</p>
+        <p class="text-[var(--la-text-dim)]">Waiting for build output...</p>
+        <p class="text-[10px] text-[var(--la-hair-strong)] mt-1">Logs will stream here when the build starts</p>
       </div>
     {:else}
       {#each displayed as entry}
-        <div class="px-4 py-1 hover:bg-[#111827] flex items-start gap-2">
-          <span class="text-[#334155] shrink-0">{formatTime(entry.timestamp)}</span>
+        <div class="px-4 py-1 hover:bg-[var(--la-bg-elev-1)] flex items-start gap-2">
+          <span class="text-[var(--la-hair-strong)] shrink-0">{formatTime(entry.timestamp)}</span>
           <span
             class="shrink-0 font-semibold"
             style="color: {levelColor(entry.level)}"
           >
             {levelBadge(entry.level)}
           </span>
-          <span class="text-[#475569] shrink-0">[{entry.source}]</span>
-          <span class="text-[#94a3b8] break-all">{entry.message}</span>
+          <span class="text-[var(--la-text-dim)] shrink-0">[{entry.source}]</span>
+          <span class="text-[var(--la-text-label)] break-all">{entry.message}</span>
         </div>
       {/each}
     {/if}
