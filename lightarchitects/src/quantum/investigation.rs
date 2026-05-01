@@ -25,8 +25,7 @@
 //!
 //! let client = QuantumClient::builder()
 //!     .timeout(std::time::Duration::from_secs(120))
-//!     .build()
-//!     .await?;
+//!     .build()?;
 //!
 //! let mut inv = QuantumInvestigation::new(&client, "auth failures in prod");
 //!

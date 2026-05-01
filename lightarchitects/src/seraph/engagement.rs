@@ -19,8 +19,7 @@
 //!
 //! let client = SeraphClient::builder()
 //!     .timeout(std::time::Duration::from_secs(120))
-//!     .build()
-//!     .await?;
+//!     .build()?;
 //!
 //! let mut engagement = SeraphEngagement::new(&client, "192.168.1.10");
 //! engagement.start().await?;
