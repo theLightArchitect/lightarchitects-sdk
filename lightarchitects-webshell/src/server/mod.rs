@@ -322,6 +322,8 @@ pub fn build_app(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/auth-check", get(auth_check))
+        .route("/api/auth/exchange", post(auth_exchange))
+        .route("/api/auth/status", get(auth_status))
         .route("/api/auth/session", delete(auth_logout))
         .route("/api/terminal/ws", get(terminal::ws::ws_handler))
         .route("/api/events", get(events::sse_handler::sse_handler))
@@ -774,24 +776,81 @@ async fn auth_check(State(state): State<AppState>, headers: HeaderMap) -> impl I
     }
 }
 
+/// Request body for `POST /api/auth/exchange`.
+#[derive(serde::Deserialize)]
+struct TokenExchange {
+    token: String,
+}
+
+/// `POST /api/auth/exchange` — swaps a Bearer token for an `HttpOnly` session cookie.
+///
+/// Unauthenticated endpoint — accepts a JSON body `{ "token": "<bare-token>" }`,
+/// validates it in constant time, then responds 200 with `Set-Cookie: la_session=...`.
+/// After exchange the frontend drops the token from sessionStorage and sends no
+/// `Authorization` header — cookies flow automatically on same-origin requests.
+async fn auth_exchange(
+    State(state): State<AppState>,
+    Json(body): Json<TokenExchange>,
+) -> impl IntoResponse {
+    if !auth::validate_raw_token(&body.token, &state.config.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let cookie = auth::session_cookie_header(&state.config.token);
+    match HeaderValue::from_str(&cookie) {
+        Ok(cookie_val) => {
+            tracing::info!(target: "webshell", "Cookie session established via exchange");
+            (StatusCode::OK, [(header::SET_COOKIE, cookie_val)]).into_response()
+        }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+/// `GET /api/auth/status` — validates the `HttpOnly` session cookie and refreshes its TTL.
+///
+/// Returns 200 with a refreshed `Set-Cookie` on success, 401 on missing or invalid cookie.
+/// Called every 30 minutes by the frontend to implement a sliding TTL.
+async fn auth_status(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let Some(cookie_hdr) = headers.get(header::COOKIE) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let Ok(cookie_str) = cookie_hdr.to_str() else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if !auth::validate_session_cookie(cookie_str, &state.config.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let cookie = auth::session_cookie_header(&state.config.token);
+    match HeaderValue::from_str(&cookie) {
+        Ok(cookie_val) => (StatusCode::OK, [(header::SET_COOKIE, cookie_val)]).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
 /// `DELETE /api/auth/session` — removes the persisted bearer token from file + keyring.
 ///
-/// Authenticated — requires a valid `Authorization: Bearer <token>` header.
-/// Returns 204 No Content on success; the server continues running with the
-/// in-memory token (the *next* startup will generate a fresh one).
+/// Accepts either `Authorization: Bearer <token>` or a valid `la_session` cookie.
+/// Returns 204 No Content on success with an expired `Set-Cookie` to clear the cookie.
+/// The server continues running with the in-memory token; the *next* startup generates
+/// a fresh one.
 async fn auth_logout(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
-    let Some(authz) = headers.get("authorization") else {
-        return StatusCode::UNAUTHORIZED;
+    let authorized = if let Some(authz) = headers.get("authorization") {
+        authz
+            .to_str()
+            .is_ok_and(|s| auth::validate_bearer(s, &state.config.token))
+    } else if let Some(cookie_hdr) = headers.get(header::COOKIE) {
+        cookie_hdr
+            .to_str()
+            .is_ok_and(|s| auth::validate_session_cookie(s, &state.config.token))
+    } else {
+        false
     };
-    let Ok(authz_str) = authz.to_str() else {
-        return StatusCode::UNAUTHORIZED;
-    };
-    if !auth::validate_bearer(authz_str, &state.config.token) {
-        return StatusCode::UNAUTHORIZED;
+    if !authorized {
+        return StatusCode::UNAUTHORIZED.into_response();
     }
     crate::config::remove_persisted_token();
     tracing::info!(target: "webshell", "Auth session logout: persisted token cleared");
-    StatusCode::NO_CONTENT
+    let cleared = HeaderValue::from_static(auth::clear_session_cookie_header());
+    (StatusCode::NO_CONTENT, [(header::SET_COOKIE, cleared)]).into_response()
 }
 
 /// `GET /api/browser-state` — returns the latest browser UI state snapshot.

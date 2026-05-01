@@ -80,6 +80,70 @@ pub fn validate_ws_subprotocol(subprotocol: &str, expected_token: &str) -> bool 
     constant_time_eq(candidate.as_bytes(), expected_token.as_bytes())
 }
 
+// ── Cookie-based session auth (v0.4.0) ─────────────────────────────────────
+
+/// Name of the `HttpOnly` session cookie.
+const SESSION_COOKIE_NAME: &str = "la_session";
+
+/// Validates a raw token (no scheme prefix) against the expected token in
+/// constant time.  Used by the cookie-exchange endpoint where the client
+/// sends the bare token in a JSON body.
+#[must_use]
+pub fn validate_raw_token(provided: &str, expected: &str) -> bool {
+    if provided.is_empty() {
+        return false;
+    }
+    constant_time_eq(provided.as_bytes(), expected.as_bytes())
+}
+
+/// Extracts the `la_session` value from a `Cookie` request header.
+///
+/// Parses the standard `name1=val1; name2=val2` format.  The token body is
+/// returned verbatim — per RFC 6265 §4.2.1, cookie-value is an opaque byte
+/// sequence and must not be trimmed.
+#[must_use]
+pub fn extract_session_cookie(cookie_header: &str) -> Option<&str> {
+    for pair in cookie_header.split(';') {
+        let pair = pair.trim();
+        if let Some(rest) = pair.strip_prefix(SESSION_COOKIE_NAME) {
+            let rest = rest.trim_start();
+            if let Some(val) = rest.strip_prefix('=') {
+                return Some(val);
+            }
+        }
+    }
+    None
+}
+
+/// Returns `true` when the `Cookie` header contains a valid `la_session` token.
+#[must_use]
+pub fn validate_session_cookie(cookie_header: &str, expected_token: &str) -> bool {
+    let Some(candidate) = extract_session_cookie(cookie_header) else {
+        return false;
+    };
+    if candidate.is_empty() {
+        return false;
+    }
+    constant_time_eq(candidate.as_bytes(), expected_token.as_bytes())
+}
+
+/// Builds a `Set-Cookie` header value for the session cookie.
+///
+/// Attributes: `HttpOnly` (blocks JS access), `SameSite=Strict` (blocks CSRF),
+/// `Path=/`, `Max-Age=28800` (8-hour TTL).
+#[must_use]
+pub fn session_cookie_header(token: &str) -> String {
+    format!("{SESSION_COOKIE_NAME}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800")
+}
+
+/// Builds a `Set-Cookie` header value that immediately expires the session cookie.
+#[must_use]
+pub fn clear_session_cookie_header() -> &'static str {
+    "la_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
+}
+
+// ── Notify-token validation ─────────────────────────────────────────────────
+
 /// Validates a hex-encoded notify token (from the `X-LA-Notify-Token` header)
 /// against the expected 32-byte token stored in a `BuildSession`.
 ///
@@ -191,6 +255,86 @@ mod tests {
         // RFC 7235 §2.1: auth-scheme is case-insensitive.
         assert!(validate_ws_subprotocol("Bearer.abc123", "abc123"));
         assert!(validate_ws_subprotocol("BEARER.abc123", "abc123"));
+    }
+
+    // ── cookie session auth ─────────────────────────────────────────────────
+
+    #[test]
+    fn raw_token_accepts_match() {
+        assert!(validate_raw_token("secret", "secret"));
+    }
+
+    #[test]
+    fn raw_token_rejects_empty() {
+        assert!(!validate_raw_token("", "secret"));
+    }
+
+    #[test]
+    fn raw_token_rejects_wrong() {
+        assert!(!validate_raw_token("wrong", "secret"));
+    }
+
+    #[test]
+    fn extract_cookie_single() {
+        assert_eq!(extract_session_cookie("la_session=abc"), Some("abc"));
+    }
+
+    #[test]
+    fn extract_cookie_multiple_first() {
+        assert_eq!(
+            extract_session_cookie("la_session=abc; other=xyz"),
+            Some("abc")
+        );
+    }
+
+    #[test]
+    fn extract_cookie_multiple_middle() {
+        assert_eq!(
+            extract_session_cookie("foo=bar; la_session=abc; baz=qux"),
+            Some("abc")
+        );
+    }
+
+    #[test]
+    fn extract_cookie_missing() {
+        assert_eq!(extract_session_cookie("other=val"), None);
+    }
+
+    #[test]
+    fn extract_cookie_prefix_collision() {
+        // `la_session_extra` must not match `la_session`
+        assert_eq!(extract_session_cookie("la_session_extra=val"), None);
+    }
+
+    #[test]
+    fn validate_session_cookie_accepts_correct() {
+        assert!(validate_session_cookie("la_session=tok123", "tok123"));
+    }
+
+    #[test]
+    fn validate_session_cookie_rejects_wrong() {
+        assert!(!validate_session_cookie("la_session=wrong", "tok123"));
+    }
+
+    #[test]
+    fn validate_session_cookie_rejects_missing() {
+        assert!(!validate_session_cookie("other=val", "tok123"));
+    }
+
+    #[test]
+    fn session_cookie_header_format() {
+        let h = session_cookie_header("abc");
+        assert!(h.starts_with("la_session=abc"));
+        assert!(h.contains("HttpOnly"));
+        assert!(h.contains("SameSite=Strict"));
+        assert!(h.contains("Max-Age=28800"));
+    }
+
+    #[test]
+    fn clear_cookie_header_zeroes_max_age() {
+        let h = clear_session_cookie_header();
+        assert!(h.contains("Max-Age=0"));
+        assert!(h.contains("HttpOnly"));
     }
 
     // ── validate_notify_token ───────────────────────────────────────────────

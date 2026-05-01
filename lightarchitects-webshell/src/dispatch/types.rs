@@ -73,7 +73,7 @@ impl fmt::Display for DispatchId {
 
 // ── DomainAgent ──────────────────────────────────────────────────────────────
 
-/// The nine domain agents selectable in the Squad Dispatch UI.
+/// The eight domain agents selectable in the Squad Dispatch UI.
 ///
 /// Each agent maps to a keyword set in [`super::classifier`] and carries a
 /// read/write permission profile in the executor.
@@ -86,18 +86,18 @@ pub enum DomainAgent {
     Quality,
     /// Security audit agent (synthesises `EngagementScope`).
     Security,
-    /// DevOps / operations agent (deploy, config, infra).
+    /// DevOps / operations and performance agent (deploy, config, infra, benchmarks).
     Ops,
     /// Research and investigation agent (read-only).
     Researcher,
-    /// Knowledge-graph and documentation agent.
+    /// Knowledge-graph, memory, and documentation agent.
     Knowledge,
-    /// Performance profiling and benchmarking agent.
-    Performance,
     /// Test-writing agent.
     Testing,
-    /// Documentation-generation agent.
-    Documentation,
+    /// Squad consultation and routing agent — solicits squad member opinions or
+    /// routes cross-cutting tasks to the appropriate sibling (SOUL, CORSO, EVA,
+    /// QUANTUM, SERAPH, AYIN). Read-only.
+    Squad,
 }
 
 impl DomainAgent {
@@ -111,9 +111,8 @@ impl DomainAgent {
             Self::Ops => "OPS",
             Self::Researcher => "RES",
             Self::Knowledge => "KNW",
-            Self::Performance => "PRF",
             Self::Testing => "TST",
-            Self::Documentation => "DOC",
+            Self::Squad => "SQD",
         }
     }
 
@@ -130,10 +129,7 @@ impl DomainAgent {
     /// write tools (HIGH H-9).
     #[must_use]
     pub fn may_write(self) -> bool {
-        matches!(
-            self,
-            Self::Engineer | Self::Ops | Self::Testing | Self::Documentation
-        )
+        matches!(self, Self::Engineer | Self::Ops | Self::Testing)
     }
 }
 
@@ -146,9 +142,8 @@ impl fmt::Display for DomainAgent {
             Self::Ops => "ops",
             Self::Researcher => "researcher",
             Self::Knowledge => "knowledge",
-            Self::Performance => "performance",
             Self::Testing => "testing",
-            Self::Documentation => "documentation",
+            Self::Squad => "squad",
         };
         f.write_str(s)
     }

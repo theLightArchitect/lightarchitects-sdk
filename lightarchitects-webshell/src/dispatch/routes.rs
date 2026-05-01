@@ -404,9 +404,8 @@ fn parse_agent(s: &str) -> Option<DomainAgent> {
         "ops" => Some(DomainAgent::Ops),
         "researcher" => Some(DomainAgent::Researcher),
         "knowledge" => Some(DomainAgent::Knowledge),
-        "performance" => Some(DomainAgent::Performance),
         "testing" => Some(DomainAgent::Testing),
-        "documentation" => Some(DomainAgent::Documentation),
+        "squad" => Some(DomainAgent::Squad),
         _ => None,
     }
 }

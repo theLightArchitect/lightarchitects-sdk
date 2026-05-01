@@ -106,15 +106,14 @@
      Canonical palette from squad-dispatch.html. Saturated, domain-meaningful:
      red=security risk, yellow=quality caution, green=research/go, etc.
      Used in: Helix 3D legend, dispatch rails, Sitrep rows, status badges.    */
-  --la-agent-engineer:      #4d8eff;
-  --la-agent-quality:       #f5d440;
-  --la-agent-security:      #ff4d4d;
-  --la-agent-ops:           #d24df5;
-  --la-agent-researcher:    #4dff8e;
-  --la-agent-knowledge:     #4dffe6;
-  --la-agent-performance:   #ff8e3c;
-  --la-agent-testing:       #a874ff;
-  --la-agent-documentation: #ff7eb6;
+  --la-agent-engineer:   #4d8eff;
+  --la-agent-quality:    #a874ff;
+  --la-agent-security:   #ff4d4d;
+  --la-agent-ops:        #ff8e3c;
+  --la-agent-researcher: #4dffe6;
+  --la-agent-knowledge:  #f5d440;
+  --la-agent-testing:    #4dff8e;
+  --la-agent-squad:      #ff7eb6;
 }
 
 /* ── Zero-state utility ────────────────────────────────────────────────────
@@ -229,12 +228,11 @@ body::after {
    Utility classes for text and background in each agent color.
    Usage: class="la-agent-engineer" or data-agent="engineer" with CSS var.
    ============================================================================ */
-[data-agent="engineer"]      { --la-agent-c: var(--la-agent-engineer); }
-[data-agent="quality"]       { --la-agent-c: var(--la-agent-quality); }
-[data-agent="security"]      { --la-agent-c: var(--la-agent-security); }
-[data-agent="ops"]           { --la-agent-c: var(--la-agent-ops); }
-[data-agent="researcher"]    { --la-agent-c: var(--la-agent-researcher); }
-[data-agent="knowledge"]     { --la-agent-c: var(--la-agent-knowledge); }
-[data-agent="performance"]   { --la-agent-c: var(--la-agent-performance); }
-[data-agent="testing"]       { --la-agent-c: var(--la-agent-testing); }
-[data-agent="documentation"] { --la-agent-c: var(--la-agent-documentation); }
+[data-agent="engineer"]   { --la-agent-c: var(--la-agent-engineer); }
+[data-agent="quality"]    { --la-agent-c: var(--la-agent-quality); }
+[data-agent="security"]   { --la-agent-c: var(--la-agent-security); }
+[data-agent="ops"]        { --la-agent-c: var(--la-agent-ops); }
+[data-agent="researcher"] { --la-agent-c: var(--la-agent-researcher); }
+[data-agent="knowledge"]  { --la-agent-c: var(--la-agent-knowledge); }
+[data-agent="testing"]    { --la-agent-c: var(--la-agent-testing); }
+[data-agent="squad"]      { --la-agent-c: var(--la-agent-squad); }

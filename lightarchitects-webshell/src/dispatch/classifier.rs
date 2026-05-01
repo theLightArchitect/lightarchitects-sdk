@@ -15,7 +15,7 @@
 //! # Algorithm
 //!
 //! 1. Lowercase the task text (ASCII fold only — UTF-8 aware).
-//! 2. For each of the nine domain agents, run an `AhoCorasick` automaton
+//! 2. For each of the eight domain agents, run an `AhoCorasick` automaton
 //!    over the lowercased text.
 //! 3. Agents with ≥1 keyword hit are included in the result, ordered by
 //!    descending hit count.
@@ -85,7 +85,7 @@ static SECURITY_PATTERNS: &[&str] = &[
     "attack surface",
 ];
 
-/// Keywords for the Ops agent.
+/// Keywords for the Ops agent (also absorbs performance/benchmarking keywords).
 static OPS_PATTERNS: &[&str] = &[
     "deploy",
     "ci/cd",
@@ -104,6 +104,22 @@ static OPS_PATTERNS: &[&str] = &[
     "alerting",
     "rollout",
     "rollback",
+    // absorbed from performance
+    "performance",
+    "optimise",
+    "optimize",
+    "benchmark",
+    "profil",
+    "latency",
+    "throughput",
+    "memory usage",
+    "cpu usage",
+    "bottleneck",
+    "slow",
+    "fast",
+    "speed up",
+    "criterion",
+    "flamegraph",
 ];
 
 /// Keywords for the Researcher agent.
@@ -124,7 +140,7 @@ static RESEARCHER_PATTERNS: &[&str] = &[
     "tradeoff",
 ];
 
-/// Keywords for the Knowledge agent.
+/// Keywords for the Knowledge agent (also absorbs documentation keywords).
 static KNOWLEDGE_PATTERNS: &[&str] = &[
     "document",
     "documentation",
@@ -141,25 +157,20 @@ static KNOWLEDGE_PATTERNS: &[&str] = &[
     "architecture decision",
     "adr",
     "changelog",
-];
-
-/// Keywords for the Performance agent.
-static PERFORMANCE_PATTERNS: &[&str] = &[
-    "performance",
-    "optimise",
-    "optimize",
-    "benchmark",
-    "profil",
-    "latency",
-    "throughput",
-    "memory usage",
-    "cpu usage",
-    "bottleneck",
-    "slow",
-    "fast",
-    "speed up",
-    "criterion",
-    "flamegraph",
+    // absorbed from documentation
+    "doc comment",
+    "rustdoc",
+    "readme",
+    "api docs",
+    "write docs",
+    "update docs",
+    "docstring",
+    "man page",
+    "reference guide",
+    "tutorial",
+    "how-to",
+    "getting started",
+    "changelog entry",
 ];
 
 /// Keywords for the Testing agent.
@@ -180,21 +191,25 @@ static TESTING_PATTERNS: &[&str] = &[
     "test suite",
 ];
 
-/// Keywords for the Documentation agent.
-static DOCUMENTATION_PATTERNS: &[&str] = &[
-    "doc comment",
-    "rustdoc",
-    "readme",
-    "api docs",
-    "write docs",
-    "update docs",
-    "docstring",
-    "man page",
-    "reference guide",
-    "tutorial",
-    "how-to",
-    "getting started",
-    "changelog entry",
+/// Keywords for the Squad agent — routes to squad siblings or solicits their
+/// opinions on task framing.
+static SQUAD_PATTERNS: &[&str] = &[
+    "ask squad",
+    "consult",
+    "second opinion",
+    "squad thoughts",
+    "squad review",
+    "route to",
+    "ask corso",
+    "ask eva",
+    "ask quantum",
+    "ask seraph",
+    "ask soul",
+    "ask ayin",
+    "squad feedback",
+    "sibling opinion",
+    "who should handle",
+    "which agent",
 ];
 
 // ── Pre-compiled automata ─────────────────────────────────────────────────────
@@ -216,9 +231,8 @@ fn automata() -> &'static [AgentAutomaton] {
             (DomainAgent::Ops, OPS_PATTERNS),
             (DomainAgent::Researcher, RESEARCHER_PATTERNS),
             (DomainAgent::Knowledge, KNOWLEDGE_PATTERNS),
-            (DomainAgent::Performance, PERFORMANCE_PATTERNS),
             (DomainAgent::Testing, TESTING_PATTERNS),
-            (DomainAgent::Documentation, DOCUMENTATION_PATTERNS),
+            (DomainAgent::Squad, SQUAD_PATTERNS),
         ];
         all.iter()
             .filter_map(|(agent, patterns)| {
@@ -444,7 +458,7 @@ mod tests {
         assert!(has("reduce the attack surface", s)); // "attack surface"
     }
 
-    // ── Ops keyword contract (17 keywords) ───────────────────────────────────
+    // ── Ops keyword contract (17 ops + 15 perf = 32 keywords) ──────────────────
 
     #[test]
     fn ops_all_keywords() {
@@ -466,6 +480,22 @@ mod tests {
         assert!(has("alerting rules for latency", o)); // "alerting"
         assert!(has("rolling rollout strategy", o)); // "rollout"
         assert!(has("rollback the last release", o)); // "rollback"
+        // absorbed performance keywords
+        assert!(has("analyse performance regression", o)); // "performance"
+        assert!(has("optimise the hot path", o)); // "optimise"
+        assert!(has("optimize allocations", o)); // "optimize"
+        assert!(has("run the benchmark suite", o)); // "benchmark"
+        assert!(has("profil the flamegraph output", o)); // "profil" (prefix)
+        assert!(has("reduce latency in handler", o)); // "latency"
+        assert!(has("improve throughput of stream", o)); // "throughput"
+        assert!(has("check memory usage after load", o)); // "memory usage"
+        assert!(has("high cpu usage in worker", o)); // "cpu usage"
+        assert!(has("find the bottleneck in query", o)); // "bottleneck"
+        assert!(has("this path is too slow", o)); // "slow"
+        assert!(has("make the serialiser fast", o)); // "fast"
+        assert!(has("speed up startup time", o)); // "speed up"
+        assert!(has("add a criterion harness", o)); // "criterion"
+        assert!(has("view the flamegraph output", o)); // "flamegraph"
     }
 
     // ── Researcher keyword contract (14 keywords) ─────────────────────────────
@@ -489,7 +519,7 @@ mod tests {
         assert!(has("consider the tradeoff of caching", r)); // "tradeoff"
     }
 
-    // ── Knowledge keyword contract (15 keywords) ──────────────────────────────
+    // ── Knowledge keyword contract (15 + 13 absorbed = 28 keywords) ─────────────
 
     #[test]
     fn knowledge_all_keywords() {
@@ -509,28 +539,20 @@ mod tests {
         assert!(has("write an architecture decision", k)); // "architecture decision"
         assert!(has("create an adr for this", k)); // "adr"
         assert!(has("add a changelog entry", k)); // "changelog"
-    }
-
-    // ── Performance keyword contract (15 keywords) ────────────────────────────
-
-    #[test]
-    fn performance_all_keywords() {
-        let p = DomainAgent::Performance;
-        assert!(has("analyse performance regression", p)); // "performance"
-        assert!(has("optimise the hot path", p)); // "optimise"
-        assert!(has("optimize allocations", p)); // "optimize"
-        assert!(has("run the benchmark suite", p)); // "benchmark"
-        assert!(has("profil the flamegraph output", p)); // "profil" (prefix match)
-        assert!(has("reduce latency in handler", p)); // "latency"
-        assert!(has("improve throughput of stream", p)); // "throughput"
-        assert!(has("check memory usage after load", p)); // "memory usage"
-        assert!(has("high cpu usage in worker", p)); // "cpu usage"
-        assert!(has("find the bottleneck in query", p)); // "bottleneck"
-        assert!(has("this path is too slow", p)); // "slow"
-        assert!(has("make the serialiser fast", p)); // "fast"
-        assert!(has("speed up startup time", p)); // "speed up"
-        assert!(has("add a criterion harness", p)); // "criterion"
-        assert!(has("view the flamegraph output", p)); // "flamegraph"
+        // absorbed documentation keywords
+        assert!(has("add doc comment to this fn", k)); // "doc comment"
+        assert!(has("rustdoc example for the type", k)); // "rustdoc"
+        assert!(has("update the readme file", k)); // "readme"
+        assert!(has("generate api docs for crate", k)); // "api docs"
+        assert!(has("write docs for the module", k)); // "write docs"
+        assert!(has("update docs after refactor", k)); // "update docs"
+        assert!(has("add a docstring to this fn", k)); // "docstring"
+        assert!(has("write a man page for tool", k)); // "man page"
+        assert!(has("add to the reference guide", k)); // "reference guide"
+        assert!(has("write a tutorial for setup", k)); // "tutorial"
+        assert!(has("add a how-to for deployment", k)); // "how-to"
+        assert!(has("write a getting started guide", k)); // "getting started"
+        assert!(has("write a changelog entry", k)); // "changelog entry"
     }
 
     // ── Testing keyword contract (14 keywords) ────────────────────────────────
@@ -554,27 +576,30 @@ mod tests {
         assert!(has("run the full test suite", t)); // "test suite"
     }
 
-    // ── Documentation keyword contract (13 keywords) ──────────────────────────
+    // ── Squad keyword contract (16 keywords) ──────────────────────────────────
 
     #[test]
-    fn documentation_all_keywords() {
-        let d = DomainAgent::Documentation;
-        assert!(has("add doc comment to this fn", d)); // "doc comment"
-        assert!(has("rustdoc example for the type", d)); // "rustdoc"
-        assert!(has("update the readme file", d)); // "readme"
-        assert!(has("generate api docs for crate", d)); // "api docs"
-        assert!(has("write docs for the module", d)); // "write docs"
-        assert!(has("update docs after refactor", d)); // "update docs"
-        assert!(has("add a docstring to this fn", d)); // "docstring"
-        assert!(has("write a man page for tool", d)); // "man page"
-        assert!(has("add to the reference guide", d)); // "reference guide"
-        assert!(has("write a tutorial for setup", d)); // "tutorial"
-        assert!(has("add a how-to for deployment", d)); // "how-to"
-        assert!(has("write a getting started guide", d)); // "getting started"
-        assert!(has("write a changelog entry", d)); // "changelog entry"
+    fn squad_all_keywords() {
+        let s = DomainAgent::Squad;
+        assert!(has("ask squad to review this design", s)); // "ask squad"
+        assert!(has("consult on the architecture choice", s)); // "consult"
+        assert!(has("get a second opinion on this", s)); // "second opinion"
+        assert!(has("what are squad thoughts on this", s)); // "squad thoughts"
+        assert!(has("squad review this approach", s)); // "squad review"
+        assert!(has("route to the right agent", s)); // "route to"
+        assert!(has("ask corso to check the build", s)); // "ask corso"
+        assert!(has("ask eva for her perspective", s)); // "ask eva"
+        assert!(has("ask quantum to investigate", s)); // "ask quantum"
+        assert!(has("ask seraph to scan the surface", s)); // "ask seraph"
+        assert!(has("ask soul for vault context", s)); // "ask soul"
+        assert!(has("ask ayin for trace data", s)); // "ask ayin"
+        assert!(has("need squad feedback on design", s)); // "squad feedback"
+        assert!(has("want a sibling opinion here", s)); // "sibling opinion"
+        assert!(has("who should handle this task", s)); // "who should handle"
+        assert!(has("which agent is best for this", s)); // "which agent"
     }
 
-    // ── Case-insensitivity (one keyword per agent × 9) ───────────────────────
+    // ── Case-insensitivity (one keyword per agent × 8) ───────────────────────
 
     #[test]
     fn case_insensitive_matching() {
@@ -584,9 +609,9 @@ mod tests {
         assert!(has("DEPLOY to staging", DomainAgent::Ops));
         assert!(has("RESEARCH alternatives", DomainAgent::Researcher));
         assert!(has("HELIX query for context", DomainAgent::Knowledge));
-        assert!(has("LATENCY spike in handler", DomainAgent::Performance));
+        assert!(has("LATENCY spike in handler", DomainAgent::Ops));
         assert!(has("PLAYWRIGHT end-to-end suite", DomainAgent::Testing));
-        assert!(has("RUSTDOC examples missing", DomainAgent::Documentation));
+        assert!(has("CONSULT the squad on this", DomainAgent::Squad));
     }
 
     // ── Mode derivation ───────────────────────────────────────────────────────
@@ -615,9 +640,9 @@ mod tests {
         );
         // security + ops
         assert_eq!(mode_of("audit the deploy pipeline"), ExecutionMode::Squad);
-        // knowledge + documentation
+        // knowledge + squad
         assert_eq!(
-            mode_of("explain the helix schema and update the readme"),
+            mode_of("explain the helix schema and ask squad for feedback"),
             ExecutionMode::Squad
         );
         // all three: engineer + testing + quality
@@ -681,11 +706,9 @@ mod tests {
     #[test]
     fn profil_prefix_matches_profile_and_profiling() {
         // "profil" is a prefix pattern — must match "profile" and "profiling".
-        assert!(has("profile the binary", DomainAgent::Performance));
-        assert!(has(
-            "profiling session on release build",
-            DomainAgent::Performance
-        ));
+        // Absorbed into Ops after performance agent was folded.
+        assert!(has("profile the binary", DomainAgent::Ops));
+        assert!(has("profiling session on release build", DomainAgent::Ops));
     }
 
     #[test]
@@ -757,30 +780,29 @@ mod tests {
     }
 
     #[test]
-    fn negative_testing_keywords_do_not_match_documentation() {
-        // "fuzz the input parser" → no Documentation match.
-        assert!(!has("fuzz the input parser", DomainAgent::Documentation));
+    fn negative_testing_keywords_do_not_match_squad() {
+        // "fuzz the input parser" → no Squad match.
+        assert!(!has("fuzz the input parser", DomainAgent::Squad));
     }
 
     #[test]
-    fn negative_performance_keywords_do_not_match_quality() {
-        // "latency spike" → no Quality match.
+    fn negative_ops_performance_keywords_do_not_match_quality() {
+        // "latency spike" → no Quality match (latency is now in Ops).
         assert!(!has("reduce latency in the hot path", DomainAgent::Quality));
     }
 
     // ── All-agents squad scenario ─────────────────────────────────────────────
 
     #[test]
-    fn all_nine_agents_can_coexist_in_squad() {
-        // One keyword per agent in a single task → Squad mode, all 9 present.
+    fn all_eight_agents_can_coexist_in_squad() {
+        // One keyword per agent in a single task → Squad mode, all 8 present.
         let task = concat!(
             "implement tests and do a code review, ",
             "audit the security surface, ",
             "deploy to prod, ",
             "research alternatives, ",
             "document in the helix, ",
-            "optimise latency, ",
-            "update the readme",
+            "ask squad for a second opinion",
         );
         let c = classify(task);
         assert_eq!(c.mode, ExecutionMode::Squad);
@@ -791,8 +813,7 @@ mod tests {
         assert!(c.agents.contains(&DomainAgent::Ops));
         assert!(c.agents.contains(&DomainAgent::Researcher));
         assert!(c.agents.contains(&DomainAgent::Knowledge));
-        assert!(c.agents.contains(&DomainAgent::Performance));
-        assert!(c.agents.contains(&DomainAgent::Documentation));
+        assert!(c.agents.contains(&DomainAgent::Squad));
     }
 
     // ── Mixed-case + punctuation preservation ────────────────────────────────
@@ -804,8 +825,9 @@ mod tests {
         assert!(has("Check for XSS vulnerability", DomainAgent::Security));
         assert!(has("Deploy via CI/CD pipeline", DomainAgent::Ops));
         assert!(has("Summarize findings in HELIX", DomainAgent::Knowledge));
-        assert!(has("Optimize for low LATENCY", DomainAgent::Performance));
-        assert!(has("Write RUSTDOC examples", DomainAgent::Documentation));
+        assert!(has("Optimize for low LATENCY", DomainAgent::Ops));
+        assert!(has("Write RUSTDOC examples", DomainAgent::Knowledge));
+        assert!(has("ASK SQUAD for a second opinion", DomainAgent::Squad));
     }
 
     // ── Rationale mentions top-3 agents at most ───────────────────────────────

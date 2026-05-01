@@ -34,7 +34,7 @@ use super::{
 pub const BROADCAST_CAPACITY: usize = 256;
 
 /// Maximum concurrent agents per dispatch (MED M-9).
-pub const MAX_AGENTS_PER_DISPATCH: usize = 9;
+pub const MAX_AGENTS_PER_DISPATCH: usize = 8;
 
 /// `EngagementScope` synthesised when `DomainAgent::Security` is selected.
 ///
@@ -630,12 +630,12 @@ mod tests {
         );
     }
 
-    /// All-nine-agent fanout: every `DomainAgent` dispatched dry; global Complete
+    /// All-eight-agent fanout: every `DomainAgent` dispatched dry; global Complete
     /// must arrive within the 500 ms timeout window.
     #[tokio::test]
-    async fn fanout_all_nine_agents_complete() {
+    async fn fanout_all_eight_agents_complete() {
         let registry = make_registry();
-        let id = DispatchId::squad("F9", 1).unwrap();
+        let id = DispatchId::squad("F8", 1).unwrap();
         let agents = vec![
             DomainAgent::Engineer,
             DomainAgent::Quality,
@@ -643,12 +643,11 @@ mod tests {
             DomainAgent::Ops,
             DomainAgent::Researcher,
             DomainAgent::Knowledge,
-            DomainAgent::Performance,
             DomainAgent::Testing,
-            DomainAgent::Documentation,
+            DomainAgent::Squad,
         ];
         execute(
-            SanitizedTask("fanout all nine".to_owned()),
+            SanitizedTask("fanout all eight".to_owned()),
             agents,
             ExecutionMode::Squad,
             true,
@@ -669,8 +668,8 @@ mod tests {
 
         assert_eq!(
             kinds.iter().filter(|&&k| k == "running").count(),
-            9,
-            "all nine agents must emit Running: {kinds:?}"
+            8,
+            "all eight agents must emit Running: {kinds:?}"
         );
         assert!(
             kinds.contains(&"complete"),
