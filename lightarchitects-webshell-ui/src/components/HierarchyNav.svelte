@@ -29,7 +29,7 @@
 <nav class="flex items-center gap-2 text-sm" aria-label="Breadcrumb">
   {#each crumbs as crumb, i}
     {#if i > 0}
-      <span class="text-[#334155] select-none">/</span>
+      <span class="text-[var(--la-hair-strong)] select-none">/</span>
     {/if}
 
     {#if i === crumbs.length - 1}
@@ -40,13 +40,13 @@
           {@const polyColor = getMetaSkillColor(crumb.metaSkill)}
           <PolytopeIcon type={polyType} color={polyColor} size={20} />
         {/if}
-        <span class="font-medium text-[#e2e8f0]">{crumb.name}</span>
+        <span class="font-medium text-[var(--la-text-bright)]">{crumb.name}</span>
       </div>
     {:else}
       <!-- Clickable crumb -->
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <span
-        class="text-[#64748b] hover:text-white transition-colors cursor-pointer"
+        class="text-[var(--la-text-dim)] hover:text-white transition-colors cursor-pointer"
         onclick={() => navigate(crumb)}
         role="link"
         tabindex={0}

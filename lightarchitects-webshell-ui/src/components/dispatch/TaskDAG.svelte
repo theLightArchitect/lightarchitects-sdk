@@ -47,7 +47,7 @@
 </style>
 
 {#if agents.length === 0}
-  <div class="flex items-center justify-center h-12 text-[10px] text-[#475569]">
+  <div class="flex items-center justify-center h-12 text-[10px] text-[var(--la-text-dim)]">
     No agents selected
   </div>
 {:else}

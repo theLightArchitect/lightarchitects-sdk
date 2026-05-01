@@ -49,44 +49,44 @@
   });
 </script>
 
-<div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
+<div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] rounded-lg overflow-hidden">
   <!-- Header -->
-  <div class="px-4 py-2 border-b border-[#1e293b] flex items-center justify-between">
-    <h3 class="text-xs font-medium text-[#94a3b8]">CONDUCTOR QUEUE</h3>
+  <div class="px-4 py-2 border-b border-[var(--la-drawer-border)] flex items-center justify-between">
+    <h3 class="text-xs font-medium text-[var(--la-text-label)]">CONDUCTOR QUEUE</h3>
     <div class="flex items-center gap-3 text-[10px]">
-      <span class="text-[#3b82f6]">{$conductorStats.running} running</span>
-      <span class="text-[#f59e0b]">{$conductorStats.pending} queued</span>
+      <span class="text-[var(--la-agent-engineer)]">{$conductorStats.running} running</span>
+      <span class="text-[var(--la-agent-performance)]">{$conductorStats.pending} queued</span>
     </div>
   </div>
 
   <!-- Queue depth indicator -->
-  <div class="px-4 py-2 bg-[#0d1117] border-b border-[#1e293b]">
+  <div class="px-4 py-2 bg-[var(--la-drawer-bg)] border-b border-[var(--la-drawer-border)]">
     <div class="flex items-center gap-2">
-      <span class="text-[10px] text-[#64748b]">Queue Depth:</span>
-      <div class="flex-1 h-1.5 bg-[#1e293b] rounded-full overflow-hidden">
+      <span class="text-[10px] text-[var(--la-text-dim)]">Queue Depth:</span>
+      <div class="flex-1 h-1.5 bg-[var(--la-drawer-border)] rounded-full overflow-hidden">
         <div
-          class="h-full bg-gradient-to-r from-[#3b82f6] to-[#FFD700] transition-all"
+          class="h-full bg-gradient-to-r from-[var(--la-agent-engineer)] to-[var(--la-focus-ring)] transition-all"
           style="width: {Math.min($conductorStats.queueDepth * 10, 100)}%"
         ></div>
       </div>
-      <span class="text-[10px] text-[#94a3b8]">{$conductorStats.queueDepth}</span>
+      <span class="text-[10px] text-[var(--la-text-label)]">{$conductorStats.queueDepth}</span>
     </div>
   </div>
 
   <!-- Task list -->
   {#if displayedTasks.length === 0}
     <div class="px-4 py-6 text-center">
-      <p class="text-xs text-[#475569]">No tasks in queue</p>
-      <p class="text-[10px] text-[#334155]">Tasks will appear as builds are dispatched</p>
+      <p class="text-xs text-[var(--la-text-dim)]">No tasks in queue</p>
+      <p class="text-[10px] text-[var(--la-hair-strong)]">Tasks will appear as builds are dispatched</p>
     </div>
   {:else}
-    <div class="divide-y divide-[#1e293b]">
+    <div class="divide-y divide-[var(--la-drawer-border)]">
       {#each displayedTasks as task (task.id)}
         {@const sibColor = (task.sibling && SIBLING_COLORS[task.sibling]) ?? '#6b7280'}
         {@const stColor = statusColor(task.status)}
 
         <button
-          class="w-full text-left px-4 py-2 flex items-center gap-3 hover:bg-[#0d1117] transition-colors"
+          class="w-full text-left px-4 py-2 flex items-center gap-3 hover:bg-[var(--la-drawer-bg)] transition-colors"
           onclick={() => onTaskClick?.(task)}
         >
           <!-- Priority indicator -->
@@ -106,10 +106,10 @@
           <!-- Task info -->
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
-              <span class="text-[11px] text-[#e2e8f0]">{task.taskType}</span>
-              <span class="text-[9px] text-[#475569]">{(task.buildId ?? '').slice(-8)}</span>
+              <span class="text-[11px] text-[var(--la-text-bright)]">{task.taskType}</span>
+              <span class="text-[9px] text-[var(--la-text-dim)]">{(task.buildId ?? '').slice(-8)}</span>
             </div>
-            <div class="text-[9px] text-[#475569]">
+            <div class="text-[9px] text-[var(--la-text-dim)]">
               {task.status === 'running' ? 'Started' : 'Queued'} {formatTime(task.startedAt ?? task.queuedAt)}
             </div>
           </div>
@@ -127,8 +127,8 @@
   {/if}
 
   {#if $conductorTasks.length > maxDisplay}
-    <div class="px-4 py-2 border-t border-[#1e293b] text-center">
-      <button class="text-[10px] text-[#FFD700] hover:text-[#9F67FF] transition-colors">
+    <div class="px-4 py-2 border-t border-[var(--la-drawer-border)] text-center">
+      <button class="text-[10px] text-[var(--la-focus-ring)] hover:text-[var(--la-agent-testing)] transition-colors">
         + {$conductorTasks.length - maxDisplay} more tasks
       </button>
     </div>

@@ -279,9 +279,9 @@ describe('SiblingDispatch component', () => {
   });
 });
 
-describe('Copilot screen', () => {
+describe('CopilotDrawer component', () => {
   it('module imports successfully', async () => {
-    const mod = await import('$lib/../screens/Copilot.svelte');
+    const mod = await import('$lib/../components/CopilotDrawer.svelte');
     expect(mod.default).toBeDefined();
   });
 });
@@ -296,8 +296,8 @@ describe('sharedBuildId regression', () => {
     storesModule.currentBuildId.set(null);
   });
 
-  it('Copilot module does not export chatBuildId or activeBuildId', async () => {
-    const mod = await import('$lib/../screens/Copilot.svelte') as Record<string, unknown>;
+  it('CopilotDrawer does not export chatBuildId or activeBuildId', async () => {
+    const mod = await import('$lib/../components/CopilotDrawer.svelte') as Record<string, unknown>;
     expect(mod).not.toHaveProperty('chatBuildId');
     expect(mod).not.toHaveProperty('activeBuildId');
   });

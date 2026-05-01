@@ -1,5 +1,6 @@
 <script lang="ts">
   import { builds, buildStats, currentBuildId, projectGroups } from '$lib/stores';
+  import { selectedProject } from '$lib/project-filter';
   import { SIBLING_COLORS, getMetaSkillPolytope, getMetaSkillColor } from '$lib/design-tokens';
   import { downloadRoadmap } from '$lib/roadmap-export';
   import type { Build, ProjectGroup } from '$lib/types';
@@ -12,6 +13,13 @@
 
   // View mode
   let viewMode = $state<'list' | 'card'>('card');
+
+  // Project filter — derived from selectedProject store + projectGroups
+  let visibleGroups = $derived(
+    $selectedProject
+      ? $projectGroups.filter(g => g.path === $selectedProject)
+      : $projectGroups
+  );
 
   // Navigate to a build
   function openBuild(buildId: string) {
@@ -89,8 +97,8 @@
   <header class="la-screen-header flex items-center justify-between gap-x-3 px-4 md:px-6 border-b border-[var(--la-hair-strong)]">
     <div class="flex items-center gap-3">
       <h1 class="text-lg font-semibold tracking-wide">Build Queue</h1>
-      <span class="text-xs text-[#64748b]">
-        {$projectGroups.length} {$projectGroups.length === 1 ? 'project' : 'projects'}
+      <span class="text-xs text-[var(--la-text-dim)]">
+        {visibleGroups.length} {visibleGroups.length === 1 ? 'project' : 'projects'}
         ·
         {$buildStats.total} {$buildStats.total === 1 ? 'build' : 'builds'}
       </span>
@@ -100,13 +108,13 @@
       {#if $builds.length > 0}
         <div class="flex bg-[var(--la-bg-elev-2)] rounded overflow-hidden">
           <button
-            class="px-3 py-1 text-xs {viewMode === 'card' ? 'bg-[#334155] text-white' : 'text-[#64748b]'}"
+            class="px-3 py-1 text-xs {viewMode === 'card' ? 'bg-[var(--la-hair-strong)] text-white' : 'text-[var(--la-text-dim)]'}"
             onclick={() => { viewMode = 'card'; }}
           >
             Board
           </button>
           <button
-            class="px-3 py-1 text-xs {viewMode === 'list' ? 'bg-[#334155] text-white' : 'text-[#64748b]'}"
+            class="px-3 py-1 text-xs {viewMode === 'list' ? 'bg-[var(--la-hair-strong)] text-white' : 'text-[var(--la-text-dim)]'}"
             onclick={() => { viewMode = 'list'; }}
           >
             List
@@ -115,7 +123,7 @@
       {/if}
       <Tooltip content="Export the full build roadmap as a standalone, shareable HTML file" side="bottom">
         <button
-          class="px-3 py-1.5 bg-[var(--la-bg-elev-2)] text-[var(--la-text-label)] text-xs rounded hover:bg-[#334155] hover:text-white transition-all"
+          class="px-3 py-1.5 bg-[var(--la-bg-elev-2)] text-[var(--la-text-label)] text-xs rounded hover:bg-[var(--la-hair-strong)] hover:text-white transition-all"
           onclick={() => downloadRoadmap($builds)}
         >
           Export
@@ -123,7 +131,7 @@
       </Tooltip>
       <Tooltip content="Start a new build — opens the Intake form to describe your task" side="bottom">
         <button
-          class="px-4 py-1.5 bg-[#d4a017] text-[#0a0a0f] text-xs font-semibold rounded hover:bg-[#f0c040] hover:shadow-[0_0_10px_rgba(255,215,0,0.4)] transition-all"
+          class="px-4 py-1.5 bg-[var(--la-focus-ring)] text-[var(--la-bg-frame)] text-xs font-semibold rounded hover:bg-[var(--la-agent-quality)] hover:shadow-[0_0_10px_rgba(255,215,0,0.4)] transition-all"
           onclick={newBuild}
         >
           + New Build
@@ -134,10 +142,10 @@
 
   <!-- Stat strip -->
   <div class="flex items-center flex-wrap gap-x-4 gap-y-1 px-4 md:px-6 py-2 bg-[var(--la-bg-frame)] border-b border-[var(--la-hair-strong)] text-xs">
-    <span class="text-[#22c55e]">{$buildStats.inProgress} in progress</span>
-    <span class="text-[#3b82f6]">{$buildStats.pending} queued</span>
+    <span class="text-[var(--la-agent-researcher)]">{$buildStats.inProgress} in progress</span>
+    <span class="text-[var(--la-agent-engineer)]">{$buildStats.pending} queued</span>
     <span class="text-[var(--la-text-label)]">{$buildStats.completed} completed</span>
-    <span class="text-[#ef4444]">{$buildStats.failed} failed</span>
+    <span class="text-[var(--la-danger-stroke)]">{$buildStats.failed} failed</span>
   </div>
 
   <!-- Build list/cards -->
@@ -146,26 +154,26 @@
       <div class="flex flex-col items-center justify-center h-full gap-4 text-center">
         <div class="space-y-2 max-w-md">
           <p class="text-lg text-[var(--la-text-label)]">No builds in flight.</p>
-          <p class="text-sm text-[#64748b] leading-snug">
+          <p class="text-sm text-[var(--la-text-dim)] leading-snug">
             The squad is idle. Spin up a build and the agents will get to work — pillar-by-pillar, gated, observable.
           </p>
         </div>
         <button
-          class="px-4 py-2 bg-[#d4a017] text-[#0a0a0f] text-sm font-semibold rounded hover:bg-[#f0c040] hover:shadow-[0_0_18px_rgba(255,215,0,0.5)] transition-all"
+          class="px-4 py-2 bg-[var(--la-focus-ring)] text-[var(--la-bg-frame)] text-sm font-semibold rounded hover:bg-[var(--la-agent-quality)] hover:shadow-[0_0_18px_rgba(255,215,0,0.5)] transition-all"
           onclick={newBuild}
         >
           + New Build
         </button>
-        <p class="text-[10px] text-[#475569]">
+        <p class="text-[10px] text-[var(--la-text-dim)]">
           or press <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">⌘K</kbd> → <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">/build</kbd>
         </p>
       </div>
     {:else if viewMode === 'card'}
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {#each $projectGroups as group}
+        {#each visibleGroups as group}
           <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
           <div
-            class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg p-3 cursor-pointer hover:border-[#334155] transition-colors"
+            class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg p-3 cursor-pointer hover:border-[var(--la-hair-strong)] transition-colors"
             onclick={() => group.plans.length > 1 ? openProject(group.id) : openBuild(group.plans[0]?.id ?? group.id)}
             onkeydown={() => group.plans.length > 1 ? openProject(group.id) : openBuild(group.plans[0]?.id ?? group.id)}
           >
@@ -178,7 +186,7 @@
             </div>
 
             <!-- Path -->
-            <p class="text-[9px] text-[#475569] font-mono truncate mb-2">~/{group.path}</p>
+            <p class="text-[9px] text-[var(--la-text-dim)] font-mono truncate mb-2">~/{group.path}</p>
 
             <!-- Plan list (first 3) -->
             <div class="space-y-1 mb-2">
@@ -187,11 +195,11 @@
                 <div class="flex items-center gap-1.5 text-[10px]">
                   <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background-color: {sstyle.fg}"></span>
                   <span class="text-[var(--la-text-label)] truncate flex-1">{plan.name}</span>
-                  <span class="text-[#475569]">{plan.status === 'in_progress' ? 'active' : plan.status === 'completed' ? 'done' : plan.status === 'queued' ? 'planned' : plan.status}</span>
+                  <span class="text-[var(--la-text-dim)]">{plan.status === 'in_progress' ? 'active' : plan.status === 'completed' ? 'done' : plan.status === 'queued' ? 'planned' : plan.status}</span>
                 </div>
               {/each}
               {#if group.plans.length > 3}
-                <div class="text-[9px] text-[#475569]">+{group.plans.length - 3} more</div>
+                <div class="text-[9px] text-[var(--la-text-dim)]">+{group.plans.length - 3} more</div>
               {/if}
             </div>
 
@@ -204,7 +212,7 @@
             </div>
 
             <!-- Stats footer -->
-            <div class="flex items-center justify-between mt-1.5 text-[9px] text-[#475569]">
+            <div class="flex items-center justify-between mt-1.5 text-[9px] text-[var(--la-text-dim)]">
               <span>{group.activePlanCount > 0 ? `${group.activePlanCount} active` : 'no active plans'}</span>
               <span>{Math.round(group.progress * 100)}%</span>
             </div>
@@ -214,11 +222,11 @@
         <!-- Inline New Build card — always last in grid (#12) -->
         <button
           data-testid="buildqueue-new-build-card"
-          class="bg-[var(--la-bg-frame)] border border-dashed border-[#FFD700]/20 rounded-lg p-3 flex flex-col items-center justify-center gap-2 hover:border-[#FFD700]/50 hover:bg-[#FFD700]/5 transition-colors min-h-[120px]"
+          class="bg-[var(--la-bg-frame)] border border-dashed border-[var(--la-focus-ring)]/20 rounded-lg p-3 flex flex-col items-center justify-center gap-2 hover:border-[var(--la-focus-ring)]/50 hover:bg-[var(--la-focus-ring)]/5 transition-colors min-h-[120px]"
           onclick={newBuild}
         >
-          <span class="text-2xl text-[#FFD700]/40 leading-none">+</span>
-          <span class="text-[10px] text-[#475569]">New Build</span>
+          <span class="text-2xl text-[var(--la-focus-ring)]/40 leading-none">+</span>
+          <span class="text-[10px] text-[var(--la-text-dim)]">New Build</span>
         </button>
       </div>
 
@@ -230,7 +238,7 @@
           {@const sstyle = statusStyle(build.status)}
           <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
           <div
-            class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg p-4 cursor-pointer hover:border-[#334155] transition-colors group"
+            class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg p-4 cursor-pointer hover:border-[var(--la-hair-strong)] transition-colors group"
             onclick={() => openBuild(build.id)}
             onkeydown={() => openBuild(build.id)}
           >
@@ -257,7 +265,7 @@
                   </span>
                 </div>
                 <!-- Description line -->
-                <p class="text-[11px] text-[#64748b] mt-0.5 truncate">
+                <p class="text-[11px] text-[var(--la-text-dim)] mt-0.5 truncate">
                   {build.description ?? 'No description'}
                 </p>
               </div>
@@ -281,16 +289,16 @@
                     </span>
                   {/each}
                   {#if (build.siblings?.length ?? 0) > 3}
-                    <span class="text-[#475569]">+{(build.siblings?.length ?? 0) - 3}</span>
+                    <span class="text-[var(--la-text-dim)]">+{(build.siblings?.length ?? 0) - 3}</span>
                   {/if}
                 {/if}
               </div>
               {#if (build.blockedBy?.length ?? 0) > 0}
-                <span class="text-[#ef4444] truncate max-w-[120px]" title="blocked by: {(build.blockedBy ?? []).join(', ')}">
+                <span class="text-[var(--la-danger-stroke)] truncate max-w-[120px]" title="blocked by: {(build.blockedBy ?? []).join(', ')}">
                   blocked
                 </span>
               {:else}
-                <span class="text-[#475569]">{build.status === 'in_progress' ? 'active' : build.status === 'completed' ? 'done' : 'planned'}</span>
+                <span class="text-[var(--la-text-dim)]">{build.status === 'in_progress' ? 'active' : build.status === 'completed' ? 'done' : 'planned'}</span>
               {/if}
             </div>
           </div>
@@ -300,7 +308,7 @@
       <div class="overflow-x-auto">
       <table class="w-full text-sm min-w-[700px]">
         <thead>
-          <tr class="text-[#64748b] text-left border-b border-[var(--la-hair-strong)]">
+          <tr class="text-[var(--la-text-dim)] text-left border-b border-[var(--la-hair-strong)]">
             <th class="pb-2 font-medium w-10"></th>
             <th class="pb-2 font-medium">Name</th>
             <th class="pb-2 font-medium">Phase</th>
@@ -325,14 +333,14 @@
               </td>
               <td class="py-2">
                 <div class="font-medium">{build.name}</div>
-                <div class="text-[10px] text-[#64748b] truncate max-w-[200px]">{build.description ?? ''}</div>
+                <div class="text-[10px] text-[var(--la-text-dim)] truncate max-w-[200px]">{build.description ?? ''}</div>
               </td>
               <td class="py-2">
                 <span class="text-xs font-mono" style="color: {polyColor}">{build.currentPillar}</span>
               </td>
               <td class="py-2">
                 <span class="text-xs font-mono">{pillarProgress(build)}</span>
-                <span class="text-[10px] text-[#64748b] ml-1">{Math.round(build.confidence * 100)}%</span>
+                <span class="text-[10px] text-[var(--la-text-dim)] ml-1">{Math.round(build.confidence * 100)}%</span>
               </td>
               <td class="py-2">
                 <span
@@ -347,7 +355,7 @@
                   title="{build.priority ?? 'unset'}"
                 ></span>
               </td>
-              <td class="py-2 text-[10px] text-[#64748b] font-mono">
+              <td class="py-2 text-[10px] text-[var(--la-text-dim)] font-mono">
                 {build.status === 'in_progress' ? 'active' : build.status === 'completed' ? 'completed' : 'planned'}
               </td>
             </tr>

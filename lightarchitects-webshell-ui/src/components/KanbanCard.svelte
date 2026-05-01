@@ -80,7 +80,7 @@
 
     <!-- Row 2: Description -->
     {#if build.description}
-      <p class="text-[10px] text-[#64748b] mt-1 line-clamp-2 leading-relaxed">
+      <p class="text-[10px] text-[var(--la-text-dim)] mt-1 line-clamp-2 leading-relaxed">
         {build.description}
       </p>
     {/if}
@@ -98,7 +98,7 @@
             ></div>
           {/each}
         </div>
-        <span class="text-[8px] text-[#475569] font-mono">{passed}/{total}</span>
+        <span class="text-[8px] text-[var(--la-text-dim)] font-mono">{passed}/{total}</span>
       </div>
 
       <!-- Sibling tags -->
@@ -113,7 +113,7 @@
             </span>
           {/each}
           {#if build.siblings.length > 3}
-            <span class="text-[7px] text-[#475569]">+{build.siblings.length - 3}</span>
+            <span class="text-[7px] text-[var(--la-text-dim)]">+{build.siblings.length - 3}</span>
           {/if}
         {/if}
       </div>
@@ -121,7 +121,7 @@
 
     <!-- Blocked indicator -->
     {#if build.blockedBy && build.blockedBy.length > 0}
-      <div class="mt-1.5 text-[8px] text-[#ef4444] flex items-center gap-1 truncate">
+      <div class="mt-1.5 text-[8px] text-[var(--la-danger-stroke)] flex items-center gap-1 truncate">
         <span>&#x26D4;</span>
         <span class="truncate">blocked by {build.blockedBy.join(', ')}</span>
       </div>

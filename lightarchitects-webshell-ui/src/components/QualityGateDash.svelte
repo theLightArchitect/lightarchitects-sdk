@@ -113,7 +113,7 @@
         </div>
       {/each}
     </div>
-    <span class="text-[10px] font-mono text-[#94a3b8] ml-1">
+    <span class="text-[10px] font-mono text-[var(--la-text-label)] ml-1">
       {passedCount}/{totalCount} passed
     </span>
   </div>

@@ -1170,14 +1170,14 @@
   {#if $helixEntries.length > 0}
     <div
       class="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-1 rounded-full
-             bg-[#FFD700]/20 border border-[#FFD700] pointer-events-none
+             bg-[var(--la-focus-ring)]/20 border border-[var(--la-focus-ring)] pointer-events-none
              animate-pulse z-10"
       data-testid="helix-orb-pulse"
       data-orb-count={$helixEntries.length}
       data-pulse-key={pulseKey}
     >
-      <span class="w-1.5 h-1.5 rounded-full bg-[#FFD700]"></span>
-      <span class="text-[9px] font-mono text-[#FFD700]">+{$helixEntries.length}</span>
+      <span class="w-1.5 h-1.5 rounded-full bg-[var(--la-focus-ring)]"></span>
+      <span class="text-[9px] font-mono text-[var(--la-focus-ring)]">+{$helixEntries.length}</span>
     </div>
   {/if}
 
@@ -1190,12 +1190,12 @@
     >
       {#each lineage as pulse (pulse.id)}
         <div
-          class="flex items-center gap-1.5 px-1.5 py-0.5 rounded border border-[#FFD700]/40
-                 bg-[#FFD700]/10 text-[9px] font-mono text-[#FFD700]/80"
+          class="flex items-center gap-1.5 px-1.5 py-0.5 rounded border border-[var(--la-focus-ring)]/40
+                 bg-[var(--la-focus-ring)]/10 text-[9px] font-mono text-[var(--la-focus-ring)]/80"
         >
-          <span class="w-1 h-1 rounded-full bg-[#FFD700] animate-ping"></span>
+          <span class="w-1 h-1 rounded-full bg-[var(--la-focus-ring)] animate-ping"></span>
           <span>hot→cold</span>
-          <span class="text-[#FFD700]/70">{pulse.sibling}</span>
+          <span class="text-[var(--la-focus-ring)]/70">{pulse.sibling}</span>
         </div>
       {/each}
     </div>

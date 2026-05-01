@@ -168,29 +168,29 @@
     <div class="flex flex-col gap-0.5">
       <div class="flex items-center gap-2">
         <button
-          class="text-[#64748b] hover:text-[#f0c040] transition-colors text-sm"
+          class="text-[var(--la-text-dim)] hover:text-[var(--la-agent-quality)] transition-colors text-sm"
           onclick={goBack}
           title="Back to Build Queue"
         >
           &larr; Projects
         </button>
-        <span class="text-[#334155]">/</span>
+        <span class="text-[var(--la-hair-strong)]">/</span>
         <h1 class="text-lg font-semibold tracking-wide">{projectName}</h1>
       </div>
-      <span class="text-[10px] text-[#475569] font-mono pl-0.5">{projectPath}</span>
+      <span class="text-[10px] text-[var(--la-text-dim)] font-mono pl-0.5">{projectPath}</span>
     </div>
     <div class="flex items-center gap-3">
       <!-- View toggle -->
-      <div class="flex bg-[#1e293b] rounded overflow-hidden">
+      <div class="flex bg-[var(--la-drawer-border)] rounded overflow-hidden">
         <button
-          class="px-3 py-1 text-xs {viewMode === 'list' ? 'bg-[#334155] text-white' : 'text-[#64748b]'}"
+          class="px-3 py-1 text-xs {viewMode === 'list' ? 'bg-[var(--la-hair-strong)] text-white' : 'text-[var(--la-text-dim)]'}"
           onclick={() => { viewMode = 'list'; }}
           data-testid="view-toggle-list"
         >
           List
         </button>
         <button
-          class="px-3 py-1 text-xs {viewMode === 'kanban' ? 'bg-[#334155] text-white' : 'text-[#64748b]'}"
+          class="px-3 py-1 text-xs {viewMode === 'kanban' ? 'bg-[var(--la-hair-strong)] text-white' : 'text-[var(--la-text-dim)]'}"
           onclick={() => { viewMode = 'kanban'; }}
           data-testid="view-toggle-kanban"
         >
@@ -198,7 +198,7 @@
         </button>
       </div>
       <button
-        class="px-4 py-1.5 bg-[#D4A017] text-[#0a0a0f] text-xs font-semibold rounded hover:bg-[#FFD700] hover:shadow-[0_0_10px_rgba(255,215,0,0.4)] transition-all"
+        class="px-4 py-1.5 bg-[var(--la-focus-ring)] text-[var(--la-bg-frame)] text-xs font-semibold rounded hover:bg-[var(--la-focus-ring)] hover:shadow-[0_0_10px_rgba(255,215,0,0.4)] transition-all"
         onclick={newPlan}
       >
         + New Plan
@@ -207,19 +207,19 @@
   </header>
 
   <!-- Stat strip -->
-  <div class="flex items-center flex-wrap gap-x-4 gap-y-1 px-4 md:px-6 py-2 bg-[#0d0d14] border-b border-[var(--la-hair-strong)] text-xs">
-    <span class="text-[#94a3b8]">{stats.total} plans</span>
-    <span class="text-[#22c55e]">{stats.active} in progress</span>
-    <span class="text-[#64748b]">{stats.planned} planned</span>
-    <span class="text-[#3b82f6]">{stats.completed} completed</span>
+  <div class="flex items-center flex-wrap gap-x-4 gap-y-1 px-4 md:px-6 py-2 bg-[var(--la-bg-frame)] border-b border-[var(--la-hair-strong)] text-xs">
+    <span class="text-[var(--la-text-label)]">{stats.total} plans</span>
+    <span class="text-[var(--la-agent-researcher)]">{stats.active} in progress</span>
+    <span class="text-[var(--la-text-dim)]">{stats.planned} planned</span>
+    <span class="text-[var(--la-agent-engineer)]">{stats.completed} completed</span>
   </div>
 
   <!-- Plan roadmap -->
   <div class="flex-1 overflow-y-auto p-4 md:p-6">
     {#if sortedBuilds.length === 0}
-      <div class="flex flex-col items-center justify-center h-full text-[#475569]">
+      <div class="flex flex-col items-center justify-center h-full text-[var(--la-text-dim)]">
         <p class="text-lg mb-2">No plans for this project</p>
-        <p class="text-sm">Create a new build plan with <kbd class="bg-[#1e293b] px-2 py-0.5 rounded text-xs">/build</kbd></p>
+        <p class="text-sm">Create a new build plan with <kbd class="bg-[var(--la-drawer-border)] px-2 py-0.5 rounded text-xs">/build</kbd></p>
       </div>
     {:else if viewMode === 'kanban'}
       <KanbanBoard builds={sortedBuilds} onOpenBuild={openBuild} onSelectBuild={openDetailPanel} />
@@ -235,14 +235,14 @@
           <!-- Dependency connector line -->
           {#if idx > 0 && build.blockedBy && build.blockedBy.length > 0}
             <div class="flex items-center justify-center">
-              <div class="w-px h-6 bg-[#334155]"></div>
+              <div class="w-px h-6 bg-[var(--la-hair-strong)]"></div>
             </div>
           {/if}
 
           <!-- Plan card -->
           <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
           <div
-            class="bg-[#111827] border border-[var(--la-hair-strong)] rounded-lg p-4 cursor-pointer hover:border-[#334155] hover:shadow-[0_0_12px_rgba(255,215,0,0.05)] transition-all group"
+            class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg p-4 cursor-pointer hover:border-[var(--la-hair-strong)] hover:shadow-[0_0_12px_rgba(255,215,0,0.05)] transition-all group"
             onclick={() => openBuild(build.id)}
             onkeydown={(e) => { if (e.key === 'Enter') openBuild(build.id); }}
           >
@@ -272,7 +272,7 @@
                     </span>
                   </div>
                   <!-- Description -->
-                  <p class="text-[11px] text-[#64748b] mt-0.5 line-clamp-2">
+                  <p class="text-[11px] text-[var(--la-text-dim)] mt-0.5 line-clamp-2">
                     {build.description ?? 'No description'}
                   </p>
                 </div>
@@ -299,7 +299,7 @@
                 {/if}
               </div>
               {#if build.blockedBy && build.blockedBy.length > 0}
-                <span class="text-[#ef4444] flex items-center gap-1" title="Blocked by: {build.blockedBy.join(', ')}">
+                <span class="text-[var(--la-danger-stroke)] flex items-center gap-1" title="Blocked by: {build.blockedBy.join(', ')}">
                   <span class="text-[11px]">&#x26D4;</span>
                   blocks: {build.blockedBy.join(', ')}
                 </span>

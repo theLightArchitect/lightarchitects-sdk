@@ -6,3 +6,5 @@ coverage/
 .DS_Store
 test-results/
 playwright-report/
+# Visual baseline HARs (large; only manifest.json index is committed)
+tests/e2e/__har__/*.har

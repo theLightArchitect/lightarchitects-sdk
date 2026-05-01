@@ -62,7 +62,7 @@
   $effect(() => {
     const t = task;
     if (classifyTimer) clearTimeout(classifyTimer);
-    if (t.trim().length < 8 || phase === 'streaming') return;
+    if (t.trim().length < 8 || phase === 'streaming' || phase === 'complete' || phase === 'error') return;
 
     classifyTimer = setTimeout(async () => {
       try {

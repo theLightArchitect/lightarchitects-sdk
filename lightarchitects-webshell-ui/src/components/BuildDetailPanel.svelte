@@ -61,7 +61,7 @@
       <!-- Progress hero -->
       <div class="progress-hero">
         <div class="text-2xl font-bold" style="color: {ROADMAP.accent}">{progressPct}%</div>
-        <div class="text-[10px] text-[#64748b] mt-0.5">
+        <div class="text-[10px] text-[var(--la-text-dim)] mt-0.5">
           {passed}/{total} gates passed
         </div>
         <div class="progress-bar-mini mt-2">
@@ -71,7 +71,7 @@
 
       <!-- Title -->
       <h2 class="text-base font-bold mt-4 mb-0.5">{build.name}</h2>
-      <div class="text-[10px] text-[#64748b] mb-4">
+      <div class="text-[10px] text-[var(--la-text-dim)] mb-4">
         {build.status.replace('_', ' ')} &bull; {build.metaSkill} &bull; {Math.round(build.confidence * 100)}% confidence
       </div>
 
@@ -79,7 +79,7 @@
       {#if build.description}
         <div class="section">
           <h3 class="section-title">Description</h3>
-          <p class="text-[12px] text-[#cbd5e1] leading-relaxed">{build.description}</p>
+          <p class="text-[12px] text-[var(--la-text-bright)] leading-relaxed">{build.description}</p>
         </div>
       {/if}
 
@@ -89,24 +89,24 @@
         <div class="grid grid-cols-2 gap-2 text-[10px]">
           {#if tierLabel()}
             <div>
-              <span class="text-[#64748b]">Tier</span>
+              <span class="text-[var(--la-text-dim)]">Tier</span>
               <span class="ml-1" style="color: {TIER_COLORS[build.tier ?? 1] ?? '#475569'}">{tierLabel()}</span>
             </div>
           {/if}
           <div>
-            <span class="text-[#64748b]">Status</span>
-            <span class="ml-1 text-[#e2e8f0]">{build.status.replace('_', ' ')}</span>
+            <span class="text-[var(--la-text-dim)]">Status</span>
+            <span class="ml-1 text-[var(--la-text-bright)]">{build.status.replace('_', ' ')}</span>
           </div>
           {#if build.priority}
             <div>
-              <span class="text-[#64748b]">Priority</span>
+              <span class="text-[var(--la-text-dim)]">Priority</span>
               <span class="ml-1" style="color: {build.priority === 'high' ? '#ef4444' : build.priority === 'medium' ? '#f59e0b' : '#22c55e'}">
                 {build.priority.toUpperCase()}
               </span>
             </div>
           {/if}
           <div>
-            <span class="text-[#64748b]">Meta-skill</span>
+            <span class="text-[var(--la-text-dim)]">Meta-skill</span>
             <span class="ml-1" style="color: {getMetaSkillColor(build.metaSkill)}">{build.metaSkill}</span>
           </div>
         </div>
@@ -133,7 +133,7 @@
       {#if build.blockedBy && build.blockedBy.length > 0}
         <div class="section">
           <h3 class="section-title">Blocked By</h3>
-          <div class="text-[11px] text-[#ef4444]">{build.blockedBy.join(', ')}</div>
+          <div class="text-[11px] text-[var(--la-danger-stroke)]">{build.blockedBy.join(', ')}</div>
         </div>
       {/if}
       {#if build.blocks && build.blocks.length > 0}

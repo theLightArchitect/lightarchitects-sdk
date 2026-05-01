@@ -45,9 +45,9 @@ export const E2E_DISPATCH_ID = 'e2e-dispatch-001';
 
 /** Pre-built SSE body: Engineer Solo dry-run completes in ~42 ms. */
 export const MOCK_SSE_STREAM = [
-  { PerAgentState: { agent: 'Engineer', state: 'Running', message: '[DRY] Engineer running on: refactor auth service' } },
-  { MailboxMessage: { agent: 'Engineer', text: 'Engineer acknowledged task (dry-run).' } },
-  { PerAgentState: { agent: 'Engineer', state: 'Complete', message: null } },
+  { PerAgentState: { agent: 'engineer', state: 'Running', message: '[DRY] Engineer running on: refactor auth service' } },
+  { MailboxMessage: { agent: 'engineer', text: 'Engineer acknowledged task (dry-run).' } },
+  { PerAgentState: { agent: 'engineer', state: 'Complete', message: null } },
   { Complete: { elapsed_ms: 42 } },
 ].map((e) => `data: ${JSON.stringify(e)}\n\n`).join('');
 
@@ -78,28 +78,28 @@ export const MOCK_BUILD = {
 
 export const MOCK_FINDINGS = [
   {
-    id: 'f-001', buildId: 'build-e2e-001', pillar: 'sec',
+    id: 'f-001', buildId: 'build-e2e-001', pillar: 'SEC',
     title: 'Hardcoded API key in config.ts',
     message: 'Line 42 contains a plaintext API key that should be moved to environment variables.',
     severity: 'critical', category: 'security', verified: false,
     file: 'src/config.ts', line: 42,
   },
   {
-    id: 'f-002', buildId: 'build-e2e-001', pillar: 'qual',
+    id: 'f-002', buildId: 'build-e2e-001', pillar: 'QUAL',
     title: 'Cyclomatic complexity exceeds threshold',
     message: 'Function processData() has complexity 14, threshold is 10.',
     severity: 'warning', category: 'quality', verified: false,
     file: 'src/processor.ts', line: 88,
   },
   {
-    id: 'f-003', buildId: 'build-e2e-001', pillar: 'perf',
+    id: 'f-003', buildId: 'build-e2e-001', pillar: 'PERF',
     title: 'Unbounded array growth in event handler',
     message: 'activityFeed array grows without limit. Consider a rolling window.',
     severity: 'info', category: 'performance', verified: true,
     file: 'src/lib/stores.ts', line: 127,
   },
   {
-    id: 'f-004', buildId: 'build-e2e-001', pillar: 'arch',
+    id: 'f-004', buildId: 'build-e2e-001', pillar: 'ARCH',
     title: 'Breaking change: renamed export',
     message: 'Renamed ApiClient to HttpClient without re-export alias.',
     severity: 'error', category: 'semver', verified: false,
@@ -306,7 +306,7 @@ export async function registerMocks(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        agents: ['Engineer'],
+        agents: ['engineer'],
         mode: 'Solo',
         rationale: 'refactor keyword → Engineer',
       }),
