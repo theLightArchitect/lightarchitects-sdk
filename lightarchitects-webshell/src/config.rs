@@ -542,6 +542,31 @@ fn save_keyring_token(token: &str) -> bool {
     }
 }
 
+/// Removes the persisted auth token from both the token file and the OS keyring.
+///
+/// Called by `DELETE /api/auth/session`. Best-effort — logs failures but does
+/// not propagate errors so a partially-cleared state still returns 204.
+pub(crate) fn remove_persisted_token() {
+    // Remove token file.
+    if let Some(path) = token_file_path() {
+        if path.exists() {
+            if let Err(e) = std::fs::remove_file(&path) {
+                tracing::warn!(target: "webshell", "Failed to remove token file: {e}");
+            } else {
+                tracing::info!(target: "webshell", "Token file removed: {}", path.display());
+            }
+        }
+    }
+    // Remove keyring entry (silently ignore "not found").
+    if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USERNAME) {
+        match entry.delete_credential() {
+            Ok(()) => tracing::info!(target: "webshell", "Keyring token entry removed"),
+            Err(keyring::Error::NoEntry) => {} // already gone
+            Err(e) => tracing::warn!(target: "webshell", "Failed to remove keyring entry: {e}"),
+        }
+    }
+}
+
 /// Reads an existing token from the file, or generates and persists a new one.
 fn load_or_create_token(token_path: &PathBuf) -> Result<String, std::io::Error> {
     // Try to read existing token

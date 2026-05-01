@@ -27,6 +27,7 @@
   import { setupComplete, step, loadSetupInfo, selectedBackend, selectedModel, selectedAgent } from '$lib/setup';
   import { connectGlobalSSE, disconnectGlobalSSE } from '$lib/sse';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
+  import { registerHotkey, dispatchHotkey } from '$lib/hotkeyRegistry';
 
   // Track persisted stores — save on any change after initial load.
   // Uses store.subscribe() instead of $effect to avoid Svelte 5's reactive
@@ -85,14 +86,39 @@
   }
 
   // Responsive viewport state — drives Helix3D panel layout decisions.
-  // At desktop (>=1024) the panel is the right-hand sibling of the main
-  // content (current default). Below 1024 the panel is hidden and the
-  // toggle button reveals it as a full-screen overlay so the WebGL scene
-  // gets readable real estate. At <768 the page itself stacks vertically.
-  // BREAKPOINTS tokens come from $lib/design-tokens.
+  // Panel is hidden by default; user toggles it with the "Show 3D View" button.
+  // Below 1024 the panel always renders as a full-screen overlay.
+  // At <768 the page itself stacks vertically.
   type ViewportCategory = 'mobile' | 'tablet' | 'desktop';
   let viewport = $state<ViewportCategory>('desktop');
-  let showHelix = $state(true);
+  let showHelix = $state(false);
+
+  // Resizable helix panel — persisted to localStorage.
+  const HELIX_WIDTH_KEY = 'la.helixPanelWidth';
+  let helixWidth = $state<number>((() => {
+    try { return parseInt(localStorage.getItem(HELIX_WIDTH_KEY) ?? '380', 10) || 380; }
+    catch { return 380; }
+  })());
+  let isResizing = $state(false);
+
+  function startResize(e: MouseEvent) {
+    e.preventDefault();
+    isResizing = true;
+    const startX = e.clientX;
+    const startWidth = helixWidth;
+    function onMove(ev: MouseEvent) {
+      const delta = startX - ev.clientX;
+      helixWidth = Math.min(700, Math.max(220, startWidth + delta));
+    }
+    function onUp() {
+      isResizing = false;
+      try { localStorage.setItem(HELIX_WIDTH_KEY, String(helixWidth)); } catch { /* ok */ }
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
 
   function categorizeViewport(width: number): ViewportCategory {
     if (width < 768) return 'mobile';
@@ -104,10 +130,8 @@
     const next = categorizeViewport(window.innerWidth);
     if (next === viewport) return;
     viewport = next;
-    // Auto-collapse the helix panel when leaving desktop so users on
-    // resize-down don't get a forced overlay; auto-restore on entering
-    // desktop because that is where the panel "lives" by default.
-    showHelix = next === 'desktop';
+    // Only auto-collapse when leaving desktop — never auto-restore (user decides).
+    if (next !== 'desktop') showHelix = false;
   }
 
   // Derived condition for setup gate — explicit dependency tracking in Svelte 5
@@ -118,11 +142,11 @@
   // (existing builds) before reaching Intake (new build — write action).
   // Squad Dispatch appended last — a power-user action (Cmd+K shortcut).
   const NAV_ITEMS = [
-    { label: 'Activity', hash: '/activity',      hint: 'Live trace events from running agents' },
-    { label: 'Sitrep',   hash: '/sitrep',         hint: 'Squad health snapshot — agent status, alerts, uptime' },
-    { label: 'Queue',    hash: '/',               hint: 'All builds — past, in-flight, and queued' },
-    { label: 'Intake',   hash: '/intake',         hint: 'Start a new build (Quick or Plan mode)' },
-    { label: 'Squad',    hash: '/squad-dispatch', hint: 'Dispatch agents by domain — Engineer, Security, Researcher, Ops (Cmd+K)' },
+    { label: 'Activity', hash: '/activity',      hint: 'Live trace events from running agents',                                         separator: false },
+    { label: 'Sitrep',   hash: '/sitrep',         hint: 'Squad health snapshot — agent status, alerts, uptime',                         separator: false },
+    { label: 'Queue',    hash: '/',               hint: 'All builds — past, in-flight, and queued',                                     separator: false },
+    { label: 'Intake',   hash: '/intake',         hint: 'Start a new build (Quick or Plan mode)',                                       separator: false },
+    { label: 'Squad',    hash: '/squad-dispatch', hint: 'Dispatch agents by domain — Engineer, Security, Researcher, Ops (Cmd+K)',      separator: true  },
   ];
 
   function navigate(hash: string) {
@@ -177,18 +201,95 @@
     // restores it — this guard catches accidental closes / nav-aways.
     window.addEventListener('beforeunload', beforeUnloadGuard);
 
-    // Global hotkeys.
-    //   Cmd/Ctrl+K → Squad Dispatch (#32 / fc0d27e — power-user shortcut).
-    //   Cmd/Ctrl+/ → toggle KeymapLegend (#4 — discoverability surface).
+    // Global hotkeys — all entries registered into hotkeyRegistry so
+    // KeymapLegend stays accurate automatically. dispatchHotkey() routes
+    // to the correct handler based on scope + current route.
+    const unregGlobalKeys = [
+      registerHotkey({
+        id: 'global-squad-dispatch',
+        keys: ['⌘', 'K'],
+        label: 'Open Squad Dispatch',
+        group: 'Navigation',
+        scope: 'global',
+        matches: e => (e.metaKey || e.ctrlKey) && e.key === 'k',
+        handler: () => navigate('/squad-dispatch'),
+      }),
+      registerHotkey({
+        id: 'global-keymap-legend',
+        keys: ['⌘', '/'],
+        label: 'Open keyboard shortcuts',
+        group: 'Navigation',
+        scope: 'global',
+        matches: e => (e.metaKey || e.ctrlKey) && e.key === '/',
+        handler: () => window.dispatchEvent(new CustomEvent('la:toggle-keymap-legend')),
+      }),
+      registerHotkey({
+        id: 'global-tab-1',
+        keys: ['1'],
+        label: 'Go to Activity',
+        group: 'Navigation',
+        scope: 'global',
+        matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '1' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
+        handler: () => navigate('/activity'),
+      }),
+      registerHotkey({
+        id: 'global-tab-2',
+        keys: ['2'],
+        label: 'Go to Sitrep',
+        group: 'Navigation',
+        scope: 'global',
+        matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '2' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
+        handler: () => navigate('/sitrep'),
+      }),
+      registerHotkey({
+        id: 'global-tab-3',
+        keys: ['3'],
+        label: 'Go to Queue',
+        group: 'Navigation',
+        scope: 'global',
+        matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '3' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
+        handler: () => navigate('/'),
+      }),
+      registerHotkey({
+        id: 'global-tab-4',
+        keys: ['4'],
+        label: 'Go to Intake',
+        group: 'Navigation',
+        scope: 'global',
+        matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '4' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
+        handler: () => navigate('/intake'),
+      }),
+      registerHotkey({
+        id: 'global-tab-5',
+        keys: ['5'],
+        label: 'Go to Squad Dispatch',
+        group: 'Navigation',
+        scope: 'global',
+        matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '5' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
+        handler: () => navigate('/squad-dispatch'),
+      }),
+      registerHotkey({
+        id: 'global-copilot',
+        keys: ['⌃', '`'],
+        label: 'Toggle Copilot drawer',
+        group: 'Drawers',
+        scope: 'global',
+        matches: e => e.ctrlKey && e.key === '`',
+        handler: () => window.dispatchEvent(new CustomEvent('la:toggle-copilot')),
+      }),
+      registerHotkey({
+        id: 'global-memory',
+        keys: ['⌘', 'M'],
+        label: 'Toggle Memory drawer',
+        group: 'Drawers',
+        scope: 'global',
+        matches: e => (e.metaKey || e.ctrlKey) && e.key === 'm',
+        handler: () => memoryDrawerOpen.update(v => !v),
+      }),
+    ];
+
     function handleGlobalKey(e: KeyboardEvent) {
-      if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.key === 'k') {
-        e.preventDefault();
-        navigate('/squad-dispatch');
-      } else if (e.key === '/') {
-        e.preventDefault();
-        window.dispatchEvent(new CustomEvent('la:toggle-keymap-legend'));
-      }
+      dispatchHotkey(e, $currentRoute);
     }
     window.addEventListener('keydown', handleGlobalKey);
 
@@ -214,6 +315,7 @@
       stopWaveTick();
       disconnectGlobalSSE();
       settingsUnsubs.forEach(fn => fn());
+      unregGlobalKeys.forEach(fn => fn());
       window.removeEventListener('hashchange', handleHashChange);
       window.removeEventListener('resize', syncViewport);
       window.removeEventListener('beforeunload', beforeUnloadGuard);
@@ -243,7 +345,14 @@
 <!-- Keymap legend modal — Cmd+/ toggles, Esc dismisses (#4). -->
 <KeymapLegend />
 <HelixLegend />
-<div class="w-screen h-screen overflow-hidden bg-[#0a0a0f] text-[#e2e8f0] font-['JetBrains_Mono',monospace]">
+<!-- Corner brackets — fixed-position tactical frame (#99 AES-3).
+     CSS lives in tokens.css .corner-bracket rules.
+     Animate to researcher-green during active dispatch via data-dispatching. -->
+<div class="corner-bracket tl" aria-hidden="true"></div>
+<div class="corner-bracket tr" aria-hidden="true"></div>
+<div class="corner-bracket bl" aria-hidden="true"></div>
+<div class="corner-bracket br" aria-hidden="true"></div>
+<div class="w-screen h-screen overflow-hidden bg-[#08090a] text-[var(--la-text-bright)] font-['JetBrains_Mono',monospace]">
   <!-- Responsive container:
          <768  : flex-col       (vertical stack — single-column flow)
          >=768 : flex-row       (side-by-side) — at 768..1023 the helix panel
@@ -256,6 +365,9 @@
       <!-- Top navigation strip — underline-only active indicator (#23) -->
       <nav class="flex items-stretch gap-1 px-3 border-b border-[#1e293b] bg-[#0a0a0f] shrink-0 overflow-x-auto">
         {#each NAV_ITEMS as item}
+          {#if item.separator}
+            <span class="self-center text-[#1e293b] select-none px-0.5" aria-hidden="true">·</span>
+          {/if}
           <Tooltip content={item.hint} side="bottom">
             <button
               onclick={() => navigate(item.hash)}
@@ -303,14 +415,25 @@
         </div>
       {:else if ActiveScreen}
         {#key ActiveScreen}
-          <svelte:component this={ActiveScreen} />
+          <ActiveScreen />
         {/key}
       {/if}
     </div>
 
-    <!-- Desktop (>=1024): inline right-hand panel — original behavior. -->
+    <!-- Desktop (>=1024): inline right-hand panel, user-resizable. -->
     {#if showHelix && viewport === 'desktop'}
-      <div class="lg:block lg:w-[35%] xl:w-[40%] min-w-[200px] max-w-[600px] relative border-l border-[#1e293b]" data-testid="helix-panel-inline">
+      <!-- Drag handle — sits on the seam between content and helix panel. -->
+      <button
+        class="w-1 shrink-0 cursor-col-resize hover:bg-[#FFD700]/30 active:bg-[#FFD700]/50 transition-colors border-l border-[#1e293b] p-0 bg-transparent {isResizing ? 'bg-[#FFD700]/40' : ''}"
+        aria-label="Resize helix panel"
+        onmousedown={startResize}
+        data-testid="helix-resize-handle"
+      ></button>
+      <div
+        class="relative shrink-0 overflow-hidden"
+        style="width: {helixWidth}px"
+        data-testid="helix-panel-inline"
+      >
         <Helix3D />
       </div>
     {/if}

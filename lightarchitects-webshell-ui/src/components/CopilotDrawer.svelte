@@ -52,6 +52,7 @@
   let showOllamaModal = $state(false);
   let input = $state('');
   let showSuggestions = $state(false);
+  let slashSuggestionIndex = $state(0);
   let tesseractOpen = $state(false);
   let searchQuery = $state('');
   let showSearch = $state(false);
@@ -109,6 +110,12 @@
         if (atSuggestions[atSuggestionIndex]) { e.preventDefault(); acceptAtSuggestion(atSuggestions[atSuggestionIndex]); return; }
       }
       if (e.key === 'Escape') { atSuggestions = []; return; }
+    }
+    if (showSuggestions && matchingCommands.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); slashSuggestionIndex = (slashSuggestionIndex + 1) % matchingCommands.length; return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); slashSuggestionIndex = (slashSuggestionIndex - 1 + matchingCommands.length) % matchingCommands.length; return; }
+      if (e.key === 'Enter' && matchingCommands[slashSuggestionIndex]) { e.preventDefault(); selectCommand(matchingCommands[slashSuggestionIndex].name); return; }
+      if (e.key === 'Escape') { showSuggestions = false; return; }
     }
     handleKeydown(e);
   }
@@ -373,6 +380,12 @@
       : []
   );
 
+  // Reset index when the match list changes (typing narrows/widens candidates)
+  $effect(() => {
+    matchingCommands; // track
+    slashSuggestionIndex = 0;
+  });
+
   // --- Rich context string shown in drawer header ---
   let contextBadge = $derived(() => {
     const b = $activeBuild;
@@ -444,7 +457,13 @@
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
     if (e.key === 'Escape') { showSuggestions = false; if (!input) open = false; }
   }
-  function handleInput() { showSuggestions = input.startsWith('/'); }
+  function handleInput() {
+    const isSlash = input.startsWith('/');
+    showSuggestions = isSlash;
+    if (isSlash && input.length === 1) {
+      import('$lib/tutorial').then(m => m.runTutorial('t4'));
+    }
+  }
 
   function handleDispatch(sibling: SiblingId, prompt?: string) {
     focusedSibling.set(sibling);
@@ -544,7 +563,7 @@
       class="h-1 bg-[#1e293b] hover:bg-[#FFD700] focus:bg-[#FFD700] cursor-ns-resize shrink-0 transition-colors outline-none focus:ring-1 focus:ring-[#FFD700]"
       onmousedown={onDragStart}
       onkeydown={onSeparatorKeydown}
-      role="separator"
+      role="slider"
       aria-label="Resize copilot drawer"
       aria-orientation="horizontal"
       aria-valuenow={heightPx}
@@ -786,16 +805,25 @@
             </div>
 
             <!-- Input -->
-            <div class="border-t border-[#1e293b] px-3 py-2 relative shrink-0">
+            <div class="border-t border-[#1e293b] px-3 py-2 relative shrink-0" data-onboarding="copilot-input">
               {#if showSuggestions && matchingCommands.length > 0}
-                <div class="absolute bottom-full left-3 right-3 mb-1 bg-[#0a0a0a] border border-[#1e293b] rounded-lg overflow-hidden shadow-xl z-10 max-h-40 overflow-y-auto">
-                  {#each matchingCommands as cmd}
-                    <button class="w-full text-left px-3 py-1.5 text-xs hover:bg-[#1e293b] flex items-baseline gap-2" onclick={() => selectCommand(cmd.name)}>
+                <div class="absolute bottom-full left-3 right-3 mb-1 bg-[#0a0a0a] border border-[#1e293b] rounded-lg overflow-hidden shadow-xl z-10 max-h-48 overflow-y-auto">
+                  {#each matchingCommands as cmd, i}
+                    <button
+                      class="w-full text-left px-3 py-1.5 text-xs flex items-baseline gap-2 transition-colors
+                             {i === slashSuggestionIndex ? 'bg-[#1e293b] text-[#e2e8f0]' : 'hover:bg-[#1e293b]/60'}"
+                      onclick={() => selectCommand(cmd.name)}
+                    >
                       <span class="text-[#FFD700] font-mono">/{cmd.name}</span>
                       <span class="text-[#64748b] flex-1">{cmd.description}</span>
                       {#if cmd.args}<span class="text-[#334155]">{cmd.args}</span>{/if}
                     </button>
                   {/each}
+                  <div class="px-3 py-1 border-t border-[#1e293b] flex items-center gap-3 text-[9px] text-[#334155] select-none">
+                    <span>↑↓ navigate</span>
+                    <span>↵ select</span>
+                    <span>Esc dismiss</span>
+                  </div>
                 </div>
               {/if}
               <!-- Hint bar for current command -->

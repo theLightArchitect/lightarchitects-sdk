@@ -164,7 +164,7 @@
   {/if}
 
   <!-- Header -->
-  <header class="flex items-center justify-between flex-wrap gap-y-2 px-4 md:px-6 py-3 border-b border-[#1e293b]">
+  <header class="flex items-center justify-between flex-wrap gap-y-2 px-4 md:px-6 py-3 border-b border-[var(--la-hair-strong)]">
     <div class="flex flex-col gap-0.5">
       <div class="flex items-center gap-2">
         <button
@@ -207,7 +207,7 @@
   </header>
 
   <!-- Stat strip -->
-  <div class="flex items-center flex-wrap gap-x-4 gap-y-1 px-4 md:px-6 py-2 bg-[#0d0d14] border-b border-[#1e293b] text-xs">
+  <div class="flex items-center flex-wrap gap-x-4 gap-y-1 px-4 md:px-6 py-2 bg-[#0d0d14] border-b border-[var(--la-hair-strong)] text-xs">
     <span class="text-[#94a3b8]">{stats.total} plans</span>
     <span class="text-[#22c55e]">{stats.active} in progress</span>
     <span class="text-[#64748b]">{stats.planned} planned</span>
@@ -242,7 +242,7 @@
           <!-- Plan card -->
           <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
           <div
-            class="bg-[#111827] border border-[#1e293b] rounded-lg p-4 cursor-pointer hover:border-[#334155] hover:shadow-[0_0_12px_rgba(255,215,0,0.05)] transition-all group"
+            class="bg-[#111827] border border-[var(--la-hair-strong)] rounded-lg p-4 cursor-pointer hover:border-[#334155] hover:shadow-[0_0_12px_rgba(255,215,0,0.05)] transition-all group"
             onclick={() => openBuild(build.id)}
             onkeydown={(e) => { if (e.key === 'Enter') openBuild(build.id); }}
           >

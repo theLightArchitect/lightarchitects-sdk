@@ -4,6 +4,7 @@
   import type { ContextMemo, EnrichedHelixEntry } from '$lib/types';
   import { SIBLING_COLORS } from '$lib/design-tokens';
   import { onDestroy } from 'svelte';
+  import Drawer from './Drawer.svelte';
 
   let tab = $state<'hot' | 'cold' | 'convergences'>('cold');
   let query = $state('');
@@ -88,13 +89,11 @@
   });
 
   // Keyboard shortcut: Cmd+M / Ctrl+M toggles the drawer.
+  // Escape is handled by the Drawer primitive.
   function onKeydown(e: KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'm') {
       e.preventDefault();
       memoryDrawerOpen.update(v => !v);
-    }
-    if (e.key === 'Escape' && $memoryDrawerOpen) {
-      memoryDrawerOpen.set(false);
     }
   }
 
@@ -251,70 +250,59 @@
   const isSearching = $derived(searchResults !== null);
 </script>
 
-<svelte:window on:keydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} />
 
-{#if $memoryDrawerOpen}
-  <div
-    class="fixed top-0 right-0 bottom-0 w-[420px] max-w-[90vw] bg-[#0a0f1c]
-           border-l border-[#1e293b] z-40 flex flex-col shadow-2xl"
-    data-testid="memory-drawer"
-  >
-    <!-- Header -->
-    <div class="flex items-center justify-between px-4 py-3 border-b border-[#1e293b]" data-onboarding="memory-header">
-      <div class="flex items-center gap-2">
-        <span class="text-sm font-semibold text-[#e2e8f0]">Memory</span>
-        <span class="text-[10px] text-[#64748b]">hot ({$hotMemory.length}) · cold ({$coldMemory.length})</span>
+<Drawer
+  open={$memoryDrawerOpen}
+  title="Memory"
+  subtitle="hot ({$hotMemory.length}) · cold ({$coldMemory.length})"
+  onclose={() => memoryDrawerOpen.set(false)}
+  testId="memory-drawer"
+  headerOnboarding="memory-header"
+>
+  {#snippet actions()}
+    {#if health}
+      <div
+        class="flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-[var(--la-drawer-border)] bg-[var(--la-drawer-bg)]"
+        title="Persistence tiers (fs / sqlite / neo4j)"
+        data-testid="tier-badge"
+        data-onboarding="memory-tier-badge"
+      >
+        <span
+          class="w-1.5 h-1.5 rounded-full"
+          style="background: {health.tiers.filesystem ? '#22c55e' : '#475569'}"
+          title="filesystem {health.tiers.filesystem ? 'on' : 'off'}"
+        ></span>
+        <span
+          class="w-1.5 h-1.5 rounded-full"
+          style="background: {health.tiers.sqlite ? '#22c55e' : '#475569'}"
+          title="sqlite {health.tiers.sqlite ? 'on' : 'off'}"
+        ></span>
+        <span
+          class="w-1.5 h-1.5 rounded-full"
+          style="background: {health.tiers.neo4j ? '#22c55e' : '#475569'}"
+          title="neo4j {health.tiers.neo4j ? 'on' : 'off'}"
+        ></span>
       </div>
-      <div class="flex items-center gap-2">
-        <!-- Phase 10.6 — tier status pill -->
-        {#if health}
-          <div
-            class="flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-[#1e293b] bg-[#0d1117]"
-            title="Persistence tiers (fs / sqlite / neo4j)"
-            data-testid="tier-badge"
-            data-onboarding="memory-tier-badge"
-          >
-            <span
-              class="w-1.5 h-1.5 rounded-full"
-              style="background: {health.tiers.filesystem ? '#22c55e' : '#475569'}"
-              title="filesystem {health.tiers.filesystem ? 'on' : 'off'}"
-            ></span>
-            <span
-              class="w-1.5 h-1.5 rounded-full"
-              style="background: {health.tiers.sqlite ? '#22c55e' : '#475569'}"
-              title="sqlite {health.tiers.sqlite ? 'on' : 'off'}"
-            ></span>
-            <span
-              class="w-1.5 h-1.5 rounded-full"
-              style="background: {health.tiers.neo4j ? '#22c55e' : '#475569'}"
-              title="neo4j {health.tiers.neo4j ? 'on' : 'off'}"
-            ></span>
-          </div>
-        {/if}
-        <button
-          class="text-[#64748b] hover:text-white text-lg leading-none"
-          onclick={() => memoryDrawerOpen.set(false)}
-          aria-label="Close memory drawer"
-        >×</button>
-      </div>
-    </div>
+    {/if}
+  {/snippet}
 
     <!-- Tabs -->
-    <div class="flex border-b border-[#1e293b] text-xs" data-onboarding="memory-tabs">
+    <div class="flex border-b border-[var(--la-drawer-border)] text-xs" data-onboarding="memory-tabs">
       <button
-        class="flex-1 py-2 transition-colors {tab === 'hot' ? 'bg-[#FFD700] text-white' : 'text-[#94a3b8] hover:bg-[#111827]'}"
+        class="flex-1 py-2 transition-colors {tab === 'hot' ? 'bg-[#FFD700] text-white' : 'text-[var(--la-text-label)] hover:bg-[#111827]'}"
         onclick={() => { tab = 'hot'; searchResults = null; }}
         data-testid="memory-tab-hot"
         data-onboarding="memory-tab-hot"
       >Hot (turnlog)</button>
       <button
-        class="flex-1 py-2 transition-colors {tab === 'cold' ? 'bg-[#FFD700] text-white' : 'text-[#94a3b8] hover:bg-[#111827]'}"
+        class="flex-1 py-2 transition-colors {tab === 'cold' ? 'bg-[#FFD700] text-white' : 'text-[var(--la-text-label)] hover:bg-[#111827]'}"
         onclick={() => { tab = 'cold'; searchResults = null; }}
         data-testid="memory-tab-cold"
         data-onboarding="memory-tab-cold"
       >Cold (helix)</button>
       <button
-        class="flex-1 py-2 transition-colors {tab === 'convergences' ? 'bg-[#FFD700] text-white' : 'text-[#94a3b8] hover:bg-[#111827]'}"
+        class="flex-1 py-2 transition-colors {tab === 'convergences' ? 'bg-[#FFD700] text-white' : 'text-[var(--la-text-label)] hover:bg-[#111827]'}"
         onclick={() => { tab = 'convergences'; searchResults = null; }}
         data-testid="memory-tab-convergences"
         data-onboarding="memory-tab-convergences"
@@ -322,7 +310,7 @@
     </div>
 
     <!-- Search (Phase 17a: segmented mode control + input + rrf_used badge) -->
-    <div class="px-3 py-2 border-b border-[#1e293b]" data-testid="search-block" data-onboarding="memory-search">
+    <div class="px-3 py-2 border-b border-[var(--la-drawer-border)]" data-testid="search-block" data-onboarding="memory-search">
       <div class="flex gap-1 mb-1.5" data-testid="search-mode-row">
         {#each (['bm25', 'semantic', 'hybrid'] as const) as m}
           <button
@@ -332,7 +320,7 @@
             class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded
                    {searchMode === m
                      ? 'bg-[#FFD700] text-white'
-                     : 'bg-[#111827] border border-[#1e293b] text-[#94a3b8] hover:border-[#FFD700]'}"
+                     : 'bg-[#111827] border border-[var(--la-drawer-border)] text-[var(--la-text-label)] hover:border-[#FFD700]'}"
           >{m}</button>
         {/each}
         {#if rrfUsed}
@@ -349,7 +337,7 @@
         onkeydown={(e) => { if (e.key === 'Enter') runSearch(); }}
         placeholder="Search SOUL vault… (Enter)"
         data-testid="search-input"
-        class="w-full bg-[#111827] border border-[#1e293b] rounded px-2 py-1.5
+        class="w-full bg-[#111827] border border-[var(--la-drawer-border)] rounded px-2 py-1.5
                text-xs text-[#e2e8f0] placeholder-[#475569] outline-none
                focus:border-[#FFD700]"
       />
@@ -361,7 +349,7 @@
          (that tab has its own data shape). -->
     {#if tab !== 'convergences' && availableKinds.length > 0}
       <div
-        class="px-3 py-1.5 border-b border-[#1e293b] flex flex-wrap gap-1"
+        class="px-3 py-1.5 border-b border-[var(--la-drawer-border)] flex flex-wrap gap-1"
         data-testid="kind-filter-row"
       >
         <button
@@ -395,7 +383,7 @@
           </div>
           {#each convergences as conv (conv.id)}
             <div
-              class="px-3 py-2 border-b border-[#1e293b]/50"
+              class="px-3 py-2 border-b border-[var(--la-drawer-border)]/50"
               data-testid="convergence-row"
             >
               <!-- Header: label + weight bar -->
@@ -434,7 +422,7 @@
                         class="font-semibold shrink-0"
                         style="color: {siblingColor(p.sibling)}"
                       >{p.sibling}</span>
-                      <span class="text-[#94a3b8] truncate">
+                      <span class="text-[var(--la-text-label)] truncate">
                         {p.title ?? p.vault_path ?? p.step_id.slice(0, 8)}
                       </span>
                     </div>
@@ -460,7 +448,7 @@
         </div>
         {#each searchResults ?? [] as entry (entry.path)}
           <button
-            class="w-full text-left px-3 py-2 border-b border-[#1e293b]/50 hover:bg-[#111827] transition-colors"
+            class="w-full text-left px-3 py-2 border-b border-[var(--la-drawer-border)]/50 hover:bg-[#111827] transition-colors"
             onclick={() => selectEnrichedEntry(entry)}
             data-testid="memory-row"
             data-kind={entry.entry_type ?? 'entry'}
@@ -475,7 +463,7 @@
                 </span>
               {/if}
             </div>
-            <p class="text-[11px] text-[#94a3b8] line-clamp-2">
+            <p class="text-[11px] text-[var(--la-text-label)] line-clamp-2">
               {entry.content_excerpt ?? entry.path}
             </p>
           </button>
@@ -483,7 +471,7 @@
       {:else}
         {#each list as memo (memo.id)}
           <button
-            class="w-full text-left px-3 py-2 border-b border-[#1e293b]/50 hover:bg-[#111827] transition-colors
+            class="w-full text-left px-3 py-2 border-b border-[var(--la-drawer-border)]/50 hover:bg-[#111827] transition-colors
                    {selected.memo?.id === memo.id ? 'bg-[#111827]' : ''}"
             onclick={() => selectMemo(memo)}
             data-testid="memory-row"
@@ -511,7 +499,7 @@
                 </span>
               {/if}
             </div>
-            <p class="text-[11px] text-[#94a3b8] line-clamp-2">{memo.content}</p>
+            <p class="text-[11px] text-[var(--la-text-label)] line-clamp-2">{memo.content}</p>
           </button>
         {:else}
           <div class="px-3 py-6 text-center text-[11px] text-[#475569]">
@@ -525,8 +513,8 @@
 
     <!-- Detail pane -->
     {#if selected.memo}
-      <div class="border-t border-[#1e293b] bg-[#0d1117] max-h-[40%] overflow-y-auto">
-        <div class="px-3 py-2 border-b border-[#1e293b] flex items-center justify-between">
+      <div class="border-t border-[var(--la-drawer-border)] bg-[var(--la-drawer-bg)] max-h-[40%] overflow-y-auto">
+        <div class="px-3 py-2 border-b border-[var(--la-drawer-border)] flex items-center justify-between">
           <span class="text-[10px] font-semibold text-[#64748b]">ENTRY DETAIL</span>
           <button
             class="text-[#64748b] hover:text-white text-xs"
@@ -536,7 +524,7 @@
         <div class="px-3 py-2 space-y-2 text-[11px]">
           <div class="flex items-center gap-2">
             <span class="text-[9px] text-[#475569]">PATH</span>
-            <span class="font-mono text-[10px] text-[#94a3b8]">{selected.memo.source_path ?? selected.memo.id}</span>
+            <span class="font-mono text-[10px] text-[var(--la-text-label)]">{selected.memo.source_path ?? selected.memo.id}</span>
           </div>
           <div class="flex items-center gap-2">
             <span class="text-[9px] text-[#475569]">AGENT</span>
@@ -560,7 +548,7 @@
               <span class="text-[9px] text-[#475569]">STRANDS</span>
               <div class="flex flex-wrap gap-1 mt-1">
                 {#each selected.memo.strands as strand}
-                  <span class="px-1.5 py-0.5 rounded bg-[#1e293b] text-[9px] text-[#94a3b8]">{strand}</span>
+                  <span class="px-1.5 py-0.5 rounded bg-[#1e293b] text-[9px] text-[var(--la-text-label)]">{strand}</span>
                 {/each}
               </div>
             </div>
@@ -589,14 +577,14 @@
           {#if loadingDetail}
             <p class="text-[#475569] italic text-[10px]">Loading…</p>
           {:else if selected.raw}
-            <pre class="text-[10px] text-[#94a3b8] whitespace-pre-wrap font-mono leading-relaxed">{selected.raw.slice(0, 2000)}{selected.raw.length > 2000 ? '\n\n…(truncated)' : ''}</pre>
+            <pre class="text-[10px] text-[var(--la-text-label)] whitespace-pre-wrap font-mono leading-relaxed">{selected.raw.slice(0, 2000)}{selected.raw.length > 2000 ? '\n\n…(truncated)' : ''}</pre>
           {:else}
-            <p class="text-[#94a3b8] whitespace-pre-wrap">{selected.memo.content}</p>
+            <p class="text-[var(--la-text-label)] whitespace-pre-wrap">{selected.memo.content}</p>
           {/if}
 
           <!-- Phase 11.5 — Related Entries via Neo4j graph walk -->
           {#if relatedNeighbors !== null}
-            <div class="mt-2 pt-2 border-t border-[#1e293b]" data-testid="related-section">
+            <div class="mt-2 pt-2 border-t border-[var(--la-drawer-border)]" data-testid="related-section">
               <div class="flex items-center gap-2 mb-1">
                 <span class="text-[9px] text-[#475569] uppercase">RELATED</span>
                 <span class="text-[9px] text-[#475569]">
@@ -614,7 +602,7 @@
                 {#each relatedNeighbors as neighbor (neighbor.id)}
                   <button
                     class="px-1.5 py-0.5 rounded border border-[#334155] bg-[#111827]
-                           text-[9px] text-[#94a3b8] hover:border-[#FFD700] transition-colors
+                           text-[9px] text-[var(--la-text-label)] hover:border-[#FFD700] transition-colors
                            max-w-[180px] truncate"
                     title={neighbor.id}
                     onclick={() => {
@@ -643,13 +631,12 @@
       </div>
     {/if}
 
-    <!-- Promotion feed strip -->
-    {#if $promotionFeed.length > 0}
-      <div class="px-3 py-1.5 border-t border-[#1e293b] bg-[#FFD700]/10">
-        <span class="text-[9px] text-[#a855f7]">
-          ↑ {$promotionFeed.length} recent promotion{$promotionFeed.length === 1 ? '' : 's'}
-        </span>
-      </div>
-    {/if}
-  </div>
-{/if}
+  <!-- Promotion feed strip -->
+  {#if $promotionFeed.length > 0}
+    <div class="px-3 py-1.5 border-t border-[var(--la-drawer-border)] bg-[#FFD700]/10">
+      <span class="text-[9px] text-[#a855f7]">
+        ↑ {$promotionFeed.length} recent promotion{$promotionFeed.length === 1 ? '' : 's'}
+      </span>
+    </div>
+  {/if}
+</Drawer>

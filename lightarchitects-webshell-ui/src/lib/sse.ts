@@ -493,6 +493,25 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
       );
       break;
     }
+    case 'strand_convergence': {
+      // Rust emits fields at top level (serde inline tag). Spike all siblings
+      // participating in the convergence, then forward to the Memory drawer via
+      // a DOM event so it can trigger a re-fetch of /soul/convergences.
+      const conv = event as unknown as {
+        type: 'strand_convergence';
+        strand: string;
+        siblings: string[];
+        memo_ids: string[];
+        detected_at: string;
+      };
+      if (Array.isArray(conv.siblings)) {
+        conv.siblings.forEach(s => spikeSibling(s as SiblingId));
+      }
+      window.dispatchEvent(
+        new CustomEvent('la:strand-convergence', { detail: conv }),
+      );
+      break;
+    }
     default:
       break;
   }

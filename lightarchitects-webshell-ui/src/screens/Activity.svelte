@@ -105,7 +105,7 @@
       case 'FAIL': return 'text-[#ef4444]';
       case 'WARN': return 'text-[#f59e0b]';
       case 'PASS': return 'text-[#22c55e]';
-      default: return 'text-[#94a3b8]';
+      default: return 'text-[var(--la-text-label)]';
     }
   }
 
@@ -186,7 +186,7 @@
     const s = typeof outcome === 'string' ? outcome : JSON.stringify(outcome);
     if (s.includes('success')) return 'text-[#22c55e]';
     if (s.includes('fail') || s.includes('error')) return 'text-[#ef4444]';
-    return 'text-[#94a3b8]';
+    return 'text-[var(--la-text-label)]';
   }
 
   function formatDuration(ms: number): string {
@@ -227,7 +227,7 @@
 
 <div class="flex-1 flex flex-col overflow-hidden h-full">
   <!-- Header bar (#38 — fixed 56px band shared across all top-level screens) -->
-  <header class="la-screen-header flex items-center gap-3 px-4 border-b border-[#1e293b]">
+  <header class="la-screen-header flex items-center gap-3 px-4 border-b border-[var(--la-hair-strong)]">
     <div class="flex items-center gap-2">
       {#if $activityActive}
         <div class="w-2 h-2 rounded-full bg-[#22c55e] animate-pulse"></div>
@@ -237,7 +237,7 @@
         <span class="text-[10px] text-[#475569] font-mono">IDLE</span>
       {/if}
     </div>
-    <span class="text-[11px] text-[#94a3b8]">
+    <span class="text-[11px] text-[var(--la-text-label)]">
       {copilotEvents.length} events{systemCount > 0 && !showSystem ? ` (+${systemCount} system)` : ''} · {ayinSpans.length} spans{#if inlineAlerts.length > 0} · <span class="{alertStats.fail > 0 ? 'text-[#ef4444]' : alertStats.warn > 0 ? 'text-[#f59e0b]' : 'text-[#22c55e]'}">{inlineAlerts.length} gate{inlineAlerts.length !== 1 ? 's' : ''}</span>{/if}
     </span>
     <div class="ml-auto flex items-center gap-2">
@@ -268,9 +268,12 @@
   <!-- Two-column layout -->
   <div class="flex-1 flex overflow-hidden">
     <!-- Left: Live copilot stream + inline supervisor alerts -->
-    <div class="flex-1 flex flex-col overflow-hidden border-r border-[#1e293b]">
-      <div class="px-3 py-1.5 border-b border-[#1e293b] shrink-0 flex items-center gap-2">
+    <div class="flex-1 flex flex-col overflow-hidden border-r border-[var(--la-hair-strong)]">
+      <div class="px-3 py-1.5 border-b border-[var(--la-hair-strong)] shrink-0 flex items-center gap-2">
         <span class="text-[11px] text-[#FFD700] font-semibold tracking-wider">AGENT ACTIVITY</span>
+        {#if copilotEvents.length + inlineAlerts.length > 0}
+          <span class="text-[9px] font-mono text-[#64748b] bg-[var(--la-bg-elev-2)] rounded px-1.5 py-0.5">{copilotEvents.length + inlineAlerts.length}</span>
+        {/if}
         {#if alertStats.fail > 0}
           <span class="text-[9px] text-[#ef4444] font-mono bg-[#ef4444]/10 rounded px-1.5 py-0.5">{alertStats.fail} BLOCKED</span>
         {/if}
@@ -281,7 +284,7 @@
       <div class="flex-1 overflow-y-auto px-2 py-1 space-y-0.5">
         {#if copilotEvents.length === 0 && inlineAlerts.length === 0}
           <div class="flex flex-col items-center justify-center h-full gap-3 px-6 text-center">
-            <p class="text-[12px] text-[#94a3b8] max-w-xs leading-snug">
+            <p class="text-[12px] text-[var(--la-text-label)] max-w-xs leading-snug">
               Each strand here is one agent's memory of you. <span class="text-[#475569]">Start a conversation in Copilot — the helix will record it.</span>
             </p>
             <button
@@ -294,9 +297,9 @@
         {:else}
           <!-- Gate verdict sub-section — separated from agent events when both present (#36) -->
           {#if inlineAlerts.length > 0}
-            <div class="sticky top-0 z-10 flex items-center gap-2 py-1 px-2 bg-[#0a0a0f]/90 backdrop-blur-sm">
-              <span class="text-[9px] font-mono text-[#94a3b8] uppercase tracking-widest">Gate Verdicts</span>
-              <div class="flex-1 h-px bg-[#1e293b]"></div>
+            <div class="sticky top-0 z-10 flex items-center gap-2 py-1 px-2 bg-[var(--la-bg-void)]/90 backdrop-blur-sm">
+              <span class="text-[9px] font-mono text-[var(--la-text-label)] uppercase tracking-widest">Gate Verdicts</span>
+              <div class="flex-1 h-px bg-[var(--la-bg-elev-2)]"></div>
               <span class="text-[9px] font-mono {alertStats.fail > 0 ? 'text-[#ef4444]' : alertStats.warn > 0 ? 'text-[#f59e0b]' : 'text-[#22c55e]'}">{inlineAlerts.length}</span>
             </div>
           {/if}
@@ -306,8 +309,8 @@
           <!-- Agent events sub-section — only show header when alerts are also visible -->
           {#if inlineAlerts.length > 0 && copilotEvents.length > 0}
             <div class="flex items-center gap-2 py-1 px-2 mt-1">
-              <span class="text-[9px] font-mono text-[#94a3b8] uppercase tracking-widest">Agent Events</span>
-              <div class="flex-1 h-px bg-[#1e293b]"></div>
+              <span class="text-[9px] font-mono text-[var(--la-text-label)] uppercase tracking-widest">Agent Events</span>
+              <div class="flex-1 h-px bg-[var(--la-bg-elev-2)]"></div>
               <span class="text-[9px] font-mono text-[#475569]">{copilotEvents.length}</span>
             </div>
           {/if}
@@ -315,7 +318,7 @@
             {@const evRole = copilotEventRole(event.kind)}
             <button
               onclick={() => toggleExpand(idx)}
-              class="w-full text-left px-2 py-1 rounded hover:bg-[#1e293b]/50 transition-colors group event-arrive"
+              class="w-full text-left px-2 py-1 rounded hover:bg-[var(--la-bg-elev-2)]/50 transition-colors group event-arrive"
             >
               <div class="flex items-center gap-2">
                 <span class="text-[9px] text-[#475569] font-mono shrink-0">{formatTime(event.timestamp)}</span>
@@ -325,16 +328,16 @@
                   style="color: {ROLE_COLORS[evRole]}; background: {ROLE_BG[evRole]};"
                 >{evRole}</span>
                 {#if event.summary}
-                  <span class="text-[10px] text-[#94a3b8] truncate">{event.summary}</span>
+                  <span class="text-[10px] text-[var(--la-text-label)] truncate">{event.summary}</span>
                 {/if}
                 <span class="ml-auto text-[9px] text-[#475569] opacity-0 group-hover:opacity-100">
                   {expandedEvents.has(idx) ? '▼' : '▶'}
                 </span>
               </div>
               {#if expandedEvents.has(idx) && verbose}
-                <pre class="mt-1 text-[9px] text-[#64748b] bg-[#0a0a0f] rounded p-2 overflow-x-auto max-h-60 whitespace-pre-wrap">{JSON.stringify(event.raw, null, 2)}</pre>
+                <pre class="mt-1 text-[9px] text-[#64748b] bg-[var(--la-bg-void)] rounded p-2 overflow-x-auto max-h-60 whitespace-pre-wrap">{JSON.stringify(event.raw, null, 2)}</pre>
               {:else if expandedEvents.has(idx)}
-                <div class="mt-1 text-[10px] text-[#94a3b8] pl-2 border-l-2 border-[#1e293b]">
+                <div class="mt-1 text-[10px] text-[var(--la-text-label)] pl-2 border-l-2 border-[var(--la-hair-strong)]">
                   {event.summary ?? JSON.stringify(event.raw).slice(0, 300)}
                 </div>
               {/if}
@@ -346,8 +349,11 @@
 
     <!-- Right: AYIN decision tree -->
     <div class="w-[40%] min-w-[250px] flex flex-col overflow-hidden">
-      <div class="px-3 py-1.5 border-b border-[#1e293b] shrink-0">
+      <div class="px-3 py-1.5 border-b border-[var(--la-hair-strong)] shrink-0">
         <span class="text-[11px] text-[#f59e0b] font-semibold tracking-wider">AYIN TRACES</span>
+        {#if ayinSpans.length > 0}
+          <span class="text-[9px] font-mono text-[#64748b] bg-[var(--la-bg-elev-2)] rounded px-1.5 py-0.5 ml-1">{ayinSpans.length}</span>
+        {/if}
       </div>
       <div class="flex-1 overflow-y-auto px-2 py-1">
         {#if ayinSpans.length === 0}
@@ -387,12 +393,12 @@
           {expandedAlerts.has(alert.id) || alert.verdict === 'FAIL' ? '▼' : '▶'}
         </span>
       </div>
-      <div class="mt-1 text-[10px] {alert.verdict === 'FAIL' ? 'text-[#e2e8f0]' : 'text-[#94a3b8]'} truncate">
+      <div class="mt-1 text-[10px] {alert.verdict === 'FAIL' ? 'text-[#e2e8f0]' : 'text-[var(--la-text-label)]'} truncate">
         {alert.message}
       </div>
     </button>
     {#if expandedAlerts.has(alert.id) && alert.details}
-      <div class="mt-2 text-[9px] text-[#94a3b8] bg-[#0a0a0f] rounded p-2 whitespace-pre-wrap font-mono max-h-40 overflow-y-auto border border-[#1e293b]">
+      <div class="mt-2 text-[9px] text-[var(--la-text-label)] bg-[var(--la-bg-void)] rounded p-2 whitespace-pre-wrap font-mono max-h-40 overflow-y-auto border border-[var(--la-hair-strong)]">
         {alert.details}
       </div>
     {/if}
@@ -402,7 +408,7 @@
 {#snippet treeNode(node: TreeNode)}
   {@const role = getAgentRole(node.span.actor, node.span.action)}
   <div class="py-0.5 event-arrive" style="padding-left: {node.depth * 16}px">
-    <div class="flex items-center gap-1.5 px-1.5 py-0.5 rounded hover:bg-[#1e293b]/50 transition-colors relative">
+    <div class="flex items-center gap-1.5 px-1.5 py-0.5 rounded hover:bg-[var(--la-bg-elev-2)]/50 transition-colors relative">
       {#if node.depth > 0}
         <span class="tree-connector absolute left-0 top-0 bottom-0 w-px" style="margin-left: {(node.depth - 1) * 16 + 4}px;"></span>
       {/if}

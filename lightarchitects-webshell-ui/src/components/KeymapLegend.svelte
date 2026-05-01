@@ -1,14 +1,27 @@
 <script lang="ts">
   /**
-   * KeymapLegend — modal listing every global keybinding (#4).
+   * KeymapLegend — modal listing every registered keybinding (#4 / #102).
    *
-   * Triggered by Cmd+/ (or Ctrl+/ on non-mac). Listens for the
-   * `la:open-keymap-legend` custom event, dispatched by app.svelte's
-   * keydown handler. Esc dismisses.
-   *
-   * Adding a new keybinding? Add a row here so it stays discoverable.
+   * Groups are derived live from the central hotkeyRegistry store.
+   * Users can rebind any shortcut by clicking its row and pressing a new chord.
+   * Overrides persist in localStorage via hotkeyRegistry.setUserOverride().
    */
+  import {
+    hotkeyRegistry,
+    hotkeyOverrides,
+    groupedEntries,
+    setUserOverride,
+    clearUserOverride,
+    eventToChord,
+  } from '$lib/hotkeyRegistry';
+
   let open = $state(false);
+
+  // Reactive: re-groups whenever any component registers/deregisters.
+  const groups = $derived(groupedEntries($hotkeyRegistry));
+
+  // Rebind state — id of the entry currently waiting for a new key press.
+  let capturingId = $state<string | null>(null);
 
   $effect(() => {
     function show() { open = true; }
@@ -24,50 +37,44 @@
     };
   });
 
-  function onEsc(e: KeyboardEvent) {
-    if (open && e.key === 'Escape') {
+  function onKeydown(e: KeyboardEvent) {
+    if (!open) return;
+
+    if (capturingId !== null) {
+      // Esc cancels capture without changing anything.
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        capturingId = null;
+        return;
+      }
+      // Ignore bare modifier keys — wait for a complete chord.
+      if (['Meta', 'Control', 'Alt', 'Shift'].includes(e.key)) return;
+      e.preventDefault();
+      setUserOverride(capturingId, eventToChord(e));
+      capturingId = null;
+      return;
+    }
+
+    if (e.key === 'Escape') {
       e.preventDefault();
       open = false;
     }
   }
 
-  // Single source of truth for the legend rows. Group order = onboarding
-  // order: navigation first (most-used), drawers second, dispatch+input
-  // third, system last.
-  const groups: { title: string; rows: { keys: string[]; label: string }[] }[] = [
-    {
-      title: 'Navigation',
-      rows: [
-        { keys: ['⌘', 'K'], label: 'Open Squad Dispatch' },
-        { keys: ['⌘', '/'], label: 'Open this keymap legend' },
-        { keys: ['Esc'],    label: 'Close any modal / dismiss banner' },
-      ],
-    },
-    {
-      title: 'Drawers',
-      rows: [
-        { keys: ['⌃', '`'], label: 'Toggle Copilot drawer' },
-        { keys: ['⌘', 'M'], label: 'Toggle Memory drawer (Hot · Cold · Convergences)' },
-      ],
-    },
-    {
-      title: 'Dispatch + Plan',
-      rows: [
-        { keys: ['↑'], label: 'Previous suggestion (CommandPalette / autocomplete)' },
-        { keys: ['↓'], label: 'Next suggestion' },
-        { keys: ['↵'], label: 'Select / submit' },
-      ],
-    },
-    {
-      title: 'Tutorials',
-      rows: [
-        { keys: ['?onboarding=t1'], label: 'Re-run T1 First Build (URL param)' },
-      ],
-    },
-  ];
+  function startCapture(id: string) {
+    capturingId = id;
+  }
+
+  function revertOverride(id: string) {
+    clearUserOverride(id);
+  }
+
+  function hasOverride(id: string): boolean {
+    return $hotkeyOverrides.has(id);
+  }
 </script>
 
-<svelte:window onkeydown={onEsc} />
+<svelte:window onkeydown={onKeydown} />
 
 {#if open}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
@@ -78,12 +85,13 @@
     aria-labelledby="legend-title"
     data-testid="keymap-legend"
     tabindex={-1}
-    onclick={() => { open = false; }}
+    onclick={() => { if (capturingId) { capturingId = null; } else { open = false; } }}
   >
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
     <div class="legend-modal" onclick={(e) => e.stopPropagation()} role="presentation">
       <header class="legend-header">
         <h2 id="legend-title">Keyboard shortcuts</h2>
+        <span class="legend-hint">Click any row to rebind</span>
         <button class="legend-close" aria-label="Close" onclick={() => { open = false; }}>×</button>
       </header>
 
@@ -94,12 +102,34 @@
             <table>
               <tbody>
                 {#each group.rows as row}
-                  <tr>
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <tr
+                    class="legend-row"
+                    class:capturing={capturingId === row.id}
+                    class:overridden={hasOverride(row.id)}
+                    role="button"
+                    tabindex={0}
+                    aria-label="Rebind {row.label}"
+                    onclick={() => startCapture(row.id)}
+                    onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') startCapture(row.id); }}
+                  >
                     <td class="legend-keys">
-                      {#each row.keys as k, i}
-                        {#if i > 0}<span class="legend-plus">+</span>{/if}
-                        <kbd>{k}</kbd>
-                      {/each}
+                      {#if capturingId === row.id}
+                        <span class="capture-prompt">Press new key…</span>
+                      {:else}
+                        {#each row.keys as k, i}
+                          {#if i > 0}<span class="legend-plus">+</span>{/if}
+                          <kbd>{k}</kbd>
+                        {/each}
+                        {#if hasOverride(row.id)}
+                          <button
+                            class="revert-btn"
+                            title="Revert to default"
+                            aria-label="Revert {row.label} to default"
+                            onclick={(e) => { e.stopPropagation(); revertOverride(row.id); }}
+                          >↺</button>
+                        {/if}
+                      {/if}
                     </td>
                     <td class="legend-label">{row.label}</td>
                   </tr>
@@ -108,10 +138,27 @@
             </table>
           </section>
         {/each}
+
+        <!-- URL-param tips aren't keyboard shortcuts — static appendix -->
+        <section class="legend-group">
+          <h3>Tutorials</h3>
+          <table>
+            <tbody>
+              <tr class="legend-row static">
+                <td class="legend-keys"><kbd>?onboarding=t1</kbd></td>
+                <td class="legend-label">Re-run T1 First Build (URL param)</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
       </div>
 
       <footer class="legend-footer">
-        <span><kbd>Esc</kbd> to dismiss</span>
+        {#if capturingId}
+          <span class="capture-hint">Press new chord — <kbd>Esc</kbd> to cancel</span>
+        {:else}
+          <span><kbd>Esc</kbd> to dismiss · click any row to rebind</span>
+        {/if}
       </footer>
     </div>
   </div>
@@ -129,7 +176,7 @@
     animation: legend-fade-in var(--la-transition-fast) ease-out;
   }
   .legend-modal {
-    width: min(540px, 92vw);
+    width: min(560px, 92vw);
     max-height: 80vh;
     display: flex;
     flex-direction: column;
@@ -143,7 +190,7 @@
   .legend-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 8px;
     padding: 12px 16px 8px;
     border-bottom: 1px solid var(--la-drawer-border);
   }
@@ -153,6 +200,12 @@
     font-weight: 600;
     color: #FFD700;
     letter-spacing: 0.02em;
+    flex: 1;
+  }
+  .legend-hint {
+    font-size: 10px;
+    color: var(--la-text-dim);
+    letter-spacing: 0.04em;
   }
   .legend-close {
     background: transparent;
@@ -186,8 +239,19 @@
   }
   .legend-group table { width: 100%; border-collapse: collapse; }
   .legend-group td { padding: 3px 0; vertical-align: middle; }
+
+  .legend-row {
+    cursor: pointer;
+    border-radius: var(--la-radius-sm);
+    transition: background var(--la-transition-fast);
+  }
+  .legend-row:hover:not(.static) td { background: rgba(255, 215, 0, 0.04); }
+  .legend-row.capturing td { background: rgba(255, 215, 0, 0.08); }
+  .legend-row.overridden .legend-keys kbd { color: #4dff8e; border-color: rgba(77,255,142,0.4); }
+  .legend-row.static { cursor: default; }
+
   .legend-keys {
-    width: 130px;
+    width: 150px;
     white-space: nowrap;
   }
   .legend-keys kbd {
@@ -200,6 +264,7 @@
     color: #FFD700;
     font-family: var(--la-font-mono);
     font-size: 10px;
+    transition: color var(--la-transition-fast), border-color var(--la-transition-fast);
   }
   .legend-plus {
     margin: 0 4px;
@@ -210,6 +275,28 @@
     color: var(--la-text-body);
     font-size: 11px;
   }
+
+  .capture-prompt {
+    font-size: 10px;
+    color: #FFD700;
+    font-family: var(--la-font-mono);
+    letter-spacing: 0.06em;
+    animation: blink 0.8s step-end infinite;
+  }
+
+  .revert-btn {
+    background: transparent;
+    border: none;
+    color: var(--la-text-dim);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 0 2px;
+    margin-left: 4px;
+    border-radius: var(--la-radius-sm);
+    vertical-align: middle;
+    transition: color var(--la-transition-fast);
+  }
+  .revert-btn:hover { color: #FFD700; }
 
   .legend-footer {
     padding: 8px 16px;
@@ -224,9 +311,16 @@
     border-radius: var(--la-radius-sm);
     font-family: var(--la-font-mono);
   }
+  .capture-hint {
+    color: #FFD700;
+    font-size: 10px;
+  }
 
   @keyframes legend-fade-in {
     from { opacity: 0; }
     to   { opacity: 1; }
+  }
+  @keyframes blink {
+    50% { opacity: 0; }
   }
 </style>

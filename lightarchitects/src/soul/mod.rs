@@ -46,7 +46,7 @@
 //! use lightarchitects::soul::SoulClient;
 //!
 //! # async fn example() -> Result<(), lightarchitects::core::SdkError> {
-//! let client = SoulClient::builder().build().await?;
+//! let client = SoulClient::builder().build()?;
 //! let entries = client.helix().sibling("eva").significance_min(7.0).limit(10).call().await?;
 //! # Ok(()) }
 //! ```

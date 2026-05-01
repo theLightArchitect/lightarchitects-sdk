@@ -176,6 +176,7 @@
     background: linear-gradient(135deg, rgba(240, 192, 64, 0.1), transparent 40%, transparent 60%, rgba(240, 192, 64, 0.05)) border-box;
     -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
     mask-composite: exclude;
     opacity: 0;
     transition: opacity 0.3s;

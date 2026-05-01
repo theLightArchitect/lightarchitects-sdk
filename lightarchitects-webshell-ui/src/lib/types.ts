@@ -295,7 +295,8 @@ export type EventType =
   | 'plan_update'
   | 'scrum_report'
   | 'training_progress'
-  | 'fs_mutation_pending';
+  | 'fs_mutation_pending'
+  | 'strand_convergence';
 
 // --- CORSO scout plan (PlanView) ---
 

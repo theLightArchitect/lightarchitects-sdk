@@ -28,6 +28,22 @@
   let busy = $state(false);
   let error = $state<string | null>(null);
 
+  // First-encounter coachmark (#71): shown once, then dismissed forever.
+  const SEEN_KEY = 'la_diff_preview_seen';
+  let showCoachmark = $state(false);
+
+  $effect(() => {
+    if (pending && !localStorage.getItem(SEEN_KEY)) {
+      const t = setTimeout(() => { showCoachmark = true; }, 400);
+      return () => { clearTimeout(t); showCoachmark = false; };
+    }
+  });
+
+  function dismissCoachmark() {
+    showCoachmark = false;
+    localStorage.setItem(SEEN_KEY, '1');
+  }
+
   $effect(() => {
     function onMutationPending(e: Event) {
       const detail = (e as CustomEvent<FsMutationPendingEvent>).detail;
@@ -160,6 +176,31 @@
           {busy ? 'Working…' : 'Approve & commit'}
         </button>
       </footer>
+    </div>
+  </div>
+{/if}
+
+<!-- First-encounter coachmark (#71) — appears once, dismissed on click or after 8s -->
+{#if showCoachmark}
+  <div
+    class="coachmark"
+    role="button"
+    tabindex="0"
+    aria-label="Dismiss write-intercept notice"
+    onclick={dismissCoachmark}
+    onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); dismissCoachmark(); } }}
+  >
+    <div class="coachmark-inner">
+      <span class="coachmark-icon">⚠</span>
+      <div class="coachmark-text">
+        <strong>Agent write intercepted</strong>
+        <p>Every file change passes through here first. Approve to commit, Reject to abort. You stay in control.</p>
+      </div>
+      <button
+        class="coachmark-dismiss"
+        aria-label="Dismiss"
+        onclick={(e) => { e.stopPropagation(); dismissCoachmark(); }}
+      >Got it</button>
     </div>
   </div>
 {/if}
@@ -303,5 +344,70 @@
   @keyframes diff-fade-in {
     from { opacity: 0; }
     to   { opacity: 1; }
+  }
+
+  /* ── First-encounter coachmark (#71) ── */
+  .coachmark {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    animation: coachmark-rise 0.35s var(--la-ease-mech) both;
+    cursor: pointer;
+  }
+  .coachmark-inner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 16px;
+    background: var(--la-bg-frame);
+    border: 1px solid #FFD700;
+    border-radius: var(--la-radius-lg);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,215,0,0.15);
+    max-width: 380px;
+    font-family: var(--la-font-chrome);
+  }
+  .coachmark-icon {
+    font-size: 16px;
+    line-height: 1;
+    color: #FFD700;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .coachmark-text strong {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--la-text-stark);
+    margin-bottom: 3px;
+  }
+  .coachmark-text p {
+    margin: 0;
+    font-size: 11px;
+    color: var(--la-text-base);
+    line-height: 1.5;
+  }
+  .coachmark-dismiss {
+    flex-shrink: 0;
+    padding: 3px 10px;
+    margin-top: 2px;
+    background: #FFD700;
+    border: none;
+    border-radius: var(--la-radius-md);
+    color: #0a0a0f;
+    font-family: var(--la-font-chrome);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    align-self: center;
+    white-space: nowrap;
+    transition: opacity var(--la-t-snap) var(--la-ease-mech);
+  }
+  .coachmark-dismiss:hover { opacity: 0.85; }
+
+  @keyframes coachmark-rise {
+    from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
   }
 </style>

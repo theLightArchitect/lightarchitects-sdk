@@ -34,6 +34,8 @@
 
   let trainingError = $state<string | null>(null);
   let showTraining = $state(true);
+  // Cost gate — shows preview before dispatching a real training run.
+  let showCostGate = $state(false);
 
   // Derived state
   let canStartTraining = $derived($trainingConfig.exerciseType !== '' && !$trainingRun);
@@ -64,7 +66,13 @@
     return () => { if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; } };
   });
 
-  async function handleStartTraining(): Promise<void> {
+  function requestStartTraining(): void {
+    trainingError = null;
+    showCostGate = true;
+  }
+
+  async function confirmStartTraining(): Promise<void> {
+    showCostGate = false;
     trainingError = null;
     try {
       const result = await api.startTraining($trainingConfig);
@@ -213,7 +221,7 @@
       onclick={() => showTraining = !showTraining}
     >
       <div class="flex items-center gap-2">
-        <h3 class="text-xs font-medium text-[#94a3b8]">AGENT TRAINING</h3>
+        <h3 class="text-xs font-medium text-[#94a3b8]">ARENA TRAINING</h3>
         <span class="text-[8px] px-1.5 py-0.5 rounded bg-[#FFD700]/10 text-[#FFD700] font-semibold">Pro</span>
       </div>
       <svg
@@ -386,14 +394,48 @@
               </div>
             {/if}
 
-            <!-- Start button -->
-            <button
-              class="w-full py-2 rounded text-[11px] font-medium transition-all {canStartTraining ? 'bg-gradient-to-r from-[#FFD700] to-[#f59e0b] text-[#0d1117] hover:brightness-110' : 'bg-[#1e293b] text-[#475569] cursor-not-allowed'}"
-              disabled={!canStartTraining}
-              onclick={handleStartTraining}
-            >
-              Start Training
-            </button>
+            <!-- Cost gate preview -->
+            {#if showCostGate}
+              <div class="bg-[#0d1117] border border-[#f59e0b]/30 rounded-lg p-3 space-y-2">
+                <div class="flex items-center gap-2">
+                  <span class="text-[9px] px-1.5 py-0.5 rounded bg-[#f59e0b]/15 text-[#f59e0b] font-semibold">PREVIEW</span>
+                  <span class="text-[10px] text-[#94a3b8]">Estimated run</span>
+                </div>
+                <div class="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <div class="text-xs font-bold text-[#e2e8f0]">~10</div>
+                    <div class="text-[9px] text-[#475569]">exercises</div>
+                  </div>
+                  <div>
+                    <div class="text-xs font-bold text-[#e2e8f0]">~8m</div>
+                    <div class="text-[9px] text-[#475569]">duration</div>
+                  </div>
+                  <div>
+                    <div class="text-xs font-bold text-[#FFD700]">local</div>
+                    <div class="text-[9px] text-[#475569]">no API cost</div>
+                  </div>
+                </div>
+                <div class="flex gap-2 pt-1">
+                  <button
+                    class="flex-1 py-1.5 rounded text-[10px] bg-[#1e293b] text-[#94a3b8] hover:text-[#e2e8f0] transition-colors"
+                    onclick={() => showCostGate = false}
+                  >Cancel</button>
+                  <button
+                    class="flex-1 py-1.5 rounded text-[10px] font-medium bg-gradient-to-r from-[#FFD700] to-[#f59e0b] text-[#0d1117] hover:brightness-110 transition-all"
+                    onclick={confirmStartTraining}
+                  >Confirm &amp; Run</button>
+                </div>
+              </div>
+            {:else}
+              <!-- Start button -->
+              <button
+                class="w-full py-2 rounded text-[11px] font-medium transition-all {canStartTraining ? 'bg-gradient-to-r from-[#FFD700] to-[#f59e0b] text-[#0d1117] hover:brightness-110' : 'bg-[#1e293b] text-[#475569] cursor-not-allowed'}"
+                disabled={!canStartTraining}
+                onclick={requestStartTraining}
+              >
+                Start Training
+              </button>
+            {/if}
           </div>
         {/if}
       </div>

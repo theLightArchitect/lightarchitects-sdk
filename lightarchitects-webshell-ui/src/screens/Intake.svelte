@@ -242,6 +242,7 @@
     if ($planBuilderMode) {
       // Just entered plan mode — generate defaults
       initPlanFromForm();
+      setTimeout(() => import('$lib/tutorial').then(m => m.runTutorial('t3')), 300);
     }
   }
 
@@ -429,7 +430,7 @@
   </div>
 
   <!-- Header (#38 — fixed 56px band shared across all top-level screens) -->
-  <header class="la-screen-header flex items-center gap-3 px-6 border-b border-[#1e293b]">
+  <header class="la-screen-header flex items-center gap-3 px-6 border-b border-[var(--la-hair-strong)]">
     <button onclick={() => { window.location.hash = '/'; }} class="text-[#64748b] hover:text-white text-xs">
       ← Queue
     </button>
@@ -442,12 +443,12 @@
         class="px-3 py-1 text-[10px] rounded transition-colors
           {!isPlanMode ? 'bg-[#FFD700]/15 text-[#FFD700] border border-[#FFD700]/30' : 'text-[#475569] border border-transparent hover:text-[#FFD700]'}"
         onclick={() => { if (isPlanMode) togglePlanMode(); }}
-      >Quick Build</button>
+      >Quick</button>
       <button
         class="px-3 py-1 text-[10px] rounded transition-colors
           {isPlanMode ? 'bg-[#FFD700]/15 text-[#FFD700] border border-[#FFD700]/30' : 'text-[#475569] border border-transparent hover:text-[#FFD700]'}"
         onclick={() => { if (!isPlanMode) togglePlanMode(); }}
-      >Plan Builder</button>
+      >Plan</button>
     </div>
   </header>
 
@@ -458,16 +459,16 @@
 
         <!-- Source selection -->
         <div data-onboarding="intake-source">
-          <h2 class="text-xs font-medium text-[#94a3b8] mb-3">SOURCE</h2>
+          <h2 class="text-xs font-medium text-[var(--la-text-label)] mb-3">SOURCE</h2>
           <div class="grid grid-cols-4 gap-2">
             {#each Object.entries(SOURCE_CONFIG) as [key, cfg]}
               <button
                 class="p-3 rounded-lg border text-left transition-colors
-                  {form.source === key ? 'border-[#FFD700] bg-[#FFD700]/5' : 'border-[#1e293b] hover:border-[#334155] bg-[#111827]'}"
+                  {form.source === key ? 'border-[#FFD700] bg-[#FFD700]/5' : 'border-[var(--la-hair-strong)] hover:border-[#334155] bg-[var(--la-bg-elev-1)]'}"
                 onclick={() => setSource(key as IntakeSource)}
               >
                 <div class="flex items-center gap-2 mb-1">
-                  <div class="w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold bg-[#1e293b] text-[#94a3b8]">
+                  <div class="w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold bg-[var(--la-bg-elev-2)] text-[var(--la-text-label)]">
                     {cfg.icon}
                   </div>
                   <span class="text-[11px] font-medium text-[#e2e8f0]">{cfg.label}</span>
@@ -480,17 +481,17 @@
 
         <!-- Repository path -->
         <div>
-          <h2 class="text-xs font-medium text-[#94a3b8] mb-3">REPOSITORY</h2>
+          <h2 class="text-xs font-medium text-[var(--la-text-label)] mb-3">REPOSITORY</h2>
           <div class="flex gap-2">
             <input
               type="text"
               value={form.repoPath}
               oninput={(e) => { intakeForm.update(f => ({ ...f, repoPath: (e.target as HTMLInputElement).value })); }}
               placeholder="org/repo or local path"
-              class="flex-1 bg-[#111827] border border-[#1e293b] rounded px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#FFD700]"
+              class="flex-1 bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#FFD700]"
             />
             <button
-              class="px-3 py-2 text-xs rounded border border-[#1e293b] text-[#64748b] hover:border-[#FFD700] hover:text-[#FFD700] transition-colors"
+              class="px-3 py-2 text-xs rounded border border-[var(--la-hair-strong)] text-[#64748b] hover:border-[#FFD700] hover:text-[#FFD700] transition-colors"
               onclick={prefetchRepo}
               disabled={prefetching || !form.repoPath.trim()}
             >
@@ -500,13 +501,13 @@
 
           <!-- Prefetched metadata preview -->
           {#if previewData}
-            <div class="mt-2 bg-[#111827] border border-[#1e293b] rounded-lg p-3">
+            <div class="mt-2 bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg p-3">
               <h3 class="text-[10px] font-medium text-[#64748b] mb-2">PREFETCHED METADATA</h3>
               <div class="grid grid-cols-2 gap-2">
                 {#each Object.entries(previewData) as [key, value]}
                   <div class="flex items-center gap-2">
                     <span class="text-[9px] text-[#475569] uppercase">{key}:</span>
-                    <span class="text-[10px] text-[#94a3b8]">{value}</span>
+                    <span class="text-[10px] text-[var(--la-text-label)]">{value}</span>
                   </div>
                 {/each}
               </div>
@@ -516,7 +517,7 @@
 
         <!-- Build description -->
         <div>
-          <h2 class="text-xs font-medium text-[#94a3b8] mb-3">DESCRIPTION</h2>
+          <h2 class="text-xs font-medium text-[var(--la-text-label)] mb-3">DESCRIPTION</h2>
           <textarea
             value={form.description}
             oninput={(e) => {
@@ -525,8 +526,8 @@
             }}
             placeholder="Describe what this build should accomplish..."
             rows="3"
-            class="w-full bg-[#111827] border rounded px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#475569] outline-none resize-y
-              {fieldErrors.description ? 'border-[#ef4444] focus:border-[#ef4444]' : 'border-[#1e293b] focus:border-[#FFD700]'}"
+            class="w-full bg-[var(--la-bg-elev-1)] border rounded px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#475569] outline-none resize-y
+              {fieldErrors.description ? 'border-[#ef4444] focus:border-[#ef4444]' : 'border-[var(--la-hair-strong)] focus:border-[#FFD700]'}"
             data-testid="intake-description"
           ></textarea>
           {#if fieldErrors.description}
@@ -536,7 +537,7 @@
 
         <!-- Meta-skill selection -->
         <div data-onboarding="intake-meta-skill">
-          <h2 class="text-xs font-medium text-[#94a3b8] mb-3">META-SKILL</h2>
+          <h2 class="text-xs font-medium text-[var(--la-text-label)] mb-3">META-SKILL</h2>
           <div class="grid grid-cols-3 gap-2">
             {#each META_SKILL_CARDS as card (card.skill)}
               {@const polyType = getMetaSkillPolytope(card.skill)}
@@ -545,7 +546,7 @@
 
               <button
                 class="p-3 rounded-lg border text-left transition-colors
-                  {isSelected ? 'border-[#FFD700] bg-[#FFD700]/5' : 'border-[#1e293b] hover:border-[#334155] bg-[#111827]'}"
+                  {isSelected ? 'border-[#FFD700] bg-[#FFD700]/5' : 'border-[var(--la-hair-strong)] hover:border-[#334155] bg-[var(--la-bg-elev-1)]'}"
                 onclick={() => setMetaSkill(card.skill)}
               >
                 <div class="flex items-center gap-2 mb-1.5">
@@ -560,13 +561,13 @@
 
         <!-- Priority -->
         <div>
-          <h2 class="text-xs font-medium text-[#94a3b8] mb-3">PRIORITY</h2>
+          <h2 class="text-xs font-medium text-[var(--la-text-label)] mb-3">PRIORITY</h2>
           <div class="flex gap-2">
             {#each Object.entries(PRIORITY_CONFIG) as [key, cfg]}
               {@const isActive = form.priority === key}
               <button
                 class="px-4 py-2 text-xs rounded border transition-colors
-                  {isActive ? `border-current bg-current/10` : 'border-[#1e293b] text-[#64748b] hover:border-[#334155]'}"
+                  {isActive ? `border-current bg-current/10` : 'border-[var(--la-hair-strong)] text-[#64748b] hover:border-[#334155]'}"
                 style={isActive ? `color: ${cfg.color}; border-color: ${cfg.color}; background-color: ${cfg.color}10` : ''}
                 onclick={() => setPriority(key as Priority)}
               >
@@ -579,13 +580,13 @@
         {#if isPlanMode}
           <div>
             <div class="flex items-center justify-between mb-3">
-              <h2 class="text-xs font-medium text-[#94a3b8]">PHASES + GATES</h2>
+              <h2 class="text-xs font-medium text-[var(--la-text-label)]">PHASES + GATES</h2>
               <div class="flex items-center gap-2">
                 <input
                   type="text"
                   bind:value={planName}
                   placeholder="Build plan name"
-                  class="bg-[#111827] border border-[#1e293b] rounded px-2 py-1 text-[10px] text-[#e2e8f0] w-40 outline-none focus:border-[#FFD700]"
+                  class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded px-2 py-1 text-[10px] text-[#e2e8f0] w-40 outline-none focus:border-[#FFD700]"
                 />
                 <span class="text-[9px] text-[#475569] font-mono">{planCodename}</span>
               </div>
@@ -597,7 +598,7 @@
               {#each (['SMALL', 'MEDIUM', 'LARGE'] as const) as tier}
                 <button
                   class="px-2 py-0.5 text-[9px] rounded border transition-colors
-                    {planTier === tier ? 'border-[#FFD700] bg-[#FFD700]/10 text-[#FFD700]' : 'border-[#1e293b] text-[#475569] hover:border-[#334155]'}"
+                    {planTier === tier ? 'border-[#FFD700] bg-[#FFD700]/10 text-[#FFD700]' : 'border-[var(--la-hair-strong)] text-[#475569] hover:border-[#334155]'}"
                   onclick={() => setPlanTier(tier)}
                 >
                   {tier} ({tier === 'SMALL' ? '4' : tier === 'MEDIUM' ? '6' : '7'})
@@ -608,21 +609,21 @@
             <div class="space-y-1">
               {#each planPhases as phase, idx (phase.id)}
                 <!-- Phase card -->
-                <div class="border border-[#1e293b] rounded-lg overflow-hidden bg-[#111827]">
+                <div class="border border-[var(--la-hair-strong)] rounded-lg overflow-hidden bg-[var(--la-bg-elev-1)]">
                   <button
-                    class="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-[#1e293b]/50 transition-colors"
+                    class="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-[var(--la-bg-elev-2)]/50 transition-colors"
                     onclick={() => togglePhaseExpand(phase.id)}
                   >
                     <span class="text-[9px] text-[#475569] w-5">{phase.id}</span>
                     <span class="text-[11px] font-medium text-[#e2e8f0] flex-1">{phase.title}</span>
                     {#if phase.assigned_sibling}
-                      <span class="text-[8px] px-1.5 py-0.5 rounded bg-[#1e293b] text-[#94a3b8]">{phase.assigned_sibling}</span>
+                      <span class="text-[8px] px-1.5 py-0.5 rounded bg-[var(--la-bg-elev-2)] text-[var(--la-text-label)]">{phase.assigned_sibling}</span>
                     {/if}
                     <span class="text-[9px] text-[#475569]">{expandedPhase === phase.id ? '▾' : '▸'}</span>
                   </button>
 
                   {#if expandedPhase === phase.id}
-                    <div class="px-3 pb-3 border-t border-[#1e293b] space-y-2">
+                    <div class="px-3 pb-3 border-t border-[var(--la-hair-strong)] space-y-2">
                       <p class="text-[9px] text-[#64748b] mt-2">{phase.description}</p>
 
                       <!-- Task items -->
@@ -630,8 +631,8 @@
                         <div class="space-y-1">
                           {#each phase.items as item, itemIdx}
                             <div class="flex items-center gap-2 group">
-                              <span class="text-[9px] text-[#94a3b8]">-</span>
-                              <span class="text-[10px] text-[#94a3b8] flex-1">{item}</span>
+                              <span class="text-[9px] text-[var(--la-text-label)]">-</span>
+                              <span class="text-[10px] text-[var(--la-text-label)] flex-1">{item}</span>
                               <button
                                 class="text-[9px] text-[#475569] opacity-0 group-hover:opacity-100"
                                 onclick={() => removePhaseItem(phase.id, itemIdx)}
@@ -647,7 +648,7 @@
                           type="text"
                           bind:value={newItemText}
                           placeholder="Add task item..."
-                          class="flex-1 bg-[#0d1117] border border-[#1e293b] rounded px-2 py-1 text-[9px] text-[#e2e8f0] outline-none focus:border-[#FFD700]"
+                          class="flex-1 bg-[#0d1117] border border-[var(--la-hair-strong)] rounded px-2 py-1 text-[9px] text-[#e2e8f0] outline-none focus:border-[#FFD700]"
                           onkeydown={(e) => { if (e.key === 'Enter') addPhaseItem(phase.id); }}
                         />
                         <button
@@ -662,7 +663,7 @@
                           <span class="text-[8px] text-[#475569] uppercase">Deliverables:</span>
                           <div class="flex flex-wrap gap-1 mt-0.5">
                             {#each phase.deliverables as d}
-                              <span class="text-[8px] px-1.5 py-0.5 rounded bg-[#1e293b] text-[#64748b]">{d}</span>
+                              <span class="text-[8px] px-1.5 py-0.5 rounded bg-[var(--la-bg-elev-2)] text-[#64748b]">{d}</span>
                             {/each}
                           </div>
                         </div>
@@ -712,9 +713,9 @@
       <!-- Right: Preview panel -->
       <div class="space-y-4">
         <!-- Selected meta-skill detail -->
-        <div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
-          <div class="px-4 py-2 border-b border-[#1e293b]">
-            <h3 class="text-xs font-medium text-[#94a3b8]">SELECTED META-SKILL</h3>
+        <div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg overflow-hidden">
+          <div class="px-4 py-2 border-b border-[var(--la-hair-strong)]">
+            <h3 class="text-xs font-medium text-[var(--la-text-label)]">SELECTED META-SKILL</h3>
           </div>
           <div class="p-4">
             <div class="flex items-center gap-3 mb-3">
@@ -730,12 +731,12 @@
                 </div>
               </div>
             </div>
-            <p class="text-[10px] text-[#94a3b8] mb-3">{selectedCard.description}</p>
+            <p class="text-[10px] text-[var(--la-text-label)] mb-3">{selectedCard.description}</p>
 
             <!-- Pillar flow -->
             <div class="bg-[#0d1117] rounded p-2">
               <div class="text-[9px] text-[#475569] mb-1">PILLAR FLOW</div>
-              <div class="text-[9px] text-[#94a3b8] font-mono">
+              <div class="text-[9px] text-[var(--la-text-label)] font-mono">
                 {formatPillarFlow(selectedCard.pillarActions)}
               </div>
             </div>
@@ -743,9 +744,9 @@
         </div>
 
         <!-- SQUAD auto-assignment -->
-        <div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
-          <div class="px-4 py-2 border-b border-[#1e293b]">
-            <h3 class="text-xs font-medium text-[#94a3b8]">SQUAD ASSIGNMENT</h3>
+        <div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg overflow-hidden">
+          <div class="px-4 py-2 border-b border-[var(--la-hair-strong)]">
+            <h3 class="text-xs font-medium text-[var(--la-text-label)]">SQUAD ASSIGNMENT</h3>
           </div>
           <div class="p-4">
             <div class="flex items-center gap-3 mb-3">
@@ -769,22 +770,22 @@
         </div>
 
         <!-- Build summary -->
-        <div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
-          <div class="px-4 py-2 border-b border-[#1e293b]">
-            <h3 class="text-xs font-medium text-[#94a3b8]">SUMMARY</h3>
+        <div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg overflow-hidden">
+          <div class="px-4 py-2 border-b border-[var(--la-hair-strong)]">
+            <h3 class="text-xs font-medium text-[var(--la-text-label)]">SUMMARY</h3>
           </div>
           <div class="p-4 space-y-2">
             <div class="flex items-center justify-between text-[10px]">
               <span class="text-[#475569]">Source</span>
-              <span class="text-[#94a3b8]">{form.source}</span>
+              <span class="text-[var(--la-text-label)]">{form.source}</span>
             </div>
             <div class="flex items-center justify-between text-[10px]">
               <span class="text-[#475569]">Repo</span>
-              <span class="text-[#94a3b8] font-mono">{form.repoPath || '—'}</span>
+              <span class="text-[var(--la-text-label)] font-mono">{form.repoPath || '—'}</span>
             </div>
             <div class="flex items-center justify-between text-[10px]">
               <span class="text-[#475569]">Meta-Skill</span>
-              <span class="text-[#94a3b8]">{form.metaSkill}</span>
+              <span class="text-[var(--la-text-label)]">{form.metaSkill}</span>
             </div>
             <div class="flex items-center justify-between text-[10px]">
               <span class="text-[#475569]">Priority</span>
@@ -797,26 +798,26 @@
 
         <!-- Plan preview (plan mode only) -->
         {#if isPlanMode}
-          <div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
-            <div class="px-4 py-2 border-b border-[#1e293b]">
-              <h3 class="text-xs font-medium text-[#94a3b8]">PLAN LIFECYCLE</h3>
+          <div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg overflow-hidden">
+            <div class="px-4 py-2 border-b border-[var(--la-hair-strong)]">
+              <h3 class="text-xs font-medium text-[var(--la-text-label)]">PLAN LIFECYCLE</h3>
             </div>
             <div class="p-3 space-y-1.5">
               <div class="flex items-center gap-2 text-[9px]">
                 <span class="w-2 h-2 rounded-full bg-[#f59e0b]"></span>
-                <span class="text-[#94a3b8]">11 pre-flight checks (3 blocking)</span>
+                <span class="text-[var(--la-text-label)]">11 pre-flight checks (3 blocking)</span>
               </div>
               <div class="flex items-center gap-2 text-[9px]">
                 <span class="w-2 h-2 rounded-full bg-[#10b981]"></span>
-                <span class="text-[#94a3b8]">{planPhases.length} work phases</span>
+                <span class="text-[var(--la-text-label)]">{planPhases.length} work phases</span>
               </div>
               <div class="flex items-center gap-2 text-[9px]">
                 <span class="w-2 h-2 rounded-full bg-[#6366f1]"></span>
-                <span class="text-[#94a3b8]">{planPhases.length} mandatory exit gates</span>
+                <span class="text-[var(--la-text-label)]">{planPhases.length} mandatory exit gates</span>
               </div>
               <div class="flex items-center gap-2 text-[9px]">
                 <span class="w-2 h-2 rounded-full bg-[#06b6d4]"></span>
-                <span class="text-[#94a3b8]">6 close-out steps</span>
+                <span class="text-[var(--la-text-label)]">6 close-out steps</span>
               </div>
               {#if isPlanMode && planPhases.length > 0}
                 <div class="mt-2">
@@ -837,7 +838,7 @@
               <span class="text-[#f59e0b] text-sm shrink-0">⚠</span>
               <div class="flex-1">
                 <p class="text-[11px] text-[#f59e0b] font-medium mb-1">Duplicate detected</p>
-                <p class="text-[10px] text-[#94a3b8]">
+                <p class="text-[10px] text-[var(--la-text-label)]">
                   A <span class="font-mono text-[#e2e8f0]">{form.metaSkill}</span> build
                   {form.repoPath ? `for <span class="font-mono text-[#e2e8f0]">${form.repoPath}</span>` : ''}
                   is already <span class="text-[#f59e0b]">{dedupeWarning.status}</span>
@@ -849,7 +850,7 @@
                     onclick={() => { window.location.hash = '/'; }}
                   >View existing</button>
                   <button
-                    class="px-3 py-1 text-[10px] rounded border border-[#64748b]/40 text-[#64748b] hover:border-[#94a3b8] hover:text-[#94a3b8] transition-colors"
+                    class="px-3 py-1 text-[10px] rounded border border-[#64748b]/40 text-[#64748b] hover:border-[#94a3b8] hover:text-[var(--la-text-label)] transition-colors"
                     data-testid="intake-force-create"
                     onclick={() => { forceCreate = true; dedupeWarning = null; }}
                   >Create anyway</button>

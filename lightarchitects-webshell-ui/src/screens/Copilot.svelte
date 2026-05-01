@@ -308,10 +308,10 @@
     </div>
   </div>
 
-  <header class="flex items-center gap-3 px-6 py-3 border-b border-[#1e293b]">
+  <header class="flex items-center gap-3 px-6 py-3 border-b border-[var(--la-hair-strong)]">
     <h1 class="text-lg font-semibold">Copilot</h1>
     <!-- Mode toggle -->
-    <div class="flex rounded overflow-hidden border border-[#1e293b]">
+    <div class="flex rounded overflow-hidden border border-[var(--la-hair-strong)]">
       <button
         onclick={() => { mode = 'chat'; }}
         class="text-[10px] px-3 py-1 transition-colors {mode === 'chat' ? 'bg-[#FFD700] text-white' : 'bg-[#111827] text-[#64748b] hover:text-[#e2e8f0]'}"
@@ -330,7 +330,7 @@
     {#if mode === 'chat'}
       <button
         onclick={clearChat}
-        class="text-[10px] text-[#475569] hover:text-[#e2e8f0] px-2 py-1 rounded border border-[#1e293b] hover:border-[#334155] transition-colors"
+        class="text-[10px] text-[#475569] hover:text-[#e2e8f0] px-2 py-1 rounded border border-[var(--la-hair-strong)] hover:border-[#334155] transition-colors"
       >
         Clear
       </button>
@@ -339,7 +339,7 @@
     <div style="position:relative;">
       <button
         onclick={() => settingsOpen.update(v => !v)}
-        class="text-[10px] text-[#475569] hover:text-[#94a3b8] px-2 py-1 rounded border border-[#1e293b] transition-colors"
+        class="text-[10px] text-[#475569] hover:text-[var(--la-text-label)] px-2 py-1 rounded border border-[var(--la-hair-strong)] transition-colors"
         title="Switch backend / model"
       >⚙</button>
       {#if $settingsOpen}
@@ -353,12 +353,12 @@
     <div class="flex-1 flex flex-col overflow-hidden">
       <!-- Controls bar -->
       {#if !sharedBuildId}
-        <div class="flex items-center flex-wrap gap-2 px-4 py-3 border-b border-[#1e293b] bg-[#0f172a]">
+        <div class="flex items-center flex-wrap gap-2 px-4 py-3 border-b border-[var(--la-hair-strong)] bg-[#0f172a]">
           <!-- Auth profile selector -->
           <span class="text-[10px] text-[#64748b]">Profile</span>
           <select
             bind:value={$authProfile}
-            class="bg-[#111827] border border-[#1e293b] rounded px-2 py-1 text-[11px] text-[#e2e8f0] outline-none focus:border-[#FFD700] transition-colors"
+            class="bg-[#111827] border border-[var(--la-hair-strong)] rounded px-2 py-1 text-[11px] text-[#e2e8f0] outline-none focus:border-[#FFD700] transition-colors"
           >
             <option value="anthropic">Anthropic</option>
             <option value="ollama">Ollama Cloud</option>
@@ -376,7 +376,7 @@
             type="text"
             bind:value={cwd}
             placeholder="/tmp"
-            class="w-32 sm:w-48 bg-[#111827] border border-[#1e293b] rounded px-2 py-1 text-[11px] text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#FFD700] transition-colors"
+            class="w-32 sm:w-48 bg-[#111827] border border-[var(--la-hair-strong)] rounded px-2 py-1 text-[11px] text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#FFD700] transition-colors"
           />
           <button
             onclick={connectTerminal}
@@ -390,7 +390,7 @@
           {/if}
         </div>
       {:else}
-        <div class="flex items-center gap-2 px-4 py-2 border-b border-[#1e293b] bg-[#0f172a]">
+        <div class="flex items-center gap-2 px-4 py-2 border-b border-[var(--la-hair-strong)] bg-[#0f172a]">
           <div class="w-2 h-2 rounded-full bg-green-500" style="box-shadow: 0 0 4px #22c55e"></div>
           <span class="text-[10px] text-[#64748b] font-mono">build {sharedBuildId.slice(0, 8)}… · {cwd}</span>
           <div class="flex-1"></div>
@@ -419,12 +419,12 @@
         {#if $copilotMessages.length === 0}
           <div class="flex flex-col items-center justify-center h-full text-[#475569]">
             <p class="text-sm mb-1">Start a conversation</p>
-            <p class="text-xs">Use <kbd class="bg-[#1e293b] px-1.5 py-0.5 rounded">/</kbd> for slash commands or type a question</p>
+            <p class="text-xs">Use <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">/</kbd> for slash commands or type a question</p>
             <div class="flex flex-wrap gap-1.5 mt-3">
               {#each ['/build', '/secure', '/research', '/deploy', '/quality', '/clear'] as cmd}
                 <button
                   onclick={() => { input = cmd + ' '; }}
-                  class="text-[10px] px-2 py-1 rounded bg-[#111827] border border-[#1e293b] hover:border-[#334155] transition-colors"
+                  class="text-[10px] px-2 py-1 rounded bg-[#111827] border border-[var(--la-hair-strong)] hover:border-[#334155] transition-colors"
                 >
                   {cmd}
                 </button>
@@ -437,8 +437,8 @@
               <div
                 class="max-w-[80%] px-3 py-2 rounded-lg text-sm
                   {msg.role === 'user' ? 'bg-[#FFD700] text-white' :
-                    msg.role === 'system' ? 'bg-[#1e293b]/50 text-[#64748b] text-xs border border-[#1e293b]' :
-                    'bg-[#111827] border border-[#1e293b] text-[#e2e8f0]'}"
+                    msg.role === 'system' ? 'bg-[var(--la-bg-elev-2)]/50 text-[#64748b] text-xs border border-[var(--la-hair-strong)]' :
+                    'bg-[#111827] border border-[var(--la-hair-strong)] text-[#e2e8f0]'}"
               >
                 {#if msg.sibling}
                   {@const color = SIBLING_COLORS[msg.sibling] ?? '#6b7280'}
@@ -451,7 +451,7 @@
           {/each}
           {#if $copilotLoading}
             <div class="flex justify-start">
-              <div class="bg-[#111827] border border-[#1e293b] px-3 py-2 rounded-lg">
+              <div class="bg-[#111827] border border-[var(--la-hair-strong)] px-3 py-2 rounded-lg">
                 <span class="text-[#475569] text-sm animate-pulse">Thinking…</span>
               </div>
             </div>
@@ -460,12 +460,12 @@
       </div>
 
       <!-- Input area with autocomplete -->
-      <div class="border-t border-[#1e293b] p-4 relative">
+      <div class="border-t border-[var(--la-hair-strong)] p-4 relative">
         {#if showSuggestions && matchingCommands.length > 0}
-          <div class="absolute bottom-full left-4 right-4 mb-2 bg-[#0a0a0a] border border-[#1e293b] rounded-lg overflow-hidden shadow-xl z-10 max-h-60 overflow-y-auto">
+          <div class="absolute bottom-full left-4 right-4 mb-2 bg-[#0a0a0a] border border-[var(--la-hair-strong)] rounded-lg overflow-hidden shadow-xl z-10 max-h-60 overflow-y-auto">
             {#each matchingCommands as cmd}
               <button
-                class="w-full text-left px-3 py-2 text-xs hover:bg-[#1e293b] transition-colors flex items-baseline gap-2"
+                class="w-full text-left px-3 py-2 text-xs hover:bg-[var(--la-bg-elev-2)] transition-colors flex items-baseline gap-2"
                 onclick={() => selectCommand(cmd.name)}
               >
                 <span class="text-[#FFD700] font-mono">/{cmd.name}</span>
@@ -490,7 +490,7 @@
             onfocus={() => { if (input.startsWith('/')) showSuggestions = true; }}
             onblur={() => { setTimeout(() => showSuggestions = false, 200); }}
             placeholder="Type a message or /command…"
-            class="flex-1 bg-[#111827] border border-[#1e293b] rounded px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#FFD700] transition-colors"
+            class="flex-1 bg-[#111827] border border-[var(--la-hair-strong)] rounded px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#FFD700] transition-colors"
           />
           <button
             onclick={sendMessage}
@@ -512,9 +512,9 @@
     </div>
 
     <!-- Sibling dispatch sidebar -->
-    <div class="w-[220px] border-l border-[#1e293b] p-4 flex flex-col gap-4 hidden lg:flex">
+    <div class="w-[220px] border-l border-[var(--la-hair-strong)] p-4 flex flex-col gap-4 hidden lg:flex">
       <div>
-        <h3 class="text-xs font-medium text-[#94a3b8] mb-3">DISPATCH</h3>
+        <h3 class="text-xs font-medium text-[var(--la-text-label)] mb-3">DISPATCH</h3>
         <SiblingDispatch
           onDispatch={handleDispatch}
           selectedSibling={$focusedSibling}
@@ -522,17 +522,17 @@
       </div>
 
       <div>
-        <h3 class="text-xs font-medium text-[#94a3b8] mb-2">CONTEXT</h3>
-        <pre class="text-[9px] text-[#475569] bg-[#0a0a0a] border border-[#1e293b] rounded p-2 whitespace-pre-wrap max-h-40 overflow-y-auto">{contextString}</pre>
+        <h3 class="text-xs font-medium text-[var(--la-text-label)] mb-2">CONTEXT</h3>
+        <pre class="text-[9px] text-[#475569] bg-[#0a0a0a] border border-[var(--la-hair-strong)] rounded p-2 whitespace-pre-wrap max-h-40 overflow-y-auto">{contextString}</pre>
       </div>
 
       <div>
-        <h3 class="text-xs font-medium text-[#94a3b8] mb-2">QUICK COMMANDS</h3>
+        <h3 class="text-xs font-medium text-[var(--la-text-label)] mb-2">QUICK COMMANDS</h3>
         <div class="space-y-1">
           {#each ['/build', '/secure', '/research', '/review', '/observe'] as cmd}
             <button
               onclick={() => { input = cmd + ' '; }}
-              class="w-full text-left text-[10px] px-2 py-1 rounded bg-[#111827] border border-[#1e293b] hover:border-[#334155] text-[#94a3b8] transition-colors"
+              class="w-full text-left text-[10px] px-2 py-1 rounded bg-[#111827] border border-[var(--la-hair-strong)] hover:border-[#334155] text-[var(--la-text-label)] transition-colors"
             >
               {cmd}
             </button>

@@ -29,8 +29,7 @@
 //! # async fn example() -> Result<(), lightarchitects::core::SdkError> {
 //! let client = SeraphClient::builder()
 //!     .timeout(std::time::Duration::from_secs(120))
-//!     .build()
-//!     .await?;
+//!     .build()?;
 //!
 //! // Recon: discover hosts on the authorised range
 //! let hosts = client.scan("192.168.1.0/24").await?;

@@ -26,6 +26,8 @@ pub mod config;
 /// Squad Comms — HTTP wrapper over the conductor task queue and soul-chat sessions.
 pub mod coordination;
 pub mod copilot;
+/// CSP middleware + violation report endpoint (SEC-3a/3b).
+pub mod csp;
 /// Squad Dispatch — heuristic classifier + in-process agent orchestration.
 pub mod dispatch;
 pub mod events;

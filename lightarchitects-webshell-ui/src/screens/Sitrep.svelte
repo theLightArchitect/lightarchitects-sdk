@@ -67,6 +67,14 @@
     return `${Math.floor(age / 3600)}h ago`;
   }
 
+  // Tutorial T5 — fires on first visit to Sitrep.
+  $effect(() => {
+    const timer = setTimeout(() => {
+      import('$lib/tutorial').then(m => m.runTutorial('t5'));
+    }, 400);
+    return () => clearTimeout(timer);
+  });
+
   // Per-card expand state — keyed by sibling id.
   let expanded = $state<Record<string, boolean>>({});
   function toggle(sib: string) { expanded[sib] = !expanded[sib]; }
@@ -84,7 +92,7 @@
   </div>
 
   <!-- Header (#38 — fixed 56px band shared across all top-level screens) -->
-  <header class="la-screen-header flex items-center justify-between px-6 border-b border-[#1e293b]">
+  <header class="la-screen-header flex items-center justify-between px-6 border-b border-[var(--la-hair-strong)]">
     <div class="flex items-center gap-3">
       <h1 class="text-lg font-semibold tracking-wide">SITREP</h1>
       <span class="text-xs text-[#64748b]">Platform Situation Report</span>
@@ -130,9 +138,9 @@
         <BuildPortfolio onBuildClick={openBuild} />
 
         <!-- Sibling Health Cards (7 siblings) -->
-        <div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
-          <div class="px-4 py-2 border-b border-[#1e293b] flex items-center justify-between">
-            <h3 class="text-xs font-medium text-[#94a3b8]">SQUAD HEALTH</h3>
+        <div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg overflow-hidden" data-onboarding="sitrep-squad-health">
+          <div class="px-4 py-2 border-b border-[var(--la-hair-strong)] flex items-center justify-between">
+            <h3 class="text-xs font-medium text-[var(--la-text-label)]">SQUAD HEALTH</h3>
             <div class="flex items-center gap-2">
               <span class="text-[10px] text-[#6b7280]">
                 {Object.values(health).filter(h => h.status === 'online').length}/7 online
@@ -148,11 +156,11 @@
               {@const dispatchCount = dispatchCounts[sib as SiblingId] ?? 0}
               {@const stale = staleness(h?.lastHeartbeat)}
 
-              <div class="bg-[#0d1117] border border-[#1e293b] rounded-lg overflow-hidden transition-all">
+              <div class="bg-[var(--la-bg-frame)] border border-[var(--la-hair-strong)] rounded-lg overflow-hidden transition-all">
                 <!-- Card header — always visible -->
                 <button
                   onclick={() => toggle(sib)}
-                  class="w-full p-3 text-left flex flex-col items-center gap-1 hover:bg-[#1e293b]/40 transition-colors cursor-pointer"
+                  class="w-full p-3 text-left flex flex-col items-center gap-1 hover:bg-[var(--la-bg-elev-2)]/40 transition-colors cursor-pointer"
                   aria-expanded={expanded[sib]}
                   aria-label="Toggle {sib} details"
                 >
@@ -202,14 +210,14 @@
 
                 <!-- Expanded detail row -->
                 {#if expanded[sib]}
-                  <div class="px-3 pb-3 border-t border-[#1e293b] pt-2 space-y-1.5">
+                  <div class="px-3 pb-3 border-t border-[var(--la-hair-strong)] pt-2 space-y-1.5">
                     <div class="text-[8px] text-[#475569]">
                       hb: <span class="{stale === 'fresh' ? 'text-[#22c55e]' : stale === 'stale' ? 'text-[#f59e0b]' : 'text-[#ef4444]'}">{formatAgo(h?.lastHeartbeat)}</span>
                     </div>
                     {#if h?.capabilities?.length}
                       <div class="flex flex-wrap gap-1">
                         {#each h.capabilities as cap}
-                          <span class="text-[7px] px-1 py-0.5 rounded bg-[#1e293b] text-[#64748b]">{cap}</span>
+                          <span class="text-[7px] px-1 py-0.5 rounded bg-[var(--la-bg-elev-2)] text-[#64748b]">{cap}</span>
                         {/each}
                       </div>
                     {/if}

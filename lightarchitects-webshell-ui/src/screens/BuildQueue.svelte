@@ -86,7 +86,7 @@
   </div>
 
   <!-- Header (#38 — fixed 56px band shared across all top-level screens) -->
-  <header class="la-screen-header flex items-center justify-between gap-x-3 px-4 md:px-6 border-b border-[#1e293b]">
+  <header class="la-screen-header flex items-center justify-between gap-x-3 px-4 md:px-6 border-b border-[var(--la-hair-strong)]">
     <div class="flex items-center gap-3">
       <h1 class="text-lg font-semibold tracking-wide">Build Queue</h1>
       <span class="text-xs text-[#64748b]">
@@ -96,24 +96,26 @@
       </span>
     </div>
     <div class="flex items-center gap-3">
-      <!-- View toggle -->
-      <div class="flex bg-[#1e293b] rounded overflow-hidden">
-        <button
-          class="px-3 py-1 text-xs {viewMode === 'card' ? 'bg-[#334155] text-white' : 'text-[#64748b]'}"
-          onclick={() => { viewMode = 'card'; }}
-        >
-          Cards
-        </button>
-        <button
-          class="px-3 py-1 text-xs {viewMode === 'list' ? 'bg-[#334155] text-white' : 'text-[#64748b]'}"
-          onclick={() => { viewMode = 'list'; }}
-        >
-          List
-        </button>
-      </div>
+      <!-- View toggle — hidden when queue is empty -->
+      {#if $builds.length > 0}
+        <div class="flex bg-[var(--la-bg-elev-2)] rounded overflow-hidden">
+          <button
+            class="px-3 py-1 text-xs {viewMode === 'card' ? 'bg-[#334155] text-white' : 'text-[#64748b]'}"
+            onclick={() => { viewMode = 'card'; }}
+          >
+            Board
+          </button>
+          <button
+            class="px-3 py-1 text-xs {viewMode === 'list' ? 'bg-[#334155] text-white' : 'text-[#64748b]'}"
+            onclick={() => { viewMode = 'list'; }}
+          >
+            List
+          </button>
+        </div>
+      {/if}
       <Tooltip content="Export the full build roadmap as a standalone, shareable HTML file" side="bottom">
         <button
-          class="px-3 py-1.5 bg-[#1e293b] text-[#94a3b8] text-xs rounded hover:bg-[#334155] hover:text-white transition-all"
+          class="px-3 py-1.5 bg-[var(--la-bg-elev-2)] text-[var(--la-text-label)] text-xs rounded hover:bg-[#334155] hover:text-white transition-all"
           onclick={() => downloadRoadmap($builds)}
         >
           Export
@@ -131,10 +133,10 @@
   </header>
 
   <!-- Stat strip -->
-  <div class="flex items-center flex-wrap gap-x-4 gap-y-1 px-4 md:px-6 py-2 bg-[#0d0d14] border-b border-[#1e293b] text-xs">
+  <div class="flex items-center flex-wrap gap-x-4 gap-y-1 px-4 md:px-6 py-2 bg-[var(--la-bg-frame)] border-b border-[var(--la-hair-strong)] text-xs">
     <span class="text-[#22c55e]">{$buildStats.inProgress} in progress</span>
     <span class="text-[#3b82f6]">{$buildStats.pending} queued</span>
-    <span class="text-[#94a3b8]">{$buildStats.completed} completed</span>
+    <span class="text-[var(--la-text-label)]">{$buildStats.completed} completed</span>
     <span class="text-[#ef4444]">{$buildStats.failed} failed</span>
   </div>
 
@@ -143,7 +145,7 @@
     {#if $builds.length === 0}
       <div class="flex flex-col items-center justify-center h-full gap-4 text-center">
         <div class="space-y-2 max-w-md">
-          <p class="text-lg text-[#94a3b8]">No builds in flight.</p>
+          <p class="text-lg text-[var(--la-text-label)]">No builds in flight.</p>
           <p class="text-sm text-[#64748b] leading-snug">
             The squad is idle. Spin up a build and the agents will get to work — pillar-by-pillar, gated, observable.
           </p>
@@ -155,7 +157,7 @@
           + New Build
         </button>
         <p class="text-[10px] text-[#475569]">
-          or press <kbd class="bg-[#1e293b] px-1.5 py-0.5 rounded">⌘K</kbd> → <kbd class="bg-[#1e293b] px-1.5 py-0.5 rounded">/build</kbd>
+          or press <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">⌘K</kbd> → <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">/build</kbd>
         </p>
       </div>
     {:else if viewMode === 'card'}
@@ -163,14 +165,14 @@
         {#each $projectGroups as group}
           <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
           <div
-            class="bg-[#111827] border border-[#1e293b] rounded-lg p-3 cursor-pointer hover:border-[#334155] transition-colors"
+            class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg p-3 cursor-pointer hover:border-[#334155] transition-colors"
             onclick={() => group.plans.length > 1 ? openProject(group.id) : openBuild(group.plans[0]?.id ?? group.id)}
             onkeydown={() => group.plans.length > 1 ? openProject(group.id) : openBuild(group.plans[0]?.id ?? group.id)}
           >
             <!-- Project name + plan count -->
             <div class="flex items-center justify-between mb-1">
               <span class="font-semibold text-sm truncate">{group.name}</span>
-              <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-[#1e293b] text-[#94a3b8]">
+              <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--la-bg-elev-2)] text-[var(--la-text-label)]">
                 {group.planCount} {group.planCount === 1 ? 'build' : 'plans'}
               </span>
             </div>
@@ -184,7 +186,7 @@
                 {@const sstyle = statusStyle(plan.status)}
                 <div class="flex items-center gap-1.5 text-[10px]">
                   <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background-color: {sstyle.fg}"></span>
-                  <span class="text-[#94a3b8] truncate flex-1">{plan.name}</span>
+                  <span class="text-[var(--la-text-label)] truncate flex-1">{plan.name}</span>
                   <span class="text-[#475569]">{plan.status === 'in_progress' ? 'active' : plan.status === 'completed' ? 'done' : plan.status === 'queued' ? 'planned' : plan.status}</span>
                 </div>
               {/each}
@@ -194,7 +196,7 @@
             </div>
 
             <!-- Progress bar -->
-            <div class="h-1 bg-[#1e293b] rounded-full overflow-hidden">
+            <div class="h-1 bg-[var(--la-bg-elev-2)] rounded-full overflow-hidden">
               <div
                 class="h-full rounded-full transition-all"
                 style="width: {Math.round(group.progress * 100)}%; background-color: {group.progress >= 1 ? '#22c55e' : group.activePlanCount > 0 ? '#f0c040' : '#475569'}"
@@ -212,7 +214,7 @@
         <!-- Inline New Build card — always last in grid (#12) -->
         <button
           data-testid="buildqueue-new-build-card"
-          class="bg-[#0d1117] border border-dashed border-[#FFD700]/20 rounded-lg p-3 flex flex-col items-center justify-center gap-2 hover:border-[#FFD700]/50 hover:bg-[#FFD700]/5 transition-colors min-h-[120px]"
+          class="bg-[var(--la-bg-frame)] border border-dashed border-[#FFD700]/20 rounded-lg p-3 flex flex-col items-center justify-center gap-2 hover:border-[#FFD700]/50 hover:bg-[#FFD700]/5 transition-colors min-h-[120px]"
           onclick={newBuild}
         >
           <span class="text-2xl text-[#FFD700]/40 leading-none">+</span>
@@ -228,7 +230,7 @@
           {@const sstyle = statusStyle(build.status)}
           <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
           <div
-            class="bg-[#111827] border border-[#1e293b] rounded-lg p-4 cursor-pointer hover:border-[#334155] transition-colors group"
+            class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg p-4 cursor-pointer hover:border-[#334155] transition-colors group"
             onclick={() => openBuild(build.id)}
             onkeydown={() => openBuild(build.id)}
           >
@@ -298,7 +300,7 @@
       <div class="overflow-x-auto">
       <table class="w-full text-sm min-w-[700px]">
         <thead>
-          <tr class="text-[#64748b] text-left border-b border-[#1e293b]">
+          <tr class="text-[#64748b] text-left border-b border-[var(--la-hair-strong)]">
             <th class="pb-2 font-medium w-10"></th>
             <th class="pb-2 font-medium">Name</th>
             <th class="pb-2 font-medium">Phase</th>
@@ -315,7 +317,7 @@
             {@const sstyle = statusStyle(build.status)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <tr
-              class="border-b border-[#1e293b] hover:bg-[#111827] cursor-pointer"
+              class="border-b border-[var(--la-hair-strong)] hover:bg-[var(--la-bg-elev-1)] cursor-pointer"
               onclick={() => openBuild(build.id)}
             >
               <td class="py-2">

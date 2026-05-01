@@ -92,15 +92,15 @@ export interface DispatchHistoryEntry {
 // ── Colors (forward-compatible with DOMAIN_AGENT_COLORS from design-tokens C5) ─
 
 export const DOMAIN_AGENT_COLORS: Record<DomainAgent, string> = {
-  engineer:      '#3b82f6',
-  quality:       '#10b981',
-  security:      '#ef4444',
-  ops:           '#f59e0b',
-  researcher:    '#8b5cf6',
-  knowledge:     '#06b6d4',
-  performance:   '#f97316',
-  testing:       '#84cc16',
-  documentation: '#64748b',
+  engineer:      '#4d8eff',
+  quality:       '#f5d440',
+  security:      '#ff4d4d',
+  ops:           '#d24df5',
+  researcher:    '#4dff8e',
+  knowledge:     '#4dffe6',
+  performance:   '#ff8e3c',
+  testing:       '#a874ff',
+  documentation: '#ff7eb6',
 };
 
 export const DOMAIN_AGENT_LABELS: Record<DomainAgent, string> = {

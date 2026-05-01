@@ -23,8 +23,7 @@
 //! # async fn example() -> Result<(), lightarchitects::core::SdkError> {
 //! let client = QuantumClient::builder()
 //!     .timeout(std::time::Duration::from_secs(120))
-//!     .build()
-//!     .await?;
+//!     .build()?;
 //!
 //! // Stateful investigation via [`QuantumInvestigation`]
 //! let mut inv = QuantumInvestigation::new(&client, "auth token refresh failures");

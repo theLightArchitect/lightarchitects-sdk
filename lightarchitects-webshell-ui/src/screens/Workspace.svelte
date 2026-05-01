@@ -144,7 +144,7 @@
   </div>
 
   <!-- Header with breadcrumb -->
-  <header class="flex items-center gap-3 px-6 py-3 border-b border-[#1e293b]">
+  <header class="flex items-center gap-3 px-6 py-3 border-b border-[var(--la-hair-strong)]">
     {#if build}
       <HierarchyNav crumbs={[
         { id: '', name: 'Builds', type: 'workspaces' },
@@ -207,7 +207,7 @@
           {#each build.pillars as gate}
             <button
               class="text-[10px] px-2 py-1 rounded border transition-colors
-                {$selectedPillar === gate.pillar ? 'border-[#FFD700] bg-[#FFD700]/10 text-white' : 'border-[#1e293b] text-[#64748b] hover:border-[#334155]'}"
+                {$selectedPillar === gate.pillar ? 'border-[#FFD700] bg-[#FFD700]/10 text-white' : 'border-[var(--la-hair-strong)] text-[#64748b] hover:border-[#334155]'}"
               style="{$selectedPillar === gate.pillar ? `color: ${PILLAR_COLORS[gate.pillar]}` : ''}"
               onclick={() => selectPillar(gate.pillar)}
             >
@@ -223,7 +223,7 @@
         {#if selectedGate}
           <PillarDetail gate={selectedGate} metaSkill={build.metaSkill} />
         {:else}
-          <div class="bg-[#111827] border border-[#1e293b] rounded-lg p-4">
+          <div class="bg-[#111827] border border-[var(--la-hair-strong)] rounded-lg p-4">
             <p class="text-xs text-[#475569]">Select a pillar above to see phase details</p>
           </div>
         {/if}
@@ -240,11 +240,11 @@
 
         <!-- Modules -->
         {#if build.modules.length > 0}
-          <div class="bg-[#111827] border border-[#1e293b] rounded-lg p-4">
-            <h3 class="text-xs font-medium text-[#94a3b8] mb-2">MODULES ({build.modules.length})</h3>
+          <div class="bg-[#111827] border border-[var(--la-hair-strong)] rounded-lg p-4">
+            <h3 class="text-xs font-medium text-[var(--la-text-label)] mb-2">MODULES ({build.modules.length})</h3>
             <ul class="space-y-1">
               {#each build.modules as mod}
-                <li class="text-xs text-[#94a3b8] flex items-center gap-2">
+                <li class="text-xs text-[var(--la-text-label)] flex items-center gap-2">
                   <span class="text-[#475569] font-mono">{mod.language ?? 'file'}</span>
                   <span class="text-[#e2e8f0]">{mod.name}</span>
                   <span class="text-[#334155] text-[10px]">{mod.path}</span>
@@ -271,14 +271,14 @@
       </div>
 
       <!-- Right: Context panel (collapses on small screens) -->
-      <div class="w-[320px] border-l border-[#1e293b] overflow-y-auto p-4 space-y-3 hidden lg:block">
-        <div class="bg-[#111827] border border-[#1e293b] rounded-lg p-3">
-          <h3 class="text-xs font-medium text-[#94a3b8] mb-2">CONTEXT</h3>
+      <div class="w-[320px] border-l border-[var(--la-hair-strong)] overflow-y-auto p-4 space-y-3 hidden lg:block">
+        <div class="bg-[#111827] border border-[var(--la-hair-strong)] rounded-lg p-3">
+          <h3 class="text-xs font-medium text-[var(--la-text-label)] mb-2">CONTEXT</h3>
           <p class="text-xs text-[#475569]">Build configuration, CLAUDE.md, active Squad dispatches</p>
         </div>
 
-        <div class="bg-[#111827] border border-[#1e293b] rounded-lg p-3">
-          <h3 class="text-xs font-medium text-[#94a3b8] mb-2">SQUAD DISPATCH</h3>
+        <div class="bg-[#111827] border border-[var(--la-hair-strong)] rounded-lg p-3">
+          <h3 class="text-xs font-medium text-[var(--la-text-label)] mb-2">SQUAD DISPATCH</h3>
           <SiblingDispatch onDispatch={dispatchSibling} selectedSibling={$focusedSibling} />
         </div>
 
@@ -290,8 +290,8 @@
           }}
         />
 
-        <div class="bg-[#111827] border border-[#1e293b] rounded-lg p-3">
-          <h3 class="text-xs font-medium text-[#94a3b8] mb-2">TERMINAL</h3>
+        <div class="bg-[#111827] border border-[var(--la-hair-strong)] rounded-lg p-3">
+          <h3 class="text-xs font-medium text-[var(--la-text-label)] mb-2">TERMINAL</h3>
           <p class="text-xs text-[#475569]">xterm.js PTY connection</p>
         </div>
       </div>

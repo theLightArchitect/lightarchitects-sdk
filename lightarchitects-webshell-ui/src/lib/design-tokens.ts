@@ -23,15 +23,15 @@ export const SIBLING_COLORS: Record<string, string> = {
 // Maps capability domains used on public-facing dispatch surfaces.
 // Hues intentionally echo SIBLING_COLORS so the two palettes feel related.
 export const DOMAIN_AGENT_COLORS: Record<string, string> = {
-  engineer:     '#00BFFF',  // blue   — mirrors corso  (aegis canonical; was teal pre-90fdfae)
-  quality:      '#B44AFF',  // purple — mirrors quantum (aegis canonical; was sage pre-90fdfae)
-  security:     '#FFEAA7',  // cream  — mirrors seraph
-  ops:          '#FF6D00',  // orange — mirrors ayin
-  researcher:   '#A78BFA',  // violet — distinct
-  knowledge:    '#f0c040',  // gold   — mirrors soul
-  performance:  '#60A5FA',  // blue   — distinct
-  testing:      '#34D399',  // emerald — distinct
-  documentation: '#94A3B8', // slate  — distinct
+  engineer:      '#4d8eff',  // blue        — LASDLC A (architecture)
+  quality:       '#f5d440',  // yellow      — LASDLC Q (quality caution)
+  security:      '#ff4d4d',  // red         — LASDLC S (security risk)
+  ops:           '#d24df5',  // magenta     — LASDLC O (operations)
+  researcher:    '#4dff8e',  // green       — research/go
+  knowledge:     '#4dffe6',  // cyan        — knowledge/recall
+  performance:   '#ff8e3c',  // orange      — LASDLC P (performance heat)
+  testing:       '#a874ff',  // purple      — LASDLC T (testing)
+  documentation: '#ff7eb6',  // pink        — LASDLC D (documentation)
 };
 
 // --- Tier colors ---

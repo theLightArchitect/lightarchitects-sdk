@@ -48,10 +48,11 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if isOpen && build}
-  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="detail-backdrop"
     onclick={handleBackdropClick}
+    onkeydown={(e) => { if (e.key === 'Escape') onClose(); }}
   >
     <div class="detail-panel" role="dialog" aria-label="Build details: {build.name}">
       <!-- Close button -->

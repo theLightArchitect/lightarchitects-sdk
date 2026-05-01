@@ -35,6 +35,17 @@
   }
 </script>
 
+<style>
+  @keyframes edge-flow {
+    from { stroke-dashoffset: 1; }
+    to   { stroke-dashoffset: -1; }
+  }
+  .edge-running {
+    stroke-dasharray: 0.35 0.65;
+    animation: edge-flow 0.9s linear infinite;
+  }
+</style>
+
 {#if agents.length === 0}
   <div class="flex items-center justify-center h-12 text-[10px] text-[#475569]">
     No agents selected
@@ -47,7 +58,26 @@
       {@const state = live?.state}
 
       {#if i > 0}
-        <div class="flex-shrink-0 w-4 h-px bg-[#1e293b] mx-0.5"></div>
+        {@const src = agents[i - 1]}
+        {@const srcState = agentStates.get(src)?.state}
+        {@const edgeColor = srcState ? stateColor(srcState) : DOMAIN_AGENT_COLORS[src]}
+        <svg
+          class="flex-shrink-0 mx-0.5 dag-edge"
+          style="width:20px;height:16px"
+          viewBox="0 0 20 16"
+          aria-hidden="true"
+        >
+          <path
+            d="M 0,8 C 6,4 14,12 20,8"
+            fill="none"
+            stroke={edgeColor}
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-opacity={srcState ? 1 : 0.3}
+            pathLength="1"
+            class={srcState === 'running' ? 'edge-running' : ''}
+          />
+        </svg>
       {/if}
 
       <div

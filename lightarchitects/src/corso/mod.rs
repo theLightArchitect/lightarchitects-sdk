@@ -14,7 +14,7 @@
 //! use lightarchitects::corso::CorsoClient;
 //!
 //! # async fn example() -> Result<(), lightarchitects::core::SdkError> {
-//! let client = CorsoClient::builder().build().await?;
+//! let client = CorsoClient::builder().build()?;
 //!
 //! // Structured response: read a source file
 //! let file = client.read_file("/path/to/lib.rs", None).await?;

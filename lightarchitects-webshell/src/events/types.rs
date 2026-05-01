@@ -526,4 +526,115 @@ mod tests {
         assert!(json.contains(r#""strand":"methodical""#), "{json}");
         assert!(json.contains(r#""weight":0.9"#), "{json}");
     }
+
+    /// SSE contract canary (#50) — trip-wire test that enumerates EVERY
+    /// `WebEvent` variant and asserts the serialised `"type"` tag matches the
+    /// exact string the frontend's `EventType` union expects.
+    ///
+    /// **If this test fails** you must update `EventType` in
+    /// `lightarchitects-webshell-ui/src/lib/types.ts` to match before merging.
+    ///
+    /// The canonical FE set at time of writing (2026-04-30):
+    ///   ayin_span, ayin_status, helix_entry, build_update, control,
+    ///   strand_activation, soul_promotion, gateway_notify, pillar_update,
+    ///   strand_convergence, copilot_activity
+    #[test]
+    fn sse_contract_all_web_event_variants_have_known_type_tags() {
+        // Helper: extract the `type` field from a serialised WebEvent.
+        fn type_tag(event: &WebEvent) -> String {
+            let json = serde_json::to_string(event).unwrap();
+            let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+            v["type"].as_str().unwrap_or("").to_owned()
+        }
+
+        let span = TraceSpanSummary {
+            id: "x".to_owned(),
+            parent_id: None,
+            actor: "soul".to_owned(),
+            action: "a".to_owned(),
+            timestamp: "t".to_owned(),
+            duration_ms: 0,
+            outcome: serde_json::Value::Null,
+            metadata: serde_json::Value::Null,
+            strand_activations: Vec::new(),
+        };
+        let helix = HelixEntrySummary::minimal("p".to_owned(), HelixEventKind::Created);
+        let build_ev = BuildUpdateEvent {
+            path: "p".to_owned(),
+            event_kind: BuildEventKind::Created,
+        };
+        let ctrl = ControlCommand::Notify {
+            message: "m".to_owned(),
+            level: "info".to_owned(),
+        };
+        let strand = StrandActivationEvent {
+            sibling: "s".to_owned(),
+            strand: "t".to_owned(),
+            weight: 1.0,
+            timestamp: "t".to_owned(),
+        };
+        let pillar = PillarUpdateEvent {
+            build_id: "b".to_owned(),
+            pillar: "arch".to_owned(),
+            phase: "started".to_owned(),
+            line: None,
+            exit_code: None,
+            artifact: None,
+        };
+        let convergence = StrandConvergenceEvent {
+            strand: "analytical".to_owned(),
+            siblings: vec!["eva".to_owned()],
+            memo_ids: Vec::new(),
+            detected_at: "t".to_owned(),
+        };
+        let activity = CopilotActivityEvent {
+            build_id: "b".to_owned(),
+            kind: "assistant".to_owned(),
+            summary: None,
+            raw: serde_json::Value::Null,
+            timestamp: "t".to_owned(),
+        };
+        let promotion = crate::memory::types::PromotionEvent {
+            memo_id: "m".to_owned(),
+            from: crate::memory::types::MemoryTier::Hot,
+            to: crate::memory::types::MemoryTier::Cold,
+            sibling: "eva".to_owned(),
+            significance: 0.9,
+            path: "p".to_owned(),
+            promoted_at: "t".to_owned(),
+        };
+
+        // Canonical mapping: Rust variant → expected serialised `type` string.
+        // Update this list AND the FE EventType whenever a new variant is added.
+        let cases: &[(&str, WebEvent)] = &[
+            ("ayin_span", WebEvent::AyinSpan(span)),
+            ("ayin_status", WebEvent::AyinStatus(AyinStatus::Connected)),
+            ("helix_entry", WebEvent::HelixEntry(helix)),
+            ("build_update", WebEvent::BuildUpdate(build_ev)),
+            ("control", WebEvent::Control(ctrl)),
+            ("strand_activation", WebEvent::StrandActivation(strand)),
+            ("soul_promotion", WebEvent::SoulPromotion(promotion)),
+            (
+                "gateway_notify",
+                WebEvent::GatewayNotify {
+                    payload: serde_json::Value::Null,
+                },
+            ),
+            ("pillar_update", WebEvent::PillarUpdate(pillar)),
+            (
+                "strand_convergence",
+                WebEvent::StrandConvergence(convergence),
+            ),
+            ("copilot_activity", WebEvent::CopilotActivity(activity)),
+        ];
+
+        for (expected_tag, event) in cases {
+            let actual = type_tag(event);
+            assert_eq!(
+                actual, *expected_tag,
+                "WebEvent variant serialised as '{actual}' but contract expects '{expected_tag}'. \
+                 Update EventType in lightarchitects-webshell-ui/src/lib/types.ts.",
+            );
+        }
+    }
 }

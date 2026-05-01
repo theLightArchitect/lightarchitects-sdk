@@ -8,24 +8,18 @@
 //!
 //! `LightarchitectsNative` backend: persistent subprocess with piped I/O.
 
-use axum::{
-    Json,
-    extract::{Path, State},
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
-};
+pub mod routes;
+pub use routes::copilot_chat_handler;
+
 use serde::Deserialize;
 use serde_json::json;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, Lines},
     process::{Child, ChildStdin, ChildStdout},
 };
-use uuid::Uuid;
 
 use crate::{
-    auth,
     config::{AgentSession, ClaudeBackend, CodexBackend},
-    server::AppState,
     session::BuildSession,
 };
 
@@ -189,51 +183,6 @@ impl CopilotProcess {
             stdout: None,
             _child: None,
         }
-    }
-}
-
-/// `POST /api/builds/:id/copilot` — dispatch to subprocess or HTTP backend.
-pub async fn copilot_chat_handler(
-    Path(id): Path<Uuid>,
-    headers: HeaderMap,
-    State(state): State<AppState>,
-    Json(body): Json<CopilotRequest>,
-) -> impl IntoResponse {
-    let authz = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    if !auth::validate_bearer(authz, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-    let Some(session) = state.builds.get(id) else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "build_not_found" })),
-        )
-            .into_response();
-    };
-    let result = match &session.agent {
-        AgentSession::Lightarchitects(ClaudeBackend::Ollama(cfg)) => {
-            // Stateless HTTP backend — existing behaviour.
-            call_ollama(&cfg.base_url, &cfg.model, &cfg.auth_token, &body.message).await
-        }
-        // Per-turn or persistent subprocess: Lightarchitects(Anthropic/OllamaLaunch), Codex(*), Native.
-        AgentSession::Lightarchitects(
-            ClaudeBackend::Anthropic | ClaudeBackend::OllamaLaunch(_),
-        )
-        | AgentSession::Codex(_)
-        | AgentSession::LightarchitectsNative(_) => {
-            call_subprocess(&body.message, &session.copilot_proc, &session).await
-        }
-    };
-    match result {
-        Ok(text) => (StatusCode::OK, Json(json!({ "response": text }))).into_response(),
-        Err(reason) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": "provider_error", "reason": reason })),
-        )
-            .into_response(),
     }
 }
 
@@ -809,7 +758,7 @@ pub async fn call_subprocess_public(
 }
 
 #[allow(clippy::too_many_lines)]
-async fn call_subprocess(
+pub(super) async fn call_subprocess(
     message: &str,
     proc_lock: &tokio::sync::Mutex<Option<CopilotProcess>>,
     session: &BuildSession,
@@ -970,7 +919,7 @@ async fn call_subprocess(
 /// # Errors
 ///
 /// Returns a descriptive string on network failure or unexpected response shape.
-async fn call_ollama(
+pub(super) async fn call_ollama(
     base_url: &str,
     model: &str,
     auth_token: &str,

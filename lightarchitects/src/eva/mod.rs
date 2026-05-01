@@ -22,7 +22,7 @@
 //! use lightarchitects::eva::{EvaClient, TeachMode, SkillLevel};
 //!
 //! # async fn example() -> Result<(), lightarchitects::core::SdkError> {
-//! let client = EvaClient::builder().build().await?;
+//! let client = EvaClient::builder().build()?;
 //!
 //! // Teach a concept
 //! let lesson = client

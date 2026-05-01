@@ -32,7 +32,8 @@ run_step() {
   if "$@"; then
     echo "      ✓ $label"
   else
-    echo "      ✗ $label (exit $?)"
+    local rc=$?
+    echo "      ✗ $label (exit $rc)"
     FAILED+=("$id $label")
   fi
 }
@@ -48,31 +49,33 @@ run_step "1/9" "cargo fmt --check" \
   bash -c "cargo fmt --all -- --check"
 
 run_step "2/9" "cargo clippy -D warnings (workspace, all targets, all features)" \
-  bash -c "cargo clippy --workspace --all-targets --all-features -- -D warnings 2>&1 | tail -5; exit \${PIPESTATUS[0]}"
+  bash -c 'f=$(mktemp); trap "rm -f \"$f\"" EXIT; cargo clippy --workspace --all-targets --all-features -- -D warnings >"$f" 2>&1; rc=$?; tail -5 "$f"; exit $rc'
 
 run_step "3/9" "cargo metadata + workspace integrity" \
   bash -c "cargo metadata --format-version 1 --no-deps > /dev/null && cargo check --workspace --all-features --quiet"
 
+# Buffer output to a temp file — avoids SIGPIPE race when tail exits early
+# before cargo test finishes writing (common on cold incremental cache).
 run_step "4/9" "cargo test --workspace --all-features (lib + tests, excluding doctests)" \
-  bash -c "cargo test --workspace --all-features --lib --tests --quiet 2>&1 | tail -10; exit \${PIPESTATUS[0]}"
+  bash -c 'f=$(mktemp); trap "rm -f \"$f\"" EXIT; cargo test --workspace --all-features --lib --tests --quiet >"$f" 2>&1; rc=$?; tail -10 "$f"; exit $rc'
 # Doctests run via `make doctest` per the SDK's split (CLAUDE.md). Keeping
 # them out of the Tier-1 gate matches the SDK convention; doc-quality drift
 # is a documentation gate, not a code-correctness gate.
 
 run_step "5/9" "svelte-check" \
-  bash -c "cd '$UI_DIR' && pnpm exec svelte-check --threshold error 2>&1 | tail -2; exit \${PIPESTATUS[0]}"
+  bash -c "cd '$UI_DIR'; f=\$(mktemp); trap 'rm -f \"\$f\"' EXIT; pnpm exec svelte-check --threshold error >\"\$f\" 2>&1; rc=\$?; tail -2 \"\$f\"; exit \$rc"
 
 run_step "6/9" "pnpm test:run (vitest)" \
-  bash -c "cd '$UI_DIR' && pnpm test:run 2>&1 | tail -3; exit \${PIPESTATUS[0]}"
+  bash -c "cd '$UI_DIR'; f=\$(mktemp); trap 'rm -f \"\$f\"' EXIT; pnpm test:run >\"\$f\" 2>&1; rc=\$?; tail -3 \"\$f\"; exit \$rc"
 
 run_step "7/9" "pnpm build (Svelte → dist/)" \
-  bash -c "cd '$UI_DIR' && pnpm build 2>&1 | tail -3; exit \${PIPESTATUS[0]}"
+  bash -c "cd '$UI_DIR'; f=\$(mktemp); trap 'rm -f \"\$f\"' EXIT; pnpm build >\"\$f\" 2>&1; rc=\$?; tail -3 \"\$f\"; exit \$rc"
 
 run_step "8/9" "cargo audit (advisory scan)" \
-  bash -c "cargo audit 2>&1 | tail -5; exit \${PIPESTATUS[0]}"
+  bash -c 'f=$(mktemp); trap "rm -f \"$f\"" EXIT; cargo audit >"$f" 2>&1; rc=$?; tail -5 "$f"; exit $rc'
 
 run_step "9/9" "cargo deny check" \
-  bash -c "cargo deny check 2>&1 | tail -5; exit \${PIPESTATUS[0]}"
+  bash -c 'f=$(mktemp); trap "rm -f \"$f\"" EXIT; cargo deny check >"$f" 2>&1; rc=$?; tail -5 "$f"; exit $rc'
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════════"

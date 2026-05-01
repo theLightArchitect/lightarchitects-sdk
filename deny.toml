@@ -11,6 +11,7 @@ db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 
 # All entries below: no safe upgrade available (verified 2026-04-30).
+# Re-evaluate 2026-07-30 (Q3 2026). Track fastembed releases — v6+ may drop the core2/rav1e/bitstream-io chain.
 # These are transitive deps we do not own. Each entry documents the chain and why we cannot fix it.
 ignore = [
     # number_prefix: unmaintained, via lightarchitects-arena → indicatif. ML utility crate only.

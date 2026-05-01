@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { registerHotkey } from '$lib/hotkeyRegistry';
   import {
     classifyTask,
     executeDispatch,
@@ -11,6 +12,7 @@
     isTerminal,
     isComplete,
     isError,
+    DOMAIN_AGENT_LABELS,
     type DomainAgent,
     type Classification,
     type DispatchEvent,
@@ -80,6 +82,7 @@
       phase = 'streaming';
       id = await executeDispatch(taskText, selectedAgents, isDry);
       dispatchId = id;
+      triggerDispatchFX();
     } catch (e) {
       errorMsg = (e as Error).message;
       phase = 'error';
@@ -212,6 +215,63 @@
   onDestroy(() => {
     stopStream?.();
     if (classifyTimer) clearTimeout(classifyTimer);
+    fxTimers.forEach(clearTimeout);
+  });
+
+  // ── Squad-scoped hotkeys (active only on /squad-dispatch) ───────────────────
+
+  $effect(() => {
+    const unregs = [
+      registerHotkey({
+        id: 'squad-reset',
+        keys: ['R'],
+        label: 'Reset dispatch',
+        group: 'Squad Dispatch',
+        scope: 'squad-dispatch',
+        matches: e =>
+          !e.metaKey && !e.ctrlKey && !e.altKey &&
+          e.key === 'r' &&
+          !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
+        handler: () => reset(),
+      }),
+      registerHotkey({
+        id: 'squad-dispatch-run',
+        keys: ['⌘', '↵'],
+        label: 'Dispatch task',
+        group: 'Squad Dispatch',
+        scope: 'squad-dispatch',
+        matches: e => (e.metaKey || e.ctrlKey) && e.key === 'Enter',
+        handler: () => { if (phase !== 'streaming') dispatch(task, dry); },
+      }),
+      registerHotkey({
+        id: 'squad-dispatch-dry',
+        keys: ['⌘', '⇧', '↵'],
+        label: 'Dry-run dispatch',
+        group: 'Squad Dispatch',
+        scope: 'squad-dispatch',
+        matches: e => (e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'Enter',
+        handler: () => { if (phase !== 'streaming') dispatch(task, true); },
+      }),
+      registerHotkey({
+        id: 'squad-focus-input',
+        keys: ['⌘', 'D'],
+        label: 'Focus task input',
+        group: 'Squad Dispatch',
+        scope: 'squad-dispatch',
+        matches: e => (e.metaKey || e.ctrlKey) && e.key === 'd',
+        handler: () => { inputSectionEl?.querySelector('textarea')?.focus(); },
+      }),
+      registerHotkey({
+        id: 'squad-cancel',
+        keys: ['Esc'],
+        label: 'Cancel dispatch',
+        group: 'Squad Dispatch',
+        scope: 'squad-dispatch',
+        matches: e => e.key === 'Escape',
+        handler: () => { if (phase === 'streaming') cancel(); },
+      }),
+    ];
+    return () => unregs.forEach(fn => fn());
   });
 
   $effect(() => {
@@ -220,40 +280,84 @@
 
   const isLive = $derived(phase === 'streaming');
   const isTerminalPhase = $derived(phase === 'complete' || phase === 'error');
+
+  // Cinematic dispatch flash — briefly true when dispatch fires.
+  let dispatchFlash = $state(false);
+  let scanlineActive = $state(false);
+  let scanlineKey = $state(0);
+  let fxTimers: ReturnType<typeof setTimeout>[] = [];
+  let inputSectionEl: HTMLElement | null = null;
+
+  function triggerDispatchFX() {
+    fxTimers.forEach(clearTimeout);
+    dispatchFlash = true;
+    scanlineActive = true;
+    scanlineKey += 1;
+    fxTimers = [
+      setTimeout(() => { dispatchFlash = false; }, 450),
+      setTimeout(() => { scanlineActive = false; }, 700),
+    ];
+  }
 </script>
 
-<div class="flex h-full bg-[#070d1a] text-[#e2e8f0] overflow-hidden">
+<!-- Cinematic flash on dispatch fire -->
+{#if dispatchFlash}
+  <div class="dispatch-flash" aria-hidden="true"></div>
+{/if}
+
+<div class="sd-root" data-dispatching={isLive}>
 
   <!-- ── Left rail: input + agent selector ── -->
-  <div class="flex flex-col w-72 flex-shrink-0 border-r border-[#0f172a] overflow-y-auto">
-    <div class="px-3 pt-3 pb-1 border-b border-[#0f172a]">
-      <div class="flex items-center justify-between mb-2">
-        <h2 class="text-[11px] font-semibold text-[#e2e8f0] tracking-wide uppercase">
-          Squad Dispatch
-        </h2>
-        {#if phase === 'classifying'}
-          <span class="text-[9px] text-[#3b82f6] animate-pulse">Classifying…</span>
-        {:else if phase === 'complete'}
-          <span class="text-[9px] text-[#10b981]">
-            ✓ {elapsedMs !== undefined ? `${(elapsedMs / 1000).toFixed(1)}s` : 'Done'}
-          </span>
-        {:else if phase === 'error'}
-          <span class="text-[9px] text-[#ef4444]">✗ Error</span>
-        {/if}
-      </div>
+  <aside class="sd-rail sd-rail-left" aria-label="Dispatch controls">
 
-      <div data-onboarding="dispatch-input">
-        <DispatchInput
-          bind:task
-          bind:dry
-          disabled={isLive}
-          onSubmit={dispatch}
-          onTaskChange={(t) => { task = t; }}
-        />
-      </div>
+    <header class="sd-section-header">
+      <span class="sd-section-label">Squad Dispatch</span>
+      {#if phase === 'classifying'}
+        <span class="sd-phase sd-phase-classifying">classifying…</span>
+      {:else if phase === 'streaming'}
+        <span class="sd-phase sd-phase-live">● live</span>
+      {:else if phase === 'complete'}
+        <span class="sd-phase sd-phase-ok">
+          ✓ {elapsedMs !== undefined ? `${(elapsedMs / 1000).toFixed(1)}s` : 'done'}
+        </span>
+      {:else if phase === 'error'}
+        <span class="sd-phase sd-phase-err">✗ error</span>
+      {/if}
+    </header>
+
+    <div class="sd-section-body" data-onboarding="dispatch-input" bind:this={inputSectionEl}>
+      <DispatchInput
+        bind:task
+        bind:dry
+        disabled={isLive}
+        onSubmit={dispatch}
+        onTaskChange={(t) => { task = t; }}
+      />
     </div>
 
-    <div class="px-3 py-2 border-b border-[#0f172a]" data-onboarding="dispatch-agent-selector">
+    {#if classification && task.trim().length >= 8}
+      <div class="sd-classifier-badge">
+        <div class="sd-classifier-agents">
+          {#each classification.agents as agent}
+            <span
+              class="sd-agent-pill"
+              style="color: var(--la-agent-{agent}); border-color: color-mix(in srgb, var(--la-agent-{agent}) 40%, transparent)"
+            >
+              {DOMAIN_AGENT_LABELS[agent]}
+            </span>
+          {/each}
+        </div>
+        {#if classification.rationale}
+          <p class="sd-classifier-rationale">
+            {classification.rationale.length > 80
+              ? classification.rationale.slice(0, 80) + '…'
+              : classification.rationale}
+          </p>
+        {/if}
+      </div>
+    {/if}
+
+    <div class="sd-section-body" data-onboarding="dispatch-agent-selector">
       <AgentSelector
         bind:selected={selectedAgents}
         {classification}
@@ -262,68 +366,259 @@
     </div>
 
     {#if isLive || isTerminalPhase}
-      <div class="px-3 py-2 border-b border-[#0f172a]">
-        <div class="flex items-center justify-between mb-1">
-          <span class="text-[9px] text-[#475569] uppercase tracking-wider">Pipeline</span>
-        </div>
+      <div class="sd-section-body">
+        <p class="sd-meta-label">Pipeline</p>
         <TaskDAG agents={selectedAgents} {agentStates} />
       </div>
     {/if}
 
-    <div class="flex gap-2 px-3 py-2">
+    <div class="sd-action-row">
       {#if isLive}
-        <button
-          onclick={cancel}
-          class="flex-1 py-1 text-[10px] rounded border border-[#ef4444]/40
-                 text-[#ef4444] hover:border-[#ef4444] hover:bg-[#ef4444]/10 transition-colors"
-        >
-          Cancel
-        </button>
+        <button class="sd-btn sd-btn-danger" onclick={cancel}>Cancel</button>
       {:else if isTerminalPhase}
-        <button
-          onclick={reset}
-          class="flex-1 py-1 text-[10px] rounded border border-[#1e293b]
-                 text-[#94a3b8] hover:border-[#334155] transition-colors"
-        >
-          New Dispatch
-        </button>
+        <button class="sd-btn sd-btn-ghost" onclick={reset}>New Dispatch</button>
       {/if}
     </div>
-  </div>
+  </aside>
 
-  <!-- ── Centre: live agent grid + mailbox stream ── -->
-  <div class="flex flex-col flex-1 min-w-0 overflow-hidden">
+  <!-- ── Centre: live agents + event stream ── -->
+  <main class="sd-centre" aria-label="Live agent workspace">
 
-    <!-- Agent cards -->
-    <div class="px-3 pt-3 pb-2 border-b border-[#0f172a]" data-onboarding="dispatch-live-grid">
-      <p class="text-[9px] text-[#475569] uppercase tracking-wider mb-2">Live agents</p>
-      <LiveAgentGrid agents={isLive || isTerminalPhase ? selectedAgents : []} {agentStates} />
-    </div>
-
-    <!-- Error banner -->
-    {#if errorMsg}
-      <div class="mx-3 mt-2 px-3 py-2 rounded border border-[#ef4444]/30 bg-[#ef4444]/10
-                  text-[10px] text-[#ef4444]">
-        {errorMsg}
-      </div>
+    <!-- Scanline sweep overlay — plays once per dispatch -->
+    {#if scanlineActive}
+      {#key scanlineKey}
+        <div class="sd-scanline" aria-hidden="true"></div>
+      {/key}
     {/if}
 
-    <!-- Mailbox stream -->
-    <div class="flex-1 min-h-0 relative px-3 py-2" data-onboarding="dispatch-mailbox">
-      <p class="text-[9px] text-[#475569] uppercase tracking-wider mb-1">Event stream</p>
-      <div class="h-full">
-        <MailboxStream {events} />
-      </div>
-    </div>
-  </div>
+    <section class="sd-agents-section" data-onboarding="dispatch-live-grid">
+      <p class="sd-meta-label">Live agents</p>
+      <LiveAgentGrid agents={isLive || isTerminalPhase ? selectedAgents : []} {agentStates} />
+    </section>
+
+    {#if errorMsg}
+      <div class="sd-error-banner" role="alert">{errorMsg}</div>
+    {/if}
+
+    <section class="sd-stream-section" data-onboarding="dispatch-mailbox">
+      <p class="sd-meta-label">Event stream</p>
+      <MailboxStream {events} />
+    </section>
+  </main>
 
   <!-- ── Right rail: history ── -->
-  <div class="w-52 flex-shrink-0 border-l border-[#0f172a] overflow-y-auto" data-onboarding="dispatch-history">
+  <aside class="sd-rail sd-rail-right" data-onboarding="dispatch-history" aria-label="Dispatch history">
     <HistoryRail
       {history}
       onSelect={replayFromHistory}
       onClear={clearHistory}
     />
-  </div>
+  </aside>
 
 </div>
+
+<style>
+  /* ── Root shell ── */
+  .sd-root {
+    position: relative;
+    display: flex;
+    height: 100%;
+    background: var(--la-bg-void);
+    color: var(--la-text-bright);
+    overflow: hidden;
+    font-family: var(--la-font-chrome);
+  }
+
+  /* ── Rails ── */
+  .sd-rail {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow-y: auto;
+  }
+  .sd-rail-left  { width: 17rem; border-right: 1px solid var(--la-hair-base); }
+  .sd-rail-right { width: 13rem; border-left:  1px solid var(--la-hair-base); }
+
+  /* ── Centre column ── */
+  .sd-centre {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  /* ── Section primitives ── */
+  .sd-section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid var(--la-hair-base);
+    flex-shrink: 0;
+  }
+  .sd-section-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: var(--la-tk-loose);
+    text-transform: uppercase;
+    color: var(--la-text-stark);
+    flex: 1;
+  }
+  .sd-section-body {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--la-hair-base);
+  }
+  .sd-agents-section {
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid var(--la-hair-base);
+    flex-shrink: 0;
+  }
+  .sd-stream-section {
+    flex: 1;
+    min-height: 0;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+  }
+  .sd-meta-label {
+    font-size: 9px;
+    letter-spacing: var(--la-tk-mid);
+    text-transform: uppercase;
+    color: var(--la-text-dim);
+    margin: 0 0 6px;
+  }
+
+  /* ── Phase badges ── */
+  .sd-phase {
+    font-size: 9px;
+    font-family: var(--la-font-mono);
+    letter-spacing: 0.04em;
+  }
+  .sd-phase-classifying { color: var(--la-agent-engineer); animation: pulse 1.2s ease-in-out infinite; }
+  .sd-phase-live        { color: var(--la-agent-researcher); }
+  .sd-phase-ok          { color: var(--la-agent-researcher); }
+  .sd-phase-err         { color: var(--la-agent-security); }
+
+  /* ── Action row ── */
+  .sd-action-row {
+    display: flex;
+    gap: 8px;
+    padding: 8px 12px;
+    margin-top: auto;
+  }
+  .sd-btn {
+    flex: 1;
+    padding: 4px 0;
+    font-size: 10px;
+    font-family: var(--la-font-chrome);
+    border-radius: var(--la-radius-md);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all var(--la-t-snap) var(--la-ease-mech);
+  }
+  .sd-btn-danger {
+    background: var(--la-danger-bg);
+    border-color: var(--la-danger-stroke);
+    color: var(--la-danger-text);
+  }
+  .sd-btn-danger:hover { box-shadow: 0 0 0 2px var(--la-danger-glow); }
+  .sd-btn-ghost {
+    background: transparent;
+    border-color: var(--la-hair-strong);
+    color: var(--la-text-base);
+  }
+  .sd-btn-ghost:hover { border-color: var(--la-text-dim); color: var(--la-text-bright); }
+
+  /* ── Error banner ── */
+  .sd-error-banner {
+    margin: 8px 12px 0;
+    padding: 6px 10px;
+    border-radius: var(--la-radius-md);
+    background: var(--la-danger-bg);
+    border: 1px solid var(--la-danger-stroke);
+    color: var(--la-danger-text);
+    font-size: 10px;
+  }
+
+  /* ── Cinematic: full-screen flash on dispatch ── */
+  .dispatch-flash {
+    position: fixed;
+    inset: 0;
+    background: var(--la-agent-researcher);
+    pointer-events: none;
+    z-index: 40;
+    animation: dispatch-flash 0.45s var(--la-ease-mech) forwards;
+  }
+  @keyframes dispatch-flash {
+    0%   { opacity: 0; }
+    15%  { opacity: 0.12; }
+    100% { opacity: 0; }
+  }
+
+  /* ── Cinematic: scanline sweep in centre column ── */
+  .sd-scanline {
+    position: absolute;
+    left: 0; right: 0;
+    top: -3px;
+    height: 2px;
+    background: linear-gradient(
+      to right,
+      transparent 0%,
+      var(--la-agent-researcher) 30%,
+      color-mix(in srgb, var(--la-agent-researcher) 80%, white) 50%,
+      var(--la-agent-researcher) 70%,
+      transparent 100%
+    );
+    pointer-events: none;
+    z-index: 10;
+    animation: sd-scanline 0.65s var(--la-ease-mech) forwards;
+  }
+  @keyframes sd-scanline {
+    0%   { top: -3px; opacity: 0; }
+    8%   { opacity: 1; }
+    92%  { opacity: 1; }
+    100% { top: calc(100% + 3px); opacity: 0; }
+  }
+
+  /* ── Corner bracket pulse when dispatching ── */
+  [data-dispatching="true"] {
+    --corner-bracket-size: 18px;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+  }
+
+  /* ── Classifier badge ── */
+  .sd-classifier-badge {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--la-hair-base);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sd-classifier-agents {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .sd-agent-pill {
+    font-size: 9px;
+    font-family: var(--la-font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: 2px;
+    border: 1px solid;
+  }
+  .sd-classifier-rationale {
+    font-size: 9px;
+    color: var(--la-text-dim);
+    margin: 0;
+    line-height: 1.4;
+    font-style: italic;
+  }
+</style>

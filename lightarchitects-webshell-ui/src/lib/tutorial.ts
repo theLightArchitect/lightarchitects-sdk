@@ -74,8 +74,10 @@ function buildTour(id: TutorialId): Tour | null {
   switch (id) {
     case 't1': return tutorialT1FirstBuild();
     case 't2': return tutorialT2MemoryDrawer();
+    case 't3': return tutorialT3PlanBuilder();
+    case 't4': return tutorialT4SlashCommands();
+    case 't5': return tutorialT5Sitrep();
     case 't6': return tutorialT6SquadDispatch();
-    // T3-T5 land in follow-up task (#31)
     default: return null;
   }
 }
@@ -208,6 +210,168 @@ function tutorialT2MemoryDrawer(): Tour {
     title: 'Search the Vault',
     text: `<p>Search across all cold entries. Three modes: <strong>BM25</strong> (keyword), <strong>Semantic</strong> (embedding-based), <strong>Hybrid</strong> (RRF fusion of both). Look for the RRF badge — it means results were blended from multiple retrieval signals.</p>`,
     attachTo: { element: '[data-onboarding="memory-search"]', on: 'bottom' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Got it', action: () => tour.complete(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  return tour;
+}
+
+function tutorialT3PlanBuilder(): Tour {
+  const tour = new Shepherd.Tour({
+    useModalOverlay: true,
+    defaultStepOptions: {
+      classes: 'la-shepherd',
+      scrollTo: { behavior: 'smooth', block: 'center' },
+      cancelIcon: { enabled: true },
+    },
+  });
+
+  tour.addStep({
+    id: 't3-intro',
+    title: 'Plan Builder',
+    text: `<p>Plan Builder lets you review and edit the full phase pipeline before a single line of code runs.</p>
+           <p>Press <kbd>Esc</kbd> any time to dismiss.</p>`,
+    attachTo: { element: '[data-onboarding="intake-mode-toggle"]', on: 'bottom' },
+    buttons: [
+      { text: 'Skip', action: () => tour.cancel(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't3-phases',
+    title: 'Phases & gates',
+    text: 'Each row is a LASDLC phase. Expand it to see the ASQPTDO gate checklist — Architecture, Security, Quality, Performance, Testing, Documentation, Operations. Every gate must pass before the next phase starts.',
+    attachTo: { element: '[data-onboarding="intake-plan-phases"]', on: 'right' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't3-edit',
+    title: 'Edit before launching',
+    text: 'You can rename phases, reorder them, or remove gates that don\'t apply. The squad uses this plan as its authoritative spec — changes here are respected at runtime.',
+    attachTo: { element: '[data-onboarding="intake-plan-phases"]', on: 'right' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't3-submit',
+    title: 'Launch the plan',
+    text: 'When the plan looks right, click Create. The squad picks up the first phase immediately.',
+    attachTo: { element: '[data-onboarding="intake-submit"]', on: 'top' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Got it', action: () => tour.complete(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  return tour;
+}
+
+function tutorialT4SlashCommands(): Tour {
+  const tour = new Shepherd.Tour({
+    useModalOverlay: true,
+    defaultStepOptions: {
+      classes: 'la-shepherd',
+      scrollTo: { behavior: 'smooth', block: 'center' },
+      cancelIcon: { enabled: true },
+    },
+  });
+
+  tour.addStep({
+    id: 't4-intro',
+    title: 'Slash Commands',
+    text: `<p>The Copilot input supports slash commands — type <kbd>/</kbd> to see all available actions. This tour covers the key commands.</p>
+           <p>Press <kbd>Esc</kbd> any time to dismiss.</p>`,
+    attachTo: { element: '[data-onboarding="copilot-input"]', on: 'top' },
+    buttons: [
+      { text: 'Skip', action: () => tour.cancel(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't4-type-slash',
+    title: 'Try it now',
+    text: 'Type <kbd>/</kbd> in the input below to open the command palette. Arrow keys navigate; <kbd>Enter</kbd> selects; <kbd>Esc</kbd> dismisses.',
+    attachTo: { element: '[data-onboarding="copilot-input"]', on: 'top' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't4-build',
+    title: '/BUILD — the workhorse',
+    text: '<kbd>/BUILD &lt;task&gt;</kbd> runs the full engineer→guard→review pipeline. It\'s the same as creating a build from Intake, but faster to invoke inline.',
+    attachTo: { element: '[data-onboarding="copilot-input"]', on: 'top' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't4-squad',
+    title: '/SQUAD — multi-agent presets',
+    text: '<kbd>/SQUAD &lt;preset&gt;</kbd> dispatches a named preset — like <code>software_engineering</code>, <code>security</code>, or <code>code_review</code>. Append <code>--then &lt;preset2&gt;</code> to chain phases.',
+    attachTo: { element: '[data-onboarding="copilot-input"]', on: 'top' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Got it', action: () => tour.complete(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  return tour;
+}
+
+function tutorialT5Sitrep(): Tour {
+  const tour = new Shepherd.Tour({
+    useModalOverlay: true,
+    defaultStepOptions: {
+      classes: 'la-shepherd',
+      scrollTo: { behavior: 'smooth', block: 'center' },
+      cancelIcon: { enabled: true },
+    },
+  });
+
+  tour.addStep({
+    id: 't5-intro',
+    title: 'SITREP — Situation Report',
+    text: `<p>SITREP is your platform health dashboard. At a glance you can see build queue depth, squad agent status, active alerts, and system health.</p>
+           <p>Press <kbd>Esc</kbd> any time to dismiss.</p>`,
+    buttons: [
+      { text: 'Skip', action: () => tour.cancel(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't5-squad-health',
+    title: 'Squad health cards',
+    text: 'Each card shows one domain agent — its current status, uptime, and heartbeat freshness. An amber badge means the heartbeat is 30–120s stale; red means >120s (likely offline).',
+    attachTo: { element: '[data-onboarding="sitrep-squad-health"]', on: 'top' },
+    buttons: [
+      { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
+      { text: 'Next', action: () => tour.next(), classes: 'la-shepherd-primary' },
+    ],
+  });
+
+  tour.addStep({
+    id: 't5-expand',
+    title: 'Expand for details',
+    text: 'Click any card to expand it — you\'ll see the heartbeat timestamp and the agent\'s declared capabilities. Useful when debugging a stale or offline agent.',
+    attachTo: { element: '[data-onboarding="sitrep-squad-health"]', on: 'top' },
     buttons: [
       { text: 'Back', action: () => tour.back(), classes: 'la-shepherd-secondary' },
       { text: 'Got it', action: () => tour.complete(), classes: 'la-shepherd-primary' },

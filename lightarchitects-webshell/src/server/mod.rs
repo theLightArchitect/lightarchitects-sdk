@@ -17,7 +17,7 @@ use axum::{
     extract::State,
     http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header},
     response::IntoResponse,
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
 };
 use tokio::sync::{Mutex, RwLock, broadcast};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -26,7 +26,7 @@ use tracing::info;
 use crate::{
     auth,
     config::{AgentSession, Config},
-    coordination, copilot,
+    coordination, copilot, csp,
     dispatch::{self, DispatchRegistry},
     events::{self, EVENT_CHANNEL_BUF, WebEvent, builds_handler},
     polytope_data, real_data,
@@ -322,6 +322,7 @@ pub fn build_app(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/auth-check", get(auth_check))
+        .route("/api/auth/session", delete(auth_logout))
         .route("/api/terminal/ws", get(terminal::ws::ws_handler))
         .route("/api/events", get(events::sse_handler::sse_handler))
         .route("/api/control", post(events::control_handler))
@@ -486,7 +487,11 @@ pub fn build_app(state: AppState) -> Router {
         .merge(dispatch::dispatch_router())
         // ── File listing for @-file autocomplete ─────────────────────────────
         .route("/api/files", get(list_files_handler))
+        // ── CSP violation reports (SEC-3b, Enforce phase) ────────────────────
+        .route("/api/csp-report", post(csp::csp_report_handler))
         .fallback(static_assets::serve)
+        // SEC-3b: Enforce-mode CSP — violations are blocked.
+        .layer(axum::middleware::from_fn(csp::enforce_layer))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -767,6 +772,26 @@ async fn auth_check(State(state): State<AppState>, headers: HeaderMap) -> impl I
     } else {
         StatusCode::UNAUTHORIZED
     }
+}
+
+/// `DELETE /api/auth/session` — removes the persisted bearer token from file + keyring.
+///
+/// Authenticated — requires a valid `Authorization: Bearer <token>` header.
+/// Returns 204 No Content on success; the server continues running with the
+/// in-memory token (the *next* startup will generate a fresh one).
+async fn auth_logout(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let Some(authz) = headers.get("authorization") else {
+        return StatusCode::UNAUTHORIZED;
+    };
+    let Ok(authz_str) = authz.to_str() else {
+        return StatusCode::UNAUTHORIZED;
+    };
+    if !auth::validate_bearer(authz_str, &state.config.token) {
+        return StatusCode::UNAUTHORIZED;
+    }
+    crate::config::remove_persisted_token();
+    tracing::info!(target: "webshell", "Auth session logout: persisted token cleared");
+    StatusCode::NO_CONTENT
 }
 
 /// `GET /api/browser-state` — returns the latest browser UI state snapshot.

@@ -50,10 +50,38 @@
   /* #94a3b8 (slate-400): 8:1 on #0a0a0f, 6.7:1 on #111827 (AA all sizes).  */
   --la-text-label: #94a3b8;
 
+  /* ── Ops-console background scale (squad-dispatch.html §DESIGN-TOKENS) ── */
+  --la-bg-void:   #08090a;   /* deepest surface — body background            */
+  --la-bg-frame:  #0c0d0e;   /* raised panels, cards, drawers                */
+  --la-bg-elev-1: #111214;   /* hover states, active rows                    */
+  --la-bg-elev-2: #16181b;   /* selected state, input fills                  */
+
+  /* ── Hair / border scale ────────────────────────────────────────────────── */
+  --la-hair-faint:  #16181b; /* gridlines, rule separators                   */
+  --la-hair-base:   #25282d; /* default panel borders                        */
+  --la-hair-strong: #3a3f47; /* emphasis borders, active outlines            */
+
+  /* ── Text scale ──────────────────────────────────────────────────────────── */
+  --la-text-mute:   #3e434a; /* disabled / zero-state labels                 */
+  --la-text-dim:    #5d646e; /* secondary metadata                           */
+  --la-text-base:   #8a929c; /* body / helper text                           */
+  --la-text-bright: #d8dde4; /* primary text                                 */
+  --la-text-stark:  #f6f7f8; /* headings / high-contrast                     */
+
+  /* ── Letter-spacing scale ───────────────────────────────────────────────── */
+  --la-tk-loose: 0.18em;     /* ALL-CAPS section labels, chip codes          */
+  --la-tk-mid:   0.08em;     /* column headers, status labels                */
+  --la-tk-tight: 0.02em;     /* body text, textarea input                    */
+
   /* ── Animation / motion ────────────────────────────────────────────────── */
   --la-transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
   --la-transition-med:  200ms cubic-bezier(0.4, 0, 0.2, 1);
   --la-transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* Mechanical ease — forward-weighted, instrument-panel feel               */
+  --la-ease-mech: cubic-bezier(0.2, 0, 0.4, 1);
+  --la-t-snap:    80ms;
+  --la-t-base:   200ms;
+  --la-t-slow:   400ms;
 
   /* ── Drawer chrome (#34 token-level pass) ──────────────────────────────────
      CopilotDrawer (bottom, push) and MemoryDrawer (right, overlay) consume
@@ -73,6 +101,20 @@
      uses a 56px-fixed header band so the page-title baseline + tab strip below
      never jumps when switching screens. Apply via `.la-screen-header`. */
   --la-header-height: 56px;
+
+  /* ── Domain agent colors (#98 AES-2) ────────────────────────────────────────
+     Canonical palette from squad-dispatch.html. Saturated, domain-meaningful:
+     red=security risk, yellow=quality caution, green=research/go, etc.
+     Used in: Helix 3D legend, dispatch rails, Sitrep rows, status badges.    */
+  --la-agent-engineer:      #4d8eff;
+  --la-agent-quality:       #f5d440;
+  --la-agent-security:      #ff4d4d;
+  --la-agent-ops:           #d24df5;
+  --la-agent-researcher:    #4dff8e;
+  --la-agent-knowledge:     #4dffe6;
+  --la-agent-performance:   #ff8e3c;
+  --la-agent-testing:       #a874ff;
+  --la-agent-documentation: #ff7eb6;
 }
 
 /* ── Zero-state utility ────────────────────────────────────────────────────
@@ -121,3 +163,78 @@
   outline: var(--la-focus-ring-width) solid var(--la-danger-stroke);
   outline-offset: var(--la-focus-ring-offset);
 }
+
+/* ── Ops-console body base (#97 AES-1) ──────────────────────────────────────
+   Void background + engineering graph-paper grid texture.
+   body::before  = 64px hairline grid (depth layer)
+   body::after   = radial vignette (center-clear, edges darken)
+   font-feature-settings applied here so all mono text gets tabular numerals,
+   stylistic alternates ss01/ss02 (JetBrains Mono optical improvements).
+   ============================================================================ */
+body {
+  background: var(--la-bg-void);
+  font-feature-settings: "ss01", "ss02", "tnum";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(to right,  var(--la-hair-faint) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--la-hair-faint) 1px, transparent 1px);
+  background-size: 64px 64px;
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 40%, transparent 35%, rgba(0, 0, 0, 0.55) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── Corner brackets — tactical frame (#99 AES-3) ────────────────────────────
+   Four fixed-position CSS-only decorations at the screen corners.
+   Animate to --la-agent-researcher green during active dispatch.
+   ============================================================================ */
+.corner-bracket {
+  position: fixed;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--la-hair-strong);
+  pointer-events: none;
+  z-index: 50;
+  transition: all var(--la-t-base) var(--la-ease-mech);
+}
+.corner-bracket.tl { top: 8px;    left: 8px;  border-right: none; border-bottom: none; }
+.corner-bracket.tr { top: 8px;    right: 8px; border-left: none;  border-bottom: none; }
+.corner-bracket.bl { bottom: 8px; left: 8px;  border-right: none; border-top: none;    }
+.corner-bracket.br { bottom: 8px; right: 8px; border-left: none;  border-top: none;    }
+
+[data-dispatching="true"] .corner-bracket {
+  width: 18px;
+  height: 18px;
+  border-color: var(--la-agent-researcher);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--la-agent-researcher) 40%, transparent);
+}
+
+/* ── Domain agent color utilities (#98 AES-2) ────────────────────────────────
+   Utility classes for text and background in each agent color.
+   Usage: class="la-agent-engineer" or data-agent="engineer" with CSS var.
+   ============================================================================ */
+[data-agent="engineer"]      { --la-agent-c: var(--la-agent-engineer); }
+[data-agent="quality"]       { --la-agent-c: var(--la-agent-quality); }
+[data-agent="security"]      { --la-agent-c: var(--la-agent-security); }
+[data-agent="ops"]           { --la-agent-c: var(--la-agent-ops); }
+[data-agent="researcher"]    { --la-agent-c: var(--la-agent-researcher); }
+[data-agent="knowledge"]     { --la-agent-c: var(--la-agent-knowledge); }
+[data-agent="performance"]   { --la-agent-c: var(--la-agent-performance); }
+[data-agent="testing"]       { --la-agent-c: var(--la-agent-testing); }
+[data-agent="documentation"] { --la-agent-c: var(--la-agent-documentation); }
