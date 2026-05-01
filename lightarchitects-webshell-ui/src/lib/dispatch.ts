@@ -86,6 +86,8 @@ export interface AgentLiveState {
   token_count?: number;
   /** Milliseconds from agent start to latest state transition. */
   elapsed_ms?: number;
+  /** Most recent tool invocation emitted via ToolUsage SSE event. */
+  last_tool?: { tool: string; action: string; status: 'fired' | 'skipped' | 'failed'; latency_ms?: number };
 }
 
 // ── History entry ─────────────────────────────────────────────────────────────

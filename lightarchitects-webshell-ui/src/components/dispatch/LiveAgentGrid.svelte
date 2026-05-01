@@ -9,9 +9,10 @@
     agents: DomainAgent[];
     agentStates?: Map<DomainAgent, AgentLiveState>;
     onRetry?: (agent: DomainAgent) => void;
+    onSelect?: (agent: DomainAgent) => void;
   }
 
-  let { agents, agentStates = new Map(), onRetry }: Props = $props();
+  let { agents, agentStates = new Map(), onRetry, onSelect }: Props = $props();
 
   const AGENT_META: Record<DomainAgent, { code: string; idx: string; gate: string }> = {
     engineer:   { code: 'ENG', idx: '01', gate: 'A' },
@@ -57,8 +58,9 @@
       {@const state = railState(live)}
       {@const meta = AGENT_META[agent]}
       {@const msg = toolText(live)}
+      {@const tool = live?.last_tool}
 
-      <div class="rail" data-agent={agent} data-state={state} data-testid="agent-rail-{agent}">
+      <div class="rail" data-agent={agent} data-state={state} data-testid="agent-rail-{agent}" onclick={() => onSelect?.(agent)} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.(agent); } }} role="button" tabindex={0} aria-label="Inspect {DOMAIN_AGENT_LABELS[agent]} agent">
         <div class="rail-edge"></div>
         <div class="rail-scan"></div>
 
@@ -79,7 +81,17 @@
         </div>
 
         <div class="rail-tool">
-          {#if msg}
+          {#if tool}
+            <span class="tool-status-dot" data-status={tool.status} aria-hidden="true"></span>
+            <span class="tool-name" data-status={tool.status}>{tool.tool}</span>
+            <span class="tool-sep" aria-hidden="true">·</span>
+            <span class="tool-target">
+              {tool.action}{tool.latency_ms !== undefined ? ` ${tool.latency_ms}ms` : ''}
+            </span>
+            {#if state === 'running' || state === 'dispatched'}
+              <span class="tool-cursor" aria-hidden="true"></span>
+            {/if}
+          {:else if msg}
             <span class="tool-action">{meta.code}</span>
             <span class="tool-target">{msg.length > 72 ? msg.slice(0, 72) + '…' : msg}</span>
             {#if state === 'running' || state === 'dispatched'}
@@ -167,6 +179,7 @@
   }
   .rail:last-child { border-bottom: none; }
   .rail:hover { background: var(--la-bg-elev-1, #111214); }
+  .rail { cursor: pointer; }
 
   /* ── colored left edge ── */
   .rail-edge {
@@ -307,6 +320,36 @@
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-size: 10px;
+    flex-shrink: 0;
+  }
+
+  /* tool activity indicators (ToolUsage events) */
+  .tool-status-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--la-text-mute);
+  }
+  .tool-status-dot[data-status="fired"]   { background: var(--rc); }
+  .tool-status-dot[data-status="skipped"] { background: var(--la-text-mute); opacity: 0.4; }
+  .tool-status-dot[data-status="failed"]  { background: var(--la-agent-security); }
+
+  .tool-name {
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 10px;
+    flex-shrink: 0;
+    color: var(--la-text-mute);
+  }
+  .tool-name[data-status="fired"]   { color: var(--rc); }
+  .tool-name[data-status="skipped"] { color: var(--la-text-mute); opacity: 0.6; }
+  .tool-name[data-status="failed"]  { color: var(--la-agent-security); }
+
+  .tool-sep {
+    color: var(--la-text-mute);
+    font-size: 9px;
     flex-shrink: 0;
   }
   .tool-target {
