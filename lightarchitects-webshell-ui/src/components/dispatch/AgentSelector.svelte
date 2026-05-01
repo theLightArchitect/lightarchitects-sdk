@@ -93,6 +93,9 @@
       <button
         onclick={() => toggle(agent)}
         {disabled}
+        data-testid="agent-btn-{agent.toLowerCase()}"
+        data-agent={agent}
+        aria-pressed={isSelected}
         class="relative px-2 py-1.5 rounded border text-[10px] text-center
                transition-all select-none
                {disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}

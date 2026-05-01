@@ -59,7 +59,7 @@
       {@const meta = AGENT_META[agent]}
       {@const msg = toolText(live)}
 
-      <div class="rail" data-agent={agent} data-state={state}>
+      <div class="rail" data-agent={agent} data-state={state} data-testid="agent-rail-{agent}">
         <div class="rail-edge"></div>
         <div class="rail-scan"></div>
 

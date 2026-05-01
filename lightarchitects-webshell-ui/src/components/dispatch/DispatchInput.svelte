@@ -91,6 +91,7 @@
 <div class="flex flex-col gap-2" data-testid="dispatch-input">
   <div class="relative">
     <textarea
+      data-testid="dispatch-task-input"
       bind:value={task}
       {disabled}
       placeholder="Describe the task for the squad… (⌘↩ to dispatch)"
@@ -160,6 +161,7 @@
   <div class="flex items-center justify-between gap-2">
     <label class="flex items-center gap-1.5 cursor-pointer select-none">
       <input
+        data-testid="dispatch-dry-toggle"
         type="checkbox"
         bind:checked={dry}
         {disabled}
@@ -196,6 +198,7 @@
       </button>
 
       <button
+        data-testid="dispatch-submit"
         onclick={submit}
         disabled={!canSubmit}
         class="px-3 py-1 text-[10px] font-medium rounded transition-colors

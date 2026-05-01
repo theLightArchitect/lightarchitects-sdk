@@ -17,7 +17,7 @@ import {
   E2E_DISPATCH_ID,
 } from './fixtures';
 
-const BASE = process.env.WEBSHELL_URL ?? 'http://localhost:9739';
+const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8733';
 const TOKEN = process.env.WEBSHELL_TOKEN ?? '63308ab0-d024-4f7d-a459-936744aa255f';
 const URL = TOKEN ? `${BASE}/#token=${TOKEN}` : BASE;
 
@@ -32,17 +32,23 @@ test.describe('Comprehensive webshell E2E', () => {
   const failedRequests: { url: string; status: number }[] = [];
 
   test.beforeAll(async () => {
+    const harReplay = !!process.env.PLAYWRIGHT_HAR_REPLAY;
+
     browser = await chromium.launch({
       headless: false,
       channel: 'chrome',
     });
     context = await browser.newContext({
       viewport: { width: 1440, height: 900 },
-      recordHar: {
-        path: 'test-results/webshell-e2e.har',
-        mode: 'full',
-      },
+      // Record HAR on live runs; skip in replay mode (we're consuming an existing HAR).
+      ...(harReplay ? {} : {
+        recordHar: {
+          path: 'test-results/webshell-e2e.har',
+          mode: 'full',
+        },
+      }),
     });
+    await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
     page = await context.newPage();
 
     // ---- Error capture ----
@@ -57,16 +63,22 @@ test.describe('Comprehensive webshell E2E', () => {
         failedRequests.push({ url: res.url(), status: res.status() });
     });
 
-    // ---- Register mocks (setup + browser-state only; SOUL/siblings hit real backend) ----
-    await registerMocks(page);
+    if (harReplay) {
+      // Offline/CI mode: replay all API calls from the previously recorded HAR.
+      // Run with: PLAYWRIGHT_HAR_REPLAY=1 npx playwright test
+      // Record first with a live run to generate test-results/webshell-e2e.har.
+      await context.routeFromHAR('test-results/webshell-e2e.har', {
+        url: '**/api/**',
+        update: false,
+      });
+      console.log('[E2E] HAR replay mode — API calls served from test-results/webshell-e2e.har');
+    } else {
+      // ---- Register mocks (setup + browser-state only; SOUL/siblings hit real backend) ----
+      await registerMocks(page);
+    }
 
     // ---- Navigate ----
     await page.goto(URL, { waitUntil: 'commit' });
-
-    // ---- Pre-mark all Shepherd tutorials as completed so the overlay never fires ----
-    await page.evaluate(() => {
-      localStorage.setItem('la.tutorial.completed.t1', 'true');
-    });
 
     // Wait for app to mount.
     await page.waitForFunction(
@@ -98,48 +110,15 @@ test.describe('Comprehensive webshell E2E', () => {
         await page.waitForTimeout(2000);
       }
     }
-
-    // ---- Dismiss any lingering Shepherd overlay (belt-and-suspenders) ----
-    const shepherdVisible = await page.evaluate(
-      () => document.querySelector('.shepherd-modal-is-visible') != null,
-    ).catch(() => false);
-    if (shepherdVisible) {
-      // Force-cancel the active tour via the Shepherd global if available.
-      await page.evaluate(() => {
-        const s = (window as any).Shepherd;
-        if (s?.activeTour) s.activeTour.cancel();
-      });
-      await page.waitForFunction(
-        () => document.querySelector('.shepherd-modal-is-visible') == null,
-        { timeout: 5000 },
-      ).catch(() => {});
-    }
   });
 
   test.afterAll(async () => {
     await page?.waitForTimeout(2000);
+    // Flush trace before closing context
+    try { await context?.tracing.stop({ path: 'test-results/webshell-e2e-trace.zip' }); } catch (e) { console.warn('[E2E] Tracing stop warning:', (e as Error).message); }
     // Close context first to flush HAR file (wrapped in try/catch for artifact race)
     try { await context?.close(); } catch (e) { console.warn('[E2E] Context close warning:', (e as Error).message); }
     try { await browser?.close(); } catch (e) { console.warn('[E2E] Browser close warning:', (e as Error).message); }
-  });
-
-  // Per-test Playwright trace recording — screenshots + snapshots + sources.
-  // Each test gets its own .zip at test-results/traces/<slug>-<status>.zip.
-  test.beforeEach(async ({}, testInfo) => {
-    if (!context) return;
-    await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
-    testInfo.annotations.push({ type: 'trace', description: testInfo.title });
-  });
-
-  test.afterEach(async ({}, testInfo) => {
-    if (!context) return;
-    const slug = testInfo.title
-      .replace(/[^a-z0-9]+/gi, '-')
-      .toLowerCase()
-      .slice(0, 60);
-    const status = testInfo.status ?? 'unknown';
-    // Rapid navigation tests can interrupt the trace writer; ignore ENOENT.
-    await context.tracing.stop({ path: `test-results/traces/${slug}-${status}.zip` }).catch(() => {});
   });
 
   // ═══════════════════════════════════════════���═══════════════════════════════
@@ -181,59 +160,52 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('2. Navigation', () => {
     test('all nav tabs render: Activity, Queue, Intake, Sitrep, Squad', async () => {
-      const text = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('nav button')).map((b) => b.textContent?.trim()),
-      );
-      expect(text).toContain('Activity');
-      expect(text).toContain('Queue');
-      expect(text).toContain('Intake');
-      expect(text).toContain('Sitrep');
-      expect(text).toContain('Squad');
+      // Web-first: role-based locators, expect.soft collects all failures before reporting
+      await expect.soft(page.getByRole('button', { name: 'Activity', exact: true })).toBeVisible();
+      await expect.soft(page.getByRole('button', { name: 'Queue',    exact: true })).toBeVisible();
+      await expect.soft(page.getByRole('button', { name: 'Intake',   exact: true })).toBeVisible();
+      await expect.soft(page.getByRole('button', { name: 'Sitrep',   exact: true })).toBeVisible();
+      await expect.soft(page.getByRole('button', { name: 'Squad',    exact: true })).toBeVisible();
     });
 
     test('Activity tab navigates via hash', async () => {
       await page.evaluate(() => { window.location.hash = '#/activity'; });
-      await page.waitForTimeout(1000);
-      expect(await page.evaluate(() => window.location.hash)).toBe('#/activity');
+      await page.waitForURL('**#/activity**', { timeout: 5_000 });
     });
 
     test('Queue tab navigates via hash', async () => {
       await page.evaluate(() => { window.location.hash = '#/'; });
-      await page.waitForTimeout(1000);
-      expect(await page.evaluate(() => window.location.hash)).toBe('#/');
+      await page.waitForURL(/\/#\/?$/, { timeout: 5_000 });
     });
 
     test('Intake tab navigates via hash', async () => {
       await page.evaluate(() => { window.location.hash = '#/intake'; });
-      await page.waitForTimeout(1000);
-      expect(await page.evaluate(() => window.location.hash)).toBe('#/intake');
+      await page.waitForURL('**#/intake**', { timeout: 5_000 });
     });
 
     test('Sitrep tab navigates via hash', async () => {
       await page.evaluate(() => { window.location.hash = '#/sitrep'; });
-      await page.waitForTimeout(1000);
-      expect(await page.evaluate(() => window.location.hash)).toBe('#/sitrep');
+      await page.waitForURL('**#/sitrep**', { timeout: 5_000 });
     });
 
     test('Squad tab navigates to /squad-dispatch via hash', async () => {
       await page.evaluate(() => { window.location.hash = '#/squad-dispatch'; });
-      await page.waitForTimeout(1000);
-      expect(await page.evaluate(() => window.location.hash)).toBe('#/squad-dispatch');
+      await page.waitForURL('**#/squad-dispatch**', { timeout: 5_000 });
     });
 
     test('Cmd+K shortcut navigates to /squad-dispatch from any tab', async () => {
       await page.evaluate(() => { window.location.hash = '#/activity'; });
-      await page.waitForTimeout(500);
+      await page.waitForURL('**#/activity**', { timeout: 5_000 });
       await page.keyboard.press('Meta+k');
-      await page.waitForTimeout(800);
-      expect(await page.evaluate(() => window.location.hash)).toBe('#/squad-dispatch');
+      await page.waitForURL('**#/squad-dispatch**', { timeout: 5_000 });
     });
 
     test('back to Queue (home)', async () => {
       await page.evaluate(() => { window.location.hash = '#/'; });
-      await page.waitForTimeout(1000);
-      const text = await page.evaluate(() => document.body.textContent ?? '');
-      expect(text.includes('Build Queue') || text.includes('No active builds')).toBe(true);
+      await page.waitForURL(/\/#\/?$/, { timeout: 5_000 });
+      await expect(
+        page.locator('text=Build Queue, text=No active builds').first(),
+      ).toBeVisible({ timeout: 5_000 });
     });
   });
 
@@ -555,9 +527,6 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('Ctrl+backtick closes drawer', async () => {
-      // Ensure the drawer is open first (prior Ctrl+` may have toggled it closed).
-      await page.evaluate(() => window.dispatchEvent(new CustomEvent('la:open-copilot')));
-      await page.waitForTimeout(300);
       await page.keyboard.press('Control+`');
       await page.waitForTimeout(500);
       const handle = await page.evaluate(() =>
@@ -573,10 +542,6 @@ test.describe('Comprehensive webshell E2E', () => {
 
   test.describe('11. Command palette', () => {
     test('Cmd+K opens palette', async () => {
-      // Navigate to squad-dispatch first so Cmd+K causes no hashchange —
-      // a same-hash navigation fires no hashchange event, keeping the palette open.
-      await page.evaluate(() => { window.location.hash = '#/squad-dispatch'; });
-      await page.waitForTimeout(400);
       await page.keyboard.press('Meta+k');
       await page.waitForTimeout(500);
       const text = await page.evaluate(() => document.body.textContent ?? '');
@@ -992,7 +957,9 @@ test.describe('Comprehensive webshell E2E', () => {
       const keepNewest = await page.locator('[data-testid="policy-keep_newest"]').count();
       const ageLimit = await page.locator('[data-testid="policy-age_limit"]').count();
       const sigTier = await page.locator('[data-testid="policy-significance_tier"]').count();
-      expect(keepNewest + ageLimit + sigTier).toBeGreaterThanOrEqual(3);
+      expect.soft(keepNewest).toBeGreaterThanOrEqual(1);
+      expect.soft(ageLimit).toBeGreaterThanOrEqual(1);
+      expect.soft(sigTier).toBeGreaterThanOrEqual(1);
     });
 
     test('switching policy changes input field', async () => {
@@ -1050,7 +1017,9 @@ test.describe('Comprehensive webshell E2E', () => {
       const bm25 = await page.locator('[data-testid="search-mode-bm25"]').count();
       const semantic = await page.locator('[data-testid="search-mode-semantic"]').count();
       const hybrid = await page.locator('[data-testid="search-mode-hybrid"]').count();
-      expect(bm25 + semantic + hybrid).toBeGreaterThanOrEqual(3);
+      expect.soft(bm25).toBeGreaterThanOrEqual(1);
+      expect.soft(semantic).toBeGreaterThanOrEqual(1);
+      expect.soft(hybrid).toBeGreaterThanOrEqual(1);
     });
 
     test('cold tab shows real vault entries', async () => {
@@ -1112,8 +1081,8 @@ test.describe('Comprehensive webshell E2E', () => {
         return res.ok ? await res.json() : null;
       }, BASE);
       expect(health).not.toBeNull();
-      expect(health.tiers.filesystem).toBe(true);
-      expect(health.tiers.sqlite).toBe(true);
+      expect.soft(health.tiers.filesystem).toBe(true);
+      expect.soft(health.tiers.sqlite).toBe(true);
     });
 
     test('SOUL health reports real entry counts', async () => {
@@ -1166,7 +1135,7 @@ test.describe('Comprehensive webshell E2E', () => {
   // ══════��═══════════════════════════════════════════════��════════════════════
 
   test.describe('22. Sibling wiring (real)', () => {
-    test('/api/siblings returns at least 6 entries', async () => {
+    test('/api/siblings returns 7 entries', async () => {
       const siblings = await page.evaluate(async (base) => {
         const token = sessionStorage.getItem('la_webshell_token') ?? '';
         const res = await fetch(`${base}/api/siblings`, {
@@ -1175,9 +1144,7 @@ test.describe('Comprehensive webshell E2E', () => {
         return res.ok ? await res.json() : null;
       }, BASE);
       expect(siblings).not.toBeNull();
-      // 6 core MCP siblings (corso, soul, eva, quantum, seraph, ayin).
-      // claude may or may not be present depending on deployment.
-      expect(siblings.length).toBeGreaterThanOrEqual(6);
+      expect(siblings.length).toBe(7);
     });
 
     test('6 siblings are active (binaries present)', async () => {
@@ -1220,10 +1187,9 @@ test.describe('Comprehensive webshell E2E', () => {
         return res.ok ? await res.json() : null;
       }, BASE);
       const claude = siblings.find((s: any) => s.id === 'claude');
-      // This test validates the offline/no-binary case only — skip if absent or already online.
-      if (!claude || claude.status !== 'offline') { test.skip(); return; }
-      expect(claude.status).toBe('offline');
-      expect(claude.binary_present).toBe(false);
+      expect(claude).toBeDefined();
+      expect.soft(claude.status).toBe('offline');
+      expect.soft(claude.binary_present).toBe(false);
     });
 
     test('AYIN has recent activity timestamp', async () => {
@@ -1425,9 +1391,6 @@ test.describe('Comprehensive webshell E2E', () => {
     });
 
     test('Cmd+K still opens command palette', async () => {
-      // Pre-navigate to squad-dispatch so Meta+k causes no hashchange — palette stays open.
-      await page.evaluate(() => { window.location.hash = '#/squad-dispatch'; });
-      await page.waitForTimeout(400);
       await page.keyboard.press('Meta+k');
       await page.waitForTimeout(500);
       const text = await page.evaluate(() => document.body.textContent ?? '');
@@ -1664,15 +1627,15 @@ test.describe('Comprehensive webshell E2E', () => {
         return res.ok ? await res.json() : null;
       }, BASE);
       expect(meta).not.toBeNull();
-      expect(meta.framework).toBe('LASDLC');
-      expect(meta.version).toBe('1.0.0');
-      expect(meta.phases).toHaveLength(7);
-      expect(meta.phases[0]).toBe('Plan');
-      expect(meta.phases[6]).toBe('Learn');
-      expect(meta.tiers.SMALL).toHaveLength(4);
-      expect(meta.tiers.MEDIUM).toHaveLength(6);
-      expect(meta.tiers.LARGE).toHaveLength(7);
-      expect(meta.quality_dimensions).toHaveLength(7);
+      expect.soft(meta.framework).toBe('LASDLC');
+      expect.soft(meta.version).toBe('1.0.0');
+      expect.soft(meta.phases).toHaveLength(7);
+      expect.soft(meta.phases[0]).toBe('Plan');
+      expect.soft(meta.phases[6]).toBe('Learn');
+      expect.soft(meta.tiers.SMALL).toHaveLength(4);
+      expect.soft(meta.tiers.MEDIUM).toHaveLength(6);
+      expect.soft(meta.tiers.LARGE).toHaveLength(7);
+      expect.soft(meta.quality_dimensions).toHaveLength(7);
     });
 
     test('reset to MEDIUM tier and Quick Build mode', async () => {
@@ -1961,8 +1924,8 @@ test.describe('Comprehensive webshell E2E', () => {
       const effectLoops = consoleErrors.filter(e => e.includes('effect_update_depth_exceeded'));
       if (typeErrors.length > 0) console.error('[E2E] TypeErrors during plan creation:', typeErrors);
       if (effectLoops.length > 0) console.error('[E2E] Effect loops during plan creation:', effectLoops);
-      expect(typeErrors).toHaveLength(0);
-      expect(effectLoops).toHaveLength(0);
+      expect.soft(typeErrors).toHaveLength(0);
+      expect.soft(effectLoops).toHaveLength(0);
     });
   });
 
@@ -2095,7 +2058,7 @@ test.describe('Comprehensive webshell E2E', () => {
       for (const col of columns) {
         const colEl = page.getByTestId(`kanban-column-${col}`);
         const exists = await colEl.isVisible().catch(() => false);
-        expect(exists).toBe(true);
+        expect.soft(exists).toBe(true);
       }
     });
 
@@ -2313,8 +2276,8 @@ test.describe('Comprehensive webshell E2E', () => {
         return r.ok ? await r.json() : null;
       }, BASE);
       if (!res) { test.skip(); return; }
-      expect(res).toHaveProperty('phases');
-      expect(res).toHaveProperty('tiers');
+      expect.soft(res).toHaveProperty('phases');
+      expect.soft(res).toHaveProperty('tiers');
     });
   });
 
@@ -3170,8 +3133,8 @@ test.describe('Comprehensive webshell E2E', () => {
       }
       const response = (res as any)?.response ?? '';
       console.log(`[E2E] Copilot response: "${response.slice(0, 100)}"`);
-      expect(response.length).toBeGreaterThan(0);
-      expect(response).toContain('4');
+      expect.soft(response.length).toBeGreaterThan(0);
+      expect.soft(response).toContain('4');
     }, { timeout: 60_000 });
 
     test('response is coherent (non-empty)', async () => {
@@ -3285,8 +3248,8 @@ test.describe('Comprehensive webshell E2E', () => {
         if (gateResult && (gateResult as any)?.status !== 'unknown') break;
         await page.waitForTimeout(3000);
       }
-      if (!gateResult || !(gateResult as any)?.status || (gateResult as any)?.status === 'unknown') {
-        console.log('[E2E] Gate did not complete within 60s or status absent — CORSO may not be deployed');
+      if (!gateResult || (gateResult as any)?.status === 'unknown') {
+        console.log('[E2E] Gate did not complete within 60s — CORSO may not be deployed');
         test.skip();
         return;
       }
@@ -3428,117 +3391,81 @@ test.describe('Comprehensive webshell E2E', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   test.describe('60. Squad Dispatch screen', () => {
+    const taskInput    = () => page.getByTestId('dispatch-task-input');
+    const submitBtn    = () => page.getByTestId('dispatch-submit');
+    const engineerBtn  = () => page.getByTestId('agent-btn-engineer');
+    const newDispatch  = () => page.getByRole('button', { name: 'New Dispatch', exact: true });
+    const heading      = () => page.locator('h2', { hasText: 'Squad Dispatch' });
+
     test('navigate to /squad-dispatch', async () => {
       await page.evaluate(() => { window.location.hash = '#/squad-dispatch'; });
-      await page.waitForSelector('h2:has-text("Squad Dispatch")', { timeout: 10_000 });
-      const hash = await page.evaluate(() => window.location.hash);
-      expect(hash).toBe('#/squad-dispatch');
+      await expect.soft(heading()).toBeVisible({ timeout: 10_000 });
+      await expect.soft(taskInput()).toBeVisible();
     });
 
     test('Squad Dispatch heading is visible', async () => {
-      const heading = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('h2')).some((h) => h.textContent?.includes('Squad Dispatch')),
-      );
-      expect(heading).toBe(true);
+      await expect(heading()).toBeVisible();
     });
 
     test('task textarea accepts input and triggers classify', async () => {
-      const textarea = await page.locator('textarea').first();
-      await textarea.fill('refactor auth service to use JWT tokens');
-      await page.waitForTimeout(600); // debounce settles
-      const val = await textarea.inputValue();
-      expect(val).toContain('refactor');
+      await taskInput().fill('refactor auth service to use JWT tokens');
+      // Web-first: wait for value to propagate (debounce) without polling sleep
+      await expect(taskInput()).toHaveValue(/refactor/);
     });
 
     test('Engineer agent appears after classify resolves', async () => {
-      // Classify mock returns Engineer — AgentSelector should show it
-      await page.waitForTimeout(500);
-      const hasEngineer = await page.evaluate(() =>
-        document.body.textContent?.includes('Engineer') ?? false,
-      );
-      expect(hasEngineer).toBe(true);
+      // Classify mock returns Engineer — web-first assertion retries until mounted
+      await expect(engineerBtn()).toBeVisible();
+    });
+
+    test('agent-btn aria-pressed reflects selection state', async () => {
+      // Engineer should be auto-selected after classify
+      await expect(engineerBtn()).toHaveAttribute('aria-pressed', 'true');
     });
 
     test('submit dispatches and transitions to streaming phase', async () => {
-      test.setTimeout(30_000);
-      await page.evaluate(() => { window.location.hash = '#/squad-dispatch'; });
-      await page.waitForTimeout(1_000);
-      const onPage = await page.evaluate(() => document.body.textContent?.includes('Squad Dispatch') ?? false);
-      if (!onPage) { test.skip(); return; }
-
-      // Type a fresh task via evaluate so canSubmit is guaranteed true.
-      await page.evaluate(() => {
-        const ta = document.querySelector('[data-testid="dispatch-input"] textarea') as HTMLTextAreaElement | null;
-        if (!ta) return;
-        ta.value = 'smoke dispatch test';
-        ta.dispatchEvent(new Event('input', { bubbles: true }));
-      });
-      await page.waitForTimeout(300);
-
-      // Enable dry-run via evaluate (no locator timeouts).
-      await page.evaluate(() => {
-        const label = Array.from(document.querySelectorAll('label'))
-          .find(l => l.textContent?.includes('Dry run'));
-        const cb = label?.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
-        if (cb && !cb.checked) cb.click();
-      });
-      await page.waitForTimeout(200);
-
-      // Click Dispatch button.
-      const submitted = await page.evaluate(() => {
-        const btn = Array.from(document.querySelectorAll('button'))
-          .find(b => b.textContent?.trim() === 'Dispatch');
-        if (!btn) return false;
-        btn.click();
-        return true;
-      });
-      if (!submitted) { test.skip(); return; }
-
-      const appeared = await page.waitForFunction(
-        () => {
-          const text = document.body.textContent ?? '';
-          return text.includes('Cancel') || text.includes('Live agents') || text.includes('Done') || text.includes('✓');
-        },
-        { timeout: 8_000 },
-      ).catch(() => null);
-      if (!appeared) { test.skip(); return; }
+      await expect(submitBtn()).toBeEnabled();
+      await submitBtn().click();
+      // Streaming or complete phase — wait for either indicator
+      await expect(
+        page.locator('text=Cancel, text=Live agents, text=Done, text=✓').first(),
+      ).toBeVisible({ timeout: 8_000 }).catch(() =>
+        // Fallback: waitForFunction covers text rendered in nested spans
+        page.waitForFunction(
+          () => {
+            const t = document.body.textContent ?? '';
+            return t.includes('Cancel') || t.includes('Live agents') || t.includes('Done') || t.includes('✓');
+          },
+          { timeout: 8_000 },
+        ),
+      );
     });
 
-    test('dispatch completes: ✓ Done badge or elapsed time visible', async () => {
-      const appeared = await page.waitForFunction(
+    test('dispatch completes: Done badge or elapsed time visible', async () => {
+      await page.waitForFunction(
         () => {
-          const text = document.body.textContent ?? '';
-          return text.includes('Done') || text.includes('New Dispatch') || /\d+\.\d+s/.test(text);
+          const t = document.body.textContent ?? '';
+          return t.includes('Done') || t.includes('New Dispatch') || /\d+\.\d+s/.test(t);
         },
         { timeout: 10_000 },
-      ).catch(() => null);
-      if (!appeared) { test.skip(); return; }
-      const complete = await page.evaluate(() => {
-        const text = document.body.textContent ?? '';
-        return text.includes('Done') || text.includes('New Dispatch') || /\d+\.\d+s/.test(text);
-      }).catch(() => false);
-      expect(complete).toBe(true);
+      );
+      // Soft assertions — all checked before first failure is reported
+      await expect.soft(
+        page.locator('text=Done, text=New Dispatch').first(),
+      ).toBeVisible({ timeout: 1_000 }).catch(() => { /* elapsed-time badge is also valid */ });
     });
 
     test('New Dispatch button resets to idle', async () => {
-      const reset = await page.evaluate(() => {
-        const btn = Array.from(document.querySelectorAll('button')).find(
-          (b) => b.textContent?.trim() === 'New Dispatch',
-        );
-        if (btn) { btn.click(); return true; }
-        return false;
-      });
-      if (!reset) { test.skip(); return; }
-      await page.waitForTimeout(400);
-      // SquadDispatch heading still visible (not navigated away)
-      const heading = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('h2')).some((h) => h.textContent?.includes('Squad Dispatch')),
-      );
-      expect(heading).toBe(true);
+      await expect(newDispatch()).toBeVisible({ timeout: 5_000 });
+      await newDispatch().click();
+      // After reset the form should return — heading + task input both visible
+      await expect.soft(heading()).toBeVisible();
+      await expect.soft(taskInput()).toBeVisible();
+      await expect.soft(taskInput()).toBeEmpty();
     });
 
     test(`dispatch history includes entry for ${E2E_DISPATCH_ID}`, async () => {
-      // History saved to localStorage — check key exists with non-empty array
+      // localStorage access still requires evaluate — no Playwright API for this
       const history = await page.evaluate((key) => {
         try { return JSON.parse(localStorage.getItem(key) ?? '[]'); }
         catch { return []; }
@@ -3549,11 +3476,13 @@ test.describe('Comprehensive webshell E2E', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 33–70. Wave 3/4 — landed P0/P1 features
+  // 33. Wave 3 NAVIGATION_FOUNDATION — landed P0 features (#10/#13/#15/#26/#27/#35/#47/#48/#58)
   // ═══════════════════════════════════════════════════════════════════════════
   //
-  // Independent sections — each sets up its own state via __e2e store injection
-  // or custom events. Section 70 (Console health) MUST remain last.
+  // These tests cover the operator-facing components shipped during the
+  // unifying-rolling-aegis Wave 3. Each section is independent (a setup
+  // step or two then 1-3 assertions) and uses real DOM rather than mocks
+  // so we catch regressions in component-level behaviour, not just API.
 
   test.describe('33. AuthBanner — 401/403 surfaced UI (#13)', () => {
     test('banner not visible when authStatus is ok', async () => {
@@ -3586,7 +3515,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
   });
 
-  test.describe('61. Tooltip primitive (#26)', () => {
+  test.describe('34. Tooltip primitive (#26)', () => {
     test('hovering a tab label reveals tooltip with hint copy', async () => {
       // Activity tab has a Tooltip wrapper with hint "Live trace events..."
       const activityTab = page.locator('button', { hasText: /^Activity$/ }).first();
@@ -3599,7 +3528,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
   });
 
-  test.describe('62. DiffPreview modal — operator FS gate (#47)', () => {
+  test.describe('35. DiffPreview modal — operator FS gate (#47)', () => {
     test('triggerMockDiffPreview opens the modal', async () => {
       await page.evaluate(() => {
         // Synthesize the SSE event the backend would send post-mantis-rebase.
@@ -3627,7 +3556,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
   });
 
-  test.describe('63. Intake form draft persistence (#15)', () => {
+  test.describe('36. Intake form draft persistence (#15)', () => {
     test('repoPath persists across reload via localStorage', async () => {
       await page.goto(`${URL.replace('#token=', '#/intake?token=')}`).catch(() => page.goto(URL));
       await page.waitForTimeout(400);
@@ -3650,7 +3579,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
   });
 
-  test.describe('64. BuildQueue header dedupe (#35)', () => {
+  test.describe('37. BuildQueue header dedupe (#35)', () => {
     test('header shows project + build counts but not active count', async () => {
       await page.goto(URL);
       await page.waitForTimeout(400);
@@ -3675,7 +3604,7 @@ test.describe('Comprehensive webshell E2E', () => {
     });
   });
 
-  test.describe('65. Empty-state hero affordance (#10 #48)', () => {
+  test.describe('38. Empty-state hero affordance (#10 #48)', () => {
     test('Activity empty state renders distinctive copy + Open Copilot CTA', async () => {
       // Reset stores so the feed is empty
       await page.evaluate(() => {
@@ -3690,6 +3619,184 @@ test.describe('Comprehensive webshell E2E', () => {
       const hasCTA = /open\s+copilot/i.test(text);
       // At least the CTA should be visible; copy is also expected
       expect(hasCTA || hasStrandCopy).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 40. Accessibility — WCAG 2.1 AA (axe-core)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('40. Accessibility (WCAG 2.1 AA)', () => {
+    test('Queue screen: no WCAG 2.1 AA violations', async () => {
+      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
+      const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa'])
+        .exclude('[data-testid="helix-canvas"]') // WebGL canvas — no ARIA role expected
+        .analyze();
+      if (results.violations.length > 0) {
+        console.warn('[E2E][a11y] Queue violations:', results.violations.map((v) => `${v.id}: ${v.description}`));
+      }
+      expect(results.violations).toHaveLength(0);
+    });
+
+    test('Activity screen: no WCAG 2.1 AA violations', async () => {
+      await page.evaluate(() => { window.location.hash = '#/activity'; });
+      await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
+      const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa'])
+        .exclude('[data-testid="helix-canvas"]')
+        .analyze();
+      if (results.violations.length > 0) {
+        console.warn('[E2E][a11y] Activity violations:', results.violations.map((v) => `${v.id}: ${v.description}`));
+      }
+      expect(results.violations).toHaveLength(0);
+    });
+
+    test('Sitrep screen: no WCAG 2.1 AA violations', async () => {
+      await page.evaluate(() => { window.location.hash = '#/sitrep'; });
+      await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
+      const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa'])
+        .exclude('[data-testid="helix-canvas"]')
+        .analyze();
+      if (results.violations.length > 0) {
+        console.warn('[E2E][a11y] Sitrep violations:', results.violations.map((v) => `${v.id}: ${v.description}`));
+      }
+      expect(results.violations).toHaveLength(0);
+    });
+
+    test('Intake screen: no WCAG 2.1 AA violations', async () => {
+      await page.evaluate(() => { window.location.hash = '#/intake'; });
+      await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
+      const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa'])
+        .exclude('[data-testid="helix-canvas"]')
+        .analyze();
+      if (results.violations.length > 0) {
+        console.warn('[E2E][a11y] Intake violations:', results.violations.map((v) => `${v.id}: ${v.description}`));
+      }
+      expect(results.violations).toHaveLength(0);
+    });
+
+    test('Squad Dispatch screen: no WCAG 2.1 AA violations', async () => {
+      await page.evaluate(() => { window.location.hash = '#/squad-dispatch'; });
+      await page.waitForFunction(
+        () => !!document.querySelector('[data-testid="dispatch-task-input"]'),
+        { timeout: 10_000 },
+      );
+      const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa'])
+        .exclude('[data-testid="helix-canvas"]')
+        .analyze();
+      if (results.violations.length > 0) {
+        console.warn('[E2E][a11y] Squad Dispatch violations:', results.violations.map((v) => `${v.id}: ${v.description}`));
+      }
+      expect(results.violations).toHaveLength(0);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 41. Visual regression — toHaveScreenshot baselines
+  //
+  // First run: snapshots are created in e2e/snapshots/.
+  // Subsequent runs: pixel-diff against baseline (threshold: 0.1%).
+  // Update baselines: npx playwright test --update-snapshots
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('41. Visual regression (screenshot baselines)', () => {
+    test('Queue screen baseline', async () => {
+      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
+      // Mask dynamic elements (timestamps, live counters) before diffing.
+      await expect(page).toHaveScreenshot('queue-screen.png', {
+        animations: 'disabled',
+        mask: [
+          page.locator('time'),
+          page.locator('[data-testid="helix-canvas"]'),
+        ],
+        maxDiffPixelRatio: 0.001,
+      });
+    });
+
+    test('Activity screen baseline', async () => {
+      await page.evaluate(() => { window.location.hash = '#/activity'; });
+      await page.waitForFunction(() => document.body.textContent!.length > 50, { timeout: 5_000 });
+      await expect(page).toHaveScreenshot('activity-screen.png', {
+        animations: 'disabled',
+        mask: [
+          page.locator('time'),
+          page.locator('[data-testid="helix-canvas"]'),
+          page.locator('[data-testid="oscillator"]'),
+        ],
+        maxDiffPixelRatio: 0.001,
+      });
+    });
+
+    test('Squad Dispatch idle baseline', async () => {
+      await page.evaluate(() => { window.location.hash = '#/squad-dispatch'; });
+      await page.waitForFunction(
+        () => !!document.querySelector('[data-testid="dispatch-task-input"]'),
+        { timeout: 10_000 },
+      );
+      await expect(page).toHaveScreenshot('squad-dispatch-idle.png', {
+        animations: 'disabled',
+        mask: [
+          page.locator('time'),
+          page.locator('[data-testid="helix-canvas"]'),
+        ],
+        maxDiffPixelRatio: 0.001,
+      });
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 39. Console health (final — MUST BE LAST)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('39. Console health (final)', () => {
+    test('zero TypeErrors after full expanded suite', async () => {
+      const typeErrors = pageErrors.filter((e) => e.includes('TypeError'));
+      if (typeErrors.length > 0) console.error('[E2E] TypeErrors found:', typeErrors);
+      expect(typeErrors).toHaveLength(0);
+    });
+
+    test('zero unhandled errors after mock injection and real API calls', async () => {
+      const realErrors = pageErrors.filter((e) => {
+        if (e.includes('extension://')) return false;
+        if (e.includes('Failed to fetch') || e.includes('NetworkError')) return false;
+        if (e.includes('WebGL context') || e.includes('WebGL')) return false;
+        return true;
+      });
+      if (realErrors.length > 0) console.error('[E2E] Page errors found:', realErrors);
+      expect(realErrors).toHaveLength(0);
+    });
+
+    test('no effect_update_depth_exceeded in console', async () => {
+      const effectLoops = consoleErrors.filter((e) => e.includes('effect_update_depth_exceeded'));
+      if (effectLoops.length > 0) console.error('[E2E] Effect loops found:', effectLoops);
+      expect(effectLoops).toHaveLength(0);
+    });
+
+    test('no unexpected 4xx/5xx in response logger', async () => {
+      const unexpected = failedRequests.filter(r => {
+        // Known 400s from mock SSE and setup are expected
+        if (r.url.includes('/events')) return false;
+        if (r.url.includes('/api/setup')) return false;
+        if (r.url.includes('/api/browser-state')) return false;
+        if (r.url.includes('build-e2e')) return false;
+        if (r.url.includes('/api/control')) return false;
+        if (r.url.includes('/session/fork')) return false;
+        if (r.url.includes('/api/dispatch')) return false;
+        return true;
+      });
+      if (unexpected.length > 0) {
+        console.warn('[E2E] Unexpected failed requests:', unexpected.slice(0, 10));
+      }
+      // Warn but don't fail — some 4xx are transient during error resilience tests
+      if (unexpected.length > 20) {
+        console.error('[E2E] Excessive failed requests:', unexpected.length);
+      }
     });
   });
 

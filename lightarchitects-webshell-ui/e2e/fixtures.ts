@@ -6,8 +6,37 @@
  *
  * registerMocks(page) only intercepts endpoints that need synthetic data.
  * SOUL, siblings, sitrep, conductor, arena, meta-skills, health all pass through.
+ *
+ * `test` export: typed fixture extension for standalone specs that use the
+ * Playwright runner's built-in context (not the manual chromium.launch() suite).
  */
+import { test as base } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { NavPage } from './pages/NavPage';
+import { SquadDispatchPage } from './pages/SquadDispatchPage';
+
+// ─── Typed fixture extension ──────────────────────────────────────────────────
+
+interface E2EFixtures {
+  nav: NavPage;
+  dispatch: SquadDispatchPage;
+}
+
+/**
+ * Extended test with `nav` and `dispatch` page-object fixtures.
+ *
+ * Use in standalone spec files (not in webshell.spec.ts which manages its own
+ * browser context):
+ *
+ *   import { test, expect } from '../fixtures';
+ *   test('...', async ({ nav, dispatch }) => { ... });
+ */
+export const test = base.extend<E2EFixtures>({
+  nav:      async ({ page }, use) => { await use(new NavPage(page)); },
+  dispatch: async ({ page }, use) => { await use(new SquadDispatchPage(page)); },
+});
+
+export { expect } from '@playwright/test';
 
 // ─── Squad Dispatch fixtures ──────────────────────────────────────────────────
 

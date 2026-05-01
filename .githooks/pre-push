@@ -17,11 +17,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-# In a worktree, `.git` is a file pointing into the parent repo's
-# `.git/worktrees/<name>/` directory. `git rev-parse --git-dir` resolves
-# correctly in both cases.
-GIT_DIR="$(git rev-parse --git-dir)"
-LOG="$GIT_DIR/squad-ci-push-log.txt"
+# Use --git-dir so this works inside worktrees (.git is a file there, not a dir)
+LOG="$(git rev-parse --git-dir)/squad-ci-push-log.txt"
 
 # Note: --no-verify bypasses this entire hook before it runs, so we can't
 # detect a bypass from inside it. The log entry below records all attempts
