@@ -63,8 +63,8 @@ describe('AgentSelector (browser)', () => {
   it('renders the AUTO·N button only when classification supplies agents', async () => {
     const classification: Classification = {
       agents: ['security', 'researcher'],
+      mode: 'Squad',
       rationale: 'task involves auth + CVE research',
-      confidence: 0.82,
     };
     const { getByText } = render(AgentSelector, { classification });
     await expect.element(getByText('AUTO·2')).toBeInTheDocument();
@@ -75,8 +75,8 @@ describe('AgentSelector (browser)', () => {
     const onchange = vi.fn();
     const classification: Classification = {
       agents: ['quality', 'testing'],
+      mode: 'Squad',
       rationale: 'test refactor',
-      confidence: 0.7,
     };
     const { getByText } = render(AgentSelector, { classification, onchange });
 
