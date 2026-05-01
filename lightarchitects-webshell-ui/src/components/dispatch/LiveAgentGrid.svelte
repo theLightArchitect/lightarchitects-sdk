@@ -44,6 +44,7 @@
   }
 </script>
 
+<div data-testid="live-agent-grid">
 {#if agents.length === 0}
   <div class="text-[10px] text-[#475569] text-center py-4">
     No agents in this dispatch
@@ -89,3 +90,4 @@
     {/each}
   </div>
 {/if}
+</div>

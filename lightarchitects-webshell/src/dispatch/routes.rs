@@ -136,6 +136,7 @@ fn is_authorised(headers: &HeaderMap, state: &AppState) -> bool {
 /// Per-IP ≤10 req/s is enforced at the infrastructure layer (future: tower
 /// governor middleware — HIGH H-8).  This handler does not implement its own
 /// rate-limiting so the constraint is visible in the spec.
+#[tracing::instrument(skip(headers, state, req), fields(task_len = req.task.len()))]
 async fn classify_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
@@ -160,6 +161,7 @@ async fn classify_handler(
 /// `GET /api/dispatch/status/:id` to receive [`DispatchEvent`] SSE frames.
 ///
 /// Bearer-authenticated (HIGH H-5).
+#[tracing::instrument(skip(headers, state, req), fields(agent_count = req.agents.len(), dry = req.dry))]
 async fn execute_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
@@ -223,6 +225,7 @@ async fn execute_handler(
         req.dry,
         dispatch_id,
         state.dispatch_registry,
+        req.attachments,
     )
     .await
     {
@@ -251,6 +254,7 @@ async fn execute_handler(
 /// The SSE stream drives off a `broadcast::Receiver<DispatchEvent>`.  We
 /// use `futures_util::stream::unfold` so we do not need the `tokio-stream`
 /// crate (mirrors the pattern in `coordination::sse`).
+#[tracing::instrument(skip(headers, state), fields(dispatch_id = %id_str))]
 async fn status_sse_handler(
     headers: HeaderMap,
     Path(id_str): Path<String>,
@@ -315,6 +319,7 @@ async fn status_sse_handler(
 /// `POST /api/dispatch/cancel/:id` — cancel an active dispatch.
 ///
 /// Bearer-authenticated (HIGH H-5).
+#[tracing::instrument(skip(headers, state), fields(dispatch_id = %id_str))]
 async fn cancel_handler(
     headers: HeaderMap,
     Path(id_str): Path<String>,
@@ -344,6 +349,7 @@ async fn cancel_handler(
 ///
 /// Retry logic is a stub in Phase 3 Wave 1 — full implementation in Wave 3 B2
 /// once `TeamManager` is wired.
+#[tracing::instrument(skip(headers, state, req), fields(dispatch_id = %id_str, agent = %agent_str))]
 async fn retry_handler(
     headers: HeaderMap,
     Path((id_str, agent_str)): Path<(String, String)>,

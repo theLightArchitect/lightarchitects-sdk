@@ -115,6 +115,17 @@ export const DOMAIN_AGENT_LABELS: Record<DomainAgent, string> = {
   documentation: 'Docs',
 };
 
+// ── File attachments ─────────────────────────────────────────────────────────
+
+export interface FileAttachment {
+  name: string;
+  path: string;
+  content: string;
+}
+
+export const MAX_ATTACHMENT_BYTES = 50 * 1024;   // 50 KB per file
+export const MAX_TOTAL_BYTES      = 300 * 1024;  // 300 KB aggregate
+
 // ── API helpers ───────────────────────────────────────────────────────────────
 
 export async function classifyTask(task: string): Promise<Classification> {
@@ -131,11 +142,12 @@ export async function executeDispatch(
   task: string,
   agents: DomainAgent[],
   dry = false,
+  attachments: FileAttachment[] = [],
 ): Promise<string> {
   const res = await fetch('/api/dispatch/execute', {
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ task, agents, dry }),
+    body: JSON.stringify({ task, agents, dry, attachments }),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');

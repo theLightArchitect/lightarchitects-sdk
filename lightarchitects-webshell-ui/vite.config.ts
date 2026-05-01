@@ -34,6 +34,8 @@ export default defineConfig({
     },
   },
   server: {
+    // Disable HMR during E2E runs so mid-suite hot-reloads cannot interrupt tests.
+    hmr: process.env.PLAYWRIGHT_BASE_URL ? false : { overlay: true },
     proxy: {
       '/api': {
         target: BACKEND_URL,

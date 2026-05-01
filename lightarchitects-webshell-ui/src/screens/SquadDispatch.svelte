@@ -18,6 +18,7 @@
     type DispatchEvent,
     type AgentLiveState,
     type DispatchHistoryEntry,
+    type FileAttachment,
   } from '$lib/dispatch';
 
   import DispatchInput from '$lib/../components/dispatch/DispatchInput.svelte';
@@ -37,6 +38,7 @@
   let selectedAgents = $state<DomainAgent[]>([]);
   let classification = $state<Classification | null>(null);
   let dispatchId = $state<string | null>(null);
+  let attachments = $state<FileAttachment[]>([]);
   let events = $state<DispatchEvent[]>([]);
   let agentStates = $state(new Map<DomainAgent, AgentLiveState>());
   let history = $state<DispatchHistoryEntry[]>(loadHistory());
@@ -70,7 +72,7 @@
 
   // ── Dispatch ──────────────────────────────────────────────────────────────────
 
-  async function dispatch(taskText: string, isDry: boolean) {
+  async function dispatch(taskText: string, isDry: boolean, atts: FileAttachment[] = []) {
     if (selectedAgents.length === 0) return;
     errorMsg = null;
     events = [];
@@ -80,7 +82,7 @@
     let id: string;
     try {
       phase = 'streaming';
-      id = await executeDispatch(taskText, selectedAgents, isDry);
+      id = await executeDispatch(taskText, selectedAgents, isDry, atts);
       dispatchId = id;
       triggerDispatchFX();
     } catch (e) {
@@ -198,6 +200,7 @@
     task = '';
     selectedAgents = [];
     classification = null;
+    attachments = [];
   }
 
   function replayFromHistory(entry: DispatchHistoryEntry) {
@@ -329,6 +332,7 @@
       <DispatchInput
         bind:task
         bind:dry
+        bind:attachments
         disabled={isLive}
         onSubmit={dispatch}
         onTaskChange={(t) => { task = t; }}
@@ -366,7 +370,7 @@
     </div>
 
     {#if isLive || isTerminalPhase}
-      <div class="sd-section-body">
+      <div class="sd-section-body" data-testid="task-dag-toggle">
         <p class="sd-meta-label">Pipeline</p>
         <TaskDAG agents={selectedAgents} {agentStates} />
       </div>

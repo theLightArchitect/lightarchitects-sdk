@@ -51,7 +51,7 @@
     No agents selected
   </div>
 {:else}
-  <div class="flex items-center gap-0 overflow-x-auto py-1">
+  <div class="flex items-center gap-0 overflow-x-auto py-1" data-testid="task-dag-canvas">
     {#each agents as agent, i}
       {@const color = DOMAIN_AGENT_COLORS[agent]}
       {@const live = agentStates.get(agent)}

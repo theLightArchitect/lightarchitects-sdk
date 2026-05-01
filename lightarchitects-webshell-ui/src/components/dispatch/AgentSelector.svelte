@@ -49,7 +49,7 @@
   }
 </script>
 
-<div class="flex flex-col gap-2">
+<div class="flex flex-col gap-2" data-testid="agent-selector">
   <div class="flex items-center justify-between">
     <span class="text-[10px] text-[#64748b] uppercase tracking-wider">Agents</span>
     <div class="flex gap-1.5">

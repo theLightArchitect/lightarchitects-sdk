@@ -520,7 +520,11 @@
 
   // Global keyboard shortcuts
   function onGlobalKeydown(e: KeyboardEvent) {
-    if (e.key === '`' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); open = !open; }
+    if (e.key === '`' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      open = !open;
+      if (!open) showSuggestions = false;
+    }
     // Ctrl+F inside the open drawer toggles history search
     if (e.key === 'f' && (e.ctrlKey || e.metaKey) && open && mode === 'chat') {
       e.preventDefault();
