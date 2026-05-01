@@ -8,15 +8,14 @@
   } from '$lib/dispatch';
 
   const AGENT_META: Record<DomainAgent, { code: string; gate: string; perm: 'W' | 'R' }> = {
-    engineer:      { code: 'ENG', gate: 'A', perm: 'W' },
-    quality:       { code: 'QLT', gate: 'Q', perm: 'W' },
-    security:      { code: 'SEC', gate: 'S', perm: 'R' },
-    ops:           { code: 'OPS', gate: 'O', perm: 'W' },
-    researcher:    { code: 'RES', gate: 'R', perm: 'R' },
-    knowledge:     { code: 'KNW', gate: 'K', perm: 'R' },
-    performance:   { code: 'PRF', gate: 'P', perm: 'R' },
-    testing:       { code: 'TST', gate: 'T', perm: 'W' },
-    documentation: { code: 'DOC', gate: 'D', perm: 'W' },
+    engineer:   { code: 'ENG', gate: 'A', perm: 'W' },
+    quality:    { code: 'QLT', gate: 'Q', perm: 'W' },
+    security:   { code: 'SEC', gate: 'S', perm: 'R' },
+    ops:        { code: 'OPS', gate: 'O', perm: 'W' },
+    researcher: { code: 'RES', gate: 'R', perm: 'R' },
+    knowledge:  { code: 'KNW', gate: 'K', perm: 'R' },
+    testing:    { code: 'TST', gate: 'T', perm: 'W' },
+    squad:      { code: 'SQD', gate: 'SQ', perm: 'R' },
   };
 
   interface Props {

@@ -26,7 +26,7 @@ const ALL_TYPES: MessageType[] = [
 
 const ALL_AGENTS: DomainAgent[] = [
   'engineer', 'quality', 'security', 'ops',
-  'researcher', 'knowledge', 'performance', 'testing', 'documentation',
+  'researcher', 'knowledge', 'testing', 'squad',
 ];
 
 describe('squadComm', () => {
@@ -38,7 +38,7 @@ describe('squadComm', () => {
 
   describe('DomainAgent coverage', () => {
     it('has exactly 9 domain agents', () => {
-      expect(ALL_AGENTS).toHaveLength(9);
+      expect(ALL_AGENTS).toHaveLength(8);
     });
   });
 

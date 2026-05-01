@@ -10,15 +10,14 @@
 
   // Per-agent tool configuration defaults
   const AGENT_TOOL_DEFAULTS: Partial<Record<DomainAgent, AgentToolConfig>> = {
-    engineer:      { tools: ['SOUL', 'CORSO', 'rust-analyzer-lsp', 'coderabbit'], depth: 'standard', optional_tools: ['Context7', 'Firecrawl', 'HuggingFace'] },
-    quality:       { tools: ['SOUL', 'CORSO', 'coderabbit'], depth: 'standard', optional_tools: ['Context7', 'Firecrawl'] },
-    security:      { tools: ['SOUL', 'SERAPH', 'CORSO'], depth: 'deep', optional_tools: ['Context7', 'Firecrawl', 'Playwright', 'HuggingFace'] },
-    ops:           { tools: ['SOUL', 'EVA', 'AYIN'], depth: 'standard', optional_tools: ['Playwright', 'Firecrawl'] },
-    researcher:    { tools: ['SOUL', 'QUANTUM', 'Context7'], depth: 'deep', optional_tools: ['Firecrawl', 'HuggingFace'] },
-    knowledge:     { tools: ['SOUL'], depth: 'standard', optional_tools: ['Context7', 'Firecrawl'] },
-    performance:   { tools: ['SOUL', 'CORSO', 'AYIN'], depth: 'standard', optional_tools: ['Context7'] },
-    testing:       { tools: ['SOUL', 'CORSO', 'EVA', 'Playwright'], depth: 'standard', optional_tools: ['Firecrawl'] },
-    documentation: { tools: ['SOUL', 'EVA', 'Context7'], depth: 'standard', optional_tools: ['Firecrawl'] },
+    engineer:   { tools: ['SOUL', 'CORSO', 'rust-analyzer-lsp', 'coderabbit'], depth: 'standard', optional_tools: ['Context7', 'Firecrawl', 'HuggingFace'] },
+    quality:    { tools: ['SOUL', 'CORSO', 'coderabbit'], depth: 'standard', optional_tools: ['Context7', 'Firecrawl'] },
+    security:   { tools: ['SOUL', 'SERAPH', 'CORSO'], depth: 'deep', optional_tools: ['Context7', 'Firecrawl', 'Playwright', 'HuggingFace'] },
+    ops:        { tools: ['SOUL', 'EVA', 'AYIN', 'CORSO'], depth: 'standard', optional_tools: ['Playwright', 'Firecrawl', 'Context7'] },
+    researcher: { tools: ['SOUL', 'QUANTUM', 'Context7'], depth: 'deep', optional_tools: ['Firecrawl', 'HuggingFace'] },
+    knowledge:  { tools: ['SOUL', 'EVA'], depth: 'standard', optional_tools: ['Context7', 'Firecrawl'] },
+    testing:    { tools: ['SOUL', 'CORSO', 'EVA', 'Playwright'], depth: 'standard', optional_tools: ['Firecrawl'] },
+    squad:      { tools: ['SOUL'], depth: 'standard', optional_tools: ['Context7'] },
   };
 
   const DEPTHS: ResearchDepth[] = ['standard', 'deep', 'exhaustive'];

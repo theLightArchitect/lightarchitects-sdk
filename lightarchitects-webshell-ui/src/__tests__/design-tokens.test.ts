@@ -60,11 +60,11 @@ describe('design-tokens', () => {
   describe('DOMAIN_AGENT_COLORS', () => {
     const AGENT_IDS = [
       'engineer', 'quality', 'security', 'ops',
-      'researcher', 'knowledge', 'performance', 'testing', 'documentation',
+      'researcher', 'knowledge', 'testing', 'squad',
     ];
 
-    it('has exactly 9 domain agent colors', () => {
-      expect(Object.keys(DOMAIN_AGENT_COLORS)).toHaveLength(9);
+    it('has exactly 8 domain agent colors', () => {
+      expect(Object.keys(DOMAIN_AGENT_COLORS)).toHaveLength(8);
     });
 
     it('every agent has a valid hex color', () => {

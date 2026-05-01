@@ -25,9 +25,8 @@ export type DomainAgent =
   | 'ops'
   | 'researcher'
   | 'knowledge'
-  | 'performance'
   | 'testing'
-  | 'documentation';
+  | 'squad';
 
 export type MessageImportance = 'low' | 'normal' | 'high' | 'critical';
 export type FindingSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
