@@ -447,6 +447,7 @@ mod tests {
             DispatchEvent::MailboxMessage { .. } => "mailbox",
             DispatchEvent::Complete { .. } => "complete",
             DispatchEvent::Error { .. } => "error",
+            DispatchEvent::ToolUsage { .. } => "tool_usage",
         }
     }
 
@@ -485,6 +486,7 @@ mod tests {
             id,
             registry,
             vec![],
+            Default::default(),
         )
         .await
         .unwrap();
@@ -503,6 +505,7 @@ mod tests {
             id,
             registry,
             vec![],
+            Default::default(),
         )
         .await
         .unwrap();
@@ -529,6 +532,7 @@ mod tests {
             id,
             registry,
             vec![],
+            Default::default(),
         )
         .await
         .unwrap();
@@ -550,6 +554,7 @@ mod tests {
                 id.clone(),
                 Arc::clone(&registry),
                 vec![],
+                Default::default(),
             )
             .await;
             // Cancel immediately — removes from registry before run_agents can.
@@ -594,6 +599,7 @@ mod tests {
             id.clone(),
             Arc::clone(&registry),
             vec![],
+            Default::default(),
         )
         .await
         .unwrap();
@@ -641,6 +647,7 @@ mod tests {
             id.clone(),
             Arc::clone(&registry),
             vec![],
+            Default::default(),
         )
         .await
         .unwrap();
@@ -689,6 +696,7 @@ mod tests {
             id.clone(),
             Arc::clone(&registry),
             vec![],
+            Default::default(),
         )
         .await
         .unwrap();
@@ -738,6 +746,7 @@ mod tests {
             id,
             registry,
             vec![],
+            Default::default(),
         )
         .await
         .unwrap_err();
@@ -764,6 +773,7 @@ mod tests {
             id.clone(),
             Arc::clone(&registry),
             vec![],
+            Default::default(),
         )
         .await
         .unwrap();
