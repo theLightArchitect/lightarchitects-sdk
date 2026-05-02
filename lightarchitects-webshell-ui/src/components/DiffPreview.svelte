@@ -221,9 +221,9 @@
     max-height: 84vh;
     display: flex;
     flex-direction: column;
-    background: #0d1117;
-    border: 1px solid #1e293b;
-    border-radius: var(--la-radius-lg);
+    background: var(--la-drawer-bg);
+    border: 1px solid var(--la-drawer-border);
+    border-radius: 0;
     box-shadow:
       0 12px 32px rgba(0, 0, 0, 0.5),
       0 0 0 1px rgba(255, 215, 0, 0.08);
@@ -232,7 +232,7 @@
   }
   .diff-header {
     padding: 14px 18px 8px;
-    border-bottom: 1px solid #1e293b;
+    border-bottom: 1px solid var(--la-drawer-border);
   }
   .diff-title-row {
     display: flex;
@@ -251,8 +251,8 @@
     font-family: var(--la-font-mono);
     font-size: 11px;
     padding: 1px 6px;
-    background: #1e293b;
-    border-radius: var(--la-radius-sm);
+    background: var(--la-bg-elev-2);
+    border-radius: 0;
   }
   .diff-path {
     flex: 1;
@@ -270,16 +270,16 @@
   }
   .diff-explainer kbd {
     font-family: var(--la-font-mono);
-    background: #1e293b;
+    background: var(--la-bg-elev-2);
     padding: 1px 5px;
-    border-radius: var(--la-radius-sm);
+    border-radius: 0;
     font-size: 10px;
   }
   .diff-body {
     flex: 1;
     overflow: auto;
     padding: 8px 0;
-    background: #0a0a0f;
+    background: var(--la-bg-frame);
     font-family: var(--la-font-mono);
     font-size: 12px;
     line-height: 1.45;
@@ -306,7 +306,7 @@
   .diff-error {
     margin: 8px 18px 0;
     padding: 6px 10px;
-    border-radius: var(--la-radius-md);
+    border-radius: 0;
     background: var(--la-danger-bg);
     border: 1px solid var(--la-danger-stroke);
     color: var(--la-danger-text);
@@ -317,14 +317,14 @@
     justify-content: flex-end;
     gap: 8px;
     padding: 12px 18px 14px;
-    border-top: 1px solid #1e293b;
+    border-top: 1px solid var(--la-drawer-border);
   }
   .diff-btn {
     padding: 6px 14px;
     font-size: 12px;
     font-family: inherit;
     font-weight: 600;
-    border-radius: var(--la-radius-md);
+    border-radius: 0;
     border: 1px solid transparent;
     cursor: pointer;
     transition: background var(--la-transition-fast), color var(--la-transition-fast);
@@ -334,11 +334,11 @@
     cursor: not-allowed;
   }
   .diff-btn.primary {
-    background: #d4a017;
-    color: #0a0a0f;
+    background: var(--la-focus-ring);
+    color: var(--la-bg-frame);
   }
   .diff-btn.primary:hover:not(:disabled) {
-    background: #f0c040;
+    background: var(--la-focus-ring);
     box-shadow: 0 0 12px rgba(255, 215, 0, 0.4);
   }
   @keyframes diff-fade-in {
@@ -362,8 +362,8 @@
     gap: 10px;
     padding: 12px 16px;
     background: var(--la-bg-frame);
-    border: 1px solid #FFD700;
-    border-radius: var(--la-radius-lg);
+    border: 1px solid var(--la-focus-ring);
+    border-radius: 0;
     box-shadow: 0 4px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,215,0,0.15);
     max-width: 380px;
     font-family: var(--la-font-chrome);
@@ -371,7 +371,7 @@
   .coachmark-icon {
     font-size: 16px;
     line-height: 1;
-    color: #FFD700;
+    color: var(--la-focus-ring);
     flex-shrink: 0;
     margin-top: 1px;
   }
@@ -392,10 +392,10 @@
     flex-shrink: 0;
     padding: 3px 10px;
     margin-top: 2px;
-    background: #FFD700;
+    background: var(--la-focus-ring);
     border: none;
-    border-radius: var(--la-radius-md);
-    color: #0a0a0f;
+    border-radius: 0;
+    color: var(--la-bg-frame);
     font-family: var(--la-font-chrome);
     font-size: 10px;
     font-weight: 600;

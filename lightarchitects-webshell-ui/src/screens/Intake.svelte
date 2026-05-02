@@ -431,24 +431,24 @@
 
   <!-- Header (#38 — fixed 56px band shared across all top-level screens) -->
   <header class="la-screen-header flex items-center gap-3 px-6 border-b border-[var(--la-hair-strong)]">
-    <button onclick={() => { window.location.hash = '/'; }} class="text-[#64748b] hover:text-white text-xs">
+    <button onclick={() => { window.location.hash = '/'; }} class="text-[var(--la-text-dim)] hover:text-white text-xs">
       ← Queue
     </button>
-    <span class="text-[#334155]">/</span>
+    <span class="text-[var(--la-hair-strong)]">/</span>
     <h1 class="text-lg font-semibold">New Build</h1>
-    <span class="text-xs text-[#64748b]">Intake</span>
+    <span class="text-xs text-[var(--la-text-dim)]">Intake</span>
     <!-- Plan Builder mode toggle -->
     <div class="ml-auto flex items-center gap-2" data-onboarding="intake-mode-toggle">
       <button
         class="px-3 py-1 text-[10px] rounded transition-colors
-          {!isPlanMode ? 'bg-[#FFD700]/15 text-[#FFD700] border border-[#FFD700]/30' : 'text-[#475569] border border-transparent hover:text-[#FFD700]'}"
+          {!isPlanMode ? 'bg-[var(--la-focus-ring)]/15 text-[var(--la-focus-ring)] border border-[var(--la-focus-ring)]/30' : 'text-[var(--la-text-dim)] border border-transparent hover:text-[var(--la-focus-ring)]'}"
         onclick={() => { if (isPlanMode) togglePlanMode(); }}
-      >Quick</button>
+      >Quick Build</button>
       <button
         class="px-3 py-1 text-[10px] rounded transition-colors
-          {isPlanMode ? 'bg-[#FFD700]/15 text-[#FFD700] border border-[#FFD700]/30' : 'text-[#475569] border border-transparent hover:text-[#FFD700]'}"
+          {isPlanMode ? 'bg-[var(--la-focus-ring)]/15 text-[var(--la-focus-ring)] border border-[var(--la-focus-ring)]/30' : 'text-[var(--la-text-dim)] border border-transparent hover:text-[var(--la-focus-ring)]'}"
         onclick={() => { if (!isPlanMode) togglePlanMode(); }}
-      >Plan</button>
+      >Plan Builder</button>
     </div>
   </header>
 
@@ -464,16 +464,16 @@
             {#each Object.entries(SOURCE_CONFIG) as [key, cfg]}
               <button
                 class="p-3 rounded-lg border text-left transition-colors
-                  {form.source === key ? 'border-[#FFD700] bg-[#FFD700]/5' : 'border-[var(--la-hair-strong)] hover:border-[#334155] bg-[var(--la-bg-elev-1)]'}"
+                  {form.source === key ? 'border-[var(--la-focus-ring)] bg-[var(--la-focus-ring)]/5' : 'border-[var(--la-hair-strong)] hover:border-[var(--la-hair-strong)] bg-[var(--la-bg-elev-1)]'}"
                 onclick={() => setSource(key as IntakeSource)}
               >
                 <div class="flex items-center gap-2 mb-1">
                   <div class="w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold bg-[var(--la-bg-elev-2)] text-[var(--la-text-label)]">
                     {cfg.icon}
                   </div>
-                  <span class="text-[11px] font-medium text-[#e2e8f0]">{cfg.label}</span>
+                  <span class="text-[11px] font-medium text-[var(--la-text-bright)]">{cfg.label}</span>
                 </div>
-                <p class="text-[9px] text-[#475569]">{cfg.desc}</p>
+                <p class="text-[9px] text-[var(--la-text-dim)]">{cfg.desc}</p>
               </button>
             {/each}
           </div>
@@ -488,10 +488,10 @@
               value={form.repoPath}
               oninput={(e) => { intakeForm.update(f => ({ ...f, repoPath: (e.target as HTMLInputElement).value })); }}
               placeholder="org/repo or local path"
-              class="flex-1 bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#475569] outline-none focus:border-[#FFD700]"
+              class="flex-1 bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded px-3 py-2 text-sm text-[var(--la-text-bright)] placeholder-[var(--la-text-dim)] outline-none focus:border-[var(--la-focus-ring)]"
             />
             <button
-              class="px-3 py-2 text-xs rounded border border-[var(--la-hair-strong)] text-[#64748b] hover:border-[#FFD700] hover:text-[#FFD700] transition-colors"
+              class="px-3 py-2 text-xs rounded border border-[var(--la-hair-strong)] text-[var(--la-text-dim)] hover:border-[var(--la-focus-ring)] hover:text-[var(--la-focus-ring)] transition-colors"
               onclick={prefetchRepo}
               disabled={prefetching || !form.repoPath.trim()}
             >
@@ -502,11 +502,11 @@
           <!-- Prefetched metadata preview -->
           {#if previewData}
             <div class="mt-2 bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg p-3">
-              <h3 class="text-[10px] font-medium text-[#64748b] mb-2">PREFETCHED METADATA</h3>
+              <h3 class="text-[10px] font-medium text-[var(--la-text-dim)] mb-2">PREFETCHED METADATA</h3>
               <div class="grid grid-cols-2 gap-2">
                 {#each Object.entries(previewData) as [key, value]}
                   <div class="flex items-center gap-2">
-                    <span class="text-[9px] text-[#475569] uppercase">{key}:</span>
+                    <span class="text-[9px] text-[var(--la-text-dim)] uppercase">{key}:</span>
                     <span class="text-[10px] text-[var(--la-text-label)]">{value}</span>
                   </div>
                 {/each}
@@ -526,12 +526,12 @@
             }}
             placeholder="Describe what this build should accomplish..."
             rows="3"
-            class="w-full bg-[var(--la-bg-elev-1)] border rounded px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#475569] outline-none resize-y
-              {fieldErrors.description ? 'border-[#ef4444] focus:border-[#ef4444]' : 'border-[var(--la-hair-strong)] focus:border-[#FFD700]'}"
+            class="w-full bg-[var(--la-bg-elev-1)] border rounded px-3 py-2 text-sm text-[var(--la-text-bright)] placeholder-[var(--la-text-dim)] outline-none resize-y
+              {fieldErrors.description ? 'border-[var(--la-danger-stroke)] focus:border-[var(--la-danger-stroke)]' : 'border-[var(--la-hair-strong)] focus:border-[var(--la-focus-ring)]'}"
             data-testid="intake-description"
           ></textarea>
           {#if fieldErrors.description}
-            <p class="mt-1 text-[10px] text-[#ef4444]" data-testid="intake-description-error">{fieldErrors.description}</p>
+            <p class="mt-1 text-[10px] text-[var(--la-danger-stroke)]" data-testid="intake-description-error">{fieldErrors.description}</p>
           {/if}
         </div>
 
@@ -546,14 +546,14 @@
 
               <button
                 class="p-3 rounded-lg border text-left transition-colors
-                  {isSelected ? 'border-[#FFD700] bg-[#FFD700]/5' : 'border-[var(--la-hair-strong)] hover:border-[#334155] bg-[var(--la-bg-elev-1)]'}"
+                  {isSelected ? 'border-[var(--la-focus-ring)] bg-[var(--la-focus-ring)]/5' : 'border-[var(--la-hair-strong)] hover:border-[var(--la-hair-strong)] bg-[var(--la-bg-elev-1)]'}"
                 onclick={() => setMetaSkill(card.skill)}
               >
                 <div class="flex items-center gap-2 mb-1.5">
                   <PolytopeIcon type={polyType} color={polyColor} size={20} />
                   <span class="text-[11px] font-semibold" style="color: {polyColor}">{card.label}</span>
                 </div>
-                <p class="text-[9px] text-[#475569] line-clamp-2">{card.description}</p>
+                <p class="text-[9px] text-[var(--la-text-dim)] line-clamp-2">{card.description}</p>
               </button>
             {/each}
           </div>
@@ -567,7 +567,7 @@
               {@const isActive = form.priority === key}
               <button
                 class="px-4 py-2 text-xs rounded border transition-colors
-                  {isActive ? `border-current bg-current/10` : 'border-[var(--la-hair-strong)] text-[#64748b] hover:border-[#334155]'}"
+                  {isActive ? `border-current bg-current/10` : 'border-[var(--la-hair-strong)] text-[var(--la-text-dim)] hover:border-[var(--la-hair-strong)]'}"
                 style={isActive ? `color: ${cfg.color}; border-color: ${cfg.color}; background-color: ${cfg.color}10` : ''}
                 onclick={() => setPriority(key as Priority)}
               >
@@ -586,19 +586,19 @@
                   type="text"
                   bind:value={planName}
                   placeholder="Build plan name"
-                  class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded px-2 py-1 text-[10px] text-[#e2e8f0] w-40 outline-none focus:border-[#FFD700]"
+                  class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded px-2 py-1 text-[10px] text-[var(--la-text-bright)] w-40 outline-none focus:border-[var(--la-focus-ring)]"
                 />
-                <span class="text-[9px] text-[#475569] font-mono">{planCodename}</span>
+                <span class="text-[9px] text-[var(--la-text-dim)] font-mono">{planCodename}</span>
               </div>
             </div>
 
             <!-- Tier selector -->
             <div class="flex items-center gap-2 mb-3">
-              <span class="text-[9px] text-[#475569]">TIER:</span>
+              <span class="text-[9px] text-[var(--la-text-dim)]">TIER:</span>
               {#each (['SMALL', 'MEDIUM', 'LARGE'] as const) as tier}
                 <button
                   class="px-2 py-0.5 text-[9px] rounded border transition-colors
-                    {planTier === tier ? 'border-[#FFD700] bg-[#FFD700]/10 text-[#FFD700]' : 'border-[var(--la-hair-strong)] text-[#475569] hover:border-[#334155]'}"
+                    {planTier === tier ? 'border-[var(--la-focus-ring)] bg-[var(--la-focus-ring)]/10 text-[var(--la-focus-ring)]' : 'border-[var(--la-hair-strong)] text-[var(--la-text-dim)] hover:border-[var(--la-hair-strong)]'}"
                   onclick={() => setPlanTier(tier)}
                 >
                   {tier} ({tier === 'SMALL' ? '4' : tier === 'MEDIUM' ? '6' : '7'})
@@ -614,17 +614,17 @@
                     class="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-[var(--la-bg-elev-2)]/50 transition-colors"
                     onclick={() => togglePhaseExpand(phase.id)}
                   >
-                    <span class="text-[9px] text-[#475569] w-5">{phase.id}</span>
-                    <span class="text-[11px] font-medium text-[#e2e8f0] flex-1">{phase.title}</span>
+                    <span class="text-[9px] text-[var(--la-text-dim)] w-5">{phase.id}</span>
+                    <span class="text-[11px] font-medium text-[var(--la-text-bright)] flex-1">{phase.title}</span>
                     {#if phase.assigned_sibling}
                       <span class="text-[8px] px-1.5 py-0.5 rounded bg-[var(--la-bg-elev-2)] text-[var(--la-text-label)]">{phase.assigned_sibling}</span>
                     {/if}
-                    <span class="text-[9px] text-[#475569]">{expandedPhase === phase.id ? '▾' : '▸'}</span>
+                    <span class="text-[9px] text-[var(--la-text-dim)]">{expandedPhase === phase.id ? '▾' : '▸'}</span>
                   </button>
 
                   {#if expandedPhase === phase.id}
                     <div class="px-3 pb-3 border-t border-[var(--la-hair-strong)] space-y-2">
-                      <p class="text-[9px] text-[#64748b] mt-2">{phase.description}</p>
+                      <p class="text-[9px] text-[var(--la-text-dim)] mt-2">{phase.description}</p>
 
                       <!-- Task items -->
                       {#if phase.items && phase.items.length > 0}
@@ -634,7 +634,7 @@
                               <span class="text-[9px] text-[var(--la-text-label)]">-</span>
                               <span class="text-[10px] text-[var(--la-text-label)] flex-1">{item}</span>
                               <button
-                                class="text-[9px] text-[#475569] opacity-0 group-hover:opacity-100"
+                                class="text-[9px] text-[var(--la-text-dim)] opacity-0 group-hover:opacity-100"
                                 onclick={() => removePhaseItem(phase.id, itemIdx)}
                               >x</button>
                             </div>
@@ -648,11 +648,11 @@
                           type="text"
                           bind:value={newItemText}
                           placeholder="Add task item..."
-                          class="flex-1 bg-[#0d1117] border border-[var(--la-hair-strong)] rounded px-2 py-1 text-[9px] text-[#e2e8f0] outline-none focus:border-[#FFD700]"
+                          class="flex-1 bg-[var(--la-drawer-bg)] border border-[var(--la-hair-strong)] rounded px-2 py-1 text-[9px] text-[var(--la-text-bright)] outline-none focus:border-[var(--la-focus-ring)]"
                           onkeydown={(e) => { if (e.key === 'Enter') addPhaseItem(phase.id); }}
                         />
                         <button
-                          class="px-2 text-[9px] text-[#FFD700] hover:text-white"
+                          class="px-2 text-[9px] text-[var(--la-focus-ring)] hover:text-white"
                           onclick={() => addPhaseItem(phase.id)}
                         >+</button>
                       </div>
@@ -660,10 +660,10 @@
                       <!-- Deliverables -->
                       {#if phase.deliverables && phase.deliverables.length > 0}
                         <div class="mt-1">
-                          <span class="text-[8px] text-[#475569] uppercase">Deliverables:</span>
+                          <span class="text-[8px] text-[var(--la-text-dim)] uppercase">Deliverables:</span>
                           <div class="flex flex-wrap gap-1 mt-0.5">
                             {#each phase.deliverables as d}
-                              <span class="text-[8px] px-1.5 py-0.5 rounded bg-[var(--la-bg-elev-2)] text-[#64748b]">{d}</span>
+                              <span class="text-[8px] px-1.5 py-0.5 rounded bg-[var(--la-bg-elev-2)] text-[var(--la-text-dim)]">{d}</span>
                             {/each}
                           </div>
                         </div>
@@ -680,7 +680,7 @@
                       GATE: {GATE_TYPE_LABELS[phase.exit_gate.type]}
                     </span>
                     <select
-                      class="bg-transparent text-[8px] text-[#475569] outline-none cursor-pointer"
+                      class="bg-transparent text-[8px] text-[var(--la-text-dim)] outline-none cursor-pointer"
                       aria-label="Gate type for {phase.title}"
                       value={phase.exit_gate.type}
                       onchange={(e) => changeGateType(phase.id, (e.target as HTMLSelectElement).value as GateType)}
@@ -689,7 +689,7 @@
                         <option value={val}>{label}</option>
                       {/each}
                     </select>
-                    <span class="text-[8px] text-[#475569]">({phase.exit_gate.criteria.length} criteria)</span>
+                    <span class="text-[8px] text-[var(--la-text-dim)]">({phase.exit_gate.criteria.length} criteria)</span>
                   </div>
                   <div class="flex-1 h-px" style="background-color: {GATE_TYPE_COLORS[phase.exit_gate.type]}30"></div>
                 </div>
@@ -698,10 +698,10 @@
 
             <!-- Validation errors -->
             {#if validationErrors.length > 0}
-              <div class="mt-3 bg-[#ef4444]/10 border border-[#ef4444]/30 rounded-lg p-3">
-                <h3 class="text-[10px] font-medium text-[#ef4444] mb-1">Validation Errors</h3>
+              <div class="mt-3 bg-[var(--la-danger-stroke)]/10 border border-[var(--la-danger-stroke)]/30 rounded-lg p-3">
+                <h3 class="text-[10px] font-medium text-[var(--la-danger-stroke)] mb-1">Validation Errors</h3>
                 {#each validationErrors as err}
-                  <div class="text-[9px] text-[#ef4444]/80">- {err}</div>
+                  <div class="text-[9px] text-[var(--la-danger-stroke)]/80">- {err}</div>
                 {/each}
               </div>
             {/if}
@@ -725,7 +725,7 @@
                 size={40}
               />
               <div>
-                <div class="text-sm font-semibold text-[#e2e8f0]">{selectedCard.label}</div>
+                <div class="text-sm font-semibold text-[var(--la-text-bright)]">{selectedCard.label}</div>
                 <div class="text-[10px]" style="color: {getMetaSkillColor(selectedCard.skill)}">
                   {selectedCard.skill}
                 </div>
@@ -734,8 +734,8 @@
             <p class="text-[10px] text-[var(--la-text-label)] mb-3">{selectedCard.description}</p>
 
             <!-- Pillar flow -->
-            <div class="bg-[#0d1117] rounded p-2">
-              <div class="text-[9px] text-[#475569] mb-1">PILLAR FLOW</div>
+            <div class="bg-[var(--la-drawer-bg)] rounded p-2">
+              <div class="text-[9px] text-[var(--la-text-dim)] mb-1">PILLAR FLOW</div>
               <div class="text-[9px] text-[var(--la-text-label)] font-mono">
                 {formatPillarFlow(selectedCard.pillarActions)}
               </div>
@@ -760,10 +760,10 @@
                 <div class="text-xs font-semibold" style="color: {assignedColor}">
                   {assignedSibling.toUpperCase()}
                 </div>
-                <div class="text-[9px] text-[#475569]">Primary SQUAD member for {selectedCard.label}</div>
+                <div class="text-[9px] text-[var(--la-text-dim)]">Primary SQUAD member for {selectedCard.label}</div>
               </div>
             </div>
-            <p class="text-[9px] text-[#475569]">
+            <p class="text-[9px] text-[var(--la-text-dim)]">
               SQUAD members are auto-assigned based on meta-skill. Override with manual dispatch after build creation.
             </p>
           </div>
@@ -776,19 +776,19 @@
           </div>
           <div class="p-4 space-y-2">
             <div class="flex items-center justify-between text-[10px]">
-              <span class="text-[#475569]">Source</span>
+              <span class="text-[var(--la-text-dim)]">Source</span>
               <span class="text-[var(--la-text-label)]">{form.source}</span>
             </div>
             <div class="flex items-center justify-between text-[10px]">
-              <span class="text-[#475569]">Repo</span>
+              <span class="text-[var(--la-text-dim)]">Repo</span>
               <span class="text-[var(--la-text-label)] font-mono">{form.repoPath || '—'}</span>
             </div>
             <div class="flex items-center justify-between text-[10px]">
-              <span class="text-[#475569]">Meta-Skill</span>
+              <span class="text-[var(--la-text-dim)]">Meta-Skill</span>
               <span class="text-[var(--la-text-label)]">{form.metaSkill}</span>
             </div>
             <div class="flex items-center justify-between text-[10px]">
-              <span class="text-[#475569]">Priority</span>
+              <span class="text-[var(--la-text-dim)]">Priority</span>
               <span style="color: {PRIORITY_CONFIG[form.priority].color}">
                 {PRIORITY_CONFIG[form.priority].label}
               </span>
@@ -804,19 +804,19 @@
             </div>
             <div class="p-3 space-y-1.5">
               <div class="flex items-center gap-2 text-[9px]">
-                <span class="w-2 h-2 rounded-full bg-[#f59e0b]"></span>
+                <span class="w-2 h-2 rounded-full bg-[var(--la-agent-performance)]"></span>
                 <span class="text-[var(--la-text-label)]">11 pre-flight checks (3 blocking)</span>
               </div>
               <div class="flex items-center gap-2 text-[9px]">
-                <span class="w-2 h-2 rounded-full bg-[#10b981]"></span>
+                <span class="w-2 h-2 rounded-full bg-[var(--la-agent-researcher)]"></span>
                 <span class="text-[var(--la-text-label)]">{planPhases.length} work phases</span>
               </div>
               <div class="flex items-center gap-2 text-[9px]">
-                <span class="w-2 h-2 rounded-full bg-[#6366f1]"></span>
+                <span class="w-2 h-2 rounded-full bg-[var(--la-agent-testing)]"></span>
                 <span class="text-[var(--la-text-label)]">{planPhases.length} mandatory exit gates</span>
               </div>
               <div class="flex items-center gap-2 text-[9px]">
-                <span class="w-2 h-2 rounded-full bg-[#06b6d4]"></span>
+                <span class="w-2 h-2 rounded-full bg-[var(--la-agent-knowledge)]"></span>
                 <span class="text-[var(--la-text-label)]">6 close-out steps</span>
               </div>
               {#if isPlanMode && planPhases.length > 0}
@@ -824,8 +824,8 @@
                   <PhaseTimeline phases={planPhases.map(p => ({ id: p.id, title: p.title.split(' — ')[0], status: p.status }))} compact={true} />
                 </div>
               {/if}
-              <div class="text-[8px] text-[#475569] mt-2">
-                Codename: <span class="font-mono text-[#FFD700]">{planCodename}</span>
+              <div class="text-[8px] text-[var(--la-text-dim)] mt-2">
+                Codename: <span class="font-mono text-[var(--la-focus-ring)]">{planCodename}</span>
               </div>
             </div>
           </div>
@@ -833,24 +833,24 @@
 
         <!-- Dedupe warning — inline, shown before submit button when a duplicate is detected -->
         {#if dedupeWarning}
-          <div class="bg-[#f59e0b]/10 border border-[#f59e0b]/40 rounded-lg p-3" data-testid="intake-dedupe-warning">
+          <div class="bg-[var(--la-agent-performance)]/10 border border-[var(--la-agent-performance)]/40 rounded-lg p-3" data-testid="intake-dedupe-warning">
             <div class="flex items-start gap-2">
-              <span class="text-[#f59e0b] text-sm shrink-0">⚠</span>
+              <span class="text-[var(--la-agent-performance)] text-sm shrink-0">⚠</span>
               <div class="flex-1">
-                <p class="text-[11px] text-[#f59e0b] font-medium mb-1">Duplicate detected</p>
+                <p class="text-[11px] text-[var(--la-agent-performance)] font-medium mb-1">Duplicate detected</p>
                 <p class="text-[10px] text-[var(--la-text-label)]">
-                  A <span class="font-mono text-[#e2e8f0]">{form.metaSkill}</span> build
-                  {form.repoPath ? `for <span class="font-mono text-[#e2e8f0]">${form.repoPath}</span>` : ''}
-                  is already <span class="text-[#f59e0b]">{dedupeWarning.status}</span>
+                  A <span class="font-mono text-[var(--la-text-bright)]">{form.metaSkill}</span> build
+                  {form.repoPath ? `for <span class="font-mono text-[var(--la-text-bright)]">${form.repoPath}</span>` : ''}
+                  is already <span class="text-[var(--la-agent-performance)]">{dedupeWarning.status}</span>
                   (ID: <span class="font-mono">{dedupeWarning.buildId}</span>).
                 </p>
                 <div class="flex gap-2 mt-2">
                   <button
-                    class="px-3 py-1 text-[10px] rounded border border-[#f59e0b]/40 text-[#f59e0b] hover:bg-[#f59e0b]/10 transition-colors"
+                    class="px-3 py-1 text-[10px] rounded border border-[var(--la-agent-performance)]/40 text-[var(--la-agent-performance)] hover:bg-[var(--la-agent-performance)]/10 transition-colors"
                     onclick={() => { window.location.hash = '/'; }}
                   >View existing</button>
                   <button
-                    class="px-3 py-1 text-[10px] rounded border border-[#64748b]/40 text-[#64748b] hover:border-[#94a3b8] hover:text-[var(--la-text-label)] transition-colors"
+                    class="px-3 py-1 text-[10px] rounded border border-[var(--la-text-dim)]/40 text-[var(--la-text-dim)] hover:border-[var(--la-text-label)] hover:text-[var(--la-text-label)] transition-colors"
                     data-testid="intake-force-create"
                     onclick={() => { forceCreate = true; dedupeWarning = null; }}
                   >Create anyway</button>
@@ -864,7 +864,7 @@
         <button
           data-onboarding="intake-submit"
           data-testid="intake-submit"
-          class="w-full px-6 py-3 bg-[#FFD700] text-white text-sm rounded-lg hover:bg-[#D4A017] transition-colors font-medium disabled:opacity-50"
+          class="w-full px-6 py-3 bg-[var(--la-focus-ring)] text-white text-sm rounded-lg hover:bg-[var(--la-focus-ring)] transition-colors font-medium disabled:opacity-50"
           onclick={isPlanMode ? submitPlan : submit}
           disabled={submitting}
         >

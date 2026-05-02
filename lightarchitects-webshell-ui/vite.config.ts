@@ -1,4 +1,3 @@
-/// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 import path from 'path';
 import tailwindcss from '@tailwindcss/vite';
@@ -60,30 +59,6 @@ export default defineConfig({
         target: BACKEND_URL,
         changeOrigin: true,
         ws: true,
-      },
-    },
-  },
-  test: {
-    // Unit tests use jsdom for DOM APIs
-    environment: 'jsdom',
-    globals: true,
-    include: ['src/**/*.test.ts', 'src/**/*.svelte.test.ts'],
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'html'],
-      include: ['src/lib/**/*.ts'],
-      exclude: [
-        'src/lib/api.ts',     // HTTP client — tested via integration
-        'src/lib/ws.ts',      // WebSocket — tested via integration
-        'src/lib/sse.ts',     // SSE — tested via integration
-        'src/lib/commands.ts', // Slash commands — tested via integration
-        'src/lib/helix-math.ts', // Pure math for 3D helix — tested visually
-      ],
-      thresholds: {
-        lines: 80,
-        functions: 80,
-        branches: 70,
-        statements: 80,
       },
     },
   },

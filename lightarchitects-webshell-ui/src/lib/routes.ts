@@ -1,0 +1,88 @@
+// Hash-based SPA router. Custom implementation (no SvelteKit).
+// Per project_webshell_drill_hierarchy memory: BuildDetail owns view modes;
+// Dispatch owns orphan runs; Helix owns strand/entry drilldown.
+
+export type ScreenKey =
+  | 'Ops'
+  | 'Dispatch'
+  | 'Builds'
+  | 'Intake'
+  | 'Helix'
+  | 'BuildDetail'
+  | 'ProjectDetail';
+
+export interface RouteMatch {
+  screen: ScreenKey;
+  params: Record<string, string>;
+}
+
+// Legacy path → replacement path rewrites (history.replaceState; preserves deep links per H-quantum-2)
+const REDIRECTS: [string, string][] = [
+  ['/squad-dispatch', '/dispatch'],
+  ['/activity',       '/ops#activity'],
+  ['/sitrep',         '/ops#health'],
+];
+
+type RouteEntry = [RegExp, ScreenKey, string[]];
+
+// Ordered most-specific first — prevents /builds/:buildId from matching before deeper patterns
+const ROUTES: RouteEntry[] = [
+  [/^\/builds\/([^/]+)\/phase\/([^/]+)\/wave\/([^/]+)\/agent\/([^/]+)$/, 'BuildDetail',   ['buildId', 'phaseId', 'waveId', 'agentKey']],
+  [/^\/builds\/([^/]+)\/phase\/([^/]+)\/wave\/([^/]+)$/,                 'BuildDetail',   ['buildId', 'phaseId', 'waveId']],
+  [/^\/builds\/([^/]+)\/phase\/([^/]+)$/,                                'BuildDetail',   ['buildId', 'phaseId']],
+  [/^\/builds\/([^/]+)$/,                                                'BuildDetail',   ['buildId']],
+  [/^\/dispatch\/run\/([^/]+)\/agent\/([^/]+)$/,                         'Dispatch',      ['runId', 'agentKey']],
+  [/^\/dispatch\/run\/([^/]+)$/,                                         'Dispatch',      ['runId']],
+  [/^\/helix\/strand\/([^/]+)$/,                                         'Helix',         ['siblingKey']],
+  [/^\/helix\/entry\/([^/]+)$/,                                          'Helix',         ['entryId']],
+  [/^\/workspace\/([^/]+)$/,                                             'BuildDetail',   ['buildId']],
+  [/^\/workspace$/,                                                      'BuildDetail',   []],
+  [/^\/project\/([^/]+)$/,                                               'ProjectDetail', ['projectId']],
+  [/^\/?$/,                                                              'Builds',        []],
+  [/^\/ops(#.*)?$/,                                                      'Ops',           []],
+  [/^\/dispatch$/,                                                       'Dispatch',      []],
+  [/^\/builds$/,                                                         'Builds',        []],
+  [/^\/intake$/,                                                         'Intake',        []],
+  [/^\/helix$/,                                                          'Helix',         []],
+];
+
+/** Matches a hash-fragment path (with or without leading #) to a screen + params. */
+export function matchRoute(hash: string): RouteMatch {
+  const path = hash.replace(/^#/, '').split('?')[0] || '/';
+  for (const [pattern, screen, paramKeys] of ROUTES) {
+    const m = path.match(pattern);
+    if (m) {
+      const params: Record<string, string> = {};
+      paramKeys.forEach((k, i) => { params[k] = m[i + 1] ?? ''; });
+      return { screen, params };
+    }
+  }
+  return { screen: 'Builds', params: {} };
+}
+
+/** Checks current hash for legacy paths and rewrites via history.replaceState. */
+export function applyRedirects(): void {
+  const hash = window.location.hash.slice(1).split('?')[0];
+  for (const [from, to] of REDIRECTS) {
+    if (hash === from || hash.startsWith(`${from}/`)) {
+      const suffix = hash.slice(from.length);
+      history.replaceState(null, '', `#${to}${suffix}`);
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      return;
+    }
+  }
+}
+
+/**
+ * Navigate to a hash path with optional param interpolation.
+ * @example navigate('/builds/:buildId', { buildId: 'abc' })
+ */
+export function navigate(path: string, params?: Record<string, string>): void {
+  let resolved = path;
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      resolved = resolved.replace(`:${k}`, encodeURIComponent(v));
+    }
+  }
+  window.location.hash = resolved;
+}

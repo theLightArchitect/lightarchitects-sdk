@@ -49,28 +49,30 @@
   {#if history.length === 0}
     <span class="history-empty">— no past dispatches —</span>
   {:else}
-    <div class="history-pills" role="list">
+    <ul class="history-pills">
       {#each history as entry (entry.id)}
-        <button
-          class="history-pill"
-          onclick={() => onSelect?.(entry)}
-          title={entry.task}
-        >
-          <span class="pill-glyph" style="color: {statusColor(entry.status)}">
-            {statusGlyph(entry.status)}
-          </span>
-          <span class="pill-task">
-            {entry.task.length > 36 ? entry.task.slice(0, 36) + '…' : entry.task}
-          </span>
-          <span class="pill-dots" aria-hidden="true">
-            {#each agentDots(entry.agents) as color}
-              <span class="pill-dot" style="background: {color}"></span>
-            {/each}
-          </span>
-          <span class="pill-time">{relativeTime(entry.startedAt)}</span>
-        </button>
+        <li class="history-pill-item">
+          <button
+            class="history-pill"
+            onclick={() => onSelect?.(entry)}
+            title={entry.task}
+          >
+            <span class="pill-glyph" style="color: {statusColor(entry.status)}">
+              {statusGlyph(entry.status)}
+            </span>
+            <span class="pill-task">
+              {entry.task.length > 36 ? entry.task.slice(0, 36) + '…' : entry.task}
+            </span>
+            <span class="pill-dots" aria-hidden="true">
+              {#each agentDots(entry.agents) as color}
+                <span class="pill-dot" style="background: {color}"></span>
+              {/each}
+            </span>
+            <span class="pill-time">{relativeTime(entry.startedAt)}</span>
+          </button>
+        </li>
       {/each}
-    </div>
+    </ul>
 
     <button class="clear-btn" onclick={onClear} aria-label="Clear history">CLR</button>
   {/if}
@@ -78,12 +80,14 @@
 
 <style>
   .history-strip {
-    display: flex;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 8px;
-    height: 100%;
+    height: 36px;
     padding: 0 16px;
     overflow: hidden;
+    background: var(--la-bg-frame);
   }
 
   .history-label {
@@ -109,8 +113,12 @@
     flex: 1;
     min-width: 0;
     scrollbar-width: none;
+    list-style: none;
+    margin: 0;
+    padding: 0;
   }
   .history-pills::-webkit-scrollbar { display: none; }
+  .history-pill-item { display: contents; }
 
   .history-pill {
     display: flex;

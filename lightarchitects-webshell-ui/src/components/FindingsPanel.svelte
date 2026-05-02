@@ -53,19 +53,19 @@
   const visibleFindings = $derived(showAll ? findings : displayed);
 </script>
 
-<div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
-  <div class="px-4 py-2 border-b border-[#1e293b] flex items-center justify-between">
-    <h3 class="text-xs font-medium text-[#94a3b8]">FINDINGS</h3>
-    <span class="text-[10px] text-[#475569]">{findings.length} total</span>
+<div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] rounded-lg overflow-hidden">
+  <div class="px-4 py-2 border-b border-[var(--la-drawer-border)] flex items-center justify-between">
+    <h3 class="text-xs font-medium text-[var(--la-text-label)]">FINDINGS</h3>
+    <span class="text-[10px] text-[var(--la-text-dim)]">{findings.length} total</span>
   </div>
 
   {#if visibleFindings.length === 0}
     <div class="px-4 py-6 text-center">
-      <p class="text-xs text-[#475569]">No findings yet</p>
-      <p class="text-[10px] text-[#334155]">Findings will appear as the build progresses</p>
+      <p class="text-xs text-[var(--la-text-dim)]">No findings yet</p>
+      <p class="text-[10px] text-[var(--la-hair-strong)]">Findings will appear as the build progresses</p>
     </div>
   {:else}
-    <div class="divide-y divide-[#1e293b]">
+    <div class="divide-y divide-[var(--la-drawer-border)]">
       {#each visibleFindings as finding (finding.id)}
         {@const isExpanded = expandedIds.has(finding.id)}
         {@const color = severityColor(finding.severity)}
@@ -73,7 +73,7 @@
           <!-- Finding header row (always visible, clickable to expand) -->
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
-            class="px-4 py-2 flex items-start gap-3 hover:bg-[#0d1117] transition-colors cursor-pointer"
+            class="px-4 py-2 flex items-start gap-3 hover:bg-[var(--la-drawer-bg)] transition-colors cursor-pointer"
             role="button"
             tabindex="0"
             aria-expanded={isExpanded}
@@ -93,36 +93,36 @@
             <!-- Finding content -->
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
-                <span class="text-xs text-[#e2e8f0] truncate">{finding.title}</span>
+                <span class="text-xs text-[var(--la-text-bright)] truncate">{finding.title}</span>
                 {#if finding.verified}
-                  <span class="text-[9px] px-1.5 py-0.5 rounded bg-[#22c55e]/10 text-[#22c55e]">VERIFIED</span>
+                  <span class="text-[9px] px-1.5 py-0.5 rounded bg-[var(--la-agent-researcher)]/10 text-[var(--la-agent-researcher)]">VERIFIED</span>
                 {:else if onVerify}
                   <button
-                    class="text-[9px] px-1.5 py-0.5 rounded bg-[#f59e0b]/10 text-[#f59e0b] hover:bg-[#f59e0b]/20 transition-colors"
+                    class="text-[9px] px-1.5 py-0.5 rounded bg-[var(--la-agent-performance)]/10 text-[var(--la-agent-performance)] hover:bg-[var(--la-agent-performance)]/20 transition-colors"
                     onclick={(e) => { e.stopPropagation(); onVerify(finding.id); }}
                   >
                     VERIFY
                   </button>
                 {/if}
-                <span class="text-[9px] text-[#475569] ml-auto">{isExpanded ? '▼' : '▶'}</span>
+                <span class="text-[9px] text-[var(--la-text-dim)] ml-auto">{isExpanded ? '▼' : '▶'}</span>
               </div>
               <div class="flex items-center gap-2 mt-0.5">
                 <span class="text-[9px] px-1.5 py-0.5 rounded" style="background-color: {PILLAR_COLORS[finding.pillar]}20; color: {PILLAR_COLORS[finding.pillar]}">
                   {finding.pillar}
                 </span>
-                <span class="text-[9px] px-1.5 py-0.5 rounded bg-[#1e293b] text-[#64748b]">
+                <span class="text-[9px] px-1.5 py-0.5 rounded bg-[var(--la-drawer-border)] text-[var(--la-text-dim)]">
                   {categoryIcon(finding.category)} {finding.category}
                 </span>
                 {#if finding.file}
                   <button
-                    class="text-[10px] text-[#FFD700] hover:text-[#9F67FF] font-mono truncate transition-colors"
+                    class="text-[10px] text-[var(--la-focus-ring)] hover:text-[var(--la-agent-testing)] font-mono truncate transition-colors"
                     onclick={(e) => { e.stopPropagation(); onFileClick?.(finding.file!, finding.line); }}
                     title="Open {finding.file}{finding.line ? `:${finding.line}` : ''} in editor"
                   >
                     {finding.file}{finding.line ? `:${finding.line}` : ''}
                   </button>
                   <button
-                    class="text-[9px] text-[#475569] hover:text-[#94a3b8] transition-colors px-1 shrink-0"
+                    class="text-[9px] text-[var(--la-text-dim)] hover:text-[var(--la-text-label)] transition-colors px-1 shrink-0"
                     onclick={(e) => { e.stopPropagation(); onReveal?.(finding.file!); }}
                     title="Reveal in Finder"
                     aria-label="Reveal {finding.file} in Finder"
@@ -137,18 +137,18 @@
           <!-- Expanded detail (visible when expanded) -->
           {#if isExpanded}
             <div class="px-4 pb-3 pl-12">
-              <p class="text-[11px] text-[#94a3b8] leading-relaxed">{finding.description}</p>
+              <p class="text-[11px] text-[var(--la-text-label)] leading-relaxed">{finding.description}</p>
               <div class="flex items-center gap-3 mt-2">
                 <span class="text-[9px] px-1.5 py-0.5 rounded" style="background-color: {color}20; color: {color}">
                   {severityLabel(finding.severity)}
                 </span>
                 {#if finding.verified}
-                  <span class="text-[9px] text-[#22c55e]">Verified</span>
+                  <span class="text-[9px] text-[var(--la-agent-researcher)]">Verified</span>
                 {:else}
-                  <span class="text-[9px] text-[#f59e0b]">Awaiting verification</span>
+                  <span class="text-[9px] text-[var(--la-agent-performance)]">Awaiting verification</span>
                 {/if}
                 {#if finding.file}
-                  <span class="text-[9px] text-[#475569] font-mono">
+                  <span class="text-[9px] text-[var(--la-text-dim)] font-mono">
                     → {finding.file}{finding.line ? `:${finding.line}` : ''}
                   </span>
                 {/if}
@@ -160,9 +160,9 @@
     </div>
 
     {#if hasMore || showAll}
-      <div class="px-4 py-2 border-t border-[#1e293b] text-center">
+      <div class="px-4 py-2 border-t border-[var(--la-drawer-border)] text-center">
         <button
-          class="text-[10px] text-[#FFD700] hover:text-[#9F67FF] transition-colors"
+          class="text-[10px] text-[var(--la-focus-ring)] hover:text-[var(--la-agent-testing)] transition-colors"
           onclick={() => showAll = !showAll}
         >
           {showAll ? 'Show less' : `+ ${findings.length - maxDisplay} more findings`}

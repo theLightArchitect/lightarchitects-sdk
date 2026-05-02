@@ -55,37 +55,37 @@
   );
 </script>
 
-<div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden">
+<div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] rounded-lg overflow-hidden">
   <!-- Header -->
-  <div class="px-4 py-2 border-b border-[#1e293b] flex items-center justify-between">
-    <h3 class="text-xs font-medium text-[#94a3b8]">ALERTS</h3>
+  <div class="px-4 py-2 border-b border-[var(--la-drawer-border)] flex items-center justify-between">
+    <h3 class="text-xs font-medium text-[var(--la-text-label)]">ALERTS</h3>
     <div class="flex items-center gap-2">
       {#if $alertStats.critical > 0}
-        <span class="text-[9px] px-1.5 py-0.5 rounded bg-[#ef4444]/20 text-[#ef4444]">
+        <span class="text-[9px] px-1.5 py-0.5 rounded bg-[var(--la-danger-stroke)]/20 text-[var(--la-danger-stroke)]">
           {$alertStats.critical} critical
         </span>
       {/if}
       {#if $alertStats.error > 0}
-        <span class="text-[9px] px-1.5 py-0.5 rounded bg-[#ef4444]/10 text-[#ef4444]">
+        <span class="text-[9px] px-1.5 py-0.5 rounded bg-[var(--la-danger-stroke)]/10 text-[var(--la-danger-stroke)]">
           {$alertStats.error} error
         </span>
       {/if}
-      <span class="text-[10px] text-[#6b7280]">{$alertStats.unacknowledged} unacked</span>
+      <span class="text-[10px] text-[var(--la-text-base)]">{$alertStats.unacknowledged} unacked</span>
     </div>
   </div>
 
   <!-- Filter toggle -->
-  <div class="px-4 py-1.5 border-b border-[#1e293b] flex gap-2">
+  <div class="px-4 py-1.5 border-b border-[var(--la-drawer-border)] flex gap-2">
     <button
       class="text-[9px] px-2 py-0.5 rounded transition-colors
-        {!showAcknowledged ? 'bg-[#FFD700]/10 text-[#FFD700]' : 'text-[#64748b] hover:text-[#94a3b8]'}"
+        {!showAcknowledged ? 'bg-[var(--la-focus-ring)]/10 text-[var(--la-focus-ring)]' : 'text-[var(--la-text-dim)] hover:text-[var(--la-text-label)]'}"
       onclick={() => showAcknowledged = false}
     >
       Unacknowledged
     </button>
     <button
       class="text-[9px] px-2 py-0.5 rounded transition-colors
-        {showAcknowledged ? 'bg-[#FFD700]/10 text-[#FFD700]' : 'text-[#64748b] hover:text-[#94a3b8]'}"
+        {showAcknowledged ? 'bg-[var(--la-focus-ring)]/10 text-[var(--la-focus-ring)]' : 'text-[var(--la-text-dim)] hover:text-[var(--la-text-label)]'}"
       onclick={() => showAcknowledged = true}
     >
       All
@@ -95,17 +95,17 @@
   <!-- Alert list -->
   {#if filteredAlerts.length === 0}
     <div class="px-4 py-6 text-center">
-      <p class="text-xs text-[#475569]">No unacknowledged alerts</p>
-      <p class="text-[10px] text-[#334155]">All alerts have been acknowledged</p>
+      <p class="text-xs text-[var(--la-text-dim)]">No unacknowledged alerts</p>
+      <p class="text-[10px] text-[var(--la-hair-strong)]">All alerts have been acknowledged</p>
     </div>
   {:else}
-    <div class="divide-y divide-[#1e293b]">
+    <div class="divide-y divide-[var(--la-drawer-border)]">
       {#each filteredAlerts as alert (alert.id)}
         {@const color = severityColor(alert.severity)}
         {@const icon = severityIcon(alert.severity)}
         {@const srcIcon = sourceIcon(alert.source)}
 
-        <div class="px-4 py-2 hover:bg-[#0d1117] transition-colors">
+        <div class="px-4 py-2 hover:bg-[var(--la-drawer-bg)] transition-colors">
           <div class="flex items-start gap-3">
             <!-- Severity badge -->
             <div
@@ -118,23 +118,23 @@
             <!-- Alert content -->
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
-                <span class="text-[11px] text-[#e2e8f0]">{alert.title}</span>
+                <span class="text-[11px] text-[var(--la-text-bright)]">{alert.title}</span>
                 {#if !alert.acknowledged && onAcknowledge}
                   <button
-                    class="text-[9px] px-1.5 py-0.5 rounded bg-[#22c55e]/10 text-[#22c55e] hover:bg-[#22c55e]/20 transition-colors"
+                    class="text-[9px] px-1.5 py-0.5 rounded bg-[var(--la-agent-researcher)]/10 text-[var(--la-agent-researcher)] hover:bg-[var(--la-agent-researcher)]/20 transition-colors"
                     onclick={(e) => { e.stopPropagation(); onAcknowledge(alert.id); }}
                   >
                     ACK
                   </button>
                 {/if}
               </div>
-              <p class="text-[10px] text-[#94a3b8] mt-0.5 line-clamp-2">{alert.message}</p>
-              <div class="flex items-center gap-2 mt-1 text-[9px] text-[#475569]">
-                <span class="px-1.5 py-0.5 rounded bg-[#1e293b]">{srcIcon}</span>
+              <p class="text-[10px] text-[var(--la-text-label)] mt-0.5 line-clamp-2">{alert.message}</p>
+              <div class="flex items-center gap-2 mt-1 text-[9px] text-[var(--la-text-dim)]">
+                <span class="px-1.5 py-0.5 rounded bg-[var(--la-drawer-border)]">{srcIcon}</span>
                 <span>{formatTime(alert.timestamp)}</span>
                 {#if alert.buildId}
                   <span>&middot;</span>
-                  <span class="text-[#FFD700]">{alert.buildId.slice(-8)}</span>
+                  <span class="text-[var(--la-focus-ring)]">{alert.buildId.slice(-8)}</span>
                 {/if}
                 {#if alert.siblingId}
                   <span>&middot;</span>
@@ -149,8 +149,8 @@
   {/if}
 
   {#if $alerts.length > maxDisplay}
-    <div class="px-4 py-2 border-t border-[#1e293b] text-center">
-      <button class="text-[10px] text-[#FFD700] hover:text-[#9F67FF] transition-colors">
+    <div class="px-4 py-2 border-t border-[var(--la-drawer-border)] text-center">
+      <button class="text-[10px] text-[var(--la-focus-ring)] hover:text-[var(--la-agent-testing)] transition-colors">
         + {$alerts.length - maxDisplay} more alerts
       </button>
     </div>

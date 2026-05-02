@@ -47,7 +47,7 @@
   <div class="flex items-stretch gap-2">
     {#each pillars as gate, i}
       <button
-        class="flex-1 text-center rounded-lg transition-all {selected === gate.pillar ? 'ring-1 ring-[#FFD700] bg-[#FFD700]/5' : 'hover:bg-[#111827]'}"
+        class="flex-1 text-center rounded-lg transition-all {selected === gate.pillar ? 'ring-1 ring-[var(--la-focus-ring)] bg-[var(--la-focus-ring)]/5' : 'hover:bg-[var(--la-bg-elev-1)]'}"
         onclick={() => onPillarClick?.(gate.pillar)}
       >
         <!-- Pillar label -->
@@ -68,12 +68,12 @@
           ></div>
         </div>
         <!-- Confidence -->
-        <div class="text-[9px] text-[#475569] mt-1">
+        <div class="text-[9px] text-[var(--la-text-dim)] mt-1">
           {gate.status === 'pending' ? '—' : `${Math.round(gate.confidence * 100)}%`}
         </div>
       </button>
       {#if i < pillars.length - 1}
-        <div class="flex items-center text-[#334155]">
+        <div class="flex items-center text-[var(--la-hair-strong)]">
           →
         </div>
       {/if}

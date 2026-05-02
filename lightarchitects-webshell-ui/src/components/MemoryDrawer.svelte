@@ -180,7 +180,7 @@
   }
 
   function siblingColor(sibling: string): string {
-    return (SIBLING_COLORS as Record<string, string>)[sibling] ?? '#FFD700';
+    return (SIBLING_COLORS as Record<string, string>)[sibling] ?? 'var(--la-focus-ring)';
   }
 
   $effect(() => {
@@ -255,7 +255,7 @@
 <Drawer
   open={$memoryDrawerOpen}
   title="Memory"
-  subtitle="hot ({$hotMemory.length}) · cold ({$coldMemory.length})"
+  subtitle="working ({$hotMemory.length}) · archive ({$coldMemory.length})"
   onclose={() => memoryDrawerOpen.set(false)}
   testId="memory-drawer"
   headerOnboarding="memory-header"
@@ -270,17 +270,17 @@
       >
         <span
           class="w-1.5 h-1.5 rounded-full"
-          style="background: {health.tiers.filesystem ? '#22c55e' : '#475569'}"
+          style="background: {health.tiers.filesystem ? 'var(--la-agent-researcher)' : 'var(--la-text-dim)'}"
           title="filesystem {health.tiers.filesystem ? 'on' : 'off'}"
         ></span>
         <span
           class="w-1.5 h-1.5 rounded-full"
-          style="background: {health.tiers.sqlite ? '#22c55e' : '#475569'}"
+          style="background: {health.tiers.sqlite ? 'var(--la-agent-researcher)' : 'var(--la-text-dim)'}"
           title="sqlite {health.tiers.sqlite ? 'on' : 'off'}"
         ></span>
         <span
           class="w-1.5 h-1.5 rounded-full"
-          style="background: {health.tiers.neo4j ? '#22c55e' : '#475569'}"
+          style="background: {health.tiers.neo4j ? 'var(--la-agent-researcher)' : 'var(--la-text-dim)'}"
           title="neo4j {health.tiers.neo4j ? 'on' : 'off'}"
         ></span>
       </div>
@@ -290,23 +290,23 @@
     <!-- Tabs -->
     <div class="flex border-b border-[var(--la-drawer-border)] text-xs" data-onboarding="memory-tabs">
       <button
-        class="flex-1 py-2 transition-colors {tab === 'hot' ? 'bg-[#FFD700] text-white' : 'text-[var(--la-text-label)] hover:bg-[#111827]'}"
+        class="flex-1 py-2 transition-colors {tab === 'hot' ? 'bg-[var(--la-focus-ring)] text-white' : 'text-[var(--la-text-label)] hover:bg-[var(--la-bg-elev-1)]'}"
         onclick={() => { tab = 'hot'; searchResults = null; }}
         data-testid="memory-tab-hot"
         data-onboarding="memory-tab-hot"
-      >Hot (turnlog)</button>
+      >Working memory</button>
       <button
-        class="flex-1 py-2 transition-colors {tab === 'cold' ? 'bg-[#FFD700] text-white' : 'text-[var(--la-text-label)] hover:bg-[#111827]'}"
+        class="flex-1 py-2 transition-colors {tab === 'cold' ? 'bg-[var(--la-focus-ring)] text-white' : 'text-[var(--la-text-label)] hover:bg-[var(--la-bg-elev-1)]'}"
         onclick={() => { tab = 'cold'; searchResults = null; }}
         data-testid="memory-tab-cold"
         data-onboarding="memory-tab-cold"
-      >Cold (helix)</button>
+      >Archive</button>
       <button
-        class="flex-1 py-2 transition-colors {tab === 'convergences' ? 'bg-[#FFD700] text-white' : 'text-[var(--la-text-label)] hover:bg-[#111827]'}"
+        class="flex-1 py-2 transition-colors {tab === 'convergences' ? 'bg-[var(--la-focus-ring)] text-white' : 'text-[var(--la-text-label)] hover:bg-[var(--la-bg-elev-1)]'}"
         onclick={() => { tab = 'convergences'; searchResults = null; }}
         data-testid="memory-tab-convergences"
         data-onboarding="memory-tab-convergences"
-      >Convergences</button>
+      >Consolidations</button>
     </div>
 
     <!-- Search (Phase 17a: segmented mode control + input + rrf_used badge) -->
@@ -319,15 +319,15 @@
             data-active={searchMode === m}
             class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded
                    {searchMode === m
-                     ? 'bg-[#FFD700] text-white'
-                     : 'bg-[#111827] border border-[var(--la-drawer-border)] text-[var(--la-text-label)] hover:border-[#FFD700]'}"
+                     ? 'bg-[var(--la-focus-ring)] text-white'
+                     : 'bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] text-[var(--la-text-label)] hover:border-[var(--la-focus-ring)]'}"
           >{m}</button>
         {/each}
         {#if rrfUsed}
           <span
             data-testid="rrf-used-badge"
             class="ml-auto text-[10px] uppercase tracking-wider px-2 py-0.5
-                   rounded border border-[#10b981] text-[#10b981]"
+                   rounded border border-[var(--la-agent-researcher)] text-[var(--la-agent-researcher)]"
           >RRF</span>
         {/if}
       </div>
@@ -337,9 +337,9 @@
         onkeydown={(e) => { if (e.key === 'Enter') runSearch(); }}
         placeholder="Search SOUL vault… (Enter)"
         data-testid="search-input"
-        class="w-full bg-[#111827] border border-[var(--la-drawer-border)] rounded px-2 py-1.5
-               text-xs text-[#e2e8f0] placeholder-[#475569] outline-none
-               focus:border-[#FFD700]"
+        class="w-full bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] rounded px-2 py-1.5
+               text-xs text-[var(--la-text-bright)] placeholder-[var(--la-text-dim)] outline-none
+               focus:border-[var(--la-focus-ring)]"
       />
     </div>
 
@@ -354,14 +354,14 @@
       >
         <button
           class="text-[9px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-medium transition-colors
-                 {activeKinds === null ? 'bg-[#FFD700] text-white' : 'bg-[#1e293b] text-[#64748b] hover:text-white'}"
+                 {activeKinds === null ? 'bg-[var(--la-focus-ring)] text-white' : 'bg-[var(--la-drawer-border)] text-[var(--la-text-dim)] hover:text-white'}"
           onclick={clearKindFilter}
           data-testid="kind-filter-all"
         >all</button>
         {#each availableKinds as k}
           <button
             class="text-[9px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-medium transition-colors
-                   {activeKinds?.has(k) ? 'bg-[#FFD700] text-white' : 'bg-[#1e293b] text-[#FFD700] hover:text-white'}"
+                   {activeKinds?.has(k) ? 'bg-[var(--la-focus-ring)] text-white' : 'bg-[var(--la-drawer-border)] text-[var(--la-focus-ring)] hover:text-white'}"
             onclick={() => toggleKind(k)}
             data-testid="kind-filter-{k}"
           >{k}</button>
@@ -376,9 +376,9 @@
              each row groups participants by sibling so the side-by-side-ness of the
              convergence is readable at a glance. -->
         {#if convergencesLoading}
-          <div class="px-3 py-6 text-center text-[11px] text-[#475569]">Loading…</div>
+          <div class="px-3 py-6 text-center text-[11px] text-[var(--la-text-dim)]">Loading…</div>
         {:else if convergences && convergences.length > 0}
-          <div class="px-3 py-2 text-[10px] text-[#64748b] uppercase" data-testid="convergence-count-label">
+          <div class="px-3 py-2 text-[10px] text-[var(--la-text-dim)] uppercase" data-testid="convergence-count-label">
             {convergences.length}{convergencesTotal > convergences.length ? ` of ${convergencesTotal}` : ''} convergences
           </div>
           {#each convergences as conv (conv.id)}
@@ -388,10 +388,10 @@
             >
               <!-- Header: label + weight bar -->
               <div class="flex items-center justify-between mb-1.5">
-                <span class="text-[11px] text-[#e2e8f0] truncate">
+                <span class="text-[11px] text-[var(--la-text-bright)] truncate">
                   {conv.label ?? `Convergence ${conv.id.slice(0, 8)}`}
                 </span>
-                <span class="text-[9px] text-[#FFD700] whitespace-nowrap ml-2">
+                <span class="text-[9px] text-[var(--la-focus-ring)] whitespace-nowrap ml-2">
                   w {conv.weight.toFixed(2)}
                 </span>
               </div>
@@ -405,14 +405,14 @@
                 {/each}
               </div>
               <!-- Meta: participants + discovered_by -->
-              <div class="flex items-center gap-2 text-[9px] text-[#475569]">
+              <div class="flex items-center gap-2 text-[9px] text-[var(--la-text-dim)]">
                 <span>{conv.participant_count} participants</span>
                 <span>·</span>
                 <span class="italic">{conv.discovered_by}</span>
               </div>
               <!-- Expandable participant list -->
               <details class="mt-1">
-                <summary class="cursor-pointer text-[9px] text-[#FFD700] hover:text-[#FFD700]">
+                <summary class="cursor-pointer text-[9px] text-[var(--la-focus-ring)] hover:text-[var(--la-focus-ring)]">
                   participants
                 </summary>
                 <div class="mt-1 space-y-0.5">
@@ -432,10 +432,10 @@
             </div>
           {/each}
         {:else}
-          <div class="px-3 py-6 text-center text-[11px] text-[#475569]" data-testid="convergence-empty">
+          <div class="px-3 py-6 text-center text-[11px] text-[var(--la-text-dim)]" data-testid="convergence-empty">
             No convergences yet.
             <br />
-            <span class="text-[10px] text-[#334155]">
+            <span class="text-[10px] text-[var(--la-hair-strong)]">
               SharedExperience nodes are populated by the nightly<br />
               `soul-consolidator` via Louvain community detection.<br />
               Run it once to see cross-Squad moments here.
@@ -443,12 +443,12 @@
           </div>
         {/if}
       {:else if isSearching}
-        <div class="px-3 py-2 text-[10px] text-[#64748b] uppercase">
+        <div class="px-3 py-2 text-[10px] text-[var(--la-text-dim)] uppercase">
           {searching ? 'Searching…' : `${searchResults?.length ?? 0} results`}
         </div>
         {#each searchResults ?? [] as entry (entry.path)}
           <button
-            class="w-full text-left px-3 py-2 border-b border-[var(--la-drawer-border)]/50 hover:bg-[#111827] transition-colors"
+            class="w-full text-left px-3 py-2 border-b border-[var(--la-drawer-border)]/50 hover:bg-[var(--la-bg-elev-1)] transition-colors"
             onclick={() => selectEnrichedEntry(entry)}
             data-testid="memory-row"
             data-kind={entry.entry_type ?? 'entry'}
@@ -458,7 +458,7 @@
                 {entry.sibling.toUpperCase()}
               </span>
               {#if entry.significance !== undefined}
-                <span class="text-[9px] text-[#64748b]">
+                <span class="text-[9px] text-[var(--la-text-dim)]">
                   {(entry.significance * 10).toFixed(1)}
                 </span>
               {/if}
@@ -471,8 +471,8 @@
       {:else}
         {#each list as memo (memo.id)}
           <button
-            class="w-full text-left px-3 py-2 border-b border-[var(--la-drawer-border)]/50 hover:bg-[#111827] transition-colors
-                   {selected.memo?.id === memo.id ? 'bg-[#111827]' : ''}"
+            class="w-full text-left px-3 py-2 border-b border-[var(--la-drawer-border)]/50 hover:bg-[var(--la-bg-elev-1)] transition-colors
+                   {selected.memo?.id === memo.id ? 'bg-[var(--la-bg-elev-1)]' : ''}"
             onclick={() => selectMemo(memo)}
             data-testid="memory-row"
             data-kind={memo.entry_type ?? 'entry'}
@@ -481,7 +481,7 @@
               <span class="text-[10px] font-semibold" style="color: {siblingColor(memo.sibling)}">
                 {memo.sibling.toUpperCase()}
               </span>
-              <span class="text-[9px] text-[#64748b]">
+              <span class="text-[9px] text-[var(--la-text-dim)]">
                 {(memo.significance * 10).toFixed(1)}
               </span>
               {#if memo.entry_type && memo.entry_type !== 'entry'}
@@ -489,12 +489,12 @@
                      so only non-entry kinds get a chip to keep the row quiet. -->
                 <span
                   class="text-[8px] px-1 py-0.5 rounded-sm uppercase tracking-wide
-                         bg-[#1e293b] text-[#FFD700] font-medium"
+                         bg-[var(--la-drawer-border)] text-[var(--la-focus-ring)] font-medium"
                   data-testid="kind-chip"
                 >{memo.entry_type}</span>
               {/if}
               {#if memo.strands.length > 0}
-                <span class="text-[9px] text-[#475569]">
+                <span class="text-[9px] text-[var(--la-text-dim)]">
                   {memo.strands.slice(0, 2).join(', ')}
                 </span>
               {/if}
@@ -502,7 +502,7 @@
             <p class="text-[11px] text-[var(--la-text-label)] line-clamp-2">{memo.content}</p>
           </button>
         {:else}
-          <div class="px-3 py-6 text-center text-[11px] text-[#475569]">
+          <div class="px-3 py-6 text-center text-[11px] text-[var(--la-text-dim)]">
             {tab === 'hot'
               ? 'No active turnlog entries. Start a session to populate hot memory.'
               : 'No cold entries found. Promoted memos will appear here.'}
@@ -515,40 +515,40 @@
     {#if selected.memo}
       <div class="border-t border-[var(--la-drawer-border)] bg-[var(--la-drawer-bg)] max-h-[40%] overflow-y-auto">
         <div class="px-3 py-2 border-b border-[var(--la-drawer-border)] flex items-center justify-between">
-          <span class="text-[10px] font-semibold text-[#64748b]">ENTRY DETAIL</span>
+          <span class="text-[10px] font-semibold text-[var(--la-text-dim)]">ENTRY DETAIL</span>
           <button
-            class="text-[#64748b] hover:text-white text-xs"
+            class="text-[var(--la-text-dim)] hover:text-white text-xs"
             onclick={() => { selected = { memo: null, raw: null }; }}
           >clear</button>
         </div>
         <div class="px-3 py-2 space-y-2 text-[11px]">
           <div class="flex items-center gap-2">
-            <span class="text-[9px] text-[#475569]">PATH</span>
+            <span class="text-[9px] text-[var(--la-text-dim)]">PATH</span>
             <span class="font-mono text-[10px] text-[var(--la-text-label)]">{selected.memo.source_path ?? selected.memo.id}</span>
           </div>
           <div class="flex items-center gap-2">
-            <span class="text-[9px] text-[#475569]">AGENT</span>
+            <span class="text-[9px] text-[var(--la-text-dim)]">AGENT</span>
             <span style="color: {siblingColor(selected.memo.sibling)}">{selected.memo.sibling}</span>
             {#if selected.memo.self_defining}
               <span
-                class="px-1 py-0 rounded bg-[#f59e0b]/20 border border-[#f59e0b]/40 text-[#fbbf24] text-[9px]"
+                class="px-1 py-0 rounded bg-[var(--la-agent-performance)]/20 border border-[var(--la-agent-performance)]/40 text-[var(--la-agent-quality)] text-[9px]"
                 title="Self-defining identity entry"
                 data-testid="self-defining-badge"
               >★ identity</span>
             {/if}
             {#if selected.memo.entry_type}
               <span
-                class="px-1 py-0 rounded bg-[#1e293b] text-[9px] text-[#64748b]"
+                class="px-1 py-0 rounded bg-[var(--la-drawer-border)] text-[9px] text-[var(--la-text-dim)]"
                 data-testid="entry-type-chip"
               >{selected.memo.entry_type}</span>
             {/if}
           </div>
           {#if selected.memo.strands.length > 0}
             <div data-testid="primitive-strands">
-              <span class="text-[9px] text-[#475569]">STRANDS</span>
+              <span class="text-[9px] text-[var(--la-text-dim)]">STRANDS</span>
               <div class="flex flex-wrap gap-1 mt-1">
                 {#each selected.memo.strands as strand}
-                  <span class="px-1.5 py-0.5 rounded bg-[#1e293b] text-[9px] text-[var(--la-text-label)]">{strand}</span>
+                  <span class="px-1.5 py-0.5 rounded bg-[var(--la-drawer-border)] text-[9px] text-[var(--la-text-label)]">{strand}</span>
                 {/each}
               </div>
             </div>
@@ -556,26 +556,26 @@
           <!-- Phase 13.2 — zettelkasten primitives: themes, resonance -->
           {#if selected.memo.themes && selected.memo.themes.length > 0}
             <div data-testid="primitive-themes">
-              <span class="text-[9px] text-[#475569]">THEMES</span>
+              <span class="text-[9px] text-[var(--la-text-dim)]">THEMES</span>
               <div class="flex flex-wrap gap-1 mt-1">
                 {#each selected.memo.themes as theme}
-                  <span class="px-1.5 py-0.5 rounded bg-[#3b0764]/40 border border-[#FFD700]/30 text-[9px] text-[#c4b5fd]">{theme}</span>
+                  <span class="px-1.5 py-0.5 rounded bg-[var(--la-agent-testing)]/40 border border-[var(--la-focus-ring)]/30 text-[9px] text-[var(--la-agent-testing)]">{theme}</span>
                 {/each}
               </div>
             </div>
           {/if}
           {#if selected.memo.resonance && selected.memo.resonance.length > 0}
             <div data-testid="primitive-resonance">
-              <span class="text-[9px] text-[#475569]">RESONANCE</span>
+              <span class="text-[9px] text-[var(--la-text-dim)]">RESONANCE</span>
               <div class="flex flex-wrap gap-1 mt-1">
                 {#each selected.memo.resonance as r}
-                  <span class="px-1.5 py-0.5 rounded bg-[#701a75]/40 border border-[#ec4899]/30 text-[9px] text-[#f9a8d4]">{r}</span>
+                  <span class="px-1.5 py-0.5 rounded bg-[var(--la-agent-ops)]/40 border border-[var(--la-agent-documentation)]/30 text-[9px] text-[var(--la-agent-documentation)]">{r}</span>
                 {/each}
               </div>
             </div>
           {/if}
           {#if loadingDetail}
-            <p class="text-[#475569] italic text-[10px]">Loading…</p>
+            <p class="text-[var(--la-text-dim)] italic text-[10px]">Loading…</p>
           {:else if selected.raw}
             <pre class="text-[10px] text-[var(--la-text-label)] whitespace-pre-wrap font-mono leading-relaxed">{selected.raw.slice(0, 2000)}{selected.raw.length > 2000 ? '\n\n…(truncated)' : ''}</pre>
           {:else}
@@ -586,8 +586,8 @@
           {#if relatedNeighbors !== null}
             <div class="mt-2 pt-2 border-t border-[var(--la-drawer-border)]" data-testid="related-section">
               <div class="flex items-center gap-2 mb-1">
-                <span class="text-[9px] text-[#475569] uppercase">RELATED</span>
-                <span class="text-[9px] text-[#475569]">
+                <span class="text-[9px] text-[var(--la-text-dim)] uppercase">RELATED</span>
+                <span class="text-[9px] text-[var(--la-text-dim)]">
                   {#if relatedTier === 'neo4j'}
                     {relatedNeighbors.length} via graph
                   {:else}
@@ -596,13 +596,13 @@
                 </span>
               </div>
               {#if relatedNeighbors.length === 0 && relatedTier === 'neo4j'}
-                <p class="text-[10px] text-[#475569] italic">No backlinks found.</p>
+                <p class="text-[10px] text-[var(--la-text-dim)] italic">No backlinks found.</p>
               {/if}
               <div class="flex flex-wrap gap-1">
                 {#each relatedNeighbors as neighbor (neighbor.id)}
                   <button
-                    class="px-1.5 py-0.5 rounded border border-[#334155] bg-[#111827]
-                           text-[9px] text-[var(--la-text-label)] hover:border-[#FFD700] transition-colors
+                    class="px-1.5 py-0.5 rounded border border-[var(--la-hair-strong)] bg-[var(--la-bg-elev-1)]
+                           text-[9px] text-[var(--la-text-label)] hover:border-[var(--la-focus-ring)] transition-colors
                            max-w-[180px] truncate"
                     title={neighbor.id}
                     onclick={() => {
@@ -633,8 +633,8 @@
 
   <!-- Promotion feed strip -->
   {#if $promotionFeed.length > 0}
-    <div class="px-3 py-1.5 border-t border-[var(--la-drawer-border)] bg-[#FFD700]/10">
-      <span class="text-[9px] text-[#a855f7]">
+    <div class="px-3 py-1.5 border-t border-[var(--la-drawer-border)] bg-[var(--la-focus-ring)]/10">
+      <span class="text-[9px] text-[var(--la-agent-testing)]">
         ↑ {$promotionFeed.length} recent promotion{$promotionFeed.length === 1 ? '' : 's'}
       </span>
     </div>

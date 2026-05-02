@@ -55,11 +55,24 @@ export interface ErrorEvent {
   Error: { agent: DomainAgent | null; message: string };
 }
 
+export interface ToolUsageEvent {
+  ToolUsage: {
+    agent: DomainAgent;
+    run_id: string;
+    tool: string;
+    action: string;
+    timestamp: string;
+    status: 'fired' | 'skipped' | 'failed';
+    latency_ms?: number;
+  };
+}
+
 export type DispatchEvent =
   | PerAgentStateEvent
   | MailboxMessageEvent
   | CompleteEvent
-  | ErrorEvent;
+  | ErrorEvent
+  | ToolUsageEvent;
 
 // ── Per-agent live state ──────────────────────────────────────────────────────
 
@@ -73,6 +86,8 @@ export interface AgentLiveState {
   token_count?: number;
   /** Milliseconds from agent start to latest state transition. */
   elapsed_ms?: number;
+  /** Most recent tool invocation emitted via ToolUsage SSE event. */
+  last_tool?: { tool: string; action: string; status: 'fired' | 'skipped' | 'failed'; latency_ms?: number };
 }
 
 // ── History entry ─────────────────────────────────────────────────────────────
@@ -112,6 +127,51 @@ export const DOMAIN_AGENT_LABELS: Record<DomainAgent, string> = {
   squad:      'Squad',
 };
 
+// ── Tool augmentation ─────────────────────────────────────────────────────────
+
+/**
+ * Research depth injected into agent prompt at dispatch.
+ * standard:   Pull 1-2 sources; conclude on first STRONG evidence.
+ * deep:       Pull ≥3 external sources; must include Context7 + one of {Firecrawl, HuggingFace}.
+ * exhaustive: All three tiers queried or each explicitly flagged "source unavailable: {reason}".
+ */
+export type ResearchDepth = 'standard' | 'deep' | 'exhaustive';
+
+export const DEPTH_CONTRACT: Record<ResearchDepth, string> = {
+  standard:   'Pull 1-2 sources; conclude on first STRONG evidence',
+  deep:       'Pull ≥3 external sources; include Context7 + one of {Firecrawl, HuggingFace}',
+  exhaustive: 'Query all three tiers (Context7, Firecrawl, HuggingFace) or explicitly flag each as unavailable',
+};
+
+export interface AgentToolConfig {
+  /** Always-on tools for this agent (not toggleable). */
+  tools: string[];
+  /** Research depth — controls how many sources the agent queries. */
+  depth: ResearchDepth;
+  /** Optional tools the operator can toggle on/off before dispatch. */
+  optional_tools: string[];
+}
+
+/** Per-agent tool usage telemetry — emitted over SSE during agent run. */
+export interface AgentToolUsage {
+  agent: DomainAgent;
+  run_id: string;
+  tool: string;
+  action: string;
+  timestamp: string;
+  status: 'fired' | 'skipped' | 'failed';
+  latency_ms?: number;
+}
+
+/** Wraps a full dispatch request, including optional per-agent tool configuration. */
+export interface DispatchPayload {
+  task: string;
+  agents: DomainAgent[];
+  dry: boolean;
+  attachments: FileAttachment[];
+  tool_config?: Partial<Record<DomainAgent, AgentToolConfig>>;
+}
+
 // ── File attachments ─────────────────────────────────────────────────────────
 
 export interface FileAttachment {
@@ -140,11 +200,14 @@ export async function executeDispatch(
   agents: DomainAgent[],
   dry = false,
   attachments: FileAttachment[] = [],
+  tool_config?: Partial<Record<DomainAgent, AgentToolConfig>>,
 ): Promise<string> {
+  const payload: DispatchPayload = { task, agents, dry, attachments };
+  if (tool_config && Object.keys(tool_config).length > 0) payload.tool_config = tool_config;
   const res = await fetch('/api/dispatch/execute', {
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ task, agents, dry, attachments }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');

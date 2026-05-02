@@ -151,7 +151,7 @@
     margin: 0;
     font-size: 13px;
     font-weight: 600;
-    color: #f0c040;
+    color: var(--la-focus-ring);
     letter-spacing: 0.02em;
   }
   .legend-close {
@@ -165,7 +165,7 @@
     border-radius: var(--la-radius-sm);
     transition: color var(--la-transition-fast), background var(--la-transition-fast);
   }
-  .legend-close:hover { color: var(--la-text-body); background: #1e293b; }
+  .legend-close:hover { color: var(--la-text-body); background: var(--la-bg-elev-2); }
 
   .legend-body {
     flex: 1;
@@ -227,7 +227,7 @@
     text-align: right;
   }
   .legend-footer kbd {
-    background: #1e293b;
+    background: var(--la-bg-elev-2);
     padding: 1px 4px;
     border-radius: var(--la-radius-sm);
     font-family: var(--la-font-mono);

@@ -44,7 +44,7 @@
     {@const ownedFiles = truncateList(agent.owns, 3)}
 
     <div
-      class="rounded-lg border border-[#1e293b] bg-[#111827] p-3 flex flex-col gap-2"
+      class="rounded-lg border border-[var(--la-drawer-border)] bg-[var(--la-bg-elev-1)] p-3 flex flex-col gap-2"
       class:animate-pulse={agent.status === 'running'}
     >
       <!-- Header: sibling badge + status -->
@@ -98,7 +98,7 @@
         <div class="flex items-center gap-1.5 flex-wrap">
           {#each agent.tools as tool}
             <span
-              class="text-[9px] px-1 py-0.5 rounded bg-[#1e293b] text-gray-400 font-mono"
+              class="text-[9px] px-1 py-0.5 rounded bg-[var(--la-drawer-border)] text-gray-400 font-mono"
               title={tool}
             >
               {TOOL_ICONS[tool] || tool.slice(0, 4).toLowerCase()}
@@ -108,7 +108,7 @@
       {/if}
 
       <!-- Context budget -->
-      <div class="flex items-center justify-between mt-auto pt-1 border-t border-[#1e293b]">
+      <div class="flex items-center justify-between mt-auto pt-1 border-t border-[var(--la-drawer-border)]">
         <span class="text-[10px] text-gray-500">Budget</span>
         <span class="text-[10px] text-gray-300 font-mono">{formatBudget(agent.budget)}</span>
       </div>

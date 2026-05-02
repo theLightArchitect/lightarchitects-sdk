@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
-  SIBLINGS, SIBLING_COLORS, PILLARS, PILLAR_COLORS,
+  SIBLINGS, SIBLING_COLORS,
+  DOMAIN_AGENT_COLORS,
+  QUALITY_GATES, QUALITY_GATE_COLORS,
+  PILLARS, PILLAR_COLORS,
   STATUS_COLORS, SIBLING_POLYTOPES, LAYOUT, TYPO, Z,
+  MOTION, LETTER_SPACING, ELEVATION, HAIRLINE, TEXT,
   META_SKILL_TO_SIBLING, getMetaSkillPolytope, getMetaSkillColor,
 } from '$lib/design-tokens';
 
@@ -28,17 +32,45 @@ describe('design-tokens', () => {
     });
   });
 
-  describe('PILLARS', () => {
-    it('contains all 7 CORSO pillars in order', () => {
-      expect(PILLARS).toEqual(['ARCH', 'SEC', 'QUAL', 'PERF', 'TEST', 'DOC', 'OPS']);
+  describe('QUALITY_GATES', () => {
+    it('contains all 7 quality gates in order', () => {
+      expect(QUALITY_GATES).toEqual(['ARCH', 'SEC', 'QUAL', 'PERF', 'TEST', 'DOC', 'OPS']);
     });
   });
 
-  describe('PILLAR_COLORS', () => {
-    it('has a color for every pillar', () => {
-      for (const pillar of PILLARS) {
-        expect(PILLAR_COLORS[pillar]).toBeDefined();
-        expect(PILLAR_COLORS[pillar]).toMatch(/^#[0-9a-fA-F]{6}$/);
+  describe('QUALITY_GATE_COLORS', () => {
+    it('has a hex color for every quality gate', () => {
+      for (const gate of QUALITY_GATES) {
+        expect(QUALITY_GATE_COLORS[gate]).toBeDefined();
+        expect(QUALITY_GATE_COLORS[gate]).toMatch(/^#[0-9a-fA-F]{6}$/);
+      }
+    });
+  });
+
+  describe('PILLARS / PILLAR_COLORS (deprecated aliases)', () => {
+    it('PILLARS is same reference as QUALITY_GATES', () => {
+      expect(PILLARS).toBe(QUALITY_GATES);
+    });
+
+    it('PILLAR_COLORS is same reference as QUALITY_GATE_COLORS', () => {
+      expect(PILLAR_COLORS).toBe(QUALITY_GATE_COLORS);
+    });
+  });
+
+  describe('DOMAIN_AGENT_COLORS', () => {
+    const AGENT_IDS = [
+      'engineer', 'quality', 'security', 'ops',
+      'researcher', 'knowledge', 'testing', 'squad',
+    ];
+
+    it('has exactly 8 domain agent colors', () => {
+      expect(Object.keys(DOMAIN_AGENT_COLORS)).toHaveLength(8);
+    });
+
+    it('every agent has a valid hex color', () => {
+      for (const id of AGENT_IDS) {
+        expect(DOMAIN_AGENT_COLORS[id]).toBeDefined();
+        expect(DOMAIN_AGENT_COLORS[id]).toMatch(/^#[0-9a-fA-F]{6}$/);
       }
     });
   });
@@ -103,7 +135,7 @@ describe('design-tokens', () => {
       expect(LAYOUT.headerHeight).toBe(48);
       expect(LAYOUT.railWidth).toBe(240);
       expect(LAYOUT.panelGap).toBe(4);
-      expect(LAYOUT.borderRadius).toBe(8);
+      expect(LAYOUT.borderRadius).toBe(0);
       expect(LAYOUT.terminalMinHeight).toBe(200);
     });
   });
@@ -116,13 +148,74 @@ describe('design-tokens', () => {
     });
   });
 
+  describe('MOTION constants', () => {
+    it('has snap < base < slow durations', () => {
+      expect(MOTION.snap).toBeLessThan(MOTION.base);
+      expect(MOTION.base).toBeLessThan(MOTION.slow);
+    });
+
+    it('has a cubic-bezier ease string', () => {
+      expect(MOTION.ease).toMatch(/^cubic-bezier/);
+    });
+  });
+
+  describe('LETTER_SPACING constants', () => {
+    it('has loose, mid, tight values in em units', () => {
+      expect(LETTER_SPACING.loose).toMatch(/em$/);
+      expect(LETTER_SPACING.mid).toMatch(/em$/);
+      expect(LETTER_SPACING.tight).toMatch(/em$/);
+    });
+
+    it('loose > mid > tight numerically', () => {
+      const parse = (v: string) => parseFloat(v);
+      expect(parse(LETTER_SPACING.loose)).toBeGreaterThan(parse(LETTER_SPACING.mid));
+      expect(parse(LETTER_SPACING.mid)).toBeGreaterThan(parse(LETTER_SPACING.tight));
+    });
+  });
+
+  describe('ELEVATION scale', () => {
+    it('has void, frame, elev1, elev2 as hex colors', () => {
+      for (const value of Object.values(ELEVATION)) {
+        expect(value).toMatch(/^#[0-9a-fA-F]{3,6}$/);
+      }
+    });
+  });
+
+  describe('HAIRLINE scale', () => {
+    it('has faint, base, strong as hex colors', () => {
+      for (const value of Object.values(HAIRLINE)) {
+        expect(value).toMatch(/^#[0-9a-fA-F]{3,6}$/);
+      }
+    });
+  });
+
+  describe('TEXT scale', () => {
+    it('has mute, dim, base, bright, stark as hex colors', () => {
+      expect(Object.keys(TEXT)).toEqual(['mute', 'dim', 'base', 'bright', 'stark']);
+      for (const value of Object.values(TEXT)) {
+        expect(value).toMatch(/^#[0-9a-fA-F]{3,6}$/);
+      }
+    });
+  });
+
   describe('Z-index layers', () => {
-    it('has ascending z-index values', () => {
-      expect(Z.base).toBeLessThan(Z.panel);
-      expect(Z.panel).toBeLessThan(Z.overlay);
-      expect(Z.overlay).toBeLessThan(Z.scope);
-      expect(Z.scope).toBeLessThan(Z.palette);
-      expect(Z.palette).toBeLessThan(Z.toast);
+    it('canonical ladder is strictly ascending', () => {
+      expect(Z.grid).toBeLessThan(Z.vignette);
+      expect(Z.vignette).toBeLessThan(Z.content);
+      expect(Z.content).toBeLessThan(Z.panel);
+      expect(Z.panel).toBeLessThan(Z.drawer);
+      expect(Z.drawer).toBeLessThan(Z.bracket);
+      expect(Z.bracket).toBeLessThan(Z.modalScrim);
+      expect(Z.modalScrim).toBeLessThan(Z.modal);
+      expect(Z.modal).toBeLessThan(Z.tooltip);
+      expect(Z.tooltip).toBeLessThan(Z.overlay);
+    });
+
+    it('deprecated aliases are still defined', () => {
+      expect(Z.base).toBeDefined();
+      expect(Z.scope).toBeDefined();
+      expect(Z.palette).toBeDefined();
+      expect(Z.toast).toBeDefined();
     });
   });
 });

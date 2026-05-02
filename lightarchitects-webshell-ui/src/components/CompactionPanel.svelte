@@ -71,18 +71,18 @@
   }
 </script>
 
-<div class="bg-[#111827] border border-[#1e293b] rounded-lg overflow-hidden" data-testid="compaction-panel">
-  <div class="px-4 py-2 border-b border-[#1e293b] flex items-center justify-between">
-    <h3 class="text-xs font-medium text-[#94a3b8]">COLD-TIER COMPACTION</h3>
+<div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] rounded-lg overflow-hidden" data-testid="compaction-panel">
+  <div class="px-4 py-2 border-b border-[var(--la-drawer-border)] flex items-center justify-between">
+    <h3 class="text-xs font-medium text-[var(--la-text-label)]">COLD-TIER COMPACTION</h3>
     {#if summary}
-      <span class="text-[10px] text-[#10b981]" data-testid="permanent-skipped-badge">
+      <span class="text-[10px] text-[var(--la-agent-researcher)]" data-testid="permanent-skipped-badge">
         {summary.permanent_skipped} protected
       </span>
     {/if}
   </div>
 
   <!-- Policy picker -->
-  <div class="p-3 border-b border-[#1e293b] space-y-2" data-testid="policy-picker">
+  <div class="p-3 border-b border-[var(--la-drawer-border)] space-y-2" data-testid="policy-picker">
     <div class="flex gap-1">
       {#each (['keep_newest','age_limit','significance_tier'] as const) as k}
         <button
@@ -91,58 +91,58 @@
           data-active={presetKey === k}
           class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded
                  {presetKey === k
-                   ? 'bg-[#FFD700] text-white'
-                   : 'bg-[#0d1117] border border-[#1e293b] text-[#94a3b8] hover:border-[#FFD700]'}"
+                   ? 'bg-[var(--la-focus-ring)] text-white'
+                   : 'bg-[var(--la-drawer-bg)] border border-[var(--la-drawer-border)] text-[var(--la-text-label)] hover:border-[var(--la-focus-ring)]'}"
         >{k.replace('_', ' ')}</button>
       {/each}
     </div>
     {#if presetKey === 'keep_newest'}
-      <label class="text-[10px] text-[#64748b] flex items-center gap-2">
+      <label class="text-[10px] text-[var(--la-text-dim)] flex items-center gap-2">
         Keep newest per sibling:
         <input type="number" bind:value={keepN} min="1" max="10000"
-          class="bg-[#0d1117] border border-[#1e293b] rounded px-1 py-0.5 text-[#e2e8f0] w-20"
+          class="bg-[var(--la-drawer-bg)] border border-[var(--la-drawer-border)] rounded px-1 py-0.5 text-[var(--la-text-bright)] w-20"
           data-testid="keep-n-input" />
       </label>
     {:else if presetKey === 'age_limit'}
-      <label class="text-[10px] text-[#64748b] flex items-center gap-2">
+      <label class="text-[10px] text-[var(--la-text-dim)] flex items-center gap-2">
         Max age (days):
         <input type="number" bind:value={maxDays} min="1" max="3650"
-          class="bg-[#0d1117] border border-[#1e293b] rounded px-1 py-0.5 text-[#e2e8f0] w-20"
+          class="bg-[var(--la-drawer-bg)] border border-[var(--la-drawer-border)] rounded px-1 py-0.5 text-[var(--la-text-bright)] w-20"
           data-testid="max-days-input" />
       </label>
     {:else}
-      <label class="text-[10px] text-[#64748b] flex items-center gap-2">
+      <label class="text-[10px] text-[var(--la-text-dim)] flex items-center gap-2">
         Min significance (0-1):
         <input type="number" bind:value={minSig} min="0" max="1" step="0.05"
-          class="bg-[#0d1117] border border-[#1e293b] rounded px-1 py-0.5 text-[#e2e8f0] w-20"
+          class="bg-[var(--la-drawer-bg)] border border-[var(--la-drawer-border)] rounded px-1 py-0.5 text-[var(--la-text-bright)] w-20"
           data-testid="min-sig-input" />
       </label>
     {/if}
   </div>
 
   <!-- Actions -->
-  <div class="p-3 flex items-center gap-2 border-b border-[#1e293b]">
+  <div class="p-3 flex items-center gap-2 border-b border-[var(--la-drawer-border)]">
     <button
       onclick={runPreview}
       disabled={loading}
       data-testid="preview-btn"
-      class="text-[11px] px-3 py-1 rounded bg-[#3b82f6] text-white disabled:opacity-50 hover:bg-[#2563eb]"
+      class="text-[11px] px-3 py-1 rounded bg-[var(--la-agent-engineer)] text-white disabled:opacity-50 hover:bg-[var(--la-agent-engineer)]"
     >{loading ? 'Running…' : 'Preview'}</button>
     {#if summary && summary.candidates.length > 0}
       <button
         onclick={runApply}
         disabled={loading}
         data-testid="apply-btn"
-        class="text-[11px] px-3 py-1 rounded bg-[#dc2626] text-white disabled:opacity-50 hover:bg-[#b91c1c]"
+        class="text-[11px] px-3 py-1 rounded bg-[var(--la-danger-stroke)] text-white disabled:opacity-50 hover:bg-[var(--la-danger-stroke)]"
       >Apply ({summary.candidates.length})</button>
     {/if}
     {#if applied}
-      <span class="text-[10px] text-[#10b981]" data-testid="apply-result">
+      <span class="text-[10px] text-[var(--la-agent-researcher)]" data-testid="apply-result">
         ✓ Moved {applied.candidates.length} entries
       </span>
     {/if}
     {#if error}
-      <span class="text-[10px] text-[#ef4444]" data-testid="error-msg">{error}</span>
+      <span class="text-[10px] text-[var(--la-danger-stroke)]" data-testid="error-msg">{error}</span>
     {/if}
   </div>
 
@@ -150,23 +150,23 @@
   {#if summary}
     <div class="max-h-64 overflow-y-auto" data-testid="candidate-list">
       {#if summary.candidates.length === 0}
-        <div class="p-3 text-[10px] text-[#64748b]">
+        <div class="p-3 text-[10px] text-[var(--la-text-dim)]">
           No entries match this policy. {summary.total_scanned} scanned, {summary.permanent_skipped} protected.
         </div>
       {:else}
         {#each groupBySibling(summary.candidates) as [sibling, group]}
-          <div class="px-3 py-2 border-b border-[#1e293b]">
-            <div class="text-[10px] uppercase tracking-wider text-[#FFD700] mb-1">
+          <div class="px-3 py-2 border-b border-[var(--la-drawer-border)]">
+            <div class="text-[10px] uppercase tracking-wider text-[var(--la-focus-ring)] mb-1">
               {sibling} ({group.length})
             </div>
             <ul class="space-y-0.5">
               {#each group.slice(0, 20) as c}
-                <li class="text-[10px] text-[#94a3b8] font-mono truncate" title={c.reason}>
+                <li class="text-[10px] text-[var(--la-text-label)] font-mono truncate" title={c.reason}>
                   {c.path}
                 </li>
               {/each}
               {#if group.length > 20}
-                <li class="text-[10px] text-[#475569] italic">
+                <li class="text-[10px] text-[var(--la-text-dim)] italic">
                   …and {group.length - 20} more
                 </li>
               {/if}

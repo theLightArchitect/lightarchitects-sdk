@@ -1,4 +1,9 @@
-/* Chrome (nav/buttons/labels): Inter — humanist sans, optimised for UI */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-/* Mono (data/IDs/timestamps): JetBrains Mono */
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+/* JetBrains Mono Variable — self-hosted from public/fonts/ (H-fe-1: offline operation).
+   Latin subset; covers all LA operator surfaces. Weight axis: 100–800. */
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  src: url('/fonts/JetBrainsMono[wght].woff2') format('woff2-variations');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}

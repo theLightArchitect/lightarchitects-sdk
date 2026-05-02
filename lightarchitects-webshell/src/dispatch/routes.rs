@@ -226,6 +226,7 @@ async fn execute_handler(
         dispatch_id,
         state.dispatch_registry,
         req.attachments,
+        req.tool_config,
     )
     .await
     {

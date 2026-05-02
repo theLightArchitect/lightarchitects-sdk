@@ -1,105 +1,100 @@
 /* ============================================================================
-   LA Design Tokens — aegis Wave 1 foundation
+   LA Design Tokens — luminous-tracing-polytope token foundation
    ----------------------------------------------------------------------------
-   Single source of truth for typography stack, radius scale, dim states, and
-   destructive-action tokens. Imported globally from styles/index.css.
-
-   Closes formatting-audit findings 1, 4, 5, 7, 12 simultaneously across every
-   screen, AND seeds destructive-action contract (task #14, hoisted to wave 1
-   per quantum Q-6 — diff-preview #47 in wave 2 USES destructive styling).
+   Squad-dispatch aesthetic: JetBrains Mono everywhere, zero border-radius,
+   void background, 64px tactical grid, agent-color domain system.
+   Imported globally from styles/index.css.
    ============================================================================ */
 
 :root {
-  /* ── Typography stack ──────────────────────────────────────────────────── */
-  /* Chrome (nav, buttons, labels, headings): humanist sans for legibility    */
-  --la-font-chrome: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  /* Mono (data, IDs, hashes, counts, timestamps, code blocks)                */
-  --la-font-mono:   "Berkeley Mono", "JetBrains Mono", ui-monospace, "SF Mono",
-                    Menlo, Consolas, monospace;
+  /* ── Typography — JBM everywhere ────────────────────────────────────────── */
+  --la-font-chrome: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+  --la-font-mono:   "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
 
-  /* ── Radius scale (3-step) ─────────────────────────────────────────────── */
-  /* Chips, inputs, segmented-control inner pills                             */
-  --la-radius-sm: 2px;
-  /* Buttons, status pills, toggle backgrounds                                */
-  --la-radius-md: 6px;
-  /* Cards, panels, drawer surfaces                                           */
-  --la-radius-lg: 10px;
+  /* ── Radius — zero-radius aesthetic (squad-dispatch: angular surfaces) ──── */
+  --la-radius:    0;
+  --la-radius-sm: 0;
+  --la-radius-md: 0;
+  --la-radius-lg: 0;
 
-  /* ── Dim / zero-state ──────────────────────────────────────────────────── */
-  /* Used when a counter reads 0 — prevents zero-noise from competing for     */
-  /* attention with non-zero counts. Apply via [data-zero="true"].            */
-  --la-text-dim:   #5A6470;
-  --la-text-mute:  #9CA3AF;
-  --la-text-body:  #E2E8F0;
+  /* ── Destructive-action tokens ─────────────────────────────────────────── */
+  --la-danger-bg:     #2A0F12;
+  --la-danger-stroke: #DC2626;
+  --la-danger-text:   #FCA5A5;
+  --la-danger-glow:   rgba(220, 38, 38, 0.35);
 
-  /* ── Destructive-action tokens (task #14) ──────────────────────────────── */
-  /* For Cancel, Delete, Reset, Discard — anything that loses user work.      */
-  /* Diff-preview #47 (wave 2) and Cancel/Undo toasts will consume these.     */
-  --la-danger-bg:      #2A0F12;  /* deep maroon — surface tint */
-  --la-danger-stroke:  #DC2626;  /* red-600 — outline */
-  --la-danger-text:    #FCA5A5;  /* red-300 — body text on dark */
-  --la-danger-glow:    rgba(220, 38, 38, 0.35);
-
-  /* ── Focus ring (#11 — visible keyboard navigation indicator) ──────────── */
-  --la-focus-ring:        #FFD700;  /* yellow accent matches brand */
-  --la-focus-ring-width:  2px;      /* was 1px; bumped to 2px for WCAG 2.2 §2.4.11 */
+  /* ── Focus ring ──────────────────────────────────────────────────────────── */
+  --la-focus-ring:        #FFD700;
+  --la-focus-ring-width:  2px;
   --la-focus-ring-offset: 2px;
 
-  /* ── Accessible muted text (#11 — ≥7:1 on #0a0a0f and #111827) ────────── */
-  /* Use for section labels, form hints, metadata captions.                   */
-  /* #94a3b8 (slate-400): 8:1 on #0a0a0f, 6.7:1 on #111827 (AA all sizes).  */
+  /* ── Accessible muted text (≥7:1 on #0a0a0f) ────────────────────────────── */
   --la-text-label: #94a3b8;
 
-  /* ── Ops-console background scale (squad-dispatch.html §DESIGN-TOKENS) ── */
-  --la-bg-void:   #08090a;   /* deepest surface — body background            */
-  --la-bg-frame:  #0c0d0e;   /* raised panels, cards, drawers                */
-  --la-bg-elev-1: #111214;   /* hover states, active rows                    */
-  --la-bg-elev-2: #16181b;   /* selected state, input fills                  */
+  /* ── Background scale ────────────────────────────────────────────────────── */
+  --la-bg-void:   #08090a;
+  --la-bg-frame:  #0c0d0e;
+  --la-bg-elev-1: #111214;
+  --la-bg-elev-2: #16181b;
 
-  /* ── Hair / border scale ────────────────────────────────────────────────── */
-  --la-hair-faint:  #16181b; /* gridlines, rule separators                   */
-  --la-hair-base:   #25282d; /* default panel borders                        */
-  --la-hair-strong: #3a3f47; /* emphasis borders, active outlines            */
+  /* ── Hair / border scale ─────────────────────────────────────────────────── */
+  --la-hair-faint:  #16181b;
+  --la-hair-base:   #25282d;
+  --la-hair-strong: #3a3f47;
 
   /* ── Text scale ──────────────────────────────────────────────────────────── */
-  --la-text-mute:   #3e434a; /* disabled / zero-state labels                 */
-  --la-text-dim:    #5d646e; /* secondary metadata                           */
-  --la-text-base:   #8a929c; /* body / helper text                           */
-  --la-text-bright: #d8dde4; /* primary text                                 */
-  --la-text-stark:  #f6f7f8; /* headings / high-contrast                     */
+  --la-text-mute:   #3e434a;
+  --la-text-dim:    #7a8390;
+  --la-text-base:   #8a929c;
+  --la-text-bright: #d8dde4;
+  --la-text-stark:  #f6f7f8;
 
-  /* ── Letter-spacing scale ───────────────────────────────────────────────── */
-  --la-tk-loose: 0.18em;     /* ALL-CAPS section labels, chip codes          */
-  --la-tk-mid:   0.08em;     /* column headers, status labels                */
-  --la-tk-tight: 0.02em;     /* body text, textarea input                    */
+  /* ── Semantic text aliases (component consumers use these) ───────────────── */
+  --text-body:      var(--la-text-bright);
+  --text-strong:    var(--la-text-stark);
+  --text-label:     var(--la-text-label);
+  --text-dim:       var(--la-text-dim);
+  --text-mute:      var(--la-text-mute);
+  /* Bridge alias — existing components use --la-text-body; bridge to new scale */
+  --la-text-body:   var(--la-text-bright);
 
-  /* ── Animation / motion ────────────────────────────────────────────────── */
+  /* ── Letter-spacing scale ────────────────────────────────────────────────── */
+  --la-tk-loose: 0.18em;
+  --la-tk-mid:   0.08em;
+  --la-tk-tight: 0.02em;
+
+  /* ── Animation / motion ──────────────────────────────────────────────────── */
   --la-transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
   --la-transition-med:  200ms cubic-bezier(0.4, 0, 0.2, 1);
   --la-transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
-  /* Mechanical ease — forward-weighted, instrument-panel feel               */
   --la-ease-mech: cubic-bezier(0.2, 0, 0.4, 1);
-  --la-t-snap:    80ms;
-  --la-t-base:   200ms;
-  --la-t-slow:   400ms;
+  --la-t-snap:  80ms;
+  --la-t-base: 200ms;
+  --la-t-slow: 400ms;
 
-  /* ── Drawer chrome (#34 token-level pass) ──────────────────────────────────
-     CopilotDrawer (bottom, push) and MemoryDrawer (right, overlay) consume
-     these so visual chrome stays consistent without forcing an architectural
-     refactor of either model. Full primitive unification deferred to v0.3.1. */
-  --la-drawer-z:        30;                          /* z-index — above content, below modal stack */
-  --la-drawer-bg:       #0d1117;                     /* surface */
-  --la-drawer-border:   #1e293b;                     /* 1px stroke */
-  --la-drawer-shadow:   0 -4px 16px rgba(0, 0, 0, 0.4),
-                        0 0 0 1px rgba(255, 215, 0, 0.05);
-  --la-drawer-padding:  12px;
-  --la-scrim-color:     rgba(10, 10, 15, 0.62);      /* used by overlay drawers */
-  --la-scrim-blur:      2px;
+  /* ── Drawer chrome ───────────────────────────────────────────────────────── */
+  --la-drawer-z:       30;
+  --la-drawer-bg:      #0d1117;
+  --la-drawer-border:  #1e293b;
+  --la-drawer-shadow:  0 -4px 16px rgba(0, 0, 0, 0.4),
+                       0 0 0 1px rgba(255, 215, 0, 0.05);
+  --la-drawer-padding: 12px;
+  --la-scrim-color:    rgba(10, 10, 15, 0.62);
+  --la-scrim-blur:     2px;
 
-  /* ── Screen header band (#38) ──────────────────────────────────────────────
-     Every top-level screen (Activity, Sitrep, Queue, Intake, Squad, Workspace)
-     uses a 56px-fixed header band so the page-title baseline + tab strip below
-     never jumps when switching screens. Apply via `.la-screen-header`. */
+  /* ── Z-index ladder (use these vars everywhere — no raw integers in code) ── */
+  --z-grid:         0;   /* body::before grid texture */
+  --z-vignette:     1;   /* body::after radial vignette */
+  --z-content:     10;   /* normal document content */
+  --z-panel:       20;   /* panels, sidebars */
+  --z-drawer:      30;   /* drawers — bridges --la-drawer-z */
+  --z-bracket:     70;   /* corner brackets — above lower modal layers */
+  --z-modal-scrim: 90;
+  --z-modal:      100;
+  --z-tooltip:    110;
+  --z-overlay:    200;
+
+  /* ── Screen header ───────────────────────────────────────────────────────── */
   --la-header-height: 56px;
 
   /* ── Domain agent colors (#98 AES-2) ────────────────────────────────────────
@@ -116,40 +111,24 @@
   --la-agent-squad:      #ff7eb6;
 }
 
-/* ── Zero-state utility ────────────────────────────────────────────────────
-   Apply to count elements: <span class="la-count" data-zero="true">0</span>.
-   When the count is non-zero, drop the data-zero attribute and the element
-   gets full chroma. Counter strips become quiet at idle, loud when active.
-   ============================================================================ */
+/* ── Zero-state utility ──────────────────────────────────────────────────── */
 .la-count[data-zero="true"] {
   color: var(--la-text-dim);
 }
 
-/* ── Screen header band (#38) ──────────────────────────────────────────────
-   Apply to the top-of-screen <header> on every screen so the title strip
-   stays at a consistent height. Use alongside Tailwind utilities for the
-   layout (flex, gap, padding-x, border-b). The fixed height prevents the
-   1-2px reflow that happens when one screen wraps and another doesn't.
-   ============================================================================ */
+/* ── Screen header band ──────────────────────────────────────────────────── */
 .la-screen-header {
   height: var(--la-header-height);
   flex-shrink: 0;
 }
 
-/* ── Focus ring (consume the token everywhere a focusable lives) ──────────
-   Buttons, inputs, links, role="button" — apply this baseline. Components
-   may override for specialized treatments (e.g., destructive focus uses
-   --la-danger-stroke instead).
-   ============================================================================ */
+/* ── Focus ring ──────────────────────────────────────────────────────────── */
 :focus-visible {
   outline: var(--la-focus-ring-width) solid var(--la-focus-ring);
   outline-offset: var(--la-focus-ring-offset);
 }
 
-/* ── Destructive utility classes ──────────────────────────────────────────
-   For consumers that want token-driven destructive styling without per-call
-   inline styles. Wave 2 diff-preview will use these.
-   ============================================================================ */
+/* ── Destructive utilities ────────────────────────────────────────────────── */
 .la-destructive {
   background: var(--la-danger-bg);
   border: 1px solid var(--la-danger-stroke);
@@ -163,20 +142,16 @@
   outline-offset: var(--la-focus-ring-offset);
 }
 
-/* ── Ops-console body base (#97 AES-1) ──────────────────────────────────────
-   Void background + engineering graph-paper grid texture.
-   body::before  = 64px hairline grid (depth layer)
-   body::after   = radial vignette (center-clear, edges darken)
-   font-feature-settings applied here so all mono text gets tabular numerals,
-   stylistic alternates ss01/ss02 (JetBrains Mono optical improvements).
-   ============================================================================ */
+/* ── Ops-console body base ────────────────────────────────────────────────── */
 body {
   background: var(--la-bg-void);
+  font-family: var(--la-font-mono);
   font-feature-settings: "ss01", "ss02", "tnum";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Grid texture — promoted to GPU compositing layer */
 body::before {
   content: "";
   position: fixed;
@@ -187,29 +162,31 @@ body::before {
   background-size: 64px 64px;
   opacity: 0.5;
   pointer-events: none;
-  z-index: 0;
+  transform: translateZ(0);
+  will-change: transform;
+  z-index: var(--z-grid);
 }
 
+/* Radial vignette — promoted to GPU compositing layer */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
   background: radial-gradient(ellipse at 50% 40%, transparent 35%, rgba(0, 0, 0, 0.55) 100%);
   pointer-events: none;
-  z-index: 1;
+  transform: translateZ(0);
+  will-change: transform;
+  z-index: var(--z-vignette);
 }
 
-/* ── Corner brackets — tactical frame (#99 AES-3) ────────────────────────────
-   Four fixed-position CSS-only decorations at the screen corners.
-   Animate to --la-agent-researcher green during active dispatch.
-   ============================================================================ */
+/* ── Corner brackets — tactical frame ────────────────────────────────────── */
 .corner-bracket {
   position: fixed;
   width: 12px;
   height: 12px;
   border: 1px solid var(--la-hair-strong);
   pointer-events: none;
-  z-index: 50;
+  z-index: var(--z-bracket);
   transition: all var(--la-t-base) var(--la-ease-mech);
 }
 .corner-bracket.tl { top: 8px;    left: 8px;  border-right: none; border-bottom: none; }
@@ -222,6 +199,13 @@ body::after {
   height: 18px;
   border-color: var(--la-agent-researcher);
   box-shadow: 0 0 6px color-mix(in srgb, var(--la-agent-researcher) 40%, transparent);
+}
+
+/* Fallback for browsers without color-mix support (pre-Safari 16.2) */
+@supports not (color: color-mix(in srgb, red 50%, blue)) {
+  [data-dispatching="true"] .corner-bracket {
+    box-shadow: 0 0 6px rgba(77, 255, 142, 0.4);
+  }
 }
 
 /* ── Domain agent color utilities (#98 AES-2) ────────────────────────────────

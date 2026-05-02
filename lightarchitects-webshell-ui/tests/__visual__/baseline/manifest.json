@@ -1,0 +1,316 @@
+{
+  "captured_at": "2026-05-01T04:37:49.685Z",
+  "base_url": "http://localhost:5180",
+  "branch": "feat/lasdlc",
+  "phase": "Phase 2 — visual baseline (LASDLC luminous-tracing-polytope)",
+  "dev_server_pid": 82576,
+  "har_path": "tests/e2e/__har__/baseline-2026-05-01T04-36-34-076Z.har",
+  "har_size_bytes": 77408627,
+  "webgl_available": true,
+  "screenshot_count": 30,
+  "blocked_screens": [],
+  "console_errors_sample": [
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+  ],
+  "screenshots": [
+    {
+      "path": "tests/__visual__/baseline/activity-mobile-375.png",
+      "screen": "activity",
+      "viewport": "mobile-375",
+      "viewport_w": 375,
+      "viewport_h": 812,
+      "captured_at": "2026-05-01T04:36:38.496Z",
+      "sha256": "9093b2592ae9672dbac98950e773c2da8961bac2cd9ec3253d6cb7211127f924"
+    },
+    {
+      "path": "tests/__visual__/baseline/sitrep-mobile-375.png",
+      "screen": "sitrep",
+      "viewport": "mobile-375",
+      "viewport_w": 375,
+      "viewport_h": 812,
+      "captured_at": "2026-05-01T04:36:40.576Z",
+      "sha256": "f4e29ec3b3caaf98cf41837f9dd83b9a333b689994c1f87a741ee84233e269a1"
+    },
+    {
+      "path": "tests/__visual__/baseline/queue-mobile-375.png",
+      "screen": "queue",
+      "viewport": "mobile-375",
+      "viewport_w": 375,
+      "viewport_h": 812,
+      "captured_at": "2026-05-01T04:36:42.462Z",
+      "sha256": "154e92526770109f35a9b2bf036146e8a16df281694de3d7a5dae4636a0eff7f"
+    },
+    {
+      "path": "tests/__visual__/baseline/intake-mobile-375.png",
+      "screen": "intake",
+      "viewport": "mobile-375",
+      "viewport_w": 375,
+      "viewport_h": 812,
+      "captured_at": "2026-05-01T04:36:44.085Z",
+      "sha256": "17c4634d3ef11fbb3e330264395b18373354a97fddf41716a527a48c082a246e"
+    },
+    {
+      "path": "tests/__visual__/baseline/squad-dispatch-mobile-375.png",
+      "screen": "squad-dispatch",
+      "viewport": "mobile-375",
+      "viewport_w": 375,
+      "viewport_h": 812,
+      "captured_at": "2026-05-01T04:36:45.736Z",
+      "sha256": "7e89bfde2208d1533c16cdee4b15504caec4a911c32af81827f1c112f59a738e"
+    },
+    {
+      "path": "tests/__visual__/baseline/activity-tablet-768.png",
+      "screen": "activity",
+      "viewport": "tablet-768",
+      "viewport_w": 768,
+      "viewport_h": 1024,
+      "captured_at": "2026-05-01T04:36:48.703Z",
+      "sha256": "aca1c9e7785b882b4fbd06914bb1c4d03ebeac59d8f726b422c6e16ca60b2bf8"
+    },
+    {
+      "path": "tests/__visual__/baseline/sitrep-tablet-768.png",
+      "screen": "sitrep",
+      "viewport": "tablet-768",
+      "viewport_w": 768,
+      "viewport_h": 1024,
+      "captured_at": "2026-05-01T04:36:50.630Z",
+      "sha256": "9f02dcea82b35c8cbe847778e61a7047d5fd28f57daa318b37d84537e6f0dfd3"
+    },
+    {
+      "path": "tests/__visual__/baseline/queue-tablet-768.png",
+      "screen": "queue",
+      "viewport": "tablet-768",
+      "viewport_w": 768,
+      "viewport_h": 1024,
+      "captured_at": "2026-05-01T04:36:52.534Z",
+      "sha256": "ed5ba36b32e8e0ac2368ffe6f43b3302fb34e79c43f20f3205d8171fb6e71b13"
+    },
+    {
+      "path": "tests/__visual__/baseline/intake-tablet-768.png",
+      "screen": "intake",
+      "viewport": "tablet-768",
+      "viewport_w": 768,
+      "viewport_h": 1024,
+      "captured_at": "2026-05-01T04:36:54.142Z",
+      "sha256": "8e8a2d6eb9616d3c6b01dd95ea123d329e4c989d90bea4e5ce9398df48029b0c"
+    },
+    {
+      "path": "tests/__visual__/baseline/squad-dispatch-tablet-768.png",
+      "screen": "squad-dispatch",
+      "viewport": "tablet-768",
+      "viewport_w": 768,
+      "viewport_h": 1024,
+      "captured_at": "2026-05-01T04:36:55.744Z",
+      "sha256": "a61db44b229b05b3de71744730fbf905e82ea4803c76e126e9e35c2bf1711cd1"
+    },
+    {
+      "path": "tests/__visual__/baseline/activity-small-1024.png",
+      "screen": "activity",
+      "viewport": "small-1024",
+      "viewport_w": 1024,
+      "viewport_h": 768,
+      "captured_at": "2026-05-01T04:36:58.394Z",
+      "sha256": "84d3d95f768ee74bfc03500d1596c7c262c75ae2187c3e0960d3000e926da076"
+    },
+    {
+      "path": "tests/__visual__/baseline/sitrep-small-1024.png",
+      "screen": "sitrep",
+      "viewport": "small-1024",
+      "viewport_w": 1024,
+      "viewport_h": 768,
+      "captured_at": "2026-05-01T04:37:00.401Z",
+      "sha256": "aaaa32c3fcbc72ebdb97c0bd3e2baac9841056035fe75681c2059880ada1c2b2"
+    },
+    {
+      "path": "tests/__visual__/baseline/queue-small-1024.png",
+      "screen": "queue",
+      "viewport": "small-1024",
+      "viewport_w": 1024,
+      "viewport_h": 768,
+      "captured_at": "2026-05-01T04:37:02.297Z",
+      "sha256": "cb99dc853e247142d2a5654467088c496db83075c36062ee40b086e33d3355f7"
+    },
+    {
+      "path": "tests/__visual__/baseline/intake-small-1024.png",
+      "screen": "intake",
+      "viewport": "small-1024",
+      "viewport_w": 1024,
+      "viewport_h": 768,
+      "captured_at": "2026-05-01T04:37:03.903Z",
+      "sha256": "6a5df72d54aa012c6d47d7aab8c2d7ad5cdf5b7c88794282772dfaa66fc89ebc"
+    },
+    {
+      "path": "tests/__visual__/baseline/squad-dispatch-small-1024.png",
+      "screen": "squad-dispatch",
+      "viewport": "small-1024",
+      "viewport_w": 1024,
+      "viewport_h": 768,
+      "captured_at": "2026-05-01T04:37:05.503Z",
+      "sha256": "c55283fb6b304fdc377b2cf5ad3e0369b859af09acf542178e3c002a5964a7b2"
+    },
+    {
+      "path": "tests/__visual__/baseline/activity-desktop-1440.png",
+      "screen": "activity",
+      "viewport": "desktop-1440",
+      "viewport_w": 1440,
+      "viewport_h": 900,
+      "captured_at": "2026-05-01T04:37:08.162Z",
+      "sha256": "ae22b8e54a37ba8261cf265ee4d364913fcee7000fe7e20baedd6d200f907720"
+    },
+    {
+      "path": "tests/__visual__/baseline/sitrep-desktop-1440.png",
+      "screen": "sitrep",
+      "viewport": "desktop-1440",
+      "viewport_w": 1440,
+      "viewport_h": 900,
+      "captured_at": "2026-05-01T04:37:10.076Z",
+      "sha256": "77b6cc28cdff490d7dc6e6e7f7527a157db9e19117309991ba3beca59a018914"
+    },
+    {
+      "path": "tests/__visual__/baseline/queue-desktop-1440.png",
+      "screen": "queue",
+      "viewport": "desktop-1440",
+      "viewport_w": 1440,
+      "viewport_h": 900,
+      "captured_at": "2026-05-01T04:37:11.968Z",
+      "sha256": "c94ba69ba98661cd83dfc945a59283637c4e657083ca88694e537814b8b56955"
+    },
+    {
+      "path": "tests/__visual__/baseline/intake-desktop-1440.png",
+      "screen": "intake",
+      "viewport": "desktop-1440",
+      "viewport_w": 1440,
+      "viewport_h": 900,
+      "captured_at": "2026-05-01T04:37:13.608Z",
+      "sha256": "c0ea94fbaae0a45e11363d3f92dd0ea3fc56203be38788ca6131cc9fef111ae9"
+    },
+    {
+      "path": "tests/__visual__/baseline/squad-dispatch-desktop-1440.png",
+      "screen": "squad-dispatch",
+      "viewport": "desktop-1440",
+      "viewport_w": 1440,
+      "viewport_h": 900,
+      "captured_at": "2026-05-01T04:37:15.277Z",
+      "sha256": "9f9385c28dafd747a181916456ca6b8af08730fe6ad4ca51e26d4290402c3f93"
+    },
+    {
+      "path": "tests/__visual__/baseline/helix-on-mobile-375.png",
+      "screen": "helix-on",
+      "viewport": "mobile-375",
+      "viewport_w": 375,
+      "viewport_h": 812,
+      "captured_at": "2026-05-01T04:37:21.441Z",
+      "sha256": "7a24acc2b9de3af1a38c4f038afa09d1dcfb26bb28a16afe3cd33ca19bafeadc"
+    },
+    {
+      "path": "tests/__visual__/baseline/helix-on-tablet-768.png",
+      "screen": "helix-on",
+      "viewport": "tablet-768",
+      "viewport_w": 768,
+      "viewport_h": 1024,
+      "captured_at": "2026-05-01T04:37:25.214Z",
+      "sha256": "edb5dd784bfbeea5d6628eb436135416058accadb2801510a058d6fe4db95048"
+    },
+    {
+      "path": "tests/__visual__/baseline/helix-on-small-1024.png",
+      "screen": "helix-on",
+      "viewport": "small-1024",
+      "viewport_w": 1024,
+      "viewport_h": 768,
+      "captured_at": "2026-05-01T04:37:28.987Z",
+      "sha256": "3f1b784cfb9639d7fa1b26f816721f892f76ab470a17efa291131da94c4a57e1"
+    },
+    {
+      "path": "tests/__visual__/baseline/helix-on-desktop-1440.png",
+      "screen": "helix-on",
+      "viewport": "desktop-1440",
+      "viewport_w": 1440,
+      "viewport_h": 900,
+      "captured_at": "2026-05-01T04:37:32.703Z",
+      "sha256": "6cc4ee92a44d0a7d8391e66326b4ce3513e8f1404269e1d16c30f328fce396d5"
+    },
+    {
+      "path": "tests/__visual__/baseline/memory-drawer-desktop-1440.png",
+      "screen": "memory-drawer",
+      "viewport": "desktop-1440",
+      "viewport_w": 1440,
+      "viewport_h": 900,
+      "captured_at": "2026-05-01T04:37:35.227Z",
+      "sha256": "8999f20edc22fdeea291599085c740b911b20ca58ba12945d0dbaad116a93771"
+    },
+    {
+      "path": "tests/__visual__/baseline/copilot-drawer-desktop-1440.png",
+      "screen": "copilot-drawer",
+      "viewport": "desktop-1440",
+      "viewport_w": 1440,
+      "viewport_h": 900,
+      "captured_at": "2026-05-01T04:37:37.872Z",
+      "sha256": "a91b1323e5bff8d594e595e89fc485e16dce6f72278ab60816347d06d5d54665"
+    },
+    {
+      "path": "tests/__visual__/baseline/keymap-legend-desktop-1440.png",
+      "screen": "keymap-legend",
+      "viewport": "desktop-1440",
+      "viewport_w": 1440,
+      "viewport_h": 900,
+      "captured_at": "2026-05-01T04:37:40.187Z",
+      "sha256": "7fc69e3f5501af7c2ebb1d87e34bf5748e86887f337db358548ab08c68c26be0"
+    },
+    {
+      "path": "tests/__visual__/baseline/helix-legend-desktop-1440.png",
+      "screen": "helix-legend",
+      "viewport": "desktop-1440",
+      "viewport_w": 1440,
+      "viewport_h": 900,
+      "captured_at": "2026-05-01T04:37:42.853Z",
+      "sha256": "1abdd003b66ce374e304b27054979c7ef45ab8f8961fd0fcd91160a8f92e99b8"
+    },
+    {
+      "path": "tests/__visual__/baseline/setup-splash-mobile-375.png",
+      "screen": "setup-splash",
+      "viewport": "mobile-375",
+      "viewport_w": 375,
+      "viewport_h": 812,
+      "captured_at": "2026-05-01T04:37:45.156Z",
+      "sha256": "84a7426858009b4d1e30497aed35a8ac036b941e482916f8f210743c0ae02f44"
+    },
+    {
+      "path": "tests/__visual__/baseline/setup-splash-desktop-1440.png",
+      "screen": "setup-splash",
+      "viewport": "desktop-1440",
+      "viewport_w": 1440,
+      "viewport_h": 900,
+      "captured_at": "2026-05-01T04:37:47.537Z",
+      "sha256": "2c06f0e64a70e7903802221d962933b7648443aad335f56199b6438624918213"
+    }
+  ]
+}

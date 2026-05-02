@@ -45,11 +45,11 @@
     aria-expanded={open}
     aria-haspopup="dialog"
     data-testid="activity-filter-btn"
-    class="text-[10px] px-2 py-0.5 border border-[#1e293b] rounded transition-colors flex items-center gap-1 {open ? 'text-[#e2e8f0] bg-[#1e293b]' : activeCount > 0 ? 'text-[#FFD700] border-[#FFD700]/30' : 'text-[#475569] hover:text-[#e2e8f0]'}"
+    class="text-[10px] px-2 py-0.5 border border-[var(--la-drawer-border)] rounded transition-colors flex items-center gap-1 {open ? 'text-[var(--la-text-bright)] bg-[var(--la-drawer-border)]' : activeCount > 0 ? 'text-[var(--la-focus-ring)] border-[var(--la-focus-ring)]/30' : 'text-[var(--la-text-dim)] hover:text-[var(--la-text-bright)]'}"
   >
     Filter
     {#if activeCount > 0}
-      <span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#FFD700] text-[#0a0a0f] text-[8px] font-bold leading-none">
+      <span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[var(--la-focus-ring)] text-[var(--la-bg-frame)] text-[8px] font-bold leading-none">
         {activeCount}
       </span>
     {/if}
@@ -68,58 +68,58 @@
       role="dialog"
       aria-label="Activity filters"
       data-testid="activity-filter-panel"
-      class="absolute right-0 top-full mt-1 w-52 z-50 bg-[#0d1117] border border-[#1e293b] rounded-lg shadow-[0_4px_16px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,215,0,0.06)] overflow-hidden"
+      class="absolute right-0 top-full mt-1 w-52 z-50 bg-[var(--la-drawer-bg)] border border-[var(--la-drawer-border)] rounded-lg shadow-[0_4px_16px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,215,0,0.06)] overflow-hidden"
     >
       <!-- Section label -->
-      <div class="px-3 pt-2.5 pb-1 text-[9px] text-[#475569] tracking-widest uppercase font-semibold select-none">
+      <div class="px-3 pt-2.5 pb-1 text-[9px] text-[var(--la-text-dim)] tracking-widest uppercase font-semibold select-none">
         Display
       </div>
 
       <!-- Show System toggle -->
       <label
-        class="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer group hover:bg-[#1e293b]/50 transition-colors"
+        class="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer group hover:bg-[var(--la-drawer-border)]/50 transition-colors"
         data-testid="activity-filter-show-system"
       >
         <div>
-          <span class="text-[11px] text-[#94a3b8] group-hover:text-[#e2e8f0] transition-colors">System events</span>
-          <p class="text-[9px] text-[#475569] mt-0.5 leading-snug">Process lifecycle · internal signals</p>
+          <span class="text-[11px] text-[var(--la-text-label)] group-hover:text-[var(--la-text-bright)] transition-colors">System events</span>
+          <p class="text-[9px] text-[var(--la-text-dim)] mt-0.5 leading-snug">Process lifecycle · internal signals</p>
         </div>
         <span
           role="switch"
           aria-checked={showSystem}
-          class="relative shrink-0 w-8 h-4 rounded-full transition-colors {showSystem ? 'bg-[#FFD700]' : 'bg-[#1e293b]'}"
+          class="relative shrink-0 w-8 h-4 rounded-full transition-colors {showSystem ? 'bg-[var(--la-focus-ring)]' : 'bg-[var(--la-drawer-border)]'}"
         >
-          <span class="absolute top-0.5 left-0.5 w-3 h-3 bg-[#e2e8f0] rounded-full transition-transform {showSystem ? 'translate-x-4' : 'translate-x-0'}"></span>
+          <span class="absolute top-0.5 left-0.5 w-3 h-3 bg-[var(--la-text-bright)] rounded-full transition-transform {showSystem ? 'translate-x-4' : 'translate-x-0'}"></span>
           <input type="checkbox" class="sr-only" bind:checked={showSystem} />
         </span>
       </label>
 
       <!-- Verbose toggle -->
       <label
-        class="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer group hover:bg-[#1e293b]/50 transition-colors"
+        class="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer group hover:bg-[var(--la-drawer-border)]/50 transition-colors"
         data-testid="activity-filter-verbose"
       >
         <div>
-          <span class="text-[11px] text-[#94a3b8] group-hover:text-[#e2e8f0] transition-colors">Verbose</span>
-          <p class="text-[9px] text-[#475569] mt-0.5 leading-snug">Show full payloads and all fields</p>
+          <span class="text-[11px] text-[var(--la-text-label)] group-hover:text-[var(--la-text-bright)] transition-colors">Verbose</span>
+          <p class="text-[9px] text-[var(--la-text-dim)] mt-0.5 leading-snug">Show full payloads and all fields</p>
         </div>
         <span
           role="switch"
           aria-checked={verbose}
-          class="relative shrink-0 w-8 h-4 rounded-full transition-colors {verbose ? 'bg-[#FFD700]' : 'bg-[#1e293b]'}"
+          class="relative shrink-0 w-8 h-4 rounded-full transition-colors {verbose ? 'bg-[var(--la-focus-ring)]' : 'bg-[var(--la-drawer-border)]'}"
         >
-          <span class="absolute top-0.5 left-0.5 w-3 h-3 bg-[#e2e8f0] rounded-full transition-transform {verbose ? 'translate-x-4' : 'translate-x-0'}"></span>
+          <span class="absolute top-0.5 left-0.5 w-3 h-3 bg-[var(--la-text-bright)] rounded-full transition-transform {verbose ? 'translate-x-4' : 'translate-x-0'}"></span>
           <input type="checkbox" class="sr-only" bind:checked={verbose} />
         </span>
       </label>
 
       <!-- Divider + Clear action -->
-      <div class="mx-3 border-t border-[#1e293b] mt-1"></div>
+      <div class="mx-3 border-t border-[var(--la-drawer-border)] mt-1"></div>
       <div class="px-3 py-2">
         <button
           onclick={clearAndClose}
           data-testid="activity-filter-clear"
-          class="w-full text-[10px] py-1.5 text-[#ef4444] hover:text-[#f87171] border border-[#ef4444]/20 hover:border-[#ef4444]/40 rounded transition-colors hover:bg-[#ef4444]/5"
+          class="w-full text-[10px] py-1.5 text-[var(--la-danger-stroke)] hover:text-[var(--la-danger-text)] border border-[var(--la-danger-stroke)]/20 hover:border-[var(--la-danger-stroke)]/40 rounded transition-colors hover:bg-[var(--la-danger-stroke)]/5"
         >
           Clear feed
         </button>

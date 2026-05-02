@@ -243,9 +243,9 @@ describe('Phase 6: SITREP + Platform Status', () => {
     });
   });
 
-  describe('Sitrep.svelte integration', () => {
-    it('Sitrep screen imports successfully', async () => {
-      const mod = await import('$lib/../screens/Sitrep.svelte');
+  describe('Ops.svelte integration', () => {
+    it('Ops screen imports successfully', async () => {
+      const mod = await import('$lib/../screens/Ops.svelte');
       expect(mod.default).toBeDefined();
     });
   });
