@@ -25,7 +25,11 @@ pub struct Frontmatter {
     /// Significance score (0.0-10.0).
     pub significance: Option<f64>,
     /// Strand names.
-    #[serde(default)]
+    ///
+    /// Accepts both an array form (`strands: [a, b]`) and a map form
+    /// (`strands: {activated: [...], aligned: [...], resonance: [...]}`).
+    /// The map form flattens all values into a single `Vec<String>`.
+    #[serde(default, deserialize_with = "deser_strands")]
     pub strands: Vec<String>,
     /// Resonance tags (emotional qualities, energy states).
     ///
@@ -76,6 +80,29 @@ pub struct Frontmatter {
     /// `"milestone"`, `"convergence"`, `"growth-summary"`, `"journal"`, etc.
     #[serde(rename = "type", alias = "entry_type", default)]
     pub entry_type: Option<String>,
+    /// Scope tier override for this entry.
+    ///
+    /// When present, overrides the parent helix's tier for this specific entry.
+    /// Most entries should NOT set this — inherited from parent helix.
+    // TODO(Wave 2 helix_toml): wire scope_tier into MarkdownVaultIngester → ensure_helix call
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope_tier: Option<String>,
+    /// Entries this entry converges with (sibling entry IDs or paths).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub convergence_with: Vec<String>,
+    /// Entry expiry (for context/decision entries; None = permanent).
+    pub expires: Option<String>,
+    /// Step index (for indexed helices like plan phases).
+    pub step_index: Option<i64>,
+    /// Scripture references (book:chapter:verse format).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scripture: Vec<String>,
+    /// Related entry paths.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub related: Vec<String>,
+    /// Tags for this entry.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
     /// Catch-all for extra fields.
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
@@ -142,6 +169,48 @@ where
     }
 
     deserializer.deserialize_any(ConvergenceVisitor)
+}
+
+/// Deserializes the `strands` field, which appears in two forms in the vault:
+///
+/// - `strands: ["analytical", "tactical"]` — plain array (common form).
+/// - `strands: {activated: [...], aligned: [...], resonance: [...]}` — map form used
+///   by some older entries. All values (which are string arrays) are flattened into
+///   a single `Vec<String>`.
+fn deser_strands<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct StrandsVisitor;
+
+    impl<'de> Visitor<'de> for StrandsVisitor {
+        type Value = Vec<String>;
+
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "a sequence of strings or a map of string arrays")
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+            let mut result = Vec::new();
+            while let Some(item) = seq.next_element::<String>()? {
+                result.push(item);
+            }
+            Ok(result)
+        }
+
+        fn visit_map<M: serde::de::MapAccess<'de>>(
+            self,
+            mut map: M,
+        ) -> Result<Self::Value, M::Error> {
+            let mut result = Vec::new();
+            while let Some((_key, values)) = map.next_entry::<String, Vec<String>>()? {
+                result.extend(values);
+            }
+            Ok(result)
+        }
+    }
+
+    deserializer.deserialize_any(StrandsVisitor)
 }
 
 /// Deserializes `themes` (and similarly structured string-list fields) that may

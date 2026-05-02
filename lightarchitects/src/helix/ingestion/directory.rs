@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
 use crate::helix::db::HelixDb;
-use crate::helix::types::{HelixOrderingMode, Step};
+use crate::helix::types::{HelixOrderingMode, ScopeTier, Step};
 
 use super::{IngestionError, IngestionReport, IngestionSource};
 
@@ -232,7 +232,7 @@ impl IngestionSource for DirectoryIngester {
         let name = owner.to_owned();
 
         let helix_id = db
-            .ensure_helix(owner, &name, HelixOrderingMode::Temporal)
+            .ensure_helix(owner, &name, HelixOrderingMode::Temporal, ScopeTier::User)
             .await
             .map_err(|e| IngestionError::Parse(format!("ensure_helix: {e}")))?;
 

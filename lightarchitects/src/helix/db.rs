@@ -166,6 +166,7 @@ pub trait HelixDb: Send + Sync {
         owner: &str,
         name: &str,
         ordering_mode: crate::helix::types::HelixOrderingMode,
+        scope_tier: crate::helix::types::ScopeTier,
     ) -> Result<String, HelixDbError>;
 
     /// Content-hash dedup step upsert.
@@ -757,6 +758,10 @@ impl HelixDb for HelixNeo4j {
             "ordering_mode".into(),
             serde_json::json!(helix.ordering_mode.to_string()),
         );
+        props.insert(
+            "scope_tier".into(),
+            serde_json::json!(helix.scope_tier.to_string()),
+        );
         if let Some(md) = helix.max_depth {
             props.insert("max_depth".into(), serde_json::json!(md));
         }
@@ -774,6 +779,7 @@ impl HelixDb for HelixNeo4j {
         let cypher = "MATCH (h:Helix {id: $id}) \
                       RETURN h.id AS id, h.owner AS owner, h.name AS name, \
                              h.level AS level, h.ordering_mode AS ordering_mode, \
+                             h.scope_tier AS scope_tier, \
                              h.max_depth AS max_depth, h.created_at AS created_at";
         let mut params = BTreeMap::new();
         params.insert("id".into(), serde_json::json!(helix_id));
@@ -820,6 +826,15 @@ impl HelixDb for HelixNeo4j {
                 .and_then(|v| u8::try_from(v).ok())
                 .unwrap_or(0),
             ordering_mode,
+            scope_tier: rec
+                .get("scope_tier")
+                .and_then(serde_json::Value::as_str)
+                .map_or(crate::helix::types::ScopeTier::User, |s| match s {
+                    "platform" => crate::helix::types::ScopeTier::Platform,
+                    "project" => crate::helix::types::ScopeTier::Project,
+                    "shared" => crate::helix::types::ScopeTier::Shared,
+                    _ => crate::helix::types::ScopeTier::User,
+                }),
             max_depth: rec
                 .get("max_depth")
                 .and_then(serde_json::Value::as_u64)
@@ -1420,12 +1435,14 @@ impl HelixDb for HelixNeo4j {
         owner: &str,
         name: &str,
         ordering_mode: crate::helix::types::HelixOrderingMode,
+        scope_tier: crate::helix::types::ScopeTier,
     ) -> Result<String, HelixDbError> {
         let id = format!("{owner}/{name}");
         let cypher = "MERGE (h:Helix {owner: $owner, name: $name}) \
                       ON CREATE SET h.id = $id, \
                                     h.level = 0, \
                                     h.ordering_mode = $mode, \
+                                    h.scope_tier = $scope_tier, \
                                     h.created_at = datetime() \
                       RETURN h.id AS id";
 
@@ -1434,6 +1451,10 @@ impl HelixDb for HelixNeo4j {
         params.insert("name".into(), serde_json::json!(name));
         params.insert("id".into(), serde_json::json!(&id));
         params.insert("mode".into(), serde_json::json!(ordering_mode.to_string()));
+        params.insert(
+            "scope_tier".into(),
+            serde_json::json!(scope_tier.to_string()),
+        );
 
         let records = self.timed_execute("ensure_helix", cypher, params).await?;
         records

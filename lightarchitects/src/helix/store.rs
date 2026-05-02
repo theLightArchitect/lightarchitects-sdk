@@ -22,7 +22,9 @@ use crate::soul::storage::StorageEntry;
 use crate::soul::{RetrievalHit, RetrievalSignal};
 use thiserror::Error;
 
-use crate::helix::{HelixDb as _, HelixNeo4j, HelixOrderingMode, Neo4jConfig, SearchOptions, Step};
+use crate::helix::{
+    HelixDb as _, HelixNeo4j, HelixOrderingMode, Neo4jConfig, ScopeTier, SearchOptions, Step,
+};
 
 // ============================================================================
 // HelixStoreError
@@ -107,7 +109,12 @@ impl HelixStore {
         for entry in entries {
             let helix_id = self
                 .db
-                .ensure_helix(&entry.sibling, "entries", HelixOrderingMode::Temporal)
+                .ensure_helix(
+                    &entry.sibling,
+                    "entries",
+                    HelixOrderingMode::Temporal,
+                    ScopeTier::User,
+                )
                 .await
                 .map_err(HelixStoreError::from)?;
 

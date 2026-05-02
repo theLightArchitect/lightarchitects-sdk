@@ -181,6 +181,39 @@ pub mod level {
 }
 
 // ============================================================================
+// Scope Tier
+// ============================================================================
+
+/// Tier of a helix within the recursive vault hierarchy.
+///
+/// Determines read-only vs writeable semantics at runtime.
+/// Derived from the helix's physical location and its `helix.toml` marker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScopeTier {
+    /// Canonical platform content — read-only for all users.
+    Platform,
+    /// Per-user personal content — writeable by the owner.
+    #[default]
+    User,
+    /// Per-project content — writeable by project collaborators.
+    Project,
+    /// Cross-user shared content — writeable by team members.
+    Shared,
+}
+
+impl std::fmt::Display for ScopeTier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Platform => write!(f, "platform"),
+            Self::User => write!(f, "user"),
+            Self::Project => write!(f, "project"),
+            Self::Shared => write!(f, "shared"),
+        }
+    }
+}
+
+// ============================================================================
 // Core Primitives
 // ============================================================================
 
@@ -201,6 +234,11 @@ pub struct Helix {
     /// How steps in this helix are ordered.
     #[serde(default)]
     pub ordering_mode: HelixOrderingMode,
+    /// Scope tier — determines read/write semantics for this helix.
+    ///
+    /// Defaults to [`ScopeTier::User`] when absent from Neo4j or TOML.
+    #[serde(default)]
+    pub scope_tier: ScopeTier,
     /// Per-helix max traversal depth override (must be <= [`MAX_TRAVERSAL_DEPTH`]).
     pub max_depth: Option<u8>,
     /// When this helix was created.
@@ -216,6 +254,14 @@ impl Helix {
     pub fn effective_max_depth(&self) -> u8 {
         self.max_depth
             .map_or(MAX_TRAVERSAL_DEPTH, |d| d.min(MAX_TRAVERSAL_DEPTH))
+    }
+
+    /// Returns `true` if new entries can be written to this helix.
+    ///
+    /// Platform-tier helices are read-only for all users.
+    #[must_use]
+    pub fn is_writeable(&self) -> bool {
+        !matches!(self.scope_tier, ScopeTier::Platform)
     }
 }
 
@@ -577,6 +623,7 @@ mod tests {
             name: "Test".into(),
             level: 0,
             ordering_mode: HelixOrderingMode::Temporal,
+            scope_tier: ScopeTier::User,
             max_depth: None,
             created_at: Utc::now(),
         };

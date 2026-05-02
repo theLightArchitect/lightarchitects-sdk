@@ -12,7 +12,7 @@ use tracing::instrument;
 
 use crate::helix::db::{HelixDb, HelixDbError};
 use crate::helix::types::{
-    DiscoveryMethod, HelixLink, HelixOrderingMode, LinkType, SharedExperience, Step,
+    DiscoveryMethod, HelixLink, HelixOrderingMode, LinkType, ScopeTier, SharedExperience, Step,
     StrandMembership,
 };
 
@@ -445,7 +445,12 @@ impl IngestionSource for MarkdownVaultIngester {
         }
 
         let helix_id = db
-            .ensure_helix(&self.sibling, &self.sibling, HelixOrderingMode::Temporal)
+            .ensure_helix(
+                &self.sibling,
+                &self.sibling,
+                HelixOrderingMode::Temporal,
+                ScopeTier::User,
+            )
             .await
             .map_err(|e| IngestionError::Parse(format!("ensure_helix failed: {e}")))?;
 
