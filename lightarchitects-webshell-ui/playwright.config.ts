@@ -25,7 +25,7 @@ export default defineConfig({
   // Structured reporters: interactive HTML + lightweight list + JSON for CI.
   reporter: [
     ['list'],
-    ['html', { outputFolder: 'playwright-report', open: 'never' }],
+    ['html', { outputFolder: 'playwright-report', open: 'on-failure' }],
     ['json', { outputFile: 'test-results/playwright.json' }],
   ],
 

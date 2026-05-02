@@ -58,6 +58,9 @@ export async function initCookieSession(token: string): Promise<void> {
       body: JSON.stringify({ token }),
     });
     if (!res.ok) return;
+    // Guard against Vite's SPA fallback: it returns index.html (text/html) with
+    // HTTP 200 for any unknown route — a real exchange endpoint returns JSON.
+    if (!(res.headers.get('content-type') ?? '').includes('application/json')) return;
     cookieMode = true;
     sessionStorage.removeItem(SESSION_KEY);
     scheduleRefresh();

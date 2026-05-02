@@ -58,28 +58,32 @@
 
   let ActiveScreen = $state<any>(null);
   let screenLoading = $state(true);
+  let loadGen = 0; // monotonic counter — latest request wins, stale results dropped
 
   function resolveScreenKey(path: string): keyof typeof screenModules {
     return matchRoute(path).screen;
   }
 
   async function loadScreen(path: string) {
+    const gen = ++loadGen;
     screenLoading = true;
     const key = resolveScreenKey(path);
     try {
       const mod: ScreenModule = await screenModules[key]();
+      if (gen !== loadGen) return; // superseded by a newer navigation
       ActiveScreen = mod.default;
     } catch (err) {
+      if (gen !== loadGen) return;
       console.error('Failed to load screen:', key, err);
-      // Fallback: try direct import
       try {
         const mod: ScreenModule = await screenModules['Builds']();
+        if (gen !== loadGen) return;
         ActiveScreen = mod.default;
       } catch {
         ActiveScreen = null;
       }
     } finally {
-      screenLoading = false;
+      if (gen === loadGen) screenLoading = false;
     }
   }
 
@@ -134,6 +138,12 @@
 
   // Derived condition for setup gate — explicit dependency tracking in Svelte 5
   const setupDone = $derived($setupComplete && $step === 'done');
+
+  // E2E readiness flag — set by reactive effect so Playwright polls a simple boolean
+  // instead of subscribing to Svelte stores. Only present in DEV builds.
+  $effect(() => {
+    if (import.meta.env.DEV) (window as any).__e2e_ready = setupDone;
+  });
 
   // 4-tab nav: OPS (live ops), DISPATCH (agent dispatch), BUILDS (build queue), HELIX (knowledge graph)
   // Tab order: read-heavy surfaces first (Ops → Builds), write/power-user last (Dispatch).
