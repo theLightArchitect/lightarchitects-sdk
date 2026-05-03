@@ -55,6 +55,9 @@ build: ## Build all crates (release)
 	cargo build --workspace --release
 
 deploy: quality ## Quality gates + build + deploy gateway to ~/.lightarchitects/bin/
+	# lightarchitects-gateway is excluded from the workspace (Cargo.toml exclude) due to
+	# worktree lockfile collisions. If this fails with "did not match any packages", temporarily
+	# add "lightarchitects-gateway" to workspace members, remove from exclude, build, then revert.
 	cargo build --release -p lightarchitects-gateway
 	mkdir -p "$(dir $(GATEWAY_BIN))"
 	cp target/release/lightarchitects "$(GATEWAY_BIN)"
