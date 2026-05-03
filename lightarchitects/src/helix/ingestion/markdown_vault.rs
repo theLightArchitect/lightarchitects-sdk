@@ -3,7 +3,23 @@
 //! Parses YAML frontmatter, extracts wikilinks, assigns strands,
 //! creates shared experiences from convergence references, and
 //! discovers co-located attachments.
+//!
+//! # Multi-root scanning
+//!
+//! Use [`MarkdownVaultIngester::with_extra_roots`] to scan additional root directories
+//! beyond the default sibling directory. Each extra root declares its [`ScopeTier`]
+//! explicitly. Symlinks are skipped entirely during recursive walk; inode-based dedup
+//! prevents duplicate scanning of top-level roots only.
+//!
+//! # Recursion-termination invariant
+//!
+//! The ingester satisfies two independent termination conditions: (1) top-level roots
+//! are deduplicated by `(device_id, inode)` tuple so symlink cycles and hard-link
+//! aliases are never double-scanned; (2) the filesystem helix-root search is bounded
+//! by `MAX_FS_HELIX_DEPTH = 7` in [`crate::helix::helix_toml`]. Full specification:
+//! `helix/user/standards/recursion-termination-invariant.md` in the SOUL vault.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
@@ -12,7 +28,7 @@ use tracing::instrument;
 
 use crate::helix::db::{HelixDb, HelixDbError};
 use crate::helix::types::{
-    DiscoveryMethod, HelixLink, HelixOrderingMode, LinkType, SharedExperience, Step,
+    DiscoveryMethod, HelixLink, HelixOrderingMode, LinkType, ScopeTier, SharedExperience, Step,
     StrandMembership,
 };
 
@@ -30,6 +46,11 @@ use super::{IngestionError, IngestionReport, IngestionSource};
 /// graph nodes for every `.md` file with YAML frontmatter: Helix → Step →
 /// Strand assignments, wikilinks, attachments, and shared experiences.
 /// Files without valid frontmatter are silently skipped.
+///
+/// # Multi-root mode
+///
+/// Call [`Self::with_extra_roots`] to scan additional root directories with
+/// explicit scope tiers. Inode-based deduplication prevents cycles from symlinks.
 pub struct MarkdownVaultIngester {
     /// Path to the vault root (e.g., `~/lightarchitects/soul/helix`).
     vault_root: PathBuf,
@@ -46,6 +67,9 @@ pub struct MarkdownVaultIngester {
     /// wiping the graph. Useful after a deploy that added wikilink
     /// resolution logic (e.g. Phase 11.5 `vault_path` fallback).
     force_wikilinks: bool,
+    /// Optional additional roots beyond the default sibling dir.
+    /// Each entry is (path, `scope_tier`). Used for platform bundle scanning.
+    roots: Vec<(PathBuf, ScopeTier)>,
 }
 
 impl MarkdownVaultIngester {
@@ -57,6 +81,7 @@ impl MarkdownVaultIngester {
             sibling: sibling.into(),
             max_entries: None,
             force_wikilinks: false,
+            roots: Vec::new(),
         }
     }
 
@@ -75,6 +100,18 @@ impl MarkdownVaultIngester {
     #[must_use]
     pub fn with_force_wikilinks(mut self, force: bool) -> Self {
         self.force_wikilinks = force;
+        self
+    }
+
+    /// Add extra root directories to scan beyond the default sibling dir.
+    ///
+    /// Each root declares its scope tier explicitly (overrides `helix.toml` lookup).
+    /// Roots are processed after the default sibling directory.
+    /// Inode-based deduplication prevents visiting the same directory twice
+    /// even when symlinks create directory aliases.
+    #[must_use]
+    pub fn with_extra_roots(mut self, roots: Vec<(PathBuf, ScopeTier)>) -> Self {
+        self.roots = roots;
         self
     }
 
@@ -435,7 +472,7 @@ impl IngestionSource for MarkdownVaultIngester {
         "MarkdownVault"
     }
 
-    #[instrument(skip(self, db))]
+    #[instrument(skip(self, db), fields(sibling = %self.sibling))]
     async fn ingest(&self, db: &dyn HelixDb) -> Result<IngestionReport, IngestionError> {
         let sibling_dir = self.sibling_dir();
         if !sibling_dir.exists() {
@@ -445,12 +482,65 @@ impl IngestionSource for MarkdownVaultIngester {
         }
 
         let helix_id = db
-            .ensure_helix(&self.sibling, &self.sibling, HelixOrderingMode::Temporal)
+            .ensure_helix(
+                &self.sibling,
+                &self.sibling,
+                HelixOrderingMode::Temporal,
+                ScopeTier::User,
+            )
             .await
             .map_err(|e| IngestionError::Parse(format!("ensure_helix failed: {e}")))?;
 
         let mut report = IngestionReport::default();
+
+        // Track visited inodes (device_id, inode) to prevent cycles via symlinks.
+        let mut visited: HashSet<(u64, u64)> = HashSet::new();
+        if let Some(key) = inode_key(&sibling_dir) {
+            visited.insert(key);
+        }
+
         Box::pin(self.walk_recursive(&sibling_dir, db, &helix_id, &mut report)).await?;
+
+        // Process each extra root with its declared scope tier.
+        for (root, scope_tier) in &self.roots {
+            // Skip roots that have already been visited (inode dedup).
+            let key = inode_key(root);
+            if let Some(k) = key {
+                if visited.contains(&k) {
+                    continue;
+                }
+                visited.insert(k);
+            }
+
+            if !root.exists() {
+                report
+                    .errors
+                    .push(format!("extra root not found: {}", root.display()));
+                continue;
+            }
+
+            let root_name = root
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("extra_root");
+
+            let extra_helix_id = db
+                .ensure_helix(
+                    root_name,
+                    root_name,
+                    HelixOrderingMode::Temporal,
+                    *scope_tier,
+                )
+                .await
+                .map_err(|e| {
+                    IngestionError::Parse(format!(
+                        "ensure_helix failed for {}: {e}",
+                        root.display()
+                    ))
+                })?;
+
+            Box::pin(self.walk_recursive(root, db, &extra_helix_id, &mut report)).await?;
+        }
 
         Ok(report)
     }
@@ -458,6 +548,7 @@ impl IngestionSource for MarkdownVaultIngester {
 
 impl MarkdownVaultIngester {
     /// Recursively walk a directory tree and ingest all markdown files.
+    #[instrument(skip(self, db, report), fields(dir = %dir.display(), helix_id))]
     async fn walk_recursive(
         &self,
         dir: &Path,
@@ -503,6 +594,35 @@ impl MarkdownVaultIngester {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/// Return a platform-specific `(device_id, inode)` key for `path`, or `None` if
+/// metadata cannot be read (permission error, non-existent path, etc.).
+///
+/// Used to build a visited set in [`MarkdownVaultIngester::ingest`] so that
+/// symlinked directories are never traversed twice.
+fn inode_key(path: &Path) -> Option<(u64, u64)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let meta = std::fs::metadata(path).ok()?;
+        Some((meta.dev(), meta.ino()))
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        let meta = std::fs::metadata(path).ok()?;
+        // Windows: volume_serial_number + file_index give a stable identity.
+        let serial = u64::from(meta.volume_serial_number().unwrap_or(0));
+        let index = meta.file_index().unwrap_or(0);
+        Some((serial, index))
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        // Fallback: no inode support; return None (no dedup on exotic targets).
+        let _ = path;
+        None
+    }
+}
 
 fn is_markdown(path: &Path) -> bool {
     path.extension()
@@ -609,6 +729,8 @@ mod tests {
         assert!(is_attachment(Path::new("voice.mp3")));
         assert!(!is_attachment(Path::new("code.rs")));
         assert!(!is_attachment(Path::new("readme.md")));
+        // No extension — early-return false branch.
+        assert!(!is_attachment(Path::new("no_extension")));
     }
 
     #[test]
@@ -618,6 +740,11 @@ mod tests {
         assert_eq!(parse_link_type(Some("dependency")), LinkType::Dependency);
         assert_eq!(parse_link_type(None), LinkType::Reference);
         assert_eq!(parse_link_type(Some("unknown")), LinkType::Reference);
+        // Cover all remaining named arms.
+        assert_eq!(parse_link_type(Some("inspired_by")), LinkType::InspiredBy);
+        assert_eq!(parse_link_type(Some("contradicts")), LinkType::Contradicts);
+        assert_eq!(parse_link_type(Some("extends")), LinkType::Extends);
+        assert_eq!(parse_link_type(Some("converges")), LinkType::Converges);
     }
 
     #[test]

@@ -97,7 +97,7 @@
   }
 
   function acceptAtSuggestion(path: string) {
-    input = input.replace(/@[\w./\-]*$/, `@${path} `);
+    input = input.replace(/@[\w./\-]*$/, `${path} `);
     atSuggestions = [];
     atQuery = '';
   }

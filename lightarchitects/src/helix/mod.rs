@@ -37,6 +37,7 @@ pub mod client;
 pub mod db;
 pub mod embedding;
 pub mod graph;
+pub mod helix_toml;
 pub mod ingestion;
 pub mod migrations;
 pub mod query;
@@ -60,6 +61,7 @@ pub use embedding::{
     EmbeddingProvider, MockEmbeddingProvider, OllamaEmbeddingProvider, PrivacyLevel,
     SemanticEmbeddingPipeline, StructuralEmbeddingPipeline,
 };
+pub use helix_toml::{HelixToml, HelixTomlSection, find_helix_root, load_helix_toml};
 pub use ingestion::{
     ChatTranscriptIngester, CompletionProvider, DirectoryConfig, DirectoryIngester, DocumentFormat,
     DocumentIngestor, DocumentIngestorConfig, DocumentParser, Entity, EntityExtractor, Extraction,

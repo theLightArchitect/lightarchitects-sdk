@@ -15,7 +15,7 @@ use chrono::{NaiveDate, Utc};
 use tracing::instrument;
 
 use crate::helix::db::HelixDb;
-use crate::helix::types::{HelixOrderingMode, Step, StrandMembership};
+use crate::helix::types::{HelixOrderingMode, ScopeTier, Step, StrandMembership};
 
 use super::{IngestionError, IngestionReport, IngestionSource};
 
@@ -104,7 +104,12 @@ impl IngestionSource for ChatTranscriptIngester {
 
         let helix_name = format!("{}-transcripts", self.owner);
         let helix_id = db
-            .ensure_helix(&self.owner, &helix_name, HelixOrderingMode::Temporal)
+            .ensure_helix(
+                &self.owner,
+                &helix_name,
+                HelixOrderingMode::Temporal,
+                ScopeTier::User,
+            )
             .await
             .map_err(|e| IngestionError::Parse(format!("ensure_helix: {e}")))?;
 

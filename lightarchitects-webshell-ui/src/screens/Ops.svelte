@@ -56,6 +56,14 @@
     return `${Math.floor(seconds / 86400)}d`;
   }
 
+  let wallClock = $derived.by(() => {
+    const d = new Date(now);
+    const h = d.getHours().toString().padStart(2, '0');
+    const m = d.getMinutes().toString().padStart(2, '0');
+    const s = d.getSeconds().toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  });
+
   let expanded = $state<Record<string, boolean>>({});
   function toggle(sib: string) { expanded[sib] = !expanded[sib]; }
 
@@ -104,6 +112,7 @@
               <span class="panel-count">
                 {Object.values(health).filter(h => h?.status === 'online').length}/7 agents online
               </span>
+              <span class="panel-clock">{wallClock}</span>
             </div>
             <div class="squad-grid">
               {#each SIBLINGS as sib}
@@ -115,8 +124,9 @@
                   <button
                     class="agent-card-btn"
                     onclick={() => toggle(sib)}
-                    aria-expanded={expanded[sib]}
+                    aria-expanded={expanded[sib] ?? false}
                     aria-label="Toggle {sib} details"
+                    data-testid="squad-health-toggle"
                   >
                     <div class="agent-card-top">
                       <div class="agent-pip" style="background: {STATUS_COLORS[h?.status ?? ''] ?? 'var(--la-text-dim)'}"></div>

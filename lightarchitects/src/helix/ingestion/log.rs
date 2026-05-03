@@ -10,7 +10,7 @@ use chrono::{NaiveDate, Utc};
 use tracing::instrument;
 
 use crate::helix::db::HelixDb;
-use crate::helix::types::{HelixOrderingMode, Step};
+use crate::helix::types::{HelixOrderingMode, ScopeTier, Step};
 
 use super::{IngestionError, IngestionReport, IngestionSource};
 
@@ -178,7 +178,12 @@ impl IngestionSource for LogIngester {
         let helix_name = log_name_from_path(&self.path);
 
         let helix_id = db
-            .ensure_helix(&self.owner, &helix_name, HelixOrderingMode::Temporal)
+            .ensure_helix(
+                &self.owner,
+                &helix_name,
+                HelixOrderingMode::Temporal,
+                ScopeTier::User,
+            )
             .await
             .map_err(|e| IngestionError::Parse(format!("ensure_helix: {e}")))?;
 
@@ -292,7 +297,12 @@ impl IngestionSource for JsonIngester {
 
         let helix_name = log_name_from_path(&self.path);
         let helix_id = db
-            .ensure_helix(&self.owner, &helix_name, HelixOrderingMode::Temporal)
+            .ensure_helix(
+                &self.owner,
+                &helix_name,
+                HelixOrderingMode::Temporal,
+                ScopeTier::User,
+            )
             .await
             .map_err(|e| IngestionError::Parse(format!("ensure_helix: {e}")))?;
 

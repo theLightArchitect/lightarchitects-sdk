@@ -11,7 +11,7 @@ use chrono::Utc;
 use tracing::instrument;
 
 use crate::helix::db::HelixDb;
-use crate::helix::types::{HelixOrderingMode, Step};
+use crate::helix::types::{HelixOrderingMode, ScopeTier, Step};
 
 use super::frontmatter;
 use super::{IngestionError, IngestionReport, IngestionSource};
@@ -117,7 +117,12 @@ impl IngestionSource for PlanIngester {
             .map_or_else(|| plan_name_from_path(&self.plan_path), str::to_owned);
 
         let helix_id = db
-            .ensure_helix(&self.owner, &plan_name, HelixOrderingMode::Indexed)
+            .ensure_helix(
+                &self.owner,
+                &plan_name,
+                HelixOrderingMode::Indexed,
+                ScopeTier::User,
+            )
             .await
             .map_err(|e| IngestionError::Parse(format!("ensure_helix: {e}")))?;
 
