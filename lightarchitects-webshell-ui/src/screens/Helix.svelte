@@ -1,58 +1,120 @@
 <script lang="ts">
   import { helixEntries, vaultCounts } from '$lib/stores';
+  import Helix3D from '$lib/../components/Helix3D.svelte';
+  import HelixHUD from '$lib/../components/helix/HelixHUD.svelte';
+  import HelixSearch from '$lib/../components/helix/HelixSearch.svelte';
 
-  let entries = $derived($helixEntries);
   let counts = $derived($vaultCounts);
   let totalCount = $derived(
     counts ? Object.values(counts).reduce((s, n) => s + n, 0) : 0
   );
+
+  let searchQuery = $state('');
+
+  // Filter entries by path · sibling · significance · excerpt
+  const filteredEntries = $derived.by(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return $helixEntries;
+    const sigNum = parseFloat(q);
+    return $helixEntries.filter(e =>
+      (e.path?.toLowerCase().includes(q)) ||
+      (e.sibling?.toLowerCase().includes(q)) ||
+      (e.strands?.some(s => s.toLowerCase().includes(q))) ||
+      (e.content_excerpt?.toLowerCase().includes(q)) ||
+      (!isNaN(sigNum) && e.significance !== undefined && e.significance >= sigNum)
+    );
+  });
 </script>
 
-<div class="helix-screen">
-  <header class="la-screen-header helix-header">
-    <div class="helix-title">
-      <span class="helix-label">HELIX</span>
-      <span class="helix-sub">
-        {totalCount > 0 ? `${totalCount} entries` : 'Knowledge Vault'}
-      </span>
-    </div>
-  </header>
+<div class="helix-screen" data-testid="helix-screen">
 
-  <div class="helix-body">
-    {#if entries.length === 0}
-      <div class="helix-empty">
-        <span class="helix-empty-glyph">◈</span>
-        <span class="helix-empty-msg">— helix vault is quiet —</span>
-        <span class="helix-empty-hint">Agent memory and knowledge entries will appear here as they are created.</span>
-      </div>
-    {:else}
-      <ul class="entry-list">
-        {#each entries as entry, idx (entry.path + idx)}
-          <li class="entry-row">
-            <span class="entry-strand">{entry.strands?.[0] ?? entry.sibling ?? '—'}</span>
-            <span class="entry-sig">{entry.significance?.toFixed(1) ?? '—'}</span>
-            <span class="entry-excerpt">{entry.content_excerpt ?? ''}</span>
-            <span class="entry-ts">{entry.created_at ? new Date(entry.created_at).toLocaleTimeString('en-US', { hour12: false }) : ''}</span>
-          </li>
-        {/each}
-      </ul>
-    {/if}
+  <!-- Left pane: 3D scene + HUD overlay -->
+  <div class="helix-left">
+    <Helix3D />
+    <HelixHUD />
   </div>
+
+  <!-- Right pane: search header + entry list -->
+  <div class="helix-right">
+    <header class="helix-right-header">
+      <div class="helix-title">
+        <span class="helix-label">HELIX</span>
+        <span class="helix-sub">
+          {totalCount > 0 ? `${totalCount} entries` : 'Knowledge Vault'}
+        </span>
+      </div>
+      <div class="helix-search-wrap">
+        <HelixSearch
+          bind:query={searchQuery}
+          matchCount={searchQuery.trim() ? filteredEntries.length : undefined}
+        />
+      </div>
+    </header>
+
+    <div class="helix-body">
+      {#if filteredEntries.length === 0}
+        <div class="helix-empty">
+          {#if searchQuery.trim()}
+            <span class="helix-empty-glyph">◈</span>
+            <span class="helix-empty-msg">— no entries match —</span>
+            <span class="helix-empty-hint">Try searching path, sibling name, or significance threshold (e.g. "7.5").</span>
+          {:else}
+            <span class="helix-empty-glyph">◈</span>
+            <span class="helix-empty-msg">— helix vault is quiet —</span>
+            <span class="helix-empty-hint">Agent memory and knowledge entries will appear here as they are created.</span>
+          {/if}
+        </div>
+      {:else}
+        <ul class="entry-list">
+          {#each filteredEntries as entry, idx (entry.path + idx)}
+            <li class="entry-row">
+              <span class="entry-strand">{entry.strands?.[0] ?? entry.sibling ?? '—'}</span>
+              <span class="entry-sig">{entry.significance?.toFixed(1) ?? '—'}</span>
+              <span class="entry-excerpt">{entry.content_excerpt ?? ''}</span>
+              <span class="entry-ts">{entry.created_at ? new Date(entry.created_at).toLocaleTimeString('en-US', { hour12: false }) : ''}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+  </div>
+
 </div>
 
 <style>
   .helix-screen {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     height: 100%;
     overflow: hidden;
   }
 
-  .helix-header {
+  /* ── Left pane: 3D scene ──────────────────────────────────── */
+  .helix-left {
+    flex: 3;
+    position: relative;
+    overflow: hidden;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+  }
+
+  /* ── Right pane: list ─────────────────────────────────────── */
+  .helix-right {
+    flex: 2;
     display: flex;
-    align-items: center;
-    padding: 0 24px;
-    gap: 12px;
+    flex-direction: column;
+    overflow: hidden;
+    border-left: 1px solid var(--la-hair-base);
+    min-width: 0;
+  }
+
+  .helix-right-header {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 16px 8px;
+    border-bottom: 1px solid var(--la-hair-base);
     flex-shrink: 0;
   }
 
@@ -76,11 +138,15 @@
     letter-spacing: 0.08em;
   }
 
+  .helix-search-wrap {
+    width: 100%;
+  }
+
   .helix-body {
     flex: 1;
     overflow-y: auto;
     min-height: 0;
-    padding: 16px 24px;
+    padding: 8px 16px 16px;
   }
 
   .helix-empty {
@@ -109,7 +175,7 @@
 
   .helix-empty-hint {
     font-size: 10px;
-    max-width: 320px;
+    max-width: 280px;
     line-height: 1.6;
     opacity: 0.6;
   }
@@ -125,8 +191,8 @@
 
   .entry-row {
     display: grid;
-    grid-template-columns: 120px 40px 1fr 80px;
-    gap: 12px;
+    grid-template-columns: 100px 36px 1fr 72px;
+    gap: 8px;
     align-items: baseline;
     padding: 6px 0;
     border-bottom: 1px solid var(--la-hair-faint);

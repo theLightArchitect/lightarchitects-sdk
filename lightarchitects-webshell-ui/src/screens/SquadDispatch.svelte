@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { registerHotkey } from '$lib/hotkeyRegistry';
   import {
     classifyTask,
@@ -13,6 +13,7 @@
     isComplete,
     isError,
     DOMAIN_AGENT_LABELS,
+    DOMAIN_AGENT_COLORS,
     type DomainAgent,
     type Classification,
     type DispatchEvent,
@@ -27,7 +28,8 @@
   import TaskDAG from '$lib/../components/dispatch/TaskDAG.svelte';
   import LiveAgentGrid from '$lib/../components/dispatch/LiveAgentGrid.svelte';
   import AgentDetail from '$lib/../components/dispatch/AgentDetail.svelte';
-  import MailboxStream from '$lib/../components/dispatch/MailboxStream.svelte';
+  import EventStream, { type StreamRow } from '$lib/../components/EventStream.svelte';
+  import DispatchCLI from '$lib/../components/cli/DispatchCLI.svelte';
   import HistoryRail from '$lib/../components/dispatch/HistoryRail.svelte';
 
   // ── Props (forwarded from Dispatch.svelte route shell) ─────────────────────
@@ -48,6 +50,7 @@
   let attachments = $state<FileAttachment[]>([]);
   let toolConfig = $state<Partial<Record<DomainAgent, AgentToolConfig>>>({});
   let events = $state<DispatchEvent[]>([]);
+  let eventTimes = $state<string[]>([]); // receive-time strings, parallel index to events
   let agentStates = $state(new Map<DomainAgent, AgentLiveState>());
   let history = $state<DispatchHistoryEntry[]>(loadHistory());
   let errorMsg = $state<string | null>(null);
@@ -56,6 +59,78 @@
 
   let stopStream: (() => void) | null = null;
   let classifyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Pre-fill task from ?task= query param when returning from /intake
+  onMount(() => {
+    const qs = window.location.hash.split('?')[1] ?? '';
+    const params = new URLSearchParams(qs);
+    const prefilled = params.get('task');
+    if (prefilled) task = prefilled;
+  });
+
+  // ── EventStream adapter — converts DispatchEvent[] → StreamRow[] ─────────
+
+  function fmtTime(d: Date): string {
+    return (
+      String(d.getHours()).padStart(2, '0') + ':' +
+      String(d.getMinutes()).padStart(2, '0') + ':' +
+      String(d.getSeconds()).padStart(2, '0')
+    );
+  }
+
+  const mailboxRows = $derived.by((): StreamRow[] => {
+    const rows: StreamRow[] = [];
+    const base = performance.now(); // sub-ms precision — unique per row even in fast-burst derivations
+    for (let idx = 0; idx < events.length; idx++) {
+      const e = events[idx];
+      const ts = base + idx;
+      const time = eventTimes[idx] ?? fmtTime(new Date()); // receive-time, not derivation-time
+      if ('MailboxMessage' in e) {
+        rows.push({
+          ts, time,
+          source: e.MailboxMessage.agent,
+          color: DOMAIN_AGENT_COLORS[e.MailboxMessage.agent] ?? '#64748b',
+          text: e.MailboxMessage.text,
+          severity: 'info',
+        });
+      } else if ('PerAgentState' in e && e.PerAgentState.message !== null) {
+        rows.push({
+          ts, time,
+          source: e.PerAgentState.agent,
+          color: DOMAIN_AGENT_COLORS[e.PerAgentState.agent] ?? '#64748b',
+          text: `[${e.PerAgentState.state}] ${e.PerAgentState.message}`,
+          severity: 'info',
+        });
+      } else if ('ToolUsage' in e) {
+        const u = e.ToolUsage;
+        rows.push({
+          ts, time,
+          source: u.agent,
+          color: DOMAIN_AGENT_COLORS[u.agent] ?? '#64748b',
+          text: `${u.tool} · ${u.action} [${u.status}]${u.latency_ms !== undefined ? ` ${u.latency_ms}ms` : ''}`,
+          severity: u.status === 'failed' ? 'err' : u.status === 'skipped' ? 'warn' : 'info',
+        });
+      } else if (isComplete(e)) {
+        rows.push({
+          ts, time,
+          source: 'system',
+          color: '#22c55e',
+          text: `Dispatch complete in ${(e.Complete.elapsed_ms / 1000).toFixed(1)}s`,
+          severity: 'ok',
+        });
+      } else if (isError(e)) {
+        const agent = e.Error.agent;
+        rows.push({
+          ts, time,
+          source: agent ?? 'system',
+          color: agent ? (DOMAIN_AGENT_COLORS[agent] ?? '#ef4444') : '#ef4444',
+          text: e.Error.message,
+          severity: 'err',
+        });
+      }
+    }
+    return rows.reverse();
+  });
 
   // ── Auto-classify with debounce ──────────────────────────────────────────────
 
@@ -90,6 +165,7 @@
     if (selectedAgents.length === 0) return;
     errorMsg = null;
     events = [];
+    eventTimes = [];
     agentStates = new Map();
     elapsedMs = undefined;
 
@@ -121,6 +197,7 @@
       id,
       (e) => {
         events = [...events, e];
+        eventTimes = [...eventTimes, fmtTime(new Date())];
         applyEvent(e);
 
         if (isTerminal(e)) {
@@ -221,6 +298,7 @@
     stopStream = null;
     phase = 'idle';
     events = [];
+    eventTimes = [];
     agentStates = new Map();
     dispatchId = null;
     errorMsg = null;
@@ -366,6 +444,10 @@
         <span><span class="lbl">T· </span><span class="val">{(elapsedMs / 1000).toFixed(1)}s</span></span>
       {/if}
       <span><span class="lbl">AGENTS· </span><span class="val">{selectedAgents.length}</span></span>
+      <button
+        class="new-dispatch-btn"
+        onclick={() => { window.location.hash = '/intake?return=/dispatch&prefill=task'; }}
+      >+ NEW DISPATCH</button>
     </div>
   </header>
 
@@ -541,9 +623,15 @@
       </span>
     </div>
     <div class="mailbox-body">
-      <MailboxStream {events} />
+      <EventStream rows={mailboxRows} newestFirst maxDisplay={200} emptyMessage="— awaiting transmission —" />
     </div>
   </section>
+
+  <!-- ── Row 6: CLI quick-dispatch ── -->
+  <DispatchCLI
+    onDispatch={(t) => dispatch(t, dry, attachments, toolConfig)}
+    disabled={isLive}
+  />
 
 </div>
 
@@ -554,7 +642,7 @@
     width: 100%;
     height: 100%;
     display: grid;
-    grid-template-rows: 40px 36px auto 1fr 184px;
+    grid-template-rows: 40px 36px auto 1fr 184px 36px;
     background: var(--la-bg-void);
     color: var(--la-text-bright);
     overflow: hidden;
@@ -621,6 +709,22 @@
   }
   .header-tele .lbl { color: var(--la-text-mute); }
   .header-tele .val { color: var(--la-text-bright); font-variant-numeric: tabular-nums; }
+  .new-dispatch-btn {
+    padding: 0 10px;
+    height: 22px;
+    font-family: inherit;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: transparent;
+    border: 1px solid var(--la-focus-ring);
+    color: var(--la-focus-ring);
+    border-radius: 2px;
+    cursor: pointer;
+    transition: background 80ms, color 80ms;
+  }
+  .new-dispatch-btn:hover { background: var(--la-focus-ring); color: var(--la-bg-frame); }
 
   /* ── Row 2: history pill strip ── */
   .history-row {
@@ -927,10 +1031,5 @@
     8%   { opacity: 1; }
     92%  { opacity: 1; }
     100% { top: calc(100% + 3px); opacity: 0; }
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50%       { opacity: 0.4; }
   }
 </style>

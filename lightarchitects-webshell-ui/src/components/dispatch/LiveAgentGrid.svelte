@@ -292,13 +292,29 @@
     transition: transform 80ms var(--la-ease-mech);
   }
   .phase-square[data-status="active"]           { border-color: var(--rc); }
-  .phase-square[data-status="active"]::after    { opacity: 0.9; animation: phase-flicker 0.8s steps(3) infinite; }
+  .phase-square[data-status="active"]::after {
+    opacity: 0.9;
+    background-image: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--rc) 55%, transparent) 0%,
+      var(--rc) 50%,
+      color-mix(in srgb, var(--rc) 55%, transparent) 100%
+    ) !important;
+    background-size: 200% auto !important;
+    background-repeat: no-repeat !important;
+    animation: phase-flicker 0.8s steps(3) infinite, phase-shimmer 1.6s linear infinite;
+  }
   .phase-square[data-status="complete"]         { border-color: var(--rc); }
   .phase-square[data-status="complete"]::before { transform: translate(-50%, -50%) scale(1); }
 
   @keyframes phase-flicker {
     0%, 60%, 100% { opacity: 0.9; }
     30%, 80%      { opacity: 0.5; }
+  }
+
+  @keyframes phase-shimmer {
+    0%   { background-position: -200% center; }
+    100% { background-position:  200% center; }
   }
 
   /* ── current tool / last message ── */

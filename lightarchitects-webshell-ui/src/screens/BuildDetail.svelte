@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { activeBuild, currentBuildId } from '$lib/stores';
-  import { matchRoute } from '$lib/routes';
+  import { matchRoute, navigate } from '$lib/routes';
   import KanbanView  from '$lib/../components/views/KanbanView.svelte';
   import ListView    from '$lib/../components/views/ListView.svelte';
   import OperatorView from '$lib/../components/views/OperatorView.svelte';
@@ -10,16 +10,26 @@
 
   type ViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan';
 
+  const VIEW_MODES: ViewMode[] = ['kanban', 'list', 'operator', 'manifest', 'plan'];
+
   let viewMode = $state<ViewMode>('kanban');
   let build = $derived($activeBuild);
 
-  // Hydrate currentBuildId when navigating directly to /builds/:id
-  onMount(() => {
-    const route = window.location.hash.slice(1) || '/';
-    const { params } = matchRoute(route);
-    if (params.buildId && !$currentBuildId) {
-      currentBuildId.set(params.buildId);
+  function syncFromHash() {
+    const { params } = matchRoute(window.location.hash.slice(1) || '/');
+    if (params.buildId) currentBuildId.set(params.buildId);
+    if (params.view && (VIEW_MODES as string[]).includes(params.view)) {
+      viewMode = params.view as ViewMode;
     }
+  }
+
+  // Hydrate currentBuildId + viewMode when navigating directly to /builds/:id/:view
+  onMount(syncFromHash);
+
+  // Sync view on back/forward navigation
+  $effect(() => {
+    window.addEventListener('hashchange', syncFromHash);
+    return () => window.removeEventListener('hashchange', syncFromHash);
   });
 
   const VIEW_TABS: { key: ViewMode; label: string }[] = [
@@ -44,7 +54,7 @@
           <button
             class="view-tab"
             class:active={viewMode === t.key}
-            onclick={() => { viewMode = t.key; }}
+            onclick={() => navigate('/builds/:buildId/:view', { buildId: build.id, view: t.key })}
           >
             {t.label}
           </button>

@@ -55,6 +55,8 @@ export interface Build {
   blocks?: string[];
   path?: string;
   tier?: number;
+  codename?: string;  // adjective-gerund-noun build identifier (from portfolio YAML)
+  branch?: string;    // feature branch (e.g. feat/luminous-tracing-polytope)
 }
 
 export type BuildStatus = 'queued' | 'in_progress' | 'completed' | 'failed' | 'paused';

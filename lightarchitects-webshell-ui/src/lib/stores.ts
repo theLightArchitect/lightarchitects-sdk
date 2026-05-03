@@ -18,6 +18,9 @@ import type {
 } from './types';
 import { SiblingWave, SIBLINGS, PILLARS } from './types';
 import { DEFAULT_SKIN, type HelixSkin } from './helix-skin';
+import type { TextureMode } from './helix/procedural-textures';
+export type { TextureMode };
+export { TEXTURE_MODES, TEXTURE_LABELS } from './helix/procedural-textures';
 
 // --- Connection status ---
 export const ayinStatus = writable<'connected' | 'reconnecting' | 'offline'>('reconnecting');
@@ -35,6 +38,9 @@ export const drawerHeightPx = writable<number>(32);
 export const currentRoute = writable<string>('/');
 export const currentBuildId = writable<string | null>(null);
 export const currentWorkspaceId = writable<string | null>(null);
+
+// --- Global events overlay (Wave 1.5) ---
+export const eventsOverlayOpen = writable<boolean>(false);
 
 // --- Build data ---
 export const workspaces = writable<Workspace[]>([]);
@@ -96,6 +102,9 @@ export const coldMemory = writable<ContextMemo[]>([]);
 
 /** Rolling window of recent helix_entry SSE events (for Helix3D orb spawn). */
 export const helixEntries = writable<HelixEntrySsePayload[]>([]);
+
+/** Active procedural texture mode for Helix3D polytope faces. */
+export const helixTextureMode = writable<TextureMode>('noise');
 
 /** Promotion feed — receives soul_promotion events as they arrive. */
 export const promotionFeed = writable<SoulPromotionPayload[]>([]);

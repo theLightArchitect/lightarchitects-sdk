@@ -1,0 +1,144 @@
+{
+  "capturedAt": "2026-05-01T15:29:09.729Z",
+  "baseUrl": "http://localhost:8733",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "deviceScaleFactor": 2,
+  "screens": [
+    {
+      "name": "00-Initial",
+      "description": "Initial post-splash state"
+    },
+    {
+      "name": "01-BuildQueue",
+      "route": "/",
+      "description": "Default landing — build queue / project grouping"
+    },
+    {
+      "name": "02-Activity",
+      "route": "/activity",
+      "description": "Live activity stream + oscillator"
+    },
+    {
+      "name": "03-Intake",
+      "route": "/intake",
+      "description": "Plan / build intake form"
+    },
+    {
+      "name": "04-Sitrep",
+      "route": "/sitrep",
+      "description": "Situation report — multi-sibling status"
+    },
+    {
+      "name": "05-Workspace",
+      "route": "/workspace",
+      "description": "Active build workspace — terminal + helix + drawer"
+    }
+  ],
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+  ],
+  "failedRequests": [
+    {
+      "url": "http://localhost:8733/api/browser-state",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/soul/memory/cold?limit=50",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/soul/memory/hot?limit=50",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/siblings",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/conductor/status",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/workspaces",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/arena/status",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/soul/health",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/builds",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/browser-state",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/soul/memory/cold?limit=50",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/arena/status",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/soul/memory/hot?limit=50",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/conductor/status",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/siblings",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/soul/health",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/workspaces",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/builds",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/soul/memory/cold?limit=50",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:8733/api/soul/memory/hot?limit=50",
+      "status": 401
+    }
+  ]
+}

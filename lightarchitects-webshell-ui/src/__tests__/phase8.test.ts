@@ -119,6 +119,7 @@ describe('Phase 8: Claude GUI Control + Polish', () => {
   });
 
   describe('PolytopeDecor presence in screens', () => {
+    // Helix.svelte now embeds Helix3D (Three.js) directly — extra time for the heavy import chain
     it('all active screens can be imported', async () => {
       const builds = await import('$lib/../screens/Builds.svelte');
       const ops = await import('$lib/../screens/Ops.svelte');
@@ -130,7 +131,7 @@ describe('Phase 8: Claude GUI Control + Polish', () => {
       expect(intake.default).toBeDefined();
       expect(helix.default).toBeDefined();
       expect(dispatch.default).toBeDefined();
-    });
+    }, 20000);
   });
 
   describe('Accessibility features', () => {

@@ -62,6 +62,16 @@ make clean          # cargo clean
 
 After deploy: `/mcp` in Claude Code to reconnect.
 
+### Gateway Build Workaround
+
+`lightarchitects-gateway` is excluded from the workspace (`Cargo.toml` `exclude` list) due to
+worktree lockfile collisions. `make deploy` always fails with:
+> "package ID specification `lightarchitects-gateway` did not match any packages"
+
+**Fix**: temporarily add `"lightarchitects-gateway"` to `members` and remove from `exclude`,
+run `cargo build --release -p lightarchitects-gateway`, copy binary, then **revert** `Cargo.toml`.
+Do NOT commit the temporary workspace change.
+
 ---
 
 ## Feature Flags (`lightarchitects`)
@@ -107,3 +117,19 @@ Canonical: `~/lightarchitects/soul/helix/user/standards/builders-cookbook.md`
 ## No External Path Dependencies
 
 All dependencies resolve from crates.io. No path deps to other workspace repos.
+
+---
+
+## Webshell UI Testing
+
+```bash
+# E2E suite — always override to dev server (suite defaults to :8733 = production binary)
+PLAYWRIGHT_BASE_URL=http://localhost:5173 pnpm exec playwright test e2e/webshell.spec.ts
+
+# Regenerate visual baselines — requires live dev server; run pnpm dev first
+PLAYWRIGHT_BASE_URL=http://localhost:5173 pnpm exec playwright test e2e/webshell.spec.ts --update-snapshots -g "Visual regression"
+```
+
+**Gotchas:**
+- Snapshot baselines regenerated without a running dev server are solid magenta (`#FF00FF`) — always verify `pnpm dev` is up on :5173 before `--update-snapshots`.
+- After any route rename: `grep -n 'location.hash' e2e/webshell.spec.ts` to find stale hash navigations in the E2E spec before running the suite.
