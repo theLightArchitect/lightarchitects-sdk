@@ -80,11 +80,10 @@ pub struct Frontmatter {
     /// `"milestone"`, `"convergence"`, `"growth-summary"`, `"journal"`, etc.
     #[serde(rename = "type", alias = "entry_type", default)]
     pub entry_type: Option<String>,
-    /// Scope tier override for this entry.
+    /// Scope tier declared in this entry's frontmatter.
     ///
-    /// When present, overrides the parent helix's tier for this specific entry.
-    /// Most entries should NOT set this — inherited from parent helix.
-    // TODO(Wave 2 helix_toml): wire scope_tier into MarkdownVaultIngester → ensure_helix call
+    /// Parsed for future use; the ingester currently derives scope tier from the
+    /// parent helix (set by `MarkdownVaultIngester::with_extra_roots`), not per-entry.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope_tier: Option<String>,
     /// Entries this entry converges with (sibling entry IDs or paths).

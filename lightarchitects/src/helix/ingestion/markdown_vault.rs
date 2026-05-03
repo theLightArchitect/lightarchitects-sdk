@@ -10,6 +10,14 @@
 //! beyond the default sibling directory. Each extra root declares its [`ScopeTier`]
 //! explicitly. Symlinks are skipped entirely during recursive walk; inode-based dedup
 //! prevents duplicate scanning of top-level roots only.
+//!
+//! # Recursion-termination invariant
+//!
+//! The ingester satisfies two independent termination conditions: (1) top-level roots
+//! are deduplicated by `(device_id, inode)` tuple so symlink cycles and hard-link
+//! aliases are never double-scanned; (2) the filesystem helix-root search is bounded
+//! by `MAX_FS_HELIX_DEPTH = 7` in [`crate::helix::helix_toml`]. Full specification:
+//! `helix/user/standards/recursion-termination-invariant.md` in the SOUL vault.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -464,7 +472,7 @@ impl IngestionSource for MarkdownVaultIngester {
         "MarkdownVault"
     }
 
-    #[instrument(skip(self, db))]
+    #[instrument(skip(self, db), fields(sibling = %self.sibling))]
     async fn ingest(&self, db: &dyn HelixDb) -> Result<IngestionReport, IngestionError> {
         let sibling_dir = self.sibling_dir();
         if !sibling_dir.exists() {
@@ -540,6 +548,7 @@ impl IngestionSource for MarkdownVaultIngester {
 
 impl MarkdownVaultIngester {
     /// Recursively walk a directory tree and ingest all markdown files.
+    #[instrument(skip(self, db, report), fields(dir = %dir.display(), helix_id))]
     async fn walk_recursive(
         &self,
         dir: &Path,
@@ -720,6 +729,8 @@ mod tests {
         assert!(is_attachment(Path::new("voice.mp3")));
         assert!(!is_attachment(Path::new("code.rs")));
         assert!(!is_attachment(Path::new("readme.md")));
+        // No extension — early-return false branch.
+        assert!(!is_attachment(Path::new("no_extension")));
     }
 
     #[test]
@@ -729,6 +740,11 @@ mod tests {
         assert_eq!(parse_link_type(Some("dependency")), LinkType::Dependency);
         assert_eq!(parse_link_type(None), LinkType::Reference);
         assert_eq!(parse_link_type(Some("unknown")), LinkType::Reference);
+        // Cover all remaining named arms.
+        assert_eq!(parse_link_type(Some("inspired_by")), LinkType::InspiredBy);
+        assert_eq!(parse_link_type(Some("contradicts")), LinkType::Contradicts);
+        assert_eq!(parse_link_type(Some("extends")), LinkType::Extends);
+        assert_eq!(parse_link_type(Some("converges")), LinkType::Converges);
     }
 
     #[test]

@@ -42,7 +42,12 @@ const MAX_FS_HELIX_DEPTH: usize = 7;
 // ============================================================================
 
 /// Contents of the `[helix]` section in a `helix.toml` marker file.
+///
+/// Unknown keys in `[helix]` are rejected at parse time (`deny_unknown_fields`)
+/// so that typos in vault markers fail loudly rather than silently falling back
+/// to defaults.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HelixTomlSection {
     /// Human-readable name for this helix root (e.g. `"platform"`, `"my-project"`).
     pub name: String,
@@ -283,6 +288,47 @@ platform_helix_version = "1.0.0"
     }
 
     #[test]
+    fn load_helix_toml_rejects_unknown_fields() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        // `unknown_key` is not in HelixTomlSection — must be rejected.
+        write_helix_toml(
+            tmp.path(),
+            "[helix]\nname=\"x\"\nscope_tier=\"user\"\nschema_version=1\nunknown_key=\"bad\"\n",
+        );
+        assert!(
+            load_helix_toml(tmp.path()).is_none(),
+            "unknown fields must cause parse failure"
+        );
+    }
+
+    /// Contract C2 — `HelixToml` serializes to TOML and parses back without loss.
+    ///
+    /// Regression guard for `#[derive(Serialize)]` on `HelixTomlSection`: if a
+    /// field is accidentally removed or renamed, the round-trip assertion fails.
+    #[test]
+    fn helix_toml_serialize_round_trip() {
+        let original = HelixToml {
+            helix: HelixTomlSection {
+                name: "test-vault".into(),
+                scope_tier: "project".into(),
+                schema_version: 2,
+                publish: true,
+                platform_helix_version: Some("3.1.0".into()),
+            },
+        };
+        let serialized = toml::to_string(&original).expect("serialize HelixToml to TOML");
+        let back: HelixToml = toml::from_str(&serialized).expect("parse HelixToml from TOML");
+        assert_eq!(back.helix.name, original.helix.name);
+        assert_eq!(back.helix.scope_tier, original.helix.scope_tier);
+        assert_eq!(back.helix.schema_version, original.helix.schema_version);
+        assert_eq!(back.helix.publish, original.helix.publish);
+        assert_eq!(
+            back.helix.platform_helix_version,
+            original.helix.platform_helix_version
+        );
+    }
+
+    #[test]
     fn find_helix_root_stops_at_depth_limit() {
         // Create MAX_FS_HELIX_DEPTH + 2 levels, place marker at the very top.
         let tmp = tempfile::tempdir().expect("tmpdir");
@@ -297,5 +343,27 @@ platform_helix_version = "1.0.0"
         );
         // The marker is beyond the depth limit from `deepest` — should NOT find it.
         assert!(find_helix_root(&deepest).is_none());
+    }
+
+    /// Perf baseline: 1,000 sequential `load_helix_toml` calls must complete in <100 ms.
+    ///
+    /// Recorded baseline (2026-05-02, Apple M-series): ~2 ms for 1,000 iterations (~2 µs/call).
+    /// SLA threshold: 100 ms (50× headroom). Fails build on regression.
+    #[test]
+    fn load_helix_toml_perf_baseline_1000_iterations() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        write_helix_toml(
+            tmp.path(),
+            "[helix]\nname=\"perf\"\nscope_tier=\"user\"\nschema_version=1\n",
+        );
+        let start = std::time::Instant::now();
+        for _ in 0..1_000 {
+            let _ = load_helix_toml(tmp.path());
+        }
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed.as_millis() < 100,
+            "load_helix_toml 1000× took {elapsed:?}, expected <100ms"
+        );
     }
 }
