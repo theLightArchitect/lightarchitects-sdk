@@ -88,15 +88,54 @@ describe('routes', () => {
     });
   });
 
-  describe('matchRoute() — legacy workspace aliases', () => {
-    it('/workspace → BuildDetail', () => {
-      expect(matchRoute('/workspace').screen).toBe('BuildDetail');
+  describe('legacy workspace aliases — now handled via REDIRECTS, not match', () => {
+    // Wave 1 (2026-05-02) moved /workspace from ROUTES into REDIRECTS so that
+    // a hard-coded redirect rewrites the URL to /builds before matching runs.
+    // matchRoute() on a bare /workspace path therefore falls through to the
+    // default Builds screen — by design. The user-visible deep link is still
+    // preserved because applyRedirects() (run on every hashchange in app.svelte)
+    // rewrites #/workspace/:id to #/builds/:id before this matcher is called.
+    it('/workspace falls through to Builds default (redirect handles user-visible navigation)', () => {
+      expect(matchRoute('/workspace').screen).toBe('Builds');
     });
 
-    it('/workspace/:buildId → BuildDetail with buildId', () => {
-      const r = matchRoute('/workspace/proj-7');
+    it('/workspace/:buildId falls through, but redirect rewrites it to /builds/:buildId before matchRoute is called', () => {
+      // Direct match (no redirect): falls through to default Builds.
+      expect(matchRoute('/workspace/proj-7').screen).toBe('Builds');
+      // After applyRedirects(), the URL becomes /builds/proj-7 and resolves correctly.
+      // (applyRedirects has DOM side-effects so it's tested in the e2e suite, not here.)
+      expect(matchRoute('/builds/proj-7').screen).toBe('BuildDetail');
+      expect(matchRoute('/builds/proj-7').params.buildId).toBe('proj-7');
+    });
+  });
+
+  describe('matchRoute() — view-encoded BuildDetail (Wave 1)', () => {
+    const VIEW_MODES = ['kanban', 'list', 'operator', 'manifest', 'plan'] as const;
+
+    for (const view of VIEW_MODES) {
+      it(`/builds/:buildId/${view} → BuildDetail with buildId + view params`, () => {
+        const r = matchRoute(`/builds/proj-7/${view}`);
+        expect(r.screen).toBe('BuildDetail');
+        expect(r.params.buildId).toBe('proj-7');
+        expect(r.params.view).toBe(view);
+      });
+    }
+
+    it('rejects unknown view names (falls back to /builds/:buildId pattern)', () => {
+      // /builds/proj-7/bogus does NOT match the view-enum regex; falls through
+      // to the next route which is /builds/:buildId. That regex has [^/]+ so it
+      // would match "proj-7/bogus" if greedy — but [^/]+ stops at /, so the
+      // pattern won't match a 2-segment tail and falls through to default Builds.
+      const r = matchRoute('/builds/proj-7/bogus');
+      expect(r.screen).toBe('Builds'); // default fallthrough
+    });
+
+    it('phase routes still take precedence over view-encoded route', () => {
+      // /builds/:buildId/phase/:phaseId is more-specific and listed earlier
+      const r = matchRoute('/builds/proj-7/phase/p2');
       expect(r.screen).toBe('BuildDetail');
-      expect(r.params.buildId).toBe('proj-7');
+      expect(r.params.phaseId).toBe('p2');
+      expect(r.params.view).toBeUndefined();
     });
   });
 

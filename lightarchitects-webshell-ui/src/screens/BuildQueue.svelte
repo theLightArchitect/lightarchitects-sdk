@@ -3,6 +3,7 @@
   import { selectedProject } from '$lib/project-filter';
   import { SIBLING_COLORS, getMetaSkillPolytope, getMetaSkillColor } from '$lib/design-tokens';
   import { downloadRoadmap } from '$lib/roadmap-export';
+  import { navigate } from '$lib/routes';
   import type { Build, ProjectGroup } from '$lib/types';
   import type { PlanPhaseStatus } from '$lib/types';
   import PhaseTimeline from '$lib/../components/PhaseTimeline.svelte';
@@ -10,6 +11,7 @@
   import PolytopeIcon from '$lib/../components/PolytopeIcon.svelte';
   import PolytopeDecor from '$lib/../components/PolytopeDecor.svelte';
   import Tooltip from '$lib/../components/Tooltip.svelte';
+  import BuildPortfolio from '$lib/../components/BuildPortfolio.svelte';
 
   // View mode
   let viewMode = $state<'list' | 'card'>('card');
@@ -21,15 +23,15 @@
       : $projectGroups
   );
 
-  // Navigate to a build
+  // Navigate to a build — land on default kanban view with URL-encoded view param
   function openBuild(buildId: string) {
     currentBuildId.set(buildId);
-    window.location.hash = `/workspace/${buildId}`;
+    navigate('/builds/:buildId/kanban', { buildId });
   }
 
-  // Navigate to intake
+  // Navigate to intake (plan builder mode, return to /builds on submit)
   function newBuild() {
-    window.location.hash = '/intake';
+    window.location.hash = '/intake?return=/builds&prefill=manifest';
   }
 
   // Navigate to project detail (roadmap drill-down)
@@ -147,6 +149,13 @@
     <span class="text-[var(--la-text-label)]">{$buildStats.completed} completed</span>
     <span class="text-[var(--la-danger-stroke)]">{$buildStats.failed} failed</span>
   </div>
+
+  <!-- Build portfolio overview — project-grouped build health -->
+  {#if $builds.length > 0}
+    <div class="portfolio-strip">
+      <BuildPortfolio onBuildClick={openBuild} maxDisplay={6} />
+    </div>
+  {/if}
 
   <!-- Build list/cards -->
   <div class="flex-1 overflow-y-auto p-6">
@@ -326,6 +335,7 @@
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <tr
               class="border-b border-[var(--la-hair-strong)] hover:bg-[var(--la-bg-elev-1)] cursor-pointer"
+              class:row-running={build.status === 'in_progress'}
               onclick={() => openBuild(build.id)}
             >
               <td class="py-2">
@@ -366,3 +376,34 @@
     {/if}
   </div>
 </div>
+
+<style>
+  /* Portfolio strip — sits between header and scrollable content */
+  .portfolio-strip {
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--la-hair-strong);
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  /* Running-build shimmer — direct background animation on <tr>.
+     Cannot use ::after on <tr> because table rows don't establish a containing block
+     for absolutely-positioned content; the pseudo-element would escape to the nearest
+     block ancestor. Background gradient animation on the element itself works correctly. */
+  .row-running {
+    background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--la-agent-researcher, #00BFFF) 8%, transparent) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    background-repeat: no-repeat;
+    animation: row-sweep 2.4s linear infinite;
+  }
+
+  @keyframes row-sweep {
+    0%   { background-position: -200% center; }
+    100% { background-position:  200% center; }
+  }
+</style>

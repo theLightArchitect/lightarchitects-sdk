@@ -1161,7 +1161,7 @@
   });
 </script>
 
-<div style="width:100%;height:100%;background:#000;position:relative;box-shadow: -30px 0 60px rgba(255,215,0,0.05), -15px 0 30px rgba(255,20,147,0.03);">
+<div style="width:100%;height:100%;background:#000;position:relative;overflow:hidden;box-shadow: -30px 0 60px rgba(255,215,0,0.05), -15px 0 30px rgba(255,20,147,0.03);">
   <!-- Three.js renderer mounts its <canvas> into this bound div. Keep it
        sibling to the overlays rather than a parent so Svelte's {#if} block
        DOM reconciliation doesn't get confused by Three.js DOM mutations. -->

@@ -727,8 +727,8 @@ test.describe('Comprehensive webshell E2E', () => {
         e2e.findings.set(data.findings);
         e2e.artifacts.set(data.artifacts);
       }, { build: MOCK_BUILD, findings: MOCK_FINDINGS, artifacts: MOCK_ARTIFACTS });
-      // Navigate to workspace via hash
-      await page.evaluate(() => { window.location.hash = '#/workspace'; });
+      // Navigate to build detail for the mock build (kanban view)
+      await page.evaluate(() => { window.location.hash = '#/builds/build-e2e-001/kanban'; });
       await page.waitForTimeout(4000);
       // Check if screen loaded; if still "Loading..." force a page reload
       let text = await page.evaluate(() => document.body.textContent ?? '');
@@ -754,11 +754,11 @@ test.describe('Comprehensive webshell E2E', () => {
         }
       }, { build: MOCK_BUILD, findings: MOCK_FINDINGS, artifacts: MOCK_ARTIFACTS });
       await page.waitForTimeout(2000);
-      // Navigate to workspace again after store injection
-      await page.evaluate(() => { window.location.hash = '#/workspace'; });
+      // Navigate to build detail again after store injection
+      await page.evaluate(() => { window.location.hash = '#/builds/build-e2e-001/kanban'; });
       await page.waitForTimeout(3000);
       text = await page.evaluate(() => document.body.textContent ?? '');
-      // Workspace shows: build name, Builds breadcrumb, back button, or pillar labels
+      // Build detail shows: build name, pillar labels, or back button
       const hasWorkspace = text.includes('E2E Test Build') || text.includes('Builds') ||
         text.includes('← Builds') || text.includes('Select a build') ||
         text.includes('arch') || text.includes('/BUILD');
@@ -2082,9 +2082,9 @@ test.describe('Comprehensive webshell E2E', () => {
       if (!clicked) { test.skip(); return; }
       await page.waitForTimeout(2000);
       const hash = await page.evaluate(() => window.location.hash);
-      expect(hash.startsWith('#/project/') || hash.startsWith('#/workspace/')).toBe(true);
-      // If navigated to workspace (single-plan project), skip remaining Kanban tests
-      if (hash.startsWith('#/workspace/')) { test.skip(); return; }
+      expect(hash.startsWith('#/project/') || hash.startsWith('#/workspace/') || hash.startsWith('#/builds/')).toBe(true);
+      // If navigated to build detail (single-plan project), skip remaining Kanban tests
+      if (hash.startsWith('#/workspace/') || hash.startsWith('#/builds/')) { test.skip(); return; }
 
       // Verify Kanban toggle button is visible
       const kanbanBtn = page.getByTestId('view-toggle-kanban');
@@ -2550,8 +2550,8 @@ test.describe('Comprehensive webshell E2E', () => {
     test('sibling dispatch buttons visible in Workspace', async () => {
       // Navigate to workspace with mock build
       const hash = await page.evaluate(() => window.location.hash);
-      if (!hash.includes('/workspace')) {
-        await page.evaluate(() => { window.location.hash = '#/workspace/build-e2e-001'; });
+      if (!hash.includes('/builds')) {
+        await page.evaluate(() => { window.location.hash = '#/builds/build-e2e-001/kanban'; });
         await page.waitForTimeout(2000);
       }
       const text = await page.evaluate(() => document.body.textContent ?? '');

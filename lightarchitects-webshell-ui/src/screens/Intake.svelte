@@ -16,6 +16,18 @@
   // Runs after a tick so the DOM is settled and Shepherd can attach to the
   // [data-onboarding="..."] target elements.
   onMount(() => {
+    // Read query params embedded in the hash (e.g. /intake?return=/builds&prefill=manifest)
+    const qs = window.location.hash.split('?')[1] ?? '';
+    const params = new URLSearchParams(qs);
+    const prefill = params.get('prefill');
+    const desc = params.get('desc');
+    if (prefill === 'manifest') {
+      planBuilderMode.set(true);
+      initPlanFromForm();
+    } else if (prefill === 'task' && desc) {
+      intakeForm.update(f => ({ ...f, description: desc }));
+    }
+
     const forced = consumeOnboardingParam();
     setTimeout(() => {
       if (forced === 't1') runTutorial('t1', true);
@@ -161,6 +173,8 @@
     if (!validateForm()) return;
     if (checkDedupe()) return;
     submitting = true;
+    // Capture before form reset — needed for ?task= return param
+    const submittedDesc = form.description;
     let newBuildId: string | null = null;
     try {
       const resp: BuildResponse = await api.createBuild({
@@ -222,12 +236,21 @@
     dedupeWarning = null;
     forceCreate = false;
     submitting = false;
-    // Navigate directly to Workspace for the new build.
+    // Navigate: use ?return= if present; fall back to the new build's detail page.
+    const qs = window.location.hash.split('?')[1] ?? '';
+    const params = new URLSearchParams(qs);
+    const returnTo = params.get('return') || null;
+    const prefill = params.get('prefill');
     if (newBuildId) {
       currentBuildId.set(newBuildId);
-      window.location.hash = '/workspace';
+      // When returning to dispatch with a task prefill, carry the description back as ?task=
+      if (prefill === 'task' && returnTo && submittedDesc) {
+        window.location.hash = `${returnTo}?task=${encodeURIComponent(submittedDesc)}`;
+      } else {
+        window.location.hash = returnTo || `/builds/${newBuildId}/kanban`;
+      }
     } else {
-      window.location.hash = '/';
+      window.location.hash = returnTo || '/';
     }
   }
 
@@ -369,10 +392,12 @@
       return;
     }
 
+    const qs = window.location.hash.split('?')[1] ?? '';
+    const returnTo = new URLSearchParams(qs).get('return') ?? '/';
+
     try {
       const resp = await api.createPlan(plan);
-      // Navigate to queue on success
-      window.location.hash = '/';
+      window.location.hash = returnTo;
     } catch {
       // Backend may not have the endpoint yet — store locally
       const newBuild = {
@@ -391,7 +416,7 @@
       };
       builds.update(b => [...b, newBuild]);
       planBuilderDraft.set(plan);
-      window.location.hash = '/';
+      window.location.hash = returnTo;
     }
 
     submitting = false;

@@ -33,7 +33,8 @@ import { writable, get } from 'svelte/store';
 
 export type HotkeyScope =
   | 'global'         // fires on any screen
-  | 'squad-dispatch'; // fires only when /squad-dispatch is active
+  | 'squad-dispatch' // legacy alias — treated identically to 'dispatch'
+  | 'dispatch';      // fires only when /dispatch (or /dispatch/*) is active
 
 export interface HotkeyEntry {
   /** Unique stable ID — duplicate registrations with the same ID are silently de-duped. */
@@ -250,10 +251,10 @@ export function clearUserOverride(id: string): void {
  */
 export function dispatchHotkey(e: KeyboardEvent, route: string): boolean {
   const registry = get(hotkeyRegistry);
-  const isDispatch = route === '/squad-dispatch';
+  const isDispatch = route === '/dispatch' || route.startsWith('/dispatch/') || route === '/squad-dispatch';
 
   for (const entry of registry) {
-    if (entry.scope === 'squad-dispatch' && !isDispatch) continue;
+    if ((entry.scope === 'dispatch' || entry.scope === 'squad-dispatch') && !isDispatch) continue;
     if (entry.matches(e)) {
       e.preventDefault();
       entry.handler(e);

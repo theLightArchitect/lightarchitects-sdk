@@ -17,33 +17,43 @@ export interface RouteMatch {
 }
 
 // Legacy path → replacement path rewrites (history.replaceState; preserves deep links per H-quantum-2)
+// /workspace* → /builds added 2026-05-02 (Wave 1) — fully replaced by /builds/:id
 const REDIRECTS: [string, string][] = [
   ['/squad-dispatch', '/dispatch'],
   ['/activity',       '/ops#activity'],
   ['/sitrep',         '/ops#health'],
+  ['/workspace',      '/builds'],
 ];
+
+/**
+ * View modes for the /builds/:buildId/:view URL pattern.
+ * Wave 1 adds the route shape; Wave 6 wires BuildDetail.svelte to read it.
+ */
+export type BuildViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan';
+const BUILD_VIEW_PATTERN = '(?:kanban|list|operator|manifest|plan)';
 
 type RouteEntry = [RegExp, ScreenKey, string[]];
 
 // Ordered most-specific first — prevents /builds/:buildId from matching before deeper patterns
 const ROUTES: RouteEntry[] = [
-  [/^\/builds\/([^/]+)\/phase\/([^/]+)\/wave\/([^/]+)\/agent\/([^/]+)$/, 'BuildDetail',   ['buildId', 'phaseId', 'waveId', 'agentKey']],
-  [/^\/builds\/([^/]+)\/phase\/([^/]+)\/wave\/([^/]+)$/,                 'BuildDetail',   ['buildId', 'phaseId', 'waveId']],
-  [/^\/builds\/([^/]+)\/phase\/([^/]+)$/,                                'BuildDetail',   ['buildId', 'phaseId']],
-  [/^\/builds\/([^/]+)$/,                                                'BuildDetail',   ['buildId']],
-  [/^\/dispatch\/run\/([^/]+)\/agent\/([^/]+)$/,                         'Dispatch',      ['runId', 'agentKey']],
-  [/^\/dispatch\/run\/([^/]+)$/,                                         'Dispatch',      ['runId']],
-  [/^\/helix\/strand\/([^/]+)$/,                                         'Helix',         ['siblingKey']],
-  [/^\/helix\/entry\/([^/]+)$/,                                          'Helix',         ['entryId']],
-  [/^\/workspace\/([^/]+)$/,                                             'BuildDetail',   ['buildId']],
-  [/^\/workspace$/,                                                      'BuildDetail',   []],
-  [/^\/project\/([^/]+)$/,                                               'ProjectDetail', ['projectId']],
-  [/^\/?$/,                                                              'Builds',        []],
-  [/^\/ops(#.*)?$/,                                                      'Ops',           []],
-  [/^\/dispatch$/,                                                       'Dispatch',      []],
-  [/^\/builds$/,                                                         'Builds',        []],
-  [/^\/intake$/,                                                         'Intake',        []],
-  [/^\/helix$/,                                                          'Helix',         []],
+  [/^\/builds\/([^/]+)\/phase\/([^/]+)\/wave\/([^/]+)\/agent\/([^/]+)$/,    'BuildDetail',   ['buildId', 'phaseId', 'waveId', 'agentKey']],
+  [/^\/builds\/([^/]+)\/phase\/([^/]+)\/wave\/([^/]+)$/,                    'BuildDetail',   ['buildId', 'phaseId', 'waveId']],
+  [/^\/builds\/([^/]+)\/phase\/([^/]+)$/,                                   'BuildDetail',   ['buildId', 'phaseId']],
+  // View-encoded pattern (Wave 1) — view is enum-validated in regex so /builds/abc/phase
+  // can never match here (would have hit one of the /phase/... routes above first)
+  [new RegExp(`^/builds/([^/]+)/(${BUILD_VIEW_PATTERN})$`),                 'BuildDetail',   ['buildId', 'view']],
+  [/^\/builds\/([^/]+)$/,                                                   'BuildDetail',   ['buildId']],
+  [/^\/dispatch\/run\/([^/]+)\/agent\/([^/]+)$/,                            'Dispatch',      ['runId', 'agentKey']],
+  [/^\/dispatch\/run\/([^/]+)$/,                                            'Dispatch',      ['runId']],
+  [/^\/helix\/strand\/([^/]+)$/,                                            'Helix',         ['siblingKey']],
+  [/^\/helix\/entry\/([^/]+)$/,                                             'Helix',         ['entryId']],
+  [/^\/project\/([^/]+)$/,                                                  'ProjectDetail', ['projectId']],
+  [/^\/?$/,                                                                 'Builds',        []],
+  [/^\/ops(#.*)?$/,                                                         'Ops',           []],
+  [/^\/dispatch$/,                                                          'Dispatch',      []],
+  [/^\/builds$/,                                                            'Builds',        []],
+  [/^\/intake$/,                                                            'Intake',        []],
+  [/^\/helix$/,                                                             'Helix',         []],
 ];
 
 /** Matches a hash-fragment path (with or without leading #) to a screen + params. */

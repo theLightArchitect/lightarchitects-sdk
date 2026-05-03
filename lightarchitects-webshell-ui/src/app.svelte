@@ -17,14 +17,17 @@
   import KeymapLegend from './components/KeymapLegend.svelte';
   import HelixLegend from './components/HelixLegend.svelte';
   import CornerBrackets from '$lib/components/CornerBrackets.svelte';
+  import ScanLines from './components/atmosphere/ScanLines.svelte';
   import ProjectPicker from './components/ProjectPicker.svelte';
   import ActiveBuildsChip from './components/ActiveBuildsChip.svelte';
+  import Breadcrumb from './components/Breadcrumb.svelte';
+  import GlobalEventsOverlay from './components/GlobalEventsOverlay.svelte';
   import {
     ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen,
     builds, currentBuildId, findings, logEntries, artifacts, conductorTasks, arenaStatus, alerts,
     activePlan, latestScrumReport, hotMemory, coldMemory, activeHelixNode, selectedPillar,
     expandedFindings, supervisorAlerts, siblingHealth, copilotMessages,
-    intakeFormDirty, authStatus, commandPaletteOpen,
+    intakeFormDirty, authStatus, commandPaletteOpen, eventsOverlayOpen,
   } from '$lib/stores';
   import { get } from 'svelte/store';
   import { setupComplete, step, loadSetupInfo, selectedBackend, selectedModel, selectedAgent } from '$lib/setup';
@@ -157,9 +160,9 @@
   let activeRoute = $derived($currentRoute);
 
   function isActive(hash: string): boolean {
-    // /builds is the default landing — active on both '/' and '/builds*' and '/workspace*'
+    // /builds is the default landing — active on both '/' and '/builds*'
     if (hash === '/builds') {
-      return activeRoute === '/' || activeRoute === '' || activeRoute.startsWith('/builds') || activeRoute.startsWith('/workspace');
+      return activeRoute === '/' || activeRoute === '' || activeRoute.startsWith('/builds');
     }
     return activeRoute.startsWith(hash);
   }
@@ -360,16 +363,23 @@
 <!-- Corner brackets — fixed-position tactical frame.
      data-dispatching prop animates to researcher-green during active dispatch. -->
 <CornerBrackets />
+<ScanLines route={activeRoute} />
 <div class="w-screen h-screen overflow-hidden bg-[var(--la-bg-void)] text-[var(--la-text-bright)]">
   <!-- Responsive container:
          <768  : flex-col       (vertical stack — single-column flow)
          >=768 : flex-row       (side-by-side) — at 768..1023 the helix panel
                                 still hides; at >=1024 it renders inline. -->
   <div class="flex flex-col md:flex-row" style="height: calc(100vh - {$drawerHeightPx}px);">
-    <!-- Left: Main content area -->
-    <div class="flex-1 flex flex-col overflow-hidden relative">
+    <!-- Left: Main content area — padding-right transitions when events overlay opens (push-not-occlude) -->
+    <div
+      class="flex-1 flex flex-col overflow-hidden relative"
+      style="padding-right: {$eventsOverlayOpen ? '320px' : '0'}; transition: padding-right 260ms cubic-bezier(0.4,0,0.2,1);"
+    >
       <!-- Ambient particles — drifting helix-palette dots behind content -->
       <AmbientParticles />
+      <!-- Breadcrumb (Wave 1) — `LIGHT ARCHITECTS / {SCREEN} / {SUB} / LIVE`
+           sits above the tab nav and provides at-a-glance "where am I" chrome -->
+      <Breadcrumb route={activeRoute} />
       <!-- Top navigation strip — underline-only active indicator (#23) -->
       <nav class="flex items-stretch gap-1 px-3 border-b border-[#1e293b] bg-[#0a0a0f] shrink-0 overflow-x-auto">
         <ProjectPicker />
@@ -383,6 +393,14 @@
         {/each}
         <div class="ml-auto shrink-0 flex items-center gap-2">
           <ActiveBuildsChip />
+          <!-- Events overlay toggle (Wave 1.5) — E key shortcut, handled in GlobalEventsOverlay -->
+          <Tooltip content="Live events feed — activity, AYIN spans, gate verdicts, build output (E)" side="bottom">
+            <button
+              onclick={() => eventsOverlayOpen.update(v => !v)}
+              class="px-2 py-1 text-[11px] transition-colors relative {$eventsOverlayOpen ? 'text-[#FFD700]' : 'text-[#475569] hover:text-[#94a3b8]'}"
+              data-testid="events-toggle"
+            >Events</button>
+          </Tooltip>
           <Tooltip content="Hot · Cold · Convergences — what each agent remembers (Cmd+M)" side="bottom">
             <button
               onclick={() => memoryDrawerOpen.update(v => !v)}
@@ -428,7 +446,7 @@
     </div>
 
     <!-- Desktop (>=1024): inline right-hand panel, user-resizable. -->
-    {#if showHelix && viewport === 'desktop'}
+    {#if showHelix && viewport === 'desktop' && activeRoute !== '/helix'}
       <!-- Drag handle — sits on the seam between content and helix panel. -->
       <button
         class="w-1 shrink-0 cursor-col-resize hover:bg-[#FFD700]/30 active:bg-[#FFD700]/50 transition-colors border-l border-[#1e293b] p-0 bg-transparent {isResizing ? 'bg-[#FFD700]/40' : ''}"
@@ -450,7 +468,7 @@
        Rendered outside the flex container so it sits on top of all layout
        at high z-index. Includes a close button (top-right) since on
        narrow screens the nav toggle may be off-screen behind a scroll. -->
-  {#if showHelix && viewport !== 'desktop'}
+  {#if showHelix && viewport !== 'desktop' && activeRoute !== '/helix'}
     <div
       class="fixed inset-0 z-40 bg-[#0a0a0f]"
       data-testid="helix-panel-overlay"
@@ -463,6 +481,8 @@
       <Helix3D />
     </div>
   {/if}
+  <!-- Global events overlay (Wave 1.5) — push-not-occlude, 320px right panel -->
+  <GlobalEventsOverlay route={activeRoute} />
   <StatusBar />
   <CommandPalette />
   <CopilotDrawer />

@@ -1,0 +1,62 @@
+/*
+ * grid-defense.css — Wave 1.5 CSS containment rules
+ *
+ * Prevents CSS Grid auto-track feedback loops when canvas/SVG/WebGL renderers
+ * live inside grid cells. The root cause: `1fr` expands to `minmax(auto, 1fr)`,
+ * and the `auto` min resolves to the item's intrinsic size. Three.js/p5 write
+ * explicit `height` attributes on their canvas elements; the grid then reads
+ * those as intrinsic sizes, driving the track taller, triggering a ResizeObserver
+ * that calls renderer.setSize() again — unbounded growth.
+ *
+ * Rule: every grid track that may contain a canvas must use `minmax(0, 1fr)`.
+ * Rule: every flex parent of a scrollable child must carry `min-height: 0`.
+ *
+ * Import once in app.svelte or a global CSS entry. Do NOT import per-component.
+ */
+
+/* Any element that is a grid container and contains a canvas or svg child
+   should have its row/column tracks floored at 0, not auto. Apply this class
+   to the grid wrapper element. */
+.la-grid-canvas {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Canvas elements inside grid or flex containers must not dictate track size. */
+.la-grid-canvas canvas,
+.la-grid-canvas svg {
+  display: block;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Flex parents of scrollable children — prevents overflow bleedout.
+   Any flex child that has overflow-y:auto or overflow-y:scroll needs its
+   parent to carry min-height:0 so the flex row doesn't grow to fit content. */
+.la-flex-scroll-parent {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.la-flex-scroll-parent > .la-scroll-child {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Topology container — used by VoxelProjects3D (Wave 3) and any other
+   Three.js scene that fills its grid cell. Applied on the immediate
+   wrapper around the <canvas> / renderer DOM element. */
+.la-topology-container {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
