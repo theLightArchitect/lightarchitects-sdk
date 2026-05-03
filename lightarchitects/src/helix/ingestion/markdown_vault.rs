@@ -527,7 +527,9 @@ impl MarkdownVaultIngester {
     /// Called from [`Self::ingest`] after the inode-dedup check, so the
     /// visited-set management stays co-located with the loop.
     /// Returns `Ok(())` (with an error pushed to `report`) when the root
-    /// directory does not exist.
+    /// directory does not exist. All other error paths (`ensure_helix`,
+    /// `walk_recursive`) propagate as [`IngestionError`] and abort the
+    /// enclosing `ingest()` call.
     #[instrument(skip(self, db, report), fields(root = %root.display()))]
     async fn process_extra_root(
         &self,
@@ -620,7 +622,9 @@ fn inode_key(path: &Path) -> Option<(u64, u64)> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        let meta = std::fs::symlink_metadata(path).ok()?;
+        // Follow symlinks so two aliases to the same directory produce the same
+        // (dev, ino) pair and dedup fires correctly.
+        let meta = std::fs::metadata(path).ok()?;
         Some((meta.dev(), meta.ino()))
     }
     #[cfg(windows)]
