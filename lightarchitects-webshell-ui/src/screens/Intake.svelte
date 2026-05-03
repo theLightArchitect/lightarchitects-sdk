@@ -91,6 +91,34 @@
   // aren't silently discarded — see #58.
   let phasesModified = $state(false);
 
+  // Inline confirm state — replaces window.confirm() for plan-template regen gating.
+  // Async so callers can await the user's decision without blocking the main thread.
+  let discardConfirm: { trigger: 'tier' | 'meta-skill' } | null = $state(null);
+  let _discardResolve: ((v: boolean) => void) | null = null;
+
+  function confirmDiscardPhases(trigger: 'tier' | 'meta-skill'): Promise<boolean> {
+    if (_discardResolve) { _discardResolve(false); _discardResolve = null; }
+    discardConfirm = { trigger };
+    return new Promise(resolve => { _discardResolve = resolve; });
+  }
+
+  function resolveDiscard(confirmed: boolean) {
+    discardConfirm = null;
+    _discardResolve?.(confirmed);
+    _discardResolve = null;
+  }
+
+  // Validate ?return= against known in-app route prefixes before hash assignment.
+  // Returns null for invalid/missing values so callers can provide a safe fallback.
+  const SAFE_RETURN_PREFIXES = ['/builds', '/dispatch', '/ops', '/helix', '/intake', '/project'];
+  function safeReturn(raw: string | null | undefined): string | null {
+    if (!raw) return null;
+    if (raw === '/') return '/';
+    return SAFE_RETURN_PREFIXES.some(p => raw === p || raw.startsWith(`${p}/`) || raw.startsWith(`${p}?`))
+      ? raw
+      : null;
+  }
+
   // Source type config
   const SOURCE_CONFIG: Record<IntakeSource, { label: string; icon: string; desc: string }> = {
     manual:  { label: 'Manual',    icon: 'M', desc: 'Describe the build manually' },
@@ -123,8 +151,8 @@
 
   // Meta-skill selection. In plan mode, changing meta-skill regenerates the
   // phase template — confirm first if the user has unsaved edits.
-  function setMetaSkill(skill: MetaSkill) {
-    if ($planBuilderMode && phasesModified && !confirmDiscardPhases('meta-skill')) {
+  async function setMetaSkill(skill: MetaSkill) {
+    if ($planBuilderMode && phasesModified && !(await confirmDiscardPhases('meta-skill'))) {
       return;
     }
     intakeForm.update(f => ({ ...f, metaSkill: skill }));
@@ -134,14 +162,6 @@
     }
   }
 
-  // Show a confirm dialog when a destructive plan-template regen is about to
-  // run with unsaved phase edits. Returns true on confirm. (window.confirm is
-  // a placeholder — a proper modal is a v0.3.1 polish task.)
-  function confirmDiscardPhases(trigger: 'tier' | 'meta-skill'): boolean {
-    return window.confirm(
-      `Changing the ${trigger} will regenerate the phase template and discard your current edits.\n\nContinue?`,
-    );
-  }
 
   // Priority selection
   function setPriority(p: Priority) {
@@ -239,7 +259,7 @@
     // Navigate: use ?return= if present; fall back to the new build's detail page.
     const qs = window.location.hash.split('?')[1] ?? '';
     const params = new URLSearchParams(qs);
-    const returnTo = params.get('return') || null;
+    const returnTo = safeReturn(params.get('return'));
     const prefill = params.get('prefill');
     if (newBuildId) {
       currentBuildId.set(newBuildId);
@@ -345,9 +365,9 @@
   }
 
   // TIER change handler — gated by confirmDiscardPhases when phasesModified.
-  function setPlanTier(tier: BuildTier) {
+  async function setPlanTier(tier: BuildTier) {
     if (tier === planTier) return;
-    if (phasesModified && !confirmDiscardPhases('tier')) {
+    if (phasesModified && !(await confirmDiscardPhases('tier'))) {
       return;
     }
     planTier = tier;
@@ -393,7 +413,7 @@
     }
 
     const qs = window.location.hash.split('?')[1] ?? '';
-    const returnTo = new URLSearchParams(qs).get('return') ?? '/';
+    const returnTo = safeReturn(new URLSearchParams(qs).get('return')) ?? '/';
 
     try {
       const resp = await api.createPlan(plan);
@@ -603,6 +623,28 @@
         </div>
         <!-- Plan Builder: Phase + Gate Editor -->
         {#if isPlanMode}
+          {#if discardConfirm}
+            <div
+              class="mb-3 rounded border border-[var(--la-warn)] bg-[var(--la-warn)]/10 px-3 py-2"
+              role="alertdialog"
+              aria-modal="true"
+              aria-label="Confirm discard edits"
+            >
+              <p class="text-[11px] text-[var(--la-text-bright)] mb-2">
+                Changing the {discardConfirm.trigger} will regenerate the phase template and discard your current edits.
+              </p>
+              <div class="flex gap-2">
+                <button
+                  class="px-2 py-1 text-[10px] font-mono rounded bg-[var(--la-warn)] text-black"
+                  onclick={() => resolveDiscard(true)}
+                >Continue</button>
+                <button
+                  class="px-2 py-1 text-[10px] font-mono rounded border border-[var(--la-hair-strong)] text-[var(--la-text-dim)]"
+                  onclick={() => resolveDiscard(false)}
+                >Cancel</button>
+              </div>
+            </div>
+          {/if}
           <div>
             <div class="flex items-center justify-between mb-3">
               <h2 class="text-xs font-medium text-[var(--la-text-label)]">PHASES + GATES</h2>

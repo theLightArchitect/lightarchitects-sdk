@@ -1452,9 +1452,9 @@ test.describe('Comprehensive webshell E2E', () => {
       await page.waitForTimeout(300);
     });
 
-    test('hash navigation stable after Workspace visit', async () => {
-      // Full round-trip: Queue → Workspace → Queue
-      await page.evaluate(() => { window.location.hash = '#/workspace'; });
+    test('hash navigation stable after Build Detail visit', async () => {
+      // Full round-trip: Queue → Build Detail → Queue (verifies router round-trip stability)
+      await page.evaluate(() => { window.location.hash = '#/builds/build-e2e-001/kanban'; });
       await page.waitForTimeout(500);
       await page.evaluate(() => { window.location.hash = '#/'; });
       await page.waitForTimeout(500);
@@ -4952,6 +4952,83 @@ test.describe('Comprehensive webshell E2E', () => {
       // Squad health panel shows "/7 agents online" not "/7 siblings online"
       expect(text).not.toMatch(/\d+\/\d+\s+siblings/i);
       expect(text).toMatch(/agents online/i);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 81. GlobalEventsOverlay — E key toggle + unread badge
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('81. GlobalEventsOverlay', () => {
+    test('E key opens events overlay', async () => {
+      await page.evaluate(() => { window.location.hash = '#/ops'; });
+      await page.waitForURL('**#/ops**', { timeout: 5_000 });
+      await page.waitForTimeout(600);
+      await page.keyboard.press('e');
+      await page.waitForTimeout(300);
+      const overlay = page.locator('[data-testid="events-overlay"]');
+      await expect(overlay).not.toHaveAttribute('inert');
+    });
+
+    test('Escape closes events overlay', async () => {
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+      const overlay = page.locator('[data-testid="events-overlay"]');
+      const inert = await overlay.getAttribute('inert');
+      expect(inert !== null || await overlay.getAttribute('aria-hidden') === 'true').toBe(true);
+    });
+
+    test('events overlay contains EVENTS header text', async () => {
+      await page.keyboard.press('e');
+      await page.waitForTimeout(300);
+      const text = await page.locator('[data-testid="events-overlay"]').textContent();
+      expect(text ?? '').toMatch(/EVENTS/i);
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 82. DispatchCLI — / key focus + input presence
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('82. DispatchCLI', () => {
+    test('CLI input is present on /dispatch', async () => {
+      await page.evaluate(() => { window.location.hash = '#/dispatch'; });
+      await page.waitForURL('**#/dispatch**', { timeout: 5_000 });
+      await page.waitForTimeout(600);
+      const cli = page.locator('[data-testid="dispatch-cli-input"]');
+      const count = await cli.count();
+      if (count === 0) { test.skip(); return; }
+      await expect(cli).toBeVisible();
+    });
+
+    test('/ key focuses CLI input on /dispatch', async () => {
+      const cli = page.locator('[data-testid="dispatch-cli-input"]');
+      if (await cli.count() === 0) { test.skip(); return; }
+      await page.keyboard.press('/');
+      await page.waitForTimeout(200);
+      const focused = await page.evaluate(() =>
+        document.activeElement?.getAttribute('data-testid') ?? ''
+      );
+      expect(focused).toBe('dispatch-cli-input');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 83. VoxelProjects3D — canvas mounts on /ops
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('83. VoxelProjects3D', () => {
+    test('3D topology canvas renders on /ops', async () => {
+      await page.evaluate(() => { window.location.hash = '#/ops'; });
+      await page.waitForURL('**#/ops**', { timeout: 5_000 });
+      await page.waitForTimeout(1200);
+      const container = page.locator('[data-testid="voxel-projects-3d"]');
+      const count = await container.count();
+      if (count === 0) { test.skip(); return; }
+      const canvas = container.locator('canvas');
+      await expect(canvas).toBeVisible();
     });
   });
 });

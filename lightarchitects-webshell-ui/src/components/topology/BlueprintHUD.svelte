@@ -12,6 +12,10 @@
 
   let canvas: HTMLCanvasElement | undefined = $state();
 
+  // Stable key derived from visible data — used to skip full redraws when only
+  // unrelated SSE ticks arrive (avoids full Canvas2D repaint on every pillar event).
+  let _lastRenderKey = '';
+
   // Project cluster screen positions — callers project 3D → 2D and pass in
   // For now we derive approximate positions from the ring layout
   function clusterScreenPos(gi: number, total: number, w: number, h: number): { x: number; y: number } {
@@ -27,6 +31,9 @@
   $effect(() => {
     if (!canvas) return;
     if (width === 0 || height === 0) return;
+    const renderKey = `${width}x${height}|${selectedGroup?.id ?? ''}|${groups.map(g => `${g.id}:${(g as any).activePlanCount ?? 0}`).join(',')}`;
+    if (renderKey === _lastRenderKey) return;
+    _lastRenderKey = renderKey;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 

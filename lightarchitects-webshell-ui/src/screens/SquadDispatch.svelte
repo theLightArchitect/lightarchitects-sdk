@@ -80,10 +80,10 @@
 
   const mailboxRows = $derived.by((): StreamRow[] => {
     const rows: StreamRow[] = [];
-    const epoch = Date.now(); // stable base; sub-ms offsets give unique ts per row
+    const base = performance.now(); // sub-ms precision — unique per row even in fast-burst derivations
     for (let idx = 0; idx < events.length; idx++) {
       const e = events[idx];
-      const ts = epoch + idx;
+      const ts = base + idx;
       const time = eventTimes[idx] ?? fmtTime(new Date()); // receive-time, not derivation-time
       if ('MailboxMessage' in e) {
         rows.push({

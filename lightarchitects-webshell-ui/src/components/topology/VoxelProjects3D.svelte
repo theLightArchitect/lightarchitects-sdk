@@ -312,6 +312,9 @@
       renderer.domElement.removeEventListener('click', onClick);
       renderer.domElement.removeEventListener('wheel', onWheel);
       window.removeEventListener('la:topology-home-camera', onCameraHome);
+      if (renderer.domElement.parentNode === container) {
+        container.removeChild(renderer.domElement);
+      }
       scene.traverse(obj => {
         const mesh = obj as THREE.Mesh;
         if (mesh.geometry) mesh.geometry.dispose();
