@@ -111,6 +111,74 @@ Canonical: `~/lightarchitects/soul/helix/user/standards/builders-cookbook.md`
 | Error hierarchy | `thiserror`, domain errors, no HTTP status codes |
 | Retry | `TransportError` only — tool errors are not transient |
 | Auth | API key via `HttpTransport::builder().api_key()`; pre-spawn check for local path |
+| ETag generation | Handler-level only — NOT tower-http middleware (doesn't compute content ETags). Serialize body → SHA-256 → set `ETag` header → check `If-None-Match` → 304. Store `content_hash` in Neo4j at write time for restart-stable ETags. See `routes/platform.rs:respond_with_body_etag()`. |
+| Neo4j pooling | `neo4rs` built-in via `ConfigBuilder::max_connections(20)` — skip `deadpool-neo4j`. Pool is managed transparently by `neo4rs::Graph`. Local cap = 20; Aura migration cap = 50. |
+| HTTP + stdio coexistence | `tokio::spawn(run_http_mode(state, addr))` as a background task; main task continues the stdio MCP loop. Both share `Arc<PlatformState>`. Shutdown signal on main task propagates via `CancellationToken`. |
+
+---
+
+## Platform API — Gateway Operational Notes
+
+### Keychain access for ad-hoc-signed binaries (macOS)
+
+`keyring v3` with `sync-secret-service` silently falls back to the in-process mock store on macOS
+(D-Bus/SecretService is Linux-only). `apple-native` triggers a GUI authorization dialog and blocks
+the process for ad-hoc-signed binaries — the binary hangs at startup with zero log output.
+
+**Pattern**: call `security find-generic-password` as a subprocess. The `security` CLI binary IS in
+the keychain item ACL (it created the items) and reads without any dialog:
+
+```rust
+fn keychain_via_security_cli(service: &str, account: &str) -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("security")
+            .args(["find-generic-password", "-s", service, "-a", account, "-w"])
+            .output().ok()?;
+        if out.status.success() {
+            let s = String::from_utf8(out.stdout).ok()?;
+            let trimmed = s.trim().to_owned();
+            if !trimmed.is_empty() { return Some(trimmed); }
+        }
+        None
+    }
+    #[cfg(not(target_os = "macos"))]
+    { let _ = (service, account); None }
+}
+```
+
+Use as fallback between keyring and env var in all `load_*_token()` functions.
+
+### `soul-neo4j-local` keychain account layout
+
+| Account (`-a`) | Value |
+|---|---|
+| (default — no `-a` flag) | bolt URI (`bolt://localhost:7687`) |
+| `uri` | bolt URI |
+| `username` | `neo4j` |
+| `password` | Neo4j password |
+| `admin-token` | 42-char platform admin token |
+| `read-token` | absent (localhost trust model) |
+
+`security find-generic-password -s "soul-neo4j-local" -w` returns the **URI**, not the password.
+Always pass `-a "password"` to get the password. Omitting `-a` is a silent gotcha that returns the
+wrong value and causes `42NFF: access denied` errors from Neo4j.
+
+### `axum::ConnectInfo` in `tower::ServiceExt::oneshot()` tests
+
+Middleware extracting `ConnectInfo(addr): ConnectInfo<SocketAddr>` panics in `oneshot()` tests
+because there is no TCP connection to supply the metadata. Inject it manually:
+
+```rust
+Request::builder()
+    .method("GET")
+    .uri("/v1/platform/health")
+    .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
+    .body(Body::empty())
+    .unwrap()
+```
+
+This applies to any middleware that extracts connection-level data (peer address, TLS info, etc.).
 
 ---
 
