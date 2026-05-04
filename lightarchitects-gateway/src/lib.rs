@@ -36,6 +36,9 @@ pub mod error;
 pub mod governance;
 /// In-process sibling handlers (feature-gated behind `inline-*` flags).
 pub mod handlers;
+/// Platform HTTP mode — private REST API backed by local Neo4j (`/v1/platform/*`).
+#[allow(missing_docs, clippy::pedantic)]
+pub mod http;
 /// MCP server loop and tool dispatch.
 pub mod server;
 /// Squad Comms MCP actions — HTTP delegation to the webshell coordination API.

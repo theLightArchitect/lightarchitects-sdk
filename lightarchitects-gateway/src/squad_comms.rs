@@ -62,8 +62,7 @@ async fn webshell_get(path: &str, config: &GatewayConfig) -> Result<Value, Gatew
 
     if !status.is_success() {
         return Err(GatewayError::InvalidRequest(format!(
-            "webshell returned {status} for {url}: {}",
-            body
+            "webshell returned {status} for {url}: {body}"
         )));
     }
 
@@ -98,8 +97,7 @@ async fn webshell_post(
 
     if !status.is_success() {
         return Err(GatewayError::InvalidRequest(format!(
-            "webshell returned {status} for {url}: {}",
-            body
+            "webshell returned {status} for {url}: {body}"
         )));
     }
 

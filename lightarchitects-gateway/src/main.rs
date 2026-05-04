@@ -20,6 +20,7 @@
 //! lightarchitects builds list|show           Build portfolio from SOUL vault
 //! lightarchitects setup keys|voice|seraph   Interactive configuration
 //! lightarchitects webshell start|control|status  Web GUI for coding agent
+//! lightarchitects platform [--port 8080]          Platform HTTP API (localhost:8080)
 //! ```
 
 use lightarchitects_gateway::{
@@ -27,6 +28,7 @@ use lightarchitects_gateway::{
     config::{GatewayConfig, expand_tilde},
     core_tools,
     error::GatewayError,
+    http::{self as platform_http, state::{PlatformConfig, PlatformState}},
     server,
 };
 use serde_json::json;
@@ -49,8 +51,10 @@ async fn main() {
         .position(|a| a == "--agent")
         .and_then(|i| raw_args.get(i + 1).cloned());
 
-    // Arena modes (serve, --agent) use JSON tracing; MCP mode uses fmt to stderr
-    let is_arena = raw_args.first().is_some_and(|a| a == "serve") || agent_mode.is_some();
+    // Arena and platform modes use JSON tracing; MCP mode uses fmt to stderr.
+    // Platform is HTTP (not stdio), so JSON output is safe and AYIN-compatible.
+    let is_arena = raw_args.first().is_some_and(|a| a == "serve" || a == "platform")
+        || agent_mode.is_some();
 
     if is_arena {
         tracing_subscriber::fmt()
@@ -235,6 +239,9 @@ async fn cli_dispatch(
             lightarchitects_gateway::cli::webshell::execute(config, &args[1..]).await
         }
 
+        // Platform HTTP mode — private REST API on localhost:8080.
+        Some("platform") => cli_platform(&args[1..]).await,
+
         // Squad Comms subcommand — delegates to webshell coordination API.
         Some("squad-comms") => cli_squad_comms(&args[1..], config).await,
 
@@ -260,7 +267,8 @@ async fn cli_dispatch(
                    lightarchitects builds list|show           Build portfolio\n  \
                    lightarchitects setup keys|voice|seraph    Configuration wizard\n  \
                    lightarchitects webshell start|control|status  Web GUI\n  \
-                   lightarchitects squad-comms tasks|add|claim|logs|inject  Squad Comms"
+                   lightarchitects squad-comms tasks|add|claim|logs|inject  Squad Comms\n  \
+                   lightarchitects platform [--port 8080]                   Platform HTTP API (localhost)"
             );
             Err(GatewayError::UnknownTool(unknown.to_owned()))
         }
@@ -308,7 +316,7 @@ fn cli_canon(args: &[String], config: &GatewayConfig) -> Result<(), GatewayError
 ///   add <title> <project> <prompt> [priority]  — append a task
 ///   claim <id> [source]    — soft-claim a task
 ///   logs <id>              — fetch task logs
-///   inject <session_id> <message> [sender]  — inject a chat message
+///   inject `<session_id>` `<message>` [sender]  — inject a chat message
 async fn cli_squad_comms(args: &[String], config: &GatewayConfig) -> Result<(), GatewayError> {
     let result = match args.first().map(String::as_str) {
         Some("tasks") => {
@@ -378,6 +386,138 @@ async fn cli_squad_comms(args: &[String], config: &GatewayConfig) -> Result<(), 
         .unwrap_or_else(|_| result.to_string());
     println!("{pretty}");
     Ok(())
+}
+
+/// `lightarchitects platform [--port <PORT>] [--no-mcp]`
+///
+/// Starts the Platform HTTP server on `localhost:<PORT>` (default 8080).
+/// Reads Neo4j credentials from the macOS keychain (`soul-neo4j-local` service).
+/// Runs indefinitely; Ctrl-C or SIGTERM to stop.
+async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
+    let port: u16 = args
+        .windows(2)
+        .find(|w| w[0] == "--port")
+        .and_then(|w| w[1].parse().ok())
+        .unwrap_or(8080);
+
+    let (uri, user, password) = platform_credentials_from_keychain()?;
+
+    let graph = platform_http::neo4j::connect(&uri, &user, &password).await?;
+
+    let report = platform_http::neo4j::apply_migrations(&graph).await?;
+    tracing::info!(
+        applied = report.applied_count,
+        skipped = report.skipped_count,
+        "Platform schema migrations"
+    );
+
+    let admin_token = load_admin_token();
+    if admin_token.is_none() {
+        tracing::warn!("No admin token configured — POST /v1/admin/* will return 503");
+    }
+
+    let read_token = load_read_token();
+    if read_token.is_none() {
+        tracing::info!("No read token configured — read endpoints are freely accessible");
+    }
+
+    let user_id = std::env::var("LIGHTARCHITECTS_USER_ID")
+        .or_else(|_| std::env::var("USER"))
+        .unwrap_or_else(|_| "local".to_owned());
+
+    let config = PlatformConfig {
+        port,
+        neo4j_uri: uri.clone(),
+        version_date: "2026-05-04".to_owned(),
+        api_version: "v1",
+        user_id,
+    };
+
+    // Tiered quotas — NonZeroU32::MIN.saturating_add(N-1) avoids unwrap/unsafe.
+    let read_limiter = std::sync::Arc::new(governor::RateLimiter::keyed(
+        governor::Quota::per_minute(std::num::NonZeroU32::MIN.saturating_add(99)),
+    ));
+    let helix_limiter = std::sync::Arc::new(governor::RateLimiter::keyed(
+        governor::Quota::per_minute(std::num::NonZeroU32::MIN.saturating_add(19)),
+    ));
+    let write_limiter = std::sync::Arc::new(governor::RateLimiter::keyed(
+        governor::Quota::per_minute(std::num::NonZeroU32::MIN.saturating_add(9)),
+    ));
+
+    let cache_ttl = std::time::Duration::from_secs(60);
+    let canon_cache = moka::future::Cache::builder()
+        .max_capacity(1_000)
+        .time_to_live(cache_ttl)
+        .build();
+    let agent_cache = moka::future::Cache::builder()
+        .max_capacity(500)
+        .time_to_live(cache_ttl)
+        .build();
+
+    let state = std::sync::Arc::new(PlatformState {
+        graph,
+        config,
+        read_limiter,
+        helix_limiter,
+        write_limiter,
+        canon_cache,
+        agent_cache,
+        admin_token,
+        read_token,
+    });
+    let addr = format!("127.0.0.1:{port}").parse().map_err(|_| {
+        GatewayError::Io(std::io::Error::other(format!("invalid port: {port}")))
+    })?;
+
+    platform_http::run_http_mode(addr, state).await
+}
+
+/// Load the admin token for `POST /v1/admin/*` authentication.
+///
+/// Priority: keychain `soul-neo4j-local/admin-token` → env `LIGHTARCHITECTS_ADMIN_TOKEN` → `None`.
+/// When `None` is returned, admin endpoints are disabled (503).
+fn load_admin_token() -> Option<secrecy::SecretBox<String>> {
+    keyring::Entry::new("soul-neo4j-local", "admin-token")
+        .ok()
+        .and_then(|e| e.get_password().ok())
+        .or_else(|| std::env::var("LIGHTARCHITECTS_ADMIN_TOKEN").ok())
+        .map(|t| secrecy::SecretBox::new(Box::new(t)))
+}
+
+/// Load the bearer read token for non-admin, non-health endpoints.
+///
+/// Priority: keychain `soul-neo4j-local/read-token` → env `LIGHTARCHITECTS_READ_TOKEN` → `None`.
+/// When `None`, read endpoints are freely accessible (localhost trust model).
+fn load_read_token() -> Option<secrecy::SecretBox<String>> {
+    keyring::Entry::new("soul-neo4j-local", "read-token")
+        .ok()
+        .and_then(|e| e.get_password().ok())
+        .or_else(|| std::env::var("LIGHTARCHITECTS_READ_TOKEN").ok())
+        .map(|t| secrecy::SecretBox::new(Box::new(t)))
+}
+
+/// Read Neo4j credentials from macOS keychain (`soul-neo4j-local` service).
+/// Falls back to env vars for non-macOS / CI environments.
+fn platform_credentials_from_keychain() -> Result<(String, String, String), GatewayError> {
+    let read_entry = |account: &str| -> Result<String, GatewayError> {
+        keyring::Entry::new("soul-neo4j-local", account)
+            .and_then(|e| e.get_password())
+            .map_err(|e| {
+                GatewayError::Io(std::io::Error::other(format!(
+                    "keychain read soul-neo4j-local/{account}: {e}. \
+                     Store with: security add-generic-password -s soul-neo4j-local -a {account} -w <value>"
+                )))
+            })
+    };
+
+    let uri = read_entry("uri")
+        .or_else(|_| std::env::var("NEO4J_URI").map_err(|_| GatewayError::MissingParam("NEO4J_URI")))?;
+    let user = read_entry("username")
+        .or_else(|_| std::env::var("NEO4J_USER").map_err(|_| GatewayError::MissingParam("NEO4J_USER")))?;
+    let password = read_entry("password")
+        .or_else(|_| std::env::var("NEO4J_PASS").map_err(|_| GatewayError::MissingParam("NEO4J_PASS")))?;
+
+    Ok((uri, user, password))
 }
 
 async fn cli_initialize(args: &[String], config: &GatewayConfig) -> Result<(), GatewayError> {

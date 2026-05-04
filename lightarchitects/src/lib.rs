@@ -63,3 +63,7 @@ pub mod squad_registry;
 /// External CLI credential detection — Claude Code, Codex, Gemini.
 #[cfg(feature = "credentials")]
 pub mod credentials;
+
+/// Typed REST client for the `lightarchitects-gateway` platform API (localhost:8080).
+#[cfg(feature = "http-client")]
+pub mod platform;
