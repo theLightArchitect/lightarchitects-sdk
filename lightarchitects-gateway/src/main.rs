@@ -474,26 +474,63 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
 
 /// Load the admin token for `POST /v1/admin/*` authentication.
 ///
-/// Priority: keychain `soul-neo4j-local/admin-token` → env `LIGHTARCHITECTS_ADMIN_TOKEN` → `None`.
-/// When `None` is returned, admin endpoints are disabled (503).
+/// Priority:
+/// 1. `keyring` crate (silent on macOS with mock store — falls through)
+/// 2. macOS `security` CLI subprocess — reads from the ACL-authorized `security` binary,
+///    avoiding the keychain authorization dialog that ad-hoc-signed binaries trigger
+/// 3. `LIGHTARCHITECTS_ADMIN_TOKEN` env var (production / CI)
+///
+/// When `None` is returned, admin endpoints return 503.
 fn load_admin_token() -> Option<secrecy::SecretBox<String>> {
     keyring::Entry::new("soul-neo4j-local", "admin-token")
         .ok()
         .and_then(|e| e.get_password().ok())
+        .or_else(|| keychain_via_security_cli("soul-neo4j-local", "admin-token"))
         .or_else(|| std::env::var("LIGHTARCHITECTS_ADMIN_TOKEN").ok())
         .map(|t| secrecy::SecretBox::new(Box::new(t)))
 }
 
 /// Load the bearer read token for non-admin, non-health endpoints.
 ///
-/// Priority: keychain `soul-neo4j-local/read-token` → env `LIGHTARCHITECTS_READ_TOKEN` → `None`.
+/// Priority: keyring → macOS `security` CLI → env `LIGHTARCHITECTS_READ_TOKEN` → `None`.
 /// When `None`, read endpoints are freely accessible (localhost trust model).
 fn load_read_token() -> Option<secrecy::SecretBox<String>> {
     keyring::Entry::new("soul-neo4j-local", "read-token")
         .ok()
         .and_then(|e| e.get_password().ok())
+        .or_else(|| keychain_via_security_cli("soul-neo4j-local", "read-token"))
         .or_else(|| std::env::var("LIGHTARCHITECTS_READ_TOKEN").ok())
         .map(|t| secrecy::SecretBox::new(Box::new(t)))
+}
+
+/// Read a generic-password keychain item via the macOS `security` CLI.
+///
+/// `keyring` v3 with `sync-secret-service` falls back to the in-process mock store
+/// on macOS (D-Bus/SecretService is Linux-only). The `apple-native` feature uses the
+/// Security.framework API which triggers a GUI authorization dialog for ad-hoc-signed
+/// binaries. The `security` CLI binary IS in the keychain item's ACL (it created the
+/// items), so it can read them without any dialog.
+///
+/// Returns `None` on non-macOS targets or if the item is absent.
+fn keychain_via_security_cli(service: &str, account: &str) -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("security")
+            .args(["find-generic-password", "-s", service, "-a", account, "-w"])
+            .output()
+            .ok()?;
+        if out.status.success() {
+            let s = String::from_utf8(out.stdout).ok()?;
+            let trimmed = s.trim().to_owned();
+            if !trimmed.is_empty() { return Some(trimmed); }
+        }
+        None
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (service, account);
+        None
+    }
 }
 
 /// Read Neo4j credentials from macOS keychain (`soul-neo4j-local` service).

@@ -4,8 +4,12 @@
 //! Works unchanged with `bolt://localhost:7687` (local) and `neo4j+s://...`
 //! (Aura) — URI is the only difference at future migration time.
 //!
-//! Migrations live in `migrations/platform/*.cypher` relative to the binary's
-//! working directory. Each file is tracked by a `:Migration { name }` node so
+//! Migration directory resolution order:
+//! 1. `LIGHTARCHITECTS_MIGRATIONS_DIR` env var
+//! 2. `~/.lightarchitects/migrations/platform/` (deployed alongside the binary)
+//! 3. `migrations/platform/` relative to CWD (development fallback)
+//!
+//! Each `.cypher` file is tracked by a `:Migration { name }` node so
 //! re-runs are idempotent.
 
 use std::sync::Arc;
@@ -56,9 +60,12 @@ pub struct MigrationReport {
 ///
 /// Returns [`GatewayError`] if any Cypher statement fails.
 pub async fn apply_migrations(graph: &neo4rs::Graph) -> Result<MigrationReport, GatewayError> {
-    let migrations_dir = std::path::Path::new("migrations/platform");
+    let migrations_dir = resolve_migrations_dir();
     if !migrations_dir.exists() {
-        tracing::warn!("migrations/platform/ not found — skipping migrations");
+        tracing::warn!(
+            path = %migrations_dir.display(),
+            "migrations directory not found — skipping migrations",
+        );
         return Ok(MigrationReport { applied_count: 0, skipped_count: 0 });
     }
 
@@ -176,4 +183,23 @@ pub async fn verify_schema(graph: &neo4rs::Graph) -> Result<Vec<String>, Gateway
     }
 
     Ok(missing)
+}
+
+/// Resolve the migrations directory.
+///
+/// Priority:
+/// 1. `LIGHTARCHITECTS_MIGRATIONS_DIR` env var (explicit override)
+/// 2. `~/.lightarchitects/migrations/platform/` (standard deploy path)
+/// 3. `migrations/platform/` relative to CWD (development / source-tree run)
+fn resolve_migrations_dir() -> std::path::PathBuf {
+    if let Ok(dir) = std::env::var("LIGHTARCHITECTS_MIGRATIONS_DIR") {
+        return std::path::PathBuf::from(dir);
+    }
+    if let Some(home) = dirs_next::home_dir() {
+        let deployed = home.join(".lightarchitects/migrations/platform");
+        if deployed.exists() {
+            return deployed;
+        }
+    }
+    std::path::PathBuf::from("migrations/platform")
 }

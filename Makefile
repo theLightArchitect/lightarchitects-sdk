@@ -4,6 +4,8 @@
 .PHONY: help quality test test-features build deploy deploy-fast doc fix push clean
 
 GATEWAY_BIN := $(HOME)/.lightarchitects/bin/lightarchitects
+GATEWAY_MIGRATIONS_SRC := lightarchitects-gateway/migrations/platform
+GATEWAY_MIGRATIONS_DST := $(HOME)/.lightarchitects/migrations/platform
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -56,24 +58,28 @@ build: ## Build all crates (release)
 
 deploy: quality ## Quality gates + build + deploy gateway to ~/.lightarchitects/bin/
 	cargo build --release -p lightarchitects-gateway
-	mkdir -p "$(dir $(GATEWAY_BIN))"
+	mkdir -p "$(dir $(GATEWAY_BIN))" "$(GATEWAY_MIGRATIONS_DST)"
 	cp target/release/lightarchitects "$(GATEWAY_BIN)"
+	cp -r "$(GATEWAY_MIGRATIONS_SRC)/." "$(GATEWAY_MIGRATIONS_DST)/"
 	codesign --force --sign - "$(GATEWAY_BIN)"
 	@printf '{\n  "mcpServers": {\n    "lightarchitects": {\n      "command": "%s"\n    }\n  }\n}\n' \
 		"$(HOME)/.lightarchitects/bin/lightarchitects" \
 		> "$(HOME)/.lightarchitects/lightarchitects.mcp.json"
 	@echo "Deployed → $(GATEWAY_BIN)"
+	@echo "Migrations → $(GATEWAY_MIGRATIONS_DST)"
 	@echo "MCP config → $(HOME)/.lightarchitects/lightarchitects.mcp.json"
 
 deploy-fast: ## Build + deploy gateway without quality gates
 	cargo build --release -p lightarchitects-gateway
-	mkdir -p "$(dir $(GATEWAY_BIN))"
+	mkdir -p "$(dir $(GATEWAY_BIN))" "$(GATEWAY_MIGRATIONS_DST)"
 	cp target/release/lightarchitects "$(GATEWAY_BIN)"
+	cp -r "$(GATEWAY_MIGRATIONS_SRC)/." "$(GATEWAY_MIGRATIONS_DST)/"
 	codesign --force --sign - "$(GATEWAY_BIN)"
 	@printf '{\n  "mcpServers": {\n    "lightarchitects": {\n      "command": "%s"\n    }\n  }\n}\n' \
 		"$(HOME)/.lightarchitects/bin/lightarchitects" \
 		> "$(HOME)/.lightarchitects/lightarchitects.mcp.json"
 	@echo "Deployed → $(GATEWAY_BIN)"
+	@echo "Migrations → $(GATEWAY_MIGRATIONS_DST)"
 	@echo "MCP config → $(HOME)/.lightarchitects/lightarchitects.mcp.json"
 
 fix: ## Auto-fix formatting and clippy issues
