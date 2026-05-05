@@ -62,8 +62,7 @@ async fn webshell_get(path: &str, config: &GatewayConfig) -> Result<Value, Gatew
 
     if !status.is_success() {
         return Err(GatewayError::InvalidRequest(format!(
-            "webshell returned {status} for {url}: {}",
-            body
+            "webshell returned {status} for {url}: {body}"
         )));
     }
 
@@ -98,8 +97,7 @@ async fn webshell_post(
 
     if !status.is_success() {
         return Err(GatewayError::InvalidRequest(format!(
-            "webshell returned {status} for {url}: {}",
-            body
+            "webshell returned {status} for {url}: {body}"
         )));
     }
 
@@ -113,10 +111,7 @@ async fn webshell_post(
 /// # Errors
 ///
 /// Returns [`GatewayError::InvalidRequest`] if the webshell is unreachable.
-pub async fn list_tasks(
-    _params: Value,
-    config: &GatewayConfig,
-) -> Result<Value, GatewayError> {
+pub async fn list_tasks(_params: Value, config: &GatewayConfig) -> Result<Value, GatewayError> {
     webshell_get("/api/coordination/tasks", config).await
 }
 
@@ -163,7 +158,12 @@ pub async fn claim_task(params: Value, config: &GatewayConfig) -> Result<Value, 
         .ok_or(GatewayError::MissingParam("id"))?;
     let source = params["source"].as_str().unwrap_or("gateway");
     let payload = json!({ "source": source });
-    webshell_post(&format!("/api/coordination/tasks/claim/{id}"), payload, config).await
+    webshell_post(
+        &format!("/api/coordination/tasks/claim/{id}"),
+        payload,
+        config,
+    )
+    .await
 }
 
 /// `lightarchitects_squad_comms_task_logs` — fetch last 200 lines of a task log.

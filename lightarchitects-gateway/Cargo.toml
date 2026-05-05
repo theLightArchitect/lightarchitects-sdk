@@ -83,6 +83,7 @@ futures-util = { workspace = true }
 tokio-tungstenite = { workspace = true }
 libc = { workspace = true }
 anyhow = { workspace = true }
+regex = { workspace = true }
 secrecy = { workspace = true }
 zeroize = { workspace = true }
 subtle = { workspace = true }

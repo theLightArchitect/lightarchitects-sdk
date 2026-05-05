@@ -186,6 +186,59 @@ impl Default for PrivacyConfig {
     }
 }
 
+/// `[vault]` section — vault-as-git operations and public companion sync.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultConfig {
+    /// Remote URL for the platform-helix public companion repo.
+    pub platform_remote_url: String,
+    /// Clone platform-helix on gateway startup (default: `false`).
+    pub clone_on_startup: bool,
+    /// Seconds between background sync checks (default: `3600`).
+    pub check_interval_secs: u64,
+    /// Local path for the public companion repo (default: `~/lightarchitects/soul-public`).
+    pub public_companion_root: String,
+    /// Additional paths appended to the hardcoded `NEVER_published_paths` blocklist.
+    ///
+    /// Each entry is a regex pattern (prefix-anchored with `^` is recommended).
+    pub never_published_paths_extra: Vec<String>,
+}
+
+impl Default for VaultConfig {
+    fn default() -> Self {
+        Self {
+            platform_remote_url: "https://github.com/TheLightArchitects/platform-helix".to_owned(),
+            clone_on_startup: false,
+            check_interval_secs: 3600,
+            public_companion_root: "~/lightarchitects/soul-public".to_owned(),
+            never_published_paths_extra: vec![],
+        }
+    }
+}
+
+impl VaultConfig {
+    /// Returns the union of hardcoded `NEVER_published_paths` and user-configured extras.
+    ///
+    /// The hardcoded set covers personally sensitive vault sections (`memories/`,
+    /// `notes/`, `journal/`, `agents/`, `spiritual/`, `career/`, `training/`,
+    /// `.compacted/`, and `navigation/hubs/(resonance|themes)/`).
+    #[must_use]
+    pub fn never_published_paths(&self) -> Vec<String> {
+        let mut paths = vec![
+            r"^memories/".to_owned(),
+            r"^notes/".to_owned(),
+            r"^journal/".to_owned(),
+            r"^agents/".to_owned(),
+            r"^spiritual/".to_owned(),
+            r"^career/".to_owned(),
+            r"^training/".to_owned(),
+            r"\.compacted/".to_owned(),
+            r"^navigation/hubs/(resonance|themes)/".to_owned(),
+        ];
+        paths.extend(self.never_published_paths_extra.clone());
+        paths
+    }
+}
+
 // ── Top-level config ──────────────────────────────────────────────────────────
 
 /// Top-level gateway configuration, parsed from `~/.lightarchitects/config.toml`.
@@ -207,6 +260,9 @@ pub struct GatewayConfig {
     /// `[privacy]` section.
     #[serde(default)]
     pub privacy: PrivacyConfig,
+    /// `[vault]` section — vault-as-git git operations and public companion sync.
+    #[serde(default)]
+    pub vault: VaultConfig,
     /// Directories the gateway is allowed to access (empty = all except denied).
     #[serde(default)]
     pub allowed_directories: Vec<String>,
@@ -251,6 +307,7 @@ impl Default for GatewayConfig {
             canon: CanonConfig::default(),
             storage: StorageConfig::default(),
             privacy: PrivacyConfig::default(),
+            vault: VaultConfig::default(),
             allowed_directories: Vec::new(),
             active_preset: default_preset_name(),
             first_run: false,
@@ -373,7 +430,13 @@ impl GatewayConfig {
              backend = \"sqlite\"\n\
              path = \"~/lightarchitects/soul/\"\n\n\
              [privacy]\n\
-             tier = \"local\"\n",
+             tier = \"local\"\n\n\
+             [vault]\n\
+             platform_remote_url = \"https://github.com/TheLightArchitects/platform-helix\"\n\
+             clone_on_startup = false\n\
+             check_interval_secs = 3600\n\
+             public_companion_root = \"~/lightarchitects/soul-public\"\n\
+             never_published_paths_extra = []\n",
         );
 
         toml

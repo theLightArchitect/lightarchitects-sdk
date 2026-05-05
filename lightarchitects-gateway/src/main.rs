@@ -20,6 +20,7 @@
 //! lightarchitects builds list|show           Build portfolio from SOUL vault
 //! lightarchitects setup keys|voice|seraph   Interactive configuration
 //! lightarchitects webshell start|control|status  Web GUI for coding agent
+//! lightarchitects vault clone-platform|pull-platform|status|validate-for-push|publish|sync-public
 //! ```
 
 use lightarchitects_gateway::{
@@ -223,6 +224,11 @@ async fn cli_dispatch(
             lightarchitects_gateway::cli::seraph::execute(config, &args[1..], mode).await
         }
 
+        // Vault commands
+        Some("vault") => lightarchitects_gateway::cli::vault::execute(config, &args[1..], mode)
+            .await
+            .map_err(|e| GatewayError::Internal(e.to_string())),
+
         // Auth commands
         Some("auth") => lightarchitects_gateway::cli::auth::execute(&args[1..]).await,
 
@@ -260,7 +266,8 @@ async fn cli_dispatch(
                    lightarchitects builds list|show           Build portfolio\n  \
                    lightarchitects setup keys|voice|seraph    Configuration wizard\n  \
                    lightarchitects webshell start|control|status  Web GUI\n  \
-                   lightarchitects squad-comms tasks|add|claim|logs|inject  Squad Comms"
+                   lightarchitects squad-comms tasks|add|claim|logs|inject  Squad Comms\n  \
+                   lightarchitects vault clone-platform|pull-platform|status|validate-for-push|publish|sync-public  Vault ops"
             );
             Err(GatewayError::UnknownTool(unknown.to_owned()))
         }
@@ -308,7 +315,7 @@ fn cli_canon(args: &[String], config: &GatewayConfig) -> Result<(), GatewayError
 ///   add <title> <project> <prompt> [priority]  — append a task
 ///   claim <id> [source]    — soft-claim a task
 ///   logs <id>              — fetch task logs
-///   inject <session_id> <message> [sender]  — inject a chat message
+///   inject `<session_id>` `<message>` [sender]  — inject a chat message
 async fn cli_squad_comms(args: &[String], config: &GatewayConfig) -> Result<(), GatewayError> {
     let result = match args.first().map(String::as_str) {
         Some("tasks") => {
@@ -341,14 +348,13 @@ async fn cli_squad_comms(args: &[String], config: &GatewayConfig) -> Result<(), 
         }
         Some("logs") => {
             let id = args.get(1).ok_or(GatewayError::MissingParam("id"))?;
-            lightarchitects_gateway::squad_comms::task_logs(
-                serde_json::json!({ "id": id }),
-                config,
-            )
-            .await?
+            lightarchitects_gateway::squad_comms::task_logs(serde_json::json!({ "id": id }), config)
+                .await?
         }
         Some("inject") => {
-            let session_id = args.get(1).ok_or(GatewayError::MissingParam("session_id"))?;
+            let session_id = args
+                .get(1)
+                .ok_or(GatewayError::MissingParam("session_id"))?;
             let message = args.get(2).ok_or(GatewayError::MissingParam("message"))?;
             let sender = args.get(3).map_or("cli", String::as_str);
             lightarchitects_gateway::squad_comms::chat_inject(
@@ -374,8 +380,7 @@ async fn cli_squad_comms(args: &[String], config: &GatewayConfig) -> Result<(), 
             return Err(GatewayError::MissingParam("squad-comms subcommand"));
         }
     };
-    let pretty = serde_json::to_string_pretty(&result)
-        .unwrap_or_else(|_| result.to_string());
+    let pretty = serde_json::to_string_pretty(&result).unwrap_or_else(|_| result.to_string());
     println!("{pretty}");
     Ok(())
 }

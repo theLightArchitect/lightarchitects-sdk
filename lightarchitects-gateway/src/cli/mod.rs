@@ -27,5 +27,6 @@ pub mod eva;
 pub mod quantum;
 pub mod seraph;
 pub mod soul;
+pub mod vault;
 
 pub use output::OutputMode;
