@@ -482,3 +482,47 @@ async fn create_research_thread(
 
     None
 }
+
+// ── Operator message contracts (Wave 3.2) ─────────────────────────────────────
+
+/// Typed operator-decision messages routed via squad-comms channels.
+///
+/// Implements the `decision_request.assertion_resolve v1.0` typed contract
+/// declared in the luminous-confidence-portal Wave 3.2 design. Each variant
+/// carries the minimum fields required to route and respond to the message.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum OperatorMessage {
+    /// Request for an operator to resolve a blocked assertion gate.
+    ///
+    /// Sent when `PreToolUse:Assertion_ConfidenceThresholdGate` or
+    /// `PostToolUse:Citation_StalenessCheck` blocks an action and the
+    /// operator must provide a decision (provide_citation / escalate /
+    /// accept_unvalidated / dispute).
+    ResolveAssertionGate {
+        /// Unique identifier for this resolve request.
+        request_id: String,
+        /// The assertion that is blocked.
+        assertion_id: String,
+        /// The build context.
+        build_id: String,
+        /// Session-bound operator the message is routed to.
+        operator_id: String,
+        /// Which hook triggered the block.
+        hook_name: String,
+        /// RFC 3339 timestamp the block was emitted.
+        blocked_at: String,
+        /// TTL (seconds) before the request expires; conductor polls against this.
+        ttl_secs: u64,
+    },
+
+    /// Query current blocked flows for a build — read-only diagnostic.
+    QueryBlockedFlow {
+        /// The build to query.
+        build_id: String,
+        /// Optional filter by assertion ID.
+        assertion_id: Option<String>,
+        /// Session-bound operator making the query.
+        operator_id: String,
+    },
+}

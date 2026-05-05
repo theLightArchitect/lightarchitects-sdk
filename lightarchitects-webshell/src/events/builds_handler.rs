@@ -713,7 +713,7 @@ pub async fn lasdlc_meta_handler() -> impl IntoResponse {
         },
         "quality_dimensions": ["Architecture", "Security", "Quality", "Performance", "Testing", "Documentation", "Operations"],
         "template": "LASDLC-TEMPLATE-v1.yaml",
-        "spec": "helix/user/standards/lasdlc-spec.md"
+        "spec": "helix/user/standards/canon/lasdlc-spec.md"
     });
     (StatusCode::OK, Json(meta))
 }

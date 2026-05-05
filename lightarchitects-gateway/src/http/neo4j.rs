@@ -66,7 +66,10 @@ pub async fn apply_migrations(graph: &neo4rs::Graph) -> Result<MigrationReport, 
             path = %migrations_dir.display(),
             "migrations directory not found — skipping migrations",
         );
-        return Ok(MigrationReport { applied_count: 0, skipped_count: 0 });
+        return Ok(MigrationReport {
+            applied_count: 0,
+            skipped_count: 0,
+        });
     }
 
     let mut entries: Vec<std::path::PathBuf> = std::fs::read_dir(migrations_dir)
@@ -87,15 +90,12 @@ pub async fn apply_migrations(graph: &neo4rs::Graph) -> Result<MigrationReport, 
             .unwrap_or_default()
             .to_owned();
 
-        let check = neo4rs::query(
-            "MATCH (m:Migration { name: $name }) RETURN count(m) AS n",
-        )
-        .param("name", name.clone());
+        let check = neo4rs::query("MATCH (m:Migration { name: $name }) RETURN count(m) AS n")
+            .param("name", name.clone());
 
-        let mut result = graph
-            .execute(check)
-            .await
-            .map_err(|e| GatewayError::Io(std::io::Error::other(format!("migration check: {e}"))))?;
+        let mut result = graph.execute(check).await.map_err(|e| {
+            GatewayError::Io(std::io::Error::other(format!("migration check: {e}")))
+        })?;
 
         let already_applied = if let Ok(Some(row)) = result.next().await {
             row.get::<i64>("n").unwrap_or(0) > 0
@@ -109,40 +109,41 @@ pub async fn apply_migrations(graph: &neo4rs::Graph) -> Result<MigrationReport, 
         }
 
         // Execute the migration.
-        let cypher = std::fs::read_to_string(path)
-            .map_err(GatewayError::Io)?;
+        let cypher = std::fs::read_to_string(path).map_err(GatewayError::Io)?;
 
         for stmt in cypher
             .split(';')
             .map(str::trim)
             .filter(|s| !s.is_empty() && !s.starts_with("//"))
         {
-            graph
-                .run(neo4rs::query(stmt))
-                .await
-                .map_err(|e| GatewayError::Io(std::io::Error::other(
-                    format!("migration {name} statement failed: {e}\nStatement: {stmt}"),
-                )))?;
+            graph.run(neo4rs::query(stmt)).await.map_err(|e| {
+                GatewayError::Io(std::io::Error::other(format!(
+                    "migration {name} statement failed: {e}\nStatement: {stmt}"
+                )))
+            })?;
         }
 
         // Record as applied.
         let now = chrono::Utc::now().to_rfc3339();
         graph
             .run(
-                neo4rs::query(
-                    "CREATE (:Migration { name: $name, applied_at: $ts })",
-                )
-                .param("name", name.clone())
-                .param("ts", now),
+                neo4rs::query("CREATE (:Migration { name: $name, applied_at: $ts })")
+                    .param("name", name.clone())
+                    .param("ts", now),
             )
             .await
-            .map_err(|e| GatewayError::Io(std::io::Error::other(format!("migration record: {e}"))))?;
+            .map_err(|e| {
+                GatewayError::Io(std::io::Error::other(format!("migration record: {e}")))
+            })?;
 
         tracing::info!(migration = %name, "Applied platform migration");
         applied_count = applied_count.saturating_add(1);
     }
 
-    Ok(MigrationReport { applied_count, skipped_count })
+    Ok(MigrationReport {
+        applied_count,
+        skipped_count,
+    })
 }
 
 /// Verify the expected constraints and indexes are present.

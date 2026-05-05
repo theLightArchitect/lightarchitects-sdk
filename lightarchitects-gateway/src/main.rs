@@ -28,7 +28,11 @@ use lightarchitects_gateway::{
     config::{GatewayConfig, expand_tilde},
     core_tools,
     error::GatewayError,
-    http::{self as platform_http, state::{PlatformConfig, PlatformState}},
+    http::{
+        self as platform_http,
+        circuit_breaker::CircuitBreaker,
+        state::{PlatformConfig, PlatformState},
+    },
     server,
 };
 use serde_json::json;
@@ -53,7 +57,9 @@ async fn main() {
 
     // Arena and platform modes use JSON tracing; MCP mode uses fmt to stderr.
     // Platform is HTTP (not stdio), so JSON output is safe and AYIN-compatible.
-    let is_arena = raw_args.first().is_some_and(|a| a == "serve" || a == "platform")
+    let is_arena = raw_args
+        .first()
+        .is_some_and(|a| a == "serve" || a == "platform")
         || agent_mode.is_some();
 
     if is_arena {
@@ -349,14 +355,13 @@ async fn cli_squad_comms(args: &[String], config: &GatewayConfig) -> Result<(), 
         }
         Some("logs") => {
             let id = args.get(1).ok_or(GatewayError::MissingParam("id"))?;
-            lightarchitects_gateway::squad_comms::task_logs(
-                serde_json::json!({ "id": id }),
-                config,
-            )
-            .await?
+            lightarchitects_gateway::squad_comms::task_logs(serde_json::json!({ "id": id }), config)
+                .await?
         }
         Some("inject") => {
-            let session_id = args.get(1).ok_or(GatewayError::MissingParam("session_id"))?;
+            let session_id = args
+                .get(1)
+                .ok_or(GatewayError::MissingParam("session_id"))?;
             let message = args.get(2).ok_or(GatewayError::MissingParam("message"))?;
             let sender = args.get(3).map_or("cli", String::as_str);
             lightarchitects_gateway::squad_comms::chat_inject(
@@ -382,8 +387,7 @@ async fn cli_squad_comms(args: &[String], config: &GatewayConfig) -> Result<(), 
             return Err(GatewayError::MissingParam("squad-comms subcommand"));
         }
     };
-    let pretty = serde_json::to_string_pretty(&result)
-        .unwrap_or_else(|_| result.to_string());
+    let pretty = serde_json::to_string_pretty(&result).unwrap_or_else(|_| result.to_string());
     println!("{pretty}");
     Ok(())
 }
@@ -443,6 +447,10 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
     let write_limiter = std::sync::Arc::new(governor::RateLimiter::keyed(
         governor::Quota::per_minute(std::num::NonZeroU32::MIN.saturating_add(9)),
     ));
+    // Auth-failure limiter: 5 failed auth attempts per IP per minute.
+    let auth_fail_limiter = std::sync::Arc::new(governor::RateLimiter::keyed(
+        governor::Quota::per_minute(std::num::NonZeroU32::MIN.saturating_add(4)),
+    ));
 
     let cache_ttl = std::time::Duration::from_secs(60);
     let canon_cache = moka::future::Cache::builder()
@@ -460,14 +468,17 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
         read_limiter,
         helix_limiter,
         write_limiter,
+        auth_fail_limiter,
+        auth_fail_counts: std::sync::Arc::new(dashmap::DashMap::new()),
+        circuit_breaker: std::sync::Arc::new(tokio::sync::Mutex::new(CircuitBreaker::new())),
         canon_cache,
         agent_cache,
         admin_token,
         read_token,
     });
-    let addr = format!("127.0.0.1:{port}").parse().map_err(|_| {
-        GatewayError::Io(std::io::Error::other(format!("invalid port: {port}")))
-    })?;
+    let addr = format!("127.0.0.1:{port}")
+        .parse()
+        .map_err(|_| GatewayError::Io(std::io::Error::other(format!("invalid port: {port}"))))?;
 
     platform_http::run_http_mode(addr, state).await
 }
@@ -522,7 +533,9 @@ fn keychain_via_security_cli(service: &str, account: &str) -> Option<String> {
         if out.status.success() {
             let s = String::from_utf8(out.stdout).ok()?;
             let trimmed = s.trim().to_owned();
-            if !trimmed.is_empty() { return Some(trimmed); }
+            if !trimmed.is_empty() {
+                return Some(trimmed);
+            }
         }
         None
     }
@@ -547,12 +560,15 @@ fn platform_credentials_from_keychain() -> Result<(String, String, String), Gate
             })
     };
 
-    let uri = read_entry("uri")
-        .or_else(|_| std::env::var("NEO4J_URI").map_err(|_| GatewayError::MissingParam("NEO4J_URI")))?;
-    let user = read_entry("username")
-        .or_else(|_| std::env::var("NEO4J_USER").map_err(|_| GatewayError::MissingParam("NEO4J_USER")))?;
-    let password = read_entry("password")
-        .or_else(|_| std::env::var("NEO4J_PASS").map_err(|_| GatewayError::MissingParam("NEO4J_PASS")))?;
+    let uri = read_entry("uri").or_else(|_| {
+        std::env::var("NEO4J_URI").map_err(|_| GatewayError::MissingParam("NEO4J_URI"))
+    })?;
+    let user = read_entry("username").or_else(|_| {
+        std::env::var("NEO4J_USER").map_err(|_| GatewayError::MissingParam("NEO4J_USER"))
+    })?;
+    let password = read_entry("password").or_else(|_| {
+        std::env::var("NEO4J_PASS").map_err(|_| GatewayError::MissingParam("NEO4J_PASS"))
+    })?;
 
     Ok((uri, user, password))
 }

@@ -20,9 +20,6 @@ pub async fn version_header_middleware(
     if let Ok(v) = HeaderValue::from_str(&state.config.version_date) {
         headers.insert("lightarchitects-version", v);
     }
-    headers.insert(
-        "lightarchitects-beta",
-        HeaderValue::from_static("true"),
-    );
+    headers.insert("lightarchitects-beta", HeaderValue::from_static("true"));
     resp
 }

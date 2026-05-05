@@ -10,7 +10,7 @@ exclude = [
     # Excluded from worktree workspace due to lockfile collision (parent path lightarchitects
     # v0.2.0 conflicts with worktree path lightarchitects v0.2.0 — cargo cannot resolve
     # two local packages with identical name+version in one workspace).
-    "lightarchitects-gateway",
+    # "lightarchitects-gateway",  re-excluded after build
 ]
 
 [workspace.package]

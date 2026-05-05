@@ -1,13 +1,17 @@
 //! Shared state for the Platform HTTP server.
 
-use governor::{clock::DefaultClock, state::keyed::DefaultKeyedStateStore, RateLimiter};
+use governor::{RateLimiter, clock::DefaultClock, state::keyed::DefaultKeyedStateStore};
 use secrecy::SecretBox;
 use serde_json::Value;
+use std::net::IpAddr;
 use std::sync::Arc;
+use tokio::sync::Mutex;
+
+use super::circuit_breaker::CircuitBreaker;
 
 /// Per-IP keyed rate limiter instance type.
 pub type PlatformRateLimiter =
-    RateLimiter<std::net::IpAddr, DefaultKeyedStateStore<std::net::IpAddr>, DefaultClock>;
+    RateLimiter<IpAddr, DefaultKeyedStateStore<IpAddr>, DefaultClock>;
 
 /// LRU response cache keyed on `(content_key, org_id)`, 60 s TTL.
 ///
@@ -25,6 +29,22 @@ pub struct PlatformState {
     pub helix_limiter: Arc<PlatformRateLimiter>,
     /// Per-IP rate limiter for admin write endpoints (10 req/min).
     pub write_limiter: Arc<PlatformRateLimiter>,
+    /// Per-IP rate limiter for authentication failures (5/min per IP).
+    ///
+    /// Tracks rapid auth failures separate from general read rate-limiting.
+    /// Checked on every 401 response; consumed tokens are NOT returned on success.
+    pub auth_fail_limiter: Arc<PlatformRateLimiter>,
+    /// Per-IP authentication failure counter for hard-lockout enforcement.
+    ///
+    /// Incremented on every 401. Reset to zero on successful authentication for
+    /// the same IP. When the count reaches 20 the IP receives HTTP 429 with no
+    /// further `Authorization` attempts accepted until the counter is reset.
+    pub auth_fail_counts: Arc<dashmap::DashMap<IpAddr, u32>>,
+    /// Neo4j circuit breaker — shared across all handlers.
+    ///
+    /// Trips to Open after 5 consecutive failures; allows one probe after 30 s
+    /// (HalfOpen); closes on the first successful query.
+    pub circuit_breaker: Arc<Mutex<CircuitBreaker>>,
     /// Override-aware response cache for `/v1/platform/canon/*`.
     pub canon_cache: ResponseCache,
     /// Override-aware response cache for `/v1/platform/agents/*`.

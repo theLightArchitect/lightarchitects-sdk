@@ -16,6 +16,7 @@
 //! - `GET  /v1/vault/info`
 //! - `POST /v1/admin/canon/upload`
 
+pub mod circuit_breaker;
 pub mod etag;
 pub mod middleware;
 pub mod neo4j;
@@ -84,8 +85,10 @@ pub fn build_http_router(state: Arc<PlatformState>) -> Router {
             Arc::clone(&state),
             middleware::version::version_header_middleware,
         ))
-        // outermost: trace (sees every request and final response)
+        // outermost tower-http trace
         .layer(TraceLayer::new_for_http())
+        // AYIN HTTP span — outermost of all; records every request including 429s
+        .layer(axum_mw::from_fn(middleware::ayin_trace::ayin_trace_middleware))
         .with_state(state)
 }
 
@@ -97,11 +100,12 @@ pub fn build_http_router(state: Arc<PlatformState>) -> Router {
 /// # Errors
 ///
 /// Returns [`GatewayError`] if binding the TCP listener fails.
-pub async fn run_http_mode(addr: SocketAddr, state: Arc<PlatformState>) -> Result<(), GatewayError> {
+pub async fn run_http_mode(
+    addr: SocketAddr,
+    state: Arc<PlatformState>,
+) -> Result<(), GatewayError> {
     let router = build_http_router(state);
-    let listener = TcpListener::bind(addr)
-        .await
-        .map_err(GatewayError::Io)?;
+    let listener = TcpListener::bind(addr).await.map_err(GatewayError::Io)?;
 
     tracing::info!(addr = %addr, "Platform HTTP server listening");
 

@@ -105,7 +105,7 @@ export const META_SKILLS: MetaSkill[] = [
 
 // --- LASDLC Framework (v1.0) ────────────────────────────────────────────────
 // Three orthogonal axes: Execution Phases × Quality Gates × Agent Topology
-// Spec: helix/user/standards/lasdlc-spec.md
+// Spec: helix/user/standards/canon/lasdlc-spec.md
 // Template: helix/corso/builds/LASDLC-TEMPLATE-v1.yaml
 
 /** LASDLC execution phases — sequential work order */

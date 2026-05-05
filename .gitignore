@@ -20,3 +20,7 @@ lightarchitects-webshell/web-figma/.turbo/
 .firecrawl/
 lightarchitects-webshell-ui/.firecrawl/
 lightarchitects-webshell/tests/e2e/test-results/
+
+# Claude Code runtime artifacts
+.claude/
+.remember/

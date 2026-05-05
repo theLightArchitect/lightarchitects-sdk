@@ -39,10 +39,10 @@ pub mod handlers;
 /// Platform HTTP mode — private REST API backed by local Neo4j (`/v1/platform/*`).
 #[allow(missing_docs, clippy::pedantic)]
 pub mod http;
+/// HMAC-SHA256 signing and verification for LASDLC hook payloads.
+pub mod security;
 /// MCP server loop and tool dispatch.
 pub mod server;
-/// Squad Comms MCP actions — HTTP delegation to the webshell coordination API.
-pub mod squad_comms;
 /// Sibling subprocess spawner and MCP proxy.
 ///
 /// Only compiled when the `spawner` feature is enabled (default).
@@ -50,5 +50,7 @@ pub mod squad_comms;
 /// all sibling calls go through in-process handlers.
 #[cfg(feature = "spawner")]
 pub mod spawner;
+/// Squad Comms MCP actions — HTTP delegation to the webshell coordination API.
+pub mod squad_comms;
 /// Build-time version metadata (CARGO_PKG_VERSION + git-sha + build-date).
 pub mod version;
