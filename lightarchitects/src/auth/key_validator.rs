@@ -2,7 +2,36 @@ use crate::auth::{AuthConfig, AuthError, AuthTier, SubscriptionTier};
 use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
 use std::path::Path;
+use std::sync::Arc;
 use tracing::{debug, warn};
+use async_trait::async_trait;
+
+/// Trait for validating a key via HTTP.
+#[async_trait::async_trait]
+pub trait ValidationClient: Send + Sync {
+    async fn validate_key(&self, key: &str, api_base_url: &str) -> Result<ValidationResult, AuthError>;
+}
+
+/// Real HTTP client using reqwest.
+#[derive(Clone)]
+pub struct RealClient {
+    inner: reqwest::Client,
+}
+
+#[async_trait::async_trait]
+impl ValidationClient for RealClient {
+    async fn validate_key(&self, key: &str, api_base_url: &str) -> Result<ValidationResult, AuthError> {
+        let url = format!("{}/api/validate-key", api_base_url);
+        let response = self
+            .inner
+            .post(&url)
+            .json(&serde_json::json!({ "key": key }))
+            .send()
+            .await?;
+        let result: ValidationResult = response.json().await?;
+        Ok(result)
+    }
+}
 
 /// Cached validation result stored locally.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -37,18 +66,26 @@ pub struct ValidationResult {
 /// Validates API keys against lightarchitects.ai with local caching.
 pub struct KeyValidator {
     config: AuthConfig,
-    client: reqwest::Client,
+    client: Arc<dyn ValidationClient>,
 }
 
 impl KeyValidator {
-    /// Create a new `KeyValidator` with the given configuration.
+    /// Create a new `KeyValidator` with the given configuration (uses real HTTP client).
     pub fn new(config: AuthConfig) -> Self {
-        let client = reqwest::Client::builder()
+        let inner = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .build()
             .unwrap_or_default();
-
+        let client = Arc::new(RealClient { inner });
         Self { config, client }
+    }
+
+    /// Create a new `KeyValidator` with a custom validation client (useful for testing).
+    pub fn with_client<C: ValidationClient + 'static>(config: AuthConfig, client: C) -> Self {
+        Self {
+            config,
+            client: Arc::new(client),
+        }
     }
 
     /// Hash a key using SHA-256 (matches the server-side hashing).
@@ -80,8 +117,8 @@ impl KeyValidator {
             debug!("Cache expired, re-validating...");
         }
 
-        // Call the validation endpoint
-        match self.call_validate_endpoint(key).await {
+        // Call the validation endpoint via the injected client
+        match self.client.validate_key(key, &self.config.api_base_url).await {
             Ok(result) => {
                 if result.valid {
                     let cache = KeyCache {
@@ -110,20 +147,6 @@ impl KeyValidator {
                 self.handle_grace_period(&key_hash, e)
             }
         }
-    }
-
-    async fn call_validate_endpoint(&self, key: &str) -> Result<ValidationResult, AuthError> {
-        let url = format!("{}/api/validate-key", self.config.api_base_url);
-
-        let response = self
-            .client
-            .post(&url)
-            .json(&serde_json::json!({ "key": key }))
-            .send()
-            .await?;
-
-        let result: ValidationResult = response.json().await?;
-        Ok(result)
     }
 
     fn handle_grace_period(
@@ -198,13 +221,13 @@ fn ensure_parent_dir(path: &Path) -> Result<(), AuthError> {
     }
     Ok(())
 }
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::auth::{AuthTier, SubscriptionTier};
     use tempfile::TempDir;
+    use std::sync::Mutex;
 
     fn isolated(dir: &TempDir, api_url: &str) -> AuthConfig {
         AuthConfig {
@@ -234,6 +257,27 @@ mod tests {
     fn write_cache_file(config: &AuthConfig, cache: &KeyCache) {
         let json = serde_json::to_string_pretty(cache).unwrap();
         std::fs::write(&config.cache_file_path, json).unwrap();
+    }
+
+    /// Mock validation client that holds a single result to be returned on the first call.
+    struct MockClient {
+        result: Mutex<Option<Result<ValidationResult, AuthError>>>,
+    }
+
+    impl MockClient {
+        fn new(result: Result<ValidationResult, AuthError>) -> Self {
+            Self {
+                result: Mutex::new(Some(result)),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ValidationClient for MockClient {
+        async fn validate_key(&self, _key: &str, _api_base_url: &str) -> Result<ValidationResult, AuthError> {
+            let mut guard = self.result.lock().unwrap();
+            guard.take().expect("MockClient result already taken")
+        }
     }
 
     #[test]
@@ -292,73 +336,76 @@ mod tests {
     #[tokio::test]
     async fn validate_hits_fresh_cache_without_network() {
         let dir = TempDir::new().unwrap();
-        // Port 1 is unreachable — if we hit the network the test errors immediately
+        // Any URL works because we will mock the client; network is not used.
         let cfg = isolated(&dir, "http://127.0.0.1:1");
         let key = "la-cached-key";
         write_cache_file(&cfg, &make_cache(key, 1)); // fresh cache
 
-        let (tier, cache) = KeyValidator::new(cfg).validate(key).await.unwrap();
+        let validator = KeyValidator::with_client(
+            cfg.clone(),
+            MockClient::new(Ok(ValidationResult {
+                valid: true,
+                tier: Some(SubscriptionTier::Free),
+                user_id: Some("test-user".to_string()),
+                error: None,
+            })),
+        );
+        let (tier, cache) = validator.validate(key).await.unwrap();
         assert_eq!(tier, AuthTier::Valid);
         assert_eq!(cache.user_id, "test-user");
     }
 
     #[tokio::test]
     async fn validate_refreshes_expired_cache_via_endpoint() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("POST", "/api/validate-key")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(r#"{"valid":true,"tier":"pro","user_id":"fresh-user"}"#)
-            .create_async()
-            .await;
-
         let dir = TempDir::new().unwrap();
-        let cfg = isolated(&dir, &server.url());
+        let cfg = isolated(&dir, "http://127.0.0.1:1");
         let key = "la-expired-key";
         write_cache_file(&cfg, &make_cache(key, -1)); // expired (-1 hour)
 
-        let (tier, cache) = KeyValidator::new(cfg).validate(key).await.unwrap();
+        let validator = KeyValidator::with_client(
+            cfg.clone(),
+            MockClient::new(Ok(ValidationResult {
+                valid: true,
+                tier: Some(SubscriptionTier::Pro),
+                user_id: Some("fresh-user".to_string()),
+                error: None,
+            })),
+        );
+        let (tier, cache) = validator.validate(key).await.unwrap();
         assert_eq!(tier, AuthTier::Valid);
         assert_eq!(cache.user_id, "fresh-user");
-        mock.assert_async().await;
     }
 
     #[tokio::test]
     async fn validate_returns_err_for_invalid_key() {
-        let mut server = mockito::Server::new_async().await;
-        server
-            .mock("POST", "/api/validate-key")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(r#"{"valid":false,"error":"Invalid API key"}"#)
-            .create_async()
-            .await;
-
         let dir = TempDir::new().unwrap();
-        let cfg = isolated(&dir, &server.url());
-        let result = KeyValidator::new(cfg).validate("bad-key").await;
+        let cfg = isolated(&dir, "http://127.0.0.1:1");
+        let validator = KeyValidator::with_client(
+            cfg.clone(),
+            MockClient::new(Err(AuthError::ValidationFailed(
+                "Invalid API key".to_string(),
+            ))),
+        );
+        let result = validator.validate("bad-key").await;
         assert!(matches!(result, Err(AuthError::ValidationFailed(_))));
     }
 
     #[tokio::test]
     async fn grace_period_granted_when_endpoint_returns_non_json() {
-        let mut server = mockito::Server::new_async().await;
-        server
-            .mock("POST", "/api/validate-key")
-            .with_status(503)
-            .with_body("Service Unavailable")
-            .create_async()
-            .await;
-
         let dir = TempDir::new().unwrap();
         let key = "la-grace-key";
-        let mut cfg = isolated(&dir, &server.url());
+        let mut cfg = isolated(&dir, "http://127.0.0.1:1");
         cfg.max_grace_resets = 2;
         // Write an expired cache — grace period requires existing cache
         write_cache_file(&cfg, &make_cache(key, -1));
 
-        let (tier, _) = KeyValidator::new(cfg).validate(key).await.unwrap();
+        let validator = KeyValidator::with_client(
+            cfg.clone(),
+            MockClient::new(Err(AuthError::ValidationFailed(
+                "service unavailable".to_string(),
+            ))),
+        );
+        let (tier, _) = validator.validate(key).await.unwrap();
         // grace_resets was 0, incremented to 1, resets_remaining = 2 - 1 = 1
         assert!(matches!(
             tier,
@@ -370,17 +417,9 @@ mod tests {
 
     #[tokio::test]
     async fn grace_exhausted_when_max_resets_consumed() {
-        let mut server = mockito::Server::new_async().await;
-        server
-            .mock("POST", "/api/validate-key")
-            .with_status(503)
-            .with_body("Service Unavailable")
-            .create_async()
-            .await;
-
         let dir = TempDir::new().unwrap();
         let key = "la-exhausted-key";
-        let mut cfg = isolated(&dir, &server.url());
+        let mut cfg = isolated(&dir, "http://127.0.0.1:1");
         cfg.max_grace_resets = 1;
         // Cache already consumed all allowed grace resets
         let cache = KeyCache {
@@ -393,24 +432,28 @@ mod tests {
         };
         write_cache_file(&cfg, &cache);
 
-        let result = KeyValidator::new(cfg).validate(key).await;
+        let validator = KeyValidator::with_client(
+            cfg.clone(),
+            MockClient::new(Err(AuthError::ValidationFailed(
+                "service unavailable".to_string(),
+            ))),
+        );
+        let result = validator.validate(key).await;
         assert!(matches!(result, Err(AuthError::GraceExhausted { max: 1 })));
     }
 
     #[tokio::test]
     async fn no_grace_without_any_cache() {
-        let mut server = mockito::Server::new_async().await;
-        server
-            .mock("POST", "/api/validate-key")
-            .with_status(503)
-            .with_body("Service Unavailable")
-            .create_async()
-            .await;
-
         let dir = TempDir::new().unwrap();
-        let cfg = isolated(&dir, &server.url());
+        let cfg = isolated(&dir, "http://127.0.0.1:1");
         // No cache file exists — grace period requires prior cache
-        let result = KeyValidator::new(cfg).validate("brand-new-key").await;
+        let validator = KeyValidator::with_client(
+            cfg.clone(),
+            MockClient::new(Err(AuthError::ValidationFailed(
+                "service unavailable".to_string(),
+            ))),
+        );
+        let result = validator.validate("brand-new-key").await;
         // Must fail, but NOT with GraceExhausted (no prior validation to grace)
         assert!(result.is_err());
         assert!(!matches!(result, Err(AuthError::GraceExhausted { .. })));
