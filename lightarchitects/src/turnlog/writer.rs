@@ -102,7 +102,7 @@ impl TurnLogWriter {
     /// first `session_start` span, and spawns the background writer task.
     ///
     /// `pepper` is the store-level secret (typically loaded from
-    /// `~/lightarchitects/laex0/.session-key` via
+    /// `~/lightarchitects/lightarchitects_cli/.session-key` via
     /// [`lightarchitects::core::paths::session_key`]).
     /// An HKDF-derived per-session key is held only inside the background task.
     ///

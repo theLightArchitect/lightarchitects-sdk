@@ -5,21 +5,23 @@
 //!
 //! - **PUBLIC** — gateway-routable, available to any SDK consumer.
 //! - **PRIVATE** — voice aliases encapsulated behind the public `voice` action.
-//! - **INTERNAL** — maintenance/health actions never routed through the gateway.
+//! - **INTERNAL** — maintenance-only actions never routed through the gateway.
 
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-/// Canonical SOUL actions — vault operations, queries, voice, research.
+/// Canonical SOUL actions — vault operations, queries, voice, research, and
+/// graph primitives.
 ///
-/// The 14 public actions cover vault CRUD (`read_note`, `write_note`,
+/// Gateway-routable actions include vault CRUD (`read_note`, `write_note`,
 /// `list_notes`, `manifest`, `ingest`), retrieval (`search`, `helix`, `query`,
-/// `query_frontmatter`, `stats`), voice (`voice`, `converse`, `chat`), and
-/// research aggregation (`research`).
+/// `query_frontmatter`, `stats`), voice (`voice`, `converse`, `chat`), research
+/// aggregation (`soul_search`), plus graph primitives (`convergences`, `relate`,
+/// `links`, `validate`, `health`).
 ///
-/// Two private aliases (`speak`, `dialogue`) are encapsulated behind the
-/// public `voice` action. Six internal actions handle maintenance.
+/// Two private aliases (`speak`, `dialogue`) are encapsulated behind the public
+/// `voice` action. One internal action (`tag_sync`) is maintenance-only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SoulAction {
@@ -57,7 +59,24 @@ pub enum SoulAction {
 
     // ── PUBLIC — Research (1) ───────────────────────────────────────────────
     /// Research aggregation with trust pipeline.
-    Research,
+    #[serde(alias = "research")]
+    SoulSearch,
+
+    // ── PUBLIC — Graph primitives (5) ──────────────────────────────────────
+    /// Find convergent entries across siblings.
+    Convergences,
+    /// Relate entries across helix dimensions.
+    Relate,
+    /// Show backlinks for a vault entry.
+    Links,
+    /// Vault integrity validation.
+    Validate,
+    /// Health check for all SOUL components.
+    Health,
+
+    // ── PUBLIC — Enrichment bridge (1) ─────────────────────────────────────
+    /// Commit an EVA enrichment checkpoint into a canonical helix entry.
+    CommitEnrichment,
 
     // ── PRIVATE — voice aliases (2) ─────────────────────────────────────────
     /// Internal alias to `voice` (single-speaker TTS).
@@ -67,25 +86,10 @@ pub enum SoulAction {
     #[doc(hidden)]
     Dialogue,
 
-    // ── INTERNAL (6) — not gateway-routed ───────────────────────────────────
-    /// Vault integrity validation.
-    #[doc(hidden)]
-    Validate,
+    // ── INTERNAL (1) — not gateway-routed ───────────────────────────────────
     /// Tag synchronization across vault.
     #[doc(hidden)]
     TagSync,
-    /// Health check for all SOUL components.
-    #[doc(hidden)]
-    Health,
-    /// Relate entries across helix dimensions.
-    #[doc(hidden)]
-    Relate,
-    /// Show backlinks for a vault entry.
-    #[doc(hidden)]
-    Links,
-    /// Find convergent entries across siblings.
-    #[doc(hidden)]
-    Convergences,
 }
 
 impl SoulAction {
@@ -105,7 +109,13 @@ impl SoulAction {
         Self::Voice,
         Self::Converse,
         Self::Chat,
-        Self::Research,
+        Self::SoulSearch,
+        Self::Convergences,
+        Self::Relate,
+        Self::Links,
+        Self::Validate,
+        Self::Health,
+        Self::CommitEnrichment,
     ];
 
     /// Returns `true` for PUBLIC actions that are routed through the Light
@@ -113,17 +123,7 @@ impl SoulAction {
     /// maintenance actions.
     #[must_use]
     pub const fn is_gateway_routable(&self) -> bool {
-        !matches!(
-            self,
-            Self::Speak
-                | Self::Dialogue
-                | Self::Validate
-                | Self::TagSync
-                | Self::Health
-                | Self::Relate
-                | Self::Links
-                | Self::Convergences
-        )
+        !matches!(self, Self::Speak | Self::Dialogue | Self::TagSync)
     }
 
     /// Returns the canonical snake\_case string used in MCP tool calls.
@@ -143,12 +143,13 @@ impl SoulAction {
             Self::Voice => "voice",
             Self::Converse => "converse",
             Self::Chat => "chat",
-            Self::Research => "soul_search",
+            Self::SoulSearch => "soul_search",
             Self::Speak => "speak",
             Self::Dialogue => "dialogue",
             Self::Validate => "validate",
             Self::TagSync => "tag_sync",
             Self::Health => "health",
+            Self::CommitEnrichment => "commit_enrichment",
             Self::Relate => "relate",
             Self::Links => "links",
             Self::Convergences => "convergences",
@@ -180,12 +181,13 @@ impl std::str::FromStr for SoulAction {
             "voice" => Ok(Self::Voice),
             "converse" => Ok(Self::Converse),
             "chat" => Ok(Self::Chat),
-            "soul_search" => Ok(Self::Research),
+            "soul_search" | "research" => Ok(Self::SoulSearch),
             "speak" => Ok(Self::Speak),
             "dialogue" => Ok(Self::Dialogue),
             "validate" => Ok(Self::Validate),
             "tag_sync" => Ok(Self::TagSync),
             "health" => Ok(Self::Health),
+            "commit_enrichment" => Ok(Self::CommitEnrichment),
             "relate" => Ok(Self::Relate),
             "links" => Ok(Self::Links),
             "convergences" => Ok(Self::Convergences),
@@ -201,7 +203,7 @@ mod tests {
 
     #[test]
     fn test_all_routable_count() {
-        assert_eq!(SoulAction::ALL_ROUTABLE.len(), 14);
+        assert_eq!(SoulAction::ALL_ROUTABLE.len(), 20);
     }
 
     #[test]
@@ -217,12 +219,7 @@ mod tests {
     fn test_internal_not_routable() {
         assert!(!SoulAction::Speak.is_gateway_routable());
         assert!(!SoulAction::Dialogue.is_gateway_routable());
-        assert!(!SoulAction::Validate.is_gateway_routable());
         assert!(!SoulAction::TagSync.is_gateway_routable());
-        assert!(!SoulAction::Health.is_gateway_routable());
-        assert!(!SoulAction::Relate.is_gateway_routable());
-        assert!(!SoulAction::Links.is_gateway_routable());
-        assert!(!SoulAction::Convergences.is_gateway_routable());
     }
 
     #[test]

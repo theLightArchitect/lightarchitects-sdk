@@ -8,9 +8,9 @@
 //! # Unsafe
 //!
 //! Rust 2024 marked `std::env::set_var` / `remove_var` as `unsafe` due to
-//! thread-safety concerns. These tests run under `cargo test` which is
-//! single-threaded per test file by default; the unsafe usage is sound
-//! under that constraint. SAFETY comments are attached at each call site.
+//! thread-safety concerns. Rust tests run in parallel by default, so we
+//! serialize environment mutation via a global lock.
+//! SAFETY comments are attached at each call site.
 
 #![allow(
     unsafe_code,
@@ -19,24 +19,47 @@
     clippy::undocumented_unsafe_blocks
 )]
 
+use std::ffi::OsString;
+use std::sync::{Mutex, MutexGuard, OnceLock};
+
 use super::{Detection, Locator, Registry, default_registry};
 
-fn in_clean_env<F: FnOnce()>(vars: &[&str], f: F) {
-    let saved: Vec<_> = vars.iter().map(|v| (*v, std::env::var(v).ok())).collect();
-    // SAFETY: tests are single-threaded per Cargo default; env mutation is
-    // ok but gated by the #[serial] attribute if we add parallel tests later.
-    for v in vars {
-        // SAFETY: single-threaded test, no concurrent env access.
-        unsafe {
-            std::env::remove_var(v);
+fn env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+struct EnvGuard {
+    _lock: MutexGuard<'static, ()>,
+    saved: Vec<(OsString, Option<OsString>)>,
+}
+
+impl EnvGuard {
+    fn new(vars: &[&str]) -> Self {
+        let lock = env_lock().lock().expect("env_lock poisoned");
+        let saved: Vec<(OsString, Option<OsString>)> = vars
+            .iter()
+            .map(|v| (OsString::from(*v), std::env::var_os(v)))
+            .collect();
+        for (v, _) in &saved {
+            // SAFETY: these tests mutate process env and assume no concurrent
+            // access. This module's tests must not run in parallel.
+            unsafe {
+                std::env::remove_var(v);
+            }
         }
+        Self { _lock: lock, saved }
     }
-    f();
-    for (v, prev) in saved {
-        match prev {
-            // SAFETY: single-threaded test, no concurrent env access.
-            Some(val) => unsafe { std::env::set_var(v, val) },
-            None => unsafe { std::env::remove_var(v) },
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        for (v, prev) in &self.saved {
+            match prev {
+                // SAFETY: see EnvGuard::new.
+                Some(val) => unsafe { std::env::set_var(v, val) },
+                None => unsafe { std::env::remove_var(v) },
+            }
         }
     }
 }
@@ -71,63 +94,47 @@ fn default_registry_includes_enabled_providers() {
 #[cfg(feature = "providers-anthropic")]
 #[tokio::test]
 async fn anthropic_env_var_produces_env_locator() {
-    in_clean_env(
-        &[
-            "ANTHROPIC_AUTH_TOKEN",
-            "CLAUDE_CODE_OAUTH_TOKEN",
-            "ANTHROPIC_API_KEY",
-            "CLAUDE_CONFIG_DIR",
-        ],
-        || {
-            // SAFETY: single-threaded test.
-            unsafe { std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-test") };
-        },
-    );
+    let _guard = EnvGuard::new(&[
+        "ANTHROPIC_AUTH_TOKEN",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CONFIG_DIR",
+    ]);
+    // SAFETY: single-threaded test (see module docs).
+    unsafe { std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-test") };
     let r = default_registry();
     let d = r.probe(super::ANTHROPIC_CLI).await.unwrap();
     assert!(d.available);
     assert_eq!(d.locator, Locator::Env);
-    // Clean up.
-    // SAFETY: single-threaded test.
-    unsafe { std::env::remove_var("ANTHROPIC_API_KEY") };
 }
 
 #[cfg(feature = "providers-openai")]
 #[tokio::test]
 async fn openai_env_var_produces_env_locator() {
-    in_clean_env(&["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_HOME"], || {
-        // SAFETY: single-threaded test.
-        unsafe { std::env::set_var("OPENAI_API_KEY", "sk-test") };
-    });
+    let _guard = EnvGuard::new(&["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_HOME"]);
+    // SAFETY: single-threaded test (see module docs).
+    unsafe { std::env::set_var("OPENAI_API_KEY", "sk-test") };
     let r = default_registry();
     let d = r.probe(super::OPENAI_CLI).await.unwrap();
     assert!(d.available);
     assert_eq!(d.locator, Locator::Env);
-    // SAFETY: single-threaded test.
-    unsafe { std::env::remove_var("OPENAI_API_KEY") };
 }
 
 #[cfg(feature = "providers-google")]
 #[tokio::test]
 async fn google_env_var_produces_env_locator() {
-    in_clean_env(
-        &[
-            "GEMINI_API_KEY",
-            "GOOGLE_API_KEY",
-            "GOOGLE_APPLICATION_CREDENTIALS",
-            "GEMINI_HOME",
-        ],
-        || {
-            // SAFETY: single-threaded test.
-            unsafe { std::env::set_var("GEMINI_API_KEY", "test-key") };
-        },
-    );
+    let _guard = EnvGuard::new(&[
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "GEMINI_HOME",
+    ]);
+    // SAFETY: single-threaded test (see module docs).
+    unsafe { std::env::set_var("GEMINI_API_KEY", "test-key") };
     let r = default_registry();
     let d = r.probe(super::GOOGLE_CLI).await.unwrap();
     assert!(d.available);
     assert_eq!(d.locator, Locator::Env);
-    // SAFETY: single-threaded test.
-    unsafe { std::env::remove_var("GEMINI_API_KEY") };
 }
 
 #[test]

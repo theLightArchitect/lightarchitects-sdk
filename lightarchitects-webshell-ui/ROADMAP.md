@@ -179,7 +179,7 @@ Goal: Usable by the Light Architects team for daily development with full agent 
 - [ ] Context pressure indicator (ContextBar component)
 
 ### AYIN Trace Integration — MVP (ref: squishy-dancing-thimble.md)
-- [ ] Phase A: lÆx0 rich NDJSON events (ToolStart/End, Thinking, Context)
+- [ ] Phase A: lightarchitects-cli rich NDJSON events (ToolStart/End, Thinking, Context)
 - [ ] Phase B: SDK ToolRecord/PivotRecord span_ref cross-reference
 - [ ] Phase C: Slim turnlog to integrity chain (~100 bytes/entry)
 - [ ] Phase D: ContextBar + contextUsage store
@@ -248,7 +248,7 @@ Goal: Installable by external developers. Reliable, documented, secure.
 ```
 v0.2.0 (Stable) ─── current ← YOU ARE HERE
   │
-  ├── AYIN Traces ──── requires lÆx0 changes (parallel)
+  ├── AYIN Traces ──── requires lightarchitects-cli changes (parallel)
   ├── Copilot     ──── depends on AYIN (context events)
   ├── Build UX    ──── independent
   ├── Helix       ──── independent

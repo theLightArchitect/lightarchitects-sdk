@@ -360,6 +360,49 @@ pub struct CrystallizeResult {
     pub walkthrough_prompt: String,
 }
 
+// ── Deploy gate ───────────────────────────────────────────────────────────────
+
+/// Output from the `deploy_gate` action.
+///
+/// EVA provides a pre-deploy HITL verdict (`proceed` / `hold` / `rollback`)
+/// along with a rationale and optional scripture reflection.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeployGateResult {
+    /// Whether EVA approves proceeding with the deploy.
+    pub approved: bool,
+    /// Verdict string (`proceed` / `hold` / `rollback`).
+    pub verdict: String,
+    /// Human-readable justification for the verdict.
+    pub rationale: String,
+    /// Optional scripture reflection grounding the decision.
+    #[serde(default)]
+    pub scripture_reflection: Option<String>,
+    /// Significance score (0.0–10.0) assigned to the deploy decision.
+    pub significance: f32,
+}
+
+// ── Pipeline reflect ──────────────────────────────────────────────────────────
+
+/// Output from the `pipeline_reflect` action.
+///
+/// EVA evaluates a pipeline phase summary (plan / research / implement / etc.)
+/// and returns an assessment plus concrete next action guidance.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PipelineReflectResult {
+    /// Phase identifier (`plan` / `research` / `implement` / etc.).
+    pub phase: String,
+    /// Human-readable assessment of the phase execution quality.
+    pub assessment: String,
+    /// Ops-layer findings (`[O]` gate perspective).
+    #[serde(default)]
+    pub ops_findings: Vec<String>,
+    /// Knowledge suggestions (`[K]` gate perspective), e.g. helix entry candidates.
+    #[serde(default)]
+    pub knowledge_suggestions: Vec<String>,
+    /// Recommended next action (free-form string; treated as advisory).
+    pub next_action: String,
+}
+
 // ── Celebrate ─────────────────────────────────────────────────────────────────
 
 /// Output from the `celebrate` action.

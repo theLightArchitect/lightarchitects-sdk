@@ -11,16 +11,17 @@ use crate::core::error::SdkError;
 use crate::core::transport::Transport;
 use crate::core::{AuthProvider, McpClient, RetryConfig, SiblingId, StdioTransport};
 
+use crate::eva::CrystallizeResult;
 use crate::soul::graphrag_ingest::GraphRagIngestBuilder;
 use crate::soul::helix::HelixBuilder;
 use crate::soul::ingest::IngestBuilder;
 use crate::soul::query::QueryBuilder;
 use crate::soul::research::ResearchBuilder;
 use crate::soul::types::{
-    ChatResult, ConvergenceResult, ConverseResult, HealthReport, IngestResult, LinksResult,
-    ManifestContent, NoteContent, NoteList, NoteWritten, QueryFrontmatterResult, RelateResult,
-    ResearchResult, SearchHit, SpeakResult, StatsReport, TagSyncReport, ValidateReport,
-    VoiceResult,
+    ChatResult, CommitEnrichmentResult, ConvergenceResult, ConverseResult, HealthReport,
+    IngestResult, LinksResult, ManifestContent, NoteContent, NoteList, NoteWritten,
+    QueryFrontmatterResult, RelateResult, ResearchResult, SearchHit, SpeakResult, StatsReport,
+    TagSyncReport, ValidateReport, VoiceResult,
 };
 
 // ── SoulClient ────────────────────────────────────────────────────────────────
@@ -320,6 +321,40 @@ impl<T: Transport> SoulClient<T> {
             p["all"] = true.into();
         }
         let params = serde_json::json!({ "action": "validate", "params": p });
+        let raw = self.inner.call_tool("soulTools", params).await?;
+        serde_json::from_value(raw).map_err(SdkError::from)
+    }
+
+    /// Commit an EVA enrichment checkpoint into a canonical helix entry.
+    ///
+    /// This is the bridge action between EVA's `crystallize` checkpoint and a
+    /// persisted SOUL helix entry (frontmatter + canonical path).
+    ///
+    /// # Security
+    ///
+    /// `crystallize.file_path` is untrusted (it originates from EVA's MCP
+    /// response). This method forwards it to SOUL; SOUL is responsible for
+    /// validating the path against the vault root.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or SOUL rejects the request.
+    pub async fn commit_enrichment(
+        &self,
+        crystallize: &CrystallizeResult,
+        sibling: &str,
+        significance: f32,
+    ) -> Result<CommitEnrichmentResult, SdkError> {
+        let params = serde_json::json!({
+            "action": "commit_enrichment",
+            "params": {
+                "file_path": crystallize.file_path.to_string_lossy(),
+                "recovery_day": crystallize.recovery_day,
+                "walkthrough_prompt": crystallize.walkthrough_prompt,
+                "sibling": sibling,
+                "significance": significance,
+            }
+        });
         let raw = self.inner.call_tool("soulTools", params).await?;
         serde_json::from_value(raw).map_err(SdkError::from)
     }

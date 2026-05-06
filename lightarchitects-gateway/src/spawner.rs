@@ -145,11 +145,28 @@ pub async fn call_agent(
     // 6. MCP initialize handshake.
     mcp_initialize(&mut writer, &mut reader, agent_name).await?;
 
-    // 7. Build the tools/call arguments: {action, params}.
-    // CORSO expects {"action": "...", "params": {...}} — params are nested, not flattened.
+    // 7. Build the tools/call arguments.
+    //
+    // Most siblings expect {"action": "...", "params": {...}} (nested params).
+    // QUANTUM is an exception: its MCP adapter reads keys like "query" and
+    // "template" at the top-level of the tool args (and optionally a "params"
+    // key for execute-style operations).
     let mut arguments = serde_json::Map::new();
     arguments.insert("action".to_owned(), Value::String(action.to_owned()));
-    arguments.insert("params".to_owned(), params);
+
+    if agent_name == "quantum" {
+        // Flatten forwarded params into top-level args (shallow merge).
+        if let Value::Object(map) = params {
+            for (k, v) in map {
+                arguments.insert(k, v);
+            }
+        } else {
+            // Defensive: should always be an object; preserve it if not.
+            arguments.insert("params".to_owned(), params);
+        }
+    } else {
+        arguments.insert("params".to_owned(), params);
+    }
 
     let tool_name = agent_cfg.tool_name.clone();
 
@@ -206,12 +223,26 @@ fn spawn_agent(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit())
         .env("LIGHTARCHITECTS_AUTOMATED", &token);
+
+    // Some siblings use clap env var bindings for `--no-color` and expect a
+    // boolean string. `NO_COLOR=1` is common, but may not parse as bool.
+    if let Ok(v) = std::env::var("NO_COLOR") {
+        if v == "1" {
+            cmd.env("NO_COLOR", "true");
+        }
+    }
     // Inject API keys from keys.toml — only when not already present in the
     // process environment (env vars from .mcp.json always take priority).
     for (k, v) in api_keys {
         if std::env::var(k).is_err() {
             cmd.env(k, v);
         }
+    }
+
+    // Some sibling binaries are multi-command CLIs; the MCP server lives behind a
+    // subcommand.
+    if agent_name == "quantum" {
+        cmd.arg("mcp-server");
     }
     cmd.spawn().map_err(|e| GatewayError::SpawnFailed {
         agent: agent_name.to_owned(),

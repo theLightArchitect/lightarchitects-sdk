@@ -1,5 +1,5 @@
 ---
-agent: laex0
+agent: lightarchitects-cli
 type: identity
 role: meta-orchestrator and canon keeper
 significance: 8.5

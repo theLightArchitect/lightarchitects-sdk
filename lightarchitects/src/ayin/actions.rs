@@ -26,10 +26,13 @@ use serde::{Deserialize, Serialize};
 pub enum AyinAction {
     // ── PUBLIC (3) ──────────────────────────────────────────────────────────
     /// List all trace sessions.
+    #[serde(alias = "list_sessions")]
     Sessions,
     /// Load `TraceSpan` JSON for a session.
+    #[serde(alias = "get_spans")]
     Spans,
     /// Load conversation/decision traces.
+    #[serde(alias = "get_conversations")]
     Conversations,
 
     // ── INTERNAL (2) — not gateway-routed ───────────────────────────────────
@@ -76,9 +79,9 @@ impl std::str::FromStr for AyinAction {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "sessions" => Ok(Self::Sessions),
-            "spans" => Ok(Self::Spans),
-            "conversations" => Ok(Self::Conversations),
+            "sessions" | "list_sessions" => Ok(Self::Sessions),
+            "spans" | "get_spans" => Ok(Self::Spans),
+            "conversations" | "get_conversations" => Ok(Self::Conversations),
             "dashboard" => Ok(Self::Dashboard),
             "vendor" => Ok(Self::Vendor),
             other => Err(format!("unknown AYIN action: {other}")),
@@ -115,6 +118,15 @@ mod tests {
     fn test_from_str() {
         assert_eq!("sessions".parse::<AyinAction>(), Ok(AyinAction::Sessions));
         assert_eq!("spans".parse::<AyinAction>(), Ok(AyinAction::Spans));
+        assert_eq!(
+            "list_sessions".parse::<AyinAction>(),
+            Ok(AyinAction::Sessions)
+        );
+        assert_eq!("get_spans".parse::<AyinAction>(), Ok(AyinAction::Spans));
+        assert_eq!(
+            "get_conversations".parse::<AyinAction>(),
+            Ok(AyinAction::Conversations)
+        );
         assert_eq!(
             "conversations".parse::<AyinAction>(),
             Ok(AyinAction::Conversations)

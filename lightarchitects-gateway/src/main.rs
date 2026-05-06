@@ -31,6 +31,7 @@ use lightarchitects_gateway::{
     server,
 };
 use serde_json::json;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 #[tokio::main]
@@ -42,6 +43,34 @@ async fn main() {
     if raw_args.iter().any(|a| a == "--version" || a == "-V") {
         println!("{}", lightarchitects_gateway::version::long());
         std::process::exit(0);
+    }
+
+    // TTY detection: if run from an interactive terminal with no args,
+    // spawn lightarchitects-cli instead of starting the MCP server.
+    let is_tty = std::io::stdin().is_terminal();
+    if raw_args.is_empty() && is_tty {
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        let cli_binary = home.map_or_else(
+            || PathBuf::from("lightarchitects-cli"),
+            |h| h.join("lightarchitects/cli/bin/lightarchitects-cli"),
+        );
+
+        if cli_binary.exists() {
+            let status = std::process::Command::new(&cli_binary)
+                .status()
+                .unwrap_or_else(|e| {
+                    eprintln!("Failed to spawn lightarchitects-cli: {e}");
+                    std::process::exit(1);
+                });
+            std::process::exit(status.code().unwrap_or(1));
+        } else {
+            eprintln!(
+                "lightarchitects-cli not found at {}.\n\
+                 Install it first: cd ~/Projects/lightarchitects-cli && make deploy",
+                cli_binary.display()
+            );
+            std::process::exit(1);
+        }
     }
 
     // Check for --agent flag early (agent mode uses JSON logging, not fmt)
@@ -463,7 +492,7 @@ fn cli_init_user(user_name: &str) -> Result<(), GatewayError> {
         ("quantum", QUANTUM_IDENTITY_TEMPLATE),
         ("seraph", SERAPH_IDENTITY_TEMPLATE),
         ("ayin", AYIN_IDENTITY_TEMPLATE),
-        ("laex0", LAEX0_IDENTITY_TEMPLATE),
+        ("lightarchitects-cli", LIGHTARCHITECTS_CLI_IDENTITY_TEMPLATE),
     ];
 
     let mut created = Vec::new();
@@ -511,4 +540,5 @@ const CORSO_IDENTITY_TEMPLATE: &str = include_str!("templates/corso-identity-tem
 const QUANTUM_IDENTITY_TEMPLATE: &str = include_str!("templates/quantum-identity-template.md");
 const SERAPH_IDENTITY_TEMPLATE: &str = include_str!("templates/seraph-identity-template.md");
 const AYIN_IDENTITY_TEMPLATE: &str = include_str!("templates/ayin-identity-template.md");
-const LAEX0_IDENTITY_TEMPLATE: &str = include_str!("templates/laex0-identity-template.md");
+const LIGHTARCHITECTS_CLI_IDENTITY_TEMPLATE: &str =
+    include_str!("templates/lightarchitects-cli-identity-template.md");

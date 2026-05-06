@@ -3,7 +3,7 @@
 //! # Trust model
 //!
 //! The chain is keyed by a **per-session secret** derived from a **store-level
-//! pepper** via HKDF. The pepper lives at `~/lightarchitects/laex0/.session-key`
+//! pepper** via HKDF. The pepper lives at `~/lightarchitects/lightarchitects_cli/.session-key`
 //! (configurable via [`lightarchitects::turnlog::store::StoreLayout`]), loaded once at process startup.
 //!
 //! Per-session key derivation (HKDF-SHA256):

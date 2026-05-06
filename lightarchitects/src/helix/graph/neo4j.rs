@@ -126,9 +126,19 @@ impl Neo4jBackend {
             .await
             .map_err(|e| GraphError::Schema(format!("Failed to read migration row: {e}")))?
         {
-            let version: i64 = row
-                .get("version")
-                .map_err(|e| GraphError::Schema(format!("Missing version field: {e}")))?;
+            let version: i64 = match row.get("version") {
+                Ok(v) => v,
+                Err(e) => {
+                    // Old/dirty databases may have `SchemaMigration` nodes without a typed
+                    // `version` property (null / wrong type). Treat them as non-applied
+                    // and proceed with idempotent migrations.
+                    tracing::warn!(
+                        error = %e,
+                        "Ignoring invalid SchemaMigration.version field; proceeding with pending migrations"
+                    );
+                    continue;
+                }
+            };
             if let Ok(v) = u32::try_from(version) {
                 applied.push(v);
             }

@@ -450,6 +450,34 @@ impl<T: Transport> SeraphClient<T> {
         Ok(ScopeResult::new(output, authorized, ttl))
     }
 
+    /// Check whether the engagement scope authorizes a `target` via the
+    /// gateway-routable `scope_check` action.
+    ///
+    /// This is the preferred scope-check surface for callers that route
+    /// through the Light Architects gateway. The legacy [`scope_check`] method
+    /// remains for backward compatibility and uses `status`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or the scope file is invalid.
+    pub async fn scope_check_routable(&self, target: &str) -> Result<ScopeResult, SdkError> {
+        let params = serde_json::json!({
+            "action": "scope_check",
+            "params": { "target": target }
+        });
+        let raw = self.inner.call_tool("penTools", params).await?;
+        let output = unwrap_text(raw)?;
+        let authorized = !output.to_lowercase().contains("out of scope")
+            && !output.to_lowercase().contains("not authorized")
+            && !output.to_lowercase().contains("scope violation");
+        let ttl = if authorized {
+            Duration::from_secs(3600)
+        } else {
+            Duration::ZERO
+        };
+        Ok(ScopeResult::new(output, authorized, ttl))
+    }
+
     /// Recon phase: gather open-source intelligence on `target`.
     ///
     /// Delegates to SERAPH's OSINT wing. Returns a [`ReconResult`] whose

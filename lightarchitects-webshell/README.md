@@ -278,18 +278,18 @@ lightarchitects-webshell/
 
 ---
 
-## lÆx0 Integration (Aspirational)
+## lightarchitects-cli Integration
 
-The `--host-cmd` flag is designed for a future build where lÆx0 replaces
-Claude Code as the host agent. Once lÆx0 reaches PTY parity, the webshell
+The `--host-cmd` flag is designed for a future build where lightarchitects-cli replaces
+Claude Code as the host agent. Once lightarchitects-cli reaches PTY parity, the webshell
 becomes a universal frontend for any agent that speaks a PTY interface.
 
 ```bash
 # Future — not yet available
-lightarchitects-webshell --host-cmd laex0 --cwd ~/Projects/myproject
+lightarchitects-webshell --host-cmd lightarchitects-cli --cwd ~/Projects/myproject
 ```
 
-This path is explicitly deferred to a future build (`lÆx0-as-host`) to keep
+This path is explicitly deferred to a future build (`lightarchitects-cli-as-host`) to keep
 nautilus scoped.
 
 ---

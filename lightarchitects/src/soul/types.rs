@@ -4,6 +4,8 @@
 //! `soulTools` action. Fields use `#[serde(default)]` where the SOUL
 //! documentation marks them as optional or implementation-version-dependent.
 
+use std::path::PathBuf;
+
 use serde::Deserialize;
 
 // ── Note operations ───────────────────────────────────────────────────────────
@@ -116,6 +118,27 @@ pub struct ValidateReport {
     /// Per-entry issue details (structure varies by SOUL version).
     #[serde(default)]
     pub issues: Vec<serde_json::Value>,
+}
+
+// ── Enrichment commit bridge ──────────────────────────────────────────────────
+
+/// Response from `soulTools` `commit_enrichment`.
+///
+/// This bridges EVA's `crystallize` checkpoint file into a canonical helix
+/// entry under the requested sibling.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CommitEnrichmentResult {
+    /// Canonical helix path written (vault-relative).
+    ///
+    /// Example: `helix/{sibling}/entries/{date}-{8hex}-{slug}.md`.
+    pub helix_path: PathBuf,
+    /// Significance assigned at commit time (0.0–10.0).
+    pub significance: f32,
+    /// Bytes written to the new helix entry.
+    pub bytes_written: u64,
+    /// Whether the action also created a Neo4j graph link to the crystallize
+    /// source (implementation-dependent).
+    pub graph_linked: bool,
 }
 
 // ── Voice & personality ───────────────────────────────────────────────────────
@@ -366,7 +389,8 @@ pub struct GraphRagIngestResult {
 
 // ── Research result ───────────────────────────────────────────────────────────
 
-/// Response from `soulTools` `research` — multi-source research aggregation.
+/// Response from `soulTools` `soul_search` (legacy alias: `research`) — multi-source
+/// research aggregation.
 ///
 /// The response shape varies by `mode` (`"search"`, `"digest"`, `"refresh"`).
 /// All modes include `mode` and `status`. Mode-specific fields are captured in

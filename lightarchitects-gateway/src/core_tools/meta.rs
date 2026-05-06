@@ -155,12 +155,16 @@ pub async fn run(arguments: Value, config: &GatewayConfig) -> Result<Value, Gate
         .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
     // 1. List action — return the catalog.
-    if action == "list" {
+    // If the caller provided an explicit agent override, treat "list" as an
+    // agent action (e.g. QUANTUM's `list`) rather than the meta-tool catalog.
+    if action == "list" && arguments.get("agent").is_none() {
         return list_actions(config);
     }
 
     // 2. Core actions — dispatch to the gateway's own handler.
-    if is_core_action(&action) {
+    // If the caller provided an explicit agent override, treat the action as an
+    // agent action even if it collides with a core tool name.
+    if is_core_action(&action) && arguments.get("agent").is_none() {
         return dispatch_core(&action, params, config).await;
     }
 

@@ -36,9 +36,9 @@ const AYIN_TIMEOUT: Duration = Duration::from_secs(10);
 /// - [`GatewayError::UnknownTool`] — action is not a known AYIN action.
 pub async fn dispatch(action: &str, params: Value) -> Result<Value, GatewayError> {
     match action {
-        "sessions" => get_sessions().await,
-        "spans" => get_spans(&params).await,
-        "conversations" => get_conversations(&params).await,
+        "sessions" | "list_sessions" => get_sessions().await,
+        "spans" | "get_spans" => get_spans(&params).await,
+        "conversations" | "get_conversations" => get_conversations(&params).await,
         _ => Err(GatewayError::UnknownTool(format!("ayin:{action}"))),
     }
 }

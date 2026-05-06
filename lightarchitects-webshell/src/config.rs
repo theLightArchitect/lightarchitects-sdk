@@ -40,7 +40,7 @@ pub enum AgentKind {
     Lightarchitects,
     /// `OpenAI` Codex CLI (binary: `codex`).
     Codex,
-    /// lÆx0 native binary (`laex0`).
+    /// lÆx0 native binary (`lightarchitects-cli`).
     LightarchitectsNative,
 }
 
@@ -197,19 +197,19 @@ impl Default for CodexConfig {
 /// Configuration for the lÆx0 native binary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LightarchitectsNativeConfig {
-    /// Path to the `laex0` binary. Default: `"laex0"` (assumes on `$PATH`).
-    #[serde(default = "default_laex0_binary")]
+    /// Path to the `lightarchitects-cli` binary. Default: `"lightarchitects-cli"` (assumes on `$PATH`).
+    #[serde(default = "default_lightarchitects_cli_binary")]
     pub binary: String,
 }
 
-fn default_laex0_binary() -> String {
-    "laex0".to_owned()
+fn default_lightarchitects_cli_binary() -> String {
+    "lightarchitects-cli".to_owned()
 }
 
 impl Default for LightarchitectsNativeConfig {
     fn default() -> Self {
         Self {
-            binary: default_laex0_binary(),
+            binary: default_lightarchitects_cli_binary(),
         }
     }
 }
@@ -226,7 +226,7 @@ pub enum AgentSession {
     Lightarchitects(ClaudeBackend),
     /// `OpenAI` Codex CLI (`codex` binary).
     Codex(CodexConfig),
-    /// lÆx0 native binary (`laex0`).
+    /// lÆx0 native binary (`lightarchitects-cli`).
     LightarchitectsNative(LightarchitectsNativeConfig),
 }
 
@@ -305,10 +305,10 @@ pub struct Cli {
     #[arg(long)]
     pub claude_agent: Option<String>,
 
-    /// Path to the `laex0` binary (default: `laex0`, assumes on `$PATH`).
+    /// Path to the `lightarchitects-cli` binary (default: `lightarchitects-cli`, assumes on `$PATH`).
     /// Only used when `--agent=lightarchitects-native`.
     #[arg(long)]
-    pub laex0_binary: Option<String>,
+    pub lightarchitects_cli_binary: Option<String>,
 }
 
 impl Default for Cli {
@@ -327,7 +327,7 @@ impl Default for Cli {
             ollama_model: None,
             ollama_key: None,
             claude_agent: None,
-            laex0_binary: None,
+            lightarchitects_cli_binary: None,
         }
     }
 }
@@ -471,18 +471,18 @@ fn resolve_agent_session(cli: &Cli) -> AgentSession {
         AgentKind::Lightarchitects => AgentSession::Lightarchitects(resolve_claude_backend(cli)),
         AgentKind::Codex => AgentSession::Codex(resolve_codex_config(cli)),
         AgentKind::LightarchitectsNative => {
-            AgentSession::LightarchitectsNative(resolve_laex0_native_config(cli))
+            AgentSession::LightarchitectsNative(resolve_lightarchitects_cli_native_config(cli))
         }
     }
 }
 
 /// Build [`LightarchitectsNativeConfig`] from CLI flags.
-fn resolve_laex0_native_config(cli: &Cli) -> LightarchitectsNativeConfig {
+fn resolve_lightarchitects_cli_native_config(cli: &Cli) -> LightarchitectsNativeConfig {
     LightarchitectsNativeConfig {
         binary: cli
-            .laex0_binary
+            .lightarchitects_cli_binary
             .clone()
-            .unwrap_or_else(default_laex0_binary),
+            .unwrap_or_else(default_lightarchitects_cli_binary),
     }
 }
 
@@ -799,7 +799,7 @@ mod tests {
             ollama_model: None,
             ollama_key: None,
             claude_agent: None,
-            laex0_binary: None,
+            lightarchitects_cli_binary: None,
         }
     }
 
@@ -814,7 +814,7 @@ mod tests {
     fn resolve_preserves_host_cmd_and_cwd() {
         let cli = Cli {
             port: 8733,
-            host_cmd: OsString::from("/custom/laex0"),
+            host_cmd: OsString::from("/custom/lightarchitects-cli"),
             cwd: Some(PathBuf::from("/tmp/session")),
             agent: AgentKind::Lightarchitects,
             backend: ClaudeBackendKind::Anthropic,
@@ -822,10 +822,10 @@ mod tests {
             ollama_model: None,
             ollama_key: None,
             claude_agent: None,
-            laex0_binary: None,
+            lightarchitects_cli_binary: None,
         };
         let cfg = Config::resolve(cli).unwrap();
-        assert_eq!(cfg.host_cmd, OsString::from("/custom/laex0"));
+        assert_eq!(cfg.host_cmd, OsString::from("/custom/lightarchitects-cli"));
         assert_eq!(cfg.cwd, PathBuf::from("/tmp/session"));
     }
 
@@ -946,9 +946,9 @@ mod tests {
     }
 
     #[test]
-    fn laex0_native_config_defaults_to_laex0_binary() {
+    fn lightarchitects_cli_native_config_defaults_to_lightarchitects_cli_binary() {
         let cfg = LightarchitectsNativeConfig::default();
-        assert_eq!(cfg.binary, "laex0");
+        assert_eq!(cfg.binary, "lightarchitects-cli");
     }
 
     #[test]

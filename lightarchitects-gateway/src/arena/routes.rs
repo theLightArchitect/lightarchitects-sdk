@@ -274,7 +274,7 @@ fn mcp_tools_list(request: &JsonRpcRequest) -> RestResponse {
                     {"name": "teach", "description": "EVA education"},
                     {"name": "soulTools", "description": "SOUL orchestrator (23 actions)"},
                     {"name": "qsTools", "description": "QUANTUM orchestrator (13 actions)"},
-                    {"name": "penTools", "description": "SERAPH orchestrator (18 actions, scope-gated)"}
+                    {"name": "penTools", "description": "SERAPH orchestrator (19 actions, scope-gated)"}
                 ]
             }
         })),

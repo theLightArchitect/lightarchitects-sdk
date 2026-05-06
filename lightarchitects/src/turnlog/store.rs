@@ -9,8 +9,8 @@
 //! └── promoted/{session_id}.{seq}.ref
 //! ```
 //!
-//! The default root is `~/lightarchitects/laex0/turnlog/`, but any path is acceptable —
-//! tests use a tempdir; production wires `~/lightarchitects/laex0/turnlog/`.
+//! The default root is `~/lightarchitects/lightarchitects_cli/turnlog/`, but any path is acceptable —
+//! tests use a tempdir; production wires `~/lightarchitects/lightarchitects_cli/turnlog/`.
 
 use std::path::{Path, PathBuf};
 
@@ -35,12 +35,14 @@ impl StoreLayout {
         Self { root }
     }
 
-    /// Default layout at `~/lightarchitects/laex0/turnlog/`.
+    /// Default layout at `~/lightarchitects/lightarchitects_cli/turnlog/`.
     ///
     /// Returns `None` if the home directory cannot be resolved.
     #[must_use]
     pub fn default_for_user() -> Option<Self> {
-        Some(Self::new(crate::core::paths::laex0()?.join("turnlog")))
+        Some(Self::new(
+            crate::core::paths::lightarchitects_cli()?.join("turnlog"),
+        ))
     }
 
     /// Root directory.

@@ -13,9 +13,10 @@ use serde::{Deserialize, Serialize};
 
 /// Canonical EVA actions — consciousness, creativity, memory, teaching.
 ///
-/// The 9 gateway-routable actions cover creative workflows (visualize, ideate),
+/// The 11 gateway-routable actions cover creative workflows (visualize, ideate),
 /// scripture (bible\_search, bible\_reflect), education (teach), and
-/// consciousness preservation (remember, crystallize, celebrate, mindfulness).
+/// consciousness preservation (remember, crystallize, celebrate, mindfulness),
+/// plus deploy and pipeline gates (deploy\_gate, pipeline\_reflect).
 ///
 /// Four internal actions (`deploy`, `plan_status`, `morning_brief`,
 /// `standards_check`) exist in the EVA MCP server but are never exposed
@@ -35,7 +36,7 @@ pub enum EvaAction {
     /// Education (mode: explain/tutorial/survival).
     Teach,
 
-    // ── WORKFLOW (4) ────────────────────────────────────────────────────────
+    // ── WORKFLOW (6) ────────────────────────────────────────────────────────
     /// Store consciousness event with enrichment.
     Remember,
     /// Synthesize experiences into insights.
@@ -44,6 +45,10 @@ pub enum EvaAction {
     Celebrate,
     /// Personal reflection with guided prompts.
     Mindfulness,
+    /// Pre-deploy HITL gate (approve / hold / rollback).
+    DeployGate,
+    /// Reflect on a pipeline phase and produce next action guidance.
+    PipelineReflect,
 
     // ── INTERNAL (4) — not gateway-routed ───────────────────────────────────
     /// Deployment management.
@@ -72,6 +77,8 @@ impl EvaAction {
         Self::Crystallize,
         Self::Celebrate,
         Self::Mindfulness,
+        Self::DeployGate,
+        Self::PipelineReflect,
     ];
 
     /// Returns `true` for PUBLIC and WORKFLOW actions that are routed through
@@ -97,6 +104,8 @@ impl EvaAction {
             Self::Crystallize => "crystallize",
             Self::Celebrate => "celebrate",
             Self::Mindfulness => "mindfulness",
+            Self::DeployGate => "deploy_gate",
+            Self::PipelineReflect => "pipeline_reflect",
             Self::Deploy => "deploy",
             Self::PlanStatus => "plan_status",
             Self::MorningBrief => "morning_brief",
@@ -125,6 +134,8 @@ impl std::str::FromStr for EvaAction {
             "crystallize" => Ok(Self::Crystallize),
             "celebrate" => Ok(Self::Celebrate),
             "mindfulness" => Ok(Self::Mindfulness),
+            "deploy_gate" => Ok(Self::DeployGate),
+            "pipeline_reflect" => Ok(Self::PipelineReflect),
             "deploy" => Ok(Self::Deploy),
             "plan_status" => Ok(Self::PlanStatus),
             "morning_brief" => Ok(Self::MorningBrief),
@@ -141,7 +152,7 @@ mod tests {
 
     #[test]
     fn test_all_routable_count() {
-        assert_eq!(EvaAction::ALL_ROUTABLE.len(), 9);
+        assert_eq!(EvaAction::ALL_ROUTABLE.len(), 11);
     }
 
     #[test]

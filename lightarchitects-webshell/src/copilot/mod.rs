@@ -42,10 +42,10 @@ pub fn resolve_binary(name: &str) -> String {
             "/opt/homebrew/bin/codex".to_owned(),
             "/usr/local/bin/codex".to_owned(),
         ],
-        "laex0" => vec![
-            format!("{home}/.local/bin/laex0"),
-            format!("{home}/.lightarchitects/bin/laex0"),
-            "/usr/local/bin/laex0".to_owned(),
+        "lightarchitects-cli" => vec![
+            format!("{home}/.local/bin/lightarchitects-cli"),
+            format!("{home}/.lightarchitects/cli/bin/lightarchitects-cli"),
+            "/usr/local/bin/lightarchitects-cli".to_owned(),
         ],
         "lightarchitects" => vec![
             format!("{home}/.lightarchitects/bin/lightarchitects"),
@@ -573,7 +573,7 @@ async fn run_codex_turn(
 
 /// Per-turn execution for `LightArchitects` CLI (single-shot `run <prompt>` mode).
 ///
-/// Spawns `laex0 run "<message>" --yes --cwd <path> --no-splash`, captures stdout,
+/// Spawns `lightarchitects-cli run "<message>" --yes --cwd <path> --no-splash`, captures stdout,
 /// returns the final text output. Each turn is a fresh process — no session continuity
 /// (the CLI manages its own session files on disk).
 async fn run_native_turn(message: &str, session: &BuildSession) -> Result<String, String> {
@@ -605,7 +605,10 @@ async fn run_native_turn(message: &str, session: &BuildSession) -> Result<String
 
     tracing::info!("run_native_turn: spawning {} run ...", resolved);
 
-    let output = c.output().await.map_err(|e| format!("spawn laex0: {e}"))?;
+    let output = c
+        .output()
+        .await
+        .map_err(|e| format!("spawn lightarchitects-cli: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -620,7 +623,7 @@ async fn run_native_turn(message: &str, session: &BuildSession) -> Result<String
             return Ok(stdout);
         }
         return Err(format!(
-            "laex0 exited with {:?}: {}",
+            "lightarchitects-cli exited with {:?}: {}",
             output.status.code(),
             stderr.chars().take(200).collect::<String>()
         ));
@@ -663,7 +666,7 @@ async fn run_native_turn(message: &str, session: &BuildSession) -> Result<String
         if !stderr_text.is_empty() {
             return Ok(stderr_text);
         }
-        return Err("laex0 returned empty output (logs filtered)".to_owned());
+        return Err("lightarchitects-cli returned empty output (logs filtered)".to_owned());
     }
 
     Ok(text)
@@ -840,7 +843,7 @@ pub(super) async fn call_subprocess(
     }
 
     // Per-turn path for LightArchitects CLI (single-shot `run <prompt>` mode).
-    // lÆx0 v0.1.0+ uses `laex0 run <prompt> --yes --cwd <path>` per turn.
+    // lÆx0 v0.1.0+ uses `lightarchitects-cli run <prompt> --yes --cwd <path>` per turn.
     if matches!(&session.agent, AgentSession::LightarchitectsNative(_)) {
         let text = run_native_turn(message, session).await?;
         emit_turn_complete_span(

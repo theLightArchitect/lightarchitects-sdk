@@ -13,12 +13,13 @@ use serde::{Deserialize, Serialize};
 
 /// Canonical QUANTUM actions — forensic investigation lifecycle.
 ///
-/// The 9 gateway-routable actions cover a complete investigation cycle
-/// (triage -> sweep -> trace -> probe -> theorize -> verify -> close)
-/// plus two utility actions (quick, research).
+/// Gateway-routable actions cover a complete investigation cycle
+/// (triage -> sweep -> trace -> probe -> theorize -> verify -> close), two
+/// utilities (quick, research), plus workflow support actions (`list`,
+/// `discover`, `workflow`).
 ///
-/// Four internal actions (`list`, `discover`, `execute`, `workflow`) handle
-/// orchestration and are never exposed through the Light Architects gateway.
+/// One internal action (`execute`) is an orchestration primitive and is never
+/// exposed through the Light Architects gateway.
 ///
 /// # Rename: `scan` -> `triage`
 ///
@@ -51,19 +52,18 @@ pub enum QuantumAction {
     /// Unified multi-source research.
     Research,
 
-    // ── INTERNAL (4) — not gateway-routed ───────────────────────────────────
+    // ── PUBLIC (3) — workflow support ──────────────────────────────────────
     /// List active investigations.
-    #[doc(hidden)]
     List,
     /// Discover investigation targets.
-    #[doc(hidden)]
     Discover,
+    /// Manage investigation workflow state.
+    Workflow,
+
+    // ── INTERNAL (1) — not gateway-routed ───────────────────────────────────
     /// Execute an investigation step.
     #[doc(hidden)]
     Execute,
-    /// Manage investigation workflow state.
-    #[doc(hidden)]
-    Workflow,
 }
 
 impl QuantumAction {
@@ -78,16 +78,16 @@ impl QuantumAction {
         Self::Close,
         Self::Quick,
         Self::Research,
+        Self::Workflow,
+        Self::List,
+        Self::Discover,
     ];
 
     /// Returns `true` for WORKFLOW and PUBLIC actions that are routed through
     /// the Light Architects gateway. Returns `false` for INTERNAL actions.
     #[must_use]
     pub const fn is_gateway_routable(&self) -> bool {
-        !matches!(
-            self,
-            Self::List | Self::Discover | Self::Execute | Self::Workflow
-        )
+        !matches!(self, Self::Execute)
     }
 
     /// Returns the canonical snake\_case string used in MCP tool calls.
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_all_routable_count() {
-        assert_eq!(QuantumAction::ALL_ROUTABLE.len(), 9);
+        assert_eq!(QuantumAction::ALL_ROUTABLE.len(), 12);
     }
 
     #[test]
@@ -164,10 +164,7 @@ mod tests {
 
     #[test]
     fn test_internal_not_routable() {
-        assert!(!QuantumAction::List.is_gateway_routable());
-        assert!(!QuantumAction::Discover.is_gateway_routable());
         assert!(!QuantumAction::Execute.is_gateway_routable());
-        assert!(!QuantumAction::Workflow.is_gateway_routable());
     }
 
     #[test]

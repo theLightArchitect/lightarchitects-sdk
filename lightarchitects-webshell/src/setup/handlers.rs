@@ -377,7 +377,7 @@ fn agent_session_from_save(req: &SaveRequest) -> Option<crate::config::AgentSess
         AgentKind::LightarchitectsNative => {
             Some(crate::config::AgentSession::LightarchitectsNative(
                 crate::config::LightarchitectsNativeConfig {
-                    binary: "laex0".to_owned(),
+                    binary: "lightarchitects-cli".to_owned(),
                 },
             ))
         }

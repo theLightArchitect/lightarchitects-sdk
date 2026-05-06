@@ -27,11 +27,11 @@ lightarchitects = { path = "../lightarchitects", features = [
 aho-corasick = "1"
 
 # Squad Dispatch TeamManager path-dep (C-1 fix — added when lockfile collision resolved).
-# CRITICAL C-1: LHS key MUST be the package name "laex0", not "laex0_cli".
-# The lib is imported as `laex0_cli::*` at use-sites (lib name in lightarchitects-cli/Cargo.toml).
+# CRITICAL C-1: LHS key MUST be the package name "lightarchitects-cli", not "lightarchitects_cli".
+# The lib is imported as `lightarchitects_cli::*` at use-sites (lib name in lightarchitects-cli/Cargo.toml).
 # Path dep gated on lockfile collision resolution (MED M-6 — ayin v0.1.0 in both vendor dirs).
 # To enable: uncomment the line below and enable the "team-manager" feature.
-# laex0 = { path = "../../../../../lightarchitects-cli", package = "laex0", optional = true }
+# lightarchitects-cli = { path = "../../../../../lightarchitects-cli", package = "lightarchitects-cli", optional = true }
 
 # Tier-1 ephemeral transactional log (unified-forging-turnlog)
 
@@ -100,7 +100,7 @@ keyring = { workspace = true }
 # "signal" feature: nix::sys::signal::{kill, Signal}.
 
 [features]
-# Gate the real TeamManager subprocess path behind a feature until laex0 is
+# Gate the real TeamManager subprocess path behind a feature until lightarchitects-cli is
 # published to crates.io (workspace rule C-1 prohibits external path deps).
 team-manager = []
 

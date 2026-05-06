@@ -13,8 +13,9 @@ use serde::{Deserialize, Serialize};
 
 /// Canonical SERAPH actions — pentest orchestration and investigation.
 ///
-/// The 6 gateway-routable actions cover system status, the investigation
-/// lifecycle (start/advance/close/report), and evidence vault synchronization.
+/// The 7 gateway-routable actions cover system status, scope authorization,
+/// the investigation lifecycle (start/advance/close/report), and evidence vault
+/// synchronization.
 ///
 /// Eleven internal actions correspond to SERAPH's scope-gated wings and
 /// knowledge services. These are never exposed through the Light Architects
@@ -23,9 +24,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SeraphAction {
-    // ── PUBLIC (1) ──────────────────────────────────────────────────────────
+    // ── PUBLIC (2) ──────────────────────────────────────────────────────────
     /// System status (CPU/memory/disk).
     Status,
+    /// Check whether the current engagement scope authorizes a target.
+    ScopeCheck,
 
     // ── WORKFLOW (5) ────────────────────────────────────────────────────────
     /// Begin pentest investigation with evidence chain.
@@ -37,6 +40,7 @@ pub enum SeraphAction {
     /// Generate report (Mermaid + JSON).
     InvestigateReport,
     /// Sync evidence to SOUL vault.
+    #[serde(alias = "sync_to_vault")]
     VaultSync,
 
     // ── INTERNAL — scope-gated wings (11) ───────────────────────────────────
@@ -79,6 +83,7 @@ impl SeraphAction {
     /// All gateway-routable actions (PUBLIC + WORKFLOW).
     pub const ALL_ROUTABLE: &[Self] = &[
         Self::Status,
+        Self::ScopeCheck,
         Self::InvestigateStart,
         Self::InvestigateAdvance,
         Self::InvestigateClose,
@@ -112,6 +117,7 @@ impl SeraphAction {
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Status => "status",
+            Self::ScopeCheck => "scope_check",
             Self::InvestigateStart => "investigate_start",
             Self::InvestigateAdvance => "investigate_advance",
             Self::InvestigateClose => "investigate_close",
@@ -144,11 +150,12 @@ impl std::str::FromStr for SeraphAction {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "status" => Ok(Self::Status),
+            "scope_check" => Ok(Self::ScopeCheck),
             "investigate_start" => Ok(Self::InvestigateStart),
             "investigate_advance" => Ok(Self::InvestigateAdvance),
             "investigate_close" => Ok(Self::InvestigateClose),
             "investigate_report" => Ok(Self::InvestigateReport),
-            "vault_sync" => Ok(Self::VaultSync),
+            "vault_sync" | "sync_to_vault" => Ok(Self::VaultSync),
             "capture" => Ok(Self::Capture),
             "scan" => Ok(Self::Scan),
             "analyze" => Ok(Self::Analyze),
@@ -172,7 +179,7 @@ mod tests {
 
     #[test]
     fn test_all_routable_count() {
-        assert_eq!(SeraphAction::ALL_ROUTABLE.len(), 6);
+        assert_eq!(SeraphAction::ALL_ROUTABLE.len(), 7);
     }
 
     #[test]

@@ -14,8 +14,8 @@ use crate::core::{AuthProvider, McpClient, RetryConfig, SiblingId, StdioTranspor
 use crate::eva::content::{extract_image, unwrap_json, unwrap_text};
 use crate::eva::types::{
     ActionOutput, BibleReflectResult, BibleSearchResult, CelebrateResult, CrystallizeResult,
-    IdeateResult, MindfulnessResult, RememberResult, SkillLevel, TeachMode, TeachResult,
-    VisualizeJson, VisualizeOutput,
+    DeployGateResult, IdeateResult, MindfulnessResult, PipelineReflectResult, RememberResult,
+    SkillLevel, TeachMode, TeachResult, VisualizeJson, VisualizeOutput,
 };
 
 /// Single MCP tool name exposed by the EVA binary.
@@ -280,6 +280,49 @@ impl<T: Transport> EvaClient<T> {
             serde_json::json!({ "action": "mindfulness", "params": { "context": context } });
         let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
         let json = unwrap_json(raw, "mindfulness")?;
+        serde_json::from_value(json).map_err(SdkError::from)
+    }
+
+    /// Pre-deploy HITL gate via EVA's `deploy_gate` action.
+    ///
+    /// EVA returns an approve/hold/rollback verdict with a rationale and
+    /// optional scripture reflection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or EVA returns an error.
+    pub async fn deploy_gate(
+        &self,
+        target: &str,
+        significance: f32,
+    ) -> Result<DeployGateResult, SdkError> {
+        let wrapped = serde_json::json!({
+            "action": "deploy_gate",
+            "params": { "target": target, "significance": significance }
+        });
+        let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
+        let json = unwrap_json(raw, "deploy_gate")?;
+        serde_json::from_value(json).map_err(SdkError::from)
+    }
+
+    /// Pipeline reflection via EVA's `pipeline_reflect` action.
+    ///
+    /// `phase_summary` is a concise description of what happened in the phase;
+    /// EVA returns an assessment plus next-action guidance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport fails or EVA returns an error.
+    pub async fn pipeline_reflect(
+        &self,
+        phase_summary: &str,
+    ) -> Result<PipelineReflectResult, SdkError> {
+        let wrapped = serde_json::json!({
+            "action": "pipeline_reflect",
+            "params": { "phase_summary": phase_summary }
+        });
+        let raw = self.inner.call_tool(EVA_TOOL, wrapped).await?;
+        let json = unwrap_json(raw, "pipeline_reflect")?;
         serde_json::from_value(json).map_err(SdkError::from)
     }
 

@@ -31,7 +31,7 @@ pub fn root() -> Option<PathBuf> {
 
 /// Returns the canonical runtime directory for a sibling.
 ///
-/// Known siblings should prefer the dedicated helpers such as [`soul`] or [`laex0`].
+/// Known siblings should prefer the dedicated helpers such as [`soul`] or [`lightarchitects_cli`].
 /// Returns `None` when `$HOME` is unavailable or `name` is not a safe single path segment.
 #[must_use]
 pub fn sibling_runtime(name: &str) -> Option<PathBuf> {
@@ -69,7 +69,7 @@ pub fn helix_root() -> Option<PathBuf> {
 /// Returns the canonical per-session key path for lÆx0 turn/session integrity.
 #[must_use]
 pub fn session_key() -> Option<PathBuf> {
-    Some(laex0()?.join(SESSION_KEY_FILENAME))
+    Some(lightarchitects_cli()?.join(SESSION_KEY_FILENAME))
 }
 
 /// Returns `~/lightarchitects/soul/`.
@@ -78,10 +78,10 @@ pub fn soul() -> Option<PathBuf> {
     sibling_runtime("soul")
 }
 
-/// Returns `~/lightarchitects/laex0/`.
+/// Returns `~/lightarchitects/cli/`.
 #[must_use]
-pub fn laex0() -> Option<PathBuf> {
-    sibling_runtime("laex0")
+pub fn lightarchitects_cli() -> Option<PathBuf> {
+    sibling_runtime("cli")
 }
 
 /// Returns `~/lightarchitects/corso/`.
@@ -181,7 +181,7 @@ pub fn helix_root_or_fallback() -> PathBuf {
 /// Returns [`session_key`] or a fallback.
 #[must_use]
 pub fn session_key_or_fallback() -> PathBuf {
-    laex0_or_fallback().join(SESSION_KEY_FILENAME)
+    lightarchitects_cli_or_fallback().join(SESSION_KEY_FILENAME)
 }
 
 /// Returns `~/lightarchitects/soul/` or a fallback.
@@ -190,10 +190,10 @@ pub fn soul_or_fallback() -> PathBuf {
     sibling_runtime_or_fallback("soul")
 }
 
-/// Returns `~/lightarchitects/laex0/` or a fallback.
+/// Returns `~/lightarchitects/cli/` or a fallback.
 #[must_use]
-pub fn laex0_or_fallback() -> PathBuf {
-    sibling_runtime_or_fallback("laex0")
+pub fn lightarchitects_cli_or_fallback() -> PathBuf {
+    sibling_runtime_or_fallback("cli")
 }
 
 /// Returns `~/lightarchitects/corso/` or a fallback.
@@ -341,12 +341,12 @@ mod tests {
     }
 
     #[test]
-    fn session_key_is_under_laex0_runtime() {
+    fn session_key_is_under_lightarchitects_cli_runtime() {
         let root = resolve_root(Path::new("/Users/kft"), None);
-        let session_key = root.join("laex0").join(".session-key");
+        let session_key = root.join("cli").join(".session-key");
         assert_eq!(
             session_key,
-            PathBuf::from("/Users/kft/lightarchitects/laex0/.session-key")
+            PathBuf::from("/Users/kft/lightarchitects/cli/.session-key")
         );
     }
 
@@ -420,7 +420,10 @@ mod tests {
     fn named_sibling_fallbacks_agree_with_sibling_runtime_or_fallback() {
         // Each named fallback must equal the generic dispatch for its name.
         assert_eq!(soul_or_fallback(), sibling_runtime_or_fallback("soul"));
-        assert_eq!(laex0_or_fallback(), sibling_runtime_or_fallback("laex0"));
+        assert_eq!(
+            lightarchitects_cli_or_fallback(),
+            sibling_runtime_or_fallback("cli")
+        );
         assert_eq!(corso_or_fallback(), sibling_runtime_or_fallback("corso"));
         assert_eq!(eva_or_fallback(), sibling_runtime_or_fallback("eva"));
         assert_eq!(
@@ -439,10 +442,10 @@ mod tests {
     fn helix_and_session_key_fallbacks_compose_correctly() {
         // helix is under soul
         assert_eq!(helix_root_or_fallback(), soul_or_fallback().join("helix"));
-        // session key is under laex0
+        // session key is under lightarchitects_cli
         assert_eq!(
             session_key_or_fallback(),
-            laex0_or_fallback().join(".session-key")
+            lightarchitects_cli_or_fallback().join(".session-key")
         );
     }
 }
