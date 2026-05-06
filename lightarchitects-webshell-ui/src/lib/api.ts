@@ -33,6 +33,16 @@ export const api = {
 
   // Builds (GET = helix portfolio; POST/GET :id = PTY session)
   listBuilds:     () => request<unknown>('/builds'),
+  /** Returns the full portfolio of manifest.yaml-tracked builds, newest first. */
+  getActiveBuilds: (filters?: { status?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set('status', filters.status);
+    const qs = params.size ? `?${params}` : '';
+    return request<unknown[]>(`/builds${qs}`);
+  },
+  /** Returns a single build by codename. Resolves to an array of 0 or 1 items. */
+  getBuildDetail: (codename: string) =>
+    request<unknown[]>(`/builds?codename=${encodeURIComponent(codename)}`),
   createBuild:    (body: unknown) => request<BuildResponse>('/builds', { method: 'POST', body: JSON.stringify(body) }),
   getBuild:       (id: string) => request<BuildResponse>(`/builds/${id}`),
 

@@ -1,7 +1,8 @@
 //! `/api/builds` routes.
 //!
-//! - `GET /api/builds` — returns the parsed `active.yaml` build tracking data
-//!   (cached by mtime; 503 if the vault is missing).
+//! - `GET /api/builds` — walks `corso/builds/*/manifest.yaml`, returns aggregate
+//!   JSON array of build summaries. Supports `?status=` and `?codename=` filters.
+//!   Cached by directory mtime; 503 if the vault is missing.
 //! - `POST /api/builds` — creates a new live build session (Phase C):
 //!   mints a UUID + random 32-byte notify token, inserts an
 //!   `Arc<BuildSession>` into the registry, returns public metadata.
@@ -15,7 +16,7 @@ use std::time::SystemTime;
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -30,7 +31,7 @@ use crate::{
     session::BuildSession,
 };
 
-/// Cached build data: (mtime, serialised JSON bytes).
+/// Cached build data: (builds-dir mtime, serialised JSON bytes).
 pub type Cache = Arc<Mutex<Option<(SystemTime, Vec<u8>)>>>;
 
 /// Shared cache instance, created once per server lifetime.
@@ -39,16 +40,98 @@ pub fn build_cache() -> Cache {
     Arc::new(Mutex::new(None))
 }
 
-/// `GET /api/builds` — returns build tracking data as JSON.
+/// Query parameters for `GET /api/builds`.
+#[derive(Debug, Deserialize, Default)]
+pub struct BuildsQuery {
+    /// Filter by build status (case-insensitive prefix match, e.g. `phase_2`).
+    pub status: Option<String>,
+    /// Return a single build matching this codename exactly.
+    pub codename: Option<String>,
+}
+
+/// Parsed summary of one `manifest.yaml` file, returned by `GET /api/builds`.
+#[derive(Debug, Serialize)]
+pub struct BuildSummary {
+    /// Build codename, from `plan_id` or parent directory name.
+    pub codename: String,
+    /// Human-readable build name from `plan_name`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_name: Option<String>,
+    /// Build status string (e.g. `PHASE_2_IN_PROGRESS`, `COMPLETE`).
+    pub status: String,
+    /// LASDLC tier (`SMALL`, `MEDIUM`, or `LARGE`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier: Option<String>,
+    /// ISO date the build was created.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+    /// Agent or user that owns the build.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    /// Phase completion history from the manifest.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase_status_history: Option<serde_json::Value>,
+}
+
+/// Parse a `manifest.yaml` file into a [`BuildSummary`], returning `None`
+/// on any read or parse error (the walk skips unparseable manifests).
+fn parse_manifest(path: &std::path::Path) -> Option<BuildSummary> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let yaml: serde_json::Value = serde_yaml::from_str::<serde_yaml::Value>(&content)
+        .ok()
+        .and_then(|v| serde_json::to_value(v).ok())?;
+
+    let codename = yaml
+        .get("plan_id")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+        // Fallback: derive from parent directory name.
+        .or_else(|| {
+            path.parent()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .map(str::to_owned)
+        })?;
+
+    let status = yaml
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_owned();
+
+    Some(BuildSummary {
+        codename,
+        plan_name: yaml
+            .get("plan_name")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned),
+        status,
+        tier: yaml.get("tier").and_then(|v| v.as_str()).map(str::to_owned),
+        created: yaml
+            .get("created")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned),
+        owner: yaml
+            .get("owner")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned),
+        phase_status_history: yaml.get("phase_status_history").cloned(),
+    })
+}
+
+/// `GET /api/builds` — returns aggregate build portfolio as a JSON array.
 ///
-/// Auth-gated (same Bearer token as `/api/events`).
-/// Returns 503 if the vault is not configured or the file doesn't exist.
+/// Walks `corso/builds/*/manifest.yaml`, parses each, applies optional
+/// `?status=` and `?codename=` filters, returns the result sorted by
+/// `created` descending.  Auth-gated (same Bearer token as `/api/events`).
+/// Returns 503 if the vault is not configured.  Results are cached by the
+/// `corso/builds/` directory mtime.
 #[allow(clippy::missing_panics_doc)]
 pub async fn builds_handler(
     headers: axum::http::HeaderMap,
+    Query(query): Query<BuildsQuery>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    // Validate bearer token.
     let authz = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -58,71 +141,73 @@ pub async fn builds_handler(
         return StatusCode::UNAUTHORIZED.into_response();
     }
 
-    // Resolve the active.yaml path.
     let Some(helix_root) = lightarchitects::core::paths::helix_root() else {
         warn!("helix_root unavailable — cannot serve /api/builds");
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
-    let path = helix_root.join("corso").join("builds").join("active.yaml");
+    let builds_dir = helix_root.join("corso").join("builds");
 
-    let metadata = match std::fs::metadata(&path) {
-        Ok(m) => m,
+    // Use directory mtime as cache key: any manifest write updates dir mtime.
+    let dir_mtime = std::fs::metadata(&builds_dir)
+        .and_then(|m| m.modified())
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+
+    // Fast-path: serve cached bytes when directory is unchanged AND no filters
+    // are active (filtered responses are not cached to keep the cache simple).
+    let no_filters = query.status.is_none() && query.codename.is_none();
+    #[allow(clippy::unwrap_used)]
+    if no_filters {
+        let cache_hit = {
+            let cache = state.builds_cache.lock().unwrap();
+            cache.as_ref().and_then(|(cached_mtime, cached_bytes)| {
+                if *cached_mtime == dir_mtime {
+                    Some(cached_bytes.clone())
+                } else {
+                    None
+                }
+            })
+        };
+        if let Some(cached_bytes) = cache_hit {
+            return (
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                cached_bytes,
+            )
+                .into_response();
+        }
+    }
+
+    // Walk builds_dir/*/manifest.yaml, parse each, collect summaries.
+    let mut summaries: Vec<BuildSummary> = match std::fs::read_dir(&builds_dir) {
+        Ok(entries) => entries
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                if !entry.file_type().ok()?.is_dir() {
+                    return None;
+                }
+                let manifest_path = entry.path().join("manifest.yaml");
+                parse_manifest(&manifest_path)
+            })
+            .collect(),
         Err(e) => {
-            warn!(error = %e, path = %path.display(), "active.yaml not found");
+            warn!(error = %e, path = %builds_dir.display(), "cannot read builds directory");
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
 
-    let mtime = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-
-    // Check the cache — if mtime matches, return cached bytes.
-    // Mutex lock is held briefly; a poisoned lock from a panic is acceptable
-    // because the server would be in an inconsistent state anyway.
-    #[allow(clippy::unwrap_used)]
-    let cache_hit = {
-        let cache = state.builds_cache.lock().unwrap();
-        cache.as_ref().and_then(|(cached_mtime, cached_bytes)| {
-            if *cached_mtime == mtime {
-                Some(cached_bytes.clone())
-            } else {
-                None
-            }
-        })
-    };
-
-    if let Some(cached_bytes) = cache_hit {
-        return (
-            StatusCode::OK,
-            [(axum::http::header::CONTENT_TYPE, "application/json")],
-            cached_bytes,
-        )
-            .into_response();
+    // Apply filters.
+    if let Some(ref codename_filter) = query.codename {
+        summaries.retain(|s| s.codename == *codename_filter);
+    }
+    if let Some(ref status_filter) = query.status {
+        let filter_lower = status_filter.to_lowercase();
+        summaries.retain(|s| s.status.to_lowercase().starts_with(&filter_lower));
     }
 
-    // Read and parse the YAML file.
-    let content = match std::fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(e) => {
-            warn!(error = %e, path = %path.display(), "failed to read active.yaml");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
+    // Sort by created descending (most recent first); unknown dates sort last.
+    summaries.sort_by(|a, b| b.created.cmp(&a.created));
 
-    let yaml_value: serde_yaml::Value = match serde_yaml::from_str(&content) {
-        Ok(v) => v,
-        Err(e) => {
-            warn!(error = %e, "failed to parse active.yaml");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
-
-    // Convert YAML → JSON for the browser.
-    let json_value = serde_json::to_value(&yaml_value).unwrap_or_else(|e| {
-        warn!(error = %e, "failed to convert YAML to JSON");
-        serde_json::Value::Null
-    });
-
-    let json_bytes = match serde_json::to_vec_pretty(&json_value) {
+    let json_bytes = match serde_json::to_vec_pretty(&summaries) {
         Ok(b) => b,
         Err(e) => {
             warn!(error = %e, "failed to serialise builds JSON");
@@ -130,12 +215,12 @@ pub async fn builds_handler(
         }
     };
 
-    info!(path = %path.display(), "served /api/builds");
+    info!(count = summaries.len(), "served /api/builds");
 
-    // Update cache.
+    // Cache only the unfiltered response.
     #[allow(clippy::unwrap_used)]
-    {
-        *state.builds_cache.lock().unwrap() = Some((mtime, json_bytes.clone()));
+    if no_filters {
+        *state.builds_cache.lock().unwrap() = Some((dir_mtime, json_bytes.clone()));
     }
 
     (

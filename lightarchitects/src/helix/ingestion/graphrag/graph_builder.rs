@@ -163,6 +163,7 @@ impl<'db> GraphBuilder<'db> {
             name: format!("GraphRAG \u{2014} {source_id}"),
             level: 0,
             ordering_mode: HelixOrderingMode::Indexed,
+            scope_tier: crate::helix::types::ScopeTier::User,
             max_depth: Some(MAX_TRAVERSAL_DEPTH),
             created_at: Utc::now(),
         };
