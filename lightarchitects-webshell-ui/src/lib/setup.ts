@@ -250,13 +250,17 @@ export async function resetSetup(): Promise<void> {
 
 // Hydrate existing stores from persisted config on load
 export function applyPersistedConfig(cfg: SetupConfig): void {
-  const isOllama = cfg.backend.includes('ollama');
-  authProfile.set(isOllama ? 'ollama' : ('anthropic' as AuthProfile));
-  if (isOllama && cfg.ollama_base_url) {
-    ollamaConfig.set({
-      baseUrl: cfg.ollama_base_url,
-      model: cfg.model ?? '',
-      apiKey: '',
-    });
+  if (cfg.backend === 'lightarchitects') {
+    authProfile.set('lightarchitects');
+  } else {
+    const isOllama = cfg.backend.includes('ollama');
+    authProfile.set(isOllama ? 'ollama' : ('anthropic' as AuthProfile));
+    if (isOllama && cfg.ollama_base_url) {
+      ollamaConfig.set({
+        baseUrl: cfg.ollama_base_url,
+        model: cfg.model ?? '',
+        apiKey: '',
+      });
+    }
   }
 }

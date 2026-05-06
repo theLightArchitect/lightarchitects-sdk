@@ -171,9 +171,9 @@ export const REAL_VAULT = {
 const SETUP_INFO = {
   setup_complete: true,
   config: {
-    agent: 'lightarchitects',
-    backend: 'anthropic',
-    model: 'claude-sonnet-4-6',
+    agent: 'lightarchitects_native',
+    backend: 'lightarchitects',
+    model: 'nemotron-3-super:cloud',
     ollama_base_url: null,
     api_key_stored: false,
   },
@@ -232,14 +232,18 @@ export async function registerMocks(page: Page): Promise<void> {
       body: '{"ok":true}',
     }),
   );
+  // ── Setup models (native CLI catalogue) ──
   await page.route('**/api/setup/models', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
         models: [
+          { id: 'nemotron-3-super:120b-cloud', label: 'Nemotron 3 Super 120B', tier: 'capable' },
+          { id: 'nemotron-3-super:cloud', label: 'Nemotron 3 Super Cloud', tier: 'capable' },
+          { id: 'qwen3-coder:480b-cloud', label: 'Qwen3 Coder 480B Cloud', tier: 'balanced' },
+          { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', tier: 'flagship' },
           { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', tier: 'balanced' },
-          { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', tier: 'capable' },
           { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', tier: 'fast' },
         ],
       }),

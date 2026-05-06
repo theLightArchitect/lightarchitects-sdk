@@ -22,6 +22,9 @@
     status === 'reconnecting' ? 'reconnecting…' :
                                 'AYIN offline'
   );
+  // Auth profile indicator
+  let profileColor = $derived($authProfile === 'anthropic' ? '#F59E0B' : $authProfile === 'lightarchitects' ? '#22C55E' : '#6366F1');
+  let profileLabel = $derived($authProfile === 'anthropic' ? 'Anthropic' : $authProfile === 'lightarchitects' ? 'CLI' : 'Ollama');
 </script>
 
 <div class="absolute bottom-[12px] left-[12px] flex items-center gap-[6px] pointer-events-none z-10 bg-[var(--la-bg-elev-1)]/80 px-2 py-1 rounded backdrop-blur-sm border border-[var(--la-drawer-border)]">
@@ -62,9 +65,7 @@
   <!-- Auth profile indicator -->
   <div
     class="w-[7px] h-[7px] rounded-full shrink-0"
-    style="background-color: {$authProfile === 'anthropic' ? '#F59E0B' : '#6366F1'}; box-shadow: 0 0 4px {$authProfile === 'anthropic' ? '#F59E0B' : '#6366F1'}"
+    style="background-color: {profileColor}; box-shadow: 0 0 4px {profileColor}"
   ></div>
-  <span class="text-[11px] text-[var(--la-text-label)] font-mono leading-none">
-    {$authProfile === 'anthropic' ? 'Anthropic' : 'Ollama'}
-  </span>
+  <span class="text-[11px] text-[var(--la-text-label)] font-mono leading-none">{profileLabel}</span>
 </div>

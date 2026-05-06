@@ -200,6 +200,10 @@ pub struct LightarchitectsNativeConfig {
     /// Path to the `lightarchitects-cli` binary. Default: `"lightarchitects-cli"` (assumes on `$PATH`).
     #[serde(default = "default_lightarchitects_cli_binary")]
     pub binary: String,
+    /// Selected model ID (e.g. `"nemotron-3-super:cloud"`).
+    /// The CLI reads this from its own TOML config; this field is for UI introspection.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 fn default_lightarchitects_cli_binary() -> String {
@@ -210,6 +214,7 @@ impl Default for LightarchitectsNativeConfig {
     fn default() -> Self {
         Self {
             binary: default_lightarchitects_cli_binary(),
+            model: None,
         }
     }
 }
@@ -389,6 +394,19 @@ fn ollama_config_path() -> Option<PathBuf> {
     lightarchitects::core::paths::root().map(|root| root.join("webshell").join("ollama.json"))
 }
 
+/// Returns the canonical lightarchitects-cli config path:
+/// `~/lightarchitects/soul/config/lightarchitects-cli.toml`.
+pub(crate) fn lightarchitects_cli_config_path() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .map(|h| {
+            h.join("lightarchitects")
+                .join("soul")
+                .join("config")
+                .join("lightarchitects-cli.toml")
+        })
+}
+
 /// Load Ollama config from disk, or return `None` if the file is missing/unreadable.
 fn load_ollama_config() -> Option<OllamaConfig> {
     let path = ollama_config_path()?;
@@ -483,6 +501,7 @@ fn resolve_lightarchitects_cli_native_config(cli: &Cli) -> LightarchitectsNative
             .lightarchitects_cli_binary
             .clone()
             .unwrap_or_else(default_lightarchitects_cli_binary),
+        model: None,
     }
 }
 

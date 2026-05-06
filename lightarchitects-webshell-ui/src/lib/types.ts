@@ -651,7 +651,7 @@ export interface PillarUpdatePayload {
 
 // --- Auth profiles ---
 
-export type AuthProfile = 'anthropic' | 'ollama';
+export type AuthProfile = 'anthropic' | 'ollama' | 'lightarchitects';
 
 export interface OllamaConfig {
   baseUrl: string;

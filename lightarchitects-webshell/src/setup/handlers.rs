@@ -250,6 +250,43 @@ async fn detect_ollama_status(base_url: &str) -> OllamaAuthStatus {
 
 // ── Model lists ───────────────────────────────────────────────────────────────
 
+/// Models available for the lightarchitects native CLI agent.
+/// Mirrors the CLI catalogue (src/llm/catalogue.rs).
+fn lightarchitects_models() -> Vec<ModelOption> {
+    vec![
+        ModelOption {
+            id: "nemotron-3-super:120b-cloud".to_owned(),
+            label: "Nemotron 3 Super 120B".to_owned(),
+            tier: "capable".to_owned(),
+        },
+        ModelOption {
+            id: "nemotron-3-super:cloud".to_owned(),
+            label: "Nemotron 3 Super Cloud".to_owned(),
+            tier: "capable".to_owned(),
+        },
+        ModelOption {
+            id: "qwen3-coder:480b-cloud".to_owned(),
+            label: "Qwen3 Coder 480B Cloud".to_owned(),
+            tier: "balanced".to_owned(),
+        },
+        ModelOption {
+            id: "claude-opus-4-7".to_owned(),
+            label: "Claude Opus 4.7".to_owned(),
+            tier: "flagship".to_owned(),
+        },
+        ModelOption {
+            id: "claude-sonnet-4-6".to_owned(),
+            label: "Claude Sonnet 4.6".to_owned(),
+            tier: "balanced".to_owned(),
+        },
+        ModelOption {
+            id: "claude-haiku-4-5-20251001".to_owned(),
+            label: "Claude Haiku 4.5".to_owned(),
+            tier: "fast".to_owned(),
+        },
+    ]
+}
+
 fn anthropic_models() -> Vec<ModelOption> {
     vec![
         ModelOption {
@@ -378,6 +415,7 @@ fn agent_session_from_save(req: &SaveRequest) -> Option<crate::config::AgentSess
             Some(crate::config::AgentSession::LightarchitectsNative(
                 crate::config::LightarchitectsNativeConfig {
                     binary: "lightarchitects-cli".to_owned(),
+                    model: req.model.clone(),
                 },
             ))
         }
@@ -386,10 +424,103 @@ fn agent_session_from_save(req: &SaveRequest) -> Option<crate::config::AgentSess
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
+/// Read the `[llm] model` key from the CLI's TOML config, if it exists.
+fn lightarchitects_cli_model_from_toml() -> Option<String> {
+    let path = crate::config::lightarchitects_cli_config_path()?;
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(target: "setup", path = %path.display(), "Failed to read CLI TOML config: {e}");
+            return None;
+        }
+    };
+    let doc: toml::Table = match content.parse() {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!(target: "setup", path = %path.display(), "Failed to parse CLI TOML config: {e}");
+            return None;
+        }
+    };
+    doc.get("llm")
+        .and_then(|v| v.as_table())
+        .and_then(|t| t.get("model"))
+        .and_then(|v| v.as_str())
+        .map(String::from)
+}
+
+/// Write `model` to `[llm] model` in the CLI's TOML config.
+///
+/// Uses atomic rename via a tempfile to avoid TOCTOU races (CWE-59) and
+/// sets `0o600` permissions to match the rest of the codebase (CWE-732).
+fn lightarchitects_cli_model_to_toml(model: &str) -> Result<(), std::io::Error> {
+    let Some(path) = crate::config::lightarchitects_cli_config_path() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "lightarchitects-cli config path unavailable",
+        ));
+    };
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => Some(c),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e),
+    };
+    let mut doc: toml::Table = match content {
+        Some(c) => c.parse().map_err(|e: toml::de::Error| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, e)
+        })?,
+        None => toml::Table::new(),
+    };
+    if doc.get_mut("llm").is_none() {
+        let _ = doc.insert("llm".to_owned(), toml::Value::Table(toml::Table::new()));
+    }
+    if let Some(llm) = doc.get_mut("llm").and_then(|v| v.as_table_mut()) {
+        let _ = llm.insert("model".to_owned(), toml::Value::String(model.to_owned()));
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let out = toml::to_string_pretty(&doc)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+
+    let tmp = path.with_extension(format!("toml.tmp.{}", std::process::id()));
+    {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)?;
+        file.write_all(out.as_bytes())?;
+        file.sync_all()?;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+    }
+    std::fs::rename(&tmp, &path)?;
+    Ok(())
+}
+
 /// `GET /api/setup/info` — returns setup state + auth detection (unauthenticated).
 pub async fn setup_info(State(state): State<AppState>) -> impl IntoResponse {
-    let setup_complete = Config::is_setup_complete();
-    let config = Config::load_setup();
+    let mut setup_complete = Config::is_setup_complete();
+    let mut config = Config::load_setup();
+
+    // Auto-complete for native CLI when no explicit setup exists.
+    if !setup_complete {
+        let is_native_default =
+            matches!(state.config.agent.kind(), AgentKind::LightarchitectsNative);
+        if is_native_default {
+            setup_complete = true;
+            config = Some(SetupConfig {
+                agent: AgentKind::LightarchitectsNative,
+                backend: "lightarchitects".to_owned(),
+                model: lightarchitects_cli_model_from_toml(),
+                ollama_base_url: None,
+                api_key_stored: false,
+            });
+        }
+    }
 
     let claude = detect_claude_auth().await;
     let codex = detect_codex_auth().await;
@@ -419,6 +550,7 @@ pub async fn setup_info(State(state): State<AppState>) -> impl IntoResponse {
 pub async fn setup_models(Query(q): Query<ModelsQuery>) -> impl IntoResponse {
     let models = match q.backend.as_str() {
         "anthropic" => anthropic_models(),
+        "lightarchitects" | "lightarchitects_native" => lightarchitects_models(),
         "openai" | "codex" => codex_models(),
         "ollama-launch" | "ollama_launch" | "ollama" => {
             let url = q.base_url.as_deref().unwrap_or("http://localhost:11434");
@@ -441,6 +573,21 @@ pub async fn setup_save(
         .unwrap_or("");
     if !auth::validate_bearer(authz, &state.config.token) {
         return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    // For native CLI, write the selected model to the CLI's TOML config first.
+    // This must succeed before we claim the setup is saved.
+    if req.agent == AgentKind::LightarchitectsNative {
+        if let Some(ref model) = req.model {
+            if model.trim().is_empty() {
+                tracing::warn!(target: "setup", "Rejecting empty model for native CLI");
+                return StatusCode::BAD_REQUEST.into_response();
+            }
+            if let Err(e) = lightarchitects_cli_model_to_toml(model) {
+                tracing::error!(target: "setup", "Failed to write CLI TOML config: {e}");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        }
     }
 
     // Store API key in OS keychain if provided.

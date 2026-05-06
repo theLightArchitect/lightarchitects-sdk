@@ -78,6 +78,9 @@ serde_yaml.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 
+# TOML config editing for lightarchitects-cli native agent model management
+toml = { workspace = true }
+
 # Logging
 tracing.workspace = true
 tracing-subscriber.workspace = true

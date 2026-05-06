@@ -7,12 +7,13 @@
   import { saveSettingsDebounced } from '$lib/settings-persistence';
 
   const backends = [
+    { id: 'lightarchitects', agent: 'lightarchitects_native', label: 'CLI' },
     { id: 'anthropic', agent: 'lightarchitects', label: 'Claude Code' },
     { id: 'openai', agent: 'codex', label: 'Codex' },
     { id: 'ollama-launch', agent: 'lightarchitects', label: 'Ollama' },
   ];
 
-  let pickedBackend = $state($selectedBackend ?? $persistedConfig?.backend ?? 'anthropic');
+  let pickedBackend = $state($selectedBackend ?? $persistedConfig?.backend ?? 'lightarchitects');
   let pickedModel = $state<string | null>($selectedModel ?? $persistedConfig?.model ?? null);
   let toast = $state<string | null>(null);
 

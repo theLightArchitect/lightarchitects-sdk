@@ -4,12 +4,15 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::sync::Arc;
 use tracing::{debug, warn};
-use async_trait::async_trait;
 
 /// Trait for validating a key via HTTP.
 #[async_trait::async_trait]
 pub trait ValidationClient: Send + Sync {
-    async fn validate_key(&self, key: &str, api_base_url: &str) -> Result<ValidationResult, AuthError>;
+    async fn validate_key(
+        &self,
+        key: &str,
+        api_base_url: &str,
+    ) -> Result<ValidationResult, AuthError>;
 }
 
 /// Real HTTP client using reqwest.
@@ -20,8 +23,12 @@ pub struct RealClient {
 
 #[async_trait::async_trait]
 impl ValidationClient for RealClient {
-    async fn validate_key(&self, key: &str, api_base_url: &str) -> Result<ValidationResult, AuthError> {
-        let url = format!("{}/api/validate-key", api_base_url);
+    async fn validate_key(
+        &self,
+        key: &str,
+        api_base_url: &str,
+    ) -> Result<ValidationResult, AuthError> {
+        let url = format!("{api_base_url}/api/validate-key");
         let response = self
             .inner
             .post(&url)
@@ -118,7 +125,11 @@ impl KeyValidator {
         }
 
         // Call the validation endpoint via the injected client
-        match self.client.validate_key(key, &self.config.api_base_url).await {
+        match self
+            .client
+            .validate_key(key, &self.config.api_base_url)
+            .await
+        {
             Ok(result) => {
                 if result.valid {
                     let cache = KeyCache {
@@ -226,8 +237,8 @@ fn ensure_parent_dir(path: &Path) -> Result<(), AuthError> {
 mod tests {
     use super::*;
     use crate::auth::{AuthTier, SubscriptionTier};
-    use tempfile::TempDir;
     use std::sync::Mutex;
+    use tempfile::TempDir;
 
     fn isolated(dir: &TempDir, api_url: &str) -> AuthConfig {
         AuthConfig {
@@ -274,7 +285,11 @@ mod tests {
 
     #[async_trait::async_trait]
     impl ValidationClient for MockClient {
-        async fn validate_key(&self, _key: &str, _api_base_url: &str) -> Result<ValidationResult, AuthError> {
+        async fn validate_key(
+            &self,
+            _key: &str,
+            _api_base_url: &str,
+        ) -> Result<ValidationResult, AuthError> {
             let mut guard = self.result.lock().unwrap();
             guard.take().expect("MockClient result already taken")
         }
