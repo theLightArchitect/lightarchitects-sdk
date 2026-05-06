@@ -105,6 +105,9 @@ pub struct BuildSession {
     /// All active `attach_ws` loops select on `notified()` so they can
     /// send a Close frame and exit cleanly.
     pub pty_exited: Arc<tokio::sync::Notify>,
+    /// Whether this build session should spawn inside a Docker container.
+    /// Set at creation time based on Docker capability + container mode config.
+    pub containerized: bool,
 }
 
 impl BuildSession {
@@ -140,6 +143,7 @@ impl BuildSession {
             pty_input_tx: tokio::sync::Mutex::new(None),
             pty_master: StdMutex::new(None),
             pty_exited: Arc::new(tokio::sync::Notify::new()),
+            containerized: false,
         }
     }
 

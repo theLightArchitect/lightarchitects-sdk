@@ -112,6 +112,10 @@ async fn ensure_pty_started(session: &BuildSession, config: &Config) -> Result<(
         return Ok(()); // already running
     }
 
+    if session.containerized {
+        tracing::warn!(target: "container", "containerized=true but relay not implemented — falling back to native PTY");
+    }
+
     // ── Open PTY pair ─────────────────────────────────────────────────────────
     let pty_sys = native_pty_system();
     let pair = pty_sys.openpty(PtySize {

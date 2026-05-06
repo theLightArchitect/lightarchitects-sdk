@@ -508,15 +508,19 @@ mod tests {
         use crate::config::{AgentSession, Config, TokenSource};
         use std::ffi::OsString;
         use std::path::PathBuf;
-        crate::server::AppState::for_test(Config {
-            port: 0,
-            host_cmd: OsString::from("bash"),
-            cwd: PathBuf::from("/tmp"),
-            token: "test-bearer-abc".to_owned(),
-            token_source: TokenSource::EnvVar,
-            agent: AgentSession::default(),
-            claude_agent_template: None,
-        })
+        crate::server::AppState::for_test(
+            Config {
+                port: 0,
+                host_cmd: OsString::from("bash"),
+                cwd: PathBuf::from("/tmp"),
+                token: "test-bearer-abc".to_owned(),
+                token_source: TokenSource::EnvVar,
+                agent: AgentSession::default(),
+                claude_agent_template: None,
+                container_mode: crate::container::ContainerMode::Auto,
+            },
+            crate::container::DockerCapability::Unavailable,
+        )
     }
 
     #[tokio::test]

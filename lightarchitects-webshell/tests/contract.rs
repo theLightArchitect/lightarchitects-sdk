@@ -29,7 +29,10 @@ fn make_app() -> axum::Router {
         ..Default::default()
     };
     let cfg = Config::resolve_with_token(cli, Some(TOKEN.to_owned())).unwrap();
-    build_app(AppState::for_test(cfg))
+    build_app(AppState::for_test(
+        cfg,
+        lightarchitects_webshell::container::DockerCapability::Unavailable,
+    ))
 }
 
 async fn body_string(resp: axum::response::Response) -> String {

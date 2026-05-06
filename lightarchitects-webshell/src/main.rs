@@ -32,6 +32,8 @@ async fn main() -> ExitCode {
 
     init_tracing();
 
+    let docker_capable = lightarchitects_webshell::container::probe::probe_docker().await;
+
     let cli = Cli::parse();
     let config = match Config::resolve(cli) {
         Ok(c) => c,
@@ -67,7 +69,7 @@ async fn main() -> ExitCode {
     eprintln!("  Keychain: ~/.lightarchitects/webshell/.token");
     eprintln!();
 
-    match server::run_with_port_retry(config).await {
+    match server::run_with_port_retry(config, docker_capable).await {
         Ok(bound_port) => {
             if bound_port != port {
                 // A fallback port was used — re-print the access URL with the

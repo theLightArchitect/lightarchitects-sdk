@@ -37,7 +37,7 @@ aho-corasick = "1"
 
 
 # Async runtime — "signal" for graceful shutdown; "ws" feature of axum adds tungstenite transitively
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "process"] }
 
 # Web framework. "ws" feature adds tungstenite-based WebSocket upgrade for Phase 2 PTY bridge.
 axum = { workspace = true, features = ["ws", "macros"] }
@@ -101,6 +101,13 @@ keyring = { workspace = true }
 
 # Safe SIGTERM on Unix (workspace unsafe_code = "deny" forbids libc::kill directly).
 # "signal" feature: nix::sys::signal::{kill, Signal}.
+
+# Session persistence — SQLite thread table for native session continuity.
+rusqlite = { workspace = true }
+
+# Telemetry hashing — SHA-256 of build_id for privacy.
+sha2 = { workspace = true }
+hex = "0.4"
 
 [features]
 # Gate the real TeamManager subprocess path behind a feature until lightarchitects-cli is

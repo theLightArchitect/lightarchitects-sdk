@@ -26,12 +26,16 @@ use tracing::info;
 use crate::{
     auth,
     config::{AgentSession, Config},
+    container::{DockerCapability, ImageManager},
     coordination, copilot, csp,
     dispatch::{self, DispatchRegistry},
     events::{self, EVENT_CHANNEL_BUF, WebEvent, builds_handler},
+    init::telemetry::TelemetryHandle,
     polytope_data, real_data,
     session::BuildRegistry,
-    session_fork, setup, static_assets, terminal,
+    session_fork,
+    session_store::SessionStore,
+    setup, static_assets, terminal,
 };
 
 /// Snapshot of the browser UI state, periodically reported by the frontend.
@@ -137,19 +141,32 @@ pub struct AppState {
     /// Guarded by a `Mutex` — each registry operation is a short critical
     /// section with no long-held locks (MED M-4).
     pub dispatch_registry: Arc<Mutex<DispatchRegistry>>,
+    /// Docker capability detected at startup.
+    pub docker_capable: DockerCapability,
+    /// Lazy image provisioning for containerized sessions.
+    pub image_manager: ImageManager,
+    /// 1P telemetry event sink (structured tracing, no PII).
+    pub telemetry: TelemetryHandle,
+    /// `SQLite` session persistence — survives browser refreshes and restarts.
+    pub session_store: Arc<std::sync::Mutex<SessionStore>>,
 }
 
 impl AppState {
     /// Constructs a new state from a resolved [`Config`] and spawns the
     /// background AYIN SSE subscription task.
     #[must_use]
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, docker_capable: DockerCapability) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_BUF);
         events::AyinClient::spawn(event_tx.clone());
         events::HelixWatcher::spawn(event_tx.clone());
         let pepper = load_turnlog_pepper();
         let active_agent = Arc::new(RwLock::new(config.agent.clone()));
         let soul_store = Some(Arc::new(crate::memory::persistence::SoulPersistence::open()));
+        let telemetry = TelemetryHandle::new();
+        let session_store = Arc::new(std::sync::Mutex::new(
+            SessionStore::open().unwrap_or_else(|_| SessionStore::noop()),
+        ));
+        let image_manager = ImageManager::new(docker_capable);
 
         // Phase 19c.2 — hot-reloadable promotion policy.
         // Gracefully absent when the YAML file doesn't exist yet.
@@ -215,6 +232,10 @@ impl AppState {
             _policy_watcher: policy_watcher,
             embedding_provider: Arc::new(tokio::sync::OnceCell::new()),
             dispatch_registry: Arc::new(Mutex::new(DispatchRegistry::new())),
+            docker_capable,
+            image_manager,
+            telemetry,
+            session_store,
         }
     }
 
@@ -281,7 +302,7 @@ impl AppState {
     /// This constructor is intended exclusively for integration test harnesses.
     /// Use [`AppState::new`] in production code.
     #[must_use]
-    pub fn for_test(config: Config) -> Self {
+    pub fn for_test(config: Config, docker_capable: DockerCapability) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_BUF);
         let active_agent = Arc::new(RwLock::new(config.agent.clone()));
         Self {
@@ -298,6 +319,10 @@ impl AppState {
             _policy_watcher: None,
             embedding_provider: Arc::new(tokio::sync::OnceCell::new()),
             dispatch_registry: Arc::new(Mutex::new(DispatchRegistry::new())),
+            docker_capable,
+            image_manager: ImageManager::new(docker_capable),
+            telemetry: TelemetryHandle::new(),
+            session_store: Arc::new(std::sync::Mutex::new(SessionStore::noop())),
         }
     }
 }
@@ -578,9 +603,9 @@ pub enum ServerError {
 ///
 /// - [`ServerError::Bind`] if the TCP listener cannot bind to the configured port.
 /// - [`ServerError::Serve`] if the server exits with an IO error mid-run.
-pub async fn run(config: Config) -> Result<(), ServerError> {
+pub async fn run(config: Config, docker_capable: DockerCapability) -> Result<(), ServerError> {
     let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
-    let state = AppState::new(config);
+    let state = AppState::new(config, docker_capable);
     let app = build_app(state);
 
     let listener = tokio::net::TcpListener::bind(addr)
@@ -612,7 +637,10 @@ const PORT_RETRY_LIMIT: u8 = 3;
 /// - [`ServerError::Bind`] when the port is available but binding fails for
 ///   another reason (e.g., permission denied on port < 1024).
 /// - [`ServerError::Serve`] if the server exits with an IO error mid-run.
-pub async fn run_with_port_retry(config: Config) -> Result<u16, ServerError> {
+pub async fn run_with_port_retry(
+    config: Config,
+    docker_capable: DockerCapability,
+) -> Result<u16, ServerError> {
     use std::io::ErrorKind;
 
     let first_port = config.port;
@@ -628,7 +656,7 @@ pub async fn run_with_port_retry(config: Config) -> Result<u16, ServerError> {
         let addr = SocketAddr::from(([127, 0, 0, 1], port));
         match tokio::net::TcpListener::bind(addr).await {
             Ok(listener) => {
-                let state = AppState::new(try_config);
+                let state = AppState::new(try_config, docker_capable);
                 let app = build_app(state);
                 info!(bind = %addr, "webshell server listening");
                 axum::serve(listener, app)

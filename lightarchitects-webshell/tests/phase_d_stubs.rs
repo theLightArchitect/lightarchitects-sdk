@@ -37,7 +37,10 @@ fn make_state() -> AppState {
         ..Default::default()
     };
     let cfg = Config::resolve_with_token(cli, Some(TOKEN.to_owned())).unwrap();
-    AppState::for_test(cfg)
+    AppState::for_test(
+        cfg,
+        lightarchitects_webshell::container::DockerCapability::Unavailable,
+    )
 }
 
 fn make_app() -> axum::Router {

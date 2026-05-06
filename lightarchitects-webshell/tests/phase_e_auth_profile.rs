@@ -43,7 +43,10 @@ fn cfg_with_agent(agent: AgentSession) -> Config {
 }
 
 async fn spawn_server_with(cfg: Config) -> (String, Arc<BuildRegistry>) {
-    let state = AppState::for_test(cfg);
+    let state = AppState::for_test(
+        cfg,
+        lightarchitects_webshell::container::DockerCapability::Unavailable,
+    );
     let builds = Arc::clone(&state.builds);
     let app = build_app(state);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
