@@ -88,6 +88,7 @@ secrecy = { workspace = true }
 zeroize = { workspace = true }
 subtle = { workspace = true }
 keyring = { workspace = true }
+tempfile = { workspace = true }
 
 # ── Platform-specific ─────────────────────────────────────────────────────────
 [target.'cfg(target_os = "macos")'.dependencies]

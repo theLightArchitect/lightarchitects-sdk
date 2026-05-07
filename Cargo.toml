@@ -3,9 +3,7 @@ resolver = "2"
 members = [
     "lightarchitects",          # Unified SDK — all clients + advanced capabilities
     "lightarchitects-webshell", # Binary: local web GUI (PTY + 3D helix panel)
-]
-exclude = [
-    "lightarchitects-gateway",
+    "lightarchitects-gateway",  # TEMP: E2E fix verification
 ]
 [workspace.package]
 edition = "2024"

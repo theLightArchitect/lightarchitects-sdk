@@ -191,15 +191,33 @@ fn cmd_sync_public(config: &GatewayConfig) -> Result<()> {
     }
 
     // Steps 3 & 4: validate before any IO (atomic abort)
+    // Note: proposed paths are relative to helix_root, so we validate them as-is
+    // (blocklist matches relative paths) but scan wikilinks on full filesystem paths
     crate::vault::prepush::validate_push_set(&proposed, &config.vault)
         .map_err(|e| anyhow!("Sync aborted — path validation failed: {e}"))?;
-    crate::vault::prepush::scan_wikilinks_for_leakage(&proposed, &config.vault)
+    // Build full paths for wikilink scanning (needs to read actual files)
+    let proposed_full: Vec<PathBuf> = proposed.iter().map(|p| helix_root.join(p)).collect();
+    crate::vault::prepush::scan_wikilinks_for_leakage(&proposed_full, &config.vault)
         .map_err(|e| anyhow!("Sync aborted — wikilink leakage detected: {e}"))?;
+
+    // H1: Symlink check — reject symlinks before rsync (SECURITY: prevent leaking files via symlinks)
+    for file in &proposed {
+        let full_path = helix_root.join(file);
+        if full_path.is_symlink() {
+            bail!(
+                "Symlinks not allowed in publishable files: {}",
+                file.display()
+            );
+        }
+    }
 
     // Step 5: validation passed — now rsync
     ensure_git_repo(&public_root)?;
     run_rsync(&helix_root, &public_root, &proposed)?;
-    run_git_in(&public_root, &["add", "-A"])?;
+    // C1: Add only validated files (NOT `git add -A` which would include unrelated staged files)
+    for file in &proposed {
+        run_git_in(&public_root, &["add", &file.to_string_lossy()])?;
+    }
     run_git_in(
         &public_root,
         &[
@@ -254,33 +272,35 @@ fn run_git_in(repo_root: &Path, args: &[&str]) -> Result<()> {
 /// Run rsync to copy a specific list of files from `src_root` to `dest_root`.
 ///
 /// Writes the file list to a temporary file in `$TMPDIR` for `rsync --files-from`.
+///
+/// # Security (H1: TOCTOU prevention)
+///
+/// Uses `NamedTempFile` for an unpredictable, atomic temp path with 0o600 perms.
 fn run_rsync(src_root: &Path, dest_root: &Path, files: &[PathBuf]) -> Result<()> {
-    let tmp_path = std::env::temp_dir().join(format!(
-        "la-vault-rsync-{}.txt",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos()
-    ));
+    // Use NamedTempFile for atomic, unpredictable temp path (H1: prevent TOCTOU race)
+    let tmp_file =
+        tempfile::NamedTempFile::new().context("cannot create temp file for rsync --files-from")?;
+
     let list: String = files
         .iter()
         .map(|p| p.to_string_lossy().into_owned() + "\n")
         .collect();
-    std::fs::write(&tmp_path, list).context("cannot write rsync file list")?;
+    std::fs::write(&tmp_file, &list).context("cannot write rsync file list")?;
 
     let status = Command::new("rsync")
         .args([
             "-a",
+            "--no-links", // SECURITY: do not follow symlinks (H1)
             "--files-from",
-            &tmp_path.to_string_lossy(),
+            &tmp_file.path().to_string_lossy(),
             &src_root.to_string_lossy(),
             &dest_root.to_string_lossy(),
         ])
         .status()
         .context("failed to spawn rsync")?;
 
-    // Best-effort cleanup — ignore failure (tmpdir cleanup handles it eventually)
-    let _ = std::fs::remove_file(&tmp_path);
+    // TempFile auto-deletes on drop; explicit close for clarity
+    tmp_file.close().ok();
 
     if !status.success() {
         bail!("rsync exited with status {status}");
@@ -355,12 +375,12 @@ fn collect_path_args(args: &[String]) -> Vec<PathBuf> {
     paths
 }
 
-/// Get the list of staged/changed paths from `git diff --name-only HEAD`.
+/// Get the list of staged paths from `git diff --name-only --cached`.
 fn staged_paths_from_git() -> Result<Vec<PathBuf>> {
     let out = Command::new("git")
-        .args(["diff", "--name-only", "HEAD"])
+        .args(["diff", "--name-only", "--cached"])
         .output()
-        .context("cannot run git diff --name-only HEAD")?;
+        .context("cannot run git diff --name-only --cached")?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     Ok(stdout
         .lines()
@@ -386,6 +406,10 @@ fn validate_paths(paths: &[PathBuf], config: &GatewayConfig) -> Result<()> {
 fn collect_publishable_files(helix_root: &Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     collect_publishable_recursive(helix_root, helix_root, &mut files)?;
+    eprintln!(
+        "DEBUG: collect_publishable_files found {} files",
+        files.len()
+    );
     Ok(files)
 }
 
@@ -415,9 +439,32 @@ fn collect_publishable_recursive(base: &Path, dir: &Path, out: &mut Vec<PathBuf>
 }
 
 /// Return `true` if `helix_toml` contains `publish = true`.
+///
+/// # Security (H3: TOML parsing)
+///
+/// Parses as TOML to avoid false positives from comments or partial matches
+/// like `publish = trueish` or `# publish = true`.
+///
+/// Supports both:
+/// - `publish = true` at root level
+/// - `[helix]` section with `publish = true` inside
 fn dir_is_publishable(helix_toml: &Path) -> bool {
     let Ok(content) = std::fs::read_to_string(helix_toml) else {
         return false;
     };
-    content.lines().any(|l| l.trim() == "publish = true")
+    // Parse as TOML to avoid false positives from comments or partial matches
+    let Ok(parsed) = content.parse::<toml::Value>() else {
+        return false;
+    };
+    // Check root level first: `publish = true`
+    if parsed.get("publish").and_then(toml::Value::as_bool) == Some(true) {
+        return true;
+    }
+    // Check [helix] section: `[helix]` with `publish = true` inside
+    if let Some(helix) = parsed.get("helix").and_then(|v| v.as_table()) {
+        if helix.get("publish").and_then(toml::Value::as_bool) == Some(true) {
+            return true;
+        }
+    }
+    false
 }
