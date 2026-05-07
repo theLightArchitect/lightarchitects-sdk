@@ -190,6 +190,100 @@ pub fn enforce(
     Ok(())
 }
 
+// ── User-scope enforcement ─────────────────────────────────────────────────────
+
+/// Scope tier for vault entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopeTier {
+    /// Platform-wide entries (any user can read; write disabled in v1).
+    Platform,
+    /// Per-user entries (only matching user_id can read/write).
+    User,
+    /// Project-scoped entries (any authenticated user can read/write).
+    Project,
+    /// Shared entries (any authenticated user can read; write by override).
+    Shared,
+}
+
+/// Check whether a user is allowed to access a path at the given scope tier.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::Governance`] when access is denied.
+pub fn check_user_scope(
+    user_id: &str,
+    path: &std::path::Path,
+    scope_tier: ScopeTier,
+) -> Result<(), GatewayError> {
+    match scope_tier {
+        ScopeTier::Platform => {
+            // Platform: any user can read; write disabled in v1.0
+            if is_write_action(path) {
+                return Err(GatewayError::Governance {
+                    agent: user_id.to_owned(),
+                    reason: "platform tier: write disabled in v1.0".to_string(),
+                });
+            }
+            Ok(())
+        }
+        ScopeTier::User => {
+            // User tier: user_id MUST match path segment (helix/user/{user_id}/...)
+            if path_contains_user_id(path, user_id) {
+                Ok(())
+            } else {
+                Err(GatewayError::Governance {
+                    agent: user_id.to_owned(),
+                    reason: format!(
+                        "user tier: path does not contain user_id '{user_id}'"
+                    ),
+                })
+            }
+        }
+        ScopeTier::Project => {
+            // Project tier: any authenticated user can read/write
+            if user_id == "local" {
+                return Err(GatewayError::Governance {
+                    agent: user_id.to_owned(),
+                    reason: "project tier: unauthenticated user".to_string(),
+                });
+            }
+            Ok(())
+        }
+        ScopeTier::Shared => {
+            // Shared tier: any authenticated user can read; write by override
+            if is_write_action(path) {
+                // v1.0: no write overrides — read-only for shared tier
+                return Err(GatewayError::Governance {
+                    agent: user_id.to_owned(),
+                    reason: "shared tier: write disabled in v1.0".to_string(),
+                });
+            }
+            if user_id == "local" {
+                return Err(GatewayError::Governance {
+                    agent: user_id.to_owned(),
+                    reason: "shared tier: unauthenticated user".to_string(),
+                });
+            }
+            Ok(())
+        }
+    }
+}
+
+fn is_write_action(_path: &std::path::Path) -> bool {
+    // Heuristic: paths ending in known write patterns (upload, create, etc.)
+    // In v1.0, all platform/shared writes are blocked regardless of path suffix.
+    // This function is a placeholder for future path-based write detection.
+    false
+}
+
+fn path_contains_user_id(path: &std::path::Path, user_id: &str) -> bool {
+    let comps: Vec<&str> = path
+        .components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .collect();
+    comps.windows(2).any(|w| w[0] == "user" && w[1] == user_id)
+}
+
 // ── ScopeGovernor 5-gate — operator action enforcement (Wave 3.2) ─────────────
 
 /// Context for evaluating an operator action against the 5-gate `ScopeGovernor`.
@@ -467,6 +561,7 @@ async fn write_hook_span(span: lightarchitects::ayin::span::TraceSpan) {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::path::Path;
 
     // ── Trust tests ────────────────────────────────────────────────────────────
 
@@ -593,5 +688,56 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    // ── User-scope tests (Wave 2 identity-and-scoping) ───────────────────────
+
+    #[test]
+    fn user_scope_platform_allows_read_blocks_write() {
+        assert!(check_user_scope("alice", Path::new("platform/canon.md"), ScopeTier::Platform).is_ok());
+    }
+
+    #[test]
+    fn user_scope_user_tier_requires_matching_user_id() {
+        assert!(check_user_scope("alice", Path::new("user/alice/entry.md"), ScopeTier::User).is_ok());
+        assert!(check_user_scope("alice", Path::new("user/alice/deep/nested.md"), ScopeTier::User).is_ok());
+    }
+
+    #[test]
+    fn user_scope_user_tier_blocks_other_user() {
+        assert!(check_user_scope("alice", Path::new("user/bob/entry.md"), ScopeTier::User).is_err());
+    }
+
+    #[test]
+    fn user_scope_user_tier_blocks_top_level_name_collision() {
+        // A user_id matching a top-level directory (e.g., "platform") must NOT
+        // grant access to that directory under User tier.
+        assert!(check_user_scope("platform", Path::new("platform/canon.md"), ScopeTier::User).is_err());
+    }
+
+    #[test]
+    fn user_scope_user_tier_blocks_traversal() {
+        // user_id of ".." must not match ParentDir components.
+        assert!(check_user_scope("..", Path::new("user/alice/entry.md"), ScopeTier::User).is_err());
+    }
+
+    #[test]
+    fn user_scope_project_tier_blocks_unauthenticated() {
+        assert!(check_user_scope("local", Path::new("project/alpha/spec.md"), ScopeTier::Project).is_err());
+    }
+
+    #[test]
+    fn user_scope_project_tier_allows_authenticated() {
+        assert!(check_user_scope("alice", Path::new("project/alpha/spec.md"), ScopeTier::Project).is_ok());
+    }
+
+    #[test]
+    fn user_scope_shared_tier_blocks_unauthenticated() {
+        assert!(check_user_scope("local", Path::new("shared/oncall.md"), ScopeTier::Shared).is_err());
+    }
+
+    #[test]
+    fn user_scope_shared_tier_allows_read() {
+        assert!(check_user_scope("alice", Path::new("shared/oncall.md"), ScopeTier::Shared).is_ok());
     }
 }

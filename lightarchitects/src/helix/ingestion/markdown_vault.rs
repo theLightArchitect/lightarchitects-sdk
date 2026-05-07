@@ -70,6 +70,9 @@ pub struct MarkdownVaultIngester {
     /// Optional additional roots beyond the default sibling dir.
     /// Each entry is (path, `scope_tier`). Used for platform bundle scanning.
     roots: Vec<(PathBuf, ScopeTier)>,
+    /// When set, skip files under `user/{other_id}/` where `other_id != user_id`.
+    /// `None` retains legacy behaviour (ingest all discovered files).
+    user_id: Option<String>,
 }
 
 impl MarkdownVaultIngester {
@@ -82,6 +85,7 @@ impl MarkdownVaultIngester {
             max_entries: None,
             force_wikilinks: false,
             roots: Vec::new(),
+            user_id: None,
         }
     }
 
@@ -115,9 +119,44 @@ impl MarkdownVaultIngester {
         self
     }
 
+    /// Set the user-scope filter so only this user's entries are ingested.
+    ///
+    /// When `user_id` is present, files whose vault path contains `user/{other_id}/`
+    /// where `other_id` differs are skipped. Platform, project, and shared
+    /// helices are ingested unconditionally.
+    #[must_use]
+    pub fn with_user_scope(mut self, user_id: String) -> Self {
+        self.user_id = Some(user_id);
+        self
+    }
+
     /// Returns the sibling root directory path (walks entire subtree).
     fn sibling_dir(&self) -> PathBuf {
         self.vault_root.join(&self.sibling)
+    }
+
+    /// Check whether a file should be skipped based on user-scope filtering.
+    ///
+    /// When `self.user_id` is set and the file's vault-relative path contains
+    /// `user/{other_id}/` where `other_id` differs, the file is skipped.
+    /// Platform, project, and shared paths are never filtered.
+    fn should_skip_path(&self, path: &Path) -> bool {
+        let Some(ref uid) = self.user_id else {
+            return false;
+        };
+        let Ok(rel) = path.strip_prefix(&self.vault_root) else {
+            return false;
+        };
+        let Some(segments) = rel.iter().map(|s| s.to_str()).collect::<Option<Vec<_>>>() else {
+            return false;
+        };
+        // Look for pattern: user/{other_id}/...
+        for window in segments.windows(2) {
+            if window[0] == "user" && window[1] != uid.as_str() {
+                return true;
+            }
+        }
+        false
     }
 
     /// Process a single markdown file into graph operations.
@@ -582,6 +621,10 @@ impl MarkdownVaultIngester {
                 }) {
                     return Ok(());
                 }
+                if self.should_skip_path(&path) {
+                    report.records_skipped += 1;
+                    continue;
+                }
                 if let Err(e) = self.ingest_file(&path, db, helix_id, report).await {
                     report.errors.push(format!("{}: {e}", path.display()));
                 }
@@ -857,5 +900,43 @@ mod tests {
             u64::MAX,
             "saturating_add caps at max"
         );
+    }
+
+    // ── Wave 3 — user-scope filtering tests ──────────────────────────────
+
+    #[test]
+    fn should_skip_path_without_user_id_never_skips() {
+        let ing = MarkdownVaultIngester::new("/vault", "eva");
+        assert!(!ing.should_skip_path(Path::new("/vault/user/other/file.md")));
+        assert!(!ing.should_skip_path(Path::new("/vault/user/local/file.md")));
+        assert!(!ing.should_skip_path(Path::new("/vault/platform/file.md")));
+    }
+
+    #[test]
+    fn should_skip_path_skips_other_user() {
+        let ing = MarkdownVaultIngester::new("/vault", "eva").with_user_scope("kevin".into());
+        assert!(ing.should_skip_path(Path::new("/vault/user/alice/entry.md")));
+        assert!(ing.should_skip_path(Path::new("/vault/user/bob/deep/nested.md")));
+    }
+
+    #[test]
+    fn should_skip_path_allows_own_user() {
+        let ing = MarkdownVaultIngester::new("/vault", "eva").with_user_scope("kevin".into());
+        assert!(!ing.should_skip_path(Path::new("/vault/user/kevin/entry.md")));
+        assert!(!ing.should_skip_path(Path::new("/vault/user/kevin/deep/nested.md")));
+    }
+
+    #[test]
+    fn should_skip_path_allows_platform_project_shared() {
+        let ing = MarkdownVaultIngester::new("/vault", "eva").with_user_scope("kevin".into());
+        assert!(!ing.should_skip_path(Path::new("/vault/platform/canon.md")));
+        assert!(!ing.should_skip_path(Path::new("/vault/project/alpha/spec.md")));
+        assert!(!ing.should_skip_path(Path::new("/vault/shared/oncall.md")));
+    }
+
+    #[test]
+    fn with_user_scope_sets_field() {
+        let ing = MarkdownVaultIngester::new("/vault", "corso").with_user_scope("test-id".into());
+        assert_eq!(ing.user_id, Some("test-id".to_owned()));
     }
 }

@@ -1,7 +1,7 @@
 //! Platform content read endpoints — `/v1/platform/*` + `/v1/vault/info`.
 
 use axum::Router;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Json, Response};
@@ -14,6 +14,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use crate::http::etag::{compute_etag, etag_from_hash, is_not_modified};
+use crate::http::middleware::identity_extractor::UserContext;
 use crate::http::state::PlatformState;
 
 /// Wire all platform read routes onto the router.
@@ -35,6 +36,7 @@ pub fn platform_routes() -> Router<Arc<PlatformState>> {
         )
         .route("/v1/platform/helix/stream", get(helix_stream))
         .route("/v1/platform/health", get(health))
+        .route("/v1/identity", get(identity_get))
         .route("/v1/vault/info", get(vault_info))
 }
 
@@ -805,6 +807,22 @@ pub async fn health(State(s): State<Arc<PlatformState>>) -> Response {
                 .into_response()
         }
     }
+}
+
+/// `GET /v1/identity` — current user identity and scope policy.
+///
+/// Returns the resolved `user_id` from the request's [`UserContext`] (injected by
+/// `identity_extractor_middleware`), not the platform's static config default.
+async fn identity_get(
+    State(s): State<Arc<PlatformState>>,
+    Extension(ctx): Extension<UserContext>,
+) -> Result<Response, Response> {
+    let body = json!({
+        "user_id": ctx.user_id,
+        "identity_scope_policy": s.config.identity_scope_policy.to_string(),
+    });
+    let bytes = serde_json::to_vec(&body).unwrap_or_default();
+    Ok(etag_response(StatusCode::OK, body, &compute_etag(&bytes)))
 }
 
 /// `GET /v1/vault/info` — node-count summary + platform metadata for vault monitoring.

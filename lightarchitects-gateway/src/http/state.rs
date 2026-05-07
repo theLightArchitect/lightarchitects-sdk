@@ -7,7 +7,8 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use super::circuit_breaker::CircuitBreaker;
+use crate::config::IdentityScopePolicy;
+use crate::http::circuit_breaker::CircuitBreaker;
 
 /// Per-IP keyed rate limiter instance type.
 pub type PlatformRateLimiter =
@@ -76,6 +77,8 @@ pub struct PlatformConfig {
     pub api_version: &'static str,
     /// User identifier returned in `/v1/vault/info` (system user or env override).
     pub user_id: String,
+    /// Identity scope policy for unauthenticated requests.
+    pub identity_scope_policy: IdentityScopePolicy,
 }
 
 impl Default for PlatformConfig {
@@ -86,6 +89,7 @@ impl Default for PlatformConfig {
             version_date: "2026-05-04".to_owned(),
             api_version: "v1",
             user_id: "local".to_owned(),
+            identity_scope_policy: IdentityScopePolicy::AllowAuthenticated,
         }
     }
 }

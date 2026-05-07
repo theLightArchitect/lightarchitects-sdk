@@ -37,10 +37,11 @@ use state::PlatformState;
 /// Assemble the full platform HTTP router.
 ///
 /// Middleware stack — request order (outer → inner):
-/// `TraceLayer` → version header → `CorsLayer` → rate-limit → handlers.
+/// `TraceLayer` → AYIN trace → version header → `CorsLayer` → rate-limit → read-auth → identity_extractor → handlers.
 ///
-/// Version is outermost (after TraceLayer) so every response — including 429s
-/// from rate-limit and CORS preflight responses — carries `lightarchitects-version`.
+/// The identity_extractor layer is the innermost non-handler layer, running after
+/// read-auth so the validated token context is available when resolving identity.
+/// `UserContext` is then injected into request extensions for handler use.
 pub fn build_http_router(state: Arc<PlatformState>) -> Router {
     let platform = routes::platform::platform_routes();
     let admin = routes::admin::admin_routes();
@@ -48,7 +49,12 @@ pub fn build_http_router(state: Arc<PlatformState>) -> Router {
     Router::new()
         .merge(platform)
         .merge(admin)
-        // innermost: read-auth (token validation + scope enforcement)
+        // innermost: identity extraction (must run before auth so UserContext is available)
+        .layer(axum_mw::from_fn_with_state(
+            Arc::clone(&state),
+            middleware::identity_extractor::identity_extractor_middleware,
+        ))
+        // read-auth (token validation + scope enforcement)
         .layer(axum_mw::from_fn_with_state(
             Arc::clone(&state),
             middleware::auth::read_auth_middleware,
