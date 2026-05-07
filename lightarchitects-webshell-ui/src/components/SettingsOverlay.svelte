@@ -5,6 +5,8 @@
     ollamaBaseUrlInput,
   } from '$lib/setup';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
+  import { listSkills, resolveSkill, type SkillOverlay } from '$lib/skill-resolver';
+  import { listPersonas, resolvePersona, type PersonaOverlay } from '$lib/persona-resolver';
 
   const backends = [
     { id: 'lightarchitects', agent: 'lightarchitects_native', label: 'CLI' },
@@ -17,6 +19,13 @@
   let pickedModel = $state<string | null>($selectedModel ?? $persistedConfig?.model ?? null);
   let toast = $state<string | null>(null);
 
+  // Tab state
+  let activeTab = $state<'backend' | 'personas' | 'skills'>('backend');
+  let skillsList = $state<SkillOverlay[]>([]);
+  let personasList = $state<PersonaOverlay[]>([]);
+  let loadingSkills = $state(false);
+  let loadingPersonas = $state(false);
+
   $effect(() => {
     if (pickedBackend) {
       loadModels(pickedBackend, pickedBackend.includes('ollama') ? $ollamaBaseUrlInput : undefined);
@@ -26,6 +35,28 @@
   $effect(() => {
     if ($availableModels.length > 0 && !pickedModel) {
       pickedModel = $availableModels[0].id;
+    }
+  });
+
+  // Load skills when tab opens
+  $effect(() => {
+    if (activeTab === 'skills' && !loadingSkills) {
+      loadingSkills = true;
+      listSkills(50).then((skills) => {
+        skillsList = skills.map(s => ({ ...s, source: 'platform' as const, is_override: false }));
+        loadingSkills = false;
+      });
+    }
+  });
+
+  // Load personas when tab opens
+  $effect(() => {
+    if (activeTab === 'personas' && !loadingPersonas) {
+      loadingPersonas = true;
+      listPersonas(50).then((personas) => {
+        personasList = personas.map(p => ({ ...p, source: 'platform' as const, is_override: false }));
+        loadingPersonas = false;
+      });
     }
   });
 
@@ -55,51 +86,144 @@
 <div class="overlay">
   <div class="panel">
     <div class="panel-header">
-      <span class="panel-title">Backend Settings</span>
+      <span class="panel-title">Settings</span>
       <button class="close-btn" onclick={() => settingsOpen.set(false)}>✕</button>
     </div>
 
-    {#if $persistedConfig}
-      <div class="current-badge">
-        Current: <strong>{$persistedConfig.backend}</strong>
-        {#if $persistedConfig.model}/ {$persistedConfig.model}{/if}
+    <!-- Tab navigation -->
+    <div class="tabs">
+      <button
+        class="tab-btn"
+        class:selected={activeTab === 'backend'}
+        onclick={() => { activeTab = 'backend'; }}
+      >
+        Backend
+      </button>
+      <button
+        class="tab-btn"
+        class:selected={activeTab === 'personas'}
+        onclick={() => { activeTab = 'personas'; }}
+      >
+        Personas
+      </button>
+      <button
+        class="tab-btn"
+        class:selected={activeTab === 'skills'}
+        onclick={() => { activeTab = 'skills'; }}
+      >
+        Skills
+      </button>
+    </div>
+
+    <!-- Backend tab -->
+    {#if activeTab === 'backend'}
+      {#if $persistedConfig}
+        <div class="current-badge">
+          Current: <strong>{$persistedConfig.backend}</strong>
+          {#if $persistedConfig.model}/ {$persistedConfig.model}{/if}
+        </div>
+      {/if}
+
+      <div class="section-label">Backend</div>
+      <div class="backend-row">
+        {#each backends as b}
+          <button
+            class="backend-btn"
+            class:selected={pickedBackend === b.id}
+            onclick={() => { pickedBackend = b.id; pickedModel = null; }}
+          >{b.label}</button>
+        {/each}
+      </div>
+
+      {#if $setupLoading}
+        <div class="loading-row">Loading models…</div>
+      {:else if $availableModels.length > 0}
+        <div class="section-label">Model</div>
+        <select class="model-select" bind:value={pickedModel}>
+          {#each $availableModels as m}
+            <option value={m.id}>{m.label || m.id}</option>
+          {/each}
+        </select>
+      {/if}
+
+      <div class="actions">
+        <button class="btn-reset" onclick={() => { step.set('splash'); settingsOpen.set(false); }}>
+          Reset setup
+        </button>
+        <button
+          class="btn-apply"
+          disabled={!pickedModel || $setupLoading}
+          onclick={apply}
+        >
+          Save & Apply
+        </button>
       </div>
     {/if}
 
-    <div class="section-label">Backend</div>
-    <div class="backend-row">
-      {#each backends as b}
-        <button
-          class="backend-btn"
-          class:selected={pickedBackend === b.id}
-          onclick={() => { pickedBackend = b.id; pickedModel = null; }}
-        >{b.label}</button>
-      {/each}
-    </div>
-
-    {#if $setupLoading}
-      <div class="loading-row">Loading models…</div>
-    {:else if $availableModels.length > 0}
-      <div class="section-label">Model</div>
-      <select class="model-select" bind:value={pickedModel}>
-        {#each $availableModels as m}
-          <option value={m.id}>{m.label || m.id}</option>
-        {/each}
-      </select>
+    <!-- Personas tab -->
+    {#if activeTab === 'personas'}
+      <div class="tab-content">
+        {#if loadingPersonas}
+          <div class="loading-state">Loading personas…</div>
+        {:else if personasList.length === 0}
+          <div class="empty-state">No personas available</div>
+        {:else}
+          <div class="list">
+            {#each personasList as persona (persona.name)}
+              <div class="list-item">
+                <div class="list-item-header">
+                  <span class="list-item-name">{persona.name}</span>
+                  <span class="list-item-source">{persona.source}</span>
+                </div>
+                {#if persona.description}
+                  <div class="list-item-desc">{persona.description}</div>
+                {/if}
+                <div class="list-item-meta">
+                  <span class="meta-sibling">{persona.sibling}</span>
+                  <span class="meta-version">v{persona.version}</span>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
     {/if}
 
-    <div class="actions">
-      <button class="btn-reset" onclick={() => { step.set('splash'); settingsOpen.set(false); }}>
-        Reset setup
-      </button>
-      <button
-        class="btn-apply"
-        disabled={!pickedModel || $setupLoading}
-        onclick={apply}
-      >
-        Save & Apply
-      </button>
-    </div>
+    <!-- Skills tab -->
+    {#if activeTab === 'skills'}
+      <div class="tab-content">
+        {#if loadingSkills}
+          <div class="loading-state">Loading skills…</div>
+        {:else if skillsList.length === 0}
+          <div class="empty-state">No skills available</div>
+        {:else}
+          <div class="list">
+            {#each skillsList as skill (skill.name)}
+              <div class="list-item">
+                <div class="list-item-header">
+                  <span class="list-item-name">{skill.name}</span>
+                  {#if skill.is_override}
+                    <span class="badge-override">CUSTOM</span>
+                  {/if}
+                </div>
+                {#if skill.description}
+                  <div class="list-item-desc">{skill.description}</div>
+                {/if}
+                {#if skill.trigger_patterns && skill.trigger_patterns.length > 0}
+                  <div class="list-item-meta">
+                    <span class="meta-triggers">Triggers: {skill.trigger_patterns.join(', ')}</span>
+                  </div>
+                {/if}
+                <div class="list-item-meta">
+                  <span class="meta-version">v{skill.version}</span>
+                  <span class="meta-source">{skill.source}</span>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -110,14 +234,19 @@
 
   .panel {
     background: #0f172a; border: 1px solid #334155; border-radius: 8px;
-    padding: 1rem; width: 280px; box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-    display: flex; flex-direction: column; gap: 0.75rem;
+    padding: 1rem; width: 360px; max-height: 70vh; overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6); display: flex; flex-direction: column; gap: 0.75rem;
   }
 
   .panel-header { display: flex; align-items: center; justify-content: space-between; }
   .panel-title { font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; color: #94a3b8; letter-spacing: 0.05em; }
   .close-btn { background: none; border: none; color: #475569; cursor: pointer; font-size: 0.9rem; }
   .close-btn:hover { color: #94a3b8; }
+
+  .tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid #334155; padding-bottom: 0.5rem; }
+  .tab-btn { flex: 1; background: #1e293b; border: 1px solid #334155; color: #64748b; border-radius: 4px; padding: 0.35rem 0.5rem; font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; cursor: pointer; transition: all 0.15s; }
+  .tab-btn:hover { color: #94a3b8; }
+  .tab-btn.selected { border-color: #ff6600; color: #ff6600; background: rgba(255,102,0,0.08); }
 
   .current-badge { font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; color: #475569; }
   .current-badge strong { color: #94a3b8; }
@@ -137,6 +266,19 @@
   .btn-reset:hover { color: #64748b; }
   .btn-apply { background: #ff6600; border: none; color: #fff; border-radius: 6px; padding: 0.4rem 1rem; font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
   .btn-apply:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .tab-content { padding: 0.5rem 0; }
+  .loading-state, .empty-state { font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; color: #475569; text-align: center; padding: 1rem; }
+
+  .list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .list-item { background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 0.5rem 0.75rem; }
+  .list-item-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+  .list-item-name { font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; color: #94a3b8; font-weight: 600; }
+  .list-item-desc { font-size: 0.7rem; color: #64748b; margin-top: 0.25rem; }
+  .list-item-meta { display: flex; gap: 0.5rem; margin-top: 0.25rem; font-size: 0.65rem; color: #475569; }
+  .meta-sibling, .meta-version, .meta-source, .meta-triggers { font-family: 'IBM Plex Mono', monospace; }
+
+  .badge-override { background: rgba(255,102,0,0.15); border: 1px solid #ff6600; color: #ff6600; border-radius: 3px; padding: 0.1rem 0.35rem; font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem; font-weight: 600; }
 
   .toast {
     position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);

@@ -27,6 +27,8 @@ pub fn platform_routes() -> Router<Arc<PlatformState>> {
         )
         .route("/v1/platform/skills", get(skills_list))
         .route("/v1/platform/skills/{name}", get(skills_get))
+        .route("/v1/platform/personas", get(personas_list))
+        .route("/v1/platform/personas/{name}", get(personas_get))
         .route("/v1/platform/standards/{name}", get(standards_get))
         .route("/v1/platform/helix/query", get(helix_query))
         .route(
@@ -239,6 +241,107 @@ async fn skills_get(
         "description": row.get::<String>("description").ok(),
         "version": row.get::<String>("version").unwrap_or_default(),
         "trigger_patterns": row.get::<Vec<String>>("trigger_patterns").unwrap_or_default(),
+        "published": row.get::<bool>("published").unwrap_or(false),
+        "content_hash": hash,
+        "updated_at": row.get::<String>("updated_at").unwrap_or_default(),
+    });
+    Ok(etag_response(StatusCode::OK, body, &etag))
+}
+
+/// `GET /v1/platform/personas` — cursor-paginated published personas.
+async fn personas_list(
+    State(s): State<Arc<PlatformState>>,
+    Query(q): Query<PersonasListQuery>,
+    headers: HeaderMap,
+) -> Result<Response, Response> {
+    let limit = q.limit.min(100);
+    let rs_query = if let Some(after) = &q.after_id {
+        neo4rs::query(
+            "MATCH (p:Persona { published: true }) WHERE p.name > $after \
+             RETURN p.name AS name, p.description AS description, p.version AS version, \
+                    p.sibling AS sibling, p.content_hash AS content_hash, p.updated_at AS updated_at \
+             ORDER BY p.name LIMIT $limit",
+        )
+        .param("after", after.clone())
+        .param("limit", limit as i64)
+    } else {
+        neo4rs::query(
+            "MATCH (p:Persona { published: true }) \
+             RETURN p.name AS name, p.description AS description, p.version AS version, \
+                    p.sibling AS sibling, p.content_hash AS content_hash, p.updated_at AS updated_at \
+             ORDER BY p.name LIMIT $limit",
+        )
+        .param("limit", limit as i64)
+    };
+
+    let mut rs = s.graph.execute(rs_query).await.map_err(|e| db_error(&e))?;
+    let mut personas: Vec<Value> = Vec::new();
+    while let Ok(Some(row)) = rs.next().await {
+        personas.push(json!({
+            "name": row.get::<String>("name").unwrap_or_default(),
+            "description": row.get::<String>("description").ok(),
+            "version": row.get::<String>("version").unwrap_or_default(),
+            "sibling": row.get::<String>("sibling").ok(),
+            "content_hash": row.get::<String>("content_hash").unwrap_or_default(),
+            "updated_at": row.get::<String>("updated_at").unwrap_or_default(),
+        }));
+    }
+
+    let next_cursor = if personas.len() == limit {
+        personas
+            .last()
+            .and_then(|s| s.get("name"))
+            .and_then(Value::as_str)
+            .map(String::from)
+    } else {
+        None
+    };
+
+    let body = json!({ "personas": personas, "next_cursor": next_cursor });
+    Ok(respond_with_body_etag(body, &headers))
+}
+
+/// `GET /v1/platform/personas/:name` — single persona by name.
+async fn personas_get(
+    State(s): State<Arc<PlatformState>>,
+    Path(name): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response, Response> {
+    if let Some(e) = validate_path_param(&name) {
+        return Err(e);
+    }
+    let q = neo4rs::query(
+        "MATCH (p:Persona { name: $name }) \
+         RETURN p.name AS name, p.description AS description, p.version AS version, \
+                p.sibling AS sibling, p.content_hash AS content_hash, \
+                p.identity_text AS identity_text, p.published AS published, p.updated_at AS updated_at",
+    )
+    .param("name", name.clone());
+
+    let mut rs = s.graph.execute(q).await.map_err(|e| db_error(&e))?;
+    let row = rs
+        .next()
+        .await
+        .map_err(|e| db_error(&e))?
+        .ok_or_else(|| not_found(&name))?;
+
+    let hash = row.get::<String>("content_hash").unwrap_or_default();
+    let etag = etag_from_hash(&hash);
+    if is_not_modified(
+        headers
+            .get(header::IF_NONE_MATCH)
+            .and_then(|v| v.to_str().ok()),
+        &etag,
+    ) {
+        return Ok(StatusCode::NOT_MODIFIED.into_response());
+    }
+
+    let body = json!({
+        "name": row.get::<String>("name").unwrap_or_default(),
+        "description": row.get::<String>("description").ok(),
+        "version": row.get::<String>("version").unwrap_or_default(),
+        "sibling": row.get::<String>("sibling").ok(),
+        "identity_text": row.get::<String>("identity_text").ok(),
         "published": row.get::<bool>("published").unwrap_or(false),
         "content_hash": hash,
         "updated_at": row.get::<String>("updated_at").unwrap_or_default(),
@@ -1108,6 +1211,13 @@ fn not_found(name: &str) -> Response {
 
 #[derive(Debug, Deserialize)]
 struct SkillsListQuery {
+    after_id: Option<String>,
+    #[serde(default = "default_limit")]
+    limit: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct PersonasListQuery {
     after_id: Option<String>,
     #[serde(default = "default_limit")]
     limit: usize,
