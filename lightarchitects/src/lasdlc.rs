@@ -5,7 +5,7 @@
 //! - Quality Dimensions (parallel): Architecture, Security, Quality, Performance, Testing, Documentation, Operations
 //! - Agent Topology (concurrent): file-ownership partitioned agents within each phase
 //!
-//! Spec: `helix/user/standards/lasdlc-spec.md`
+//! Spec: `helix/user/standards/canon/lasdlc-spec.md`
 //! Template: `helix/corso/builds/LASDLC-TEMPLATE-v1.yaml`
 
 use serde::{Deserialize, Serialize};

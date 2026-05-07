@@ -147,7 +147,7 @@ pub struct CanonConfig {
 impl Default for CanonConfig {
     fn default() -> Self {
         Self {
-            registry: "~/lightarchitects/soul/helix/user/standards/canon.md".to_owned(),
+            registry: "~/lightarchitects/soul/helix/user/standards/canon/canon.md".to_owned(),
             auto_check: true,
         }
     }
@@ -424,7 +424,7 @@ impl GatewayConfig {
 
         toml.push_str(
             "[canon]\n\
-             registry = \"~/lightarchitects/soul/helix/user/standards/canon.md\"\n\
+             registry = \"~/lightarchitects/soul/helix/user/standards/canon/canon.md\"\n\
              auto_check = true\n\n\
              [storage]\n\
              backend = \"sqlite\"\n\
@@ -687,7 +687,7 @@ trust = "trusted"
 scope = "own"
 
 [canon]
-registry = "~/lightarchitects/soul/helix/user/standards/canon.md"
+registry = "~/lightarchitects/soul/helix/user/standards/canon/canon.md"
 auto_check = true
 
 [storage]
