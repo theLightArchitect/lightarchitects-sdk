@@ -65,7 +65,10 @@ export async function resolveSkill(
       return { ...platformSkill, source: 'platform' as const, is_override: false };
     }
   } catch (e) {
-    console.warn('Platform API unavailable, falling back to plugin cache', e);
+    console.warn('Platform API unavailable', {
+      name,
+      error: e instanceof Error ? e.message : String(e),
+    });
   }
 
   // Tier 5: Plugin cache fallback
@@ -88,7 +91,9 @@ export async function listSkills(limit = 50): Promise<PlatformSkill[]> {
     const data = await res.json();
     return data.skills || [];
   } catch (e) {
-    console.warn('Failed to list skills from platform API', e);
+    console.warn('Failed to list skills from platform API', {
+      error: e instanceof Error ? e.message : String(e),
+    });
     return [];
   }
 }
@@ -125,7 +130,11 @@ async function fetchPlatformSkill(
       trigger_patterns: data.trigger_patterns,
       content: undefined, // Skills don't have content field in platform API
     };
-  } catch {
+  } catch (e) {
+    console.warn('Failed to fetch skill from platform', {
+      name,
+      error: e instanceof Error ? e.message : String(e),
+    });
     return null;
   }
 }

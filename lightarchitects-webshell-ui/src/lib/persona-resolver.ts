@@ -56,7 +56,10 @@ export async function resolvePersona(
       return { ...platformPersona, source: 'platform' as const, is_override: false };
     }
   } catch (e) {
-    console.warn('Platform API unavailable, falling back to plugin cache', e);
+    console.warn('Platform API unavailable', {
+      sibling,
+      error: e instanceof Error ? e.message : String(e),
+    });
   }
 
   // Tier 4: Plugin cache fallback
@@ -79,7 +82,9 @@ export async function listPersonas(limit = 50): Promise<PlatformPersona[]> {
     const data = await res.json();
     return data.personas || [];
   } catch (e) {
-    console.warn('Failed to list personas from platform API', e);
+    console.warn('Failed to list personas from platform API', {
+      error: e instanceof Error ? e.message : String(e),
+    });
     return [];
   }
 }
@@ -110,7 +115,11 @@ async function fetchPlatformPersona(
       version: data.version,
       identity_text: data.identity_text,
     };
-  } catch {
+  } catch (e) {
+    console.warn('Failed to fetch persona from platform', {
+      sibling,
+      error: e instanceof Error ? e.message : String(e),
+    });
     return null;
   }
 }

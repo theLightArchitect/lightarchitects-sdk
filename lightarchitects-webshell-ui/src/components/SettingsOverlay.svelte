@@ -40,7 +40,7 @@
 
   // Load skills when tab opens
   $effect(() => {
-    if (activeTab === 'skills' && !loadingSkills) {
+    if (activeTab === 'skills') {
       loadingSkills = true;
       listSkills(50).then((skills) => {
         skillsList = skills.map(s => ({ ...s, source: 'platform' as const, is_override: false }));
@@ -51,7 +51,7 @@
 
   // Load personas when tab opens
   $effect(() => {
-    if (activeTab === 'personas' && !loadingPersonas) {
+    if (activeTab === 'personas') {
       loadingPersonas = true;
       listPersonas(50).then((personas) => {
         personasList = personas.map(p => ({ ...p, source: 'platform' as const, is_override: false }));
@@ -80,35 +80,47 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if toast}
-  <div class="toast">{toast}</div>
+  <div class="toast" role="status" aria-live="polite">{toast}</div>
 {/if}
 
 <div class="overlay">
   <div class="panel">
     <div class="panel-header">
       <span class="panel-title">Settings</span>
-      <button class="close-btn" onclick={() => settingsOpen.set(false)}>✕</button>
+      <button class="close-btn" aria-label="Close settings" onclick={() => settingsOpen.set(false)}>✕</button>
     </div>
 
     <!-- Tab navigation -->
-    <div class="tabs">
+    <div class="tabs" role="tablist">
       <button
+        role="tab"
+        id="tab-backend"
+        aria-controls="panel-backend"
         class="tab-btn"
         class:selected={activeTab === 'backend'}
+        aria-selected={activeTab === 'backend'}
         onclick={() => { activeTab = 'backend'; }}
       >
         Backend
       </button>
       <button
+        role="tab"
+        id="tab-personas"
+        aria-controls="panel-personas"
         class="tab-btn"
         class:selected={activeTab === 'personas'}
+        aria-selected={activeTab === 'personas'}
         onclick={() => { activeTab = 'personas'; }}
       >
         Personas
       </button>
       <button
+        role="tab"
+        id="tab-skills"
+        aria-controls="panel-skills"
         class="tab-btn"
         class:selected={activeTab === 'skills'}
+        aria-selected={activeTab === 'skills'}
         onclick={() => { activeTab = 'skills'; }}
       >
         Skills
@@ -117,111 +129,117 @@
 
     <!-- Backend tab -->
     {#if activeTab === 'backend'}
-      {#if $persistedConfig}
-        <div class="current-badge">
-          Current: <strong>{$persistedConfig.backend}</strong>
-          {#if $persistedConfig.model}/ {$persistedConfig.model}{/if}
-        </div>
-      {/if}
+      <div role="tabpanel" id="panel-backend" aria-labelledby="tab-backend">
+        {#if $persistedConfig}
+          <div class="current-badge">
+            Current: <strong>{$persistedConfig.backend}</strong>
+            {#if $persistedConfig.model}/ {$persistedConfig.model}{/if}
+          </div>
+        {/if}
 
-      <div class="section-label">Backend</div>
-      <div class="backend-row">
-        {#each backends as b}
-          <button
-            class="backend-btn"
-            class:selected={pickedBackend === b.id}
-            onclick={() => { pickedBackend = b.id; pickedModel = null; }}
-          >{b.label}</button>
-        {/each}
-      </div>
-
-      {#if $setupLoading}
-        <div class="loading-row">Loading models…</div>
-      {:else if $availableModels.length > 0}
-        <div class="section-label">Model</div>
-        <select class="model-select" bind:value={pickedModel}>
-          {#each $availableModels as m}
-            <option value={m.id}>{m.label || m.id}</option>
+        <div class="section-label">Backend</div>
+        <div class="backend-row">
+          {#each backends as b}
+            <button
+              class="backend-btn"
+              class:selected={pickedBackend === b.id}
+              onclick={() => { pickedBackend = b.id; pickedModel = null; }}
+            >{b.label}</button>
           {/each}
-        </select>
-      {/if}
+        </div>
 
-      <div class="actions">
-        <button class="btn-reset" onclick={() => { step.set('splash'); settingsOpen.set(false); }}>
-          Reset setup
-        </button>
-        <button
-          class="btn-apply"
-          disabled={!pickedModel || $setupLoading}
-          onclick={apply}
-        >
-          Save & Apply
-        </button>
+        {#if $setupLoading}
+          <div class="loading-row">Loading models…</div>
+        {:else if $availableModels.length > 0}
+          <div class="section-label">Model</div>
+          <select class="model-select" bind:value={pickedModel}>
+            {#each $availableModels as m}
+              <option value={m.id}>{m.label || m.id}</option>
+            {/each}
+          </select>
+        {/if}
+
+        <div class="actions">
+          <button class="btn-reset" onclick={() => { step.set('splash'); settingsOpen.set(false); }}>
+            Reset setup
+          </button>
+          <button
+            class="btn-apply"
+            disabled={!pickedModel || $setupLoading}
+            onclick={apply}
+          >
+            Save & Apply
+          </button>
+        </div>
       </div>
     {/if}
 
     <!-- Personas tab -->
     {#if activeTab === 'personas'}
-      <div class="tab-content">
-        {#if loadingPersonas}
-          <div class="loading-state">Loading personas…</div>
-        {:else if personasList.length === 0}
-          <div class="empty-state">No personas available</div>
-        {:else}
-          <div class="list">
-            {#each personasList as persona (persona.name)}
-              <div class="list-item">
-                <div class="list-item-header">
-                  <span class="list-item-name">{persona.name}</span>
-                  <span class="list-item-source">{persona.source}</span>
+      <div role="tabpanel" id="panel-personas" aria-labelledby="tab-personas">
+        <div class="tab-content">
+          {#if loadingPersonas}
+            <div class="loading-state">Loading personas…</div>
+          {:else if personasList.length === 0}
+            <div class="empty-state">No personas available</div>
+          {:else}
+            <div class="list">
+              {#each personasList as persona (persona.name)}
+                <div class="list-item">
+                  <div class="list-item-header">
+                    <span class="list-item-name">{persona.name}</span>
+                    <span class="list-item-source">{persona.source}</span>
+                  </div>
+                  {#if persona.description}
+                    <div class="list-item-desc">{persona.description}</div>
+                  {/if}
+                  <div class="list-item-meta">
+                    <span class="meta-sibling">{persona.sibling}</span>
+                    <span class="meta-version">v{persona.version}</span>
+                  </div>
                 </div>
-                {#if persona.description}
-                  <div class="list-item-desc">{persona.description}</div>
-                {/if}
-                <div class="list-item-meta">
-                  <span class="meta-sibling">{persona.sibling}</span>
-                  <span class="meta-version">v{persona.version}</span>
-                </div>
-              </div>
-            {/each}
-          </div>
-        {/if}
+              {/each}
+            </div>
+          {/if}
+        </div>
       </div>
     {/if}
 
     <!-- Skills tab -->
     {#if activeTab === 'skills'}
-      <div class="tab-content">
-        {#if loadingSkills}
-          <div class="loading-state">Loading skills…</div>
-        {:else if skillsList.length === 0}
-          <div class="empty-state">No skills available</div>
-        {:else}
-          <div class="list">
-            {#each skillsList as skill (skill.name)}
-              <div class="list-item">
-                <div class="list-item-header">
-                  <span class="list-item-name">{skill.name}</span>
-                  {#if skill.is_override}
-                    <span class="badge-override">CUSTOM</span>
-                  {/if}
-                </div>
-                {#if skill.description}
-                  <div class="list-item-desc">{skill.description}</div>
-                {/if}
-                {#if skill.trigger_patterns && skill.trigger_patterns.length > 0}
-                  <div class="list-item-meta">
-                    <span class="meta-triggers">Triggers: {skill.trigger_patterns.join(', ')}</span>
+      <div role="tabpanel" id="panel-skills" aria-labelledby="tab-skills">
+        <div class="tab-content">
+          {#if loadingSkills}
+            <div class="loading-state">Loading skills…</div>
+          {:else if skillsList.length === 0}
+            <div class="empty-state">No skills available</div>
+          {:else}
+            <div class="list">
+              {#each skillsList as skill (skill.name)}
+                <div class="list-item">
+                  <div class="list-item-header">
+                    <span class="list-item-name">{skill.name}</span>
+                    {#if skill.is_override}
+                      <span class="badge-override">CUSTOM</span>
+                    {/if}
                   </div>
-                {/if}
-                <div class="list-item-meta">
-                  <span class="meta-version">v{skill.version}</span>
-                  <span class="meta-source">{skill.source}</span>
+                  {#if skill.description}
+                    <div class="list-item-desc">{skill.description}</div>
+                  {/if}
+                  {#if skill.trigger_patterns && skill.trigger_patterns.length > 0}
+                    <div class="list-item-meta">
+                      <span class="meta-triggers">Triggers: {skill.trigger_patterns.join(', ')}</span>
+                    </div>
+                  {/if}
+                  <div class="list-item-meta">
+                    <span class="meta-version">v{skill.version}</span>
+                    <span class="meta-source">{skill.source}</span>
+                  </div>
                 </div>
-              </div>
-            {/each}
-          </div>
-        {/if}
+              {/each}
+            </div>
+          {/if}
+        </div>
       </div>
     {/if}
   </div>
