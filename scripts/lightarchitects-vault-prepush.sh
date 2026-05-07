@@ -33,11 +33,20 @@ while IFS= read -r local_ref local_sha remote_ref remote_sha || [[ -n "$local_re
     # Skip deletion events
     [[ "$local_sha" == "0000000000000000000000000000000000000000" ]] && continue
 
-    # Get staged files for this ref (null-delimited for filename safety)
+    # Get committed files for this ref (null-delimited for filename safety)
+    # FIX: Use git diff-tree to get only files in the commit, not working directory
     local files_array=()
-    while IFS= read -r -d '' file; do
-        files_array+=("$file")
-    done < <(git rev-list -z --name-only "$remote_sha".."$local_sha" 2>/dev/null || true)
+    if [[ "$remote_sha" == "0000000000000000000000000000000000000000" ]]; then
+        # New branch: compare against parent commit
+        while IFS= read -r -d '' file; do
+            files_array+=("$file")
+        done < <(git diff-tree --no-commit-id --name-only -z -r "$local_sha" 2>/dev/null || true)
+    else
+        # Existing branch: compare local vs remote
+        while IFS= read -r -d '' file; do
+            files_array+=("$file")
+        done < <(git rev-list -z --name-only "$remote_sha".."$local_sha" 2>/dev/null || true)
+    fi
 
     if [[ ${#files_array[@]} -eq 0 ]]; then
         continue
