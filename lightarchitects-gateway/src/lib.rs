@@ -49,5 +49,9 @@ pub mod spawner;
 pub mod squad_comms;
 /// Vault-as-git module — pre-push validation and public companion sync.
 pub mod vault;
+/// LASDLC C1-C8 effectiveness rubric — grades agent/task outputs.
+pub mod rubric;
+/// Conversational build mode — pair programmer in a box.
+pub mod conversational;
 /// Build-time version metadata (CARGO_PKG_VERSION + git-sha + build-date).
 pub mod version;

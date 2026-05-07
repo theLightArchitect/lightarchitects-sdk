@@ -22,6 +22,12 @@ pub enum WebshellCommand {
         host_cmd: String,
         /// Working directory for the spawned process.
         cwd: Option<PathBuf>,
+        /// Agent kind override (`--agent-kind`).
+        agent_kind: Option<String>,
+        /// Backend override (`--backend`).
+        backend: Option<String>,
+        /// Ollama model override (`--ollama-model`).
+        ollama_model: Option<String>,
     },
     /// Check if the webshell server is running.
     Status {
@@ -43,31 +49,18 @@ pub enum WebshellCommand {
 pub async fn execute(config: &GatewayConfig, args: &[String]) -> Result<(), GatewayError> {
     match args.first().map(String::as_str) {
         Some("start") => {
-            let port = args
-                .iter()
-                .position(|a| a == "--port")
-                .and_then(|i| args.get(i + 1))
-                .and_then(|s| s.parse::<u16>().ok())
-                .unwrap_or(8733);
-            let host_cmd = args
-                .iter()
-                .position(|a| a == "--host-cmd")
-                .and_then(|i| args.get(i + 1))
-                .cloned()
+            let port = parse_flag(args, "--port").and_then(|s| s.parse::<u16>().ok()).unwrap_or(8733);
+            let host_cmd = parse_flag(args, "--host-cmd")
                 .unwrap_or_else(|| "claude".to_owned());
-            let cwd = args
-                .iter()
-                .position(|a| a == "--cwd")
-                .and_then(|i| args.get(i + 1))
-                .map(std::path::PathBuf::from);
+            let cwd = parse_flag(args, "--cwd").map(std::path::PathBuf::from);
+            let agent_kind = parse_flag(args, "--agent-kind");
+            let backend = parse_flag(args, "--backend");
+            let ollama_model = parse_flag(args, "--ollama-model");
 
-            start_server(config, port, &host_cmd, cwd.as_deref())
+            start_server(config, port, &host_cmd, cwd.as_deref(), agent_kind, backend, ollama_model)
         }
         Some("status") => {
-            let port = args
-                .iter()
-                .position(|a| a == "--port")
-                .and_then(|i| args.get(i + 1))
+            let port = parse_flag(args, "--port")
                 .and_then(|s| s.parse::<u16>().ok())
                 .unwrap_or(8733);
             check_status(port).await
@@ -84,7 +77,7 @@ pub async fn execute(config: &GatewayConfig, args: &[String]) -> Result<(), Gate
             eprintln!("Available: start, control, status");
             Err(GatewayError::UnknownTool(other.to_owned()))
         }
-        None => start_server(config, 8733, "claude", None),
+        None => start_server(config, 8733, "claude", None, None, None, None),
     }
 }
 
@@ -93,6 +86,9 @@ fn start_server(
     port: u16,
     host_cmd: &str,
     cwd: Option<&std::path::Path>,
+    agent_kind: Option<String>,
+    backend: Option<String>,
+    ollama_model: Option<String>,
 ) -> Result<(), GatewayError> {
     let binary = config.agents.get("webshell").map_or_else(
         || {
@@ -112,6 +108,15 @@ fn start_server(
     child.arg("--host-cmd").arg(host_cmd);
     if let Some(cwd_path) = cwd {
         child.arg("--cwd").arg(cwd_path);
+    }
+    if let Some(kind) = agent_kind {
+        child.arg("--agent").arg(kind);
+    }
+    if let Some(b) = backend {
+        child.arg("--backend").arg(b);
+    }
+    if let Some(m) = ollama_model {
+        child.arg("--ollama-model").arg(m);
     }
 
     let status = child.status().map_err(|e| GatewayError::SpawnFailed {
@@ -221,4 +226,11 @@ fn resolve_token() -> Option<String> {
     }
 
     None
+}
+
+/// Parse a `--flag` value from a raw argument list.
+///
+/// Returns `Some(value)` if `--flag <value>` appears, else `None`.
+fn parse_flag(args: &[String], flag: &str) -> Option<String> {
+    args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1).cloned())
 }

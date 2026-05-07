@@ -33,6 +33,7 @@
 use std::{
     io::{Read, Write},
     sync::Arc,
+    time::Instant,
 };
 
 use axum::extract::ws::{Message, WebSocket};
@@ -78,6 +79,12 @@ pub async fn run_session(
     build: Option<Arc<BuildSession>>,
     _guard: SessionGuard,
 ) {
+    let start = Instant::now();
+    let build_id = build.as_ref().map(|s| s.build_id.to_string());
+    if let Some(ref id) = build_id {
+        tracing::info!(target: "la_telemetry", event = "session_start", build_id = %id);
+    }
+
     let result = if let Some(session) = build {
         run_persistent(socket, &config, &session).await
     } else {
@@ -86,6 +93,11 @@ pub async fn run_session(
     };
     if let Err(e) = result {
         warn!(error = %e, "PTY session terminated with error");
+    }
+
+    if let Some(ref id) = build_id {
+        let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+        tracing::info!(target: "la_telemetry", event = "session_end", build_id = %id, duration_ms = duration_ms);
     }
     info!("PTY session closed");
 }
@@ -113,7 +125,9 @@ async fn ensure_pty_started(session: &BuildSession, config: &Config) -> Result<(
     }
 
     if session.containerized {
-        tracing::warn!(target: "container", "containerized=true but relay not implemented — falling back to native PTY");
+        return Err(anyhow::anyhow!(
+            "containerized session requested but WebSocket relay is not yet implemented"
+        ));
     }
 
     // ── Open PTY pair ─────────────────────────────────────────────────────────

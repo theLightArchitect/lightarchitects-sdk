@@ -376,9 +376,9 @@ pub async fn create_build_handler(
     };
 
     if let Ok(store) = state.session_store.lock() {
-        let _ = store.insert(
+        if let Err(e) = store.insert(
             &session.build_id.to_string(),
-            session.cwd.to_str().unwrap_or(""),
+            session.cwd.to_string_lossy().as_ref(),
             match session.agent.kind() {
                 crate::config::AgentKind::Lightarchitects => "lightarchitects",
                 crate::config::AgentKind::Codex => "codex",
@@ -387,11 +387,16 @@ pub async fn create_build_handler(
             None,
             session.model.as_deref(),
             session.containerized,
-        );
+        ) {
+            tracing::error!(error = %e, "session_store insert failed");
+        }
     }
 
     let session = Arc::new(session);
     let _prev = state.builds.insert(Arc::clone(&session));
+    state
+        .telemetry
+        .build_created(&session.build_id, &session.cwd);
     info!(build_id = %resp.build_id, cwd = %body.cwd.display(), "build session created");
 
     (StatusCode::OK, Json(resp)).into_response()
@@ -686,7 +691,9 @@ pub async fn create_plan_handler(
 
     // Scaffold per-build manifest directory.
     let manifest_dir = helix_root.join("corso").join("builds").join(&codename);
-    let _ = std::fs::create_dir_all(&manifest_dir);
+    if let Err(e) = std::fs::create_dir_all(&manifest_dir) {
+        warn!(error = %e, "failed to create manifest dir");
+    }
     let manifest_path = manifest_dir.join("manifest.yaml");
     if !manifest_path.exists() {
         let scaffold = format!(
@@ -694,7 +701,9 @@ pub async fn create_plan_handler(
             codename = codename,
             now = chrono::Utc::now().to_rfc3339(),
         );
-        let _ = std::fs::write(&manifest_path, scaffold);
+        if let Err(e) = std::fs::write(&manifest_path, scaffold) {
+            warn!(error = %e, "failed to write manifest scaffold");
+        }
     }
 
     info!(codename = %codename, "plan created in active.yaml");

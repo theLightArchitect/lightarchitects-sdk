@@ -8,6 +8,27 @@ use std::path::PathBuf;
 
 use rusqlite::{Connection, params};
 
+/// A single row from the `sessions` table, returned by [`SessionStore::list`].
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionRow {
+    /// Build UUID (primary key).
+    pub build_id: String,
+    /// Working directory for the build.
+    pub cwd: String,
+    /// Agent kind (`lightarchitects`, `codex`, etc.).
+    pub agent_kind: String,
+    /// Backend name, if recorded.
+    pub backend: Option<String>,
+    /// Model override, if recorded.
+    pub model: Option<String>,
+    /// Unix timestamp when the row was created.
+    pub created_at: i64,
+    /// Unix timestamp when the row was last updated.
+    pub updated_at: i64,
+    /// Whether the session runs in a container.
+    pub containerized: bool,
+}
+
 /// SQLite-backed session store.
 pub struct SessionStore {
     conn: Connection,
@@ -23,7 +44,9 @@ impl SessionStore {
     /// Returns [`rusqlite::Error`] if the database cannot be opened or the
     /// schema cannot be initialised.
     pub fn open() -> Result<Self, rusqlite::Error> {
-        let path = db_path().unwrap_or_else(|| std::env::temp_dir().join("la_sessions.db"));
+        let path = db_path().unwrap_or_else(|| {
+            std::env::temp_dir().join(format!("la_sessions_{}.db", std::process::id()))
+        });
         let conn = Connection::open(&path)?;
         Self::init_schema(&conn)?;
         tracing::info!(target: "session_store", path = %path.display(), "SQLite session store opened");
@@ -138,6 +161,31 @@ impl SessionStore {
     pub fn count(&self) -> Result<i64, rusqlite::Error> {
         self.conn
             .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
+    }
+
+    /// List all persisted sessions ordered by most recently updated first.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`rusqlite::Error`] on SQL execution failure.
+    pub fn list(&self) -> Result<Vec<SessionRow>, rusqlite::Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT build_id, cwd, agent_kind, backend, model, created_at, updated_at, containerized
+             FROM sessions ORDER BY updated_at DESC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(SessionRow {
+                build_id: row.get(0)?,
+                cwd: row.get(1)?,
+                agent_kind: row.get(2)?,
+                backend: row.get(3)?,
+                model: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+                containerized: row.get::<_, i32>(7)? != 0,
+            })
+        })?;
+        rows.collect()
     }
 }
 

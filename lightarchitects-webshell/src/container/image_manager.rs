@@ -127,7 +127,7 @@ impl ImageManager {
         let status = tokio::process::Command::new("docker")
             .args(["build", "-t", &self.image_name, tmp.to_str().unwrap_or(".")])
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
             .status()
             .await?;
 

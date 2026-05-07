@@ -8,8 +8,11 @@
 //! Phase 3/5 will add `/api/events` (SSE fan-out).
 
 use std::{
+    future::Future,
     net::SocketAddr,
+    pin::Pin,
     sync::{Arc, atomic::AtomicUsize},
+    task::{Context, Poll},
 };
 
 use axum::{
@@ -357,6 +360,7 @@ pub fn build_app(state: AppState) -> Router {
             "/api/builds",
             get(builds_handler::builds_handler).post(builds_handler::create_build_handler),
         )
+        .route("/api/builds/resume", get(resume_sessions_handler))
         .route("/api/lasdlc", get(builds_handler::lasdlc_meta_handler))
         .route(
             "/api/builds/plan",
@@ -597,6 +601,22 @@ pub enum ServerError {
     Serve(#[source] std::io::Error),
 }
 
+/// Opaque future that drives the axum server until it exits.
+///
+/// Created by [`run_with_port_retry`] after a successful bind.  The caller
+/// should `await` this future (often inside `tokio::select!`) to keep the
+/// server alive.
+pub struct ServerDriver {
+    inner: Pin<Box<dyn Future<Output = Result<(), ServerError>> + Send>>,
+}
+
+impl Future for ServerDriver {
+    type Output = Result<(), ServerError>;
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.inner.as_mut().poll(cx)
+    }
+}
+
 /// Starts the webshell server on `127.0.0.1:<port>` and blocks until it exits.
 ///
 /// # Errors
@@ -623,24 +643,26 @@ pub async fn run(config: Config, docker_capable: DockerCapability) -> Result<(),
 /// Maximum number of sequential ports tried beyond the configured port.
 const PORT_RETRY_LIMIT: u8 = 3;
 
-/// Starts the webshell server, automatically retrying on adjacent ports when
+/// Binds the webshell server, automatically retrying on adjacent ports when
 /// the configured port is already in use (`EADDRINUSE`).
 ///
-/// On success, returns the port that was actually bound so the caller can
-/// update the startup banner.  On failure, returns [`ServerError::PortInUse`]
-/// when all retried ports were busy, or [`ServerError::Bind`] for other bind
-/// failures.
+/// On success, returns the port that was actually bound **and** a [`ServerDriver`]
+/// future that must be awaited to keep the server running.  This split lets the
+/// caller print the real port (e.g. fallback) and fire profiler checkpoints
+/// *before* the server blocks.
+///
+/// On failure, returns [`ServerError::PortInUse`] when all retried ports were
+/// busy, or [`ServerError::Bind`] for other bind failures.
 ///
 /// # Errors
 ///
 /// - [`ServerError::PortInUse`] when every port in the retry window is busy.
 /// - [`ServerError::Bind`] when the port is available but binding fails for
 ///   another reason (e.g., permission denied on port < 1024).
-/// - [`ServerError::Serve`] if the server exits with an IO error mid-run.
 pub async fn run_with_port_retry(
     config: Config,
     docker_capable: DockerCapability,
-) -> Result<u16, ServerError> {
+) -> Result<(u16, ServerDriver), ServerError> {
     use std::io::ErrorKind;
 
     let first_port = config.port;
@@ -659,10 +681,15 @@ pub async fn run_with_port_retry(
                 let state = AppState::new(try_config, docker_capable);
                 let app = build_app(state);
                 info!(bind = %addr, "webshell server listening");
-                axum::serve(listener, app)
-                    .await
-                    .map_err(ServerError::Serve)?;
-                return Ok(port);
+                let driver = ServerDriver {
+                    inner: Box::pin(async move {
+                        axum::serve(listener, app)
+                            .with_graceful_shutdown(crate::init::shutdown::shutdown_signal())
+                            .await
+                            .map_err(ServerError::Serve)
+                    }),
+                };
+                return Ok((port, driver));
             }
             Err(e) if e.kind() == ErrorKind::AddrInUse => {
                 if attempt < PORT_RETRY_LIMIT {
@@ -931,6 +958,41 @@ async fn write_browser_state(
     *snapshot = update;
 
     StatusCode::OK
+}
+
+/// `GET /api/builds/resume` — returns all persisted sessions from `SessionStore`.
+///
+/// Auth-gated (global Bearer token). Results are ordered by `updated_at`
+/// descending (most recently touched first).
+async fn resume_sessions_handler(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let Some(authz) = headers.get("authorization") else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let Ok(authz_str) = authz.to_str() else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if !auth::validate_bearer(authz_str, &state.config.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    let rows = match state.session_store.lock() {
+        Ok(store) => store.list(),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to lock session store");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    match rows {
+        Ok(sessions) => (StatusCode::OK, Json(sessions)).into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "session_store list failed");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
 }
 
 /// `GET /api/polytopes` — returns the per-sibling 4D polytope snapshot.

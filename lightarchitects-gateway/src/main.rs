@@ -34,6 +34,72 @@ use serde_json::json;
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
+/// TTY launcher — runs onboarding (first run) or acts on saved preferences,
+/// then **never returns** (always calls `std::process::exit`).
+fn run_tty_launcher() -> ! {
+    let launcher = lightarchitects_gateway::cli::launcher::LauncherConfig::load();
+    let cfg = if launcher.first_run_done {
+        launcher
+    } else {
+        lightarchitects_gateway::cli::launcher::run_onboarding()
+    };
+
+    if cfg.always_webshell {
+        let exe = std::env::current_exe()
+            .unwrap_or_else(|_| PathBuf::from("lightarchitects"));
+        let mut cmd = std::process::Command::new(exe);
+        cmd.arg("webshell").arg("start");
+        match cfg.backend {
+            lightarchitects_gateway::cli::launcher::Backend::Codex => {
+                cmd.arg("--host-cmd").arg("codex");
+                cmd.arg("--agent-kind").arg("codex");
+            }
+            lightarchitects_gateway::cli::launcher::Backend::OllamaLaunch => {
+                cmd.arg("--host-cmd").arg("claude");
+                cmd.arg("--agent-kind").arg("lightarchitects");
+                cmd.arg("--backend").arg("ollama-launch");
+                cmd.arg("--ollama-model").arg(&cfg.model);
+            }
+            lightarchitects_gateway::cli::launcher::Backend::Claude => {
+                cmd.arg("--host-cmd").arg("claude");
+                cmd.arg("--agent-kind").arg("lightarchitects");
+            }
+        }
+        if cfg.sandbox {
+            cmd.env("LA_CONTAINER_MODE", "1");
+        }
+        let status = cmd.status().unwrap_or_else(|e| {
+            eprintln!("Failed to start webshell: {e}");
+            std::process::exit(1);
+        });
+        std::process::exit(status.code().unwrap_or(1));
+    }
+
+    // Not webshell — hand off to lightarchitects-cli as before
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let cli_binary = home.map_or_else(
+        || PathBuf::from("lightarchitects-cli"),
+        |h| h.join("lightarchitects/cli/bin/lightarchitects-cli"),
+    );
+
+    if cli_binary.exists() {
+        let status = std::process::Command::new(&cli_binary)
+            .status()
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to spawn lightarchitects-cli: {e}");
+                std::process::exit(1);
+            });
+        std::process::exit(status.code().unwrap_or(1));
+    } else {
+        eprintln!(
+            "lightarchitects-cli not found at {}.\n\
+             Install it first: cd ~/Projects/lightarchitects-cli && make deploy",
+            cli_binary.display()
+        );
+        std::process::exit(1);
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let raw_args: Vec<String> = std::env::args().skip(1).collect();
@@ -46,31 +112,10 @@ async fn main() {
     }
 
     // TTY detection: if run from an interactive terminal with no args,
-    // spawn lightarchitects-cli instead of starting the MCP server.
+    // run the onboarding wizard (first run) or act on saved preferences.
     let is_tty = std::io::stdin().is_terminal();
     if raw_args.is_empty() && is_tty {
-        let home = std::env::var_os("HOME").map(PathBuf::from);
-        let cli_binary = home.map_or_else(
-            || PathBuf::from("lightarchitects-cli"),
-            |h| h.join("lightarchitects/cli/bin/lightarchitects-cli"),
-        );
-
-        if cli_binary.exists() {
-            let status = std::process::Command::new(&cli_binary)
-                .status()
-                .unwrap_or_else(|e| {
-                    eprintln!("Failed to spawn lightarchitects-cli: {e}");
-                    std::process::exit(1);
-                });
-            std::process::exit(status.code().unwrap_or(1));
-        } else {
-            eprintln!(
-                "lightarchitects-cli not found at {}.\n\
-                 Install it first: cd ~/Projects/lightarchitects-cli && make deploy",
-                cli_binary.display()
-            );
-            std::process::exit(1);
-        }
+        run_tty_launcher();
     }
 
     // Check for --agent flag early (agent mode uses JSON logging, not fmt)
@@ -270,6 +315,9 @@ async fn cli_dispatch(
             lightarchitects_gateway::cli::webshell::execute(config, &args[1..]).await
         }
 
+        // Conversational mode — pair programmer in a box.
+        Some("chat") => cli_chat(&args[1..]),
+
         // Squad Comms subcommand — delegates to webshell coordination API.
         Some("squad-comms") => cli_squad_comms(&args[1..], config).await,
 
@@ -294,6 +342,7 @@ async fn cli_dispatch(
                    lightarchitects config                     Resolved configuration\n  \
                    lightarchitects builds list|show           Build portfolio\n  \
                    lightarchitects setup keys|voice|seraph    Configuration wizard\n  \
+                   lightarchitects chat                        Conversational brainstorm mode
                    lightarchitects webshell start|control|status  Web GUI\n  \
                    lightarchitects squad-comms tasks|add|claim|logs|inject  Squad Comms\n  \
                    lightarchitects vault clone-platform|pull-platform|status|validate-for-push|publish|sync-public  Vault ops"
@@ -411,6 +460,54 @@ async fn cli_squad_comms(args: &[String], config: &GatewayConfig) -> Result<(), 
     };
     let pretty = serde_json::to_string_pretty(&result).unwrap_or_else(|_| result.to_string());
     println!("{pretty}");
+    Ok(())
+}
+
+fn cli_chat(args: &[String]) -> Result<(), GatewayError> {
+    let mut session = lightarchitects_gateway::conversational::ConversationalSession::default();
+
+    if !args.is_empty() {
+        // Non-interactive: take first arg as user message, print suggestion, exit.
+        let user_input = args.join(" ");
+        session.push_user(&user_input);
+        println!("Assistant: I'd be happy to help with that.");
+        println!();
+        if let Some(plan) = session.suggest_plan() {
+            println!("Suggested LASDLC plan:");
+            println!("{plan}");
+        } else {
+            println!("(not enough user context to suggest a plan yet)");
+        }
+        return Ok(());
+    }
+
+    // Interactive REPL loop
+    println!("lightarchitects chat — type 'build' to promote, 'quit' to exit");
+    loop {
+        print!("> ");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        let mut line = String::new();
+        std::io::stdin()
+            .read_line(&mut line)
+            .map_err(|e| GatewayError::Internal(e.to_string()))?;
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line == "quit" || line == "exit" {
+            break;
+        }
+        if line == "build" {
+            if let Some(plan) = session.suggest_plan() {
+                println!("Promoted plan:\n{plan}");
+            } else {
+                println!("No user messages yet — nothing to build.");
+            }
+            continue;
+        }
+        session.push_user(line);
+        println!("Assistant: acknowledged.");
+    }
     Ok(())
 }
 

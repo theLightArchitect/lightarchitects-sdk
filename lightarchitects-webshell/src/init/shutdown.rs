@@ -8,7 +8,8 @@ static CLEANUP_REGISTRY: Mutex<Vec<Box<dyn FnOnce() + Send>>> = Mutex::new(Vec::
 /// Register a cleanup function to run on SIGTERM or SIGINT.
 ///
 /// Functions run in LIFO order (most-recently-registered first).
-/// Best-effort — if a function panics, the remaining functions still run.
+/// Best-effort — a panicking cleanup is isolated via `catch_unwind` so the
+/// remaining functions still run.
 ///
 /// # Panics
 ///
@@ -19,17 +20,18 @@ pub fn register_cleanup(f: impl FnOnce() + Send + 'static) {
     CLEANUP_REGISTRY.lock().unwrap().push(Box::new(f));
 }
 
-/// Wait for SIGTERM (Unix) or SIGINT, then run all registered cleanup functions.
+/// Returns a future that resolves when SIGTERM (Unix) or SIGINT is received.
 ///
 /// On non-Unix platforms, only SIGINT is handled.
-/// After running cleanup, returns — the caller should exit the process.
+/// This future is suitable for passing to `axum::serve(...).with_graceful_shutdown`
+/// so the HTTP layer can drain connections before the process exits.
 ///
 /// # Panics
 ///
 /// Panics only if Tokio signal handler registration fails (kernel-level
 /// resource exhaustion — effectively impossible in practice).
 #[allow(clippy::expect_used)]
-pub async fn wait_for_shutdown() {
+pub async fn shutdown_signal() {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};
@@ -40,10 +42,10 @@ pub async fn wait_for_shutdown() {
 
         tokio::select! {
             _ = sigterm.recv() => {
-                tracing::info!(target: "shutdown", "SIGTERM received — running cleanup");
+                tracing::info!(target: "shutdown", "SIGTERM received");
             }
             _ = sigint.recv() => {
-                tracing::info!(target: "shutdown", "SIGINT received — running cleanup");
+                tracing::info!(target: "shutdown", "SIGINT received");
             }
         }
     }
@@ -51,17 +53,33 @@ pub async fn wait_for_shutdown() {
     #[cfg(not(unix))]
     {
         let _ = tokio::signal::ctrl_c().await;
-        tracing::info!(target: "shutdown", "CTRL-C received — running cleanup");
+        tracing::info!(target: "shutdown", "CTRL-C received");
     }
+}
 
+/// Wait for SIGTERM (Unix) or SIGINT, then run all registered cleanup functions.
+///
+/// On non-Unix platforms, only SIGINT is handled.
+/// After running cleanup, returns — the caller should exit the process.
+pub async fn wait_for_shutdown() {
+    shutdown_signal().await;
     run_cleanup();
 }
 
-fn run_cleanup() {
+#[doc(hidden)]
+pub fn run_cleanup() {
+    // Drain into a local Vec so the lock is not held during execution,
+    // preventing deadlock if a cleanup calls register_cleanup.
     #[allow(clippy::unwrap_used)]
-    let mut registry = CLEANUP_REGISTRY.lock().unwrap();
-    for f in registry.drain(..).rev() {
-        f();
+    let functions: Vec<Box<dyn FnOnce() + Send>> = {
+        let mut registry = CLEANUP_REGISTRY.lock().unwrap();
+        registry.drain(..).rev().collect()
+    };
+
+    for f in functions {
+        if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+            tracing::error!(target: "shutdown", panic = ?e, "cleanup function panicked");
+        }
     }
     tracing::info!(target: "shutdown", "cleanup complete");
 }

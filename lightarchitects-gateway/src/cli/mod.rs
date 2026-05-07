@@ -16,6 +16,7 @@
 pub mod auth;
 pub mod builds;
 pub mod config_cmd;
+pub mod launcher;
 pub mod output;
 pub mod setup;
 pub mod status;
