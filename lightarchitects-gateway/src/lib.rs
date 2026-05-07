@@ -52,5 +52,7 @@ pub mod server;
 pub mod spawner;
 /// Squad Comms MCP actions — HTTP delegation to the webshell coordination API.
 pub mod squad_comms;
+/// Vault-as-git — pre-push validation and public companion repo sync.
+pub mod vault;
 /// Build-time version metadata (CARGO_PKG_VERSION + git-sha + build-date).
 pub mod version;

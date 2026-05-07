@@ -218,7 +218,8 @@ async fn cli_dispatch(
         Some("routes" | "siblings") => cli_route_list(config),
         Some("canon") => cli_canon(args, config),
         Some("conductor") => lightarchitects_gateway::conductor::dispatch(&args[1..]).await,
-        Some("initialize" | "init") => cli_initialize(args, config).await,
+        Some("initialize") => cli_initialize(args, config).await,
+        Some("init") => cli::init::run(args.contains(&"--force".to_owned())),
 
         // Sibling commands (use SDK clients)
         Some("soul") => lightarchitects_gateway::cli::soul::execute(config, &args[1..], mode).await,
@@ -435,6 +436,7 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
         version_date: "2026-05-04".to_owned(),
         api_version: "v1",
         user_id,
+        identity_scope_policy: crate::config::IdentityScopePolicy::AllowAuthenticated,
     };
 
     // Tiered quotas — NonZeroU32::MIN.saturating_add(N-1) avoids unwrap/unsafe.
