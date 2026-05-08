@@ -204,6 +204,10 @@ async fn run_agents(
     // Squad Comms persistence (C2): mark queue entry completed.
     crate::coordination::complete_dispatch(id.as_str()).await;
 
+    // Grace period: keep the broadcast sender alive so late SSE subscribers
+    // (frontend fetch round-trip) can connect and receive the terminal event.
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
     // Clean up registry entry.
     let mut reg = registry.lock().await;
     reg.remove(&id);

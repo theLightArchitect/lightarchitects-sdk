@@ -53,5 +53,9 @@ pub mod vault;
 pub mod rubric;
 /// Conversational build mode — pair programmer in a box.
 pub mod conversational;
+/// Interactive coding agent — NDJSON streaming + TTY REPL.
+pub mod agent_stream;
 /// Build-time version metadata (CARGO_PKG_VERSION + git-sha + build-date).
 pub mod version;
+/// Shared LLM client — Ollama, OpenAI-compatible, Anthropic.
+pub mod llm;

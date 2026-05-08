@@ -21,6 +21,7 @@
 //! requires swapping the host to an Agent-SDK-built agent or lÆx0 via
 //! `--host-cmd` and is gated by the separate licensing review in Phase 9.
 
+pub mod agent;
 pub mod auth;
 pub mod config;
 pub mod container;

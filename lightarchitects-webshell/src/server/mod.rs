@@ -27,7 +27,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
 use crate::{
-    auth,
+    agent, auth,
     config::{AgentSession, Config},
     container::{DockerCapability, ImageManager},
     coordination, copilot, csp,
@@ -385,6 +385,15 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/builds/{id}/terminal/ws",
             get(terminal::ws::ws_build_handler),
+        )
+        // ── Option E: hybrid SSE + WebSocket agent protocol ────────────────
+        .route(
+            "/api/builds/{id}/agent/stream",
+            get(agent::sse::agent_sse_handler),
+        )
+        .route(
+            "/api/builds/{id}/agent/ws",
+            get(agent::ws::agent_ws_handler),
         )
         .route(
             "/api/browser-state",

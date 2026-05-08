@@ -108,6 +108,12 @@ pub struct BuildSession {
     /// Whether this build session should spawn inside a Docker container.
     /// Set at creation time based on Docker capability + container mode config.
     pub containerized: bool,
+
+    /// Live agent session host (Option E — SSE + WebSocket agent protocol).
+    ///
+    /// Lazily initialised on first agent activity.  Holds the subprocess
+    /// bridge, event broadcast channel, and permission queue.
+    pub agent_host: tokio::sync::Mutex<Option<Arc<crate::agent::AgentSessionHost>>>,
 }
 
 impl BuildSession {
@@ -144,6 +150,7 @@ impl BuildSession {
             pty_master: StdMutex::new(None),
             pty_exited: Arc::new(tokio::sync::Notify::new()),
             containerized: false,
+            agent_host: tokio::sync::Mutex::new(None),
         }
     }
 

@@ -1,0 +1,439 @@
+//! Subprocess bridge — spawns `lightarchitects --stream-events` and translates
+//! NDJSON stdout into `AgentEvent` broadcasts.
+//!
+//! ## Lifecycle
+//!
+//! ```text
+//! lazy_init() on first SSE/WS connect
+//!   → spawn lightarchitects --stream-events --cwd <build.cwd>
+//!   → stdout task parses NDJSON → AgentEvent → event_tx
+//!   → stdin task reads control_rx → NDJSON → cli stdin
+//!   → on bridge drop: SIGKILL child, close channels
+//! ```
+//!
+//! ## NDJSON line format (lightarchitects-cli → bridge)
+//!
+//! Each line is a self-contained JSON object matching `AgentEvent`:
+//! ```json
+//! {"type":"tool_start","name":"Read","id":"call_01","input":{"file_path":"/tmp/test.md"}}
+//! ```
+
+use std::process::Stdio;
+
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
+use tokio::process::{Child, ChildStdin, ChildStdout};
+use tokio::sync::{broadcast, mpsc};
+use tracing::{info, warn};
+
+use crate::copilot::resolve_binary;
+use crate::session::BuildSession;
+
+use super::protocol::{AgentEvent, ControlMessage};
+
+/// Maximum length of a single NDJSON line from the CLI stdout.
+///
+/// Lines exceeding this are truncated and discarded as a `DoS` defence.
+const MAX_NDJSON_LINE: usize = 1_048_576; // 1 MiB
+
+/// Spawn the agent bridge for `session` and wire it into `event_tx`/`control_rx`.
+///
+/// Returns the child process handle so the caller can store it for lifecycle
+/// management (kill on session drop).  Background tasks are spawned for
+/// stdout parsing and stdin writing.
+///
+/// # Fallback behaviour
+///
+/// If the CLI binary does not exist or spawn fails, the function returns
+/// `None` and emits an `AgentEvent::Error` on `event_tx`.
+pub async fn spawn_bridge(
+    session: &BuildSession,
+    event_tx: broadcast::Sender<AgentEvent>,
+    control_rx: mpsc::Receiver<ControlMessage>,
+) -> Option<Child> {
+    let binary = resolve_binary("lightarchitects");
+    let mut cmd = tokio::process::Command::new(&binary);
+
+    // Validate cwd before passing it to the child.
+    let workdir = match validate_cwd(&session.cwd).await {
+        Ok(path) => path,
+        Err(e) => {
+            warn!(error = %e, cwd = %session.cwd.display(), "invalid cwd for bridge");
+            let _ = event_tx.send(AgentEvent::Error {
+                message: e,
+                recoverable: Some(false),
+            });
+            return None;
+        }
+    };
+
+    // Attempt streaming mode first (future flag).
+    cmd.arg("--stream-events").arg("--cwd").arg(&workdir);
+
+    // NOTE: ANTHROPIC_API_KEY is intentionally NOT injected here.
+    // The CLI resolves its own credentials (keychain / config file) so that
+    // a compromised agent process cannot exfiltrate the key via /proc/self/environ.
+    // See C4 in agent module security review.
+
+    cmd.kill_on_drop(true)
+        .env_clear()
+        .env("PATH", crate::copilot::augmented_path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+
+    // Whitelist safe env vars if present in parent.
+    for key in [
+        "HOME",
+        "USER",
+        "SHELL",
+        "RUST_LOG",
+        "LLM_BACKEND",
+        "OLLAMA_BASE_URL",
+        "OLLAMA_MODEL",
+    ] {
+        if let Ok(val) = std::env::var(key) {
+            cmd.env(key, val);
+        }
+    }
+    for (key, val) in std::env::vars() {
+        if key.starts_with("LA_") || key.starts_with("LIGHTARCHITECTS_") {
+            cmd.env(key, val);
+        }
+    }
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            warn!(error = %e, "failed to spawn lightarchitects-cli bridge");
+            let _ = event_tx.send(AgentEvent::Error {
+                message: format!("spawn failed: {e}"),
+                recoverable: Some(false),
+            });
+            return None;
+        }
+    };
+
+    let Some(stdin) = child.stdin.take() else {
+        warn!("child stdin not piped after spawn");
+        return None;
+    };
+    let Some(stdout) = child.stdout.take() else {
+        warn!("child stdout not piped after spawn");
+        return None;
+    };
+
+    info!(build_id = %session.build_id, binary = %binary, "agent bridge spawned");
+
+    // ── stdout parsing task ───────────────────────────────────────────────────
+    let event_tx_stdout = event_tx.clone();
+    tokio::spawn(parse_stdout(stdout, event_tx_stdout));
+
+    // ── stdin / control task ────────────────────────────────────────────────────
+    tokio::spawn(drive_stdin(stdin, control_rx));
+
+    Some(child)
+}
+
+/// Parse NDJSON lines from the CLI stdout and emit `AgentEvent`s.
+///
+/// Reads stdout in 8 KiB chunks and enforces `MAX_NDJSON_LINE` *before*
+/// accumulation so a malicious or buggy child cannot OOM the webshell
+/// with a single unbounded line.
+async fn parse_stdout(mut stdout: ChildStdout, event_tx: broadcast::Sender<AgentEvent>) {
+    let mut chunk = [0u8; 8192];
+    let mut line = Vec::with_capacity(4096);
+    let mut saw_complete = false;
+    let mut overflow = false;
+
+    loop {
+        match stdout.read(&mut chunk).await {
+            Ok(0) => {
+                if !line.is_empty() && !overflow {
+                    process_line(&line, &event_tx, &mut saw_complete);
+                }
+                if !saw_complete {
+                    let _ = event_tx.send(AgentEvent::Complete {
+                        reason: super::protocol::TerminationReason::Error {
+                            message: "stdout closed before completion".to_owned(),
+                        },
+                    });
+                }
+                break;
+            }
+            Ok(n) => {
+                for &b in &chunk[..n] {
+                    if b == b'\n' {
+                        if !overflow && !line.is_empty() {
+                            process_line(&line, &event_tx, &mut saw_complete);
+                        }
+                        line.clear();
+                        overflow = false;
+                    } else if line.len() < MAX_NDJSON_LINE {
+                        line.push(b);
+                    } else {
+                        overflow = true;
+                    }
+                }
+                if overflow && line.is_empty() {
+                    // We are in overflow state and just hit a newline
+                    // (handled above); if still overflowing mid-line,
+                    // warn once per line.
+                    warn!("NDJSON line exceeds max length; discarding");
+                    let _ = event_tx.send(AgentEvent::Error {
+                        message: "NDJSON line too long".to_owned(),
+                        recoverable: Some(true),
+                    });
+                }
+            }
+            Err(e) => {
+                warn!(error = %e, "stdout read error");
+                let _ = event_tx.send(AgentEvent::Error {
+                    message: "stdout read error".to_owned(),
+                    recoverable: Some(false),
+                });
+                let _ = event_tx.send(AgentEvent::Complete {
+                    reason: super::protocol::TerminationReason::Error {
+                        message: "stdout read error".to_owned(),
+                    },
+                });
+                break;
+            }
+        }
+    }
+}
+
+/// Parse one accumulated NDJSON line and broadcast it.
+fn process_line(raw: &[u8], event_tx: &broadcast::Sender<AgentEvent>, saw_complete: &mut bool) {
+    let Ok(line) = std::str::from_utf8(raw) else {
+        let _ = event_tx.send(AgentEvent::Text {
+            chunk: String::from_utf8_lossy(raw).into_owned(),
+        });
+        return;
+    };
+    if line.trim().is_empty() {
+        return;
+    }
+    match serde_json::from_str::<AgentEvent>(line) {
+        Ok(ev) => {
+            if matches!(ev, AgentEvent::Complete { .. }) {
+                *saw_complete = true;
+            }
+            let _ = event_tx.send(ev);
+        }
+        Err(_) => {
+            let _ = event_tx.send(AgentEvent::Text {
+                chunk: format!("{line}\n"),
+            });
+        }
+    }
+}
+
+/// Read `ControlMessage`s from the control channel and write NDJSON to stdin.
+async fn drive_stdin(stdin: ChildStdin, mut control_rx: mpsc::Receiver<ControlMessage>) {
+    let mut writer = BufWriter::new(stdin);
+    while let Some(msg) = control_rx.recv().await {
+        let json = match msg {
+            ControlMessage::SendMessage { text } => {
+                serde_json::json!({"action":"send_message","text":text})
+            }
+            ControlMessage::ApprovePermission { request_id } => {
+                serde_json::json!({"action":"approve_permission","request_id":request_id})
+            }
+            ControlMessage::DenyPermission { request_id, reason } => {
+                serde_json::json!({"action":"deny_permission","request_id":request_id,"reason":reason})
+            }
+            ControlMessage::Interrupt => {
+                serde_json::json!({"action":"interrupt"})
+            }
+            ControlMessage::Steer { text } => {
+                serde_json::json!({"action":"steer","text":text})
+            }
+            ControlMessage::ExecutePlan => {
+                serde_json::json!({"action":"execute_plan"})
+            }
+            ControlMessage::Ping => continue,
+        };
+        let line = format!("{json}\n");
+        if let Err(e) = writer.write_all(line.as_bytes()).await {
+            warn!(error = %e, "bridge stdin write failed");
+            break;
+        }
+        if let Err(e) = writer.flush().await {
+            warn!(error = %e, "bridge stdin flush failed");
+            break;
+        }
+    }
+}
+
+/// Fallback single-shot bridge for when the CLI does not support streaming.
+///
+/// Spawns `lightarchitects-cli run <message>` per `SendMessage` control and
+/// emits the response as `Text` + `Complete`.  Runs in the caller's task
+/// (not background) so it can be swapped in when streaming is unavailable.
+///
+/// # Security
+///
+/// Does NOT pass `--yes`; the CLI's standard permission-approval flow is used.
+/// If the bridge is dead and the user sends a `SendMessage`, the fallback
+/// requires explicit tool approval just like the streaming path.
+pub async fn run_fallback_turn(
+    session: &BuildSession,
+    event_tx: broadcast::Sender<AgentEvent>,
+    text: &str,
+) {
+    let binary = resolve_binary("lightarchitects");
+
+    // Validate cwd before passing it to the child.
+    let cwd = match validate_cwd(&session.cwd).await {
+        Ok(path) => path,
+        Err(e) => {
+            warn!(error = %e, cwd = %session.cwd.display(), "invalid cwd for fallback");
+            let _ = event_tx.send(AgentEvent::Error {
+                message: e,
+                recoverable: Some(false),
+            });
+            return;
+        }
+    };
+
+    let output = match tokio::process::Command::new(&binary)
+        .arg("run")
+        .arg(text)
+        .arg("--no-splash")
+        .arg("--cwd")
+        .arg(&cwd)
+        .env("PATH", crate::copilot::augmented_path())
+        .output()
+        .await
+    {
+        Ok(o) => o,
+        Err(e) => {
+            let _ = event_tx.send(AgentEvent::Error {
+                message: format!("run failed: {e}"),
+                recoverable: Some(true),
+            });
+            return;
+        }
+    };
+
+    let success = output.status.success();
+    let code = output.status.code();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let text = if stdout.trim().is_empty() {
+        stderr.into_owned()
+    } else {
+        stdout.into_owned()
+    };
+
+    let _ = event_tx.send(AgentEvent::Text { chunk: text });
+
+    if success {
+        let _ = event_tx.send(AgentEvent::Complete {
+            reason: super::protocol::TerminationReason::Complete,
+        });
+    } else {
+        let _ = event_tx.send(AgentEvent::Error {
+            message: format!("cli exited with code {code:?}"),
+            recoverable: Some(true),
+        });
+        let _ = event_tx.send(AgentEvent::Complete {
+            reason: super::protocol::TerminationReason::Error {
+                message: format!("cli exited with code {code:?}"),
+            },
+        });
+    }
+}
+
+/// Validate that `cwd` is a safe working directory for the agent child.
+///
+/// 1. Canonicalises the path (resolves symlinks) — async to avoid blocking
+///    the Tokio runtime.
+/// 2. Verifies it is an existing directory.
+///
+/// Error messages are intentionally generic to avoid leaking absolute paths
+/// or OS-level details to the browser.
+async fn validate_cwd(cwd: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let canon = tokio::fs::canonicalize(cwd)
+        .await
+        .map_err(|_| "cwd path is invalid or inaccessible".to_string())?;
+    if !canon.is_dir() {
+        return Err("cwd is not a directory".to_string());
+    }
+    Ok(canon)
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::needless_raw_string_hashes
+)]
+mod tests {
+    use super::*;
+    use tokio::sync::broadcast;
+
+    #[tokio::test]
+    async fn validate_cwd_rejects_missing_path() {
+        let result = validate_cwd(std::path::Path::new("/nonexistent/path/12345")).await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "cwd path is invalid or inaccessible");
+    }
+
+    #[tokio::test]
+    async fn validate_cwd_accepts_existing_dir() {
+        let tmp = std::env::temp_dir();
+        let result = validate_cwd(&tmp).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_dir());
+    }
+
+    #[tokio::test]
+    async fn validate_cwd_rejects_file() {
+        let tmpfile = std::env::temp_dir().join(format!("la-test-file-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&tmpfile, "x").unwrap();
+        let result = validate_cwd(&tmpfile).await;
+        std::fs::remove_file(&tmpfile).unwrap();
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "cwd is not a directory");
+    }
+
+    #[test]
+    fn process_line_parses_valid_agent_event() {
+        let (tx, mut rx) = broadcast::channel(4);
+        let mut saw = false;
+        let json = r#"{"type":"text","chunk":"hello"}"#;
+        process_line(json.as_bytes(), &tx, &mut saw);
+        assert!(rx.try_recv().is_ok());
+        assert!(!saw);
+    }
+
+    #[test]
+    fn process_line_sets_saw_complete_on_complete_event() {
+        let (tx, _rx) = broadcast::channel(4);
+        let mut saw = false;
+        let json = r#"{"type":"complete","reason":{"kind":"complete"}}"#;
+        process_line(json.as_bytes(), &tx, &mut saw);
+        assert!(saw);
+    }
+
+    #[test]
+    fn process_line_emits_text_on_unrecognised_json() {
+        let (tx, mut rx) = broadcast::channel(4);
+        let mut saw = false;
+        let json = r"not json";
+        process_line(json.as_bytes(), &tx, &mut saw);
+        let ev = rx.try_recv().expect("text event emitted");
+        assert!(matches!(ev, AgentEvent::Text { .. }));
+    }
+
+    #[test]
+    fn process_line_emits_text_on_invalid_utf8() {
+        let (tx, mut rx) = broadcast::channel(4);
+        let mut saw = false;
+        let bytes = vec![0x80, 0x81, 0x82];
+        process_line(&bytes, &tx, &mut saw);
+        let ev = rx.try_recv().expect("text event emitted");
+        assert!(matches!(ev, AgentEvent::Text { .. }));
+    }
+}

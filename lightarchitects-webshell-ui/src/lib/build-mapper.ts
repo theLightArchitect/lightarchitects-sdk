@@ -153,6 +153,9 @@ export function mapPortfolioToBuild(entry: Record<string, unknown>): Build {
     blocks: Array.isArray(entry.blocks) ? entry.blocks as string[] : undefined,
     path: (entry.path as string) || undefined,
     tier: typeof entry.tier === 'number' ? entry.tier : undefined,
+    agent: entry.agent
+      ? { kind: (entry.agent as Record<string, unknown>).kind as string, backend: ((entry.agent as Record<string, unknown>).backend as string) || undefined }
+      : undefined,
   };
 }
 

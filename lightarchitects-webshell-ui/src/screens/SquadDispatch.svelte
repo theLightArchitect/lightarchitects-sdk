@@ -85,46 +85,44 @@
       const e = events[idx];
       const ts = base + idx;
       const time = eventTimes[idx] ?? fmtTime(new Date()); // receive-time, not derivation-time
-      if ('MailboxMessage' in e) {
+      if (e.type === 'mailbox_message') {
         rows.push({
           ts, time,
-          source: e.MailboxMessage.agent,
-          color: DOMAIN_AGENT_COLORS[e.MailboxMessage.agent] ?? '#64748b',
-          text: e.MailboxMessage.text,
+          source: e.agent,
+          color: DOMAIN_AGENT_COLORS[e.agent] ?? '#64748b',
+          text: e.text,
           severity: 'info',
         });
-      } else if ('PerAgentState' in e && e.PerAgentState.message !== null) {
+      } else if (e.type === 'per_agent_state' && e.message !== null) {
         rows.push({
           ts, time,
-          source: e.PerAgentState.agent,
-          color: DOMAIN_AGENT_COLORS[e.PerAgentState.agent] ?? '#64748b',
-          text: `[${e.PerAgentState.state}] ${e.PerAgentState.message}`,
+          source: e.agent,
+          color: DOMAIN_AGENT_COLORS[e.agent] ?? '#64748b',
+          text: `[${e.state}] ${e.message}`,
           severity: 'info',
         });
-      } else if ('ToolUsage' in e) {
-        const u = e.ToolUsage;
+      } else if (e.type === 'tool_usage') {
         rows.push({
           ts, time,
-          source: u.agent,
-          color: DOMAIN_AGENT_COLORS[u.agent] ?? '#64748b',
-          text: `${u.tool} · ${u.action} [${u.status}]${u.latency_ms !== undefined ? ` ${u.latency_ms}ms` : ''}`,
-          severity: u.status === 'failed' ? 'err' : u.status === 'skipped' ? 'warn' : 'info',
+          source: e.agent,
+          color: DOMAIN_AGENT_COLORS[e.agent] ?? '#64748b',
+          text: `${e.tool} · ${e.action} [${e.status}]${e.latency_ms !== undefined ? ` ${e.latency_ms}ms` : ''}`,
+          severity: e.status === 'failed' ? 'err' : e.status === 'skipped' ? 'warn' : 'info',
         });
       } else if (isComplete(e)) {
         rows.push({
           ts, time,
           source: 'system',
           color: '#22c55e',
-          text: `Dispatch complete in ${(e.Complete.elapsed_ms / 1000).toFixed(1)}s`,
+          text: `Dispatch complete in ${(e.elapsed_ms / 1000).toFixed(1)}s`,
           severity: 'ok',
         });
       } else if (isError(e)) {
-        const agent = e.Error.agent;
         rows.push({
           ts, time,
-          source: agent ?? 'system',
-          color: agent ? (DOMAIN_AGENT_COLORS[agent] ?? '#ef4444') : '#ef4444',
-          text: e.Error.message,
+          source: e.agent ?? 'system',
+          color: e.agent ? (DOMAIN_AGENT_COLORS[e.agent] ?? '#ef4444') : '#ef4444',
+          text: e.message,
           severity: 'err',
         });
       }
@@ -202,11 +200,11 @@
 
         if (isTerminal(e)) {
           if (isComplete(e)) {
-            elapsedMs = e.Complete.elapsed_ms;
+            elapsedMs = e.elapsed_ms;
             updateHistoryEntry(id, 'complete', elapsedMs);
             phase = 'complete';
           } else if (isError(e)) {
-            errorMsg = e.Error.message;
+            errorMsg = e.message;
             updateHistoryEntry(id, 'error');
             phase = 'error';
           }
@@ -223,8 +221,8 @@
   }
 
   function applyEvent(e: DispatchEvent) {
-    if ('PerAgentState' in e) {
-      const { agent, state, message, files_touched, token_count, elapsed_ms } = e.PerAgentState;
+    if (e.type === 'per_agent_state') {
+      const { agent, state, message, files_touched, token_count, elapsed_ms } = e;
       const prev = agentStates.get(agent);
       agentStates = new Map(agentStates).set(agent, {
         agent,
@@ -237,8 +235,8 @@
         elapsed_ms:    elapsed_ms    ?? prev?.elapsed_ms,
         last_tool:     prev?.last_tool,
       });
-    } else if ('MailboxMessage' in e) {
-      const { agent, text } = e.MailboxMessage;
+    } else if (e.type === 'mailbox_message') {
+      const { agent, text } = e;
       const existing = agentStates.get(agent);
       agentStates = new Map(agentStates).set(agent, {
         agent,
@@ -249,8 +247,8 @@
         elapsed_ms:    existing?.elapsed_ms,
         last_tool:     existing?.last_tool,
       });
-    } else if ('ToolUsage' in e) {
-      const { agent, tool, action, status, latency_ms } = e.ToolUsage;
+    } else if (e.type === 'tool_usage') {
+      const { agent, tool, action, status, latency_ms } = e;
       const existing = agentStates.get(agent);
       agentStates = new Map(agentStates).set(agent, {
         agent,
