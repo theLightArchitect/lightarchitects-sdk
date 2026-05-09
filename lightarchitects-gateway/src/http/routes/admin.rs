@@ -20,7 +20,13 @@ use crate::http::state::PlatformState;
 use crate::security::hmac::ct_eq_bytes;
 
 /// Permitted sibling names for the agent upload endpoint.
-const ALLOWED_SIBLINGS: &[&str] = &["corso", "eva", "soul", "quantum", "seraph", "ayin", "claude"];
+///
+/// LÆX promoted from implicit-layer to canonical routed sibling 2026-05-08;
+/// vestigial `"claude"` entry removed in the same swap (no SDK backing). See
+/// `helix/corso/builds/laex-sibling-promotion/manifest.yaml` for the build
+/// trail and the migration script at `scripts/migrate-claude-to-laex-sibling-identity.sh`
+/// for handling any extant `:SiblingIdentity {sibling: 'claude'}` records.
+const ALLOWED_SIBLINGS: &[&str] = &["corso", "eva", "soul", "quantum", "seraph", "ayin", "laex"];
 
 /// Wire admin routes onto the router.
 pub fn admin_routes() -> Router<Arc<PlatformState>> {
@@ -905,4 +911,45 @@ fn verify_resolve_hmac(
         return Err("HMAC signature verification failed".into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    // ── ALLOWED_SIBLINGS const tests (W4 — laex-sibling-promotion) ───────────────
+
+    #[test]
+    fn allowed_siblings_includes_laex() {
+        assert!(
+            ALLOWED_SIBLINGS.contains(&"laex"),
+            "LÆX must be in ALLOWED_SIBLINGS post laex-sibling-promotion ship"
+        );
+    }
+
+    #[test]
+    fn allowed_siblings_excludes_vestigial_claude() {
+        assert!(
+            !ALLOWED_SIBLINGS.contains(&"claude"),
+            "vestigial \"claude\" entry must be removed in laex-sibling-promotion W4 swap"
+        );
+    }
+
+    #[test]
+    fn allowed_siblings_length_unchanged() {
+        // 7 entries before swap (incl. vestigial "claude"), 7 entries after (incl. "laex").
+        assert_eq!(ALLOWED_SIBLINGS.len(), 7);
+    }
+
+    #[test]
+    fn allowed_siblings_canonical_seven_routed_sibs() {
+        // Verifies the full 7-sibling slate is represented post-promotion.
+        for expected in ["corso", "eva", "soul", "quantum", "seraph", "ayin", "laex"] {
+            assert!(
+                ALLOWED_SIBLINGS.contains(&expected),
+                "{expected} should be in ALLOWED_SIBLINGS"
+            );
+        }
+    }
 }

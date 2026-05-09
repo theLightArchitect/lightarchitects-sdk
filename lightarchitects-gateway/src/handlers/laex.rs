@@ -327,4 +327,90 @@ mod tests {
         assert!(text.contains("not gateway-routed"));
         assert!(text.contains("test"));
     }
+
+    // ── W5 backcompat tests — verify REAL dispatch on wrap targets ───────────────
+    //
+    // These tests prove that LaexHandler::call("canon_check", _) and
+    // LaexHandler::call("canon_evaluate", _) reach the same core_tools::run()
+    // functions that the top-level lightarchitects_canon_check /
+    // lightarchitects_canon_evaluate MCP tools call directly. Backcompat is
+    // preserved because both paths share the same run() implementation — there
+    // is no logic duplication.
+
+    use std::io::Write as _;
+
+    fn handler_with_canon_registry(registry_path: &str) -> LaexHandler {
+        let mut config = GatewayConfig::default();
+        config.canon.registry = registry_path.to_owned();
+        LaexHandler::new(&config)
+    }
+
+    #[tokio::test]
+    async fn canon_check_through_laex_handler_returns_canon_headers() {
+        let mut tmp = tempfile::NamedTempFile::new().expect("tempfile");
+        writeln!(
+            tmp,
+            "### Canon I: Builders Cookbook\n### Canon XXIII: Inline Citation Protocol\n"
+        )
+        .expect("write");
+        let h = handler_with_canon_registry(tmp.path().to_str().expect("utf8 path"));
+
+        let result = h
+            .call(
+                "canon_check",
+                json!({"decision": "ship hot-fix without test"}),
+            )
+            .await
+            .expect("canon_check via LaexHandler");
+
+        let text = result["content"][0]["text"].as_str().expect("text content");
+        assert!(
+            text.contains("Canon I: Builders Cookbook"),
+            "real dispatch should surface canon headers: {text}"
+        );
+        assert!(
+            text.contains("Canon XXIII: Inline Citation Protocol"),
+            "real dispatch should surface all canon headers: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn canon_evaluate_through_laex_handler_returns_5_criteria() {
+        let mut tmp = tempfile::NamedTempFile::new().expect("tempfile");
+        writeln!(tmp, "### Canon I: Test\n").expect("write");
+        let h = handler_with_canon_registry(tmp.path().to_str().expect("utf8 path"));
+
+        let result = h
+            .call(
+                "canon_evaluate",
+                json!({"candidate": "voice-first operator dialog"}),
+            )
+            .await
+            .expect("canon_evaluate via LaexHandler");
+
+        // 5-criteria framework asserts — all 5 names must appear in the response.
+        let text = result["content"][0]["text"].as_str().expect("text content");
+        for criterion in [
+            "convergent_evidence",
+            "biblical_grounding",
+            "decision_shaping",
+            "pressure_tested",
+            "kevin_ratifies",
+        ] {
+            assert!(
+                text.contains(criterion),
+                "criterion {criterion} missing from real-dispatch output: {text}"
+            );
+        }
+
+        // The structured `criteria` array carries 5 entries.
+        let criteria = result["criteria"]
+            .as_array()
+            .expect("criteria should be a JSON array");
+        assert_eq!(
+            criteria.len(),
+            5,
+            "5-criteria framework must return exactly 5 entries"
+        );
+    }
 }
