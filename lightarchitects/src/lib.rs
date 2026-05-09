@@ -40,6 +40,11 @@ pub mod seraph;
 /// AYIN observability transport wrapper and HTTP viewer client.
 pub mod ayin;
 
+/// LÆX governance MCP client (9 routable actions: canon-check, canon-evaluate,
+/// matrix-ratify, effectiveness-score, reflect, layer1-4 reviews; 2 internal:
+/// register-decision, query-canon-drift). Gateway-dispatched (inline-only).
+pub mod laex;
+
 // ── Advanced / IP capabilities ────────────────────────────────────────────────
 
 /// MCP training data factory — discover → generate → execute → score → export.
