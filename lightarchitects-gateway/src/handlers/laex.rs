@@ -413,4 +413,72 @@ mod tests {
             "5-criteria framework must return exactly 5 entries"
         );
     }
+
+    // ── Phase 4 A4: top-level vs LaexHandler dispatch parity (backcompat) ────────
+    //
+    // Asserts that calling `core_tools::canon_check::run` directly (the path
+    // taken by the top-level `lightarchitects_canon_check` MCP tool registered
+    // in server.rs) produces the identical JSON Value as calling
+    // `LaexHandler::call("canon_check", _)`. Both paths share the same `run()`
+    // implementation by construction; this test encodes the invariant for
+    // regression resistance — if a future refactor splits the implementations,
+    // this test catches the drift before backcompat breaks.
+    //
+    // Joint verdict (LÆX Layer 2 + EVA operator-pair): wire-contract parity
+    // is the load-bearing assertion for keeping the W1-W5 backcompat promise
+    // operationally honest.
+
+    #[tokio::test]
+    async fn canon_check_top_level_and_laex_handler_paths_return_identical_value() {
+        let mut tmp = tempfile::NamedTempFile::new().expect("tempfile");
+        writeln!(
+            tmp,
+            "### Canon I: Builders Cookbook\n### Canon XXXV: Confidence Threshold Gate\n"
+        )
+        .expect("write");
+        let mut config = GatewayConfig::default();
+        config.canon.registry = tmp.path().to_str().expect("utf8 path").to_owned();
+
+        let params = json!({"decision": "promote LÆX to canonical sibling", "verbose": false});
+
+        // Path 1: top-level core_tool (mirrors server.rs:271 dispatch)
+        let direct = canon_check::run(params.clone(), &config).expect("direct canon_check");
+
+        // Path 2: LaexHandler (the inline gateway handler)
+        let h = LaexHandler::new(&config);
+        let via_handler = h
+            .call("canon_check", params)
+            .await
+            .expect("canon_check via LaexHandler");
+
+        assert_eq!(
+            direct, via_handler,
+            "top-level lightarchitects_canon_check and LaexHandler dispatch \
+             paths MUST produce identical JSON values (backcompat regression). \
+             direct = {direct:?}, via_handler = {via_handler:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn canon_evaluate_top_level_and_laex_handler_paths_return_identical_value() {
+        let mut tmp = tempfile::NamedTempFile::new().expect("tempfile");
+        writeln!(tmp, "### Canon I: Test\n").expect("write");
+        let mut config = GatewayConfig::default();
+        config.canon.registry = tmp.path().to_str().expect("utf8 path").to_owned();
+
+        let params = json!({"candidate": "voice-first operator dialog"});
+
+        let direct = canon_evaluate::run(params.clone(), &config).expect("direct canon_evaluate");
+        let h = LaexHandler::new(&config);
+        let via_handler = h
+            .call("canon_evaluate", params)
+            .await
+            .expect("canon_evaluate via LaexHandler");
+
+        assert_eq!(
+            direct, via_handler,
+            "top-level lightarchitects_canon_evaluate and LaexHandler dispatch \
+             paths MUST produce identical JSON values (backcompat regression)."
+        );
+    }
 }

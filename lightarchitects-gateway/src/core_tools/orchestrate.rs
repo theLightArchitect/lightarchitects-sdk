@@ -858,4 +858,96 @@ mod tests {
             }
         }
     }
+
+    // ── Phase 4 A1: programmatic collision audit ────────────────────────────────
+    //
+    // Verifies no LaexAction string collides with any other sibling's
+    // ALL_ROUTABLE set (PR3 mitigation in laex-sibling-promotion plan).
+    // Encodes the invariant that priority-shift behavior is safe — no existing
+    // action's routing changes when LÆX is inserted at SIBLING_ROUTES slot 0.
+    //
+    // Joint verdict (LÆX Layer 2 + EVA DevOps): convert from agent-confirmation
+    // to compile-time-test for regression resistance.
+
+    #[test]
+    fn cross_sibling_action_names_have_no_collisions() {
+        use std::collections::HashSet;
+
+        // Collect each sibling's routable action name set.
+        let laex: HashSet<&'static str> = LaexAction::ALL_ROUTABLE
+            .iter()
+            .map(LaexAction::as_str)
+            .collect();
+        let quantum: HashSet<&'static str> = QuantumAction::ALL_ROUTABLE
+            .iter()
+            .map(QuantumAction::as_str)
+            .collect();
+        let corso: HashSet<&'static str> = CorsoAction::ALL_ROUTABLE
+            .iter()
+            .map(CorsoAction::as_str)
+            .collect();
+        let seraph: HashSet<&'static str> = SeraphAction::ALL_ROUTABLE
+            .iter()
+            .map(SeraphAction::as_str)
+            .collect();
+        let eva: HashSet<&'static str> = EvaAction::ALL_ROUTABLE
+            .iter()
+            .map(EvaAction::as_str)
+            .collect();
+        let soul: HashSet<&'static str> = SoulAction::ALL_ROUTABLE
+            .iter()
+            .map(SoulAction::as_str)
+            .collect();
+        let ayin: HashSet<&'static str> = AyinAction::ALL_ROUTABLE
+            .iter()
+            .map(AyinAction::as_str)
+            .collect();
+
+        let pairs: &[(&str, &HashSet<&'static str>, &str, &HashSet<&'static str>)] = &[
+            ("laex", &laex, "quantum", &quantum),
+            ("laex", &laex, "corso", &corso),
+            ("laex", &laex, "seraph", &seraph),
+            ("laex", &laex, "eva", &eva),
+            ("laex", &laex, "soul", &soul),
+            ("laex", &laex, "ayin", &ayin),
+            // Defensive — verify the pre-existing siblings remain collision-free
+            // post-LÆX promotion. Catches any future-action churn that would
+            // shadow LÆX governance dispatch.
+            ("quantum", &quantum, "corso", &corso),
+            ("quantum", &quantum, "soul", &soul),
+            ("corso", &corso, "soul", &soul),
+            ("eva", &eva, "soul", &soul),
+            ("seraph", &seraph, "soul", &soul),
+            ("ayin", &ayin, "soul", &soul),
+        ];
+
+        for &(a_name, a_set, b_name, b_set) in pairs {
+            let intersection: Vec<&&str> = a_set.intersection(b_set).collect();
+            assert!(
+                intersection.is_empty(),
+                "action-name collision between {a_name} and {b_name}: {intersection:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn laex_routable_actions_match_priority_slot_0_invariant() {
+        // Verifies that every LaexAction::ALL_ROUTABLE entry resolves to "laex"
+        // via auto_route when LÆX is enabled, anchoring the slot-0 invariant
+        // (canon-supersedes-research) at the test layer.
+        let mut cfg = GatewayConfig::default();
+        if let Some(l) = cfg.agents.get_mut("laex") {
+            l.enabled = true;
+        }
+        for action in LaexAction::ALL_ROUTABLE {
+            let resolved = auto_route(action.as_str(), &cfg);
+            assert_eq!(
+                resolved,
+                Some("laex"),
+                "routable LaexAction `{}` should auto-route to laex; resolved to {:?}",
+                action.as_str(),
+                resolved
+            );
+        }
+    }
 }
