@@ -7,8 +7,8 @@
 //! **Response types** — what [`crate::laex::LaexClient`] typed methods return.
 //! Structs are deserialized directly from the JSON LÆX places in the MCP
 //! `content[].text` block. Unknown fields are silently ignored
-//! (`#[serde(flatten)]` / `deny_unknown_fields` is intentionally absent) so
-//! that the gateway can add fields without breaking SDK consumers.
+//! (`deny_unknown_fields` is intentionally absent) so that the gateway can
+//! add fields without breaking SDK consumers.
 
 use std::collections::BTreeMap;
 

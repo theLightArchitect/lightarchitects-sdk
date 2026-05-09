@@ -274,6 +274,34 @@ fn no_agent_response(action: &str) -> Value {
     })
 }
 
+/// Build an "internal action not routable" payload — returned when an explicit
+/// `agent: "laex"` route is paired with an internal-only `LaexAction`
+/// (`register_decision`, `query_canon_drift`).
+///
+/// Mitigates S3-M3 (security audit 2026-05-08): the explicit-route path at
+/// [`run`] previously only checked `cfg.enabled`, allowing operators to bypass
+/// `LaexAction::is_gateway_routable()` enforcement that `auto_route` applies.
+/// Internal actions are reachable only via direct in-process `LaexClient`
+/// handles per the SDK contract.
+fn internal_action_blocked(agent: &str, action: &str) -> Value {
+    json!({
+        "content": [{
+            "type": "text",
+            "text": serde_json::to_string_pretty(&json!({
+                "error": "internal_action_not_routable",
+                "agent": agent,
+                "action": action,
+                "message": format!(
+                    "Action '{action}' is internal to the {agent} handler and not exposed via gateway \
+                     routing. Use the in-process client API instead (LaexClient::register_decision, \
+                     LaexClient::query_canon_drift, etc.)."
+                ),
+                "hint": "Internal LÆX actions: register_decision, query_canon_drift."
+            })).unwrap_or_default()
+        }]
+    })
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 /// Execute `lightarchitects_orchestrate`.
@@ -314,7 +342,17 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
         Some(name) => {
             // Explicit route — validate it exists and is enabled.
             match config.agents.get(name) {
-                Some(cfg) if cfg.enabled => name.to_owned(),
+                Some(cfg) if cfg.enabled => {
+                    // S3-M3 mitigation (security audit 2026-05-08): for LÆX
+                    // explicit routes, also enforce gateway-routable filtering
+                    // so internal actions (register_decision, query_canon_drift)
+                    // cannot be reached via explicit-agent override. `auto_route`
+                    // already enforces this via SiblingRoute::matches.
+                    if name == "laex" && !is_routable_laex(&action) {
+                        return Ok(internal_action_blocked(name, &action));
+                    }
+                    name.to_owned()
+                }
                 Some(_) | None => return Ok(disabled_response(name)),
             }
         }
@@ -731,5 +769,93 @@ mod tests {
         let text = result["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("no_agent"), "expected no_agent error");
         assert!(text.contains("frobnicate"), "expected action in payload");
+    }
+
+    // ── S3-M3 regression: explicit-`agent: laex` route must enforce
+    //    is_gateway_routable filtering on internal LÆX actions ───────────────────
+
+    #[tokio::test]
+    async fn orchestrate_explicit_laex_blocks_register_decision() {
+        let mut cfg = GatewayConfig::default();
+        if let Some(l) = cfg.agents.get_mut("laex") {
+            l.enabled = true;
+        }
+        let result = run(
+            json!({
+                "action": "register_decision",
+                "agent": "laex",
+                "params": {"decision": "test", "ratifier": "kft"}
+            }),
+            &cfg,
+        )
+        .await
+        .expect("run");
+        let text = result["content"][0]["text"]
+            .as_str()
+            .expect("text payload");
+        assert!(
+            text.contains("internal_action_not_routable"),
+            "expected internal-action-blocked payload, got: {text}"
+        );
+        assert!(
+            text.contains("register_decision"),
+            "payload should reference the rejected action"
+        );
+    }
+
+    #[tokio::test]
+    async fn orchestrate_explicit_laex_blocks_query_canon_drift() {
+        let mut cfg = GatewayConfig::default();
+        if let Some(l) = cfg.agents.get_mut("laex") {
+            l.enabled = true;
+        }
+        let result = run(
+            json!({
+                "action": "query_canon_drift",
+                "agent": "laex",
+                "params": {}
+            }),
+            &cfg,
+        )
+        .await
+        .expect("run");
+        let text = result["content"][0]["text"]
+            .as_str()
+            .expect("text payload");
+        assert!(
+            text.contains("internal_action_not_routable"),
+            "expected internal-action-blocked payload, got: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn orchestrate_explicit_laex_allows_routable_canon_check() {
+        let mut cfg = GatewayConfig::default();
+        if let Some(l) = cfg.agents.get_mut("laex") {
+            l.enabled = true;
+        }
+        // canon_check is a routable LaexAction; explicit route should NOT block it.
+        // (Note: the call may fail downstream because canon_check needs a valid
+        // registry path, but the orchestrate-level routing must succeed past the
+        // S3-M3 gate.)
+        let result = run(
+            json!({
+                "action": "canon_check",
+                "agent": "laex",
+                "params": {"decision": "test"}
+            }),
+            &cfg,
+        )
+        .await;
+        // Either Ok(payload) (handler dispatched) or Ok(structured-error). Critical:
+        // the result must NOT be the internal_action_not_routable gate.
+        if let Ok(value) = result {
+            if let Some(text) = value["content"][0]["text"].as_str() {
+                assert!(
+                    !text.contains("internal_action_not_routable"),
+                    "canon_check is routable; should not be blocked at the S3-M3 gate: {text}"
+                );
+            }
+        }
     }
 }

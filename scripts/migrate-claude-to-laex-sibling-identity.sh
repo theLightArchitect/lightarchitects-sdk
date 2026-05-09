@@ -88,6 +88,11 @@ create_backup() {
         'CALL apoc.export.cypher.all(NULL, { format: "plain", stream: true }) YIELD cypherStatements RETURN cypherStatements' \
         2>/dev/null > "$BACKUP_FILE" \
         || die "Neo4j backup failed (apoc plugin required for full dump)"
+    # SECURITY-L3 (audit 2026-05-08): explicit empty-backup guard. Without APOC
+    # installed, cypher-shell exits 0 with a 0-byte file; shasum then succeeds
+    # silently and the operator believes the backup is good. Fail-closed here
+    # so the migration cannot proceed with no recovery point.
+    [[ -s "$BACKUP_FILE" ]] || die "Neo4j backup is empty (0 bytes); APOC plugin missing or query produced no output"
     shasum -a 256 "$BACKUP_FILE" > "$BACKUP_SHA"
     chmod 0400 "$BACKUP_FILE" "$BACKUP_SHA"
     log "backup written + checksummed (chmod 0400)"
@@ -96,10 +101,13 @@ create_backup() {
 # ── Migration probe ────────────────────────────────────────────────────────────
 
 count_claude_records() {
+    # MIGRATION-L3 (quality + security agents 2026-05-08): cypher-shell
+    # `--format plain` emits a header line + value rows. Use awk to grab row 2
+    # (the count value) deterministically. Earlier `tail -n 1 | tr -d '[:space:]'`
+    # was brittle to newer cypher-shell versions that append a `(1 row)` footer.
     cypher-shell -a "$NEO4J_URI" --format plain \
         "MATCH (s:SiblingIdentity {sibling: 'claude'}) RETURN count(s) AS n" \
-        | tail -n 1 \
-        | tr -d '[:space:]'
+        | awk 'NR==2 { gsub(/[^0-9]/, ""); print; exit }'
 }
 
 emit_blocked_summary() {

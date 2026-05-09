@@ -203,6 +203,10 @@ impl<T: Transport> LaexClient<T> {
         layer: GovernanceLayer,
         target: &str,
     ) -> Result<LayerReviewResult, SdkError> {
+        // Mirrors `GovernanceLayer::as_str` ordering. Kept as an explicit match
+        // (vs deriving from `layer.index()`) because the action-name format
+        // (`layer{N}_review` literal) is part of the wire contract and benefits
+        // from compile-time exhaustiveness checking against the enum.
         let action_name = match layer {
             GovernanceLayer::Security => "layer1_review",
             GovernanceLayer::Methodology => "layer2_review",
