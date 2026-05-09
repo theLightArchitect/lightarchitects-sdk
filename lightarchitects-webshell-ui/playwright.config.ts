@@ -9,7 +9,7 @@ export default defineConfig({
   // Supplementary specs run on-demand via CLI filter:
   //   pnpm test:e2e -- claude-code-oauth   (wizard + real Haiku, resets setup)
   //   pnpm test:e2e -- screenshot-tour     (standalone visual capture)
-  testMatch: ['**/webshell.spec.ts', '**/conversational.spec.ts', '**/northstar.spec.ts'],
+  testMatch: ['**/webshell.spec.ts', '**/conversational.spec.ts', '**/northstar.spec.ts', '**/vibe-coding.spec.ts'],
 
   // Snapshot baselines committed alongside tests (§57.6 visual tier).
   // First run creates them; subsequent runs diff against them.
