@@ -95,14 +95,11 @@ inline-soul = []
 inline-quantum = []
 # inline-seraph intentionally omitted — SERAPH stays spawner-only for process
 # isolation (offensive security tools must not crash the gateway).
-# LÆX is inline-only by design (no standalone binary); the inline-laex feature
-# is the canonical and only enable path.
-inline-laex = []
 
-## Convenience: enable all six inline handlers at once.
+## Convenience: enable all five inline handlers at once.
 inline-all = [
     "inline-ayin", "inline-corso", "inline-eva",
-    "inline-soul", "inline-quantum", "inline-laex",
+    "inline-soul", "inline-quantum",
 ]
 
 ## SOUL heavy dependencies (Neo4j + fastembed). Without this, the SOUL handler

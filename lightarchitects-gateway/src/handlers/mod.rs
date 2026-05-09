@@ -14,12 +14,9 @@
 //! | `inline-eva` | `EvaHandler` | Hook chain, LLM providers |
 //! | `inline-soul` | `SoulHandler` | Filesystem vault (use `helix` for Neo4j) |
 //! | `inline-quantum` | `QuantumHandler` | Hook system, providers |
-//! | `inline-laex` | `LaexHandler` | Inline-only — wraps `core_tools` canon-check / canon-evaluate; structured frameworks for governance reviews |
 //!
 //! SERAPH is intentionally **not** inlinable — it stays spawner-only for
 //! process isolation (offensive security tools must not crash the gateway).
-//! LÆX is **inline-only** — it has no standalone binary, so spawner mode is
-//! not applicable.
 
 #[cfg(any(
     feature = "inline-ayin",
@@ -27,7 +24,6 @@
     feature = "inline-eva",
     feature = "inline-soul",
     feature = "inline-quantum",
-    feature = "inline-laex",
 ))]
 mod registry;
 
@@ -37,7 +33,6 @@ mod registry;
     feature = "inline-eva",
     feature = "inline-soul",
     feature = "inline-quantum",
-    feature = "inline-laex",
 ))]
 pub use registry::{init_handlers, registry};
 
@@ -58,9 +53,6 @@ mod soul;
 #[cfg(feature = "inline-quantum")]
 mod quantum;
 
-#[cfg(feature = "inline-laex")]
-mod laex;
-
 // ── No inline handlers enabled — provide stub ──────────────────────────────────
 
 #[cfg(not(any(
@@ -69,7 +61,6 @@ mod laex;
     feature = "inline-eva",
     feature = "inline-soul",
     feature = "inline-quantum",
-    feature = "inline-laex",
 )))]
 /// No-op initializer when no inline handlers are compiled in.
 pub fn init_handlers(_config: &crate::config::GatewayConfig) {
@@ -82,7 +73,6 @@ pub fn init_handlers(_config: &crate::config::GatewayConfig) {
     feature = "inline-eva",
     feature = "inline-soul",
     feature = "inline-quantum",
-    feature = "inline-laex",
 )))]
 /// Returns `None` when no inline handlers are compiled in.
 #[must_use]

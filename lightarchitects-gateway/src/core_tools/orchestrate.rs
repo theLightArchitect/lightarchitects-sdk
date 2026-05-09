@@ -5,19 +5,15 @@
 //! enum in priority order. When both match, the first enabled route wins; the
 //! caller can always override by specifying `route` explicitly.
 //!
-//! Priority order: LÆX > QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN.
-//! Rationale: LÆX governance trumps research on canon-related collisions
-//! (`canon_check` / `canon_evaluate` / `matrix_ratify` must route to LÆX over
-//! any research-flavoured QUANTUM match). QUANTUM's `research` then wins over
-//! SOUL's, and CORSO's domain-heavy actions come before SOUL's generic names
-//! (search, query, stats).
+//! Priority order: QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN.
+//! This ensures QUANTUM's `research` wins over SOUL's, and CORSO's domain-heavy
+//! actions come before SOUL's generic names (search, query, stats).
 
 use serde_json::{Value, json};
 
 use lightarchitects::ayin::AyinAction;
 use lightarchitects::corso::CorsoAction;
 use lightarchitects::eva::EvaAction;
-use lightarchitects::laex::LaexAction;
 use lightarchitects::quantum::QuantumAction;
 use lightarchitects::seraph::SeraphAction;
 use lightarchitects::soul::SoulAction;
@@ -34,13 +30,6 @@ use crate::spawner::call_agent;
 struct SiblingRoute {
     name: &'static str,
     matches: fn(&str) -> bool,
-}
-
-/// Check whether `action` parses as a routable LÆX action.
-fn is_routable_laex(action: &str) -> bool {
-    action
-        .parse::<LaexAction>()
-        .is_ok_and(|a| a.is_gateway_routable())
 }
 
 /// Check whether `action` parses as a routable action for the given enum.
@@ -87,26 +76,17 @@ fn is_routable_ayin(action: &str) -> bool {
 
 /// Priority-ordered route routing table.
 ///
-/// Order: LÆX > QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN.
+/// Order: QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN.
 ///
 /// Rationale:
-/// - LÆX first (slot 0): governance trumps research on canon-related
-///   collisions. `canon_check`, `canon_evaluate`, `matrix_ratify`, layer
-///   reviews, and effectiveness scoring all anchor at the canon layer
-///   regardless of preset. Without slot 0, a future research-flavoured
-///   QUANTUM action could shadow LÆX governance dispatch.
-/// - QUANTUM second: its `research` must win over SOUL's `research`.
-/// - CORSO third: domain-heavy security/ops actions.
-/// - SERAPH fourth: pentest investigation actions.
-/// - EVA fifth: creative/consciousness actions.
-/// - SOUL sixth: generic vault names (search, query, stats) only match if
+/// - QUANTUM first: its `research` must win over SOUL's `research`.
+/// - CORSO second: domain-heavy security/ops actions.
+/// - SERAPH third: pentest investigation actions.
+/// - EVA fourth: creative/consciousness actions.
+/// - SOUL fifth: generic vault names (search, query, stats) only match if
 ///   no other route claims them.
 /// - AYIN last: observability (sessions, spans, conversations).
 const SIBLING_ROUTES: &[SiblingRoute] = &[
-    SiblingRoute {
-        name: "laex",
-        matches: is_routable_laex,
-    },
     SiblingRoute {
         name: "quantum",
         matches: is_routable_quantum,
@@ -186,8 +166,7 @@ fn auto_route_with_priority<'a>(
 /// Return the total number of gateway-routable actions across all agents.
 #[must_use]
 pub fn total_routable_action_count() -> usize {
-    LaexAction::ALL_ROUTABLE.len()
-        + QuantumAction::ALL_ROUTABLE.len()
+    QuantumAction::ALL_ROUTABLE.len()
         + CorsoAction::ALL_ROUTABLE.len()
         + SeraphAction::ALL_ROUTABLE.len()
         + EvaAction::ALL_ROUTABLE.len()
@@ -201,10 +180,6 @@ pub fn total_routable_action_count() -> usize {
 #[must_use]
 pub fn routable_actions_for(agent: &str) -> Vec<&'static str> {
     match agent {
-        "laex" => LaexAction::ALL_ROUTABLE
-            .iter()
-            .map(LaexAction::as_str)
-            .collect(),
         "quantum" => QuantumAction::ALL_ROUTABLE
             .iter()
             .map(QuantumAction::as_str)
@@ -337,7 +312,6 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
         feature = "inline-eva",
         feature = "inline-soul",
         feature = "inline-quantum",
-        feature = "inline-laex",
     ))]
     if let Some(registry) = crate::handlers::registry() {
         if let Some(handler) = registry.get(&target_route) {
@@ -407,81 +381,14 @@ mod tests {
 
     #[test]
     fn auto_route_returns_none_for_arena_actions() {
-        // Arena actions are not in any SDK enum (forge, summon are Arena-only).
-        // After laex-sibling-promotion ship, canon_check IS in LaexAction; it now
-        // routes to laex when enabled (see auto_route_canon_check_routes_to_laex).
+        // Arena actions are not in any SDK enum.
         let mut cfg = GatewayConfig::default();
         if let Some(l) = cfg.agents.get_mut("laex") {
             l.enabled = true;
         }
         assert_eq!(auto_route("forge", &cfg), None);
         assert_eq!(auto_route("summon", &cfg), None);
-    }
-
-    // ── LÆX-specific auto_route tests (W3 deliverable: ≥4 tests) ────────────────
-
-    #[test]
-    fn auto_route_canon_check_routes_to_laex() {
-        let mut cfg = GatewayConfig::default();
-        if let Some(l) = cfg.agents.get_mut("laex") {
-            l.enabled = true;
-        }
-        assert_eq!(auto_route("canon_check", &cfg), Some("laex"));
-    }
-
-    #[test]
-    fn auto_route_effectiveness_score_routes_to_laex() {
-        let mut cfg = GatewayConfig::default();
-        if let Some(l) = cfg.agents.get_mut("laex") {
-            l.enabled = true;
-        }
-        assert_eq!(auto_route("effectiveness_score", &cfg), Some("laex"));
-    }
-
-    #[test]
-    fn auto_route_all_layer_reviews_route_to_laex() {
-        let mut cfg = GatewayConfig::default();
-        if let Some(l) = cfg.agents.get_mut("laex") {
-            l.enabled = true;
-        }
-        for action in [
-            "layer1_review",
-            "layer2_review",
-            "layer3_review",
-            "layer4_review",
-        ] {
-            assert_eq!(
-                auto_route(action, &cfg),
-                Some("laex"),
-                "{action} should route to laex"
-            );
-        }
-    }
-
-    #[test]
-    fn auto_route_disabled_laex_returns_none_for_canon_check() {
-        // Default config has laex disabled — canon_check routes nowhere.
-        let cfg = GatewayConfig::default();
         assert_eq!(auto_route("canon_check", &cfg), None);
-    }
-
-    #[test]
-    fn laex_priority_supersedes_quantum_when_both_enabled() {
-        // Verifies the slot-0 placement: even when QUANTUM is enabled and could
-        // theoretically claim a future research-flavoured action, LÆX governance
-        // actions (canon_check, matrix_ratify) always anchor at LÆX.
-        let mut cfg = GatewayConfig::default();
-        for sib in cfg.agents.values_mut() {
-            sib.enabled = true;
-        }
-        let full = super::super::preset::find_preset("full").unwrap();
-        for action in ["canon_check", "canon_evaluate", "matrix_ratify"] {
-            assert_eq!(
-                auto_route_with_priority(action, &cfg, full.routing_priority),
-                Some("laex"),
-                "{action} should route to laex even with QUANTUM enabled"
-            );
-        }
     }
 
     #[test]
@@ -656,32 +563,17 @@ mod tests {
 
     #[test]
     fn total_routable_count_matches_sdk_enums() {
-        // 9 (laex) + 9 (quantum) + 19 (corso) + 6 (seraph) + 11 (eva) + 14 (soul) + 3 (ayin) = 71
-        // (eva moved from 9 to 11 routable post 2026-04 update; laex adds 9 net new)
+        // 9 + 19 + 6 + 9 + 14 + 3 = 60
         let total = total_routable_action_count();
         assert_eq!(
             total,
-            LaexAction::ALL_ROUTABLE.len()
-                + QuantumAction::ALL_ROUTABLE.len()
+            QuantumAction::ALL_ROUTABLE.len()
                 + CorsoAction::ALL_ROUTABLE.len()
                 + SeraphAction::ALL_ROUTABLE.len()
                 + EvaAction::ALL_ROUTABLE.len()
                 + SoulAction::ALL_ROUTABLE.len()
                 + AyinAction::ALL_ROUTABLE.len(),
         );
-    }
-
-    #[test]
-    fn routable_actions_for_laex_matches_enum() {
-        let actions = routable_actions_for("laex");
-        assert_eq!(actions.len(), LaexAction::ALL_ROUTABLE.len());
-        for &expected in LaexAction::ALL_ROUTABLE {
-            assert!(
-                actions.contains(&expected.as_str()),
-                "missing LÆX action: {}",
-                expected.as_str()
-            );
-        }
     }
 
     #[test]
