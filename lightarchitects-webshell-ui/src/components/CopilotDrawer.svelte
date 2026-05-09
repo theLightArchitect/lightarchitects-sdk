@@ -664,6 +664,54 @@
     window.addEventListener('la:open-copilot', handler);
     return () => window.removeEventListener('la:open-copilot', handler);
   });
+
+  // ── E2E injection bridge ────────────────────────────────────────────────────
+  // Only active in dev/test. Allows Playwright tests to inject synthetic
+  // AgentEvents without a real WebSocket connection.
+  $effect(() => {
+    if (import.meta.env.PROD) return;
+
+    const injectHandler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { events?: import('./types').AgentEvent[] } | undefined;
+      if (!detail?.events) return;
+      for (const ev of detail.events) {
+        handleAgentEvent(ev);
+      }
+    };
+    window.addEventListener('la:e2e-inject-agent-events', injectHandler);
+
+    const rawHandler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { raw?: string } | undefined;
+      if (!detail?.raw) return;
+      // Simulate AgentWS.onmessage parsing the raw string
+      try {
+        const parsed = JSON.parse(detail.raw) as Record<string, unknown>;
+        if (parsed.type === 'text' && typeof parsed.chunk === 'string') {
+          handleAgentEvent(parsed as import('./types').AgentEvent);
+        } else {
+          handleAgentEvent({ type: 'error', message: `Malformed event: ${String(parsed.type)}` });
+        }
+      } catch {
+        handleAgentEvent({ type: 'text', chunk: detail.raw });
+      }
+    };
+    window.addEventListener('la:e2e-inject-raw-ws', rawHandler);
+
+    const disconnectHandler = () => {
+      // Simulate the onClose callback path
+      if (get(copilotLoading)) {
+        copilotLoading.set(false);
+        addMessage('system', 'Agent connection lost. Reconnecting…');
+      }
+    };
+    window.addEventListener('la:e2e-simulate-ws-disconnect', disconnectHandler);
+
+    return () => {
+      window.removeEventListener('la:e2e-inject-agent-events', injectHandler);
+      window.removeEventListener('la:e2e-inject-raw-ws', rawHandler);
+      window.removeEventListener('la:e2e-simulate-ws-disconnect', disconnectHandler);
+    };
+  });
 </script>
 
 <svelte:window
