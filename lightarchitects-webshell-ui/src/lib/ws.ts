@@ -102,6 +102,38 @@ export class TerminalWS {
 // Protocol: text frames = JSON AgentEvent lines
 // ============================================================================
 
+const MAX_FRAME_BYTES = 2 * 1024 * 1024; // 2 MiB — defense-in-depth against oversized frames
+
+function isValidAgentEvent(parsed: Record<string, unknown>): parsed is import('./types').AgentEvent {
+  if (typeof parsed.type !== 'string') return false;
+  switch (parsed.type) {
+    case 'text':
+      return typeof parsed.chunk === 'string';
+    case 'thinking':
+      return typeof parsed.content === 'string';
+    case 'tool_start':
+      return typeof parsed.name === 'string' && typeof parsed.id === 'string';
+    case 'tool_complete':
+      return (
+        typeof parsed.id === 'string' &&
+        typeof parsed.success === 'boolean' &&
+        typeof parsed.duration_ms === 'number'
+      );
+    case 'status_update':
+      return typeof parsed.text === 'string';
+    case 'error':
+      return typeof parsed.message === 'string';
+    case 'complete':
+      return parsed.reason !== undefined;
+    case 'token_usage':
+      return typeof parsed.input === 'number' && typeof parsed.output === 'number';
+    case 'heartbeat':
+      return true;
+    default:
+      return false;
+  }
+}
+
 export class AgentWS {
   private ws: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -143,11 +175,25 @@ export class AgentWS {
 
     this.ws.onmessage = (event) => {
       if (typeof event.data === 'string') {
+        if (event.data.length > MAX_FRAME_BYTES) {
+          this.onEvent?.({ type: 'error', message: `Frame too large (${event.data.length} bytes)` });
+          return;
+        }
         try {
-          const ev = JSON.parse(event.data) as import('./types').AgentEvent;
-          this.onEvent?.(ev);
+          const parsed = JSON.parse(event.data) as Record<string, unknown>;
+          // ControlResponse types (ack/reject/pong/etc.) are NOT AgentEvents — ignore them.
+          const controlTypes = ['ack', 'reject', 'permission_resolved', 'interrupted', 'pong', 'server_error'];
+          if (typeof parsed.type === 'string' && controlTypes.includes(parsed.type)) {
+            return;
+          }
+          if (!isValidAgentEvent(parsed)) {
+            // Malformed event — surface as error so the UI doesn't silently drop it
+            this.onEvent?.({ type: 'error', message: `Malformed event: ${String(parsed.type)}` });
+            return;
+          }
+          this.onEvent?.(parsed);
         } catch {
-          // Unparseable line — treat as raw text event
+          // Unparseable line — treat as raw text event only if within size bounds (already checked)
           this.onEvent?.({ type: 'text', chunk: event.data });
         }
       }
