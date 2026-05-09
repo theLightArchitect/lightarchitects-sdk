@@ -304,6 +304,10 @@
   function handleAgentEvent(ev: AgentEvent): void {
     switch (ev.type) {
       case 'text':
+        // If a text chunk arrives without loading=true (e.g. server-initiated
+        // or E2E injection), set it so the UI shows the spinner and subsequent
+        // chunks append rather than spawning duplicate bubbles.
+        if (!get(copilotLoading)) copilotLoading.set(true);
         // Append to the current assistant message if one is in flight,
         // otherwise start a new one.
         copilotMessages.update((msgs) => {
