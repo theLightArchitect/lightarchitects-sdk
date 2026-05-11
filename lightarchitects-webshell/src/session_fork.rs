@@ -110,12 +110,14 @@ pub async fn fork_handler(
             .into_response();
     };
 
-    // Guard against newlines or shell metacharacters in session_id / cwd that
-    // would break the AppleScript string or inject shell commands (LOW H-92).
-    // session_id is a UUID from internal state, but cwd comes from the
-    // user's working directory and may contain unexpected characters.
-    if session_id.contains(['\n', '\r', '"', '\'', '\\']) {
-        warn!(session_id = %session_id, "fork: rejected session_id with shell-unsafe chars");
+    // Allowlist-validate session_id and cwd before embedding them in an
+    // AppleScript string (H-92). Denylists are incomplete — AppleScript's
+    // `do shell script` expands `$`, backticks, `;`, `|`, etc. Allowlists
+    // make injection structurally impossible for these well-bounded inputs.
+    //
+    // session_id: UUID format — hex digits and hyphens only, max 36 chars.
+    if !is_safe_fork_session_id(&session_id) {
+        warn!(session_id = %session_id, "fork: rejected session_id with non-UUID chars");
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({ "error": "invalid_session_id" })),
@@ -128,8 +130,10 @@ pub async fn fork_handler(
     // directory — critical because `claude --resume` derives the session
     // file path from the CWD's project hash.
     let cwd_str = session.cwd.to_string_lossy();
-    if cwd_str.contains(['\n', '\r', '"', '\'']) {
-        warn!(cwd = %cwd_str, "fork: rejected cwd with shell-unsafe chars");
+    // cwd: filesystem path — alphanumeric, `/`, `_`, `.`, `-`, space only,
+    // max 512 chars. Rejects `$`, backticks, `;`, `|`, `&`, quotes, etc.
+    if !is_safe_fork_cwd(&cwd_str) {
+        warn!(cwd = %cwd_str, "fork: rejected cwd with non-allowlist chars");
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({ "error": "invalid_cwd" })),
@@ -229,10 +233,78 @@ fn spawn_terminal(_command: &str) -> (bool, &'static str) {
     (false, "unsupported")
 }
 
+/// Allowlist validator for session IDs embedded in `AppleScript` strings.
+///
+/// Accepts UUID format: hex digits (`[0-9a-fA-F]`) and hyphens, max 36 chars.
+/// This makes shell/AppleScript injection via `session_id` structurally impossible.
+fn is_safe_fork_session_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 36 && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+}
+
+/// Allowlist validator for working-directory paths embedded in `AppleScript` strings.
+///
+/// Accepts filesystem path chars: alphanumeric, `/`, `_`, `.`, `-`, and space.
+/// Rejects `$`, backticks, `;`, `|`, `&`, `>`, `<`, `(`, `)`, quotes, etc.
+/// Max 512 chars prevents runaway buffer use.
+fn is_safe_fork_cwd(cwd: &str) -> bool {
+    !cwd.is_empty()
+        && cwd.len() <= 512
+        && cwd
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '_' | '.' | '-' | ' '))
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_id_allowlist_accepts_uuid() {
+        assert!(is_safe_fork_session_id(
+            "9a8b7c6d-5e4f-3a2b-1c0d-e9f8a7b6c5d4"
+        ));
+    }
+
+    #[test]
+    fn session_id_allowlist_rejects_dollar() {
+        assert!(!is_safe_fork_session_id("$(rm -rf ~)"));
+    }
+
+    #[test]
+    fn session_id_allowlist_rejects_backtick() {
+        assert!(!is_safe_fork_session_id("`id`"));
+    }
+
+    #[test]
+    fn session_id_allowlist_rejects_overlong() {
+        assert!(!is_safe_fork_session_id(&"a".repeat(37)));
+    }
+
+    #[test]
+    fn cwd_allowlist_accepts_normal_path() {
+        assert!(is_safe_fork_cwd("/Users/kft/Projects/my-project"));
+    }
+
+    #[test]
+    fn cwd_allowlist_rejects_semicolon() {
+        assert!(!is_safe_fork_cwd("/tmp; rm -rf ~"));
+    }
+
+    #[test]
+    fn cwd_allowlist_rejects_pipe() {
+        assert!(!is_safe_fork_cwd("/tmp | cat /etc/passwd"));
+    }
+
+    #[test]
+    fn cwd_allowlist_rejects_dollar() {
+        assert!(!is_safe_fork_cwd("/tmp/$HOME"));
+    }
+
+    #[test]
+    fn cwd_allowlist_rejects_overlong() {
+        assert!(!is_safe_fork_cwd(&"/a".repeat(257)));
+    }
 
     #[test]
     fn fork_response_serializes_with_expected_fields() {
