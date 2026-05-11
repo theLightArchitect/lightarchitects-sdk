@@ -41,6 +41,38 @@ export function authHeaders(): { Authorization: string } | Record<string, never>
 }
 
 /**
+ * Redeems a one-time nonce UUID for an HttpOnly session cookie.
+ *
+ * Called when the URL fragment contains `#nonce=<uuid>` (set by the gateway
+ * after registering the nonce with the webshell). The nonce is single-use and
+ * expires after 60 seconds server-side.
+ *
+ * On success: sets cookieMode=true, starts the sliding-TTL refresh timer, and
+ * registers a pagehide cleanup listener — identical to initCookieSession.
+ * On failure: logs a warning; the user will see the unauthenticated UI.
+ */
+export async function initNonceSession(nonce: string): Promise<void> {
+  if (cookieMode) return;
+  try {
+    const res = await fetch('/api/auth/nonce-exchange', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ nonce }),
+    });
+    if (!res.ok) return;
+    // Guard against Vite SPA fallback: its 200 carries text/html, not a real cookie.
+    if ((res.headers.get('content-type') ?? '').includes('text/html')) return;
+    cookieMode = true;
+    sessionStorage.removeItem(SESSION_KEY);
+    scheduleRefresh();
+    window.addEventListener('pagehide', stopRefresh, { once: true });
+  } catch (e) {
+    console.warn('[la-auth] Nonce exchange failed', e);
+  }
+}
+
+/**
  * Exchanges a Bearer token for an HttpOnly session cookie (v0.4.0).
  *
  * Idempotent — returns immediately if already in cookie mode.

@@ -77,14 +77,17 @@ pub struct KeyValidator {
 }
 
 impl KeyValidator {
-    /// Create a new `KeyValidator` with the given configuration (uses real HTTP client).
-    pub fn new(config: AuthConfig) -> Self {
+    /// Create a new [`KeyValidator`] with the given configuration (uses real HTTP client).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::Http`] if the HTTP client cannot be constructed.
+    pub fn new(config: AuthConfig) -> Result<Self, AuthError> {
         let inner = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
-            .build()
-            .unwrap_or_default();
+            .build()?;
         let client = Arc::new(RealClient { inner });
-        Self { config, client }
+        Ok(Self { config, client })
     }
 
     /// Create a new `KeyValidator` with a custom validation client (useful for testing).
@@ -325,7 +328,10 @@ mod tests {
         let cache = make_cache("k", 1);
         write_cache_file(&cfg, &cache);
         assert!(cfg.cache_file_path.exists());
-        KeyValidator::new(cfg.clone()).clear_cache().unwrap();
+        KeyValidator::new(cfg.clone())
+            .unwrap()
+            .clear_cache()
+            .unwrap();
         assert!(!cfg.cache_file_path.exists());
     }
 
@@ -333,14 +339,14 @@ mod tests {
     fn clear_cache_noop_when_absent() {
         let dir = TempDir::new().unwrap();
         let cfg = isolated(&dir, "http://127.0.0.1:1");
-        KeyValidator::new(cfg).clear_cache().unwrap();
+        KeyValidator::new(cfg).unwrap().clear_cache().unwrap();
     }
 
     #[test]
     fn cache_write_read_round_trip() {
         let dir = TempDir::new().unwrap();
         let cfg = isolated(&dir, "http://127.0.0.1:1");
-        let validator = KeyValidator::new(cfg);
+        let validator = KeyValidator::new(cfg).unwrap();
         let cache = make_cache("round-trip", 1);
         validator.write_cache(&cache).unwrap();
         let read = validator.read_cache().unwrap().unwrap();
