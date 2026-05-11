@@ -1,11 +1,15 @@
 [package]
 name = "lightarchitects-gateway"
 version = "0.3.0"
-edition = "2024"
-rust-version = "1.87"
-authors = ["KFT <kf.tan@lightarchitects.io>"]
-license = "MPL-2.0"
-repository = "https://github.com/TheLightArchitects/lightarchitects-sdk"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+# License override: the workspace is MPL-2.0, but this gateway crate carries
+# business-critical orchestration logic (arena RL pipeline, conductor runtime,
+# sibling identity templates, squad-comms protocol, canon validation, governance
+# gates) and is licensed separately. See ./LICENSE for terms.
+license-file = "LICENSE"
+repository.workspace = true
 publish = false
 description = "Light Architects unified gateway — MCP server, Arena HTTP API, and autonomous agent runtime."
 
@@ -95,11 +99,14 @@ inline-soul = []
 inline-quantum = []
 # inline-seraph intentionally omitted — SERAPH stays spawner-only for process
 # isolation (offensive security tools must not crash the gateway).
+# LÆX is inline-only by design (no standalone binary); the inline-laex feature
+# is the canonical and only enable path.
+inline-laex = []
 
-## Convenience: enable all five inline handlers at once.
+## Convenience: enable all six inline handlers at once.
 inline-all = [
     "inline-ayin", "inline-corso", "inline-eva",
-    "inline-soul", "inline-quantum",
+    "inline-soul", "inline-quantum", "inline-laex",
 ]
 
 ## SOUL heavy dependencies (Neo4j + fastembed). Without this, the SOUL handler
@@ -115,6 +122,8 @@ lightarchitects = { path = "../lightarchitects" }
 
 # ── Shared (both MCP + Arena modes) ──────────────────────────────────────────
 async-trait = "0.1"
+inquire = "0.7"
+hmac = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
@@ -136,6 +145,9 @@ axum = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 governor = { workspace = true }
+neo4rs = { workspace = true }
+moka = { workspace = true }
+sha2 = { workspace = true }
 rusqlite = { workspace = true }
 cron = { workspace = true }
 notify = { workspace = true }
@@ -149,6 +161,8 @@ secrecy = { workspace = true }
 zeroize = { workspace = true }
 subtle = { workspace = true }
 keyring = { workspace = true }
+tempfile = { workspace = true }
+fs2 = { workspace = true }
 
 # ── Platform-specific ─────────────────────────────────────────────────────────
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -157,3 +171,10 @@ security-framework = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio-test = { workspace = true }
+tower = { workspace = true, features = ["util"] }
+axum = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "wave32_perf"
+harness = false

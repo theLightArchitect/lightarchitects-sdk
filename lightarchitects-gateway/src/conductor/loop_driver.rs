@@ -131,6 +131,10 @@ async fn run_one_iteration(
     gutter_map: &mut GutterMap,
     metrics: &mut Metrics,
 ) -> Result<bool, ConductorError> {
+    // -- RESOLUTION DEADLINE POLL ---
+    // Expire AwaitingOperatorResolution tasks whose deadline has passed.
+    expire_timed_out_resolutions(queue_path)?;
+
     // -- DISCOVER ---
     let mut queue = TaskQueue::load(queue_path).map_err(ConductorError::Queue)?;
 
@@ -378,6 +382,55 @@ async fn run_discovery(discovery_dir: &Path) {
             }
         }
     }
+}
+
+/// Expire `AwaitingOperatorResolution` tasks whose `resolution_deadline` has passed.
+///
+/// Called at the top of every loop iteration. Tasks past deadline are transitioned
+/// to `Failed` so they don't block the queue indefinitely. The admin route
+/// (`/v1/admin/operator/resolve-assertion`) handles the success path by setting
+/// the task status back to `Pending` with the resolution data.
+///
+/// # Deadline invariant
+///
+/// Any code that transitions a task to `AwaitingOperatorResolution` MUST also set
+/// `resolution_deadline` to `Some(...)`. Tasks with `None` deadline are never expired
+/// here and will wait indefinitely — this is intentional for manually-managed gates,
+/// but unintentional deadline omission creates a queue stall. The Wave 3.3 assertion
+/// gate hook will enforce this via the `resolve_assertion` route.
+fn expire_timed_out_resolutions(queue_path: &Path) -> Result<(), ConductorError> {
+    use super::queue::TaskStatus;
+    use chrono::Utc;
+
+    let mut queue = super::queue::TaskQueue::load(queue_path).map_err(ConductorError::Queue)?;
+    let now = Utc::now();
+    let mut changed = false;
+
+    for task in &mut queue.tasks {
+        if task.status != TaskStatus::AwaitingOperatorResolution {
+            continue;
+        }
+        // is_some_and: None deadline = no expiry (wait forever); Some = expire when past.
+        let expired = task
+            .resolution_deadline
+            .is_some_and(|deadline| now >= deadline);
+        if expired {
+            tracing::warn!(
+                task_id = %task.id,
+                assertion_id = ?task.awaiting_assertion_id,
+                "operator resolution deadline expired — failing task"
+            );
+            task.status = TaskStatus::Failed;
+            task.awaiting_assertion_id = None;
+            task.resolution_deadline = None;
+            changed = true;
+        }
+    }
+
+    if changed {
+        queue.save(queue_path).map_err(ConductorError::Queue)?;
+    }
+    Ok(())
 }
 
 /// Conductor errors.

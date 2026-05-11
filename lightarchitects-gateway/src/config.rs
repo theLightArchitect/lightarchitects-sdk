@@ -80,6 +80,26 @@ pub enum PrivacyTier {
     Cloud,
 }
 
+/// Identity scope policy for multi-user vault enforcement.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IdentityScopePolicy {
+    /// Fail closed: unauthenticated requests are rejected.
+    DenyByDefault,
+    /// Single-user mode: unauthenticated requests use `user_id = "local"`.
+    #[default]
+    AllowAuthenticated,
+}
+
+impl std::fmt::Display for IdentityScopePolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DenyByDefault => write!(f, "deny_by_default"),
+            Self::AllowAuthenticated => write!(f, "allow_authenticated"),
+        }
+    }
+}
+
 // ── Sub-sections ──────────────────────────────────────────────────────────────
 
 /// `[gateway]` section: top-level metadata.
@@ -147,7 +167,7 @@ pub struct CanonConfig {
 impl Default for CanonConfig {
     fn default() -> Self {
         Self {
-            registry: "~/lightarchitects/soul/helix/user/standards/canon.md".to_owned(),
+            registry: "~/lightarchitects/soul/helix/user/standards/canon/canon.md".to_owned(),
             auto_check: true,
         }
     }
@@ -263,6 +283,12 @@ pub struct GatewayConfig {
     /// `[vault]` section — vault-as-git git operations and public companion sync.
     #[serde(default)]
     pub vault: VaultConfig,
+    /// `[identity]` section — user identity provider and scope policy.
+    #[serde(default)]
+    pub identity: lightarchitects::auth::IdentityConfig,
+    /// Identity scope policy: fail-closed vs local fallback.
+    #[serde(default)]
+    pub identity_scope_policy: IdentityScopePolicy,
     /// Directories the gateway is allowed to access (empty = all except denied).
     #[serde(default)]
     pub allowed_directories: Vec<String>,
@@ -308,6 +334,13 @@ impl Default for GatewayConfig {
             storage: StorageConfig::default(),
             privacy: PrivacyConfig::default(),
             vault: VaultConfig::default(),
+            identity: lightarchitects::auth::IdentityConfig {
+                provider: lightarchitects::auth::IdentityProvider::Local,
+                user_id: "local".to_owned(),
+                vault_remote: None,
+                github_keychain_handle: None,
+            },
+            identity_scope_policy: IdentityScopePolicy::AllowAuthenticated,
             allowed_directories: Vec::new(),
             active_preset: default_preset_name(),
             first_run: false,
@@ -424,7 +457,7 @@ impl GatewayConfig {
 
         toml.push_str(
             "[canon]\n\
-             registry = \"~/lightarchitects/soul/helix/user/standards/canon.md\"\n\
+             registry = \"~/lightarchitects/soul/helix/user/standards/canon/canon.md\"\n\
              auto_check = true\n\n\
              [storage]\n\
              backend = \"sqlite\"\n\
@@ -687,7 +720,7 @@ trust = "trusted"
 scope = "own"
 
 [canon]
-registry = "~/lightarchitects/soul/helix/user/standards/canon.md"
+registry = "~/lightarchitects/soul/helix/user/standards/canon/canon.md"
 auto_check = true
 
 [storage]

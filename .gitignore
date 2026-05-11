@@ -21,6 +21,10 @@ lightarchitects-webshell/web-figma/.turbo/
 lightarchitects-webshell-ui/.firecrawl/
 lightarchitects-webshell/tests/e2e/test-results/
 
+# Claude Code runtime artifacts
+.claude/
+.remember/
+
 # Coverage artifacts
 coverage-gateway/
 coverage-sdk/

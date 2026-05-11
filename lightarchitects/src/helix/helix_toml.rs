@@ -46,6 +46,18 @@ const MAX_FS_HELIX_DEPTH: usize = 7;
 /// Unknown keys in `[helix]` are rejected at parse time (`deny_unknown_fields`)
 /// so that typos in vault markers fail loudly rather than silently falling back
 /// to defaults.
+///
+/// # Forward-compatibility hazard
+///
+/// Because `deny_unknown_fields` is in effect, adding a new field to `helix.toml`
+/// before the matching code is deployed causes `load_helix_toml` to return `None`.
+/// This propagates as "no helix root found" in `find_helix_root`, which makes
+/// `check_helix_writeable` **fail open** on platform-tier directories — writes that
+/// should be rejected will silently succeed.
+///
+/// Mitigation: bump `schema_version` when adding fields, and gate new-field reads
+/// on `schema_version >= N`. Never deploy a `helix.toml` with new keys before the
+/// code that recognises them is live.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HelixTomlSection {

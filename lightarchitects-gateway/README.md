@@ -185,4 +185,6 @@ cargo test -p lightarchitects-gateway --all-features   # 211+ tests
 
 ## License
 
-Apache-2.0
+**Proprietary — All Rights Reserved.** See [LICENSE](./LICENSE) for terms.
+
+This crate is licensed separately from the broader `lightarchitects-sdk` workspace (MPL-2.0). It contains business-critical orchestration logic — the Arena training pipeline, conductor runtime, sibling identity templates, squad-comms protocol, canon validation, and governance gates — and is not licensed for redistribution. Licensing inquiries: kevinfrancis.tan@gmail.com

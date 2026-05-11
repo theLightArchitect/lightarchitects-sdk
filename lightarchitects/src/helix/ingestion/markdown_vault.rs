@@ -520,6 +520,8 @@ impl IngestionSource for MarkdownVaultIngester {
             ));
         }
 
+        // Primary sibling root is always User-tier; extra roots carry their own tier
+        // via `with_extra_roots` and are processed by `process_extra_root`.
         let helix_id = db
             .ensure_helix(
                 &self.sibling,
@@ -550,35 +552,8 @@ impl IngestionSource for MarkdownVaultIngester {
                 }
                 visited.insert(k);
             }
-
-            if !root.exists() {
-                report
-                    .errors
-                    .push(format!("extra root not found: {}", root.display()));
-                continue;
-            }
-
-            let root_name = root
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("extra_root");
-
-            let extra_helix_id = db
-                .ensure_helix(
-                    root_name,
-                    root_name,
-                    HelixOrderingMode::Temporal,
-                    *scope_tier,
-                )
-                .await
-                .map_err(|e| {
-                    IngestionError::Parse(format!(
-                        "ensure_helix failed for {}: {e}",
-                        root.display()
-                    ))
-                })?;
-
-            Box::pin(self.walk_recursive(root, db, &extra_helix_id, &mut report)).await?;
+            self.process_extra_root(root, *scope_tier, db, &mut report)
+                .await?;
         }
 
         Ok(report)
@@ -586,6 +561,49 @@ impl IngestionSource for MarkdownVaultIngester {
 }
 
 impl MarkdownVaultIngester {
+    /// Process a single extra root: ensure its helix node and walk it.
+    ///
+    /// Called from [`Self::ingest`] after the inode-dedup check, so the
+    /// visited-set management stays co-located with the loop.
+    /// Returns `Ok(())` (with an error pushed to `report`) when the root
+    /// directory does not exist. All other error paths (`ensure_helix`,
+    /// `walk_recursive`) propagate as [`IngestionError`] and abort the
+    /// enclosing `ingest()` call.
+    #[instrument(skip(self, db, report), fields(root = %root.display()))]
+    async fn process_extra_root(
+        &self,
+        root: &Path,
+        scope_tier: ScopeTier,
+        db: &dyn HelixDb,
+        report: &mut IngestionReport,
+    ) -> Result<(), IngestionError> {
+        if !root.exists() {
+            report
+                .errors
+                .push(format!("extra root not found: {}", root.display()));
+            return Ok(());
+        }
+
+        let root_name = root
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("extra_root");
+
+        let extra_helix_id = db
+            .ensure_helix(
+                root_name,
+                root_name,
+                HelixOrderingMode::Temporal,
+                scope_tier,
+            )
+            .await
+            .map_err(|e| {
+                IngestionError::Parse(format!("ensure_helix failed for {}: {e}", root.display()))
+            })?;
+
+        Box::pin(self.walk_recursive(root, db, &extra_helix_id, report)).await
+    }
+
     /// Recursively walk a directory tree and ingest all markdown files.
     #[instrument(skip(self, db, report), fields(dir = %dir.display(), helix_id))]
     async fn walk_recursive(
@@ -647,6 +665,8 @@ fn inode_key(path: &Path) -> Option<(u64, u64)> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
+        // Follow symlinks so two aliases to the same directory produce the same
+        // (dev, ino) pair and dedup fires correctly.
         let meta = std::fs::metadata(path).ok()?;
         Some((meta.dev(), meta.ino()))
     }

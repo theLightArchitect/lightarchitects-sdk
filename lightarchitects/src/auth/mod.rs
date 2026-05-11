@@ -14,6 +14,7 @@
 mod auth_guard;
 mod config;
 mod error;
+mod identity_resolver;
 mod key_reader;
 mod key_validator;
 mod revocation;
@@ -24,8 +25,9 @@ mod cli;
 mod login;
 
 pub use auth_guard::AuthGuard;
-pub use config::AuthConfig;
+pub use config::{AuthConfig, IdentityConfig, IdentityProvider};
 pub use error::AuthError;
+pub use identity_resolver::{resolve_identity, resolve_user_id_from_cache, user_id_or_local};
 pub use key_reader::KeyReader;
 pub use key_validator::{KeyCache, KeyValidator, ValidationResult};
 pub use revocation::RevocationWatcher;

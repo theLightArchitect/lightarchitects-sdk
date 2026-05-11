@@ -34,6 +34,16 @@
 //!
 /// Trace span types and builder — [`TraceSpan`], [`Actor`], [`TraceContext`].
 pub mod span;
+
+/// LASDLC semantic-convention attribute and span name constants.
+pub mod semconv;
+
+/// Session ID and W3C Trace Context propagation across MCP call chains.
+pub mod propagation;
+pub use propagation::{
+    PropagationContext, SESSION_PROPAGATION_KEY, TRACEPARENT_KEY, TRACESTATE_KEY,
+    validate_traceparent, validate_tracestate,
+};
 pub use span::{
     Actor, DecisionPoint, Sibling, StrandActivation, TraceContext, TraceOutcome, TraceSpan,
 };

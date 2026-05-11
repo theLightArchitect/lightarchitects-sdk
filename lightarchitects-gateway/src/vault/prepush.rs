@@ -16,6 +16,36 @@ use regex::Regex;
 use crate::config::VaultConfig;
 use crate::error::GatewayError;
 
+/// Normalize path traversal by resolving `../` and `./` components.
+///
+/// # Security (H2)
+///
+/// Prevents path traversal bypasses like `shared/../memories/secret.md`
+/// which would otherwise evade the `^memories/` blocklist pattern.
+///
+/// Returns `Some(normalized_path)` if the path stays within the vault root,
+/// or `None` if the path attempts to escape (more `..` than ancestors).
+///
+/// Examples:
+/// - `"shared/../memories/foo.md"` → `Some("memories/foo.md")`
+/// - `"./entries/2026/foo.md"` → `Some("entries/2026/foo.md")`
+/// - `"a/b/../c"` → `Some("a/c")`
+/// - `"../../etc/passwd"` → `None` (escapes root)
+/// - `"a/b/../../../etc"` → `None` (escapes root)
+fn normalize_path_traversal(path: &str) -> Option<String> {
+    let mut components: Vec<&str> = Vec::new();
+    for component in path.split('/') {
+        match component {
+            ".." => {
+                components.pop()?; // Attempted to pop from empty — path escapes root
+            }
+            "." | "" => {} // Skip current/empty
+            other => components.push(other),
+        }
+    }
+    Some(components.join("/"))
+}
+
 /// Hardcoded `NEVER_published_paths` patterns (prefix-anchored with `^`).
 ///
 /// These patterns protect personally sensitive vault sections from being
@@ -60,6 +90,11 @@ fn compile_blocklist(cfg: &VaultConfig) -> Result<Vec<(Regex, String)>, GatewayE
 /// patterns are anchored with `^` so that e.g. `^memories/` matches
 /// `memories/foo.md` but not `shared/memories/foo.md`.
 ///
+/// # Security (H2: Path traversal normalization)
+///
+/// Paths are normalized before regex matching to prevent `../` traversal bypasses
+/// (e.g., `shared/../memories/foo.md` → `memories/foo.md` → blocked).
+///
 /// # Errors
 ///
 /// Returns [`GatewayError::File`] with the offending path and matched pattern
@@ -68,10 +103,16 @@ pub fn validate_push_set(staged: &[PathBuf], cfg: &VaultConfig) -> Result<(), Ga
     let blocklist = compile_blocklist(cfg)?;
     for path in staged {
         let path_str = path.to_string_lossy().replace('\\', "/");
+        // H2 + C1: Normalize path traversal and reject escapes (returns None if escapes root)
+        let Some(normalized) = normalize_path_traversal(&path_str) else {
+            return Err(GatewayError::File(format!(
+                "path escapes vault root: '{path_str}'"
+            )));
+        };
         for (re, pattern) in &blocklist {
-            if re.is_match(&path_str) {
+            if re.is_match(&normalized) {
                 return Err(GatewayError::File(format!(
-                    "NEVER_published_paths violation: '{path_str}' matched pattern '{pattern}'"
+                    "NEVER_published_paths violation: '{normalized}' matched pattern '{pattern}'"
                 )));
             }
         }
@@ -130,8 +171,14 @@ fn check_file_wikilinks(
         let raw = &cap[1];
         // Strip alias — `[[target|display text]]` → `target`
         let target = raw.split('|').next().unwrap_or(raw).trim();
-        // Normalise to forward-slash path
+        // Normalise to forward-slash path, then apply path traversal normalization
         let target_path = target.replace('\\', "/");
+        // C1: Reject wikilinks that escape the vault root (normalize returns None)
+        let Some(target_path) = normalize_path_traversal(&target_path) else {
+            return Err(GatewayError::File(format!(
+                "wikilink escapes vault root: '[[{target}]]'"
+            )));
+        };
         for (re, pattern) in blocklist {
             if re.is_match(&target_path) {
                 return Err(GatewayError::File(format!(
@@ -247,5 +294,84 @@ mod tests {
         };
         let staged = vec![PathBuf::from("custom-private/data.md")];
         assert!(validate_push_set(&staged, &cfg).is_err());
+    }
+
+    #[test]
+    fn validate_blocks_path_traversal_bypass() {
+        // H2: Path traversal like `shared/../memories/secret.md` should be normalized
+        // to `memories/secret.md` and blocked by the `^memories/` pattern.
+        let staged = vec![PathBuf::from("shared/../memories/secret.md")];
+        assert!(
+            validate_push_set(&staged, &default_cfg()).is_err(),
+            "path traversal bypass must be normalized and blocked"
+        );
+    }
+
+    #[test]
+    fn validate_blocks_nested_path_traversal() {
+        // H2: Deeper nesting like `a/b/../../memories/foo.md` should also be blocked.
+        let staged = vec![PathBuf::from("a/b/../../memories/foo.md")];
+        assert!(
+            validate_push_set(&staged, &default_cfg()).is_err(),
+            "nested path traversal must be normalized and blocked"
+        );
+    }
+
+    #[test]
+    fn validate_allows_legitimate_shared_subdir() {
+        // Ensure legitimate paths like `shared/memories-like/foo.md` are NOT blocked
+        // (the pattern is `^memories/`, not `memories` anywhere).
+        let staged = vec![PathBuf::from("shared/memories-like/foo.md")];
+        assert!(
+            validate_push_set(&staged, &default_cfg()).is_ok(),
+            "legitimate shared subdirs should not be blocked"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_path_escaping_root() {
+        // C1: Paths that escape the vault root must be rejected
+        let staged = vec![PathBuf::from("../../memories/secret.md")];
+        assert!(
+            validate_push_set(&staged, &default_cfg()).is_err(),
+            "path escaping root must be rejected"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_deep_path_escape() {
+        // C1: Deep traversal like `a/b/../../../etc/passwd` must be rejected
+        let staged = vec![PathBuf::from("a/b/../../../etc/passwd")];
+        assert!(
+            validate_push_set(&staged, &default_cfg()).is_err(),
+            "deep path escape must be rejected"
+        );
+    }
+
+    #[test]
+    fn scan_wikilinks_rejects_traversal_target() {
+        // C1: Wikilinks with traversal targets like `[[../memories/secret]]` must be rejected
+        let tmpdir = tempfile::tempdir().expect("tempdir");
+        let md_path = tmpdir.path().join("pub.md");
+        std::fs::write(&md_path, "See [[../memories/secret]] for context.").expect("write");
+        let staged = vec![md_path];
+        assert!(
+            scan_wikilinks_for_leakage(&staged, &default_cfg()).is_err(),
+            "wikilink traversal target must be rejected"
+        );
+    }
+
+    #[test]
+    #[ignore = "absolute wikilinks are a known limitation - /memories/ doesn't match ^memories/"]
+    fn scan_wikilinks_rejects_absolute_target() {
+        // TODO: Add absolute path detection to check_file_wikilinks
+        let tmpdir = tempfile::tempdir().expect("tempdir");
+        let md_path = tmpdir.path().join("pub.md");
+        std::fs::write(&md_path, "See [[/memories/secret]] for context.").expect("write");
+        let staged = vec![md_path];
+        assert!(
+            scan_wikilinks_for_leakage(&staged, &default_cfg()).is_err(),
+            "absolute wikilinks should be rejected"
+        );
     }
 }

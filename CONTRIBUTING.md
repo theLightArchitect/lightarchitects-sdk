@@ -26,7 +26,7 @@ Thank you for your interest in contributing to `lightarchitects`.
 
 ## Coding Standards
 
-Canonical reference: `~/lightarchitects/soul/helix/user/standards/builders-cookbook.md`
+Canonical reference: `~/lightarchitects/soul/helix/user/standards/canon/builders-cookbook.md`
 
 Key rules enforced by CI:
 - `clippy::pedantic` as errors
