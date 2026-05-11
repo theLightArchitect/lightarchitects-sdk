@@ -6,7 +6,7 @@
 //! # Flow
 //!
 //! 1. Detect existing config — prompt for overwrite if present.
-//! 2. Enumerate available providers (GitHub, git_config, explicit, local).
+//! 2. Enumerate available providers (GitHub, `git_config`, explicit, local).
 //! 3. Let user pick a provider.
 //! 4. Resolve the `user_id` from the chosen provider.
 //! 5. Write `config.toml` with atomic rename + 0o600 permissions.
@@ -78,8 +78,9 @@ pub fn run(force: bool) -> Result<(), GatewayError> {
             IdentityProvider::GitHub { username }
         }
         ProviderOption::GitConfig => {
-            let email = resolve_git_email()
-                .map_err(|e| GatewayError::Internal(format!("git config resolution failed: {e}")))?;
+            let email = resolve_git_email().map_err(|e| {
+                GatewayError::Internal(format!("git config resolution failed: {e}"))
+            })?;
             IdentityProvider::GitConfig { email }
         }
         ProviderOption::Explicit => {
@@ -96,10 +97,7 @@ pub fn run(force: bool) -> Result<(), GatewayError> {
     let identity = IdentityConfig::resolve(provider)
         .map_err(|e| GatewayError::Internal(format!("identity resolution failed: {e}")))?;
 
-    write_identity_config(&config_path,
-        &identity.user_id,
-        &identity.provider,
-    )?;
+    write_identity_config(&config_path, &identity.user_id, &identity.provider)?;
 
     // Verify round-trip
     let reloaded = GatewayConfig::load_from(&config_path).unwrap_or_default();
@@ -142,10 +140,10 @@ fn resolve_gh_username() -> Result<String, std::io::Error> {
         .args(["api", "/user", "--jq", ".login"])
         .output()?;
     if !output.status.success() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("gh exited with {}", output.status),
-        ));
+        return Err(std::io::Error::other(format!(
+            "gh exited with {}",
+            output.status
+        )));
     }
     let username = String::from_utf8_lossy(&output.stdout).trim().to_owned();
     if username.is_empty() {
@@ -163,10 +161,10 @@ fn resolve_git_email() -> Result<String, std::io::Error> {
         .args(["config", "--global", "user.email"])
         .output()?;
     if !output.status.success() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("git exited with {}", output.status),
-        ));
+        return Err(std::io::Error::other(format!(
+            "git exited with {}",
+            output.status
+        )));
     }
     let email = String::from_utf8_lossy(&output.stdout).trim().to_owned();
     if email.is_empty() {
@@ -181,9 +179,8 @@ fn resolve_git_email() -> Result<String, std::io::Error> {
 // ── Config I/O ───────────────────────────────────────────────────────────────
 
 fn config_file_path() -> Result<PathBuf, GatewayError> {
-    let home = dirs_next::home_dir().ok_or(GatewayError::Config(
-        crate::error::ConfigError::NoHome,
-    ))?;
+    let home =
+        dirs_next::home_dir().ok_or(GatewayError::Config(crate::error::ConfigError::NoHome))?;
     Ok(home.join(".lightarchitects").join("config.toml"))
 }
 
@@ -219,9 +216,9 @@ fn write_identity_config(
         toml::Value::Table(toml::map::Map::new())
     };
 
-    let table = doc.as_table_mut().ok_or_else(|| {
-        GatewayError::Internal("config.toml root is not a table".into())
-    })?;
+    let table = doc
+        .as_table_mut()
+        .ok_or_else(|| GatewayError::Internal("config.toml root is not a table".into()))?;
 
     // Preserve existing identity fields (vault_remote, github_keychain_handle).
     let mut id_table = table

@@ -11,8 +11,7 @@ use crate::config::IdentityScopePolicy;
 use crate::http::circuit_breaker::CircuitBreaker;
 
 /// Per-IP keyed rate limiter instance type.
-pub type PlatformRateLimiter =
-    RateLimiter<IpAddr, DefaultKeyedStateStore<IpAddr>, DefaultClock>;
+pub type PlatformRateLimiter = RateLimiter<IpAddr, DefaultKeyedStateStore<IpAddr>, DefaultClock>;
 
 /// LRU response cache keyed on `(content_key, org_id)`, 60 s TTL.
 ///
@@ -35,6 +34,12 @@ pub struct PlatformState {
     /// Tracks rapid auth failures separate from general read rate-limiting.
     /// Checked on every 401 response; consumed tokens are NOT returned on success.
     pub auth_fail_limiter: Arc<PlatformRateLimiter>,
+    /// Per-IP rate limiter for the skill upload endpoint (≤1 req/sec — SERAPH F-MEDIUM-3).
+    ///
+    /// Checked in `rate_limit_middleware` before the general `write_limiter` so burst
+    /// skill uploads (which could fill Neo4j with large text blobs) are throttled more
+    /// tightly than ordinary admin writes.
+    pub skills_limiter: Arc<PlatformRateLimiter>,
     /// Per-IP authentication failure counter for hard-lockout enforcement.
     ///
     /// Incremented on every 401. Reset to zero on successful authentication for

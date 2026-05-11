@@ -197,7 +197,7 @@ pub fn enforce(
 pub enum ScopeTier {
     /// Platform-wide entries (any user can read; write disabled in v1).
     Platform,
-    /// Per-user entries (only matching user_id can read/write).
+    /// Per-user entries (only matching `user_id` can read/write).
     User,
     /// Project-scoped entries (any authenticated user can read/write).
     Project,
@@ -233,9 +233,7 @@ pub fn check_user_scope(
             } else {
                 Err(GatewayError::Governance {
                     agent: user_id.to_owned(),
-                    reason: format!(
-                        "user tier: path does not contain user_id '{user_id}'"
-                    ),
+                    reason: format!("user tier: path does not contain user_id '{user_id}'"),
                 })
             }
         }
@@ -694,25 +692,40 @@ mod tests {
 
     #[test]
     fn user_scope_platform_allows_read_blocks_write() {
-        assert!(check_user_scope("alice", Path::new("platform/canon.md"), ScopeTier::Platform).is_ok());
+        assert!(
+            check_user_scope("alice", Path::new("platform/canon.md"), ScopeTier::Platform).is_ok()
+        );
     }
 
     #[test]
     fn user_scope_user_tier_requires_matching_user_id() {
-        assert!(check_user_scope("alice", Path::new("user/alice/entry.md"), ScopeTier::User).is_ok());
-        assert!(check_user_scope("alice", Path::new("user/alice/deep/nested.md"), ScopeTier::User).is_ok());
+        assert!(
+            check_user_scope("alice", Path::new("user/alice/entry.md"), ScopeTier::User).is_ok()
+        );
+        assert!(
+            check_user_scope(
+                "alice",
+                Path::new("user/alice/deep/nested.md"),
+                ScopeTier::User
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn user_scope_user_tier_blocks_other_user() {
-        assert!(check_user_scope("alice", Path::new("user/bob/entry.md"), ScopeTier::User).is_err());
+        assert!(
+            check_user_scope("alice", Path::new("user/bob/entry.md"), ScopeTier::User).is_err()
+        );
     }
 
     #[test]
     fn user_scope_user_tier_blocks_top_level_name_collision() {
         // A user_id matching a top-level directory (e.g., "platform") must NOT
         // grant access to that directory under User tier.
-        assert!(check_user_scope("platform", Path::new("platform/canon.md"), ScopeTier::User).is_err());
+        assert!(
+            check_user_scope("platform", Path::new("platform/canon.md"), ScopeTier::User).is_err()
+        );
     }
 
     #[test]
@@ -723,21 +736,39 @@ mod tests {
 
     #[test]
     fn user_scope_project_tier_blocks_unauthenticated() {
-        assert!(check_user_scope("local", Path::new("project/alpha/spec.md"), ScopeTier::Project).is_err());
+        assert!(
+            check_user_scope(
+                "local",
+                Path::new("project/alpha/spec.md"),
+                ScopeTier::Project
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn user_scope_project_tier_allows_authenticated() {
-        assert!(check_user_scope("alice", Path::new("project/alpha/spec.md"), ScopeTier::Project).is_ok());
+        assert!(
+            check_user_scope(
+                "alice",
+                Path::new("project/alpha/spec.md"),
+                ScopeTier::Project
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn user_scope_shared_tier_blocks_unauthenticated() {
-        assert!(check_user_scope("local", Path::new("shared/oncall.md"), ScopeTier::Shared).is_err());
+        assert!(
+            check_user_scope("local", Path::new("shared/oncall.md"), ScopeTier::Shared).is_err()
+        );
     }
 
     #[test]
     fn user_scope_shared_tier_allows_read() {
-        assert!(check_user_scope("alice", Path::new("shared/oncall.md"), ScopeTier::Shared).is_ok());
+        assert!(
+            check_user_scope("alice", Path::new("shared/oncall.md"), ScopeTier::Shared).is_ok()
+        );
     }
 }

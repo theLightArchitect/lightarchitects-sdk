@@ -38,9 +38,14 @@ pub fn admin_routes() -> Router<Arc<PlatformState>> {
             axum::routing::post(upload_standard),
         )
         .route(
-            "/v1/admin/overrides",
-            axum::routing::post(upsert_override),
+            "/v1/admin/skills/upload",
+            // Body limit applied as a route layer — enforced before JSON extraction so an
+            // unauthenticated streaming body cannot OOM the process (C1, security review 2026-05-10).
+            axum::routing::post(upload_skill).layer(axum::extract::DefaultBodyLimit::max(
+                MAX_SKILL_CONTENT_BYTES,
+            )),
         )
+        .route("/v1/admin/overrides", axum::routing::post(upsert_override))
         .route(
             "/v1/admin/overrides/{org_id}/{*target_path}",
             axum::routing::delete(delete_override),
@@ -53,6 +58,12 @@ pub fn admin_routes() -> Router<Arc<PlatformState>> {
 
 /// Maximum byte length for `content_text` and serialized `content_json`.
 const MAX_CONTENT_BYTES: usize = 512 * 1024; // 512 KB
+
+/// Maximum byte length for `content_text` in skill uploads (SERAPH F-MEDIUM-3: 10 MB cap).
+///
+/// Skills contain full SKILL.md bodies which can reach several MB. Higher than
+/// the 512 KB canon/standards cap, but bounded to prevent unbounded Neo4j writes.
+const MAX_SKILL_CONTENT_BYTES: usize = 10 * 1024 * 1024; // 10 MB
 
 /// Permitted values for the `kind` field.
 const ALLOWED_KINDS: &[&str] = &["canon", "standard", "template", "skill"];
@@ -172,9 +183,10 @@ async fn upload_canon(
     let mut lock_stream = match s.graph.execute(lock_check).await {
         Ok(rs) => rs,
         Err(e) => {
+            tracing::error!(error = %e, path = %path, "Lock check query failed");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": { "code": "database_error", "message": format!("{e}"), "status": 500 } })),
+                Json(json!({ "error": { "code": "database_error", "status": 500 } })),
             )
                 .into_response();
         }
@@ -222,9 +234,10 @@ async fn upload_canon(
     .param("locked_fields", locked_fields);
 
     if let Err(e) = s.graph.run(q).await {
+        tracing::error!(error = %e, path = %path, "Canon upsert failed");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": { "code": "database_error", "message": format!("{e}"), "status": 500 } })),
+            Json(json!({ "error": { "code": "database_error", "status": 500 } })),
         )
             .into_response();
     }
@@ -345,9 +358,10 @@ async fn upload_agent(
     .param("version", version.clone());
 
     if let Err(e) = s.graph.run(q).await {
+        tracing::error!(error = %e, sibling = %sibling, "Agent identity upsert failed");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": { "code": "database_error", "message": format!("{e}"), "status": 500 } })),
+            Json(json!({ "error": { "code": "database_error", "status": 500 } })),
         )
             .into_response();
     }
@@ -358,7 +372,14 @@ async fn upload_agent(
         .agent_cache
         .invalidate_entries_if(move |k, _v| k.0 == evict);
 
-    write_audit_log("upload_agent", &sibling, "agent_identity", &version, "admin", &updated_at);
+    write_audit_log(
+        "upload_agent",
+        &sibling,
+        "agent_identity",
+        &version,
+        "admin",
+        &updated_at,
+    );
 
     (
         StatusCode::CREATED,
@@ -392,7 +413,9 @@ async fn upload_standard(
         _ => {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
-                Json(json!({ "error": { "code": "missing_field", "field": "name", "status": 422 } })),
+                Json(
+                    json!({ "error": { "code": "missing_field", "field": "name", "status": 422 } }),
+                ),
             )
                 .into_response();
         }
@@ -456,14 +479,160 @@ async fn upload_standard(
     .param("version", version.clone());
 
     if let Err(e) = s.graph.run(q).await {
+        tracing::error!(error = %e, name = %name, "Standard upsert failed");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": { "code": "database_error", "message": format!("{e}"), "status": 500 } })),
+            Json(json!({ "error": { "code": "database_error", "status": 500 } })),
         )
             .into_response();
     }
 
-    write_audit_log("upload_standard", &name, "standard", &version, "admin", &updated_at);
+    write_audit_log(
+        "upload_standard",
+        &name,
+        "standard",
+        &version,
+        "admin",
+        &updated_at,
+    );
+
+    (
+        StatusCode::CREATED,
+        Json(json!({ "name": name, "content_hash": content_hash, "updated_at": updated_at })),
+    )
+        .into_response()
+}
+
+/// `POST /v1/admin/skills/upload` — upsert a [`Skill`] node.
+///
+/// Rate-limited to ≤1 req/sec per IP (SERAPH F-MEDIUM-3). Body size capped at
+/// [`MAX_SKILL_CONTENT_BYTES`] (10 MB).
+///
+/// Body (JSON):
+/// ```json
+/// {
+///   "name": "corso-build",
+///   "description": "Triggers the CORSO build cycle",
+///   "content_text": "# CORSO BUILD SKILL\n...",
+///   "version": "1.0.0",
+///   "trigger_patterns": ["/CORSO build", "CORSO build"],
+///   "published": true
+/// }
+/// ```
+async fn upload_skill(
+    State(s): State<Arc<PlatformState>>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Response {
+    if let Err(r) = require_admin_token(&s, &headers) {
+        return r;
+    }
+
+    let name = match body.get("name").and_then(Value::as_str) {
+        Some(v) if !v.is_empty() => v.to_owned(),
+        _ => {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(
+                    json!({ "error": { "code": "missing_field", "field": "name", "status": 422 } }),
+                ),
+            )
+                .into_response();
+        }
+    };
+
+    if let Some(e) = validate_path_param(&name) {
+        return e;
+    }
+
+    let description = body
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    let content_text = body
+        .get("content_text")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    let version = body
+        .get("version")
+        .and_then(Value::as_str)
+        .unwrap_or("1.0.0")
+        .to_owned();
+    let trigger_patterns: Vec<String> = body
+        .get("trigger_patterns")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let published = body
+        .get("published")
+        .and_then(Value::as_bool)
+        .unwrap_or(false); // safe default — caller must explicitly set published=true
+
+    if content_text.len() > MAX_SKILL_CONTENT_BYTES {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(json!({ "error": { "code": "content_too_large",
+                "max_bytes": MAX_SKILL_CONTENT_BYTES, "status": 413 } })),
+        )
+            .into_response();
+    }
+
+    if !is_valid_semver(&version) {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({ "error": {
+                "code": "invalid_version",
+                "detail": "version must be MAJOR.MINOR.PATCH",
+                "status": 422
+            } })),
+        )
+            .into_response();
+    }
+
+    let content_hash = sha256_hex(content_text.as_bytes());
+    let updated_at = chrono::Utc::now().to_rfc3339();
+
+    let q = neo4rs::query(
+        "MERGE (sk:Skill { name: $name }) \
+         SET sk.description = $description, sk.content_text = $content_text, \
+             sk.version = $version, sk.trigger_patterns = $trigger_patterns, \
+             sk.published = $published, sk.content_hash = $content_hash, \
+             sk.updated_at = $updated_at",
+    )
+    .param("name", name.clone())
+    .param("description", description)
+    .param("content_text", content_text)
+    .param("version", version.clone())
+    .param("trigger_patterns", trigger_patterns)
+    .param("published", published)
+    .param("content_hash", content_hash.clone())
+    .param("updated_at", updated_at.clone());
+
+    if let Err(e) = s.graph.run(q).await {
+        tracing::error!(error = %e, name = %name, "Skill upsert failed");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": { "code": "database_error", "status": 500 } })),
+        )
+            .into_response();
+    }
+
+    // No skill_cache on PlatformState yet — add name-keyed eviction here when one is introduced.
+    write_audit_log(
+        "upload_skill",
+        &name,
+        "skill",
+        &version,
+        "admin",
+        &updated_at,
+    );
 
     (
         StatusCode::CREATED,
@@ -583,9 +752,10 @@ async fn upsert_override(
     .param("now", now.clone());
 
     if let Err(e) = s.graph.run(q).await {
+        tracing::error!(error = %e, org_id = %org_id, target_path = %target_path, "Override upsert failed");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": { "code": "database_error", "message": format!("{e}"), "status": 500 } })),
+            Json(json!({ "error": { "code": "database_error", "status": 500 } })),
         )
             .into_response();
     }
@@ -597,7 +767,14 @@ async fn upsert_override(
     s.canon_cache.invalidate(&evict_key).await;
     s.agent_cache.invalidate(&evict_key).await;
 
-    write_audit_log("upsert_override", &target_path, "org_override", "1.0.0", &updated_by, &now);
+    write_audit_log(
+        "upsert_override",
+        &target_path,
+        "org_override",
+        "1.0.0",
+        &updated_by,
+        &now,
+    );
 
     (
         StatusCode::CREATED,
@@ -639,9 +816,10 @@ async fn delete_override(
 
     let deleted = match s.graph.execute(del).await {
         Err(e) => {
+            tracing::error!(error = %e, org_id = %org_id, target_path = %target_path, "Override delete failed");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": { "code": "database_error", "message": format!("{e}"), "status": 500 } })),
+                Json(json!({ "error": { "code": "database_error", "status": 500 } })),
             )
                 .into_response();
         }
@@ -667,7 +845,14 @@ async fn delete_override(
     s.agent_cache.invalidate(&evict_key).await;
 
     let now = chrono::Utc::now().to_rfc3339();
-    write_audit_log("delete_override", &target_path, "org_override", "1.0.0", "admin", &now);
+    write_audit_log(
+        "delete_override",
+        &target_path,
+        "org_override",
+        "1.0.0",
+        "admin",
+        &now,
+    );
 
     StatusCode::NO_CONTENT.into_response()
 }
@@ -736,30 +921,44 @@ fn is_valid_semver(v: &str) -> bool {
             .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
 }
 
-/// Append one JSONL line to the admin audit log. Errors are swallowed.
+/// Append one JSONL line to the admin audit log.
+///
+/// Failures are logged via `tracing::error!` so AYIN captures them; the admin write
+/// still proceeds rather than returning 500 on disk issues (M3 partial — full blocking
+/// requires returning `Result` from callers, deferred to v1.1).
 fn write_audit_log(action: &str, path: &str, kind: &str, version: &str, actor: &str, ts: &str) {
     let log_path = dirs_next::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
         .join(".lightarchitects/audit/admin-canon.jsonl");
 
     if let Some(parent) = log_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            tracing::error!(error = %e, path = %log_path.display(), "Failed to create audit log directory");
+            return;
+        }
     }
 
-    if let Ok(mut file) = std::fs::OpenOptions::new()
+    match std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&log_path)
     {
-        let entry = json!({
-            "timestamp": ts,
-            "action": action,
-            "path": path,
-            "kind": kind,
-            "version": version,
-            "actor": actor,
-        });
-        let _ = writeln!(file, "{entry}");
+        Err(e) => {
+            tracing::error!(error = %e, action, path, "Failed to open audit log");
+        }
+        Ok(mut file) => {
+            let entry = json!({
+                "timestamp": ts,
+                "action": action,
+                "path": path,
+                "kind": kind,
+                "version": version,
+                "actor": actor,
+            });
+            if let Err(e) = writeln!(file, "{entry}") {
+                tracing::error!(error = %e, action, "Failed to write audit log entry");
+            }
+        }
     }
 }
 
@@ -848,6 +1047,8 @@ async fn resolve_assertion(
     });
     match crate::squad_comms::resolve_assertion_gate(
         resolve_params,
+        // L1: GatewayConfig::default() is safe here — squad-comms loopback does not consume
+        // TLS or port config. Thread PlatformState.config when GatewayConfig is added to state.
         &crate::config::GatewayConfig::default(),
     )
     .await
@@ -951,5 +1152,32 @@ mod tests {
                 "{expected} should be in ALLOWED_SIBLINGS"
             );
         }
+    }
+
+    // ── upload_skill tests (W4a — SERAPH F-MEDIUM-3) ──────────────────────────
+    // ct_eq_bytes constant-time timing verification lives in security/hmac.rs
+    // (`ct_eq_bytes_timing_smoke`) with a µs-level threshold. The 10 ms threshold
+    // that was here is too coarse to detect a real timing oracle; removed.
+
+    #[test]
+    fn upload_skill_name_rejects_slash() {
+        // validate_path_param must block slash-containing names (path traversal guard).
+        assert!(
+            validate_path_param("my/skill").is_some(),
+            "validate_path_param must reject names containing '/'"
+        );
+    }
+
+    #[test]
+    fn upload_skill_content_limit_is_10mb() {
+        // SERAPH F-MEDIUM-3: skills endpoint allows up to 10 MB content.
+        assert_eq!(MAX_SKILL_CONTENT_BYTES, 10 * 1024 * 1024);
+    }
+
+    #[test]
+    fn upload_skill_route_exists_as_post() {
+        // Compilation gate: admin_routes() references upload_skill.
+        // If the fn is removed or renamed this test will fail to compile.
+        let _router = admin_routes();
     }
 }

@@ -21,8 +21,8 @@
 //! HTTP 403 rather than proceeding to the admin handler.
 
 use axum::body::Body;
-use axum::extract::connect_info::ConnectInfo;
 use axum::extract::State;
+use axum::extract::connect_info::ConnectInfo;
 use axum::http::{Request, Response, StatusCode};
 use axum::middleware::Next;
 use axum::response::IntoResponse;
@@ -77,11 +77,7 @@ pub async fn read_auth_middleware(
 
         // Hard-lockout check — fastest rejection path (no crypto work).
         if let Some(addr) = ip {
-            if state
-                .auth_fail_counts
-                .get(&addr)
-                .is_some_and(|c| *c >= 20)
-            {
+            if state.auth_fail_counts.get(&addr).is_some_and(|c| *c >= 20) {
                 tracing::warn!(%addr, "auth: hard lockout (>=20 failures)");
                 return hard_lockout().into_response();
             }

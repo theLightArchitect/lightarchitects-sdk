@@ -6,8 +6,8 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::get;
-use neo4rs::BoltType;
 use futures_util::stream;
+use neo4rs::BoltType;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::convert::Infallible;
@@ -404,10 +404,17 @@ const HELIX_VECTOR_DIM: usize = 384;
 
 /// Validate `HelixQueryParams` — returns a 400 response on the first violation.
 fn validate_helix_params(q: &HelixQueryParams) -> Option<Response> {
-    let too_long = q.search.as_deref().is_some_and(|s| s.len() > HQ_MAX_SEARCH_LEN)
-        || q.sibling.as_deref().is_some_and(|s| s.len() > HQ_MAX_PARAM_LEN)
+    let too_long = q
+        .search
+        .as_deref()
+        .is_some_and(|s| s.len() > HQ_MAX_SEARCH_LEN)
+        || q.sibling
+            .as_deref()
+            .is_some_and(|s| s.len() > HQ_MAX_PARAM_LEN)
         || q.tag.as_deref().is_some_and(|s| s.len() > HQ_MAX_PARAM_LEN)
-        || q.after_id.as_deref().is_some_and(|s| s.len() > HQ_MAX_PARAM_LEN);
+        || q.after_id
+            .as_deref()
+            .is_some_and(|s| s.len() > HQ_MAX_PARAM_LEN);
     if too_long {
         return Some(
             (
@@ -464,9 +471,9 @@ async fn helix_query(
         // helix_id is null for Steps promoted from turnlog — treat as Option.
         let helix_id: Option<String> = row.get::<String>("helix_id").ok();
         // helix_id format: "<sibling>/<sibling>" — extract the first segment.
-        let sibling: Option<String> = helix_id.as_deref().map(|h| {
-            h.split_once('/').map_or(h, |(a, _)| a).to_owned()
-        });
+        let sibling: Option<String> = helix_id
+            .as_deref()
+            .map(|h| h.split_once('/').map_or(h, |(a, _)| a).to_owned());
         entries.push(json!({
             "id": row.get::<String>("id").unwrap_or_default(),
             "content": row.get::<String>("content").ok(),
@@ -485,7 +492,10 @@ async fn helix_query(
         entries.truncate(limit);
     }
     let next_cursor: Option<String> = if has_more {
-        entries.last().and_then(|e| e["id"].as_str()).map(String::from)
+        entries
+            .last()
+            .and_then(|e| e["id"].as_str())
+            .map(String::from)
     } else {
         None
     };
@@ -522,7 +532,10 @@ async fn helix_search(
         )
             .into_response());
     }
-    if q.sibling.as_deref().is_some_and(|s| s.len() > HQ_MAX_PARAM_LEN) {
+    if q.sibling
+        .as_deref()
+        .is_some_and(|s| s.len() > HQ_MAX_PARAM_LEN)
+    {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": { "code": "param_too_long", "status": 400 } })),
@@ -572,9 +585,9 @@ async fn helix_search(
     let mut results: Vec<Value> = Vec::new();
     while let Ok(Some(row)) = rs.next().await {
         let helix_id: Option<String> = row.get::<String>("helix_id").ok();
-        let sibling_out: Option<String> = helix_id.as_deref().map(|h| {
-            h.split_once('/').map_or(h, |(a, _)| a).to_owned()
-        });
+        let sibling_out: Option<String> = helix_id
+            .as_deref()
+            .map(|h| h.split_once('/').map_or(h, |(a, _)| a).to_owned());
         results.push(json!({
             "id": row.get::<String>("id").unwrap_or_default(),
             "content": row.get::<String>("content").ok(),
@@ -793,9 +806,9 @@ async fn helix_stream(
                 match rs.next().await {
                     Ok(Some(row)) => {
                         let helix_id: Option<String> = row.get::<String>("helix_id").ok();
-                        let sibling: Option<String> = helix_id.as_deref().map(|h| {
-                            h.split_once('/').map_or(h, |(a, _)| a).to_owned()
-                        });
+                        let sibling: Option<String> = helix_id
+                            .as_deref()
+                            .map(|h| h.split_once('/').map_or(h, |(a, _)| a).to_owned());
                         let id = row.get::<String>("id").unwrap_or_default();
                         let payload = json!({
                             "id": id,
@@ -852,22 +865,19 @@ pub async fn health(State(s): State<Arc<PlatformState>>) -> Response {
     let start = std::time::Instant::now();
 
     // Execute the Neo4j probe inside a 5-second timeout.
-    let probe = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        async {
-            let mut rs = s
-                .graph
-                .execute(neo4rs::query("MATCH (m:Migration) RETURN count(m) AS n"))
-                .await
-                .map_err(|e| e.to_string())?;
-            let count = if let Ok(Some(row)) = rs.next().await {
-                row.get::<i64>("n").unwrap_or(0)
-            } else {
-                0
-            };
-            Ok::<i64, String>(count)
-        },
-    )
+    let probe = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let mut rs = s
+            .graph
+            .execute(neo4rs::query("MATCH (m:Migration) RETURN count(m) AS n"))
+            .await
+            .map_err(|e| e.to_string())?;
+        let count = if let Ok(Some(row)) = rs.next().await {
+            row.get::<i64>("n").unwrap_or(0)
+        } else {
+            0
+        };
+        Ok::<i64, String>(count)
+    })
     .await;
 
     let latency_ms = start.elapsed().as_millis() as u64;
@@ -1047,16 +1057,18 @@ async fn fetch_agent_body(
 /// Reject path parameters that contain traversal sequences or non-printable bytes.
 ///
 /// Returns `Some(error_response)` when the value is invalid; `None` when clean.
-/// Allowed: printable ASCII (0x20–0x7E) excluding `/` and `\`.
-/// Rejected: empty string, `..`, `/`, `\`, any byte outside 0x20–0x7E.
+/// Allowed: `[a-zA-Z0-9._-]`, max 128 characters.
+///
+/// Tighter than printable-ASCII allowlist: rejects spaces, `@`, `$`, `%`, and any
+/// character that would survive URL-decoding into a path traversal or injection vector.
 ///
 /// Pub-crate so admin handlers can reuse the same validation discipline.
 pub(crate) fn validate_path_param(val: &str) -> Option<Response> {
     let invalid = val.is_empty()
-        || val.contains("..")
-        || val.contains('/')
-        || val.contains('\\')
-        || val.bytes().any(|b| !(0x20..=0x7E).contains(&b));
+        || val.len() > 128
+        || !val
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
     if invalid {
         return Some(
             (
@@ -1196,10 +1208,7 @@ fn etag_response(status: StatusCode, body: Value, etag: &str) -> Response {
         h.insert(header::ETAG, v);
     }
     // no-cache: always revalidate — content is mutable via admin upload endpoints.
-    h.insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("no-cache"),
-    );
+    h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     resp
 }
 

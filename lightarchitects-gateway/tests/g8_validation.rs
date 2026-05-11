@@ -30,10 +30,8 @@ use lightarchitects_gateway::http::{
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Fake client IP injected into every test request (avoids `ConnectInfo` extractor panic).
-const TEST_IP: SocketAddr = SocketAddr::new(
-    std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
-    54321,
-);
+const TEST_IP: SocketAddr =
+    SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 54321);
 
 /// Alternate IP for rate-limit isolation between test groups.
 const TEST_IP_2: SocketAddr = SocketAddr::new(
@@ -81,6 +79,9 @@ fn build_state_with_graph(
     let write_limiter = Arc::new(governor::RateLimiter::keyed(governor::Quota::per_minute(
         NonZeroU32::MIN.saturating_add(2),
     )));
+    let skills_limiter = Arc::new(governor::RateLimiter::keyed(governor::Quota::per_second(
+        NonZeroU32::MIN,
+    )));
 
     let canon_cache = moka::future::Cache::builder().max_capacity(50).build();
     let agent_cache = moka::future::Cache::builder().max_capacity(50).build();
@@ -92,6 +93,7 @@ fn build_state_with_graph(
         read_limiter,
         helix_limiter,
         write_limiter,
+        skills_limiter,
         auth_fail_limiter: Arc::new(governor::RateLimiter::keyed(governor::Quota::per_minute(
             NonZeroU32::MIN.saturating_add(4),
         ))),
@@ -248,6 +250,9 @@ async fn g8_09_unauthenticated_read_returns_401() {
         write_limiter: Arc::new(governor::RateLimiter::keyed(governor::Quota::per_minute(
             NonZeroU32::MIN.saturating_add(9),
         ))),
+        skills_limiter: Arc::new(governor::RateLimiter::keyed(governor::Quota::per_second(
+            NonZeroU32::MIN,
+        ))),
         auth_fail_limiter: Arc::new(governor::RateLimiter::keyed(governor::Quota::per_minute(
             NonZeroU32::MIN.saturating_add(4),
         ))),
@@ -295,6 +300,9 @@ async fn g8_10_read_bearer_on_admin_returns_403() {
         ))),
         write_limiter: Arc::new(governor::RateLimiter::keyed(governor::Quota::per_minute(
             NonZeroU32::MIN.saturating_add(9),
+        ))),
+        skills_limiter: Arc::new(governor::RateLimiter::keyed(governor::Quota::per_second(
+            NonZeroU32::MIN,
         ))),
         auth_fail_limiter: Arc::new(governor::RateLimiter::keyed(governor::Quota::per_minute(
             NonZeroU32::MIN.saturating_add(4),
@@ -605,6 +613,9 @@ async fn g8_06_admin_upload_with_read_bearer_returns_403() {
         ))),
         write_limiter: Arc::new(governor::RateLimiter::keyed(governor::Quota::per_minute(
             NonZeroU32::MIN.saturating_add(9),
+        ))),
+        skills_limiter: Arc::new(governor::RateLimiter::keyed(governor::Quota::per_second(
+            NonZeroU32::MIN,
         ))),
         auth_fail_limiter: Arc::new(governor::RateLimiter::keyed(governor::Quota::per_minute(
             NonZeroU32::MIN.saturating_add(4),

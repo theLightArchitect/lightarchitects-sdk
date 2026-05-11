@@ -54,7 +54,10 @@ impl CircuitBreaker {
         match self.state {
             CbState::Closed | CbState::HalfOpen => true,
             CbState::Open => {
-                if self.opened_at.is_some_and(|t| t.elapsed() >= HALF_OPEN_AFTER) {
+                if self
+                    .opened_at
+                    .is_some_and(|t| t.elapsed() >= HALF_OPEN_AFTER)
+                {
                     self.state = CbState::HalfOpen;
                     tracing::info!("Neo4j circuit breaker → HalfOpen; probe query permitted");
                     true
@@ -84,9 +87,7 @@ impl CircuitBreaker {
     /// (reset timer) so that one bad probe does not require 5 cumulative failures.
     pub fn record_failure(&mut self) {
         if self.state == CbState::HalfOpen {
-            tracing::warn!(
-                "Neo4j circuit breaker → Open (HalfOpen probe failed; resetting timer)",
-            );
+            tracing::warn!("Neo4j circuit breaker → Open (HalfOpen probe failed; resetting timer)",);
             self.state = CbState::Open;
             self.opened_at = Some(Instant::now());
             return;

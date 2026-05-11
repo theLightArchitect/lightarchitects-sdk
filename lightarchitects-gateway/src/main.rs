@@ -25,7 +25,7 @@
 
 use lightarchitects_gateway::{
     cli::OutputMode,
-    config::{GatewayConfig, expand_tilde},
+    config::{GatewayConfig, IdentityScopePolicy, expand_tilde},
     core_tools,
     error::GatewayError,
     http::{
@@ -219,7 +219,9 @@ async fn cli_dispatch(
         Some("canon") => cli_canon(args, config),
         Some("conductor") => lightarchitects_gateway::conductor::dispatch(&args[1..]).await,
         Some("initialize") => cli_initialize(args, config).await,
-        Some("init") => cli::init::run(args.contains(&"--force".to_owned())),
+        Some("init") => {
+            lightarchitects_gateway::cli::init::run(args.contains(&"--force".to_owned()))
+        }
 
         // Sibling commands (use SDK clients)
         Some("soul") => lightarchitects_gateway::cli::soul::execute(config, &args[1..], mode).await,
@@ -436,7 +438,7 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
         version_date: "2026-05-04".to_owned(),
         api_version: "v1",
         user_id,
-        identity_scope_policy: crate::config::IdentityScopePolicy::AllowAuthenticated,
+        identity_scope_policy: IdentityScopePolicy::AllowAuthenticated,
     };
 
     // Tiered quotas — NonZeroU32::MIN.saturating_add(N-1) avoids unwrap/unsafe.
@@ -452,6 +454,10 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
     // Auth-failure limiter: 5 failed auth attempts per IP per minute.
     let auth_fail_limiter = std::sync::Arc::new(governor::RateLimiter::keyed(
         governor::Quota::per_minute(std::num::NonZeroU32::MIN.saturating_add(4)),
+    ));
+    // Skills upload: ≤1 req/sec per IP (SERAPH F-MEDIUM-3 — large-body Neo4j writes).
+    let skills_limiter = std::sync::Arc::new(governor::RateLimiter::keyed(
+        governor::Quota::per_second(std::num::NonZeroU32::MIN),
     ));
 
     let cache_ttl = std::time::Duration::from_secs(60);
@@ -471,6 +477,7 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
         helix_limiter,
         write_limiter,
         auth_fail_limiter,
+        skills_limiter,
         auth_fail_counts: std::sync::Arc::new(dashmap::DashMap::new()),
         circuit_breaker: std::sync::Arc::new(tokio::sync::Mutex::new(CircuitBreaker::new())),
         canon_cache,
@@ -494,12 +501,17 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
 /// 3. `LIGHTARCHITECTS_ADMIN_TOKEN` env var (production / CI)
 ///
 /// When `None` is returned, admin endpoints return 503.
+/// Minimum byte length for an admin token — rejects empty strings and keychain
+/// mock-store returns that would otherwise grant admin access unconditionally.
+const MIN_ADMIN_TOKEN_LEN: usize = 16;
+
 fn load_admin_token() -> Option<secrecy::SecretBox<String>> {
     keyring::Entry::new("soul-neo4j-local", "admin-token")
         .ok()
         .and_then(|e| e.get_password().ok())
         .or_else(|| keychain_via_security_cli("soul-neo4j-local", "admin-token"))
         .or_else(|| std::env::var("LIGHTARCHITECTS_ADMIN_TOKEN").ok())
+        .filter(|t| t.len() >= MIN_ADMIN_TOKEN_LEN)
         .map(|t| secrecy::SecretBox::new(Box::new(t)))
 }
 
@@ -653,7 +665,7 @@ fn cli_init_user(user_name: &str) -> Result<(), GatewayError> {
         ("quantum", QUANTUM_IDENTITY_TEMPLATE),
         ("seraph", SERAPH_IDENTITY_TEMPLATE),
         ("ayin", AYIN_IDENTITY_TEMPLATE),
-        ("laex0", LAEX0_IDENTITY_TEMPLATE),
+        ("lightarchitects-cli", LIGHTARCHITECTS_CLI_IDENTITY_TEMPLATE),
     ];
 
     let mut created = Vec::new();
@@ -701,4 +713,5 @@ const CORSO_IDENTITY_TEMPLATE: &str = include_str!("templates/corso-identity-tem
 const QUANTUM_IDENTITY_TEMPLATE: &str = include_str!("templates/quantum-identity-template.md");
 const SERAPH_IDENTITY_TEMPLATE: &str = include_str!("templates/seraph-identity-template.md");
 const AYIN_IDENTITY_TEMPLATE: &str = include_str!("templates/ayin-identity-template.md");
-const LAEX0_IDENTITY_TEMPLATE: &str = include_str!("templates/laex0-identity-template.md");
+const LIGHTARCHITECTS_CLI_IDENTITY_TEMPLATE: &str =
+    include_str!("templates/lightarchitects-cli-identity-template.md");

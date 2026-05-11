@@ -790,9 +790,7 @@ mod tests {
         )
         .await
         .expect("run");
-        let text = result["content"][0]["text"]
-            .as_str()
-            .expect("text payload");
+        let text = result["content"][0]["text"].as_str().expect("text payload");
         assert!(
             text.contains("internal_action_not_routable"),
             "expected internal-action-blocked payload, got: {text}"
@@ -819,9 +817,7 @@ mod tests {
         )
         .await
         .expect("run");
-        let text = result["content"][0]["text"]
-            .as_str()
-            .expect("text payload");
+        let text = result["content"][0]["text"].as_str().expect("text payload");
         assert!(
             text.contains("internal_action_not_routable"),
             "expected internal-action-blocked payload, got: {text}"

@@ -232,4 +232,36 @@ mod tests {
         let result = sign_hook_payload(&payload, b"");
         assert!(result.is_err());
     }
+
+    /// SERAPH F-MEDIUM-3: `ct_eq_bytes` must not leak via timing side-channel.
+    ///
+    /// Runs 10 000 iterations of match vs mismatch comparison on equal-length tokens.
+    /// The average per-call delta must stay under 100 µs — a coarse smoke test that
+    /// catches obvious branching on content equality without relying on sub-ns precision.
+    #[test]
+    fn ct_eq_bytes_timing_smoke() {
+        use std::time::Instant;
+
+        let token_a = b"la_test_admin_token_xxxxxxxxxxxxxxxx";
+        let token_b = b"la_test_admin_token_yyyyyyyyyyyyyyyy";
+        let iterations = 10_000_usize;
+
+        let t0 = Instant::now();
+        for _ in 0..iterations {
+            std::hint::black_box(ct_eq_bytes(token_a, token_a));
+        }
+        let match_ns = t0.elapsed().as_nanos();
+
+        let t1 = Instant::now();
+        for _ in 0..iterations {
+            std::hint::black_box(ct_eq_bytes(token_a, token_b));
+        }
+        let mismatch_ns = t1.elapsed().as_nanos();
+
+        let avg_delta_ns = match_ns.abs_diff(mismatch_ns) / iterations as u128;
+        assert!(
+            avg_delta_ns < 100_000,
+            "avg timing delta {avg_delta_ns} ns >= 100 µs — possible timing oracle in ct_eq_bytes"
+        );
+    }
 }

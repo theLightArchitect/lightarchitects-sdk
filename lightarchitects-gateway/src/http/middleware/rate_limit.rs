@@ -1,10 +1,11 @@
 //! Path-aware per-IP rate-limit middleware.
 //!
-//! Three tiers, keyed by request path prefix:
-//! - `/v1/platform/health` — exempt (liveness probe; no quota consumed)
-//! - `/v1/admin/*`         — write limiter (10 req/min)
+//! Five tiers, keyed by request path:
+//! - `/v1/platform/health`          — exempt (liveness probe; no quota consumed)
+//! - `POST /v1/admin/skills/upload` — skills limiter (≤1 req/sec — SERAPH F-MEDIUM-3)
+//! - `/v1/admin/*`                  — write limiter (10 req/min)
 //! - `/v1/platform/helix*`, `/v1/vault/*` — helix limiter (20 req/min)
-//! - all other `/v1/platform/*` — read limiter (100 req/min)
+//! - all other `/v1/platform/*`     — read limiter (100 req/min)
 //!
 //! Clients that exceed their quota receive HTTP 429 with `Retry-After: 60`.
 
@@ -34,7 +35,11 @@ pub async fn rate_limit_middleware(
     }
 
     let ip = addr.ip();
-    let result = if path.starts_with("/v1/admin/") {
+    // Skills upload is checked before the general admin tier — SERAPH F-MEDIUM-3 requires
+    // ≤1 req/sec, which is tighter than the 10 req/min write_limiter burst window.
+    let result = if path == "/v1/admin/skills/upload" {
+        state.skills_limiter.check_key(&ip)
+    } else if path.starts_with("/v1/admin/") {
         state.write_limiter.check_key(&ip)
     } else if path.starts_with("/v1/platform/helix") || path.starts_with("/v1/vault/") {
         state.helix_limiter.check_key(&ip)
