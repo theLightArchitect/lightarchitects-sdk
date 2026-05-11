@@ -899,8 +899,11 @@ async fn auth_issue_nonce(State(state): State<AppState>, headers: HeaderMap) -> 
     if !authorized {
         return StatusCode::UNAUTHORIZED.into_response();
     }
+    // Prune expired entries before inserting so the map stays bounded.
+    let now = std::time::Instant::now();
+    state.auth_nonces.retain(|_, exp| now <= *exp);
     let nonce = Uuid::new_v4();
-    let expiry = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let expiry = now + std::time::Duration::from_secs(60);
     state.auth_nonces.insert(nonce, expiry);
     axum::Json(serde_json::json!({"nonce": nonce.to_string()})).into_response()
 }

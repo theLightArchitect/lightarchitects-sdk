@@ -61,7 +61,10 @@ export async function initNonceSession(nonce: string): Promise<void> {
       body: JSON.stringify({ nonce }),
     });
     if (!res.ok) return;
+    // Guard against Vite SPA fallback: its 200 carries text/html, not a real cookie.
+    if ((res.headers.get('content-type') ?? '').includes('text/html')) return;
     cookieMode = true;
+    sessionStorage.removeItem(SESSION_KEY);
     scheduleRefresh();
     window.addEventListener('pagehide', stopRefresh, { once: true });
   } catch (e) {
