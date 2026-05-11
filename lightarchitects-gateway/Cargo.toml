@@ -55,7 +55,7 @@ dirs-next = "2"
 async-trait = "0.1"
 axum = "0.7"
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
 governor = "0.4"
 rusqlite = { version = "0.32", features = ["bundled"] }
 cron = "0.15"
@@ -73,6 +73,12 @@ keyring = "3"
 security-framework = "3"
 tempfile = "3"
 tokio-test = "0.4"
+fs2 = "0.4"
+hmac = "0.12"
+sha2 = "0.10"
+neo4rs = { version = "0.8", features = ["json"] }
+moka = { version = "0.12", features = ["future"] }
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bin]]
 name = "lightarchitects"
