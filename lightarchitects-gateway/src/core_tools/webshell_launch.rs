@@ -24,13 +24,18 @@
 //!   "status": "running" | "started",
 //!   "port": 8733,
 //!   "host_cmd": "claude",
-//!   "url": "http://localhost:8733/#token=...",
+//!   "url": "http://localhost:8733/#nonce=<uuid>",
 //!   "token_available": true,
 //!   "resumed_session": true,
 //!   "session_mismatch": false,
 //!   "kill_hint": null
 //! }
 //! ```
+//!
+//! The URL fragment uses a one-time nonce (`#nonce=<uuid>`) exchanged by the
+//! browser via `POST /api/auth/nonce-exchange`. The raw bearer token never
+//! appears in the MCP tool response, preventing it from being recorded in
+//! Claude Code session logs.
 //!
 //! `session_mismatch` is `true` when the caller supplied a `session_id`
 //! but the webshell was already running — meaning the running instance
@@ -48,6 +53,7 @@ use std::time::Duration;
 
 use tokio::process::Command;
 use tokio::time::sleep;
+use tracing::warn;
 
 use crate::config::GatewayConfig;
 use crate::core_tools::text_result;
@@ -122,7 +128,14 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
 
     let token = resolve_token();
     let url = match &token {
-        Some(t) => format!("http://localhost:{port}/#token={t}"),
+        Some(t) => {
+            if let Some(nonce) = register_nonce(port, t).await {
+                format!("http://localhost:{port}/#nonce={nonce}")
+            } else {
+                warn!(port, "nonce registration failed — URL will not include auth fragment");
+                format!("http://localhost:{port}/")
+            }
+        }
         None => format!("http://localhost:{port}/"),
     };
 
@@ -182,6 +195,36 @@ async fn probe_health(port: u16) -> bool {
         .send()
         .await
         .is_ok_and(|r| r.status().is_success())
+}
+
+/// Register a one-time auth nonce with the running webshell.
+///
+/// POSTs to `POST /api/auth/nonce` on the running webshell with the resolved
+/// bearer token. Returns a [`uuid::Uuid`] nonce that the browser can exchange
+/// for a session cookie via `POST /api/auth/nonce-exchange`. Using the nonce
+/// instead of the raw token prevents the credential from appearing in the MCP
+/// tool-response URL, which Claude Code logs to `~/.claude/projects/*/session.jsonl`.
+///
+/// Returns `None` if the webshell does not support the nonce endpoint or any
+/// network error occurs — callers fall back to a token-less URL.
+async fn register_nonce(port: u16, token: &str) -> Option<uuid::Uuid> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .ok()?;
+    let url = format!("http://127.0.0.1:{port}/api/auth/nonce");
+    let resp = client
+        .post(&url)
+        .bearer_auth(token)
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let body: serde_json::Value = resp.json().await.ok()?;
+    let nonce_str = body.get("nonce")?.as_str()?;
+    nonce_str.parse().ok()
 }
 
 async fn wait_for_health(port: u16) -> Result<(), GatewayError> {

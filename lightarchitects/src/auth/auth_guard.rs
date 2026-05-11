@@ -23,15 +23,19 @@ pub struct AuthGuard {
 }
 
 impl AuthGuard {
-    /// Create a new `AuthGuard` with the given configuration.
-    pub fn new(config: AuthConfig) -> Self {
-        let validator = KeyValidator::new(config.clone());
+    /// Create a new [`AuthGuard`] with the given configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthError::Http`] if the HTTP client cannot be constructed.
+    pub fn new(config: AuthConfig) -> Result<Self, AuthError> {
+        let validator = KeyValidator::new(config.clone())?;
         let revocation = RevocationWatcher::new(config.clone());
-        Self {
+        Ok(Self {
             config,
             validator,
             revocation,
-        }
+        })
     }
 
     /// Run the full auth check. Call this at MCP server startup.
@@ -106,9 +110,15 @@ impl AuthGuard {
 
     fn spawn_key_refresh(config: AuthConfig) -> tokio::task::JoinHandle<()> {
         let interval = config.refresh_interval;
-        let validator = KeyValidator::new(config.clone());
 
         tokio::spawn(async move {
+            let validator = match KeyValidator::new(config.clone()) {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!("Background key refresh — failed to create validator: {e}");
+                    return;
+                }
+            };
             let mut ticker = tokio::time::interval(interval);
             ticker.tick().await; // skip first immediate tick
 
@@ -143,7 +153,13 @@ impl AuthGuard {
             println!("Key file:  {}", config.key_file_path.display());
 
             // Check cache
-            let validator = KeyValidator::new(config.clone());
+            let validator = match KeyValidator::new(config.clone()) {
+                Ok(v) => v,
+                Err(e) => {
+                    println!("Status:    ERROR — failed to initialise validator: {e}");
+                    return;
+                }
+            };
             match validator.validate(&key).await {
                 Ok((tier, cache)) => {
                     println!("Tier:      {}", cache.tier);
@@ -182,7 +198,7 @@ impl AuthGuard {
         KeyReader::remove(config)?;
 
         // Also clear cache and revocation list
-        let validator = KeyValidator::new(config.clone());
+        let validator = KeyValidator::new(config.clone())?;
         validator.clear_cache()?;
 
         let watcher = RevocationWatcher::new(config.clone());

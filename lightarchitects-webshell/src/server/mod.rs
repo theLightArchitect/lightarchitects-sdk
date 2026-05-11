@@ -15,6 +15,9 @@ use std::{
     task::{Context, Poll},
 };
 
+use dashmap::DashMap;
+use uuid::Uuid;
+
 use axum::{
     Json, Router,
     extract::State,
@@ -152,6 +155,11 @@ pub struct AppState {
     pub telemetry: TelemetryHandle,
     /// `SQLite` session persistence — survives browser refreshes and restarts.
     pub session_store: Arc<std::sync::Mutex<SessionStore>>,
+    /// One-time auth nonces registered by the gateway at webshell launch.
+    ///
+    /// Maps [`Uuid`] nonce → expiry [`std::time::Instant`] (60-second TTL).
+    /// Consumed on first use; expired entries are discarded on access.
+    pub auth_nonces: Arc<DashMap<Uuid, std::time::Instant>>,
 }
 
 impl AppState {
@@ -239,6 +247,7 @@ impl AppState {
             image_manager,
             telemetry,
             session_store,
+            auth_nonces: Arc::new(DashMap::new()),
         }
     }
 
@@ -326,6 +335,7 @@ impl AppState {
             image_manager: ImageManager::new(docker_capable),
             telemetry: TelemetryHandle::new(),
             session_store: Arc::new(std::sync::Mutex::new(SessionStore::noop())),
+            auth_nonces: Arc::new(DashMap::new()),
         }
     }
 }
@@ -351,6 +361,8 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/health", get(health))
         .route("/api/auth-check", get(auth_check))
         .route("/api/auth/exchange", post(auth_exchange))
+        .route("/api/auth/nonce", post(auth_issue_nonce))
+        .route("/api/auth/nonce-exchange", post(auth_nonce_exchange))
         .route("/api/auth/status", get(auth_status))
         .route("/api/auth/session", delete(auth_logout))
         .route("/api/terminal/ws", get(terminal::ws::ws_handler))
@@ -866,6 +878,61 @@ async fn auth_exchange(
     match HeaderValue::from_str(&cookie) {
         Ok(cookie_val) => {
             tracing::info!(target: "webshell", "Cookie session established via exchange");
+            (StatusCode::OK, [(header::SET_COOKIE, cookie_val)]).into_response()
+        }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+/// `POST /api/auth/nonce` — issue a one-time auth nonce (gateway-to-webshell).
+///
+/// The gateway calls this immediately after the webshell starts up, passing its
+/// resolved bearer token in `Authorization: Bearer <token>`. Returns
+/// `{"nonce":"<uuid>"}` with a 60-second TTL. The nonce replaces the raw
+/// bearer token in the launch URL so the real token never appears in MCP
+/// tool-response logs (`~/.claude/projects/*/session.jsonl`).
+async fn auth_issue_nonce(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let authorized = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|s| auth::validate_bearer(s, &state.config.token));
+    if !authorized {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let nonce = Uuid::new_v4();
+    let expiry = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    state.auth_nonces.insert(nonce, expiry);
+    axum::Json(serde_json::json!({"nonce": nonce.to_string()})).into_response()
+}
+
+/// Request body for `POST /api/auth/nonce-exchange`.
+#[derive(serde::Deserialize)]
+struct NonceExchange {
+    /// The one-time nonce UUID issued by `POST /api/auth/nonce`.
+    nonce: String,
+}
+
+/// `POST /api/auth/nonce-exchange` — redeem a one-time nonce for a session cookie.
+///
+/// The browser calls this after reading `#nonce=<uuid>` from the URL fragment.
+/// The nonce is deleted on first use and rejected if the 60-second TTL has elapsed.
+async fn auth_nonce_exchange(
+    State(state): State<AppState>,
+    Json(body): Json<NonceExchange>,
+) -> impl IntoResponse {
+    let Ok(nonce_id) = body.nonce.parse::<Uuid>() else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let Some((_, expiry)) = state.auth_nonces.remove(&nonce_id) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if std::time::Instant::now() > expiry {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let cookie = auth::session_cookie_header(&state.config.token);
+    match HeaderValue::from_str(&cookie) {
+        Ok(cookie_val) => {
+            tracing::info!(target: "webshell", "Cookie session established via nonce exchange");
             (StatusCode::OK, [(header::SET_COOKIE, cookie_val)]).into_response()
         }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
