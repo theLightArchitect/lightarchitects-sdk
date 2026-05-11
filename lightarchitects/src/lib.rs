@@ -40,6 +40,11 @@ pub mod seraph;
 /// AYIN observability transport wrapper and HTTP viewer client.
 pub mod ayin;
 
+/// LÆX governance MCP client (9 routable actions: canon-check, canon-evaluate,
+/// matrix-ratify, effectiveness-score, reflect, layer1-4 reviews; 2 internal:
+/// register-decision, query-canon-drift). Gateway-dispatched (inline-only).
+pub mod laex;
+
 // ── Advanced / IP capabilities ────────────────────────────────────────────────
 
 /// MCP training data factory — discover → generate → execute → score → export.
@@ -63,3 +68,7 @@ pub mod squad_registry;
 /// External CLI credential detection — Claude Code, Codex, Gemini.
 #[cfg(feature = "credentials")]
 pub mod credentials;
+
+/// Typed REST client for the `lightarchitects-gateway` platform API (localhost:8080).
+#[cfg(feature = "http-client")]
+pub mod platform;

@@ -1,0 +1,46 @@
+# SERAPH scope contract — bridging-converging-mantis Phase 4
+# Governs the Phase 4 SERAPH scan of dispatch + coordination routes.
+# HITL approval (AskUserQuestion) required before executing STRIKE.
+# Created: 2026-04-30 (Phase 2 Research deliverable D7, HIGH H-6)
+
+[scope]
+target = "localhost:8733"
+mode = "read-only"
+ttl_minutes = 30
+
+# Routes covered by the scan
+routes = [
+    # Dispatch module (new — Phase 3 output)
+    "/api/dispatch/classify",
+    "/api/dispatch/execute",
+    "/api/dispatch/status",
+    "/api/dispatch/cancel/:id",
+    "/api/dispatch/retry/:id/:agent",
+    # Coordination module (ported from worktree)
+    "/api/coordination/tasks",
+    "/api/coordination/tasks/:id",
+    "/api/coordination/tasks/:id/logs",
+    "/api/coordination/chat/sessions",
+    "/api/coordination/chat/stream",
+    "/api/coordination/chat/inject",
+]
+
+# Exclusions
+exclude = [
+    "/api/health",        # unauthenticated liveness probe — no attack surface
+    "/api/auth-check",    # only checks Bearer token validity, no state mutation
+]
+
+# Scan targets (from Phase 4 manifest deliverables)
+[scan_targets]
+path_traversal = true          # /api/dispatch/* route params
+scope_escape = true            # DomainAgent::Security without EngagementScope
+classifier_injection = true    # task text → keyword table processing
+sse_frame_injection = true     # DispatchId in SSE data: field
+
+# Approval gate (H-6)
+[approval]
+required = true
+gate = "HITL via AskUserQuestion before SERAPH STRIKE phase"
+approved_by = ""               # filled in by Kevin at HITL gate
+approved_at = ""

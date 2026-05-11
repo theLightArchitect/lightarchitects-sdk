@@ -53,6 +53,14 @@ pub struct Task {
     /// Path to the output log file (set after execution).
     #[serde(default)]
     pub output_log: Option<String>,
+    /// Assertion gate ID blocking this task (set when status is
+    /// [`TaskStatus::AwaitingOperatorResolution`]).
+    #[serde(default)]
+    pub awaiting_assertion_id: Option<String>,
+    /// Deadline by which the operator must resolve the blocked gate. After this
+    /// time the conductor transitions the task to [`TaskStatus::Failed`].
+    #[serde(default)]
+    pub resolution_deadline: Option<DateTime<Utc>>,
 }
 
 /// Task lifecycle status.
@@ -71,6 +79,13 @@ pub enum TaskStatus {
     Timeout,
     /// Manually skipped.
     Skipped,
+    /// Blocked waiting for an operator to resolve an assertion gate.
+    ///
+    /// The assertion ID and resolution deadline are stored in the parent
+    /// [`Task`] fields `awaiting_assertion_id` and `resolution_deadline`.
+    /// Conductor polls `resolution_deadline` and transitions to `Failed`
+    /// on expiry, or resumes execution when the assertion is resolved.
+    AwaitingOperatorResolution,
 }
 
 /// Task priority.
@@ -202,6 +217,8 @@ mod tests {
                     finished: None,
                     retries: 0,
                     output_log: None,
+                    awaiting_assertion_id: None,
+                    resolution_deadline: None,
                 },
                 Task {
                     id: "t-med".into(),
@@ -216,6 +233,8 @@ mod tests {
                     finished: None,
                     retries: 0,
                     output_log: None,
+                    awaiting_assertion_id: None,
+                    resolution_deadline: None,
                 },
                 Task {
                     id: "t-done".into(),
@@ -230,6 +249,8 @@ mod tests {
                     finished: None,
                     retries: 0,
                     output_log: None,
+                    awaiting_assertion_id: None,
+                    resolution_deadline: None,
                 },
             ],
         }
@@ -363,6 +384,8 @@ mod tests {
                     finished: None,
                     retries: 0,
                     output_log: None,
+                    awaiting_assertion_id: None,
+                    resolution_deadline: None,
                 },
                 Task {
                     id: "high".into(),
@@ -377,6 +400,8 @@ mod tests {
                     finished: None,
                     retries: 0,
                     output_log: None,
+                    awaiting_assertion_id: None,
+                    resolution_deadline: None,
                 },
             ],
         };

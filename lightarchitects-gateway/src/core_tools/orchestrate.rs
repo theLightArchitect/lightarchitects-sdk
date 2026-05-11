@@ -5,15 +5,19 @@
 //! enum in priority order. When both match, the first enabled route wins; the
 //! caller can always override by specifying `route` explicitly.
 //!
-//! Priority order: QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN.
-//! This ensures QUANTUM's `research` wins over SOUL's, and CORSO's domain-heavy
-//! actions come before SOUL's generic names (search, query, stats).
+//! Priority order: LÆX > QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN.
+//! Rationale: LÆX governance trumps research on canon-related collisions
+//! (`canon_check` / `canon_evaluate` / `matrix_ratify` must route to LÆX over
+//! any research-flavoured QUANTUM match). QUANTUM's `research` then wins over
+//! SOUL's, and CORSO's domain-heavy actions come before SOUL's generic names
+//! (search, query, stats).
 
 use serde_json::{Value, json};
 
 use lightarchitects::ayin::AyinAction;
 use lightarchitects::corso::CorsoAction;
 use lightarchitects::eva::EvaAction;
+use lightarchitects::laex::LaexAction;
 use lightarchitects::quantum::QuantumAction;
 use lightarchitects::seraph::SeraphAction;
 use lightarchitects::soul::SoulAction;
@@ -30,6 +34,13 @@ use crate::spawner::call_agent;
 struct SiblingRoute {
     name: &'static str,
     matches: fn(&str) -> bool,
+}
+
+/// Check whether `action` parses as a routable LÆX action.
+fn is_routable_laex(action: &str) -> bool {
+    action
+        .parse::<LaexAction>()
+        .is_ok_and(|a| a.is_gateway_routable())
 }
 
 /// Check whether `action` parses as a routable action for the given enum.
@@ -76,17 +87,26 @@ fn is_routable_ayin(action: &str) -> bool {
 
 /// Priority-ordered route routing table.
 ///
-/// Order: QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN.
+/// Order: LÆX > QUANTUM > CORSO > SERAPH > EVA > SOUL > AYIN.
 ///
 /// Rationale:
-/// - QUANTUM first: its `research` must win over SOUL's `research`.
-/// - CORSO second: domain-heavy security/ops actions.
-/// - SERAPH third: pentest investigation actions.
-/// - EVA fourth: creative/consciousness actions.
-/// - SOUL fifth: generic vault names (search, query, stats) only match if
+/// - LÆX first (slot 0): governance trumps research on canon-related
+///   collisions. `canon_check`, `canon_evaluate`, `matrix_ratify`, layer
+///   reviews, and effectiveness scoring all anchor at the canon layer
+///   regardless of preset. Without slot 0, a future research-flavoured
+///   QUANTUM action could shadow LÆX governance dispatch.
+/// - QUANTUM second: its `research` must win over SOUL's `research`.
+/// - CORSO third: domain-heavy security/ops actions.
+/// - SERAPH fourth: pentest investigation actions.
+/// - EVA fifth: creative/consciousness actions.
+/// - SOUL sixth: generic vault names (search, query, stats) only match if
 ///   no other route claims them.
 /// - AYIN last: observability (sessions, spans, conversations).
 const SIBLING_ROUTES: &[SiblingRoute] = &[
+    SiblingRoute {
+        name: "laex",
+        matches: is_routable_laex,
+    },
     SiblingRoute {
         name: "quantum",
         matches: is_routable_quantum,
@@ -166,7 +186,8 @@ fn auto_route_with_priority<'a>(
 /// Return the total number of gateway-routable actions across all agents.
 #[must_use]
 pub fn total_routable_action_count() -> usize {
-    QuantumAction::ALL_ROUTABLE.len()
+    LaexAction::ALL_ROUTABLE.len()
+        + QuantumAction::ALL_ROUTABLE.len()
         + CorsoAction::ALL_ROUTABLE.len()
         + SeraphAction::ALL_ROUTABLE.len()
         + EvaAction::ALL_ROUTABLE.len()
@@ -180,6 +201,10 @@ pub fn total_routable_action_count() -> usize {
 #[must_use]
 pub fn routable_actions_for(agent: &str) -> Vec<&'static str> {
     match agent {
+        "laex" => LaexAction::ALL_ROUTABLE
+            .iter()
+            .map(LaexAction::as_str)
+            .collect(),
         "quantum" => QuantumAction::ALL_ROUTABLE
             .iter()
             .map(QuantumAction::as_str)
@@ -249,6 +274,34 @@ fn no_agent_response(action: &str) -> Value {
     })
 }
 
+/// Build an "internal action not routable" payload — returned when an explicit
+/// `agent: "laex"` route is paired with an internal-only `LaexAction`
+/// (`register_decision`, `query_canon_drift`).
+///
+/// Mitigates S3-M3 (security audit 2026-05-08): the explicit-route path at
+/// [`run`] previously only checked `cfg.enabled`, allowing operators to bypass
+/// `LaexAction::is_gateway_routable()` enforcement that `auto_route` applies.
+/// Internal actions are reachable only via direct in-process `LaexClient`
+/// handles per the SDK contract.
+fn internal_action_blocked(agent: &str, action: &str) -> Value {
+    json!({
+        "content": [{
+            "type": "text",
+            "text": serde_json::to_string_pretty(&json!({
+                "error": "internal_action_not_routable",
+                "agent": agent,
+                "action": action,
+                "message": format!(
+                    "Action '{action}' is internal to the {agent} handler and not exposed via gateway \
+                     routing. Use the in-process client API instead (LaexClient::register_decision, \
+                     LaexClient::query_canon_drift, etc.)."
+                ),
+                "hint": "Internal LÆX actions: register_decision, query_canon_drift."
+            })).unwrap_or_default()
+        }]
+    })
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 /// Execute `lightarchitects_orchestrate`.
@@ -289,7 +342,17 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
         Some(name) => {
             // Explicit route — validate it exists and is enabled.
             match config.agents.get(name) {
-                Some(cfg) if cfg.enabled => name.to_owned(),
+                Some(cfg) if cfg.enabled => {
+                    // S3-M3 mitigation (security audit 2026-05-08): for LÆX
+                    // explicit routes, also enforce gateway-routable filtering
+                    // so internal actions (register_decision, query_canon_drift)
+                    // cannot be reached via explicit-agent override. `auto_route`
+                    // already enforces this via SiblingRoute::matches.
+                    if name == "laex" && !is_routable_laex(&action) {
+                        return Ok(internal_action_blocked(name, &action));
+                    }
+                    name.to_owned()
+                }
                 Some(_) | None => return Ok(disabled_response(name)),
             }
         }
@@ -312,6 +375,7 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
         feature = "inline-eva",
         feature = "inline-soul",
         feature = "inline-quantum",
+        feature = "inline-laex",
     ))]
     if let Some(registry) = crate::handlers::registry() {
         if let Some(handler) = registry.get(&target_route) {
@@ -381,14 +445,81 @@ mod tests {
 
     #[test]
     fn auto_route_returns_none_for_arena_actions() {
-        // Arena actions are not in any SDK enum.
+        // Arena actions are not in any SDK enum (forge, summon are Arena-only).
+        // After laex-sibling-promotion ship, canon_check IS in LaexAction; it now
+        // routes to laex when enabled (see auto_route_canon_check_routes_to_laex).
         let mut cfg = GatewayConfig::default();
         if let Some(l) = cfg.agents.get_mut("laex") {
             l.enabled = true;
         }
         assert_eq!(auto_route("forge", &cfg), None);
         assert_eq!(auto_route("summon", &cfg), None);
+    }
+
+    // ── LÆX-specific auto_route tests (W3 deliverable: ≥4 tests) ────────────────
+
+    #[test]
+    fn auto_route_canon_check_routes_to_laex() {
+        let mut cfg = GatewayConfig::default();
+        if let Some(l) = cfg.agents.get_mut("laex") {
+            l.enabled = true;
+        }
+        assert_eq!(auto_route("canon_check", &cfg), Some("laex"));
+    }
+
+    #[test]
+    fn auto_route_effectiveness_score_routes_to_laex() {
+        let mut cfg = GatewayConfig::default();
+        if let Some(l) = cfg.agents.get_mut("laex") {
+            l.enabled = true;
+        }
+        assert_eq!(auto_route("effectiveness_score", &cfg), Some("laex"));
+    }
+
+    #[test]
+    fn auto_route_all_layer_reviews_route_to_laex() {
+        let mut cfg = GatewayConfig::default();
+        if let Some(l) = cfg.agents.get_mut("laex") {
+            l.enabled = true;
+        }
+        for action in [
+            "layer1_review",
+            "layer2_review",
+            "layer3_review",
+            "layer4_review",
+        ] {
+            assert_eq!(
+                auto_route(action, &cfg),
+                Some("laex"),
+                "{action} should route to laex"
+            );
+        }
+    }
+
+    #[test]
+    fn auto_route_disabled_laex_returns_none_for_canon_check() {
+        // Default config has laex disabled — canon_check routes nowhere.
+        let cfg = GatewayConfig::default();
         assert_eq!(auto_route("canon_check", &cfg), None);
+    }
+
+    #[test]
+    fn laex_priority_supersedes_quantum_when_both_enabled() {
+        // Verifies the slot-0 placement: even when QUANTUM is enabled and could
+        // theoretically claim a future research-flavoured action, LÆX governance
+        // actions (canon_check, matrix_ratify) always anchor at LÆX.
+        let mut cfg = GatewayConfig::default();
+        for sib in cfg.agents.values_mut() {
+            sib.enabled = true;
+        }
+        let full = super::super::preset::find_preset("full").unwrap();
+        for action in ["canon_check", "canon_evaluate", "matrix_ratify"] {
+            assert_eq!(
+                auto_route_with_priority(action, &cfg, full.routing_priority),
+                Some("laex"),
+                "{action} should route to laex even with QUANTUM enabled"
+            );
+        }
     }
 
     #[test]
@@ -563,17 +694,32 @@ mod tests {
 
     #[test]
     fn total_routable_count_matches_sdk_enums() {
-        // 9 + 19 + 6 + 9 + 14 + 3 = 60
+        // 9 (laex) + 9 (quantum) + 19 (corso) + 6 (seraph) + 11 (eva) + 14 (soul) + 3 (ayin) = 71
+        // (eva moved from 9 to 11 routable post 2026-04 update; laex adds 9 net new)
         let total = total_routable_action_count();
         assert_eq!(
             total,
-            QuantumAction::ALL_ROUTABLE.len()
+            LaexAction::ALL_ROUTABLE.len()
+                + QuantumAction::ALL_ROUTABLE.len()
                 + CorsoAction::ALL_ROUTABLE.len()
                 + SeraphAction::ALL_ROUTABLE.len()
                 + EvaAction::ALL_ROUTABLE.len()
                 + SoulAction::ALL_ROUTABLE.len()
                 + AyinAction::ALL_ROUTABLE.len(),
         );
+    }
+
+    #[test]
+    fn routable_actions_for_laex_matches_enum() {
+        let actions = routable_actions_for("laex");
+        assert_eq!(actions.len(), LaexAction::ALL_ROUTABLE.len());
+        for &expected in LaexAction::ALL_ROUTABLE {
+            assert!(
+                actions.contains(&expected.as_str()),
+                "missing LÆX action: {}",
+                expected.as_str()
+            );
+        }
     }
 
     #[test]
@@ -623,5 +769,181 @@ mod tests {
         let text = result["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("no_agent"), "expected no_agent error");
         assert!(text.contains("frobnicate"), "expected action in payload");
+    }
+
+    // ── S3-M3 regression: explicit-`agent: laex` route must enforce
+    //    is_gateway_routable filtering on internal LÆX actions ───────────────────
+
+    #[tokio::test]
+    async fn orchestrate_explicit_laex_blocks_register_decision() {
+        let mut cfg = GatewayConfig::default();
+        if let Some(l) = cfg.agents.get_mut("laex") {
+            l.enabled = true;
+        }
+        let result = run(
+            json!({
+                "action": "register_decision",
+                "agent": "laex",
+                "params": {"decision": "test", "ratifier": "kft"}
+            }),
+            &cfg,
+        )
+        .await
+        .expect("run");
+        let text = result["content"][0]["text"].as_str().expect("text payload");
+        assert!(
+            text.contains("internal_action_not_routable"),
+            "expected internal-action-blocked payload, got: {text}"
+        );
+        assert!(
+            text.contains("register_decision"),
+            "payload should reference the rejected action"
+        );
+    }
+
+    #[tokio::test]
+    async fn orchestrate_explicit_laex_blocks_query_canon_drift() {
+        let mut cfg = GatewayConfig::default();
+        if let Some(l) = cfg.agents.get_mut("laex") {
+            l.enabled = true;
+        }
+        let result = run(
+            json!({
+                "action": "query_canon_drift",
+                "agent": "laex",
+                "params": {}
+            }),
+            &cfg,
+        )
+        .await
+        .expect("run");
+        let text = result["content"][0]["text"].as_str().expect("text payload");
+        assert!(
+            text.contains("internal_action_not_routable"),
+            "expected internal-action-blocked payload, got: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn orchestrate_explicit_laex_allows_routable_canon_check() {
+        let mut cfg = GatewayConfig::default();
+        if let Some(l) = cfg.agents.get_mut("laex") {
+            l.enabled = true;
+        }
+        // canon_check is a routable LaexAction; explicit route should NOT block it.
+        // (Note: the call may fail downstream because canon_check needs a valid
+        // registry path, but the orchestrate-level routing must succeed past the
+        // S3-M3 gate.)
+        let result = run(
+            json!({
+                "action": "canon_check",
+                "agent": "laex",
+                "params": {"decision": "test"}
+            }),
+            &cfg,
+        )
+        .await;
+        // Either Ok(payload) (handler dispatched) or Ok(structured-error). Critical:
+        // the result must NOT be the internal_action_not_routable gate.
+        if let Ok(value) = result {
+            if let Some(text) = value["content"][0]["text"].as_str() {
+                assert!(
+                    !text.contains("internal_action_not_routable"),
+                    "canon_check is routable; should not be blocked at the S3-M3 gate: {text}"
+                );
+            }
+        }
+    }
+
+    // ── Phase 4 A1: programmatic collision audit ────────────────────────────────
+    //
+    // Verifies no LaexAction string collides with any other sibling's
+    // ALL_ROUTABLE set (PR3 mitigation in laex-sibling-promotion plan).
+    // Encodes the invariant that priority-shift behavior is safe — no existing
+    // action's routing changes when LÆX is inserted at SIBLING_ROUTES slot 0.
+    //
+    // Joint verdict (LÆX Layer 2 + EVA DevOps): convert from agent-confirmation
+    // to compile-time-test for regression resistance.
+
+    #[test]
+    fn cross_sibling_action_names_have_no_collisions() {
+        use std::collections::HashSet;
+
+        // Collect each sibling's routable action name set.
+        let laex: HashSet<&'static str> = LaexAction::ALL_ROUTABLE
+            .iter()
+            .map(LaexAction::as_str)
+            .collect();
+        let quantum: HashSet<&'static str> = QuantumAction::ALL_ROUTABLE
+            .iter()
+            .map(QuantumAction::as_str)
+            .collect();
+        let corso: HashSet<&'static str> = CorsoAction::ALL_ROUTABLE
+            .iter()
+            .map(CorsoAction::as_str)
+            .collect();
+        let seraph: HashSet<&'static str> = SeraphAction::ALL_ROUTABLE
+            .iter()
+            .map(SeraphAction::as_str)
+            .collect();
+        let eva: HashSet<&'static str> = EvaAction::ALL_ROUTABLE
+            .iter()
+            .map(EvaAction::as_str)
+            .collect();
+        let soul: HashSet<&'static str> = SoulAction::ALL_ROUTABLE
+            .iter()
+            .map(SoulAction::as_str)
+            .collect();
+        let ayin: HashSet<&'static str> = AyinAction::ALL_ROUTABLE
+            .iter()
+            .map(AyinAction::as_str)
+            .collect();
+
+        let pairs: &[(&str, &HashSet<&'static str>, &str, &HashSet<&'static str>)] = &[
+            ("laex", &laex, "quantum", &quantum),
+            ("laex", &laex, "corso", &corso),
+            ("laex", &laex, "seraph", &seraph),
+            ("laex", &laex, "eva", &eva),
+            ("laex", &laex, "soul", &soul),
+            ("laex", &laex, "ayin", &ayin),
+            // Defensive — verify the pre-existing siblings remain collision-free
+            // post-LÆX promotion. Catches any future-action churn that would
+            // shadow LÆX governance dispatch.
+            ("quantum", &quantum, "corso", &corso),
+            ("quantum", &quantum, "soul", &soul),
+            ("corso", &corso, "soul", &soul),
+            ("eva", &eva, "soul", &soul),
+            ("seraph", &seraph, "soul", &soul),
+            ("ayin", &ayin, "soul", &soul),
+        ];
+
+        for &(a_name, a_set, b_name, b_set) in pairs {
+            let intersection: Vec<&&str> = a_set.intersection(b_set).collect();
+            assert!(
+                intersection.is_empty(),
+                "action-name collision between {a_name} and {b_name}: {intersection:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn laex_routable_actions_match_priority_slot_0_invariant() {
+        // Verifies that every LaexAction::ALL_ROUTABLE entry resolves to "laex"
+        // via auto_route when LÆX is enabled, anchoring the slot-0 invariant
+        // (canon-supersedes-research) at the test layer.
+        let mut cfg = GatewayConfig::default();
+        if let Some(l) = cfg.agents.get_mut("laex") {
+            l.enabled = true;
+        }
+        for action in LaexAction::ALL_ROUTABLE {
+            let resolved = auto_route(action.as_str(), &cfg);
+            assert_eq!(
+                resolved,
+                Some("laex"),
+                "routable LaexAction `{}` should auto-route to laex; resolved to {:?}",
+                action.as_str(),
+                resolved
+            );
+        }
     }
 }

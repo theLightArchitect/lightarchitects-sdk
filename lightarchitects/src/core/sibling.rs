@@ -24,6 +24,8 @@ pub enum SiblingId {
     Quantum,
     /// SERAPH pentest orchestration (`penTools`, `Content-Length` framing).
     Seraph,
+    /// LÆX governance umbrella (`laexTools`; inline-only — gateway dispatch, no standalone binary).
+    Laex,
 }
 
 impl SiblingId {
@@ -38,6 +40,8 @@ impl SiblingId {
             Self::Eva => paths::eva()?,
             Self::Quantum => paths::quantum()?,
             Self::Seraph => paths::seraph()?,
+            // LÆX is inline-only (gateway dispatch); no standalone binary.
+            Self::Laex => return None,
         };
         let rel = match self {
             Self::Soul => "bin/soul",
@@ -45,6 +49,7 @@ impl SiblingId {
             Self::Eva => "bin/eva",
             Self::Quantum => "bin/quantum-q",
             Self::Seraph => "bin/seraph",
+            Self::Laex => return None,
         };
         Some(runtime_root.join(rel))
     }
@@ -79,6 +84,7 @@ impl SiblingId {
             Self::Eva => "evaTools",
             Self::Quantum => "qsTools",
             Self::Seraph => "penTools",
+            Self::Laex => "laexTools",
         }
     }
 
@@ -91,14 +97,16 @@ impl SiblingId {
             Self::Eva => "EVA",
             Self::Quantum => "QUANTUM",
             Self::Seraph => "SERAPH",
+            Self::Laex => "LÆX",
         }
     }
 
-    /// All five canonical LA siblings in discovery order.
+    /// All five stdio LA siblings in discovery order.
     ///
     /// Use this to iterate known siblings when building default server lists.
     /// AYIN is intentionally absent — it runs as an HTTP viewer (`localhost:3742`),
-    /// not a stdio MCP server.
+    /// not a stdio MCP server. LÆX is intentionally absent — it is inline-only
+    /// (gateway dispatch), with no standalone binary.
     #[must_use]
     pub fn all_la() -> &'static [Self] {
         &[
@@ -123,6 +131,7 @@ mod tests {
             SiblingId::Eva,
             SiblingId::Quantum,
             SiblingId::Seraph,
+            SiblingId::Laex,
         ] {
             assert_eq!(
                 sibling.framing(),
@@ -140,6 +149,7 @@ mod tests {
             SiblingId::Corso,
             SiblingId::Eva,
             SiblingId::Seraph,
+            SiblingId::Laex,
         ] {
             assert_eq!(
                 sibling.mcp_subcommand(),
@@ -156,6 +166,13 @@ mod tests {
         assert_eq!(SiblingId::Eva.orchestrator_tool(), "evaTools");
         assert_eq!(SiblingId::Quantum.orchestrator_tool(), "qsTools");
         assert_eq!(SiblingId::Seraph.orchestrator_tool(), "penTools");
+        assert_eq!(SiblingId::Laex.orchestrator_tool(), "laexTools");
+    }
+
+    #[test]
+    fn laex_has_no_binary_path() {
+        // LÆX is inline-only (gateway dispatch); no standalone stdio binary.
+        assert_eq!(SiblingId::Laex.default_binary_path(), None);
     }
 
     #[test]

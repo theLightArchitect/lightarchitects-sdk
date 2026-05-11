@@ -45,4 +45,12 @@ pub enum AuthError {
         /// How many seconds were waited before timing out.
         seconds: u64,
     },
+
+    /// Identity resolution failed (e.g., `gh` CLI not authenticated).
+    #[error("Identity resolution failed: {0}")]
+    IdentityResolutionFailed(String),
+
+    /// Vault remote URL contains embedded credentials (S8 violation).
+    #[error("Vault remote URL contains embedded credentials: {0}")]
+    InvalidVaultRemote(String),
 }

@@ -12,6 +12,7 @@
 //!   v7:    Step.expires index for read-side freshness gate
 //!   v8:    `Step.vault_path` index for wikilink slug resolution
 //!   v9:    `:HotMemo` tier — Tier-1 ephemeral memos with TTL (Phase 18 dual-write)
+//!   v10:   Fix `step-embeddings` dimension: drop 768-dim, recreate at 384-dim
 
 use crate::helix::graph::schema::Migration;
 
@@ -134,9 +135,28 @@ const V9_STATEMENTS: &[&str] = &[
     "CREATE INDEX hot_memo_created_idx IF NOT EXISTS FOR (h:HotMemo) ON (h.created_at)",
 ];
 
+// ── Migration v10: Fix step-embeddings dimension ──────────────────────
+
+/// v10 corrects the `step-embeddings` HNSW vector index dimension.
+///
+/// v5 declared 768-dim (nomic-embed-text via Ollama). All embeddings written
+/// to the vault are 384-dim (all-MiniLM-L6-v2 / BAAI/bge-small-en-v1.5).
+/// Neo4j silently excludes vectors whose dimension does not match the index
+/// declaration at write time, so `step-embeddings` was effectively empty
+/// despite 2000+ `Step` nodes carrying an `embedding` property.
+///
+/// This migration drops the mismatched index and recreates it at 384-dim.
+/// Neo4j automatically re-indexes existing `embedding` properties when the
+/// index is first created; no consolidator rerun is required.
+const V10_STATEMENTS: &[&str] = &[
+    "DROP INDEX `step-embeddings` IF EXISTS",
+    "CREATE VECTOR INDEX `step-embeddings` IF NOT EXISTS FOR (s:Step) ON (s.embedding) \
+     OPTIONS { indexConfig: { `vector.dimensions`: 384, `vector.similarity_function`: 'cosine' } }",
+];
+
 // ── Public API ────────────────────────────────────────────────────────
 
-/// All helix migrations (v3-v8), ordered by version.
+/// All helix migrations (v3-v10), ordered by version.
 ///
 /// These extend graph-engine's core migrations (v1-v2).
 /// Use [`helix_pending_migrations`] to filter by already-applied versions.
@@ -175,6 +195,11 @@ pub const HELIX_MIGRATIONS: &[Migration] = &[
         version: 9,
         description: "Add :HotMemo label — Tier-1 ephemeral memories (Phase 18 dual-write)",
         statements: V9_STATEMENTS,
+    },
+    Migration {
+        version: 10,
+        description: "Fix step-embeddings dimension: drop 768-dim HNSW index, recreate at 384-dim to match stored embeddings",
+        statements: V10_STATEMENTS,
     },
 ];
 
@@ -328,24 +353,25 @@ mod tests {
     #[test]
     fn test_pending_all() {
         let pending = helix_pending_migrations(&[]);
-        assert_eq!(pending.len(), 7, "All 7 helix migrations pending");
+        assert_eq!(pending.len(), 8, "All 8 helix migrations pending");
     }
 
     #[test]
     fn test_pending_partial() {
         let pending = helix_pending_migrations(&[3]);
-        assert_eq!(pending.len(), 6, "v4, v5, v6, v7, v8, and v9 pending");
+        assert_eq!(pending.len(), 7, "v4, v5, v6, v7, v8, v9, and v10 pending");
         assert_eq!(pending[0].version, 4);
         assert_eq!(pending[1].version, 5);
         assert_eq!(pending[2].version, 6);
         assert_eq!(pending[3].version, 7);
         assert_eq!(pending[4].version, 8);
         assert_eq!(pending[5].version, 9);
+        assert_eq!(pending[6].version, 10);
     }
 
     #[test]
     fn test_pending_none() {
-        let pending = helix_pending_migrations(&[3, 4, 5, 6, 7, 8, 9]);
+        let pending = helix_pending_migrations(&[3, 4, 5, 6, 7, 8, 9, 10]);
         assert!(pending.is_empty(), "No pending migrations");
     }
 
@@ -359,50 +385,47 @@ mod tests {
 
     #[test]
     fn test_no_duplicate_index_names() {
+        // Collect index names that are explicitly dropped in some migration.
+        // A corrective migration (e.g. v10) must DROP IF EXISTS before re-creating;
+        // that pattern is allowed and is the only valid reason for a duplicate CREATE name.
+        let dropped_names: std::collections::HashSet<String> = HELIX_MIGRATIONS
+            .iter()
+            .flat_map(|m| m.statements.iter().copied())
+            .filter_map(|stmt| {
+                stmt.strip_prefix("DROP INDEX ")
+                    .map(|rest| {
+                        rest.split(" IF EXISTS")
+                            .next()
+                            .unwrap_or("")
+                            .trim()
+                            .trim_matches('`')
+                            .to_owned()
+                    })
+                    .filter(|n| !n.is_empty())
+            })
+            .collect();
+
+        let prefixes = [
+            "CREATE INDEX ",
+            "CREATE FULLTEXT INDEX ",
+            "CREATE VECTOR INDEX ",
+            "CREATE LOOKUP INDEX ",
+        ];
         let mut names: Vec<String> = Vec::new();
         for m in HELIX_MIGRATIONS {
             for stmt in m.statements {
-                // Match patterns: CREATE INDEX name IF NOT EXISTS
-                // Also handles backtick-quoted names like `step-fulltext`
-                if let Some(rest) = stmt.strip_prefix("CREATE INDEX ") {
-                    let name = rest
-                        .split(" IF NOT EXISTS")
-                        .next()
-                        .unwrap_or("")
-                        .trim()
-                        .trim_matches('`');
-                    if !name.is_empty() {
-                        names.push(name.to_string());
-                    }
-                } else if let Some(rest) = stmt.strip_prefix("CREATE FULLTEXT INDEX ") {
-                    let name = rest
-                        .split(" IF NOT EXISTS")
-                        .next()
-                        .unwrap_or("")
-                        .trim()
-                        .trim_matches('`');
-                    if !name.is_empty() {
-                        names.push(name.to_string());
-                    }
-                } else if let Some(rest) = stmt.strip_prefix("CREATE VECTOR INDEX ") {
-                    let name = rest
-                        .split(" IF NOT EXISTS")
-                        .next()
-                        .unwrap_or("")
-                        .trim()
-                        .trim_matches('`');
-                    if !name.is_empty() {
-                        names.push(name.to_string());
-                    }
-                } else if let Some(rest) = stmt.strip_prefix("CREATE LOOKUP INDEX ") {
-                    let name = rest
-                        .split(" IF NOT EXISTS")
-                        .next()
-                        .unwrap_or("")
-                        .trim()
-                        .trim_matches('`');
-                    if !name.is_empty() {
-                        names.push(name.to_string());
+                for prefix in prefixes {
+                    if let Some(rest) = stmt.strip_prefix(prefix) {
+                        let name = rest
+                            .split(" IF NOT EXISTS")
+                            .next()
+                            .unwrap_or("")
+                            .trim()
+                            .trim_matches('`');
+                        if !name.is_empty() {
+                            names.push(name.to_string());
+                        }
+                        break;
                     }
                 }
             }
@@ -411,12 +434,18 @@ mod tests {
             !names.is_empty(),
             "Should have found at least one index name"
         );
+
         let mut seen = std::collections::HashSet::new();
         for name in &names {
-            assert!(
-                seen.insert(name.as_str()),
-                "Duplicate index name found: {name}"
-            );
+            let already_seen = !seen.insert(name.as_str());
+            // Duplicates are only valid for indexes that were explicitly dropped first.
+            if already_seen {
+                assert!(
+                    dropped_names.contains(name.as_str()),
+                    "Duplicate CREATE for index '{name}' without a preceding DROP IF EXISTS — \
+                     corrective migrations must drop before re-creating"
+                );
+            }
         }
     }
 
@@ -517,6 +546,48 @@ mod tests {
         assert!(
             has_compound,
             "v3 must have a compound uniqueness constraint on (s.helix_id, s.step_date)"
+        );
+    }
+
+    #[test]
+    fn test_v10_corrects_embedding_dimension() {
+        // v10 is the last migration (index 7 in the 0-based array).
+        let v10 = HELIX_MIGRATIONS.last().expect("at least one migration");
+        assert_eq!(v10.version, 10);
+        assert_eq!(
+            v10.statements.len(),
+            2,
+            "v10 must have exactly 2 statements"
+        );
+
+        // First statement: drop the mismatched index.
+        let drop_stmt = v10.statements[0];
+        assert!(
+            drop_stmt.starts_with("DROP INDEX"),
+            "v10 statement[0] must be DROP INDEX: {drop_stmt}"
+        );
+        assert!(
+            drop_stmt.contains("step-embeddings"),
+            "v10 must drop step-embeddings: {drop_stmt}"
+        );
+
+        // Second statement: recreate at 384-dim.
+        let create_stmt = v10.statements[1];
+        assert!(
+            create_stmt.contains("VECTOR INDEX"),
+            "v10 statement[1] must be CREATE VECTOR INDEX: {create_stmt}"
+        );
+        assert!(
+            create_stmt.contains("384"),
+            "v10 must declare 384 dimensions: {create_stmt}"
+        );
+        assert!(
+            !create_stmt.contains("768"),
+            "v10 must NOT use the old 768 dimensions: {create_stmt}"
+        );
+        assert!(
+            create_stmt.contains("cosine"),
+            "v10 must use cosine similarity: {create_stmt}"
         );
     }
 

@@ -1,11 +1,15 @@
 [package]
 name = "lightarchitects-gateway"
 version = "0.3.0"
-edition = "2024"
-rust-version = "1.87"
-authors = ["KFT <kf.tan@lightarchitects.io>"]
-license = "MPL-2.0"
-repository = "https://github.com/TheLightArchitects/lightarchitects-sdk"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+# License override: the workspace is MPL-2.0, but this gateway crate carries
+# business-critical orchestration logic (arena RL pipeline, conductor runtime,
+# sibling identity templates, squad-comms protocol, canon validation, governance
+# gates) and is licensed separately. See ./LICENSE for terms.
+license-file = "LICENSE"
+repository.workspace = true
 publish = false
 description = "Light Architects unified gateway — MCP server, Arena HTTP API, and autonomous agent runtime."
 
@@ -38,37 +42,43 @@ serde_json = "1"
 serde_yaml = "0.9"
 toml = "0.8"
 rpassword = "7"
-thiserror = "1"
+thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 clap = "4"
 chrono = { version = "0.4", features = ["serde"] }
-chrono-tz = "0.9"
+chrono-tz = "0.10"
 reqwest = { version = "0.12", features = ["json"] }
 uuid = { version = "1", features = ["v4"] }
 dirs-next = "2"
 async-trait = "0.1"
-axum = "0.7"
+axum = "0.8"
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors"] }
-governor = "0.4"
-rusqlite = { version = "0.32", features = ["bundled"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+governor = "0.6"
+rusqlite = { version = "0.32", features = ["bundled", "vtab"] }
 cron = "0.15"
-notify = "7"
+notify = "6"
 dashmap = "6"
 futures-util = "0.3"
-tokio-tungstenite = "0.24"
+tokio-tungstenite = "0.26"
 libc = "0.2"
 anyhow = "1"
 regex = "1"
 secrecy = { version = "0.10", features = ["serde"] }
 zeroize = { version = "1", features = ["derive"] }
 subtle = "2"
-keyring = "3"
+keyring = { version = "3", features = ["sync-secret-service", "vendored", "crypto-rust"] }
 security-framework = "3"
 tempfile = "3"
 tokio-test = "0.4"
+fs2 = "0.4"
+hmac = "0.12"
+sha2 = "0.10"
+neo4rs = { version = "0.8", features = ["json"] }
+moka = { version = "0.12", features = ["future"] }
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bin]]
 name = "lightarchitects"
@@ -95,11 +105,14 @@ inline-soul = []
 inline-quantum = []
 # inline-seraph intentionally omitted — SERAPH stays spawner-only for process
 # isolation (offensive security tools must not crash the gateway).
+# LÆX is inline-only by design (no standalone binary); the inline-laex feature
+# is the canonical and only enable path.
+inline-laex = []
 
-## Convenience: enable all five inline handlers at once.
+## Convenience: enable all six inline handlers at once.
 inline-all = [
     "inline-ayin", "inline-corso", "inline-eva",
-    "inline-soul", "inline-quantum",
+    "inline-soul", "inline-quantum", "inline-laex",
 ]
 
 ## SOUL heavy dependencies (Neo4j + fastembed). Without this, the SOUL handler
@@ -115,6 +128,8 @@ lightarchitects = { path = "../lightarchitects" }
 
 # ── Shared (both MCP + Arena modes) ──────────────────────────────────────────
 async-trait = "0.1"
+inquire = "0.7"
+hmac = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
@@ -136,6 +151,9 @@ axum = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 governor = { workspace = true }
+neo4rs = { workspace = true }
+moka = { workspace = true }
+sha2 = { workspace = true }
 rusqlite = { workspace = true }
 cron = { workspace = true }
 notify = { workspace = true }
@@ -149,6 +167,8 @@ secrecy = { workspace = true }
 zeroize = { workspace = true }
 subtle = { workspace = true }
 keyring = { workspace = true }
+tempfile = { workspace = true }
+fs2 = { workspace = true }
 
 # ── Platform-specific ─────────────────────────────────────────────────────────
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -157,3 +177,10 @@ security-framework = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio-test = { workspace = true }
+tower = { workspace = true, features = ["util"] }
+axum = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "wave32_perf"
+harness = false

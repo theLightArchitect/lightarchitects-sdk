@@ -204,3 +204,79 @@ pub async fn chat_inject(params: Value, config: &GatewayConfig) -> Result<Value,
 
     webshell_post("/api/coordination/chat/inject", payload, config).await
 }
+
+// ── Operator assertion-resolve actions (Wave 3.2) ─────────────────────────────
+
+/// `lightarchitects_squad_comms_resolve_assertion_gate` — submit an operator decision
+/// for a blocked assertion gate.
+///
+/// Expects params: `request_id`, `assertion_id`, `build_id`, `operator_id`,
+/// `action_type` (`provide_citation` | escalate | `accept_unvalidated` | dispute),
+/// and optionally `citation` (the citation data for `provide_citation` actions).
+///
+/// # Errors
+///
+/// Returns [`GatewayError::MissingParam`] for missing required fields.
+/// Returns [`GatewayError::InvalidRequest`] if the webshell is unreachable.
+pub async fn resolve_assertion_gate(
+    params: Value,
+    config: &GatewayConfig,
+) -> Result<Value, GatewayError> {
+    let request_id = params["request_id"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("request_id"))?
+        .to_owned();
+    let assertion_id = params["assertion_id"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("assertion_id"))?
+        .to_owned();
+    let build_id = params["build_id"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("build_id"))?
+        .to_owned();
+    let operator_id = params["operator_id"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("operator_id"))?
+        .to_owned();
+    let action_type = params["action_type"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("action_type"))?
+        .to_owned();
+
+    let payload = json!({
+        "request_id": request_id,
+        "assertion_id": assertion_id,
+        "build_id": build_id,
+        "operator_id": operator_id,
+        "action_type": action_type,
+        "citation": params.get("citation"),
+    });
+
+    webshell_post("/api/coordination/assertions/resolve", payload, config).await
+}
+
+/// `lightarchitects_squad_comms_query_blocked_flow` — query currently blocked
+/// assertion gates for a build.
+///
+/// Expects params: `build_id`, and optionally `assertion_id` to filter results.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::MissingParam`] for missing `build_id`.
+/// Returns [`GatewayError::InvalidRequest`] if the webshell is unreachable.
+pub async fn query_blocked_flow(
+    params: Value,
+    config: &GatewayConfig,
+) -> Result<Value, GatewayError> {
+    let build_id = params["build_id"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("build_id"))?;
+    let path = if let Some(assertion_id) = params["assertion_id"].as_str() {
+        format!(
+            "/api/coordination/assertions/blocked?build_id={build_id}&assertion_id={assertion_id}"
+        )
+    } else {
+        format!("/api/coordination/assertions/blocked?build_id={build_id}")
+    };
+    webshell_get(&path, config).await
+}

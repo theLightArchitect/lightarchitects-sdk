@@ -68,6 +68,13 @@ pub fn init_handlers(config: &GatewayConfig) {
         reg.register(Arc::new(handler));
     }
 
+    #[cfg(feature = "inline-laex")]
+    if should_inline("laex", config) {
+        let handler = super::laex::LaexHandler::new(config);
+        info!(handler = "laex", "registering inline handler");
+        reg.register(Arc::new(handler));
+    }
+
     let names = reg.handler_names();
     if names.is_empty() {
         info!("no inline handlers registered — all siblings use spawner");

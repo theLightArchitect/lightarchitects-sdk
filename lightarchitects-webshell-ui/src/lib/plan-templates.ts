@@ -3,7 +3,7 @@
 //
 // Generates tier-telescoped phases with mandatory interleaved exit gates.
 // Three axes: Execution Phases × Quality Gates × Agent Topology.
-// Spec: helix/user/standards/lasdlc-spec.md
+// Spec: helix/user/standards/canon/lasdlc-spec.md
 // Template: helix/corso/builds/LASDLC-TEMPLATE-v1.yaml
 // ============================================================================
 
