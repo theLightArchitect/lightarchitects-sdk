@@ -33,6 +33,7 @@
 use std::{
     io::{Read, Write},
     sync::Arc,
+    time::Instant,
 };
 
 use axum::extract::ws::{Message, WebSocket};
@@ -41,7 +42,13 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{debug, info, instrument, warn};
 
-use crate::{config::Config, mcp_config, session::BuildSession, terminal::ws::SessionGuard};
+use crate::{
+    agent::protocol::ControlMessage,
+    config::{AgentSession, Config},
+    mcp_config,
+    session::BuildSession,
+    terminal::ws::SessionGuard,
+};
 
 /// Size of the blocking read buffer for PTY stdout.
 const PTY_BUF: usize = 4096;
@@ -78,8 +85,18 @@ pub async fn run_session(
     build: Option<Arc<BuildSession>>,
     _guard: SessionGuard,
 ) {
+    let start = Instant::now();
+    let build_id = build.as_ref().map(|s| s.build_id.to_string());
+    if let Some(ref id) = build_id {
+        tracing::info!(target: "la_telemetry", event = "session_start", build_id = %id);
+    }
+
     let result = if let Some(session) = build {
-        run_persistent(socket, &config, &session).await
+        if let AgentSession::LightarchitectsNative(_) = &session.agent {
+            run_agent_persistent(socket, &session).await
+        } else {
+            run_persistent(socket, &config, &session).await
+        }
     } else {
         // Legacy path — no session, PTY dies with WS.
         run_inner(socket, &config, None).await
@@ -87,19 +104,28 @@ pub async fn run_session(
     if let Err(e) = result {
         warn!(error = %e, "PTY session terminated with error");
     }
+
+    if let Some(ref id) = build_id {
+        let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+        tracing::info!(target: "la_telemetry", event = "session_end", build_id = %id, duration_ms = duration_ms);
+    }
     info!("PTY session closed");
 }
 
 // ── Persistent-mode helpers ───────────────────────────────────────────────────
 
-/// Persistent PTY entry point: ensure the child is running, then attach WS.
+/// Persistent entry point: PTY or agent bridge, then attach WS.
 async fn run_persistent(
     socket: WebSocket,
     config: &Config,
     session: &BuildSession,
 ) -> Result<(), anyhow::Error> {
-    ensure_pty_started(session, config).await?;
-    attach_ws(socket, session).await
+    if let AgentSession::LightarchitectsNative(_) = &session.agent {
+        run_agent_persistent(socket, session).await
+    } else {
+        ensure_pty_started(session, config).await?;
+        attach_ws(socket, session).await
+    }
 }
 
 /// Start the PTY process for `session` if it is not already running.
@@ -110,6 +136,12 @@ async fn ensure_pty_started(session: &BuildSession, config: &Config) -> Result<(
     let mut pty_in_guard = session.pty_input_tx.lock().await;
     if pty_in_guard.is_some() {
         return Ok(()); // already running
+    }
+
+    if session.containerized {
+        return Err(anyhow::anyhow!(
+            "containerized session requested but WebSocket relay is not yet implemented"
+        ));
     }
 
     // ── Open PTY pair ─────────────────────────────────────────────────────────
@@ -164,6 +196,72 @@ async fn ensure_pty_started(session: &BuildSession, config: &Config) -> Result<(
     spawn_pty_writer(pty_writer, pty_in_rx);
 
     *pty_in_guard = Some(pty_in_tx);
+    Ok(())
+}
+
+/// Attach one WebSocket to an agent bridge session (native agent).
+///
+/// Forwards `AgentEvent` JSON lines to the browser and `SendMessage`
+/// control frames from the browser into the bridge.
+async fn run_agent_persistent(
+    socket: WebSocket,
+    session: &BuildSession,
+) -> Result<(), anyhow::Error> {
+    let (event_tx, control_tx) = crate::agent::ensure_agent_host(session).await;
+    let mut event_rx = event_tx.subscribe();
+
+    let (mut ws_sink, mut ws_stream) = socket.split();
+    let exited = Arc::clone(&session.pty_exited);
+
+    loop {
+        tokio::select! {
+            // Agent event → browser
+            ev = event_rx.recv() => {
+                match ev {
+                    Ok(ev) => {
+                        let Ok(json) = serde_json::to_string(&ev) else { continue };
+                        if ws_sink.send(Message::Text(json.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        let _ = ws_sink
+                            .send(Message::Text(
+                                format!("{{\"type\":\"error\",\"message\":\"lagged {n}\"}}").into(),
+                            ))
+                            .await;
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+
+            // Browser → agent control channel
+            maybe_msg = ws_stream.next() => {
+                match maybe_msg {
+                    None | Some(Ok(Message::Close(_)) | Err(_)) => break,
+                    Some(Ok(Message::Text(t))) => {
+                        let ctrl = ControlMessage::SendMessage { text: t.to_string() };
+                        let _ = control_tx.try_send(ctrl);
+                    }
+                    Some(Ok(Message::Binary(b))) => {
+                        // Native agent receives raw keystrokes as text only.
+                        let ctrl = ControlMessage::SendMessage {
+                            text: String::from_utf8_lossy(&b).into_owned(),
+                        };
+                        let _ = control_tx.try_send(ctrl);
+                    }
+                    Some(Ok(Message::Ping(_) | Message::Pong(_))) => {}
+                }
+            }
+
+            // Session teardown
+            () = exited.notified() => {
+                let _ = ws_sink.send(Message::Close(None)).await;
+                break;
+            }
+        }
+    }
+
     Ok(())
 }
 

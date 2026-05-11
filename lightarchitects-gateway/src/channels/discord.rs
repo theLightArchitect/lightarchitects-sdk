@@ -203,7 +203,7 @@ async fn send_identify(
         })?,
     };
     write
-        .send(Message::Text(serde_json::to_string(&identify)?.into()))
+        .send(Message::Text(serde_json::to_string(&identify)?))
         .await?;
     tracing::info!("IDENTIFY sent — presence: Watching the helix");
     Ok(())
@@ -229,7 +229,7 @@ async fn run_heartbeat_loop(
                     return Err("Missed heartbeat ACK".into());
                 }
                 let hb = serde_json::json!({"op": opcode::HEARTBEAT, "d": last_sequence});
-                write.send(Message::Text(serde_json::to_string(&hb)?.into())).await?;
+                write.send(Message::Text(serde_json::to_string(&hb)?)).await?;
                 heartbeat_acked = false;
             }
             msg = read.next() => {
@@ -238,7 +238,7 @@ async fn run_heartbeat_loop(
                     LoopAction::Continue => {}
                     LoopAction::SendHeartbeat => {
                         let hb = serde_json::json!({"op": opcode::HEARTBEAT, "d": last_sequence});
-                        write.send(Message::Text(serde_json::to_string(&hb)?.into())).await?;
+                        write.send(Message::Text(serde_json::to_string(&hb)?)).await?;
                     }
                     LoopAction::Reconnect | LoopAction::Closed => return Ok(()),
                     LoopAction::InvalidSession => {

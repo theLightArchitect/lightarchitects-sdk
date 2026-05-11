@@ -21,8 +21,10 @@
 //! requires swapping the host to an Agent-SDK-built agent or lÆx0 via
 //! `--host-cmd` and is gated by the separate licensing review in Phase 9.
 
+pub mod agent;
 pub mod auth;
 pub mod config;
+pub mod container;
 /// Squad Comms — HTTP wrapper over the conductor task queue and soul-chat sessions.
 pub mod coordination;
 pub mod copilot;
@@ -31,6 +33,7 @@ pub mod csp;
 /// Squad Dispatch — heuristic classifier + in-process agent orchestration.
 pub mod dispatch;
 pub mod events;
+pub mod init;
 pub mod mcp_config;
 pub mod memory;
 pub mod polytope_data;
@@ -39,6 +42,7 @@ pub mod server;
 pub mod session;
 pub mod session_cwd;
 pub mod session_fork;
+pub mod session_store;
 pub mod setup;
 pub mod static_assets;
 pub mod terminal;

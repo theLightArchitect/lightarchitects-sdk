@@ -9,7 +9,7 @@ export default defineConfig({
   // Supplementary specs run on-demand via CLI filter:
   //   pnpm test:e2e -- claude-code-oauth   (wizard + real Haiku, resets setup)
   //   pnpm test:e2e -- screenshot-tour     (standalone visual capture)
-  testMatch: ['**/webshell.spec.ts'],
+  testMatch: ['**/webshell.spec.ts', '**/conversational.spec.ts', '**/northstar.spec.ts'],
 
   // Snapshot baselines committed alongside tests (§57.6 visual tier).
   // First run creates them; subsequent runs diff against them.
@@ -30,29 +30,18 @@ export default defineConfig({
   ],
 
   use: {
+    // Always headed — bugs don't reproduce in headless.
     headless: false,
-    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8733',
-    viewport: { width: 1440, height: 900 },
 
-    // §57.2 — always-on artifacts. Every run produces a full evidence bundle.
-    trace: 'on',          // ZIP: DOM snapshots + network + timeline
-    screenshot: 'on',     // PNG at end of every test (pass and fail)
-    video: 'on',          // MP4 full recording, always-on
-
-    // HAR recorded per-context inside specs that manage their own browser
-    // (webshell.spec.ts, claude-code-oauth.spec.ts). The entry here covers
-    // any spec that uses the default Playwright fixture context.
+    // Record HAR for every test run (replay + audit).
     recordHar: {
-      path: 'test-results/default-context.har',
+      path: 'test-results/webshell-e2e.har',
       mode: 'full',
     },
 
-    // PLAYWRIGHT_SLOW_MO=50 for visual debugging.
-    launchOptions: {
-      slowMo: process.env.PLAYWRIGHT_SLOW_MO ? Number(process.env.PLAYWRIGHT_SLOW_MO) : 0,
-    },
+    // Always capture artifacts for post-mortem.
+    trace: 'on',
+    screenshot: 'on',
+    video: 'on',
   },
-
-  // No webServer block — run against the live backend.
-  // Start with: make deploy && cargo run --bin lightarchitects-webshell
 });

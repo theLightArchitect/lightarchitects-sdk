@@ -281,6 +281,8 @@ pub struct BuildResponse {
     pub claude_agent_template: Option<String>,
     /// Echo of the model override, if any.
     pub model: Option<String>,
+    /// Whether this build will spawn in a container (true) or native PTY (false).
+    pub containerized: bool,
 }
 
 /// Sanitised view of [`AgentSession`] — omits Ollama `auth_token`.
@@ -361,16 +363,40 @@ pub async fn create_build_handler(
     session.allowed_tools = body.allowed_tools;
     session.disallowed_tools = body.disallowed_tools;
 
+    session.containerized = state.docker_capable == crate::container::DockerCapability::Ready
+        && state.config.container_mode != crate::container::ContainerMode::ForceDisable;
+
     let resp = BuildResponse {
         build_id: session.build_id,
         cwd: session.cwd.clone(),
         agent: AgentDescriptor::from_session(&session.agent),
         claude_agent_template: session.claude_agent_template.clone(),
         model: session.model.clone(),
+        containerized: session.containerized,
     };
+
+    if let Ok(store) = state.session_store.lock() {
+        if let Err(e) = store.insert(
+            &session.build_id.to_string(),
+            session.cwd.to_string_lossy().as_ref(),
+            match session.agent.kind() {
+                crate::config::AgentKind::Lightarchitects => "lightarchitects",
+                crate::config::AgentKind::Codex => "codex",
+                crate::config::AgentKind::LightarchitectsNative => "lightarchitects_native",
+            },
+            None,
+            session.model.as_deref(),
+            session.containerized,
+        ) {
+            tracing::error!(error = %e, "session_store insert failed");
+        }
+    }
 
     let session = Arc::new(session);
     let _prev = state.builds.insert(Arc::clone(&session));
+    state
+        .telemetry
+        .build_created(&session.build_id, &session.cwd);
     info!(build_id = %resp.build_id, cwd = %body.cwd.display(), "build session created");
 
     (StatusCode::OK, Json(resp)).into_response()
@@ -404,6 +430,7 @@ pub async fn build_details_handler(
         agent: AgentDescriptor::from_session(&session.agent),
         claude_agent_template: session.claude_agent_template.clone(),
         model: session.model.clone(),
+        containerized: session.containerized,
     };
 
     (StatusCode::OK, Json(resp)).into_response()
@@ -664,7 +691,9 @@ pub async fn create_plan_handler(
 
     // Scaffold per-build manifest directory.
     let manifest_dir = helix_root.join("corso").join("builds").join(&codename);
-    let _ = std::fs::create_dir_all(&manifest_dir);
+    if let Err(e) = std::fs::create_dir_all(&manifest_dir) {
+        warn!(error = %e, "failed to create manifest dir");
+    }
     let manifest_path = manifest_dir.join("manifest.yaml");
     if !manifest_path.exists() {
         let scaffold = format!(
@@ -672,7 +701,9 @@ pub async fn create_plan_handler(
             codename = codename,
             now = chrono::Utc::now().to_rfc3339(),
         );
-        let _ = std::fs::write(&manifest_path, scaffold);
+        if let Err(e) = std::fs::write(&manifest_path, scaffold) {
+            warn!(error = %e, "failed to write manifest scaffold");
+        }
     }
 
     info!(codename = %codename, "plan created in active.yaml");
@@ -860,6 +891,7 @@ mod tests {
             )),
             claude_agent_template: None,
             model: None,
+            containerized: false,
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(

@@ -57,6 +57,8 @@ export interface Build {
   tier?: number;
   codename?: string;  // adjective-gerund-noun build identifier (from portfolio YAML)
   branch?: string;    // feature branch (e.g. feat/luminous-tracing-polytope)
+  /** Agent descriptor from the build session — `kind` indicates which agent runs this build. */
+  agent?: { kind: string; backend?: string };
 }
 
 export type BuildStatus = 'queued' | 'in_progress' | 'completed' | 'failed' | 'paused';
@@ -299,6 +301,20 @@ export type EventType =
   | 'training_progress'
   | 'fs_mutation_pending'
   | 'strand_convergence';
+
+// --- Agent protocol (native agent bridge) ---
+
+/** Agent event streamed from the native agent bridge. */
+export type AgentEvent =
+  | { type: 'text'; chunk: string }
+  | { type: 'thinking'; content: string }
+  | { type: 'tool_start'; name: string; id: string; input: unknown }
+  | { type: 'tool_complete'; id: string; success: boolean; duration_ms: number; result?: string }
+  | { type: 'complete'; reason: { kind: 'complete' | 'max_iterations' | 'token_budget_exhausted' | 'user_cancelled' | 'timeout' | 'error' | 'verify_exhausted'; message?: string } }
+  | { type: 'error'; message: string; recoverable?: boolean }
+  | { type: 'token_usage'; input: number; output: number }
+  | { type: 'status_update'; text: string }
+  | { type: 'heartbeat' };
 
 // --- CORSO scout plan (PlanView) ---
 

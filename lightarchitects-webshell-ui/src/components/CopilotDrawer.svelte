@@ -5,13 +5,13 @@
     findings, selectedPillar, focusedSibling, spikeSibling,
     buildBuildContext, authProfile, ollamaConfig, terminalConnected,
     builds, siblingHealth, arenaStats, alertStats, drawerHeightPx, waves,
-    clearCopilotHistory,
+    clearCopilotHistory, isNativeAgent,
   } from '$lib/stores';
   import { SIBLING_COLORS } from '$lib/design-tokens';
   import { api } from '$lib/api';
   import { parseCommand, SLASH_COMMANDS } from '$lib/commands';
   import { connectSSE, disconnectSSE } from '$lib/sse';
-  import { TerminalWS } from '$lib/ws';
+  import { TerminalWS, AgentWS } from '$lib/ws';
   import SiblingDispatch from './SiblingDispatch.svelte';
   import OllamaConfigModal from './OllamaConfigModal.svelte';
   import SettingsOverlay from './SettingsOverlay.svelte';
@@ -19,7 +19,7 @@
   import { settingsOpen, pendingResumeSessionId, serverCwd } from '$lib/setup';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
   import { renderMarkdown } from '$lib/markdown';
-  import type { CopilotMessage, SiblingId } from '$lib/types';
+  import type { CopilotMessage, SiblingId, AgentEvent } from '$lib/types';
   import { Terminal } from '@xterm/xterm';
   import { FitAddon } from '@xterm/addon-fit';
 
@@ -58,6 +58,50 @@
   let showSearch = $state(false);
   let messagesEl: HTMLDivElement | undefined = $state();
   let oscillatorEl: HTMLCanvasElement | undefined = $state();
+
+  // --- Native agent bridge state ---
+  let agentWs: AgentWS | null = $state(null);
+  let buildAgentKind = $state<string | undefined>(undefined);
+  let pendingMessages: string[] = $state([]);
+  const MAX_PENDING = 50;
+
+  // Wire AgentWS when a native-agent build is active and we're in chat mode
+  $effect(() => {
+    const buildId = sharedBuildId;
+    const native = $isNativeAgent || buildAgentKind === 'lightarchitects_native';
+    if (!buildId || !native) {
+      agentWs?.disconnect();
+      agentWs = null;
+      pendingMessages = [];
+      return;
+    }
+
+    const ws = new AgentWS(
+      buildId,
+      (ev: AgentEvent) => handleAgentEvent(ev),
+      () => {
+        // connected — flush any messages queued while handshake was in progress
+        while (pendingMessages.length > 0) {
+          const msg = pendingMessages.shift();
+          if (msg) ws.sendMessage(msg);
+        }
+      },
+      () => {
+        // disconnected — if we were mid-turn, surface it so the UI doesn't hang
+        if (get(copilotLoading)) {
+          copilotLoading.set(false);
+          addMessage('system', 'Agent connection lost. Reconnecting…');
+        }
+      },
+    );
+    ws.connect();
+    agentWs = ws;
+
+    return () => {
+      ws.disconnect();
+      agentWs = null;
+    };
+  });
 
   // History search — filter by case-insensitive substring match on content
   const filteredMessages = $derived(
@@ -256,6 +300,53 @@
     if (id && !sharedBuildId) sharedBuildId = id;
   });
 
+  // --- Agent event handler — converts NDJSON bridge events into chat messages ---
+  function handleAgentEvent(ev: AgentEvent): void {
+    switch (ev.type) {
+      case 'text':
+        // Append to the current assistant message if one is in flight,
+        // otherwise start a new one.
+        copilotMessages.update((msgs) => {
+          const updated = [...msgs];
+          const last = updated[updated.length - 1];
+          if (last && last.role === 'assistant' && get(copilotLoading)) {
+            updated[updated.length - 1] = { ...last, content: last.content + ev.chunk };
+          } else {
+            updated.push({ id: crypto.randomUUID(), role: 'assistant', content: ev.chunk, timestamp: new Date().toISOString() });
+          }
+          return updated;
+        });
+        break;
+      case 'thinking':
+        // Render thinking as a subtle italic system message
+        addMessage('system', ev.content);
+        break;
+      case 'tool_start':
+        addMessage('system', `[${ev.name}] ${JSON.stringify(ev.input)}`);
+        break;
+      case 'tool_complete':
+        addMessage('system', `${ev.success ? '✅' : '❌'} [${ev.id}] ${ev.duration_ms}ms${ev.result ? '\n' + ev.result : ''}`);
+        break;
+      case 'status_update':
+        addMessage('system', ev.text);
+        break;
+      case 'error':
+        addMessage('system', `Error: ${ev.message}`);
+        copilotLoading.set(false);
+        break;
+      case 'complete':
+        copilotLoading.set(false);
+        break;
+      case 'token_usage':
+        // Silently ignore — AgentConsole shows token stats if user wants detail
+        break;
+      case 'heartbeat':
+        break;
+      default:
+        break;
+    }
+  }
+
   async function ensureBuild(): Promise<string> {
     if (sharedBuildId) return sharedBuildId;
     const existing = $currentBuildId;
@@ -278,9 +369,15 @@
       body.resume_session_id = resumeId;
       pendingResumeSessionId.set(null);
     }
-    const resp = await api.createBuild(body) as { build_id: string };
+    const resp = await api.createBuild(body) as {
+      build_id: string;
+      agent?: { kind: string; backend?: string };
+    };
     sharedBuildId = resp.build_id;
     currentBuildId.set(resp.build_id);
+    if (resp.agent?.kind) {
+      buildAgentKind = resp.agent.kind;
+    }
     return resp.build_id;
   }
 
@@ -442,6 +539,30 @@
     let buildId: string | null = null;
     try { buildId = await ensureBuild(); }
     catch { mockStream('Could not create build session. Is the webshell running?'); copilotLoading.set(false); return; }
+
+    // Native agent bridge path: streaming NDJSON via WebSocket
+    const isNative = buildAgentKind === 'lightarchitects_native' || get(isNativeAgent);
+    if (agentWs) {
+      if (agentWs.connected) {
+        agentWs.sendMessage(text);
+      } else if (pendingMessages.length < MAX_PENDING) {
+        pendingMessages.push(text);
+      } else {
+        addMessage('system', 'Message queue full — connection pending. Please wait or retry.');
+      }
+      return;
+    }
+    if (isNative) {
+      // WS hasn't been created yet (effect pending) — queue for flush on connect
+      if (pendingMessages.length < MAX_PENDING) {
+        pendingMessages.push(text);
+      } else {
+        addMessage('system', 'Message queue full — connection pending. Please wait or retry.');
+      }
+      return;
+    }
+
+    // Fallback: legacy HTTP POST (non-native builds, Ollama, Anthropic CLI modes)
     try {
       const result = await api.copilotChat(buildId!, `[Context]\n${contextString}\n\n[User]\n${text}`);
       const response = typeof result === 'object' && result !== null && 'response' in result
@@ -542,6 +663,54 @@
     const handler = () => { if (!open) open = true; };
     window.addEventListener('la:open-copilot', handler);
     return () => window.removeEventListener('la:open-copilot', handler);
+  });
+
+  // ── E2E injection bridge ────────────────────────────────────────────────────
+  // Only active in dev/test. Allows Playwright tests to inject synthetic
+  // AgentEvents without a real WebSocket connection.
+  $effect(() => {
+    if (import.meta.env.PROD) return;
+
+    const injectHandler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { events?: import('./types').AgentEvent[] } | undefined;
+      if (!detail?.events) return;
+      for (const ev of detail.events) {
+        handleAgentEvent(ev);
+      }
+    };
+    window.addEventListener('la:e2e-inject-agent-events', injectHandler);
+
+    const rawHandler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { raw?: string } | undefined;
+      if (!detail?.raw) return;
+      // Simulate AgentWS.onmessage parsing the raw string
+      try {
+        const parsed = JSON.parse(detail.raw) as Record<string, unknown>;
+        if (parsed.type === 'text' && typeof parsed.chunk === 'string') {
+          handleAgentEvent(parsed as import('./types').AgentEvent);
+        } else {
+          handleAgentEvent({ type: 'error', message: `Malformed event: ${String(parsed.type)}` });
+        }
+      } catch {
+        handleAgentEvent({ type: 'text', chunk: detail.raw });
+      }
+    };
+    window.addEventListener('la:e2e-inject-raw-ws', rawHandler);
+
+    const disconnectHandler = () => {
+      // Simulate the onClose callback path
+      if (get(copilotLoading)) {
+        copilotLoading.set(false);
+        addMessage('system', 'Agent connection lost. Reconnecting…');
+      }
+    };
+    window.addEventListener('la:e2e-simulate-ws-disconnect', disconnectHandler);
+
+    return () => {
+      window.removeEventListener('la:e2e-inject-agent-events', injectHandler);
+      window.removeEventListener('la:e2e-inject-raw-ws', rawHandler);
+      window.removeEventListener('la:e2e-simulate-ws-disconnect', disconnectHandler);
+    };
   });
 </script>
 

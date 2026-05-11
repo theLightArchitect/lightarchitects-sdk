@@ -38,7 +38,10 @@ async fn spawn_server() -> (String, String, Arc<BuildRegistry>) {
         ..Default::default()
     };
     let cfg = Config::resolve_with_token(cli, Some(TOKEN.to_owned())).unwrap();
-    let state = AppState::for_test(cfg);
+    let state = AppState::for_test(
+        cfg,
+        lightarchitects_webshell::container::DockerCapability::Unavailable,
+    );
     let builds = Arc::clone(&state.builds);
     let app = build_app(state);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

@@ -1,75 +1,75 @@
-# Webshell Capability-Coverage Matrix
+# Capability-Coverage Matrix — `lightarchitects-webshell`
 
-> If every test mapped to a capability passes, that capability is production-ready.
-> This matrix maps each `lightarchitects-webshell/tests/` file and `e2e/` spec to one
-> of the 12 fundamental capabilities.
+Maps every test file to production capabilities. If every test in a capability block passes, that capability is **production-ready**.
 
-## Capabilities
+---
 
-| ID | Capability | Description | Prod-Ready Gate |
-|---|---|---|---|
-| C01 | Agent Dispatch | Spawn, fanout, cancel, scope enforcement, 8-sibling coverage | `cargo test --test phase_e_multi_build` |
-| C02 | LASDLC Build Lifecycle | Plan, build, verify, deploy, secure, observe, enrich | `cargo test --test phase_c_wire` + `phase_d_stubs` |
-| C03 | Vault / Helix | Query, inject, sanitize, pre-push encryption, soul-public sync | `cargo test --test helix_recursion` |
-| C04 | Tool Ecosystem | 25+ tools via ToolRegistry, plugin scanner, permission gates | `cargo test --test fullstack_contract` |
-| C05 | TUI / Webshell UI | ratatui rendering, 3D helix panel, build tracker, settings overlay | `pnpm exec vitest run` + `pnpm exec playwright test` |
-| C06 | Session Management | Fork, merge, SQLite persistence, auth token isolation | `cargo test --test session_fork` |
-| C07 | Container & Infra | Docker probe, image provisioning, spawner, init profiler, telemetry, shutdown | `cargo test --test container_e2e` + `init_e2e` |
-| C08 | Conversational Mode | Interactive chat, brainstorming, context accumulation, no-build iteration | `pnpm exec playwright test e2e/conversational.spec.ts` |
-| C09 | Security Boundaries | Injection sanitization, logging redaction, path traversal, HMAC, confusables | `cargo test --test adversarial_e2e` + `authorization` |
-| C10 | MCP Mesh | Sibling spawn, reconnect, health, custom binary validation | `cargo test --test mcp_sdk` (SDK side) |
-| C11 | State Machine / Task Queue | Dependency DAG, cycle detection, cascade failure, scheduler | `cargo test --test chaos` + `idempotency` |
-| C12 | Output Grading | Rubric application (C1-C8), score persistence, calibration drift | `cargo test --test rubric_engine` + Playwright `rubric-score.spec.ts` |
+## Capabilities (12)
 
-## File-to-Capability Map — Rust Backend Tests
-
-| Test File | Primary Capability | Secondary | Status |
-|---|---|---|---|
-| `adversarial_e2e.rs` | C09 Security | C02 LASDLC | ✅ |
-| `authorization.rs` | C09 Security | — | ✅ |
-| `chaos.rs` | C11 State Machine | — | ✅ |
-| `contract.rs` | C04 Tools | C02 LASDLC | ✅ |
-| `fullstack_contract.rs` | C02 LASDLC | C04 Tools | ✅ |
-| `helix_recursion.rs` | C03 Vault | — | ✅ |
-| `idempotency.rs` | C11 State Machine | — | ✅ |
-| `phase_c_wire.rs` | C02 LASDLC | — | ✅ |
-| `phase_d_stubs.rs` | C02 LASDLC | — | ✅ |
-| `phase_e_auth_profile.rs` | C09 Security | C06 Session | ✅ |
-| `phase_e_multi_build.rs` | C02 LASDLC | C01 Agent Dispatch | ✅ |
-| `user_journey.rs` | C02 LASDLC | C01 Agent Dispatch | ✅ |
-
-## Gaps — Rust Backend
-
-| Missing Test | Capability | What It Covers |
+| ID | Capability | Definition |
 |---|---|---|
-| `container_e2e.rs` | C07 Container & Infra | Docker probe, ImageManager idempotency, spawner rejection, embedded Dockerfile build |
-| `init_e2e.rs` | C07 Container & Infra | Profiler checkpoint events, telemetry UUID hashing, shutdown registry grace |
-| `session_persistence.rs` | C06 Session | SQLite roundtrip, concurrent writes, touch timestamp, noop store |
+| A | **Agent Dispatch** | Spawn, fanout, cancel, scope enforcement, sibling coverage |
+| B | **LASDLC Build Lifecycle** | Plan, build, verify, deploy, secure, observe, enrich |
+| C | **Vault / Helix** | Query, inject, sanitize, pre-push encryption, soul-public sync |
+| D | **Tool Ecosystem** | 25+ tools via ToolRegistry, plugin scanner, permission gates |
+| E | **TUI / Webshell UI** | ratatui rendering, 3D helix panel, build tracker, settings overlay |
+| F | **Session Management** | Fork, merge, SQLite persistence, auth token isolation |
+| G | **Container & Infra** | Docker probe, image provisioning, spawner, init profiler, telemetry, shutdown |
+| H | **Conversational Mode** | Interactive chat, brainstorming, context accumulation, no-build iteration |
+| I | **Security Boundaries** | Injection sanitization, logging redaction, path traversal, HMAC, confusables |
+| J | **MCP Mesh** | Sibling spawn, reconnect, health, custom binary validation |
+| K | **State Machine / Task Queue** | Dependency DAG, cycle detection, cascade failure, scheduler |
+| L | **Output Grading** | Rubric application, score persistence, calibration drift detection |
 
-## File-to-Capability Map — UI (Playwright E2E)
+---
 
-| Spec | Capability | Status |
+## Test-to-Capability Map
+
+| Test File | Capabilities Covered | Notes |
 |---|---|---|
-| `e2e/webshell.spec.ts` | C05 TUI / Webshell UI | ✅ |
-| `e2e/agent-dispatch.spec.ts` | C01 Agent Dispatch | 🔴 MISSING |
-| `e2e/build-lifecycle.spec.ts` | C02 LASDLC | 🔴 MISSING |
-| `e2e/vault-query.spec.ts` | C03 Vault | 🔴 MISSING |
-| `e2e/session-fork.spec.ts` | C06 Session | 🔴 MISSING |
-| `e2e/container-toggle.spec.ts` | C07 Container | 🔴 MISSING |
-| `e2e/conversational.spec.ts` | C08 Conversational | 🔴 MISSING |
-| `e2e/rubric-score.spec.ts` | C12 Output Grading | 🔴 MISSING |
+| `tests/container_e2e.rs` | G | Docker probe, ImageManager, spawner, embedded image strings |
+| `tests/init_e2e.rs` | G | Profiler checkpoints, telemetry hashing, shutdown registry LIFO + panic isolation |
+| `tests/session_persistence.rs` | F | SQLite roundtrip, concurrent writes, touch semantics, noop store |
+| `tests/adversarial_e2e.rs` | I | Injection sanitization, path traversal, HMAC, confusables |
+| `tests/authorization.rs` | I | Auth profile, multi-build authorization gates |
+| `tests/chaos.rs` | K | Cascade failure, scheduler under stress |
+| `tests/contract.rs` | D, J | Type contracts, binary framing, tool registry validation |
+| `tests/e2e/webshell.spec.ts` | E | Playwright E2E — headed, UI smoke test |
+| `tests/fullstack_contract.rs` | B, K | LASDLC build lifecycle + task queue end-to-end |
+| `tests/idempotency.rs` | K | Idempotency keys, duplicate request rejection |
+| `tests/phase_c_wire.rs` | J | MCP mesh wire protocol, reconnect, heartbeat |
+| `tests/phase_d_stubs.rs` | D | Tool stub registry, permission gates |
+| `tests/phase_e_auth_profile.rs` | I | Auth profile validation, token isolation |
+| `tests/phase_e_multi_build.rs` | B, K | Multi-build orchestration, dependency DAG |
+| `tests/user_journey.rs` | E, H | User journey E2E — onboarding, chat, build promotion |
+| `tests/vault_cli_tests.rs` | C, I | Vault clone, validate-for-push, sync-public |
 
-## Running the Matrix
+---
 
-```bash
-# Rust backend — all integration tests
-cd lightarchitects-webshell
-cargo test --test '*'
+## Gaps
 
-# UI unit tests
-cd lightarchitects-webshell-ui
-pnpm exec vitest run
+| Capability | Missing Coverage | Priority |
+|---|---|---|
+| A | Agent dispatch end-to-end (spawn + stream + render) | HIGH |
+| E | TUI snapshot tests (insta + ratatui) | MEDIUM |
+| H | Conversational mode backend tests (webshell chat route) | MEDIUM |
+| L | Rubric UI component (Svelte radar chart) | LOW |
 
-# UI E2E (headed only — headless: false per policy)
-PLAYWRIGHT_BASE_URL=http://localhost:5173 pnpm exec playwright test
-```
+---
+
+## Rubric: LASDLC C1-C8
+
+Same definitions as `lightarchitects-gateway/tests/CAPABILITY_MATRIX.md`.
+
+| Component | Weight | Scoring Method |
+|---|---|---|
+| C1 — Output Completeness | 10% | Checklist matching |
+| C2 — Validation Discipline | 15% | Cross-validation flag + citations |
+| C3 — Gate Compliance | 15% | Gate runner verdict aggregation |
+| C4 — Operator Experience | 10% | Jargon penalty + conciseness reward |
+| C5 — Resource + Trace Discipline | 10% | Token count buckets + span coverage |
+| C6 — Iteration Integrity | 10% | Loop-cycle / oscillation detection |
+| C7 — Northstar Alignment | 15% | Keyword overlap task → output |
+| C8 — Context Precision | 15% | Extra-topic penalty (hallucination guard) |
+
+Score bands: Exemplary (90-100) · Strong (75-89) · Acceptable (60-74) · Deficient (45-59) · Unsafe (<45)

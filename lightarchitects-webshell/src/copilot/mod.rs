@@ -81,7 +81,7 @@ pub fn resolve_binary(name: &str) -> String {
 /// 4. `ANTHROPIC_API_KEY` env var (if not a placeholder)
 ///
 /// Returns `None` if no valid key found — the CLI will fall back to its own resolution.
-fn resolve_api_key_for_native() -> Option<String> {
+pub fn resolve_api_key_for_native() -> Option<String> {
     // 1. Canonical keychain namespace ("lightarchitects") — new writes land here.
     if let Ok(entry) = keyring::Entry::new("lightarchitects", "anthropic") {
         if let Ok(key) = entry.get_password() {

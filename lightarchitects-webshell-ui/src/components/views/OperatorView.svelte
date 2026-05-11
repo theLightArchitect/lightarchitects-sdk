@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { activeBuild, logEntries, artifacts } from '$lib/stores';
+  import { activeBuild, logEntries, artifacts, isNativeAgent } from '$lib/stores';
   import LogStream from '$lib/../components/LogStream.svelte';
   import SiblingDispatch from '$lib/../components/SiblingDispatch.svelte';
+  import AgentConsole from '$lib/../components/AgentConsole.svelte';
   import ArtifactPanel from '$lib/../components/ArtifactPanel.svelte';
 
   let build = $derived($activeBuild);
@@ -33,12 +34,16 @@
       <!-- Right column: agent dispatch + artifacts -->
       <div class="operator-side">
         <div class="side-panel">
-          <div class="panel-head">
-            <span class="panel-label">AGENT DISPATCH</span>
-          </div>
-          <div class="panel-body">
-            <SiblingDispatch />
-          </div>
+          {#if $isNativeAgent}
+            <AgentConsole />
+          {:else}
+            <div class="panel-head">
+              <span class="panel-label">AGENT DISPATCH</span>
+            </div>
+            <div class="panel-body">
+              <SiblingDispatch />
+            </div>
+          {/if}
         </div>
 
         {#if buildArtifacts.length > 0}

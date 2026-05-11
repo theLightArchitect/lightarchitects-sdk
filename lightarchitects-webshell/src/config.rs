@@ -361,6 +361,8 @@ pub struct Config {
     /// Per-build `POST /api/builds` requests may override this; the `Config`
     /// value is just the default for builds that don't specify.
     pub claude_agent_template: Option<String>,
+    /// Container mode override (env var `LA_CONTAINER_MODE`).
+    pub container_mode: crate::container::ContainerMode,
 }
 
 /// Where the auth token was resolved from.
@@ -732,6 +734,7 @@ impl Config {
 
         let agent = resolve_agent_session(&cli);
         let claude_agent_template = cli.claude_agent.clone();
+        let container_mode = crate::container::ContainerMode::from_env();
 
         Ok(Self {
             port: cli.port,
@@ -741,6 +744,7 @@ impl Config {
             token_source,
             agent,
             claude_agent_template,
+            container_mode,
         })
     }
 

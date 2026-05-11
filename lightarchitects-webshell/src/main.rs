@@ -31,10 +31,17 @@ async fn main() -> ExitCode {
     }
 
     init_tracing();
+    lightarchitects_webshell::profile_checkpoint!("tracing_ready");
+
+    let docker_capable = lightarchitects_webshell::container::probe::probe_docker().await;
+    lightarchitects_webshell::profile_checkpoint!("docker_probed");
 
     let cli = Cli::parse();
     let config = match Config::resolve(cli) {
-        Ok(c) => c,
+        Ok(c) => {
+            lightarchitects_webshell::profile_checkpoint!("config_resolved");
+            c
+        }
         Err(e) => {
             error!(error = %e, "failed to resolve webshell configuration");
             return ExitCode::from(2);
@@ -67,18 +74,8 @@ async fn main() -> ExitCode {
     eprintln!("  Keychain: ~/.lightarchitects/webshell/.token");
     eprintln!();
 
-    match server::run_with_port_retry(config).await {
-        Ok(bound_port) => {
-            if bound_port != port {
-                // A fallback port was used — re-print the access URL with the
-                // actual port so the user knows where to connect.
-                eprintln!();
-                eprintln!("  Note: port {port} was in use — started on port {bound_port}");
-                eprintln!("  Open in your browser:");
-                eprintln!("    http://localhost:{bound_port}#token={token}");
-                eprintln!();
-            }
-        }
+    let (bound_port, driver) = match server::run_with_port_retry(config, docker_capable).await {
+        Ok(pair) => pair,
         Err(ServerError::PortInUse { first_port, tried }) => {
             eprintln!();
             eprintln!("  ERROR: port {first_port} (and {tried} fallback(s)) are all in use.");
@@ -93,12 +90,38 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
         Err(e) => {
-            error!(error = %e, "webshell server exited with error");
+            error!(error = %e, "webshell server bind error");
             return ExitCode::FAILURE;
         }
+    };
+
+    // Bind succeeded — checkpoint and, if a fallback port was used, re-print
+    // the access URL so the user knows where to connect.
+    lightarchitects_webshell::profile_checkpoint!("server_bound");
+    if bound_port != port {
+        eprintln!();
+        eprintln!("  Note: port {port} was in use — started on port {bound_port}");
+        eprintln!("  Open in your browser:");
+        eprintln!("    http://localhost:{bound_port}#token={token}");
+        eprintln!();
     }
 
-    ExitCode::SUCCESS
+    let shutdown_fut = lightarchitects_webshell::init::shutdown::wait_for_shutdown();
+
+    tokio::select! {
+        result = driver => {
+            if let Err(e) = result {
+                error!(error = %e, "webshell server exited with error");
+                return ExitCode::FAILURE;
+            }
+            // Clean server exit (unexpected but harmless).
+            ExitCode::SUCCESS
+        }
+        () = shutdown_fut => {
+            tracing::info!("shutdown signal received, exiting");
+            ExitCode::SUCCESS
+        }
+    }
 }
 
 fn init_tracing() {

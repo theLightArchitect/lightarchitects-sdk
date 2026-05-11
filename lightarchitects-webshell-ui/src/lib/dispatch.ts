@@ -33,38 +33,41 @@ export interface Classification {
 // ── DispatchEvent union (mirrors Rust enum) ───────────────────────────────────
 
 export interface PerAgentStateEvent {
-  PerAgentState: {
-    agent: DomainAgent;
-    state: AgentState;
-    message: string | null;
-    files_touched: number | null;
-    token_count: number | null;
-    elapsed_ms: number | null;
-  };
+  type: 'per_agent_state';
+  agent: DomainAgent;
+  state: AgentState;
+  message: string | null;
+  files_touched: number | null;
+  token_count: number | null;
+  elapsed_ms: number | null;
 }
 
 export interface MailboxMessageEvent {
-  MailboxMessage: { agent: DomainAgent; text: string };
+  type: 'mailbox_message';
+  agent: DomainAgent;
+  text: string;
 }
 
 export interface CompleteEvent {
-  Complete: { elapsed_ms: number };
+  type: 'complete';
+  elapsed_ms: number;
 }
 
 export interface ErrorEvent {
-  Error: { agent: DomainAgent | null; message: string };
+  type: 'error';
+  agent: DomainAgent | null;
+  message: string;
 }
 
 export interface ToolUsageEvent {
-  ToolUsage: {
-    agent: DomainAgent;
-    run_id: string;
-    tool: string;
-    action: string;
-    timestamp: string;
-    status: 'fired' | 'skipped' | 'failed';
-    latency_ms?: number;
-  };
+  type: 'tool_usage';
+  agent: DomainAgent;
+  run_id: string;
+  tool: string;
+  action: string;
+  timestamp: string;
+  status: 'fired' | 'skipped' | 'failed';
+  latency_ms?: number;
 }
 
 export type DispatchEvent =
@@ -257,7 +260,7 @@ export function streamDispatch(
               const evt = JSON.parse(line.slice(6)) as DispatchEvent;
               onEvent(evt);
             } catch {
-              // skip malformed frames
+              // ignore malformed SSE lines
             }
           }
         }
@@ -301,11 +304,11 @@ export function addToHistory(
 // ── Event helpers ─────────────────────────────────────────────────────────────
 
 export function isComplete(e: DispatchEvent): e is CompleteEvent {
-  return 'Complete' in e;
+  return e.type === 'complete';
 }
 
 export function isError(e: DispatchEvent): e is ErrorEvent {
-  return 'Error' in e;
+  return e.type === 'error';
 }
 
 export function isTerminal(e: DispatchEvent): boolean {

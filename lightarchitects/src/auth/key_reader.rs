@@ -133,7 +133,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let cfg = isolated(&dir);
         std::fs::write(&cfg.key_file_path, "  la-test-key-abc\n").unwrap();
-        assert_eq!(KeyReader::read(&cfg).unwrap(), "la-test-key-abc");
+        assert_eq!(
+            KeyReader::read_from_file(&cfg.key_file_path).unwrap(),
+            "la-test-key-abc"
+        );
     }
 
     #[test]

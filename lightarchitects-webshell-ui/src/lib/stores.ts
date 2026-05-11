@@ -340,10 +340,20 @@ export const terminalConnected = writable(false);
 export const authProfile = writable<AuthProfile>('anthropic');
 export const ollamaConfig = writable<OllamaConfig | null>(null);
 
+// --- Agent reactive state (native agent bridge) ---
+export const agentConnected = writable(false);
+export const agentEvents = writable<import('./types').AgentEvent[]>([]);
+export const agentInput = writable('');
+
 // --- Derived: active build ---
 export const activeBuild = derived(
   [builds, currentBuildId],
   ([$builds, $id]) => $id ? $builds.find(b => b.id === $id) ?? null : null
+);
+
+// Whether the active build uses the native agent bridge (kind === 'lightarchitects_native')
+export const isNativeAgent = derived(activeBuild, ($build) =>
+  $build?.agent?.kind === 'lightarchitects_native'
 );
 
 // --- Derived: project groups (LASDLC — groups builds by project path) ---
