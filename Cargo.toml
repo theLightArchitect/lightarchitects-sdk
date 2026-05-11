@@ -2,15 +2,10 @@
 resolver = "2"
 members = [
     "lightarchitects",          # Unified SDK — all clients + advanced capabilities
-    # lightarchitects-gateway excluded: worktree lockfile collision (same pkg at two local paths)
-    # "lightarchitects-gateway",  # Binary: MCP server + Arena HTTP + Conductor
     "lightarchitects-webshell", # Binary: local web GUI (PTY + 3D helix panel)
 ]
 exclude = [
-    # Excluded from worktree workspace due to lockfile collision (parent path lightarchitects
-    # v0.2.0 conflicts with worktree path lightarchitects v0.2.0 — cargo cannot resolve
-    # two local packages with identical name+version in one workspace).
-    "lightarchitects-gateway",  # re-excluded after build
+    "lightarchitects-gateway",
 ]
 
 [workspace.package]

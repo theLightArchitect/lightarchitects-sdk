@@ -16,6 +16,7 @@
 //! - `GET  /v1/vault/info`
 //! - `POST /v1/admin/canon/upload`
 
+pub mod api_version;
 pub mod circuit_breaker;
 pub mod etag;
 pub mod middleware;

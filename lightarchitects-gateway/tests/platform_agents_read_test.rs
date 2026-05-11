@@ -71,8 +71,7 @@ async fn build_neo4j_state(admin_token: Option<&str>) -> Arc<PlatformState> {
         canon_cache: moka::future::Cache::builder().max_capacity(10).build(),
         agent_cache: moka::future::Cache::builder().max_capacity(10).build(),
         config: PlatformConfig::default(),
-        admin_token: admin_token
-            .map(|t| secrecy::SecretBox::new(Box::new(t.to_owned()))),
+        admin_token: admin_token.map(|t| secrecy::SecretBox::new(Box::new(t.to_owned()))),
         read_token: None,
     })
 }
@@ -111,9 +110,7 @@ fn admin_token() -> String {
             .ok()
             .and_then(|o| String::from_utf8(o.stdout).ok())
             .map(|s| s.trim().to_owned())
-            .expect(
-                "LIGHTARCHITECTS_ADMIN_TOKEN or keychain soul-neo4j-local/admin-token required",
-            )
+            .expect("LIGHTARCHITECTS_ADMIN_TOKEN or keychain soul-neo4j-local/admin-token required")
     })
 }
 
@@ -164,16 +161,15 @@ async fn seed_laex_identity(state: &Arc<PlatformState>, tok: &str) -> String {
     });
 
     let resp = build_http_router(Arc::clone(state))
-        .oneshot(post_admin(
-            "/v1/admin/agents/upload",
-            payload,
-            tok,
-            TEST_IP,
-        ))
+        .oneshot(post_admin("/v1/admin/agents/upload", payload, tok, TEST_IP))
         .await
         .unwrap();
 
-    assert_eq!(resp.status(), StatusCode::CREATED, "fixture upload must succeed");
+    assert_eq!(
+        resp.status(),
+        StatusCode::CREATED,
+        "fixture upload must succeed"
+    );
     body_json(resp)
         .await
         .get("content_hash")
@@ -186,7 +182,7 @@ async fn seed_laex_identity(state: &Arc<PlatformState>, tok: &str) -> String {
 
 /// Validate path param — `"laex"` must pass the `[a-zA-Z0-9._-]` allowlist.
 ///
-/// Structural guard: no Neo4j needed. The validate_path_param function is
+/// Structural guard: no Neo4j needed. The `validate_path_param` function is
 /// pub(crate) so we can't call it directly; verified implicitly by the endpoint
 /// returning 200 (not 400) in A3-01.
 #[test]
@@ -255,10 +251,7 @@ async fn a3_02_integration_unknown_sibling_404() {
     let app = build_http_router(state);
 
     let resp = app
-        .oneshot(get(
-            "/v1/platform/agents/definitely-not-a-sibling",
-            TEST_IP,
-        ))
+        .oneshot(get("/v1/platform/agents/definitely-not-a-sibling", TEST_IP))
         .await
         .unwrap();
 

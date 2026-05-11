@@ -26,7 +26,10 @@ use crate::security::hmac::ct_eq_bytes;
 /// `helix/corso/builds/laex-sibling-promotion/manifest.yaml` for the build
 /// trail and the migration script at `scripts/migrate-claude-to-laex-sibling-identity.sh`
 /// for handling any extant `:SiblingIdentity {sibling: 'claude'}` records.
-const ALLOWED_SIBLINGS: &[&str] = &["corso", "eva", "soul", "quantum", "seraph", "ayin", "laex"];
+/// Permitted sibling slugs — pub(crate) so `api_version::compute_api_version_hash` can
+/// include them in the contract-surface fingerprint (OD-6).
+pub(crate) const ALLOWED_SIBLINGS: &[&str] =
+    &["corso", "eva", "soul", "quantum", "seraph", "ayin", "laex"];
 
 /// Wire admin routes onto the router.
 pub fn admin_routes() -> Router<Arc<PlatformState>> {
@@ -66,7 +69,9 @@ const MAX_CONTENT_BYTES: usize = 512 * 1024; // 512 KB
 const MAX_SKILL_CONTENT_BYTES: usize = 10 * 1024 * 1024; // 10 MB
 
 /// Permitted values for the `kind` field.
-const ALLOWED_KINDS: &[&str] = &["canon", "standard", "template", "skill"];
+///
+/// pub(crate) so `api_version::compute_api_version_hash` can include it in the fingerprint.
+pub(crate) const ALLOWED_KINDS: &[&str] = &["canon", "standard", "template", "skill"];
 
 /// `POST /v1/admin/canon/upload` — upsert a [`PlatformEntry`] node.
 ///

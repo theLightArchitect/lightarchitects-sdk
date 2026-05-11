@@ -75,8 +75,7 @@ async fn build_neo4j_state(admin_token: Option<&str>) -> Arc<PlatformState> {
         canon_cache: moka::future::Cache::builder().max_capacity(10).build(),
         agent_cache: moka::future::Cache::builder().max_capacity(10).build(),
         config: PlatformConfig::default(),
-        admin_token: admin_token
-            .map(|t| secrecy::SecretBox::new(Box::new(t.to_owned()))),
+        admin_token: admin_token.map(|t| secrecy::SecretBox::new(Box::new(t.to_owned()))),
         read_token: None,
     })
 }
@@ -115,9 +114,7 @@ fn admin_token() -> String {
             .ok()
             .and_then(|o| String::from_utf8(o.stdout).ok())
             .map(|s| s.trim().to_owned())
-            .expect(
-                "LIGHTARCHITECTS_ADMIN_TOKEN or keychain soul-neo4j-local/admin-token required",
-            )
+            .expect("LIGHTARCHITECTS_ADMIN_TOKEN or keychain soul-neo4j-local/admin-token required")
     })
 }
 
@@ -167,7 +164,7 @@ fn laex_payload() -> serde_json::Value {
 
 // ── Structural tests (no Neo4j) ───────────────────────────────────────────────
 
-/// ALLOWED_SIBLINGS must contain "laex" post-promotion — structural guard.
+/// `ALLOWED_SIBLINGS` must contain "laex" post-promotion — structural guard.
 #[test]
 fn a2_structural_allowed_siblings_contains_laex() {
     // Verify the guard constant is accessible from the integration harness perspective:
@@ -217,7 +214,7 @@ async fn a2_01_integration_laex_upload_201() {
 
 /// A2-02: Upload with an unknown sibling slug → 422 Unprocessable Entity.
 ///
-/// Validates that ALLOWED_SIBLINGS still excludes the vestigial `"claude"` entry.
+/// Validates that `ALLOWED_SIBLINGS` still excludes the vestigial `"claude"` entry.
 #[tokio::test]
 async fn a2_02_integration_vestigial_claude_returns_422() {
     let tok = admin_token();
@@ -290,7 +287,11 @@ async fn a2_04_integration_idempotent_upsert_same_hash() {
         ))
         .await
         .unwrap();
-    assert_eq!(resp1.status(), StatusCode::CREATED, "first upload must be 201");
+    assert_eq!(
+        resp1.status(),
+        StatusCode::CREATED,
+        "first upload must be 201"
+    );
     let hash1 = body_json(resp1)
         .await
         .get("content_hash")

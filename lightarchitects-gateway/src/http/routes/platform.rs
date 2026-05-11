@@ -40,6 +40,7 @@ pub fn platform_routes() -> Router<Arc<PlatformState>> {
         .route("/v1/platform/health", get(health))
         .route("/v1/identity", get(identity_get))
         .route("/v1/vault/info", get(vault_info))
+        .route("/v1/version", get(version_get))
 }
 
 // ── Override-aware handlers ────────────────────────────────────────────────────
@@ -856,6 +857,24 @@ async fn helix_stream(
 /// `GET /v1/platform/health` — deep liveness probe with Neo4j check.
 ///
 /// Runs `MATCH (m:Migration) RETURN count(m) AS n` inside a 5-second deadline.
+/// `GET /v1/version` — API contract surface fingerprint (OD-6).
+///
+/// No admin token required — operators and SDK clients can poll without privilege.
+/// Returns `api_version`, `api_version_date`, `api_version_hash`, and `contract_surface_count`.
+async fn version_get(State(s): State<Arc<PlatformState>>) -> Response {
+    use crate::http::api_version::{API_VERSION_DATE, API_VERSION_HASH, CONTRACT_SURFACE_COUNT};
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "api_version": s.config.api_version,
+            "api_version_date": API_VERSION_DATE,
+            "api_version_hash": API_VERSION_HASH,
+            "contract_surface_count": CONTRACT_SURFACE_COUNT,
+        })),
+    )
+        .into_response()
+}
+
 /// Returns 200 `healthy` when Neo4j is reachable, 503 `degraded` otherwise.
 /// Records CB success on a healthy probe; does NOT record failure — health is
 /// auth-exempt and unauthenticated callers could otherwise use it to trip the
