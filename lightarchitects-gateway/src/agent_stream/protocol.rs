@@ -112,6 +112,9 @@ pub enum ControlMessage {
     Interrupt,
     /// Steer the agent mid-turn.
     Steer { text: String },
+    /// Override the system prompt for subsequent turns (must be sent before SendMessage).
+    /// `text` is capped at 8 KiB and must not contain NUL bytes; the runner validates both.
+    SetSystemPrompt { text: String },
     /// Execute queued plan actions.
     ExecutePlan,
     /// Ping / keepalive.
