@@ -73,6 +73,51 @@ pub struct AddTaskRequest {
     /// Priority — `high`, `medium`, `low`. Defaults to `medium`.
     #[serde(default)]
     pub priority: Option<String>,
+    /// Build codename this task belongs to (optional, max 200 chars).
+    #[serde(default)]
+    pub build_codename: Option<String>,
+    /// Agent or worker to pre-assign this task to (optional, max 200 chars).
+    #[serde(default)]
+    pub assignee: Option<String>,
+    /// UUID of the build's soul-chat session (optional).
+    #[serde(default)]
+    pub build_session_id: Option<String>,
+}
+
+/// Request body for `POST /api/coordination/sessions/start`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SessionStartRequest {
+    /// Build codename (required, max 200 chars).
+    pub build_codename: String,
+    /// UUID v4 session ID minted by the gateway (required).
+    pub session_id: String,
+}
+
+/// Response for `POST /api/coordination/sessions/start`.
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionStartResponse {
+    /// The session UUID (echoed from the request).
+    pub session_id: String,
+    /// Build codename (echoed from the request).
+    pub build_codename: String,
+    /// Always `"running"` on success.
+    pub status: String,
+}
+
+/// Request body for `POST /api/coordination/sessions/end`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SessionEndRequest {
+    /// UUID of the session to close (required).
+    pub session_id: String,
+}
+
+/// Response for `POST /api/coordination/sessions/end`.
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionEndResponse {
+    /// The session UUID (echoed from the request).
+    pub session_id: String,
+    /// Always `"stopped"` on success.
+    pub status: String,
 }
 
 /// Response for `POST /api/coordination/tasks/add`.

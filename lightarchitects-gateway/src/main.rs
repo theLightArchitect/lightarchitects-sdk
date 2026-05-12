@@ -58,7 +58,7 @@ async fn main() {
         let cwd = cwd.unwrap_or_else(|| {
             std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
         });
-        if let Err(e) = lightarchitects_gateway::agent_stream::run_ndjson(&cwd).await {
+        if let Err(e) = lightarchitects_gateway::agent_stream::run_ndjson(&cwd, None).await {
             eprintln!("Agent stream error: {e}");
             std::process::exit(1);
         }

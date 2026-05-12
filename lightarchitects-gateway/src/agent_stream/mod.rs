@@ -25,16 +25,49 @@ pub mod runner;
 
 use runner::AgentRunner;
 
+/// Maximum byte length for a caller-supplied system prompt.
+/// Prevents token-flood amplification when an untrusted caller controls the prompt.
+pub const SYSTEM_PROMPT_MAX_BYTES: usize = 8 * 1024;
+
+/// Validate a caller-supplied system prompt at the input boundary.
+///
+/// Returns an error string if the prompt violates the security constraints:
+/// - Must not exceed [`SYSTEM_PROMPT_MAX_BYTES`].
+/// - Must not contain NUL bytes (prevents C-string truncation in downstream tools).
+///
+/// # Errors
+///
+/// Returns a static error message string on violation.
+pub fn validate_system_prompt(prompt: &str) -> Result<(), &'static str> {
+    if prompt.len() > SYSTEM_PROMPT_MAX_BYTES {
+        return Err("system_prompt exceeds 8 KiB limit");
+    }
+    if prompt.contains('\0') {
+        return Err("system_prompt contains NUL byte");
+    }
+    Ok(())
+}
+
 /// Run the agent in NDJSON streaming mode.
 ///
 /// - Reads `ControlMessage` lines from stdin.
 /// - Emits `AgentEvent` lines to stdout.
 /// - Blocking; returns when stdin closes or an unrecoverable error occurs.
 ///
+/// `system_prompt` overrides the default "You are a helpful coding assistant." preamble.
+/// It is validated at this boundary (length + NUL check); pass `None` for the default.
+///
 /// # Errors
 ///
-/// Returns an error if the LLM client cannot be initialised from environment.
-pub async fn run_ndjson(cwd: &Path) -> Result<(), Box<dyn std::error::Error>> {
+/// Returns an error if the LLM client cannot be initialised from environment, or if
+/// `system_prompt` fails validation.
+pub async fn run_ndjson(
+    cwd: &Path,
+    system_prompt: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(ref sp) = system_prompt {
+        validate_system_prompt(sp).map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+    }
     if let Some(key) = std::env::var("LA_INHERITED_API_KEY").ok().filter(|s| !s.is_empty()) {
         let backend = std::env::var("LA_INHERITED_BACKEND")
             .ok()
@@ -48,6 +81,11 @@ pub async fn run_ndjson(cwd: &Path) -> Result<(), Box<dyn std::error::Error>> {
         persist_inherited_key(&key, backend);
     }
     let mut runner = AgentRunner::new(cwd)?;
+    if let Some(sp) = system_prompt {
+        runner
+            .set_system_prompt(sp)
+            .map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+    }
     runner.run_ndjson_loop().await;
     Ok(())
 }
@@ -66,7 +104,9 @@ fn persist_inherited_key(key: &str, key_name: &str) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let _ = std::fs::write(&path, toml::to_string_pretty(&keys).unwrap_or_default());
+    if let Ok(serialized) = toml::to_string_pretty(&keys) {
+        let _ = std::fs::write(&path, serialized);
+    }
 }
 
 /// Run the agent in interactive TTY mode (human-facing REPL).

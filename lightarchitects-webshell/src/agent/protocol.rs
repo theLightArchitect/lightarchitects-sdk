@@ -407,6 +407,16 @@ pub enum ControlMessage {
         text: String,
     },
 
+    /// Override the system prompt preamble for subsequent turns.
+    ///
+    /// Must be sent before `SendMessage`. Validated on the gateway side
+    /// (≤ 8 KiB, no NUL bytes). The browser can issue this to inject
+    /// a Governor or Worker role prompt before the first turn.
+    SetSystemPrompt {
+        /// New system prompt preamble text.
+        text: String,
+    },
+
     /// Request the current plan queue be executed.
     ExecutePlan,
 

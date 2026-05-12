@@ -61,6 +61,17 @@ pub struct Task {
     /// time the conductor transitions the task to [`TaskStatus::Failed`].
     #[serde(default)]
     pub resolution_deadline: Option<DateTime<Utc>>,
+    /// Build codename this task belongs to (e.g. `squad-comms-session-per-build`).
+    /// Scopes the task to a specific build for multi-agent coordination.
+    #[serde(default)]
+    pub build_codename: Option<String>,
+    /// Agent or worker that has claimed this task.
+    #[serde(default)]
+    pub assignee: Option<String>,
+    /// UUID of the soul-chat session for this build. Set by `session_start` and
+    /// propagated to all tasks in the same build so workers can join the session.
+    #[serde(default)]
+    pub build_session_id: Option<String>,
 }
 
 /// Task lifecycle status.
@@ -219,6 +230,9 @@ mod tests {
                     output_log: None,
                     awaiting_assertion_id: None,
                     resolution_deadline: None,
+                    build_codename: None,
+                    assignee: None,
+                    build_session_id: None,
                 },
                 Task {
                     id: "t-med".into(),
@@ -235,6 +249,9 @@ mod tests {
                     output_log: None,
                     awaiting_assertion_id: None,
                     resolution_deadline: None,
+                    build_codename: None,
+                    assignee: None,
+                    build_session_id: None,
                 },
                 Task {
                     id: "t-done".into(),
@@ -251,6 +268,9 @@ mod tests {
                     output_log: None,
                     awaiting_assertion_id: None,
                     resolution_deadline: None,
+                    build_codename: None,
+                    assignee: None,
+                    build_session_id: None,
                 },
             ],
         }
@@ -386,6 +406,9 @@ mod tests {
                     output_log: None,
                     awaiting_assertion_id: None,
                     resolution_deadline: None,
+                    build_codename: None,
+                    assignee: None,
+                    build_session_id: None,
                 },
                 Task {
                     id: "high".into(),
@@ -402,6 +425,9 @@ mod tests {
                     output_log: None,
                     awaiting_assertion_id: None,
                     resolution_deadline: None,
+                    build_codename: None,
+                    assignee: None,
+                    build_session_id: None,
                 },
             ],
         };

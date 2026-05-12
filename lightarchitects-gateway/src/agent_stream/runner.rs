@@ -18,7 +18,7 @@ use crate::config::GatewayConfig;
 use crate::core_tools;
 use crate::error::GatewayError;
 
-use super::protocol::{AgentEvent, ControlMessage, TerminationReason};
+use super::{validate_system_prompt, protocol::{AgentEvent, ControlMessage, TerminationReason}};
 
 /// Maximum iterations per agent turn (prevents runaway).
 const MAX_ITERATIONS: u32 = 10;
@@ -82,6 +82,9 @@ pub struct AgentRunner {
     config: GatewayConfig,
     cwd: std::path::PathBuf,
     interrupt_flag: Arc<AtomicBool>,
+    /// Caller-supplied system prompt preamble. When `None`, the default
+    /// "You are a helpful coding assistant." text is used.
+    system_prompt: Option<String>,
 }
 
 impl AgentRunner {
@@ -103,6 +106,7 @@ impl AgentRunner {
             config,
             cwd: cwd.to_path_buf(),
             interrupt_flag: Arc::new(AtomicBool::new(false)),
+            system_prompt: None,
         })
     }
 
@@ -117,7 +121,21 @@ impl AgentRunner {
             config,
             cwd: cwd.to_path_buf(),
             interrupt_flag: Arc::new(AtomicBool::new(false)),
+            system_prompt: None,
         }
+    }
+
+    /// Override the system prompt preamble used for all subsequent turns.
+    ///
+    /// Validates the prompt at the method boundary (≤ 8 KiB, no NUL bytes).
+    ///
+    /// # Errors
+    ///
+    /// Returns a static error string if validation fails.
+    pub fn set_system_prompt(&mut self, prompt: String) -> Result<(), &'static str> {
+        validate_system_prompt(&prompt)?;
+        self.system_prompt = Some(prompt);
+        Ok(())
     }
 
     // ── NDJSON loop (machine-facing) ──────────────────────────────────────────
@@ -157,6 +175,30 @@ impl AgentRunner {
                     },
                     &mut stdout)
                     .await;
+                }
+                ControlMessage::SetSystemPrompt { text } => {
+                    match self.set_system_prompt(text) {
+                        Ok(()) => {
+                            self.emit_ndjson(
+                                &AgentEvent::StatusUpdate {
+                                    text: "system_prompt accepted (applies from next turn)"
+                                        .to_owned(),
+                                },
+                                &mut stdout,
+                            )
+                            .await;
+                        }
+                        Err(reason) => {
+                            self.emit_ndjson(
+                                &AgentEvent::Error {
+                                    message: format!("SetSystemPrompt rejected: {reason}"),
+                                    recoverable: Some(true),
+                                },
+                                &mut stdout,
+                            )
+                            .await;
+                        }
+                    }
                 }
                 ControlMessage::Steer { text } => {
                     self.emit_ndjson(
@@ -229,8 +271,12 @@ impl AgentRunner {
         sink: &mut (dyn tokio::io::AsyncWrite + Unpin + Send),
         ndjson: bool,
     ) {
+        let preamble = self
+            .system_prompt
+            .as_deref()
+            .unwrap_or("You are a helpful coding assistant.");
         let mut conversation = format!(
-            "You are a helpful coding assistant. You have access to tools.\n\n{TOOL_DESCRIPTIONS}\n\nUser: {user_message}\n\nAssistant:"
+            "{preamble}\n\n{TOOL_DESCRIPTIONS}\n\nUser: {user_message}\n\nAssistant:"
         );
 
         for iteration in 0..MAX_ITERATIONS {
