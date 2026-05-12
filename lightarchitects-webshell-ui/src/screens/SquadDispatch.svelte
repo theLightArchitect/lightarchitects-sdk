@@ -56,6 +56,7 @@
   let errorMsg = $state<string | null>(null);
   let elapsedMs = $state<number | undefined>(undefined);
   let selectedAgent = $state<DomainAgent | null>(null);
+  let showAgentValidation = $state(false);
 
   let stopStream: (() => void) | null = null;
   let classifyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -160,7 +161,8 @@
     atts: FileAttachment[] = [],
     cfg: Partial<Record<DomainAgent, AgentToolConfig>> = {},
   ) {
-    if (selectedAgents.length === 0) return;
+    if (selectedAgents.length === 0) { showAgentValidation = true; return; }
+    showAgentValidation = false;
     errorMsg = null;
     events = [];
     eventTimes = [];
@@ -513,6 +515,7 @@
           bind:selected={selectedAgents}
           {classification}
           disabled={isLive}
+          showValidation={showAgentValidation}
         />
       </div>
     </div>

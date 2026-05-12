@@ -1,5 +1,17 @@
 @custom-variant dark (&:is(.dark *));
 
+/* ── G-1 OFFLINE dominant state (DESIGN-REFINEMENTS.md Sprint 1) ─────────── */
+@keyframes offline-pulse {
+  0%, 100% { box-shadow: 0 0 24px rgba(245, 158, 11, 0.10) inset; }
+  50%       { box-shadow: 0 0 40px rgba(245, 158, 11, 0.28) inset; }
+}
+.la-nav[data-status="reconnecting"],
+.la-nav[data-status="disconnected"] {
+  border-bottom-color: var(--la-semantic-warn) !important;
+  animation: offline-pulse 3s ease-in-out infinite;
+}
+/* ─────────────────────────────────────────────────────────────────────────── */
+
 :root {
   --font-size: 16px;
   --background: #ffffff;

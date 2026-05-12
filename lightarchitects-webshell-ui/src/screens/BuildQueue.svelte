@@ -150,13 +150,6 @@
     <span class="text-[var(--la-danger-stroke)]">{$buildStats.failed} failed</span>
   </div>
 
-  <!-- Build portfolio overview — project-grouped build health -->
-  {#if $builds.length > 0}
-    <div class="portfolio-strip">
-      <BuildPortfolio onBuildClick={openBuild} maxDisplay={6} />
-    </div>
-  {/if}
-
   <!-- Build list/cards -->
   <div class="flex-1 overflow-y-auto p-6">
     {#if $builds.length === 0}
@@ -212,18 +205,22 @@
               {/if}
             </div>
 
-            <!-- Progress bar -->
-            <div class="h-1 bg-[var(--la-bg-elev-2)] rounded-full overflow-hidden">
-              <div
-                class="h-full rounded-full transition-all"
-                style="width: {Math.round(group.progress * 100)}%; background-color: {group.progress >= 1 ? '#22c55e' : group.activePlanCount > 0 ? '#f0c040' : '#475569'}"
-              ></div>
-            </div>
+            <!-- Progress bar — dashed when no data, filled when pillar data exists -->
+            {#if group.progress == null || (group.progress === 0 && group.activePlanCount === 0)}
+              <div class="h-[2px] border border-dashed border-[#475569]/50 rounded-none" title="No progress data yet"></div>
+            {:else}
+              <div class="h-[2px] bg-[var(--la-bg-elev-2)] overflow-hidden">
+                <div
+                  class="h-full transition-all"
+                  style="width: {Math.round(group.progress * 100)}%; background-color: {group.progress >= 1 ? 'var(--la-semantic-ok)' : group.activePlanCount > 0 ? '#f0c040' : '#475569'}; transition: width 600ms var(--ease-project)"
+                ></div>
+              </div>
+            {/if}
 
             <!-- Stats footer -->
             <div class="flex items-center justify-between mt-1.5 text-[9px] text-[var(--la-text-dim)]">
               <span>{group.activePlanCount > 0 ? `${group.activePlanCount} active` : 'no active plans'}</span>
-              <span>{Math.round(group.progress * 100)}%</span>
+              <span>{group.progress != null ? `${Math.round(group.progress * 100)}%` : '—'}</span>
             </div>
           </div>
         {/each}

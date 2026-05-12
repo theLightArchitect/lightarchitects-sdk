@@ -22,6 +22,7 @@
     selected?: DomainAgent[];
     classification?: Classification | null;
     disabled?: boolean;
+    showValidation?: boolean;
     onchange?: (agents: DomainAgent[]) => void;
   }
 
@@ -29,6 +30,7 @@
     selected = $bindable([]),
     classification = null,
     disabled = false,
+    showValidation = false,
     onchange,
   }: Props = $props();
 
@@ -109,8 +111,8 @@
     <p class="cls-rationale">{classification.rationale}</p>
   {/if}
 
-  {#if selected.length === 0 && !disabled}
-    <p class="cls-warn">Select at least one agent to dispatch.</p>
+  {#if showValidation && selected.length === 0 && !disabled}
+    <p class="cls-warn" role="alert">↑ Select at least one agent above to dispatch.</p>
   {/if}
 </div>
 

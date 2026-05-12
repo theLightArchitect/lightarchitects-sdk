@@ -381,7 +381,7 @@
            sits above the tab nav and provides at-a-glance "where am I" chrome -->
       <Breadcrumb route={activeRoute} />
       <!-- Top navigation strip — underline-only active indicator (#23) -->
-      <nav class="flex items-stretch gap-1 px-3 border-b border-[#1e293b] bg-[#0a0a0f] shrink-0 overflow-x-auto">
+      <nav class="la-nav flex items-stretch gap-1 px-3 border-b border-[#1e293b] bg-[#0a0a0f] shrink-0 overflow-x-auto" data-status={$ayinStatus}>
         <ProjectPicker />
         {#each NAV_ITEMS as item}
           <Tooltip content={item.hint} side="bottom">

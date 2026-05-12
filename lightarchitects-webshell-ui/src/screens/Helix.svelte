@@ -89,24 +89,32 @@
     overflow: hidden;
   }
 
-  /* ── Left pane: 3D scene ──────────────────────────────────── */
+  /* ── Left pane: 3D scene — ambient accent (25%) ──────────── */
   .helix-left {
-    flex: 3;
+    flex: 1;
     position: relative;
     overflow: hidden;
     min-width: 0;
     min-height: 0;
     height: 100%;
+    min-width: 160px;
+    max-width: 280px;
   }
 
-  /* ── Right pane: list ─────────────────────────────────────── */
+  /* ── Right pane: search + list — primary surface (75%) ───── */
   .helix-right {
-    flex: 2;
+    flex: 3;
     display: flex;
     flex-direction: column;
     overflow: hidden;
     border-left: 1px solid var(--la-hair-base);
     min-width: 0;
+    /* Helix ambient glow bleeds from left pane as atmospheric depth */
+    background: linear-gradient(
+      to right,
+      rgba(0, 200, 255, 0.025) 0%,
+      transparent 20%
+    );
   }
 
   .helix-right-header {
