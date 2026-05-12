@@ -1360,4 +1360,227 @@ This unifies code artifacts (git commits) with knowledge artifacts (helix entrie
 
 Multiple repositories are spatially separated in the void. Layout: `fibonacci_grid(repo_count, spacing=40)` — produces a natural, non-grid arrangement. Camera starts at grove overview (all trees visible), click to focus on individual tree. Focus transition: camera lerps to tree-centered position over 600ms `--ease-project`.
 
+**Rendering:** all git forest materials use the holographic rendering pipeline defined in §19.
+
+---
+
+## §19 — Holographic Rendering Pipeline
+
+**Applies to**: Git Forest (§18), Helix 3D scene, any future Three.js surface  
+**Aesthetic north star**: Tony Stark holographic schematic — light projected in air, not solid objects in space. Every surface is transparent. Edges glow. Overlapping elements add their light. The grid continues behind everything.
+
+### 19.1 — Rendering layer stack
+
+```
+z-index [0]  body::before ─────── 64px CSS grid texture (flat, already live)
+z-index [1]  Three.js WebGL ────── scene geometry: trees, nodes, branches, depth, bloom
+z-index [2]  p5.js 2D canvas ───── atmospheric overlay: scan lines, grain, circuit traces
+z-index [3]  Svelte HUD layer ───── branch labels, gate badges, hover cards, annotations
+```
+
+The p5.js canvas sits above Three.js with `pointer-events: none` and `mix-blend-mode: screen`. It composites additively — scan lines appear to pass *through* the 3D geometry, not over it. This is the key compositional difference between "overlay" and "atmosphere."
+
+### 19.2 — The six hologram properties
+
+Every Stark hologram has exactly these six properties. All six are achievable with our stack.
+
+---
+
+**Property 1: `UnrealBloomPass` — the single most important effect**
+
+The same emissive cyan line without bloom = wireframe diagram. With bloom = light suspended in air. Bloom is what makes the visual difference between "technical drawing" and "holographic projection."
+
+```javascript
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass';
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new UnrealBloomPass(
+  new THREE.Vector2(width, height),
+  0.8,   // strength — bloom spread amount
+  0.3,   // radius — halo width
+  0.1    // threshold — minimum emissive value to bloom
+));
+// Replace renderer.render() with composer.render() in animation loop
+```
+
+---
+
+**Property 2: `AdditiveBlending` on all emissive materials**
+
+Surfaces don't occlude each other — they add their light. Overlapping branches brighten, not obstruct. This is the physics of laser light in air. Without it, objects look solid. With it, they look like projection.
+
+```javascript
+const material = new THREE.MeshBasicMaterial({
+  color: 0x00c8ff,
+  transparent: true,
+  opacity: 0.9,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,  // required for correct additive sort
+});
+```
+
+---
+
+**Property 3: Fresnel edge glow (GLSL fragment shader)**
+
+In every Stark hologram, edges glow brighter than flat faces. `dot(viewDir, normal)` ≈ 0 at grazing angles (edges) = max emissive. ≈ 1 at flat faces = near-zero emissive. Objects become luminous silhouettes — visible at their outline, nearly invisible in their interior.
+
+```glsl
+// vertex shader
+varying vec3 vNormal;
+varying vec3 vViewDir;
+
+void main() {
+  vNormal = normalize(normalMatrix * normal);
+  vec4 worldPos = modelViewMatrix * vec4(position, 1.0);
+  vViewDir = normalize(-worldPos.xyz);
+  gl_Position = projectionMatrix * worldPos;
+}
+
+// fragment shader
+varying vec3 vNormal;
+varying vec3 vViewDir;
+uniform vec3 uEmissiveColor;
+uniform float uIntensity;
+
+void main() {
+  float fresnel = pow(1.0 - dot(vNormal, vViewDir), 2.5);
+  gl_FragColor = vec4(uEmissiveColor * fresnel * uIntensity, fresnel * 0.85);
+}
+```
+
+---
+
+**Property 4: Schematic line rendering — `EdgesGeometry` overlay**
+
+Solid geometry reads as physical objects. Edge-only geometry reads as schematics. Render both: the filled geometry provides depth and bloom surface; the `EdgesGeometry` overlay provides the crisp schematic lines.
+
+Merged ghost branches use `LineDashedMaterial` — the engineering convention for hidden/removed lines in technical drawings.
+
+```javascript
+// Solid geometry — provides bloom surface, transparent fill
+const solidMesh = new THREE.Mesh(geometry, fresnelMaterial);
+
+// Edge overlay — provides schematic lines
+const edges = new THREE.EdgesGeometry(geometry);
+const lineMesh = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({
+  color: 0x00c8ff,
+  blending: THREE.AdditiveBlending,
+}));
+scene.add(solidMesh, lineMesh);
+
+// Ghost branches — dashed line convention
+const dashedMaterial = new THREE.LineDashedMaterial({
+  color: 0x475569,
+  dashSize: 0.3,
+  gapSize: 0.15,
+  blending: THREE.AdditiveBlending,
+});
+```
+
+---
+
+**Property 5: Scan lines and noise grain (p5.js atmospheric layer)**
+
+The p5.js canvas renders scan lines and Perlin noise grain as a screen-blend overlay over the entire Three.js scene. Scan line density and speed can react to scene activity (more activity = slightly faster sweep).
+
+```javascript
+// p5.js sketch — mounted as a canvas above Three.js
+const sketch = (p) => {
+  p.setup = () => {
+    const canvas = p.createCanvas(width, height);
+    canvas.style('position', 'absolute');
+    canvas.style('top', '0');
+    canvas.style('pointer-events', 'none');
+    canvas.style('mix-blend-mode', 'screen');
+    p.noFill();
+  };
+
+  p.draw = () => {
+    p.clear();
+
+    // Scan line sweep — soft-edged horizontal band scrolling down
+    const scanY = (p.millis() * 0.008) % p.height;
+    for (let y = 0; y < p.height; y += 3) {
+      const dist = Math.abs(y - scanY);
+      const alpha = Math.max(0, 7 - dist) * 2.5;
+      p.stroke(0, 200, 255, alpha);
+      p.line(0, y, p.width, y);
+    }
+
+    // Perlin noise grain — very subtle film grain over entire surface
+    p.loadPixels();
+    for (let i = 0; i < p.pixels.length; i += 4) {
+      const x = (i / 4) % p.width;
+      const y = Math.floor((i / 4) / p.width);
+      const grain = p.noise(x * 0.008, y * 0.008, p.frameCount * 0.015) * 10;
+      p.pixels[i]     = 0;    // R
+      p.pixels[i + 1] = 200;  // G
+      p.pixels[i + 2] = 255;  // B
+      p.pixels[i + 3] = grain; // alpha only — tints toward cyan
+    }
+    p.updatePixels();
+  };
+};
+```
+
+---
+
+**Property 6: Circuit trace annotations (p5.js)**
+
+When a branch enters HITL-pending state (yellow), p5 draws circuit-style 90° angle lines sprouting from that branch's screen-space projection — the same corner-bracket visual language from `tokens.css`, now animated and growing. Growth rate ~60px/s, then fade.
+
+```javascript
+function drawCircuitTrace(p, screenX, screenY, color) {
+  const t = (p.millis() % 1200) / 1200; // 0→1 over 1.2s
+  const reach = t * 80; // grows to 80px
+  p.stroke(...color, (1 - t) * 180); // fade as it grows
+  p.strokeWeight(1);
+  // Four arms — up, down, left, right — each with 90° bend
+  p.line(screenX, screenY, screenX + reach, screenY);
+  p.line(screenX + reach, screenY, screenX + reach, screenY - reach * 0.6);
+  p.line(screenX, screenY, screenX, screenY - reach);
+  p.line(screenX, screenY - reach, screenX + reach * 0.6, screenY - reach);
+}
+```
+
+### 19.3 — p5.js responsibility table
+
+| Effect | Layer | Why p5.js |
+|---|---|---|
+| Scan line sweep | p5.js overlay | Per-frame Y position + soft falloff |
+| Perlin noise grain | p5.js overlay | `p5.noise()` purpose-built for this |
+| Circuit trace sprouts | p5.js overlay | 90° path drawing + growth animation |
+| Blueprint perspective grid | p5.js overlay | Extends CSS grid into perspective projection |
+| Blueprint dimension callouts | Svelte HUD | String positioning from Three.js `worldToScreen` |
+| Bloom / edge glow | Three.js `UnrealBloomPass` | WebGL post-processing compositing |
+| Fresnel silhouette glow | Three.js GLSL shader | Requires vertex normal vectors |
+| Additive material blending | Three.js | WebGL blend mode |
+| Atmospheric depth fade | Three.js `FogExp2` | Depth-aware fade of distant trees |
+| Animated geometry | Three.js | Lerp/tween on vertex positions |
+
+### 19.4 — Blueprint dimension annotations (Svelte HUD layer)
+
+Technical schematics annotate their geometry with measurements. The git forest annotates meaning. All text rendered in 9px JetBrains Mono, emissive cyan or gate-status color, positioned via Three.js `worldToScreen` projection.
+
+| Location | Annotation | Example |
+|---|---|---|
+| Branch tip | Commits ahead/behind main | `+12 ahead` / `−4 behind` |
+| Trunk base | Repo size | `1,847 files · 4.2 MB` |
+| Fork point marker | Branch codename | `◈ luminous-tracing-polytope` |
+| Active worktree | Current agent action | `WRITING — 3 files` |
+| Merge ring | Merge codename | `← git-orchestration-standard` |
+| HITL branch | Pending gate | `⚑ HITL PENDING` (yellow, pulsing) |
+
+### 19.5 — The single principle
+
+> Everything in the scene is **light, not matter**. Surfaces are transparent. Edges glow. Overlaps add, not occlude. The grid continues behind everything. Scan lines pass through. The physical metaphor is a laser drawing in air — not an object sitting in space.
+
+This principle is the test for every material, animation, and effect decision. If a proposed element looks like a solid physical object, it violates the aesthetic. If it looks like it's projected, it belongs.
+
+---
+
 *This document is the implementation contract. It evolves via PR — never via ad-hoc decisions during implementation.*

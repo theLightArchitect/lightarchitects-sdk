@@ -357,6 +357,8 @@ Current: "11 queued" with a progress bar. Required: show what each queued item i
 
 Three.js scene, isometric camera (same angle as `VoxelProjects3D`). One tree per tracked repository. Generated from `git log --graph --all` output seeded with real repo data.
 
+**Rendering approach**: holographic pipeline per DESIGN-LANGUAGE.md §19 — `UnrealBloomPass` + `AdditiveBlending` + fresnel GLSL shader + `EdgesGeometry` overlay + p5.js scan line / grain atmospheric layer. All materials render as light-in-air, not solid objects. Ghost branches (merged) use `LineDashedMaterial`.
+
 **Geometry encoding:**
 
 | Dimension | Encodes | Primitive |
