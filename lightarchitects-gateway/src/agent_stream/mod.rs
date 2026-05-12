@@ -82,7 +82,9 @@ pub async fn run_ndjson(
     }
     let mut runner = AgentRunner::new(cwd)?;
     if let Some(sp) = system_prompt {
-        runner.set_system_prompt(sp);
+        runner
+            .set_system_prompt(sp)
+            .map_err(|e| Box::<dyn std::error::Error>::from(e))?;
     }
     runner.run_ndjson_loop().await;
     Ok(())
@@ -102,7 +104,9 @@ fn persist_inherited_key(key: &str, key_name: &str) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let _ = std::fs::write(&path, toml::to_string_pretty(&keys).unwrap_or_default());
+    if let Ok(serialized) = toml::to_string_pretty(&keys) {
+        let _ = std::fs::write(&path, serialized);
+    }
 }
 
 /// Run the agent in interactive TTY mode (human-facing REPL).

@@ -248,6 +248,9 @@ async fn drive_stdin(stdin: ChildStdin, mut control_rx: mpsc::Receiver<ControlMe
             ControlMessage::Steer { text } => {
                 serde_json::json!({"action":"steer","text":text})
             }
+            ControlMessage::SetSystemPrompt { text } => {
+                serde_json::json!({"action":"set_system_prompt","text":text})
+            }
             ControlMessage::ExecutePlan => {
                 serde_json::json!({"action":"execute_plan"})
             }

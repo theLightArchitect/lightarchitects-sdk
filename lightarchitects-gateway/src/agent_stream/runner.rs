@@ -127,11 +127,15 @@ impl AgentRunner {
 
     /// Override the system prompt preamble used for all subsequent turns.
     ///
-    /// Callers must validate length (≤ 8 KiB) and absence of NUL bytes before
-    /// calling this; the runner trusts the caller has already enforced those
-    /// constraints (MCP boundary validation lives in `server.rs`).
-    pub fn set_system_prompt(&mut self, prompt: String) {
+    /// Validates the prompt at the method boundary (≤ 8 KiB, no NUL bytes).
+    ///
+    /// # Errors
+    ///
+    /// Returns a static error string if validation fails.
+    pub fn set_system_prompt(&mut self, prompt: String) -> Result<(), &'static str> {
+        validate_system_prompt(&prompt)?;
         self.system_prompt = Some(prompt);
+        Ok(())
     }
 
     // ── NDJSON loop (machine-facing) ──────────────────────────────────────────
@@ -173,12 +177,12 @@ impl AgentRunner {
                     .await;
                 }
                 ControlMessage::SetSystemPrompt { text } => {
-                    match validate_system_prompt(&text) {
+                    match self.set_system_prompt(text) {
                         Ok(()) => {
-                            self.system_prompt = Some(text);
                             self.emit_ndjson(
                                 &AgentEvent::StatusUpdate {
-                                    text: "system_prompt updated".to_owned(),
+                                    text: "system_prompt accepted (applies from next turn)"
+                                        .to_owned(),
                                 },
                                 &mut stdout,
                             )

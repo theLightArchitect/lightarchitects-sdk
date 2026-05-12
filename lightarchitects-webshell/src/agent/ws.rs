@@ -221,6 +221,7 @@ async fn drive_reader(
             ControlMessage::DenyPermission { .. } => "deny_permission",
             ControlMessage::Interrupt => "interrupt",
             ControlMessage::Steer { .. } => "steer",
+            ControlMessage::SetSystemPrompt { .. } => "set_system_prompt",
             ControlMessage::ExecutePlan => "execute_plan",
             ControlMessage::Ping => "ping",
         };
