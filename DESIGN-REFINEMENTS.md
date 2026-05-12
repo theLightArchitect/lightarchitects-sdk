@@ -299,12 +299,14 @@ function drawCollaborationTrace(p, fromHex, toHex) {
 .exec-card .gate-dot[data-state="pending"] { background: var(--la-semantic-offline); }
 ```
 
-### OPS-5 🟡 Bottom sibling strip — elevate or remove
+### OPS-5 🟡 Bottom sibling strip — superseded by Git Forest
 
-The bottom colored strips (SOUL · EVA · CORSO · QUANTUM · SERAPH · AYIN · LARC) at 8px height carry zero information. Two options:
+**Status**: Design direction resolved — the Git Forest visualization (GIT-1 through GIT-8) replaces the need for a separate sibling activity strip. Agent activity, ownership, and worktree state are encoded directly on git tree branches. The strip below can be removed.
 
-**Option A (preferred)**: Remove — sibling health already shown in Mission Control pills.  
-**Option B**: Elevate to a "currently active agents" mini-bar showing what each is doing:
+~~The bottom colored strips (SOUL · EVA · CORSO · QUANTUM · SERAPH · AYIN · LARC) at 8px height carry zero information. Two options:~~
+
+~~**Option A (preferred)**: Remove — sibling health already shown in Mission Control pills.~~
+~~**Option B**: Elevate to a "currently active agents" mini-bar showing what each is doing:~~
 
 ```svelte
 <!-- Replace bottom strip with active-agent bar -->
@@ -339,6 +341,126 @@ Current: "11 queued" with a progress bar. Required: show what each queued item i
   </div>
 </div>
 ```
+
+---
+
+## GIT FOREST — OPS Screen: Git Tree Visualization
+
+**Placement**: OPS center column — tab-toggles with or replaces `VoxelProjects3D`  
+**Renderer**: Three.js (already loaded in `VoxelProjects3D.svelte`)  
+**Backend dependency**: `gateway-worktree-coordinator` (queued, HIGH priority, MEDIUM tier)  
+**Standard**: `git-orchestration-standard` v1.0 (ratified 2026-05-12, `helix/corso/builds/git-orchestration-standard/`)  
+**Eye-flow**: F-pattern — grove scan left-to-right, individual tree focus on click  
+**Data shape**: `GET /api/git/repos`, `GET /api/git/repos/:id/graph`, SSE `git:branch_status` / `git:file_write` / `git:merge`
+
+### GIT-1 🔴 Git forest scene — core geometry
+
+Three.js scene, isometric camera (same angle as `VoxelProjects3D`). One tree per tracked repository. Generated from `git log --graph --all` output seeded with real repo data.
+
+**Geometry encoding:**
+
+| Dimension | Encodes | Primitive |
+|---|---|---|
+| Trunk height | Total commits on `main` — each commit = 1 unit | `CylinderGeometry` |
+| Trunk base girth | Total repo file count / disk size — natural taper to tip | Radius differential top/bottom |
+| Branch fork height | Commit number where `feat/<codename>` diverged | Fork point on trunk |
+| Branch length | Commit count on branch — each commit = 1 unit | `TubeGeometry` (Catmull-Rom) |
+| Branch girth | Unique files modified across branch — grows as work accumulates | Tube radius |
+| Branch tip vs trunk tip | Above = ahead of `main`; below = behind | Relative Y position |
+| Agent worktree | Sub-branch off `feat/<codename>` in agent identity color | Thin `TubeGeometry` |
+| Commit node | Marker at uniform spacing along branch | `SphereGeometry` r=0.15 |
+| Files per commit | Leaf particles around commit node | `InstancedMesh` `PlaneGeometry` |
+| Merge point | Ring pulse at merge height on trunk; trunk girth steps up | Torus flash + radius lerp |
+| Merged ghost branch | 20% opacity, no animation — persists until operator prune | Opacity + desaturate |
+
+**Branch girth rule:** default thin (~20% trunk girth). Grows proportionally to files modified on the branch. Can exceed trunk girth only if branch introduces more net-new files than currently exist on `main` (e.g. a major feature addition). On merge, trunk girth steps up smoothly at merge height to absorb the new files.
+
+### GIT-2 🔴 Gate status color system
+
+Branch emissive color maps to `git-orchestration-standard` gate state. Active write (cyan pulse) overrides status color during write and returns on idle (3s no new `git:file_write` events).
+
+| State | Color | Token | Trigger |
+|---|---|---|---|
+| Commit gate passed — clean | Green | `--la-semantic-ok` | fmt + clippy + unit tests pass |
+| HITL checkpoint pending | Yellow | `--la-semantic-warn` | Phase-boundary gate — operator action required |
+| Merge gate / PR ready | Gold | `--la-focus-ring` | All merge gate checks passed |
+| Gate failure | Red | `--la-semantic-error` | Any blocking gate failed |
+| Active agent write | Cyan pulse | `--la-struct-primary` | SSE `git:file_write` on worktree |
+| Merged ghost | Dim | `--la-semantic-offline` | Post-merge until operator prune |
+
+```typescript
+// Branch material update on SSE event
+function applyGateColor(branch: BranchMesh, state: GateState) {
+  const colors: Record<GateState, number> = {
+    clean:        0x22c55e,
+    hitl_pending: 0xf59e0b,
+    merge_ready:  0xFFD700,
+    failed:       0xef4444,
+    writing:      0x00c8ff,
+    ghost:        0x475569,
+  };
+  branch.material.emissive.setHex(colors[state]);
+  branch.material.emissiveIntensity = state === 'writing' ? 1.0 : 0.4;
+}
+```
+
+### GIT-3 🔴 Agent worktree sub-branches
+
+Each `feat/<codename>` branch has sub-branches for agent worktrees (`.claude/worktrees/<codename>/`). Sub-branches use **agent domain identity color** (not gate color) — ownership is the primary encoding at sub-branch level. Sub-branches are always thinner than their parent `feat/<codename>` branch.
+
+```typescript
+const AGENT_COLORS: Record<AgentDomain, number> = {
+  engineer:   0x4d8eff,
+  quality:    0xa874ff,
+  security:   0xff4d4d,
+  ops:        0xff8e3c,
+  researcher: 0x4dffe6,
+  knowledge:  0xf5d440,
+  testing:    0x4dff8e,
+  squad:      0xff7eb6,
+};
+```
+
+### GIT-4 🟠 Agent write pulse animation
+
+On SSE `git:file_write` for a branch:
+- Branch emissive: 0.3 → 1.0 → 0.3 over 1.5s (`var(--ease-project)`)
+- Leaf particles at that commit node: flutter (±4px random offset, 60fps for 2s)
+- Sub-branch glows in agent identity color during write
+- Returns to gate-state color 3s after last write event
+
+### GIT-5 🟠 Merged branch ghost persistence
+
+Merged branches do not disappear. On SSE `git:merge`:
+1. Leaves fall to branch surface (gravity animation, 800ms `--ease-retract`)
+2. Branch desaturates to 20% opacity, emissive off
+3. Merge ring: brief torus pulse outward from trunk at merge height in branch's color
+4. Trunk girth lerps to new value (absorbed file count) over 600ms `--ease-project`
+
+Ghost branches persist until operator clicks "Prune stale branches" in grove context menu. Reflects real git state: merged refs exist until explicit cleanup.
+
+### GIT-6 🟡 Ahead-of-main upward particle trace
+
+Branches with tip above trunk tip (ahead of `main` HEAD) display an upward-flowing particle trace on their surface — rate of flow encodes commits-ahead count. Branches behind `main` tip carry no indicator beyond their relative height position.
+
+### GIT-7 🟡 File leaf particles — instanced mesh (Sprint 4)
+
+`InstancedMesh` leaf planes distributed via `fibonacci_sphere(count, radius=0.8)` around each commit node. Count = files modified in that commit. Leaf color by file type:
+
+| File type | Color |
+|---|---|
+| `.rs` Rust | `#f97316` orange |
+| `.ts` / `.svelte` TypeScript | `#3b82f6` blue |
+| `.css` | `#00c8ff` cyan |
+| `.md` Markdown | `#7a8390` dim |
+| `.json` / `.yaml` | `#f5d440` yellow |
+| Other | `#475569` slate |
+
+Dense leaf clouds mark significant commits before any label is read.
+
+### GIT-8 🟡 SOUL helix cross-reference (Sprint 4)
+
+Helix entries tagged with a build codename appear as luminous nodes on the corresponding `feat/<codename>` branch at the commit height nearest their `created_at` timestamp. Significance ≥7.0 = full glow node (`--la-semantic-ok` green). Hover reveals the helix entry excerpt and significance score. Connects code artifacts (commits) to knowledge artifacts (helix entries) in a single view.
 
 ---
 
@@ -1105,32 +1227,42 @@ The Three.js graph: nodes = helix entries (sized by significance), edges = `:LIN
 ### Sprint 2 — Utility elevation (P1 high-value)
 7. OPS-1: Sidebar as hero, map as secondary
 8. OPS-2: Squad pills with health state glow
-9. DIS-2: Agent card selection states
-10. DIS-3: DISPATCH button as Z-pattern terminal CTA
-11. BLD-3: GateStrip (7 dots) on all cards
-12. BLD-5: Active build left-border glow
-13. BLD-6: Summary bar as clickable filters
-14. DET-2: Working History structured entries
-15. DET-3: Agent presence bar
-16. HEL-2: Faceted search + suggested queries
-17. EVT-1: Events panel offline vs no-events
+9. **GIT-1: Git forest scene — core geometry** (Three.js, static git data)
+10. **GIT-2: Gate status color system** (green/yellow/gold/red mapping)
+11. **GIT-3: Agent worktree sub-branches** (identity color encoding)
+12. DIS-2: Agent card selection states
+13. DIS-3: DISPATCH button as Z-pattern terminal CTA
+14. BLD-3: GateStrip (7 dots) on all cards
+15. BLD-5: Active build left-border glow
+16. BLD-6: Summary bar as clickable filters
+17. DET-2: Working History structured entries
+18. DET-3: Agent presence bar
+19. HEL-2: Faceted search + suggested queries
+20. EVT-1: Events panel offline vs no-events
 
-### Sprint 3 — Stark aesthetic depth (P2 polish)
-18. G-2: Perspective grid (p5.js)
-19. G-3: Scan-line shader on all panels
-20. G-4: Targeting reticles on selection
-21. G-5: Section label typography
-22. G-6: Construct transition on card mount
-23. OPS-3: Hexagon circuit traces + presence glow (Three.js)
-24. OPS-4: Executive summary card on hover
-25. DIS-5: RAILS + DAG tooltips
-26. DIS-6: Textarea focus state
-27. DIS-7: Zone separator circuit traces
-28. BLD-7: Drill-down zoom from card origin
-29. DET-4: Kanban gate separators
-30. DET-5: View tab descriptions
-31. HEL-3: Graph view (Three.js force-directed)
-32. MEM-1: Memory entry type coding
+### Sprint 3 — Stark aesthetic depth + live git (P2 polish)
+21. G-2: Perspective grid (p5.js)
+22. G-3: Scan-line shader on all panels
+23. G-4: Targeting reticles on selection
+24. G-5: Section label typography
+25. G-6: Construct transition on card mount
+26. **GIT-4: Agent write pulse animation** (SSE `git:file_write` → branch flash)
+27. **GIT-5: Merged branch ghost persistence** (leaves fall, ghost until prune)
+28. **GIT-6: Ahead-of-main upward particle trace**
+29. OPS-3: Hexagon circuit traces + presence glow (Three.js) — or retired if git forest fully replaces
+30. OPS-4: Executive summary card on hover
+31. DIS-5: RAILS + DAG tooltips
+32. DIS-6: Textarea focus state
+33. DIS-7: Zone separator circuit traces
+34. BLD-7: Drill-down zoom from card origin
+35. DET-4: Kanban gate separators
+36. DET-5: View tab descriptions
+37. HEL-3: Graph view (Three.js force-directed)
+38. MEM-1: Memory entry type coding
+
+### Sprint 4 — Deep features (P2 depth)
+39. **GIT-7: File leaf particles** — instanced mesh, file-type color coding
+40. **GIT-8: SOUL helix cross-reference** — commits linked to helix entries, significance glow nodes
 
 ---
 

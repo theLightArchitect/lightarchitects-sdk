@@ -116,6 +116,23 @@
 - The LLM-native interaction (chat strip at bottom) is present but disconnected from the operational view — there's no way to "ask about" a hexagon by clicking it and opening a chat context
 - Prompt-native pattern missing: clicking a stalled build should inject context into the chat ("vault-migration-v1 has been queued for 3h — investigate?")
 
+#### OPS-7 — Design direction: replace hexagon topology with Git Forest
+
+**Ratified 2026-05-12.** The 3D hexagon map has no topological meaning and fails all four agentic SDLC visibility layers. The replacement is the **Git Forest** visualization (DESIGN-LANGUAGE.md §18, DESIGN-REFINEMENTS.md GIT-1 through GIT-8).
+
+The git forest surfaces everything the hexagon map cannot:
+- **Reasoning & Planning**: branch tip positions show what's ahead/behind main — operator sees at a glance what's in-flight vs merged
+- **Execution & Tool Telemetry**: agent write pulses on worktree sub-branches; leaf particle flutter on active commits
+- **Verification & Quality Gates**: gate status colors (green/yellow/gold/red) on every branch encode the current gate state; HITL pending = yellow glow
+- **Economic & Operational Health**: trunk girth = codebase size; branch girth = scope of work in progress; ghost branches = stale worktrees the operator hasn't cleaned
+
+The hexagon map (`VoxelProjects3D.svelte`) moves to optional/toggled view or is retired. The git forest becomes the OPS center column primary surface.
+
+**Implementation path:**
+- Sprint 2: GIT-1/2/3 — static tree geometry from real git data, gate color system, worktree sub-branches
+- Sprint 3: GIT-4/5/6 — live SSE animation (requires `gateway-worktree-coordinator` build)
+- Sprint 4: GIT-7/8 — leaf particles + SOUL helix cross-reference
+
 ---
 
 ### S2 — DISPATCH / Squad Dispatch Operator Console

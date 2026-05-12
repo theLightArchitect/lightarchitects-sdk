@@ -1245,7 +1245,7 @@ Items requiring a decision before implementation can proceed:
 
 - [ ] **Headless component library**: Melt UI vs. Bits UI vs. custom for accessible comboboxes, dialogs, tooltips
 - [ ] **Command palette implementation**: build custom vs. `cmdk` port for Svelte
-- [ ] **Temporal view**: timeline/Gantt in OPS — Three.js or p5.js? Canvas or SVG?
+- [x] **Temporal view**: timeline/Gantt in OPS — **RESOLVED**: Three.js git forest (see §18) replaces the hexagon topology map as the primary OPS center surface; it encodes time vertically via commit height, making a separate Gantt/timeline redundant for the primary operator workflow
 - [ ] **OpenAPI spec generation**: add `utoipa` or `aide` to Axum routes for auto-generated spec
 - [ ] **Token/cost API**: new backend endpoint — which agent owns cost attribution? (AYIN spans contain timing; cost requires Anthropic API billing data)
 - [ ] **Loop iteration counter instrumentation**: agents must emit `build.loops.count` KV key on each self-correction. Requires agent-side instrumentation across CORSO/QUANTUM/SERAPH
@@ -1255,5 +1255,109 @@ Items requiring a decision before implementation can proceed:
 - [ ] **Firecrawl live web research**: wire `GET /api/soul/search` with Firecrawl fallback when SOUL returns 0 results for HELIX queries — requires gateway action routing decision
 
 ---
+
+---
+
+## §18 — Git Forest Visual Language
+
+**Ratified**: 2026-05-12  
+**Standard reference**: `helix/corso/builds/git-orchestration-standard/plan.md §8`  
+**Renderer**: Three.js (shared scene with `VoxelProjects3D.svelte`)  
+**Placement**: OPS center column — tab `[TOPOLOGY | GIT FOREST]`
+
+### 18.1 — Conceptual model
+
+Each tracked repository is a literal tree. Git structure IS the tree structure — no additional metaphor layer. The trunk is `main`. Feature branches are branches. Agent worktrees are sub-branches. Files are leaves. Multiple repositories form a grove, spatially separated in the void.
+
+The tree shape communicates the project's character before any label is read:
+- Tall thin trunk, sparse leaves = long incremental history, small commits
+- Short wide trunk with dense leaf bursts = large codebase, significant per-commit changes
+- Many long branches extending above trunk tip = active multi-front development ahead of main
+- Ghost branches (merged, faded) = project history preserved
+
+### 18.2 — Geometry encoding
+
+| Dimension | Git concept | Primitive |
+|---|---|---|
+| Trunk height | Commits on `main` (1 unit per commit) | `CylinderGeometry` |
+| Trunk base girth | Repo total file count / disk size | Radius at base; natural taper to tip |
+| Branch fork height | Commit number of divergence point | Y-position on trunk |
+| Branch length | Commit count on branch (1 unit per commit) | `TubeGeometry` along Catmull-Rom |
+| Branch girth | Unique files modified across branch — default thin; grows as agent works | Tube radius |
+| Branch tip Y vs trunk tip Y | Ahead (above) or behind (below) `main` HEAD | Relative height |
+| Agent worktree | Sub-branch off `feat/<codename>` | Thin `TubeGeometry` |
+| Commit node | Discrete marker at each commit | `SphereGeometry` r=0.15 |
+| Files per commit | Leaf particles at commit node | `InstancedMesh` `PlaneGeometry` (2-sided) |
+| Merge point | Trunk ring at merge height; girth step-up | Torus flash + radius lerp 600ms |
+| Merged ghost | Persists at 20% opacity until operator prunes | Desaturate + opacity |
+
+**Branch girth rule (canonical):** branch girth is proportional to the unique files it touches. It can only exceed trunk girth if the branch introduces net-new files beyond main's total file count. On merge, trunk girth steps up at merge height to reflect the absorbed codebase size.
+
+### 18.3 — Gate status color system
+
+Sourced from `git-orchestration-standard` v1.0. Active write (cyan pulse) overrides status color temporarily.
+
+| Gate state | Color | Token | Source event |
+|---|---|---|---|
+| Commit gate passed — clean | `#22c55e` | `--la-semantic-ok` | fmt + clippy + unit tests pass |
+| HITL checkpoint pending | `#f59e0b` | `--la-semantic-warn` | Phase-boundary gate — operator action required |
+| Merge gate / PR ready | `#FFD700` | `--la-focus-ring` | All merge gate checks passed |
+| Gate failure | `#ef4444` | `--la-semantic-error` | Any blocking gate failed |
+| Active agent write | `#00c8ff` pulse | `--la-struct-primary` | SSE `git:file_write` on worktree |
+| Merged ghost | `#475569` dim | `--la-semantic-offline` | Post-merge, not yet pruned |
+
+### 18.4 — Agent identity on sub-branches
+
+Worktree sub-branches use **agent domain identity color** — not gate color. Agent ownership is the primary encoding at the sub-branch level. Gate state is secondary (emissive intensity, not hue).
+
+```
+--la-agent-engineer:   #4d8eff   (sub-branch with engineer agent worktree)
+--la-agent-quality:    #a874ff
+--la-agent-security:   #ff4d4d
+--la-agent-ops:        #ff8e3c
+--la-agent-researcher: #4dffe6
+--la-agent-knowledge:  #f5d440
+--la-agent-testing:    #4dff8e
+--la-agent-squad:      #ff7eb6
+```
+
+### 18.5 — Animation vocabulary
+
+| Event | Animation | Duration | Easing |
+|---|---|---|---|
+| Agent write (`git:file_write`) | Branch emissive 0.3→1.0→0.3; leaves flutter ±4px | 1.5s | `--ease-project` |
+| Write idle (3s no events) | Branch returns to gate-state color | 800ms | `--ease-retract` |
+| Merge (`git:merge`) | Torus ring pulse from trunk at merge height; trunk girth lerp | 600ms | `--ease-project` |
+| Branch merge-to-ghost | Leaves fall (gravity, 800ms); branch desaturates to 20% | 800ms | `--ease-retract` |
+| New commit | Commit node constructs (scale 0→1) at branch tip | 400ms | `--ease-snap` |
+| Trunk girth step-up | Cylinder radius lerp at merge height | 600ms | `--ease-project` |
+| Operator prune | Ghost branch deconstructs (scale 1→0, leaves dissolve) | 600ms | `--ease-retract` |
+
+### 18.6 — Leaf file-type color coding
+
+`InstancedMesh` particles distributed via `fibonacci_sphere(count, radius=0.8)` around each commit node.
+
+| Extension | Color | Meaning |
+|---|---|---|
+| `.rs` | `#f97316` orange | Rust source |
+| `.ts` / `.svelte` | `#3b82f6` blue | TypeScript / Svelte |
+| `.css` | `#00c8ff` cyan | Styles |
+| `.md` / `.txt` | `#7a8390` dim | Documentation |
+| `.json` / `.yaml` / `.toml` | `#f5d440` yellow | Config / data |
+| Other | `#475569` slate | Misc |
+
+### 18.7 — SOUL helix cross-reference
+
+Helix entries tagged with a build codename appear as luminous sphere nodes on the corresponding `feat/<codename>` branch at the commit height nearest their `created_at` timestamp.
+
+- Significance < 7.0: dim node (`--la-text-dim`)
+- Significance ≥ 7.0: full glow node (`--la-semantic-ok` green)
+- Hover: tooltip reveals `content_excerpt`, `sibling`, `significance`, `created_at`
+
+This unifies code artifacts (git commits) with knowledge artifacts (helix entries) into one surface. The tree shows what was built; the glowing nodes show what was learned while building it.
+
+### 18.8 — Grove layout
+
+Multiple repositories are spatially separated in the void. Layout: `fibonacci_grid(repo_count, spacing=40)` — produces a natural, non-grid arrangement. Camera starts at grove overview (all trees visible), click to focus on individual tree. Focus transition: camera lerps to tree-centered position over 600ms `--ease-project`.
 
 *This document is the implementation contract. It evolves via PR — never via ad-hoc decisions during implementation.*
