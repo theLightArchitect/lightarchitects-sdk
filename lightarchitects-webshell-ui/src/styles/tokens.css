@@ -34,6 +34,11 @@
   --la-bg-panel:    #0f1117;
   --la-bg-card:     #141820;
   --la-bg-elevated: #1a2030;
+  --la-bg-overlay:  rgba(10, 10, 15, 0.85);  /* modal backdrop */
+
+  /* ── Background grid (p5.js — §2 DESIGN-LANGUAGE) ───────────────────────── */
+  --la-struct-grid:       rgba(0, 200, 255, 0.04);   /* base grid lines */
+  --la-struct-grid-hover: rgba(0, 200, 255, 0.12);   /* hover pulse within 200px */
 
   /* ── Sibling identity channel ────────────────────────────────────────────── */
   --la-id-soul:    #f59e0b;
@@ -257,3 +262,15 @@ body::after {
 [data-agent="knowledge"]  { --la-agent-c: var(--la-agent-knowledge); }
 [data-agent="testing"]    { --la-agent-c: var(--la-agent-testing); }
 [data-agent="squad"]      { --la-agent-c: var(--la-agent-squad); }
+
+/* ── NI-4: prefers-reduced-motion (DESIGN-LANGUAGE.md §5) ───────────────────
+   Collapses all CSS transitions/animations to instant for users who have
+   enabled the OS-level "Reduce Motion" accessibility setting.              */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration:        0.01ms !important;
+    animation-iteration-count: 1      !important;
+    transition-duration:       0.01ms !important;
+    scroll-behavior:           auto   !important;
+  }
+}

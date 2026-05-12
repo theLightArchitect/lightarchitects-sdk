@@ -112,8 +112,9 @@
     /* Helix ambient glow bleeds from left pane as atmospheric depth */
     background: linear-gradient(
       to right,
-      rgba(0, 200, 255, 0.025) 0%,
-      transparent 20%
+      rgba(0, 200, 255, 0.06) 0%,
+      rgba(0, 200, 255, 0.02) 12%,
+      transparent 28%
     );
   }
 

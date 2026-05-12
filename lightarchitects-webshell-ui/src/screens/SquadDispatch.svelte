@@ -520,7 +520,12 @@
       </div>
     </div>
 
-    <!-- action panel: telemetry + primary CTA -->
+    <!-- action panel: telemetry + primary CTA
+         TODO Sprint 2 DIS-3: this panel currently anchors top-right of the Z-pattern,
+         making it the FIRST read on the right side. Per DESIGN-LANGUAGE.md §3, the
+         terminal CTA must anchor BOTTOM-RIGHT (the Z endpoint). Restructure: zones 03
+         (Execution Stage) and 04 (Mailbox) should move to the right column so the
+         DISPATCH button is the last element the eye reaches. -->
     <div class="cmd-action">
       <div class="cmd-action-head">
         <span><span class="idx">[ 02 ]</span> DISPATCH</span>
