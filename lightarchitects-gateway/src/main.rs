@@ -842,7 +842,7 @@ fn cli_init_user(user_name: &str) -> Result<(), GatewayError> {
     let mut skipped = Vec::new();
 
     for (sibling, template) in siblings {
-        let sibling_dir = vault_root.join(sibling);
+        let sibling_dir = user_dir.join(sibling);
         std::fs::create_dir_all(&sibling_dir)
             .map_err(|e| GatewayError::File(format!("Failed to create {sibling}/: {e}")))?;
 
