@@ -11,8 +11,6 @@
   import PolytopeIcon from '$lib/../components/PolytopeIcon.svelte';
   import PolytopeDecor from '$lib/../components/PolytopeDecor.svelte';
   import Tooltip from '$lib/../components/Tooltip.svelte';
-  import BuildPortfolio from '$lib/../components/BuildPortfolio.svelte';
-
   // View mode
   let viewMode = $state<'list' | 'card'>('card');
 
