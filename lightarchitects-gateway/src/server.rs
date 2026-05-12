@@ -106,10 +106,12 @@ fn platform_tool_defs() -> Vec<Value> {
 /// Squad tool definitions: `canon_check`, `canon_evaluate`, initialize, import.
 fn squad_tool_defs() -> Vec<Value> {
     let mut tools = vec![
-        // ── Squad Comms (5 actions, Phase 3 agent-C) ──────────────────────────
+        // ── Squad Comms (7 actions, Phase 3 agent-C + session-per-build) ──────
+        json!({"name": "lightarchitects_squad_comms_session_start", "description": "Open a per-build soul-chat coordination session. Mints a UUID v4 session ID (the gateway is the session authority) and materialises the session via the webshell /api/coordination/sessions/start endpoint. Store the returned session_id in all tasks for this build.", "inputSchema": {"type": "object", "properties": {"build_codename": {"type": "string", "description": "Codename of the build being started (e.g. squad-comms-session-per-build)."}}, "required": ["build_codename"]}}),
+        json!({"name": "lightarchitects_squad_comms_session_end", "description": "Close a per-build soul-chat coordination session. Delegates to the webshell /api/coordination/sessions/end endpoint.", "inputSchema": {"type": "object", "properties": {"session_id": {"type": "string", "description": "UUID of the session to close (returned by session_start)."}}, "required": ["session_id"]}}),
         json!({"name": "lightarchitects_squad_comms_list_tasks", "description": "List the current conductor task queue snapshot. Returns all tasks with status, counts, and daemon health. Delegates to the webshell /api/coordination/tasks endpoint.", "inputSchema": {"type": "object", "properties": {}}}),
-        json!({"name": "lightarchitects_squad_comms_add_task", "description": "Append a task to the conductor queue. Delegates to the webshell /api/coordination/tasks/add endpoint.", "inputSchema": {"type": "object", "properties": {"title": {"type": "string", "description": "Human-readable task title."}, "project": {"type": "string", "description": "Project path relative to ~/Projects/."}, "prompt": {"type": "string", "description": "Agent prompt for the task (max 4000 chars)."}, "priority": {"type": "string", "enum": ["high", "medium", "low"], "description": "Priority (default: medium)."}}, "required": ["title", "project", "prompt"]}}),
-        json!({"name": "lightarchitects_squad_comms_claim_task", "description": "Soft-claim a task in the conductor queue, annotating it with the claiming agent's source label. Delegates to the webshell /api/coordination/tasks/claim/:id endpoint.", "inputSchema": {"type": "object", "properties": {"id": {"type": "string", "description": "Task ID to claim (e.g. manual-20260429-170935)."}, "source": {"type": "string", "description": "Claiming agent identifier."}}, "required": ["id"]}}),
+        json!({"name": "lightarchitects_squad_comms_add_task", "description": "Append a task to the conductor queue. Delegates to the webshell /api/coordination/tasks/add endpoint.", "inputSchema": {"type": "object", "properties": {"title": {"type": "string", "description": "Human-readable task title."}, "project": {"type": "string", "description": "Project path relative to ~/Projects/."}, "prompt": {"type": "string", "description": "Agent prompt for the task (max 4000 chars)."}, "priority": {"type": "string", "enum": ["high", "medium", "low"], "description": "Priority (default: medium)."}, "build_codename": {"type": "string", "description": "Build codename to scope this task (optional)."}, "assignee": {"type": "string", "description": "Agent or worker to pre-assign this task to (optional)."}, "build_session_id": {"type": "string", "description": "UUID of the build's soul-chat session (from session_start, optional)."}}, "required": ["title", "project", "prompt"]}}),
+        json!({"name": "lightarchitects_squad_comms_claim_task", "description": "Soft-claim a task in the conductor queue, annotating it with the claiming agent's source label and assignee. Delegates to the webshell /api/coordination/tasks/claim/:id endpoint.", "inputSchema": {"type": "object", "properties": {"id": {"type": "string", "description": "Task ID to claim (e.g. manual-20260429-170935)."}, "source": {"type": "string", "description": "Claiming agent identifier."}, "assignee": {"type": "string", "description": "Agent or worker name claiming the task (optional)."}}, "required": ["id"]}}),
         json!({"name": "lightarchitects_squad_comms_task_logs", "description": "Fetch the last 200 lines of a task's execution log. Delegates to the webshell /api/coordination/tasks/:id/logs endpoint.", "inputSchema": {"type": "object", "properties": {"id": {"type": "string", "description": "Task ID."}}, "required": ["id"]}}),
         json!({"name": "lightarchitects_squad_comms_chat_inject", "description": "Inject a message into a soul-chat session. Delegates to the webshell /api/coordination/chat/inject endpoint.", "inputSchema": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Target chat session ID."}, "message": {"type": "string", "description": "Message text to inject."}, "sender": {"type": "string", "description": "Sender label (e.g. agent name)."}}, "required": ["session_id", "message"]}}),
     ];
@@ -273,6 +275,8 @@ async fn dispatch(
         "lightarchitects_initialize" => core_tools::initialize::run(params, config).await,
         "lightarchitects_import" => core_tools::import_adapter::run(params, config),
         // Squad Comms — thin HTTP wrappers delegating to the webshell coordination API.
+        "lightarchitects_squad_comms_session_start" => squad_comms::session_start(params, config).await,
+        "lightarchitects_squad_comms_session_end" => squad_comms::session_end(params, config).await,
         "lightarchitects_squad_comms_list_tasks" => squad_comms::list_tasks(params, config).await,
         "lightarchitects_squad_comms_add_task" => squad_comms::add_task(params, config).await,
         "lightarchitects_squad_comms_claim_task" => squad_comms::claim_task(params, config).await,
@@ -305,9 +309,41 @@ mod tests {
     }
 
     #[test]
-    fn all_tool_definitions_has_nineteen_entries() {
-        // 1 meta + 6 file + 3 platform + 9 squad (5 squad_comms + 4 original)
-        assert_eq!(all_tool_definitions().len(), 19);
+    fn all_tool_definitions_has_twenty_one_entries() {
+        // 1 meta + 6 file + 3 platform + 11 squad (7 squad_comms + 4 original)
+        assert_eq!(all_tool_definitions().len(), 21);
+    }
+
+    #[test]
+    fn session_start_and_end_tools_are_registered() {
+        let tools = all_tool_definitions();
+        let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+        assert!(names.contains(&"lightarchitects_squad_comms_session_start"));
+        assert!(names.contains(&"lightarchitects_squad_comms_session_end"));
+    }
+
+    #[test]
+    fn session_start_schema_requires_build_codename() {
+        let tools = all_tool_definitions();
+        let session_start = tools
+            .iter()
+            .find(|t| t["name"] == "lightarchitects_squad_comms_session_start")
+            .unwrap();
+        let required = session_start["inputSchema"]["required"].as_array().unwrap();
+        assert!(required.iter().any(|r| r == "build_codename"));
+    }
+
+    #[test]
+    fn add_task_schema_includes_build_fields() {
+        let tools = all_tool_definitions();
+        let add_task = tools
+            .iter()
+            .find(|t| t["name"] == "lightarchitects_squad_comms_add_task")
+            .unwrap();
+        let props = &add_task["inputSchema"]["properties"];
+        assert!(props.get("build_codename").is_some());
+        assert!(props.get("assignee").is_some());
+        assert!(props.get("build_session_id").is_some());
     }
 
     #[test]

@@ -32,7 +32,8 @@ use crate::{auth, server::AppState};
 
 use super::types::{
     AddTaskRequest, AddTaskResponse, ChatSessionSummary, ChatSessionsResponse, ClaimRequest,
-    ClaimResponse, InjectRequest, InjectResponse, TaskLogsResponse, TaskQueueResponse, TaskSummary,
+    ClaimResponse, InjectRequest, InjectResponse, SessionEndRequest, SessionEndResponse,
+    SessionStartRequest, SessionStartResponse, TaskLogsResponse, TaskQueueResponse, TaskSummary,
 };
 
 // ── Security helpers ─────────────────────────────────────────────────────────
@@ -76,6 +77,12 @@ struct OnDiskTask {
     retries: u32,
     #[serde(default)]
     output_log: Option<String>,
+    #[serde(default)]
+    build_codename: Option<String>,
+    #[serde(default)]
+    assignee: Option<String>,
+    #[serde(default)]
+    build_session_id: Option<String>,
 }
 
 /// Top-level shape of `~/.lightarchitects/tasks/queue.json`.
@@ -92,7 +99,7 @@ fn default_version() -> String {
 }
 
 /// On-disk shape of a soul-chat session record.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct OnDiskSession {
     session_id: String,
     #[serde(default)]
@@ -101,6 +108,9 @@ struct OnDiskSession {
     status: String,
     #[serde(default)]
     topic: Option<String>,
+    /// Build codename this session was created for (written by `session_start`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    build_codename: Option<String>,
 }
 
 // ── Public handlers ─────────────────────────────────────────────────────────
@@ -183,6 +193,9 @@ pub async fn enqueue_dispatch(id: &str, title: &str, prompt: &str) -> Result<(),
         finished: None,
         retries: 0,
         output_log: None,
+        build_codename: None,
+        assignee: None,
+        build_session_id: None,
     };
     queue.tasks.push(task);
     write_queue_async(queue_path, queue).await
@@ -238,6 +251,21 @@ pub async fn add_task(
 
     let id = mint_task_id();
     let priority = normalize_priority(req.priority.as_deref());
+    let build_codename = req
+        .build_codename
+        .as_deref()
+        .map(|s| truncate(s, 200))
+        .filter(|s| !s.is_empty());
+    let assignee = req
+        .assignee
+        .as_deref()
+        .map(|s| truncate(s, 200))
+        .filter(|s| !s.is_empty());
+    let build_session_id = req
+        .build_session_id
+        .as_deref()
+        .map(|s| truncate(s, 200))
+        .filter(|s| !s.is_empty());
     let task = OnDiskTask {
         id: id.clone(),
         title: truncate(&req.title, 200),
@@ -251,6 +279,9 @@ pub async fn add_task(
         finished: None,
         retries: 0,
         output_log: None,
+        build_codename,
+        assignee,
+        build_session_id,
     };
     queue.tasks.push(task);
 
@@ -356,6 +387,105 @@ pub async fn chat_sessions(headers: HeaderMap, State(state): State<AppState>) ->
     let dir = sessions_dir();
     let sessions = read_sessions_dir(&dir).unwrap_or_default();
     Json(ChatSessionsResponse { sessions }).into_response()
+}
+
+/// `POST /api/coordination/sessions/start` — materialise a per-build soul-chat session.
+///
+/// The gateway mints the UUID and sends `{ build_codename, session_id }`. The
+/// webshell writes the session file at
+/// `~/lightarchitects/soul/helix/chat/sessions/<session_id>.json` so the
+/// `GET /api/coordination/chat/sessions` list and the SSE stream see it
+/// immediately. Idempotent: a repeat call with the same session ID overwrites
+/// the existing file with status `running`.
+pub async fn session_start(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(req): Json<SessionStartRequest>,
+) -> impl IntoResponse {
+    if !is_authorised(&headers, &state) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    if req.session_id.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            "session_id must be non-empty".to_owned(),
+        )
+            .into_response();
+    }
+    if req.build_codename.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            "build_codename must be non-empty".to_owned(),
+        )
+            .into_response();
+    }
+    if req.build_codename.len() > 200 {
+        return (
+            StatusCode::BAD_REQUEST,
+            "build_codename exceeds 200-character limit".to_owned(),
+        )
+            .into_response();
+    }
+    let dir = sessions_dir();
+    let record = OnDiskSession {
+        session_id: req.session_id.clone(),
+        participants: Vec::new(),
+        status: "running".into(),
+        topic: None,
+        build_codename: Some(req.build_codename.clone()),
+    };
+    if let Err(e) = write_session_async(dir, record).await {
+        tracing::warn!(session_id = %req.session_id, error = %e, "session write failed");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    Json(SessionStartResponse {
+        session_id: req.session_id,
+        build_codename: req.build_codename,
+        status: "running".into(),
+    })
+    .into_response()
+}
+
+/// `POST /api/coordination/sessions/end` — mark a per-build soul-chat session stopped.
+///
+/// Updates `status` to `"stopped"` in the on-disk session file. If the file
+/// does not exist (e.g. the session was never started) the handler returns 404.
+pub async fn session_end(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(req): Json<SessionEndRequest>,
+) -> impl IntoResponse {
+    if !is_authorised(&headers, &state) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    if req.session_id.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            "session_id must be non-empty".to_owned(),
+        )
+            .into_response();
+    }
+    let dir = sessions_dir();
+    let path = dir.join(format!("{}.json", req.session_id));
+    let raw = match tokio::task::spawn_blocking(move || std::fs::read_to_string(&path)).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(_)) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let mut record: OnDiskSession = match serde_json::from_str(&raw) {
+        Ok(r) => r,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    record.status = "stopped".into();
+    if let Err(e) = write_session_async(sessions_dir(), record).await {
+        tracing::warn!(session_id = %req.session_id, error = %e, "session end write failed");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    Json(SessionEndResponse {
+        session_id: req.session_id,
+        status: "stopped".into(),
+    })
+    .into_response()
 }
 
 /// `POST /api/coordination/chat/inject` — relay a message to the soul CLI.
@@ -482,6 +612,23 @@ fn write_queue(path: &Path, queue: &OnDiskQueue) -> Result<(), String> {
 /// Async wrapper — offloads blocking file I/O to a thread pool (MED H-90).
 async fn write_queue_async(path: PathBuf, queue: OnDiskQueue) -> Result<(), String> {
     tokio::task::spawn_blocking(move || write_queue(&path, &queue))
+        .await
+        .unwrap_or_else(|_| Err("blocking task panicked".to_owned()))
+}
+
+fn write_session(dir: &Path, record: &OnDiskSession) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let path = dir.join(format!("{}.json", record.session_id));
+    let body = serde_json::to_string_pretty(record).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, body.as_bytes()).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Async wrapper — offloads blocking file I/O to a thread pool (MED H-90).
+async fn write_session_async(dir: PathBuf, record: OnDiskSession) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || write_session(&dir, &record))
         .await
         .unwrap_or_else(|_| Err("blocking task panicked".to_owned()))
 }
@@ -679,6 +826,9 @@ mod tests {
             project: "p".into(),
             prompt: "q".into(),
             priority: None,
+            build_codename: None,
+            assignee: None,
+            build_session_id: None,
         };
         assert!(validate_add(&bad).is_err());
     }
@@ -690,6 +840,9 @@ mod tests {
             project: "p".into(),
             prompt: "q".into(),
             priority: Some("high".into()),
+            build_codename: None,
+            assignee: None,
+            build_session_id: None,
         };
         assert!(validate_add(&ok).is_ok());
     }
@@ -721,6 +874,9 @@ mod tests {
                 finished: None,
                 retries: 0,
                 output_log: None,
+                build_codename: None,
+                assignee: None,
+                build_session_id: None,
             }],
         };
         write_queue(&path, &q).expect("write");
@@ -753,6 +909,9 @@ mod tests {
             finished: None,
             retries: 0,
             output_log: None,
+            build_codename: None,
+            assignee: None,
+            build_session_id: None,
         };
         let s = to_summary(&task);
         assert_eq!(s.prompt_excerpt.len(), 240);

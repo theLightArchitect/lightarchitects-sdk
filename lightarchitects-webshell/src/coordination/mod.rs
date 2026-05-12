@@ -26,6 +26,8 @@
 //! - `POST /api/coordination/tasks/add` — append a task to the queue
 //! - `POST /api/coordination/tasks/claim/:id` — soft-claim (annotates source)
 //! - `GET  /api/coordination/tasks/:id/logs` — last 200 lines of task log
+//! - `POST /api/coordination/sessions/start` — materialise a per-build soul-chat session
+//! - `POST /api/coordination/sessions/end` — mark a session stopped
 //! - `GET  /api/coordination/chat/sessions` — list known chat sessions
 //! - `POST /api/coordination/chat/inject` — inject a message into a session
 //! - `GET  /api/coordination/chat/stream?session_id=...` — SSE chat stream
@@ -40,6 +42,6 @@ pub mod types;
 
 pub use handlers::{
     add_task, chat_inject, chat_sessions, claim_task, complete_dispatch, enqueue_dispatch,
-    list_tasks, task_logs,
+    list_tasks, session_end, session_start, task_logs,
 };
 pub use sse::chat_stream;

@@ -524,6 +524,14 @@ pub fn build_app(state: AppState) -> Router {
             get(coordination::task_logs),
         )
         .route(
+            "/api/coordination/sessions/start",
+            post(coordination::session_start),
+        )
+        .route(
+            "/api/coordination/sessions/end",
+            post(coordination::session_end),
+        )
+        .route(
             "/api/coordination/chat/sessions",
             get(coordination::chat_sessions),
         )

@@ -7,11 +7,13 @@
 //!
 //! # Actions
 //!
-//! - `list_tasks`  — `GET  /api/coordination/tasks`
-//! - `add_task`    — `POST /api/coordination/tasks/add`
-//! - `claim_task`  — `POST /api/coordination/tasks/claim/:id`
-//! - `task_logs`   — `GET  /api/coordination/tasks/:id/logs`
-//! - `chat_inject` — `POST /api/coordination/chat/inject`
+//! - `session_start` — `POST /api/coordination/sessions/start` (UUID minted here)
+//! - `session_end`   — `POST /api/coordination/sessions/end`
+//! - `list_tasks`    — `GET  /api/coordination/tasks`
+//! - `add_task`      — `POST /api/coordination/tasks/add`
+//! - `claim_task`    — `POST /api/coordination/tasks/claim/:id`
+//! - `task_logs`     — `GET  /api/coordination/tasks/:id/logs`
+//! - `chat_inject`   — `POST /api/coordination/chat/inject`
 //!
 //! # Error handling
 //!
@@ -19,6 +21,7 @@
 //! MCP caller — no panic, no unwrap (BC-1).
 
 use serde_json::{Value, json};
+use uuid::Uuid;
 
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
@@ -106,6 +109,45 @@ async fn webshell_post(
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
+/// `lightarchitects_squad_comms_session_start` — open a per-build soul-chat session.
+///
+/// Mints a UUID v4 session ID in the gateway (the session authority), then
+/// POSTs to the webshell to materialize the soul-chat session. The returned
+/// `session_id` must be stored in every task's `build_session_id` field so
+/// workers can join the session without a second round-trip.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::MissingParam`] if `build_codename` is absent.
+/// Returns [`GatewayError::InvalidRequest`] if the webshell is unreachable.
+pub async fn session_start(params: Value, config: &GatewayConfig) -> Result<Value, GatewayError> {
+    let build_codename = params["build_codename"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("build_codename"))?
+        .to_owned();
+    let session_id = Uuid::new_v4().to_string();
+    let payload = json!({
+        "build_codename": build_codename,
+        "session_id": session_id,
+    });
+    webshell_post("/api/coordination/sessions/start", payload, config).await
+}
+
+/// `lightarchitects_squad_comms_session_end` — close a per-build soul-chat session.
+///
+/// # Errors
+///
+/// Returns [`GatewayError::MissingParam`] if `session_id` is absent.
+/// Returns [`GatewayError::InvalidRequest`] if the webshell is unreachable.
+pub async fn session_end(params: Value, config: &GatewayConfig) -> Result<Value, GatewayError> {
+    let session_id = params["session_id"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("session_id"))?
+        .to_owned();
+    let payload = json!({ "session_id": session_id });
+    webshell_post("/api/coordination/sessions/end", payload, config).await
+}
+
 /// `lightarchitects_squad_comms_list_tasks` — list task queue snapshot.
 ///
 /// # Errors
@@ -135,12 +177,18 @@ pub async fn add_task(params: Value, config: &GatewayConfig) -> Result<Value, Ga
         .ok_or(GatewayError::MissingParam("prompt"))?
         .to_owned();
     let priority = params["priority"].as_str().unwrap_or("medium").to_owned();
+    let build_codename = params["build_codename"].as_str().map(str::to_owned);
+    let assignee = params["assignee"].as_str().map(str::to_owned);
+    let build_session_id = params["build_session_id"].as_str().map(str::to_owned);
 
     let payload = json!({
         "title": title,
         "project": project,
         "prompt": prompt,
-        "priority": priority
+        "priority": priority,
+        "build_codename": build_codename,
+        "assignee": assignee,
+        "build_session_id": build_session_id,
     });
 
     webshell_post("/api/coordination/tasks/add", payload, config).await
@@ -157,7 +205,8 @@ pub async fn claim_task(params: Value, config: &GatewayConfig) -> Result<Value, 
         .as_str()
         .ok_or(GatewayError::MissingParam("id"))?;
     let source = params["source"].as_str().unwrap_or("gateway");
-    let payload = json!({ "source": source });
+    let assignee = params["assignee"].as_str().map(str::to_owned);
+    let payload = json!({ "source": source, "assignee": assignee });
     webshell_post(
         &format!("/api/coordination/tasks/claim/{id}"),
         payload,

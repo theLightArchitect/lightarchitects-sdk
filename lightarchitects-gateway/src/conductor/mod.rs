@@ -204,6 +204,9 @@ fn cmd_add(config: &config::Config, args: &[String]) -> Result<(), GatewayError>
         output_log: None,
         awaiting_assertion_id: None,
         resolution_deadline: None,
+        build_codename: None,
+        assignee: None,
+        build_session_id: None,
     });
 
     q.save(queue_path)
