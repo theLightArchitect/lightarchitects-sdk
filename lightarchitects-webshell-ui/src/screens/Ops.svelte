@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
     siblingHealth, ayinStatus, platformHealth,
-    conductorStats, arenaStats, alertStats, buildStats,
+    conductorStats, alertStats, buildStats,
     siblingDispatchCounts, projectGroups, activityFeed, logEntries,
     helixEntries, vaultCounts,
   } from '$lib/stores';
@@ -9,7 +9,6 @@
   import type { SiblingId } from '$lib/types';
   import type { ProjectGroup, Build } from '$lib/types';
   import ConductorPanel from '$lib/../components/ConductorPanel.svelte';
-  import ArenaPanel from '$lib/../components/ArenaPanel.svelte';
   import AlertPanel from '$lib/../components/AlertPanel.svelte';
   import CompactionPanel from '$lib/../components/CompactionPanel.svelte';
   import VoxelProjects3D from '$lib/../components/topology/VoxelProjects3D.svelte';
@@ -261,7 +260,6 @@
 
       <!-- Accordion panels -->
       <ConductorPanel />
-      <ArenaPanel />
       <AlertPanel />
       <CompactionPanel />
     </div>

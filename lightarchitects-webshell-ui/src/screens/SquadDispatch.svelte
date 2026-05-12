@@ -56,6 +56,7 @@
   let errorMsg = $state<string | null>(null);
   let elapsedMs = $state<number | undefined>(undefined);
   let selectedAgent = $state<DomainAgent | null>(null);
+  let showAgentValidation = $state(false);
 
   let stopStream: (() => void) | null = null;
   let classifyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -160,7 +161,8 @@
     atts: FileAttachment[] = [],
     cfg: Partial<Record<DomainAgent, AgentToolConfig>> = {},
   ) {
-    if (selectedAgents.length === 0) return;
+    if (selectedAgents.length === 0) { showAgentValidation = true; return; }
+    showAgentValidation = false;
     errorMsg = null;
     events = [];
     eventTimes = [];
@@ -513,11 +515,17 @@
           bind:selected={selectedAgents}
           {classification}
           disabled={isLive}
+          showValidation={showAgentValidation}
         />
       </div>
     </div>
 
-    <!-- action panel: telemetry + primary CTA -->
+    <!-- action panel: telemetry + primary CTA
+         TODO Sprint 2 DIS-3: this panel currently anchors top-right of the Z-pattern,
+         making it the FIRST read on the right side. Per DESIGN-LANGUAGE.md §3, the
+         terminal CTA must anchor BOTTOM-RIGHT (the Z endpoint). Restructure: zones 03
+         (Execution Stage) and 04 (Mailbox) should move to the right column so the
+         DISPATCH button is the last element the eye reaches. -->
     <div class="cmd-action">
       <div class="cmd-action-head">
         <span><span class="idx">[ 02 ]</span> DISPATCH</span>

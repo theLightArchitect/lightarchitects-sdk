@@ -4,7 +4,7 @@
     copilotMessages, copilotLoading, currentBuildId, activeBuild,
     findings, selectedPillar, focusedSibling, spikeSibling,
     buildBuildContext, authProfile, ollamaConfig, terminalConnected,
-    builds, siblingHealth, arenaStats, alertStats, drawerHeightPx, waves,
+    builds, siblingHealth, alertStats, drawerHeightPx, waves,
     clearCopilotHistory, isNativeAgent,
   } from '$lib/stores';
   import { SIBLING_COLORS } from '$lib/design-tokens';
@@ -790,8 +790,6 @@
         <span>{$builds.length} builds</span>
         <span>·</span>
         <span>{Object.values($siblingHealth).filter(h => h?.status === 'online').length}/7 agents</span>
-        <span>·</span>
-        <span>{$arenaStats.activeAgents} active</span>
         <span>·</span>
         <span class="text-[#ef4444]">{$alertStats.unacknowledged} alerts</span>
       </div>

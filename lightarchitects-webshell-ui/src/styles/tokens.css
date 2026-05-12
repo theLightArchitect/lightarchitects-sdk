@@ -7,6 +7,48 @@
    ============================================================================ */
 
 :root {
+  /* ── Motion grammar (DESIGN-LANGUAGE.md §5) ─────────────────────────────── */
+  --ease-project: cubic-bezier(0.16, 1, 0.3, 1);   /* forward progress */
+  --ease-retract: cubic-bezier(0.7, 0, 0.84, 0);    /* retraction / dismiss */
+  --ease-snap:    cubic-bezier(0.34, 1.56, 0.64, 1); /* selection confirmation */
+
+  /* ── Structural channel ──────────────────────────────────────────────────── */
+  --la-struct-primary:   #00c8ff;
+  --la-struct-secondary: #2a6496;
+
+  /* ── Semantic channel with glow levels ──────────────────────────────────── */
+  --la-semantic-ok:           #22c55e;
+  --la-semantic-ok-glow:      0 0 8px rgba(34, 197, 94, 0.4);
+  --la-semantic-ok-glow-hi:   0 0 20px rgba(34, 197, 94, 0.7);
+  --la-semantic-warn:         #f59e0b;
+  --la-semantic-warn-glow:    0 0 8px rgba(245, 158, 11, 0.4);
+  --la-semantic-warn-glow-hi: 0 0 20px rgba(245, 158, 11, 0.7);
+  --la-semantic-error:         #ef4444;
+  --la-semantic-error-glow:    0 0 8px rgba(239, 68, 68, 0.4);
+  --la-semantic-error-glow-hi: 0 0 20px rgba(239, 68, 68, 0.7);
+  --la-semantic-active:  #a78bfa;
+  --la-semantic-offline: #475569;
+
+  /* ── Surface scale ───────────────────────────────────────────────────────── */
+  --la-bg-base:     #0a0a0f;
+  --la-bg-panel:    #0f1117;
+  --la-bg-card:     #141820;
+  --la-bg-elevated: #1a2030;
+  --la-bg-overlay:  rgba(10, 10, 15, 0.85);  /* modal backdrop */
+
+  /* ── Background grid (p5.js — §2 DESIGN-LANGUAGE) ───────────────────────── */
+  --la-struct-grid:       rgba(0, 200, 255, 0.04);   /* base grid lines */
+  --la-struct-grid-hover: rgba(0, 200, 255, 0.12);   /* hover pulse within 200px */
+
+  /* ── Sibling identity channel ────────────────────────────────────────────── */
+  --la-id-soul:    #f59e0b;
+  --la-id-eva:     #ec4899;
+  --la-id-corso:   #3b82f6;
+  --la-id-quantum: #8b5cf6;
+  --la-id-seraph:  #ef4444;
+  --la-id-ayin:    #f97316;
+  --la-id-laex:    #eab308;
+
   /* ── Typography — JBM everywhere ────────────────────────────────────────── */
   --la-font-chrome: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
   --la-font-mono:   "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
@@ -220,3 +262,15 @@ body::after {
 [data-agent="knowledge"]  { --la-agent-c: var(--la-agent-knowledge); }
 [data-agent="testing"]    { --la-agent-c: var(--la-agent-testing); }
 [data-agent="squad"]      { --la-agent-c: var(--la-agent-squad); }
+
+/* ── NI-4: prefers-reduced-motion (DESIGN-LANGUAGE.md §5) ───────────────────
+   Collapses all CSS transitions/animations to instant for users who have
+   enabled the OS-level "Reduce Motion" accessibility setting.              */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration:        0.01ms !important;
+    animation-iteration-count: 1      !important;
+    transition-duration:       0.01ms !important;
+    scroll-behavior:           auto   !important;
+  }
+}
