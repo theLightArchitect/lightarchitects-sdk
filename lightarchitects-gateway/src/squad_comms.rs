@@ -204,9 +204,9 @@ pub async fn claim_task(params: Value, config: &GatewayConfig) -> Result<Value, 
     let id = params["id"]
         .as_str()
         .ok_or(GatewayError::MissingParam("id"))?;
-    let source = params["source"].as_str().unwrap_or("gateway");
-    let assignee = params["assignee"].as_str().map(str::to_owned);
-    let payload = json!({ "source": source, "assignee": assignee });
+    // `source` is the claiming agent identifier; webshell ClaimRequest expects `claimant`.
+    let claimant = params["source"].as_str().unwrap_or("gateway").to_owned();
+    let payload = json!({ "claimant": claimant });
     webshell_post(
         &format!("/api/coordination/tasks/claim/{id}"),
         payload,
