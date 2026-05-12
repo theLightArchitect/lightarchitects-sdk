@@ -408,7 +408,7 @@ function applyGateColor(branch: BranchMesh, state: GateState) {
 
 ### GIT-3 🔴 Agent worktree sub-branches
 
-Each `feat/<codename>` branch has sub-branches for agent worktrees (`.claude/worktrees/<codename>/`). Sub-branches use **agent domain identity color** (not gate color) — ownership is the primary encoding at sub-branch level. Sub-branches are always thinner than their parent `feat/<codename>` branch.
+Each `feat/<codename>` branch has sub-branches for agent worktrees (`~/lightarchitects/worktrees/<codename>/`). Sub-branches use **agent domain identity color** (not gate color) — ownership is the primary encoding at sub-branch level. Sub-branches are always thinner than their parent `feat/<codename>` branch.
 
 ```typescript
 const AGENT_COLORS: Record<AgentDomain, number> = {
