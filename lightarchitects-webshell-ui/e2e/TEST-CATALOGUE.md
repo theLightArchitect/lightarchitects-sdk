@@ -1,8 +1,8 @@
 # Test Suite Catalogue — lightarchitects-webshell-ui
 
 **Standard:** §57 E2E Test Engineering Standards (Builders Cookbook Canon XXXII)
-**Last updated:** 2026-05-01
-**Gate:** `pnpm test:run` (426/426) + `svelte-check --threshold error` (0 errors)
+**Last updated:** 2026-05-13
+**Gate:** `pnpm test:run` (472/472) + `svelte-check --threshold error` (0 errors)
 
 ---
 
@@ -10,11 +10,11 @@
 
 | Layer | Files | Tests | Gate |
 |-------|-------|-------|------|
-| Unit (Vitest) | 22 | 426 | Blocks merge |
-| E2E integration (Playwright) | 1 | ~324 | Blocks release |
+| Unit (Vitest) | 26 | 472 | Blocks merge |
+| E2E integration (Playwright) | 5 | ~346 | Blocks release |
 | E2E live integration | 1 | 13 | Blocks release |
 | E2E visual | 1 | 5 | Manual only |
-| **Total** | **25** | **~768** | |
+| **Total** | **33** | **~836** | |
 
 ---
 
@@ -46,11 +46,26 @@ Tier: **Smoke** (blocks merge)
 | `stores.test.ts` | 21 | State | Initial state, `buildStats`, `activeBuild`, `selectedPillar`, `spikeSibling`, wave tick |
 | `types.test.ts` | 18 | Type system | `PILLARS`, `PILLAR_ACTIONS`, `META_SKILLS`, `SIBLINGS`, `SiblingWave`, type validation |
 | `vocabulary.test.ts` | 8 | Vocabulary canon | `TERMS`, `NAV_LABELS`, `TOOLTIPS`, `t()`, `tip()` |
+| `wave2.test.ts` | 20 | Atmosphere / Events | `ATMOSPHERE_SOURCE_COLORS`, `sourceColor`, `scanLinesEnabled`; `EventStream.svelte`, `ScanLines.svelte`, `GlobalEventsOverlay.svelte` imports |
 | `ws.test.ts` | 10 | Terminal | `TerminalWS` constructor, connect, message handling, `sendText`, `sendResize`, lifecycle |
+
+### Layer 1b — Browser Component Tests (`src/components/dispatch/*.svelte.test.ts`)
+
+Run: `pnpm test:run` (included in unified run)  
+Mode: Vitest browser (chromium); real DOM + Svelte 5 reactivity  
+Tier: **Capability** (blocks merge — same gate as unit)
+
+| File | Tests | Capability | What it covers |
+|------|-------|------------|----------------|
+| `AgentSelector.svelte.test.ts` | 9 | Squad dispatch | Chip rendering, aria-pressed, selection toggle, AUTO, ALL, CLR, disabled state, empty-state warning |
+| `AgentToolConfig.svelte.test.ts` | 10 | Squad dispatch | Panel expand/collapse, depth badge, depth switching, optional tool toggles, ACTIVE pills, disabled guard |
+| `LiveAgentGrid.svelte.test.ts` | 7 | Squad dispatch | Empty state, 8 agent codes + gates, STANDBY state, last_tool metadata, data-state attribute, onSelect, fallback text |
 
 ---
 
-## Layer 2 — E2E Integration (`e2e/webshell.spec.ts`)
+## Layer 2 — E2E Integration
+
+### Layer 2a — Full webshell suite (`e2e/webshell.spec.ts`)
 
 Run: `pnpm test:e2e -- webshell`  
 Mode: serial, shared browser context  
@@ -184,6 +199,74 @@ Tier: **Capability** (blocks release)
 
 ---
 
+### Layer 2b — Northstar E2E (`e2e/northstar.spec.ts`)
+
+Run: `pnpm test:e2e -- northstar`  
+Mode: serial, shared browser context  
+Mocks: setup flow + browser-state; real backend hits where available  
+Tier: **Capability** (blocks release)
+
+| # | Test | Capability | Key assertions |
+|---|------|------------|----------------|
+| 1 | Operator creates a build from Intake form | Build lifecycle | POST /api/builds, build_id returned, redirect to /builds |
+| 2 | Build detail renders all 7 LASDLC pillars | Build lifecycle | 7 pillar sections visible in build detail |
+| 3 | Dispatch launches agent and streams output | Squad dispatch | POST /api/dispatch, streaming SSE response in UI |
+| 4 | Helix vault shows stored entries | Knowledge / Helix | SOUL entries load; search + filter functional |
+
+---
+
+### Layer 2c — Vibe Coding E2E (`e2e/vibe-coding.spec.ts`)
+
+Run: `pnpm test:e2e -- vibe-coding`  
+Mode: serial, synthetic event injection via `la:e2e-inject-agent-events` CustomEvent  
+Mocks: AgentWS bypassed; events injected directly into handler  
+Tier: **Capability** (blocks release)
+
+| # | Test | Capability | Key assertions |
+|---|------|------------|----------------|
+| 1 | Agent file-write event renders tool start + complete in chat | Copilot | `Write` tool bubble, ✅ completion, final text visible, no lingering "Thinking…" |
+| 2 | Permission prompt structure (contract test) | Copilot | Permission request renders with correct structure |
+| 3 | Bash tool event renders in chat | Copilot | Bash tool bubble with command and output |
+| 4 | Agent error event renders error bubble | Copilot | Error bubble visible with message text |
+| 5 | Complete event clears thinking state | Copilot | "Thinking…" disappears after complete event |
+
+---
+
+### Layer 2d — Conversational Mode (`e2e/conversational.spec.ts`)
+
+Run: `pnpm test:e2e -- conversational`  
+Mode: serial; mock backend via `registerMocks`  
+Tier: **Capability** (blocks release)
+
+| # | Test | Capability | Key assertions |
+|---|------|------------|----------------|
+| 1 | Copilot drawer opens via keyboard shortcut | Copilot | Ctrl+\` opens drawer; `[aria-label="Chat messages"]` visible |
+| 2 | Sending a message adds it to chat history | Copilot | User bubble appears with message text |
+| 3 | Slash command suggestions appear when typing / | Copilot | `/build` suggestion dropdown visible |
+| 4 | Context injection via @-mention | Copilot | @-trigger opens file picker |
+| 5 | Message history persists after close/reopen | Copilot | Prior messages visible after drawer reopens |
+| 6 | Clearing history removes all messages | Copilot | Chat empty after clear action |
+
+---
+
+### Layer 2e — Provider & Model Switching (`e2e/provider-model.spec.ts`)
+
+Run: `pnpm test:e2e -- provider-model`  
+Mode: serial; mock backend  
+Tier: **Capability** (blocks release)
+
+| # | Test | Capability | Key assertions |
+|---|------|------------|----------------|
+| 1 | Default provider is shown in settings | Setup | Current backend visible in Settings panel |
+| 2 | Switch to Ollama updates config | Setup | `POST /api/setup/save` with `backend: 'ollama'` |
+| 3 | Switch back to Anthropic | Setup | Restore default backend config |
+| 4 | Model list updates after provider switch | Setup | Different model list for Ollama vs Anthropic |
+| 5 | Selected model persists across nav | Setup | Model choice survives route change |
+| 6 | Invalid model selection blocked | Setup | Save disabled until valid model selected |
+| 7 | Provider switch reflected in status bar | Setup | Status bar shows updated backend name |
+
+---
+
 ## Layer 3 — E2E Live Integration (`e2e/claude-code-oauth.spec.ts`)
 
 Run: `pnpm test:e2e -- claude-code-oauth`  
@@ -258,7 +341,7 @@ Output: `screenshots/*.png` + `test-results/screenshot-tour.har`
 ### Default — one persistent headed session
 
 ```bash
-# Unit gate (blocks merge) — 426 tests, ~8s
+# Unit gate (blocks merge) — 472 tests, ~8s
 pnpm test:run
 
 # svelte-check gate (blocks merge)
