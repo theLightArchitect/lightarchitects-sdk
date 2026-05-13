@@ -301,7 +301,8 @@ export type EventType =
   | 'training_progress'
   | 'fs_mutation_pending'
   | 'strand_convergence'
-  | 'mailbox_message';
+  | 'mailbox_message'
+  | 'context_status';
 
 // --- Agent protocol (native agent bridge) ---
 
@@ -540,6 +541,18 @@ export interface CopilotActivityEvent {
   raw: unknown;
   /** ISO-8601 timestamp. */
   timestamp: string;
+}
+
+/** Context-window utilisation snapshot from the LightArchitects CLI subprocess. */
+export interface ContextStatusEvent {
+  /** Usage as a fraction of the context window (0.0–1.0). */
+  usage_pct: number;
+  /** Active compaction level: null, "l1", "l2", or "l3". */
+  level?: string;
+  /** Total token budget for this session. */
+  budget: number;
+  /** Tokens consumed so far in this session. */
+  used: number;
 }
 
 /** AYIN trace span forwarded from the backend. */

@@ -84,6 +84,12 @@ pub enum WebEvent {
     /// `stream-json` event (thinking, `tool_use`, `tool_result`, etc.). The
     /// frontend Activity tab renders these as a live feed.
     CopilotActivity(CopilotActivityEvent),
+    /// Context-window utilisation snapshot from the `LightArchitects` CLI subprocess.
+    ///
+    /// Emitted by `run_native_turn` each time the persistent CLI process outputs a
+    /// `{"type":"context",...}` NDJSON line. The frontend uses this to drive the
+    /// context bar above the Copilot drawer.
+    ContextStatus(ContextStatusEvent),
 }
 
 /// Cross-sibling strand convergence event (Phase 19b.2).
@@ -122,6 +128,24 @@ pub struct CopilotActivityEvent {
     pub raw: serde_json::Value,
     /// ISO-8601 UTC timestamp of when this event was received.
     pub timestamp: String,
+}
+
+/// Context-window utilisation snapshot from the `LightArchitects` CLI subprocess.
+///
+/// Emitted by `run_native_turn` each time the persistent CLI process outputs a
+/// `{"type":"context",...}` NDJSON line. The frontend uses this to drive the
+/// context bar above the Copilot drawer.
+#[derive(Debug, Clone, Serialize)]
+pub struct ContextStatusEvent {
+    /// Usage as a fraction of the context window (0.0–1.0).
+    pub usage_pct: f32,
+    /// Active compaction level: `None`, `"l1"`, `"l2"`, or `"l3"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<String>,
+    /// Total token budget for this session.
+    pub budget: u64,
+    /// Tokens consumed so far in this session.
+    pub used: u64,
 }
 
 /// Incremental pillar-run update broadcast over SSE (Phase 15).

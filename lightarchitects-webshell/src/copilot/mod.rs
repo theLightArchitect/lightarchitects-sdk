@@ -897,6 +897,23 @@ pub(super) async fn call_subprocess(
                     if let Some(id) = val["session_id"].as_str() {
                         proc.session_id = Some(id.to_owned());
                     }
+                    if val["type"].as_str() == Some("context") {
+                        #[allow(clippy::cast_possible_truncation)]
+                        let usage_pct = val["usage_pct"].as_f64().unwrap_or(0.0) as f32;
+                        let budget = val["budget"].as_u64().unwrap_or(0);
+                        let used = val["used"].as_u64().unwrap_or(0);
+                        let level = val["level"].as_str().map(ToOwned::to_owned);
+                        let _ = session
+                            .event_tx
+                            .send(crate::events::WebEvent::ContextStatus(
+                                crate::events::types::ContextStatusEvent {
+                                    usage_pct,
+                                    level,
+                                    budget,
+                                    used,
+                                },
+                            ));
+                    }
                 }
                 if let Some(text) = parse_turn_end(&line, session) {
                     break Some(text);
