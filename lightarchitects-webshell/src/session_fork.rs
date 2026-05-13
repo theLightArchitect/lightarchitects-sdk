@@ -146,11 +146,11 @@ pub async fn fork_handler(
                 AgentSession::LightarchitectsNative(_) => "lightarchitects_native",
                 _ => "lightarchitects",
             },
-            format!("cd {cwd_str} && claude --resume {session_id}"),
+            format!("cd '{cwd_str}' && claude --resume {session_id}"),
         ),
         AgentKind::Codex => (
             "codex",
-            format!("cd {cwd_str} && codex exec resume {session_id}"),
+            format!("cd '{cwd_str}' && codex exec resume {session_id}"),
         ),
     };
 
@@ -304,6 +304,11 @@ mod tests {
     #[test]
     fn cwd_allowlist_rejects_overlong() {
         assert!(!is_safe_fork_cwd(&"/a".repeat(257)));
+    }
+
+    #[test]
+    fn cwd_allowlist_accepts_path_with_space() {
+        assert!(is_safe_fork_cwd("/Users/kft/My Projects/build"));
     }
 
     #[test]
