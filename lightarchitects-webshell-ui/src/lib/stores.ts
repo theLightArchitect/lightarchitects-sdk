@@ -549,6 +549,23 @@ export const planBuilderMode = writable<boolean>(false);
 /** Active plan being built/edited in Intake Plan Builder */
 export const planBuilderDraft = writable<import('./types').BuildPlan | null>(null);
 
+// ── Code editor (EEF Phase 3 Wave 1) ─────────────────────────────────────────
+
+/** In-memory buffer for the code editor screen. */
+export interface CodeBuffer {
+  /** Absolute or relative path of the open file. */
+  path: string;
+  /** Current in-editor content (may differ from disk). */
+  content: string;
+  /** Content at last save — used for dirty-flag tracking. */
+  savedContent: string;
+  /** Monaco language identifier (e.g. `"rust"`, `"typescript"`). */
+  language: string;
+}
+
+/** Active code editor buffer. `null` when no file is open. */
+export const codeStore = writable<CodeBuffer | null>(null);
+
 let waveInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startWaveTick(): void {

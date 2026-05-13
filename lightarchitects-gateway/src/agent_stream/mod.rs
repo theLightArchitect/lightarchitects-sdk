@@ -66,7 +66,7 @@ pub async fn run_ndjson(
     system_prompt: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(ref sp) = system_prompt {
-        validate_system_prompt(sp).map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+        validate_system_prompt(sp).map_err(Box::<dyn std::error::Error>::from)?;
     }
     if let Some(key) = std::env::var("LA_INHERITED_API_KEY").ok().filter(|s| !s.is_empty()) {
         let backend = std::env::var("LA_INHERITED_BACKEND")
@@ -84,7 +84,7 @@ pub async fn run_ndjson(
     if let Some(sp) = system_prompt {
         runner
             .set_system_prompt(sp)
-            .map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+            .map_err(Box::<dyn std::error::Error>::from)?;
     }
     runner.run_ndjson_loop().await;
     Ok(())

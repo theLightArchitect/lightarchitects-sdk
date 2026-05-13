@@ -44,6 +44,8 @@ use crate::{
     setup, static_assets, terminal,
 };
 
+pub mod code_routes;
+
 /// Snapshot of the browser UI state, periodically reported by the frontend.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BrowserStateSnapshot {
@@ -555,6 +557,19 @@ pub fn build_app(state: AppState) -> Router {
         .merge(dispatch::dispatch_router())
         // ── File listing for @-file autocomplete ─────────────────────────────
         .route("/api/files", get(list_files_handler))
+        // ── Code editor API (EEF Phase 3 Wave 1) ─────────────────────────────
+        .route("/api/code/read", get(code_routes::read_handler))
+        .route("/api/code/list", get(code_routes::list_handler))
+        .route("/api/code/write", post(code_routes::write_handler))
+        .route("/api/code/search", post(code_routes::search_handler))
+        .route(
+            "/api/code/preview-diff",
+            post(code_routes::preview_diff_handler),
+        )
+        .route(
+            "/api/code/apply-diff",
+            post(code_routes::apply_diff_handler),
+        )
         // ── CSP violation reports (SEC-3b, Enforce phase) ────────────────────
         .route("/api/csp-report", post(csp::csp_report_handler))
         .fallback(static_assets::serve)

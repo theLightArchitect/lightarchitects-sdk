@@ -56,22 +56,21 @@
     BuildDetail:   () => import('./screens/BuildDetail.svelte'),
     ProjectDetail: () => import('./screens/ProjectDetail.svelte'),
     Comms:         () => import('./screens/Comms.svelte'),
+    Editor:        () => import('./screens/Editor.svelte'),
   };
 
   type ScreenModule = { default: any };
 
   let ActiveScreen = $state<any>(null);
+  let screenParams = $state<Record<string, string>>({});
   let screenLoading = $state(true);
   let loadGen = 0; // monotonic counter — latest request wins, stale results dropped
-
-  function resolveScreenKey(path: string): keyof typeof screenModules {
-    return matchRoute(path).screen;
-  }
 
   async function loadScreen(path: string) {
     const gen = ++loadGen;
     screenLoading = true;
-    const key = resolveScreenKey(path);
+    const { screen: key, params } = matchRoute(path);
+    screenParams = params;
     try {
       const mod: ScreenModule = await screenModules[key]();
       if (gen !== loadGen) return; // superseded by a newer navigation
@@ -459,7 +458,7 @@
         </div>
       {:else if ActiveScreen}
         {#key ActiveScreen}
-          <ActiveScreen />
+          <ActiveScreen params={screenParams} />
         {/key}
       {/if}
     </div>

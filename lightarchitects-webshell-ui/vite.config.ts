@@ -18,10 +18,17 @@ export default defineConfig({
     },
   },
   assetsInclude: ['**/*.svg', '**/*.csv'],
+  // Monaco pre-bundling breaks its worker URL resolution — exclude from Vite's dep optimizer.
+  optimizeDeps: {
+    exclude: ['monaco-editor'],
+  },
   build: {
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (id.includes('node_modules/monaco-editor/')) {
+            return 'monaco';
+          }
           if (id.includes('node_modules/three/') || id.includes('node_modules/@threlte/')) {
             return 'three';
           }

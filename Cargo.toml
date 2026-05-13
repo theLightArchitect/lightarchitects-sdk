@@ -110,6 +110,7 @@ moka      = { version = "0.12", features = ["future"] }
 regex     = "1"
 serde_yaml = "0.9"
 fastembed = { version = "5", optional = false }
+similar   = "2"
 
 # ── Dev/test ──────────────────────────────────────────────────────────────────
 tempfile = "3"

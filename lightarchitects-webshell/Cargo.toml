@@ -93,6 +93,9 @@ uuid.workspace = true
 # Date formatting for helix entry path projection
 chrono.workspace = true
 
+# Unified diff generation for /api/code/preview-diff
+similar.workspace = true
+
 # Per-build session registry (concurrent map, deadlock-safe clone-out API).
 dashmap = { workspace = true }
 
