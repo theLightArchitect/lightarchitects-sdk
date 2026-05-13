@@ -17,8 +17,9 @@ pub mod ws;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use dashmap::DashMap;
 use tokio::process::Child;
-use tokio::sync::{Mutex, broadcast, mpsc};
+use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use tracing::{info, warn};
 
 use crate::session::BuildSession;
@@ -61,6 +62,25 @@ pub struct AgentSessionHost {
     /// Set to `true` when a fallback `run` is in flight; subsequent
     /// `SendMessage`s are rejected until it clears.
     pub fallback_in_flight: AtomicBool,
+
+    /// Pending tool-permission requests awaiting operator approval.
+    ///
+    /// Key: server-generated `call_id` (`Uuid::new_v4().to_string()`).
+    /// Value: `oneshot::Sender<bool>` — send `true` to approve, `false` to deny.
+    ///
+    /// Populated when `WebEvent::PermissionRequest` is emitted; resolved by
+    /// `POST /api/builds/:id/copilot/approve`. Bounded at
+    /// [`MAX_PENDING_PERMISSIONS`] entries; insert returns HTTP 429 on overflow.
+    ///
+    /// On `Drop`, all pending senders receive `false` (deny) to unblock waiting
+    /// agent turns. See `Drop` impl below.
+    ///
+    /// # Note
+    /// A1 validation (Sprint 4-A Phase 1) found the Claude CLI does not emit
+    /// `permission_request` events at this version. This field is scaffolded
+    /// for forward-compatibility; the `/approve` route is wired in Sprint 4-B
+    /// once CLI support is confirmed.
+    pub permission_queue: Arc<DashMap<String, oneshot::Sender<bool>>>,
 }
 
 impl AgentSessionHost {
@@ -77,8 +97,35 @@ impl AgentSessionHost {
             control_tx,
             child: Mutex::new(None),
             fallback_in_flight: AtomicBool::new(false),
+            permission_queue: Arc::new(DashMap::new()),
         };
         (host, control_rx)
+    }
+}
+
+/// Maximum number of concurrent pending permission requests per build session.
+///
+/// Inserts beyond this limit return HTTP 429 to prevent unbounded queue growth
+/// under adversarial or runaway agent conditions (§3.3 constraint 3, SA-10).
+pub const MAX_PENDING_PERMISSIONS: usize = 64;
+
+impl Drop for AgentSessionHost {
+    fn drop(&mut self) {
+        // Drain the permission queue — collect keys first to avoid holding a
+        // DashMap shard reference while calling send() (deadlock risk, SA-22).
+        let keys: Vec<String> = self
+            .permission_queue
+            .iter()
+            .map(|e| e.key().clone())
+            .collect();
+        for key in keys {
+            if let Some((_, sender)) = self.permission_queue.remove(&key) {
+                // Deny all pending requests on teardown. Agent turns blocked on
+                // oneshot::Receiver::await will unblock with `false`.
+                let _ = sender.send(false);
+                warn!(call_id = %key, "permission_queue drained on AgentSessionHost drop — denied");
+            }
+        }
     }
 }
 

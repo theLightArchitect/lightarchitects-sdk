@@ -35,6 +35,9 @@ importers:
       marked:
         specifier: ^15.0.0
         version: 15.0.12
+      monaco-editor:
+        specifier: ^0.52.0
+        version: 0.52.2
       shepherd.js:
         specifier: ^15.2.2
         version: 15.2.2
@@ -1129,6 +1132,9 @@ packages:
 
   meshoptimizer@1.1.1:
     resolution: {integrity: sha512-oRFNWJRDA/WTrVj7NWvqa5HqE1t9MYDj2VaWirQCzCCrAd2GHrqR/sQezCxiWATPNlKTcRaPRHPJwIRoPBAp5g==}
+
+  monaco-editor@0.52.2:
+    resolution: {integrity: sha512-GEQWEZmfkOGLdd3XK8ryrfWz3AIP8YymVXiPHEdewrUq7mh0qrKrfHLNCXcbB6sTnMLnOZ3ztSiKcciFUkIJwQ==}
 
   mri@1.2.0:
     resolution: {integrity: sha512-tzzskb3bG8LvYGFF/mDTpq3jpI6Q9wc3LEmBaghu+DdCssd1FakN7Bc0hVNmEyGq1bq3RgfkCb3cmQLpNPOroA==}
@@ -2355,6 +2361,8 @@ snapshots:
   mdn-data@2.27.1: {}
 
   meshoptimizer@1.1.1: {}
+
+  monaco-editor@0.52.2: {}
 
   mri@1.2.0: {}
 

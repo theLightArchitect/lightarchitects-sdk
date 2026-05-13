@@ -84,6 +84,34 @@ pub enum WebEvent {
     /// `stream-json` event (thinking, `tool_use`, `tool_result`, etc.). The
     /// frontend Activity tab renders these as a live feed.
     CopilotActivity(CopilotActivityEvent),
+    /// Streaming text chunk from a copilot turn.
+    ///
+    /// Emitted by `run_print_turn` for each `text_delta` content block delta.
+    /// The wire type tag is `"copilot_response"` (matches `sse.ts:349`).
+    /// `done: true` signals end-of-turn; the frontend stops the loading spinner.
+    CopilotResponse {
+        /// Incremental text from the model.
+        chunk: String,
+        /// Whether this is the final chunk for this turn.
+        done: bool,
+        /// Source sibling identifier, e.g. `"claude"`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sibling: Option<String>,
+    },
+    /// Tool permission request streamed to the operator.
+    ///
+    /// `input_preview` MUST be derived from the serialised tool-call payload —
+    /// NOT from model-authored text (OWASP LLM01 indirect prompt injection, SA-15).
+    /// `call_id` is always server-generated via `Uuid::new_v4()` — never client-supplied
+    /// (IDOR prevention, SA-4).
+    PermissionRequest {
+        /// Server-generated call identifier — `Uuid::new_v4().to_string()`.
+        call_id: String,
+        /// Preview of the tool call: `"<tool_name>: <serialised_args>"`.
+        input_preview: String,
+        /// Risk classification for this tool call.
+        risk_tier: RiskTier,
+    },
     /// Context-window utilisation snapshot from the `LightArchitects` CLI subprocess.
     ///
     /// Emitted by `run_native_turn` each time the persistent CLI process outputs a
@@ -146,6 +174,23 @@ pub struct ContextStatusEvent {
     pub budget: u64,
     /// Tokens consumed so far in this session.
     pub used: u64,
+}
+
+/// Risk classification for a tool permission request.
+///
+/// Used in [`WebEvent::PermissionRequest`] to help the operator quickly assess
+/// the potential impact of approving a tool call.
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RiskTier {
+    /// Read-only, no side effects.
+    Low,
+    /// Writes to local filesystem or makes network requests.
+    Medium,
+    /// Executes shell commands or modifies external services.
+    High,
+    /// Irreversible or destructive action (e.g. `rm -rf`, production deploys).
+    Critical,
 }
 
 /// Incremental pillar-run update broadcast over SSE (Phase 15).
@@ -558,10 +603,12 @@ mod tests {
     /// **If this test fails** you must update `EventType` in
     /// `lightarchitects-webshell-ui/src/lib/types.ts` to match before merging.
     ///
-    /// The canonical FE set at time of writing (2026-04-30):
+    /// The canonical FE set at time of writing (2026-05-13):
     ///   `ayin_span`, `ayin_status`, `helix_entry`, `build_update`, `control`,
     ///   `strand_activation`, `soul_promotion`, `gateway_notify`, `pillar_update`,
-    ///   `strand_convergence`, `copilot_activity`
+    ///   `strand_convergence`, `copilot_activity`, `copilot_response`,
+    ///   `permission_request`, `context_status`
+    #[allow(clippy::too_many_lines)]
     #[test]
     fn sse_contract_all_web_event_variants_have_known_type_tags() {
         // Helper: extract the `type` field from a serialised WebEvent.
@@ -651,6 +698,22 @@ mod tests {
             ),
             ("copilot_activity", WebEvent::CopilotActivity(activity)),
             (
+                "copilot_response",
+                WebEvent::CopilotResponse {
+                    chunk: "hello".to_owned(),
+                    done: false,
+                    sibling: Some("claude".to_owned()),
+                },
+            ),
+            (
+                "permission_request",
+                WebEvent::PermissionRequest {
+                    call_id: "test-id".to_owned(),
+                    input_preview: "Bash: {\"command\":\"ls\"}".to_owned(),
+                    risk_tier: RiskTier::Low,
+                },
+            ),
+            (
                 "context_status",
                 WebEvent::ContextStatus(ContextStatusEvent {
                     usage_pct: 0.25,
@@ -669,5 +732,85 @@ mod tests {
                  Update EventType in lightarchitects-webshell-ui/src/lib/types.ts.",
             );
         }
+    }
+
+    /// Task 2.4a — Subscribe-ordering invariant.
+    ///
+    /// SSE handler MUST call `event_tx.subscribe()` and hold the `Receiver`
+    /// BEFORE `run_print_turn` is invoked, otherwise the first chunks are lost.
+    ///
+    /// This test validates the invariant at the broadcast channel level:
+    /// a subscriber created BEFORE sends receives ALL sent events, including
+    /// the final `done: true` variant.
+    #[tokio::test]
+    async fn copilot_response_subscribe_ordering_invariant() {
+        use tokio::sync::broadcast;
+        let (tx, mut rx) = broadcast::channel::<WebEvent>(4096);
+
+        // Simulate run_print_turn: emits chunks then done:true
+        let tx2 = tx.clone();
+        tokio::spawn(async move {
+            for i in 0..3u8 {
+                let _ = tx2.send(WebEvent::CopilotResponse {
+                    chunk: format!("chunk{i}"),
+                    done: false,
+                    sibling: Some("claude".to_owned()),
+                });
+            }
+            let _ = tx2.send(WebEvent::CopilotResponse {
+                chunk: String::new(),
+                done: true,
+                sibling: Some("claude".to_owned()),
+            });
+        });
+
+        let mut received = Vec::new();
+        while let Ok(event) = rx.recv().await {
+            if let WebEvent::CopilotResponse { done, chunk, .. } = &event {
+                received.push(chunk.clone());
+                if *done {
+                    break;
+                }
+            }
+        }
+        // Expect 3 chunks + 1 done (empty chunk)
+        assert_eq!(
+            received.len(),
+            4,
+            "expected 3 chunks + done sentinel, got {received:?}"
+        );
+        assert!(
+            received.last().is_some_and(String::is_empty),
+            "last chunk must be empty (done sentinel)"
+        );
+    }
+
+    /// `RiskTier` serialises with `snake_case` tags.
+    #[test]
+    fn risk_tier_serialises_snake_case() {
+        let json = serde_json::to_string(&RiskTier::Critical).unwrap();
+        assert_eq!(
+            json, r#""critical""#,
+            "RiskTier::Critical must serialise as \"critical\""
+        );
+        let json = serde_json::to_string(&RiskTier::Medium).unwrap();
+        assert_eq!(json, r#""medium""#);
+    }
+
+    /// `CopilotResponse` serialises with the correct wire type tag.
+    #[test]
+    fn copilot_response_has_correct_type_tag() {
+        let event = WebEvent::CopilotResponse {
+            chunk: "hello".to_owned(),
+            done: true,
+            sibling: None,
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains(r#""type":"copilot_response""#), "{json}");
+        assert!(json.contains(r#""done":true"#), "{json}");
+        assert!(
+            !json.contains("sibling"),
+            "absent sibling must be omitted: {json}"
+        );
     }
 }

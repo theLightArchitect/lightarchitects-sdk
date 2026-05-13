@@ -20,7 +20,7 @@ import {
   contextUsage,
 } from './stores';
 import { spikeSibling } from './stores';
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import type {
   SiblingId, Build, Finding, ConductorTask, ArenaAgent,
   HelixEntrySsePayload, SoulPromotionPayload, ContextMemo,
@@ -97,6 +97,15 @@ function extractSupervisorAlert(span: AyinSpanEvent): SupervisorAlert | null {
 /** Maximum helix_entry events retained in the rolling window store. */
 const HELIX_ENTRIES_WINDOW = 500;
 
+/**
+ * Whether the SSE connection is currently established.
+ *
+ * Set to `true` when the fetch response is OK and the stream loop starts.
+ * Set to `false` on stream end, error, or abort. Consumers can subscribe
+ * to render a retry button when the connection drops.
+ */
+export const sseConnected = writable<boolean>(false);
+
 const MAX_BACKOFF = 30_000;
 const INITIAL_DELAY = 1_000;
 
@@ -141,6 +150,7 @@ function _connect(): void {
 
       authStatus.set('ok');
       ayinStatus.set('connected');
+      sseConnected.set(true);
       currentDelay = INITIAL_DELAY;
 
       while (true) {
@@ -164,12 +174,14 @@ function _connect(): void {
       }
 
       // Stream ended — reconnect
+      sseConnected.set(false);
       ayinStatus.set('reconnecting');
       _scheduleReconnect();
     })
     .catch((err) => {
       if (err.name !== 'AbortError') {
         console.error('SSE connection error:', err);
+        sseConnected.set(false);
         ayinStatus.set('offline');
         _scheduleReconnect();
       }
@@ -641,6 +653,7 @@ export function disconnectGlobalSSE(): void {
 }
 
 export function disconnectSSE(): void {
+  sseConnected.set(false);
   if (abortController) {
     abortController.abort();
     abortController = null;
@@ -649,4 +662,16 @@ export function disconnectSSE(): void {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
+}
+
+/**
+ * Reconnect the SSE stream for the given build.
+ *
+ * Delegates to {@link connectSSE} — exposed as a distinct export so
+ * components can bind a retry button to a named action without importing
+ * the lower-level {@link connectSSE} directly (SA-9: `reconnectSSE` does
+ * NOT pre-exist; `connectSSE` is the canonical existing export).
+ */
+export function reconnectSSE(buildId: string): void {
+  connectSSE(buildId);
 }

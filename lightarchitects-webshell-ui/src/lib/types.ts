@@ -61,7 +61,7 @@ export interface Build {
   agent?: { kind: string; backend?: string };
 }
 
-export type BuildStatus = 'queued' | 'in_progress' | 'completed' | 'failed' | 'paused';
+export type BuildStatus = 'queued' | 'in_progress' | 'completed' | 'failed' | 'paused' | 'rejected' | 'rolled_back';
 
 /** Project group — aggregates builds by project path */
 export interface ProjectGroup {
@@ -541,6 +541,8 @@ export interface CopilotActivityEvent {
   raw: unknown;
   /** ISO-8601 timestamp. */
   timestamp: string;
+  /** Number of agentic loop iterations at the time this event was emitted. */
+  loop_count?: number;
 }
 
 /** Context-window utilisation snapshot from the LightArchitects CLI subprocess. */

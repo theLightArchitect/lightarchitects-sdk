@@ -88,7 +88,8 @@
   --la-text-mute:   #5a6472;
   --la-text-dim:    #96a2ae;
   --la-text-base:   #b4bec8;
-  --la-text-bright: #e0e6ec;
+  --la-text-bright: #f1f5f9;
+  --la-text-code:   #a8d8ea;
   --la-text-stark:  #f8f9fa;
 
   /* ── Semantic text aliases (component consumers use these) ───────────────── */
@@ -106,6 +107,7 @@
   --la-tk-tight: 0.02em;
 
   /* ── Animation / motion ──────────────────────────────────────────────────── */
+  --ease-linear:        linear;
   --la-transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
   --la-transition-med:  200ms cubic-bezier(0.4, 0, 0.2, 1);
   --la-transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { activeBuild, currentBuildId } from '$lib/stores';
+  import { activeBuild, currentBuildId, activityFeed } from '$lib/stores';
   import { matchRoute, navigate } from '$lib/routes';
   import KanbanView  from '$lib/../components/views/KanbanView.svelte';
   import ListView    from '$lib/../components/views/ListView.svelte';
@@ -15,6 +15,14 @@
 
   let viewMode = $state<ViewMode>('kanban');
   let build = $derived($activeBuild);
+
+  /** Thinking entries from the activity feed for the active build (P1-2). */
+  let thinkingEntries = $derived(
+    $activityFeed.filter(
+      (e): e is { source: 'copilot'; event: import('$lib/types').CopilotActivityEvent } =>
+        e.source === 'copilot' && (e as { source: 'copilot'; event: import('$lib/types').CopilotActivityEvent }).event.kind === 'thinking'
+    )
+  );
 
   function syncFromHash() {
     const { params } = matchRoute(window.location.hash.slice(1) || '/');
@@ -65,6 +73,18 @@
       </div>
     </div>
 
+    <!-- P1-2: Collapsible thinking entries from copilot activity feed -->
+    {#if thinkingEntries.length > 0}
+      <div class="thinking-feed">
+        {#each thinkingEntries.slice(-5) as entry}
+          <details class="thinking-entry">
+            <summary class="thinking-summary">Reasoning · {entry.event.timestamp.slice(11, 19)}</summary>
+            <pre class="thinking-content">{entry.event.summary ?? '—'}</pre>
+          </details>
+        {/each}
+      </div>
+    {/if}
+
     <div class="view-content" data-mode={viewMode}>
       {#if viewMode === 'kanban'}
         <KanbanView />
@@ -93,6 +113,44 @@
     flex-direction: column;
     height: 100%;
     overflow: hidden;
+  }
+
+  /* P1-2: Thinking feed */
+  .thinking-feed {
+    border-bottom: 1px solid var(--la-hair-faint);
+    background: var(--la-bg-panel);
+    padding: 2px 0;
+    flex-shrink: 0;
+  }
+  .thinking-entry {
+    border-bottom: 1px solid var(--la-hair-faint);
+  }
+  .thinking-entry:last-child {
+    border-bottom: none;
+  }
+  .thinking-summary {
+    font-size: 10px;
+    color: var(--la-text-dim);
+    padding: 2px 12px;
+    cursor: pointer;
+    user-select: none;
+    font-family: var(--la-font-mono);
+    letter-spacing: 0.04em;
+  }
+  .thinking-summary:hover {
+    color: var(--la-text-base);
+  }
+  .thinking-content {
+    font-size: 10px;
+    color: var(--la-text-base);
+    padding: 4px 16px 6px;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--la-font-mono);
+    max-height: 120px;
+    overflow-y: auto;
+    background: var(--la-bg-card);
   }
 
   .view-tab-bar {

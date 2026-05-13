@@ -40,10 +40,12 @@ const MAX_BACKOFF_SECS: u64 = 30;
 
 /// Broadcast channel buffer for [`WebEvent`]s.
 ///
-/// Sized to absorb short AYIN bursts without blocking the reader task.
-/// Subscribers that fall more than this many events behind receive a
+/// Sized to 4096 to absorb high-frequency copilot token streaming without
+/// dropping events for slow browser tabs. Subscribers that fall more than
+/// this many events behind receive a
 /// [`tokio::sync::broadcast::error::RecvError::Lagged`] on their next poll.
-pub const EVENT_CHANNEL_BUF: usize = 256;
+/// Overflow is counted via `app.copilot.token_buffer.overflow_total`.
+pub const EVENT_CHANNEL_BUF: usize = 4096;
 
 /// Manages the background AYIN SSE connection lifecycle.
 pub struct AyinClient;

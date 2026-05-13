@@ -78,7 +78,9 @@
     switch (status) {
       case 'in_progress': return { bg: '#22c55e20', fg: '#22c55e' };
       case 'completed':   return { bg: '#3b82f620', fg: '#3b82f6' };
-      case 'failed':      return { bg: '#ef444420', fg: '#ef4444' };
+      case 'failed':       return { bg: '#ef444420', fg: '#ef4444' };
+      case 'rejected':     return { bg: '#ef444420', fg: '#ef4444' };
+      case 'rolled_back':  return { bg: '#ef444430', fg: '#fca5a5' };
       case 'paused':      return { bg: '#f59e0b20', fg: '#f59e0b' };
       case 'queued':      return { bg: '#0ea5e920', fg: '#0ea5e9' };
       case 'draft':       return { bg: '#94a3b820', fg: '#94a3b8' };
@@ -402,6 +404,8 @@
             <tr
               class="border-b border-[var(--la-hair-strong)] hover:bg-[var(--la-bg-elev-1)] cursor-pointer"
               class:row-running={build.status === 'in_progress'}
+              class:row-rejected={build.status === 'rejected'}
+              class:row-rolled-back={build.status === 'rolled_back'}
               onclick={() => openBuild(build.id)}
             >
               <td class="py-2">
@@ -471,5 +475,21 @@
   @keyframes row-sweep {
     0%   { background-position: -200% center; }
     100% { background-position:  200% center; }
+  }
+
+  /* P-UX1: glitch flicker for rejected / rolled_back builds */
+  @keyframes la-glitch {
+    0%   { clip-path: inset(0 0 100% 0); }
+    5%   { clip-path: inset(30% 0 50% 0); }
+    10%  { clip-path: inset(0 0 80% 0); }
+    15%  { clip-path: inset(60% 0 20% 0); }
+    20%  { clip-path: inset(0 0 0 0); }
+    100% { clip-path: inset(0 0 0 0); }
+  }
+
+  .row-rejected,
+  .row-rolled-back {
+    animation: la-glitch 1.8s step-end 1 forwards;
+    color: var(--la-semantic-error);
   }
 </style>

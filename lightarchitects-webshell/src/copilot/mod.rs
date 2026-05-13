@@ -25,6 +25,20 @@ use crate::{
     session::BuildSession,
 };
 
+/// Parsed `content_block_delta` inner delta from Claude's `stream-json` output.
+///
+/// Uses `#[serde(rename = "type")]` because `delta.type` is a Rust reserved
+/// keyword — never access as `delta.type` (SA-20).
+#[derive(Debug, Deserialize)]
+struct ContentBlockDelta {
+    /// The delta type — `"text_delta"`, `"thinking_delta"`, `"input_json_delta"`, etc.
+    #[serde(rename = "type")]
+    delta_type: String,
+    /// Present when `delta_type == "text_delta"`.
+    #[serde(default)]
+    text: String,
+}
+
 /// Resolve a binary name to its full path by checking known install locations.
 /// Falls back to the bare name (relies on PATH) if not found in known locations.
 pub fn resolve_binary(name: &str) -> String {
@@ -284,13 +298,27 @@ async fn run_print_turn(
     let mut found_session_id: Option<String> = None;
     let build_id = session.build_id.to_string();
 
+    // OTel semconv v1.56.0 — SA-23: emit a structured event instead of `.entered()`
+    // because EnteredSpan is !Send; holding it across .await makes the future !Send,
+    // breaking axum's Handler trait. Use tracing::info! to preserve the span semantics.
+    tracing::info!(build_id = %build_id, "app.copilot.turn starting");
+
     while let Some(line) = reader
         .next_line()
         .await
         .map_err(|e| format!("read stdout: {e}"))?
     {
-        let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
-            continue;
+        // SA-21: parse errors are non-fatal — warn and skip the line.
+        let val = match serde_json::from_str::<serde_json::Value>(&line) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(build_id = %build_id, error = %e, "copilot NDJSON parse error");
+                tracing::warn!(
+                    counter = "app.copilot.parse_error_total",
+                    "incrementing counter"
+                );
+                continue;
+            }
         };
 
         if let Some(id) = val["session_id"].as_str() {
@@ -301,7 +329,7 @@ async fn run_print_turn(
 
         // Broadcast activity event for the Activity tab
         let summary = extract_activity_summary(&val);
-        let _ = session
+        let send_result = session
             .event_tx
             .send(crate::events::WebEvent::CopilotActivity(
                 crate::events::types::CopilotActivityEvent {
@@ -312,6 +340,12 @@ async fn run_print_turn(
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 },
             ));
+        if send_result.is_err() {
+            tracing::warn!(
+                counter = "app.copilot.token_buffer.overflow_total",
+                "channel send failed — receiver lagged or dropped"
+            );
+        }
 
         // Emit AYIN span for tool calls so they appear in the AYIN SPANS column
         if event_type == "content_block_start"
@@ -333,8 +367,57 @@ async fn run_print_turn(
             ));
         }
 
+        // SA-20: extract text_delta — field named `delta_type` not `delta.type`
+        // (reserved keyword). SA-21: parse errors warn-and-continue, never `?`.
+        if event_type == "content_block_delta" {
+            if let Some(delta_val) = val.get("delta") {
+                match serde_json::from_value::<ContentBlockDelta>(delta_val.clone()) {
+                    Ok(delta) => {
+                        if delta.delta_type == "text_delta" {
+                            let send_r =
+                                session
+                                    .event_tx
+                                    .send(crate::events::WebEvent::CopilotResponse {
+                                        chunk: delta.text.clone(),
+                                        done: false,
+                                        sibling: Some("claude".to_owned()),
+                                    });
+                            if send_r.is_err() {
+                                tracing::warn!(
+                                    counter = "app.copilot.token_buffer.overflow_total",
+                                    "channel send failed — receiver lagged or dropped"
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            build_id = %build_id,
+                            error = %e,
+                            "copilot delta parse error"
+                        );
+                        tracing::warn!(
+                            counter = "app.copilot.parse_error_total",
+                            "incrementing counter"
+                        );
+                    }
+                }
+            }
+        }
+
         if event_type == "result" && val["subtype"].as_str() == Some("success") {
             result_text = Some(val["result"].as_str().unwrap_or("").to_owned());
+        }
+
+        // Emit done:true on message_stop to signal end-of-turn to frontend.
+        if event_type == "message_stop" {
+            let _ = session
+                .event_tx
+                .send(crate::events::WebEvent::CopilotResponse {
+                    chunk: String::new(),
+                    done: true,
+                    sibling: Some("claude".to_owned()),
+                });
         }
     }
 
