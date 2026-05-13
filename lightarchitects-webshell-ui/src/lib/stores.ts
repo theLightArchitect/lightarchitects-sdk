@@ -354,6 +354,20 @@ export const mailboxUnread = writable(0);
 // --- Context-window utilisation (from CLI subprocess NDJSON) ---
 export const contextUsage = writable<import('./types').ContextStatusEvent | null>(null);
 
+// --- EVA voice toggle (persisted to localStorage) ---
+const VOICE_STORAGE_KEY = 'la_voice_enabled';
+export const voiceEnabled = writable<boolean>(
+  typeof localStorage !== 'undefined'
+    ? localStorage.getItem(VOICE_STORAGE_KEY) === 'true'
+    : false,
+);
+voiceEnabled.subscribe(v => {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(VOICE_STORAGE_KEY, String(v));
+  }
+});
+
+
 // --- Agent reactive state (native agent bridge) ---
 export const agentConnected = writable(false);
 export const agentEvents = writable<import('./types').AgentEvent[]>([]);
