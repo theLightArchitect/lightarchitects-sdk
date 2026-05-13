@@ -5,13 +5,13 @@
     findings, selectedPillar, focusedSibling, spikeSibling,
     buildBuildContext, authProfile, ollamaConfig, terminalConnected,
     builds, siblingHealth, alertStats, drawerHeightPx, waves,
-    clearCopilotHistory, isNativeAgent, voiceEnabled,
+    clearCopilotHistory, isNativeAgent, voiceEnabled, activityFeed,
   } from '$lib/stores';
   import { SIBLING_COLORS } from '$lib/design-tokens';
   import { api } from '$lib/api';
   import { authHeaders } from '$lib/auth';
   import { parseCommand, SLASH_COMMANDS } from '$lib/commands';
-  import { connectSSE, disconnectSSE } from '$lib/sse';
+  import { connectSSE, disconnectSSE, reconnectSSE, sseConnected } from '$lib/sse';
   import { TerminalWS, AgentWS } from '$lib/ws';
   import SiblingDispatch from './SiblingDispatch.svelte';
   import ContextBar from './ContextBar.svelte';
@@ -28,6 +28,19 @@
   // --- Drawer state ---
   let open = $state(false);
   let heightPx = $state(350);
+
+  // P1-4: latest loop_count from the activity feed (CopilotActivityEvent).
+  let latestLoopCount = $derived(
+    (() => {
+      for (let i = $activityFeed.length - 1; i >= 0; i--) {
+        const e = $activityFeed[i];
+        if (e.source === 'copilot' && e.event.loop_count != null) {
+          return e.event.loop_count;
+        }
+      }
+      return null;
+    })()
+  );
   const MIN_HEIGHT = 180;
   const MAX_HEIGHT_RATIO = 0.85;
 
@@ -606,8 +619,10 @@
       const response = typeof result === 'object' && result !== null && 'response' in result
         ? String((result as Record<string, unknown>).response)
         : 'No response from provider.';
-      // If SSE already delivered copilot_response (done: true → loading=false), skip.
-      if ($copilotLoading) mockStream(response);
+      // SSE delivers copilot_response chunks via the broadcast channel.
+      // The HTTP response text is intentionally discarded — the frontend
+      // receives real streaming output via WebEvent::CopilotResponse SSE events.
+      void response;
     } catch { mockStream('Could not reach AI provider. Check webshell logs.'); }
   }
 
@@ -826,10 +841,23 @@
         <span>{Object.values($siblingHealth).filter(h => h?.status === 'online').length}/7 agents</span>
         <span>·</span>
         <span class="text-[#ef4444]">{$alertStats.unacknowledged} alerts</span>
+        {#if latestLoopCount != null}
+          <span>·</span>
+          <span title="Agentic loop iterations">loop {latestLoopCount}</span>
+        {/if}
       </div>
     {/if}
 
     <div class="flex-1"></div>
+
+    {#if open && !$sseConnected && $currentBuildId}
+      <button
+        onclick={() => reconnectSSE($currentBuildId!)}
+        class="text-[9px] px-1.5 py-0.5 border text-[var(--la-semantic-warn)] border-[var(--la-semantic-warn)]/40 hover:bg-[var(--la-semantic-warn)]/10 transition-colors"
+        title="SSE disconnected — click to reconnect"
+        aria-label="Reconnect SSE stream"
+      >⟳ Reconnect</button>
+    {/if}
 
     {#if open}
       {#if mode === 'chat'}

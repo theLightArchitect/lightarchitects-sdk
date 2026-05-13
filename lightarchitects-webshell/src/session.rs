@@ -28,14 +28,8 @@ use uuid::Uuid;
 
 use crate::config::{AgentSession, ClaudeBackend, CodexBackend};
 use crate::copilot::CopilotProcess;
+use crate::events::ayin_client::EVENT_CHANNEL_BUF;
 use crate::events::types::WebEvent;
-
-/// Channel capacity for per-build SSE broadcasts.
-///
-/// Sized so a brief GUI hang (tab in background, scheduler pause) doesn't
-/// cause the sender to lag receivers into a cold-start. 256 is generous for
-/// typical event rates (tool calls, build gates).
-pub const EVENT_CHANNEL_BUF: usize = 256;
 
 /// Broadcast ring-buffer capacity for raw PTY stdout bytes.
 ///

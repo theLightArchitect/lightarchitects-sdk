@@ -4,7 +4,9 @@
     conductorStats, alertStats, buildStats,
     siblingDispatchCounts, projectGroups, activityFeed, logEntries,
     helixEntries, vaultCounts, mailboxUnread,
+    activeBuild,
   } from '$lib/stores';
+  import type { PillarGate } from '$lib/types';
   import { SIBLING_COLORS, STATUS_COLORS, SIBLINGS } from '$lib/design-tokens';
   import type { SiblingId } from '$lib/types';
   import ConductorPanel from '$lib/../components/ConductorPanel.svelte';
@@ -26,6 +28,32 @@
 
   // ── Reactive data ─────────────────────────────────────────────────────────
 
+  /** P1-6: 10 gatekeeper gate labels → pillar indices for the active build. */
+  const GATE_LABELS: Array<{ key: string; short: string }> = [
+    { key: 'A', short: 'A' }, { key: 'S', short: 'S' }, { key: 'Q', short: 'Q' },
+    { key: 'C', short: 'C' }, { key: 'O', short: 'O' }, { key: 'P', short: 'P' },
+    { key: 'K', short: 'K' }, { key: 'D', short: 'D' }, { key: 'T', short: 'T' },
+    { key: 'R', short: 'R' },
+  ];
+
+  /** Map LASDLC gate key to pillar status for the active build's pillar array. */
+  function gateColor(gate: string, pillars: PillarGate[]): string {
+    // Map A→ARCH, S→SEC, Q→QUAL, O→OPS, P→PERF, T→TEST, D→DOC
+    const GATE_TO_PILLAR: Record<string, string> = {
+      A: 'ARCH', S: 'SEC', Q: 'QUAL', O: 'OPS', P: 'PERF', T: 'TEST', D: 'DOC',
+    };
+    const pillar = pillars.find(p => p.pillar === GATE_TO_PILLAR[gate]);
+    if (!pillar) return 'var(--la-text-mute)';
+    switch (pillar.status) {
+      case 'passed':      return 'var(--la-semantic-ok)';
+      case 'failed':      return 'var(--la-semantic-error)';
+      case 'in_progress': return 'var(--la-semantic-warn)';
+      case 'blocked':     return 'var(--la-semantic-error)';
+      default:            return 'var(--la-text-mute)';
+    }
+  }
+
+  let build = $derived($activeBuild);
   let health        = $derived($siblingHealth);
   let status        = $derived($ayinStatus);
   // P0-1: surface auth failures distinctly from genuine network outages
@@ -306,6 +334,25 @@
     <!-- LEFT — Mission Control (hero at 55%) -->
     <div class="mission-col">
 
+      <!-- P1-6: 10-column gatekeeper gate row for active build -->
+      {#if build}
+        <div class="panel-section gate-row-section">
+          <div class="panel-head">
+            <span class="panel-label">GATEKEEPER — {build.name.slice(0, 24)}</span>
+          </div>
+          <div class="gate-row" role="row" aria-label="LASDLC gatekeeper status">
+            {#each GATE_LABELS as gate}
+              <span
+                class="gate-cell"
+                style="color: {gateColor(gate.key, build.pillars)}"
+                title="Gate [{gate.key}]"
+                role="cell"
+              >[{gate.short}]</span>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
       <!-- OPS-2: Squad health pills with color glow + heartbeat -->
       <div class="panel-section" data-onboarding="sitrep-squad-health">
         <div class="panel-head">
@@ -455,7 +502,6 @@
     align-items: center;
   }
   .ops-header-tele {
-    margin-left: auto;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -498,6 +544,22 @@
   .panel-section {
     border-bottom: 1px solid var(--la-hair-base);
     flex-shrink: 0;
+  }
+
+  /* P1-6: gatekeeper row */
+  .gate-row {
+    display: flex;
+    gap: 0;
+    padding: 4px 10px;
+    font-family: var(--la-font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .gate-cell {
+    flex: 1;
+    text-align: center;
+    transition: color 200ms ease;
   }
   .panel-head {
     display: flex;
@@ -748,6 +810,7 @@
 
   /* ── Preset switcher (right-anchored in telemetry bar) ── */
   .preset-switcher {
+    margin-left: auto;
     display: flex;
     align-items: center;
     gap: 2px;

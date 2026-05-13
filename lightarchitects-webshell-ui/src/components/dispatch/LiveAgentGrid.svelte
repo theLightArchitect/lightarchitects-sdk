@@ -113,6 +113,10 @@
             <span class="val">{live?.token_count ?? 0}</span>
           </span>
           <span class="rail-metric">
+            <span class="lbl">COST</span>
+            <span class="val">${((live?.token_count ?? 0) * 0.000003).toFixed(4)}</span>
+          </span>
+          <span class="rail-metric">
             <span class="lbl">MS</span>
             <span class="val">{live?.elapsed_ms ?? 0}</span>
           </span>

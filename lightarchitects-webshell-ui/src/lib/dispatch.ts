@@ -91,6 +91,8 @@ export interface AgentLiveState {
   elapsed_ms?: number;
   /** Most recent tool invocation emitted via ToolUsage SSE event. */
   last_tool?: { tool: string; action: string; status: 'fired' | 'skipped' | 'failed'; latency_ms?: number };
+  /** Number of agentic loop iterations completed for this agent. */
+  loop_count?: number;
 }
 
 // ── History entry ─────────────────────────────────────────────────────────────
