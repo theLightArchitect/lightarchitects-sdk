@@ -10,9 +10,10 @@
     agentStates?: Map<DomainAgent, AgentLiveState>;
     onRetry?: (agent: DomainAgent) => void;
     onSelect?: (agent: DomainAgent) => void;
+    selectedAgent?: DomainAgent | null;
   }
 
-  let { agents, agentStates = new Map(), onRetry, onSelect }: Props = $props();
+  let { agents, agentStates = new Map(), onRetry, onSelect, selectedAgent = null }: Props = $props();
 
   const AGENT_META: Record<DomainAgent, { code: string; idx: string; gate: string }> = {
     engineer:   { code: 'ENG', idx: '01', gate: 'A' },
@@ -60,7 +61,7 @@
       {@const msg = toolText(live)}
       {@const tool = live?.last_tool}
 
-      <div class="rail" data-agent={agent} data-state={state} data-testid="agent-rail-{agent}" onclick={() => onSelect?.(agent)} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.(agent); } }} role="button" tabindex={0} aria-label="Inspect {DOMAIN_AGENT_LABELS[agent]} agent">
+      <div class="rail" data-agent={agent} data-state={state} data-selected={agent === selectedAgent} data-testid="agent-rail-{agent}" onclick={() => onSelect?.(agent)} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.(agent); } }} role="button" tabindex={0} aria-label="Inspect {DOMAIN_AGENT_LABELS[agent]} agent">
         <div class="rail-edge"></div>
         <div class="rail-scan"></div>
 
@@ -180,6 +181,20 @@
   .rail:last-child { border-bottom: none; }
   .rail:hover { background: var(--la-bg-elev-1, #111214); }
   .rail { cursor: pointer; }
+
+  /* ── selected agent highlight ── */
+  .rail[data-selected="true"] {
+    background: color-mix(in srgb, var(--rc) 6%, var(--la-bg-elev-1, #111214));
+    outline: 1px solid color-mix(in srgb, var(--rc) 35%, transparent);
+    outline-offset: -1px;
+    z-index: 1;
+  }
+  .rail[data-selected="true"] .rail-edge { opacity: 0.6; }
+  .rail[data-selected="true"] .rail-id-code { color: var(--rc); }
+  .rail[data-selected="true"] .status-pip {
+    background: var(--rc);
+    box-shadow: 0 0 6px var(--rc);
+  }
 
   /* ── colored left edge ── */
   .rail-edge {

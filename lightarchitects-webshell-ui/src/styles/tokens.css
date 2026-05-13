@@ -85,11 +85,11 @@
   --la-hair-strong: #3a3f47;
 
   /* ── Text scale ──────────────────────────────────────────────────────────── */
-  --la-text-mute:   #3e434a;
-  --la-text-dim:    #7a8390;
-  --la-text-base:   #8a929c;
-  --la-text-bright: #d8dde4;
-  --la-text-stark:  #f6f7f8;
+  --la-text-mute:   #5a6472;
+  --la-text-dim:    #96a2ae;
+  --la-text-base:   #b4bec8;
+  --la-text-bright: #e0e6ec;
+  --la-text-stark:  #f8f9fa;
 
   /* ── Semantic text aliases (component consumers use these) ───────────────── */
   --text-body:      var(--la-text-bright);

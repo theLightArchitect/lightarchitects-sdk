@@ -3,12 +3,12 @@ import { matchRoute, type ScreenKey } from '$lib/routes';
 
 describe('routes', () => {
   describe('matchRoute() — top-level routes', () => {
-    it('/ → Builds', () => {
-      expect(matchRoute('/').screen).toBe('Builds');
+    it('/ → Ops', () => {
+      expect(matchRoute('/').screen).toBe('Ops');
     });
 
-    it('empty string → Builds', () => {
-      expect(matchRoute('').screen).toBe('Builds');
+    it('empty string → Ops', () => {
+      expect(matchRoute('').screen).toBe('Ops');
     });
 
     it('/builds → Builds', () => {
@@ -92,16 +92,16 @@ describe('routes', () => {
     // Wave 1 (2026-05-02) moved /workspace from ROUTES into REDIRECTS so that
     // a hard-coded redirect rewrites the URL to /builds before matching runs.
     // matchRoute() on a bare /workspace path therefore falls through to the
-    // default Builds screen — by design. The user-visible deep link is still
+    // default Ops screen — by design. The user-visible deep link is still
     // preserved because applyRedirects() (run on every hashchange in app.svelte)
     // rewrites #/workspace/:id to #/builds/:id before this matcher is called.
-    it('/workspace falls through to Builds default (redirect handles user-visible navigation)', () => {
-      expect(matchRoute('/workspace').screen).toBe('Builds');
+    it('/workspace falls through to Ops default (redirect handles user-visible navigation)', () => {
+      expect(matchRoute('/workspace').screen).toBe('Ops');
     });
 
     it('/workspace/:buildId falls through, but redirect rewrites it to /builds/:buildId before matchRoute is called', () => {
-      // Direct match (no redirect): falls through to default Builds.
-      expect(matchRoute('/workspace/proj-7').screen).toBe('Builds');
+      // Direct match (no redirect): falls through to default Ops.
+      expect(matchRoute('/workspace/proj-7').screen).toBe('Ops');
       // After applyRedirects(), the URL becomes /builds/proj-7 and resolves correctly.
       // (applyRedirects has DOM side-effects so it's tested in the e2e suite, not here.)
       expect(matchRoute('/builds/proj-7').screen).toBe('BuildDetail');
@@ -125,9 +125,9 @@ describe('routes', () => {
       // /builds/proj-7/bogus does NOT match the view-enum regex; falls through
       // to the next route which is /builds/:buildId. That regex has [^/]+ so it
       // would match "proj-7/bogus" if greedy — but [^/]+ stops at /, so the
-      // pattern won't match a 2-segment tail and falls through to default Builds.
+      // pattern won't match a 2-segment tail and falls through to default Ops.
       const r = matchRoute('/builds/proj-7/bogus');
-      expect(r.screen).toBe('Builds'); // default fallthrough
+      expect(r.screen).toBe('Ops'); // default fallthrough
     });
 
     it('phase routes still take precedence over view-encoded route', () => {
@@ -162,14 +162,14 @@ describe('routes', () => {
     });
   });
 
-  describe('matchRoute() — unknown paths fall back to Builds', () => {
-    it('/unknown → Builds fallback', () => {
-      expect(matchRoute('/unknown').screen).toBe('Builds');
+  describe('matchRoute() — unknown paths fall back to Ops', () => {
+    it('/unknown → Ops fallback', () => {
+      expect(matchRoute('/unknown').screen).toBe('Ops');
     });
 
-    it('/builds/b/phase/p/wave/w/agent/a/extra → Builds fallback (too deep)', () => {
+    it('/builds/b/phase/p/wave/w/agent/a/extra → Ops fallback (too deep)', () => {
       const r = matchRoute('/builds/b/phase/p/wave/w/agent/a/extra');
-      expect(r.screen).toBe('Builds');
+      expect(r.screen).toBe('Ops');
     });
   });
 

@@ -6,7 +6,7 @@
 import type { EventType, Pillar } from './types';
 import { authHeaders } from './auth';
 import {
-  ayinStatus, siblingHealth, waves, builds, findings,
+  ayinStatus, authStatus, siblingHealth, waves, builds, findings,
   conductorTasks, arenaStatus, alerts, selectedPillar,
   copilotMessages, copilotLoading, buildFocusActive,
   helixEntries, promotionFeed, hotMemory, coldMemory,
@@ -16,6 +16,7 @@ import {
   activePlan, updatePlanPhase,
   latestScrumReport,
   trainingRun,
+  mailboxMessages, mailboxUnread,
 } from './stores';
 import { spikeSibling } from './stores';
 import { get } from 'svelte/store';
@@ -119,6 +120,16 @@ function _connect(): void {
     .then(async (response) => {
       if (!response.ok || !response.body) {
         console.error(`SSE: ${response.status} ${response.statusText}`);
+        if (response.status === 401) {
+          authStatus.set('unauthorized');
+          ayinStatus.set('offline');
+          return; // not transient — do not retry until token changes
+        }
+        if (response.status === 403) {
+          authStatus.set('forbidden');
+          ayinStatus.set('offline');
+          return;
+        }
         _scheduleReconnect();
         return;
       }
@@ -127,6 +138,7 @@ function _connect(): void {
       const decoder = new TextDecoder();
       let buffer = '';
 
+      authStatus.set('ok');
       ayinStatus.set('connected');
       currentDelay = INITIAL_DELAY;
 
@@ -512,6 +524,22 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
       );
       break;
     }
+    case 'mailbox_message': {
+      // P0-3: inter-agent message arriving via global SSE (cross-dispatch visibility).
+      // The per-dispatch stream in SquadDispatch.svelte owns its own mailbox view;
+      // this store provides a global unread badge for background dispatches.
+      const msg = event as unknown as { type: 'mailbox_message'; dispatch_id?: string; agent: string; text: string };
+      const newMsg = {
+        id: `mbx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        dispatchId: msg.dispatch_id,
+        agent: msg.agent ?? 'unknown',
+        text: msg.text ?? '',
+        ts: Date.now(),
+      };
+      mailboxMessages.update(list => [newMsg, ...list].slice(0, 200));
+      mailboxUnread.update(n => n + 1);
+      break;
+    }
     default:
       break;
   }
@@ -536,7 +564,13 @@ export function connectGlobalSSE(): void {
   const { signal } = globalAbort;
   fetch('/api/events', { signal, headers: authHeaders() })
     .then(async (response) => {
-      if (!response.ok || !response.body) return;
+      if (!response.ok || !response.body) {
+        if (response.status === 401) { authStatus.set('unauthorized'); ayinStatus.set('offline'); return; }
+        if (response.status === 403) { authStatus.set('forbidden');    ayinStatus.set('offline'); return; }
+        if (!signal.aborted) _scheduleGlobalReconnect();
+        return;
+      }
+      authStatus.set('ok');
       _resetGlobalBackoff();
       const reader = response.body.getReader();
       const decoder = new TextDecoder();

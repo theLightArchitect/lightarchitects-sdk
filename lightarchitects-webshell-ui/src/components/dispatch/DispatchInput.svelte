@@ -33,6 +33,7 @@
   }: Props = $props();
 
   let toolConfigOpen = $state(false);
+  let taskFocused = $state(false);
 
   let fileInput: HTMLInputElement | null = null;
   let folderInput: HTMLInputElement | null = null;
@@ -113,8 +114,11 @@
                : disabled
                  ? 'border-[var(--la-drawer-border)] opacity-50 cursor-not-allowed'
                  : 'border-[var(--la-drawer-border)] focus:border-[var(--la-agent-engineer)]'}"
+      style="{taskFocused && !overLimit && !disabled ? 'box-shadow: 0 0 0 1px var(--la-agent-engineer), 0 0 18px rgba(77,142,255,0.12);' : ''}"
       oninput={handleInput}
       onkeydown={handleKeydown}
+      onfocus={() => { taskFocused = true; }}
+      onblur={() => { taskFocused = false; }}
     ></textarea>
     <span
       class="absolute bottom-1.5 right-2 text-[9px] tabular-nums

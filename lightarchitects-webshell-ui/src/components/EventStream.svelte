@@ -34,8 +34,10 @@
     maxDisplay?: number;
     /** Whether to render rows newest-first (default: true). */
     newestFirst?: boolean;
-    /** Placeholder text when rows is empty. */
+    /** Placeholder text when rows is empty and online. */
     emptyMessage?: string;
+    /** When true, SSE transport is disconnected — shows a distinct offline state. */
+    isOffline?: boolean;
   }
 
   let {
@@ -43,6 +45,7 @@
     maxDisplay = 120,
     newestFirst = true,
     emptyMessage = '— no events yet —',
+    isOffline = false,
   }: Props = $props();
 
   let scrollEl: HTMLDivElement | undefined = $state();
@@ -69,8 +72,13 @@
   data-testid="event-stream"
 >
   {#if displayed.length === 0}
-    <div class="px-4 py-8 text-center">
-      <p class="text-[10px] text-[#334155]">{emptyMessage}</p>
+    <div class="px-4 py-8 text-center space-y-1">
+      {#if isOffline}
+        <p class="text-[10px] font-bold tracking-widest uppercase" style="color: #ef444460">⬡ SSE OFFLINE</p>
+        <p class="text-[9px]" style="color: #334155">gateway unreachable — reconnecting</p>
+      {:else}
+        <p class="text-[10px]" style="color: #334155">{emptyMessage}</p>
+      {/if}
     </div>
   {:else}
     {#each displayed as row (`${row.ts}-${row.source}`)}

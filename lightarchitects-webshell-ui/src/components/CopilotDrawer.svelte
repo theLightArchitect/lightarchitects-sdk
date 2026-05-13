@@ -676,7 +676,7 @@
     if (import.meta.env.PROD) return;
 
     const injectHandler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { events?: import('./types').AgentEvent[] } | undefined;
+      const detail = (e as CustomEvent).detail as { events?: import('$lib/types').AgentEvent[] } | undefined;
       if (!detail?.events) return;
       for (const ev of detail.events) {
         handleAgentEvent(ev);
@@ -691,7 +691,7 @@
       try {
         const parsed = JSON.parse(detail.raw) as Record<string, unknown>;
         if (parsed.type === 'text' && typeof parsed.chunk === 'string') {
-          handleAgentEvent(parsed as import('./types').AgentEvent);
+          handleAgentEvent(parsed as import('$lib/types').AgentEvent);
         } else {
           handleAgentEvent({ type: 'error', message: `Malformed event: ${String(parsed.type)}` });
         }

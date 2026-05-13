@@ -11,15 +11,24 @@
   import PolytopeIcon from '$lib/../components/PolytopeIcon.svelte';
   import PolytopeDecor from '$lib/../components/PolytopeDecor.svelte';
   import Tooltip from '$lib/../components/Tooltip.svelte';
+  import GateStrip from '$lib/../components/GateStrip.svelte';
+  import type { GateEntry } from '$lib/../components/GateStrip.svelte';
   // View mode
   let viewMode = $state<'list' | 'card'>('card');
 
-  // Project filter — derived from selectedProject store + projectGroups
-  let visibleGroups = $derived(
-    $selectedProject
+  // Status filter — null = show all
+  let statusFilter = $state<string | null>(null);
+
+  // Project filter + optional status filter
+  let visibleGroups = $derived.by(() => {
+    let groups = $selectedProject
       ? $projectGroups.filter(g => g.path === $selectedProject)
-      : $projectGroups
-  );
+      : $projectGroups;
+    if (statusFilter) {
+      groups = groups.filter(g => g.plans.some(p => p.status === statusFilter));
+    }
+    return groups;
+  });
 
   // Navigate to a build — land on default kanban view with URL-encoded view param
   function openBuild(buildId: string) {
@@ -68,10 +77,24 @@
   function statusStyle(status: string): { bg: string; fg: string } {
     switch (status) {
       case 'in_progress': return { bg: '#22c55e20', fg: '#22c55e' };
-      case 'completed': return { bg: '#3b82f620', fg: '#3b82f6' };
-      case 'failed': return { bg: '#ef444420', fg: '#ef4444' };
-      case 'paused': return { bg: '#f59e0b20', fg: '#f59e0b' };
-      default: return { bg: '#64748b20', fg: '#64748b' };
+      case 'completed':   return { bg: '#3b82f620', fg: '#3b82f6' };
+      case 'failed':      return { bg: '#ef444420', fg: '#ef4444' };
+      case 'paused':      return { bg: '#f59e0b20', fg: '#f59e0b' };
+      case 'queued':      return { bg: '#0ea5e920', fg: '#0ea5e9' };
+      case 'draft':       return { bg: '#94a3b820', fg: '#94a3b8' };
+      default:            return { bg: '#64748b20', fg: '#64748b' };
+    }
+  }
+
+  function statusLabel(status: string): string {
+    switch (status) {
+      case 'in_progress': return 'ACTIVE';
+      case 'completed':   return 'DONE';
+      case 'failed':      return 'FAILED';
+      case 'paused':      return 'PAUSED';
+      case 'queued':      return 'QUEUED';
+      case 'draft':       return 'DRAFT';
+      default:            return status.toUpperCase();
     }
   }
 
@@ -79,6 +102,17 @@
   function pillarProgress(build: Build): string {
     const passed = build.pillars.filter(p => p.status === 'passed').length;
     return `${passed}/${build.pillars.length}`;
+  }
+
+  // Map a Build's PillarGate array to GateEntry[] for GateStrip.
+  // 'in_progress' → 'active'; all others map 1:1.
+  const GATE_IDS = ['A', 'S', 'Q', 'C', 'O', 'K', 'T'] as const;
+  function buildGates(build: Build): GateEntry[] {
+    if (!build.pillars?.length) return [];
+    return build.pillars.slice(0, 7).map((p, i) => ({
+      id: GATE_IDS[i] ?? p.pillar[0],
+      status: (p.status === 'in_progress' ? 'active' : p.status) as GateEntry['status'],
+    }));
   }
 </script>
 
@@ -140,12 +174,33 @@
     </div>
   </header>
 
-  <!-- Stat strip -->
-  <div class="flex items-center flex-wrap gap-x-4 gap-y-1 px-4 md:px-6 py-2 bg-[var(--la-bg-frame)] border-b border-[var(--la-hair-strong)] text-xs">
-    <span class="text-[var(--la-agent-researcher)]">{$buildStats.inProgress} in progress</span>
-    <span class="text-[var(--la-agent-engineer)]">{$buildStats.pending} queued</span>
-    <span class="text-[var(--la-text-label)]">{$buildStats.completed} completed</span>
-    <span class="text-[var(--la-danger-stroke)]">{$buildStats.failed} failed</span>
+  <!-- Stat strip — clickable filters -->
+  <div class="flex items-center flex-wrap gap-x-1 gap-y-1 px-4 md:px-6 py-2 bg-[var(--la-bg-frame)] border-b border-[var(--la-hair-strong)] text-xs">
+    {#each [
+      { key: 'in_progress', label: 'in progress', count: $buildStats.inProgress, color: 'var(--la-agent-researcher)' },
+      { key: 'queued',      label: 'queued',      count: $buildStats.pending,    color: 'var(--la-agent-engineer)' },
+      { key: 'completed',   label: 'completed',   count: $buildStats.completed,  color: 'var(--la-text-label)' },
+      { key: 'failed',      label: 'failed',      count: $buildStats.failed,     color: 'var(--la-danger-stroke)' },
+    ] as f}
+      <button
+        class="px-2 py-0.5 rounded-sm transition-all text-[11px] font-mono"
+        style="
+          color: {f.color};
+          background: {statusFilter === f.key ? `color-mix(in srgb, ${f.color} 14%, transparent)` : 'transparent'};
+          border: 1px solid {statusFilter === f.key ? f.color : 'transparent'};
+          opacity: {statusFilter && statusFilter !== f.key ? 0.45 : 1};
+        "
+        onclick={() => { statusFilter = statusFilter === f.key ? null : f.key; }}
+        title="{statusFilter === f.key ? 'Clear filter' : `Filter by ${f.label}`}"
+      >{f.count} {f.label}</button>
+      {#if f.key !== 'failed'}<span class="text-[var(--la-hair-strong)] select-none">·</span>{/if}
+    {/each}
+    {#if statusFilter}
+      <button
+        class="ml-2 text-[10px] text-[var(--la-text-mute)] hover:text-[var(--la-text-base)] transition-colors"
+        onclick={() => { statusFilter = null; }}
+      >✕ clear</button>
+    {/if}
   </div>
 
   <!-- Build list/cards -->
@@ -173,7 +228,10 @@
         {#each visibleGroups as group}
           <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
           <div
-            class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg p-3 cursor-pointer hover:border-[var(--la-hair-strong)] transition-colors"
+            class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg p-3 cursor-pointer hover:brightness-110 transition-all"
+            style="
+              {group.activePlanCount > 0 ? 'border-left-color: var(--la-agent-researcher); box-shadow: inset 3px 0 14px color-mix(in srgb, var(--la-agent-researcher) 10%, transparent);' : ''}
+            "
             onclick={() => group.plans.length > 1 ? openProject(group.id) : openBuild(group.plans[0]?.id ?? group.id)}
             onkeydown={() => group.plans.length > 1 ? openProject(group.id) : openBuild(group.plans[0]?.id ?? group.id)}
           >
@@ -192,10 +250,15 @@
             <div class="space-y-1 mb-2">
               {#each group.plans.slice(0, 3) as plan}
                 {@const sstyle = statusStyle(plan.status)}
+                {@const planGates = buildGates(plan)}
                 <div class="flex items-center gap-1.5 text-[10px]">
                   <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background-color: {sstyle.fg}"></span>
                   <span class="text-[var(--la-text-label)] truncate flex-1">{plan.name}</span>
-                  <span class="text-[var(--la-text-dim)]">{plan.status === 'in_progress' ? 'active' : plan.status === 'completed' ? 'done' : plan.status === 'queued' ? 'planned' : plan.status}</span>
+                  {#if planGates.length}
+                    <GateStrip gates={planGates} />
+                  {:else}
+                    <span class="text-[9px] font-mono font-bold tracking-widest" style="color: {sstyle.fg}">{statusLabel(plan.status)}</span>
+                  {/if}
                 </div>
               {/each}
               {#if group.plans.length > 3}
@@ -215,10 +278,18 @@
               </div>
             {/if}
 
-            <!-- Stats footer -->
-            <div class="flex items-center justify-between mt-1.5 text-[9px] text-[var(--la-text-dim)]">
-              <span>{group.activePlanCount > 0 ? `${group.activePlanCount} active` : 'no active plans'}</span>
-              <span>{group.progress != null ? `${Math.round(group.progress * 100)}%` : '—'}</span>
+            <!-- Gate strip + stats footer -->
+            <div class="flex items-center justify-between mt-1.5">
+              <GateStrip
+                gates={group.plans[0] ? buildGates(group.plans[0]) : undefined}
+                passed={group.progress != null ? Math.round(group.progress * 7) : 0}
+                total={7}
+                labels={true}
+              />
+              <div class="flex items-center gap-2 text-[9px] text-[var(--la-text-dim)]">
+                <span>{group.activePlanCount > 0 ? `${group.activePlanCount} active` : 'idle'}</span>
+                <span>{group.progress != null ? `${Math.round(group.progress * 100)}%` : '—'}</span>
+              </div>
             </div>
           </div>
         {/each}

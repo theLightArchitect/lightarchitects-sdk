@@ -4,6 +4,13 @@
   import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
   import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
   import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+  import {
+    fetchGitHubForestData,
+    GITHUB_ORG,
+    FOREST_REPO_NAMES,
+    FOREST_CACHE_TTL_MS,
+    type RepoData,
+  } from '$lib/github';
 
   // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -34,8 +41,27 @@
     branches: Branch[];
   }
 
-  // ─── Static seed — real repo data ────────────────────────────────────────
-  // lightarchitects-sdk: 333 commits / 1726 files (git log --oneline | wc -l)
+  // ─── Layout positions (assigned by index) ────────────────────────────────
+
+  const REPO_POSITIONS: THREE.Vector3[] = [
+    new THREE.Vector3(-6,  0,  2),   // sdk   — left, slightly back
+    new THREE.Vector3( 0,  0, -1),   // soul  — centre, slightly forward
+    new THREE.Vector3( 6,  0,  1),   // corso — right
+  ];
+
+  function repoDataToRepo(d: RepoData, idx: number): Repo {
+    return {
+      id: d.id,
+      name: d.name,
+      commitCount: d.commitCount,
+      fileCount: d.fileCount,
+      pos: REPO_POSITIONS[idx] ?? new THREE.Vector3(idx * 5.5, 0, 0),
+      branches: d.branches as Branch[],
+    };
+  }
+
+  // ─── Static seed — real repo data (used until GitHub fetch resolves) ─────
+  // lightarchitects-sdk: 333 commits / 1726 files
   // SOUL-DEV: 64 commits / 291 files
   // CORSO-DEV: 85 commits / 589 files
 
@@ -45,11 +71,11 @@
       name: 'lightarchitects-sdk',
       commitCount: 333,
       fileCount: 1726,
-      pos: new THREE.Vector3(-7, 0, 0),
+      pos: REPO_POSITIONS[0],
       branches: [
         {
           name: 'feat/acp-paused',
-          divergeCommit: 295,
+          divergeCommit: 245,
           commitCount: 24,
           filesModified: 142,
           gateState: 'ghost',
@@ -57,9 +83,9 @@
           worktrees: [],
         },
         {
-          name: 'feat/steady-wishing-sparkle',
-          divergeCommit: 325,
-          commitCount: 5,
+          name: 'feat/webshell-sprint3',
+          divergeCommit: 290,
+          commitCount: 18,
           filesModified: 87,
           gateState: 'hitl_pending',
           isGhost: false,
@@ -67,8 +93,8 @@
         },
         {
           name: 'fix/security-88-92',
-          divergeCommit: 330,
-          commitCount: 2,
+          divergeCommit: 315,
+          commitCount: 8,
           filesModified: 12,
           gateState: 'merge_ready',
           isGhost: false,
@@ -81,11 +107,11 @@
       name: 'SOUL-DEV',
       commitCount: 64,
       fileCount: 291,
-      pos: new THREE.Vector3(0, 0, 3),
+      pos: REPO_POSITIONS[1],
       branches: [
         {
           name: 'feat/helix-of-helices-spec',
-          divergeCommit: 52,
+          divergeCommit: 42,
           commitCount: 12,
           filesModified: 45,
           gateState: 'clean',
@@ -102,18 +128,86 @@
       name: 'CORSO-DEV',
       commitCount: 85,
       fileCount: 589,
-      pos: new THREE.Vector3(7, 0, 1),
-      branches: [],
+      pos: REPO_POSITIONS[2],
+      branches: [
+        {
+          name: 'feat/trinity-v8',
+          divergeCommit: 60,
+          commitCount: 7,
+          filesModified: 33,
+          gateState: 'writing',
+          isGhost: false,
+          worktrees: [{ domain: 'quality', commitCount: 2 }],
+        },
+      ],
     },
   ];
 
-  // ─── Scale constants ──────────────────────────────────────────────────────
+  // ─── Live repos state (starts as seed, replaced on GitHub fetch) ──────────
 
-  const COMMIT_H       = 0.028;  // scene Y units per commit
-  const TRUNK_GIRTH_K  = 0.007;  // trunk radiusBot = sqrt(fileCount) * K
-  const BRANCH_GIRTH_K = 0.0028; // branch radius = sqrt(filesModified) * K
-  const WKTREE_R       = 0.042;  // worktree sub-branch radius
-  const NODE_R         = 0.088;  // commit sphere radius
+  let repos = $state<Repo[]>(SEED_REPOS);
+
+  $effect(() => {
+    // Only fetch if a token is available — avoids burning 16 unauthenticated requests on load
+    const token = (() => {
+      try {
+        return (
+          sessionStorage.getItem('la_token_github') ??  // TokenVault secure path
+          localStorage.getItem('la_gh_token') ??        // legacy fallback
+          undefined
+        );
+      } catch { return undefined; }
+    })();
+    if (!token) return;
+
+    // Respect cache TTL
+    const lastFetch = (() => {
+      try { return parseInt(localStorage.getItem('la_gh_forest_ts') ?? '0', 10); } catch { return 0; }
+    })();
+    if (Date.now() - lastFetch < FOREST_CACHE_TTL_MS) {
+      const cached = (() => {
+        try { const s = localStorage.getItem('la_gh_forest'); return s ? JSON.parse(s) as RepoData[] : null; } catch { return null; }
+      })();
+      if (cached) { repos = cached.map(repoDataToRepo); return; }
+    }
+
+    void fetchGitHubForestData(GITHUB_ORG, FOREST_REPO_NAMES, token).then(result => {
+      if (result.repos.length > 0) {
+        repos = result.repos.map(repoDataToRepo);
+        try {
+          localStorage.setItem('la_gh_forest', JSON.stringify(result.repos));
+          localStorage.setItem('la_gh_forest_ts', String(result.fetchedAt));
+        } catch { /* storage quota */ }
+      }
+    });
+  });
+
+  // ─── Scale constants ──────────────────────────────────────────────────────
+  //
+  // Previous values produced invisible trunks:
+  //   COMMIT_H=0.028 → SOUL trunk only 1.8 units at r=26 camera
+  //   TRUNK_GIRTH_K=0.007 → trunk radii 0.12–0.29 units (sub-pixel at distance)
+  //   emissiveIntensity=0.22 on trunk → no bloom, invisible against dark bg
+
+  const COMMIT_H       = 0.065;  // branch/worktree Y units per commit
+  const TRUNK_GIRTH_K  = 0.014;  // trunk radiusBot = sqrt(fileCount) * K
+  const BRANCH_GIRTH_K = 0.005;  // branch radius = sqrt(filesModified) * K
+  const WKTREE_R       = 0.075;  // worktree sub-branch radius
+  const NODE_R         = 0.13;   // commit sphere radius
+
+  // ─── Repo identity colors (trunk/halo) — each repo gets a distinct hue ──
+  // Index matches REPO_POSITIONS / FOREST_REPO_NAMES order.
+  // sdk=cyan, soul=gold, corso=violet
+
+  const REPO_TRUNK_COLORS: [trunk: number, wire: number][] = [
+    [0x0ea5e9, 0x38bdf8],  // sdk  — sky blue
+    [0xf5d440, 0xfde68a],  // soul — gold
+    [0x8b5cf6, 0xa78bfa],  // corso — violet
+  ];
+
+  function repoTrunkColor(idx: number): [number, number] {
+    return REPO_TRUNK_COLORS[idx] ?? REPO_TRUNK_COLORS[0];
+  }
 
   // ─── Gate → color (GIT-2) ────────────────────────────────────────────────
 
@@ -139,26 +233,46 @@
     squad:      0xff7eb6,
   };
 
+  // ─── Scene mode ───────────────────────────────────────────────────────────
+
+  type SceneMode = '2d' | '3d';
+  let mode            = $state<SceneMode>('2d');
+  let selectedRepoIdx = $state<number | null>(null);
+
+  // Cubic Bezier scalar interpolation (used by 2D renderer)
+  function bezierPoint(p0: number, p1: number, p2: number, p3: number, t: number): number {
+    const u = 1 - t;
+    return u*u*u*p0 + 3*u*u*t*p1 + 3*u*t*t*p2 + t*t*t*p3;
+  }
+
   // ─── Component bindings ───────────────────────────────────────────────────
 
   let container: HTMLDivElement | undefined = $state();
+  let canvas2d: HTMLCanvasElement | undefined = $state();
   let overlayCanvas: HTMLCanvasElement | undefined = $state();
 
   // ─── Three.js forest scene (GIT-1) ────────────────────────────────────────
 
   $effect(() => {
-    if (!container) return;
+    if (mode !== '3d' || !container) return;
 
     const w = container.clientWidth || 400;
     const h = container.clientHeight || 300;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x020408);
-    scene.fog = new THREE.FogExp2(0x020408, 0.012);
+    scene.fog = new THREE.FogExp2(0x020408, 0.007);  // reduced — was 0.012 (ate trunks)
 
-    // Elevated orbit camera
-    const camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 200);
-    let sph = { theta: -0.4, phi: 0.70, r: 26 };
+    // Pre-compute max trunk height so lookAt can be set to keep all trunks in frame.
+    // Uses the same formula as buildTrunk: n^0.50 * 0.50
+    const trunkH = (n: number) => Math.sqrt(n) * 0.50;
+    const maxTrunkH = Math.max(...repos.map(r => trunkH(r.commitCount)));
+    const lookAtY   = maxTrunkH * 0.55;  // aim at ~55% of tallest tree — vertically centers grove
+
+    const camera = new THREE.PerspectiveCamera(58, w / h, 0.1, 200);
+    // theta=0.0 positions camera dead-on: repos at x=-6,0,+6 appear symmetric left/centre/right
+    // phi=0.80 is more side-on (less overhead) so trunks read as vertical, not diagonal
+    let sph = { theta: 0.0, phi: 0.80, r: 30 };
 
     function applySph() {
       camera.position.set(
@@ -166,7 +280,7 @@
         sph.r * Math.cos(sph.phi),
         sph.r * Math.sin(sph.phi) * Math.cos(sph.theta),
       );
-      camera.lookAt(0, 4, 0);
+      camera.lookAt(0, lookAtY, 0);
     }
     applySph();
 
@@ -181,7 +295,7 @@
     // Holographic bloom pipeline (§19)
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.85, 0.35, 0.08);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.65, 0.38, 0.12);
     composer.addPass(bloomPass);
     composer.addPass(new OutputPass());
 
@@ -235,26 +349,55 @@
 
     // ── Trunk ─────────────────────────────────────────────────────────────
 
-    function buildTrunk(repo: Repo, group: THREE.Group): { height: number; radiusBot: number } {
-      const height    = repo.commitCount * COMMIT_H;
+    function buildTrunk(
+      repo: Repo,
+      repoIdx: number,
+      group: THREE.Group,
+    ): { height: number; radiusBot: number } {
+      // sqrt(n) * 0.50 → SDK=9.1u  SOUL=4.0u  CORSO=4.6u  ratio 2.3:1
+      // Camera lookAt set to maxTrunkH * 0.48 so all trunks stay in frustum
+      const height    = trunkH(repo.commitCount);
       const radiusBot = Math.sqrt(repo.fileCount) * TRUNK_GIRTH_K;
-      const radiusTop = radiusBot * 0.38;
+      const radiusTop = radiusBot * 0.42;
+      const [tc, wc]  = repoTrunkColor(repoIdx);
 
+      // Core cylinder — lower emissive so it doesn't blow out; wire edges carry the form
       const geo = new THREE.CylinderGeometry(radiusTop, radiusBot, height, 8, 1);
       geo.translate(0, height / 2, 0);
       toDispose.push(geo);
-      group.add(new THREE.Mesh(geo, holoMat(0x0ea5e9, 0.22, 0.65)));
+      group.add(new THREE.Mesh(geo, holoMat(tc, 0.42, 0.62)));
 
       const edges = new THREE.EdgesGeometry(geo);
       toDispose.push(edges);
-      group.add(new THREE.LineSegments(edges, wireMat(0x38bdf8, 0.35)));
+      group.add(new THREE.LineSegments(edges, wireMat(wc, 0.82)));
 
-      // Ground ring at tree base
-      const ring = new THREE.RingGeometry(radiusBot * 0.95, radiusBot * 1.4, 32);
-      ring.rotateX(-Math.PI / 2);
-      ring.translate(0, 0.005, 0);
-      toDispose.push(ring);
-      group.add(new THREE.Mesh(ring, holoMat(0x0ea5e9, 0.65, 0.7)));
+      // Milestone rings — use warm white for contrast against trunk hue
+      const ringCount = Math.min(Math.floor(repo.commitCount / 25), 12);
+      for (let ri = 1; ri <= ringCount; ri++) {
+        const t       = ri / (ringCount + 1);
+        const ringY   = t * height;
+        const frac    = ringY / height;
+        const ringRad = radiusBot + (radiusTop - radiusBot) * frac;
+        const rGeo    = new THREE.RingGeometry(ringRad * 0.88, ringRad * 1.38, 20);
+        rGeo.rotateX(-Math.PI / 2);
+        rGeo.translate(0, ringY, 0);
+        toDispose.push(rGeo);
+        // Alternate: even rings use trunk hue, odd rings use white accent
+        const ringColor = ri % 2 === 0 ? tc : 0xe2e8f0;
+        group.add(new THREE.Mesh(rGeo, holoMat(ringColor, 0.62, 0.5)));
+      }
+
+      // Wide ground halo — anchors tree to floor, colored per repo
+      const halo = new THREE.RingGeometry(radiusBot * 0.9, radiusBot * 3.2, 32);
+      halo.rotateX(-Math.PI / 2);
+      halo.translate(0, 0.01, 0);
+      toDispose.push(halo);
+      group.add(new THREE.Mesh(halo, holoMat(tc, 0.72, 0.48)));
+
+      // Base disc
+      const disc = new THREE.CylinderGeometry(radiusBot * 1.1, radiusBot * 1.1, 0.018, 16);
+      toDispose.push(disc);
+      group.add(new THREE.Mesh(disc, holoMat(tc, 0.92, 0.88)));
 
       return { height, radiusBot };
     }
@@ -354,23 +497,28 @@
 
     // ── Build grove ───────────────────────────────────────────────────────
 
-    SEED_REPOS.forEach(repo => {
+    repos.forEach((repo, repoIdx) => {
       const group = new THREE.Group();
       group.position.copy(repo.pos);
-      const { height, radiusBot } = buildTrunk(repo, group);
+      const { height, radiusBot } = buildTrunk(repo, repoIdx, group);
       repo.branches.forEach((b, bi) =>
         buildBranch(b, bi, repo, height, radiusBot, group),
       );
       scene.add(group);
     });
 
-    // Blueprint grid floor
-    const grid = new THREE.GridHelper(44, 44, 0x0d2544, 0x071a33);
+    // Blueprint grid floor — AdditiveBlending required: dark colors add nothing to near-black bg
+    // Center lines: 0x1a6ec0 (R26,G110,B192) → adds (16,66,115) on top of black = visible mid-blue
+    // Division lines: 0x0c3a70 (R12,G58,B112) → adds (7,35,67) = subtle dark-blue lattice
+    const grid = new THREE.GridHelper(44, 44, 0x1a6ec0, 0x0c3a70);
     grid.position.y = -0.05;
     const gridMats = Array.isArray(grid.material) ? grid.material : [grid.material];
     gridMats.forEach(m => {
-      (m as THREE.LineBasicMaterial).transparent = true;
-      (m as THREE.LineBasicMaterial).opacity = 0.35;
+      const lm = m as THREE.LineBasicMaterial;
+      lm.transparent = true;
+      lm.opacity = 0.62;
+      lm.blending = THREE.AdditiveBlending;
+      lm.depthWrite = false;
     });
     scene.add(grid);
 
@@ -405,7 +553,7 @@
     function animate() {
       animId = requestAnimationFrame(animate);
       if (!dragging) {
-        sph.theta += 0.0007;
+        sph.theta += 0.00025;
         applySph();
       }
       composer.render();
@@ -437,6 +585,444 @@
       toDispose.forEach(x => x.dispose());
       renderer.dispose();
       composer.dispose();
+    };
+  });
+
+  // ─── 2D flat git-graph renderer ──────────────────────────────────────────
+
+  $effect(() => {
+    if (mode !== '2d' || !canvas2d) return;
+
+    const canvas = canvas2d;
+    const ctxRaw = canvas.getContext('2d');
+    if (!ctxRaw) return;
+    const ctx: CanvasRenderingContext2D = ctxRaw;
+
+    function resize() {
+      canvas.width  = canvas.offsetWidth  || 400;
+      canvas.height = canvas.offsetHeight || 300;
+    }
+    resize();
+
+    const maxCommits = Math.max(...repos.map(r => r.commitCount));
+    let animId: number;
+
+    function hexColor(n: number): string {
+      return `#${n.toString(16).padStart(6, '0')}`;
+    }
+
+    function draw() {
+      animId = requestAnimationFrame(draw);
+      const cw = canvas.width;
+      const ch = canvas.height;
+      const t = performance.now() * 0.001;
+
+      ctx.clearRect(0, 0, cw, ch);
+      ctx.fillStyle = '#020408';
+      ctx.fillRect(0, 0, cw, ch);
+
+      // Blueprint grid — cell size relative to canvas so it adapts to any viewport
+      const gs = Math.max(cw, ch) / 20;
+      ctx.lineWidth = 0.5;
+      for (let x = 0; x < cw; x += gs) {
+        ctx.strokeStyle = (Math.round(x / gs) % 4 === 0) ? 'rgba(26,110,192,0.2)' : 'rgba(26,110,192,0.07)';
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ch); ctx.stroke();
+      }
+      for (let y = 0; y < ch; y += gs) {
+        ctx.strokeStyle = (Math.round(y / gs) % 4 === 0) ? 'rgba(26,110,192,0.2)' : 'rgba(26,110,192,0.07)';
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke();
+      }
+
+      // ── Layout constants that scale with repo count ───────────────────────
+      // Two-pass sizing: compute font sizes first (needed for padX), then
+      // derive padX from the longest label so no name ever clips at the edge.
+      const n = repos.length;
+
+      // Preliminary colW estimate (padX unknown yet — use 5% placeholder)
+      const colWEst     = (cw * 0.90) / n;
+      const nameFontSz  = Math.max(7, Math.min(11, Math.floor(colWEst * 0.075)));
+      const statsFontSz = Math.max(6, Math.min(9,  Math.floor(colWEst * 0.058)));
+      const labelFontSz = Math.max(6, Math.min(8,  Math.floor(colWEst * 0.052)));
+
+      // Half-width of the longest repo label in px (monospace ≈ 0.62× font size)
+      const maxNameLen  = Math.max(...repos.map(r => r.name.length));
+      const labelHalfW  = (maxNameLen * nameFontSz * 0.62) / 2;
+      // padX must also accommodate the outermost branch overhang (colWEst * 0.46)
+      const branchOverhang = colWEst * 0.46;
+      const padX   = Math.max(labelHalfW + 6, branchOverhang + 4, cw * 0.03);
+      const drawW  = cw - 2 * padX;
+      const colW   = drawW / n;
+      const labelH = Math.max(28, ch * 0.09);
+      const baseY  = ch - labelH;
+      const availH = baseY - 12;
+
+      // Update layout refs for click/hover handlers
+      l1ColW = colW;
+      l1PadX = padX;
+
+      // ── L2: hero mode for a selected repo ──────────────────────────────
+      if (selectedRepoIdx !== null && selectedRepoIdx < repos.length) {
+        drawHero(repos[selectedRepoIdx], selectedRepoIdx);
+        return;
+      }
+
+      repos.forEach((repo, ri) => {
+        const cx       = padX + colW * (ri + 0.5);
+        // Trunk height fills most of availH, scaled by sqrt(commitCount)/sqrt(max)
+        const trunkPx  = (Math.sqrt(repo.commitCount) / Math.sqrt(maxCommits)) * availH * 0.88;
+        const topY     = baseY - trunkPx;
+        const [tcN, wcN] = repoTrunkColor(ri);
+        const tc       = hexColor(tcN);
+        const wc       = hexColor(wcN);
+
+        // Trunk gradient
+        const grad = ctx.createLinearGradient(cx, baseY, cx, topY);
+        grad.addColorStop(0, tc + '55');
+        grad.addColorStop(1, wc + 'dd');
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = Math.max(1.5, colW * 0.016);
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(cx, baseY);
+        ctx.lineTo(cx, topY);
+        ctx.stroke();
+
+        // Milestone tick marks
+        const ringCount = Math.min(Math.floor(repo.commitCount / 25), 12);
+        for (let mi = 1; mi <= ringCount; mi++) {
+          const frac  = mi / (ringCount + 1);
+          const ringY = baseY - frac * trunkPx;
+          const len   = mi % 4 === 0 ? Math.max(6, colW * 0.06) : Math.max(3, colW * 0.03);
+          ctx.strokeStyle = mi % 2 === 0 ? tc + 'aa' : '#e2e8f0' + '55';
+          ctx.lineWidth = 0.8;
+          ctx.beginPath();
+          ctx.moveTo(cx - len, ringY);
+          ctx.lineTo(cx + len, ringY);
+          ctx.stroke();
+        }
+
+        // Trunk tip glow pulse
+        const tipPulse = 0.65 + 0.35 * Math.sin(t * 1.4 + ri * 1.2);
+        ctx.fillStyle = tc;
+        ctx.globalAlpha = tipPulse;
+        ctx.beginPath();
+        ctx.arc(cx, topY, Math.max(2.5, colW * 0.025), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        // Branches — length capped at colW * 0.46 so they stay within their column
+        repo.branches.forEach((branch, bi) => {
+          const forkFrac = branch.divergeCommit / repo.commitCount;
+          const forkY    = baseY - forkFrac * trunkPx;
+          const branchPx = Math.min(branch.commitCount * (colW * 0.055), colW * 0.46);
+          const dir      = bi % 2 === 0 ? 1 : -1;
+          const bColor   = hexColor(GATE_COLORS[branch.gateState]);
+
+          const cp1X = cx + dir * branchPx * 0.25;
+          const cp1Y = forkY - branchPx * 0.08;
+          const cp2X = cx + dir * branchPx * 0.65;
+          const cp2Y = forkY - branchPx * 0.38;
+          const tipX = cx + dir * branchPx;
+          const tipY = forkY - branchPx * 0.52;
+
+          if (branch.isGhost) {
+            ctx.setLineDash([4, 3]);
+            ctx.strokeStyle = bColor;
+            ctx.globalAlpha = 0.22;
+          } else {
+            ctx.setLineDash([]);
+            ctx.strokeStyle = bColor;
+            ctx.globalAlpha = 0.88;
+          }
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(cx, forkY);
+          ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, tipX, tipY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.globalAlpha = 1;
+
+          if (!branch.isGhost) {
+            // Commit dots with staggered pulse
+            const nodeCap = Math.min(branch.commitCount, 8);
+            for (let ni = 0; ni < nodeCap; ni++) {
+              const nt   = (ni + 1) / (nodeCap + 1);
+              const dotX = bezierPoint(cx, cp1X, cp2X, tipX, nt);
+              const dotY = bezierPoint(forkY, cp1Y, cp2Y, tipY, nt);
+              const pulse = 0.5 + 0.5 * Math.sin(t * 2.2 + ni * 0.9 + bi * 1.5 + ri * 2.3);
+              ctx.fillStyle = bColor;
+              ctx.globalAlpha = pulse;
+              ctx.beginPath();
+              ctx.arc(dotX, dotY, Math.max(1.5, colW * 0.013), 0, Math.PI * 2);
+              ctx.fill();
+              ctx.globalAlpha = 1;
+            }
+
+            // Branch label near tip — char limit scales with column width
+            const maxChars = Math.max(8, Math.floor(colW / (labelFontSz * 0.62)));
+            ctx.font = `${labelFontSz}px monospace`;
+            ctx.fillStyle = bColor;
+            ctx.globalAlpha = 0.65;
+            ctx.textAlign = dir > 0 ? 'left' : 'right';
+            const shortName = branch.name.replace(/^(feat|fix|chore)\//, '').slice(0, maxChars);
+            ctx.fillText(shortName, tipX + dir * 4, tipY - 2);
+            ctx.globalAlpha = 1;
+            ctx.textAlign = 'left';
+
+            // Worktree sub-branches
+            branch.worktrees.forEach((wt, wi) => {
+              const wtT   = Math.min(0.42 + wi * 0.22, 0.88);
+              const wtX   = bezierPoint(cx, cp1X, cp2X, tipX, wtT);
+              const wtY2  = bezierPoint(forkY, cp1Y, cp2Y, tipY, wtT);
+              const wtLen = wt.commitCount * Math.max(6, colW * 0.06);
+              const wtCol = hexColor(AGENT_COLORS[wt.domain]);
+              const offX  = dir * 0.4 + (wi % 2 === 0 ? 0.9 : -0.9);
+              const offY  = -1;
+              const mag   = Math.sqrt(offX*offX + offY*offY);
+              ctx.strokeStyle = wtCol;
+              ctx.lineWidth = 1;
+              ctx.globalAlpha = 0.72;
+              ctx.beginPath();
+              ctx.moveTo(wtX, wtY2);
+              ctx.lineTo(wtX + (offX/mag)*wtLen, wtY2 + (offY/mag)*wtLen);
+              ctx.stroke();
+              ctx.globalAlpha = 1;
+            });
+          }
+        });
+
+        // Repo name + stats label
+        ctx.textAlign = 'center';
+        ctx.font = `bold ${nameFontSz}px monospace`;
+        ctx.fillStyle = tc;
+        ctx.fillText(repo.name, cx, baseY + labelH * 0.42);
+        ctx.font = `${statsFontSz}px monospace`;
+        ctx.fillStyle = '#475569';
+        ctx.fillText(`${repo.commitCount}c · ${repo.fileCount}f`, cx, baseY + labelH * 0.80);
+        ctx.textAlign = 'left';
+      });
+    }
+
+    // ── L2 hero renderer ─────────────────────────────────────────────────
+    // Draws a single repo in full-canvas detail mode.
+
+    function drawHero(repo: Repo, riOrig: number) {
+      const cw   = canvas.width;
+      const ch   = canvas.height;
+      const t    = performance.now() * 0.001;
+      const cx   = cw / 2;
+
+      const labelH = Math.max(28, ch * 0.09);
+      const baseY  = ch - labelH;
+      const availH = baseY - 48;   // reserve 48px at top for title
+
+      const [tcN, wcN] = repoTrunkColor(riOrig);
+      const tc = hexColor(tcN);
+      const wc = hexColor(wcN);
+
+      // Title
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 13px monospace';
+      ctx.fillStyle = tc;
+      ctx.fillText(repo.name, cx, 22);
+      ctx.font = '9px monospace';
+      ctx.fillStyle = '#475569';
+      ctx.fillText(`${repo.commitCount} commits  ·  ${repo.fileCount} files`, cx, 36);
+      ctx.textAlign = 'left';
+
+      const trunkPx = availH * 0.92;
+      const topY    = baseY - trunkPx;
+
+      // Trunk
+      const grad = ctx.createLinearGradient(cx, baseY, cx, topY);
+      grad.addColorStop(0, tc + '55');
+      grad.addColorStop(1, wc + 'dd');
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 3;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(cx, baseY);
+      ctx.lineTo(cx, topY);
+      ctx.stroke();
+
+      // Milestone rings + commit count labels
+      const ringCount = Math.min(Math.floor(repo.commitCount / 25), 12);
+      for (let mi = 1; mi <= ringCount; mi++) {
+        const frac   = mi / (ringCount + 1);
+        const ringY  = baseY - frac * trunkPx;
+        const tickW  = mi % 4 === 0 ? 18 : 9;
+        ctx.strokeStyle = mi % 2 === 0 ? tc + 'aa' : '#e2e8f0' + '55';
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(cx - tickW, ringY);
+        ctx.lineTo(cx + tickW, ringY);
+        ctx.stroke();
+        if (mi % 4 === 0) {
+          ctx.font = '7px monospace';
+          ctx.fillStyle = '#334155';
+          ctx.textAlign = 'right';
+          ctx.fillText(`${Math.floor(frac * repo.commitCount)}c`, cx - tickW - 3, ringY + 3);
+          ctx.textAlign = 'left';
+        }
+      }
+
+      // Trunk tip pulse
+      const tipPulse = 0.65 + 0.35 * Math.sin(t * 1.4 + riOrig * 1.2);
+      ctx.fillStyle = tc;
+      ctx.globalAlpha = tipPulse;
+      ctx.beginPath();
+      ctx.arc(cx, topY, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // Branches — full horizontal spread
+      const maxHalf = cw * 0.42;
+      repo.branches.forEach((branch, bi) => {
+        const forkFrac = branch.divergeCommit / repo.commitCount;
+        const forkY    = baseY - forkFrac * trunkPx;
+        const branchPx = Math.min(branch.commitCount * 18, maxHalf);
+        const dir      = bi % 2 === 0 ? 1 : -1;
+        const bColor   = hexColor(GATE_COLORS[branch.gateState]);
+
+        const cp1X = cx + dir * branchPx * 0.25;
+        const cp1Y = forkY - branchPx * 0.08;
+        const cp2X = cx + dir * branchPx * 0.65;
+        const cp2Y = forkY - branchPx * 0.38;
+        const tipX = cx + dir * branchPx;
+        const tipY = forkY - branchPx * 0.52;
+
+        if (branch.isGhost) {
+          ctx.setLineDash([6, 4]); ctx.globalAlpha = 0.25;
+        } else {
+          ctx.setLineDash([]);     ctx.globalAlpha = 0.9;
+        }
+        ctx.strokeStyle = bColor;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, forkY);
+        ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, tipX, tipY);
+        ctx.stroke();
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
+
+        if (!branch.isGhost) {
+          // Commit nodes with index labels
+          const nodeCap = Math.min(branch.commitCount, 10);
+          for (let ni = 0; ni < nodeCap; ni++) {
+            const nt   = (ni + 1) / (nodeCap + 1);
+            const dotX = bezierPoint(cx, cp1X, cp2X, tipX, nt);
+            const dotY = bezierPoint(forkY, cp1Y, cp2Y, tipY, nt);
+            const pulse = 0.6 + 0.4 * Math.sin(t * 2.2 + ni * 0.9 + bi * 1.5);
+            ctx.fillStyle = bColor;
+            ctx.globalAlpha = pulse;
+            ctx.beginPath();
+            ctx.arc(dotX, dotY, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 0.5;
+            ctx.font = '7px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`C${nodeCap - ni}`, dotX, dotY - 6);
+            ctx.globalAlpha = 1;
+            ctx.textAlign = 'left';
+          }
+
+          // Branch name + metadata at tip
+          ctx.textAlign = dir > 0 ? 'left' : 'right';
+          const lx = tipX + dir * 8;
+          ctx.font = 'bold 9px monospace';
+          ctx.fillStyle = bColor;
+          ctx.fillText(branch.name, lx, tipY - 4);
+          ctx.font = '7px monospace';
+          ctx.fillStyle = '#475569';
+          ctx.fillText(`${branch.commitCount}c · ${branch.filesModified}f`, lx, tipY + 7);
+          ctx.textAlign = 'left';
+
+          // Worktrees — labeled
+          branch.worktrees.forEach((wt, wi) => {
+            const wtT   = Math.min(0.42 + wi * 0.22, 0.88);
+            const wtX   = bezierPoint(cx, cp1X, cp2X, tipX, wtT);
+            const wtY2  = bezierPoint(forkY, cp1Y, cp2Y, tipY, wtT);
+            const wtLen = wt.commitCount * 22;
+            const wtCol = hexColor(AGENT_COLORS[wt.domain]);
+            const offX  = dir * 0.4 + (wi % 2 === 0 ? 0.9 : -0.9);
+            const offY  = -1;
+            const mag   = Math.sqrt(offX * offX + offY * offY);
+            const wtTX  = wtX + (offX / mag) * wtLen;
+            const wtTY  = wtY2 + (offY / mag) * wtLen;
+            ctx.strokeStyle = wtCol;
+            ctx.lineWidth = 1.5;
+            ctx.globalAlpha = 0.82;
+            ctx.beginPath();
+            ctx.moveTo(wtX, wtY2);
+            ctx.lineTo(wtTX, wtTY);
+            ctx.stroke();
+            ctx.globalAlpha = 0.7;
+            ctx.font = '7px monospace';
+            ctx.fillStyle = wtCol;
+            ctx.textAlign = 'center';
+            ctx.fillText(wt.domain, wtTX, wtTY - 5);
+            ctx.globalAlpha = 1;
+            ctx.textAlign = 'left';
+          });
+        }
+      });
+
+      // Back button — fixed top-left
+      const bx = 8, by = 8, bw = 72, bh = 22;
+      ctx.fillStyle = 'rgba(2,4,8,0.8)';
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.strokeStyle = 'rgba(58,63,71,0.8)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(bx, by, bw, bh);
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '700 9px monospace';
+      ctx.fillText('< FOREST', bx + 9, by + 14);
+    }
+
+    // ── Layout refs shared with click/hover handlers ───────────────────
+    let l1ColW = 0;
+    let l1PadX = 0;
+
+    function handleClick(e: MouseEvent) {
+      const rect = canvas.getBoundingClientRect();
+      const mx   = (e.clientX - rect.left) * (canvas.width  / rect.width);
+      const my   = (e.clientY - rect.top)  * (canvas.height / rect.height);
+
+      if (selectedRepoIdx !== null) {
+        if (mx < 80 && my < 30) selectedRepoIdx = null;
+        return;
+      }
+      if (l1ColW <= 0) return;
+      const ri = Math.floor((mx - l1PadX) / l1ColW);
+      if (ri >= 0 && ri < repos.length) selectedRepoIdx = ri;
+    }
+
+    function handleMouseMove(e: MouseEvent) {
+      const rect = canvas.getBoundingClientRect();
+      const mx   = (e.clientX - rect.left) * (canvas.width  / rect.width);
+      const my   = (e.clientY - rect.top)  * (canvas.height / rect.height);
+
+      if (selectedRepoIdx !== null) {
+        canvas.style.cursor = (mx < 80 && my < 30) ? 'pointer' : 'default';
+      } else if (l1ColW > 0) {
+        const ri = Math.floor((mx - l1PadX) / l1ColW);
+        canvas.style.cursor = (ri >= 0 && ri < repos.length) ? 'pointer' : 'default';
+      }
+    }
+
+    canvas.addEventListener('click', handleClick);
+    canvas.addEventListener('mousemove', handleMouseMove);
+
+    draw();
+
+    const ro = new ResizeObserver(resize);
+    ro.observe(canvas);
+
+    return () => {
+      cancelAnimationFrame(animId);
+      ro.disconnect();
+      canvas.removeEventListener('click', handleClick);
+      canvas.removeEventListener('mousemove', handleMouseMove);
+      canvas.style.cursor = '';
     };
   });
 
@@ -499,7 +1085,15 @@
 </script>
 
 <div class="forest-wrap">
-  <div bind:this={container} class="forest-canvas"></div>
+  <div class="mode-toggle" role="group" aria-label="Scene mode">
+    <button class="mode-btn" class:active={mode === '2d'} onclick={() => mode = '2d'}>2D</button>
+    <button class="mode-btn" class:active={mode === '3d'} onclick={() => mode = '3d'}>3D</button>
+  </div>
+  {#if mode === '3d'}
+    <div bind:this={container} class="forest-canvas"></div>
+  {:else}
+    <canvas bind:this={canvas2d} class="forest-canvas"></canvas>
+  {/if}
   <canvas bind:this={overlayCanvas} class="forest-overlay" aria-hidden="true"></canvas>
 </div>
 
@@ -522,5 +1116,38 @@
     height: 100%;
     pointer-events: none;
     mix-blend-mode: screen;
+  }
+
+  /* ── Mode toggle pill ── */
+  .mode-toggle {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    z-index: 10;
+    display: flex;
+    gap: 2px;
+    padding: 3px;
+    background: rgba(2, 4, 8, 0.76);
+    border: 1px solid rgba(0, 200, 255, 0.18);
+    border-radius: 6px;
+    backdrop-filter: blur(6px);
+  }
+  .mode-btn {
+    font: 600 10px/1 monospace;
+    letter-spacing: 0.06em;
+    color: #475569;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 9px;
+    cursor: pointer;
+    transition: color 120ms ease, background 120ms ease;
+  }
+  .mode-btn.active {
+    color: #00c8ff;
+    background: rgba(0, 200, 255, 0.12);
+  }
+  .mode-btn:hover:not(.active) {
+    color: #94a3b8;
   }
 </style>

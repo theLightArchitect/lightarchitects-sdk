@@ -183,6 +183,31 @@
     return (SIBLING_COLORS as Record<string, string>)[sibling] ?? 'var(--la-focus-ring)';
   }
 
+  /** Returns a color for the significance badge based on value (0–1 range). */
+  function sigBadgeStyle(sig: number): string {
+    if (sig >= 0.8) return 'color: #f0c040; background: rgba(240,192,64,0.12); border-color: rgba(240,192,64,0.3);';
+    if (sig >= 0.6) return 'color: var(--la-agent-researcher); background: rgba(100,200,255,0.08); border-color: rgba(100,200,255,0.2);';
+    if (sig >= 0.4) return 'color: var(--la-agent-engineer); background: rgba(77,142,255,0.08); border-color: rgba(77,142,255,0.15);';
+    return 'color: var(--la-text-mute); background: transparent; border-color: var(--la-drawer-border);';
+  }
+
+  /** Returns a left-border accent color for entry type. */
+  function kindBorderColor(kind: string | undefined): string {
+    switch (kind) {
+      case 'plan':        return 'var(--la-agent-engineer)';
+      case 'standard':    return '#f0c040';
+      case 'review':      return 'var(--la-agent-security)';
+      case 'lesson':      return 'var(--la-agent-testing)';
+      case 'reference':   return 'var(--la-agent-knowledge)';
+      case 'experience':  return 'var(--la-agent-researcher)';
+      case 'helix':       return 'var(--la-agent-quality)';
+      case 'convergence': return 'var(--la-agent-squad)';
+      case 'milestone':   return '#f0c040';
+      case 'meeting':     return 'var(--la-text-mute)';
+      default:            return 'transparent';
+    }
+  }
+
   $effect(() => {
     if ($memoryDrawerOpen) {
       refresh();
@@ -449,6 +474,7 @@
         {#each searchResults ?? [] as entry (entry.path)}
           <button
             class="w-full text-left px-3 py-2 border-b border-[var(--la-drawer-border)]/50 hover:bg-[var(--la-bg-elev-1)] transition-colors"
+            style="border-left: 2px solid {kindBorderColor(entry.entry_type)};"
             onclick={() => selectEnrichedEntry(entry)}
             data-testid="memory-row"
             data-kind={entry.entry_type ?? 'entry'}
@@ -458,9 +484,11 @@
                 {entry.sibling.toUpperCase()}
               </span>
               {#if entry.significance !== undefined}
-                <span class="text-[9px] text-[var(--la-text-dim)]">
-                  {(entry.significance * 10).toFixed(1)}
-                </span>
+                <span
+                  class="text-[8px] font-mono font-bold px-1 py-px border rounded-sm"
+                  style="{sigBadgeStyle(entry.significance)}"
+                  title="Significance: {(entry.significance * 10).toFixed(1)}/10"
+                >{(entry.significance * 10).toFixed(1)}</span>
               {/if}
             </div>
             <p class="text-[11px] text-[var(--la-text-label)] line-clamp-2">
@@ -473,6 +501,7 @@
           <button
             class="w-full text-left px-3 py-2 border-b border-[var(--la-drawer-border)]/50 hover:bg-[var(--la-bg-elev-1)] transition-colors
                    {selected.memo?.id === memo.id ? 'bg-[var(--la-bg-elev-1)]' : ''}"
+            style="border-left: 2px solid {kindBorderColor(memo.entry_type)};"
             onclick={() => selectMemo(memo)}
             data-testid="memory-row"
             data-kind={memo.entry_type ?? 'entry'}
@@ -481,9 +510,12 @@
               <span class="text-[10px] font-semibold" style="color: {siblingColor(memo.sibling)}">
                 {memo.sibling.toUpperCase()}
               </span>
-              <span class="text-[9px] text-[var(--la-text-dim)]">
-                {(memo.significance * 10).toFixed(1)}
-              </span>
+              <!-- Significance badge — color-coded by value -->
+              <span
+                class="text-[8px] font-mono font-bold px-1 py-px border rounded-sm"
+                style="{sigBadgeStyle(memo.significance)}"
+                title="Significance: {(memo.significance * 10).toFixed(1)}/10"
+              >{(memo.significance * 10).toFixed(1)}</span>
               {#if memo.entry_type && memo.entry_type !== 'entry'}
                 <!-- Phase 14.1 — typed-output chip. `entry` is the default,
                      so only non-entry kinds get a chip to keep the row quiet. -->

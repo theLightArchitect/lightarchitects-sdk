@@ -1,6 +1,6 @@
 <script lang="ts">
   import { activeBuild, logEntries, artifacts, isNativeAgent } from '$lib/stores';
-  import LogStream from '$lib/../components/LogStream.svelte';
+  import WorkingHistory from './WorkingHistory.svelte';
   import SiblingDispatch from '$lib/../components/SiblingDispatch.svelte';
   import AgentConsole from '$lib/../components/AgentConsole.svelte';
   import ArtifactPanel from '$lib/../components/ArtifactPanel.svelte';
@@ -20,14 +20,14 @@
     <div class="operator-empty">— no build selected —</div>
   {:else}
     <div class="operator-main">
-      <!-- Log stream — primary panel -->
+      <!-- Working history — primary panel -->
       <div class="log-panel">
         <div class="panel-head">
-          <span class="panel-label">LOG STREAM</span>
+          <span class="panel-label">WORKING HISTORY</span>
           <span class="panel-meta">{buildLogs.length} entries</span>
         </div>
         <div class="panel-body">
-          <LogStream entries={buildLogs} />
+          <WorkingHistory entries={buildLogs} />
         </div>
       </div>
 

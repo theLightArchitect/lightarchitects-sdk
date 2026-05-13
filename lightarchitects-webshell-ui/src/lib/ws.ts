@@ -129,6 +129,49 @@ function isValidAgentEvent(parsed: Record<string, unknown>): parsed is import('.
       return typeof parsed.input === 'number' && typeof parsed.output === 'number';
     case 'heartbeat':
       return true;
+    case 'permission_request':
+      return typeof parsed.request_id === 'string' && typeof parsed.tool === 'string';
+    // ── Phase 5 TRUST hooks ──────────────────────────────────────────────
+    case 'pick_classified':
+      return typeof parsed.mode === 'string';
+    case 'discover_injected':
+      return typeof parsed.entry_count === 'number' && typeof parsed.chars_injected === 'number';
+    case 'verify_complete':
+      return typeof parsed.passed === 'boolean' && typeof parsed.retries_used === 'number';
+    case 'verify_failed':
+      return typeof parsed.reason === 'string';
+    case 'reflect_complete':
+      return typeof parsed.significance === 'number' && typeof parsed.enrich_triggered === 'boolean';
+    case 'cost_gate_check':
+      return typeof parsed.projected_usd === 'number' && typeof parsed.gate_usd === 'number';
+    // ── Phase 10+ advanced ───────────────────────────────────────────────
+    case 'squad_suggestion':
+      return typeof parsed.preset === 'string' && typeof parsed.reason === 'string';
+    case 'strand_bump':
+      return typeof parsed.strand === 'number' && typeof parsed.delta === 'number';
+    case 'security_violation':
+      return typeof parsed.event_type === 'string' && typeof parsed.tool === 'string' && typeof parsed.detail === 'string';
+    case 'sandbox_blocked':
+      return typeof parsed.tool === 'string' && typeof parsed.attempted_path === 'string' && typeof parsed.reason === 'string';
+    case 'resource_limit_hit':
+      return typeof parsed.tool === 'string' && typeof parsed.limit_type === 'string';
+    case 'exec_server_status':
+      return typeof parsed.connected === 'boolean';
+    case 'provider_fallback':
+      return typeof parsed.from === 'string' && typeof parsed.to === 'string';
+    // ── Phase 11 lens system ─────────────────────────────────────────────
+    case 'lenses_selected':
+      return Array.isArray(parsed.lenses) && typeof parsed.tier === 'number';
+    case 'lens_assessment':
+      return typeof parsed.sibling === 'string' && typeof parsed.confidence === 'number';
+    // ── Phase 14 child agents ────────────────────────────────────────────
+    case 'child_agent_forked':
+      return typeof parsed.child_name === 'string' && typeof parsed.task_id === 'string';
+    case 'child_agent_completed':
+      return typeof parsed.child_name === 'string' && typeof parsed.success === 'boolean';
+    // ── Plan mode ────────────────────────────────────────────────────────
+    case 'plan_queue_ready':
+      return Array.isArray(parsed.actions);
     default:
       return false;
   }
@@ -229,6 +272,31 @@ export class AgentWS {
   sendSteer(text: string): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ action: 'steer', text }));
+    }
+  }
+
+  /** Approve a pending HITL permission request. */
+  sendApprove(requestId: string): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ action: 'approve_permission', request_id: requestId }));
+    }
+  }
+
+  /** Deny a pending HITL permission request with an optional reason. */
+  sendDeny(requestId: string, reason?: string): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ action: 'deny_permission', request_id: requestId, ...(reason ? { reason } : {}) }));
+    }
+  }
+
+  /**
+   * Set (or replace) the agent's system prompt for the current session.
+   * Requires backend feat/squad-comms-session-per-build (SetSystemPrompt #161).
+   * Server validates: ≤8 KiB, no NUL bytes. Responds with Ack or Reject.
+   */
+  sendSystemPrompt(text: string): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ action: 'set_system_prompt', text }));
     }
   }
 

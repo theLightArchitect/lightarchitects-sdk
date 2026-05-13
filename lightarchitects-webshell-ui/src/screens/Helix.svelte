@@ -10,20 +10,38 @@
   );
 
   let searchQuery = $state('');
+  let siblingFilter = $state<string | null>(null);
+  let sigFilter = $state<number | null>(null);
 
-  // Filter entries by path · sibling · significance · excerpt
-  const filteredEntries = $derived.by(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return $helixEntries;
-    const sigNum = parseFloat(q);
-    return $helixEntries.filter(e =>
-      (e.path?.toLowerCase().includes(q)) ||
-      (e.sibling?.toLowerCase().includes(q)) ||
-      (e.strands?.some(s => s.toLowerCase().includes(q))) ||
-      (e.content_excerpt?.toLowerCase().includes(q)) ||
-      (!isNaN(sigNum) && e.significance !== undefined && e.significance >= sigNum)
-    );
+  // Siblings present in the vault (for filter chips)
+  const availableSiblings = $derived.by(() => {
+    const seen = new Set<string>();
+    for (const e of $helixEntries) if (e.sibling) seen.add(e.sibling.toLowerCase());
+    return [...seen].sort();
   });
+
+  // Composed filter: text query AND sibling AND significance
+  const filteredEntries = $derived.by(() => {
+    let entries = $helixEntries;
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      const sigNum = parseFloat(q);
+      entries = entries.filter(e =>
+        (e.path?.toLowerCase().includes(q)) ||
+        (e.sibling?.toLowerCase().includes(q)) ||
+        (e.strands?.some(s => s.toLowerCase().includes(q))) ||
+        (e.content_excerpt?.toLowerCase().includes(q)) ||
+        (!isNaN(sigNum) && e.significance !== undefined && e.significance >= sigNum)
+      );
+    }
+    if (siblingFilter) entries = entries.filter(e => e.sibling?.toLowerCase() === siblingFilter);
+    if (sigFilter !== null) entries = entries.filter(e => (e.significance ?? 0) >= sigFilter!);
+    return entries;
+  });
+
+  const hasFilters = $derived(siblingFilter !== null || sigFilter !== null);
+
+  function clearFilters() { siblingFilter = null; sigFilter = null; }
 </script>
 
 <div class="helix-screen" data-testid="helix-screen">
@@ -46,18 +64,60 @@
       <div class="helix-search-wrap">
         <HelixSearch
           bind:query={searchQuery}
-          matchCount={searchQuery.trim() ? filteredEntries.length : undefined}
+          matchCount={(searchQuery.trim() || hasFilters) ? filteredEntries.length : undefined}
         />
+      </div>
+
+      <!-- Faceted filter strip -->
+      <div class="helix-filters">
+        <!-- Sibling chips -->
+        {#each availableSiblings as sib}
+          <button
+            class="hf-chip"
+            class:hf-active={siblingFilter === sib}
+            onclick={() => { siblingFilter = siblingFilter === sib ? null : sib; }}
+            title="Filter by {sib.toUpperCase()}"
+          >{sib.toUpperCase()}</button>
+        {/each}
+
+        <!-- Significance threshold quick-filters -->
+        {#each ([0.7, 0.8, 0.9] as const) as threshold}
+          <button
+            class="hf-chip hf-sig"
+            class:hf-active={sigFilter === threshold}
+            onclick={() => { sigFilter = sigFilter === threshold ? null : threshold; }}
+            title="Show entries with significance ≥ {threshold * 10}"
+          >≥{threshold * 10}</button>
+        {/each}
+
+        {#if hasFilters}
+          <button class="hf-clear" onclick={clearFilters}>✕</button>
+        {/if}
       </div>
     </header>
 
     <div class="helix-body">
       {#if filteredEntries.length === 0}
         <div class="helix-empty">
-          {#if searchQuery.trim()}
+          {#if searchQuery.trim() || hasFilters}
             <span class="helix-empty-glyph">◈</span>
             <span class="helix-empty-msg">— no entries match —</span>
-            <span class="helix-empty-hint">Try searching path, sibling name, or significance threshold (e.g. "7.5").</span>
+            <span class="helix-empty-hint">Broaden your search or clear filters.</span>
+            <button class="helix-empty-action" onclick={() => { searchQuery = ''; clearFilters(); }}>
+              clear all filters
+            </button>
+          {:else if totalCount === 0}
+            <span class="helix-empty-glyph">◈</span>
+            <span class="helix-empty-msg">— helix vault is quiet —</span>
+            <span class="helix-empty-hint">Agent memory and knowledge entries will appear here as they are created.</span>
+            <div class="helix-suggestions">
+              <span class="sugg-label">try</span>
+              {#each ['soul', 'lesson', 'standard', '8.0', '9.0'] as sugg}
+                <button class="sugg-pill" onclick={() => { searchQuery = sugg; }}>
+                  {sugg}
+                </button>
+              {/each}
+            </div>
           {:else}
             <span class="helix-empty-glyph">◈</span>
             <span class="helix-empty-msg">— helix vault is quiet —</span>
@@ -149,6 +209,91 @@
 
   .helix-search-wrap {
     width: 100%;
+  }
+
+  /* ── faceted filter strip ── */
+  .helix-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+  }
+  .hf-chip {
+    background: transparent;
+    border: 1px solid var(--la-hair-base);
+    color: var(--la-text-mute);
+    font-family: var(--la-font-chrome);
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    cursor: pointer;
+    transition: border-color 80ms, color 80ms, background 80ms;
+  }
+  .hf-chip:hover { border-color: var(--la-hair-strong); color: var(--la-text-dim); }
+  .hf-chip.hf-active {
+    border-color: var(--la-accent, #00c8ff);
+    color: var(--la-accent, #00c8ff);
+    background: color-mix(in srgb, var(--la-accent, #00c8ff) 10%, transparent);
+  }
+  .hf-sig { color: var(--la-focus-ring); border-color: transparent; }
+  .hf-sig.hf-active { border-color: var(--la-focus-ring); color: var(--la-focus-ring); background: color-mix(in srgb, var(--la-focus-ring) 10%, transparent); }
+  .hf-clear {
+    background: none;
+    border: none;
+    color: var(--la-text-mute);
+    font-size: 9px;
+    cursor: pointer;
+    padding: 2px 4px;
+    margin-left: 2px;
+  }
+  .hf-clear:hover { color: var(--la-text-bright); }
+
+  /* ── empty state actions + suggestions ── */
+  .helix-empty-action {
+    background: none;
+    border: 1px solid var(--la-hair-base);
+    color: var(--la-text-dim);
+    font-family: var(--la-font-chrome);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    cursor: pointer;
+    margin-top: 4px;
+    transition: border-color 80ms, color 80ms;
+  }
+  .helix-empty-action:hover { border-color: var(--la-hair-strong); color: var(--la-text-base); }
+
+  .helix-suggestions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 8px;
+  }
+  .sugg-label {
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--la-text-mute);
+    opacity: 0.6;
+  }
+  .sugg-pill {
+    background: transparent;
+    border: 1px solid var(--la-hair-base);
+    color: var(--la-focus-ring);
+    font-family: var(--la-font-mono);
+    font-size: 9px;
+    padding: 2px 8px;
+    cursor: pointer;
+    transition: background 80ms, border-color 80ms;
+  }
+  .sugg-pill:hover {
+    background: color-mix(in srgb, var(--la-focus-ring) 10%, transparent);
+    border-color: var(--la-focus-ring);
   }
 
   .helix-body {

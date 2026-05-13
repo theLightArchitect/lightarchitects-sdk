@@ -201,7 +201,7 @@ export const SIBLINGS: SiblingId[] = ['soul', 'eva', 'corso', 'quantum', 'seraph
 
 export interface SiblingHealth {
   id: SiblingId;
-  status: 'online' | 'degraded' | 'offline';
+  status: 'online' | 'degraded' | 'offline' | 'unconfigured';
   uptime: number;
   lastHeartbeat: string;
   capabilities: string[];
@@ -300,12 +300,26 @@ export type EventType =
   | 'scrum_report'
   | 'training_progress'
   | 'fs_mutation_pending'
-  | 'strand_convergence';
+  | 'strand_convergence'
+  | 'mailbox_message';
 
 // --- Agent protocol (native agent bridge) ---
 
+/** Execution mode from the PICK classifier. */
+export type AgentExecutionMode = 'solo' | 'solo_with_verify' | 'squad';
+
+/** A single action queued in plan mode, awaiting operator review. */
+export interface QueuedAction {
+  tool: string;
+  target: string;
+  preview: string;
+  args: unknown;
+  tool_call_id: string;
+}
+
 /** Agent event streamed from the native agent bridge. */
 export type AgentEvent =
+  // ── Core streaming ──────────────────────────────────────────────────────
   | { type: 'text'; chunk: string }
   | { type: 'thinking'; content: string }
   | { type: 'tool_start'; name: string; id: string; input: unknown }
@@ -314,7 +328,32 @@ export type AgentEvent =
   | { type: 'error'; message: string; recoverable?: boolean }
   | { type: 'token_usage'; input: number; output: number }
   | { type: 'status_update'; text: string }
-  | { type: 'heartbeat' };
+  | { type: 'heartbeat' }
+  // ── HITL permission ──────────────────────────────────────────────────────
+  | { type: 'permission_request'; request_id: string; tool: string; input: unknown }
+  // ── Phase 5 TRUST hooks ──────────────────────────────────────────────────
+  | { type: 'pick_classified'; mode: AgentExecutionMode }
+  | { type: 'discover_injected'; entry_count: number; chars_injected: number }
+  | { type: 'verify_complete'; passed: boolean; retries_used: number }
+  | { type: 'verify_failed'; reason: string }
+  | { type: 'reflect_complete'; significance: number; enrich_triggered: boolean }
+  | { type: 'cost_gate_check'; projected_usd: number; gate_usd: number }
+  // ── Phase 10+ advanced ───────────────────────────────────────────────────
+  | { type: 'squad_suggestion'; preset: string; reason: string }
+  | { type: 'strand_bump'; strand: number; delta: number }
+  | { type: 'security_violation'; event_type: string; tool: string; path?: string; detail: string }
+  | { type: 'sandbox_blocked'; tool: string; attempted_path: string; reason: string }
+  | { type: 'resource_limit_hit'; tool: string; limit_type: string; value: number; max: number }
+  | { type: 'exec_server_status'; connected: boolean; pid?: number }
+  | { type: 'provider_fallback'; from: string; to: string }
+  // ── Phase 11 lens system ─────────────────────────────────────────────────
+  | { type: 'lenses_selected'; lenses: string[]; tier: number }
+  | { type: 'lens_assessment'; sibling: string; tier: number; finding?: string; confidence: number }
+  // ── Phase 14 child agents ────────────────────────────────────────────────
+  | { type: 'child_agent_forked'; child_name: string; task_id: string; cwd: string }
+  | { type: 'child_agent_completed'; child_name: string; task_id: string; success: boolean; summary: string }
+  // ── Plan mode ────────────────────────────────────────────────────────────
+  | { type: 'plan_queue_ready'; actions: QueuedAction[] };
 
 // --- CORSO scout plan (PlanView) ---
 
@@ -892,4 +931,52 @@ export class SiblingWave {
   isActive(): boolean {
     return this.activity > IS_ACTIVE_EPS;
   }
+}
+
+// ============================================================================
+// Mosaic Panel Layout — recursive flex-tree (Zed flex-ratio model)
+// ============================================================================
+
+/** Named panel IDs — each maps to a concrete Svelte component in PanelHost. */
+export type PanelId =
+  | 'copilot'
+  | 'terminal'
+  | 'git-forest'
+  | 'agent-console'
+  | 'file-diff'
+  | 'file-explorer'
+  | 'build-status'
+  | 'findings'
+  | 'helix';
+
+/** The five built-in layout presets. */
+export type LayoutPreset = 'ops' | 'ide' | 'debug' | 'pr-review' | 'focus';
+
+/**
+ * Recursive panel tree using Zed's flex-ratio model.
+ * flexes[i] / sum(flexes) gives each child's proportional size.
+ * Invariant: flexes.length === children.length.
+ * Validation on load: if |sum(flexes) - children.length| > 0.001, reset to [1, 1, ...].
+ */
+export type PanelTree =
+  | { type: 'axis'; direction: 'row' | 'column'; children: PanelTree[]; flexes: number[] }
+  | { type: 'tabgroup'; activeIndex: number; tabs: PanelId[] }
+  | { type: 'leaf'; panelId: PanelId };
+
+/** Context a panel writes on focus — consumed by CopilotDrawer. */
+export type PanelContext =
+  | { type: 'file-diff'; path: string; diff?: string }
+  | { type: 'branch'; name: string; commits?: string[]; gates?: PillarGate[] }
+  | { type: 'agent-log'; buildId: string; recentEvents?: AgentEvent[] }
+  | { type: 'finding'; finding: Finding }
+  | { type: 'terminal'; recentOutput: string }
+  | { type: 'git-forest'; repoName: string }
+  | { type: 'helix'; query?: string };
+
+/** Cross-panel navigation request (e.g. finding → file-diff at line N). */
+export interface PanelNavRequest {
+  targetPanel: PanelId;
+  path?: string;
+  line?: number;
+  findingId?: string;
 }

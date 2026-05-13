@@ -71,7 +71,7 @@
     <div class="kanban-empty">— no build selected —</div>
   {:else}
     <div class="kanban-board">
-      {#each QUALITY_GATES as pillar}
+      {#each QUALITY_GATES as pillar, colIdx}
         {@const gate = build.pillars.find(p => p.pillar === pillar)}
         {@const color = pillarColor(pillar)}
         {@const pFindings = findingsByPillar[pillar] ?? []}
@@ -115,6 +115,15 @@
             {/if}
           </div>
         </div>
+
+        {#if colIdx < QUALITY_GATES.length - 1}
+          <div class="gate-sep" data-state={gate?.status ?? 'pending'}>
+            <div class="gate-line"></div>
+            <span class="gate-sep-lbl">{pillar.slice(0, 1)}</span>
+            <span class="gate-sep-icon">{statusGlyph(gate?.status ?? 'pending')}</span>
+            <div class="gate-line"></div>
+          </div>
+        {/if}
       {/each}
     </div>
   {/if}
@@ -140,15 +149,17 @@
   }
 
   .kanban-board {
-    display: grid;
-    grid-template-columns: repeat(7, minmax(160px, 1fr));
-    gap: 8px;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
     height: 100%;
-    min-width: 1120px;
+    min-width: 1232px; /* 7 × 160px columns + 6 × 24px separators */
   }
 
   .kanban-col {
     --pc: var(--la-text-mute);
+    flex: 1;
+    min-width: 160px;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -157,6 +168,42 @@
     background: var(--la-bg-base);
     overflow: hidden;
   }
+
+  /* ── gate separator between kanban columns ── */
+  .gate-sep {
+    flex-shrink: 0;
+    width: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 0;
+    gap: 3px;
+  }
+  .gate-line {
+    flex: 1;
+    width: 1px;
+    background: rgba(71, 85, 105, 0.3);
+  }
+  .gate-sep-lbl {
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--la-text-mute);
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+  }
+  .gate-sep-icon {
+    font-size: 10px;
+    color: var(--la-text-mute);
+  }
+  .gate-sep[data-state="passed"] .gate-sep-lbl,
+  .gate-sep[data-state="passed"] .gate-sep-icon { color: var(--la-agent-researcher, #4dffe6); }
+  .gate-sep[data-state="failed"] .gate-sep-lbl,
+  .gate-sep[data-state="failed"] .gate-sep-icon { color: var(--la-agent-security, #ff4d4d); }
+  .gate-sep[data-state="in_progress"] .gate-sep-lbl,
+  .gate-sep[data-state="in_progress"] .gate-sep-icon { color: var(--la-agent-performance, #ff8e3c); }
+  .gate-sep[data-state="passed"] .gate-line { background: color-mix(in srgb, var(--la-agent-researcher, #4dffe6) 30%, transparent); }
+  .gate-sep[data-state="failed"] .gate-line  { background: color-mix(in srgb, var(--la-agent-security, #ff4d4d) 30%, transparent); }
 
   .col-head {
     display: flex;

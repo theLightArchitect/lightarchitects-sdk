@@ -217,7 +217,7 @@ export const selectedPillar = writable<Pillar | null>(null);
 export const siblingHealth = writable<Record<SiblingId, SiblingHealth>>(
   Object.fromEntries(SIBLINGS.map(s => [s, {
     id: s,
-    status: 'offline' as const,
+    status: 'unconfigured' as const,
     uptime: 0,
     lastHeartbeat: '',
     capabilities: [],
@@ -340,10 +340,30 @@ export const terminalConnected = writable(false);
 export const authProfile = writable<AuthProfile>('anthropic');
 export const ollamaConfig = writable<OllamaConfig | null>(null);
 
+// --- Mailbox: global inter-agent messages from the platform SSE stream ---
+export interface GlobalMailboxMessage {
+  id: string;
+  dispatchId?: string;
+  agent: string;
+  text: string;
+  ts: number;
+}
+export const mailboxMessages = writable<GlobalMailboxMessage[]>([]);
+export const mailboxUnread = writable(0);
+
 // --- Agent reactive state (native agent bridge) ---
 export const agentConnected = writable(false);
 export const agentEvents = writable<import('./types').AgentEvent[]>([]);
 export const agentInput = writable('');
+
+/** Cumulative token usage for the active agent session. */
+export const agentTokenUsage = derived(agentEvents, ($evs) => {
+  let input = 0, output = 0;
+  for (const ev of $evs) {
+    if (ev.type === 'token_usage') { input += ev.input; output += ev.output; }
+  }
+  return { input, output };
+});
 
 // --- Derived: active build ---
 export const activeBuild = derived(

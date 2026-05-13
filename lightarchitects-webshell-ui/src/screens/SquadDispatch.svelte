@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { registerHotkey } from '$lib/hotkeyRegistry';
+  import { mailboxUnread } from '$lib/stores';
   import {
     classifyTask,
     executeDispatch,
@@ -63,6 +64,7 @@
 
   // Pre-fill task from ?task= query param when returning from /intake
   onMount(() => {
+    mailboxUnread.set(0); // clear global badge when user opens Dispatch
     const qs = window.location.hash.split('?')[1] ?? '';
     const params = new URLSearchParams(qs);
     const prefilled = params.get('task');
@@ -539,13 +541,30 @@
         </span>
       </div>
 
-      <div class="cmd-count">
-        <span class="cmd-count-num">{String(selectedAgents.length).padStart(2, '0')}</span>
-        <span class="cmd-count-lbl">
-          AGENT{selectedAgents.length !== 1 ? 'S' : ''}<br>
-          {isLive ? 'RUNNING' : 'QUEUED'}
-        </span>
-      </div>
+      {#if selectedAgents.length > 0 || isLive}
+        <div class="cmd-count">
+          <span class="cmd-count-num">{String(selectedAgents.length).padStart(2, '0')}</span>
+          <span class="cmd-count-lbl">
+            AGENT{selectedAgents.length !== 1 ? 'S' : ''}<br>
+            {isLive ? 'RUNNING' : 'QUEUED'}
+          </span>
+        </div>
+      {:else}
+        <ol class="cmd-idle-hints" aria-label="Dispatch checklist">
+          <li class:hint-done={task.trim().length > 0}>
+            <span class="hint-num">01</span>
+            <span class="hint-text">Write task</span>
+          </li>
+          <li class:hint-done={selectedAgents.length > 0}>
+            <span class="hint-num">02</span>
+            <span class="hint-text">Select agents</span>
+          </li>
+          <li>
+            <span class="hint-num">03</span>
+            <span class="hint-text">Hit DISPATCH ▶</span>
+          </li>
+        </ol>
+      {/if}
 
       {#if errorMsg}
         <p class="cmd-error-msg" role="alert">{errorMsg}</p>
@@ -567,11 +586,16 @@
       {:else}
         <button
           class="cmd-btn cmd-btn-dispatch"
+          class:dispatch-armed={selectedAgents.length > 0 && task.trim().length > 0 && !isLive}
           disabled={selectedAgents.length === 0 || !task.trim()}
           onclick={() => dispatch(task, dry, attachments, toolConfig)}
         >
           <span>DISPATCH</span>
-          <span class="dispatch-arrow">▶</span>
+          {#if selectedAgents.length > 0 && task.trim().length > 0 && !isLive}
+            <span class="dispatch-count">{selectedAgents.length}</span>
+          {:else}
+            <span class="dispatch-arrow">▶</span>
+          {/if}
         </button>
       {/if}
     </div>
@@ -587,8 +611,8 @@
         {:else}EXECUTION STAGE · STANDBY{/if}
       </span>
       <div class="view-toggle">
-        <button class="vt-btn vt-active" disabled>RAILS</button>
-        <button class="vt-btn" disabled>+ DAG</button>
+        <button class="vt-btn vt-active" disabled title="RAILS — horizontal timeline view; one row per agent (current)">RAILS</button>
+        <button class="vt-btn" disabled title="+ DAG — dependency graph overlay; shows inter-agent task edges (Sprint 3)">+ DAG</button>
       </div>
     </div>
 
@@ -602,6 +626,7 @@
       <LiveAgentGrid
         agents={selectedAgents}
         {agentStates}
+        selectedAgent={selectedAgent}
         onRetry={(agent) => { /* retry wired via dispatch */ void agent; }}
         onSelect={(agent) => { selectedAgent = agent; }}
       />
@@ -867,6 +892,42 @@
     text-transform: uppercase;
   }
 
+  /* ── idle hint checklist (no agents selected) ── */
+  .cmd-idle-hints {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .cmd-idle-hints li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    opacity: 0.5;
+    transition: opacity 150ms;
+  }
+  .cmd-idle-hints li.hint-done { opacity: 1; }
+  .hint-num {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--la-text-mute);
+    font-family: var(--la-font-mono);
+    flex-shrink: 0;
+    width: 16px;
+  }
+  .cmd-idle-hints li.hint-done .hint-num { color: var(--la-agent-researcher); }
+  .hint-text {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--la-text-dim);
+    text-transform: uppercase;
+  }
+  .cmd-idle-hints li.hint-done .hint-text { color: var(--la-text-base); }
+
   .cmd-error-msg {
     font-size: 9px;
     color: var(--la-agent-security);
@@ -914,6 +975,32 @@
     cursor: not-allowed;
   }
   .cmd-btn-dispatch:active:not(:disabled) { transform: scale(0.985); }
+  .cmd-btn-dispatch.dispatch-armed:not(:disabled) {
+    background: transparent;
+    color: var(--la-focus-ring, #00c8ff);
+    border-color: var(--la-focus-ring, #00c8ff);
+    animation: dispatch-ready-pulse 2s ease-in-out infinite;
+  }
+  .cmd-btn-dispatch.dispatch-armed:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--la-focus-ring, #00c8ff) 12%, transparent);
+  }
+  @keyframes dispatch-ready-pulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(0, 200, 255, 0.3); }
+    50%       { box-shadow: 0 0 20px rgba(0, 200, 255, 0.6), 0 0 0 1px rgba(0, 200, 255, 0.2); }
+  }
+  .dispatch-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--la-focus-ring, #00c8ff);
+    color: var(--la-bg-void, #090b0e);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+  }
 
   .cmd-btn-cancel {
     background: color-mix(in srgb, var(--la-agent-security) 10%, transparent);
@@ -939,6 +1026,22 @@
     flex-direction: column;
     border-bottom: 1px solid var(--la-hair-base);
     overflow: hidden;
+  }
+
+  /* ── circuit trace left-border on zone headers ── */
+  .cmd-label::before,
+  .rail-stage-head::before,
+  .mailbox-head::before {
+    content: '';
+    display: block;
+    width: 8px;
+    height: 8px;
+    border-left: 1px solid var(--la-hair-strong);
+    border-top: 1px solid var(--la-hair-strong);
+    margin-right: 8px;
+    flex-shrink: 0;
+    align-self: flex-start;
+    margin-top: 1px;
   }
 
   .rail-stage-head {

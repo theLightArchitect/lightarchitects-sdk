@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ayinStatus, builds, terminalConnected, authProfile, authStatus } from '$lib/stores';
+  import { ayinStatus, builds, terminalConnected, authProfile, authStatus, agentTokenUsage } from '$lib/stores';
   import { STATUS_COLORS } from '$lib/design-tokens';
 
   // Auth state takes precedence over connection state — a 401/403 is a more
@@ -68,4 +68,11 @@
     style="background-color: {profileColor}; box-shadow: 0 0 4px {profileColor}"
   ></div>
   <span class="text-[11px] text-[var(--la-text-label)] font-mono leading-none">{profileLabel}</span>
+
+  {#if $agentTokenUsage.input > 0}
+    <div class="w-px h-3 bg-[var(--la-hair-strong)] mx-1"></div>
+    <span class="text-[10px] text-[var(--la-text-dim)] font-mono leading-none tabular-nums">
+      {$agentTokenUsage.input.toLocaleString()}→{$agentTokenUsage.output.toLocaleString()} tok
+    </span>
+  {/if}
 </div>

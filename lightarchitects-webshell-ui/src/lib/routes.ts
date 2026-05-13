@@ -48,7 +48,7 @@ const ROUTES: RouteEntry[] = [
   [/^\/helix\/strand\/([^/]+)$/,                                            'Helix',         ['siblingKey']],
   [/^\/helix\/entry\/([^/]+)$/,                                             'Helix',         ['entryId']],
   [/^\/project\/([^/]+)$/,                                                  'ProjectDetail', ['projectId']],
-  [/^\/?$/,                                                                 'Builds',        []],
+  [/^\/?$/,                                                                 'Ops',           []],
   [/^\/ops(#.*)?$/,                                                         'Ops',           []],
   [/^\/dispatch$/,                                                          'Dispatch',      []],
   [/^\/builds$/,                                                            'Builds',        []],
@@ -67,7 +67,7 @@ export function matchRoute(hash: string): RouteMatch {
       return { screen, params };
     }
   }
-  return { screen: 'Builds', params: {} };
+  return { screen: 'Ops', params: {} };
 }
 
 /** Checks current hash for legacy paths and rewrites via history.replaceState. */

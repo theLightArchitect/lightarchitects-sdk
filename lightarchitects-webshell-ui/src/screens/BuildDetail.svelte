@@ -32,12 +32,12 @@
     return () => window.removeEventListener('hashchange', syncFromHash);
   });
 
-  const VIEW_TABS: { key: ViewMode; label: string }[] = [
-    { key: 'kanban',   label: 'KANBAN' },
-    { key: 'list',     label: 'LIST' },
-    { key: 'operator', label: 'OPERATOR' },
-    { key: 'manifest', label: 'MANIFEST' },
-    { key: 'plan',     label: 'PLAN' },
+  const VIEW_TABS: { key: ViewMode; label: string; desc: string }[] = [
+    { key: 'kanban',   label: 'KANBAN',   desc: 'LASDLC pillar board — findings sorted by severity per gate' },
+    { key: 'list',     label: 'LIST',     desc: 'Flat phase list with status, confidence, and findings counts' },
+    { key: 'operator', label: 'OPERATOR', desc: 'Live log stream, agent dispatch, and artifact panel' },
+    { key: 'manifest', label: 'MANIFEST', desc: 'Raw YAML manifest — codename, tier, phase set, assumptions' },
+    { key: 'plan',     label: 'PLAN',     desc: 'Full LASDLC plan document with phases, exit criteria, and deliverables' },
   ];
 </script>
 
@@ -54,6 +54,7 @@
           <button
             class="view-tab"
             class:active={viewMode === t.key}
+            title={t.desc}
             onclick={() => navigate('/builds/:buildId/:view', { buildId: build.id, view: t.key })}
           >
             {t.label}

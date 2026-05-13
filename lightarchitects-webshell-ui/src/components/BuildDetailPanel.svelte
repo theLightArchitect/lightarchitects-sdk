@@ -1,8 +1,10 @@
 <!-- Origin: scope-bleed from radiant-weaving-phoenix; landed via squishy-tome (commit 42bb840) merge. Phoenix is the canonical owner. -->
 <script lang="ts">
-  import { SIBLING_COLORS, TIER_COLORS, ROADMAP, getMetaSkillColor } from '$lib/design-tokens';
-  import type { Build } from '$lib/types';
+  import { SIBLING_COLORS, TIER_COLORS, ROADMAP, getMetaSkillColor, PILLAR_COLORS } from '$lib/design-tokens';
+  import type { Build, PillarGate } from '$lib/types';
+  import { PILLARS } from '$lib/types';
   import PhaseTimeline from './PhaseTimeline.svelte';
+  import PillarRail from './PillarRail.svelte';
   import type { PlanPhaseStatus } from '$lib/types';
 
   let { build, onClose, onOpenWorkspace }: {
@@ -26,6 +28,11 @@
   let passed = $derived(build?.pillars.filter(p => p.status === 'passed').length ?? 0);
   let total = $derived(build?.pillars.length ?? 0);
   let progressPct = $derived(total > 0 ? Math.round((passed / total) * 100) : 0);
+
+  // Ensure all 7 pillars are represented for the scorecard (fill gaps with 'pending')
+  let normalizedPillars = $derived<PillarGate[]>(
+    PILLARS.map(p => build?.pillars.find(g => g.pillar === p) ?? { pillar: p, status: 'pending', confidence: 0, findings: [] }),
+  );
 
   let tierLabel = $derived(() => {
     switch (build?.tier) {
@@ -143,6 +150,23 @@
         </div>
       {/if}
 
+      <!-- LASDLC 7-gate scorecard (P1-6) -->
+      <div class="section">
+        <h3 class="section-title">CORSO Gates</h3>
+        <PillarRail pillars={normalizedPillars} />
+        <div class="gate-legend">
+          {#each normalizedPillars as gate}
+            <div class="gate-legend-item" data-status={gate.status}>
+              <span class="gate-dot" style="background: {gate.status === 'passed' ? '#22c55e' : gate.status === 'in_progress' ? '#3b82f6' : gate.status === 'failed' ? '#ef4444' : gate.status === 'blocked' ? '#f59e0b' : 'var(--la-hair-base)'}"></span>
+              <span class="gate-label" style="color: {PILLAR_COLORS[gate.pillar] ?? 'var(--la-text-mute)'}">{gate.pillar}</span>
+              {#if gate.status === 'in_progress'}
+                <span class="gate-pct">{Math.round(gate.confidence * 100)}%</span>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </div>
+
       <!-- Phase timeline -->
       <div class="section">
         <h3 class="section-title">Phases</h3>
@@ -230,6 +254,34 @@
     text-transform: uppercase;
     letter-spacing: 1px;
     margin-bottom: 6px;
+  }
+
+  .gate-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .gate-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 9px;
+    font-family: var(--la-font-mono, 'JetBrains Mono', monospace);
+    letter-spacing: 0.06em;
+  }
+  .gate-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .gate-label {
+    font-weight: 700;
+  }
+  .gate-pct {
+    color: var(--la-text-mute);
+    font-size: 8px;
   }
 
   .workspace-btn {

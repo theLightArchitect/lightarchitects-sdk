@@ -27,9 +27,15 @@ describe('AgentSelector (browser)', () => {
     }
   });
 
-  it('shows the empty-state warning when no agent is selected', async () => {
-    const { getByText } = render(AgentSelector, {});
-    await expect.element(getByText('Select at least one agent to dispatch.')).toBeInTheDocument();
+  it('shows the empty-state warning when no agent is selected and showValidation is true', async () => {
+    const { getByText } = render(AgentSelector, { showValidation: true });
+    await expect.element(getByText('↑ Select at least one agent above to dispatch.')).toBeInTheDocument();
+  });
+
+  it('does not show the validation warning before a dispatch attempt', async () => {
+    const { container } = render(AgentSelector, {});
+    const alerts = container.querySelectorAll('[role="alert"]');
+    expect(alerts.length).toBe(0);
   });
 
   it('shows aria-pressed=true on selected chips and reflects the count', async () => {

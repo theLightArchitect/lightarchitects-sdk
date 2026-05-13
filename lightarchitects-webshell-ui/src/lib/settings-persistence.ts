@@ -34,6 +34,7 @@ export interface PersistedSettings {
   selectedBackend?: string | null;
   selectedModel?: string | null;
   selectedAgent?: string | null;
+  layoutPreset?: string;  // LayoutPreset — string to avoid circular import
 }
 
 // --- Debounce timer handle ---
