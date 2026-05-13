@@ -10,6 +10,7 @@
 
 pub mod arena;
 pub mod ask_user;
+pub mod code_comms;
 pub mod ayin_http;
 pub mod bash;
 pub mod canon_check;

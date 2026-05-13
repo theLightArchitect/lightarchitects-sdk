@@ -30,6 +30,7 @@ pub fn all_tool_definitions() -> Vec<Value> {
     tools.extend(file_tool_defs());
     tools.extend(platform_tool_defs());
     tools.extend(squad_tool_defs());
+    tools.extend(code_tool_defs());
     tools
 }
 
@@ -100,6 +101,18 @@ fn platform_tool_defs() -> Vec<Value> {
                 "required": ["action"]
             }
         }),
+    ]
+}
+
+/// Code editor tool definitions: `code.*` file-system operations scoped to project roots.
+fn code_tool_defs() -> Vec<Value> {
+    vec![
+        json!({"name": "lightarchitects_code_read_file", "description": "Read a file's content for display in the webshell code editor. Files >50 MiB are refused; files >5 MiB return truncated: true. Returns path, content, size, encoding, truncated, and mtime.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string", "description": "Absolute file path. ~/ prefix is expanded."}}, "required": ["path"]}}),
+        json!({"name": "lightarchitects_code_write_file", "description": "Write content to a file atomically (tmp → rename). Creates parent directories. Enforces T-2 path canonicalization — target must be within allowed_directories. Returns bytes_written and mtime.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string", "description": "Destination file path. ~/ prefix is expanded."}, "content": {"type": "string", "description": "File content to write."}}, "required": ["path", "content"]}}),
+        json!({"name": "lightarchitects_code_list_dir", "description": "List directory entries. Returns each entry with name, type (file|dir|symlink), size, and mtime. Directories sort before files.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string", "description": "Directory path. ~/ prefix is expanded."}, "glob": {"type": "string", "description": "Optional glob filter (e.g. '*.rs'). Applied to entry names only."}}, "required": ["path"]}}),
+        json!({"name": "lightarchitects_code_apply_diff", "description": "Apply a unified diff to a file using the system patch command. The target must exist and pass write-path validation. Returns applied (bool), conflicts (list), and message.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string", "description": "File to patch. Must exist."}, "diff": {"type": "string", "description": "Unified diff string (output of diff -u or similar)."}}, "required": ["path", "diff"]}}),
+        json!({"name": "lightarchitects_code_search_text", "description": "Search file contents within a directory using ripgrep (fallback: grep). Returns up to 50 matches with path, line number, and matched text.", "inputSchema": {"type": "object", "properties": {"root": {"type": "string", "description": "Directory to search recursively."}, "pattern": {"type": "string", "description": "Regex pattern to search for."}, "glob": {"type": "string", "description": "File glob filter (e.g. '*.rs')."}}, "required": ["root", "pattern"]}}),
+        json!({"name": "lightarchitects_code_preview_diff", "description": "Generate a unified diff between a file's current content and proposed content. Uses the similar crate. Returns unified_diff string and line_count.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string", "description": "Existing file to diff against."}, "content": {"type": "string", "description": "Proposed new content."}}, "required": ["path", "content"]}}),
     ]
 }
 
@@ -282,6 +295,13 @@ async fn dispatch(
         "lightarchitects_squad_comms_claim_task" => squad_comms::claim_task(params, config).await,
         "lightarchitects_squad_comms_task_logs" => squad_comms::task_logs(params, config).await,
         "lightarchitects_squad_comms_chat_inject" => squad_comms::chat_inject(params, config).await,
+        // Code editor tools — EEF Wave E1 (code-and-files).
+        "lightarchitects_code_read_file" => core_tools::code_comms::run_read_file(params, config),
+        "lightarchitects_code_write_file" => core_tools::code_comms::run_write_file(params, config),
+        "lightarchitects_code_list_dir" => core_tools::code_comms::run_list_dir(params, config),
+        "lightarchitects_code_apply_diff" => core_tools::code_comms::run_apply_diff(params, config),
+        "lightarchitects_code_search_text" => core_tools::code_comms::run_search_text(params, config),
+        "lightarchitects_code_preview_diff" => core_tools::code_comms::run_preview_diff(params, config),
         _ => Err(GatewayError::UnknownTool(tool_name.to_owned())),
     }
 }
@@ -309,9 +329,9 @@ mod tests {
     }
 
     #[test]
-    fn all_tool_definitions_has_twenty_one_entries() {
-        // 1 meta + 6 file + 3 platform + 11 squad (7 squad_comms + 4 original)
-        assert_eq!(all_tool_definitions().len(), 21);
+    fn all_tool_definitions_has_twenty_seven_entries() {
+        // 1 meta + 6 file + 3 platform + 11 squad (7 squad_comms + 4 original) + 6 code
+        assert_eq!(all_tool_definitions().len(), 27);
     }
 
     #[test]

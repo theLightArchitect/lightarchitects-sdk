@@ -79,6 +79,7 @@ sha2 = "0.10"
 neo4rs = { version = "0.8", features = ["json"] }
 moka = { version = "0.12", features = ["future"] }
 criterion = { version = "0.5", features = ["html_reports"] }
+similar = "2"
 
 [[bin]]
 name = "lightarchitects"
@@ -169,6 +170,7 @@ subtle = { workspace = true }
 keyring = { workspace = true }
 tempfile = { workspace = true }
 fs2 = { workspace = true }
+similar = { workspace = true }
 
 # ── Platform-specific ─────────────────────────────────────────────────────────
 [target.'cfg(target_os = "macos")'.dependencies]
