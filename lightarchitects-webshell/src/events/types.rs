@@ -193,7 +193,6 @@ pub enum RiskTier {
     Critical,
 }
 
-
 /// Incremental pillar-run update broadcast over SSE (Phase 15).
 ///
 /// The frontend subscribes on the per-build SSE channel and matches on
