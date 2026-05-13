@@ -3,3 +3,53 @@
 @import './theme.css';
 @import './tokens.css';
 @import './shepherd-theme.css';
+
+/* G-1: OFFLINE nav dominant state — amber glow when connectivity is lost */
+.la-nav[data-status="reconnecting"],
+.la-nav[data-status="offline"] {
+  border-bottom: 1px solid var(--la-semantic-warn, #f59e0b) !important;
+  animation: g1-offline-pulse 3s ease-in-out infinite;
+}
+@keyframes g1-offline-pulse {
+  0%, 100% { box-shadow: 0 0 24px rgba(245, 158, 11, 0.10) inset; }
+  50%       { box-shadow: 0 0 40px rgba(245, 158, 11, 0.25) inset; }
+}
+
+/* G-1: status pill — shown in nav when offline/reconnecting */
+.nav-offline-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  border-radius: 2px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--la-semantic-warn, #f59e0b);
+  white-space: nowrap;
+}
+.nav-offline-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--la-semantic-warn, #f59e0b);
+  flex-shrink: 0;
+  animation: g1-blink 1s step-end infinite;
+}
+@keyframes g1-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+.nav-offline-retry {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--la-semantic-warn, #f59e0b);
+  font-size: 9px;
+  font-family: inherit;
+  letter-spacing: 0.08em;
+  padding: 0 4px;
+  opacity: 0.8;
+  transition: opacity 120ms;
+}
+.nav-offline-retry:hover { opacity: 1; }

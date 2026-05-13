@@ -393,6 +393,14 @@
         {/each}
         <div class="ml-auto shrink-0 flex items-center gap-2">
           <ActiveBuildsChip />
+          <!-- G-1: OFFLINE status pill — only when connectivity is lost -->
+          {#if $ayinStatus === 'reconnecting' || $ayinStatus === 'offline'}
+            <div class="nav-offline-pill">
+              <span class="nav-offline-dot"></span>
+              <span>OFFLINE — reconnecting</span>
+              <button class="nav-offline-retry" onclick={connectGlobalSSE}>Retry</button>
+            </div>
+          {/if}
           <!-- Events overlay toggle (Wave 1.5) — E key shortcut, handled in GlobalEventsOverlay -->
           <Tooltip content="Live events feed — activity, AYIN spans, gate verdicts, build output (E)" side="bottom">
             <button

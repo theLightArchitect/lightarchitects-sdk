@@ -648,6 +648,7 @@ export interface HelixEntrySsePayload {
   strands?: string[];
   content_excerpt?: string;
   created_at?: string;
+  entry_type?: string;
 }
 
 /**
