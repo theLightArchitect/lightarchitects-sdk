@@ -55,6 +55,7 @@
     Helix:         () => import('./screens/Helix.svelte'),
     BuildDetail:   () => import('./screens/BuildDetail.svelte'),
     ProjectDetail: () => import('./screens/ProjectDetail.svelte'),
+    Comms:         () => import('./screens/Comms.svelte'),
   };
 
   type ScreenModule = { default: any };
@@ -148,12 +149,13 @@
     if (import.meta.env.DEV) (window as any).__e2e_ready = setupDone;
   });
 
-  // 4-tab nav: OPS (live ops), DISPATCH (agent dispatch), BUILDS (build queue), HELIX (knowledge graph)
-  // Tab order: read-heavy surfaces first (Ops → Builds), write/power-user last (Dispatch).
+  // 5-tab nav: OPS · DISPATCH · BUILDS · COMMS · HELIX
+  // Tab order: read-heavy surfaces first (Ops → Builds), coordination (Comms), power-user last (Helix).
   const NAV_ITEMS = [
     { label: 'OPS',      hash: '/ops',      hint: 'Live agent activity, alerts, and squad health',                    separator: false },
     { label: 'DISPATCH', hash: '/dispatch', hint: 'Dispatch agents by domain — Engineer, Security, Ops (Cmd+K)',      separator: false },
     { label: 'BUILDS',   hash: '/builds',   hint: 'All builds — past, in-flight, and queued',                         separator: false },
+    { label: 'COMMS',    hash: '/comms',    hint: 'Squad comms — cross-build coordination overview and task queue',    separator: false },
     { label: 'HELIX',    hash: '/helix',    hint: 'Knowledge graph — agent memory strands and quality gates',          separator: false },
   ];
 
@@ -277,10 +279,19 @@
       registerHotkey({
         id: 'global-tab-4',
         keys: ['4'],
-        label: 'Go to Helix',
+        label: 'Go to Comms',
         group: 'Navigation',
         scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '4' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
+        handler: () => navigate('/comms'),
+      }),
+      registerHotkey({
+        id: 'global-tab-5',
+        keys: ['5'],
+        label: 'Go to Helix',
+        group: 'Navigation',
+        scope: 'global',
+        matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '5' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
         handler: () => navigate('/helix'),
       }),
       registerHotkey({

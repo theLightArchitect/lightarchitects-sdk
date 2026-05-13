@@ -205,6 +205,38 @@ pub struct InjectResponse {
     pub correlation_id: String,
 }
 
+/// Request body for `POST /api/coordination/tasks/spawn-worker`.
+///
+/// Spawns the conductor daemon (or a one-shot worker) to execute pending tasks
+/// from `~/.lightarchitects/tasks/queue.json`. The webshell delegates execution
+/// to the conductor binary — it does not run agent logic itself.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SpawnWorkerRequest {
+    /// Execution mode:
+    /// - `"daemon"` — start the conductor daemon (default; no-op if already running)
+    /// - `"once"` — run one pending task with `conductor --once` and exit
+    #[serde(default = "default_spawn_mode")]
+    pub mode: String,
+}
+
+fn default_spawn_mode() -> String {
+    "daemon".to_owned()
+}
+
+/// Response for `POST /api/coordination/tasks/spawn-worker`.
+#[derive(Debug, Clone, Serialize)]
+pub struct SpawnWorkerResponse {
+    /// Whether the spawn call succeeded (process was launched or daemon was already running).
+    pub spawned: bool,
+    /// Whether the conductor daemon was already running before this call.
+    pub daemon_was_running: bool,
+    /// PID of the conductor process if readable from `conductor.pid`, else `null`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+    /// Human-readable status message.
+    pub message: String,
+}
+
 /// One delta on the chat SSE stream.
 ///
 /// Sent as the JSON body of each SSE `data:` line. The frontend dispatches

@@ -7,10 +7,11 @@
   import OperatorView from '$lib/../components/views/OperatorView.svelte';
   import ManifestView from '$lib/../components/views/ManifestView.svelte';
   import PlanView    from '$lib/../components/PlanView.svelte';
+  import CommsView   from '$lib/../components/views/CommsView.svelte';
 
-  type ViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan';
+  type ViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms';
 
-  const VIEW_MODES: ViewMode[] = ['kanban', 'list', 'operator', 'manifest', 'plan'];
+  const VIEW_MODES: ViewMode[] = ['kanban', 'list', 'operator', 'manifest', 'plan', 'comms'];
 
   let viewMode = $state<ViewMode>('kanban');
   let build = $derived($activeBuild);
@@ -38,6 +39,7 @@
     { key: 'operator', label: 'OPERATOR', desc: 'Live log stream, agent dispatch, and artifact panel' },
     { key: 'manifest', label: 'MANIFEST', desc: 'Raw YAML manifest — codename, tier, phase set, assumptions' },
     { key: 'plan',     label: 'PLAN',     desc: 'Full LASDLC plan document with phases, exit criteria, and deliverables' },
+    { key: 'comms',    label: 'COMMS',    desc: 'Agent communication stream — messages, handoffs, and coordination events' },
   ];
 </script>
 
@@ -72,6 +74,8 @@
         <OperatorView />
       {:else if viewMode === 'manifest'}
         <ManifestView />
+      {:else if viewMode === 'comms'}
+        <CommsView />
       {:else}
         <PlanView />
       {/if}

@@ -9,7 +9,8 @@ export type ScreenKey =
   | 'Intake'
   | 'Helix'
   | 'BuildDetail'
-  | 'ProjectDetail';
+  | 'ProjectDetail'
+  | 'Comms';
 
 export interface RouteMatch {
   screen: ScreenKey;
@@ -29,8 +30,8 @@ const REDIRECTS: [string, string][] = [
  * View modes for the /builds/:buildId/:view URL pattern.
  * Wave 1 adds the route shape; Wave 6 wires BuildDetail.svelte to read it.
  */
-export type BuildViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan';
-const BUILD_VIEW_PATTERN = '(?:kanban|list|operator|manifest|plan)';
+export type BuildViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms';
+const BUILD_VIEW_PATTERN = '(?:kanban|list|operator|manifest|plan|comms)';
 
 type RouteEntry = [RegExp, ScreenKey, string[]];
 
@@ -54,6 +55,7 @@ const ROUTES: RouteEntry[] = [
   [/^\/builds$/,                                                            'Builds',        []],
   [/^\/intake$/,                                                            'Intake',        []],
   [/^\/helix$/,                                                             'Helix',         []],
+  [/^\/comms$/,                                                             'Comms',         []],
 ];
 
 /** Matches a hash-fragment path (with or without leading #) to a screen + params. */

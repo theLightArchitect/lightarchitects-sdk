@@ -33,7 +33,8 @@ use crate::{auth, server::AppState};
 use super::types::{
     AddTaskRequest, AddTaskResponse, ChatSessionSummary, ChatSessionsResponse, ClaimRequest,
     ClaimResponse, InjectRequest, InjectResponse, SessionEndRequest, SessionEndResponse,
-    SessionStartRequest, SessionStartResponse, TaskLogsResponse, TaskQueueResponse, TaskSummary,
+    SessionStartRequest, SessionStartResponse, SpawnWorkerRequest, SpawnWorkerResponse,
+    TaskLogsResponse, TaskQueueResponse, TaskSummary,
 };
 
 // ── Security helpers ─────────────────────────────────────────────────────────
@@ -532,6 +533,99 @@ pub async fn chat_inject(
     }
 }
 
+/// `POST /api/coordination/tasks/spawn-worker` — spawn the conductor daemon or a one-shot worker.
+///
+/// In `"daemon"` mode the conductor is started as a background process and persists
+/// until stopped. In `"once"` mode a single pending task is claimed and executed,
+/// then the worker exits. Both modes are no-ops when the daemon is already running
+/// (the conductor binary itself guards against duplicate daemons via `conductor.pid`).
+///
+/// The spawned process's stdio is fully detached — stdin/stdout/stderr inherit
+/// `Stdio::null()` so the child does not stay linked to the webshell's HTTP server
+/// file descriptors.
+pub async fn spawn_worker(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(req): Json<SpawnWorkerRequest>,
+) -> impl IntoResponse {
+    if !is_authorised(&headers, &state) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    // Validate mode before touching the filesystem.
+    let mode = req.mode.as_str();
+    if mode != "daemon" && mode != "once" {
+        return (
+            StatusCode::BAD_REQUEST,
+            format!("mode must be 'daemon' or 'once', got '{mode}'"),
+        )
+            .into_response();
+    }
+
+    let daemon_was_running = daemon_pid_alive();
+
+    // Locate the conductor binary at the canonical path.
+    let bin = home_dir()
+        .join(".lightarchitects")
+        .join("bin")
+        .join("lightarchitects");
+    let bin = if bin.exists() {
+        bin
+    } else {
+        // Fallback to PATH lookup — allows dev environments without a deployed binary.
+        PathBuf::from("lightarchitects")
+    };
+
+    // Build args: `conductor start` (daemon) or `conductor --once` (one-shot).
+    let args: &[&str] = if mode == "once" {
+        &["conductor", "--once"]
+    } else {
+        &["conductor", "start"]
+    };
+
+    let spawn_result = tokio::process::Command::new(&bin)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+
+    match spawn_result {
+        Ok(_child) => {
+            // Give the daemon a brief window to write its PID file before we read it.
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            let pid = read_conductor_pid();
+            let message = if daemon_was_running {
+                "conductor already running; mode applied".to_owned()
+            } else if mode == "once" {
+                "one-shot worker spawned".to_owned()
+            } else {
+                "conductor daemon started".to_owned()
+            };
+            Json(SpawnWorkerResponse {
+                spawned: true,
+                daemon_was_running,
+                pid,
+                message,
+            })
+            .into_response()
+        }
+        Err(e) => {
+            tracing::warn!(
+                mode = %mode,
+                bin = %bin.display(),
+                error = %e,
+                "spawn-worker: conductor spawn failed"
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("spawn failed: {e}"),
+            )
+                .into_response()
+        }
+    }
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn is_authorised(headers: &HeaderMap, state: &AppState) -> bool {
@@ -741,6 +835,13 @@ fn read_log_tail(path: &str) -> Vec<String> {
     let lines: Vec<&str> = content.lines().collect();
     let start = lines.len().saturating_sub(200);
     lines[start..].iter().map(|s| (*s).to_owned()).collect()
+}
+
+fn read_conductor_pid() -> Option<u32> {
+    let pid_path = home_dir().join(".lightarchitects").join("conductor.pid");
+    std::fs::read_to_string(&pid_path)
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok())
 }
 
 fn daemon_pid_alive() -> bool {

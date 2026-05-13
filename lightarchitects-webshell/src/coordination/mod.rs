@@ -31,6 +31,7 @@
 //! - `GET  /api/coordination/chat/sessions` — list known chat sessions
 //! - `POST /api/coordination/chat/inject` — inject a message into a session
 //! - `GET  /api/coordination/chat/stream?session_id=...` — SSE chat stream
+//! - `POST /api/coordination/tasks/spawn-worker` — spawn the conductor daemon or one-shot worker
 //!
 //! All endpoints require `Authorization: Bearer <token>` against the
 //! webshell's HMAC token, same as `/api/events`.
@@ -42,6 +43,6 @@ pub mod types;
 
 pub use handlers::{
     add_task, chat_inject, chat_sessions, claim_task, complete_dispatch, enqueue_dispatch,
-    list_tasks, session_end, session_start, task_logs,
+    list_tasks, session_end, session_start, spawn_worker, task_logs,
 };
 pub use sse::chat_stream;

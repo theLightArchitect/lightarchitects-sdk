@@ -543,6 +543,10 @@ pub fn build_app(state: AppState) -> Router {
             "/api/coordination/chat/stream",
             get(coordination::chat_stream),
         )
+        .route(
+            "/api/coordination/tasks/spawn-worker",
+            post(coordination::spawn_worker),
+        )
         // ── Squad Dispatch routes — all Bearer-authenticated (HIGH H-5) ─────
         .merge(dispatch::dispatch_router())
         // ── File listing for @-file autocomplete ─────────────────────────────
