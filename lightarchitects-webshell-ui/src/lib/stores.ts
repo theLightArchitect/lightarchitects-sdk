@@ -351,6 +351,9 @@ export interface GlobalMailboxMessage {
 export const mailboxMessages = writable<GlobalMailboxMessage[]>([]);
 export const mailboxUnread = writable(0);
 
+// --- Context-window utilisation (from CLI subprocess NDJSON) ---
+export const contextUsage = writable<import('./types').ContextStatusEvent | null>(null);
+
 // --- Agent reactive state (native agent bridge) ---
 export const agentConnected = writable(false);
 export const agentEvents = writable<import('./types').AgentEvent[]>([]);

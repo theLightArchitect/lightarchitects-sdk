@@ -13,6 +13,7 @@
   import { connectSSE, disconnectSSE } from '$lib/sse';
   import { TerminalWS, AgentWS } from '$lib/ws';
   import SiblingDispatch from './SiblingDispatch.svelte';
+  import ContextBar from './ContextBar.svelte';
   import OllamaConfigModal from './OllamaConfigModal.svelte';
   import SettingsOverlay from './SettingsOverlay.svelte';
   import PolytopeIcon from './PolytopeIcon.svelte';
@@ -874,6 +875,7 @@
         <div class="flex-1 flex overflow-hidden">
           <!-- Messages + input -->
           <div class="flex-1 flex flex-col overflow-hidden">
+            <ContextBar />
             {#if forkError}
               <div class="px-3 py-1.5 border-b border-red-500/40 bg-red-500/10 flex items-center gap-2 shrink-0">
                 <span class="text-[10px] text-red-300">Fork failed: {forkError}</span>

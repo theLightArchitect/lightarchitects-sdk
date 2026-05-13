@@ -143,6 +143,12 @@ mod conversations_impl {
         pub result_preview: String,
         /// Branch index: 0 = initial approach, increments after each pivot.
         pub branch: u32,
+        /// UUID of the corresponding AYIN `TraceSpan` for cross-layer correlation.
+        ///
+        /// Set by the CLI when it emits both a conversation record and a span for
+        /// the same tool call. `None` for records produced without AYIN tracing.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub span_ref: Option<String>,
     }
 
     /// An auto-detected or manual pivot record (`type: "pivot"`).
@@ -166,6 +172,9 @@ mod conversations_impl {
         /// Detection rule that fired (`"rule1"` or `"rule2"`), if auto.
         #[serde(skip_serializing_if = "Option::is_none")]
         pub rule: Option<String>,
+        /// UUID of the erroring tool-call `TraceSpan` that triggered this pivot.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub span_ref: Option<String>,
     }
 
     // ── PivotState ────────────────────────────────────────────────────────────
@@ -272,6 +281,8 @@ mod conversations_impl {
                         branch: self.branch,
                         source: "auto".to_owned(),
                         rule: Some(rule.to_owned()),
+                        // TODO(Phase A): wire from lÆx0-cli once it emits span UUIDs.
+                        span_ref: None,
                     },
                 }
             } else {
@@ -395,6 +406,8 @@ mod conversations_impl {
                 error,
                 result_preview: truncate(result_preview.into(), 120),
                 branch: self.state.branch(),
+                // TODO(Phase A): wire from lÆx0-cli once it emits span UUIDs.
+                span_ref: None,
             };
             append_jsonl(&trace_file, &tool_record).await
         }

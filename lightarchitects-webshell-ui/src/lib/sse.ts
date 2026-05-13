@@ -17,13 +17,14 @@ import {
   latestScrumReport,
   trainingRun,
   mailboxMessages, mailboxUnread,
+  contextUsage,
 } from './stores';
 import { spikeSibling } from './stores';
 import { get } from 'svelte/store';
 import type {
   SiblingId, Build, Finding, ConductorTask, ArenaAgent,
   HelixEntrySsePayload, SoulPromotionPayload, ContextMemo,
-  PillarUpdatePayload, CopilotActivityEvent, AyinSpanEvent,
+  PillarUpdatePayload, CopilotActivityEvent, AyinSpanEvent, ContextStatusEvent,
   SupervisorAlert, SupervisorGate, SupervisorVerdict,
   ActivePlan, PlanPhaseStatus,
   ScrumReport, ScrumFinding,
@@ -395,6 +396,12 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
       if (supervisorAlert) {
         appendSupervisorAlert(supervisorAlert);
       }
+      break;
+    }
+    case 'context_status': {
+      // squishy-dancing-thimble Phase D — context-window utilisation from CLI subprocess
+      const payload = event as unknown as ContextStatusEvent & { type: 'context_status' };
+      contextUsage.set(payload);
       break;
     }
     case 'supervisor_decision': {
