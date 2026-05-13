@@ -9,7 +9,9 @@
 //! `LightarchitectsNative` backend: persistent subprocess with piped I/O.
 
 pub mod routes;
+pub mod voice;
 pub use routes::copilot_chat_handler;
+pub use voice::copilot_voice_handler;
 
 use serde::Deserialize;
 use serde_json::json;

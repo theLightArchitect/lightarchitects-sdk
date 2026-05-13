@@ -496,6 +496,10 @@ pub fn build_app(state: AppState) -> Router {
             post(copilot::copilot_chat_handler),
         )
         .route(
+            "/api/builds/{id}/copilot/voice",
+            post(copilot::copilot_voice_handler),
+        )
+        .route(
             "/api/builds/{id}/dispatch",
             post(real_data::dispatch_sibling),
         )

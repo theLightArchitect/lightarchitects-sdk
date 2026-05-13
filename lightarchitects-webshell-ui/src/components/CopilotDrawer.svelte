@@ -5,10 +5,11 @@
     findings, selectedPillar, focusedSibling, spikeSibling,
     buildBuildContext, authProfile, ollamaConfig, terminalConnected,
     builds, siblingHealth, alertStats, drawerHeightPx, waves,
-    clearCopilotHistory, isNativeAgent,
+    clearCopilotHistory, isNativeAgent, voiceEnabled,
   } from '$lib/stores';
   import { SIBLING_COLORS } from '$lib/design-tokens';
   import { api } from '$lib/api';
+  import { authHeaders } from '$lib/auth';
   import { parseCommand, SLASH_COMMANDS } from '$lib/commands';
   import { connectSSE, disconnectSSE } from '$lib/sse';
   import { TerminalWS, AgentWS } from '$lib/ws';
@@ -59,6 +60,8 @@
   let showSearch = $state(false);
   let messagesEl: HTMLDivElement | undefined = $state();
   let oscillatorEl: HTMLCanvasElement | undefined = $state();
+  let audioEl: HTMLAudioElement | undefined = $state();
+  let voicePlaying = $state(false);
 
   // --- Native agent bridge state ---
   let agentWs: AgentWS | null = $state(null);
@@ -301,6 +304,31 @@
     if (id && !sharedBuildId) sharedBuildId = id;
   });
 
+  // --- EVA voice playback ---
+  async function playVoice(text: string): Promise<void> {
+    const buildId = sharedBuildId;
+    if (!buildId || !text.trim()) return;
+    try {
+      const resp = await fetch(`/api/builds/${buildId}/copilot/voice`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ text: text.slice(0, 500) }),
+      });
+      if (!resp.ok) return;
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      if (audioEl) {
+        audioEl.src = url;
+        voicePlaying = true;
+        audioEl.onended = () => { voicePlaying = false; URL.revokeObjectURL(url); };
+        audioEl.onerror = () => { voicePlaying = false; URL.revokeObjectURL(url); };
+        audioEl.play().catch(() => { voicePlaying = false; URL.revokeObjectURL(url); });
+      } else {
+        URL.revokeObjectURL(url);
+      }
+    } catch { voicePlaying = false; }
+  }
+
   // --- Agent event handler — converts NDJSON bridge events into chat messages ---
   function handleAgentEvent(ev: AgentEvent): void {
     switch (ev.type) {
@@ -341,6 +369,11 @@
         break;
       case 'complete':
         copilotLoading.set(false);
+        if (get(voiceEnabled)) {
+          const msgs = get(copilotMessages);
+          const last = msgs.findLast(m => m.role === 'assistant');
+          if (last?.content) playVoice(last.content);
+        }
         break;
       case 'token_usage':
         // Silently ignore — AgentConsole shows token stats if user wants detail
@@ -1052,6 +1085,22 @@
                     {/each}
                   </div>
                 {/if}
+                <!-- Voice toggle button — activates EVA voice output after each response -->
+                <button
+                  onclick={() => voiceEnabled.update(v => !v)}
+                  aria-pressed={$voiceEnabled}
+                  title={$voiceEnabled ? 'Voice on — click to mute EVA' : 'Click to enable EVA voice'}
+                  class="w-9 h-9 flex items-center justify-center rounded-lg shrink-0 border transition-all duration-200
+                    {$voiceEnabled
+                      ? 'border-[var(--la-focus-ring)] bg-[var(--la-focus-ring)]/15 shadow-[0_0_8px_rgba(255,215,0,0.3)] text-[var(--la-focus-ring)]'
+                      : 'border-[var(--la-drawer-border)] text-[var(--la-text-dim)] hover:border-[var(--la-focus-ring)]/40'}"
+                >
+                  {#if voicePlaying}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+                  {:else}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                  {/if}
+                </button>
                 <button
                   onclick={sendMessage}
                   disabled={$copilotLoading}
@@ -1091,6 +1140,8 @@
 </div>
 
 <OllamaConfigModal isOpen={showOllamaModal} onClose={() => { showOllamaModal = false; }} />
+<!-- Hidden audio element for EVA voice playback; aria-hidden prevents AT exposure -->
+<audio bind:this={audioEl} aria-hidden="true" style="display:none"></audio>
 
 <style>
   /* Markdown rendering inside chat bubbles.
