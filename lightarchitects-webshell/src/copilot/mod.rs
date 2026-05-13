@@ -899,7 +899,8 @@ pub(super) async fn call_subprocess(
                     }
                     if val["type"].as_str() == Some("context") {
                         #[allow(clippy::cast_possible_truncation)]
-                        let usage_pct = val["usage_pct"].as_f64().unwrap_or(0.0) as f32;
+                        let usage_pct =
+                            val["usage_pct"].as_f64().unwrap_or(0.0).clamp(0.0, 1.0) as f32;
                         let budget = val["budget"].as_u64().unwrap_or(0);
                         let used = val["used"].as_u64().unwrap_or(0);
                         let level = val["level"].as_str().map(ToOwned::to_owned);

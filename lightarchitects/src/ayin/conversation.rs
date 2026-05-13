@@ -281,6 +281,7 @@ mod conversations_impl {
                         branch: self.branch,
                         source: "auto".to_owned(),
                         rule: Some(rule.to_owned()),
+                        // TODO(Phase A): wire from lÆx0-cli once it emits span UUIDs.
                         span_ref: None,
                     },
                 }
@@ -405,6 +406,7 @@ mod conversations_impl {
                 error,
                 result_preview: truncate(result_preview.into(), 120),
                 branch: self.state.branch(),
+                // TODO(Phase A): wire from lÆx0-cli once it emits span UUIDs.
                 span_ref: None,
             };
             append_jsonl(&trace_file, &tool_record).await

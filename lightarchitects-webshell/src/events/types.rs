@@ -650,6 +650,15 @@ mod tests {
                 WebEvent::StrandConvergence(convergence),
             ),
             ("copilot_activity", WebEvent::CopilotActivity(activity)),
+            (
+                "context_status",
+                WebEvent::ContextStatus(ContextStatusEvent {
+                    usage_pct: 0.25,
+                    level: None,
+                    budget: 200_000,
+                    used: 50_000,
+                }),
+            ),
         ];
 
         for (expected_tag, event) in cases {
