@@ -124,7 +124,10 @@ impl PersonalityEngine {
 }
 
 /// Count steps in a helix for confidence gating.
-async fn count_helix_steps(db: &dyn HelixDb, helix_id: &str) -> Result<usize, HelixDbError> {
+pub(super) async fn count_helix_steps(
+    db: &dyn HelixDb,
+    helix_id: &str,
+) -> Result<usize, HelixDbError> {
     let cypher = "MATCH (h:Helix {id: $helix_id})-[:HAS_STEP]->(s:Step) \
                   RETURN count(s) AS step_count";
     let params =

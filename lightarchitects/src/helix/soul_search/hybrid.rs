@@ -268,8 +268,17 @@ impl HybridRetriever {
             return Ok(RetrievalResult::empty());
         }
 
-        // Determine retrieval mode
-        let mode = config.mode_override.unwrap_or(RetrievalMode::Balanced);
+        // Determine retrieval mode — use step count to select adaptive weights when no override set
+        let mode = if let Some(m) = config.mode_override {
+            m
+        } else if let Some(helix_id) = &opts.helix_id {
+            let count = super::personality::count_helix_steps(db, helix_id)
+                .await
+                .unwrap_or(0);
+            RetrievalMode::from_step_count(count)
+        } else {
+            RetrievalMode::Balanced
+        };
         let weights = mode.weights();
 
         // Merge caller's limit preference with per-signal cap.
