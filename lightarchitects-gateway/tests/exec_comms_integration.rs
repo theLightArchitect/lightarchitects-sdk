@@ -62,7 +62,10 @@ async fn t1_disallowed_binary_is_rejected() {
     let result = run_run_command(json!({ "argv": ["bash", "-c", "id"], "cwd": cwd() })).await;
     assert!(result.is_err(), "bash must be rejected by allowlist");
     let msg = result.unwrap_err().to_string();
-    assert!(msg.contains("allowlist"), "error message should mention allowlist: {msg}");
+    assert!(
+        msg.contains("allowlist"),
+        "error message should mention allowlist: {msg}"
+    );
 }
 
 #[tokio::test]
@@ -94,8 +97,7 @@ async fn t1_pipe_in_arg_is_rejected() {
 
 #[tokio::test]
 async fn t1_dollar_in_arg_is_rejected() {
-    let result =
-        run_run_command(json!({ "argv": ["cargo", "$HOME"], "cwd": cwd() })).await;
+    let result = run_run_command(json!({ "argv": ["cargo", "$HOME"], "cwd": cwd() })).await;
     assert!(result.is_err());
 }
 
@@ -204,9 +206,10 @@ async fn get_output_cursor_advances() {
 
 #[tokio::test]
 async fn get_output_unknown_handle_errors() {
-    let result =
-        run_get_output(json!({ "stream_handle": "no-such-handle-integration-abc999", "cursor": 0 }))
-            .await;
+    let result = run_get_output(
+        json!({ "stream_handle": "no-such-handle-integration-abc999", "cursor": 0 }),
+    )
+    .await;
     assert!(result.is_err());
 }
 
@@ -244,10 +247,9 @@ async fn timeout_kills_long_running_process() {
     // Wait up to 2s for timeout to trigger.
     for _ in 0..40 {
         tokio::time::sleep(Duration::from_millis(50)).await;
-        let out =
-            run_get_output(json!({ "stream_handle": &handle, "cursor": 0u64 }))
-                .await
-                .unwrap();
+        let out = run_get_output(json!({ "stream_handle": &handle, "cursor": 0u64 }))
+            .await
+            .unwrap();
         if out["complete"].as_bool().unwrap_or(false) {
             let status = out["status"].as_str().unwrap_or("");
             assert!(

@@ -313,16 +313,24 @@ async fn dispatch(
         "lightarchitects_squad_comms_chat_inject" => squad_comms::chat_inject(params, config).await,
         // Process execution tools — EEF Wave E2 (shell-and-output).
         "lightarchitects_exec_run_command" => core_tools::exec_comms::run_run_command(params).await,
-        "lightarchitects_exec_list_processes" => core_tools::exec_comms::run_list_processes(params).await,
-        "lightarchitects_exec_kill_process" => core_tools::exec_comms::run_kill_process(params).await,
+        "lightarchitects_exec_list_processes" => {
+            core_tools::exec_comms::run_list_processes(params).await
+        }
+        "lightarchitects_exec_kill_process" => {
+            core_tools::exec_comms::run_kill_process(params).await
+        }
         "lightarchitects_exec_get_output" => core_tools::exec_comms::run_get_output(params).await,
         // Code editor tools — EEF Wave E1 (code-and-files).
         "lightarchitects_code_read_file" => core_tools::code_comms::run_read_file(params, config),
         "lightarchitects_code_write_file" => core_tools::code_comms::run_write_file(params, config),
         "lightarchitects_code_list_dir" => core_tools::code_comms::run_list_dir(params, config),
         "lightarchitects_code_apply_diff" => core_tools::code_comms::run_apply_diff(params, config),
-        "lightarchitects_code_search_text" => core_tools::code_comms::run_search_text(params, config),
-        "lightarchitects_code_preview_diff" => core_tools::code_comms::run_preview_diff(params, config),
+        "lightarchitects_code_search_text" => {
+            core_tools::code_comms::run_search_text(params, config)
+        }
+        "lightarchitects_code_preview_diff" => {
+            core_tools::code_comms::run_preview_diff(params, config)
+        }
         _ => Err(GatewayError::UnknownTool(tool_name.to_owned())),
     }
 }
