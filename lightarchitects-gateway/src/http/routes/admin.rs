@@ -388,7 +388,7 @@ async fn upload_agent(
 
     (
         StatusCode::CREATED,
-        Json(json!({ "sibling": sibling, "content_hash": content_hash, "updated_at": updated_at })),
+        Json(json!({ "sibling": sibling, "version": version, "content_hash": content_hash, "updated_at": updated_at })),
     )
         .into_response()
 }
