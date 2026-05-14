@@ -30,6 +30,7 @@ pub fn all_tool_definitions() -> Vec<Value> {
     tools.extend(file_tool_defs());
     tools.extend(platform_tool_defs());
     tools.extend(squad_tool_defs());
+    tools.extend(exec_tool_defs());
     tools.extend(code_tool_defs());
     tools
 }
@@ -101,6 +102,19 @@ fn platform_tool_defs() -> Vec<Value> {
                 "required": ["action"]
             }
         }),
+    ]
+}
+
+/// Process execution tool definitions: `exec.*` — EEF Wave 2 (shell-and-output).
+///
+/// All tools enforce T-1 command injection mitigation: structured argv, approved-binary
+/// allowlist, metacharacter rejection, and 50 req/10s rate limiting.
+fn exec_tool_defs() -> Vec<Value> {
+    vec![
+        json!({"name": "lightarchitects_exec_run_command", "description": "Spawn a process with structured argv (T-1 safe — no shell string). Returns {pid, stream_handle}. Use exec.get_output to poll streaming output. Permitted binaries: cargo, cargo-nextest, pnpm, npx, vitest, playwright, node, rustfmt, clippy-driver.", "inputSchema": {"type": "object", "properties": {"argv": {"type": "array", "items": {"type": "string"}, "description": "Structured argv. argv[0] must be a permitted binary. No shell metacharacters."}, "cwd": {"type": "string", "description": "Working directory. ~/ prefix is expanded."}, "env": {"type": "object", "description": "Optional extra environment variables (merged with parent env).", "additionalProperties": {"type": "string"}}, "timeout_ms": {"type": "integer", "description": "Kill timeout in milliseconds (default: 300000 / 5 min)."}}, "required": ["argv", "cwd"]}}),
+        json!({"name": "lightarchitects_exec_list_processes", "description": "List all tracked exec.run_command processes with their status, command, and output line count.", "inputSchema": {"type": "object", "properties": {}}}),
+        json!({"name": "lightarchitects_exec_kill_process", "description": "Send SIGKILL to a tracked process by PID. Only works on Unix. Returns {killed, pid}.", "inputSchema": {"type": "object", "properties": {"pid": {"type": "integer", "description": "PID of the process to kill."}}, "required": ["pid"]}}),
+        json!({"name": "lightarchitects_exec_get_output", "description": "Retrieve buffered output chunks since cursor (line index). Returns up to 200 lines per call. When complete=true and next_cursor equals total_lines, all output has been consumed.", "inputSchema": {"type": "object", "properties": {"stream_handle": {"type": "string", "description": "Handle returned by exec.run_command."}, "cursor": {"type": "integer", "description": "Line index to start from (default: 0)."}}, "required": ["stream_handle"]}}),
     ]
 }
 
@@ -297,17 +311,18 @@ async fn dispatch(
         "lightarchitects_squad_comms_claim_task" => squad_comms::claim_task(params, config).await,
         "lightarchitects_squad_comms_task_logs" => squad_comms::task_logs(params, config).await,
         "lightarchitects_squad_comms_chat_inject" => squad_comms::chat_inject(params, config).await,
+        // Process execution tools — EEF Wave E2 (shell-and-output).
+        "lightarchitects_exec_run_command" => core_tools::exec_comms::run_run_command(params).await,
+        "lightarchitects_exec_list_processes" => core_tools::exec_comms::run_list_processes(params).await,
+        "lightarchitects_exec_kill_process" => core_tools::exec_comms::run_kill_process(params).await,
+        "lightarchitects_exec_get_output" => core_tools::exec_comms::run_get_output(params).await,
         // Code editor tools — EEF Wave E1 (code-and-files).
         "lightarchitects_code_read_file" => core_tools::code_comms::run_read_file(params, config),
         "lightarchitects_code_write_file" => core_tools::code_comms::run_write_file(params, config),
         "lightarchitects_code_list_dir" => core_tools::code_comms::run_list_dir(params, config),
         "lightarchitects_code_apply_diff" => core_tools::code_comms::run_apply_diff(params, config),
-        "lightarchitects_code_search_text" => {
-            core_tools::code_comms::run_search_text(params, config)
-        }
-        "lightarchitects_code_preview_diff" => {
-            core_tools::code_comms::run_preview_diff(params, config)
-        }
+        "lightarchitects_code_search_text" => core_tools::code_comms::run_search_text(params, config),
+        "lightarchitects_code_preview_diff" => core_tools::code_comms::run_preview_diff(params, config),
         _ => Err(GatewayError::UnknownTool(tool_name.to_owned())),
     }
 }
@@ -335,9 +350,9 @@ mod tests {
     }
 
     #[test]
-    fn all_tool_definitions_has_twenty_seven_entries() {
-        // 1 meta + 6 file + 3 platform + 11 squad (7 squad_comms + 4 original) + 6 code
-        assert_eq!(all_tool_definitions().len(), 27);
+    fn all_tool_definitions_has_thirty_one_entries() {
+        // 1 meta + 6 file + 3 platform + 11 squad (7 squad_comms + 4 original) + 4 exec + 6 code
+        assert_eq!(all_tool_definitions().len(), 31);
     }
 
     #[test]

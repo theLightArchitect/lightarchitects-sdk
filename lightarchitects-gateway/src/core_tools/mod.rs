@@ -17,6 +17,7 @@ pub mod canon_evaluate;
 pub mod code_comms;
 pub mod discover;
 pub mod edit;
+pub mod exec_comms;
 pub mod glob;
 pub mod import_adapter;
 pub mod initialize;

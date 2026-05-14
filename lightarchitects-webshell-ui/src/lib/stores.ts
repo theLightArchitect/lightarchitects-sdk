@@ -393,6 +393,9 @@ export const isNativeAgent = derived(activeBuild, ($build) =>
   $build?.agent?.kind === 'lightarchitects_native'
 );
 
+// EVA voice output toggle — persisted per session
+export const voiceEnabled = writable<boolean>(false);
+
 // --- Derived: project groups (LASDLC — groups builds by project path) ---
 export const projectGroups = derived(builds, ($builds) => groupByProject($builds));
 
