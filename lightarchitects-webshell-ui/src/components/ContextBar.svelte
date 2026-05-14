@@ -18,6 +18,7 @@
 {#if usage}
   <div
     class="context-bar shrink-0"
+    data-testid="context-bar"
     title={label ?? ''}
     aria-label={label ?? 'Context usage'}
     role="progressbar"

@@ -32,6 +32,7 @@
   import { get } from 'svelte/store';
   import { setupComplete, step, loadSetupInfo, selectedBackend, selectedModel, selectedAgent } from '$lib/setup';
   import { connectGlobalSSE, disconnectGlobalSSE } from '$lib/sse';
+  import { authHeaders } from '$lib/auth';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
   import { registerHotkey, dispatchHotkey } from '$lib/hotkeyRegistry';
   import { matchRoute, applyRedirects, navigate } from '$lib/routes';
@@ -221,6 +222,15 @@
     loadScreen(window.location.hash.slice(1) || '/');
     const initializeStoresPromise = initializeStores(); // non-blocking; errors caught internally
     connectGlobalSSE(); // Phase 10.9 — global helix_entry / soul_promotion / strand_activation stream
+
+    // E4 session lifecycle — materialise a soul-chat session for this webshell visit.
+    const e4SessionId = crypto.randomUUID();
+    void fetch('/api/coordination/sessions/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ build_codename: 'webshell', session_id: e4SessionId }),
+    });
+
     window.addEventListener('hashchange', handleHashChange);
 
     // Warn the operator before unload if they have unsaved Intake form data.
@@ -341,6 +351,11 @@
     return () => {
       stopWaveTick();
       disconnectGlobalSSE();
+      void fetch('/api/coordination/sessions/end', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ session_id: e4SessionId }),
+      });
       settingsUnsubs.forEach(fn => fn());
       unregGlobalKeys.forEach(fn => fn());
       window.removeEventListener('hashchange', handleHashChange);
