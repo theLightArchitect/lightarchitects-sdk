@@ -1,30 +1,51 @@
 <script lang="ts">
   /**
-   * DiffPreview — operator-gated FS mutation modal (#47).
+   * DiffPreview — operator-gated approval modal (E5 extension).
    *
-   * Listens for `la:fs-mutation-pending` custom events (dispatched from
-   * sse.ts when the backend broadcasts an FsMutationPending). Renders the
-   * unified diff with a syntax-coloured presentation and Approve / Reject
-   * actions that call the dispatch API.
+   * Handles two event kinds:
+   *  1. `la:fs-mutation-pending` — FS mutation gate (unified diff view)
+   *  2. `la:permission-request`  — generic tool-call approval (input_preview view)
    *
-   * Backend wiring (mantis-rebase pending):
-   * - Agent invokes Edit/Write → backend gateway intercepts → computes diff
-   *   → broadcasts FsMutationPending → holds the tool-call response
-   * - On approve: POST /api/dispatch/:id/fs-approve releases the tool call
-   * - On reject: POST /api/dispatch/:id/fs-reject returns synthetic error
-   *
-   * Until backend lands, see `lib/diff-preview.ts::triggerMockDiffPreview()`
-   * for local dev verification.
+   * Both resolve via POST /api/dispatch/:build_id/fs-approve or fs-reject.
    */
   import {
-    type FsMutationPending,
     type FsMutationPendingEvent,
     approveMutation,
     rejectMutation,
   } from '$lib/diff-preview';
   import { DOMAIN_AGENT_COLORS } from '$lib/design-tokens';
 
-  let pending = $state<FsMutationPending | null>(null);
+  // ── Discriminated union covering both approval kinds ─────────────────────────
+
+  interface FsMutationPending {
+    kind: 'fs_mutation';
+    dispatch_id: string;
+    mutation_id: string;
+    agent: string;
+    file_path: string;
+    tool: string;
+    diff_unified: string;
+  }
+
+  interface PermissionRequestPending {
+    kind: 'permission_request';
+    dispatch_id: string;
+    /** call_id from the backend — used as mutation_id for the approval endpoint. */
+    call_id: string;
+    input_preview: string;
+    risk_tier: 'low' | 'medium' | 'high' | 'critical';
+  }
+
+  type PendingRequest = FsMutationPending | PermissionRequestPending;
+
+  const RISK_COLORS: Record<string, string> = {
+    low:      '#22d3ee',
+    medium:   '#facc15',
+    high:     '#f97316',
+    critical: '#ef4444',
+  };
+
+  let pending = $state<PendingRequest | null>(null);
   let busy = $state(false);
   let error = $state<string | null>(null);
 
@@ -46,24 +67,47 @@
 
   $effect(() => {
     function onMutationPending(e: Event) {
-      const detail = (e as CustomEvent<FsMutationPendingEvent>).detail;
-      // Only show the first pending — queueing multiple mutations could land
-      // in a follow-up. For now, an in-flight prompt blocks new ones.
+      const d = (e as CustomEvent<FsMutationPendingEvent>).detail;
       if (!pending) {
-        pending = detail;
+        pending = {
+          kind: 'fs_mutation',
+          dispatch_id: d.dispatch_id,
+          mutation_id: d.mutation_id,
+          agent: d.agent,
+          file_path: d.file_path,
+          tool: d.tool,
+          diff_unified: d.diff_unified,
+        };
         error = null;
       }
     }
+
+    function onPermissionRequest(e: Event) {
+      const d = (e as CustomEvent<{ dispatch_id: string; call_id: string; input_preview: string; risk_tier: string }>).detail;
+      if (!pending) {
+        pending = {
+          kind: 'permission_request',
+          dispatch_id: d.dispatch_id,
+          call_id: d.call_id,
+          input_preview: d.input_preview,
+          risk_tier: (d.risk_tier as PermissionRequestPending['risk_tier']) ?? 'medium',
+        };
+        error = null;
+      }
+    }
+
     window.addEventListener('la:fs-mutation-pending', onMutationPending);
+    window.addEventListener('la:permission-request', onPermissionRequest);
     return () => {
       window.removeEventListener('la:fs-mutation-pending', onMutationPending);
+      window.removeEventListener('la:permission-request', onPermissionRequest);
     };
   });
 
-  // Tokenise the diff into rows so we can colour add/del lines without
-  // pulling in a dependency. Leading char on each row drives the class.
+  // ── Derived values ────────────────────────────────────────────────────────────
+
   let diffRows = $derived.by(() => {
-    if (!pending) return [];
+    if (!pending || pending.kind !== 'fs_mutation') return [];
     return pending.diff_unified.split('\n').map((line, idx) => ({
       idx,
       kind:
@@ -81,17 +125,30 @@
   });
 
   let agentColor = $derived(
-    pending && (DOMAIN_AGENT_COLORS as Record<string, string>)[pending.agent]
+    pending && pending.kind === 'fs_mutation' &&
+    (DOMAIN_AGENT_COLORS as Record<string, string>)[pending.agent]
       ? (DOMAIN_AGENT_COLORS as Record<string, string>)[pending.agent]
       : '#FFD700',
   );
+
+  let riskColor = $derived(
+    pending && pending.kind === 'permission_request'
+      ? (RISK_COLORS[pending.risk_tier] ?? '#FFD700')
+      : '#FFD700',
+  );
+
+  // ── Actions ───────────────────────────────────────────────────────────────────
+
+  function mutationId(p: PendingRequest): string {
+    return p.kind === 'fs_mutation' ? p.mutation_id : p.call_id;
+  }
 
   async function approve() {
     if (!pending || busy) return;
     busy = true;
     error = null;
     try {
-      await approveMutation(pending.dispatch_id, pending.mutation_id);
+      await approveMutation(pending.dispatch_id, mutationId(pending));
       pending = null;
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : String(e);
@@ -105,7 +162,7 @@
     busy = true;
     error = null;
     try {
-      await rejectMutation(pending.dispatch_id, pending.mutation_id, reason);
+      await rejectMutation(pending.dispatch_id, mutationId(pending), reason);
       pending = null;
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : String(e);
@@ -132,33 +189,60 @@
     aria-modal="true"
     aria-labelledby="diff-title"
     data-testid="diff-preview"
+    data-kind={pending.kind}
   >
     <div class="diff-modal">
-      <header class="diff-header">
-        <div class="diff-title-row">
-          <span
-            class="diff-agent-badge"
-            style="background-color: {agentColor}; box-shadow: 0 0 6px {agentColor};"
-            aria-label="agent {pending.agent}"
-          ></span>
-          <strong id="diff-title">{pending.agent}</strong>
-          <span class="diff-tool">{pending.tool}</span>
-          <code class="diff-path">{pending.file_path}</code>
-        </div>
-        <p class="diff-explainer">
-          The agent wants to write this change. Review and Approve to commit, or Reject to abort.
-          <kbd>Esc</kbd> rejects.
-        </p>
-      </header>
 
-      <div class="diff-body">
-        {#each diffRows as row (row.idx)}
-          <div class="diff-row" data-kind={row.kind}>
-            <span class="diff-line-num">{row.idx + 1}</span>
-            <span class="diff-line-text">{row.text}</span>
+      {#if pending.kind === 'fs_mutation'}
+        <!-- ── FS mutation view: unified diff ───────────────────────────── -->
+        <header class="diff-header">
+          <div class="diff-title-row">
+            <span
+              class="diff-agent-badge"
+              style="background-color: {agentColor}; box-shadow: 0 0 6px {agentColor};"
+              aria-label="agent {pending.agent}"
+            ></span>
+            <strong id="diff-title">{pending.agent}</strong>
+            <span class="diff-tool">{pending.tool}</span>
+            <code class="diff-path">{pending.file_path}</code>
           </div>
-        {/each}
-      </div>
+          <p class="diff-explainer">
+            The agent wants to write this change. Review and Approve to commit, or Reject to abort.
+            <kbd>Esc</kbd> rejects.
+          </p>
+        </header>
+
+        <div class="diff-body">
+          {#each diffRows as row (row.idx)}
+            <div class="diff-row" data-kind={row.kind}>
+              <span class="diff-line-num">{row.idx + 1}</span>
+              <span class="diff-line-text">{row.text}</span>
+            </div>
+          {/each}
+        </div>
+
+      {:else}
+        <!-- ── Permission request view: tool-call approval ──────────────── -->
+        <header class="diff-header">
+          <div class="diff-title-row">
+            <span
+              class="perm-risk-badge"
+              style="background-color: {riskColor};"
+              aria-label="risk tier {pending.risk_tier}"
+              data-testid="risk-badge"
+            >{pending.risk_tier.toUpperCase()}</span>
+            <strong id="diff-title">Tool permission required</strong>
+          </div>
+          <p class="diff-explainer">
+            The agent is requesting permission to execute a tool call.
+            Review the details and Approve or Deny. <kbd>Esc</kbd> denies.
+          </p>
+        </header>
+
+        <div class="perm-body" data-testid="permission-preview">
+          <pre class="perm-preview">{pending.input_preview}</pre>
+        </div>
+      {/if}
 
       {#if error}
         <p class="diff-error" role="alert">{error}</p>
@@ -169,11 +253,17 @@
           class="diff-btn la-destructive"
           onclick={() => reject('operator-rejected')}
           disabled={busy}
+          data-testid="reject-btn"
         >
-          Reject
+          {pending.kind === 'fs_mutation' ? 'Reject' : 'Deny'}
         </button>
-        <button class="diff-btn primary" onclick={approve} disabled={busy}>
-          {busy ? 'Working…' : 'Approve & commit'}
+        <button
+          class="diff-btn primary"
+          onclick={approve}
+          disabled={busy}
+          data-testid="approve-btn"
+        >
+          {busy ? 'Working…' : pending.kind === 'fs_mutation' ? 'Approve & commit' : 'Approve'}
         </button>
       </footer>
     </div>
@@ -344,6 +434,33 @@
   @keyframes diff-fade-in {
     from { opacity: 0; }
     to   { opacity: 1; }
+  }
+
+  /* ── Permission-request view ── */
+  .perm-risk-badge {
+    display: inline-block;
+    padding: 1px 7px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--la-bg-frame);
+    border-radius: 0;
+    flex-shrink: 0;
+  }
+  .perm-body {
+    flex: 1;
+    overflow: auto;
+    padding: 14px 18px;
+    background: var(--la-bg-frame);
+  }
+  .perm-preview {
+    margin: 0;
+    font-family: var(--la-font-mono);
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--la-text-body);
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 
   /* ── First-encounter coachmark (#71) ── */

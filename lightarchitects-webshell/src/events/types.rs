@@ -206,7 +206,7 @@ pub struct ContextStatusEvent {
 ///
 /// Used in [`WebEvent::PermissionRequest`] to help the operator quickly assess
 /// the potential impact of approving a tool call.
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RiskTier {
     /// Read-only, no side effects.
