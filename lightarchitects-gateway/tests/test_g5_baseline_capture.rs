@@ -1,10 +1,10 @@
 //! G5 Baseline Capture — Phase 2 close-out
 //!
-//! Measures p50/p95 latency for all 41 verdict_y_actions through the existing
+//! Measures p50/p95 latency for all 41 `verdict_y_actions` through the existing
 //! stub handler path. This pre-migration baseline documents that current
 //! handlers return errors/stubs in sub-ms time.
 //!
-//! Run: cargo test --features inline-all --test test_g5_baseline_capture -- --nocapture
+//! Run: `cargo test --features inline-all --test test_g5_baseline_capture -- --nocapture`
 //!
 //! Writes: ~/lightarchitects/soul/helix/corso/builds/
 //!         gateway-action-audit-claude-runtime/baseline-latency.json
@@ -126,7 +126,7 @@ async fn time_action<H: SiblingHandler>(handler: &H, action: &str, samples: usiz
         let _ = handler
             .call(action, json!({"input": "baseline-probe"}))
             .await;
-        timings.push(start.elapsed().as_micros() as u64);
+        timings.push(u64::try_from(start.elapsed().as_micros()).unwrap_or(u64::MAX));
     }
     timings.sort_unstable();
     timings
@@ -136,12 +136,18 @@ fn p50(sorted: &[u64]) -> u64 {
     sorted[sorted.len() / 2]
 }
 
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
 fn p95(sorted: &[u64]) -> u64 {
     let idx = ((sorted.len() - 1) as f64 * 0.95) as usize;
     sorted[idx]
 }
 
 #[test]
+#[allow(clippy::too_many_lines, clippy::expect_used)]
 fn capture_g5_baseline_latency() {
     let rt = Runtime::new().expect("tokio runtime");
     let config = GatewayConfig::default();

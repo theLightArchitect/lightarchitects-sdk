@@ -449,11 +449,8 @@ pub async fn run_push(params: Value) -> Result<Value, GatewayError> {
     let set_upstream = params["set_upstream"].as_bool().unwrap_or(false);
     let branch = params["branch"].as_str();
 
-    let _span = tracing::info_span!(
-        "git.push.auth",
-        git.auth_present = load_github_pat().is_some()
-    )
-    .entered();
+    let auth_present = load_github_pat().is_some();
+    tracing::info!(git.auth_present = auth_present, "git.push.auth");
 
     let stdout = if set_upstream {
         let branch_name = branch.ok_or(GatewayError::MissingParam(
