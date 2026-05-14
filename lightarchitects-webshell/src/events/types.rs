@@ -118,6 +118,32 @@ pub enum WebEvent {
     /// `{"type":"context",...}` NDJSON line. The frontend uses this to drive the
     /// context bar above the Copilot drawer.
     ContextStatus(ContextStatusEvent),
+    /// One line of stdout/stderr from an `exec.run_command` process.
+    ///
+    /// The frontend `OutputViewer` uses `handle` to correlate chunks and
+    /// `seq` for ordered rendering. `stream` is `"stdout"` or `"stderr"`.
+    ExecOutput {
+        /// Stream handle returned by `POST /api/exec/run`.
+        handle: String,
+        /// Monotonically increasing line sequence number within the handle.
+        seq: u64,
+        /// Which stdio stream produced this line.
+        stream: String,
+        /// Raw output line (may contain ANSI escape codes).
+        line: String,
+    },
+    /// Terminal event for a completed exec process.
+    ///
+    /// Emitted once per process after all `ExecOutput` events. `exit_code`
+    /// is `None` when the process was killed before it produced an exit code.
+    ExecDone {
+        /// Stream handle identifying the completed process.
+        handle: String,
+        /// OS exit code, or `None` if the process was killed.
+        exit_code: Option<i32>,
+        /// Whether the process ended due to timeout or explicit kill.
+        killed: bool,
+    },
 }
 
 /// Cross-sibling strand convergence event (Phase 19b.2).

@@ -45,6 +45,7 @@ use crate::{
 };
 
 pub mod code_routes;
+pub mod exec_routes;
 
 /// Snapshot of the browser UI state, periodically reported by the frontend.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -557,6 +558,11 @@ pub fn build_app(state: AppState) -> Router {
         .merge(dispatch::dispatch_router())
         // ── File listing for @-file autocomplete ─────────────────────────────
         .route("/api/files", get(list_files_handler))
+        // ── Process execution API (EEF Wave 2 — E2 gate) ─────────────────────
+        .route("/api/exec/run", post(exec_routes::run_handler))
+        .route("/api/exec/output/{handle}", get(exec_routes::output_handler))
+        .route("/api/exec/processes", get(exec_routes::processes_handler))
+        .route("/api/exec/kill", post(exec_routes::kill_handler))
         // ── Code editor API (EEF Phase 3 Wave 1) ─────────────────────────────
         .route("/api/code/read", get(code_routes::read_handler))
         .route("/api/code/list", get(code_routes::list_handler))
