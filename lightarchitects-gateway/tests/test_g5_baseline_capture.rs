@@ -28,9 +28,49 @@ const SAMPLES: usize = 10;
 const BUILD_ROOT: &str =
     "/Users/kft/lightarchitects/soul/helix/corso/builds/gateway-action-audit-claude-runtime";
 
-// CORSO Phase-3 pilot actions: now LLM-dispatched (not stubs).
-// Excluded from the sub-ms ceiling assertion; their latency is ClaudeCliProvider latency.
-const CORSO_PILOT_MIGRATED: &[&str] = &["sniff", "scout"];
+// Phase-4 complete: all verdict_y actions across CORSO/EVA/SOUL/QUANTUM are now
+// LLM-dispatched. Excluded from the sub-ms ceiling assertion.
+const LLM_MIGRATED_PHASE4: &[&str] = &[
+    // CORSO (9)
+    "sniff",
+    "scout",
+    "code_review",
+    "guard",
+    "fetch",
+    "prove",
+    "optimize",
+    "chase",
+    "chow",
+    // SOUL (2)
+    "converse",
+    "chat",
+    // QUANTUM (7)
+    "sweep",
+    "trace",
+    "probe",
+    "theorize",
+    "verify",
+    "close",
+    "research",
+    // EVA direct (7)
+    "remember",
+    "visualize",
+    "review",
+    "refactor",
+    "architect",
+    "simplify",
+    "explain",
+    // EVA alias-target (9)
+    "ideate",
+    "crystallize",
+    "celebrate",
+    "bible_reflect",
+    "research_ollama",
+    "research_perplexity",
+    "research_docs",
+    "tutorial",
+    "survival",
+];
 
 // verdict_y actions per sibling (from manifest.yaml)
 const CORSO_VERDICT_Y: &[&str] = &[
@@ -42,7 +82,7 @@ const CORSO_VERDICT_Y: &[&str] = &[
     "prove",
     "optimize",
     "chase",
-    // chow excluded — not yet in CORSO_ACTIONS (Phase 3.5 prerequisite)
+    "chow",
 ];
 
 const EVA_VERDICT_Y_DIRECT: &[&str] = &[
@@ -217,14 +257,13 @@ fn capture_g5_baseline_latency() {
     println!("G5 baseline written to {out_path}");
 
     // Spot-check: stub-path actions must be <10ms.
-    // Phase-3 pilot actions (sniff, scout) are now LLM-dispatched and excluded.
+    // Phase-4 complete: all verdict_y actions are LLM-dispatched and excluded.
     for (action, v) in corso_map
         .iter()
         .chain(soul_map.iter())
         .chain(quantum_map.iter())
     {
-        if CORSO_PILOT_MIGRATED.contains(&action.as_str()) {
-            // LLM-dispatched post-Phase-3: no sub-ms ceiling applies.
+        if LLM_MIGRATED_PHASE4.contains(&action.as_str()) {
             continue;
         }
         if let Some(p95_us) = v["p95_us"].as_u64() {
@@ -235,6 +274,9 @@ fn capture_g5_baseline_latency() {
         }
     }
     for (action, v) in &eva_map {
+        if LLM_MIGRATED_PHASE4.contains(&action.as_str()) {
+            continue;
+        }
         if let Some(p95_us) = v["p95_us"].as_u64() {
             assert!(
                 p95_us < 10_000,

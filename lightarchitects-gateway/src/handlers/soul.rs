@@ -9,12 +9,21 @@
 //! Stub implementation — full handler requires SOUL git submodule and
 //! `soul_mcp::ToolRouter` integration. The action list is canonical and
 //! matches the `soulTools` MCP protocol.
+//!
+//! # Phase 4
+//!
+//! `converse` and `chat` (`verdict_y`) are wired to [`ClaudeCliProvider`].
+//! All other actions remain stubs pending SOUL submodule integration.
+
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use lightarchitects::core::handler::{HandlerError, SiblingHandler};
 use serde_json::{Value, json};
 
 use crate::config::GatewayConfig;
+use crate::spawner::claude_runtime::ClaudeCliProvider;
+use crate::spawner::llm_agent::{AgentRequest, LlmAgentProvider, ProviderError};
 
 /// All SOUL actions supported by the inline handler.
 ///
@@ -55,19 +64,49 @@ const SOUL_ACTIONS: &[&str] = &[
     "chat",
 ];
 
-/// In-process SOUL handler (stub).
+/// Verdict-y actions dispatched through the LLM provider (Phase 4).
+const SOUL_LLM_ACTIONS: &[&str] = &["converse", "chat"];
+
+/// SOUL sibling identity — used as `--append-system-prompt` in the subprocess.
 ///
-/// TODO: Replace with `soul_mcp::ToolRouter::execute_tool()` once
-/// SOUL submodule is wired and `AppState` initialization is handled.
+/// Establishes SOUL's conversational persona for LLM dispatch.
+const SOUL_IDENTITY: &str = "You are SOUL, the Light Architects knowledge keeper and \
+    conversational presence. You hold the helix graph of accumulated wisdom, long-term \
+    memory, and relationship context. Converse with warmth, depth, and precision. \
+    Draw on stored knowledge when relevant and respond as a trusted partner who \
+    remembers and honors the history of the work.";
+
+/// Budget ceiling per LLM call for SOUL conversational actions.
+const SOUL_MAX_BUDGET_USD: f64 = 0.50;
+
+/// Maximum bytes allowed for pretty-printed params before prompt construction.
+///
+/// Headroom below the provider `MAX_PARAM_BYTES` (8192) to leave room for the
+/// action header line.
+const MAX_PARAMS_PRETTY_BYTES: usize = 4_096;
+
+/// In-process SOUL handler.
+///
+/// Verdict-y actions (`converse`, `chat`) are dispatched through the injected
+/// [`LlmAgentProvider`]. All other actions return a stub response pending SOUL
+/// submodule integration.
 pub struct SoulHandler {
-    _marker: (),
+    provider: Arc<dyn LlmAgentProvider>,
 }
 
 impl SoulHandler {
-    /// Create a new SOUL handler from gateway config.
+    /// Create a new SOUL handler backed by the default [`ClaudeCliProvider`].
     #[must_use]
     pub fn new(_config: &GatewayConfig) -> Self {
-        Self { _marker: () }
+        Self {
+            provider: Arc::new(ClaudeCliProvider::default()),
+        }
+    }
+
+    /// Create a handler with an injected provider (used in tests).
+    #[must_use]
+    pub fn with_provider(provider: Arc<dyn LlmAgentProvider>) -> Self {
+        Self { provider }
     }
 }
 
@@ -81,9 +120,30 @@ impl SiblingHandler for SoulHandler {
         SOUL_ACTIONS
     }
 
-    async fn call(&self, action: &str, _params: Value) -> Result<Value, HandlerError> {
+    async fn call(&self, action: &str, params: Value) -> Result<Value, HandlerError> {
         if !SOUL_ACTIONS.contains(&action) {
             return Err(HandlerError::unknown_action("soul", action));
+        }
+
+        // Phase 4: verdict_y actions dispatch through LLM provider.
+        if SOUL_LLM_ACTIONS.contains(&action) {
+            let prompt = build_prompt(action, &params)?;
+            let req = AgentRequest {
+                sibling_identity: SOUL_IDENTITY.to_owned(),
+                user_prompt: prompt,
+                schema: None,
+                allowed_tools: vec![],
+                max_turns: 1,
+                max_budget_usd: SOUL_MAX_BUDGET_USD,
+                model_hint: None,
+                parent_span_id: None,
+            };
+            return self
+                .provider
+                .spawn(req)
+                .await
+                .map(|resp| resp.output)
+                .map_err(|e| map_provider_error("soul", action, e));
         }
 
         // TODO: Replace with real SOUL dispatch via soul_mcp::ToolRouter.
@@ -105,14 +165,95 @@ impl SiblingHandler for SoulHandler {
     }
 }
 
+/// Build the LLM prompt for a dispatched action.
+///
+/// # Errors
+///
+/// Returns [`HandlerError::InvalidParams`] if the pretty-printed params exceed
+/// [`MAX_PARAMS_PRETTY_BYTES`]. This guards against params that are compact as
+/// JSON Values but expand significantly when pretty-printed (G1 / HIGH-2).
+fn build_prompt(action: &str, params: &Value) -> Result<String, HandlerError> {
+    let params_str = serde_json::to_string_pretty(params).unwrap_or_else(|_| "{}".to_owned());
+    if params_str.len() > MAX_PARAMS_PRETTY_BYTES {
+        return Err(HandlerError::invalid_params(
+            "soul",
+            action,
+            format!(
+                "params payload too large after serialization ({} > {MAX_PARAMS_PRETTY_BYTES} bytes)",
+                params_str.len()
+            ),
+        ));
+    }
+    Ok(format!("Action: {action}\n\nParameters:\n{params_str}"))
+}
+
+/// Map a [`ProviderError`] to the appropriate [`HandlerError`] variant.
+fn map_provider_error(sibling: &str, action: &str, e: ProviderError) -> HandlerError {
+    match e {
+        ProviderError::ParamSanitizationFailed { param_name, reason } => {
+            HandlerError::invalid_params(sibling, action, format!("{param_name}: {reason}"))
+        }
+        ProviderError::Internal(msg) => HandlerError::internal(sibling, action, msg),
+        other => HandlerError::service_error(sibling, action, other.to_string()),
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
+    use std::collections::HashMap;
+
+    use async_trait::async_trait;
+
     use super::*;
+    use crate::spawner::llm_agent::{AgentResponse, ProviderCapabilities, SchemaMode, TokenUsage};
 
     fn handler() -> SoulHandler {
         SoulHandler::new(&GatewayConfig::default())
     }
+
+    // ── Stub provider for unit tests ─────────────────────────────────────────
+
+    struct EchoProvider;
+
+    #[async_trait]
+    impl LlmAgentProvider for EchoProvider {
+        fn name(&self) -> &'static str {
+            "echo"
+        }
+
+        async fn spawn(&self, req: AgentRequest) -> Result<AgentResponse, ProviderError> {
+            Ok(AgentResponse {
+                output: serde_json::json!({
+                    "provider": "echo",
+                    "action_echoed": req.user_prompt.lines().next().unwrap_or(""),
+                }),
+                turns_used: 1,
+                cost_usd: 0.0,
+                tokens: TokenUsage {
+                    input: 10,
+                    output: 5,
+                },
+                provider_attrs: HashMap::new(),
+                retry_count: 0,
+            })
+        }
+
+        fn capabilities(&self) -> ProviderCapabilities {
+            ProviderCapabilities {
+                schema_enforcement: SchemaMode::None,
+                native_budget_cap: false,
+                native_turn_cap: false,
+                auth_inherits_session: false,
+            }
+        }
+
+        fn estimate_cost(&self, _input: u32, _output: u32) -> f64 {
+            0.0
+        }
+    }
+
+    // ── Existing tests (must remain passing) ─────────────────────────────────
 
     #[test]
     fn name_returns_soul() {
@@ -152,5 +293,40 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, HandlerError::UnknownAction { .. }));
+    }
+
+    // ── Phase 4 tests ─────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn converse_dispatches_to_provider() {
+        let h = SoulHandler::with_provider(Arc::new(EchoProvider));
+        let result = h
+            .call("converse", serde_json::json!({"message": "hello"}))
+            .await;
+        assert!(result.is_ok(), "converse must succeed: {result:?}");
+        assert_eq!(result.unwrap()["provider"], "echo");
+    }
+
+    #[tokio::test]
+    async fn chat_dispatches_to_provider() {
+        let h = SoulHandler::with_provider(Arc::new(EchoProvider));
+        let result = h
+            .call("chat", serde_json::json!({"message": "hello"}))
+            .await;
+        assert!(result.is_ok(), "chat must succeed: {result:?}");
+        assert_eq!(result.unwrap()["provider"], "echo");
+    }
+
+    #[tokio::test]
+    async fn non_llm_action_still_stubs() {
+        // "read_note" is KEEP (not verdict_y) — must stay as text stub
+        let h = SoulHandler::with_provider(Arc::new(EchoProvider));
+        let result = h.call("read_note", serde_json::json!({})).await;
+        assert!(result.is_ok());
+        let text = result.unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap_or("")
+            .to_owned();
+        assert!(text.contains("stub"), "read_note must still stub: {text}");
     }
 }

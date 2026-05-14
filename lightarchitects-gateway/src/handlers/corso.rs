@@ -5,11 +5,11 @@
 //! Until those crates are available, this handler stubs the interface so that
 //! `--all-features` compiles cleanly.
 //!
-//! # Phase 3 pilot
+//! # Phase 4
 //!
-//! `sniff` and `scout` are wired to [`ClaudeCliProvider`] as the first two
-//! `LLM_AGENT` `verdict_y` actions. All other `LLM_AGENT` actions remain stubbed
-//! until Phase 4.
+//! All 9 `verdict_y` actions are wired to [`ClaudeCliProvider`]: `code_review`,
+//! `guard`, `fetch`, `prove`, `optimize`, `chase`, `chow` added; `sniff` and
+//! `scout` were the Phase 3 pilot.
 //!
 //! # Heavy dependencies
 //!
@@ -65,10 +65,20 @@ const CORSO_ACTIONS: &[&str] = &[
     "manage_logs",
 ];
 
-/// Phase 3 pilot: two actions wired to LLM provider.
-/// Remaining `verdict_y` `LLM_AGENT` actions (code\_review, guard, fetch, prove,
-/// optimize, chase) are migrated in Phase 4.
-const PILOT_LLM_ACTIONS: &[&str] = &["sniff", "scout"];
+/// All `verdict_y` `LLM_AGENT` actions dispatched through the provider.
+/// Phase 4 completion: `code_review`, `guard`, `fetch`, `prove`, `optimize`,
+/// `chase`, `chow` added; `sniff` and `scout` were the Phase 3 pilot.
+const CORSO_LLM_ACTIONS: &[&str] = &[
+    "sniff",
+    "scout",
+    "code_review",
+    "guard",
+    "fetch",
+    "prove",
+    "optimize",
+    "chase",
+    "chow",
+];
 
 /// CORSO sibling identity — used as `--append-system-prompt` in the subprocess.
 ///
@@ -118,8 +128,8 @@ impl SiblingHandler for CorsoHandler {
             return Err(HandlerError::unknown_action("corso", action));
         }
 
-        // Phase 3 pilot: route sniff + scout through LLM provider.
-        if PILOT_LLM_ACTIONS.contains(&action) {
+        // Phase 4: all verdict_y actions dispatch through LLM provider.
+        if CORSO_LLM_ACTIONS.contains(&action) {
             let prompt = build_prompt(action, &params)?;
             let req = AgentRequest {
                 sibling_identity: CORSO_IDENTITY.to_owned(),
@@ -139,7 +149,7 @@ impl SiblingHandler for CorsoHandler {
                 .map_err(|e| map_provider_error("corso", action, e));
         }
 
-        // All other actions: KEEP (subprocess path — not yet available) or future Phase 4.
+        // Non-verdict_y actions: KEEP (subprocess path — not yet available).
         Err(HandlerError::not_initialized(
             "corso",
             "inline-corso handler not yet available — corso-server/trinity-core not published",
@@ -326,15 +336,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn non_pilot_llm_action_returns_not_initialized() {
-        // code_review is verdict_y but NOT in the Phase 3 pilot — still stubbed.
+    async fn code_review_dispatches_to_provider() {
         let h = CorsoHandler::with_provider(Arc::new(EchoProvider));
-        let result = h.call("code_review", serde_json::json!({})).await;
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            HandlerError::NotInitialized { .. }
-        ));
+        let result = h
+            .call("code_review", serde_json::json!({"target": "src/lib.rs"}))
+            .await;
+        assert!(
+            result.is_ok(),
+            "code_review must succeed with echo provider: {result:?}"
+        );
+        assert_eq!(result.unwrap()["provider"], "echo");
+    }
+
+    #[tokio::test]
+    async fn guard_dispatches_to_provider() {
+        let h = CorsoHandler::with_provider(Arc::new(EchoProvider));
+        let result = h.call("guard", serde_json::json!({"scan": "full"})).await;
+        assert!(
+            result.is_ok(),
+            "guard must succeed with echo provider: {result:?}"
+        );
+        assert_eq!(result.unwrap()["provider"], "echo");
     }
 
     #[tokio::test]

@@ -5,15 +5,23 @@
 //! SERAPH SDK) that increase compile time and binary size.
 //!
 //! # Status
-//! Stub implementation — real dispatch requires `quantum_q::call_tool` with
-//! initialized providers, hook registry, and sandbox. The action list is
-//! canonical and matches `qsTools` in the MCP protocol.
+//! Phase 4: the 7 `verdict_y` `LLM_AGENT` actions (`sweep`, `trace`, `probe`,
+//! `theorize`, `verify`, `close`, `research`) are wired through
+//! [`ClaudeCliProvider`]. The remaining 8 KEEP actions (`triage`, `quick`,
+//! `helix`, `discover`, `list`, `execute`, `workflow`, `scan`) stay as stubs
+//! pending `quantum_q::call_tool` provider initialization.
+//!
+//! The action list is canonical and matches `qsTools` in the MCP protocol.
+
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use lightarchitects::core::handler::{HandlerError, SiblingHandler};
-use serde_json::{Value, json};
+use lightarchitects::core::handler::{HandlerConfig, HandlerError, SiblingHandler};
+use serde_json::Value;
 
 use crate::config::GatewayConfig;
+use crate::spawner::claude_runtime::ClaudeCliProvider;
+use crate::spawner::llm_agent::{AgentRequest, LlmAgentProvider, ProviderError};
 
 /// All QUANTUM actions supported by the inline handler.
 ///
@@ -28,19 +36,55 @@ const QUANTUM_ACTIONS: &[&str] = &[
     "discover", "list", "execute", "workflow", "scan",
 ];
 
-/// In-process QUANTUM handler (stub).
+/// `verdict_y` `LLM_AGENT` actions dispatched through the provider.
 ///
-/// TODO: Replace stub dispatch with `quantum_q::call_tool()` once
-/// provider initialization is wired through `HandlerConfig`.
+/// Phase 4: investigation cycle minus `triage` (KEEP/deterministic), plus
+/// `research`. `triage`, `quick`, `helix`, `discover`, `list`, `execute`,
+/// `workflow`, and `scan` are KEEP verdict and remain as stubs.
+const QUANTUM_LLM_ACTIONS: &[&str] = &[
+    "sweep", "trace", "probe", "theorize", "verify", "close", "research",
+];
+
+/// QUANTUM sibling identity — used as `--append-system-prompt` in the subprocess.
+///
+/// Establishes QUANTUM's forensic investigator persona for LLM dispatch.
+/// Control-plane sanitization (G1) applies before this string reaches the subprocess command.
+const QUANTUM_IDENTITY: &str = "You are QUANTUM, the Light Architects forensic investigator. \
+    You are methodical, evidence-driven, and precise. You build evidence chains, \
+    formulate falsifiable hypotheses, and apply rigorous verification before drawing \
+    conclusions. Think step by step. Cite your sources. When uncertain, state your \
+    confidence level explicitly and identify what additional evidence would resolve it.";
+
+/// Budget ceiling per LLM call for QUANTUM actions.
+const QUANTUM_MAX_BUDGET_USD: f64 = 0.50;
+
+/// Maximum bytes allowed for pretty-printed params before prompt construction.
+///
+/// Headroom below `MAX_PARAM_BYTES` (8192) to leave room for the action header.
+const MAX_PARAMS_PRETTY_BYTES: usize = 4_096;
+
+/// In-process QUANTUM handler.
+///
+/// Dispatches `verdict_y` LLM actions through an [`LlmAgentProvider`]; stubs
+/// KEEP actions until `quantum_q::call_tool` provider initialization is wired
+/// through `HandlerConfig`.
 pub struct QuantumHandler {
-    _marker: (),
+    provider: Arc<dyn LlmAgentProvider>,
 }
 
 impl QuantumHandler {
-    /// Create a new QUANTUM handler from gateway config.
+    /// Create a new QUANTUM handler backed by the default [`ClaudeCliProvider`].
     #[must_use]
     pub fn new(_config: &GatewayConfig) -> Self {
-        Self { _marker: () }
+        Self {
+            provider: Arc::new(ClaudeCliProvider::default()),
+        }
+    }
+
+    /// Create a handler with an injected provider (used in tests).
+    #[must_use]
+    pub fn with_provider(provider: Arc<dyn LlmAgentProvider>) -> Self {
+        Self { provider }
     }
 }
 
@@ -54,41 +98,145 @@ impl SiblingHandler for QuantumHandler {
         QUANTUM_ACTIONS
     }
 
-    async fn call(&self, action: &str, _params: Value) -> Result<Value, HandlerError> {
+    async fn call(&self, action: &str, params: Value) -> Result<Value, HandlerError> {
         if !QUANTUM_ACTIONS.contains(&action) {
             return Err(HandlerError::unknown_action("quantum", action));
         }
 
+        // Phase 4: verdict_y actions dispatch through LLM provider.
+        if QUANTUM_LLM_ACTIONS.contains(&action) {
+            let prompt = build_prompt(action, &params)?;
+            let req = AgentRequest {
+                sibling_identity: QUANTUM_IDENTITY.to_owned(),
+                user_prompt: prompt,
+                schema: None,
+                allowed_tools: vec![],
+                max_turns: 1,
+                max_budget_usd: QUANTUM_MAX_BUDGET_USD,
+                model_hint: None,
+                parent_span_id: None,
+            };
+            return self
+                .provider
+                .spawn(req)
+                .await
+                .map(|resp| resp.output)
+                .map_err(|e| map_provider_error("quantum", action, e));
+        }
+
+        // KEEP actions: stub — real dispatch requires `quantum_q::call_tool`
+        // with initialized providers, hook registry, and sandbox.
+        //
         // TODO: Replace with real dispatch:
         //   use quantum_q::orchestrators::call_tool::{call_tool, CallToolParams, CallToolOperation};
         //   let params = CallToolParams { operation, tool, params, ... };
         //   let result = call_tool(params).await?;
-        Ok(json!({
+        Ok(serde_json::json!({
             "content": [{
                 "type": "text",
-                "text": format!("QUANTUM inline handler stub: action='{action}' — full implementation pending provider initialization")
+                "text": format!(
+                    "QUANTUM inline handler stub: action='{action}' — full implementation pending provider initialization"
+                )
             }]
         }))
     }
 
-    async fn initialize(
-        &self,
-        _config: &lightarchitects::core::handler::HandlerConfig,
-    ) -> Result<(), HandlerError> {
+    async fn initialize(&self, _config: &HandlerConfig) -> Result<(), HandlerError> {
         // TODO: Initialize QUANTUM providers, hook registry, and sandbox.
         // Provider initialization requires API keys from HandlerConfig.
         Ok(())
     }
 }
 
+/// Build the LLM prompt for a dispatched action.
+///
+/// # Errors
+///
+/// Returns [`HandlerError::InvalidParams`] if the pretty-printed params exceed
+/// [`MAX_PARAMS_PRETTY_BYTES`]. This guards against params that are compact as
+/// JSON Values but expand significantly when pretty-printed (G1 / HIGH-2).
+fn build_prompt(action: &str, params: &Value) -> Result<String, HandlerError> {
+    let params_str = serde_json::to_string_pretty(params).unwrap_or_else(|_| "{}".to_owned());
+    if params_str.len() > MAX_PARAMS_PRETTY_BYTES {
+        return Err(HandlerError::invalid_params(
+            "quantum",
+            action,
+            format!(
+                "params payload too large after serialization ({} > {MAX_PARAMS_PRETTY_BYTES} bytes)",
+                params_str.len()
+            ),
+        ));
+    }
+    Ok(format!("Action: {action}\n\nParameters:\n{params_str}"))
+}
+
+/// Map a [`ProviderError`] to the appropriate [`HandlerError`] variant.
+fn map_provider_error(sibling: &str, action: &str, e: ProviderError) -> HandlerError {
+    match e {
+        ProviderError::ParamSanitizationFailed { param_name, reason } => {
+            HandlerError::invalid_params(sibling, action, format!("{param_name}: {reason}"))
+        }
+        ProviderError::Internal(msg) => HandlerError::internal(sibling, action, msg),
+        other => HandlerError::service_error(sibling, action, other.to_string()),
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
+    use std::collections::HashMap;
+
+    use async_trait::async_trait;
+
     use super::*;
+    use crate::spawner::llm_agent::{AgentResponse, ProviderCapabilities, SchemaMode, TokenUsage};
 
     fn handler() -> QuantumHandler {
         QuantumHandler::new(&GatewayConfig::default())
     }
+
+    // ── Stub provider for unit tests ─────────────────────────────────────────
+
+    struct EchoProvider;
+
+    #[async_trait]
+    impl LlmAgentProvider for EchoProvider {
+        fn name(&self) -> &'static str {
+            "echo"
+        }
+
+        async fn spawn(&self, req: AgentRequest) -> Result<AgentResponse, ProviderError> {
+            Ok(AgentResponse {
+                output: serde_json::json!({
+                    "provider": "echo",
+                    "action_echoed": req.user_prompt.lines().next().unwrap_or(""),
+                }),
+                turns_used: 1,
+                cost_usd: 0.0,
+                tokens: TokenUsage {
+                    input: 10,
+                    output: 5,
+                },
+                provider_attrs: HashMap::new(),
+                retry_count: 0,
+            })
+        }
+
+        fn capabilities(&self) -> ProviderCapabilities {
+            ProviderCapabilities {
+                schema_enforcement: SchemaMode::None,
+                native_budget_cap: false,
+                native_turn_cap: false,
+                auth_inherits_session: false,
+            }
+        }
+
+        fn estimate_cost(&self, _input: u32, _output: u32) -> f64 {
+            0.0
+        }
+    }
+
+    // ── Existing tests (preserved) ────────────────────────────────────────────
 
     #[test]
     fn name_returns_quantum() {
@@ -125,7 +273,7 @@ mod tests {
     #[tokio::test]
     async fn call_returns_ok_for_known_action() {
         let handler = handler();
-        let result = handler.call("triage", json!({})).await;
+        let result = handler.call("triage", serde_json::json!({})).await;
         assert!(result.is_ok());
         let binding = result.unwrap();
         let text = binding["content"][0]["text"].as_str().unwrap();
@@ -135,9 +283,47 @@ mod tests {
     #[tokio::test]
     async fn call_returns_error_for_unknown_action() {
         let handler = handler();
-        let result = handler.call("frobnicate", json!({})).await;
+        let result = handler.call("frobnicate", serde_json::json!({})).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, HandlerError::UnknownAction { .. }));
+    }
+
+    // ── Phase 4 new tests ─────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn sweep_dispatches_to_provider() {
+        let h = QuantumHandler::with_provider(Arc::new(EchoProvider));
+        let result = h
+            .call("sweep", serde_json::json!({"target": "auth module"}))
+            .await;
+        assert!(result.is_ok(), "sweep must succeed: {result:?}");
+        assert_eq!(result.unwrap()["provider"], "echo");
+    }
+
+    #[tokio::test]
+    async fn research_dispatches_to_provider() {
+        let h = QuantumHandler::with_provider(Arc::new(EchoProvider));
+        let result = h
+            .call("research", serde_json::json!({"query": "timing attacks"}))
+            .await;
+        assert!(result.is_ok(), "research must succeed: {result:?}");
+        assert_eq!(result.unwrap()["provider"], "echo");
+    }
+
+    #[tokio::test]
+    async fn triage_is_keep_and_still_stubs() {
+        // "triage" is KEEP verdict (deterministic) — must NOT dispatch to provider
+        let h = QuantumHandler::with_provider(Arc::new(EchoProvider));
+        let result = h.call("triage", serde_json::json!({})).await;
+        assert!(result.is_ok());
+        let text = result.unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap_or("")
+            .to_owned();
+        assert!(
+            text.contains("stub"),
+            "triage is KEEP; must still return stub: {text}"
+        );
     }
 }
