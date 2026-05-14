@@ -57,6 +57,7 @@ const CORSO_ACTIONS: &[&str] = &[
     "scout",
     "prove",
     "optimize",
+    "chow",
     // Raphael — infrastructure & ops
     "chase",
     "monitor_health",
@@ -264,7 +265,7 @@ mod tests {
     #[test]
     fn actions_count_matches_routes() {
         let binding = handler();
-        assert_eq!(binding.actions().len(), 27);
+        assert_eq!(binding.actions().len(), 28);
     }
 
     #[tokio::test]
