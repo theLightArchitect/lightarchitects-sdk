@@ -61,7 +61,7 @@ fn run_git(dir: &Path, args: &[&str]) {
         .current_dir(dir)
         .status()
         .expect("git command failed to spawn");
-    assert!(status.success(), "git {:?} failed in {:?}", args, dir);
+    assert!(status.success(), "git {args:?} failed in {}", dir.display());
 }
 
 // ── Test 1: clean repo ────────────────────────────────────────────────────────
