@@ -246,6 +246,17 @@ fn check_length(param_name: &str, s: &str) -> Result<(), ProviderError> {
     Ok(())
 }
 
+/// Return a path to a minimal valid MCP config that disables all servers.
+///
+/// Writes `{"mcpServers":{}}` to a stable temp-dir location on first call.
+/// The write is idempotent (same content, same path) and safe to call on
+/// every subprocess launch — it is a 18-byte file in the OS temp directory.
+fn null_mcp_config() -> std::path::PathBuf {
+    let path = std::env::temp_dir().join("la-gateway-mcp-null.json");
+    let _ = std::fs::write(&path, r#"{"mcpServers":{}}"#);
+    path
+}
+
 /// Build the `tokio::process::Command` for the Claude CLI subprocess.
 fn build_command(
     binary: &PathBuf,
@@ -279,9 +290,14 @@ fn build_command(
     // --strict-mcp-config ensures ~/.claude/mcp.json is NOT loaded; without it
     // the subprocess would still inherit the host session's MCP servers (incl.
     // the lightarchitects gateway), enabling recursion.
+    //
+    // /dev/null is not valid JSON — the CLI rejects it and writes the error to
+    // stdout, producing empty output that fails JSON parsing. Write a minimal
+    // valid config to a stable temp-dir path instead (idempotent, 18 bytes).
+    let mcp_null = null_mcp_config();
     cmd.arg("--strict-mcp-config")
         .arg("--mcp-config")
-        .arg("/dev/null");
+        .arg(&mcp_null);
 
     if let Some(span_id) = &req.parent_span_id {
         cmd.env("TRACEPARENT", span_id);
@@ -503,9 +519,12 @@ mod tests {
             .expect("--mcp-config must be present in subprocess command");
         let dev_null_pos = mcp_config_pos + 1;
 
+        // Verify the config path ends in the sentinel filename, not /dev/null which
+        // is not valid JSON and causes the CLI to error on stdout with empty output.
+        let mcp_path = args_str.get(dev_null_pos).copied().unwrap_or("");
         assert!(
-            args_str.get(dev_null_pos) == Some(&"/dev/null"),
-            "--mcp-config must be followed by /dev/null"
+            mcp_path.ends_with("la-gateway-mcp-null.json"),
+            "--mcp-config must point to la-gateway-mcp-null.json (not /dev/null), got: {mcp_path}"
         );
         assert!(
             strict_pos < mcp_config_pos,
