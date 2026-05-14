@@ -68,7 +68,10 @@ pub async fn run_ndjson(
     if let Some(ref sp) = system_prompt {
         validate_system_prompt(sp).map_err(Box::<dyn std::error::Error>::from)?;
     }
-    if let Some(key) = std::env::var("LA_INHERITED_API_KEY").ok().filter(|s| !s.is_empty()) {
+    if let Some(key) = std::env::var("LA_INHERITED_API_KEY")
+        .ok()
+        .filter(|s| !s.is_empty())
+    {
         let backend = std::env::var("LA_INHERITED_BACKEND")
             .ok()
             .and_then(|b| match b.to_lowercase().as_str() {
@@ -92,7 +95,9 @@ pub async fn run_ndjson(
 
 /// Persist an inherited API key to `~/.lightarchitects/keys.toml`.
 fn persist_inherited_key(key: &str, key_name: &str) {
-    let Some(home) = std::env::var_os("HOME") else { return };
+    let Some(home) = std::env::var_os("HOME") else {
+        return;
+    };
     let path = std::path::PathBuf::from(home)
         .join(".lightarchitects")
         .join("keys.toml");

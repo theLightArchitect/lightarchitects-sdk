@@ -130,8 +130,9 @@ pub fn run_write_file(params: Value, config: &GatewayConfig) -> Result<Value, Ga
     // Create parent directories.
     if let Some(parent) = expanded.parent() {
         if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| GatewayError::File(format!("create dirs {}: {e}", parent.display())))?;
+            std::fs::create_dir_all(parent).map_err(|e| {
+                GatewayError::File(format!("create dirs {}: {e}", parent.display()))
+            })?;
         }
     }
 
@@ -139,11 +140,10 @@ pub fn run_write_file(params: Value, config: &GatewayConfig) -> Result<Value, Ga
     let tmp = expanded.with_extension(".__code_tmp__");
     std::fs::write(&tmp, content)
         .map_err(|e| GatewayError::File(format!("write tmp {}: {e}", tmp.display())))?;
-    std::fs::rename(&tmp, &expanded)
-        .map_err(|e| {
-            let _ = std::fs::remove_file(&tmp);
-            GatewayError::File(format!("rename {}: {e}", expanded.display()))
-        })?;
+    std::fs::rename(&tmp, &expanded).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        GatewayError::File(format!("rename {}: {e}", expanded.display()))
+    })?;
 
     let meta = std::fs::metadata(&expanded)
         .map_err(|e| GatewayError::File(format!("{}: {e}", expanded.display())))?;
@@ -188,8 +188,7 @@ pub fn run_list_dir(params: Value, config: &GatewayConfig) -> Result<Value, Gate
         .map_err(|e| GatewayError::File(format!("{}: {e}", canonical.display())))?;
 
     for entry in rd {
-        let entry = entry
-            .map_err(|e| GatewayError::File(format!("read dir entry: {e}")))?;
+        let entry = entry.map_err(|e| GatewayError::File(format!("read dir entry: {e}")))?;
         let name = entry.file_name().to_string_lossy().into_owned();
 
         // Apply glob filter if provided.
@@ -371,7 +370,9 @@ pub fn run_preview_diff(params: Value, config: &GatewayConfig) -> Result<Value, 
     let current = std::fs::read_to_string(&canonical)
         .map_err(|e| GatewayError::File(format!("{}: {e}", canonical.display())))?;
 
-    let label = canonical.file_name().map_or("file", |n| n.to_str().unwrap_or("file"));
+    let label = canonical
+        .file_name()
+        .map_or("file", |n| n.to_str().unwrap_or("file"));
     let diff = build_unified_diff(label, &current, proposed);
     let line_count = diff.lines().count();
 
@@ -448,9 +449,7 @@ fn glob_match_inner(
                 let p_rest: String = p.collect();
                 let n_rest: String = n.collect();
                 for i in 0..=n_rest.len() {
-                    if i <= n_rest.len()
-                        && glob_match(&p_rest, &n_rest[i..])
-                    {
+                    if i <= n_rest.len() && glob_match(&p_rest, &n_rest[i..]) {
                         return true;
                     }
                 }

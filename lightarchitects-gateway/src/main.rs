@@ -55,9 +55,8 @@ async fn main() {
     let stream_events = raw_args.iter().any(|a| a == "--stream-events");
     let cwd = parse_cwd(&raw_args);
     if stream_events {
-        let cwd = cwd.unwrap_or_else(|| {
-            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-        });
+        let cwd =
+            cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
         if let Err(e) = lightarchitects_gateway::agent_stream::run_ndjson(&cwd, None).await {
             eprintln!("Agent stream error: {e}");
             std::process::exit(1);
@@ -77,8 +76,7 @@ async fn main() {
         };
 
         if cfg.always_webshell {
-            let exe = std::env::current_exe()
-                .unwrap_or_else(|_| PathBuf::from("lightarchitects"));
+            let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("lightarchitects"));
             let mut child = std::process::Command::new(exe);
             child.arg("webshell").arg("start");
             match cfg.backend {
@@ -108,12 +106,13 @@ async fn main() {
         }
 
         // Direct interactive TTY mode — like `claude` CLI
-        let cwd = cwd.unwrap_or_else(|| {
-            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-        });
+        let cwd =
+            cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
         // Check for inherited API key from parent coding agent (bash mode / skill)
-        let inherited_key = std::env::var("LA_INHERITED_API_KEY").ok().filter(|s| !s.is_empty());
+        let inherited_key = std::env::var("LA_INHERITED_API_KEY")
+            .ok()
+            .filter(|s| !s.is_empty());
         let inherited_backend = std::env::var("LA_INHERITED_BACKEND").ok();
 
         let (llm_backend, model, api_key) = if let Some(key) = inherited_key {
@@ -153,11 +152,11 @@ async fn main() {
             }
         };
 
-        let mut runner = lightarchitects_gateway::agent_stream::runner::AgentRunner::with_llm(&cwd, llm);
+        let mut runner =
+            lightarchitects_gateway::agent_stream::runner::AgentRunner::with_llm(&cwd, llm);
         runner.run_interactive_loop().await;
         return;
     }
-
 
     // Check for --agent flag early (agent mode uses JSON logging, not fmt)
     let agent_mode = raw_args
@@ -895,8 +894,12 @@ fn persist_inherited_key(key: &str, backend: &lightarchitects_gateway::llm::LlmB
         lightarchitects_gateway::llm::LlmBackend::OpenAi => "OPENAI_API_KEY",
         lightarchitects_gateway::llm::LlmBackend::Ollama => "OLLAMA_API_KEY",
     };
-    let Some(home) = std::env::var_os("HOME") else { return };
-    let path = std::path::PathBuf::from(home).join(".lightarchitects").join("keys.toml");
+    let Some(home) = std::env::var_os("HOME") else {
+        return;
+    };
+    let path = std::path::PathBuf::from(home)
+        .join(".lightarchitects")
+        .join("keys.toml");
     let mut keys: std::collections::HashMap<String, String> = std::fs::read_to_string(&path)
         .ok()
         .and_then(|c| toml::from_str(&c).ok())
@@ -980,10 +983,7 @@ fn resolve_backend_interactive(
             backend: lightarchitects_gateway::llm::LlmBackend::OpenAi,
             key_source: "LIGHTARCHITECTS_API_KEY",
             key: la_key.clone(),
-            models: &[
-                ("Genesis", "genesis"),
-                ("Genesis Pro", "genesis-pro"),
-            ],
+            models: &[("Genesis", "genesis"), ("Genesis Pro", "genesis-pro")],
         });
     }
 
@@ -1015,7 +1015,11 @@ fn resolve_backend_interactive(
             let _ = io::stdout().flush();
             let mut buf = String::new();
             if io::stdin().read_line(&mut buf).is_err() {
-                return (options[0].backend.clone(), saved.model.clone(), options[0].key.clone());
+                return (
+                    options[0].backend.clone(),
+                    saved.model.clone(),
+                    options[0].key.clone(),
+                );
             }
             if let Ok(n) = buf.trim().parse::<usize>() {
                 if n > 0 && n <= options.len() {
@@ -1034,7 +1038,10 @@ fn resolve_backend_interactive(
         for (i, (name, _id)) in selected.models.iter().enumerate() {
             println!("  {}) {}", i + 1, name);
         }
-        let default_model = selected.models.iter().position(|(_name, id)| **id == saved.model)
+        let default_model = selected
+            .models
+            .iter()
+            .position(|(_name, id)| **id == saved.model)
             .unwrap_or(0);
         loop {
             print!("Select [1-{}]: ", selected.models.len());
@@ -1066,19 +1073,35 @@ fn resolve_backend_interactive(
     (selected.backend.clone(), model, selected.key.clone())
 }
 
-fn backend_to_llm(b: lightarchitects_gateway::cli::launcher::Backend) -> lightarchitects_gateway::llm::LlmBackend {
+fn backend_to_llm(
+    b: lightarchitects_gateway::cli::launcher::Backend,
+) -> lightarchitects_gateway::llm::LlmBackend {
     match b {
-        lightarchitects_gateway::cli::launcher::Backend::Claude => lightarchitects_gateway::llm::LlmBackend::Anthropic,
-        lightarchitects_gateway::cli::launcher::Backend::Codex => lightarchitects_gateway::llm::LlmBackend::OpenAi,
-        lightarchitects_gateway::cli::launcher::Backend::OllamaLaunch => lightarchitects_gateway::llm::LlmBackend::Ollama,
+        lightarchitects_gateway::cli::launcher::Backend::Claude => {
+            lightarchitects_gateway::llm::LlmBackend::Anthropic
+        }
+        lightarchitects_gateway::cli::launcher::Backend::Codex => {
+            lightarchitects_gateway::llm::LlmBackend::OpenAi
+        }
+        lightarchitects_gateway::cli::launcher::Backend::OllamaLaunch => {
+            lightarchitects_gateway::llm::LlmBackend::Ollama
+        }
     }
 }
 
-fn llm_to_backend(b: lightarchitects_gateway::llm::LlmBackend) -> lightarchitects_gateway::cli::launcher::Backend {
+fn llm_to_backend(
+    b: lightarchitects_gateway::llm::LlmBackend,
+) -> lightarchitects_gateway::cli::launcher::Backend {
     match b {
-        lightarchitects_gateway::llm::LlmBackend::Anthropic => lightarchitects_gateway::cli::launcher::Backend::Claude,
-        lightarchitects_gateway::llm::LlmBackend::OpenAi => lightarchitects_gateway::cli::launcher::Backend::Codex,
-        lightarchitects_gateway::llm::LlmBackend::Ollama => lightarchitects_gateway::cli::launcher::Backend::OllamaLaunch,
+        lightarchitects_gateway::llm::LlmBackend::Anthropic => {
+            lightarchitects_gateway::cli::launcher::Backend::Claude
+        }
+        lightarchitects_gateway::llm::LlmBackend::OpenAi => {
+            lightarchitects_gateway::cli::launcher::Backend::Codex
+        }
+        lightarchitects_gateway::llm::LlmBackend::Ollama => {
+            lightarchitects_gateway::cli::launcher::Backend::OllamaLaunch
+        }
     }
 }
 

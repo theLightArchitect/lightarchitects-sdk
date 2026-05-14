@@ -275,8 +275,13 @@ fn build_command(
         cmd.arg("--tools").arg(req.allowed_tools.join(","));
     }
 
-    // Prevent recursive gateway invocation — supply an empty MCP config.
-    cmd.arg("--mcp-config").arg("/dev/null");
+    // Prevent recursive gateway invocation: restrict to only the empty config.
+    // --strict-mcp-config ensures ~/.claude/mcp.json is NOT loaded; without it
+    // the subprocess would still inherit the host session's MCP servers (incl.
+    // the lightarchitects gateway), enabling recursion.
+    cmd.arg("--strict-mcp-config")
+        .arg("--mcp-config")
+        .arg("/dev/null");
 
     if let Some(span_id) = &req.parent_span_id {
         cmd.env("TRACEPARENT", span_id);
@@ -452,6 +457,54 @@ mod tests {
         assert!(
             (cost - expected).abs() < 1e-9,
             "cost={cost}, expected={expected}"
+        );
+    }
+
+    /// G10 recursion guard: `--strict-mcp-config` MUST precede `--mcp-config /dev/null`
+    /// in the subprocess command. Without `--strict-mcp-config`, the subprocess loads
+    /// the host's `~/.claude/mcp.json` (which includes the lightarchitects gateway),
+    /// enabling gateway → gateway recursion.
+    #[test]
+    fn command_includes_strict_mcp_config_guard() {
+        use std::ffi::OsStr;
+        let req = AgentRequest {
+            sibling_identity: "test-sibling".to_owned(),
+            user_prompt: "probe".to_owned(),
+            schema: None,
+            allowed_tools: vec![],
+            max_turns: 1,
+            max_budget_usd: 0.10,
+            model_hint: None,
+            parent_span_id: None,
+        };
+        let provider = ClaudeCliProvider::default();
+        let cmd = build_command(
+            &provider.claude_binary,
+            &provider.default_model,
+            &req,
+            &req.sibling_identity,
+            &req.user_prompt,
+        );
+        let args: Vec<&OsStr> = cmd.as_std().get_args().collect();
+        let args_str: Vec<&str> = args.iter().filter_map(|a| a.to_str()).collect();
+
+        let strict_pos = args_str
+            .iter()
+            .position(|a| *a == "--strict-mcp-config")
+            .expect("--strict-mcp-config must be present in subprocess command");
+        let mcp_config_pos = args_str
+            .iter()
+            .position(|a| *a == "--mcp-config")
+            .expect("--mcp-config must be present in subprocess command");
+        let dev_null_pos = mcp_config_pos + 1;
+
+        assert!(
+            args_str.get(dev_null_pos) == Some(&"/dev/null"),
+            "--mcp-config must be followed by /dev/null"
+        );
+        assert!(
+            strict_pos < mcp_config_pos,
+            "--strict-mcp-config must precede --mcp-config"
         );
     }
 }

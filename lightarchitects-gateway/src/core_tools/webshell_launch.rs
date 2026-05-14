@@ -132,7 +132,10 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
             if let Some(nonce) = register_nonce(port, t).await {
                 format!("http://localhost:{port}/#nonce={nonce}")
             } else {
-                warn!(port, "nonce registration failed — URL will not include auth fragment");
+                warn!(
+                    port,
+                    "nonce registration failed — URL will not include auth fragment"
+                );
                 format!("http://localhost:{port}/")
             }
         }
@@ -213,12 +216,7 @@ async fn register_nonce(port: u16, token: &str) -> Option<uuid::Uuid> {
         .build()
         .ok()?;
     let url = format!("http://127.0.0.1:{port}/api/auth/nonce");
-    let resp = client
-        .post(&url)
-        .bearer_auth(token)
-        .send()
-        .await
-        .ok()?;
+    let resp = client.post(&url).bearer_auth(token).send().await.ok()?;
     if !resp.status().is_success() {
         return None;
     }

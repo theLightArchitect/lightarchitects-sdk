@@ -16,6 +16,8 @@
 //! # }
 //! ```
 
+/// Interactive coding agent — NDJSON streaming + TTY REPL.
+pub mod agent_stream;
 /// Arena — autonomous multi-agent research platform (HTTP + scheduler + heartbeats).
 #[allow(unused, missing_docs, clippy::pedantic)]
 pub mod arena;
@@ -28,6 +30,8 @@ pub mod cli;
 pub mod conductor;
 /// Gateway configuration: typed schema and loader.
 pub mod config;
+/// Conversational build mode — pair programmer in a box.
+pub mod conversational;
 /// Core tool implementations.
 pub mod core_tools;
 /// Error types.
@@ -39,6 +43,10 @@ pub mod handlers;
 /// Platform HTTP mode — private REST API backed by local Neo4j (`/v1/platform/*`).
 #[allow(missing_docs, clippy::pedantic)]
 pub mod http;
+/// Shared LLM client — Ollama, OpenAI-compatible, Anthropic.
+pub mod llm;
+/// LASDLC C1-C8 effectiveness rubric — grades agent/task outputs.
+pub mod rubric;
 /// HMAC-SHA256 signing and verification for LASDLC hook payloads.
 pub mod security;
 /// MCP server loop and tool dispatch.
@@ -54,13 +62,5 @@ pub mod spawner;
 pub mod squad_comms;
 /// Vault-as-git — pre-push validation and public companion repo sync.
 pub mod vault;
-/// LASDLC C1-C8 effectiveness rubric — grades agent/task outputs.
-pub mod rubric;
-/// Conversational build mode — pair programmer in a box.
-pub mod conversational;
-/// Interactive coding agent — NDJSON streaming + TTY REPL.
-pub mod agent_stream;
 /// Build-time version metadata (CARGO_PKG_VERSION + git-sha + build-date).
 pub mod version;
-/// Shared LLM client — Ollama, OpenAI-compatible, Anthropic.
-pub mod llm;

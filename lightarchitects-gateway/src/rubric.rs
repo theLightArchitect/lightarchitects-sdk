@@ -77,14 +77,8 @@ impl RubricScore {
     /// C1=10%, C2=15%, C3=15%, C4=10%, C5=10%, C6=10%, C7=15%, C8=15%.
     #[must_use]
     pub fn compute(c1: f32, c2: f32, c3: f32, c4: f32, c5: f32, c6: f32, c7: f32, c8: f32) -> Self {
-        let aggregate = c1 * 1.0
-            + c2 * 1.5
-            + c3 * 1.5
-            + c4 * 1.0
-            + c5 * 1.0
-            + c6 * 1.0
-            + c7 * 1.5
-            + c8 * 1.5;
+        let aggregate =
+            c1 * 1.0 + c2 * 1.5 + c3 * 1.5 + c4 * 1.0 + c5 * 1.0 + c6 * 1.0 + c7 * 1.5 + c8 * 1.5;
         let aggregate = aggregate.clamp(0.0, 100.0);
         Self {
             c1: c1.clamp(0.0, 10.0),
@@ -104,7 +98,15 @@ impl RubricScore {
     #[must_use]
     pub fn to_array(&self) -> [f32; 9] {
         [
-            self.c1, self.c2, self.c3, self.c4, self.c5, self.c6, self.c7, self.c8, self.aggregate,
+            self.c1,
+            self.c2,
+            self.c3,
+            self.c4,
+            self.c5,
+            self.c6,
+            self.c7,
+            self.c8,
+            self.aggregate,
         ]
     }
 }
@@ -120,7 +122,11 @@ impl RubricScore {
 /// - C7 via EVA interest scorer
 /// - C8 via SOUL helix RRF relevance
 #[must_use]
-pub fn grade_agent_result(content: &str, tokens_used: usize, task_description: &str) -> RubricScore {
+pub fn grade_agent_result(
+    content: &str,
+    tokens_used: usize,
+    task_description: &str,
+) -> RubricScore {
     let c1 = score_completeness(content, task_description);
     let c2 = 5.0; // placeholder — cross-validation flag not yet wired
     let c3 = 5.0; // placeholder — gate verdict aggregation not yet wired
@@ -136,7 +142,10 @@ pub fn grade_agent_result(content: &str, tokens_used: usize, task_description: &
 ///
 /// Uses the build manifest (plan) and the final build status to derive scores.
 #[must_use]
-pub fn grade_build_entry(manifest_lines: &[std::borrow::Cow<'_, str>], status: &str) -> RubricScore {
+pub fn grade_build_entry(
+    manifest_lines: &[std::borrow::Cow<'_, str>],
+    status: &str,
+) -> RubricScore {
     let plan_text = manifest_lines.join("\n");
 
     let c1 = if status == "completed" { 8.0 } else { 5.0 };
@@ -190,11 +199,14 @@ fn score_completeness(output: &str, task: &str) -> f32 {
 /// Penalise jargon-heavy output; reward concise, actionable responses.
 fn score_operator_experience(output: &str) -> f32 {
     let jargon = [
-        "LASDLC", "CORSO", "EVA", "SOUL", "QUANTUM", "SERAPH", "AYIN", "LÆX",
-        "helix", "vault", "sibling", "MCP",
+        "LASDLC", "CORSO", "EVA", "SOUL", "QUANTUM", "SERAPH", "AYIN", "LÆX", "helix", "vault",
+        "sibling", "MCP",
     ];
     let lower = output.to_lowercase();
-    let jargon_count = jargon.iter().filter(|jw| lower.contains(&jw.to_lowercase())).count();
+    let jargon_count = jargon
+        .iter()
+        .filter(|jw| lower.contains(&jw.to_lowercase()))
+        .count();
 
     let base = if output.len() > 1000 { 5.0 } else { 7.0 };
     let penalty = jargon_count as f32 * 0.5;
@@ -250,7 +262,10 @@ fn score_context_precision(output: &str, task: &str) -> f32 {
 /// Extract meaningful keywords from a text (lowercased, deduplicated).
 fn extract_keywords(text: &str) -> HashSet<String> {
     text.split_whitespace()
-        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
+        .map(|w| {
+            w.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase()
+        })
         .filter(|w| w.len() >= 4)
         .collect()
 }
@@ -312,9 +327,10 @@ impl RubricStore {
         score: &RubricScore,
     ) -> Result<(), rusqlite::Error> {
         let now = chrono::Utc::now().timestamp();
-        let guard = self.conn.lock().map_err(|_| {
-            rusqlite::Error::ExecuteReturnedResults
-        })?;
+        let guard = self
+            .conn
+            .lock()
+            .map_err(|_| rusqlite::Error::ExecuteReturnedResults)?;
         guard.execute(
             "INSERT INTO rubric_scores
              (task_id, agent_kind, c1, c2, c3, c4, c5, c6, c7, c8, aggregate, band, graded_at)
@@ -349,9 +365,10 @@ impl RubricStore {
         agent_kind: &str,
         days: u32,
     ) -> Result<f32, rusqlite::Error> {
-        let guard = self.conn.lock().map_err(|_| {
-            rusqlite::Error::ExecuteReturnedResults
-        })?;
+        let guard = self
+            .conn
+            .lock()
+            .map_err(|_| rusqlite::Error::ExecuteReturnedResults)?;
         let seconds = i64::from(days) * 86_400;
         let since = chrono::Utc::now().timestamp() - seconds;
         let avg: f64 = guard.query_row(
@@ -369,9 +386,10 @@ impl RubricStore {
     /// # Errors
     /// Returns `rusqlite::Error` on query failure.
     pub fn count(&self) -> Result<usize, rusqlite::Error> {
-        let guard = self.conn.lock().map_err(|_| {
-            rusqlite::Error::ExecuteReturnedResults
-        })?;
+        let guard = self
+            .conn
+            .lock()
+            .map_err(|_| rusqlite::Error::ExecuteReturnedResults)?;
         let n: i64 = guard.query_row("SELECT COUNT(*) FROM rubric_scores", [], |row| row.get(0))?;
         Ok(n as usize)
     }
@@ -422,7 +440,10 @@ mod tests {
     #[test]
     fn grade_agent_result_with_empty_output() {
         let score = grade_agent_result("", 0, "implement login page");
-        assert!(score.c1 <= 5.0, "empty output should score low on completeness");
+        assert!(
+            score.c1 <= 5.0,
+            "empty output should score low on completeness"
+        );
         assert_eq!(score.c5, 9.0, "zero tokens = excellent resource discipline");
     }
 
@@ -430,7 +451,10 @@ mod tests {
     fn grade_agent_result_with_jargon() {
         let output = "The LASDLC CORSO gate requires SOUL helix vault injection for LÆX alignment.";
         let score = grade_agent_result(output, 500, "how do I login");
-        assert!(score.c4 < 5.0, "jargon-heavy output should score low on OpEx");
+        assert!(
+            score.c4 < 5.0,
+            "jargon-heavy output should score low on OpEx"
+        );
     }
 
     #[test]

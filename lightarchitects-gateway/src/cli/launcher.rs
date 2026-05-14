@@ -121,10 +121,7 @@ impl LauncherConfig {
     /// Returns [`io::Error`] if the home directory or write fails.
     pub fn save(&self) -> io::Result<()> {
         let Some(path) = launcher_path() else {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "$HOME not set",
-            ));
+            return Err(io::Error::new(io::ErrorKind::NotFound, "$HOME not set"));
         };
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -137,9 +134,8 @@ impl LauncherConfig {
         let wrapped = LauncherToml {
             launcher: self.clone(),
         };
-        let toml = toml::to_string_pretty(&wrapped).map_err(|e| {
-            io::Error::new(io::ErrorKind::InvalidData, e.to_string())
-        })?;
+        let toml = toml::to_string_pretty(&wrapped)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
         let tmp = path.with_extension("tmp");
         std::fs::write(&tmp, &toml)?;
         #[cfg(unix)]
