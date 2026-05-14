@@ -18,7 +18,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use lightarchitects::core::handler::{HandlerError, SiblingHandler};
+use lightarchitects::core::handler::{HandlerConfig, HandlerError, SiblingHandler};
 use serde_json::{Value, json};
 
 use crate::config::GatewayConfig;
@@ -155,10 +155,7 @@ impl SiblingHandler for SoulHandler {
         }))
     }
 
-    async fn initialize(
-        &self,
-        _config: &lightarchitects::core::handler::HandlerConfig,
-    ) -> Result<(), HandlerError> {
+    async fn initialize(&self, _config: &HandlerConfig) -> Result<(), HandlerError> {
         // TODO: Initialize SOUL AppState (vault root, optional Neo4j, embed provider).
         // With `helix` feature: also initialize Neo4j connection and fastembed.
         Ok(())

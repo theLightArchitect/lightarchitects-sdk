@@ -137,7 +137,8 @@ fn p50(sorted: &[u64]) -> u64 {
 }
 
 fn p95(sorted: &[u64]) -> u64 {
-    sorted[(sorted.len() as f64 * 0.95) as usize]
+    let idx = ((sorted.len() - 1) as f64 * 0.95) as usize;
+    sorted[idx]
 }
 
 #[test]

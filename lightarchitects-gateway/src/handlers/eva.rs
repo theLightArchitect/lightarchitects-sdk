@@ -425,10 +425,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn non_llm_action_still_stubs() {
-        // "chat" is NOT in EVA_LLM_ACTIONS — should still return text stub.
+    async fn deploy_is_keep_and_still_stubs() {
+        // "deploy" is a non-verdict_y Operations action — must NOT dispatch to provider.
         let h = EvaHandler::with_provider(Arc::new(EchoProvider));
-        let result = h.call("chat", serde_json::json!({})).await;
+        let result = h
+            .call("deploy", serde_json::json!({"env": "staging"}))
+            .await;
         assert!(result.is_ok());
         let text = result.unwrap()["content"][0]["text"]
             .as_str()
@@ -436,7 +438,7 @@ mod tests {
             .to_owned();
         assert!(
             text.contains("stub"),
-            "chat is not verdict_y; must still stub: {text}"
+            "deploy is not verdict_y; must still return stub: {text}"
         );
     }
 
