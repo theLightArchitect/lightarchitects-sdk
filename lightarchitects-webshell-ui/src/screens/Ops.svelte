@@ -145,6 +145,7 @@
     debug:      'hexadecachoron',
     'pr-review': 'icositetrachoron',
     focus:      'duoprism55',
+    observe:    'hexacosichoron',
   };
 
   const PRESET_SHORT: Record<LayoutPreset, string> = {
@@ -153,6 +154,7 @@
     debug:      'DEBUG',
     'pr-review': 'SHIP',
     focus:      'AGENT',
+    observe:    'OBSERVE',
   };
 
   const PRESET_TOOLTIP: Record<LayoutPreset, string> = {
@@ -161,6 +163,7 @@
     debug:      'Debug — agent console | findings | terminal to reproduce and fix',
     'pr-review': 'Ship — diff what changed | terminal to push | build status confirm',
     focus:      'Agent — full-screen console, watch a single run live',
+    observe:    'Observe — agent console | live AYIN trace dataflow diagrams',
   };
 
   const PRESET_TITLES: Record<LayoutPreset, string> = {
@@ -169,6 +172,7 @@
     debug:      'Debug layout     Ctrl+Shift+3',
     'pr-review': 'Ship layout      Ctrl+Shift+4',
     focus:      'Agent layout     Ctrl+Shift+5',
+    observe:    'Observe layout   Ctrl+Shift+6',
   };
 
   $effect(() => {
@@ -178,6 +182,7 @@
       ['layout-debug',     '3', 'debug',     true],
       ['layout-pr-review', '4', 'pr-review', true],
       ['layout-focus',     '5', 'focus',     true],
+      ['layout-observe',   '6', 'observe',   true],
     ];
     const unreg = presets.map(([id, num, preset, mosaic]) =>
       registerHotkey({

@@ -975,10 +975,11 @@ export type PanelId =
   | 'file-explorer'
   | 'build-status'
   | 'findings'
-  | 'helix';
+  | 'helix'
+  | 'ayin-traces';
 
-/** The five built-in layout presets. */
-export type LayoutPreset = 'ops' | 'ide' | 'debug' | 'pr-review' | 'focus';
+/** The six built-in layout presets. */
+export type LayoutPreset = 'ops' | 'ide' | 'debug' | 'pr-review' | 'focus' | 'observe';
 
 /**
  * Recursive panel tree using Zed's flex-ratio model.
@@ -999,7 +1000,8 @@ export type PanelContext =
   | { type: 'finding'; finding: Finding }
   | { type: 'terminal'; recentOutput: string }
   | { type: 'git-forest'; repoName: string }
-  | { type: 'helix'; query?: string };
+  | { type: 'helix'; query?: string }
+  | { type: 'ayin-traces'; spanCount?: number };
 
 /** Cross-panel navigation request (e.g. finding → file-diff at line N). */
 export interface PanelNavRequest {

@@ -62,12 +62,25 @@ const PR_REVIEW_PRESET: PanelTree = {
 /** Agent: single agent run, full attention */
 const FOCUS_PRESET: PanelTree = { type: 'leaf', panelId: 'agent-console' };
 
+/** Observe: live AYIN traces with agent activity context
+ *  agent-console 40% | ayin-traces 60% */
+const OBSERVE_PRESET: PanelTree = {
+  type: 'axis',
+  direction: 'row',
+  children: [
+    { type: 'leaf', panelId: 'agent-console' },
+    { type: 'leaf', panelId: 'ayin-traces' },
+  ],
+  flexes: [1.2, 1.8],
+};
+
 export const PRESETS: Record<LayoutPreset, PanelTree> = {
   ops: OPS_PRESET,
   ide: IDE_PRESET,
   debug: DEBUG_PRESET,
   'pr-review': PR_REVIEW_PRESET,
   focus: FOCUS_PRESET,
+  observe: OBSERVE_PRESET,
 };
 
 // ── Flex-ratio validation ─────────────────────────────────────────────────────
@@ -193,6 +206,7 @@ const LS_CUSTOM_PRESETS_KEY = 'la_custom_presets';
 const VALID_PANEL_IDS = new Set<string>([
   'copilot', 'terminal', 'git-forest', 'agent-console',
   'file-diff', 'file-explorer', 'build-status', 'findings', 'helix',
+  'ayin-traces',
 ]);
 
 function isValidPanelTree(node: unknown): boolean {

@@ -16,6 +16,7 @@
     'build-status':  { label: 'Build Status',  icon: '◧', color: 'var(--la-agent-security)' },
     'findings':      { label: 'Findings',      icon: '⊛', color: 'var(--la-semantic-warn)' },
     'helix':         { label: 'Helix',         icon: '⬡', color: 'var(--la-struct-accent)' },
+    'ayin-traces':   { label: 'AYIN Traces',   icon: '◎', color: 'var(--la-agent-ops, #f97316)' },
   };
 
   // Track which panels are currently in the tree for visibility management

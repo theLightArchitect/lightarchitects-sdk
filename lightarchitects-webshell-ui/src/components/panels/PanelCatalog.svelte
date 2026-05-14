@@ -17,6 +17,7 @@
     { id: 'findings',      label: 'Findings',        desc: 'Quality and security issues' },
     { id: 'git-forest',    label: 'Git Branches',    desc: 'Branch topology and commits' },
     { id: 'helix',         label: 'Knowledge Graph', desc: '3D project memory graph' },
+    { id: 'ayin-traces',   label: 'AYIN Traces',     desc: 'Live trace dataflow diagrams from AYIN at :3742' },
   ];
 
   let inLayout = $derived(collectPanelIds($layoutTree));

@@ -9,6 +9,7 @@
   import Helix3D from '$lib/../components/Helix3D.svelte';
   import CopilotDrawer from '$lib/../components/CopilotDrawer.svelte';
   import DiffPreview from '$lib/../components/DiffPreview.svelte';
+  import AyinTracesPanel from '$lib/../components/panels/AyinTracesPanel.svelte';
 
   interface Props {
     panelId: PanelId;
@@ -28,6 +29,7 @@
     'build-status':  { label: 'Build Status',    icon: '◧', color: 'var(--la-agent-security)' },
     'findings':      { label: 'Findings',        icon: '⊛', color: 'var(--la-semantic-warn)' },
     'helix':         { label: 'Helix',           icon: '⬡', color: 'var(--la-struct-accent)' },
+    'ayin-traces':   { label: 'AYIN Traces',     icon: '◎', color: 'var(--la-agent-ops, #f97316)' },
   };
 
   let meta = $derived(PANEL_META[panelId]);
@@ -37,6 +39,7 @@
     if (panelId === 'git-forest') ctx = { type: 'git-forest', repoName: 'lightarchitects-sdk' };
     else if (panelId === 'helix')  ctx = { type: 'helix' };
     else if (panelId === 'terminal') ctx = { type: 'terminal', recentOutput: '' };
+    else if (panelId === 'ayin-traces') ctx = { type: 'ayin-traces' };
     activePanelContext.set(ctx);
   }
 
@@ -102,6 +105,11 @@
       <span class="stub-icon">⊛</span>
       <span class="stub-label">FINDINGS</span>
       <span class="stub-note">Phase 2</span>
+    </div>
+
+  {:else if panelId === 'ayin-traces'}
+    <div class="panel-fill">
+      <AyinTracesPanel />
     </div>
   {/if}
 </div>
