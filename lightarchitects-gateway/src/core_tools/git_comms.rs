@@ -431,7 +431,7 @@ pub async fn run_commit(params: Value) -> Result<Value, GatewayError> {
 ///
 /// # Errors
 ///
-/// Returns [`GatewayError::Forbidden`] when `force: true` is present.
+/// Returns [`GatewayError::Subprocess`] when `force: true` is present.
 /// Returns [`GatewayError`] on invalid params or git subprocess failure.
 #[instrument(skip(params))]
 pub async fn run_push(params: Value) -> Result<Value, GatewayError> {

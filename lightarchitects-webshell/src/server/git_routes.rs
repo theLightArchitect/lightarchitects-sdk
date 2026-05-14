@@ -456,8 +456,11 @@ pub async fn push_handler(
     tracing::info!(git.auth_present = auth_present, "git push auth check");
     let set_upstream = body["set_upstream"].as_bool().unwrap_or(false);
     let args: Vec<&str> = if set_upstream {
-        let branch = body["branch"].as_str().unwrap_or("HEAD");
-        vec!["push", "--set-upstream", "origin", branch]
+        let branch_raw = body["branch"].as_str().unwrap_or("HEAD");
+        if let Err(e) = validate_branch_name(branch_raw) {
+            return bad_request(e).into_response();
+        }
+        vec!["push", "--set-upstream", "origin", branch_raw]
     } else {
         vec!["push"]
     };
