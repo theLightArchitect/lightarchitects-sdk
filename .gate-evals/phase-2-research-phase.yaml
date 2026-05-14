@@ -1,0 +1,46 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-14T05:00:00Z"
+build_id: git-and-pr
+phase_id: phase-2-research
+overall_verdict: pass
+notes: |
+  Branch base corrected: feat/eef/git-and-pr was initialized from main (c903764) instead
+  of feat/embodied-engineering-forge (90d64f3). Reset performed (approved by operator) since
+  Phase 2 was research-only (zero own commits). One pre-existing EEF merge artifact fixed:
+  duplicate voiceEnabled export in stores.ts (committed as fix: 02f53f6).
+  All Q1-Q4 gates clean after frontend build.
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 94
+    tests_fail: 0
+  Q4_svelte:
+    pnpm_test_run:
+      result: pass
+      tests_run: 473
+      tests_fail: 0
+    svelte_check:
+      result: pass
+      errors: 0
+      warnings: 9
+  D2_plan:
+    result: pass
+    notes: >
+      Phase 2 exit criteria all [x] COMPLETE. Phase 3 entry blockers updated:
+      R-5, latency budget, reqwest auth span marked [x] (completed in Phase 2).
+      PAT storage + T-8 UI disclosure remain [ ] (Phase 3 implementation gates).
+      Plan frontmatter updated: phase=gate-2, updated=2026-05-14.
+infrastructure_fix:
+  branch_base_reset:
+    from: c903764bb1063aeb113e5d3519ccf1e150cc88cd
+    to: 90d64f3 (feat/embodied-engineering-forge tip, E2 merged)
+    reason: Branch was erroneously created from main instead of EEF parent
+    approved_by: operator
+  stores_ts_fix:
+    commit: 02f53f6
+    description: Remove duplicate voiceEnabled export (E2 merge artifact)
+    pre_existing: true

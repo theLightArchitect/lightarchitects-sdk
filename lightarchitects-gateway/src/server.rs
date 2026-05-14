@@ -32,6 +32,7 @@ pub fn all_tool_definitions() -> Vec<Value> {
     tools.extend(squad_tool_defs());
     tools.extend(exec_tool_defs());
     tools.extend(code_tool_defs());
+    tools.extend(git_tool_defs());
     tools
 }
 
@@ -149,6 +150,24 @@ fn squad_tool_defs() -> Vec<Value> {
         json!({"name": "lightarchitects_import", "description": "Import content from external systems. Adapters: obsidian/markdown (scan directory for .md files, extract H1 titles), mcp (generate a [agents.<name>] TOML block for a custom agent).", "inputSchema": {"type": "object", "properties": {"adapter": {"type": "string", "description": "Import adapter to use.", "enum": ["obsidian", "markdown", "mcp"]}, "path": {"type": "string", "description": "Directory to scan (required for obsidian/markdown adapters)."}, "name": {"type": "string", "description": "New agent name (required for mcp adapter)."}, "binary": {"type": "string", "description": "Binary path for the new agent (optional, for mcp adapter)."}, "tool_name": {"type": "string", "description": "MCP tool name for the new agent (optional, for mcp adapter)."}, "role": {"type": "string", "description": "Human-readable description of the agent's role (optional, for mcp adapter)."}}, "required": ["adapter"]}}),
     ]);
     tools
+}
+
+/// Git operation tool definitions: `git.*` — EEF Wave E3 (git-and-pr).
+///
+/// All tools enforce T-7 (CWE-78) command injection mitigation: structured
+/// `Command::new("git").args([...])`, branch-name allowlist validation,
+/// `cwd` canonicalization, and force-push prevention (T-5).
+fn git_tool_defs() -> Vec<Value> {
+    vec![
+        json!({"name": "lightarchitects_git_status", "description": "Return the porcelain v1 status of a working tree. Returns {files: [{path, status}], clean}.", "inputSchema": {"type": "object", "properties": {"cwd": {"type": "string", "description": "Working directory (absolute path, ~/ expanded)."}}, "required": ["cwd"]}}),
+        json!({"name": "lightarchitects_git_branch", "description": "Perform a branch operation: list, create, switch, or delete. Branch names are validated against the T-7 allowlist.", "inputSchema": {"type": "object", "properties": {"op": {"type": "string", "enum": ["list", "create", "switch", "delete"], "description": "Operation to perform."}, "name": {"type": "string", "description": "Branch name (required for create/switch/delete)."}, "cwd": {"type": "string", "description": "Working directory."}}, "required": ["op", "cwd"]}}),
+        json!({"name": "lightarchitects_git_diff", "description": "Return the diff for a working tree. Returns {diff: string}.", "inputSchema": {"type": "object", "properties": {"cwd": {"type": "string", "description": "Working directory."}, "staged": {"type": "boolean", "description": "If true, show staged (index) diff (default false)."}, "path": {"type": "string", "description": "Optional path filter."}}, "required": ["cwd"]}}),
+        json!({"name": "lightarchitects_git_commit", "description": "Commit staged changes with --no-verify. Returns {sha, message}.", "inputSchema": {"type": "object", "properties": {"cwd": {"type": "string", "description": "Working directory."}, "message": {"type": "string", "description": "Commit message."}}, "required": ["cwd", "message"]}}),
+        json!({"name": "lightarchitects_git_push", "description": "Push the current branch to origin. Force push is permanently disabled (T-5). Returns {pushed, url?}.", "inputSchema": {"type": "object", "properties": {"cwd": {"type": "string", "description": "Working directory."}, "set_upstream": {"type": "boolean", "description": "Pass --set-upstream origin <branch> (default false)."}, "branch": {"type": "string", "description": "Branch name — required when set_upstream is true."}, "force": {"type": "boolean", "description": "Always rejected — force push is disabled."}}, "required": ["cwd"]}}),
+        json!({"name": "lightarchitects_git_pull", "description": "Pull with --ff-only. Returns {merged, commits}.", "inputSchema": {"type": "object", "properties": {"cwd": {"type": "string", "description": "Working directory."}}, "required": ["cwd"]}}),
+        json!({"name": "lightarchitects_git_create_pr", "description": "Create a GitHub pull request via the REST API. Requires a GitHub PAT in keyring or LIGHTARCHITECTS_GITHUB_PAT env var. Returns {number, url, title}.", "inputSchema": {"type": "object", "properties": {"owner": {"type": "string", "description": "GitHub repository owner."}, "repo": {"type": "string", "description": "GitHub repository name."}, "title": {"type": "string", "description": "PR title."}, "head": {"type": "string", "description": "Head branch."}, "base": {"type": "string", "description": "Base branch."}, "body": {"type": "string", "description": "PR description (optional)."}}, "required": ["owner", "repo", "title", "head", "base"]}}),
+        json!({"name": "lightarchitects_git_review_pr", "description": "Submit a GitHub PR review via the REST API. Inline comments must use comments[].position (diff-position integer). Returns {id, state}.", "inputSchema": {"type": "object", "properties": {"owner": {"type": "string", "description": "GitHub repository owner."}, "repo": {"type": "string", "description": "GitHub repository name."}, "number": {"type": "integer", "description": "PR number."}, "event": {"type": "string", "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT"], "description": "Review event."}, "body": {"type": "string", "description": "Review body (optional)."}, "comments": {"type": "array", "description": "Inline review comments. Each must include path, position (diff-position integer), and body.", "items": {"type": "object"}}}, "required": ["owner", "repo", "number", "event"]}}),
+    ]
 }
 
 // ── MCP server loop ───────────────────────────────────────────────────────────
@@ -331,6 +350,15 @@ async fn dispatch(
         "lightarchitects_code_preview_diff" => {
             core_tools::code_comms::run_preview_diff(params, config)
         }
+        // Git operations — EEF Wave E3 (git-and-pr).
+        "lightarchitects_git_status" => core_tools::git_comms::run_status(params).await,
+        "lightarchitects_git_branch" => core_tools::git_comms::run_branch_op(params).await,
+        "lightarchitects_git_diff" => core_tools::git_comms::run_diff(params).await,
+        "lightarchitects_git_commit" => core_tools::git_comms::run_commit(params).await,
+        "lightarchitects_git_push" => core_tools::git_comms::run_push(params).await,
+        "lightarchitects_git_pull" => core_tools::git_comms::run_pull(params).await,
+        "lightarchitects_git_create_pr" => core_tools::git_comms::run_create_pr(params).await,
+        "lightarchitects_git_review_pr" => core_tools::git_comms::run_review_pr(params).await,
         _ => Err(GatewayError::UnknownTool(tool_name.to_owned())),
     }
 }
@@ -358,9 +386,9 @@ mod tests {
     }
 
     #[test]
-    fn all_tool_definitions_has_thirty_one_entries() {
-        // 1 meta + 6 file + 3 platform + 11 squad (7 squad_comms + 4 original) + 4 exec + 6 code
-        assert_eq!(all_tool_definitions().len(), 31);
+    fn all_tool_definitions_has_thirty_nine_entries() {
+        // 1 meta + 6 file + 3 platform + 11 squad (7 squad_comms + 4 original) + 4 exec + 6 code + 8 git
+        assert_eq!(all_tool_definitions().len(), 39);
     }
 
     #[test]
