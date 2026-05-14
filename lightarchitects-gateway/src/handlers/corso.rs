@@ -8,7 +8,7 @@
 //! # Phase 3 pilot
 //!
 //! `sniff` and `scout` are wired to [`ClaudeCliProvider`] as the first two
-//! LLM_AGENT verdict_y actions. All other LLM_AGENT actions remain stubbed
+//! `LLM_AGENT` `verdict_y` actions. All other `LLM_AGENT` actions remain stubbed
 //! until Phase 4.
 //!
 //! # Heavy dependencies
@@ -65,7 +65,7 @@ const CORSO_ACTIONS: &[&str] = &[
 ];
 
 /// Phase 3 pilot: two actions wired to LLM provider.
-/// Remaining verdict_y LLM_AGENT actions (code_review, guard, fetch, prove,
+/// Remaining `verdict_y` `LLM_AGENT` actions (code\_review, guard, fetch, prove,
 /// optimize, chase) are migrated in Phase 4.
 const PILOT_LLM_ACTIONS: &[&str] = &["sniff", "scout"];
 
@@ -119,7 +119,7 @@ impl SiblingHandler for CorsoHandler {
 
         // Phase 3 pilot: route sniff + scout through LLM provider.
         if PILOT_LLM_ACTIONS.contains(&action) {
-            let prompt = build_prompt(action, &params);
+            let prompt = build_prompt(action, &params)?;
             let req = AgentRequest {
                 sibling_identity: CORSO_IDENTITY.to_owned(),
                 user_prompt: prompt,
@@ -150,10 +150,30 @@ impl SiblingHandler for CorsoHandler {
     }
 }
 
+/// Maximum bytes allowed for pretty-printed params before prompt construction.
+/// Headroom below `MAX_PARAM_BYTES` (8192) to leave room for the action header.
+const MAX_PARAMS_PRETTY_BYTES: usize = 4_096;
+
 /// Build the LLM prompt for a dispatched action.
-fn build_prompt(action: &str, params: &Value) -> String {
+///
+/// # Errors
+///
+/// Returns [`HandlerError::InvalidParams`] if the pretty-printed params exceed
+/// [`MAX_PARAMS_PRETTY_BYTES`]. This guards against params that are compact as
+/// JSON Values but expand significantly when pretty-printed (G1 / HIGH-2).
+fn build_prompt(action: &str, params: &Value) -> Result<String, HandlerError> {
     let params_str = serde_json::to_string_pretty(params).unwrap_or_else(|_| "{}".to_owned());
-    format!("Action: {action}\n\nParameters:\n{params_str}")
+    if params_str.len() > MAX_PARAMS_PRETTY_BYTES {
+        return Err(HandlerError::invalid_params(
+            "corso",
+            action,
+            format!(
+                "params payload too large after serialization ({} > {MAX_PARAMS_PRETTY_BYTES} bytes)",
+                params_str.len()
+            ),
+        ));
+    }
+    Ok(format!("Action: {action}\n\nParameters:\n{params_str}"))
 }
 
 /// Map a [`ProviderError`] to the appropriate [`HandlerError`] variant.
@@ -314,6 +334,19 @@ mod tests {
             result.unwrap_err(),
             HandlerError::NotInitialized { .. }
         ));
+    }
+
+    #[tokio::test]
+    async fn sniff_rejects_oversized_params() {
+        let h = CorsoHandler::with_provider(Arc::new(EchoProvider));
+        // Construct a params Value whose pretty-printed form exceeds MAX_PARAMS_PRETTY_BYTES.
+        let big_str = "x".repeat(5_000);
+        let result = h.call("sniff", serde_json::json!({"data": big_str})).await;
+        assert!(result.is_err());
+        assert!(
+            matches!(result.unwrap_err(), HandlerError::InvalidParams { .. }),
+            "oversized params must yield InvalidParams"
+        );
     }
 
     #[tokio::test]

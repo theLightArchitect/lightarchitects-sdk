@@ -305,15 +305,20 @@ async fn spawn_with_timeout(
     mut cmd: tokio::process::Command,
     timeout_dur: Duration,
 ) -> Result<std::process::Output, ProviderError> {
-    let child = cmd
-        .spawn()
-        .map_err(|e| ProviderError::Internal(e.to_string()))?;
+    let child = cmd.spawn().map_err(|e| {
+        // Log detail to traces only — never surface OS error strings to callers (G10 / S3).
+        warn!(provider = "claude-cli", err = %e, "subprocess spawn failed");
+        ProviderError::Internal("subprocess launch failed".to_owned())
+    })?;
 
     let result = tokio::time::timeout(timeout_dur, child.wait_with_output()).await;
 
     match result {
         Ok(Ok(output)) => Ok(output),
-        Ok(Err(e)) => Err(ProviderError::Internal(e.to_string())),
+        Ok(Err(e)) => {
+            warn!(provider = "claude-cli", err = %e, "subprocess wait_with_output failed");
+            Err(ProviderError::Internal("subprocess I/O error".to_owned()))
+        }
         Err(_elapsed) => Err(ProviderError::SubprocessTimeout {
             used_turns: 0,
             used_budget_usd: 0.0,
