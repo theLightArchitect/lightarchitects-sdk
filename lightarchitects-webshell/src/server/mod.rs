@@ -45,6 +45,8 @@ use crate::{
 };
 
 pub mod code_routes;
+pub mod exec_routes;
+pub mod git_routes;
 
 /// Snapshot of the browser UI state, periodically reported by the frontend.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -557,6 +559,11 @@ pub fn build_app(state: AppState) -> Router {
         .merge(dispatch::dispatch_router())
         // ── File listing for @-file autocomplete ─────────────────────────────
         .route("/api/files", get(list_files_handler))
+        // ── Process execution API (EEF Wave 2 — E2 gate) ─────────────────────
+        .route("/api/exec/run", post(exec_routes::run_handler))
+        .route("/api/exec/output/{handle}", get(exec_routes::output_handler))
+        .route("/api/exec/processes", get(exec_routes::processes_handler))
+        .route("/api/exec/kill", post(exec_routes::kill_handler))
         // ── Code editor API (EEF Phase 3 Wave 1) ─────────────────────────────
         .route("/api/code/read", get(code_routes::read_handler))
         .route("/api/code/list", get(code_routes::list_handler))
@@ -570,6 +577,15 @@ pub fn build_app(state: AppState) -> Router {
             "/api/code/apply-diff",
             post(code_routes::apply_diff_handler),
         )
+        // ── Git operations API (EEF Wave E3 — git-and-pr) ────────────────────
+        .route("/api/git/status", post(git_routes::status_handler))
+        .route("/api/git/branch", post(git_routes::branch_handler))
+        .route("/api/git/diff", post(git_routes::diff_handler))
+        .route("/api/git/commit", post(git_routes::commit_handler))
+        .route("/api/git/push", post(git_routes::push_handler))
+        .route("/api/git/pull", post(git_routes::pull_handler))
+        .route("/api/git/pr/create", post(git_routes::create_pr_handler))
+        .route("/api/git/pr/review", post(git_routes::review_pr_handler))
         // ── CSP violation reports (SEC-3b, Enforce phase) ────────────────────
         .route("/api/csp-report", post(csp::csp_report_handler))
         .fallback(static_assets::serve)

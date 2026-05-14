@@ -30,7 +30,9 @@ pub fn all_tool_definitions() -> Vec<Value> {
     tools.extend(file_tool_defs());
     tools.extend(platform_tool_defs());
     tools.extend(squad_tool_defs());
+    tools.extend(exec_tool_defs());
     tools.extend(code_tool_defs());
+    tools.extend(git_tool_defs());
     tools
 }
 
@@ -104,6 +106,19 @@ fn platform_tool_defs() -> Vec<Value> {
     ]
 }
 
+/// Process execution tool definitions: `exec.*` — EEF Wave 2 (shell-and-output).
+///
+/// All tools enforce T-1 command injection mitigation: structured argv, approved-binary
+/// allowlist, metacharacter rejection, and 50 req/10s rate limiting.
+fn exec_tool_defs() -> Vec<Value> {
+    vec![
+        json!({"name": "lightarchitects_exec_run_command", "description": "Spawn a process with structured argv (T-1 safe — no shell string). Returns {pid, stream_handle}. Use exec.get_output to poll streaming output. Permitted binaries: cargo, cargo-nextest, pnpm, npx, vitest, playwright, node, rustfmt, clippy-driver.", "inputSchema": {"type": "object", "properties": {"argv": {"type": "array", "items": {"type": "string"}, "description": "Structured argv. argv[0] must be a permitted binary. No shell metacharacters."}, "cwd": {"type": "string", "description": "Working directory. ~/ prefix is expanded."}, "env": {"type": "object", "description": "Optional extra environment variables (merged with parent env).", "additionalProperties": {"type": "string"}}, "timeout_ms": {"type": "integer", "description": "Kill timeout in milliseconds (default: 300000 / 5 min)."}}, "required": ["argv", "cwd"]}}),
+        json!({"name": "lightarchitects_exec_list_processes", "description": "List all tracked exec.run_command processes with their status, command, and output line count.", "inputSchema": {"type": "object", "properties": {}}}),
+        json!({"name": "lightarchitects_exec_kill_process", "description": "Send SIGKILL to a tracked process by PID. Only works on Unix. Returns {killed, pid}.", "inputSchema": {"type": "object", "properties": {"pid": {"type": "integer", "description": "PID of the process to kill."}}, "required": ["pid"]}}),
+        json!({"name": "lightarchitects_exec_get_output", "description": "Retrieve buffered output chunks since cursor (line index). Returns up to 200 lines per call. When complete=true and next_cursor equals total_lines, all output has been consumed.", "inputSchema": {"type": "object", "properties": {"stream_handle": {"type": "string", "description": "Handle returned by exec.run_command."}, "cursor": {"type": "integer", "description": "Line index to start from (default: 0)."}}, "required": ["stream_handle"]}}),
+    ]
+}
+
 /// Code editor tool definitions: `code.*` file-system operations scoped to project roots.
 fn code_tool_defs() -> Vec<Value> {
     vec![
@@ -135,6 +150,24 @@ fn squad_tool_defs() -> Vec<Value> {
         json!({"name": "lightarchitects_import", "description": "Import content from external systems. Adapters: obsidian/markdown (scan directory for .md files, extract H1 titles), mcp (generate a [agents.<name>] TOML block for a custom agent).", "inputSchema": {"type": "object", "properties": {"adapter": {"type": "string", "description": "Import adapter to use.", "enum": ["obsidian", "markdown", "mcp"]}, "path": {"type": "string", "description": "Directory to scan (required for obsidian/markdown adapters)."}, "name": {"type": "string", "description": "New agent name (required for mcp adapter)."}, "binary": {"type": "string", "description": "Binary path for the new agent (optional, for mcp adapter)."}, "tool_name": {"type": "string", "description": "MCP tool name for the new agent (optional, for mcp adapter)."}, "role": {"type": "string", "description": "Human-readable description of the agent's role (optional, for mcp adapter)."}}, "required": ["adapter"]}}),
     ]);
     tools
+}
+
+/// Git operation tool definitions: `git.*` — EEF Wave E3 (git-and-pr).
+///
+/// All tools enforce T-7 (CWE-78) command injection mitigation: structured
+/// `Command::new("git").args([...])`, branch-name allowlist validation,
+/// `cwd` canonicalization, and force-push prevention (T-5).
+fn git_tool_defs() -> Vec<Value> {
+    vec![
+        json!({"name": "lightarchitects_git_status", "description": "Return the porcelain v1 status of a working tree. Returns {files: [{path, status}], clean}.", "inputSchema": {"type": "object", "properties": {"cwd": {"type": "string", "description": "Working directory (absolute path, ~/ expanded)."}}, "required": ["cwd"]}}),
+        json!({"name": "lightarchitects_git_branch", "description": "Perform a branch operation: list, create, switch, or delete. Branch names are validated against the T-7 allowlist.", "inputSchema": {"type": "object", "properties": {"op": {"type": "string", "enum": ["list", "create", "switch", "delete"], "description": "Operation to perform."}, "name": {"type": "string", "description": "Branch name (required for create/switch/delete)."}, "cwd": {"type": "string", "description": "Working directory."}}, "required": ["op", "cwd"]}}),
+        json!({"name": "lightarchitects_git_diff", "description": "Return the diff for a working tree. Returns {diff: string}.", "inputSchema": {"type": "object", "properties": {"cwd": {"type": "string", "description": "Working directory."}, "staged": {"type": "boolean", "description": "If true, show staged (index) diff (default false)."}, "path": {"type": "string", "description": "Optional path filter."}}, "required": ["cwd"]}}),
+        json!({"name": "lightarchitects_git_commit", "description": "Commit staged changes with --no-verify. Returns {sha, message}.", "inputSchema": {"type": "object", "properties": {"cwd": {"type": "string", "description": "Working directory."}, "message": {"type": "string", "description": "Commit message."}}, "required": ["cwd", "message"]}}),
+        json!({"name": "lightarchitects_git_push", "description": "Push the current branch to origin. Force push is permanently disabled (T-5). Returns {pushed, url?}.", "inputSchema": {"type": "object", "properties": {"cwd": {"type": "string", "description": "Working directory."}, "set_upstream": {"type": "boolean", "description": "Pass --set-upstream origin <branch> (default false)."}, "branch": {"type": "string", "description": "Branch name — required when set_upstream is true."}, "force": {"type": "boolean", "description": "Always rejected — force push is disabled."}}, "required": ["cwd"]}}),
+        json!({"name": "lightarchitects_git_pull", "description": "Pull with --ff-only. Returns {merged, commits}.", "inputSchema": {"type": "object", "properties": {"cwd": {"type": "string", "description": "Working directory."}}, "required": ["cwd"]}}),
+        json!({"name": "lightarchitects_git_create_pr", "description": "Create a GitHub pull request via the REST API. Requires a GitHub PAT in keyring or LIGHTARCHITECTS_GITHUB_PAT env var. Returns {number, url, title}.", "inputSchema": {"type": "object", "properties": {"owner": {"type": "string", "description": "GitHub repository owner."}, "repo": {"type": "string", "description": "GitHub repository name."}, "title": {"type": "string", "description": "PR title."}, "head": {"type": "string", "description": "Head branch."}, "base": {"type": "string", "description": "Base branch."}, "body": {"type": "string", "description": "PR description (optional)."}}, "required": ["owner", "repo", "title", "head", "base"]}}),
+        json!({"name": "lightarchitects_git_review_pr", "description": "Submit a GitHub PR review via the REST API. Inline comments must use comments[].position (diff-position integer). Returns {id, state}.", "inputSchema": {"type": "object", "properties": {"owner": {"type": "string", "description": "GitHub repository owner."}, "repo": {"type": "string", "description": "GitHub repository name."}, "number": {"type": "integer", "description": "PR number."}, "event": {"type": "string", "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT"], "description": "Review event."}, "body": {"type": "string", "description": "Review body (optional)."}, "comments": {"type": "array", "description": "Inline review comments. Each must include path, position (diff-position integer), and body.", "items": {"type": "object"}}}, "required": ["owner", "repo", "number", "event"]}}),
+    ]
 }
 
 // ── MCP server loop ───────────────────────────────────────────────────────────
@@ -297,6 +330,15 @@ async fn dispatch(
         "lightarchitects_squad_comms_claim_task" => squad_comms::claim_task(params, config).await,
         "lightarchitects_squad_comms_task_logs" => squad_comms::task_logs(params, config).await,
         "lightarchitects_squad_comms_chat_inject" => squad_comms::chat_inject(params, config).await,
+        // Process execution tools — EEF Wave E2 (shell-and-output).
+        "lightarchitects_exec_run_command" => core_tools::exec_comms::run_run_command(params).await,
+        "lightarchitects_exec_list_processes" => {
+            core_tools::exec_comms::run_list_processes(params).await
+        }
+        "lightarchitects_exec_kill_process" => {
+            core_tools::exec_comms::run_kill_process(params).await
+        }
+        "lightarchitects_exec_get_output" => core_tools::exec_comms::run_get_output(params).await,
         // Code editor tools — EEF Wave E1 (code-and-files).
         "lightarchitects_code_read_file" => core_tools::code_comms::run_read_file(params, config),
         "lightarchitects_code_write_file" => core_tools::code_comms::run_write_file(params, config),
@@ -308,6 +350,15 @@ async fn dispatch(
         "lightarchitects_code_preview_diff" => {
             core_tools::code_comms::run_preview_diff(params, config)
         }
+        // Git operations — EEF Wave E3 (git-and-pr).
+        "lightarchitects_git_status" => core_tools::git_comms::run_status(params).await,
+        "lightarchitects_git_branch" => core_tools::git_comms::run_branch_op(params).await,
+        "lightarchitects_git_diff" => core_tools::git_comms::run_diff(params).await,
+        "lightarchitects_git_commit" => core_tools::git_comms::run_commit(params).await,
+        "lightarchitects_git_push" => core_tools::git_comms::run_push(params).await,
+        "lightarchitects_git_pull" => core_tools::git_comms::run_pull(params).await,
+        "lightarchitects_git_create_pr" => core_tools::git_comms::run_create_pr(params).await,
+        "lightarchitects_git_review_pr" => core_tools::git_comms::run_review_pr(params).await,
         _ => Err(GatewayError::UnknownTool(tool_name.to_owned())),
     }
 }
@@ -335,9 +386,9 @@ mod tests {
     }
 
     #[test]
-    fn all_tool_definitions_has_twenty_seven_entries() {
-        // 1 meta + 6 file + 3 platform + 11 squad (7 squad_comms + 4 original) + 6 code
-        assert_eq!(all_tool_definitions().len(), 27);
+    fn all_tool_definitions_has_thirty_nine_entries() {
+        // 1 meta + 6 file + 3 platform + 11 squad (7 squad_comms + 4 original) + 4 exec + 6 code + 8 git
+        assert_eq!(all_tool_definitions().len(), 39);
     }
 
     #[test]

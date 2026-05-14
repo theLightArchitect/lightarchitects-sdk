@@ -54,6 +54,11 @@ fn home_dir() -> Option<PathBuf> {
 /// should short-circuit with `StatusCode::UNAUTHORIZED` when this returns
 /// `false`. We return a `bool` instead of a boxed `Response` to keep the
 /// `Err` variant cheap (clippy `result_large_err` gate).
+/// Public alias for auth check used by `exec_routes` and other modules.
+pub fn is_authed_pub(headers: &HeaderMap, token: &str) -> bool {
+    is_authed(headers, token)
+}
+
 fn is_authed(headers: &HeaderMap, token: &str) -> bool {
     let authz = headers
         .get("authorization")

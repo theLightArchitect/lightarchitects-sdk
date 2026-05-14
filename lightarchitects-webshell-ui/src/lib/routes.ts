@@ -11,7 +11,9 @@ export type ScreenKey =
   | 'BuildDetail'
   | 'ProjectDetail'
   | 'Comms'
-  | 'Editor';
+  | 'Editor'
+  | 'Git'
+  | 'PullRequest';
 
 export interface RouteMatch {
   screen: ScreenKey;
@@ -59,6 +61,9 @@ const ROUTES: RouteEntry[] = [
   [/^\/comms$/,                                                             'Comms',         []],
   [/^\/editor\/(.+)$/,                                                      'Editor',        ['filepath']],
   [/^\/editor$/,                                                            'Editor',        []],
+  [/^\/git$/,                                                               'Git',           []],
+  [/^\/pr\/new$/,                                                           'PullRequest',   []],
+  [/^\/pr\/(\d+)$/,                                                         'PullRequest',   ['number']],
 ];
 
 /** Matches a hash-fragment path (with or without leading #) to a screen + params. */

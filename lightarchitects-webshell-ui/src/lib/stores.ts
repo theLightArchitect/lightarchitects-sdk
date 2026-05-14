@@ -354,6 +354,20 @@ export const mailboxUnread = writable(0);
 // --- Context-window utilisation (from CLI subprocess NDJSON) ---
 export const contextUsage = writable<import('./types').ContextStatusEvent | null>(null);
 
+// --- EVA voice toggle (persisted to localStorage) ---
+const VOICE_STORAGE_KEY = 'la_voice_enabled';
+export const voiceEnabled = writable<boolean>(
+  typeof localStorage !== 'undefined'
+    ? localStorage.getItem(VOICE_STORAGE_KEY) === 'true'
+    : false,
+);
+voiceEnabled.subscribe(v => {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(VOICE_STORAGE_KEY, String(v));
+  }
+});
+
+
 // --- Agent reactive state (native agent bridge) ---
 export const agentConnected = writable(false);
 export const agentEvents = writable<import('./types').AgentEvent[]>([]);
@@ -473,6 +487,7 @@ const META_SKILL_DESCRIPTIONS: Record<string, string> = {
 import { META_SKILL_TO_SIBLING } from './design-tokens';
 import { PILLAR_ACTIONS as PILLAR_ACTIONS_TYPE } from './types';
 import { api } from './api';
+import { authHeaders } from './auth';
 import { loadPersistedSettings } from './settings-persistence';
 import { mapPortfolioBuilds, groupByProject } from './build-mapper';
 
@@ -535,6 +550,161 @@ export const planBuilderMode = writable<boolean>(false);
 
 /** Active plan being built/edited in Intake Plan Builder */
 export const planBuilderDraft = writable<import('./types').BuildPlan | null>(null);
+
+// ── Git operations (EEF E3 Phase 3) ──────────────────────────────────────────
+
+/** A single file entry from `git status`. */
+export interface GitFileStatus {
+  /** Repo-relative path of the changed file. */
+  path: string;
+  /** Short status code: M=modified, A=added, D=deleted, ?=untracked, etc. */
+  status: string;
+}
+
+/** Reactive git state — all fields use the `git` prefix per store convention. */
+export const gitStore = {
+  /** Absolute path of the working directory for git operations. */
+  cwd: writable<string>(''),
+  /** Per-file change list from the most recent `git status` call. */
+  fileStatuses: writable<GitFileStatus[]>([]),
+  /** Active branch name (empty when not yet fetched). */
+  currentBranch: writable<string>(''),
+  /** All local branch names. */
+  branches: writable<string[]>([]),
+  /** True while any gitApi async operation is in flight. */
+  loading: writable<boolean>(false),
+  /** Last error message; empty string means no error. */
+  error: writable<string>(''),
+  /** True when `fileStatuses` contains at least one entry. */
+  isDirty: writable<boolean>(false),
+};
+
+/** Response shape for POST /api/git/status */
+interface GitStatusResponse {
+  branch: string;
+  branches: string[];
+  files: GitFileStatus[];
+}
+
+/** Response shape for POST /api/git/commit */
+interface GitCommitResponse {
+  sha: string;
+}
+
+/**
+ * Async wrappers for the webshell /api/git/* endpoints.
+ *
+ * All functions:
+ * - Set `gitStore.loading` to true at entry and false on completion (success or error).
+ * - Clear `gitStore.error` at entry; populate it on catch.
+ * - Never throw — callers can observe `gitStore.error` reactively.
+ */
+export const gitApi = {
+  /** Fetch current branch, all branches, and changed-file list for `cwd`. */
+  async status(cwd: string): Promise<void> {
+    gitStore.loading.set(true);
+    gitStore.error.set('');
+    try {
+      const res = await fetch('/api/git/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ cwd }),
+      });
+      if (!res.ok) throw new Error(`git status: ${res.status}`);
+      const data = (await res.json()) as GitStatusResponse;
+      gitStore.currentBranch.set(data.branch ?? '');
+      gitStore.branches.set(data.branches ?? []);
+      gitStore.fileStatuses.set(data.files ?? []);
+      gitStore.isDirty.set((data.files ?? []).length > 0);
+      gitStore.cwd.set(cwd);
+    } catch (e) {
+      gitStore.error.set(e instanceof Error ? e.message : 'git status failed');
+    } finally {
+      gitStore.loading.set(false);
+    }
+  },
+
+  /**
+   * Branch operations: `op` is one of `switch`, `create`, `delete`.
+   * `name` is the branch name; omit for operations that don't need it.
+   */
+  async branch(op: string, name?: string, cwd?: string): Promise<void> {
+    gitStore.loading.set(true);
+    gitStore.error.set('');
+    try {
+      const res = await fetch('/api/git/branch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ op, name, cwd }),
+      });
+      if (!res.ok) throw new Error(`git branch: ${res.status}`);
+    } catch (e) {
+      gitStore.error.set(e instanceof Error ? e.message : 'git branch failed');
+    } finally {
+      gitStore.loading.set(false);
+    }
+  },
+
+  /** Stage all changes and commit with `message`. Returns the new commit SHA. */
+  async commit(message: string, cwd: string): Promise<GitCommitResponse> {
+    gitStore.loading.set(true);
+    gitStore.error.set('');
+    try {
+      const res = await fetch('/api/git/commit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ message, cwd }),
+      });
+      if (!res.ok) throw new Error(`git commit: ${res.status}`);
+      const data = (await res.json()) as GitCommitResponse;
+      // After a successful commit the working tree is clean.
+      gitStore.fileStatuses.set([]);
+      gitStore.isDirty.set(false);
+      return data;
+    } catch (e) {
+      gitStore.error.set(e instanceof Error ? e.message : 'git commit failed');
+      return { sha: '' };
+    } finally {
+      gitStore.loading.set(false);
+    }
+  },
+
+  /** Push the current branch to its upstream remote. */
+  async push(cwd: string): Promise<void> {
+    gitStore.loading.set(true);
+    gitStore.error.set('');
+    try {
+      const res = await fetch('/api/git/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ cwd }),
+      });
+      if (!res.ok) throw new Error(`git push: ${res.status}`);
+    } catch (e) {
+      gitStore.error.set(e instanceof Error ? e.message : 'git push failed');
+    } finally {
+      gitStore.loading.set(false);
+    }
+  },
+
+  /** Pull the latest commits from the upstream remote. */
+  async pull(cwd: string): Promise<void> {
+    gitStore.loading.set(true);
+    gitStore.error.set('');
+    try {
+      const res = await fetch('/api/git/pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ cwd }),
+      });
+      if (!res.ok) throw new Error(`git pull: ${res.status}`);
+    } catch (e) {
+      gitStore.error.set(e instanceof Error ? e.message : 'git pull failed');
+    } finally {
+      gitStore.loading.set(false);
+    }
+  },
+};
 
 // ── Code editor (EEF Phase 3 Wave 1) ─────────────────────────────────────────
 
