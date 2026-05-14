@@ -6,19 +6,22 @@
 
 use std::fmt::Write as _;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-use crate::llm::LlmClient;
 use crate::config::GatewayConfig;
 use crate::core_tools;
 use crate::error::GatewayError;
+use crate::llm::LlmClient;
 
-use super::{validate_system_prompt, protocol::{AgentEvent, ControlMessage, TerminationReason}};
+use super::{
+    protocol::{AgentEvent, ControlMessage, TerminationReason},
+    validate_system_prompt,
+};
 
 /// Maximum iterations per agent turn (prevents runaway).
 const MAX_ITERATIONS: u32 = 10;
@@ -151,11 +154,13 @@ impl AgentRunner {
             let msg: ControlMessage = match serde_json::from_str(&line) {
                 Ok(m) => m,
                 Err(e) => {
-                    self.emit_ndjson(&AgentEvent::Error {
-                        message: format!("parse error: {e}"),
-                        recoverable: Some(true),
-                    },
-                    &mut stdout)
+                    self.emit_ndjson(
+                        &AgentEvent::Error {
+                            message: format!("parse error: {e}"),
+                            recoverable: Some(true),
+                        },
+                        &mut stdout,
+                    )
                     .await;
                     continue;
                 }
@@ -169,43 +174,42 @@ impl AgentRunner {
                 ControlMessage::Interrupt => {
                     self.interrupt_flag.store(true, Ordering::SeqCst);
                     self.emit_ndjson(
-                    &AgentEvent::Error {
-                        message: "interrupted".to_owned(),
-                        recoverable: Some(true),
-                    },
-                    &mut stdout)
+                        &AgentEvent::Error {
+                            message: "interrupted".to_owned(),
+                            recoverable: Some(true),
+                        },
+                        &mut stdout,
+                    )
                     .await;
                 }
-                ControlMessage::SetSystemPrompt { text } => {
-                    match self.set_system_prompt(text) {
-                        Ok(()) => {
-                            self.emit_ndjson(
-                                &AgentEvent::StatusUpdate {
-                                    text: "system_prompt accepted (applies from next turn)"
-                                        .to_owned(),
-                                },
-                                &mut stdout,
-                            )
-                            .await;
-                        }
-                        Err(reason) => {
-                            self.emit_ndjson(
-                                &AgentEvent::Error {
-                                    message: format!("SetSystemPrompt rejected: {reason}"),
-                                    recoverable: Some(true),
-                                },
-                                &mut stdout,
-                            )
-                            .await;
-                        }
+                ControlMessage::SetSystemPrompt { text } => match self.set_system_prompt(text) {
+                    Ok(()) => {
+                        self.emit_ndjson(
+                            &AgentEvent::StatusUpdate {
+                                text: "system_prompt accepted (applies from next turn)".to_owned(),
+                            },
+                            &mut stdout,
+                        )
+                        .await;
                     }
-                }
+                    Err(reason) => {
+                        self.emit_ndjson(
+                            &AgentEvent::Error {
+                                message: format!("SetSystemPrompt rejected: {reason}"),
+                                recoverable: Some(true),
+                            },
+                            &mut stdout,
+                        )
+                        .await;
+                    }
+                },
                 ControlMessage::Steer { text } => {
                     self.emit_ndjson(
-                    &AgentEvent::StatusUpdate {
-                        text: format!("steer: {text}"),
-                    },
-                    &mut stdout)
+                        &AgentEvent::StatusUpdate {
+                            text: format!("steer: {text}"),
+                        },
+                        &mut stdout,
+                    )
                     .await;
                 }
                 ControlMessage::Ping => {
@@ -213,11 +217,12 @@ impl AgentRunner {
                 }
                 _ => {
                     self.emit_ndjson(
-                    &AgentEvent::Error {
-                        message: "unsupported control message".to_owned(),
-                        recoverable: Some(true),
-                    },
-                    &mut stdout)
+                        &AgentEvent::Error {
+                            message: "unsupported control message".to_owned(),
+                            recoverable: Some(true),
+                        },
+                        &mut stdout,
+                    )
                     .await;
                 }
             }
@@ -244,15 +249,15 @@ impl AgentRunner {
             let _ = stdout.write_all(b"> ").await;
             let _ = stdout.flush().await;
 
-            let Ok(Some(line)) = lines.next_line().await else { break };
+            let Ok(Some(line)) = lines.next_line().await else {
+                break;
+            };
 
             let input = line.trim();
             if input.is_empty() {
                 continue;
             }
-            if input.eq_ignore_ascii_case("quit")
-                || input.eq_ignore_ascii_case("exit")
-            {
+            if input.eq_ignore_ascii_case("quit") || input.eq_ignore_ascii_case("exit") {
                 break;
             }
 
@@ -275,9 +280,8 @@ impl AgentRunner {
             .system_prompt
             .as_deref()
             .unwrap_or("You are a helpful coding assistant.");
-        let mut conversation = format!(
-            "{preamble}\n\n{TOOL_DESCRIPTIONS}\n\nUser: {user_message}\n\nAssistant:"
-        );
+        let mut conversation =
+            format!("{preamble}\n\n{TOOL_DESCRIPTIONS}\n\nUser: {user_message}\n\nAssistant:");
 
         for iteration in 0..MAX_ITERATIONS {
             if self.interrupt_flag.load(Ordering::Relaxed) {
@@ -292,56 +296,52 @@ impl AgentRunner {
                 return;
             }
 
-            let response = match tokio::time::timeout(
-                LLM_TIMEOUT,
-                self.llm.generate(&conversation),
-            )
-            .await
-            {
-                Ok(Ok(r)) => r,
-                Ok(Err(e)) => {
-                    self.emit(
-                        &AgentEvent::Error {
-                            message: format!("LLM error: {e}"),
-                            recoverable: Some(false),
-                        },
-                        sink,
-                        ndjson,
-                    )
-                    .await;
-                    self.emit(
-                        &AgentEvent::Complete {
-                            reason: TerminationReason::Error {
+            let response =
+                match tokio::time::timeout(LLM_TIMEOUT, self.llm.generate(&conversation)).await {
+                    Ok(Ok(r)) => r,
+                    Ok(Err(e)) => {
+                        self.emit(
+                            &AgentEvent::Error {
                                 message: format!("LLM error: {e}"),
+                                recoverable: Some(false),
                             },
-                        },
-                        sink,
-                        ndjson,
-                    )
-                    .await;
-                    return;
-                }
-                Err(_) => {
-                    self.emit(
-                        &AgentEvent::Error {
-                            message: "LLM timeout".to_owned(),
-                            recoverable: Some(true),
-                        },
-                        sink,
-                        ndjson,
-                    )
-                    .await;
-                    self.emit(
-                        &AgentEvent::Complete {
-                            reason: TerminationReason::Timeout,
-                        },
-                        sink,
-                        ndjson,
-                    )
-                    .await;
-                    return;
-                }
-            };
+                            sink,
+                            ndjson,
+                        )
+                        .await;
+                        self.emit(
+                            &AgentEvent::Complete {
+                                reason: TerminationReason::Error {
+                                    message: format!("LLM error: {e}"),
+                                },
+                            },
+                            sink,
+                            ndjson,
+                        )
+                        .await;
+                        return;
+                    }
+                    Err(_) => {
+                        self.emit(
+                            &AgentEvent::Error {
+                                message: "LLM timeout".to_owned(),
+                                recoverable: Some(true),
+                            },
+                            sink,
+                            ndjson,
+                        )
+                        .await;
+                        self.emit(
+                            &AgentEvent::Complete {
+                                reason: TerminationReason::Timeout,
+                            },
+                            sink,
+                            ndjson,
+                        )
+                        .await;
+                        return;
+                    }
+                };
 
             // Stream text chunks to the sink as we parse
             if let Some(final_output) = extract_final_output(&response) {
@@ -380,11 +380,7 @@ impl AgentRunner {
                 .await;
 
                 let start = Instant::now();
-                let result = execute_tool(&tool_call,
-                    &self.config,
-                    &self.cwd,
-                )
-                .await;
+                let result = execute_tool(&tool_call, &self.config, &self.cwd).await;
                 let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
 
                 let (success, result_text) = match result {
@@ -480,7 +476,9 @@ impl AgentRunner {
         ev: &AgentEvent,
         sink: &mut (dyn tokio::io::AsyncWrite + Unpin + Send),
     ) {
-        let Ok(json) = serde_json::to_string(ev) else { return };
+        let Ok(json) = serde_json::to_string(ev) else {
+            return;
+        };
         let line = format!("{json}\n");
         let _ = sink.write_all(line.as_bytes()).await;
         let _ = sink.flush().await;
@@ -505,7 +503,9 @@ impl AgentRunner {
                     let _ = sink.write_all(msg.as_bytes()).await;
                     let _ = sink.flush().await;
                 }
-                AgentEvent::ToolComplete { success, result, .. } => {
+                AgentEvent::ToolComplete {
+                    success, result, ..
+                } => {
                     let status = if *success { "✓" } else { "✗" };
                     let result_str = result.as_deref().unwrap_or("(no result)");
                     let msg = format!("{status} {result_str}\n");
@@ -606,9 +606,7 @@ fn strip_tool_blocks(text: &str) -> String {
 
 // ── Tool execution ──────────────────────────────────────────────────────────
 
-const ALLOWED_TOOLS: &[&str] = &[
-    "bash", "read", "write", "edit", "search", "glob",
-];
+const ALLOWED_TOOLS: &[&str] = &["bash", "read", "write", "edit", "search", "glob"];
 
 async fn execute_tool(
     call: &ToolCall,
@@ -625,8 +623,10 @@ async fn execute_tool(
         if params.get("cwd").is_none() {
             params["cwd"] = json!(cwd.to_string_lossy().to_string());
         }
-    } else if matches!(call.tool.as_str(), "read" | "write" | "edit" | "search" | "glob")
-        && params.get("path").is_none()
+    } else if matches!(
+        call.tool.as_str(),
+        "read" | "write" | "edit" | "search" | "glob"
+    ) && params.get("path").is_none()
     {
         // Some tools use 'path' as the directory/file target
         // We leave it absent so the tool can report missing param

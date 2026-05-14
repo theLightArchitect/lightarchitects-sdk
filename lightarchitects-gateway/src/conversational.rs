@@ -123,7 +123,8 @@ mod tests {
     fn brainstorm_accepts_open_ended_prompt() {
         let mut session = ConversationalSession::default();
         session.push_user("how do I refactor auth middleware?");
-        session.push_assistant("start by extracting the token validation logic into its own module.");
+        session
+            .push_assistant("start by extracting the token validation logic into its own module.");
         assert_eq!(session.history().len(), 2);
     }
 
@@ -138,9 +139,18 @@ mod tests {
         let Some(plan) = plan else {
             panic!("plan should be generated after 3 messages (suggest_plan returned None)");
         };
-        assert!(plan.contains("login page"), "plan should include first user goal");
-        assert!(plan.contains("React + Tailwind"), "plan should include second user goal");
-        assert!(plan.contains("LASDLC Plan"), "plan should have LASDLC header");
+        assert!(
+            plan.contains("login page"),
+            "plan should include first user goal"
+        );
+        assert!(
+            plan.contains("React + Tailwind"),
+            "plan should include second user goal"
+        );
+        assert!(
+            plan.contains("LASDLC Plan"),
+            "plan should have LASDLC header"
+        );
     }
 
     #[test]
@@ -153,10 +163,17 @@ mod tests {
     fn context_accumulation_no_truncation_under_32k() {
         let mut session = ConversationalSession::default();
         for i in 0..10 {
-            session.push_user(&format!("message {i} with some padding to simulate real content"));
-            session.push_assistant(&format!("response {i} with matching padding so tokens add up"));
+            session.push_user(&format!(
+                "message {i} with some padding to simulate real content"
+            ));
+            session.push_assistant(&format!(
+                "response {i} with matching padding so tokens add up"
+            ));
         }
-        assert!(session.within_budget(), "10 messages should fit under 32k ceiling");
+        assert!(
+            session.within_budget(),
+            "10 messages should fit under 32k ceiling"
+        );
     }
 
     #[test]
@@ -168,7 +185,10 @@ mod tests {
         assert!(t1 > t0, "token estimate should grow after user message");
         session.push_assistant("hi there");
         let t2 = session.token_estimate();
-        assert!(t2 > t1, "token estimate should grow after assistant message");
+        assert!(
+            t2 > t1,
+            "token estimate should grow after assistant message"
+        );
     }
 
     #[test]

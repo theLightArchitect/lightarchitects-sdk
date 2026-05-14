@@ -49,15 +49,24 @@ pub enum WebshellCommand {
 pub async fn execute(config: &GatewayConfig, args: &[String]) -> Result<(), GatewayError> {
     match args.first().map(String::as_str) {
         Some("start") => {
-            let port = parse_flag(args, "--port").and_then(|s| s.parse::<u16>().ok()).unwrap_or(8733);
-            let host_cmd = parse_flag(args, "--host-cmd")
-                .unwrap_or_else(|| "claude".to_owned());
+            let port = parse_flag(args, "--port")
+                .and_then(|s| s.parse::<u16>().ok())
+                .unwrap_or(8733);
+            let host_cmd = parse_flag(args, "--host-cmd").unwrap_or_else(|| "claude".to_owned());
             let cwd = parse_flag(args, "--cwd").map(std::path::PathBuf::from);
             let agent_kind = parse_flag(args, "--agent-kind");
             let backend = parse_flag(args, "--backend");
             let ollama_model = parse_flag(args, "--ollama-model");
 
-            start_server(config, port, &host_cmd, cwd.as_deref(), agent_kind, backend, ollama_model)
+            start_server(
+                config,
+                port,
+                &host_cmd,
+                cwd.as_deref(),
+                agent_kind,
+                backend,
+                ollama_model,
+            )
         }
         Some("status") => {
             let port = parse_flag(args, "--port")
@@ -232,5 +241,7 @@ fn resolve_token() -> Option<String> {
 ///
 /// Returns `Some(value)` if `--flag <value>` appears, else `None`.
 fn parse_flag(args: &[String], flag: &str) -> Option<String> {
-    args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1).cloned())
+    args.iter()
+        .position(|a| a == flag)
+        .and_then(|i| args.get(i + 1).cloned())
 }

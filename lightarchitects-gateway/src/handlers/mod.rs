@@ -61,6 +61,26 @@ mod quantum;
 #[cfg(feature = "inline-laex")]
 mod laex;
 
+// ── Re-export handler structs for integration tests ───────────────────────────
+
+#[cfg(feature = "inline-corso")]
+pub use corso::CorsoHandler;
+
+#[cfg(feature = "inline-eva")]
+pub use eva::EvaHandler;
+
+#[cfg(feature = "inline-soul")]
+pub use soul::SoulHandler;
+
+#[cfg(feature = "inline-quantum")]
+pub use quantum::QuantumHandler;
+
+#[cfg(feature = "inline-ayin")]
+pub use ayin::AyinHandler;
+
+#[cfg(feature = "inline-laex")]
+pub use laex::LaexHandler;
+
 // ── No inline handlers enabled — provide stub ──────────────────────────────────
 
 #[cfg(not(any(

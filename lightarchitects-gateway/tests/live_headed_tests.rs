@@ -121,9 +121,7 @@ fn chat_repl_exits_on_quit() {
         stdin.flush().expect("flush stdin");
     }
 
-    let output = child
-        .wait_with_output()
-        .expect("wait for REPL output");
+    let output = child.wait_with_output().expect("wait for REPL output");
 
     assert!(
         output.status.success(),
@@ -153,9 +151,7 @@ fn chat_repl_suggests_plan_on_build_command() {
         stdin.flush().expect("flush stdin");
     }
 
-    let output = child
-        .wait_with_output()
-        .expect("wait for REPL output");
+    let output = child.wait_with_output().expect("wait for REPL output");
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
 
     assert!(

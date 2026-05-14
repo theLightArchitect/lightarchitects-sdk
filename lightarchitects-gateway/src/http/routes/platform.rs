@@ -76,7 +76,7 @@ async fn canon_get(
         }
     };
 
-    Ok(respond_with_body_etag(body, &headers))
+    Ok(respond_canon_etag(body, &headers))
 }
 
 /// `GET /v1/platform/agents/:sibling` — full agent identity with optional org override.
@@ -1134,6 +1134,26 @@ fn respond_with_body_etag(body: Value, headers: &HeaderMap) -> Response {
         return StatusCode::NOT_MODIFIED.into_response();
     }
     etag_response(StatusCode::OK, body, &etag)
+}
+
+/// Same as [`respond_with_body_etag`] but sets `Cache-Control: public, max-age=2592000`
+/// (30 days). Canon documents are content-addressed via SHA-256 and versioned, so
+/// long-lived caching is safe — a changed document gets a new ETag.
+fn respond_canon_etag(body: Value, headers: &HeaderMap) -> Response {
+    let bytes = serde_json::to_vec(&body).unwrap_or_default();
+    let etag = compute_etag(&bytes);
+    let inm = headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok());
+    if is_not_modified(inm, &etag) {
+        return StatusCode::NOT_MODIFIED.into_response();
+    }
+    let mut resp = etag_response(StatusCode::OK, body, &etag);
+    resp.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=2592000"),
+    );
+    resp
 }
 
 /// Build a parameterized Cypher query over `Step` journal entries with optional filters.

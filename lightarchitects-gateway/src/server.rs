@@ -288,7 +288,9 @@ async fn dispatch(
         "lightarchitects_initialize" => core_tools::initialize::run(params, config).await,
         "lightarchitects_import" => core_tools::import_adapter::run(params, config),
         // Squad Comms — thin HTTP wrappers delegating to the webshell coordination API.
-        "lightarchitects_squad_comms_session_start" => squad_comms::session_start(params, config).await,
+        "lightarchitects_squad_comms_session_start" => {
+            squad_comms::session_start(params, config).await
+        }
         "lightarchitects_squad_comms_session_end" => squad_comms::session_end(params, config).await,
         "lightarchitects_squad_comms_list_tasks" => squad_comms::list_tasks(params, config).await,
         "lightarchitects_squad_comms_add_task" => squad_comms::add_task(params, config).await,
@@ -300,8 +302,12 @@ async fn dispatch(
         "lightarchitects_code_write_file" => core_tools::code_comms::run_write_file(params, config),
         "lightarchitects_code_list_dir" => core_tools::code_comms::run_list_dir(params, config),
         "lightarchitects_code_apply_diff" => core_tools::code_comms::run_apply_diff(params, config),
-        "lightarchitects_code_search_text" => core_tools::code_comms::run_search_text(params, config),
-        "lightarchitects_code_preview_diff" => core_tools::code_comms::run_preview_diff(params, config),
+        "lightarchitects_code_search_text" => {
+            core_tools::code_comms::run_search_text(params, config)
+        }
+        "lightarchitects_code_preview_diff" => {
+            core_tools::code_comms::run_preview_diff(params, config)
+        }
         _ => Err(GatewayError::UnknownTool(tool_name.to_owned())),
     }
 }

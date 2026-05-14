@@ -96,8 +96,8 @@ impl LlmClient {
             }
             LlmBackend::Anthropic => {
                 let url = "https://api.anthropic.com".to_owned();
-                let model = std::env::var("LLM_MODEL")
-                    .unwrap_or_else(|_| "claude-sonnet-4-6".into());
+                let model =
+                    std::env::var("LLM_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".into());
                 (url, model)
             }
         };
@@ -388,11 +388,7 @@ impl LlmClient {
     }
 
     /// Generate via Anthropic Messages API (`/v1/messages`).
-    async fn generate_anthropic(
-        &self,
-        model: &str,
-        prompt: &str,
-    ) -> Result<String, String> {
+    async fn generate_anthropic(&self, model: &str, prompt: &str) -> Result<String, String> {
         let start = Instant::now();
         let url = format!("{}/v1/messages", self.base_url);
 
@@ -429,7 +425,11 @@ impl LlmClient {
         let text = json
             .get("content")
             .and_then(|c| c.as_array())
-            .and_then(|arr| arr.iter().find(|block| block.get("type") == Some(&serde_json::Value::String("text".to_owned()))))
+            .and_then(|arr| {
+                arr.iter().find(|block| {
+                    block.get("type") == Some(&serde_json::Value::String("text".to_owned()))
+                })
+            })
             .and_then(|block| block.get("text"))
             .and_then(serde_json::Value::as_str)
             .unwrap_or("")
@@ -503,7 +503,9 @@ impl LlmClient {
 ///
 /// Priority: environment variable → `~/.lightarchitects/keys.toml` → OS keyring.
 pub fn resolve_key(name: &str) -> Option<String> {
-    std::env::var(name).ok().filter(|s| !s.is_empty())
+    std::env::var(name)
+        .ok()
+        .filter(|s| !s.is_empty())
         .or_else(|| {
             let home = std::env::var_os("HOME")?;
             let path = std::path::PathBuf::from(home)

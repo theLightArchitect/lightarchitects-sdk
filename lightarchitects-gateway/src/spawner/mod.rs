@@ -26,6 +26,18 @@
 //! | [`crate::error::GatewayError::McpProtocol`] | Timeout, malformed JSON, or unexpected response |
 //! | [`crate::error::GatewayError::AgentNotEnabled`] | Sibling disabled in config |
 
+/// LLM agent provider trait and associated types.
+///
+/// Defines the contract for provider implementations that spawn an LLM agent
+/// subprocess (e.g. the Claude CLI) and return a structured response.
+pub mod llm_agent;
+
+/// Claude CLI provider — `ClaudeCliProvider` implements [`llm_agent::LlmAgentProvider`].
+///
+/// Spawns `claude --bare -p` as a subprocess with G1 input sanitization,
+/// G10 subprocess hygiene, and W3C traceparent propagation.
+pub mod claude_runtime;
+
 use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
