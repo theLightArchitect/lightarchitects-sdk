@@ -65,13 +65,26 @@ async function setupPage(page: Page): Promise<void> {
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify({
-      configured: true,
-      backend: 'anthropic',
-      model: 'claude-opus-4-7',
-      agent: 'claude',
+      setup_complete: true,
+      auth_status: {
+        claude: { has_keychain_auth: true, has_api_key: false, login_method: 'keychain' },
+        codex:  { has_keychain_auth: false, has_api_key: false, login_method: 'none' },
+        ollama: { base_url: 'http://localhost:11434', reachable: false },
+      },
+      config: {
+        agent: 'claude',
+        backend: 'anthropic',
+        model: 'claude-opus-4-7',
+        ollama_base_url: null,
+        api_key_stored: false,
+      },
+      cwd: '/tmp',
     }),
   }));
   await page.route('**/api/events',      r => r.fulfill({ status: 200, body: '' }));
+  // Cookie-exchange is called when a Bearer token is found in sessionStorage.
+  // Return a non-JSON body so initCookieSession stays in bearer mode (correct path).
+  await page.route('**/api/auth/exchange', r => r.fulfill({ status: 200, body: 'ok' }));
 
   // Git API mocks.
   await page.route('**/api/git/status',  r => r.fulfill({
@@ -118,32 +131,31 @@ async function navigateTo(page: Page, hash: string): Promise<void> {
 }
 
 async function openApp(page: Page, hash: string): Promise<void> {
-  await setupPage(page);
-  await page.goto(`${BASE}/?token=${TOKEN}`, { waitUntil: 'domcontentloaded' });
-  // Seed auth token and bypass tutorials.
-  await page.evaluate((token) => {
+  // addInitScript runs BEFORE the page's own scripts — the only reliable way to
+  // pre-seed sessionStorage/localStorage so the SPA reads a valid auth state on init.
+  // page.evaluate runs after init and is too late for auth-gate checks.
+  await page.addInitScript((token: string) => {
     sessionStorage.setItem('la_webshell_token', token);
     for (let i = 1; i <= 6; i++) {
       localStorage.setItem(`la.tutorial.completed.t${i}`, 'true');
     }
   }, TOKEN);
+  await setupPage(page);
+  await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
   await navigateTo(page, hash);
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
+// Per feedback_playwright_headed.md: always headed — headless: false must be top-level
+// (Playwright forbids test.use({ headless }) inside describe groups as of v1.42+).
+test.use({ headless: false });
+
 test.describe('EEF E3 — git-and-pr Northstar gate', () => {
-  test.use({ headless: false });
-
-  let harPath: string;
-
-  test.beforeEach(async ({}, testInfo) => {
-    harPath = `test-results/e3-git-and-pr-${testInfo.title.replace(/\s+/g, '-')}.har`;
-  });
+  // HAR captured globally by playwright.config.ts use.recordHar — no per-test calls needed.
 
   // ── T1: Git screen renders ──────────────────────────────────────────────────
-  test('1. /git route renders Git screen with branch dropdown', async ({ page, context }) => {
-    await context.recordHar({ path: harPath });
+  test('1. /git route renders Git screen with branch dropdown', async ({ page }) => {
     await openApp(page, '/git');
 
     // Git screen container.
@@ -152,13 +164,10 @@ test.describe('EEF E3 — git-and-pr Northstar gate', () => {
     // GitOpsPanel must contain a branch-select dropdown.
     const branchSelect = page.locator('select[aria-label="Select branch"]');
     await expect(branchSelect).toBeVisible({ timeout: 5000 });
-
-    await context.close();
   });
 
   // ── T2: Status list area renders ────────────────────────────────────────────
-  test('2. /git route shows file status list area (even if empty)', async ({ page, context }) => {
-    await context.recordHar({ path: harPath });
+  test('2. /git route shows file status list area (even if empty)', async ({ page }) => {
     await openApp(page, '/git');
 
     await expect(page.locator('[data-testid="git-screen"]')).toBeVisible({ timeout: 8000 });
@@ -168,27 +177,21 @@ test.describe('EEF E3 — git-and-pr Northstar gate', () => {
     const emptyState  = page.locator('text=Working tree clean');
     const sectionLabel = page.locator('text=CHANGES');
 
-    // At least the CHANGES section label must be visible.
-    await expect(sectionLabel.or(fileList).or(emptyState)).toBeVisible({ timeout: 5000 });
-
-    await context.close();
+    // At least ONE of the three must be visible (first() avoids strict-mode multi-match).
+    await expect(sectionLabel.or(fileList).or(emptyState).first()).toBeVisible({ timeout: 5000 });
   });
 
   // ── T3: PR create form renders ──────────────────────────────────────────────
-  test('3. /pr/new route renders PRCreateForm with title and body fields', async ({ page, context }) => {
-    await context.recordHar({ path: harPath });
+  test('3. /pr/new route renders PRCreateForm with title and body fields', async ({ page }) => {
     await openApp(page, '/pr/new');
 
     await expect(page.locator('[data-testid="pr-create-form"]')).toBeVisible({ timeout: 8000 });
     await expect(page.locator('[data-testid="pr-title-input"]')).toBeVisible();
     await expect(page.locator('[data-testid="pr-body-textarea"]')).toBeVisible();
-
-    await context.close();
   });
 
   // ── T4: Submit button enabled only when title is non-empty ──────────────────
-  test('4. submit button disabled on empty title, enabled after fill', async ({ page, context }) => {
-    await context.recordHar({ path: harPath });
+  test('4. submit button disabled on empty title, enabled after fill', async ({ page }) => {
     await openApp(page, '/pr/new');
 
     const submitBtn = page.locator('[data-testid="pr-submit-btn"]');
@@ -202,13 +205,10 @@ test.describe('EEF E3 — git-and-pr Northstar gate', () => {
     // Fill title → enabled.
     await titleInput.fill('Test PR from E2E');
     await expect(submitBtn).toBeEnabled({ timeout: 3000 });
-
-    await context.close();
   });
 
   // ── T5: Submit button is visible with non-empty title ───────────────────────
-  test('5. submit button is visible when title is non-empty', async ({ page, context }) => {
-    await context.recordHar({ path: harPath });
+  test('5. submit button is visible when title is non-empty', async ({ page }) => {
     await openApp(page, '/pr/new');
 
     const submitBtn  = page.locator('[data-testid="pr-submit-btn"]');
@@ -218,26 +218,20 @@ test.describe('EEF E3 — git-and-pr Northstar gate', () => {
     await titleInput.fill('Test PR from E2E');
     await expect(submitBtn).toBeVisible();
     await expect(submitBtn).toBeEnabled();
-
-    await context.close();
   });
 
   // ── T6: PR review surface renders at /pr/:number ────────────────────────────
-  test('6. /pr/1 route renders PRReviewSurface with diff container', async ({ page, context }) => {
-    await context.recordHar({ path: harPath });
+  test('6. /pr/1 route renders PRReviewSurface with diff container', async ({ page }) => {
     await openApp(page, '/pr/1');
 
     await expect(page.locator('[data-testid="pr-review-surface"]')).toBeVisible({ timeout: 8000 });
 
     // Diff container must be present (may be empty if diff load is async).
     await expect(page.locator('[data-testid="diff-container"]')).toBeVisible({ timeout: 5000 });
-
-    await context.close();
   });
 
   // ── T7: PR review surface has review body and submit button ─────────────────
-  test('7. /pr/1 review surface has overall comment and submit review button', async ({ page, context }) => {
-    await context.recordHar({ path: harPath });
+  test('7. /pr/1 review surface has overall comment and submit review button', async ({ page }) => {
     await openApp(page, '/pr/1');
 
     await expect(page.locator('[data-testid="pr-review-surface"]')).toBeVisible({ timeout: 8000 });
@@ -245,8 +239,6 @@ test.describe('EEF E3 — git-and-pr Northstar gate', () => {
     // Overall review textarea and submit button.
     await expect(page.locator('[data-testid="review-body-textarea"]')).toBeVisible({ timeout: 5000 });
     await expect(page.locator('[data-testid="submit-review-btn"]')).toBeVisible();
-
-    await context.close();
   });
 
   // ── T8: Diff parser logic — unit test via page.evaluate ─────────────────────
