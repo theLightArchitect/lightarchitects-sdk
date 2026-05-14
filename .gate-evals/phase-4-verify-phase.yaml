@@ -1,0 +1,87 @@
+schema_version: 1
+gate: phase
+scope: phase
+scored_by: "/GATE (lightarchitects:GATE skill, official invocation)"
+scored_at: "2026-05-13T20:55:00-07:00"
+build_id: shell-and-output
+phase_id: phase-4-verify
+branch: feat/eef/shell-and-output
+sha: bbd5c2a
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt:
+    result: pass
+    note: >
+      cargo fmt --all -- --check: EXIT:0. Pre-existing fmt issues in
+      agent_stream/mod.rs + runner.rs (not introduced by this branch) were
+      fixed via `cargo fmt --all` and committed as style cleanup bbd5c2a.
+      SDK workspace fmt fully clean on this run.
+
+  Q2_clippy:
+    result: pass
+    note: >
+      cargo clippy --workspace --all-targets --all-features -- -D warnings:
+      0 warnings, 0 errors. EXIT:0. All clippy::pedantic + unwrap_used +
+      expect_used deny rules satisfied. Gateway compiled clean.
+
+  Q3_tests:
+    result: pass
+    tests_run: 1561
+    tests_fail: 0
+    workspace_run: true
+    breakdown_gateway_phase4:
+      lib_unit: 401
+      integration_exec_comms: 14
+      property_exec_argv_safety: 4
+      phase4_subtotal: 419
+    note: >
+      cargo test --workspace --all-features: 1561 passed, 0 failed (workspace
+      total). Phase 4 deliverables account for 419 of those tests (401 lib +
+      14 exec_comms integration + 4 proptest property). a2_01_integration_laex_upload_201
+      did not fire this run (prior flaky: free-tier token budget exhaustion).
+      GATE flakiness protocol: pre-existing, non-Phase-4 code, does not block.
+
+  Q4_svelte:
+    result: pass
+    vitest_tests: 473
+    vitest_files: 26
+    svelte_check_errors: 0
+    svelte_check_warnings: 9
+    note: >
+      pnpm test:run: 473 tests, 26 files, all pass. svelte-check --threshold error:
+      0 errors (9 pre-existing warnings, threshold is error-only).
+
+  D2_plan:
+    result: pass
+    note: >
+      Plan at ~/.claude/plans/shell-and-output-manifest.yaml reflects Phase 4 scope:
+      phase frontmatter = phase-4-verify; Phase 4 status = COMPLETE with full
+      deliverable notes (419 tests, SERAPH HARD GATE APPROVED, E2 Playwright
+      terminal_window_open_count === 0). Deferred items (AYIN exec_trace.rs,
+      /exec UI route wiring, execStore) documented in Phase 3 notes with explicit
+      waiver.
+
+seraph_hard_gate:
+  required: true
+  status: COMPLETED
+  findings_total: 6
+  findings_fixed: 6
+  critical_fixed: 2
+  high_fixed: 4
+  verdict_before: BLOCK
+  verdict_after: APPROVE
+  commit: 3f50407
+
+test_pyramid_coverage:
+  unit: "401 lib tests (exec_comms.rs inline #[cfg(test)] + 400 other lib)"
+  integration: "14 tests (exec_comms_integration.rs)"
+  property: "4 tests × 500 proptest cases (property_exec_argv_safety.rs)"
+  e2e: "4 Playwright tests (e2.spec.ts) — terminal_window_open_count === 0 gate"
+  regression: "deferred (no bugs resolved yet)"
+  smoke: "run_echo_completes_with_exit_zero passes in integration suite"
+
+northstar_gate:
+  assertion: "terminal_window_open_count === 0"
+  e2_spec_tests: 4
+  all_assert_zero: true

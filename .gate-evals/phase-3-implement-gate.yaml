@@ -1,0 +1,72 @@
+---
+gate_id: phase-3-implement
+build_codename: shell-and-output
+phase: 3
+phase_name: Implement
+scope: phase
+timestamp: "2026-05-13T00:45:00Z"
+branch: feat/eef/shell-and-output
+commits:
+  - d7130d5  # gateway: exec_comms.rs + mod.rs + server.rs dispatch
+  - 0a14e01  # webshell: exec_routes.rs + real_data.is_authed_pub + events/types.rs ExecOutput/ExecDone
+  - e46daf9  # webshell-ui: OutputViewer + TestResultsTree + LogStreamPane + stores.voiceEnabled
+  - b3a2115  # gateway: clippy::pedantic fix (8 errors → 0 in exec_comms.rs)
+
+gates:
+  Q1_fmt:
+    status: PASS
+    detail: "cargo fmt --check clean on gateway (my 3 files); webshell workspace clean"
+    note: "~70 pre-existing fmt issues in gateway agent_stream/cli/conversational.rs — not my scope; documented"
+
+  Q2_clippy:
+    gateway:
+      status: PASS
+      detail: "0 errors after 8-fix pass (similar_names, while_let_loop, manual_contains, ignored_unit_patterns, cast_possible_truncation)"
+      findings_fixed:
+        - similar_names: "h_so/h_se → stdout_join/stderr_join; cmd/cwd → process_cmd/working_dir"
+        - while_let_loop: "loop{match} → while let Ok(Some(line)) in drain_stdout/drain_stderr"
+        - manual_contains: "iter().any() → ALLOWED_BINARIES.contains()"
+        - ignored_unit_patterns: "_ → () for sleep arm in select!"
+        - cast_possible_truncation: "as u32 → u32::try_from; as usize → usize::try_from"
+    webshell:
+      status: PASS
+      detail: "cargo clippy empty output (0 errors, 0 warnings as errors)"
+
+  Q3_tests:
+    gateway:
+      status: PASS
+      count: 400
+      failed: 0
+      ignored: 1
+      ignored_reason: "a2_01_integration_laex_upload_201 — pre-existing free-tier token exhaustion; FLAKY-PREEXISTING"
+    webshell:
+      status: PASS
+      count: 388
+      failed: 0
+      ignored: 0
+
+  Q4_svelte_check:
+    status: PASS
+    detail: "0 errors, 9 warnings (pre-existing a11y/unused export warnings; not blocking)"
+
+  D2_plan_accuracy:
+    status: PASS
+    detail: |
+      Phase 3 deliverables all implemented. Path adaptations from plan:
+      - gateway exec tools: core_tools/exec_comms.rs (plan said handlers/exec_comms.rs)
+      - webshell HTTP layer: server/exec_routes.rs (plan said handlers/exec.rs)
+      - execStore deferred: polling embedded in OutputViewer.svelte (deliberate)
+      - AYIN exec_trace.rs, integration/property/E2E tests reserved for Phases 4+
+      Plan frontmatter updated: phase → phase-3-implement, Phase 3 status → COMPLETE
+
+verdict: APPROVED
+confidence: 0.96
+northstar_advancement: |
+  E2 Northstar gate components now exist. exec.* MCP tools (gateway) + HTTP REST layer
+  (webshell) + OutputViewer/TestResultsTree/LogStreamPane (webshell-ui) form the
+  complete streaming output pipeline. Remaining to close E2: integration tests,
+  property tests, E2 Playwright spec with terminal_window_open_count === 0 assertion.
+
+phase_4_unlock:
+  unblocked: ["verify", "harden"]
+  next_phase: "Phase 4 — Verify (integration tests + property tests + SERAPH T-1 co-review + E2 Playwright spec)"
