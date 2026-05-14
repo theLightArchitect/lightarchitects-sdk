@@ -57,6 +57,8 @@
     ProjectDetail: () => import('./screens/ProjectDetail.svelte'),
     Comms:         () => import('./screens/Comms.svelte'),
     Editor:        () => import('./screens/Editor.svelte'),
+    Git:           () => import('./screens/Git.svelte'),
+    PullRequest:   () => import('./screens/PullRequest.svelte'),
   };
 
   type ScreenModule = { default: any };
