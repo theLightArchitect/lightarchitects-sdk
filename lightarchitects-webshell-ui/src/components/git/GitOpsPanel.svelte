@@ -13,36 +13,21 @@
   // ── Local reactive state ────────────────────────────────────────────────────
   let commitMessage = $state('');
 
-  // ── Store subscriptions (rune-style) ────────────────────────────────────────
-  let currentBranch = $derived((() => {
-    let val = '';
-    gitStore.currentBranch.subscribe(v => { val = v; })();
-    return val;
-  })());
+  // ── Store subscriptions — $state + $effect for proper Svelte 5 reactivity ────
+  // $derived + IIFE-subscribe immediately unsubscribes, so $derived never registers
+  // the store as a reactive dependency; the value is captured once and frozen.
+  // $effect keeps the subscription alive until the component is destroyed.
+  let currentBranch = $state('');
+  let branches      = $state<string[]>([]);
+  let fileStatuses  = $state<Array<{ path: string; status: string }>>([]);
+  let loading       = $state(false);
+  let errorMsg      = $state('');
 
-  let branches = $derived((() => {
-    let val: string[] = [];
-    gitStore.branches.subscribe(v => { val = v; })();
-    return val;
-  })());
-
-  let fileStatuses = $derived((() => {
-    let val: Array<{ path: string; status: string }> = [];
-    gitStore.fileStatuses.subscribe(v => { val = v; })();
-    return val;
-  })());
-
-  let loading = $derived((() => {
-    let val = false;
-    gitStore.loading.subscribe(v => { val = v; })();
-    return val;
-  })());
-
-  let errorMsg = $derived((() => {
-    let val = '';
-    gitStore.error.subscribe(v => { val = v; })();
-    return val;
-  })());
+  $effect(() => gitStore.currentBranch.subscribe(v => { currentBranch = v; }));
+  $effect(() => gitStore.branches.subscribe(v => { branches = v; }));
+  $effect(() => gitStore.fileStatuses.subscribe(v => { fileStatuses = v; }));
+  $effect(() => gitStore.loading.subscribe(v => { loading = v; }));
+  $effect(() => gitStore.error.subscribe(v => { errorMsg = v; }));
 
   // ── Auto-refresh on mount; clear on destroy ─────────────────────────────────
   $effect(() => {

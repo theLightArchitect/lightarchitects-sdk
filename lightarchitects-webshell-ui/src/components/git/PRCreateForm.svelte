@@ -25,18 +25,12 @@
   let prUrl = $state<string | null>(null);
   let submitError = $state<string | null>(null);
 
-  // ── Store subscriptions ────────────────────────────────────────────────────
-  let currentBranch = $derived((() => {
-    let val = '';
-    gitStore.currentBranch.subscribe(v => { val = v; })();
-    return val;
-  })());
+  // ── Store subscriptions — $state + $effect for proper Svelte 5 reactivity ────
+  let currentBranch = $state('');
+  let branches      = $state<string[]>([]);
 
-  let branches = $derived((() => {
-    let val: string[] = [];
-    gitStore.branches.subscribe(v => { val = v; })();
-    return val;
-  })());
+  $effect(() => gitStore.currentBranch.subscribe(v => { currentBranch = v; }));
+  $effect(() => gitStore.branches.subscribe(v => { branches = v; }));
 
   // ── Bootstrap branches on mount ────────────────────────────────────────────
   $effect(() => {

@@ -170,6 +170,12 @@ test.describe('EEF E3 — git-and-pr Northstar gate', () => {
 
     // Select has the expected aria-label and is focusable — confirms ARIA contract.
     await expect(branchSelect).toHaveAttribute('aria-label', 'Select branch');
+
+    // With $effect reactivity fix: mock response populates branches; current branch selected.
+    await expect(branchSelect).toHaveValue('feat/eef/git-and-pr', { timeout: 5000 });
+
+    // 3 options rendered from mock branches list (CSS locator — ARIA tree omits option children).
+    await expect(branchSelect.locator('option')).toHaveCount(3, { timeout: 5000 });
   });
 
   // ── T2: Status list area renders ────────────────────────────────────────────
@@ -181,13 +187,16 @@ test.describe('EEF E3 — git-and-pr Northstar gate', () => {
     const gitScreen = page.getByTestId('git-screen');
     await expect(gitScreen).toBeVisible({ timeout: 8000 });
 
-    // Section header — toContainText for partial match ("CHANGES (3)" contains "CHANGES").
-    await expect(gitScreen).toContainText('CHANGES', { timeout: 5000 });
+    // Section header — mock returns 3 files; label renders as "CHANGES (3)".
+    await expect(gitScreen).toContainText('CHANGES (3)', { timeout: 5000 });
 
-    // File list or empty state — first() avoids strict-mode multi-match violation.
-    const fileList   = page.locator('[aria-label="Changed files"]');
-    const emptyState = page.getByText('Working tree clean');
-    await expect(fileList.or(emptyState).first()).toBeVisible({ timeout: 5000 });
+    // File list populated — mock provides 3 changed files.
+    const fileList = page.locator('[aria-label="Changed files"]');
+    await expect(fileList).toBeVisible({ timeout: 5000 });
+    await expect(fileList.locator('li')).toHaveCount(3, { timeout: 5000 });
+
+    // First file in the list matches mock path.
+    await expect(fileList.locator('li').first()).toContainText('src/screens/Git.svelte');
   });
 
   // ── T3: PR create form renders ──────────────────────────────────────────────
