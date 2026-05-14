@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { activePanelContext } from '$lib/layout';
   import mermaid from 'mermaid';
+  import DOMPurify from 'dompurify';
 
   // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@
 
   mermaid.initialize({
     startOnLoad: false,
+    securityLevel: 'strict',
     theme: 'dark',
     themeVariables: {
       background: '#0a0a12',
@@ -78,7 +80,8 @@
     for (const span of window) {
       const actor = sanitize(span.actor);
       const action = sanitize(span.action);
-      const durationLabel = span.duration_ms > 0 ? ` (${span.duration_ms}ms)` : '';
+      const dur = Math.trunc(Number(span.duration_ms) || 0);
+      const durationLabel = dur > 0 ? ` (${dur}ms)` : '';
       const tool = span.tool ? ` [${sanitize(span.tool)}]` : '';
       lines.push(`  Note over ${actor}: ${action}${tool}${durationLabel}`);
       if (span.outcome === 'Finish') {
@@ -105,7 +108,8 @@
       const labelA = `${sanitize(a.actor)}.${sanitize(a.action)}`;
       const labelB = `${sanitize(b.actor)}.${sanitize(b.action)}`;
       if (a.outcome === 'Finish') {
-        lines.push(`  ${idA}["${labelA}"] -->|${a.duration_ms}ms| ${idB}["${labelB}"]`);
+        const dur = Math.trunc(Number(a.duration_ms) || 0);
+        lines.push(`  ${idA}["${labelA}"] -->|${dur}ms| ${idB}["${labelB}"]`);
       } else {
         lines.push(`  ${idA}["${labelA}"] -.->|→| ${idB}["${labelB}"]`);
       }
@@ -128,7 +132,7 @@
     try {
       const id = `ayin-mermaid-${++renderCount}`;
       const { svg } = await mermaid.render(id, definition);
-      svgOutput = svg;
+      svgOutput = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } });
       activePanelContext.update(ctx =>
         ctx?.type === 'ayin-traces' ? { ...ctx, spanCount: spans.length } : ctx
       );
