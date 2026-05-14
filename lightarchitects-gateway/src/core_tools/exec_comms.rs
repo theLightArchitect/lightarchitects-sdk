@@ -256,3 +256,300 @@ async fn drain_and_wait(
     }
 
     // Join drain tasks before marking complete — guarantees all output is buffered.
+    if let Some(t) = stdout_join {
+        let _ = t.await;
+    }
+    if let Some(t) = stderr_join {
+        let _ = t.await;
+    }
+
+    let exit_code = child.wait().await.ok().and_then(|s| s.code());
+
+    let mut reg = registry().lock().await;
+    if let Some(e) = reg.entries.get_mut(&handle) {
+        e.status = if killed {
+            ExecStatus::Killed
+        } else {
+            ExecStatus::Complete
+        };
+        e.exit_code = exit_code;
+        e.kill_tx = None;
+    }
+}
+
+// ── exec.run_command ──────────────────────────────────────────────────────────
+
+/// Spawn a process with structured argv and stream output into the registry.
+///
+/// Returns `{pid, stream_handle}`. Poll output with `exec.get_output`.
+///
+/// # Errors
+///
+/// Returns [`GatewayError`] on invalid params, T-1 rejection, rate limit,
+/// registry capacity, or spawn failure.
+pub async fn run_run_command(params: Value) -> Result<Value, GatewayError> {
+    {
+        let mut rl = rate_limiter().lock().await;
+        if !rl.try_acquire() {
+            return Err(GatewayError::Subprocess(
+                "exec rate limit exceeded (50 req / 10s)".to_owned(),
+            ));
+        }
+    }
+
+    let argv = parse_argv(&params)?;
+    validate_argv(&argv)?;
+
+    let cwd_str = params["cwd"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("cwd"))?;
+    let working_dir = expand_tilde(cwd_str);
+    if !working_dir.is_dir() {
+        return Err(GatewayError::File(format!(
+            "cwd does not exist or is not a directory: {}",
+            working_dir.display()
+        )));
+    }
+
+    let timeout_ms = params["timeout_ms"].as_u64().unwrap_or(DEFAULT_TIMEOUT_MS);
+    let timeout = Duration::from_millis(timeout_ms);
+    let extra_env = parse_extra_env(&params);
+
+    let handle = uuid::Uuid::new_v4().to_string();
+    let command_display = argv.join(" ");
+    let started_at = Utc::now();
+
+    let mut process_cmd = tokio::process::Command::new(&argv[0]);
+    process_cmd.args(&argv[1..]);
+    process_cmd.current_dir(&working_dir);
+    process_cmd.stdout(std::process::Stdio::piped());
+    process_cmd.stderr(std::process::Stdio::piped());
+    for (k, v) in &extra_env {
+        process_cmd.env(k, v);
+    }
+
+    let child = process_cmd
+        .spawn()
+        .map_err(|e| GatewayError::Subprocess(format!("spawn failed: {e}")))?;
+    let pid = child.id().unwrap_or(0);
+
+    let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<()>();
+
+    {
+        let mut reg = registry().lock().await;
+        if reg.entries.len() >= MAX_REGISTRY_SIZE {
+            return Err(GatewayError::Subprocess(format!(
+                "exec registry full ({MAX_REGISTRY_SIZE}); kill old processes first"
+            )));
+        }
+        reg.entries.insert(
+            handle.clone(),
+            ExecEntry {
+                pid,
+                command_display,
+                started_at,
+                status: ExecStatus::Running,
+                buffer: Vec::new(),
+                exit_code: None,
+                kill_tx: Some(kill_tx),
+            },
+        );
+    }
+
+    let task_handle = handle.clone();
+    tokio::spawn(async move {
+        drain_and_wait(task_handle, child, timeout, kill_rx).await;
+    });
+
+    Ok(json!({ "pid": pid, "stream_handle": handle }))
+}
+
+// ── exec.list_processes ───────────────────────────────────────────────────────
+
+/// Return all tracked processes with status, command, and buffer metrics.
+///
+/// # Errors
+///
+/// Never fails; `Result` signature matches the dispatch interface.
+pub async fn run_list_processes(_params: Value) -> Result<Value, GatewayError> {
+    let reg = registry().lock().await;
+    let processes: Vec<Value> = reg
+        .entries
+        .iter()
+        .map(|(handle, e)| {
+            json!({
+                "stream_handle": handle,
+                "pid": e.pid,
+                "command": e.command_display,
+                "started_at": e.started_at.to_rfc3339(),
+                "status": e.status.as_str(),
+                "output_lines": e.buffer.len(),
+                "exit_code": e.exit_code,
+            })
+        })
+        .collect();
+    Ok(json!({ "processes": processes }))
+}
+
+// ── exec.kill_process ─────────────────────────────────────────────────────────
+
+/// Signal a tracked process to terminate by sending the kill signal via its channel.
+///
+/// # Errors
+///
+/// Returns [`GatewayError`] if the process is not tracked or already complete.
+pub async fn run_kill_process(params: Value) -> Result<Value, GatewayError> {
+    let pid = u32::try_from(
+        params["pid"]
+            .as_u64()
+            .ok_or(GatewayError::MissingParam("pid"))?,
+    )
+    .map_err(|_| GatewayError::Subprocess("pid exceeds u32 range".to_owned()))?;
+
+    let kill_tx = {
+        let mut reg = registry().lock().await;
+        reg.entries
+            .values_mut()
+            .find(|e| e.pid == pid)
+            .and_then(|e| e.kill_tx.take())
+    };
+
+    match kill_tx {
+        Some(tx) => {
+            let _ = tx.send(());
+            Ok(json!({ "killed": true, "pid": pid }))
+        }
+        None => Err(GatewayError::Subprocess(format!(
+            "no active process with pid={pid} (may have already completed or been killed)"
+        ))),
+    }
+}
+
+// ── exec.get_output ───────────────────────────────────────────────────────────
+
+/// Retrieve buffered output lines since `cursor`.
+///
+/// Returns up to `PAGE_SIZE` lines. `next_cursor` advances past the returned
+/// chunk. When `complete=true` and `next_cursor == total_lines`, all output
+/// has been consumed.
+///
+/// # Errors
+///
+/// Returns [`GatewayError`] if the handle is not found in the registry.
+pub async fn run_get_output(params: Value) -> Result<Value, GatewayError> {
+    let handle = params["stream_handle"]
+        .as_str()
+        .ok_or(GatewayError::MissingParam("stream_handle"))?;
+    let cursor = usize::try_from(params["cursor"].as_u64().unwrap_or(0)).unwrap_or(0);
+
+    let reg = registry().lock().await;
+    let e = reg.entries.get(handle).ok_or_else(|| {
+        GatewayError::Subprocess(format!("stream_handle '{handle}' not found in registry"))
+    })?;
+
+    let total = e.buffer.len();
+    let start = cursor.min(total);
+    let end = (start + PAGE_SIZE).min(total);
+    let chunks: Vec<&str> = e.buffer[start..end].iter().map(String::as_str).collect();
+    let complete = matches!(e.status, ExecStatus::Complete | ExecStatus::Killed) && end == total;
+
+    Ok(json!({
+        "chunks": chunks,
+        "next_cursor": end,
+        "complete": complete,
+        "status": e.status.as_str(),
+        "exit_code": e.exit_code,
+        "total_lines": total,
+    }))
+}
+
+// ── Public test helpers (visible to integration tests in tests/) ───────────────
+
+/// Test utilities for `exec.*` integration and property tests.
+///
+/// Not part of the public API — exported only for test consumers.
+#[doc(hidden)]
+pub mod test_helpers {
+    use super::SlidingWindowLimiter;
+    use std::time::Duration;
+
+    /// Opaque wrapper around [`SlidingWindowLimiter`] for property testing.
+    pub struct TestRateLimiter(SlidingWindowLimiter);
+
+    impl TestRateLimiter {
+        /// Returns `true` and records the instant if within the rate limit.
+        pub fn try_acquire(&mut self) -> bool {
+            self.0.try_acquire()
+        }
+    }
+
+    /// Construct an isolated limiter for property tests (does not share the global singleton).
+    pub fn make_rate_limiter(max_requests: usize, window: Duration) -> TestRateLimiter {
+        TestRateLimiter(SlidingWindowLimiter::new(max_requests, window))
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn validate_binary_permits_allowlist() {
+        assert!(validate_binary("cargo").is_ok());
+        assert!(validate_binary("/usr/local/bin/cargo").is_ok());
+        assert!(validate_binary("pnpm").is_ok());
+    }
+
+    #[test]
+    fn validate_binary_blocks_shells() {
+        assert!(validate_binary("sh").is_err());
+        assert!(validate_binary("bash").is_err());
+        assert!(validate_binary("/bin/sh").is_err());
+    }
+
+    #[test]
+    fn validate_arg_rejects_metacharacters() {
+        assert!(validate_arg("test; rm -rf /").is_err());
+        assert!(validate_arg("arg|pipe").is_err());
+        assert!(validate_arg("$HOME").is_err());
+        assert!(validate_arg("`id`").is_err());
+        assert!(validate_arg("echo\nhello").is_err());
+    }
+
+    #[test]
+    fn validate_arg_permits_safe_flags() {
+        assert!(validate_arg("--format=json").is_ok());
+        assert!(validate_arg("--message-format").is_ok());
+        assert!(validate_arg("libtest-json").is_ok());
+        assert!(validate_arg("--all-features").is_ok());
+        assert!(validate_arg("test_module::my_test").is_ok());
+    }
+
+    #[test]
+    fn validate_argv_empty_is_rejected() {
+        assert!(validate_argv(&[]).is_err());
+    }
+
+    #[tokio::test]
+    async fn rate_limiter_blocks_at_limit() {
+        let mut rl = SlidingWindowLimiter::new(3, Duration::from_secs(60));
+        assert!(rl.try_acquire());
+        assert!(rl.try_acquire());
+        assert!(rl.try_acquire());
+        assert!(!rl.try_acquire()); // 4th is denied
+    }
+
+    #[tokio::test]
+    async fn get_output_unknown_handle_errors() {
+        let result = run_get_output(json!({
+            "stream_handle": "no-such-handle-abc123",
+            "cursor": 0
+        }))
+        .await;
+        assert!(result.is_err());
+    }
+}

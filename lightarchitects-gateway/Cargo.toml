@@ -79,6 +79,7 @@ sha2 = "0.10"
 neo4rs = { version = "0.8", features = ["json"] }
 moka = { version = "0.12", features = ["future"] }
 criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1"
 similar = "2"
 
 [[bin]]
@@ -182,6 +183,7 @@ tokio-test = { workspace = true }
 tower = { workspace = true, features = ["util"] }
 axum = { workspace = true }
 criterion = { workspace = true }
+proptest = { workspace = true }
 
 [[bench]]
 name = "wave32_perf"
