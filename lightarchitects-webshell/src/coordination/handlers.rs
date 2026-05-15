@@ -31,10 +31,11 @@ use serde::{Deserialize, Serialize};
 use crate::{auth, server::AppState};
 
 use super::types::{
-    AddTaskRequest, AddTaskResponse, ChatSessionSummary, ChatSessionsResponse, ClaimRequest,
-    ClaimResponse, InjectRequest, InjectResponse, SessionEndRequest, SessionEndResponse,
-    SessionStartRequest, SessionStartResponse, SpawnWorkerRequest, SpawnWorkerResponse,
-    TaskLogsResponse, TaskQueueResponse, TaskSummary,
+    AddTaskRequest, AddTaskResponse, ApproveRequest, ApproveResponse, ChatSessionSummary,
+    ChatSessionsResponse, ClaimRequest, ClaimResponse, InjectRequest, InjectResponse,
+    RejectRequest, RejectResponse, SessionEndRequest, SessionEndResponse, SessionStartRequest,
+    SessionStartResponse, SpawnWorkerRequest, SpawnWorkerResponse, TaskLogsResponse,
+    TaskQueueResponse, TaskSummary,
 };
 
 // ── Security helpers ─────────────────────────────────────────────────────────
@@ -624,6 +625,181 @@ pub async fn spawn_worker(
                 .into_response()
         }
     }
+}
+
+/// `POST /api/builds/{id}/copilot/approve` — approve a pending tool-call permission.
+///
+/// Looks up the `AgentSessionHost` for the build, checks if the `call_id` exists
+/// in the `permission_queue`, and sends `true` via the oneshot channel to unblock
+/// the waiting agent turn.
+///
+/// # Errors
+///
+/// Returns:
+/// - `401 Unauthorized` — missing or invalid bearer token
+/// - `404 Not Found` — `build_id` doesn't exist or `AgentSessionHost` not initialized
+/// - `400 Bad Request` — `call_id` not provided or invalid format
+/// - `409 Conflict` — `call_id` already resolved (race condition)
+/// - `503 Service Unavailable` — `control_tx` channel full
+pub async fn approve_permission(
+    AxPath(build_id): AxPath<String>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(req): Json<ApproveRequest>,
+) -> impl IntoResponse {
+    if !is_authorised(&headers, &state) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    // Validate call_id format (UUID v4 expected).
+    if req.call_id.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, "call_id is required".to_owned()).into_response();
+    }
+
+    // Parse build_id as UUID.
+    let Ok(build_uuid) = uuid::Uuid::parse_str(&build_id) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            "invalid build_id format".to_owned(),
+        )
+            .into_response();
+    };
+
+    // Look up the build session.
+    let Some(session) = state.builds.get(build_uuid) else {
+        return (StatusCode::NOT_FOUND, format!("build {build_id} not found")).into_response();
+    };
+
+    // Clone the Arc<AgentSessionHost> while holding the lock (HIGH H-22).
+    let host = {
+        let guard = session.agent_host.lock().await;
+        guard.as_ref().cloned()
+    };
+    let Some(host) = host else {
+        return (
+            StatusCode::NOT_FOUND,
+            "agent session not initialized".to_owned(),
+        )
+            .into_response();
+    };
+
+    // Check if call_id exists in permission_queue.
+    let Some((_, sender)) = host.permission_queue.remove(&req.call_id) else {
+        return (
+            StatusCode::CONFLICT,
+            format!(
+                "permission request {} already resolved or not found",
+                req.call_id
+            ),
+        )
+            .into_response();
+    };
+
+    // Send approval (true) via oneshot channel.
+    if sender.send(true).is_err() {
+        // Receiver already dropped — agent turn already resolved.
+        return (
+            StatusCode::CONFLICT,
+            "agent turn already completed".to_owned(),
+        )
+            .into_response();
+    }
+
+    Json(ApproveResponse {
+        approved: true,
+        message: "permission approved".to_owned(),
+    })
+    .into_response()
+}
+
+/// `POST /api/builds/{id}/copilot/reject` — reject a pending tool-call permission.
+///
+/// Looks up the `AgentSessionHost` for the build, checks if the `call_id` exists
+/// in the `permission_queue`, and sends `false` via the oneshot channel to unblock
+/// the waiting agent turn with a denial.
+///
+/// # Errors
+///
+/// Returns:
+/// - `401 Unauthorized` — missing or invalid bearer token
+/// - `404 Not Found` — `build_id` doesn't exist or `AgentSessionHost` not initialized
+/// - `400 Bad Request` — `call_id` not provided or invalid format
+/// - `409 Conflict` — `call_id` already resolved (race condition)
+/// - `503 Service Unavailable` — `control_tx` channel full
+pub async fn reject_permission(
+    AxPath(build_id): AxPath<String>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(req): Json<RejectRequest>,
+) -> impl IntoResponse {
+    if !is_authorised(&headers, &state) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    // Validate call_id format (UUID v4 expected).
+    if req.call_id.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, "call_id is required".to_owned()).into_response();
+    }
+
+    // Parse build_id as UUID.
+    let Ok(build_uuid) = uuid::Uuid::parse_str(&build_id) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            "invalid build_id format".to_owned(),
+        )
+            .into_response();
+    };
+
+    // Look up the build session.
+    let Some(session) = state.builds.get(build_uuid) else {
+        return (StatusCode::NOT_FOUND, format!("build {build_id} not found")).into_response();
+    };
+
+    // Get the agent host. Bind the guard to a named binding so the MutexGuard
+    // lives long enough for host to borrow from it across the permission_queue lookup.
+    let agent_host_guard = session.agent_host.lock().await;
+    let Some(host) = agent_host_guard.as_ref() else {
+        return (
+            StatusCode::NOT_FOUND,
+            "agent session not initialized".to_owned(),
+        )
+            .into_response();
+    };
+
+    // Check if call_id exists in permission_queue.
+    let Some((_, sender)) = host.permission_queue.remove(&req.call_id) else {
+        return (
+            StatusCode::CONFLICT,
+            format!(
+                "permission request {} already resolved or not found",
+                req.call_id
+            ),
+        )
+            .into_response();
+    };
+
+    // Log rejection reason if provided.
+    if let Some(ref reason) = req.reason {
+        tracing::info!(call_id = %req.call_id, reason = %reason, "permission rejected");
+    }
+
+    // Send denial (false) via oneshot channel.
+    if sender.send(false).is_err() {
+        // Receiver already dropped — agent turn already resolved.
+        return (
+            StatusCode::CONFLICT,
+            "agent turn already completed".to_owned(),
+        )
+            .into_response();
+    }
+
+    Json(RejectResponse {
+        rejected: true,
+        message: req
+            .reason
+            .unwrap_or_else(|| "permission rejected".to_owned()),
+    })
+    .into_response()
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

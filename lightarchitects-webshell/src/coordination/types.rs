@@ -237,6 +237,48 @@ pub struct SpawnWorkerResponse {
     pub message: String,
 }
 
+// ── Agent approval endpoints (E5: permission gating + approval UX) ─────────
+
+/// Request body for `POST /api/builds/{id}/copilot/approve`.
+///
+/// Approves a pending tool-call permission request. The `call_id` must match
+/// a pending request in the `AgentSessionHost.permission_queue`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ApproveRequest {
+    /// Permission request ID (matches `call_id` from `PermissionRequest` SSE event).
+    pub call_id: String,
+}
+
+/// Response for `POST /api/builds/{id}/copilot/approve`.
+#[derive(Debug, Clone, Serialize)]
+pub struct ApproveResponse {
+    /// Always `true` on success.
+    pub approved: bool,
+    /// Human-readable status message.
+    pub message: String,
+}
+
+/// Request body for `POST /api/builds/{id}/copilot/reject`.
+///
+/// Rejects a pending tool-call permission request with an optional reason.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RejectRequest {
+    /// Permission request ID (matches `call_id` from `PermissionRequest` SSE event).
+    pub call_id: String,
+    /// Optional reason for rejection (displayed to operator in activity log).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Response for `POST /api/builds/{id}/copilot/reject`.
+#[derive(Debug, Clone, Serialize)]
+pub struct RejectResponse {
+    /// Always `true` on success.
+    pub rejected: bool,
+    /// Human-readable status message.
+    pub message: String,
+}
+
 /// One delta on the chat SSE stream.
 ///
 /// Sent as the JSON body of each SSE `data:` line. The frontend dispatches

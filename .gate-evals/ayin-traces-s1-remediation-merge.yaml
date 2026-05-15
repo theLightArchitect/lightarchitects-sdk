@@ -1,0 +1,64 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-14T16:22:00Z"
+build_id: ayin-traces-s1-remediation
+commit: "114959a"
+parent_commit: "7de6355"
+phase_id: merge
+overall_verdict: blocked
+block_reason: "V1 — unit/property/regression tests missing for security-critical behaviors (duration_ms coercion, sanitize() coverage, XSS regression pin)"
+
+dimensions:
+  V0_primary_on_main: pass
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 94
+    tests_fail: 0
+  Q4_svelte:
+    result: pass
+    vitest: 473
+    svelte_check_errors: 0
+  S1_security:
+    result: pass
+    findings: []
+    notes: >
+      DOMPurify 3.4.0 SVG profile closes {@html} XSS vector. securityLevel:'strict'
+      encodes label content at DSL-parse time. Math.trunc(Number(x)||0) eliminates
+      duration_ms injection in both sequence (L83) and flow (L111) generators.
+      No new attack surface introduced. CVE-2024-47875 and 3.2.0 bypass both patched
+      at ^3.4.0. LOW: add pnpm audit to CI.
+    agent: lightarchitects:security
+  S2_supply_chain: pass
+  S3_laex: n/a
+  I1_rebase:
+    result: pass
+    commits_ahead: 2
+    notes: "clean descendant of github/main; 7de6355 + 114959a local, not yet pushed"
+  N1_northstar:
+    result: pass
+    pillar: P1
+    notes: "Referenced from parent build 7de6355; no standalone plan for remediation commit"
+  N2_chain:
+    result: pass
+    notes: "Concrete — DOMPurify remediation removes sole blocker on parent feature merge"
+  D1_docs: pass
+  D2_plan: n/a
+  D3_claude_md:
+    result: warn
+    notes: "CLAUDE.md still missing mermaid dep + observe preset note; carried from parent gate 7de6355"
+  V1_pyramid:
+    result: fail
+    missing_suites:
+      - unit: "duration_ms coercion — null/undefined/NaN/object/string → 0"
+      - property: "sanitize() whitelist holds for arbitrary string inputs"
+      - regression: "actor='<img onerror=alert(1)>' → svgOutput must not contain onerror"
+      - integration: "DOMPurify applied to mermaid.render() output before {@html}"
+    passing_suites:
+      - smoke: "473 vitest + pnpm build clean"
+    deferred_suites:
+      - e2e: "feat/ayin-http-dashboard merge + AYIN :3742 redeployment required"
+  V2_smoke: pass
+  V3_e2e: "deferred:feat/ayin-http-dashboard merge + AYIN redeployed at :3742"

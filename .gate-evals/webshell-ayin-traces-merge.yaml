@@ -1,0 +1,71 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-14T15:05:00Z"
+build_id: harvesting-converging-quasar
+phase_id: phase-5a-remediation
+commit: 7de6355
+branch: main
+overall_verdict: blocked
+block_reason: "S1 HIGH — {@html svgOutput} without DOMPurify; Mermaid SVG injection vector not mitigated"
+
+dimensions:
+  V0_primary_on_main: pass
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    rust_tests_pass: 94
+    js_tests_pass: 473
+    flaky_pre_existing: "phase6 > Ops screen imports successfully (parallel race, passes in isolation)"
+  Q4_svelte:
+    result: pass
+    errors: 0
+    warnings: 12
+  S1_security:
+    result: blocked
+    findings:
+      - id: F1
+        severity: HIGH
+        title: "{@html svgOutput} without DOMPurify — Mermaid SVG XSS vector"
+        location: "AyinTracesPanel.svelte:257"
+        cwe: CWE-79
+        remediation: "Sanitize svgOutput through DOMPurify with SVG allowlist before state assignment"
+      - id: F2
+        severity: MEDIUM
+        title: "No runtime schema validation on SSE JSON — TypeScript cast only"
+        location: "AyinTracesPanel.svelte:155"
+        remediation: "Zod or hand-rolled validator; cast duration_ms with Number() >>> 0"
+      - id: F3
+        severity: MEDIUM
+        title: "mermaid@^11.15.0 — unpinned semver allows future XSS regression"
+        location: "package.json"
+        remediation: "Pin to exact version 11.15.0; add pnpm audit to CI"
+      - id: F4
+        severity: LOW
+        title: "SSE unauthenticated over HTTP loopback — confirm AYIN Origin validation"
+        location: "AyinTracesPanel.svelte:25"
+  S2_supply_chain:
+    rust: pass  # cargo deny: advisories ok, bans ok, licenses ok, sources ok
+    js: pre_existing  # 5 svelte vulns (1 high, 4 moderate) — not introduced by this commit, no mermaid CVEs
+  S3_laex: n/a  # no new crypto/auth/permission surfaces
+  I1_rebase: pass  # 1 commit ahead of github/main, clean descendant
+  I2_build: pass   # cargo build --workspace Finished
+  N1_northstar:
+    result: pass
+    pillar: "P1 (E2E engineering from webshell UI)"
+  N2_chain: pass  # concrete — AYIN panel closes observability gap in mosaic, operators see traces from UI
+  N3_exclusion_zones: pass
+  D1_docs:
+    result: warning
+    notes:
+      - "AyinTracesPanel.svelte: no @component JSDoc — but convention not used in any other panel; not blocking"
+      - "types.ts: duplicate ContextStatusEvent (lines 549/561) — PRE-EXISTING from commit 2716348, not introduced here"
+  D2_plan: pass  # scope matches HCQ Phase 5a AYIN mosaic deliverable
+  D3_claude_md: warning  # mermaid dep + observe preset unmentioned; not blocking
+  V1_pyramid:
+    result: fail
+    missing_suites: [integration, property, e2e, regression]
+    gap_detail: "addPanel('ayin-traces') integration; Mermaid render E2E; offline/reconnect cycle; VALID_PANEL_IDS property test"
+  V2_smoke: pass  # dist/ exists; cargo build Finished
+  V3_e2e: "deferred:feat/ayin-http-dashboard merged + AYIN redeployed at :3742"

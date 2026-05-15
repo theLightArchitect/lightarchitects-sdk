@@ -135,6 +135,28 @@ export const DOMAIN_AGENT_LABELS: Record<DomainAgent, string> = {
 // ── Tool augmentation ─────────────────────────────────────────────────────────
 
 /**
+ * Claude model tier for agent dispatch.
+ * haiku:   Structured verification tasks (coverage audit, compliance check, pattern matching).
+ * sonnet:  Complex multi-step reasoning (implementation, security, investigation, synthesis).
+ * opus:    Reserved — architecture planning only, not used in standard presets.
+ * inherit: Pass through the parent session model (routing-only agents).
+ *
+ * Source: code.claude.com/docs/en/sub-agents, validated 2026-05-14.
+ */
+export type ModelTier = 'haiku' | 'sonnet' | 'opus' | 'inherit';
+
+export const DOMAIN_AGENT_MODEL_TIERS: Record<DomainAgent, ModelTier> = {
+  engineer:   'sonnet',
+  quality:    'sonnet',
+  security:   'sonnet',
+  ops:        'sonnet',
+  researcher: 'sonnet',
+  knowledge:  'sonnet',
+  testing:    'haiku',
+  squad:      'inherit',
+};
+
+/**
  * Research depth injected into agent prompt at dispatch.
  * standard:   Pull 1-2 sources; conclude on first STRONG evidence.
  * deep:       Pull ≥3 external sources; must include Context7 + one of {Firecrawl, HuggingFace}.
@@ -155,6 +177,8 @@ export interface AgentToolConfig {
   depth: ResearchDepth;
   /** Optional tools the operator can toggle on/off before dispatch. */
   optional_tools: string[];
+  /** Claude model tier override for this agent. Defaults to DOMAIN_AGENT_MODEL_TIERS[agent]. */
+  model_tier?: ModelTier;
 }
 
 /** Per-agent tool usage telemetry — emitted over SSE during agent run. */
