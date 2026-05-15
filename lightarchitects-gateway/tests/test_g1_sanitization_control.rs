@@ -6,7 +6,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use lightarchitects_gateway::spawner::claude_runtime::sanitize_params;
+use lightarchitects::agent::sanitize_params;
 
 // ── Control-plane rejection tests ─────────────────────────────────────────────
 

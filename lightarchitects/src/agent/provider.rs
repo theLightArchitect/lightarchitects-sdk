@@ -1,14 +1,13 @@
 //! LLM agent provider trait and associated request/response types.
 //!
-//! [`LlmAgentProvider`] is the contract every Claude-CLI-backed (or mock)
-//! provider must satisfy. The gateway dispatches inline handler calls through
-//! the provider rather than through the MCP subprocess path in
-//! [`crate::spawner::call_agent`].
+//! [`LlmAgentProvider`] is the contract every provider must satisfy.
+//! Inline sibling handlers dispatch LLM calls through the provider rather
+//! than through the MCP subprocess spawner.
 //!
 //! # Security model
 //!
 //! - **G1**: All string parameters entering a provider MUST pass the two-plane
-//!   sanitization defined in [`crate::spawner::claude_runtime`]:
+//!   sanitization defined in [`super::sanitize_params`]:
 //!   control-plane (identity) → reject on dangerous tokens;
 //!   content-plane (prompt) → escape and strip.
 //! - **G4**: `parent_span_id` carries the W3C `traceparent` header value;

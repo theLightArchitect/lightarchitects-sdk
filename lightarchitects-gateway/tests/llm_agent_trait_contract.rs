@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use lightarchitects_gateway::spawner::llm_agent::{
+use lightarchitects::agent::{
     AgentRequest, AgentResponse, LlmAgentProvider, ProviderCapabilities, ProviderError, SchemaMode,
     TokenUsage,
 };

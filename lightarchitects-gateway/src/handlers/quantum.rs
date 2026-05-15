@@ -20,12 +20,9 @@ use lightarchitects::core::handler::{HandlerConfig, HandlerError, SiblingHandler
 use serde_json::Value;
 
 use crate::config::GatewayConfig;
-use crate::spawner::claude_runtime::ClaudeCliProvider;
 #[cfg(test)]
-use crate::spawner::llm_agent::ProviderError;
-use crate::spawner::llm_agent::{AgentRequest, LlmAgentProvider};
-
-use super::common::{build_prompt, map_provider_error};
+use lightarchitects::agent::ProviderError;
+use lightarchitects::agent::{ClaudeCliProvider, LlmAgentProvider, dispatch_action};
 
 /// All QUANTUM actions supported by the inline handler.
 ///
@@ -104,23 +101,15 @@ impl SiblingHandler for QuantumHandler {
 
         // Phase 4: verdict_y actions dispatch through LLM provider.
         if QUANTUM_LLM_ACTIONS.contains(&action) {
-            let prompt = build_prompt("quantum", action, &params)?;
-            let req = AgentRequest {
-                sibling_identity: QUANTUM_IDENTITY.to_owned(),
-                user_prompt: prompt,
-                schema: None,
-                allowed_tools: vec![],
-                max_turns: 1,
-                max_budget_usd: QUANTUM_MAX_BUDGET_USD,
-                model_hint: None,
-                parent_span_id: None,
-            };
-            return self
-                .provider
-                .spawn(req)
-                .await
-                .map(|resp| resp.output)
-                .map_err(|e| map_provider_error("quantum", action, e));
+            return dispatch_action(
+                &*self.provider,
+                "quantum",
+                action,
+                &params,
+                QUANTUM_IDENTITY,
+                QUANTUM_MAX_BUDGET_USD,
+            )
+            .await;
         }
 
         // KEEP actions: stub — real dispatch requires `quantum_q::call_tool`
@@ -155,7 +144,9 @@ mod tests {
     use async_trait::async_trait;
 
     use super::*;
-    use crate::spawner::llm_agent::{AgentResponse, ProviderCapabilities, SchemaMode, TokenUsage};
+    use lightarchitects::agent::{
+        AgentRequest, AgentResponse, ProviderCapabilities, SchemaMode, TokenUsage,
+    };
 
     fn handler() -> QuantumHandler {
         QuantumHandler::new(&GatewayConfig::default())

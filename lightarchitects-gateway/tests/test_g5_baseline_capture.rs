@@ -1,10 +1,16 @@
-//! G5 Baseline Capture — Phase 2 close-out
+//! G5 Baseline Capture — Phase 2 close-out (Phase 4 updated)
 //!
-//! Measures p50/p95 latency for all 41 `verdict_y_actions` through the existing
-//! stub handler path. This pre-migration baseline documents that current
-//! handlers return errors/stubs in sub-ms time.
+//! Measures p50/p95 latency for all 41 `verdict_y_actions`. Since Phase 4,
+//! all actions are LLM-dispatched via `ClaudeCliProvider` (real `claude -p`
+//! subprocesses). Each sample makes a live API call.
 //!
-//! Run: `cargo test --features inline-all --test test_g5_baseline_capture -- --nocapture`
+//! **This test is `#[ignore]`d** — it requires a live Claude auth session and
+//! incurs real API cost. Run explicitly:
+//!
+//! ```
+//! cargo test --features inline-all --test test_g5_baseline_capture \
+//!     -- --ignored --nocapture
+//! ```
 //!
 //! Writes: ~/lightarchitects/soul/helix/corso/builds/
 //!         gateway-action-audit-claude-runtime/baseline-latency.json
@@ -21,10 +27,15 @@ use lightarchitects_gateway::config::GatewayConfig;
 use lightarchitects_gateway::handlers::{CorsoHandler, EvaHandler, QuantumHandler, SoulHandler};
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::time::Instant;
-use tokio::runtime::Runtime;
+use std::time::{Duration, Instant};
 
-const SAMPLES: usize = 10;
+/// One sample per LLM action — enough for a baseline; p95 over 10 LLM calls
+/// adds no statistical value given the high natural variance of API latency.
+const SAMPLES: usize = 1;
+
+/// Hard per-call wall-clock ceiling. claude -p rarely needs more than 60s for
+/// a single-turn probe; anything longer indicates a hang, not slow inference.
+const LLM_CALL_TIMEOUT: Duration = Duration::from_secs(60);
 const BUILD_ROOT: &str =
     "/Users/kft/lightarchitects/soul/helix/corso/builds/gateway-action-audit-claude-runtime";
 
@@ -123,9 +134,11 @@ async fn time_action<H: SiblingHandler>(handler: &H, action: &str, samples: usiz
     let mut timings = Vec::with_capacity(samples);
     for _ in 0..samples {
         let start = Instant::now();
-        let _ = handler
-            .call(action, json!({"input": "baseline-probe"}))
-            .await;
+        let _ = tokio::time::timeout(
+            LLM_CALL_TIMEOUT,
+            handler.call(action, json!({"input": "baseline-probe"})),
+        )
+        .await;
         timings.push(u64::try_from(start.elapsed().as_micros()).unwrap_or(u64::MAX));
     }
     timings.sort_unstable();
@@ -136,20 +149,15 @@ fn p50(sorted: &[u64]) -> u64 {
     sorted[sorted.len() / 2]
 }
 
-#[allow(
-    clippy::cast_precision_loss,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
-)]
 fn p95(sorted: &[u64]) -> u64 {
-    let idx = ((sorted.len() - 1) as f64 * 0.95) as usize;
+    let idx = (sorted.len() - 1) * 95 / 100;
     sorted[idx]
 }
 
-#[test]
+#[tokio::test]
+#[ignore = "LLM integration test — makes live API calls. Run with: cargo test -- --ignored"]
 #[allow(clippy::too_many_lines, clippy::expect_used)]
-fn capture_g5_baseline_latency() {
-    let rt = Runtime::new().expect("tokio runtime");
+async fn capture_g5_baseline_latency() {
     let config = GatewayConfig::default();
 
     let corso = CorsoHandler::new(&config);
@@ -162,7 +170,7 @@ fn capture_g5_baseline_latency() {
     // ── CORSO ────────────────────────────────────────────────────────────────
     let mut corso_map: HashMap<String, Value> = HashMap::new();
     for action in CORSO_VERDICT_Y {
-        let timings = rt.block_on(time_action(&corso, action, SAMPLES));
+        let timings = time_action(&corso, action, SAMPLES).await;
         corso_map.insert(
             (*action).to_owned(),
             json!({
@@ -178,7 +186,7 @@ fn capture_g5_baseline_latency() {
     // ── EVA ──────────────────────────────────────────────────────────────────
     let mut eva_map: HashMap<String, Value> = HashMap::new();
     for action in EVA_VERDICT_Y_DIRECT.iter().chain(EVA_VERDICT_Y_ALIAS) {
-        let timings = rt.block_on(time_action(&eva, action, SAMPLES));
+        let timings = time_action(&eva, action, SAMPLES).await;
         eva_map.insert(
             (*action).to_owned(),
             json!({
@@ -215,7 +223,7 @@ fn capture_g5_baseline_latency() {
     // ── SOUL ─────────────────────────────────────────────────────────────────
     let mut soul_map: HashMap<String, Value> = HashMap::new();
     for action in SOUL_VERDICT_Y {
-        let timings = rt.block_on(time_action(&soul, action, SAMPLES));
+        let timings = time_action(&soul, action, SAMPLES).await;
         soul_map.insert(
             (*action).to_owned(),
             json!({
@@ -231,7 +239,7 @@ fn capture_g5_baseline_latency() {
     // ── QUANTUM ──────────────────────────────────────────────────────────────
     let mut quantum_map: HashMap<String, Value> = HashMap::new();
     for action in QUANTUM_VERDICT_Y {
-        let timings = rt.block_on(time_action(&quantum, action, SAMPLES));
+        let timings = time_action(&quantum, action, SAMPLES).await;
         quantum_map.insert(
             (*action).to_owned(),
             json!({

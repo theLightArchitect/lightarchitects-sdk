@@ -1,4 +1,4 @@
-//! Claude CLI provider — [`ClaudeCliProvider`] spawns `claude --bare -p` as a
+//! Claude CLI provider — [`ClaudeCliProvider`] spawns `claude -p` as a
 //! subprocess and wraps the result in the [`LlmAgentProvider`] contract.
 //!
 //! # Security controls
@@ -7,8 +7,15 @@
 //! |------|----------------|
 //! | G1 control-plane | [`sanitize_params`] rejects `</system>`, `<system>`, RTL U+202E, zero-width joiners, and null bytes |
 //! | G1 content-plane | [`sanitize_params`] escapes `<`/`>` and strips RTL/zero-width chars with `tracing::warn!` |
-//! | G10 subprocess hygiene | `kill_on_drop(true)` + `tokio::time::timeout`; stderr piped to `tracing::warn!` only |
+//! | G10 subprocess hygiene | `kill_on_drop(true)` + `process_group(0)` + `libc::killpg` on timeout; stderr piped to `tracing::warn!` only |
 //! | G4 traceparent | `TRACEPARENT` env var injected from `parent_span_id` when present |
+//!
+//! # Auth model
+//!
+//! The subprocess inherits authentication from the host `claude` CLI session
+//! (OAuth / Claude Max, or explicit API key via `api_key` field). The host
+//! `ANTHROPIC_API_KEY` env var is explicitly removed so a stale env var cannot
+//! override the user's configured auth method.
 //!
 //! # Cost accounting
 //!
@@ -23,7 +30,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tracing::{info, warn};
 
-use super::llm_agent::{
+use super::provider::{
     AgentRequest, AgentResponse, LlmAgentProvider, ProviderCapabilities, ProviderError, SchemaMode,
     TokenUsage,
 };
@@ -36,14 +43,16 @@ const SONNET_INPUT_USD_PER_M: f64 = 3.0;
 const SONNET_OUTPUT_USD_PER_M: f64 = 15.0;
 
 /// Maximum allowed byte length for control-plane or content-plane strings.
-const MAX_PARAM_BYTES: usize = 8_192;
+pub const MAX_PARAM_BYTES: usize = 8_192;
 
 // ── Provider struct ─────────────────────────────────────────────────────────────
 
-/// Spawns `claude --bare -p` as a subprocess.
+/// Spawns `claude -p` as a subprocess.
 ///
-/// Authentication is inherited from the host session (API key / OAuth already
-/// configured for the `claude` CLI binary). No additional credentials are required.
+/// Authentication is inherited from the host session (OAuth / Claude Max or
+/// API key already configured for the `claude` CLI binary). The host
+/// `ANTHROPIC_API_KEY` env var is removed to prevent stale overrides; use
+/// `api_key` to supply an explicit key when needed.
 #[derive(Debug, Clone)]
 pub struct ClaudeCliProvider {
     /// Default model identifier (overridable per-request via [`AgentRequest::model_hint`]).
@@ -52,6 +61,12 @@ pub struct ClaudeCliProvider {
     pub claude_binary: PathBuf,
     /// Version tag for the rate table in use (for audit/logging).
     pub rate_table_version: String,
+    /// Explicit API key to inject into the subprocess environment.
+    ///
+    /// When `None`, the subprocess inherits the host session's auth
+    /// (OAuth / Claude Max). When `Some`, the key is set as
+    /// `ANTHROPIC_API_KEY` for the subprocess only.
+    pub api_key: Option<String>,
 }
 
 impl Default for ClaudeCliProvider {
@@ -60,6 +75,7 @@ impl Default for ClaudeCliProvider {
             default_model: "claude-sonnet-4-6".to_owned(),
             claude_binary: PathBuf::from("claude"),
             rate_table_version: "2026-05-14".to_owned(),
+            api_key: None,
         }
     }
 }
@@ -72,7 +88,7 @@ impl LlmAgentProvider for ClaudeCliProvider {
         "claude-cli"
     }
 
-    /// Spawn `claude --bare -p` with the sanitized request parameters.
+    /// Spawn `claude -p` with the sanitized request parameters.
     ///
     /// # Errors
     ///
@@ -90,6 +106,7 @@ impl LlmAgentProvider for ClaudeCliProvider {
             &req,
             &safe_identity,
             &safe_prompt,
+            self.api_key.as_deref(),
         );
 
         let timeout_secs = u64::from(req.max_turns) * 120 + 30;
@@ -171,7 +188,6 @@ pub fn sanitize_params(identity: &str, prompt: &str) -> Result<(String, String),
 
 /// Reject a control-plane string that contains dangerous tokens.
 fn reject_control_plane(s: &str) -> Result<String, ProviderError> {
-    // Forbidden patterns: XML system tags, RTL override, zero-width chars, null byte.
     let forbidden: &[(&str, &str)] = &[
         ("</system>", "XML system-close tag"),
         ("<system>", "XML system-open tag"),
@@ -198,13 +214,8 @@ fn reject_control_plane(s: &str) -> Result<String, ProviderError> {
 }
 
 /// Escape and strip a content-plane string.
-///
-/// `<` and `>` are HTML-entity-escaped. RTL override and zero-width characters
-/// are stripped (not rejected) with a `tracing::warn!`.
 fn escape_content_plane(s: &str) -> String {
-    // Strip RTL and zero-width control characters.
     let stripped = strip_invisible(s);
-    // HTML-escape angle brackets.
     stripped.replace('<', "&lt;").replace('>', "&gt;")
 }
 
@@ -248,9 +259,7 @@ fn check_length(param_name: &str, s: &str) -> Result<(), ProviderError> {
 
 /// Return a path to a minimal valid MCP config that disables all servers.
 ///
-/// Writes `{"mcpServers":{}}` to a stable temp-dir location on first call.
-/// The write is idempotent (same content, same path) and safe to call on
-/// every subprocess launch — it is a 18-byte file in the OS temp directory.
+/// Writes `{"mcpServers":{}}` to a stable temp-dir location. Idempotent.
 fn null_mcp_config() -> std::path::PathBuf {
     let path = std::env::temp_dir().join("la-gateway-mcp-null.json");
     let _ = std::fs::write(&path, r#"{"mcpServers":{}}"#);
@@ -264,11 +273,11 @@ fn build_command(
     req: &AgentRequest,
     safe_identity: &str,
     safe_prompt: &str,
+    api_key: Option<&str>,
 ) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new(binary);
 
-    cmd.arg("--bare")
-        .arg("-p")
+    cmd.arg("-p")
         .arg(safe_prompt)
         .arg("--append-system-prompt")
         .arg(safe_identity)
@@ -286,14 +295,7 @@ fn build_command(
         cmd.arg("--tools").arg(req.allowed_tools.join(","));
     }
 
-    // Prevent recursive gateway invocation: restrict to only the empty config.
-    // --strict-mcp-config ensures ~/.claude/mcp.json is NOT loaded; without it
-    // the subprocess would still inherit the host session's MCP servers (incl.
-    // the lightarchitects gateway), enabling recursion.
-    //
-    // /dev/null is not valid JSON — the CLI rejects it and writes the error to
-    // stdout, producing empty output that fails JSON parsing. Write a minimal
-    // valid config to a stable temp-dir path instead (idempotent, 18 bytes).
+    // G10: prevent recursive gateway invocation by restricting MCP servers.
     let mcp_null = null_mcp_config();
     cmd.arg("--strict-mcp-config")
         .arg("--mcp-config")
@@ -303,10 +305,24 @@ fn build_command(
         cmd.env("TRACEPARENT", span_id);
     }
 
+    // Auth: remove any stale ANTHROPIC_API_KEY from the host env so it cannot
+    // override the user's configured auth (OAuth / Claude Max). Re-inject only
+    // when an explicit key is provided.
+    cmd.env_remove("ANTHROPIC_API_KEY");
+    if let Some(key) = api_key {
+        cmd.env("ANTHROPIC_API_KEY", key);
+    }
+
     cmd.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
+
+    // G10: put the subprocess in its own process group so that killpg on
+    // timeout reaches all grandchildren (e.g. claude spawning sub-agents).
+    // PGID == child PID when pgroup is 0.
+    #[cfg(unix)]
+    cmd.process_group(0);
 
     cmd
 }
@@ -317,15 +333,27 @@ fn build_command(
 ///
 /// - [`ProviderError::SubprocessTimeout`] if the deadline is exceeded.
 /// - [`ProviderError::Internal`] if the process cannot be spawned or waited on.
+///
+/// # Safety note
+///
+/// The `#[allow(unsafe_code)]` covers the `libc::killpg` call on timeout.
+/// `killpg` is async-signal-safe and the PID is a valid `u32` obtained from
+/// the OS at spawn time. A negative return value means the group already
+/// exited — safe to ignore.
+#[allow(unsafe_code)]
 async fn spawn_with_timeout(
     mut cmd: tokio::process::Command,
     timeout_dur: Duration,
 ) -> Result<std::process::Output, ProviderError> {
     let child = cmd.spawn().map_err(|e| {
-        // Log detail to traces only — never surface OS error strings to callers (G10 / S3).
         warn!(provider = "claude-cli", err = %e, "subprocess spawn failed");
         ProviderError::Internal("subprocess launch failed".to_owned())
     })?;
+
+    // Save the PID before wait_with_output() consumes the Child handle.
+    // With process_group(0) the PGID equals this PID, so killpg(pid, SIGKILL)
+    // reaches all grandchildren spawned by the claude subprocess.
+    let pgid = child.id();
 
     let result = tokio::time::timeout(timeout_dur, child.wait_with_output()).await;
 
@@ -335,21 +363,34 @@ async fn spawn_with_timeout(
             warn!(provider = "claude-cli", err = %e, "subprocess wait_with_output failed");
             Err(ProviderError::Internal("subprocess I/O error".to_owned()))
         }
-        Err(_elapsed) => Err(ProviderError::SubprocessTimeout {
-            used_turns: 0,
-            used_budget_usd: 0.0,
-        }),
+        Err(_elapsed) => {
+            // kill_on_drop fires when the future above is dropped (direct child).
+            // Also kill the process group to reap any grandchildren.
+            #[cfg(unix)]
+            if let Some(pid) = pgid {
+                // SAFETY: killpg is async-signal-safe; pid is a valid u32 from
+                // the OS. Negative return value means group already gone — safe to ignore.
+                // OS PIDs are bounded by PID_MAX (≤ 4_194_304 on Linux, 99_999 on macOS),
+                // well within i32::MAX, so the cast cannot wrap.
+                #[allow(clippy::cast_possible_wrap)]
+                unsafe {
+                    libc::killpg(pid as libc::pid_t, libc::SIGKILL);
+                }
+            }
+            warn!(
+                provider = "claude-cli",
+                timeout_secs = timeout_dur.as_secs(),
+                "subprocess timed out; process group killed"
+            );
+            Err(ProviderError::SubprocessTimeout {
+                used_turns: 0,
+                used_budget_usd: 0.0,
+            })
+        }
     }
 }
 
-/// Parse `raw` as JSON; on failure retry up to `max_retries` times (re-parse only).
-///
-/// Schema validation (when `schema` is `Some`) checks that the parsed value is
-/// an object — full JSON-Schema evaluation is a future extension.
-///
-/// # Errors
-///
-/// Returns [`ProviderError::SchemaValidationFailed`] when all attempts fail.
+/// Parse `raw` as JSON; on failure retry up to `max_retries` times.
 fn validate_and_retry(
     raw: &str,
     schema: Option<&Value>,
@@ -389,7 +430,7 @@ fn try_parse_and_validate(raw: &str, schema: Option<&Value>) -> Result<Value, St
     Ok(value)
 }
 
-/// Return a human-readable type name for a JSON value (for error messages).
+/// Return a human-readable type name for a JSON value.
 fn value_type_name(v: &Value) -> &'static str {
     match v {
         Value::Null => "null",
@@ -402,9 +443,6 @@ fn value_type_name(v: &Value) -> &'static str {
 }
 
 /// Emit a `tracing::info!` span with key request/response attributes.
-///
-/// This is the G4/AYIN hook point — the span fields are picked up by the AYIN
-/// tracing subscriber for span enrichment.
 fn emit_span(req: &AgentRequest, resp: &AgentResponse) {
     info!(
         provider = "claude-cli",
@@ -481,12 +519,10 @@ mod tests {
         );
     }
 
-    /// G10 recursion guard: `--strict-mcp-config` MUST precede `--mcp-config /dev/null`
-    /// in the subprocess command. Without `--strict-mcp-config`, the subprocess loads
-    /// the host's `~/.claude/mcp.json` (which includes the lightarchitects gateway),
-    /// enabling gateway → gateway recursion.
+    /// G10 recursion guard: `--strict-mcp-config` MUST be present and `--bare`
+    /// MUST NOT be present (bare mode is API-key-only, blocking OAuth/Claude Max).
     #[test]
-    fn command_includes_strict_mcp_config_guard() {
+    fn command_includes_strict_mcp_config_and_no_bare() {
         use std::ffi::OsStr;
         let req = AgentRequest {
             sibling_identity: "test-sibling".to_owned(),
@@ -505,26 +541,28 @@ mod tests {
             &req,
             &req.sibling_identity,
             &req.user_prompt,
+            provider.api_key.as_deref(),
         );
         let args: Vec<&OsStr> = cmd.as_std().get_args().collect();
         let args_str: Vec<&str> = args.iter().filter_map(|a| a.to_str()).collect();
 
+        assert!(
+            !args_str.contains(&"--bare"),
+            "--bare must not appear (breaks OAuth/Claude Max auth)"
+        );
+
         let strict_pos = args_str
             .iter()
             .position(|a| *a == "--strict-mcp-config")
-            .expect("--strict-mcp-config must be present in subprocess command");
+            .expect("--strict-mcp-config must be present");
         let mcp_config_pos = args_str
             .iter()
             .position(|a| *a == "--mcp-config")
-            .expect("--mcp-config must be present in subprocess command");
-        let dev_null_pos = mcp_config_pos + 1;
-
-        // Verify the config path ends in the sentinel filename, not /dev/null which
-        // is not valid JSON and causes the CLI to error on stdout with empty output.
-        let mcp_path = args_str.get(dev_null_pos).copied().unwrap_or("");
+            .expect("--mcp-config must be present");
+        let mcp_path = args_str.get(mcp_config_pos + 1).copied().unwrap_or("");
         assert!(
             mcp_path.ends_with("la-gateway-mcp-null.json"),
-            "--mcp-config must point to la-gateway-mcp-null.json (not /dev/null), got: {mcp_path}"
+            "--mcp-config must point to la-gateway-mcp-null.json, got: {mcp_path}"
         );
         assert!(
             strict_pos < mcp_config_pos,

@@ -2571,6 +2571,7 @@ dependencies = [
  "hkdf",
  "hmac",
  "indicatif 0.17.11",
+ "libc",
  "moka",
  "neo4rs",
  "notify",

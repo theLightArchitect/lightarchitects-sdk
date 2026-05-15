@@ -22,12 +22,9 @@ use lightarchitects::core::handler::{HandlerConfig, HandlerError, SiblingHandler
 use serde_json::{Value, json};
 
 use crate::config::GatewayConfig;
-use crate::spawner::claude_runtime::ClaudeCliProvider;
 #[cfg(test)]
-use crate::spawner::llm_agent::ProviderError;
-use crate::spawner::llm_agent::{AgentRequest, LlmAgentProvider};
-
-use super::common::{build_prompt, map_provider_error};
+use lightarchitects::agent::ProviderError;
+use lightarchitects::agent::{ClaudeCliProvider, LlmAgentProvider, dispatch_action};
 
 /// All SOUL actions supported by the inline handler.
 ///
@@ -125,23 +122,15 @@ impl SiblingHandler for SoulHandler {
 
         // Phase 4: verdict_y actions dispatch through LLM provider.
         if SOUL_LLM_ACTIONS.contains(&action) {
-            let prompt = build_prompt("soul", action, &params)?;
-            let req = AgentRequest {
-                sibling_identity: SOUL_IDENTITY.to_owned(),
-                user_prompt: prompt,
-                schema: None,
-                allowed_tools: vec![],
-                max_turns: 1,
-                max_budget_usd: SOUL_MAX_BUDGET_USD,
-                model_hint: None,
-                parent_span_id: None,
-            };
-            return self
-                .provider
-                .spawn(req)
-                .await
-                .map(|resp| resp.output)
-                .map_err(|e| map_provider_error("soul", action, e));
+            return dispatch_action(
+                &*self.provider,
+                "soul",
+                action,
+                &params,
+                SOUL_IDENTITY,
+                SOUL_MAX_BUDGET_USD,
+            )
+            .await;
         }
 
         // TODO: Replace with real SOUL dispatch via soul_mcp::ToolRouter.
@@ -168,7 +157,9 @@ mod tests {
     use async_trait::async_trait;
 
     use super::*;
-    use crate::spawner::llm_agent::{AgentResponse, ProviderCapabilities, SchemaMode, TokenUsage};
+    use lightarchitects::agent::{
+        AgentRequest, AgentResponse, ProviderCapabilities, SchemaMode, TokenUsage,
+    };
 
     fn handler() -> SoulHandler {
         SoulHandler::new(&GatewayConfig::default())

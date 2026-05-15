@@ -25,12 +25,9 @@ use lightarchitects::core::handler::{HandlerConfig, HandlerError, SiblingHandler
 use serde_json::Value;
 
 use crate::config::GatewayConfig;
-use crate::spawner::claude_runtime::ClaudeCliProvider;
 #[cfg(test)]
-use crate::spawner::llm_agent::ProviderError;
-use crate::spawner::llm_agent::{AgentRequest, LlmAgentProvider};
-
-use super::common::{build_prompt, map_provider_error};
+use lightarchitects::agent::ProviderError;
+use lightarchitects::agent::{ClaudeCliProvider, LlmAgentProvider, dispatch_action};
 
 /// Canonical CORSO action names — matches `tool_routes.rs` ROUTES array.
 const CORSO_ACTIONS: &[&str] = &[
@@ -94,7 +91,7 @@ const CORSO_IDENTITY: &str = "You are CORSO, the Light Architects security and \
     with structured, actionable findings. Use markdown headers and bullet lists.";
 
 /// Budget ceiling per LLM call for pilot actions.
-const PILOT_MAX_BUDGET_USD: f64 = 0.50;
+const CORSO_MAX_BUDGET_USD: f64 = 0.50;
 
 /// In-process CORSO handler (stub — real impl requires unpublished deps).
 pub struct CorsoHandler {
@@ -134,23 +131,15 @@ impl SiblingHandler for CorsoHandler {
 
         // Phase 4: all verdict_y actions dispatch through LLM provider.
         if CORSO_LLM_ACTIONS.contains(&action) {
-            let prompt = build_prompt("corso", action, &params)?;
-            let req = AgentRequest {
-                sibling_identity: CORSO_IDENTITY.to_owned(),
-                user_prompt: prompt,
-                schema: None,
-                allowed_tools: vec![],
-                max_turns: 1,
-                max_budget_usd: PILOT_MAX_BUDGET_USD,
-                model_hint: None,
-                parent_span_id: None,
-            };
-            return self
-                .provider
-                .spawn(req)
-                .await
-                .map(|resp| resp.output)
-                .map_err(|e| map_provider_error("corso", action, e));
+            return dispatch_action(
+                &*self.provider,
+                "corso",
+                action,
+                &params,
+                CORSO_IDENTITY,
+                CORSO_MAX_BUDGET_USD,
+            )
+            .await;
         }
 
         // Non-verdict_y actions: KEEP (subprocess path — not yet available).
@@ -173,7 +162,9 @@ mod tests {
     use async_trait::async_trait;
 
     use super::*;
-    use crate::spawner::llm_agent::{AgentResponse, ProviderCapabilities, SchemaMode, TokenUsage};
+    use lightarchitects::agent::{
+        AgentRequest, AgentResponse, ProviderCapabilities, SchemaMode, TokenUsage,
+    };
 
     fn handler() -> CorsoHandler {
         CorsoHandler::new(&GatewayConfig::default())
