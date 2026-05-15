@@ -1,0 +1,84 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-15T11:45:00Z"
+build_id: gateway-action-audit-claude-runtime
+phase_id: merge
+overall_verdict: blocked
+post_gate_fix_committed: "61edced — gateway test EchoProvider/FailProvider spawn signatures"
+dimensions:
+  V0_worktree: pass
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    workspace_tests: pass
+    gateway_tests: pass
+    note: "1 compile fix required post-gate: test EchoProvider impls had stale AgentRequest spawn signature; fixed and committed 61edced before gate completion"
+  Q4_svelte: n/a
+  S1_security:
+    result: fail
+    findings:
+      - id: F1
+        severity: CRITICAL
+        title: "API key passed as OS env var to subprocess — §2.4 IPC bridge mandatory finding"
+        location: "lightarchitects/src/agent/claude.rs build_command()"
+        action: "File §1.5 exception immediately (<=90d); add ulimit -c 0 to LaunchAgent plist; track stdin-injection migration as HIGH build item"
+      - id: F2
+        severity: HIGH
+        title: "allowed_tools / model_hint / parent_span_id bypass G1 sanitization"
+        location: "lightarchitects/src/agent/provider.rs AgentRequest struct"
+        action: "Validate allowed_tools entries [a-zA-Z0-9_-]{1,128}; allowlist model_hint; validate parent_span_id against W3C traceparent format"
+      - id: F3
+        severity: HIGH
+        title: "sibling/action names unsanitized in wire-visible HandlerError messages"
+        location: "lightarchitects/src/agent/dispatch.rs map_provider_error()"
+        action: "Validate sibling+action against byte-level allowlist at top of dispatch_action(); truncate reason to 128 bytes"
+      - id: F4
+        severity: MEDIUM
+        title: "Unicode normalization + incomplete RTL list + & not escaped in content-plane"
+        location: "lightarchitects/src/agent/provider.rs reject_control_plane() / escape_content_plane()"
+        action: "Apply NFC normalization pre-check; extend INVISIBLE chars; escape & in escape_content_plane"
+      - id: F5
+        severity: MEDIUM
+        title: "TempDir drop ordering hazard under timeout / early-return path"
+        location: "lightarchitects/src/agent/claude.rs spawn_with_timeout()"
+        action: "Document drop ordering; consider scopeguard::defer! for explicit lifetime"
+      - id: F6
+        severity: LOW
+        title: "ChainContext.depth is public — child() bypass possible via direct struct construction"
+        location: "lightarchitects/src/agent/dispatch.rs ChainContext"
+        action: "Make depth private; expose test_with_depth() behind #[cfg(test)]"
+  S2_supply_chain: pass
+  S3_laex:
+    result: blocked
+    reason: "laex-internal binary not found — gateway config has binary=laex-internal mode=inline but binary does not exist"
+    note: "lÆx0 CLI deployed to ~/.laex0/bin/lÆx0 but this is separate from the gateway's inline laex handler. Per GATE protocol: no waiver."
+  I1_rebase: pass
+  I2_build: pass
+  N1_northstar:
+    result: pass
+    pillar: both
+  N2_chain: pass
+  N3_exclusion_zones: pass
+  D1_docs:
+    result: pass
+    coverage: "100%"
+  D2_plan: pass
+  D3_claude_md: pass
+  V1_pyramid:
+    result: fail
+    suites_present: [unit, integration, property]
+    suites_missing: [smoke]
+    suites_warned: [e2e, regression]
+    blocker: "Suite 6 (smoke) missing"
+  V2_smoke: pass
+  V3_e2e: n/a
+blockers:
+  - gate: S1
+    severity: CRITICAL
+    description: "F1 API key env var — §2.4 mandatory finding with no §1.5 exception on file"
+  - gate: S3
+    description: "laex-internal binary not found"
+  - gate: V1
+    description: "Suite 6 smoke tests absent"

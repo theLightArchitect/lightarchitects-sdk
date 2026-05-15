@@ -23,16 +23,19 @@
 //! - `claude-sonnet-4-6`: $3.00 / M input tokens, $15.00 / M output tokens
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use tempfile::TempDir;
+
 use async_trait::async_trait;
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 use tracing::{info, warn};
 
 use super::provider::{
-    AgentRequest, AgentResponse, LlmAgentProvider, ProviderCapabilities, ProviderError, SchemaMode,
-    TokenUsage,
+    AgentRequest, AgentResponse, LlmAgentProvider, ProviderCapabilities, ProviderError,
+    SanitizedAgentRequest, SchemaMode, TokenUsage,
 };
 
 // ── Rate table ─────────────────────────────────────────────────────────────────
@@ -42,9 +45,6 @@ const SONNET_INPUT_USD_PER_M: f64 = 3.0;
 /// Output token cost for `claude-sonnet-4-6` in USD per million tokens.
 const SONNET_OUTPUT_USD_PER_M: f64 = 15.0;
 
-/// Maximum allowed byte length for control-plane or content-plane strings.
-pub const MAX_PARAM_BYTES: usize = 8_192;
-
 // ── Provider struct ─────────────────────────────────────────────────────────────
 
 /// Spawns `claude -p` as a subprocess.
@@ -53,7 +53,7 @@ pub const MAX_PARAM_BYTES: usize = 8_192;
 /// API key already configured for the `claude` CLI binary). The host
 /// `ANTHROPIC_API_KEY` env var is removed to prevent stale overrides; use
 /// `api_key` to supply an explicit key when needed.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ClaudeCliProvider {
     /// Default model identifier (overridable per-request via [`AgentRequest::model_hint`]).
     pub default_model: String,
@@ -63,10 +63,21 @@ pub struct ClaudeCliProvider {
     pub rate_table_version: String,
     /// Explicit API key to inject into the subprocess environment.
     ///
+    /// Stored as a [`SecretString`] so the key is zeroed on drop and never
+    /// appears in `Debug` output or log sinks.
+    ///
     /// When `None`, the subprocess inherits the host session's auth
     /// (OAuth / Claude Max). When `Some`, the key is set as
     /// `ANTHROPIC_API_KEY` for the subprocess only.
-    pub api_key: Option<String>,
+    ///
+    /// # Accepted risk (F5)
+    ///
+    /// `SecretString` zeroes this field on drop via `ZeroizeOnDrop`, but
+    /// `cmd.env()` copies the value into a plain `OsString` allocation that is
+    /// not zeroized. The window is short (subprocess exec only). Mitigation:
+    /// run with `ulimit -c 0` in production to prevent heap-dump exposure.
+    /// Follow-on: migrate to stdin-based key injection when Claude CLI supports it.
+    pub api_key: Option<SecretString>,
 }
 
 impl Default for ClaudeCliProvider {
@@ -96,21 +107,25 @@ impl LlmAgentProvider for ClaudeCliProvider {
     /// parameter, [`ProviderError::SubprocessTimeout`] on wall-clock timeout,
     /// or [`ProviderError::SchemaValidationFailed`] if schema validation fails
     /// after the retry budget is exhausted.
-    async fn spawn(&self, req: AgentRequest) -> Result<AgentResponse, ProviderError> {
-        let (safe_identity, safe_prompt) =
-            sanitize_params(&req.sibling_identity, &req.user_prompt)?;
+    async fn spawn(&self, req: SanitizedAgentRequest) -> Result<AgentResponse, ProviderError> {
+        // R3: process-private tempdir prevents TOCTOU symlink race on predictable /tmp path.
+        let mcp_dir = TempDir::with_prefix("la-")
+            .map_err(|e| ProviderError::Internal(format!("tempdir creation failed: {e}")))?;
+        let mcp_config = mcp_dir.path().join("mcp-null.json");
+        std::fs::write(&mcp_config, r#"{"mcpServers":{}}"#)
+            .map_err(|e| ProviderError::Internal(format!("mcp config write failed: {e}")))?;
 
         let cmd = build_command(
             &self.claude_binary,
             &self.default_model,
             &req,
-            &safe_identity,
-            &safe_prompt,
-            self.api_key.as_deref(),
+            self.api_key.as_ref().map(ExposeSecret::expose_secret),
+            &mcp_config,
         );
 
-        let timeout_secs = u64::from(req.max_turns) * 120 + 30;
-        let output = spawn_with_timeout(cmd, Duration::from_secs(timeout_secs)).await?;
+        let inner = req.request();
+        let timeout_secs = u64::from(inner.max_turns) * 120 + 30;
+        let output = spawn_with_timeout(cmd, Duration::from_secs(timeout_secs), mcp_dir).await?;
 
         let stdout_str = String::from_utf8_lossy(&output.stdout);
         if !output.stderr.is_empty() {
@@ -121,10 +136,10 @@ impl LlmAgentProvider for ClaudeCliProvider {
             );
         }
 
-        let output_val = validate_and_retry(stdout_str.as_ref(), req.schema.as_ref(), 2)?;
+        let output_val = validate_and_retry(stdout_str.as_ref(), inner.schema.as_ref(), 2)?;
 
         let input_tokens =
-            u32::try_from(req.sibling_identity.len() / 4 + req.user_prompt.len() / 4)
+            u32::try_from(inner.sibling_identity.len() / 4 + inner.user_prompt.len() / 4)
                 .unwrap_or(u32::MAX);
         let output_str = serde_json::to_string(&output_val).unwrap_or_default();
         let output_tokens = u32::try_from(output_str.len() / 4).unwrap_or(u32::MAX);
@@ -141,7 +156,7 @@ impl LlmAgentProvider for ClaudeCliProvider {
             provider_attrs: HashMap::new(),
             retry_count: 0,
         };
-        emit_span(&req, &resp);
+        emit_span(inner, &resp);
         Ok(resp)
     }
 
@@ -163,145 +178,44 @@ impl LlmAgentProvider for ClaudeCliProvider {
 
 // ── Private helpers ─────────────────────────────────────────────────────────────
 
-/// Apply G1 two-plane sanitization.
-///
-/// - `identity` (control-plane): **reject** on dangerous tokens — returns
-///   [`ProviderError::ParamSanitizationFailed`] for any match.
-/// - `prompt` (content-plane): **escape** `<`/`>` to HTML entities; strip
-///   RTL and zero-width chars with a warning; length cap applied to both.
-///
-/// Returns `(sanitized_identity, sanitized_prompt)` on success.
-///
-/// # Errors
-///
-/// Returns [`ProviderError::ParamSanitizationFailed`] if the identity string
-/// contains dangerous tokens, or either string exceeds [`MAX_PARAM_BYTES`].
-pub fn sanitize_params(identity: &str, prompt: &str) -> Result<(String, String), ProviderError> {
-    check_length("sibling_identity", identity)?;
-    check_length("user_prompt", prompt)?;
-
-    let safe_identity = reject_control_plane(identity)?;
-    let safe_prompt = escape_content_plane(prompt);
-
-    Ok((safe_identity, safe_prompt))
-}
-
-/// Reject a control-plane string that contains dangerous tokens.
-fn reject_control_plane(s: &str) -> Result<String, ProviderError> {
-    let forbidden: &[(&str, &str)] = &[
-        ("</system>", "XML system-close tag"),
-        ("<system>", "XML system-open tag"),
-        ("\u{202E}", "RTL override (U+202E)"),
-        ("\x00", "null byte"),
-        ("\u{200B}", "zero-width space (U+200B)"),
-        ("\u{200C}", "zero-width non-joiner (U+200C)"),
-        ("\u{200D}", "zero-width joiner (U+200D)"),
-        ("\u{200E}", "left-to-right mark (U+200E)"),
-        ("\u{200F}", "right-to-left mark (U+200F)"),
-        ("\u{FEFF}", "BOM / zero-width no-break space (U+FEFF)"),
-    ];
-
-    for (token, description) in forbidden {
-        if s.contains(token) {
-            return Err(ProviderError::ParamSanitizationFailed {
-                param_name: "sibling_identity".to_owned(),
-                reason: format!("contains forbidden token: {description}"),
-            });
-        }
-    }
-
-    Ok(s.to_owned())
-}
-
-/// Escape and strip a content-plane string.
-fn escape_content_plane(s: &str) -> String {
-    let stripped = strip_invisible(s);
-    stripped.replace('<', "&lt;").replace('>', "&gt;")
-}
-
-/// Strip RTL override and zero-width Unicode control characters from `s`.
-fn strip_invisible(s: &str) -> String {
-    const INVISIBLE: &[char] = &[
-        '\u{202E}', // RTL override
-        '\u{200B}', // zero-width space
-        '\u{200C}', // zero-width non-joiner
-        '\u{200D}', // zero-width joiner
-        '\u{200E}', // left-to-right mark
-        '\u{200F}', // right-to-left mark
-        '\u{FEFF}', // BOM / ZWNBSP
-    ];
-
-    let result: String = s.chars().filter(|c| !INVISIBLE.contains(c)).collect();
-    if result.len() != s.len() {
-        warn!(
-            provider = "claude-cli",
-            original_len = s.len(),
-            stripped_len = result.len(),
-            "stripped invisible Unicode characters from content-plane param"
-        );
-    }
-    result
-}
-
-/// Return an error if `s` exceeds [`MAX_PARAM_BYTES`].
-fn check_length(param_name: &str, s: &str) -> Result<(), ProviderError> {
-    if s.len() > MAX_PARAM_BYTES {
-        return Err(ProviderError::ParamSanitizationFailed {
-            param_name: param_name.to_owned(),
-            reason: format!(
-                "exceeds maximum byte length ({} > {MAX_PARAM_BYTES})",
-                s.len()
-            ),
-        });
-    }
-    Ok(())
-}
-
-/// Return a path to a minimal valid MCP config that disables all servers.
-///
-/// Writes `{"mcpServers":{}}` to a stable temp-dir location. Idempotent.
-fn null_mcp_config() -> std::path::PathBuf {
-    let path = std::env::temp_dir().join("la-gateway-mcp-null.json");
-    let _ = std::fs::write(&path, r#"{"mcpServers":{}}"#);
-    path
-}
-
 /// Build the `tokio::process::Command` for the Claude CLI subprocess.
+///
+/// `mcp_config` must point to a file containing `{"mcpServers":{}}` inside a
+/// process-private tempdir (created by the caller with [`TempDir::with_prefix`]).
 fn build_command(
     binary: &PathBuf,
     default_model: &str,
-    req: &AgentRequest,
-    safe_identity: &str,
-    safe_prompt: &str,
+    req: &SanitizedAgentRequest,
     api_key: Option<&str>,
+    mcp_config: &Path,
 ) -> tokio::process::Command {
+    let inner = req.request();
     let mut cmd = tokio::process::Command::new(binary);
 
     cmd.arg("-p")
-        .arg(safe_prompt)
+        .arg(req.safe_prompt())
         .arg("--append-system-prompt")
-        .arg(safe_identity)
+        .arg(req.safe_identity())
         .arg("--max-turns")
-        .arg(req.max_turns.to_string())
+        .arg(inner.max_turns.to_string())
         .arg("--max-budget-usd")
-        .arg(req.max_budget_usd.to_string())
+        .arg(inner.max_budget_usd.to_string())
         .arg("--output-format")
         .arg("json");
 
-    let model = req.model_hint.as_deref().unwrap_or(default_model);
+    let model = inner.model_hint.as_deref().unwrap_or(default_model);
     cmd.arg("--model").arg(model);
 
-    if !req.allowed_tools.is_empty() {
-        cmd.arg("--tools").arg(req.allowed_tools.join(","));
+    if !inner.allowed_tools.is_empty() {
+        cmd.arg("--tools").arg(inner.allowed_tools.join(","));
     }
 
     // G10: prevent recursive gateway invocation by restricting MCP servers.
-    let mcp_null = null_mcp_config();
     cmd.arg("--strict-mcp-config")
         .arg("--mcp-config")
-        .arg(&mcp_null);
+        .arg(mcp_config);
 
-    if let Some(span_id) = &req.parent_span_id {
+    if let Some(span_id) = &inner.parent_span_id {
         cmd.env("TRACEPARENT", span_id);
     }
 
@@ -344,6 +258,7 @@ fn build_command(
 async fn spawn_with_timeout(
     mut cmd: tokio::process::Command,
     timeout_dur: Duration,
+    _mcp_dir: TempDir,
 ) -> Result<std::process::Output, ProviderError> {
     let child = cmd.spawn().map_err(|e| {
         warn!(provider = "claude-cli", err = %e, "subprocess spawn failed");
@@ -463,6 +378,7 @@ fn emit_span(req: &AgentRequest, resp: &AgentResponse) {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::agent::provider::{MAX_PARAM_BYTES, sanitize_params};
 
     #[test]
     fn sanitize_rejects_system_close_tag_in_identity() {
@@ -533,15 +449,25 @@ mod tests {
             max_budget_usd: 0.10,
             model_hint: None,
             parent_span_id: None,
-        };
+            chain_origin: None,
+            chain_depth: 0,
+            aud: None,
+        }
+        .sanitize()
+        .unwrap();
         let provider = ClaudeCliProvider::default();
+        let mcp_dir = tempfile::TempDir::with_prefix("la-").unwrap();
+        let mcp_config = mcp_dir.path().join("mcp-null.json");
+        std::fs::write(&mcp_config, r#"{"mcpServers":{}}"#).unwrap();
         let cmd = build_command(
             &provider.claude_binary,
             &provider.default_model,
             &req,
-            &req.sibling_identity,
-            &req.user_prompt,
-            provider.api_key.as_deref(),
+            provider
+                .api_key
+                .as_ref()
+                .map(secrecy::ExposeSecret::expose_secret),
+            &mcp_config,
         );
         let args: Vec<&OsStr> = cmd.as_std().get_args().collect();
         let args_str: Vec<&str> = args.iter().filter_map(|a| a.to_str()).collect();
@@ -561,8 +487,8 @@ mod tests {
             .expect("--mcp-config must be present");
         let mcp_path = args_str.get(mcp_config_pos + 1).copied().unwrap_or("");
         assert!(
-            mcp_path.ends_with("la-gateway-mcp-null.json"),
-            "--mcp-config must point to la-gateway-mcp-null.json, got: {mcp_path}"
+            mcp_path.ends_with("mcp-null.json"),
+            "--mcp-config must point to process-private mcp-null.json, got: {mcp_path}"
         );
         assert!(
             strict_pos < mcp_config_pos,

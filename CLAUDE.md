@@ -86,6 +86,20 @@ worktree lockfile collisions. `make deploy` always fails with:
 run `cargo build --release -p lightarchitects-gateway`, copy binary, then **revert** `Cargo.toml`.
 Do NOT commit the temporary workspace change.
 
+**`cargo test --workspace` does NOT cover the gateway.** Because the crate is excluded, G3/Q3
+pre-flight and pre-merge gates pass green without testing it. When gateway code is touched, run
+the gateway tests explicitly: `cd lightarchitects-gateway && cargo test --features inline-all`.
+
+**Integration test file targeting**: `cargo test <name>` filters by test *function* name, not file
+name. To run a specific integration test binary, use `cargo test --test <filename>` (e.g.
+`cargo test --test handler_dispatch_contract`). A name-filter against a file with no matching
+function names silently reports "N filtered out" with exit 0 — looks like success, isn't.
+
+**Cargo build lock on excluded crate**: `target/.cargo-lock` is held exclusively. Multiple Claude
+Code sessions running `cargo test` in `lightarchitects-gateway/` simultaneously block each other
+indefinitely — they do NOT fail fast. Check before running: `lsof target/.cargo-lock 2>/dev/null`.
+Recovery: `pkill -9 -f "cargo test"` across all open windows before starting a fresh run.
+
 ---
 
 ## Feature Flags (`lightarchitects`)

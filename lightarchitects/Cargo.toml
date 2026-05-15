@@ -26,7 +26,7 @@ default = [
     "cypher", "embedding-ollama", "embedding-fastembed", "embedding-llama-cpp",
     "observe", "conversations", "http-client",
     "neo4j", "file", "dual", "fastembed", "rerank",
-    "ssh", "cli", "agent-cli",
+    "ssh", "cli",
 ]
 sqlite               = []
 search               = []
@@ -55,7 +55,10 @@ providers-openai     = ["credentials"]
 providers-google     = ["credentials"]
 credentials-display-names    = ["credentials"]
 credentials-detailed-locator = ["credentials"]
-agent-cli                    = []
+# Enables ClaudeCliProvider — subprocess-based Claude CLI spawner.
+# Does NOT gate LlmAgentProvider trait, AgentRequest, or SanitizedAgentRequest;
+# those are always compiled and available to any provider implementor.
+agent-cli = []
 
 # ── Always-on external deps (union of all 13 merged crates) ──────────────────
 
@@ -117,6 +120,9 @@ openssh = { workspace = true }
 
 # SOUL SQLite backend
 rusqlite = { workspace = true }
+
+# Agent CLI subprocess (process-private tempdir for mcp-null.json)
+tempfile = { workspace = true }
 
 # macOS keychain (crypto keychain feature)
 [target.'cfg(target_os = "macos")'.dependencies]

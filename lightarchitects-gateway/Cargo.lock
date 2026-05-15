@@ -2588,6 +2588,7 @@ dependencies = [
  "serde_yaml",
  "sha2",
  "subtle",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "toml",
@@ -6312,3 +6313,11 @@ dependencies = [
  "quote",
  "syn 2.0.117",
 ]
+
+[[patch.unused]]
+name = "corso-server"
+version = "2.0.0"
+
+[[patch.unused]]
+name = "corso-trinity-core"
+version = "2.0.0"

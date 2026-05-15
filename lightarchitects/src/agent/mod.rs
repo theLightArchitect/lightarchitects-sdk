@@ -9,14 +9,15 @@
 
 mod provider;
 pub use provider::{
-    AgentRequest, AgentResponse, LlmAgentProvider, ProviderCapabilities, ProviderError, SchemaMode,
-    TokenUsage,
+    AgentRequest, AgentResponse, LlmAgentProvider, MAX_CHAIN_DEPTH, MAX_PARAM_BYTES,
+    ProviderCapabilities, ProviderError, SanitizedAgentRequest, SchemaMode, TokenUsage,
+    sanitize_params,
 };
 
 mod dispatch;
-pub use dispatch::dispatch_action;
+pub use dispatch::{ChainContext, dispatch_action};
 
 #[cfg(feature = "agent-cli")]
 mod claude;
 #[cfg(feature = "agent-cli")]
-pub use claude::{ClaudeCliProvider, MAX_PARAM_BYTES, sanitize_params};
+pub use claude::ClaudeCliProvider;

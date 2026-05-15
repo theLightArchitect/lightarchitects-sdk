@@ -1,7 +1,7 @@
 # l-arc-sdk — Light Architects SDK workspace
 # Standard Light Architects Makefile targets
 
-.PHONY: help quality test test-features build deploy deploy-fast rollback doc fix push clean
+.PHONY: help quality test test-gateway-smoke test-features build deploy deploy-fast rollback doc fix push clean
 
 GATEWAY_BIN      := $(HOME)/.lightarchitects/bin/lightarchitects
 GATEWAY_PREV_BIN := $(HOME)/.lightarchitects/bin/lightarchitects.prev
@@ -19,6 +19,9 @@ quality: ## Run quality gates (fmt check + clippy + unit/integration tests)
 
 test: ## Run unit and integration tests
 	cargo test --workspace --all-features --lib --tests
+
+test-gateway-smoke: ## Canon XXVII Suite 6 smoke tests — gateway G1 + chain-depth + action-allowlist (no subprocess)
+	cd lightarchitects-gateway && cargo test --test smoke --features inline-all
 
 doctest: ## Run doc-examples (separate gate — pre-existing crate:: path migration debt)
 	cargo test --workspace --all-features --doc

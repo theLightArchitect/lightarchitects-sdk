@@ -19,6 +19,15 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use serde_json::Value;
+use tracing::warn;
+
+/// Maximum allowed byte length for control-plane or content-plane strings.
+pub const MAX_PARAM_BYTES: usize = 8_192;
+
+/// Maximum allowed depth for a multi-agent chain (Canon §2.6).
+///
+/// `dispatch_action` rejects any request whose `chain_depth` exceeds this value.
+pub const MAX_CHAIN_DEPTH: u8 = 7;
 
 /// Input to an LLM agent invocation.
 #[derive(Debug, Clone)]
@@ -39,6 +48,152 @@ pub struct AgentRequest {
     pub model_hint: Option<String>,
     /// W3C `traceparent` value for distributed tracing (G4).
     pub parent_span_id: Option<String>,
+    /// Identifier of the session or agent that originated this chain (Canon §2.6).
+    pub chain_origin: Option<String>,
+    /// Depth of this call in a multi-agent chain; 0 = direct operator call (Canon §2.6).
+    /// Must not exceed [`MAX_CHAIN_DEPTH`].
+    pub chain_depth: u8,
+    /// Audience claim — intended recipient of this request (Canon §2.6).
+    pub aud: Option<String>,
+}
+
+impl AgentRequest {
+    /// Apply G1 two-plane sanitization and return a [`SanitizedAgentRequest`].
+    ///
+    /// This is the only way to construct a `SanitizedAgentRequest`. Callers that
+    /// hold one have compile-time proof that G1 sanitization has been applied.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderError::ParamSanitizationFailed`] if `sibling_identity`
+    /// contains dangerous tokens or either field exceeds [`MAX_PARAM_BYTES`].
+    pub fn sanitize(self) -> Result<SanitizedAgentRequest, ProviderError> {
+        let (safe_identity, safe_prompt) =
+            sanitize_params(&self.sibling_identity, &self.user_prompt)?;
+        Ok(SanitizedAgentRequest {
+            inner: self,
+            safe_identity,
+            safe_prompt,
+        })
+    }
+}
+
+/// A pre-sanitized agent request: compile-time proof that G1 has been applied.
+///
+/// Can only be constructed via [`AgentRequest::sanitize`]. Providers that accept
+/// this type are guaranteed to receive only sanitized inputs.
+pub struct SanitizedAgentRequest {
+    inner: AgentRequest,
+    safe_identity: String,
+    safe_prompt: String,
+}
+
+impl SanitizedAgentRequest {
+    /// The G1-sanitized system prompt (control-plane — dangerous tokens rejected).
+    pub fn safe_identity(&self) -> &str {
+        &self.safe_identity
+    }
+
+    /// The G1-sanitized user prompt (content-plane — escaped and stripped).
+    pub fn safe_prompt(&self) -> &str {
+        &self.safe_prompt
+    }
+
+    /// Borrow the underlying [`AgentRequest`].
+    pub fn request(&self) -> &AgentRequest {
+        &self.inner
+    }
+
+    /// Consume this wrapper and return the raw, **unsanitized** [`AgentRequest`].
+    ///
+    /// # Warning
+    ///
+    /// The returned [`AgentRequest`] exposes the original `sibling_identity` and
+    /// `user_prompt` strings *before* G1 sanitization. This method exists for test
+    /// inspection only — provider implementors MUST use [`safe_identity`] and
+    /// [`safe_prompt`] when passing data to subprocesses.
+    ///
+    /// [`safe_identity`]: SanitizedAgentRequest::safe_identity
+    /// [`safe_prompt`]: SanitizedAgentRequest::safe_prompt
+    pub fn into_inner_unchecked(self) -> AgentRequest {
+        self.inner
+    }
+}
+
+/// Apply G1 two-plane sanitization to identity and prompt strings.
+///
+/// - `identity` (control-plane): reject on dangerous tokens.
+/// - `prompt` (content-plane): escape `<`/`>` to HTML entities; strip RTL and
+///   zero-width characters with a warning; length cap applied to both.
+///
+/// Returns `(sanitized_identity, sanitized_prompt)` on success.
+///
+/// # Errors
+///
+/// Returns [`ProviderError::ParamSanitizationFailed`] if the identity string
+/// contains dangerous tokens, or either string exceeds [`MAX_PARAM_BYTES`].
+pub fn sanitize_params(identity: &str, prompt: &str) -> Result<(String, String), ProviderError> {
+    check_length("sibling_identity", identity)?;
+    check_length("user_prompt", prompt)?;
+    let safe_identity = reject_control_plane(identity)?;
+    let safe_prompt = escape_content_plane(prompt);
+    Ok((safe_identity, safe_prompt))
+}
+
+fn reject_control_plane(s: &str) -> Result<String, ProviderError> {
+    const FORBIDDEN: &[(&str, &str)] = &[
+        ("</system>", "XML system-close tag"),
+        ("<system>", "XML system-open tag"),
+        ("\u{202E}", "RTL override (U+202E)"),
+        ("\x00", "null byte"),
+        ("\u{200B}", "zero-width space (U+200B)"),
+        ("\u{200C}", "zero-width non-joiner (U+200C)"),
+        ("\u{200D}", "zero-width joiner (U+200D)"),
+        ("\u{200E}", "left-to-right mark (U+200E)"),
+        ("\u{200F}", "right-to-left mark (U+200F)"),
+        ("\u{FEFF}", "BOM / zero-width no-break space (U+FEFF)"),
+    ];
+    for (token, description) in FORBIDDEN {
+        if s.contains(token) {
+            return Err(ProviderError::ParamSanitizationFailed {
+                param_name: "sibling_identity".to_owned(),
+                reason: format!("contains forbidden token: {description}"),
+            });
+        }
+    }
+    Ok(s.to_owned())
+}
+
+fn escape_content_plane(s: &str) -> String {
+    strip_invisible(s).replace('<', "&lt;").replace('>', "&gt;")
+}
+
+fn strip_invisible(s: &str) -> String {
+    const INVISIBLE: &[char] = &[
+        '\u{202E}', '\u{200B}', '\u{200C}', '\u{200D}', '\u{200E}', '\u{200F}', '\u{FEFF}',
+    ];
+    let result: String = s.chars().filter(|c| !INVISIBLE.contains(c)).collect();
+    if result.len() != s.len() {
+        warn!(
+            original_len = s.len(),
+            stripped_len = result.len(),
+            "stripped invisible Unicode characters from content-plane param"
+        );
+    }
+    result
+}
+
+fn check_length(param_name: &str, s: &str) -> Result<(), ProviderError> {
+    if s.len() > MAX_PARAM_BYTES {
+        return Err(ProviderError::ParamSanitizationFailed {
+            param_name: param_name.to_owned(),
+            reason: format!(
+                "exceeds maximum byte length ({} > {MAX_PARAM_BYTES})",
+                s.len()
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// Token usage counters for a completed agent invocation.
@@ -142,6 +297,13 @@ pub enum ProviderError {
         used_budget_usd: f64,
     },
 
+    /// The chain depth exceeds the platform maximum (Canon §2.6).
+    #[error("chain depth {depth} exceeds maximum {MAX_CHAIN_DEPTH}")]
+    ChainDepthExceeded {
+        /// The depth value that triggered the rejection.
+        depth: u8,
+    },
+
     /// An unexpected internal error occurred.
     #[error("internal: {0}")]
     Internal(String),
@@ -159,13 +321,18 @@ pub trait LlmAgentProvider: Send + Sync {
     /// Human-readable provider identifier (e.g. `"claude-cli"`).
     fn name(&self) -> &'static str;
 
-    /// Spawn the agent with the given request and await its output.
+    /// Spawn the agent with the given pre-sanitized request and await its output.
+    ///
+    /// Accepts only a [`SanitizedAgentRequest`] — holding one is compile-time
+    /// proof that G1 sanitization has already been applied. Providers MUST NOT
+    /// re-sanitize inputs; they may use [`SanitizedAgentRequest::safe_identity`]
+    /// and [`SanitizedAgentRequest::safe_prompt`] directly.
     ///
     /// # Errors
     ///
-    /// Returns a [`ProviderError`] if sanitization, subprocess execution,
-    /// budget/turn enforcement, or schema validation fails.
-    async fn spawn(&self, req: AgentRequest) -> Result<AgentResponse, ProviderError>;
+    /// Returns a [`ProviderError`] if subprocess execution, budget/turn
+    /// enforcement, or schema validation fails.
+    async fn spawn(&self, req: SanitizedAgentRequest) -> Result<AgentResponse, ProviderError>;
 
     /// Declare the capabilities of this provider.
     fn capabilities(&self) -> ProviderCapabilities;
