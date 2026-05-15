@@ -22,7 +22,7 @@ use serde_json::Value;
 use crate::config::GatewayConfig;
 #[cfg(test)]
 use lightarchitects::agent::ProviderError;
-use lightarchitects::agent::{ClaudeCliProvider, LlmAgentProvider, dispatch_action};
+use lightarchitects::agent::{ChainContext, ClaudeCliProvider, LlmAgentProvider, dispatch_action};
 
 /// All QUANTUM actions supported by the inline handler.
 ///
@@ -108,6 +108,7 @@ impl SiblingHandler for QuantumHandler {
                 &params,
                 QUANTUM_IDENTITY,
                 QUANTUM_MAX_BUDGET_USD,
+                ChainContext::default(),
             )
             .await;
         }
@@ -145,7 +146,7 @@ mod tests {
 
     use super::*;
     use lightarchitects::agent::{
-        AgentRequest, AgentResponse, ProviderCapabilities, SchemaMode, TokenUsage,
+        AgentResponse, ProviderCapabilities, SchemaMode, SanitizedAgentRequest, TokenUsage,
     };
 
     fn handler() -> QuantumHandler {
@@ -162,11 +163,11 @@ mod tests {
             "echo"
         }
 
-        async fn spawn(&self, req: AgentRequest) -> Result<AgentResponse, ProviderError> {
+        async fn spawn(&self, req: SanitizedAgentRequest) -> Result<AgentResponse, ProviderError> {
             Ok(AgentResponse {
                 output: serde_json::json!({
                     "provider": "echo",
-                    "action_echoed": req.user_prompt.lines().next().unwrap_or(""),
+                    "action_echoed": req.safe_prompt().lines().next().unwrap_or(""),
                 }),
                 turns_used: 1,
                 cost_usd: 0.0,

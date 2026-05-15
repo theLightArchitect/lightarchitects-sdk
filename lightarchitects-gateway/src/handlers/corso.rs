@@ -27,7 +27,7 @@ use serde_json::Value;
 use crate::config::GatewayConfig;
 #[cfg(test)]
 use lightarchitects::agent::ProviderError;
-use lightarchitects::agent::{ClaudeCliProvider, LlmAgentProvider, dispatch_action};
+use lightarchitects::agent::{ChainContext, ClaudeCliProvider, LlmAgentProvider, dispatch_action};
 
 /// Canonical CORSO action names — matches `tool_routes.rs` ROUTES array.
 const CORSO_ACTIONS: &[&str] = &[
@@ -138,6 +138,7 @@ impl SiblingHandler for CorsoHandler {
                 &params,
                 CORSO_IDENTITY,
                 CORSO_MAX_BUDGET_USD,
+                ChainContext::default(),
             )
             .await;
         }
@@ -163,7 +164,7 @@ mod tests {
 
     use super::*;
     use lightarchitects::agent::{
-        AgentRequest, AgentResponse, ProviderCapabilities, SchemaMode, TokenUsage,
+        AgentResponse, ProviderCapabilities, SchemaMode, SanitizedAgentRequest, TokenUsage,
     };
 
     fn handler() -> CorsoHandler {
@@ -180,11 +181,11 @@ mod tests {
             "echo"
         }
 
-        async fn spawn(&self, req: AgentRequest) -> Result<AgentResponse, ProviderError> {
+        async fn spawn(&self, req: SanitizedAgentRequest) -> Result<AgentResponse, ProviderError> {
             Ok(AgentResponse {
                 output: serde_json::json!({
                     "provider": "echo",
-                    "action_echoed": req.user_prompt.lines().next().unwrap_or(""),
+                    "action_echoed": req.safe_prompt().lines().next().unwrap_or(""),
                 }),
                 turns_used: 1,
                 cost_usd: 0.0,
@@ -340,7 +341,7 @@ mod tests {
                 "fail"
             }
 
-            async fn spawn(&self, _req: AgentRequest) -> Result<AgentResponse, ProviderError> {
+            async fn spawn(&self, _req: SanitizedAgentRequest) -> Result<AgentResponse, ProviderError> {
                 Err(ProviderError::Internal("simulated failure".to_owned()))
             }
 

@@ -12,7 +12,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use lightarchitects::agent::{
     AgentRequest, AgentResponse, LlmAgentProvider, ProviderCapabilities, ProviderError, SchemaMode,
-    TokenUsage,
+    SanitizedAgentRequest, TokenUsage,
 };
 
 // ── MockProvider ───────────────────────────────────────────────────────────────
@@ -27,15 +27,15 @@ impl LlmAgentProvider for MockProvider {
         self.name
     }
 
-    async fn spawn(&self, req: AgentRequest) -> Result<AgentResponse, ProviderError> {
-        if req.max_budget_usd < 0.001 {
+    async fn spawn(&self, req: SanitizedAgentRequest) -> Result<AgentResponse, ProviderError> {
+        if req.request().max_budget_usd < 0.001 {
             return Err(ProviderError::BudgetExceeded {
-                cap_usd: req.max_budget_usd,
+                cap_usd: req.request().max_budget_usd,
                 actual_usd: 0.001,
             });
         }
         Ok(AgentResponse {
-            output: serde_json::json!({"mock": true, "prompt": req.user_prompt}),
+            output: serde_json::json!({"mock": true, "prompt": req.safe_prompt()}),
             turns_used: 1,
             cost_usd: self.estimate_cost(100, 50),
             tokens: TokenUsage {
@@ -73,6 +73,9 @@ fn mock_request(budget: f64) -> AgentRequest {
         max_budget_usd: budget,
         model_hint: Some("claude-sonnet-4-6".into()),
         parent_span_id: None,
+        chain_origin: None,
+        chain_depth: 0,
+        aud: None,
     }
 }
 
@@ -84,7 +87,7 @@ async fn trait_dispatch_through_arc() {
     assert_eq!(provider.name(), "mock");
 
     let resp = provider
-        .spawn(mock_request(0.10))
+        .spawn(mock_request(0.10).sanitize().expect("valid test input"))
         .await
         .expect("mock should succeed");
 
@@ -96,7 +99,7 @@ async fn trait_dispatch_through_arc() {
 #[tokio::test]
 async fn budget_cap_enforced() {
     let provider: Arc<dyn LlmAgentProvider> = Arc::new(MockProvider { name: "mock" });
-    let result = provider.spawn(mock_request(0.0001)).await;
+    let result = provider.spawn(mock_request(0.0001).sanitize().expect("valid test input")).await;
     assert!(
         matches!(result, Err(ProviderError::BudgetExceeded { .. })),
         "expected BudgetExceeded, got {result:?}"

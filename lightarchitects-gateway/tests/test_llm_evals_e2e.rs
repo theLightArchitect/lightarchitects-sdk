@@ -60,7 +60,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use lightarchitects::agent::{
     AgentRequest, AgentResponse, ClaudeCliProvider, LlmAgentProvider, ProviderCapabilities,
-    ProviderError, SchemaMode,
+    ProviderError, SchemaMode, SanitizedAgentRequest,
 };
 use lightarchitects::core::handler::SiblingHandler;
 use lightarchitects_gateway::handlers::{CorsoHandler, EvaHandler, QuantumHandler, SoulHandler};
@@ -101,12 +101,13 @@ impl LlmAgentProvider for MonitoringProvider {
         "monitoring-claude-cli"
     }
 
-    async fn spawn(&self, req: AgentRequest) -> Result<AgentResponse, ProviderError> {
+    async fn spawn(&self, req: SanitizedAgentRequest) -> Result<AgentResponse, ProviderError> {
         let t0 = Instant::now();
-        let result = self.inner.spawn(req.clone()).await;
+        let raw = req.request().clone();
+        let result = self.inner.spawn(req).await;
         let latency_ms = t0.elapsed().as_millis() as u64;
         let capture = EvalCapture {
-            request: req,
+            request: raw,
             response: result.as_ref().ok().cloned(),
             latency_ms,
             error: result.as_ref().err().map(|e| format!("{e:?}")),
