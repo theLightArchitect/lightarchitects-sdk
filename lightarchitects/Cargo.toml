@@ -26,7 +26,7 @@ default = [
     "cypher", "embedding-ollama", "embedding-fastembed", "embedding-llama-cpp",
     "observe", "conversations", "http-client",
     "neo4j", "file", "dual", "fastembed", "rerank",
-    "ssh", "cli",
+    "ssh", "cli", "agent-cli",
 ]
 sqlite               = []
 search               = []
@@ -55,11 +55,13 @@ providers-openai     = ["credentials"]
 providers-google     = ["credentials"]
 credentials-display-names    = ["credentials"]
 credentials-detailed-locator = ["credentials"]
+agent-cli                    = []
 
 # ── Always-on external deps (union of all 13 merged crates) ──────────────────
 
 [dependencies]
 # Core runtime
+libc        = { workspace = true }
 rand        = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }

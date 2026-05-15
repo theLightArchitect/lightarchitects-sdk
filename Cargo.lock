@@ -2689,6 +2689,7 @@ dependencies = [
  "hkdf",
  "hmac",
  "indicatif 0.17.11",
+ "libc",
  "mockito",
  "moka",
  "neo4rs",

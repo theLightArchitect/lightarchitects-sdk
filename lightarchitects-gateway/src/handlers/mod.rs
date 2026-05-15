@@ -41,16 +41,6 @@ mod registry;
 ))]
 pub use registry::{init_handlers, registry};
 
-// ── Shared helpers (compiled when any LLM-dispatch handler is included) ─────────
-
-#[cfg(any(
-    feature = "inline-corso",
-    feature = "inline-eva",
-    feature = "inline-soul",
-    feature = "inline-quantum",
-))]
-mod common;
-
 // ── Individual handler modules (feature-gated) ─────────────────────────────────
 
 #[cfg(feature = "inline-ayin")]

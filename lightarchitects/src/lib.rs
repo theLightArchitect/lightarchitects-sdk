@@ -59,6 +59,10 @@ pub mod helix;
 /// Tier-1 ephemeral transactional log with HMAC chaining and helix promotion.
 pub mod turnlog;
 
+/// LLM agent provider infrastructure — trait, request/response types,
+/// `ClaudeCliProvider`, `sanitize_params`, and `dispatch_action`.
+pub mod agent;
+
 /// LASDLC — execution phases, build tiers, quality dimensions.
 pub mod lasdlc;
 

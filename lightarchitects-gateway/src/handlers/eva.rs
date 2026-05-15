@@ -24,12 +24,9 @@ use lightarchitects::core::handler::{HandlerConfig, HandlerError, SiblingHandler
 use serde_json::{Value, json};
 
 use crate::config::GatewayConfig;
-use crate::spawner::claude_runtime::ClaudeCliProvider;
 #[cfg(test)]
-use crate::spawner::llm_agent::ProviderError;
-use crate::spawner::llm_agent::{AgentRequest, LlmAgentProvider};
-
-use super::common::{build_prompt, map_provider_error};
+use lightarchitects::agent::ProviderError;
+use lightarchitects::agent::{ClaudeCliProvider, LlmAgentProvider, dispatch_action};
 
 /// All EVA canonical actions supported by the inline handler.
 ///
@@ -211,23 +208,15 @@ impl SiblingHandler for EvaHandler {
 
         // Phase 4: all verdict_y actions dispatch through the LLM provider.
         if EVA_LLM_ACTIONS.contains(&dispatch) {
-            let prompt = build_prompt("eva", dispatch, &params)?;
-            let req = AgentRequest {
-                sibling_identity: EVA_IDENTITY.to_owned(),
-                user_prompt: prompt,
-                schema: None,
-                allowed_tools: vec![],
-                max_turns: 1,
-                max_budget_usd: EVA_MAX_BUDGET_USD,
-                model_hint: None,
-                parent_span_id: None,
-            };
-            return self
-                .provider
-                .spawn(req)
-                .await
-                .map(|resp| resp.output)
-                .map_err(|e| map_provider_error("eva", dispatch, e));
+            return dispatch_action(
+                &*self.provider,
+                "eva",
+                dispatch,
+                &params,
+                EVA_IDENTITY,
+                EVA_MAX_BUDGET_USD,
+            )
+            .await;
         }
 
         // All other actions: stub response pending EVA lib extraction.
@@ -253,7 +242,9 @@ mod tests {
     use async_trait::async_trait;
 
     use super::*;
-    use crate::spawner::llm_agent::{AgentResponse, ProviderCapabilities, SchemaMode, TokenUsage};
+    use lightarchitects::agent::{
+        AgentRequest, AgentResponse, ProviderCapabilities, SchemaMode, TokenUsage,
+    };
 
     /// Default handler for tests that exercise non-LLM paths (stub actions,
     /// unknown-action errors, actions/name metadata).

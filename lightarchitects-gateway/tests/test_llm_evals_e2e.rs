@@ -37,19 +37,33 @@
     clippy::panic,
     clippy::print_stdout,
     clippy::missing_docs_in_private_items,
-    clippy::missing_panics_doc
+    clippy::missing_panics_doc,
+    // test-file: reasons documented in module doc comment above
+    clippy::ignore_without_reason,
+    // test-file: intentional casts in scoring arithmetic
+    dead_code,
+    clippy::cast_possible_truncation,
+    clippy::cast_lossless,
+    clippy::cast_precision_loss,
+    // test-file: scenario builder and eval struct are intentionally verbose
+    clippy::too_many_lines,
+    clippy::struct_excessive_bools,
+    // test-file: format style acceptable in diagnostic output code
+    clippy::print_literal,
+    clippy::uninlined_format_args,
+    clippy::map_unwrap_or,
 )]
 
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use lightarchitects::agent::{
+    AgentRequest, AgentResponse, ClaudeCliProvider, LlmAgentProvider, ProviderCapabilities,
+    ProviderError, SchemaMode,
+};
 use lightarchitects::core::handler::SiblingHandler;
 use lightarchitects_gateway::handlers::{CorsoHandler, EvaHandler, QuantumHandler, SoulHandler};
-use lightarchitects_gateway::spawner::claude_runtime::ClaudeCliProvider;
-use lightarchitects_gateway::spawner::llm_agent::{
-    AgentRequest, AgentResponse, LlmAgentProvider, ProviderCapabilities, ProviderError, SchemaMode,
-};
 use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
@@ -576,12 +590,12 @@ fn print_result(result: &EvalResult) {
                 .take(200)
                 .collect::<String>()
         );
-        println!("\n  Invocation:  claude --bare -p <prompt> --append-system-prompt <identity>");
+        println!("\n  Invocation:  claude -p <prompt> --append-system-prompt <identity>");
         println!(
             "               --output-format json --model {} --max-turns {} --max-budget-usd {:.2}",
             "claude-sonnet-4-6", cap.request.max_turns, cap.request.max_budget_usd
         );
-        println!("               --strict-mcp-config --mcp-config /dev/null");
+        println!("               --strict-mcp-config --mcp-config la-gateway-mcp-null.json");
         println!("\n  Latency:     {}ms", cap.latency_ms);
 
         if let Some(resp) = &cap.response {
