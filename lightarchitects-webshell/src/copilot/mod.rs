@@ -88,6 +88,18 @@ pub fn resolve_binary(name: &str) -> String {
     name.to_owned()
 }
 
+/// Mint a Claude Code–compatible session UUID for pre-minting before subprocess spawn.
+///
+/// Generates a `UUIDv4` (hyphenated lowercase) that Claude Code accepts as `--session-id`
+/// on the first turn. The resulting JSONL file on disk will be named `<uuid>.jsonl`,
+/// giving the webshell a stable handle before the subprocess is launched.
+///
+/// If Claude Code's `--session-id` semantics change in a future release, add a
+/// version-detect or feature-detect guard here.
+pub fn mint_session_id() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
 /// Resolve an Anthropic API key for the `LightArchitects` CLI subprocess.
 ///
 /// Priority:
@@ -1107,4 +1119,43 @@ fn emit_turn_complete_span(
             strand_activations: Vec::new(),
         },
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn is_hex(c: char) -> bool {
+        matches!(c, '0'..='9' | 'a'..='f')
+    }
+
+    #[test]
+    fn mint_session_id_is_uuidv4() {
+        let id = mint_session_id();
+        let chars: Vec<char> = id.chars().collect();
+        // UUIDv4 canonical: xxxxxxxx-xxxx-4xxx-[89ab]xxx-xxxxxxxxxxxx  (36 chars)
+        assert_eq!(chars.len(), 36, "expected 36-char UUID, got '{id}'");
+        assert_eq!(chars[8], '-', "hyphen at pos 8");
+        assert_eq!(chars[13], '-', "hyphen at pos 13");
+        assert_eq!(chars[18], '-', "hyphen at pos 18");
+        assert_eq!(chars[23], '-', "hyphen at pos 23");
+        assert_eq!(chars[14], '4', "version nibble at pos 14 must be '4'");
+        assert!(
+            matches!(chars[19], '8' | '9' | 'a' | 'b'),
+            "variant nibble at pos 19 must be 8/9/a/b, got '{}'",
+            chars[19]
+        );
+        for (i, &c) in chars.iter().enumerate() {
+            if [8, 13, 18, 23].contains(&i) {
+                continue;
+            }
+            assert!(is_hex(c), "pos {i} in '{id}' is not a hex digit: '{c}'");
+        }
+    }
+
+    #[test]
+    fn mint_session_id_is_unique() {
+        let ids: std::collections::HashSet<_> = (0..100).map(|_| mint_session_id()).collect();
+        assert_eq!(ids.len(), 100, "mint_session_id() produced duplicate UUIDs");
+    }
 }
