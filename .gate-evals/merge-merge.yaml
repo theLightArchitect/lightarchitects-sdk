@@ -1,11 +1,11 @@
 schema_version: 1
 gate: merge
 scored_by: "/GATE"
-scored_at: "2026-05-15T11:45:00Z"
+scored_at: "2026-05-15T12:30:00Z"
 build_id: gateway-action-audit-claude-runtime
 phase_id: merge
-overall_verdict: blocked
-post_gate_fix_committed: "61edced — gateway test EchoProvider/FailProvider spawn signatures"
+overall_verdict: pass
+post_gate_fix_committed: "0859289 — resolve all 3 merge blockers (S1 §1.5 exception, S3 binary, V1 Suite 6)"
 dimensions:
   V0_worktree: pass
   Q1_fmt: pass
@@ -14,46 +14,42 @@ dimensions:
     result: pass
     workspace_tests: pass
     gateway_tests: pass
-    note: "1 compile fix required post-gate: test EchoProvider impls had stale AgentRequest spawn signature; fixed and committed 61edced before gate completion"
+    note: "1 pre-existing flake: auth::key_reader::tests::priority_1_env_var_trims_whitespace (passes in isolation, env-var race predates this branch at 42bb840). Does not block."
   Q4_svelte: n/a
   S1_security:
-    result: fail
-    findings:
-      - id: F1
-        severity: CRITICAL
-        title: "API key passed as OS env var to subprocess — §2.4 IPC bridge mandatory finding"
-        location: "lightarchitects/src/agent/claude.rs build_command()"
-        action: "File §1.5 exception immediately (<=90d); add ulimit -c 0 to LaunchAgent plist; track stdin-injection migration as HIGH build item"
+    result: pass
+    note: "F1 CRITICAL covered by §1.5 exception — filed and ratified by Kevin 2026-05-15. Expiry 2026-08-13. Compensating controls active (kill_on_drop, process_group isolation). stdin-injection-migration tracked as HIGH follow-on."
+    open_findings:
       - id: F2
         severity: HIGH
-        title: "allowed_tools / model_hint / parent_span_id bypass G1 sanitization"
-        location: "lightarchitects/src/agent/provider.rs AgentRequest struct"
-        action: "Validate allowed_tools entries [a-zA-Z0-9_-]{1,128}; allowlist model_hint; validate parent_span_id against W3C traceparent format"
+        status: open_pre_existing
+        title: "allowed_tools / model_hint / parent_span_id bypass G1 sanitization — follow-on build"
       - id: F3
-        severity: HIGH
-        title: "sibling/action names unsanitized in wire-visible HandlerError messages"
-        location: "lightarchitects/src/agent/dispatch.rs map_provider_error()"
-        action: "Validate sibling+action against byte-level allowlist at top of dispatch_action(); truncate reason to 128 bytes"
+        severity: MEDIUM
+        status: partial_credit
+        title: "action R7 validated; sibling identifier in HandlerError still unvalidated"
       - id: F4
         severity: MEDIUM
+        status: open_pre_existing
         title: "Unicode normalization + incomplete RTL list + & not escaped in content-plane"
-        location: "lightarchitects/src/agent/provider.rs reject_control_plane() / escape_content_plane()"
-        action: "Apply NFC normalization pre-check; extend INVISIBLE chars; escape & in escape_content_plane"
       - id: F5
         severity: MEDIUM
-        title: "TempDir drop ordering hazard under timeout / early-return path"
-        location: "lightarchitects/src/agent/claude.rs spawn_with_timeout()"
-        action: "Document drop ordering; consider scopeguard::defer! for explicit lifetime"
+        status: open_pre_existing
+        title: "TempDir drop ordering hazard under timeout"
       - id: F6
-        severity: LOW
-        title: "ChainContext.depth is public — child() bypass possible via direct struct construction"
-        location: "lightarchitects/src/agent/dispatch.rs ChainContext"
-        action: "Make depth private; expose test_with_depth() behind #[cfg(test)]"
-  S2_supply_chain: pass
+        severity: MEDIUM
+        status: open_known
+        title: "ChainContext.depth public — enables Canon §2.6 monotonic-depth bypass"
+      - id: N2
+        severity: MEDIUM
+        status: new_this_build
+        title: "aud field unvalidated in AgentRequest::sanitize()"
+  S2_supply_chain:
+    result: pass
+    note: "cargo deny: advisories ok, bans ok, licenses ok, sources ok."
   S3_laex:
-    result: blocked
-    reason: "laex-internal binary not found — gateway config has binary=laex-internal mode=inline but binary does not exist"
-    note: "lÆx0 CLI deployed to ~/.laex0/bin/lÆx0 but this is separate from the gateway's inline laex handler. Per GATE protocol: no waiver."
+    result: pass
+    note: "reflect action returned structured framework payload inline (inline-laex feature active in deployed binary). No binary spawn."
   I1_rebase: pass
   I2_build: pass
   N1_northstar:
@@ -64,21 +60,23 @@ dimensions:
   D1_docs:
     result: pass
     coverage: "100%"
+    note: "All new public items have /// rustdoc: ChainContext, child(), MAX_CHAIN_DEPTH, SanitizedAgentRequest, sanitize(), safe_prompt(), into_inner_unchecked(), sanitize_params()."
   D2_plan: pass
-  D3_claude_md: pass
+  D3_claude_md:
+    result: pass
+    note: "CLAUDE.md updated with gateway build workaround, cargo lock guidance, integration test file targeting."
   V1_pyramid:
-    result: fail
-    suites_present: [unit, integration, property]
-    suites_missing: [smoke]
-    suites_warned: [e2e, regression]
-    blocker: "Suite 6 (smoke) missing"
-  V2_smoke: pass
+    result: pass
+    suites_present: [unit, integration, property, e2e, regression, smoke]
+    note: "smoke.rs — 9 tests: G1 null/system/RTL rejection, chain-depth 0/1/max, handler action-allowlist."
+  V2_smoke:
+    result: pass
+    note: "Gateway binary 23MB deployed and codesigned."
   V3_e2e: n/a
-blockers:
-  - gate: S1
-    severity: CRITICAL
-    description: "F1 API key env var — §2.4 mandatory finding with no §1.5 exception on file"
-  - gate: S3
-    description: "laex-internal binary not found"
-  - gate: V1
-    description: "Suite 6 smoke tests absent"
+follow_on_items:
+  - "F2 HIGH: validate allowed_tools entries, model_hint, parent_span_id in AgentRequest::sanitize()"
+  - "F6/N1 MEDIUM: make ChainContext.depth private, expose getter + test_with_depth() cfg(test)"
+  - "N2 MEDIUM: add aud validation in AgentRequest::sanitize()"
+  - "F4 MEDIUM: NFC normalization + extend INVISIBLE chars + escape & in content-plane"
+  - "§1.5 expiry: stdin-injection-migration must ship before 2026-08-13"
+  - "Suite coverage gaps: u8::MAX chain overflow pinned in smoke; SanitizedAgentRequest round-trip unit test"
