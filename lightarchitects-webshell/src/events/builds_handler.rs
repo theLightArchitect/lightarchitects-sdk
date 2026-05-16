@@ -845,11 +845,20 @@ pub async fn lasdlc_meta_handler() -> impl IntoResponse {
 /// the `SSE` stream at `GET /api/builds/plan/draft-stream/<session_id>`.
 pub async fn draft_plan_handler(
     axum::extract::State(state): axum::extract::State<crate::server::AppState>,
+    headers: axum::http::HeaderMap,
     axum::extract::Json(req): axum::extract::Json<crate::events::types::PlanDraftRequest>,
 ) -> impl axum::response::IntoResponse {
     use crate::copilot::mint_session_id;
     use crate::events::types::PlanDraftResponseEnvelope;
     use axum::http::StatusCode;
+
+    let authz = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !crate::auth::validate_bearer(authz, &state.config.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
 
     let sid_str = mint_session_id();
     let Ok(session_id) = uuid::Uuid::parse_str(&sid_str) else {
@@ -984,10 +993,19 @@ pub async fn plan_draft_stream_handler(
 
 /// `POST /api/builds/plan/commit` — commit a validated plan draft to disk.
 pub async fn commit_plan_handler(
-    axum::extract::State(_state): axum::extract::State<crate::server::AppState>,
+    axum::extract::State(state): axum::extract::State<crate::server::AppState>,
+    headers: axum::http::HeaderMap,
     axum::extract::Json(req): axum::extract::Json<crate::events::types::PlanCommitRequest>,
 ) -> impl axum::response::IntoResponse {
     use axum::http::StatusCode;
+
+    let authz = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !crate::auth::validate_bearer(authz, &state.config.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
 
     if req.body.is_empty() {
         return (StatusCode::UNPROCESSABLE_ENTITY, "body is empty").into_response();
@@ -1026,7 +1044,8 @@ pub async fn commit_plan_handler(
         .join(format!("{}.md", req.codename));
 
     if let Err(e) = std::fs::write(&plan_path, &req.body) {
-        return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        tracing::warn!(path=%plan_path.display(), error=%e, "plan commit write failed");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
 
     (

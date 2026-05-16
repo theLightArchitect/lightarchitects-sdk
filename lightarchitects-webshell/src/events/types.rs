@@ -477,7 +477,7 @@ pub enum ControlCommand {
 /// Form fields from the Plan Builder UI for requesting a new plan draft.
 ///
 /// Sent as JSON body to `POST /api/builds/plan/draft`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PlanDraftRequest {
     /// Human-readable description — the "what" of the build.
     pub description: String,
