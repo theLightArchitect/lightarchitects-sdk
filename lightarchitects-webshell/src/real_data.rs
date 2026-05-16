@@ -846,6 +846,72 @@ pub async fn dispatch_sibling(
     }
 }
 
+// ── MCP Servers (§O Tool Surface Parity) ────────────────────────────────────
+
+/// GET /api/mcp-servers — reads `~/.claude/mcp.json` and returns a
+/// parity-annotated list of all configured MCP servers.
+///
+/// §O Check 1 (enumeration) + Check 6 (gap visibility). Returns `[]` if
+/// the file is absent or malformed — never an error, always a valid array.
+pub async fn list_mcp_servers(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    if !is_authed(&headers, &state.config.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let Some(home) = home_dir() else {
+        return (StatusCode::OK, Json(json!([]))).into_response();
+    };
+    let mcp_json = home.join(".claude/mcp.json");
+    let Ok(raw) = tokio::fs::read_to_string(&mcp_json).await else {
+        return (StatusCode::OK, Json(json!([]))).into_response();
+    };
+    let Ok(parsed) = serde_json::from_str::<Value>(&raw) else {
+        return (StatusCode::OK, Json(json!([]))).into_response();
+    };
+    let servers = parsed
+        .get("mcpServers")
+        .and_then(|v| v.as_object())
+        .map(|obj| {
+            obj.iter()
+                .map(|(key, val)| {
+                    let command = val
+                        .get("command")
+                        .and_then(|c| c.as_str())
+                        .map(std::borrow::ToOwned::to_owned);
+                    // §O Check 6: servers not invocable via webshell dispatch show a gap label.
+                    // Only the lightarchitects MCP is fully supported today.
+                    let webshell_supported = key == "lightarchitects";
+                    let gap_label: Option<&str> =
+                        (!webshell_supported).then_some("webshell: not yet supported");
+                    let tool_count: Option<u32> = None;
+                    json!({
+                        "id": key,
+                        "name": mcp_titlecase(key),
+                        "status": "configured",
+                        "command": command,
+                        "tool_count": tool_count,
+                        "webshell_supported": webshell_supported,
+                        "gap_label": gap_label
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    (StatusCode::OK, Json(servers)).into_response()
+}
+
+fn mcp_titlecase(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
+
+// ── Sibling identity ─────────────────────────────────────────────────────────
+
 /// Load a sibling's identity from `$HELIX/<sibling>/identity.md`.
 ///
 /// Returns the identity content prefixed with a header, or an empty string
@@ -863,4 +929,34 @@ fn load_sibling_identity(sibling: &str) -> String {
         }
     }
     String::new()
+}
+
+#[cfg(test)]
+mod mcp_server_tests {
+    use super::mcp_titlecase;
+
+    #[test]
+    fn titlecase_empty() {
+        assert_eq!(mcp_titlecase(""), "");
+    }
+
+    #[test]
+    fn titlecase_single_char() {
+        assert_eq!(mcp_titlecase("a"), "A");
+    }
+
+    #[test]
+    fn titlecase_lowercase() {
+        assert_eq!(mcp_titlecase("lightarchitects"), "Lightarchitects");
+    }
+
+    #[test]
+    fn titlecase_already_upper() {
+        assert_eq!(mcp_titlecase("Figma"), "Figma");
+    }
+
+    #[test]
+    fn titlecase_hyphenated() {
+        assert_eq!(mcp_titlecase("my-tool"), "My-tool");
+    }
 }
