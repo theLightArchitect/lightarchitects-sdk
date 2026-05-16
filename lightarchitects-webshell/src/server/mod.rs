@@ -368,7 +368,7 @@ impl AppState {
             telemetry: TelemetryHandle::new(),
             session_store: Arc::new(std::sync::Mutex::new(SessionStore::noop())),
             auth_nonces: Arc::new(DashMap::new()),
-            global_event_store: events::GlobalEventStore::new(None),
+            global_event_store: events::GlobalEventStore::noop(),
             plan_draft_sessions: Arc::new(DashMap::new()),
         }
     }

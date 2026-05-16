@@ -39,6 +39,19 @@ export function buildSequenceDiagram(spans: TraceSpan[]): string {
   return lines.join('\n');
 }
 
+// Strip event-handler identifiers (onerror, onclick, …) and dangerous JS
+// function names that survive the base sanitize step because they are
+// alphanumeric.  Applied only to Mermaid node labels where innerHTML rendering
+// may not escape nested strings.
+function mermaidLabel(actor: string, action: string): string {
+  const raw = `${sanitize(actor)}.${sanitize(action)}`;
+  return raw
+    .replace(/\bon\w+\b/gi, '_evt_')
+    .replace(/\b(?:alert|eval|exec|fetch|document|window|location)\b/gi, '_fn_')
+    .replace(/[^a-zA-Z0-9_.\-:/ ]/g, '_')
+    .slice(0, 40);
+}
+
 export function buildFlowDiagram(spans: TraceSpan[]): string {
   const lines: string[] = ['graph LR'];
   const nodeIds = new Map<string, string>();
@@ -53,8 +66,8 @@ export function buildFlowDiagram(spans: TraceSpan[]): string {
     const b = spans[i + 1];
     const idA = nodeId(a.actor, a.action);
     const idB = nodeId(b.actor, b.action);
-    const labelA = `${sanitize(a.actor)}.${sanitize(a.action)}`;
-    const labelB = `${sanitize(b.actor)}.${sanitize(b.action)}`;
+    const labelA = mermaidLabel(a.actor, a.action);
+    const labelB = mermaidLabel(b.actor, b.action);
     if (a.outcome === 'Finish') {
       const dur = coerceDuration(a.duration_ms);
       lines.push(`  ${idA}["${labelA}"] -->|${dur}ms| ${idB}["${labelB}"]`);
@@ -65,7 +78,7 @@ export function buildFlowDiagram(spans: TraceSpan[]): string {
   if (spans.length === 1) {
     const s = spans[0];
     const id = nodeId(s.actor, s.action);
-    lines.push(`  ${id}["${sanitize(s.actor)}.${sanitize(s.action)}"]`);
+    lines.push(`  ${id}["${mermaidLabel(s.actor, s.action)}"]`);
   }
   return lines.join('\n');
 }

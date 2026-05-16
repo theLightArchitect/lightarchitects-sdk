@@ -69,8 +69,11 @@ impl GlobalEventStore {
     /// Create a new store and spawn the background disk-persistence task.
     ///
     /// `persist_path` should be a writable file path (e.g.
-    /// `$data_dir/events.ndjson`). Pass `None` to disable disk persistence
-    /// (useful in tests).
+    /// `$data_dir/events.ndjson`). Pass `None` to disable disk persistence.
+    ///
+    /// **Requires a Tokio runtime** — call from an `async` context or a thread
+    /// already inside `tokio::Runtime`. Use [`GlobalEventStore::noop`] in
+    /// synchronous unit tests.
     pub fn new(persist_path: Option<PathBuf>) -> Self {
         let (sender, _) = broadcast::channel(BROADCAST_CAP);
         let ring = Arc::new(std::sync::Mutex::new(VecDeque::with_capacity(RING_CAP)));
@@ -83,6 +86,28 @@ impl GlobalEventStore {
             tokio::spawn(drain_task(persist_rx));
         }
 
+        Self {
+            sender,
+            ring,
+            next_seq,
+            persist_tx,
+        }
+    }
+
+    /// Create a no-op store that spawns no background tasks.
+    ///
+    /// Safe to call outside a Tokio runtime. Persist sends are silently
+    /// discarded (the `persist_rx` is dropped immediately). Broadcast and ring
+    /// buffer remain fully functional for in-process subscribers.
+    ///
+    /// Intended for use in synchronous unit tests via [`AppState::for_test`].
+    #[must_use]
+    pub fn noop() -> Self {
+        let (sender, _) = broadcast::channel(BROADCAST_CAP);
+        let ring = Arc::new(std::sync::Mutex::new(VecDeque::with_capacity(RING_CAP)));
+        let next_seq = Arc::new(AtomicU64::new(1));
+        let (persist_tx, _persist_rx) = mpsc::unbounded_channel();
+        // _persist_rx is dropped here; persist_tx.send() silently errors (ignored in push()).
         Self {
             sender,
             ring,
