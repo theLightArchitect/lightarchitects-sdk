@@ -20,6 +20,7 @@
 pub mod ayin_client;
 pub mod builds_handler;
 pub mod control;
+pub mod global_events;
 pub mod helix_watcher;
 pub mod notify;
 pub mod soul; // task #51 split target — see events/soul/mod.rs
@@ -31,9 +32,10 @@ pub mod types;
 pub use ayin_client::{AyinClient, EVENT_CHANNEL_BUF};
 pub use builds_handler::builds_handler;
 pub use control::control_handler;
+pub use global_events::GlobalEventStore;
 pub use helix_watcher::HelixWatcher;
 pub use strand::{parse_strand_activations, window_aggregate};
 pub use types::{
-    BuildEventKind, BuildUpdateEvent, ControlCommand, CopilotActivityEvent, StrandActivationEvent,
-    WebEvent,
+    BuildEventKind, BuildUpdateEvent, ControlCommand, CopilotActivityEvent, GlobalEventEntry,
+    StrandActivationEvent, WebEvent,
 };

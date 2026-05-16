@@ -1121,6 +1121,191 @@ fn emit_turn_complete_span(
     ));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Plan draft subprocess — F-002 fix (plan-builder-copilot-bridge Phase 3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Form-field bundle for [`spawn_plan_draft`].
+///
+/// Groups the six operator-supplied fields so the function signature stays
+/// within `clippy::too_many_arguments` (≤7).
+pub struct PlanDraftArgs {
+    /// Free-text description of the feature or build target.
+    pub description: String,
+    /// Optional Northstar statement injected into the `/PLAN` seed prompt.
+    pub northstar: Option<String>,
+    /// Optional repository URL or monorepo path for the plan's scope context.
+    pub repository: Option<String>,
+    /// When `true`, appends `--research` phase hint to the seed prompt.
+    pub research: bool,
+    /// Requested LASDLC tier (`SMALL`, `MEDIUM`, or `LARGE`), or `None` for auto.
+    pub tier: Option<String>,
+    /// Pre-minted `UUIDv4` passed as `--session-id` on Turn 1.
+    pub session_id: String,
+}
+
+/// Build the `/PLAN` seed prompt from operator-supplied form fields.
+fn build_plan_seed_prompt(args: &PlanDraftArgs) -> String {
+    use std::fmt::Write as _;
+    let desc = &args.description;
+    let mut prompt =
+        format!("/PLAN {desc}\n\n**Build context from webshell form**:\n- Description: {desc}");
+    if let Some(ref ns) = args.northstar {
+        let _ = write!(prompt, "\n- Northstar: {ns}");
+    }
+    if let Some(ref repo) = args.repository {
+        let _ = write!(prompt, "\n- Repository: {repo}");
+    }
+    if let Some(ref t) = args.tier {
+        let _ = write!(prompt, "\n- Tier: {t}");
+    }
+    if args.research {
+        prompt.push_str("\n- Include research phase: yes");
+    }
+    prompt.push_str("\n\nAuthor a complete LASDLC v2.5.1-compliant plan body. Include northstar_lineage, all phases with [A+S+Q+C+O+P+K+D+T+R] gates, file-function map, C1-C8 rubric, and IEEE references.");
+    prompt
+}
+
+/// Spawn a `claude --print` subprocess to author a `LASDLC v2.5.1` plan draft.
+///
+/// Uses the same `--print --output-format stream-json --verbose` pattern as
+/// [`run_print_turn`] but is stateless (no [`BuildSession`] required) because
+/// plan authoring runs outside a build session — the session UUID is
+/// pre-minted by the caller via [`mint_session_id`] and passed as
+/// `--session-id` on Turn 1.
+///
+/// # Streaming contract
+///
+/// Emits [`PlanDraftEvent`] variants over `tx` in this order:
+/// 1. `TextChunk` — one per `text_delta` content block delta
+/// 2. `IterationStart` — once per `/PLAN` self-review iteration detected
+/// 3. `VerdictBlock` — once when EVA emits a `VALIDATED` or `REVISION_NEEDED` block
+/// 4. `Done` — on clean subprocess exit (codename derived from description)
+/// 5. `Error` — on spawn failure, timeout, or non-zero exit
+///
+fn push_copilot_chunk(store: &crate::events::GlobalEventStore, pid: u32, text: &str) {
+    store.push(
+        crate::events::types::EventSource::CopilotSubprocess { pid },
+        crate::events::WebEvent::CopilotResponse {
+            chunk: text.to_owned(),
+            done: false,
+            sibling: Some("eva".into()),
+        },
+    );
+}
+
+/// # Errors
+///
+/// Returns [`PlanDraftError`] on spawn failure or I/O error. Runtime
+/// errors (timeouts, subprocess non-zero exit) are sent over `tx` as
+/// `PlanDraftEvent::Error` and then `Ok(())` is returned.
+pub async fn spawn_plan_draft(
+    args: PlanDraftArgs,
+    tx: tokio::sync::mpsc::Sender<crate::events::types::PlanDraftEvent>,
+    global_store: Option<crate::events::GlobalEventStore>,
+) -> Result<(), crate::events::types::PlanDraftError> {
+    use crate::events::types::{PlanDraftError, PlanDraftEvent};
+
+    let binary = resolve_binary("claude");
+    let prompt = build_plan_seed_prompt(&args);
+    // Derive codename before args is consumed: lowercase kebab from first 5 words.
+    let codename = args
+        .description
+        .split_whitespace()
+        .take(5)
+        .map(|w| w.to_lowercase().replace(|c: char| !c.is_alphanumeric(), ""))
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+
+    let mut c = tokio::process::Command::new(&binary);
+    c.env("PATH", augmented_path());
+    c.env_remove("ANTHROPIC_API_KEY");
+    c.arg("--output-format").arg("stream-json");
+    c.arg("--verbose");
+    c.arg("--dangerously-skip-permissions");
+    c.arg("--print").arg("-p").arg(&prompt);
+    c.arg("--session-id").arg(&args.session_id);
+    c.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+
+    let mut child = c
+        .spawn()
+        .map_err(|e| PlanDraftError::SubprocessSpawnFailed(format!("claude spawn: {e}")))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| PlanDraftError::SubprocessSpawnFailed("stdout unavailable".into()))?;
+    let mut reader = tokio::io::BufReader::new(stdout).lines();
+    let mut iteration: u8 = 1;
+
+    while let Some(line) = reader
+        .next_line()
+        .await
+        .map_err(|e| PlanDraftError::IoError(format!("read stdout: {e}")))?
+    {
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+
+        if val["type"].as_str() != Some("content_block_delta") {
+            continue;
+        }
+        let Some(delta) = val.get("delta") else {
+            continue;
+        };
+        if delta["type"].as_str() != Some("text_delta") {
+            continue;
+        }
+        let Some(text) = delta["text"].as_str() else {
+            continue;
+        };
+
+        if text.contains("## Self-Review") {
+            iteration = iteration.saturating_add(1);
+            let _ = tx.send(PlanDraftEvent::IterationStart { iteration }).await;
+        }
+        if text.contains("validation_status: VALIDATED") {
+            let verdict = crate::events::types::ReviewVerdict {
+                validation_status: "VALIDATED".into(),
+                iteration,
+                summary: Some("Plan validated by EVA self-review".into()),
+            };
+            let _ = tx.send(PlanDraftEvent::VerdictBlock { verdict }).await;
+        }
+
+        if let Some(ref store) = global_store {
+            push_copilot_chunk(store, child.id().unwrap_or(0), text);
+        }
+        if tx
+            .send(PlanDraftEvent::TextChunk {
+                text: text.to_owned(),
+            })
+            .await
+            .is_err()
+        {
+            let _ = child.kill().await;
+            return Ok(());
+        }
+    }
+
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| PlanDraftError::IoError(e.to_string()))?;
+    if status.success() {
+        let _ = tx.send(PlanDraftEvent::Done { codename }).await;
+    } else {
+        let _ = tx
+            .send(PlanDraftEvent::Error {
+                message: "Plan draft subprocess exited with error".into(),
+            })
+            .await;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -5,6 +5,7 @@
 //! to via `GET /api/events` (Phase 5).
 
 use crate::memory::types::PromotionEvent;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Broadcast event emitted by the webshell backend.
@@ -655,6 +656,24 @@ pub enum EventSource {
         /// Gate identifier (e.g. `"gate-3-AQT"`).
         gate_id: String,
     },
+}
+
+/// A single entry stored in the [`GlobalEventStore`] ring buffer.
+///
+/// Every event pushed to the store is wrapped with sequence number, timestamp,
+/// and source metadata. The `seq` field is used for `Last-Event-ID` reconnect
+/// resume (clients send `Last-Event-ID: <seq>` on reconnect; server resumes
+/// from `seq+1` if the entry is still in the ring).
+#[derive(Debug, Clone, Serialize)]
+pub struct GlobalEventEntry {
+    /// Monotonically increasing sequence number (1-based, per-store instance).
+    pub seq: u64,
+    /// `UTC` wall-clock timestamp when the event was pushed to the store.
+    pub timestamp: DateTime<Utc>,
+    /// Origin of the event — used by [`EventFilter`] for consumer-side filtering.
+    pub source: EventSource,
+    /// The wrapped broadcast event payload.
+    pub event: WebEvent,
 }
 
 /// Filter parameters accepted as query-string on `GET /api/events/global`.

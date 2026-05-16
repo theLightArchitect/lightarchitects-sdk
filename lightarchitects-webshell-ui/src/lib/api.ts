@@ -9,6 +9,7 @@ import type {
   ContextMemo, EnrichedHelixEntry,
   RetentionPolicy, CompactionSummary,
   TrainingConfig, TrainingRun,
+  PlanDraftRequest, PlanDraftResponseEnvelope, PlanDraftEvent, PlanCommitRequest,
 } from './types';
 import type { SetupInfo, ModelOption, SaveRequest } from './setup';
 
@@ -290,4 +291,82 @@ export const api = {
       }>;
       total: number;
     }>(`/soul/convergences?min_participants=${minParticipants}&limit=${limit}`),
+
+  // ── Plan Draft (plan-builder-copilot-bridge Phase 3) ─────────────────────
+
+  /**
+   * Start an EVA-authored plan draft.
+   *
+   * Returns a session_id + SSE URL to subscribe to via `subscribePlanStream`.
+   * The copilot subprocess streams LASDLC v2.5.1-compliant plan body over SSE.
+   */
+  draftPlan: (req: PlanDraftRequest) =>
+    request<PlanDraftResponseEnvelope>('/builds/plan/draft', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  /**
+   * Subscribe to the streaming plan draft events for a session.
+   *
+   * Returns a native `EventSource`. The caller must close it on cleanup.
+   * Each SSE `data:` payload is a JSON-serialised `PlanDraftEvent`.
+   *
+   * Phase 3 stub: endpoint returns 501 until Phase 4 broadcast refactor.
+   * The caller should handle `error` events gracefully.
+   */
+  subscribePlanStream: (
+    sessionId: string,
+    onEvent: (ev: PlanDraftEvent) => void,
+    onError?: (e: Event) => void,
+  ): EventSource => {
+    const es = new EventSource(`/api/builds/plan/draft-stream/${sessionId}`);
+    es.onmessage = (e: MessageEvent) => {
+      try {
+        const parsed = JSON.parse(e.data as string) as PlanDraftEvent;
+        onEvent(parsed);
+      } catch {
+        // malformed JSON — skip
+      }
+    };
+    if (onError) es.onerror = onError;
+    return es;
+  },
+
+  /**
+   * Commit a validated plan body to `~/.claude/plans/<codename>.md`.
+   *
+   * The backend validates that `frontmatter.validation_status == VALIDATED`
+   * before writing. Returns `{ ok: true }` on success, throws on 422/500.
+   */
+  commitPlan: (req: PlanCommitRequest) =>
+    request<{ ok: boolean }>('/builds/plan/commit', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  /**
+   * Subscribe to the global event ring buffer over SSE.
+   *
+   * Replays buffered entries (seq > last_seq if provided), then streams live.
+   * Returns a native `EventSource`; caller must close it on component destroy.
+   */
+  subscribeGlobalEvents: (
+    onEvent: (data: unknown) => void,
+    options?: { buildId?: string; lastSeq?: number },
+  ): EventSource => {
+    const params = new URLSearchParams();
+    if (options?.buildId) params.set('build_id', options.buildId);
+    if (options?.lastSeq != null) params.set('last_seq', String(options.lastSeq));
+    const qs = params.size > 0 ? `?${params}` : '';
+    const es = new EventSource(`/api/events/global${qs}`);
+    es.onmessage = (e: MessageEvent) => {
+      try {
+        onEvent(JSON.parse(e.data as string));
+      } catch {
+        // skip malformed
+      }
+    };
+    return es;
+  },
 };

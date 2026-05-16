@@ -551,6 +551,38 @@ export const planBuilderMode = writable<boolean>(false);
 /** Active plan being built/edited in Intake Plan Builder */
 export const planBuilderDraft = writable<import('./types').BuildPlan | null>(null);
 
+// ── Plan Draft streaming state (plan-builder-copilot-bridge Phase 3) ─────────
+
+export interface PlanDraftState {
+  /** null = idle; non-null = active draft session */
+  sessionId: string | null;
+  codename:  string;
+  /** Accumulated streamed Markdown text */
+  text:      string;
+  iteration: number;
+  /** Latest verdict from EVA self-review; null until Step 5 emits one */
+  verdict:   import('./types').ReviewVerdict | null;
+  done:      boolean;
+  error:     string | null;
+}
+
+const PLAN_DRAFT_IDLE: PlanDraftState = {
+  sessionId: null,
+  codename:  '',
+  text:      '',
+  iteration: 1,
+  verdict:   null,
+  done:      false,
+  error:     null,
+};
+
+export const planDraftState = writable<PlanDraftState>({ ...PLAN_DRAFT_IDLE });
+
+/** Reset plan draft state to idle. */
+export function resetPlanDraft(): void {
+  planDraftState.set({ ...PLAN_DRAFT_IDLE });
+}
+
 // ── Git operations (EEF E3 Phase 3) ──────────────────────────────────────────
 
 /** A single file entry from `git status`. */

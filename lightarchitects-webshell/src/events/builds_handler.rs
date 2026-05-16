@@ -834,6 +834,199 @@ pub async fn lasdlc_meta_handler() -> impl IntoResponse {
     (StatusCode::OK, Json(meta))
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Plan draft + commit handlers — plan-builder-copilot-bridge Phase 3
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// `POST /api/builds/plan/draft` — seed a new plan draft via EVA copilot.
+///
+/// Mints a session `UUID`, spawns `spawn_plan_draft` in a background task,
+/// and returns `PlanDraftResponseEnvelope` so the browser can subscribe to
+/// the `SSE` stream at `GET /api/builds/plan/draft-stream/<session_id>`.
+pub async fn draft_plan_handler(
+    axum::extract::State(state): axum::extract::State<crate::server::AppState>,
+    axum::extract::Json(req): axum::extract::Json<crate::events::types::PlanDraftRequest>,
+) -> impl axum::response::IntoResponse {
+    use crate::copilot::mint_session_id;
+    use crate::events::types::PlanDraftResponseEnvelope;
+    use axum::http::StatusCode;
+
+    let sid_str = mint_session_id();
+    let Ok(session_id) = uuid::Uuid::parse_str(&sid_str) else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "uuid mint failed").into_response();
+    };
+
+    let codename = req
+        .description
+        .split_whitespace()
+        .take(5)
+        .map(|w| w.to_lowercase().replace(|c: char| !c.is_alphanumeric(), ""))
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+
+    let (tx, _rx) = tokio::sync::mpsc::channel(64);
+    state.plan_draft_sessions.insert(session_id, tx.clone());
+
+    let store = state.global_event_store.clone();
+    let desc = req.description.clone();
+    let ns = req.northstar.clone();
+    let repo = req.repository.clone();
+    let research = req.research;
+    let tier = req.tier.clone();
+
+    tokio::spawn(async move {
+        let _ = crate::copilot::spawn_plan_draft(
+            crate::copilot::PlanDraftArgs {
+                description: desc,
+                northstar: ns,
+                repository: repo,
+                research,
+                tier,
+                session_id: sid_str,
+            },
+            tx,
+            Some(store),
+        )
+        .await;
+    });
+
+    let envelope = PlanDraftResponseEnvelope {
+        session_id,
+        codename,
+        sse_url: format!("/api/builds/plan/draft-stream/{session_id}"),
+    };
+    (StatusCode::OK, axum::Json(envelope)).into_response()
+}
+
+/// `GET /api/builds/plan/draft-stream/:session_id` — SSE stream for a plan draft.
+///
+/// Phase 3 stub — returns 501 until Phase 4 refactors `plan_draft_sessions`
+/// from `mpsc::Sender` to `broadcast::Sender` to support multiple SSE
+/// subscribers per draft session (browser refresh safety).
+pub async fn plan_draft_stream_handler(
+    axum::extract::State(state): axum::extract::State<crate::server::AppState>,
+    axum::extract::Path(session_id): axum::extract::Path<uuid::Uuid>,
+) -> impl axum::response::IntoResponse {
+    use axum::http::StatusCode;
+
+    if !state.plan_draft_sessions.contains_key(&session_id) {
+        return (StatusCode::NOT_FOUND, "No draft session found").into_response();
+    }
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        "SSE stream — broadcast refactor in Phase 4",
+    )
+        .into_response()
+}
+
+/// `POST /api/builds/plan/commit` — commit a validated plan draft to disk.
+pub async fn commit_plan_handler(
+    axum::extract::State(_state): axum::extract::State<crate::server::AppState>,
+    axum::extract::Json(req): axum::extract::Json<crate::events::types::PlanCommitRequest>,
+) -> impl axum::response::IntoResponse {
+    use axum::http::StatusCode;
+
+    if req.body.is_empty() {
+        return (StatusCode::UNPROCESSABLE_ENTITY, "body is empty").into_response();
+    }
+
+    // Validate required frontmatter fields.
+    let required = [
+        "project:",
+        "codename:",
+        "validation_status:",
+        "lasdlc_template_version:",
+    ];
+    for field in &required {
+        if !req.body.contains(field) {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!("invalid_frontmatter: missing {field}"),
+            )
+                .into_response();
+        }
+    }
+
+    // Check validation_status is VALIDATED.
+    if !req.body.contains("validation_status: VALIDATED") {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_frontmatter: validation_status must be VALIDATED".to_owned(),
+        )
+            .into_response();
+    }
+
+    // Write plan file.
+    let plan_path = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+        .join(".claude")
+        .join("plans")
+        .join(format!("{}.md", req.codename));
+
+    if let Err(e) = std::fs::write(&plan_path, &req.body) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+    }
+
+    (
+        StatusCode::OK,
+        axum::Json(serde_json::json!({ "committed": true, "path": plan_path })),
+    )
+        .into_response()
+}
+
+/// `GET /api/events/global` — SSE stream of all global events with optional filtering.
+///
+/// Sends a snapshot of existing entries (newest-last), then streams live events.
+/// Filtering on `sibling`, `severity`, `build_id`, `tool_name` is applied
+/// consumer-side per the Phase 1 architecture decision.
+pub async fn global_events_handler(
+    axum::extract::State(state): axum::extract::State<crate::server::AppState>,
+    axum::extract::Query(filter): axum::extract::Query<crate::events::types::EventFilter>,
+) -> impl axum::response::IntoResponse {
+    use crate::events::global_events::matches_filter;
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    use futures_util::{StreamExt as _, stream};
+
+    // Snapshot replay: send existing ring entries before switching to live.
+    let snapshot = state.global_event_store.snapshot();
+    let rx = state.global_event_store.subscribe();
+
+    let replay_events: Vec<Result<Event, std::convert::Infallible>> = snapshot
+        .into_iter()
+        .filter(|e| matches_filter(e, &filter))
+        .map(|e| {
+            let data = serde_json::to_string(e.as_ref()).unwrap_or_default();
+            Ok(Event::default().id(e.seq.to_string()).data(data))
+        })
+        .collect();
+
+    let live = stream::unfold((rx, filter), |(mut rx, filter)| async move {
+        loop {
+            match rx.recv().await {
+                Ok(entry) => {
+                    if matches_filter(&entry, &filter) {
+                        let data = serde_json::to_string(entry.as_ref()).unwrap_or_default();
+                        let ev = Event::default().id(entry.seq.to_string()).data(data);
+                        return Some((Ok::<_, std::convert::Infallible>(ev), (rx, filter)));
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    let lag_ev = Event::default()
+                        .event("lag")
+                        .data(format!("{{\"skipped\":{n}}}"));
+                    return Some((Ok(lag_ev), (rx, filter)));
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    });
+
+    let combined = stream::iter(replay_events).chain(live);
+    Sse::new(combined)
+        .keep_alive(KeepAlive::default())
+        .into_response()
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

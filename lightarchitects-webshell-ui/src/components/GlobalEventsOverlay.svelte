@@ -1,13 +1,49 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
   import {
     activityFeed, pillarStream, logEntries,
     eventsOverlayOpen,
   } from '$lib/stores';
+  import { api } from '$lib/api';
   import type { ActivityEntry, SupervisorAlert, PillarUpdatePayload, LogEntry } from '$lib/types';
   import EventStream, { type StreamRow, logLevelToSeverity } from './EventStream.svelte';
   import { sourceColor } from '$lib/atmosphere';
 
   let { route = '/' }: { route?: string } = $props();
+
+  // ── /api/events/global SSE subscription ───────────────────────────────────
+
+  interface GlobalEntry {
+    seq:       number;
+    timestamp: string;
+    source:    unknown;
+    event:     { type?: string; chunk?: string; summary?: string; [k: string]: unknown };
+  }
+
+  let globalEntries = $state<{ entry: GlobalEntry; ts: number }[]>([]);
+  let lastSeq = $state(0);
+  let globalEs: EventSource | null = null;
+
+  function openGlobalSse() {
+    globalEs?.close();
+    globalEs = api.subscribeGlobalEvents(
+      (data) => {
+        const e = data as GlobalEntry;
+        if (!e?.seq) return;
+        if (e.seq <= lastSeq) return;
+        lastSeq = e.seq;
+        globalEntries = [...globalEntries.slice(-119), { entry: e, ts: new Date(e.timestamp).getTime() }];
+      },
+      { lastSeq },
+    );
+    globalEs.onerror = () => {
+      // backend may not be running — reconnect silently after 5 s
+      setTimeout(openGlobalSse, 5_000);
+    };
+  }
+
+  onMount(openGlobalSse);
+  onDestroy(() => globalEs?.close());
 
   // ── Unified internal entry type ───────────────────────────────────────────
 
@@ -39,7 +75,7 @@
 
   let lastSeenCount = $state(0);
   let totalCount = $derived(
-    $activityFeed.length + $pillarStream.length + $logEntries.length
+    $activityFeed.length + $pillarStream.length + $logEntries.length + globalEntries.length
   );
   let unread = $derived($eventsOverlayOpen ? 0 : Math.max(0, totalCount - lastSeenCount));
 
@@ -53,8 +89,12 @@
 
   const MAX_ENTRIES = 120;
 
-  let merged = $derived.by((): OverlayEntry[] => {
-    const out: OverlayEntry[] = [];
+  type OverlayEntryWithGlobal =
+    | OverlayEntry
+    | { kind: 'global'; entry: GlobalEntry; ts: number };
+
+  let merged = $derived.by((): OverlayEntryWithGlobal[] => {
+    const out: OverlayEntryWithGlobal[] = [];
 
     for (const entry of $activityFeed) {
       out.push({ kind: 'activity', entry, ts: entryTimestamp(entry) });
@@ -65,6 +105,9 @@
     }
     for (const entry of $logEntries) {
       out.push({ kind: 'log', entry, ts: new Date(entry.timestamp).getTime() });
+    }
+    for (const { entry, ts } of globalEntries) {
+      out.push({ kind: 'global', entry, ts });
     }
 
     out.sort((a, b) => b.ts - a.ts);
@@ -88,7 +131,21 @@
     );
   }
 
-  function toStreamRow(e: OverlayEntry): StreamRow {
+  function toStreamRow(e: OverlayEntryWithGlobal): StreamRow {
+    if (e.kind === 'global') {
+      const ev = e.entry.event;
+      const text = typeof ev.chunk === 'string'   ? ev.chunk
+                 : typeof ev.summary === 'string' ? ev.summary
+                 : ev.type ?? 'event';
+      return {
+        ts:       e.ts,
+        time:     formatTime(e.ts),
+        source:   'global',
+        color:    '#6366f1',
+        text,
+        severity: 'info',
+      };
+    }
     if (e.kind === 'log') {
       return {
         ts:       e.ts,
@@ -147,13 +204,16 @@
     };
   }
 
-  let streamRows = $derived(merged.map(toStreamRow));
+  let streamRows = $derived(merged.map((e) => toStreamRow(e)));
 
   // ── Keyboard shortcut — E to open, Esc to close ───────────────────────────
 
   function handleKeyDown(e: KeyboardEvent) {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-    if ((e.key === 'e' || e.key === 'E') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    const isEventsToggle =
+      ((e.key === 'e' || e.key === 'E') && !e.metaKey && !e.ctrlKey && !e.altKey) ||
+      ((e.key === 'e' || e.key === 'E') && (e.metaKey || e.ctrlKey) && !e.altKey);
+    if (isEventsToggle) {
       e.preventDefault();
       eventsOverlayOpen.update(v => !v);
     } else if (e.key === 'Escape' && $eventsOverlayOpen) {
