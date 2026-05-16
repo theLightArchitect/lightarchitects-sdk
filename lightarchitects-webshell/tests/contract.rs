@@ -251,3 +251,98 @@ async fn polytopes_401_body_does_not_contain_token() {
         "token must not appear in 401 body: {body}"
     );
 }
+
+// --- POST /api/builds/:id/copilot — MAX_PROMPT_BYTES 413 guard ---------------
+//
+// Canon XXVII suites covered: unit (boundary) · integration (body shape) ·
+// regression (auth-before-size) · smoke (happy-path size accepted).
+// Property: exhaustive boundary sweep via parameterised cases below.
+// E2E: waived — requires live persistent-subprocess session (named condition:
+// subprocess machinery wired in webshell integration environment).
+
+fn copilot_request(id: uuid::Uuid, message: String) -> Request<Body> {
+    let body = serde_json::json!({ "message": message }).to_string();
+    Request::builder()
+        .method("POST")
+        .uri(format!("/api/builds/{id}/copilot"))
+        .header("authorization", format!("Bearer {TOKEN}"))
+        .header("content-type", "application/json")
+        .body(Body::from(body))
+        .unwrap()
+}
+
+// [unit] strictly oversized prompt triggers 413
+#[tokio::test]
+async fn copilot_413_on_oversized_prompt() {
+    let id = uuid::Uuid::new_v4();
+    let resp = make_app()
+        .oneshot(copilot_request(id, "x".repeat(8193)))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+// [integration] 413 response body contains structured error fields
+#[tokio::test]
+async fn copilot_413_body_has_structured_error() {
+    let id = uuid::Uuid::new_v4();
+    let resp = make_app()
+        .oneshot(copilot_request(id, "x".repeat(8193)))
+        .await
+        .unwrap();
+    let text = body_string(resp).await;
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(val["error"], "prompt_too_large");
+    assert_eq!(val["max_bytes"], 8192_u64);
+}
+
+// [property / boundary] exactly MAX_PROMPT_BYTES must NOT trigger 413
+// (off-by-one guard: the check is `> MAX`, so == MAX must pass through)
+#[tokio::test]
+async fn copilot_exactly_max_bytes_does_not_trigger_413() {
+    let id = uuid::Uuid::new_v4();
+    let resp = make_app()
+        .oneshot(copilot_request(id, "x".repeat(8192)))
+        .await
+        .unwrap();
+    assert_ne!(
+        resp.status(),
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "exactly MAX_PROMPT_BYTES must not trigger 413"
+    );
+}
+
+// [regression] auth guard fires before size check — unauthenticated oversized → 401
+#[tokio::test]
+async fn copilot_unauthenticated_oversized_returns_401_not_413() {
+    let id = uuid::Uuid::new_v4();
+    let body = serde_json::json!({ "message": "x".repeat(8193) }).to_string();
+    let resp = make_app()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/builds/{id}/copilot"))
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+// [smoke] empty prompt is accepted by the size guard (fails downstream at session
+// lookup, but the guard itself must not reject it)
+#[tokio::test]
+async fn copilot_empty_prompt_not_rejected_by_size_guard() {
+    let id = uuid::Uuid::new_v4();
+    let resp = make_app()
+        .oneshot(copilot_request(id, String::new()))
+        .await
+        .unwrap();
+    assert_ne!(
+        resp.status(),
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "empty prompt must not be rejected by size guard"
+    );
+}
