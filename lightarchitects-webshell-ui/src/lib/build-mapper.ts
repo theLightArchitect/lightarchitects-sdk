@@ -113,7 +113,7 @@ function calcConfidence(entry: Record<string, unknown>): number {
  * to the frontend Build interface.
  */
 export function mapPortfolioToBuild(entry: Record<string, unknown>): Build {
-  const id = (entry.codename as string) || (entry.name as string) || 'unknown';
+  const id = (entry.build_id as string) || (entry.codename as string) || (entry.name as string) || 'unknown';
   const now = new Date().toISOString();
 
   // Extract extended portfolio fields

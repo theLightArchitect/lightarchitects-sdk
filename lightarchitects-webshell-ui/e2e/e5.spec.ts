@@ -502,24 +502,20 @@ test.describe('EEF E5 — live integration (requires real binary at :8733)', () 
     }
   });
 
-  /** Create a real build via the live API and return its codename. */
+  /** Create a real build via the live API and return its build_id (UUID). */
   async function createLiveBuild(page: Page): Promise<string> {
     const response = await page.request.post(`${LIVE_BASE}/api/builds`, {
       headers: {
         'Authorization': `Bearer ${TOKEN}`,
         'Content-Type': 'application/json',
       },
-      data: JSON.stringify({
-        name:       'E5 Live Integration Test',
-        meta_skill: '/TEST',
-        agent:      { kind: 'lightarchitects_native', backend: 'lightarchitects' },
-      }),
+      data: JSON.stringify({ cwd: '/tmp' }),
     });
     if (!response.ok()) {
       throw new Error(`Failed to create build: ${response.status()} ${await response.text()}`);
     }
-    const build = await response.json() as { codename: string };
-    return build.codename;
+    const build = await response.json() as { build_id: string };
+    return build.build_id;
   }
 
   /** Auth + localStorage tokens for the live server. */
@@ -542,11 +538,7 @@ test.describe('EEF E5 — live integration (requires real binary at :8733)', () 
     // Create a real build session.
     const buildId = await createLiveBuild(page);
 
-    // Navigate to the operator view for the real build.
-    await page.evaluate((id: string) => { window.location.hash = `/builds/${id}/operator`; }, buildId);
-    await expect(page.locator('[data-testid="agent-console"]')).toBeVisible({ timeout: 10_000 });
-
-    // Capture WS responses from the real server.
+    // Register WS listener BEFORE navigating so the AgentConsole WS is captured.
     const serverResponses: string[] = [];
     page.on('websocket', ws => {
       ws.on('framereceived', frame => {
@@ -555,6 +547,10 @@ test.describe('EEF E5 — live integration (requires real binary at :8733)', () 
         }
       });
     });
+
+    // Navigate to the operator view for the real build.
+    await page.evaluate((id: string) => { window.location.hash = `/builds/${id}/operator`; }, buildId);
+    await expect(page.locator('[data-testid="agent-console"]')).toBeVisible({ timeout: 10_000 });
 
     // Inject a permission_request directly into the Svelte store (DOM bridge).
     const callId = `live-t8-${Date.now()}`;
@@ -595,9 +591,8 @@ test.describe('EEF E5 — live integration (requires real binary at :8733)', () 
     await page.goto(LIVE_BASE, { waitUntil: 'domcontentloaded' });
 
     const buildId = await createLiveBuild(page);
-    await page.evaluate((id: string) => { window.location.hash = `/builds/${id}/operator`; }, buildId);
-    await expect(page.locator('[data-testid="agent-console"]')).toBeVisible({ timeout: 10_000 });
 
+    // Register WS listener BEFORE navigating so the AgentConsole WS is captured.
     const serverResponses: string[] = [];
     page.on('websocket', ws => {
       ws.on('framereceived', frame => {
@@ -606,6 +601,9 @@ test.describe('EEF E5 — live integration (requires real binary at :8733)', () 
         }
       });
     });
+
+    await page.evaluate((id: string) => { window.location.hash = `/builds/${id}/operator`; }, buildId);
+    await expect(page.locator('[data-testid="agent-console"]')).toBeVisible({ timeout: 10_000 });
 
     const callId = `live-t9-${Date.now()}`;
     await injectEvent(page, {

@@ -489,7 +489,7 @@ import { PILLAR_ACTIONS as PILLAR_ACTIONS_TYPE } from './types';
 import { api } from './api';
 import { authHeaders } from './auth';
 import { loadPersistedSettings } from './settings-persistence';
-import { mapPortfolioBuilds, groupByProject } from './build-mapper';
+import { mapPortfolioBuilds, mapPortfolioToBuild, groupByProject } from './build-mapper';
 
 export const META_SKILL_CARDS: MetaSkillCard[] = Object.entries(PILLAR_ACTIONS_TYPE).map(([skill, actions]) => ({
   skill: skill as MetaSkill,
@@ -842,5 +842,24 @@ export async function initializeStores(): Promise<void> {
   }
   if (buildsResult.status === 'fulfilled') {
     try { builds.set(mapPortfolioBuilds(buildsResult.value)); } catch (e) { console.error('[stores] builds.set failed:', e); }
+  }
+}
+
+/**
+ * Fetches a single build by UUID from `GET /api/builds/:id` and inserts it
+ * into the builds store if not already present. Used when navigating directly
+ * to a session build URL (e.g. `/builds/:uuid/operator`) that was created after
+ * `initializeStores()` ran and is therefore not in the portfolio snapshot.
+ */
+export async function ensureBuildInStore(id: string): Promise<void> {
+  const { get } = await import('svelte/store');
+  const existing = get(builds).find(b => b.id === id);
+  if (existing) return;
+  try {
+    const data = await api.getBuild(id);
+    const build = mapPortfolioToBuild(data as unknown as Record<string, unknown>);
+    builds.update(bs => (bs.some(b => b.id === build.id) ? bs : [build, ...bs]));
+  } catch (e) {
+    console.warn('[stores] ensureBuildInStore failed:', e);
   }
 }

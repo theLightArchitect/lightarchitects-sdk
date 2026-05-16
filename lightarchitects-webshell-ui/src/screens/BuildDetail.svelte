@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { activeBuild, currentBuildId, activityFeed } from '$lib/stores';
+  import { activeBuild, currentBuildId, activityFeed, ensureBuildInStore } from '$lib/stores';
   import { matchRoute, navigate } from '$lib/routes';
   import KanbanView  from '$lib/../components/views/KanbanView.svelte';
   import ListView    from '$lib/../components/views/ListView.svelte';
@@ -26,7 +26,12 @@
 
   function syncFromHash() {
     const { params } = matchRoute(window.location.hash.slice(1) || '/');
-    if (params.buildId) currentBuildId.set(params.buildId);
+    if (params.buildId) {
+      currentBuildId.set(params.buildId);
+      // Session builds (POST /api/builds) are not in the portfolio snapshot.
+      // Fetch and insert so activeBuild resolves and AgentConsole can render.
+      ensureBuildInStore(params.buildId);
+    }
     if (params.view && (VIEW_MODES as string[]).includes(params.view)) {
       viewMode = params.view as ViewMode;
     }
