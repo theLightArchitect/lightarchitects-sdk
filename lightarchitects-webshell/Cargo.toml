@@ -45,6 +45,9 @@ axum = { workspace = true, features = ["ws", "macros"] }
 # Stream/sink combinators for split WebSocket (SinkExt::send + StreamExt::next).
 futures-util.workspace = true
 
+# CancellationToken for clean subprocess cancellation on client disconnect.
+tokio-util.workspace = true
+
 # Middleware — CORS for dev, trace for request logging
 tower-http = { workspace = true, features = ["cors", "trace"] }
 

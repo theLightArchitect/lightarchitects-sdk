@@ -5,6 +5,7 @@
 //! to via `GET /api/events` (Phase 5).
 
 use crate::memory::types::PromotionEvent;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Broadcast event emitted by the webshell backend.
@@ -466,6 +467,230 @@ pub enum ControlCommand {
         /// Absolute or workspace-relative path to reveal.
         path: String,
     },
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Plan-builder copilot bridge — Phase 1 contract types
+// plan-builder-copilot-bridge feat, Phase 1 deliverable 1
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Form fields from the Plan Builder UI for requesting a new plan draft.
+///
+/// Sent as JSON body to `POST /api/builds/plan/draft`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PlanDraftRequest {
+    /// Human-readable description — the "what" of the build.
+    pub description: String,
+    /// Repository path (or GitHub slug) the plan targets.
+    pub repository: Option<String>,
+    /// Northstar text verbatim. Omit to let EVA propose 3 options inline in the PLAN view.
+    pub northstar: Option<String>,
+    /// When `true`, the draft prompt includes `--research` flag (QUANTUM + SOUL prior-art research).
+    #[serde(default)]
+    pub research: bool,
+    /// `LASDLC` tier selection (`"SMALL"`, `"MEDIUM"`, or `"LARGE"`). EVA selects when omitted.
+    pub tier: Option<String>,
+}
+
+/// Immediate response body from `POST /api/builds/plan/draft`.
+///
+/// The `session_id` is the pre-minted Claude Code session `UUID`; the SSE stream
+/// is available at `sse_url` for the browser to subscribe to.
+#[derive(Debug, Serialize)]
+pub struct PlanDraftResponseEnvelope {
+    /// Pre-minted `UUIDv4` — used as `--session-id` arg, `JSONL` filename, and commit key.
+    pub session_id: uuid::Uuid,
+    /// Codename derived from the description (kebab-case, 3–5 words).
+    pub codename: String,
+    /// `SSE` `URL` the browser should subscribe to for streaming draft events.
+    pub sse_url: String,
+}
+
+/// Request body for `POST /api/builds/plan/commit`.
+#[derive(Debug, Deserialize)]
+pub struct PlanCommitRequest {
+    /// Session `UUID` returned by the draft endpoint — must match the in-flight draft.
+    pub session_id: uuid::Uuid,
+    /// Codename of the plan to commit (must match the draft's codename).
+    pub codename: String,
+    /// Final `LASDLC` plan body (full Markdown, including validated frontmatter).
+    pub body: String,
+    /// Optional idempotency key — replay of the same key on the same `(session_id, codename)`
+    /// returns the prior 200 without a duplicate write (1 h `TTL` on server).
+    pub idempotency_key: Option<uuid::Uuid>,
+}
+
+/// Streaming event emitted over `GET /api/builds/{codename}/plan-stream`.
+///
+/// Event sequence: `TextChunk`* → `IterationStart` → `TextChunk`* → `VerdictBlock`
+/// → `Done` (on success) | `Error` (on failure).
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PlanDraftEvent {
+    /// A chunk of streamed plan Markdown text from the copilot subprocess.
+    TextChunk {
+        /// Incremental text delta — append to the PLAN view buffer.
+        text: String,
+    },
+    /// EVA is starting iteration `N` of the `/PLAN` draft–review loop (1-based).
+    IterationStart {
+        /// Current iteration number.
+        iteration: u8,
+    },
+    /// The `/PLAN` Step 5 self-review verdict block was emitted.
+    VerdictBlock {
+        /// Parsed verdict — gate the Commit button on `validation_status == "VALIDATED"`.
+        verdict: ReviewVerdict,
+    },
+    /// Draft complete; `codename` is the derived codename to use in the commit step.
+    Done {
+        /// Codename for the subsequent `PlanCommitRequest`.
+        codename: String,
+    },
+    /// Terminal error — draft cannot continue; surface to the operator and offer retry.
+    Error {
+        /// Human-readable error message (never leaks subprocess internals per security-guardrails).
+        message: String,
+    },
+}
+
+/// Parsed review verdict from the `/PLAN` Step 5 self-review loop.
+///
+/// Emitted inside [`PlanDraftEvent::VerdictBlock`]; the frontend gates the
+/// Commit button on `validation_status == "VALIDATED"`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewVerdict {
+    /// `VALIDATED` | `INSUFFICIENT_EVIDENCE` | `REVISION_NEEDED`
+    pub validation_status: String,
+    /// Which `LASDLC` review iteration this verdict closes (1-based).
+    pub iteration: u8,
+    /// Human-readable summary of what passed and what needs revision.
+    pub summary: Option<String>,
+}
+
+/// Errors that can occur during `POST /api/builds/plan/draft` handling.
+///
+/// Complete `HTTP` status map (Cookbook §multi-variant rule — all variants covered):
+/// - [`SubprocessSpawnFailed`][Self::SubprocessSpawnFailed] → 502 Bad Gateway
+/// - [`Timeout`][Self::Timeout]                             → 504 Gateway Timeout
+/// - [`ValidationFailed`][Self::ValidationFailed]           → 422 Unprocessable Entity
+/// - [`IoError`][Self::IoError]                             → 500 Internal Server Error
+/// - [`CancelledByClient`][Self::CancelledByClient]         → 499 Client Closed Request
+#[derive(Debug, thiserror::Error)]
+pub enum PlanDraftError {
+    /// The `claude --print` subprocess could not be spawned. → 502
+    #[error("subprocess spawn failed: {0}")]
+    SubprocessSpawnFailed(String),
+    /// The copilot draft exceeded the wall-clock timeout. → 504
+    #[error("plan draft timed out")]
+    Timeout,
+    /// The prompt template or form input failed validation. → 422
+    #[error("validation failed: {0}")]
+    ValidationFailed(String),
+    /// An I/O error occurred during streaming or disk writes. → 500
+    #[error("I/O error: {0}")]
+    IoError(String),
+    /// The client closed the `SSE` connection before the draft completed. → 499
+    #[error("cancelled by client")]
+    CancelledByClient,
+}
+
+/// Errors that can occur during `POST /api/builds/plan/commit` handling.
+///
+/// Complete `HTTP` status map (Cookbook §multi-variant rule — all variants covered):
+/// - [`SessionMismatch`][Self::SessionMismatch]                 → 403 Forbidden
+/// - [`InvalidFrontmatter`][Self::InvalidFrontmatter]           → 422 Unprocessable Entity
+/// - [`DuplicateCommit`][Self::DuplicateCommit]                 → 409 Conflict
+/// - [`WriteConsistencyFailed`][Self::WriteConsistencyFailed]   → 409 Conflict
+/// - [`IoError`][Self::IoError]                                 → 500 Internal Server Error
+#[derive(Debug, thiserror::Error)]
+pub enum PlanCommitError {
+    /// The `session_id` does not match the in-flight or completed draft. → 403
+    ///
+    /// 403 (security-flavored) rather than 404 to avoid confirming session existence.
+    /// Per SCRUM F9 rationale: 409 reserved for future multi-instance commit conflict.
+    #[error("session mismatch — commit rejected")]
+    SessionMismatch,
+    /// The plan body has invalid or missing required frontmatter fields. → 422
+    #[error("invalid frontmatter: {0}")]
+    InvalidFrontmatter(String),
+    /// A commit with the same `idempotency_key` on a different body was already recorded. → 409
+    #[error("duplicate commit detected")]
+    DuplicateCommit,
+    /// Post-commit tree-hash check failed — `active.yaml` write may not have persisted. → 409
+    ///
+    /// See agents-playbook §15.4.5 phantom-empty-commit guard. `CF-F14`.
+    #[error("write consistency check failed")]
+    WriteConsistencyFailed,
+    /// An I/O error occurred while writing plan file or `active.yaml`. → 500
+    #[error("I/O error: {0}")]
+    IoError(String),
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Global event store types — Phase 1 contract types
+// plan-builder-copilot-bridge feat, Phase 1 deliverable 1 (global observability)
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Source of a [`GlobalWebEvent`] for consumer-side filtering.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum EventSource {
+    /// Event from a specific build's copilot subprocess.
+    BuildSession {
+        /// Codename of the build that produced this event.
+        codename: String,
+    },
+    /// Event from a raw copilot subprocess identified by `PID`.
+    CopilotSubprocess {
+        /// Process `ID` of the copilot subprocess.
+        pid: u32,
+    },
+    /// Event from the conductor worker pool.
+    ConductorWorker {
+        /// Task `ID` within the conductor queue.
+        task_id: String,
+    },
+    /// Event from a `/GATE` runner.
+    GateRunner {
+        /// Gate identifier (e.g. `"gate-3-AQT"`).
+        gate_id: String,
+    },
+}
+
+/// A single entry stored in the [`GlobalEventStore`] ring buffer.
+///
+/// Every event pushed to the store is wrapped with sequence number, timestamp,
+/// and source metadata. The `seq` field is used for `Last-Event-ID` reconnect
+/// resume (clients send `Last-Event-ID: <seq>` on reconnect; server resumes
+/// from `seq+1` if the entry is still in the ring).
+#[derive(Debug, Clone, Serialize)]
+pub struct GlobalEventEntry {
+    /// Monotonically increasing sequence number (1-based, per-store instance).
+    pub seq: u64,
+    /// `UTC` wall-clock timestamp when the event was pushed to the store.
+    pub timestamp: DateTime<Utc>,
+    /// Origin of the event — used by [`EventFilter`] for consumer-side filtering.
+    pub source: EventSource,
+    /// The wrapped broadcast event payload.
+    pub event: WebEvent,
+}
+
+/// Filter parameters accepted as query-string on `GET /api/events/global`.
+///
+/// All fields are optional; absent fields match all events. Filtering is
+/// applied consumer-side at the `SSE` subscriber — the ring buffer stores
+/// all variants unfiltered (see `GlobalEventStore`).
+#[derive(Debug, Default, Deserialize)]
+pub struct EventFilter {
+    /// Only events from a sibling matching this name.
+    pub sibling: Option<String>,
+    /// Only events at or above this severity level.
+    pub severity: Option<String>,
+    /// Only events from the build with this codename.
+    pub build_id: Option<String>,
+    /// Only events for the tool with this name.
+    pub tool_name: Option<String>,
 }
 
 #[cfg(test)]

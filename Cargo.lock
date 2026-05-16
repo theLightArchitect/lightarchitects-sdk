@@ -2754,6 +2754,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
  "toml",
  "tower 0.4.13",
  "tower-http",
@@ -5280,6 +5281,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]
@@ -6645,11 +6647,3 @@ dependencies = [
  "quote",
  "syn 2.0.117",
 ]
-
-[[patch.unused]]
-name = "corso-server"
-version = "2.0.0"
-
-[[patch.unused]]
-name = "corso-trinity-core"
-version = "2.0.0"

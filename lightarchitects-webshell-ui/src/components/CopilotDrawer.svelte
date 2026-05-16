@@ -61,6 +61,8 @@
 
   // --- Session state ---
   let mode = $state<'chat' | 'terminal'>('chat');
+  /** Position mode — 'drawer' renders pinned to bottom; 'overlay' floats freely. */
+  let positionMode = $state<'drawer' | 'overlay'>('drawer');
   let terminalEl: HTMLDivElement | undefined = $state();
   let sharedBuildId = $state<string | null>(null);
   let cwd = $derived($serverCwd);
@@ -884,6 +886,13 @@
           class="text-[9px] text-[var(--la-text-dim)] hover:text-[var(--la-text-bright)] px-1.5 py-0.5 border border-[var(--la-drawer-border)] transition-colors"
         >Clear</button>
       {/if}
+      <button
+        onclick={() => { positionMode = positionMode === 'drawer' ? 'overlay' : 'drawer'; }}
+        class="text-[9px] px-1.5 py-0.5 border transition-colors
+          {positionMode === 'overlay' ? 'text-[var(--la-focus-ring)] border-[var(--la-focus-ring)]/40 bg-[var(--la-focus-ring)]/10' : 'text-[var(--la-text-dim)] border-[var(--la-drawer-border)] hover:text-[var(--la-text-bright)]'}"
+        title="Toggle floating overlay mode"
+        aria-label="Toggle copilot position mode"
+      >{positionMode === 'overlay' ? '⊠' : '⊡'}</button>
       <div style="position: relative;">
         <button
           onclick={() => settingsOpen.update(v => !v)}

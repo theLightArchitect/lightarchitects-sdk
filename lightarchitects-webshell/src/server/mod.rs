@@ -164,6 +164,31 @@ pub struct AppState {
     /// Maps [`Uuid`] nonce → expiry [`std::time::Instant`] (60-second TTL).
     /// Consumed on first use; expired entries are discarded on access.
     pub auth_nonces: Arc<DashMap<Uuid, std::time::Instant>>,
+    /// Global event ring buffer — plan-builder-copilot-bridge Phase 3.
+    ///
+    /// Stores the last 1,000 [`GlobalEventEntry`] entries across all sources
+    /// (copilot subprocesses, conductor workers, gate runners). Subscribers
+    /// connect via `GET /api/events/global` (SSE). Filtering is applied
+    /// consumer-side per [`EventFilter`] query params.
+    pub global_event_store: events::GlobalEventStore,
+    /// In-flight plan draft sessions — keyed by pre-minted session `UUID`.
+    ///
+    /// Broadcast sender per in-flight plan draft session.
+    ///
+    /// `broadcast::Sender` allows multiple `SSE` subscribers (browser tab refresh
+    /// safety). Each entry is inserted on `POST /api/builds/plan/draft` and
+    /// removed when `Done`/`Error` fires or the session TTL expires.
+    /// The paired [`tokio_util::sync::CancellationToken`] lets the `SSE` handler
+    /// signal subprocess cancellation on client disconnect.
+    pub plan_draft_sessions: Arc<
+        DashMap<
+            uuid::Uuid,
+            (
+                tokio::sync::broadcast::Sender<crate::events::types::PlanDraftEvent>,
+                tokio_util::sync::CancellationToken,
+            ),
+        >,
+    >,
 }
 
 impl AppState {
@@ -252,6 +277,19 @@ impl AppState {
             telemetry,
             session_store,
             auth_nonces: Arc::new(DashMap::new()),
+            global_event_store: {
+                let data_dir = std::env::var("HOME").map_or_else(
+                    |_| std::path::PathBuf::from("/tmp").join("lightarchitects-webshell"),
+                    |h| {
+                        std::path::PathBuf::from(h)
+                            .join(".lightarchitects")
+                            .join("webshell")
+                    },
+                );
+                let _ = std::fs::create_dir_all(&data_dir);
+                events::GlobalEventStore::new(Some(data_dir.join("events.ndjson")))
+            },
+            plan_draft_sessions: Arc::new(DashMap::new()),
         }
     }
 
@@ -340,6 +378,8 @@ impl AppState {
             telemetry: TelemetryHandle::new(),
             session_store: Arc::new(std::sync::Mutex::new(SessionStore::noop())),
             auth_nonces: Arc::new(DashMap::new()),
+            global_event_store: events::GlobalEventStore::noop(),
+            plan_draft_sessions: Arc::new(DashMap::new()),
         }
     }
 }
@@ -382,6 +422,19 @@ pub fn build_app(state: AppState) -> Router {
             "/api/builds/plan",
             post(builds_handler::create_plan_handler),
         )
+        .route(
+            "/api/builds/plan/draft",
+            post(builds_handler::draft_plan_handler),
+        )
+        .route(
+            "/api/builds/plan/draft-stream/{session_id}",
+            get(builds_handler::plan_draft_stream_handler),
+        )
+        .route(
+            "/api/builds/plan/commit",
+            post(builds_handler::commit_plan_handler),
+        )
+        .route("/api/events/global", get(builds_handler::global_events_handler))
         .route(
             "/api/builds/plan/{codename}",
             put(builds_handler::update_plan_handler),

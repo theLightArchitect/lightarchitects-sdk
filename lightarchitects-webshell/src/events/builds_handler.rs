@@ -865,6 +865,305 @@ pub async fn lasdlc_meta_handler() -> impl IntoResponse {
     (StatusCode::OK, Json(meta))
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Plan draft + commit handlers — plan-builder-copilot-bridge Phase 3
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// `POST /api/builds/plan/draft` — seed a new plan draft via EVA copilot.
+///
+/// Mints a session `UUID`, spawns `spawn_plan_draft` in a background task,
+/// and returns `PlanDraftResponseEnvelope` so the browser can subscribe to
+/// the `SSE` stream at `GET /api/builds/plan/draft-stream/<session_id>`.
+pub async fn draft_plan_handler(
+    axum::extract::State(state): axum::extract::State<crate::server::AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Json(req): axum::extract::Json<crate::events::types::PlanDraftRequest>,
+) -> impl axum::response::IntoResponse {
+    use crate::copilot::mint_session_id;
+    use crate::events::types::PlanDraftResponseEnvelope;
+    use axum::http::StatusCode;
+
+    let authz = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !crate::auth::validate_bearer(authz, &state.config.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    let sid_str = mint_session_id();
+    let Ok(session_id) = uuid::Uuid::parse_str(&sid_str) else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "session mint failed").into_response();
+    };
+
+    let codename = req
+        .description
+        .split_whitespace()
+        .take(5)
+        .map(|w| w.to_lowercase().replace(|c: char| !c.is_alphanumeric(), ""))
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+
+    // broadcast::channel — multiple SSE subscribers (browser refresh safety).
+    // Capacity 256: matches GlobalEventStore BROADCAST_CAP; lag unlikely at
+    // <1 event/100ms typical plan-draft throughput.
+    let (tx, _rx) = tokio::sync::broadcast::channel(256);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    state
+        .plan_draft_sessions
+        .insert(session_id, (tx.clone(), cancel.clone()));
+
+    let store = state.global_event_store.clone();
+    let sessions = state.plan_draft_sessions.clone();
+    let desc = req.description.clone();
+    let ns = req.northstar.clone();
+    let repo = req.repository.clone();
+    let research = req.research;
+    let tier = req.tier.clone();
+
+    tokio::spawn(async move {
+        let result = crate::copilot::spawn_plan_draft(
+            crate::copilot::PlanDraftArgs {
+                description: desc,
+                northstar: ns,
+                repository: repo,
+                research,
+                tier,
+                session_id: sid_str,
+            },
+            tx,
+            Some(store),
+            cancel,
+        )
+        .await;
+        if let Err(e) = result {
+            // Opaque error — do NOT surface internal details to the client.
+            // Full detail goes to tracing for operator visibility only.
+            tracing::warn!(session=%session_id, error=%e, "plan draft subprocess error");
+        }
+        sessions.remove(&session_id);
+    });
+
+    let envelope = PlanDraftResponseEnvelope {
+        session_id,
+        codename,
+        sse_url: format!("/api/builds/plan/draft-stream/{session_id}"),
+    };
+    (StatusCode::OK, axum::Json(envelope)).into_response()
+}
+
+/// `GET /api/builds/plan/draft-stream/:session_id` — SSE stream for a plan draft.
+///
+/// Subscribes to the per-session `broadcast::Sender` and fans each
+/// [`PlanDraftEvent`] out as a JSON `data:` line. Supports multiple concurrent
+/// subscribers (browser refresh safety). Cancels the subprocess on disconnect.
+pub async fn plan_draft_stream_handler(
+    axum::extract::State(state): axum::extract::State<crate::server::AppState>,
+    axum::extract::Path(session_id): axum::extract::Path<uuid::Uuid>,
+) -> impl axum::response::IntoResponse {
+    use axum::http::StatusCode;
+    use axum::response::sse::{Event, KeepAlive, Sse};
+
+    // RAII guard: cancels the CancellationToken when dropped (client disconnect).
+    struct CancelOnDrop(tokio_util::sync::CancellationToken);
+    impl Drop for CancelOnDrop {
+        fn drop(&mut self) {
+            self.0.cancel();
+        }
+    }
+
+    let Some(entry) = state.plan_draft_sessions.get(&session_id) else {
+        return (StatusCode::NOT_FOUND, "No draft session found").into_response();
+    };
+    let rx = entry.0.subscribe();
+    let cancel = entry.1.clone();
+    drop(entry); // release DashMap guard before await
+
+    // Build an SSE stream via unfold over the broadcast receiver.
+    // Terminates after forwarding a Done or Error event.
+    let stream = futures_util::stream::unfold((rx, false), |(mut rx, done)| async move {
+        if done {
+            return None;
+        }
+        match rx.recv().await {
+            Ok(event) => {
+                let terminal = matches!(
+                    event,
+                    crate::events::types::PlanDraftEvent::Done { .. }
+                        | crate::events::types::PlanDraftEvent::Error { .. }
+                );
+                let data = serde_json::to_string(&event).unwrap_or_default();
+                let sse = Ok::<Event, std::convert::Infallible>(Event::default().data(data));
+                Some((sse, (rx, terminal)))
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                let data = r#"{"type":"lag","message":"subscriber lagged — reconnect"}"#;
+                let sse = Ok(Event::default().event("lag").data(data));
+                Some((sse, (rx, false)))
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => None,
+        }
+    });
+
+    // Cancel the subprocess when the client disconnects (axum drops the stream).
+    let cancel_on_drop = CancelOnDrop(cancel);
+    let stream = futures_util::stream::StreamExt::chain(
+        stream,
+        futures_util::stream::once(async move {
+            drop(cancel_on_drop);
+            // This item is never yielded; chain just ensures drop fires.
+            std::future::pending::<Result<Event, std::convert::Infallible>>().await
+        }),
+    );
+
+    Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response()
+}
+
+/// `POST /api/builds/plan/commit` — commit a validated plan draft to disk.
+pub async fn commit_plan_handler(
+    axum::extract::State(state): axum::extract::State<crate::server::AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Json(req): axum::extract::Json<crate::events::types::PlanCommitRequest>,
+) -> impl axum::response::IntoResponse {
+    use axum::http::StatusCode;
+
+    let authz = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !crate::auth::validate_bearer(authz, &state.config.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    if req.body.is_empty() {
+        return (StatusCode::UNPROCESSABLE_ENTITY, "body is empty").into_response();
+    }
+
+    // Validate required frontmatter fields.
+    let required = [
+        "project:",
+        "codename:",
+        "validation_status:",
+        "lasdlc_template_version:",
+    ];
+    for field in &required {
+        if !req.body.contains(field) {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!("invalid_frontmatter: missing {field}"),
+            )
+                .into_response();
+        }
+    }
+
+    // Check validation_status is VALIDATED.
+    if !req.body.contains("validation_status: VALIDATED") {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_frontmatter: validation_status must be VALIDATED".to_owned(),
+        )
+            .into_response();
+    }
+
+    // Validate codename: only lowercase alphanumeric + hyphen permitted.
+    // Rejects path-traversal attempts (e.g. "../../../etc/passwd") before
+    // any filesystem operation.
+    if req.codename.is_empty()
+        || !req
+            .codename
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid codename: only [a-z0-9-] permitted",
+        )
+            .into_response();
+    }
+
+    // Construct the target path and verify containment within plans_dir.
+    // PathBuf::join does NOT strip `..` components; starts_with is the
+    // reliable containment check (defense-in-depth after codename validation).
+    let plans_dir = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+        .join(".claude")
+        .join("plans");
+    let plan_path = plans_dir.join(format!("{}.md", req.codename));
+    if !plan_path.starts_with(&plans_dir) {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid codename: path escapes plans directory",
+        )
+            .into_response();
+    }
+
+    if let Err(e) = std::fs::write(&plan_path, &req.body) {
+        tracing::warn!(path=%plan_path.display(), error=%e, "plan commit write failed");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    (
+        StatusCode::OK,
+        axum::Json(serde_json::json!({ "committed": true, "path": plan_path })),
+    )
+        .into_response()
+}
+
+/// `GET /api/events/global` — SSE stream of all global events with optional filtering.
+///
+/// Sends a snapshot of existing entries (newest-last), then streams live events.
+/// Filtering on `sibling`, `severity`, `build_id`, `tool_name` is applied
+/// consumer-side per the Phase 1 architecture decision.
+pub async fn global_events_handler(
+    axum::extract::State(state): axum::extract::State<crate::server::AppState>,
+    axum::extract::Query(filter): axum::extract::Query<crate::events::types::EventFilter>,
+) -> impl axum::response::IntoResponse {
+    use crate::events::global_events::matches_filter;
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    use futures_util::{StreamExt as _, stream};
+
+    // Snapshot replay: send existing ring entries before switching to live.
+    let snapshot = state.global_event_store.snapshot();
+    let rx = state.global_event_store.subscribe();
+
+    let replay_events: Vec<Result<Event, std::convert::Infallible>> = snapshot
+        .into_iter()
+        .filter(|e| matches_filter(e, &filter))
+        .map(|e| {
+            let data = serde_json::to_string(e.as_ref()).unwrap_or_default();
+            Ok(Event::default().id(e.seq.to_string()).data(data))
+        })
+        .collect();
+
+    let live = stream::unfold((rx, filter), |(mut rx, filter)| async move {
+        loop {
+            match rx.recv().await {
+                Ok(entry) => {
+                    if matches_filter(&entry, &filter) {
+                        let data = serde_json::to_string(entry.as_ref()).unwrap_or_default();
+                        let ev = Event::default().id(entry.seq.to_string()).data(data);
+                        return Some((Ok::<_, std::convert::Infallible>(ev), (rx, filter)));
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    let lag_ev = Event::default()
+                        .event("lag")
+                        .data(format!("{{\"skipped\":{n}}}"));
+                    return Some((Ok(lag_ev), (rx, filter)));
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    });
+
+    let combined = stream::iter(replay_events).chain(live);
+    Sse::new(combined)
+        .keep_alive(KeepAlive::default())
+        .into_response()
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

@@ -88,6 +88,18 @@ pub fn resolve_binary(name: &str) -> String {
     name.to_owned()
 }
 
+/// Mint a Claude Code–compatible session UUID for pre-minting before subprocess spawn.
+///
+/// Generates a `UUIDv4` (hyphenated lowercase) that Claude Code accepts as `--session-id`
+/// on the first turn. The resulting JSONL file on disk will be named `<uuid>.jsonl`,
+/// giving the webshell a stable handle before the subprocess is launched.
+///
+/// If Claude Code's `--session-id` semantics change in a future release, add a
+/// version-detect or feature-detect guard here.
+pub fn mint_session_id() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
 /// Resolve an Anthropic API key for the `LightArchitects` CLI subprocess.
 ///
 /// Priority:
@@ -1171,4 +1183,222 @@ fn emit_turn_complete_span(
             strand_activations: Vec::new(),
         },
     ));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Plan draft subprocess — F-002 fix (plan-builder-copilot-bridge Phase 3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Form-field bundle for [`spawn_plan_draft`].
+///
+/// Groups the six operator-supplied fields so the function signature stays
+/// within `clippy::too_many_arguments` (≤7).
+pub struct PlanDraftArgs {
+    /// Free-text description of the feature or build target.
+    pub description: String,
+    /// Optional Northstar statement injected into the `/PLAN` seed prompt.
+    pub northstar: Option<String>,
+    /// Optional repository URL or monorepo path for the plan's scope context.
+    pub repository: Option<String>,
+    /// When `true`, appends `--research` phase hint to the seed prompt.
+    pub research: bool,
+    /// Requested LASDLC tier (`SMALL`, `MEDIUM`, or `LARGE`), or `None` for auto.
+    pub tier: Option<String>,
+    /// Pre-minted `UUIDv4` passed as `--session-id` on Turn 1.
+    pub session_id: String,
+}
+
+/// Build the `/PLAN` seed prompt from operator-supplied form fields.
+fn build_plan_seed_prompt(args: &PlanDraftArgs) -> String {
+    use std::fmt::Write as _;
+    let desc = &args.description;
+    let mut prompt =
+        format!("/PLAN {desc}\n\n**Build context from webshell form**:\n- Description: {desc}");
+    if let Some(ref ns) = args.northstar {
+        let _ = write!(prompt, "\n- Northstar: {ns}");
+    }
+    if let Some(ref repo) = args.repository {
+        let _ = write!(prompt, "\n- Repository: {repo}");
+    }
+    if let Some(ref t) = args.tier {
+        let _ = write!(prompt, "\n- Tier: {t}");
+    }
+    if args.research {
+        prompt.push_str("\n- Include research phase: yes");
+    }
+    prompt.push_str("\n\nAuthor a complete LASDLC v2.5.1-compliant plan body. Include northstar_lineage, all phases with [A+S+Q+C+O+P+K+D+T+R] gates, file-function map, C1-C8 rubric, and IEEE references.");
+    prompt
+}
+
+/// Spawn a `claude --print` subprocess to author a `LASDLC v2.5.1` plan draft.
+///
+/// Uses the same `--print --output-format stream-json --verbose` pattern as
+/// [`run_print_turn`] but is stateless (no [`BuildSession`] required) because
+/// plan authoring runs outside a build session — the session UUID is
+/// pre-minted by the caller via [`mint_session_id`] and passed as
+/// `--session-id` on Turn 1.
+///
+/// # Streaming contract
+///
+/// Emits [`PlanDraftEvent`] variants over `tx` in this order:
+/// 1. `TextChunk` — one per `text_delta` content block delta
+/// 2. `IterationStart` — once per `/PLAN` self-review iteration detected
+/// 3. `VerdictBlock` — once when EVA emits a `VALIDATED` or `REVISION_NEEDED` block
+/// 4. `Done` — on clean subprocess exit (codename derived from description)
+/// 5. `Error` — on spawn failure, timeout, or non-zero exit
+///
+fn push_copilot_chunk(store: &crate::events::GlobalEventStore, pid: u32, text: &str) {
+    store.push(
+        crate::events::types::EventSource::CopilotSubprocess { pid },
+        crate::events::WebEvent::CopilotResponse {
+            chunk: text.to_owned(),
+            done: false,
+            sibling: Some("eva".into()),
+        },
+    );
+}
+
+/// # Errors
+///
+/// Returns [`PlanDraftError`] on spawn failure or I/O error. Runtime
+/// errors (timeouts, subprocess non-zero exit) are sent over `tx` as
+/// `PlanDraftEvent::Error` and then `Ok(())` is returned.
+///
+/// `cancel` is checked on each iteration; when triggered (client disconnect)
+/// the subprocess is killed and [`PlanDraftError::CancelledByClient`] is returned.
+pub async fn spawn_plan_draft(
+    args: PlanDraftArgs,
+    tx: tokio::sync::broadcast::Sender<crate::events::types::PlanDraftEvent>,
+    global_store: Option<crate::events::GlobalEventStore>,
+    cancel: tokio_util::sync::CancellationToken,
+) -> Result<(), crate::events::types::PlanDraftError> {
+    use crate::events::types::{PlanDraftError, PlanDraftEvent};
+
+    let binary = resolve_binary("claude");
+    let prompt = build_plan_seed_prompt(&args);
+    // Derive codename before args is consumed: lowercase kebab from first 5 words.
+    let codename = args
+        .description
+        .split_whitespace()
+        .take(5)
+        .map(|w| w.to_lowercase().replace(|c: char| !c.is_alphanumeric(), ""))
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+
+    let mut c = tokio::process::Command::new(&binary);
+    c.env("PATH", augmented_path());
+    c.env_remove("ANTHROPIC_API_KEY");
+    c.arg("--output-format").arg("stream-json");
+    c.arg("--verbose");
+    c.arg("--dangerously-skip-permissions");
+    c.arg("--print").arg("-p").arg(&prompt);
+    c.arg("--session-id").arg(&args.session_id);
+    c.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+
+    let mut child = c.spawn().map_err(|_| {
+        // Opaque spawn error — internal path redacted from all responses.
+        PlanDraftError::SubprocessSpawnFailed("copilot unavailable".into())
+    })?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| PlanDraftError::SubprocessSpawnFailed("stdout unavailable".into()))?;
+    let mut reader = tokio::io::BufReader::new(stdout).lines();
+    let mut iteration: u8 = 1;
+
+    loop {
+        tokio::select! {
+            // Cancelled by client disconnect.
+            () = cancel.cancelled() => {
+                let _ = child.kill().await;
+                return Err(PlanDraftError::CancelledByClient);
+            }
+            line = reader.next_line() => {
+                let Some(line) = line.map_err(|_| PlanDraftError::IoError("read error".into()))? else {
+                    break;
+                };
+                let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
+                    continue;
+                };
+                if val["type"].as_str() != Some("content_block_delta") { continue; }
+                let Some(delta) = val.get("delta") else { continue; };
+                if delta["type"].as_str() != Some("text_delta") { continue; }
+                let Some(text) = delta["text"].as_str() else { continue; };
+
+                if text.contains("## Self-Review") {
+                    iteration = iteration.saturating_add(1);
+                    let _ = tx.send(PlanDraftEvent::IterationStart { iteration });
+                }
+                if text.contains("validation_status: VALIDATED") {
+                    let verdict = crate::events::types::ReviewVerdict {
+                        validation_status: "VALIDATED".into(),
+                        iteration,
+                        summary: Some("Plan validated by EVA self-review".into()),
+                    };
+                    let _ = tx.send(PlanDraftEvent::VerdictBlock { verdict });
+                }
+
+                if let Some(ref store) = global_store {
+                    push_copilot_chunk(store, child.id().unwrap_or(0), text);
+                }
+                // broadcast::send errors when zero receivers — that's fine; continue.
+                let _ = tx.send(PlanDraftEvent::TextChunk { text: text.to_owned() });
+            }
+        }
+    }
+
+    let status = child
+        .wait()
+        .await
+        .map_err(|_| PlanDraftError::IoError("wait error".into()))?;
+    if status.success() {
+        let _ = tx.send(PlanDraftEvent::Done { codename });
+    } else {
+        let _ = tx.send(PlanDraftEvent::Error {
+            message: "plan draft failed".into(),
+        });
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn is_hex(c: char) -> bool {
+        matches!(c, '0'..='9' | 'a'..='f')
+    }
+
+    #[test]
+    fn mint_session_id_is_uuidv4() {
+        let id = mint_session_id();
+        let chars: Vec<char> = id.chars().collect();
+        // UUIDv4 canonical: xxxxxxxx-xxxx-4xxx-[89ab]xxx-xxxxxxxxxxxx  (36 chars)
+        assert_eq!(chars.len(), 36, "expected 36-char UUID, got '{id}'");
+        assert_eq!(chars[8], '-', "hyphen at pos 8");
+        assert_eq!(chars[13], '-', "hyphen at pos 13");
+        assert_eq!(chars[18], '-', "hyphen at pos 18");
+        assert_eq!(chars[23], '-', "hyphen at pos 23");
+        assert_eq!(chars[14], '4', "version nibble at pos 14 must be '4'");
+        assert!(
+            matches!(chars[19], '8' | '9' | 'a' | 'b'),
+            "variant nibble at pos 19 must be 8/9/a/b, got '{}'",
+            chars[19]
+        );
+        for (i, &c) in chars.iter().enumerate() {
+            if [8, 13, 18, 23].contains(&i) {
+                continue;
+            }
+            assert!(is_hex(c), "pos {i} in '{id}' is not a hex digit: '{c}'");
+        }
+    }
+
+    #[test]
+    fn mint_session_id_is_unique() {
+        let ids: std::collections::HashSet<_> = (0..100).map(|_| mint_session_id()).collect();
+        assert_eq!(ids.len(), 100, "mint_session_id() produced duplicate UUIDs");
+    }
 }

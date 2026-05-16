@@ -1010,3 +1010,51 @@ export interface PanelNavRequest {
   line?: number;
   findingId?: string;
 }
+
+// ── Plan Draft (plan-builder-copilot-bridge Phase 3) ─────────────────────────
+
+/** Parsed review verdict from the `/PLAN` Step 5 self-review loop. */
+export interface ReviewVerdict {
+  /** `VALIDATED` | `INSUFFICIENT_EVIDENCE` | `REVISION_NEEDED` */
+  validation_status: string;
+  /** Which LASDLC review iteration this verdict closes (1-based). */
+  iteration: number;
+  /** Human-readable summary of what passed / needs revision. */
+  summary: string | null;
+}
+
+/**
+ * Streaming event emitted over `GET /api/builds/plan/draft-stream/:session_id`.
+ *
+ * Discriminated on `type` (snake_case, matching Rust `#[serde(tag = "type", rename_all = "snake_case")]`).
+ */
+export type PlanDraftEvent =
+  | { type: 'text_chunk';      text: string }
+  | { type: 'iteration_start'; iteration: number }
+  | { type: 'verdict_block';   verdict: ReviewVerdict }
+  | { type: 'done';            codename: string }
+  | { type: 'error';           message: string };
+
+/** Request body for `POST /api/builds/plan/draft`. */
+export interface PlanDraftRequest {
+  description: string;
+  northstar?:  string;
+  repository?: string;
+  research:    boolean;
+  tier?:       string;
+}
+
+/** Immediate response from `POST /api/builds/plan/draft`. */
+export interface PlanDraftResponseEnvelope {
+  session_id: string;
+  codename:   string;
+  sse_url:    string;
+}
+
+/** Request body for `POST /api/builds/plan/commit`. */
+export interface PlanCommitRequest {
+  session_id:      string;
+  codename:        string;
+  body:            string;
+  idempotency_key?: string;
+}

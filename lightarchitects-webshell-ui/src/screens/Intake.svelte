@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { intakeForm, META_SKILL_CARDS, builds, currentBuildId, planBuilderMode, planBuilderDraft } from '$lib/stores';
+  import { onMount, onDestroy } from 'svelte';
+  import { intakeForm, META_SKILL_CARDS, builds, currentBuildId, planBuilderMode, planBuilderDraft, planDraftState, resetPlanDraft } from '$lib/stores';
   import { getMetaSkillPolytope, getMetaSkillColor, SIBLING_COLORS } from '$lib/design-tokens';
   import { api } from '$lib/api';
   import type { MetaSkill, IntakeSource, Priority, SiblingId, PhaseWithGates, GateType, BuildPlan, BuildTier, BuildResponse } from '$lib/types';
@@ -461,6 +461,96 @@
     clean_room: '#06b6d4',
     custom: '#64748b',
   };
+
+  // ── Draft with EVA ────────────────────────────────────────────────────────
+
+  let evaAnchorNorthstar = $state('');
+  let evaIncludeResearch = $state(false);
+  let evaDrafting = $state(false);
+  let evaEventSource = $state<EventSource | null>(null);
+  let draft = $derived($planDraftState);
+
+  function cancelEvaDraft() {
+    evaEventSource?.close();
+    evaEventSource = null;
+    evaDrafting = false;
+    resetPlanDraft();
+  }
+
+  async function draftWithEva() {
+    if (!validateForm()) return;
+    evaDrafting = true;
+    resetPlanDraft();
+
+    let envelope: import('$lib/types').PlanDraftResponseEnvelope;
+    try {
+      envelope = await api.draftPlan({
+        description: form.description ?? '',
+        northstar:   evaAnchorNorthstar.trim() || undefined,
+        repository:  form.repoPath.trim()      || undefined,
+        research:    evaIncludeResearch,
+        tier:        planTier,
+      });
+    } catch (err) {
+      planDraftState.update(s => ({
+        ...s,
+        error: err instanceof Error ? err.message : 'Draft request failed',
+      }));
+      evaDrafting = false;
+      return;
+    }
+
+    planDraftState.update(s => ({
+      ...s,
+      sessionId: envelope.session_id,
+      codename:  envelope.codename,
+    }));
+
+    const es = api.subscribePlanStream(
+      envelope.session_id,
+      (ev) => {
+        planDraftState.update(s => {
+          if (ev.type === 'text_chunk')      return { ...s, text: s.text + ev.text };
+          if (ev.type === 'iteration_start') return { ...s, iteration: ev.iteration };
+          if (ev.type === 'verdict_block')   return { ...s, verdict: ev.verdict };
+          if (ev.type === 'done')            return { ...s, done: true, codename: ev.codename };
+          if (ev.type === 'error')           return { ...s, error: ev.message };
+          return s;
+        });
+      },
+      () => {
+        // SSE error — Phase 3 stub returns 501; show a friendly message.
+        planDraftState.update(s => ({
+          ...s,
+          error: 'Stream unavailable (Phase 4 wires broadcast). EVA is drafting in the background.',
+        }));
+        evaDrafting = false;
+      },
+    );
+    evaEventSource = es;
+  }
+
+  async function commitEvaDraft() {
+    if (!draft.sessionId || !draft.codename || !draft.text) return;
+    try {
+      await api.commitPlan({
+        session_id: draft.sessionId,
+        codename:   draft.codename,
+        body:       draft.text,
+      });
+      cancelEvaDraft();
+      window.location.hash = '/builds';
+    } catch (err) {
+      planDraftState.update(s => ({
+        ...s,
+        error: err instanceof Error ? err.message : 'Commit failed',
+      }));
+    }
+  }
+
+  onDestroy(() => {
+    evaEventSource?.close();
+  });
 </script>
 
 <div class="h-full flex flex-col relative overflow-hidden">
@@ -772,6 +862,101 @@
                 {/each}
               </div>
             {/if}
+
+            <!-- ── Draft with EVA ────────────────────────────────────────── -->
+            <div class="mt-4 border border-[var(--la-focus-ring)]/20 rounded-lg p-3 bg-[var(--la-bg-elev-1)]">
+              <h2 class="text-xs font-medium text-[var(--la-focus-ring)] mb-3">DRAFT WITH EVA</h2>
+
+              <!-- Northstar anchor -->
+              <div class="mb-3">
+                <label class="text-[10px] text-[var(--la-text-dim)] block mb-1">NORTHSTAR (optional)</label>
+                <textarea
+                  bind:value={evaAnchorNorthstar}
+                  placeholder="Describe the ideal end-state this build achieves..."
+                  rows="2"
+                  class="w-full bg-[var(--la-drawer-bg)] border border-[var(--la-hair-strong)] rounded px-2 py-1.5 text-[11px] text-[var(--la-text-bright)] placeholder-[var(--la-text-dim)] outline-none focus:border-[var(--la-focus-ring)] resize-none"
+                ></textarea>
+              </div>
+
+              <!-- Research toggle -->
+              <label class="flex items-center gap-2 mb-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  bind:checked={evaIncludeResearch}
+                  class="w-3.5 h-3.5 accent-[var(--la-focus-ring)]"
+                />
+                <span class="text-[10px] text-[var(--la-text-label)]">Include research phase (QUANTUM + SOUL prior-art)</span>
+              </label>
+
+              <!-- Action buttons -->
+              <div class="flex gap-2">
+                <button
+                  class="flex-1 px-3 py-2 text-[11px] font-medium rounded border transition-colors
+                    {evaDrafting
+                      ? 'border-[var(--la-focus-ring)]/40 text-[var(--la-focus-ring)]/60 cursor-not-allowed'
+                      : 'border-[var(--la-focus-ring)] text-[var(--la-focus-ring)] hover:bg-[var(--la-focus-ring)]/10'}"
+                  onclick={draftWithEva}
+                  disabled={evaDrafting}
+                  data-testid="intake-draft-with-eva"
+                >
+                  {evaDrafting ? 'EVA drafting...' : 'Draft with EVA'}
+                </button>
+                {#if draft.sessionId}
+                  <button
+                    class="px-3 py-2 text-[11px] rounded border border-[var(--la-hair-strong)] text-[var(--la-text-dim)] hover:border-[var(--la-text-label)] hover:text-[var(--la-text-label)] transition-colors"
+                    onclick={cancelEvaDraft}
+                  >Cancel</button>
+                {/if}
+              </div>
+
+              <!-- Streaming output + iteration indicator -->
+              {#if draft.sessionId}
+                <div class="mt-3">
+                  <div class="flex items-center gap-2 mb-1.5">
+                    <span class="text-[9px] font-mono text-[var(--la-text-dim)]">ITERATION {draft.iteration}</span>
+                    {#if draft.verdict}
+                      <span class="text-[9px] px-1.5 py-0.5 rounded
+                        {draft.verdict.validation_status === 'VALIDATED' ? 'bg-[#22c55e]/10 text-[#22c55e]' : 'bg-[#f59e0b]/10 text-[#f59e0b]'}">
+                        {draft.verdict.validation_status}
+                      </span>
+                    {/if}
+                    {#if draft.done}
+                      <span class="text-[9px] text-[#22c55e]">✓ Done — {draft.codename}</span>
+                    {/if}
+                  </div>
+
+                  {#if draft.error}
+                    <div class="text-[9px] text-[var(--la-danger-stroke)] bg-[var(--la-danger-stroke)]/10 rounded px-2 py-1.5 mb-2">
+                      {draft.error}
+                    </div>
+                  {/if}
+
+                  {#if draft.text}
+                    <div class="bg-[var(--la-drawer-bg)] border border-[var(--la-hair-strong)] rounded p-2 max-h-64 overflow-y-auto font-mono text-[9px] text-[var(--la-text-label)] whitespace-pre-wrap leading-relaxed" data-testid="eva-draft-stream">
+                      {draft.text}
+                    </div>
+                  {:else if !draft.error}
+                    <div class="text-[9px] text-[var(--la-text-dim)] italic">Waiting for EVA to begin streaming...</div>
+                  {/if}
+
+                  {#if draft.done}
+                    <button
+                      class="mt-2 w-full px-3 py-2 text-[11px] font-medium rounded bg-[#22c55e] text-black hover:bg-[#16a34a] transition-colors disabled:opacity-50"
+                      onclick={commitEvaDraft}
+                      disabled={draft.verdict?.validation_status !== 'VALIDATED'}
+                      data-testid="eva-commit-plan"
+                    >
+                      Commit Plan to ~/.claude/plans/{draft.codename}.md
+                    </button>
+                    {#if draft.verdict?.validation_status !== 'VALIDATED'}
+                      <p class="mt-1 text-[9px] text-[var(--la-text-dim)]">
+                        Commit unlocks when EVA marks the plan VALIDATED.
+                      </p>
+                    {/if}
+                  {/if}
+                </div>
+              {/if}
+            </div>
           </div>
         {/if}
 
