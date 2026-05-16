@@ -8,7 +8,7 @@
 use axum::{
     body::Body,
     extract::{Path, State},
-    http::{HeaderMap, StatusCode, header},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use serde::Deserialize;
@@ -181,18 +181,11 @@ async fn run_soul_speak(text: &str) -> Result<Vec<u8>, (StatusCode, String)> {
 /// Returns `audio/mpeg` audio synthesised by EVA's voice via `soul speak`.
 /// Requires the same bearer token as all other build-scoped routes.
 pub async fn copilot_voice_handler(
+    _: auth::AuthGuard,
     Path(id): Path<Uuid>,
-    headers: HeaderMap,
     State(state): State<AppState>,
     axum::Json(body): axum::Json<VoiceRequest>,
 ) -> Response {
-    let authz = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    if !auth::validate_bearer(authz, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
     if state.builds.get(id).is_none() {
         return (
             StatusCode::NOT_FOUND,

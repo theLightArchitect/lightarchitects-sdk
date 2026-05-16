@@ -3,7 +3,7 @@
 use axum::{
     Json,
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::IntoResponse,
 };
 use serde_json::json;
@@ -19,18 +19,11 @@ use super::{CopilotRequest, call_ollama, call_subprocess};
 
 /// `POST /api/builds/:id/copilot` — dispatch to subprocess or HTTP backend.
 pub async fn copilot_chat_handler(
+    _: auth::AuthGuard,
     Path(id): Path<Uuid>,
-    headers: HeaderMap,
     State(state): State<AppState>,
     Json(body): Json<CopilotRequest>,
 ) -> impl IntoResponse {
-    let authz = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    if !auth::validate_bearer(authz, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
     let Some(session) = state.builds.get(id) else {
         return (
             StatusCode::NOT_FOUND,

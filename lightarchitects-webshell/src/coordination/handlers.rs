@@ -804,14 +804,22 @@ pub async fn reject_permission(
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+/// Return `true` if the request carries valid credentials — either an
+/// `Authorization: Bearer <token>` header **or** a valid `la_session` cookie.
+/// Mirrors [`crate::auth::AuthGuard`] for handlers that already take `HeaderMap`.
 fn is_authorised(headers: &HeaderMap, state: &AppState) -> bool {
-    let Some(authz) = headers.get("authorization") else {
-        return false;
-    };
-    let Ok(s) = authz.to_str() else {
-        return false;
-    };
-    auth::validate_bearer(s, &state.config.token)
+    let token = &state.config.token;
+    let bearer_ok = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|s| auth::validate_bearer(s, token));
+    if bearer_ok {
+        return true;
+    }
+    headers
+        .get("cookie")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|s| auth::validate_session_cookie(s, token))
 }
 
 /// Resolve the canonical conductor queue path: `~/.lightarchitects/tasks/queue.json`.

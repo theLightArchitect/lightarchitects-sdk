@@ -50,21 +50,31 @@ fn home_dir() -> Option<PathBuf> {
 
 // ── Auth helper ─────────────────────────────────────────────────────────────
 
-/// Returns `true` if the request's Bearer token matches `token`. Handlers
-/// should short-circuit with `StatusCode::UNAUTHORIZED` when this returns
-/// `false`. We return a `bool` instead of a boxed `Response` to keep the
-/// `Err` variant cheap (clippy `result_large_err` gate).
-/// Public alias for auth check used by `exec_routes` and other modules.
+/// Returns `true` if the request authenticates via **either**
+/// `Authorization: Bearer <token>` **or** a valid `la_session` cookie.
+/// Handlers should short-circuit with `StatusCode::UNAUTHORIZED` when this
+/// returns `false`. We return a `bool` instead of a boxed `Response` to keep
+/// the `Err` variant cheap (clippy `result_large_err` gate).
+///
+/// Mirrors [`crate::auth::AuthGuard`] for handlers that already take
+/// `headers: HeaderMap` and cannot easily migrate to an extractor.
+/// Public alias used by `exec_routes` and other modules.
 pub fn is_authed_pub(headers: &HeaderMap, token: &str) -> bool {
     is_authed(headers, token)
 }
 
 fn is_authed(headers: &HeaderMap, token: &str) -> bool {
-    let authz = headers
+    let bearer_ok = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    auth::validate_bearer(authz, token)
+        .is_some_and(|s| auth::validate_bearer(s, token));
+    if bearer_ok {
+        return true;
+    }
+    headers
+        .get("cookie")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|s| auth::validate_session_cookie(s, token))
 }
 
 // ── Workspaces ──────────────────────────────────────────────────────────────

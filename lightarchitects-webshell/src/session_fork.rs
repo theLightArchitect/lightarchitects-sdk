@@ -26,12 +26,7 @@
 //! }
 //! ```
 
-use axum::{
-    Json,
-    extract::State,
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
-};
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -72,18 +67,10 @@ pub struct ForkResponse {
 /// (Linux/Windows) with the resume command returned in `command`.
 #[allow(clippy::module_name_repetitions)]
 pub async fn fork_handler(
-    headers: HeaderMap,
+    _: auth::AuthGuard,
     State(state): State<AppState>,
     Json(body): Json<ForkRequest>,
 ) -> impl IntoResponse {
-    let authz = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    if !auth::validate_bearer(authz, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-
     let Some(session) = state.builds.get(body.build_id) else {
         return (
             StatusCode::NOT_FOUND,

@@ -25,7 +25,6 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::{
-    auth,
     config::{AgentSession, ClaudeBackend},
     server::AppState,
     session::BuildSession,
@@ -71,6 +70,36 @@ pub struct BuildSummary {
     /// Phase completion history from the manifest.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phase_status_history: Option<serde_json::Value>,
+    /// Current LASDLC phase number (0-indexed).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_phase: Option<u8>,
+    /// Total phase count for this build's tier (SMALL=4, MEDIUM=6, LARGE=7).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_phases: Option<u8>,
+    /// Phase status label (e.g. `PHASE_0_PREFLIGHT_IN_PROGRESS`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase_status: Option<String>,
+    /// LASDLC validation status (`VALIDATED`, `DRAFT`, `PENDING_REVIEW`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validation_status: Option<String>,
+    /// C1-C8 aggregate score (0.0-100.0).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validation_score: Option<f64>,
+    /// Number of /PLAN review iterations the plan has been through.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub review_iterations: Option<u8>,
+    /// Northstar pillar fit (e.g. `pillar_1_axis_1_authoring`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub northstar: Option<String>,
+    /// True if this build is a program (orchestrates sub-builds).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub program: Option<bool>,
+    /// ISO date the build was last updated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated: Option<String>,
+    /// Compact array of phase {id, title, status} for portfolio rendering.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phases: Option<serde_json::Value>,
 }
 
 /// Parse a `manifest.yaml` file into a [`BuildSummary`], returning `None`
@@ -116,7 +145,54 @@ fn parse_manifest(path: &std::path::Path) -> Option<BuildSummary> {
             .and_then(|v| v.as_str())
             .map(str::to_owned),
         phase_status_history: yaml.get("phase_status_history").cloned(),
+        current_phase: yaml
+            .get("current_phase")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|n| u8::try_from(n).ok()),
+        total_phases: tier_total_phases(yaml.get("tier").and_then(|v| v.as_str())).or_else(|| {
+            yaml.get("phases")
+                .and_then(|v| v.as_array())
+                .and_then(|a| u8::try_from(a.len()).ok())
+        }),
+        phase_status: yaml
+            .get("phase_status")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned),
+        validation_status: yaml
+            .get("validation_status")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned),
+        validation_score: yaml
+            .get("validation_score")
+            .and_then(serde_json::Value::as_f64),
+        review_iterations: yaml
+            .get("review_iterations")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|n| u8::try_from(n).ok()),
+        northstar: yaml
+            .get("northstar")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned),
+        program: yaml.get("program").and_then(serde_json::Value::as_bool),
+        updated: yaml
+            .get("updated")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned),
+        phases: yaml.get("phases").cloned(),
     })
+}
+
+/// Map LASDLC tier name to total phase count.
+///
+/// Per `LASDLC-TEMPLATE-v1.yaml` §1.3: SMALL=4 phases, MEDIUM=6, LARGE=7.
+/// Returns `None` for unknown tier strings; caller falls back to `phases` array length.
+fn tier_total_phases(tier: Option<&str>) -> Option<u8> {
+    match tier?.to_ascii_uppercase().as_str() {
+        "SMALL" => Some(4),
+        "MEDIUM" => Some(6),
+        "LARGE" => Some(7),
+        _ => None,
+    }
 }
 
 /// `GET /api/builds` — returns aggregate build portfolio as a JSON array.
@@ -128,19 +204,10 @@ fn parse_manifest(path: &std::path::Path) -> Option<BuildSummary> {
 /// `corso/builds/` directory mtime.
 #[allow(clippy::missing_panics_doc)]
 pub async fn builds_handler(
-    headers: axum::http::HeaderMap,
+    _: crate::auth::AuthGuard,
     Query(query): Query<BuildsQuery>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let authz = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    if !auth::validate_bearer(authz, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-
     let Some(helix_root) = lightarchitects::core::paths::helix_root() else {
         warn!("helix_root unavailable — cannot serve /api/builds");
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
@@ -338,19 +405,10 @@ impl AgentDescriptor {
 /// spawn (see [`BuildSession::build_spawn_env`]).
 #[allow(clippy::missing_panics_doc)]
 pub async fn create_build_handler(
-    headers: axum::http::HeaderMap,
+    _: crate::auth::AuthGuard,
     State(state): State<AppState>,
     Json(body): Json<CreateBuildRequest>,
 ) -> impl IntoResponse {
-    let authz = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    if !auth::validate_bearer(authz, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-
     // Use the active agent session (updated live by /api/setup/save).
     let agent = state.active_agent.read().await.clone();
     let mut session = BuildSession::new(body.cwd.clone(), agent);
@@ -408,18 +466,9 @@ pub async fn create_build_handler(
 /// the registry. The response never contains the notify token.
 pub async fn build_details_handler(
     Path(build_id): Path<Uuid>,
-    headers: axum::http::HeaderMap,
+    _: crate::auth::AuthGuard,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let authz = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    if !auth::validate_bearer(authz, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-
     let Some(session) = state.builds.get(build_id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -499,19 +548,10 @@ pub struct CreatePlanRequest {
 /// the builds cache so the next `GET /api/builds` reflects the new entry.
 #[allow(clippy::missing_panics_doc, clippy::too_many_lines)]
 pub async fn create_plan_handler(
-    headers: axum::http::HeaderMap,
+    _: crate::auth::AuthGuard,
     State(state): State<AppState>,
     Json(body): Json<CreatePlanRequest>,
 ) -> impl IntoResponse {
-    let authz = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    if !auth::validate_bearer(authz, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-
     // Soft-validate LASDLC phase names (warn, don't reject)
     let valid_phase_prefixes = [
         "Plan",
@@ -722,19 +762,10 @@ pub async fn create_plan_handler(
 #[allow(clippy::missing_panics_doc)]
 pub async fn update_plan_handler(
     Path(codename): Path<String>,
-    headers: axum::http::HeaderMap,
+    _: crate::auth::AuthGuard,
     State(state): State<AppState>,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    let authz = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    if !auth::validate_bearer(authz, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-
     let Some(helix_root) = lightarchitects::core::paths::helix_root() else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };

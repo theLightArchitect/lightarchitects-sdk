@@ -24,7 +24,6 @@ use std::{
 
 use axum::{
     extract::{Query, State},
-    http::{HeaderMap, StatusCode},
     response::{
         IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
@@ -47,19 +46,16 @@ pub struct ChatStreamQuery {
     pub session_id: Option<String>,
 }
 
-/// `GET /api/coordination/chat/stream` — bearer-authenticated SSE handler.
+/// `GET /api/coordination/chat/stream` — authenticated SSE handler.
+///
+/// Auth via [`auth::AuthGuard`] (Bearer header **or** `la_session` cookie).
+/// The cookie path is what lets browser `EventSource` connect — it cannot
+/// set the `Authorization` header.
 pub async fn chat_stream(
-    headers: HeaderMap,
+    _: auth::AuthGuard,
     Query(q): Query<ChatStreamQuery>,
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
 ) -> Response {
-    let authz = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    if !auth::validate_bearer(authz, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
     let session_id = q.session_id.unwrap_or_default();
     let cursor: Cursor = Arc::new(Mutex::new(HashMap::new()));
     let stream = stream::unfold((session_id, cursor, false), drive);

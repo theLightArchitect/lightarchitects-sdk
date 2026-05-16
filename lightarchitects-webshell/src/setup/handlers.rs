@@ -3,7 +3,7 @@
 use axum::{
     Json,
     extract::{Query, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
@@ -561,20 +561,14 @@ pub async fn setup_models(Query(q): Query<ModelsQuery>) -> impl IntoResponse {
     Json(ModelsResponse { models }).into_response()
 }
 
-/// `POST /api/setup/save` — persist config + hot-reload the active agent (authenticated).
+/// `POST /api/setup/save` — persist config + hot-reload the active agent.
+///
+/// Authenticated via [`auth::AuthGuard`] (Bearer header **or** `la_session` cookie).
 pub async fn setup_save(
-    headers: HeaderMap,
+    _: auth::AuthGuard,
     State(state): State<AppState>,
     Json(req): Json<SaveRequest>,
 ) -> impl IntoResponse {
-    let authz = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    if !auth::validate_bearer(authz, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-
     // For native CLI, write the selected model to the CLI's TOML config first.
     // This must succeed before we claim the setup is saved.
     if req.agent == AgentKind::LightarchitectsNative {
@@ -620,16 +614,10 @@ pub async fn setup_save(
     Json(SaveResponse { ok: true }).into_response()
 }
 
-/// `DELETE /api/setup/reset` — wipe setup config, frontend returns to splash (authenticated).
-pub async fn setup_reset(headers: HeaderMap, State(state): State<AppState>) -> impl IntoResponse {
-    let authz = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    if !auth::validate_bearer(authz, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-
+/// `DELETE /api/setup/reset` — wipe setup config, frontend returns to splash.
+///
+/// Authenticated via [`auth::AuthGuard`] (Bearer header **or** `la_session` cookie).
+pub async fn setup_reset(_: auth::AuthGuard) -> impl IntoResponse {
     if let Err(e) = Config::delete_setup() {
         tracing::error!(target: "setup", "Failed to delete setup config: {e}");
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();

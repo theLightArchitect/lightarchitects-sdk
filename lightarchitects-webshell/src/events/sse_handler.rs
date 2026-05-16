@@ -25,7 +25,7 @@ use std::{convert::Infallible, sync::Arc};
 
 use axum::{
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::{
         IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
@@ -40,17 +40,11 @@ use crate::{auth, events::WebEvent, server::AppState};
 
 /// `GET /api/events` — authenticates and returns an SSE stream.
 ///
-/// Responds 401 when `Authorization: Bearer <token>` is missing or invalid.
-pub async fn sse_handler(headers: HeaderMap, State(state): State<AppState>) -> Response {
-    let authz = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    if !auth::validate_bearer(authz, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-
+/// Authenticated via [`auth::AuthGuard`] — accepts either
+/// `Authorization: Bearer <token>` or a valid `la_session` cookie. The cookie
+/// path is what makes browser `EventSource` work: SSE cannot set Authorization
+/// headers, so cookies are its only durable auth channel.
+pub async fn sse_handler(_: auth::AuthGuard, State(state): State<AppState>) -> Response {
     let token: Arc<str> = Arc::from(state.config.token.as_str());
     let rx = state.event_tx.subscribe();
 
@@ -69,22 +63,15 @@ pub async fn sse_handler(headers: HeaderMap, State(state): State<AppState>) -> R
 /// the hash-fragment handshake), then looks up the build by UUID.
 ///
 /// - `404 Not Found` if `build_id` is unknown.
-/// - `401 Unauthorized` on missing or invalid bearer.
+/// - `401 Unauthorized` on missing or invalid credentials.
 /// - Otherwise an SSE stream over [`WebEvent`]s for that build.
+///
+/// Authenticated via [`auth::AuthGuard`] (Bearer header **or** `la_session` cookie).
 pub async fn sse_build_handler(
+    _: auth::AuthGuard,
     Path(build_id): Path<Uuid>,
-    headers: HeaderMap,
     State(state): State<AppState>,
 ) -> Response {
-    let authz = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    if !auth::validate_bearer(authz, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-
     let Some(session) = state.builds.get(build_id) else {
         return StatusCode::NOT_FOUND.into_response();
     };

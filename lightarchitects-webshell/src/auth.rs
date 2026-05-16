@@ -15,7 +15,12 @@
 //!   The sub-protocol extractor lives in Phase 2; this module exposes the
 //!   underlying constant-time comparator both surfaces call.
 
+use axum::extract::FromRequestParts;
+use axum::http::{StatusCode, header, request::Parts};
+use axum::response::{IntoResponse, Response};
 use constant_time_eq::constant_time_eq;
+
+use crate::server::AppState;
 
 /// Validates an `Authorization: Bearer <token>` header value against
 /// the expected token in constant time.
@@ -143,6 +148,74 @@ pub fn session_cookie_header(token: &str) -> String {
 #[must_use]
 pub fn clear_session_cookie_header() -> &'static str {
     "la_session=; HttpOnly; SameSite=Strict; Secure; Path=/; Max-Age=0"
+}
+
+// ── AuthGuard extractor ─────────────────────────────────────────────────────
+
+/// Axum extractor that authenticates a request via **either** an
+/// `Authorization: Bearer <token>` header **or** a valid `la_session` cookie.
+///
+/// Plug into any handler signature as `_: AuthGuard` to replace the inline
+/// `validate_bearer` / `validate_session_cookie` checks that were previously
+/// duplicated across ~50 handler sites.
+///
+/// # Rejection
+///
+/// On missing or invalid credentials the extractor returns `401 Unauthorized`
+/// with an empty body. The rejection type is [`Response`] (not [`StatusCode`])
+/// so SSE handlers — whose handler return type is `Response` rather than
+/// `impl IntoResponse` — can use the same extractor without conversion noise.
+///
+/// # Constant-time guarantee
+///
+/// Bearer and cookie validators each compare in constant time. The boolean
+/// `||` short-circuits between them, but the short-circuit reveals only
+/// whether the Bearer header was present and valid — it does **not** reveal
+/// anything about the token contents on either side (both validators run a
+/// full constant-time comparison before returning their bool).
+///
+/// # Order of evaluation
+///
+/// Bearer is checked before cookie. This is the historical primary auth path
+/// and is the cheaper code path (one header lookup, no parsing of cookie pairs).
+/// Order does not affect security — both must independently pass constant-time
+/// comparison against the same expected token.
+#[derive(Debug, Clone, Copy)]
+pub struct AuthGuard;
+
+impl FromRequestParts<AppState> for AuthGuard {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let expected = &state.config.token;
+
+        // Try Bearer header first.
+        let bearer_ok = parts
+            .headers
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|s| validate_bearer(s, expected));
+
+        if bearer_ok {
+            return Ok(Self);
+        }
+
+        // Fall back to la_session cookie.
+        let cookie_ok = parts
+            .headers
+            .get(header::COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|s| validate_session_cookie(s, expected));
+
+        if cookie_ok {
+            return Ok(Self);
+        }
+
+        Err(StatusCode::UNAUTHORIZED.into_response())
+    }
 }
 
 // ── Notify-token validation ─────────────────────────────────────────────────

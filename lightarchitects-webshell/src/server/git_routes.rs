@@ -47,11 +47,18 @@ type Resp = (StatusCode, Json<Value>);
 // ── Auth + response helpers ───────────────────────────────────────────────────
 
 fn check_auth(headers: &HeaderMap, token: &str) -> Result<(), Resp> {
-    let authz = headers
+    let bearer_ok = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
-        .ok_or_else(unauthorized)?;
-    if crate::auth::validate_bearer(authz, token) {
+        .is_some_and(|s| crate::auth::validate_bearer(s, token));
+    if bearer_ok {
+        return Ok(());
+    }
+    let cookie_ok = headers
+        .get("cookie")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|s| crate::auth::validate_session_cookie(s, token));
+    if cookie_ok {
         Ok(())
     } else {
         Err(unauthorized())

@@ -48,19 +48,11 @@ static AGENT_SSE_COUNT: AtomicUsize = AtomicUsize::new(0);
 /// - `503 Service Unavailable` if the global SSE cap is reached.
 /// - Otherwise an SSE stream of `AgentEvent` variants for that build.
 pub async fn agent_sse_handler(
+    _: auth::AuthGuard,
     Path(build_id): Path<Uuid>,
     headers: HeaderMap,
     State(state): State<AppState>,
 ) -> Response {
-    let authz = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    if !auth::validate_bearer(authz, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-
     let Some(session) = state.builds.get(build_id) else {
         return StatusCode::NOT_FOUND.into_response();
     };

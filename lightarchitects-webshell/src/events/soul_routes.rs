@@ -156,16 +156,23 @@ pub struct MemoryListResponse {
 
 // ── Auth helper ─────────────────────────────────────────────────────────────
 
-/// Validate Bearer token, returning `Err(StatusCode::UNAUTHORIZED)` on failure.
-///
-/// Mirrors the inline pattern in `builds_handler.rs`. Extracted here because
-/// four routes share the same check.
+/// Validate credentials via either `Authorization: Bearer <token>` **or**
+/// a valid `la_session` cookie, returning `Err(StatusCode::UNAUTHORIZED)` on
+/// failure. Mirrors [`crate::auth::AuthGuard`] for handlers that already take
+/// `HeaderMap`.
 fn check_auth(headers: &axum::http::HeaderMap, token: &str) -> Result<(), StatusCode> {
-    let authz = headers
+    let bearer_ok = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    if auth::validate_bearer(authz, token) {
+        .is_some_and(|s| auth::validate_bearer(s, token));
+    if bearer_ok {
+        return Ok(());
+    }
+    let cookie_ok = headers
+        .get("cookie")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|s| auth::validate_session_cookie(s, token));
+    if cookie_ok {
         Ok(())
     } else {
         Err(StatusCode::UNAUTHORIZED)

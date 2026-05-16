@@ -794,20 +794,10 @@ use axum::extract::Query as AxumQuery;
 /// build-artifact dirs (`target`, `node_modules`, `.git`, etc.) are skipped.
 /// Requires `Authorization: Bearer <token>`.
 async fn list_files_handler(
-    headers: HeaderMap,
+    _: auth::AuthGuard,
     State(state): State<AppState>,
     AxumQuery(params): AxumQuery<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
-    let Some(authz) = headers.get("authorization") else {
-        return (StatusCode::UNAUTHORIZED, Json(Vec::<String>::new()));
-    };
-    let Ok(authz_str) = authz.to_str() else {
-        return (StatusCode::UNAUTHORIZED, Json(Vec::<String>::new()));
-    };
-    if !auth::validate_bearer(authz_str, &state.config.token) {
-        return (StatusCode::UNAUTHORIZED, Json(Vec::<String>::new()));
-    }
-
     let query = params
         .get("q")
         .map(|s| s.to_lowercase())
@@ -880,23 +870,12 @@ async fn health() -> impl IntoResponse {
     (StatusCode::OK, "ok")
 }
 
-/// `GET /api/auth-check` — validates `Authorization: Bearer <token>`.
+/// `GET /api/auth-check` — validates either `Authorization: Bearer <token>`
+/// **or** a valid `la_session` cookie via [`auth::AuthGuard`].
 ///
-/// Responds 200 on match, 401 on mismatch or missing header.
-async fn auth_check(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
-    let Some(authz) = headers.get("authorization") else {
-        return StatusCode::UNAUTHORIZED;
-    };
-
-    let Ok(authz_str) = authz.to_str() else {
-        return StatusCode::UNAUTHORIZED;
-    };
-
-    if auth::validate_bearer(authz_str, &state.config.token) {
-        StatusCode::OK
-    } else {
-        StatusCode::UNAUTHORIZED
-    }
+/// Responds 200 on match, 401 on mismatch or missing credentials.
+async fn auth_check(_: auth::AuthGuard) -> impl IntoResponse {
+    StatusCode::OK
 }
 
 /// Request body for `POST /api/auth/exchange`.
@@ -1042,21 +1021,11 @@ async fn auth_logout(State(state): State<AppState>, headers: HeaderMap) -> impl 
 
 /// `GET /api/browser-state` — returns the latest browser UI state snapshot.
 ///
-/// Authenticated — requires a valid `Authorization: Bearer <token>` header.
+/// Authenticated via [`auth::AuthGuard`] (Bearer header **or** `la_session` cookie).
 async fn read_browser_state(
-    headers: HeaderMap,
+    _: auth::AuthGuard,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let Some(authz) = headers.get("authorization") else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    let Ok(authz_str) = authz.to_str() else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    if !auth::validate_bearer(authz_str, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-
     let snapshot = state.browser_state.read().await;
     Json(snapshot.clone()).into_response()
 }
@@ -1064,22 +1033,13 @@ async fn read_browser_state(
 /// `POST /api/browser-state` — updates the browser UI state snapshot.
 ///
 /// Called periodically by the frontend to report current viewport, panel
-/// sizes, zoom level, etc. Authenticated — requires a valid bearer token.
+/// sizes, zoom level, etc. Authenticated via [`auth::AuthGuard`]
+/// (Bearer header **or** `la_session` cookie).
 async fn write_browser_state(
-    headers: HeaderMap,
+    _: auth::AuthGuard,
     State(state): State<AppState>,
     Json(update): Json<BrowserStateSnapshot>,
 ) -> impl IntoResponse {
-    let Some(authz) = headers.get("authorization") else {
-        return StatusCode::UNAUTHORIZED;
-    };
-    let Ok(authz_str) = authz.to_str() else {
-        return StatusCode::UNAUTHORIZED;
-    };
-    if !auth::validate_bearer(authz_str, &state.config.token) {
-        return StatusCode::UNAUTHORIZED;
-    }
-
     let mut snapshot = state.browser_state.write().await;
     *snapshot = update;
 
@@ -1091,19 +1051,9 @@ async fn write_browser_state(
 /// Auth-gated (global Bearer token). Results are ordered by `updated_at`
 /// descending (most recently touched first).
 async fn resume_sessions_handler(
-    headers: HeaderMap,
+    _: auth::AuthGuard,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let Some(authz) = headers.get("authorization") else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    let Ok(authz_str) = authz.to_str() else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    if !auth::validate_bearer(authz_str, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-
     let rows = match state.session_store.lock() {
         Ok(store) => store.list(),
         Err(e) => {
@@ -1130,17 +1080,7 @@ async fn resume_sessions_handler(
 /// Returns:
 /// - `200 OK` with `application/json` body on valid token.
 /// - `401 UNAUTHORIZED` on missing or invalid token.
-async fn polytopes(headers: HeaderMap, State(state): State<AppState>) -> impl IntoResponse {
-    let Some(authz) = headers.get("authorization") else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    let Ok(authz_str) = authz.to_str() else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    if !auth::validate_bearer(authz_str, &state.config.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-
+async fn polytopes(_: auth::AuthGuard) -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
         polytope_data::POLYTOPES_JSON,

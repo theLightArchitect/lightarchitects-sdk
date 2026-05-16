@@ -7,12 +7,7 @@
 //! This is the primary mechanism by which Claude Code (or any process
 //! with the auth token) can programmatically control the web app UI.
 
-use axum::{
-    Json,
-    extract::State,
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
-};
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use tracing::{info, warn};
 
 use crate::{auth, server::AppState};
@@ -31,21 +26,10 @@ use super::types::{ControlCommand, WebEvent};
 /// - `400` — body is not valid JSON or does not match a known command.
 /// - `401` — missing or invalid `Authorization` header.
 pub async fn control_handler(
-    headers: HeaderMap,
+    _: auth::AuthGuard,
     State(state): State<AppState>,
     Json(cmd): Json<ControlCommand>,
 ) -> impl IntoResponse {
-    // Validate bearer token.
-    let Some(authz) = headers.get("authorization") else {
-        return StatusCode::UNAUTHORIZED;
-    };
-    let Ok(authz_str) = authz.to_str() else {
-        return StatusCode::UNAUTHORIZED;
-    };
-    if !auth::validate_bearer(authz_str, &state.config.token) {
-        return StatusCode::UNAUTHORIZED;
-    }
-
     // Handle local-execution commands before broadcasting.
     match &cmd {
         ControlCommand::OpenInEditor { file, line } => {
