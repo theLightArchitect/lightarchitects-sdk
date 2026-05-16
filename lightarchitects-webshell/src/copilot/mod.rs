@@ -214,19 +214,59 @@ impl CopilotProcess {
     }
 }
 
-/// Detect end-of-turn from an NDJSON line for the `LightarchitectsNative` backend.
+/// Dispatch a single NDJSON event line from the CLI stream to the webshell event bus.
 ///
-/// Returns `Some(text)` when `line` is the `{"type":"result","subtype":"success"}` event.
-/// Returns `None` for any other line (keep reading).
-fn parse_turn_end(line: &str, _session: &BuildSession) -> Option<String> {
-    let Ok(val) = serde_json::from_str::<serde_json::Value>(line) else {
+/// Returns `Some(text)` when `line` is the `{"type":"result","text":"..."}` event.
+/// Returns `None` for any other event type (caller should continue reading).
+fn dispatch_ndjson_line(line: &str, session: &BuildSession, build_id: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || !trimmed.starts_with('{') {
+        return None;
+    }
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) else {
         return None;
     };
-    if val["type"].as_str() == Some("result") && val["subtype"].as_str() == Some("success") {
-        Some(val["result"].as_str().unwrap_or("").to_owned())
-    } else {
-        None
+    match val["type"].as_str() {
+        Some("result") => {
+            return val["text"].as_str().map(ToOwned::to_owned);
+        }
+        Some("context") => {
+            #[allow(clippy::cast_possible_truncation)]
+            let usage_pct = val["usage_pct"].as_f64().unwrap_or(0.0).clamp(0.0, 1.0) as f32;
+            let _ = session
+                .event_tx
+                .send(crate::events::WebEvent::ContextStatus(
+                    crate::events::types::ContextStatusEvent {
+                        usage_pct,
+                        level: val["level"].as_str().map(ToOwned::to_owned),
+                        budget: val["budget"].as_u64().unwrap_or(0),
+                        used: val["used"].as_u64().unwrap_or(0),
+                    },
+                ));
+        }
+        Some(kind @ ("tool_call" | "thinking")) => {
+            let summary = if kind == "tool_call" {
+                val["tool_name"].as_str().map(ToOwned::to_owned)
+            } else {
+                val["text"]
+                    .as_str()
+                    .map(|t| t.chars().take(120).collect::<String>())
+            };
+            let _ = session
+                .event_tx
+                .send(crate::events::WebEvent::CopilotActivity(
+                    crate::events::types::CopilotActivityEvent {
+                        build_id: build_id.to_owned(),
+                        kind: kind.to_owned(),
+                        summary,
+                        raw: val,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                    },
+                ));
+        }
+        _ => {}
     }
+    None
 }
 
 /// Spawn one turn of a `claude --print` subprocess for `Lightarchitects` backends.
@@ -668,173 +708,7 @@ async fn run_codex_turn(
     }
 }
 
-/// Per-turn execution for `LightArchitects` CLI (single-shot `run <prompt>` mode).
-///
-/// Spawns `lightarchitects-cli run "<message>" --yes --cwd <path> --no-splash`, captures stdout,
-/// returns the final text output. Each turn is a fresh process — no session continuity
-/// (the CLI manages its own session files on disk).
-async fn run_native_turn(message: &str, session: &BuildSession) -> Result<String, String> {
-    let AgentSession::LightarchitectsNative(cfg) = &session.agent else {
-        return Err("run_native_turn: not a LightarchitectsNative session".to_owned());
-    };
-
-    let resolved = resolve_binary(&cfg.binary);
-    let mut c = tokio::process::Command::new(&resolved);
-    c.env("PATH", augmented_path());
-
-    // Inject credentials from webshell auth broker
-    if let Some(key) = resolve_api_key_for_native() {
-        c.env("ANTHROPIC_API_KEY", &key);
-    }
-
-    c.arg("run").arg(message).arg("--yes").arg("--no-splash");
-
-    if session.cwd.is_dir() {
-        c.arg("--cwd").arg(&session.cwd);
-    } else {
-        let _ = std::fs::create_dir_all(&session.cwd);
-        c.arg("--cwd").arg(&session.cwd);
-    }
-
-    c.stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-
-    tracing::info!("run_native_turn: spawning {} run ...", resolved);
-
-    let output = c
-        .output()
-        .await
-        .map_err(|e| format!("spawn lightarchitects-cli: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        tracing::warn!(
-            "run_native_turn: exit {:?}, stderr: {}",
-            output.status.code(),
-            &stderr[..stderr.len().min(500)]
-        );
-        // Still try to return stdout if it has content
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-        if !stdout.is_empty() {
-            return Ok(stdout);
-        }
-        return Err(format!(
-            "lightarchitects-cli exited with {:?}: {}",
-            output.status.code(),
-            stderr.chars().take(200).collect::<String>()
-        ));
-    }
-
-    let raw = String::from_utf8_lossy(&output.stdout);
-
-    // Phase A — parse NDJSON lines; return result text if found.
-    if let Some(text) = parse_native_ndjson(&raw, session) {
-        return Ok(text);
-    }
-
-    // Fallback — no NDJSON result line found; strip tracing lines and return raw text.
-    let text = filter_tracing_lines(&raw);
-    if text.is_empty() {
-        let stderr_text = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-        if !stderr_text.is_empty() {
-            return Ok(stderr_text);
-        }
-        return Err("lightarchitects-cli returned empty output (logs filtered)".to_owned());
-    }
-
-    Ok(text)
-}
-
-/// Parse NDJSON lines from CLI stdout, dispatch [`WebEvent`]s, and return the
-/// result text from the `{"type":"result","text":"..."}` line.
-///
-/// Returns `None` if no result line is present (caller should fall back to
-/// the legacy tracing-line filter).
-fn parse_native_ndjson(raw: &str, session: &BuildSession) -> Option<String> {
-    let build_id = session.build_id.to_string();
-    let mut result_text: Option<String> = None;
-
-    for line in raw.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || !trimmed.starts_with('{') {
-            continue;
-        }
-        let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) else {
-            continue;
-        };
-
-        match val["type"].as_str() {
-            Some("result") => {
-                result_text = val["text"].as_str().map(ToOwned::to_owned);
-            }
-            Some("context") => {
-                #[allow(clippy::cast_possible_truncation)]
-                let usage_pct = val["usage_pct"].as_f64().unwrap_or(0.0).clamp(0.0, 1.0) as f32;
-                let _ = session
-                    .event_tx
-                    .send(crate::events::WebEvent::ContextStatus(
-                        crate::events::types::ContextStatusEvent {
-                            usage_pct,
-                            level: val["level"].as_str().map(ToOwned::to_owned),
-                            budget: val["budget"].as_u64().unwrap_or(0),
-                            used: val["used"].as_u64().unwrap_or(0),
-                        },
-                    ));
-            }
-            Some(kind @ ("tool_call" | "thinking")) => {
-                let summary = if kind == "tool_call" {
-                    val["tool_name"].as_str().map(ToOwned::to_owned)
-                } else {
-                    val["text"]
-                        .as_str()
-                        .map(|t| t.chars().take(120).collect::<String>())
-                };
-                let _ = session
-                    .event_tx
-                    .send(crate::events::WebEvent::CopilotActivity(
-                        crate::events::types::CopilotActivityEvent {
-                            build_id: build_id.clone(),
-                            kind: kind.to_owned(),
-                            summary,
-                            raw: val,
-                            timestamp: chrono::Utc::now().to_rfc3339(),
-                        },
-                    ));
-            }
-            _ => {}
-        }
-    }
-
-    result_text
-}
-
-/// Strip tracing log lines and NDJSON event lines from raw CLI stdout.
-fn filter_tracing_lines(raw: &str) -> String {
-    raw.lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            if trimmed.starts_with('\x1b')
-                && (trimmed.contains("INFO")
-                    || trimmed.contains("WARN")
-                    || trimmed.contains("DEBUG")
-                    || trimmed.contains("ERROR"))
-            {
-                return false;
-            }
-            if trimmed.starts_with("\x1b[2m2") || trimmed.starts_with('{') {
-                return false;
-            }
-            !trimmed.is_empty()
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_owned()
-}
-
 /// Spawn a persistent agent subprocess for the `LightarchitectsNative` backend.
-/// (Future: when the CLI supports NDJSON streaming mode)
 ///
 /// | Session | Binary | Extra env |
 /// |---------|--------|-----------|
@@ -1003,22 +877,7 @@ pub(super) async fn call_subprocess(
         return Ok(text);
     }
 
-    // Per-turn path for LightArchitects CLI (single-shot `run <prompt>` mode).
-    // lÆx0 v0.1.0+ uses `lightarchitects-cli run <prompt> --yes --cwd <path>` per turn.
-    if matches!(&session.agent, AgentSession::LightarchitectsNative(_)) {
-        let text = run_native_turn(message, session).await?;
-        emit_turn_complete_span(
-            session,
-            &span_id,
-            actor,
-            &start_ts,
-            start.elapsed(),
-            "success",
-        );
-        return Ok(text);
-    }
-
-    // Persistent subprocess path — future LightArchitects CLI versions with NDJSON streaming.
+    // Persistent subprocess path — `LightarchitectsNative` CLI with NDJSON streaming.
     if guard.is_none() {
         *guard = Some(spawn_copilot(session)?);
     }
@@ -1043,6 +902,7 @@ pub(super) async fn call_subprocess(
             .map_err(|e| format!("stdin flush: {e}"))?;
     }
 
+    let build_id = session.build_id.to_string();
     let result_text: Option<String> = loop {
         // Borrow proc.stdout only within this inner block to allow accessing
         // proc.session_id (a different field) in the match arms below.
@@ -1058,26 +918,8 @@ pub(super) async fn call_subprocess(
                     if let Some(id) = val["session_id"].as_str() {
                         proc.session_id = Some(id.to_owned());
                     }
-                    if val["type"].as_str() == Some("context") {
-                        #[allow(clippy::cast_possible_truncation)]
-                        let usage_pct =
-                            val["usage_pct"].as_f64().unwrap_or(0.0).clamp(0.0, 1.0) as f32;
-                        let budget = val["budget"].as_u64().unwrap_or(0);
-                        let used = val["used"].as_u64().unwrap_or(0);
-                        let level = val["level"].as_str().map(ToOwned::to_owned);
-                        let _ = session
-                            .event_tx
-                            .send(crate::events::WebEvent::ContextStatus(
-                                crate::events::types::ContextStatusEvent {
-                                    usage_pct,
-                                    level,
-                                    budget,
-                                    used,
-                                },
-                            ));
-                    }
                 }
-                if let Some(text) = parse_turn_end(&line, session) {
+                if let Some(text) = dispatch_ndjson_line(&line, session, &build_id) {
                     break Some(text);
                 }
             }
@@ -1093,7 +935,16 @@ pub(super) async fn call_subprocess(
         }
     };
 
-    result_text.ok_or_else(|| "no result in agent stream output".to_owned())
+    let text = result_text.ok_or_else(|| "no result in agent stream output".to_owned())?;
+    emit_turn_complete_span(
+        session,
+        &span_id,
+        actor,
+        &start_ts,
+        start.elapsed(),
+        "success",
+    );
+    Ok(text)
 }
 
 /// POST to Ollama-compatible `/v1/chat/completions` endpoint.
