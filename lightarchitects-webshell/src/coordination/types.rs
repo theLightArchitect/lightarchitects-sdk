@@ -279,6 +279,37 @@ pub struct RejectResponse {
     pub message: String,
 }
 
+/// Request body for `POST /api/dispatch/:id/fs-approve`.
+///
+/// `dispatch_id` is the build-session UUID (same string that appeared in the
+/// `fs_mutation_pending` SSE event's `dispatch_id` field). `mutation_id` is
+/// the `call_id` minted by `Uuid::new_v4()` on the server side; it keys the
+/// `AgentSessionHost::permission_queue` oneshot channel.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FsApproveRequest {
+    /// Permission-request id — matches `call_id` in `AgentSessionHost::permission_queue`.
+    pub mutation_id: String,
+}
+
+/// Request body for `POST /api/dispatch/:id/fs-reject`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FsRejectRequest {
+    /// Permission-request id — matches `call_id` in `AgentSessionHost::permission_queue`.
+    pub mutation_id: String,
+    /// Human-readable reason for rejection (forwarded to the agent as a synthetic error).
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// Response for `POST /api/dispatch/:id/fs-approve` and `fs-reject`.
+#[derive(Debug, Clone, Serialize)]
+pub struct FsDecisionResponse {
+    /// The `mutation_id` that was resolved (echoed from the request).
+    pub mutation_id: String,
+    /// `"approved"` or `"rejected"`.
+    pub decision: String,
+}
+
 /// One delta on the chat SSE stream.
 ///
 /// Sent as the JSON body of each SSE `data:` line. The frontend dispatches

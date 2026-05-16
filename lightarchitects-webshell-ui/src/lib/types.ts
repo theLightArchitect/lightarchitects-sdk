@@ -300,6 +300,7 @@ export type EventType =
   | 'scrum_report'
   | 'training_progress'
   | 'fs_mutation_pending'
+  | 'permission_request'
   | 'strand_convergence'
   | 'mailbox_message'
   | 'context_status';

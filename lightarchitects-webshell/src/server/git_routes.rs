@@ -661,3 +661,59 @@ pub async fn review_pr_handler(
         git_err("unexpected GitHub API response").into_response()
     }
 }
+
+// ── Smoke tests (Canon XXVII suite 6) ─────────────────────────────────────────
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use axum::http::{HeaderMap, HeaderValue, StatusCode};
+
+    use super::*;
+
+    #[test]
+    fn check_auth_rejects_missing_header() {
+        let headers = HeaderMap::new();
+        let result = check_auth(&headers, "secret");
+        assert!(result.is_err());
+        let (status, _) = result.unwrap_err();
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn check_auth_rejects_wrong_token() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "authorization",
+            HeaderValue::from_static("Bearer wrong-token"),
+        );
+        let result = check_auth(&headers, "correct-token");
+        assert!(result.is_err());
+        let (status, _) = result.unwrap_err();
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn check_auth_accepts_correct_token() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "authorization",
+            HeaderValue::from_static("Bearer correct-token"),
+        );
+        assert!(check_auth(&headers, "correct-token").is_ok());
+    }
+
+    #[test]
+    fn bad_request_response_shape() {
+        let (status, Json(body)) = bad_request("missing cwd");
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"], "missing cwd");
+    }
+
+    #[test]
+    fn ok_response_shape() {
+        let (status, Json(body)) = ok(serde_json::json!({"branch": "main"}));
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["branch"], "main");
+    }
+}

@@ -10,6 +10,8 @@
 //! - `GET  /api/dispatch/status/:id` — SSE stream of [`DispatchEvent`]s
 //! - `POST /api/dispatch/cancel/:id` — cancel an active dispatch
 //! - `POST /api/dispatch/retry/:id/:agent` — retry a failed agent
+//! - `POST /api/dispatch/:id/fs-approve` — approve a pending FS-mutation permission
+//! - `POST /api/dispatch/:id/fs-reject`  — reject a pending FS-mutation permission
 //!
 //! # Input validation (HIGH H-2)
 //!
@@ -34,7 +36,13 @@ use axum::{
 use futures_util::stream;
 use serde::Serialize;
 
-use crate::{auth, server::AppState};
+use uuid::Uuid;
+
+use crate::{
+    auth,
+    coordination::types::{FsApproveRequest, FsDecisionResponse, FsRejectRequest},
+    server::AppState,
+};
 
 use super::{
     classifier, executor,
@@ -99,6 +107,8 @@ pub fn dispatch_router() -> Router<AppState> {
         .route("/api/dispatch/status/{id}", get(status_sse_handler))
         .route("/api/dispatch/cancel/{id}", post(cancel_handler))
         .route("/api/dispatch/retry/{id}/{agent}", post(retry_handler))
+        .route("/api/dispatch/{id}/fs-approve", post(fs_approve_handler))
+        .route("/api/dispatch/{id}/fs-reject", post(fs_reject_handler))
 }
 
 // ── Response helpers ──────────────────────────────────────────────────────────
@@ -396,6 +406,97 @@ async fn retry_handler(
     } // mutex guard drops here before response is built
     // TODO(team-manager): wire actual retry into TeamManager in Wave 3 B2.
     Json(OkResponse { ok: true }).into_response()
+}
+
+/// `POST /api/dispatch/:id/fs-approve` — approve a pending FS-mutation permission request.
+///
+/// `:id` is the build-session UUID (the `dispatch_id` field of the
+/// `fs_mutation_pending` SSE event). The request body carries the `mutation_id`
+/// that keys `AgentSessionHost::permission_queue`.
+///
+/// Bearer-authenticated (HIGH H-5). Returns 404 when the session or mutation
+/// is not found. Returns 409 when the mutation was already resolved.
+#[tracing::instrument(skip(headers, state, req), fields(build_id = %id_str))]
+async fn fs_approve_handler(
+    headers: HeaderMap,
+    Path(id_str): Path<String>,
+    State(state): State<AppState>,
+    Json(req): Json<FsApproveRequest>,
+) -> Response {
+    if !is_authorised(&headers, &state) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    resolve_fs_permission(&id_str, &req.mutation_id, true, &state).await
+}
+
+/// `POST /api/dispatch/:id/fs-reject` — reject a pending FS-mutation permission request.
+///
+/// Same semantics as `fs-approve` but sends `false` to the oneshot channel,
+/// causing the agent to receive a synthetic error for the blocked tool call.
+#[tracing::instrument(skip(headers, state, req), fields(build_id = %id_str))]
+async fn fs_reject_handler(
+    headers: HeaderMap,
+    Path(id_str): Path<String>,
+    State(state): State<AppState>,
+    Json(req): Json<FsRejectRequest>,
+) -> Response {
+    if !is_authorised(&headers, &state) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    // reason is logged only — not forwarded over the oneshot (bool channel).
+    if !req.reason.is_empty() {
+        tracing::info!(mutation_id = %req.mutation_id, reason = %req.reason, "fs mutation rejected by operator");
+    }
+    resolve_fs_permission(&id_str, &req.mutation_id, false, &state).await
+}
+
+/// Shared resolution logic for approve + reject.
+///
+/// Finds the `AgentSessionHost` for `build_id_str`, removes `mutation_id` from
+/// its `permission_queue`, and sends `approved` through the oneshot channel.
+async fn resolve_fs_permission(
+    build_id_str: &str,
+    mutation_id: &str,
+    approved: bool,
+    state: &AppState,
+) -> Response {
+    // Parse the build-session UUID — the dispatch_id in SSE events is the build UUID.
+    let Ok(build_uuid) = Uuid::parse_str(build_id_str) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+
+    // Look up the BuildSession.
+    let Some(session) = state.builds.get(build_uuid) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    // Access the agent host (may be None if no agent activity yet).
+    let guard = session.agent_host.lock().await;
+    let Some(host) = guard.as_ref().cloned() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    drop(guard); // release lock before send
+
+    // Remove and resolve the oneshot sender (removes from queue atomically).
+    let Some((_, sender)) = host.permission_queue.remove(mutation_id) else {
+        // Already resolved or never registered.
+        return StatusCode::CONFLICT.into_response();
+    };
+
+    // Unblock the waiting agent — error means receiver was dropped (turn cancelled).
+    if sender.send(approved).is_err() {
+        tracing::warn!(
+            mutation_id,
+            approved,
+            "permission oneshot receiver dropped before resolve"
+        );
+    }
+
+    Json(FsDecisionResponse {
+        mutation_id: mutation_id.to_owned(),
+        decision: if approved { "approved" } else { "rejected" }.to_owned(),
+    })
+    .into_response()
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

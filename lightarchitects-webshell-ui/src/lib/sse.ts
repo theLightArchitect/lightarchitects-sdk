@@ -524,6 +524,22 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
       );
       break;
     }
+    case 'permission_request': {
+      // E5 — generic tool-call permission gate. Emitted by the backend when
+      // `AgentSessionHost::permission_queue` receives a new request.
+      // Include the currentBuildId as dispatch_id so the approval endpoint
+      // POST /api/dispatch/{build_id}/fs-approve can route to the right session.
+      window.dispatchEvent(
+        new CustomEvent('la:permission-request', {
+          detail: {
+            type: 'permission_request',
+            dispatch_id: currentBuildId ?? '',
+            ...(event.data as Record<string, unknown>),
+          },
+        }),
+      );
+      break;
+    }
     case 'strand_convergence': {
       // Rust emits fields at top level (serde inline tag). Spike all siblings
       // participating in the convergence, then forward to the Memory drawer via

@@ -1,0 +1,83 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-14T20:45:00Z"
+build_id: embodied-engineering-forge
+branch: feat/embodied-engineering-forge
+head_sha: 0e9a75d9a50a5761ba7c3a1256b9cb14daa3d86b
+phase_id: merge
+overall_verdict: pass
+dimensions:
+  V0_primary_on_main:
+    result: pass
+    detail: "Primary worktree on main; gate worktree on feat/embodied-engineering-forge"
+  Q1_fmt:
+    result: pass
+    detail: "cargo fmt --all -- --check: clean"
+  Q2_clippy:
+    result: pass
+    detail: "cargo clippy --all-targets --all-features -- -D warnings: 0 errors (fixed pre-existing test_g5_baseline_capture.rs issues)"
+  Q3_tests:
+    result: pass
+    tests_run: 424
+    tests_fail: 0
+    detail: "424 gateway tests + 393 webshell tests passing"
+  Q4_svelte:
+    result: pass
+    detail: "svelte-check: 0 errors, 12 warnings"
+  S1_security:
+    result: pass
+    findings:
+      - id: S1-MEDIUM-ENTEREDSPAN
+        severity: MEDIUM
+        status: FIXED
+        description: "!Send EnteredSpan held across .await in git_comms::run_push"
+        fix: "Replaced .entered() with tracing::info! + extracted auth_present bool before first .await"
+        commit: 0e9a75d9a50a5761ba7c3a1256b9cb14daa3d86b
+  S2_supply_chain:
+    result: pass
+    detail: "cargo deny check: clean (2 Dependabot alerts on default branch pre-exist, unrelated)"
+  S3_laex:
+    result: n/a
+    detail: "No new crypto primitives or auth surfaces introduced in EEF E3"
+  I1_rebase:
+    result: pass
+    detail: "Branch rebased onto github/main (ea7342d); 0 commits main-ahead after rebase"
+  I2_conflicts:
+    result: pass
+    detail: "6 conflict hunks resolved: code_comms.rs (fmt), code_routes.rs (fmt), stores.ts (voiceEnabled union-add), server.rs (exec_tool_defs union-add), Cargo.toml (proptest union-add)"
+  I3_build:
+    result: pass
+    detail: "cargo build --release: clean, 2m34s"
+  N1_northstar:
+    result: pass
+    pillar: "P1 — E2E Engineering from Webshell UI"
+    detail: "northstar_lineage present in plan; git-and-pr closes the git workflow gate"
+  N2_chain:
+    result: pass
+    detail: "Chain concrete: PR create + review flow + GitOpsPanel = operator can ship from webshell without terminal"
+  D1_docs:
+    result: pass
+    detail: "All public items documented; no missing_docs violations"
+  D2_plan:
+    result: pass
+    detail: "Plan reflects actual scope; phases 1-6 completed for EEF E3"
+  V1_pyramid:
+    result: pass
+    suites:
+      unit: "git_comms_integration.rs (unit-level tool tests)"
+      integration: "git_comms_integration.rs (full git operations)"
+      property: "property_git_safety.rs (branch name + cwd sanitization)"
+      e2e: "e3.spec.ts Playwright (8/8 passing)"
+      regression: "test_g1_sanitization_control.rs (18 security regression tests)"
+      smoke: "git_routes::tests (5 auth/response smoke tests)"
+  V2_smoke:
+    result: pass
+    detail: "cargo build --release: binary produced successfully"
+  V3_e2e:
+    result: pass
+    detail: "e3.spec.ts: 8/8 Playwright tests passing at 8.9s"
+notes:
+  - "EEF E2+E3 merged to main as ea7342d before gate completion; gate fix commit (0e9a75d) pushed separately"
+  - "test_g5_baseline_capture.rs clippy errors were pre-existing on main; fixed as part of this gate"
+  - "lightarchitects-cli broken build (Commands::Claude) resolved naturally — gateway-action-audit-claude-runtime fully landed"
