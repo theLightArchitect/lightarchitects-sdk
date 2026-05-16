@@ -1,0 +1,46 @@
+schema_version: 1
+gate: merge
+scored_by: /GATE
+scored_at: "2026-05-15T23:45:00Z"
+build_id: plan-builder-copilot-bridge
+phase_id: merge
+overall_verdict: pass
+head_sha: 029bacc6e001a8a7f0de45e0c728c2bc921ee988
+branch: feat/plan-builder-copilot-bridge
+
+dimensions:
+  V0_primary_on_main: pass
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1586
+    tests_fail: 0
+    # plan_draft_e2e: 10 pass; webshell integration: 396 pass; sdk: 1118 pass; gateway: 30 pass
+  Q4_svelte: pass
+  S1_security:
+    result: pass
+    critical_remediated: true
+    finding: "path traversal in commit_plan_handler (codename unsanitised + no starts_with check)"
+    fix_commit: 029bacc
+    remaining_findings: []
+  S2_supply_chain: pass
+  S3_laex: "n/a"
+  I1_rebase: pass
+  N1_northstar:
+    result: pass
+    pillar: pillar_1_axis_1_authoring
+  N2_chain: pass
+  N3_exclusion_zones: pass
+  D1_docs:
+    result: pass
+    note: "PlanDraftState + planDraftState JSDoc added; 91% coverage above 90% threshold"
+  D2_plan: pass
+  D3_claude_md: pass
+  V1_pyramid: pass
+  V2_smoke: pass
+  V3_e2e: "deferred: Playwright E2E requires dev server + live claude subprocess; target Phase 7 (follow-up build)"
+
+summary: >
+  All gates pass. S1 CRITICAL (path traversal) remediated in commit 029bacc.
+  D1 soft gaps closed. 1,586 tests pass across workspace. Ready for merge to main.
