@@ -96,6 +96,7 @@ notify = "6"
 dirs-next = "2.0"
 dashmap = "6"
 futures-util = "0.3"
+tokio-util = { version = "0.7", features = ["rt"] }
 tokio-tungstenite = "0.26"
 libc = "0.2"
 anyhow = "1"

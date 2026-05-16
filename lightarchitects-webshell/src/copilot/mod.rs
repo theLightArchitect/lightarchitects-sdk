@@ -1199,10 +1199,14 @@ fn push_copilot_chunk(store: &crate::events::GlobalEventStore, pid: u32, text: &
 /// Returns [`PlanDraftError`] on spawn failure or I/O error. Runtime
 /// errors (timeouts, subprocess non-zero exit) are sent over `tx` as
 /// `PlanDraftEvent::Error` and then `Ok(())` is returned.
+///
+/// `cancel` is checked on each iteration; when triggered (client disconnect)
+/// the subprocess is killed and [`PlanDraftError::CancelledByClient`] is returned.
 pub async fn spawn_plan_draft(
     args: PlanDraftArgs,
-    tx: tokio::sync::mpsc::Sender<crate::events::types::PlanDraftEvent>,
+    tx: tokio::sync::broadcast::Sender<crate::events::types::PlanDraftEvent>,
     global_store: Option<crate::events::GlobalEventStore>,
+    cancel: tokio_util::sync::CancellationToken,
 ) -> Result<(), crate::events::types::PlanDraftError> {
     use crate::events::types::{PlanDraftError, PlanDraftEvent};
 
@@ -1229,9 +1233,10 @@ pub async fn spawn_plan_draft(
     c.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null());
 
-    let mut child = c
-        .spawn()
-        .map_err(|e| PlanDraftError::SubprocessSpawnFailed(format!("claude spawn: {e}")))?;
+    let mut child = c.spawn().map_err(|_| {
+        // Opaque spawn error — internal path redacted from all responses.
+        PlanDraftError::SubprocessSpawnFailed("copilot unavailable".into())
+    })?;
 
     let stdout = child
         .stdout
@@ -1240,68 +1245,57 @@ pub async fn spawn_plan_draft(
     let mut reader = tokio::io::BufReader::new(stdout).lines();
     let mut iteration: u8 = 1;
 
-    while let Some(line) = reader
-        .next_line()
-        .await
-        .map_err(|e| PlanDraftError::IoError(format!("read stdout: {e}")))?
-    {
-        let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
-            continue;
-        };
+    loop {
+        tokio::select! {
+            // Cancelled by client disconnect.
+            () = cancel.cancelled() => {
+                let _ = child.kill().await;
+                return Err(PlanDraftError::CancelledByClient);
+            }
+            line = reader.next_line() => {
+                let Some(line) = line.map_err(|_| PlanDraftError::IoError("read error".into()))? else {
+                    break;
+                };
+                let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
+                    continue;
+                };
+                if val["type"].as_str() != Some("content_block_delta") { continue; }
+                let Some(delta) = val.get("delta") else { continue; };
+                if delta["type"].as_str() != Some("text_delta") { continue; }
+                let Some(text) = delta["text"].as_str() else { continue; };
 
-        if val["type"].as_str() != Some("content_block_delta") {
-            continue;
-        }
-        let Some(delta) = val.get("delta") else {
-            continue;
-        };
-        if delta["type"].as_str() != Some("text_delta") {
-            continue;
-        }
-        let Some(text) = delta["text"].as_str() else {
-            continue;
-        };
+                if text.contains("## Self-Review") {
+                    iteration = iteration.saturating_add(1);
+                    let _ = tx.send(PlanDraftEvent::IterationStart { iteration });
+                }
+                if text.contains("validation_status: VALIDATED") {
+                    let verdict = crate::events::types::ReviewVerdict {
+                        validation_status: "VALIDATED".into(),
+                        iteration,
+                        summary: Some("Plan validated by EVA self-review".into()),
+                    };
+                    let _ = tx.send(PlanDraftEvent::VerdictBlock { verdict });
+                }
 
-        if text.contains("## Self-Review") {
-            iteration = iteration.saturating_add(1);
-            let _ = tx.send(PlanDraftEvent::IterationStart { iteration }).await;
-        }
-        if text.contains("validation_status: VALIDATED") {
-            let verdict = crate::events::types::ReviewVerdict {
-                validation_status: "VALIDATED".into(),
-                iteration,
-                summary: Some("Plan validated by EVA self-review".into()),
-            };
-            let _ = tx.send(PlanDraftEvent::VerdictBlock { verdict }).await;
-        }
-
-        if let Some(ref store) = global_store {
-            push_copilot_chunk(store, child.id().unwrap_or(0), text);
-        }
-        if tx
-            .send(PlanDraftEvent::TextChunk {
-                text: text.to_owned(),
-            })
-            .await
-            .is_err()
-        {
-            let _ = child.kill().await;
-            return Ok(());
+                if let Some(ref store) = global_store {
+                    push_copilot_chunk(store, child.id().unwrap_or(0), text);
+                }
+                // broadcast::send errors when zero receivers — that's fine; continue.
+                let _ = tx.send(PlanDraftEvent::TextChunk { text: text.to_owned() });
+            }
         }
     }
 
     let status = child
         .wait()
         .await
-        .map_err(|e| PlanDraftError::IoError(e.to_string()))?;
+        .map_err(|_| PlanDraftError::IoError("wait error".into()))?;
     if status.success() {
-        let _ = tx.send(PlanDraftEvent::Done { codename }).await;
+        let _ = tx.send(PlanDraftEvent::Done { codename });
     } else {
-        let _ = tx
-            .send(PlanDraftEvent::Error {
-                message: "Plan draft subprocess exited with error".into(),
-            })
-            .await;
+        let _ = tx.send(PlanDraftEvent::Error {
+            message: "plan draft failed".into(),
+        });
     }
     Ok(())
 }

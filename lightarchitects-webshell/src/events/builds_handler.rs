@@ -853,7 +853,7 @@ pub async fn draft_plan_handler(
 
     let sid_str = mint_session_id();
     let Ok(session_id) = uuid::Uuid::parse_str(&sid_str) else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, "uuid mint failed").into_response();
+        return (StatusCode::INTERNAL_SERVER_ERROR, "session mint failed").into_response();
     };
 
     let codename = req
@@ -865,10 +865,17 @@ pub async fn draft_plan_handler(
         .collect::<Vec<_>>()
         .join("-");
 
-    let (tx, _rx) = tokio::sync::mpsc::channel(64);
-    state.plan_draft_sessions.insert(session_id, tx.clone());
+    // broadcast::channel — multiple SSE subscribers (browser refresh safety).
+    // Capacity 256: matches GlobalEventStore BROADCAST_CAP; lag unlikely at
+    // <1 event/100ms typical plan-draft throughput.
+    let (tx, _rx) = tokio::sync::broadcast::channel(256);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    state
+        .plan_draft_sessions
+        .insert(session_id, (tx.clone(), cancel.clone()));
 
     let store = state.global_event_store.clone();
+    let sessions = state.plan_draft_sessions.clone();
     let desc = req.description.clone();
     let ns = req.northstar.clone();
     let repo = req.repository.clone();
@@ -876,7 +883,7 @@ pub async fn draft_plan_handler(
     let tier = req.tier.clone();
 
     tokio::spawn(async move {
-        let _ = crate::copilot::spawn_plan_draft(
+        let result = crate::copilot::spawn_plan_draft(
             crate::copilot::PlanDraftArgs {
                 description: desc,
                 northstar: ns,
@@ -887,8 +894,15 @@ pub async fn draft_plan_handler(
             },
             tx,
             Some(store),
+            cancel,
         )
         .await;
+        if let Err(e) = result {
+            // Opaque error — do NOT surface internal details to the client.
+            // Full detail goes to tracing for operator visibility only.
+            tracing::warn!(session=%session_id, error=%e, "plan draft subprocess error");
+        }
+        sessions.remove(&session_id);
     });
 
     let envelope = PlanDraftResponseEnvelope {
@@ -901,22 +915,70 @@ pub async fn draft_plan_handler(
 
 /// `GET /api/builds/plan/draft-stream/:session_id` — SSE stream for a plan draft.
 ///
-/// Phase 3 stub — returns 501 until Phase 4 refactors `plan_draft_sessions`
-/// from `mpsc::Sender` to `broadcast::Sender` to support multiple SSE
-/// subscribers per draft session (browser refresh safety).
+/// Subscribes to the per-session `broadcast::Sender` and fans each
+/// [`PlanDraftEvent`] out as a JSON `data:` line. Supports multiple concurrent
+/// subscribers (browser refresh safety). Cancels the subprocess on disconnect.
 pub async fn plan_draft_stream_handler(
     axum::extract::State(state): axum::extract::State<crate::server::AppState>,
     axum::extract::Path(session_id): axum::extract::Path<uuid::Uuid>,
 ) -> impl axum::response::IntoResponse {
     use axum::http::StatusCode;
+    use axum::response::sse::{Event, KeepAlive, Sse};
 
-    if !state.plan_draft_sessions.contains_key(&session_id) {
-        return (StatusCode::NOT_FOUND, "No draft session found").into_response();
+    // RAII guard: cancels the CancellationToken when dropped (client disconnect).
+    struct CancelOnDrop(tokio_util::sync::CancellationToken);
+    impl Drop for CancelOnDrop {
+        fn drop(&mut self) {
+            self.0.cancel();
+        }
     }
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        "SSE stream — broadcast refactor in Phase 4",
-    )
+
+    let Some(entry) = state.plan_draft_sessions.get(&session_id) else {
+        return (StatusCode::NOT_FOUND, "No draft session found").into_response();
+    };
+    let rx = entry.0.subscribe();
+    let cancel = entry.1.clone();
+    drop(entry); // release DashMap guard before await
+
+    // Build an SSE stream via unfold over the broadcast receiver.
+    // Terminates after forwarding a Done or Error event.
+    let stream = futures_util::stream::unfold((rx, false), |(mut rx, done)| async move {
+        if done {
+            return None;
+        }
+        match rx.recv().await {
+            Ok(event) => {
+                let terminal = matches!(
+                    event,
+                    crate::events::types::PlanDraftEvent::Done { .. }
+                        | crate::events::types::PlanDraftEvent::Error { .. }
+                );
+                let data = serde_json::to_string(&event).unwrap_or_default();
+                let sse = Ok::<Event, std::convert::Infallible>(Event::default().data(data));
+                Some((sse, (rx, terminal)))
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                let data = r#"{"type":"lag","message":"subscriber lagged — reconnect"}"#;
+                let sse = Ok(Event::default().event("lag").data(data));
+                Some((sse, (rx, false)))
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => None,
+        }
+    });
+
+    // Cancel the subprocess when the client disconnects (axum drops the stream).
+    let cancel_on_drop = CancelOnDrop(cancel);
+    let stream = futures_util::stream::StreamExt::chain(
+        stream,
+        futures_util::stream::once(async move {
+            drop(cancel_on_drop);
+            // This item is never yielded; chain just ensures drop fires.
+            std::future::pending::<Result<Event, std::convert::Infallible>>().await
+        }),
+    );
+
+    Sse::new(stream)
+        .keep_alive(KeepAlive::default())
         .into_response()
 }
 

@@ -173,12 +173,22 @@ pub struct AppState {
     pub global_event_store: events::GlobalEventStore,
     /// In-flight plan draft sessions — keyed by pre-minted session `UUID`.
     ///
-    /// Each entry is the `mpsc::Sender` through which the subprocess streams
-    /// [`PlanDraftEvent`]s to the `SSE` handler. Entries are inserted on
-    /// `POST /api/builds/plan/draft` and removed on `Done`/`Error` or when
-    /// the client closes the `SSE` connection.
-    pub plan_draft_sessions:
-        Arc<DashMap<uuid::Uuid, tokio::sync::mpsc::Sender<crate::events::types::PlanDraftEvent>>>,
+    /// Broadcast sender per in-flight plan draft session.
+    ///
+    /// `broadcast::Sender` allows multiple `SSE` subscribers (browser tab refresh
+    /// safety). Each entry is inserted on `POST /api/builds/plan/draft` and
+    /// removed when `Done`/`Error` fires or the session TTL expires.
+    /// The paired [`tokio_util::sync::CancellationToken`] lets the `SSE` handler
+    /// signal subprocess cancellation on client disconnect.
+    pub plan_draft_sessions: Arc<
+        DashMap<
+            uuid::Uuid,
+            (
+                tokio::sync::broadcast::Sender<crate::events::types::PlanDraftEvent>,
+                tokio_util::sync::CancellationToken,
+            ),
+        >,
+    >,
 }
 
 impl AppState {
