@@ -715,38 +715,15 @@ async fn run_native_turn(message: &str, session: &BuildSession) -> Result<String
     }
 
     let raw = String::from_utf8_lossy(&output.stdout);
-    // Strip tracing log lines (start with ANSI escape \x1b[2m or timestamp pattern)
-    // and ANSI escape codes from the output. lÆx0 logs to stdout which pollutes the response.
-    let text: String = raw
-        .lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            // Skip tracing-style log lines (ISO timestamp + level)
-            if trimmed.starts_with('\x1b') && trimmed.contains("INFO") {
-                return false;
-            }
-            if trimmed.starts_with('\x1b') && trimmed.contains("WARN") {
-                return false;
-            }
-            if trimmed.starts_with('\x1b') && trimmed.contains("DEBUG") {
-                return false;
-            }
-            if trimmed.starts_with('\x1b') && trimmed.contains("ERROR") {
-                return false;
-            }
-            // Skip lines that are purely ANSI-escaped timestamps
-            if trimmed.starts_with("\x1b[2m2") {
-                return false;
-            }
-            !trimmed.is_empty()
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_owned();
 
+    // Phase A — parse NDJSON lines; return result text if found.
+    if let Some(text) = parse_native_ndjson(&raw, session) {
+        return Ok(text);
+    }
+
+    // Fallback — no NDJSON result line found; strip tracing lines and return raw text.
+    let text = filter_tracing_lines(&raw);
     if text.is_empty() {
-        // Try stderr as fallback (some output may go there)
         let stderr_text = String::from_utf8_lossy(&output.stderr).trim().to_owned();
         if !stderr_text.is_empty() {
             return Ok(stderr_text);
@@ -755,6 +732,93 @@ async fn run_native_turn(message: &str, session: &BuildSession) -> Result<String
     }
 
     Ok(text)
+}
+
+/// Parse NDJSON lines from CLI stdout, dispatch [`WebEvent`]s, and return the
+/// result text from the `{"type":"result","text":"..."}` line.
+///
+/// Returns `None` if no result line is present (caller should fall back to
+/// the legacy tracing-line filter).
+fn parse_native_ndjson(raw: &str, session: &BuildSession) -> Option<String> {
+    let build_id = session.build_id.to_string();
+    let mut result_text: Option<String> = None;
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || !trimmed.starts_with('{') {
+            continue;
+        }
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+            continue;
+        };
+
+        match val["type"].as_str() {
+            Some("result") => {
+                result_text = val["text"].as_str().map(ToOwned::to_owned);
+            }
+            Some("context") => {
+                #[allow(clippy::cast_possible_truncation)]
+                let usage_pct = val["usage_pct"].as_f64().unwrap_or(0.0).clamp(0.0, 1.0) as f32;
+                let _ = session
+                    .event_tx
+                    .send(crate::events::WebEvent::ContextStatus(
+                        crate::events::types::ContextStatusEvent {
+                            usage_pct,
+                            level: val["level"].as_str().map(ToOwned::to_owned),
+                            budget: val["budget"].as_u64().unwrap_or(0),
+                            used: val["used"].as_u64().unwrap_or(0),
+                        },
+                    ));
+            }
+            Some(kind @ ("tool_call" | "thinking")) => {
+                let summary = if kind == "tool_call" {
+                    val["tool_name"].as_str().map(ToOwned::to_owned)
+                } else {
+                    val["text"]
+                        .as_str()
+                        .map(|t| t.chars().take(120).collect::<String>())
+                };
+                let _ = session
+                    .event_tx
+                    .send(crate::events::WebEvent::CopilotActivity(
+                        crate::events::types::CopilotActivityEvent {
+                            build_id: build_id.clone(),
+                            kind: kind.to_owned(),
+                            summary,
+                            raw: val,
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                        },
+                    ));
+            }
+            _ => {}
+        }
+    }
+
+    result_text
+}
+
+/// Strip tracing log lines and NDJSON event lines from raw CLI stdout.
+fn filter_tracing_lines(raw: &str) -> String {
+    raw.lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            if trimmed.starts_with('\x1b')
+                && (trimmed.contains("INFO")
+                    || trimmed.contains("WARN")
+                    || trimmed.contains("DEBUG")
+                    || trimmed.contains("ERROR"))
+            {
+                return false;
+            }
+            if trimmed.starts_with("\x1b[2m2") || trimmed.starts_with('{') {
+                return false;
+            }
+            !trimmed.is_empty()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_owned()
 }
 
 /// Spawn a persistent agent subprocess for the `LightarchitectsNative` backend.
