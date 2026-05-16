@@ -50,7 +50,7 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::{broadcast, mpsc};
-use tracing::info;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::{auth, server::AppState};
@@ -267,10 +267,19 @@ async fn drive_reader(
                 guard.as_ref().map(|h| h.permission_queue.clone())
             };
             if let Some((_, tx)) = pq.and_then(|q| q.remove(&request_id)) {
-                let _ = tx.send(approved);
+                // Check send result: if the receiver was dropped (bridge timed out),
+                // the CLI already denied — report deny to the browser rather than lying.
+                let send_ok = tx.send(approved).is_ok();
+                if !send_ok {
+                    warn!(
+                        %request_id,
+                        "permission oneshot receiver dropped — bridge timed out; reporting deny"
+                    );
+                }
+                let actually_approved = send_ok && approved;
                 let resp = super::protocol::ControlResponse::PermissionResolved {
                     request_id,
-                    approved,
+                    approved: actually_approved,
                 };
                 let _ = outgoing_tx
                     .send(axum::extract::ws::Message::Text(
