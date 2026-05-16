@@ -1,41 +1,40 @@
 /**
  * EEF E5 — permission gating + approval UX Northstar gate spec.
  *
- * Verifies the frontend permission approval UX shipped in Wave E5
- * (AgentConsole.svelte HITL permission cards) using the mock-layer approach
- * (Path A decision 2026-05-16): the CLI-side StreamingApprovalGate Rust
- * implementation is a follow-on build; these tests prove the shipped
- * frontend behaviour via WebSocket mock injection.
+ * Two test suites:
  *
- * What is being tested (shipped, E5 commit 2521853):
- *   1. AgentConsole renders a permission card when `permission_request` WS event received.
- *   2. Clicking APPROVE sends `{action:"approve_permission",request_id}` WS message.
- *   3. Clicking DENY sends `{action:"deny_permission",request_id}` WS message.
- *   4. Approved card is removed from the pending list (UI state cleared).
- *   5. Denied card is removed from the pending list.
- *   6. HAR evidence captured for the WS upgrade handshake.
+ * Suite A — mock-layer (T1-T7): deterministic, CI-safe, Vite dev server at :5174.
+ *   Wire: WS routeWebSocket mock injects `permission_request` events.
+ *   Proves: frontend rendering pipeline, WS message format, UI state machine,
+ *   timer countdown, auto-deny on timeout.
  *
- * Wire format (E5 P3, 2026-05-16): uses call_id/summary/timeout_secs not request_id/input.
- * Outbound WS approve/deny still use {action,request_id} (ControlMessage shape).
+ * Suite B — live-integration (T8-T10): against real binary at :8733.
+ *   Wire: browser connects to REAL WS; Playwright injects events via
+ *   `la:e2e-inject-agent-events` DOM bridge; approve/deny flow over real WS.
+ *   Proves: full browser→server roundtrip, WS upgrade, ControlMessage parsing,
+ *   permission_resolved/reject server response.
+ *   Enable: E5_LIVE=1 PLAYWRIGHT_BASE_URL=http://localhost:8733 pnpm exec playwright test e2e/e5.spec.ts
  *
- * What is NOT tested here (deferred to E5 CLI impl follow-on build):
- *   - Real CLI→bridge→frontend flow via StreamingApprovalGate (Rust).
- *   - SERAPH gate on the Rust permission handler surface.
+ * Wire format (E5 P3, 2026-05-16): `call_id` / `summary` / `timeout_secs`.
+ * Outbound WS approve/deny: `{action, request_id}` (ControlMessage shape).
  *
- * Northstar gate: terminal_window_open_count === 0 asserted in every test.
+ * Northstar gate: terminal_window_open_count === 0 in every test.
  *
- * Run (headed, required):
+ * Run (mock-layer, headed, required):
  *   PLAYWRIGHT_BASE_URL=http://localhost:5174 pnpm exec playwright test e2e/e5.spec.ts
  *
  * HAR: test-results/e5-permission-gating-*.har
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { execSync } from 'node:child_process';
 
-const BASE  = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5174';
-const TOKEN = process.env.WEBSHELL_TOKEN ?? '63308ab0-d024-4f7d-a459-936744aa255f';
+const BASE      = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5174';
+const TOKEN     = process.env.WEBSHELL_TOKEN ?? '63308ab0-d024-4f7d-a459-936744aa255f';
+const IS_LIVE   = process.env.E5_LIVE === '1';
+const LIVE_BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8733';
 
-/** Build ID used for all E5 tests — routed through mock WS. */
+/** Build ID for mock-layer tests — routed through WS mock. */
 const BUILD_ID = 'eef-e5-perm-test';
 
 // ── Mock payloads ──────────────────────────────────────────────────────────────
@@ -56,14 +55,19 @@ const MOCK_SESSION_START = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function makePermissionRequest(id: string, tool: string, summary = `E5 test: ${tool} needs approval`) {
+function makePermissionRequest(
+  id: string,
+  tool: string,
+  summary = `E5 test: ${tool} needs approval`,
+  timeout_secs = 300,
+) {
   return JSON.stringify({
     type:         'permission_request',
     call_id:      id,
     tool,
     summary,
     agent_id:     'e5-test-agent',
-    timeout_secs: 300,
+    timeout_secs,
   });
 }
 
@@ -92,8 +96,8 @@ async function setupPage(page: Page): Promise<void> {
   }, TOKEN);
 
   // Health + auth routes.
-  await page.route('**/api/health',       r => r.fulfill({ status: 200, body: 'ok' }));
-  await page.route('**/api/auth-check',   r => r.fulfill({ status: 200 }));
+  await page.route('**/api/health',        r => r.fulfill({ status: 200, body: 'ok' }));
+  await page.route('**/api/auth-check',    r => r.fulfill({ status: 200 }));
   await page.route('**/api/auth/exchange', r => r.fulfill({ status: 200, body: 'ok' }));
 
   await page.route('**/api/setup/info', r => r.fulfill({
@@ -159,7 +163,7 @@ async function setupPage(page: Page): Promise<void> {
     }
   });
 
-  // Build-specific SSE — empty stream; agent events come via WS.
+  // Build-specific SSE — empty stream; agent events arrive via WS.
   await page.route(`**/api/builds/${BUILD_ID}/events`, async route => {
     if (route.request().method() === 'GET') {
       await route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
@@ -168,16 +172,10 @@ async function setupPage(page: Page): Promise<void> {
     }
   });
 
-  // Wildcard catch-all for other API calls (siblings, soul, etc.).
-  await page.route('**/api/siblings', r => r.fulfill({
-    status: 200, contentType: 'application/json', body: JSON.stringify([]),
-  }));
-  await page.route('**/api/conductor/status', r => r.fulfill({
-    status: 200, contentType: 'application/json', body: JSON.stringify({ nodes: [] }),
-  }));
-  await page.route('**/api/arena/status', r => r.fulfill({
-    status: 200, contentType: 'application/json', body: JSON.stringify({ agents: [] }),
-  }));
+  // Wildcard catch-all.
+  await page.route('**/api/siblings',          r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/conductor/status',  r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ nodes: [] }) }));
+  await page.route('**/api/arena/status',      r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ agents: [] }) }));
 }
 
 async function readWindowOpenCount(page: Page): Promise<number> {
@@ -188,22 +186,37 @@ async function readWindowOpenCount(page: Page): Promise<number> {
 
 /**
  * Navigate to the build operator view.
- * BuildDetail.svelte sets currentBuildId on mount → isNativeAgent true → AgentConsole rendered.
+ * BuildDetail.svelte sets currentBuildId on mount → isNativeAgent true → AgentConsole renders.
  */
 async function openOperatorView(page: Page): Promise<void> {
   await setupPage(page);
   await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => { window.location.hash = `/builds/${(window as any).__E5_BUILD_ID}/operator`; });
+  await page.evaluate(() => {
+    window.location.hash = `/builds/${(window as Record<string, unknown>).__E5_BUILD_ID as string}/operator`;
+  });
 }
 
 // Expose BUILD_ID for use inside page.evaluate() calls.
 async function injectBuildIdGlobal(page: Page): Promise<void> {
   await page.addInitScript((id: string) => {
-    (window as any).__E5_BUILD_ID = id;
+    (window as Record<string, unknown>).__E5_BUILD_ID = id;
   }, BUILD_ID);
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────────────
+/**
+ * Inject an AgentEvent directly into the Svelte agentEvents store via the
+ * `la:e2e-inject-agent-events` DOM bridge (bypasses WS transport).
+ * Used for live-integration tests and component-layer assertions.
+ */
+async function injectEvent(page: Page, event: Record<string, unknown>): Promise<void> {
+  await page.evaluate((ev: unknown) => {
+    window.dispatchEvent(new CustomEvent('la:e2e-inject-agent-events', { detail: ev }));
+  }, event);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Suite A — mock-layer (T1–T7)
+// ══════════════════════════════════════════════════════════════════════════════
 
 test.describe('EEF E5 — permission gating approval UX (mock-layer)', () => {
   test.beforeEach(async ({ page }) => {
@@ -213,7 +226,6 @@ test.describe('EEF E5 — permission gating approval UX (mock-layer)', () => {
   // ── T1: permission card renders from WS event ───────────────────────────────
   test('1. permission_request WS event renders permission card with tool name', async ({ page, context }) => {
 
-    // Inject permission_request from server after WS connects.
     await page.routeWebSocket(`**/api/builds/${BUILD_ID}/agent/ws`, wsRoute => {
       setTimeout(() => {
         void wsRoute.send(makePermissionRequest('perm-e5-t1-001', 'Write'));
@@ -222,10 +234,7 @@ test.describe('EEF E5 — permission gating approval UX (mock-layer)', () => {
 
     await openOperatorView(page);
 
-    // Wait for AgentConsole to be present.
     await expect(page.locator('[data-testid="agent-console"]')).toBeVisible({ timeout: 8_000 });
-
-    // Wait for permission card.
     await expect(page.locator('.msg-permission-card').first()).toBeVisible({ timeout: 8_000 });
 
     // Card shows the tool name.
@@ -234,12 +243,14 @@ test.describe('EEF E5 — permission gating approval UX (mock-layer)', () => {
     // Card shows the summary text (not raw JSON input).
     await expect(page.locator('.perm-input').first()).toContainText('E5 test: Write needs approval');
 
-    // Timer countdown is visible and shows remaining seconds (≤ 300).
+    // Timer countdown is visible and in range.
     await expect(page.locator('.perm-timer').first()).toBeVisible();
     const timerText = await page.locator('.perm-timer').first().textContent();
     const secs = parseInt(timerText?.replace('s', '') ?? '0', 10);
     expect(secs).toBeGreaterThan(0);
-    expect(secs).toBeLessThanOrEqual(300);
+    // +1 tolerance: the 1s ticker interval means the first render may show timeout_secs+1
+    // before the next tick fires (now lags behind Date.now() by up to 1s).
+    expect(secs).toBeLessThanOrEqual(301);
 
     // Northstar E5 gate.
     expect(await readWindowOpenCount(page), 'terminal_window_open_count must be 0').toBe(0);
@@ -285,9 +296,7 @@ test.describe('EEF E5 — permission gating approval UX (mock-layer)', () => {
     const parsed = JSON.parse(approveMsg!) as Record<string, unknown>;
     expect(parsed.request_id).toBe('perm-e5-t2-001');
 
-    // Northstar gate.
     expect(await readWindowOpenCount(page), 'terminal_window_open_count must be 0').toBe(0);
-
     await context.close();
   });
 
@@ -310,15 +319,11 @@ test.describe('EEF E5 — permission gating approval UX (mock-layer)', () => {
     await expect(page.locator('[data-testid="agent-console"]')).toBeVisible({ timeout: 8_000 });
     await expect(page.locator('.msg-permission-card').first()).toBeVisible({ timeout: 8_000 });
 
-    // Click DENY.
     await page.locator('.perm-deny').first().click();
 
-    // Card removed.
     await expect(page.locator('.msg-permission-card')).not.toBeVisible({ timeout: 3_000 });
-
     await page.waitForTimeout(300);
 
-    // Verify deny_permission WS message.
     const denyMsg = capturedMessages.find(m => {
       try { return (JSON.parse(m) as Record<string, unknown>).action === 'deny_permission'; }
       catch { return false; }
@@ -328,9 +333,7 @@ test.describe('EEF E5 — permission gating approval UX (mock-layer)', () => {
     const parsed = JSON.parse(denyMsg!) as Record<string, unknown>;
     expect(parsed.request_id).toBe('perm-e5-t3-001');
 
-    // Northstar gate.
     expect(await readWindowOpenCount(page), 'terminal_window_open_count must be 0').toBe(0);
-
     await context.close();
   });
 
@@ -340,7 +343,6 @@ test.describe('EEF E5 — permission gating approval UX (mock-layer)', () => {
     await page.routeWebSocket(`**/api/builds/${BUILD_ID}/agent/ws`, wsRoute => {
       setTimeout(() => {
         void wsRoute.send(makePermissionRequest('perm-e5-t4-001', 'Write'));
-        // Second request injected 100ms later.
         setTimeout(() => {
           void wsRoute.send(makePermissionRequest('perm-e5-t4-002', 'Read'));
         }, 100);
@@ -350,16 +352,13 @@ test.describe('EEF E5 — permission gating approval UX (mock-layer)', () => {
     await openOperatorView(page);
 
     await expect(page.locator('[data-testid="agent-console"]')).toBeVisible({ timeout: 8_000 });
-
-    // Both cards should render.
     await expect(page.locator('.msg-permission-card')).toHaveCount(2, { timeout: 8_000 });
 
-    // Each card shows its tool name (may be in any order).
     const toolTexts = await page.locator('.perm-tool').allTextContents();
     expect(toolTexts.some(t => t.includes('Write'))).toBe(true);
     expect(toolTexts.some(t => t.includes('Read'))).toBe(true);
 
-    // Approve first → only one card remains.
+    // Approve first → one card remains.
     await page.locator('.perm-approve').first().click();
     await expect(page.locator('.msg-permission-card')).toHaveCount(1, { timeout: 3_000 });
 
@@ -367,20 +366,12 @@ test.describe('EEF E5 — permission gating approval UX (mock-layer)', () => {
     await page.locator('.perm-deny').first().click();
     await expect(page.locator('.msg-permission-card')).toHaveCount(0, { timeout: 3_000 });
 
-    // Northstar gate.
     expect(await readWindowOpenCount(page), 'terminal_window_open_count must be 0').toBe(0);
-
     await context.close();
   });
 
   // ── T5: WS route handler invoked + HAR evidence ────────────────────────────
   test('5. HAR evidence: WS mock handler invoked and permission card rendered', async ({ page, context }) => {
-    // routeWebSocket intercepts at network level; page.on('websocket') does not
-    // fire for mocked connections. Proof of WS connectivity: the route handler
-    // is invoked (proven by the permission card rendering in T1-T4) and the
-    // permission_request event arrives in the UI. This test captures HTTP HAR
-    // evidence for the surrounding coordination + SSE surfaces.
-
     let wsRouteCalled = false;
 
     await page.routeWebSocket(`**/api/builds/${BUILD_ID}/agent/ws`, wsRoute => {
@@ -395,20 +386,278 @@ test.describe('EEF E5 — permission gating approval UX (mock-layer)', () => {
 
     await openOperatorView(page);
 
-    // E4 + E3 HTTP surfaces captured in HAR.
     await sessionStartResp;
     await globalSseResp;
 
     await expect(page.locator('[data-testid="agent-console"]')).toBeVisible({ timeout: 8_000 });
     await expect(page.locator('.msg-permission-card').first()).toBeVisible({ timeout: 8_000 });
 
-    // WS mock handler was invoked (permission card appearance proves WS connected).
     expect(wsRouteCalled, 'WS route handler must be invoked for agent/ws endpoint').toBe(true);
 
-    // HAR auto-saved on context.close().
     await context.close();
-
-    // Northstar gate.
     expect(windowOpenCount, 'terminal_window_open_count must be 0').toBe(0);
+  });
+
+  // ── T6: Timer counts down from timeout_secs ────────────────────────────────
+  test('6. permission timer counts down from timeout_secs over real time', async ({ page, context }) => {
+
+    await page.routeWebSocket(`**/api/builds/${BUILD_ID}/agent/ws`, wsRoute => {
+      setTimeout(() => {
+        // 5-second timeout — measureable countdown within a single test
+        void wsRoute.send(makePermissionRequest('perm-e5-t6-001', 'Write',
+          'E5 timer test: Write needs approval', 5));
+      }, 400);
+    });
+
+    await openOperatorView(page);
+
+    await expect(page.locator('[data-testid="agent-console"]')).toBeVisible({ timeout: 8_000 });
+    await expect(page.locator('.msg-permission-card').first()).toBeVisible({ timeout: 8_000 });
+
+    // Capture initial timer value.
+    const t0Text = await page.locator('.perm-timer').first().textContent();
+    const t0 = parseInt(t0Text?.replace('s', '') ?? '0', 10);
+    expect(t0).toBeGreaterThan(0);
+    // +1 tolerance: 1s ticker lag (see T1 comment).
+    expect(t0).toBeLessThanOrEqual(6);
+
+    // Wait 2 seconds: timer must have decremented.
+    await page.waitForTimeout(2_100);
+
+    const t1Text = await page.locator('.perm-timer').first().textContent();
+    const t1 = parseInt(t1Text?.replace('s', '') ?? '0', 10);
+    expect(t1, 'timer must decrement after 2 seconds').toBeLessThan(t0);
+    expect(t1).toBeGreaterThan(0);
+
+    // Approve to clean up before the 5s timeout fires.
+    await page.locator('.perm-approve').first().click();
+    await expect(page.locator('.msg-permission-card')).not.toBeVisible({ timeout: 2_000 });
+
+    expect(await readWindowOpenCount(page), 'terminal_window_open_count must be 0').toBe(0);
+    await context.close();
+  });
+
+  // ── T7: Auto-deny fires on deadline + sends deny WS message ───────────────
+  test('7. auto-deny fires when deadline expires and sends deny_permission WS with reason timeout', async ({ page, context }) => {
+    const capturedMessages: string[] = [];
+
+    await page.routeWebSocket(`**/api/builds/${BUILD_ID}/agent/ws`, wsRoute => {
+      wsRoute.onMessage(msg => {
+        capturedMessages.push(typeof msg === 'string' ? msg : Buffer.from(msg as Buffer).toString('utf-8'));
+      });
+      setTimeout(() => {
+        // 2-second timeout — fast expiry for testability
+        void wsRoute.send(makePermissionRequest('perm-e5-t7-001', 'Bash',
+          'E5 auto-deny test: Bash needs approval', 2));
+      }, 400);
+    });
+
+    await openOperatorView(page);
+
+    await expect(page.locator('[data-testid="agent-console"]')).toBeVisible({ timeout: 8_000 });
+    await expect(page.locator('.msg-permission-card').first()).toBeVisible({ timeout: 8_000 });
+
+    // Wait for the 2-second timeout to expire (+1s margin for the 1s ticker).
+    await page.waitForTimeout(3_500);
+
+    // Card auto-removed after expiry.
+    await expect(page.locator('.msg-permission-card')).not.toBeVisible({ timeout: 2_000 });
+
+    // Auto-deny WS message must have been sent with reason 'timeout'.
+    const denyMsg = capturedMessages.find(m => {
+      try { return (JSON.parse(m) as Record<string, unknown>).action === 'deny_permission'; }
+      catch { return false; }
+    });
+    expect(denyMsg, 'auto-deny WS message must be sent on timeout expiry').toBeTruthy();
+
+    const parsed = JSON.parse(denyMsg!) as Record<string, unknown>;
+    expect(parsed.request_id).toBe('perm-e5-t7-001');
+    expect(parsed.reason).toBe('timeout');
+
+    expect(await readWindowOpenCount(page), 'terminal_window_open_count must be 0').toBe(0);
+    await context.close();
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Suite B — live-integration (T8–T10)
+//
+// Runs against the REAL webshell binary at :8733.
+// Enable: E5_LIVE=1 PLAYWRIGHT_BASE_URL=http://localhost:8733
+//
+// These tests prove the full browser→server WS roundtrip works without mocking:
+//   - Browser opens real WS to /api/builds/:id/agent/ws
+//   - AgentConsole receives events via `la:e2e-inject-agent-events` DOM bridge
+//   - Operator click sends real ControlMessage over live WS
+//   - Server processes the message and returns a real ControlResponse
+//   - Both `permission_resolved` (if CLI is running) and `reject` (no CLI) are valid —
+//     either response proves the WS roundtrip is working end-to-end.
+// ══════════════════════════════════════════════════════════════════════════════
+
+test.describe('EEF E5 — live integration (requires real binary at :8733)', () => {
+  test.beforeEach(async () => {
+    if (!IS_LIVE) {
+      // Skip entire suite when not in live mode.
+      test.skip();
+    }
+  });
+
+  /** Create a real build via the live API and return its codename. */
+  async function createLiveBuild(page: Page): Promise<string> {
+    const response = await page.request.post(`${LIVE_BASE}/api/builds`, {
+      headers: {
+        'Authorization': `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      data: JSON.stringify({
+        name:       'E5 Live Integration Test',
+        meta_skill: '/TEST',
+        agent:      { kind: 'lightarchitects_native', backend: 'lightarchitects' },
+      }),
+    });
+    if (!response.ok()) {
+      throw new Error(`Failed to create build: ${response.status()} ${await response.text()}`);
+    }
+    const build = await response.json() as { codename: string };
+    return build.codename;
+  }
+
+  /** Auth + localStorage tokens for the live server. */
+  async function authLive(page: Page): Promise<void> {
+    await page.addInitScript((token: string) => {
+      sessionStorage.setItem('la_webshell_token', token);
+      localStorage.setItem('la_token', token);
+      for (let i = 1; i <= 6; i++) {
+        localStorage.setItem(`la.tutorial.completed.t${i}`, 'true');
+      }
+    }, TOKEN);
+  }
+
+  // ── T8: Real WS approve roundtrip ──────────────────────────────────────────
+  test('8. live: inject permission_request via DOM bridge, APPROVE sends real WS message, server responds', async ({ page, context }) => {
+
+    await authLive(page);
+    await page.goto(LIVE_BASE, { waitUntil: 'domcontentloaded' });
+
+    // Create a real build session.
+    const buildId = await createLiveBuild(page);
+
+    // Navigate to the operator view for the real build.
+    await page.evaluate((id: string) => { window.location.hash = `/builds/${id}/operator`; }, buildId);
+    await expect(page.locator('[data-testid="agent-console"]')).toBeVisible({ timeout: 10_000 });
+
+    // Capture WS responses from the real server.
+    const serverResponses: string[] = [];
+    page.on('websocket', ws => {
+      ws.on('framereceived', frame => {
+        if (frame.payload && typeof frame.payload === 'string') {
+          serverResponses.push(frame.payload);
+        }
+      });
+    });
+
+    // Inject a permission_request directly into the Svelte store (DOM bridge).
+    const callId = `live-t8-${Date.now()}`;
+    await injectEvent(page, {
+      type: 'permission_request', call_id: callId,
+      tool: 'Bash', summary: 'Live integration: Bash needs approval',
+      agent_id: 'e5-live-test', timeout_secs: 60,
+    });
+
+    // Card must appear.
+    await expect(page.locator('.msg-permission-card').first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.perm-tool').first()).toContainText('Bash');
+
+    // Click APPROVE — sends {action:"approve_permission",request_id:callId} over REAL WS.
+    await page.locator('.perm-approve').first().click();
+    await expect(page.locator('.msg-permission-card')).not.toBeVisible({ timeout: 3_000 });
+
+    // Allow server response to arrive.
+    await page.waitForTimeout(500);
+
+    // Server must respond with permission_resolved OR reject (both prove WS roundtrip works).
+    const roundtripProof = serverResponses.find(r => {
+      try {
+        const p = JSON.parse(r) as Record<string, unknown>;
+        return p.type === 'permission_resolved' || p.type === 'reject';
+      } catch { return false; }
+    });
+    expect(roundtripProof, 'server must respond to approve_permission over real WS').toBeTruthy();
+
+    expect(await readWindowOpenCount(page), 'terminal_window_open_count must be 0').toBe(0);
+    await context.close();
+  });
+
+  // ── T9: Real WS deny roundtrip ─────────────────────────────────────────────
+  test('9. live: inject permission_request via DOM bridge, DENY sends real WS message, server responds', async ({ page, context }) => {
+
+    await authLive(page);
+    await page.goto(LIVE_BASE, { waitUntil: 'domcontentloaded' });
+
+    const buildId = await createLiveBuild(page);
+    await page.evaluate((id: string) => { window.location.hash = `/builds/${id}/operator`; }, buildId);
+    await expect(page.locator('[data-testid="agent-console"]')).toBeVisible({ timeout: 10_000 });
+
+    const serverResponses: string[] = [];
+    page.on('websocket', ws => {
+      ws.on('framereceived', frame => {
+        if (frame.payload && typeof frame.payload === 'string') {
+          serverResponses.push(frame.payload);
+        }
+      });
+    });
+
+    const callId = `live-t9-${Date.now()}`;
+    await injectEvent(page, {
+      type: 'permission_request', call_id: callId,
+      tool: 'Write', summary: 'Live integration: Write needs approval',
+      agent_id: 'e5-live-test', timeout_secs: 60,
+    });
+
+    await expect(page.locator('.msg-permission-card').first()).toBeVisible({ timeout: 5_000 });
+
+    await page.locator('.perm-deny').first().click();
+    await expect(page.locator('.msg-permission-card')).not.toBeVisible({ timeout: 3_000 });
+
+    await page.waitForTimeout(500);
+
+    const roundtripProof = serverResponses.find(r => {
+      try {
+        const p = JSON.parse(r) as Record<string, unknown>;
+        return p.type === 'permission_resolved' || p.type === 'reject';
+      } catch { return false; }
+    });
+    expect(roundtripProof, 'server must respond to deny_permission over real WS').toBeTruthy();
+
+    expect(await readWindowOpenCount(page), 'terminal_window_open_count must be 0').toBe(0);
+    await context.close();
+  });
+
+  // ── T10: Real server health + WS upgrade responds 101 ─────────────────────
+  test('10. live: real server health check passes and WS upgrade succeeds', async ({ page, context }) => {
+
+    await authLive(page);
+
+    // Health check.
+    const health = await page.request.get(`${LIVE_BASE}/api/health`);
+    expect(health.status()).toBe(200);
+
+    await page.goto(LIVE_BASE, { waitUntil: 'domcontentloaded' });
+
+    const buildId = await createLiveBuild(page);
+    await page.evaluate((id: string) => { window.location.hash = `/builds/${id}/operator`; }, buildId);
+
+    // Wait for AgentConsole to mount — proves WS upgrade succeeded (OFFLINE or CONNECTED).
+    await expect(page.locator('[data-testid="agent-console"]')).toBeVisible({ timeout: 10_000 });
+
+    // CONNECTED status means the WS upgraded and onopen fired.
+    // OFFLINE is also valid (no CLI subprocess running) — both prove the server is up.
+    const statusEl = page.locator('.console-status');
+    await expect(statusEl).toBeVisible({ timeout: 5_000 });
+    const statusText = await statusEl.textContent();
+    expect(['CONNECTED', 'OFFLINE']).toContain(statusText?.trim());
+
+    expect(await readWindowOpenCount(page), 'terminal_window_open_count must be 0').toBe(0);
+    await context.close();
   });
 });

@@ -130,7 +130,12 @@ function isValidAgentEvent(parsed: Record<string, unknown>): parsed is import('.
     case 'heartbeat':
       return true;
     case 'permission_request':
-      return typeof parsed.request_id === 'string' && typeof parsed.tool === 'string';
+      return (
+        typeof parsed.call_id === 'string' &&
+        typeof parsed.tool === 'string' &&
+        typeof parsed.summary === 'string' &&
+        typeof parsed.timeout_secs === 'number'
+      );
     // ── Phase 5 TRUST hooks ──────────────────────────────────────────────
     case 'pick_classified':
       return typeof parsed.mode === 'string';

@@ -108,6 +108,21 @@
     pendingPermissions = pendingPermissions.filter(p => p.requestId !== requestId);
   }
 
+  // ── E2E injection bridge ─────────────────────────────────────────────────
+  // Playwright injects AgentEvent objects via `window.dispatchEvent(new CustomEvent(
+  //   'la:e2e-inject-agent-events', { detail: ev }))`. Bypasses WS transport for
+  // component-layer and live-integration tests.
+  $effect(() => {
+    function handleInject(e: Event) {
+      const ev = (e as CustomEvent).detail as AgentEvent | undefined;
+      if (ev && typeof ev.type === 'string') {
+        agentEvents.update(arr => [...arr, ev]);
+      }
+    }
+    window.addEventListener('la:e2e-inject-agent-events', handleInject);
+    return () => window.removeEventListener('la:e2e-inject-agent-events', handleInject);
+  });
+
   // ── Role injection (Governor / Worker / Default) ─────────────────────────
   // Loads canon prompts from the soul helix API and injects via SetSystemPrompt.
   // UI is ready; backend SetSystemPrompt variant (#161) must ship from
