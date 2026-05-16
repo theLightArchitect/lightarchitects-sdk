@@ -683,7 +683,7 @@ fn build_cors(port: u16) -> CorsLayer {
     let notify_header: HeaderName = HeaderName::from_static("x-la-notify-token");
     CorsLayer::new()
         .allow_origin(allowed_origins)
-        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::OPTIONS])
         .allow_headers([
             header::AUTHORIZATION,
             header::CONTENT_TYPE,
