@@ -1,0 +1,5 @@
+# Firecrawl CLI cache (scratch, never commit)
+.firecrawl/
+
+# Browser-scraped binary asset directories (images, etc.)
+research/threejs resources/

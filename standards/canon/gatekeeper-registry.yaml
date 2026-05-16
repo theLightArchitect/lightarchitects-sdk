@@ -1,0 +1,251 @@
+# uuid: 3f345852-c5ed-4cd9-8a4a-d8272787bb9f
+# ============================================================================
+# Gatekeeper Registry — authoritative mapping of LightArchitects agents to
+# LASDLC [A+S+Q+C+O+P+K+D+T+R] gate ownership.
+# ============================================================================
+# Source of truth for:
+#   1. Which agent fires at which gate boundary (squad-dispatch wiring)
+#   2. Which folders an agent has SCORING authority over (writes gate_evaluation)
+#   3. Which folders an agent may CONSULT read-only (cites but does not score)
+#   4. Which sibling is the named LA squad member behind each agent role
+#   5. Scoring lenses for multi-gate and multi-sibling gate coverage
+#   6. Veto authorities for cross-agent conflict resolution
+#
+# Composition: paired with canon/squad-synthesizer-protocol.md (synthesis fan-in)
+#              and canon/parallel-execution-policy.md (dispatch fan-out).
+#
+# When adding a new sibling: claim primary_gates + home_folders + invocation,
+# then verify no other gatekeeper claims the same primary_gate.
+# ============================================================================
+# Canonical gate vocabulary ref: plugins/lightarchitects/skills/SQUAD/references/presets.md
+#   commit c06c807 — feat(squad): expand gatekeeper to 9-gate (2026-05-05)
+# ============================================================================
+
+schema_version: "v1.1"
+generated: "2026-05-05"
+gate_vocabulary: "[A+S+Q+C+O+P+K+D+T+R]"   # 9 dimensions (10 individual gates; [K+D] paired)
+gate_count: 9
+
+gatekeepers:
+
+  engineer:
+    sibling: CORSO
+    primary_gates: ["[A]"]
+    home_folders:
+      - "industry-baselines/architecture/"
+    consults:
+      - "canon/platform-architecture-v2.md"
+      - "canon/agent-architecture.md"
+      - "canon/agent-dispatch-templates.md"
+    invocation: "lightarchitects:engineer"
+    role_summary: "Architectural integrity — viewpoint coverage, modularity, SoC, coupling discipline. Anchors against IEEE/ISO/IEC 42010 vocabulary."
+
+  security:
+    sibling: SERAPH
+    primary_gates: ["[S]"]
+    home_folders:
+      - "industry-baselines/security/"          # entire security baseline tree (recursive)
+    priority_references:                         # high-value reads for [S] gate scoring
+      red_team:
+        - "industry-baselines/security/ptes/ptes-methodology-2026-05-05.md"
+        - "industry-baselines/security/ptes/ptes-technical-guidelines-2026-05-05.md"
+        - "industry-baselines/security/mitre/atomic-red-team-2026-05-05.md"
+        - "industry-baselines/security/mitre/mitre-attack-enterprise-2026-05-04.md"
+      llm_and_ai_security:
+        - "industry-baselines/security/owasp/owasp-llm-top-10-v2.0-2026-05-05.md"
+        - "industry-baselines/security/owasp/owasp-top-10-agentic-2026-2026-05-05.md"
+        - "industry-baselines/security/owasp/owasp-llm-prompt-injection-cheatsheet-2026-05-05.md"
+        - "industry-baselines/security/google/google-saif-risks-2026-05-05.md"
+        - "industry-baselines/security/mitre/mitre-atlas-2026-05-04.md"
+        - "industry-baselines/security/nist/nist-ai-rmf-landing-2026-05-05.md"
+      appsec:
+        - "industry-baselines/security/owasp/owasp-asvs-2026-05-04.md"
+        - "industry-baselines/security/owasp/owasp-top-10-2021-2026-05-04.md"
+        - "industry-baselines/security/owasp/owasp-proactive-controls-2024-2026-05-05.md"
+        - "industry-baselines/security/owasp/owasp-cheatsheet-series-index-2026-05-05.md"
+        - "industry-baselines/security/owasp/owasp-secure-coding-playbook-2026-05-05.md"
+        - "industry-baselines/security/owasp/owasp-api-security-top-10-2023-2026-05-04.md"
+    consults:
+      - "canon/builders-cookbook.md"  # §44 security canon
+    invocation: "lightarchitects:security"
+    role_summary: "Adversarial robustness — threat modeling, secret hygiene, supply chain integrity, regulatory mandates, LLM/agent-specific risks. Anchors against OWASP/MITRE/NIST/CIS/SLSA/STRIDE/LINDDUN. LLM+AI: OWASP LLM Top 10 v2.0, OWASP Agentic Apps 2026, MITRE ATLAS, Google SAIF 2.0 (15 risks, Secure Agents), NIST AI RMF. Red team: PTES 7-phase methodology + Technical Guidelines, Atomic Red Team/ATT&CK. AppSec: OWASP ASVS, Proactive Controls 2024, Cheat Sheet Series."
+
+  quality:
+    sibling: CORSO                  # primary scorer; LÆX0 provides [C] canon enforcement lens
+    primary_gates: ["[Q]", "[C]"]
+    scoring_lenses:
+      "[Q]":
+        sibling: CORSO
+        mcp_steps:
+          - action: "code_review"     # Builders Cookbook compliance, coding standards
+          - action: "lint"            # clippy pedantic (invoked via EVA sibling)
+      "[C]":
+        sibling: LÆX0
+        reads:
+          - "canon/builders-cookbook.md"
+          - "canon/platform-canon.md"
+        description: "LÆX canon enforcement — checks changed code and decisions against canonical rules"
+    home_folders:
+      - "industry-baselines/quality/"
+    consults:
+      - "canon/coding-guidelines.md"
+      - "canon/builders-cookbook.md"
+    invocation: "lightarchitects:quality"
+    role_summary: "Software product quality + canon conformance — KISS, complexity bounds, accessibility, ASCQM measurement, LÆX canon rule enforcement. Anchors against ISO 25010/25023, ISO 5055/CISQ, WCAG, Builders Cookbook."
+
+  ops:
+    sibling: EVA                    # primary; AYIN provides runtime observability lens on [P]
+    primary_gates: ["[O]", "[P]"]
+    scoring_lenses:
+      "[O]":
+        sibling: EVA
+        mcp_steps:
+          - action: "status"          # project health, binary freshness
+          - action: "repo"            # CI/CD workflows, quality gate enforcement
+      "[P]":
+        sibling: EVA
+        mcp_steps:
+          - action: "chase"           # O(n²) pattern detection via CORSO
+        observability_steps:
+          sibling: AYIN
+          endpoints:
+            - "localhost:3742/api/traces?filter=latency"   # P95/P99 latency vs baseline
+            - "localhost:3742/api/traces?filter=errors"    # error rate and anomaly signals
+    home_folders:
+      - "industry-baselines/operations/"
+      - "industry-baselines/performance/"
+    consults: []
+    invocation: "lightarchitects:ops"
+    role_summary: "Operational + performance + observability signals — DORA delivery metrics, SRE golden signals, AYIN trace analysis, parallel-speedup math, queuing theory. Anchors against DORA/OTel/SRE/Apdex + Amdahl/Gustafson/Karp-Flatt/Little/CPM."
+
+  knowledge:
+    sibling: SOUL
+    primary_gates: ["[K]", "[D]"]
+    home_folders:
+      - "canon/"
+      - "cookbooks/"
+      - "research/"
+      - "industry-baselines/documentation/"
+    consults:
+      - "industry-baselines/REGISTRY.md"
+      - "UUID-CATALOGUE.md"
+    invocation: "lightarchitects:knowledge"
+    role_summary: "Universal canon-citation referee — validates every plan and gate_evaluation cites verbatim per Canon XXXV, structures match LASDLC spec, helix enrichment runs after wave-close."
+    universal_reviewer: true   # fires at every gate boundary as meta-validator
+
+  testing:
+    sibling: CORSO
+    primary_gates: ["[T]"]
+    home_folders:
+      - "industry-baselines/testing/"
+    consults: []
+    invocation: "lightarchitects:testing"
+    role_summary: "Test pyramid coverage + ML production readiness — vulnerability test procedures, coverage ratchet, contract tests, ML test score. Anchors against OWASP WSTG, Breck ML Test Score."
+
+  researcher:
+    sibling: QUANTUM
+    primary_gates: ["[R]"]
+    home_folders:
+      - "industry-baselines/research/"
+    scoring_lenses:
+      "[R]":
+        sibling: QUANTUM
+        mcp_steps:
+          - action: "scan"            # evidence-based diff analysis, anomaly detection in change surface
+          - action: "research"        # BCRA blast score across dependency/binary/API/config/coverage boundaries
+        soul_search:
+          sibling: SOUL
+          query_template: "<target> risk incident prior decision"
+          description: "Retrieve prior risk decisions and incident history from helix"
+    consults:
+      - "industry-baselines/REGISTRY.md"
+    invocation: "lightarchitects:researcher"
+    role_summary: "Research + Risk gate — BCRA blast score analysis, dependency risk surface, evidence chain review, prior incident lookup via SOUL. Anchors against BCRA methodology. FAIL if any boundary scores CRITICAL."
+
+# ============================================================================
+# Authority rules
+# ============================================================================
+authority_rules:
+
+  scoring_authority:
+    description: "Only the primary-gate owner may write `scored_anchors[]` in a gate_evaluation block. Secondary-gate consultation produces `consulted_anchors[]` (read-only)."
+    enforcement: "Mechanical — file's `<!-- gate: -->` tag's first entry is the primary; additional entries are secondary consultation rights only."
+
+  veto_powers:
+    security:
+      scope: "Anything touching auth, secrets, network, supply chain, threat surface"
+      effect: "Squad verdict → FAIL regardless of other gatekeeper outputs"
+      invocation: "lightarchitects:security"
+      sibling: SERAPH
+    knowledge:
+      scope: "Canon violations — non-resolving citations, structure mismatch with LASDLC spec, missing verbatim quotes per Canon XXXV"
+      effect: "Squad verdict → FAIL regardless of other gatekeeper outputs"
+      invocation: "lightarchitects:knowledge"
+      sibling: SOUL
+    quality_canon:
+      scope: "Canon rule violations in changed code or decisions — Builders Cookbook rules, CORSO Protocol, canon.md rule violations (LÆX0 enforcement lens)"
+      effect: "Squad verdict → FAIL regardless of other gatekeeper outputs"
+      invocation: "lightarchitects:quality"
+      sibling: LÆX0
+      gate: "[C]"
+
+  conflict_resolution:
+    same_anchor_different_verdict:
+      rule: "If agent A scores anchor X PASS and agent B (consulting only) flags concern, A's verdict stands but B's concern is recorded under squad_review.disputes[]"
+    citation_dispute:
+      rule: "Knowledge agent (SOUL) arbitrates"
+    architectural_dispute:
+      rule: "Engineer agent (CORSO) arbitrates"
+    canon_dispute:
+      rule: "Quality agent (LÆX0 lens) arbitrates; binding on [C] gate"
+
+# ============================================================================
+# Verdict aggregation (canonical per presets.md commit c06c807)
+# ============================================================================
+verdict_aggregation:
+  rule: "PASS if all 9 dimensions pass. FAIL if any dimension fails."
+  dimensions:
+    - gate: "[A]"
+      pass_criteria: "Complexity ≤10, functions ≤60 lines, no god objects"
+      fail_criteria: "Any violation"
+    - gate: "[S]"
+      pass_criteria: "No CRITICAL/HIGH findings"
+      fail_criteria: "Any CRITICAL/HIGH finding"
+    - gate: "[Q]"
+      pass_criteria: "Builders Cookbook clean, clippy pedantic pass"
+      fail_criteria: "Any violation"
+    - gate: "[C]"
+      pass_criteria: "No canon rule violations"
+      fail_criteria: "Any canon violation"
+    - gate: "[O]"
+      pass_criteria: "CI enforcing gates, binary health passing"
+      fail_criteria: "Any CI gate missing"
+    - gate: "[P]"
+      pass_criteria: "No O(n²), no >5% latency regression, AYIN signal clean"
+      fail_criteria: "Any violation"
+    - gate: "[K+D]"
+      pass_criteria: "≥90% public item coverage, CLAUDE.md current"
+      fail_criteria: "Either condition fails"
+    - gate: "[T]"
+      pass_criteria: "≥90% coverage, all 6 Canon XXVII suites present"
+      fail_criteria: "Either condition fails"
+    - gate: "[R]"
+      pass_criteria: "All BCRA blast scores below CRITICAL, no prior incident match"
+      fail_criteria: "Any CRITICAL blast score"
+
+# ============================================================================
+# Composition
+# ============================================================================
+composition:
+  dispatch:
+    spec: "canon/parallel-dispatch-principles.md"
+    pattern: "All 7 gatekeepers fan out in parallel at gate boundary"
+  execution:
+    spec: "canon/parallel-execution-policy.md"
+    pattern: "OPS-8.1 parallel execution; each gatekeeper isolated to its home folder"
+  synthesis:
+    spec: "canon/squad-synthesizer-protocol.md"
+    pattern: "Seven gate_evaluation blocks → single squad_review verdict"
+  schema:
+    spec: "canon/lasdlc-spec.md §4.5 Gatekeeper Evaluation Schema"
+    pattern: "YAML block written per gatekeeper per phase boundary"

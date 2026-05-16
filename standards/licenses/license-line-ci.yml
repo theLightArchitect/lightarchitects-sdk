@@ -1,0 +1,231 @@
+# uuid: f8979dc6-296f-4442-ae6e-65b07bbf2f58
+# license-line-ci.yml — canonical CI gate for license-line drift detection
+#
+# Drop-in `.github/workflows/license-line-guard.yml` that catches the bug
+# class documented in helix entry sig-8.2 (audit-reports-as-tertiary-sources):
+# license metadata silently flipped inside an unrelated feature commit.
+#
+# Bug class prevented:
+#   Commit `6f7f85a` (titled "cognitive loop MVP with async polish") changed
+#   `license = "AGPL-3.0-only"` → `license = "Proprietary"` while shipping
+#   unrelated cognitive-loop work. Reviewers cannot reasonably be expected
+#   to spot a Cargo.toml license string flip buried inside a 200-file MVP
+#   diff. This guard fails CI on any PR that touches a `license = ...`
+#   line UNLESS the PR is intentionally labelled `license-migration`.
+#
+# Cross-references:
+#   ~/.claude/plans/permanent-fixes-2026-04-29.md (Layer 2 → L2.5)
+#   ~/lightarchitects/soul/helix/user/standards/canon/builders-cookbook.md
+#   ~/lightarchitects/soul/helix/user/standards/scripts/check-license-line.sh  (sibling detector)
+#   ~/lightarchitects/soul/helix/user/standards/licenses/license-migration-playbook.md
+#   ~/lightarchitects/soul/helix/claude/journal/projects/2026-04-29-audit-reports-as-tertiary-sources.md  (sig-8.2)
+#
+# Principle: **process drift before state drift.** A valid surface state
+# reached via an invalid path is still a process violation. Catching it
+# at the path layer (this guard) complements catching it at the state
+# layer (file-level canonical-state checker, future work).
+
+# ════════════════════════════════════════════════════════════════════════════
+# OPTION A — drop-in standalone workflow (recommended)
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Save as `.github/workflows/license-line-guard.yml` in each LA repo.
+# Runs in parallel with other CI jobs; fast red signal on license drift.
+
+name: License-line guard
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/Cargo.toml'
+      - 'Cargo.toml'
+  workflow_dispatch:
+
+jobs:
+  license-line:
+    name: detect license-line drift in non-migration PRs
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout (with full history for diff)
+        uses: actions/checkout@v4
+        with:
+          # We need the merge-base, so fetch enough history to resolve
+          # `origin/${{ github.base_ref }}...HEAD`. fetch-depth: 0 is the
+          # safe default; tune down if your repo has heavy history.
+          fetch-depth: 0
+
+      - name: Fetch base ref
+        run: git fetch origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+
+      - name: Detect license-line drift
+        id: detect
+        # The detector script lives in the SOUL canonical standards folder.
+        # Each repo vendors a copy at `.github/scripts/check-license-line.sh`
+        # (kept in sync via `make sync-standards`) so CI doesn't depend on
+        # an external checkout.
+        run: |
+          chmod +x .github/scripts/check-license-line.sh
+          if .github/scripts/check-license-line.sh \
+              --base "origin/${{ github.base_ref }}" \
+              --head HEAD \
+              --quiet \
+              > /tmp/license-line-drift.txt 2>&1; then
+              echo "drift=false" >> "${GITHUB_OUTPUT}"
+          else
+              echo "drift=true" >> "${GITHUB_OUTPUT}"
+              cat /tmp/license-line-drift.txt
+          fi
+
+      - name: Allow drift if PR is labelled `license-migration`
+        if: steps.detect.outputs.drift == 'true'
+        env:
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        run: |
+          if echo "${PR_LABELS}" | grep -q '"license-migration"'; then
+              echo "::notice::license-line drift detected, but PR is labelled \`license-migration\` — allowed."
+              exit 0
+          fi
+          echo "::error::license-line drift detected and PR is NOT labelled \`license-migration\`."
+          echo "::error::Either (a) split the license change into a dedicated migration PR following"
+          echo "::error::    ~/lightarchitects/soul/helix/user/standards/licenses/license-migration-playbook.md"
+          echo "::error::or (b) apply the \`license-migration\` label and re-run this check."
+          cat /tmp/license-line-drift.txt
+          exit 1
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# OPTION B — drop-in step (insert into an existing job)
+# ════════════════════════════════════════════════════════════════════════════
+#
+# If you'd rather avoid a separate workflow file, paste these steps into
+# your main CI job (after `actions/checkout@v4` with fetch-depth: 0).
+
+#       - name: Detect license-line drift
+#         id: detect-license-line
+#         run: |
+#           chmod +x .github/scripts/check-license-line.sh
+#           if .github/scripts/check-license-line.sh \
+#               --base "origin/${{ github.base_ref }}" \
+#               --head HEAD \
+#               --quiet \
+#               > /tmp/license-line-drift.txt 2>&1; then
+#               echo "drift=false" >> "${GITHUB_OUTPUT}"
+#           else
+#               echo "drift=true" >> "${GITHUB_OUTPUT}"
+#               cat /tmp/license-line-drift.txt
+#           fi
+#
+#       - name: Enforce license-line guard
+#         if: steps.detect-license-line.outputs.drift == 'true'
+#         env:
+#           PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+#         run: |
+#           if echo "${PR_LABELS}" | grep -q '"license-migration"'; then
+#               echo "::notice::drift allowed by \`license-migration\` label"
+#               exit 0
+#           fi
+#           cat /tmp/license-line-drift.txt
+#           exit 1
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# OPTION C — pre-PR-create local hook (faster local feedback)
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Run before `gh pr create` to catch drift before it reaches CI:
+#
+#   ~/lightarchitects/soul/helix/user/standards/scripts/check-license-line.sh \
+#       --base origin/main --head HEAD
+#
+# Exit 0 = clean to push; exit 1 = drift detected.
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DOCUMENTATION — what this catches and why
+# ════════════════════════════════════════════════════════════════════════════
+#
+# 1. The detector script (`check-license-line.sh`)
+#    -------------------------------------------------------------------------
+#    What:  `git diff --no-color -U0 base...head -- '**/Cargo.toml'` filtered
+#           for lines starting with `+`/`-` that match `^[+-]\s*license\s*=`.
+#    Why:   The bundled-license-change pattern requires a SPDX field flip in
+#           a Cargo.toml. Detecting that single line change reliably and
+#           reporting it is sufficient — the workflow handles policy.
+#    Cost:  <1 second local; <5 seconds CI cold start.
+#
+# 2. The label-based override (`license-migration`)
+#    -------------------------------------------------------------------------
+#    What:  PR-level signal that the migration is intentional, reviewed, and
+#           scoped. Setting the label requires write access to the repo.
+#    Why:   We don't want to block license migrations — we want to make them
+#           VISIBLE. Labelling forces a deliberate action; bundled drift is
+#           by definition unlabelled.
+#    Cost:  Zero — github labels are free.
+#
+# 3. Why `license-file` is NOT caught
+#    -------------------------------------------------------------------------
+#    The detector regex matches `license = ...` but not `license-file = ...`.
+#    Renaming the LICENSE file path (e.g., `LICENSE` → `LICENSE-Apache-2.0`)
+#    is a routine refactor that should not require migration ceremony.
+#    The actual SPDX identifier flip (which has legal/redistribution implications)
+#    is what we gate.
+#
+# 4. Why the script lives in `.github/scripts/`, not `~/lightarchitects/`
+#    -------------------------------------------------------------------------
+#    CI runners do not have access to `~/lightarchitects/`. The canonical copy
+#    lives at `~/lightarchitects/soul/helix/user/standards/scripts/check-license-line.sh`,
+#    and each repo vendors a copy at `.github/scripts/check-license-line.sh`,
+#    kept in sync via the standards-sync hook (or a manual `cp` for now).
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# HOW TO ADD TO A NEW REPO
+# ════════════════════════════════════════════════════════════════════════════
+#
+# 1. Vendor the detector:
+#      mkdir -p .github/scripts
+#      cp ~/lightarchitects/soul/helix/user/standards/scripts/check-license-line.sh \
+#         .github/scripts/check-license-line.sh
+#      chmod +x .github/scripts/check-license-line.sh
+#
+# 2. Vendor this workflow as a separate file:
+#      mkdir -p .github/workflows
+#      # Copy OPTION A (lines 28-79 of this file) to:
+#      .github/workflows/license-line-guard.yml
+#
+# 3. Open the `license-migration` label in the repo:
+#      gh label create license-migration \
+#         --description 'PR intentionally migrates license metadata' \
+#         --color 'B60205' \
+#         --repo TheLightArchitects/<REPO>
+#
+# 4. Push and open a PR. The first run on a non-migration PR that touches
+#    Cargo.toml license fields will fail — that's expected, and exactly the
+#    bug class this gate is designed to catch.
+#
+# 5. To migrate a license intentionally, apply the `license-migration` label
+#    AND follow the migration playbook
+#    (~/lightarchitects/soul/helix/user/standards/licenses/license-migration-playbook.md).
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# REPOS REQUIRING THIS GATE (as of 2026-04-29)
+# ════════════════════════════════════════════════════════════════════════════
+#
+#   [ ] CORSO-DEV     — ~/Projects/CORSO/MCP/CORSO-DEV
+#   [ ] EVA-DEV       — ~/Projects/EVA/MCP/EVA-DEV/eva
+#   [ ] SOUL-DEV      — ~/Projects/SOUL/SOUL-DEV
+#   [ ] QUANTUM-DEV   — ~/Projects/QUANTUM/MCP/QUANTUM-DEV
+#   [ ] SERAPH-DEV    — ~/Projects/SERAPH/MCP/SERAPH-DEV
+#   [ ] AYIN-DEV      — ~/Projects/AYIN/AYIN-DEV
+#   [ ] sdk           — ~/Projects/lightarchitects-sdk
+#
+# Track rollout in: ~/lightarchitects/corso/builds/active.yaml
+#
+# Pairs with: workspace-integrity-ci.yml (L2.3 — workspace-level drift)
+#             check-branch-divergence.sh (L2.4 — commit-level drift)
+#             this file                  (L2.5 — license-line drift inside Cargo.toml)
+#
+# Closes: helix entry sig-8.2 (audit-reports-as-tertiary-sources, 2026-04-29).

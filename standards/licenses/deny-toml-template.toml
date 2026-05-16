@@ -1,0 +1,227 @@
+# uuid: 94c715fc-a241-42f7-adf1-b14c5d29f7c8
+# deny-toml-template.toml — canonical cargo-deny configurations per license type
+#
+# This file is NOT meant to be copied wholesale. It contains FOUR variants —
+# pick the one that matches your project's license per the per-crate rule, then
+# strip the comments and copy into your repo's deny.toml.
+#
+# Cross-references:
+#   ~/.claude/projects/-Users-kft-Projects/memory/project_license_architecture.md
+#   ~/lightarchitects/soul/helix/user/standards/licenses/license-migration-playbook.md
+#   ~/lightarchitects/soul/helix/user/standards/licenses/notice-template.md
+#
+# Rationale (2026-04-29 audit):
+#   CORSO/EVA/QUANTUM/SERAPH/SOUL deny.toml files all had drift after the
+#   AGPL → Proprietary migration: licenses.allow was missing "LicenseRef-LA-Proprietary",
+#   and [[licenses.clarify]] still claimed AGPL-3.0-only. This template documents
+#   the canonical state for each license style so drift is prevented.
+
+# ┌──────────────────────────────────────────────────────────────────────────┐
+# │ COMMON BASELINE — applies to every variant below                         │
+# │   • [graph], [advisories], [bans], [sources] are identical across repos  │
+# │   • Only [licenses] differs                                              │
+# └──────────────────────────────────────────────────────────────────────────┘
+
+# ────────────────────────────────────────────────────────────────────────────
+# [graph] — same for all
+# ────────────────────────────────────────────────────────────────────────────
+# [graph]
+# targets = []
+# all-features = true
+
+# ────────────────────────────────────────────────────────────────────────────
+# [advisories] — same for all (security DB)
+# ────────────────────────────────────────────────────────────────────────────
+# [advisories]
+# db-path = "~/.cargo/advisory-db"
+# db-urls = ["https://github.com/rustsec/advisory-db"]
+# # Per-crate `ignore` entries are allowed but require justification comment.
+
+# ────────────────────────────────────────────────────────────────────────────
+# [bans] — same for all
+# ────────────────────────────────────────────────────────────────────────────
+# [bans]
+# multiple-versions = "warn"
+# wildcards = "warn"
+# highlight = "all"
+
+# ────────────────────────────────────────────────────────────────────────────
+# [sources] — same for all
+# ────────────────────────────────────────────────────────────────────────────
+# [sources]
+# unknown-registry = "deny"
+# unknown-git = "deny"
+# allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+
+
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║ VARIANT 1 — Proprietary (server implementations)                          ║
+# ║   Use for: SOUL, CORSO, EVA, QUANTUM, SERAPH                              ║
+# ║   The project's own crates use SPDX `LicenseRef-LA-Proprietary`.          ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+# [licenses]
+# allow = [
+#     "MIT",
+#     "Apache-2.0",
+#     "BSD-2-Clause",
+#     "BSD-3-Clause",
+#     "ISC",
+#     "Unicode-3.0",
+#     "MPL-2.0",
+#     "CDLA-Permissive-2.0",
+#     "Zlib",
+#     "NCSA",
+#     "CC0-1.0",
+#     "LicenseRef-LA-Proprietary",   # project's own (LA Proprietary)
+# ]
+#
+# # Clarify rules for first-party crates. Repeat per workspace member.
+# # The license-files = ["LICENSE"] entry tells cargo-deny that the
+# # LicenseRef expression is satisfied by the repo-root LICENSE text.
+#
+# [[licenses.clarify]]
+# name = "<workspace-member-1>"
+# version = "*"
+# expression = "LicenseRef-LA-Proprietary"
+# license-files = ["LICENSE"]
+#
+# [[licenses.clarify]]
+# name = "<workspace-member-2>"
+# version = "*"
+# expression = "LicenseRef-LA-Proprietary"
+# license-files = ["LICENSE"]
+
+
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║ VARIANT 2 — Apache-2.0 (externally-facing observability)                  ║
+# ║   Use for: AYIN                                                            ║
+# ║   Apache-2.0 is already in `allow`; the exception block is documentation. ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+# [licenses]
+# allow = [
+#     "MIT",
+#     "Apache-2.0",
+#     "BSD-2-Clause",
+#     "BSD-3-Clause",
+#     "ISC",
+#     "Unicode-3.0",
+#     "MPL-2.0",
+#     "CDLA-Permissive-2.0",
+#     "Zlib",
+#     "NCSA",
+#     "CC0-1.0",
+# ]
+#
+# # AYIN's own crates — Apache-2.0 is already allowed, but we list explicit
+# # exceptions for clarity and for future tooling that consumes this file.
+# exceptions = [
+#     { name = "ayin",        version = "*", allow = ["Apache-2.0"] },
+#     { name = "ayin-viewer", version = "*", allow = ["Apache-2.0"] },
+# ]
+
+
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║ VARIANT 3 — MPL-2.0 (public consumer SDK)                                 ║
+# ║   Use for: lightarchitects-sdk                                             ║
+# ║   The SDK itself is MPL-2.0. Some path-deps may be Proprietary;            ║
+# ║   include LicenseRef-LA-Proprietary in `allow` and clarify per crate.      ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+# [licenses]
+# allow = [
+#     "MIT",
+#     "Apache-2.0",
+#     "BSD-2-Clause",
+#     "BSD-3-Clause",
+#     "ISC",
+#     "Unicode-3.0",
+#     "MPL-2.0",
+#     "CDLA-Permissive-2.0",
+#     "Zlib",
+#     "NCSA",
+#     "CC0-1.0",
+#     "LicenseRef-LA-Proprietary",   # for path-deps that haven't been re-licensed yet
+# ]
+#
+# # SDK's own crates — MPL-2.0 (already in allow, listed for clarity)
+# # If any sub-crate is intentionally Proprietary (e.g. a closed-source path-dep),
+# # use [[licenses.clarify]] below.
+#
+# [[licenses.clarify]]
+# name = "lightarchitects"
+# version = "*"
+# expression = "MPL-2.0"
+# license-files = []
+#
+# [[licenses.clarify]]
+# name = "lightarchitects-gateway"
+# version = "*"
+# expression = "MPL-2.0"
+# license-files = []
+#
+# # Path-deps still on Proprietary license — example pattern
+# [[licenses.clarify]]
+# name = "corso-trinity"
+# version = "*"
+# expression = "LicenseRef-LA-Proprietary"
+# license-files = []
+
+
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║ VARIANT 4 — MIT (rare; standalone utilities only)                         ║
+# ║   Not currently used by any LA repo as of 2026-04-29.                     ║
+# ║   Documented for completeness.                                             ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+# [licenses]
+# allow = [
+#     "MIT",
+#     "Apache-2.0",
+#     "BSD-2-Clause",
+#     "BSD-3-Clause",
+#     "ISC",
+#     "Unicode-3.0",
+#     "MPL-2.0",
+#     "CDLA-Permissive-2.0",
+#     "Zlib",
+#     "NCSA",
+#     "CC0-1.0",
+# ]
+# # MIT is already in `allow` — no additional clarify needed for first-party MIT crates.
+
+
+# ┌──────────────────────────────────────────────────────────────────────────┐
+# │ DRIFT CHECKLIST — run on every audit                                      │
+# │                                                                           │
+# │   Compare the deny.toml in each repo to the variant above. Verify:        │
+# │     1. licenses.allow contains every SPDX listed in NOTICE third-party    │
+# │     2. licenses.allow contains the project's own SPDX                     │
+# │        (or, for Proprietary, LicenseRef-LA-Proprietary)                   │
+# │     3. [[licenses.clarify]] rules name every workspace member             │
+# │     4. [[licenses.clarify]].expression matches Cargo.toml.license         │
+# │     5. [[licenses.clarify]].license-files = ["LICENSE"] for Proprietary,  │
+# │        empty list otherwise                                                │
+# │                                                                           │
+# │   If any of 1-5 fail: drift exists. Fix per the migration playbook.       │
+# └──────────────────────────────────────────────────────────────────────────┘
+
+
+# ┌──────────────────────────────────────────────────────────────────────────┐
+# │ ALLOWED-LIST RATIONALE                                                    │
+# │   Why these 11 SPDX expressions are always in `allow`:                    │
+# │                                                                           │
+# │   MIT, Apache-2.0          — overwhelming majority of crates.io           │
+# │   BSD-2-Clause, BSD-3-Clause — av1-grain, curve25519-dalek, encoding_rs   │
+# │   ISC                       — ring, rustls-webpki, untrusted              │
+# │   Unicode-3.0               — ICU components (icu_*, zerovec, etc.)       │
+# │   MPL-2.0                   — option-ext, lightarchitects, webpki-roots   │
+# │   CDLA-Permissive-2.0       — webpki-root-certs (cert data only)          │
+# │   Zlib                      — foldhash, tinyvec                           │
+# │   NCSA                      — libfuzzer-sys (rav1e → fastembed transitive)│
+# │   CC0-1.0                   — notify (public domain dedication)           │
+# │                                                                           │
+# │   Adding a new SPDX to this list is a SQUAD-LEVEL DECISION, not a         │
+# │   per-repo decision. Open an RFC; update this template; propagate.        │
+# └──────────────────────────────────────────────────────────────────────────┘

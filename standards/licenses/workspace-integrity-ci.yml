@@ -1,0 +1,184 @@
+# uuid: 4a6bcdf8-326b-4d99-9edf-0b82eb04cb5f
+# workspace-integrity-ci.yml — canonical CI gate for Rust workspace integrity
+#
+# Drop-in `.github/workflows/ci.yml` step (or full job) that catches the bug
+# class shipped 4 times during the 2026-04-28 session: workspace member
+# declared in Cargo.toml but source directory missing OR features that don't
+# compile in isolation.
+#
+# Cross-references:
+#   ~/.claude/plans/permanent-fixes-2026-04-29.md (Layer 2 → L2.3)
+#   ~/lightarchitects/soul/helix/user/standards/canon/builders-cookbook.md
+#
+# Why this matters:
+#   Today's session shipped PRs #4, #5, #7, #8 to fix downstream symptoms of
+#   the same root cause: main HEAD on github had a workspace member
+#   (`lightarchitects-server`) declared but its `crates/` source untracked.
+#   `cargo metadata` failed instantly. Every consumer that did `git clone`
+#   hit the same wall. A 30-second CI check would have caught it at PR time.
+#
+# Principle: **fail loud, fail early.** A CI gate that turns "broken main"
+# from a 2-week debugging mystery into a 90-second red X on the PR.
+
+# ════════════════════════════════════════════════════════════════════════════
+# OPTION A — drop-in step (insert into an existing GitHub Actions job)
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Paste this between `actions/checkout@v4` and your `cargo test` step.
+
+      - name: Workspace integrity (cargo metadata)
+        # Fails if a declared workspace member's source is missing,
+        # if Cargo.toml has parse errors, or if any path-dep is broken.
+        run: cargo metadata --format-version 1 --no-deps > /dev/null
+
+      - name: Workspace builds with no default features
+        # Catches features that silently provide types/symbols only included
+        # in the default feature set. Without this, removing a `default = ...`
+        # entry can break downstream consumers.
+        run: cargo build --workspace --no-default-features
+
+      - name: Workspace builds with all features
+        # Catches feature-flag drift: code paths gated behind a feature
+        # but never compiled in CI. Today's session shipped a feature that
+        # had a typo in its module name; --all-features caught it once added.
+        run: cargo build --workspace --all-features
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# OPTION B — standalone job (recommended for new repos)
+# ════════════════════════════════════════════════════════════════════════════
+#
+# A dedicated job that runs in parallel with `test` / `clippy` jobs.
+# Faster red signal: if metadata is broken, you don't wait for tests.
+
+name: Workspace integrity
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  integrity:
+    name: cargo metadata + build (no-default + all-features)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-integrity-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-integrity-
+
+      - name: cargo metadata (workspace declaration is parseable)
+        run: cargo metadata --format-version 1 --no-deps > /dev/null
+
+      - name: cargo build --workspace --no-default-features
+        run: cargo build --workspace --no-default-features
+
+      - name: cargo build --workspace --all-features
+        run: cargo build --workspace --all-features
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# OPTION C — pre-commit hook variant (faster local feedback)
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Place at: <repo>/.git/hooks/pre-commit (or use a hook framework like
+# rusty-hook, lefthook, pre-commit). Catches issues BEFORE they hit CI.
+#
+# Skip the --all-features build locally — too slow for every commit.
+# Keep --no-default-features as the local fast path.
+#
+# #!/usr/bin/env bash
+# set -euo pipefail
+# echo "[integrity] cargo metadata..."
+# cargo metadata --format-version 1 --no-deps > /dev/null
+# echo "[integrity] cargo check --no-default-features..."
+# cargo check --workspace --no-default-features --quiet
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DOCUMENTATION — what this catches and why each step matters
+# ════════════════════════════════════════════════════════════════════════════
+#
+# 1. `cargo metadata --no-deps`
+#    -------------------------------------------------------------------------
+#    What:  Resolves the workspace graph WITHOUT fetching dependencies.
+#    Why:   Catches:
+#              - Workspace member declared but source missing (PR #4 today).
+#              - Cargo.toml syntax errors.
+#              - Path-dep pointing to nonexistent path.
+#              - Duplicate package names across the workspace.
+#    Cost:  ~1 second locally; ~5 seconds in CI cold start.
+#
+# 2. `cargo build --workspace --no-default-features`
+#    -------------------------------------------------------------------------
+#    What:  Compiles every crate with default features disabled.
+#    Why:   Catches the bug pattern: code that compiles only when one of the
+#           default features is enabled, but the feature gate is missing on
+#           an `impl` block or a `pub use` re-export. Library consumers who
+#           opt out of defaults hit this; CI without this step does not.
+#    Cost:  ~30-90 seconds depending on workspace size.
+#
+# 3. `cargo build --workspace --all-features`
+#    -------------------------------------------------------------------------
+#    What:  Compiles every crate with EVERY feature enabled.
+#    Why:   Catches code under #[cfg(feature = "...")] that has bit-rotted
+#           because no test path exercised it. Also catches mutually-exclusive
+#           features that should be enforced at Cargo.toml level (e.g. via
+#           [features] subtraction or ResolverV2 explicit dep activation).
+#    Cost:  ~60-180 seconds depending on feature surface.
+#
+# Total CI cost added: ~2-4 minutes. Bug class prevented: every shipped PR
+# from the 2026-04-28 session that fell into the workspace-integrity bucket.
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# HOW TO ADD TO A NEW REPO
+# ════════════════════════════════════════════════════════════════════════════
+#
+# 1. Open .github/workflows/ci.yml in the target repo.
+# 2. Either:
+#    a. Insert OPTION A's three steps into your existing test job (fastest path
+#       — runs on the same runner as the rest of CI, reuses the cargo cache).
+#    b. Add OPTION B as a separate workflow file (`.github/workflows/integrity.yml`)
+#       — gives you a dedicated red signal independent of test/clippy jobs.
+# 3. Push and open a PR. The first run will fail if any latent integrity bug
+#    exists in main HEAD — that's expected and is exactly the bug class this
+#    gate is designed to catch.
+# 4. Fix the underlying issue (don't disable the gate). Common fixes:
+#    - Add the missing source directory.
+#    - Remove the dead workspace member from Cargo.toml.
+#    - Fix the cfg(feature) gate that broke under --no-default-features.
+# 5. Land the integrity gate alongside the fix in the same PR.
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# REPOS REQUIRING THIS GATE (as of 2026-04-29)
+# ════════════════════════════════════════════════════════════════════════════
+#
+#   [ ] CORSO-DEV     — ~/Projects/CORSO/MCP/CORSO-DEV
+#   [ ] EVA-DEV       — ~/Projects/EVA/MCP/EVA-DEV/eva
+#   [ ] SOUL-DEV      — ~/Projects/SOUL/SOUL-DEV
+#   [ ] QUANTUM-DEV   — ~/Projects/QUANTUM/MCP/QUANTUM-DEV
+#   [ ] SERAPH-DEV    — ~/Projects/SERAPH/MCP/SERAPH-DEV
+#   [ ] AYIN-DEV      — ~/Projects/AYIN/AYIN-DEV
+#   [ ] sdk           — ~/Projects/lightarchitects-sdk
+#
+# Track rollout in: ~/lightarchitects/corso/builds/active.yaml

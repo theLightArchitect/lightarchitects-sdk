@@ -1,0 +1,440 @@
+<!-- uuid: f2e8b3d7-6c41-4a9f-b825-1e3d7c9a0f42 -->
+
+---
+title: "Webshell API Surface"
+version: "1.0.0"
+status: ratified
+author: "Kevin Tan, Claude (Engineer)"
+date: "2026-05-16"
+ratified_by: "kevin"
+type: reference
+canon_uri: "canon://webshell-api-surface"
+gate: "[A] primary · [D] secondary"
+gate_owner: "corso"
+gate_enforcer: "laex"
+
+supersedes: []
+
+canonical:
+  - "[[platform-canon]]"
+  - "[[builders-cookbook]]"
+  - "[[agents-playbook]]"
+  - "[[operators-manual]]"
+
+related:
+  - "[[platform-architecture-v2]]"
+
+tags:
+  - type/reference
+  - domain/webshell
+  - domain/api
+  - compliance/mandatory
+---
+
+# Webshell API Surface
+
+> "Prove all things; hold fast that which is good."
+> — 1 Thessalonians 5:21
+
+**Purpose**: Authoritative catalogue of all backend HTTP endpoints and frontend hash-based routes exposed by the `lightarchitects-webshell` binary and its companion UI. Verified directly from source on 2026-05-16. Every route listed here was read from `src/server/mod.rs`, `src/dispatch/routes.rs`, and `lightarchitects-webshell-ui/src/lib/routes.ts` — not inferred or reported by an agent. This document is the ground truth; the code is the oracle.
+
+**Scope**: Webshell local backend (`/api/*`). The platform/gateway API (`/v1/platform/*`, `/v1/admin/*`, `/v1/vault/*`) is a separate API layer documented in helix entries OD-5 and OD-6.
+
+---
+
+## Canonical Suite
+
+| Document | Answers | URI |
+|---|---|---|
+| **[Platform Canon](platform-canon.md)** | *Why we build* — constitutional principles, squad doctrine, Canon I–XXXVIII+ | `canon://platform-canon` |
+| **[Builders Cookbook](builders-cookbook.md)** | *How to code* — Rust standards, quality gates, security patterns | `canon://builders-cookbook` |
+| **[Agents Playbook](agents-playbook.md)** | *How agents operate* — roles, A2A protocol, state machines, HITL, git lifecycle | `canon://agents-playbook` |
+| **[Architects Blueprint](architects-blueprint.md)** | *How to plan builds* — 21 Parts, C1–C8 rubric, phase gates | `canon://architects-blueprint` |
+| **[Operators Manual](operators-manual.md)** | *How to use the platform* — setup, squad ops, vault ops, security, voice | `canon://operators-manual` |
+| **[LASDLC Template](../../corso/builds/LASDLC-TEMPLATE-v1.yaml)** | *Build schema* — tier/phase/gate structure (v2.5.1) | `canon://lasdlc-template` |
+| **[Security Guardrails](security-guardrails.md)** | *How to stay secure* — threat model, agentic AI security, CVE management | `canon://security-guardrails` |
+
+---
+
+## Part I — Architecture Overview
+
+### §1.1 Two API Layers
+
+The platform exposes two distinct HTTP surfaces:
+
+| Layer | Base path | Authority | Documentation |
+|-------|-----------|-----------|---------------|
+| Platform / Gateway API | `/v1/platform/*`, `/v1/admin/*`, `/v1/vault/*` | `lightarchitects-gateway` binary | OD-5 + OD-6 helix entries (LOCKED) |
+| Webshell Backend API | `/api/*` | `lightarchitects-webshell` binary | **This document** |
+
+These are separate binaries on separate ports. The webshell UI always targets its own binary's `/api/*` surface.
+
+### §1.2 Router Composition
+
+The Axum router is constructed in `build_app()` at `src/server/mod.rs:402`. It merges a sub-router:
+
+```
+build_app()                              ← src/server/mod.rs:402
+  └── .merge(dispatch::dispatch_router()) ← src/dispatch/routes.rs:103
+```
+
+Total: **96 `.route()` call sites** (89 in `server/mod.rs` + 7 in `dispatch/routes.rs`). Several call sites register multiple HTTP methods on one path (e.g., `.get(h1).put(h2)`), yielding more method–path combinations than call sites.
+
+### §1.3 AppState Components
+
+`AppState` (shared via `Arc`, passed to all handlers). Full struct at `src/server/mod.rs:89`.
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `config` | `Arc<Config>` | Resolved config: port, host_cmd, cwd, token |
+| `turnlog_pepper` | `Arc<SecretSlice<u8>>` | HMAC session key loaded at startup |
+| `session_count` | `Arc<AtomicUsize>` | Active PTY session count (max `MAX_SESSIONS`) |
+| `event_tx` | `broadcast::Sender<WebEvent>` | Internal SSE broadcast sender |
+| `browser_state` | `Arc<RwLock<BrowserStateSnapshot>>` | Cached frontend UI state |
+| `builds_cache` | `builds_handler::Cache` | `active.yaml` mtime + JSON bytes |
+| `builds` | `Arc<BuildRegistry>` | Per-build session registry keyed by UUID |
+| `active_agent` | `Arc<RwLock<AgentSession>>` | Active agent config; updated by `POST /api/setup/save` |
+| `soul_store` | `Option<Arc<SoulPersistence>>` | SQLite SOUL vault — `None` on open failure, degrades gracefully |
+| `promotion_policy` | `Option<PolicyHandle>` | Hot-reloadable promotion policy YAML |
+| `embedding_provider` | `Arc<OnceCell<Arc<dyn EmbeddingProvider>>>` | Lazy-init FastEmbed; falls back to `MockEmbeddingProvider` |
+| `dispatch_registry` | `Arc<Mutex<DispatchRegistry>>` | In-flight dispatch handles; short critical section per op (MED M-4) |
+| `docker_capable` | `DockerCapability` | Docker availability detected at startup |
+| `image_manager` | `ImageManager` | Lazy image provisioning for containerized sessions |
+| `telemetry` | `TelemetryHandle` | 1P structured event sink — no PII |
+| `session_store` | `Arc<Mutex<SessionStore>>` | SQLite session persistence — survives browser refresh |
+| `auth_nonces` | `Arc<DashMap<Uuid, Instant>>` | One-time auth nonces (60-second TTL); consumed on first use |
+| `global_event_store` | `GlobalEventStore` | Ring buffer (last 1,000 entries) → `~/.lightarchitects/webshell/events.ndjson` |
+| `plan_draft_sessions` | `Arc<DashMap<Uuid, (broadcast::Sender<PlanDraftEvent>, CancellationToken)>>` | In-flight plan draft sessions; removed on Done/Error/TTL expiry |
+
+### §1.4 CORS Constraint
+
+**`build_cors()` at `src/server/mod.rs:686` allows: `GET`, `POST`, `PUT`, `OPTIONS`.**
+
+All four HTTP methods used by webshell routes are included. Fixed 2026-05-16 — `Method::PUT` was absent in v1.0.0 initial ratification, silently blocking the two PUT routes for cross-origin callers. Resolved in same session.
+
+---
+
+## Part II — Backend API Endpoints
+
+### §2.1 Auth & Health
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/health` | Server liveness check |
+| `GET` | `/api/auth-check` | Quick auth status (no session detail) |
+| `POST` | `/api/auth/exchange` | OAuth token exchange |
+| `POST` | `/api/auth/nonce` | Issue HMAC nonce for CLI auth flow |
+| `POST` | `/api/auth/nonce-exchange` | Exchange nonce → session token |
+| `GET` | `/api/auth/status` | Detailed session and auth state |
+| `DELETE` | `/api/auth/session` | Logout and revoke session |
+
+### §2.2 Terminal / WebSocket
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET (WS)` | `/api/terminal/ws` | Global PTY WebSocket — TUI shell |
+| `GET (WS)` | `/api/builds/{id}/terminal/ws` | Per-build PTY WebSocket |
+
+### §2.3 Events & SSE
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET (SSE)` | `/api/events` | Global SSE stream (all platform events) |
+| `POST` | `/api/control` | Inject a control event into the SSE stream |
+| `GET (SSE)` | `/api/builds/{id}/events` | Per-build SSE stream |
+| `POST` | `/api/builds/{id}/notify` | Push a notification to a build's SSE channel |
+| `GET (SSE)` | `/api/events/global` | SSE: replays ring-buffer snapshot (last 1,000 events) then streams live global events; filterable via `EventFilter` query params |
+
+### §2.4 Builds Core
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/builds` | List all builds |
+| `POST` | `/api/builds` | Create a build |
+| `GET` | `/api/builds/resume` | List resumable agent sessions |
+| `GET` | `/api/lasdlc` | LASDLC template metadata |
+| `POST` | `/api/builds/plan` | Create a plan (committed immediately) |
+| `POST` | `/api/builds/plan/draft` | Start a streaming plan draft session |
+| `GET (SSE)` | `/api/builds/plan/draft-stream/{session_id}` | SSE stream for an in-flight plan draft |
+| `POST` | `/api/builds/plan/commit` | Commit a draft plan to canonical state |
+| `PUT` | `/api/builds/plan/{codename}` | Update an existing plan |
+| `GET` | `/api/builds/{id}` | Build detail |
+| `GET` | `/api/builds/{id}/findings` | Gate findings list for a build |
+| `GET` | `/api/builds/{id}/notes` | Get operator notes |
+| `PUT` | `/api/builds/{id}/notes` | Update notes |
+| `GET` | `/api/builds/{id}/artifacts` | List build artifacts |
+| `POST` | `/api/builds/{id}/artifacts` | Upload an artifact |
+| `GET` | `/api/builds/{id}/gates/{pillar}` | Gate status for a specific pillar |
+| `POST` | `/api/builds/{id}/pillars/{pillar}` | Trigger a pillar |
+| `POST` | `/api/builds/{id}/copilot` | EVA copilot chat (streaming) |
+| `POST` | `/api/builds/{id}/copilot/voice` | EVA voice synthesis |
+| `POST` | `/api/builds/{id}/dispatch` | Dispatch a squad agent from within a build |
+| `GET (SSE)` | `/api/builds/{id}/agent/stream` | Option-E hybrid agent SSE |
+| `GET (WS)` | `/api/builds/{id}/agent/ws` | Option-E hybrid agent WebSocket |
+
+### §2.5 SOUL Vault
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/soul/search` | Semantic + full-text hybrid search |
+| `GET` | `/api/soul/entries/{*path}` | Fetch a vault entry by path (wildcard) |
+| `GET` | `/api/soul/memory/hot` | Hot memory — recent entries in the ring buffer |
+| `GET` | `/api/soul/memory/cold` | Cold memory — archived entries from SQLite |
+| `GET` | `/api/soul/health` | SOUL backend health check |
+| `POST` | `/api/soul/reindex` | Trigger a full vault reindex |
+| `POST` | `/api/soul/compaction/preview` | Dry-run compaction analysis (non-destructive) |
+| `POST` | `/api/soul/compaction/apply` | Apply compaction — moves files to `.compacted/{date}/` |
+| `GET` | `/api/soul/relationships/{*entry_id}` | Graph edges for a specific entry |
+| `GET` | `/api/soul/edges` | All graph edges |
+| `GET` | `/api/soul/convergences` | Cross-entry convergence signals |
+
+### §2.6 Workspaces & Squad
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/workspaces` | List workspaces / projects |
+| `GET` | `/api/workspaces/{id}` | Workspace detail |
+| `GET` | `/api/meta-skills` | Inventory of available meta-skills |
+| `GET` | `/api/siblings` | Squad agent status (route name is internal artefact — UI shows "Squad") |
+| `GET` | `/api/sitrep` | System situation report |
+| `GET` | `/api/conductor/status` | Gateway conductor queue and heartbeat |
+| `GET` | `/api/arena/status` | Arena training data factory status |
+
+### §2.7 Dispatch Sub-Router
+
+Registered via `.merge(dispatch::dispatch_router())`. All routes require `Authorization: Bearer <token>` **or** a valid `la_session` cookie (HIGH H-5). Source: `src/dispatch/routes.rs:131`.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/dispatch/classify` | Classify a prompt → sibling routing decision |
+| `POST` | `/api/dispatch/execute` | Execute a classified dispatch run |
+| `GET (SSE)` | `/api/dispatch/status/{id}` | Live run status stream |
+| `POST` | `/api/dispatch/cancel/{id}` | Cancel a running dispatch |
+| `POST` | `/api/dispatch/retry/{id}/{agent}` | Retry a run with a specific agent |
+| `POST` | `/api/dispatch/{id}/fs-approve` | Approve a filesystem permission gate (EEF E5) |
+| `POST` | `/api/dispatch/{id}/fs-reject` | Reject a filesystem permission gate (EEF E5) |
+
+### §2.8 Exec / Processes
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/exec/run` | Spawn a managed process |
+| `GET` | `/api/exec/output/{handle}` | Stream or poll process stdout/stderr |
+| `GET` | `/api/exec/processes` | List all running managed processes |
+| `POST` | `/api/exec/kill` | Kill a process by handle |
+
+### §2.9 Code Editor
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/code/read` | Read file content (path as query param) |
+| `GET` | `/api/code/list` | List directory contents |
+| `POST` | `/api/code/write` | Write or overwrite a file |
+| `POST` | `/api/code/search` | Code search (grep-style, regex) |
+| `POST` | `/api/code/preview-diff` | Preview a diff before applying |
+| `POST` | `/api/code/apply-diff` | Apply a diff to the filesystem |
+
+### §2.10 Git Operations
+
+All routes accept a repo path in the request body. No worktree operations exist.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/git/status` | `git status` for a repo path |
+| `POST` | `/api/git/branch` | Branch info or create branch |
+| `POST` | `/api/git/diff` | `git diff` (staged + unstaged) |
+| `POST` | `/api/git/commit` | Stage and commit |
+| `POST` | `/api/git/push` | Push to remote |
+| `POST` | `/api/git/pull` | Pull from remote |
+| `POST` | `/api/git/pr/create` | Create a GitHub PR via `gh` |
+| `POST` | `/api/git/pr/review` | Review or merge a PR |
+
+### §2.11 Coordination / Squad Comms
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/coordination/tasks` | List coordination tasks |
+| `POST` | `/api/coordination/tasks/add` | Add a task |
+| `POST` | `/api/coordination/tasks/claim/{id}` | Claim a task for execution |
+| `GET` | `/api/coordination/tasks/{id}/logs` | Task execution logs |
+| `POST` | `/api/coordination/sessions/start` | Start a coordination session |
+| `POST` | `/api/coordination/sessions/end` | End a coordination session |
+| `GET` | `/api/coordination/chat/sessions` | List active chat sessions |
+| `POST` | `/api/coordination/chat/inject` | Inject a message into an agent chat session |
+| `GET (SSE)` | `/api/coordination/chat/stream` | SSE stream for chat messages |
+| `POST` | `/api/coordination/tasks/spawn-worker` | Spawn a worker agent for a task |
+
+### §2.12 Miscellaneous
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/polytopes` | Voxel / project topology for the Ops 3D helix panel |
+| `GET` | `/api/browser-state` | Read persisted browser UI state |
+| `POST` | `/api/browser-state` | Write / update browser UI state |
+| `POST` | `/api/session/fork` | Fork: handoff webshell session → terminal |
+| `GET` | `/api/setup/info` | Backend configuration info |
+| `GET` | `/api/setup/models` | Available model list |
+| `POST` | `/api/setup/save` | Save backend configuration |
+| `DELETE` | `/api/setup/reset` | Reset backend configuration to defaults |
+| `GET` | `/api/debug/parity` | Phase 20b.3 parity verification (dev/debug) |
+| `POST` | `/api/csp-report` | CSP violation ingestion (Enforce mode, SEC-3b) |
+| `GET` | `/api/files` | File tree listing for `@`-file autocomplete |
+
+**Static assets**: all unmatched routes are handled by `static_assets::serve` — the fallback serves the pre-built SPA bundle.
+
+---
+
+## Part III — Frontend Route Catalogue
+
+### §3.1 Router Implementation
+
+**File**: `lightarchitects-webshell-ui/src/lib/routes.ts`
+
+Custom hash-based SPA router (not SvelteKit file-based routing). Routes are matched against `window.location.hash` in declaration order — most-specific patterns first.
+
+### §3.2 ScreenKey Types
+
+```typescript
+type ScreenKey =
+  | 'Ops'         // /  /ops
+  | 'Dispatch'    // /dispatch
+  | 'Builds'      // /builds
+  | 'Intake'      // /intake
+  | 'Helix'       // /helix
+  | 'BuildDetail' // /builds/:buildId
+  | 'ProjectDetail' // /project/:projectId
+  | 'Comms'       // /comms
+  | 'Editor'      // /editor
+  | 'Git'         // /git
+  | 'PullRequest' // /pr
+```
+
+### §3.3 BuildViewMode Enum
+
+```typescript
+type BuildViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms'
+```
+
+### §3.4 Route Patterns
+
+Ordered most-specific first — the router short-circuits on first match. **22 entries** in the ROUTES array (`src/lib/routes.ts:42–67`).
+
+| # | Regex pattern | Screen | Params | What it surfaces |
+|---|---------------|--------|--------|-----------------|
+| 1 | `/^\/builds\/([^/]+)\/phase\/([^/]+)\/wave\/([^/]+)\/agent\/([^/]+)$/` | `BuildDetail` | buildId, phaseId, waveId, agentKey | Agent output within a wave |
+| 2 | `/^\/builds\/([^/]+)\/phase\/([^/]+)\/wave\/([^/]+)$/` | `BuildDetail` | buildId, phaseId, waveId | Wave drilldown |
+| 3 | `/^\/builds\/([^/]+)\/phase\/([^/]+)$/` | `BuildDetail` | buildId, phaseId | Phase drilldown |
+| 4 | `new RegExp('^/builds/([^/]+)/((?:kanban\|list\|operator\|manifest\|plan\|comms))$')` | `BuildDetail` | buildId, view | Specific view mode — `BUILD_VIEW_PATTERN = '(?:kanban\|...)'` is non-capturing; outer `()` captures the view value |
+| 5 | `/^\/builds\/([^/]+)$/` | `BuildDetail` | buildId | Build detail (default view) |
+| 6 | `/^\/dispatch\/run\/([^/]+)\/agent\/([^/]+)$/` | `Dispatch` | runId, agentKey | Agent output within a run |
+| 7 | `/^\/dispatch\/run\/([^/]+)$/` | `Dispatch` | runId | Single orphan run detail |
+| 8 | `/^\/helix\/strand\/([^/]+)$/` | `Helix` | siblingKey | Strand drilldown (e.g. SOUL, CORSO) |
+| 9 | `/^\/helix\/entry\/([^/]+)$/` | `Helix` | entryId | Vault entry detail |
+| 10 | `/^\/project\/([^/]+)$/` | `ProjectDetail` | projectId | Project detail |
+| 11 | `/^\/?$/` | `Ops` | — | Root path — Operations HUD |
+| 12 | `/^\/ops(#.*)?$/` | `Ops` | — | `/ops` with optional hash fragment — Operations HUD |
+| 13 | `/^\/dispatch$/` | `Dispatch` | — | Squad dispatch — classify and execute runs |
+| 14 | `/^\/builds$/` | `Builds` | — | Build portfolio list |
+| 15 | `/^\/intake$/` | `Intake` | — | New build creation form |
+| 16 | `/^\/helix$/` | `Helix` | — | SOUL knowledge graph browser |
+| 17 | `/^\/comms$/` | `Comms` | — | Squad communications hub |
+| 18 | `/^\/editor\/(.+)$/` | `Editor` | filepath | Code editor with file open |
+| 19 | `/^\/editor$/` | `Editor` | — | Code editor (no file) |
+| 20 | `/^\/git$/` | `Git` | — | Git operations screen |
+| 21 | `/^\/pr\/new$/` | `PullRequest` | — | PR creation |
+| 22 | `/^\/pr\/(\d+)$/` | `PullRequest` | number | PR detail and review |
+
+### §3.5 Legacy Redirects
+
+Applied via `history.replaceState` (transparent — no visible route change):
+
+| Old path | New path | Added |
+|----------|----------|-------|
+| `/squad-dispatch` | `/dispatch` | Wave 1 |
+| `/activity` | `/ops#activity` | Wave 1 |
+| `/sitrep` | `/ops#health` | Wave 1 |
+| `/workspace` | `/builds` | Wave 1 (2026-05-02) |
+
+### §3.6 Fallback Behaviour
+
+All unmatched routes fall through to `screen: 'Ops'` — the default home screen.
+
+---
+
+## Part IV — Coverage Gaps
+
+Backend routes that exist but have no dedicated frontend screen or route.
+
+| Backend domain | Endpoints | Frontend representation | Gap severity |
+|----------------|-----------|------------------------|-------------|
+| **Workspaces** | `GET /api/workspaces`, `GET /api/workspaces/{id}` | None — no `/workspaces` screen | High — key HUD surface for vibe-coding engineers |
+| **Processes** | `GET /api/exec/processes` | None — no running-processes list | High — engineers need visibility into spawned processes |
+| **Worktrees** | Zero backend routes | None | Critical — complete gap at both layers |
+| **Meta-skills** | `GET /api/meta-skills` | None | Medium — skill inventory not surfaced |
+| **SOUL graph edges** | `GET /api/soul/edges`, `/api/soul/convergences` | Not in Helix screen | Medium — graph topology invisible |
+| **Conductor/Arena control** | `GET /api/conductor/status`, `/api/arena/status` | Ops panel read-only | Low — status visible; no control surface |
+| **Coordination drilldown** | `GET /api/coordination/tasks/{id}/logs` | Comms screen is flat (no `/comms/task/{id}`) | Medium — task log detail unreachable via deep link |
+| **Dispatch permission gates** | `POST /api/dispatch/{id}/fs-approve/reject` | EEF E5 dispatch detail view | Needs verification — UI wiring not confirmed |
+| **Polytope browse** | `GET /api/polytopes` | Only Ops 3D panel | Low — not a browsable list |
+| **Debug parity** | `GET /api/debug/parity` | None | Intentional — dev/debug only |
+
+---
+
+## Part V — Known Defects
+
+### §5.1 CORS PUT Gap — RESOLVED 2026-05-16
+
+**Severity**: HIGH — was silently blocking cross-origin callers.
+**Status**: Fixed. `Method::PUT` added to `allow_methods` in `build_cors()` (`src/server/mod.rs:686`).
+
+Affected routes: `PUT /api/builds/plan/{codename}` and `PUT /api/builds/{id}/notes`. Both now reachable cross-origin.
+
+### §5.2 Internal Route Name Artefact
+
+`GET /api/siblings` returns squad agent status. The route name `siblings` is an internal artefact from pre-vocabulary-canon naming. The public UI vocabulary is "Squad" / "Agent" (per vocabulary canon). The route name is load-bearing and cannot be changed without a coordinated client update, but all UI labels and documentation should use the canonical terms.
+
+---
+
+## Part VI — Governance
+
+### §6.1 Update Protocol
+
+Any PR that modifies `build_app()`, `dispatch_router()`, or `src/lib/routes.ts` **must** update this document in the same commit. Gate [D] is enforced by LÆX. The PR description must include a diff of this document alongside the code change.
+
+### §6.2 Version Policy
+
+| Change type | Version bump |
+|-------------|-------------|
+| New route added | Patch (1.0.x) |
+| Route removed or path changed | Minor (1.x.0) |
+| CORS policy changed | Minor (1.x.0) |
+| Authentication model changed | Major (x.0.0) |
+| AppState schema changed | Major (x.0.0) |
+
+### §6.3 Verification Protocol
+
+Run the following after any backend route change to reconcile this document with the implementation:
+
+```bash
+# Count route registrations across both router files
+grep -c '\.route(' \
+  lightarchitects-webshell/src/server/mod.rs \
+  lightarchitects-webshell/src/dispatch/routes.rs
+
+# Confirm CORS methods
+grep -A3 'allow_methods' lightarchitects-webshell/src/server/mod.rs
+
+# Confirm frontend route count (counts regex-literal entries; add 1 for the new RegExp() entry on line 48)
+grep -c '\[/' lightarchitects-webshell-ui/src/lib/routes.ts
+```
+
+Expected at time of ratification (2026-05-16): 89 + 7 = 96 call sites in Rust; **22** route entries in TypeScript ROUTES array (`routes.ts:42–67`). Note: the grep command returns **21** — entry #4 (line 48) uses `new RegExp(...)` and does not start with `[/`, so it is not counted by the grep. True count = grep output + 1.
+
+### §6.4 Source Files
+
+| File | Content | Lines verified |
+|------|---------|----------------|
+| `lightarchitects-webshell/src/server/mod.rs` | `build_app()` — all routes | 402–650 |
+| `lightarchitects-webshell/src/dispatch/routes.rs` | `dispatch_router()` — dispatch sub-routes | 103–111 |
+| `lightarchitects-webshell-ui/src/lib/routes.ts` | Hash router — all ScreenKey types and patterns | 1–109 |
+| `lightarchitects-webshell/src/server/mod.rs:686` | CORS allowed methods | Confirmed: GET, POST, PUT, OPTIONS (PUT added 2026-05-16, §5.1) |
