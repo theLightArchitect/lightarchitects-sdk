@@ -553,6 +553,7 @@ export const planBuilderDraft = writable<import('./types').BuildPlan | null>(nul
 
 // ── Plan Draft streaming state (plan-builder-copilot-bridge Phase 3) ─────────
 
+/** Streaming state for an in-progress EVA plan draft session. */
 export interface PlanDraftState {
   /** null = idle; non-null = active draft session */
   sessionId: string | null;
@@ -576,6 +577,7 @@ const PLAN_DRAFT_IDLE: PlanDraftState = {
   error:     null,
 };
 
+/** Svelte writable store for the active plan draft; reset with `resetPlanDraft()`. */
 export const planDraftState = writable<PlanDraftState>({ ...PLAN_DRAFT_IDLE });
 
 /** Reset plan draft state to idle. */

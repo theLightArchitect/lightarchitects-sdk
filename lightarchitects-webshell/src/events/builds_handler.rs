@@ -1037,11 +1037,36 @@ pub async fn commit_plan_handler(
             .into_response();
     }
 
-    // Write plan file.
-    let plan_path = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+    // Validate codename: only lowercase alphanumeric + hyphen permitted.
+    // Rejects path-traversal attempts (e.g. "../../../etc/passwd") before
+    // any filesystem operation.
+    if req.codename.is_empty()
+        || !req
+            .codename
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid codename: only [a-z0-9-] permitted",
+        )
+            .into_response();
+    }
+
+    // Construct the target path and verify containment within plans_dir.
+    // PathBuf::join does NOT strip `..` components; starts_with is the
+    // reliable containment check (defense-in-depth after codename validation).
+    let plans_dir = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
         .join(".claude")
-        .join("plans")
-        .join(format!("{}.md", req.codename));
+        .join("plans");
+    let plan_path = plans_dir.join(format!("{}.md", req.codename));
+    if !plan_path.starts_with(&plans_dir) {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid codename: path escapes plans directory",
+        )
+            .into_response();
+    }
 
     if let Err(e) = std::fs::write(&plan_path, &req.body) {
         tracing::warn!(path=%plan_path.display(), error=%e, "plan commit write failed");
