@@ -15,6 +15,9 @@
  *   5. Denied card is removed from the pending list.
  *   6. HAR evidence captured for the WS upgrade handshake.
  *
+ * Wire format (E5 P3, 2026-05-16): uses call_id/summary/timeout_secs not request_id/input.
+ * Outbound WS approve/deny still use {action,request_id} (ControlMessage shape).
+ *
  * What is NOT tested here (deferred to E5 CLI impl follow-on build):
  *   - Real CLI→bridge→frontend flow via StreamingApprovalGate (Rust).
  *   - SERAPH gate on the Rust permission handler surface.
@@ -53,12 +56,14 @@ const MOCK_SESSION_START = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function makePermissionRequest(id: string, tool: string) {
+function makePermissionRequest(id: string, tool: string, summary = `E5 test: ${tool} needs approval`) {
   return JSON.stringify({
-    type:       'permission_request',
-    request_id: id,
+    type:         'permission_request',
+    call_id:      id,
     tool,
-    input:      { path: '/tmp/e5-test.txt', content: 'hello from permission gate' },
+    summary,
+    agent_id:     'e5-test-agent',
+    timeout_secs: 300,
   });
 }
 
@@ -226,8 +231,15 @@ test.describe('EEF E5 — permission gating approval UX (mock-layer)', () => {
     // Card shows the tool name.
     await expect(page.locator('.perm-tool').first()).toContainText('Write');
 
-    // Timer countdown is visible.
+    // Card shows the summary text (not raw JSON input).
+    await expect(page.locator('.perm-input').first()).toContainText('E5 test: Write needs approval');
+
+    // Timer countdown is visible and shows remaining seconds (≤ 300).
     await expect(page.locator('.perm-timer').first()).toBeVisible();
+    const timerText = await page.locator('.perm-timer').first().textContent();
+    const secs = parseInt(timerText?.replace('s', '') ?? '0', 10);
+    expect(secs).toBeGreaterThan(0);
+    expect(secs).toBeLessThanOrEqual(300);
 
     // Northstar E5 gate.
     expect(await readWindowOpenCount(page), 'terminal_window_open_count must be 0').toBe(0);
