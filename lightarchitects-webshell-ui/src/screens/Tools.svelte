@@ -36,31 +36,38 @@
     description: string;
   }
 
-  let mcpServers = $state<McpServer[]>([]);
-  let squadAgents = $state<SquadAgent[]>([]);
-  let workspaces  = $state<Workspace[]>([]);
-  let metaSkills  = $state<MetaSkill[]>([]);
-  let loading     = $state(true);
-  let fetchError  = $state<string | null>(null);
+  let mcpServers      = $state<McpServer[]>([]);
+  let squadAgents     = $state<SquadAgent[]>([]);
+  let workspaces      = $state<Workspace[]>([]);
+  let metaSkills      = $state<MetaSkill[]>([]);
+  let loading         = $state(true);
+  let mcpError        = $state<string | null>(null);
+  let squadError      = $state<string | null>(null);
+  let workspacesError = $state<string | null>(null);
+  let skillsError     = $state<string | null>(null);
 
   async function fetchAll() {
-    try {
-      const h = authHeaders();
-      const [mcp, squad, ws, skills] = await Promise.all([
-        fetch('/api/mcp-servers',  { headers: h }).then(r => r.json()),
-        fetch('/api/siblings',     { headers: h }).then(r => r.json()),
-        fetch('/api/workspaces',   { headers: h }).then(r => r.json()),
-        fetch('/api/meta-skills',  { headers: h }).then(r => r.json()),
-      ]);
-      mcpServers  = mcp;
-      squadAgents = squad;
-      workspaces  = ws;
-      metaSkills  = skills;
-    } catch (e) {
-      fetchError = e instanceof Error ? e.message : 'Failed to load tool surface';
-    } finally {
-      loading = false;
-    }
+    const h = authHeaders();
+    const [mcp, squad, ws, skills] = await Promise.allSettled([
+      fetch('/api/mcp-servers', { headers: h }).then(r => r.json()),
+      fetch('/api/siblings',    { headers: h }).then(r => r.json()),
+      fetch('/api/workspaces',  { headers: h }).then(r => r.json()),
+      fetch('/api/meta-skills', { headers: h }).then(r => r.json()),
+    ]);
+
+    if (mcp.status    === 'fulfilled') mcpServers  = mcp.value;
+    else mcpError        = 'MCP servers unavailable';
+
+    if (squad.status  === 'fulfilled') squadAgents = squad.value;
+    else squadError      = 'Squad agents unavailable';
+
+    if (ws.status     === 'fulfilled') workspaces  = ws.value;
+    else workspacesError = 'Workspaces unavailable';
+
+    if (skills.status === 'fulfilled') metaSkills  = skills.value;
+    else skillsError     = 'Meta-skills unavailable';
+
+    loading = false;
   }
 
   onMount(fetchAll);
@@ -68,20 +75,21 @@
 
 <div class="tools-screen">
   <header class="tools-header">
-    <h1>Tool Surface</h1>
+    <h1>Available Tools</h1>
     <p class="subtitle">Platform capability inventory — MCP servers, agents, workspaces, skills</p>
   </header>
 
   {#if loading}
     <div class="loading" role="status">Loading tool surface…</div>
-  {:else if fetchError}
-    <div class="fetch-error" role="alert">{fetchError}</div>
   {:else}
     <div class="panels">
 
-      <!-- Panel 1: MCP Servers — §O Checks 1 + 6 -->
+      <!-- Panel 1: MCP Servers — §O Checks 1 + 2 + 6 -->
       <section class="panel" aria-label="MCP Servers">
         <h2>MCP Servers</h2>
+        {#if mcpError}
+          <p class="panel-error" role="alert">{mcpError}</p>
+        {/if}
         {#each mcpServers as server (server.id)}
           <div class="server-row" data-supported={server.webshell_supported}>
             <span class="server-name">{server.name}</span>
@@ -103,6 +111,9 @@
       <!-- Panel 2: Squad Agents — agent tool surface -->
       <section class="panel" aria-label="Squad Agents">
         <h2>Squad Agents</h2>
+        {#if squadError}
+          <p class="panel-error" role="alert">{squadError}</p>
+        {/if}
         {#each squadAgents as agent (agent.id)}
           <div class="agent-row">
             <span class="agent-id">{agent.id}</span>
@@ -119,6 +130,9 @@
       <!-- Panel 3: Workspaces -->
       <section class="panel" aria-label="Workspaces">
         <h2>Workspaces</h2>
+        {#if workspacesError}
+          <p class="panel-error" role="alert">{workspacesError}</p>
+        {/if}
         {#each workspaces as ws (ws.id)}
           <div class="workspace-row">
             <span class="ws-name">{ws.name}</span>
@@ -132,6 +146,9 @@
       <!-- Panel 4: Meta-skills — §O Check 3 -->
       <section class="panel" aria-label="Meta-skills">
         <h2>Meta-skills</h2>
+        {#if skillsError}
+          <p class="panel-error" role="alert">{skillsError}</p>
+        {/if}
         {#each metaSkills as skill (skill.id)}
           <div class="skill-row">
             <span class="skill-id">{skill.id}</span>
@@ -287,12 +304,11 @@
     text-align: center;
   }
 
-  .fetch-error {
+  .panel-error {
     color: var(--danger, #ef4444);
-    font-size: 0.875rem;
-    padding: 1rem;
-    border: 1px solid var(--danger, #ef4444);
-    border-radius: 6px;
+    font-size: 0.8rem;
+    font-style: italic;
+    margin: 0 0 0.5rem;
   }
 
   @media (max-width: 767px) {

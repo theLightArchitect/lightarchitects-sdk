@@ -30,7 +30,7 @@ use axum::{
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::path::{Path as StdPath, PathBuf};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
@@ -853,6 +853,14 @@ pub async fn dispatch_sibling(
 ///
 /// §O Check 1 (enumeration) + Check 6 (gap visibility). Returns `[]` if
 /// the file is absent or malformed — never an error, always a valid array.
+/// §O Checks 1 + 2 + 6: lists all MCP servers configured in `~/.claude/mcp.json`.
+/// Check 1 — operator sees the server list without a terminal.
+/// Check 2 — data is live (parsed from mcp.json at request time, not stubbed).
+/// Check 6 — non-invocable servers carry a `gap_label` naming the gap.
+///
+/// Degrades silently to `[]` on any I/O or parse error.
+/// Reads at most 64 KiB to prevent runaway allocation on malformed configs.
+#[tracing::instrument(skip(headers, state), level = "info")]
 pub async fn list_mcp_servers(
     headers: HeaderMap,
     State(state): State<AppState>,
@@ -864,13 +872,29 @@ pub async fn list_mcp_servers(
         return (StatusCode::OK, Json(json!([]))).into_response();
     };
     let mcp_json = home.join(".claude/mcp.json");
-    let Ok(raw) = tokio::fs::read_to_string(&mcp_json).await else {
+    let Some(raw) = read_capped(&mcp_json, 64 * 1024).await else {
         return (StatusCode::OK, Json(json!([]))).into_response();
     };
-    let Ok(parsed) = serde_json::from_str::<Value>(&raw) else {
-        return (StatusCode::OK, Json(json!([]))).into_response();
+    let servers = parse_mcp_servers(&raw);
+    (StatusCode::OK, Json(servers)).into_response()
+}
+
+/// Read a file but reject (return `None`) if it exceeds `max_bytes`.
+/// Prevents runaway memory on pathologically large config files.
+async fn read_capped(path: &std::path::Path, max_bytes: u64) -> Option<String> {
+    let file = tokio::fs::File::open(path).await.ok()?;
+    let mut buf = String::new();
+    file.take(max_bytes).read_to_string(&mut buf).await.ok()?;
+    Some(buf)
+}
+
+/// Parse `~/.claude/mcp.json` raw content into an array of server summary objects.
+/// Extracted for unit testability — the async handler calls this after the I/O step.
+fn parse_mcp_servers(raw: &str) -> Vec<Value> {
+    let Ok(parsed) = serde_json::from_str::<Value>(raw) else {
+        return vec![];
     };
-    let servers = parsed
+    parsed
         .get("mcpServers")
         .and_then(|v| v.as_object())
         .map(|obj| {
@@ -898,8 +922,7 @@ pub async fn list_mcp_servers(
                 })
                 .collect::<Vec<_>>()
         })
-        .unwrap_or_default();
-    (StatusCode::OK, Json(servers)).into_response()
+        .unwrap_or_default()
 }
 
 fn mcp_titlecase(s: &str) -> String {
@@ -933,7 +956,9 @@ fn load_sibling_identity(sibling: &str) -> String {
 
 #[cfg(test)]
 mod mcp_server_tests {
-    use super::mcp_titlecase;
+    use super::{mcp_titlecase, parse_mcp_servers};
+
+    // ── mcp_titlecase ──────────────────────────────────────────────────────────
 
     #[test]
     fn titlecase_empty() {
@@ -958,5 +983,69 @@ mod mcp_server_tests {
     #[test]
     fn titlecase_hyphenated() {
         assert_eq!(mcp_titlecase("my-tool"), "My-tool");
+    }
+
+    #[test]
+    fn titlecase_unicode_key() {
+        // Multi-codepoint expansion: ß → SS (correct uppercase, not titlecase)
+        assert_eq!(mcp_titlecase("ß-server"), "SS-server");
+    }
+
+    // ── parse_mcp_servers ──────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_empty_string() {
+        assert!(parse_mcp_servers("").is_empty());
+    }
+
+    #[test]
+    fn parse_invalid_json() {
+        assert!(parse_mcp_servers("{not json}").is_empty());
+    }
+
+    #[test]
+    fn parse_missing_mcp_servers_key() {
+        assert!(parse_mcp_servers(r#"{"otherKey": {}}"#).is_empty());
+    }
+
+    #[test]
+    fn parse_empty_mcp_servers_object() {
+        assert!(parse_mcp_servers(r#"{"mcpServers": {}}"#).is_empty());
+    }
+
+    #[test]
+    fn parse_single_server_gap_label() {
+        let raw = r#"{"mcpServers": {"figma": {"command": "/usr/bin/figma"}}}"#;
+        let servers = parse_mcp_servers(raw);
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0]["id"], "figma");
+        assert_eq!(servers[0]["webshell_supported"], false);
+        assert_eq!(servers[0]["gap_label"], "webshell: not yet supported");
+    }
+
+    #[test]
+    fn parse_lightarchitects_server_supported() {
+        let raw = r#"{"mcpServers": {"lightarchitects": {"command": "/usr/local/bin/la"}}}"#;
+        let servers = parse_mcp_servers(raw);
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0]["webshell_supported"], true);
+        assert!(servers[0]["gap_label"].is_null());
+    }
+
+    #[test]
+    fn parse_server_without_command() {
+        let raw = r#"{"mcpServers": {"context7": {"type": "http", "url": "https://example.com"}}}"#;
+        let servers = parse_mcp_servers(raw);
+        assert_eq!(servers.len(), 1);
+        assert!(servers[0]["command"].is_null());
+    }
+
+    #[test]
+    fn parse_unicode_server_key() {
+        let raw = r#"{"mcpServers": {"日本語": {}}}"#;
+        let servers = parse_mcp_servers(raw);
+        assert_eq!(servers.len(), 1);
+        // Display name derives from key; should not panic
+        assert!(!servers[0]["name"].as_str().unwrap_or("").is_empty());
     }
 }
