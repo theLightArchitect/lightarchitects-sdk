@@ -188,6 +188,7 @@ async fn bridge_is_alive(host: &super::AgentSessionHost) -> bool {
     matches!(child.try_wait(), Ok(None))
 }
 
+#[allow(clippy::too_many_lines)]
 async fn drive_reader(
     ws_stream: &mut futures_util::stream::SplitStream<axum::extract::ws::WebSocket>,
     session: &std::sync::Arc<crate::session::BuildSession>,
@@ -251,6 +252,43 @@ async fn drive_reader(
                 handle_fallback(session, event_tx, outgoing_tx, action_name, text).await;
                 continue;
             }
+        }
+
+        // ApprovePermission / DenyPermission must go through permission_queue for
+        // TOCTOU safety (prevents HTTP + WS double-resolution of the same call_id).
+        let maybe_perm = match &ctrl {
+            ControlMessage::ApprovePermission { request_id } => Some((request_id.clone(), true)),
+            ControlMessage::DenyPermission { request_id, .. } => Some((request_id.clone(), false)),
+            _ => None,
+        };
+        if let Some((request_id, approved)) = maybe_perm {
+            let pq = {
+                let guard = session.agent_host.lock().await;
+                guard.as_ref().map(|h| h.permission_queue.clone())
+            };
+            if let Some((_, tx)) = pq.and_then(|q| q.remove(&request_id)) {
+                let _ = tx.send(approved);
+                let resp = super::protocol::ControlResponse::PermissionResolved {
+                    request_id,
+                    approved,
+                };
+                let _ = outgoing_tx
+                    .send(axum::extract::ws::Message::Text(
+                        serde_json::to_string(&resp).unwrap_or_default().into(),
+                    ))
+                    .await;
+            } else {
+                let resp = super::protocol::ControlResponse::Reject {
+                    action: action_name.to_owned(),
+                    reason: "permission request already resolved or not found".to_owned(),
+                };
+                let _ = outgoing_tx
+                    .send(axum::extract::ws::Message::Text(
+                        serde_json::to_string(&resp).unwrap_or_default().into(),
+                    ))
+                    .await;
+            }
+            continue;
         }
 
         // Streaming mode: forward to bridge control channel.

@@ -153,7 +153,14 @@ pub async fn ensure_agent_host(
     let tx = host.event_tx.clone();
     let ctrl = host.control_tx.clone();
 
-    let child = bridge::spawn_bridge(session, host.event_tx.clone(), control_rx).await;
+    let child = bridge::spawn_bridge(
+        session,
+        host.event_tx.clone(),
+        host.control_tx.clone(),
+        control_rx,
+        Arc::clone(&host.permission_queue),
+    )
+    .await;
     if let Some(c) = child {
         let mut host_with_child = host;
         host_with_child.child = Mutex::new(Some(c));

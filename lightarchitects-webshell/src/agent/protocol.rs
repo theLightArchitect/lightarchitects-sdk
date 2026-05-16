@@ -269,6 +269,27 @@ pub enum AgentEvent {
     // ── Heartbeat ─────────────────────────────────────────────────────────────
     /// Heartbeat / keepalive emitted every ~30s during long turns.
     Heartbeat,
+
+    // ── E5 permission gating ───────────────────────────────────────────────────
+    /// Operator approval required before a risky tool call executes.
+    ///
+    /// Emitted by the CLI `StreamingApprovalGate` when running as a webshell
+    /// subprocess.  The browser must respond via `ApprovePermission` or
+    /// `DenyPermission` within `timeout_secs`; the gate denies on timeout
+    /// (fail-secure).
+    PermissionRequest {
+        /// Stable, server-generated UUID v4 identifying this request.
+        /// Echoed back in `ApprovePermission` / `DenyPermission`.
+        call_id: String,
+        /// Tool name (e.g. `"Bash"`, `"Write"`).
+        tool: String,
+        /// Human-readable description of the pending operation.
+        summary: String,
+        /// Agent session identifier from the CLI side.
+        agent_id: String,
+        /// Seconds before the gate times out and auto-denies (fail-secure).
+        timeout_secs: u64,
+    },
 }
 
 impl AgentEvent {
@@ -302,6 +323,7 @@ impl AgentEvent {
             Self::ChildAgentCompleted { .. } => "child_complete",
             Self::PlanQueueReady { .. } => "plan_queue",
             Self::Heartbeat => "heartbeat",
+            Self::PermissionRequest { .. } => "permission_request",
         }
     }
 }

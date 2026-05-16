@@ -61,8 +61,9 @@
   interface PendingPermission {
     requestId: string;
     tool: string;
-    input: unknown;
+    summary: string;
     deadline: number; // unix ms — auto-deny when now >= deadline
+    timeoutSecs: number;
   }
 
   let pendingPermissions = $state<PendingPermission[]>([]);
@@ -84,13 +85,14 @@
 
   $effect(() => {
     for (const ev of events) {
-      if (ev.type === 'permission_request' && !_seenPermIds.has(ev.request_id)) {
-        _seenPermIds.add(ev.request_id);
+      if (ev.type === 'permission_request' && !_seenPermIds.has(ev.call_id)) {
+        _seenPermIds.add(ev.call_id);
         pendingPermissions = [...pendingPermissions, {
-          requestId: ev.request_id,
+          requestId: ev.call_id,
           tool: ev.tool,
-          input: ev.input,
-          deadline: Date.now() + 30_000,
+          summary: ev.summary,
+          deadline: Date.now() + ev.timeout_secs * 1000,
+          timeoutSecs: ev.timeout_secs,
         }];
       }
     }
@@ -435,7 +437,7 @@
           </div>
 
         {:else if ev.type === 'permission_request'}
-          {@const pending = pendingPermissions.find(p => p.requestId === ev.request_id)}
+          {@const pending = pendingPermissions.find(p => p.requestId === ev.call_id)}
           {#if pending}
             <div class="msg msg-permission-card" role="group" aria-label="Permission request for {ev.tool}">
               <div class="perm-header">
@@ -443,13 +445,13 @@
                 <span class="perm-tool">{ev.tool}</span>
                 <span class="perm-timer">{Math.max(0, Math.ceil((pending.deadline - now) / 1000))}s</span>
               </div>
-              <code class="perm-input">{JSON.stringify(ev.input, null, 0).slice(0, 240)}</code>
+              <code class="perm-input">{pending.summary.slice(0, 240)}</code>
               <div class="perm-bar-track">
-                <div class="perm-bar-fill" style:width="{Math.max(0, (pending.deadline - now) / 300)}%"></div>
+                <div class="perm-bar-fill" style:width="{Math.max(0, (pending.deadline - now) / (pending.timeoutSecs * 10))}%"></div>
               </div>
               <div class="perm-actions">
-                <button class="perm-btn perm-approve" onclick={() => approvePermission(ev.request_id)}>APPROVE</button>
-                <button class="perm-btn perm-deny"    onclick={() => denyPermission(ev.request_id)}>DENY</button>
+                <button class="perm-btn perm-approve" onclick={() => approvePermission(ev.call_id)}>APPROVE</button>
+                <button class="perm-btn perm-deny"    onclick={() => denyPermission(ev.call_id)}>DENY</button>
               </div>
             </div>
           {:else}

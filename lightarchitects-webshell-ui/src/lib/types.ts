@@ -332,7 +332,7 @@ export type AgentEvent =
   | { type: 'status_update'; text: string }
   | { type: 'heartbeat' }
   // ── HITL permission ──────────────────────────────────────────────────────
-  | { type: 'permission_request'; request_id: string; tool: string; input: unknown }
+  | { type: 'permission_request'; call_id: string; tool: string; summary: string; agent_id: string; timeout_secs: number }
   // ── Phase 5 TRUST hooks ──────────────────────────────────────────────────
   | { type: 'pick_classified'; mode: AgentExecutionMode }
   | { type: 'discover_injected'; entry_count: number; chars_injected: number }

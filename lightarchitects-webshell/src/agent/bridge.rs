@@ -19,10 +19,12 @@
 //! ```
 
 use std::process::Stdio;
+use std::sync::Arc;
 
+use dashmap::DashMap;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::process::{Child, ChildStdin, ChildStdout};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{info, warn};
 
 use crate::copilot::resolve_binary;
@@ -48,7 +50,9 @@ const MAX_NDJSON_LINE: usize = 1_048_576; // 1 MiB
 pub async fn spawn_bridge(
     session: &BuildSession,
     event_tx: broadcast::Sender<AgentEvent>,
+    control_tx: mpsc::Sender<ControlMessage>,
     control_rx: mpsc::Receiver<ControlMessage>,
+    permission_queue: Arc<DashMap<String, oneshot::Sender<bool>>>,
 ) -> Option<Child> {
     let binary = resolve_binary("lightarchitects");
     let mut cmd = tokio::process::Command::new(&binary);
@@ -126,7 +130,12 @@ pub async fn spawn_bridge(
 
     // ── stdout parsing task ───────────────────────────────────────────────────
     let event_tx_stdout = event_tx.clone();
-    tokio::spawn(parse_stdout(stdout, event_tx_stdout));
+    tokio::spawn(parse_stdout(
+        stdout,
+        event_tx_stdout,
+        control_tx,
+        permission_queue,
+    ));
 
     // ── stdin / control task ────────────────────────────────────────────────────
     tokio::spawn(drive_stdin(stdin, control_rx));
@@ -139,7 +148,12 @@ pub async fn spawn_bridge(
 /// Reads stdout in 8 KiB chunks and enforces `MAX_NDJSON_LINE` *before*
 /// accumulation so a malicious or buggy child cannot OOM the webshell
 /// with a single unbounded line.
-async fn parse_stdout(mut stdout: ChildStdout, event_tx: broadcast::Sender<AgentEvent>) {
+async fn parse_stdout(
+    mut stdout: ChildStdout,
+    event_tx: broadcast::Sender<AgentEvent>,
+    control_tx: mpsc::Sender<ControlMessage>,
+    permission_queue: Arc<DashMap<String, oneshot::Sender<bool>>>,
+) {
     let mut chunk = [0u8; 8192];
     let mut line = Vec::with_capacity(4096);
     let mut saw_complete = false;
@@ -149,7 +163,13 @@ async fn parse_stdout(mut stdout: ChildStdout, event_tx: broadcast::Sender<Agent
         match stdout.read(&mut chunk).await {
             Ok(0) => {
                 if !line.is_empty() && !overflow {
-                    process_line(&line, &event_tx, &mut saw_complete);
+                    process_line(
+                        &line,
+                        &event_tx,
+                        &mut saw_complete,
+                        &permission_queue,
+                        &control_tx,
+                    );
                 }
                 if !saw_complete {
                     let _ = event_tx.send(AgentEvent::Complete {
@@ -164,7 +184,13 @@ async fn parse_stdout(mut stdout: ChildStdout, event_tx: broadcast::Sender<Agent
                 for &b in &chunk[..n] {
                     if b == b'\n' {
                         if !overflow && !line.is_empty() {
-                            process_line(&line, &event_tx, &mut saw_complete);
+                            process_line(
+                                &line,
+                                &event_tx,
+                                &mut saw_complete,
+                                &permission_queue,
+                                &control_tx,
+                            );
                         }
                         line.clear();
                         overflow = false;
@@ -203,7 +229,18 @@ async fn parse_stdout(mut stdout: ChildStdout, event_tx: broadcast::Sender<Agent
 }
 
 /// Parse one accumulated NDJSON line and broadcast it.
-fn process_line(raw: &[u8], event_tx: &broadcast::Sender<AgentEvent>, saw_complete: &mut bool) {
+///
+/// When `AgentEvent::PermissionRequest` is parsed, the `call_id` is inserted
+/// into `permission_queue` with a `oneshot::Sender<bool>`.  A resolution task
+/// is spawned that awaits the bool and writes the CLI-format approve/deny JSON
+/// to `control_tx` (routed to the CLI's `read_control_stdin`).
+fn process_line(
+    raw: &[u8],
+    event_tx: &broadcast::Sender<AgentEvent>,
+    saw_complete: &mut bool,
+    permission_queue: &Arc<DashMap<String, oneshot::Sender<bool>>>,
+    control_tx: &mpsc::Sender<ControlMessage>,
+) {
     let Ok(line) = std::str::from_utf8(raw) else {
         let _ = event_tx.send(AgentEvent::Text {
             chunk: String::from_utf8_lossy(raw).into_owned(),
@@ -217,6 +254,31 @@ fn process_line(raw: &[u8], event_tx: &broadcast::Sender<AgentEvent>, saw_comple
         Ok(ev) => {
             if matches!(ev, AgentEvent::Complete { .. }) {
                 *saw_complete = true;
+            }
+            // Wire permission requests into the approval queue before broadcasting.
+            if let AgentEvent::PermissionRequest { ref call_id, .. } = ev {
+                if permission_queue.len() < super::MAX_PENDING_PERMISSIONS {
+                    let (tx, rx) = oneshot::channel::<bool>();
+                    permission_queue.insert(call_id.clone(), tx);
+                    let call_id_owned = call_id.clone();
+                    let ctrl = control_tx.clone();
+                    tokio::spawn(async move {
+                        let approved = rx.await.unwrap_or(false);
+                        let msg = if approved {
+                            ControlMessage::ApprovePermission {
+                                request_id: call_id_owned,
+                            }
+                        } else {
+                            ControlMessage::DenyPermission {
+                                request_id: call_id_owned,
+                                reason: None,
+                            }
+                        };
+                        let _ = ctrl.send(msg).await;
+                    });
+                } else {
+                    warn!(call_id = %call_id, "permission_queue at capacity — request will timeout (fail-secure)");
+                }
             }
             let _ = event_tx.send(ev);
         }
@@ -237,10 +299,11 @@ async fn drive_stdin(stdin: ChildStdin, mut control_rx: mpsc::Receiver<ControlMe
                 serde_json::json!({"action":"send_message","text":text})
             }
             ControlMessage::ApprovePermission { request_id } => {
-                serde_json::json!({"action":"approve_permission","request_id":request_id})
+                // CLI reads {"type":"approve","call_id":"..."} per StreamingApprovalGate wire format.
+                serde_json::json!({"type":"approve","call_id":request_id})
             }
-            ControlMessage::DenyPermission { request_id, reason } => {
-                serde_json::json!({"action":"deny_permission","request_id":request_id,"reason":reason})
+            ControlMessage::DenyPermission { request_id, .. } => {
+                serde_json::json!({"type":"deny","call_id":request_id})
             }
             ControlMessage::Interrupt => {
                 serde_json::json!({"action":"interrupt"})
@@ -374,7 +437,19 @@ async fn validate_cwd(cwd: &std::path::Path) -> Result<std::path::PathBuf, Strin
 )]
 mod tests {
     use super::*;
-    use tokio::sync::broadcast;
+    use dashmap::DashMap;
+    use std::sync::Arc;
+    use tokio::sync::{broadcast, mpsc, oneshot};
+
+    /// Helper: build a throwaway `permission_queue` + `control_tx` for `process_line` tests.
+    fn dummy_pq_ctrl() -> (
+        Arc<DashMap<String, oneshot::Sender<bool>>>,
+        mpsc::Sender<ControlMessage>,
+    ) {
+        let pq = Arc::new(DashMap::new());
+        let (ctrl_tx, _ctrl_rx) = mpsc::channel(4);
+        (pq, ctrl_tx)
+    }
 
     #[tokio::test]
     async fn validate_cwd_rejects_missing_path() {
@@ -404,9 +479,10 @@ mod tests {
     #[test]
     fn process_line_parses_valid_agent_event() {
         let (tx, mut rx) = broadcast::channel(4);
+        let (pq, ctrl) = dummy_pq_ctrl();
         let mut saw = false;
         let json = r#"{"type":"text","chunk":"hello"}"#;
-        process_line(json.as_bytes(), &tx, &mut saw);
+        process_line(json.as_bytes(), &tx, &mut saw, &pq, &ctrl);
         assert!(rx.try_recv().is_ok());
         assert!(!saw);
     }
@@ -414,18 +490,20 @@ mod tests {
     #[test]
     fn process_line_sets_saw_complete_on_complete_event() {
         let (tx, _rx) = broadcast::channel(4);
+        let (pq, ctrl) = dummy_pq_ctrl();
         let mut saw = false;
         let json = r#"{"type":"complete","reason":{"kind":"complete"}}"#;
-        process_line(json.as_bytes(), &tx, &mut saw);
+        process_line(json.as_bytes(), &tx, &mut saw, &pq, &ctrl);
         assert!(saw);
     }
 
     #[test]
     fn process_line_emits_text_on_unrecognised_json() {
         let (tx, mut rx) = broadcast::channel(4);
+        let (pq, ctrl) = dummy_pq_ctrl();
         let mut saw = false;
         let json = r"not json";
-        process_line(json.as_bytes(), &tx, &mut saw);
+        process_line(json.as_bytes(), &tx, &mut saw, &pq, &ctrl);
         let ev = rx.try_recv().expect("text event emitted");
         assert!(matches!(ev, AgentEvent::Text { .. }));
     }
@@ -433,10 +511,24 @@ mod tests {
     #[test]
     fn process_line_emits_text_on_invalid_utf8() {
         let (tx, mut rx) = broadcast::channel(4);
+        let (pq, ctrl) = dummy_pq_ctrl();
         let mut saw = false;
         let bytes = vec![0x80, 0x81, 0x82];
-        process_line(&bytes, &tx, &mut saw);
+        process_line(&bytes, &tx, &mut saw, &pq, &ctrl);
         let ev = rx.try_recv().expect("text event emitted");
         assert!(matches!(ev, AgentEvent::Text { .. }));
+    }
+
+    #[tokio::test]
+    async fn process_line_inserts_permission_request_into_queue() {
+        let (tx, mut rx) = broadcast::channel(4);
+        let (pq, ctrl) = dummy_pq_ctrl();
+        let mut saw = false;
+        let json = r#"{"type":"permission_request","call_id":"test-call-id","tool":"Bash","summary":"rm -rf /","agent_id":"agent-1","timeout_secs":300}"#;
+        process_line(json.as_bytes(), &tx, &mut saw, &pq, &ctrl);
+        // Event should be broadcast.
+        assert!(rx.try_recv().is_ok());
+        // permission_queue should contain the call_id.
+        assert!(pq.contains_key("test-call-id"), "call_id must be queued");
     }
 }

@@ -778,9 +778,10 @@ pub async fn reject_permission(
             .into_response();
     };
 
-    // Log rejection reason if provided.
+    // Log rejection reason if provided — strip newlines to prevent log injection.
     if let Some(ref reason) = req.reason {
-        tracing::info!(call_id = %req.call_id, reason = %reason, "permission rejected");
+        let sanitized = reason.replace(['\n', '\r'], " ");
+        tracing::info!(call_id = %req.call_id, reason = %sanitized, "permission rejected");
     }
 
     // Send denial (false) via oneshot channel.
