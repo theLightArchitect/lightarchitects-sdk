@@ -366,6 +366,7 @@ mod conversations_impl {
         ///
         /// Returns [`ConversationError`] if the trace directory cannot be created
         /// or the JSONL line cannot be written to disk.
+        #[allow(clippy::too_many_arguments)]
         pub async fn record_tool(
             &mut self,
             tool_name: &str,
@@ -374,6 +375,7 @@ mod conversations_impl {
             error: Option<String>,
             result_preview: impl Into<String>,
             duration_ms: u64,
+            span_ref: Option<String>,
         ) -> Result<(), ConversationError> {
             let timestamp = utc_timestamp_now();
 
@@ -406,8 +408,7 @@ mod conversations_impl {
                 error,
                 result_preview: truncate(result_preview.into(), 120),
                 branch: self.state.branch(),
-                // TODO(Phase A): wire from lÆx0-cli once it emits span UUIDs.
-                span_ref: None,
+                span_ref,
             };
             append_jsonl(&trace_file, &tool_record).await
         }
@@ -580,6 +581,7 @@ mod noop_conversations {
             _error: Option<String>,
             _result_preview: impl Into<String>,
             _duration_ms: u64,
+            _span_ref: Option<String>,
         ) -> Result<(), std::convert::Infallible> {
             Ok(())
         }
