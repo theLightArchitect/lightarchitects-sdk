@@ -886,7 +886,13 @@ pub(super) async fn call_subprocess(
         .as_mut()
         .ok_or_else(|| "copilot process unavailable".to_owned())?;
 
-    let msg_bytes = [message.as_bytes(), b"\n"].concat();
+    // Wrap prompt in a structured envelope (§2.1 LLM01 — structural isolation).
+    // The CLI's parse_stdin_prompt helper strips this envelope before forwarding
+    // to the LLM, ensuring operator text never lands verbatim in the system-prompt
+    // namespace.
+    let envelope = json!({"type": "prompt", "text": message});
+    let envelope_str = envelope.to_string();
+    let msg_bytes = [envelope_str.as_bytes(), b"\n"].concat();
     {
         let stdin = proc
             .stdin
@@ -1216,8 +1222,152 @@ pub async fn spawn_plan_draft(
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    // ── Test helpers ─────────────────────────────────────────────────────────
+
+    fn make_test_session() -> crate::session::BuildSession {
+        crate::session::BuildSession::new(
+            std::path::PathBuf::from("/tmp"),
+            crate::config::AgentSession::LightarchitectsNative(
+                crate::config::LightarchitectsNativeConfig::default(),
+            ),
+        )
+    }
+
+    // ── dispatch_ndjson_line — unit suite ─────────────────────────────────────
+
+    #[test]
+    fn dispatch_result_line_returns_text() {
+        let session = make_test_session();
+        let result = dispatch_ndjson_line(
+            r#"{"type":"result","text":"Hello, world!"}"#,
+            &session,
+            "build-1",
+        );
+        assert_eq!(result.as_deref(), Some("Hello, world!"));
+    }
+
+    #[test]
+    fn dispatch_result_with_no_text_returns_none() {
+        let session = make_test_session();
+        let result = dispatch_ndjson_line(r#"{"type":"result"}"#, &session, "b");
+        assert!(result.is_none());
+    }
+
+    // ── dispatch_ndjson_line — integration suite (crosses event-bus boundary) ─
+
+    #[test]
+    fn dispatch_tool_call_sends_activity_event() {
+        let session = make_test_session();
+        let mut rx = session.event_tx.subscribe();
+        let result =
+            dispatch_ndjson_line(r#"{"type":"tool_call","tool_name":"Read"}"#, &session, "b1");
+        assert!(result.is_none(), "tool_call must not return text");
+        let event = rx
+            .try_recv()
+            .expect("expected CopilotActivity event on event_tx");
+        assert!(
+            matches!(
+                event,
+                crate::events::types::WebEvent::CopilotActivity(ref e) if e.kind == "tool_call"
+            ),
+            "unexpected event variant: {event:?}"
+        );
+    }
+
+    #[test]
+    fn dispatch_thinking_sends_activity_event() {
+        let session = make_test_session();
+        let mut rx = session.event_tx.subscribe();
+        let result = dispatch_ndjson_line(
+            r#"{"type":"thinking","text":"Planning step."}"#,
+            &session,
+            "b2",
+        );
+        assert!(result.is_none());
+        let event = rx
+            .try_recv()
+            .expect("expected CopilotActivity event on event_tx");
+        assert!(
+            matches!(
+                event,
+                crate::events::types::WebEvent::CopilotActivity(ref e) if e.kind == "thinking"
+            ),
+            "unexpected event variant: {event:?}"
+        );
+    }
+
+    #[test]
+    fn dispatch_context_sends_context_status_event() {
+        let session = make_test_session();
+        let mut rx = session.event_tx.subscribe();
+        let result = dispatch_ndjson_line(
+            r#"{"type":"context","usage_pct":0.42,"level":null,"budget":200000,"used":84000}"#,
+            &session,
+            "b3",
+        );
+        assert!(result.is_none());
+        let event = rx
+            .try_recv()
+            .expect("expected ContextStatus event on event_tx");
+        assert!(
+            matches!(
+                event,
+                crate::events::types::WebEvent::ContextStatus(ref e) if (e.usage_pct - 0.42).abs() < 0.01
+            ),
+            "unexpected event variant: {event:?}"
+        );
+    }
+
+    // ── dispatch_ndjson_line — smoke suite (happy-path gate) ─────────────────
+
+    #[test]
+    fn dispatch_smoke_result_roundtrip() {
+        let session = make_test_session();
+        assert_eq!(
+            dispatch_ndjson_line(r#"{"type":"result","text":"done"}"#, &session, "smoke")
+                .as_deref(),
+            Some("done")
+        );
+    }
+
+    // ── dispatch_ndjson_line — regression suite ───────────────────────────────
+
+    #[test]
+    fn dispatch_empty_line_returns_none_no_panic() {
+        let session = make_test_session();
+        assert!(dispatch_ndjson_line("", &session, "b").is_none());
+        assert!(dispatch_ndjson_line("   ", &session, "b").is_none());
+    }
+
+    #[test]
+    fn dispatch_non_json_returns_none_no_panic() {
+        let session = make_test_session();
+        assert!(dispatch_ndjson_line("tracing INFO span", &session, "b").is_none());
+        assert!(dispatch_ndjson_line("plain text output", &session, "b").is_none());
+    }
+
+    #[test]
+    fn dispatch_unknown_type_returns_none_no_event() {
+        let session = make_test_session();
+        let mut rx = session.event_tx.subscribe();
+        let result = dispatch_ndjson_line(r#"{"type":"unknown_future_type","x":1}"#, &session, "b");
+        assert!(result.is_none());
+        assert!(
+            rx.try_recv().is_err(),
+            "no event expected for unrecognised type"
+        );
+    }
+
+    #[test]
+    fn dispatch_malformed_json_does_not_panic() {
+        let session = make_test_session();
+        // Truncated JSON that starts with '{' — must not panic.
+        dispatch_ndjson_line(r#"{"type":"result","text":"#, &session, "b");
+    }
 
     fn is_hex(c: char) -> bool {
         matches!(c, '0'..='9' | 'a'..='f')

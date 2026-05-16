@@ -17,6 +17,9 @@ use crate::{
 
 use super::{CopilotRequest, call_ollama, call_subprocess};
 
+/// Maximum prompt size accepted by the copilot endpoint (§3.4 — 8 KiB).
+const MAX_PROMPT_BYTES: usize = 8192;
+
 /// `POST /api/builds/:id/copilot` — dispatch to subprocess or HTTP backend.
 pub async fn copilot_chat_handler(
     _: auth::AuthGuard,
@@ -24,6 +27,14 @@ pub async fn copilot_chat_handler(
     State(state): State<AppState>,
     Json(body): Json<CopilotRequest>,
 ) -> impl IntoResponse {
+    if body.message.len() > MAX_PROMPT_BYTES {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(json!({ "error": "prompt_too_large", "max_bytes": MAX_PROMPT_BYTES })),
+        )
+            .into_response();
+    }
+
     let Some(session) = state.builds.get(id) else {
         return (
             StatusCode::NOT_FOUND,
