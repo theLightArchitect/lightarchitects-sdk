@@ -159,6 +159,10 @@ fn keychain_to_check(
 // ── Core checks ──────────────────────────────────────────────────────────────
 
 /// Check that `$SHELL` is set and points to an executable binary.
+///
+/// # Failures
+///
+/// Returns [`CheckStatus::Fail`] when `$SHELL` is unset or is not a regular file on disk.
 pub async fn check_shell() -> CheckResult {
     let (status, detail) = match std::env::var("SHELL") {
         Err(_) => (
@@ -188,6 +192,12 @@ pub async fn check_shell() -> CheckResult {
 }
 
 /// Check that `~/.lightarchitects/` exists and is writable.
+///
+/// # Failures
+///
+/// Returns [`CheckStatus::Fail`] when the directory does not exist.
+/// Returns [`CheckStatus::Warn`] when it exists but its permissions metadata
+/// reports `readonly` (coarse check — does not attempt a test write).
 pub async fn check_la_config_dir() -> CheckResult {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
     let dir = std::path::PathBuf::from(&home).join(".lightarchitects");
@@ -217,6 +227,10 @@ pub async fn check_la_config_dir() -> CheckResult {
 /// Check that the agent binary is installed and resolvable.
 ///
 /// Uses [`crate::copilot::resolve_binary`] which probes known installation paths.
+///
+/// # Failures
+///
+/// Returns [`CheckStatus::Fail`] when the resolved path does not exist on disk.
 pub async fn check_agent_binary(agent: &AgentSession) -> CheckResult {
     if let AgentSession::LightarchitectsNative(c) = agent {
         let resolved = crate::copilot::resolve_binary(&c.binary);
@@ -281,6 +295,11 @@ pub async fn check_agent_binary(agent: &AgentSession) -> CheckResult {
 /// Check that API credentials are available for the configured agent backend.
 ///
 /// Uses `spawn_blocking` + timeout for keychain subprocess calls (`§SPAWN_BLOCKING`).
+///
+/// # Failures
+///
+/// Returns [`CheckStatus::Fail`] when the required API key env var is unset/empty
+/// or when keychain lookup times out or returns no entry.
 pub async fn check_agent_credentials(agent: &AgentSession) -> CheckResult {
     match agent {
         AgentSession::Lightarchitects(backend) => match backend {
@@ -380,6 +399,11 @@ pub async fn check_agent_credentials(agent: &AgentSession) -> CheckResult {
 // ── Important checks ──────────────────────────────────────────────────────────
 
 /// Check that `~/lightarchitects/` workspace directory exists.
+///
+/// # Failures
+///
+/// Returns [`CheckStatus::Fail`] when the directory is absent.
+/// Returns [`CheckStatus::Warn`] when it exists but metadata reports `readonly`.
 pub async fn check_la_workspace() -> CheckResult {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
     let dir = std::path::PathBuf::from(&home).join("lightarchitects");
@@ -402,6 +426,11 @@ pub async fn check_la_workspace() -> CheckResult {
 }
 
 /// Check that `~/lightarchitects/soul/helix/` vault is readable.
+///
+/// # Failures
+///
+/// Returns [`CheckStatus::Fail`] when the vault directory does not exist.
+/// Returns [`CheckStatus::Warn`] when it exists but metadata reports `readonly`.
 pub async fn check_helix_vault() -> CheckResult {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
     let dir = std::path::PathBuf::from(&home)
@@ -430,6 +459,11 @@ pub async fn check_helix_vault() -> CheckResult {
 }
 
 /// Check that `~/lightarchitects/soul/helix.db` is writable (or its parent directory is).
+///
+/// # Failures
+///
+/// Returns [`CheckStatus::Fail`] when neither the DB file nor its parent directory
+/// reports writable permissions.
 pub async fn check_helix_db() -> CheckResult {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
     let db = std::path::PathBuf::from(&home)
@@ -474,6 +508,11 @@ pub async fn check_helix_db() -> CheckResult {
 }
 
 /// Check that `~/.lightarchitects/webshell/sessions.db` path is writable.
+///
+/// # Failures
+///
+/// Returns [`CheckStatus::Fail`] when neither the file nor its parent directory
+/// reports writable permissions.
 pub async fn check_session_store() -> CheckResult {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
     let db = std::path::PathBuf::from(&home)
@@ -520,6 +559,11 @@ pub async fn check_session_store() -> CheckResult {
 // ── Optional checks ──────────────────────────────────────────────────────────
 
 /// Check that the AYIN observability service is reachable on TCP :3742.
+///
+/// # Failures
+///
+/// Returns [`CheckStatus::Fail`] when a TCP connection to `127.0.0.1:3742`
+/// cannot be established within [`PREFLIGHT_CHECK_TIMEOUT_MS`] ms.
 pub async fn check_ayin_service() -> CheckResult {
     let timeout = Duration::from_millis(PREFLIGHT_CHECK_TIMEOUT_MS);
     let (status, detail) =
@@ -551,6 +595,10 @@ pub async fn check_ayin_service() -> CheckResult {
 /// Check Docker daemon availability from the already-probed [`DockerCapability`].
 ///
 /// Reuses the probe result captured at startup — does not re-run the docker probe.
+///
+/// # Failures
+///
+/// Returns [`CheckStatus::Fail`] when [`DockerCapability::Unavailable`] was recorded at startup.
 pub async fn check_docker_daemon(cap: DockerCapability) -> CheckResult {
     let (status, detail) = match cap {
         DockerCapability::Ready => (CheckStatus::Pass, "Docker daemon ready".to_owned()),
@@ -574,6 +622,13 @@ pub async fn check_docker_daemon(cap: DockerCapability) -> CheckResult {
 }
 
 /// Check that the Ollama service is reachable (only if an Ollama backend is configured).
+///
+/// # Failures
+///
+/// Returns [`CheckStatus::Fail`] when a TCP connection to the configured Ollama
+/// address cannot be established within [`PREFLIGHT_CHECK_TIMEOUT_MS`] ms.
+/// Returns [`CheckStatus::Pass`] immediately when no Ollama backend is active —
+/// the check is not applicable.
 ///
 /// Returns `Pass` immediately when the active agent does not use Ollama.
 /// Uses `spawn_blocking` + timeout for the TCP probe (`§SPAWN_BLOCKING`).
@@ -641,6 +696,11 @@ pub async fn check_ollama_service(agent: &AgentSession) -> CheckResult {
 /// Check that a GitHub PAT is provisioned in the macOS keychain.
 ///
 /// Uses `spawn_blocking` + timeout for the keychain subprocess (`§SPAWN_BLOCKING`).
+///
+/// # Failures
+///
+/// Returns [`CheckStatus::Fail`] when `GITHUB_TOKEN` is unset/empty and keychain
+/// lookup finds no entry. Returns [`CheckStatus::Warn`] when the subprocess times out.
 pub async fn check_github_pat() -> CheckResult {
     let kr = keychain_lookup("lightarchitects-github", "pat").await;
     keychain_to_check(

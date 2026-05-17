@@ -90,6 +90,24 @@ impl PreflightReport {
 /// Only runs infra checks that do not require a resolved agent type:
 /// `$SHELL` executability and `~/.lightarchitects/` writability.
 ///
+/// # Failures
+///
+/// Returns [`CheckStatus::Fail`] in the embedded [`CheckResult`]s when:
+/// - `$SHELL` is unset or does not point to an executable file.
+/// - `~/.lightarchitects/` does not exist or is not writable.
+///
+/// Never returns a Rust error — failures are represented as [`CheckStatus::Fail`] inside the result.
+///
+/// # Examples
+///
+/// ```no_run
+/// # async fn run() {
+/// let basic = lightarchitects_webshell::preflight::run_basic().await;
+/// assert!(matches!(basic.shell.status, lightarchitects_webshell::preflight::CheckStatus::Pass
+///     | lightarchitects_webshell::preflight::CheckStatus::Fail));
+/// # }
+/// ```
+///
 /// [`probe_docker`]: crate::container::probe::probe_docker
 /// [`Config::resolve`]: crate::config::Config::resolve
 pub async fn run_basic() -> BasicPreflight {
@@ -104,6 +122,13 @@ pub async fn run_basic() -> BasicPreflight {
 ///
 /// Dispatches all 10 remaining checks concurrently via [`tokio::join!`].
 /// Subprocess-spawning checks are bounded by [`PREFLIGHT_CHECK_TIMEOUT_MS`].
+///
+/// # Failures
+///
+/// Returns [`OverallStatus::Blocked`] when any [`Category::Core`] check fails,
+/// [`OverallStatus::Degraded`] when only [`Category::Important`] or lower checks fail,
+/// and [`OverallStatus::Ready`] when all checks pass.
+/// Individual failures are in [`PreflightReport::checks`]; never panics.
 ///
 /// [`Config::resolve`]: crate::config::Config::resolve
 pub async fn run_full(
