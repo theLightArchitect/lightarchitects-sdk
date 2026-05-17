@@ -8,10 +8,12 @@
 //! allowing the operator to redirect the build (§Q check 5 + 6).
 
 pub mod evaluation;
+pub mod routing;
 
 pub use evaluation::{
     EvaluationError, EvaluationStatus, NorthstarEvaluation, WaveContext, evaluate_wave,
 };
+pub use routing::{ActionClass, AgentId, SupervisorRoutingConfig, escalate_to_hitl};
 
 /// Tunable parameters for one build's supervisor instance.
 #[derive(Debug, Clone)]
