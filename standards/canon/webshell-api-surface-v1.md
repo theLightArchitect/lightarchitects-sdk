@@ -2,10 +2,10 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.0"
+version: "1.0.1"
 status: ratified
 author: "Kevin Tan, Claude (Engineer)"
-date: "2026-05-16"
+date: "2026-05-17"
 ratified_by: "kevin"
 type: reference
 canon_uri: "canon://webshell-api-surface"
@@ -358,6 +358,78 @@ Applied via `history.replaceState` (transparent — no visible route change):
 ### §3.6 Fallback Behaviour
 
 All unmatched routes fall through to `screen: 'Ops'` — the default home screen.
+
+### §3.7 Screen Component Catalogue
+
+Screens are lazy-loaded per `screenModules` in `src/app.svelte:51`. Each entry maps a `ScreenKey` to its Svelte component via dynamic `import()`.
+
+| ScreenKey | Component file | Route(s) | Purpose |
+|-----------|----------------|----------|---------|
+| `Ops` | `src/screens/Ops.svelte` | `/`, `/ops` | Operations HUD — live squad health, AYIN status, conductor stats, alert panel, event stream, git forest, polytope 3D topology. Default landing when no route matches. |
+| `Dispatch` | `src/screens/Dispatch.svelte` → `src/screens/SquadDispatch.svelte` | `/dispatch`, `/dispatch/run/:runId`, `/dispatch/run/:runId/agent/:agentKey` | Squad dispatch — prompt input, domain-agent selector, live-agent grid, task DAG, dispatch history rail, CLI mode. `Dispatch.svelte` is a thin route shell; `SquadDispatch.svelte` is the full implementation. |
+| `Builds` | `src/screens/Builds.svelte` → `src/screens/BuildQueue.svelte` | `/builds` | Build portfolio list — all builds (past, in-flight, queued). `Builds.svelte` is a compatibility wrapper; `BuildQueue.svelte` is the actual implementation pending a dedicated rewrite. Also treated as the default tab when route is `/`. |
+| `Intake` | `src/screens/Intake.svelte` | `/intake` | New build creation form — source, repository, plan fields. Guards unsaved state via `beforeunload`; draft auto-persisted to `localStorage`. Tutorial T1 auto-fires on first visit. |
+| `Helix` | `src/screens/Helix.svelte` | `/helix`, `/helix/strand/:siblingKey`, `/helix/entry/:entryId` | SOUL knowledge graph browser — strand filter chips, vault entry list, strand drilldown, entry detail. Also reachable via inline 3D panel toggle; when `/helix` is the active route the inline Helix3D panel is hidden (avoids duplicate render). |
+| `BuildDetail` | `src/screens/BuildDetail.svelte` | `/builds/:buildId`, `/builds/:buildId/:view`, `/builds/:buildId/phase/:phaseId`, `/builds/:buildId/phase/:phaseId/wave/:waveId`, `/builds/:buildId/phase/:phaseId/wave/:waveId/agent/:agentKey` | Per-build detail — supports 6 `BuildViewMode` tabs (kanban / list / operator / manifest / plan / comms), phase timeline, pillar rail, gate strip, findings panel, artifact panel, build notes, per-build SSE stream, copilot, agent console. Deepest drill-down level in the nav hierarchy. |
+| `ProjectDetail` | `src/screens/ProjectDetail.svelte` | `/project/:projectId` | Project detail card — project metadata, voxel type badge, linked build list. |
+| `Comms` | `src/screens/Comms.svelte` | `/comms` | Squad communications hub — cross-build coordination overview, task queue, active chat sessions, squad comms injection. |
+| `Editor` | `src/screens/Editor.svelte` | `/editor`, `/editor/:filepath` | Code editor — file tree browser, CodeMirror editor surface, diff viewer, read/write/search/apply-diff ops via `/api/code/*`. `filepath` param pre-opens a file when navigated with a path. |
+| `Git` | `src/screens/Git.svelte` | `/git` | Git operations — project-directory picker, status / branch / diff / commit / push / pull / PR create / PR review via `/api/git/*`. `cwd` URL param initialises the working directory. |
+| `PullRequest` | `src/screens/PullRequest.svelte` | `/pr/new`, `/pr/:number` | Pull request surface — `PRCreateForm` at `/pr/new`; `PRReviewSurface` at `/pr/:number`. Route param `number` is injected by `app.svelte` as `params.number`. |
+
+### §3.8 Navigation Structure
+
+**5-tab primary nav** (rendered in `app.svelte`, keyboard shortcuts `1`–`5` map to tabs):
+
+| Tab | Label | Hash | Keyboard | Hint |
+|-----|-------|------|----------|------|
+| 1 | OPS | `/ops` | `1` | Live agent activity, alerts, and squad health |
+| 2 | DISPATCH | `/dispatch` | `2`, `⌘K` | Dispatch agents by domain — Engineer, Security, Ops |
+| 3 | BUILDS | `/builds` | `3` | All builds — past, in-flight, and queued |
+| 4 | COMMS | `/comms` | `4` | Squad comms — cross-build coordination overview and task queue |
+| 5 | HELIX | `/helix` | `5` | Knowledge graph — agent memory strands and quality gates |
+
+**Global keyboard shortcuts** (registered via `hotkeyRegistry`):
+
+| Shortcut | Action | Scope |
+|----------|--------|-------|
+| `1` – `5` | Navigate to OPS / DISPATCH / BUILDS / COMMS / HELIX | Global (non-input) |
+| `⌘K` / `Ctrl+K` | Open Dispatch | Global |
+| `⌘/` / `Ctrl+/` | Toggle keymap legend | Global |
+| `Ctrl+\`` | Toggle Copilot drawer | Global |
+| `⌘M` / `Ctrl+M` | Toggle Memory drawer | Global |
+
+**Global UI layers** (always mounted, outside screen routing):
+
+| Component | Purpose | Toggle |
+|-----------|---------|--------|
+| `CopilotDrawer` | EVA copilot chat panel | `Ctrl+\`` |
+| `MemoryDrawer` | Hot / cold / convergence memory browser | `⌘M` |
+| `CommandPalette` | Command palette | Rendered by `CommandPalette.svelte` |
+| `GlobalEventsOverlay` | Push-not-occlude 320px right panel — live events feed | `Events` button in nav |
+| `Helix3D` (inline) | 3D knowledge graph — inline right panel (desktop ≥1024px) or full-screen overlay (tablet/mobile) | `Show 3D View` button |
+| `StatusBar` | Bottom status strip | Always visible |
+| `AuthBanner` | Top-of-screen 401/403 affordance | Auto-shown |
+| `DiffPreview` | Operator-gated FS mutation flow | `la:fs-mutation-pending` event |
+| `KeymapLegend` | Keyboard shortcut overlay | `⌘/` |
+| `HelixLegend` | Color-map legend for helix strand/gate colors | `?` button in nav |
+| `ScrumReport` | SCRUM report overlay | Internal event |
+
+### §3.9 Setup Flow (Pre-routing Gate)
+
+The setup flow gates all screen rendering. When `setupComplete` is `false`, `app.svelte` renders `SetupFlow` instead of any hash-routed screen. No hash routing occurs until setup completes.
+
+**File**: `src/screens/setup/SetupFlow.svelte`
+
+| Step component | Purpose |
+|----------------|---------|
+| `SplashStep` | Welcome / intro |
+| `AuthStep` | Anthropic API key or OAuth credential entry |
+| `BackendStep` | Backend selection (Claude Code vs MistralVibe) |
+| `ModelStep` | Model picker |
+| `InitStep` | Final initialisation — calls `POST /api/setup/save` |
+
+E2E tests can bypass the setup flow by writing to `window.__e2e.setupComplete` and `window.__e2e.step` (DEV builds only; tree-shaken in production).
 
 ---
 
