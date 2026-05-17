@@ -27,6 +27,7 @@
 use std::{convert::Infallible, sync::Arc};
 
 use axum::{
+    Json,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{
@@ -35,6 +36,7 @@ use axum::{
     },
 };
 use futures_util::stream;
+use serde::Serialize;
 use tokio::sync::{Mutex, broadcast};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -60,8 +62,25 @@ pub struct SupervisorEntry {
     /// `None` means the operator did not supply a northstar at build-creation
     /// time; wave events are ignored by the watcher in that case.
     pub northstar_text: Option<String>,
+    /// Most-recent wave evaluation result for `GET /supervisor/state`.
+    pub last_evaluation: Arc<Mutex<Option<NorthstarEvaluationEvent>>>,
     /// Cancellation token — triggers watcher task shutdown on session teardown.
     pub watcher_token: CancellationToken,
+}
+
+/// JSON response for `GET /api/builds/:id/supervisor/state`.
+#[derive(Debug, Serialize)]
+pub struct SupervisorStateResponse {
+    /// Operator's declared northstar for this build.
+    pub northstar_text: Option<String>,
+    /// Number of consecutive drifting wave evaluations.
+    pub consecutive_drifts: u32,
+    /// Drift count at which a proposal card is triggered.
+    pub drift_threshold: u32,
+    /// Whether a proposal is currently awaiting operator acknowledgement.
+    pub proposal_pending: bool,
+    /// Last completed wave evaluation, or `null` if no waves yet.
+    pub last_evaluation: Option<NorthstarEvaluationEvent>,
 }
 
 impl SupervisorEntry {
@@ -76,6 +95,7 @@ impl SupervisorEntry {
         Arc::new(Self {
             state: Arc::new(Mutex::new(state)),
             northstar_text,
+            last_evaluation: Arc::new(Mutex::new(None)),
             watcher_token: CancellationToken::new(),
         })
     }
@@ -186,6 +206,34 @@ pub async fn supervisor_acknowledge_handler(
     StatusCode::NO_CONTENT.into_response()
 }
 
+/// `GET /api/builds/:id/supervisor/state` — point-in-time supervisor snapshot.
+///
+/// Returns the current drift count, proposal flag, and last wave evaluation.
+/// Returns `404` if no supervisor entry exists for the build (northstar not set).
+pub async fn supervisor_state_handler(
+    _: auth::AuthGuard,
+    Path(build_id): Path<Uuid>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let Some(entry) = state.supervisor_states.get(&build_id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let supervisor = entry.state.lock().await;
+    let consecutive_drifts = supervisor.consecutive_drifts();
+    let drift_threshold = supervisor.config.drift_threshold_waves;
+    let proposal_pending = supervisor.proposal_pending;
+    drop(supervisor);
+    let last_evaluation = entry.last_evaluation.lock().await.clone();
+    let resp = SupervisorStateResponse {
+        northstar_text: entry.northstar_text.clone(),
+        consecutive_drifts,
+        drift_threshold,
+        proposal_pending,
+        last_evaluation,
+    };
+    (StatusCode::OK, Json(resp)).into_response()
+}
+
 // ── Background watcher ────────────────────────────────────────────────────────
 
 /// Spawn the background supervisor watcher for a build.
@@ -259,6 +307,8 @@ pub fn spawn_supervisor_watcher(
                                         );
                                     }
 
+                                    // Cache for GET /supervisor/state.
+                                    *entry.last_evaluation.lock().await = Some(ev.clone());
                                     let _ = session.event_tx.send(WebEvent::SupervisorUpdate(ev));
                                 }
                                 Err(e) => {

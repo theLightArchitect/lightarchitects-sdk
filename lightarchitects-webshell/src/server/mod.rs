@@ -478,6 +478,10 @@ pub fn build_app(state: AppState) -> Router {
             get(events::supervisor_handler::supervisor_sse_handler),
         )
         .route(
+            "/api/builds/{id}/supervisor/state",
+            get(events::supervisor_handler::supervisor_state_handler),
+        )
+        .route(
             "/api/builds/{id}/supervisor/acknowledge",
             post(events::supervisor_handler::supervisor_acknowledge_handler),
         )

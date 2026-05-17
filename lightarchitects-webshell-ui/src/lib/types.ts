@@ -295,6 +295,7 @@ export type EventType =
   | 'copilot_activity'
   | 'control'
   | 'soul_promotion'
+  | 'supervisor_update'
   | 'supervisor_decision'
   | 'plan_update'
   | 'scrum_report'
@@ -605,6 +606,38 @@ export type ActivityEntry =
   | { source: 'copilot'; event: CopilotActivityEvent }
   | { source: 'ayin'; span: AyinSpanEvent }
   | { source: 'supervisor'; alert: SupervisorAlert };
+
+// --- Northstar supervisor (copilot-supervised-orchestration) ---
+
+/** Result of evaluating a completed wave against the operator's northstar. */
+export interface NorthstarEvaluationEvent {
+  /** Build UUID this evaluation belongs to. */
+  build_id: string;
+  /** Wave index (0-based) this evaluation covers. */
+  wave_num: number;
+  /** Alignment verdict: `"advancing"` | `"neutral"` | `"drifting"`. */
+  status: 'advancing' | 'neutral' | 'drifting';
+  /** Model confidence in the verdict, clamped to `[0, 1]`. */
+  confidence: number;
+  /** Suggested next action for the operator when drifting. */
+  recommended_next: string;
+  /** Whether a proposal card is currently awaiting acknowledgement. */
+  proposal_pending: boolean;
+}
+
+/** Point-in-time snapshot returned by `GET /api/builds/:id/supervisor/state`. */
+export interface SupervisorState {
+  /** Operator's declared northstar text, or `null` if not set. */
+  northstar_text: string | null;
+  /** Number of consecutive drifting wave evaluations. */
+  consecutive_drifts: number;
+  /** Drift count threshold at which a proposal card is triggered. */
+  drift_threshold: number;
+  /** Whether a proposal is currently awaiting operator acknowledgement. */
+  proposal_pending: boolean;
+  /** Last completed wave evaluation, or `null` if no waves evaluated yet. */
+  last_evaluation: NorthstarEvaluationEvent | null;
+}
 
 // --- SOUL vault hybrid memory (Phase 9) ---
 
