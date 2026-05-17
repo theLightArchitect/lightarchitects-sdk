@@ -8,6 +8,7 @@ author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-17"
 ratified_by: "kevin"
 type: reference
+format: markdown
 canon_uri: "canon://webshell-api-surface"
 gate: "[A] primary · [D] secondary"
 gate_owner: "corso"
@@ -20,6 +21,8 @@ canonical:
   - "[[builders-cookbook]]"
   - "[[agents-playbook]]"
   - "[[operators-manual]]"
+
+canonical_pair: "webshell-api-surface-v1.html"
 
 related:
   - "[[platform-architecture-v2]]"
@@ -39,6 +42,8 @@ tags:
 **Purpose**: Authoritative catalogue of all backend HTTP endpoints and frontend hash-based routes exposed by the `lightarchitects-webshell` binary and its companion UI. Verified directly from source on 2026-05-16. Every route listed here was read from `src/server/mod.rs`, `src/dispatch/routes.rs`, and `lightarchitects-webshell-ui/src/lib/routes.ts` — not inferred or reported by an agent. This document is the ground truth; the code is the oracle.
 
 **Scope**: Webshell local backend (`/api/*`). The platform/gateway API (`/v1/platform/*`, `/v1/admin/*`, `/v1/vault/*`) is a separate API layer documented in helix entries OD-5 and OD-6.
+
+**Canonical pairing**: This document is co-authoritative with **[webshell-api-surface-v1.html](webshell-api-surface-v1.html)** under `canon://webshell-api-surface` (uuid `f2e8b3d7`). The HTML carries equal canonical weight as the visual and interactive representation of this spec. Neither is derived from the other.
 
 ---
 
