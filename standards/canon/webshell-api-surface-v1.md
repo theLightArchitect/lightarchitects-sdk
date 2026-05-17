@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.4"
+version: "1.0.5"
 status: ratified
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-17"
@@ -45,6 +45,37 @@ tags:
 **Scope**: Webshell local backend (`/api/*`). The platform/gateway API (`/v1/platform/*`, `/v1/admin/*`, `/v1/vault/*`) is a separate API layer documented in helix entries OD-5 and OD-6.
 
 **Canonical pairing**: This document is co-authoritative with **[webshell-api-surface-v1.html](webshell-api-surface-v1.html)** under `canon://webshell-api-surface` (uuid `f2e8b3d7`). The HTML carries equal canonical weight as the visual and interactive representation of this spec. Neither is derived from the other.
+
+---
+
+## §0 — For New Readers
+
+The webshell is a local web application that turns your browser into a full engineering interface for the Light Architects platform. You start it with `lightarchitects webshell start`, open `http://localhost:8733`, and everything else — running agent sessions, managing builds, browsing the knowledge graph, streaming events — happens through the UI. No terminal fallback required.
+
+**Two binaries**: `lightarchitects-webshell` serves the UI and all `/api/*` routes documented here. A separate `lightarchitects-gateway` binary handles the cloud platform API (`/v1/*`). Different ports, different scopes — this document covers only the webshell.
+
+**End-to-end flow** — what happens between "open browser" and "see agent output":
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant WS as lightarchitects-webshell<br/>(Axum :8733)
+    participant PTY
+    participant Agent as Agent Process<br/>(lightarchitects or vibe-acp)
+
+    Browser->>WS: GET / → Svelte app (served from embedded dist/)
+    Browser->>WS: POST /api/auth/nonce-exchange → la_session cookie set
+    Browser->>WS: GET /api/setup/info → determines first screen
+    Browser->>WS: WS /api/builds/{id}/terminal/ws (open session)
+    WS->>PTY: spawn_bridge() — fork, env_clear(), inject whitelist
+    PTY->>Agent: exec lightarchitects --stream-events --cwd workdir
+    Agent-->>PTY: stdout NDJSON events
+    PTY-->>WS: read PTY output
+    WS-->>Browser: WebSocket frames → agent activity in UI
+    note over Browser,WS: Machine callbacks POST /api/builds/{id}/notify<br/>with bearer token — never sent to browser JS
+```
+
+**Where to start reading**: §1 (Architecture) for the structural picture. §2 (Backend Endpoints) for the full route catalogue. §3 (Frontend) for the browser-side router and screens. Unfamiliar terms are defined in §7 (Glossary).
 
 ---
 
@@ -118,6 +149,30 @@ Total: **99 `.route()` call sites** (92 in `server/mod.rs` + 7 in `dispatch/rout
 **`build_cors()` at `src/server/mod.rs:707` allows: `GET`, `POST`, `PUT`, `OPTIONS`.**
 
 All four HTTP methods used by webshell routes are included. Fixed 2026-05-16 — `Method::PUT` was absent in v1.0.0 initial ratification, silently blocking the two PUT routes for cross-origin callers. Resolved in same session.
+
+### §1.5 Agent Backend Model
+
+Four backends are selectable via `AgentSession` (`src/config.rs:244`, `#[serde(tag = "agent", rename_all = "snake_case")]`). The active backend is stored in `AppState::active_agent` and updated by `POST /api/setup/save`.
+
+| `AgentKind` | Binary spawned | Auth source | Spawn args |
+|-------------|----------------|-------------|-----------|
+| `Lightarchitects` | `lightarchitects` | Anthropic API key via Keychain | `--stream-events --cwd <workdir>` |
+| `LightarchitectsNative` | `lightarchitects` | Anthropic API key via Keychain | Variant config; same binary |
+| `Codex` | `codex` | OpenAI key via env | No PTY; JSON-RPC stdio |
+| `MistralVibe` | `vibe-acp` | `MISTRAL_API_KEY` injected at spawn only | No positional args |
+
+`AgentSession` carries per-variant config fields (model, working dir, etc.). `AgentKind` is the discriminant-only sibling enum used for matching without carrying config.
+
+### §1.6 Authentication Model
+
+Two caller types; two auth mechanisms — never interchangeable.
+
+| Caller | Mechanism | Token lifecycle | Handler gate |
+|--------|-----------|-----------------|--------------|
+| Browser (operator) | `la_session` HttpOnly cookie; `SameSite=Strict`; `Max-Age=28800` | Issued at `/api/auth/nonce-exchange`; revoked at `DELETE /api/auth/session` | `AuthGuard` middleware |
+| Machine callbacks | `Authorization: Bearer <token>` where token = `Config::token` | Static; set at server start | `notify_auth` extractor |
+
+> **Why the split?** If the machine notify token were readable by browser JavaScript, an XSS vulnerability could exfiltrate it and forge agent callbacks — turning a UI-layer exploit into a server-side event injection. The token is excluded from `BuildResponse` (the JSON sent to the browser after build creation) by design. `AuthGuard` reads only the session cookie; the notify bearer path is a separate extractor. This is a deliberate CWE-306 prevention: two attack surfaces, separated in code, not just convention. See `src/agent/bridge.rs` for the omission point.
 
 ---
 
@@ -450,6 +505,24 @@ The setup flow gates all screen rendering. When `setupComplete` is `false`, `app
 
 E2E tests can bypass the setup flow by writing to `window.__e2e.setupComplete` and `window.__e2e.step` (DEV builds only; tree-shaken in production).
 
+### §3.10 Frontend ↔ Backend Mapping
+
+Which backend sections and route prefixes serve each screen. Use this to find relevant routes when debugging or extending a screen — avoids scanning the full §2 table.
+
+| ScreenKey | Backend section(s) | Primary route prefixes |
+|-----------|-------------------|------------------------|
+| `Ops` | §2.1 Auth & Health, §2.3 Events, §2.12 Misc | `/api/health`, `/api/events/global`, `/api/polytopes` |
+| `Dispatch` | §2.7 Dispatch Sub-Router, §2.3 Events | `/api/dispatch/*`, `/api/events` |
+| `Builds` | §2.4 Builds Core | `/api/builds` |
+| `BuildDetail` | §2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor | `/api/builds/{id}`, `/api/builds/{id}/terminal/ws`, `/api/builds/{id}/events` |
+| `Intake` | §2.4 Builds Core, §2.6 Workspaces | `/api/builds/plan*`, `/api/builds` |
+| `Helix` | §2.5 SOUL Vault | `/api/soul/*` |
+| `Editor` | §2.9 Code Editor | `/api/code/*` |
+| `Git` | §2.10 Git Operations | `/api/git/*` |
+| `PullRequest` | §2.10 Git Operations | `/api/git/pr/*` |
+| `Comms` | §2.11 Coordination / Squad Comms | `/api/coordination/*` |
+| `ProjectDetail` | §2.6 Workspaces | `/api/workspaces/{id}` |
+
 ---
 
 ## Part IV — Coverage Gaps
@@ -534,6 +607,8 @@ Expected after `copilot-supervised-orchestration` Phase 5 (2026-05-17): 92 + 7 =
 
 ### §6.5 Compliance Checklist (Agent-Executable)
 
+> **Maintainer content** — This section is for developers and agents maintaining spec accuracy. If you're learning the architecture, start at §0 and stop before here.
+
 > **Purpose**: A coding agent must run this checklist whenever a source file in the trigger column changes. Each item maps one spec claim to its exact source location and provides the verification command. On any MISMATCH: update both `webshell-api-surface-v1.md` and `webshell-api-surface-v1.html`, bump the version, set `xea_verified` to today, and commit per §6.3.
 
 #### Triggers — run checklist when any of these files change on `main`
@@ -607,3 +682,20 @@ Cross-reference: checklist item → HTML section anchor → HTML element to upda
 | C15 auth_nonces | `#auth-nonce` | Nonce `sequenceDiagram`; nonce TTL note |
 | C16 CORS | `#arch-binaries` | CORS methods `<code>` or table |
 | C17 Setup types | `#arch-state` or setup section | Auth status `<table>` rows |
+
+---
+
+## Part VII — Glossary
+
+Quick definitions for terms used throughout this document. All definitions are anchored to source code locations.
+
+| Term | Definition |
+|------|------------|
+| **PTY** | Pseudo-terminal — a kernel-level pair (master + slave) where the server holds the master end and the agent process holds the slave end. Makes the agent believe it is running in an interactive terminal, enabling streaming I/O and TTY control sequences. |
+| **AgentSession** | Tagged serde enum (`src/config.rs:244`, `#[serde(tag = "agent", rename_all = "snake_case")]`) that carries backend-specific config. The `agent` field in the config file selects the variant: `lightarchitects`, `codex`, `lightarchitects_native`, or `mistral_vibe`. See §1.5. |
+| **vibe-acp** | The MistralVibe agent binary. Communicates over stdin/stdout using the Agent Communication Protocol (ACP). `MISTRAL_API_KEY` is injected by `spawn_bridge` at fork time and is never present in the parent process environment. |
+| **SOUL helix** | The platform's long-term knowledge graph: enriched session memory, architectural decisions, and domain knowledge stored as vector-embedded entries in a Neo4j-backed graph. Browsable via the Helix screen (`/helix`). Accessed via `/api/soul/*` routes (§2.5). |
+| **ScreenKey** | TypeScript union type (`src/lib/routes.ts:5`) naming the 11 navigable screens. The hash router maps URL hash patterns to a `ScreenKey`; `app.svelte` lazy-loads the matching Svelte component via `screenModules`. |
+| **spawn_bridge** | Rust function (`src/agent/bridge.rs`) that forks the agent process: calls `env_clear()` to strip the parent environment, re-injects a whitelisted set of env vars, builds binary-specific args, and wires PTY I/O. All agent sessions start here. See §1.5 for the binary-per-backend table. |
+| **la_session** | HttpOnly session cookie (`Max-Age=28800`, `SameSite=Strict`, `Secure`, `Path=/`). Issued at `/api/auth/nonce-exchange`; consumed by `AuthGuard` middleware on every browser-facing route. Never readable by browser JavaScript. |
+| **X-LA-Notify-Token** | Convention name for the static bearer token used in machine-to-machine callbacks (agent process → server). The actual value is `Config::token`. Excluded from `BuildResponse` by design. See §1.6 for the security rationale. |

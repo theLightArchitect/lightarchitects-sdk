@@ -1,7 +1,7 @@
 <!-- uuid: f2e8b3d7-6c41-4a9f-b825-1e3d7c9a0f42 -->
 <!--
 title: "Webshell API Surface"
-version: "1.0.4"
+version: "1.0.5"
 status: ratified
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-17"
@@ -37,7 +37,7 @@ tags:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Webshell API Surface — Canonical Reference v1.0.4</title>
+<title>Webshell API Surface — Canonical Reference v1.0.5</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <style>
   :root {
@@ -218,9 +218,12 @@ tags:
 <nav class="sidebar">
   <div class="logo">
     <div class="title">Light Architects</div>
-    <div class="sub">Webshell API Surface v1.0.4</div>
+    <div class="sub">Webshell API Surface v1.0.5</div>
     <div class="sub" style="margin-top:4px;color:#FFD700;opacity:0.7;font-size:9px;letter-spacing:0.05em;">canon://webshell-api-surface</div>
   </div>
+
+  <div class="section-label">Start Here</div>
+  <a href="#new-readers">For New Readers</a>
 
   <div class="section-label">Architecture</div>
   <a href="#arch-system">System Topology</a>
@@ -251,6 +254,7 @@ tags:
   <a href="#fe-hierarchy">Component Hierarchy</a>
   <a href="#fe-nav">Navigation</a>
   <a href="#fe-states">Screen States</a>
+  <a href="#fe-backend-map">Screen ↔ Backend</a>
 
   <div class="section-label">Data Flows</div>
   <a href="#flow-sse">SSE Event Routing</a>
@@ -266,6 +270,9 @@ tags:
   <a href="#compliance-checklist">Checklist (C1–C17)</a>
   <a href="#compliance-procedure">Update Procedure</a>
   <a href="#compliance-id-map">HTML ID Map</a>
+
+  <div class="section-label">Reference</div>
+  <a href="#glossary">Glossary</a>
 </nav>
 
 <!-- ── Main ─────────────────────────────────────────────────────────────── -->
@@ -285,7 +292,7 @@ tags:
       Neither is derived from the other — they are co-authored representations of the same spec.
     </div>
     <div class="meta" style="margin-top:16px;">
-      <div class="meta-item">Version <span>1.0.4</span></div>
+      <div class="meta-item">Version <span>1.0.5</span></div>
       <div class="meta-item">Status <span>ratified</span></div>
       <div class="meta-item">Date <span>2026-05-17</span></div>
       <div class="meta-item">Canon URI <span>canon://webshell-api-surface</span></div>
@@ -296,6 +303,41 @@ tags:
     </div>
   </div>
 
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="new-readers">
+  <h2>§0 — For New Readers</h2>
+
+  <p>The webshell is a local web application that turns your browser into a full engineering interface for the Light Architects platform. Start it with <code>lightarchitects webshell start</code>, open <code>http://localhost:8733</code>, and everything — running agent sessions, managing builds, browsing the knowledge graph — happens through the UI. No terminal fallback required.</p>
+
+  <div class="callout info"><strong>Two binaries, one port</strong> — <code>lightarchitects-webshell</code> serves the SPA and all <code>/api/*</code> routes documented here. A separate <code>lightarchitects-gateway</code> binary handles the cloud platform API (<code>/v1/*</code>). Different ports, different scopes. This document covers the webshell only.</div>
+
+  <h3>End-to-End Flow</h3>
+  <p>What happens between "open browser" and "see agent output":</p>
+  <div class="diagram">
+    <div class="diagram-label">Sequence — Browser to Agent Output</div>
+    <div class="mermaid">
+sequenceDiagram
+  participant Browser
+  participant WS as lightarchitects-webshell<br/>(Axum :8733)
+  participant PTY
+  participant Agent as Agent Process<br/>(lightarchitects or vibe-acp)
+
+  Browser->>WS: GET / → Svelte app (embedded dist/)
+  Browser->>WS: POST /api/auth/nonce-exchange → la_session cookie set
+  Browser->>WS: GET /api/setup/info → determines first screen
+  Browser->>WS: WS /api/builds/{id}/terminal/ws
+  WS->>PTY: spawn_bridge() — fork, env_clear(), inject whitelist
+  PTY->>Agent: exec lightarchitects --stream-events --cwd workdir
+  Agent-->>PTY: stdout NDJSON events
+  PTY-->>WS: read PTY output
+  WS-->>Browser: WebSocket frames → agent activity in UI
+  note over Browser,WS: Machine callbacks POST /api/builds/{id}/notify<br/>with bearer token — never sent to browser JS
+    </div>
+  </div>
+
+  <p><strong>Where to start</strong>: Use the sidebar — <em>Architecture</em> for the structural picture, <em>Authentication</em> for the auth model, <em>Frontend</em> for the browser-side router and screens. Unfamiliar terms: <a href="#glossary">Glossary</a>.</p>
+  </section>
 
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <section id="arch-system">
@@ -598,6 +640,14 @@ classDiagram
       <tr><td><strong>Notify token</strong></td><td><code>POST /api/builds/{id}/notify</code></td><td><code>X-LA-Notify-Token: &lt;64-char hex&gt;</code></td><td>Per-build 32-byte secret; consumed by external notifiers</td></tr>
     </tbody>
   </table>
+
+  <h3>Why Two Auth Surfaces?</h3>
+  <div class="callout secure">
+    <strong>Browser vs. machine callbacks — never interchangeable.</strong><br><br>
+    The session cookie (<code>la_session</code>) is <code>HttpOnly</code>, preventing browser JavaScript from ever reading it — XSS cannot steal it. <code>SameSite=Strict</code> prevents CSRF.<br><br>
+    The notify bearer token (<code>Config::token</code>) is used exclusively for machine-to-machine callbacks — agent processes notifying the server of gate results or events. It is deliberately <strong>excluded from <code>BuildResponse</code></strong> (the JSON the browser receives after a build is created), so browser JavaScript can never access it.<br><br>
+    If the notify token were readable by browser JS, an XSS vulnerability could exfiltrate it and forge agent callbacks — turning a UI-layer exploit into server-side event injection. The two surfaces are separated in code, not just by convention. This is a CWE-306 prevention pattern: see <code>src/agent/bridge.rs</code> for the omission point.
+  </div>
   </section>
 
   <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -1044,6 +1094,29 @@ stateDiagram-v2
 
 
   <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="fe-backend-map">
+  <h3>§3.10 — Screen ↔ Backend Mapping</h3>
+  <p>Which backend sections and route prefixes serve each screen. Use this when debugging a screen or adding a route — avoids scanning the full backend table.</p>
+
+  <table>
+    <thead><tr><th>ScreenKey</th><th>Backend section(s)</th><th>Primary route prefixes</th></tr></thead>
+    <tbody>
+      <tr><td><code>Ops</code></td><td>§2.1 Auth &amp; Health, §2.3 Events, §2.12 Misc</td><td><code>/api/health</code>, <code>/api/events/global</code>, <code>/api/polytopes</code></td></tr>
+      <tr><td><code>Dispatch</code></td><td>§2.7 Dispatch Sub-Router, §2.3 Events</td><td><code>/api/dispatch/*</code>, <code>/api/events</code></td></tr>
+      <tr><td><code>Builds</code></td><td>§2.4 Builds Core</td><td><code>/api/builds</code></td></tr>
+      <tr><td><code>BuildDetail</code></td><td>§2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor</td><td><code>/api/builds/{id}</code>, <code>/api/builds/{id}/terminal/ws</code>, <code>/api/builds/{id}/events</code></td></tr>
+      <tr><td><code>Intake</code></td><td>§2.4 Builds Core, §2.6 Workspaces</td><td><code>/api/builds/plan*</code>, <code>/api/builds</code></td></tr>
+      <tr><td><code>Helix</code></td><td>§2.5 SOUL Vault</td><td><code>/api/soul/*</code></td></tr>
+      <tr><td><code>Editor</code></td><td>§2.9 Code Editor</td><td><code>/api/code/*</code></td></tr>
+      <tr><td><code>Git</code></td><td>§2.10 Git Operations</td><td><code>/api/git/*</code></td></tr>
+      <tr><td><code>PullRequest</code></td><td>§2.10 Git Operations</td><td><code>/api/git/pr/*</code></td></tr>
+      <tr><td><code>Comms</code></td><td>§2.11 Coordination / Squad Comms</td><td><code>/api/coordination/*</code></td></tr>
+      <tr><td><code>ProjectDetail</code></td><td>§2.6 Workspaces</td><td><code>/api/workspaces/{id}</code></td></tr>
+    </tbody>
+  </table>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
   <section id="flow-sse">
   <h2>Data Flows</h2>
 
@@ -1245,7 +1318,7 @@ flowchart LR
   </table>
 
   <p style="font-size:12px; color: var(--mute); margin-top: 24px;">
-    Canonical source: <a href="webshell-api-surface-v1.md">webshell-api-surface-v1.md</a> · Version 1.0.2 · 2026-05-17 · Derived from <code>src/server/mod.rs</code>, <code>src/dispatch/routes.rs</code>, <code>src/auth.rs</code>, <code>src/config.rs</code>, <code>src/agent/bridge.rs</code>, <code>src/screens/</code>
+    Canonical source: <a href="webshell-api-surface-v1.md">webshell-api-surface-v1.md</a> · Version 1.0.5 · 2026-05-17 · Derived from <code>src/server/mod.rs</code>, <code>src/dispatch/routes.rs</code>, <code>src/auth.rs</code>, <code>src/config.rs</code>, <code>src/agent/bridge.rs</code>, <code>src/screens/</code>
   </p>
   </section>
 
@@ -1281,6 +1354,10 @@ flowchart LR
   <!-- ─────────────────────────────────────────────────────────────────── -->
   <section id="compliance-checklist">
   <h3>Checklist — C1 through C17</h3>
+
+  <div class="callout" style="border-left-color:#FFD700;background:rgba(255,215,0,0.06);">
+    <strong>Maintainer content</strong> — This section is for developers and agents maintaining spec accuracy. If you're learning the architecture, start at <a href="#new-readers">§0 — For New Readers</a> and stop before here.
+  </div>
 
   <table>
     <thead>
@@ -1468,6 +1545,50 @@ flowchart LR
       <tr><td>C15 auth_nonces</td><td><code>#auth-nonce</code></td><td>Nonce <code>sequenceDiagram</code>; TTL note text</td></tr>
       <tr><td>C16 CORS</td><td><code>#arch-binaries</code></td><td>CORS methods <code>&lt;code&gt;</code> or table cell</td></tr>
       <tr><td>C17 Setup types</td><td><code>#arch-state</code></td><td>Auth status / setup info <code>&lt;table&gt;</code> rows</td></tr>
+    </tbody>
+  </table>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="glossary">
+  <h2>Glossary</h2>
+  <p>Quick definitions for terms used throughout this document without prior introduction.</p>
+
+  <table>
+    <thead><tr><th style="width:160px">Term</th><th>Definition</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>PTY</strong></td>
+        <td>Pseudo-terminal — a kernel-level pair (master + slave) where the webshell server holds the master end and the agent process holds the slave end. Makes the agent believe it is running in an interactive terminal, enabling streaming I/O and TTY control sequences.</td>
+      </tr>
+      <tr>
+        <td><strong>AgentSession</strong></td>
+        <td>Tagged serde enum (<code>src/config.rs:244</code>, <code>#[serde(tag = "agent")]</code>) that carries backend-specific config. The <code>agent</code> field in the config file selects the variant: <code>lightarchitects</code>, <code>codex</code>, <code>lightarchitects_native</code>, or <code>mistral_vibe</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>vibe-acp</strong></td>
+        <td>The MistralVibe agent binary. Communicates over stdin/stdout using the Agent Communication Protocol (ACP). <code>MISTRAL_API_KEY</code> is injected by <code>spawn_bridge</code> at fork time — never present in the parent process environment.</td>
+      </tr>
+      <tr>
+        <td><strong>SOUL helix</strong></td>
+        <td>The platform's long-term knowledge graph: enriched session memory, architectural decisions, and domain knowledge stored as vector-embedded entries in a Neo4j-backed graph. Browsable via the <code>/helix</code> screen (<code>/api/soul/*</code> routes).</td>
+      </tr>
+      <tr>
+        <td><strong>ScreenKey</strong></td>
+        <td>TypeScript union type (<code>src/lib/routes.ts:5</code>) naming the 11 navigable screens. The hash router maps URL hash patterns to a <code>ScreenKey</code>; <code>app.svelte</code> lazy-loads the matching Svelte component via <code>screenModules</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>spawn_bridge</strong></td>
+        <td>Rust function (<code>src/agent/bridge.rs</code>) that forks the agent process: calls <code>env_clear()</code> to strip the parent environment, re-injects a whitelisted set of env vars, builds binary-specific args, and wires PTY I/O. All agent sessions start here.</td>
+      </tr>
+      <tr>
+        <td><strong>la_session</strong></td>
+        <td>HttpOnly session cookie (<code>Max-Age=28800</code>, <code>SameSite=Strict</code>, <code>Secure</code>, <code>Path=/</code>). Issued at <code>/api/auth/nonce-exchange</code>; consumed by <code>AuthGuard</code> middleware on every browser-facing route. Never readable by browser JavaScript.</td>
+      </tr>
+      <tr>
+        <td><strong>X-LA-Notify-Token</strong></td>
+        <td>Convention name for the static bearer token used in machine-to-machine callbacks. The actual value is <code>Config::token</code>. Excluded from <code>BuildResponse</code> by design — see the <a href="#auth-overview">Why Two Auth Surfaces</a> callout for the security rationale.</td>
+      </tr>
     </tbody>
   </table>
   </section>
