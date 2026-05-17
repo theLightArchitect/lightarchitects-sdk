@@ -1,7 +1,7 @@
 <!-- uuid: f2e8b3d7-6c41-4a9f-b825-1e3d7c9a0f42 -->
 <!--
 title: "Webshell API Surface"
-version: "1.0.2"
+version: "1.0.3"
 status: ratified
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-17"
@@ -37,7 +37,7 @@ tags:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Webshell API Surface — Canonical Reference v1.0.2</title>
+<title>Webshell API Surface — Canonical Reference v1.0.3</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <style>
   :root {
@@ -218,7 +218,7 @@ tags:
 <nav class="sidebar">
   <div class="logo">
     <div class="title">Light Architects</div>
-    <div class="sub">Webshell API Surface v1.0.2</div>
+    <div class="sub">Webshell API Surface v1.0.3</div>
     <div class="sub" style="margin-top:4px;color:#FFD700;opacity:0.7;font-size:9px;letter-spacing:0.05em;">canon://webshell-api-surface</div>
   </div>
 
@@ -260,6 +260,12 @@ tags:
   <div class="section-label">API Reference</div>
   <a href="#api-backend">Backend Endpoints</a>
   <a href="#api-frontend">Frontend Routes</a>
+
+  <div class="section-label">Compliance</div>
+  <a href="#compliance-triggers">Triggers</a>
+  <a href="#compliance-checklist">Checklist (C1–C17)</a>
+  <a href="#compliance-procedure">Update Procedure</a>
+  <a href="#compliance-id-map">HTML ID Map</a>
 </nav>
 
 <!-- ── Main ─────────────────────────────────────────────────────────────── -->
@@ -279,7 +285,7 @@ tags:
       Neither is derived from the other — they are co-authored representations of the same spec.
     </div>
     <div class="meta" style="margin-top:16px;">
-      <div class="meta-item">Version <span>1.0.2</span></div>
+      <div class="meta-item">Version <span>1.0.3</span></div>
       <div class="meta-item">Status <span>ratified</span></div>
       <div class="meta-item">Date <span>2026-05-17</span></div>
       <div class="meta-item">Canon URI <span>canon://webshell-api-surface</span></div>
@@ -1239,8 +1245,231 @@ flowchart LR
   </table>
 
   <p style="font-size:12px; color: var(--mute); margin-top: 24px;">
-    Canonical source: <a href="webshell-api-surface-v1.md">webshell-api-surface-v1.md</a> · Version 1.0.1 · 2026-05-17 · Derived from <code>src/server/mod.rs</code>, <code>src/dispatch/routes.rs</code>, <code>src/auth.rs</code>, <code>src/config.rs</code>, <code>src/agent/bridge.rs</code>, <code>src/screens/</code>
+    Canonical source: <a href="webshell-api-surface-v1.md">webshell-api-surface-v1.md</a> · Version 1.0.2 · 2026-05-17 · Derived from <code>src/server/mod.rs</code>, <code>src/dispatch/routes.rs</code>, <code>src/auth.rs</code>, <code>src/config.rs</code>, <code>src/agent/bridge.rs</code>, <code>src/screens/</code>
   </p>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="compliance-triggers">
+  <h2>Compliance Checklist</h2>
+
+  <div class="callout">
+    <strong>Purpose</strong> — A coding agent must run this checklist whenever a source file in the trigger table changes on <code>main</code>.
+    Each item maps one spec claim to its exact source location and provides the verification command.
+    On any MISMATCH: update both canonical documents, bump the version, set <code>xea_verified</code> to today, and commit per §6.3.
+  </div>
+
+  <h3>Triggers</h3>
+  <p>Run the listed checklist items whenever these files change:</p>
+
+  <table>
+    <thead><tr><th>File changed</th><th>Checklist items triggered</th></tr></thead>
+    <tbody>
+      <tr><td><code>src/server/mod.rs</code></td><td>C1 C2 C3 C4 C15 C16</td></tr>
+      <tr><td><code>src/dispatch/routes.rs</code></td><td>C3 C4</td></tr>
+      <tr><td><code>src/config.rs</code></td><td>C5 C6 C7</td></tr>
+      <tr><td><code>src/agent/bridge.rs</code></td><td>C8</td></tr>
+      <tr><td><code>src/auth.rs</code></td><td>C14</td></tr>
+      <tr><td><code>src/setup/handlers.rs</code></td><td>C17</td></tr>
+      <tr><td><code>src/lib/routes.ts</code> (UI)</td><td>C9 C10</td></tr>
+      <tr><td><code>src/app.svelte</code></td><td>C11 C12 C13</td></tr>
+    </tbody>
+  </table>
+  </section>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <section id="compliance-checklist">
+  <h3>Checklist — C1 through C17</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:42px">ID</th>
+        <th style="width:140px">Spec claim</th>
+        <th style="width:220px">Source file · location</th>
+        <th>What to verify</th>
+        <th>Verify command</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="badge badge-gold">C1</span></td>
+        <td>§1.3 AppState: <strong>20 public</strong> fields + 1 private</td>
+        <td><code>src/server/mod.rs</code> · lines 89–198</td>
+        <td>Field count, names, and types match §1.3 table row-for-row; no new or removed fields</td>
+        <td><code>Read lines 89–198; diff against §1.3 table</code></td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-gold">C2</span></td>
+        <td>§1.3 Config: <code>port:u16 host_cmd:OsString cwd:PathBuf token:String agent:AgentSession</code></td>
+        <td><code>src/config.rs</code> · line 360–373</td>
+        <td>Field names and types exact</td>
+        <td><code>grep -n 'pub struct Config' -A15 src/config.rs</code></td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-gold">C3</span></td>
+        <td>§1.2 Route count: <strong>99 total</strong> (92 + 7)</td>
+        <td><code>server/mod.rs</code> 402–650 · <code>dispatch/routes.rs</code> 103–111</td>
+        <td><code>.route(</code> call-site counts match</td>
+        <td><code>grep -c '\.route(' src/server/mod.rs src/dispatch/routes.rs</code></td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-blue">C4</span></td>
+        <td>§2.x All backend route groups documented</td>
+        <td><code>src/server/mod.rs</code> · lines 402–650</td>
+        <td>Every §2.x route exists in source; no undocumented routes</td>
+        <td>Read route registration block; spot-check 3+ groups per session</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-blue">C5</span></td>
+        <td>§1.5 <code>AgentSession</code>: 4 variants; <code>#[serde(tag="agent", rename_all="snake_case")]</code></td>
+        <td><code>src/config.rs</code> · line 242–253</td>
+        <td>Variant names and serde attrs exact</td>
+        <td><code>grep -n 'enum AgentSession' -A10 src/config.rs</code></td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-blue">C6</span></td>
+        <td>§1.5 <code>AgentKind</code>: 4 variants</td>
+        <td><code>src/config.rs</code> · line 39–50</td>
+        <td>Exactly: Lightarchitects Codex LightarchitectsNative MistralVibe</td>
+        <td><code>grep -n 'enum AgentKind' -A8 src/config.rs</code></td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-blue">C7</span></td>
+        <td>§1.5 Config structs: 7 types; fields + defaults</td>
+        <td><code>src/config.rs</code> · various</td>
+        <td>ClaudeBackend CodexBackend OllamaLaunchConfig OllamaConfig CodexConfig LightarchitectsNativeConfig MistralVibeConfig — field names, types, serde defaults</td>
+        <td>Read each struct definition; compare field-by-field</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-purple">C8</span></td>
+        <td>§1.6 <code>spawn_bridge</code>: binaries, env whitelist, args</td>
+        <td><code>src/agent/bridge.rs</code> · lines 52–161</td>
+        <td>Binary names (<code>lightarchitects</code> / <code>vibe-acp</code>); env whitelist vars; <code>MISTRAL_API_KEY</code> vibe-only; non-vibe args <code>["--stream-events","--cwd",&lt;cwd&gt;]</code>; vibe: no args</td>
+        <td>Read lines 52–161; inspect binary, env inject block, arg construction</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-green">C9</span></td>
+        <td>§3.2 <code>ScreenKey</code>: exactly <strong>11</strong> keys</td>
+        <td><code>src/lib/routes.ts</code> · lines 5–16</td>
+        <td>Ops Dispatch Builds Intake Helix BuildDetail ProjectDetail Comms Editor Git PullRequest — no extras, no gaps</td>
+        <td>Read lines 5–16</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-green">C10</span></td>
+        <td>§3.3 <code>ROUTES</code>: exactly <strong>22</strong> entries, most-specific first, fallback=Ops</td>
+        <td><code>src/lib/routes.ts</code> · lines 42–67</td>
+        <td>Count = 22; pattern strings and ScreenKey targets match §3.3 table; fallback returns Ops</td>
+        <td><code>grep -c '\[/' src/lib/routes.ts</code> → returns 21; +1 for <code>new RegExp()</code> on line 48 = 22</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-green">C11</span></td>
+        <td>§3.7 <code>screenModules</code>: 11 entries; correct import paths</td>
+        <td><code>src/app.svelte</code> · lines 51–63</td>
+        <td>Count = 11; every ScreenKey maps to the documented <code>.svelte</code> file</td>
+        <td><code>grep -A15 'screenModules' src/app.svelte</code></td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-green">C12</span></td>
+        <td>§3.8 NAV_ITEMS: <strong>5 tabs</strong> with correct labels and hash paths</td>
+        <td><code>src/app.svelte</code> · lines 156–162</td>
+        <td>OPS→/ops · DISPATCH→/dispatch · BUILDS→/builds · COMMS→/comms · HELIX→/helix</td>
+        <td><code>grep -A10 'NAV_ITEMS' src/app.svelte</code></td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-green">C13</span></td>
+        <td>§3.8 Keyboard shortcuts: <strong>8 hotkeys</strong>; correct labels</td>
+        <td><code>src/app.svelte</code> · lines 244–326</td>
+        <td>1–5 (nav tabs) · ⌘K (Open Dispatch) · ⌘/ (keymap legend) · ⌃` (<strong>Toggle Copilot drawer</strong>) · ⌘M (<strong>Toggle Memory drawer</strong>)</td>
+        <td>Read lines 244–326; check each <code>label:</code> string</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-red">C14</span></td>
+        <td>§4.1 Session cookie: <code>la_session</code>; HttpOnly; SameSite=Strict; Secure; Max-Age=28800</td>
+        <td><code>src/auth.rs</code> · ~line 143</td>
+        <td>All 5 attributes present in <code>session_cookie_header()</code></td>
+        <td><code>grep -n 'HttpOnly\|SameSite\|Max-Age\|la_session' src/auth.rs</code></td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-red">C15</span></td>
+        <td>§1.3 <code>auth_nonces: Arc&lt;DashMap&lt;Uuid, Instant&gt;&gt;</code>; 60-second TTL</td>
+        <td><code>src/server/mod.rs</code> · lines 162–166</td>
+        <td>Field name <code>auth_nonces</code>; key type <code>Uuid</code> (not <code>String</code>); 60s TTL comment present</td>
+        <td><code>grep -n -B2 -A3 'auth_nonces' src/server/mod.rs</code></td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-red">C16</span></td>
+        <td>§1.4 CORS: <code>GET POST PUT OPTIONS</code></td>
+        <td><code>src/server/mod.rs</code> · line 686</td>
+        <td>All 4 methods in <code>build_cors()</code></td>
+        <td><code>grep -A5 'allow_methods' src/server/mod.rs</code></td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-mute">C17</span></td>
+        <td>§3.9 Setup types: <code>ClaudeAuthStatus</code> (4 fields) · <code>SetupInfoResponse</code> (5 fields)</td>
+        <td><code>src/setup/handlers.rs</code> · lines 29–97</td>
+        <td><code>ClaudeAuthStatus</code>: has_keychain_auth, has_api_key, login_method, login_source. <code>SetupInfoResponse</code>: setup_complete, config, auth_status, resume_session, cwd</td>
+        <td>Read lines 29–97</td>
+      </tr>
+    </tbody>
+  </table>
+  </section>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <section id="compliance-procedure">
+  <h3>Update Procedure</h3>
+
+  <ol style="line-height:2; color:var(--label); font-size:13px; padding-left:20px;">
+    <li>Identify failing checklist items (source ≠ spec claim).</li>
+    <li>Update <code>webshell-api-surface-v1.md</code>: edit the <code>§</code> section listed in the <em>Spec claim</em> column.</li>
+    <li>Update <code>webshell-api-surface-v1.html</code>: find the diagram or table via the HTML ID map below (<code>#compliance-id-map</code>) and apply the same correction.</li>
+    <li><strong>Sync counts</strong>: if AppState field count changed → update "N public fields" prose in both docs. If route count changed → update §1.2 and the HTML hero <code>Routes</code> meta value.</li>
+    <li><strong>Bump version</strong> in all four locations per §6.2:
+      <ul style="margin-top:4px;">
+        <li>MD frontmatter <code>version:</code></li>
+        <li>HTML frontmatter comment <code>version:</code></li>
+        <li>HTML <code>&lt;title&gt;</code></li>
+        <li>HTML sidebar subtitle + hero <code>Version</code> meta item</li>
+      </ul>
+    </li>
+    <li>Set <code>xea_verified: YYYY-MM-DD</code> to today in MD frontmatter.</li>
+    <li>Commit: <code>docs(canon): XEA corrections — webshell-api-surface vX.Y.Z</code> listing each failing check ID and correction in the body.</li>
+    <li>Push to <code>github main</code>.</li>
+  </ol>
+
+  <div class="callout warn" style="margin-top:20px;">
+    <strong>Version bump rules</strong> (§6.2): patch (x.y.<strong>Z</strong>) for spec corrections · minor (x.<strong>Y</strong>.0) for new sections or route group restructure · major (<strong>X</strong>.0.0) for auth model change, AppState schema change, or new agent types.
+  </div>
+  </section>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <section id="compliance-id-map">
+  <h3>HTML Element ID Map</h3>
+  <p>Cross-reference: checklist item → section anchor → element type to update.</p>
+
+  <table>
+    <thead><tr><th>Checklist item</th><th>HTML anchor</th><th>Element to update</th></tr></thead>
+    <tbody>
+      <tr><td>C1 AppState fields</td><td><code>#arch-state</code></td><td><code>erDiagram</code> — add/remove/retype rows under <code>AppState {}</code>; update "N public fields" prose</td></tr>
+      <tr><td>C2 Config fields</td><td><code>#arch-state</code></td><td><code>erDiagram</code> — <code>Config {}</code> block</td></tr>
+      <tr><td>C3 Route count</td><td><code>#arch-system</code> hero + <code>#api-backend</code></td><td>Hero meta <code>Routes</code> <code>&lt;span&gt;</code>; any route count text</td></tr>
+      <tr><td>C4 Backend routes</td><td><code>#api-backend</code></td><td><code>&lt;table&gt;</code> rows per route group</td></tr>
+      <tr><td>C5 AgentSession</td><td><code>#agents-hierarchy</code></td><td><code>classDiagram</code> — <code>AgentSession</code> class members</td></tr>
+      <tr><td>C6 AgentKind</td><td><code>#agents-hierarchy</code></td><td><code>classDiagram</code> — <code>AgentKind</code> enum members</td></tr>
+      <tr><td>C7 Config structs</td><td><code>#agents-hierarchy</code></td><td><code>classDiagram</code> — per-config class blocks</td></tr>
+      <tr><td>C8 spawn_bridge</td><td><code>#agents-env</code> · <code>#spawn-claude</code> · <code>#spawn-vibe</code> · <code>#spawn-ollama</code> · <code>#spawn-codex</code></td><td>Env whitelist table rows; <code>sequenceDiagram</code> spawn lines</td></tr>
+      <tr><td>C9 ScreenKey</td><td><code>#fe-screens</code></td><td>Screen map <code>&lt;table&gt;</code> rows</td></tr>
+      <tr><td>C10 ROUTES</td><td><code>#fe-router</code> · <code>#api-frontend</code></td><td>Route resolution <code>flowchart</code>; frontend routes <code>&lt;table&gt;</code></td></tr>
+      <tr><td>C11 screenModules</td><td><code>#fe-hierarchy</code></td><td>Component hierarchy <code>graph TD</code></td></tr>
+      <tr><td>C12 NAV_ITEMS</td><td><code>#fe-nav</code></td><td>Nav table rows</td></tr>
+      <tr><td>C13 Keyboard shortcuts</td><td><code>#fe-nav</code></td><td>Shortcuts <code>&lt;table&gt;</code> rows — especially label text</td></tr>
+      <tr><td>C14 Auth cookie</td><td><code>#auth-exchange</code></td><td><code>sequenceDiagram</code> Set-Cookie note; cookie attributes table</td></tr>
+      <tr><td>C15 auth_nonces</td><td><code>#auth-nonce</code></td><td>Nonce <code>sequenceDiagram</code>; TTL note text</td></tr>
+      <tr><td>C16 CORS</td><td><code>#arch-binaries</code></td><td>CORS methods <code>&lt;code&gt;</code> or table cell</td></tr>
+      <tr><td>C17 Setup types</td><td><code>#arch-state</code></td><td>Auth status / setup info <code>&lt;table&gt;</code> rows</td></tr>
+    </tbody>
+  </table>
   </section>
 
 </main>

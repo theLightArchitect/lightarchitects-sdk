@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.2"
+version: "1.0.3"
 status: ratified
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-17"
@@ -529,3 +529,81 @@ Expected after `copilot-supervised-orchestration` Phase 5 (2026-05-17): 92 + 7 =
 | `lightarchitects-webshell/src/dispatch/routes.rs` | `dispatch_router()` — dispatch sub-routes | 103–111 |
 | `lightarchitects-webshell-ui/src/lib/routes.ts` | Hash router — all ScreenKey types and patterns | 1–109 |
 | `lightarchitects-webshell/src/server/mod.rs:686` | CORS allowed methods | Confirmed: GET, POST, PUT, OPTIONS (PUT added 2026-05-16, §5.1) |
+
+---
+
+### §6.5 Compliance Checklist (Agent-Executable)
+
+> **Purpose**: A coding agent must run this checklist whenever a source file in the trigger column changes. Each item maps one spec claim to its exact source location and provides the verification command. On any MISMATCH: update both `webshell-api-surface-v1.md` and `webshell-api-surface-v1.html`, bump the version, set `xea_verified` to today, and commit per §6.3.
+
+#### Triggers — run checklist when any of these files change on `main`
+
+| File changed | Checklist items triggered |
+|---|---|
+| `src/server/mod.rs` | C1, C2, C3, C4, C15, C16 |
+| `src/dispatch/routes.rs` | C3, C4 |
+| `src/config.rs` | C5, C6, C7 |
+| `src/agent/bridge.rs` | C8 |
+| `src/auth.rs` | C14 |
+| `src/setup/handlers.rs` | C17 |
+| `src/lib/routes.ts` (UI) | C9, C10 |
+| `src/app.svelte` | C11, C12, C13 |
+
+#### Checklist
+
+| ID | Spec claim | Source file | Exact location | What to verify | Verify command |
+|----|-----------|-------------|----------------|----------------|----------------|
+| **C1** | §1.3 AppState: 20 public fields, 1 private (`_policy_watcher`) | `src/server/mod.rs` | Line 89–198 | Field count, names, and types match §1.3 table; no new or removed fields | Read lines 89–198; diff against §1.3 table row by row |
+| **C2** | §1.3 Config: `port:u16`, `host_cmd:OsString`, `cwd:PathBuf`, `token:String`, `agent:AgentSession` | `src/config.rs` | Line 360–373 | Field names and types exact | `grep -n 'pub struct Config' -A15 src/config.rs` |
+| **C3** | §1.2 Route count: 99 total (92 in `server/mod.rs` + 7 in `dispatch/routes.rs`) | Both route files | Full file | `.route(` call-site count matches | `grep -c '\.route(' src/server/mod.rs src/dispatch/routes.rs` |
+| **C4** | §2.x All backend route groups present | `src/server/mod.rs`, `src/dispatch/routes.rs` | Lines 402–650 | Every route in §2.x tables exists in source; no routes in source absent from §2.x | Read route registration block; spot-check 3 groups per session |
+| **C5** | §1.5 `AgentSession`: 4 variants; `#[serde(tag="agent", rename_all="snake_case")]` | `src/config.rs` | Line 242–253 | Variants and serde attrs exact | `grep -n 'enum AgentSession' -A10 src/config.rs` |
+| **C6** | §1.5 `AgentKind`: 4 variants (Lightarchitects, Codex, LightarchitectsNative, MistralVibe) | `src/config.rs` | Line 39–50 | All 4 variants present, no extras | `grep -n 'enum AgentKind' -A8 src/config.rs` |
+| **C7** | §1.5 Config structs: `ClaudeBackend`, `CodexBackend`, `OllamaLaunchConfig`, `OllamaConfig`, `CodexConfig`, `LightarchitectsNativeConfig`, `MistralVibeConfig` — field names and defaults | `src/config.rs` | Various | Every field name, type, and serde default matches §1.5 | Read each struct definition; compare field-by-field |
+| **C8** | §1.6 `spawn_bridge`: binaries `lightarchitects`/`vibe-acp`; env whitelist (PATH HOME USER SHELL RUST_LOG LLM_BACKEND OLLAMA_BASE_URL OLLAMA_MODEL LA_* LIGHTARCHITECTS_*); MISTRAL_API_KEY vibe-only; non-vibe args `["--stream-events","--cwd",<cwd>]`; vibe: no args | `src/agent/bridge.rs` | Lines 52–161 | Every spawn_bridge claim matches | Read lines 52–161; check binary names, env inject block, arg construction |
+| **C9** | §3.2 `ScreenKey` union: exactly 11 keys (Ops Dispatch Builds Intake Helix BuildDetail ProjectDetail Comms Editor Git PullRequest) | `src/lib/routes.ts` | Lines 5–16 | Count = 11; no keys added or removed | `grep -c '\|' src/lib/routes.ts` then read lines 5–16 |
+| **C10** | §3.3 `ROUTES`: exactly 22 entries, ordered most-specific first, fallback = `Ops` | `src/lib/routes.ts` | Lines 42–67 | Count = 22; order preserved; pattern strings match §3.3 table | `grep -c '\[/' src/lib/routes.ts` (returns 21; +1 for `new RegExp(...)` entry = 22); read lines 42–67 |
+| **C11** | §3.7 `screenModules`: 11 entries; ScreenKey → correct `.svelte` import path | `src/app.svelte` | Lines 51–63 | Count = 11; every key maps to the documented component file | `grep -A15 'screenModules' src/app.svelte` |
+| **C12** | §3.8 NAV_ITEMS: 5 tabs (OPS/DISPATCH/BUILDS/COMMS/HELIX), hash paths `/ops` `/dispatch` `/builds` `/comms` `/helix` | `src/app.svelte` | Lines 156–162 | Tab count = 5; labels and paths exact | `grep -A10 'NAV_ITEMS' src/app.svelte` |
+| **C13** | §3.8 Keyboard shortcuts: 8 registered hotkeys — `1`–`5` (nav tabs), `⌘K` (Open Dispatch), `⌘/` (keymap legend), `⌃\`` (Toggle Copilot drawer), `⌘M` (Toggle Memory drawer) | `src/app.svelte` | Lines 244–326 | Count = 8; IDs, labels, and handlers exact | Read lines 244–326; compare label strings |
+| **C14** | §4.1 Session cookie: `la_session=<token>; HttpOnly; SameSite=Strict; Secure; Max-Age=28800` | `src/auth.rs` | ~Line 143 | All 5 cookie attributes present in `session_cookie_header()` | `grep -n 'HttpOnly\|SameSite\|Max-Age\|la_session' src/auth.rs` |
+| **C15** | §1.3 `auth_nonces`: `Arc<DashMap<Uuid, Instant>>`; 60-second TTL; consumed on first use | `src/server/mod.rs` | Lines 162–166 | Field name, key type (`Uuid` not `String`), and TTL comment match | `grep -n 'auth_nonces' src/server/mod.rs` |
+| **C16** | §1.4 CORS: `GET POST PUT OPTIONS` | `src/server/mod.rs` | Line 686 | All 4 methods in `build_cors()` | `grep -A5 'allow_methods' src/server/mod.rs` |
+| **C17** | §3.9 Setup types: `ClaudeAuthStatus` (4 fields: `has_keychain_auth`, `has_api_key`, `login_method`, `login_source`); `SetupInfoResponse` (5 fields: `setup_complete`, `config`, `auth_status`, `resume_session`, `cwd`) | `src/setup/handlers.rs` | Lines 29–97 | Field counts and names exact | Read lines 29–97 |
+
+#### Update procedure (step-by-step for an agent)
+
+1. **Identify failing items** by comparing source against each claim above.
+2. **Update `webshell-api-surface-v1.md`**: find the corresponding `§` section listed in the *Spec claim* column and edit the table/text to match source exactly.
+3. **Update `webshell-api-surface-v1.html`**: find the corresponding diagram or table using the *HTML element IDs* in §6.6 below and apply the same correction.
+4. **Sync counts**: if AppState field count changed → update the prose `"N public fields"` in both docs. If route count changed → update §1.2 prose and HTML hero meta `Routes` value.
+5. **Bump version** in both files per §6.2 rules. Update all four locations: MD frontmatter `version:`, HTML frontmatter comment `version:`, HTML `<title>`, HTML sidebar subtitle, HTML hero `Version` meta item.
+6. **Set `xea_verified`** to today's date in MD frontmatter.
+7. **Commit**: `docs(canon): XEA corrections — webshell-api-surface vX.Y.Z` with a body listing each failing check ID and the correction applied.
+8. **Push** to `github main`.
+
+---
+
+### §6.6 HTML Element ID Map
+
+Cross-reference: checklist item → HTML section anchor → HTML element to update.
+
+| Checklist item | HTML section | Element type |
+|---|---|---|
+| C1 AppState fields | `#arch-state` | `erDiagram` — add/remove/retype rows under `AppState {}` |
+| C2 Config fields | `#arch-state` | `erDiagram` — `Config {}` block |
+| C3 Route count | `#arch-system` hero + `#api-backend` | Hero meta `Routes` span; `<h4>` count text |
+| C4 Backend routes | `#api-backend` | `<table>` rows per route group |
+| C5 AgentSession | `#agents-hierarchy` | `classDiagram` — `AgentSession` class members |
+| C6 AgentKind | `#agents-hierarchy` | `classDiagram` — `AgentKind` enum members |
+| C7 Config structs | `#agents-hierarchy` | `classDiagram` — per-config class blocks |
+| C8 spawn_bridge | `#agents-env`, `#spawn-claude`, `#spawn-vibe`, `#spawn-ollama`, `#spawn-codex` | Env whitelist table rows; `sequenceDiagram` spawn lines |
+| C9 ScreenKey | `#fe-screens` | Screen map `<table>` rows |
+| C10 ROUTES | `#fe-router`, `#api-frontend` | Route resolution `flowchart`; frontend routes `<table>` |
+| C11 screenModules | `#fe-hierarchy` | Component hierarchy `graph TD` |
+| C12 NAV_ITEMS | `#fe-nav` | Nav table rows |
+| C13 Keyboard shortcuts | `#fe-nav` | Shortcuts `<table>` rows |
+| C14 Auth cookie | `#auth-exchange` | `sequenceDiagram` Set-Cookie note; cookie attributes `<table>` |
+| C15 auth_nonces | `#auth-nonce` | Nonce `sequenceDiagram`; nonce TTL note |
+| C16 CORS | `#arch-binaries` | CORS methods `<code>` or table |
+| C17 Setup types | `#arch-state` or setup section | Auth status `<table>` rows |
