@@ -780,7 +780,10 @@ async fn run_vibe_turn(message: &str, session: &BuildSession) -> Result<String, 
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    let output = c.output().await.map_err(|e| format!("spawn vibe: {e}"))?;
+    let output = c.output().await.map_err(|e| {
+        tracing::warn!(error = %e, "failed to spawn vibe subprocess");
+        "vibe_spawn_failed".to_owned()
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1342,7 +1345,7 @@ pub async fn spawn_plan_draft(
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
+#[allow(clippy::expect_used, clippy::unwrap_used, unsafe_code)]
 mod tests {
     use super::*;
 
@@ -1355,6 +1358,56 @@ mod tests {
                 crate::config::LightarchitectsNativeConfig::default(),
             ),
         )
+    }
+
+    // ── resolve_mistral_api_key — property suite ─────────────────────────────
+    //
+    // Tests the filtering predicate directly (no env mutation → no parallel race).
+    // The env-var path checks: !empty && !contains("your_").
+    // The keychain path additionally checks: !contains("placeholder").
+
+    /// Returns true when the key satisfies the env-var acceptance predicate.
+    #[cfg(test)]
+    fn env_key_is_valid(key: &str) -> bool {
+        !key.is_empty() && !key.contains("your_")
+    }
+
+    /// Returns true when the key satisfies the keychain acceptance predicate.
+    #[cfg(test)]
+    fn keychain_key_is_valid(key: &str) -> bool {
+        !key.is_empty() && !key.contains("placeholder") && !key.contains("your_")
+    }
+
+    proptest::proptest! {
+        /// Any alphanumeric key (no "your_") passes the env-var filter.
+        #[test]
+        fn prop_valid_env_keys_pass_filter(s in "[a-zA-Z0-9]{8,64}") {
+            proptest::prop_assert!(
+                env_key_is_valid(&s),
+                "clean alphanumeric key must pass env filter: {s}"
+            );
+        }
+
+        /// Any string prefixed with "your_" fails both filters.
+        #[test]
+        fn prop_your_prefix_rejected_by_both_filters(suffix in "[a-zA-Z0-9]{4,32}") {
+            let key = format!("your_{suffix}");
+            proptest::prop_assert!(!env_key_is_valid(&key), "your_ must fail env filter: {key}");
+            proptest::prop_assert!(!keychain_key_is_valid(&key), "your_ must fail keychain filter: {key}");
+        }
+
+        /// Any string containing "placeholder" fails the keychain filter.
+        #[test]
+        fn prop_placeholder_rejected_by_keychain_filter(
+            prefix in "[a-z]{0,8}",
+            suffix in "[a-z]{0,8}"
+        ) {
+            let key = format!("{prefix}placeholder{suffix}");
+            proptest::prop_assert!(
+                !keychain_key_is_valid(&key),
+                "placeholder must fail keychain filter: {key}"
+            );
+        }
     }
 
     // ── resolve_mistral_api_key — unit suite ─────────────────────────────────

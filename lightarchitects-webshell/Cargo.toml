@@ -131,6 +131,8 @@ tower = { version = "0.4", features = ["util"] }
 http-body-util = "0.1"
 # Tempdir for memory module tests + coordination/sse test isolation.
 tempfile = { workspace = true }
+# Property-based testing for invariant coverage.
+proptest = { workspace = true }
 
 [[bench]]
 name = "classifier"
