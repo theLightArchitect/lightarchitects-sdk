@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Webshell API Surface — Canonical Reference v1.0.1</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg:       #0a0a0f;
+    --bg-card:  #0f111a;
+    --bg-row:   #131720;
+    --border:   #1e293b;
+    --gold:     #FFD700;
+    --gold-dim: #c8a900;
+    --text:     #e2e8f0;
+    --mute:     #475569;
+    --label:    #94a3b8;
+    --ok:       #22c55e;
+    --warn:     #f59e0b;
+    --err:      #ef4444;
+    --blue:     #38bdf8;
+    --purple:   #a78bfa;
+    --green:    #4ade80;
+    --mono:     'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --sans:     'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── Layout ── */
+  .layout { display: flex; min-height: 100vh; }
+
+  nav.sidebar {
+    width: 240px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+    font-size: 12px;
+  }
+
+  nav.sidebar .logo {
+    padding: 0 20px 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+  }
+  nav.sidebar .logo .title { font-size: 11px; font-weight: 700; color: var(--gold); letter-spacing: 0.1em; text-transform: uppercase; }
+  nav.sidebar .logo .sub   { font-size: 10px; color: var(--mute); margin-top: 2px; }
+
+  nav.sidebar a {
+    display: block;
+    padding: 5px 20px;
+    color: var(--mute);
+    text-decoration: none;
+    transition: color 0.15s;
+    border-left: 2px solid transparent;
+  }
+  nav.sidebar a:hover { color: var(--text); }
+  nav.sidebar a.active { color: var(--gold); border-left-color: var(--gold); background: rgba(255,215,0,0.04); }
+  nav.sidebar .section-label {
+    padding: 14px 20px 4px;
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--mute);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+
+  main {
+    flex: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 48px;
+  }
+
+  /* ── Typography ── */
+  h1 { font-size: 28px; font-weight: 700; color: var(--gold); letter-spacing: -0.02em; margin-bottom: 8px; }
+  h2 { font-size: 20px; font-weight: 600; color: var(--text); margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 15px; font-weight: 600; color: var(--label); margin: 28px 0 12px; }
+  h4 { font-size: 13px; font-weight: 600; color: var(--mute); margin: 20px 0 8px; text-transform: uppercase; letter-spacing: 0.08em; }
+  p  { margin-bottom: 12px; color: var(--label); }
+  a  { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: var(--mono); font-size: 12px; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 3px; color: var(--gold-dim); }
+  pre  { font-family: var(--mono); font-size: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 16px; overflow-x: auto; color: var(--label); line-height: 1.8; margin-bottom: 16px; }
+
+  /* ── Hero ── */
+  .hero {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 28px 32px;
+    margin-bottom: 40px;
+  }
+  .hero p { margin: 8px 0 0; font-size: 13px; }
+  .meta { display: flex; gap: 24px; margin-top: 16px; flex-wrap: wrap; }
+  .meta-item { font-size: 11px; color: var(--mute); }
+  .meta-item span { color: var(--label); font-family: var(--mono); }
+
+  /* ── Tables ── */
+  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; background: var(--bg-row); color: var(--mute); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 12px; border-bottom: 1px solid rgba(30,41,59,0.5); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  td code { font-size: 11px; }
+
+  /* ── Cards ── */
+  .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 20px 24px; margin-bottom: 20px; }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card h3 { margin: 0 0 10px; font-size: 13px; }
+
+  .badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 3px; letter-spacing: 0.05em; text-transform: uppercase; }
+  .badge-gold   { background: rgba(255,215,0,0.12); color: var(--gold); }
+  .badge-blue   { background: rgba(56,189,248,0.12); color: var(--blue); }
+  .badge-green  { background: rgba(74,222,128,0.12); color: var(--green); }
+  .badge-purple { background: rgba(167,139,250,0.12); color: var(--purple); }
+  .badge-red    { background: rgba(239,68,68,0.12); color: var(--err); }
+  .badge-mute   { background: rgba(71,85,105,0.2); color: var(--mute); }
+
+  /* ── Diagram containers ── */
+  .diagram {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 24px;
+    overflow-x: auto;
+  }
+  .diagram-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--mute);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 12px;
+  }
+  .diagram .mermaid { min-width: 500px; }
+
+  /* ── Callout ── */
+  .callout { border-left: 3px solid var(--gold); padding: 12px 16px; background: rgba(255,215,0,0.04); border-radius: 0 6px 6px 0; margin-bottom: 16px; font-size: 12px; color: var(--label); }
+  .callout.info   { border-color: var(--blue);   background: rgba(56,189,248,0.04); }
+  .callout.warn   { border-color: var(--warn);   background: rgba(245,158,11,0.04); }
+  .callout.secure { border-color: var(--green);  background: rgba(74,222,128,0.04); }
+
+  /* ── Section anchors ── */
+  section { scroll-margin-top: 24px; }
+
+  /* ── Auth flow tags ── */
+  .flow-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-family: var(--mono); background: var(--bg-row); border: 1px solid var(--border); border-radius: 4px; padding: 3px 10px; margin-bottom: 8px; }
+
+  /* ── Legend row ── */
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--mute); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  @media (max-width: 900px) {
+    nav.sidebar { display: none; }
+    main { padding: 24px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+<!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
+<nav class="sidebar">
+  <div class="logo">
+    <div class="title">Light Architects</div>
+    <div class="sub">Webshell API Surface v1.0.1</div>
+  </div>
+
+  <div class="section-label">Architecture</div>
+  <a href="#arch-system">System Topology</a>
+  <a href="#arch-binaries">Binary Layer</a>
+  <a href="#arch-state">AppState</a>
+
+  <div class="section-label">Coding Agents</div>
+  <a href="#agents-overview">Agent Overview</a>
+  <a href="#agents-hierarchy">Type Hierarchy</a>
+  <a href="#agents-env">Env Whitelist</a>
+
+  <div class="section-label">Authentication</div>
+  <a href="#auth-overview">Auth Mechanisms</a>
+  <a href="#auth-exchange">Token Exchange</a>
+  <a href="#auth-nonce">Nonce Flow</a>
+  <a href="#auth-ws">WebSocket</a>
+  <a href="#auth-session">Session Lifecycle</a>
+
+  <div class="section-label">Agent Spawn</div>
+  <a href="#spawn-claude">Claude / Anthropic</a>
+  <a href="#spawn-vibe">MistralVibe</a>
+  <a href="#spawn-ollama">Ollama</a>
+  <a href="#spawn-codex">Codex</a>
+
+  <div class="section-label">Frontend</div>
+  <a href="#fe-router">Route Resolution</a>
+  <a href="#fe-screens">Screen Map</a>
+  <a href="#fe-hierarchy">Component Hierarchy</a>
+  <a href="#fe-nav">Navigation</a>
+  <a href="#fe-states">Screen States</a>
+
+  <div class="section-label">Data Flows</div>
+  <a href="#flow-sse">SSE Event Routing</a>
+  <a href="#flow-dispatch">Dispatch Flow</a>
+  <a href="#flow-soul">SOUL Vault</a>
+
+  <div class="section-label">API Reference</div>
+  <a href="#api-backend">Backend Endpoints</a>
+  <a href="#api-frontend">Frontend Routes</a>
+</nav>
+
+<!-- ── Main ─────────────────────────────────────────────────────────────── -->
+<main>
+
+  <!-- Hero -->
+  <div class="hero">
+    <h1>Webshell API Surface</h1>
+    <p>Canonical visual reference for the <code>lightarchitects-webshell</code> binary. All diagrams derived directly from source — not inferred.</p>
+    <div class="meta">
+      <div class="meta-item">Version <span>1.0.1</span></div>
+      <div class="meta-item">Date <span>2026-05-17</span></div>
+      <div class="meta-item">Backend port <span>:8733</span></div>
+      <div class="meta-item">Routes <span>99 .route() call sites</span></div>
+      <div class="meta-item">Agents <span>4 supported</span></div>
+      <div class="meta-item">Source <span>webshell-api-surface-v1.md</span></div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="arch-system">
+  <h2>System Architecture</h2>
+
+  <h3>System Topology</h3>
+  <p>The webshell is one of two distinct HTTP surfaces. It serves the SPA and proxies agent sessions. The gateway handles the platform MCP/REST API on a separate port.</p>
+
+  <div class="diagram">
+    <div class="diagram-label">C4 Container — System Topology</div>
+    <div class="mermaid">
+graph LR
+  subgraph Browser["Browser (SPA)"]
+    UI["Hash-router SPA\nsrc/app.svelte"]
+  end
+
+  subgraph Webshell["lightarchitects-webshell :8733"]
+    WS_API["/api/* handlers\nbuild_app()"]
+    PTY["PTY Terminal\naxum-ws"]
+    SSE["SSE streams\nglobal + per-build"]
+    BRIDGE["Agent Bridge\nNDJSON subprocess"]
+    SOUL_S["SOUL store\nSQLite"]
+  end
+
+  subgraph Gateway["lightarchitects-gateway :3xxx"]
+    GW_API["/v1/platform/*\n/v1/admin/*\n/v1/vault/*"]
+    NEO["Neo4j\n:7687"]
+  end
+
+  subgraph Agents["Coding Agent CLIs"]
+    CLAUDE["claude\n(Claude Code)"]
+    VIBE["vibe-acp\n(MistralVibe)"]
+    CODEX["codex\n(OpenAI Codex)"]
+    LACLI["lightarchitects-cli\n(LÆx0 Native)"]
+  end
+
+  subgraph External["External APIs"]
+    ANTHROPIC["api.anthropic.com"]
+    MISTRAL["api.mistral.ai"]
+    OPENAI["api.openai.com"]
+    OLLAMA["localhost:11434\n(Ollama)"]
+  end
+
+  AYIN["AYIN :3742\nobservability"]
+
+  UI -->|"HTTP /api/*\nWS /api/.../ws\nSSE /api/events"| WS_API
+  WS_API --> PTY
+  WS_API --> SSE
+  WS_API --> BRIDGE
+  WS_API --> SOUL_S
+  BRIDGE -->|"spawn + NDJSON\nstdin/stdout"| CLAUDE
+  BRIDGE -->|"spawn + NDJSON\nACP protocol"| VIBE
+  BRIDGE -->|"spawn + NDJSON"| CODEX
+  BRIDGE -->|"spawn + NDJSON"| LACLI
+  CLAUDE -->|"HTTPS"| ANTHROPIC
+  CLAUDE -->|"HTTP (optional)"| OLLAMA
+  VIBE -->|"HTTPS"| MISTRAL
+  CODEX -->|"HTTPS"| OPENAI
+  CODEX -->|"HTTP (optional)"| OLLAMA
+  UI -->|"HTTP /v1/*"| GW_API
+  GW_API --> NEO
+  WS_API -->|"traces"| AYIN
+
+  style Webshell fill:#0f111a,stroke:#1e293b,color:#e2e8f0
+  style Browser fill:#0a0a14,stroke:#1e293b,color:#e2e8f0
+  style Gateway fill:#0a0a14,stroke:#1e293b,color:#e2e8f0
+  style Agents fill:#0a0a14,stroke:#1e293b,color:#e2e8f0
+  style External fill:#080810,stroke:#1e293b,color:#475569
+    </div>
+  </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="arch-binaries">
+  <h3>Binary Layer — Two API Surfaces</h3>
+  <div class="callout info">The webshell and gateway are separate binaries on separate ports. The SPA talks to both — <code>/api/*</code> goes to the webshell, <code>/v1/platform/*</code> goes to the gateway. Never conflate the two surfaces.</div>
+
+  <table>
+    <thead><tr><th>Layer</th><th>Binary</th><th>Base path</th><th>Port</th><th>Auth</th></tr></thead>
+    <tbody>
+      <tr><td>Webshell backend</td><td><code>lightarchitects-webshell</code></td><td><code>/api/*</code></td><td><code>8733</code></td><td><code>la_session</code> cookie or <code>Bearer</code></td></tr>
+      <tr><td>Gateway / Platform API</td><td><code>lightarchitects</code></td><td><code>/v1/platform/*</code> <code>/v1/admin/*</code></td><td>configured</td><td>Platform API key</td></tr>
+    </tbody>
+  </table>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="arch-state">
+  <h3>AppState — Shared Server State</h3>
+  <p>All handlers receive <code>Arc&lt;AppState&gt;</code>. 19 public fields, 1 private (<code>_policy_watcher</code>).</p>
+
+  <div class="diagram">
+    <div class="diagram-label">Entity — AppState fields</div>
+    <div class="mermaid">
+erDiagram
+  AppState {
+    Arc_Config config
+    Arc_SecretSlice turnlog_pepper
+    Arc_AtomicUsize session_count
+    Sender_WebEvent event_tx
+    Arc_RwLock_BrowserStateSnapshot browser_state
+    BuildsHandlerCache builds_cache
+    Arc_BuildRegistry builds
+    Arc_RwLock_AgentSession active_agent
+    Option_Arc_SoulPersistence soul_store
+    Option_PolicyHandle promotion_policy
+    Arc_OnceCell_EmbeddingProvider embedding_provider
+    Arc_Mutex_DispatchRegistry dispatch_registry
+    DockerCapability docker_capable
+    ImageManager image_manager
+    TelemetryHandle telemetry
+    Arc_Mutex_SessionStore session_store
+    Arc_DashMap_Uuid_Instant auth_nonces
+    GlobalEventStore global_event_store
+    Arc_DashMap_Uuid_PlanDraftSession plan_draft_sessions
+    Arc_DashMap_Uuid_SupervisorEntry supervisor_states
+  }
+  Config {
+    u16 port
+    OsString host_cmd
+    PathBuf cwd
+    String token
+    AgentSession agent_session
+  }
+    </div>
+  </div>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="agents-overview">
+  <h2>Coding Agents</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <h3><span class="badge badge-gold">Lightarchitects</span> &nbsp; Claude Code</h3>
+      <table>
+        <tr><td>Binary</td><td><code>claude</code></td></tr>
+        <tr><td>Protocol</td><td>NDJSON <code>--stream-events</code></td></tr>
+        <tr><td>Backends</td><td>Anthropic · OllamaLaunch · Ollama</td></tr>
+        <tr><td>Auth</td><td>macOS Keychain / <code>.credentials.json</code> / <code>ANTHROPIC_API_KEY</code></td></tr>
+        <tr><td>Default</td><td>✓ Default agent</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3><span class="badge badge-purple">MistralVibe</span> &nbsp; Mistral Vibe</h3>
+      <table>
+        <tr><td>Binary</td><td><code>vibe-acp</code> (ACP bridge)</td></tr>
+        <tr><td>Protocol</td><td>NDJSON ACP mode (no CLI flags)</td></tr>
+        <tr><td>Backends</td><td>Mistral API only</td></tr>
+        <tr><td>Auth</td><td><code>MISTRAL_API_KEY</code> env · macOS Keychain</td></tr>
+        <tr><td>Key storage</td><td><code>secrecy::SecretString</code> — zeroized on drop</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3><span class="badge badge-blue">Codex</span> &nbsp; OpenAI Codex</h3>
+      <table>
+        <tr><td>Binary</td><td><code>codex</code></td></tr>
+        <tr><td>Protocol</td><td>NDJSON <code>--stream-events</code></td></tr>
+        <tr><td>Backends</td><td>OpenAI · OllamaLaunch</td></tr>
+        <tr><td>Auth</td><td><code>OPENAI_API_KEY</code> env · <code>~/.codex/auth.json</code></td></tr>
+        <tr><td>Default model</td><td><code>o3</code></td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3><span class="badge badge-green">LightarchitectsNative</span> &nbsp; LÆx0 CLI</h3>
+      <table>
+        <tr><td>Binary</td><td><code>lightarchitects-cli</code></td></tr>
+        <tr><td>Protocol</td><td>NDJSON <code>--stream-events</code></td></tr>
+        <tr><td>Backends</td><td>Native (reads own TOML config)</td></tr>
+        <tr><td>Auth</td><td>Own TOML config at <code>~/.lightarchitects-cli/</code></td></tr>
+      </table>
+    </div>
+  </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="agents-hierarchy">
+  <h3>Agent Type Hierarchy</h3>
+  <p>The <code>AgentSession</code> tagged enum makes invalid backend combinations unrepresentable at compile time — Claude cannot be configured with an OpenAI backend.</p>
+
+  <div class="diagram">
+    <div class="diagram-label">Class — AgentSession type hierarchy</div>
+    <div class="mermaid">
+classDiagram
+  class AgentSession {
+    &lt;&lt;enum tag=agent&gt;&gt;
+  }
+  class Lightarchitects {
+    ClaudeBackend backend
+  }
+  class Codex {
+    CodexConfig config
+  }
+  class LightarchitectsNative {
+    LightarchitectsNativeConfig config
+  }
+  class MistralVibe {
+    MistralVibeConfig config
+  }
+  class ClaudeBackend {
+    &lt;&lt;enum&gt;&gt;
+    Anthropic
+    OllamaLaunch(OllamaLaunchConfig)
+    Ollama(OllamaConfig)
+  }
+  class CodexBackend {
+    &lt;&lt;enum&gt;&gt;
+    OpenAi
+    OllamaLaunch(OllamaLaunchConfig)
+  }
+  class OllamaLaunchConfig {
+    String model
+    String base_url
+  }
+  class OllamaConfig {
+    String base_url
+    String model
+    String auth_token
+  }
+  class CodexConfig {
+    String model
+    CodexBackend backend
+  }
+  class LightarchitectsNativeConfig {
+    String binary
+    Option_String model
+  }
+  class MistralVibeConfig {
+    Option_String model
+  }
+
+  AgentSession <|-- Lightarchitects
+  AgentSession <|-- Codex
+  AgentSession <|-- LightarchitectsNative
+  AgentSession <|-- MistralVibe
+  Lightarchitects --> ClaudeBackend
+  Codex --> CodexConfig
+  CodexConfig --> CodexBackend
+  ClaudeBackend --> OllamaLaunchConfig : OllamaLaunch
+  ClaudeBackend --> OllamaConfig : Ollama
+  CodexBackend --> OllamaLaunchConfig : OllamaLaunch
+  LightarchitectsNative --> LightarchitectsNativeConfig
+  MistralVibe --> MistralVibeConfig
+    </div>
+  </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="agents-env">
+  <h3>Environment Whitelist — <code>spawn_bridge()</code></h3>
+  <div class="callout secure">Security invariant: <code>env_clear()</code> is called on every agent spawn before any variables are injected. <code>ANTHROPIC_API_KEY</code> is never injected by the bridge — the CLI resolves its own credentials from the keychain so a compromised agent process cannot exfiltrate the key via <code>/proc/self/environ</code>.</div>
+
+  <table>
+    <thead><tr><th>Variable</th><th>Lightarchitects</th><th>Codex</th><th>LÆx0 Native</th><th>MistralVibe</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>PATH</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>augmented with agent binary dir</td></tr>
+      <tr><td><code>HOME</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
+      <tr><td><code>USER</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
+      <tr><td><code>SHELL</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
+      <tr><td><code>RUST_LOG</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
+      <tr><td><code>LLM_BACKEND</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
+      <tr><td><code>OLLAMA_BASE_URL</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
+      <tr><td><code>OLLAMA_MODEL</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
+      <tr><td><code>LA_*</code> / <code>LIGHTARCHITECTS_*</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>all matching keys forwarded</td></tr>
+      <tr><td><code>MISTRAL_API_KEY</code></td><td>✗</td><td>✗</td><td>✗</td><td><strong>✓</strong></td><td>injected as <code>secrecy::SecretString</code> — only for vibe</td></tr>
+      <tr><td><code>ANTHROPIC_API_KEY</code></td><td>✗</td><td>✗</td><td>✗</td><td>✗</td><td>never injected — CLI reads from keychain directly</td></tr>
+      <tr><td><code>OPENAI_API_KEY</code></td><td>✗</td><td>✗</td><td>✗</td><td>✗</td><td>never injected — CLI reads its own credentials</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Ollama Launch Mode — extra env injection</h4>
+  <p>When <code>ClaudeBackend::OllamaLaunch</code> or <code>CodexBackend::OllamaLaunch</code> is active, the bridge additionally injects the following to replicate <code>ollama launch &lt;agent&gt; --model &lt;model&gt;</code>:</p>
+  <table>
+    <thead><tr><th>Variable</th><th>Claude / OllamaLaunch</th><th>Codex / OllamaLaunch</th></tr></thead>
+    <tbody>
+      <tr><td><code>ANTHROPIC_AUTH_TOKEN</code></td><td><code>"ollama"</code></td><td>—</td></tr>
+      <tr><td><code>ANTHROPIC_API_KEY</code></td><td><code>""</code> (empty, disables cloud)</td><td>—</td></tr>
+      <tr><td><code>ANTHROPIC_BASE_URL</code></td><td><code>&lt;ollama_base_url&gt;</code></td><td>—</td></tr>
+      <tr><td><code>OPENAI_BASE_URL</code></td><td>—</td><td><code>&lt;ollama_base_url&gt;/v1</code></td></tr>
+      <tr><td><code>OPENAI_API_KEY</code></td><td>—</td><td><code>"ollama"</code></td></tr>
+    </tbody>
+  </table>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="auth-overview">
+  <h2>Authentication</h2>
+
+  <h3>Auth Mechanisms</h3>
+  <p>Three distinct credential paths are supported. All token comparisons are constant-time via <code>constant_time_eq</code> to prevent timing side-channel attacks.</p>
+
+  <table>
+    <thead><tr><th>Mechanism</th><th>Endpoint</th><th>Token location</th><th>Use case</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Bearer header</strong></td><td>Any authenticated route</td><td><code>Authorization: Bearer &lt;token&gt;</code></td><td>CLI clients, initial SPA load before exchange</td></tr>
+      <tr><td><strong>Session cookie</strong></td><td>All same-origin requests after exchange</td><td><code>Cookie: la_session=&lt;token&gt;</code> — <code>HttpOnly; SameSite=Strict; Secure; Max-Age=28800</code></td><td>SPA post-exchange (8-hour sliding TTL)</td></tr>
+      <tr><td><strong>WS sub-protocol</strong></td><td><code>/api/terminal/ws</code>, <code>/api/builds/{id}/terminal/ws</code></td><td><code>Sec-WebSocket-Protocol: bearer.&lt;token&gt;</code></td><td>PTY terminal — browsers cannot set <code>Authorization</code> on <code>new WebSocket()</code></td></tr>
+      <tr><td><strong>Notify token</strong></td><td><code>POST /api/builds/{id}/notify</code></td><td><code>X-LA-Notify-Token: &lt;64-char hex&gt;</code></td><td>Per-build 32-byte secret; consumed by external notifiers</td></tr>
+    </tbody>
+  </table>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="auth-exchange">
+  <h3>Auth Flow 1 — Direct Token Exchange</h3>
+  <div class="flow-tag"><span class="badge badge-gold">PATH A</span> SPA initial load with known token</div>
+
+  <div class="callout">The SPA holds the bearer token in <code>sessionStorage</code> for one request only. After exchange it drops the token and sends no further <code>Authorization</code> headers — cookies flow automatically on same-origin requests.</div>
+
+  <div class="diagram">
+    <div class="diagram-label">Sequence — Token Exchange (Direct)</div>
+    <div class="mermaid">
+sequenceDiagram
+  participant B as Browser
+  participant W as Webshell :8733
+  participant S as sessionStorage
+
+  Note over B: SPA loads, token in sessionStorage
+  B->>S: read token
+  S-->>B: &lt;bearer-token&gt;
+  B->>W: POST /api/auth/exchange {"token":"&lt;bearer-token&gt;"}
+  Note over W: validate_raw_token() — constant time
+  alt token valid
+    W-->>B: 200 Set-Cookie: la_session=&lt;token&gt;; HttpOnly; SameSite=Strict; Secure; Max-Age=28800
+    B->>S: delete token from sessionStorage
+    Note over B: subsequent requests use cookie only
+    B->>W: GET /api/builds (Cookie: la_session=...)
+    W-->>B: 200 builds list
+  else token invalid
+    W-->>B: 401 Unauthorized
+  end
+    </div>
+  </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="auth-nonce">
+  <h3>Auth Flow 2 — Nonce Exchange (Gateway-Launched)</h3>
+  <div class="flow-tag"><span class="badge badge-blue">PATH B</span> Gateway opens browser tab — real token must not appear in URL or MCP logs</div>
+
+  <div class="callout info">The nonce prevents the real session token from appearing in MCP tool-response logs (<code>~/.claude/projects/*/session.jsonl</code>). Single-use: removed from <code>auth_nonces</code> DashMap on first redemption. 60-second TTL.</div>
+
+  <div class="diagram">
+    <div class="diagram-label">Sequence — Nonce Exchange (Gateway-Launched Webshell)</div>
+    <div class="mermaid">
+sequenceDiagram
+  participant G as Gateway
+  participant W as Webshell :8733
+  participant OS as OS (browser open)
+  participant B as Browser
+
+  G->>W: POST /api/auth/nonce (Authorization: Bearer &lt;token&gt;)
+  Note over W: validate_bearer() — constant time
+  Note over W: prune expired nonces from DashMap
+  W->>W: generate UUID nonce, TTL = now + 60s
+  W->>W: auth_nonces.insert(nonce, expiry)
+  W-->>G: 200 {"nonce":"&lt;uuid&gt;"}
+
+  G->>OS: open browser: http://localhost:8733/#nonce=&lt;uuid&gt;
+  OS->>B: browser launches
+
+  Note over B: app.svelte reads window.location.hash
+  B->>B: parse #nonce=&lt;uuid&gt; from URL fragment
+  B->>W: POST /api/auth/nonce-exchange {"nonce":"&lt;uuid&gt;"}
+
+  Note over W: auth_nonces.remove(&amp;nonce_id)
+  alt nonce found and TTL not expired
+    W->>W: validate TTL (Instant::now() &lt;= expiry)
+    W-->>B: 200 Set-Cookie: la_session=&lt;token&gt;; HttpOnly; Secure
+    Note over B: nonce cleared from URL, cookie set
+    B->>W: subsequent requests use cookie
+  else nonce not found (already used or never existed)
+    W-->>B: 401 Unauthorized
+  else TTL expired
+    W-->>B: 401 Unauthorized
+  end
+    </div>
+  </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="auth-ws">
+  <h3>Auth Flow 3 — WebSocket PTY Terminal</h3>
+  <div class="flow-tag"><span class="badge badge-purple">PATH C</span> PTY terminal — browsers cannot set Authorization on WebSocket upgrade</div>
+
+  <div class="diagram">
+    <div class="diagram-label">Sequence — WebSocket Terminal Auth</div>
+    <div class="mermaid">
+sequenceDiagram
+  participant B as Browser
+  participant W as Webshell :8733
+  participant P as PTY process
+
+  Note over B: new WebSocket(url) — cannot set Authorization header
+  B->>W: GET /api/terminal/ws (HTTP Upgrade)\n  Sec-WebSocket-Protocol: bearer.&lt;token&gt;
+  Note over W: validate_ws_subprotocol()\n  prefix "bearer." stripped\n  constant_time_eq on token body
+  alt token valid
+    W-->>B: 101 Switching Protocols\n  Sec-WebSocket-Protocol: bearer.&lt;token&gt;
+    W->>P: spawn PTY (host_cmd = "claude" or configured binary)
+    loop PTY I/O
+      B-->>W: WS message (stdin bytes)
+      W->>P: write stdin
+      P-->>W: stdout bytes
+      W-->>B: WS message (stdout bytes)
+    end
+  else token invalid
+    W-->>B: 401 Unauthorized (before upgrade)
+  end
+    </div>
+  </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="auth-session">
+  <h3>Session Lifecycle</h3>
+
+  <div class="diagram">
+    <div class="diagram-label">State Machine — Session Lifecycle</div>
+    <div class="mermaid">
+stateDiagram-v2
+  [*] --> Unauthenticated : browser loads SPA
+
+  Unauthenticated --> ExchangePending : POST /api/auth/exchange\nor POST /api/auth/nonce-exchange
+  ExchangePending --> Authenticated : 200 Set-Cookie la_session
+  ExchangePending --> Unauthenticated : 401
+
+  Authenticated --> Authenticated : GET /api/auth/status every 30min\n(sliding TTL refresh)
+  Authenticated --> Expired : Max-Age=28800 (8h) elapsed\nno /auth/status refresh
+  Authenticated --> LoggedOut : DELETE /api/auth/session
+  Expired --> Unauthenticated : next request → 401
+  LoggedOut --> Unauthenticated : Set-Cookie Max-Age=0
+    </div>
+  </div>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="spawn-claude">
+  <h2>Agent Spawn Sequences</h2>
+
+  <h3>Claude Code — Anthropic Backend</h3>
+  <div class="callout secure"><strong>ANTHROPIC_API_KEY is never injected by the bridge.</strong> The <code>claude</code> CLI resolves its own credentials from the macOS Keychain or <code>~/.claude/.credentials.json</code>. This prevents a compromised child process from exfiltrating the key via <code>/proc/self/environ</code> (C4 from agent module security review).</div>
+
+  <div class="diagram">
+    <div class="diagram-label">Sequence — Agent Spawn: Claude Code / Anthropic</div>
+    <div class="mermaid">
+sequenceDiagram
+  participant UI as Browser
+  participant W as Webshell
+  participant B as spawn_bridge()
+  participant C as claude (binary)
+  participant K as macOS Keychain
+  participant A as api.anthropic.com
+
+  UI->>W: POST /api/builds/{id}/copilot {prompt}
+  W->>B: spawn_bridge(session, event_tx, ...)
+  Note over B: resolve_binary("lightarchitects") → PATH lookup
+  Note over B: validate_cwd(session.cwd)
+
+  B->>C: spawn("lightarchitects", ["--stream-events", "--cwd", &lt;cwd&gt;])\n  env_clear()\n  env PATH=augmented_path()\n  env HOME, USER, SHELL, RUST_LOG, LA_*, LIGHTARCHITECTS_*\n  stdin=piped, stdout=piped, stderr=null
+  Note over C: CLI resolves its own auth
+  C->>K: read credentials (OAuth token or API key)
+  K-->>C: credential
+  C->>A: API request (model call)
+  A-->>C: streaming response
+  C-->>B: NDJSON line: {"type":"text_delta","text":"..."}
+  B-->>W: AgentEvent broadcast on event_tx
+  W-->>UI: SSE: data: {"type":"text_delta","text":"..."}
+    </div>
+  </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="spawn-vibe">
+  <h3>MistralVibe</h3>
+  <div class="callout">MistralVibe uses the ACP (Agent Control Protocol) bridge binary <code>vibe-acp</code> — not the <code>vibe</code> CLI directly. No <code>--stream-events</code> flag; ACP speaks pure NDJSON on stdin/stdout. The <code>MISTRAL_API_KEY</code> is injected as a <code>secrecy::SecretString</code> and zeroized on drop.</div>
+
+  <div class="diagram">
+    <div class="diagram-label">Sequence — Agent Spawn: MistralVibe</div>
+    <div class="mermaid">
+sequenceDiagram
+  participant W as Webshell
+  participant B as spawn_bridge()
+  participant R as resolve_mistral_api_key()
+  participant E as Env / Keychain
+  participant V as vibe-acp (binary)
+  participant M as api.mistral.ai
+
+  W->>B: spawn_bridge(session[MistralVibe], ...)
+  Note over B: is_vibe = true
+  Note over B: resolve_binary("vibe-acp") → PATH lookup
+  B->>R: resolve_mistral_api_key()
+  R->>E: check MISTRAL_API_KEY env var
+  alt env var set
+    E-->>R: key value
+  else env var absent
+    R->>E: macOS Keychain lookup
+    E-->>R: key from Keychain
+  end
+  R-->>B: Option&lt;SecretString&gt;
+
+  B->>V: spawn("vibe-acp", []) ← no --stream-events, ACP mode\n  env_clear()\n  env PATH, HOME, USER, SHELL, RUST_LOG, LA_*, LIGHTARCHITECTS_*\n  env MISTRAL_API_KEY = key.expose_secret()  ← only for vibe\n  stdin=piped, stdout=piped, stderr=null
+  Note over V: vibe-acp ACP bridge
+  V->>M: HTTPS model request
+  M-->>V: streaming response
+  V-->>B: NDJSON (ACP protocol)
+  Note over B: parse_stdout() → AgentEvent
+  B-->>W: AgentEvent on event_tx
+    </div>
+  </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="spawn-ollama">
+  <h3>Claude Code — Ollama Launch Mode</h3>
+
+  <div class="diagram">
+    <div class="diagram-label">Sequence — Agent Spawn: Claude Code / OllamaLaunch</div>
+    <div class="mermaid">
+sequenceDiagram
+  participant W as Webshell
+  participant B as spawn_bridge()
+  participant C as claude (binary)
+  participant O as Ollama :11434
+
+  W->>B: spawn_bridge(session[Lightarchitects(OllamaLaunch{model, base_url})], ...)
+  B->>C: spawn("lightarchitects", ["--stream-events", "--cwd", &lt;cwd&gt;])\n  env_clear()\n  env PATH, HOME, USER, SHELL ...\n  env ANTHROPIC_AUTH_TOKEN = "ollama"\n  env ANTHROPIC_API_KEY = "" (disables cloud routing)\n  env ANTHROPIC_BASE_URL = &lt;ollama_base_url&gt;\n  (per-tier model overrides so claude routes to Ollama)
+  Note over C: claude sees ANTHROPIC_BASE_URL → routes to Ollama
+  C->>O: POST /v1/messages (Anthropic-compat endpoint)
+  O-->>C: streaming response
+  C-->>B: NDJSON events
+  B-->>W: AgentEvent on event_tx
+    </div>
+  </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="spawn-codex">
+  <h3>Codex — OpenAI Backend</h3>
+
+  <div class="diagram">
+    <div class="diagram-label">Sequence — Agent Spawn: Codex / OpenAI</div>
+    <div class="mermaid">
+sequenceDiagram
+  participant W as Webshell
+  participant B as spawn_bridge()
+  participant C as codex (binary)
+  participant K as ~/.codex/auth.json
+  participant OA as api.openai.com
+
+  W->>B: spawn_bridge(session[Codex(CodexConfig{model:"o3", backend:OpenAi})], ...)
+  B->>C: spawn("codex", ["--stream-events", "--cwd", &lt;cwd&gt;])\n  env_clear()\n  env PATH, HOME, USER, SHELL, LA_* ...\n  (OPENAI_API_KEY NOT injected — codex reads own auth)
+  Note over C: codex resolves own credentials
+  C->>K: read OPENAI_API_KEY from auth.json or env
+  K-->>C: credential
+  C->>OA: API request (model: o3)
+  OA-->>C: streaming response
+  C-->>B: NDJSON events
+  B-->>W: AgentEvent on event_tx
+    </div>
+  </div>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="fe-router">
+  <h2>Frontend Navigation</h2>
+
+  <h3>Route Resolution Flow</h3>
+  <p>The SPA uses a custom hash-based router — not SvelteKit file routing. Routes are matched against <code>window.location.hash</code> in declaration order, most-specific first.</p>
+
+  <div class="diagram">
+    <div class="diagram-label">Flowchart — Hash Route Resolution</div>
+    <div class="mermaid">
+flowchart TD
+  A([hashchange event\nor initial load]) --> B[applyRedirects]
+  B --> C{legacy redirect\nmatch?}
+  C -->|yes| D[history.replaceState\nto new path]
+  D --> E
+  C -->|no| E[matchRoute\npath]
+  E --> F{match ROUTES\narray in order}
+  F -->|pattern 1..22| G[extract params\ne.g. buildId, view, phaseId]
+  F -->|no match| H[screen: Ops\ndefault fallback]
+  G --> I{screenModules[key]}
+  H --> I
+  I --> J[dynamic import\nlazy code-split bundle]
+  J --> K{import\nsucceeded?}
+  K -->|yes| L[ActiveScreen = mod.default\nscreenParams = params]
+  K -->|no| M[fallback import\nBuilds.svelte]
+  L --> N([render &lt;ActiveScreen params /&gt;])
+  M --> N
+    </div>
+  </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="fe-screens">
+  <h3>Screen Map — All 22 Route Patterns</h3>
+
+  <table>
+    <thead><tr><th>#</th><th>Pattern</th><th>Screen</th><th>Params</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code>/builds/:id/phase/:p/wave/:w/agent/:a</code></td><td>BuildDetail</td><td>buildId, phaseId, waveId, agentKey</td></tr>
+      <tr><td>2</td><td><code>/builds/:id/phase/:p/wave/:w</code></td><td>BuildDetail</td><td>buildId, phaseId, waveId</td></tr>
+      <tr><td>3</td><td><code>/builds/:id/phase/:p</code></td><td>BuildDetail</td><td>buildId, phaseId</td></tr>
+      <tr><td>4</td><td><code>/builds/:id/(kanban|list|operator|manifest|plan|comms)</code></td><td>BuildDetail</td><td>buildId, view</td></tr>
+      <tr><td>5</td><td><code>/builds/:id</code></td><td>BuildDetail</td><td>buildId</td></tr>
+      <tr><td>6</td><td><code>/dispatch/run/:id/agent/:a</code></td><td>Dispatch</td><td>runId, agentKey</td></tr>
+      <tr><td>7</td><td><code>/dispatch/run/:id</code></td><td>Dispatch</td><td>runId</td></tr>
+      <tr><td>8</td><td><code>/helix/strand/:key</code></td><td>Helix</td><td>siblingKey</td></tr>
+      <tr><td>9</td><td><code>/helix/entry/:id</code></td><td>Helix</td><td>entryId</td></tr>
+      <tr><td>10</td><td><code>/project/:id</code></td><td>ProjectDetail</td><td>projectId</td></tr>
+      <tr><td>11</td><td><code>/</code> (root)</td><td>Ops</td><td>—</td></tr>
+      <tr><td>12</td><td><code>/ops</code> (+ optional hash)</td><td>Ops</td><td>—</td></tr>
+      <tr><td>13</td><td><code>/dispatch</code></td><td>Dispatch</td><td>—</td></tr>
+      <tr><td>14</td><td><code>/builds</code></td><td>Builds</td><td>—</td></tr>
+      <tr><td>15</td><td><code>/intake</code></td><td>Intake</td><td>—</td></tr>
+      <tr><td>16</td><td><code>/helix</code></td><td>Helix</td><td>—</td></tr>
+      <tr><td>17</td><td><code>/comms</code></td><td>Comms</td><td>—</td></tr>
+      <tr><td>18</td><td><code>/editor/:filepath</code></td><td>Editor</td><td>filepath</td></tr>
+      <tr><td>19</td><td><code>/editor</code></td><td>Editor</td><td>—</td></tr>
+      <tr><td>20</td><td><code>/git</code></td><td>Git</td><td>—</td></tr>
+      <tr><td>21</td><td><code>/pr/new</code></td><td>PullRequest</td><td>—</td></tr>
+      <tr><td>22</td><td><code>/pr/:number</code></td><td>PullRequest</td><td>number</td></tr>
+    </tbody>
+  </table>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="fe-hierarchy">
+  <h3>Screen Component Hierarchy</h3>
+
+  <div class="diagram">
+    <div class="diagram-label">Tree — Frontend Component Architecture</div>
+    <div class="mermaid">
+graph TD
+  APP["app.svelte\nroot shell"]
+
+  subgraph PreAuth["Pre-auth gate"]
+    SETUP["SetupFlow.svelte\n5-step wizard"]
+    SPLASH["SplashStep"]
+    AUTH_STEP["AuthStep"]
+    BACKEND["BackendStep"]
+    MODEL["ModelStep"]
+    INIT["InitStep"]
+  end
+
+  subgraph Screens["Screen layer (lazy-loaded)"]
+    OPS["Ops.svelte\n/  /ops"]
+    DISPATCH["Dispatch.svelte → SquadDispatch.svelte\n/dispatch /dispatch/run/:id..."]
+    BUILDS["Builds.svelte → BuildQueue.svelte\n/builds"]
+    INTAKE["Intake.svelte\n/intake"]
+    HELIX_S["Helix.svelte\n/helix /helix/strand/:k /helix/entry/:id"]
+    BD["BuildDetail.svelte\n/builds/:id (+ 4 drill-down levels)"]
+    PD["ProjectDetail.svelte\n/project/:id"]
+    COMMS["Comms.svelte\n/comms"]
+    EDITOR["Editor.svelte\n/editor /:filepath"]
+    GIT["Git.svelte\n/git"]
+    PR["PullRequest.svelte\n/pr/new /pr/:number"]
+  end
+
+  subgraph Global["Global overlays (always mounted)"]
+    COPILOT["CopilotDrawer"]
+    MEMORY["MemoryDrawer"]
+    EVENTS["GlobalEventsOverlay"]
+    HELIX3D["Helix3D (inline/overlay)"]
+    STATUSBAR["StatusBar"]
+    CMD["CommandPalette"]
+    DIFF["DiffPreview"]
+    KEYMAP["KeymapLegend"]
+  end
+
+  APP -->|"!setupDone"| SETUP
+  SETUP --> SPLASH & AUTH_STEP & BACKEND & MODEL & INIT
+  APP -->|"setupDone"| Screens
+  APP --> Global
+    </div>
+  </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="fe-nav">
+  <h3>Primary Navigation — 5 Tabs</h3>
+
+  <table>
+    <thead><tr><th>Tab</th><th>Label</th><th>Hash</th><th>Keyboard</th><th>Also reachable via</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>OPS</td><td><code>/ops</code></td><td><kbd>1</kbd></td><td>root <code>/</code>, fallback route</td></tr>
+      <tr><td>2</td><td>DISPATCH</td><td><code>/dispatch</code></td><td><kbd>2</kbd>, <kbd>⌘K</kbd></td><td><code>/dispatch/run/:id</code></td></tr>
+      <tr><td>3</td><td>BUILDS</td><td><code>/builds</code></td><td><kbd>3</kbd></td><td><code>/builds/:id</code> and all drill-downs</td></tr>
+      <tr><td>4</td><td>COMMS</td><td><code>/comms</code></td><td><kbd>4</kbd></td><td>—</td></tr>
+      <tr><td>5</td><td>HELIX</td><td><code>/helix</code></td><td><kbd>5</kbd></td><td><code>/helix/strand/:k</code>, <code>/helix/entry/:id</code></td></tr>
+    </tbody>
+  </table>
+
+  <h4>Global Keyboard Shortcuts</h4>
+  <table>
+    <thead><tr><th>Shortcut</th><th>Action</th><th>Scope</th></tr></thead>
+    <tbody>
+      <tr><td><kbd>1</kbd>–<kbd>5</kbd></td><td>Navigate to OPS / DISPATCH / BUILDS / COMMS / HELIX</td><td>Global (non-input elements)</td></tr>
+      <tr><td><kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd></td><td>Navigate to <code>/dispatch</code></td><td>Global</td></tr>
+      <tr><td><kbd>⌘/</kbd> / <kbd>Ctrl+/</kbd></td><td>Toggle keymap legend</td><td>Global</td></tr>
+      <tr><td><kbd>Ctrl+`</kbd></td><td>Toggle Copilot drawer (EVA)</td><td>Global</td></tr>
+      <tr><td><kbd>⌘M</kbd> / <kbd>Ctrl+M</kbd></td><td>Toggle Memory drawer</td><td>Global</td></tr>
+    </tbody>
+  </table>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="fe-states">
+  <h3>Build Detail — View State Machine</h3>
+  <p>BuildDetail has 6 view modes, each mapping to a <code>BuildViewMode</code> tab. The active view is set by the URL pattern <code>/builds/:id/:view</code>.</p>
+
+  <div class="diagram">
+    <div class="diagram-label">State Machine — BuildDetail view modes</div>
+    <div class="mermaid">
+stateDiagram-v2
+  [*] --> kanban : /builds/:id (default)
+
+  kanban --> list : click List tab
+  kanban --> operator : click Operator tab
+  kanban --> manifest : click Manifest tab
+  kanban --> plan : click Plan tab
+  kanban --> comms : click Comms tab
+
+  list --> kanban
+  list --> operator
+  list --> manifest
+  list --> plan
+  list --> comms
+
+  operator --> kanban
+  manifest --> kanban
+  plan --> kanban
+  comms --> kanban
+
+  note right of operator : Operator console\nper-build PTY + SSE
+  note right of manifest : Build manifest\nYAML view
+  note right of plan : LASDLC plan doc\nstreaming view
+  note right of comms : Squad comms\nfor this build
+    </div>
+  </div>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="flow-sse">
+  <h2>Data Flows</h2>
+
+  <h3>SSE Event Routing</h3>
+  <p>Two SSE surfaces: <strong>global</strong> (all platform events, last 1,000 buffered) and <strong>per-build</strong> (scoped to one build session).</p>
+
+  <div class="diagram">
+    <div class="diagram-label">Flowchart — SSE Event Routing</div>
+    <div class="mermaid">
+flowchart TD
+  subgraph Sources["Event Sources"]
+    AGENT["Agent bridge\nNDJSON stdout"]
+    CLI["CLI control events\nPOST /api/control"]
+    BUILD_NOTIFY["Build notifier\nPOST /api/builds/:id/notify\n(X-LA-Notify-Token)"]
+    SOUL_PROMOTE["SOUL promotions\nglobal_event_store"]
+    SUPERVISOR["Northstar supervisor\n/api/supervisor/events"]
+  end
+
+  subgraph Broadcast["Internal broadcast"]
+    EVENT_TX["broadcast::Sender&lt;WebEvent&gt;\nAppState.event_tx"]
+    BUILD_TX["per-build broadcast\nBuildSession.event_tx"]
+    GLOBAL_STORE["GlobalEventStore\nring buffer (last 1000)"]
+  end
+
+  subgraph Consumers["SSE Endpoints"]
+    GLOBAL_SSE["GET /api/events\nglobal SSE stream"]
+    BUILD_SSE["GET /api/builds/:id/events\nper-build SSE stream"]
+    GLOBAL_RING["GET /api/events/global\nreplay + live (EventFilter params)"]
+  end
+
+  AGENT --> BUILD_TX
+  CLI --> EVENT_TX
+  BUILD_NOTIFY --> BUILD_TX
+  SOUL_PROMOTE --> GLOBAL_STORE
+  SUPERVISOR --> GLOBAL_STORE
+
+  EVENT_TX --> GLOBAL_SSE
+  BUILD_TX --> BUILD_SSE
+  GLOBAL_STORE --> GLOBAL_RING
+  GLOBAL_STORE -->|"snapshot on connect"| GLOBAL_RING
+    </div>
+  </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="flow-dispatch">
+  <h3>Squad Dispatch Flow</h3>
+
+  <div class="diagram">
+    <div class="diagram-label">Sequence — Squad Dispatch (classify → execute → stream)</div>
+    <div class="mermaid">
+sequenceDiagram
+  participant UI as Browser / Dispatch screen
+  participant W as Webshell
+  participant CL as dispatch/classifier.rs
+  participant EX as dispatch/executor.rs
+  participant AG as lightarchitects agent
+  participant SSE as GET /api/dispatch/status/:id
+
+  UI->>W: POST /api/dispatch/classify {prompt, agent_hint?}
+  W->>CL: classify(prompt)
+  CL-->>W: Classification {domain, confidence, agent}
+  W-->>UI: 200 {run_id, classification}
+
+  UI->>W: POST /api/dispatch/execute {run_id, prompt, ...}
+  W->>EX: execute(run_id, classification)
+  Note over EX: DispatchRegistry.insert(run_id, handle)
+  EX->>AG: spawn agent bridge (spawn_bridge)
+
+  UI->>SSE: GET /api/dispatch/status/:id (SSE)
+  loop streaming
+    AG-->>EX: NDJSON AgentEvent
+    EX-->>SSE: DispatchEvent (tool_start / text_delta / complete)
+    SSE-->>UI: data: event
+  end
+
+  alt cancel
+    UI->>W: POST /api/dispatch/cancel/:id
+    W->>EX: send cancel signal
+    EX->>AG: SIGKILL child
+  end
+    </div>
+  </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="flow-soul">
+  <h3>SOUL Vault Integration</h3>
+
+  <div class="diagram">
+    <div class="diagram-label">Flowchart — SOUL Vault Read Path</div>
+    <div class="mermaid">
+flowchart LR
+  UI["Browser\nGET /api/soul/search?q=..."]
+
+  subgraph WS["Webshell"]
+    GUARD["AuthGuard extractor"]
+    HANDLER["soul_routes handlers"]
+    SOUL_S["AppState.soul_store\nOption&lt;Arc&lt;SoulPersistence&gt;&gt;"]
+  end
+
+  subgraph SQLite["SQLite (local vault)"]
+    FULL["full-text index\n(FTS5)"]
+    EMB["embedding table\n(fastembed vectors)"]
+    HOT["hot memory ring"]
+    COLD["cold memory archive"]
+  end
+
+  subgraph Neo4j["Neo4j (graph, optional)"]
+    GRAPH["helix graph\nstrand edges"]
+  end
+
+  UI --> GUARD
+  GUARD -->|"401 if unauth"| UI
+  GUARD -->|"pass"| HANDLER
+  HANDLER --> SOUL_S
+  SOUL_S -->|"None → degrade gracefully"| HANDLER
+  SOUL_S --> FULL
+  SOUL_S --> EMB
+  SOUL_S --> HOT
+  SOUL_S --> COLD
+  SOUL_S -.->|"helix graph queries"| GRAPH
+
+  style SOUL_S fill:#0f111a,stroke:#FFD700,color:#e2e8f0
+    </div>
+  </div>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="api-backend">
+  <h2>API Quick Reference</h2>
+
+  <h3>Backend Endpoints (<code>/api/*</code>)</h3>
+
+  <h4>§ Auth &amp; Health</h4>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/api/health</code></td><td>none</td><td>Liveness probe</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/auth-check</code></td><td>Bearer/cookie</td><td>Quick auth status</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/auth/exchange</code></td><td>none</td><td>Bearer → HttpOnly cookie exchange</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/auth/nonce</code></td><td>Bearer</td><td>Issue one-time nonce (60s TTL)</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/auth/nonce-exchange</code></td><td>none</td><td>Nonce → session cookie</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/auth/status</code></td><td>cookie</td><td>Validate + refresh sliding TTL</td></tr>
+      <tr><td><code>DELETE</code></td><td><code>/api/auth/session</code></td><td>Bearer/cookie</td><td>Logout, expire cookie</td></tr>
+    </tbody>
+  </table>
+
+  <h4>§ Agent Session</h4>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET (WS)</code></td><td><code>/api/terminal/ws</code></td><td>Global PTY WebSocket — <code>Sec-WebSocket-Protocol: bearer.&lt;token&gt;</code></td></tr>
+      <tr><td><code>GET (WS)</code></td><td><code>/api/builds/{id}/terminal/ws</code></td><td>Per-build PTY WebSocket</td></tr>
+      <tr><td><code>GET (SSE)</code></td><td><code>/api/builds/{id}/agent/stream</code></td><td>Option-E hybrid agent SSE</td></tr>
+      <tr><td><code>GET (WS)</code></td><td><code>/api/builds/{id}/agent/ws</code></td><td>Option-E hybrid agent WebSocket</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/builds/{id}/copilot</code></td><td>EVA copilot chat (streaming)</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/builds/{id}/copilot/voice</code></td><td>EVA voice synthesis</td></tr>
+    </tbody>
+  </table>
+
+  <h4>§ Squad Dispatch</h4>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>POST</code></td><td><code>/api/dispatch/classify</code></td><td>Classify prompt → domain agent routing decision</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/dispatch/execute</code></td><td>Execute classified dispatch run</td></tr>
+      <tr><td><code>GET (SSE)</code></td><td><code>/api/dispatch/status/{id}</code></td><td>Live run status stream</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/dispatch/cancel/{id}</code></td><td>Cancel a running dispatch</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/dispatch/retry/{id}/{agent}</code></td><td>Retry with specific agent</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/dispatch/{id}/fs-approve</code></td><td>Approve filesystem permission gate (EEF E5)</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/dispatch/{id}/fs-reject</code></td><td>Reject filesystem permission gate</td></tr>
+    </tbody>
+  </table>
+
+  <h4>§ Builds, Events, SOUL — see <a href="webshell-api-surface-v1.md">webshell-api-surface-v1.md</a> for full tables</h4>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="api-frontend">
+  <h3>Frontend Route Summary</h3>
+
+  <table>
+    <thead><tr><th>Screen</th><th>Component</th><th>Root routes</th><th>Nav tab</th></tr></thead>
+    <tbody>
+      <tr><td>Ops</td><td><code>src/screens/Ops.svelte</code></td><td><code>/</code> · <code>/ops</code></td><td>1 — OPS</td></tr>
+      <tr><td>Dispatch</td><td><code>Dispatch.svelte</code> → <code>SquadDispatch.svelte</code></td><td><code>/dispatch</code></td><td>2 — DISPATCH</td></tr>
+      <tr><td>Builds</td><td><code>Builds.svelte</code> → <code>BuildQueue.svelte</code></td><td><code>/builds</code></td><td>3 — BUILDS</td></tr>
+      <tr><td>BuildDetail</td><td><code>BuildDetail.svelte</code></td><td><code>/builds/:id</code> + 4 drilldowns</td><td>3 — BUILDS (deep)</td></tr>
+      <tr><td>Intake</td><td><code>Intake.svelte</code></td><td><code>/intake</code></td><td>not in nav bar (linked from Builds)</td></tr>
+      <tr><td>Comms</td><td><code>Comms.svelte</code></td><td><code>/comms</code></td><td>4 — COMMS</td></tr>
+      <tr><td>Helix</td><td><code>Helix.svelte</code></td><td><code>/helix</code></td><td>5 — HELIX</td></tr>
+      <tr><td>ProjectDetail</td><td><code>ProjectDetail.svelte</code></td><td><code>/project/:id</code></td><td>linked from Ops 3D panel</td></tr>
+      <tr><td>Editor</td><td><code>Editor.svelte</code></td><td><code>/editor</code> · <code>/editor/:filepath</code></td><td>not in nav bar (linked from BuildDetail)</td></tr>
+      <tr><td>Git</td><td><code>Git.svelte</code></td><td><code>/git</code></td><td>not in nav bar</td></tr>
+      <tr><td>PullRequest</td><td><code>PullRequest.svelte</code></td><td><code>/pr/new</code> · <code>/pr/:number</code></td><td>not in nav bar (linked from Git)</td></tr>
+    </tbody>
+  </table>
+
+  <p style="font-size:12px; color: var(--mute); margin-top: 24px;">
+    Canonical source: <a href="webshell-api-surface-v1.md">webshell-api-surface-v1.md</a> · Version 1.0.1 · 2026-05-17 · Derived from <code>src/server/mod.rs</code>, <code>src/dispatch/routes.rs</code>, <code>src/auth.rs</code>, <code>src/config.rs</code>, <code>src/agent/bridge.rs</code>, <code>src/screens/</code>
+  </p>
+  </section>
+
+</main>
+</div>
+
+<script>
+  // Initialize Mermaid with LA dark theme
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      background:         '#0a0a0f',
+      primaryColor:       '#1e293b',
+      primaryTextColor:   '#e2e8f0',
+      primaryBorderColor: '#334155',
+      lineColor:          '#475569',
+      secondaryColor:     '#0f111a',
+      tertiaryColor:      '#131720',
+      edgeLabelBackground:'#0f111a',
+      actorBkg:           '#1e293b',
+      actorTextColor:     '#e2e8f0',
+      actorBorder:        '#334155',
+      activationBkgColor: '#1e293b',
+      activationBorderColor:'#FFD700',
+      sequenceNumberColor:'#0a0a0f',
+      noteBkgColor:       '#1e2433',
+      noteTextColor:      '#94a3b8',
+      noteBorderColor:    '#334155',
+      labelBoxBkgColor:   '#1e293b',
+      labelBoxBorderColor:'#334155',
+      labelTextColor:     '#94a3b8',
+      signalColor:        '#FFD700',
+      signalTextColor:    '#e2e8f0',
+      loopTextColor:      '#94a3b8',
+      clusterBkg:         '#0f111a',
+      clusterBorder:      '#1e293b',
+      titleColor:         '#FFD700',
+      classText:          '#e2e8f0',
+      fillType0:          '#1e293b',
+      fillType1:          '#162032',
+      fillType2:          '#1e2433',
+      fillType3:          '#1a1f2e',
+      fillType4:          '#162235',
+      fillType5:          '#1a2038',
+      fillType6:          '#1e2a3a',
+      fillType7:          '#1a2535',
+      stateBkg:           '#1e293b',
+      stateLabelColor:    '#e2e8f0',
+    },
+    sequence: { actorMargin: 60, boxTextMargin: 8, noteMargin: 12, messageMargin: 35, mirrorActors: false },
+    flowchart: { curve: 'basis', padding: 20 },
+    er: { diagramPadding: 20, layoutDirection: 'TB', minEntityWidth: 100, minEntityHeight: 75 },
+  });
+
+  // Active sidebar link tracking
+  const sections = document.querySelectorAll('section[id]');
+  const links    = document.querySelectorAll('nav.sidebar a');
+
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        const active = document.querySelector(`nav.sidebar a[href="#${e.target.id}"]`);
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+
+  sections.forEach(s => obs.observe(s));
+</script>
+</body>
+</html>
