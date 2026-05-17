@@ -404,6 +404,13 @@ Pre-write templates for EVERY major file before coding starts. Label as Template
 
 ### §8.3 Inter-Phase Quality Gates (MANDATORY after every phase)
 
+Gates operate at three nested levels (full model in Part XXIII §23.5):
+- **Wave level**: Gatekeeper auto-runs on every `WAVE_COMPLETE` (8 dimensions, Playbook §7.2)
+- **Phase level**: `/GATE --scope phase` after all waves complete (5-step RECORD→QUALITY→AUDIT→REMEDY→PRESENT)
+- **Merge level**: `/GATE --scope merge` on the full feature branch before merge
+
+If `/GATE --scope phase` fails: dispatch REMEDY agents by FILE_CLAIM ownership → re-run the full phase gate. After N failed REMEDY cycles → AskUserQuestion before proceeding.
+
 | After Phase | Gate Name | What's Checked |
 |---|---|---|
 | Phase 1 | **Compile Gate** | Compiles, lints clean, shared types unit tested |
@@ -417,7 +424,7 @@ Pre-write templates for EVERY major file before coding starts. Label as Template
 
 ### §8.4 TUI Task Board (pre-execution, mandatory)
 
-Before executing any phase, register the complete plan as Claude Code tasks using `TaskCreate` / `TaskUpdate`. Wire dependency chains with `addBlockedBy`. The operator sees the full execution plan as a live task board before a single file changes. Update tasks to `in_progress` / `completed` as execution proceeds. See Builders Cookbook §21.5.
+Before executing any phase, register the complete Phase→Wave→Task hierarchy as Claude Code tasks using `TaskCreate` / `TaskUpdate`. Wire all dependency chains with `addBlockedBy` per the wave and task `blocked_by` declarations in Part XXIII §23.6. The operator sees the full execution plan as a live task board — phases, waves, tasks, and blockers — before a single file changes. Update tasks to `in_progress` / `completed` as execution proceeds. Tasks within a `parallel_group` are dispatched simultaneously; blocked tasks remain in `pending` until their blockers reach `completed`. See Builders Cookbook §21.5 and Part XXIII §23.7.
 
 ### §8.5 Educational Note Standard (after EVERY coding phase)
 
@@ -1330,6 +1337,267 @@ The relationship mirrors GATE: the 5-step GATE protocol is defined in canon and 
 
 ---
 
+## Part XXIII — Phase→Wave→Task→Files Decomposition Protocol
+
+> **RATIONALE**: A plan that stops at the phase level leaves agents to improvise the work breakdown at BUILD time. Improvised decomposition produces sequential execution of independent work, cascade failures from dependency misordering, merge conflicts from uncoordinated file ownership, and GATE loops that catch problems late rather than at the wave boundary where they're cheapest to fix. This Part mandates that plans declare the full four-level hierarchy at plan time so that BUILD orchestration is mechanical, parallel, and deterministic.
+
+---
+
+### §23.1 — The Four-Level Hierarchy
+
+```
+Phase
+ └── Wave        (commit boundary; the unit of Gatekeeper evaluation)
+      └── Task   (file-set boundary; the unit of agent ownership)
+           └── Files  (file:function pairs; the unit of FILE_CLAIM)
+```
+
+| Level | Definition | Boundary | Gatekeeper trigger |
+|-------|-----------|----------|--------------------|
+| **Phase** | LASDLC-defined work segment with a gate, exit criteria, and agent ownership | `/GATE --scope phase` after all waves complete | Full 5-step /GATE protocol |
+| **Wave** | A cohesive set of tasks that produce a meaningful, independently committable increment | `WAVE_COMPLETE` A2A event | Per-wave Gatekeeper (8 dimensions, Playbook §7.2) |
+| **Task** | A single agent's work on a non-overlapping file set | Task status `completed` in task board | Q1 lint gate (cargo fmt/clippy on changed files) |
+| **Files** | Specific `file:function` pairs within a task | FILE_CLAIM acquired before first write; FILE_RELEASE after commit | Implicit — enforced by FILE_CLAIM ownership |
+
+**Invariants**:
+- Every file belongs to exactly one task in a given wave. No shared ownership within a wave.
+- Every task is owned by exactly one agent. Co-ownership requires a merge protocol declared at the wave level.
+- Wave IDs are unique within a build: `W{phase}{letter}` (e.g., W3a, W3b, W5a).
+- Task IDs are unique within a build: `T{phase}{wave-letter}-{seq}` (e.g., T3a-1, T3b-2).
+
+---
+
+### §23.2 — Foundation-First Priority Ordering
+
+Waves and tasks within a phase MUST be ordered by dependency tier, not by arbitrary authoring order. The five priority tiers:
+
+| Priority | Tier name | Content | Dependency |
+|----------|-----------|---------|------------|
+| **P1** | Foundation | Shared types, database schema, protocol definitions, enums, constants | No dependencies — start immediately |
+| **P2** | Domain logic | Core algorithms, state machines, business rules, pure functions | Depends on P1 (types must compile) |
+| **P3** | Wiring | Routes, handlers, middleware, service integration, dependency injection | Depends on P1 + P2 |
+| **P4** | Surface | UI components, CLI commands, API response shaping, operator-facing output | Depends on P3 (API shape must be final) |
+| **P5** | Verification | Tests, E2E, coverage, smoke, Playwright | Depends on P4; some unit tests can parallelize with P2/P3 |
+
+**Why this order is non-negotiable**: A P3 wiring task that references a P1 type that hasn't compiled yet produces a compiler error that blocks the entire wave. In agentic execution, that failure cascades — the agent retries, produces incorrect fixes, and the wave is unrecoverable without human intervention. Foundation-first eliminates this failure class entirely.
+
+**Within a priority tier**, waves that have disjoint file ownership can run in parallel. Two P2 waves that own separate modules are independent and should launch simultaneously.
+
+---
+
+### §23.3 — Dependency and Blocker Labeling
+
+Every wave and task declaration MUST include explicit dependency labels. Implicit ordering ("do this before that") is not sufficient for agentic orchestration — the orchestrator needs machine-readable blocker chains.
+
+**Wave-level dependency format** (in the plan's phase section):
+
+```yaml
+waves:
+  - id: W3a
+    name: foundation-types
+    priority: P1
+    parallel_group: null        # no parallel peer at P1
+    blocked_by: []              # foundational — no upstream
+    estimated_hours: 2
+    tasks: [T3a-1, T3a-2]
+
+  - id: W3b
+    name: domain-logic
+    priority: P2
+    parallel_group: null        # sequential after W3a
+    blocked_by: [W3a]           # W3a must WAVE_COMPLETE + Gatekeeper PASS
+    estimated_hours: 4
+    tasks: [T3b-1, T3b-2]
+
+  - id: W3c
+    name: domain-logic-alt-module   # independent of W3b
+    priority: P2
+    parallel_group: G1          # same group as W3b — launch simultaneously
+    blocked_by: [W3a]           # both depend on P1, not on each other
+    estimated_hours: 3
+    tasks: [T3c-1]
+```
+
+**Task-level dependency format** (within a wave declaration):
+
+```yaml
+tasks:
+  - id: T3a-1
+    file: events/types.rs
+    functions: [WebEvent::SupervisorUpdate, SupervisorUpdatePayload]
+    agent: CORSO
+    priority: P1
+    blocked_by: []
+    blocks: [T3b-2, T3b-3]    # supervisor.rs and evaluation.rs need these types
+
+  - id: T3a-2
+    file: session_store.rs
+    functions: [get_northstar_text, set_northstar_text, migration_guard]
+    agent: CORSO
+    priority: P1
+    blocked_by: []
+    blocks: [T3c-6]            # copilot/mod.rs injection depends on this accessor
+```
+
+**Blocker classification**:
+
+| Label | Meaning | Blocking strength |
+|-------|---------|-------------------|
+| `blocked_by: [W_x]` | Wave W_x must reach WAVE_COMPLETE + Gatekeeper PASS | Hard — cannot begin |
+| `blocked_by: [T_x]` | Task T_x must complete (FILE_RELEASE) | Hard — cannot begin |
+| `soft_dep: [W_x]` | Prefers W_x to complete first but can proceed with stubs | Soft — note in task context |
+| `cross_phase_dep: [phase_N]` | Depends on an artifact produced by a prior phase gate | Hard — phase gate must PASS first |
+
+---
+
+### §23.4 — Parallelism Optimization
+
+**Goal**: minimize wall-clock time by maximizing simultaneous agent execution. The constraint is file ownership — two tasks that claim overlapping files cannot run in parallel.
+
+**Critical path analysis** (declare in the plan's timeline section):
+
+```
+critical_path:
+  chain: [W3a → W3b → W3c → W5a → W5b]
+  wall_clock_hours: 12
+  parallel_savings_hours: 6   # work that runs off the critical path simultaneously
+  total_sequential_hours: 18  # what wall-clock would be without parallelism
+
+parallel_lanes:
+  - lane: A
+    waves: [W3a]              # foundational — blocks all
+  - lane: B
+    waves: [W3b, W3c]         # both P2; W3b owns backend module; W3c owns config module
+    simultaneous: true
+  - lane: C
+    waves: [W5a, W5b]         # Phase 5: backend verify and frontend verify; disjoint files
+    simultaneous: true
+```
+
+**Parallel dispatch rule** (enforced by BUILD Step 7.2):
+- All tasks in the same `parallel_group` → dispatched in a single `Agent` call (one message, multiple tool blocks)
+- Tasks with `blocked_by` → dispatched only after all blockers reach FILE_RELEASE
+- Cross-phase: next phase starts only after current phase's `/GATE --scope phase` returns PASS
+
+**Wall-clock formula**:
+```
+wall_clock = Σ(sequential_wave_durations_on_critical_path)
+             + 0  # parallel off-path waves add 0 wall-clock
+```
+
+**Anti-patterns** (plan authors must avoid):
+
+| Anti-pattern | Problem | Fix |
+|---|---|---|
+| Listing all waves sequentially without parallel groups | 3× wall-clock inflation | Assign parallel_group to independent same-priority waves |
+| Starting P3 wiring before P1 types compile | Cascade compiler failures | Enforce `blocked_by: [W_p1]` on all P3 waves |
+| Single agent for the entire phase | No parallelism; bottleneck | Partition by file ownership; assign distinct agents |
+| Unowned files (no task claims them) | Agents write to unclaimed files; merge conflicts | Every file in Part XXI must appear in exactly one task |
+
+---
+
+### §23.5 — Iterative /GATE Loop Model
+
+Quality is enforced at three nested levels, not just at merge time:
+
+```
+┌─ Phase N ──────────────────────────────────────────────────────────┐
+│                                                                      │
+│  Wave A ──WAVE_COMPLETE──► Gatekeeper (8 dims, §7.2)               │
+│    ↓ PASS                                                            │
+│  Wave B ──WAVE_COMPLETE──► Gatekeeper                               │
+│    ↓ PASS                                                            │
+│  Wave C ──WAVE_COMPLETE──► Gatekeeper                               │
+│    ↓ PASS (all waves)                                                │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+           ↓
+    /GATE --scope phase-N  (5-step: RECORD→QUALITY→AUDIT→REMEDY→PRESENT)
+           ↓ PASS → Phase N+1
+           ↓ FAIL → REMEDY dispatch → re-gate
+                      ↓ still FAIL (N remedies exhausted)
+                      → AskUserQuestion: [restructure / defer / accept-with-waiver]
+
+... (repeat per phase) ...
+
+    /GATE --scope merge   (full Q/S/I/N/D/V pre-merge)
+           ↓ PASS → merge --no-ff
+```
+
+**REMEDY dispatch** (when /GATE phase returns FAIL):
+- Fix-it agents are dispatched by FILE_CLAIM ownership — the agent that owns the failing file gets the fix task
+- Never send a fix to a different agent than the one that owns the file (produces conflicting edits)
+- REMEDY is a full re-implementation of the failing unit, not a patch — the wave's file set is the fix scope
+- After REMEDY, re-run the full `/GATE --scope phase` (not just the failed dimension)
+
+**Gatekeeper thresholds** (Playbook §3.3):
+- Wave auto-accept: confidence ≥ 0.95
+- Phase auto-accept: confidence ≥ 0.97
+- Merge auto-accept: confidence ≥ 0.99
+- Below threshold at any level → `verdict: hitl` → AskUserQuestion before proceeding
+
+**Why iterative gates beat end-of-build gates**: A merge-time gate on a 7-phase build finds a Phase 3 architectural flaw after 4 more phases of dependent work. A Phase 3 gate finds it immediately, while the fix scope is one wave. Cost of late detection scales quadratically with phase depth.
+
+---
+
+### §23.6 — Plan Declaration Format
+
+The Phase→Wave→Task→Files decomposition MUST be declared in the plan (Part VIII phases section) before `/BUILD` begins. Minimum required fields per element:
+
+**Wave block** (inside each phase):
+```
+Wave {id} — {name} [P{priority}]
+Blocked by: {wave_ids or "none"}
+Parallel group: {group_id or "none"}
+Estimated: {hours}h
+Tasks: {task_id list}
+```
+
+**Task block** (inside each wave):
+```
+Task {id} — {agent}
+Files: {file:function list}
+Blocked by: {task_ids or "none"}
+Blocks: {task_ids or "none"}
+```
+
+**Minimum plan completeness for BUILD acceptance**:
+- Every phase has ≥1 wave declared
+- Every wave has ≥1 task declared
+- Every task has ≥1 file:function pair
+- Every file in Part XXI (Files Created/Modified) appears in exactly one task
+- Every `blocked_by` reference points to a valid wave/task ID in the same plan
+- The critical path is declared in Part IX (Timeline)
+
+Plans that declare phases but not waves are **incomplete** for the purposes of `/BUILD` Step 6 task initialization. BUILD will reject them and request wave decomposition before proceeding.
+
+---
+
+### §23.7 — Agentic Orchestration Integration
+
+The decomposition structure maps directly to the BUILD + SQUAD execution model:
+
+| Plan element | BUILD action | SQUAD action |
+|---|---|---|
+| Phase list | `TaskCreate` per phase; `addBlockedBy` per phase dependency | Sequential phase execution |
+| Wave list | `TaskCreate` per wave; `addBlockedBy` per wave dependency | Wave dispatch per parallel group |
+| Task list | `TaskCreate` per task; `addBlockedBy` per task dependency | Parallel agent dispatch within parallel group |
+| Files list | FILE_CLAIM before first write; FILE_RELEASE after commit | Agent receives explicit file scope in dispatch prompt |
+| `parallel_group` | Tasks in same group dispatched in single message | Multiple `Agent` tool calls in one message → concurrent execution |
+| `blocked_by` | Task board dependency wiring | SQUAD waits for blocker FILE_RELEASE before dispatching dependent |
+| WAVE_COMPLETE | Task status → `completed`; Gatekeeper trigger | Gatekeeper auto-runs; produces verdict; BUILD routes PASS/FAIL |
+| Phase GATE | `/GATE --scope phase` | 5-step GATE protocol; REMEDY dispatch on FAIL |
+
+**Dispatch prompt construction**: When BUILD dispatches an agent for a task, the prompt MUST include:
+1. Task ID and wave context
+2. Explicit file list (from task declaration) — agent cannot touch files outside this list
+3. `blocked_by` context — what the agent can assume is already compiled/available
+4. `blocks` context — what downstream tasks depend on this task's output contract
+
+This makes the agent's scope mechanical and prevents scope creep that corrupts other tasks in the same wave.
+
+---
+
 ## Canonical Planning Principles (consolidated)
 
 Distilled from 20+ builds and pressure-tested across the platform:
@@ -1340,7 +1608,7 @@ Distilled from 20+ builds and pressure-tested across the platform:
 4. **Respectfully challenge** technology choices — always research, propose alternatives with trade-offs (§4.9)
 5. **Minimize cost by default** — HITL checkpoint before any paid decision (§5.5)
 6. **Gate every phase** with quality, security, and code review checks (§8.3, not just Phase 5)
-7. **Maximize parallel execution** — file-ownership-partitioned agents (Canon XXIII, Playbook Part XVI)
+7. **Maximize parallel execution** — file-ownership-partitioned agents within `parallel_group` waves; critical path declared in Part IX; independent same-priority waves launch simultaneously in one message (Canon XXIII, Playbook Part XVI, Part XXIII §23.4)
 8. **Wire everything before deploying** — Phase 5b integration verification is mandatory (§8.9)
 9. **Observe from day one** — AYIN/Grafana/Prometheus/Loki provisioned with the project (Part IX)
 10. **Log for strangers** — structured JSON, error chains, actionable messages, context propagation (Part X)
@@ -1354,6 +1622,7 @@ Distilled from 20+ builds and pressure-tested across the platform:
 18. **Educate the operator at every phase transition** — deliver an educational note explaining WHAT, WHY, and WHAT'S NEXT (§8.5)
 19. **XEA compliance review before Phase 1 and before /BUILD** — 4-layer check: structural schema (Layer 0), C1–C8 rubric (Layer 1, Part XIV), Northstar mechanical (Layer 2), LDB declaration (Layer 3); VALIDATED required to proceed (Part XXII)
 20. **Northstar-first** — every plan declares `northstar_lineage`; builds that cannot demonstrate Northstar advancement do not ship (Part I)
+21. **Decompose to the file level at plan time** — declare Phase→Wave→Task→Files hierarchy before BUILD begins; foundation-first priority (P1→P2→P3→P4→P5); explicit `blocked_by` on every wave and task; every file in Part XXI owned by exactly one task; plans without wave decomposition are rejected at /BUILD Step 6 (Part XXIII)
 
 ---
 
@@ -1378,6 +1647,7 @@ Research-first, cost-conscious, security-gated, handoff-ready, observable, fully
 
 ---
 
-*Architects Blueprint v3.1 | Light Architects | merged 2026-05-13, updated 2026-05-17*
+*Architects Blueprint v3.2 | Light Architects | merged 2026-05-13, updated 2026-05-17*
 *Part of the Canonical Suite. Companion: LASDLC Template. Supersedes: gold-standard-planning-framework v2.0, architects-runbook v1.0, lasdlc-effectiveness-rubric v2.0.*
-*v3.1 adds: Part XXII (Plan Compliance Review Protocol / XEA 4-layer doctrine). Promoted from /XEA SKILL.md per Canon XXXIX pipeline.*
+*v3.1 adds: Part XXII (Plan Compliance Review Protocol / XEA 4-layer doctrine).*
+*v3.2 adds: Part XXIII (Phase→Wave→Task→Files Decomposition Protocol — foundation-first priority, dependency labeling, parallelism optimization, iterative /GATE loop model, agentic orchestration integration). Updates §8.3, §8.4, Principles 7 and 21.*
