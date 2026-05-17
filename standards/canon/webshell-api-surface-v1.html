@@ -1,7 +1,7 @@
 <!-- uuid: f2e8b3d7-6c41-4a9f-b825-1e3d7c9a0f42 -->
 <!--
 title: "Webshell API Surface"
-version: "1.0.1"
+version: "1.0.2"
 status: ratified
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-17"
@@ -37,7 +37,7 @@ tags:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Webshell API Surface — Canonical Reference v1.0.1</title>
+<title>Webshell API Surface — Canonical Reference v1.0.2</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <style>
   :root {
@@ -218,7 +218,7 @@ tags:
 <nav class="sidebar">
   <div class="logo">
     <div class="title">Light Architects</div>
-    <div class="sub">Webshell API Surface v1.0.1</div>
+    <div class="sub">Webshell API Surface v1.0.2</div>
     <div class="sub" style="margin-top:4px;color:#FFD700;opacity:0.7;font-size:9px;letter-spacing:0.05em;">canon://webshell-api-surface</div>
   </div>
 
@@ -279,7 +279,7 @@ tags:
       Neither is derived from the other — they are co-authored representations of the same spec.
     </div>
     <div class="meta" style="margin-top:16px;">
-      <div class="meta-item">Version <span>1.0.1</span></div>
+      <div class="meta-item">Version <span>1.0.2</span></div>
       <div class="meta-item">Status <span>ratified</span></div>
       <div class="meta-item">Date <span>2026-05-17</span></div>
       <div class="meta-item">Canon URI <span>canon://webshell-api-surface</span></div>
@@ -379,7 +379,7 @@ graph LR
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <section id="arch-state">
   <h3>AppState — Shared Server State</h3>
-  <p>All handlers receive <code>Arc&lt;AppState&gt;</code>. 19 public fields, 1 private (<code>_policy_watcher</code>).</p>
+  <p>All handlers receive <code>Arc&lt;AppState&gt;</code>. 20 public fields, 1 private (<code>_policy_watcher</code>). Full struct: <code>src/server/mod.rs:89</code>.</p>
 
   <div class="diagram">
     <div class="diagram-label">Entity — AppState fields</div>
@@ -412,7 +412,7 @@ erDiagram
     OsString host_cmd
     PathBuf cwd
     String token
-    AgentSession agent_session
+    AgentSession agent
   }
     </div>
   </div>
@@ -427,7 +427,7 @@ erDiagram
     <div class="card">
       <h3><span class="badge badge-gold">Lightarchitects</span> &nbsp; Claude Code</h3>
       <table>
-        <tr><td>Binary</td><td><code>claude</code></td></tr>
+        <tr><td>Binary</td><td><code>lightarchitects</code></td></tr>
         <tr><td>Protocol</td><td>NDJSON <code>--stream-events</code></td></tr>
         <tr><td>Backends</td><td>Anthropic · OllamaLaunch · Ollama</td></tr>
         <tr><td>Auth</td><td>macOS Keychain / <code>.credentials.json</code> / <code>ANTHROPIC_API_KEY</code></td></tr>
@@ -690,7 +690,7 @@ sequenceDiagram
   Note over W: validate_ws_subprotocol()\n  prefix "bearer." stripped\n  constant_time_eq on token body
   alt token valid
     W-->>B: 101 Switching Protocols\n  Sec-WebSocket-Protocol: bearer.&lt;token&gt;
-    W->>P: spawn PTY (host_cmd = "claude" or configured binary)
+    W->>P: spawn PTY (host_cmd = "lightarchitects" or configured binary)
     loop PTY I/O
       B-->>W: WS message (stdin bytes)
       W->>P: write stdin
@@ -733,7 +733,7 @@ stateDiagram-v2
   <h2>Agent Spawn Sequences</h2>
 
   <h3>Claude Code — Anthropic Backend</h3>
-  <div class="callout secure"><strong>ANTHROPIC_API_KEY is never injected by the bridge.</strong> The <code>claude</code> CLI resolves its own credentials from the macOS Keychain or <code>~/.claude/.credentials.json</code>. This prevents a compromised child process from exfiltrating the key via <code>/proc/self/environ</code> (C4 from agent module security review).</div>
+  <div class="callout secure"><strong>ANTHROPIC_API_KEY is never injected by the bridge.</strong> The <code>lightarchitects</code> CLI resolves its own credentials from the macOS Keychain or <code>~/.claude/.credentials.json</code>. This prevents a compromised child process from exfiltrating the key via <code>/proc/self/environ</code> (C4 from agent module security review).</div>
 
   <div class="diagram">
     <div class="diagram-label">Sequence — Agent Spawn: Claude Code / Anthropic</div>

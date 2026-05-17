@@ -2,10 +2,11 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.1"
+version: "1.0.2"
 status: ratified
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-17"
+xea_verified: "2026-05-17"
 ratified_by: "kevin"
 type: reference
 format: markdown
