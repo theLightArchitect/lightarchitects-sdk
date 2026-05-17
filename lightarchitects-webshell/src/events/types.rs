@@ -119,6 +119,14 @@ pub enum WebEvent {
     /// `{"type":"context",...}` NDJSON line. The frontend uses this to drive the
     /// context bar above the Copilot drawer.
     ContextStatus(ContextStatusEvent),
+    /// Northstar supervision evaluation result for a completed wave.
+    ///
+    /// Emitted by the supervisor after each `WAVE_COMPLETE` event when
+    /// `northstar_text` is set for the build. The frontend uses this to update
+    /// the drift indicator and trigger `ProposalCard` when `proposal_pending`
+    /// is `true` (§Q check 4 — SCR1-B1).
+    SupervisorUpdate(NorthstarEvaluationEvent),
+
     /// One line of stdout/stderr from an `exec.run_command` process.
     ///
     /// The frontend `OutputViewer` uses `handle` to correlate chunks and
@@ -145,6 +153,29 @@ pub enum WebEvent {
         /// Whether the process ended due to timeout or explicit kill.
         killed: bool,
     },
+}
+
+/// Northstar evaluation result broadcast after a `WAVE_COMPLETE` event.
+///
+/// Consumed by the `ProposalCard` component on the frontend; `proposal_pending`
+/// gates the card display. Wire tag: `"supervisor_update"`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NorthstarEvaluationEvent {
+    /// Build UUID this evaluation belongs to.
+    pub build_id: String,
+    /// Wave index (0-based) that triggered this evaluation.
+    pub wave_num: u32,
+    /// Alignment verdict: `"advancing"`, `"neutral"`, or `"drifting"`.
+    pub status: String,
+    /// Model confidence in the verdict (0.0–1.0).
+    pub confidence: f32,
+    /// Suggested operator action when drifting.
+    pub recommended_next: String,
+    /// Whether the consecutive-drift threshold has been reached.
+    ///
+    /// When `true`, the frontend should surface a `ProposalCard` and await
+    /// operator selection (§Q check 6 — operator-selectable next action).
+    pub proposal_pending: bool,
 }
 
 /// Cross-sibling strand convergence event (Phase 19b.2).
@@ -854,11 +885,11 @@ mod tests {
     /// **If this test fails** you must update `EventType` in
     /// `lightarchitects-webshell-ui/src/lib/types.ts` to match before merging.
     ///
-    /// The canonical FE set at time of writing (2026-05-13):
+    /// The canonical FE set at time of writing (2026-05-17):
     ///   `ayin_span`, `ayin_status`, `helix_entry`, `build_update`, `control`,
     ///   `strand_activation`, `soul_promotion`, `gateway_notify`, `pillar_update`,
     ///   `strand_convergence`, `copilot_activity`, `copilot_response`,
-    ///   `permission_request`, `context_status`
+    ///   `permission_request`, `context_status`, `supervisor_update`
     #[allow(clippy::too_many_lines)]
     #[test]
     fn sse_contract_all_web_event_variants_have_known_type_tags() {
@@ -971,6 +1002,17 @@ mod tests {
                     level: None,
                     budget: 200_000,
                     used: 50_000,
+                }),
+            ),
+            (
+                "supervisor_update",
+                WebEvent::SupervisorUpdate(NorthstarEvaluationEvent {
+                    build_id: "build-1".to_owned(),
+                    wave_num: 1,
+                    status: "advancing".to_owned(),
+                    confidence: 0.9,
+                    recommended_next: "Continue".to_owned(),
+                    proposal_pending: false,
                 }),
             ),
         ];
