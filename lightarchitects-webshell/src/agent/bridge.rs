@@ -22,12 +22,14 @@ use std::process::Stdio;
 use std::sync::Arc;
 
 use dashmap::DashMap;
+use secrecy::ExposeSecret;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{info, warn};
 
-use crate::copilot::resolve_binary;
+use crate::config::AgentSession;
+use crate::copilot::{resolve_binary, resolve_mistral_api_key};
 use crate::session::BuildSession;
 
 use super::protocol::{AgentEvent, ControlMessage};
@@ -54,7 +56,12 @@ pub async fn spawn_bridge(
     control_rx: mpsc::Receiver<ControlMessage>,
     permission_queue: Arc<DashMap<String, oneshot::Sender<bool>>>,
 ) -> Option<Child> {
-    let binary = resolve_binary("lightarchitects");
+    let is_vibe = matches!(session.agent, AgentSession::MistralVibe(_));
+    let binary = if is_vibe {
+        resolve_binary("vibe-acp")
+    } else {
+        resolve_binary("lightarchitects")
+    };
     let mut cmd = tokio::process::Command::new(&binary);
 
     // Validate cwd before passing it to the child.
@@ -70,8 +77,12 @@ pub async fn spawn_bridge(
         }
     };
 
-    // Attempt streaming mode first (future flag).
-    cmd.arg("--stream-events").arg("--cwd").arg(&workdir);
+    if is_vibe {
+        // vibe-acp: ACP mode, pure NDJSON stdin/stdout — no CLI path flags.
+        cmd.current_dir(&workdir);
+    } else {
+        cmd.arg("--stream-events").arg("--cwd").arg(&workdir);
+    }
 
     // NOTE: ANTHROPIC_API_KEY is intentionally NOT injected here.
     // The CLI resolves its own credentials (keychain / config file) so that
@@ -104,13 +115,19 @@ pub async fn spawn_bridge(
             cmd.env(key, val);
         }
     }
+    // Inject Mistral API key explicitly for vibe-acp — env_clear above strips it.
+    if is_vibe {
+        if let Some(key) = resolve_mistral_api_key() {
+            cmd.env("MISTRAL_API_KEY", key.expose_secret());
+        }
+    }
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
             warn!(error = %e, "failed to spawn lightarchitects-cli bridge");
             let _ = event_tx.send(AgentEvent::Error {
-                message: format!("spawn failed: {e}"),
+                message: "bridge_spawn_failed".to_owned(),
                 recoverable: Some(false),
             });
             return None;
@@ -374,8 +391,9 @@ pub async fn run_fallback_turn(
     {
         Ok(o) => o,
         Err(e) => {
+            warn!(error = %e, "failed to spawn fallback cli");
             let _ = event_tx.send(AgentEvent::Error {
-                message: format!("run failed: {e}"),
+                message: "bridge_run_failed".to_owned(),
                 recoverable: Some(true),
             });
             return;
@@ -399,13 +417,14 @@ pub async fn run_fallback_turn(
             reason: super::protocol::TerminationReason::Complete,
         });
     } else {
+        warn!(code = ?code, "fallback cli exited with non-zero code");
         let _ = event_tx.send(AgentEvent::Error {
-            message: format!("cli exited with code {code:?}"),
+            message: "bridge_cli_exit_error".to_owned(),
             recoverable: Some(true),
         });
         let _ = event_tx.send(AgentEvent::Complete {
             reason: super::protocol::TerminationReason::Error {
-                message: format!("cli exited with code {code:?}"),
+                message: "bridge_cli_exit_error".to_owned(),
             },
         });
     }

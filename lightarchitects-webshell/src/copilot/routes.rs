@@ -50,7 +50,8 @@ pub async fn copilot_chat_handler(
             ClaudeBackend::Anthropic | ClaudeBackend::OllamaLaunch(_),
         )
         | AgentSession::Codex(_)
-        | AgentSession::LightarchitectsNative(_) => {
+        | AgentSession::LightarchitectsNative(_)
+        | AgentSession::MistralVibe(_) => {
             call_subprocess(&body.message, &session.copilot_proc, &session).await
         }
     };

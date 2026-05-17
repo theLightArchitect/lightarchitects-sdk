@@ -13,6 +13,7 @@
     { id: 'anthropic', agent: 'lightarchitects', label: 'Claude Code' },
     { id: 'openai', agent: 'codex', label: 'Codex' },
     { id: 'ollama-launch', agent: 'lightarchitects', label: 'Ollama' },
+    { id: 'mistral-vibe', agent: 'mistral_vibe', label: 'Mistral Vibe' },
   ];
 
   let pickedBackend = $state($selectedBackend ?? $persistedConfig?.backend ?? 'lightarchitects');
@@ -27,7 +28,9 @@
   let loadingPersonas = $state(false);
 
   $effect(() => {
-    if (pickedBackend) {
+    if (pickedBackend === 'mistral-vibe') {
+      availableModels.set([{ id: '', label: 'default (from ~/.vibe/config.toml)', tier: '' }]);
+    } else if (pickedBackend) {
       loadModels(pickedBackend, pickedBackend.includes('ollama') ? $ollamaBaseUrlInput : undefined);
     }
   });
@@ -61,11 +64,11 @@
   });
 
   async function apply() {
-    if (!pickedBackend || !pickedModel) return;
+    if (!pickedBackend || pickedModel === undefined || pickedModel === null) return;
     const agent = backends.find(b => b.id === pickedBackend)?.agent ?? 'lightarchitects';
     selectedBackend.set(pickedBackend);
     selectedAgent.set(agent);
-    selectedModel.set(pickedModel);
+    selectedModel.set(pickedModel || null);
     await saveSetup();
     saveSettingsDebounced();
     toast = `Switched to ${pickedBackend}`;
@@ -165,7 +168,7 @@
           </button>
           <button
             class="btn-apply"
-            disabled={!pickedModel || $setupLoading}
+            disabled={pickedModel === null || pickedModel === undefined || $setupLoading}
             onclick={apply}
           >
             Save & Apply

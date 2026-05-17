@@ -139,6 +139,10 @@ pub async fn fork_handler(
             "codex",
             format!("cd '{cwd_str}' && codex exec resume {session_id}"),
         ),
+        AgentKind::MistralVibe => (
+            "mistral_vibe",
+            format!("cd '{cwd_str}' && vibe --resume {session_id}"),
+        ),
     };
 
     let (launched, platform) = spawn_terminal(&command);

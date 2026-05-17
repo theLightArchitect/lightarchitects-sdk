@@ -248,7 +248,10 @@ impl BuildSession {
                 argv.push("-m".to_owned());
                 argv.push(cfg.model.clone());
             }
-            AgentSession::LightarchitectsNative(_) => {}
+            AgentSession::LightarchitectsNative(_) | AgentSession::MistralVibe(_) => {
+                // MistralVibe is dispatched via run_vibe_turn(), not the claude-CLI
+                // argv builder — model is injected via VIBE_ACTIVE_MODEL env var.
+            }
         }
         argv
     }
@@ -270,7 +273,8 @@ impl BuildSession {
         ];
         match &self.agent {
             AgentSession::Lightarchitects(ClaudeBackend::Anthropic)
-            | AgentSession::LightarchitectsNative(_) => {}
+            | AgentSession::LightarchitectsNative(_)
+            | AgentSession::MistralVibe(_) => {}
             AgentSession::Lightarchitects(ClaudeBackend::OllamaLaunch(lc)) => {
                 // Replicates what `ollama launch claude --model <model>` injects.
                 env.push(("ANTHROPIC_BASE_URL".to_owned(), lc.base_url.clone()));

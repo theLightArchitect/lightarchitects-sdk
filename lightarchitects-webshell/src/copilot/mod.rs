@@ -13,6 +13,7 @@ pub mod voice;
 pub use routes::copilot_chat_handler;
 pub use voice::copilot_voice_handler;
 
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::{
@@ -67,6 +68,17 @@ pub fn resolve_binary(name: &str) -> String {
             format!("{home}/.lightarchitects/bin/lightarchitects"),
             format!("{home}/.local/bin/lightarchitects"),
             "/usr/local/bin/lightarchitects".to_owned(),
+        ],
+        // Mistral Vibe: installed via `uv tool install mistral-vibe` → ~/.local/bin/
+        "vibe" => vec![
+            format!("{home}/.local/bin/vibe"),
+            "/opt/homebrew/bin/vibe".to_owned(),
+            "/usr/local/bin/vibe".to_owned(),
+        ],
+        "vibe-acp" => vec![
+            format!("{home}/.local/bin/vibe-acp"),
+            "/opt/homebrew/bin/vibe-acp".to_owned(),
+            "/usr/local/bin/vibe-acp".to_owned(),
         ],
         _ => vec![],
     };
@@ -159,6 +171,36 @@ pub fn resolve_api_key_for_native() -> Option<String> {
     }
 
     tracing::warn!("resolve_api_key_for_native: no valid API key found for native CLI");
+    None
+}
+
+/// Resolve the Mistral API key for vibe subprocess injection.
+///
+/// Priority order:
+/// 1. Keychain `keyring::Entry::new("lightarchitects", "mistral")` — canonical namespace
+/// 2. `MISTRAL_API_KEY` env var inherited by the webshell process
+///
+/// Returns `None` if no key found — vibe will fail with its own auth error.
+pub fn resolve_mistral_api_key() -> Option<SecretString> {
+    if let Ok(entry) = keyring::Entry::new("lightarchitects", "mistral") {
+        if let Ok(key) = entry.get_password() {
+            if !key.is_empty() && !key.contains("placeholder") && !key.contains("your_") {
+                tracing::debug!(
+                    "resolve_mistral_api_key: found key in keychain (lightarchitects/mistral)"
+                );
+                return Some(SecretString::new(key.into()));
+            }
+        }
+    }
+
+    if let Ok(key) = std::env::var("MISTRAL_API_KEY") {
+        if !key.is_empty() && !key.contains("your_") {
+            tracing::debug!("resolve_mistral_api_key: found key in env MISTRAL_API_KEY");
+            return Some(SecretString::new(key.into()));
+        }
+    }
+
+    tracing::warn!("resolve_mistral_api_key: no Mistral API key found for vibe subprocess");
     None
 }
 
@@ -708,6 +750,59 @@ async fn run_codex_turn(
     }
 }
 
+/// Send a single turn to the Mistral Vibe CLI (`vibe -p`) and return the text response.
+///
+/// Uses `--output text` (human-readable, default for `-p`).  When the config
+/// carries an explicit model override, it is injected via `VIBE_ACTIVE_MODEL`.
+/// If no override is set, vibe resolves its own `active_model` from `~/.vibe/config.toml`.
+async fn run_vibe_turn(message: &str, session: &BuildSession) -> Result<String, String> {
+    let AgentSession::MistralVibe(cfg) = &session.agent else {
+        return Err("run_vibe_turn: not a MistralVibe session".to_owned());
+    };
+
+    let mut c = tokio::process::Command::new(resolve_binary("vibe"));
+    c.env("PATH", augmented_path());
+    if let Some(key) = resolve_mistral_api_key() {
+        c.env("MISTRAL_API_KEY", key.expose_secret());
+    }
+    if let Some(model) = &cfg.model {
+        c.env("VIBE_ACTIVE_MODEL", model);
+    }
+    c.arg("-p").arg(message).arg("--output").arg("text");
+    if !session.cwd.as_os_str().is_empty() {
+        c.arg("--workdir").arg(&session.cwd);
+    }
+    if !session.cwd.is_dir() {
+        let _ = std::fs::create_dir_all(&session.cwd);
+    }
+    c.current_dir(&session.cwd);
+    c.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let output = c.output().await.map_err(|e| {
+        tracing::warn!(error = %e, "failed to spawn vibe subprocess");
+        "vibe_spawn_failed".to_owned()
+    })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::warn!(
+            target: "webshell",
+            status = %output.status,
+            stderr = %&stderr[..stderr.len().min(512)],
+            "vibe subprocess exited non-zero"
+        );
+        return Err("vibe_subprocess_error".to_owned());
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    if text.is_empty() {
+        return Err("vibe returned empty response".to_owned());
+    }
+    Ok(text)
+}
+
 /// Spawn a persistent agent subprocess for the `LightarchitectsNative` backend.
 ///
 /// | Session | Binary | Extra env |
@@ -771,6 +866,9 @@ fn spawn_copilot(session: &BuildSession) -> Result<CopilotProcess, String> {
 
 /// Send `message` to the agent and return its response.
 ///
+/// Public entry point for dispatch — routes a prompt through the copilot
+/// subprocess. Same as the internal `call_subprocess` used by `copilot_chat_handler`.
+///
 /// `Lightarchitects`: spawns a fresh `claude --print` per turn; session continuity via
 /// `--resume` with disk persistence.
 ///
@@ -785,8 +883,6 @@ fn spawn_copilot(session: &BuildSession) -> Result<CopilotProcess, String> {
 /// # Errors
 ///
 /// Returns a descriptive string on spawn failure, process death, or missing result.
-/// Public entry point for dispatch — routes a prompt through the copilot
-/// subprocess. Same as the internal `call_subprocess` used by `copilot_chat_handler`.
 pub async fn call_subprocess_public(
     message: &str,
     proc_lock: &tokio::sync::Mutex<Option<CopilotProcess>>,
@@ -806,6 +902,7 @@ pub(super) async fn call_subprocess(
     let actor = match &session.agent {
         AgentSession::Lightarchitects(_) | AgentSession::LightarchitectsNative(_) => "eva",
         AgentSession::Codex(_) => "codex",
+        AgentSession::MistralVibe(_) => "vibe",
     };
     let (span_id, start, start_ts) = emit_turn_start_span(session, actor, message);
 
@@ -831,6 +928,32 @@ pub(super) async fn call_subprocess(
         }
 
         // Emit turn-complete AYIN span
+        emit_turn_complete_span(
+            session,
+            &span_id,
+            actor,
+            &start_ts,
+            start.elapsed(),
+            "success",
+        );
+
+        return Ok(text);
+    }
+
+    // Per-turn path for MistralVibe (`vibe -p` programmatic mode).
+    if matches!(&session.agent, AgentSession::MistralVibe(_)) {
+        let text = run_vibe_turn(message, session).await?;
+
+        // Broadcast the full response so the UI SSE handler can render it.
+        // The HTTP body is discarded by the frontend; only SSE events are displayed.
+        let _ = session
+            .event_tx
+            .send(crate::events::WebEvent::CopilotResponse {
+                chunk: text.clone(),
+                done: true,
+                sibling: Some("vibe".to_owned()),
+            });
+
         emit_turn_complete_span(
             session,
             &span_id,
@@ -1222,7 +1345,7 @@ pub async fn spawn_plan_draft(
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
+#[allow(clippy::expect_used, clippy::unwrap_used, unsafe_code)]
 mod tests {
     use super::*;
 
@@ -1235,6 +1358,90 @@ mod tests {
                 crate::config::LightarchitectsNativeConfig::default(),
             ),
         )
+    }
+
+    // ── resolve_mistral_api_key — property suite ─────────────────────────────
+    //
+    // Tests the filtering predicate directly (no env mutation → no parallel race).
+    // The env-var path checks: !empty && !contains("your_").
+    // The keychain path additionally checks: !contains("placeholder").
+
+    /// Returns true when the key satisfies the env-var acceptance predicate.
+    #[cfg(test)]
+    fn env_key_is_valid(key: &str) -> bool {
+        !key.is_empty() && !key.contains("your_")
+    }
+
+    /// Returns true when the key satisfies the keychain acceptance predicate.
+    #[cfg(test)]
+    fn keychain_key_is_valid(key: &str) -> bool {
+        !key.is_empty() && !key.contains("placeholder") && !key.contains("your_")
+    }
+
+    proptest::proptest! {
+        /// Any alphanumeric key (no "your_") passes the env-var filter.
+        #[test]
+        fn prop_valid_env_keys_pass_filter(s in "[a-zA-Z0-9]{8,64}") {
+            proptest::prop_assert!(
+                env_key_is_valid(&s),
+                "clean alphanumeric key must pass env filter: {s}"
+            );
+        }
+
+        /// Any string prefixed with "your_" fails both filters.
+        #[test]
+        fn prop_your_prefix_rejected_by_both_filters(suffix in "[a-zA-Z0-9]{4,32}") {
+            let key = format!("your_{suffix}");
+            proptest::prop_assert!(!env_key_is_valid(&key), "your_ must fail env filter: {key}");
+            proptest::prop_assert!(!keychain_key_is_valid(&key), "your_ must fail keychain filter: {key}");
+        }
+
+        /// Any string containing "placeholder" fails the keychain filter.
+        #[test]
+        fn prop_placeholder_rejected_by_keychain_filter(
+            prefix in "[a-z]{0,8}",
+            suffix in "[a-z]{0,8}"
+        ) {
+            let key = format!("{prefix}placeholder{suffix}");
+            proptest::prop_assert!(
+                !keychain_key_is_valid(&key),
+                "placeholder must fail keychain filter: {key}"
+            );
+        }
+    }
+
+    // ── resolve_mistral_api_key — unit suite ─────────────────────────────────
+
+    #[test]
+    #[allow(unsafe_code)]
+    fn resolve_mistral_api_key_env_var_path_returns_secret() {
+        // SAFETY: single-threaded test; env mutation is isolated by test harness.
+        unsafe { std::env::set_var("MISTRAL_API_KEY", "sk-test-valid-key-12345") };
+        let result = resolve_mistral_api_key();
+        unsafe { std::env::remove_var("MISTRAL_API_KEY") };
+        let key = result.expect("expected Some when env var is set");
+        assert_eq!(key.expose_secret(), "sk-test-valid-key-12345");
+    }
+
+    #[test]
+    #[allow(unsafe_code)]
+    fn resolve_mistral_api_key_rejects_placeholder_prefix() {
+        unsafe { std::env::set_var("MISTRAL_API_KEY", "your_api_key_here") };
+        let result = resolve_mistral_api_key();
+        unsafe { std::env::remove_var("MISTRAL_API_KEY") };
+        assert!(
+            result.is_none(),
+            "placeholder prefix 'your_' must be rejected"
+        );
+    }
+
+    #[test]
+    #[allow(unsafe_code)]
+    fn resolve_mistral_api_key_rejects_empty_env_var() {
+        unsafe { std::env::set_var("MISTRAL_API_KEY", "") };
+        let result = resolve_mistral_api_key();
+        unsafe { std::env::remove_var("MISTRAL_API_KEY") };
+        assert!(result.is_none(), "empty string must be rejected");
     }
 
     // ── dispatch_ndjson_line — unit suite ─────────────────────────────────────

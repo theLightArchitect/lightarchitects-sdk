@@ -12,8 +12,8 @@ use tracing::info;
 use crate::{
     auth,
     config::{
-        AgentKind, ClaudeBackend, CodexBackend, CodexConfig, Config, OllamaLaunchConfig,
-        SetupConfig,
+        AgentKind, ClaudeBackend, CodexBackend, CodexConfig, Config, MistralVibeConfig,
+        OllamaLaunchConfig, SetupConfig,
     },
     server::AppState,
 };
@@ -419,6 +419,11 @@ fn agent_session_from_save(req: &SaveRequest) -> Option<crate::config::AgentSess
                 },
             ))
         }
+        AgentKind::MistralVibe => Some(crate::config::AgentSession::MistralVibe(
+            MistralVibeConfig {
+                model: req.model.clone(),
+            },
+        )),
     }
 }
 
@@ -625,4 +630,49 @@ pub async fn setup_reset(_: auth::AuthGuard) -> impl IntoResponse {
 
     info!(target: "setup", "Setup config reset — frontend will re-enter setup flow");
     StatusCode::NO_CONTENT.into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AgentSession;
+
+    fn save_req(agent: AgentKind, backend: &str, model: Option<&str>) -> SaveRequest {
+        SaveRequest {
+            agent,
+            backend: backend.to_owned(),
+            model: model.map(ToOwned::to_owned),
+            ollama_base_url: None,
+            api_key: None,
+        }
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used, clippy::panic)]
+    fn agent_session_from_save_mistral_vibe_explicit_model() {
+        let req = save_req(
+            AgentKind::MistralVibe,
+            "mistral",
+            Some("mistral-small-latest"),
+        );
+        let sess = agent_session_from_save(&req).unwrap();
+        let AgentSession::MistralVibe(cfg) = sess else {
+            panic!("expected MistralVibe session");
+        };
+        assert_eq!(cfg.model.as_deref(), Some("mistral-small-latest"));
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used, clippy::panic)]
+    fn agent_session_from_save_mistral_vibe_model_defaults_when_absent() {
+        let req = save_req(AgentKind::MistralVibe, "mistral", None);
+        let sess = agent_session_from_save(&req).unwrap();
+        let AgentSession::MistralVibe(cfg) = sess else {
+            panic!("expected MistralVibe session");
+        };
+        assert_eq!(
+            cfg.model, None,
+            "absent model passes through as None — vibe uses its own config"
+        );
+    }
 }

@@ -197,12 +197,15 @@ describe('Copilot stores', () => {
       copilotMessages.set([]);
       copilotLoading.set(true);
 
-      _handleEvent({ type: 'copilot_response', data: { chunk: 'Hello' } });
+      // Backend uses #[serde(tag = "type")] — fields inline, not under `data`.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      _handleEvent({ type: 'copilot_response', chunk: 'Hello' } as any);
       expect(get(copilotMessages)).toHaveLength(1);
       expect(get(copilotMessages)[0].role).toBe('assistant');
       expect(get(copilotMessages)[0].content).toBe('Hello');
 
-      _handleEvent({ type: 'copilot_response', data: { chunk: ' world' } });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      _handleEvent({ type: 'copilot_response', chunk: ' world' } as any);
       expect(get(copilotMessages)).toHaveLength(1);
       expect(get(copilotMessages)[0].content).toBe('Hello world');
     });
@@ -211,7 +214,8 @@ describe('Copilot stores', () => {
       const { _handleEvent } = await import('$lib/sse');
       copilotLoading.set(true);
 
-      _handleEvent({ type: 'copilot_response', data: { chunk: 'Done', done: true } });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      _handleEvent({ type: 'copilot_response', chunk: 'Done', done: true } as any);
       expect(get(copilotLoading)).toBe(false);
     });
 

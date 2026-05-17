@@ -390,6 +390,10 @@ impl AgentDescriptor {
                 kind: "lightarchitects_native",
                 backend: "native",
             },
+            AgentSession::MistralVibe(_) => Self {
+                kind: "mistral_vibe",
+                backend: "mistral",
+            },
         }
     }
 }
@@ -441,6 +445,7 @@ pub async fn create_build_handler(
                 crate::config::AgentKind::Lightarchitects => "lightarchitects",
                 crate::config::AgentKind::Codex => "codex",
                 crate::config::AgentKind::LightarchitectsNative => "lightarchitects_native",
+                crate::config::AgentKind::MistralVibe => "mistral_vibe",
             },
             None,
             session.model.as_deref(),

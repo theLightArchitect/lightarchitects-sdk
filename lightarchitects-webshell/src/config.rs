@@ -32,7 +32,10 @@ pub const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
 /// Default Ollama model when the cloud profile is selected without an explicit model.
 pub const DEFAULT_OLLAMA_MODEL: &str = "qwen3-coder:480b-cloud";
 
-/// Which CLI binary runs in the embedded PTY.
+/// Agent backend discriminator — selects which CLI binary and protocol the webshell uses.
+///
+/// Not all variants use the embedded PTY: `LightarchitectsNative` and `MistralVibe`
+/// route through subprocess bridges (`spawn_copilot` / `run_vibe_turn`) rather than a PTY.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentKind {
@@ -42,6 +45,8 @@ pub enum AgentKind {
     Codex,
     /// lÆx0 native binary (`lightarchitects-cli`).
     LightarchitectsNative,
+    /// Mistral Vibe coding agent (binary: `vibe`, ACP bridge: `vibe-acp`).
+    MistralVibe,
 }
 
 impl Default for AgentKind {
@@ -219,6 +224,16 @@ impl Default for LightarchitectsNativeConfig {
     }
 }
 
+/// Configuration for the Mistral Vibe coding agent.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MistralVibeConfig {
+    /// Optional model override injected via `VIBE_ACTIVE_MODEL`.
+    ///
+    /// When `None`, vibe uses `active_model` from `~/.vibe/config.toml`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
 /// Complete agent session — which CLI to spawn + how it routes its LLM calls.
 ///
 /// The outer discriminator is the [`AgentKind`]; each kind carries its own
@@ -233,6 +248,8 @@ pub enum AgentSession {
     Codex(CodexConfig),
     /// lÆx0 native binary (`lightarchitects-cli`).
     LightarchitectsNative(LightarchitectsNativeConfig),
+    /// Mistral Vibe CLI (`vibe` binary, ACP bridge: `vibe-acp`).
+    MistralVibe(MistralVibeConfig),
 }
 
 impl Default for AgentSession {
@@ -249,6 +266,7 @@ impl AgentSession {
             Self::Lightarchitects(_) => AgentKind::Lightarchitects,
             Self::Codex(_) => AgentKind::Codex,
             Self::LightarchitectsNative(_) => AgentKind::LightarchitectsNative,
+            Self::MistralVibe(_) => AgentKind::MistralVibe,
         }
     }
 }
@@ -493,6 +511,14 @@ fn resolve_agent_session(cli: &Cli) -> AgentSession {
         AgentKind::LightarchitectsNative => {
             AgentSession::LightarchitectsNative(resolve_lightarchitects_cli_native_config(cli))
         }
+        AgentKind::MistralVibe => AgentSession::MistralVibe(resolve_mistral_vibe_config(cli)),
+    }
+}
+
+/// Build [`MistralVibeConfig`] from CLI flags.
+fn resolve_mistral_vibe_config(cli: &Cli) -> MistralVibeConfig {
+    MistralVibeConfig {
+        model: cli.ollama_model.clone(),
     }
 }
 
@@ -652,6 +678,47 @@ pub struct SetupConfig {
     pub api_key_stored: bool,
 }
 
+impl SetupConfig {
+    /// Converts the persisted setup into a live [`AgentSession`].
+    pub fn to_agent_session(&self) -> AgentSession {
+        match self.agent {
+            AgentKind::MistralVibe => AgentSession::MistralVibe(MistralVibeConfig {
+                model: self.model.clone(),
+            }),
+            AgentKind::Codex => AgentSession::Codex(CodexConfig {
+                model: self.model.clone().unwrap_or_else(default_codex_model),
+                backend: if self.backend.contains("ollama") {
+                    CodexBackend::OllamaLaunch(OllamaLaunchConfig {
+                        model: self.model.clone().unwrap_or_else(default_codex_model),
+                        base_url: self
+                            .ollama_base_url
+                            .clone()
+                            .unwrap_or_else(default_ollama_launch_base_url),
+                    })
+                } else {
+                    CodexBackend::OpenAi
+                },
+            }),
+            AgentKind::LightarchitectsNative => {
+                AgentSession::LightarchitectsNative(LightarchitectsNativeConfig::default())
+            }
+            AgentKind::Lightarchitects => {
+                AgentSession::Lightarchitects(if self.backend.contains("ollama") {
+                    ClaudeBackend::OllamaLaunch(OllamaLaunchConfig {
+                        model: self.model.clone().unwrap_or_else(default_codex_model),
+                        base_url: self
+                            .ollama_base_url
+                            .clone()
+                            .unwrap_or_else(default_ollama_launch_base_url),
+                    })
+                } else {
+                    ClaudeBackend::Anthropic
+                })
+            }
+        }
+    }
+}
+
 /// Returns the canonical setup config path: `~/.lightarchitects/webshell/setup.json`.
 fn setup_config_path() -> Option<std::path::PathBuf> {
     lightarchitects::core::paths::root().map(|root| root.join("webshell").join("setup.json"))
@@ -732,7 +799,13 @@ impl Config {
             None => std::env::current_dir().map_err(ConfigError::InvalidCwd)?,
         };
 
-        let agent = resolve_agent_session(&cli);
+        // Prefer the persisted setup config (written by /api/setup/save) over CLI defaults,
+        // so the chosen backend survives binary restarts without requiring re-save.
+        let agent = if let Some(setup) = Self::load_setup() {
+            setup.to_agent_session()
+        } else {
+            resolve_agent_session(&cli)
+        };
         let claude_agent_template = cli.claude_agent.clone();
         let container_mode = crate::container::ContainerMode::from_env();
 
@@ -877,14 +950,25 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::panic)]
+    #[allow(clippy::panic, unsafe_code)]
     fn default_agent_is_claude_code_with_anthropic() {
-        let cfg = Config::resolve(cli_with(8733)).unwrap();
-        assert_eq!(cfg.agent.kind(), AgentKind::Lightarchitects);
-        let AgentSession::Lightarchitects(backend) = &cfg.agent else {
-            panic!("expected Lightarchitects session");
-        };
-        assert_eq!(backend.kind(), ClaudeBackendKind::Anthropic);
+        // Redirect to a temp dir so no real setup.json is found — tests the
+        // CLI-default path without interference from the operator's saved config.
+        let tmp = std::env::temp_dir().join(format!("la-test-{}", std::process::id()));
+        // SAFETY: test binary is single-threaded by default (no concurrent env reads).
+        unsafe { std::env::set_var("LIGHTARCHITECTS_HOME", &tmp) };
+        let result = std::panic::catch_unwind(|| {
+            let cfg = Config::resolve(cli_with(8733)).unwrap();
+            assert_eq!(cfg.agent.kind(), AgentKind::Lightarchitects);
+            let AgentSession::Lightarchitects(backend) = &cfg.agent else {
+                panic!("expected Lightarchitects session");
+            };
+            assert_eq!(backend.kind(), ClaudeBackendKind::Anthropic);
+        });
+        // SAFETY: restoring env after test.
+        unsafe { std::env::remove_var("LIGHTARCHITECTS_HOME") };
+        let _ = std::fs::remove_dir_all(&tmp);
+        result.unwrap();
     }
 
     #[test]
@@ -983,5 +1067,48 @@ mod tests {
             json.contains(r#""agent":"lightarchitects_native""#),
             "native agent tag missing: {json}"
         );
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used, clippy::expect_used)]
+    fn mistral_vibe_config_default_model() {
+        let cfg = MistralVibeConfig::default();
+        assert_eq!(
+            cfg.model, None,
+            "no model override by default — defer to vibe config"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used, clippy::expect_used)]
+    fn agent_session_mistral_vibe_kind() {
+        let sess = AgentSession::MistralVibe(MistralVibeConfig::default());
+        assert_eq!(sess.kind(), AgentKind::MistralVibe);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+    fn agent_session_mistral_vibe_serde_round_trip() {
+        let sess = AgentSession::MistralVibe(MistralVibeConfig {
+            model: Some("mistral-small-latest".to_owned()),
+        });
+        let json = serde_json::to_string(&sess).unwrap();
+        assert!(
+            json.contains(r#""agent":"mistral_vibe""#),
+            "outer tag missing: {json}"
+        );
+        let back: AgentSession = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.kind(), AgentKind::MistralVibe);
+        let AgentSession::MistralVibe(cfg) = back else {
+            panic!("expected MistralVibe session after round-trip");
+        };
+        assert_eq!(cfg.model.as_deref(), Some("mistral-small-latest"));
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used, clippy::expect_used)]
+    fn mistral_vibe_config_serde_uses_default_model_when_absent() {
+        let back: MistralVibeConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(back.model, None, "absent model field deserializes to None");
     }
 }
