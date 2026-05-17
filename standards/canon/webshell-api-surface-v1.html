@@ -1,7 +1,7 @@
 <!-- uuid: f2e8b3d7-6c41-4a9f-b825-1e3d7c9a0f42 -->
 <!--
 title: "Webshell API Surface"
-version: "1.0.3"
+version: "1.0.4"
 status: ratified
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-17"
@@ -37,7 +37,7 @@ tags:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Webshell API Surface — Canonical Reference v1.0.3</title>
+<title>Webshell API Surface — Canonical Reference v1.0.4</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <style>
   :root {
@@ -218,7 +218,7 @@ tags:
 <nav class="sidebar">
   <div class="logo">
     <div class="title">Light Architects</div>
-    <div class="sub">Webshell API Surface v1.0.3</div>
+    <div class="sub">Webshell API Surface v1.0.4</div>
     <div class="sub" style="margin-top:4px;color:#FFD700;opacity:0.7;font-size:9px;letter-spacing:0.05em;">canon://webshell-api-surface</div>
   </div>
 
@@ -285,7 +285,7 @@ tags:
       Neither is derived from the other — they are co-authored representations of the same spec.
     </div>
     <div class="meta" style="margin-top:16px;">
-      <div class="meta-item">Version <span>1.0.3</span></div>
+      <div class="meta-item">Version <span>1.0.4</span></div>
       <div class="meta-item">Status <span>ratified</span></div>
       <div class="meta-item">Date <span>2026-05-17</span></div>
       <div class="meta-item">Canon URI <span>canon://webshell-api-surface</span></div>
@@ -1326,7 +1326,7 @@ flowchart LR
         <td>§1.5 <code>AgentSession</code>: 4 variants; <code>#[serde(tag="agent", rename_all="snake_case")]</code></td>
         <td><code>src/config.rs</code> · line 242–253</td>
         <td>Variant names and serde attrs exact</td>
-        <td><code>grep -n 'enum AgentSession' -A10 src/config.rs</code></td>
+        <td><code>grep -n 'enum AgentSession' -B3 -A10 src/config.rs</code></td>
       </tr>
       <tr>
         <td><span class="badge badge-blue">C6</span></td>
@@ -1379,7 +1379,7 @@ flowchart LR
       </tr>
       <tr>
         <td><span class="badge badge-green">C13</span></td>
-        <td>§3.8 Keyboard shortcuts: <strong>8 hotkeys</strong>; correct labels</td>
+        <td>§3.8 Keyboard shortcuts: <strong>9 hotkeys</strong>; correct labels</td>
         <td><code>src/app.svelte</code> · lines 244–326</td>
         <td>1–5 (nav tabs) · ⌘K (Open Dispatch) · ⌘/ (keymap legend) · ⌃` (<strong>Toggle Copilot drawer</strong>) · ⌘M (<strong>Toggle Memory drawer</strong>)</td>
         <td>Read lines 244–326; check each <code>label:</code> string</td>
@@ -1401,7 +1401,7 @@ flowchart LR
       <tr>
         <td><span class="badge badge-red">C16</span></td>
         <td>§1.4 CORS: <code>GET POST PUT OPTIONS</code></td>
-        <td><code>src/server/mod.rs</code> · line 686</td>
+        <td><code>src/server/mod.rs</code> · line 707</td>
         <td>All 4 methods in <code>build_cors()</code></td>
         <td><code>grep -A5 'allow_methods' src/server/mod.rs</code></td>
       </tr>

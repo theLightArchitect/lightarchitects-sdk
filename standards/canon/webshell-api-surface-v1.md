@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.3"
+version: "1.0.4"
 status: ratified
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-17"
@@ -115,7 +115,7 @@ Total: **99 `.route()` call sites** (92 in `server/mod.rs` + 7 in `dispatch/rout
 
 ### §1.4 CORS Constraint
 
-**`build_cors()` at `src/server/mod.rs:686` allows: `GET`, `POST`, `PUT`, `OPTIONS`.**
+**`build_cors()` at `src/server/mod.rs:707` allows: `GET`, `POST`, `PUT`, `OPTIONS`.**
 
 All four HTTP methods used by webshell routes are included. Fixed 2026-05-16 — `Method::PUT` was absent in v1.0.0 initial ratification, silently blocking the two PUT routes for cross-origin callers. Resolved in same session.
 
@@ -476,7 +476,7 @@ Backend routes that exist but have no dedicated frontend screen or route.
 ### §5.1 CORS PUT Gap — RESOLVED 2026-05-16
 
 **Severity**: HIGH — was silently blocking cross-origin callers.
-**Status**: Fixed. `Method::PUT` added to `allow_methods` in `build_cors()` (`src/server/mod.rs:686`).
+**Status**: Fixed. `Method::PUT` added to `allow_methods` in `build_cors()` (`src/server/mod.rs:707`).
 
 Affected routes: `PUT /api/builds/plan/{codename}` and `PUT /api/builds/{id}/notes`. Both now reachable cross-origin.
 
@@ -528,7 +528,7 @@ Expected after `copilot-supervised-orchestration` Phase 5 (2026-05-17): 92 + 7 =
 | `lightarchitects-webshell/src/server/mod.rs` | `build_app()` — all routes | 402–650 |
 | `lightarchitects-webshell/src/dispatch/routes.rs` | `dispatch_router()` — dispatch sub-routes | 103–111 |
 | `lightarchitects-webshell-ui/src/lib/routes.ts` | Hash router — all ScreenKey types and patterns | 1–109 |
-| `lightarchitects-webshell/src/server/mod.rs:686` | CORS allowed methods | Confirmed: GET, POST, PUT, OPTIONS (PUT added 2026-05-16, §5.1) |
+| `lightarchitects-webshell/src/server/mod.rs:707` | CORS allowed methods | Confirmed: GET, POST, PUT, OPTIONS (PUT added 2026-05-16, §5.1) |
 
 ---
 
@@ -557,7 +557,7 @@ Expected after `copilot-supervised-orchestration` Phase 5 (2026-05-17): 92 + 7 =
 | **C2** | §1.3 Config: `port:u16`, `host_cmd:OsString`, `cwd:PathBuf`, `token:String`, `agent:AgentSession` | `src/config.rs` | Line 360–373 | Field names and types exact | `grep -n 'pub struct Config' -A15 src/config.rs` |
 | **C3** | §1.2 Route count: 99 total (92 in `server/mod.rs` + 7 in `dispatch/routes.rs`) | Both route files | Full file | `.route(` call-site count matches | `grep -c '\.route(' src/server/mod.rs src/dispatch/routes.rs` |
 | **C4** | §2.x All backend route groups present | `src/server/mod.rs`, `src/dispatch/routes.rs` | Lines 402–650 | Every route in §2.x tables exists in source; no routes in source absent from §2.x | Read route registration block; spot-check 3 groups per session |
-| **C5** | §1.5 `AgentSession`: 4 variants; `#[serde(tag="agent", rename_all="snake_case")]` | `src/config.rs` | Line 242–253 | Variants and serde attrs exact | `grep -n 'enum AgentSession' -A10 src/config.rs` |
+| **C5** | §1.5 `AgentSession`: 4 variants; `#[serde(tag="agent", rename_all="snake_case")]` | `src/config.rs` | Line 242–253 | Variants and serde attrs exact | `grep -n 'enum AgentSession' -B3 -A10 src/config.rs` |
 | **C6** | §1.5 `AgentKind`: 4 variants (Lightarchitects, Codex, LightarchitectsNative, MistralVibe) | `src/config.rs` | Line 39–50 | All 4 variants present, no extras | `grep -n 'enum AgentKind' -A8 src/config.rs` |
 | **C7** | §1.5 Config structs: `ClaudeBackend`, `CodexBackend`, `OllamaLaunchConfig`, `OllamaConfig`, `CodexConfig`, `LightarchitectsNativeConfig`, `MistralVibeConfig` — field names and defaults | `src/config.rs` | Various | Every field name, type, and serde default matches §1.5 | Read each struct definition; compare field-by-field |
 | **C8** | §1.6 `spawn_bridge`: binaries `lightarchitects`/`vibe-acp`; env whitelist (PATH HOME USER SHELL RUST_LOG LLM_BACKEND OLLAMA_BASE_URL OLLAMA_MODEL LA_* LIGHTARCHITECTS_*); MISTRAL_API_KEY vibe-only; non-vibe args `["--stream-events","--cwd",<cwd>]`; vibe: no args | `src/agent/bridge.rs` | Lines 52–161 | Every spawn_bridge claim matches | Read lines 52–161; check binary names, env inject block, arg construction |
@@ -565,10 +565,10 @@ Expected after `copilot-supervised-orchestration` Phase 5 (2026-05-17): 92 + 7 =
 | **C10** | §3.3 `ROUTES`: exactly 22 entries, ordered most-specific first, fallback = `Ops` | `src/lib/routes.ts` | Lines 42–67 | Count = 22; order preserved; pattern strings match §3.3 table | `grep -c '\[/' src/lib/routes.ts` (returns 21; +1 for `new RegExp(...)` entry = 22); read lines 42–67 |
 | **C11** | §3.7 `screenModules`: 11 entries; ScreenKey → correct `.svelte` import path | `src/app.svelte` | Lines 51–63 | Count = 11; every key maps to the documented component file | `grep -A15 'screenModules' src/app.svelte` |
 | **C12** | §3.8 NAV_ITEMS: 5 tabs (OPS/DISPATCH/BUILDS/COMMS/HELIX), hash paths `/ops` `/dispatch` `/builds` `/comms` `/helix` | `src/app.svelte` | Lines 156–162 | Tab count = 5; labels and paths exact | `grep -A10 'NAV_ITEMS' src/app.svelte` |
-| **C13** | §3.8 Keyboard shortcuts: 8 registered hotkeys — `1`–`5` (nav tabs), `⌘K` (Open Dispatch), `⌘/` (keymap legend), `⌃\`` (Toggle Copilot drawer), `⌘M` (Toggle Memory drawer) | `src/app.svelte` | Lines 244–326 | Count = 8; IDs, labels, and handlers exact | Read lines 244–326; compare label strings |
+| **C13** | §3.8 Keyboard shortcuts: 9 registered hotkeys — `1`–`5` (nav tabs), `⌘K` (Open Dispatch), `⌘/` (keymap legend), `⌃\`` (Toggle Copilot drawer), `⌘M` (Toggle Memory drawer) | `src/app.svelte` | Lines 244–326 | Count = 9; IDs, labels, and handlers exact | Read lines 244–326; compare label strings |
 | **C14** | §4.1 Session cookie: `la_session=<token>; HttpOnly; SameSite=Strict; Secure; Max-Age=28800` | `src/auth.rs` | ~Line 143 | All 5 cookie attributes present in `session_cookie_header()` | `grep -n 'HttpOnly\|SameSite\|Max-Age\|la_session' src/auth.rs` |
 | **C15** | §1.3 `auth_nonces`: `Arc<DashMap<Uuid, Instant>>`; 60-second TTL; consumed on first use | `src/server/mod.rs` | Lines 162–166 | Field name, key type (`Uuid` not `String`), and TTL comment match | `grep -n 'auth_nonces' src/server/mod.rs` |
-| **C16** | §1.4 CORS: `GET POST PUT OPTIONS` | `src/server/mod.rs` | Line 686 | All 4 methods in `build_cors()` | `grep -A5 'allow_methods' src/server/mod.rs` |
+| **C16** | §1.4 CORS: `GET POST PUT OPTIONS` | `src/server/mod.rs` | Line 707 | All 4 methods in `build_cors()` | `grep -A5 'allow_methods' src/server/mod.rs` |
 | **C17** | §3.9 Setup types: `ClaudeAuthStatus` (4 fields: `has_keychain_auth`, `has_api_key`, `login_method`, `login_source`); `SetupInfoResponse` (5 fields: `setup_complete`, `config`, `auth_status`, `resume_session`, `cwd`) | `src/setup/handlers.rs` | Lines 29–97 | Field counts and names exact | Read lines 29–97 |
 
 #### Update procedure (step-by-step for an agent)
