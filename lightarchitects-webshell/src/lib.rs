@@ -45,6 +45,7 @@ pub mod session_fork;
 pub mod session_store;
 pub mod setup;
 pub mod static_assets;
+pub mod supervisor;
 pub mod terminal;
 pub mod turnlog;
 pub mod version;

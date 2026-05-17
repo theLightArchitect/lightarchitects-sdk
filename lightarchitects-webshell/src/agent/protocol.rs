@@ -266,6 +266,19 @@ pub enum AgentEvent {
         actions: Vec<QueuedAction>,
     },
 
+    // ── Supervisor ────────────────────────────────────────────────────────────
+    /// A wave (commit boundary) completed within the current build phase.
+    ///
+    /// Emitted by the squad host when all tasks in a wave are resolved.
+    /// The supervisor evaluation loop consumes this to score the wave against
+    /// the operator's northstar and update drift state (§Q check 4).
+    WaveComplete {
+        /// Wave index within the current phase (0-based).
+        wave_num: u32,
+        /// Human-readable summary of what was accomplished in this wave.
+        summary: String,
+    },
+
     // ── Heartbeat ─────────────────────────────────────────────────────────────
     /// Heartbeat / keepalive emitted every ~30s during long turns.
     Heartbeat,
@@ -322,6 +335,7 @@ impl AgentEvent {
             Self::ChildAgentForked { .. } => "child_forked",
             Self::ChildAgentCompleted { .. } => "child_complete",
             Self::PlanQueueReady { .. } => "plan_queue",
+            Self::WaveComplete { .. } => "wave_complete",
             Self::Heartbeat => "heartbeat",
             Self::PermissionRequest { .. } => "permission_request",
         }

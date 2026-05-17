@@ -10,6 +10,7 @@ import type {
   RetentionPolicy, CompactionSummary,
   TrainingConfig, TrainingRun,
   PlanDraftRequest, PlanDraftResponseEnvelope, PlanDraftEvent, PlanCommitRequest,
+  NorthstarEvaluationEvent, SupervisorState,
 } from './types';
 import type { SetupInfo, ModelOption, SaveRequest } from './setup';
 
@@ -367,6 +368,42 @@ export const api = {
         // skip malformed
       }
     };
+    return es;
+  },
+
+  /**
+   * Fetch the current northstar supervisor state for a build.
+   *
+   * Returns `404` if the build has no northstar set.
+   * Poll this on mount; subscribe to {@link supervisorEvents} for live updates.
+   */
+  getSupervisorState: (buildId: string): Promise<SupervisorState> =>
+    request<SupervisorState>(`/builds/${buildId}/supervisor/state`),
+
+  /**
+   * Subscribe to northstar evaluation events for a build via SSE.
+   *
+   * Connects to `GET /api/builds/:id/supervisor/events` (dedicated supervisor
+   * channel — carries only `supervisor_update` events).
+   *
+   * Returns a native `EventSource`; caller must call `es.close()` on destroy.
+   * Use `{#if}` (not CSS hide) for the supervisor panel so `onDestroy` fires.
+   */
+  supervisorEvents: (
+    buildId: string,
+    onEvent: (ev: NorthstarEvaluationEvent) => void,
+    onError?: (e: Event) => void,
+  ): EventSource => {
+    const es = new EventSource(`/api/builds/${buildId}/supervisor/events`);
+    es.addEventListener('supervisor_update', (e: MessageEvent) => {
+      try {
+        const parsed = JSON.parse(e.data as string) as NorthstarEvaluationEvent;
+        onEvent(parsed);
+      } catch {
+        // skip malformed
+      }
+    });
+    if (onError) es.onerror = onError;
     return es;
   },
 };

@@ -329,6 +329,12 @@ pub struct CreateBuildRequest {
     /// Override for `claude --disallowedTools`.
     #[serde(default)]
     pub disallowed_tools: Option<String>,
+    /// Operator's northstar text for this build.
+    ///
+    /// When present, a [`SupervisorEntry`] is created and a background watcher
+    /// is spawned that calls `evaluate_wave` on every `WAVE_COMPLETE` event.
+    #[serde(default)]
+    pub northstar_text: Option<String>,
 }
 
 /// Public response shape for `POST /api/builds` and `GET /api/builds/:id`.
@@ -460,6 +466,36 @@ pub async fn create_build_handler(
     state
         .telemetry
         .build_created(&session.build_id, &session.cwd);
+
+    // Spawn supervisor watcher when northstar_text is provided (§Q checks 5+6).
+    if let Some(northstar_text) = body.northstar_text {
+        use crate::events::supervisor_handler::{SupervisorEntry, spawn_supervisor_watcher};
+        // SupervisorConfig::default() — ollama_base: None means neutral stubs
+        // until an operator-configured Ollama backend is available (§Q check 5+6).
+        let entry = SupervisorEntry::new(
+            Some(northstar_text.clone()),
+            crate::supervisor::SupervisorConfig::default(),
+        );
+        state
+            .supervisor_states
+            .insert(session.build_id, Arc::clone(&entry));
+        spawn_supervisor_watcher(
+            Arc::clone(&session),
+            entry,
+            reqwest::Client::new(),
+            None,
+            "llama3".to_owned(),
+        );
+        // Persist northstar_text to SQLite so it survives server restarts.
+        if let Ok(store) = state.session_store.lock() {
+            if let Err(e) = store.set_northstar_text(&session.build_id.to_string(), &northstar_text)
+            {
+                tracing::warn!(error = %e, build_id = %session.build_id, "set_northstar_text failed");
+            }
+        }
+        info!(build_id = %session.build_id, "supervisor watcher spawned for northstar build");
+    }
+
     info!(build_id = %resp.build_id, cwd = %body.cwd.display(), "build session created");
 
     (StatusCode::OK, Json(resp)).into_response()
