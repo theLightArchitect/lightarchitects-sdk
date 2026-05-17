@@ -189,6 +189,12 @@ pub struct AppState {
             ),
         >,
     >,
+    /// Per-build northstar supervisor state — keyed by build [`Uuid`].
+    ///
+    /// Inserted by `POST /api/builds` when `northstar_text` is present.
+    /// The background watcher task holds an `Arc` clone and exits when
+    /// `SupervisorEntry::watcher_token` is cancelled.
+    pub supervisor_states: Arc<DashMap<Uuid, Arc<events::SupervisorEntry>>>,
 }
 
 impl AppState {
@@ -290,6 +296,7 @@ impl AppState {
                 events::GlobalEventStore::new(Some(data_dir.join("events.ndjson")))
             },
             plan_draft_sessions: Arc::new(DashMap::new()),
+            supervisor_states: Arc::new(DashMap::new()),
         }
     }
 
@@ -380,6 +387,7 @@ impl AppState {
             auth_nonces: Arc::new(DashMap::new()),
             global_event_store: events::GlobalEventStore::noop(),
             plan_draft_sessions: Arc::new(DashMap::new()),
+            supervisor_states: Arc::new(DashMap::new()),
         }
     }
 }
@@ -463,6 +471,15 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/builds/{id}/agent/ws",
             get(agent::ws::agent_ws_handler),
+        )
+        // ── Northstar supervisor (copilot-supervised-orchestration) ──────────
+        .route(
+            "/api/builds/{id}/supervisor/events",
+            get(events::supervisor_handler::supervisor_sse_handler),
+        )
+        .route(
+            "/api/builds/{id}/supervisor/acknowledge",
+            post(events::supervisor_handler::supervisor_acknowledge_handler),
         )
         .route(
             "/api/browser-state",

@@ -27,6 +27,7 @@ pub mod soul; // task #51 split target — see events/soul/mod.rs
 pub mod soul_routes; // shim during partial-split window; re-exports from soul::*
 pub mod sse_handler;
 pub mod strand;
+pub mod supervisor_handler;
 pub mod types;
 
 pub use ayin_client::{AyinClient, EVENT_CHANNEL_BUF};
@@ -35,6 +36,7 @@ pub use control::control_handler;
 pub use global_events::GlobalEventStore;
 pub use helix_watcher::HelixWatcher;
 pub use strand::{parse_strand_activations, window_aggregate};
+pub use supervisor_handler::SupervisorEntry;
 pub use types::{
     BuildEventKind, BuildUpdateEvent, ControlCommand, CopilotActivityEvent, GlobalEventEntry,
     StrandActivationEvent, WebEvent,

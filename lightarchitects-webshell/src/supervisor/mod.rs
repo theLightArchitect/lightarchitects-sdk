@@ -9,7 +9,9 @@
 
 pub mod evaluation;
 
-pub use evaluation::{EvaluationError, EvaluationStatus, NorthstarEvaluation, WaveContext};
+pub use evaluation::{
+    EvaluationError, EvaluationStatus, NorthstarEvaluation, WaveContext, evaluate_wave,
+};
 
 /// Tunable parameters for one build's supervisor instance.
 #[derive(Debug, Clone)]
