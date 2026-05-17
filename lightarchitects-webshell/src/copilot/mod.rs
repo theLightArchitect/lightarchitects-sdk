@@ -44,6 +44,14 @@ struct ContentBlockDelta {
 /// Falls back to the bare name (relies on PATH) if not found in known locations.
 pub fn resolve_binary(name: &str) -> String {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
+    resolve_binary_with_home(name, &home)
+}
+
+/// Inner implementation of [`resolve_binary`] with an explicit home directory.
+///
+/// Extracted so unit tests can supply a controlled `home` without mutating
+/// `$HOME` in the process environment (which races with parallel test threads).
+fn resolve_binary_with_home(name: &str, home: &str) -> String {
     let candidates: Vec<String> = match name {
         "claude" => vec![
             format!("{home}/.local/bin/claude"),
@@ -1608,5 +1616,77 @@ mod tests {
     fn mint_session_id_is_unique() {
         let ids: std::collections::HashSet<_> = (0..100).map(|_| mint_session_id()).collect();
         assert_eq!(ids.len(), 100, "mint_session_id() produced duplicate UUIDs");
+    }
+
+    // ── resolve_binary_with_home — vibe/* arms ──────────────────────────────
+    //
+    // Tests call the private helper directly with a controlled home directory,
+    // avoiding $HOME mutation (which races with parallel test threads).
+    // tempfile::TempDir creates a real filesystem path; p.is_file() requires
+    // the file to actually exist, so we create a zero-byte stub.
+
+    #[cfg(unix)]
+    mod resolve_binary_tests {
+        use super::*;
+        use std::os::unix::fs::PermissionsExt;
+
+        fn make_executable(dir: &std::path::Path, rel: &str) -> std::path::PathBuf {
+            let path = dir.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, b"#!/bin/sh\n").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        }
+
+        #[test]
+        fn vibe_resolves_local_bin_first() {
+            let tmp = tempfile::TempDir::new().unwrap();
+            let home = tmp.path().to_str().unwrap();
+            let expected = make_executable(tmp.path(), ".local/bin/vibe");
+            // Also place a stub at a lower-priority location — must not win.
+            make_executable(tmp.path(), "opt_homebrew_stub/vibe");
+
+            let result = resolve_binary_with_home("vibe", home);
+            assert_eq!(
+                result,
+                expected.to_str().unwrap(),
+                "~/.local/bin/vibe must win over lower-priority candidates"
+            );
+        }
+
+        #[test]
+        fn vibe_falls_back_to_bare_name_when_absent() {
+            let tmp = tempfile::TempDir::new().unwrap();
+            let home = tmp.path().to_str().unwrap();
+            // No vibe binary anywhere in the temp tree.
+            let result = resolve_binary_with_home("vibe", home);
+            assert_eq!(result, "vibe", "must fall back to bare name when not found");
+        }
+
+        #[test]
+        fn vibe_acp_resolves_local_bin_first() {
+            let tmp = tempfile::TempDir::new().unwrap();
+            let home = tmp.path().to_str().unwrap();
+            let expected = make_executable(tmp.path(), ".local/bin/vibe-acp");
+
+            let result = resolve_binary_with_home("vibe-acp", home);
+            assert_eq!(result, expected.to_str().unwrap());
+        }
+
+        #[test]
+        fn vibe_acp_falls_back_to_bare_name_when_absent() {
+            let tmp = tempfile::TempDir::new().unwrap();
+            let home = tmp.path().to_str().unwrap();
+            let result = resolve_binary_with_home("vibe-acp", home);
+            assert_eq!(result, "vibe-acp");
+        }
+
+        #[test]
+        fn unknown_binary_falls_back_to_bare_name() {
+            let tmp = tempfile::TempDir::new().unwrap();
+            let home = tmp.path().to_str().unwrap();
+            let result = resolve_binary_with_home("no-such-tool", home);
+            assert_eq!(result, "no-such-tool");
+        }
     }
 }
