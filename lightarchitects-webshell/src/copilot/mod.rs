@@ -13,6 +13,7 @@ pub mod voice;
 pub use routes::copilot_chat_handler;
 pub use voice::copilot_voice_handler;
 
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::{
@@ -180,14 +181,14 @@ pub fn resolve_api_key_for_native() -> Option<String> {
 /// 2. `MISTRAL_API_KEY` env var inherited by the webshell process
 ///
 /// Returns `None` if no key found — vibe will fail with its own auth error.
-pub fn resolve_mistral_api_key() -> Option<String> {
+pub fn resolve_mistral_api_key() -> Option<SecretString> {
     if let Ok(entry) = keyring::Entry::new("lightarchitects", "mistral") {
         if let Ok(key) = entry.get_password() {
             if !key.is_empty() && !key.contains("placeholder") && !key.contains("your_") {
                 tracing::debug!(
                     "resolve_mistral_api_key: found key in keychain (lightarchitects/mistral)"
                 );
-                return Some(key);
+                return Some(SecretString::new(key.into()));
             }
         }
     }
@@ -195,7 +196,7 @@ pub fn resolve_mistral_api_key() -> Option<String> {
     if let Ok(key) = std::env::var("MISTRAL_API_KEY") {
         if !key.is_empty() && !key.contains("your_") {
             tracing::debug!("resolve_mistral_api_key: found key in env MISTRAL_API_KEY");
-            return Some(key);
+            return Some(SecretString::new(key.into()));
         }
     }
 
@@ -762,7 +763,7 @@ async fn run_vibe_turn(message: &str, session: &BuildSession) -> Result<String, 
     let mut c = tokio::process::Command::new(resolve_binary("vibe"));
     c.env("PATH", augmented_path());
     if let Some(key) = resolve_mistral_api_key() {
-        c.env("MISTRAL_API_KEY", key);
+        c.env("MISTRAL_API_KEY", key.expose_secret());
     }
     if let Some(model) = &cfg.model {
         c.env("VIBE_ACTIVE_MODEL", model);
@@ -862,6 +863,9 @@ fn spawn_copilot(session: &BuildSession) -> Result<CopilotProcess, String> {
 
 /// Send `message` to the agent and return its response.
 ///
+/// Public entry point for dispatch — routes a prompt through the copilot
+/// subprocess. Same as the internal `call_subprocess` used by `copilot_chat_handler`.
+///
 /// `Lightarchitects`: spawns a fresh `claude --print` per turn; session continuity via
 /// `--resume` with disk persistence.
 ///
@@ -876,8 +880,6 @@ fn spawn_copilot(session: &BuildSession) -> Result<CopilotProcess, String> {
 /// # Errors
 ///
 /// Returns a descriptive string on spawn failure, process death, or missing result.
-/// Public entry point for dispatch — routes a prompt through the copilot
-/// subprocess. Same as the internal `call_subprocess` used by `copilot_chat_handler`.
 pub async fn call_subprocess_public(
     message: &str,
     proc_lock: &tokio::sync::Mutex<Option<CopilotProcess>>,
@@ -1353,6 +1355,40 @@ mod tests {
                 crate::config::LightarchitectsNativeConfig::default(),
             ),
         )
+    }
+
+    // ── resolve_mistral_api_key — unit suite ─────────────────────────────────
+
+    #[test]
+    #[allow(unsafe_code)]
+    fn resolve_mistral_api_key_env_var_path_returns_secret() {
+        // SAFETY: single-threaded test; env mutation is isolated by test harness.
+        unsafe { std::env::set_var("MISTRAL_API_KEY", "sk-test-valid-key-12345") };
+        let result = resolve_mistral_api_key();
+        unsafe { std::env::remove_var("MISTRAL_API_KEY") };
+        let key = result.expect("expected Some when env var is set");
+        assert_eq!(key.expose_secret(), "sk-test-valid-key-12345");
+    }
+
+    #[test]
+    #[allow(unsafe_code)]
+    fn resolve_mistral_api_key_rejects_placeholder_prefix() {
+        unsafe { std::env::set_var("MISTRAL_API_KEY", "your_api_key_here") };
+        let result = resolve_mistral_api_key();
+        unsafe { std::env::remove_var("MISTRAL_API_KEY") };
+        assert!(
+            result.is_none(),
+            "placeholder prefix 'your_' must be rejected"
+        );
+    }
+
+    #[test]
+    #[allow(unsafe_code)]
+    fn resolve_mistral_api_key_rejects_empty_env_var() {
+        unsafe { std::env::set_var("MISTRAL_API_KEY", "") };
+        let result = resolve_mistral_api_key();
+        unsafe { std::env::remove_var("MISTRAL_API_KEY") };
+        assert!(result.is_none(), "empty string must be rejected");
     }
 
     // ── dispatch_ndjson_line — unit suite ─────────────────────────────────────
