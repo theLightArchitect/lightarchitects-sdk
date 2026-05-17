@@ -63,7 +63,7 @@ The non-negotiable planning blueprint for every build on the Light Architects pl
 | **[Agents Playbook](agents-playbook.md)** | *How agents operate* | `canon://agents-playbook` |
 | **[Architects Blueprint](architects-blueprint.md)** (this) | *How to plan builds* | `canon://architects-blueprint` |
 | **[Operators Manual](operators-manual.md)** | *How to use the platform* | `canon://operators-manual` |
-| **[LASDLC Template](../../corso/builds/LASDLC-TEMPLATE-v1.yaml)** | *Build schema* | `canon://lasdlc-template` |
+| **[LASDLC Template](./LASDLC-TEMPLATE-v1.yaml)** | *Build schema* | `canon://lasdlc-template` |
 | **[Security Guardrails](security-guardrails.md)** | *How to stay secure* | `canon://security-guardrails` |
 | **[Gatekeeper Registry](gatekeeper-registry.yaml)** | *Agent-to-gate authority map* | `canon://gatekeeper-registry` |
 
@@ -1501,16 +1501,22 @@ wall_clock = Σ(sequential_wave_durations_on_critical_path)
 Quality is enforced at three nested levels, not just at merge time:
 
 ```
-┌─ Phase N ──────────────────────────────────────────────────────────┐
-│                                                                      │
-│  Wave A ──WAVE_COMPLETE──► Gatekeeper (8 dims, §7.2)               │
-│    ↓ PASS                                                            │
-│  Wave B ──WAVE_COMPLETE──► Gatekeeper                               │
-│    ↓ PASS                                                            │
-│  Wave C ──WAVE_COMPLETE──► Gatekeeper                               │
-│    ↓ PASS (all waves)                                                │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
+┌─ Phase N ──────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│  Wave A                                                                      │
+│    Task T1A-1 ──IMPLEMENTATION_COMPLETE──► Review Agent (§23.8, §7.7)      │
+│    Task T1A-2 ──IMPLEMENTATION_COMPLETE──► Review Agent (§23.8, §7.7)      │
+│       ↓ REVIEW_PASS (all tasks in wave)                                      │
+│    ──WAVE_COMPLETE──► Gatekeeper (8 mechanical dims, §7.2)                  │
+│       ↓ GATE_REVIEW accept                                                   │
+│                                                                              │
+│  Wave B  (same pattern)                                                      │
+│       ↓ GATE_REVIEW accept                                                   │
+│                                                                              │
+│  Wave C  (same pattern)                                                      │
+│       ↓ GATE_REVIEW accept (all waves)                                       │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
            ↓
     /GATE --scope phase-N  (5-step: RECORD→QUALITY→AUDIT→REMEDY→PRESENT)
            ↓ PASS → Phase N+1
@@ -1598,6 +1604,62 @@ This makes the agent's scope mechanical and prevents scope creep that corrupts o
 
 ---
 
+### §23.8 — Agent Output Hypothesis Protocol
+
+**The Principle**: Code written by a spawned Worker agent is a *hypothesis*, not trusted output. The Worker applies mechanical quality gates (cargo fmt, clippy, test) but cannot objectively assess whether it implemented the correct behavior, made the right architectural decisions, or introduced security regressions. An independent `lightarchitects:<domain_agent>` code review is mandatory before a task is counted as complete.
+
+**Why this is distinct from the Gatekeeper (§7.2)**: The 8 Gatekeeper dimensions (Q1-Q4/N1-N2/S1/D1) are mechanical — they check format compliance, compiler warnings, test pass/fail, and Northstar label presence. They do NOT check: correctness of logic, appropriateness of architecture choices, quality of the implementation relative to the task spec, or subtle security properties that require semantic reasoning. The hypothesis verification step fills this semantic gap. Both are required; neither substitutes for the other.
+
+**Task Lifecycle with Hypothesis Verification**:
+```
+FILE_CLAIM
+    ↓
+[Worker implements: Prepare → Write → Gate → Repeat]
+    ↓
+local gates pass (cargo test/clippy/fmt)
+    ↓
+IMPLEMENTATION_COMPLETE signal
+    ↓
+Governor spawns Review Agent (lightarchitects:<reviewer_agent> per plan declaration)
+    ↓
+Review Agent: reads task spec, reads diff, applies domain lens
+    ↓ REVIEW_PASS (confidence ≥ 0.95)    ↓ REVIEW_FAIL
+FILE_RELEASE + WAVE_COMPLETE eligible    Fix-it task → Worker → re-commit → loop
+```
+
+**Reviewer domain routing** — the `reviewer_agent` field in the plan wave declaration controls routing:
+
+| Wave content | Default reviewer | Override to |
+|---|---|---|
+| General implementation (Rust/TS) | `lightarchitects:quality` | — |
+| Security-touching code (auth, crypto, permissions) | `lightarchitects:security` | mandatory |
+| New public APIs or exported types | `lightarchitects:quality` + `lightarchitects:knowledge` | — |
+| Observability / tracing / metrics code | `lightarchitects:ops` | — |
+| Test suite waves | `lightarchitects:testing` | — |
+
+If `reviewer_agent` is not declared in the wave, default to `lightarchitects:quality`.
+
+**REMEDY on REVIEW_FAIL**:
+- The Review Agent emits a `REVIEW_FAIL` message listing specific findings with file:line citations.
+- Governor creates a fix-it task targeting the same Worker (FILE_CLAIM ownership preserved).
+- Worker implements the fix, re-commits, re-gates locally, re-signals IMPLEMENTATION_COMPLETE.
+- Governor spawns Review Agent again on the new commit diff.
+- Maximum 2 REVIEW_FAIL cycles before escalating to HITL (pattern of failure = spec ambiguity or capability ceiling, not implementation error).
+
+**Confidence threshold**: Review Agent verdict requires confidence ≥ 0.95 to proceed. Below 0.95 → `verdict: hitl` → AskUserQuestion with full diff and finding list.
+
+**What the Review Agent assesses** (beyond Gatekeeper mechanical checks):
+- Does the implementation match the task spec? (correct behavior, not just compiling code)
+- Are architectural decisions consistent with the surrounding codebase?
+- Are error paths handled completely? (no silent swallows, no unintended panics)
+- Do new public APIs have complete doc comments with usage examples?
+- Are there logic inversions, off-by-one errors, or race conditions in the diff?
+- Does the diff introduce any security surface not declared in the task's `blocks` context?
+
+**This principle is load-bearing.** An orchestrated build that skips hypothesis verification is running unreviewed code. The BUILD skill (Step 7.2) and the Gatekeeper (Playbook §7.7) both enforce this. Plans MUST declare `reviewer_agent` per wave in their Part VIII decomposition.
+
+---
+
 ## Canonical Planning Principles (consolidated)
 
 Distilled from 20+ builds and pressure-tested across the platform:
@@ -1623,6 +1685,7 @@ Distilled from 20+ builds and pressure-tested across the platform:
 19. **XEA compliance review before Phase 1 and before /BUILD** — 4-layer check: structural schema (Layer 0), C1–C8 rubric (Layer 1, Part XIV), Northstar mechanical (Layer 2), LDB declaration (Layer 3); VALIDATED required to proceed (Part XXII)
 20. **Northstar-first** — every plan declares `northstar_lineage`; builds that cannot demonstrate Northstar advancement do not ship (Part I)
 21. **Decompose to the file level at plan time** — declare Phase→Wave→Task→Files hierarchy before BUILD begins; foundation-first priority (P1→P2→P3→P4→P5); explicit `blocked_by` on every wave and task; every file in Part XXI owned by exactly one task; plans without wave decomposition are rejected at /BUILD Step 6 (Part XXIII)
+22. **Agent output is a hypothesis** — spawned Worker code must be independently reviewed by a `lightarchitects:<reviewer_agent>` before WAVE_COMPLETE; the Gatekeeper's 8 mechanical dimensions are not a substitute for semantic code review; declare `reviewer_agent` per wave in Part VIII (Part XXIII §23.8, Playbook §7.7)
 
 ---
 
@@ -1647,7 +1710,8 @@ Research-first, cost-conscious, security-gated, handoff-ready, observable, fully
 
 ---
 
-*Architects Blueprint v3.2 | Light Architects | merged 2026-05-13, updated 2026-05-17*
+*Architects Blueprint v3.3 | Light Architects | merged 2026-05-13, updated 2026-05-17*
 *Part of the Canonical Suite. Companion: LASDLC Template. Supersedes: gold-standard-planning-framework v2.0, architects-runbook v1.0, lasdlc-effectiveness-rubric v2.0.*
 *v3.1 adds: Part XXII (Plan Compliance Review Protocol / XEA 4-layer doctrine).*
 *v3.2 adds: Part XXIII (Phase→Wave→Task→Files Decomposition Protocol — foundation-first priority, dependency labeling, parallelism optimization, iterative /GATE loop model, agentic orchestration integration). Updates §8.3, §8.4, Principles 7 and 21.*
+*v3.3 adds: §23.8 (Agent Output Hypothesis Protocol — spawned worker code is a hypothesis; mandatory lightarchitects:<reviewer_agent> review before WAVE_COMPLETE; reviewer domain routing; REMEDY on REVIEW_FAIL). Updates §23.5 GATE loop diagram to show per-task review. Adds Principle 22.*

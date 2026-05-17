@@ -68,7 +68,7 @@ The authoritative documents governing the platform. Every operational question h
 | **[Agents Playbook](agents-playbook.md)** | *How agents operate* — roles, A2A protocol, state machines, Gatekeeper, HITL, git lifecycle | `canon://agents-playbook` |
 | **[Architects Blueprint](architects-blueprint.md)** | *How to plan builds* — research-first doctrine, scaffolding, tracking files, pre-finalization C1–C8 gate, 21 Parts | `canon://architects-blueprint` |
 | **[Operators Manual](operators-manual.md)** | *How to use the platform* — setup, squad ops, vault ops, security, voice, observability | `canon://operators-manual` |
-| **[LASDLC Template](../../corso/builds/LASDLC-TEMPLATE-v1.yaml)** | *Build schema* — tier/phase/gate structure (v2.5.1) | `canon://lasdlc-template` |
+| **[LASDLC Template](./LASDLC-TEMPLATE-v1.yaml)** | *Build schema* — tier/phase/gate structure (v2.5.1) | `canon://lasdlc-template` |
 | **[Security Guardrails](security-guardrails.md)** | *How to stay secure* — threat model, agentic AI security, sandboxing, CVE management, red team, compliance | `canon://security-guardrails` |
 
 ---
@@ -5290,11 +5290,11 @@ Reconcile with richer SDK abstractions in a follow-up phase.
 ## §54 Build Plan Template Standard
 
 > Source: LASDLC Template v1.0 (2026-04-26). Supersedes CORSO Build Plan Template v2.0.
-> File: `~/.soul/helix/corso/builds/LASDLC-TEMPLATE-v1.yaml`
+> File: `~/lightarchitects/soul/helix/user/standards/canon/LASDLC-TEMPLATE-v1.yaml`
 
 ### §54.1 Template Authority
 
-The template at `~/.soul/helix/corso/builds/LASDLC-TEMPLATE-v1.yaml` is
+The template at `~/lightarchitects/soul/helix/user/standards/canon/LASDLC-TEMPLATE-v1.yaml` is
 the canonical structure for all build plans. SCOUT reads it for plan generation.
 HUNT reads it for validation. /GATE reads it for inter-phase enforcement.
 
@@ -6026,7 +6026,7 @@ Compact in-prose forms; resolve relative to `$HELIX` unless absolute:
 |--------|-------------|---------|
 | `canon://<roman>` | `$HELIX/user/standards/canon/platform-canon.md#canon-<roman-lower>` | `canon://XXXV` |
 | `cookbook://<§>` | `$HELIX/user/standards/canon/builders-cookbook.md#<anchor>` | `cookbook://60` |
-| `lasdlc://<§>` | `$HELIX/corso/builds/LASDLC-TEMPLATE-v1.yaml#<key>` | `lasdlc://0.6` |
+| `lasdlc://<§>` | `$HELIX/user/standards/canon/LASDLC-TEMPLATE-v1.yaml#<key>` | `lasdlc://0.6` |
 | `helix://<sibling>/<sub>/<file>` | `$HELIX/<sibling>/<sub>/<file>` | `helix://shared/entries/2026-05-04-...md` |
 | `memory://<file>` | `~/.claude/projects/-Users-kft-Projects/memory/<file>` | `memory://feedback_confidence_threshold_gates.md` |
 | `rubric://<id>` | `$HELIX/user/standards/canon/architects-blueprint.md` Part XIV (C1–C8) | `rubric://C8f` |

@@ -37,7 +37,7 @@ The authoritative documents governing the platform. Every operational question h
 | **[Agents Playbook](agents-playbook.md)** | *How agents operate* — roles, A2A protocol, state machines, Gatekeeper, HITL, git lifecycle | `canon://agents-playbook` |
 | **[Architects Blueprint](architects-blueprint.md)** | *How to plan builds* — research-first doctrine, scaffolding, tracking files, pre-finalization C1–C8 gate, 21 Parts | `canon://architects-blueprint` |
 | **[Operators Manual](operators-manual.md)** | *How to use the platform* — setup, squad ops, vault ops, security, voice, observability | `canon://operators-manual` |
-| **[LASDLC Template](../../corso/builds/LASDLC-TEMPLATE-v1.yaml)** | *Build schema* — tier/phase/gate structure (v2.5.1) | `canon://lasdlc-template` |
+| **[LASDLC Template](./LASDLC-TEMPLATE-v1.yaml)** | *Build schema* — tier/phase/gate structure (v2.5.1) | `canon://lasdlc-template` |
 | **[Security Guardrails](security-guardrails.md)** | *How to stay secure* — threat model, agentic AI security, sandboxing, CVE management, red team, compliance | `canon://security-guardrails` |
 
 ---
@@ -48,7 +48,7 @@ The authoritative documents governing the platform. Every operational question h
 |-------|----------|----------------|
 | **Builders Cookbook** | `~/.soul/helix/user/standards/canon/builders-cookbook.md` | Coding standards, quality gates, complexity limits, military-grade engineering |
 | **Agent's Playbook** | `~/.soul/helix/user/standards/canon/agents-playbook.md` | Agent roles, A2A protocol, MCP tool surface, state machines, Gatekeeper, HITL, git lifecycle |
-| **LASDLC Template** | `~/.soul/helix/corso/builds/LASDLC-TEMPLATE-v1.yaml` | Build structure — tier/phase/gate schema (v2.5.1) |
+| **LASDLC Template** | `~/lightarchitects/soul/helix/user/standards/canon/LASDLC-TEMPLATE-v1.yaml` | Build structure — tier/phase/gate schema (v2.5.1) |
 | **Communication Covenant** | `~/.claude/CLAUDE.md` (lines 1-50) | How we communicate — arithmetic before assertions, no false witness, honest uncertainty |
 | **CORSO Protocol** | CORSO-DEV `CLAUDE.md` | 7-pillar build cycle, pipeline enforcement, quality gates |
 | **ScopeGovernor Pattern** | SERAPH-DEV `scope_governor.rs` | Halt, don't default. Fail closed, never open. 5 compiled gates. |
@@ -603,7 +603,7 @@ The wiring test is the one that matters in production.
 **Composition with Canon XXXIV**: Canon XXXIV says HOW to report confidence (intervals, not points, for evolving evaluations). Canon XXXV says WHAT confidence is acceptable (≥95% or block) and WHAT counts as a measurement (verbatim primary-source citation). Together: the interval frames the uncertainty; the threshold gates the decision; the citation grounds both. Self-validated wide intervals (per Canon XXXIII) often fall below the 95% threshold floor — Canon XXXV correctly forces them to research mode rather than aspirational ship.
 
 **Documents**:
-- LASDLC template gate spec: `~/lightarchitects/soul/helix/corso/builds/LASDLC-TEMPLATE-v1.yaml` Section 0.6 (confidence_threshold_gate)
+- LASDLC template gate spec: `~/lightarchitects/soul/helix/user/standards/canon/LASDLC-TEMPLATE-v1.yaml` Section 0.6 (confidence_threshold_gate)
 - Operational heuristic: `~/lightarchitects/soul/helix/user/standards/canon/builders-cookbook.md` §60
 - Behavioral memory: `~/.claude/projects/-Users-kft-Projects/memory/feedback_confidence_threshold_gates.md`
 
@@ -645,7 +645,7 @@ The wiring test is the one that matters in production.
 
 **Documents**:
 - /btw source exchange: `~/lightarchitects/soul/helix/shared/entries/2026-05-04-quality-first-compression-sequencing.md` (sig 8.0)
-- LASDLC v2.2.5 calibration substrate spec: `~/lightarchitects/soul/helix/corso/builds/LASDLC-TEMPLATE-v1.yaml` Section 7.6 (calibration_substrate)
+- LASDLC v2.2.5 calibration substrate spec: `~/lightarchitects/soul/helix/user/standards/canon/LASDLC-TEMPLATE-v1.yaml` Section 7.6 (calibration_substrate)
 - LASDLC v2.3.0 auto-decision eligibility gate: same file Section 0.7 (auto_decision_eligibility_gate)
 - Operational heuristic: `~/lightarchitects/soul/helix/user/standards/canon/builders-cookbook.md` §61
 - Behavioral memory: `~/.claude/projects/-Users-kft-Projects/memory/feedback_quality_first_compression.md`
@@ -679,7 +679,7 @@ The wiring test is the one that matters in production.
 **Documents**:
 - Gatekeeper registry: `~/lightarchitects/soul/helix/user/standards/canon/gatekeeper-registry.yaml`
 - Gate evaluation schema: `~/lightarchitects/soul/helix/user/standards/canon/lasdlc-spec.md` §4.5
-- LASDLC template gate vocabulary: `~/lightarchitects/soul/helix/corso/builds/LASDLC-TEMPLATE-v1.yaml` (now `[A+S+Q+C+O+P+K+D+T+R]` throughout)
+- LASDLC template gate vocabulary: `~/lightarchitects/soul/helix/user/standards/canon/LASDLC-TEMPLATE-v1.yaml` (now `[A+S+Q+C+O+P+K+D+T+R]` throughout)
 - Squad synthesis protocol: `agents-playbook.md` Part XVII
 
 **Ratified by**: Kevin (2026-05-05).
@@ -712,7 +712,7 @@ The wiring test is the one that matters in production.
 - Gatekeeper registry v1.1: `~/lightarchitects/soul/helix/user/standards/canon/gatekeeper-registry.yaml`
 - Squad synthesizer v1.1: `agents-playbook.md` Part XVII
 - Reference implementation: `~/lightarchitects/soul/helix/user/standards/scripts/synthesize-squad-review.py`
-- LASDLC template: `~/lightarchitects/soul/helix/corso/builds/LASDLC-TEMPLATE-v1.yaml` (now `[A+S+Q+C+O+P+K+D+T+R]` throughout)
+- LASDLC template: `~/lightarchitects/soul/helix/user/standards/canon/LASDLC-TEMPLATE-v1.yaml` (now `[A+S+Q+C+O+P+K+D+T+R]` throughout)
 - [R] gate home folder: `~/lightarchitects/soul/helix/user/standards/industry-baselines/research/`
 - LÆX0 identity: `~/lightarchitects/soul/helix/laex0/identity.md` (role corrected to `[C] Canon gate`)
 

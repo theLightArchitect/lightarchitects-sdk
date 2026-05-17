@@ -38,7 +38,7 @@ The complete reference for operating the Light Architects platform. Readable by 
 | **[Agents Playbook](agents-playbook.md)** | *How agents operate* | `canon://agents-playbook` |
 | **[Architects Blueprint](architects-blueprint.md)** | *How to plan builds* | `canon://architects-blueprint` |
 | **[Operators Manual](operators-manual.md)** | *How to use the platform* | `canon://operators-manual` |
-| **[LASDLC Template](../../corso/builds/LASDLC-TEMPLATE-v1.yaml)** | *Build schema* | `canon://lasdlc-template` |
+| **[LASDLC Template](./LASDLC-TEMPLATE-v1.yaml)** | *Build schema* | `canon://lasdlc-template` |
 | **[Security Guardrails](security-guardrails.md)** | *How to stay secure* | `canon://security-guardrails` |
 
 ---

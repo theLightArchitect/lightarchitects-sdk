@@ -39,7 +39,7 @@ The authoritative documents governing the platform. Every operational question h
 | **[Agents Playbook](agents-playbook.md)** | *How agents operate* — roles, A2A protocol, state machines, Gatekeeper, HITL, git lifecycle | `canon://agents-playbook` |
 | **[Architects Blueprint](architects-blueprint.md)** | *How to plan builds* — LASDLC procedure, scaffolding, tracking files, pre-finalization C1–C8 gate | `canon://architects-blueprint` |
 | **[Operators Manual](operators-manual.md)** | *How to use the platform* — setup, squad ops, vault ops, security, voice, observability | `canon://operators-manual` |
-| **[LASDLC Template](../../corso/builds/LASDLC-TEMPLATE-v1.yaml)** | *Build schema* — tier/phase/gate structure (v2.5.1) | `canon://lasdlc-template` |
+| **[LASDLC Template](./LASDLC-TEMPLATE-v1.yaml)** | *Build schema* — tier/phase/gate structure (v2.5.1) | `canon://lasdlc-template` |
 | **[Security Guardrails](security-guardrails.md)** | *How to stay secure* — threat model, agentic AI security, sandboxing, CVE management, red team, compliance | `canon://security-guardrails` |
 
 ---
@@ -542,6 +542,66 @@ The following labels are CANONICAL and RESERVED — they must NOT be used for an
 - Review-tier authors (SCRUM, Canon Audit, /REVIEW) MUST use their canonical prefix.
 
 **Composition**: Canon XXXVIII reserves the gate-vocabulary tokens `[A+S+Q+C+O+P+K+D+T+R]` semantically. §7.6 reserves the operational labels (`G1-G8`, `Q1-Q4`, `N1-N2`, `S1`, `D1`, `C1-C8`) syntactically. Together they protect the canonical vocabulary at both the semantic and naming layers.
+
+---
+
+### 7.7 Post-Implementation Hypothesis Verification
+
+**Principle**: Code produced by a spawned Worker is a *hypothesis*. The Worker's local gates (Q1-Q4: fmt/clippy/test/complexity) verify compilation and surface regressions, but they cannot evaluate correctness of the implementation against the task spec. An independent semantic code review by a `lightarchitects:<reviewer_agent>` is mandatory after every Worker task completion and before WAVE_COMPLETE.
+
+**Trigger**: Governor receives the Worker's completion signal (`IMPLEMENTATION_COMPLETE`) for a task.
+
+```
+Worker completes task → IMPLEMENTATION_COMPLETE signal
+    → Governor reads reviewer_agent from wave declaration in plan
+    → Governor spawns: Agent(subagent_type="lightarchitects:<reviewer_agent>",
+                              prompt="Review the diff at commit <sha> for task <task_id>.
+                                      Task spec: <task.prompt>.
+                                      Assess: correctness, architecture fit, error handling,
+                                              doc completeness, security surface.
+                                              File scope: <task.owned_files>.
+                                              Report REVIEW_PASS or REVIEW_FAIL with findings.")
+    → Review Agent returns verdict
+```
+
+**Verdict routing**:
+
+| Verdict | Condition | Action |
+|---|---|---|
+| `REVIEW_PASS` | confidence ≥ 0.95, no blocking findings | FILE_RELEASE; task status → `completed`; count toward WAVE_COMPLETE eligibility |
+| `REVIEW_FAIL` | Any blocking finding OR confidence < 0.95 | Create fix-it task for same Worker; do NOT FILE_RELEASE; do NOT count toward WAVE_COMPLETE |
+| `review_hitl` | confidence < 0.95 on verdict itself | AskUserQuestion with diff + findings before routing |
+
+**Reviewer domain defaults** (from Blueprint §23.8):
+
+| Wave content | `reviewer_agent` |
+|---|---|
+| General implementation | `lightarchitects:quality` |
+| Security-touching (auth/crypto/permissions) | `lightarchitects:security` (mandatory) |
+| New public APIs / exported types | `lightarchitects:quality` |
+| Observability / tracing / metrics | `lightarchitects:ops` |
+| Test suites | `lightarchitects:testing` |
+
+If `reviewer_agent` is not declared in the plan wave, Governor defaults to `lightarchitects:quality`.
+
+**REVIEW_FAIL fix-it cycle**:
+1. Governor creates a fix-it task with the REVIEW_FAIL findings as the task prompt.
+2. The fix-it task targets the same Worker (preserves FILE_CLAIM ownership — prevents conflicting edits from other agents).
+3. Worker implements fixes, re-commits, signals IMPLEMENTATION_COMPLETE again.
+4. Governor spawns Review Agent on the new diff.
+5. Maximum 2 consecutive REVIEW_FAIL cycles on the same task before escalating to HITL. Repeated failure indicates spec ambiguity or capability ceiling, not just an implementation error.
+
+**What review covers** (beyond Gatekeeper mechanical Q1-D1 dimensions):
+- Task spec compliance: does the implementation match what was asked?
+- Logic correctness: inversions, off-by-one, unhandled cases, race conditions
+- Architecture fit: consistent with surrounding conventions; no unnecessary abstractions
+- Error handling completeness: all error variants mapped, no silent swallows
+- Security surface: no unintended new trust boundaries in the diff
+- Doc completeness: all public items have meaningful (not just present) doc comments
+
+**Relationship to Gatekeeper (§7.2)**: The Gatekeeper runs mechanical checks *after* WAVE_COMPLETE. Hypothesis verification runs *before* WAVE_COMPLETE. They are sequential, not alternatives. A wave's sequence is: IMPLEMENTATION_COMPLETE → review → (on pass) FILE_RELEASE → WAVE_COMPLETE → Gatekeeper.
+
+**Enforcement**: `/BUILD` Step 7.2 (SQUAD dispatch) is responsible for the IMPLEMENTATION_COMPLETE → review → WAVE_COMPLETE routing. Workers MUST NOT send WAVE_COMPLETE directly — only the Governor emits WAVE_COMPLETE after all tasks in the wave have received REVIEW_PASS.
 
 ---
 
@@ -1914,17 +1974,23 @@ Inject status messages at these milestones:
 | Phase boundary | `[worker-<id>] Phase <N> complete. <M> tests passing. Next: <description>.` |
 | Gate result | `[worker-<id>] Gate: <gate_name> — PASS / FAIL (<detail>).` |
 | Blocker | `[worker-<id>] BLOCKER on task <task_id>: <description>. Needs: <what>.` |
-| Completion | `[worker-<id>] Task <task_id> complete. Commit: <sha>. <files_changed> files.` |
+| Implementation complete | `[worker-<id>] IMPLEMENTATION_COMPLETE task <task_id>. Commit: <sha>. Awaiting review.` |
+| Review accepted | `[worker-<id>] Task <task_id> review PASS. Claiming next.` |
+| Review rejected | `[worker-<id>] Task <task_id> review FAIL. Fix-it received. Implementing.` |
 
-Rate limit: maximum 1 chat_inject per 60 seconds — except BLOCKER and completion messages, which bypass the limit.
+Rate limit: maximum 1 chat_inject per 60 seconds — except BLOCKER and implementation-complete messages, which bypass the limit.
 
 ## Completion
 
-When implementation is done and all gates pass:
+When implementation is done and all local gates pass (cargo test/clippy/fmt):
 1. Commit your changes with a descriptive message.
-2. Inject the completion message: `[worker-<id>] Task <task_id> complete. Commit: <sha>. <N> files.`
-3. Call list_tasks() again and claim the next pending task for this build (return to Startup step 1).
-4. If no tasks remain pending: inject readiness and enter Idle Waiting.
+2. Signal IMPLEMENTATION_COMPLETE — do NOT signal WAVE_COMPLETE: inject `[worker-<id>] IMPLEMENTATION_COMPLETE task <task_id>. Commit: <sha>. Awaiting review.`
+3. **Wait for the review result.** Do NOT claim the next task yet.
+   - **REVIEW_PASS**: inject `[worker-<id>] Task <task_id> review PASS. Claiming next.` → call list_tasks() and claim the next pending task (return to Startup step 1).
+   - **REVIEW_FAIL**: receive the fix-it task from the Governor → implement the listed fixes → re-commit → return to step 1 of Completion. Maximum 2 fix-it cycles before escalating to HITL.
+4. If no tasks remain pending after REVIEW_PASS: inject readiness and enter Idle Waiting.
+
+> **Why wait for review?** Your implementation is a hypothesis. The Governor routes an independent `lightarchitects:<reviewer_agent>` to verify correctness, architecture fit, and error handling. This is structurally distinct from the local gates you already ran. WAVE_COMPLETE is only emitted by the Governor after all tasks in the wave have received REVIEW_PASS. You never emit WAVE_COMPLETE directly.
 
 ## Blocker Protocol
 
@@ -1978,5 +2044,6 @@ The Governor will decide whether to act on it.
 
 ---
 
-*Light Architects Agent's Playbook v1.4 | 2026-05-16*
+*Light Architects Agent's Playbook v1.5 | 2026-05-17*
 *Part of the Canonical Suite. Supersedes agent-comms-state-machine-v1.md, a2a-contract-v1.md, squad-comms-protocol-v1.md, git-lifecycle-canon.md, governor-system-prompt.md, and worker-system-prompt.md.*
+*v1.5 adds: §7.7 (Post-Implementation Hypothesis Verification — spawned Worker code is a hypothesis; mandatory lightarchitects:<reviewer_agent> review before WAVE_COMPLETE; REVIEW_FAIL fix-it cycle; domain routing). Updates Part XX Worker System Prompt Completion sequence: Workers signal IMPLEMENTATION_COMPLETE and wait for review before claiming next task.*

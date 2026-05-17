@@ -613,7 +613,7 @@ CORSO runs its 7-step cycle at **every gate boundary** — it's the gate evaluat
 
 ## Links
 
-- Template: [[corso/builds/LASDLC-TEMPLATE-v1.yaml]] (schema v2.5.1)
+- Template: [[canon/LASDLC-TEMPLATE-v1.yaml]] (schema v2.5.1)
 - Canon: [[user/standards/canon/builders-cookbook.md]]
 - Quality rules: [[user/standards/canon/platform-canon.md]]
 - CORSO protocol: [[corso/entries/2026-01-20-corso-protocol-49-rules-7-pillars.md]]
