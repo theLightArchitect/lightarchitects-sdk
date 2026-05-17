@@ -66,6 +66,18 @@ pub async fn wait_for_shutdown() {
     run_cleanup();
 }
 
+/// Drain the registry without running handlers — test isolation only.
+///
+/// Call this at the start of shutdown-registry tests to discard any handlers
+/// registered by a concurrently-running test before acquiring the serialization
+/// lock. Integration tests live outside the `#[cfg(test)]` scope, so this
+/// cannot be gated by `#[cfg(test)]`; `#[doc(hidden)]` keeps it out of docs.
+#[doc(hidden)]
+pub fn drain_for_test() {
+    #[allow(clippy::unwrap_used)]
+    CLEANUP_REGISTRY.lock().unwrap().clear();
+}
+
 #[doc(hidden)]
 pub fn run_cleanup() {
     // Drain into a local Vec so the lock is not held during execution,

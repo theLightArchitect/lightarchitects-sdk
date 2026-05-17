@@ -1356,6 +1356,11 @@ pub async fn spawn_plan_draft(
 #[allow(clippy::expect_used, clippy::unwrap_used, unsafe_code)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Serialise all tests that mutate `MISTRAL_API_KEY`.
+    /// The env is process-global; parallel tests race on it without this lock.
+    static MISTRAL_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     // ── Test helpers ─────────────────────────────────────────────────────────
 
@@ -1421,9 +1426,8 @@ mod tests {
     // ── resolve_mistral_api_key — unit suite ─────────────────────────────────
 
     #[test]
-    #[allow(unsafe_code)]
     fn resolve_mistral_api_key_env_var_path_returns_secret() {
-        // SAFETY: single-threaded test; env mutation is isolated by test harness.
+        let _guard = MISTRAL_ENV_LOCK.lock().unwrap();
         unsafe { std::env::set_var("MISTRAL_API_KEY", "sk-test-valid-key-12345") };
         let result = resolve_mistral_api_key();
         unsafe { std::env::remove_var("MISTRAL_API_KEY") };
@@ -1432,8 +1436,8 @@ mod tests {
     }
 
     #[test]
-    #[allow(unsafe_code)]
     fn resolve_mistral_api_key_rejects_placeholder_prefix() {
+        let _guard = MISTRAL_ENV_LOCK.lock().unwrap();
         unsafe { std::env::set_var("MISTRAL_API_KEY", "your_api_key_here") };
         let result = resolve_mistral_api_key();
         unsafe { std::env::remove_var("MISTRAL_API_KEY") };
@@ -1444,8 +1448,8 @@ mod tests {
     }
 
     #[test]
-    #[allow(unsafe_code)]
     fn resolve_mistral_api_key_rejects_empty_env_var() {
+        let _guard = MISTRAL_ENV_LOCK.lock().unwrap();
         unsafe { std::env::set_var("MISTRAL_API_KEY", "") };
         let result = resolve_mistral_api_key();
         unsafe { std::env::remove_var("MISTRAL_API_KEY") };

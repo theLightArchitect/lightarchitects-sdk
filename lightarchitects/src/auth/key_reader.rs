@@ -117,7 +117,12 @@ impl KeyReader {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, unsafe_code)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
     use tempfile::TempDir;
+
+    /// Serialize all tests that touch `LA_API_KEY` (set, remove, or read via priority chain).
+    /// The env is process-global; parallel tests race on it without this lock.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn isolated(dir: &TempDir) -> AuthConfig {
         AuthConfig {
@@ -141,6 +146,8 @@ mod tests {
 
     #[test]
     fn missing_file_returns_no_key_found() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("LA_API_KEY") };
         let dir = TempDir::new().unwrap();
         let cfg = isolated(&dir);
         // No file written — must return NoKeyFound
@@ -152,6 +159,8 @@ mod tests {
 
     #[test]
     fn whitespace_only_file_returns_no_key_found() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("LA_API_KEY") };
         let dir = TempDir::new().unwrap();
         let cfg = isolated(&dir);
         std::fs::write(&cfg.key_file_path, "   \n  \n").unwrap();
@@ -177,6 +186,8 @@ mod tests {
 
     #[test]
     fn save_then_read_round_trip() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("LA_API_KEY") };
         let dir = TempDir::new().unwrap();
         let cfg = isolated(&dir);
         KeyReader::save(&cfg, "round-trip-key").unwrap();
@@ -206,11 +217,10 @@ mod tests {
 
     #[test]
     fn priority_1_env_var_wins_when_file_also_present() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let dir = TempDir::new().unwrap();
         let cfg = isolated(&dir);
         std::fs::write(&cfg.key_file_path, "file-key").unwrap();
-        // SAFETY: test-only env mutation; test is not parallel-sensitive here
-        // because LA_API_KEY is cleared at the end of the function.
         unsafe { std::env::set_var("LA_API_KEY", "env-key") };
         let result = KeyReader::read(&cfg);
         unsafe { std::env::remove_var("LA_API_KEY") };
@@ -219,6 +229,7 @@ mod tests {
 
     #[test]
     fn priority_1_env_var_trims_whitespace() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let dir = TempDir::new().unwrap();
         let cfg = isolated(&dir);
         unsafe { std::env::set_var("LA_API_KEY", "  padded-key\n") };
@@ -229,6 +240,7 @@ mod tests {
 
     #[test]
     fn priority_1_empty_env_falls_through_to_file() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let dir = TempDir::new().unwrap();
         let cfg = isolated(&dir);
         std::fs::write(&cfg.key_file_path, "file-key").unwrap();
@@ -241,6 +253,7 @@ mod tests {
 
     #[test]
     fn priority_1_whitespace_env_falls_through_to_file() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let dir = TempDir::new().unwrap();
         let cfg = isolated(&dir);
         std::fs::write(&cfg.key_file_path, "file-key-ws").unwrap();
@@ -252,9 +265,9 @@ mod tests {
 
     #[test]
     fn priority_3_file_used_when_no_env_and_no_keychain() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let dir = TempDir::new().unwrap();
         let cfg = isolated(&dir);
-        // Ensure env absent (remove if accidentally set in test environment)
         unsafe { std::env::remove_var("LA_API_KEY") };
         std::fs::write(&cfg.key_file_path, "file-only-key").unwrap();
         assert_eq!(KeyReader::read(&cfg).unwrap(), "file-only-key");
@@ -262,6 +275,7 @@ mod tests {
 
     #[test]
     fn all_sources_absent_returns_no_key_found() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let dir = TempDir::new().unwrap();
         let cfg = isolated(&dir);
         unsafe { std::env::remove_var("LA_API_KEY") };
@@ -274,8 +288,8 @@ mod tests {
 
     #[test]
     fn priority_chain_order_is_p1_then_p3_without_keychain() {
+        let _guard = ENV_LOCK.lock().unwrap();
         // Without keychain feature: chain is P1 → P3 with no P2 intervening.
-        // Verify both work in order.
         let dir = TempDir::new().unwrap();
         let cfg = isolated(&dir);
         std::fs::write(&cfg.key_file_path, "chain-file-key").unwrap();

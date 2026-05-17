@@ -140,19 +140,28 @@ async fn drive_agent_stream(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use std::sync::atomic::Ordering;
+    use std::sync::{Mutex, atomic::Ordering};
+
+    /// Serialise sync tests that mutate the global `AGENT_SSE_COUNT`.
+    /// The counter is process-global; parallel tests race on it without this lock.
+    static SSE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn sse_guard_decrements_global_counter_on_drop() {
-        let before = AGENT_SSE_COUNT.load(Ordering::SeqCst);
+        let _lock = SSE_TEST_LOCK.lock().unwrap();
+        // Reset to a known value so `before + 1` never overflows regardless of
+        // what concurrent tests may have done to the counter.
+        AGENT_SSE_COUNT.store(0, Ordering::SeqCst);
         {
             let _guard = SseGuard;
             AGENT_SSE_COUNT.fetch_add(1, Ordering::SeqCst);
-            assert_eq!(AGENT_SSE_COUNT.load(Ordering::SeqCst), before + 1);
+            assert_eq!(AGENT_SSE_COUNT.load(Ordering::SeqCst), 1);
         }
-        assert_eq!(AGENT_SSE_COUNT.load(Ordering::SeqCst), before);
+        // SseGuard::drop() calls fetch_sub(1) → back to 0.
+        assert_eq!(AGENT_SSE_COUNT.load(Ordering::SeqCst), 0);
     }
 
     #[allow(clippy::unwrap_used)]
@@ -164,6 +173,8 @@ mod tests {
         let _ = tx.send(AgentEvent::Heartbeat);
         let _ = tx.send(AgentEvent::Heartbeat);
 
+        // Pre-increment so SseGuard::drop() does not underflow the counter.
+        AGENT_SSE_COUNT.fetch_add(1, Ordering::SeqCst);
         // rx will be lagged because channel capacity is 2 and we sent 4
         let (result, (_rx, seq, _guard)) = drive_agent_stream((rx, 0, SseGuard)).await.unwrap();
         let _event = result.unwrap();
@@ -178,6 +189,8 @@ mod tests {
             chunk: "hello".to_owned(),
         });
 
+        // Pre-increment so SseGuard::drop() does not underflow the counter.
+        AGENT_SSE_COUNT.fetch_add(1, Ordering::SeqCst);
         let (result, (_rx, seq, _guard)) = drive_agent_stream((rx, 0, SseGuard)).await.unwrap();
         let _event = result.unwrap();
         assert_eq!(seq, 1);

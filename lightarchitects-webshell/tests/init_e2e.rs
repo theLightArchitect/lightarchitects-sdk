@@ -158,9 +158,17 @@ fn telemetry_model_switch_event() {
 }
 
 // ── Shutdown registry tests ────────────────────────────────────────────────
+//
+// The global CLEANUP_REGISTRY static is shared across all test threads.
+// These tests must be serialized and must drain stale state before registering
+// their own handlers so concurrent runs don't cross-contaminate.
+static SHUTDOWN_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[test]
 fn shutdown_registry_runs_all_handlers_in_lifo_order() {
+    let _guard = SHUTDOWN_TEST_LOCK.lock().unwrap();
+    lightarchitects_webshell::init::shutdown::drain_for_test();
+
     let order = Arc::new(std::sync::Mutex::new(Vec::new()));
 
     {
@@ -195,6 +203,9 @@ fn shutdown_registry_runs_all_handlers_in_lifo_order() {
 
 #[test]
 fn shutdown_registry_isolates_panicking_cleanup() {
+    let _guard = SHUTDOWN_TEST_LOCK.lock().unwrap();
+    lightarchitects_webshell::init::shutdown::drain_for_test();
+
     let count = Arc::new(std::sync::Mutex::new(0));
 
     {
