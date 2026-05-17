@@ -1,0 +1,121 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-17T22:30:00Z"
+build_id: mistral-vibe-integration
+branch: feat/mistral-vibe-integration
+sha: a4f280f
+phase_id: merge
+overall_verdict: pass
+remediation_sha: a4f280f
+remediation_at: "2026-05-17T22:30:00Z"
+remaining_open:
+  - "V1 follow-on: resolve_binary vibe/* arm unit tests (non-blocking, next sprint)"
+  - "V1 follow-on: MistralVibe HTTP dispatch integration test (non-blocking, next sprint)"
+
+dimensions:
+  V0_primary_on_main: pass
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1816
+    tests_fail: 0
+  Q4_svelte:
+    result: pass
+    tests_run: 501
+    svelte_check_errors: 0
+  S1_security:
+    result: pass
+    remediated_at: "4e6bf07"
+    blocking_findings:
+      - id: SERAPH-2026-001
+        severity: HIGH
+        title: "MISTRAL_API_KEY stored as plain String — no SecretString/zeroize"
+        file: "lightarchitects-webshell/src/copilot/mod.rs:183-203"
+        cwe: CWE-316
+        status: remediated
+      - id: SERAPH-2026-002
+        severity: HIGH
+        title: "vibe-acp bridge missing MISTRAL_API_KEY injection"
+        file: "lightarchitects-webshell/src/agent/bridge.rs:86-116"
+        cwe: CWE-306
+        status: remediated
+      - id: SERAPH-2026-003
+        severity: HIGH
+        title: "Spawn error message leaks to SSE event bus (pre-existing pattern propagated)"
+        file: "lightarchitects-webshell/src/agent/bridge.rs:120-127"
+        cwe: CWE-209
+        status: remediated
+      - id: SERAPH-2026-003b
+        severity: LOW
+        title: "vibe spawn error leaks in copilot::run_vibe_turn"
+        file: "lightarchitects-webshell/src/copilot/mod.rs"
+        cwe: CWE-209
+        status: remediated_at_e5824dc
+    track_findings:
+      - id: SERAPH-2026-004
+        severity: MEDIUM
+        title: "env::set_var UB risk under parallel test execution"
+      - id: SERAPH-2026-005
+        severity: MEDIUM
+        title: "HTTP 500 reason field leaks internal error strings"
+      - id: SERAPH-2026-006
+        severity: MEDIUM
+        title: "vibe-acp inherits all LA_* env vars without scope-specific allowlist"
+      - id: SERAPH-2026-007
+        severity: MEDIUM
+        title: "vibe binary PATH fallback — no integrity check"
+      - id: SERAPH-2026-008
+        severity: LOW
+        title: "DashMap permission_queue TOCTOU"
+      - id: SERAPH-2026-009
+        severity: LOW
+        title: "MISTRAL_API_KEY env-var fallback violates §3.5/§5.5"
+  S2_supply_chain: pass
+  S3_laex:
+    result: pass_with_conditions
+    remediated_at: "4e6bf07 + canon.md created"
+    canon_check_status: fixed
+    layer_verdicts:
+      L1_security: pass
+      L2_methodology: pass
+      L3_product: pass
+      L4_ethics: pass
+    conditions:
+      - id: SERAPH-2026-009
+        severity: MEDIUM
+        detail: "env-var fallback §3.5/§5.5 Security Guardrails — pre-existing pattern, canon gap (not a breach). Tracked for follow-on sprint."
+    reason: "canon_check proxy fixed (canon.md created). LÆX inline reflect evaluated all 4 layers. New auth surface mirrors existing approved resolve_api_key_for_native() pattern."
+  I1_rebase:
+    result: pass
+    detail: "Local main pushed at prior gate run (53e6367, 4f1a7dc). Branch is clean descendant of github/main."
+  I2_build: pass
+  N1_northstar: skip
+  N2_chain: skip
+  N3_exclusion_zones: skip
+  D1_docs:
+    result: pass
+    remediated_at: "4e6bf07"
+  D2_plan: "n/a"
+  D3_claude_md:
+    result: pass
+    remediated_at: "a4f280f"
+    detail: "lightarchitects-webshell/CLAUDE.md created — MistralVibe backend, MISTRAL_API_KEY env var, vibe binary deps, SecretString pattern, env whitelist."
+  V1_pyramid:
+    result: partial
+    blocking_gaps: []
+    accepted_follow_ons:
+      - "unit: resolve_binary vibe/* arms untested [next sprint]"
+      - "integration: MistralVibe HTTP dispatch round-trip test [next sprint]"
+      - "e2e: Playwright spec for Mistral Vibe setup flow [deferred: vibe-acp verified + V1 integration tests added]"
+    passing:
+      - "regression: copilot_response SSE fix guarded by 10 tests"
+      - "unit: resolve_mistral_api_key env-var/placeholder/empty — 3 new tests at 4e6bf07"
+      - "property: key-filter invariants (pure-function, no env races) — 3 tests at e5824dc"
+      - "integration: env_clear + SecretString expose_secret + subprocess injection — 2 tests at e5824dc"
+      - "integration: non-vibe path confirms MISTRAL_API_KEY stripped by env_clear — 1 test at e5824dc"
+  V2_smoke:
+    result: pass
+    detail: "cargo build --release -p lightarchitects-webshell succeeded at a4f280f"
+  V3_e2e: "deferred:vibe-acp verified + integration tests added"
