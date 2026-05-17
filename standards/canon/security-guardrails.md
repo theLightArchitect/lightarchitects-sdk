@@ -396,6 +396,32 @@ Reject at the first failing check. Log the rejection with the field name but **n
 
 All interactions with Personal Identifiable Information (PII) require **minimum AAL2** regardless of operation type (NIST SP 800-63-3 §4 directive).
 
+### §3.5.1 Webshell Two-Auth-Model Invariant
+
+The webshell backend exposes two authentication models that must never be confused:
+
+| Model | Header | Scope |
+|-------|--------|-------|
+| `X-LA-Notify-Token` | Custom header | Machine-to-machine only — gateway callback → webshell |
+| `Authorization: Bearer <token>` via `auth::AuthGuard` | Standard | Operator-facing — browser-callable |
+
+`notify_token` is deliberately excluded from `BuildResponse` (the JSON the browser receives at
+session creation). The browser cannot obtain it at runtime. This is intentional:
+
+- **CWE-522** (Insufficiently Protected Credentials) — machine credentials that reach client-side
+  code can be extracted from memory, DevTools, or HAR files by any script running in the same
+  browsing context.
+- **OWASP API2:2023** (Broken Authentication) — using a credential designed for one authentication
+  context (machine-to-machine) to gate a different context (human-facing action) is an
+  authentication design failure, independent of whether an adversary is present today.
+
+**Gate check ([S] gate — SERAPH or CORSO GUARD):** Before wiring any UI action or Svelte
+component to a backend endpoint, verify: *"Can the browser obtain this credential at runtime?"*
+If no → wrong auth model. Switch the handler to `auth::AuthGuard`.
+
+This is a **BLOCKING** security finding — a browser-facing endpoint protected by machine-only
+credentials is an authentication bypass by design.
+
 ### §3.6 Neo4j Hardening
 
 Neo4j is in the platform attack surface inventory (§1.2) with Cypher injection, authentication bypass, and data exfiltration as primary risks. These controls are mandatory for every production Neo4j instance.

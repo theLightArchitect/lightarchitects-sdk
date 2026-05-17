@@ -646,6 +646,27 @@ Rust is our standard for critical infrastructure due to its ownership model and 
 | `panic!()` | Return `Result<T, E>` |
 | `unreachable!()` | Only with proof comment |
 
+#### 4.1.1 Rust `_`-prefix binding gotcha
+
+**Rule:** `_x` and `x` are different identifiers. The `_` prefix marks a binding as intentionally unused — it does not alias or shadow the original name.
+
+Any downstream reference to the original name after a `_`-prefix rename produces **E0425** (`cannot find value x in this scope`) even when `_x` is visible on the same line. The bug is non-obvious because the eye reads `_` as a modifier, not as a name change.
+
+```rust
+// WRONG — _session and session are different identifiers
+let Some(_session) = state.builds.get(id) else { return; };
+session.event_tx.send(ev);  // E0425: cannot find value `session`
+
+// CORRECT — keep the name if the value is used below
+let Some(session) = state.builds.get(id) else { return; };
+session.event_tx.send(ev);  // OK
+
+// CORRECT — discard explicitly at the point of discard if truly unused
+let _ = session.event_tx.send(ev);  // discard the Result, not the binding
+```
+
+Use `_` prefix **only** when the binding is never read after the `let`. To suppress a specific unused warning on a value you do need later, restructure the code so the value is actually consumed — or discard with `let _ = expr;` at the exact site of discard.
+
 ### 4.2 Unsafe Code Isolation
 
 **Rule:** `unsafe` is a "break glass in case of emergency" tool.
@@ -664,6 +685,30 @@ Rust is our standard for critical infrastructure due to its ownership model and 
 | **Acceptable** | `Mutex`, `RwLock` with documented lock hierarchy |
 | **Avoid** | Shared mutable state |
 | **Forbidden** | Undocumented lock ordering |
+
+#### 4.3.1 `Sender<T>` where `T` is a large enum — return `bool`, not `Result<(), SendError<T>>`
+
+`clippy::result_large_err` (deny-level under `clippy::pedantic`) fires when an `Err` variant
+exceeds 128 bytes. `broadcast::error::SendError<T>` wraps the unsent value, so any enum with
+`String`, `Vec`, or `Arc` fields in any variant triggers this lint.
+
+**Rule:** When a function wrapping `.send()` only needs to signal success/failure, return `bool`:
+
+```rust
+// WRONG — WebEvent has String-bearing variants; SendError<WebEvent> > 128 bytes
+pub fn notify(session: &BuildSession, ev: MyEvent) -> Result<(), SendError<WebEvent>> {
+    session.event_tx.send(WebEvent::MyVariant(ev)).map_err(|e| e)
+}
+
+// CORRECT — the bool is sufficient; the error payload carries no actionable information
+pub fn notify(session: &BuildSession, ev: MyEvent) -> bool {
+    session.event_tx.send(WebEvent::MyVariant(ev)).is_ok()
+}
+```
+
+The `SendError<T>` payload is the unsent value — it signals only "channel closed", which the
+caller can reconstruct if needed. This applies equally to `tokio::sync::broadcast::Sender` and
+`std::sync::mpsc::Sender`.
 
 ### 4.4 Async Patterns
 
