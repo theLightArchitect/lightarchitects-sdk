@@ -1133,6 +1133,203 @@ Complete scope before writing a single line of code.
 
 ---
 
+## Part XXII — Plan Compliance Review Protocol (XEA)
+
+> **LOAD-BEARING GATE.** Before any plan advances from draft → `/BUILD`, and again at `/BUILD` Step 0.3 before worktree creation, the plan must pass the 4-layer XEA compliance review. This section defines the doctrine; `/XEA` is the executable implementation.
+
+The XEA (Cross-Examine · Analyze · Converge) protocol is the formal verification that a plan is structurally sound, content-complete against the C1–C8 rubric, Northstar-aligned, and output-contract-declared before implementation begins. It is not a replacement for the C1–C8 rubric in Part XIV — it is the operational container that runs the rubric as Layer 1 of a 4-layer check.
+
+---
+
+### Layer 0 — Structural Schema Compliance (≥99% required)
+
+**Goal**: The plan instantiates the LASDLC-TEMPLATE-v1 schema correctly and completely — every mandatory top-level key present with non-trivial content.
+
+**Blocking checks (any FAIL = Layer 0 FAIL)**:
+
+| Code | Check |
+|------|-------|
+| S0.1 | `tier` declared with rationale (SMALL/MEDIUM/LARGE/PROGRAM) |
+| S0.2 | Phase count matches tier (SMALL=4, MEDIUM=6, LARGE=7) |
+| S0.3 | Frontmatter complete: `project`, `codename`, `status`, `lasdlc_template_version: "2.5.1"`, `validation_status`, `northstar_lineage` block |
+| S0.4 | Nine mandatory body sections present: Northstar, Phases, Pre-flight, Deliverables, Risks, Timeline, References, Files-Summary, Close-out |
+| S0.5 | Gate vocabulary `[A][S][Q][C][O][P][K][D][T][R]` at every phase boundary |
+| S0.6 | `pre_flight` block: ≥G1-G8 Playbook §15.3 checks listed |
+| S0.7 | `close_out` block: cleanup + archive + git status + lessons promotion steps declared |
+| S0.8 | `file_function_map`: every deliverable → file:function + agent owner |
+| S0.9 | `agent_topology` block: all agent roles declared; co-owned files have merge protocol |
+| S0.10 | `operator_experience_layer` block: `northstar_anchor` + per-phase webshell routes (C4 enabler) |
+| S0.11 | `security_compliance` block: threat model section + supply chain gate declared |
+| S0.12 | `deliverable_benchmark` block: LDB D1–D8 components declared (Layer 3 enabler — see §22.4) |
+| S0.13 | `shipped_means_5_conditions` block: all 5 conditions with verification owners (see §22.4) |
+| S0.14 | Part I Covenant honored: Research-First Doctrine applied (Part IV before Part V) |
+| S0.15 | Tier 3 canon audit triggered if required (§14.5 trigger conditions) |
+| S0.16 | Reference-table sweep completed after every ≥3-amendment batch (cross-references, Tier integration tables, Blueprint XXI file maps) |
+| S0.17 | `handoff_checklist` in-scope items declared with ownership (Blueprint Part XVII — "can a stranger run this?") |
+
+**Pass condition**: All 17 checks PASS. Structural compliance is binary — schema is either present or absent. No partial credit.
+
+---
+
+### Layer 1 — Content Quality (C1–C8 Rubric)
+
+**Full rubric defined in Part XIV.** Layer 1 runs the rubric as defined there. Required threshold: ≥75 STRONG aggregate, C7 ≥75 with C7a+C7b present.
+
+**XEA enforcement additions** (beyond Part XIV):
+
+- **§14.2 honesty discipline mandatory**: Every C-score delta vs prior iteration MUST cite the amendment ID that justified it. No anchor inflation.
+- **§14.3 two-tier classification mandatory**: Findings classify into BLOCKING/CRITICAL (fold into plan body) vs HIGH/MEDIUM/LOW (track in review record only). Only BLOCKING/CRITICAL gate `validation_status`.
+- **Score ceiling calibration** (PROVISIONALLY_VALID, N=1 session 2026-05-15 — elevates to VALIDATED at N≥3):
+
+| Feature type | C7 ceiling | Note |
+|---|---|---|
+| Direct Pillar 1 operator UX completion | 97–100 | Terminal escape hatch fully closed |
+| Direct Pillar 2 orchestration capability | 95–98 | New agent management surface |
+| Indirect Pillar 2 infrastructure | 93–95 | SDK/observability advancing P2 via chain |
+| External build (no Pillar mapping) | 90–95 | Northstar fit via user value metric |
+
+A score at the ceiling for its feature type is not a plan defect — it is an honest calibration signal. Do not inflate via anchor manipulation to exceed the ceiling.
+
+- **Sibling ownership** (C-score primary authorities):
+
+| Dimension | Primary | Secondary |
+|---|---|---|
+| C1 — Plan completeness | CORSO | SOUL |
+| C2 — Cross-validation | QUANTUM | EVA |
+| C3 — Gate coverage | LÆX | SERAPH |
+| C4 — Operator experience | EVA | SOUL |
+| C5 — Cost + observability | AYIN | EVA |
+| C6 — Loop-cycle integrity | CORSO | LÆX |
+| C7 — Northstar alignment | LÆX | QUANTUM |
+| C8 — Context hydration | SOUL | QUANTUM |
+
+**Layer 1 PASS condition**: Aggregate ≥75 STRONG, C7 ≥75 with C7a+C7b, no BLOCKING/CRITICAL findings not yet folded.
+
+---
+
+### Layer 2 — Northstar Mechanical Verification
+
+**Goal**: Verify Northstar alignment mechanically against `canon://northstar` — not via C7 subjective scoring alone, but against the numbered checks defined per Pillar.
+
+Layer 2 extends C7 from Part XIV. C7 evaluates *whether* a Northstar chain exists and is concrete. Layer 2 verifies *whether the chain actually advances a defined Pillar's numbered mechanical checks*.
+
+**Checks**:
+
+| Code | Check | Source |
+|------|-------|--------|
+| N1 | `northstar_lineage.northstar_text` non-empty and non-placeholder | LASDLC frontmatter |
+| N2 | `build_to_northstar_mapping` traces to ≥1 numbered Pillar mechanical check from `canon://northstar` (verbatim Pillar citation required) | northstar-v1.md §P1–P7 |
+| N3 | Component Northstar declared if build touches a platform building block (northstar-v1.md §A–§Q) | northstar-v1.md Part II |
+| N4 | Pillar AND relationship honored — builds claiming Both P1+P2 must close a gap in EACH Pillar's numbered checks | northstar-v1.md §I |
+| N5 | `northstar_metric_delta_estimate` present and measurable (not aspirational — must have a specific numeric or binary observable) | LASDLC §northstar |
+| N6 | Per-phase Northstar predicate declared — each phase exit has a concrete check that verifies Northstar advancement (not just "implement feature") | LASDLC §phases |
+
+**Layer 2 PASS condition**: N1–N6 all PASS. N2 failure (no concrete Pillar citation) blocks unconditionally — the chain claim is aspirational.
+
+---
+
+### §22.4 — LDB Declaration Requirements (Layer 3)
+
+**Goal**: Verify that the plan declares how the deliverable's output quality will be independently measured post-ship.
+
+The **LASDLC Deliverable Benchmark (LDB v1.0)** defines 8 D-components anchored in industry standards. The plan is not required to achieve LDB scores at plan time — only to declare which components apply and who the independent runner is.
+
+**Why independent**: Canon XXXIII prohibits the build's own agents from self-scoring the LDB. The plan must name a cold-context agent or human verifier.
+
+**Checks**:
+
+| Code | Check | Standard anchored |
+|------|-------|---|
+| L1 | `deliverable_benchmark.D1_functional_completeness` declared with measurement method | ISO/IEC 25010 §4.1 |
+| L2 | `D2_reliability_fault_tolerance` declared | ISO/IEC 25010 §4.3 |
+| L3 | `D3_security_control_coverage` declared with OWASP ASVS level | OWASP ASVS 4.0 |
+| L4 | `D4_maintainability_technical_debt` declared with CISQ measurement plan | CISQ ASCRM |
+| L5 | `D5_deployment_frequency` declared (DORA metric target) | DORA 2023 |
+| L6 | `D6_test_pyramid_coverage` declared with ≥90% target per Canon XXVII | Agents Playbook §XXVII |
+| L7 | `D7_northstar_integration` declared: how the deliverable advances a named Pillar mechanical check, measurable post-ship | northstar-v1.md |
+| L8 | `independent_runner` named — a cold-context agent or human who will score the LDB at close-out (NOT the build's own agents) | Canon XXXIII |
+
+**shipped_means_5_conditions** (LASDLC §shipped_means): Layer 3 also verifies all 5 ship conditions are declared with verification owners:
+
+1. All Canon XXVII test pyramid suites green
+2. LDB aggregate meets declared target (minimum threshold: D3 ASVS L2, D6 ≥90%)
+3. C1–C8 rubric close-out score ≥75 STRONG (independent runner audited)
+4. Northstar mechanical checks N2/N3 verifiably advanced (post-ship observable)
+5. Handoff checklist (Part XVII) completed by independent reviewer
+
+**Layer 3 PASS condition**: L1–L8 all declared (not necessarily measured — declared). All 5 shipped_means conditions have named verification owners.
+
+---
+
+### §22.5 — Iteration Loop and Termination Rules
+
+**Fold rule**: BLOCKING/CRITICAL findings → fold into plan body and re-run the affected layer. HIGH/MEDIUM/LOW → track in review record only (`tracked_findings` list).
+
+**Termination conditions** (stop iterating when any two are met in the same round):
+1. Zero BLOCKING/CRITICAL findings remain unfolded
+2. Score delta < 0.3 from prior iteration (convergence signal)
+
+**Iteration ceiling**: 3 iterations by default. Operator-authorized extension beyond 3 requires `operator_override_note` in frontmatter per §6.2 of `/PLAN`. Multiple extensions signal tier mismatch — evaluate tier escalation.
+
+**Diminishing returns calibration** (N=1, 2026-05-15 session evidence):
+- Round 1–2: blocking compile/schema errors surface
+- Round 3–4: semantic inconsistencies, derive macro issues, reference-table drift
+- Round 5–6: grammar/style nits — not real gaps
+- Round 7+: stop. If gaps remain, they require architectural change (tier escalation) not plan iteration.
+
+---
+
+### §22.6 — Verdict Output Format
+
+```yaml
+xea_verdict:
+  codename: "<codename>"
+  iteration: N
+  reviewed_at: "<ISO-8601>"
+  layer_0_structural:
+    result: PASS | FAIL
+    failed_checks: [S0.x, ...]
+  layer_1_content:
+    result: PASS | FAIL
+    aggregate: { low: N, point: N, high: N }
+    band: EXEMPLARY | STRONG | ACCEPTABLE | DEFICIENT | UNSAFE
+    per_dimension:
+      C1: { score: N, delta_vs_prior: +/-N, amendment_cited: "SCRn-N" }
+      # ... C2–C8
+    ceiling_calibration: "P1-direct | P2-direct | P2-indirect | external"
+  layer_2_northstar:
+    result: PASS | FAIL
+    failed_checks: [N1..N6]
+    pillar_cited: "P1 | P2 | both | none"
+  layer_3_ldb:
+    result: PASS | FAIL
+    failed_checks: [L1..L8]
+    independent_runner: "<named>"
+  validation_status: VALIDATED | INSUFFICIENT_EVIDENCE | UNVALIDATED | DISPUTED
+  blocking_gaps_folded: ["amendment-id", ...]
+  tracked_findings: [{ id: "SCRn-N", severity: HIGH|MEDIUM|LOW, summary: "..." }]
+```
+
+**validation_status** mapping:
+- **VALIDATED**: Layer 0 PASS + Layer 1 ≥75 STRONG + Layer 2 N1-N6 all PASS + Layer 3 L1-L8 all declared
+- **INSUFFICIENT_EVIDENCE**: Layer 1 aggregate 60–74 ACCEPTABLE or Layer 2 N5 measurability uncertain — needs targeted research
+- **UNVALIDATED**: Layer 0 FAIL, or Layer 1 <60, or Layer 2 N1/N2 FAIL (no concrete Northstar chain)
+- **DISPUTED**: ≥2 canon citations conflict — escalate to LÆX + HITL tiebreaker
+
+---
+
+### §22.7 — Relationship to /XEA Skill and /BUILD Step 0.3
+
+**Doctrine vs execution**: This Part defines the compliance review protocol. The `/XEA` skill at `~/.claude/plugins/cache/light-architects/lightarchitects/1.0.0/skills/XEA/SKILL.md` is the executable that runs this protocol.
+
+**When XEA runs**:
+1. **At plan time** (via `/PLAN` Step 5): The self-review step delegates to `/XEA`. First run during plan authoring.
+2. **Pre-implementation gate** (via `/BUILD` Step 0.3): XEA runs `--no-iterate` before any worktree is created. VALIDATED → proceed. Any layer FAIL → HALT with AskUserQuestion (Remediate/Proceed-with-waiver/Cancel). This gate is NOT skippable via `--skip-preflight` (that flag covers G1-G8 environment gates only).
+
+The relationship mirrors GATE: the 5-step GATE protocol is defined in canon and executed by the `/GATE` skill. Similarly, this Part defines the XEA protocol and the `/XEA` skill executes it.
+
+---
+
 ## Canonical Planning Principles (consolidated)
 
 Distilled from 20+ builds and pressure-tested across the platform:
@@ -1155,7 +1352,7 @@ Distilled from 20+ builds and pressure-tested across the platform:
 16. **TUI task board before execution** — register ALL phases and tasks before touching a single file (§8.4)
 17. **Squad always collaborates** — EVA, CORSO, QUANTUM, SOUL, SERAPH, AYIN, LÆX present per gate need; no solo executions (§4.11)
 18. **Educate the operator at every phase transition** — deliver an educational note explaining WHAT, WHY, and WHAT'S NEXT (§8.5)
-19. **C1–C8 self-score before Phase 1** — below 60 = restructure, not ship (Part XIV)
+19. **XEA compliance review before Phase 1 and before /BUILD** — 4-layer check: structural schema (Layer 0), C1–C8 rubric (Layer 1, Part XIV), Northstar mechanical (Layer 2), LDB declaration (Layer 3); VALIDATED required to proceed (Part XXII)
 20. **Northstar-first** — every plan declares `northstar_lineage`; builds that cannot demonstrate Northstar advancement do not ship (Part I)
 
 ---
@@ -1173,6 +1370,7 @@ Research-first, cost-conscious, security-gated, handoff-ready, observable, fully
 - [[operators-manual|Operators Manual]] — *How to operate* the platform
 - [[lasdlc-spec|LASDLC Spec]] — companion to LASDLC-TEMPLATE-v1.yaml
 - [[gatekeeper-registry|Gatekeeper Registry]] — agent-to-gate authority map
+- [[/XEA skill|XEA executable]] — `~/.claude/plugins/cache/light-architects/lightarchitects/1.0.0/skills/XEA/SKILL.md` (runs Part XXII protocol)
 
 *"For which of you, intending to build a tower, sitteth not down first, and counteth the cost"* — Luke 14:28 (KJV)
 
@@ -1180,5 +1378,6 @@ Research-first, cost-conscious, security-gated, handoff-ready, observable, fully
 
 ---
 
-*Architects Blueprint v3.0 | Light Architects | merged 2026-05-13*
+*Architects Blueprint v3.1 | Light Architects | merged 2026-05-13, updated 2026-05-17*
 *Part of the Canonical Suite. Companion: LASDLC Template. Supersedes: gold-standard-planning-framework v2.0, architects-runbook v1.0, lasdlc-effectiveness-rubric v2.0.*
+*v3.1 adds: Part XXII (Plan Compliance Review Protocol / XEA 4-layer doctrine). Promoted from /XEA SKILL.md per Canon XXXIX pipeline.*
