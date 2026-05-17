@@ -16,6 +16,15 @@
   let viewMode = $state<ViewMode>('kanban');
   let build = $derived($activeBuild);
 
+  // helix-viz-remap: Turn-zoom deep-link params (P6 check 7)
+  let phaseId  = $state<string | null>(null);
+  let waveId   = $state<string | null>(null);
+  let agentKey = $state<string | null>(null);
+  // 'turn' when all three deep-link params are present, 'build' otherwise
+  let zoomLevel = $derived<'build' | 'turn'>(
+    phaseId !== null && waveId !== null && agentKey !== null ? 'turn' : 'build'
+  );
+
   /** Thinking entries from the activity feed for the active build (P1-2). */
   let thinkingEntries = $derived(
     $activityFeed.filter(
@@ -35,6 +44,10 @@
     if (params.view && (VIEW_MODES as string[]).includes(params.view)) {
       viewMode = params.view as ViewMode;
     }
+    // helix-viz-remap: sync Turn-zoom deep-link params
+    phaseId  = params.phaseId  ?? null;
+    waveId   = params.waveId   ?? null;
+    agentKey = params.agentKey ?? null;
   }
 
   // Hydrate currentBuildId + viewMode when navigating directly to /builds/:id/:view
@@ -58,24 +71,40 @@
 
 <div class="build-detail-shell">
   {#if build}
-    <!-- View mode tab bar -->
+    <!-- ZoomBreadcrumb + view-mode tab bar (helix-viz-remap P6 check 7) -->
     <div class="view-tab-bar">
-      <div class="build-crumb">
-        <span class="crumb-name">{build.name}</span>
-        <span class="crumb-id">{build.id.slice(0, 8)}</span>
-      </div>
-      <div class="view-tabs">
-        {#each VIEW_TABS as t}
+      <nav aria-label="breadcrumb" class="zoom-breadcrumb">
+        <button
+          class="crumb-seg"
+          onclick={() => navigate('/builds', {})}
+        >PORTFOLIO</button>
+        <span class="crumb-sep" aria-hidden="true">›</span>
+        {#if zoomLevel === 'turn'}
           <button
-            class="view-tab"
-            class:active={viewMode === t.key}
-            title={t.desc}
-            onclick={() => navigate('/builds/:buildId/:view', { buildId: build.id, view: t.key })}
-          >
-            {t.label}
-          </button>
-        {/each}
-      </div>
+            class="crumb-seg"
+            onclick={() => navigate('/builds/:buildId', { buildId: build.id })}
+          >{build.name}</button>
+          <span class="crumb-sep" aria-hidden="true">›</span>
+          <span class="crumb-seg crumb-current" aria-current="page">{agentKey}</span>
+        {:else}
+          <span class="crumb-seg crumb-current" aria-current="page">{build.name}</span>
+          <span class="crumb-id">{build.id.slice(0, 8)}</span>
+        {/if}
+      </nav>
+      {#if zoomLevel === 'build'}
+        <div class="view-tabs">
+          {#each VIEW_TABS as t}
+            <button
+              class="view-tab"
+              class:active={viewMode === t.key}
+              title={t.desc}
+              onclick={() => navigate('/builds/:buildId/:view', { buildId: build.id, view: t.key })}
+            >
+              {t.label}
+            </button>
+          {/each}
+        </div>
+      {/if}
     </div>
 
     <!-- P1-2: Collapsible thinking entries from copilot activity feed -->
@@ -90,21 +119,37 @@
       </div>
     {/if}
 
-    <div class="view-content" data-mode={viewMode}>
-      {#if viewMode === 'kanban'}
-        <KanbanView />
-      {:else if viewMode === 'list'}
-        <ListView />
-      {:else if viewMode === 'operator'}
-        <OperatorView />
-      {:else if viewMode === 'manifest'}
-        <ManifestView />
-      {:else if viewMode === 'comms'}
-        <CommsView />
-      {:else}
-        <PlanView />
-      {/if}
-    </div>
+    <!-- helix-viz-remap: Turn zoom replaces tab content (P6 check 7) -->
+    <!-- Use {#if} (not CSS visibility) so child SSE connections close on nav -->
+    {#if zoomLevel === 'turn'}
+      <div class="turn-panel">
+        <dl class="turn-meta">
+          <dt class="turn-label">AGENT</dt>
+          <dd class="turn-value">{agentKey}</dd>
+          <dt class="turn-label">PHASE</dt>
+          <dd class="turn-value">{phaseId}</dd>
+          <dt class="turn-label">WAVE</dt>
+          <dd class="turn-value">{waveId}</dd>
+        </dl>
+      </div>
+    {:else}
+      <div class="view-content" data-mode={viewMode}>
+        {#if viewMode === 'kanban'}
+          <KanbanView />
+        {:else if viewMode === 'list'}
+          <ListView />
+        {:else if viewMode === 'operator'}
+          <OperatorView />
+        {:else if viewMode === 'manifest'}
+          <ManifestView />
+        {:else if viewMode === 'comms'}
+          <CommsView />
+        {:else}
+          <PlanView />
+        {/if}
+        <!-- SUPERVISOR_PANEL_SLOT -->
+      </div>
+    {/if}
   {:else}
     <div class="build-detail-empty">
       <span>— no build selected —</span>
@@ -167,6 +212,56 @@
     gap: 0;
   }
 
+  /* helix-viz-remap: ZoomBreadcrumb (replaces build-crumb) */
+  .zoom-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 12px;
+    border-right: 1px solid var(--la-hair-faint);
+    height: 36px;
+    flex-shrink: 0;
+  }
+
+  .crumb-seg {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--la-text-dim);
+    background: transparent;
+    border: none;
+    padding: 0 2px;
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .crumb-seg:hover { color: var(--la-text-base); }
+  .crumb-seg:not(button) { cursor: default; }
+
+  .crumb-current {
+    color: var(--la-text-base);
+    cursor: default;
+  }
+
+  .crumb-sep {
+    font-size: 10px;
+    color: var(--la-text-mute);
+    user-select: none;
+    flex-shrink: 0;
+  }
+
+  /* keep .crumb-id for the id badge at build zoom */
+  .crumb-id {
+    font-size: 9px;
+    color: var(--la-text-mute);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+  }
+
+  /* .build-crumb kept for backwards-compat (unused in template, CSS only) */
   .build-crumb {
     display: flex;
     align-items: baseline;
@@ -186,13 +281,6 @@
     max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .crumb-id {
-    font-size: 9px;
-    color: var(--la-text-mute);
-    font-variant-numeric: tabular-nums;
-    letter-spacing: 0.04em;
   }
 
   .view-tabs {
@@ -228,6 +316,38 @@
     flex: 1;
     overflow: hidden;
     min-height: 0;
+  }
+
+  /* helix-viz-remap: Turn zoom panel (P6 check 7) */
+  .turn-panel {
+    flex: 1;
+    overflow: auto;
+    padding: 24px;
+    background: var(--la-bg-base);
+    min-height: 0;
+  }
+
+  .turn-meta {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 16px;
+    margin: 0;
+  }
+
+  .turn-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: var(--la-text-mute);
+    text-transform: uppercase;
+    padding-top: 2px;
+  }
+
+  .turn-value {
+    font-size: 12px;
+    color: var(--la-text-base);
+    font-family: var(--la-font-mono);
+    letter-spacing: 0.03em;
   }
 
   .build-detail-empty {

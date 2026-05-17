@@ -155,6 +155,25 @@
     };
   });
 
+  // helix-viz-remap P6 check 8 — cold-start: seed helixEntries from the
+  // REST snapshot so the render loop spawns active nodes for entries that
+  // arrived before this component mounted. Skipped if SSE already populated
+  // the store (compare-and-set via update callback).
+  $effect(() => {
+    let cancelled = false;
+    api.getHelixNodes({ limit: 100 })
+      .then(res => {
+        if (cancelled) return;
+        helixEntries.update(current => current.length === 0 ? res.nodes : current);
+      })
+      .catch(() => {
+        // Endpoint may be absent on older server builds — silent ignore.
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+
   // Garbage-collect expired lineage pulses every 500ms.
   $effect(() => {
     const id = setInterval(() => {

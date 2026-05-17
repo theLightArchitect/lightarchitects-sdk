@@ -536,6 +536,11 @@ pub fn build_app(state: AppState) -> Router {
             "/api/soul/convergences",
             get(events::soul_routes::convergences_handler),
         )
+        // ── helix-viz-remap: helix node snapshot (Helix3D cold-start) ──────
+        .route(
+            "/api/helix/nodes",
+            get(events::soul_routes::helix_nodes_handler),
+        )
         // ── Phase 20b.3: parity verification endpoint ─────────────────────
         .route(
             "/api/debug/parity",
