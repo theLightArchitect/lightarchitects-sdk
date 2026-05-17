@@ -638,7 +638,7 @@ The Northstar is constitutional-tier. Amendments follow the full Canon XXXIX pip
 | **§O Tool Surface Parity** | ❌ Not started | MCP enumeration 🔄 (Claude Code MCP connect ✅, webshell UI surface inventory ❌); plugin tool invocability ❌; skill surface parity ❌; gap visibility ❌ |
 | **§P UI-to-Copilot Synthesis** | ❌ Not started | Typed context schemas ❌; two-path routing ❌; token budget enforcement ❌; prompt transparency ❌; pre-flight validation ❌; domain agent routing contract ❌ |
 | **§Q Copilot-Supervised Orchestration** | ❌ Not started | build.northstar_text capture ❌; northstar injection ❌; per-wave evaluation ❌; SSE supervisor stream ❌; drift detection ❌; next-step proposal cards ❌; supervisor state API ❌ |
-| **§R Platform & User Vault Architecture** | ❌ Not started | Platform vault (`lightarchitects-sdk/standards/`) not instantiated ❌; canon docs still in `soul/helix/user/standards/` as direct git files ❌; symlink not created ❌; write discipline not enforced ❌; Neo4j `scope_tier` not applied to canon entries ❌ |
+| **§R Platform & User Vault Architecture** | ✅ Complete (2026-05-16) | Platform vault (`lightarchitects-sdk/standards/`) instantiated ✅; canon docs in SDK git (symlink `soul/helix/user/standards/` → `lightarchitects-sdk/standards/`) ✅; write discipline enforced (`is_platform_read_only()` blocks vault writes to `user/standards/` subtree) ✅; Neo4j `scope_tier` applied — 3,082 Steps tagged (W0d) ✅; consolidator ingests SDK standards as Platform-tier extra root ✅ |
 
 ---
 
