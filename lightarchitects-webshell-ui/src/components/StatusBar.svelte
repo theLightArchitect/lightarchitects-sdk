@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
   import { ayinStatus, builds, terminalConnected, authProfile, authStatus, agentTokenUsage } from '$lib/stores';
   import { STATUS_COLORS } from '$lib/design-tokens';
+  import { api } from '$lib/api';
+  import type { OverallStatus } from '$lib/types';
 
   // Auth state takes precedence over connection state — a 401/403 is a more
   // urgent operator signal than "reconnecting" (#13 second-half: AuthBanner
@@ -25,9 +28,45 @@
   // Auth profile indicator
   let profileColor = $derived($authProfile === 'anthropic' ? '#F59E0B' : $authProfile === 'lightarchitects' ? '#22C55E' : '#6366F1');
   let profileLabel = $derived($authProfile === 'anthropic' ? 'Anthropic' : $authProfile === 'lightarchitects' ? 'CLI' : 'Ollama');
+
+  // Preflight dot — unauthenticated poll every 30 s so the badge stays current
+  // without requiring the operator to open the panel.
+  let preflightOverall = $state<OverallStatus | null>(null);
+
+  function preflightDotColor(o: OverallStatus | null): string {
+    if (o === 'Ready')    return '#22c55e';
+    if (o === 'Degraded') return '#f59e0b';
+    if (o === 'Blocked')  return '#ef4444';
+    return '#6b7280';
+  }
+
+  function preflightDotLabel(o: OverallStatus | null): string {
+    if (o === 'Ready')    return 'infra: ready';
+    if (o === 'Degraded') return 'infra: degraded';
+    if (o === 'Blocked')  return 'infra: blocked';
+    return 'infra: …';
+  }
+
+  async function pollPreflight() {
+    try {
+      const r = await api.fetchPreflight();
+      preflightOverall = r.overall;
+    } catch {
+      // Silently ignore — the dot stays at its last-known state.
+    }
+  }
+
+  let pollInterval: ReturnType<typeof setInterval> | undefined;
+  onMount(() => {
+    void pollPreflight();
+    pollInterval = setInterval(() => { void pollPreflight(); }, 30_000);
+  });
+  onDestroy(() => {
+    clearInterval(pollInterval);
+  });
 </script>
 
-<div class="absolute bottom-[12px] left-[12px] flex items-center gap-[6px] pointer-events-none z-10 bg-[var(--la-bg-elev-1)]/80 px-2 py-1 rounded backdrop-blur-sm border border-[var(--la-drawer-border)]">
+<div class="absolute bottom-[12px] left-[12px] flex items-center gap-[6px] pointer-events-auto z-10 bg-[var(--la-bg-elev-1)]/80 px-2 py-1 rounded backdrop-blur-sm border border-[var(--la-drawer-border)]">
   <!-- AYIN status (also surfaces auth failures from sse.ts; banner offers recovery) -->
   <div
     class="w-[7px] h-[7px] rounded-full shrink-0"
@@ -68,6 +107,15 @@
     style="background-color: {profileColor}; box-shadow: 0 0 4px {profileColor}"
   ></div>
   <span class="text-[11px] text-[var(--la-text-label)] font-mono leading-none">{profileLabel}</span>
+
+  <div class="w-px h-3 bg-[var(--la-hair-strong)] mx-1"></div>
+
+  <!-- Preflight readiness dot -->
+  <div
+    class="w-[7px] h-[7px] rounded-full shrink-0"
+    style="background-color: {preflightDotColor(preflightOverall)}; box-shadow: 0 0 4px {preflightDotColor(preflightOverall)}"
+  ></div>
+  <span class="text-[11px] text-[var(--la-text-label)] font-mono leading-none">{preflightDotLabel(preflightOverall)}</span>
 
   {#if $agentTokenUsage.input > 0}
     <div class="w-px h-3 bg-[var(--la-hair-strong)] mx-1"></div>

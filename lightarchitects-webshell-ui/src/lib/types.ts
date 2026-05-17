@@ -1091,3 +1091,27 @@ export interface PlanCommitRequest {
   body:            string;
   idempotency_key?: string;
 }
+
+// ── Preflight ──────────────────────────────────────────────────────────────
+
+export type CheckStatus = 'Pass' | 'Warn' | 'Fail';
+export type CheckCategory = 'Core' | 'Important' | 'Optional';
+export type OverallStatus = 'Ready' | 'Degraded' | 'Blocked';
+
+/** One infrastructure dependency check as returned by `GET /api/preflight`. */
+export interface CheckResult {
+  id:           string;
+  label:        string;
+  category:     CheckCategory;
+  status:       CheckStatus;
+  detail:       string;
+  remediation?: string;
+}
+
+/** Full preflight report — structured readiness state of the webshell system. */
+export interface PreflightReport {
+  timestamp:  string;
+  overall:    OverallStatus;
+  checks:     CheckResult[];
+  elapsed_ms: number;
+}

@@ -71,15 +71,6 @@ fn is_valid_keychain_param(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
-fn tilde_path(absolute: &str) -> String {
-    if let Ok(home) = std::env::var("HOME") {
-        if let Some(rel) = absolute.strip_prefix(&home) {
-            return format!("~{rel}");
-        }
-    }
-    absolute.to_owned()
-}
-
 enum KeychainResult {
     Found,
     /// Exit 44 — `errSecItemNotFound`.
@@ -176,11 +167,12 @@ pub async fn check_shell() -> CheckResult {
         ),
         Ok(shell) => {
             if Path::new(&shell).is_file() {
-                (CheckStatus::Pass, tilde_path(&shell))
+                // Avoid echoing the resolved path on the unauthenticated endpoint.
+                (CheckStatus::Pass, "$SHELL set and executable".to_owned())
             } else {
                 (
                     CheckStatus::Fail,
-                    format!("$SHELL not found or not a file: {}", tilde_path(&shell)),
+                    "$SHELL is set but not a valid executable".to_owned(),
                 )
             }
         }
@@ -229,11 +221,12 @@ pub async fn check_agent_binary(agent: &AgentSession) -> CheckResult {
     if let AgentSession::LightarchitectsNative(c) = agent {
         let resolved = crate::copilot::resolve_binary(&c.binary);
         let (status, detail) = if Path::new(&resolved).is_file() {
-            (CheckStatus::Pass, tilde_path(&resolved))
+            (CheckStatus::Pass, "lightarchitects-cli found".to_owned())
         } else {
+            // Avoid disclosing the resolved path on the unauthenticated endpoint.
             (
                 CheckStatus::Fail,
-                format!("{} not found — check your PATH", tilde_path(&c.binary)),
+                format!("{} not found — check your PATH", c.binary),
             )
         };
         return CheckResult {
@@ -267,7 +260,7 @@ pub async fn check_agent_binary(agent: &AgentSession) -> CheckResult {
 
     let resolved = crate::copilot::resolve_binary(name);
     let (status, detail) = if Path::new(&resolved).is_file() {
-        (CheckStatus::Pass, tilde_path(&resolved))
+        (CheckStatus::Pass, format!("{name} found"))
     } else {
         (
             CheckStatus::Fail,

@@ -11,6 +11,7 @@ import type {
   TrainingConfig, TrainingRun,
   PlanDraftRequest, PlanDraftResponseEnvelope, PlanDraftEvent, PlanCommitRequest,
   NorthstarEvaluationEvent, SupervisorState,
+  PreflightReport,
 } from './types';
 import type { SetupInfo, ModelOption, SaveRequest } from './setup';
 
@@ -426,4 +427,30 @@ export const api = {
       throw new Error(`API ${res.status}: ${res.statusText} — /builds/${buildId}/supervisor/acknowledge`);
     }
   },
+
+  // ── Preflight (replicated-greeting-robin) ────────────────────────────────
+
+  /**
+   * Fetch the current preflight report.
+   *
+   * Unauthenticated — available before the token is entered so the UI can
+   * surface a "Blocked" status on the init screen. Returns the last
+   * `PreflightReport` computed at startup (or after the last refresh).
+   */
+  fetchPreflight: (): Promise<PreflightReport> =>
+    fetch(`${API_BASE}/preflight`)
+      .then(r => { if (!r.ok) throw new Error(`preflight: ${r.status}`); return r.json() as Promise<PreflightReport>; }),
+
+  /**
+   * Trigger an on-demand preflight re-run.
+   *
+   * Requires auth. Rate-limited to 1 request per 10 s server-side to avoid
+   * macOS Keychain ACL dialog spam. Returns 429 if called too quickly —
+   * callers should surface a "Please wait" message in that case.
+   */
+  refreshPreflight: (): Promise<PreflightReport> =>
+    fetch(`${API_BASE}/preflight/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    }).then(r => { if (!r.ok) throw new Error(`preflight/refresh: ${r.status}`); return r.json() as Promise<PreflightReport>; }),
 };

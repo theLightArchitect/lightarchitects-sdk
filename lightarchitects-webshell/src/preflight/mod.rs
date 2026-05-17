@@ -111,8 +111,8 @@ pub async fn run_full(
     docker: DockerCapability,
     basic: BasicPreflight,
 ) -> PreflightReport {
-    let span = tracing::info_span!("preflight.run_full");
-    let _guard = span.entered();
+    // `EnteredSpan` is `!Send` — do not hold it across the `tokio::join!` await.
+    // Log via info! at completion instead; callers can instrument via `.instrument()`.
     let started = Instant::now();
 
     let (
