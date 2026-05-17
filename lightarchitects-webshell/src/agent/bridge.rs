@@ -27,6 +27,7 @@ use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{info, warn};
 
+use crate::config::AgentSession;
 use crate::copilot::resolve_binary;
 use crate::session::BuildSession;
 
@@ -54,7 +55,12 @@ pub async fn spawn_bridge(
     control_rx: mpsc::Receiver<ControlMessage>,
     permission_queue: Arc<DashMap<String, oneshot::Sender<bool>>>,
 ) -> Option<Child> {
-    let binary = resolve_binary("lightarchitects");
+    let is_vibe = matches!(session.agent, AgentSession::MistralVibe(_));
+    let binary = if is_vibe {
+        resolve_binary("vibe-acp")
+    } else {
+        resolve_binary("lightarchitects")
+    };
     let mut cmd = tokio::process::Command::new(&binary);
 
     // Validate cwd before passing it to the child.
@@ -70,8 +76,12 @@ pub async fn spawn_bridge(
         }
     };
 
-    // Attempt streaming mode first (future flag).
-    cmd.arg("--stream-events").arg("--cwd").arg(&workdir);
+    if is_vibe {
+        // vibe-acp: ACP mode, pure NDJSON stdin/stdout — no CLI path flags.
+        cmd.current_dir(&workdir);
+    } else {
+        cmd.arg("--stream-events").arg("--cwd").arg(&workdir);
+    }
 
     // NOTE: ANTHROPIC_API_KEY is intentionally NOT injected here.
     // The CLI resolves its own credentials (keychain / config file) so that

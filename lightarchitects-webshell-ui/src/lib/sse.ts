@@ -360,8 +360,9 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
     }
     case 'copilot_response': {
       // Streaming copilot chunks from the backend.
-      // Payload: { chunk?: string, done?: boolean, sibling?: SiblingId }
-      const resp = event.data as { chunk?: string; done?: boolean; sibling?: SiblingId };
+      // Backend uses #[serde(tag = "type")] — fields are inlined at the top level,
+      // not nested under `data`. Read from `event` directly (same pattern as pillar_update).
+      const resp = event as unknown as { chunk?: string; done?: boolean; sibling?: SiblingId };
       copilotMessages.update(msgs => {
         const last = msgs[msgs.length - 1];
         if (last && last.role === 'assistant') {
@@ -606,6 +607,7 @@ export function connectGlobalSSE(): void {
         return;
       }
       authStatus.set('ok');
+      ayinStatus.set('connected');
       _resetGlobalBackoff();
       const reader = response.body.getReader();
       const decoder = new TextDecoder();

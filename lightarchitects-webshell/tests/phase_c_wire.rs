@@ -17,7 +17,7 @@
 //! `gateway ui.rs → webshell notify → SSE → browser` is correct at the
 //! Rust level.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, unsafe_code)]
 
 use std::{ffi::OsString, path::PathBuf, sync::Arc, time::Duration};
 
@@ -38,6 +38,12 @@ const TOKEN: &str = "phase-c-wire-token";
 /// test can look up notify tokens the way the gateway would (via env var
 /// in production).
 async fn spawn_server() -> (String, String, Arc<BuildRegistry>) {
+    // Redirect to a temp dir so no real setup.json is found — tests the
+    // CLI-default path without interference from the operator's saved config.
+    let tmp = std::env::temp_dir().join(format!("la-wire-test-{}", std::process::id()));
+    // SAFETY: integration tests run single-threaded; no concurrent env reads.
+    unsafe { std::env::set_var("LIGHTARCHITECTS_HOME", &tmp) };
+
     let cli = Cli {
         port: 0, // unused — TcpListener binds on its own
         host_cmd: OsString::from("echo"),
@@ -45,6 +51,9 @@ async fn spawn_server() -> (String, String, Arc<BuildRegistry>) {
         ..Default::default()
     };
     let cfg = Config::resolve_with_token(cli, Some(TOKEN.to_owned())).unwrap();
+    // SAFETY: restoring env immediately after config is resolved.
+    unsafe { std::env::remove_var("LIGHTARCHITECTS_HOME") };
+    let _ = std::fs::remove_dir_all(&tmp);
     let state = AppState::for_test(
         cfg,
         lightarchitects_webshell::container::DockerCapability::Unavailable,

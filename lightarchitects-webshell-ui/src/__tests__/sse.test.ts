@@ -240,9 +240,14 @@ describe('SSE _handleEvent', () => {
   });
 
   // --- copilot_response ---
+  // Backend uses #[serde(tag = "type")] — fields are inlined at the top level,
+  // not nested under `data`. Wire format: { type, chunk, done, sibling }.
   describe('copilot_response', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cr = (fields: Record<string, unknown>) => ({ type: 'copilot_response', ...fields } as any);
+
     it('creates new assistant message on first chunk', () => {
-      _handleEvent(makeEvent('copilot_response', { chunk: 'Hello' }));
+      _handleEvent(cr({ chunk: 'Hello' }));
       const msgs = get(copilotMessages);
       expect(msgs).toHaveLength(1);
       expect(msgs[0].role).toBe('assistant');
@@ -250,8 +255,8 @@ describe('SSE _handleEvent', () => {
     });
 
     it('appends chunk to existing assistant message', () => {
-      _handleEvent(makeEvent('copilot_response', { chunk: 'Hello' }));
-      _handleEvent(makeEvent('copilot_response', { chunk: ' world' }));
+      _handleEvent(cr({ chunk: 'Hello' }));
+      _handleEvent(cr({ chunk: ' world' }));
       const msgs = get(copilotMessages);
       expect(msgs).toHaveLength(1);
       expect(msgs[0].content).toBe('Hello world');
@@ -259,7 +264,7 @@ describe('SSE _handleEvent', () => {
 
     it('sets copilotLoading to false on done', () => {
       copilotLoading.set(true);
-      _handleEvent(makeEvent('copilot_response', { chunk: 'Done', done: true }));
+      _handleEvent(cr({ chunk: 'Done', done: true }));
       expect(get(copilotLoading)).toBe(false);
     });
 
@@ -267,7 +272,7 @@ describe('SSE _handleEvent', () => {
       copilotMessages.set([{
         id: 'u1', role: 'user', content: 'Question', timestamp: '',
       }]);
-      _handleEvent(makeEvent('copilot_response', { chunk: 'Answer' }));
+      _handleEvent(cr({ chunk: 'Answer' }));
       const msgs = get(copilotMessages);
       expect(msgs).toHaveLength(2);
       expect(msgs[1].role).toBe('assistant');
@@ -275,21 +280,21 @@ describe('SSE _handleEvent', () => {
     });
 
     it('handles empty chunk gracefully', () => {
-      _handleEvent(makeEvent('copilot_response', {}));
+      _handleEvent(cr({}));
       const msgs = get(copilotMessages);
       expect(msgs).toHaveLength(1);
       expect(msgs[0].content).toBe('');
     });
 
     it('preserves sibling field from SSE event', () => {
-      _handleEvent(makeEvent('copilot_response', { chunk: 'Result', sibling: 'corso' }));
+      _handleEvent(cr({ chunk: 'Result', sibling: 'corso' }));
       const msgs = get(copilotMessages);
       expect(msgs[0].sibling).toBe('corso');
     });
 
     it('does not set copilotLoading false without done flag', () => {
       copilotLoading.set(true);
-      _handleEvent(makeEvent('copilot_response', { chunk: 'Partial' }));
+      _handleEvent(cr({ chunk: 'Partial' }));
       expect(get(copilotLoading)).toBe(true);
     });
   });

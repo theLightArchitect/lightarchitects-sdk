@@ -33,6 +33,16 @@
       authField: null,
       authBadge: null,
     },
+    {
+      id: 'mistral-vibe',
+      agent: 'mistral_vibe',
+      label: 'Mistral Vibe',
+      description: 'Mistral AI Vibe coding agent',
+      polytopeType: 'pentachoron',
+      authKey: 'mistral_vibe' as const,
+      authField: null,
+      authBadge: null,
+    },
   ] as const;
 
   let selected = $state<string | null>($selectedBackend);
