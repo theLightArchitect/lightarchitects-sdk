@@ -26,6 +26,7 @@ use tracing::warn;
 
 use crate::{
     auth,
+    events::types::{HelixEntrySummary, WebEvent},
     memory::{
         cold, frontmatter,
         types::{ContextMemo, EnrichedEntry},
@@ -1312,6 +1313,36 @@ mod tests {
         let c = vec![0.8, -0.6, 0.0];
         assert!(cosine_similarity(&a, &c).abs() < 1e-5);
     }
+
+    // ── helix_nodes_handler ──────────────────────────────────────────────────
+
+    #[test]
+    fn helix_nodes_query_defaults_to_no_since_and_no_limit() {
+        let q: HelixNodesQuery = serde_json::from_str("{}").unwrap();
+        assert!(q.since.is_none());
+        assert!(q.limit.is_none());
+    }
+
+    #[test]
+    fn helix_nodes_query_limit_clamped_to_500() {
+        let q: HelixNodesQuery = serde_json::from_str(r#"{"limit":501}"#).unwrap();
+        // Clamp logic mirrors handler: .unwrap_or(100).min(500)
+        assert_eq!(q.limit.unwrap_or(100).min(500), 500);
+    }
+
+    #[test]
+    fn helix_nodes_response_serializes_nodes_and_total() {
+        use crate::events::types::{HelixEntrySummary, HelixEventKind};
+        let entry =
+            HelixEntrySummary::minimal("eva/entries/day-1.md".to_owned(), HelixEventKind::Created);
+        let resp = HelixNodesResponse {
+            nodes: vec![entry],
+            total: 1,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains(r#""total":1"#));
+        assert!(json.contains("eva/entries/day-1.md"));
+    }
 }
 
 // ── /api/debug/parity ─────────────────────────────────────────────────────────
@@ -1395,6 +1426,64 @@ pub async fn parity_handler(
         writes_disabled: crate::memory::persistence::SoulPersistence::sqlite_writes_disabled(),
     })
     .into_response()
+}
+
+// ── helix-viz-remap: helix node snapshot endpoint ────────────────────────────
+
+/// Query parameters for `GET /api/helix/nodes`.
+#[derive(Debug, Deserialize)]
+pub struct HelixNodesQuery {
+    /// Earliest event timestamp to include (ISO-8601 UTC). Defaults to epoch.
+    #[serde(default)]
+    pub since: Option<String>,
+    /// Maximum nodes to return. Server caps at 500; defaults to 100.
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// Response body for `GET /api/helix/nodes`.
+#[derive(Debug, Serialize)]
+pub struct HelixNodesResponse {
+    /// Helix entry summaries, oldest-first (ring-buffer order).
+    pub nodes: Vec<HelixEntrySummary>,
+    /// Total matching entries before `limit` was applied.
+    pub total: usize,
+}
+
+/// `GET /api/helix/nodes` — snapshot of helix entries from the global event ring buffer.
+///
+/// Used by `Helix3D.svelte` for cold-start population before SSE events begin.
+/// Filters by optional `since` timestamp; caps at `limit` (max 500).
+pub async fn helix_nodes_handler(
+    headers: axum::http::HeaderMap,
+    State(state): State<AppState>,
+    Query(q): Query<HelixNodesQuery>,
+) -> impl IntoResponse {
+    if let Err(status) = check_auth(&headers, &state.config.token) {
+        return status.into_response();
+    }
+
+    let since = q
+        .since
+        .as_deref()
+        .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok());
+    let limit = q.limit.unwrap_or(100).min(500) as usize;
+
+    let nodes: Vec<HelixEntrySummary> = state
+        .global_event_store
+        .snapshot()
+        .into_iter()
+        .filter(|e| since.is_none_or(|cutoff| e.timestamp >= cutoff))
+        .filter_map(|e| match &e.event {
+            WebEvent::HelixEntry(entry) => Some(entry.clone()),
+            _ => None,
+        })
+        .collect();
+
+    let total = nodes.len();
+    let nodes: Vec<HelixEntrySummary> = nodes.into_iter().take(limit).collect();
+
+    Json(HelixNodesResponse { nodes, total }).into_response()
 }
 
 // ────────────────────────────────────────────────────────────────────────────

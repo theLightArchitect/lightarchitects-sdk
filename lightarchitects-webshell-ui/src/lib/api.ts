@@ -6,7 +6,7 @@ import { authHeaders } from './auth';
 import type {
   Workspace, Finding, Artifact, BuildNotes, SiblingHealth,
   ConductorTask, ArenaStatus, BuildResponse,
-  ContextMemo, EnrichedHelixEntry,
+  ContextMemo, EnrichedHelixEntry, HelixEntrySsePayload,
   RetentionPolicy, CompactionSummary,
   TrainingConfig, TrainingRun,
   PlanDraftRequest, PlanDraftResponseEnvelope, PlanDraftEvent, PlanCommitRequest,
@@ -425,5 +425,14 @@ export const api = {
     if (!res.ok) {
       throw new Error(`API ${res.status}: ${res.statusText} — /builds/${buildId}/supervisor/acknowledge`);
     }
+  },
+
+  /** `GET /api/helix/nodes` — snapshot of helix entries for Helix3D cold-start population. */
+  getHelixNodes: (opts?: { since?: string; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.since) params.set('since', opts.since);
+    if (opts?.limit != null) params.set('limit', String(opts.limit));
+    const qs = params.size ? `?${params}` : '';
+    return request<{ nodes: HelixEntrySsePayload[]; total: number }>(`/helix/nodes${qs}`);
   },
 };
