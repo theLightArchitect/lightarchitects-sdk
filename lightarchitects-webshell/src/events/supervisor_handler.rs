@@ -12,16 +12,16 @@
 //!
 //! ## Auth
 //!
-//! - SSE endpoint: requires `Authorization: Bearer <token>` (global webshell bearer).
-//! - Acknowledge endpoint: requires `X-LA-Notify-Token` (per-build notify token).
-//!   This matches the trust domain of `/api/builds/:id/notify` — the gateway
-//!   acknowledges proposals on behalf of the operator via the same secret
-//!   delivered through `LA_NOTIFY_TOKEN` env var.
+//! Both the SSE endpoint and the acknowledge endpoint require
+//! `Authorization: Bearer <token>` (global webshell bearer token).  The
+//! acknowledge action is operator-initiated — the browser holds the bearer
+//! token and can call the endpoint directly when the operator clicks
+//! "Acknowledge & Redirect" in the `ProposalCard` UI.
 //!
 //! ## Error map
 //!
 //! - `404 Not Found` — `build_id` unknown or no supervisor entry for that build.
-//! - `401 Unauthorized` — bearer or notify token missing/invalid.
+//! - `401 Unauthorized` — bearer token missing or invalid.
 //! - `204 No Content` — successful acknowledgement (no body).
 
 use std::{convert::Infallible, sync::Arc};
@@ -29,7 +29,7 @@ use std::{convert::Infallible, sync::Arc};
 use axum::{
     Json,
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::{
         IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
@@ -44,7 +44,7 @@ use uuid::Uuid;
 
 use crate::{
     auth,
-    events::{WebEvent, notify::NOTIFY_TOKEN_HEADER, types::NorthstarEvaluationEvent},
+    events::{WebEvent, types::NorthstarEvaluationEvent},
     server::AppState,
     supervisor::{EvaluationStatus, SupervisorConfig, SupervisorState, WaveContext, evaluate_wave},
 };
@@ -148,41 +148,18 @@ pub async fn supervisor_sse_handler(
 
 /// `POST /api/builds/:id/supervisor/acknowledge` — operator acknowledges a drift proposal.
 ///
-/// Validates `X-LA-Notify-Token`, resets the supervisor's drift counter and
-/// `proposal_pending` flag, then broadcasts a `SupervisorUpdate` so the
-/// frontend can clear the proposal card immediately.
+/// Requires `Authorization: Bearer <token>` (same as the SSE endpoint).
+/// Resets the supervisor's drift counter and `proposal_pending` flag, then
+/// broadcasts a `SupervisorUpdate` so the frontend can clear the proposal
+/// card immediately.
 pub async fn supervisor_acknowledge_handler(
+    _: auth::AuthGuard,
     Path(build_id): Path<Uuid>,
-    headers: HeaderMap,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     let Some(session) = state.builds.get(build_id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-
-    let Some(provided) = headers
-        .get(NOTIFY_TOKEN_HEADER)
-        .and_then(|v| v.to_str().ok())
-    else {
-        warn!(
-            target: "auth",
-            event = "supervisor_ack_failure",
-            reason = "missing_header",
-            build_id = %build_id,
-        );
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-
-    if !auth::validate_notify_token(provided, &session.notify_token) {
-        warn!(
-            target: "auth",
-            event = "supervisor_ack_failure",
-            reason = "invalid_token",
-            build_id = %build_id,
-            header_length = provided.len(),
-        );
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
 
     let Some(entry) = state.supervisor_states.get(&build_id) else {
         return StatusCode::NOT_FOUND.into_response();

@@ -296,7 +296,6 @@ export type EventType =
   | 'control'
   | 'soul_promotion'
   | 'supervisor_update'
-  | 'supervisor_decision'
   | 'plan_update'
   | 'scrum_report'
   | 'training_progress'

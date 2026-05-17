@@ -346,8 +346,45 @@ async fn run_inner(
     let slave = pair.slave;
 
     // ── 2. Spawn host command ─────────────────────────────────────────────────
-    let mut host_builder = CommandBuilder::new(&config.host_cmd);
-    host_builder.env(crate::config::TOKEN_ENV, &config.token);
+    //
+    // Build-bound path: spawn the configured agent (claude, vibe, etc.) in the
+    // build's working directory.
+    //
+    // Standalone path (no build): spawn a fresh interactive login shell so the
+    // Terminal tab behaves like a real terminal. CWD defaults to ~/lightarchitects/
+    // (the Light Architects workspace root) if it exists, otherwise falls back to
+    // the server's configured CWD.
+    let mut host_builder = if build.is_none() {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_owned());
+        let mut b = CommandBuilder::new(&shell);
+        b.arg("-l");
+        b.arg("-i"); // login + interactive — keeps the shell alive in a PTY
+        // CWD priority:
+        // 1. ~/lightarchitects/ — the canonical LA workspace root (default).
+        // 2. config.cwd if it is a subdirectory of ~/lightarchitects/ — inherits the
+        //    working directory when the webshell was launched from inside the workspace.
+        // 3. config.cwd as the final fallback (e.g. ~/lightarchitects/ doesn't exist yet).
+        let la_home = std::env::var("HOME")
+            .ok()
+            .map(|h| std::path::PathBuf::from(h).join("lightarchitects"))
+            .filter(|p| p.is_dir());
+        let cwd = if let Some(ref la) = la_home {
+            // Inherit the launch CWD only when it lives inside the LA workspace.
+            if config.cwd.starts_with(la) && config.cwd.is_dir() {
+                config.cwd.clone()
+            } else {
+                la.clone()
+            }
+        } else {
+            config.cwd.clone()
+        };
+        b.cwd(cwd);
+        b
+    } else {
+        let mut b = CommandBuilder::new(&config.host_cmd);
+        b.env(crate::config::TOKEN_ENV, &config.token);
+        b
+    };
 
     if let Some(session) = build {
         host_builder.cwd(&session.cwd);
@@ -359,8 +396,6 @@ async fn run_inner(
             host_builder.env(k, v);
         }
         maybe_write_mcp_json(session, &gui_url);
-    } else {
-        host_builder.cwd(&config.cwd);
     }
     let child = slave.spawn_command(host_builder)?;
     drop(slave);

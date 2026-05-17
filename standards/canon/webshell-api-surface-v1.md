@@ -78,7 +78,7 @@ build_app()                              ← src/server/mod.rs:402
   └── .merge(dispatch::dispatch_router()) ← src/dispatch/routes.rs:103
 ```
 
-Total: **96 `.route()` call sites** (89 in `server/mod.rs` + 7 in `dispatch/routes.rs`). Several call sites register multiple HTTP methods on one path (e.g., `.get(h1).put(h2)`), yielding more method–path combinations than call sites.
+Total: **99 `.route()` call sites** (92 in `server/mod.rs` + 7 in `dispatch/routes.rs`). The three `supervisor/events`, `supervisor/acknowledge`, and `supervisor/state` routes added by `copilot-supervised-orchestration` Phase 5 account for the increase from 89 → 92. Several call sites register multiple HTTP methods on one path (e.g., `.get(h1).put(h2)`), yielding more method–path combinations than call sites.
 
 ### §1.3 AppState Components
 
@@ -105,6 +105,7 @@ Total: **96 `.route()` call sites** (89 in `server/mod.rs` + 7 in `dispatch/rout
 | `auth_nonces` | `Arc<DashMap<Uuid, Instant>>` | One-time auth nonces (60-second TTL); consumed on first use |
 | `global_event_store` | `GlobalEventStore` | Ring buffer (last 1,000 entries) → `~/.lightarchitects/webshell/events.ndjson` |
 | `plan_draft_sessions` | `Arc<DashMap<Uuid, (broadcast::Sender<PlanDraftEvent>, CancellationToken)>>` | In-flight plan draft sessions; removed on Done/Error/TTL expiry |
+| `supervisor_states` | `Arc<DashMap<Uuid, Arc<SupervisorEntry>>>` | Per-build northstar supervisor state (drift counter, proposal gate, last evaluation); populated at `POST /api/builds` when `northstar_text` is present |
 
 ### §1.4 CORS Constraint
 
@@ -279,6 +280,18 @@ All routes accept a repo path in the request body. No worktree operations exist.
 | `GET` | `/api/debug/parity` | Phase 20b.3 parity verification (dev/debug) |
 | `POST` | `/api/csp-report` | CSP violation ingestion (Enforce mode, SEC-3b) |
 | `GET` | `/api/files` | File tree listing for `@`-file autocomplete |
+
+### §2.13 Northstar Supervisor
+
+Endpoints for the copilot supervision loop (`copilot-supervised-orchestration`). All three require `Authorization: Bearer <token>`.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/builds/:id/supervisor/events` | SSE stream of `NorthstarEvaluationEvent`s — fires on every `WAVE_COMPLETE` event from the agent bus |
+| `POST` | `/api/builds/:id/supervisor/acknowledge` | Operator acknowledges a pending drift proposal; resets drift counter and broadcasts synthetic update (204 No Content) |
+| `GET` | `/api/builds/:id/supervisor/state` | Point-in-time snapshot: `consecutive_drifts`, `drift_threshold`, `proposal_pending`, `last_evaluation`, `northstar_text` |
+
+All three return `404` when the build UUID is unknown **or** no `northstar_text` was supplied at build-creation time (`supervisor_states` entry absent).
 
 **Static assets**: all unmatched routes are handled by `static_assets::serve` — the fallback serves the pre-built SPA bundle.
 
@@ -500,7 +513,7 @@ grep -A3 'allow_methods' lightarchitects-webshell/src/server/mod.rs
 grep -c '\[/' lightarchitects-webshell-ui/src/lib/routes.ts
 ```
 
-Expected at time of ratification (2026-05-16): 89 + 7 = 96 call sites in Rust; **22** route entries in TypeScript ROUTES array (`routes.ts:42–67`). Note: the grep command returns **21** — entry #4 (line 48) uses `new RegExp(...)` and does not start with `[/`, so it is not counted by the grep. True count = grep output + 1.
+Expected after `copilot-supervised-orchestration` Phase 5 (2026-05-17): 92 + 7 = 99 call sites in Rust; **22** route entries in TypeScript ROUTES array (`routes.ts:42–67`). Note: the grep command returns **21** — entry #4 (line 48) uses `new RegExp(...)` and does not start with `[/`, so it is not counted by the grep. True count = grep output + 1.
 
 ### §6.4 Source Files
 

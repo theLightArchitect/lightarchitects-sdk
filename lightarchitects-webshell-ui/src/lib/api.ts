@@ -406,4 +406,24 @@ export const api = {
     if (onError) es.onerror = onError;
     return es;
   },
+
+  /**
+   * Acknowledge a pending northstar drift proposal for a build.
+   *
+   * Calls `POST /api/builds/:id/supervisor/acknowledge` with bearer auth.
+   * Returns `undefined` on 204 No Content (success). Throws on 401/404/500.
+   *
+   * After acknowledgement the backend broadcasts a synthetic `supervisor_update`
+   * event with `proposal_pending: false` — no manual state reset needed on the
+   * caller side if {@link supervisorEvents} is active.
+   */
+  acknowledgeProposal: async (buildId: string): Promise<void> => {
+    const res = await fetch(`${API_BASE}/builds/${buildId}/supervisor/acknowledge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    });
+    if (!res.ok) {
+      throw new Error(`API ${res.status}: ${res.statusText} — /builds/${buildId}/supervisor/acknowledge`);
+    }
+  },
 };

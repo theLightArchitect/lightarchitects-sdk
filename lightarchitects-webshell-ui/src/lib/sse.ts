@@ -417,35 +417,6 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
       contextUsage.set(payload);
       break;
     }
-    case 'supervisor_decision': {
-      // Phase 21 — dedicated supervisor decision event (direct from CORSO)
-      const payload = event as unknown as {
-        type: 'supervisor_decision';
-        id?: string;
-        sibling?: string;
-        gate?: string;
-        verdict?: string;
-        message?: string;
-        details?: string;
-        timestamp?: string;
-      };
-      const gate = (payload.gate ?? 'guard').toLowerCase();
-      const validGates = new Set(['guard', 'alpha', 'quality', 'canon']);
-      const verdict = (payload.verdict ?? 'PASS').toUpperCase();
-      const validVerdicts = new Set(['PASS', 'FAIL', 'WARN']);
-      const alert: SupervisorAlert = {
-        id: payload.id ?? `sv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        timestamp: payload.timestamp ? new Date(payload.timestamp).getTime() : Date.now(),
-        sibling: payload.sibling ?? 'corso',
-        gate: (validGates.has(gate) ? gate : 'guard') as SupervisorGate,
-        verdict: (validVerdicts.has(verdict) ? verdict : 'PASS') as SupervisorVerdict,
-        message: (payload.message ?? `CORSO ${gate.toUpperCase()}: ${verdict}`).slice(0, 500),
-        details: payload.details ? String(payload.details).slice(0, 4096) : undefined,
-      };
-      appendSupervisorAlert(alert);
-      spikeSibling('corso');
-      break;
-    }
     case 'plan_update': {
       // CORSO scout plan — full plan or phase-level update.
       // Full plan: { plan: ActivePlan }

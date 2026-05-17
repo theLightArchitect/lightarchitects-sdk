@@ -185,11 +185,19 @@ pub fn resolve_api_key_for_native() -> Option<String> {
 /// Resolve the Mistral API key for vibe subprocess injection.
 ///
 /// Priority order:
-/// 1. Keychain `keyring::Entry::new("lightarchitects", "mistral")` — canonical namespace
-/// 2. `MISTRAL_API_KEY` env var inherited by the webshell process
+/// 1. `security find-generic-password` CLI (macOS native Keychain, service=lightarchitects account=mistral)
+/// 2. `keyring::Entry::new("lightarchitects", "mistral")` — cross-platform fallback
+/// 3. `MISTRAL_API_KEY` env var inherited by the webshell process
 ///
 /// Returns `None` if no key found — vibe will fail with its own auth error.
 pub fn resolve_mistral_api_key() -> Option<SecretString> {
+    if let Some(key) = keychain_via_security_cli("lightarchitects", "mistral") {
+        tracing::debug!(
+            "resolve_mistral_api_key: found key via security CLI (lightarchitects/mistral)"
+        );
+        return Some(SecretString::new(key.into()));
+    }
+
     if let Ok(entry) = keyring::Entry::new("lightarchitects", "mistral") {
         if let Ok(key) = entry.get_password() {
             if !key.is_empty() && !key.contains("placeholder") && !key.contains("your_") {
@@ -209,6 +217,31 @@ pub fn resolve_mistral_api_key() -> Option<SecretString> {
     }
 
     tracing::warn!("resolve_mistral_api_key: no Mistral API key found for vibe subprocess");
+    None
+}
+
+/// Read a generic-password entry from the macOS Keychain via the `security` CLI.
+///
+/// `keyring` v3 silently falls back to an in-process mock on macOS (no D-Bus).
+/// The `security` binary is always in the ACL of items it created and needs no GUI dialog.
+#[cfg(target_os = "macos")]
+fn keychain_via_security_cli(service: &str, account: &str) -> Option<String> {
+    let out = std::process::Command::new("security")
+        .args(["find-generic-password", "-s", service, "-a", account, "-w"])
+        .output()
+        .ok()?;
+    if out.status.success() {
+        let s = String::from_utf8(out.stdout).ok()?;
+        let trimmed = s.trim().to_owned();
+        if !trimmed.is_empty() {
+            return Some(trimmed);
+        }
+    }
+    None
+}
+
+#[cfg(not(target_os = "macos"))]
+fn keychain_via_security_cli(_service: &str, _account: &str) -> Option<String> {
     None
 }
 
