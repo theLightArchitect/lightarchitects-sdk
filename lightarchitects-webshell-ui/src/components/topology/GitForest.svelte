@@ -191,10 +191,26 @@
   // client-side token reads.
 
   let repos = $state<Repo[]>(SEED_REPOS);
-  // Prefers-reduced-motion stub (Phase 3.5 wires the listener; here we declare the flag)
-  let motionEnabled = $state(true);
+  // prefers-reduced-motion: initial value + live MediaQueryList listener (Phase 3.5)
+  const motionMq = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let motionEnabled = $state(!motionMq.matches);
+  $effect(() => {
+    const handler = (e: MediaQueryListEvent) => { motionEnabled = !e.matches; };
+    motionMq.addEventListener('change', handler);
+    return () => motionMq.removeEventListener('change', handler);
+  });
   // Memoised active-worktree counts per nodeId; invalidated on gitforestTree update
   let activeCountCache = $state(new Map<string, number>());
+
+  // ── A11y substrate (Phase 3.5) ────────────────────────────────────────────
+  // Shadow hitbox positions — updated at 4Hz from draw() via hitboxPending
+  interface HitboxEntry { id: string; label: string; gateState: GateState; x: number; y: number; cw: number; ch: number; }
+  let hitboxes = $state<HitboxEntry[]>([]);
+  let hitboxPending: HitboxEntry[] = [];
+  let hitboxFrame = 0;
+  // Live region announcement (rate-limited: one update per 2s)
+  let liveAnnouncement = $state('');
+  let liveAnnouncedAt = 0;
 
   $effect(() => {
     const unsubscribe = gitforestTree.subscribe(topology => {
@@ -239,14 +255,15 @@
   }
 
   // ─── Gate → color (GIT-2) ────────────────────────────────────────────────
-
+  // Deuteranopia + protanopia safe: blue-orange-teal axis (no red/green confusion).
+  // Validated: clean=teal, failed=orange, hitl=amber-gold, writing=sky-blue, ghost=slate.
   const GATE_COLORS: Record<GateState, number> = {
-    clean:        0x22c55e,
-    hitl_pending: 0xf59e0b,
-    merge_ready:  0xffd700,
-    failed:       0xef4444,
-    writing:      0x00c8ff,
-    ghost:        0x334155,
+    clean:        0x17c3b2,  // teal — distinguishable from all other states
+    hitl_pending: 0xfbbf24,  // amber-gold — warm, not red
+    merge_ready:  0xe2f542,  // yellow-lime — high-luminance, safe
+    failed:       0xf97316,  // orange — safe for deuteranopia/protanopia
+    writing:      0x38bdf8,  // sky-blue — distinct from teal
+    ghost:        0x334155,  // slate — neutral; reduced opacity on merged branches
   };
 
   // ─── Agent domain → color (GIT-3) ────────────────────────────────────────
@@ -756,11 +773,22 @@
       for (const id of nodeIds) {
         pulseLayer.enqueue(id);
       }
+      // Live region announcement — rate-limited to one per 2s (Phase 3.5)
+      if (nodeIds.length > 0) {
+        const now = performance.now();
+        if (now - liveAnnouncedAt > 2000) {
+          liveAnnouncement = nodeIds.length === 1
+            ? `Branch activity: ${nodeIds[0]}`
+            : `${nodeIds.length} branches active`;
+          liveAnnouncedAt = now;
+        }
+      }
     });
 
     // PulseLayer tick at 4Hz (setInterval 250ms — deliberate: JS single-threaded,
     // no race with rAF; tick mutates ring buffer between frames safely)
     const pulseTickId = setInterval(() => {
+      if (!motionEnabled) return;  // prefers-reduced-motion: skip tick entirely
       pulseLayer.tick();
       // Sync PulseLayer opacities → pulseIntensities (scaled ×3.0 to match Phase 2 peak)
       for (const [id, opacity] of pulseLayer.opacities) {
@@ -1019,6 +1047,9 @@
           ctx.setLineDash([]);
           ctx.globalAlpha = 1;
 
+          // Collect hitbox for a11y overlay (Phase 3.5 — flushed to $state at 4Hz)
+          hitboxPending.push({ id: `${repo.name}/${branch.name}`, label: branch.name, gateState: branch.gateState, x: tipX, y: tipY, cw: canvas.width, ch: canvas.height });
+
           if (!branch.isGhost) {
             // Commit dots with staggered pulse
             const nodeCap = Math.min(branch.commitCount, 8);
@@ -1078,6 +1109,13 @@
         ctx.fillText(`${repo.commitCount}c · ${repo.fileCount}f`, cx, baseY + labelH * 0.80);
         ctx.textAlign = 'left';
       });
+
+      // Flush hitbox positions to $state every ~15 frames (≈4Hz at 60fps)
+      hitboxFrame = (hitboxFrame + 1) % 15;
+      if (hitboxFrame === 0) {
+        hitboxes = hitboxPending;
+      }
+      hitboxPending = [];
     }
 
     // ── L2 hero renderer ─────────────────────────────────────────────────
@@ -1369,6 +1407,29 @@
   <div bind:this={container} class="forest-three" aria-hidden="true"></div>
   <!-- Hologram scan-line overlay -->
   <canvas bind:this={overlayCanvas} class="forest-overlay" aria-hidden="true"></canvas>
+
+  <!-- A11y shadow hitboxes (Phase 3.5): invisible buttons over branch tips for keyboard/SR users -->
+  {#each hitboxes as hb (hb.id)}
+    <button
+      class="forest-hitbox"
+      style:left="{(hb.x / hb.cw) * 100}%"
+      style:top="{(hb.y / hb.ch) * 100}%"
+      aria-label="{hb.label} — {hb.gateState.replace('_', ' ')}"
+      onclick={() => { /* Phase 6 BranchTooltip click handler wired here */ }}
+    ></button>
+  {/each}
+
+  <!-- Reduced-motion static badge (shown when prefers-reduced-motion: reduce) -->
+  {#if !motionEnabled}
+    <div class="forest-reduced-badge" role="status" aria-label="Animations paused — reduced motion">
+      ◈ static
+    </div>
+  {/if}
+
+  <!-- Live region: announces pulse events to screen readers (rate-limited 1/2s) -->
+  <div role="status" aria-live="polite" aria-atomic="true" class="forest-live-region">
+    {liveAnnouncement}
+  </div>
 </div>
 
 <style>
@@ -1400,5 +1461,52 @@
     pointer-events: none;
     mix-blend-mode: screen;
     will-change: transform;
+  }
+
+  /* Shadow hitboxes: visible only to keyboard/SR users via focus ring */
+  .forest-hitbox {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    /* Clip visually, show on focus for keyboard users */
+    clip-path: inset(50%);
+    border-radius: 50%;
+  }
+  .forest-hitbox:focus-visible {
+    clip-path: none;
+    outline: 2px solid #38bdf8;
+    outline-offset: 2px;
+    background: rgba(56, 189, 248, 0.15);
+  }
+
+  /* Reduced-motion badge */
+  .forest-reduced-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 10px;
+    font-family: monospace;
+    color: #64748b;
+    background: rgba(2, 4, 8, 0.75);
+    padding: 3px 7px;
+    border-radius: 4px;
+    border: 1px solid #1e293b;
+    pointer-events: none;
+  }
+
+  /* Live region: visually hidden, announced to screen readers */
+  .forest-live-region {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    pointer-events: none;
   }
 </style>
