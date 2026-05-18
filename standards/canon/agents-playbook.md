@@ -2293,6 +2293,54 @@ Tasks completed during plan authoring without ⚡PRE-DONE marker = silent pre-co
 
 ---
 
+## §7.9 — Implementation-Readiness Audit (2026-05-18 ADDITION, candidate #13 formalization)
+
+**Scope**: A distinct post-/PLAN review class that catches concreteness gaps no quality/security/perf/a11y review surfaces. Runs AFTER SCRUM R3 returns VALIDATED, BEFORE /BUILD fires.
+
+### §7.9.1 What it catches (12-dimension audit)
+
+The /BUILD executor opens the plan tomorrow with no planning-session context. It needs the literal bytes to execute. Audit the plan body for:
+
+1. **Type signatures** — every new type has full schema (Rust + TypeScript)
+2. **Function signatures** — every NEW function in the File-Function Map has a complete signature in the plan body
+3. **File paths** — every path is absolute and resolvable on the target machine
+4. **Test commands** — every test command in exit criteria is copy-pasteable
+5. **Existing patterns referenced** — verify against pinned SHA they actually exist
+6. **External APIs** — endpoint paths, auth headers, response shapes pinned
+7. **Algorithm choices** — every algorithmic primitive (hash, cipher, codec) has a declared dep
+8. **Cross-references valid** — `file:line` refs against pinned SHA
+9. **Edge cases** — empty/error/loading states for every new view
+10. **Dependencies** — every new lib named + version-pinning strategy
+11. **Acceptance criteria checkable** — objective pass/fail tests, not "feels right"
+12. **Phase ordering hazards** — Phase N depends on Phase M's output, explicit handoff
+
+### §7.9.2 Severity scale
+
+- **BLOCKER** — cannot proceed without resolving (e.g., undeclared dep, missing struct schema)
+- **STUCK** — must ask a clarifying question before continuing (e.g., "which library version?", "where does this state live?")
+- **SLOW** — can proceed but slowly (e.g., must grep around codebase for existing patterns)
+
+### §7.9.3 Fold-trigger
+
+Treat ≥1 BLOCKER as iter-N+1 fold-in trigger. Track in plan verdict block as a SEPARATE fold-iteration distinct from SCRUM rounds.
+
+### §7.9.4 Why distinct from SCRUM
+
+SCRUM R3 returning VALIDATED converges same-author multi-iteration review to ~93 STRONG band. Cannot reach EXEMPLARY without independent external implementation-readiness audit pushing the ceiling another +0.5 to +1.0 aggregate. The /BUILD agent does not have access to the planning session's context — only what's literally in the plan body. SCRUM cross-sibling lenses catch *design* gaps; implementation-readiness audit catches *concreteness* gaps. Both are needed; neither substitutes for the other.
+
+### §7.9.5 Pressure-tested
+
+`gitforest-live-ops` iter-7 audit surfaced 12 BLOCKERS + 11 STUCK + 8 SLOW that 6 prior iterations missed entirely. iter-7 fix pass closed all 12 BLOCKERS verified by sanity audit (23/23 RESOLVED). Without this dedicated audit class, those gaps would have surfaced at /BUILD execution time as halt-and-clarify events, much more expensive to resolve.
+
+### §7.9.6 Composition
+
+- Runs after Step 5.2 (SCRUM R3 verdict) per /PLAN skill
+- Auditor: independent agent (cold-context Explore or different sibling) per Canon XXXIII independent-runner principle
+- Output: severity-classified findings list appended to plan verdict block as `implementation_readiness_audit:` sub-block
+- Iteration: ≥1 BLOCKER triggers iter-N+1 fold; re-audit on iter-N+1 output
+
+---
+
 ## §Phase-2A.5 — Canon-Doc Amendment Phase Protocol (2026-05-18 ADDITION, candidate #17)
 
 **Scope**: When a build plan introduces patterns that contradict, extend, or fill gaps in existing canon docs, the plan SHOULD insert a dedicated canon-doc amendment phase between research and implementation phases. This closes the **canon-violation-by-construction** risk where implementation lands code that contradicts canon-doc declarative statements.
@@ -2341,4 +2389,54 @@ ironclaw-spine §5.7 + §5.8 (canonical instance, 2026-05-18 authoring session).
 
 ---
 
-*v1.7 adds (2026-05-18): §15.3.13 Wave Dispatch Protocol + §7.8 Pre-Completion Verification Gate + §Phase-2A.5 Canon-Doc Amendment Phase Protocol. Closes ironclaw-spine iter-11 follow-on gaps (wave fan-out/fan-in mechanics + ⚡PRE-DONE marker operationalization + canon-violation-by-construction prevention). LÆX Phase 7 ratification pending — candidates #15, #16, #17.*
+## §7.10 — Two-Problems-in-One-Question Framing Discipline (2026-05-18 ADDITION, Phase 7 ratified, candidate #22)
+
+**Scope**: Pre-implementation triage discipline. Applies when operator requests bundle two solutions in one sentence ("we need X or maybe Y").
+
+### §7.10.1 The problem
+
+Operator requests that bundle two solutions ("do X or do Y") often hide two distinct concerns with different urgency and cost profiles. Conflating them produces over-engineered solutions or wrong-problem recommendations.
+
+### §7.10.2 The framing test
+
+When you see "do X or do Y" language:
+
+1. **Restate as two separate questions**: "X solves what?" + "Y solves what?"
+2. **Check problem distinctness**: do X and Y solve different problems or different aspects of the same problem?
+3. **Match problems to symptoms**: which problem matches the immediate trigger for the request?
+4. **Tier independently**:
+   - Problem 1: urgent cost/benefit → Tier 1 (execute now) or conditional
+   - Problem 2: conditional cost/benefit → Tier 2 (defer until trigger condition) or orthogonal
+5. **Present trade-offs per-problem**, not per-solution
+
+### §7.10.3 Why this catches real gaps
+
+Bundled phrasing masks diagnostic uncertainty. The honest read is often "I noticed something wrong and have multiple hypotheses." Treating it as "pick X or Y" produces recommendations that solve one problem confidently while ignoring the other, or solve a compound problem when only one was urgent.
+
+### §7.10.4 Pressure-tested
+
+2026-05-18 ironclaw-spine iter-18. Operator request: *"move the changelog somewhere else **or** create a repo for canon files."* Framing test surfaced two problems:
+
+| Problem | Symptom | Solution | Cost | Recommendation |
+|---|---|---|---|---|
+| Schema-bloat (changelog accretion inside YAML) | LASDLC at 7567 lines, v2.5.4 about to be 4th tail block | Extract to `<doc>.CHANGELOG.md` companion | 10 min | Tier 1 — DO NOW |
+| Canon access-control / publication-readiness | Canon lives in sdk repo; sdk may go public | Move canon to dedicated repo | Multi-day; reverses recent migration | Tier 2 — DEFER until trigger |
+
+The "OR" framing made these look like alternatives; they weren't. Applied Tier 1 in 5 commits (30 min); Tier 2 deferred with explicit trigger conditions. Conflating them would have produced an over-engineered "new canon repo with CHANGELOG separation built in" project addressing the wrong problem (sdk private, no publication need) while leaving the actual symptom unsolved.
+
+### §7.10.5 Composition
+
+- Canon XV (Principal Hierarchy — operator authority over problem diagnosis)
+- Architects Blueprint Part I (Architectural Thesis discipline — thesis clarity prerequisite)
+- Builders Cookbook §66 (Context Assembly Discipline — context is problem-specific)
+- agents-playbook §7.9 (Implementation-Readiness Audit — catches similar framing gaps at concreteness level)
+
+### §7.10.6 Anti-pattern
+
+Solving the wrong problem confidently. The framing discipline is the gate that catches it before commitment.
+
+---
+
+*v1.7 adds (2026-05-18): §15.3.13 Wave Dispatch Protocol + §7.8 Pre-Completion Verification Gate + §Phase-2A.5 Canon-Doc Amendment Phase Protocol. Closes ironclaw-spine iter-11 follow-on gaps (wave fan-out/fan-in mechanics + ⚡PRE-DONE marker operationalization + canon-violation-by-construction prevention).*
+
+*v1.9 adds (Phase 7 ratification 2026-05-18): §7.9 Implementation-Readiness Audit (candidate #13 formalization) + §7.10 Two-Problems-in-One-Question Framing Discipline (candidate #22).*

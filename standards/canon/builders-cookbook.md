@@ -5672,6 +5672,12 @@ export type Route = typeof ROUTES[keyof typeof ROUTES];
 
 **Rule S57.6c:** Visual tier tests never run in CI automatically. They are run deliberately before design releases to update baselines. Baselines are committed PNG files; diffs are reviewed in PR.
 
+**Rule S57.6d (2026-05-18 Phase 7 ratified, candidate #33):** Console-Error Zero Gate. All E2E test runs (Smoke, Capability, Integration tiers) must terminate with zero console errors logged during test execution. Console error captures (from §57.2a `console.ndjson`) are reviewed; any TypeError, uncaught exception, or unhandled promise rejection must be diagnosed and fixed before test passes.
+
+Clarification: §57.2b requires console errors to be CAPTURED (artifact discipline); §57.6d requires console errors to be ZERO (blocking gate). Capturing five errors and ignoring them is non-compliant. The evidence-bundle must contain `consoleLogs: []` OR explicitly document that captured errors are benign (intentional deprecation warnings from dependencies, caught exceptions in error-recovery tests) via allowlist.
+
+Implementation: Playwright `page.on('console')` accumulates all messages; test teardown asserts `errors.length === 0` OR `errors.filter(e => !ALLOWLIST.includes(e.text)).length === 0`. Pressure-tested: webshell-ui test suite discipline (2026-05, Playwright session). TypeError capture during comprehensive E2E catches hydration mismatches, event-handler closures, and stale promise rejections that would ship silently in production.
+
 ### §57.7 Serial Mode Constraints
 
 **Rule S57.7a:** Serial mode (`test.describe.configure({ mode: 'serial' })`) is used only when tests have genuine data dependencies — e.g., a build ID created in test N is required by test N+1. It is never used for convenience.
@@ -5748,6 +5754,44 @@ interface EvidenceBundle {
 | S57.5c (no CSS class selectors) | Svelte hashes class names: `.btn-continue` in a spec fails in production build; `getByRole('button', { name: 'Continue →' })` survives |
 | S57.7b (skip guards) | webshell.spec.ts test 34: invalid locator `text=Build Queue, text=No active builds` blocked ~300 serial tests with no attribution — all appeared as "skipped" |
 | S57.2b (evidence-bundle) | Manual diagnosis of the blocked test 34 required reading 4,656 lines; structured bundle would have pointed to locator line directly |
+
+### §57.11 Northstar Pillar Mechanical Mapping (2026-05-18 ADDITION, candidate #12 formalization)
+
+**Rule S57.11a — ≥3 E2E scenarios per claimed Northstar Pillar.** For each Northstar Pillar a build claims to advance, the Phase 7 E2E suite MUST declare ≥3 specific named scenarios that validate that Pillar's mechanical promises. Generic "operator flow" coverage does not satisfy this rule.
+
+**Total E2E count formula**: `3 × claimed_pillar_count + happy_path + perf_baseline + a11y_baseline`. For a 3-Pillar LARGE-tier build, expect 15–20 named scenarios.
+
+**Rule S57.11b — per-scenario specificity.** Each scenario gets:
+- Specific name (`E1`, `E2`, ...)
+- Specific mechanical promise it validates (cite Northstar Pillar text)
+- Specific assertion (e.g., `≤500ms`, `no OOM`, `framerate ≥ 30fps`, `terminal_window_open_count === 0`)
+
+Generic assertions ("looks correct", "no crashes") fail this rule.
+
+**Rule S57.11c — Phase-7 N-gate exit criterion.** `/GATE-7` N-gate (Northstar mechanical) passes only when every named scenario passes AND per-Pillar mechanical advancement is empirically validated by E2E execution. The N1 gate per agents-playbook §15.4 requires "Pillar advancement validated against diff" — but `diff` alone doesn't validate runtime behavior; only E2E execution does. S57.11 closes this gap.
+
+**Reference example** (`gitforest-live-ops` iter-8, 3-Pillar build):
+
+P1 (E2E from webshell — operator completes without terminal fallback):
+- E14 reduced-motion respect (a11y substrate)
+- E16 keyboard-only operator flow (no mouse required)
+- E19 Web Vitals deltas vs baseline (objective UX metric)
+- E12 View Transitions cross-browser
+
+P2 (vibe orchestration — multi-agent live state):
+- E3 AYIN trace pulse e2e (synthetic span → overlay pulse within 500ms)
+- E5 conductor ghost branch lifecycle (queued → live)
+- E6 multi-agent comms edge (3 messages → edge renders → fades at 3s)
+
+P4 (operator-legible arc — see status at a glance):
+- E4 persistent merged structures render (6 fixtures at lifecycle ages)
+- E7 branch ACL filtering (security-critical for operator trust)
+- E9 HITL flash (operator alert visible at 1Hz)
+- E10 forest LOD eviction (year-1 scale doesn't break)
+
+**Pressure-tested**: `gitforest-live-ops` iter-7 had 6 generic test categories; iter-8 expanded to 18 specific scenarios mapping to P1/P2/P4. Sanity audit confirmed 18/18 RESOLVED with concrete assertions. Without S57.11, Phase-7 N-gate would have been a checkbox.
+
+**Composition**: extends §57 (E2E discipline) with Northstar-specific mechanical mapping. Complements LASDLC `northstar_lineage` block (declarative claim) with empirical E2E validation (runtime proof).
 
 ---
 
@@ -6808,6 +6852,46 @@ When a task fails ReviewGate and a FixAgent is dispatched (max 3 iterations per 
 - /BUILD skill v2 Step 11.3.2 PT-7 (orchestrator-side enforcement)
 - observability-canon §1.1 (W3C traceparent propagation)
 - Source: operator concern surfaced 2026-05-18 — "workers should be git-aware throughout the build"
+
+---
+
+## §68 Enum-Extension Collision Pre-check (2026-05-18 Phase 7 ratified, candidate #32)
+
+**Principle**: Before any plan claims a new value in an existing enum (e.g., "BuildDetail view-mode-6 = Wave Timeline"), pre-check the canon to verify the position is free and the position count aligns.
+
+### §68.1 Pre-claim enumeration audit
+
+**Rule S68a**: For every enum position claimed in a plan body:
+
+1. Grep canon (e.g., `webshell-api-surface-v1.md` §3.3) for the enum's current count + all variants
+2. Verify the claimed position is the next free slot (not a collision with existing variant)
+3. If collision discovered: propose different position OR declare rename with operator approval
+4. Plan body assertion: cite source enum file + line range (not just "view-mode-N")
+
+### §68.2 Common enums requiring pre-check
+
+**Rule S68b**: The following enums recur as plan-extension targets and MUST be pre-checked:
+
+- `BuildViewMode` (`webshell-api-surface-v1.md` §3.3)
+- `WebEvent` variants (events/types.rs + canon §1.3)
+- `AgentDomain` (`lightarchitects/src/soul/types.rs`)
+- Gate vocabulary `[A+S+Q+C+O+P+K+D+T+R]` (Canon XXXVIII — 10 dimensions)
+- LASDLC tier `SMALL | MEDIUM | LARGE`
+- Status enums (`pending | running | completed | failed`) per surface
+
+### §68.3 Cross-plan coordination
+
+**Rule S68c**: When two plans both extend the same enum, the helix coordination pact MUST declare who claims which value. First merger commits the canonical extension; second extends additively.
+
+### §68.4 Pressure-tested
+
+`gitforest-live-ops` iter-7 API-canon audit caught view-mode-6 collision (pre-existing `comms` occupied that position). Resolved iter-8 by allocating Wave Timeline as view-mode-7 + helix coordination pact declared enum-scoped allocation. Without this pre-check, collision would have surfaced at runtime as serialization/view-routing/API-dispatch failure.
+
+### §68.5 Composition
+
+- Architects Blueprint Part VI (Compliance Matrix — file-function map consistency)
+- webshell-api-surface §3.3 (current enum source-of-truth)
+- Canon XXXVIII Gate Vocabulary (10-dimension enum that itself is pre-check target)
 
 ---
 

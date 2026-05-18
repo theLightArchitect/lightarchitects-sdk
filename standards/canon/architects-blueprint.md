@@ -143,6 +143,7 @@ SMALL-tier plans may abbreviate sections 2, 4, 6 but may not omit them entirely.
 | **MEDIUM** | Multi-component feature, ≤20 files | 6 | 6–12h |
 | **LARGE** | Full subsystem or cross-crate | 7 | 12–48h |
 | **PROGRAM** | Multi-build programme (WGC, EEF) | N/A — parent manifest | Weeks |
+| **XL** | Multi-subsystem cross-binary programme with autonomous delivery (cross-crate orchestration, security substrate, observability layer) | 8–10 (operator-extended from LARGE via Canon XV) | Weeks |
 
 **Selection heuristic**: Start with MEDIUM. Upgrade to LARGE if any apply:
 - Touches ≥3 crates or packages
@@ -168,6 +169,7 @@ Architecture diagrams are mandatory Phase 1 design artifacts. Required depth sca
 | MEDIUM | C2 (container) + C3 (component) |
 | LARGE | C1 (system context) + C2 + C3 + C4 (code) + ERD + sequence diagrams for async/cross-binary flows |
 | PROGRAM | All LARGE diagrams aggregated at program level + per-build subset |
+| XL | All LARGE diagrams + deployment topology for multi-binary autonomous flows |
 
 Diagrams are design inputs, not documentation outputs — see Canon XLI for the mechanical [A] gate predicate (`diagram_present ∧ drift_clean ∧ checklist_current`), operator-override clause (`diagram_waiver` for SMALL-tier deadline pressure, expires at next [A] gate), and `source_anchor` provenance discipline per relation (Canon XXXV extension).
 
@@ -951,9 +953,25 @@ Plan-review findings classify into two operational tiers based on whether they f
 
 **Operational application**: `review_verdict.findings_addressed` MUST distinguish `blocking_amendments_folded` (in-plan iteration content) from `lower_severity_tracked_in_record` (out-of-band review-tier file).
 
-### §14.4 Reserved — Future Subsection
+### §14.4 Circular Validation Signature — Canon-Codification-Driven Score Lift (Ratified at Phase 7 2026-05-18, candidate #26)
 
-(Reserved for future C1-C8 rubric extensions.)
+**Pattern**: When canon docs are authored FROM a plan's patterns (mid-session canon-fold during phase-2A or phase-2A.5) and the plan is then re-XEA'd against the updated canon, score Δ in the re-XEA is **canon-codification-driven**, not plan-improvement.
+
+**Why this matters**: The naive interpretation of "iter Δ +1.3" is "plan got better." That's wrong here. The plan didn't change; the rubric caught up with what the plan was already saying. Different signal entirely.
+
+This tests the canon's coherence: if the canon was correctly amended FROM the plan's patterns, the plan should score higher against the new rubric than the old rubric (same plan body). If it doesn't, something in the canon-amendment process drifted from what the plan actually says.
+
+**When to expect this**: After a session that (1) authors a substantial plan defining new patterns, (2) folds those patterns into canon docs via Phase 2A.5-class amendment, (3) re-runs /XEA against the updated canon. The first re-XEA produces a circular-validation lift. Subsequent re-XEAs (with canon stable) revert to normal iter-improvement deltas or stop-rule convergence.
+
+**Honest reporting** (composes with §14.2 Score Honesty Discipline):
+- Cite the rubric source change explicitly in `xea_verdict.amendment_citations`
+- Note in `ceiling_annotation` that self-iter plan-body delta = 0
+- Skill stop-rule still fires when subsequent iters return Δ < 0.3 (canon-codification is a one-time lift)
+- Convergence is between plan + canon (not just self-iter)
+
+**Pressure-tested**: 2026-05-18 ironclaw-spine iter-8 (Δ +1.3, plan-body-unchanged, 21 canon amendments applied; circular validation proof). iter-9 drift-fold (Δ +0.1, normal). iter-10 wave-decomposition substantive add (Δ +0.55, plan content changed). Pattern confirmed.
+
+**Composition**: §14.2 (score honesty) + Canon XXXVI (quality-first compression) + Canon XXXIII (self-validation ceiling — circular validation is post-amendment verification).
 
 ### §14.5 Three-Tier Plan Review Protocol (Ratified 2026-05-13)
 
@@ -974,6 +992,42 @@ Plan review has three distinct tiers, each catching a different defect class. Ti
 **Pressure-tested**: 2026-05-13 — Tier 1 + Tier 2 (2 SCRUM rounds) reached self-claimed VALIDATED aggregate 89.05. Tier 3 surfaced 3 CRITICAL ZERO-EXCEPTION items (Security §2.6, §5.1, §10.2), 2 CRITICAL contract-design items (Cookbook §51, §40), and 2 BLOCKING structural items (Blueprint Part VII + XI missing). None visible to Tier 1 + Tier 2.
 
 **Dispatch contract**: Tier 3 spawns 7 parallel Agent tools (one per canon doc — Platform Canon, Builders Cookbook, Agents Playbook, Architects Blueprint, Operators Manual, LASDLC Template, Security Guardrails). Each produces structured compliance report with verbatim citations per Canon XXXV. Synthesize as Round 3 A6 unified verdict; fold BLOCKING/CRITICAL into next iteration per §14.3 classification.
+
+### §14.6 SCRUM Round Convergence Signatures (Ratified at Phase 7 2026-05-18, candidates #28 + #30 composite)
+
+SCRUM rounds carry diagnostic signatures beyond their per-lens verdicts. Two complementary patterns characterize honest convergence — both must be present, or the cycle isn't done.
+
+**§14.6.1 R2 — depth-on-new-surface signature**
+
+R2's expected trajectory is **depth refinement on R1's just-added fold**, not breadth on R1's pre-existing surfaces. When R2 produces ~50–60% fewer findings than R1, the pattern is honest: R1 caught broad issues; iter-2 folds addressed them; R2 now finds finer concerns specifically on what iter-2 added.
+
+If R2 produces breadth on old surfaces (≥80% of R1 finding count, distributed across pre-existing scope), iter-2 folds were inadequate — they didn't land on what R1 surfaced. Iteration-3 fold required; R2 cannot serve as convergence proof.
+
+**§14.6.2 R3 — verdict-upgrade signature**
+
+R3 is typically interpreted as a consensus check. Its real diagnostic value is the **upgrade signature** — proof that R2 folds actually addressed R2 critics' findings.
+
+| Upgrades / 7 siblings | Reading |
+|---|---|
+| 0 + new BLOCKING surfaced | R2 folds didn't address findings; iter-N+1 required |
+| 1–2 | Folds partially landed; targeted re-iteration recommended |
+| 3 ± 1 | Folds substantially landed; convergence is REAL; SCRUM cycle complete |
+| 5+ | Suspicious — check for groupthink or insufficient adversarial rigor |
+
+**§14.6.3 Composite reading**
+
+A complete SCRUM cycle exhibits BOTH:
+- R2 depth-on-new-surface (~50–60% fewer findings than R1, focused on iter-2-fold zone)
+- R3 verdict-upgrades (3 ± 1 of 7 siblings)
+
+Either signature alone is insufficient. Depth without upgrades = folds touched the surface but didn't satisfy critics. Upgrades without depth = siblings updated verdicts without re-inspecting the new fold.
+
+**§14.6.4 Pressure-tested**
+
+- **R3 upgrade signature**: 2026-05-18 ironclaw-spine. R2 downgrades 3/7 (SERAPH, QUANTUM, EVA). iter-4 XL + Phase 2A restructure. R3 upgrades 3/7 (SERAPH HOLD→SHIP, AYIN GAPS→READY, QUANTUM RED-adjacent→CLEAR). Real convergence.
+- **R2 depth signature**: 2026-05-17 architecture-intelligence-substrate. R1 findings → iter-2 folds → R2 produced 57–67% fewer findings concentrated on iter-2 additions.
+
+**§14.6.5 Composition**: Canon XXXIII (self-validation ceiling — SCRUM clears the 30% same-author misses via 7 independent lenses) + §14.3 (Two-Tier Amendment Classification — fold mechanics) + §14.5 (Three-Tier Plan Review Protocol — Tier 2 = SCRUM).
 
 ---
 
@@ -1135,6 +1189,61 @@ Cross-system comparison table. 20+ dimensions: Language, Transport, Protocol, Bi
 
 Purpose: enforce consistency across the entire platform.
 
+### §19.A — Design Choices vs Research-Grounded Claims appendix (LARGE-tier with iterative operator refinements)
+
+**Trigger**: Plans that accumulated design refinements through iterative operator conversation (hierarchy, scene mode, decay parameters, layout topology, etc.) MUST add Part XIX.A. The pattern prevents masquerading operator preferences as research-grounded claims (which would inflate C8 citation-gate score).
+
+**Format**: one row per choice in this table:
+
+| # | Choice | Status | Evidence | Falsifiable by | Recalibration trigger |
+|---|--------|--------|----------|----------------|----------------------|
+
+**Status enum**:
+- `DESIGN CHOICE` — operator preference (no user-study, no telemetry)
+- `DESIGN DEFAULT` — common UI/system convention
+- `DERIVED CHOICE` — constrained by structure (maps to existing convention)
+- `AESTHETIC CHOICE` — visual judgment, ascending dimensional richness, etc.
+- `NOVEL SEMANTIC PRIMITIVE` — Canon XXXIX promotion candidate (enters 4-step pipeline post-merge)
+
+**Mandatory fields per row**:
+- `falsifiable_by` — what observation would make this choice wrong (specific signal, not vague)
+- `recalibration_trigger` — when to revisit (post-merge timeline, telemetry threshold, operator-confusion event)
+
+**Closing disclosure box** (required at end of Part XIX.A):
+
+> Design choices are bounded by operator authority per Canon XV. They are NOT masquerading as research findings. /BUILD execution proceeds with the design defaults; the `Recalibration trigger` column tells future maintainers when to revisit each choice.
+
+**Why this is mandatory at LARGE tier**: Without explicit framing, plan author + reviewer cannot honestly separate "evidence-based architectural decision" from "operator's preference at the time of authoring". C8 (Context Hydration + Precision) and the Canon XXXV verbatim-citation gate both fail silently when these get conflated.
+
+**Pressure-tested**: `gitforest-live-ops` iter-5 added Part XIX.A with 7 choices. QUANTUM SCR1 R2 verdict surfaced this gap: *"the operator's refinements are a hypothesis; the plan currently presents them as decisions. Fix the framing."* Ratified by LÆX SCR1 R2 + Phase 7 re-verification 2026-05-18.
+
+### §19.C — Contracts Catalog (LARGE-tier with ≥10 contracts)
+
+**Trigger**: Plans that accumulate ≥10 named contracts (API endpoints, WebEvent variants, type schemas, enums, IDB schemas, auth models, hash-derivation functions, cache policies, error mappings) MUST consolidate them into Part XIX.C — a dedicated Contracts Catalog section.
+
+**Format**: one sub-section per contract (`XIX.C.1`, `XIX.C.2`, …). Each sub-section pins:
+
+1. **Concrete Rust/TS source code block** (verbatim, not prose description)
+2. **Source-of-truth file path** (absolute, e.g., `lightarchitects-sdk/lightarchitects/src/soul/types.rs`)
+3. **Pinned SHA** for SOT verification at /BUILD time
+4. **Cross-references** to other contracts that consume or depend on this one
+
+**Why mandatory at ≥10 contracts**: a cold-context /BUILD executor cannot assemble contracts scattered across 7 phases of task bullets without missing one. A single catalog section makes the contract surface auditable + extensible. Future amendments append a sub-section rather than re-finding the original scattered location. Stranger-test (Part XVII handoff checklist) FAILS without consolidation when contract count ≥10.
+
+**Phase 1 task pairing** (recommended): "validate every Part XIX.C contract against pinned SHA before implementation". This makes the SOT verification mechanical at /BUILD start.
+
+**Reference example** (`gitforest-live-ops` iter-8, 8 contracts):
+- XIX.C.1 — `SquadCommsMessageType` enum (12 variants pinned)
+- XIX.C.2 — AYIN span attribute allowlist (bounded enum with cardinality cap)
+- XIX.C.3 — `AgentDomain` enum (8 variants, source-of-truth path)
+- XIX.C.4 — `ConductorTask` schema (full TS interface)
+- XIX.C.5 — `github_token_store.rs` API surface (fn signatures + error enum)
+- XIX.C.6 — Polytope `cluster_hash` derivation (TS code with derivation logic)
+- XIX.C.7 — WebGL → canvas2D fallback handshake (7-step sequence)
+- XIX.C.8 — IDB LRU eviction policy (code block with thresholds)
+
+**Pressure-tested**: `gitforest-live-ops` iter-7 had contracts scattered across Phase 1/2/3 task bullets (sanity audit could not verify all 8 in one pass); iter-8 consolidated into Part XIX.C with all 8 RESOLVED + implementable. Ratified at Phase 7 2026-05-18.
+
 ---
 
 ## Part XX — Prior Art Assessment
@@ -1155,6 +1264,33 @@ Verdict: evaluate honestly. Adopt what's better, reject over-engineering.
 | | | |
 
 Complete scope before writing a single line of code.
+
+### Part XXI.D — Manifest Counter Synchronization (10-Field Discipline) (Ratified at Phase 7 2026-05-18, candidate #23)
+
+**Scope**: ironclaw-style per-build `manifest.yaml` carries counter and reference fields that all derive from canon state. When canon changes (new amendment, ratification, version bump), ALL of the following must update synchronously — partial updates create drift between canon and manifest that breaks downstream queries.
+
+**Why**: The manifest is a SNAPSHOT — a frozen reflection of canon state at build-start. Partial snapshots claim N amendments while pointing to N+1 docs, or claim 20 candidates while the queue enumerates 21. /BUILD G6 preflight reads manifest counters and verifies consistency; mismatches HALT dispatch.
+
+**10-field atomic checklist** — when you edit canon:
+
+1. `canon_amendments_applied` (int) — cumulative count across the build's session arc
+2. `canon_docs_touched` (int) — distinct files modified (separate from amendments)
+3. `lasdlc_v` (string) — current LASDLC schema version; bump only on schema change
+4. `blueprint_parts_extended` / `cookbook_sections_added` / `agents_playbook_sections_added` (lists) — per-doc section enumeration; append new section IDs
+5. `lex_promotion_candidates` (int) — current count of candidates in queue
+6. `lex_ratification_target` (string with embedded count) — "≥N/M ratified at phase boundary"; update BOTH ratio and target counts
+7. `lex_pre_authored_candidates` (int) — sub-pieces of composite candidates
+8. `dependent_canon` (list) — per-canon-doc descriptors; append to correct doc
+9. `metadata.version` (string) — bump on every sync (1.2 → 1.3 → 1.4 ...)
+10. `metadata.last_updated` (string) — ISO date + iter-N stamp + brief change description
+
+**Pattern**: list all 10 fields at start of sync, update in one batch (4–5 sequential edits since they're in different manifest sections), grep-verify before commit.
+
+**Anti-pattern**: updating counter N but missing counter N+1. Silent drift. Catches at next /BUILD dispatch → gate HALT.
+
+**Pressure-tested**: 2026-05-18 iter-18. Canon XLII codification required updating 9 of 10 fields. Missing the `lex_ratification_target` string bump would have left manifest claiming a ratio that didn't match the enumerated queue.
+
+**Composition**: Part XXI (manifest governance) + Canon XLII (manifest is CHANGELOG-class artifact).
 
 ---
 
@@ -1830,37 +1966,37 @@ Failure mode: source file changes but checklist `xea_verified` not refreshed →
      Evidence: 28 verification surfaces; aggregate 93.8 EXEMPLARY
      ────────────────────────────────────────────────────────────────────────── -->
 
-## Part XXIV — Autonomous-Mode Planning Doctrine (v3.4 ADDITION 2026-05-18)
+## Part XXV — Autonomous-Mode Planning Doctrine (v3.4 ADDITION 2026-05-18)
 
 When `execution_mode: autonomous` (LASDLC v2.5.2), the plan adopts five additional discipline gates beyond interactive `/PLAN`:
 
-### §24.1 Wave-Level File-Function Map (extends Part XXI)
+### §25.1 Wave-Level File-Function Map (extends Part XXI)
 
 In autonomous mode, file-function maps decompose to the WAVE level, not just the PHASE level. Each wave's tasks declare exclusive `file_ownership` arrays (Canon XXIII). Conflict detection at plan-time prevents wave-N task collision at runtime. Wave-N+1 tasks may reference Wave-N output files but never edit them concurrently.
 
-### §24.2 Context Budget Per Task (links Cookbook §65)
+### §25.2 Context Budget Per Task (links Cookbook §65)
 
 Every autonomous-mode task carries a `context_budget: {tier1, tier2, tier3, cap_tokens: 15000}` declaration. Tier 1 (type defs + actual call sites + test harness) is NEVER truncated; Tier 2 (similar impls + decisions.md) truncates last-added-first; Tier 3 (task spec + execution history) truncates first under pressure. This operationalizes the **"Plausible vs Correct"** doctrine from `ironclaw-architecture.html` §11: correct code requires THIS system's invariants, not training-data pattern-matching.
 
-### §24.3 Program-Manifest Integrity Lock
+### §25.3 Program-Manifest Integrity Lock
 
 Autonomous-mode plans MUST be locked at /BUILD-start via Ed25519-signed `program.toml` + `program.sig` (operator-approval ceremony). Mid-execution plan changes are a hard stop. Recovery requires re-signing ceremony. See security-guardrails §SG-CRYPTO for ceremony spec.
 
-### §24.4 Iter-Cap Override Composition (refines §6.2)
+### §25.4 Iter-Cap Override Composition (refines §6.2)
 
 When canon-audit findings at iter-3+ surface BLOCKING canon-contradictions (factual canon-vs-implementation drift), §6.2 operator-override is the canonical fold mechanism. Each override increments `review_iterations` honestly; iter-count >5 is a tier-mismatch signal per `feedback_zero_exception_tier_reeval`. Operator-override never violates Canon XXXIX no-auto-application — canon edits still enter the 4-step pipeline at Phase 7 LÆX ratification.
 
-### §24.5 Independent Verification Surface Count (extends Part XIV C2)
+### §25.5 Independent Verification Surface Count (extends Part XIV C2)
 
 C2 (Cross-Validation Discipline) earns full marks in autonomous-mode plans only when independent verification surfaces ≥ 14 (e.g., 5 R-research + 7 siblings × cross-critique + 2 cross-exam streams = 14). Self-validation alone caps at STRONG band per `feedback_self_validation_ceiling`. The 28-surface convergence pattern (ironclaw-spine session 2026-05-18) is the reference high-water mark.
 
-### §24.6 Cross-Build Coupling Integration Record
+### §25.6 Cross-Build Coupling Integration Record
 
 When ironclaw-style autonomous backend ships alongside operator-visualization frontend (e.g., ironclaw-spine ↔ gitforest-live-ops), plans MUST declare a `cross_build_integration` section enumerating: (a) file-level shared surfaces with merge protocols, (b) WebEvent/API surface namespace coordination, (c) sequencing decision with wall-clock rationale, (d) joint Northstar metric forecast. Reference: ironclaw-spine §22.5 (the canonical pattern).
 
-### §24.7 Cross-Reference Table
+### §25.7 Cross-Reference Table
 
-- LASDLC Template v2.5.2 §24.1 — wave schema (mechanical)
+- LASDLC Template v2.5.4 §25.1 — wave schema (mechanical)
 - Cookbook §65 — Context Assembly Discipline (tier budgets)
 - Cookbook §66 — Concurrency Idioms (autonomous workers)
 - Security-Guardrails §SG-CRYPTO — manifest integrity ceremony
@@ -1870,4 +2006,4 @@ When ironclaw-style autonomous backend ships alongside operator-visualization fr
 
 ---
 
-*Architects Blueprint v3.4 | Light Architects | updated 2026-05-18 with Part XXIV (Autonomous-Mode Planning Doctrine — closes ironclaw-spine §3+§11+§15 canon gaps; pending LÆX ratification at Phase 7)*
+*Architects Blueprint v3.4 | Light Architects | updated 2026-05-18 with Part XXV (Autonomous-Mode Planning Doctrine — closes ironclaw-spine §3+§11+§15 canon gaps; pending LÆX ratification at Phase 7)*

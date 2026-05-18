@@ -76,6 +76,7 @@ architecture_artifacts:
       tier_MEDIUM: ["C2_container", "C3_component"]
       tier_LARGE: ["C1_context", "C2_container", "C3_component", "C4_code", "ERD_if_persisted_data", "sequence_for_async_flows"]
       tier_PROGRAM: ["all_LARGE_aggregated_at_program_level", "per_build_subset_at_build_level"]
+      tier_XL: ["C1_context", "C2_container", "C3_component", "C4_code", "ERD_if_persisted_data", "sequence_for_async_flows", "deployment_topology_if_multi_binary"]
     artifact_format: "Mermaid embedded in plan body OR Likec4 DSL referenced by path"
     source_anchor_discipline: "Each non-trivial relation carries source_anchor: {file, lines} OR source_anchor: architect_assertion. Architect-assertion <=20% per diagram per Canon XLI."
     compliance_checklist: "Per Blueprint Part XXIV - choose variant V1/V2/V3/V4 matching artifact type; verify commands restricted to cmd_exec allowlist per Cookbook §63.P2."

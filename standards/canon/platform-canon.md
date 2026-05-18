@@ -764,6 +764,33 @@ Lessons from session work, no matter how vivid, MUST follow a four-step pipeline
 
 **Ratified by**: Kevin (2026-05-13).
 
+### Canon XXXIX Extension — Authoritative Enumeration as Step-(b) Prerequisite (Ratified at Phase 7 2026-05-18, candidate #24)
+
+**Scope**: Canon XXXIX describes a four-step pipeline (create entry → identify candidates → contradiction check → ratification). Step (b) "identify promotion candidates" is incomplete if the candidates are not enumerated in a single source of truth.
+
+**Problem**: Numbered candidate IDs scattered across canon doc footers + per-build manifest counters do NOT constitute a queue. They are pointers to a queue that doesn't exist. Without authoritative enumeration:
+
+- Phase N LÆX cannot mechanically compute "for each candidate, run contradiction check"
+- Kevin's ratification stamp has no canonical anchor
+- Counter claims drift (manifest says 20, only 7 IDs found in docs)
+- Ratified candidates from prior sessions become archaeologically invisible
+
+**Pattern**: Before LÆX Phase-N evaluation fires:
+
+1. **Author `standards/canon/LAEX-PHASE-N-QUEUE.md`** — single source of truth enumerating ALL candidates (RATIFIED, PENDING-Step-b, PENDING-Step-c+)
+2. **Per-candidate required fields**: ID + title · status · source · canon location · authority (Canon XV override vs. direct) · memory/helix cross-references · cross-canon ties
+3. **For composite candidates**: enumerate sub-pieces (e.g., #19 = 4 sub-changes)
+4. **Link manifest to queue**: per-build manifest carries `lex_queue_file` field; manifest counters DERIVE from queue
+5. **Update on every canon edit**: when authoring under Canon XV override, add to queue FIRST, then make canon edit (not inverted)
+
+**Anti-pattern**: Queue drift — manifest claims N candidates, queue enumerates N+1 or N-1. Discovered when LÆX begins step (c) contradiction check and finds undocumented candidates.
+
+**Pressure-tested**: 2026-05-18 iter-18. Manifest claimed `lex_promotion_candidates: 20` but searching all 10 canon docs found only ~7 numbered IDs. Authored LAEX-PHASE-7-QUEUE.md reconstructing full 21-candidate enumeration. Discovered 11 candidates already RATIFIED from prior sessions that would have been silently dropped without the queue. Subsequent 137-entry memory sweep surfaced 12 additional candidates (#22-#33) — queue prevented duplicative enumeration.
+
+**Composition**: Canon XXXIX (the pipeline this extends) + Canon XLII (queue is CHANGELOG-class artifact per separation doctrine) + Canon XXXIII (independent runner clears self-validation ceiling on queue authoring).
+
+**Mandatory trigger**: Every /BUILD reaching phase-boundary evaluation MUST have completed this queue authoring before LÆX Phase-N evaluation fires. The queue is the authoritative artifact LÆX evaluates; without it, the pipeline cannot proceed past Step (b).
+
 ---
 
 ## Canon XL: Mixture-of-Experts Platform Architecture
