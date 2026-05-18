@@ -4,7 +4,36 @@ Companion changelog for `builders-cookbook.md`. The cookbook holds **current sta
 
 **Authoritative latest version**: see the header inline summary in `builders-cookbook.md`.
 **Mechanical history**: `git log -- standards/canon/builders-cookbook.md`
-**Constitutional basis**: Canon XLII — Schema-Changelog Separation (LÆX candidate #21, ratification pending). See `canon://platform-canon` §"Canon XLII".
+**Constitutional basis**: Canon XLII — Schema-Changelog Separation (RATIFIED 2026-05-18 Phase 7). See `canon://platform-canon` §"Canon XLII".
+
+---
+
+## v3.3.0 — Phase 7 ratifications (2026-05-18, iter-19)
+
+**Source**: LÆX Phase 7 ratification walkthrough (see `LAEX-PHASE-7-QUEUE.md`).
+
+### §57.11 — Northstar Pillar Mechanical Mapping
+**Candidate**: #12 — promoted from `feedback_e2e_pillar_mechanical_validation`
+**Wave**: 1 (Step-(d)-failure closure — memory marked RATIFIED 2026-05-17 but canon body was INCOMPLETE; pattern existed only in memory)
+**Rationale**: For each Northstar Pillar a build claims to advance, Phase 7 E2E suite MUST declare ≥3 specific named scenarios validating that Pillar's mechanical promises. Generic "operator flow" coverage does not satisfy. Total E2E count = `3 × claimed_pillar_count + happy_path + perf_baseline + a11y_baseline`. Each scenario: specific name (E1, E2, ...) + specific mechanical promise (cite Pillar text) + specific assertion (≤500ms, framerate ≥30fps, terminal_window_open_count===0). Closes /GATE-7 N-gate from checkbox to empirical validation.
+**Cross-canon ties**: §57 (E2E discipline), Northstar §S (pillar validation), Canon XXXII (E2E discipline)
+**Pressure-tested**: `gitforest-live-ops` iter-7 had 6 generic categories; iter-8 expanded to 18 specific scenarios mapping to P1/P2/P4 with concrete assertions.
+
+### §57.6d — Console-Error Zero Gate
+**Candidate**: #33 — promoted from `feedback_comprehensive_e2e`
+**Wave**: 6 RATIFY-WITH-MERGE (LOW conf, supervisor merge verdict — sub-rule of §57.6 rather than standalone section)
+**Rationale**: All E2E test runs (Smoke/Capability/Integration) must terminate with zero console errors. §57.2b requires CAPTURE (artifact discipline); §57.6d requires ZERO (blocking gate). Capturing five errors and ignoring them is non-compliant. Allowlist permitted for benign-by-design messages. Implementation via Playwright `page.on('console')` + test teardown assertion.
+**Cross-canon ties**: §57.2a (console.ndjson capture), §57.6 (stability tiers)
+**Pressure-tested**: webshell-ui Playwright session (2026-05) — TypeError capture during comprehensive E2E catches hydration mismatches, event-handler closures, stale promise rejections that ship silently otherwise.
+
+### §68 — Enum-Extension Collision Pre-check
+**Candidate**: #32 — promoted from `feedback_enum_collision_precheck`
+**Wave**: 6 RATIFY-AND-CODIFY (LOW conf but concrete pattern + decision-shaping + pressure-tested)
+**Rationale**: Before any plan claims a new value in an existing enum, pre-check canon to verify position is free and count aligns. Common enums requiring pre-check: BuildViewMode, WebEvent, AgentDomain, Gate vocab [A+S+Q+C+O+P+K+D+T+R], LASDLC tier, status enums. Cross-plan coordination via helix coordination pact when two plans extend same enum.
+**Cross-canon ties**: Blueprint Part VI (Compliance Matrix), webshell-api-surface §3.3 (current SOT), Canon XXXVIII (gate vocab)
+**Pressure-tested**: `gitforest-live-ops` iter-7 API-canon audit caught view-mode-6 collision (pre-existing `comms` occupied that position); iter-8 allocated Wave Timeline as view-mode-7 + helix coordination pact.
+
+---
 
 > **Note on legacy version numbering** (2026-02 through 2026-05): Cookbook was historically versioned per-section rather than per-document. Version numbers `2.0.0`, `3.0.0`, and `1.6.0` each appear at multiple dates because section authors bumped section-scoped versions independently. From v3.2.1 (2026-05-18) forward, the cookbook follows strict per-document SemVer. Earlier entries below preserve original numbering for traceability.
 

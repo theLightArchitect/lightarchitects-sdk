@@ -2437,6 +2437,4 @@ Solving the wrong problem confidently. The framing discipline is the gate that c
 
 ---
 
-*v1.7 adds (2026-05-18): §15.3.13 Wave Dispatch Protocol + §7.8 Pre-Completion Verification Gate + §Phase-2A.5 Canon-Doc Amendment Phase Protocol. Closes ironclaw-spine iter-11 follow-on gaps (wave fan-out/fan-in mechanics + ⚡PRE-DONE marker operationalization + canon-violation-by-construction prevention).*
-
-*v1.9 adds (Phase 7 ratification 2026-05-18): §7.9 Implementation-Readiness Audit (candidate #13 formalization) + §7.10 Two-Problems-in-One-Question Framing Discipline (candidate #22).*
+*Agents Playbook v1.9 | Light Architects | updated 2026-05-18 at Phase 7 ratification close-out (added §7.9 Implementation-Readiness Audit + §7.10 Two-Problems Framing Discipline). v1.7 added §15.3.13 + §7.8 + §Phase-2A.5; v1.8 added §15.3.13.5 28-gate checklist. Full amendment narrative: see `agents-playbook.CHANGELOG.md` companion (created at Phase 7 per Canon XLII Tier-2 threshold).*

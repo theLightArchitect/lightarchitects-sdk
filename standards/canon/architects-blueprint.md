@@ -2006,4 +2006,4 @@ When ironclaw-style autonomous backend ships alongside operator-visualization fr
 
 ---
 
-*Architects Blueprint v3.4 | Light Architects | updated 2026-05-18 with Part XXV (Autonomous-Mode Planning Doctrine — closes ironclaw-spine §3+§11+§15 canon gaps; pending LÆX ratification at Phase 7)*
+*Architects Blueprint v3.5 | Light Architects | updated 2026-05-18 at Phase 7 ratification close-out (added §19.A, §19.C, §14.4, §14.6, Part XXI.D); v3.4 added Part XXV Autonomous-Mode Planning Doctrine. Full amendment narrative: see `architects-blueprint.CHANGELOG.md` companion (created at Phase 7 per Canon XLII Tier-2 threshold).*

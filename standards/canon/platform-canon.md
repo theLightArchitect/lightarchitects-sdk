@@ -1122,7 +1122,7 @@ These names are **vocabulary facades** over the existing 7 squad siblings — th
 
 ---
 
-*Platform Canon v2.2 | updated 2026-05-18 with: Canon XLII (Schema-Changelog Separation — standards docs hold current state only; LÆX candidate #21). Plus v2.1 additions: LDB §D5 (Program Manifest Integrity), Gatekeeper Registry Extension (Decision Pipeline as runtime arbiter mechanism), Vocabulary Canon (LightArchitect:* ↔ sibling mapping). Closes ironclaw §3+§5+§7+§13 canon gaps + 2026-05-18 changelog-accretion antipattern. LÆX Phase 7 ratification pending.*
+*Platform Canon v2.3 | updated 2026-05-18 at Phase 7 ratification close-out (added Canon XXXIX Extension on enumeration prerequisite); v2.2 added Canon XLII (Schema-Changelog Separation — RATIFIED Phase 7); v2.1 added LDB §D5 + Gatekeeper Registry Extension + Vocabulary Canon. Full amendment narrative: see `platform-canon.CHANGELOG.md` companion (created at Phase 7 per Canon XLII Tier-2 threshold; Canon XLII binds its own home first).*
 
 ---
 
