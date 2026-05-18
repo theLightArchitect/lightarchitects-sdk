@@ -543,7 +543,7 @@ pub fn build_app(state: AppState) -> Router {
             get(gitforest::routes::handle_live),
         )
         .route(
-            "/api/gitforest/node/{id}",
+            "/api/gitforest/node/{*id}",
             get(gitforest::routes::handle_node),
         )
         // ── Phase 9.5 / 10.5 SOUL vault hybrid memory routes ─────────────────
