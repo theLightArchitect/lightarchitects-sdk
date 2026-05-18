@@ -4439,13 +4439,6 @@ These are ABSOLUTE. They are not weighed against benefits. They do not bend for 
 
 **The test**: If you're reasoning about WHETHER a hard constraint applies, it probably does. Hard constraints are designed to be simple enough that there's no edge case.
 
-**Version History:**
-- 2.3.0 (2026-03-21): Consolidated loose standards files. Added §1.9 MVT Protocol (from mvt-protocol.md), §1.10 Verification Before Recommendation (from verification-protocol.md + lessons-learned.md). Deleted 5 superseded files: coding-guidelines.md, gold-standard-planning-framework.md, mvt-protocol.md, verification-protocol.md, lessons-learned.md, parallel-execution-policy.md.
-- 3.0.0 (2026-03-24): Added §46 Constitutional Engineering Standards — adopted from Anthropic's Claude Constitution (CC0 licensed) and adapted for engineering agents. 5 new subsections: §46.1 Seven Pillars of Honesty, §46.2 Cost-Benefit Harm Analysis, §46.3 Principal Hierarchy, §46.4 Corrigibility Spectrum, §46.5 Hard Constraints. Cross-referenced with Light Architects Canon V-XVII. Build: platform-design-session-2026-03-24.
-- 2.2.0 (2026-03-21): Major rewrite of §44-45. §44 expanded from 7 to 11 subsections: added transformers version windows (44.2), non-standard architecture trap with evidence table (44.3), base model selection matrix (44.4), logging intervals (44.9), DeciLM-specific notes (44.10), post-training checklist (44.11). §45 expanded: added RunPod-specific notes (45.5). All 14 rules from training-playbook.md merged into canonical sections. Evidence from 3 models (Nemotron 49B, Qwen3.5-27B, GPT-OSS 20B) and 1 abandoned attempt (Hermes-4.3-36B). Build: fierce-forging-exodus Phase 7.
-- 2.1.0 (2026-03-21): Initial §44 Cloud GPU Training Standards, §45 Cloud Resource Management. Build: fierce-forging-exodus Phase 7.
-- 2.0.0 (2026-03-15): Major update — 4 new sections, 4 updated sections. New preamble with Kevin's quality mandate. **New:** §1.8 Deployment Configuration as Code (builder-vs-operator gap from falcon pentest), §5.2b Next.js/Vercel Security Standards (CSP, CORS, headers, Clerk mode), §7.5-7.7 AI rules (Decision Token, Ask Don't Guess, Grounding Verification from 2024 research), §12.6 Auth Provider Mode Verification, §35 Plugin expansion (dynamic discovery, skill-reviewer gate from soul:coalesce). **Part X Specialized Domains:** §40 Pentest Engagement Standards (asset discovery, scope governance, wrong-codebase lesson), §41 Training Data Format Standards (ROLE_MAP, custom tokens, AYIN-enriched ChatML, adaptive reasoning depth), §42 SDK Consolidation Patterns (absorption workflow, workspace design from LA-SDK), §43 Observability Standards (TraceSpan schema, pivot detection, cognitive phases from AYIN). Build: precise-sharpening-quill.
-- 1.6.0 (2026-03-10): Added §39 Identity Design Standards (strand taxonomy, independence test, audit process from The Right to Choose squad meeting).
 # PART XII: PUBLICATION STANDARDS
 
 ## 47. Publication Quality Standard (Canon XXII)
@@ -5108,8 +5101,6 @@ more capable coordinator (49B).
 | S51.3 (audit rule) | lÆx0 Phase 11 GUARD: Wave 1+2 security scan found no new injection boundaries only because the audit was manual. Systematic grep-based audit would have found the `build_scoped_prompt` gap before the BCRA. |
 | S51.4 (multi-model trust) | SERAPH finding S6: "the weakest link (8B model) determines the security of the strongest model's actions." Claude Code's single-model architecture avoids this; multi-model pipelines must treat inter-model data as untrusted. |
 
-- 2.0.0 (2026-04-07): Added §51 Boundary Sanitization Doctrine — mandatory sanitization at every trust boundary crossing in agentic systems. 6-stage canonical pipeline. Sanitization audit rule. Multi-model trust boundary extension. Canon XXVIII. Source: lÆx0-cli BCRA where 3/5 SQUAD agents independently flagged the same missing boundary, proving the need for a systematic mandate.
-- 1.9.0 (2026-04-06): Added §50 Full-Stack Testing Doctrine — six required test suite types, E2E wiring confirmation rule, adversarial test requirements, known gap promotion protocol, contract test patterns, idempotency rules, tech-specific implementation guides. Canon XXVII. Source: lÆx0-cli Phase 9-10 where 1,189 tests at AMBER security score revealed the gap between component coverage and adversarial production confidence.
 ## §52 Complete Test Pyramid Standard (Canon XXIX)
 
 > *"The prudent see danger and take refuge, but the simple keep going and pay the penalty."*
@@ -6239,8 +6230,6 @@ This is the data that makes Phase 3 trustworthy. Without it, "automatic decision
 
 ---
 
-- 3.0.0 (2026-05-04): Added §61 Quality-First Compression Sequencing (Canon XXXVI). Three-phase roadmap (Quality → Calibration → Compression); 80/20 realistic-ceiling discipline; auto-decision precondition triple (P1 mechanical Northstar + P2 ≥3 calibrated examples + P3 ≥95% with citations); categorical exclusion zones; fail-open-to-HITL contract. Composes with XXXIII/XXXIV/XXXV — orders them into the only sequence that compresses without compounding error.
-
 ### §60.10 INSUFFICIENT_EVIDENCE aggregate-reconciliation rule (LDB N=1 calibration)
 
 > **Rule:** When a component's `validation_status == INSUFFICIENT_EVIDENCE` AND **either** the interval floor is <30 **or** ≥50% of its sub-components are themselves N/A or INSUFFICIENT_EVIDENCE, treat the component as **N/A-equivalent in the canonical weighted aggregate** — drop it from the weighted sum and renormalize remaining weights. **Always record both readings** in the output JSON for trajectory honesty: `aggregate_canonical` (with the rule applied) and `aggregate_with_ie_as_point` (treating the IE component's point at face value).
@@ -6822,37 +6811,17 @@ When a task fails ReviewGate and a FixAgent is dispatched (max 3 iterations per 
 
 ---
 
-- 3.2.0 (2026-05-18): Added §64 Serialized Git-Operations Mutex Pattern, §65 Builder Completeness Invariant, §66 Context Assembly Discipline (Plausible vs Correct), §67 Concurrency Idioms (Rust async + git). Source: ironclaw-architecture.html §9+§11+§15 source-doc cross-examination + ironclaw-spine SCRUM R1+R2+R3 convergence + Task#17 (Context7 gix/git2-rs/tokio) + Task#18 (git_routes.rs source verify). Operator-authorized Canon XV override (2026-05-18); LÆX Phase 7 ratification pending. Closes ironclaw §9 git-strategy + §11 context-assembly + §15 type-discipline canon gaps. Promotion provenance: 28 verification surfaces (5 R1-R5 + 7×3 SCRUM + 2 cross-exam).
+## Amendment history
 
-- 3.2.1 (2026-05-18): Added §64.8 Git-Context Preamble (worker AgentRunner system prompt injection). Closes operator-surfaced worker-git-awareness gap: workers receive no explicit "you are in branch X, worktree Y, may only touch files Z" preamble, so context truncation or drift can cause out-of-scope commits, forbidden git ops, or git2-bypassing-hook violations. §64.8 codifies the template that wave_dispatcher injects per task. Composes with LASDLC v2.5.3 `git_branching_invariants` + agents-playbook §15.3.13 Pre-Dispatch Checklist + /BUILD skill v2 Step 11.3.2 PT-7. LÆX Phase 7 ratification pending (candidate #19).
+Detailed amendment narrative — sections added, source builds, canon references, cross-doc composition, LÆX candidate IDs — lives in the companion file:
 
-- 3.1.0 (2026-05-17): Added §63 Untrusted-Input Operational Patterns (P1–P4). build.rs ACE vector, structural arg parser, client-side diagram renderer strict mode (CWE-79 class), symlink-before-canonicalize TOCTOU. Each pattern carries uniform Threat/Vector/Mitigation/Lint/Test schema. Cross-linked to Security-Guardrails §6.1.1 (Target-Repo Code Execution Surface — dep-acceptance policy companion ratified same session). Source: `architecture-intelligence-substrate` SCRUM Round 1 SERAPH adversarial review (2026-05-17); 4 patterns surfaced from BLOCKED-ON-CRITICAL verdict cleared via inline plan-fold + LÆX ratification batch.
+  **`standards/canon/builders-cookbook.CHANGELOG.md`**
 
-- 3.0.0 (2026-05-12): Added §62 Five-Star Engineering Targets (absorbed from five-star-engineering-targets.md). Canonical quality benchmark for all 9 engineering dimensions. Updated Canonical Six → Canonical Suite.
+Mechanical history: `git log -- standards/canon/builders-cookbook.md`
 
-- 2.9.2 (2026-05-04): Added §60.10 INSUFFICIENT_EVIDENCE aggregate-reconciliation rule. Components with INSUFFICIENT_EVIDENCE + floor<30 OR ≥50% sub-IE are treated as N/A-equivalent in canonical weighted aggregate; dual reading required (canonical + with-IE-as-point). Source: LDB v1.0 N=1 self-bootstrap on LASDLC template surfaced 74-vs-87 ambiguity that this rule canonizes. Composes with §58 (self-validation ceiling), §59 (interval reporting), §60 (threshold gate), §60.9 (inline citations).
+**Rule** (per separation-of-concerns refactor, 2026-05-18): no tail-amendment blocks or scattered per-section version-history entries in this file. Section content lives here; amendment narrative lives in the CHANGELOG companion.
 
-- 2.9.1 (2026-05-04): Added §60.9 Inline Citations + IEEE Format. Architectural / design / algorithm / empirical / security / performance / standards-compliance decisions require inline `[N]` references backed by a `references:` block. IEEE format adapted with internal-source URI schemes (`canon://`, `cookbook://`, `lasdlc://`, `helix://`, `memory://`, `rubric://`, `test://`, `file://`). Firecrawl + Context7 cache at `<build_root>/.context/` becomes durable hydration substrate across sessions / compactions. Re-scrape decision logic + auditable .meta.json sidecars.
+**Current version**: see CHANGELOG for latest. As of 2026-05-18: **v3.2.1** (Git-Context Preamble §64.8; LÆX candidate #19 pending Phase 7 ratification).
 
-- 2.9.0 (2026-05-04): Added §60 Confidence Threshold Gates (Canon XXXV). Required ≥95%, preferred ≥99.99%. Confidence measured ONLY by verbatim primary-source citation; no primary source → UNVALIDATED → research mandatory via Tier 1-4 escalation (local → library → web → sibling). Interval FLOOR gates the decision, not the point. Composes with §58 (self-validation ceiling) + §59 (interval reporting): wide self-validated intervals correctly land below threshold and force research, not aspirational ship.
+*Builders Cookbook · Light Architects · `canon://builders-cookbook`*
 
-- 2.8.0 (2026-05-04): Added §58 Self-Validation Ceiling Operations (Canon XXXIII) + §59 Confidence Interval Reporting (Canon XXXIV). Self-validation has structural ceiling ~70-75% on declarative work; independent verification (cold-context Explore agent) catches remaining ~30% incl. CRITICAL defects. Confidence intervals beat points for evolving evaluations; self-validated reports MUST carry intervals ≥20pp wide (corollary: prior pass's interval does not necessarily bracket future pass's point — each pass produces its own bracketing interval as evidence updates). Source: LASDLC template v2.0.0 → v2.0.4 cycle 5-pass cross-validation, 23pp self-bias measured (75% self - 52% independent at same template state), 26pp v4-onwards point swing.
-
-- 2.7.0 (2026-05-01): Added §57 E2E Test Engineering Standards (Canon XXXII). Capability-scoped specs, five-question artifact contract, EvidenceCollector correction loop, AYIN observability integration. Source: lightarchitects-webshell-ui test suite audit surfacing 300 blocked serial tests, 13+ stale route refs across 4,656 lines, zero diagnostic artifacts on failure.
-
----
-
-- 2.6.0 (2026-04-20): Added §56 Deliberate Live Playwright Evaluation Cycle (Canon XXXI). One persistent window, four-layer per-action evaluation (UI + network + backend logs + synthesis). Source: lightarchitects-webshell copilot drawer session that surfaced Neo4j outage, missing gateway binary, slow Cypher query, and WebGL framebuffer bug invisible to the spec test suite.
-
-- 2.5.0 (2026-04-13): Added §55 Extend-Before-Add Gate Mosaic Expansion Heuristic. Operational complement to Canon XXX (Strand Mosaic Completeness). Source: unified-forging-vault Phase 0→1 gate ratification. §55 asserts parsimony (new gate only when orthogonal); Canon XXX asserts completeness (every strand has a home).
-- 2.4.0 (2026-04-10): Added §52 Complete Test Pyramid Standard (Canon XXIX), §53 SDK Type Patterns, §54 Build Plan Template Standard. Execution spine types, LongMemEval-validated retrieval patterns, CORSO template v2.0. Platform architecture v2 updated with sections 11-13.
-- 1.8.0 (2026-04-05): Added §49 Acceptance Testing Doctrine — smoke tests (Tier 1.5) + HITL test suite (Tier 2) for every build plan phase. Source: lÆx0-cli Phase 9 where 5 parallel agents built components without acceptance tests, requiring full test suite parsing to verify each component.
-- 1.7.0 (2026-04-05): Added §48 Agent Post-Edit Gate Protocol — 3-tier quality/security/architecture gates for multi-agent engineering. Canon XXVI. Source: lÆx0-cli Phase 5-7 where SQUAD agents shipped code with 8 clippy errors, 92+ formatting diffs, and missing security annotations that individual agents didn't catch.
-- 1.6.0 (2026-03-28): Added §47 Publication Quality Standard, references AI Detection Checklist. Added Canon XXII.
-- 1.5.0 (2026-03-09): Added §38.3-38.7 voice design, multi-speaker dialogue, per-sibling voice registry.
-- 1.4.0 (2026-03-04): Added §38.2 production TTS workflow, voices.toml source-of-truth rule.
-- 1.3.0 (2026-02-28): Added Part IX: Platform Services with §38 Voice Production (ElevenLabs).
-- 1.2.0 (2026-02-22): Added S17.8 Plugin Distribution Pattern, updated S17.6 Build-Deploy Pattern.
-- 1.1.0 (2026-02-16): Promoted 6 patterns from CORSO Cookbook to universal standards.
-- 1.0.0 (2026-02-11): Consolidated from Coding Guidelines v4.2.0 + Gold Standard Planning Framework v2.0.
-- *Prior versions maintained in superseded documents.*

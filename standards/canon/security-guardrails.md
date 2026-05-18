@@ -1099,16 +1099,6 @@ An explicit per-layer control map surfaces gaps that cross-cutting policies can 
 
 ---
 
-## Changelog
-
-| Version | Date | Summary |
-|---|---|---|
-| 1.2.0 | 2026-05-12 | Industry baseline additions (Tier 1/2/3). **New sections**: §2.7 MITRE ATLAS v4.5 (16 AI/ML adversary tactics + LA platform controls); §3.7 OWASP ASVS verification baseline (L1 minimum, L2 for auth/crypto); §5.6 Device Security L1 physical (FileVault, screen lock, USB, firmware); §11.4 NIST CSF v2.0 (6-function: Govern·Identify·Protect·Detect·Respond·Recover); §11.5 EU AI Act + GDPR Art. 25 regulatory mapping; Part XIII OSI Layer Security Posture (L1-L8 per-layer control map + residual gap summary). **Expansions**: §2.4 OWASP API Security Top 10 2023 stance table + ProtectAI IPC Sidecar mandatory pattern (no secrets as CLI args); §3.1/A04 LINDDUN privacy threat modeling paired with STRIDE for PII flows; §3.5 NIST SP 800-63B AAL1/AAL2/AAL3 alignment (AAL2 required for privileged ops + all PII interactions); §5.4 DNS security (DoH, DNSSEC, rebinding protection, exfiltration detection); §6.4 OpenSSF SLSA L2 target (currently L1; L3 roadmap 2027); §12.1 +12 new industry baseline index entries. 12 new source files added to frontmatter. |
-| 1.1.0 | 2026-05-12 | SERAPH security audit applied (15 findings). **CRITICAL**: §2.6 Multi-Agent Trust Chain Policy (monotonic scope reduction invariant, per-hop auth, chain logging); §7.1 agent-to-agent key scoping (per-callee `aud` claim); removed `execve` from seccomp allowlist (sandbox escape vector); §10.2 HMAC chain key ownership separation (LÆX holds verify key, not AYIN). **HIGH**: §1.5 Security Exception Process; LLM07 output filtering control; `pids.max` 512→64; §3.6 Neo4j Hardening; §6.3 model change threat model requirement; §11.3 Developer Security Training. **MEDIUM**: WASM fuel exhaustion behavior specified (OutOfFuel trap); Secret tier out-of-band channels defined; SBOM retention 90d→1 year; CIS CG15+CG17 added; CVSS 4.0 added to findings schema. **LOW**: PQC migration roadmap (FIPS 203/204); 12th AYIN signal (behavioral anomaly). |
-| 1.0.0 | 2026-05-12 | Initial ratification. 12 parts covering all platform security domains. Absorbs Builders Cookbook §40 (pentest) and §12 policy half (supply chain policy). Sources: OWASP LLM Top 10 2025, OWASP Agentic Top 10 2026, Google SAIF 15 risks, NIST AI RMF, PTES, Atomic Red Team, CISA KEV. |
-
----
-
 <!-- ──────────────────────────────────────────────────────────────────────────
      IRONCLAW-SPINE CANON AMENDMENT (2026-05-18 iter-7)
      Source plan: ironclaw-spine.md security_compliance + Phase 2A
@@ -1192,7 +1182,17 @@ CWE-184 (Incomplete List of Disallowed Inputs). The allowlist composes with `saf
 
 ---
 
-| 1.3.0 | 2026-05-18 | §SG-CRYPTO Artifact Integrity + Key Lifecycle (Ed25519 manifest, HKDF subkeys, decisions.md hash-chain, cargo-vet TTL ≤30d, failover circuit breaker, PermissionMatrix allowlist). Closes ironclaw-spine SCRUM R2 SERAPH BLOCKING/CRITICAL findings + R3 follow-up threats (Keychain ACL, allowlist-Bash, cargo-vet freshness, failover breaker). LÆX Phase 7 ratification pending. |
+## Amendment history
+
+Detailed amendment narrative — sections added, source audit findings, CVE/CWE references, cross-canon ties, LÆX candidate IDs — lives in the companion file:
+
+  **`standards/canon/security-guardrails.CHANGELOG.md`**
+
+Mechanical history: `git log -- standards/canon/security-guardrails.md`
+
+**Rule** (per separation-of-concerns refactor, 2026-05-18): no tail-changelog tables or orphan changelog rows in this file. Section content lives here; amendment narrative lives in the CHANGELOG companion.
+
+**Current version**: see CHANGELOG for latest. As of 2026-05-18: **v1.3.0** (§SG-CRYPTO Artifact Integrity + Key Lifecycle; LÆX Phase 7 ratification pending).
 
 ---
 
