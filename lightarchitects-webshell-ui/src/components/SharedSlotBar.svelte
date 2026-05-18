@@ -2,24 +2,31 @@
   /**
    * SharedSlotBar — 7-slot agent pool view at panel header.
    *
-   * Slots are ordered by assignment; unoccupied slots show as IDLE.
-   * Model labels: SON = claude-sonnet-*, HAI = claude-haiku-*, OLL = ollama/*,
-   * GATE = agent waiting at a quality gate, IDLE = no assignment.
+   * Subscribes to the `slotAssignments` store (derived from `gitforestTree`)
+   * and renders the active worktree pool. Unoccupied slots show as IDLE.
    *
-   * Phase 1 scaffold: static prop-driven. Phase 5/6 wires the `slotAssignments`
-   * store and animates on assignment change events.
+   * Model labels: SON = claude-sonnet-*, HAI = claude-haiku-*, OPS = opus-*,
+   * OLL = ollama/*, IDLE = no assignment.
    */
 
+  import { slotAssignments } from '$lib/stores';
   import type { WorktreeAssignment } from '$lib/gitforest';
 
   interface Props {
-    /** Active worktree assignments to display. Max 7 rendered; extras are clipped. */
-    assignments: WorktreeAssignment[];
     /** Total pool capacity (default: 7). */
     capacity?: number;
+    /** Optional override assignments — for testing; if absent, store drives. */
+    assignments?: WorktreeAssignment[];
   }
 
-  const { assignments, capacity = 7 }: Props = $props();
+  const { capacity = 7, assignments: propAssignments }: Props = $props();
+
+  // Flatten the slotAssignments Map (keyed by node ID) into a sorted list.
+  let storeAssignments = $derived<WorktreeAssignment[]>(
+    [...$slotAssignments.values()].flat(),
+  );
+
+  let assignments = $derived(propAssignments ?? storeAssignments);
 
   /** Map model ID prefix → 3-char label. */
   function modelLabel(modelId: string): string {

@@ -12,6 +12,8 @@
   import type { GitForestTopology, BranchNode } from '$lib/gitforest';
   import { countActiveWorktrees, computeFadeLevel, polytopeClusterFor } from '$lib/gitforest';
   import { PulseLayer } from '$lib/pulseLayer';
+  import { navigate } from '$lib/routes';
+  import BranchTooltip from '$lib/../components/topology/BranchTooltip.svelte';
 
   // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -208,6 +210,36 @@
   let hitboxes = $state<HitboxEntry[]>([]);
   let hitboxPending: HitboxEntry[] = [];
   let hitboxFrame = 0;
+
+  // ── Phase 6: BranchTooltip hover state ───────────────────────────────────
+  let tooltipNodeId = $state<string | null>(null);
+  let tooltipAnchor = $state<DOMRect | null>(null);
+  let hoverTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function showTooltip(nodeId: string, btn: HTMLButtonElement) {
+    if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
+    hoverTimer = setTimeout(() => {
+      tooltipNodeId = nodeId;
+      tooltipAnchor = btn.getBoundingClientRect();
+    }, 150);
+  }
+
+  function hideTooltip() {
+    if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
+    tooltipNodeId = null;
+    tooltipAnchor = null;
+  }
+
+  function handleHitboxClick(nodeId: string) {
+    hideTooltip();
+    navigate('/builds', {});
+  }
+
+  function handleContextMenu(e: MouseEvent, nodeId: string, btn: HTMLButtonElement) {
+    e.preventDefault();
+    tooltipNodeId = nodeId;
+    tooltipAnchor = btn.getBoundingClientRect();
+  }
   // Live region announcement (rate-limited: one update per 2s)
   let liveAnnouncement = $state('');
   let liveAnnouncedAt = 0;
@@ -1409,15 +1441,31 @@
   <canvas bind:this={overlayCanvas} class="forest-overlay" aria-hidden="true"></canvas>
 
   <!-- A11y shadow hitboxes (Phase 3.5): invisible buttons over branch tips for keyboard/SR users -->
+  <!-- Phase 6: hover → BranchTooltip; click → navigate('/builds'); contextmenu → pin tooltip -->
   {#each hitboxes as hb (hb.id)}
     <button
       class="forest-hitbox"
       style:left="{(hb.x / hb.cw) * 100}%"
       style:top="{(hb.y / hb.ch) * 100}%"
       aria-label="{hb.label} — {hb.gateState.replace('_', ' ')}"
-      onclick={() => { /* Phase 6 BranchTooltip click handler wired here */ }}
+      aria-describedby={tooltipNodeId === hb.id ? `branch-tooltip-${hb.id}` : undefined}
+      onmouseenter={(e) => showTooltip(hb.id, e.currentTarget as HTMLButtonElement)}
+      onmouseleave={hideTooltip}
+      onfocusin={(e) => showTooltip(hb.id, e.currentTarget as HTMLButtonElement)}
+      onfocusout={hideTooltip}
+      onclick={() => handleHitboxClick(hb.id)}
+      oncontextmenu={(e) => handleContextMenu(e, hb.id, e.currentTarget as HTMLButtonElement)}
     ></button>
   {/each}
+
+  <!-- Phase 6: BranchTooltip — rendered when a hitbox is hovered/focused -->
+  {#if tooltipNodeId && tooltipAnchor}
+    <BranchTooltip
+      nodeId={tooltipNodeId}
+      anchor={tooltipAnchor}
+      onclose={hideTooltip}
+    />
+  {/if}
 
   <!-- Reduced-motion static badge (shown when prefers-reduced-motion: reduce) -->
   {#if !motionEnabled}
