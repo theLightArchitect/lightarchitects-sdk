@@ -213,3 +213,76 @@ export function getMetaSkillColor(metaSkill: string): string {
   const sib = META_SKILL_TO_SIBLING[metaSkill];
   return sib ? SIBLING_COLORS[sib] ?? '#8B5CF6' : '#8B5CF6';
 }
+
+// ── GitForest visual tokens ────────────────────────────────────────────────────
+// Centralised here so GitForest.svelte, overlay canvases, and Three.js layers
+// all share the same colour vocabulary.  Previously inline in GitForest.svelte.
+
+import type { BranchKind, BranchLifecycle } from './gitforest';
+
+/**
+ * Gate state → hex colour.  Drives branch stroke + Three.js tube material.
+ * Matches the old `GateState` union in GitForest.svelte.
+ */
+export const GATE_COLORS: Record<string, number> = {
+  clean:        0x22c55e,
+  hitl_pending: 0xf59e0b,
+  merge_ready:  0xffd700,
+  failed:       0xef4444,
+  writing:      0x00c8ff,
+  ghost:        0x334155,
+};
+
+/**
+ * Branch lifecycle → opacity factor applied on top of the base fade_level.
+ * `live_active` = full opacity; `abandoned` = 30%.
+ */
+export const LIFECYCLE_OPACITY: Record<BranchLifecycle, number> = {
+  live_active: 1.0,
+  live_idle:   1.0,
+  merged:      0.75,  // further modulated by fade_level
+  abandoned:   0.30,
+};
+
+/**
+ * Branch kind → hex accent colour used for the branch stroke.
+ *
+ * Main trunk colour comes from `REPO_TRUNK_COLORS`; these accents apply
+ * to the 3 non-trunk levels so the hierarchy is visually legible.
+ */
+export const BRANCH_KIND_COLORS: Record<BranchKind, number> = {
+  main:         0x38bdf8,   // sky blue — trunk (overridden by REPO_TRUNK_COLORS)
+  program:      0xa78bfa,   // violet   — program stubs
+  build:        0x60a5fa,   // blue     — build branches
+  wave_cluster: 0x34d399,   // emerald  — wave twigs
+};
+
+/**
+ * Per-repo trunk and wire edge colours.  Index matches the order repos appear
+ * in the forest layout (sdk=0, soul=1, corso=2, …).
+ *
+ * `[trunk: number, wire: number]` — both as hex integers for Three.js + `#rrggbb`.
+ */
+export const REPO_TRUNK_COLORS: [trunk: number, wire: number][] = [
+  [0x0ea5e9, 0x38bdf8],   // sdk   — sky blue
+  [0xf5d440, 0xfde68a],   // soul  — gold
+  [0x8b5cf6, 0xa78bfa],   // corso — violet
+];
+
+/**
+ * Model identifier → accent colour for `model_attribution` badges.
+ * Keys match the internal model IDs used by the squad.
+ */
+export const MODEL_COLORS: Record<string, string> = {
+  'claude-opus-4-7':          '#f5d440',   // gold   — Opus
+  'claude-sonnet-4-6':        '#60a5fa',   // blue   — Sonnet
+  'claude-haiku-4-5':         '#34d399',   // emerald — Haiku
+  'mistral-vibe':              '#ff7eb6',   // pink   — Mistral
+  'ollama':                    '#fb923c',   // orange — local Ollama
+  'unknown':                   '#475569',   // slate  — unattributed
+};
+
+/** Converts a hex integer colour (e.g. `0x0ea5e9`) to a CSS hex string. */
+export function hexToCSS(hex: number): string {
+  return `#${hex.toString(16).padStart(6, '0')}`;
+}

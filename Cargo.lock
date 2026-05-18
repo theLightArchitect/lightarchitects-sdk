@@ -2739,14 +2739,17 @@ dependencies = [
  "http-body-util",
  "keyring",
  "lightarchitects",
+ "moka",
  "nix 0.29.0",
  "notify",
  "portable-pty",
  "proptest",
+ "regex",
  "reqwest",
  "rusqlite",
  "rust-embed",
  "secrecy",
+ "security-framework 3.7.0",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -6648,11 +6651,3 @@ dependencies = [
  "quote",
  "syn 2.0.117",
 ]
-
-[[patch.unused]]
-name = "corso-server"
-version = "2.0.0"
-
-[[patch.unused]]
-name = "corso-trinity-core"
-version = "2.0.0"

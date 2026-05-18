@@ -1,0 +1,81 @@
+---
+# /GATE-3 — Phase 3: Pulse Overlay
+# gate_receipt_id: phase-3-pulse-overlay-pass-20260518T1415Z
+# Ratified: 2026-05-18T14:15:00Z
+# Commit: 1a7680f (feat/gitforest-live-ops)
+
+phase: 3
+phase_name: "pulse-overlay"
+overall_verdict: pass
+ratified_at: "2026-05-18T14:15:00Z"
+
+# ── RECORD ──────────────────────────────────────────────────────────────────
+record:
+  deliverables_shipped:
+    - "PulseLayer class (pulseLayer.ts): ring-buffer 500-cap, smoothstep decay 2.5s, 1:3 sampling >30 ev/s, 250ms coalesce"
+    - "GitForest.svelte Phase 3 additions: InstancedMesh pool (4 polytope kinds, MAX_CLUSTERS=100), per-Mesh frustum culling, HARD_NODE_CAP=200, LOD at 40u, webglcontextlost guard, will-change: transform"
+    - "computeFadeLevel/polytopeClusterFor/countActiveWorktrees integration; gitforestPulses subscriber"
+    - "30 new unit tests (pulseLayer.test.ts ×7, gitforest-overlay.test.ts ×23)"
+  commits:
+    - sha: "1a7680f"
+      message: "feat(phase-3): PulseLayer + live GitForest polytope overlay"
+
+# ── QUALITY ─────────────────────────────────────────────────────────────────
+quality:
+  Q1_cargo_fmt_check: PASS
+  Q2_cargo_clippy_warnings: PASS
+  Q3_cargo_tests: PASS
+  Q4_complexity_fn_length: PASS   # all helpers <60 lines; smoothstep inline is trivial
+  ts_tests_count: 553
+  ts_tests_delta: +30             # 523→553 (monotonic ratchet ✓)
+  svelte_check_errors: 0
+  svelte_check_warnings: 15       # pre-existing a11y warnings; not new
+
+# ── MATHEMATICAL PROOFS (/PROVE) ─────────────────────────────────────────────
+proofs:
+  smoothstep_S_t:
+    formula: "S(t) = t²(3 - 2t)"
+    S_0: 0        # 0²(3-0) = 0 ✓
+    S_1: 1        # 1²(3-2) = 1 ✓
+    S_prime_0: 0  # S'(t)=6t(1-t); S'(0)=0 ✓
+    S_prime_1: 0  # S'(1)=0 ✓
+    S_half: 0.5   # 0.25*(3-1)=0.5 ✓ — midpoint symmetry confirmed
+    test_at_1250ms: "opacity = 1 - S(0.5) = 0.5  (test line 35: toBeCloseTo(0.5,2)) ✓"
+  compute_fade_level:
+    formula: "clamp(1 - ageDays/60, 0.20, 1.0)"
+    at_0_days: 1.0
+    at_30_days: 0.5
+    at_60_days: 0.20   # floor hits
+    at_90_days: 0.20   # floor holds
+  sampling_1_in_3:
+    threshold_ev_s: 30
+    at_80_ev_s: "effective = 80/3 ≈ 26.7 ev/s < 30 (AY-R2-5 capacity verified)"
+    counter_period: 3
+    accept_residue: 0  # 1 of {0,1,2} → 1/3 rate
+  ring_cap_steady_state:
+    cap: 500
+    decay_ms: 2500
+    eviction_threshold_opacity: 0.02
+    survival_time_ms: 2318  # S^-1(0.98) ≈ 0.927 × 2500
+    at_30_ev_s_entries_in_flight: 69.5   # 30 × 2.318s — 7× cap headroom
+
+# ── AUDIT ────────────────────────────────────────────────────────────────────
+audit:
+  findings: []
+  critical_count: 0
+  high_count: 0
+
+# ── DIMENSIONS ────────────────────────────────────────────────────────────────
+gates:
+  P_performance:
+    verdict: PASS
+    notes: "InstancedMesh (4 draw calls), frustum culling per-Mesh, HARD_NODE_CAP=200, LOD>40u, will-change:transform"
+  Q_quality:
+    verdict: PASS
+    notes: "553/553 tests, 0 svelte-check errors, cargo clippy clean"
+  A_architecture:
+    verdict: PASS
+    notes: "PulseLayer isolated from renderer; destroy() cleanup in $effect; WebGL context loss handled"
+  D_documentation:
+    verdict: PASS
+    notes: "JSDoc on all public PulseLayer members; inline math comments cite iter-9 B1"

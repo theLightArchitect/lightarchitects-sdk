@@ -18,8 +18,11 @@ import {
   trainingRun,
   mailboxMessages, mailboxUnread,
   contextUsage,
+  gitforestTree, gitforestPulses,
 } from './stores';
 import { spikeSibling } from './stores';
+import { reconstructTopology } from './gitforest';
+import { invalidate as invalidateGitForestCache } from './gitforestCache';
 import { get, writable } from 'svelte/store';
 import type {
   SiblingId, Build, Finding, ConductorTask, ArenaAgent,
@@ -409,6 +412,12 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
       if (supervisorAlert) {
         appendSupervisorAlert(supervisorAlert);
       }
+      // GitForest pulse: spans with metadata.branch_id pulse the associated forest node.
+      const meta = span.metadata as Record<string, unknown> | null | undefined;
+      const branchId = typeof meta?.branch_id === 'string' ? meta.branch_id : null;
+      if (branchId) {
+        gitforestPulses.update(ring => [branchId, ...ring].slice(0, 32));
+      }
       break;
     }
     case 'context_status': {
@@ -545,6 +554,21 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
       };
       mailboxMessages.update(list => [newMsg, ...list].slice(0, 200));
       mailboxUnread.update(n => n + 1);
+      break;
+    }
+    case 'gitforest_update': {
+      // Payload: { repo: string; root: BranchNode } — branch tree rooted at main.
+      // Phase 5 adds a full REST fetch on top; this gives an immediate partial update.
+      const payload = event as unknown as { type: 'gitforest_update'; repo: string; root: import('./gitforest').BranchNode };
+      void invalidateGitForestCache(payload.repo);
+      gitforestTree.set(reconstructTopology(payload.repo, payload.root));
+      // Pulse nodes with active worktrees.
+      const activeIds = payload.root.worktrees
+        .filter(w => w.state === 'writing' || w.state === 'gate')
+        .map(() => payload.root.id);
+      if (activeIds.length > 0) {
+        gitforestPulses.update(ring => [...activeIds, ...ring].slice(0, 32));
+      }
       break;
     }
     default:

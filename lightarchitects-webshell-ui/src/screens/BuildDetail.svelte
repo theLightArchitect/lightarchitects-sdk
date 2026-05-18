@@ -8,10 +8,14 @@
   import ManifestView from '$lib/../components/views/ManifestView.svelte';
   import PlanView    from '$lib/../components/PlanView.svelte';
   import CommsView   from '$lib/../components/views/CommsView.svelte';
+  import TaskDrillView from '$lib/../components/views/TaskDrillView.svelte';
+  import WavePipelineView from '$lib/../components/views/WavePipelineView.svelte';
+  import type { Phase } from '$lib/WavePipelineView.contract';
 
-  type ViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms';
+  // 'pipeline' is the FOLD-4 hook for ironclaw-spine (6th view mode).
+  type ViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms' | 'pipeline';
 
-  const VIEW_MODES: ViewMode[] = ['kanban', 'list', 'operator', 'manifest', 'plan', 'comms'];
+  const VIEW_MODES: ViewMode[] = ['kanban', 'list', 'operator', 'manifest', 'plan', 'comms', 'pipeline'];
 
   let viewMode = $state<ViewMode>('kanban');
   let build = $derived($activeBuild);
@@ -20,6 +24,8 @@
   let phaseId  = $state<string | null>(null);
   let waveId   = $state<string | null>(null);
   let agentKey = $state<string | null>(null);
+  // Phase 5: L3 task drill-down
+  let taskId   = $state<string | null>(null);
   // 'turn' when all three deep-link params are present, 'build' otherwise
   let zoomLevel = $derived<'build' | 'turn'>(
     phaseId !== null && waveId !== null && agentKey !== null ? 'turn' : 'build'
@@ -48,6 +54,8 @@
     phaseId  = params.phaseId  ?? null;
     waveId   = params.waveId   ?? null;
     agentKey = params.agentKey ?? null;
+    // Phase 5: L3 task drill-down
+    taskId   = params.taskId   ?? null;
   }
 
   // Hydrate currentBuildId + viewMode when navigating directly to /builds/:id/:view
@@ -66,7 +74,11 @@
     { key: 'manifest', label: 'MANIFEST', desc: 'Raw YAML manifest — codename, tier, phase set, assumptions' },
     { key: 'plan',     label: 'PLAN',     desc: 'Full LASDLC plan document with phases, exit criteria, and deliverables' },
     { key: 'comms',    label: 'COMMS',    desc: 'Agent communication stream — messages, handoffs, and coordination events' },
+    { key: 'pipeline', label: 'PIPELINE', desc: 'Wave pipeline — phase/wave/task timeline with gate verdicts' },
   ];
+
+  // Stub phases for WavePipelineView — populated from manifest in Phase 7.
+  const STUB_PHASES: Phase[] = [];
 </script>
 
 <div class="build-detail-shell">
@@ -119,9 +131,18 @@
       </div>
     {/if}
 
+    <!-- Phase 5: L3 task drill-down — renders instead of turn/build content -->
+    <!-- Use {#if} (not visibility) so EventStream SSE cleans up on navigation -->
+    {#if taskId && phaseId && waveId && agentKey}
+      <TaskDrillView
+        buildId={build.id}
+        phaseId={phaseId}
+        waveId={waveId}
+        agentKey={agentKey}
+        taskId={taskId}
+      />
     <!-- helix-viz-remap: Turn zoom replaces tab content (P6 check 7) -->
-    <!-- Use {#if} (not CSS visibility) so child SSE connections close on nav -->
-    {#if zoomLevel === 'turn'}
+    {:else if zoomLevel === 'turn'}
       <div class="turn-panel">
         <dl class="turn-meta">
           <dt class="turn-label">AGENT</dt>
@@ -131,6 +152,23 @@
           <dt class="turn-label">WAVE</dt>
           <dd class="turn-value">{waveId}</dd>
         </dl>
+      </div>
+    <!-- Phase 6: phaseId drill — split-pane (left: phase info, right: WavePipelineView) -->
+    {:else if phaseId && !waveId && !agentKey}
+      <div class="phase-split">
+        <div class="phase-split-left">
+          <span class="phase-split-label">PHASE</span>
+          <span class="phase-split-id">{phaseId}</span>
+          <span class="phase-split-build">{build.name}</span>
+        </div>
+        <div class="phase-split-right">
+          <WavePipelineView
+            mode="split"
+            phases={STUB_PHASES}
+            onTaskClick={(taskId) => navigate('/builds/:buildId/phase/:phaseId/wave/stub/agent/stub/task/:taskId', { buildId: build.id, phaseId: phaseId ?? '', taskId })}
+            onGateClick={(pid, wid) => navigate('/builds/:buildId/phase/:phaseId', { buildId: build.id, phaseId: pid })}
+          />
+        </div>
       </div>
     {:else}
       <div class="view-content" data-mode={viewMode}>
@@ -144,6 +182,8 @@
           <ManifestView />
         {:else if viewMode === 'comms'}
           <CommsView />
+        {:else if viewMode === 'pipeline'}
+          <WavePipelineView mode="full" phases={STUB_PHASES} />
         {:else}
           <PlanView />
         {/if}
@@ -315,6 +355,55 @@
   .view-content {
     flex: 1;
     overflow: hidden;
+    min-height: 0;
+  }
+
+  /* Phase 6: phaseId split-pane */
+  .phase-split {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .phase-split-left {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 16px 12px;
+    border-right: 1px solid var(--la-hair-faint);
+    background: var(--la-bg-panel);
+    font-family: var(--la-font-mono);
+  }
+
+  .phase-split-label {
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--la-text-mute);
+    text-transform: uppercase;
+  }
+
+  .phase-split-id {
+    font-size: 11px;
+    color: var(--la-text-stark);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    word-break: break-all;
+  }
+
+  .phase-split-build {
+    font-size: 9px;
+    color: var(--la-text-dim);
+    letter-spacing: 0.04em;
+    margin-top: 2px;
+  }
+
+  .phase-split-right {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
     min-height: 0;
   }
 

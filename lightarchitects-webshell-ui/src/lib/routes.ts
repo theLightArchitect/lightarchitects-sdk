@@ -33,13 +33,15 @@ const REDIRECTS: [string, string][] = [
  * View modes for the /builds/:buildId/:view URL pattern.
  * Wave 1 adds the route shape; Wave 6 wires BuildDetail.svelte to read it.
  */
-export type BuildViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms';
-const BUILD_VIEW_PATTERN = '(?:kanban|list|operator|manifest|plan|comms)';
+export type BuildViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms' | 'pipeline';
+const BUILD_VIEW_PATTERN = '(?:kanban|list|operator|manifest|plan|comms|pipeline)';
 
 type RouteEntry = [RegExp, ScreenKey, string[]];
 
 // Ordered most-specific first — prevents /builds/:buildId from matching before deeper patterns
 const ROUTES: RouteEntry[] = [
+  // L3 task drill-down (Phase 5) — must precede the agent pattern
+  [/^\/builds\/([^/]+)\/phase\/([^/]+)\/wave\/([^/]+)\/agent\/([^/]+)\/task\/([^/]+)$/, 'BuildDetail', ['buildId', 'phaseId', 'waveId', 'agentKey', 'taskId']],
   [/^\/builds\/([^/]+)\/phase\/([^/]+)\/wave\/([^/]+)\/agent\/([^/]+)$/,    'BuildDetail',   ['buildId', 'phaseId', 'waveId', 'agentKey']],
   [/^\/builds\/([^/]+)\/phase\/([^/]+)\/wave\/([^/]+)$/,                    'BuildDetail',   ['buildId', 'phaseId', 'waveId']],
   [/^\/builds\/([^/]+)\/phase\/([^/]+)$/,                                   'BuildDetail',   ['buildId', 'phaseId']],

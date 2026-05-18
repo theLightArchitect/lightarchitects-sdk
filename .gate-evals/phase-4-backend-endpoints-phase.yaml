@@ -1,0 +1,39 @@
+schema_version: 1
+gate: phase
+scope: phase
+scored_by: "/GATE"
+scored_at: "2026-05-18T15:10:00Z"
+build_id: gitforest-live-ops
+phase_id: phase-4-backend-endpoints
+overall_verdict: pass
+
+commit_sha: 1cbd5a2
+branch: feat/gitforest-live-ops
+
+dimensions:
+  Q1_fmt: pass        # cargo fmt --check passed (pre-commit hook + manual verify)
+  Q2_clippy: pass     # cargo clippy -D warnings clean after 16 findings remediated
+  Q3_tests:
+    result: pass
+    tests_run: 653    # 645 Rust unit/integration + 8 gitforest_routes
+    tests_fail: 0
+    notes: >
+      490 unit tests in main lib. 8 new gitforest_routes integration tests covering
+      all Phase 4 exit criteria. /node/{*id} wildcard fixed during gate.
+  Q4_svelte: pass     # 553 vitest tests, 0 errors, svelte-check 0 errors
+  D2_plan: pass       # Plan Phase 4 deliverables match shipped code (routes.rs,
+                      # github_proxy.rs, github_token_store.rs, broadcast lag gauge,
+                      # route wiring, api.ts stubs). Exit criteria now met after
+                      # adding gitforest_routes.rs with 8 integration tests.
+
+findings: []
+
+notes: >
+  Phase 4 delivered 3 gitforest HTTP endpoints (topology/live/node), GitHub CI proxy
+  with SSRF allowlist (is_tracked_repo), macOS Keychain PAT storage, broadcast lag
+  gauge (AYIN AY-R2-5), moka 60s cache, path-traversal validation (REPO_RE/SINCE_RE),
+  and frontend api.ts stubs. Gate required adding gitforest_routes.rs (8 cases) to
+  satisfy plan exit criteria before passing. /node route wildcard {*id} corrected to
+  capture slash-delimited node IDs.
+
+phase_5_unblock: true

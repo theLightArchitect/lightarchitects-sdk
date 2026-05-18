@@ -72,6 +72,15 @@ reqwest = { workspace = true, features = ["stream"] }
 # Filesystem watcher — Phase 4 helix vault fallback event source.
 notify.workspace = true
 
+# In-memory async cache — gitforest topology + CI check-runs (Phase 4)
+moka = { workspace = true, features = ["future"] }
+
+# Allowlist validation for gitforest route params (Phase 4)
+regex = { workspace = true }
+
+# macOS Keychain access for server-side GitHub PAT storage (Phase 4 Agent B)
+security-framework = { workspace = true }
+
 # Serialization
 serde = { workspace = true }
 serde_json.workspace = true

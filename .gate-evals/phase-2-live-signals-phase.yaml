@@ -1,0 +1,72 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-18T11:45:00Z"
+build_id: "gitforest-live-ops"
+phase_id: "phase-2-live-signals"
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt:    pass
+  Q2_clippy:
+    result: pass
+    note: "1 fix applied inline: redundant_closure_for_method_calls in broadcaster.rs (PoisonError::into_inner)"
+  Q3_tests:
+    result:     pass
+    tests_run:  1724   # Rust: 1118+30+7+490+0+5+14+7+2+6+7+16+1+21 = 1724 across workspace
+    tests_fail: 0
+    note:       "+79 from Phase 1 baseline 1645 reflects broader workspace coverage; Phase 2 added no new unit tests (broadcaster integration-only)"
+  Q4_svelte:
+    result:  pass
+    errors:  0
+    warnings: 15   # pre-existing toolbar tabindex; not blocking; address in Phase 3.5 a11y substrate
+    ts_tests: 530
+    ts_tests_fail: 0
+  D2_plan:
+    result: pass
+    note: |
+      Plan reconstructed iter-9 from iter-1 base + helix entry + manifest evidence after
+      original was wiped by interrupted sed. XEA --no-iterate verdict VALIDATED at
+      audit-honest aggregate 95.4 EXEMPLARY. Plan frontmatter phase updated to
+      phase-2-live-signals-gated. Phase 2 resequencing documented in Part II.
+
+phase_deliverables:
+  - WebEvent::GitForestUpdate variant:    completed   # events/types.rs + serde tag "gitforest_update"
+  - broadcaster.rs:                       completed   # 250ms debounce + .is_ok() pattern + DebouncedBroadcaster
+  - sse.ts gitforest_update case:         completed   # invalidates cache, sets gitforestTree, pushes pulses
+  - sse.ts ayin_span branch_id extract:   completed   # metadata.branch_id pulse extraction
+  - gitforest.ts reconstructTopology:     completed   # Phase 2 scaffold (1-node topology); Phase 5 replaces
+  - gitforest.ts fetchTopology stub:      completed   # returns null until Phase 4 backend route lands
+  - types.ts EventType extension:         completed   # 'gitforest_update' added to union; svelte-check authoritative
+  - GitForest.svelte pulse animation:     completed   # haloMeshes Map + pulseIntensities Map; emissiveIntensity bloom modulation; ×0.95 decay/frame; baseline 0.48; peak 6.48
+
+test_ratchet:
+  rust_tests_before: 1645   # post-phase-1
+  rust_tests_after:  1724   # +79 from broader workspace coverage; broadcaster has no explicit unit tests yet
+  ts_tests_before:   530    # post-phase-1
+  ts_tests_after:    530    # unchanged (Phase 2 work is integration-only)
+
+blocking_findings: []
+tracked_findings:
+  - id: TF-P2-1
+    severity: LOW
+    description: "broadcaster.rs has no explicit unit tests (debounce behavior tested via integration)"
+    owner: testing
+    action: "Add unit tests in Phase 7 test pyramid (TF-P2-1 → Part VI item #30 pulseLayer.test.ts companion)"
+  - id: TF-P2-2
+    severity: MEDIUM
+    description: "Plan file was wiped by interrupted sed during this /GATE; reconstructed from iter-1 + helix + session evidence"
+    owner: engineer
+    action: "Verify reconstruction fidelity against any future iter-9 grep results; folded into TF tracking only (no plan change needed)"
+  - id: TF-P2-3
+    severity: LOW
+    description: "lasdlc_template_version bumped 2.5.1 → 2.5.4 during reconstruction (matches current canon)"
+    owner: knowledge
+    action: "Document version bump rationale in close-out memory entry"
+
+phase_2_resequencing_note: |
+  Original iter-1 plan put "Backend APIs + Event Wiring" in Phase 2. iter-4 SCRUM fold
+  resequenced: Phase 2 became "Live Signal Integration" (broadcaster + SSE wiring +
+  pulse overlay) — type-locks the WebEvent + frontend dispatcher before backend authors
+  emit it. Backend route authoring moved to Phase 4. This phase gate evaluates the
+  resequenced Phase 2 (live-signals), not the iter-1 Phase 2 (backend-apis).

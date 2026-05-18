@@ -288,3 +288,90 @@ export function getPolytope4D(type: Polytope4DType): Polytope4D {
   }
   return p;
 }
+
+// ── Stage-split projections (Phase 1 item 13 — Three.js polytope layer) ──────
+//
+// The Three.js polytope overlay in Phase 3 needs to consume 3D vertices directly
+// from the 4D math rather than going through the full canvas2D draw path.
+// These two functions split the pipeline so Three.js can take over from stage (b).
+//
+// Pipeline:
+//   (a) project4DTo3D  — 4D → 3D via stereographic projection + SO(4) rotation
+//   (b) project3DTo2D  — 3D → 2D via camera (used by canvas2D fallback)
+//   (c) draw2D         — existing full-pipeline entry point (unchanged)
+
+/** 4×4 identity rotation matrix (row-major). */
+type Mat4x4 = [
+  number, number, number, number,
+  number, number, number, number,
+  number, number, number, number,
+  number, number, number, number,
+];
+
+function identityMat4(): Mat4x4 {
+  return [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+}
+
+/** Apply a 4×4 matrix to a Vec4 (row-vector × column-major matrix). */
+function applyMat4(m: Mat4x4, v: Vec4): Vec4 {
+  return [
+    m[0]*v[0] + m[4]*v[1] + m[8] *v[2] + m[12]*v[3],
+    m[1]*v[0] + m[5]*v[1] + m[9] *v[2] + m[13]*v[3],
+    m[2]*v[0] + m[6]*v[1] + m[10]*v[2] + m[14]*v[3],
+    m[3]*v[0] + m[7]*v[1] + m[11]*v[2] + m[15]*v[3],
+  ];
+}
+
+/**
+ * Project 4D vertices to 3D via stereographic projection.
+ *
+ * Each Vec4 `[x,y,z,w]` projects to `[x,y,z] / (1 - w)` (w-axis perspective).
+ * A SO(4) rotation matrix `rot4` is applied before projection to animate the
+ * 4D rotation that gives polytopes their distinctive spin.
+ *
+ * Returns a `Float32Array` of interleaved `[x,y,z, x,y,z, …]` triples,
+ * one per input vertex — ready for Three.js `BufferAttribute`.
+ */
+export function project4DTo3D(
+  polytope: Polytope4D,
+  rot4: Mat4x4 = identityMat4(),
+): Float32Array {
+  const out = new Float32Array(polytope.vertices.length * 3);
+  polytope.vertices.forEach((v, i) => {
+    const rv = applyMat4(rot4, v);
+    const denom = 1 - rv[3];
+    const scale = Math.abs(denom) < 1e-6 ? 1e6 : 1 / denom;
+    out[i * 3]     = rv[0] * scale;
+    out[i * 3 + 1] = rv[1] * scale;
+    out[i * 3 + 2] = rv[2] * scale;
+  });
+  return out;
+}
+
+/**
+ * Project 3D vertices (from `project4DTo3D`) to 2D canvas coordinates.
+ *
+ * Uses a simple perspective camera at `[0, 0, cameraZ]` looking at the origin.
+ * Returns a `Float32Array` of interleaved `[x, y, …]` pairs in normalised
+ * device coordinates (`-1..1`), one per vertex.
+ *
+ * The canvas2D `draw2D` function uses the full combined pipeline internally;
+ * this split is provided so Phase 3 Three.js code can reuse stage (a) alone.
+ */
+export function project3DTo2D(
+  vertices3d: Float32Array,
+  cameraZ = 3.5,
+): Float32Array {
+  const n = vertices3d.length / 3;
+  const out = new Float32Array(n * 2);
+  for (let i = 0; i < n; i++) {
+    const x = vertices3d[i * 3];
+    const y = vertices3d[i * 3 + 1];
+    const z = vertices3d[i * 3 + 2];
+    const denom = cameraZ - z;
+    const scale = Math.abs(denom) < 1e-6 ? 1e6 : cameraZ / denom;
+    out[i * 2]     = x * scale;
+    out[i * 2 + 1] = y * scale;
+  }
+  return out;
+}

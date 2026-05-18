@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { FEATURE_FLAGS, FLAG_TOOLTIP, isEnabled, type FeatureFlag } from '$lib/featureFlags';
+import {
+  FEATURE_FLAGS, FLAG_TOOLTIP, isEnabled, isSafeMode, isGitForestFlagEnabled,
+  type FeatureFlag,
+} from '$lib/featureFlags';
 
+/** Follow-up-build flags — all default false. */
 const FLAG_KEYS: FeatureFlag[] = ['parallelismEnabled', 'commPubSubEnabled', 'multiProjectGateway'];
+/** GitForest live-ops flags — default true. */
+const GITFOREST_FLAGS: FeatureFlag[] = ['pulseEnabled', 'statsTopbarEnabled'];
 
 describe('featureFlags', () => {
   beforeEach(() => {
@@ -21,19 +27,50 @@ describe('featureFlags', () => {
 
     it('is immutable (const assertion)', () => {
       // TypeScript const assertion — verify the object exists with correct keys
-      expect(Object.keys(FEATURE_FLAGS)).toHaveLength(3);
+      expect(Object.keys(FEATURE_FLAGS)).toHaveLength(5);
       expect(FEATURE_FLAGS).toHaveProperty('parallelismEnabled');
       expect(FEATURE_FLAGS).toHaveProperty('commPubSubEnabled');
       expect(FEATURE_FLAGS).toHaveProperty('multiProjectGateway');
+      expect(FEATURE_FLAGS).toHaveProperty('pulseEnabled');
+      expect(FEATURE_FLAGS).toHaveProperty('statsTopbarEnabled');
     });
   });
 
   describe('FLAG_TOOLTIP', () => {
     it('has a tooltip for every flag', () => {
-      for (const key of FLAG_KEYS) {
+      const allFlags = [...FLAG_KEYS, ...GITFOREST_FLAGS];
+      for (const key of allFlags) {
         expect(FLAG_TOOLTIP[key]).toBeDefined();
         expect(FLAG_TOOLTIP[key].length).toBeGreaterThan(0);
       }
+    });
+  });
+
+  describe('GitForest flags', () => {
+    it('pulseEnabled and statsTopbarEnabled default to true', () => {
+      for (const key of GITFOREST_FLAGS) {
+        expect(FEATURE_FLAGS[key]).toBe(true);
+      }
+    });
+
+    it('isEnabled returns true for GitForest flags when no localStorage override', () => {
+      for (const key of GITFOREST_FLAGS) {
+        expect(isEnabled(key)).toBe(true);
+      }
+    });
+
+    it('isEnabled returns false when localStorage overrides GitForest flag to "false"', () => {
+      localStorage.setItem('la.feature.pulseEnabled', 'false');
+      expect(isEnabled('pulseEnabled')).toBe(false);
+    });
+
+    it('isSafeMode returns false when ?safe param is absent', () => {
+      expect(isSafeMode()).toBe(false);
+    });
+
+    it('isGitForestFlagEnabled mirrors isEnabled when not in safe mode', () => {
+      expect(isGitForestFlagEnabled('pulseEnabled')).toBe(true);
+      expect(isGitForestFlagEnabled('statsTopbarEnabled')).toBe(true);
     });
   });
 

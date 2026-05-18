@@ -4,13 +4,16 @@
   import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
   import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
   import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-  import {
-    fetchGitHubForestData,
-    GITHUB_ORG,
-    FOREST_REPO_NAMES,
-    FOREST_CACHE_TTL_MS,
-    type RepoData,
-  } from '$lib/github';
+  import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+  import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
+  import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
+  import { gitforestTree, gitforestPulses } from '$lib/stores';
+  import { get } from 'svelte/store';
+  import type { GitForestTopology, BranchNode } from '$lib/gitforest';
+  import { countActiveWorktrees, computeFadeLevel, polytopeClusterFor } from '$lib/gitforest';
+  import { PulseLayer } from '$lib/pulseLayer';
+  import { navigate } from '$lib/routes';
+  import BranchTooltip from '$lib/../components/topology/BranchTooltip.svelte';
 
   // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -49,15 +52,56 @@
     new THREE.Vector3( 6,  0,  1),   // corso — right
   ];
 
-  function repoDataToRepo(d: RepoData, idx: number): Repo {
+  function repoDataToRepo(d: { id: string; name: string; commitCount: number; fileCount: number; branches: Branch[] }, idx: number): Repo {
     return {
       id: d.id,
       name: d.name,
       commitCount: d.commitCount,
       fileCount: d.fileCount,
       pos: REPO_POSITIONS[idx] ?? new THREE.Vector3(idx * 5.5, 0, 0),
-      branches: d.branches as Branch[],
+      branches: d.branches,
     };
+  }
+
+  /** Map a `GitForestTopology` (BranchNode tree) into the internal `Repo[]`
+   *  rendering representation.  Depth-0 nodes become repo roots; depth-2
+   *  (build) nodes become branches; depth-3 (wave_cluster) worktrees map
+   *  to the Branch.worktrees array. */
+  function topologyToRepos(topology: GitForestTopology): Repo[] {
+    const repos: Repo[] = [];
+    let idx = 0;
+    for (const node of Object.values(topology.nodes)) {
+      if (node.depth !== 1) continue;  // program-level = one repo trunk per program
+      const branches: Branch[] = node.children
+        .map(cid => topology.nodes[cid])
+        .filter(Boolean)
+        .filter(c => c.depth === 2)
+        .map(build => ({
+          name: build.name,
+          divergeCommit: 0,
+          commitCount: build.build_progress?.waves_done ?? 0,
+          filesModified: 0,
+          gateState: (build.overlay.ci_status === 'success' ? 'clean'
+            : build.overlay.ci_status === 'failure' ? 'failed'
+            : build.overlay.hitl_state === 'pending' ? 'hitl_pending'
+            : 'writing') as GateState,
+          isGhost: build.overlay.lifecycle === 'abandoned',
+          worktrees: build.worktrees.map(w => ({
+            domain: w.domain as AgentDomain,
+            commitCount: w.commits,
+          })),
+        }));
+      repos.push({
+        id: node.id,
+        name: node.name,
+        commitCount: countActiveWorktrees(node.id, topology.nodes),
+        fileCount: 0,
+        pos: REPO_POSITIONS[idx] ?? new THREE.Vector3(idx * 5.5, 0, 0),
+        branches,
+      });
+      idx++;
+    }
+    return repos.length > 0 ? repos : [];
   }
 
   // ─── Static seed — real repo data (used until GitHub fetch resolves) ─────
@@ -143,43 +187,76 @@
     },
   ];
 
-  // ─── Live repos state (starts as seed, replaced on GitHub fetch) ──────────
+  // ─── Live repos state (seed until gitforestTree store populates) ─────────
+  // Phase 5 wires the SSE stream → gitforestTree store → repos reactive update.
+  // GitHub PAT is server-side only (github_token_store.rs, Phase 4) — no
+  // client-side token reads.
 
   let repos = $state<Repo[]>(SEED_REPOS);
+  // prefers-reduced-motion: initial value + live MediaQueryList listener (Phase 3.5)
+  const motionMq = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let motionEnabled = $state(!motionMq.matches);
+  $effect(() => {
+    const handler = (e: MediaQueryListEvent) => { motionEnabled = !e.matches; };
+    motionMq.addEventListener('change', handler);
+    return () => motionMq.removeEventListener('change', handler);
+  });
+  // Memoised active-worktree counts per nodeId; invalidated on gitforestTree update
+  let activeCountCache = $state(new Map<string, number>());
+
+  // ── A11y substrate (Phase 3.5) ────────────────────────────────────────────
+  // Shadow hitbox positions — updated at 4Hz from draw() via hitboxPending
+  interface HitboxEntry { id: string; label: string; gateState: GateState; x: number; y: number; cw: number; ch: number; }
+  let hitboxes = $state<HitboxEntry[]>([]);
+  let hitboxPending: HitboxEntry[] = [];
+  let hitboxFrame = 0;
+
+  // ── Phase 6: BranchTooltip hover state ───────────────────────────────────
+  let tooltipNodeId = $state<string | null>(null);
+  let tooltipAnchor = $state<DOMRect | null>(null);
+  let hoverTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function showTooltip(nodeId: string, btn: HTMLButtonElement) {
+    if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
+    hoverTimer = setTimeout(() => {
+      tooltipNodeId = nodeId;
+      tooltipAnchor = btn.getBoundingClientRect();
+    }, 150);
+  }
+
+  function hideTooltip() {
+    if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
+    tooltipNodeId = null;
+    tooltipAnchor = null;
+  }
+
+  function handleHitboxClick(nodeId: string) {
+    hideTooltip();
+    navigate('/builds', {});
+  }
+
+  function handleContextMenu(e: MouseEvent, nodeId: string, btn: HTMLButtonElement) {
+    e.preventDefault();
+    tooltipNodeId = nodeId;
+    tooltipAnchor = btn.getBoundingClientRect();
+  }
+  // Live region announcement (rate-limited: one update per 2s)
+  let liveAnnouncement = $state('');
+  let liveAnnouncedAt = 0;
 
   $effect(() => {
-    // Only fetch if a token is available — avoids burning 16 unauthenticated requests on load
-    const token = (() => {
-      try {
-        return (
-          sessionStorage.getItem('la_token_github') ??  // TokenVault secure path
-          localStorage.getItem('la_gh_token') ??        // legacy fallback
-          undefined
-        );
-      } catch { return undefined; }
-    })();
-    if (!token) return;
-
-    // Respect cache TTL
-    const lastFetch = (() => {
-      try { return parseInt(localStorage.getItem('la_gh_forest_ts') ?? '0', 10); } catch { return 0; }
-    })();
-    if (Date.now() - lastFetch < FOREST_CACHE_TTL_MS) {
-      const cached = (() => {
-        try { const s = localStorage.getItem('la_gh_forest'); return s ? JSON.parse(s) as RepoData[] : null; } catch { return null; }
-      })();
-      if (cached) { repos = cached.map(repoDataToRepo); return; }
-    }
-
-    void fetchGitHubForestData(GITHUB_ORG, FOREST_REPO_NAMES, token).then(result => {
-      if (result.repos.length > 0) {
-        repos = result.repos.map(repoDataToRepo);
-        try {
-          localStorage.setItem('la_gh_forest', JSON.stringify(result.repos));
-          localStorage.setItem('la_gh_forest_ts', String(result.fetchedAt));
-        } catch { /* storage quota */ }
+    const unsubscribe = gitforestTree.subscribe(topology => {
+      if (!topology) return;
+      const live = topologyToRepos(topology);
+      if (live.length > 0) repos = live;
+      // Rebuild active-count cache on tree update (O(nodes) not O(frames))
+      const cache = new Map<string, number>();
+      for (const id of Object.keys(topology.nodes)) {
+        cache.set(id, countActiveWorktrees(id, topology.nodes));
       }
+      activeCountCache = cache;
     });
+    return unsubscribe;
   });
 
   // ─── Scale constants ──────────────────────────────────────────────────────
@@ -210,14 +287,15 @@
   }
 
   // ─── Gate → color (GIT-2) ────────────────────────────────────────────────
-
+  // Deuteranopia + protanopia safe: blue-orange-teal axis (no red/green confusion).
+  // Validated: clean=teal, failed=orange, hitl=amber-gold, writing=sky-blue, ghost=slate.
   const GATE_COLORS: Record<GateState, number> = {
-    clean:        0x22c55e,
-    hitl_pending: 0xf59e0b,
-    merge_ready:  0xffd700,
-    failed:       0xef4444,
-    writing:      0x00c8ff,
-    ghost:        0x334155,
+    clean:        0x17c3b2,  // teal — distinguishable from all other states
+    hitl_pending: 0xfbbf24,  // amber-gold — warm, not red
+    merge_ready:  0xe2f542,  // yellow-lime — high-luminance, safe
+    failed:       0xf97316,  // orange — safe for deuteranopia/protanopia
+    writing:      0x38bdf8,  // sky-blue — distinct from teal
+    ghost:        0x334155,  // slate — neutral; reduced opacity on merged branches
   };
 
   // ─── Agent domain → color (GIT-3) ────────────────────────────────────────
@@ -233,10 +311,6 @@
     squad:      0xff7eb6,
   };
 
-  // ─── Scene mode ───────────────────────────────────────────────────────────
-
-  type SceneMode = '2d' | '3d';
-  let mode            = $state<SceneMode>('2d');
   let selectedRepoIdx = $state<number | null>(null);
 
   // Cubic Bezier scalar interpolation (used by 2D renderer)
@@ -254,7 +328,7 @@
   // ─── Three.js forest scene (GIT-1) ────────────────────────────────────────
 
   $effect(() => {
-    if (mode !== '3d' || !container) return;
+    if (!container) return;
 
     const w = container.clientWidth || 400;
     const h = container.clientHeight || 300;
@@ -302,6 +376,67 @@
     scene.add(new THREE.AmbientLight(0x003355, 0.45));
 
     const toDispose: Array<THREE.BufferGeometry | THREE.Material> = [];
+
+    // ── Phase 3: PulseLayer, frustum, polytope InstancedMesh pool ────────
+    const pulseLayer = new PulseLayer();
+
+    // Frustum updated each animate() tick from camera matrices.
+    // Used for per-Mesh culling in renderNode (not per-Group — THREE.Group has no geometry)
+    const frustum = new THREE.Frustum();
+    const projScreenMatrix = new THREE.Matrix4();
+
+    // InstancedMesh pool: one per polytope kind, shared across all build nodes.
+    // 4 draw calls total at 50 visible clusters × 4 kinds (H2 design choice DC-9).
+    const MAX_CLUSTERS = 100;
+    const polyGeos: Record<string, THREE.BufferGeometry> = {
+      pentachoron:      new THREE.TetrahedronGeometry(0.35, 0),
+      tesseract:        new THREE.BoxGeometry(0.5, 0.5, 0.5),
+      hexadecachoron:   new THREE.OctahedronGeometry(0.38, 0),
+      icositetrachoron: new THREE.DodecahedronGeometry(0.32, 0),
+    };
+    const polyMats: Record<string, THREE.MeshStandardMaterial> = {};
+    const polyMeshes: Record<string, THREE.InstancedMesh> = {};
+    const POLY_COLORS: Record<string, number> = {
+      pentachoron:      0x4dffe6,
+      tesseract:        0x4d8eff,
+      hexadecachoron:   0xa874ff,
+      icositetrachoron: 0xff7eb6,
+    };
+    for (const kind of Object.keys(polyGeos)) {
+      toDispose.push(polyGeos[kind]!);
+      const mat = new THREE.MeshStandardMaterial({
+        color: POLY_COLORS[kind],
+        emissive: new THREE.Color(POLY_COLORS[kind]),
+        emissiveIntensity: 0.6,
+        transparent: true,
+        opacity: 0.55,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        wireframe: false,
+      });
+      toDispose.push(mat);
+      polyMats[kind] = mat;
+      const im = new THREE.InstancedMesh(polyGeos[kind]!, mat, MAX_CLUSTERS);
+      im.count = 0;
+      im.frustumCulled = true;  // engine uses instancedMesh bounding sphere for cull
+      scene.add(im);
+      polyMeshes[kind] = im;
+    }
+    // Per-frame: positions of active clusters keyed by kind
+    const clusterPositions: Record<string, THREE.Vector3[]> = {
+      pentachoron: [], tesseract: [], hexadecachoron: [], icositetrachoron: [],
+    };
+
+    // ── Pulse overlay — Phase 2 (haloMeshes driven by PulseLayer in Phase 3) ─
+    const haloMeshes = new Map<string, THREE.Mesh>();
+    // pulseIntensities retained as passthrough from PulseLayer.opacities (scaled ×3.0)
+    const pulseIntensities = new Map<string, number>();
+
+    // webglcontextlost fallback (iter-9 B2 fold — Safari / Intel HD mitigation)
+    renderer.domElement.addEventListener('webglcontextlost', (e: Event) => {
+      e.preventDefault();
+      cancelAnimationFrame(animId);
+    }, { once: true });
 
     // ── Material helpers ──────────────────────────────────────────────────
 
@@ -387,12 +522,14 @@
         group.add(new THREE.Mesh(rGeo, holoMat(ringColor, 0.62, 0.5)));
       }
 
-      // Wide ground halo — anchors tree to floor, colored per repo
+      // Wide ground halo — anchors tree to floor; pulse overlay boosts emissiveIntensity
       const halo = new THREE.RingGeometry(radiusBot * 0.9, radiusBot * 3.2, 32);
       halo.rotateX(-Math.PI / 2);
       halo.translate(0, 0.01, 0);
       toDispose.push(halo);
-      group.add(new THREE.Mesh(halo, holoMat(tc, 0.72, 0.48)));
+      const haloMesh = new THREE.Mesh(halo, holoMat(tc, 0.48, 0.48));
+      haloMeshes.set(repo.id, haloMesh);
+      group.add(haloMesh);
 
       // Base disc
       const disc = new THREE.CylinderGeometry(radiusBot * 1.1, radiusBot * 1.1, 0.018, 16);
@@ -495,17 +632,158 @@
       group.add(new THREE.Mesh(wtGeo, holoMat(wtColor, 0.78, 0.85)));
     }
 
-    // ── Build grove ───────────────────────────────────────────────────────
+    // ── renderNode: recursive BranchNode renderer (Phase 3 — live data path) ─
+    // Replaces flat repos.forEach when gitforestTree has live topology.
+    // Bounded recursion invariant: depth ≤ 3 (main=0, program=1, build=2, wave_cluster=3).
+    // Frustum culling: per-Mesh before scene.add (not per-Group — Group has no geometry).
+    // LOD: >200 visible nodes caps at simplified geometry via mesh.userData.lod flag.
 
-    repos.forEach((repo, repoIdx) => {
-      const group = new THREE.Group();
-      group.position.copy(repo.pos);
-      const { height, radiusBot } = buildTrunk(repo, repoIdx, group);
-      repo.branches.forEach((b, bi) =>
-        buildBranch(b, bi, repo, height, radiusBot, group),
-      );
-      scene.add(group);
-    });
+    let renderedNodeCount = 0;
+    const HARD_NODE_CAP = 200;
+
+    function addWithCull(mesh: THREE.Mesh): void {
+      mesh.updateMatrixWorld();
+      if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+      if (renderedNodeCount < HARD_NODE_CAP && frustum.intersectsObject(mesh)) {
+        scene.add(mesh);
+        renderedNodeCount++;
+      }
+    }
+
+    function renderNode(
+      nodeId: string,
+      nodes: Record<string, BranchNode>,
+      worldPos: THREE.Vector3,
+      parentHeight: number,
+      depth: number,
+    ): void {
+      if (depth > 3) throw new Error('GitForest depth > 3 invariant violated');
+      const node = nodes[nodeId];
+      if (!node) return;
+
+      const fade = node.overlay.lifecycle === 'merged' || node.overlay.lifecycle === 'abandoned'
+        ? computeFadeLevel(node.overlay.merged_at ?? null)
+        : 1.0;
+
+      // Camera distance for LOD: simplified geometry beyond 40 units
+      const distToCamera = worldPos.distanceTo(camera.position);
+      const useLOD = distToCamera > 40;
+
+      if (depth === 0) {
+        // main trunk — anchor sphere
+        const geo = useLOD
+          ? new THREE.SphereGeometry(0.3, 4, 3)
+          : new THREE.SphereGeometry(0.5, 8, 6);
+        toDispose.push(geo);
+        const mesh = new THREE.Mesh(geo, holoMat(0x22c55e, 0.7 * fade, 0.8 * fade));
+        mesh.position.copy(worldPos);
+        addWithCull(mesh);
+      } else if (depth === 1) {
+        // program-level: horizontal disc
+        const geo = useLOD
+          ? new THREE.CylinderGeometry(0.25, 0.25, 0.06, 6, 1)
+          : new THREE.CylinderGeometry(0.35, 0.35, 0.06, 12, 1);
+        toDispose.push(geo);
+        const color = REPO_TRUNK_COLORS[(renderedNodeCount % 3)] ?? REPO_TRUNK_COLORS[0];
+        const mesh = new THREE.Mesh(geo, holoMat(color[0], 0.55 * fade, 0.7 * fade));
+        mesh.position.copy(worldPos);
+        addWithCull(mesh);
+      } else if (depth === 2) {
+        // build-level: cylinder trunk
+        const height = (node.build_progress?.waves_done ?? 1) * 0.8;
+        const geo = useLOD
+          ? new THREE.CylinderGeometry(0.1, 0.18, height, 5, 1)
+          : new THREE.CylinderGeometry(0.12, 0.22, height, 8, 1);
+        geo.translate(0, height / 2, 0);
+        toDispose.push(geo);
+        const ciColor = node.overlay.ci_status === 'success' ? GATE_COLORS.clean
+          : node.overlay.ci_status === 'failure' ? GATE_COLORS.failed
+          : GATE_COLORS.writing;
+        const mesh = new THREE.Mesh(geo, holoMat(ciColor, 0.6 * fade, 0.75 * fade));
+        mesh.position.copy(worldPos);
+        addWithCull(mesh);
+
+        // Register polytope cluster if active worktrees present (memoised count)
+        const activeCount = activeCountCache.get(nodeId) ?? 0;
+        if (activeCount > 0 && !useLOD) {
+          const kinds = polytopeClusterFor(activeCount);
+          for (const kind of kinds) {
+            if (kind in clusterPositions) {
+              clusterPositions[kind as keyof typeof clusterPositions]?.push(
+                worldPos.clone().add(new THREE.Vector3(0, height + 0.5, 0)),
+              );
+            }
+          }
+        }
+      } else if (depth === 3) {
+        // wave-cluster leaf: small sphere
+        const geo = useLOD
+          ? new THREE.SphereGeometry(0.08, 3, 2)
+          : new THREE.SphereGeometry(0.12, 5, 4);
+        toDispose.push(geo);
+        const mesh = new THREE.Mesh(
+          geo,
+          holoMat(node.overlay.hitl_state === 'pending' ? 0xf59e0b : 0x4d8eff, 0.7 * fade, 0.8 * fade),
+        );
+        mesh.position.copy(worldPos);
+        addWithCull(mesh);
+      }
+
+      // Recurse into children — spread them around the parent position
+      const children = node.children.map(cid => nodes[cid]).filter(Boolean) as BranchNode[];
+      children.forEach((child, ci) => {
+        const angle = ci * 2.399963;  // golden angle spacing
+        const lateral = 2.5 + ci * 0.6;
+        const childPos = worldPos.clone().add(new THREE.Vector3(
+          Math.cos(angle) * lateral,
+          depth === 0 ? 0.5 : 1.2,
+          Math.sin(angle) * lateral,
+        ));
+        renderNode(child.id, nodes, childPos, parentHeight, depth + 1);
+      });
+    }
+
+    // ── Update polytope InstancedMesh matrices for current cluster positions ─
+    function flushPolytopeInstances(): void {
+      const tempMatrix = new THREE.Matrix4();
+      const tempQuat   = new THREE.Quaternion();
+      const tempScale  = new THREE.Vector3(1, 1, 1);
+      for (const kind of Object.keys(polyMeshes)) {
+        const positions = clusterPositions[kind as keyof typeof clusterPositions] ?? [];
+        const im = polyMeshes[kind]!;
+        const count = Math.min(positions.length, MAX_CLUSTERS);
+        im.count = count;
+        for (let i = 0; i < count; i++) {
+          tempMatrix.compose(positions[i]!, tempQuat, tempScale);
+          im.setMatrixAt(i, tempMatrix);
+        }
+        im.instanceMatrix.needsUpdate = true;
+        im.computeBoundingSphere();
+        // Reset for next frame
+        positions.length = 0;
+      }
+    }
+
+    // ── Build grove (seed-data legacy path + live-data renderNode path) ──
+
+    const currentTopology = get(gitforestTree);
+    if (currentTopology) {
+      // Live path: recursive BranchNode renderer with frustum culling
+      renderedNodeCount = 0;
+      renderNode(currentTopology.root_id, currentTopology.nodes, new THREE.Vector3(0, 0, 0), 0, 0);
+      flushPolytopeInstances();
+    } else {
+      // Seed path: existing Repo[] renderer (flat iteration, no frustum cull)
+      repos.forEach((repo, repoIdx) => {
+        const group = new THREE.Group();
+        group.position.copy(repo.pos);
+        const { height, radiusBot } = buildTrunk(repo, repoIdx, group);
+        repo.branches.forEach((b, bi) =>
+          buildBranch(b, bi, repo, height, radiusBot, group),
+        );
+        scene.add(group);
+      });
+    }
 
     // Blueprint grid floor — AdditiveBlending required: dark colors add nothing to near-black bg
     // Center lines: 0x1a6ec0 (R26,G110,B192) → adds (16,66,115) on top of black = visible mid-blue
@@ -521,6 +799,38 @@
       lm.depthWrite = false;
     });
     scene.add(grid);
+
+    // Wire pulse store → PulseLayer.enqueue (Phase 3 replaces direct intensity set)
+    const unsubPulses = gitforestPulses.subscribe(nodeIds => {
+      for (const id of nodeIds) {
+        pulseLayer.enqueue(id);
+      }
+      // Live region announcement — rate-limited to one per 2s (Phase 3.5)
+      if (nodeIds.length > 0) {
+        const now = performance.now();
+        if (now - liveAnnouncedAt > 2000) {
+          liveAnnouncement = nodeIds.length === 1
+            ? `Branch activity: ${nodeIds[0]}`
+            : `${nodeIds.length} branches active`;
+          liveAnnouncedAt = now;
+        }
+      }
+    });
+
+    // PulseLayer tick at 4Hz (setInterval 250ms — deliberate: JS single-threaded,
+    // no race with rAF; tick mutates ring buffer between frames safely)
+    const pulseTickId = setInterval(() => {
+      if (!motionEnabled) return;  // prefers-reduced-motion: skip tick entirely
+      pulseLayer.tick();
+      // Sync PulseLayer opacities → pulseIntensities (scaled ×3.0 to match Phase 2 peak)
+      for (const [id, opacity] of pulseLayer.opacities) {
+        pulseIntensities.set(id, opacity * 3.0);
+      }
+      // Evict entries no longer in PulseLayer
+      for (const id of pulseIntensities.keys()) {
+        if (!pulseLayer.opacities.has(id)) pulseIntensities.delete(id);
+      }
+    }, 250);
 
     // ── Orbit interaction ─────────────────────────────────────────────────
 
@@ -552,9 +862,32 @@
     let animId = 0;
     function animate() {
       animId = requestAnimationFrame(animate);
+      // prefers-reduced-motion guard (Phase 3.5 wires the listener; guard is here now)
+      if (!motionEnabled) {
+        composer.render();
+        return;
+      }
       if (!dragging) {
         sph.theta += 0.00025;
         applySph();
+      }
+      // Update frustum from camera (used by addWithCull inside next renderNode rebuild)
+      camera.updateMatrixWorld();
+      projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      frustum.setFromProjectionMatrix(projScreenMatrix);
+
+      // Apply PulseLayer opacities to halo meshes (PulseLayer.tick runs at 4Hz in setInterval)
+      for (const [id, intensity] of pulseIntensities) {
+        const mesh = haloMeshes.get(id);
+        if (mesh) {
+          (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.48 + intensity * 2.0;
+        }
+      }
+      // Restore baseline for halos no longer pulsing
+      for (const [id, mesh] of haloMeshes) {
+        if (!pulseIntensities.has(id)) {
+          (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.48;
+        }
       }
       composer.render();
     }
@@ -577,12 +910,16 @@
 
     return () => {
       cancelAnimationFrame(animId);
+      clearInterval(pulseTickId);
+      pulseLayer.destroy();
+      unsubPulses();
       resizeObs.disconnect();
       el.removeEventListener('pointerdown', onPDown);
       el.removeEventListener('pointermove', onPMove);
       window.removeEventListener('pointerup', onPUp);
       el.removeEventListener('wheel', onWheel);
       toDispose.forEach(x => x.dispose());
+      for (const im of Object.values(polyMeshes)) im.dispose();
       renderer.dispose();
       composer.dispose();
     };
@@ -591,7 +928,7 @@
   // ─── 2D flat git-graph renderer ──────────────────────────────────────────
 
   $effect(() => {
-    if (mode !== '2d' || !canvas2d) return;
+    if (!canvas2d) return;
 
     const canvas = canvas2d;
     const ctxRaw = canvas.getContext('2d');
@@ -742,6 +1079,9 @@
           ctx.setLineDash([]);
           ctx.globalAlpha = 1;
 
+          // Collect hitbox for a11y overlay (Phase 3.5 — flushed to $state at 4Hz)
+          hitboxPending.push({ id: `${repo.name}/${branch.name}`, label: branch.name, gateState: branch.gateState, x: tipX, y: tipY, cw: canvas.width, ch: canvas.height });
+
           if (!branch.isGhost) {
             // Commit dots with staggered pulse
             const nodeCap = Math.min(branch.commitCount, 8);
@@ -801,6 +1141,13 @@
         ctx.fillText(`${repo.commitCount}c · ${repo.fileCount}f`, cx, baseY + labelH * 0.80);
         ctx.textAlign = 'left';
       });
+
+      // Flush hitbox positions to $state every ~15 frames (≈4Hz at 60fps)
+      hitboxFrame = (hitboxFrame + 1) % 15;
+      if (hitboxFrame === 0) {
+        hitboxes = hitboxPending;
+      }
+      hitboxPending = [];
     }
 
     // ── L2 hero renderer ─────────────────────────────────────────────────
@@ -1085,16 +1432,52 @@
 </script>
 
 <div class="forest-wrap">
-  <div class="mode-toggle" role="group" aria-label="Scene mode">
-    <button class="mode-btn" class:active={mode === '2d'} onclick={() => mode = '2d'}>2D</button>
-    <button class="mode-btn" class:active={mode === '3d'} onclick={() => mode = '3d'}>3D</button>
-  </div>
-  {#if mode === '3d'}
-    <div bind:this={container} class="forest-canvas"></div>
-  {:else}
-    <canvas bind:this={canvas2d} class="forest-canvas"></canvas>
-  {/if}
+  <!-- 2D canvas: primary tree rendering -->
+  <canvas bind:this={canvas2d} class="forest-canvas"></canvas>
+  <!-- Three.js container: selective agent-presence polytope overlay (always mounted,
+       rendered only when BranchNode worktrees are present — no operator mode toggle) -->
+  <div bind:this={container} class="forest-three" aria-hidden="true"></div>
+  <!-- Hologram scan-line overlay -->
   <canvas bind:this={overlayCanvas} class="forest-overlay" aria-hidden="true"></canvas>
+
+  <!-- A11y shadow hitboxes (Phase 3.5): invisible buttons over branch tips for keyboard/SR users -->
+  <!-- Phase 6: hover → BranchTooltip; click → navigate('/builds'); contextmenu → pin tooltip -->
+  {#each hitboxes as hb (hb.id)}
+    <button
+      class="forest-hitbox"
+      style:left="{(hb.x / hb.cw) * 100}%"
+      style:top="{(hb.y / hb.ch) * 100}%"
+      aria-label="{hb.label} — {hb.gateState.replace('_', ' ')}"
+      aria-describedby={tooltipNodeId === hb.id ? `branch-tooltip-${hb.id}` : undefined}
+      onmouseenter={(e) => showTooltip(hb.id, e.currentTarget as HTMLButtonElement)}
+      onmouseleave={hideTooltip}
+      onfocusin={(e) => showTooltip(hb.id, e.currentTarget as HTMLButtonElement)}
+      onfocusout={hideTooltip}
+      onclick={() => handleHitboxClick(hb.id)}
+      oncontextmenu={(e) => handleContextMenu(e, hb.id, e.currentTarget as HTMLButtonElement)}
+    ></button>
+  {/each}
+
+  <!-- Phase 6: BranchTooltip — rendered when a hitbox is hovered/focused -->
+  {#if tooltipNodeId && tooltipAnchor}
+    <BranchTooltip
+      nodeId={tooltipNodeId}
+      anchor={tooltipAnchor}
+      onclose={hideTooltip}
+    />
+  {/if}
+
+  <!-- Reduced-motion static badge (shown when prefers-reduced-motion: reduce) -->
+  {#if !motionEnabled}
+    <div class="forest-reduced-badge" role="status" aria-label="Animations paused — reduced motion">
+      ◈ static
+    </div>
+  {/if}
+
+  <!-- Live region: announces pulse events to screen readers (rate-limited 1/2s) -->
+  <div role="status" aria-live="polite" aria-atomic="true" class="forest-live-region">
+    {liveAnnouncement}
+  </div>
 </div>
 
 <style>
@@ -1108,6 +1491,15 @@
   .forest-canvas {
     position: absolute;
     inset: 0;
+    width: 100%;
+    height: 100%;
+    will-change: transform;
+  }
+  .forest-three {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    will-change: transform;
   }
   .forest-overlay {
     position: absolute;
@@ -1116,38 +1508,53 @@
     height: 100%;
     pointer-events: none;
     mix-blend-mode: screen;
+    will-change: transform;
   }
 
-  /* ── Mode toggle pill ── */
-  .mode-toggle {
+  /* Shadow hitboxes: visible only to keyboard/SR users via focus ring */
+  .forest-hitbox {
     position: absolute;
-    top: 10px;
-    right: 12px;
-    z-index: 10;
-    display: flex;
-    gap: 2px;
-    padding: 3px;
-    background: rgba(2, 4, 8, 0.76);
-    border: 1px solid rgba(0, 200, 255, 0.18);
-    border-radius: 6px;
-    backdrop-filter: blur(6px);
-  }
-  .mode-btn {
-    font: 600 10px/1 monospace;
-    letter-spacing: 0.06em;
-    color: #475569;
-    background: none;
+    transform: translate(-50%, -50%);
+    width: 28px;
+    height: 28px;
+    background: transparent;
     border: none;
-    border-radius: 4px;
-    padding: 4px 9px;
     cursor: pointer;
-    transition: color 120ms ease, background 120ms ease;
+    padding: 0;
+    /* Clip visually, show on focus for keyboard users */
+    clip-path: inset(50%);
+    border-radius: 50%;
   }
-  .mode-btn.active {
-    color: #00c8ff;
-    background: rgba(0, 200, 255, 0.12);
+  .forest-hitbox:focus-visible {
+    clip-path: none;
+    outline: 2px solid #38bdf8;
+    outline-offset: 2px;
+    background: rgba(56, 189, 248, 0.15);
   }
-  .mode-btn:hover:not(.active) {
-    color: #94a3b8;
+
+  /* Reduced-motion badge */
+  .forest-reduced-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 10px;
+    font-family: monospace;
+    color: #64748b;
+    background: rgba(2, 4, 8, 0.75);
+    padding: 3px 7px;
+    border-radius: 4px;
+    border: 1px solid #1e293b;
+    pointer-events: none;
+  }
+
+  /* Live region: visually hidden, announced to screen readers */
+  .forest-live-region {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    pointer-events: none;
   }
 </style>

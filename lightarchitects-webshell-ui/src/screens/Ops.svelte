@@ -25,6 +25,7 @@
   import type { LayoutPreset } from '$lib/types';
   import type { Polytope4DType } from '$lib/polytopes4d-canvas2d';
   import { registerHotkey } from '$lib/hotkeyRegistry';
+  import SharedSlotBar from '$lib/../components/SharedSlotBar.svelte';
 
   // ── Reactive data ─────────────────────────────────────────────────────────
 
@@ -445,6 +446,8 @@
       <div class="forest-col">
         <div class="forest-header">
           <span class="panel-label">GIT FOREST</span>
+          <!-- Phase 6: SharedSlotBar — live agent pool -->
+          <SharedSlotBar />
           <div class="forest-legend">
             <span class="legend-dot" style="background:#22c55e"></span><span class="legend-txt">clean</span>
             <span class="legend-dot" style="background:#f59e0b"></span><span class="legend-txt">hitl</span>
@@ -458,7 +461,9 @@
             HIDE
           </button>
         </div>
-        <GitForest />
+        <div class="forest-body">
+          <GitForest />
+        </div>
       </div>
     {/if}
   </div>
@@ -735,6 +740,11 @@
     min-height: 0;
     overflow: hidden;
     background: #020408;
+  }
+  .forest-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
   .forest-header {
     display: flex;

@@ -22,6 +22,7 @@
   import ActiveBuildsChip from './components/ActiveBuildsChip.svelte';
   import Breadcrumb from './components/Breadcrumb.svelte';
   import GlobalEventsOverlay from './components/GlobalEventsOverlay.svelte';
+  import StatsTopbar from './components/StatsTopbar.svelte';
   import {
     ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen,
     builds, currentBuildId, findings, logEntries, artifacts, conductorTasks, arenaStatus, alerts,
@@ -465,6 +466,9 @@
           </Tooltip>
         </div>
       </nav>
+
+      <!-- Phase 6: StatsTopbar — persistent build fleet status ribbon -->
+      <StatsTopbar />
 
       {#if screenLoading}
         <div class="flex-1 flex items-center justify-center">
