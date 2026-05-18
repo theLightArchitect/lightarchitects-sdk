@@ -60,6 +60,18 @@ credentials-detailed-locator = ["credentials"]
 # those are always compiled and available to any provider implementor.
 agent-cli = []
 
+# lightsquad — autonomous code-delivery orchestration engine.
+# Phase 1 stub: gates module compilation only. Phase 3+ wires in nearai/ironclaw
+# upstream crates (ironclaw_engine, ironclaw_approvals, ironclaw_capabilities,
+# ironclaw_safety, ironclaw_secrets, ironclaw_run_state, ironclaw_processes,
+# ironclaw_trust, ironclaw_common) via git deps pinned at rev 4fea8b3546
+# (per .audit/nearai-ironclaw-license-supply-chain-2026-05-18.md verdict).
+# Apache-2.0 attribution obligations land in lightarchitects-sdk/NOTICE.
+#
+# Extraction candidate — see ~/.claude/projects/-Users-kft-Projects/memory/
+# project_lightarchitects_sdk_extraction_candidates.md
+lightsquad = ["agent-cli", "http-client", "credentials"]
+
 # ── Always-on external deps (union of all 13 merged crates) ──────────────────
 
 [dependencies]

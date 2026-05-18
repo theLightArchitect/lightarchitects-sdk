@@ -76,3 +76,9 @@ pub mod credentials;
 /// Typed REST client for the `lightarchitects-gateway` platform API (localhost:8080).
 #[cfg(feature = "http-client")]
 pub mod platform;
+
+/// lightsquad — autonomous code-delivery orchestration engine.
+/// Phase 1 stubs; implementations land in Phase 3+ per the ironclaw-spine LASDLC plan.
+/// See module-level docs for architecture, sub-modules, and future-extraction status.
+#[cfg(feature = "lightsquad")]
+pub mod lightsquad;
