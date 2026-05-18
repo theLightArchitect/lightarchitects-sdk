@@ -1,0 +1,8 @@
+# Lake build artifacts (large; Mathlib + caches ~6.9 GB)
+HelixProofs/.lake/
+HelixProofs/build/
+*.olean
+*.ilean
+
+# Backup files
+*.bak

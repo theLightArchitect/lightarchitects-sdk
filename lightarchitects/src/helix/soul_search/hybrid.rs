@@ -88,34 +88,30 @@ impl RetrievalMode {
     /// Get the signal weight for each retrieval signal.
     ///
     /// See [`RetrievalMode`] doc comment for full tuning rationale.
+    ///
+    /// # Panics
+    ///
+    /// Statically cannot panic — each literal tuple is machine-verified by Lean
+    /// to sum to exactly 100 (see `proofs/HelixProofs/HelixProofs/Basic.lean`
+    /// theorems `keyword_dominated_valid`, `balanced_valid`, `graph_weighted_valid`).
+    /// The `expect` calls below are formal proof obligations that this code never
+    /// hits the `None` branch of `SignalWeights::new`.
     #[must_use]
+    #[allow(
+        clippy::expect_used,
+        reason = "Lean-verified: each literal tuple proven to sum to 100"
+    )]
     pub fn weights(&self) -> SignalWeights {
         match self {
             // Fresh helix: BM25 dominates, semantic as secondary.
-            // Structural nearly zeroed (GDS unlikely to have run yet).
-            Self::KeywordDominated => SignalWeights {
-                fulltext: 0.65,
-                semantic: 0.25,
-                structural: 0.03,
-                graph: 0.07,
-            },
+            Self::KeywordDominated => SignalWeights::new(65, 25, 3, 7)
+                .expect("KeywordDominated weights sum to 100 (Lean-verified)"),
             // Medium helix: semantic is strongest general signal.
-            // Graph elevated (links are forming). Structural kept low
-            // because Node2Vec availability is not guaranteed.
-            Self::Balanced => SignalWeights {
-                fulltext: 0.25,
-                semantic: 0.35,
-                structural: 0.10,
-                graph: 0.30,
-            },
+            Self::Balanced => SignalWeights::new(25, 35, 10, 30)
+                .expect("Balanced weights sum to 100 (Lean-verified)"),
             // Mature helix: graph topology is the primary discriminator.
-            // Semantic provides meaning overlap. BM25 catches exact-match.
-            Self::GraphWeighted => SignalWeights {
-                fulltext: 0.15,
-                semantic: 0.30,
-                structural: 0.10,
-                graph: 0.45,
-            },
+            Self::GraphWeighted => SignalWeights::new(15, 30, 10, 45)
+                .expect("GraphWeighted weights sum to 100 (Lean-verified)"),
         }
     }
 }
@@ -131,16 +127,89 @@ impl std::fmt::Display for RetrievalMode {
 }
 
 /// Signal weights for RRF fusion.
-#[derive(Debug, Clone, Copy)]
+///
+/// **Type-safe representation**: weights are stored as `u8` percentages (0..=100)
+/// rather than `f64`. The smart constructor [`SignalWeights::new`] returns `Some`
+/// only when the four percentages sum to exactly 100, eliminating floating-point
+/// drift in weight distributions.
+///
+/// Downstream consumers (RRF fusion) get `f64` via accessor methods.
+///
+/// **Formal verification** (`proofs/HelixProofs/HelixProofs/Basic.lean`):
+/// - `SignalWeights.new(a, b, c, d).is_some() ↔ a + b + c + d = 100`
+/// - `dispatcher_preserves_probability_invariant`: every step count → valid distribution
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "_pct suffix is load-bearing: distinguishes integer-percent representation from the f64 accessors with bare names"
+)]
 pub struct SignalWeights {
-    /// BM25 fulltext weight.
-    pub fulltext: f64,
-    /// Semantic vector weight.
-    pub semantic: f64,
-    /// Structural vector weight.
-    pub structural: f64,
-    /// Graph traversal weight.
-    pub graph: f64,
+    fulltext_pct: u8,
+    semantic_pct: u8,
+    structural_pct: u8,
+    graph_pct: u8,
+}
+
+impl SignalWeights {
+    /// Smart constructor — returns `Some(SignalWeights)` iff the four percentages
+    /// sum to exactly 100. This invariant is machine-checked in Lean (see proof file).
+    #[must_use]
+    pub fn new(
+        fulltext_pct: u8,
+        semantic_pct: u8,
+        structural_pct: u8,
+        graph_pct: u8,
+    ) -> Option<Self> {
+        let sum = u16::from(fulltext_pct)
+            + u16::from(semantic_pct)
+            + u16::from(structural_pct)
+            + u16::from(graph_pct);
+        if sum == 100 {
+            Some(Self {
+                fulltext_pct,
+                semantic_pct,
+                structural_pct,
+                graph_pct,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// BM25 fulltext weight as f64 (0.0..=1.0).
+    #[must_use]
+    pub fn fulltext(&self) -> f64 {
+        f64::from(self.fulltext_pct) / 100.0
+    }
+
+    /// Semantic vector weight as f64 (0.0..=1.0).
+    #[must_use]
+    pub fn semantic(&self) -> f64 {
+        f64::from(self.semantic_pct) / 100.0
+    }
+
+    /// Structural (`Node2Vec`) weight as f64 (0.0..=1.0).
+    #[must_use]
+    pub fn structural(&self) -> f64 {
+        f64::from(self.structural_pct) / 100.0
+    }
+
+    /// Graph traversal weight as f64 (0.0..=1.0).
+    #[must_use]
+    pub fn graph(&self) -> f64 {
+        f64::from(self.graph_pct) / 100.0
+    }
+
+    /// Raw percentage tuple (for testing / inspection).
+    #[must_use]
+    pub fn as_percentages(&self) -> (u8, u8, u8, u8) {
+        (
+            self.fulltext_pct,
+            self.semantic_pct,
+            self.structural_pct,
+            self.graph_pct,
+        )
+    }
 }
 
 // ============================================================================
@@ -308,7 +377,7 @@ impl HybridRetriever {
             &signals.semantic,
             &signals.structural,
             &signals.graph,
-            &weights,
+            weights,
         );
 
         // Strand affinity boost — post-RRF, does not affect signal weights.
@@ -428,7 +497,7 @@ fn rrf_fuse(
     semantic: &[ScoredId],
     structural: &[ScoredId],
     graph: &[ScoredId],
-    weights: &SignalWeights,
+    weights: SignalWeights,
 ) -> Vec<FusedResult> {
     let mut scores: HashMap<String, FusedEntry> = HashMap::new();
 
@@ -436,22 +505,22 @@ fn rrf_fuse(
     add_signal_ranks(
         &mut scores,
         fulltext,
-        weights.fulltext,
+        weights.fulltext(),
         RetrievalSignal::Fulltext,
     );
     add_signal_ranks(
         &mut scores,
         semantic,
-        weights.semantic,
+        weights.semantic(),
         RetrievalSignal::Semantic,
     );
     add_signal_ranks(
         &mut scores,
         structural,
-        weights.structural,
+        weights.structural(),
         RetrievalSignal::Structural,
     );
-    add_signal_ranks(&mut scores, graph, weights.graph, RetrievalSignal::Graph);
+    add_signal_ranks(&mut scores, graph, weights.graph(), RetrievalSignal::Graph);
 
     // Collect — caller sorts after optional post-RRF boosts.
     scores
@@ -673,6 +742,11 @@ pub fn precision_at_k_patterns(results: &[FusedResult], patterns: &[String], k: 
 // ============================================================================
 
 #[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "tests use expect/unwrap on Lean-verified literal weight tuples"
+)]
 mod tests {
     use super::*;
 
@@ -708,18 +782,33 @@ mod tests {
 
     #[test]
     fn test_weights_sum_to_one() {
+        // With u8-percent representation, the sum is exact (no floating-point drift).
+        // The smart constructor guarantees this; tests verify per-mode invariant.
         for mode in [
             RetrievalMode::KeywordDominated,
             RetrievalMode::Balanced,
             RetrievalMode::GraphWeighted,
         ] {
             let w = mode.weights();
-            let sum = w.fulltext + w.semantic + w.structural + w.graph;
-            assert!(
-                (sum - 1.0).abs() < 0.01,
-                "{mode}: weights sum to {sum}, expected ~1.0"
+            let (ft, sm, st, gr) = w.as_percentages();
+            let sum: u16 = u16::from(ft) + u16::from(sm) + u16::from(st) + u16::from(gr);
+            assert_eq!(
+                sum, 100,
+                "{mode}: weights sum to {sum}, expected exactly 100"
             );
         }
+    }
+
+    #[test]
+    fn test_signal_weights_smart_constructor() {
+        // Valid distributions
+        assert!(SignalWeights::new(65, 25, 3, 7).is_some());
+        assert!(SignalWeights::new(100, 0, 0, 0).is_some());
+        assert!(SignalWeights::new(25, 25, 25, 25).is_some());
+        // Invalid distributions: rejected
+        assert!(SignalWeights::new(50, 50, 50, 0).is_none(), "150 > 100");
+        assert!(SignalWeights::new(50, 25, 0, 0).is_none(), "75 < 100");
+        assert!(SignalWeights::new(0, 0, 0, 0).is_none(), "0 != 100");
     }
 
     #[test]
@@ -736,14 +825,10 @@ mod tests {
                 signal: RetrievalSignal::Fulltext,
             },
         ];
-        let weights = SignalWeights {
-            fulltext: 1.0,
-            semantic: 0.0,
-            structural: 0.0,
-            graph: 0.0,
-        };
+        // 100/0/0/0 = 100, valid distribution
+        let weights = SignalWeights::new(100, 0, 0, 0).expect("100+0+0+0 = 100");
 
-        let mut results = rrf_fuse(&fulltext, &[], &[], &[], &weights);
+        let mut results = rrf_fuse(&fulltext, &[], &[], &[], weights);
         results.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
@@ -768,14 +853,10 @@ mod tests {
             score: 0.9,
             signal: RetrievalSignal::Semantic,
         }];
-        let weights = SignalWeights {
-            fulltext: 0.5,
-            semantic: 0.5,
-            structural: 0.0,
-            graph: 0.0,
-        };
+        // 50/50/0/0 = 100, valid distribution
+        let weights = SignalWeights::new(50, 50, 0, 0).expect("50+50+0+0 = 100");
 
-        let results = rrf_fuse(&fulltext, &semantic, &[], &[], &weights);
+        let results = rrf_fuse(&fulltext, &semantic, &[], &[], weights);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].step_id, "shared");
         assert_eq!(results[0].signals.len(), 2);
@@ -806,7 +887,7 @@ mod tests {
         }];
         let weights = RetrievalMode::Balanced.weights();
 
-        let mut results = rrf_fuse(&fulltext, &semantic, &[], &[], &weights);
+        let mut results = rrf_fuse(&fulltext, &semantic, &[], &[], weights);
         results.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
@@ -959,21 +1040,16 @@ mod tests {
 
         // Tuned weights
         let tuned = RetrievalMode::Balanced.weights();
-        let mut tuned_results = rrf_fuse(&fulltext, &semantic, &[], &graph, &tuned);
+        let mut tuned_results = rrf_fuse(&fulltext, &semantic, &[], &graph, tuned);
         tuned_results.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        // Old equal weights for comparison
-        let old = SignalWeights {
-            fulltext: 0.25,
-            semantic: 0.25,
-            structural: 0.25,
-            graph: 0.25,
-        };
-        let mut old_results = rrf_fuse(&fulltext, &semantic, &[], &graph, &old);
+        // Old equal weights for comparison: 25+25+25+25 = 100
+        let old = SignalWeights::new(25, 25, 25, 25).expect("25*4 = 100");
+        let mut old_results = rrf_fuse(&fulltext, &semantic, &[], &graph, old);
         old_results.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
@@ -997,7 +1073,7 @@ mod tests {
         // Verify KeywordDominated mode heavily favors fulltext results
         let w = RetrievalMode::KeywordDominated.weights();
         assert!(
-            w.fulltext > w.semantic + w.structural + w.graph,
+            w.fulltext() > w.semantic() + w.structural() + w.graph(),
             "KeywordDominated fulltext weight should exceed sum of all others"
         );
     }
@@ -1006,8 +1082,8 @@ mod tests {
     fn test_graph_weighted_graph_is_primary() {
         // Verify GraphWeighted mode has graph as the single highest signal
         let w = RetrievalMode::GraphWeighted.weights();
-        assert!(w.graph > w.fulltext);
-        assert!(w.graph > w.semantic);
-        assert!(w.graph > w.structural);
+        assert!(w.graph() > w.fulltext());
+        assert!(w.graph() > w.semantic());
+        assert!(w.graph() > w.structural());
     }
 }
