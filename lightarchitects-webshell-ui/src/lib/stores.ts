@@ -863,3 +863,41 @@ export async function ensureBuildInStore(id: string): Promise<void> {
     console.warn('[stores] ensureBuildInStore failed:', e);
   }
 }
+
+// ── GitForest live-ops stores ─────────────────────────────────────────────────
+// These stores power the live operational overlay on the forest canvas.
+// Phase 1 scaffold: stores are defined here; wiring to the SSE stream and
+// IndexedDB cache happens in Phase 5 (SSE Broadcast + Frontend Wiring).
+
+import type {
+  BranchNode, WorktreeAssignment, GitForestTopology,
+} from './gitforest';
+import { isGitForestFlagEnabled } from './featureFlags';
+
+/** Full topology for the primary repo, keyed by node ID. Null until first fetch. */
+export const gitforestTree = writable<GitForestTopology | null>(null);
+
+/** Ring buffer of recent AYIN pulse events. Each entry is a node ID that
+ *  received a pulse tick in the last `PULSE_RING_SIZE` frames. Cleared when
+ *  `pulseEnabled` is toggled off. */
+export const gitforestPulses = writable<string[]>([]);
+
+/** Current slot assignments: node ID → array of active worktree assignments.
+ *  Derived from `gitforestTree` on every topology update. */
+export const slotAssignments = derived(
+  gitforestTree,
+  ($tree): Map<string, WorktreeAssignment[]> => {
+    if (!$tree) return new Map();
+    const map = new Map<string, WorktreeAssignment[]>();
+    for (const node of Object.values($tree.nodes)) {
+      if (node.worktrees.length > 0) {
+        map.set(node.id, node.worktrees);
+      }
+    }
+    return map;
+  },
+);
+
+/** Whether the AYIN pulse overlay is active. Initialised from feature flag;
+ *  operator can toggle off via the stats topbar without a page reload. */
+export const pulseEnabled = writable<boolean>(isGitForestFlagEnabled('pulseEnabled'));

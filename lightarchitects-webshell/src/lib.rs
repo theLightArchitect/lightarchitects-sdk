@@ -33,6 +33,8 @@ pub mod csp;
 /// Squad Dispatch — heuristic classifier + in-process agent orchestration.
 pub mod dispatch;
 pub mod events;
+/// GitForest live operational branch-hierarchy map.
+pub mod gitforest;
 pub mod init;
 pub mod mcp_config;
 pub mod memory;
