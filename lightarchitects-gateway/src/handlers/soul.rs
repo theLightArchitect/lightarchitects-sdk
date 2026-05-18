@@ -159,7 +159,7 @@ mod tests {
 
     use super::*;
     use lightarchitects::agent::{
-        AgentResponse, ProviderCapabilities, SchemaMode, SanitizedAgentRequest, TokenUsage,
+        AgentResponse, ProviderCapabilities, SanitizedAgentRequest, SchemaMode, TokenUsage,
     };
 
     fn handler() -> SoulHandler {

@@ -45,6 +45,8 @@ pub mod handlers;
 pub mod http;
 /// Shared LLM client — Ollama, OpenAI-compatible, Anthropic.
 pub mod llm;
+/// Pre-flight checks for autonomous build runs (`lightarchitects preflight <check>`).
+pub mod preflight;
 /// LASDLC C1-C8 effectiveness rubric — grades agent/task outputs.
 pub mod rubric;
 /// HMAC-SHA256 signing and verification for LASDLC hook payloads.

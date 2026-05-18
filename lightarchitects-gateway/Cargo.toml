@@ -117,6 +117,11 @@ inline-all = [
     "inline-soul", "inline-quantum", "inline-laex",
 ]
 
+## Delivery Arena — autonomous build delivery engine (Pillar 2 spine).
+## Default: off. Enable with --features delivery_arena.
+## Phase 1: module skeleton only; Phases 3–5 add implementations.
+delivery_arena = []
+
 ## SOUL heavy dependencies (Neo4j + fastembed). Without this, the SOUL handler
 ## uses the filesystem vault backend only — no graph database or embeddings.
 helix = ["inline-soul"]
