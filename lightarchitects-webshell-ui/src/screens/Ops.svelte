@@ -458,7 +458,9 @@
             HIDE
           </button>
         </div>
-        <GitForest />
+        <div class="forest-body">
+          <GitForest />
+        </div>
       </div>
     {/if}
   </div>
@@ -735,6 +737,11 @@
     min-height: 0;
     overflow: hidden;
     background: #020408;
+  }
+  .forest-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
   .forest-header {
     display: flex;

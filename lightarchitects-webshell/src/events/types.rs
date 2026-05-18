@@ -4,6 +4,7 @@
 //! verbatim as `data:` payloads on the SSE stream the browser subscribes
 //! to via `GET /api/events` (Phase 5).
 
+use crate::gitforest::BranchNode;
 use crate::memory::types::PromotionEvent;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -141,6 +142,23 @@ pub enum WebEvent {
         /// Raw output line (may contain ANSI escape codes).
         line: String,
     },
+    /// Live `GitForest` topology update.
+    ///
+    /// Emitted on every branch state change that affects the 4-level forest
+    /// hierarchy.  `root` is the full `main` subtree for the named repo so
+    /// the frontend can do a single atomic replace without partial-update
+    /// bookkeeping.
+    ///
+    /// `debounce_window_ms` is NOT part of the payload — it is an
+    /// implementation constant in the broadcaster (`DEBOUNCE_WINDOW_MS = 250`)
+    /// per API-canon-audit S6 (iter-7).
+    GitForestUpdate {
+        /// Repository name (matches `BranchNode.id` for the root `main` node).
+        repo: String,
+        /// Full branch tree rooted at `main`.
+        root: BranchNode,
+    },
+
     /// Terminal event for a completed exec process.
     ///
     /// Emitted once per process after all `ExecOutput` events. `exit_code`

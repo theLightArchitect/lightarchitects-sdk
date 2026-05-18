@@ -4,13 +4,9 @@
   import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
   import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
   import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-  import {
-    fetchGitHubForestData,
-    GITHUB_ORG,
-    FOREST_REPO_NAMES,
-    FOREST_CACHE_TTL_MS,
-    type RepoData,
-  } from '$lib/github';
+  import { gitforestTree, gitforestPulses } from '$lib/stores';
+  import type { GitForestTopology } from '$lib/gitforest';
+  import { countActiveWorktrees } from '$lib/gitforest';
 
   // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -49,15 +45,56 @@
     new THREE.Vector3( 6,  0,  1),   // corso — right
   ];
 
-  function repoDataToRepo(d: RepoData, idx: number): Repo {
+  function repoDataToRepo(d: { id: string; name: string; commitCount: number; fileCount: number; branches: Branch[] }, idx: number): Repo {
     return {
       id: d.id,
       name: d.name,
       commitCount: d.commitCount,
       fileCount: d.fileCount,
       pos: REPO_POSITIONS[idx] ?? new THREE.Vector3(idx * 5.5, 0, 0),
-      branches: d.branches as Branch[],
+      branches: d.branches,
     };
+  }
+
+  /** Map a `GitForestTopology` (BranchNode tree) into the internal `Repo[]`
+   *  rendering representation.  Depth-0 nodes become repo roots; depth-2
+   *  (build) nodes become branches; depth-3 (wave_cluster) worktrees map
+   *  to the Branch.worktrees array. */
+  function topologyToRepos(topology: GitForestTopology): Repo[] {
+    const repos: Repo[] = [];
+    let idx = 0;
+    for (const node of Object.values(topology.nodes)) {
+      if (node.depth !== 1) continue;  // program-level = one repo trunk per program
+      const branches: Branch[] = node.children
+        .map(cid => topology.nodes[cid])
+        .filter(Boolean)
+        .filter(c => c.depth === 2)
+        .map(build => ({
+          name: build.name,
+          divergeCommit: 0,
+          commitCount: build.build_progress?.waves_done ?? 0,
+          filesModified: 0,
+          gateState: (build.overlay.ci_status === 'success' ? 'clean'
+            : build.overlay.ci_status === 'failure' ? 'failed'
+            : build.overlay.hitl_state === 'pending' ? 'hitl_pending'
+            : 'writing') as GateState,
+          isGhost: build.overlay.lifecycle === 'abandoned',
+          worktrees: build.worktrees.map(w => ({
+            domain: w.domain as AgentDomain,
+            commitCount: w.commits,
+          })),
+        }));
+      repos.push({
+        id: node.id,
+        name: node.name,
+        commitCount: countActiveWorktrees(node.id, topology.nodes),
+        fileCount: 0,
+        pos: REPO_POSITIONS[idx] ?? new THREE.Vector3(idx * 5.5, 0, 0),
+        branches,
+      });
+      idx++;
+    }
+    return repos.length > 0 ? repos : [];
   }
 
   // ─── Static seed — real repo data (used until GitHub fetch resolves) ─────
@@ -143,43 +180,20 @@
     },
   ];
 
-  // ─── Live repos state (starts as seed, replaced on GitHub fetch) ──────────
+  // ─── Live repos state (seed until gitforestTree store populates) ─────────
+  // Phase 5 wires the SSE stream → gitforestTree store → repos reactive update.
+  // GitHub PAT is server-side only (github_token_store.rs, Phase 4) — no
+  // client-side token reads.
 
   let repos = $state<Repo[]>(SEED_REPOS);
 
   $effect(() => {
-    // Only fetch if a token is available — avoids burning 16 unauthenticated requests on load
-    const token = (() => {
-      try {
-        return (
-          sessionStorage.getItem('la_token_github') ??  // TokenVault secure path
-          localStorage.getItem('la_gh_token') ??        // legacy fallback
-          undefined
-        );
-      } catch { return undefined; }
-    })();
-    if (!token) return;
-
-    // Respect cache TTL
-    const lastFetch = (() => {
-      try { return parseInt(localStorage.getItem('la_gh_forest_ts') ?? '0', 10); } catch { return 0; }
-    })();
-    if (Date.now() - lastFetch < FOREST_CACHE_TTL_MS) {
-      const cached = (() => {
-        try { const s = localStorage.getItem('la_gh_forest'); return s ? JSON.parse(s) as RepoData[] : null; } catch { return null; }
-      })();
-      if (cached) { repos = cached.map(repoDataToRepo); return; }
-    }
-
-    void fetchGitHubForestData(GITHUB_ORG, FOREST_REPO_NAMES, token).then(result => {
-      if (result.repos.length > 0) {
-        repos = result.repos.map(repoDataToRepo);
-        try {
-          localStorage.setItem('la_gh_forest', JSON.stringify(result.repos));
-          localStorage.setItem('la_gh_forest_ts', String(result.fetchedAt));
-        } catch { /* storage quota */ }
-      }
+    const unsubscribe = gitforestTree.subscribe(topology => {
+      if (!topology) return;
+      const live = topologyToRepos(topology);
+      if (live.length > 0) repos = live;
     });
+    return unsubscribe;
   });
 
   // ─── Scale constants ──────────────────────────────────────────────────────
@@ -233,10 +247,6 @@
     squad:      0xff7eb6,
   };
 
-  // ─── Scene mode ───────────────────────────────────────────────────────────
-
-  type SceneMode = '2d' | '3d';
-  let mode            = $state<SceneMode>('2d');
   let selectedRepoIdx = $state<number | null>(null);
 
   // Cubic Bezier scalar interpolation (used by 2D renderer)
@@ -254,7 +264,7 @@
   // ─── Three.js forest scene (GIT-1) ────────────────────────────────────────
 
   $effect(() => {
-    if (mode !== '3d' || !container) return;
+    if (!container) return;
 
     const w = container.clientWidth || 400;
     const h = container.clientHeight || 300;
@@ -302,6 +312,12 @@
     scene.add(new THREE.AmbientLight(0x003355, 0.45));
 
     const toDispose: Array<THREE.BufferGeometry | THREE.Material> = [];
+
+    // ── Pulse overlay (Phase 2 AYIN/SSE live signal) ──────────────────────
+    // haloMeshes: nodeId → ground-halo Mesh (populated by buildTrunk).
+    // pulseIntensities: nodeId → 0..3 intensity, decayed each frame.
+    const haloMeshes = new Map<string, THREE.Mesh>();
+    const pulseIntensities = new Map<string, number>();
 
     // ── Material helpers ──────────────────────────────────────────────────
 
@@ -387,12 +403,14 @@
         group.add(new THREE.Mesh(rGeo, holoMat(ringColor, 0.62, 0.5)));
       }
 
-      // Wide ground halo — anchors tree to floor, colored per repo
+      // Wide ground halo — anchors tree to floor; pulse overlay boosts emissiveIntensity
       const halo = new THREE.RingGeometry(radiusBot * 0.9, radiusBot * 3.2, 32);
       halo.rotateX(-Math.PI / 2);
       halo.translate(0, 0.01, 0);
       toDispose.push(halo);
-      group.add(new THREE.Mesh(halo, holoMat(tc, 0.72, 0.48)));
+      const haloMesh = new THREE.Mesh(halo, holoMat(tc, 0.48, 0.48));
+      haloMeshes.set(repo.id, haloMesh);
+      group.add(haloMesh);
 
       // Base disc
       const disc = new THREE.CylinderGeometry(radiusBot * 1.1, radiusBot * 1.1, 0.018, 16);
@@ -522,6 +540,13 @@
     });
     scene.add(grid);
 
+    // Wire pulse store: each new nodeId in the ring starts at intensity 3.0
+    const unsubPulses = gitforestPulses.subscribe(nodeIds => {
+      for (const id of nodeIds) {
+        pulseIntensities.set(id, 3.0);
+      }
+    });
+
     // ── Orbit interaction ─────────────────────────────────────────────────
 
     let dragging = false;
@@ -556,6 +581,20 @@
         sph.theta += 0.00025;
         applySph();
       }
+      // Decay active pulses; restore baseline when faded
+      for (const [id, intensity] of pulseIntensities) {
+        const next = intensity * 0.95;
+        const mesh = haloMeshes.get(id);
+        if (mesh) {
+          (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.48 + next * 2.0;
+        }
+        if (next < 0.01) {
+          pulseIntensities.delete(id);
+          if (mesh) (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.48;
+        } else {
+          pulseIntensities.set(id, next);
+        }
+      }
       composer.render();
     }
     animate();
@@ -577,6 +616,7 @@
 
     return () => {
       cancelAnimationFrame(animId);
+      unsubPulses();
       resizeObs.disconnect();
       el.removeEventListener('pointerdown', onPDown);
       el.removeEventListener('pointermove', onPMove);
@@ -591,7 +631,7 @@
   // ─── 2D flat git-graph renderer ──────────────────────────────────────────
 
   $effect(() => {
-    if (mode !== '2d' || !canvas2d) return;
+    if (!canvas2d) return;
 
     const canvas = canvas2d;
     const ctxRaw = canvas.getContext('2d');
@@ -1085,15 +1125,12 @@
 </script>
 
 <div class="forest-wrap">
-  <div class="mode-toggle" role="group" aria-label="Scene mode">
-    <button class="mode-btn" class:active={mode === '2d'} onclick={() => mode = '2d'}>2D</button>
-    <button class="mode-btn" class:active={mode === '3d'} onclick={() => mode = '3d'}>3D</button>
-  </div>
-  {#if mode === '3d'}
-    <div bind:this={container} class="forest-canvas"></div>
-  {:else}
-    <canvas bind:this={canvas2d} class="forest-canvas"></canvas>
-  {/if}
+  <!-- 2D canvas: primary tree rendering -->
+  <canvas bind:this={canvas2d} class="forest-canvas"></canvas>
+  <!-- Three.js container: selective agent-presence polytope overlay (always mounted,
+       rendered only when BranchNode worktrees are present — no operator mode toggle) -->
+  <div bind:this={container} class="forest-three" aria-hidden="true"></div>
+  <!-- Hologram scan-line overlay -->
   <canvas bind:this={overlayCanvas} class="forest-overlay" aria-hidden="true"></canvas>
 </div>
 
@@ -1108,6 +1145,13 @@
   .forest-canvas {
     position: absolute;
     inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .forest-three {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
   }
   .forest-overlay {
     position: absolute;
@@ -1116,38 +1160,5 @@
     height: 100%;
     pointer-events: none;
     mix-blend-mode: screen;
-  }
-
-  /* ── Mode toggle pill ── */
-  .mode-toggle {
-    position: absolute;
-    top: 10px;
-    right: 12px;
-    z-index: 10;
-    display: flex;
-    gap: 2px;
-    padding: 3px;
-    background: rgba(2, 4, 8, 0.76);
-    border: 1px solid rgba(0, 200, 255, 0.18);
-    border-radius: 6px;
-    backdrop-filter: blur(6px);
-  }
-  .mode-btn {
-    font: 600 10px/1 monospace;
-    letter-spacing: 0.06em;
-    color: #475569;
-    background: none;
-    border: none;
-    border-radius: 4px;
-    padding: 4px 9px;
-    cursor: pointer;
-    transition: color 120ms ease, background 120ms ease;
-  }
-  .mode-btn.active {
-    color: #00c8ff;
-    background: rgba(0, 200, 255, 0.12);
-  }
-  .mode-btn:hover:not(.active) {
-    color: #94a3b8;
   }
 </style>

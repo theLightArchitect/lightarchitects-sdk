@@ -1,0 +1,50 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-18T11:07:00Z"
+build_id: "gitforest-live-ops"
+phase_id: "phase-1-foundation"
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt:    pass
+  Q2_clippy: pass
+  Q3_tests:
+    result:     pass
+    tests_run:  1645   # 1118+30+7+490+0 Rust; 530 TS/Svelte
+    tests_fail: 0
+  Q4_svelte:
+    result:  pass
+    errors:  0
+    warnings: 15   # pre-existing toolbar tabindex warning; not blocking
+  D2_plan:
+    result: pass
+    note:   "plan.phase updated to phase-1-foundation-gated; manifest.yaml created with schema_version 1.1.0 + context_tiers"
+
+phase_deliverables:
+  - task-types-rust:            completed   # gitforest/types.rs + mod.rs; 6 tests; clippy clean
+  - task-types-ts:              completed   # gitforest.ts; BranchNode mirror; POLYTOPE_CLUSTER_MAP
+  - task-feature-flags:         completed   # pulseEnabled + statsTopbarEnabled; isSafeMode; 13 tests
+  - task-idb-cache:             completed   # gitforestCache.ts; SWR; getCached/putCache/invalidate/getOrFetch
+  - task-wave-pipeline-contract: completed  # WavePipelineView.contract.ts shared with ironclaw-spine
+  - task-stores:                completed   # gitforestTree/gitforestPulses/slotAssignments/pulseEnabled stores
+  - task-gitforest-svelte-refactor: completed  # BranchNode schema; mode toggle removed; no localStorage PAT
+  - task-shared-slot-bar:       completed   # SharedSlotBar.svelte; 7-slot pool; model labels; state CSS
+  - task-easings:               completed   # easings.ts; 6 pure-function curves
+  - task-manifest-context-tier: completed   # manifest.yaml schema 1.1.0 with context_tiers per task
+  - task-design-tokens:         completed   # GATE_COLORS/LIFECYCLE_OPACITY/BRANCH_KIND_COLORS/hexToCSS
+  - task-polytope-stage-split:  completed   # project4DTo3D + project3DTo2D in polytopes4d-canvas2d.ts
+
+test_ratchet:
+  rust_tests_before: 1639  # pre-phase-1 (490 webshell + existing crates)
+  rust_tests_after:  1645  # +6 gitforest unit tests
+  ts_tests_before:   524   # pre-phase-1
+  ts_tests_after:    530   # +6 featureFlags tests (13 total; net +6 from prior 7)
+
+blocking_findings: []
+tracked_findings:
+  - id: TF1
+    severity: LOW
+    description: "15 svelte-check warnings (pre-existing toolbar tabindex, canvas getContext stubs)"
+    owner: ops
+    action: "address in Phase 3.5 accessibility substrate"

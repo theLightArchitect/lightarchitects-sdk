@@ -303,7 +303,8 @@ export type EventType =
   | 'permission_request'
   | 'strand_convergence'
   | 'mailbox_message'
-  | 'context_status';
+  | 'context_status'
+  | 'gitforest_update';
 
 // --- Agent protocol (native agent bridge) ---
 
