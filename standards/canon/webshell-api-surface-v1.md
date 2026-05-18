@@ -512,6 +512,124 @@ REST snapshot of the in-memory `GlobalEventStore` ring buffer, used by `Helix3D.
 
 ---
 
+> **§2.16 — Reserved**: ironclaw-spine (cross-build collision lock; see `memory://feedback_cross_build_section_collision_lock`). Section number reserved 2026-05-18; content to be authored by ironclaw-spine Phase 4 merge.
+
+---
+
+### §2.17 GitForest Topology
+
+Branch tree topology for the live gitforest visualization. Used by `GitForest.svelte` (Ops screen) to hydrate the `gitforestTree` store when the SSE topology event is unavailable.
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/api/gitforest/topology` | Bearer token | Returns the branch topology for a repository as a recursive `BranchNode` tree |
+
+**Query params**:
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `repo` | string | Yes | Repository name (allowlisted; must match `^[a-zA-Z0-9_.-]{1,100}$`) |
+| `since` | ISO-8601 string | No | Return topology only if modified after this timestamp; `304 Not Modified` if unchanged |
+
+**Response** (`200 OK`):
+
+```json
+{
+  "repo": "lightarchitects-sdk",
+  "root_id": "main",
+  "nodes": {
+    "main": {
+      "id": "main",
+      "name": "main",
+      "kind": "main",
+      "parent_id": null,
+      "depth": 0,
+      "children": ["feat/gitforest-live-ops"],
+      "overlay": { "lifecycle": "live_active", "ci_status": "pass", "hitl_state": "none", "phase": null, "gate_score": null, "merged_at": null, "merged_to": null, "age_days": 0, "model_attribution": [], "fade_level": 1.0 },
+      "build_progress": null,
+      "worktrees": []
+    }
+  },
+  "fetched_at": "2026-05-18T12:00:00Z"
+}
+```
+
+**Security**: `repo` parameter is validated against `^[a-zA-Z0-9_.-]{1,100}$` before path construction — rejects path traversal (`../../etc/passwd` → `400 Bad Request`) and shell metacharacters. **Branches matching `.gitforestignore` patterns are redacted** until merged; their node entries are omitted from the response.
+
+**Cache**: 30-second `moka` TTL per repo name. Cache hit returns identical body without shelling out to `git`. Cache miss shells `git branch -r` and `git log`.
+
+**Errors**:
+
+| Code | Condition |
+|------|-----------|
+| `400` | `repo` param missing, too long, or contains disallowed characters |
+| `401` | Missing or invalid bearer token |
+| `500` | Repository not found on disk or git command failed |
+
+**Frontend wiring**: `gitforestTree` Svelte store is populated from this endpoint (and kept live via `§2.18 GitForest Live SSE`). `GitForest.svelte` subscribes to the store; topology update triggers canvas re-render.
+
+---
+
+### §2.18 GitForest Live SSE
+
+Server-sent event stream for real-time gitforest activity. Delivers `gitforest`-typed events whenever a branch node changes state (CI result, HITL, merge, new worktree).
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/api/gitforest/live` | Bearer token | SSE stream of `gitforest` events — branch state changes, pulse signals for the activity overlay |
+
+**Response**: `text/event-stream`; one event per state change.
+
+```
+event: gitforest
+data: {"type":"branch_update","node_id":"feat/ironclaw-spine","lifecycle":"live_active","ci_status":"pass","gate_score":0.97}
+```
+
+**Event fields**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | `"branch_update"` or `"topology_refresh"` |
+| `node_id` | string | `"<repo>/<branch>"` composite key matching `HitboxEntry.id` |
+| `lifecycle` | string | `BranchLifecycle` enum value |
+| `ci_status` | string | `CiStatus` enum value |
+| `gate_score` | number \| null | Latest gate confidence (0–1); `null` if no gate run |
+
+**Frontend wiring**: `sse.ts` dispatches `gitforest` events to the `gitforestTree` store via `appendGitForestUpdate()`. The `pulseLayer` enqueues the `node_id` for 2.5s opacity decay on the canvas overlay.
+
+**Auth**: `401` without valid bearer token. Connection drops gracefully if token expires mid-stream.
+
+---
+
+### §2.19 GitForest Node Detail
+
+Single-node detail lookup by composite node ID. Used by `BranchTooltip.svelte` for rich card content when the node is not yet hydrated in the `gitforestTree` store.
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/api/gitforest/node/{*id}` | Bearer token | Returns a single `BranchNode` by its composite ID (`<repo>/<branch>`) |
+
+**Path params**:
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `id` | string (wildcard) | Composite node ID: `<repo-name>/<branch-name>`. May contain `/` (hence wildcard capture). |
+
+**Response** (`200 OK`): A single `BranchNode` JSON object (same schema as nodes in `§2.17` response).
+
+**Errors**:
+
+| Code | Condition |
+|------|-----------|
+| `401` | Missing or invalid bearer token |
+| `404` | Node ID not found in any cached topology |
+
+**Security**: Node ID is validated against the repo allowlist and `.gitforestignore` ACL — branches hidden from the topology are also hidden from this endpoint (`404` not `403` to avoid enumeration).
+
+**Frontend wiring**: `BranchTooltip.svelte` reads from the `gitforestTree` store (populated via `§2.17`/`§2.18`) rather than calling this endpoint directly. This endpoint is available as a fallback for cold-start scenarios.
+
+---
+
 ## Part III — Frontend Route Catalogue
 
 ### §3.1 Router Implementation
@@ -540,7 +658,7 @@ type ScreenKey =
 ### §3.3 BuildViewMode Enum
 
 ```typescript
-type BuildViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms'
+type BuildViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms' | 'pipeline'
 ```
 
 ### §3.4 Route Patterns
@@ -665,10 +783,10 @@ Which backend sections and route prefixes serve each screen. Use this to find re
 
 | ScreenKey | Backend section(s) | Primary route prefixes |
 |-----------|-------------------|------------------------|
-| `Ops` | §2.1 Auth & Health, §2.3 Events, §2.12 Misc, §2.14 Preflight | `/api/health`, `/api/events/global`, `/api/polytopes`, `/api/preflight` |
+| `Ops` | §2.1 Auth & Health, §2.3 Events, §2.12 Misc, §2.14 Preflight, §2.17-2.19 GitForest | `/api/health`, `/api/events/global`, `/api/polytopes`, `/api/preflight`, `/api/gitforest/*` |
 | `Dispatch` | §2.7 Dispatch Sub-Router, §2.3 Events | `/api/dispatch/*`, `/api/events` |
 | `Builds` | §2.4 Builds Core | `/api/builds` |
-| `BuildDetail` | §2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor | `/api/builds/{id}`, `/api/builds/{id}/terminal/ws`, `/api/builds/{id}/events` |
+| `BuildDetail` | §2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor, §2.17-2.19 GitForest | `/api/builds/{id}`, `/api/builds/{id}/terminal/ws`, `/api/builds/{id}/events`, `/api/gitforest/*` |
 | `Helix3D` (inline) | §2.15 Helix Node Snapshot | `/api/helix/nodes` |
 | `Intake` | §2.4 Builds Core, §2.6 Workspaces | `/api/builds/plan*`, `/api/builds` |
 | `Helix` | §2.5 SOUL Vault | `/api/soul/*` |

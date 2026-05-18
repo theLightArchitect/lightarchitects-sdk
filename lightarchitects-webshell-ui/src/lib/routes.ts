@@ -33,8 +33,8 @@ const REDIRECTS: [string, string][] = [
  * View modes for the /builds/:buildId/:view URL pattern.
  * Wave 1 adds the route shape; Wave 6 wires BuildDetail.svelte to read it.
  */
-export type BuildViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms';
-const BUILD_VIEW_PATTERN = '(?:kanban|list|operator|manifest|plan|comms)';
+export type BuildViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms' | 'pipeline';
+const BUILD_VIEW_PATTERN = '(?:kanban|list|operator|manifest|plan|comms|pipeline)';
 
 type RouteEntry = [RegExp, ScreenKey, string[]];
 
