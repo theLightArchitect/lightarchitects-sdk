@@ -164,7 +164,7 @@ mod tests {
 
     use super::*;
     use lightarchitects::agent::{
-        AgentResponse, ProviderCapabilities, SanitizedAgentRequest, SchemaMode, TokenUsage,
+        AgentResponse, ProviderCapabilities, SchemaMode, SanitizedAgentRequest, TokenUsage,
     };
 
     fn handler() -> CorsoHandler {
@@ -341,10 +341,7 @@ mod tests {
                 "fail"
             }
 
-            async fn spawn(
-                &self,
-                _req: SanitizedAgentRequest,
-            ) -> Result<AgentResponse, ProviderError> {
+            async fn spawn(&self, _req: SanitizedAgentRequest) -> Result<AgentResponse, ProviderError> {
                 Err(ProviderError::Internal("simulated failure".to_owned()))
             }
 

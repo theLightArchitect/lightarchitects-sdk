@@ -146,7 +146,7 @@ mod tests {
 
     use super::*;
     use lightarchitects::agent::{
-        AgentResponse, ProviderCapabilities, SanitizedAgentRequest, SchemaMode, TokenUsage,
+        AgentResponse, ProviderCapabilities, SchemaMode, SanitizedAgentRequest, TokenUsage,
     };
 
     fn handler() -> QuantumHandler {

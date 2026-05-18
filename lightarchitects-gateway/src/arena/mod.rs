@@ -9,14 +9,6 @@
 //! - `run_serve` — Orchestrator mode: HTTP API + scheduler + spawn agent processes
 //! - `run_agent` — Single-agent mode: one sibling's heartbeat loop
 
-/// Delivery arena — autonomous build delivery engine (Pillar 2 spine).
-///
-/// Feature-gated behind `delivery_arena` (off by default). Enable with
-/// `--features delivery_arena`. Phase 1: module skeleton only.
-#[cfg(feature = "delivery_arena")]
-#[allow(unused, missing_docs, clippy::pedantic)]
-pub mod delivery_arena;
-
 pub mod agent_loop;
 pub mod alerting;
 pub mod arena_config;

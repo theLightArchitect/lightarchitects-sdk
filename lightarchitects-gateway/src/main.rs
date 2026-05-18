@@ -374,23 +374,6 @@ async fn cli_dispatch(
         // Squad Comms subcommand — delegates to webshell coordination API.
         Some("squad-comms") => cli_squad_comms(&args[1..], config).await,
 
-        // Pre-flight checks for autonomous build runs.
-        Some("preflight") => {
-            let check = args.get(1).map_or("", String::as_str);
-            match check {
-                "disk" => lightarchitects_gateway::preflight::disk(),
-                "api" => lightarchitects_gateway::preflight::api(),
-                "canon" => lightarchitects_gateway::preflight::canon(),
-                other => {
-                    eprintln!(
-                        "Unknown preflight check: {}\nValid checks: disk, api, canon",
-                        if other.is_empty() { "(none)" } else { other }
-                    );
-                    Err(GatewayError::MissingParam("preflight check"))
-                }
-            }
-        }
-
         Some(unknown) => {
             eprintln!(
                 "Unknown subcommand: {unknown}\n\n\
@@ -415,8 +398,7 @@ async fn cli_dispatch(
                    lightarchitects chat                        Conversational brainstorm mode
                    lightarchitects webshell start|control|status  Web GUI\n  \
                    lightarchitects squad-comms tasks|add|claim|logs|inject  Squad Comms\n  \
-                   lightarchitects platform [--port 8080]                   Platform HTTP API (localhost)\n  \
-                   lightarchitects preflight disk|api|canon  Autonomous build pre-flight checks"
+                   lightarchitects platform [--port 8080]                   Platform HTTP API (localhost)"
             );
             Err(GatewayError::UnknownTool(unknown.to_owned()))
         }
