@@ -4,9 +4,14 @@
   import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
   import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
   import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+  import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+  import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
+  import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
   import { gitforestTree, gitforestPulses } from '$lib/stores';
-  import type { GitForestTopology } from '$lib/gitforest';
-  import { countActiveWorktrees } from '$lib/gitforest';
+  import { get } from 'svelte/store';
+  import type { GitForestTopology, BranchNode } from '$lib/gitforest';
+  import { countActiveWorktrees, computeFadeLevel, polytopeClusterFor } from '$lib/gitforest';
+  import { PulseLayer } from '$lib/pulseLayer';
 
   // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -186,12 +191,22 @@
   // client-side token reads.
 
   let repos = $state<Repo[]>(SEED_REPOS);
+  // Prefers-reduced-motion stub (Phase 3.5 wires the listener; here we declare the flag)
+  let motionEnabled = $state(true);
+  // Memoised active-worktree counts per nodeId; invalidated on gitforestTree update
+  let activeCountCache = $state(new Map<string, number>());
 
   $effect(() => {
     const unsubscribe = gitforestTree.subscribe(topology => {
       if (!topology) return;
       const live = topologyToRepos(topology);
       if (live.length > 0) repos = live;
+      // Rebuild active-count cache on tree update (O(nodes) not O(frames))
+      const cache = new Map<string, number>();
+      for (const id of Object.keys(topology.nodes)) {
+        cache.set(id, countActiveWorktrees(id, topology.nodes));
+      }
+      activeCountCache = cache;
     });
     return unsubscribe;
   });
@@ -313,11 +328,66 @@
 
     const toDispose: Array<THREE.BufferGeometry | THREE.Material> = [];
 
-    // ── Pulse overlay (Phase 2 AYIN/SSE live signal) ──────────────────────
-    // haloMeshes: nodeId → ground-halo Mesh (populated by buildTrunk).
-    // pulseIntensities: nodeId → 0..3 intensity, decayed each frame.
+    // ── Phase 3: PulseLayer, frustum, polytope InstancedMesh pool ────────
+    const pulseLayer = new PulseLayer();
+
+    // Frustum updated each animate() tick from camera matrices.
+    // Used for per-Mesh culling in renderNode (not per-Group — THREE.Group has no geometry)
+    const frustum = new THREE.Frustum();
+    const projScreenMatrix = new THREE.Matrix4();
+
+    // InstancedMesh pool: one per polytope kind, shared across all build nodes.
+    // 4 draw calls total at 50 visible clusters × 4 kinds (H2 design choice DC-9).
+    const MAX_CLUSTERS = 100;
+    const polyGeos: Record<string, THREE.BufferGeometry> = {
+      pentachoron:      new THREE.TetrahedronGeometry(0.35, 0),
+      tesseract:        new THREE.BoxGeometry(0.5, 0.5, 0.5),
+      hexadecachoron:   new THREE.OctahedronGeometry(0.38, 0),
+      icositetrachoron: new THREE.DodecahedronGeometry(0.32, 0),
+    };
+    const polyMats: Record<string, THREE.MeshStandardMaterial> = {};
+    const polyMeshes: Record<string, THREE.InstancedMesh> = {};
+    const POLY_COLORS: Record<string, number> = {
+      pentachoron:      0x4dffe6,
+      tesseract:        0x4d8eff,
+      hexadecachoron:   0xa874ff,
+      icositetrachoron: 0xff7eb6,
+    };
+    for (const kind of Object.keys(polyGeos)) {
+      toDispose.push(polyGeos[kind]!);
+      const mat = new THREE.MeshStandardMaterial({
+        color: POLY_COLORS[kind],
+        emissive: new THREE.Color(POLY_COLORS[kind]),
+        emissiveIntensity: 0.6,
+        transparent: true,
+        opacity: 0.55,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        wireframe: false,
+      });
+      toDispose.push(mat);
+      polyMats[kind] = mat;
+      const im = new THREE.InstancedMesh(polyGeos[kind]!, mat, MAX_CLUSTERS);
+      im.count = 0;
+      im.frustumCulled = true;  // engine uses instancedMesh bounding sphere for cull
+      scene.add(im);
+      polyMeshes[kind] = im;
+    }
+    // Per-frame: positions of active clusters keyed by kind
+    const clusterPositions: Record<string, THREE.Vector3[]> = {
+      pentachoron: [], tesseract: [], hexadecachoron: [], icositetrachoron: [],
+    };
+
+    // ── Pulse overlay — Phase 2 (haloMeshes driven by PulseLayer in Phase 3) ─
     const haloMeshes = new Map<string, THREE.Mesh>();
+    // pulseIntensities retained as passthrough from PulseLayer.opacities (scaled ×3.0)
     const pulseIntensities = new Map<string, number>();
+
+    // webglcontextlost fallback (iter-9 B2 fold — Safari / Intel HD mitigation)
+    renderer.domElement.addEventListener('webglcontextlost', (e: Event) => {
+      e.preventDefault();
+      cancelAnimationFrame(animId);
+    }, { once: true });
 
     // ── Material helpers ──────────────────────────────────────────────────
 
@@ -513,17 +583,158 @@
       group.add(new THREE.Mesh(wtGeo, holoMat(wtColor, 0.78, 0.85)));
     }
 
-    // ── Build grove ───────────────────────────────────────────────────────
+    // ── renderNode: recursive BranchNode renderer (Phase 3 — live data path) ─
+    // Replaces flat repos.forEach when gitforestTree has live topology.
+    // Bounded recursion invariant: depth ≤ 3 (main=0, program=1, build=2, wave_cluster=3).
+    // Frustum culling: per-Mesh before scene.add (not per-Group — Group has no geometry).
+    // LOD: >200 visible nodes caps at simplified geometry via mesh.userData.lod flag.
 
-    repos.forEach((repo, repoIdx) => {
-      const group = new THREE.Group();
-      group.position.copy(repo.pos);
-      const { height, radiusBot } = buildTrunk(repo, repoIdx, group);
-      repo.branches.forEach((b, bi) =>
-        buildBranch(b, bi, repo, height, radiusBot, group),
-      );
-      scene.add(group);
-    });
+    let renderedNodeCount = 0;
+    const HARD_NODE_CAP = 200;
+
+    function addWithCull(mesh: THREE.Mesh): void {
+      mesh.updateMatrixWorld();
+      if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+      if (renderedNodeCount < HARD_NODE_CAP && frustum.intersectsObject(mesh)) {
+        scene.add(mesh);
+        renderedNodeCount++;
+      }
+    }
+
+    function renderNode(
+      nodeId: string,
+      nodes: Record<string, BranchNode>,
+      worldPos: THREE.Vector3,
+      parentHeight: number,
+      depth: number,
+    ): void {
+      if (depth > 3) throw new Error('GitForest depth > 3 invariant violated');
+      const node = nodes[nodeId];
+      if (!node) return;
+
+      const fade = node.overlay.lifecycle === 'merged' || node.overlay.lifecycle === 'abandoned'
+        ? computeFadeLevel(node.overlay.merged_at ?? null)
+        : 1.0;
+
+      // Camera distance for LOD: simplified geometry beyond 40 units
+      const distToCamera = worldPos.distanceTo(camera.position);
+      const useLOD = distToCamera > 40;
+
+      if (depth === 0) {
+        // main trunk — anchor sphere
+        const geo = useLOD
+          ? new THREE.SphereGeometry(0.3, 4, 3)
+          : new THREE.SphereGeometry(0.5, 8, 6);
+        toDispose.push(geo);
+        const mesh = new THREE.Mesh(geo, holoMat(0x22c55e, 0.7 * fade, 0.8 * fade));
+        mesh.position.copy(worldPos);
+        addWithCull(mesh);
+      } else if (depth === 1) {
+        // program-level: horizontal disc
+        const geo = useLOD
+          ? new THREE.CylinderGeometry(0.25, 0.25, 0.06, 6, 1)
+          : new THREE.CylinderGeometry(0.35, 0.35, 0.06, 12, 1);
+        toDispose.push(geo);
+        const color = REPO_TRUNK_COLORS[(renderedNodeCount % 3)] ?? REPO_TRUNK_COLORS[0];
+        const mesh = new THREE.Mesh(geo, holoMat(color[0], 0.55 * fade, 0.7 * fade));
+        mesh.position.copy(worldPos);
+        addWithCull(mesh);
+      } else if (depth === 2) {
+        // build-level: cylinder trunk
+        const height = (node.build_progress?.waves_done ?? 1) * 0.8;
+        const geo = useLOD
+          ? new THREE.CylinderGeometry(0.1, 0.18, height, 5, 1)
+          : new THREE.CylinderGeometry(0.12, 0.22, height, 8, 1);
+        geo.translate(0, height / 2, 0);
+        toDispose.push(geo);
+        const ciColor = node.overlay.ci_status === 'success' ? GATE_COLORS.clean
+          : node.overlay.ci_status === 'failure' ? GATE_COLORS.failed
+          : GATE_COLORS.writing;
+        const mesh = new THREE.Mesh(geo, holoMat(ciColor, 0.6 * fade, 0.75 * fade));
+        mesh.position.copy(worldPos);
+        addWithCull(mesh);
+
+        // Register polytope cluster if active worktrees present (memoised count)
+        const activeCount = activeCountCache.get(nodeId) ?? 0;
+        if (activeCount > 0 && !useLOD) {
+          const kinds = polytopeClusterFor(activeCount);
+          for (const kind of kinds) {
+            if (kind in clusterPositions) {
+              clusterPositions[kind as keyof typeof clusterPositions]?.push(
+                worldPos.clone().add(new THREE.Vector3(0, height + 0.5, 0)),
+              );
+            }
+          }
+        }
+      } else if (depth === 3) {
+        // wave-cluster leaf: small sphere
+        const geo = useLOD
+          ? new THREE.SphereGeometry(0.08, 3, 2)
+          : new THREE.SphereGeometry(0.12, 5, 4);
+        toDispose.push(geo);
+        const mesh = new THREE.Mesh(
+          geo,
+          holoMat(node.overlay.hitl_state === 'pending' ? 0xf59e0b : 0x4d8eff, 0.7 * fade, 0.8 * fade),
+        );
+        mesh.position.copy(worldPos);
+        addWithCull(mesh);
+      }
+
+      // Recurse into children — spread them around the parent position
+      const children = node.children.map(cid => nodes[cid]).filter(Boolean) as BranchNode[];
+      children.forEach((child, ci) => {
+        const angle = ci * 2.399963;  // golden angle spacing
+        const lateral = 2.5 + ci * 0.6;
+        const childPos = worldPos.clone().add(new THREE.Vector3(
+          Math.cos(angle) * lateral,
+          depth === 0 ? 0.5 : 1.2,
+          Math.sin(angle) * lateral,
+        ));
+        renderNode(child.id, nodes, childPos, parentHeight, depth + 1);
+      });
+    }
+
+    // ── Update polytope InstancedMesh matrices for current cluster positions ─
+    function flushPolytopeInstances(): void {
+      const tempMatrix = new THREE.Matrix4();
+      const tempQuat   = new THREE.Quaternion();
+      const tempScale  = new THREE.Vector3(1, 1, 1);
+      for (const kind of Object.keys(polyMeshes)) {
+        const positions = clusterPositions[kind as keyof typeof clusterPositions] ?? [];
+        const im = polyMeshes[kind]!;
+        const count = Math.min(positions.length, MAX_CLUSTERS);
+        im.count = count;
+        for (let i = 0; i < count; i++) {
+          tempMatrix.compose(positions[i]!, tempQuat, tempScale);
+          im.setMatrixAt(i, tempMatrix);
+        }
+        im.instanceMatrix.needsUpdate = true;
+        im.computeBoundingSphere();
+        // Reset for next frame
+        positions.length = 0;
+      }
+    }
+
+    // ── Build grove (seed-data legacy path + live-data renderNode path) ──
+
+    const currentTopology = get(gitforestTree);
+    if (currentTopology) {
+      // Live path: recursive BranchNode renderer with frustum culling
+      renderedNodeCount = 0;
+      renderNode(currentTopology.root_id, currentTopology.nodes, new THREE.Vector3(0, 0, 0), 0, 0);
+      flushPolytopeInstances();
+    } else {
+      // Seed path: existing Repo[] renderer (flat iteration, no frustum cull)
+      repos.forEach((repo, repoIdx) => {
+        const group = new THREE.Group();
+        group.position.copy(repo.pos);
+        const { height, radiusBot } = buildTrunk(repo, repoIdx, group);
+        repo.branches.forEach((b, bi) =>
+          buildBranch(b, bi, repo, height, radiusBot, group),
+        );
+        scene.add(group);
+      });
+    }
 
     // Blueprint grid floor — AdditiveBlending required: dark colors add nothing to near-black bg
     // Center lines: 0x1a6ec0 (R26,G110,B192) → adds (16,66,115) on top of black = visible mid-blue
@@ -540,12 +751,26 @@
     });
     scene.add(grid);
 
-    // Wire pulse store: each new nodeId in the ring starts at intensity 3.0
+    // Wire pulse store → PulseLayer.enqueue (Phase 3 replaces direct intensity set)
     const unsubPulses = gitforestPulses.subscribe(nodeIds => {
       for (const id of nodeIds) {
-        pulseIntensities.set(id, 3.0);
+        pulseLayer.enqueue(id);
       }
     });
+
+    // PulseLayer tick at 4Hz (setInterval 250ms — deliberate: JS single-threaded,
+    // no race with rAF; tick mutates ring buffer between frames safely)
+    const pulseTickId = setInterval(() => {
+      pulseLayer.tick();
+      // Sync PulseLayer opacities → pulseIntensities (scaled ×3.0 to match Phase 2 peak)
+      for (const [id, opacity] of pulseLayer.opacities) {
+        pulseIntensities.set(id, opacity * 3.0);
+      }
+      // Evict entries no longer in PulseLayer
+      for (const id of pulseIntensities.keys()) {
+        if (!pulseLayer.opacities.has(id)) pulseIntensities.delete(id);
+      }
+    }, 250);
 
     // ── Orbit interaction ─────────────────────────────────────────────────
 
@@ -577,22 +802,31 @@
     let animId = 0;
     function animate() {
       animId = requestAnimationFrame(animate);
+      // prefers-reduced-motion guard (Phase 3.5 wires the listener; guard is here now)
+      if (!motionEnabled) {
+        composer.render();
+        return;
+      }
       if (!dragging) {
         sph.theta += 0.00025;
         applySph();
       }
-      // Decay active pulses; restore baseline when faded
+      // Update frustum from camera (used by addWithCull inside next renderNode rebuild)
+      camera.updateMatrixWorld();
+      projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      frustum.setFromProjectionMatrix(projScreenMatrix);
+
+      // Apply PulseLayer opacities to halo meshes (PulseLayer.tick runs at 4Hz in setInterval)
       for (const [id, intensity] of pulseIntensities) {
-        const next = intensity * 0.95;
         const mesh = haloMeshes.get(id);
         if (mesh) {
-          (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.48 + next * 2.0;
+          (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.48 + intensity * 2.0;
         }
-        if (next < 0.01) {
-          pulseIntensities.delete(id);
-          if (mesh) (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.48;
-        } else {
-          pulseIntensities.set(id, next);
+      }
+      // Restore baseline for halos no longer pulsing
+      for (const [id, mesh] of haloMeshes) {
+        if (!pulseIntensities.has(id)) {
+          (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.48;
         }
       }
       composer.render();
@@ -616,6 +850,8 @@
 
     return () => {
       cancelAnimationFrame(animId);
+      clearInterval(pulseTickId);
+      pulseLayer.destroy();
       unsubPulses();
       resizeObs.disconnect();
       el.removeEventListener('pointerdown', onPDown);
@@ -623,6 +859,7 @@
       window.removeEventListener('pointerup', onPUp);
       el.removeEventListener('wheel', onWheel);
       toDispose.forEach(x => x.dispose());
+      for (const im of Object.values(polyMeshes)) im.dispose();
       renderer.dispose();
       composer.dispose();
     };
@@ -1147,11 +1384,13 @@
     inset: 0;
     width: 100%;
     height: 100%;
+    will-change: transform;
   }
   .forest-three {
     position: absolute;
     inset: 0;
     pointer-events: none;
+    will-change: transform;
   }
   .forest-overlay {
     position: absolute;
@@ -1160,5 +1399,6 @@
     height: 100%;
     pointer-events: none;
     mix-blend-mode: screen;
+    will-change: transform;
   }
 </style>
