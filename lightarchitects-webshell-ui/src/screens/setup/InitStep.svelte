@@ -50,9 +50,14 @@
 
   // Tick animation only starts once preflight is resolved AND not Blocked
   // (or the operator has dismissed the panel after a Degraded result).
+  // Allow tick when: fetch done AND (backend unreachable OR not Blocked OR operator dismissed).
+  // null report = network error = don't block startup (matches fetchPreflight catch comment).
   let canTick = $derived(
-    preflightReport !== null &&
-    (preflightReport.overall !== 'Blocked' || preflightDismissed)
+    !preflightLoading && (
+      preflightReport === null ||
+      preflightReport.overall !== 'Blocked' ||
+      preflightDismissed
+    )
   );
 
   $effect(() => {
@@ -200,7 +205,7 @@
     const w = window.innerWidth, h = window.innerHeight;
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(55, w/h, 0.1, 100);
-    camera.position.set(0, 0, 4.5);
+    camera.position.set(0, 0, 1.5);
     const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
     renderer.setSize(w, h);
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -215,20 +220,20 @@
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       const mat = new THREE.LineBasicMaterial({ color: 0xff6600, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false });
-      const matG = new THREE.LineBasicMaterial({ color: 0x00d26a, transparent: true, opacity: opacity*0.22, blending: THREE.AdditiveBlending, depthWrite: false });
+      const matG = new THREE.LineBasicMaterial({ color: 0x3366ff, transparent: true, opacity: opacity*0.5, blending: THREE.AdditiveBlending, depthWrite: false });
       const geoG = new THREE.BufferGeometry();
       geoG.setAttribute('position', new THREE.BufferAttribute(new Float32Array(maxE*6), 3));
-      const segs = new THREE.LineSegments(geo, mat); segs.scale.setScalar(1); scene.add(segs);
-      const glowSegs = new THREE.LineSegments(geoG, matG); glowSegs.scale.setScalar(1.04); scene.add(glowSegs);
+      const segs = new THREE.LineSegments(geo, mat); scene.add(segs);
+      const glowSegs = new THREE.LineSegments(geoG, matG); glowSegs.scale.setScalar(1.08); scene.add(glowSegs);
       return { pos, geo, mat, matG, geoG };
     };
-    const setA = mkSet(0.75);
+    const setA = mkSet(0.9);
     const setB = mkSet(0.0);
 
     const nodePos = new Float32Array(maxV * 3);
     const nodeGeo = new THREE.BufferGeometry();
     nodeGeo.setAttribute('position', new THREE.BufferAttribute(nodePos, 3));
-    const nodeMat = new THREE.PointsMaterial({ color: 0xffcc44, size: 0.055, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+    const nodeMat = new THREE.PointsMaterial({ color: 0xffcc44, size: 0.10, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
     scene.add(new THREE.Points(nodeGeo, nodeMat));
 
     // Per-polytope projected vertex cache.
@@ -286,16 +291,16 @@
       if (ease < 1.0) {
         writeSet(setA, currentIdx);
         writeSet(setB, targetIdx);
-        const pulse = 0.60 + Math.sin(t*1.4)*0.22;
+        const pulse = 0.70 + Math.sin(t*1.4)*0.25;
         setA.mat.opacity = pulse * (1 - ease);
-        setA.matG.opacity = pulse * (1 - ease) * 0.22;
+        setA.matG.opacity = pulse * (1 - ease) * 0.5;
         setB.mat.opacity = pulse * ease;
-        setB.matG.opacity = pulse * ease * 0.22;
+        setB.matG.opacity = pulse * ease * 0.5;
       } else {
         writeSet(setA, currentIdx);
-        const pulse = 0.60 + Math.sin(t*1.4)*0.22;
+        const pulse = 0.70 + Math.sin(t*1.4)*0.25;
         setA.mat.opacity = pulse;
-        setA.matG.opacity = pulse * 0.22;
+        setA.matG.opacity = pulse * 0.5;
         setB.mat.opacity = 0; setB.matG.opacity = 0;
       }
 
