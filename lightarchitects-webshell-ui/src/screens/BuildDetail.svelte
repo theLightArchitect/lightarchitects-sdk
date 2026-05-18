@@ -8,6 +8,7 @@
   import ManifestView from '$lib/../components/views/ManifestView.svelte';
   import PlanView    from '$lib/../components/PlanView.svelte';
   import CommsView   from '$lib/../components/views/CommsView.svelte';
+  import TaskDrillView from '$lib/../components/views/TaskDrillView.svelte';
 
   type ViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms';
 
@@ -20,6 +21,8 @@
   let phaseId  = $state<string | null>(null);
   let waveId   = $state<string | null>(null);
   let agentKey = $state<string | null>(null);
+  // Phase 5: L3 task drill-down
+  let taskId   = $state<string | null>(null);
   // 'turn' when all three deep-link params are present, 'build' otherwise
   let zoomLevel = $derived<'build' | 'turn'>(
     phaseId !== null && waveId !== null && agentKey !== null ? 'turn' : 'build'
@@ -48,6 +51,8 @@
     phaseId  = params.phaseId  ?? null;
     waveId   = params.waveId   ?? null;
     agentKey = params.agentKey ?? null;
+    // Phase 5: L3 task drill-down
+    taskId   = params.taskId   ?? null;
   }
 
   // Hydrate currentBuildId + viewMode when navigating directly to /builds/:id/:view
@@ -119,9 +124,18 @@
       </div>
     {/if}
 
+    <!-- Phase 5: L3 task drill-down — renders instead of turn/build content -->
+    <!-- Use {#if} (not visibility) so EventStream SSE cleans up on navigation -->
+    {#if taskId && phaseId && waveId && agentKey}
+      <TaskDrillView
+        buildId={build.id}
+        phaseId={phaseId}
+        waveId={waveId}
+        agentKey={agentKey}
+        taskId={taskId}
+      />
     <!-- helix-viz-remap: Turn zoom replaces tab content (P6 check 7) -->
-    <!-- Use {#if} (not CSS visibility) so child SSE connections close on nav -->
-    {#if zoomLevel === 'turn'}
+    {:else if zoomLevel === 'turn'}
       <div class="turn-panel">
         <dl class="turn-meta">
           <dt class="turn-label">AGENT</dt>
