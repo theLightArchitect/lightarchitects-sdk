@@ -412,6 +412,46 @@ Infrastructure readiness checks (added in `replicated-greeting-robin`). `GET /ap
 
 **Static assets**: all unmatched routes are handled by `static_assets::serve` — the fallback serves the pre-built SPA bundle.
 
+### §2.15 Helix Node Snapshot
+
+REST snapshot of the in-memory `GlobalEventStore` ring buffer, used by `Helix3D.svelte` to cold-start the 3D visualization before the SSE stream delivers new entries.
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/api/helix/nodes` | Bearer token | Returns a snapshot of helix entries from the `GlobalEventStore` ring buffer |
+
+**Query params**:
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `since` | ISO-8601 string | — | Return only entries after this timestamp |
+| `limit` | u32 | 100 | Cap the returned slice; never exceeds ring buffer size |
+
+**Response** (`200 OK`):
+
+```json
+{
+  "nodes": [
+    {
+      "entry_id": "uuid",
+      "strand": "SOUL | CORSO | ...",
+      "title": "...",
+      "summary": "...",
+      "timestamp": "2026-05-18T00:00:00Z",
+      "pillar": "P1 | P2 | ...",
+      "tags": ["..."]
+    }
+  ],
+  "total": 42
+}
+```
+
+`total` reflects the full ring-buffer count before any `limit` or `since` slice. `nodes.length` ≤ `total`.
+
+**Auth**: `401` without a valid `Authorization: Bearer <token>` header.
+
+**Frontend wiring**: `api.getHelixNodes({ limit: 100 })` in `Helix3D.svelte` `$effect` — seeds the `helixEntries` store on mount. A compare-and-set update callback (`current.length === 0 ? res.nodes : current`) ensures SSE-first population is never overwritten by the REST snapshot if both arrive concurrently.
+
 ---
 
 ## Part III — Frontend Route Catalogue
@@ -571,6 +611,7 @@ Which backend sections and route prefixes serve each screen. Use this to find re
 | `Dispatch` | §2.7 Dispatch Sub-Router, §2.3 Events | `/api/dispatch/*`, `/api/events` |
 | `Builds` | §2.4 Builds Core | `/api/builds` |
 | `BuildDetail` | §2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor | `/api/builds/{id}`, `/api/builds/{id}/terminal/ws`, `/api/builds/{id}/events` |
+| `Helix3D` (inline) | §2.15 Helix Node Snapshot | `/api/helix/nodes` |
 | `Intake` | §2.4 Builds Core, §2.6 Workspaces | `/api/builds/plan*`, `/api/builds` |
 | `Helix` | §2.5 SOUL Vault | `/api/soul/*` |
 | `Editor` | §2.9 Code Editor | `/api/code/*` |
