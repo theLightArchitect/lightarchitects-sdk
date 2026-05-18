@@ -49,7 +49,16 @@
 # ============================================================================
 
 template_name: "LASDLC-TEMPLATE-v1"
-template_version: "2.5.3"
+template_version: "2.5.4"
+# v2.5.4 (2026-05-18): Runtime-mirror schema. Adds three additive blocks closing the
+# plan-substrate-vs-runtime-mirror gap surfaced during ironclaw-spine iter-16 audit:
+#   (1) per-build manifest.yaml `runtime_state` block (current_phase/wave/parallelism/SHA)
+#   (2) NEW `gate_receipts.ndjson` append-only artifact (hash-chained per §SG-CRYPTO.3)
+#   (3) `active.yaml` 3-field extension (execution_mode, run_id, overlaps_with)
+# Backward-compatible: blocks absent → pre-BUILD or interactive-mode build (legacy ok).
+# Authority: operator-authorized Canon XV override (2026-05-18); LÆX candidate #20.
+# See runtime_mirror_schema appended at file tail.
+#
 # v2.5.3 (2026-05-18): Git Branching Invariants. Plan-level `git_branching_invariants`
 # block + per-task `git_scope`. Closes worker-git-awareness gap. Composes with
 # Cookbook §64.8 + agents-playbook §15.3.13 + /BUILD v2 Step 11.3.0-11.3.5 (28 gates).
@@ -7408,3 +7417,151 @@ reference_table_integrity:
 #
 # history_latest_version: "2.5.3"
 # history_latest_summary: "PATCH — git_branching_invariants plan-level block + per-task git_scope declaration; closes worker-git-awareness gap surfaced 2026-05-18; composes with Cookbook §64.8 preamble + agents-playbook §15.3.13 Pre-Dispatch Checklist + /BUILD skill v2 Step 11.3.0-11.3.5 (28 explicit gates)"
+
+# ============================================================================
+# IRONCLAW-SPINE CANON AMENDMENT — v2.5.4 Runtime-Mirror Schema (2026-05-18)
+# ============================================================================
+# Closes operator concern (2026-05-18 iter-16 audit): "Are tracking artifacts
+# still valid for the new LASDLC build cycle workflows?"
+#
+# Surfaces: v2.5.3 declares plan-substrate (git_branching_invariants + per-task
+# git_scope) and /BUILD v2 declares 28 gates, but NO runtime mirror exists where
+# gate-pass receipts, current execution position, or autonomous-mode correlation
+# are recorded. Runtime evidence is ephemeral → §D5 hash-chain unverifiable at
+# close-out → contract declared but unverifiable from day 1.
+#
+# Adds three additive blocks:
+#   (1) per-build manifest.yaml `runtime_state` block
+#   (2) NEW `gate_receipts.ndjson` append-only artifact (hash-chained per §SG-CRYPTO.3)
+#   (3) `active.yaml` 3-field orchestrator-written extension
+#
+# All three are OPTIONAL when absent (pre-BUILD or interactive mode); REQUIRED
+# when execution_mode: autonomous AND status ∈ {in-progress, paused, completed}.
+#
+# Authority: operator-authorized Canon XV override (2026-05-18)
+# LÆX Phase 7 ratification pending — candidate #20
+# ============================================================================
+
+# ─────────────────────────────────────────────────────────────────────────────
+# (1) Per-build manifest.yaml — runtime_state block (additive)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Location: ~/lightarchitects/soul/helix/corso/builds/{codename}/manifest.yaml
+# Ownership: /BUILD orchestrator writes; appended to per-build manifest at G6
+#            preflight; mutated on phase/wave transitions and gate evaluations.
+# Schema:
+#
+# runtime_state:
+#   execution_mode: "interactive" | "autonomous"   # mirror of frontmatter
+#   run_id: "<uuid-v4 OR null>"                    # null for interactive mode
+#   started_at: "<ISO-8601>"                       # first G1-G8 preflight pass
+#   current_phase: "phase-<N>-<slug> | gate-<N> | close-out | null"
+#   current_wave: "p{N}-w{M} | null"               # null between waves or pre-Phase-1
+#   parallelism_active: <0-7>                      # count of in-flight task workers
+#   last_merged_sha: "<git-sha-40>"                # feat/{build} HEAD after last wave merge
+#   last_gate_receipt_id: "<receipt-id>"           # FK into gate_receipts.ndjson
+#   gates_passed_count: <int>                      # cumulative across phases
+#   gates_failed_count: <int>                      # cumulative; non-zero → halt OR retry
+#   pause_reason: "<string OR null>"               # set by HITL or §SG-CRYPTO.5 circuit-breaker
+#   resumed_from_phase: "<phase-id OR null>"       # set on /BUILD resume
+#   tasks_pre_done_verified: <int>                 # ⚡PRE-DONE staleness checks passed
+#   tasks_pre_done_invalidated: <int>              # ⚡PRE-DONE failed staleness/drift; demoted to fresh
+#   cross_build_coupling_status:
+#     overlaps_with: ["<codename>", ...]           # cross-build state (e.g., ironclaw+gitforest)
+#     contract_check_passed_at: "<ISO-8601 OR null>"   # last successful coupling verification
+#
+# Composition:
+# - Mirrors plan-time `phases[]` / `waves[]` / `tasks[]` declarations to runtime cursors
+# - last_gate_receipt_id provides the join into gate_receipts.ndjson for §D5 hash-chain
+# - Absent block = pre-BUILD state (plan-only); /BUILD G6 creates it at first preflight
+
+# ─────────────────────────────────────────────────────────────────────────────
+# (2) gate_receipts.ndjson — NEW append-only artifact (hash-chained)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Location: ~/lightarchitects/soul/helix/corso/builds/{codename}/gate_receipts.ndjson
+# Ownership: /BUILD orchestrator + Gatekeeper agents append; NEVER mutate in-place.
+# Format: one JSON object per line (NDJSON); hash-chained per §SG-CRYPTO.3.
+# Lifecycle: created at first gate evaluation (G1 preflight); closed at /BUILD
+#            terminal state (shipped | abandoned); archived to helix on close-out.
+# Schema (one line):
+#
+# {
+#   "receipt_id": "<uuid-v4>",
+#   "gate_id": "G1|G2|...|PP-1|PW-1|PT-1|...|PoW-3",        # 28 gates + G1-G8 preflight
+#   "gate_class": "preflight|pre_phase|pre_wave|pre_task|post_task|post_wave|gate_N",
+#   "scope": "build|phase-<N>|p<N>-w<M>|task-<id>",
+#   "target": "<canonical-target-ref>",                      # e.g., feat/ironclaw-spine HEAD SHA
+#   "result": "PASS|FAIL|WAIVED|SKIPPED",
+#   "evaluator": "claude|corso-agent|laex-agent|...|operator", # who ran the check
+#   "evidence_ref": "<file-path:line OR cmd-output-hash>",   # what proved the result
+#   "timestamp": "<ISO-8601>",
+#   "prev_receipt_hash": "<sha256-of-prior-line OR genesis>",  # hash-chain anchor
+#   "self_hash": "<sha256 of this line MINUS self_hash field>",
+#   "subkey_id": "<HKDF-derived subkey per §SG-CRYPTO.2>",   # for cryptographic attestation
+#   "manifest_id": "<plan-sha-at-G6-preflight>"              # binds receipt to plan snapshot
+# }
+#
+# Invariants:
+# - prev_receipt_hash of line N == self_hash of line N-1 (chain integrity)
+# - First line uses "genesis" sentinel; verified at /BUILD close-out per §D5
+# - FAIL receipts trigger /BUILD halt UNLESS gate_class = "post_*" with retry path
+# - WAIVED requires explicit operator-override receipt with rationale + Canon XV citation
+#
+# Composition:
+# - Companion to manifest.yaml `runtime_state.last_gate_receipt_id`
+# - Read by LDB §D5 close-out verifier (Canon XXXIII independent runner)
+# - 28-gate compliance audit: count_by(gate_id) == expected_per_plan (declared in plan §17.5)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# (3) active.yaml — 3-field orchestrator-written extension
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Location: ~/lightarchitects/soul/helix/corso/builds/active.yaml
+# Ownership: /BUILD orchestrator ONLY (never manual edit per memory rule).
+# Extension: 3 new fields appended to each entry; backward-compatible (absent = legacy).
+# Schema (per entry):
+#
+# - codename: "<codename>"
+#   project_id: "<project>"
+#   status: "in-progress|paused|completed"
+#   started: "<ISO-8601>"
+#   plan_iteration: <int>
+#   # NEW v2.5.4 fields:
+#   execution_mode: "interactive | autonomous"
+#   run_id: "<uuid-v4 | null>"                   # null for interactive mode
+#   overlaps_with: ["<codename>", ...]           # cross-build coupling (e.g., ironclaw overlaps gitforest)
+#
+# Composition:
+# - execution_mode dispatches /BUILD into interactive (operator-driven AskUserQuestion)
+#   vs autonomous (Step 11 conditional gates) code paths
+# - run_id correlates AYIN traces + AgentRunner worker logs to active.yaml entry
+# - overlaps_with enables cross-build invariant checks at G6 preflight (e.g., if
+#   ironclaw declares overlaps_with: [gitforest-live-ops] then G6 verifies
+#   gitforest contracts satisfied before ironclaw Phase 3 spawn)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Composition with prior versions
+# ─────────────────────────────────────────────────────────────────────────────
+# v2.5.4 is purely additive. Plans authored under v2.5.0-v2.5.3 remain VALIDATED
+# without modification. Runtime mirror blocks are populated by /BUILD orchestrator
+# at execution time; plans need not declare them.
+#
+# When required:
+# - runtime_state: REQUIRED when manifest.yaml.status ∈ {in-progress, paused, completed}
+# - gate_receipts.ndjson: REQUIRED when /BUILD has fired G6 preflight at least once
+# - active.yaml.execution_mode/run_id: REQUIRED for all entries (orchestrator writes)
+# - active.yaml.overlaps_with: OPTIONAL (empty list ok); REQUIRED when cross-build
+#   coupling declared in plan frontmatter `coupled_with` field
+#
+# Cross-canon ties:
+# - Cookbook §64.5 (worker commit discipline) — gate_receipts.ndjson per-task commits
+# - Cookbook §SG-CRYPTO.3 (hash-chain attestation) — gate_receipts integrity
+# - Cookbook §SG-CRYPTO.2 (HKDF subkey rotation) — subkey_id field
+# - agents-playbook §15.3.13.5 (28-gate pre-dispatch checklist) — each gate emits receipt
+# - Platform Canon LDB §D5 (manifest integrity contract) — close-out verifier reads receipts
+# - /BUILD skill v2 Step 11.3.0-11.3.5 — receipts emitted at every gate evaluation
+# - /BUILD skill v2 Step 11.6 (decision routing) — pause_reason populated at HITL escalation
+#
+# history_latest_version: "2.5.4"
+# history_latest_summary: "PATCH — runtime-mirror schema closes plan-substrate-vs-runtime gap surfaced at ironclaw-spine iter-16 audit; three additive blocks: (1) per-build manifest.yaml runtime_state, (2) NEW gate_receipts.ndjson hash-chained per §SG-CRYPTO.3, (3) active.yaml 3-field extension (execution_mode/run_id/overlaps_with); enables §D5 close-out verification + 28-gate compliance audit + cross-build coupling state (ironclaw+gitforest overlap); LÆX candidate #20."
