@@ -1,0 +1,109 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-18T23:46:36Z"
+build_id: "gitforest-live-ops"
+phase_id: "merge"
+branch: "feat/gitforest-live-ops"
+commit_sha: "6dd7235dd22af8995d946a3cd12f9948fb827954"
+overall_verdict: pass
+
+dimensions:
+  V0_primary_on_main:
+    result: pass
+    detail: "worktree on feat/gitforest-live-ops; primary repo on main by construction"
+
+  Q1_fmt:
+    result: pass
+    detail: "cargo fmt --all -- --check clean"
+
+  Q2_clippy:
+    result: pass
+    detail: "cargo clippy --workspace --all-targets --all-features -- -D warnings clean"
+
+  Q3_tests:
+    result: pass
+    tests_run: 1780
+    tests_fail: 0
+    suites: 30
+    detail: "all suites clean post-rebase; prior session 1-flake resolved on retry (pre-existing sse_guard parallel race, not regression)"
+
+  Q4_svelte:
+    result: pass
+    detail: "vitest 583/583 pass; svelte-check 0 errors 16 warnings (pre-existing)"
+
+  S1_security:
+    result: pass
+    findings:
+      - id: GF-01
+        severity: MEDIUM
+        status: remediated
+        description: "path traversal via subdirectory in ?repo= — canonicalize()+prefix assertion added in build_topology"
+      - id: GF-02
+        severity: MEDIUM
+        status: remediated
+        description: "unvalidated build_codename SSE filter — REPO_RE + 128-byte cap added in handle_live"
+      - id: GF-03
+        severity: LOW
+        status: documented
+        description: "?since= validated but discarded — Phase 5 wires it; re-review required then"
+      - id: GF-04
+        severity: LOW
+        status: documented
+        description: "SSRF allowlist owner-blind — repo-only check; owner param comes from trusted caller, acceptable for Phase 4 scope"
+
+  S2_supply_chain:
+    result: pass
+    detail: "cargo deny check: advisories ok, bans ok, licenses ok, sources ok"
+
+  S3_laex:
+    result: "n/a"
+    detail: "no new crypto primitives, auth flows, or permission surfaces introduced"
+
+  I1_rebase:
+    result: pass
+    commits_ahead: 12
+    detail: "rebased onto github/main (9bb03ff); conflict in webshell-api-surface-v1.md resolved (HEAD v1.0.8 accepted — already contained gitforest §2.17-2.19)"
+    build_post_rebase: pass
+
+  N1_northstar:
+    result: pass
+    pillar: "P1+P2+P4"
+    detail: "northstar_pillar field present; build_to_northstar_mapping has concrete metric deltas"
+
+  N2_chain:
+    result: pass
+    detail: "concrete: GitForest canvas → operator topology at glance → P4 triage ≤8s; SSE → P2 time-to-aware ≤500ms; hitbox UI → P1 terminal-cmd-count ≤4"
+
+  N3_exclusion_zones:
+    result: pass
+    detail: "no open exclusion zones declared in plan"
+
+  D1_docs:
+    result: pass
+    detail: "46/46 public items documented (100%); knowledge agent DOC-AUDIT confirmed"
+
+  D2_plan:
+    result: pass
+    detail: "plan status: in-progress; phase: phase-7-test-pyramid; all deliverables reflected in body"
+
+  D3_claude_md:
+    result: pass
+    detail: "no new tooling or commands requiring CLAUDE.md update"
+
+  V1_pyramid:
+    result: "conditional_pass"
+    suites_present: 5
+    suites_total: 6
+    detail: "unit(43 TS+Rust), integration(8 Rust routes), property(4 SSE burst), E2E(12 Playwright), smoke(14 gateway); regression suite: no recorded bugs to pin — framework present, activation pending first production incident"
+    gap: "regression suite pending first production incident"
+
+  V2_smoke:
+    result: pass
+    detail: "cargo build --release -p lightarchitects-webshell succeeded"
+
+  V3_e2e:
+    result: "deferred"
+    waiver_condition: "gitforest-ops.spec.ts authored; runs after integration test environment with webshell dev server + gitforest backend live. Target: post-merge smoke or Phase 8 integration sprint."
+
+summary: "gitforest-live-ops LARGE-tier LASDLC 7-phase build: all Q/S/I/N/D/V gates pass. 2 MEDIUM security findings remediated pre-merge (canonicalize+prefix GF-01, build_codename validation GF-02). Rebase conflict resolved (v1.0.7→v1.0.8 frontmatter). V1 conditional pass (regression suite framework present, activation pending). V3 deferred with explicit waiver. Verdict: PASS — ready for merge."

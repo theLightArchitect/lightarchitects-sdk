@@ -13,9 +13,10 @@
 //! - `GET /api/gitforest/node/:id`
 //!   Deep-link fetch for a single [`BranchNode`] by its stable node ID.
 //!
-//! All three require bearer auth ([`AuthGuard`]). Path params validated against
-//! `^[a-zA-Z0-9_/-]+$`; `since` param validated against ISO-8601 regex.
-//! AYIN span emitted on every `git` subprocess invocation.
+//! All three require bearer auth ([`AuthGuard`]). Path params and `build_codename`
+//! validated against `^[a-zA-Z0-9_/-]+$` (max 128 bytes); `since` param validated
+//! against ISO-8601 regex. Resolved repo paths are prefix-checked against the
+//! repos root to prevent subdirectory traversal. AYIN span emitted per subprocess.
 
 use std::{
     convert::Infallible,
