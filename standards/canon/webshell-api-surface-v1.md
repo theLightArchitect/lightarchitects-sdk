@@ -574,6 +574,9 @@ Any PR that modifies `build_app()`, `dispatch_router()`, or `src/lib/routes.ts` 
 | CORS policy changed | Minor (1.x.0) |
 | Authentication model changed | Major (x.0.0) |
 | AppState schema changed | Major (x.0.0) |
+| AppState field added (additive-only, crate marked `#[non_exhaustive]`) | Patch (1.0.x) |
+
+> **Clarification (2026-05-17)**: "AppState schema changed" (Major) means a breaking change — field removal, type change, or rename. An additive-only new field on an `#[non_exhaustive]` struct is a Patch-level change: existing consumers are not broken, no field is removed, and the Rust type system enforces the non-breaking contract. This mirrors [semantic versioning §7](https://semver.org/#spec-item-7) applied to the doc level.
 
 ### §6.3 Verification Protocol
 
