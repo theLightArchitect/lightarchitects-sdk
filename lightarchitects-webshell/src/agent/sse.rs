@@ -152,16 +152,16 @@ mod tests {
     #[test]
     fn sse_guard_decrements_global_counter_on_drop() {
         let _lock = SSE_TEST_LOCK.lock().unwrap();
-        // Reset to a known value so `before + 1` never overflows regardless of
-        // what concurrent tests may have done to the counter.
-        AGENT_SSE_COUNT.store(0, Ordering::SeqCst);
+        // Snapshot before — don't store(0): resetting races with in-flight async
+        // SseGuard drops from concurrent tokio tests, causing them to subtract from
+        // 0 and wrap to u64::MAX.
+        let before = AGENT_SSE_COUNT.load(Ordering::SeqCst);
         {
             let _guard = SseGuard;
             AGENT_SSE_COUNT.fetch_add(1, Ordering::SeqCst);
-            assert_eq!(AGENT_SSE_COUNT.load(Ordering::SeqCst), 1);
         }
-        // SseGuard::drop() calls fetch_sub(1) → back to 0.
-        assert_eq!(AGENT_SSE_COUNT.load(Ordering::SeqCst), 0);
+        // SseGuard::drop() called fetch_sub(1) → net delta = 0.
+        assert_eq!(AGENT_SSE_COUNT.load(Ordering::SeqCst), before);
     }
 
     #[allow(clippy::unwrap_used)]
