@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.5"
+version: "1.0.6"
 status: ratified
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-17"
@@ -354,6 +354,62 @@ Endpoints for the copilot supervision loop (`copilot-supervised-orchestration`).
 
 All three return `404` when the build UUID is unknown **or** no `northstar_text` was supplied at build-creation time (`supervisor_states` entry absent).
 
+All three return `404` when the build UUID is unknown **or** no `northstar_text` was supplied at build-creation time (`supervisor_states` entry absent).
+
+---
+
+### §2.14 Preflight & Capability Initialization
+
+Infrastructure readiness checks (added in `replicated-greeting-robin`). `GET /api/preflight` is intentionally **unauthenticated** so the UI can surface `Blocked` status before the operator token is entered.
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/api/preflight` | None | Returns the last computed `PreflightReport` (overall status + per-check results + elapsed_ms) |
+| `POST` | `/api/preflight/refresh` | Bearer token | Re-runs all 12 preflight checks concurrently; rate-limited to 1/10 s to prevent macOS Keychain ACL dialog spam; returns the fresh `PreflightReport` |
+
+**`PreflightReport` schema** (JSON, `serde(rename_all = "PascalCase")` on `OverallStatus`):
+
+```json
+{
+  "timestamp": "2026-05-17T01:28:00Z",
+  "overall": "Ready | Degraded | Blocked",
+  "checks": [
+    {
+      "id": "shell",
+      "label": "Shell binary ($SHELL)",
+      "category": "Core | Important | Optional",
+      "status": "Pass | Warn | Fail",
+      "detail": "...",
+      "remediation": "..."
+    }
+  ],
+  "elapsed_ms": 42
+}
+```
+
+**Check inventory** (12 total, ordered Core → Important → Optional):
+
+| Check ID | Category | Description |
+|----------|----------|-------------|
+| `shell` | Core | `$SHELL` executability |
+| `la_config_dir` | Core | `~/.lightarchitects/` writability |
+| `agent_binary` | Core | Agent CLI binary in PATH |
+| `agent_credentials` | Core | API key / keychain credential |
+| `la_workspace` | Important | `~/lightarchitects/` workspace writable |
+| `helix_vault` | Important | SOUL helix vault directory writable |
+| `helix_db` | Important | SQLite helix DB accessible |
+| `session_store` | Important | Session store directory writable |
+| `ayin_service` | Optional | AYIN HTTP service reachable (`:3742`) |
+| `docker_daemon` | Optional | Docker daemon socket accessible |
+| `ollama_service` | Optional | Ollama HTTP service reachable (`:11434`) |
+| `github_pat` | Optional | `GITHUB_TOKEN` env var set |
+
+**Two-phase startup**: `run_basic()` (shell + la_config_dir) runs concurrently with Docker probe before `Config::resolve`. `run_full()` runs after config resolution when the agent type is known.
+
+**Preflight dot** (`StatusBar.svelte`): polls `GET /api/preflight` every 30 s and renders a green/amber/red dot.
+
+**InitStep gate** (`InitStep.svelte`): fetches preflight on mount; pauses subsystem tick animation on `Blocked`; shows `PreflightPanel` with per-check detail and "Continue anyway" affordance on `Degraded`.
+
 **Static assets**: all unmatched routes are handled by `static_assets::serve` — the fallback serves the pre-built SPA bundle.
 
 ---
@@ -511,7 +567,7 @@ Which backend sections and route prefixes serve each screen. Use this to find re
 
 | ScreenKey | Backend section(s) | Primary route prefixes |
 |-----------|-------------------|------------------------|
-| `Ops` | §2.1 Auth & Health, §2.3 Events, §2.12 Misc | `/api/health`, `/api/events/global`, `/api/polytopes` |
+| `Ops` | §2.1 Auth & Health, §2.3 Events, §2.12 Misc, §2.14 Preflight | `/api/health`, `/api/events/global`, `/api/polytopes`, `/api/preflight` |
 | `Dispatch` | §2.7 Dispatch Sub-Router, §2.3 Events | `/api/dispatch/*`, `/api/events` |
 | `Builds` | §2.4 Builds Core | `/api/builds` |
 | `BuildDetail` | §2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor | `/api/builds/{id}`, `/api/builds/{id}/terminal/ws`, `/api/builds/{id}/events` |

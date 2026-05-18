@@ -11,7 +11,10 @@ use std::{
     future::Future,
     net::SocketAddr,
     pin::Pin,
-    sync::{Arc, atomic::AtomicUsize},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+    },
     task::{Context, Poll},
 };
 
@@ -37,7 +40,9 @@ use crate::{
     dispatch::{self, DispatchRegistry},
     events::{self, EVENT_CHANNEL_BUF, WebEvent, builds_handler},
     init::telemetry::TelemetryHandle,
-    polytope_data, real_data,
+    polytope_data, preflight,
+    preflight::{OverallStatus, PreflightReport},
+    real_data,
     session::BuildRegistry,
     session_fork,
     session_store::SessionStore,
@@ -195,13 +200,29 @@ pub struct AppState {
     /// The background watcher task holds an `Arc` clone and exits when
     /// `SupervisorEntry::watcher_token` is cancelled.
     pub supervisor_states: Arc<DashMap<Uuid, Arc<events::SupervisorEntry>>>,
+    /// Structured infrastructure readiness report — populated at startup by
+    /// [`preflight::run_full`] and updated by `POST /api/preflight/refresh`.
+    ///
+    /// Always 200 on `GET /api/preflight`; body carries status. Monitoring
+    /// systems MUST NOT restart the process on `overall: Blocked` alone.
+    /// See §2.5 for the `/api/health` vs `/api/preflight` semantic distinction.
+    pub preflight: Arc<RwLock<PreflightReport>>,
+    /// Unix epoch seconds of the last `POST /api/preflight/refresh` call.
+    ///
+    /// Used to enforce the 1-per-10s rate limit that prevents keychain ACL
+    /// dialog spam when the macOS keychain is locked.
+    preflight_last_refresh: Arc<AtomicU64>,
 }
 
 impl AppState {
     /// Constructs a new state from a resolved [`Config`] and spawns the
     /// background AYIN SSE subscription task.
     #[must_use]
-    pub fn new(config: Config, docker_capable: DockerCapability) -> Self {
+    pub fn new(
+        config: Config,
+        docker_capable: DockerCapability,
+        preflight: PreflightReport,
+    ) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_BUF);
         events::AyinClient::spawn(event_tx.clone());
         events::HelixWatcher::spawn(event_tx.clone());
@@ -297,6 +318,8 @@ impl AppState {
             },
             plan_draft_sessions: Arc::new(DashMap::new()),
             supervisor_states: Arc::new(DashMap::new()),
+            preflight: Arc::new(RwLock::new(preflight)),
+            preflight_last_refresh: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -388,6 +411,13 @@ impl AppState {
             global_event_store: events::GlobalEventStore::noop(),
             plan_draft_sessions: Arc::new(DashMap::new()),
             supervisor_states: Arc::new(DashMap::new()),
+            preflight: Arc::new(RwLock::new(PreflightReport {
+                timestamp: chrono::Utc::now(),
+                overall: OverallStatus::Ready,
+                checks: vec![],
+                elapsed_ms: 0,
+            })),
+            preflight_last_refresh: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -395,6 +425,8 @@ impl AppState {
 /// Builds the Axum router with all routes wired.
 ///
 /// - `GET /api/health` — liveness probe (unauthenticated).
+/// - `GET /api/preflight` — readiness probe, structured JSON (unauthenticated).
+/// - `POST /api/preflight/refresh` — re-run all checks, rate-limited 1/10s (authenticated).
 /// - `GET /api/auth-check` — validates `Authorization: Bearer <token>`.
 /// - `GET /api/terminal/ws` — PTY WebSocket bridge (Phase 2).
 /// - `GET /api/events` — SSE fan-out stream (Phase 5, authenticated).
@@ -411,6 +443,8 @@ pub fn build_app(state: AppState) -> Router {
     let cors = build_cors(state.config.port);
     Router::new()
         .route("/api/health", get(health))
+        .route("/api/preflight", get(preflight_status_handler))
+        .route("/api/preflight/refresh", post(preflight_refresh_handler))
         .route("/api/auth-check", get(auth_check))
         .route("/api/auth/exchange", post(auth_exchange))
         .route("/api/auth/nonce", post(auth_issue_nonce))
@@ -770,9 +804,13 @@ impl Future for ServerDriver {
 ///
 /// - [`ServerError::Bind`] if the TCP listener cannot bind to the configured port.
 /// - [`ServerError::Serve`] if the server exits with an IO error mid-run.
-pub async fn run(config: Config, docker_capable: DockerCapability) -> Result<(), ServerError> {
+pub async fn run(
+    config: Config,
+    docker_capable: DockerCapability,
+    preflight: PreflightReport,
+) -> Result<(), ServerError> {
     let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
-    let state = AppState::new(config, docker_capable);
+    let state = AppState::new(config, docker_capable, preflight);
     let app = build_app(state);
 
     let listener = tokio::net::TcpListener::bind(addr)
@@ -809,6 +847,7 @@ const PORT_RETRY_LIMIT: u8 = 3;
 pub async fn run_with_port_retry(
     config: Config,
     docker_capable: DockerCapability,
+    preflight: PreflightReport,
 ) -> Result<(u16, ServerDriver), ServerError> {
     use std::io::ErrorKind;
 
@@ -825,7 +864,7 @@ pub async fn run_with_port_retry(
         let addr = SocketAddr::from(([127, 0, 0, 1], port));
         match tokio::net::TcpListener::bind(addr).await {
             Ok(listener) => {
-                let state = AppState::new(try_config, docker_capable);
+                let state = AppState::new(try_config, docker_capable, preflight);
                 let app = build_app(state);
                 info!(bind = %addr, "webshell server listening");
                 let driver = ServerDriver {
@@ -947,6 +986,47 @@ fn walk_files(root: &std::path::Path, query: &str) -> Vec<String> {
 /// `GET /api/health` — unauthenticated liveness probe.
 async fn health() -> impl IntoResponse {
     (StatusCode::OK, "ok")
+}
+
+/// `GET /api/preflight` — structured infrastructure readiness probe (unauthenticated).
+///
+/// Always returns 200 regardless of `overall` status. The body carries the full
+/// structured report with per-check results.
+///
+/// Monitoring systems MUST NOT restart the process on `overall: Blocked` alone —
+/// a Blocked system is expected to be human-resolved (e.g. missing keychain entry).
+/// `/api/health` is the binary liveness probe; this endpoint is the readiness probe.
+async fn preflight_status_handler(State(state): State<AppState>) -> impl IntoResponse {
+    let report = state.preflight.read().await.clone();
+    (StatusCode::OK, Json(report))
+}
+
+/// `POST /api/preflight/refresh` — re-runs all 12 checks and updates the stored report.
+///
+/// Requires `Authorization: Bearer <token>`. Rate-limited to 1 request per 10 seconds
+/// to prevent macOS keychain ACL dialog spam when the keychain is locked.
+async fn preflight_refresh_handler(
+    _: auth::AuthGuard,
+    State(state): State<AppState>,
+) -> axum::response::Response {
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let last = state.preflight_last_refresh.load(Ordering::Relaxed);
+    if now_secs.saturating_sub(last) < 10 {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    }
+    state
+        .preflight_last_refresh
+        .store(now_secs, Ordering::Relaxed);
+
+    let agent_snap = state.active_agent.read().await.clone();
+    let docker = state.docker_capable;
+    let basic = preflight::run_basic().await;
+    let report = preflight::run_full(&agent_snap, docker, basic).await;
+
+    *state.preflight.write().await = report.clone();
+    (StatusCode::OK, Json(report)).into_response()
 }
 
 /// `GET /api/auth-check` — validates either `Authorization: Bearer <token>`

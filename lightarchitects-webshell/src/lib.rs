@@ -37,6 +37,7 @@ pub mod init;
 pub mod mcp_config;
 pub mod memory;
 pub mod polytope_data;
+pub mod preflight;
 pub mod real_data;
 pub mod server;
 pub mod session;

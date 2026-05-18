@@ -13,6 +13,8 @@ use std::process::ExitCode;
 use clap::Parser;
 use lightarchitects_webshell::{
     config::{Cli, Config, TokenSource},
+    preflight,
+    preflight::OverallStatus,
     server::{self, ServerError},
 };
 use tracing::error;
@@ -33,7 +35,10 @@ async fn main() -> ExitCode {
     init_tracing();
     lightarchitects_webshell::profile_checkpoint!("tracing_ready");
 
-    let docker_capable = lightarchitects_webshell::container::probe::probe_docker().await;
+    let (docker_capable, preflight_basic) = tokio::join!(
+        lightarchitects_webshell::container::probe::probe_docker(),
+        preflight::run_basic(),
+    );
     lightarchitects_webshell::profile_checkpoint!("docker_probed");
 
     let cli = Cli::parse();
@@ -47,6 +52,9 @@ async fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+
+    let preflight = preflight::run_full(&config.agent, docker_capable, preflight_basic).await;
+    lightarchitects_webshell::profile_checkpoint!("preflight_complete");
 
     // Print the access URL with the auth token hash fragment.
     // The browser frontend reads this from the URL hash and stores it
@@ -73,27 +81,29 @@ async fn main() -> ExitCode {
     eprintln!("  Token:    {token_preview}  (via {source_label})");
     eprintln!("  Keychain: ~/.lightarchitects/webshell/.token");
     eprintln!();
+    print_preflight_banner(&preflight);
 
-    let (bound_port, driver) = match server::run_with_port_retry(config, docker_capable).await {
-        Ok(pair) => pair,
-        Err(ServerError::PortInUse { first_port, tried }) => {
-            eprintln!();
-            eprintln!("  ERROR: port {first_port} (and {tried} fallback(s)) are all in use.");
-            eprintln!();
-            eprintln!("  To diagnose:");
-            eprintln!("    lsof -i :{first_port}");
-            eprintln!();
-            eprintln!("  To use a different port:");
-            eprintln!("    lightarchitects-webshell --port <PORT>");
-            eprintln!();
-            error!(first_port, tried, "all ports in retry window are in use");
-            return ExitCode::FAILURE;
-        }
-        Err(e) => {
-            error!(error = %e, "webshell server bind error");
-            return ExitCode::FAILURE;
-        }
-    };
+    let (bound_port, driver) =
+        match server::run_with_port_retry(config, docker_capable, preflight).await {
+            Ok(pair) => pair,
+            Err(ServerError::PortInUse { first_port, tried }) => {
+                eprintln!();
+                eprintln!("  ERROR: port {first_port} (and {tried} fallback(s)) are all in use.");
+                eprintln!();
+                eprintln!("  To diagnose:");
+                eprintln!("    lsof -i :{first_port}");
+                eprintln!();
+                eprintln!("  To use a different port:");
+                eprintln!("    lightarchitects-webshell --port <PORT>");
+                eprintln!();
+                error!(first_port, tried, "all ports in retry window are in use");
+                return ExitCode::FAILURE;
+            }
+            Err(e) => {
+                error!(error = %e, "webshell server bind error");
+                return ExitCode::FAILURE;
+            }
+        };
 
     // Bind succeeded — checkpoint and, if a fallback port was used, re-print
     // the access URL so the user knows where to connect.
@@ -128,4 +138,33 @@ fn init_tracing() {
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info,lightarchitects_webshell=debug"));
     tracing_subscriber::fmt().with_env_filter(filter).init();
+}
+
+/// Prints a one-line preflight status banner, plus per-check detail for failures.
+fn print_preflight_banner(report: &preflight::PreflightReport) {
+    match report.overall {
+        OverallStatus::Ready => {
+            eprintln!(
+                "  Status:   ✅ Ready  (all {} checks pass)",
+                report.checks.len()
+            );
+        }
+        OverallStatus::Degraded => {
+            eprintln!("  Status:   ⚠  Degraded");
+        }
+        OverallStatus::Blocked => {
+            eprintln!("  Status:   ❌ Blocked");
+        }
+    }
+    for c in &report.checks {
+        use preflight::CheckStatus;
+        match c.status {
+            CheckStatus::Pass => {}
+            CheckStatus::Warn => eprintln!("  ⚠  {:20}  {}", c.id, c.detail),
+            CheckStatus::Fail => eprintln!("  ❌  {:20}  {}", c.id, c.detail),
+        }
+    }
+    if !matches!(report.overall, OverallStatus::Ready) {
+        eprintln!();
+    }
 }
