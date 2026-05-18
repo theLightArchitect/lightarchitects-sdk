@@ -190,16 +190,123 @@ Operator-authorized Canon XV override during pending interval applies — conten
 
 ---
 
+## 2026-05-18 memory sweep additions (Step (b) bulk preparation)
+
+Per Canon XXXIX Step (b), 137-entry memory corpus was swept via cold-context Explore agent. 12 new candidates surfaced. Sweep snapshot: `LAEX-PHASE-7-MEMORY-SWEEP-2026-05-18.md` (this directory).
+
+### #22 — Two-problems-in-one-question framing test
+- **Status**: PENDING — Step b (surfaced via sweep)
+- **Confidence (sweep)**: HIGH
+- **Source**: ironclaw-spine session 2026-05-18 (changelog-vs-canon-repo bundling)
+- **Proposed canon home**: `builders-cookbook` new §N OR `agents-playbook` §Phase-1 (planning discipline)
+- **Cross-canon ties**: Canon XV (operator authority), agents-playbook Phase-1, Cookbook §66 Context Assembly
+- **Memory**: `memory://feedback_two_problems_one_question`
+- **Self-author flag**: authored this session by Claude → independent verification at Phase 7 mandatory
+
+### #23 — Per-build manifest 10-field counter sync discipline
+- **Status**: PENDING — Step b
+- **Confidence (sweep)**: HIGH
+- **Source**: ironclaw-spine session 2026-05-18 (iter-18 counter sync after Canon XLII)
+- **Proposed canon home**: `LASDLC-TEMPLATE-v1.yaml` §manifest-hygiene OR `agents-playbook` §counter-sync
+- **Cross-canon ties**: architects-blueprint Part XXI, Cookbook §66 counter-derivation
+- **Memory**: `memory://feedback_per_build_manifest_counter_sync`
+- **Self-author flag**: authored this session → ceiling applies
+
+### #24 — LÆX queue authoritative enumeration is Canon XXXIX Step-(b) prerequisite
+- **Status**: PENDING — Step b
+- **Confidence (sweep)**: HIGH
+- **Source**: ironclaw-spine session 2026-05-18 (queue gap discovery)
+- **Proposed canon home**: `platform-canon` Canon XXXIX extension OR `builders-cookbook` §audit-discipline
+- **Cross-canon ties**: Canon XXXIX, Canon XLII, LASDLC manifest counters
+- **Memory**: `memory://feedback_laex_queue_enumeration_prerequisite`
+- **Self-author flag**: authored this session → ceiling applies; THIS queue file is the empirical witness
+
+### #25 — Parallel-agent helix entry pre-write check
+- **Status**: PENDING — Step b
+- **Confidence (sweep)**: MEDIUM
+- **Source**: ironclaw-spine iter-18 (discovered parallel-agent enrichment)
+- **Proposed canon home**: `agents-playbook` §7.2 (pre-tool discipline) OR `operators-manual` §helix-write-surface
+- **Cross-canon ties**: teammateMode auto, operators-manual, security-guardrails
+- **Memory**: `memory://feedback_parallel_agent_helix_check`
+- **Self-author flag**: authored this session → ceiling applies
+
+### #26 — Circular validation signature: canon authored from plan → re-XEA proves consistency
+- **Status**: PENDING — Step b (surfaced via sweep)
+- **Confidence (sweep)**: HIGH
+- **Source**: ironclaw-spine 2026-05-18 iter-8 (Δ +1.3 canon-codification-driven)
+- **Proposed canon home**: `architects-blueprint` Part XIV §14.3 (scoring honesty)
+- **Cross-canon ties**: Canon XXXVI (quality-first compression), canon-audit-as-review-tier (Tier 3)
+- **Memory**: `memory://feedback_circular_validation_canon_plan`
+
+### #27 — TaskStop + relaunch tighter scope on stalled background agent
+- **Status**: PENDING — Step b
+- **Confidence (sweep)**: MEDIUM
+- **Source**: ironclaw-spine 2026-05-18 Task #17 stall (relaunched in 77s with tighter scope)
+- **Proposed canon home**: `agents-playbook` §worker-lifecycle
+- **Cross-canon ties**: operators-manual task lifecycle, Cookbook §agent-scoping
+- **Memory**: `memory://feedback_taskstop_relaunch_tighter_scope`
+
+### #28 — SCRUM 3-round verdict-upgrade signature (R3 upgrades = convergence proof)
+- **Status**: PENDING — Step b
+- **Confidence (sweep)**: MEDIUM
+- **Source**: ironclaw-spine 2026-05-18 R3 (SERAPH/AYIN/QUANTUM upgrades)
+- **Proposed canon home**: `platform-canon` Canon XXXIII corollary OR `architects-blueprint` Part X
+- **Cross-canon ties**: Canon XXXIII (independent verification), agents-playbook SCRUM protocol
+- **Memory**: `memory://feedback_scrum_r3_verdict_upgrade_signature`
+
+### #29 — TeammateMode + parallel-agent layer distinction
+- **Status**: PENDING — Step b
+- **Confidence (sweep)**: MEDIUM
+- **Source**: ironclaw-spine session (CLAUDE.md OPS-8.2 codification)
+- **Proposed canon home**: `agents-playbook` §worker-dispatch OR `operators-manual` §agent-roles
+- **Cross-canon ties**: OPS-8.2 layer selection rule, AgentRunner vs Claude Code teammate distinction
+- **Memory**: `memory://feedback_teammate_mode_synergy`
+
+### #30 — SCRUM Round-2 depth-on-new-surface signature
+- **Status**: PENDING — Step b
+- **Confidence (sweep)**: MEDIUM
+- **Source**: ironclaw-spine R2 (gaps surfaced on R1-fold additions)
+- **Proposed canon home**: `architects-blueprint` Part X (review convergence) — sibling to #28
+- **Cross-canon ties**: Canon XXXIII, agents-playbook SCRUM rounds
+- **Memory**: `memory://feedback_scrum_round_2_depth_signature`
+
+### #31 — Self-review ceiling STRONG for LARGE+canon plans
+- **Status**: PENDING — Step b
+- **Confidence (sweep)**: MEDIUM
+- **Source**: novel-substrate plan-validation observations across sessions
+- **Proposed canon home**: `architects-blueprint` Part XIV §C2 (independent-runner gate)
+- **Cross-canon ties**: Canon XXXIII (self-validation ceiling), agents-playbook review discipline
+- **Memory**: `memory://feedback_self_review_ceiling_novel_substrate`
+
+### #32 — Enum-extension collision pre-check
+- **Status**: PENDING — Step b
+- **Confidence (sweep)**: LOW (borderline — could stay operational)
+- **Source**: webshell routes.ts session (constrained-vocabulary mutation)
+- **Proposed canon home**: `builders-cookbook` §validation-discipline (lightweight pattern)
+- **Cross-canon ties**: architects-blueprint Part VI (file-function map consistency)
+- **Memory**: `memory://feedback_enum_collision_precheck`
+
+### #33 — Comprehensive E2E console-error-zero requirement
+- **Status**: PENDING — Step b
+- **Confidence (sweep)**: LOW (overlap risk with existing Cookbook §57)
+- **Source**: 2026-05-13 era Playwright discipline session
+- **Proposed canon home**: `builders-cookbook` §57 extension (E2E Test Engineering Standards) — possible merge rather than separate section
+- **Cross-canon ties**: Canon XXXII (E2E discipline), Northstar §S (pillar validation)
+- **Memory**: `memory://feedback_comprehensive_e2e`
+- **Overlap note**: existing §57 already covers E2E test engineering; Phase 7 should decide MERGE-INTO-§57 vs SEPARATE-SUBSECTION
+
+---
+
 ## Aggregate
 
 | Status | Count | Sources |
 |---|---|---|
 | RATIFIED | 11 (#4–#14) | 2026-05-17 sessions |
-| PENDING — Step b (memory + candidate identified, contradiction check pending) | 3 (#1, #2, #3) | 2026-05-15 agent-teams-fleet |
-| PENDING — Step c+ (Canon XV override applied; LÆX ratification pending) | 7 (#15–#21) | 2026-05-18 ironclaw-spine |
-| **Total candidates** | **21** | |
-| **Ratification target** | ≥11/21 at phase boundary | per ironclaw-spine manifest |
-| **Currently ratified** | 11/21 | already meets target threshold (52%) |
+| PENDING — Step b (memory + candidate identified, contradiction check pending) | 15 (#1–#3 + #22–#33) | 2026-05-15 + 2026-05-18 memory-sweep additions |
+| PENDING — Step c+ (Canon XV override applied; LÆX ratification pending) | 7 (#15–#21) | 2026-05-18 ironclaw-spine in-session canon edits |
+| **Total candidates** | **33** | 21 original + 12 sweep additions |
+| **Ratification target** | ≥11/33 at phase boundary | per ironclaw-spine manifest (target unchanged; absolute count grew) |
+| **Currently ratified** | 11/33 | already meets the absolute count of 11; coverage now 33% (was 52% pre-sweep) |
 
 ---
 
