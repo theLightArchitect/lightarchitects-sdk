@@ -74,212 +74,243 @@
     setTimeout(tick, 200);
   });
 
-  // ── 4D recursive double helix background ───────────────────────────────────
+  // ── 4D polytope background — morphs through each subsystem's polytope ────────
   let canvas: HTMLCanvasElement;
 
-  /** Gram-Schmidt: given a unit `axis`, produce two orthonormal vectors u, v
-   *  both perpendicular to axis and to each other.
-   *
-   *  Oracle-verified precondition (Leanstral, 2026-05-18): the construction is
-   *  valid iff axis is not parallel to ±e₃ AND ±e₄.  Both fallbacks below are
-   *  re-checked against the final u so that v is always orthonormal to the
-   *  actual u that was chosen, not only to the attempted one.
-   */
-  function orthoBasis(axis: number[]): [number[], number[]] {
-    const dot = (a: number[], b: number[]) => a.reduce((s, v, i) => s + v * b[i], 0);
-    const norm = (a: number[]) => Math.sqrt(dot(a, a));
-    const sub  = (a: number[], b: number[]) => a.map((v, i) => v - b[i]);
-    const scale = (a: number[], s: number) => a.map(v => v * s);
-    const normalize = (a: number[]) => { const n = norm(a); return n > 1e-10 ? scale(a, 1/n) : a; };
+  type Poly = { verts: number[][], edges: [number,number][] };
 
-    // Project candidate c onto the plane perpendicular to axis.
-    const project = (c: number[]) => sub(c, scale(axis, dot(c, axis)));
-
-    // u — project e₃ = [0,0,1,0]; fall back to e₁ = [1,0,0,0] if degenerate.
-    let uRaw = project([0, 0, 1, 0]);
-    if (norm(uRaw) < 0.01) uRaw = project([1, 0, 0, 0]);
-    const u = normalize(uRaw);
-
-    // v — project e₄ = [0,0,0,1] onto the plane perpendicular to BOTH axis
-    //     and the final u (not the attempted u — this is the oracle-identified fix).
-    let vRaw = project([0, 0, 0, 1]);
-    vRaw = sub(vRaw, scale(u, dot(vRaw, u)));
-    if (norm(vRaw) < 0.01) {
-      // e₄ was in span{axis, u}; try e₂ = [0,1,0,0].
-      vRaw = project([0, 1, 0, 0]);
-      vRaw = sub(vRaw, scale(u, dot(vRaw, u)));
-    }
-    const v = normalize(vRaw);
-
-    return [u, v];
-  }
-
-  /** Two 4D helical strands (antipodal by construction: s₂(t) = −s₁(t),
-   *  proven via Real.cos_add_pi / Real.sin_add_pi) plus twisted rung
-   *  mini-helices connecting them.  All geometry lives in ℝ⁴ and rotates
-   *  coherently before perspective projection.
-   */
-  function genDoubleHelix() {
-    const N      = 240;   // samples per strand
-    const TURNS  = 4;     // full xy loops  (strand is a (4,3) torus knot on the Clifford torus)
-    const R      = 1.2;   // xy amplitude
-    const r      = 0.6;   // zw amplitude
-    const WIND   = 3;     // zw winding number
-    const RUNGS  = 24;    // cross-connections
-    const RSEG   = 10;    // segments per rung mini-helix
-    const RRAD   = 0.11;  // rung helix radius
-    const RWINDS = 2;     // turns per rung
-
-    const verts4d: number[][] = [];
-    const s1Edges: [number,number][] = [];
-    const s2Edges: [number,number][] = [];
-    const rungEdges: [number,number][] = [];
-
-    // Strand 1: s₁(t) = (R cos t, R sin t, r cos 3t, r sin 3t)
-    for (let i = 0; i < N; i++) {
-      const t = (i / (N - 1)) * TURNS * 2 * Math.PI;
-      verts4d.push([R*Math.cos(t), R*Math.sin(t), r*Math.cos(WIND*t), r*Math.sin(WIND*t)]);
-    }
-    for (let i = 0; i < N - 1; i++) s1Edges.push([i, i + 1]);
-
-    // Strand 2: offset xy by π (opposite side of the axis), zw in-phase.
-    // Rung midpoints = (0, 0, r cos(3t), r sin(3t)) — a circle in zw-space,
-    // never at the 4D origin, so rungs project as distributed chords not a fan.
-    const S2 = N;
-    for (let i = 0; i < N; i++) {
-      const t = (i / (N - 1)) * TURNS * 2 * Math.PI;
-      verts4d.push([R*Math.cos(t+Math.PI), R*Math.sin(t+Math.PI), r*Math.cos(WIND*t), r*Math.sin(WIND*t)]);
-    }
-    for (let i = 0; i < N - 1; i++) s2Edges.push([S2 + i, S2 + i + 1]);
-
-    // Rungs: mini-helices connecting strand1[k] → strand2[k].
-    for (let k = 0; k < RUNGS; k++) {
-      const idx = Math.floor((k / (RUNGS - 1)) * (N - 1));
-      const p1 = verts4d[idx];
-      const p2 = verts4d[S2 + idx];
-
-      const ax = p2.map((v, i) => v - p1[i]);
-      const axLen = Math.sqrt(ax.reduce((s, v) => s + v*v, 0)) || 1;
-      const axN = ax.map(v => v / axLen);
-      const [u, v] = orthoBasis(axN);
-
-      const base = verts4d.length;
-      for (let j = 0; j <= RSEG; j++) {
-        const s = j / RSEG;
-        const angle = s * RWINDS * 2 * Math.PI;
-        const cos = Math.cos(angle), sin = Math.sin(angle);
-        verts4d.push([
-          p1[0] + s*ax[0] + RRAD*(cos*u[0] + sin*v[0]),
-          p1[1] + s*ax[1] + RRAD*(cos*u[1] + sin*v[1]),
-          p1[2] + s*ax[2] + RRAD*(cos*u[2] + sin*v[2]),
-          p1[3] + s*ax[3] + RRAD*(cos*u[3] + sin*v[3]),
-        ]);
-      }
-      for (let j = 0; j < RSEG; j++) rungEdges.push([base + j, base + j + 1]);
-    }
-
-    // Node markers: every 12th point on each strand.
-    const nodeIdxs: number[] = [];
-    for (let i = 0; i < N; i += 12) { nodeIdxs.push(i); nodeIdxs.push(S2 + i); }
-
-    return { verts4d, s1Edges, s2Edges, rungEdges, nodeIdxs };
-  }
-
-  // 4D rotation operators — each is an element of SO(4) by construction
-  // (block-diagonal; det = cos²a + sin²a = 1; proven by Leanstral 2026-05-18).
+  // SO(4) rotation operators (det=1, oracle-verified Leanstral 2026-05-18).
   function rotZW(v: number[], a: number) { return [v[0], v[1], v[2]*Math.cos(a)-v[3]*Math.sin(a), v[2]*Math.sin(a)+v[3]*Math.cos(a)]; }
   function rotXW(v: number[], a: number) { return [v[0]*Math.cos(a)-v[3]*Math.sin(a), v[1], v[2], v[0]*Math.sin(a)+v[3]*Math.cos(a)]; }
   function rotYW(v: number[], a: number) { return [v[0], v[1]*Math.cos(a)-v[3]*Math.sin(a), v[2], v[1]*Math.sin(a)+v[3]*Math.cos(a)]; }
-
-  // Perspective projection ℝ⁴ → ℝ³.
-  // Denominator max(2.2 − w, 0.3) ≥ 0.3 > 0 for all w ∈ ℝ (proven: le_max_right).
   function proj4(v: number[]): THREE.Vector3 {
     const d = 2.2, w = Math.max(d - v[3], 0.3), s = 2.6 / w;
     return new THREE.Vector3(v[0]*s, v[1]*s, v[2]*s);
   }
 
-  const { verts4d: baseVerts, s1Edges, s2Edges, rungEdges, nodeIdxs } = genDoubleHelix();
+  function simplex5cell(): Poly {
+    // Project 5 standard-basis vectors of ℝ⁵ (minus centroid) to ℝ⁴ via Gram-Schmidt.
+    const raw = Array.from({length:5}, (_,k) => Array.from({length:5}, (_,j) => (j===k?1:0)-0.2));
+    const basis: number[][] = [];
+    for (const v of raw) {
+      if (basis.length === 4) break;
+      let u = [...v];
+      for (const b of basis) { const d = u.reduce((s,x,i)=>s+x*b[i],0); for (let i=0;i<5;i++) u[i]-=d*b[i]; }
+      const len = Math.sqrt(u.reduce((s,x)=>s+x*x,0));
+      if (len > 1e-10) basis.push(u.map(x=>x/len));
+    }
+    const verts = raw.map(v5 => {
+      const v4 = basis.map(b => v5.reduce((s,x,i)=>s+x*b[i],0));
+      const n = Math.sqrt(v4.reduce((s,x)=>s+x*x,0));
+      return v4.map(x=>x/n);
+    });
+    const edges: [number,number][] = [];
+    for (let i=0;i<5;i++) for (let j=i+1;j<5;j++) edges.push([i,j]);
+    return { verts, edges };
+  }
+
+  function tesseract(): Poly {
+    const verts: number[][] = [];
+    for (const a of [-1,1]) for (const b of [-1,1]) for (const c of [-1,1]) for (const d of [-1,1])
+      verts.push([a/2,b/2,c/2,d/2]);
+    const edges: [number,number][] = [];
+    for (let i=0;i<16;i++) for (let j=i+1;j<16;j++) {
+      let diff=0; for (let k=0;k<4;k++) if (verts[i][k]!==verts[j][k]) diff++;
+      if (diff===1) edges.push([i,j]);
+    }
+    return { verts, edges };
+  }
+
+  function hexadecachoron(): Poly {
+    const verts: number[][] = [[1,0,0,0],[-1,0,0,0],[0,1,0,0],[0,-1,0,0],[0,0,1,0],[0,0,-1,0],[0,0,0,1],[0,0,0,-1]];
+    const edges: [number,number][] = [];
+    for (let i=0;i<8;i++) for (let j=i+1;j<8;j++) {
+      let d2=0; for (let k=0;k<4;k++) d2+=(verts[i][k]-verts[j][k])**2;
+      if (Math.abs(d2-2)<0.01) edges.push([i,j]);
+    }
+    return { verts, edges };
+  }
+
+  function icositetrachoron(): Poly {
+    const verts: number[][] = [];
+    for (let i=0;i<4;i++) for (let j=i+1;j<4;j++) for (const si of [-1,1]) for (const sj of [-1,1]) {
+      const v=[0,0,0,0]; v[i]=si/Math.SQRT2; v[j]=sj/Math.SQRT2; verts.push(v);
+    }
+    const edges: [number,number][] = [];
+    for (let i=0;i<verts.length;i++) for (let j=i+1;j<verts.length;j++) {
+      let d2=0; for (let k=0;k<4;k++) d2+=(verts[i][k]-verts[j][k])**2;
+      if (Math.abs(d2-1)<0.01) edges.push([i,j]);
+    }
+    return { verts, edges };
+  }
+
+  function rectified5cell(): Poly {
+    const { verts: v5 } = simplex5cell();
+    const verts: number[][] = [];
+    const pairs: [number,number][] = [];
+    for (let i=0;i<5;i++) for (let j=i+1;j<5;j++) {
+      const mid = v5[i].map((x,k)=>(x+v5[j][k])/2);
+      const n = Math.sqrt(mid.reduce((s,x)=>s+x*x,0));
+      verts.push(mid.map(x=>x/n));
+      pairs.push([i,j]);
+    }
+    const edges: [number,number][] = [];
+    for (let i=0;i<10;i++) for (let j=i+1;j<10;j++) {
+      const [a,b]=pairs[i],[c,d]=pairs[j];
+      if (a===c||a===d||b===c||b===d) edges.push([i,j]);
+    }
+    return { verts, edges };
+  }
+
+  function duoprism55(): Poly {
+    const N=5, verts: number[][] = [], edges: [number,number][] = [];
+    for (let i=0;i<N;i++) for (let j=0;j<N;j++) {
+      const ai=2*Math.PI*i/N, aj=2*Math.PI*j/N;
+      verts.push([Math.cos(ai)/Math.SQRT2, Math.sin(ai)/Math.SQRT2, Math.cos(aj)/Math.SQRT2, Math.sin(aj)/Math.SQRT2]);
+    }
+    for (let i=0;i<N;i++) for (let j=0;j<N;j++) {
+      edges.push([i*N+j, ((i+1)%N)*N+j]);
+      edges.push([i*N+j, i*N+((j+1)%N)]);
+    }
+    return { verts, edges };
+  }
+
+  // One polytope per subsystem — named to match the checklist.
+  const polytopes: Poly[] = [
+    simplex5cell(),      // Pentachoron  / QUANTUM
+    tesseract(),         // Tesseract    / AYIN
+    hexadecachoron(),    // Hexadecachoron / CORSO
+    icositetrachoron(),  // Icositetrachoron / LÆX
+    rectified5cell(),    // Rectified 5-Cell / EVA
+    duoprism55(),        // Duoprism     / SERAPH
+  ];
+
+  // Plain object shared between the reactive watcher and the animation loop.
+  // Not $state — the animation loop reads it every frame without creating a dependency.
+  const morphState = { target: 0, alpha: 1.0 };
+
+  $effect(() => {
+    // Advance polytope when a subsystem completes.
+    const next = Math.min(doneIdxs.length, polytopes.length - 1);
+    if (next !== morphState.target) { morphState.target = next; morphState.alpha = 0.0; }
+  });
 
   $effect(() => {
     if (!canvas) return;
     const w = window.innerWidth, h = window.innerHeight;
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(55, w/h, 0.1, 100);
-    camera.position.set(0, 0, 5.5);
-    camera.lookAt(0, 0, 0);
+    camera.position.set(0, 0, 4.5);
     const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
     renderer.setSize(w, h);
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.setClearColor(0x000000, 0);
 
-    const nVerts = baseVerts.length;
-    const projected3D = Array.from({ length: nVerts }, () => new THREE.Vector3());
+    const maxE = Math.max(...polytopes.map(p=>p.edges.length));
+    const maxV = Math.max(...polytopes.map(p=>p.verts.length));
 
-    const mkSegs = (edges: [number,number][], color: number, opacity: number) => {
-      const pos = new Float32Array(edges.length * 6);
+    // Two draw sets for crossfade (A = fading out, B = fading in).
+    const mkSet = (opacity: number) => {
+      const pos = new Float32Array(maxE * 6);
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false });
-      scene.add(new THREE.LineSegments(geo, mat));
-      return { pos, geo, mat };
+      const mat = new THREE.LineBasicMaterial({ color: 0xff6600, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false });
+      const matG = new THREE.LineBasicMaterial({ color: 0x00d26a, transparent: true, opacity: opacity*0.22, blending: THREE.AdditiveBlending, depthWrite: false });
+      const geoG = new THREE.BufferGeometry();
+      geoG.setAttribute('position', new THREE.BufferAttribute(new Float32Array(maxE*6), 3));
+      const segs = new THREE.LineSegments(geo, mat); segs.scale.setScalar(1); scene.add(segs);
+      const glowSegs = new THREE.LineSegments(geoG, matG); glowSegs.scale.setScalar(1.04); scene.add(glowSegs);
+      return { pos, geo, mat, matG, geoG };
     };
+    const setA = mkSet(0.75);
+    const setB = mkSet(0.0);
 
-    const s1  = mkSegs(s1Edges,   0xff6600, 0.85);  // strand 1 — orange
-    const s2  = mkSegs(s2Edges,   0x00ccff, 0.85);  // strand 2 — cyan
-    const rng = mkSegs(rungEdges, 0xffcc44, 0.55);  // rungs — gold
-
-    const nodePos = new Float32Array(nodeIdxs.length * 3);
+    const nodePos = new Float32Array(maxV * 3);
     const nodeGeo = new THREE.BufferGeometry();
     nodeGeo.setAttribute('position', new THREE.BufferAttribute(nodePos, 3));
-    scene.add(new THREE.Points(nodeGeo, new THREE.PointsMaterial({ color: 0xffcc44, size: 0.07, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })));
+    const nodeMat = new THREE.PointsMaterial({ color: 0xffcc44, size: 0.055, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+    scene.add(new THREE.Points(nodeGeo, nodeMat));
 
-    const updateSegs = (edges: [number,number][], buf: Float32Array, geo: THREE.BufferGeometry) => {
-      for (let i = 0; i < edges.length; i++) {
-        const [a, b] = edges[i];
-        buf[i*6  ] = projected3D[a].x; buf[i*6+1] = projected3D[a].y; buf[i*6+2] = projected3D[a].z;
-        buf[i*6+3] = projected3D[b].x; buf[i*6+4] = projected3D[b].y; buf[i*6+5] = projected3D[b].z;
+    // Per-polytope projected vertex cache.
+    const projCache = polytopes.map(p => p.verts.map(() => new THREE.Vector3()));
+
+    const writeSet = (set: typeof setA, polyIdx: number) => {
+      const { edges } = polytopes[polyIdx];
+      const proj = projCache[polyIdx];
+      for (let i=0;i<edges.length;i++) {
+        const [a,b]=edges[i];
+        set.pos[i*6  ]=proj[a].x; set.pos[i*6+1]=proj[a].y; set.pos[i*6+2]=proj[a].z;
+        set.pos[i*6+3]=proj[b].x; set.pos[i*6+4]=proj[b].y; set.pos[i*6+5]=proj[b].z;
       }
-      geo.attributes.position.needsUpdate = true;
+      set.geo.setDrawRange(0, edges.length*2);
+      set.geo.attributes.position.needsUpdate = true;
+      (set.geoG.attributes.position.array as Float32Array).set(set.pos);
+      set.geoG.setDrawRange(0, edges.length*2);
+      set.geoG.attributes.position.needsUpdate = true;
     };
 
+    let currentIdx = 0;
+    let targetIdx  = 0;
     const timer = new THREE.Timer();
+    let prevT = 0;
     let animId: number;
 
     function animate() {
       animId = requestAnimationFrame(animate);
       timer.update();
       const t = timer.getElapsed();
+      const dt = t - prevT; prevT = t;
 
-      for (let i = 0; i < nVerts; i++) {
-        let v = rotZW(baseVerts[i], t * 0.30);
-        v = rotXW(v, t * 0.17);
-        v = rotYW(v, t * 0.09);
-        projected3D[i].copy(proj4(v));
+      // Advance morph.
+      if (morphState.target !== targetIdx) { targetIdx = morphState.target; morphState.alpha = 0.0; }
+      if (morphState.alpha < 1.0) {
+        morphState.alpha = Math.min(1.0, morphState.alpha + dt / 1.4);
+        if (morphState.alpha >= 1.0) { currentIdx = targetIdx; morphState.alpha = 1.0; }
+      }
+      const ease = morphState.alpha < 1.0
+        ? morphState.alpha * morphState.alpha * (3 - 2 * morphState.alpha)  // smoothstep
+        : 1.0;
+
+      // Project all needed polytopes under the current 4D rotation.
+      const needed = new Set([currentIdx, targetIdx]);
+      for (const idx of needed) {
+        const { verts } = polytopes[idx];
+        const proj = projCache[idx];
+        for (let i=0;i<verts.length;i++) {
+          let v = rotZW(verts[i], t*0.42);
+          v = rotXW(v, t*0.25); v = rotYW(v, t*0.12);
+          proj[i].copy(proj4(v));
+        }
       }
 
-      updateSegs(s1Edges,   s1.pos,  s1.geo);
-      updateSegs(s2Edges,   s2.pos,  s2.geo);
-      updateSegs(rungEdges, rng.pos, rng.geo);
-
-      for (let i = 0; i < nodeIdxs.length; i++) {
-        nodePos[i*3  ] = projected3D[nodeIdxs[i]].x;
-        nodePos[i*3+1] = projected3D[nodeIdxs[i]].y;
-        nodePos[i*3+2] = projected3D[nodeIdxs[i]].z;
+      if (ease < 1.0) {
+        writeSet(setA, currentIdx);
+        writeSet(setB, targetIdx);
+        const pulse = 0.60 + Math.sin(t*1.4)*0.22;
+        setA.mat.opacity = pulse * (1 - ease);
+        setA.matG.opacity = pulse * (1 - ease) * 0.22;
+        setB.mat.opacity = pulse * ease;
+        setB.matG.opacity = pulse * ease * 0.22;
+      } else {
+        writeSet(setA, currentIdx);
+        const pulse = 0.60 + Math.sin(t*1.4)*0.22;
+        setA.mat.opacity = pulse;
+        setA.matG.opacity = pulse * 0.22;
+        setB.mat.opacity = 0; setB.matG.opacity = 0;
       }
+
+      // Nodes from current polytope.
+      const nv = polytopes[currentIdx].verts.length;
+      const proj = projCache[currentIdx];
+      for (let i=0;i<nv;i++) { nodePos[i*3]=proj[i].x; nodePos[i*3+1]=proj[i].y; nodePos[i*3+2]=proj[i].z; }
+      nodeGeo.setDrawRange(0, nv);
       nodeGeo.attributes.position.needsUpdate = true;
-
-      s1.mat.opacity  = 0.70 + Math.sin(t * 1.2) * 0.15;
-      s2.mat.opacity  = 0.70 + Math.sin(t * 1.2 + Math.PI / 3) * 0.15;
-      rng.mat.opacity = 0.40 + Math.sin(t * 0.8) * 0.15;
 
       renderer.render(scene, camera);
     }
     animate();
 
-    return () => {
-      cancelAnimationFrame(animId);
-      renderer.dispose();
-    };
+    return () => { cancelAnimationFrame(animId); renderer.dispose(); };
   });
 </script>
 
