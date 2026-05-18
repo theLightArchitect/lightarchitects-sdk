@@ -4,6 +4,7 @@ Companion changelog for `security-guardrails.md`. Doc holds **current state only
 
 **Authoritative latest version**: see the inline footer in `security-guardrails.md`.
 **Mechanical history**: `git log -- standards/canon/security-guardrails.md`
+**Constitutional basis**: Canon XLII — Schema-Changelog Separation (LÆX candidate #21, ratification pending). See `canon://platform-canon` §"Canon XLII".
 
 ---
 

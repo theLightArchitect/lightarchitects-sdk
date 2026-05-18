@@ -5,6 +5,7 @@ Companion changelog for `LASDLC-TEMPLATE-v1.yaml`. Schema file holds **current s
 **Authoritative version**: see `template_version` field in `LASDLC-TEMPLATE-v1.yaml` header.
 **Mechanical history**: `git log -- standards/canon/LASDLC-TEMPLATE-v1.yaml`
 **Inline version markers**: `added_in_template_version: "X.Y.Z"` annotations throughout schema fields.
+**Constitutional basis**: Canon XLII — Schema-Changelog Separation (LÆX candidate #21, ratification pending). See `canon://platform-canon` §"Canon XLII".
 
 ---
 

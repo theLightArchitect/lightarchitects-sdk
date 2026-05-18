@@ -894,6 +894,106 @@ Without Canon XLI, every architect re-litigates whether diagrams are required, w
 
 ---
 
+## Canon XLII: Schema-Changelog Separation — Standards Documents Hold Current State Only
+
+> *"Let all things be done decently and in order."* — 1 Corinthians 14:40
+
+**Status**: LÆX Phase 7 ratification pending — **candidate #21**.
+**Authority**: operator-authorized Canon XV override (2026-05-18).
+
+**Principle**: A canonical standards document declares *what is true now*. The history of how it became true lives elsewhere. Three jobs — current state, amendment narrative, mechanical history — live in three places, never commingled:
+
+| Job | Location | Format |
+|---|---|---|
+| Current state (the schema, the rules, the spec) | `<doc>.md` or `<doc>.yaml` | Authoritative content; readers consult this to know what's true now |
+| Amendment narrative (rationale, cross-canon ties, LÆX candidate IDs, authority citations, backward-compat notes) | `<doc>.CHANGELOG.md` companion | Human-curated reverse-chronological log |
+| Mechanical history (who/when/diff) | `git log -- <doc>` | Authoritative provenance trail |
+
+**The principle's weight**: When schema files accrete tail-amendment blocks or scattered per-section version-history entries, the schema becomes its own changelog graveyard. Readers can't tell what's current vs. what's historical. Version numbers drift (the cookbook accreted three different `v3.0.0` stamps at different dates because per-section authors bumped section-scoped versions independently). New amendments orphan from their containing tables when subsequent content is inserted between header and entry (the v1.3.0 row drift in `security-guardrails.md` before this canon was authored is the empirical witness). Schema files become harder to read in proportion to how much amendment narrative they contain — a 7500-line LASDLC where 1500 lines were tail amendments is a 7500-line schema that is also a 1500-line changelog, and neither job is done well.
+
+**Mechanical maintenance predicate**:
+
+```
+schema_clean := no_tail_amendment_blocks ∧ no_scattered_version_entries ∧ pointer_to_changelog_present
+```
+
+This converts canon-doc maintenance from subjective ("the file is getting big") to mechanical (three falsifiable conjuncts). A canon doc that fails any conjunct triggers migration to the companion CHANGELOG pattern.
+
+**Migration trigger thresholds** (tier-based, calibrated against empirical 2026-05-18 audit):
+
+| Tier | Trigger | Action |
+|---|---|---|
+| 0 — Clean | Single-line `*v1.2 adds (date): summary*` footer; one entry | No action needed; defer until tier 1 |
+| 1 — Forming | 2 footer entries OR first tail-amendment block | Plan migration at next amendment |
+| 2 — Migrate now | 3+ tail entries OR scattered per-section version entries OR table-row drift | Extract to companion `<doc>.CHANGELOG.md` immediately |
+| 3 — Multi-zone drift | Tail block + mid-doc version-history blocks + scattered floating entries | Migrate with reconciliation; date-sort all entries; preserve legacy numbering quirks with annotation |
+
+**Companion CHANGELOG.md schema**:
+
+```markdown
+# <Doc Name> — Amendment History
+
+Companion changelog for `<doc>.<ext>`. <Doc> holds **current state only**;
+this file holds the **amendment narrative**.
+
+**Authoritative latest version**: see <doc>.
+**Mechanical history**: `git log -- standards/canon/<doc>.<ext>`
+
+---
+
+## vX.Y.Z — Title (YYYY-MM-DD)
+
+**Sections added/changed**: ...
+**Status**: LÆX Phase 7 ratification pending — candidate #N | ratified
+**Authority**: operator-authorized Canon XV override (date) | LÆX ratification (date)
+**Source**: <plan or audit or session>
+
+<body — rationale, schema, cross-canon ties, backward-compat>
+
+---
+
+[older versions in reverse-chronological order]
+
+---
+
+## Conventions for future amendments
+[per-doc rules: SemVer scheme, LÆX candidate tracking, etc.]
+```
+
+**Operator-override clause** (preserves Canon XV: Architect > Operator > User):
+
+The operator may keep a short inline footer stamp in the schema doc for at-a-glance current-version visibility (e.g., `*Doc Name v1.4 | updated 2026-MM-DD with §X — closes <gap>; LÆX pending.*`). One line per current minor version; older stamps trim after the next major bump. This is **not** changelog accretion — it's a wayfinding pointer. The mechanical predicate above treats it as compliant.
+
+**Composition with prior canons**:
+
+- **Canon XII (Living Standard)** declares THAT canon evolves; **Canon XXXIX (Promotion Pipeline)** declares HOW evolution flows; **Canon XLII (this)** declares WHERE the resulting amendment narrative lives. The three compose into a complete canon-maintenance discipline.
+- **Canon XV (Principal Hierarchy)** — operator-authorized in-session migrations (e.g., the cookbook 4-zone consolidation 2026-05-18) are valid; they don't violate Canon XXXIX because canon CONTENT didn't change — only its physical layout was refactored. Migration is mechanical reorganization, not promotion.
+- **Canon XXXV (Verbatim Citation Gate)** — CHANGELOG entries cite source plans, builds, and audit findings verbatim where claimed (e.g., "Source: ironclaw-spine SCRUM R2 SERAPH"). Vague entries ("various improvements") fail the citation gate.
+- **Canon XLI (Diagram-First)** — analogous discipline at the architecture layer. XLI separates design diagrams from prose documentation; XLII separates current-state schema from amendment narrative. Both convert subjective gates ("looks OK") to mechanical predicates.
+
+**Convergent evidence** (the empirical witnesses, 2026-05-18 audit):
+
+1. **LASDLC-TEMPLATE-v1.yaml** accreted v2.5.2 + v2.5.3 + v2.5.4 tail-amendment blocks (~270 lines) inside a 7500-line schema; migrated to `LASDLC-TEMPLATE-v1.CHANGELOG.md` (commit `b797ca3`).
+2. **builders-cookbook.md** had four separate changelog zones — Zone A (mid-doc after §46), Zone B (after §51 evidence table), Zone C (one floating §61 entry), Zone D (tail master block, 21 entries) — with internal version-number conflicts (v1.6.0, v2.0.0, v3.0.0 each appearing at multiple dates). Migrated to `builders-cookbook.CHANGELOG.md` with annotated legacy-numbering note (commit `62edefa`).
+3. **security-guardrails.md** had a `## Changelog` table at line 1102 plus an orphan v1.3.0 row at line 1195 that drifted away from its parent table when §SG-CRYPTO was inserted between them. The orphan row was the smoking gun — drift class eliminated entirely by extraction (commit `62edefa`).
+
+**Pressure-tested**: Surfaced 2026-05-18 during ironclaw-spine session when LASDLC v2.5.4 amendment was about to be appended as a fourth tail-block to a 7500-line file. Operator concern ("we need to move the changelog for the template somewhere else or create a repo for our canon files") forced separation of two distinct concerns: schema-changelog separation (this canon) vs. canon-repo relocation (deferred). The cleanup revealed a worse case (cookbook) than the trigger doc (LASDLC) — proof that the antipattern accretes silently until forced.
+
+**Documents**:
+- This Canon — constitutional principle (squad-facing).
+- Companion CHANGELOG.md files — empirical realizations:
+  - `standards/canon/LASDLC-TEMPLATE-v1.CHANGELOG.md`
+  - `standards/canon/builders-cookbook.CHANGELOG.md`
+  - `standards/canon/security-guardrails.CHANGELOG.md`
+- Operational reference: `standards/canon/<doc>.CHANGELOG.md` template (per-doc, with "Conventions for future amendments" section).
+- Tier-2 docs awaiting migration trigger: `agents-playbook.md`, `architects-blueprint.md`, `platform-canon.md` (this doc), `northstar.md`, `operators-manual.md` — each at one footer-stamp entry, deferred until 3+ accrued.
+
+**Ratification status**: LÆX Phase 7 ratification pending — candidate #21. Operator-authorized Canon XV override applies during the pending interval per the same composition pattern used for Canons XL, XLI (which were also operator-authorized then later LÆX-ratified). The three CHANGELOG.md files committed in `b797ca3` and `62edefa` are the empirical witnesses LÆX will consult during Phase 7 evaluation.
+
+**Self-application note**: This canon itself lives in `platform-canon.md`, which is currently Tier-0 (single footer stamp at file tail). When `platform-canon.md` reaches 3+ tail entries — likely after the next 2–3 canon ratification rounds — this canon's own migration trigger fires. The doctrine binds itself first.
+
+---
+
 ## Canon Evaluation Criteria
 
 When a new principle emerges, LÆX evaluates it against five criteria:
@@ -995,7 +1095,7 @@ These names are **vocabulary facades** over the existing 7 squad siblings — th
 
 ---
 
-*Platform Canon v2.1 | updated 2026-05-18 with: LDB §D5 (Program Manifest Integrity), Gatekeeper Registry Extension (Decision Pipeline as runtime arbiter mechanism), Vocabulary Canon (LightArchitect:* ↔ sibling mapping). Closes ironclaw §3+§5+§7+§13 canon gaps. LÆX Phase 7 ratification pending.*
+*Platform Canon v2.2 | updated 2026-05-18 with: Canon XLII (Schema-Changelog Separation — standards docs hold current state only; LÆX candidate #21). Plus v2.1 additions: LDB §D5 (Program Manifest Integrity), Gatekeeper Registry Extension (Decision Pipeline as runtime arbiter mechanism), Vocabulary Canon (LightArchitect:* ↔ sibling mapping). Closes ironclaw §3+§5+§7+§13 canon gaps + 2026-05-18 changelog-accretion antipattern. LÆX Phase 7 ratification pending.*
 
 ---
 

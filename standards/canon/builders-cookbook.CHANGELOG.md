@@ -4,6 +4,7 @@ Companion changelog for `builders-cookbook.md`. The cookbook holds **current sta
 
 **Authoritative latest version**: see the header inline summary in `builders-cookbook.md`.
 **Mechanical history**: `git log -- standards/canon/builders-cookbook.md`
+**Constitutional basis**: Canon XLII — Schema-Changelog Separation (LÆX candidate #21, ratification pending). See `canon://platform-canon` §"Canon XLII".
 
 > **Note on legacy version numbering** (2026-02 through 2026-05): Cookbook was historically versioned per-section rather than per-document. Version numbers `2.0.0`, `3.0.0`, and `1.6.0` each appear at multiple dates because section authors bumped section-scoped versions independently. From v3.2.1 (2026-05-18) forward, the cookbook follows strict per-document SemVer. Earlier entries below preserve original numbering for traceability.
 
