@@ -936,5 +936,76 @@ Keep each logical standard as **one file** in the registry. Split only when two 
 
 ---
 
-*Operators Manual v1.1 | Light Architects | 2026-05-12*
+---
+
+<!-- ──────────────────────────────────────────────────────────────────────────
+     IRONCLAW-SPINE CANON AMENDMENT (2026-05-18 iter-7)
+     Source plan: ~/.claude/plans/ironclaw-spine.md Phase 2A + §22.6
+     Source proposal: ~/Downloads/ironclaw-architecture.html §8 + §12
+     Authority: operator-authorized Canon XV override (2026-05-18)
+     ────────────────────────────────────────────────────────────────────────── -->
+
+## §Run-Control-Primitives — Autonomous-Mode Lifecycle (2026-05-18 ADDITION)
+
+For long-running autonomous builds, the operator interacts via 4 lifecycle primitives:
+
+| Primitive | Effect | When |
+|---|---|---|
+| `lightarchitects supervisor start` | daemonize via launchd `gui/<uid>/io.lightarchitects.supervisor`; bind Unix socket `~/.lightarchitects/supervisor.sock`; load canon corpus + program manifest | At `/BUILD --autonomous` after preflight APPROVE |
+| `lightarchitects supervisor pause` | Quiesce wave dispatcher (no new tasks); in-flight tasks complete naturally; supervisor stays connected | Operator wants to inspect state without aborting |
+| `lightarchitects supervisor drain` | `pause` + await all in-flight task completion + checkpoint to `runs/<id>/state.json` (atomic write per CWE-662) | Operator wants safe pause-point (e.g., laptop reboot) |
+| `lightarchitects supervisor resume` | Load checkpoint + verify HMAC subkey-id + resume wave dispatch | After `drain` or `pause` |
+| `lightarchitects supervisor stop` | Graceful SIGTERM → 5s grace → SIGKILL; persist final state | End of build |
+| `lightarchitects supervisor status` | pid + channel health + decision count + L4 escalation count + heartbeat lag | Operator triage |
+| `lightarchitects supervisor channel` | Tail HITL channel events (decisions.md tail + escalation.notify spans) | Live decision audit |
+| `lightarchitects attach <run_id>` | Reconnect to running supervisor via Unix socket from any Claude Code session (HMAC handshake; subkey-id matches active run) | Tab close ≠ supervisor death |
+
+**Key lifecycle ceremony** (composes with security-guardrails §SG-CRYPTO):
+- Operator-approval at `/BUILD --autonomous` performs Ed25519 keygen ceremony (Touch ID-gated)
+- HKDF master key derived from operator-approval ceremony; per-wave subkeys via HKDF-SHA256
+- Revocation: `supervisor stop` + `supervisor start` regenerates master → invalidates all prior subkeys
+- Mid-build key rotation: `supervisor rotate-keys` triggers fresh HKDF chain + decisions.md hash-chain restart
+
+**Escalation notification config** (per agents-playbook §HITL-7):
+- Default: webshell SSE toast + `osascript -e 'display notification'`
+- Optional: Telegram/SMS webhook via `lightarchitects supervisor notify --add <webhook_url>`
+- Severity floor: operator-tunable; default = all L4 escalations notify; throttle frequency NOT global disable
+
+**`lightarchitects mode --check <project>`** (autonomous↔interactive switch safety):
+- Detects uncommitted work in tracked worktrees
+- Detects stale `feat/*` branches from prior autonomous runs
+- Detects in-flight gates (`.gate-evals/*.jsonl` recent)
+- Detects `.ironclaw/state.json` from prior autonomous run
+- Returns HALT/WARN/PROCEED verdict; HALT blocks `/BUILD --autonomous` if interactive `/BUILD` is mid-execution
+
+---
+
+## §Model-Routing-Doctrine — Route Intentionally (2026-05-18 ADDITION)
+
+Per ironclaw-architecture.html §12: rate limits are per-model and tracked separately. Using Haiku does not consume Sonnet quota. Using Ollama Cloud (fixed subscription) does not consume Anthropic API quota. **Route intentionally.**
+
+| Task type | Model | Why |
+|---|---|---|
+| Complex implementation, multi-file | Anthropic Sonnet | Best reasoning depth for cross-file consistency |
+| ReviewGate, canon alignment | Anthropic Sonnet | Judgment + instruction following precision — non-negotiable, this is the moat |
+| Architectural decisions | Anthropic Sonnet | Non-negotiable; load-bearing for §S Component Northstar |
+| Medium-complexity implementation | Ollama Cloud (`qwen3-coder:480b-cloud`, `deepseek-v3.1:671b-cloud`) | Frontier quality at fixed-subscription cost; failover lane = Anthropic Haiku |
+| Simple edits, formatting, config | Anthropic Haiku | Fast, cheap, sufficient for well-scoped tasks |
+| Test boilerplate, commit messages | Anthropic Haiku | Pattern tasks, no reasoning needed |
+| Git ops, merge, worktree management | git2 / `Command::new("git")` (ZERO LLM) | Pure git ops, deterministic, serialized via MergeAgent mutex |
+
+**Failover discipline** (per security-guardrails §SG-CRYPTO.5):
+- Ollama 429/5xx → auto-failover to Anthropic Haiku 4.5
+- Circuit breaker on failover count: HITL at 50% of cost ceiling; auto-HALT at 100%
+- AYIN `model.failover_total{from,to,cause}` counter tracks
+- Anthropic Sonnet moat tier has NO failover (quality is non-negotiable; rate-limit → HITL escalate, not silent downgrade)
+
+**SLA-anchored model selection**:
+- Anthropic API has published SLA + rate-limit headers — production-safe for moat tier
+- Ollama Cloud has NO published SLA — appropriate for worker tier WHERE a gate will catch quality gaps (ReviewGate)
+- Self-hosted models — only if compute available; never as moat-tier
+
+---
+
+*Operators Manual v1.2 | Light Architects | updated 2026-05-18 with §Run-Control-Primitives + §Model-Routing-Doctrine (closes ironclaw §8 + §12 canon gaps; LÆX Phase 7 ratification pending)*
 *Part of the Canonical Suite. Supersedes: northstar-v1.md, platform-architecture-v2.md, lens-driven-squad-selection.md, soul-cycle.md, secret-leak-runbook.md, ai-detection-checklist.md, tts-voice-production.md.*

@@ -31,6 +31,14 @@ gatekeepers:
   engineer:
     sibling: CORSO
     primary_gates: ["[A]"]
+    gate_predicate:                              # Canon XLI ratified 2026-05-17
+      formula: "diagram_present AND drift_clean AND checklist_current"
+      conjuncts:
+        diagram_present: "Tier-appropriate C-level diagrams exist (SMALL=C3; MEDIUM=C2+C3; LARGE=C1+C2+C3+C4+ERD+sequence)"
+        drift_clean: "arch verify (or manual inspection until tooling ships) returns zero BLOCKING findings"
+        checklist_current: "Compliance checklist xea_verified within TTL"
+      canonical_ref: "canon://platform-canon Canon XLI"
+      operator_override: "diagram_waiver in plan frontmatter; expires at next [A] gate; auto-flags for LÆX retrospective; SMALL-tier only without Canon XV invocation"
     home_folders:
       - "industry-baselines/architecture/"
     consults:
@@ -38,7 +46,7 @@ gatekeepers:
       - "canon/agent-architecture.md"
       - "canon/agent-dispatch-templates.md"
     invocation: "lightarchitects:engineer"
-    role_summary: "Architectural integrity — viewpoint coverage, modularity, SoC, coupling discipline. Anchors against IEEE/ISO/IEC 42010 vocabulary."
+    role_summary: "Architectural integrity — viewpoint coverage, modularity, SoC, coupling discipline. Anchors against IEEE/ISO/IEC 42010 vocabulary. Enforces Canon XLI Diagram-First Doctrine via the mechanical gate_predicate above."
 
   security:
     sibling: SERAPH

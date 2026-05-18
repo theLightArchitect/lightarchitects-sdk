@@ -2,11 +2,12 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.6"
-status: ratified
+version: "1.0.8"  # bumped 2026-05-18 per ironclaw-spine iter-7 canon amendments (Phase 2A.5); covers gitforest-live-ops §2.17-2.19 + ironclaw §2.10b/c/d + §1.6 SG-CRYPTO cross-ref + 5 WebEvent variants + §2.10 PR-drift fix
+status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
-date: "2026-05-17"
-xea_verified: "2026-05-17"
+date: "2026-05-18"
+xea_verified: "2026-05-17"  # 1.0.6 ratified; 1.0.8 pending re-XEA at Phase 7
+amended_by: "ironclaw-spine iter-7 (operator-authorized Canon XV override 2026-05-18)"
 ratified_by: "kevin"
 type: reference
 format: markdown
@@ -174,6 +175,8 @@ Two caller types; two auth mechanisms — never interchangeable.
 
 > **Why the split?** If the machine notify token were readable by browser JavaScript, an XSS vulnerability could exfiltrate it and forge agent callbacks — turning a UI-layer exploit into a server-side event injection. The token is excluded from `BuildResponse` (the JSON sent to the browser after build creation) by design. `AuthGuard` reads only the session cookie; the notify bearer path is a separate extractor. This is a deliberate CWE-306 prevention: two attack surfaces, separated in code, not just convention. See `src/agent/bridge.rs` for the omission point.
 
+**Cross-reference (2026-05-18 ADDITION)**: For autonomous-mode builds, program manifest integrity adds an Ed25519-signed `program.toml` + per-wave HKDF-SHA256 HMAC subkey chain. See `security-guardrails §SG-CRYPTO` for the full ceremony (Touch-ID-gated Keychain keygen, subkey-id stamping in decisions.md, revocation-via-restart). Program manifest verification fires pre-dispatch on every task; mismatch HALTS.
+
 ---
 
 ## Part II — Backend API Endpoints
@@ -206,6 +209,22 @@ Two caller types; two auth mechanisms — never interchangeable.
 | `GET (SSE)` | `/api/builds/{id}/events` | Per-build SSE stream |
 | `POST` | `/api/builds/{id}/notify` | Push a notification to a build's SSE channel |
 | `GET (SSE)` | `/api/events/global` | SSE: replays ring-buffer snapshot (last 1,000 events) then streams live global events; filterable via `EventFilter` query params |
+| `GET (SSE)` | `/api/conductor/events` | (2026-05-18 ADDITION) Conductor queue + heartbeat live events; debounced 250ms |
+
+#### §2.3.1 WebEvent Variants — 2026-05-18 ADDITIONS
+
+ironclaw-spine + gitforest-live-ops add 6 new WebEvent variants (zero collisions vs 17 existing variants — verified at `lightarchitects-webshell/src/events/types.rs:18-156` per Task #18):
+
+| Variant | Wire tag | Payload | Source plan |
+|---|---|---|---|
+| `Escalation` | `escalation` | `{ build_id, reason, severity, requires_ack, dispatched_at, ack_deadline_ms }` | ironclaw §HITL-7 escalation.notify |
+| `WorkerSlotGauge` | `worker_slot_gauge` | `{ occupied: u32, total: u32, by_model: HashMap<ModelTier, u32> }` | ironclaw worker pool observability |
+| `ConductorTick` | `conductor_tick` | `{ kind, queue_depth, heartbeat_ts, subkey_id }` | ironclaw FOLD-3 (renamed from `ConductorEvent` to avoid `GatewayNotify` overlap) |
+| `MergeAgentStatus` | `merge_agent_status` | `{ build_id, queue_depth, in_flight, lock_wait_ms_p95 }` | ironclaw MergeAgent observability |
+| `FixAgentIteration` | `fix_agent_iteration` | `{ build_id, iter, cap, outcome }` | ironclaw FixAgent loop bounded at 3 |
+| `GitForestUpdate` | `gitforest_update` | `{ repo, branch, kind: "branch_added"\|"ci_status"\|"conductor_ghost", payload }` | gitforest-live-ops |
+
+Wire tags use `serde(rename_all = "snake_case")` per the existing enum convention.
 
 ### §2.4 Builds Core
 
@@ -298,7 +317,7 @@ Registered via `.merge(dispatch::dispatch_router())`. All routes require `Author
 
 ### §2.10 Git Operations
 
-All routes accept a repo path in the request body. No worktree operations exist.
+All routes accept a repo path in the request body. Implementation: 100% `tokio::process::Command::new("git")` for local ops + `reqwest` direct GitHub REST API for PR ops (verified at `lightarchitects-webshell/src/server/git_routes.rs:41,124-162,179-195`). Worktree operations are internal-only (§2.10b/c) — no HTTP write surface; state observable via read endpoint.
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -308,8 +327,47 @@ All routes accept a repo path in the request body. No worktree operations exist.
 | `POST` | `/api/git/commit` | Stage and commit |
 | `POST` | `/api/git/push` | Push to remote |
 | `POST` | `/api/git/pull` | Pull from remote |
-| `POST` | `/api/git/pr/create` | Create a GitHub PR via `gh` |
-| `POST` | `/api/git/pr/review` | Review or merge a PR |
+| `POST` | `/api/git/pr/create` | Create a GitHub PR via GitHub REST API (PAT-authenticated) — NOT `gh` CLI [DRIFT FIX 2026-05-18] |
+| `POST` | `/api/git/pr/review` | Review or merge a PR via GitHub REST API (PAT-authenticated) |
+
+### §2.10b Worktree Operations (internal-only — 2026-05-18 ADDITION)
+
+Closes the "no worktree operations exist" declaration from v1.0.6 §2.10.
+
+Worktree lifecycle is owned by `WorktreeManager` (Phase 3 deliverable in ironclaw-spine, `arena/delivery_arena/worktree_manager.rs`). Lifecycle ops are invoked ONLY by `wave_dispatcher` and `worker_slot` — **no HTTP write surface**. State observable via §2.10c read endpoint.
+
+| Operation | Surface | Implementation |
+|---|---|---|
+| Worktree create | `WorktreeManager::create(branch, path)` | `tokio::process::Command::new("git") worktree add -b <branch> <path> HEAD` |
+| Worktree remove | `WorktreeManager::remove(path)` | lsof→SIGTERM→SIGKILL→`worktree remove --force`→`worktree prune` (Cookbook §64.7) |
+| Worktree list | `WorktreeManager::list()` | `git worktree list --porcelain` (bypasses mutex — read-only) |
+
+All ref-mutating ops behind `Arc<Mutex<()>>` per Cookbook §64 (Serialized git-ops Mutex). Path validation via existing `safe_cwd` pattern (`git_routes.rs:165-174`).
+
+### §2.10c Worktree State (read endpoint — 2026-05-18 ADDITION, SHARED)
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/api/git/worktrees/{repo}` | dual-path (bearer OR session cookie) | Returns `[{path, branch, head_sha, status, locked, created_at}]` |
+
+**SHARED ownership** between ironclaw-spine and gitforest-live-ops:
+- gitforest-live-ops week 5: HTTP handler ships in `lightarchitects-webshell/src/routes/git.rs` calling `git worktree list --porcelain` directly via `Command::new("git")` template (matches existing §2.10 pattern)
+- ironclaw-spine week 10: `WorktreeManager::list() -> Vec<Worktree>` Rust API ships in delivery_arena; gitforest handler migrates to call this (single-line swap)
+
+Error handling: opaque `git_operation_failed` + `tracing::warn!` for raw stderr per CWE-209/S3 prevention (matches `git_routes.rs:83-89`).
+
+### §2.10d Conductor Decision Log (read endpoint — 2026-05-18 ADDITION)
+
+For autonomous-mode builds, `.ironclaw/decisions.md` is the HMAC-chained append-only ground truth of every L1-L4 decision. Read surface:
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/api/builds/{id}/decisions` | bearer | Streams hash-chained JSONL of decisions for a build; supports `?since=<line_n>` cursor |
+| `GET (SSE)` | `/api/builds/{id}/decisions/stream` | bearer | Live SSE feed of new decisions (debounced 250ms) |
+
+**No write surface** — decisions.md is supervisor-owned per security-guardrails §SG-CRYPTO.3 (hash-chain + O_APPEND+fsync + atomic-write).
+
+Frontend consumer: gitforest-live-ops `DecisionLog.svelte` (Phase 6 deliverable in ironclaw-spine).
 
 ### §2.11 Coordination / Squad Comms
 

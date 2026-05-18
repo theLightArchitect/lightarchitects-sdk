@@ -6390,6 +6390,444 @@ The nine dimensions and what 5 stars actually means for each. Derived from compe
 
 ---
 
+## §63 Untrusted-Input Operational Patterns (P1–P4)
+
+> "The simple believeth every word: but the prudent man looketh well to his going." — Proverbs 14:15
+
+**Ratified**: 2026-05-17 (Kevin direct, via Canon XXXIX pipeline; LÆX RATIFY WITH AMENDMENT cleared).
+
+Four operational patterns for tools that ingest user/operator-controlled input. Each pattern follows the uniform schema **Threat (CWE) · Vector · Mitigation · Static-Lint Rule · Test Vector**. These are class-level patterns; the named instances (Mermaid, grep, etc.) are illustrative — apply the class.
+
+### §63.P1 — `build.rs` ACE vector
+
+| Field | Content |
+|-------|---------|
+| **Threat** | CWE-94 Code Injection — arbitrary code execution on operator host via dependency-driven target-repo code execution |
+| **Vector** | Any tool that invokes `cargo +nightly rustdoc`, `cargo expand`, `cargo doc`, or any subcommand that runs `build.rs` / proc-macros against a target repo. Includes naive "extract types from rustdoc JSON" pipelines applied to arbitrary user repos |
+| **Mitigation** | Drop the tool, OR sandbox via container (process-isolated extraction), OR explicit `--trust-build-rs` operator opt-in with HITL confirmation prompt. Tree-sitter syntax extraction provides syntactic coverage without invoking target code |
+| **Static-lint rule** | `forbid Command::new("cargo")` with `expand` / `rustdoc-json` / `doc` args in workspaces handling untrusted repos. CI enforced |
+| **Test vector** | Property-test: craft target repo with `build.rs` containing `std::fs::write("/tmp/pwn", ...)` then assert no operator-host filesystem mutation occurs after extraction |
+
+**Policy companion**: Security-Guardrails §6.1.1 (Target-Repo Code Execution Surface) — defines the dep-acceptance classification rule that triggers this pattern's enforcement.
+
+### §63.P2 — Structural argument parser, not metacharacter rejection
+
+| Field | Content |
+|-------|---------|
+| **Threat** | CWE-78 OS Command Injection — RCE via user-controlled command arguments |
+| **Vector** | Tools executing whitelisted commands from user-controlled config (compliance checklists, generated scripts, automation YAML). Naive impl: `Command::new("sh").arg("-c").arg(user_string)` |
+| **Mitigation** | Parse arguments structurally; pass via `Command::new(binary).args(parsed_args)` — NEVER through `sh -c`. Per-binary flag allowlist (e.g., `grep` allows `{-n, -A, -B, -c, --include}`; forbids `-f`, `--file`, `-d skip`, `--exclude-dir` to prevent `-f /etc/passwd` arbitrary read or `--include='*' '' /` DoS). Argument-shape regex per binary. Bounded path roots via path module (see P4) |
+| **Static-lint rule** | `forbid Command::new("sh").arg("-c")` AND `forbid Command::new("bash").arg("-c")` in workspaces handling untrusted command-string input |
+| **Test vector** | 10K mutated checklist inputs (shell metacharacters, ANSI escapes, null bytes, encoding variants); assert zero shell-injection escapes; per-binary flag rejection asserted |
+
+### §63.P3 — Client-side diagram renderer strict mode (CWE-79 class)
+
+| Field | Content |
+|-------|---------|
+| **Threat** | CWE-79 Cross-Site Scripting — XSS via user-derived strings rendered in diagram labels |
+| **Vector** | Any client-side diagram renderer accepting server-supplied labels (struct names, file paths, route paths, log lines, schema strings). Instance: Mermaid label injection. Class extends to any web-rendered visualization that interprets label content |
+| **Mitigation** | Set renderer to strictest available security mode at template-render time. **Mermaid instance**: `mermaid.initialize({ securityLevel: 'strict' })`. Combine with: context-aware HTML encoder (separate encoders for attribute / text / URL contexts — never a single `htmlEscape()`) + CSP `script-src 'self'; style-src 'self' 'unsafe-inline'` + Markdown emitters use safe mode (raw HTML stripped — e.g., `pulldown-cmark` `safe`) |
+| **Static-lint rule** | Forbid Mermaid initialization without `securityLevel` in any web emitter; forbid `innerHTML` with user-derived content; forbid raw-HTML-permissive Markdown rendering of untrusted source |
+| **Test vector** | Inject XSS payloads in source identifiers consumed by the renderer (e.g., struct name `A--xss[<img onerror=...>]--B`; filename `foo.rs" onclick="alert(1)`); assert no script execution + no DOM mutation outside intended label area; 10K mutated XSS-payload corpus |
+
+### §63.P4 — `symlink_metadata()` per-segment BEFORE `canonicalize()` (TOCTOU)
+
+| Field | Content |
+|-------|---------|
+| **Threat** | CWE-59 Symlink Following + TOCTOU race — sandbox escape via symlink resolution timing |
+| **Vector** | Any tool that takes a user-supplied path and operates on its contents (file readers, repo walkers, sandbox roots). Naive defense: `Metadata::is_symlink()` AFTER `std::fs::canonicalize()`. **Why it fails**: `canonicalize()` silently follows symlinks — the resolution has already happened by the time you check |
+| **Mitigation** | (1) Walk path per-segment; (2) `symlink_metadata()` each segment; reject if `is_symlink()`; (3) THEN `canonicalize()`; (4) THEN **post-canonicalize root re-check** under allowlist (defeats TOCTOU race where a directory becomes a symlink between segment walk and canonicalize) |
+| **Static-lint rule** | Forbid `std::fs::canonicalize()` followed by `is_symlink()` check; require canonicalize wrapped in per-segment symlink reject + post-canonicalize root validation |
+| **Test vector** | 10K mutated path inputs including `..` traversal, symlink chains (`a -> b -> c -> /etc/passwd`), symlink-bomb fixtures (`fixture.rs -> /etc/passwd`), race-window injection (concurrent symlink creation during walk); assert all rejected before contents read |
+
+### Cross-references
+
+- **Policy boundary**: Security-Guardrails §6.1.1 (Target-Repo Code Execution Surface) — when to refuse a dep before adopting it; the §63.P1 pattern is the operational mitigation when adoption is required despite the surface.
+- **Sanitization pipeline**: §51 Boundary Sanitization Doctrine (Canon XXVIII) — these patterns operate at output boundaries (subprocess, rendered DOM, filesystem); §51 covers internal sanitization at trust-boundary crossings. Both required; neither subsumes the other.
+- **Security-Guardrails §3 Code Security** — broader CWE-anchored coverage; §63 holds the operational pattern detail those checkboxes verify.
+
+**Pressure-tested**: `architecture-intelligence-substrate` SCRUM Round 1 — SERAPH returned BLOCKED ON CRITICAL FINDING with 2 CRITICAL (P1 build.rs vector + checklist verify-cmd shell injection) + 4 HIGH (P3/P4 plus narrative-seed encoder coverage). Round 2 returned CLEAR WITH HARDENING after these four patterns folded into the plan. Patterns are class-level reusable beyond that build.
+
+**Promotion provenance**: Canon XXXIX pipeline (memory entry `feedback_security_patterns_arch_substrate.md` 2026-05-17 → promotion candidate → LÆX contradiction check → RATIFY WITH AMENDMENT → operator stamp). Per-pattern uniform schema added in ratification; P3 reframed from Mermaid-instance to CWE-79 class per LÆX amendment.
+
+---
+
+<!-- ──────────────────────────────────────────────────────────────────────────
+     IRONCLAW-SPINE CANON AMENDMENT (2026-05-18 iter-7)
+     Source plan: ~/.claude/plans/ironclaw-spine.md §22.6 + Task#17 + Task#18
+     Source proposal: ~/Downloads/ironclaw-architecture.html §9 + §11 + §15
+     Authority: operator-authorized Canon XV override (2026-05-18)
+     Pending LÆX-ratification at Phase 7 of ironclaw-spine build
+     Sections §64-§67 added.
+     ────────────────────────────────────────────────────────────────────────── -->
+
+## §64 Serialized Git-Operations Mutex Pattern
+
+**Source**: ironclaw-architecture.html §9; Task #17 Q4 (Context7 git2-rs + gitoxide crate-status); Task #18 verification of existing `git_routes.rs` pattern.
+
+When multiple worker agents operate in concurrent git worktrees against the same parent repo, ALL ref-mutating git operations MUST be serialized through a single `Arc<Mutex<()>>` per repo. Three failure modes occur otherwise (per Task #17 Q2):
+
+1. **`.git/index.lock` collision** — exit-128 `fatal: Unable to create '.../index.lock': File exists` when concurrent ops race the index lock
+2. **Packfile rebuild race** — `git gc --auto` triggered mid-fetch produces torn `.idx` files requiring repack recovery
+3. **`packed-refs` collision** — last-writer-wins TOCTOU (CWE-362) on packed-refs rewrite causes lost ref updates
+
+### §64.1 Mutex scope — ref-mutating ops ONLY
+
+The mutex wraps **ref-mutating** operations (worktree add/remove, branch create, merge, commit). Pure reads (`rev-parse`, `ls-tree`, `git2::Repository::head()`) MUST bypass the mutex — gating reads single-threads the wave dispatcher and defeats the parallelism purpose. Git's object store is append-only and read-safe under concurrent access; locks only collide on `$GIT_DIR/*.lock` writers.
+
+### §64.2 Retry policy — jittered exponential
+
+On `.lock` collision (exit-128), retry with **jittered exponential backoff**:
+- base 50ms, cap 2s, max 5 attempts
+- Rationale: constant backoff thrashes under load; pure-random has no progress guarantee; pure-exponential synchronizes retries. Jittered exponential is git-LFS canonical (matches `feedback_cargo_build_lock_playbook_gap` learning).
+
+### §64.3 MAX_GATE_ITERATIONS=3 invariant
+
+When a git operation feeds a quality gate (e.g., merge → ReviewGate → FixAgent fix → re-merge), the FixAgent iteration count is capped at **3**. After 3 consecutive failures, escalate to HITL — never retry indefinitely. This invariant applies to ReviewGates, merge-conflict resolution, and any agent-driven recovery loop. Source: ironclaw-architecture.html §10 + memory `feedback_iteration_cap_operator_override`.
+
+### §64.4 Branch-naming `/` separator convention
+
+For autonomous-mode builds:
+- Build branch: `feat/{build-slug}` (single slash)
+- Task branch (generic): `task/{build}/{task}` (TWO slashes — `/` separator, NOT `-`)
+- Task branch (wave-aware, when plan declares `waves[]`): `task/{build}/p{N}-w{M}-{slug}` per LASDLC v2.5.3 `git_branching_invariants.branch_naming_convention`. The wave-aware form preserves the `/` separator invariant; the `p{N}-w{M}-{slug}` tail encodes phase + wave + task within the second segment, enabling `build_id_from_task()` to recover the build slug via `split('/').next()` as below.
+
+Rationale: build slugs contain hyphens (e.g., `feat/agent-pool`). Using `task/{build}-{task}` makes `build_id_from_task()` unparseable. The `/` separator preserves slug integrity:
+
+```rust
+pub fn build_id_from_task(branch: &str) -> Option<&str> {
+    branch.strip_prefix("task/")?.split('/').next()  // "agent-pool" not "agent"
+}
+```
+
+### §64.5 Worker commits stay on CLI
+
+Worker agents commit via `Command::new("git") commit`, NOT `git2::Repository::commit()`. Rationale: git2 bypasses pre-commit hooks. If the project's pre-commit hooks enforce policy (linting, secret scanning, signature verification), git2 silently bypasses them — CWE-1059-adjacent class. CLI honors `.gitattributes`, hooks, and signing config.
+
+### §64.6 git2 carve-outs (read-only)
+
+Two operations earn `git2` carve-outs because they're hot-path reads with zero mutation risk:
+- `git2::Repository::head().peel_to_commit()` — 10× faster than fork+exec for post-commit tree-hash verification
+- `git2::Repository::branch()` — in-process branch create from HEAD; no subprocess startup cost
+
+Both require `tokio::task::spawn_blocking` (git2 is synchronous FFI). Bypass the mutex (read-only).
+
+### §64.7 Worktree cleanup race protocol
+
+`git worktree remove --force <path>` while another process holds files open in that worktree fails silently on Linux (locked) and partially on macOS APFS (open files survive until close). Canonical safe cleanup:
+
+```
+lsof | grep <worktree-path>  →  kill -TERM <pids>  →  wait ≤5s
+                              →  kill -KILL <survivors>
+                              →  git worktree remove --force <path>
+                              →  git worktree prune
+```
+
+The `prune` step is mandatory — `remove --force` doesn't clean stale `$GIT_DIR/worktrees/<name>/` admin dirs.
+
+---
+
+## §65 Builder Completeness Invariant
+
+**Source**: ironclaw-spine SCRUM R2 (CORSO + SERAPH); Task #17 Q1 (AgentRunner builder-pattern absence).
+
+Every Rust builder API that constructs a security-relevant runtime object MUST satisfy the **Builder Completeness Invariant**: required fields produce compile-time errors when omitted, not silent-default behavior.
+
+### §65.1 Fail-closed default
+
+Builder methods for required fields MUST return a type that prevents `.build()` until set. Example pattern:
+
+```rust
+pub struct AgentExecutionBuilder<Permissions = NoPermissions, CostGate = NoCostGate> {
+    // ... PhantomData<Permissions>, PhantomData<CostGate> ...
+}
+
+impl AgentExecutionBuilder<NoPermissions, NoCostGate> {
+    pub fn new(cwd: PathBuf) -> Self { ... }
+}
+
+impl<C> AgentExecutionBuilder<NoPermissions, C> {
+    pub fn with_permission_matrix(self, m: PermissionMatrix)
+        -> AgentExecutionBuilder<HasPermissions, C> { ... }
+}
+
+// .build() only exists when both type params are "Has..."
+impl AgentExecutionBuilder<HasPermissions, HasCostGate> {
+    pub fn build(self) -> AgentExecution { ... }
+}
+```
+
+Alternative: runtime check returning `BuilderError::MissingPermissionMatrix` is acceptable for non-security-critical fields, but security-relevant fields (permission matrix, cost gate, auth token) MUST be type-state enforced.
+
+### §65.2 Anti-pattern — silent default
+
+```rust
+// WRONG: missing permission_matrix silently defaults to "allow all"
+pub fn new(cwd: PathBuf) -> AgentRunner {
+    AgentRunner { permissions: PermissionMatrix::default(), ... }  // CWE-276
+}
+```
+
+Default permissions for security-relevant builders are CWE-276 (Incorrect Default Permissions) regardless of how restrictive the default appears. The default-permissive case is the classic confused-deputy attack surface.
+
+### §65.3 Required setters checklist
+
+For autonomous-mode worker construction (ironclaw-spine Phase 3):
+- `with_permission_matrix(PermissionMatrix)` — fail-closed required
+- `with_cost_gate(budget_usd: f32)` — bounded execution
+- `with_allowed_tools(Vec<ToolId>)` — explicit allowlist
+- `with_traceparent(carrier: TraceContext)` — observability propagation
+
+`.run()` MUST NOT be reachable without all four. Compile-time enforcement is preferred over runtime checks for security-relevant fields.
+
+---
+
+## §66 Context Assembly Discipline (Plausible vs Correct)
+
+**Source**: ironclaw-architecture.html §11 — the doctrinal core of correct-first code generation.
+
+> *"Plausible code comes from pattern-matching. Correct code comes from reasoning about this specific system's invariants. The orchestrator — not the agent — assembles the context that enables the difference."*
+
+### §66.1 Plausible vs Correct framing
+
+| Quality | How produced | What it satisfies |
+|---|---|---|
+| **PLAUSIBLE** | Pattern-matching from training data | Passes eyeball review. May fail at integration, edge cases, or runtime. |
+| **CORRECT** | Reasoning from system-specific invariants | Satisfies actual types, actual callers, actual tests. Gate-passing. |
+
+The three context items that most determine correctness, in priority order:
+1. **Actual type definitions** the component must satisfy (NOT descriptions of them — the real source)
+2. **Actual call sites** showing how errors are handled
+3. **Actual test harness structure**
+
+### §66.2 Tier 1/2/3 budget discipline
+
+For multi-agent autonomous builds, every task carries an explicit context budget:
+
+| Tier | Content | Budget | Truncation |
+|---|---|---|---|
+| **TIER 1** | Type definitions + actual call sites + test harness structure | ~6K tokens | NEVER truncated |
+| **TIER 2** | Similar existing implementations + prior wave decisions (decisions.md) | ~4.5K tokens | Last-added-first |
+| **TIER 3** | Task spec + acceptance criteria + step history | ~1.6K tokens | First-truncated under pressure |
+
+**Hard cap**: 15K tokens total. An agent with the RIGHT 15K outperforms one with 200K unfocused tokens. Context-assembly is the orchestrator's responsibility, not the agent's.
+
+### §66.3 Stable vs Dynamic separation
+
+- **System Context** (stable, prompt-cached): canon docs (all 7), process rules, environment, explicit DO-NOT list, Northstar statement. Loaded once at program start; cache-read cost ~10% of base input per call (Anthropic ephemeral cache).
+- **Task Context** (dynamic, per-task): assembled by orchestrator from repo BEFORE agent spawn. All file I/O via `spawn_blocking` (never blocking the async executor).
+
+The orchestrator owns the dynamic-context assembly contract. Agents NEVER fetch their own context — the orchestrator computes Tier 1/2/3 per task and injects via `--append-system-prompt-file` or equivalent.
+
+### §66.4 Composition with §65 (Builder Completeness)
+
+`AgentExecution::with_context_budget(ContextBudget { tier1, tier2, tier3, cap: 15_000 })` is a required builder setter for autonomous-mode workers. Missing → no spawn (per §65.1).
+
+---
+
+## §67 Concurrency Idioms (Rust async + git)
+
+**Source**: ironclaw-architecture.html §15 (Rust Types); Task #17 Q4 (tokio + git2 patterns).
+
+### §67.1 RwLock over Mutex when reads dominate
+
+For `SharedState` patterns where reads vastly outnumber writes (e.g., 7 worker agents reading task status concurrently, dispatcher writing on task completion):
+
+```rust
+// PREFERRED for read-heavy state
+pub struct Coordinator {
+    pub state: Arc<RwLock<SharedState>>,  // Many readers concurrent; writer exclusive
+    pub notify: Arc<Notify>,              // Wake agents on state change — NO polling
+}
+
+// AVOID for read-heavy state
+pub struct Coordinator {
+    pub state: Arc<Mutex<SharedState>>,  // Serializes ALL access including reads
+}
+```
+
+`RwLock` allows N concurrent readers OR 1 exclusive writer. Workers checking `can_run()` predicates run truly in parallel. `Mutex` serializes everything.
+
+### §67.2 `Arc<Notify>` over polling
+
+For "wake when state changes" patterns, use `tokio::sync::Notify` instead of polling loops:
+
+```rust
+// PREFERRED
+notify.notified().await;  // Sleeps until notified — zero CPU
+
+// AVOID
+loop {
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    if check_condition().await { break; }  // Wasted CPU + latency
+}
+```
+
+### §67.3 `spawn_blocking` for synchronous FFI
+
+Synchronous C/FFI libraries (git2, libsqlite3 sync mode, OS sync syscalls) MUST be wrapped in `tokio::task::spawn_blocking`. Direct calls from async tasks starve the runtime's worker thread for the duration of the operation, blocking other tasks scheduled on that worker.
+
+```rust
+let result = tokio::task::spawn_blocking(move || {
+    let repo = git2::Repository::open(&repo_path)?;
+    repo.head()?.peel_to_commit()
+}).await??;
+```
+
+`tokio::process::Command` is itself async — `spawn_blocking` is NOT required for CLI shell-outs. Only for libgit2 FFI / synchronous-library calls.
+
+### §67.4 `HashMap::get` for O(1) predicate checks
+
+```rust
+// O(1) — task.depends_on is small; HashMap::get is hash-table lookup
+pub fn can_run(task: &Task, state: &SharedState) -> bool {
+    task.depends_on.iter().all(|dep_id| {
+        state.tasks.get(dep_id)
+            .map(|t| t.status == TaskStatus::Completed)
+            .unwrap_or(false)
+    })
+}
+
+// AVOID — O(n²) over N tasks × M dependencies
+pub fn can_run(task: &Task, state: &SharedState) -> bool {
+    task.depends_on.iter().all(|dep_id|
+        state.tasks_vec.iter().any(|t| &t.id == dep_id && t.completed))
+}
+```
+
+### §67.5 Enum-not-String for status fields
+
+```rust
+// PREFERRED
+pub enum TaskStatus { Pending, Running, Completed, Failed(String) }
+
+// AVOID
+pub struct Task { status: String, ... }  // "completed" vs "Completed" vs "complete"...
+```
+
+Closed sum types prevent typo-class bugs; serde derives JSON encode/decode correctly; match exhaustiveness catches new-variant handling. (Already in Cookbook §4 spirit; §67 makes the autonomous-state-machine application explicit.)
+
+### §67.6 Cross-references
+
+- §64 Serialized git-ops mutex pattern
+- §65 Builder Completeness Invariant
+- §66 Context Assembly Discipline
+- `feedback_cargo_build_lock_playbook_gap` (memory)
+- ironclaw-architecture.html §15
+
+---
+
+## §64.8 Git-Context Preamble (worker AgentRunner system prompt injection — 2026-05-18 ADDITION)
+
+**Scope**: Every AgentRunner spawned via `wave_dispatcher` receives an explicit git-context preamble injected into its system prompt. Makes the worker "git-aware" throughout execution; without it, context truncation or drift can cause out-of-scope commits, forbidden git ops, or hook-bypassing violations.
+
+### §64.8.1 Why this exists
+
+Without explicit git-context preamble:
+- Worker may attempt `git checkout` to "switch to main and try something" — breaks parallel wave invariant
+- Worker may stage files outside `file_ownership` when running into a missing dependency — produces cross-task contamination
+- Worker may commit via `git2` to "be efficient" — bypasses pre-commit hooks (CWE-1059 class)
+- Worker may attempt self-merge to "save the orchestrator time" — races MergeAgent mutex
+
+These failure modes are all worker-driven; the preamble closes them at the **system-prompt boundary**, not at the git-tooling boundary (where catching is reactive).
+
+### §64.8.2 Template (injected per task at AgentRunner spawn)
+
+```
+═══════════════════════════════════════════════════════════════
+GIT CONTEXT FOR THIS TASK — non-negotiable scope boundary
+═══════════════════════════════════════════════════════════════
+You are working in:
+- Branch:       task/{build}/p{N}-w{M}-{slug}
+- Worktree:     <build_worktree_root>/p{N}-w{M}-{slug}/
+- Parent:       feat/{build}
+- Wave:         p{N}-w{M} (parallelism={N}; siblings: {comma-separated})
+- Pre-dispatch SHA: {sha}  (your branch was cut from this feat/{build} commit)
+
+File ownership (exclusive — you may ONLY touch these):
+{enumerated file paths from task.file_ownership}
+
+FORBIDDEN operations (will fail post-task verification):
+- git checkout — you're in your own worktree; no branch switching
+- git push — orchestrator handles
+- git merge — MergeAgent serializes all merges (Cookbook §64)
+- git worktree {add|remove|prune} — orchestrator handles
+- git rebase — would invalidate parallel sibling tasks
+- git reset --hard / git clean -fd — destructive; orchestrator-only
+- Editing files NOT in your file_ownership list above
+- Using git2 / gix programmatically for commits — bypasses pre-commit hooks (Cookbook §64.5)
+
+Required workflow:
+1. Read files needed for your task (Tier 1+2+3 context per Cookbook §66)
+2. Edit ONLY files in your file_ownership list
+3. Stage with: git add <files-in-ownership-list> (NEVER `git add -A` or `git add .`)
+4. Commit with: git commit -m "<message>" (CLI, NOT git2 — honors hooks)
+5. Signal IMPLEMENTATION_COMPLETE to orchestrator
+6. STOP — do NOT attempt to merge, push, or clean up your worktree
+
+Reviewer agent will inspect your work via gate vocabulary [A+S+Q+T] per Cookbook §64.
+If REVIEW_FAIL: you'll receive a FixAgent dispatch in your same worktree (max 3 iterations per Cookbook §64.3).
+
+Trace correlation: AYIN spans use task_id={task_id}, trace_id from W3C_TRACEPARENT env var
+(observability-canon §1.1). Your tool-call spans will carry these IDs automatically.
+
+Post-task verification (orchestrator runs after your IMPLEMENTATION_COMPLETE):
+- PoT-1: git diff --name-only HEAD~1 ⊆ your file_ownership (else FAIL)
+- PoT-2: Tree hash matches your reported commit SHA (else phantom-commit FAIL)
+- PoT-3: decisions.md entry written with manifest_id + active subkey-id
+
+If you need to touch a file outside your ownership: STOP, signal NEEDS_SCOPE_EXPANSION
+to orchestrator with reason. Do NOT silently expand scope.
+═══════════════════════════════════════════════════════════════
+```
+
+### §64.8.3 Injection mechanics
+
+The preamble is injected by `worker_slot.rs` via the AgentRunner builder:
+
+```rust
+let preamble = render_git_context_preamble(&task);  // template above
+let agent_exec = AgentExecution::new(worktree_path)
+    .with_permission_matrix(matrix)         // Cookbook §65 fail-closed
+    .with_cost_gate(task.budget_usd)
+    .with_traceparent(traceparent)
+    .with_allowed_tools(task.allowed_tools)
+    .with_system_prompt_append(preamble)    // NEW: per-task git context
+    .build()?;
+agent_exec.run().await?;
+```
+
+The preamble is **separate from the cached canon corpus** (Cookbook §66 + agents-playbook §11.3a):
+- Cached canon = stable across all tasks in a build (7-8 docs, 1-hour TTL)
+- Git-context preamble = per-task; templated at dispatch time; injected via `with_system_prompt_append`
+
+### §64.8.4 Re-injection on FixAgent dispatch
+
+When a task fails ReviewGate and a FixAgent is dispatched (max 3 iterations per Cookbook §64.3), the FixAgent receives the SAME git-context preamble. Workers may have lost context across fix iterations; re-injection ensures git-awareness persists.
+
+### §64.8.5 Cross-references
+
+- §64 Serialized git-ops Mutex (mutex mechanics for ref-mutating ops)
+- §64.3 MAX_GATE_ITERATIONS=3 invariant
+- §64.4 Branch naming `/` separator convention
+- §64.5 Worker commits stay on CLI (NOT git2)
+- §64.7 Worktree cleanup race protocol (orchestrator-only)
+- §65 Builder Completeness Invariant (fail-closed AgentExecution builder)
+- §66 Context Assembly Discipline (tier 1/2/3; canon corpus caching)
+- LASDLC v2.5.3 `git_branching_invariants` block + per-task `git_scope`
+- agents-playbook §15.3.13 Pre-Dispatch Checklist (PT-7 injects this preamble)
+- /BUILD skill v2 Step 11.3.2 PT-7 (orchestrator-side enforcement)
+- observability-canon §1.1 (W3C traceparent propagation)
+- Source: operator concern surfaced 2026-05-18 — "workers should be git-aware throughout the build"
+
+---
+
+- 3.2.0 (2026-05-18): Added §64 Serialized Git-Operations Mutex Pattern, §65 Builder Completeness Invariant, §66 Context Assembly Discipline (Plausible vs Correct), §67 Concurrency Idioms (Rust async + git). Source: ironclaw-architecture.html §9+§11+§15 source-doc cross-examination + ironclaw-spine SCRUM R1+R2+R3 convergence + Task#17 (Context7 gix/git2-rs/tokio) + Task#18 (git_routes.rs source verify). Operator-authorized Canon XV override (2026-05-18); LÆX Phase 7 ratification pending. Closes ironclaw §9 git-strategy + §11 context-assembly + §15 type-discipline canon gaps. Promotion provenance: 28 verification surfaces (5 R1-R5 + 7×3 SCRUM + 2 cross-exam).
+
+- 3.2.1 (2026-05-18): Added §64.8 Git-Context Preamble (worker AgentRunner system prompt injection). Closes operator-surfaced worker-git-awareness gap: workers receive no explicit "you are in branch X, worktree Y, may only touch files Z" preamble, so context truncation or drift can cause out-of-scope commits, forbidden git ops, or git2-bypassing-hook violations. §64.8 codifies the template that wave_dispatcher injects per task. Composes with LASDLC v2.5.3 `git_branching_invariants` + agents-playbook §15.3.13 Pre-Dispatch Checklist + /BUILD skill v2 Step 11.3.2 PT-7. LÆX Phase 7 ratification pending (candidate #19).
+
+- 3.1.0 (2026-05-17): Added §63 Untrusted-Input Operational Patterns (P1–P4). build.rs ACE vector, structural arg parser, client-side diagram renderer strict mode (CWE-79 class), symlink-before-canonicalize TOCTOU. Each pattern carries uniform Threat/Vector/Mitigation/Lint/Test schema. Cross-linked to Security-Guardrails §6.1.1 (Target-Repo Code Execution Surface — dep-acceptance policy companion ratified same session). Source: `architecture-intelligence-substrate` SCRUM Round 1 SERAPH adversarial review (2026-05-17); 4 patterns surfaced from BLOCKED-ON-CRITICAL verdict cleared via inline plan-fold + LÆX ratification batch.
+
 - 3.0.0 (2026-05-12): Added §62 Five-Star Engineering Targets (absorbed from five-star-engineering-targets.md). Canonical quality benchmark for all 9 engineering dimensions. Updated Canonical Six → Canonical Suite.
 
 - 2.9.2 (2026-05-04): Added §60.10 INSUFFICIENT_EVIDENCE aggregate-reconciliation rule. Components with INSUFFICIENT_EVIDENCE + floor<30 OR ≥50% sub-IE are treated as N/A-equivalent in canonical weighted aggregate; dual reading required (canonical + with-IE-as-point). Source: LDB v1.0 N=1 self-bootstrap on LASDLC template surfaced 74-vs-87 ambiguity that this rule canonizes. Composes with §58 (self-validation ceiling), §59 (interval reporting), §60 (threshold gate), §60.9 (inline citations).

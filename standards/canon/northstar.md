@@ -642,6 +642,46 @@ The Northstar is constitutional-tier. Amendments follow the full Canon XXXIX pip
 
 ---
 
+<!-- ──────────────────────────────────────────────────────────────────────────
+     IRONCLAW-SPINE CANON AMENDMENT (2026-05-18 iter-7)
+     Source plan: ~/.claude/plans/ironclaw-spine.md §0 + Northstar lineage
+     Source proposal: ~/Downloads/ironclaw-architecture.html §2 Northstar
+     Authority: operator-authorized Canon XV override (2026-05-18)
+     ────────────────────────────────────────────────────────────────────────── -->
+
+## §S — Autonomous Delivery Spine (Component Northstar, 2026-05-18 ADDITION)
+
+**Component scope**: Pillar 2 (Secure-by-Default Orchestration) refinement for autonomous-mode builds.
+
+**Statement**: *Within autonomous-mode orchestration, the moat is correct code generation governed by ReviewGate. Plausible-but-wrong code reaching `main` is the failure mode; correctness is the moat — verified through 4-layer Canon→Northstar→LightArchitect→User decision gating and blocking sequential gates between every parallel-task wave.*
+
+**Relationship to top-level Pillars**: §S REFINES P2; does NOT replace any top-level Pillar. All 7 Pillars (P1–P7) remain invariant. Pillar contributions are additive, not exclusive.
+
+**Mechanical checks** (when an autonomous-mode build claims §S contribution):
+
+1. ReviewGate runs after EVERY wave; MAX_GATE_ITERATIONS=3 enforced (Cookbook §64.3); HITL escalation after 3rd failure
+2. Decision pipeline applies Canon → Northstar → LightArchitect → User in that order
+3. `decisions.md` hash-chained append-only log records every L1-L4 decision with subkey-id (security-guardrails §SG-CRYPTO)
+4. Cold-context Explore agent reconstructs ≥90% of "why was X decided?" from decisions.md alone (Canon XXXIII independent runner)
+5. ≥95% of HITL decisions resolve at L1-L3; ≤5% escalate to L4 (User) in a well-specified program
+6. Program manifest Ed25519-signed at /BUILD-start; SHA mismatch HALTS
+7. Context assembly per Cookbook §66 tier 1/2/3 budgets; 15K cap per task; orchestrator owns assembly
+8. Worker tier serialized through MergeAgent `Arc<Mutex<()>>` (Cookbook §64); ref-mutating ops only; cleanup via lsof protocol
+
+**Non-regression on top-level Pillars** when §S advances:
+
+- P1 (E2E Engineering Surface): ENHANCED via autonomous-mode Wave Timeline view + DecisionLog UI
+- P3 (MoE Platform Architecture): REINFORCED via Sonnet-moat / Ollama-Cloud-workers / Haiku-failover model routing
+- P4 (Async Parallel Collaboration): EXTENDED via wave-level parallelism (up to 7 concurrent tasks per wave)
+- P5 (Persistent Knowledge): UNCHANGED
+- P6 (Operator-Legible Arc): REINFORCED via decisions.md + AYIN escalation.notify span + StatsTopbar HITL counter
+- P7 (Production-Grade Reliability): EXTENDED via FixAgent bounded at MAX_ITERATIONS=3; HMAC HKDF subkeys; signed manifests
+
+**Source**: ironclaw-architecture.html §2+§7+§10, cross-examined against current stack 2026-05-18; ironclaw-spine plan §22.6 + Task#17 + Task#18.
+
+---
+
 *Canonical URI*: `canon://northstar`
 *Storage*: `$HELIX/user/standards/canon/northstar.md`
 *Supersedes*: `northstar-v1.md` (archived), operators-manual.md §1.2 inline Pillars (reference-only since 2026-05-16)
+*v1.2 adds (2026-05-18): §S Autonomous Delivery Spine — Component Northstar refining P2; closes ironclaw §2 Northstar canon gap; LÆX Phase 7 ratification pending.*

@@ -655,6 +655,34 @@ Before any new dependency is added to `Cargo.toml` or `package.json`:
 
 No dependency added without passing all six checks. Document the check result in the PR description.
 
+### §6.1.1 Target-Repo Code Execution Surface
+
+**Ratified**: 2026-05-17 (Kevin direct, via Canon XXXIX pipeline; LÆX RATIFY WITH AMENDMENT cleared).
+
+**Classification rule**: Any dependency whose advertised function is to extract, analyze, or document arbitrary user repositories is classified **CRITICAL** — not "MEDIUM stability" — if its extraction path invokes any of:
+
+- `cargo` (with `expand`, `rustdoc-json`, `rustdoc`, or `doc` subcommands)
+- `cargo +nightly rustdoc` (executes target repo's `build.rs`)
+- Any tool that runs target-repo code as a side-effect of metadata extraction
+
+**Why this classification is needed**: `cargo audit` / `cargo deny` / RustSec are advisory-database-driven. They cannot catch by-design code execution surfaces — a dep that, by its stated function, executes target-repo code is not a CVE; it is the **threat vector itself**.
+
+**Acceptance gate** (in addition to §6.1's six checks):
+
+Before adopting any dep whose function is "extract/analyze/document arbitrary user repos", answer:
+
+> *Does the extraction path invoke `cargo`, `cargo +nightly rustdoc`, `cargo expand`, or `cargo doc`?*
+
+If **yes** → **CRITICAL**. Default verdict: **drop**. Mitigations require explicit operator HITL opt-in (e.g., `--trust-build-rs` flag with confirmation prompt) OR sandboxing (container-isolated extraction).
+
+**Mechanical enforcement**: Cookbook §security includes a static-analysis lint that forbids `Command::new("cargo")` with `expand` / `rustdoc-json` / `doc` args in workspaces handling untrusted repos. See Cookbook §63.P1 (Untrusted-Input Operational Pattern P1 — `build.rs` ACE vector) for the operational counterpart.
+
+**Anchors**: CWE-94 (Code Injection) · AML.T0010 (AI Supply Chain Compromise — referenced in §3 line 294).
+
+**Pressure-tested**: `architecture-intelligence-substrate` SCRUM Round 1 (SERAPH CRITICAL B2, 2026-05-17). rustdoc-JSON was originally listed as "MEDIUM dependency-stability risk" in the plan; SERAPH's adversarial review reclassified it as CRITICAL ACE-on-host. The dep was dropped from MVP rather than mitigated; tree-sitter syntax extraction proved sufficient for L1–L3 facts.
+
+**Cross-reference**: Cookbook §63.P1 holds the operational mitigation pattern (how to harden if a build.rs-touching tool is required). This canon holds the classification policy (when to refuse the dep before it enters Cargo.toml).
+
 ### §6.2 Software Bill of Materials (SBOM)
 
 Every production build generates an SBOM:
@@ -1078,6 +1106,93 @@ An explicit per-layer control map surfaces gaps that cross-cutting policies can 
 | 1.2.0 | 2026-05-12 | Industry baseline additions (Tier 1/2/3). **New sections**: §2.7 MITRE ATLAS v4.5 (16 AI/ML adversary tactics + LA platform controls); §3.7 OWASP ASVS verification baseline (L1 minimum, L2 for auth/crypto); §5.6 Device Security L1 physical (FileVault, screen lock, USB, firmware); §11.4 NIST CSF v2.0 (6-function: Govern·Identify·Protect·Detect·Respond·Recover); §11.5 EU AI Act + GDPR Art. 25 regulatory mapping; Part XIII OSI Layer Security Posture (L1-L8 per-layer control map + residual gap summary). **Expansions**: §2.4 OWASP API Security Top 10 2023 stance table + ProtectAI IPC Sidecar mandatory pattern (no secrets as CLI args); §3.1/A04 LINDDUN privacy threat modeling paired with STRIDE for PII flows; §3.5 NIST SP 800-63B AAL1/AAL2/AAL3 alignment (AAL2 required for privileged ops + all PII interactions); §5.4 DNS security (DoH, DNSSEC, rebinding protection, exfiltration detection); §6.4 OpenSSF SLSA L2 target (currently L1; L3 roadmap 2027); §12.1 +12 new industry baseline index entries. 12 new source files added to frontmatter. |
 | 1.1.0 | 2026-05-12 | SERAPH security audit applied (15 findings). **CRITICAL**: §2.6 Multi-Agent Trust Chain Policy (monotonic scope reduction invariant, per-hop auth, chain logging); §7.1 agent-to-agent key scoping (per-callee `aud` claim); removed `execve` from seccomp allowlist (sandbox escape vector); §10.2 HMAC chain key ownership separation (LÆX holds verify key, not AYIN). **HIGH**: §1.5 Security Exception Process; LLM07 output filtering control; `pids.max` 512→64; §3.6 Neo4j Hardening; §6.3 model change threat model requirement; §11.3 Developer Security Training. **MEDIUM**: WASM fuel exhaustion behavior specified (OutOfFuel trap); Secret tier out-of-band channels defined; SBOM retention 90d→1 year; CIS CG15+CG17 added; CVSS 4.0 added to findings schema. **LOW**: PQC migration roadmap (FIPS 203/204); 12th AYIN signal (behavioral anomaly). |
 | 1.0.0 | 2026-05-12 | Initial ratification. 12 parts covering all platform security domains. Absorbs Builders Cookbook §40 (pentest) and §12 policy half (supply chain policy). Sources: OWASP LLM Top 10 2025, OWASP Agentic Top 10 2026, Google SAIF 15 risks, NIST AI RMF, PTES, Atomic Red Team, CISA KEV. |
+
+---
+
+<!-- ──────────────────────────────────────────────────────────────────────────
+     IRONCLAW-SPINE CANON AMENDMENT (2026-05-18 iter-7)
+     Source plan: ironclaw-spine.md security_compliance + Phase 2A
+     Source: ironclaw-architecture.html §13; SCRUM R2 SERAPH adversarial review
+     Authority: operator-authorized Canon XV override (2026-05-18)
+     ────────────────────────────────────────────────────────────────────────── -->
+
+## §SG-CRYPTO — Artifact Integrity + Key Lifecycle (2026-05-18 ADDITION)
+
+**Scope**: Cryptographic discipline for autonomous-mode build artifacts (program manifest, decision log, supervisor channel, model failover).
+
+### §SG-CRYPTO.1 Program Manifest Integrity (Ed25519, not SHA256-alone)
+
+Autonomous-mode builds lock the plan at `/BUILD` start via **Ed25519-signed manifest**:
+- `program.toml` (canonical TOML serialization)
+- `program.sig` (detached Ed25519 signature)
+
+Ceremony:
+1. Operator approval at `/BUILD --autonomous` triggers keygen
+2. Keypair stored in macOS Keychain with `kSecAccessControlBiometryCurrentSet` + `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` (Touch ID-gated; never exported)
+3. Detached signature emitted to `.ironclaw/program.sig`
+4. `lightarchitects verify-manifest <path>` verifies signature pre-dispatch
+
+**Bare SHA256 IS INSUFFICIENT** (CWE-345). Attacker with local write modifies both `program.toml` AND `program.sha256` in same write — verification passes. Signature with attacker-unreachable private key closes this.
+
+### §SG-CRYPTO.2 Supervisor Channel HMAC (HKDF Per-Wave Subkeys)
+
+Long-running supervisor channels MUST rotate HMAC keys per wave via **HKDF-SHA256**:
+- Master key derived from operator-approval ceremony (Keychain-stored; never logged)
+- Per-wave subkey: `HKDF(master, salt=build_id || wave_id, info="supervisor-channel-v1")`
+- Subkey-id stamped in every channel message + every `.ironclaw/decisions.md` entry
+- Revocation: supervisor restart → fresh master → all prior subkeys invalidated
+
+Single per-build HMAC is insufficient (CWE-320). If compromised at task 3 of 72-task program, attacker forges 69 remaining decisions. Per-wave subkeys + restart-revocation bound the blast radius.
+
+### §SG-CRYPTO.3 decisions.md Hash-Chain (Append-Only Tamper Detection)
+
+`.ironclaw/decisions.md` MUST be hash-chained newline-delimited JSON:
+```jsonl
+{"line":1,"prev_hash":"00…","ts":...,"task_id":...,"layer":1,"verdict":...,"subkey_id":"w1-sk-3"}
+{"line":2,"prev_hash":"<sha256(line 1)>",...}
+```
+
+Write protocol: `write to .tmp + fsync + rename` (atomic per CWE-662). Never truncate. On supervisor reload, verify entire chain — any mismatch = tamper detected, HALT.
+
+### §SG-CRYPTO.4 cargo-vet TTL ≤ 30d for Cross-Repo Dependencies
+
+For autonomous-mode builds with git-dep across repos (e.g., `lightarchitects-gateway` → `lightarchitects-cli`):
+- SHA-pinned `rev =` (NEVER mutable branch ref) — MITRE ATLAS AML.T0010 mitigation
+- `cargo-vet` attestation present
+- `deny.toml` source allowlist enforced
+- **Attestation TTL ≤ 30 days** — stale attestations rubber-stamp post-compromise upstream
+- CI re-verifies attestations every build; expired → BLOCK merge
+
+### §SG-CRYPTO.5 Failover Rate-Limit Circuit Breaker
+
+When primary model lane fails over to backup (e.g., Ollama 429 → Anthropic Haiku failover per ironclaw §12 Model Routing), a **circuit breaker** MUST cap failover-lane spend per program:
+- Counter `model.failover_total{from,to,cause}` instrumented (AYIN span per observability-canon)
+- HITL prompt at 50% of program cost ceiling
+- Auto-HALT at 100% of ceiling
+
+Failover-as-resilience inverts into failover-as-cost-amplification under adversarial induction (OWASP-LLM10 Unbounded Consumption; MITRE ATLAS AML.T0034 Cost Harvesting).
+
+### §SG-CRYPTO.6 PermissionMatrix Denylist→Allowlist (Bash verbs)
+
+For autonomous-mode workers, the AgentRunner PermissionMatrix MUST use an **allowlist of permitted Bash verbs**, NOT a denylist of denied patterns:
+- Denylist enumerated patterns (`ln -s outside cwd`, `chmod +x on host paths`, `curl|sh`, `> /etc/`...) are bypassable via splits (`cp /bin/sh /tmp/x; chmod +x`) or alternate interpreters (`python -c "import os; os.symlink(...)"`)
+- Allowlist of permitted verbs is enforceable and auditable
+
+CWE-184 (Incomplete List of Disallowed Inputs). The allowlist composes with `safe_cwd` canonicalize-after-..-rejection pattern from `git_routes.rs:165-174`.
+
+### §SG-CRYPTO.7 Cross-References
+
+- Cookbook §64 (serialized git-ops mutex)
+- Cookbook §65 (Builder Completeness Invariant — fail-closed permission matrix)
+- LASDLC v2.5.2 `program_manifest_integrity` block
+- Architects Blueprint §24.3 (manifest integrity discipline)
+- webshell-api-surface §1.6 (cross-reference)
+- observability-canon §AYIN span schema (escalation.notify, model.failover_total)
+- Source: ironclaw-spine SCRUM R2 SERAPH + R3 follow-up threats (2026-05-18)
+
+---
+
+| 1.3.0 | 2026-05-18 | §SG-CRYPTO Artifact Integrity + Key Lifecycle (Ed25519 manifest, HKDF subkeys, decisions.md hash-chain, cargo-vet TTL ≤30d, failover circuit breaker, PermissionMatrix allowlist). Closes ironclaw-spine SCRUM R2 SERAPH BLOCKING/CRITICAL findings + R3 follow-up threats (Keychain ACL, allowlist-Bash, cargo-vet freshness, failover breaker). LÆX Phase 7 ratification pending. |
 
 ---
 

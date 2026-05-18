@@ -2047,3 +2047,298 @@ The Governor will decide whether to act on it.
 *Light Architects Agent's Playbook v1.5 | 2026-05-17*
 *Part of the Canonical Suite. Supersedes agent-comms-state-machine-v1.md, a2a-contract-v1.md, squad-comms-protocol-v1.md, git-lifecycle-canon.md, governor-system-prompt.md, and worker-system-prompt.md.*
 *v1.5 adds: §7.7 (Post-Implementation Hypothesis Verification — spawned Worker code is a hypothesis; mandatory lightarchitects:<reviewer_agent> review before WAVE_COMPLETE; REVIEW_FAIL fix-it cycle; domain routing). Updates Part XX Worker System Prompt Completion sequence: Workers signal IMPLEMENTATION_COMPLETE and wait for review before claiming next task.*
+
+---
+
+<!-- ──────────────────────────────────────────────────────────────────────────
+     IRONCLAW-SPINE CANON AMENDMENT (2026-05-18 iter-7)
+     Source plan: ~/.claude/plans/ironclaw-spine.md §22.6
+     Source proposal: ~/Downloads/ironclaw-architecture.html §4, §7, §8, §10
+     Authority: operator-authorized Canon XV override (2026-05-18)
+     Pending LÆX-ratification at Phase 7 of ironclaw-spine build
+     ────────────────────────────────────────────────────────────────────────── -->
+
+## §HITL-7 — Escalation Notification Invariant (2026-05-18 ADDITION)
+
+**Invariant**: every L4 (User) escalation in the autonomous-mode decision pipeline MUST emit an operator-visible event. Silent escalation = Pillar 4 violation (CWE-223 Omission of Security-relevant Information).
+
+**Required components**:
+
+1. **AYIN span**: `escalation.notify { build_id, reason, severity, requires_ack, dispatched_at, ack_deadline_ms }` — child of `escalation.raise` parent span
+2. **Schema-typed**: structured payload (never free-form text); fields enforce required vs optional
+3. **Non-suppressible**: operator preference can throttle frequency (notification-fatigue config), but never globally disable
+4. **Multi-channel**: webshell SSE toast (red banner with REVIEW click-option) + `osascript -e 'display notification'` for off-screen ops + optional Telegram/SMS webhook for off-device alerting
+5. **MTTA-measurable**: `escalation.notify.ack_received_at` timestamp populated when operator acknowledges; AYIN computes mean-time-to-acknowledge per build
+
+Without this invariant, autonomous-mode runs that L4-escalate at 3am have no operator-visible signal — operator misses escalation, build hangs indefinitely. CWE-223 + Pillar 4 (operator-legible arc) double-violation.
+
+**Composition with §7.7**: §7.7 governs Worker code review BEFORE WAVE_COMPLETE; §HITL-7 governs escalation AFTER review failure (≥3rd FixAgent iteration per Cookbook §64.3).
+
+---
+
+## §15.3a — Tier Separation Principle (Supervisor / Worker / Git, 2026-05-18 ADDITION)
+
+**Source**: ironclaw-architecture.html §4 Tiers — Supervisor / Worker / Git zero-LLM separation.
+
+In autonomous-mode builds, three tiers operate at structurally separate concurrency surfaces:
+
+| Tier | Roles | Slot model |
+|---|---|---|
+| **Supervisor** | Operator's Claude Code session + 8 LightArchitect domain agents + Canon Decision Agent | Async, NEVER in worker pool; spawned on-demand for HITL |
+| **Worker** | 7-slot pool: ReviewGate + FixAgents + Worker agents (Sonnet/Ollama/Haiku model routing) | All 7 slots; spawned via AgentRunner builder; serialized via MergeAgent mutex for ref-mutating ops |
+| **Git** | MergeAgent + Worktree Manager + Orchestrator scheduler | ZERO LLM — pure git2 + `Command::new("git")`; serializes all git ops; one process at a time against `.git/objects` |
+
+**Invariants** (mechanical):
+
+1. Supervisor and LightArchitects are NEVER part of the 7-slot worker pool. Confusing them produces slot starvation under HITL load.
+2. Workers SPAWN via fail-closed AgentRunner builder (Cookbook §65); no permission matrix = no spawn.
+3. Git tier has ZERO LLM calls. Pure git2 reads (head, branch) + `Command::new("git")` mutating ops via mutex. Deterministic.
+4. Each tier has its own failure-recovery domain: supervisor restart resets HMAC subkeys; worker death frees slot; git lock timeout retries with jittered exp (Cookbook §64.2).
+
+**Anti-pattern**: collapsing tiers (e.g., supervisor running git ops in-band) cross-contaminates failure domains. A git lock collision shouldn't pause supervisor decision-making; an LLM rate-limit shouldn't block git cleanup.
+
+---
+
+## §11.3a — Canon-as-Cached-System-Prompt (2026-05-18 ADDITION)
+
+**Source**: ironclaw-architecture.html §8 Autonomous Delegation + §10 ReviewGate canon-as-system-prompt pattern.
+
+For long-running supervisor sessions and ReviewGate evaluators, canon docs MUST be delivered as **cached system prompt content**, not per-call user messages:
+
+1. Load 7 canon docs (~80K combined tokens, see canon corpus subset list) at session start
+2. Send as `system: [{type: "text", text: <canon>, cache_control: {type: "ephemeral"}}]` per Anthropic prompt-caching API
+3. Subsequent calls hit cache at ~10% of base input cost (cache_read_input_tokens per usage response)
+4. Use 1-hour TTL (2× write cost, 12× fewer refreshes for bursty load) over default 5-min for supervisor sessions
+
+**Why system not user**: cache-hit semantics only fire when the cached prefix is in `system`, not in `messages`. Putting canon in the user message means 100% input cost per call.
+
+**Composition with §SG-CRYPTO.3**: canon corpus integrity verified via SHA256 of canon files at session start; mismatch HALTS before any L1 decision fires.
+
+**Cost arithmetic** (per Task #17 R2 verified):
+- 80K canon + 2K fresh per call + 1K output, 95% cache hit, 97 calls over 72-task program: **~$7.31**
+- 70% cache hit: **~$13.94**
+- No cache: **~$25.32**
+- Cache savings: 3.46× vs no-cache; cost ceiling cannot exceed $100 under spec'd parameters
+
+---
+
+*v1.6 adds (2026-05-18): §HITL-7 Escalation Notification Invariant + §15.3a Tier Separation Principle + §11.3a Canon-as-Cached-System-Prompt. Closes ironclaw §4 + §7 + §8 + §10 canon gaps. LÆX Phase 7 ratification pending.*
+
+*v1.8 adds (2026-05-18): §15.3.13.5 Pre-Dispatch Checklist Tables — 24 explicit git-aware gates (PP-1..PP-4 pre-phase + PW-1..PW-7 pre-wave + PT-1..PT-7 pre-task + PoT-1..PoT-3 post-task + PoW-1..PoW-3 post-wave); composes with Cookbook §64.8 Git-Context Preamble (PT-7) + LASDLC v2.5.3 git_branching_invariants block + /BUILD skill v2 Step 11.3.0-11.3.5. Closes operator-surfaced worker-git-awareness gap. LÆX candidate #19.*
+
+---
+
+<!-- ──────────────────────────────────────────────────────────────────────────
+     IRONCLAW-SPINE iter-11 FOLLOW-ON ADDITIONS (2026-05-18 v1.7 amendment)
+     Source: ironclaw-spine plan §17.5 Wave Decomposition + iter-11 pre-completion analysis
+     Authority: operator-authorized Canon XV override (2026-05-18)
+     Pending LÆX Phase 7 ratification — candidates #15, #16, #17
+     ────────────────────────────────────────────────────────────────────────── -->
+
+## §15.3.13 — Wave Dispatch Protocol (2026-05-18 ADDITION, candidate #15)
+
+**Scope**: Orchestrator mechanics for wave-level fan-out/fan-in within a phase. Complements §15.3.x single-task git lifecycle (existing) and Cookbook §64 mutex mechanics (existing). This section formalizes how the orchestrator dispatches N parallel tasks per wave, waits for all-merge, and advances to the next wave.
+
+### §15.3.13.1 Wave-cut invariant
+
+**Wave-N branches MUST be cut from `feat/{build}` HEAD AFTER Wave-(N-1) merges to feat — never before.** This is non-negotiable per Cookbook §64.4 and Ironclaw §9.
+
+```
+git rev-parse feat/{build}  ←  HEAD AFTER Wave-N-1 merge complete
+git checkout -b task/{build}/p{N}-w{M}-{slug} {feat-head}  ←  ONE per task in Wave-M
+```
+
+**Anti-pattern**: cutting all wave branches upfront from feat-build-start HEAD creates merge conflicts when Wave-1 lands changes Wave-2 expected. Wave branches must inherit Wave-(N-1) artifacts via merge-then-cut sequencing.
+
+### §15.3.13.2 Fan-out dispatch
+
+Per wave declaration in plan §17.5 (LASDLC v2.5.2 `waves[].tasks[]`):
+
+1. Orchestrator reads `parallelism: N` from wave block (max 7 per Ironclaw §6 slot pool cap)
+2. Creates N worktrees under `<build_worktree_root>/p{N}-w{M}-{slug}/`
+3. Spawns N AgentRunner instances in parallel via fail-closed builder (Cookbook §65)
+4. Each AgentRunner receives:
+   - W3C `traceparent` env var (observability-canon §1.1)
+   - HKDF subkey-id for current wave (security-guardrails §SG-CRYPTO.2)
+   - Task-specific context bundle (Cookbook §66 tier 1/2/3, 15K cap)
+   - File-ownership manifest (no overlap with sibling tasks in same wave)
+5. Orchestrator monitors via supervisor channel; emits `WorkerSlotGauge` WebEvent per slot occupancy change
+
+### §15.3.13.3 Fan-in convergence
+
+Wave N+1 dispatch BLOCKED until:
+1. All N tasks in Wave-N signal `IMPLEMENTATION_COMPLETE` (per §7.7)
+2. All N tasks pass per-task post-implementation review (per §7.7)
+3. All N task branches merge to `feat/{build}` via MergeAgent (Cookbook §64 serialized mutex)
+4. ReviewGate verdict PASS at wave boundary (Cookbook §64.3; MAX_GATE_ITERATIONS=3)
+5. `decisions.md` entry written with `wave_complete` verdict + active subkey-id
+
+**Failure recovery**: any task FAIL → FixAgent dispatched (max 3 iterations); 3rd consecutive FAIL → §HITL-7 escalation, wave-N+1 stays blocked, supervisor pauses dispatcher.
+
+### §15.3.13.4 Wave-internal task dependencies
+
+Tasks within a wave MAY declare `depends_on: [task_id]` referencing tasks in **prior waves**. Within-wave dependencies are disallowed — same-wave tasks MUST be parallel-safe (no shared file ownership; no inter-task communication). If a task within a wave needs the output of another task in the same wave, split into two waves.
+
+### §15.3.13.5 Pre-Dispatch Checklist Tables (2026-05-18 ADDITION — 28 hardcoded git-aware gates)
+
+Operationalizes the wave-cut invariant + fan-out + fan-in into **28 explicit gates** fired pre-phase / pre-wave / pre-task / post-task / post-wave. Each gate is BLOCKING — failure HALTS dispatch + emits operator HITL. Mirrors /BUILD skill v2 Steps 11.3.0-11.3.5 for canonicity.
+
+#### Pre-Phase (4 gates, fires once per phase entry)
+
+| Gate | Check | Failure → |
+|------|-------|-----------|
+| **PP-1** | feat/{build} clean (no uncommitted) | BLOCK + HITL |
+| **PP-2** | No stale `task/{build}/p{phase-1}-*` branches | BLOCK + prune |
+| **PP-3** | feat HEAD SHA matches prior-gate-exit SHA | BLOCK + HITL (drift) |
+| **PP-4** | `<build_worktree_root>` exists + writable + sentinel | BLOCK + create |
+
+#### Pre-Wave (7 gates, fires per wave BEFORE branch cuts)
+
+| Gate | Check | Failure → |
+|------|-------|-----------|
+| **PW-1** | Wn-1 fully merged + ls-tree containment (§15.4.5) | BLOCK |
+| **PW-2** | No orphan `task/{build}/p{N}-w{M-1}-*` branches | BLOCK + prune |
+| **PW-3** | Worktree count = 1 main + 0 task | BLOCK + cleanup §64.7 |
+| **PW-4** | Record `WAVE_PARENT_SHA = git rev-parse feat/{build}` (atomic) | non-failing |
+| **PW-5** | Each task in wave has unique branch slug | BLOCK + reject plan |
+| **PW-6** | Wave tasks have disjoint `file_ownership` | BLOCK + reject plan |
+| **PW-7** | wave.parallelism ≤ 7 (Ironclaw §6 slot cap) | BLOCK + reject plan |
+
+#### Pre-Task (7 gates, fires per task BEFORE AgentRunner spawn)
+
+| Gate | Check | Failure → |
+|------|-------|-----------|
+| **PT-1** | Branch name regex `^task/[a-z0-9-]+/p\d+-w\d+-[a-z0-9-]+$` | BLOCK + reject |
+| **PT-2** | Task branch cut from `$WAVE_PARENT_SHA` (PW-4) | BLOCK + re-cut |
+| **PT-3** | Worktree path exists + clean | BLOCK + recreate |
+| **PT-4** | AgentRunner config carries worktree + branch + file_ownership + parent_branch + wave_siblings + pre_dispatch_sha | BLOCK + reject as incomplete |
+| **PT-5** | PermissionMatrix fail-closed (Cookbook §65) | BLOCK with `BuilderError::MissingPermissionMatrix` (CWE-276) |
+| **PT-6** | W3C_TRACEPARENT env var set (observability-canon §1.1) | BLOCK + regenerate |
+| **PT-7** | **Cookbook §64.8 Git-Context Preamble injected** into AgentRunner system prompt | **BLOCK — non-negotiable; workers without preamble lose git-awareness** |
+
+#### Post-Task (3 gates, fires per task AFTER `IMPLEMENTATION_COMPLETE`)
+
+| Gate | Check | Failure → |
+|------|-------|-----------|
+| **PoT-1** | Worker stayed in scope: `git diff --name-only HEAD~1` ⊆ task.file_ownership | BLOCK merge + REVIEW_FAIL → FixAgent |
+| **PoT-2** | Tree-hash matches worker report (§15.4.5 phantom commit prevention) | BLOCK + diagnose |
+| **PoT-3** | decisions.md entry written with `manifest_id` + active HKDF subkey-id + task_id | BLOCK + diagnose append failure |
+
+#### Post-Wave (3 gates, fires per wave AFTER all tasks merge)
+
+| Gate | Check | Failure → |
+|------|-------|-----------|
+| **PoW-1** | All Wn task branches merged to feat/ (no orphans) | BLOCK Wn+1; HITL |
+| **PoW-2** | Worktree count = 1 main + 0 task (§64.7 + Ironclaw §9 max-8) | BLOCK + cleanup |
+| **PoW-3** | `git ls-tree -r feat/{build}` contains all Wn merge artifacts (§15.4.5 containment) | BLOCK + diagnose missing |
+
+#### Total: 4 + 7 + 7 + 3 + 3 = **24 git-aware gates** per wave-lifecycle
+
+(Note: Cookbook §64.8 Git-Context Preamble injection at PT-7 is the 25th explicit invariant; §SG-CRYPTO.1 manifest verification + §SG-CRYPTO.2 subkey rotation + §SG-CRYPTO.3 hash-chain integrity per gate = 28 total when counting cross-doc enforcement.)
+
+### §15.3.13.6 Wave dispatch state machine
+
+```
+Wave-N: pending → preflight → cutting → dispatching → executing → reviewing → merging → complete
+                                                                                          → fail (≤3 retries) → escalated
+```
+
+State transitions emit AYIN spans:
+- `wave.cut { wave_id, parallelism, feat_head_sha }`
+- `wave.dispatch_start { wave_id, task_count }`
+- `wave.execute { wave_id, in_flight_count }` (gauge, sampled 1Hz)
+- `wave.review_complete { wave_id, verdict, fix_iter_count }`
+- `wave.merge_complete { wave_id, merge_sha }`
+- `wave.escalated { wave_id, reason, l4_escalation_id }`
+
+---
+
+## §7.8 — Pre-Completion Verification Gate (2026-05-18 ADDITION, candidate #16)
+
+**Scope**: Operationalizes the `⚡PRE-DONE` marker pattern from ironclaw-spine iter-11. When a plan documents tasks completed inline during plan authoring (self-referential pre-execution), /BUILD MUST verify-not-execute rather than re-running the work.
+
+### §7.8.1 Marker syntax
+
+In a LASDLC v2.5.2 wave decomposition table, pre-completed tasks carry `⚡PRE-DONE` suffix in the Task ID column with attribution:
+
+```markdown
+| p2-w1-r1-prior-art ⚡PRE-DONE (TR-1) | task/{build}/p2-w1-r1 | R1 research findings | researcher |
+```
+
+A `> **⚡ PRE-COMPLETED [date] (TR-N)**: <narrative + /BUILD action guidance>` callout above the wave table documents what was done and what /BUILD must verify.
+
+### §7.8.2 Verification protocol
+
+When /BUILD reaches a wave containing ⚡PRE-DONE tasks, instead of dispatching AgentRunner instances:
+
+1. **Staleness check** (Canon XXXV ≤14 days): compute days since pre-completion stamp; if >14 days → re-execute as fresh task, NOT verify
+2. **Artifact existence check**: verify the file/section/code referenced in the pre-completion narrative still exists
+3. **Canon-drift check**: SHA256 of any canon docs cited by the pre-completed work; compare against SHA at pre-completion time; mismatch → flag for canon-amendment review before flip
+4. **Operator HITL on stale verification**: if ≥2 of {staleness, artifact, canon-drift} fail → §HITL-7 escalation; operator decides re-execute vs accept stale
+
+If all 3 checks PASS: flip status `pre_done → verified_complete`; emit `wave.pretask_verified { task_id, pre_done_age_days }` AYIN span; proceed to next wave.
+
+### §7.8.3 Pre-completion provenance requirement
+
+Pre-completion markers MUST cite:
+- Session date when pre-completion occurred
+- Operator-authorization signal (Canon XV stamp, /XEA verdict reference, or explicit instruction)
+- Cross-reference to where the artifact lives (plan §, canon section, file path)
+
+Without provenance, pre-completion is unverifiable and reverts to fresh execution.
+
+### §7.8.4 Anti-pattern — silent pre-completion
+
+Tasks completed during plan authoring without ⚡PRE-DONE marker = silent pre-completion. /BUILD has no way to distinguish "already done" from "needs execution" and will re-execute, producing duplicate work or canon drift. **Mark explicitly or expect re-execution.**
+
+---
+
+## §Phase-2A.5 — Canon-Doc Amendment Phase Protocol (2026-05-18 ADDITION, candidate #17)
+
+**Scope**: When a build plan introduces patterns that contradict, extend, or fill gaps in existing canon docs, the plan SHOULD insert a dedicated canon-doc amendment phase between research and implementation phases. This closes the **canon-violation-by-construction** risk where implementation lands code that contradicts canon-doc declarative statements.
+
+### §Phase-2A.5.1 Trigger conditions
+
+A plan triggers this protocol when ANY of:
+
+1. **Declarative contradiction**: implementation introduces capability that an existing canon section declares absent (e.g., webshell-api-surface §2.10 declared "no worktree operations exist" but plan implements them)
+2. **Schema extension**: plan extends a canon schema (e.g., LASDLC v2.5.1 → v2.5.2 wave schema addition)
+3. **New canon doc required**: plan introduces a discipline that lacks any canonical anchor (e.g., observability-canon.md as 9th doc for AYIN gates)
+4. **Cross-canon dependency**: plan touches ≥3 canon docs in coordinated ways (security + observability + agents-playbook + cookbook)
+
+### §Phase-2A.5.2 Phase structure
+
+Canon-amendment phase sits BETWEEN the security/observability foundation phase (Phase 2A in ironclaw pattern) and the spine-implementation phase (Phase 3). Typical contents (parallel-safe, single wave):
+
+| Task class | What | Who |
+|---|---|---|
+| Doc-edit | additive canon section per affected doc | knowledge |
+| Drift-fix | correct factually-wrong prose in existing canon | knowledge |
+| New-doc | author NEW canon doc if needed | knowledge + domain owner |
+| .md/.html sync | for paired docs (webshell-api-surface), bump both siblings | knowledge |
+| Property test | `tests/canon_doc_integrity.rs` enforces post-edit invariants | testing |
+| LÆX queue file | submit Canon XXXIX 4-step pipeline candidate per amendment | LÆX |
+
+### §Phase-2A.5.3 Gate criteria
+
+Phase passes only when:
+
+1. All canon-doc edits committed with `<!-- IRONCLAW-{build} CANON AMENDMENT -->` attribution headers
+2. `tests/canon_doc_integrity.rs` PASSES (count match, no orphan references)
+3. .md/.html sibling sync verified (HTML 4-location bump per webshell-api-surface §6.6)
+4. LÆX Canon XXXIX 4-step pipeline queue entries filed for each amendment
+5. Operator stamp (Canon XV override) recorded OR LÆX ratification deferred to Phase 7
+
+### §Phase-2A.5.4 Why this phase exists
+
+**Anti-pattern**: implementing capability without amending the canon section that contradicts it = the implementation IS canon-violating from day 1. Even when LÆX eventually ratifies the amendment at Phase 7, the intervening weeks have code-in-flight that contradicts canon. Auditing this state is impossible — operator can't tell whether canon or code is authoritative.
+
+**This protocol** lands canon edits BEFORE implementation begins, so during phases 3-6 the canon doc and code are mutually consistent. Phase 7 LÆX ratification then formalizes what's been operationally true since Phase 2A.5.
+
+### §Phase-2A.5.5 Pattern source
+
+ironclaw-spine §5.7 + §5.8 (canonical instance, 2026-05-18 authoring session). See ironclaw-spine plan for the reference exemplar.
+
+---
+
+*v1.7 adds (2026-05-18): §15.3.13 Wave Dispatch Protocol + §7.8 Pre-Completion Verification Gate + §Phase-2A.5 Canon-Doc Amendment Phase Protocol. Closes ironclaw-spine iter-11 follow-on gaps (wave fan-out/fan-in mechanics + ⚡PRE-DONE marker operationalization + canon-violation-by-construction prevention). LÆX Phase 7 ratification pending — candidates #15, #16, #17.*

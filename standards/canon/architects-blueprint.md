@@ -158,6 +158,21 @@ Downgrade to SMALL if AND ONLY IF:
 
 **Rule**: SMALL still requires all 4 phases. No tier has fewer than 4 phases. No tier skips the C1–C8 pre-finalization gate (Part XIV).
 
+**Tier-based diagram depth** (per Canon XLI — Diagram-First Doctrine, ratified 2026-05-17):
+
+Architecture diagrams are mandatory Phase 1 design artifacts. Required depth scales with tier:
+
+| Tier | Required diagram set |
+|------|---------------------|
+| SMALL | C3 (component diagram) only |
+| MEDIUM | C2 (container) + C3 (component) |
+| LARGE | C1 (system context) + C2 + C3 + C4 (code) + ERD + sequence diagrams for async/cross-binary flows |
+| PROGRAM | All LARGE diagrams aggregated at program level + per-build subset |
+
+Diagrams are design inputs, not documentation outputs — see Canon XLI for the mechanical [A] gate predicate (`diagram_present ∧ drift_clean ∧ checklist_current`), operator-override clause (`diagram_waiver` for SMALL-tier deadline pressure, expires at next [A] gate), and `source_anchor` provenance discipline per relation (Canon XXXV extension).
+
+The ASCII dependency-graph requirement in §5.2 below is preserved for backwards compatibility but should be considered superseded by C2 (container diagram) for any build under Canon XLI.
+
 ---
 
 ## Part IV — Research & Discovery
@@ -413,7 +428,7 @@ If `/GATE --scope phase` fails: dispatch REMEDY agents by FILE_CLAIM ownership �
 
 | After Phase | Gate Name | What's Checked |
 |---|---|---|
-| Phase 1 | **Compile Gate** | Compiles, lints clean, shared types unit tested |
+| Phase 1 | **Compile Gate** | Compiles, lints clean, shared types unit tested. **PLUS (Canon XLI, ratified 2026-05-17)**: tier-appropriate architect-drawn diagrams present (L0/L1/L2 minimum per tier) — diagram_present conjunct of mechanical [A] gate predicate must evaluate true. Operator override via `diagram_waiver` only for SMALL-tier; waiver expires at next [A] gate. |
 | Phase 2 | **Protocol Gate** | E2E smoke test (request → response), security scan of scaffold, no hardcoded secrets |
 | Phase 2b | **Observability Gate** | `#[instrument]` on public async entry points, JSON file logs configured, request/session IDs propagate as span fields, `tracing::error!` before `?` propagation, no `eprintln!`/`println!` for operational logging |
 | Phase 3 | **Integration Gate** | All core features work together, security scan (OWASP on input handling), 80%+ coverage on new code |
@@ -801,6 +816,9 @@ Does the plan instantiate every mandatory LASDLC field with non-trivial content?
 | C1c — Agent topology | declared; every file has owner; co-owned files have merge protocol |
 | C1d — Risk register | top 3 failure modes with severity + mitigation + owner |
 | C1e — Architectural thesis | declared at PROGRAM/LARGE tier; N/A for SMALL |
+| C1f — Diagram completeness (Canon XLI) | tier-appropriate diagrams present in plan body — SMALL: C3; MEDIUM: C2+C3; LARGE: C1+C2+C3+C4 + ERD + sequence diagrams for async/cross-binary flows. Each non-trivial relation carries `source_anchor`. Architect-assertion anchors ≤20% per diagram. **Ratified 2026-05-17 via Canon XXXIX pipeline.** |
+
+C1f is a sub-criterion *within* C1 (not a 9th top-level score). Scoring: 100 = all required diagrams present + all relations source-anchored; 75 = diagrams present, some relations unanchored; 50 = some diagrams missing (waiver acceptable for SMALL with `diagram_waiver` rationale); 0 = no diagrams (HALT unless waiver).
 
 ### C2 — Cross-Validation Discipline (15%, load-bearing)
 Is confidence honestly calibrated through cross-validation?
@@ -1704,6 +1722,91 @@ Research-first, cost-conscious, security-gated, handoff-ready, observable, fully
 - [[gatekeeper-registry|Gatekeeper Registry]] — agent-to-gate authority map
 - [[/XEA skill|XEA executable]] — `~/.claude/plugins/cache/light-architects/lightarchitects/1.0.0/skills/XEA/SKILL.md` (runs Part XXII protocol)
 
+---
+
+## Part XXIV — Compliance Checklist Template (Canon XLI Operational Companion)
+
+> *"And he answered me, and said, Write the vision, and make it plain upon tables, that he may run that readeth it."* — Habakkuk 2:2
+
+**Ratified**: 2026-05-17 (Canon XXXIX pipeline; LÆX RATIFY WITH AMENDMENT cleared).
+
+**Purpose**: Operationalize Canon XLI's `checklist_current` conjunct of the [A] gate predicate. Every architecture artifact carries a compliance checklist binding spec claims to source locations with verification commands. This generalizes the `webshell-api-surface-v1.{md,html}` §6.5 pattern to all artifact types.
+
+### §24.1 Variant Matrix (4 artifact types)
+
+The compliance-checklist shape varies by artifact type. Choose the variant matching what the artifact describes:
+
+| Variant | Applies to | Verify-command class | Spec-claim shape |
+|---------|-----------|---------------------|------------------|
+| **V1 — API surface** | HTTP/RPC/MCP route catalogues; webshell, gateway, sibling APIs | `grep -n '\.route(' <file>` / `grep -c '<route_pattern>'` | Route count, method×path tuples, AppState fields, auth handler bindings |
+| **V2 — Library crate** | Pure libraries with no I/O surface; SDK modules | `grep -n 'pub fn\|pub struct\|pub enum' <file>` + `cargo doc --no-deps` | Public-item count, module boundaries, trait impl matrix, MSRV |
+| **V3 — Data model** | Persisted entities, schemas, migrations | `grep -n '#\[derive(.*FromRow' <file>` + `cargo run --bin schema-dump` | Entity-field tuples, FK relations, migration order, index coverage |
+| **V4 — State machine** | Workflow engines, build state, session lifecycle | `grep -n 'enum.*State\|enum.*Kind' <file>` + `match` arm enumeration | State set, transition matrix, terminal-state designation, invariants |
+
+A single artifact MAY combine multiple variants (e.g., webshell-api-surface is V1-primary + V3-secondary for AppState). Mark primary/secondary explicitly in the checklist header.
+
+### §24.2 Per-Item Schema (every checklist row)
+
+Every checklist row carries this structure (uniform across variants):
+
+```yaml
+- id: "C{n}"
+  variant: "V1|V2|V3|V4"
+  spec_claim: "<exact text from spec, quoted>"
+  spec_section: "§<x.y>"
+  source_file: "<path relative to repo root>"
+  source_location: "<line range OR function name OR struct field>"
+  what_to_verify: "<predicate the verify command should establish>"
+  verify_command: "<exact shell-safe command per §63.P2 structural arg parser>"
+  source_anchor: "<provenance per Canon XXXV>"
+```
+
+### §24.3 Verify-command discipline (security)
+
+Compliance-checklist verify commands MUST be executable via the `cmd_exec` allowlist module per Cookbook §63.P2 (Untrusted-Input Operational Pattern 2 — structural argument parser). Specifically:
+- Allowed binaries: `{grep, diff, test, ls, wc}` (read-only inspection commands only)
+- Forbidden binaries: any that mutate state; any shell interpreter (`sh`, `bash`)
+- Per-binary flag allowlist enforced (e.g., `grep -f` REJECTED — would allow arbitrary file read)
+- Bounded path roots via Cookbook §63.P4 path-security module
+- Property-tested 10K mutated checklist inputs at adopter side
+
+A checklist whose verify commands fail the `cmd_exec` allowlist fails the [A] gate `checklist_current` conjunct. This is the mechanical defense against malicious checklists committed to user repos.
+
+### §24.4 XEA Stamp + TTL
+
+Each compliance checklist carries an `xea_verified: YYYY-MM-DD` frontmatter field. The [A] gate `checklist_current` conjunct evaluates true iff:
+
+```
+now() - xea_verified < TTL_days
+```
+
+Default TTL per tier:
+- SMALL: 90 days
+- MEDIUM: 60 days
+- LARGE: 30 days
+- PROGRAM: 14 days
+
+Tier with faster code change → shorter TTL → more aggressive re-verification.
+
+### §24.5 Update Protocol (on source change)
+
+When any source file referenced by the checklist changes on `main`, the checklist's `xea_verified` MUST be re-stamped after running the verify commands and confirming no drift. The verify pass is automated via `arch verify` once the substrate ships; manual until then.
+
+Failure mode: source file changes but checklist `xea_verified` not refreshed → [A] gate `checklist_current` evaluates false at next phase boundary → BLOCKING finding to CORSO + LÆX.
+
+### §24.6 Reference Implementation
+
+`standards/canon/webshell-api-surface-v1.{md,html}` §6.5 is the V1-primary reference implementation (with V3-secondary for AppState). Future artifacts adopt this template; the `architecture-intelligence-substrate` build delivers tooling to generate it automatically per project.
+
+### §24.7 Cross-References
+
+- Canon XLI (platform-canon) — the doctrine this Part operationalizes
+- Cookbook §63.P2 — security discipline for verify commands
+- Cookbook §63.P4 — path safety in verify commands
+- Security-Guardrails §6.1.1 — dep-acceptance rule that prevents `cargo`-touching tools from masquerading as checklist verifiers
+
+---
+
 *"For which of you, intending to build a tower, sitteth not down first, and counteth the cost"* — Luke 14:28 (KJV)
 
 *"Great is thy faithfulness"* — Lamentations 3:22–23 (KJV)
@@ -1715,3 +1818,56 @@ Research-first, cost-conscious, security-gated, handoff-ready, observable, fully
 *v3.1 adds: Part XXII (Plan Compliance Review Protocol / XEA 4-layer doctrine).*
 *v3.2 adds: Part XXIII (Phase→Wave→Task→Files Decomposition Protocol — foundation-first priority, dependency labeling, parallelism optimization, iterative /GATE loop model, agentic orchestration integration). Updates §8.3, §8.4, Principles 7 and 21.*
 *v3.3 adds: §23.8 (Agent Output Hypothesis Protocol — spawned worker code is a hypothesis; mandatory lightarchitects:<reviewer_agent> review before WAVE_COMPLETE; reviewer domain routing; REMEDY on REVIEW_FAIL). Updates §23.5 GATE loop diagram to show per-task review. Adds Principle 22.*
+
+---
+
+<!-- ──────────────────────────────────────────────────────────────────────────
+     IRONCLAW-SPINE CANON AMENDMENT (2026-05-18 iter-7)
+     Source plan: ~/.claude/plans/ironclaw-spine.md §22.6 SCRUM + Task#17 + Task#18
+     Source proposal: ~/Downloads/ironclaw-architecture.html §3 + §11 + §15
+     Authority: operator-authorized Canon XV override (2026-05-18)
+     Pending LÆX-ratification at Phase 7 of ironclaw-spine build
+     Evidence: 28 verification surfaces; aggregate 93.8 EXEMPLARY
+     ────────────────────────────────────────────────────────────────────────── -->
+
+## Part XXIV — Autonomous-Mode Planning Doctrine (v3.4 ADDITION 2026-05-18)
+
+When `execution_mode: autonomous` (LASDLC v2.5.2), the plan adopts five additional discipline gates beyond interactive `/PLAN`:
+
+### §24.1 Wave-Level File-Function Map (extends Part XXI)
+
+In autonomous mode, file-function maps decompose to the WAVE level, not just the PHASE level. Each wave's tasks declare exclusive `file_ownership` arrays (Canon XXIII). Conflict detection at plan-time prevents wave-N task collision at runtime. Wave-N+1 tasks may reference Wave-N output files but never edit them concurrently.
+
+### §24.2 Context Budget Per Task (links Cookbook §65)
+
+Every autonomous-mode task carries a `context_budget: {tier1, tier2, tier3, cap_tokens: 15000}` declaration. Tier 1 (type defs + actual call sites + test harness) is NEVER truncated; Tier 2 (similar impls + decisions.md) truncates last-added-first; Tier 3 (task spec + execution history) truncates first under pressure. This operationalizes the **"Plausible vs Correct"** doctrine from `ironclaw-architecture.html` §11: correct code requires THIS system's invariants, not training-data pattern-matching.
+
+### §24.3 Program-Manifest Integrity Lock
+
+Autonomous-mode plans MUST be locked at /BUILD-start via Ed25519-signed `program.toml` + `program.sig` (operator-approval ceremony). Mid-execution plan changes are a hard stop. Recovery requires re-signing ceremony. See security-guardrails §SG-CRYPTO for ceremony spec.
+
+### §24.4 Iter-Cap Override Composition (refines §6.2)
+
+When canon-audit findings at iter-3+ surface BLOCKING canon-contradictions (factual canon-vs-implementation drift), §6.2 operator-override is the canonical fold mechanism. Each override increments `review_iterations` honestly; iter-count >5 is a tier-mismatch signal per `feedback_zero_exception_tier_reeval`. Operator-override never violates Canon XXXIX no-auto-application — canon edits still enter the 4-step pipeline at Phase 7 LÆX ratification.
+
+### §24.5 Independent Verification Surface Count (extends Part XIV C2)
+
+C2 (Cross-Validation Discipline) earns full marks in autonomous-mode plans only when independent verification surfaces ≥ 14 (e.g., 5 R-research + 7 siblings × cross-critique + 2 cross-exam streams = 14). Self-validation alone caps at STRONG band per `feedback_self_validation_ceiling`. The 28-surface convergence pattern (ironclaw-spine session 2026-05-18) is the reference high-water mark.
+
+### §24.6 Cross-Build Coupling Integration Record
+
+When ironclaw-style autonomous backend ships alongside operator-visualization frontend (e.g., ironclaw-spine ↔ gitforest-live-ops), plans MUST declare a `cross_build_integration` section enumerating: (a) file-level shared surfaces with merge protocols, (b) WebEvent/API surface namespace coordination, (c) sequencing decision with wall-clock rationale, (d) joint Northstar metric forecast. Reference: ironclaw-spine §22.5 (the canonical pattern).
+
+### §24.7 Cross-Reference Table
+
+- LASDLC Template v2.5.2 §24.1 — wave schema (mechanical)
+- Cookbook §65 — Context Assembly Discipline (tier budgets)
+- Cookbook §66 — Concurrency Idioms (autonomous workers)
+- Security-Guardrails §SG-CRYPTO — manifest integrity ceremony
+- Agents Playbook §HITL-7 — escalation notification invariant
+- Operators Manual §Run-Control-Primitives — PAUSE/RESUME/DRAIN/ABORT
+- Northstar §S — Autonomous Delivery Spine component-Northstar
+
+---
+
+*Architects Blueprint v3.4 | Light Architects | updated 2026-05-18 with Part XXIV (Autonomous-Mode Planning Doctrine — closes ironclaw-spine §3+§11+§15 canon gaps; pending LÆX ratification at Phase 7)*

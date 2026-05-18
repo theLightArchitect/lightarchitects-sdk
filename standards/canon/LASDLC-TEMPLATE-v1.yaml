@@ -49,7 +49,45 @@
 # ============================================================================
 
 template_name: "LASDLC-TEMPLATE-v1"
-template_version: "2.5.1"
+template_version: "2.5.3"
+# v2.5.3 (2026-05-18): Git Branching Invariants. Plan-level `git_branching_invariants`
+# block + per-task `git_scope`. Closes worker-git-awareness gap. Composes with
+# Cookbook §64.8 + agents-playbook §15.3.13 + /BUILD v2 Step 11.3.0-11.3.5 (28 gates).
+# LÆX candidate #19. See tail-amendment for full schema.
+#
+# v2.5.2 (2026-05-17): Added optional `architecture_artifacts` block per Canon XLI
+# (Diagram-First Doctrine, ratified 2026-05-17 via Canon XXXIX pipeline).
+# Backward-compatible: block is `optional` for plans authored under v2.5.1 or earlier;
+# `required_if: lasdlc_template_version >= "2.5.2"` enforces presence on new plans only.
+# See architecture_artifacts schema below this header.
+
+architecture_artifacts:
+  required_if: 'lasdlc_template_version >= "2.5.2"'
+  optional_for: 'lasdlc_template_version <= "2.5.1"'
+  description: |
+    Per Canon XLI, every plan declares tier-appropriate architecture diagrams as
+    Phase 1 design artifacts. Required depth scales with tier per Blueprint Part III.
+    See Blueprint Part XXIV for compliance-checklist variant matrix.
+  schema:
+    diagrams:
+      tier_SMALL: ["C3_component"]
+      tier_MEDIUM: ["C2_container", "C3_component"]
+      tier_LARGE: ["C1_context", "C2_container", "C3_component", "C4_code", "ERD_if_persisted_data", "sequence_for_async_flows"]
+      tier_PROGRAM: ["all_LARGE_aggregated_at_program_level", "per_build_subset_at_build_level"]
+    artifact_format: "Mermaid embedded in plan body OR Likec4 DSL referenced by path"
+    source_anchor_discipline: "Each non-trivial relation carries source_anchor: {file, lines} OR source_anchor: architect_assertion. Architect-assertion <=20% per diagram per Canon XLI."
+    compliance_checklist: "Per Blueprint Part XXIV - choose variant V1/V2/V3/V4 matching artifact type; verify commands restricted to cmd_exec allowlist per Cookbook §63.P2."
+    xea_stamp: "Field xea_verified: YYYY-MM-DD; TTL by tier per Blueprint §24.4."
+  operator_override:
+    diagram_waiver:
+      allowed_tiers: ["SMALL"]
+      schema:
+        rationale: "single-paragraph justification"
+        expires_at: "next [A] gate of this build OR next operator review (whichever first)"
+      auto_flags: "LÆX retrospective review queue"
+      not_allowed_for: ["MEDIUM", "LARGE", "PROGRAM"]
+      override_path_for_higher_tiers: "Canon XV explicit operator authority invocation logged per Canon XXXIX §6.2"
+
 framework: "LASDLC"
 framework_version: "1.0.0"
 created: "2026-04-26"
@@ -7247,3 +7285,126 @@ reference_table_integrity:
 #
 # history_latest_version: "2.5.1"
 # history_latest_summary: "PATCH — Git Orchestration Topology: branch rules, worktree lifecycle, commit/phase/merge gates, agent dispatch (closes git-orchestration-standard build)"
+
+# ============================================================================
+# IRONCLAW-SPINE CANON AMENDMENT — v2.5.2 Wave Schema (2026-05-18 iter-7)
+# ============================================================================
+# Source plan: ~/.claude/plans/ironclaw-spine.md §3 Hierarchy + §22.6 SCRUM
+# Source proposal: ~/Downloads/ironclaw-architecture.html §3 Hierarchy
+# Authority: operator-authorized Canon XV override (2026-05-18)
+# Pending LÆX-ratification at Phase 7 of ironclaw-spine build
+# Evidence: 28 verification surfaces (5 R1-R5 + 7×3 SCRUM + Task#17 + Task#18)
+# ============================================================================
+
+# v2.5.2 PATCH — Wave-level parallelism schema + autonomous-mode flag
+#
+# Per ironclaw-architecture.html §3, the fixed 5-level hierarchy is:
+#   PROGRAM → BUILD → PHASE → WAVE → TASK
+# Existing template covers PROGRAM/BUILD/PHASE/TASK. v2.5.2 adds WAVE as a
+# phase sub-unit and `execution_mode` to distinguish interactive from autonomous.
+#
+# Addition to phase schema:
+#   phases:
+#     - name: phase-N
+#       execution_mode: interactive | autonomous  # NEW field, default interactive
+#       waves:                                      # NEW array (optional for interactive)
+#         - wave_id: W1
+#           parallelism: 1..7                      # max 7 concurrent tasks per Ironclaw §6
+#           tasks:
+#             - id: T1
+#               agent_owner: <agent>
+#               file_ownership: [paths]
+#               depends_on: [task_ids]             # within same wave or prior wave
+#               context_budget:                    # NEW per Cookbook §65 (Context Assembly)
+#                 tier1_tokens: u32                # type defs + call sites + test harness — NEVER truncated
+#                 tier2_tokens: u32                # similar impls + decisions.md — last-added-first truncation
+#                 tier3_tokens: u32                # task spec + step history — first-truncated under budget pressure
+#               cap_tokens: 15000                  # hard cap per Ironclaw §11 — 15K focused beats 200K unfocused
+#
+# Wave semantics (per ironclaw §3):
+# - Tasks within a wave run CONCURRENTLY (up to parallelism cap)
+# - Waves within a phase run SEQUENTIALLY (wave N+1 starts after wave N merges)
+# - Wave branches cut from feat/build HEAD AFTER prior wave's merge completes
+# - Wave failure: max 3 FixAgent iterations (MAX_GATE_ITERATIONS=3 per Cookbook §49.4)
+#   then HITL escalation to operator
+#
+# Backward compatibility:
+# - Interactive plans (execution_mode: interactive) MAY omit waves entirely
+# - Existing v2.5.1 plans render correctly under v2.5.2 schema (waves array absent)
+# - Autonomous plans (execution_mode: autonomous) MUST declare waves with parallelism
+#
+# v2.5.2 also adds:
+# - context_budget per task (links Cookbook §65 Context Assembly Discipline)
+# - program_manifest_integrity block (links security-guardrails §SG-CRYPTO)
+# - canon_corpus_subset list (which canon docs constitute the supervisor system prompt)
+# - autonomous-mode preflight gates G9–G12 (disk ≥60GB, shared CARGO_TARGET_DIR,
+#   Ed25519 keypair, caffeinate wrapper) — see agents-playbook §15.3
+#
+# history_latest_version: "2.5.2"
+# history_latest_summary: "PATCH — Wave schema + execution_mode field + context_budget per task + autonomous-mode preflight (closes ironclaw-spine §3 Hierarchy canon gap; 2026-05-18)"
+
+# ============================================================================
+# IRONCLAW-SPINE CANON AMENDMENT — v2.5.3 Git Branching Invariants (2026-05-18)
+# ============================================================================
+# Closes operator concern (2026-05-18): "Are there hardcoded gates ensuring git
+# branching strategy adhered to before any code is written?"
+#
+# Adds plan-level `git_branching_invariants` block + per-task `git_scope` declaration.
+# Composes with Cookbook §64 (mutex), §64.4 (naming), §64.8 (preamble), and
+# agents-playbook §15.3.13 Pre-Dispatch Checklist.
+#
+# Authority: operator-authorized Canon XV override (2026-05-18)
+# LÆX Phase 7 ratification pending — candidate #19
+# ============================================================================
+
+# Plan-level block (REQUIRED for execution_mode: autonomous OR plan with waves[]):
+#
+# git_branching_invariants:
+#   branch_naming_convention: "task/{build}/p{N}-w{M}-{slug}"  # Cookbook §64.4
+#   separator: "/"  # NEVER hyphen (build_id_from_task ambiguity)
+#   worktree_root: "<build_worktree_root>"  # from frontmatter
+#   worktree_path_pattern: "<root>/p{N}-w{M}-{slug}/"
+#
+#   wave_cut_invariant: |
+#     Wn+1 task branches MUST be cut from feat/{build} HEAD AFTER Wn merges,
+#     NEVER before. Cutting all waves upfront produces merge conflicts.
+#
+#   worker_scope_rules:
+#     - Worker operates EXCLUSIVELY in assigned worktree
+#     - Worker stages + commits via `git commit` (NOT git2; honors hooks per Cookbook §64.5)
+#     - Worker NEVER runs: git checkout, git push, git merge, git worktree, git rebase
+#     - Worker NEVER touches files outside file_ownership manifest
+#     - Worker reports IMPLEMENTATION_COMPLETE to MergeAgent; does NOT self-merge
+#
+#   post_task_verification:
+#     - git diff --name-only HEAD~1 ⊆ file_ownership manifest (Cookbook §64 + playbook §7.7)
+#     - Tree-hash matches worker report (playbook §15.4.5)
+#     - decisions.md entry written with manifest_id + active subkey-id
+#
+# Per-task entry additions (within phases[].waves[].tasks[]):
+#
+# tasks:
+#   - id: <task-id>
+#     branch: task/{build}/p{N}-w{M}-{slug}
+#     worktree: <root>/p{N}-w{M}-{slug}/
+#     file_ownership: [<paths>]
+#     git_scope:                           # NEW v2.5.3
+#       parent_branch: feat/{build}
+#       wave_siblings: [<other-task-ids-in-same-wave>]  # parallel-safe peers
+#       depends_on: [<prior-wave-task-ids>]  # empty for W1 of a phase
+#       merge_target: feat/{build}
+#       pre_dispatch_sha: "<recorded by orchestrator at wave-cut time>"
+#       preamble_injected: true              # confirms Cookbook §64.8 preamble in system prompt
+#
+# Composition with v2.5.2:
+# - `git_branching_invariants` is a top-level plan block (alongside `northstar_lineage`)
+# - `git_scope` is a per-task field (alongside `file_ownership` + `context_budget`)
+# - Both REQUIRED when execution_mode: autonomous OR plan.waves[] non-empty
+# - Plans without these blocks are valid for interactive mode only (backward-compat)
+#
+# /BUILD skill v2 Step 11.3.0 through 11.3.5 enforces these invariants via 28 explicit
+# gates (PP-1..PP-4 pre-phase + PW-1..PW-7 pre-wave + PT-1..PT-7 pre-task + PoT-1..PoT-3
+# post-task + PoW-1..PoW-3 post-wave). Failure on any gate HALTS dispatch.
+#
+# history_latest_version: "2.5.3"
+# history_latest_summary: "PATCH — git_branching_invariants plan-level block + per-task git_scope declaration; closes worker-git-awareness gap surfaced 2026-05-18; composes with Cookbook §64.8 preamble + agents-playbook §15.3.13 Pre-Dispatch Checklist + /BUILD skill v2 Step 11.3.0-11.3.5 (28 explicit gates)"

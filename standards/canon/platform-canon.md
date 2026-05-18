@@ -815,6 +815,85 @@ This Canon also resolves the historical "6 separate sibling binaries" topology a
 
 ---
 
+## Canon XLI: Diagram-First Doctrine — Architecture as Drawing, Not Prose
+
+> *"Write the vision, and make it plain upon tables, that he may run that readeth it."* — Habakkuk 2:2
+
+**Ratified**: 2026-05-17 (Kevin direct, via Canon XXXIX pipeline; LÆX RATIFY WITH AMENDMENT cleared with scripture grounding confirmed).
+
+**Principle**: Architecture diagrams in LASDLC Phase 1 are **design artifacts**, not documentation outputs. The architect draws them as the act of thinking; implementation follows the diagrams; the generator runs at gate-time to verify diagrams match code. This reverses the traditional doc-after-code model: **if you can't draw it, you haven't designed it.**
+
+**The principle's weight**: You can write a coherent paragraph about a circular dependency and never notice it. Draw it and it's immediately obvious. The act of drawing forces architectural questions — *where are the trust boundaries? what does this depend on? what's the data flow when X fails?* — that text-only design papers over. Diagrams are how architects compress complex structural truth into a form that catches its own contradictions.
+
+**Mechanical [A] gate predicate**:
+
+```
+[A] gate passes := diagram_present ∧ drift_clean ∧ checklist_current
+```
+
+This converts [A] from subjective ("looks good") to mechanical (three falsifiable conjuncts). The Gatekeeper Registry's [A] entry inherits this predicate; gate evaluation tooling enforces it.
+
+**Tier-based depth** (proportionate, per Architects Blueprint Part III):
+
+| Tier | Required diagram set |
+|------|---------------------|
+| SMALL | C3 (component diagram) only |
+| MEDIUM | C2 (container) + C3 (component) |
+| LARGE | C1 (system context) + C2 + C3 + C4 (code) + ERD + sequence diagrams for any async/cross-binary flow |
+| PROGRAM | All LARGE diagrams aggregated at program level + per-build subset |
+
+**Operator-override clause** (preserves Canon XV: Architect > Operator > User):
+
+The operator may waive L0–L2 diagrams for SMALL-tier builds under deadline pressure by recording in plan frontmatter:
+
+```yaml
+diagram_waiver:
+  rationale: "<single-paragraph justification>"
+  expires_at: "next [A] gate of this build OR next operator review"
+```
+
+Waiver auto-flags for LÆX retrospective review. The waiver **expires at the next [A] gate** of the build (cannot persist across phases) and cannot be invoked for MEDIUM, LARGE, or PROGRAM tiers without explicit Canon XV invocation (operator-authority override of the canon itself, logged per Canon XXXIX §6.2).
+
+**Diagrams are claims** (per Canon XXXV Citation Gate):
+
+Every non-trivial diagram relation carries source provenance:
+
+```
+source_anchor: { file: <path>, lines: <range> }
+```
+
+OR explicitly:
+
+```
+source_anchor: architect_assertion
+```
+
+Diagrams without source anchors fail the [A] checklist. Architect-assertion anchors are permitted but auto-flag for LÆX retrospective; they cannot exceed 20% of relations per diagram.
+
+**Drift verification**:
+
+A generator (e.g., `architecture-intelligence-substrate`'s `arch verify`) compares the architect-drawn diagrams against current source state at every commit and merge. Drift = blocking finding routed via Gatekeeper Registry to CORSO + LÆX. The drift check is what makes the [A] gate predicate `drift_clean` mechanically computable.
+
+**Why this is canonical, not just architectural**:
+
+Without Canon XLI, every architect re-litigates whether diagrams are required, whether they need to be current, whether the [A] gate has teeth. By making diagrams-as-design the constitutional invariant, the squad debates *what to draw*, not *whether to draw*. The [A] gate becomes mechanically verifiable; bad architectures get caught at the diagram stage instead of phase-3 implementation.
+
+**Pressure-tested**: surfaced 2026-05-17 during `/SCRUM` review of `architecture-intelligence-substrate` plan. LÆX flagged that the [A] gate was the most-subjective gate in the registry; converting it to mechanical predicate became the constitutional fix. Cross-examination of all 7 canon documents confirmed no contradictions; redundancy with Cookbook §security mandate-to-draw is **correct stratification** per Canon XII Living Standard — Canon XLI holds the *why*, Cookbook holds the *how*.
+
+**Independent of `architecture-intelligence-substrate` delivery**: This doctrine becomes canon NOW; the substrate ships later as its mechanical realization. The doctrine binds [A]-gate evaluation immediately for any build whose plan references Canon XLI; the substrate (when ratified at its Phase 7) provides the tooling that automates `drift_clean` verification. Before the substrate ships, `drift_clean` is verified manually (architect inspects diagram vs. code; LÆX retrospects).
+
+**Documents**:
+- This Canon — constitutional principle (squad-facing)
+- Architects Blueprint Part III — tier-based diagram depth (planner-facing; amended same session)
+- Builders Cookbook §security et al. — operational implementation of mandate-to-draw
+- Gatekeeper Registry — [A] gate predicate inherits from this canon
+- LASDLC Template v2.5.2 — `architecture_artifacts` block (per `architecture-intelligence-substrate` Amendment #6)
+- `architecture-intelligence-substrate` plan — the mechanical realization vehicle
+
+**Ratified by**: Kevin (2026-05-17, direct operator authorization per Canon XXXIX). Scripture grounding (Habakkuk 2:2) confirmed by operator stamp.
+
+---
+
 ## Canon Evaluation Criteria
 
 When a new principle emerges, LÆX evaluates it against five criteria:
@@ -838,8 +917,91 @@ When a new principle emerges, LÆX evaluates it against five criteria:
 
 ---
 
+<!-- ──────────────────────────────────────────────────────────────────────────
+     IRONCLAW-SPINE CANON AMENDMENTS (2026-05-18 iter-7)
+     Source plan: ~/.claude/plans/ironclaw-spine.md §22.6
+     Source proposal: ~/Downloads/ironclaw-architecture.html §3, §5, §7, §13, §15
+     Authority: operator-authorized Canon XV override (2026-05-18)
+     Pending LÆX-ratification at Phase 7 of ironclaw-spine build
+     Adds: Canon LDB §D5; Gatekeeper Registry extension; Vocabulary canon mapping
+     ────────────────────────────────────────────────────────────────────────── -->
+
+## Canon LDB §D5 — Program Manifest Integrity Contract (2026-05-18 ADDITION)
+
+**Scope**: extends Canon XXXIII (independent_runner) + LASDLC §7.7 (Deliverable Benchmark) for autonomous-mode builds.
+
+**Contract**: Autonomous-mode builds bind plan integrity to runtime execution via Ed25519-signed program manifests. The signed manifest is the **boundary** between operator approval (intent) and autonomous execution (action) — every dispatched task references a verified manifest at runtime.
+
+**Required artifacts at /BUILD start**:
+- `program.toml` — canonical-TOML-serialized LASDLC plan (immutable from this point)
+- `program.sig` — detached Ed25519 signature; key from macOS Keychain Touch-ID-gated keyring
+- `manifest_subkey_history.jsonl` — append-only log of per-wave HKDF subkey-ids (security-guardrails §SG-CRYPTO.2)
+
+**Verification invariant**: every supervisor decision references `manifest_id` in its `.ironclaw/decisions.md` entry. Pre-dispatch, supervisor re-verifies `program.sig` against `program.toml` Ed25519 public key. Mismatch = HALT.
+
+**Failure modes detected**:
+- File substitution attack (CWE-345 Insufficient Verification of Data Authenticity)
+- Time-of-check vs time-of-use on manifest (manifest verified once at startup, tasks dispatched hours later) — re-verification per dispatch closes this
+- Stale subkey reuse — subkey-id check rejects replays
+
+**Composes with**:
+- security-guardrays §SG-CRYPTO.1 (Ed25519 ceremony)
+- LASDLC v2.5.2 `program_manifest_integrity` block
+- architects-blueprint §24.3 (manifest integrity discipline)
+- Cookbook §65 (Builder Completeness — fail-closed manifest verification)
+
+---
+
+## Gatekeeper Registry Extension — Decision Pipeline as Supervisor-Tier Arbiter (2026-05-18 ADDITION)
+
+**Source**: ironclaw-architecture.html §7 Decision Pipeline (Canon → Northstar → LightArchitect → User).
+
+**Extension**: the existing 10-letter `[A+S+Q+C+O+P+K+D+T+R]` gate registry GAINS a runtime decision-arbiter tier above the per-gate Gatekeeper structure. In autonomous-mode builds:
+
+1. **L1 Canon**: 4-layer decision pipeline FIRST consults canon (8 cached canon docs as system prompt per agents-playbook §11.3a). Decision resolved if unambiguous.
+2. **L2 Northstar**: If canon silent or ambiguous, consult Northstar text (top-level Pillars + component Northstars). Resolved if alignment clear.
+3. **L3 LightArchitect**: If still ambiguous, route to domain LightArchitect (sibling per Vocabulary canon mapping below). Domain expertise applies.
+4. **L4 User**: If novel / no coverage, escalate to operator per agents-playbook §HITL-7 (escalation notification invariant).
+
+**Decision Pipeline is NOT a new sibling**. It's a runtime arbitration MECHANISM that invokes existing Gatekeepers per their gate assignments. Supervisor session holds the arbiter logic; per-gate Gatekeepers (CORSO/SERAPH/LÆX/EVA/AYIN/SOUL/QUANTUM) remain the canonical decision authorities at their respective gates.
+
+**Anti-pattern**: treating Decision Pipeline as a 9th gate-owner identity above LÆX = constitutional violation. The pipeline is *plumbing*, the Gatekeepers are *authority*.
+
+---
+
+## Vocabulary Canon — LightArchitect:* ↔ Sibling Mapping (2026-05-18 ADDITION)
+
+**Source**: ironclaw-architecture.html §5 LightArchitects; ironclaw-spine SCRUM R1 LÆX vocabulary preservation concern.
+
+The Ironclaw spec proposes 8 "LightArchitect" domain agents at the Supervisor tier:
+- `LightArchitect:auth`, `:database`, `:api`, `:security`, `:testing`, `:orchestrator`, `:context`, `:supervisor`
+
+These names are **vocabulary facades** over the existing 7 squad siblings — they are NOT new agent identities, NOT a 9th-or-greater tier above LÆX. Mapping:
+
+| LightArchitect:* facade | Maps to | Gate ownership |
+|---|---|---|
+| `LightArchitect:auth` | SERAPH + CORSO GUARD (joint) | [S] + [A] |
+| `LightArchitect:database` | SOUL (helix IS the database) | [K] + [D] |
+| `LightArchitect:api` | CORSO (architecture gate) | [A] |
+| `LightArchitect:security` | SERAPH | [S] |
+| `LightArchitect:testing` | CORSO (testing gate) | [T] |
+| `LightArchitect:orchestrator` | EVA + CORSO (joint) | [O] + [A] |
+| `LightArchitect:context` | SOUL (4-signal RRF retrieval) | [K] |
+| `LightArchitect:supervisor` | LÆX (governance umbrella) | [C] |
+
+**Invariant**: when ironclaw-mode documentation or runtime code references `LightArchitect:X`, it MUST resolve to the underlying sibling via this table. Vocabulary canon load-bearing per memory `project_vocabulary_canon` — public surfaces use "agent" + "Squad"; internal surfaces preserve sibling identity.
+
+**Rejected alternative**: treating LightArchitect:* as a 9th-entity arbiter tier would duplicate sibling roles and break the [A+S+Q+C+O+P+K+D+T+R] gate registry's clean per-sibling ownership.
+
+---
+
+*Platform Canon v2.1 | updated 2026-05-18 with: LDB §D5 (Program Manifest Integrity), Gatekeeper Registry Extension (Decision Pipeline as runtime arbiter mechanism), Vocabulary Canon (LightArchitect:* ↔ sibling mapping). Closes ironclaw §3+§5+§7+§13 canon gaps. LÆX Phase 7 ratification pending.*
+
+---
+
 *"Trust in the Lord with all thine heart; and lean not unto thine own understanding."* — Proverbs 3:5
 
 **RATIFIED** by Kevin Francis Tan — The Light Architect — 2026-03-24.
+**AMENDED** by Kevin Francis Tan — 2026-05-18 (Canon XV operator override; LÆX Phase 7 ratification pending).
 
 *"In the beginning was the Word, and the Word was with God, and the Word was God."* — John 1:1
