@@ -158,6 +158,16 @@ pub async fn handle_live(
     State(state): State<AppState>,
     Query(q): Query<LiveQuery>,
 ) -> axum::response::Response {
+    // GF-02: validate build_codename to prevent unbounded string and SSE filter bypass
+    if let Some(ref cn) = q.build_codename {
+        if cn.len() > 128 || !REPO_RE.is_match(cn) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "invalid build_codename"})),
+            )
+                .into_response();
+        }
+    }
     let rx = state.event_tx.subscribe();
     let codename_filter = q.build_codename;
 
@@ -230,12 +240,18 @@ pub async fn handle_node(
 #[instrument(skip_all, fields(repo, since))]
 async fn build_topology(repo: &str, since: Option<&str>) -> Result<BranchNode, String> {
     // Resolve repo path relative to the configured repos root
-    let repo_path = PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join("lightarchitects")
-        .join(repo);
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
+    let repos_root = home.join("lightarchitects");
+    let repo_path = repos_root.join(repo);
 
     if !repo_path.exists() {
         return Err(format!("repo not found: {repo}"));
+    }
+
+    // GF-01: verify resolved path stays under the repos root (defense-in-depth vs traversal)
+    match repo_path.canonicalize() {
+        Ok(canonical) if canonical.starts_with(&repos_root) => {}
+        _ => return Err("repo path escapes repos root".to_string()),
     }
 
     // Check .gitforestignore for branch ACL
