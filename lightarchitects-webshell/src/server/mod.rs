@@ -39,6 +39,7 @@ use crate::{
     coordination, copilot, csp,
     dispatch::{self, DispatchRegistry},
     events::{self, EVENT_CHANNEL_BUF, WebEvent, builds_handler},
+    gitforest,
     init::telemetry::TelemetryHandle,
     polytope_data, preflight,
     preflight::{OverallStatus, PreflightReport},
@@ -212,6 +213,10 @@ pub struct AppState {
     /// Used to enforce the 1-per-10s rate limit that prevents keychain ACL
     /// dialog spam when the macOS keychain is locked.
     preflight_last_refresh: Arc<AtomicU64>,
+    /// `GitForest` topology cache — 60s TTL, max 64 repos (Phase 4 Agent A).
+    pub gitforest_cache: crate::gitforest::routes::TopologyMokaCache,
+    /// GitHub CI check-run cache — 60s TTL, max 512 SHAs (Phase 4 Agent B).
+    pub check_run_cache: crate::github_proxy::CheckRunCache,
 }
 
 impl AppState {
@@ -320,6 +325,8 @@ impl AppState {
             supervisor_states: Arc::new(DashMap::new()),
             preflight: Arc::new(RwLock::new(preflight)),
             preflight_last_refresh: Arc::new(AtomicU64::new(0)),
+            gitforest_cache: crate::gitforest::routes::topology_cache(),
+            check_run_cache: crate::github_proxy::check_run_cache(),
         }
     }
 
@@ -418,6 +425,8 @@ impl AppState {
                 elapsed_ms: 0,
             })),
             preflight_last_refresh: Arc::new(AtomicU64::new(0)),
+            gitforest_cache: crate::gitforest::routes::topology_cache(),
+            check_run_cache: crate::github_proxy::check_run_cache(),
         }
     }
 }
@@ -524,6 +533,19 @@ pub fn build_app(state: AppState) -> Router {
             get(read_browser_state).post(write_browser_state),
         )
         .route("/api/polytopes", get(polytopes))
+        // ── GitForest live operational map (Phase 4) ──────────────────────────
+        .route(
+            "/api/gitforest/topology",
+            get(gitforest::routes::handle_topology),
+        )
+        .route(
+            "/api/gitforest/live",
+            get(gitforest::routes::handle_live),
+        )
+        .route(
+            "/api/gitforest/node/{id}",
+            get(gitforest::routes::handle_node),
+        )
         // ── Phase 9.5 / 10.5 SOUL vault hybrid memory routes ─────────────────
         .route("/api/soul/search", get(events::soul_routes::search_handler))
         .route(

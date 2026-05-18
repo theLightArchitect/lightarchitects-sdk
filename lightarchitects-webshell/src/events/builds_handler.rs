@@ -1205,6 +1205,32 @@ pub async fn global_events_handler(
         .into_response()
 }
 
+// ── GitForest broadcast lag gauge (Phase 4 — AY-R2-5) ────────────────────────
+
+/// Measure and emit an AYIN span for `gitforest.broadcast_lag_ms`.
+///
+/// Call this immediately after every `event_tx.send(WebEvent::GitForestUpdate …)`
+/// with the `Instant` captured just before the send.  The span is emitted via
+/// `tracing` so AYIN's collector picks it up at `:3742`.
+///
+/// Alert threshold: p95 ≥ 500ms triggers a warning log visible in AYIN.
+pub fn record_broadcast_lag(send_start: std::time::Instant) {
+    let lag_ms = u64::try_from(send_start.elapsed().as_millis()).unwrap_or(u64::MAX);
+    tracing::info!(
+        target: "gitforest.broadcast_lag_ms",
+        lag_ms,
+        p95_threshold_ms = 500,
+        exceeded = lag_ms >= 500,
+        "gitforest broadcast lag"
+    );
+    if lag_ms >= 500 {
+        tracing::warn!(
+            target: "gitforest.broadcast_lag_ms",
+            lag_ms,
+            "gitforest.broadcast_lag_ms p95 threshold exceeded — investigate SSE backpressure"
+        );
+    }
+}
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

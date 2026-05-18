@@ -5,6 +5,7 @@
 //! and by `WebEvent::GitForestUpdate`.
 
 pub mod broadcaster;
+pub mod routes;
 pub mod types;
 
 pub use types::{

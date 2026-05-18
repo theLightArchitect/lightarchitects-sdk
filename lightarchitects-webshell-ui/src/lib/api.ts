@@ -463,4 +463,28 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
     }).then(r => { if (!r.ok) throw new Error(`preflight/refresh: ${r.status}`); return r.json() as Promise<PreflightReport>; }),
+
+  // ── GitForest live operational map (Phase 4) ───────────────────────────────
+
+  /** Fetch the full 4-level BranchNode topology for a repo (60s server-side cache). */
+  getGitForestTopology: (repo: string, since?: string): Promise<import('$lib/gitforest').BranchNode> => {
+    const params = new URLSearchParams({ repo });
+    if (since) params.set('since', since);
+    return fetch(`${API_BASE}/gitforest/topology?${params}`, {
+      headers: authHeaders(),
+    }).then(r => { if (!r.ok) throw new Error(`gitforest/topology: ${r.status}`); return r.json(); });
+  },
+
+  /** Fetch a single BranchNode by its stable node ID. */
+  getGitForestNode: (id: string): Promise<import('$lib/gitforest').BranchNode> =>
+    fetch(`${API_BASE}/gitforest/node/${encodeURIComponent(id)}`, {
+      headers: authHeaders(),
+    }).then(r => { if (!r.ok) throw new Error(`gitforest/node: ${r.status}`); return r.json(); }),
+
+  /** Open a GitForest live SSE stream, optionally filtered by build codename. */
+  gitForestLiveStream: (buildCodename?: string): EventSource => {
+    const params = buildCodename ? `?build_codename=${encodeURIComponent(buildCodename)}` : '';
+    // EventSource does not support custom headers; auth via session cookie (la_session).
+    return new EventSource(`${API_BASE}/gitforest/live${params}`, { withCredentials: true });
+  },
 };
