@@ -1,0 +1,32 @@
+---
+schema_version: 1
+gate: phase
+scope: phase
+scored_by: "/GATE"
+scored_at: "2026-05-18T16:10:00Z"
+build_id: gitforest-live-ops
+phase_id: phase-6-slot-bar-topbar
+overall_verdict: pass
+commit_sha: 0743f42d09db1094360f09b22a2a328b4912b141
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1673
+    tests_fail: 0
+    note: "No flake this run; SSE counter test (phase-5 documented flake) passed cleanly"
+  Q4_svelte:
+    result: pass
+    vitest_tests: 553
+    svelte_check_errors: 0
+    svelte_check_warnings: 16
+    warnings_pre_existing: true
+  D2_plan: pass
+notes:
+  - "BranchTooltip uses fixed-position (not true portal) — consistent with existing Tooltip.svelte pattern"
+  - "WavePipelineView phases prop is STUB_PHASES (empty) in BuildDetail; Phase 7 wires manifest data"
+  - "SharedSlotBar store-wired: slotAssignments Map flattened to WorktreeAssignment[]; prop override kept for tests"
+  - "StatsTopbar stale-detection uses findLast on activityFeed — correct for ordered append-only array"
+  - "D2 note: split-pane left shows phase info panel (not live 3D canvas); zoomed-canvas upgrade deferred to Phase 7"
+  - "6th view mode 'pipeline' tab wired for ironclaw FOLD-4 deduplication"

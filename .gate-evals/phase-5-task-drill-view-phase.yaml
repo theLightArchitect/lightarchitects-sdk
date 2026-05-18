@@ -1,0 +1,36 @@
+---
+schema_version: 1
+gate: phase
+scope: phase
+scored_by: "/GATE"
+scored_at: "2026-05-18T15:30:00Z"
+build_id: gitforest-live-ops
+phase_id: phase-5-task-drill-view
+overall_verdict: pass
+commit_sha: 10dac3c82ba2e910aa7c943a3ceb0eb598f5a1bf
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1646
+    tests_fail: 0
+    flaky_pre_existing:
+      - test: "agent::sse::tests::sse_guard_decrements_global_counter_on_drop"
+        reason: "process-global AGENT_SSE_COUNT races with concurrent tokio tests; SSE_TEST_LOCK
+          serialises sync tests only; passes in isolation; phase-5 touched zero Rust files —
+          not a regression"
+  Q4_svelte:
+    result: pass
+    vitest_tests: 553
+    svelte_check_errors: 0
+    svelte_check_warnings: 15
+    warnings_pre_existing: true
+  D2_plan: pass
+notes:
+  - "TaskDrillView placed at components/views/ (not screens/ as in plan item #22) —
+     consistent with KanbanView/ListView/OperatorView convention; not a scope deviation"
+  - "api.ts syntax fix: closing }) of fetch().then() used comma instead of semicolon —
+     caught by vitest transform, fixed before Q4 ran"
+  - "BuildDetail.svelte: {buildId} shorthand → buildId={build.id} explicit bind —
+     caught by svelte-check, fixed before Q4 ran"
