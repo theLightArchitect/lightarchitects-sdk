@@ -201,6 +201,23 @@ pub struct AppState {
     /// The background watcher task holds an `Arc` clone and exits when
     /// `SupervisorEntry::watcher_token` is cancelled.
     pub supervisor_states: Arc<DashMap<Uuid, Arc<events::SupervisorEntry>>>,
+    /// In-flight autonomous build handles — keyed by build [`Uuid`].
+    ///
+    /// Inserted by `POST /api/builds` when `mode = "autonomous"`.
+    /// The `JoinHandle` can be aborted on build cancellation; it resolves
+    /// when all waves complete or the first `WaveError` halts the run.
+    pub lightsquad_programs: Arc<DashMap<Uuid, tokio::task::JoinHandle<()>>>,
+    /// Directory where per-build NDJSON decision logs are written.
+    ///
+    /// One file per build: `<decisions_dir>/<build_id>.ndjson`.
+    /// Defaults to `~/.lightarchitects/builds/decisions/`; overridden to
+    /// a temp dir in the test harness so tests don't pollute the vault.
+    pub decisions_dir: std::path::PathBuf,
+    /// When `true`, autonomous builds use the hermetic mock worker (write file +
+    /// git commit) instead of spawning the real `lightarchitects --bare` CLI.
+    ///
+    /// Set by [`AppState::for_test`]; always `false` in production.
+    pub mock_workers: bool,
     /// Structured infrastructure readiness report — populated at startup by
     /// [`preflight::run_full`] and updated by `POST /api/preflight/refresh`.
     ///
@@ -323,6 +340,17 @@ impl AppState {
             },
             plan_draft_sessions: Arc::new(DashMap::new()),
             supervisor_states: Arc::new(DashMap::new()),
+            lightsquad_programs: Arc::new(DashMap::new()),
+            decisions_dir: std::env::var("HOME").map_or_else(
+                |_| std::path::PathBuf::from("/tmp").join("la-decisions"),
+                |h| {
+                    std::path::PathBuf::from(h)
+                        .join(".lightarchitects")
+                        .join("builds")
+                        .join("decisions")
+                },
+            ),
+            mock_workers: false,
             preflight: Arc::new(RwLock::new(preflight)),
             preflight_last_refresh: Arc::new(AtomicU64::new(0)),
             gitforest_cache: crate::gitforest::routes::topology_cache(),
@@ -418,6 +446,9 @@ impl AppState {
             global_event_store: events::GlobalEventStore::noop(),
             plan_draft_sessions: Arc::new(DashMap::new()),
             supervisor_states: Arc::new(DashMap::new()),
+            lightsquad_programs: Arc::new(DashMap::new()),
+            decisions_dir: std::env::temp_dir().join("la-decisions-test"),
+            mock_workers: true,
             preflight: Arc::new(RwLock::new(PreflightReport {
                 timestamp: chrono::Utc::now(),
                 overall: OverallStatus::Ready,

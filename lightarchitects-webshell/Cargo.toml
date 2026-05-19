@@ -121,8 +121,9 @@ keyring = { workspace = true }
 # Session persistence — SQLite thread table for native session continuity.
 rusqlite = { workspace = true }
 
-# Telemetry hashing — SHA-256 of build_id for privacy.
+# Telemetry hashing + decisions HMAC chain.
 sha2 = { workspace = true }
+hmac = { workspace = true }
 hex = "0.4"
 
 [features]

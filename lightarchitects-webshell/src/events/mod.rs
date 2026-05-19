@@ -20,8 +20,10 @@
 pub mod ayin_client;
 pub mod builds_handler;
 pub mod control;
+pub mod decisions;
 pub mod global_events;
 pub mod helix_watcher;
+pub mod lightsquad_bridge;
 pub mod notify;
 pub mod soul; // task #51 split target — see events/soul/mod.rs
 pub mod soul_routes; // shim during partial-split window; re-exports from soul::*

@@ -341,6 +341,27 @@ pub struct CreateBuildRequest {
     /// parallelism, `ReviewGate`, `MergeAgent`, and decision-log recording.
     #[serde(default)]
     pub mode: Option<String>,
+    /// Task waves for autonomous mode.
+    ///
+    /// Each inner `Vec` is one wave dispatched in parallel; waves are
+    /// executed sequentially (wave N+1 starts only after wave N completes).
+    /// Required when `mode = "autonomous"`; ignored for interactive builds.
+    #[serde(default)]
+    pub waves: Option<Vec<Vec<TaskSpec>>>,
+}
+
+/// Lightweight task specification supplied by the operator at build creation.
+///
+/// Translated internally to [`lightarchitects::lightsquad::types::Task`].
+#[derive(Debug, Deserialize, Clone)]
+pub struct TaskSpec {
+    /// Unique identifier within this build (e.g. `"phase-1-arch"`).
+    pub id: String,
+    /// Prompt sent to the worker subprocess.
+    pub prompt: String,
+    /// IDs of tasks that must complete before this one may start.
+    #[serde(default)]
+    pub depends_on: Vec<String>,
 }
 
 /// Public response shape for `POST /api/builds` and `GET /api/builds/:id`.
@@ -410,6 +431,50 @@ impl AgentDescriptor {
             },
         }
     }
+}
+
+/// Spawn an autonomous lightsquad build if `waves` was supplied.
+fn maybe_spawn_autonomous(
+    state: &AppState,
+    session: &Arc<BuildSession>,
+    waves: Option<Vec<Vec<TaskSpec>>>,
+) {
+    use crate::events::{
+        decisions::DecisionsWriter,
+        lightsquad_bridge::{BridgeContext, spawn_autonomous_build},
+    };
+    let Some(waves) = waves else {
+        tracing::warn!(
+            build_id = %session.build_id,
+            "autonomous mode requested but no `waves` supplied — running as interactive"
+        );
+        return;
+    };
+    let build_id = session.build_id;
+    let decisions_writer = match DecisionsWriter::open(
+        &state.decisions_dir,
+        build_id,
+        secrecy::ExposeSecret::expose_secret(&*state.turnlog_pepper),
+    ) {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::error!(error = %e, "decisions writer failed to open — autonomous build aborted");
+            return;
+        }
+    };
+    let handle = spawn_autonomous_build(BridgeContext {
+        build_id,
+        codename: format!("build-{build_id}"),
+        repo_root: session.cwd.clone(),
+        worktree_root: std::env::temp_dir().join(format!("la-wt-{build_id}")),
+        feat_branch: format!("feat/auto-{build_id}"),
+        waves,
+        event_tx: state.event_tx.clone(),
+        decisions_writer,
+        mock_workers: state.mock_workers,
+    });
+    state.lightsquad_programs.insert(build_id, handle);
+    info!(build_id = %build_id, "lightsquad autonomous build spawned");
 }
 
 /// `POST /api/builds` — create a new live build session.
@@ -509,6 +574,11 @@ pub async fn create_build_handler(
             }
         }
         info!(build_id = %session.build_id, "supervisor watcher spawned for northstar build");
+    }
+
+    // Dispatch to lightsquad when mode = "autonomous" and waves were provided.
+    if mode == "autonomous" {
+        maybe_spawn_autonomous(&state, &session, body.waves);
     }
 
     info!(build_id = %resp.build_id, cwd = %body.cwd.display(), "build session created");
@@ -1175,14 +1245,14 @@ pub struct DecisionsQuery {
     pub since: Option<u64>,
 }
 
-/// `GET /api/builds/:id/decisions` — stub for Phase 6; autonomous conductor populates in Phase 7.
+/// `GET /api/builds/:id/decisions` — HMAC-chained decision log for an autonomous build.
 ///
-/// Returns the JSONL decision log for an autonomous-mode build. The log is
-/// append-only and HMAC-chained; each entry includes a line number for
-/// cursor-based pagination via `?since=<line_n>`.
+/// Returns the NDJSON decision log as a JSON array. The log is append-only and
+/// HMAC-chained; each entry includes a `line_n` for cursor-based pagination via
+/// `?since=<line_n>` (entries with `line_n <= since` are excluded).
 ///
 /// Responds `404` when the build is not found. Returns an empty JSON array
-/// when the build has no decisions yet (interactive mode or not started).
+/// when the build has no decisions yet (interactive mode or build not started).
 ///
 /// # Errors
 ///
@@ -1197,11 +1267,28 @@ pub async fn build_decisions_handler(
         return StatusCode::NOT_FOUND.into_response();
     };
 
-    let _since: u64 = params.since.unwrap_or(0);
+    let entries = match crate::events::decisions::DecisionsWriter::read_all(
+        &state.decisions_dir,
+        build_id,
+    ) {
+        Ok(all) => all,
+        Err(e) => {
+            tracing::warn!(error = %e, build_id = %build_id, "decisions read failed — returning empty");
+            vec![]
+        }
+    };
 
-    // Stub: autonomous conductor (Phase 7) will write decisions.md; for now
-    // return an empty array so the UI renders the "no decisions yet" state.
-    (StatusCode::OK, axum::Json(serde_json::json!([]))).into_response()
+    // When `since` is absent return all entries (line_n starts at 0 so
+    // `unwrap_or(0)` would silently drop the first entry).
+    let filtered: Vec<_> = match params.since {
+        Some(since) => entries
+            .into_iter()
+            .filter(|e| e.line_n as u64 > since)
+            .collect(),
+        None => entries,
+    };
+
+    (StatusCode::OK, axum::Json(filtered)).into_response()
 }
 
 /// `GET /api/events/global` — SSE stream of all global events with optional filtering.
