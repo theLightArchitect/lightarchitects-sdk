@@ -217,3 +217,37 @@ async fn copilot_returns_404_for_unknown_build() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
+
+// ── Phase 6 decisions smoke (Suite 6) ────────────────────────────────────────
+
+#[tokio::test]
+async fn decisions_requires_bearer() {
+    let b = Uuid::new_v4();
+    let (status, _) = get(&format!("/api/builds/{b}/decisions"), false).await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "/api/builds/:id/decisions must enforce auth"
+    );
+}
+
+#[tokio::test]
+async fn decisions_smoke_returns_empty_array_for_registered_build() {
+    let (app, build_id) = make_app_with_registered_build();
+    let resp = app
+        .oneshot(
+            Request::get(format!("/api/builds/{build_id}/decisions"))
+                .header("authorization", format!("Bearer {TOKEN}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body_bytes = to_bytes(resp.into_body(), 1024).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(
+        body.is_array(),
+        "decisions stub must return a JSON array, got: {body}"
+    );
+}

@@ -89,6 +89,14 @@ Listens for `la:escalation` on `window`; prepends entries when `ev.build_id` mat
       return ts.slice(11, 19);
     }
   }
+
+  // Allow only canon:// (→ anchor) and https?:// (internal/external doc links).
+  // Blocks javascript: and data: URIs — Security Guardrails §3.1 A03 / ASVS v5 §3.4.1.
+  function safeCanonHref(ref: string): string {
+    if (ref.startsWith('canon://')) return '#';
+    if (/^https?:\/\//.test(ref)) return ref;
+    return '#';
+  }
 </script>
 
 <div class="decision-log" data-testid="decision-log" data-build-id={buildId}>
@@ -147,7 +155,7 @@ Listens for `la:escalation` on `window`; prepends entries when `ev.build_id` mat
           <p class="dl-decision">{entry.decision}</p>
           {#if entry.canon_ref}
             <span class="dl-canon-ref" title="Canon reference">
-              <a href={entry.canon_ref.startsWith('canon://') ? '#' : entry.canon_ref}
+              <a href={safeCanonHref(entry.canon_ref)}
                  class="dl-canon-link"
                  aria-label="Canon reference: {entry.canon_ref}">
                 {entry.canon_ref}

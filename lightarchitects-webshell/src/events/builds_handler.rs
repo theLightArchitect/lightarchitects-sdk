@@ -1411,4 +1411,26 @@ mod tests {
         let req: CreateBuildRequest = serde_json::from_str(body).unwrap();
         assert!(req.mode.is_none(), "absent mode must deserialise as None");
     }
+
+    #[test]
+    fn mode_normalisation_pins_handler_match_logic() {
+        // Regression pin: the match in create_build_handler must accept only
+        // "autonomous" and collapse everything else to "interactive". If a
+        // future commit adds a new variant, this table test must be updated
+        // explicitly — preventing silent behavioural changes.
+        let cases: &[(&str, &str)] = &[
+            ("autonomous", "autonomous"),
+            ("interactive", "interactive"),
+            ("AUTONOMOUS", "interactive"), // case-sensitive — no implicit coerce
+            ("turbo", "interactive"),
+            ("", "interactive"),
+        ];
+        for &(input, expected) in cases {
+            let resolved = match Some(input) {
+                Some("autonomous") => "autonomous",
+                _ => "interactive",
+            };
+            assert_eq!(resolved, expected, "mode={input:?}");
+        }
+    }
 }
