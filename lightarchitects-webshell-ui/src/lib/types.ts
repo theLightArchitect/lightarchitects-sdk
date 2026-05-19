@@ -310,7 +310,8 @@ export type EventType =
   | 'worker_slot_gauge'
   | 'conductor_tick'
   | 'merge_agent_status'
-  | 'fix_agent_iteration';
+  | 'fix_agent_iteration'
+  | 'agent_fleet_update';
 
 // --- Agent protocol (native agent bridge) ---
 
@@ -362,7 +363,11 @@ export type AgentEvent =
   | { type: 'child_agent_forked'; child_name: string; task_id: string; cwd: string }
   | { type: 'child_agent_completed'; child_name: string; task_id: string; success: boolean; summary: string }
   // ── Plan mode ────────────────────────────────────────────────────────────
-  | { type: 'plan_queue_ready'; actions: QueuedAction[] };
+  | { type: 'plan_queue_ready'; actions: QueuedAction[] }
+  // ── Fleet (agent-teams-fleet Phase 4A) ───────────────────────────────────
+  | { type: 'agent_spawned'; agent_id: string; agent_type: string; parent_agent_id: string | null; description: string; run_in_background: boolean; worktree_path: string | null }
+  | { type: 'agent_progress'; agent_id: string; elapsed_ms: number }
+  | { type: 'agent_completed'; agent_id: string; exit_path: string; turns: number; duration_ms: number };
 
 // --- CORSO scout plan (PlanView) ---
 
@@ -1254,3 +1259,53 @@ export interface GroundingInfo {
   /** Number of git commits injected (0 when cwd is not a git repo). */
   git: number;
 }
+
+// ── Fleet types (agent-teams-fleet Phase 4A) ──────────────────────────────────
+
+/** Lifecycle status of a tracked fleet agent. */
+export type FleetStatus = 'queued' | 'running' | 'completed' | 'failed' | 'stalled';
+
+/**
+ * A single agent node tracked by the fleet subsystem.
+ *
+ * V1 notes:
+ * - `worktree_path` is always null (not yet wired).
+ * - `turns` is always 0 (JSONL line count is not reliably parseable in V1).
+ * - `elapsed_ms` is timer-driven, updated every 500 ms while `status === 'running'`.
+ */
+export interface FleetNode {
+  agent_id: string;
+  /** Normalised agent type, e.g. "engineer", "researcher" (prefix stripped). */
+  agent_type: string;
+  /** Human-readable task summary — max 200 chars, no newlines. */
+  description: string;
+  parent_agent_id: string | null;
+  /** V1: always null. */
+  worktree_path: string | null;
+  run_in_background: boolean;
+  status: FleetStatus;
+  /** V1: always 0. */
+  turns: number;
+  /** Timer-driven wall-clock elapsed time in milliseconds. */
+  elapsed_ms: number;
+  exit_path: 'completed' | 'error' | 'watchdog_stall' | null;
+}
+
+/** Full fleet snapshot returned by REST and the `snapshot` SSE event. */
+export interface FleetSnapshot {
+  nodes: FleetNode[];
+  /** ISO 8601 UTC timestamp when this snapshot was captured. */
+  captured_at: string;
+}
+
+/**
+ * Discriminated union of events emitted on the fleet SSE stream
+ * (`/api/builds/:id/fleet`).
+ *
+ * `snapshot` is sent once on initial connect; subsequent events are incremental.
+ */
+export type FleetEvent =
+  | { type: 'snapshot'; nodes: FleetNode[]; captured_at: string }
+  | { type: 'agent_spawned'; node: FleetNode }
+  | { type: 'agent_progress'; agent_id: string; elapsed_ms: number }
+  | { type: 'agent_completed'; agent_id: string; exit_path: string; turns: number; duration_ms: number };
