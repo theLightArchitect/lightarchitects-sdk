@@ -2,8 +2,8 @@
 //!
 //! Four tools bridge the `lightarchitects-arch` crate into the MCP sibling
 //! protocol. Each tool enforces the M6 per-sibling capability check: the
-//! caller must supply `sibling_id` + `allowed_roots[]` that the gateway
-//! cross-checks before touching the filesystem.
+//! caller must supply `sibling_id`; the gateway derives the path allowlist
+//! from `$HOME` (server-side) and never accepts it from the caller.
 //!
 //! Tools:
 //! - `lightarchitects_arch_extract` — extract `ArchModel` from a project root.
@@ -30,8 +30,6 @@ use crate::error::GatewayError;
 /// # Parameters
 /// - `project_root` (string, required): absolute path to analyse.
 /// - `sibling_id` (string, optional): calling sibling identity for audit log.
-/// - `allowed_roots` (array of strings, optional): per-project allowlist override;
-///   defaults to `[$HOME]` when absent (M6 home-dir guard).
 ///
 /// # Errors
 /// Returns [`GatewayError::MissingParam`] when `project_root` is absent.
@@ -42,7 +40,7 @@ pub fn run_extract(params: Value, _config: &GatewayConfig) -> Result<Value, Gate
         .ok_or(GatewayError::MissingParam("project_root"))?;
 
     let sibling = params["sibling_id"].as_str().unwrap_or("unknown");
-    let root = validate_root(root_str, &params["allowed_roots"])?;
+    let root = validate_root(root_str)?;
 
     tracing::info!(sibling_id = sibling, project_root = %root.display(), "arch_extract");
 
@@ -73,7 +71,6 @@ pub fn run_extract(params: Value, _config: &GatewayConfig) -> Result<Value, Gate
 /// - `project_root` (string, required): path to project (current model extracted live).
 /// - `blocking_threshold` (string, optional): "info"|"low"|"medium"|"high"|"critical".
 /// - `sibling_id` (string, optional): caller identity for audit log.
-/// - `allowed_roots` (array, optional): M6 allowlist override.
 ///
 /// # Errors
 /// Returns [`GatewayError::MissingParam`] when `planned` or `project_root` are absent or invalid.
@@ -87,7 +84,7 @@ pub fn run_verify(params: Value, _config: &GatewayConfig) -> Result<Value, Gatew
         .ok_or(GatewayError::MissingParam("project_root"))?;
 
     let sibling = params["sibling_id"].as_str().unwrap_or("unknown");
-    let root = validate_root(root_str, &params["allowed_roots"])?;
+    let root = validate_root(root_str)?;
 
     let threshold = parse_threshold(params["blocking_threshold"].as_str().unwrap_or("high"));
 
@@ -162,7 +159,6 @@ pub fn run_render(params: Value, _config: &GatewayConfig) -> Result<Value, Gatew
 /// # Parameters
 /// - `project_root` (string, required): absolute path to analyse.
 /// - `sibling_id` (string, optional): caller identity for audit log.
-/// - `allowed_roots` (array, optional): M6 allowlist override.
 ///
 /// # Errors
 /// Returns [`GatewayError::MissingParam`] when `project_root` is absent.
@@ -173,7 +169,7 @@ pub fn run_emit(params: Value, _config: &GatewayConfig) -> Result<Value, Gateway
         .ok_or(GatewayError::MissingParam("project_root"))?;
 
     let sibling = params["sibling_id"].as_str().unwrap_or("unknown");
-    let root = validate_root(root_str, &params["allowed_roots"])?;
+    let root = validate_root(root_str)?;
 
     tracing::info!(sibling_id = sibling, project_root = %root.display(), "arch_emit");
 
@@ -221,18 +217,11 @@ pub fn run_emit(params: Value, _config: &GatewayConfig) -> Result<Value, Gateway
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-fn validate_root(root_str: &str, allowed_roots_param: &Value) -> Result<PathBuf, GatewayError> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users".into());
-
-    let allowed: Vec<PathBuf> = if let Some(arr) = allowed_roots_param.as_array() {
-        arr.iter()
-            .filter_map(|v| v.as_str())
-            .map(PathBuf::from)
-            .collect()
-    } else {
-        vec![PathBuf::from(&home)]
-    };
-
+fn validate_root(root_str: &str) -> Result<PathBuf, GatewayError> {
+    let home = std::env::var("HOME").map_err(|_| {
+        GatewayError::File("$HOME not set — M6 allowlist cannot be constructed".into())
+    })?;
+    let allowed = [PathBuf::from(&home)];
     canonicalize_and_check(std::path::Path::new(root_str), &allowed)
         .map_err(|e| GatewayError::File(format!("M6 allowlist rejection: {e}")))
 }

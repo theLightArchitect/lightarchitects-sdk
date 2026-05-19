@@ -172,6 +172,7 @@ pub struct ExecOutput {
     pub stderr: Vec<u8>,
 }
 
+// argv is intentionally omitted from the span to avoid leaking search patterns into traces.
 /// Executes `binary` with `args`, constrained to `allowed_roots` as the working directory.
 ///
 /// All arguments are validated against the per-binary allowlist *before* the process is
@@ -184,7 +185,6 @@ pub struct ExecOutput {
 /// - [`CmdError::Io`] — spawn or wait failed.
 /// - [`CmdError::NonZeroExit`] — process exited with a non-zero code (exit 1 from grep
 ///   means "no match" — callers may handle this specially).
-// argv is intentionally omitted from the span to avoid leaking search patterns into traces.
 #[tracing::instrument(skip_all, fields(binary = ?binary))]
 pub fn execute(
     binary: AllowedBinary,

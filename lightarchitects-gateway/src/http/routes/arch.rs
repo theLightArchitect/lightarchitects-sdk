@@ -100,11 +100,18 @@ fn sibling_id(headers: &HeaderMap) -> &str {
 
 /// Validates the project_root path against the operator home directory.
 ///
-/// Rejects anything outside `$HOME` (M6 cross-sibling exfil guard). Phase 7
-/// adds a per-project Neo4j-backed allowlist.
+/// Rejects anything outside `$HOME` (M6 cross-sibling exfil guard). Fails
+/// closed (HTTP 500) if `$HOME` is not set. Phase 7 adds a per-project
+/// Neo4j-backed allowlist.
 #[allow(clippy::result_large_err)] // axum Response is inherently large in HTTP helpers.
 fn validate_root(root: &str) -> Result<PathBuf, Response> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users".into());
+    let home = std::env::var("HOME").map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "$HOME not set — M6 allowlist cannot be constructed",
+        )
+            .into_response()
+    })?;
     let allowed = [PathBuf::from(&home)];
     canonicalize_and_check(std::path::Path::new(root), &allowed).map_err(|e| {
         (
