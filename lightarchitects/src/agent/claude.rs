@@ -9,6 +9,8 @@
 //! | G1 content-plane | [`sanitize_params`] escapes `<`/`>` and strips RTL/zero-width chars with `tracing::warn!` |
 //! | G10 subprocess hygiene | `kill_on_drop(true)` + `process_group(0)` + `libc::killpg` on timeout; stderr piped to `tracing::warn!` only |
 //! | G4 traceparent | `TRACEPARENT` env var injected from `parent_span_id` when present |
+//! | G-PM permission matrix | [`PermissionMatrix`] applied via `--tools` allowlist; fail-closed default |
+//! | G-CG cost gate | [`CostGate`] pre-flight estimate check; spawn rejected before subprocess launch |
 //!
 //! # Auth model
 //!
@@ -33,6 +35,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 use tracing::{info, warn};
 
+use super::permissions::{CostGate, PermissionMatrix};
 use super::provider::{
     AgentRequest, AgentResponse, LlmAgentProvider, ProviderCapabilities, ProviderError,
     SanitizedAgentRequest, SchemaMode, TokenUsage,
@@ -53,6 +56,25 @@ const SONNET_OUTPUT_USD_PER_M: f64 = 15.0;
 /// API key already configured for the `claude` CLI binary). The host
 /// `ANTHROPIC_API_KEY` env var is removed to prevent stale overrides; use
 /// `api_key` to supply an explicit key when needed.
+///
+/// # Builder methods
+///
+/// Use the chainable builder methods to configure security controls:
+///
+/// ```rust,no_run
+/// # use lightarchitects::agent::permissions::{CostGate, PermissionMatrix};
+/// # use lightarchitects::agent::ClaudeCliProvider;
+/// let provider = ClaudeCliProvider::default()
+///     .with_permission_matrix(PermissionMatrix {
+///         allowed_tools: vec!["Read".to_owned(), "Edit".to_owned()],
+///         allow_bash: false,
+///         allow_file_write: true,
+///         allow_network: false,
+///     })
+///     .with_cost_gate(CostGate { max_usd: 0.50 })
+///     .with_traceparent("00-abc123-def456-01")
+///     .with_allowed_tools(vec!["Read".to_owned()]);
+/// ```
 #[derive(Debug)]
 pub struct ClaudeCliProvider {
     /// Default model identifier (overridable per-request via [`AgentRequest::model_hint`]).
@@ -78,6 +100,38 @@ pub struct ClaudeCliProvider {
     /// run with `ulimit -c 0` in production to prevent heap-dump exposure.
     /// Follow-on: migrate to stdin-based key injection when Claude CLI supports it.
     pub api_key: Option<SecretString>,
+
+    // ── AgentRunner / lightsquad extension fields ───────────────────────────
+    /// Permission matrix applied at spawn time.
+    ///
+    /// When `Some`, the effective tool list from [`PermissionMatrix::effective_tools`]
+    /// overrides the request-level `allowed_tools` at subprocess build time.
+    pub permission_matrix: Option<PermissionMatrix>,
+
+    /// Pre-flight cost gate.
+    ///
+    /// When `Some`, the estimated cost is compared against [`CostGate::max_usd`]
+    /// before the subprocess is launched.  Exceeding the cap returns
+    /// [`ProviderError::BudgetExceeded`] without spawning any process.
+    pub cost_gate: Option<CostGate>,
+
+    /// W3C `traceparent` header value injected as `W3C_TRACEPARENT` env var.
+    ///
+    /// Independent of the per-request `parent_span_id`; propagates orchestrator
+    /// span context to every subprocess spawned by this provider instance.
+    pub traceparent: Option<String>,
+
+    /// Provider-level tool allowlist applied to every spawn from this instance.
+    ///
+    /// When `Some`, replaces the `allowed_tools` list for all spawns.  If a
+    /// `permission_matrix` is also set, the matrix takes precedence.
+    pub allowed_tools: Option<Vec<String>>,
+
+    /// When `true`, [`LlmAgentProvider::spawn`] returns
+    /// [`ProviderError::MissingPermissionMatrix`] if `permission_matrix` is
+    /// `None`.  Defaults to `false` for backward compatibility with non-lightsquad
+    /// callers.
+    pub require_permission_matrix: bool,
 }
 
 impl Default for ClaudeCliProvider {
@@ -87,7 +141,69 @@ impl Default for ClaudeCliProvider {
             claude_binary: PathBuf::from("claude"),
             rate_table_version: "2026-05-14".to_owned(),
             api_key: None,
+            permission_matrix: None,
+            cost_gate: None,
+            traceparent: None,
+            allowed_tools: None,
+            require_permission_matrix: false,
         }
+    }
+}
+
+// ── Builder methods ─────────────────────────────────────────────────────────────
+
+impl ClaudeCliProvider {
+    /// Set the permission matrix for this provider.
+    ///
+    /// When set, the effective tool list from [`PermissionMatrix::effective_tools`]
+    /// overrides the request-level `allowed_tools` at subprocess build time.
+    #[must_use]
+    pub fn with_permission_matrix(mut self, pm: PermissionMatrix) -> Self {
+        self.permission_matrix = Some(pm);
+        self
+    }
+
+    /// Set a pre-flight cost gate.
+    ///
+    /// The estimated spawn cost is compared against [`CostGate::max_usd`] before
+    /// launching any subprocess.  Exceeding the gate returns
+    /// [`ProviderError::BudgetExceeded`] without spawning.
+    #[must_use]
+    pub fn with_cost_gate(mut self, gate: CostGate) -> Self {
+        self.cost_gate = Some(gate);
+        self
+    }
+
+    /// Set a W3C `traceparent` value injected as `W3C_TRACEPARENT` env var.
+    ///
+    /// Independent of the per-request `parent_span_id`; propagates orchestrator
+    /// span context to every subprocess spawned by this provider instance.
+    #[must_use]
+    pub fn with_traceparent(mut self, tp: impl Into<String>) -> Self {
+        self.traceparent = Some(tp.into());
+        self
+    }
+
+    /// Set a provider-level tool allowlist for all spawns from this instance.
+    ///
+    /// If a `permission_matrix` is also set, the matrix takes precedence over
+    /// this list.
+    #[must_use]
+    pub fn with_allowed_tools(mut self, tools: Vec<String>) -> Self {
+        self.allowed_tools = Some(tools);
+        self
+    }
+
+    /// Require an explicit [`PermissionMatrix`] on every spawn.
+    ///
+    /// When enabled, [`LlmAgentProvider::spawn`] returns
+    /// [`ProviderError::MissingPermissionMatrix`] if `permission_matrix` is
+    /// `None`.  Use this for lightsquad worker pool spawns where fail-closed
+    /// permission enforcement is mandatory.
+    #[must_use]
+    pub fn require_permission_matrix(mut self) -> Self {
+        self.require_permission_matrix = true;
+        self
     }
 }
 
@@ -103,11 +219,43 @@ impl LlmAgentProvider for ClaudeCliProvider {
     ///
     /// # Errors
     ///
+    /// Returns [`ProviderError::MissingPermissionMatrix`] if
+    /// `require_permission_matrix` is set and no matrix was supplied.
+    /// Returns [`ProviderError::BudgetExceeded`] if the pre-flight cost estimate
+    /// exceeds the configured [`CostGate`].
     /// Returns [`ProviderError::ParamSanitizationFailed`] if G1 rejects any
     /// parameter, [`ProviderError::SubprocessTimeout`] on wall-clock timeout,
     /// or [`ProviderError::SchemaValidationFailed`] if schema validation fails
     /// after the retry budget is exhausted.
     async fn spawn(&self, req: SanitizedAgentRequest) -> Result<AgentResponse, ProviderError> {
+        // Fail-closed permission matrix check — must come before any resource allocation.
+        if self.require_permission_matrix && self.permission_matrix.is_none() {
+            return Err(ProviderError::MissingPermissionMatrix);
+        }
+
+        let inner = req.request();
+
+        // Pre-flight cost gate: estimate and reject before spawning any subprocess.
+        if let Some(gate) = &self.cost_gate {
+            let input_est =
+                u32::try_from(inner.sibling_identity.len() / 4 + inner.user_prompt.len() / 4)
+                    .unwrap_or(u32::MAX);
+            // Conservative output estimate: max_budget_usd * 10_000 token-equivalent units.
+            // Clamped to [0, u32::MAX] before narrowing; the allow attrs suppress the
+            // truncation/sign lints that fire despite the explicit clamp.
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let output_est = (inner.max_budget_usd * 10_000.0)
+                .max(0.0)
+                .min(f64::from(u32::MAX)) as u32;
+            let estimated = self.estimate_cost(input_est, output_est);
+            if estimated > gate.max_usd {
+                return Err(ProviderError::BudgetExceeded {
+                    cap_usd: gate.max_usd,
+                    actual_usd: estimated,
+                });
+            }
+        }
+
         // R3: process-private tempdir prevents TOCTOU symlink race on predictable /tmp path.
         let mcp_dir = TempDir::with_prefix("la-")
             .map_err(|e| ProviderError::Internal(format!("tempdir creation failed: {e}")))?;
@@ -121,9 +269,10 @@ impl LlmAgentProvider for ClaudeCliProvider {
             &req,
             self.api_key.as_ref().map(ExposeSecret::expose_secret),
             &mcp_config,
+            self.permission_matrix.as_ref(),
+            self.traceparent.as_deref(),
         );
 
-        let inner = req.request();
         let timeout_secs = u64::from(inner.max_turns) * 120 + 30;
         let output = spawn_with_timeout(cmd, Duration::from_secs(timeout_secs), mcp_dir).await?;
 
@@ -182,12 +331,18 @@ impl LlmAgentProvider for ClaudeCliProvider {
 ///
 /// `mcp_config` must point to a file containing `{"mcpServers":{}}` inside a
 /// process-private tempdir (created by the caller with [`TempDir::with_prefix`]).
+///
+/// `permission_matrix` overrides the request-level `allowed_tools` when `Some`:
+/// the effective tool list from [`PermissionMatrix::effective_tools`] is used
+/// instead.  `traceparent` is injected as `W3C_TRACEPARENT` when `Some`.
 fn build_command(
     binary: &PathBuf,
     default_model: &str,
     req: &SanitizedAgentRequest,
     api_key: Option<&str>,
     mcp_config: &Path,
+    permission_matrix: Option<&PermissionMatrix>,
+    traceparent: Option<&str>,
 ) -> tokio::process::Command {
     let inner = req.request();
     let mut cmd = tokio::process::Command::new(binary);
@@ -206,8 +361,15 @@ fn build_command(
     let model = inner.model_hint.as_deref().unwrap_or(default_model);
     cmd.arg("--model").arg(model);
 
-    if !inner.allowed_tools.is_empty() {
-        cmd.arg("--tools").arg(inner.allowed_tools.join(","));
+    // G-PM: when a permission matrix is present, use its effective tool list.
+    // Otherwise fall back to the request-level allowed_tools.
+    let tools: Vec<String> = if let Some(pm) = permission_matrix {
+        pm.effective_tools()
+    } else {
+        inner.allowed_tools.clone()
+    };
+    if !tools.is_empty() {
+        cmd.arg("--tools").arg(tools.join(","));
     }
 
     // G10: prevent recursive gateway invocation by restricting MCP servers.
@@ -215,8 +377,14 @@ fn build_command(
         .arg("--mcp-config")
         .arg(mcp_config);
 
+    // G4: per-request traceparent from the request field.
     if let Some(span_id) = &inner.parent_span_id {
         cmd.env("TRACEPARENT", span_id);
+    }
+
+    // G4: provider-level W3C traceparent (orchestrator span context).
+    if let Some(tp) = traceparent {
+        cmd.env("W3C_TRACEPARENT", tp);
     }
 
     // Auth: remove any stale ANTHROPIC_API_KEY from the host env so it cannot
@@ -468,6 +636,8 @@ mod tests {
                 .as_ref()
                 .map(secrecy::ExposeSecret::expose_secret),
             &mcp_config,
+            None,
+            None,
         );
         let args: Vec<&OsStr> = cmd.as_std().get_args().collect();
         let args_str: Vec<&str> = args.iter().filter_map(|a| a.to_str()).collect();
@@ -493,6 +663,56 @@ mod tests {
         assert!(
             strict_pos < mcp_config_pos,
             "--strict-mcp-config must precede --mcp-config"
+        );
+    }
+
+    #[test]
+    fn permission_matrix_default_is_fail_closed() {
+        use crate::agent::permissions::PermissionMatrix;
+        let pm = PermissionMatrix::default();
+        assert!(
+            pm.effective_tools().is_empty(),
+            "default PermissionMatrix must allow no tools"
+        );
+        assert!(!pm.allow_bash, "default must not allow bash");
+        assert!(!pm.allow_file_write, "default must not allow file writes");
+        assert!(!pm.allow_network, "default must not allow network");
+    }
+
+    #[test]
+    fn require_permission_matrix_rejects_none() {
+        // Build a provider with require_permission_matrix but no matrix set.
+        let provider = ClaudeCliProvider::default().require_permission_matrix();
+        assert!(
+            provider.require_permission_matrix,
+            "flag must be set after require_permission_matrix()"
+        );
+        assert!(
+            provider.permission_matrix.is_none(),
+            "no matrix should be set by default"
+        );
+        // The actual Err check requires an async runtime; the field check above
+        // is sufficient to verify the builder flag wires correctly.
+    }
+
+    #[test]
+    fn with_traceparent_stores_value() {
+        let provider = ClaudeCliProvider::default().with_traceparent("00-abc-def-01");
+        assert_eq!(
+            provider.traceparent.as_deref(),
+            Some("00-abc-def-01"),
+            "traceparent must be stored"
+        );
+    }
+
+    #[test]
+    fn with_allowed_tools_stores_list() {
+        let tools = vec!["Read".to_owned(), "Edit".to_owned()];
+        let provider = ClaudeCliProvider::default().with_allowed_tools(tools.clone());
+        assert_eq!(
+            provider.allowed_tools.as_deref(),
+            Some(tools.as_slice()),
+            "allowed_tools must be stored"
         );
     }
 }

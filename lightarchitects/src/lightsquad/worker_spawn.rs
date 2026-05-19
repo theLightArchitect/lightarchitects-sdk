@@ -21,3 +21,75 @@
 //! and result-channel routing back to `crate::lightsquad::wave_dispatcher`.
 //!
 //! Phase 1 stub — slot pool declared in Phase 3.
+
+// ── WorkerHandle ────────────────────────────────────────────────────────────────
+
+/// Handle to a running worker process.
+///
+/// Owns the subprocess `Child` handle and kills it on drop so that abandoned
+/// workers (e.g. from a cancelled wave) don't accumulate as zombie processes.
+///
+/// # Drop behaviour
+///
+/// `Drop` calls [`tokio::process::Child::start_kill`] on a best-effort basis.
+/// Errors are silently ignored — the process may have already exited cleanly.
+/// No blocking wait is performed in `drop`; use [`WorkerHandle::wait`] before
+/// dropping if you need the exit status.
+pub struct WorkerHandle {
+    /// Logical agent identifier (e.g. `"agent-abc123"`).
+    pub agent_id: String,
+    /// Task identifier this worker was spawned to execute.
+    pub task_id: String,
+    /// Worktree path the worker operates in.
+    pub worktree: std::path::PathBuf,
+    /// Underlying subprocess handle.  Wrapped in `Option` so `start_kill` can
+    /// take ownership in `Drop` without requiring `&mut self` to be `Pin`ned.
+    pub child: Option<tokio::process::Child>,
+}
+
+impl WorkerHandle {
+    /// Wait for the worker process to exit and return its exit status.
+    ///
+    /// After this call the inner `Child` handle is consumed; subsequent `drop`
+    /// is a no-op (the `Option` will be `None`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`std::io::Error`] if waiting on the subprocess fails.
+    pub async fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        match self.child.as_mut() {
+            Some(child) => child.wait().await,
+            None => Err(std::io::Error::other("worker already consumed")),
+        }
+    }
+}
+
+impl Drop for WorkerHandle {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            // Best-effort kill — ignore errors (process may have already exited).
+            let _ = child.start_kill();
+        }
+    }
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    /// Verify that a `WorkerHandle` with no child does not panic on drop.
+    #[test]
+    fn worker_handle_drop_with_no_child() {
+        let handle = WorkerHandle {
+            agent_id: "test-agent".to_owned(),
+            task_id: "task-001".to_owned(),
+            worktree: PathBuf::from("/tmp/test-worktree"),
+            child: None,
+        };
+        drop(handle); // must not panic
+    }
+}

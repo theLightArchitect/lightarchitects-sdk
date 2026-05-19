@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use lightarchitects::agent::{
-    AgentRequest, AgentResponse, LlmAgentProvider, ProviderCapabilities, ProviderError, SchemaMode,
-    SanitizedAgentRequest, TokenUsage,
+    AgentRequest, AgentResponse, LlmAgentProvider, ProviderCapabilities, ProviderError,
+    SanitizedAgentRequest, SchemaMode, TokenUsage,
 };
 
 // ── MockProvider ───────────────────────────────────────────────────────────────
@@ -99,7 +99,9 @@ async fn trait_dispatch_through_arc() {
 #[tokio::test]
 async fn budget_cap_enforced() {
     let provider: Arc<dyn LlmAgentProvider> = Arc::new(MockProvider { name: "mock" });
-    let result = provider.spawn(mock_request(0.0001).sanitize().expect("valid test input")).await;
+    let result = provider
+        .spawn(mock_request(0.0001).sanitize().expect("valid test input"))
+        .await;
     assert!(
         matches!(result, Err(ProviderError::BudgetExceeded { .. })),
         "expected BudgetExceeded, got {result:?}"

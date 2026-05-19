@@ -54,3 +54,12 @@ pub mod worker_spawn;
 /// LightArchitects — 10 gate-dimension specialists ([A+S+Q+C+O+P+K+D+T+R])
 /// routed to existing siblings via `crate::squad_registry`.
 pub mod light_architects;
+
+/// Program.toml integrity lock — SHA-256 + Ed25519 signing.
+pub mod manifest;
+
+/// Per-wave HKDF subkey derivation from a build master key.
+pub mod hmac;
+
+/// Decision log subsystem — HMAC-chained NDJSON gate decisions.
+pub mod decisions;

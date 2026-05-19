@@ -8,7 +8,12 @@
 //! - Always-on: pure sanitization + chain-depth invariants (no feature flags).
 //! - Feature-gated: handler-level dispatch (requires `inline-corso`).
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, unused_imports)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    unused_imports
+)]
 
 use lightarchitects::agent::{ChainContext, MAX_CHAIN_DEPTH, ProviderError, sanitize_params};
 
@@ -47,13 +52,18 @@ fn chain_depth_default_is_zero() {
 
 #[test]
 fn chain_child_increments_depth() {
-    let child = ChainContext::default().child().expect("depth 0 → 1 must succeed");
+    let child = ChainContext::default()
+        .child()
+        .expect("depth 0 → 1 must succeed");
     assert_eq!(child.depth, 1);
 }
 
 #[test]
 fn chain_depth_exceeded_at_max() {
-    let at_max = ChainContext { depth: MAX_CHAIN_DEPTH, ..ChainContext::default() };
+    let at_max = ChainContext {
+        depth: MAX_CHAIN_DEPTH,
+        ..ChainContext::default()
+    };
     let result = at_max.child();
     assert!(
         matches!(result, Err(ProviderError::ChainDepthExceeded { depth }) if depth == MAX_CHAIN_DEPTH),
@@ -90,7 +100,10 @@ mod handler_smoke {
                 output: serde_json::json!({}),
                 turns_used: 0,
                 cost_usd: 0.0,
-                tokens: TokenUsage { input: 0, output: 0 },
+                tokens: TokenUsage {
+                    input: 0,
+                    output: 0,
+                },
                 provider_attrs: HashMap::new(),
                 retry_count: 0,
             })
@@ -126,7 +139,10 @@ mod handler_smoke {
         // it must be rejected (not a panic or internal error).
         let h = CorsoHandler::new(&GatewayConfig::default());
         let result = h.call("sniff\x00inject", serde_json::json!({})).await;
-        assert!(result.is_err(), "action name with null byte must always be rejected");
+        assert!(
+            result.is_err(),
+            "action name with null byte must always be rejected"
+        );
     }
 
     #[tokio::test]

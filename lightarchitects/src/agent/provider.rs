@@ -307,6 +307,11 @@ pub enum ProviderError {
     /// An unexpected internal error occurred.
     #[error("internal: {0}")]
     Internal(String),
+
+    /// Spawn was rejected because `require_permission_matrix` is set but no
+    /// [`crate::agent::permissions::PermissionMatrix`] was provided.
+    #[error("a PermissionMatrix is required but was not provided")]
+    MissingPermissionMatrix,
 }
 
 /// Contract for a provider that can spawn an LLM agent and return structured output.
