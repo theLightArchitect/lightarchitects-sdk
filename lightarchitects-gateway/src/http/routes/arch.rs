@@ -21,7 +21,7 @@ use axum::routing::{get, post};
 use lightarchitects_arch::{
     ArchModel, Severity,
     emitter::{emit_d2, emit_html, emit_likec4, emit_markdown, emit_mermaid},
-    extractor::walk_and_extract,
+    extractor::{ExtractorConfig, walk_and_extract},
     security::path::canonicalize_and_check,
     verifier,
 };
@@ -102,6 +102,7 @@ fn sibling_id(headers: &HeaderMap) -> &str {
 ///
 /// Rejects anything outside `$HOME` (M6 cross-sibling exfil guard). Phase 7
 /// adds a per-project Neo4j-backed allowlist.
+#[allow(clippy::result_large_err)] // axum Response is inherently large in HTTP helpers.
 fn validate_root(root: &str) -> Result<PathBuf, Response> {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users".into());
     let allowed = [PathBuf::from(&home)];
@@ -121,7 +122,7 @@ fn dispatch_render(model: &ArchModel, format: &str) -> Result<String, String> {
         "d2" => emit_d2(model).map_err(|e| e.to_string()),
         "likec4" => emit_likec4(model).map_err(|e| e.to_string()),
         "markdown" => emit_markdown(model, None).map_err(|e| e.to_string()),
-        "html" => emit_html(model, None).map_err(|e| e.to_string()),
+        "html" => emit_html(model, None, false).map_err(|e| e.to_string()),
         other => Err(format!(
             "unknown format '{other}'; valid: mermaid|d2|likec4|markdown|html"
         )),
@@ -151,7 +152,7 @@ async fn arch_extract(
         return (StatusCode::OK, axum::Json((*cached).clone())).into_response();
     }
 
-    let facts = match walk_and_extract(&root) {
+    let facts = match walk_and_extract(&root, &ExtractorConfig::default()) {
         Ok(f) => f,
         Err(e) => {
             return (
@@ -201,7 +202,7 @@ async fn arch_verify(
         _ => Severity::High,
     };
 
-    let facts = match walk_and_extract(&root) {
+    let facts = match walk_and_extract(&root, &ExtractorConfig::default()) {
         Ok(f) => f,
         Err(e) => {
             return (
@@ -275,7 +276,7 @@ async fn arch_emit(
         Err(r) => return r,
     };
 
-    let facts = match walk_and_extract(&root) {
+    let facts = match walk_and_extract(&root, &ExtractorConfig::default()) {
         Ok(f) => f,
         Err(e) => {
             return (

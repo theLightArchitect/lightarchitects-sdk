@@ -14,11 +14,11 @@
 use lightarchitects_arch::{
     ArchModel, Severity,
     emitter::{emit_d2, emit_html, emit_likec4, emit_markdown, emit_mermaid},
-    extractor::walk_and_extract,
+    extractor::{ExtractorConfig, walk_and_extract},
     security::path::canonicalize_and_check,
     verifier,
 };
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::path::PathBuf;
 
 use crate::config::GatewayConfig;
@@ -46,8 +46,8 @@ pub fn run_extract(params: Value, _config: &GatewayConfig) -> Result<Value, Gate
 
     tracing::info!(sibling_id = sibling, project_root = %root.display(), "arch_extract");
 
-    let facts =
-        walk_and_extract(&root).map_err(|e| GatewayError::File(format!("extract error: {e}")))?;
+    let facts = walk_and_extract(&root, &ExtractorConfig::default())
+        .map_err(|e| GatewayError::File(format!("extract error: {e}")))?;
 
     let mut model = ArchModel::new(root.display().to_string());
     model.nodes = facts.nodes;
@@ -74,9 +74,13 @@ pub fn run_extract(params: Value, _config: &GatewayConfig) -> Result<Value, Gate
 /// - `blocking_threshold` (string, optional): "info"|"low"|"medium"|"high"|"critical".
 /// - `sibling_id` (string, optional): caller identity for audit log.
 /// - `allowed_roots` (array, optional): M6 allowlist override.
+///
+/// # Errors
+/// Returns [`GatewayError::MissingParam`] when `planned` or `project_root` are absent or invalid.
+/// Returns [`GatewayError::File`] when extraction fails.
 pub fn run_verify(params: Value, _config: &GatewayConfig) -> Result<Value, GatewayError> {
     let planned: ArchModel = serde_json::from_value(params["planned"].clone())
-        .map_err(|e| GatewayError::MissingParam("planned — invalid ArchModel JSON"))?;
+        .map_err(|_e| GatewayError::MissingParam("planned — invalid ArchModel JSON"))?;
 
     let root_str = params["project_root"]
         .as_str()
@@ -89,8 +93,8 @@ pub fn run_verify(params: Value, _config: &GatewayConfig) -> Result<Value, Gatew
 
     tracing::info!(sibling_id = sibling, project_root = %root.display(), "arch_verify");
 
-    let facts =
-        walk_and_extract(&root).map_err(|e| GatewayError::File(format!("extract error: {e}")))?;
+    let facts = walk_and_extract(&root, &ExtractorConfig::default())
+        .map_err(|e| GatewayError::File(format!("extract error: {e}")))?;
     let mut current = ArchModel::new(root.display().to_string());
     current.nodes = facts.nodes;
     current.relations = facts.relations;
@@ -132,6 +136,10 @@ pub fn run_verify(params: Value, _config: &GatewayConfig) -> Result<Value, Gatew
 /// - `model` (object, required): JSON-serialised `ArchModel`.
 /// - `format` (string, required): "mermaid"|"d2"|"likec4"|"markdown"|"html".
 /// - `sibling_id` (string, optional): caller identity for audit log.
+///
+/// # Errors
+/// Returns [`GatewayError::MissingParam`] when `model` or `format` are absent or invalid.
+/// Returns [`GatewayError::File`] when rendering fails.
 pub fn run_render(params: Value, _config: &GatewayConfig) -> Result<Value, GatewayError> {
     let model: ArchModel = serde_json::from_value(params["model"].clone())
         .map_err(|_| GatewayError::MissingParam("model — invalid ArchModel JSON"))?;
@@ -155,6 +163,10 @@ pub fn run_render(params: Value, _config: &GatewayConfig) -> Result<Value, Gatew
 /// - `project_root` (string, required): absolute path to analyse.
 /// - `sibling_id` (string, optional): caller identity for audit log.
 /// - `allowed_roots` (array, optional): M6 allowlist override.
+///
+/// # Errors
+/// Returns [`GatewayError::MissingParam`] when `project_root` is absent.
+/// Returns [`GatewayError::File`] when extraction fails.
 pub fn run_emit(params: Value, _config: &GatewayConfig) -> Result<Value, GatewayError> {
     let root_str = params["project_root"]
         .as_str()
@@ -165,8 +177,8 @@ pub fn run_emit(params: Value, _config: &GatewayConfig) -> Result<Value, Gateway
 
     tracing::info!(sibling_id = sibling, project_root = %root.display(), "arch_emit");
 
-    let facts =
-        walk_and_extract(&root).map_err(|e| GatewayError::File(format!("extract error: {e}")))?;
+    let facts = walk_and_extract(&root, &ExtractorConfig::default())
+        .map_err(|e| GatewayError::File(format!("extract error: {e}")))?;
     let mut model = ArchModel::new(root.display().to_string());
     model.nodes = facts.nodes;
     model.relations = facts.relations;
@@ -241,7 +253,7 @@ fn dispatch_render(model: &ArchModel, format: &str) -> Result<String, String> {
         "d2" => emit_d2(model).map_err(|e| e.to_string()),
         "likec4" => emit_likec4(model).map_err(|e| e.to_string()),
         "markdown" => emit_markdown(model, None).map_err(|e| e.to_string()),
-        "html" => emit_html(model, None).map_err(|e| e.to_string()),
+        "html" => emit_html(model, None, false).map_err(|e| e.to_string()),
         other => Err(format!(
             "unknown format '{other}'; valid: mermaid|d2|likec4|markdown|html"
         )),
