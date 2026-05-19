@@ -335,6 +335,12 @@ pub struct CreateBuildRequest {
     /// is spawned that calls `evaluate_wave` on every `WAVE_COMPLETE` event.
     #[serde(default)]
     pub northstar_text: Option<String>,
+    /// Execution mode: `"interactive"` (default) or `"autonomous"`.
+    ///
+    /// `"autonomous"` activates the lightsquad conductor: wave-level
+    /// parallelism, `ReviewGate`, `MergeAgent`, and decision-log recording.
+    #[serde(default)]
+    pub mode: Option<String>,
 }
 
 /// Public response shape for `POST /api/builds` and `GET /api/builds/:id`.
@@ -356,6 +362,8 @@ pub struct BuildResponse {
     pub model: Option<String>,
     /// Whether this build will spawn in a container (true) or native PTY (false).
     pub containerized: bool,
+    /// Echo of the resolved execution mode: `"interactive"` or `"autonomous"`.
+    pub mode: String,
 }
 
 /// Sanitised view of [`AgentSession`] — omits Ollama `auth_token`.
@@ -434,6 +442,11 @@ pub async fn create_build_handler(
     session.containerized = state.docker_capable == crate::container::DockerCapability::Ready
         && state.config.container_mode != crate::container::ContainerMode::ForceDisable;
 
+    let mode = match body.mode.as_deref() {
+        Some("autonomous") => "autonomous",
+        _ => "interactive",
+    };
+
     let resp = BuildResponse {
         build_id: session.build_id,
         cwd: session.cwd.clone(),
@@ -441,6 +454,7 @@ pub async fn create_build_handler(
         claude_agent_template: session.claude_agent_template.clone(),
         model: session.model.clone(),
         containerized: session.containerized,
+        mode: mode.to_owned(),
     };
 
     if let Ok(store) = state.session_store.lock() {
@@ -521,6 +535,7 @@ pub async fn build_details_handler(
         claude_agent_template: session.claude_agent_template.clone(),
         model: session.model.clone(),
         containerized: session.containerized,
+        mode: "interactive".to_owned(),
     };
 
     (StatusCode::OK, Json(resp)).into_response()
@@ -1152,6 +1167,39 @@ pub async fn commit_plan_handler(
         .into_response()
 }
 
+/// `GET /api/builds/:id/decisions` — HMAC-chained decision log (§2.10d).
+///
+/// Returns the JSONL decision log for an autonomous-mode build. The log is
+/// append-only and HMAC-chained; each entry includes a line number for
+/// cursor-based pagination via `?since=<line_n>`.
+///
+/// Responds `404` when the build is not found. Returns an empty JSON array
+/// when the build has no decisions yet (interactive mode or not started).
+/// Query parameters for `GET /api/builds/:id/decisions`.
+#[derive(serde::Deserialize)]
+pub struct DecisionsQuery {
+    /// Return only decisions with `line_n` greater than this value (cursor pagination).
+    pub since: Option<u64>,
+}
+
+/// `GET /api/builds/:id/decisions` — stub for Phase 6; autonomous conductor populates in Phase 7.
+pub async fn build_decisions_handler(
+    _: crate::auth::AuthGuard,
+    Path(build_id): Path<Uuid>,
+    State(state): State<AppState>,
+    Query(params): Query<DecisionsQuery>,
+) -> impl IntoResponse {
+    let Some(_session) = state.builds.get(build_id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    let _since: u64 = params.since.unwrap_or(0);
+
+    // Stub: autonomous conductor (Phase 7) will write decisions.md; for now
+    // return an empty array so the UI renders the "no decisions yet" state.
+    (StatusCode::OK, axum::Json(serde_json::json!([]))).into_response()
+}
+
 /// `GET /api/events/global` — SSE stream of all global events with optional filtering.
 ///
 /// Sends a snapshot of existing entries (newest-last), then streams live events.
@@ -1289,6 +1337,7 @@ mod tests {
             claude_agent_template: None,
             model: None,
             containerized: false,
+            mode: "interactive".to_owned(),
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(

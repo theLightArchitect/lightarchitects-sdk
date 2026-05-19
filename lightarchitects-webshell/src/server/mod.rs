@@ -499,6 +499,10 @@ pub fn build_app(state: AppState) -> Router {
             get(events::sse_handler::sse_build_handler),
         )
         .route(
+            "/api/builds/{id}/decisions",
+            get(builds_handler::build_decisions_handler),
+        )
+        .route(
             "/api/builds/{id}/notify",
             post(events::notify::notify_handler),
         )

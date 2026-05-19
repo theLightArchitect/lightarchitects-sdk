@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.10"  # bumped 2026-05-19: BuildDetail supervisor wiring — §2.13 frontend notes, §3.7/§3.10 BuildDetail supervisor strip + route mapping
+version: "1.0.10"  # bumped 2026-05-19: BuildDetail supervisor wiring — §2.13 frontend notes, §3.7/§3.10 BuildDetail supervisor strip + route mapping; §2.16 autonomous mode (CreateBuildRequest.mode + BuildResponse.mode + decisions endpoint + 5 SSE event types wiring)
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
@@ -512,7 +512,49 @@ REST snapshot of the in-memory `GlobalEventStore` ring buffer, used by `Helix3D.
 
 ---
 
-> **§2.16 — Reserved**: ironclaw-spine (cross-build collision lock; see `memory://feedback_cross_build_section_collision_lock`). Section number reserved 2026-05-18; content to be authored by ironclaw-spine Phase 4 merge.
+### §2.16 Autonomous Build Mode (ironclaw-spine Phase 6 — 2026-05-19 ADDITION)
+
+Extends `POST /api/builds` with an execution mode field that activates the lightsquad conductor for wave-level parallel delivery.
+
+#### §2.16.1 Request extension
+
+`CreateBuildRequest` gains one optional field:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `mode` | `string` | `"interactive"` | Execution mode. Valid values: `"interactive"` (single-agent PTY, operator-supervised) or `"autonomous"` (lightsquad conductor — wave parallelism, ReviewGate, MergeAgent, decision-log). |
+
+#### §2.16.2 Response extension
+
+`BuildResponse` echoes the resolved mode:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `mode` | `string` | Resolved execution mode — `"interactive"` or `"autonomous"`. |
+
+#### §2.16.3 Autonomous-mode SSE events
+
+When `mode = "autonomous"`, the per-build SSE stream (`GET /api/builds/{id}/events`) emits five additional event types defined in Phase 2A.5:
+
+| Event type | Payload | Description |
+|------------|---------|-------------|
+| `escalation` | `{ build_id, wave_index, call_id, reason, canon_ref? }` | HITL gate threshold crossed |
+| `worker_slot_gauge` | `{ build_id, wave_index, active, capacity }` | 7-slot pool occupancy update |
+| `conductor_tick` | `{ build_id, tick_seq, queue_depth, active_workers }` | Conductor heartbeat |
+| `merge_agent_status` | `{ build_id, wave_index, phase, commit_sha? }` | Merge agent lifecycle event |
+| `fix_agent_iteration` | `{ build_id, wave_index, worker_slot, iteration, issue_summary }` | FixAgent iteration depth |
+
+**Frontend wiring**: `sse.ts` `_handleEvent` routes these to the `workerSlots`, `conductorState`, `mergeAgentEvents`, `fixAgentEvents` stores. `AutonomousRun.svelte` consumes these stores. `Escalation` events are forwarded as DOM `la:escalation` custom events.
+
+#### §2.16.4 Decision log read endpoint
+
+`GET /api/builds/{id}/decisions` — returns the HMAC-chained conductor decision log. Stub in Phase 6 (returns empty array); fully populated by Phase 7 autonomous conductor.
+
+| Query param | Description |
+|-------------|-------------|
+| `since` | Resume from line number (inclusive) for cursor-based pagination. |
+
+**Frontend wiring**: `api.getDecisions(buildId)` in `DecisionLog.svelte`.
 
 ---
 

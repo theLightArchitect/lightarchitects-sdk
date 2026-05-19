@@ -11,6 +11,8 @@
   import PolytopeIcon from '$lib/../components/PolytopeIcon.svelte';
   import PolytopeDecor from '$lib/../components/PolytopeDecor.svelte';
   import PhaseTimeline from '$lib/../components/PhaseTimeline.svelte';
+  import PreflightPanel from '$lib/../components/PreflightPanel.svelte';
+  import type { PreflightReport } from '$lib/types';
 
   // Tutorial T1 — auto-fires on first visit; re-trigger via ?onboarding=t1.
   // Runs after a tick so the DOM is settled and Shepherd can attach to the
@@ -48,6 +50,32 @@
   // null = no duplicate; non-null = show "already queued" warning + "Create anyway" option.
   let dedupeWarning = $state<{ buildId: string; status: string } | null>(null);
   let forceCreate = $state(false);
+
+  // Build execution mode — wired to POST /api/builds `mode` field.
+  type BuildExecMode = 'interactive' | 'autonomous';
+  let execMode = $state<BuildExecMode>('interactive');
+
+  // Preflight report — loaded on mount + when mode changes to autonomous.
+  let preflightReport = $state<PreflightReport | null>(null);
+  let preflightLoading = $state(false);
+
+  async function loadPreflight() {
+    if (preflightLoading) return;
+    preflightLoading = true;
+    try {
+      preflightReport = await api.fetchPreflight();
+    } catch {
+      // Non-fatal — panel shows empty state.
+    } finally {
+      preflightLoading = false;
+    }
+  }
+
+  $effect(() => {
+    if (execMode === 'autonomous') {
+      loadPreflight();
+    }
+  });
 
   // Validate form fields. Returns true if valid.
   function validateForm(): boolean {
@@ -204,6 +232,7 @@
         priority: form.priority,
         repoPath: form.repoPath,
         description: form.description,
+        mode: execMode,
       });
       newBuildId = resp.build_id;
       // Seed the builds store so activeBuild resolves immediately in Workspace.
@@ -584,6 +613,22 @@
           {isPlanMode ? 'bg-[var(--la-focus-ring)]/15 text-[var(--la-focus-ring)] border border-[var(--la-focus-ring)]/30' : 'text-[var(--la-text-dim)] border border-transparent hover:text-[var(--la-focus-ring)]'}"
         onclick={() => { if (!isPlanMode) togglePlanMode(); }}
       >Plan Builder</button>
+      <!-- Execution mode toggle (ironclaw-spine Phase 6) -->
+      <span class="w-px h-4 bg-[var(--la-hair-strong)]" aria-hidden="true"></span>
+      <button
+        class="px-3 py-1 text-[10px] rounded transition-colors
+          {execMode === 'interactive' ? 'bg-[var(--la-focus-ring)]/15 text-[var(--la-focus-ring)] border border-[var(--la-focus-ring)]/30' : 'text-[var(--la-text-dim)] border border-transparent hover:text-[var(--la-focus-ring)]'}"
+        onclick={() => { execMode = 'interactive'; }}
+        data-testid="exec-mode-interactive"
+        title="Interactive mode — operator-supervised, single-agent"
+      >Interactive</button>
+      <button
+        class="px-3 py-1 text-[10px] rounded transition-colors
+          {execMode === 'autonomous' ? 'bg-[var(--la-focus-ring)]/15 text-[var(--la-focus-ring)] border border-[var(--la-focus-ring)]/30' : 'text-[var(--la-text-dim)] border border-transparent hover:text-[var(--la-focus-ring)]'}"
+        onclick={() => { execMode = 'autonomous'; }}
+        data-testid="exec-mode-autonomous"
+        title="Autonomous mode — lightsquad conductor with wave-level parallelism"
+      >Autonomous</button>
     </div>
   </header>
 
@@ -591,6 +636,18 @@
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-6xl">
       <!-- Left: Form fields -->
       <div class="lg:col-span-2 space-y-6">
+
+        <!-- Preflight panel — shown only in autonomous mode (ironclaw-spine Phase 6) -->
+        {#if execMode === 'autonomous'}
+          <div data-testid="preflight-panel-container">
+            <h2 class="text-xs font-medium text-[var(--la-text-label)] mb-3">PREFLIGHT</h2>
+            <PreflightPanel
+              report={preflightReport ?? { timestamp: '', overall: 'Blocked' as const, checks: [], elapsed_ms: 0 }}
+              loading={preflightLoading}
+              onRefresh={loadPreflight}
+            />
+          </div>
+        {/if}
 
         <!-- Source selection -->
         <div data-onboarding="intake-source">

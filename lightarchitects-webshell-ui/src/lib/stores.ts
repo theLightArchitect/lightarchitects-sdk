@@ -901,3 +901,24 @@ export const slotAssignments = derived(
 /** Whether the AYIN pulse overlay is active. Initialised from feature flag;
  *  operator can toggle off via the stats topbar without a page reload. */
 export const pulseEnabled = writable<boolean>(isGitForestFlagEnabled('pulseEnabled'));
+
+// ── ironclaw-spine lightsquad stores (Phase 6) ───────────────────────────────
+
+import type {
+  WorkerSlotGaugeEvent,
+  ConductorTickEvent,
+  MergeAgentStatusEvent,
+  FixAgentIterationEvent,
+} from './types';
+
+/** Latest worker slot occupancy — null until first gauge event arrives. */
+export const workerSlots = writable<WorkerSlotGaugeEvent | null>(null);
+
+/** Latest conductor tick — null until first tick event arrives. */
+export const conductorState = writable<ConductorTickEvent | null>(null);
+
+/** Rolling window of merge agent status events (newest first, max 50). */
+export const mergeAgentEvents = writable<MergeAgentStatusEvent[]>([]);
+
+/** Rolling window of fix agent iteration events (newest first, max 100). */
+export const fixAgentEvents = writable<FixAgentIterationEvent[]>([]);

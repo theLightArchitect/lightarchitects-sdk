@@ -19,6 +19,7 @@ import {
   mailboxMessages, mailboxUnread,
   contextUsage,
   gitforestTree, gitforestPulses,
+  workerSlots, conductorState, mergeAgentEvents, fixAgentEvents,
 } from './stores';
 import { spikeSibling } from './stores';
 import { reconstructTopology } from './gitforest';
@@ -569,6 +570,35 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
       if (activeIds.length > 0) {
         gitforestPulses.update(ring => [...activeIds, ...ring].slice(0, 32));
       }
+      break;
+    }
+    // ── ironclaw-spine lightsquad events (Phase 6) ─────────────────────────
+    case 'escalation': {
+      window.dispatchEvent(
+        new CustomEvent('la:escalation', {
+          detail: event as unknown as import('./types').EscalationEvent,
+        }),
+      );
+      break;
+    }
+    case 'worker_slot_gauge': {
+      const payload = event as unknown as import('./types').WorkerSlotGaugeEvent;
+      workerSlots.set(payload);
+      break;
+    }
+    case 'conductor_tick': {
+      const payload = event as unknown as import('./types').ConductorTickEvent;
+      conductorState.set(payload);
+      break;
+    }
+    case 'merge_agent_status': {
+      const payload = event as unknown as import('./types').MergeAgentStatusEvent;
+      mergeAgentEvents.update(list => [payload, ...list].slice(0, 50));
+      break;
+    }
+    case 'fix_agent_iteration': {
+      const payload = event as unknown as import('./types').FixAgentIterationEvent;
+      fixAgentEvents.update(list => [payload, ...list].slice(0, 100));
       break;
     }
     default:
