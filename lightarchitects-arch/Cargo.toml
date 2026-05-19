@@ -1,0 +1,47 @@
+[package]
+name    = "lightarchitects-arch"
+version = "0.1.0"
+edition.workspace    = true
+rust-version.workspace = true
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+description = "Architecture intelligence — extract, verify, emit diagrams from Rust/TS/Python codebases"
+
+[features]
+default = []
+
+[dependencies]
+# Core
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+thiserror   = { workspace = true }
+tracing     = { workspace = true }
+
+# Architecture extraction
+tree-sitter            = { workspace = true }
+tree-sitter-rust       = { workspace = true }
+tree-sitter-typescript = { workspace = true }
+tree-sitter-python     = { workspace = true }
+pulldown-cmark         = { workspace = true }
+
+# Diagram emission
+regex = { workspace = true }
+
+[dev-dependencies]
+criterion        = { workspace = true }
+proptest         = { workspace = true }
+pretty_assertions = { workspace = true }
+tempfile         = { workspace = true }
+
+[[bench]]
+name    = "extractor"
+harness = false
+
+[[bench]]
+name    = "verifier"
+harness = false
+
+[[bench]]
+name    = "emitter"
+harness = false

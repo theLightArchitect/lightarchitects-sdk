@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "lightarchitects",          # Unified SDK — all clients + advanced capabilities
     "lightarchitects-webshell", # Binary: local web GUI (PTY + 3D helix panel)
+    "lightarchitects-arch",     # Architecture intelligence — extract, verify, emit
 ]
 exclude = [
     "lightarchitects-gateway",
@@ -112,6 +113,13 @@ regex     = "1"
 serde_yaml = "0.9"
 fastembed = { version = "5", optional = false }
 similar   = "2"
+
+# ── Architecture intelligence (lightarchitects-arch) ─────────────────────────
+tree-sitter          = "0.24.4"
+tree-sitter-rust     = "0.24.0"
+tree-sitter-typescript = "0.23.2"
+tree-sitter-python   = "0.23.2"
+pulldown-cmark       = { version = "0.12", features = [] }
 
 # ── Dev/test ──────────────────────────────────────────────────────────────────
 tempfile = "3"
