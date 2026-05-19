@@ -82,3 +82,10 @@ pub mod platform;
 /// See module-level docs for architecture, sub-modules, and future-extraction status.
 #[cfg(feature = "lightsquad")]
 pub mod lightsquad;
+
+/// Observability primitives for lightsquad wave execution — W3C `traceparent`
+/// carrier, tool-call span attribute schema, and Google SRE Golden Signals +
+/// Apdex metrics. Gated on `lightsquad` because this module exists solely to
+/// instrument lightsquad worker activity.
+#[cfg(feature = "lightsquad")]
+pub mod observability;
