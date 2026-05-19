@@ -2,10 +2,10 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.8"  # bumped 2026-05-18 per ironclaw-spine iter-7 canon amendments (Phase 2A.5); covers gitforest-live-ops §2.17-2.19 + ironclaw §2.10b/c/d + §1.6 SG-CRYPTO cross-ref + 5 WebEvent variants + §2.10 PR-drift fix
+version: "1.0.9"  # bumped 2026-05-19: Monitor redesign — §2.20 HITL Resolve endpoint, GitForest2D.svelte frontend wiring, Ops screen description update
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
-date: "2026-05-18"
+date: "2026-05-19"
 xea_verified: "2026-05-17"  # 1.0.6 ratified; 1.0.8 pending re-XEA at Phase 7
 amended_by: "ironclaw-spine iter-7 (operator-authorized Canon XV override 2026-05-18)"
 ratified_by: "kevin"
@@ -566,7 +566,7 @@ Branch tree topology for the live gitforest visualization. Used by `GitForest.sv
 | `401` | Missing or invalid bearer token |
 | `500` | Repository not found on disk or git command failed |
 
-**Frontend wiring**: `gitforestTree` Svelte store is populated from this endpoint (and kept live via `§2.18 GitForest Live SSE`). `GitForest.svelte` subscribes to the store; topology update triggers canvas re-render.
+**Frontend wiring**: `gitforestTree` Svelte store is populated from this endpoint (and kept live via `§2.18 GitForest Live SSE`). `GitForest2D.svelte` subscribes to the store; topology update re-derives the card grid. The previous 3D WebGL `GitForest.svelte` was replaced by the 2D card renderer in the 2026-05-19 Monitor redesign.
 
 ---
 
@@ -595,7 +595,7 @@ data: {"type":"branch_update","node_id":"feat/ironclaw-spine","lifecycle":"live_
 | `ci_status` | string | `CiStatus` enum value |
 | `gate_score` | number \| null | Latest gate confidence (0–1); `null` if no gate run |
 
-**Frontend wiring**: `sse.ts` dispatches `gitforest` events to the `gitforestTree` store via `appendGitForestUpdate()`. The `pulseLayer` enqueues the `node_id` for 2.5s opacity decay on the canvas overlay.
+**Frontend wiring**: `sse.ts` dispatches `gitforest` events to the `gitforestTree` store via `appendGitForestUpdate()`. `GitForest2D.svelte` re-derives the card grid reactively from the store; the `pulseLayer` canvas overlay was removed in the 2026-05-19 Monitor redesign (wave-dot progress indicators replace the opacity pulse).
 
 **Auth**: `401` without valid bearer token. Connection drops gracefully if token expires mid-stream.
 
@@ -627,6 +627,43 @@ Single-node detail lookup by composite node ID. Used by `BranchTooltip.svelte` f
 **Security**: Node ID is validated against the repo allowlist and `.gitforestignore` ACL — branches hidden from the topology are also hidden from this endpoint (`404` not `403` to avoid enumeration).
 
 **Frontend wiring**: `BranchTooltip.svelte` reads from the `gitforestTree` store (populated via `§2.17`/`§2.18`) rather than calling this endpoint directly. This endpoint is available as a fallback for cold-start scenarios.
+
+---
+
+### §2.20 GitForest HITL Resolve (2026-05-19 ADDITION)
+
+Operator action endpoint — approve or reject a HITL gate from the Monitor view inline drawer. Introduced by the Monitor redesign; backend implementation is a deliverable of ironclaw-spine Phase 3. Until ironclaw-spine ships, the endpoint returns `404` and the UI closes the drawer gracefully.
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `POST` | `/api/gitforest/hitl-resolve` | Bearer token | Submit an operator approve/reject decision for a HITL-blocked build node |
+
+**Request body** (`application/json`):
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `node_id` | string | Yes | Composite node ID `<repo>/<branch>` identifying the HITL-blocked build |
+| `decision` | `"approve"` \| `"reject"` | Yes | Operator's decision |
+| `rationale` | string | No | Free-text operator rationale (max 2 000 chars); stored in the decision log (§2.10d) |
+
+**Response** (`200 OK`):
+
+```json
+{ "ok": true, "node_id": "lightarchitects-sdk/feat/ironclaw-spine", "decision": "approve" }
+```
+
+**Errors**:
+
+| Code | Condition |
+|------|-----------|
+| `400` | Missing or invalid `node_id` / `decision` field |
+| `401` | Missing or invalid bearer token |
+| `404` | Endpoint not yet implemented (pre-ironclaw-spine); UI treats this as a graceful no-op |
+| `409` | Node is not in HITL state — decision was already resolved or node is not blocked |
+
+**Security**: `node_id` validated against `^[a-zA-Z0-9_./%-]{1,200}$`; rationale is stored as opaque text (not executed). Decision is append-only in the conductor decision log — no delete surface.
+
+**Frontend wiring**: `GitForest2D.svelte` HITL drawer posts to this endpoint on confirm. `404` closes the drawer silently (backend not yet wired). Non-`2xx`/`404` responses surface `hitlError` text inside the drawer. On success, the node's `hitl_state` overlay field is expected to update via the `§2.18` SSE stream within one polling cycle.
 
 ---
 
@@ -711,7 +748,7 @@ Screens are lazy-loaded per `screenModules` in `src/app.svelte:51`. Each entry m
 
 | ScreenKey | Component file | Route(s) | Purpose |
 |-----------|----------------|----------|---------|
-| `Ops` | `src/screens/Ops.svelte` | `/`, `/ops` | Operations HUD — live squad health, AYIN status, conductor stats, alert panel, event stream, git forest, polytope 3D topology. Default landing when no route matches. |
+| `Ops` | `src/screens/Ops.svelte` | `/`, `/ops` | Monitor HUD — 3-panel layout: Agent Comms (left, 22%) / GitForest2D card view (center, 50%) / Worktrees filepath tree (right, 28%). Conductor queue strip above the forest. Preset tabs: MONITOR / WORKSPACE / DEBUG / SHIP / AGENT / OBSERVE. Default landing when no route matches. Components: `AgentCommsPanel.svelte`, `GitForest2D.svelte`, `WorktreePanel.svelte`. |
 | `Dispatch` | `src/screens/Dispatch.svelte` → `src/screens/SquadDispatch.svelte` | `/dispatch`, `/dispatch/run/:runId`, `/dispatch/run/:runId/agent/:agentKey` | Squad dispatch — prompt input, domain-agent selector, live-agent grid, task DAG, dispatch history rail, CLI mode. `Dispatch.svelte` is a thin route shell; `SquadDispatch.svelte` is the full implementation. |
 | `Builds` | `src/screens/Builds.svelte` → `src/screens/BuildQueue.svelte` | `/builds` | Build portfolio list — all builds (past, in-flight, queued). `Builds.svelte` is a compatibility wrapper; `BuildQueue.svelte` is the actual implementation pending a dedicated rewrite. Also treated as the default tab when route is `/`. |
 | `Intake` | `src/screens/Intake.svelte` | `/intake` | New build creation form — source, repository, plan fields. Guards unsaved state via `beforeunload`; draft auto-persisted to `localStorage`. Tutorial T1 auto-fires on first visit. |
@@ -783,7 +820,7 @@ Which backend sections and route prefixes serve each screen. Use this to find re
 
 | ScreenKey | Backend section(s) | Primary route prefixes |
 |-----------|-------------------|------------------------|
-| `Ops` | §2.1 Auth & Health, §2.3 Events, §2.12 Misc, §2.14 Preflight, §2.17-2.19 GitForest | `/api/health`, `/api/events/global`, `/api/polytopes`, `/api/preflight`, `/api/gitforest/*` |
+| `Ops` | §2.1 Auth & Health, §2.3 Events, §2.6 Workspaces (conductor tasks), §2.12 Misc, §2.14 Preflight, §2.17-2.20 GitForest | `/api/health`, `/api/events/global`, `/api/conductor/status`, `/api/polytopes`, `/api/preflight`, `/api/gitforest/*` |
 | `Dispatch` | §2.7 Dispatch Sub-Router, §2.3 Events | `/api/dispatch/*`, `/api/events` |
 | `Builds` | §2.4 Builds Core | `/api/builds` |
 | `BuildDetail` | §2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor, §2.17-2.19 GitForest | `/api/builds/{id}`, `/api/builds/{id}/terminal/ws`, `/api/builds/{id}/events`, `/api/gitforest/*` |
