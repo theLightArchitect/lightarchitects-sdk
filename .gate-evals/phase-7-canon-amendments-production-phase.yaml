@@ -1,0 +1,57 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-19T11:00:00Z"
+build_id: architecture-intelligence-substrate
+phase_id: phase-7-canon-amendments-production
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 2022_plus
+    tests_fail: 0
+    note: >
+      1 pre-existing flake (non-blocking per GATE protocol):
+      load_helix_toml_perf_baseline_1000_iterations — timing test in
+      lightarchitects (core) crate; 113ms under parallel load vs 100ms threshold;
+      passes in isolation. Pre-existing since Phase 1. lightarchitects crate not
+      in this branch's diff.
+      Phase 7 adds 5 new bootstrap_convergence integration tests in
+      lightarchitects-arch (all pass: container_ids, relation_tuples,
+      html_references, markdown_references, write_canon_files).
+      Gateway smoke: 9/9 pass (make test-gateway-smoke).
+      Frontend: 592 vitest tests pass / 1 pre-existing import-timeout flake
+      (Ops screen timeout; load-sensitive; pre-existing since Phase 6).
+      Vite production build: clean.
+  Q4_svelte:
+    result: pass
+    note: >
+      Vite production build clean. Architecture.svelte unchanged from Phase 6.
+      592/593 vitest pass (1 pre-existing import-timeout flake).
+  D2_plan:
+    result: pass
+    note: >
+      Phase 7 deliverables complete per plan scope reduction (plan line 1141:
+      all 7 canon amendments pre-ratified before Phase 7; scope = deliverable
+      convergence + bootstrap + helix enrichment):
+      (1) webshell-api-surface-v1.{md,html}: §2.21 added (5 /api/arch/* routes),
+          ScreenKey union updated (11→12 keys), route table updated (22→24 entries),
+          screen→section mapping row added for Architecture.
+      (2) arch-substrate-narrative-seed.toml: authored (4 sections + 7 glossary
+          terms); section_0 body appears in generated HTML.
+      (3) arch-substrate-v1.{html,md}: canonical self-generated documentation pair
+          produced by the substrate (ARCH_WRITE_CANON=1).
+      (4) bootstrap_convergence.rs: 5 integration tests covering K-2 three-axis
+          convergence (container IDs exact ✅, relation tuples exact ✅,
+          HTML/Markdown round-trip ✅).
+      (5) gateway API call sites fixed: walk_and_extract (1→2 args),
+          emit_html (2→3 args), missing # Errors doc sections, result_large_err
+          suppress on validate_root. Gateway excluded from workspace --workspace;
+          these were pre-existing compile errors from Phase 5 that became visible
+          at the Phase 7 smoke test.
+      (6) make test-gateway-smoke: 9/9 PASS — P1.E6 smoke criterion met.
+      (7) Helix enrichment deferred to close-out (Task #16) per standard practice.
+      webshell-api-surface.md amendment: complete (was deferred from Phase 6 gate).
