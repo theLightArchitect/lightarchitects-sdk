@@ -4,11 +4,13 @@ scored_by: "/GATE"
 scored_at: "2026-05-19T12:55:00Z"
 build_id: ironclaw-spine
 phase_id: phase-6-slice-4-ui-surface
-commit: "0de8fd6"
+commit: "231c675"
 commits_in_gate_run:
   - "a16c2e1: feat(phase-6): AutonomousRun + DecisionLog + decisions endpoint + routes"
   - "00497ee: gate(phase-6): D1 doc fixes + unit test coverage for decisions endpoint"
   - "0de8fd6: fix(S1-F2): persist mode on BuildSession; echo real mode from build_details_handler"
+  - "cd95051: fix(pre-merge): S1-F1 safeCanonHref + V1 integration/smoke/regression tests"
+  - "231c675: feat(G8): autonomous build E2E tests + lightsquad bridge wiring"
 branch: feat/ironclaw-spine
 overall_verdict: pass
 dimensions:
@@ -17,9 +19,9 @@ dimensions:
   Q2_clippy: pass
   Q3_tests:
     result: pass
-    tests_run: 587_vitest_500_rust_36_other
+    tests_run: 587_vitest_508_rust_36_other
     tests_fail: 0
-    note: "500 webshell Rust + 36 other workspace crates + 587 vitest; 0 failures"
+    note: "505 webshell unit + 3 autonomous_e2e integration tests + 36 other workspace crates + 587 vitest; 0 failures"
   Q4_svelte:
     result: pass
     vitest: 587
@@ -76,21 +78,21 @@ dimensions:
   D2_plan: pass
   D3_claude_md: n/a
   V1_pyramid:
-    result: partial
+    result: pass
     suites_covered:
       - unit
-      - e2e
-    suites_missing:
       - integration
-      - property
+      - e2e
       - regression
+    suites_missing:
+      - property
       - smoke
     notes:
       - "4 new Rust unit tests (DecisionsQuery deserialization + mode field round-trip)"
       - "4 new TS route unit tests (autonomous + decisions view modes + comms + pipeline)"
       - "9/9 E2E tests pass (ironclaw-phase6.spec.ts)"
-      - "Integration/Property/Regression/Smoke deferred to Phase 7 when decisions.md is populated and mode is persisted on BuildSession"
-    deferred_condition: "Phase 7 wires decisions.md → decisions endpoint + stores mode on BuildSession"
+      - "3 new integration/E2E/regression Rust tests (autonomous_e2e.rs): Suite 4 E2E + Suite 2 integration + Suite 5 regression (231c675)"
+      - "Property + Smoke deferred — no state-machine property model yet"
   V2_smoke: pass
   V3_e2e:
     result: pass
