@@ -113,6 +113,13 @@ pub struct BuildSession {
     /// Lazily initialised on first agent activity.  Holds the subprocess
     /// bridge, event broadcast channel, and permission queue.
     pub agent_host: tokio::sync::Mutex<Option<Arc<crate::agent::AgentSessionHost>>>,
+
+    /// Lazily-initialised fleet broadcaster — `None` until first fleet SSE
+    /// connect or snapshot request (OQ5 resolution).
+    ///
+    /// Holds the `FleetTracker` + JSONL tailer + ticker tasks for this build.
+    /// Initialised under the mutex to prevent TOCTOU races.
+    pub fleet_broadcaster: tokio::sync::Mutex<Option<Arc<crate::agent::fleet::FleetBroadcaster>>>,
 }
 
 impl BuildSession {
@@ -151,6 +158,7 @@ impl BuildSession {
             containerized: false,
             mode: "interactive".to_owned(),
             agent_host: tokio::sync::Mutex::new(None),
+            fleet_broadcaster: tokio::sync::Mutex::new(None),
         }
     }
 

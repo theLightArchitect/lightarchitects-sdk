@@ -66,7 +66,7 @@ impl From<&FleetSpan> for FleetNode {
 }
 
 /// Point-in-time snapshot of the entire fleet, ready for SSE emission.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct FleetSnapshot {
     /// All known agent nodes at the moment of capture.
     pub nodes: Vec<FleetNode>,
