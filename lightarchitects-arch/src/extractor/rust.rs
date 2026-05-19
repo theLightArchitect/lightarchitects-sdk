@@ -21,6 +21,7 @@ use crate::{
 ///
 /// Returns [`ExtractError::FileTooLarge`] or [`ExtractError::ParseFailed`] on failure.
 /// I/O errors are surfaced as [`ExtractError::Io`].
+#[tracing::instrument(skip_all, fields(lang = "rust", file = %path.display()))]
 pub fn extract_file(
     path: &Path,
     source: &str,
@@ -127,6 +128,11 @@ pub fn extract_file(
     // ── Query: use declarations → Uses edges ────────────────────────────────
     extract_use_paths(tree.root_node(), source, &path_str, &mut facts);
 
+    tracing::debug!(
+        nodes = facts.nodes.len(),
+        relations = facts.relations.len(),
+        "rust extraction complete"
+    );
     Ok(facts)
 }
 

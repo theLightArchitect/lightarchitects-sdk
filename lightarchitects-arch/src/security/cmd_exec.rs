@@ -184,6 +184,8 @@ pub struct ExecOutput {
 /// - [`CmdError::Io`] — spawn or wait failed.
 /// - [`CmdError::NonZeroExit`] — process exited with a non-zero code (exit 1 from grep
 ///   means "no match" — callers may handle this specially).
+// argv is intentionally omitted from the span to avoid leaking search patterns into traces.
+#[tracing::instrument(skip_all, fields(binary = ?binary))]
 pub fn execute(
     binary: AllowedBinary,
     args: &[OsString],

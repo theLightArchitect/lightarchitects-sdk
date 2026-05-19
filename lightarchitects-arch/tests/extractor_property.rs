@@ -205,3 +205,54 @@ fn merge_facts_combines_correctly() {
     assert!(combined.nodes.iter().any(|n| n.label == "A"));
     assert!(combined.nodes.iter().any(|n| n.label == "B"));
 }
+
+// ── walk_and_extract integration ──────────────────────────────────────────────
+
+#[test]
+fn walk_and_extract_returns_facts_for_mixed_project() {
+    use std::fs;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(root.join("lib.rs"), "pub struct Foo {}").unwrap();
+    fs::write(root.join("main.ts"), "class Bar {}").unwrap();
+    fs::write(root.join("app.py"), "class Baz:\n    pass\n").unwrap();
+
+    let cfg = config();
+    let facts = lightarchitects_arch::extractor::walk_and_extract(root, &cfg).unwrap();
+    assert!(facts.nodes.iter().any(|n| n.label == "Foo"));
+    assert!(facts.nodes.iter().any(|n| n.label == "Bar"));
+    assert!(facts.nodes.iter().any(|n| n.label == "Baz"));
+}
+
+#[test]
+fn walk_and_extract_skips_unknown_extensions() {
+    use std::fs;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(root.join("data.json"), r#"{"key": "value"}"#).unwrap();
+    fs::write(root.join("notes.txt"), "hello").unwrap();
+
+    let cfg = config();
+    let facts = lightarchitects_arch::extractor::walk_and_extract(root, &cfg).unwrap();
+    assert!(facts.nodes.is_empty());
+    assert!(facts.warnings.is_empty());
+}
+
+#[test]
+fn walk_and_extract_accumulates_warnings_for_oversized_files() {
+    use std::fs;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let cfg = lightarchitects_arch::extractor::ExtractorConfig {
+        max_file_bytes: 10,
+        max_warnings: 50,
+    };
+    fs::write(root.join("big.rs"), "x".repeat(100)).unwrap();
+
+    let facts = lightarchitects_arch::extractor::walk_and_extract(root, &cfg).unwrap();
+    assert!(
+        !facts.warnings.is_empty(),
+        "oversized file should produce a warning"
+    );
+    assert!(facts.nodes.is_empty());
+}

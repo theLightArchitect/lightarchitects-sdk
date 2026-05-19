@@ -17,6 +17,7 @@ use crate::{
 /// # Errors
 ///
 /// Returns [`ExtractError::FileTooLarge`] or [`ExtractError::ParseFailed`] on failure.
+#[tracing::instrument(skip_all, fields(lang = "python", file = %path.display()))]
 pub fn extract_file(
     path: &Path,
     source: &str,
@@ -128,6 +129,11 @@ pub fn extract_file(
         }
     }
 
+    tracing::debug!(
+        nodes = facts.nodes.len(),
+        relations = facts.relations.len(),
+        "python extraction complete"
+    );
     Ok(facts)
 }
 

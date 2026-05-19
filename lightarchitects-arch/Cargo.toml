@@ -26,6 +26,9 @@ tree-sitter-typescript = { workspace = true }
 tree-sitter-python     = { workspace = true }
 pulldown-cmark         = { workspace = true }
 
+# Directory walking
+walkdir = { workspace = true }
+
 # Diagram emission
 regex = { workspace = true }
 
