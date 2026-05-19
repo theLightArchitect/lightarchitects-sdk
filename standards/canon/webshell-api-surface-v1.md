@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.9"  # bumped 2026-05-19: Monitor redesign — §2.20 HITL Resolve endpoint, GitForest2D.svelte frontend wiring, Ops screen description update
+version: "1.0.10"  # bumped 2026-05-19: BuildDetail supervisor wiring — §2.13 frontend notes, §3.7/§3.10 BuildDetail supervisor strip + route mapping
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
@@ -410,9 +410,9 @@ Endpoints for the copilot supervision loop (`copilot-supervised-orchestration`).
 | `POST` | `/api/builds/:id/supervisor/acknowledge` | Operator acknowledges a pending drift proposal; resets drift counter and broadcasts synthetic update (204 No Content) |
 | `GET` | `/api/builds/:id/supervisor/state` | Point-in-time snapshot: `consecutive_drifts`, `drift_threshold`, `proposal_pending`, `last_evaluation`, `northstar_text` |
 
-All three return `404` when the build UUID is unknown **or** no `northstar_text` was supplied at build-creation time (`supervisor_states` entry absent).
+All three return `404` when the build UUID is unknown **or** no `northstar_text` was supplied at build-creation time (`supervisor_states` entry absent). A `401` is returned when the `la_session` cookie is absent or expired.
 
-All three return `404` when the build UUID is unknown **or** no `northstar_text` was supplied at build-creation time (`supervisor_states` entry absent).
+**Frontend wiring** (`build-detail-supervisor`, 2026-05-19): `BuildDetail.svelte` polls `GET /api/builds/:id/supervisor/state` on mount and re-fetches on every `GET /api/builds/:id/supervisor/events` SSE event (full-state re-fetch avoids partial-merge against `consecutive_drifts`). On `401`, `supervisorAuthError` state is set and a visible AUTH strip replaces the northstar strip. `POST /api/builds/:id/supervisor/acknowledge` is called with optimistic clear of `proposal_pending`; re-fetch on both success and catch restores server truth. Auth: `AuthGuard` accepts the `la_session` HttpOnly SameSite=Strict cookie — browsers cannot send custom headers on `EventSource`.
 
 ---
 
@@ -753,7 +753,7 @@ Screens are lazy-loaded per `screenModules` in `src/app.svelte:51`. Each entry m
 | `Builds` | `src/screens/Builds.svelte` → `src/screens/BuildQueue.svelte` | `/builds` | Build portfolio list — all builds (past, in-flight, queued). `Builds.svelte` is a compatibility wrapper; `BuildQueue.svelte` is the actual implementation pending a dedicated rewrite. Also treated as the default tab when route is `/`. |
 | `Intake` | `src/screens/Intake.svelte` | `/intake` | New build creation form — source, repository, plan fields. Guards unsaved state via `beforeunload`; draft auto-persisted to `localStorage`. Tutorial T1 auto-fires on first visit. |
 | `Helix` | `src/screens/Helix.svelte` | `/helix`, `/helix/strand/:siblingKey`, `/helix/entry/:entryId` | SOUL knowledge graph browser — strand filter chips, vault entry list, strand drilldown, entry detail. Also reachable via inline 3D panel toggle; when `/helix` is the active route the inline Helix3D panel is hidden (avoids duplicate render). |
-| `BuildDetail` | `src/screens/BuildDetail.svelte` | `/builds/:buildId`, `/builds/:buildId/:view`, `/builds/:buildId/phase/:phaseId`, `/builds/:buildId/phase/:phaseId/wave/:waveId`, `/builds/:buildId/phase/:phaseId/wave/:waveId/agent/:agentKey` | Per-build detail — supports 6 `BuildViewMode` tabs (kanban / list / operator / manifest / plan / comms), phase timeline, pillar rail, gate strip, findings panel, artifact panel, build notes, per-build SSE stream, copilot, agent console. Deepest drill-down level in the nav hierarchy. |
+| `BuildDetail` | `src/screens/BuildDetail.svelte` | `/builds/:buildId`, `/builds/:buildId/:view`, `/builds/:buildId/phase/:phaseId`, `/builds/:buildId/phase/:phaseId/wave/:waveId`, `/builds/:buildId/phase/:phaseId/wave/:waveId/agent/:agentKey` | Per-build detail — supports 6 `BuildViewMode` tabs (kanban / list / operator / manifest / plan / comms), phase timeline, pillar rail, gate strip, findings panel, artifact panel, build notes, per-build SSE stream, copilot, agent console, supervisor northstar strip (28px; polls `getSupervisorState`, live via `supervisorEvents` SSE; shows `ProposalCard` on `proposal_pending`; `supervisorAuthError` state surfaces AUTH strip on 401). Deepest drill-down level in the nav hierarchy. |
 | `ProjectDetail` | `src/screens/ProjectDetail.svelte` | `/project/:projectId` | Project detail card — project metadata, voxel type badge, linked build list. |
 | `Comms` | `src/screens/Comms.svelte` | `/comms` | Squad communications hub — cross-build coordination overview, task queue, active chat sessions, squad comms injection. |
 | `Editor` | `src/screens/Editor.svelte` | `/editor`, `/editor/:filepath` | Code editor — file tree browser, CodeMirror editor surface, diff viewer, read/write/search/apply-diff ops via `/api/code/*`. `filepath` param pre-opens a file when navigated with a path. |
@@ -823,7 +823,7 @@ Which backend sections and route prefixes serve each screen. Use this to find re
 | `Ops` | §2.1 Auth & Health, §2.3 Events, §2.6 Workspaces (conductor tasks), §2.12 Misc, §2.14 Preflight, §2.17-2.20 GitForest | `/api/health`, `/api/events/global`, `/api/conductor/status`, `/api/polytopes`, `/api/preflight`, `/api/gitforest/*` |
 | `Dispatch` | §2.7 Dispatch Sub-Router, §2.3 Events | `/api/dispatch/*`, `/api/events` |
 | `Builds` | §2.4 Builds Core | `/api/builds` |
-| `BuildDetail` | §2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor, §2.17-2.19 GitForest | `/api/builds/{id}`, `/api/builds/{id}/terminal/ws`, `/api/builds/{id}/events`, `/api/gitforest/*` |
+| `BuildDetail` | §2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor, §2.17-2.19 GitForest | `/api/builds/{id}`, `/api/builds/{id}/terminal/ws`, `/api/builds/{id}/events`, `/api/builds/{id}/supervisor/state`, `/api/builds/{id}/supervisor/events`, `/api/builds/{id}/supervisor/acknowledge`, `/api/gitforest/*` |
 | `Helix3D` (inline) | §2.15 Helix Node Snapshot | `/api/helix/nodes` |
 | `Intake` | §2.4 Builds Core, §2.6 Workspaces | `/api/builds/plan*`, `/api/builds` |
 | `Helix` | §2.5 SOUL Vault | `/api/soul/*` |

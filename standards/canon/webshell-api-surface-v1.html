@@ -1,7 +1,7 @@
 <!-- uuid: f2e8b3d7-6c41-4a9f-b825-1e3d7c9a0f42 -->
 <!--
 title: "Webshell API Surface"
-version: "1.0.5"
+version: "1.0.10"
 status: ratified
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-17"
@@ -37,7 +37,7 @@ tags:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Webshell API Surface — Canonical Reference v1.0.5</title>
+<title>Webshell API Surface — Canonical Reference v1.0.10</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <style>
   :root {
@@ -218,7 +218,7 @@ tags:
 <nav class="sidebar">
   <div class="logo">
     <div class="title">Light Architects</div>
-    <div class="sub">Webshell API Surface v1.0.5</div>
+    <div class="sub">Webshell API Surface v1.0.10</div>
     <div class="sub" style="margin-top:4px;color:#FFD700;opacity:0.7;font-size:9px;letter-spacing:0.05em;">canon://webshell-api-surface</div>
   </div>
 
@@ -292,7 +292,7 @@ tags:
       Neither is derived from the other — they are co-authored representations of the same spec.
     </div>
     <div class="meta" style="margin-top:16px;">
-      <div class="meta-item">Version <span>1.0.5</span></div>
+      <div class="meta-item">Version <span>1.0.10</span></div>
       <div class="meta-item">Status <span>ratified</span></div>
       <div class="meta-item">Date <span>2026-05-17</span></div>
       <div class="meta-item">Canon URI <span>canon://webshell-api-surface</span></div>
@@ -1104,7 +1104,7 @@ stateDiagram-v2
       <tr><td><code>Ops</code></td><td>§2.1 Auth &amp; Health, §2.3 Events, §2.12 Misc</td><td><code>/api/health</code>, <code>/api/events/global</code>, <code>/api/polytopes</code></td></tr>
       <tr><td><code>Dispatch</code></td><td>§2.7 Dispatch Sub-Router, §2.3 Events</td><td><code>/api/dispatch/*</code>, <code>/api/events</code></td></tr>
       <tr><td><code>Builds</code></td><td>§2.4 Builds Core</td><td><code>/api/builds</code></td></tr>
-      <tr><td><code>BuildDetail</code></td><td>§2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor</td><td><code>/api/builds/{id}</code>, <code>/api/builds/{id}/terminal/ws</code>, <code>/api/builds/{id}/events</code></td></tr>
+      <tr><td><code>BuildDetail</code></td><td>§2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor, §2.17-2.19 GitForest</td><td><code>/api/builds/{id}</code>, <code>/api/builds/{id}/terminal/ws</code>, <code>/api/builds/{id}/events</code>, <code>/api/builds/{id}/supervisor/state</code>, <code>/api/builds/{id}/supervisor/events</code>, <code>/api/builds/{id}/supervisor/acknowledge</code>, <code>/api/gitforest/*</code></td></tr>
       <tr><td><code>Intake</code></td><td>§2.4 Builds Core, §2.6 Workspaces</td><td><code>/api/builds/plan*</code>, <code>/api/builds</code></td></tr>
       <tr><td><code>Helix</code></td><td>§2.5 SOUL Vault</td><td><code>/api/soul/*</code></td></tr>
       <tr><td><code>Editor</code></td><td>§2.9 Code Editor</td><td><code>/api/code/*</code></td></tr>
@@ -1318,7 +1318,7 @@ flowchart LR
   </table>
 
   <p style="font-size:12px; color: var(--mute); margin-top: 24px;">
-    Canonical source: <a href="webshell-api-surface-v1.md">webshell-api-surface-v1.md</a> · Version 1.0.5 · 2026-05-17 · Derived from <code>src/server/mod.rs</code>, <code>src/dispatch/routes.rs</code>, <code>src/auth.rs</code>, <code>src/config.rs</code>, <code>src/agent/bridge.rs</code>, <code>src/screens/</code>
+    Canonical source: <a href="webshell-api-surface-v1.md">webshell-api-surface-v1.md</a> · Version 1.0.10 · 2026-05-19 · Derived from <code>src/server/mod.rs</code>, <code>src/dispatch/routes.rs</code>, <code>src/auth.rs</code>, <code>src/config.rs</code>, <code>src/agent/bridge.rs</code>, <code>src/screens/</code>
   </p>
   </section>
 
