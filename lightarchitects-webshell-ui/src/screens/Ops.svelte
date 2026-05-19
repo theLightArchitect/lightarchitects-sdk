@@ -1,20 +1,15 @@
 <script lang="ts">
   import {
     siblingHealth, ayinStatus, authStatus, platformHealth,
-    conductorStats, alertStats, buildStats,
-    siblingDispatchCounts, projectGroups, activityFeed, logEntries,
-    helixEntries, vaultCounts, mailboxUnread,
-    activeBuild,
+    conductorStats, conductorTasks, alertStats, buildStats,
+    projectGroups, activityFeed, logEntries,
+    mailboxUnread,
   } from '$lib/stores';
-  import type { PillarGate } from '$lib/types';
-  import { SIBLING_COLORS, STATUS_COLORS, SIBLINGS } from '$lib/design-tokens';
-  import type { SiblingId } from '$lib/types';
-  import ConductorPanel from '$lib/../components/ConductorPanel.svelte';
-  import AlertPanel from '$lib/../components/AlertPanel.svelte';
-  import CompactionPanel from '$lib/../components/CompactionPanel.svelte';
-  import GitForest   from '$lib/../components/topology/GitForest.svelte';
+  import { STATUS_COLORS } from '$lib/design-tokens';
+  import GitForest2D from '$lib/../components/topology/GitForest2D.svelte';
+  import WorktreePanel from '$lib/../components/WorktreePanel.svelte';
+  import AgentCommsPanel from '$lib/../components/AgentCommsPanel.svelte';
   import TokenVault  from '$lib/../components/TokenVault.svelte';
-  import EventStream from '$lib/../components/EventStream.svelte';
   import { logLevelToSeverity } from '$lib/../components/EventStream.svelte';
   import { sourceColor } from '$lib/atmosphere';
   import type { StreamRow } from '$lib/../components/EventStream.svelte';
@@ -29,32 +24,6 @@
 
   // ── Reactive data ─────────────────────────────────────────────────────────
 
-  /** P1-6: 10 gatekeeper gate labels → pillar indices for the active build. */
-  const GATE_LABELS: Array<{ key: string; short: string }> = [
-    { key: 'A', short: 'A' }, { key: 'S', short: 'S' }, { key: 'Q', short: 'Q' },
-    { key: 'C', short: 'C' }, { key: 'O', short: 'O' }, { key: 'P', short: 'P' },
-    { key: 'K', short: 'K' }, { key: 'D', short: 'D' }, { key: 'T', short: 'T' },
-    { key: 'R', short: 'R' },
-  ];
-
-  /** Map LASDLC gate key to pillar status for the active build's pillar array. */
-  function gateColor(gate: string, pillars: PillarGate[]): string {
-    // Map A→ARCH, S→SEC, Q→QUAL, O→OPS, P→PERF, T→TEST, D→DOC
-    const GATE_TO_PILLAR: Record<string, string> = {
-      A: 'ARCH', S: 'SEC', Q: 'QUAL', O: 'OPS', P: 'PERF', T: 'TEST', D: 'DOC',
-    };
-    const pillar = pillars.find(p => p.pillar === GATE_TO_PILLAR[gate]);
-    if (!pillar) return 'var(--la-text-mute)';
-    switch (pillar.status) {
-      case 'passed':      return 'var(--la-semantic-ok)';
-      case 'failed':      return 'var(--la-semantic-error)';
-      case 'in_progress': return 'var(--la-semantic-warn)';
-      case 'blocked':     return 'var(--la-semantic-error)';
-      default:            return 'var(--la-text-mute)';
-    }
-  }
-
-  let build = $derived($activeBuild);
   let health        = $derived($siblingHealth);
   let status        = $derived($ayinStatus);
   // P0-1: surface auth failures distinctly from genuine network outages
@@ -64,7 +33,6 @@
       : status,
   );
   let ph            = $derived($platformHealth);
-  let dispatchCounts = $derived($siblingDispatchCounts);
   let phColor       = $derived(
     ph === 'healthy'  ? 'var(--la-agent-researcher)'  :
     ph === 'degraded' ? 'var(--la-agent-performance)' :
@@ -82,33 +50,6 @@
     return () => clearInterval(id);
   });
 
-  function heartbeatAge(lastHeartbeat: string | undefined): number {
-    if (!lastHeartbeat) return Infinity;
-    return (now - new Date(lastHeartbeat).getTime()) / 1000;
-  }
-
-  function staleness(lastHeartbeat: string | undefined): 'fresh' | 'stale' | 'dead' {
-    const age = heartbeatAge(lastHeartbeat);
-    if (age < 30)  return 'fresh';
-    if (age < 120) return 'stale';
-    return 'dead';
-  }
-
-  function formatAgo(lastHeartbeat: string | undefined): string {
-    const age = heartbeatAge(lastHeartbeat);
-    if (!isFinite(age)) return 'never';
-    if (age < 60)   return `${Math.floor(age)}s ago`;
-    if (age < 3600) return `${Math.floor(age / 60)}m ago`;
-    return `${Math.floor(age / 3600)}h ago`;
-  }
-
-  function formatUptime(seconds: number): string {
-    if (seconds < 60)    return `${seconds}s`;
-    if (seconds < 3600)  return `${Math.floor(seconds / 60)}m`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
-    return `${Math.floor(seconds / 86400)}d`;
-  }
-
   let wallClock = $derived.by(() => {
     const d = new Date(now);
     const hh = d.getHours()  .toString().padStart(2, '0');
@@ -117,18 +58,12 @@
     return `${hh}:${mm}:${ss}`;
   });
 
-  let expanded = $state<Record<string, boolean>>({});
-  function toggle(sib: string) { expanded[sib] = !expanded[sib]; }
-
   // Tutorial hook
   $effect(() => {
     import('$lib/tutorial').then(m => m.runTutorial('t5')).catch(() => {});
   });
 
-  // ── Git forest toggle + vault (OPS-1) ────────────────────────────────────
-
-  let forestVisible = $state(true);
-  let vaultOpen     = $state(false);
+  let vaultOpen = $state(false);
 
   // ── Mosaic layout mode ────────────────────────────────────────────────────
   let mosaicMode = $state(
@@ -201,16 +136,11 @@
 
   // ── Header counts ─────────────────────────────────────────────────────────
 
-  let projectCount = $derived($projectGroups.length);
-  let onlineCount  = $derived(
+  let projectCount  = $derived($projectGroups.length);
+  let onlineCount   = $derived(
     Object.values($siblingHealth).filter(h => h?.status === 'online').length,
   );
-
-  // ── Memory metrics ────────────────────────────────────────────────────────
-
-  let memSteps   = $derived($helixEntries.length);
-  let memStrands = $derived($vaultCounts?.['strands'] ?? 0);
-  let memHelixes = $derived($vaultCounts?.['helixes'] ?? 0);
+  let pendingTasks  = $derived($conductorTasks.filter(t => t.status === 'pending'));
 
   // ── Compact event stream ──────────────────────────────────────────────────
 
@@ -334,148 +264,66 @@
     </div>
 
   {:else}
-  <!-- OPS-1: 2-column hero layout (55% mission-control / 45% git forest) -->
-  <div class="ops-main" data-forest-hidden={!forestVisible || undefined}>
+  <!-- Monitor layout: 3-column (agent comms | gitforest | worktrees) -->
+  <div class="ops-main">
 
-    <!-- LEFT — Mission Control (hero at 55%) -->
-    <div class="mission-col">
+    <!-- LEFT — Structured agent comms (~22%) -->
+    <div class="comms-col">
+      <div class="panel-head">
+        <span class="panel-label">AGENT COMMS</span>
+        <span class="panel-count">{eventRows.length}</span>
+      </div>
+      <AgentCommsPanel rows={eventRows} maxDisplay={MAX_ROWS} />
+    </div>
 
-      <!-- P1-6: 10-column gatekeeper gate row for active build -->
-      {#if build}
-        <div class="panel-section gate-row-section">
-          <div class="panel-head">
-            <span class="panel-label">GATEKEEPER — {build.name.slice(0, 24)}</span>
-          </div>
-          <div class="gate-row" role="row" aria-label="LASDLC gatekeeper status">
-            {#each GATE_LABELS as gate}
-              <span
-                class="gate-cell"
-                style="color: {gateColor(gate.key, build.pillars)}"
-                title="Gate [{gate.key}]"
-                role="cell"
-              >[{gate.short}]</span>
-            {/each}
-          </div>
+    <!-- CENTER — 2D Git Forest (~50%) -->
+    <div class="forest-col">
+      <div class="forest-header">
+        <span class="panel-label">GIT FOREST</span>
+        <SharedSlotBar />
+        <div class="forest-legend">
+          <span class="legend-dot" style="background:#f5a623"></span><span class="legend-txt">active</span>
+          <span class="legend-dot" style="background:#22c55e"></span><span class="legend-txt">merged</span>
+          <span class="legend-dot" style="background:#1e3a52"></span><span class="legend-txt">idle</span>
+        </div>
+        <button class="forest-connect" onclick={() => { vaultOpen = true; }}>CONNECT</button>
+      </div>
+
+      <!-- Conductor queue strip — only visible when builds are queued -->
+      {#if pendingTasks.length > 0}
+        <div class="queue-strip" aria-label="Queued builds">
+          <span class="queue-label">QUEUE</span>
+          {#each pendingTasks.slice(0, 5) as task}
+            <span class="queue-chip queue-chip--{task.priority}" title="{task.buildId} · {task.taskType}">
+              <span class="queue-chip-sib">{task.sibling.toUpperCase()}</span>
+              <span class="queue-chip-name">{task.buildId.replace(/^feat\//, '').slice(0, 18)}</span>
+              <span class="queue-chip-type">{task.taskType}</span>
+            </span>
+          {/each}
+          {#if pendingTasks.length > 5}
+            <span class="queue-more">+{pendingTasks.length - 5}</span>
+          {/if}
         </div>
       {/if}
 
-      <!-- OPS-2: Squad health pills with color glow + heartbeat -->
-      <div class="panel-section" data-onboarding="sitrep-squad-health">
-        <div class="panel-head">
-          <span class="panel-label">SQUAD HEALTH</span>
-          <span class="panel-count">{onlineCount}/7 agents online</span>
-        </div>
-        <div class="squad-pills">
-          {#each SIBLINGS as sib}
-            {@const h = health[sib as SiblingId]}
-            {@const color = SIBLING_COLORS[sib] ?? 'var(--la-text-mute)'}
-            {@const stale = staleness(h?.lastHeartbeat)}
-            {@const dc = dispatchCounts[sib as SiblingId] ?? 0}
-            {@const pillState = h?.status === 'online' ? 'online' : h?.status === 'offline' || h?.status === 'degraded' ? 'offline' : h?.status === 'unconfigured' ? 'unconfigured' : 'never'}
-            <button
-              class="squad-pill"
-              data-state={pillState}
-              style:--color={color}
-              onclick={() => toggle(sib)}
-              aria-expanded={expanded[sib] ?? false}
-              aria-label="Toggle {sib} details"
-              data-testid="squad-health-toggle"
-            >
-              <span class="pill-dot"></span>
-              <span class="pill-name">{sib.toUpperCase()}</span>
-              <span class="pill-seen">{formatAgo(h?.lastHeartbeat)}</span>
-              {#if dc > 0}<span class="pill-dc">{dc}</span>{/if}
-              {#if stale !== 'fresh' && pillState !== 'never' && pillState !== 'unconfigured'}
-                <span class="pill-stale" class:stale={stale === 'stale'} class:dead={stale === 'dead'}></span>
-              {/if}
-            </button>
-            {#if expanded[sib]}
-              <div class="pill-expanded" style:border-color={color}>
-                <div class="pill-exp-row">
-                  <span class="exp-label">uptime</span>
-                  <span class="exp-val">{h?.uptime ? formatUptime(h.uptime) : '--'}</span>
-                </div>
-                <div class="pill-exp-row">
-                  <span class="exp-label">hb</span>
-                  <span class="exp-val hb-age" class:fresh={stale === 'fresh'} class:stale={stale === 'stale'} class:dead={stale === 'dead'}>{formatAgo(h?.lastHeartbeat)}</span>
-                </div>
-                {#if h?.capabilities?.length}
-                  <div class="pill-caps">
-                    {#each h.capabilities as cap}
-                      <span class="cap-chip">{cap}</span>
-                    {/each}
-                  </div>
-                {/if}
-              </div>
-            {/if}
-          {/each}
-        </div>
-      </div>
-
-      <!-- Memory metrics -->
-      <div class="panel-section">
-        <div class="panel-head">
-          <span class="panel-label">MEMORY</span>
-        </div>
-        <div class="memory-metrics">
-          <div class="mem-row"><span class="mem-label">Steps</span><span class="mem-val">{memSteps.toLocaleString()}</span></div>
-          <div class="mem-row"><span class="mem-label">Strands</span><span class="mem-val">{memStrands.toLocaleString()}</span></div>
-          <div class="mem-row"><span class="mem-label">Helixes</span><span class="mem-val">{memHelixes.toLocaleString()}</span></div>
-        </div>
-      </div>
-
-      <!-- Accordion panels -->
-      <ConductorPanel />
-      <AlertPanel />
-      <CompactionPanel />
-
-      <!-- Live event stream (moved from right col) -->
-      <div class="events-section">
-        <div class="panel-head">
-          <span class="panel-label">LIVE EVENTS</span>
-          <span class="panel-count">{eventRows.length}</span>
-        </div>
-        <div class="events-stream">
-          <EventStream rows={eventRows} newestFirst maxDisplay={MAX_ROWS} />
-        </div>
+      <div class="forest-body">
+        <GitForest2D />
       </div>
     </div>
 
-    <!-- RIGHT — Git forest (GIT-1 through GIT-3) -->
-    {#if forestVisible}
-      <div class="forest-col">
-        <div class="forest-header">
-          <span class="panel-label">GIT FOREST</span>
-          <!-- Phase 6: SharedSlotBar — live agent pool -->
-          <SharedSlotBar />
-          <div class="forest-legend">
-            <span class="legend-dot" style="background:#22c55e"></span><span class="legend-txt">clean</span>
-            <span class="legend-dot" style="background:#f59e0b"></span><span class="legend-txt">hitl</span>
-            <span class="legend-dot" style="background:#ffd700"></span><span class="legend-txt">pr ready</span>
-            <span class="legend-dot" style="background:#ef4444"></span><span class="legend-txt">failed</span>
-          </div>
-          <button class="forest-connect" onclick={() => { vaultOpen = true; }}>
-            CONNECT
-          </button>
-          <button class="forest-toggle" onclick={() => { forestVisible = false; }}>
-            HIDE
-          </button>
-        </div>
-        <div class="forest-body">
-          <GitForest />
-        </div>
+    <!-- RIGHT — Worktree hierarchy (~28%) -->
+    <div class="worktree-col">
+      <div class="panel-head">
+        <span class="panel-label">WORKTREES</span>
       </div>
-    {/if}
+      <div class="worktree-body">
+        <WorktreePanel />
+      </div>
+    </div>
+
   </div>
 
   <TokenVault bind:open={vaultOpen} />
-
-  <!-- Show forest button when hidden -->
-  {#if !forestVisible}
-    <button class="forest-show-btn" onclick={() => { forestVisible = true; }}>
-      SHOW GIT FOREST
-    </button>
-  {/if}
   {/if}<!-- /mosaicMode -->
 
 </div>
@@ -528,49 +376,81 @@
   .tele-clock  { color: var(--la-text-mute); }
   .tele-div    { color: var(--la-hair-strong); }
 
-  /* ── OPS-1: 2-col layout (55/45 split) ── */
+  /* ── Monitor: 3-col layout (comms | forest | worktrees) ── */
   .ops-main {
     flex: 1;
     display: grid;
-    grid-template-columns: minmax(0, 55fr) minmax(0, 45fr);
+    grid-template-columns: minmax(0, 22fr) minmax(0, 50fr) minmax(0, 28fr);
     min-height: 0;
     overflow: hidden;
   }
-  .ops-main[data-forest-hidden] {
-    grid-template-columns: 1fr;
-  }
 
-  /* ── Mission Control column ── */
-  .mission-col {
-    overflow-y: auto;
-    border-right: 1px solid var(--la-hair-base);
+  /* ── Agent comms column ── */
+  .comms-col {
     display: flex;
     flex-direction: column;
-    gap: 0;
-    scrollbar-width: none;
+    min-height: 0;
+    border-right: 1px solid var(--la-hair-base);
+    overflow: hidden;
   }
-  .mission-col::-webkit-scrollbar { display: none; }
 
-  .panel-section {
-    border-bottom: 1px solid var(--la-hair-base);
+  /* ── Conductor queue strip ── */
+  .queue-strip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    background: rgba(245, 158, 11, 0.05);
+    border-bottom: 1px solid rgba(245, 158, 11, 0.2);
+    flex-shrink: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    font-family: var(--la-font-chrome, 'JetBrains Mono', monospace);
+  }
+  .queue-strip::-webkit-scrollbar { display: none; }
+  .queue-label {
+    font-size: 7px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #f59e0b;
+    flex-shrink: 0;
+  }
+  .queue-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 7px;
+    border-radius: 3px;
+    padding: 2px 6px;
+    border: 1px solid;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .queue-chip--high   { border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.07); color: #f87171; }
+  .queue-chip--normal { border-color: rgba(245,158,11,0.35); background: rgba(245,158,11,0.06); color: #f59e0b; }
+  .queue-chip--low    { border-color: var(--la-hair-base); background: transparent; color: var(--la-text-mute); }
+  .queue-chip-sib  { font-weight: 700; opacity: 0.8; }
+  .queue-chip-name { font-weight: 600; }
+  .queue-chip-type { opacity: 0.6; }
+  .queue-more {
+    font-size: 7px;
+    color: var(--la-text-mute);
     flex-shrink: 0;
   }
 
-  /* P1-6: gatekeeper row */
-  .gate-row {
+  /* ── Worktree column ── */
+  .worktree-col {
     display: flex;
-    gap: 0;
-    padding: 4px 10px;
-    font-family: var(--la-font-mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
   }
-  .gate-cell {
+  .worktree-body {
     flex: 1;
-    text-align: center;
-    transition: color 200ms ease;
+    min-height: 0;
+    overflow: hidden;
   }
+
   .panel-head {
     display: flex;
     justify-content: space-between;
@@ -588,158 +468,14 @@
   }
   .panel-count { font-size: 8px; color: var(--la-text-dim); }
 
-  /* ── OPS-2: Squad health pills ── */
-  .squad-pills {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-  }
-  .squad-pill {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 10px;
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid var(--la-hair-base);
-    cursor: pointer;
-    text-align: left;
-    transition: background 80ms;
-    position: relative;
-  }
-  .squad-pill:hover { background: rgba(255,255,255,0.03); }
-
-  /* Online: colored border + subtle box-shadow glow */
-  .squad-pill[data-state="online"] {
-    border-left: 2px solid var(--color);
-    box-shadow: inset 3px 0 12px color-mix(in srgb, var(--color) 18%, transparent);
-    padding-left: 8px;
-  }
-  .squad-pill[data-state="offline"] {
-    /* amber: was running, now crashed */
-    border-left: 2px solid var(--la-agent-performance, #f59e0b);
-    opacity: 0.72;
-    padding-left: 8px;
-  }
-  .squad-pill[data-state="unconfigured"] {
-    /* dim: never set up — no alarm, no color */
-    border-left: 2px solid var(--la-hair-base, #334155);
-    opacity: 0.28;
-    font-style: italic;
-    padding-left: 8px;
-  }
-  .squad-pill[data-state="never"] {
-    border-left: 2px solid var(--la-hair-base, #334155);
-    opacity: 0.32;
-    font-style: italic;
-    padding-left: 8px;
-  }
-
-  .pill-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--color);
-    flex-shrink: 0;
-  }
-  .squad-pill[data-state="online"] .pill-dot {
-    animation: agent-pulse 2s ease-in-out infinite;
-  }
-  @keyframes agent-pulse {
-    0%, 100% { box-shadow: 0 0 3px var(--color); }
-    50%       { box-shadow: 0 0 10px var(--color), 0 0 18px color-mix(in srgb, var(--color) 50%, transparent); }
-  }
-  .squad-pill[data-state="offline"] .pill-dot {
-    background: var(--la-agent-performance, #f59e0b);
-  }
-  .squad-pill[data-state="unconfigured"] .pill-dot,
-  .squad-pill[data-state="never"] .pill-dot {
-    background: var(--la-hair-base, #334155);
-  }
-
-  .pill-name {
-    font-size: 8px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: var(--color);
-    min-width: 38px;
-    flex-shrink: 0;
-  }
-  .squad-pill[data-state="offline"] .pill-name {
-    color: color-mix(in srgb, var(--la-agent-performance, #f59e0b) 70%, var(--la-text-mute));
-  }
-  .squad-pill[data-state="never"] .pill-name,
-  .squad-pill[data-state="unconfigured"] .pill-name {
-    color: var(--la-text-mute);
-  }
-  .pill-seen {
-    font-size: 7px;
-    color: var(--la-text-dim);
-    font-variant-numeric: tabular-nums;
-    flex: 1;
-  }
-  .pill-dc {
-    font-size: 6px;
-    color: var(--la-agent-engineer, #4d8eff);
-    background: rgba(77, 142, 255, 0.12);
-    padding: 1px 3px;
-    border-radius: 2px;
-  }
-  .pill-stale {
-    width: 4px; height: 4px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-  .pill-stale.stale { background: var(--la-agent-performance, #ff8e3c); }
-  .pill-stale.dead  { background: var(--la-agent-security,    #ff4d4d); }
-
-  .pill-expanded {
-    padding: 5px 10px 6px 20px;
-    border-left: 2px solid;
-    border-bottom: 1px solid var(--la-hair-base);
-    background: rgba(255,255,255,0.02);
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-  .pill-exp-row { display: flex; gap: 6px; align-items: center; }
-  .exp-label { font-size: 7px; color: var(--la-text-dim); min-width: 28px; }
-  .exp-val { font-size: 7px; color: var(--la-text-base); font-variant-numeric: tabular-nums; }
-  .hb-age.fresh { color: var(--la-agent-researcher, #4dffe6); }
-  .hb-age.stale { color: var(--la-agent-performance, #ff8e3c); }
-  .hb-age.dead  { color: var(--la-agent-security,    #ff4d4d); }
-  .pill-caps { display: flex; flex-wrap: wrap; gap: 2px; padding-top: 2px; }
-  .cap-chip { font-size: 5px; padding: 1px 3px; background: var(--la-bg-elev-2); color: var(--la-text-dim); border-radius: 1px; }
-
-  /* Memory metrics */
-  .memory-metrics { padding: 6px 10px; display: flex; flex-direction: column; gap: 3px; }
-  .mem-row { display: flex; justify-content: space-between; }
-  .mem-label { font-size: 8px; color: var(--la-text-dim); }
-  .mem-val { font-size: 8px; color: var(--la-text-base); font-variant-numeric: tabular-nums; }
-
-  /* Events section (fills remaining space) */
-  .events-section {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 120px;
-    border-bottom: none;
-  }
-  .events-stream {
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-  }
-
-  /* ── Git Forest column (OPS-1 right side) ── */
+  /* ── Git Forest column ── */
   .forest-col {
     display: flex;
     flex-direction: column;
     min-height: 0;
     overflow: hidden;
     background: #020408;
+    border-right: 1px solid var(--la-hair-base);
   }
   .forest-body {
     flex: 1;
@@ -759,7 +495,7 @@
     display: flex;
     align-items: center;
     gap: 5px;
-    margin-left: 8px;
+    margin-left: 4px;
     flex: 1;
   }
   .legend-dot {
@@ -769,18 +505,6 @@
     flex-shrink: 0;
   }
   .legend-txt { font-size: 7px; color: var(--la-text-dim); margin-right: 4px; }
-  .forest-toggle {
-    font-size: 7px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    color: var(--la-text-dim);
-    background: none;
-    border: 1px solid var(--la-hair-strong);
-    padding: 2px 6px;
-    cursor: pointer;
-    transition: color 80ms, border-color 80ms;
-  }
-  .forest-toggle:hover { color: var(--la-text-base); border-color: var(--la-text-mute); }
   .forest-connect {
     font-size: 7px;
     font-weight: 700;
@@ -796,23 +520,6 @@
     background: rgba(0, 200, 255, 0.14);
     box-shadow: 0 0 0 1px rgba(0, 200, 255, 0.2);
   }
-
-  /* Show forest floating button (when hidden) */
-  .forest-show-btn {
-    position: absolute;
-    bottom: 12px;
-    right: 14px;
-    font-size: 7px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    color: var(--la-focus-ring, #0ea5e9);
-    background: rgba(14, 165, 233, 0.08);
-    border: 1px solid var(--la-focus-ring, #0ea5e9);
-    padding: 4px 10px;
-    cursor: pointer;
-    transition: background 80ms;
-  }
-  .forest-show-btn:hover { background: rgba(14, 165, 233, 0.16); }
 
   /* ── Mosaic layout container ── */
   .ops-mosaic {
