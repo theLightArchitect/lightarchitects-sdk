@@ -46,10 +46,12 @@ use state::PlatformState;
 pub fn build_http_router(state: Arc<PlatformState>) -> Router {
     let platform = routes::platform::platform_routes();
     let admin = routes::admin::admin_routes();
+    let arch = routes::arch::arch_routes();
 
     Router::new()
         .merge(platform)
         .merge(admin)
+        .merge(arch)
         // innermost: identity extraction (must run before auth so UserContext is available)
         .layer(axum_mw::from_fn_with_state(
             Arc::clone(&state),

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Architecture Intelligence Substrate — v1</title>
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'nonce-arch-mermaid'; style-src 'self' 'unsafe-inline'">
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; display: flex; }
+    #sidebar { width: 220px; min-height: 100vh; background: #1a1a2e; color: #eee; padding: 1rem; }
+    #sidebar a { color: #90caf9; text-decoration: none; }
+    main { flex: 1; padding: 2rem; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
+    th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+    th { background: #f4f4f4; }
+    .chip { background: #e3f2fd; border-radius: 12px; padding: 2px 10px; margin-right: 4px; font-size: 0.85em; }
+    .badge { border-radius: 4px; padding: 1px 6px; font-size: 0.8em; color: #fff; }
+    .badge.uses { background: #1976d2; }
+    .badge.implements { background: #388e3c; }
+    .badge.contains { background: #7b1fa2; }
+    .badge.calls { background: #f57c00; }
+    .badge.extends { background: #5d4037; }
+    pre.mermaid { background: #fafafa; border: 1px solid #eee; padding: 1rem; overflow-x: auto; }
+    section { margin-bottom: 2rem; }
+    footer { border-top: 1px solid #eee; padding: 1rem; color: #888; font-size: 0.85em; }
+    .stat-chips { margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+<nav id="sidebar" aria-label="Sections">
+  <ul>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#nodes">Components</a></li>
+    <li><a href="#relations">Relations</a></li>
+    <li><a href="#diagrams">Diagrams</a></li>
+    <li><a href="#glossary">Glossary</a></li>
+  </ul>
+</nav>
+
+<main>
+<header id="hero">
+  <h1>Architecture Intelligence Substrate — v1</h1>
+  <p class="project-label">Project: <code>lightarchitects-arch</code></p>
+  <div class="stat-chips">
+    <span class="chip">6 nodes</span>
+    <span class="chip">0 components</span>
+    <span class="chip">6 relations</span>
+  </div>
+</header>
+
+<section id="overview">
+  <h2>Overview</h2>
+  <p>The `lightarchitects-arch` crate is the Architecture Intelligence Substrate for
+the Light Architects platform. It provides three capabilities that together close
+Northstar Pillar 1 / E3 (operators see living architecture diagrams that drift when
+code diverges) and E5 (webshell Architecture screen):
+
+1. **Extraction** — tree-sitter parsers for Rust, TypeScript, and Python produce
+   an `ArchModel` (nodes + relations) from source trees without running the code.
+2. **Emission** — the model is rendered to Likec4, Mermaid, D2, and an HTML/Markdown
+   pair. The HTML pair is the canonical operator-facing artifact.
+3. **Verification** — `Verifier::diff` compares a planned model (committed spec) against
+   the current extraction, capping findings at 50 per run (M7) to prevent alert fatigue.
+
+Security is first-class: `security::path` prevents path traversal (H1/CWE-22) and
+`security::cmd_exec` hard-codes an allowlist for compliance-check binaries (B1/CWE-78),
+rejecting any invocation that uses shell expansion.
+</p>
+</section>
+<section id="nodes">
+  <h2>Components</h2>
+  <table>
+    <thead><tr><th>ID</th><th>Label</th><th>Level</th><th>Location</th></tr></thead>
+    <tbody>
+      <tr id="node-extractor"><td><code>extractor</code></td><td>extractor</td><td>Module</td><td>lightarchitects-arch/src/extractor/mod.rs</td></tr>
+      <tr id="node-emitter"><td><code>emitter</code></td><td>emitter</td><td>Module</td><td>lightarchitects-arch/src/emitter/mod.rs</td></tr>
+      <tr id="node-narrative"><td><code>narrative</code></td><td>narrative</td><td>Module</td><td>lightarchitects-arch/src/narrative/mod.rs</td></tr>
+      <tr id="node-verifier"><td><code>verifier</code></td><td>verifier</td><td>Module</td><td>lightarchitects-arch/src/verifier/mod.rs</td></tr>
+      <tr id="node-security"><td><code>security</code></td><td>security</td><td>Module</td><td>lightarchitects-arch/src/security/mod.rs</td></tr>
+      <tr id="node-model"><td><code>model</code></td><td>model</td><td>Module</td><td>lightarchitects-arch/src/model/mod.rs</td></tr>
+    </tbody>
+  </table>
+</section>
+<section id="relations">
+  <h2>Relations</h2>
+  <table>
+    <thead><tr><th>From</th><th>Kind</th><th>To</th></tr></thead>
+    <tbody>
+      <tr><td><code>extractor</code></td><td><span class="badge uses">uses</span></td><td><code>model</code></td></tr>
+      <tr><td><code>emitter</code></td><td><span class="badge uses">uses</span></td><td><code>model</code></td></tr>
+      <tr><td><code>emitter</code></td><td><span class="badge uses">uses</span></td><td><code>narrative</code></td></tr>
+      <tr><td><code>verifier</code></td><td><span class="badge uses">uses</span></td><td><code>model</code></td></tr>
+      <tr><td><code>security</code></td><td><span class="badge uses">uses</span></td><td><code>extractor</code></td></tr>
+      <tr><td><code>security</code></td><td><span class="badge uses">uses</span></td><td><code>emitter</code></td></tr>
+    </tbody>
+  </table>
+</section>
+<section id="diagrams">
+  <h2>Diagrams</h2>
+  <figure>
+    <figcaption>System Overview</figcaption>
+    <pre class="mermaid">
+---
+config:
+  securityLevel: strict
+---
+graph TD
+  extractor[extractor]
+  emitter[emitter]
+  narrative[narrative]
+  verifier[verifier]
+  security[security]
+  model[model]
+  extractor --&gt; model
+  emitter --&gt; model
+  emitter --&gt; narrative
+  verifier --&gt; model
+  security --&gt; extractor
+  security --&gt; emitter
+    </pre>
+  </figure>
+</section>
+<section id="glossary">
+  <h2>Glossary</h2>
+  <dl>
+    <dt>ArchModel</dt>
+    <dd>The normalized representation of a project&#x27;s architecture: nodes (modules, structs, functions) + directed relations (calls, imports, depends_on) + findings.</dd>
+    <dt>ExtractedFacts</dt>
+    <dd>Raw output of a single extraction pass: nodes, relations, and parse warnings. Converted to ArchModel by the caller.</dd>
+    <dt>NarrativeSeed</dt>
+    <dd>Architect-authored TOML file providing section text, glossary entries, and source anchors. The emitter merges this with the deterministic skeleton — it never invents narrative.</dd>
+    <dt>Drift Finding</dt>
+    <dd>A discrepancy between the planned ArchModel (committed spec) and the current extraction. Findings are capped at 50 per run (M7) to prevent alert fatigue.</dd>
+    <dt>M6 Capability Check</dt>
+    <dd>Per-sibling gate at the gateway: the requesting sibling must have arch_extract in its capability set, and the target project must be on the per-project allowlist.</dd>
+    <dt>M17 Isolation</dt>
+    <dd>The webshell crate has no compile-time dependency on lightarchitects-arch; it proxies via HTTP to the gateway. This keeps the webshell compilation surface clean and allows the arch crate to evolve independently.</dd>
+    <dt>Bootstrap Convergence</dt>
+    <dd>The three-axis test that the tool-generated arch-substrate-v1 HTML matches the hand-drafted L0–L2: (a) DOM-tree structural diff ≤5%, (b) exact container/component IDs, (c) exact relation source→target tuples (modulo ordering).</dd>
+  </dl>
+</section>
+
+<footer>
+  <p>Generated by <strong>lightarchitects-arch</strong> &mdash; mode: full</p>
+</footer>
+
+</main>
+<script nonce="arch-mermaid" type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, securityLevel: 'strict' });
+</script>
+</body>
+</html>

@@ -1112,6 +1112,7 @@ stateDiagram-v2
       <tr><td><code>PullRequest</code></td><td>§2.10 Git Operations</td><td><code>/api/git/pr/*</code></td></tr>
       <tr><td><code>Comms</code></td><td>§2.11 Coordination / Squad Comms</td><td><code>/api/coordination/*</code></td></tr>
       <tr><td><code>ProjectDetail</code></td><td>§2.6 Workspaces</td><td><code>/api/workspaces/{id}</code></td></tr>
+      <tr><td><code>Architecture</code></td><td>§2.21 Architecture Intelligence Proxy</td><td><code>/api/arch/*</code></td></tr>
     </tbody>
   </table>
   </section>
@@ -1428,17 +1429,17 @@ flowchart LR
       </tr>
       <tr>
         <td><span class="badge badge-green">C9</span></td>
-        <td>§3.2 <code>ScreenKey</code>: exactly <strong>11</strong> keys</td>
-        <td><code>src/lib/routes.ts</code> · lines 5–16</td>
-        <td>Ops Dispatch Builds Intake Helix BuildDetail ProjectDetail Comms Editor Git PullRequest — no extras, no gaps</td>
+        <td>§3.2 <code>ScreenKey</code>: exactly <strong>12</strong> keys</td>
+        <td><code>src/lib/routes.ts</code> · lines 5–17</td>
+        <td>Ops Dispatch Builds Intake Helix BuildDetail ProjectDetail Comms Editor Git PullRequest Architecture — no extras, no gaps</td>
         <td>Read lines 5–16</td>
       </tr>
       <tr>
         <td><span class="badge badge-green">C10</span></td>
-        <td>§3.3 <code>ROUTES</code>: exactly <strong>22</strong> entries, most-specific first, fallback=Ops</td>
-        <td><code>src/lib/routes.ts</code> · lines 42–67</td>
-        <td>Count = 22; pattern strings and ScreenKey targets match §3.3 table; fallback returns Ops</td>
-        <td><code>grep -c '\[/' src/lib/routes.ts</code> → returns 21; +1 for <code>new RegExp()</code> on line 48 = 22</td>
+        <td>§3.3 <code>ROUTES</code>: exactly <strong>24</strong> entries, most-specific first, fallback=Ops</td>
+        <td><code>src/lib/routes.ts</code> · lines 42–72</td>
+        <td>Count = 24; pattern strings and ScreenKey targets match §3.4 table; fallback returns Ops</td>
+        <td><code>grep -c '\[/' src/lib/routes.ts</code> → returns 23; +1 for <code>new RegExp()</code> on line 51 = 24</td>
       </tr>
       <tr>
         <td><span class="badge badge-green">C11</span></td>

@@ -55,6 +55,8 @@ pub struct PlatformState {
     pub canon_cache: ResponseCache,
     /// Override-aware response cache for `/v1/platform/agents/*`.
     pub agent_cache: ResponseCache,
+    /// Arch model response cache for `/v1/platform/arch/*` — 5 min TTL.
+    pub arch_cache: ResponseCache,
     /// Platform server configuration.
     pub config: PlatformConfig,
     /// Admin token for `POST /v1/admin/*` endpoints.

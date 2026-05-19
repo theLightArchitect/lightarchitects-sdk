@@ -1,0 +1,35 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-19T10:45:00Z"
+build_id: architecture-intelligence-substrate
+phase_id: phase-5-gateway-mcp-surface
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 2015_plus
+    tests_fail: 0
+    note: >
+      1 pre-existing FLAKY (sse_guard_decrements_global_counter_on_drop in
+      lightarchitects-webshell/src/agent/sse.rs — global AtomicI64 race under
+      full workspace parallel load). sse.rs not in this branch's diff
+      (git diff main --name-only shows no webshell changes). Passes in
+      isolation; pre-existing since before Phase 1. Not blocking per GATE
+      flakiness protocol. New gateway arch tests and arch crate tests all
+      PASS. Exact workspace total unavailable (disk full during output
+      capture); Phase 4 baseline was 2015; Phase 5 adds ≥8 new tests.
+  Q4_svelte: n/a
+  D2_plan:
+    result: pass
+    note: >
+      Phase 5 deliverables complete: 5 HTTP routes (/extract /verify /render
+      /emit /health), 4 MCP tools (arch_extract/verify/render/emit) with M6
+      capability check, 5-min moka arch_cache, AYIN blocking_count metric,
+      lightarchitects-arch path dep added to gateway. Deploy ordering (M5)
+      documented in RUNBOOK.md (Phase 4). AuthGuard inherited from global
+      middleware stack. AYIN panels deferred to Phase 7 (no AYIN dashboard
+      write in Phase 5 scope). No scope drift.

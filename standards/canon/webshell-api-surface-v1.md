@@ -667,6 +667,54 @@ Operator action endpoint — approve or reject a HITL gate from the Monitor view
 
 ---
 
+### §2.21 Architecture Intelligence Proxy (2026-05-19 ADDITION)
+
+Proxy routes introduced by `architecture-intelligence-substrate` Phase 6. The webshell forwards these requests to the gateway's `/v1/platform/arch/*` surface — the webshell has no direct dependency on the `lightarchitects-arch` crate (M17 isolation). The gateway URL is configurable via the `GATEWAY_PLATFORM_URL` environment variable; default `http://127.0.0.1:8080`.
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `POST` | `/api/arch/extract` | Bearer token | Extract architecture model from source tree |
+| `POST` | `/api/arch/verify` | Bearer token | Verify architecture model against constraints |
+| `POST` | `/api/arch/render` | Bearer token | Render architecture model to diagram format |
+| `POST` | `/api/arch/emit` | Bearer token | Emit architecture artifacts (Likec4/Mermaid/D2/HTML) |
+| `GET`  | `/api/arch/health` | Bearer token | Gateway reachability probe |
+
+**Source**: `lightarchitects-webshell/src/arch_proxy.rs` — handler functions `extract_handler`, `verify_handler`, `render_handler`, `emit_handler`, `health_handler`.
+
+**Request body** (POST endpoints, `application/json`): forwarded verbatim to the gateway. Shape is gateway-defined — see `lightarchitects-arch` gateway handler docs for per-operation schemas.
+
+**Response** (`200 OK`, POST endpoints): MCP tool-result envelope forwarded from the gateway:
+
+```json
+{
+  "content": [
+    { "type": "text", "text": "..." }
+  ]
+}
+```
+
+**Health response** (`200 OK`):
+
+```json
+{ "status": "ok" }
+```
+
+Returns `{ "status": "unreachable" }` with `200` if the gateway is not reachable (graceful degradation — the UI shows a warning banner rather than an error).
+
+**Errors**:
+
+| Code | Condition |
+|------|-----------|
+| `401` | Missing or invalid bearer token |
+| `502` | Gateway returned a non-`2xx` response; body contains the gateway error |
+| `503` | Gateway unreachable (health endpoint only returns `{ "status": "unreachable" }` instead) |
+
+**Rate limiting**: the frontend enforces a client-side ≤1 extract call/sec/session debounce (M15). The proxy itself applies no additional rate limiting.
+
+**Frontend wiring**: `Architecture.svelte` (screen at `/arch` and `/arch/{project}`) calls these endpoints via `postArch(op, body)`. The nav bar exposes an `ARCH` button (right control area) that navigates to `/arch` — not a sixth `NAV_ITEMS` entry (M4).
+
+---
+
 ## Part III — Frontend Route Catalogue
 
 ### §3.1 Router Implementation
@@ -679,17 +727,18 @@ Custom hash-based SPA router (not SvelteKit file-based routing). Routes are matc
 
 ```typescript
 type ScreenKey =
-  | 'Ops'         // /  /ops
-  | 'Dispatch'    // /dispatch
-  | 'Builds'      // /builds
-  | 'Intake'      // /intake
-  | 'Helix'       // /helix
-  | 'BuildDetail' // /builds/:buildId
+  | 'Ops'           // /  /ops
+  | 'Dispatch'      // /dispatch
+  | 'Builds'        // /builds
+  | 'Intake'        // /intake
+  | 'Helix'         // /helix
+  | 'BuildDetail'   // /builds/:buildId
   | 'ProjectDetail' // /project/:projectId
-  | 'Comms'       // /comms
-  | 'Editor'      // /editor
-  | 'Git'         // /git
-  | 'PullRequest' // /pr
+  | 'Comms'         // /comms
+  | 'Editor'        // /editor
+  | 'Git'           // /git
+  | 'PullRequest'   // /pr
+  | 'Architecture'  // /arch  /arch/:project
 ```
 
 ### §3.3 BuildViewMode Enum
@@ -700,7 +749,7 @@ type BuildViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'com
 
 ### §3.4 Route Patterns
 
-Ordered most-specific first — the router short-circuits on first match. **22 entries** in the ROUTES array (`src/lib/routes.ts:42–67`).
+Ordered most-specific first — the router short-circuits on first match. **24 entries** in the ROUTES array (`src/lib/routes.ts:42–72`).
 
 | # | Regex pattern | Screen | Params | What it surfaces |
 |---|---------------|--------|--------|-----------------|
@@ -726,6 +775,8 @@ Ordered most-specific first — the router short-circuits on first match. **22 e
 | 20 | `/^\/git$/` | `Git` | — | Git operations screen |
 | 21 | `/^\/pr\/new$/` | `PullRequest` | — | PR creation |
 | 22 | `/^\/pr\/(\d+)$/` | `PullRequest` | number | PR detail and review |
+| 23 | `/^\/arch\/(.+)$/` | `Architecture` | project | Architecture screen with project filter |
+| 24 | `/^\/arch$/` | `Architecture` | — | Architecture screen (no project filter) |
 
 ### §3.5 Legacy Redirects
 
@@ -832,6 +883,7 @@ Which backend sections and route prefixes serve each screen. Use this to find re
 | `PullRequest` | §2.10 Git Operations | `/api/git/pr/*` |
 | `Comms` | §2.11 Coordination / Squad Comms | `/api/coordination/*` |
 | `ProjectDetail` | §2.6 Workspaces | `/api/workspaces/{id}` |
+| `Architecture` | §2.21 Architecture Intelligence Proxy | `/api/arch/*` |
 
 ---
 

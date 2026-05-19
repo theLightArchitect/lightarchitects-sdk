@@ -1,0 +1,26 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-19T07:55:00Z"
+build_id: architecture-intelligence-substrate
+phase_id: phase-3-emitter-html-narrative
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1841
+    tests_fail: 0
+    note: "81 unit + 18 integration/property for lightarchitects-arch; 1742 from rest of workspace"
+  Q4_svelte: n/a
+  D2_plan:
+    result: pass
+    note: >
+      Phase 3 deliverables all built (Likec4/Mermaid/D2/MD/HTML/narrative-seed).
+      CLI-dependent exit criteria (a)/(b) correctly deferred to Phase 5 per plan.
+      Emitter pipeline property tests (10K mutations) deferred to Phase 5 — encoder
+      has Phase 1 property coverage. No scope drift.
+</content>
+</invoke>

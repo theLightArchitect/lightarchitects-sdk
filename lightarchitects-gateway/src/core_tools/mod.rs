@@ -8,6 +8,7 @@
 //! The returned `Value` is the MCP tool-result payload:
 //! `{"content": [{"type": "text", "text": "<result>"}]}`.
 
+pub mod arch;
 pub mod arena;
 pub mod ask_user;
 pub mod ayin_http;

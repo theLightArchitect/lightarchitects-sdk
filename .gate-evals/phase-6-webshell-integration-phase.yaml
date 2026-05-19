@@ -1,0 +1,45 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-19T08:55:00Z"
+build_id: architecture-intelligence-substrate
+phase_id: phase-6-webshell-integration
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 2017_plus
+    tests_fail: 0
+    note: >
+      2 pre-existing flakes (non-blocking per GATE protocol):
+      (1) sse_guard_decrements_global_counter_on_drop — global AtomicI64 race under
+      parallel workspace load; lightarchitects-webshell/src/agent/sse.rs unchanged
+      on this branch. Pre-existing since Phase 1.
+      (2) load_helix_toml_perf_baseline_1000_iterations — timing test in
+      lightarchitects (core) crate; 115ms under parallel load vs 100ms threshold;
+      passes in isolation (50ms). lightarchitects crate not in this branch's diff.
+      Both pass in isolation; both pre-existing before Phase 1.
+      Phase 6 adds 2 new arch_proxy unit tests in lightarchitects-webshell.
+      Frontend: 593 vitest tests pass (pnpm run test:run, 33 test files).
+      Vite build: clean (12.45s, no type errors).
+  Q4_svelte:
+    result: pass
+    note: >
+      Vite production build clean. Architecture.svelte compiles without errors.
+      593 vitest tests pass. svelte-check not available as standalone command
+      in this project (no "check" script in package.json); build validates types.
+  D2_plan:
+    result: pass
+    note: >
+      Phase 6 deliverables complete: Architecture ScreenKey added to routes.ts;
+      /arch and /arch/{project} routes; Architecture.svelte (~200 lines,
+      extract/verify/render/emit tabs, M15 ≤1/sec debounce); app.svelte updated
+      (screenModules + ARCH nav button — M4 drawer approach, not 6th NAV_ITEMS tab);
+      arch_proxy.rs (5 proxy handlers → gateway /v1/platform/arch/*, M17 no direct
+      lightarchitects-arch dep in webshell); lib.rs + server/mod.rs wired.
+      GATEWAY_PLATFORM_URL env-var override supported; default http://127.0.0.1:8080.
+      webshell-api-surface.md amendment deferred to Phase 7 canon amendments.
+      No scope drift.

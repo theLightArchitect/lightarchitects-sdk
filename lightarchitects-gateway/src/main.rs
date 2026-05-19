@@ -590,6 +590,11 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
         .max_capacity(500)
         .time_to_live(cache_ttl)
         .build();
+    // Arch cache uses 5 min TTL — extracted models are stable between commits.
+    let arch_cache = moka::future::Cache::builder()
+        .max_capacity(200)
+        .time_to_live(std::time::Duration::from_secs(300))
+        .build();
 
     let state = std::sync::Arc::new(PlatformState {
         graph,
@@ -603,6 +608,7 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
         circuit_breaker: std::sync::Arc::new(tokio::sync::Mutex::new(CircuitBreaker::new())),
         canon_cache,
         agent_cache,
+        arch_cache,
         admin_token,
         read_token,
     });
