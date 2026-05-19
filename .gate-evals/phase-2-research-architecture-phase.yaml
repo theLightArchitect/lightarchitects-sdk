@@ -1,0 +1,54 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE phase-2-research-architecture"
+scored_at: "2026-05-18T00:00:00Z"
+build_id: ironclaw-spine
+phase_id: phase-2-research-architecture
+overall_verdict: pass
+head_sha_pre_rebase: "453cf45"
+head_sha_post_rebase: "6c933cb"
+rebased_onto: "4c2379d"  # origin/main gitforest-live-ops merge
+dimensions:
+  V0_primary_on_main: pass
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 115
+    tests_fail: 0
+  Q4_svelte: n/a  # no UI surface changes in Phase 2
+  S1_security:
+    result: pass
+    note: "Phase 2 ADR-only + stubs; no new trust boundaries, input vectors, or auth surfaces. Lightweight assessment. Full adversarial S1 deferred to Phase 2A (security foundation) + Phase 4 (SERAPH review per plan serapH_review_phases)."
+  S2_supply_chain: pass  # cargo deny: advisories ok, bans ok, licenses ok, sources ok
+  S3_laex: n/a  # no new cryptographic primitives or permission surfaces in Phase 2
+  I1_rebase:
+    result: pass
+    commits_ahead: 5
+    note: "Rebased cleanly onto origin/main (4c2379d). 2 files with potential conflicts: Cargo.lock (auto-resolved), lightarchitects-webshell/Cargo.toml (no actual conflict — branch added lightsquad feature, main added nix dep in different lines)."
+  N1_northstar:
+    result: pass
+    pillar: P2
+    fields_present: [northstar_text, pillar_mapping, build_to_northstar_mapping, northstar_metric_delta_estimate]
+  N2_chain:
+    result: pass
+    note: "Phase 2 establishes concrete architectural decisions (ADR-010..015) that are direct enablers for Phase 3-5 implementation. Not aspirational — each ADR answers a specific architectural question required before implementation begins."
+  N3_exclusion_zones: pass
+  D1_docs:
+    result: pass
+    note: "All 8 pub mod declarations in mod.rs have /// doc comments. Stub files have //! module docs only; no undocumented public items."
+  D2_plan:
+    result: pass
+    note: "Plan reflects Phase 2 scope: 6 ADRs written, TF-17-1 path sweep complete, LASDLC compliance fixes applied, program_branch added."
+  D3_claude_md:
+    result: soft_fail
+    note: "CLAUDE.md does not reference lightsquad module or Phase 2 ADRs. Recommend adding lightsquad module entry. Non-blocking for phase gate."
+  V1_pyramid:
+    result: n/a
+    note: "Phase 2 is research/ADRs. No new behaviors to test. Test pyramid activation begins Phase 3 (first implementation wave)."
+  V2_smoke: pass  # cargo build --release -p lightarchitects exit 0
+  V3_e2e: n/a  # no new operator-facing UI surface in Phase 2
+notes:
+  - "Rebase was required and executed per GATE I-gate protocol. 5 ironclaw-spine commits now atop 4c2379d."
+  - "D3 soft-fail: CLAUDE.md lightsquad entry recommended before Phase 3."
+  - "SCRUM C2 lift pending (Gate 2 second step) — targets EXEMPLARY band (≥90) from STRONG 85.2."
