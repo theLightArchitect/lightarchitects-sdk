@@ -70,12 +70,16 @@ pub fn canonicalize_and_check(
                 let canonical_hop = std::fs::canonicalize(&hop)?;
                 // Allow the symlink if its target is either:
                 //   (a) within any root (descendant or equal), OR
-                //   (b) an ancestor of any root (OS-level path component e.g. /var → /private/var)
-                // Reject only when the target is completely outside the root hierarchy.
+                //   (b) a structural ancestor of any root — handles OS-level path aliasing
+                //       (e.g. /var → /private/var on macOS).  The only explicit rejection
+                //       is the filesystem root `/`: a symlink to `/` would admit traversal
+                //       to the entire filesystem if Pass 2 were ever skipped.  All other
+                //       ancestors are caught by Pass 2's unconditional root re-check.
                 let within = root_contains(&canonical_hop, &canonical_roots);
-                let ancestor = canonical_roots
-                    .iter()
-                    .any(|r| r.starts_with(&canonical_hop));
+                let ancestor = canonical_roots.iter().any(|r| {
+                    r.starts_with(&canonical_hop)             // target is a prefix of root
+                        && canonical_hop.components().count() > 1 // reject filesystem root /
+                });
                 if !within && !ancestor {
                     return Err(PathError::SymlinkEscapesRoot(accumulated));
                 }

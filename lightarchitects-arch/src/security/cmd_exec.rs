@@ -146,6 +146,13 @@ pub enum CmdError {
     #[error("subprocess failed: {0}")]
     Io(#[from] std::io::Error),
 
+    /// An empty argument was supplied; grep interprets it as a match-all pattern.
+    #[error("empty argument is not permitted for binary '{binary}'")]
+    EmptyArgument {
+        /// The binary that was to be invoked.
+        binary: &'static str,
+    },
+
     /// The subprocess exited with a non-zero status.
     #[error("subprocess exited with status {code}; stderr: {stderr}")]
     NonZeroExit {
@@ -197,6 +204,12 @@ pub fn execute(
     // Validate flags.
     for arg in args {
         let s = arg.to_string_lossy();
+        // Reject empty args: grep treats "" as a match-all pattern.
+        if s.is_empty() {
+            return Err(CmdError::EmptyArgument {
+                binary: binary.name(),
+            });
+        }
         // Non-flag arguments (patterns, file paths) are passed as-is.
         if s.starts_with('-') && !binary.is_allowed_flag(&s) {
             return Err(CmdError::ForbiddenFlag {
@@ -298,6 +311,17 @@ mod tests {
         assert!(matches!(
             execute(AllowedBinary::Grep, &args, tmp.path(), &roots),
             Err(CmdError::ForbiddenFlag { .. })
+        ));
+    }
+
+    #[test]
+    fn execute_rejects_empty_argument() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let args: Vec<OsString> = vec![os("")]; // empty pattern = match-all
+        let roots = vec![tmp.path().to_path_buf()];
+        assert!(matches!(
+            execute(AllowedBinary::Grep, &args, tmp.path(), &roots),
+            Err(CmdError::EmptyArgument { .. })
         ));
     }
 }
