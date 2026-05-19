@@ -30,6 +30,7 @@
 
 #![deny(missing_docs)]
 
+pub mod extractor;
 pub mod model;
 pub mod security;
 

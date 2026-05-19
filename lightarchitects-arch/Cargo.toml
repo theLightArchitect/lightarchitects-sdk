@@ -19,6 +19,7 @@ thiserror   = { workspace = true }
 tracing     = { workspace = true }
 
 # Architecture extraction
+streaming-iterator     = { workspace = true }
 tree-sitter            = { workspace = true }
 tree-sitter-rust       = { workspace = true }
 tree-sitter-typescript = { workspace = true }
