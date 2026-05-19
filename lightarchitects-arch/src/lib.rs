@@ -30,8 +30,10 @@
 
 #![deny(missing_docs)]
 
+pub mod emitter;
 pub mod extractor;
 pub mod model;
+pub mod narrative;
 pub mod security;
 
 pub use model::{

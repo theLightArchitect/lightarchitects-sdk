@@ -1,0 +1,41 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-19T08:15:00Z"
+build_id: architecture-intelligence-substrate
+phase_id: phase-2-extractor-core
+overall_verdict: pass
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 41
+    tests_fail: 0
+    property_tests: 18
+    property_cases_per_language: 10000
+  Q4_svelte: n/a
+  D2_plan:
+    result: pass
+    notes: |
+      - plan frontmatter phase updated to phase-2-extractor-core
+      - route-coverage exit criteria (≥90% on webshell, ≥90% ScreenKey/ROUTES)
+        deferred to merge-time V gate; requires Phase 3+ emitter pipeline
+      - walk_and_extract uses std::fs::read_to_string after walkdir (safe;
+        canonicalize_and_check applies at API boundary for untrusted paths)
+findings: []
+commits:
+  - sha: e0cd01b
+    subject: "feat(arch): Phase 2 — Extractor Core (Rust/TS/Python + property tests)"
+  - sha: f8f5f73
+    subject: "feat(arch): Phase 2b — Observability Gate (AYIN spans + walk_and_extract)"
+key_decisions:
+  - tree_sitter_rust_pinned_0_23: |
+      tree-sitter-rust 0.24.x uses grammar ABI 15; tree-sitter 0.24.7 binding
+      supports only ABI 13-14 (TREE_SITTER_LANGUAGE_VERSION=14). Pinned to 0.23.x
+      (ABI 14) to match Python/TypeScript grammars. Fix forward: upgrade all
+      grammar crates together when tree-sitter binding bumps to ABI 15.
+  - streaming_iterator_pattern: |
+      tree-sitter 0.24.x QueryMatches implements streaming_iterator::StreamingIterator
+      (lending/GAT pattern), not std::iter::Iterator. All for-loops converted to
+      while-let-Some pattern with explicit StreamingIterator import.
