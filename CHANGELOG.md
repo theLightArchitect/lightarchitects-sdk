@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project uses semantic versioning.
 
+## [Unreleased] — agent-teams-fleet — Fleet Observability
+
+### Added
+
+**lightarchitects SDK — fleet module**
+- `FleetTracker`: in-memory agent tree assembled from Claude Code JSONL events; thread-safe `DashMap`-backed node registry; parent-child hierarchy via `parent_agent_id`; elapsed_ms derived from `started_at` + now
+- `ClaudeJsonlTailer`: async file tailer for `~/.claude/projects/**/*.jsonl`; parses `tool_use` (agent_id extraction) + `agent_start`/`agent_finish` event records; forwards `FleetEvent` to `FleetTracker`
+- `FleetSpan`: typed node struct — `agent_id`, `agent_type`, `description`, `parent_agent_id`, `worktree_path`, `run_in_background`, `status` (running/completed/failed), `turns`, `elapsed_ms`, `exit_path`
+- `FleetBroadcaster`: `tokio::sync::broadcast` channel publishing `FleetSnapshot` events to all SSE subscribers
+
+**lightarchitects-webshell — backend**
+- `GET /api/builds/:id/fleet` — SSE endpoint streaming `FleetEvent` (snapshot + delta) as `text/event-stream`; guards via `AuthGuard`, `SseGuard`, `AtomicUsize` active-connection counter
+- `GET /api/builds/:id/fleet/snapshot` — REST endpoint returning current `FleetSnapshot` as JSON (`{ nodes, captured_at }`)
+- `WebEvent::AgentFleetUpdate` variant added to event broadcast system
+- `webshell-api-surface-v1.md` §2.21-2.22 documenting both endpoints
+
+**lightarchitects-webshell-ui — frontend**
+- `FleetPanel.svelte`: Svelte 5 component rendering live agent tree; subscribes to `/api/builds/:id/fleet` SSE via `subscribeFleet()`; status badge map (running → "Running", completed → "Done", failed → "Failed"); depth-3 tree cap; elapsed_ms formatter (`2500ms → "2s"`); "Connecting…" / "No agents running" empty states
+- `subscribeFleet()` SSE helper in `sse.ts`: typed `FleetSnapshot` / `FleetDelta` event dispatch
+- FLEET tab added to BuildDetail tab bar; `BuildViewMode` extended with `'fleet'`; `routes.ts` `BUILD_VIEW_PATTERN` updated; `{#if}` mount/unmount ensures SSE cleanup on tab switch
+
+**Integration + E2E**
+- 7 Playwright E2E tests (F1-F7): FLEET tab visibility, FleetPanel mount, SSE snapshot rendering, running agent badge + elapsed time, Done badge, parent-child tree indentation, REST snapshot endpoint
+- `fleet.spec.ts` follows e5.spec.ts mock pattern (beforeAll infrastructure mocks + per-test SSE fulfillment)
+- All 593 vitest tests unaffected (0 regressions)
+
 ## [0.2.0] — 2026-04-25 — Stable Build: squishy-munching-tome
 
 ### Added
