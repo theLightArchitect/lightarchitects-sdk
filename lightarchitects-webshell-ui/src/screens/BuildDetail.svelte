@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { activeBuild, currentBuildId, activityFeed, ensureBuildInStore } from '$lib/stores';
   import { matchRoute, navigate } from '$lib/routes';
+  import { api } from '$lib/api';
   import KanbanView  from '$lib/../components/views/KanbanView.svelte';
   import ListView    from '$lib/../components/views/ListView.svelte';
   import OperatorView from '$lib/../components/views/OperatorView.svelte';
@@ -10,7 +11,9 @@
   import CommsView   from '$lib/../components/views/CommsView.svelte';
   import TaskDrillView from '$lib/../components/views/TaskDrillView.svelte';
   import WavePipelineView from '$lib/../components/views/WavePipelineView.svelte';
+  import ProposalCard from '$lib/../components/ProposalCard.svelte';
   import type { Phase } from '$lib/WavePipelineView.contract';
+  import type { SupervisorState } from '$lib/types';
 
   // 'pipeline' is the FOLD-4 hook for ironclaw-spine (6th view mode).
   type ViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms' | 'pipeline';
@@ -79,6 +82,44 @@
 
   // Stub phases for WavePipelineView — populated from manifest in Phase 7.
   const STUB_PHASES: Phase[] = [];
+
+  // ── Supervisor state ──────────────────────────────────────────────────────
+  let supervisorState = $state<SupervisorState | null>(null);
+
+  async function fetchSupervisorState(buildId: string) {
+    try {
+      supervisorState = await api.getSupervisorState(buildId);
+    } catch (e: unknown) {
+      // 404 = no northstar captured for this build yet — silent
+      if (e instanceof Error && e.message.includes('404')) return;
+      // other errors: leave prior state intact, don't crash the panel
+    }
+  }
+
+  async function handleAcknowledge() {
+    const id = build?.id;
+    if (!id) return;
+    // Optimistic clear so the card disappears immediately
+    if (supervisorState) supervisorState = { ...supervisorState, proposal_pending: false };
+    try {
+      await api.acknowledgeProposal(id);
+      // SSE will broadcast the confirmed state; re-fetch for drift counter
+      await fetchSupervisorState(id);
+    } catch {
+      // Re-fetch to restore real state if the POST failed
+      await fetchSupervisorState(id);
+    }
+  }
+
+  // Open SSE on build mount; re-fetch full state on every evaluation event.
+  // Uses {#if} (not CSS hide) per api.ts comment — onDestroy fires on unmount.
+  $effect(() => {
+    const id = build?.id;
+    if (!id) return;
+    fetchSupervisorState(id);
+    const es = api.supervisorEvents(id, () => { fetchSupervisorState(id); });
+    return () => es.close();
+  });
 </script>
 
 <div class="build-detail-shell">
@@ -129,6 +170,37 @@
           </details>
         {/each}
       </div>
+    {/if}
+
+    <!-- Supervisor northstar strip — only when northstar has been captured -->
+    {#if supervisorState?.northstar_text}
+      <div
+        class="supervisor-strip"
+        class:sv-drifting={supervisorState.consecutive_drifts > 0}
+        class:sv-advancing={supervisorState.last_evaluation?.status === 'advancing'}
+      >
+        <span class="sv-label">NORTHSTAR</span>
+        <span class="sv-text" title={supervisorState.northstar_text}>
+          {supervisorState.northstar_text}
+        </span>
+        {#if supervisorState.consecutive_drifts > 0}
+          <span class="sv-badge sv-badge--drift" aria-label="Consecutive drift count">
+            DRIFT {supervisorState.consecutive_drifts}/{supervisorState.drift_threshold}
+          </span>
+        {:else if supervisorState.last_evaluation?.status === 'advancing'}
+          <span class="sv-badge sv-badge--ok">ADVANCING</span>
+        {/if}
+      </div>
+
+      <!-- ProposalCard — mounted only while proposal is pending (SSE cleans up) -->
+      {#if supervisorState.proposal_pending && supervisorState.last_evaluation}
+        <div class="proposal-wrap" role="status">
+          <ProposalCard
+            evaluation={supervisorState.last_evaluation}
+            onAcknowledge={handleAcknowledge}
+          />
+        </div>
+      {/if}
     {/if}
 
     <!-- Phase 5: L3 task drill-down — renders instead of turn/build content -->
@@ -187,7 +259,6 @@
         {:else}
           <PlanView />
         {/if}
-        <!-- SUPERVISOR_PANEL_SLOT -->
       </div>
     {/if}
   {:else}
@@ -437,6 +508,72 @@
     color: var(--la-text-base);
     font-family: var(--la-font-mono);
     letter-spacing: 0.03em;
+  }
+
+  /* ── Supervisor northstar strip ─────────────────────────────────────── */
+  .supervisor-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 14px;
+    height: 28px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--la-hair-faint);
+    background: var(--la-bg-panel);
+    font-family: var(--la-font-mono);
+    overflow: hidden;
+    transition: background 200ms;
+  }
+  .sv-drifting {
+    background: rgba(248, 113, 113, 0.05);
+    border-bottom-color: rgba(248, 113, 113, 0.25);
+  }
+  .sv-advancing {
+    background: rgba(34, 197, 94, 0.04);
+    border-bottom-color: rgba(34, 197, 94, 0.2);
+  }
+
+  .sv-label {
+    font-size: 7px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--la-text-mute);
+    flex-shrink: 0;
+  }
+  .sv-text {
+    font-size: 9px;
+    color: var(--la-text-dim);
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: 0.01em;
+  }
+
+  .sv-badge {
+    font-size: 7px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    padding: 1px 6px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .sv-badge--drift {
+    color: #f87171;
+    background: rgba(248, 113, 113, 0.12);
+    border: 1px solid rgba(248, 113, 113, 0.3);
+  }
+  .sv-badge--ok {
+    color: #22c55e;
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.25);
+  }
+
+  .proposal-wrap {
+    padding: 10px 14px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--la-hair-faint);
   }
 
   .build-detail-empty {
