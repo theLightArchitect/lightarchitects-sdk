@@ -21,10 +21,10 @@
 //! is computed. The overall verdict is the worst-case across all checks:
 //! `Approved` < `RequiresFixAgent` < `Rejected`.
 //!
-//! Built-in checks (registered in [`ReviewGate::default`]):
+//! Built-in checks (registered in [`ReviewGate::with_default_checks`]):
 //! - [`QualityCheck`] — `cargo fmt --check` + `cargo clippy -- -D warnings`
 //! - [`TestCheck`] — `cargo test --features lightsquad`
-//! - [`CanonCheck`] — verifies `unsafe` usage, `unwrap`, `panic!` per
+//! - `CanonCheck` — planned; will verify `unsafe`, `unwrap`, `panic!` per
 //!   Builders Cookbook §48
 //!
 //! # FixAgent integration
@@ -117,7 +117,8 @@ pub enum GateError {
     /// A check subprocess (cargo, git) could not be spawned.
     #[error("failed to spawn check subprocess: {0}")]
     Spawn(#[source] std::io::Error),
-    /// A check subprocess exited unexpectedly.
+    /// A check subprocess exited unexpectedly (reserved for custom
+    /// [`GateCheck`] impls; built-ins surface exits as `Fixable` findings).
     #[error("check subprocess exited (code {code}): {stderr}")]
     SubprocessFailed {
         /// Exit code.
@@ -164,8 +165,8 @@ pub struct CheckResult {
     pub score: f32,
 }
 
-/// Per-check decision (before aggregation). Mirrors [`GateDecision`] but
-/// carries a numeric confidence so the aggregator can compute weighted scores.
+/// Per-check decision (before aggregation). Mirrors [`GateDecision`] at check
+/// scope; the pipeline folds these via [`GateDecision::worst`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum GateDecisionLocal {
     /// Check passed.
@@ -226,6 +227,7 @@ impl ReviewGate {
         worktree_path: &std::path::Path,
         iteration: u8,
     ) -> Result<GateVerdict, GateError> {
+        let iteration = iteration.min(MAX_GATE_ITERATIONS);
         if self.checks.is_empty() {
             return Err(GateError::NoChecks);
         }
@@ -239,8 +241,19 @@ impl ReviewGate {
             let result = check.run(worktree_path, &self.repo_root).await?;
             let decision = result.decision.to_gate_decision();
             overall = overall.worst(decision);
-            all_failures.extend(result.failures);
-            all_fixes.extend(result.required_fixes);
+            let check_name = check.name();
+            all_failures.extend(
+                result
+                    .failures
+                    .into_iter()
+                    .map(|f| format!("[{check_name}] {f}")),
+            );
+            all_fixes.extend(
+                result
+                    .required_fixes
+                    .into_iter()
+                    .map(|f| format!("[{check_name}] {f}")),
+            );
             score_sum += result.score;
         }
 
@@ -256,13 +269,13 @@ impl ReviewGate {
         })
     }
 
-    /// Run the gate loop: evaluate → if `RequiresFixAgent`, yield back to
-    /// caller (`FixAgent` runs externally) → re-evaluate.  Returns the final
-    /// [`GateVerdict`] after at most `MAX_GATE_ITERATIONS` passes.
+    /// Run the gate loop up to [`MAX_GATE_ITERATIONS`] times, re-evaluating
+    /// `worktree_path` on each pass. Returns on the first `Approved` or
+    /// `Rejected` verdict, or once `RequiresFixAgent` fires and
+    /// [`GateVerdict::exhausted`] is true.
     ///
-    /// The caller is responsible for actually invoking the `FixAgent` between
-    /// iterations; `run_loop` yields control by returning `RequiresFixAgent`
-    /// verdicts rather than blocking internally.
+    /// For yield-and-resume semantics (run a `FixAgent` between passes),
+    /// call [`ReviewGate::evaluate`] directly from an outer loop instead.
     ///
     /// # Errors
     ///
