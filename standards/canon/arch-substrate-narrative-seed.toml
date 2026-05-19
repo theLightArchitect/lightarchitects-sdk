@@ -1,0 +1,142 @@
+# arch-substrate-narrative-seed.toml
+# Architect-authored content for the arch-substrate-v1 documentation pair.
+# Merged with deterministic extraction output by the HTML/Markdown emitter.
+# Schema: lightarchitects-arch/src/narrative/mod.rs NarrativeSeed.
+
+[meta]
+title   = "Architecture Intelligence Substrate — v1"
+version = "1.0.0"
+project = "lightarchitects-arch"
+
+# ── section_0 — Purpose + Northstar ──────────────────────────────────────────
+
+[narrative.section_0]
+title = "Purpose and Northstar"
+source_anchor = "architect_assertion"
+body = """
+The `lightarchitects-arch` crate is the Architecture Intelligence Substrate for
+the Light Architects platform. It provides three capabilities that together close
+Northstar Pillar 1 / E3 (operators see living architecture diagrams that drift when
+code diverges) and E5 (webshell Architecture screen):
+
+1. **Extraction** — tree-sitter parsers for Rust, TypeScript, and Python produce
+   an `ArchModel` (nodes + relations) from source trees without running the code.
+2. **Emission** — the model is rendered to Likec4, Mermaid, D2, and an HTML/Markdown
+   pair. The HTML pair is the canonical operator-facing artifact.
+3. **Verification** — `Verifier::diff` compares a planned model (committed spec) against
+   the current extraction, capping findings at 50 per run (M7) to prevent alert fatigue.
+
+Security is first-class: `security::path` prevents path traversal (H1/CWE-22) and
+`security::cmd_exec` hard-codes an allowlist for compliance-check binaries (B1/CWE-78),
+rejecting any invocation that uses shell expansion.
+"""
+
+# ── section_1 — Architecture (L0 Context) ────────────────────────────────────
+
+[narrative.section_1]
+title = "Context (L0)"
+source_anchor = { file = "lightarchitects-arch/src/lib.rs", lines = [1, 40] }
+body = """
+At L0, the substrate sits inside the `lightarchitects-sdk` workspace and exposes
+its capabilities to three consumers:
+
+- **lightarchitects-gateway** — wraps the Rust API in five HTTP/MCP routes
+  (`/v1/platform/arch/*`) with a per-sibling capability check (M6).
+- **lightarchitects-webshell** — proxies those routes via `arch_proxy.rs` (M17
+  isolation — no direct crate dependency on `lightarchitects-arch` in the webshell).
+- **lightarchitects-cli** (future) — direct library access for offline workflows.
+
+The gateway enforces a home-directory root allowlist, preventing extraction from
+arbitrary filesystem paths.
+"""
+
+# ── section_2 — Container Architecture (L1) ──────────────────────────────────
+
+[narrative.section_2]
+title = "Containers (L1)"
+source_anchor = "architect_assertion"
+body = """
+Six logical containers form the substrate:
+
+| Container | Purpose |
+|-----------|---------|
+| `extractor` | Tree-sitter parsing for Rust/TypeScript/Python; produces `ExtractedFacts` |
+| `emitter` | Renders `ArchModel` to Likec4, Mermaid, D2, HTML/MD pair |
+| `narrative` | Merges architect-authored seed content with the deterministic skeleton |
+| `verifier` | Diffs planned vs current model; caps findings at M7=50 |
+| `security` | Path canonicalization (H1) + cmd_exec allowlist (B1/S-1) |
+| `model` | Shared data types: `ArchModel`, `ArchNode`, `ArchRelation`, `ArchFinding` |
+
+All containers are pure library code — no binary, no global state, no `unsafe`.
+"""
+
+# ── section_3 — Security Invariants ──────────────────────────────────────────
+
+[narrative.section_3]
+title = "Security Invariants"
+source_anchor = { file = "lightarchitects-arch/src/security/path.rs", lines = [1, 30] }
+body = """
+Two security invariants are verified by property tests (10 000 mutated inputs each):
+
+**H1 — Path traversal prevention**: Every file path is processed by
+`security::path::is_safe_path()` which (a) checks each path segment for symlinks via
+`symlink_metadata()` BEFORE `canonicalize()`, (b) rejects any symlink segment, (c)
+re-validates the canonicalized path against the allowlist roots to defeat TOCTOU races.
+`canonicalize()` alone is insufficient because it silently follows symlinks.
+
+**B1 / S-1 — Command execution allowlist**: `security::cmd_exec` accepts only
+`{grep, diff, test}` and enforces per-binary flag allowlists (e.g., `grep` rejects
+`-f`, `--file`, `-r` with root path, `-d skip`). Invocations are built with
+`Command::new(binary).args(parsed_args)` — never `sh -c`. Every invocation emits
+an AYIN trace span with argv redacted.
+"""
+
+# ── section_4 — Observability ─────────────────────────────────────────────────
+
+[narrative.section_4]
+title = "Observability"
+source_anchor = "architect_assertion"
+body = """
+All public entry points carry `#[instrument]` spans. The gateway emits Northstar
+metrics: `arch_extract_duration_ms`, `arch_verify_duration_ms`, `arch_blocking_count`,
+`arch_drift_to_fix_wall_clock`. The AYIN dashboard targets: extract p95 < 2 000 ms,
+verify p95 < 500 ms. `arch_verify_false_positive_rate{canon_version}` is the rollout
+signal for Canon XLI enforcement dial (`warn → block`).
+"""
+
+# ── Glossary ──────────────────────────────────────────────────────────────────
+
+[[glossary]]
+term = "ArchModel"
+definition = "The normalized representation of a project's architecture: nodes (modules, structs, functions) + directed relations (calls, imports, depends_on) + findings."
+source_anchor = { file = "lightarchitects-arch/src/model.rs", lines = [159, 183] }
+
+[[glossary]]
+term = "ExtractedFacts"
+definition = "Raw output of a single extraction pass: nodes, relations, and parse warnings. Converted to ArchModel by the caller."
+source_anchor = { file = "lightarchitects-arch/src/model.rs", lines = [148, 157] }
+
+[[glossary]]
+term = "NarrativeSeed"
+definition = "Architect-authored TOML file providing section text, glossary entries, and source anchors. The emitter merges this with the deterministic skeleton — it never invents narrative."
+source_anchor = { file = "lightarchitects-arch/src/narrative/mod.rs", lines = [13, 25] }
+
+[[glossary]]
+term = "Drift Finding"
+definition = "A discrepancy between the planned ArchModel (committed spec) and the current extraction. Findings are capped at 50 per run (M7) to prevent alert fatigue."
+source_anchor = "architect_assertion"
+
+[[glossary]]
+term = "M6 Capability Check"
+definition = "Per-sibling gate at the gateway: the requesting sibling must have arch_extract in its capability set, and the target project must be on the per-project allowlist."
+source_anchor = "architect_assertion"
+
+[[glossary]]
+term = "M17 Isolation"
+definition = "The webshell crate has no compile-time dependency on lightarchitects-arch; it proxies via HTTP to the gateway. This keeps the webshell compilation surface clean and allows the arch crate to evolve independently."
+source_anchor = { file = "lightarchitects-webshell/src/arch_proxy.rs", lines = [1, 30] }
+
+[[glossary]]
+term = "Bootstrap Convergence"
+definition = "The three-axis test that the tool-generated arch-substrate-v1 HTML matches the hand-drafted L0–L2: (a) DOM-tree structural diff ≤5%, (b) exact container/component IDs, (c) exact relation source→target tuples (modulo ordering)."
+source_anchor = "architect_assertion"
