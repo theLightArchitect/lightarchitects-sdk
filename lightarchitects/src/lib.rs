@@ -77,6 +77,12 @@ pub mod credentials;
 #[cfg(feature = "http-client")]
 pub mod platform;
 
+/// lightsquad supervisor — OS process-lifecycle management (launchd on macOS).
+/// Gated on `lightsquad` because the supervisor exists solely to keep the
+/// lightsquad engine running as a managed background service.
+#[cfg(feature = "lightsquad")]
+pub mod supervisor;
+
 /// lightsquad — autonomous code-delivery orchestration engine.
 /// Phase 1 stubs; implementations land in Phase 3+ per the ironclaw-spine LASDLC plan.
 /// See module-level docs for architecture, sub-modules, and future-extraction status.
