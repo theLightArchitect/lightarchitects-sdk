@@ -1167,14 +1167,6 @@ pub async fn commit_plan_handler(
         .into_response()
 }
 
-/// `GET /api/builds/:id/decisions` — HMAC-chained decision log (§2.10d).
-///
-/// Returns the JSONL decision log for an autonomous-mode build. The log is
-/// append-only and HMAC-chained; each entry includes a line number for
-/// cursor-based pagination via `?since=<line_n>`.
-///
-/// Responds `404` when the build is not found. Returns an empty JSON array
-/// when the build has no decisions yet (interactive mode or not started).
 /// Query parameters for `GET /api/builds/:id/decisions`.
 #[derive(serde::Deserialize)]
 pub struct DecisionsQuery {
@@ -1183,6 +1175,17 @@ pub struct DecisionsQuery {
 }
 
 /// `GET /api/builds/:id/decisions` — stub for Phase 6; autonomous conductor populates in Phase 7.
+///
+/// Returns the JSONL decision log for an autonomous-mode build. The log is
+/// append-only and HMAC-chained; each entry includes a line number for
+/// cursor-based pagination via `?since=<line_n>`.
+///
+/// Responds `404` when the build is not found. Returns an empty JSON array
+/// when the build has no decisions yet (interactive mode or not started).
+///
+/// # Errors
+///
+/// Returns `404 Not Found` when no build session exists for the given `build_id`.
 pub async fn build_decisions_handler(
     _: crate::auth::AuthGuard,
     Path(build_id): Path<Uuid>,
@@ -1380,5 +1383,31 @@ mod tests {
             !json.contains("lightarchitects-cli"),
             "binary path must not leak: {json}"
         );
+    }
+
+    #[test]
+    fn decisions_query_deserializes_since_param() {
+        let q: DecisionsQuery = serde_json::from_str(r#"{"since":42}"#).unwrap();
+        assert_eq!(q.since, Some(42));
+    }
+
+    #[test]
+    fn decisions_query_since_optional() {
+        let q: DecisionsQuery = serde_json::from_str("{}").unwrap();
+        assert!(q.since.is_none());
+    }
+
+    #[test]
+    fn create_build_request_accepts_mode_autonomous() {
+        let body = r#"{"cwd":"/tmp/build-3","mode":"autonomous"}"#;
+        let req: CreateBuildRequest = serde_json::from_str(body).unwrap();
+        assert_eq!(req.mode.as_deref(), Some("autonomous"));
+    }
+
+    #[test]
+    fn create_build_request_mode_absent_is_none() {
+        let body = r#"{"cwd":"/tmp/build-4"}"#;
+        let req: CreateBuildRequest = serde_json::from_str(body).unwrap();
+        assert!(req.mode.is_none(), "absent mode must deserialise as None");
     }
 }

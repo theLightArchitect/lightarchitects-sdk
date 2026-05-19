@@ -1,3 +1,14 @@
+<!--
+@component
+Displays the HMAC-chained decision log for an autonomous build (L1–L4 levels).
+Supports level filtering and live escalation markers via the `la:escalation` DOM event.
+
+Props:
+- `buildId` — the active build's UUID; used to query decisions and filter SSE escalation events
+
+Level taxonomy: L1 ARCHITECTURAL · L2 IMPLEMENTATION · L3 QUALITY GATE · L4 ESCALATION.
+Listens for `la:escalation` on `window`; prepends entries when `ev.build_id` matches.
+-->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { api } from '$lib/api';

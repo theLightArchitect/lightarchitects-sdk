@@ -110,7 +110,7 @@ describe('routes', () => {
   });
 
   describe('matchRoute() — view-encoded BuildDetail (Wave 1)', () => {
-    const VIEW_MODES = ['kanban', 'list', 'operator', 'manifest', 'plan'] as const;
+    const VIEW_MODES = ['kanban', 'list', 'operator', 'manifest', 'plan', 'comms', 'pipeline', 'autonomous', 'decisions'] as const;
 
     for (const view of VIEW_MODES) {
       it(`/builds/:buildId/${view} → BuildDetail with buildId + view params`, () => {

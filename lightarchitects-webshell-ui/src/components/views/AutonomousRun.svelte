@@ -1,3 +1,14 @@
+<!--
+@component
+Displays real-time autonomous-run orchestration for a given build: worker slot gauge,
+conductor heartbeat, MergeAgent events, and FixAgent iteration feed.
+
+Props:
+- `buildId` — the active build's UUID; used to filter store events by build
+
+Consumed stores: `workerSlots` (slot capacity + active count + wave index),
+`conductorState` (queue depth + heartbeat), `mergeAgentEvents`, `fixAgentEvents`.
+-->
 <script lang="ts">
   import { workerSlots, conductorState, mergeAgentEvents, fixAgentEvents } from '$lib/stores';
   import type { MergeAgentStatusEvent, FixAgentIterationEvent } from '$lib/types';
