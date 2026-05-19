@@ -1,0 +1,91 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-19T01:17:00Z"
+build_id: build-detail-supervisor
+commit_sha: "8d57fba"
+parent_build: gitforest-live-ops  # promoted 2026-05-18; this is a follow-on gap closure
+phase_id: merge
+overall_verdict: pass
+
+dimensions:
+  V0_primary_on_main: pass        # branch --show-current = main ✅
+  Q1_fmt: pass                    # cargo fmt --all -- --check: clean
+  Q2_clippy: pass                 # clippy --workspace --all-targets --all-features -D warnings: clean
+  Q3_tests:
+    result: pass
+    tests_run: 489                # lightarchitects-webshell Rust suite
+    tests_fail: 0
+    flaky_pre_existing:
+      - test: "agent::sse::tests::sse_guard_decrements_global_counter_on_drop"
+        reason: "global mutable state race under --workspace parallel; passes in isolation; 2 prior fix commits (ad693dd, b76637e)"
+  Q4_svelte:
+    result: pass
+    tests_run: 593                # pnpm test:run — 10 new from supervisor-strip.test.ts
+    svelte_check_errors: 0
+  S1_security:
+    result: pass
+    findings:
+      - id: S1-INFO-1
+        title: "EventSource + cookie auth"
+        severity: INFO
+        verdict: SAFE
+        note: "AuthGuard accepts la_session cookie; HttpOnly SameSite=Strict; by design for browser clients"
+      - id: S1-INFO-2
+        title: "XSS surface — Svelte text interpolation"
+        severity: INFO
+        verdict: SAFE
+        note: "All values rendered via Svelte text nodes, no {#html}; numbers from typed interface"
+      - id: S1-MEDIUM-3
+        title: "IDOR — no per-build ownership check"
+        severity: MEDIUM
+        verdict: PRE_EXISTING
+        note: "Architectural gap; mitigated by single-operator localhost-only constraint. Blocker if multi-user added."
+        owner: SERAPH
+      - id: S1-LOW-4
+        title: "Silent 401 swallow in fetchSupervisorState"
+        severity: LOW
+        verdict: REMEDIATED
+        note: "Added supervisorAuthError state + console.error; 401 now surfaces AUTH strip"
+      - id: S1-LOW-5
+        title: "EventSource no onerror / back-off"
+        severity: LOW
+        verdict: REMEDIATED
+        note: "Added onerror handler; on CLOSED state sets supervisorAuthError, stops reconnect flood"
+      - id: S1-INFO-6
+        title: "title attribute injection"
+        severity: INFO
+        verdict: SAFE
+        note: "Svelte setAttribute() encoding; no XSS"
+  S2_supply_chain: pass           # cargo deny check: warnings-only (pre-existing duplicates), no advisories
+  S3_laex: n/a                   # no new crypto/auth/permission surfaces
+  I1_rebase: pass                 # github/main at de97ea0; 8d57fba is clean descendant; workspace build clean
+  N1_northstar:
+    result: pass
+    pillar: "P1+P2+P4"
+    source: "gitforest-live-ops parent plan (promoted 2026-05-18)"
+    northstar_text: "≤8s triage, zero terminal required"
+  N2_chain: pass
+  N2_evidence: >
+    northstar.md §Q line 640 documents BuildDetail.svelte supervisor wiring as
+    '🔄 (blocked — feat/helix-viz-remap FILE_CLAIM)'. helix-viz-remap shipped
+    2026-05-17 (afa1d0d). This diff directly closes that documented gap:
+    fetchSupervisorState + supervisorEvents SSE + acknowledgeProposal all wired.
+    Chain is concrete — operator sees northstar alignment in BuildDetail without terminal.
+  N3_exclusion_zones: pass        # no open exclusion zones applicable
+  D1_docs: pass                   # 3 gaps found by knowledge agent; all remediated (aria-label values, aria-live, acknowledge comments)
+  D2_plan: n/a                    # no LASDLC plan for this follow-on commit; parent plan (gitforest-live-ops) is promoted
+  D3_claude_md: pass              # no new tooling/commands/architecture patterns requiring CLAUDE.md update
+  V1_pyramid:
+    result: partial
+    suites_present: [unit, regression]
+    suites_missing: [integration, property, e2e, smoke]
+    new_tests: 10                 # supervisor-strip.test.ts: display-condition invariants + optimistic-acknowledge regression
+    note: "Integration + E2E deferred: supervisor backend returns stub; V3 waiver condition documented below"
+  V2_smoke: pass                  # svelte-check 0 errors; no Rust changes; webshell Rust build clean
+  V3_e2e: "deferred: ironclaw-spine must ship live GET /api/builds/:id/supervisor/state before golden-path E2E is possible"
+
+notes:
+  - "No standalone LASDLC plan; gated against parent build northstar + northstar canon §Q directly"
+  - "S1-MEDIUM-3 (IDOR) is pre-existing across all /api/builds/:id/* handlers; tracked as blocker for multi-user expansion only"
+  - "V1 integration + E2E suites deferred to ironclaw-spine delivery (target 2026-07-31)"

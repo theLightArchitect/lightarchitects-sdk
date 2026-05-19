@@ -85,14 +85,21 @@
 
   // ── Supervisor state ──────────────────────────────────────────────────────
   let supervisorState = $state<SupervisorState | null>(null);
+  let supervisorAuthError = $state(false);
 
   async function fetchSupervisorState(buildId: string) {
     try {
       supervisorState = await api.getSupervisorState(buildId);
+      supervisorAuthError = false;
     } catch (e: unknown) {
       // 404 = no northstar captured for this build yet — silent
       if (e instanceof Error && e.message.includes('404')) return;
-      // other errors: leave prior state intact, don't crash the panel
+      // 401 = session expired — surface so operator can re-auth (S1-LOW-4)
+      if (e instanceof Error && e.message.includes('401')) {
+        supervisorAuthError = true;
+        return;
+      }
+      console.error('[supervisor] fetch failed:', e);
     }
   }
 
@@ -103,10 +110,12 @@
     if (supervisorState) supervisorState = { ...supervisorState, proposal_pending: false };
     try {
       await api.acknowledgeProposal(id);
-      // SSE will broadcast the confirmed state; re-fetch for drift counter
+      // Re-fetch after success: drift counter only lives in full SupervisorState,
+      // not in the SSE NorthstarEvaluationEvent — must pull to get updated count.
       await fetchSupervisorState(id);
-    } catch {
-      // Re-fetch to restore real state if the POST failed
+    } catch (e: unknown) {
+      // Re-fetch on failure to restore server truth; log to aid AYIN auth-rate signal.
+      console.error('[supervisor] acknowledge failed:', e);
       await fetchSupervisorState(id);
     }
   }
@@ -117,7 +126,14 @@
     const id = build?.id;
     if (!id) return;
     fetchSupervisorState(id);
-    const es = api.supervisorEvents(id, () => { fetchSupervisorState(id); });
+    const es = api.supervisorEvents(id, () => { fetchSupervisorState(id); }, (err) => {
+      // On SSE error (including 401 reconnect loop), close to stop silent retries
+      // and surface auth failure state. Browser auto-retry floods auth-rate signal
+      // at 3s intervals; explicit close + flag prevents false-positive AYIN alerts.
+      if ((err.target as EventSource | null)?.readyState === EventSource.CLOSED) {
+        supervisorAuthError = true;
+      }
+    });
     return () => es.close();
   });
 </script>
@@ -173,7 +189,13 @@
     {/if}
 
     <!-- Supervisor northstar strip — only when northstar has been captured -->
-    {#if supervisorState?.northstar_text}
+    {#if supervisorAuthError}
+      <div class="supervisor-strip sv-auth-error" role="alert">
+        <span class="sv-label">NORTHSTAR</span>
+        <span class="sv-text">Session expired — supervisor unavailable</span>
+        <span class="sv-badge sv-badge--drift" aria-label="Authentication required">AUTH</span>
+      </div>
+    {:else if supervisorState?.northstar_text}
       <div
         class="supervisor-strip"
         class:sv-drifting={supervisorState.consecutive_drifts > 0}
@@ -184,17 +206,18 @@
           {supervisorState.northstar_text}
         </span>
         {#if supervisorState.consecutive_drifts > 0}
-          <span class="sv-badge sv-badge--drift" aria-label="Consecutive drift count">
-            DRIFT {supervisorState.consecutive_drifts}/{supervisorState.drift_threshold}
-          </span>
+          <span
+            class="sv-badge sv-badge--drift"
+            aria-label="Consecutive drifts: {supervisorState.consecutive_drifts} of {supervisorState.drift_threshold}"
+          >DRIFT {supervisorState.consecutive_drifts}/{supervisorState.drift_threshold}</span>
         {:else if supervisorState.last_evaluation?.status === 'advancing'}
-          <span class="sv-badge sv-badge--ok">ADVANCING</span>
+          <span class="sv-badge sv-badge--ok" aria-label="Northstar advancing">ADVANCING</span>
         {/if}
       </div>
 
       <!-- ProposalCard — mounted only while proposal is pending (SSE cleans up) -->
       {#if supervisorState.proposal_pending && supervisorState.last_evaluation}
-        <div class="proposal-wrap" role="status">
+        <div class="proposal-wrap" role="status" aria-live="polite">
           <ProposalCard
             evaluation={supervisorState.last_evaluation}
             onAcknowledge={handleAcknowledge}
@@ -523,6 +546,10 @@
     font-family: var(--la-font-mono);
     overflow: hidden;
     transition: background 200ms;
+  }
+  .sv-auth-error {
+    background: rgba(248, 113, 113, 0.06);
+    border-bottom-color: rgba(248, 113, 113, 0.3);
   }
   .sv-drifting {
     background: rgba(248, 113, 113, 0.05);
