@@ -35,8 +35,10 @@ pub mod extractor;
 pub mod model;
 pub mod narrative;
 pub mod security;
+pub mod verifier;
 
 pub use model::{
     ArchFinding, ArchLevel, ArchModel, ArchNode, ArchRelation, ExtractedFacts, FindingClass,
     Language, RelationKind, Severity,
 };
+pub use verifier::{VerifierResult, run as verify};
