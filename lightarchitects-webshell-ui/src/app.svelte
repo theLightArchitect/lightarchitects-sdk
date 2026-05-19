@@ -61,6 +61,7 @@
     Editor:        () => import('./screens/Editor.svelte'),
     Git:           () => import('./screens/Git.svelte'),
     PullRequest:   () => import('./screens/PullRequest.svelte'),
+    Architecture:  () => import('./screens/Architecture.svelte'),
   };
 
   type ScreenModule = { default: any };
@@ -444,6 +445,13 @@
               title="Memory drawer (Cmd+M)"
               data-testid="memory-toggle"
             >{$memoryDrawerOpen ? 'Close Memory' : 'Memory'}</button>
+          </Tooltip>
+          <Tooltip content="Architecture Intelligence — extract, verify, render, and emit architecture diagrams" side="bottom">
+            <button
+              onclick={() => navigate('/arch')}
+              class="px-2 py-1 text-[11px] transition-colors {activeRoute.startsWith('/arch') ? 'text-[#FFD700]' : 'text-[#475569] hover:text-[#FFD700]'}"
+              data-testid="arch-nav-btn"
+            >ARCH</button>
           </Tooltip>
           <!-- 3D View toggle — visible at every viewport.
                Desktop (>=1024): toggles the inline right-hand panel.

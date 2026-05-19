@@ -546,6 +546,12 @@ pub fn build_app(state: AppState) -> Router {
             "/api/gitforest/node/{*id}",
             get(gitforest::routes::handle_node),
         )
+        // ── Architecture Intelligence proxy (Phase 6 — M17) ───────────────────
+        .route("/api/arch/extract", post(crate::arch_proxy::extract_handler))
+        .route("/api/arch/verify",  post(crate::arch_proxy::verify_handler))
+        .route("/api/arch/render",  post(crate::arch_proxy::render_handler))
+        .route("/api/arch/emit",    post(crate::arch_proxy::emit_handler))
+        .route("/api/arch/health",  get(crate::arch_proxy::health_handler))
         // ── Phase 9.5 / 10.5 SOUL vault hybrid memory routes ─────────────────
         .route("/api/soul/search", get(events::soul_routes::search_handler))
         .route(
