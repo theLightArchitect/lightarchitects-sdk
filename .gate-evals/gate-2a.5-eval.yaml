@@ -1,0 +1,62 @@
+gate: "2A.5"
+codename: ironclaw-spine
+phase: phase-2a.5-canon-doc-amendments
+dimensions: [S, Q, T, K, C]
+evaluated_at: "2026-05-19"
+evaluator: "Claude (BUILD orchestrator)"
+verdict: PASS
+operator_stamp: "Kevin — 2026-05-19 (approved gate-2a.5, proceed to phase-3)"
+
+dimension_results:
+  S_security:
+    result: PASS
+    notes: >
+      EscalationEvent.call_id documented as server-minted UUIDv4 — never
+      client-supplied (IDOR prevention, SA-4, matches existing PermissionRequest
+      invariant). No new HTTP routes. No new subprocess spawn surface. All
+      payload structs derive Serialize/Deserialize with serde attributes only —
+      no unsafe deserialization paths.
+
+  Q_quality:
+    result: PASS
+    notes: >
+      cargo fmt --all -- --check: PASS. cargo clippy --workspace --all-targets
+      --all-features -- -D warnings: PASS. Pre-commit hook verified on commit
+      85e4c04. Two test-scope suppressions: clippy::expect_used +
+      clippy::match_same_arms in canon_doc_integrity.rs (integration test file,
+      not production path).
+
+  T_testing:
+    result: PASS
+    notes: >
+      +8 new tests (6 inline serialisation tests in types.rs test module +
+      2 integration tests in tests/canon_doc_integrity.rs).
+      canon_doc_integrity.rs: compiler-enforced exhaustive match ratchet +
+      type-tag serialisation coverage for all 5 ironclaw variants.
+      Total suite: 2011 passed (up from 1898 at gate-2a).
+
+  K_knowledge:
+    result: PASS
+    notes: >
+      All 5 new payload structs have /// item-level doc comments. Variant
+      doc comments cite Phase 2A.5 and reference the HITL response endpoint
+      path pattern. commit_sha skip_serializing_if = None documented inline.
+
+  C_canon:
+    result: PASS
+    notes: >
+      Canon XXXIX operator stamp obtained (Kevin, 2026-05-19). Webshell
+      WebEvent schema extension is API-surface-adjacent (not a canon doc
+      edit) — no LÆX ratification required for the schema addition itself.
+      webshell-api-surface-v1.md §2.x update deferred to Phase 6 UI surface
+      (when frontend begins consuming the variants — doc catch-up, not
+      blocking). Plan count correction: base was 18 (not 20 as estimated);
+      total 23 (not 25). No functional impact.
+
+commits:
+  - sha: 85e4c04
+    desc: "Phase 2A.5 — canon doc amendments: 5 ironclaw WebEvent variants + integrity test"
+
+test_count_delta: "+8 new tests (Phase 2A.5)"
+total_tests: 2011
+next_phase: phase-3-slice-1-spine
