@@ -26,7 +26,7 @@ default = [
     "cypher", "embedding-ollama", "embedding-fastembed", "embedding-llama-cpp",
     "observe", "conversations", "http-client",
     "neo4j", "file", "dual", "fastembed", "rerank",
-    "ssh", "cli",
+    "ssh", "cli", "fleet",
 ]
 sqlite               = []
 search               = []
@@ -59,6 +59,8 @@ credentials-detailed-locator = ["credentials"]
 # Does NOT gate LlmAgentProvider trait, AgentRequest, or SanitizedAgentRequest;
 # those are always compiled and available to any provider implementor.
 agent-cli = []
+# Live agent fleet tracking — DashMap state machine + JSONL tailer.
+fleet = ["dep:dashmap"]
 
 # lightsquad — autonomous code-delivery orchestration engine.
 # Phase 1 stub: gates module compilation only. Phase 3+ wires in nearai/ironclaw
@@ -135,6 +137,9 @@ rusqlite = { workspace = true }
 
 # Agent CLI subprocess (process-private tempdir for mcp-null.json)
 tempfile = { workspace = true }
+
+# Fleet tracking (optional — gated behind `fleet` feature)
+dashmap = { workspace = true, optional = true }
 
 # macOS keychain (crypto keychain feature)
 [target.'cfg(target_os = "macos")'.dependencies]
