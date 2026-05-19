@@ -1,0 +1,70 @@
+gate: "2A"
+codename: ironclaw-spine
+phase: phase-2a-security-observability-foundation
+dimensions: [S, Q, T, K]
+evaluated_at: "2026-05-19"
+evaluator: "Claude (BUILD orchestrator)"
+verdict: PASS
+
+dimension_results:
+  S_security:
+    result: PASS
+    notes: >
+      No .unwrap()/.expect() in production paths — grep confirmed all instances
+      are in #[cfg(test)] modules (manifest.rs:163+, claude.rs:545+, pause.rs:189+,
+      launchd.rs:241+). PermissionMatrix defaults fail-closed (all fields false,
+      empty allowed_tools); require_permission_matrix() raises
+      ProviderError::MissingPermissionMatrix before any subprocess spawn.
+      No new dependencies added beyond workspace-pinned crates. No secrets in diff.
+      TRACEPARENT env var injection in ClaudeCliProvider::build_command() follows
+      W3C traceparent spec (00-<trace>-<parent>-<flags>). SERAPH adversarial
+      review: report-only per Phase 2A plan — deferred to Gate 2A.5.
+
+  Q_quality:
+    result: PASS
+    notes: >
+      cargo fmt --all -- --check: PASS. cargo clippy --workspace --all-targets
+      --all-features -- -D warnings: PASS (0 errors). Fixed during gating:
+      doc_markdown items (AgentRunner, WebFetch, WorkerHandle, LightArchitect
+      in docs), clippy::cast_possible_truncation + cast_sign_loss on f64→u32
+      clamp (suppressed with allow where mathematically safe), float_cmp in
+      metrics test module (suppressed with allow), expect_used in launchd test
+      module (suppressed with allow). All suppressions in #[cfg(test)] scope only.
+
+  T_testing:
+    result: PASS
+    notes: >
+      Test count ratchet: baseline (HEAD 7f67e7c) → 1898 (HEAD 6ea94f3).
+      Phase 2A new tests:
+        W2Aa: 28 (9 manifest + 8 hmac + 11 hash_chain)
+        W2Ab: 5 (4 builder + 1 WorkerHandle drop)
+        W2Ac: 34 (14 traceparent + 7 span_schema + 13 metrics)
+        W2Ad: 12 (plist content + error formatting + label constants)
+        W2Ae: 15 (12 state transitions + 3 atomic_write)
+      Total new: 94 tests. All pass, 0 failed, 0 ignored.
+      Test types: unit (sync) + async tokio::test (pause state machine).
+      Canon XXVII coverage: unit ✓ | integration n/a | E2E n/a (Phase 2A is library-only).
+
+  K_knowledge:
+    result: PASS
+    notes: >
+      All new modules have //! crate-level doc + /// item-level docs. Key design
+      decisions documented inline: ManifestLock signs 32-byte SHA-256 digest
+      (not raw TOML) to prevent length-extension attacks; WaveKeyMaterial uses
+      Zeroizing<[u8;32]> on drop; PauseHandle uses Notify (no busy-waiting);
+      atomic_write uses .tmp sibling + rename for crash safety; PermissionMatrix
+      defaults documented as fail-closed. Gate eval YAML committed to .gate-evals/.
+
+commits:
+  - sha: a168706
+    desc: "Phase 2A W2Aa+W2Ab — crypto foundation + permission matrix"
+  - sha: 527ef73
+    desc: "Phase 2A W2Ac — observability foundation"
+  - sha: 4991234
+    desc: "Phase 2A W2Ad — launchd supervisor integration"
+  - sha: 6ea94f3
+    desc: "Phase 2A W2Ae — PAUSE/drain/resume + atomic-write"
+
+test_count_delta: "+94 new tests (Phase 2A W2Aa–W2Ae)"
+total_tests: 1898
+next_phase: gate-2a.5-canon-amendments
