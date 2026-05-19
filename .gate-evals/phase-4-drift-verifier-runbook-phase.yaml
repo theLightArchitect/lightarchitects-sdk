@@ -1,0 +1,29 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-19T09:30:00Z"
+build_id: architecture-intelligence-substrate
+phase_id: phase-4-drift-verifier-runbook
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 2015
+    tests_fail: 0
+    note: >
+      114 unit (96 lightarchitects-arch unit + 18 integration/property) + 1901
+      from rest of workspace. Test count ratchet: 1841 → 2015 (+174).
+  Q4_svelte: n/a
+  D2_plan:
+    result: pass
+    note: >
+      Phase 4 deliverables fully built: verifier::diff (#[instrument] with
+      4 child-span check classes), verifier::findings (M7 caps + dedup-by-hash),
+      verifier::mod (VerifierResult + run()), docs/RUNBOOK.md (4 worked examples).
+      R-1 gateway-smoke and R-2 canon-amendment fold examples use semantically
+      equivalent scenarios (service removal / dep drift / cap flood / dedup);
+      full gateway-specific variant deferred to Phase 5 per plan dependency
+      on gateway binary. lib.rs exports verify() + VerifierResult. No scope drift.
