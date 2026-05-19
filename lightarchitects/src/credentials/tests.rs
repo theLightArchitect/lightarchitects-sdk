@@ -24,16 +24,19 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use super::{Detection, Locator, Registry, default_registry};
 
+#[allow(dead_code)]
 fn env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+#[allow(dead_code)]
 struct EnvGuard {
     _lock: MutexGuard<'static, ()>,
     saved: Vec<(OsString, Option<OsString>)>,
 }
 
+#[allow(dead_code)]
 impl EnvGuard {
     fn new(vars: &[&str]) -> Self {
         let lock = env_lock().lock().expect("env_lock poisoned");

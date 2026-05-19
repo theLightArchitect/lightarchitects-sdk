@@ -29,6 +29,15 @@
 //! promotion to standalone workspace crate when sub-module count ≥ 10 or
 //! independent-publish need emerges.
 
+/// Core status enums, task definition, shared state, and scheduling predicate.
+pub mod types;
+
+/// Worktree lifecycle — create, remove, list git worktrees.
+pub mod worktree_manager;
+
+/// Top-level build program — owns the full wave dispatch + merge lifecycle.
+pub mod program;
+
 /// Wave dispatcher — fans tasks out to per-worktree workers via Tokio JoinSet.
 pub mod wave_dispatcher;
 
