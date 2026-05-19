@@ -63,3 +63,6 @@ pub mod hmac;
 
 /// Decision log subsystem — HMAC-chained NDJSON gate decisions.
 pub mod decisions;
+
+/// PAUSE/drain/resume state machine + atomic-write helper.
+pub mod pause;
