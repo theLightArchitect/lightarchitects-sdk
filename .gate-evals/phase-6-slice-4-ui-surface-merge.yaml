@@ -1,0 +1,103 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-19T12:55:00Z"
+build_id: ironclaw-spine
+phase_id: phase-6-slice-4-ui-surface
+commit: "0de8fd6"
+commits_in_gate_run:
+  - "a16c2e1: feat(phase-6): AutonomousRun + DecisionLog + decisions endpoint + routes"
+  - "00497ee: gate(phase-6): D1 doc fixes + unit test coverage for decisions endpoint"
+  - "0de8fd6: fix(S1-F2): persist mode on BuildSession; echo real mode from build_details_handler"
+branch: feat/ironclaw-spine
+overall_verdict: pass
+dimensions:
+  V0_primary_on_main: pass
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 587_vitest_500_rust_36_other
+    tests_fail: 0
+    note: "500 webshell Rust + 36 other workspace crates + 587 vitest; 0 failures"
+  Q4_svelte:
+    result: pass
+    vitest: 587
+    svelte_check_errors: 0
+    svelte_check_warnings: 16
+  S1_security:
+    result: pass
+    findings:
+      - id: S1-F1
+        severity: MEDIUM
+        description: "canon_ref rendered as href without javascript:/data: URI sanitization (CWE-601)"
+        resolution: "pre-Phase-7 fix required before decisions.md is populated"
+        canon_ref: "Security Guardrails §3.1 A03, §3.2/C4, ASVS v5.0.0 §3.4.1"
+      - id: S1-F2
+        severity: MEDIUM
+        description: "mode field unbounded string + not persisted on BuildSession"
+        resolution: "FIXED in 0de8fd6 — mode stored on BuildSession; echoed from build_details_handler"
+        residual: "length cap on mode input (DoS vector) deferred — functional risk eliminated"
+        canon_ref: "Security Guardrails §3.4, §3.1 A03"
+      - id: S1-F3
+        severity: LOW
+        description: "Unvalidated escalation event detail (EscalationEvent shape not checked before CustomEvent dispatch)"
+        canon_ref: "Security Guardrails §3.4, LLM05"
+      - id: S1-F4
+        severity: LOW
+        description: "build_details_handler hardcodes mode: interactive — latent Phase 7 logic bypass"
+        canon_ref: "Security Guardrails §3.5, OWASP API3:2023"
+      - id: S1-F5
+        severity: INFO
+        description: "since param not URLSearchParams-escaped in api.ts"
+    no_critical: true
+    no_high: true
+  S2_supply_chain: pass
+  S3_laex: n/a
+  I1_rebase:
+    result: note
+    commits_ahead: 10
+    commits_behind: 5
+    note: "5 commits behind github/main — rebase required before final merge, not phase-blocking"
+  N1_northstar:
+    result: pass
+    pillar: "P1 + P2 (operator autonomous control surface)"
+  N2_chain: pass
+  N3_exclusion_zones: pass
+  D1_docs:
+    result: pass
+    gaps_found: 4
+    gaps_fixed: 4
+    details:
+      - "DecisionsQuery doc block reordered before handler (empty_line_after_doc_comments fixed)"
+      - "build_decisions_handler: # Errors section added; doc blocks merged"
+      - "AutonomousRun.svelte: @component JSDoc block added"
+      - "DecisionLog.svelte: @component JSDoc block added"
+  D2_plan: pass
+  D3_claude_md: n/a
+  V1_pyramid:
+    result: partial
+    suites_covered:
+      - unit
+      - e2e
+    suites_missing:
+      - integration
+      - property
+      - regression
+      - smoke
+    notes:
+      - "4 new Rust unit tests (DecisionsQuery deserialization + mode field round-trip)"
+      - "4 new TS route unit tests (autonomous + decisions view modes + comms + pipeline)"
+      - "9/9 E2E tests pass (ironclaw-phase6.spec.ts)"
+      - "Integration/Property/Regression/Smoke deferred to Phase 7 when decisions.md is populated and mode is persisted on BuildSession"
+    deferred_condition: "Phase 7 wires decisions.md → decisions endpoint + stores mode on BuildSession"
+  V2_smoke: pass
+  V3_e2e:
+    result: pass
+    tests: 9
+    spec: "ironclaw-phase6.spec.ts"
+    duration_s: 13.1
+security_findings_requiring_pre_phase7_fix:
+  - S1-F1
+security_findings_fixed_in_gate:
+  - S1-F2
