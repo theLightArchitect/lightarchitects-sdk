@@ -446,6 +446,7 @@ pub async fn create_build_handler(
         Some("autonomous") => "autonomous",
         _ => "interactive",
     };
+    mode.clone_into(&mut session.mode);
 
     let resp = BuildResponse {
         build_id: session.build_id,
@@ -535,7 +536,7 @@ pub async fn build_details_handler(
         claude_agent_template: session.claude_agent_template.clone(),
         model: session.model.clone(),
         containerized: session.containerized,
-        mode: "interactive".to_owned(),
+        mode: session.mode.clone(),
     };
 
     (StatusCode::OK, Json(resp)).into_response()

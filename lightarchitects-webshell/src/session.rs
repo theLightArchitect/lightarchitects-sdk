@@ -102,6 +102,11 @@ pub struct BuildSession {
     /// Whether this build session should spawn inside a Docker container.
     /// Set at creation time based on Docker capability + container mode config.
     pub containerized: bool,
+    /// Resolved execution mode: `"interactive"` (default) or `"autonomous"`.
+    ///
+    /// Echoed in [`BuildResponse`] so the UI can enable autonomous-mode panels
+    /// without re-parsing the original creation request.
+    pub mode: String,
 
     /// Live agent session host (Option E — SSE + WebSocket agent protocol).
     ///
@@ -144,6 +149,7 @@ impl BuildSession {
             pty_master: StdMutex::new(None),
             pty_exited: Arc::new(tokio::sync::Notify::new()),
             containerized: false,
+            mode: "interactive".to_owned(),
             agent_host: tokio::sync::Mutex::new(None),
         }
     }
