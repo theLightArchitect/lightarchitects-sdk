@@ -26,12 +26,12 @@
     [...$slotAssignments.values()].flat().filter(w => w.state === 'writing' || w.state === 'gate').length,
   );
 
-  // Gate events = GATE_REVIEW entries in the activity feed in the last 60s.
+  // Gate events — all session gate events (monotonically increasing, never resets).
   let recentGates = $derived(
     $activityFeed.filter(e => {
       if (e.source !== 'copilot') return false;
       const ev = (e as { source: 'copilot'; event: import('$lib/types').CopilotActivityEvent }).event;
-      return ev.kind === 'gate' && Date.now() - new Date(ev.timestamp).getTime() < 60_000;
+      return ev.kind === 'gate';
     }).length,
   );
 

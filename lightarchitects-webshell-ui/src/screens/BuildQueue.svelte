@@ -251,6 +251,7 @@
         <div class="w-full max-w-sm">
           <DispatchCLI
             inline
+            focusOnMount
             placeholder="describe task, ↵ to dispatch"
             onDispatch={quickDispatch}
           />

@@ -7,6 +7,8 @@
     placeholder?: string;
     /** Inline mode: bordered box for embedding in content areas (no border-top chrome) */
     inline?: boolean;
+    /** Auto-focus the input on mount (use in empty-state contexts) */
+    focusOnMount?: boolean;
   }
 
   let {
@@ -14,10 +16,17 @@
     disabled = false,
     placeholder = 'type task, Enter to dispatch…',
     inline = false,
+    focusOnMount = false,
   }: Props = $props();
 
   let inputEl: HTMLInputElement | null = $state(null);
   let value = $state('');
+
+  $effect(() => {
+    if (focusOnMount && inputEl && document.activeElement === document.body) {
+      inputEl.focus();
+    }
+  });
 
   $effect(() => {
     const isDisabled = disabled; // tracked read — re-registers when disabled changes
