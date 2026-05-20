@@ -1,0 +1,104 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-20T20:30:00Z"
+build_id: webshell-roadmap-rendering
+phase_id: merge
+branch: feat/webshell-roadmap-rendering
+sha: 4418ce4089f757d13023ecd34ff654ce7534110e
+overall_verdict: pass
+
+dimensions:
+  V0_primary_on_main: pass
+
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 548
+    tests_fail: 0
+    notes: "Rust workspace 548 pass / 0 fail. roadmap_route_test.rs 3 new integration tests included."
+  Q4_svelte:
+    result: pass
+    vitest: "603/603 pass"
+    svelte_check: "0 errors, 25 pre-existing warnings"
+
+  S1_security:
+    result: pass
+    findings:
+      - id: F-1
+        severity: MEDIUM
+        title: "DOMPurify ADD_TAGS:['style'] + unsafe-inline CSP = CSS injection surface"
+        status: accepted
+        notes: "Local-only operator tool; roadmap.html is operator-generated (trusted process). CSS exfil risk acknowledged. ADD_TAGS:['style'] retained for roadmap stylesheet fidelity; shadow-DOM scoping deferred to webshell-roadmap-live-data follow-on."
+      - id: F-2
+        severity: LOW
+        title: "FORBID_ATTR blacklist incomplete — event handler deny-list misses pointer/form/animation events"
+        status: remediated
+        notes: "Replaced FORBID_ATTR (blacklist) with ALLOWED_ATTR:[] (whitelist) in RoadmapPanel.svelte per Security Guardrails §3.2 C5. Committed in pre-merge remediation."
+      - id: F-3
+        severity: LOW
+        title: "No startup path prefix validation for roadmap_html_path"
+        status: accepted
+        notes: "Path is operator-set at binary startup, not per-request. Impact bounded to operator self-harm. Startup-time prefix assertion deferred to follow-on."
+      - id: F-4
+        severity: INFO
+        title: "CSP is report-only — enforcing mode not yet active"
+        status: accepted
+        notes: "Pre-existing architectural phasing (SEC-3a → SEC-3b). No new CSP regression from this build."
+  S2_supply_chain:
+    result: pass
+    notes: "cargo deny: advisories ok, bans ok, licenses ok, sources ok."
+  S3_laex: "n/a — no new crypto primitives, auth flows, or permission surfaces"
+
+  I1_rebase:
+    result: pass
+    commits_ahead: 5
+    notes: "Clean descendant of github/main. No rebase needed."
+  I2_build: pass
+
+  N1_northstar:
+    result: pass
+    pillar: P6
+    northstar_text: "Pillar 6 — Operator-Legible Engineering Arc"
+  N2_chain:
+    result: pass
+    notes: "p6_mechanical_check_1 concrete: roadmap.html was file-manager-only → /#/roadmap UI surface with <500ms auto-refresh. Diff directly closes the northstar_metric_delta gap."
+  N3_exclusion: pass
+
+  D1_docs:
+    result: pass
+    notes: "0 gaps. roadmap_handler + AppState.roadmap_html_path both have /// doc comments."
+  D2_plan:
+    result: pass
+    notes: "Frontmatter drift remediated: phase updated from phase-2-implement to phase-4-ship."
+  D3_api_surface:
+    result: pass
+    notes: "§2.22 Roadmap added to standards/canon/webshell-api-surface-v1.md in pre-merge remediation commit."
+
+  V1_pyramid:
+    result: pass
+    suites_covered:
+      - unit: "roadmap.test.ts — 6 tests (store state transitions)"
+      - integration: "roadmap_route_test.rs — 3 tests (html/empty/401 handler branches)"
+      - e2e: "roadmap.spec.ts — 4 tests (R1-R4, nav/empty/success/error)"
+    suites_absent:
+      - property: "acceptable — read-only 3-branch handler; exhausted by integration tests"
+      - regression: "acceptable — net-new code, no prior bug history"
+      - smoke: "marginal WARNING (SMALL-tier); integration tests serve as fast canary"
+  V2_smoke: pass
+  V3_e2e:
+    result: pass
+    tests: "roadmap.spec.ts 4/4 (10.9s, headed, dev server @ localhost:5173)"
+    notes: "Verified in phase-3 gate eval; phase-3-verify-phase.yaml is canonical record."
+
+pre_existing_flakes:
+  - file: "src/__tests__/phase6.test.ts"
+    test: "Ops screen imports successfully"
+    cause: "Canvas API not available in jsdom; pre-exists on main branch"
+    verdict: "FLAKY (pre-existing) — not a regression"
+
+remediation_in_this_gate:
+  - "RoadmapPanel.svelte: FORBID_ATTR (blacklist) → ALLOWED_ATTR:[] (whitelist), closes S1 F-2"
+  - "webshell-api-surface-v1.md: §2.22 Roadmap section added, closes D3"
+  - "Cargo.lock: removed stale [[patch.unused]] entries (corso-server, corso-trinity-core)"

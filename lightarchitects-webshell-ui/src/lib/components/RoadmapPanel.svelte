@@ -34,16 +34,13 @@
   let status = $derived($roadmapStore.status);
 
   // Sanitized HTML ready for {@html} injection.
-  // ADD_TAGS:['style'] preserves roadmap internal CSS; scripts always stripped.
+  // ADD_TAGS:['style'] preserves roadmap internal CSS; ALLOWED_ATTR:[] whitelist
+  // denies all event handlers (whitelist beats blacklist per Security Guardrails §3.2 C5).
   let sanitizedHtml = $derived(
     $roadmapStore.status === 'success'
       ? DOMPurify.sanitize($roadmapStore.rawHtml, {
           ADD_TAGS: ['style'],
-          FORBID_ATTR: [
-            'onclick', 'onmouseover', 'onmouseenter', 'onmouseleave',
-            'onerror', 'onload', 'onunload', 'onfocus', 'onblur',
-            'onkeydown', 'onkeyup', 'onkeypress', 'onsubmit',
-          ],
+          ALLOWED_ATTR: [],
         })
       : ''
   );

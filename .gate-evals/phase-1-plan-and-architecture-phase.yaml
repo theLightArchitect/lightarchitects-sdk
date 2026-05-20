@@ -1,0 +1,22 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-20T01:08:59Z"
+build_id: webshell-roadmap-rendering
+phase_id: phase-1-plan-and-architecture
+overall_verdict: pass
+commit: "468d1d0"
+dimensions:
+  Q1_fmt: pass            # cargo fmt --check via pre-commit hook
+  Q2_clippy: pass         # cargo clippy via pre-commit hook (required dist/ symlink)
+  Q3_tests: n/a           # no Rust changes in phase 1 diff
+  Q4_svelte:
+    result: pass
+    tests_run: 597
+    errors: 0
+    warnings: 25          # pre-existing warnings, not regressions
+    fix_applied: "Removed block JSDoc with <style> literal from script block; svelte-check language server tokenizes bare <style> inside /* */ comments as a block delimiter even within backticks. Replaced with single-line // comments."
+  D2_plan: pass           # plan reflects actual scope: roadmap.ts + RoadmapPanel.svelte skeleton
+notes:
+  - "dist/ symlink required (~/Projects/lightarchitects-sdk/lightarchitects-webshell-ui/dist → worktree) for RustEmbed proc macro at compile time; per CLAUDE.md worktree prerequisite"
+  - "Svelte compiler (node compile) accepted file; issue isolated to svelte-check language server tokenizer"

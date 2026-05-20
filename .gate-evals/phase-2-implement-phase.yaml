@@ -1,0 +1,26 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-20T01:25:00Z"
+build_id: webshell-roadmap-rendering
+phase_id: phase-2-implement
+overall_verdict: pass
+commit: "1cddf2c"
+dimensions:
+  Q1_fmt: pass           # cargo fmt --check — pre-commit hook PASS
+  Q2_clippy: pass        # Two issues fixed: doc_markdown (DOMPurify backticks) + too_many_lines (AppState::new allow)
+  Q3_tests:
+    result: pass
+    tests_run: 544       # Rust (505 lib + 0 + 5 + 14 + 7 + 3 + 2 + 2 + 6)
+    tests_fail: 0
+  Q4_svelte:
+    result: pass
+    tests_run: 597
+    errors: 0
+  D2_plan: pass          # Plan reflects actual scope: roadmap.rs, AppState.roadmap_html_path, sse.ts, routes.ts, app.svelte
+files_changed:
+  - lightarchitects-webshell/src/server/roadmap.rs       # new: GET /api/roadmap handler
+  - lightarchitects-webshell/src/server/mod.rs           # roadmap_html_path field + route + module decl
+  - lightarchitects-webshell-ui/src/lib/sse.ts           # la:build-update CustomEvent dispatch
+  - lightarchitects-webshell-ui/src/lib/routes.ts        # Roadmap ScreenKey + /roadmap route
+  - lightarchitects-webshell-ui/src/app.svelte           # Roadmap screen module + nav item + isActive
