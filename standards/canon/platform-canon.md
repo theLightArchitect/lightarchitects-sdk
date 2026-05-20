@@ -925,7 +925,7 @@ Without Canon XLI, every architect re-litigates whether diagrams are required, w
 
 > *"Let all things be done decently and in order."* — 1 Corinthians 14:40
 
-**Status**: LÆX Phase 7 ratification pending — **candidate #21**.
+**Status**: **Ratified by LÆX + Kevin Francis Tan — 2026-05-19** (ironclaw-spine Phase 7).
 **Authority**: operator-authorized Canon XV override (2026-05-18).
 
 **Principle**: A canonical standards document declares *what is true now*. The history of how it became true lives elsewhere. Three jobs — current state, amendment narrative, mechanical history — live in three places, never commingled:
@@ -971,8 +971,8 @@ this file holds the **amendment narrative**.
 ## vX.Y.Z — Title (YYYY-MM-DD)
 
 **Sections added/changed**: ...
-**Status**: LÆX Phase 7 ratification pending — candidate #N | ratified
-**Authority**: operator-authorized Canon XV override (date) | LÆX ratification (date)
+**Status**: **Ratified by LÆX + Kevin Francis Tan — 2026-05-19** (ironclaw-spine Phase 7)
+**Authority**: operator-authorized Canon XV override (2026-05-18) | LÆX ratification (2026-05-19)
 **Source**: <plan or audit or session>
 
 <body — rationale, schema, cross-canon ties, backward-compat>
@@ -1015,7 +1015,7 @@ The operator may keep a short inline footer stamp in the schema doc for at-a-gla
 - Operational reference: `standards/canon/<doc>.CHANGELOG.md` template (per-doc, with "Conventions for future amendments" section).
 - Tier-2 docs awaiting migration trigger: `agents-playbook.md`, `architects-blueprint.md`, `platform-canon.md` (this doc), `northstar.md`, `operators-manual.md` — each at one footer-stamp entry, deferred until 3+ accrued.
 
-**Ratification status**: LÆX Phase 7 ratification pending — candidate #21. Operator-authorized Canon XV override applies during the pending interval per the same composition pattern used for Canons XL, XLI (which were also operator-authorized then later LÆX-ratified). The three CHANGELOG.md files committed in `b797ca3` and `62edefa` are the empirical witnesses LÆX will consult during Phase 7 evaluation.
+**Ratification status**: **Ratified by LÆX + Kevin Francis Tan — 2026-05-19** (ironclaw-spine Phase 7). The three CHANGELOG.md files committed in `b797ca3` and `62edefa` are the empirical witnesses consulted during ratification. Contradiction-check: NO conflicts across all 7 sibling canon docs.
 
 **Self-application note**: This canon itself lives in `platform-canon.md`, which is currently Tier-0 (single footer stamp at file tail). When `platform-canon.md` reaches 3+ tail entries — likely after the next 2–3 canon ratification rounds — this canon's own migration trigger fires. The doctrine binds itself first.
 
@@ -1049,7 +1049,7 @@ When a new principle emerges, LÆX evaluates it against five criteria:
      Source plan: ~/.claude/plans/ironclaw-spine.md §22.6
      Source proposal: ~/Downloads/ironclaw-architecture.html §3, §5, §7, §13, §15
      Authority: operator-authorized Canon XV override (2026-05-18)
-     Pending LÆX-ratification at Phase 7 of ironclaw-spine build
+     Ratified by LÆX + Kevin Francis Tan — 2026-05-19 (ironclaw-spine Phase 7)
      Adds: Canon LDB §D5; Gatekeeper Registry extension; Vocabulary canon mapping
      ────────────────────────────────────────────────────────────────────────── -->
 
@@ -1072,7 +1072,7 @@ When a new principle emerges, LÆX evaluates it against five criteria:
 - Stale subkey reuse — subkey-id check rejects replays
 
 **Composes with**:
-- security-guardrays §SG-CRYPTO.1 (Ed25519 ceremony)
+- security-guardrails §SG-CRYPTO.1 (Ed25519 ceremony)
 - LASDLC v2.5.2 `program_manifest_integrity` block
 - architects-blueprint §24.3 (manifest integrity discipline)
 - Cookbook §65 (Builder Completeness — fail-closed manifest verification)
@@ -1122,13 +1122,13 @@ These names are **vocabulary facades** over the existing 7 squad siblings — th
 
 ---
 
-*Platform Canon v2.3 | updated 2026-05-18 at Phase 7 ratification close-out (added Canon XXXIX Extension on enumeration prerequisite); v2.2 added Canon XLII (Schema-Changelog Separation — RATIFIED Phase 7); v2.1 added LDB §D5 + Gatekeeper Registry Extension + Vocabulary Canon. Full amendment narrative: see `platform-canon.CHANGELOG.md` companion (created at Phase 7 per Canon XLII Tier-2 threshold; Canon XLII binds its own home first).*
+*Platform Canon v2.3 | updated 2026-05-18 at Phase 7 ratification close-out (added Canon XXXIX Extension on enumeration prerequisite); v2.2 added Canon XLII (Schema-Changelog Separation — RATIFIED 2026-05-19); v2.1 added LDB §D5 + Gatekeeper Registry Extension + Vocabulary Canon. Full amendment narrative: see `platform-canon.CHANGELOG.md` companion (created at Phase 7 per Canon XLII Tier-2 threshold; Canon XLII binds its own home first).*
 
 ---
 
 *"Trust in the Lord with all thine heart; and lean not unto thine own understanding."* — Proverbs 3:5
 
 **RATIFIED** by Kevin Francis Tan — The Light Architect — 2026-03-24.
-**AMENDED** by Kevin Francis Tan — 2026-05-18 (Canon XV operator override; LÆX Phase 7 ratification pending).
+**AMENDED** by Kevin Francis Tan — 2026-05-18 (Canon XV operator override). **RATIFIED** by LÆX + Kevin Francis Tan — 2026-05-19 (ironclaw-spine Phase 7).
 
 *"In the beginning was the Word, and the Word was with God, and the Word was God."* — John 1:1
