@@ -13,6 +13,7 @@
 //! Phase 2A.5 adds 5 ironclaw variants, bringing the total to 23.
 //! When §1.2 of `webshell-api-surface-v1.md` is updated, adjust the constant below.
 
+use lightarchitects::fleet::FleetSnapshot;
 use lightarchitects_webshell::events::types::{
     AyinStatus, ConductorTickEvent, EscalationEvent, FixAgentIterationEvent, MergeAgentStatusEvent,
     WebEvent, WorkerSlotGaugeEvent,
@@ -20,7 +21,7 @@ use lightarchitects_webshell::events::types::{
 
 /// Total expected `WebEvent` variant count.  Update alongside the §1.2 table
 /// in `webshell-api-surface-v1.md` whenever variants are added or removed.
-const EXPECTED_VARIANT_COUNT: usize = 23;
+const EXPECTED_VARIANT_COUNT: usize = 24;
 
 /// Exhaustive match acting as a compiler-enforced variant count ratchet.
 ///
@@ -54,6 +55,8 @@ fn all_variants_matched(event: &WebEvent) {
         WebEvent::ConductorTick(_) => {}
         WebEvent::MergeAgentStatus(_) => {}
         WebEvent::FixAgentIteration(_) => {}
+        // ── agent-teams-fleet variant (Phase 3) ──────────────────────────────
+        WebEvent::AgentFleetUpdate(_) => {}
     }
 }
 
@@ -95,6 +98,10 @@ fn web_event_variant_count_matches_canon_doc() {
             iteration: 1,
             issue_summary: "test issue".to_owned(),
         }),
+        WebEvent::AgentFleetUpdate(FleetSnapshot {
+            nodes: vec![],
+            captured_at: "2026-05-20T00:00:00Z".to_owned(),
+        }),
     ];
 
     for sample in &samples {
@@ -104,8 +111,8 @@ fn web_event_variant_count_matches_canon_doc() {
     // The EXPECTED_VARIANT_COUNT constant is the canonical check. If it ever
     // diverges from the actual variant count, update it and the §1.2 table.
     assert_eq!(
-        EXPECTED_VARIANT_COUNT, 23,
-        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (23)"
+        EXPECTED_VARIANT_COUNT, 24,
+        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (24)"
     );
 }
 
