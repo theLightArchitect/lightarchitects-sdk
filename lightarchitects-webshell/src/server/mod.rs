@@ -241,6 +241,11 @@ pub struct AppState {
     /// `$HOME/lightarchitects/soul/helix/corso/builds/roadmap.html`.
     /// The handler returns an empty body when the file is absent (→ `empty` state).
     pub roadmap_html_path: std::path::PathBuf,
+    /// EVA identity cache — frontmatter-stripped body of `eva/identity.md`.
+    ///
+    /// Background task is the sole writer (30s poll); per-request read lock only —
+    /// no file I/O on the hot path.  Empty when the file is absent or unreadable.
+    pub eva_identity: Arc<tokio::sync::RwLock<crate::copilot::eva_identity::EvaIdentityCache>>,
 }
 
 impl AppState {
@@ -315,6 +320,23 @@ impl AppState {
                 crate::memory::convergence::spawn(soul_for_embed, tx_for_convergence);
             });
         }
+        let identity_path =
+            lightarchitects::core::paths::helix_root_or_fallback().join("eva/identity.md");
+        let eva_identity = Arc::new(tokio::sync::RwLock::new(
+            crate::copilot::eva_identity::EvaIdentityCache::load(&identity_path),
+        ));
+        {
+            let cache = eva_identity.clone();
+            let path = identity_path.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+                loop {
+                    interval.tick().await;
+                    cache.write().await.check_reload(&path);
+                }
+            });
+        }
+
         Self {
             config: Arc::new(config),
             turnlog_pepper: Arc::new(pepper),
@@ -375,6 +397,7 @@ impl AppState {
             preflight_last_refresh: Arc::new(AtomicU64::new(0)),
             gitforest_cache: crate::gitforest::routes::topology_cache(),
             check_run_cache: crate::github_proxy::check_run_cache(),
+            eva_identity,
         }
     }
 
@@ -479,6 +502,9 @@ impl AppState {
             preflight_last_refresh: Arc::new(AtomicU64::new(0)),
             gitforest_cache: crate::gitforest::routes::topology_cache(),
             check_run_cache: crate::github_proxy::check_run_cache(),
+            eva_identity: Arc::new(tokio::sync::RwLock::new(
+                crate::copilot::eva_identity::EvaIdentityCache::default(),
+            )),
         }
     }
 }

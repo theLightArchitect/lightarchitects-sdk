@@ -306,3 +306,61 @@ describe('sharedBuildId regression', () => {
     expect(mod).not.toHaveProperty('activeBuildId');
   });
 });
+
+describe('grounding_header_parsed', () => {
+  it('parses full grounding header', async () => {
+    const { parseGroundingHeader } = await import('$lib/api');
+    const result = parseGroundingHeader('eva=1,soul=3,git=5');
+    expect(result).toEqual({ eva: 1, soul: 3, git: 5 });
+  });
+
+  it('parses header with eva=0', async () => {
+    const { parseGroundingHeader } = await import('$lib/api');
+    const result = parseGroundingHeader('eva=0,soul=0,git=0');
+    expect(result).toEqual({ eva: 0, soul: 0, git: 0 });
+  });
+
+  it('returns null for missing header', async () => {
+    const { parseGroundingHeader } = await import('$lib/api');
+    expect(parseGroundingHeader(null)).toBeNull();
+  });
+
+  it('returns null for malformed header', async () => {
+    const { parseGroundingHeader } = await import('$lib/api');
+    expect(parseGroundingHeader('notvalid')).toBeNull();
+  });
+});
+
+describe('grounding_chips_render', () => {
+  it('copilotGrounding store accepts GroundingInfo', async () => {
+    const { copilotGrounding } = await import('$lib/stores');
+    copilotGrounding.set({ eva: 1, soul: 3, git: 5 });
+    expect(get(copilotGrounding)).toEqual({ eva: 1, soul: 3, git: 5 });
+    copilotGrounding.set(null);
+  });
+
+  it('CopilotContextTray module imports successfully', async () => {
+    const mod = await import('$lib/../components/CopilotContextTray.svelte');
+    expect(mod.default).toBeDefined();
+  });
+});
+
+describe('grounding_chips_hidden_when_zero', () => {
+  it('copilotGrounding store starts as null', async () => {
+    const { copilotGrounding } = await import('$lib/stores');
+    copilotGrounding.set(null);
+    expect(get(copilotGrounding)).toBeNull();
+  });
+
+  it('grounding row only rendered when grounding is non-null (conditional logic)', async () => {
+    // Validates that the tray hides the row when grounding=null by checking
+    // the conditional is present in the component source.
+    const fs = await import('fs');
+    const path = await import('path');
+    const src = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/CopilotContextTray.svelte'),
+      'utf8'
+    );
+    expect(src).toContain('{#if grounding !== null}');
+  });
+});

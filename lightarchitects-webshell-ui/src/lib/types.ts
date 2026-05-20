@@ -1239,3 +1239,18 @@ export interface CopilotContextSnapshot {
   /** Indices (0-based) of events whose payload exceeds the 4 KiB warning threshold. */
   oversizeIndices: number[];
 }
+
+/**
+ * Grounding source indicators parsed from the `X-LA-Grounding` response header.
+ *
+ * Updated after each copilot response and consumed by `CopilotContextTray`
+ * to render the `EVA ✓ | SOUL N | Git N` indicator row (Phase 4).
+ */
+export interface GroundingInfo {
+  /** 1 when EVA identity was injected; 0 when absent or identity file missing. */
+  eva: number;
+  /** Number of SOUL vault entries injected (0 when soul_store unavailable). */
+  soul: number;
+  /** Number of git commits injected (0 when cwd is not a git repo). */
+  git: number;
+}
