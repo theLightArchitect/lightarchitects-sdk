@@ -249,26 +249,42 @@ pub fn validate(
     Ok(())
 }
 
-/// Build the XML-style context prelude prepended to the copilot prompt.
+/// Build the context prelude prepended to the copilot prompt.
 ///
-/// Produces `<recent_events>…</recent_events>` + `<ui_context>…</ui_context>` blocks.
+/// Produces an `[Identity]` block (when `identity` is non-empty), followed by
+/// `<recent_events>…</recent_events>` and `<ui_context>…</ui_context>` blocks.
 /// Event payloads are embedded verbatim via `serde_json::Value`'s `Display` impl —
 /// no server-side truncation (§P check 2). `source` and `timestamp` are validated
 /// by [`validate`] before this function is called; callers must not skip validation.
 ///
-/// Returns an empty string when both `events` is empty and `ui` is `None`.
+/// Returns an empty string when `identity` is empty, `events` is empty, and
+/// `ui` is `None`.
 ///
 /// # Arguments
+/// * `identity` — EVA identity text (frontmatter-stripped); prepended as
+///   `[Identity]\n…\n\n` when non-empty (§C session-continuity gate).
 /// * `events` — slice of entries (frontend caps at 50; server validated ≤100).
 /// * `ui` — optional [`UiContext`] snapshot captured at submit time.
 #[must_use]
-pub fn assemble_prompt_prelude(events: &[RecentEventEntry], ui: Option<&UiContext>) -> String {
-    if events.is_empty() && ui.is_none() {
+pub fn assemble_prompt_prelude(
+    identity: &str,
+    events: &[RecentEventEntry],
+    ui: Option<&UiContext>,
+) -> String {
+    if identity.is_empty() && events.is_empty() && ui.is_none() {
         return String::new();
     }
 
-    let estimated = events.len() * OVERHEAD_PER_EVENT + ui.map_or(0, |ctx| ctx.route.len() + 128);
+    let estimated = identity.len()
+        + events.len() * OVERHEAD_PER_EVENT
+        + ui.map_or(0, |ctx| ctx.route.len() + 128);
     let mut out = String::with_capacity(estimated.max(256));
+
+    if !identity.is_empty() {
+        out.push_str("[Identity]\n");
+        out.push_str(identity);
+        out.push_str("\n\n");
+    }
 
     if !events.is_empty() {
         out.push_str("<recent_events>\n");
@@ -338,13 +354,13 @@ mod tests {
 
     #[test]
     fn context_assembly_empty() {
-        assert!(assemble_prompt_prelude(&[], None).is_empty());
+        assert!(assemble_prompt_prelude("", &[], None).is_empty());
     }
 
     #[test]
     fn context_assembly_events_only() {
         let events = vec![entry(1, sjson!({"type": "BuildStarted"}))];
-        let out = assemble_prompt_prelude(&events, None);
+        let out = assemble_prompt_prelude("", &events, None);
         assert!(out.contains("<recent_events>"));
         assert!(out.contains("seq=1"));
         assert!(out.contains("BuildRunner"));
@@ -360,7 +376,7 @@ mod tests {
             view: Some("activity".to_owned()),
             degraded: vec![],
         };
-        let out = assemble_prompt_prelude(&events, Some(&ctx));
+        let out = assemble_prompt_prelude("", &events, Some(&ctx));
         assert!(out.contains("<recent_events>"));
         assert!(out.contains("seq=42"));
         assert!(out.contains("<ui_context>"));
@@ -380,7 +396,7 @@ mod tests {
                 "gitforest_stale".to_owned(),
             ],
         };
-        let out = assemble_prompt_prelude(&[], Some(&ctx));
+        let out = assemble_prompt_prelude("", &[], Some(&ctx));
         assert!(out.contains("<ui_context>"));
         assert!(out.contains("degraded: stream_disconnected, gitforest_stale"));
     }

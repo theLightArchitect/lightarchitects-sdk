@@ -9,6 +9,7 @@
 //! `LightarchitectsNative` backend: persistent subprocess with piped I/O.
 
 pub mod context;
+pub mod eva_identity;
 pub mod routes;
 pub mod voice;
 pub use routes::copilot_chat_handler;

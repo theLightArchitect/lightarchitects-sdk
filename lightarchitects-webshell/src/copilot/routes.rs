@@ -49,9 +49,16 @@ pub async fn copilot_chat_handler(
         return e.into_response();
     }
 
+    // Read EVA identity under a brief read lock — no file I/O on hot path (Phase 1).
+    let identity_text = state.eva_identity.read().await.text().to_owned();
+
     // Assemble the grounded prompt: context prelude prepended to the user message.
     // Passes event payloads verbatim — no silent truncation (§P check 2; northstar.md:491).
-    let prelude = context::assemble_prompt_prelude(&body.recent_events, body.ui_context.as_ref());
+    let prelude = context::assemble_prompt_prelude(
+        &identity_text,
+        &body.recent_events,
+        body.ui_context.as_ref(),
+    );
     let grounded_message: std::borrow::Cow<str> = if prelude.is_empty() {
         std::borrow::Cow::Borrowed(&body.message)
     } else {
