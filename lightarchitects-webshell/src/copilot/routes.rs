@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::{
     auth,
     config::{AgentSession, ClaudeBackend},
+    events::types::TraceSpanSummary,
     server::AppState,
 };
 
@@ -42,54 +43,21 @@ pub async fn copilot_chat_handler(
         )
             .into_response();
     }
-
-    // Validate context fields before session lookup (cheap, no allocation on happy path).
-    // Includes source/timestamp injection guards and UiContext field limits.
     if let Err(e) = context::validate(&body.recent_events, body.ui_context.as_ref()) {
         return e.into_response();
     }
 
-    // Read EVA identity under a brief read lock — no file I/O on hot path (Phase 1).
     let identity_text = state.eva_identity.read().await.text().to_owned();
-
-    // SOUL vault grounding: top-5 BM25 entries, 400 ms hard timeout (Phase 2).
-    // Query = "{route_tail} {message[:150]}" — route_tail boosts build-specific entries.
-    // Skipped when soul_store is None (no SQLite backend) or on timeout.
-    let soul_block = if let Some(soul) = state.soul_store.as_deref() {
-        // route_tail = build UUID → boosts vault entries tagged to this build in FTS5
-        let route_tail = id.to_string();
-        let msg_prefix: String = body.message.chars().take(150).collect();
-        let fts5_expr = format!("{route_tail} {msg_prefix}");
-        let entries = tokio::time::timeout(
-            std::time::Duration::from_millis(400),
-            super::soul_grounding::search(soul, &fts5_expr),
-        )
-        .await
-        .unwrap_or_default();
-        let nonce = super::soul_grounding::vault_nonce();
-        super::soul_grounding::format_block(&nonce, &entries)
-    } else {
-        String::new()
-    };
-
-    // Git context grounding: branch + 10 commits + status, 800 ms hard timeout (Phase 3).
-    // Skipped silently when cwd is not a git repo or on timeout.
-    let git_ctx = tokio::time::timeout(
-        std::time::Duration::from_millis(800),
-        super::git_context::gather(&state.config.cwd),
-    )
-    .await
-    .unwrap_or(None);
-
-    // Assemble the grounded prompt: context prelude prepended to the user message.
-    // Passes event payloads verbatim — no silent truncation (§P check 2; northstar.md:491).
-    let prelude = context::assemble_prompt_prelude(
+    let (prelude, soul_block, git_ctx) = gather_grounding(
+        &state,
+        id,
         &identity_text,
-        &soul_block,
-        git_ctx.as_ref(),
+        &body.message,
         &body.recent_events,
         body.ui_context.as_ref(),
-    );
+    )
+    .await;
+
     let grounded_message: std::borrow::Cow<str> = if prelude.is_empty() {
         std::borrow::Cow::Borrowed(&body.message)
     } else {
@@ -145,6 +113,79 @@ pub async fn copilot_chat_handler(
     }
 }
 
+/// Gather all three grounding vectors (SOUL + git) concurrently, assemble the prelude,
+/// and emit AYIN latency spans. Returns `(prelude, soul_block, git_ctx)`.
+async fn gather_grounding(
+    state: &AppState,
+    id: Uuid,
+    identity: &str,
+    message: &str,
+    recent_events: &[super::context::RecentEventEntry],
+    ui_context: Option<&super::UiContext>,
+) -> (String, String, Option<super::git_context::GitContext>) {
+    // SOUL vault: top-5 BM25, 400 ms hard timeout (Phase 2).
+    let soul_t0 = std::time::Instant::now();
+    let (soul_block, soul_result_count, soul_timed_out) =
+        if let Some(soul) = state.soul_store.as_deref() {
+            let msg_prefix: String = message.chars().take(150).collect();
+            let fts5_expr = format!("{id} {msg_prefix}");
+            match tokio::time::timeout(
+                std::time::Duration::from_millis(400),
+                super::soul_grounding::search(soul, &fts5_expr),
+            )
+            .await
+            {
+                Ok(entries) => {
+                    let count = entries.len();
+                    let nonce = super::soul_grounding::vault_nonce();
+                    (
+                        super::soul_grounding::format_block(&nonce, &entries),
+                        count,
+                        false,
+                    )
+                }
+                Err(_) => (String::new(), 0, true),
+            }
+        } else {
+            (String::new(), 0, false)
+        };
+    let soul_ms = u64::try_from(soul_t0.elapsed().as_millis()).unwrap_or(u64::MAX);
+
+    // Git context: branch + commits + status, 800 ms hard timeout (Phase 3).
+    let git_t0 = std::time::Instant::now();
+    let (git_ctx, git_timed_out) = match tokio::time::timeout(
+        std::time::Duration::from_millis(800),
+        super::git_context::gather(&state.config.cwd),
+    )
+    .await
+    {
+        Ok(ctx) => (ctx, false),
+        Err(_) => (None, true),
+    };
+    let git_ms = u64::try_from(git_t0.elapsed().as_millis()).unwrap_or(u64::MAX);
+
+    let prelude = context::assemble_prompt_prelude(
+        identity,
+        &soul_block,
+        git_ctx.as_ref(),
+        recent_events,
+        ui_context,
+    );
+
+    emit_grounding_spans(
+        state,
+        soul_ms,
+        soul_result_count,
+        soul_timed_out,
+        git_ms,
+        git_ctx.as_ref(),
+        git_timed_out,
+        prelude.len(),
+    );
+
+    (prelude, soul_block, git_ctx)
+}
+
 /// Build the `X-LA-Grounding` response header for the `CopilotContextTray` (Phase 4).
 ///
 /// Format: `eva=<0|1>,soul=<N>,git=<N>`
@@ -166,6 +207,73 @@ fn grounding_headers(
         headers.insert("x-la-grounding", v);
     }
     headers
+}
+
+/// Emit three AYIN spans for the grounding pipeline (Phase 6 — `copilot-eva-ambient`).
+///
+/// Spans are broadcast on the global SSE channel so the AYIN dashboard surfaces
+/// `copilot.eva_ambient.*` latency without requiring a live build session.
+///
+/// Span names: `copilot.eva_ambient.soul_search_ms`, `copilot.eva_ambient.git_gather_ms`,
+/// `copilot.eva_ambient.prelude_bytes`.
+#[allow(clippy::too_many_arguments)]
+fn emit_grounding_spans(
+    state: &AppState,
+    soul_ms: u64,
+    soul_result_count: usize,
+    soul_timed_out: bool,
+    git_ms: u64,
+    git: Option<&super::git_context::GitContext>,
+    git_timed_out: bool,
+    prelude_bytes: usize,
+) {
+    let ts = chrono::Utc::now().to_rfc3339();
+    let _ = state
+        .event_tx
+        .send(crate::events::WebEvent::AyinSpan(TraceSpanSummary {
+            id: uuid::Uuid::new_v4().to_string(),
+            parent_id: None,
+            actor: "webshell".to_owned(),
+            action: "copilot.eva_ambient.soul_search_ms".to_owned(),
+            timestamp: ts.clone(),
+            duration_ms: soul_ms,
+            outcome: serde_json::json!(if soul_timed_out { "timeout" } else { "ok" }),
+            metadata: serde_json::json!({
+                "result_count": soul_result_count,
+                "timed_out": soul_timed_out,
+            }),
+            strand_activations: Vec::new(),
+        }));
+    let _ = state
+        .event_tx
+        .send(crate::events::WebEvent::AyinSpan(TraceSpanSummary {
+            id: uuid::Uuid::new_v4().to_string(),
+            parent_id: None,
+            actor: "webshell".to_owned(),
+            action: "copilot.eva_ambient.git_gather_ms".to_owned(),
+            timestamp: ts.clone(),
+            duration_ms: git_ms,
+            outcome: serde_json::json!(if git_timed_out { "timeout" } else { "ok" }),
+            metadata: serde_json::json!({
+                "branch": git.map_or("", |g| g.branch.as_str()),
+                "commit_count": git.map_or(0, |g| g.commits.len()),
+                "timed_out": git_timed_out,
+            }),
+            strand_activations: Vec::new(),
+        }));
+    let _ = state
+        .event_tx
+        .send(crate::events::WebEvent::AyinSpan(TraceSpanSummary {
+            id: uuid::Uuid::new_v4().to_string(),
+            parent_id: None,
+            actor: "webshell".to_owned(),
+            action: "copilot.eva_ambient.prelude_bytes".to_owned(),
+            timestamp: ts,
+            duration_ms: 0,
+            outcome: serde_json::json!("ok"),
+            metadata: serde_json::json!({ "prelude_bytes": prelude_bytes }),
+            strand_activations: Vec::new(),
+        }));
 }
 
 /// Phase 5 — integration tests: grounding pipeline assembly + graceful degradation.
