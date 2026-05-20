@@ -10,6 +10,7 @@
 //! and the SSE/WebSocket protocol.
 
 pub mod bridge;
+pub mod fleet;
 pub mod permissions;
 pub mod protocol;
 pub mod sse;

@@ -1,0 +1,50 @@
+gate: 3
+codename: agent-teams-fleet
+phase: phase-3-webshell-backend
+dimensions: [Q, S, O, K]
+evaluated_at: "2026-05-19"
+evaluator: "Claude (BUILD orchestrator)"
+verdict: PASS
+
+dimension_results:
+  Q_quality:
+    result: PASS
+    notes: >
+      make quality passes clean: cargo fmt --check + cargo clippy -D warnings + cargo test.
+      1,146 Rust tests + 498 webshell tests + integration tests — all green, 0 failures.
+      Clippy pedantic errors resolved: used_underscore_binding (#[allow] on Drop impl),
+      doc_markdown backticks, needless_continue removed.
+  S_security:
+    result: PASS
+    notes: >
+      All 5 S-invariants verified:
+      S1: No prompt field in any FleetEvent serialization (confirmed by test s1_no_prompt_in_fleet_event_serialization).
+      S2: Both fleet handlers carry _: auth::AuthGuard extractor (compile-time enforced).
+      S3: description sanitized ≤200 chars in FleetTracker (SDK layer, from Phase 2).
+      S4: find_jsonl_for_session HOME-prefix guard in jsonl.rs (from Phase 2).
+      S5: MAX_FLEET_SSE=100 cap enforced via RAII FleetSseGuard (test s5_fleet_sse_cap_enforced).
+      Zero unsafe blocks in Phase 3 deliverables.
+  O_operations:
+    result: PASS
+    notes: >
+      FleetBroadcaster lifecycle: lazy-init under Mutex (TOCTOU-safe), Drop aborts both
+      background tasks. Cold-start resilience: 10×500ms retry for JSONL file (XEA-3).
+      Connection cap (429 + X-Webshell-Reason: fleet-sse-cap) prevents resource exhaustion.
+      Keepalive every 30s prevents proxy timeouts. FleetSseGuard RAII ensures counter
+      always decrements on disconnect.
+  K_knowledge:
+    result: PASS
+    notes: >
+      webshell-api-surface-v1.md bumped to v1.0.11 with §2.21 (fleet SSE) and §2.22
+      (fleet snapshot) fully documented including wire format, S1-S5 invariants, OQ resolutions.
+      §3.10 BuildDetail screen-to-endpoint updated. WebEvent::AgentFleetUpdate added to
+      canary test with updated canonical FE set comment (2026-05-19).
+
+commits:
+  - sha: 0de374a
+    desc: "Phase 3: webshell backend fleet SSE routes + WebEvent wiring"
+  - sha: 5469519
+    desc: "docs: webshell-api-surface v1.0.11 — add §2.21-2.22 fleet endpoints"
+
+test_count_delta: "+7 fleet route unit tests (S5 guard decrement, S5 cap enforcement, event_name coverage, S2 AuthGuard, 4 FleetEvent type-tag tests in agent/fleet.rs)"
+next_phase: phase-4-fleet-panel-svelte

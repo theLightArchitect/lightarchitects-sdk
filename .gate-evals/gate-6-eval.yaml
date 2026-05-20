@@ -1,0 +1,95 @@
+gate: 6
+codename: agent-teams-fleet
+phase: pre-merge
+dimensions: [D, K, C, A, S, Q]
+evaluated_at: "2026-05-19"
+evaluator: "Claude (BUILD orchestrator)"
+verdict: PASS
+
+dimension_results:
+  D_documentation:
+    result: PASS
+    notes: >
+      Public Rust items in fleet module documented:
+      FleetSpan (/// comment), FleetStatus (/// "Lifecycle state of a fleet agent."),
+      ExitPath (/// "How an agent exited."), FleetTracker (/// comment in tracker.rs),
+      FleetBroadcaster (/// comment). CHANGELOG.md entry written under [Unreleased]
+      documenting all four layers of the feature (SDK / webshell / UI / E2E).
+      webshell-api-surface-v1.md §2.21-2.22 added in Phase 3 commit (5469519).
+  K_knowledge:
+    result: PASS
+    notes: >
+      5 gate eval YAMLs committed (.gate-evals/gate-1 through gate-5).
+      fleet.spec.ts inline comments document mock pattern, sseSnapshot helper
+      rationale, and BUILD_VIEW_PATTERN fix context. Gate evals document
+      two Phase 5 root-cause fixes (BUILD_VIEW_PATTERN + Playwright strict mode).
+  C_canon:
+    result: PASS
+    notes: >
+      No .unwrap()/.expect() in production code (verified grep — all instances are
+      in #[cfg(test)] modules). No panic!() in production paths. No nested worktrees
+      or feat/ branches created off this feature branch. Commit history: 13 commits
+      with conventional-style messages. No --no-verify or force-push in history.
+  A_architecture:
+    result: PASS
+    notes: >
+      Branch is 13 commits ahead, 0 behind origin/main (no rebase needed — branch
+      forked cleanly and main has not moved). git merge-tree reports 0 conflicts.
+      Post-rebase build state: cargo fmt + clippy + tests all pass (verified via
+      pre-commit hook on latest commit dd842eb). Fleet module follows SDK crate
+      conventions: pub struct + pub enum in span.rs, impl block in tracker.rs,
+      mod declarations in lib.rs. {#if} mount/unmount pattern used in FleetPanel
+      (not CSS hide) — SSE cleanup fires correctly on tab switch.
+  S_security:
+    result: PASS
+    notes: >
+      No production unwrap()/expect() (all in #[cfg(test)] modules past line 129
+      in span.rs and line 191 in tracker.rs). Webshell diff unwrap() instances are
+      in SSE test helpers and serialize/deserialize test cases. Fleet SSE endpoint
+      uses existing AuthGuard + SseGuard middleware — no auth bypass. No new
+      dependencies added (dashmap already in workspace). No secrets in diff.
+  Q_quality:
+    result: PASS
+    notes: >
+      cargo fmt --check: PASS. cargo clippy -- -D warnings: PASS (0 warnings).
+      cargo test -p lightarchitects: 93 tests pass (0 failed). pnpm test:run:
+      593 tests pass (33 test files, 0 regressions). Cyclomatic complexity within
+      bounds — fleet tracker functions are short and focused. 7/7 Playwright E2E
+      pass (F1-F7, 14.7s). svelte-check: 0 errors (16 pre-existing warnings in
+      PanelRoot/PanelHeader not introduced by this build).
+
+merge_checks:
+  I1_rebased_on_main: PASS  # 0 commits behind origin/main
+  I2_no_merge_conflicts: PASS  # git merge-tree: 0 conflicts
+  I3_post_rebase_build: PASS  # pre-commit hook green on latest commit
+  N1_northstar_lineage: PASS  # plan northstar_lineage block present
+  N2_pillar_advancement: PASS  # Pillar 1 (FleetPanel zero-terminal UX) + Pillar 2 (fleet tree in orchestrator)
+  S4_no_verify_bypass: PASS   # no --no-verify in git log
+  V1_e2e_pass: PASS           # fleet.spec.ts 7/7 pass
+
+commits:
+  - sha: 841175f
+    desc: "Phase 6: close-out — CHANGELOG entry"
+  - sha: dd842eb
+    desc: "gate: Phase 5 eval [O+P+T+K] PASS"
+  - sha: 4fd654e
+    desc: "Phase 5: Fleet E2E Playwright tests (F1-F7 all pass)"
+  - sha: 4f89e88
+    desc: "gate: Phase 4 eval [Q+T+K] PASS"
+  - sha: 2fd3d7c
+    desc: "Phase 4: FleetPanel.svelte + FLEET tab in BuildDetail"
+  - sha: a88db4d
+    desc: "gate: Phase 3 eval [Q+S+O+K] PASS + backfill gate 1-2 evals"
+  - sha: 5469519
+    desc: "docs: webshell-api-surface v1.0.11 — add §2.21-2.22 fleet endpoints"
+  - sha: 0de374a
+    desc: "Phase 3: webshell backend fleet SSE routes + WebEvent wiring"
+  - earlier: "Phase 1-2 commits (research, SDK fleet module, frontend types)"
+
+overall_test_counts:
+  rust_unit: 93
+  vitest: 593
+  playwright_e2e: 7
+  total: 693
+
+status: READY_TO_MERGE

@@ -52,6 +52,7 @@ use crate::{
 
 pub mod code_routes;
 pub mod exec_routes;
+pub mod fleet_routes;
 pub mod git_routes;
 pub mod roadmap;
 
@@ -597,6 +598,15 @@ pub fn build_app(state: AppState) -> Router {
             "/api/builds/{id}/agent/ws",
             get(agent::ws::agent_ws_handler),
         )
+        // ── Fleet SSE + snapshot (agent-teams-fleet Phase 3) ────────────────
+        .route(
+            "/api/builds/{id}/fleet",
+            get(fleet_routes::fleet_sse_handler),
+        )
+        .route(
+            "/api/builds/{id}/fleet/snapshot",
+            get(fleet_routes::fleet_snapshot_handler),
+        )
         // ── Northstar supervisor (copilot-supervised-orchestration) ──────────
         .route(
             "/api/builds/{id}/supervisor/events",
@@ -698,6 +708,7 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/sitrep", get(real_data::get_sitrep))
         .route("/api/conductor/status", get(real_data::get_conductor_status))
         .route("/api/arena/status", get(real_data::get_arena_status))
+        .route("/api/mcp-servers", get(real_data::list_mcp_servers))
         .route(
             "/api/builds/{id}/findings",
             get(real_data::list_findings),

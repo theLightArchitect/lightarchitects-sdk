@@ -1,0 +1,65 @@
+gate: 5
+codename: agent-teams-fleet
+phase: phase-5-integration-e2e
+dimensions: [O, P, T, K]
+evaluated_at: "2026-05-19"
+evaluator: "Claude (BUILD orchestrator)"
+verdict: PASS
+
+dimension_results:
+  O_operations:
+    result: PASS
+    notes: >
+      Playwright test suite runs headless: false, serial mode, HAR recorded
+      to test-results/fleet-e2e.har. Server lifecycle managed by beforeAll
+      (no teardown issues). Route guards (beforeAll + per-test unroute)
+      follow e5.spec.ts pattern — no leaked route handlers between tests.
+      webshell binary rebuilt from worktree dist (rust-embed bakes UI at
+      compile time; confirmed via pnpm build + make deploy-fast + kill/restart).
+  P_performance:
+    result: PASS
+    notes: >
+      All 7 E2E tests completed in 14.7s total (Playwright wall clock).
+      F7 (REST snapshot fetch) completed in 66ms. No timeout failures
+      (default expect.timeout=10000ms). navTo helper uses 1200ms / 2000ms
+      extraWait for hash navigation + async store settling — conservative
+      but within budget.
+  T_testing:
+    result: PASS
+    notes: >
+      7/7 E2E Playwright tests pass (F1–F7):
+        F1 — FLEET tab appears in BuildDetail tab bar          ✓ 1.3s
+        F2 — navigating to fleet route renders FleetPanel      ✓ 2.8s
+        F3 — SSE snapshot delivers agent tree to FleetPanel    ✓ 1.3s
+        F4 — running agent shows elapsed time and Running badge ✓ 1.3s
+        F5 — completed agent shows Done badge (not Running)     ✓ 2.1s
+        F6 — child agent rendered indented under parent         ✓ 1.3s
+        F7 — GET /api/builds/{id}/fleet/snapshot returns JSON   ✓ 66ms
+      593 vitest tests pass (33 test files) — zero regression.
+      Canon XXVII suites: unit ✓ | integration ✓ | E2E ✓ (new, Phase 5).
+      Property/regression/smoke suites: not applicable for this UI phase.
+  K_knowledge:
+    result: PASS
+    notes: >
+      fleet.spec.ts documents mock pattern (mirrors e5.spec.ts), inline
+      comments on BUILD_VIEW_PATTERN fix rationale, sseSnapshot helper,
+      and F7 graceful skip-on-404 pattern. Phase 5 closes the E2E gap
+      flagged in gate-4-eval.yaml ("Phase 5 will add E2E Playwright tests").
+
+root_cause_notes: >
+  Two implementation bugs surfaced during E2E authoring and fixed in this phase:
+  (1) routes.ts BUILD_VIEW_PATTERN missing 'fleet' — /builds/:id/fleet fell
+  through to Ops screen. Fixed by adding fleet to BuildViewMode + regex.
+  (2) Playwright strict mode on getByText('Running') — FleetPanel header
+  "1 running · 1 total" contains lowercase "running" triggering multi-match.
+  Fixed by { exact: true } on all status badge locators.
+  Stale binary (rust-embed bakes dist at compile time) required full
+  pnpm build + make deploy-fast cycle to pick up routes.ts fix.
+
+commits:
+  - sha: 4fd654e
+    desc: "Phase 5: Fleet E2E Playwright tests (F1-F7 all pass)"
+
+test_count_delta: "+7 new E2E Playwright (F1-F7 fleet golden path)"
+vitest_count: 593
+next_phase: phase-6-close-out

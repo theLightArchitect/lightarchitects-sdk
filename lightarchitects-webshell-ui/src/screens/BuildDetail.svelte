@@ -14,13 +14,15 @@
   import ProposalCard from '$lib/../components/ProposalCard.svelte';
   import AutonomousRun from '$lib/../components/views/AutonomousRun.svelte';
   import DecisionLog   from '$lib/../components/views/DecisionLog.svelte';
+  import FleetPanel    from '$lib/../components/FleetPanel.svelte';
   import type { Phase } from '$lib/WavePipelineView.contract';
   import type { SupervisorState } from '$lib/types';
 
-  // 'autonomous' + 'decisions' are the ironclaw-spine Phase 6 tabs.
-  type ViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms' | 'pipeline' | 'autonomous' | 'decisions';
+  // 'autonomous' + 'decisions' = ironclaw-spine Phase 6 tabs.
+  // 'fleet' = agent-teams-fleet live agent tree view.
+  type ViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms' | 'pipeline' | 'autonomous' | 'decisions' | 'fleet';
 
-  const VIEW_MODES: ViewMode[] = ['kanban', 'list', 'operator', 'manifest', 'plan', 'comms', 'pipeline', 'autonomous', 'decisions'];
+  const VIEW_MODES: ViewMode[] = ['kanban', 'list', 'operator', 'manifest', 'plan', 'comms', 'pipeline', 'autonomous', 'decisions', 'fleet'];
 
   let viewMode = $state<ViewMode>('kanban');
   let build = $derived($activeBuild);
@@ -82,6 +84,7 @@
     { key: 'pipeline',   label: 'PIPELINE',   desc: 'Wave pipeline — phase/wave/task timeline with gate verdicts' },
     { key: 'autonomous', label: 'AUTO RUN',   desc: 'Live autonomous execution — slot occupancy, conductor ticks, merge/fix agent events' },
     { key: 'decisions',  label: 'DECISIONS',  desc: 'HMAC-chained conductor decision log — L1 architectural through L4 escalation' },
+    { key: 'fleet',      label: 'FLEET',      desc: 'Live agent tree — spawned agents, status, elapsed time' },
   ];
 
   // Stub phases for WavePipelineView — populated from manifest in Phase 7.
@@ -287,6 +290,8 @@
           <AutonomousRun buildId={build.id} />
         {:else if viewMode === 'decisions'}
           <DecisionLog buildId={build.id} />
+        {:else if viewMode === 'fleet'}
+          <FleetPanel buildId={build.id} />
         {:else}
           <PlanView />
         {/if}

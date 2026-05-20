@@ -1,0 +1,50 @@
+gate: 1
+codename: agent-teams-fleet
+phase: phase-1-research
+dimensions: [A, R, K]
+evaluated_at: "2026-05-19"
+evaluator: "Claude (BUILD orchestrator) + Kevin (HITL approval)"
+verdict: PASS
+
+dimension_results:
+  A_architecture:
+    result: PASS
+    notes: >
+      API contract is architecturally sound. Two-endpoint design (SSE stream + snapshot)
+      follows existing agent/sse.rs SseGuard+AtomicUsize pattern exactly. No circular deps.
+      SDK fleet/ module has no dep on webshell (confirmed by file-function map). FleetNode
+      schema is clean — no prompt field, 200-char description invariant, normative S1-S5.
+  R_research:
+    result: PASS
+    notes: >
+      Assumption A2 confirmed: ≥3 live JSONL record sets verified. Field allowlist
+      {description, subagent_type, run_in_background, isolation} confirmed present.
+      prompt field confirmed absent from all FleetNode representations.
+      parent_agent_id inference approach confirmed viable (context tracking in FleetTracker).
+  K_knowledge:
+    result: PASS
+    notes: >
+      Five research docs committed (fleet-jsonl-format.md, fleet-threat-model.md,
+      fleet-api-contract.md, fleet-data-flow.md, fleet-component.md). Mermaid diagrams
+      created as design inputs (Canon XLI Diagram-First). Threat model covers 6 vectors.
+
+open_questions_resolved:
+  OQ1_parent_agent_id:
+    resolution: "FleetTracker active-agent context inference"
+    authority: "Kevin HITL + Northstar P1 alignment"
+  OQ2_worktree_path:
+    resolution: "null for V1 — worktree_path always None; defer ChildAgentForked.cwd wiring to post-ironclaw"
+    authority: "Kevin HITL + source analysis (ChildAgentForked.cwd exists but is separate event bus)"
+  OQ3_watchdog_timeout:
+    resolution: "30 minutes"
+    authority: "Kevin HITL"
+  OQ4_turns:
+    resolution: "0 always for V1 — not reliably countable from parent JSONL; SCR1-F2 pre-approved this"
+    authority: "Kevin HITL + plan SCR1-F2"
+  OQ5_fleet_tracker_lifecycle:
+    resolution: "Lazy init at first agent spawn (XEA-3 cold-start spec)"
+    authority: "Kevin HITL + plan XEA-3"
+
+commit_sha: e11d461
+gate_receipts_path: .gate-evals/gate-1-eval.yaml
+next_phase: phase-2-sdk-fleet-module

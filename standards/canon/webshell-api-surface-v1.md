@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.13"  # bumped 2026-05-20: §2.4b EVA ambient grounding (identity/vault/git) + X-LA-Grounding header — copilot-eva-ambient Phase 5
+version: "1.0.14"  # bumped 2026-05-20: §2.4b EVA ambient grounding (copilot-eva-ambient Phase 5) + §2.23-2.24 fleet SSE/snapshot (agent-teams-fleet Phase 3)
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
@@ -874,6 +874,76 @@ Static HTML artifact serving route introduced by `webshell-roadmap-rendering`. R
 
 ---
 
+### §2.23 Fleet SSE Stream (2026-05-19 ADDITION — agent-teams-fleet Phase 3)
+
+Per-build SSE stream for live agent fleet state. Sends a snapshot on connect, then `agent_spawned`, `agent_progress` (500 ms), and `agent_completed` events as the JSONL tailer detects changes.
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/api/builds/{id}/fleet` | `Authorization: Bearer <token>` | Subscribe to per-build fleet events |
+
+**Response**: `200 OK`, `Content-Type: text/event-stream`. First event is always `event: snapshot`. Subsequent events: `event: agent_spawned`, `event: agent_progress`, `event: agent_completed`, `event: lag` (channel overflow). Keepalive: `data: keep-alive` every 30 s.
+
+**Errors**:
+
+| Code | Condition |
+|------|-----------|
+| `401` | Missing/invalid bearer token |
+| `404` | Unknown `build_id` |
+| `429` + `X-Webshell-Reason: fleet-sse-cap` | Process-wide cap of 100 concurrent fleet SSE streams exceeded |
+
+**Event wire format** (all variants carry `"type"` discriminant):
+```json
+{ "type": "snapshot",         "nodes": [...], "captured_at": "2026-05-19T00:00:00Z" }
+{ "type": "agent_spawned",    "node": { "agent_id": "...", "status": "running", ... } }
+{ "type": "agent_progress",   "agent_id": "...", "elapsed_ms": 1500 }
+{ "type": "agent_completed",  "agent_id": "...", "exit_path": "completed", "turns": 0, "duration_ms": 5000 }
+```
+
+**Security invariants** (S1–S5, from `fleet-api-contract.md`):
+- S1: No `prompt` field ever appears in any fleet event payload.
+- S2: Both endpoints require `AuthGuard` (compile-time enforced).
+- S3: `description` is sanitised to ≤200 chars, no control characters.
+- S4: `find_jsonl_for_session` enforces HOME-prefix path guard (no traversal).
+- S5: Fleet SSE connections are capped at 100 per process via `FleetSseGuard` RAII.
+
+---
+
+### §2.24 Fleet Snapshot (2026-05-19 ADDITION — agent-teams-fleet Phase 3)
+
+Point-in-time snapshot of the current fleet state for a build. Useful for initial page load without establishing a long-lived SSE connection.
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/api/builds/{id}/fleet/snapshot` | `Authorization: Bearer <token>` | Fetch current fleet state |
+
+**Response** (`200 OK`):
+```json
+{
+  "nodes": [
+    {
+      "agent_id": "abc123",
+      "agent_type": "engineer",
+      "description": "Build the fleet module",
+      "parent_agent_id": null,
+      "worktree_path": null,
+      "run_in_background": false,
+      "status": "running",
+      "turns": 0,
+      "elapsed_ms": 2500,
+      "exit_path": null
+    }
+  ],
+  "captured_at": "2026-05-19T00:00:00Z"
+}
+```
+
+**Errors**: `401` on invalid bearer, `404` on unknown `build_id`.
+
+**Note**: `worktree_path` is always `null` in V1 (OQ2 resolution). `turns` is always `0` in V1 (OQ4 resolution). `parent_agent_id` is inferred from the active-agent context stack at spawn time (OQ1 resolution).
+
+---
+
 ## Part III — Frontend Route Catalogue
 
 ### §3.1 Router Implementation
@@ -1071,7 +1141,7 @@ Which backend sections and route prefixes serve each screen. Use this to find re
 | `Ops` | §2.1 Auth & Health, §2.3 Events, §2.6 Workspaces (conductor tasks), §2.12 Misc, §2.14 Preflight, §2.17-2.20 GitForest | `/api/health`, `/api/events/global`, `/api/conductor/status`, `/api/polytopes`, `/api/preflight`, `/api/gitforest/*` |
 | `Dispatch` | §2.7 Dispatch Sub-Router, §2.3 Events | `/api/dispatch/*`, `/api/events` |
 | `Builds` | §2.4 Builds Core | `/api/builds` |
-| `BuildDetail` | §2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor, §2.17-2.19 GitForest | `/api/builds/{id}`, `/api/builds/{id}/terminal/ws`, `/api/builds/{id}/events`, `/api/builds/{id}/supervisor/state`, `/api/builds/{id}/supervisor/events`, `/api/builds/{id}/supervisor/acknowledge`, `/api/gitforest/*` |
+| `BuildDetail` | §2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor, §2.17-2.19 GitForest, §2.21-2.22 Fleet | `/api/builds/{id}`, `/api/builds/{id}/terminal/ws`, `/api/builds/{id}/events`, `/api/builds/{id}/supervisor/state`, `/api/builds/{id}/supervisor/events`, `/api/builds/{id}/supervisor/acknowledge`, `/api/gitforest/*`, `/api/builds/{id}/fleet`, `/api/builds/{id}/fleet/snapshot` |
 | `Helix3D` (inline) | §2.15 Helix Node Snapshot | `/api/helix/nodes` |
 | `Intake` | §2.4 Builds Core, §2.6 Workspaces | `/api/builds/plan*`, `/api/builds` |
 | `Helix` | §2.5 SOUL Vault | `/api/soul/*` |
