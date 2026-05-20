@@ -8,13 +8,14 @@
 //!
 //! `LightarchitectsNative` backend: persistent subprocess with piped I/O.
 
+pub mod context;
 pub mod routes;
 pub mod voice;
 pub use routes::copilot_chat_handler;
 pub use voice::copilot_voice_handler;
 
 use secrecy::{ExposeSecret, SecretString};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, Lines},
@@ -256,10 +257,45 @@ pub fn augmented_path() -> String {
 }
 
 /// JSON body for `POST /api/builds/:id/copilot`.
+///
+/// The `recent_events` and `ui_context` fields are optional for backwards
+/// compatibility — older clients sending `{"message":"..."}` only continue to
+/// work unchanged (§R4 backwards-compat contract).
 #[derive(Debug, Deserialize)]
 pub struct CopilotRequest {
     /// User message text (may include injected build context from the frontend).
     pub message: String,
+    /// Last N events from `GlobalEventStore` captured by the frontend at submit
+    /// time. Grounds the copilot prompt in recent activity (Northstar §P check 1;
+    /// `northstar.md:490`). Frontend caps at 50; server validates ≤100.
+    #[serde(default)]
+    pub recent_events: Vec<context::RecentEventEntry>,
+    /// Operator's current UI state at submit time (route, selection, view mode).
+    ///
+    /// Combined with `recent_events` to produce the `<ui_context>` prelude block
+    /// (Northstar §P check 1 + §C check 9; `northstar.md:490, :261`).
+    pub ui_context: Option<UiContext>,
+}
+
+/// Current UI state snapshot attached to a copilot turn.
+///
+/// Captured by the frontend at submit time; embedded in the prompt prelude via
+/// [`context::assemble_prompt_prelude`]. Satisfies Northstar §P check 1
+/// (typed context schema; `northstar.md:490`).
+#[derive(Debug, Deserialize, Serialize)]
+pub struct UiContext {
+    /// Current browser route (URL pathname, e.g. `"/builds/abc"`).
+    pub route: String,
+    /// Selected item identifier or text within the current screen, if any.
+    pub selection: Option<String>,
+    /// Active view mode within the current screen (e.g. `"activity"`, `"files"`).
+    pub view: Option<String>,
+    /// Degradation codes appended by the frontend when context retrieval was
+    /// unhealthy at submit time (e.g. `["stream_disconnected_22s"]`).
+    /// Surfaced in the `<ui_context>` prelude so the model knows context may
+    /// be incomplete.
+    #[serde(default)]
+    pub degraded: Vec<String>,
 }
 
 /// Per-session agent state held behind `tokio::sync::Mutex<Option<CopilotProcess>>`.
@@ -1717,5 +1753,19 @@ mod tests {
             let result = resolve_binary_with_home("no-such-tool", home);
             assert_eq!(result, "no-such-tool");
         }
+    }
+
+    /// Backwards-compat: old clients send `{"message":"..."}` only — both new
+    /// context fields must be absent/empty without a parse error (§R4).
+    #[test]
+    fn backwards_compat_missing_fields() {
+        let json = r#"{"message": "what just happened?"}"#;
+        let req: CopilotRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.message, "what just happened?");
+        assert!(
+            req.recent_events.is_empty(),
+            "recent_events must default to empty vec"
+        );
+        assert!(req.ui_context.is_none(), "ui_context must default to None");
     }
 }
