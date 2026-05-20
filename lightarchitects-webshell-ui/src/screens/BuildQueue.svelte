@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { builds, buildStats, currentBuildId, projectGroups } from '$lib/stores';
+  import { builds, buildStats, currentBuildId, projectGroups, staleBuilds } from '$lib/stores';
+  import { onMount } from 'svelte';
   import { selectedProject } from '$lib/project-filter';
   import { SIBLING_COLORS, getMetaSkillPolytope, getMetaSkillColor } from '$lib/design-tokens';
   import { downloadRoadmap } from '$lib/roadmap-export';
@@ -17,11 +18,42 @@
   // View mode
   let viewMode = $state<'list' | 'card'>('card');
 
-  // Status filter — null = show all
+  // Status filter — null = show all. 'stale' is a synthetic sentinel (not a build status value).
   let statusFilter = $state<string | null>(null);
 
-  // Project filter + optional status filter
+  // URL filter param → internal statusFilter key
+  const FILTER_MAP: Record<string, string> = {
+    active: 'in_progress',
+    gates:  'in_progress',  // no build-status equivalent; maps to active
+    stale:  'stale',
+  };
+
+  // Read ?filter= from hash URL on mount; set statusFilter if recognised.
+  onMount(() => {
+    const hash = window.location.hash.slice(1);
+    const qIdx = hash.indexOf('?');
+    if (qIdx !== -1) {
+      const param = new URLSearchParams(hash.slice(qIdx + 1)).get('filter');
+      if (param && param in FILTER_MAP) {
+        statusFilter = FILTER_MAP[param] ?? null;
+      }
+    }
+  });
+
+  // Project filter + optional status filter (stale is handled via staleBuilds store).
   let visibleGroups = $derived.by(() => {
+    if (statusFilter === 'stale') {
+      // Stale builds: wrap each as a single-plan ProjectGroup for card rendering
+      return $staleBuilds.map(b => ({
+        id: b.id,
+        name: b.id,
+        path: b.id,
+        plans: [b],
+        planCount: 1,
+        activePlanCount: 1,
+        progress: 0,
+      }));
+    }
     let groups = $selectedProject
       ? $projectGroups.filter(g => g.path === $selectedProject)
       : $projectGroups;
@@ -239,34 +271,52 @@
 
   <!-- Build list/cards -->
   <div class="flex-1 overflow-y-auto p-6">
-    {#if $builds.length === 0}
+    {#if visibleGroups.length === 0}
+      {@const filterMsg = statusFilter === 'in_progress'
+        ? { headline: 'No active builds.', sub: 'All builds are queued, completed, or failed.' }
+        : statusFilter === 'stale'
+          ? { headline: 'No stale builds — squad is responsive.', sub: 'All active builds have recent activity.' }
+          : statusFilter === 'queued'
+            ? { headline: 'Nothing queued.', sub: null }
+            : statusFilter === 'completed'
+              ? { headline: 'No completed builds yet.', sub: null }
+              : statusFilter === 'failed'
+                ? { headline: 'No failed builds — all clear.', sub: null }
+                : { headline: 'No builds in flight.', sub: 'The squad is idle. Describe a task below or start the intake form to get agents moving.' }}
       <div class="flex flex-col items-center justify-center h-full gap-5 text-center">
         <div class="space-y-2 max-w-md">
-          <p class="text-lg text-[var(--la-text-label)]">No builds in flight.</p>
-          <p class="text-sm text-[var(--la-text-dim)] leading-snug">
-            The squad is idle. Describe a task below or start the intake form to get agents moving.
-          </p>
+          <p class="text-lg text-[var(--la-text-label)]">{filterMsg.headline}</p>
+          {#if filterMsg.sub}
+            <p class="text-sm text-[var(--la-text-dim)] leading-snug">{filterMsg.sub}</p>
+          {/if}
         </div>
-        <!-- Inline quick-dispatch: navigates to Run screen with task pre-filled -->
-        <div class="w-full max-w-sm">
-          <DispatchCLI
-            inline
-            focusOnMount
-            placeholder="describe task, ↵ to dispatch"
-            onDispatch={quickDispatch}
-          />
-        </div>
-        <div class="flex items-center gap-3">
+        {#if !statusFilter}
+          <!-- Inline quick-dispatch: navigates to Run screen with task pre-filled -->
+          <div class="w-full max-w-sm">
+            <DispatchCLI
+              inline
+              focusOnMount
+              placeholder="describe task, ↵ to dispatch"
+              onDispatch={quickDispatch}
+            />
+          </div>
+          <div class="flex items-center gap-3">
+            <button
+              class="px-4 py-2 bg-[var(--la-focus-ring)] text-[var(--la-bg-frame)] text-sm font-semibold rounded hover:bg-[var(--la-agent-quality)] hover:shadow-[0_0_18px_rgba(255,215,0,0.5)] transition-all"
+              onclick={newBuild}
+            >
+              + New Build
+            </button>
+            <span class="text-[10px] text-[var(--la-text-dim)]">
+              or <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">⌘K</kbd> → <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">/build</kbd>
+            </span>
+          </div>
+        {:else}
           <button
-            class="px-4 py-2 bg-[var(--la-focus-ring)] text-[var(--la-bg-frame)] text-sm font-semibold rounded hover:bg-[var(--la-agent-quality)] hover:shadow-[0_0_18px_rgba(255,215,0,0.5)] transition-all"
-            onclick={newBuild}
-          >
-            + New Build
-          </button>
-          <span class="text-[10px] text-[var(--la-text-dim)]">
-            or <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">⌘K</kbd> → <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">/build</kbd>
-          </span>
-        </div>
+            class="text-xs text-[var(--la-text-mute)] hover:text-[var(--la-text-base)] transition-colors"
+            onclick={() => { statusFilter = null; window.location.hash = '/builds'; }}
+          >← show all builds</button>
+        {/if}
       </div>
     {:else if viewMode === 'card'}
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

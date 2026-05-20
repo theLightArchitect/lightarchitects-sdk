@@ -137,6 +137,24 @@ export const activeHelixNode = writable<{
 const ACTIVITY_WINDOW = 500;
 export const activityFeed = writable<import('./types').ActivityEntry[]>([]);
 
+// --- Derived: stale builds (in_progress with no copilot activity in last 10 min) ---
+// Single source of truth — imported by StatsTopbar (count) and BuildQueue (list).
+export const staleBuilds = derived(
+  [builds, activityFeed],
+  ([$builds, $activityFeed]: [import('./types').Build[], import('./types').ActivityEntry[]]) =>
+    $builds.filter((b) => {
+      if (b.status !== 'in_progress') return false;
+      const lastActivity = $activityFeed.findLast((e) => {
+        if (e.source !== 'copilot') return false;
+        const ev = (e as { source: 'copilot'; event: import('./types').CopilotActivityEvent }).event;
+        return 'build_id' in ev && (ev as unknown as Record<string, unknown>).build_id === b.id;
+      });
+      if (!lastActivity) return true;
+      const ts = (lastActivity as { source: 'copilot'; event: import('./types').CopilotActivityEvent }).event.timestamp;
+      return Date.now() - new Date(ts).getTime() > 10 * 60_000;
+    })
+);
+
 /** Whether the copilot is actively processing (streaming events). */
 export const activityActive = writable<boolean>(false);
 

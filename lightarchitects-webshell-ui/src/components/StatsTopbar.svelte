@@ -8,7 +8,7 @@
    * Counters: Builds · Active · Agents · Gates · HITL · Stale
    */
 
-  import { builds, activityFeed, slotAssignments } from '$lib/stores';
+  import { builds, activityFeed, slotAssignments, staleBuilds } from '$lib/stores';
   import type { BuildStatus } from '$lib/types';
   import { navigate } from '$lib/routes';
 
@@ -40,20 +40,8 @@
     $builds.filter((b): boolean => (b.status as BuildStatus) === 'paused').length,
   );
 
-  // Stale = builds in_progress with no activity feed event in the last 10 minutes.
-  let staleBuilds = $derived(
-    $builds.filter((b): boolean => {
-      if ((b.status as BuildStatus) !== 'in_progress') return false;
-      const lastActivity = $activityFeed.findLast(e => {
-        if (e.source !== 'copilot') return false;
-        const ev = (e as { source: 'copilot'; event: import('$lib/types').CopilotActivityEvent }).event;
-        return 'build_id' in ev && (ev as unknown as Record<string, unknown>).build_id === b.id;
-      });
-      if (!lastActivity) return true;
-      const ts = (lastActivity as { source: 'copilot'; event: import('$lib/types').CopilotActivityEvent }).event.timestamp;
-      return Date.now() - new Date(ts).getTime() > 10 * 60_000;
-    }).length,
-  );
+  // Stale count — sourced from the shared staleBuilds store (single source of truth).
+  let staleCount = $derived($staleBuilds.length);
 </script>
 
 <div class="stats-topbar" role="status" aria-label="Build fleet status">
@@ -87,8 +75,8 @@
   </button>
   <span class="stat-sep" aria-hidden="true">·</span>
 
-  <button class="stat stat-btn" class:stat-warn={staleBuilds > 0} onclick={() => navigate('/ops')} title="Stale / idle builds">
-    <span class="stat-val">{staleBuilds}</span>
+  <button class="stat stat-btn" class:stat-warn={staleCount > 0} onclick={() => navigate('/builds?filter=stale')} title="Stale / idle builds">
+    <span class="stat-val">{staleCount}</span>
     <span class="stat-label">Idle</span>
   </button>
 </div>
