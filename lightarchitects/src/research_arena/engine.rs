@@ -10,9 +10,9 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::arena::config::ModelConfig;
-use crate::arena::exercises::Exercise;
-use crate::arena::prompts::{self, AssembledPrompt, PromptConfig};
+use crate::research_arena::config::ModelConfig;
+use crate::research_arena::exercises::Exercise;
+use crate::research_arena::prompts::{self, AssembledPrompt, PromptConfig};
 
 /// Errors from the execution engine.
 #[derive(Debug, thiserror::Error)]
@@ -361,7 +361,7 @@ mod tests {
             prompt: AssembledPrompt {
                 system: "sys".into(),
                 user: "usr".into(),
-                objective: crate::arena::config::OutputFormat::Sft,
+                objective: crate::research_arena::config::OutputFormat::Sft,
             },
             model_output: "output".into(),
             reasoning_content: None,

@@ -11,8 +11,8 @@ use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::arena::config::{Difficulty, ExerciseType};
-use crate::arena::discovery::ToolRegistry;
+use crate::research_arena::config::{Difficulty, ExerciseType};
+use crate::research_arena::discovery::ToolRegistry;
 
 /// A single training exercise generated from tool schemas.
 #[derive(Debug, Clone, Serialize, Deserialize)]

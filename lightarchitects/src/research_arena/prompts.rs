@@ -7,8 +7,8 @@
 use crate::core::action::ToolInfo;
 use serde::{Deserialize, Serialize};
 
-use crate::arena::config::OutputFormat;
-use crate::arena::exercises::Exercise;
+use crate::research_arena::config::OutputFormat;
+use crate::research_arena::exercises::Exercise;
 
 /// A fully assembled prompt ready to send to the model.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -178,8 +178,8 @@ mod tests {
     }
 
     fn test_exercise() -> Exercise {
-        use crate::arena::config::{Difficulty, ExerciseType};
-        use crate::arena::exercises::{ExpectedAnswer, ExpectedToolCall};
+        use crate::research_arena::config::{Difficulty, ExerciseType};
+        use crate::research_arena::exercises::{ExpectedAnswer, ExpectedToolCall};
 
         Exercise {
             id: "test-1".to_owned(),

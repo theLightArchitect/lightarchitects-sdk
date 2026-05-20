@@ -4,7 +4,7 @@
 //! the MCP initialize handshake, calls `tools/list` with pagination support,
 //! and populates a [`ToolRegistry`] with discovered tool schemas.
 //!
-//! [`ToolRegistry`]: lightarchitects::arena::discovery::ToolRegistry
+//! [`ToolRegistry`]: lightarchitects::research_arena::discovery::ToolRegistry
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -17,7 +17,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::Mutex;
 
-use crate::arena::config::{ServerConfig, TransportType};
+use crate::research_arena::config::{ServerConfig, TransportType};
 
 /// Maximum bytes read from a single stdio line (8 MiB).
 /// Prevents a rogue MCP server from consuming unbounded memory.

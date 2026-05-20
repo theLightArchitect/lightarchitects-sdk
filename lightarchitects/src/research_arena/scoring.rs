@@ -105,8 +105,8 @@ pub struct RewardBreakdown {
 
 use std::collections::{HashMap, HashSet};
 
-use crate::arena::engine::{ToolCallRecord, Trace};
-use crate::arena::exercises::{Exercise, ExpectedToolCall};
+use crate::research_arena::engine::{ToolCallRecord, Trace};
+use crate::research_arena::exercises::{Exercise, ExpectedToolCall};
 
 /// Score a trace against its exercise's expected answer.
 ///
@@ -538,7 +538,7 @@ fn default_hallucination() -> f64 {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use crate::arena::engine::ToolCallResult;
+    use crate::research_arena::engine::ToolCallResult;
 
     #[test]
     fn default_weights_sum_to_one() {
