@@ -63,6 +63,7 @@
     PullRequest:   () => import('./screens/PullRequest.svelte'),
     Architecture:  () => import('./screens/Architecture.svelte'),
     Roadmap:       () => import('./lib/components/RoadmapPanel.svelte'),
+    Tools:         () => import('./screens/Tools.svelte'),
   };
 
   type ScreenModule = { default: any };
@@ -154,15 +155,16 @@
     if (import.meta.env.DEV) (window as any).__e2e_ready = setupDone;
   });
 
-  // 6-tab nav: Dashboard · Run · Builds · Activity · Knowledge · Diagrams
+  // 8-tab nav: Dashboard · Run · Builds · Activity · Knowledge · Diagrams · Roadmap · Tools
   const NAV_ITEMS = [
-    { label: 'Dashboard', hash: '/dashboard', hint: 'Live agent activity, alerts, and squad health',               separator: false },
-    { label: 'Run',       hash: '/run',       hint: 'Dispatch agents by domain — Engineer, Security, Ops (Cmd+K)',separator: false },
-    { label: 'Builds',    hash: '/builds',    hint: 'All builds — past, in-flight, and queued',                    separator: false },
-    { label: 'Activity',  hash: '/activity',  hint: 'Build cockpit — live health, escalations, fleet and decisions', separator: false },
-    { label: 'Knowledge', hash: '/knowledge', hint: 'Knowledge graph — agent memory strands and quality gates',    separator: false },
-    { label: 'Diagrams',  hash: '/diagrams',  hint: 'Architecture intelligence — extract, verify, render diagrams',separator: false },
-    { label: 'Roadmap',   hash: '/roadmap',   hint: 'Portfolio-level roadmap — active builds, phases, blockers',   separator: false },
+    { label: 'Dashboard', hash: '/dashboard', hint: 'Live agent activity, alerts, and squad health',                          separator: false },
+    { label: 'Run',       hash: '/run',       hint: 'Dispatch agents by domain — Engineer, Security, Ops (Cmd+K)',            separator: false },
+    { label: 'Builds',    hash: '/builds',    hint: 'All builds — past, in-flight, and queued',                               separator: false },
+    { label: 'Activity',  hash: '/activity',  hint: 'Build cockpit — live health, escalations, fleet and decisions',          separator: false },
+    { label: 'Knowledge', hash: '/knowledge', hint: 'Knowledge graph — agent memory strands and quality gates',               separator: false },
+    { label: 'Diagrams',  hash: '/diagrams',  hint: 'Architecture intelligence — extract, verify, render diagrams',           separator: false },
+    { label: 'Roadmap',   hash: '/roadmap',   hint: 'Portfolio-level roadmap — active builds, phases, blockers',              separator: false },
+    { label: 'Tools',     hash: '/tools',     hint: 'MCP servers, squad agents, workspaces, meta-skills — tool surface §O',  separator: false },
   ];
 
   let activeRoute = $derived($currentRoute);
