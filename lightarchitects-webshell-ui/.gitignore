@@ -8,3 +8,7 @@ test-results/
 playwright-report/
 # Visual baseline HARs (large; only manifest.json index is committed)
 tests/e2e/__har__/*.har
+# Scratch study/preview files — not regression tests
+e2e/preview.spec.ts
+playwright-preview.config.ts
+screenshots/

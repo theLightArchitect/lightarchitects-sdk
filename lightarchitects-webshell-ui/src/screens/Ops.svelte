@@ -141,6 +141,7 @@
     Object.values($siblingHealth).filter(h => h?.status === 'online').length,
   );
   let pendingTasks  = $derived($conductorTasks.filter(t => t.status === 'pending'));
+  let activeTasks   = $derived($conductorTasks.filter(t => t.status === 'running'));
 
   // ── Compact event stream ──────────────────────────────────────────────────
 
@@ -289,22 +290,31 @@
         <button class="forest-connect" onclick={() => { vaultOpen = true; }}>CONNECT</button>
       </div>
 
-      <!-- Conductor queue strip — only visible when builds are queued -->
-      {#if pendingTasks.length > 0}
-        <div class="queue-strip" aria-label="Queued builds">
-          <span class="queue-label">QUEUE</span>
-          {#each pendingTasks.slice(0, 5) as task}
-            <span class="queue-chip queue-chip--{task.priority}" title="{task.buildId} · {task.taskType}">
-              <span class="queue-chip-sib">{task.sibling.toUpperCase()}</span>
-              <span class="queue-chip-name">{task.buildId.replace(/^feat\//, '').slice(0, 18)}</span>
-              <span class="queue-chip-type">{task.taskType}</span>
-            </span>
-          {/each}
-          {#if pendingTasks.length > 5}
-            <span class="queue-more">+{pendingTasks.length - 5}</span>
-          {/if}
-        </div>
-      {/if}
+      <!-- Conductor queue strip — always visible; running (blue) + pending (amber) -->
+      <div class="queue-strip" aria-label="Conductor queue">
+        <span class="queue-label">QUEUE</span>
+        {#if activeTasks.length === 0 && pendingTasks.length === 0}
+          <span class="queue-empty">idle</span>
+        {/if}
+        {#each activeTasks.slice(0, 3) as task}
+          <span class="queue-chip queue-chip--running" title="{task.buildId} · {task.taskType} · running">
+            <span class="queue-chip-pulse"></span>
+            <span class="queue-chip-sib">{task.sibling.toUpperCase()}</span>
+            <span class="queue-chip-name">{task.buildId.replace(/^feat\//, '').slice(0, 18)}</span>
+            <span class="queue-chip-type">{task.taskType}</span>
+          </span>
+        {/each}
+        {#each pendingTasks.slice(0, 5) as task}
+          <span class="queue-chip queue-chip--{task.priority}" title="{task.buildId} · {task.taskType}">
+            <span class="queue-chip-sib">{task.sibling.toUpperCase()}</span>
+            <span class="queue-chip-name">{task.buildId.replace(/^feat\//, '').slice(0, 18)}</span>
+            <span class="queue-chip-type">{task.taskType}</span>
+          </span>
+        {/each}
+        {#if activeTasks.length + pendingTasks.length > 8}
+          <span class="queue-more">+{activeTasks.length + pendingTasks.length - 8}</span>
+        {/if}
+      </div>
 
       <div class="forest-body">
         <GitForest2D />
@@ -426,12 +436,31 @@
     white-space: nowrap;
     flex-shrink: 0;
   }
-  .queue-chip--high   { border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.07); color: #f87171; }
-  .queue-chip--normal { border-color: rgba(245,158,11,0.35); background: rgba(245,158,11,0.06); color: #f59e0b; }
-  .queue-chip--low    { border-color: var(--la-hair-base); background: transparent; color: var(--la-text-mute); }
+  .queue-chip--high    { border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.07); color: #f87171; }
+  .queue-chip--normal  { border-color: rgba(245,158,11,0.35); background: rgba(245,158,11,0.06); color: #f59e0b; }
+  .queue-chip--low     { border-color: var(--la-hair-base); background: transparent; color: var(--la-text-mute); }
+  .queue-chip--running { border-color: rgba(0,200,255,0.4); background: rgba(0,200,255,0.07); color: var(--la-struct-primary, #00c8ff); }
   .queue-chip-sib  { font-weight: 700; opacity: 0.8; }
   .queue-chip-name { font-weight: 600; }
   .queue-chip-type { opacity: 0.6; }
+  .queue-chip-pulse {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+    animation: queue-running-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes queue-running-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.25; }
+  }
+  .queue-empty {
+    font-size: 7px;
+    color: var(--la-text-mute);
+    font-style: italic;
+    opacity: 0.6;
+  }
   .queue-more {
     font-size: 7px;
     color: var(--la-text-mute);

@@ -243,3 +243,9 @@ PLAYWRIGHT_BASE_URL=http://localhost:5173 pnpm exec playwright test e2e/webshell
 **Gotchas:**
 - Snapshot baselines regenerated without a running dev server are solid magenta (`#FF00FF`) — always verify `pnpm dev` is up on :5173 before `--update-snapshots`.
 - After any route rename: `grep -n 'location.hash' e2e/webshell.spec.ts` to find stale hash navigations in the E2E spec before running the suite.
+
+### Cockpit PR QUEUE card (frontend-direct GitHub API)
+
+`Cockpit.svelte` (`/#/activity`) contains a PR QUEUE card that calls `listOpenPRs()` from `src/lib/github.ts` directly against `https://api.github.com` — NOT proxied through the gateway. It polls every 2 minutes across `FOREST_REPO_NAMES`. Requires `la_gh_token` in `localStorage` (set via the CONNECT button in Dashboard → TokenVault). If the token is absent, the card shows "configure GitHub token in Dashboard" instead of erroring.
+
+The Ops/Dashboard screen (`/#/dashboard`) conductor queue-strip now always renders (even when idle) — shows running tasks (blue pulsing) then pending tasks (amber).

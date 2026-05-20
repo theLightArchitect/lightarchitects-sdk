@@ -406,6 +406,15 @@ export const buildStats = derived(builds, ($builds) => ({
   pending: $builds.filter(b => b.status === 'queued').length,
 }));
 
+// --- Derived: last-5 completed builds for cockpit build-health sparkline ---
+export const sparklineBuilds = derived(builds, ($builds) =>
+  $builds
+    .filter(b => b.status === 'completed' || b.status === 'failed')
+    .sort((a, b) => (b.updatedAt > a.updatedAt ? 1 : -1))
+    .slice(0, 5)
+    .reverse()
+);
+
 // --- Derived: conductor stats ---
 export const conductorStats = derived(conductorTasks, ($tasks) => ({
   total: $tasks.length,

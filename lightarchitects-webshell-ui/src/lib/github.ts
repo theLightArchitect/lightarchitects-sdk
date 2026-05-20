@@ -70,6 +70,37 @@ interface GHPull {
   requested_reviewers: unknown[];
 }
 
+interface GHPullList {
+  number: number;
+  title: string;
+  state: string;
+  draft: boolean;
+  user: { login: string };
+  head: { ref: string; sha: string };
+  base: { ref: string };
+  created_at: string;
+  updated_at: string;
+  changed_files: number;
+  labels: { name: string; color: string }[];
+  requested_reviewers: { login: string }[];
+}
+
+/** A pull request summary suitable for the Cockpit PR card. */
+export interface PullRequest {
+  number:             number;
+  title:              string;
+  repo:               string;
+  author:             string;
+  headBranch:         string;
+  baseBranch:         string;
+  createdAt:          string;
+  updatedAt:          string;
+  changedFiles:       number;
+  labels:             string[];
+  reviewersRequested: number;
+  draft:              boolean;
+}
+
 // ── HTTP helpers ────────────────────────────────────────────────────────────
 
 function resolveToken(overrideToken?: string): string | undefined {
@@ -286,3 +317,46 @@ export async function fetchGitHubForestData(
 
 /** 5-minute cache TTL */
 export const FOREST_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * List open pull requests across the given repos.
+ * Uses the list endpoint only (no N+1 per-PR calls) — no additions/deletions.
+ * Sort: most-recently-updated first.
+ */
+export async function listOpenPRs(
+  org: string,
+  repoNames: readonly string[],
+  overrideToken?: string,
+): Promise<PullRequest[]> {
+  const token = resolveToken(overrideToken);
+  const results: PullRequest[] = [];
+
+  await Promise.allSettled(
+    repoNames.map(async repo => {
+      const { data } = await ghFetch<GHPullList[]>(
+        `/repos/${org}/${repo}/pulls?state=open&per_page=20`,
+        token,
+      );
+      for (const pr of data) {
+        results.push({
+          number:             pr.number,
+          title:              pr.title,
+          repo,
+          author:             pr.user.login,
+          headBranch:         pr.head.ref,
+          baseBranch:         pr.base.ref,
+          createdAt:          pr.created_at,
+          updatedAt:          pr.updated_at,
+          changedFiles:       pr.changed_files,
+          labels:             pr.labels.map(l => l.name),
+          reviewersRequested: pr.requested_reviewers.length,
+          draft:              pr.draft,
+        });
+      }
+    }),
+  );
+
+  return results.sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  );
+}

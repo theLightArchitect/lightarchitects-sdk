@@ -1126,6 +1126,14 @@ export interface EscalationEvent {
   canon_ref?: string;
 }
 
+/** Per-slot task context (populated when conductor tracks per-slot assignment). */
+export interface SlotDetail {
+  slot_index: number;
+  task_id?:   string;
+  build_id?:  string;
+  domain?:    string;
+}
+
 /** Worker slot occupancy update (7-slot pool). */
 export interface WorkerSlotGaugeEvent {
   type:       'worker_slot_gauge';
@@ -1133,6 +1141,8 @@ export interface WorkerSlotGaugeEvent {
   wave_index: number;
   active:     number;
   capacity:   number;
+  /** Per-slot detail — optional; backend populates when per-slot tracking is enabled. */
+  slots?:     SlotDetail[];
 }
 
 /** Conductor heartbeat — queue depth + active worker count. */

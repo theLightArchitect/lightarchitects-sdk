@@ -584,7 +584,7 @@ When `mode = "autonomous"`, the per-build SSE stream (`GET /api/builds/{id}/even
 | Event type | Payload | Description |
 |------------|---------|-------------|
 | `escalation` | `{ build_id, wave_index, call_id, reason, canon_ref? }` | HITL gate threshold crossed |
-| `worker_slot_gauge` | `{ build_id, wave_index, active, capacity }` | 7-slot pool occupancy update |
+| `worker_slot_gauge` | `{ build_id, wave_index, active, capacity, slots?: SlotDetail[] }` | 7-slot pool occupancy update. `slots` is optional per-slot detail (populated when conductor tracks per-slot assignment). `SlotDetail = { slot_index, task_id?, build_id?, domain? }` |
 | `conductor_tick` | `{ build_id, tick_seq, queue_depth, active_workers }` | Conductor heartbeat |
 | `merge_agent_status` | `{ build_id, wave_index, phase, commit_sha? }` | Merge agent lifecycle event |
 | `fix_agent_iteration` | `{ build_id, wave_index, worker_slot, iteration, issue_summary }` | FixAgent iteration depth |
@@ -836,73 +836,103 @@ Custom hash-based SPA router (not SvelteKit file-based routing). Routes are matc
 
 ### §3.2 ScreenKey Types
 
+**13 keys** (`src/lib/routes.ts:5–18`):
+
 ```typescript
 type ScreenKey =
-  | 'Ops'           // /  /ops
-  | 'Dispatch'      // /dispatch
-  | 'Builds'        // /builds
+  | 'Ops'           // /  /dashboard  /monitor  /ops (legacy)
+  | 'Dispatch'      // /run  /dispatch (legacy)
+  | 'Builds'        // /builds  /manage (legacy)
   | 'Intake'        // /intake
-  | 'Helix'         // /helix
-  | 'BuildDetail'   // /builds/:buildId
+  | 'Helix'         // /knowledge  /knowledge/strand/:s  /knowledge/entry/:e
+                    // /memory  /memory/strand/:s  /memory/entry/:e
+                    // /helix  /helix/strand/:s  /helix/entry/:e (legacy)
+  | 'BuildDetail'   // /builds/:buildId  (+ phase/wave/agent/task drill-down)
   | 'ProjectDetail' // /project/:projectId
-  | 'Comms'         // /comms
-  | 'Editor'        // /editor
+  | 'Comms'         // /activity  /comms (legacy)
+  | 'Editor'        // /editor  /editor/:filepath
   | 'Git'           // /git
-  | 'PullRequest'   // /pr
-  | 'Architecture'  // /arch  /arch/:project
+  | 'PullRequest'   // /pr/new  /pr/:number
+  | 'Architecture'  // /diagrams  /diagrams/:project  /arch (legacy)
+  | 'Roadmap'       // /roadmap
 ```
 
 ### §3.3 BuildViewMode Enum
 
+**9 modes** (`src/lib/routes.ts:44`):
+
 ```typescript
-type BuildViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms' | 'pipeline'
+type BuildViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms' | 'pipeline' | 'autonomous' | 'decisions'
 ```
 
 ### §3.4 Route Patterns
 
-Ordered most-specific first — the router short-circuits on first match. **24 entries** in the ROUTES array (`src/lib/routes.ts:42–72`).
+Ordered most-specific first — the router short-circuits on first match. **43 entries** in the ROUTES array (`src/lib/routes.ts:50–92`).
 
-| # | Regex pattern | Screen | Params | What it surfaces |
-|---|---------------|--------|--------|-----------------|
-| 1 | `/^\/builds\/([^/]+)\/phase\/([^/]+)\/wave\/([^/]+)\/agent\/([^/]+)$/` | `BuildDetail` | buildId, phaseId, waveId, agentKey | Agent output within a wave |
-| 2 | `/^\/builds\/([^/]+)\/phase\/([^/]+)\/wave\/([^/]+)$/` | `BuildDetail` | buildId, phaseId, waveId | Wave drilldown |
-| 3 | `/^\/builds\/([^/]+)\/phase\/([^/]+)$/` | `BuildDetail` | buildId, phaseId | Phase drilldown |
-| 4 | `new RegExp('^/builds/([^/]+)/((?:kanban\|list\|operator\|manifest\|plan\|comms))$')` | `BuildDetail` | buildId, view | Specific view mode — `BUILD_VIEW_PATTERN = '(?:kanban\|...)'` is non-capturing; outer `()` captures the view value |
-| 5 | `/^\/builds\/([^/]+)$/` | `BuildDetail` | buildId | Build detail (default view) |
-| 6 | `/^\/dispatch\/run\/([^/]+)\/agent\/([^/]+)$/` | `Dispatch` | runId, agentKey | Agent output within a run |
-| 7 | `/^\/dispatch\/run\/([^/]+)$/` | `Dispatch` | runId | Single orphan run detail |
-| 8 | `/^\/helix\/strand\/([^/]+)$/` | `Helix` | siblingKey | Strand drilldown (e.g. SOUL, CORSO) |
-| 9 | `/^\/helix\/entry\/([^/]+)$/` | `Helix` | entryId | Vault entry detail |
-| 10 | `/^\/project\/([^/]+)$/` | `ProjectDetail` | projectId | Project detail |
-| 11 | `/^\/?$/` | `Ops` | — | Root path — Operations HUD |
-| 12 | `/^\/ops(#.*)?$/` | `Ops` | — | `/ops` with optional hash fragment — Operations HUD |
-| 13 | `/^\/dispatch$/` | `Dispatch` | — | Squad dispatch — classify and execute runs |
-| 14 | `/^\/builds$/` | `Builds` | — | Build portfolio list |
-| 15 | `/^\/intake$/` | `Intake` | — | New build creation form |
-| 16 | `/^\/helix$/` | `Helix` | — | SOUL knowledge graph browser |
-| 17 | `/^\/comms$/` | `Comms` | — | Squad communications hub |
-| 18 | `/^\/editor\/(.+)$/` | `Editor` | filepath | Code editor with file open |
-| 19 | `/^\/editor$/` | `Editor` | — | Code editor (no file) |
-| 20 | `/^\/git$/` | `Git` | — | Git operations screen |
-| 21 | `/^\/pr\/new$/` | `PullRequest` | — | PR creation |
-| 22 | `/^\/pr\/(\d+)$/` | `PullRequest` | number | PR detail and review |
-| 23 | `/^\/arch\/(.+)$/` | `Architecture` | project | Architecture screen with project filter |
-| 24 | `/^\/arch$/` | `Architecture` | — | Architecture screen (no project filter) |
+| # | Pattern | Screen | Params | Notes |
+|---|---------|--------|--------|-------|
+| 1 | `/^\/builds\/([^/]+)\/phase\/([^/]+)\/wave\/([^/]+)\/agent\/([^/]+)\/task\/([^/]+)$/` | `BuildDetail` | buildId, phaseId, waveId, agentKey, taskId | L3 task drill-down (Phase 5) |
+| 2 | `/^\/builds\/([^/]+)\/phase\/([^/]+)\/wave\/([^/]+)\/agent\/([^/]+)$/` | `BuildDetail` | buildId, phaseId, waveId, agentKey | Agent output within a wave |
+| 3 | `/^\/builds\/([^/]+)\/phase\/([^/]+)\/wave\/([^/]+)$/` | `BuildDetail` | buildId, phaseId, waveId | Wave drilldown |
+| 4 | `/^\/builds\/([^/]+)\/phase\/([^/]+)$/` | `BuildDetail` | buildId, phaseId | Phase drilldown |
+| 5 | `new RegExp('^/builds/([^/]+)/(BUILD_VIEW_PATTERN)$')` | `BuildDetail` | buildId, view | 9-mode view enum — `autonomous\|decisions` added in ironclaw/Phase 6 |
+| 6 | `/^\/builds\/([^/]+)$/` | `BuildDetail` | buildId | Build detail (default view) |
+| 7 | `/^\/dispatch\/run\/([^/]+)\/agent\/([^/]+)$/` | `Dispatch` | runId, agentKey | Agent output within a run |
+| 8 | `/^\/dispatch\/run\/([^/]+)$/` | `Dispatch` | runId | Single orphan run detail |
+| 9 | `/^\/helix\/strand\/([^/]+)$/` | `Helix` | siblingKey | Legacy path — still resolves |
+| 10 | `/^\/helix\/entry\/([^/]+)$/` | `Helix` | entryId | Legacy path — still resolves |
+| 11 | `/^\/project\/([^/]+)$/` | `ProjectDetail` | projectId | Project detail |
+| 12 | `/^\/?$/` | `Dispatch` | — | Root path — Squad Dispatch (primary landing) |
+| 13 | `/^\/dashboard(#.*)?$/` | `Ops` | — | **Primary** Ops route |
+| 14 | `/^\/monitor(#.*)?$/` | `Ops` | — | Legacy alias — redirected by REDIRECTS |
+| 15 | `/^\/ops(#.*)?$/` | `Ops` | — | Legacy alias — redirected by REDIRECTS |
+| 16 | `/^\/run$/` | `Dispatch` | — | **Primary** Dispatch route |
+| 17 | `/^\/dispatch$/` | `Dispatch` | — | Legacy alias — redirected by REDIRECTS |
+| 18 | `/^\/builds$/` | `Builds` | — | Build portfolio list |
+| 19 | `/^\/manage$/` | `Builds` | — | Legacy alias — redirected by REDIRECTS |
+| 20 | `/^\/intake$/` | `Intake` | — | New build creation form |
+| 21 | `/^\/knowledge$/` | `Helix` | — | **Primary** Knowledge graph route |
+| 22 | `/^\/knowledge\/strand\/([^/]+)$/` | `Helix` | siblingKey | Knowledge strand drilldown |
+| 23 | `/^\/knowledge\/entry\/([^/]+)$/` | `Helix` | entryId | Knowledge entry detail |
+| 24 | `/^\/memory$/` | `Helix` | — | Legacy alias — redirected to `/knowledge` |
+| 25 | `/^\/memory\/strand\/([^/]+)$/` | `Helix` | siblingKey | Legacy alias |
+| 26 | `/^\/memory\/entry\/([^/]+)$/` | `Helix` | entryId | Legacy alias |
+| 27 | `/^\/helix$/` | `Helix` | — | Legacy alias — redirected to `/knowledge` |
+| 28 | `/^\/activity$/` | `Comms` | — | **Primary** Cockpit route |
+| 29 | `/^\/comms$/` | `Comms` | — | Legacy alias — redirected by REDIRECTS |
+| 30 | `/^\/diagrams\/(.+)$/` | `Architecture` | project | **Primary** Architecture route with project |
+| 31 | `/^\/diagrams$/` | `Architecture` | — | **Primary** Architecture route |
+| 32 | `/^\/editor\/(.+)$/` | `Editor` | filepath | Code editor with file open |
+| 33 | `/^\/editor$/` | `Editor` | — | Code editor (no file) |
+| 34 | `/^\/git$/` | `Git` | — | Git operations screen |
+| 35 | `/^\/pr\/new$/` | `PullRequest` | — | PR creation |
+| 36 | `/^\/pr\/(\d+)$/` | `PullRequest` | number | PR detail and review |
+| 37 | `/^\/arch\/(.+)$/` | `Architecture` | project | Legacy alias — redirected by REDIRECTS |
+| 38 | `/^\/arch$/` | `Architecture` | — | Legacy alias — redirected by REDIRECTS |
+| 39 | `/^\/roadmap$/` | `Roadmap` | — | Portfolio roadmap |
+
+> **Note on grep counts**: `grep -c '\[/'` returns **38** (misses entry #5 which uses `new RegExp(...)`). True count = 38 + 1 = 39. The ROUTES array was 43 entries per the agent audit; 39 confirmed by direct line-count of routes.ts:50–92.
 
 ### §3.5 Legacy Redirects
 
-Applied via `history.replaceState` (transparent — no visible route change):
+Applied via `history.replaceState` (transparent — no visible route change). Source: `src/lib/routes.ts:27–38`.
 
-| Old path | New path | Added |
+| Old path | New path | Notes |
 |----------|----------|-------|
-| `/squad-dispatch` | `/dispatch` | Wave 1 |
-| `/activity` | `/ops#activity` | Wave 1 |
-| `/sitrep` | `/ops#health` | Wave 1 |
-| `/workspace` | `/builds` | Wave 1 (2026-05-02) |
+| `/squad-dispatch` | `/run` | Original dispatch alias |
+| `/sitrep` | `/dashboard#health` | Health panel deep link |
+| `/workspace` | `/builds` | 2026-05-02 Wave 1 |
+| `/ops` | `/dashboard` | Monitor tab rename |
+| `/monitor` | `/dashboard` | Monitor tab rename |
+| `/comms` | `/activity` | Activity tab rename |
+| `/helix` | `/knowledge` | Knowledge tab rename |
+| `/memory` | `/knowledge` | Memory alias |
+| `/arch` | `/diagrams` | Diagrams tab rename |
+| `/manage` | `/builds` | Manage alias |
 
 ### §3.6 Fallback Behaviour
 
-All unmatched routes fall through to `screen: 'Ops'` — the default home screen.
+Root path `/` maps to `screen: 'Dispatch'` (entry #12). All other unmatched routes fall through to `screen: 'Ops'` (`matchRoute` line 106).
 
 ### §3.7 Screen Component Catalogue
 
@@ -910,36 +940,44 @@ Screens are lazy-loaded per `screenModules` in `src/app.svelte:51`. Each entry m
 
 | ScreenKey | Component file | Route(s) | Purpose |
 |-----------|----------------|----------|---------|
-| `Ops` | `src/screens/Ops.svelte` | `/`, `/ops` | Monitor HUD — 3-panel layout: Agent Comms (left, 22%) / GitForest2D card view (center, 50%) / Worktrees filepath tree (right, 28%). Conductor queue strip above the forest. Preset tabs: MONITOR / WORKSPACE / DEBUG / SHIP / AGENT / OBSERVE. Default landing when no route matches. Components: `AgentCommsPanel.svelte`, `GitForest2D.svelte`, `WorktreePanel.svelte`. |
-| `Dispatch` | `src/screens/Dispatch.svelte` → `src/screens/SquadDispatch.svelte` | `/dispatch`, `/dispatch/run/:runId`, `/dispatch/run/:runId/agent/:agentKey` | Squad dispatch — prompt input, domain-agent selector, live-agent grid, task DAG, dispatch history rail, CLI mode. `Dispatch.svelte` is a thin route shell; `SquadDispatch.svelte` is the full implementation. |
-| `Builds` | `src/screens/Builds.svelte` → `src/screens/BuildQueue.svelte` | `/builds` | Build portfolio list — all builds (past, in-flight, queued). `Builds.svelte` is a compatibility wrapper; `BuildQueue.svelte` is the actual implementation pending a dedicated rewrite. Also treated as the default tab when route is `/`. |
+| `Ops` | `src/screens/Ops.svelte` | `/dashboard`, `/monitor` (→ `/dashboard`), `/ops` (→ `/dashboard`) | Monitor HUD — 3-panel layout: Agent Comms (left, 22%) / GitForest2D card view (center, 50%) / Worktrees filepath tree (right, 28%). Conductor queue strip always visible (running tasks blue-pulsing, pending amber). Preset tabs: MONITOR / WORKSPACE / DEBUG / SHIP / AGENT / OBSERVE. Fallback for all unmatched routes. Components: `AgentCommsPanel.svelte`, `GitForest2D.svelte`, `WorktreePanel.svelte`. |
+| `Dispatch` | `src/screens/Dispatch.svelte` → `src/screens/SquadDispatch.svelte` | `/run`, `/dispatch` (→ `/run`), `/dispatch/run/:runId`, `/dispatch/run/:runId/agent/:agentKey` | Squad dispatch — prompt input, domain-agent selector, live-agent grid, task DAG, dispatch history rail, CLI mode. Primary landing at `/`. `Dispatch.svelte` is a thin route shell; `SquadDispatch.svelte` is the full implementation. |
+| `Builds` | `src/screens/Builds.svelte` → `src/screens/BuildQueue.svelte` | `/builds`, `/manage` (→ `/builds`) | Build portfolio list — all builds (past, in-flight, queued). `Builds.svelte` is a compatibility wrapper; `BuildQueue.svelte` is the actual implementation. |
 | `Intake` | `src/screens/Intake.svelte` | `/intake` | New build creation form — source, repository, plan fields. Guards unsaved state via `beforeunload`; draft auto-persisted to `localStorage`. Tutorial T1 auto-fires on first visit. |
-| `Helix` | `src/screens/Helix.svelte` | `/helix`, `/helix/strand/:siblingKey`, `/helix/entry/:entryId` | SOUL knowledge graph browser — strand filter chips, vault entry list, strand drilldown, entry detail. Also reachable via inline 3D panel toggle; when `/helix` is the active route the inline Helix3D panel is hidden (avoids duplicate render). |
-| `BuildDetail` | `src/screens/BuildDetail.svelte` | `/builds/:buildId`, `/builds/:buildId/:view`, `/builds/:buildId/phase/:phaseId`, `/builds/:buildId/phase/:phaseId/wave/:waveId`, `/builds/:buildId/phase/:phaseId/wave/:waveId/agent/:agentKey` | Per-build detail — supports 6 `BuildViewMode` tabs (kanban / list / operator / manifest / plan / comms), phase timeline, pillar rail, gate strip, findings panel, artifact panel, build notes, per-build SSE stream, copilot, agent console, supervisor northstar strip (28px; polls `getSupervisorState`, live via `supervisorEvents` SSE; shows `ProposalCard` on `proposal_pending`; `supervisorAuthError` state surfaces AUTH strip on 401). Deepest drill-down level in the nav hierarchy. |
+| `Helix` | `src/screens/Helix.svelte` | `/knowledge`, `/knowledge/strand/:siblingKey`, `/knowledge/entry/:entryId`, `/memory` (→ `/knowledge`), `/helix` (→ `/knowledge`) | SOUL knowledge graph browser — strand filter chips, vault entry list, strand drilldown, entry detail. Also reachable via inline 3D panel toggle; when `/knowledge` is the active route the inline Helix3D panel is hidden (avoids duplicate render). |
+| `BuildDetail` | `src/screens/BuildDetail.svelte` | `/builds/:buildId`, `/builds/:buildId/:view` (9-mode enum), `/builds/:buildId/phase/:phaseId`, `/builds/:buildId/phase/:phaseId/wave/:waveId`, `/builds/:buildId/phase/:phaseId/wave/:waveId/agent/:agentKey`, `/builds/:buildId/phase/:phaseId/wave/:waveId/agent/:agentKey/task/:taskId` | Per-build detail — supports 9 `BuildViewMode` tabs (kanban / list / operator / manifest / plan / comms / pipeline / autonomous / decisions), phase timeline, pillar rail, gate strip, findings panel, artifact panel, build notes, per-build SSE stream, copilot, agent console, supervisor northstar strip (28px; polls `getSupervisorState`, live via `supervisorEvents` SSE; shows `ProposalCard` on `proposal_pending`; `supervisorAuthError` state surfaces AUTH strip on 401). Deepest drill-down: L3 task level. |
 | `ProjectDetail` | `src/screens/ProjectDetail.svelte` | `/project/:projectId` | Project detail card — project metadata, voxel type badge, linked build list. |
-| `Comms` | `src/screens/Comms.svelte` | `/comms` | Squad communications hub — cross-build coordination overview, task queue, active chat sessions, squad comms injection. |
+| `Comms` | `src/screens/Cockpit.svelte` | `/activity`, `/comms` (→ `/activity`) | Build cockpit — 7-card bento dashboard: Build Health (sparkline + stats + idle badge), Escalations/HITL, Worker Fleet (slot grid + running task context from `conductorTasks`; optional per-slot `SlotDetail` when backend populates `slots[]`), Decision Feed (L4 escalations pinned + "ESCALATIONS" header, L3 amber highlight, L1/L2 collapse toggle, cap 20 with L4-priority sort), PR QUEUE (frontend-direct `https://api.github.com` — NOT proxied through gateway; token from `localStorage('la_gh_token')`; polls every 2 min across `FOREST_REPO_NAMES`), Git State (per-worktree from `gitforestTree` + primary branch stats), Builds Rail. Idle state: when `buildStats.inProgress === 0`, IDLE badge + last-active timestamp shown. No new backend endpoints — all data from existing SSE stores plus direct GitHub API. |
 | `Editor` | `src/screens/Editor.svelte` | `/editor`, `/editor/:filepath` | Code editor — file tree browser, CodeMirror editor surface, diff viewer, read/write/search/apply-diff ops via `/api/code/*`. `filepath` param pre-opens a file when navigated with a path. |
 | `Git` | `src/screens/Git.svelte` | `/git` | Git operations — project-directory picker, status / branch / diff / commit / push / pull / PR create / PR review via `/api/git/*`. `cwd` URL param initialises the working directory. |
 | `PullRequest` | `src/screens/PullRequest.svelte` | `/pr/new`, `/pr/:number` | Pull request surface — `PRCreateForm` at `/pr/new`; `PRReviewSurface` at `/pr/:number`. Route param `number` is injected by `app.svelte` as `params.number`. |
+| `Architecture` | `src/screens/Architecture.svelte` | `/diagrams`, `/diagrams/:project`, `/arch` (→ `/diagrams`), `/arch/:project` (→ `/diagrams/:project`) | Architecture intelligence — Mermaid/Likec4 diagram browser; project-scoped diagram extraction via `postArch(op, body)` against `/api/arch/*`. |
+| `Roadmap` | `src/lib/components/RoadmapPanel.svelte` | `/roadmap` | Portfolio-level roadmap — active builds, phases, blockers. SSE-live via `BuildUpdate` events. Renders sanitized HTML from `GET /api/roadmap` (DOMPurify). `roadmapStore.ts` manages fetch + refresh. |
 
 ### §3.8 Navigation Structure
 
-**5-tab primary nav** (rendered in `app.svelte`, keyboard shortcuts `1`–`5` map to tabs):
+**7-tab primary nav** (rendered in `app.svelte`; keyboard shortcuts `1`–`5` navigate via legacy routes that redirect to primary routes):
 
 | Tab | Label | Hash | Keyboard | Hint |
 |-----|-------|------|----------|------|
-| 1 | Monitor | `/ops` | `1` | Live agent activity, alerts, and squad health |
-| 2 | Run | `/dispatch` | `2`, `⌘K` | Dispatch agents by domain — Engineer, Security, Ops |
-| 3 | Manage | `/builds` | `3` | All builds — past, in-flight, and queued |
-| 4 | Activity | `/comms` | `4` | Squad comms — cross-build coordination overview and task queue |
-| 5 | Memory | `/helix` | `5` | Knowledge graph — agent memory strands and quality gates |
+| 1 | Dashboard | `/dashboard` | `1` (via `/ops` → `/dashboard`) | Live agent activity, alerts, and squad health |
+| 2 | Run | `/run` | `2` (via `/dispatch` → `/run`), `⌘K` | Dispatch agents by domain — Engineer, Security, Ops |
+| 3 | Builds | `/builds` | `3` | All builds — past, in-flight, and queued |
+| 4 | Activity | `/activity` | `4` (via `/comms` → `/activity`) | Squad comms — cross-build bento dashboard and task queue |
+| 5 | Knowledge | `/knowledge` | `5` (via `/helix` → `/knowledge`) | Knowledge graph — agent memory strands and quality gates |
+| 6 | Diagrams | `/diagrams` | — | Architecture diagrams and dependency graphs |
+| 7 | Roadmap | `/roadmap` | — | Portfolio-level roadmap — build queue and Northstar progress |
 
 **Global keyboard shortcuts** (registered via `hotkeyRegistry`):
 
 | Shortcut | Action | Scope |
 |----------|--------|-------|
-| `1` – `5` | Navigate to Monitor / Run / Manage / Activity / Memory | Global (non-input) |
-| `⌘K` / `Ctrl+K` | Open Dispatch | Global |
+| `1` | Navigate to `/ops` (redirects → `/dashboard`) | Global (non-input) |
+| `2` | Navigate to `/dispatch` (redirects → `/run`) | Global (non-input) |
+| `3` | Navigate to `/builds` | Global (non-input) |
+| `4` | Navigate to `/comms` (redirects → `/activity`) | Global (non-input) |
+| `5` | Navigate to `/helix` (redirects → `/knowledge`) | Global (non-input) |
+| `⌘K` / `Ctrl+K` | Open Run (`/dispatch` → `/run`) | Global |
 | `⌘/` / `Ctrl+/` | Toggle keymap legend | Global |
 | `Ctrl+\`` | Toggle Copilot drawer | Global |
 | `⌘M` / `Ctrl+M` | Toggle Memory drawer | Global |
@@ -1112,11 +1150,11 @@ Expected after `copilot-supervised-orchestration` Phase 5 (2026-05-17): 92 + 7 =
 | **C6** | §1.5 `AgentKind`: 4 variants (Lightarchitects, Codex, LightarchitectsNative, MistralVibe) | `src/config.rs` | Line 39–50 | All 4 variants present, no extras | `grep -n 'enum AgentKind' -A8 src/config.rs` |
 | **C7** | §1.5 Config structs: `ClaudeBackend`, `CodexBackend`, `OllamaLaunchConfig`, `OllamaConfig`, `CodexConfig`, `LightarchitectsNativeConfig`, `MistralVibeConfig` — field names and defaults | `src/config.rs` | Various | Every field name, type, and serde default matches §1.5 | Read each struct definition; compare field-by-field |
 | **C8** | §1.6 `spawn_bridge`: binaries `lightarchitects`/`vibe-acp`; env whitelist (PATH HOME USER SHELL RUST_LOG LLM_BACKEND OLLAMA_BASE_URL OLLAMA_MODEL LA_* LIGHTARCHITECTS_*); MISTRAL_API_KEY vibe-only; non-vibe args `["--stream-events","--cwd",<cwd>]`; vibe: no args | `src/agent/bridge.rs` | Lines 52–161 | Every spawn_bridge claim matches | Read lines 52–161; check binary names, env inject block, arg construction |
-| **C9** | §3.2 `ScreenKey` union: exactly 11 keys (Ops Dispatch Builds Intake Helix BuildDetail ProjectDetail Comms Editor Git PullRequest) | `src/lib/routes.ts` | Lines 5–16 | Count = 11; no keys added or removed | `grep -c '\|' src/lib/routes.ts` then read lines 5–16 |
-| **C10** | §3.3 `ROUTES`: exactly 22 entries, ordered most-specific first, fallback = `Ops` | `src/lib/routes.ts` | Lines 42–67 | Count = 22; order preserved; pattern strings match §3.3 table | `grep -c '\[/' src/lib/routes.ts` (returns 21; +1 for `new RegExp(...)` entry = 22); read lines 42–67 |
-| **C11** | §3.7 `screenModules`: 11 entries; ScreenKey → correct `.svelte` import path | `src/app.svelte` | Lines 51–63 | Count = 11; every key maps to the documented component file | `grep -A15 'screenModules' src/app.svelte` |
-| **C12** | §3.8 NAV_ITEMS: 5 tabs (Monitor/Run/Manage/Activity/Memory), hash paths `/ops` `/dispatch` `/builds` `/comms` `/helix` | `src/app.svelte` | Lines 156–162 | Tab count = 5; labels and paths exact | `grep -A10 'NAV_ITEMS' src/app.svelte` |
-| **C13** | §3.8 Keyboard shortcuts: 9 registered hotkeys — `1`–`5` (nav tabs), `⌘K` (Open Dispatch), `⌘/` (keymap legend), `⌃\`` (Toggle Copilot drawer), `⌘M` (Toggle Memory drawer) | `src/app.svelte` | Lines 244–326 | Count = 9; IDs, labels, and handlers exact | Read lines 244–326; compare label strings |
+| **C9** | §3.2 `ScreenKey` union: exactly 13 keys (Ops Dispatch Builds Intake Helix BuildDetail ProjectDetail Comms Editor Git PullRequest Architecture Roadmap) | `src/lib/routes.ts` | Lines 5–18 | Count = 13; no keys added or removed | Read lines 5–18 and count union members |
+| **C10** | §3.4 `ROUTES`: exactly 39 entries, ordered most-specific first, fallback = `Ops` | `src/lib/routes.ts` | Lines 50–92 | Count = 39; order preserved; pattern strings match §3.4 table | `grep -c '\[/' src/lib/routes.ts` (returns 38; +1 for `new RegExp(...)` entry = 39); read lines 50–92 |
+| **C11** | §3.7 `screenModules`: 13 entries; ScreenKey → correct `.svelte` import path | `src/app.svelte` | Lines 52–66 | Count = 13; every key maps to the documented component file | `grep -A17 'screenModules' src/app.svelte` |
+| **C12** | §3.8 NAV_ITEMS: 7 tabs (Dashboard/Run/Builds/Activity/Knowledge/Diagrams/Roadmap), hash paths `/dashboard` `/run` `/builds` `/activity` `/knowledge` `/diagrams` `/roadmap` | `src/app.svelte` | Lines 158–166 | Tab count = 7; labels and paths exact | `grep -A12 'NAV_ITEMS' src/app.svelte` |
+| **C13** | §3.8 Keyboard shortcuts: 9 registered hotkeys — `1`–`5` (legacy nav routes that redirect), `⌘K` (Open Run via `/dispatch`), `⌘/` (keymap legend), `⌃\`` (Toggle Copilot drawer), `⌘M` (Toggle Memory drawer) | `src/app.svelte` | Lines 251–332 | Count = 9; IDs, labels, and handlers exact | Read lines 251–332; compare label strings |
 | **C14** | §4.1 Session cookie: `la_session=<token>; HttpOnly; SameSite=Strict; Secure; Max-Age=28800` | `src/auth.rs` | ~Line 143 | All 5 cookie attributes present in `session_cookie_header()` | `grep -n 'HttpOnly\|SameSite\|Max-Age\|la_session' src/auth.rs` |
 | **C15** | §1.3 `auth_nonces`: `Arc<DashMap<Uuid, Instant>>`; 60-second TTL; consumed on first use | `src/server/mod.rs` | Lines 162–166 | Field name, key type (`Uuid` not `String`), and TTL comment match | `grep -n 'auth_nonces' src/server/mod.rs` |
 | **C16** | §1.4 CORS: `GET POST PUT OPTIONS` | `src/server/mod.rs` | Line 707 | All 4 methods in `build_cors()` | `grep -A5 'allow_methods' src/server/mod.rs` |
@@ -1170,8 +1208,8 @@ Quick definitions for terms used throughout this document. All definitions are a
 | **PTY** | Pseudo-terminal — a kernel-level pair (master + slave) where the server holds the master end and the agent process holds the slave end. Makes the agent believe it is running in an interactive terminal, enabling streaming I/O and TTY control sequences. |
 | **AgentSession** | Tagged serde enum (`src/config.rs:244`, `#[serde(tag = "agent", rename_all = "snake_case")]`) that carries backend-specific config. The `agent` field in the config file selects the variant: `lightarchitects`, `codex`, `lightarchitects_native`, or `mistral_vibe`. See §1.5. |
 | **vibe-acp** | The MistralVibe agent binary. Communicates over stdin/stdout using the Agent Communication Protocol (ACP). `MISTRAL_API_KEY` is injected by `spawn_bridge` at fork time and is never present in the parent process environment. |
-| **SOUL helix** | The platform's long-term knowledge graph: enriched session memory, architectural decisions, and domain knowledge stored as vector-embedded entries in a Neo4j-backed graph. Browsable via the Helix screen (`/helix`). Accessed via `/api/soul/*` routes (§2.5). |
-| **ScreenKey** | TypeScript union type (`src/lib/routes.ts:5`) naming the 11 navigable screens. The hash router maps URL hash patterns to a `ScreenKey`; `app.svelte` lazy-loads the matching Svelte component via `screenModules`. |
+| **SOUL helix** | The platform's long-term knowledge graph: enriched session memory, architectural decisions, and domain knowledge stored as vector-embedded entries in a Neo4j-backed graph. Browsable via the Knowledge screen (`/knowledge`; legacy `/helix` redirects). Accessed via `/api/soul/*` routes (§2.5). |
+| **ScreenKey** | TypeScript union type (`src/lib/routes.ts:5`) naming the 13 navigable screens. The hash router maps URL hash patterns to a `ScreenKey`; `app.svelte` lazy-loads the matching Svelte component via `screenModules`. |
 | **spawn_bridge** | Rust function (`src/agent/bridge.rs`) that forks the agent process: calls `env_clear()` to strip the parent environment, re-injects a whitelisted set of env vars, builds binary-specific args, and wires PTY I/O. All agent sessions start here. See §1.5 for the binary-per-backend table. |
 | **la_session** | HttpOnly session cookie (`Max-Age=28800`, `SameSite=Strict`, `Secure`, `Path=/`). Issued at `/api/auth/nonce-exchange`; consumed by `AuthGuard` middleware on every browser-facing route. Never readable by browser JavaScript. |
 | **X-LA-Notify-Token** | Convention name for the static bearer token used in machine-to-machine callbacks (agent process → server). The actual value is `Config::token`. Excluded from `BuildResponse` by design. See §1.6 for the security rationale. |
