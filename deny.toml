@@ -91,6 +91,13 @@ multiple-versions = "warn"
 # standard practice — downgrade to warn so the check doesn't block CI.
 wildcards = "warn"
 highlight = "all"
+deny = [
+    # Never use openssl — use rustls (Security-Guardrails §4, Cookbook §63.P1)
+    { crate = "openssl" },
+    # Use ring or aws-lc-rs; native-tls binds openssl on Linux and is banned accordingly.
+    # Exemptions require explicit security review.
+    { crate = "native-tls", wrappers = ["reqwest", "tungstenite", "ureq"] },
+]
 
 [sources]
 unknown-registry = "deny"
