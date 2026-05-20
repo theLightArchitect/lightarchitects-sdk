@@ -91,18 +91,29 @@
   <div class="roadmap-body">
 
     {#if status === 'idle' || status === 'loading'}
-      <!-- Loading skeleton — 3 scan-line rows, no blank screen on first paint -->
+      <!-- Loading skeleton — staggered scan rows, no blank screen on first paint -->
       <div class="skeleton" aria-hidden="true" aria-label="Loading roadmap content">
-        <div class="sk-row sk-wide"></div>
-        <div class="sk-row sk-med"></div>
-        <div class="sk-row sk-narrow"></div>
-        <div class="sk-row sk-wide" style="margin-top: 8px;"></div>
-        <div class="sk-row sk-med"></div>
+        <div class="sk-group">
+          <div class="sk-row sk-wide"></div>
+          <div class="sk-row sk-med"></div>
+          <div class="sk-row sk-narrow"></div>
+        </div>
+        <div class="sk-group">
+          <div class="sk-row sk-wide"></div>
+          <div class="sk-row sk-med"></div>
+          <div class="sk-row sk-wide"></div>
+          <div class="sk-row sk-narrow"></div>
+        </div>
+        <div class="sk-group">
+          <div class="sk-row sk-med"></div>
+          <div class="sk-row sk-wide"></div>
+        </div>
       </div>
 
     {:else if status === 'error'}
-      <!-- Error banner with retry -->
+      <!-- Error banner with pulsing indicator and retry -->
       <div class="error-banner" role="alert">
+        <span class="err-pulse-dot" aria-hidden="true"></span>
         <span class="error-icon" aria-hidden="true">⚠</span>
         <span class="error-msg">{$roadmapStore.error}</span>
         <button class="retry-btn" onclick={() => roadmapStore.fetch()}>
@@ -111,11 +122,12 @@
       </div>
 
     {:else if status === 'empty'}
-      <!-- Empty state — roadmap.html exists but is empty -->
+      <!-- Empty state — no roadmap.html artifact yet -->
       <div class="empty-state" role="status">
-        <span class="empty-glyph" aria-hidden="true">[ — ]</span>
+        <span class="empty-glyph" aria-hidden="true">◈</span>
+        <p class="empty-label" aria-hidden="true">NO ARTIFACT</p>
         <p class="empty-text">No roadmap artifact available</p>
-        <p class="empty-hint">Run /SYNC --roadmap to generate content</p>
+        <p class="empty-hint">/SYNC --roadmap to generate content</p>
       </div>
 
     {:else}
@@ -157,28 +169,51 @@
 
   /* ── Loading skeleton ─────────────────────────────────────────────────── */
   .skeleton {
-    padding: 16px;
+    padding: 14px 16px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 16px;
+    /* Subtle dot-grid gives skeleton the feel of graph paper */
+    background-image:
+      radial-gradient(circle, rgba(0,200,255,0.04) 1px, transparent 1px);
+    background-size: 20px 20px;
+    background-position: -1px -1px;
+  }
+
+  .sk-group {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
   }
 
   .sk-row {
-    height: 11px;
+    height: 10px;
+    border-radius: 1px;
     background: linear-gradient(
       90deg,
-      var(--la-bg-elevated, #1a2030) 25%,
-      rgba(0, 200, 255, 0.07) 50%,
-      var(--la-bg-elevated, #1a2030) 75%
+      var(--la-bg-elevated, #1a2030) 0%,
+      rgba(0, 200, 255, 0.10) 45%,
+      rgba(0, 200, 255, 0.03) 55%,
+      var(--la-bg-elevated, #1a2030) 100%
     );
-    background-size: 300% 100%;
-    animation: sk-scan 1.8s ease-in-out infinite;
+    background-size: 250% 100%;
+    animation: sk-scan 2.4s ease-in-out infinite;
   }
 
-  /* Varying widths create the "table of data" illusion */
+  /* Staggered delays — waterfall scan illusion, reads as live data arriving */
+  .sk-group:nth-child(1) .sk-row:nth-child(1) { animation-delay:   0ms; }
+  .sk-group:nth-child(1) .sk-row:nth-child(2) { animation-delay: 100ms; }
+  .sk-group:nth-child(1) .sk-row:nth-child(3) { animation-delay: 200ms; }
+  .sk-group:nth-child(2) .sk-row:nth-child(1) { animation-delay: 320ms; }
+  .sk-group:nth-child(2) .sk-row:nth-child(2) { animation-delay: 420ms; }
+  .sk-group:nth-child(2) .sk-row:nth-child(3) { animation-delay: 520ms; }
+  .sk-group:nth-child(2) .sk-row:nth-child(4) { animation-delay: 620ms; }
+  .sk-group:nth-child(3) .sk-row:nth-child(1) { animation-delay: 740ms; }
+  .sk-group:nth-child(3) .sk-row:nth-child(2) { animation-delay: 840ms; }
+
   .sk-wide   { width: 100%; }
-  .sk-med    { width: 67%; }
-  .sk-narrow { width: 42%; }
+  .sk-med    { width: 64%; }
+  .sk-narrow { width: 39%; }
 
   @keyframes sk-scan {
     0%   { background-position: 200% 0; }
@@ -211,13 +246,29 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 12px 16px;
-    margin: 0;
-    border-left: 2px solid var(--la-semantic-error, #ef4444);
-    background: rgba(239, 68, 68, 0.05);
+    padding: 10px 16px;
+    margin: 10px 12px;
+    border: 1px solid rgba(239, 68, 68, 0.20);
+    border-left: 3px solid var(--la-semantic-error, #ef4444);
+    background: rgba(239, 68, 68, 0.04);
     font-family: var(--la-font-mono, monospace);
     font-size: 10px;
     flex-shrink: 0;
+  }
+
+  /* Pulsing warning dot — operator-grade alert indicator */
+  .err-pulse-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--la-semantic-error, #ef4444);
+    flex-shrink: 0;
+    animation: err-pulse 1.6s ease-in-out infinite;
+  }
+
+  @keyframes err-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+    50%       { opacity: 0.45; box-shadow: 0 0 0 4px rgba(239,68,68,0); }
   }
 
   .error-icon {
@@ -241,15 +292,17 @@
     font-family: var(--la-font-mono, monospace);
     font-size: 8px;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.10em;
     padding: 3px 8px;
     cursor: pointer;
     flex-shrink: 0;
-    transition: background var(--la-transition-fast, 120ms ease);
+    transition: background var(--la-transition-fast, 120ms ease),
+                box-shadow var(--la-transition-fast, 120ms ease);
   }
 
   .retry-btn:hover {
     background: rgba(0, 200, 255, 0.08);
+    box-shadow: 0 0 6px rgba(0, 200, 255, 0.15);
   }
 
   .retry-btn:active {
@@ -263,19 +316,52 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 6px;
     padding: 32px;
     text-align: center;
+    position: relative;
+    overflow: hidden;
   }
 
+  /* Concentric rings — mission control "no signal" radar */
+  .empty-state::before {
+    content: '';
+    position: absolute;
+    width: 280px;
+    height: 280px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 200, 255, 0.05);
+    box-shadow:
+      0 0 0 50px rgba(0, 200, 255, 0.025),
+      0 0 0 100px rgba(0, 200, 255, 0.01);
+    pointer-events: none;
+  }
+
+  /* Single geometric glyph — diamond/compass marker */
   .empty-glyph {
     display: block;
     font-family: var(--la-font-mono, monospace);
-    font-size: 22px;
-    font-weight: 200;
-    color: var(--la-text-mute, #5a6472);
-    letter-spacing: 0.15em;
-    margin-bottom: 4px;
+    font-size: 26px;
+    color: rgba(0, 200, 255, 0.18);
+    margin-bottom: 10px;
+    position: relative;
+    animation: empty-breathe 3.5s ease-in-out infinite;
+  }
+
+  @keyframes empty-breathe {
+    0%, 100% { opacity: 0.6; }
+    50%       { opacity: 1; }
+  }
+
+  .empty-label {
+    font-family: var(--la-font-mono, monospace);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.30em;
+    color: rgba(0, 200, 255, 0.30);
+    text-transform: uppercase;
+    margin: 0 0 4px;
+    position: relative;
   }
 
   .empty-text {
@@ -283,19 +369,24 @@
     font-size: 11px;
     font-weight: 500;
     color: var(--la-text-dim, #96a2ae);
+    position: relative;
+    margin: 0;
   }
 
   .empty-hint {
     font-family: var(--la-font-mono, monospace);
     font-size: 9px;
     color: var(--la-text-mute, #5a6472);
-    letter-spacing: 0.05em;
+    letter-spacing: 0.04em;
+    position: relative;
+    margin: 0;
   }
 
   /* ── Content host ─────────────────────────────────────────────────────── */
   .content-host {
     flex: 1;
     overflow: auto;
+    position: relative;
     /*
      * Traps position:fixed children from the injected roadmap HTML
      * (sticky header, progress bar, particle canvas) within this
@@ -304,12 +395,28 @@
      * becomes the containing block for position:fixed descendants.
      */
     transform: translate(0, 0);
-    border-left: 2px solid transparent;
-    transition: border-left-color 150ms ease;
   }
 
-  /* 150ms cyan flash on SSE-driven refresh — tactile signal of live update */
-  .content-host.flash {
-    border-left-color: var(--la-struct-primary, #00c8ff);
+  /* Left-edge sweep on SSE-driven refresh — reads as a data pulse arriving */
+  .content-host::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    left: 0;
+    width: 2px;
+    background: var(--la-struct-primary, #00c8ff);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .content-host.flash::before {
+    animation: edge-sweep 300ms ease-out forwards;
+  }
+
+  @keyframes edge-sweep {
+    0%   { opacity: 0.9; top: 0; height: 0; }
+    40%  { opacity: 0.9; top: 0; height: 100%; }
+    100% { opacity: 0;   top: 0; height: 100%; }
   }
 </style>
