@@ -21,3 +21,8 @@ pub use dispatch::{ChainContext, dispatch_action};
 mod claude;
 #[cfg(feature = "agent-cli")]
 pub use claude::ClaudeCliProvider;
+
+#[cfg(feature = "agent-cli")]
+pub mod permissions;
+#[cfg(feature = "agent-cli")]
+pub use permissions::{CostGate, PermissionMatrix};

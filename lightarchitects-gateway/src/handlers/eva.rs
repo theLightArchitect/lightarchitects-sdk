@@ -244,7 +244,7 @@ mod tests {
 
     use super::*;
     use lightarchitects::agent::{
-        AgentResponse, ProviderCapabilities, SchemaMode, SanitizedAgentRequest, TokenUsage,
+        AgentResponse, ProviderCapabilities, SanitizedAgentRequest, SchemaMode, TokenUsage,
     };
 
     /// Default handler for tests that exercise non-LLM paths (stub actions,

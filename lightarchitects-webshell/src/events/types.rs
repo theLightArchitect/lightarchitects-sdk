@@ -171,6 +171,42 @@ pub enum WebEvent {
         /// Whether the process ended due to timeout or explicit kill.
         killed: bool,
     },
+
+    // ── ironclaw-spine / lightsquad variants (Phase 2A.5) ────────────────────
+    /// A lightsquad worker slot requires operator `HITL` approval before continuing.
+    ///
+    /// Emitted by the worker-slot coordinator when a gate decision crosses the
+    /// `HITL` threshold defined in `PermissionMatrix`. The operator must respond
+    /// via `POST /api/builds/:id/hitl/:call_id` before the slot unblocks.
+    Escalation(EscalationEvent),
+
+    /// Real-time slot-pool occupancy gauge for the 7-slot lightsquad worker pool.
+    ///
+    /// Emitted on every slot state change (acquire / release). The frontend
+    /// `WaveTimeline` uses this to render the live occupancy bar above the wave
+    /// graph.
+    WorkerSlotGauge(WorkerSlotGaugeEvent),
+
+    /// Conductor heartbeat tick emitted once per conductor cycle.
+    ///
+    /// The frontend uses `tick_seq` to detect stalled conductors (no tick for
+    /// `N` seconds ⇒ show a warning badge). `queue_depth` and `active_workers`
+    /// drive the `ConductorPanel` live counters.
+    ConductorTick(ConductorTickEvent),
+
+    /// Merge agent lifecycle status update.
+    ///
+    /// Emitted by the merge agent at phase transitions: `"started"`,
+    /// `"running"`, `"merged"`, or `"failed"`. `commit_sha` is set only in
+    /// the `"merged"` phase.
+    MergeAgentStatus(MergeAgentStatusEvent),
+
+    /// A fix agent is entering another iteration against a failing gate.
+    ///
+    /// Emitted before each fix pass so the operator can observe retry depth.
+    /// The `ReviewGate` uses `iteration` to enforce the per-gate fix-attempt
+    /// limit (default: 3).
+    FixAgentIteration(FixAgentIterationEvent),
 }
 
 /// Northstar evaluation result broadcast after a `WAVE_COMPLETE` event.
@@ -250,6 +286,96 @@ pub struct ContextStatusEvent {
     pub budget: u64,
     /// Tokens consumed so far in this session.
     pub used: u64,
+}
+
+// ── ironclaw-spine / lightsquad payload types (Phase 2A.5) ──────────────────
+
+/// Payload for [`WebEvent::Escalation`].
+///
+/// Carries the minimal data the operator needs to evaluate and approve or
+/// reject a `HITL` gate decision. `call_id` is a `UUIDv4` minted server-side
+/// for correlation with the `POST /api/builds/:id/hitl/:call_id` response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EscalationEvent {
+    /// Build that triggered the escalation.
+    pub build_id: String,
+    /// Zero-based wave index at the time of escalation.
+    pub wave_index: u32,
+    /// Slot number (1–7) that is blocked waiting for approval.
+    pub worker_slot: u8,
+    /// Human-readable reason for the escalation (e.g. gate dimension + rule).
+    pub reason: String,
+    /// Server-minted `UUIDv4` — used as the path parameter in the `HITL`
+    /// response endpoint. Never client-supplied (prevents `IDOR`).
+    pub call_id: String,
+}
+
+/// Payload for [`WebEvent::WorkerSlotGauge`].
+///
+/// Carries the instantaneous occupancy of the 7-slot lightsquad worker pool.
+/// `active` ≤ `capacity` is always true; capacity is 7 for the default pool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkerSlotGaugeEvent {
+    /// Build the pool belongs to.
+    pub build_id: String,
+    /// Zero-based wave index.
+    pub wave_index: u32,
+    /// Number of slots currently running a worker process.
+    pub active: u8,
+    /// Total slot capacity (7 for the standard pool).
+    pub capacity: u8,
+}
+
+/// Payload for [`WebEvent::ConductorTick`].
+///
+/// Emitted once per conductor scheduling cycle. `tick_seq` is monotonically
+/// increasing within a build; a gap in `tick_seq` signals a missed tick.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConductorTickEvent {
+    /// Build the conductor is managing.
+    pub build_id: String,
+    /// Monotonically increasing tick counter (1-based, resets per build).
+    pub tick_seq: u64,
+    /// Number of tasks waiting in the conductor queue.
+    pub queue_depth: u32,
+    /// Number of worker slots currently active.
+    pub active_workers: u8,
+}
+
+/// Payload for [`WebEvent::MergeAgentStatus`].
+///
+/// Tracks the merge agent through its lifecycle phases. `commit_sha` is
+/// populated only in the `"merged"` phase after a successful `git merge --no-ff`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MergeAgentStatusEvent {
+    /// Build the merge agent is working on.
+    pub build_id: String,
+    /// Zero-based wave index this merge agent belongs to.
+    pub wave_index: u32,
+    /// Lifecycle phase: `"started"` | `"running"` | `"merged"` | `"failed"`.
+    pub phase: String,
+    /// Full `git` commit `SHA` produced by the merge, set only in `"merged"` phase.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_sha: Option<String>,
+}
+
+/// Payload for [`WebEvent::FixAgentIteration`].
+///
+/// Emitted before each fix-agent pass so the operator can observe retry depth
+/// and surface a manual override if the agent is stuck. The `ReviewGate`
+/// enforces a per-gate cap (default 3 iterations).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixAgentIterationEvent {
+    /// Build the fix agent belongs to.
+    pub build_id: String,
+    /// Zero-based wave index.
+    pub wave_index: u32,
+    /// Slot number (1–7) running the fix agent.
+    pub worker_slot: u8,
+    /// 1-based iteration counter for this fix cycle.
+    pub iteration: u32,
+    /// Short summary of the failing gate dimension being addressed.
+    pub issue_summary: String,
 }
 
 /// Risk classification for a tool permission request.
@@ -1123,5 +1249,91 @@ mod tests {
             !json.contains("sibling"),
             "absent sibling must be omitted: {json}"
         );
+    }
+
+    // ── ironclaw-spine / lightsquad variant tests (Phase 2A.5) ───────────────
+
+    #[test]
+    fn escalation_serialises_type_tag() {
+        let event = WebEvent::Escalation(EscalationEvent {
+            build_id: "ironclaw-spine".to_owned(),
+            wave_index: 1,
+            worker_slot: 3,
+            reason: "gate [S] requires operator approval".to_owned(),
+            call_id: "00000000-0000-0000-0000-000000000001".to_owned(),
+        });
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains(r#""type":"escalation""#), "{json}");
+        assert!(json.contains("ironclaw-spine"), "{json}");
+        assert!(json.contains("call_id"), "{json}");
+    }
+
+    #[test]
+    fn worker_slot_gauge_serialises_type_tag() {
+        let event = WebEvent::WorkerSlotGauge(WorkerSlotGaugeEvent {
+            build_id: "ironclaw-spine".to_owned(),
+            wave_index: 0,
+            active: 5,
+            capacity: 7,
+        });
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains(r#""type":"worker_slot_gauge""#), "{json}");
+        assert!(json.contains(r#""active":5"#), "{json}");
+        assert!(json.contains(r#""capacity":7"#), "{json}");
+    }
+
+    #[test]
+    fn conductor_tick_serialises_type_tag() {
+        let event = WebEvent::ConductorTick(ConductorTickEvent {
+            build_id: "ironclaw-spine".to_owned(),
+            tick_seq: 42,
+            queue_depth: 3,
+            active_workers: 4,
+        });
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains(r#""type":"conductor_tick""#), "{json}");
+        assert!(json.contains(r#""tick_seq":42"#), "{json}");
+    }
+
+    #[test]
+    fn merge_agent_status_merged_phase_includes_commit_sha() {
+        let event = WebEvent::MergeAgentStatus(MergeAgentStatusEvent {
+            build_id: "ironclaw-spine".to_owned(),
+            wave_index: 2,
+            phase: "merged".to_owned(),
+            commit_sha: Some("abc1234".to_owned()),
+        });
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains(r#""type":"merge_agent_status""#), "{json}");
+        assert!(json.contains("abc1234"), "{json}");
+    }
+
+    #[test]
+    fn merge_agent_status_non_merged_omits_commit_sha() {
+        let event = WebEvent::MergeAgentStatus(MergeAgentStatusEvent {
+            build_id: "ironclaw-spine".to_owned(),
+            wave_index: 2,
+            phase: "running".to_owned(),
+            commit_sha: None,
+        });
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(
+            !json.contains("commit_sha"),
+            "absent commit_sha must be omitted: {json}"
+        );
+    }
+
+    #[test]
+    fn fix_agent_iteration_serialises_type_tag() {
+        let event = WebEvent::FixAgentIteration(FixAgentIterationEvent {
+            build_id: "ironclaw-spine".to_owned(),
+            wave_index: 1,
+            worker_slot: 2,
+            iteration: 2,
+            issue_summary: "clippy::unwrap_used in production path".to_owned(),
+        });
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains(r#""type":"fix_agent_iteration""#), "{json}");
+        assert!(json.contains(r#""iteration":2"#), "{json}");
     }
 }

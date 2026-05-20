@@ -12,6 +12,9 @@ use tokio::process::Command;
 /// `account`. Returns `Ok(true)` on exit 0, `Ok(false)` on any non-zero
 /// exit (including the `errSecItemNotFound = 44` path), and propagates the
 /// spawn error only if `security(1)` itself cannot be launched.
+// Used by providers-anthropic and providers-openai callers; dead_code fires
+// when those features are inactive under the `lightsquad`-only feature set.
+#[allow(dead_code)]
 pub(crate) async fn probe_keychain(service: &str, account: &str) -> std::io::Result<bool> {
     let status = Command::new("security")
         .args(["find-generic-password", "-s", service, "-a", account])

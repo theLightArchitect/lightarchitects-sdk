@@ -6,10 +6,15 @@
 
 #[cfg(target_os = "macos")]
 mod keychain_macos;
+// Used by providers-anthropic and providers-openai; unused when those features
+// are inactive (e.g. the `lightsquad` feature alone). Suppress the lint rather
+// than gate the re-export on every provider feature combination.
 #[cfg(target_os = "macos")]
+#[allow(unused_imports)]
 pub(crate) use keychain_macos::probe_keychain;
 
 #[cfg(not(target_os = "macos"))]
 mod keychain_stub;
 #[cfg(not(target_os = "macos"))]
+#[allow(unused_imports)]
 pub(crate) use keychain_stub::probe_keychain;

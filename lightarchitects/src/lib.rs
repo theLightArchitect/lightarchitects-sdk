@@ -76,3 +76,22 @@ pub mod credentials;
 /// Typed REST client for the `lightarchitects-gateway` platform API (localhost:8080).
 #[cfg(feature = "http-client")]
 pub mod platform;
+
+/// lightsquad supervisor — OS process-lifecycle management (launchd on macOS).
+/// Gated on `lightsquad` because the supervisor exists solely to keep the
+/// lightsquad engine running as a managed background service.
+#[cfg(feature = "lightsquad")]
+pub mod supervisor;
+
+/// lightsquad — autonomous code-delivery orchestration engine.
+/// Phase 1 stubs; implementations land in Phase 3+ per the ironclaw-spine LASDLC plan.
+/// See module-level docs for architecture, sub-modules, and future-extraction status.
+#[cfg(feature = "lightsquad")]
+pub mod lightsquad;
+
+/// Observability primitives for lightsquad wave execution — W3C `traceparent`
+/// carrier, tool-call span attribute schema, and Google SRE Golden Signals +
+/// Apdex metrics. Gated on `lightsquad` because this module exists solely to
+/// instrument lightsquad worker activity.
+#[cfg(feature = "lightsquad")]
+pub mod observability;

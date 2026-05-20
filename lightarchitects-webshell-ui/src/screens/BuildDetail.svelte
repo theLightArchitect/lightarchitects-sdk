@@ -12,13 +12,15 @@
   import TaskDrillView from '$lib/../components/views/TaskDrillView.svelte';
   import WavePipelineView from '$lib/../components/views/WavePipelineView.svelte';
   import ProposalCard from '$lib/../components/ProposalCard.svelte';
+  import AutonomousRun from '$lib/../components/views/AutonomousRun.svelte';
+  import DecisionLog   from '$lib/../components/views/DecisionLog.svelte';
   import type { Phase } from '$lib/WavePipelineView.contract';
   import type { SupervisorState } from '$lib/types';
 
-  // 'pipeline' is the FOLD-4 hook for ironclaw-spine (6th view mode).
-  type ViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms' | 'pipeline';
+  // 'autonomous' + 'decisions' are the ironclaw-spine Phase 6 tabs.
+  type ViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms' | 'pipeline' | 'autonomous' | 'decisions';
 
-  const VIEW_MODES: ViewMode[] = ['kanban', 'list', 'operator', 'manifest', 'plan', 'comms', 'pipeline'];
+  const VIEW_MODES: ViewMode[] = ['kanban', 'list', 'operator', 'manifest', 'plan', 'comms', 'pipeline', 'autonomous', 'decisions'];
 
   let viewMode = $state<ViewMode>('kanban');
   let build = $derived($activeBuild);
@@ -77,7 +79,9 @@
     { key: 'manifest', label: 'MANIFEST', desc: 'Raw YAML manifest — codename, tier, phase set, assumptions' },
     { key: 'plan',     label: 'PLAN',     desc: 'Full LASDLC plan document with phases, exit criteria, and deliverables' },
     { key: 'comms',    label: 'COMMS',    desc: 'Agent communication stream — messages, handoffs, and coordination events' },
-    { key: 'pipeline', label: 'PIPELINE', desc: 'Wave pipeline — phase/wave/task timeline with gate verdicts' },
+    { key: 'pipeline',   label: 'PIPELINE',   desc: 'Wave pipeline — phase/wave/task timeline with gate verdicts' },
+    { key: 'autonomous', label: 'AUTO RUN',   desc: 'Live autonomous execution — slot occupancy, conductor ticks, merge/fix agent events' },
+    { key: 'decisions',  label: 'DECISIONS',  desc: 'HMAC-chained conductor decision log — L1 architectural through L4 escalation' },
   ];
 
   // Stub phases for WavePipelineView — populated from manifest in Phase 7.
@@ -279,6 +283,10 @@
           <CommsView />
         {:else if viewMode === 'pipeline'}
           <WavePipelineView mode="full" phases={STUB_PHASES} />
+        {:else if viewMode === 'autonomous'}
+          <AutonomousRun buildId={build.id} />
+        {:else if viewMode === 'decisions'}
+          <DecisionLog buildId={build.id} />
         {:else}
           <PlanView />
         {/if}

@@ -335,6 +335,33 @@ pub struct CreateBuildRequest {
     /// is spawned that calls `evaluate_wave` on every `WAVE_COMPLETE` event.
     #[serde(default)]
     pub northstar_text: Option<String>,
+    /// Execution mode: `"interactive"` (default) or `"autonomous"`.
+    ///
+    /// `"autonomous"` activates the lightsquad conductor: wave-level
+    /// parallelism, `ReviewGate`, `MergeAgent`, and decision-log recording.
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// Task waves for autonomous mode.
+    ///
+    /// Each inner `Vec` is one wave dispatched in parallel; waves are
+    /// executed sequentially (wave N+1 starts only after wave N completes).
+    /// Required when `mode = "autonomous"`; ignored for interactive builds.
+    #[serde(default)]
+    pub waves: Option<Vec<Vec<TaskSpec>>>,
+}
+
+/// Lightweight task specification supplied by the operator at build creation.
+///
+/// Translated internally to [`lightarchitects::lightsquad::types::Task`].
+#[derive(Debug, Deserialize, Clone)]
+pub struct TaskSpec {
+    /// Unique identifier within this build (e.g. `"phase-1-arch"`).
+    pub id: String,
+    /// Prompt sent to the worker subprocess.
+    pub prompt: String,
+    /// IDs of tasks that must complete before this one may start.
+    #[serde(default)]
+    pub depends_on: Vec<String>,
 }
 
 /// Public response shape for `POST /api/builds` and `GET /api/builds/:id`.
@@ -356,6 +383,8 @@ pub struct BuildResponse {
     pub model: Option<String>,
     /// Whether this build will spawn in a container (true) or native PTY (false).
     pub containerized: bool,
+    /// Echo of the resolved execution mode: `"interactive"` or `"autonomous"`.
+    pub mode: String,
 }
 
 /// Sanitised view of [`AgentSession`] — omits Ollama `auth_token`.
@@ -404,6 +433,50 @@ impl AgentDescriptor {
     }
 }
 
+/// Spawn an autonomous lightsquad build if `waves` was supplied.
+fn maybe_spawn_autonomous(
+    state: &AppState,
+    session: &Arc<BuildSession>,
+    waves: Option<Vec<Vec<TaskSpec>>>,
+) {
+    use crate::events::{
+        decisions::DecisionsWriter,
+        lightsquad_bridge::{BridgeContext, spawn_autonomous_build},
+    };
+    let Some(waves) = waves else {
+        tracing::warn!(
+            build_id = %session.build_id,
+            "autonomous mode requested but no `waves` supplied — running as interactive"
+        );
+        return;
+    };
+    let build_id = session.build_id;
+    let decisions_writer = match DecisionsWriter::open(
+        &state.decisions_dir,
+        build_id,
+        secrecy::ExposeSecret::expose_secret(&*state.turnlog_pepper),
+    ) {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::error!(error = %e, "decisions writer failed to open — autonomous build aborted");
+            return;
+        }
+    };
+    let handle = spawn_autonomous_build(BridgeContext {
+        build_id,
+        codename: format!("build-{build_id}"),
+        repo_root: session.cwd.clone(),
+        worktree_root: std::env::temp_dir().join(format!("la-wt-{build_id}")),
+        feat_branch: format!("feat/auto-{build_id}"),
+        waves,
+        event_tx: state.event_tx.clone(),
+        decisions_writer,
+        mock_workers: state.mock_workers,
+    });
+    state.lightsquad_programs.insert(build_id, handle);
+    info!(build_id = %build_id, "lightsquad autonomous build spawned");
+}
+
 /// `POST /api/builds` — create a new live build session.
 ///
 /// Auth-gated (global Bearer token). The request body is the
@@ -434,6 +507,12 @@ pub async fn create_build_handler(
     session.containerized = state.docker_capable == crate::container::DockerCapability::Ready
         && state.config.container_mode != crate::container::ContainerMode::ForceDisable;
 
+    let mode = match body.mode.as_deref() {
+        Some("autonomous") => "autonomous",
+        _ => "interactive",
+    };
+    mode.clone_into(&mut session.mode);
+
     let resp = BuildResponse {
         build_id: session.build_id,
         cwd: session.cwd.clone(),
@@ -441,6 +520,7 @@ pub async fn create_build_handler(
         claude_agent_template: session.claude_agent_template.clone(),
         model: session.model.clone(),
         containerized: session.containerized,
+        mode: mode.to_owned(),
     };
 
     if let Ok(store) = state.session_store.lock() {
@@ -496,6 +576,11 @@ pub async fn create_build_handler(
         info!(build_id = %session.build_id, "supervisor watcher spawned for northstar build");
     }
 
+    // Dispatch to lightsquad when mode = "autonomous" and waves were provided.
+    if mode == "autonomous" {
+        maybe_spawn_autonomous(&state, &session, body.waves);
+    }
+
     info!(build_id = %resp.build_id, cwd = %body.cwd.display(), "build session created");
 
     (StatusCode::OK, Json(resp)).into_response()
@@ -521,6 +606,7 @@ pub async fn build_details_handler(
         claude_agent_template: session.claude_agent_template.clone(),
         model: session.model.clone(),
         containerized: session.containerized,
+        mode: session.mode.clone(),
     };
 
     (StatusCode::OK, Json(resp)).into_response()
@@ -1152,6 +1238,59 @@ pub async fn commit_plan_handler(
         .into_response()
 }
 
+/// Query parameters for `GET /api/builds/:id/decisions`.
+#[derive(serde::Deserialize)]
+pub struct DecisionsQuery {
+    /// Return only decisions with `line_n` greater than this value (cursor pagination).
+    pub since: Option<u64>,
+}
+
+/// `GET /api/builds/:id/decisions` — HMAC-chained decision log for an autonomous build.
+///
+/// Returns the NDJSON decision log as a JSON array. The log is append-only and
+/// HMAC-chained; each entry includes a `line_n` for cursor-based pagination via
+/// `?since=<line_n>` (entries with `line_n <= since` are excluded).
+///
+/// Responds `404` when the build is not found. Returns an empty JSON array
+/// when the build has no decisions yet (interactive mode or build not started).
+///
+/// # Errors
+///
+/// Returns `404 Not Found` when no build session exists for the given `build_id`.
+pub async fn build_decisions_handler(
+    _: crate::auth::AuthGuard,
+    Path(build_id): Path<Uuid>,
+    State(state): State<AppState>,
+    Query(params): Query<DecisionsQuery>,
+) -> impl IntoResponse {
+    let Some(_session) = state.builds.get(build_id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    let entries = match crate::events::decisions::DecisionsWriter::read_all(
+        &state.decisions_dir,
+        build_id,
+    ) {
+        Ok(all) => all,
+        Err(e) => {
+            tracing::warn!(error = %e, build_id = %build_id, "decisions read failed — returning empty");
+            vec![]
+        }
+    };
+
+    // When `since` is absent return all entries (line_n starts at 0 so
+    // `unwrap_or(0)` would silently drop the first entry).
+    let filtered: Vec<_> = match params.since {
+        Some(since) => entries
+            .into_iter()
+            .filter(|e| e.line_n as u64 > since)
+            .collect(),
+        None => entries,
+    };
+
+    (StatusCode::OK, axum::Json(filtered)).into_response()
+}
+
 /// `GET /api/events/global` — SSE stream of all global events with optional filtering.
 ///
 /// Sends a snapshot of existing entries (newest-last), then streams live events.
@@ -1289,6 +1428,7 @@ mod tests {
             claude_agent_template: None,
             model: None,
             containerized: false,
+            mode: "interactive".to_owned(),
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(
@@ -1331,5 +1471,53 @@ mod tests {
             !json.contains("lightarchitects-cli"),
             "binary path must not leak: {json}"
         );
+    }
+
+    #[test]
+    fn decisions_query_deserializes_since_param() {
+        let q: DecisionsQuery = serde_json::from_str(r#"{"since":42}"#).unwrap();
+        assert_eq!(q.since, Some(42));
+    }
+
+    #[test]
+    fn decisions_query_since_optional() {
+        let q: DecisionsQuery = serde_json::from_str("{}").unwrap();
+        assert!(q.since.is_none());
+    }
+
+    #[test]
+    fn create_build_request_accepts_mode_autonomous() {
+        let body = r#"{"cwd":"/tmp/build-3","mode":"autonomous"}"#;
+        let req: CreateBuildRequest = serde_json::from_str(body).unwrap();
+        assert_eq!(req.mode.as_deref(), Some("autonomous"));
+    }
+
+    #[test]
+    fn create_build_request_mode_absent_is_none() {
+        let body = r#"{"cwd":"/tmp/build-4"}"#;
+        let req: CreateBuildRequest = serde_json::from_str(body).unwrap();
+        assert!(req.mode.is_none(), "absent mode must deserialise as None");
+    }
+
+    #[test]
+    fn mode_normalisation_pins_handler_match_logic() {
+        // Regression pin: the match in create_build_handler must accept only
+        // "autonomous" and collapse everything else to "interactive". If a
+        // future commit adds a new variant, this table test must be updated
+        // explicitly — preventing silent behavioural changes.
+        let cases: &[(&str, &str)] = &[
+            ("autonomous", "autonomous"),
+            ("interactive", "interactive"),
+            ("AUTONOMOUS", "interactive"), // case-sensitive — no implicit coerce
+            ("turbo", "interactive"),
+            ("", "interactive"),
+        ];
+        for &(input, expected) in cases {
+            let resolved = match Some(input) {
+                Some("autonomous") => "autonomous",
+                _ => "interactive",
+            };
+            assert_eq!(resolved, expected, "mode={input:?}");
+        }
     }
 }

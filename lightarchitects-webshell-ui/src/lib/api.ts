@@ -12,6 +12,7 @@ import type {
   PlanDraftRequest, PlanDraftResponseEnvelope, PlanDraftEvent, PlanCommitRequest,
   NorthstarEvaluationEvent, SupervisorState,
   PreflightReport,
+  DecisionEntry,
 } from './types';
 import type { SetupInfo, ModelOption, SaveRequest } from './setup';
 
@@ -515,6 +516,27 @@ export const api = {
       if (r.status === 404) return [] as import('$lib/types').AyinSpanEvent[];
       if (!r.ok) throw new Error(`ayin/traces: ${r.status}`);
       return r.json() as Promise<import('$lib/types').AyinSpanEvent[]>;
+    });
+  },
+
+  // ── ironclaw-spine lightsquad (Phase 6) ───────────────────────────────────
+
+  /**
+   * Fetch the HMAC-chained decision log for an autonomous build.
+   *
+   * Calls `GET /api/builds/:id/decisions` (§2.10d). Returns an empty array
+   * when the build has no decisions yet (404 or empty body).
+   *
+   * @param since - Resume from this line number (inclusive) for pagination.
+   */
+  getDecisions: (buildId: string, since?: number): Promise<DecisionEntry[]> => {
+    const params = since != null ? `?since=${since}` : '';
+    return fetch(`${API_BASE}/builds/${encodeURIComponent(buildId)}/decisions${params}`, {
+      headers: authHeaders(),
+    }).then(r => {
+      if (r.status === 404) return [] as DecisionEntry[];
+      if (!r.ok) throw new Error(`builds/${buildId}/decisions: ${r.status}`);
+      return r.json() as Promise<DecisionEntry[]>;
     });
   },
 };

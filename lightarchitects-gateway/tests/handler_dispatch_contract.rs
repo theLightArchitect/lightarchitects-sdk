@@ -66,7 +66,10 @@ impl LlmAgentProvider for CapturingProvider {
     }
 
     async fn spawn(&self, req: SanitizedAgentRequest) -> Result<AgentResponse, ProviderError> {
-        self.requests.lock().unwrap().push(req.into_inner_unchecked());
+        self.requests
+            .lock()
+            .unwrap()
+            .push(req.into_inner_unchecked());
         Ok(AgentResponse {
             output: self.output.clone(),
             turns_used: 1,
@@ -650,7 +653,10 @@ async fn dispatch_action_depth_at_max_passes() {
         },
     )
     .await;
-    assert!(result.is_ok(), "depth={MAX_CHAIN_DEPTH} must pass chain guard");
+    assert!(
+        result.is_ok(),
+        "depth={MAX_CHAIN_DEPTH} must pass chain guard"
+    );
     assert_eq!(requests.lock().unwrap().len(), 1);
 }
 

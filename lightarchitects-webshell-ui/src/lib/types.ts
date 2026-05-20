@@ -304,7 +304,13 @@ export type EventType =
   | 'strand_convergence'
   | 'mailbox_message'
   | 'context_status'
-  | 'gitforest_update';
+  | 'gitforest_update'
+  // ── ironclaw-spine lightsquad (Phase 2A.5) ──────────────────────────────
+  | 'escalation'
+  | 'worker_slot_gauge'
+  | 'conductor_tick'
+  | 'merge_agent_status'
+  | 'fix_agent_iteration';
 
 // --- Agent protocol (native agent bridge) ---
 
@@ -1115,4 +1121,66 @@ export interface PreflightReport {
   overall:    OverallStatus;
   checks:     CheckResult[];
   elapsed_ms: number;
+}
+
+// ── ironclaw-spine lightsquad event payloads (Phase 2A.5) ──────────────────
+
+/** Build execution mode. */
+export type BuildMode = 'interactive' | 'autonomous';
+
+/** HITL escalation — gate threshold crossed. */
+export interface EscalationEvent {
+  type:       'escalation';
+  build_id:   string;
+  wave_index: number;
+  call_id:    string;
+  reason:     string;
+  canon_ref?: string;
+}
+
+/** Worker slot occupancy update (7-slot pool). */
+export interface WorkerSlotGaugeEvent {
+  type:       'worker_slot_gauge';
+  build_id:   string;
+  wave_index: number;
+  active:     number;
+  capacity:   number;
+}
+
+/** Conductor heartbeat — queue depth + active worker count. */
+export interface ConductorTickEvent {
+  type:           'conductor_tick';
+  build_id:       string;
+  tick_seq:       number;
+  queue_depth:    number;
+  active_workers: number;
+}
+
+/** Merge agent lifecycle event. */
+export interface MergeAgentStatusEvent {
+  type:        'merge_agent_status';
+  build_id:    string;
+  wave_index:  number;
+  phase:       string;
+  commit_sha?: string;
+}
+
+/** FixAgent iteration depth. */
+export interface FixAgentIterationEvent {
+  type:          'fix_agent_iteration';
+  build_id:      string;
+  wave_index:    number;
+  worker_slot:   number;
+  iteration:     number;
+  issue_summary: string;
+}
+
+/** A single decision entry from GET /api/builds/:id/decisions. */
+export interface DecisionEntry {
+  line_n:      number;
+  timestamp:   string;
+  level:       'L1' | 'L2' | 'L3' | 'L4';
+  decision:    string;
+  canon_ref?:  string;
+  hmac_ok?:    boolean;
 }

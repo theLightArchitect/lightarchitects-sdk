@@ -60,7 +60,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use lightarchitects::agent::{
     AgentRequest, AgentResponse, ClaudeCliProvider, LlmAgentProvider, ProviderCapabilities,
-    ProviderError, SchemaMode, SanitizedAgentRequest,
+    ProviderError, SanitizedAgentRequest, SchemaMode,
 };
 use lightarchitects::core::handler::SiblingHandler;
 use lightarchitects_gateway::handlers::{CorsoHandler, EvaHandler, QuantumHandler, SoulHandler};
