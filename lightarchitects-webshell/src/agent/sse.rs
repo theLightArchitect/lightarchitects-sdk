@@ -94,7 +94,15 @@ struct SseGuard;
 
 impl Drop for SseGuard {
     fn drop(&mut self) {
+        // In tests, use saturating update: async tests create SseGuard without a
+        // corresponding fetch_add, so plain fetch_sub would underflow and race
+        // with the sync counter-delta test. In production the counter is always
+        // incremented before SseGuard is constructed (see sse_agent above).
+        #[cfg(not(test))]
         AGENT_SSE_COUNT.fetch_sub(1, Ordering::Relaxed);
+        #[cfg(test)]
+        let _ =
+            AGENT_SSE_COUNT.fetch_update(Ordering::AcqRel, Ordering::Relaxed, |n| n.checked_sub(1));
     }
 }
 
@@ -173,8 +181,6 @@ mod tests {
         let _ = tx.send(AgentEvent::Heartbeat);
         let _ = tx.send(AgentEvent::Heartbeat);
 
-        // Pre-increment so SseGuard::drop() does not underflow the counter.
-        AGENT_SSE_COUNT.fetch_add(1, Ordering::SeqCst);
         // rx will be lagged because channel capacity is 2 and we sent 4
         let (result, (_rx, seq, _guard)) = drive_agent_stream((rx, 0, SseGuard)).await.unwrap();
         let _event = result.unwrap();
@@ -189,8 +195,6 @@ mod tests {
             chunk: "hello".to_owned(),
         });
 
-        // Pre-increment so SseGuard::drop() does not underflow the counter.
-        AGENT_SSE_COUNT.fetch_add(1, Ordering::SeqCst);
         let (result, (_rx, seq, _guard)) = drive_agent_stream((rx, 0, SseGuard)).await.unwrap();
         let _event = result.unwrap();
         assert_eq!(seq, 1);
