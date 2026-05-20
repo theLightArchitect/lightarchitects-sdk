@@ -1,0 +1,45 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-20T02:57:32Z"
+build_id: webshell-roadmap-rendering
+phase_id: phase-3-verify
+branch: feat/webshell-roadmap-rendering
+sha: 4418ce4089f757d13023ecd34ff654ce7534110e
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1965
+    tests_fail: 0
+    notes: "Rust workspace: 1965 pass / 0 fail. roadmap_route_test 3 new tests included."
+  Q4_svelte:
+    result: pass
+    vitest: "602/603 pass (1 pre-existing Ops.svelte jsdom/Canvas flake in phase6.test.ts)"
+    svelte_check: "0 errors, 25 pre-existing warnings"
+    e2e: "roadmap.spec.ts 4/4 pass (10.9s, headed, dev server)"
+  D2_plan:
+    result: pass
+    notes: |
+      D2 gap remediated inline: roadmap_route_test.rs (Rust integration test for /api/roadmap)
+      was missing at Phase 3 commit 93bf114; added at 4418ce4 before gate close.
+      Plan deliverables now fully covered:
+        - lightarchitects-webshell/tests/roadmap_route_test.rs (3 tests: html/empty/401)
+        - lightarchitects-webshell-ui/src/__tests__/roadmap.test.ts (6 vitest unit tests)
+        - lightarchitects-webshell-ui/e2e/roadmap.spec.ts (4 E2E tests R1-R4)
+        - lightarchitects-webshell-ui/src/lib/components/RoadmapPanel.svelte (polished)
+
+pre_existing_flakes:
+  - file: "src/__tests__/phase6.test.ts"
+    test: "Ops screen imports successfully"
+    cause: "Canvas API not available in jsdom; pre-exists on main branch"
+    verdict: "FLAKY (pre-existing) — not a regression; does not block gate"
+
+commits_in_phase:
+  - sha: "93bf114"
+    message: "feat(roadmap): Phase 3 — unit tests, E2E suite, RoadmapPanel polish"
+  - sha: "4418ce4"
+    message: "test(roadmap): add Rust integration tests for GET /api/roadmap"
