@@ -62,6 +62,7 @@
     Git:           () => import('./screens/Git.svelte'),
     PullRequest:   () => import('./screens/PullRequest.svelte'),
     Architecture:  () => import('./screens/Architecture.svelte'),
+    Roadmap:       () => import('./lib/components/RoadmapPanel.svelte'),
   };
 
   type ScreenModule = { default: any };
@@ -161,6 +162,7 @@
     { label: 'Activity',  hash: '/activity',  hint: 'Squad comms — cross-build coordination overview and task queue', separator: false },
     { label: 'Knowledge', hash: '/knowledge', hint: 'Knowledge graph — agent memory strands and quality gates',    separator: false },
     { label: 'Diagrams',  hash: '/diagrams',  hint: 'Architecture intelligence — extract, verify, render diagrams',separator: false },
+    { label: 'Roadmap',   hash: '/roadmap',   hint: 'Portfolio-level roadmap — active builds, phases, blockers',   separator: false },
   ];
 
   let activeRoute = $derived($currentRoute);
@@ -172,6 +174,7 @@
     if (hash === '/knowledge') return activeRoute.startsWith('/knowledge') || activeRoute.startsWith('/memory') || activeRoute.startsWith('/helix');
     if (hash === '/activity')  return activeRoute.startsWith('/activity') || activeRoute.startsWith('/comms');
     if (hash === '/diagrams')  return activeRoute.startsWith('/diagrams') || activeRoute.startsWith('/arch');
+    if (hash === '/roadmap')   return activeRoute.startsWith('/roadmap');
     return activeRoute.startsWith(hash);
   }
 
