@@ -318,6 +318,8 @@ The DecisionLog panel in BuildDetail shows each entry with a coloured left borde
 | Amber | L3 QUALITY GATE |
 | Red | L4 ESCALATION |
 
+**Normal operation: entries display no badge.** The absence of a badge means `hmac_ok === true` — the chain is intact. You only see UI indicators when something is wrong.
+
 When `hmac_ok === false` the entry displays a **"⚠ HMAC"** badge in amber. This means either:
 
 - The log file was edited after the fact, or
