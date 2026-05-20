@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.11"  # bumped 2026-05-19: nav tab renames (Monitor/Run/Manage/Activity/Memory); §2.16 autonomous mode (CreateBuildRequest.mode + BuildResponse.mode + decisions endpoint + 5 SSE event types); BuildDetail supervisor strip + route mapping
+version: "1.0.12"  # bumped 2026-05-20: §2.4a copilot context grounding (recent_events + ui_context) — copilot-omniscience-read Phase 3
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
@@ -252,6 +252,51 @@ Wire tags use `serde(rename_all = "snake_case")` per the existing enum conventio
 | `POST` | `/api/builds/{id}/dispatch` | Dispatch a squad agent from within a build |
 | `GET (SSE)` | `/api/builds/{id}/agent/stream` | Option-E hybrid agent SSE |
 | `GET (WS)` | `/api/builds/{id}/agent/ws` | Option-E hybrid agent WebSocket |
+
+### §2.4a POST /api/builds/{id}/copilot — Context Grounding (copilot-omniscience-read)
+
+Added in `copilot-omniscience-read` Phase 1–3 (2026-05-20). All new fields are optional; omitting them is fully backwards-compatible.
+
+**Request body** (`application/json`):
+
+```jsonc
+{
+  "message": "string",                      // required — user turn
+  "recent_events": [                        // optional — max 100 entries
+    {
+      "seq": 42,                            // u64 monotone sequence number
+      "timestamp": "2026-05-20T18:00:00Z", // ISO-8601 UTC, no subseconds
+      "source": "BuildRunner",             // allowlist: [A-Za-z0-9_-], max 64 bytes
+      "event": { ... }                     // arbitrary JSON payload, max 16 KiB per entry
+    }
+  ],
+  "ui_context": {                           // optional — current operator UI state
+    "route": "/builds/abc-123",            // current route, max 512 bytes
+    "selection": "phase-2",               // optional selected entity, max 256 bytes
+    "view": "kanban",                     // optional view mode, max 256 bytes
+    "degraded": ["corso", "soul"]         // optional degraded/offline sibling IDs
+  }
+}
+```
+
+**Server-side limits** (enforced in `context.rs`, `routes.rs`):
+
+| Limit | Value |
+|-------|-------|
+| `recent_events` max count | 100 |
+| Per-event payload | 16 KiB (returns 422 `event_payload_too_large`) |
+| Assembled grounded message | 256 KiB (returns 400 `grounded_message_too_large`) |
+| `source` field | `[A-Za-z0-9_-]`, max 64 bytes |
+| `timestamp` field | no `<>`, `\n`, `\r`, `\0`; max 64 bytes |
+| `route` / `selection` / `view` | max 512 / 256 / 256 bytes |
+| `degraded` array | max 20 entries, each max 64 bytes, same allowlist as `source` |
+
+**Client-side behaviour** (TypeScript stores + `CopilotContextTray`):
+
+- `recentEventBuffer` (writable store) — rolling 50-event window, newest-first
+- `pushRecentEvent(source, payload)` — called by `sse.ts` `_handleEvent` for every incoming SSE event
+- `snapshotContextForCopilot()` — reverses buffer to chronological order, computes `oversizeIndices` (entries > 4 KiB payload), captures `currentRoute` + degraded siblings from `siblingHealth`
+- `CopilotContextTray.svelte` — compact 24px status bar (event count, token estimate, oversize warning) + expandable event inspector; wired below oscilloscope canvas in `CopilotDrawer.svelte`
 
 ### §2.5 SOUL Vault
 
