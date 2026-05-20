@@ -270,6 +270,7 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
           bld.id === buildData.id ? { ...bld, ...buildData } : bld
         ));
       }
+      window.dispatchEvent(new CustomEvent('la:build-update'));
       break;
     }
     case 'pillar_update': {

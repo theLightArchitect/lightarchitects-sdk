@@ -6400,4 +6400,7 @@ test.describe('Comprehensive webshell E2E', () => {
       expect(true).toBe(true); // survival test — reaching here means no hard crash
     });
   });
+
 });
+// Section 100 (Roadmap Panel) tests moved to e2e/roadmap.spec.ts (standalone spec,
+// ironclaw pattern) — webshell.spec.ts beforeAll is not suited for isolated runs.

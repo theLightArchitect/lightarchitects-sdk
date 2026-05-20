@@ -288,6 +288,14 @@ export async function registerMocks(page: Page): Promise<void> {
     return route.continue();
   });
 
+  // ── SSE event streams — abort to unblock HAR recording ───────────────────
+  // HAR recording mode:'full' waits for SSE response bodies to complete before
+  // flushing. Live SSE streams (never-ending) deadlock context.close() in afterAll.
+  // Aborting causes the browser's SSE client to reconnect (shows Gateway offline)
+  // but leaves no pending HAR body — context.close() completes immediately.
+  await page.route('**/api/events', (route) => route.abort());
+  await page.route('**/api/builds/*/events', (route) => route.abort());
+
   // ── Session fork (no real PTY needed for E2E) ──
   await page.route('**/api/session/fork', (route) =>
     route.fulfill({

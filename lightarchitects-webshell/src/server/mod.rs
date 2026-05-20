@@ -53,6 +53,7 @@ use crate::{
 pub mod code_routes;
 pub mod exec_routes;
 pub mod git_routes;
+pub mod roadmap;
 
 /// Snapshot of the browser UI state, periodically reported by the frontend.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -234,12 +235,19 @@ pub struct AppState {
     pub gitforest_cache: crate::gitforest::routes::TopologyMokaCache,
     /// GitHub CI check-run cache — 60s TTL, max 512 SHAs (Phase 4 Agent B).
     pub check_run_cache: crate::github_proxy::CheckRunCache,
+    /// Path to the pre-generated roadmap HTML artifact served by `GET /api/roadmap`.
+    ///
+    /// Written by `/SYNC --roadmap`; defaults to
+    /// `$HOME/lightarchitects/soul/helix/corso/builds/roadmap.html`.
+    /// The handler returns an empty body when the file is absent (→ `empty` state).
+    pub roadmap_html_path: std::path::PathBuf,
 }
 
 impl AppState {
     /// Constructs a new state from a resolved [`Config`] and spawns the
     /// background AYIN SSE subscription task.
     #[must_use]
+    #[allow(clippy::too_many_lines)]
     pub fn new(
         config: Config,
         docker_capable: DockerCapability,
@@ -350,6 +358,18 @@ impl AppState {
                         .join("decisions")
                 },
             ),
+            roadmap_html_path: std::env::var("HOME").map_or_else(
+                |_| std::path::PathBuf::from("/tmp").join("roadmap.html"),
+                |h| {
+                    std::path::PathBuf::from(h)
+                        .join("lightarchitects")
+                        .join("soul")
+                        .join("helix")
+                        .join("corso")
+                        .join("builds")
+                        .join("roadmap.html")
+                },
+            ),
             mock_workers: false,
             preflight: Arc::new(RwLock::new(preflight)),
             preflight_last_refresh: Arc::new(AtomicU64::new(0)),
@@ -448,6 +468,7 @@ impl AppState {
             supervisor_states: Arc::new(DashMap::new()),
             lightsquad_programs: Arc::new(DashMap::new()),
             decisions_dir: std::env::temp_dir().join("la-decisions-test"),
+            roadmap_html_path: std::env::temp_dir().join("la-roadmap-test.html"),
             mock_workers: true,
             preflight: Arc::new(RwLock::new(PreflightReport {
                 timestamp: chrono::Utc::now(),
@@ -762,6 +783,8 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/git/pull", post(git_routes::pull_handler))
         .route("/api/git/pr/create", post(git_routes::create_pr_handler))
         .route("/api/git/pr/review", post(git_routes::review_pr_handler))
+        // ── Roadmap artifact (webshell-roadmap-rendering) ────────────────────
+        .route("/api/roadmap", get(roadmap::roadmap_handler))
         // ── CSP violation reports (SEC-3b, Enforce phase) ────────────────────
         .route("/api/csp-report", post(csp::csp_report_handler))
         .fallback(static_assets::serve)
