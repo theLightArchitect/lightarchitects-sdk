@@ -20,6 +20,14 @@ use super::{CopilotRequest, call_ollama, call_subprocess, context};
 /// Maximum prompt size accepted by the copilot endpoint (§3.4 — 8 KiB).
 const MAX_PROMPT_BYTES: usize = 8192;
 
+/// Maximum total size of the grounded message (prelude + user message).
+///
+/// The prelude from `recent_events` is unbounded by `MAX_PROMPT_BYTES`, so a
+/// separate ceiling is required. Set to 256 KiB — comfortably below macOS
+/// `ARG_MAX` (262 144 B) which subprocess backends hit when the message is
+/// passed as a CLI argument.
+const MAX_GROUNDED_MESSAGE_BYTES: usize = 256 * 1024;
+
 /// `POST /api/builds/:id/copilot` — dispatch to subprocess or HTTP backend.
 pub async fn copilot_chat_handler(
     _: auth::AuthGuard,
@@ -36,7 +44,8 @@ pub async fn copilot_chat_handler(
     }
 
     // Validate context fields before session lookup (cheap, no allocation on happy path).
-    if let Err(e) = context::validate(&body.recent_events) {
+    // Includes source/timestamp injection guards and UiContext field limits.
+    if let Err(e) = context::validate(&body.recent_events, body.ui_context.as_ref()) {
         return e.into_response();
     }
 
@@ -48,6 +57,17 @@ pub async fn copilot_chat_handler(
     } else {
         std::borrow::Cow::Owned(format!("{prelude}\n{}", body.message))
     };
+
+    if grounded_message.len() > MAX_GROUNDED_MESSAGE_BYTES {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": "grounded_message_too_large",
+                "max_bytes": MAX_GROUNDED_MESSAGE_BYTES
+            })),
+        )
+            .into_response();
+    }
 
     let Some(session) = state.builds.get(id) else {
         return (
