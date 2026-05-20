@@ -15,6 +15,7 @@ import type {
   ActivePlan, PlanPhase, PlanPhaseStatus,
   ScrumReport,
   TrainingConfig, TrainingRun, ScoringDimension,
+  RecentEvent, ContextRetrievalStatus, CopilotContextSnapshot, UiContext,
 } from './types';
 import { SiblingWave, SIBLINGS, PILLARS } from './types';
 import { DEFAULT_SKIN, type HelixSkin } from './helix-skin';
@@ -922,3 +923,94 @@ export const mergeAgentEvents = writable<MergeAgentStatusEvent[]>([]);
 
 /** Rolling window of fix agent iteration events (newest first, max 100). */
 export const fixAgentEvents = writable<FixAgentIterationEvent[]>([]);
+
+// --- Copilot context buffer (copilot-omniscience-read) ---
+
+/** Maximum events retained in the rolling context buffer (frontend cap). */
+const RECENT_EVENTS_WINDOW = 50;
+
+/**
+ * Rolling window of the last 50 SSE events buffered for copilot context.
+ *
+ * Newest-first. Populated by `pushRecentEvent()` (called from the SSE handler
+ * for every inbound event). Reversed to chronological order by
+ * `snapshotContextForCopilot()` before submission.
+ */
+export const recentEventBuffer = writable<RecentEvent[]>([]);
+
+/** Current state of the context capture workflow. */
+export const copilotContextStatus = writable<ContextRetrievalStatus>('idle');
+
+/** Client-side sequence counter — monotone, resets on page load. */
+let _eventSeq = 0;
+
+/** Server-side oversize threshold in bytes (mirrors context.rs `OVERSIZE_THRESHOLD_BYTES`). */
+const OVERSIZE_THRESHOLD_BYTES = 4096;
+
+/** Estimate byte length of an arbitrary JSON-serializable value. */
+function eventPayloadBytes(payload: unknown): number {
+  try {
+    return new TextEncoder().encode(JSON.stringify(payload)).length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Push an inbound SSE event into the rolling context buffer.
+ *
+ * Called by the SSE handler (`_handleEvent`) for every event so the buffer
+ * always reflects the most recent platform activity. `source` must satisfy
+ * `[A-Za-z0-9_-]` (server-validated on submit); callers should pass the
+ * canonical system name (e.g. `"BuildRunner"`, `"CORSO"`, `"AYIN"`).
+ */
+export function pushRecentEvent(source: string, payload: unknown): void {
+  const entry: RecentEvent = {
+    seq: ++_eventSeq,
+    timestamp: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
+    source,
+    event: payload,
+  };
+  recentEventBuffer.update(buf => {
+    const next = [entry, ...buf];
+    return next.length > RECENT_EVENTS_WINDOW ? next.slice(0, RECENT_EVENTS_WINDOW) : next;
+  });
+}
+
+/**
+ * Assemble a context snapshot for the next copilot submission.
+ *
+ * Reverses the buffer from newest-first to chronological order, computes
+ * oversize indices (payload > 4 KiB), and captures the current UI state
+ * from `currentRoute`, `selectedPillar`, and `siblingHealth` stores.
+ */
+export function snapshotContextForCopilot(): CopilotContextSnapshot {
+  let buf: RecentEvent[] = [];
+  recentEventBuffer.subscribe(b => { buf = b; })();
+
+  const recentEvents = [...buf].reverse();
+
+  const oversizeIndices = recentEvents
+    .map((e, i) => ({ i, bytes: eventPayloadBytes(e.event) }))
+    .filter(({ bytes }) => bytes > OVERSIZE_THRESHOLD_BYTES)
+    .map(({ i }) => i);
+
+  let route = '/';
+  currentRoute.subscribe(r => { route = r; })();
+
+  let degraded: string[] = [];
+  siblingHealth.subscribe(health => {
+    degraded = Object.values(health)
+      .filter(h => h.status === 'degraded' || h.status === 'offline')
+      .map(h => h.id);
+  })();
+
+  const uiContext: UiContext = { route, degraded };
+
+  return {
+    recentEvents,
+    uiContext,
+    capturedAt: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
+    oversizeIndices,
+  };
+}

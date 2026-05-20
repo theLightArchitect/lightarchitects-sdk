@@ -13,6 +13,7 @@ import type {
   NorthstarEvaluationEvent, SupervisorState,
   PreflightReport,
   DecisionEntry,
+  RecentEvent, UiContext,
 } from './types';
 import type { SetupInfo, ModelOption, SaveRequest } from './setup';
 
@@ -77,8 +78,19 @@ export const api = {
     request<BuildNotes>(`/builds/${buildId}/notes`, { method: 'PUT', body: JSON.stringify({ content: markdown }) }),
 
   // Copilot
-  copilotChat:    (buildId: string, message: string) =>
-    request<unknown>(`/builds/${buildId}/copilot`, { method: 'POST', body: JSON.stringify({ message }) }),
+  copilotChat: (
+    buildId: string,
+    message: string,
+    context?: { recentEvents?: RecentEvent[]; uiContext?: UiContext },
+  ) =>
+    request<unknown>(`/builds/${buildId}/copilot`, {
+      method: 'POST',
+      body: JSON.stringify({
+        message,
+        ...(context?.recentEvents?.length ? { recent_events: context.recentEvents } : {}),
+        ...(context?.uiContext ? { ui_context: context.uiContext } : {}),
+      }),
+    }),
 
   /**
    * Fork the build's copilot session to a native terminal, so the user can

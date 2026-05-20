@@ -6,6 +6,7 @@
     buildBuildContext, authProfile, ollamaConfig, terminalConnected,
     builds, siblingHealth, alertStats, drawerHeightPx, waves,
     clearCopilotHistory, isNativeAgent, voiceEnabled, activityFeed,
+    snapshotContextForCopilot,
   } from '$lib/stores';
   import { SIBLING_COLORS } from '$lib/design-tokens';
   import { api } from '$lib/api';
@@ -617,7 +618,12 @@
 
     // Fallback: legacy HTTP POST (non-native builds, Ollama, Anthropic CLI modes)
     try {
-      const result = await api.copilotChat(buildId!, `[Context]\n${contextString}\n\n[User]\n${text}`);
+      const ctx = snapshotContextForCopilot();
+      const result = await api.copilotChat(
+        buildId!,
+        `[Context]\n${contextString}\n\n[User]\n${text}`,
+        { recentEvents: ctx.recentEvents, uiContext: ctx.uiContext },
+      );
       const response = typeof result === 'object' && result !== null && 'response' in result
         ? String((result as Record<string, unknown>).response)
         : 'No response from provider.';
