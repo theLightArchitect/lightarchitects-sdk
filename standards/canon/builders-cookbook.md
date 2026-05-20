@@ -6490,8 +6490,8 @@ Four operational patterns for tools that ingest user/operator-controlled input. 
      Source plan: ~/.claude/plans/ironclaw-spine.md §22.6 + Task#17 + Task#18
      Source proposal: ~/Downloads/ironclaw-architecture.html §9 + §11 + §15
      Authority: operator-authorized Canon XV override (2026-05-18)
-     Pending LÆX-ratification at Phase 7 of ironclaw-spine build
-     Sections §64-§67 added.
+     Ratified by LÆX + Kevin Francis Tan — 2026-05-19 (ironclaw-spine Phase 7)
+     Sections §64-§67 ratified.
      ────────────────────────────────────────────────────────────────────────── -->
 
 ## §64 Serialized Git-Operations Mutex Pattern

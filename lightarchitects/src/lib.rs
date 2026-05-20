@@ -48,7 +48,7 @@ pub mod laex;
 // ── Advanced / IP capabilities ────────────────────────────────────────────────
 
 /// MCP training data factory — discover → generate → execute → score → export.
-pub mod arena;
+pub mod research_arena;
 
 /// Multi-model mathematical verification oracle (Lean 4 + DeepSeek + Qwen + Kimi).
 pub mod oracle;

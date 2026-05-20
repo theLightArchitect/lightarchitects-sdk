@@ -1170,6 +1170,20 @@ For autonomous-mode workers, the AgentRunner PermissionMatrix MUST use an **allo
 
 CWE-184 (Incomplete List of Disallowed Inputs). The allowlist composes with `safe_cwd` canonicalize-after-..-rejection pattern from `git_routes.rs:165-174`.
 
+### §SG-CRYPTO.8 Canon-File SHA256 Integrity at Session Start
+
+When a supervisor session initializes, it MUST verify the SHA256 digest of each of the 8 canonical canon docs before allowing any L1 decision to fire. A mismatch between the on-disk digest and the expected digest (stored in Keychain as `lightarchitects-canon-sha256-<doc-name>`) halts the session with a CANON_INTEGRITY_FAIL event.
+
+**Mechanism**: on first run after any canon update, the supervisor writes new expected digests to Keychain. On subsequent runs, digests are compared before canon docs are loaded as cached system prompt (§11.3a).
+
+**Covered docs**: the 8 canonical files enumerated in agents-playbook §11.3a.
+
+**Rationale**: §11.3a's composition note cited §SG-CRYPTO.3 for this check, but §SG-CRYPTO.3 covers decisions.md tamper detection (a different chain). Canon-file integrity at session start is a distinct mechanism — this section defines it.
+
+**Status**: stub — implementation target Phase 7+ (ironclaw-spine post-ship). Canon XV operator-authorized pre-declaration per agents-playbook §11.3a annotation.
+
+---
+
 ### §SG-CRYPTO.7 Cross-References
 
 - Cookbook §64 (serialized git-ops mutex)
@@ -1192,7 +1206,7 @@ Mechanical history: `git log -- standards/canon/security-guardrails.md`
 
 **Rule** (per separation-of-concerns refactor, 2026-05-18): no tail-changelog tables or orphan changelog rows in this file. Section content lives here; amendment narrative lives in the CHANGELOG companion.
 
-**Current version**: see CHANGELOG for latest. As of 2026-05-18: **v1.3.0** (§SG-CRYPTO Artifact Integrity + Key Lifecycle; LÆX Phase 7 ratification pending).
+**Current version**: see CHANGELOG for latest. As of 2026-05-19: **v1.3.0** (§SG-CRYPTO Artifact Integrity + Key Lifecycle; ratified by LÆX + Kevin Francis Tan — 2026-05-19, ironclaw-spine Phase 7).
 
 ---
 

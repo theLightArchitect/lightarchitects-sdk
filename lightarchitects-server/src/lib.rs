@@ -44,12 +44,12 @@ pub mod auth {
 
 /// MCP training data factory — discover → generate → execute → score → export.
 ///
-/// Re-exports [`lightarchitects::arena`] unchanged. Provides arena configuration,
+/// Re-exports [`lightarchitects::research_arena`] unchanged. Provides arena configuration,
 /// MCP server auto-discovery, exercise generation, execution engine, reward scoring,
 /// and SFT/DPO/RL export formats.
 #[cfg(feature = "arena")]
-pub mod arena {
-    pub use lightarchitects::arena::*;
+pub mod research_arena {
+    pub use lightarchitects::research_arena::*;
 }
 
 // ── Helix ─────────────────────────────────────────────────────────────────────

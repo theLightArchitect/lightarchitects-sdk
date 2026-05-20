@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::arena::export::ExportError;
+use crate::research_arena::export::ExportError;
 
 // ── Output format ────────────────────────────────────────────────────────────
 

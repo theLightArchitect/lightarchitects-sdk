@@ -1,6 +1,6 @@
 //! Arena configuration parsing and validation.
 //!
-//! The [`ArenaConfig`](lightarchitects::arena::config::ArenaConfig) struct is the user's entry point — it deserializes from
+//! The [`ArenaConfig`](lightarchitects::research_arena::config::ArenaConfig) struct is the user's entry point — it deserializes from
 //! a JSON file and drives the entire arena pipeline. Configuration includes
 //! model endpoint, MCP server definitions, exercise parameters, and output
 //! format selection.
@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::arena::scoring::RewardConfig;
+use crate::research_arena::scoring::RewardConfig;
 
 /// Top-level arena configuration, deserialized from user JSON.
 ///

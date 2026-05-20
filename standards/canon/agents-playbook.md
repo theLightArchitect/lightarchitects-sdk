@@ -2068,7 +2068,7 @@ The Governor will decide whether to act on it.
      Source plan: ~/.claude/plans/ironclaw-spine.md §22.6
      Source proposal: ~/Downloads/ironclaw-architecture.html §4, §7, §8, §10
      Authority: operator-authorized Canon XV override (2026-05-18)
-     Pending LÆX-ratification at Phase 7 of ironclaw-spine build
+     Ratified by LÆX + Kevin Francis Tan — 2026-05-19 (ironclaw-spine Phase 7)
      ────────────────────────────────────────────────────────────────────────── -->
 
 ## §HITL-7 — Escalation Notification Invariant (2026-05-18 ADDITION)
@@ -2083,7 +2083,7 @@ The Governor will decide whether to act on it.
 4. **Multi-channel**: webshell SSE toast (red banner with REVIEW click-option) + `osascript -e 'display notification'` for off-screen ops + optional Telegram/SMS webhook for off-device alerting
 5. **MTTA-measurable**: `escalation.notify.ack_received_at` timestamp populated when operator acknowledges; AYIN computes mean-time-to-acknowledge per build
 
-Without this invariant, autonomous-mode runs that L4-escalate at 3am have no operator-visible signal — operator misses escalation, build hangs indefinitely. CWE-223 + Pillar 4 (operator-legible arc) double-violation.
+Without this invariant, autonomous-mode runs that L4-escalate at 3am have no operator-visible signal — operator misses escalation, build hangs indefinitely. CWE-223 + Pillar 6 (operator-legible arc) double-violation.
 
 **Composition with §7.7**: §7.7 governs Worker code review BEFORE WAVE_COMPLETE; §HITL-7 governs escalation AFTER review failure (≥3rd FixAgent iteration per Cookbook §64.3).
 
@@ -2135,7 +2135,7 @@ For long-running supervisor sessions and ReviewGate evaluators, canon docs MUST 
 
 ---
 
-*v1.6 adds (2026-05-18): §HITL-7 Escalation Notification Invariant + §15.3a Tier Separation Principle + §11.3a Canon-as-Cached-System-Prompt. Closes ironclaw §4 + §7 + §8 + §10 canon gaps. LÆX Phase 7 ratification pending.*
+*v1.6 adds (2026-05-18): §HITL-7 Escalation Notification Invariant + §15.3a Tier Separation Principle + §11.3a Canon-as-Cached-System-Prompt. Closes ironclaw §4 + §7 + §8 + §10 canon gaps. Ratified by LÆX + Kevin Francis Tan — 2026-05-19.*
 
 *v1.8 adds (2026-05-18): §15.3.13.5 Pre-Dispatch Checklist Tables — 24 explicit git-aware gates (PP-1..PP-4 pre-phase + PW-1..PW-7 pre-wave + PT-1..PT-7 pre-task + PoT-1..PoT-3 post-task + PoW-1..PoW-3 post-wave); composes with Cookbook §64.8 Git-Context Preamble (PT-7) + LASDLC v2.5.3 git_branching_invariants block + /BUILD skill v2 Step 11.3.0-11.3.5. Closes operator-surfaced worker-git-awareness gap. LÆX candidate #19.*
 

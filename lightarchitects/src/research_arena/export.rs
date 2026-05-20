@@ -8,8 +8,8 @@
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use crate::arena::engine::Trace;
-use crate::arena::scoring::RewardBreakdown;
+use crate::research_arena::engine::Trace;
+use crate::research_arena::scoring::RewardBreakdown;
 use serde::Serialize;
 
 /// Errors during export operations.
@@ -565,10 +565,10 @@ pub fn write_report(report: &EvalReport, output_path: &Path) -> Result<(), Expor
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use crate::arena::config::OutputFormat;
-    use crate::arena::engine::Trace;
-    use crate::arena::prompts::AssembledPrompt;
-    use crate::arena::scoring::RewardBreakdown;
+    use crate::research_arena::config::OutputFormat;
+    use crate::research_arena::engine::Trace;
+    use crate::research_arena::prompts::AssembledPrompt;
+    use crate::research_arena::scoring::RewardBreakdown;
 
     fn make_scored_trace(exercise_id: &str, total: f64) -> ScoredTrace {
         ScoredTrace {
