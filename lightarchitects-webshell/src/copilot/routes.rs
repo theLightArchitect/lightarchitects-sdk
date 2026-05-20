@@ -52,10 +52,31 @@ pub async fn copilot_chat_handler(
     // Read EVA identity under a brief read lock — no file I/O on hot path (Phase 1).
     let identity_text = state.eva_identity.read().await.text().to_owned();
 
+    // SOUL vault grounding: top-5 BM25 entries, 400 ms hard timeout (Phase 2).
+    // Query = "{route_tail} {message[:150]}" — route_tail boosts build-specific entries.
+    // Skipped when soul_store is None (no SQLite backend) or on timeout.
+    let soul_block = if let Some(soul) = state.soul_store.as_deref() {
+        // route_tail = build UUID → boosts vault entries tagged to this build in FTS5
+        let route_tail = id.to_string();
+        let msg_prefix: String = body.message.chars().take(150).collect();
+        let fts5_expr = format!("{route_tail} {msg_prefix}");
+        let entries = tokio::time::timeout(
+            std::time::Duration::from_millis(400),
+            super::soul_grounding::search(soul, &fts5_expr),
+        )
+        .await
+        .unwrap_or_default();
+        let nonce = super::soul_grounding::vault_nonce();
+        super::soul_grounding::format_block(&nonce, &entries)
+    } else {
+        String::new()
+    };
+
     // Assemble the grounded prompt: context prelude prepended to the user message.
     // Passes event payloads verbatim — no silent truncation (§P check 2; northstar.md:491).
     let prelude = context::assemble_prompt_prelude(
         &identity_text,
+        &soul_block,
         &body.recent_events,
         body.ui_context.as_ref(),
     );
