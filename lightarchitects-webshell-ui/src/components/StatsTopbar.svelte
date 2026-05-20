@@ -82,13 +82,13 @@
 
   <span class="stat" class:stat-warn={hitlPending > 0}>
     <span class="stat-val">{hitlPending}</span>
-    <span class="stat-label">HITL</span>
+    <span class="stat-label">Approval</span>
   </span>
   <span class="stat-sep" aria-hidden="true">·</span>
 
   <span class="stat" class:stat-warn={staleBuilds > 0}>
     <span class="stat-val">{staleBuilds}</span>
-    <span class="stat-label">STALE</span>
+    <span class="stat-label">Idle</span>
   </span>
 </div>
 

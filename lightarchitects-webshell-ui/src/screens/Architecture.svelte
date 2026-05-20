@@ -45,7 +45,7 @@
 
   // ── Gateway proxy calls ───────────────────────────────────────────────────
 
-  async function postArch(op: string, body: unknown): Promise<string> {
+  async function postDiagrams(op: string, body: unknown): Promise<string> {
     const res = await fetch(`/api/arch/${op}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -69,7 +69,7 @@
     if (!projectRoot.trim()) { error = 'Project root is required.'; return; }
     loading = true; error = null; result = null;
     try {
-      const text = await postArch('extract', {
+      const text = await postDiagrams('extract', {
         project_root: projectRoot.trim(),
         sibling_id: siblingId || undefined,
       });
@@ -94,7 +94,7 @@
     }
     loading = true; error = null; result = null;
     try {
-      result = await postArch('verify', {
+      result = await postDiagrams('verify', {
         project_root: projectRoot.trim(),
         planned,
         blocking_threshold: blockingThreshold,
@@ -114,7 +114,7 @@
     }
     loading = true; error = null; result = null;
     try {
-      result = await postArch('render', {
+      result = await postDiagrams('render', {
         model,
         format: renderFormat,
         sibling_id: siblingId || undefined,
@@ -130,7 +130,7 @@
     if (!projectRoot.trim()) { error = 'Project root is required.'; return; }
     loading = true; error = null; result = null;
     try {
-      result = await postArch('emit', {
+      result = await postDiagrams('emit', {
         project_root: projectRoot.trim(),
         sibling_id: siblingId || undefined,
       });
@@ -162,12 +162,12 @@
   }
 </script>
 
-<!-- Architecture Intelligence screen (M4: accessed via ARCH drawer button, not nav tab) -->
+<!-- Architecture Intelligence screen  -->
 <div class="flex flex-col h-full overflow-hidden bg-[var(--la-bg-void)] text-[var(--la-text-bright)]">
   <!-- Header row -->
   <div class="flex items-center justify-between px-4 py-2 border-b border-[#1e293b] shrink-0">
     <div class="flex items-center gap-3">
-      <span class="text-[11px] font-mono text-[#FFD700] tracking-wider">ARCHITECTURE</span>
+      <span class="text-[11px] font-mono text-[#FFD700] tracking-wider">Diagrams</span>
       <!-- Gateway health pill -->
       <span class="flex items-center gap-1 text-[10px] font-mono">
         <span class="w-1.5 h-1.5 rounded-full {gatewayHealth === 'ok' ? 'bg-[#22c55e]' : gatewayHealth === 'error' ? 'bg-red-500' : 'bg-[#475569]'}"></span>
@@ -175,7 +175,7 @@
       </span>
     </div>
     <button
-      onclick={() => navigate('/ops')}
+      onclick={() => navigate('/dashboard')}
       class="text-[10px] text-[#475569] hover:text-[#94a3b8] transition-colors px-2 py-1"
     >← Back</button>
   </div>

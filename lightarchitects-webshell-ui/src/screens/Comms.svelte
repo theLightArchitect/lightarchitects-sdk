@@ -30,7 +30,7 @@
 <div class="comms-dashboard" data-testid="comms-dashboard">
   <!-- Header row -->
   <div class="dash-header">
-    <div class="dash-title">SQUAD COMMS</div>
+    <div class="dash-title">Activity</div>
     <div class="dash-meta">
       <span class="meta-chip">{stats.total} task{stats.total === 1 ? '' : 's'}</span>
       <span class="meta-chip running">{stats.running} running</span>

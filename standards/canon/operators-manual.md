@@ -51,7 +51,9 @@ The Light Architects platform enables **solo developers and small agentic teams 
 
 ### §1.2 Northstar Pillars
 
-> **Canonical reference**: [`canon://northstar`](northstar.md) — the standalone Northstar canon document. The four Pillars (P1–P4), mechanical checks, per-build alignment requirement, and evolution protocol live there. This section is a summary index only.
+> **Canonical reference**: [`canon://northstar`](northstar.md) — the standalone Northstar canon document. The seven Pillars (P1–P7), mechanical checks, per-build alignment requirement, and evolution protocol live there. This section is a summary index only.
+>
+> *Fix 2026-05-19: was "four Pillars (P1–P4)" — stale from v1 era (P1+P2-only); contradicted the table below which lists all 7. Corrected via /SCRUM portfolio-pillar-drift.*
 
 | Pillar | Assertion (one line) | Canonical check |
 |--------|---------------------|-----------------|
@@ -63,7 +65,7 @@ The Light Architects platform enables **solo developers and small agentic teams 
 | **P6 — Operator-Legible Engineering Arc** | Operator determines what is happening, what happened, and what needs attention from the UI alone — no terminal required | 8 mechanical checks (portfolio 3s scan, build legibility, ≤500ms Activity stream, inline permission cards, git narrative, vibe entry, 3-zoom levels, ambient knowledge) |
 | **P7 — Production-Grade Reliability** | Platform operates with deterministic behavior, clear error surfaces, and recovery paths — reliably enough for others to depend on | 9 mechanical checks (binary rollback, graceful degradation, fallback fidelity, session durability, error surfaces, data loss prevention, resource cleanup, test pyramid ≥90%, Northstar predicate stability) |
 
-All four Pillars are AND, not OR. A deliverable that satisfies any subset but violates another does not ship. A deliverable may advance one Pillar and merely preserve the others.
+All seven Pillars are AND, not OR. A deliverable that satisfies any subset but violates another does not ship. A deliverable may advance one Pillar and merely preserve the others.
 
 For full Pillar definitions, mechanical checks, ceiling heuristics, and the per-build `northstar_lineage:` block schema → **[`canon://northstar`](northstar.md)**.
 
@@ -229,7 +231,9 @@ The lightarchitects plugin (`mcp__plugin_lightarchitects_lightarchitects__tools`
 
 ### §4.2 Build Tracking
 
-Canonical artifact location: `helix/corso/builds/` (active.yaml, portfolio.md, roadmap.html, _MOC-builds.md). All plans route through lightarchitects plugin meta-skills — NOT legacy `/CORSO build` cycle. Direct edits to tracking artifacts are forbidden.
+Canonical artifact location: `helix/corso/builds/` (active.yaml, portfolio.md, _MOC-builds.md, roadmap.html, builds-registry.yaml). All plans route through lightarchitects plugin meta-skills — NOT legacy `/CORSO build` cycle. Direct edits to tracking artifacts are forbidden.
+
+> **2026-05-19 amendment (E5 reconciliation, LÆX soak-close audit)**: `builds-registry.yaml` added to canonical list (was already enumerated in Cookbook §69 but absent here). Both docs now converge on the 5-artifact set above.
 
 ### §4.3 Background Task Drain
 

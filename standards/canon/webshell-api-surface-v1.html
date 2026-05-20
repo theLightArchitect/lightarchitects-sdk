@@ -1,7 +1,7 @@
 <!-- uuid: f2e8b3d7-6c41-4a9f-b825-1e3d7c9a0f42 -->
 <!--
 title: "Webshell API Surface"
-version: "1.0.10"
+version: "1.0.11"
 status: ratified
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-17"
@@ -37,7 +37,7 @@ tags:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Webshell API Surface — Canonical Reference v1.0.10</title>
+<title>Webshell API Surface — Canonical Reference v1.0.11</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <style>
   :root {
@@ -218,7 +218,7 @@ tags:
 <nav class="sidebar">
   <div class="logo">
     <div class="title">Light Architects</div>
-    <div class="sub">Webshell API Surface v1.0.10</div>
+    <div class="sub">Webshell API Surface v1.0.11</div>
     <div class="sub" style="margin-top:4px;color:#FFD700;opacity:0.7;font-size:9px;letter-spacing:0.05em;">canon://webshell-api-surface</div>
   </div>
 
@@ -292,7 +292,7 @@ tags:
       Neither is derived from the other — they are co-authored representations of the same spec.
     </div>
     <div class="meta" style="margin-top:16px;">
-      <div class="meta-item">Version <span>1.0.10</span></div>
+      <div class="meta-item">Version <span>1.0.11</span></div>
       <div class="meta-item">Status <span>ratified</span></div>
       <div class="meta-item">Date <span>2026-05-17</span></div>
       <div class="meta-item">Canon URI <span>canon://webshell-api-surface</span></div>
@@ -1035,10 +1035,10 @@ graph TD
   <table>
     <thead><tr><th>Tab</th><th>Label</th><th>Hash</th><th>Keyboard</th><th>Also reachable via</th></tr></thead>
     <tbody>
-      <tr><td>1</td><td>OPS</td><td><code>/ops</code></td><td><kbd>1</kbd></td><td>root <code>/</code>, fallback route</td></tr>
-      <tr><td>2</td><td>DISPATCH</td><td><code>/dispatch</code></td><td><kbd>2</kbd>, <kbd>⌘K</kbd></td><td><code>/dispatch/run/:id</code></td></tr>
+      <tr><td>1</td><td>Monitor</td><td><code>/ops</code></td><td><kbd>1</kbd></td><td>root <code>/</code>, fallback route</td></tr>
+      <tr><td>2</td><td>Run</td><td><code>/dispatch</code></td><td><kbd>2</kbd>, <kbd>⌘K</kbd></td><td><code>/dispatch/run/:id</code></td></tr>
       <tr><td>3</td><td>BUILDS</td><td><code>/builds</code></td><td><kbd>3</kbd></td><td><code>/builds/:id</code> and all drill-downs</td></tr>
-      <tr><td>4</td><td>COMMS</td><td><code>/comms</code></td><td><kbd>4</kbd></td><td>—</td></tr>
+      <tr><td>4</td><td>Activity</td><td><code>/comms</code></td><td><kbd>4</kbd></td><td>—</td></tr>
       <tr><td>5</td><td>HELIX</td><td><code>/helix</code></td><td><kbd>5</kbd></td><td><code>/helix/strand/:k</code>, <code>/helix/entry/:id</code></td></tr>
     </tbody>
   </table>
@@ -1047,7 +1047,7 @@ graph TD
   <table>
     <thead><tr><th>Shortcut</th><th>Action</th><th>Scope</th></tr></thead>
     <tbody>
-      <tr><td><kbd>1</kbd>–<kbd>5</kbd></td><td>Navigate to OPS / DISPATCH / BUILDS / COMMS / HELIX</td><td>Global (non-input elements)</td></tr>
+      <tr><td><kbd>1</kbd>–<kbd>5</kbd></td><td>Navigate to Monitor / Run / Manage / Activity / Memory</td><td>Global (non-input elements)</td></tr>
       <tr><td><kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd></td><td>Navigate to <code>/dispatch</code></td><td>Global</td></tr>
       <tr><td><kbd>⌘/</kbd> / <kbd>Ctrl+/</kbd></td><td>Toggle keymap legend</td><td>Global</td></tr>
       <tr><td><kbd>Ctrl+`</kbd></td><td>Toggle Copilot drawer (EVA)</td><td>Global</td></tr>
@@ -1304,12 +1304,12 @@ flowchart LR
   <table>
     <thead><tr><th>Screen</th><th>Component</th><th>Root routes</th><th>Nav tab</th></tr></thead>
     <tbody>
-      <tr><td>Ops</td><td><code>src/screens/Ops.svelte</code></td><td><code>/</code> · <code>/ops</code></td><td>1 — OPS</td></tr>
-      <tr><td>Dispatch</td><td><code>Dispatch.svelte</code> → <code>SquadDispatch.svelte</code></td><td><code>/dispatch</code></td><td>2 — DISPATCH</td></tr>
+      <tr><td>Ops</td><td><code>src/screens/Ops.svelte</code></td><td><code>/</code> · <code>/ops</code></td><td>1 — Monitor</td></tr>
+      <tr><td>Dispatch</td><td><code>Dispatch.svelte</code> → <code>SquadDispatch.svelte</code></td><td><code>/dispatch</code></td><td>2 — Run</td></tr>
       <tr><td>Builds</td><td><code>Builds.svelte</code> → <code>BuildQueue.svelte</code></td><td><code>/builds</code></td><td>3 — BUILDS</td></tr>
       <tr><td>BuildDetail</td><td><code>BuildDetail.svelte</code></td><td><code>/builds/:id</code> + 4 drilldowns</td><td>3 — BUILDS (deep)</td></tr>
       <tr><td>Intake</td><td><code>Intake.svelte</code></td><td><code>/intake</code></td><td>not in nav bar (linked from Builds)</td></tr>
-      <tr><td>Comms</td><td><code>Comms.svelte</code></td><td><code>/comms</code></td><td>4 — COMMS</td></tr>
+      <tr><td>Comms</td><td><code>Comms.svelte</code></td><td><code>/comms</code></td><td>4 — Activity</td></tr>
       <tr><td>Helix</td><td><code>Helix.svelte</code></td><td><code>/helix</code></td><td>5 — HELIX</td></tr>
       <tr><td>ProjectDetail</td><td><code>ProjectDetail.svelte</code></td><td><code>/project/:id</code></td><td>linked from Ops 3D panel</td></tr>
       <tr><td>Editor</td><td><code>Editor.svelte</code></td><td><code>/editor</code> · <code>/editor/:filepath</code></td><td>not in nav bar (linked from BuildDetail)</td></tr>
@@ -1319,7 +1319,7 @@ flowchart LR
   </table>
 
   <p style="font-size:12px; color: var(--mute); margin-top: 24px;">
-    Canonical source: <a href="webshell-api-surface-v1.md">webshell-api-surface-v1.md</a> · Version 1.0.10 · 2026-05-19 · Derived from <code>src/server/mod.rs</code>, <code>src/dispatch/routes.rs</code>, <code>src/auth.rs</code>, <code>src/config.rs</code>, <code>src/agent/bridge.rs</code>, <code>src/screens/</code>
+    Canonical source: <a href="webshell-api-surface-v1.md">webshell-api-surface-v1.md</a> · Version 1.0.11 · 2026-05-19 · Derived from <code>src/server/mod.rs</code>, <code>src/dispatch/routes.rs</code>, <code>src/auth.rs</code>, <code>src/config.rs</code>, <code>src/agent/bridge.rs</code>, <code>src/screens/</code>
   </p>
   </section>
 
@@ -1452,7 +1452,7 @@ flowchart LR
         <td><span class="badge badge-green">C12</span></td>
         <td>§3.8 NAV_ITEMS: <strong>5 tabs</strong> with correct labels and hash paths</td>
         <td><code>src/app.svelte</code> · lines 156–162</td>
-        <td>OPS→/ops · DISPATCH→/dispatch · BUILDS→/builds · COMMS→/comms · HELIX→/helix</td>
+        <td>Monitor→/ops · Run→/dispatch · Manage→/builds · Activity→/comms · Memory→/helix</td>
         <td><code>grep -A10 'NAV_ITEMS' src/app.svelte</code></td>
       </tr>
       <tr>

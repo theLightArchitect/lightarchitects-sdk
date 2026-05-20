@@ -94,7 +94,7 @@
   };
 
   const PRESET_TOOLTIP: Record<LayoutPreset, string> = {
-    ops:        'Monitor — git branches | agent console | build status',
+    ops:        'Dashboard — git branches | agent console | build status',
     ide:        'Workspace — file explorer | diff viewer | terminal to run tests',
     debug:      'Debug — agent console | findings | terminal to reproduce and fix',
     'pr-review': 'Ship — diff what changed | terminal to push | build status confirm',
@@ -175,7 +175,7 @@
 
   <!-- Telemetry bar -->
   <div class="ops-tab-bar">
-    <span class="ops-tab active">MISSION CONTROL</span>
+    <span class="ops-tab active">Dashboard</span>
     <div class="ops-header-tele">
       <span class="tele-stat" style="color:{phColor}">● {ph.toUpperCase()}</span>
       <span class="tele-stat" style="color:{stColor}">{displayStatus}</span>

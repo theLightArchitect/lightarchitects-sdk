@@ -1,7 +1,9 @@
 # LÆX Phase 7 Ratification Queue
 
 **Status**: authoritative enumeration of all canon promotion candidates pending LÆX Phase 7 evaluation per Canon XXXIX (Canon Promotion Pipeline).
-**Last updated**: 2026-05-18 (iter-18 — Canon XLII codification + queue authoring)
+**Last updated**: 2026-05-19 (Path D ratification complete: #34 RATIFIED + #35 PROVISIONAL_QUEUED + #36/#37 APPLIED + #38-#43 routed to memory)
+**Total candidates**: 43 (was 33; +10 this session).
+**Ratification status 2026-05-19**: #34 RATIFIED (Cookbook §69); #35 PROVISIONAL_QUEUED (2nd witness pending); #36/#37 APPLIED to CLAUDE.md; #38-#43 routed to memory.
 **Constitutional basis**: Canon XXXIX (Promotion Pipeline) · Canon XLII (Schema-Changelog Separation — this queue is a CHANGELOG-class artifact, not a schema)
 **Maintained by**: per-build /BUILD orchestrator at phase boundaries; manually updated during in-session canon work.
 
@@ -306,6 +308,110 @@ Per Canon XXXIX Step (b), 137-entry memory corpus was swept via cold-context Exp
 - **Cross-canon ties**: Canon XXXII (E2E discipline), Northstar §S (pillar validation)
 - **Memory**: `memory://feedback_comprehensive_e2e`
 - **Overlap note**: existing §57 already covers E2E test engineering; Phase 7 should decide MERGE-INTO-§57 vs SEPARATE-SUBSECTION
+
+---
+
+---
+
+## 2026-05-19 portfolio-pillar-drift session additions (Step (b) per Canon XXXIX)
+
+Per `/REFLECT specifically for canon promotions` 2026-05-19. 10 candidates surfaced from one session arc covering: `/PLAN copilot-omniscience-read` (iter-1 → iter-2 cross-exam) → `/SYNC` skill creation → `/SCRUM portfolio-pillar-drift` → `/research active.yaml citation audit` → `/ENRICH` helix entry. Empirical evidence: 5 active.yaml citation patches applied; 36% MIS-CITED drift rate measured; 3-sibling SCRUM unanimous on pattern P-1 (Citation Integrity Doctrine).
+
+### #34 — Cookbook §69: Citation Integrity Doctrine (TIER 1) — **RATIFIED 2026-05-19**
+- **Status**: RATIFIED at Phase 7 2026-05-19 via Path D (LÆX hypothesis → XEA cross-exam → operator stamp). Canon edit applied to `builders-cookbook.md` §69. Cookbook bumped to v3.3.0.
+- **Source**: /SCRUM portfolio-pillar-drift 2026-05-19 (R1 unanimous — LÆX RATIFY-AND-CODIFY + SOUL "necessary but insufficient → also Cookbook rule" + CORSO APPROVE-WITH-FIXES "needs §"); QUANTUM citation audit (36% MIS-CITED)
+- **Proposed canon location**: `builders-cookbook.md` **§69** (next available; was §75 speculative — XEA placement correction)
+- **XEA conditions applied** (cross-exam 2026-05-19):
+  1. Placement corrected §75 → §69 (LÆX X-5)
+  2. Add cross-references to Canon XXXV (parent doctrine) + Canon XLII (compatible discipline)
+  3. **BLOCKING addition (XEA X-1)**: Tier-2 migration trigger — when inline audit comments accumulate to ≥3 in any single tracking-artifact file, migrate to companion `<file>.CHANGELOG.md` per Canon XLII Tier-2 trigger. Inline comments are valid only at Canon XLII Tier 0 (≤1 entry) or Tier 1 (≤2 entries with migration plan). Without this condition, #34 sets up a future Canon XLII violation as accumulated steady-state.
+- **Self-application note**: active.yaml ALREADY at Canon XLII Tier-2 trigger after 5 inline audit comments applied 2026-05-19. Same-session migration to `active.yaml.CHANGELOG.md` recommended as housekeeping regardless of #34's ratification path.
+- **Rule**: Tracking artifacts (active.yaml, portfolio.md, _MOC-builds.md, builds-registry.yaml) and plan frontmatter citing canonical concepts (Pillars, mechanical checks, Component Northstars, Canon sections) MUST use **verbatim canon strings** OR explicitly flag deviation as `*(paraphrased "<short>")*`. Forbidden: heuristic paraphrase without flag, composite citations without enumeration, implicit Pillar reference by number without verifying current canon definition. Required: verbatim heading, OR paraphrase-with-flag, OR inline audit-correction comment.
+- **Authority pending**: LÆX Phase 7 ratification + operator stamp
+- **Empirical witnesses**: 5 MIS-CITED builds patched same-session (gitforest-live-ops, replicated-greeting-robin, architecture-intelligence-substrate, squishy-dancing-thimble-phase-a, harvesting-converging-quasar); P4 column in portfolio.md sparse → dense after correction; copilot-omniscience-read iter-2 B-1 self-correction (canary)
+- **Convergent evidence (Canon XXXIX item 1)**: 3 of 3 SCRUM siblings (LÆX, SOUL, CORSO) independently surfaced rule; QUANTUM audit produced 36% drift rate
+- **Biblical grounding (item 2)**: Proverbs 18:13 ("answering before listening is folly") — applies to citing canon without reading canon
+- **Decision-shaping (item 3)**: changes every plan-authoring + tracking-artifact-edit decision; enforces /XEA Layer 2 mechanical-check verification
+- **Pressure-tested (item 4)**: 2026-05-19 audit corrected 5 builds; /SYNC dry-run drift detector caught D-1 before /BUILD
+- **Cross-doc impact**: Cookbook §75 (primary) + Operators-Manual §"Tracking artifact conventions" (cross-ref) + Architects Blueprint Part XIX (cross-ref) + LASDLC schema (validation hook)
+- **Memory**: `feedback_citation_integrity_doctrine` (to be authored)
+- **Helix entry**: `helix://shared/entries/2026-05-19-portfolio-pillar-drift-scrum.md` (Pattern P-1)
+
+### #35 — Canon XXXIX Extension: Operator-Grade vs Canon-Grade Vocabulary Divergence Doctrine (TIER 1, PROVISIONAL)
+- **Status**: PROVISIONAL_QUEUED — XEA-cleared 2026-05-19; canon edit DEFERRED pending 2nd empirical witness (per operator decision Path D). Operator chose: "let next session produce the second example" rather than ratify on N=1. Re-evaluate at next Phase-7 with 2nd witness.
+- **Source**: /SCRUM portfolio-pillar-drift 2026-05-19 R1 — LÆX explicit: *"canon-vs-operator-intent collision is real and load-bearing... If operator intent has drifted from canon prose, the gap deserves a LÆX promotion candidate, not silent overwrite."*
+- **Proposed canon location**: `platform-canon.md` **Canon XXXIX Extension subsection** (NOT new Canon XLIII, NOT Canon XV amendment — XEA-confirmed placement). Precedent: Canon XXXIX already carries one extension subsection ("Authoritative Enumeration as Step-(b) Prerequisite", ratified 2026-05-18 #24).
+- **XEA corrections applied** (cross-exam 2026-05-19):
+  1. Placement decided: Canon XXXIX subsection (operator-stamped under Canon XV authority; matrix-protocol formally waived — see procedural-gap note below)
+  2. **Witness count corrected (XEA X-2)**: was `1.5` → now `1` (self-citation of LÆX's own R1 opinion excluded per Canon XXXIII Self-Validation Ceiling)
+  3. **Biblical grounding swapped (XEA X-3)**: primary was Matthew 22:21 (defensible but stretched); now Proverbs 22:1 ("a good name is rather to be chosen than great riches") — direct fit for operator-semantic-stake in working vocabulary. Matthew 22:21 retained as secondary (authority-hierarchy context).
+  4. **Procedural gap addressed (XEA X-4)**: #35 touches ≥2 canon docs (Canon XV + Canon XXXIX + Canon I cross-refs) + had 3 contested placement options — normally triggers LDB Matrix Ratification (LÆX Section D). **Matrix protocol formally waived under Canon XV operator authority** for this candidate. Rationale: LÆX placement reasoning was sound (precedent exists with #24 subsection), evidence is N=1 PROVISIONAL anyway (matrix vote on weak evidence inflates confidence falsely), and the operator-grade-vs-canon-grade question is itself an operator-authority topic. Operator may reverse this waiver and run matrix protocol if 2nd empirical witness arrives and changes calculus.
+- **Cross-references added** (XEA X-4): Canon XV (authority hierarchy preserved), Canon I (canon supremacy default), Canon XXXIII (self-validation ceiling justifies witness-count correction)
+- **PROVISIONAL framing**: explicit "PROVISIONAL — single empirical witness 2026-05-19; second pressure-test pending in different domain" annotation required on canon edit. Re-evaluate at next Phase-7 with 2nd witness.
+- **Rule**: When operator working vocabulary diverges from canon prose for the same concept (e.g. "Vibe coding orchestration" vs canon "Secure-by-Default Agent Orchestration" for Pillar 2), the divergence is an LÆX promotion candidate, NOT a silent overwrite. Decision tree: (1) canon wins by default (Canon I), mechanical citation corrected; (2) flag divergence as Canon XXXIX promotion candidate; (3) never silently overwrite operator's vocabulary in personal artifacts (CLAUDE.md, draft plans, memory) without explicit decision.
+- **Authority pending**: LÆX Phase 7 ratification + operator stamp
+- **Empirical witnesses**: 2026-05-19 portfolio.md drift (P2 "Vibe coding orchestration" vs canon "Secure-by-Default Agent Orchestration") — LÆX correctly raised this as canon-vs-operator-intent question rather than silent overwriting
+- **Convergent evidence (item 1)**: only LÆX flagged in R1; SOUL + CORSO converged on mechanical fix but didn't surface the divergence question — partial convergence; may need second pressure-test before ratification
+- **Biblical grounding (item 2)**: Proverbs 22:1 ("a good name is rather to be chosen than great riches") — operators have semantic stake in their working vocabulary
+- **Decision-shaping (item 3)**: changes every canon-vs-operator-vocabulary tension resolution; prevents silent canon overwrites of operator artifacts
+- **Pressure-tested (item 4)**: 1 session — limited; recommend ratification gated on second pressure-test in different domain
+- **Cross-doc impact**: Canon XV (Principal Hierarchy) + Canon XXXIX (promotion pipeline) — explicit interaction needs LÆX layer mapping
+- **Memory**: `feedback_operator_grade_vs_canon_grade_divergence` (to be authored)
+- **Helix entry**: `helix://shared/entries/2026-05-19-portfolio-pillar-drift-scrum.md` (Lesson Learned #6)
+
+### #36 — CLAUDE.md BLOCKING POLICIES: Pre-/BUILD drift check (TIER 2 — CLAUDE.md, not canon) — **APPLIED 2026-05-19**
+- **Status**: APPLIED to `~/.claude/CLAUDE.md` BLOCKING POLICIES section 2026-05-19. Operator-stamped per Canon XV (CLAUDE.md is personal global instructions).
+- **Source**: This session — /SYNC dry-run drift detection caught 4 portfolio mislabels before /BUILD copilot-omniscience-read; if not caught, /BUILD would have spawned a worktree with citation drift propagating downstream
+- **Proposed location**: `~/.claude/CLAUDE.md` BLOCKING POLICIES section
+- **Rule**: Before invoking `/BUILD <codename>`, run `/SYNC --roadmap <codename> --dry-run` to detect tracking-artifact drift (D-1 through D-6 findings). If HIGH-severity drift detected, resolve first (separate /SCRUM or operator decision) before /BUILD creates worktree.
+- **Authority**: operator stamp on CLAUDE.md (no LÆX needed for personal global instructions)
+- **Pressure-tested (item 4)**: 2026-05-19 — D-1 detector caught 4 mislabels; /BUILD held; correction applied; /BUILD now safe to proceed
+- **Memory**: `feedback_pre_build_drift_check` (to be authored)
+
+### #37 — CLAUDE.md COMMUNICATION COVENANT rule 11: Audit-pending disclosure (TIER 2) — **APPLIED 2026-05-19**
+- **Status**: APPLIED to `~/.claude/CLAUDE.md` COMMUNICATION COVENANT as rule 11 (2026-05-19). Operator-stamped per Canon XV.
+- **Source**: This session — portfolio.md "Active builds" column re-population done in 2 phases (P0 SCRUM flagged `_audit pending_`, P1 audit populated). Disclosure-at-checkpoint preserved operator trust.
+- **Proposed location**: `~/.claude/CLAUDE.md` COMMUNICATION COVENANT (add rule 11)
+- **Rule**: When a field's correctness depends on a deferred audit task, flag the field with `_audit pending_` (or structured equivalent) and a link to the dispatched task. Truthful-by-disclosure beats truthful-by-omission.
+- **Authority**: operator stamp on CLAUDE.md
+- **Pressure-tested**: 2026-05-19 portfolio.md re-population
+- **Memory**: `feedback_audit_pending_disclosure` (to be authored)
+
+### #38 — Mid-SCRUM verification supersedes formal R2 (TIER 3 — memory only)
+- **Status**: WRITTEN to memory 2026-05-19 (Path D — not canon-level)
+- **Rule**: When SCRUM R1 surfaces a claim with verifiable evidence (line numbers, file paths), moderator should verify mid-SCRUM before R2 dispatch. If verification produces stronger findings than peer critique would, skip R2 → R3.
+- **Pressure-tested**: 2026-05-19 — SOUL's L54 claim verified mid-SCRUM expanded scope from 4 portfolio labels to 4 labels + 2 canon prose corrections; R2 would have added little
+- **Memory**: `feedback_mid_scrum_verification_supersedes_r2`
+
+### #39 — Inline tracking-artifact audit comments (Canon XLII-compatible) (TIER 3)
+- **Status**: WRITTEN to memory 2026-05-19 (Path D)
+- **Rule**: When correcting tracking-artifact citations (active.yaml, portfolio.md), append inline `# YYYY-MM-DD audit (severity): was X — Y rationale` comment. One-line scope preserves provenance without violating Canon XLII (no amendment history in schema files).
+- **Pressure-tested**: 2026-05-19 — 5 active.yaml patches all carried inline provenance comments; git log preserves full change record
+- **Memory**: `feedback_tracking_artifact_inline_audit_comments`
+
+### #40 — Pre-Northstar-v1.1 vocabulary fingerprints (TIER 3)
+- **Status**: WRITTEN to memory 2026-05-19 (Path D)
+- **Rule**: Strings like `"both P1+P2"`, `both_p1_p2`, `"both"` in `pillar_mapping:` indicate plans authored under pre-v1.1 (2-Pillar) Northstar canon. Audit-via-grep is effective: `grep -rE 'pillar_mapping.*"both"' ~/.claude/plans/` flags candidates for re-citation.
+- **Pressure-tested**: 2026-05-19 — squishy-dancing-thimble-phase-a + eef-e5 + harvesting-converging-quasar all used "both" vocabulary; flagged for audit
+- **Memory**: `feedback_pre_v1_1_vocabulary_fingerprints`
+
+### #41 — Iter-2 cross-exam self-correction as canary for systemic drift (TIER 3)
+- **Status**: WRITTEN to memory 2026-05-19 (Path D)
+- **Rule**: When a plan's iter-2 cross-exam catches a citation error IN ITSELF (e.g. copilot-omniscience-read B-1: P4→P6), grep all sibling artifacts for the same drift pattern. One canary catch typically reveals systemic drift.
+- **Pressure-tested**: 2026-05-19 — copilot-omniscience-read iter-2 B-1 was the canary; grep revealed 4 other MIS-CITED builds with same P4→P6 drift
+- **Memory**: `feedback_iter2_canary_self_correction`
+
+### #42 — Drift asymmetry threshold → /SYNC --lint priority (TIER 3)
+- **Status**: WRITTEN to memory 2026-05-19 (Path D)
+- **Rule**: 36% MIS-CITED drift rate (5 of 14 in-flight builds) is high enough to mandate `/SYNC --lint` as priority backlog (not nice-to-have). Below 10% drift = lint nice-to-have; 10-25% = should-have; ≥25% = priority.
+- **Pressure-tested**: 2026-05-19 — 36% empirical rate from QUANTUM audit
+- **Memory**: `feedback_drift_asymmetry_lint_threshold`
+
+### #43 — Canon docs can drift against themselves (TIER 3)
+- **Status**: WRITTEN to memory 2026-05-19 (Path D)
+- **Rule**: Canon documents can be internally contradictory (prose vs table, intro vs body). Verify surrounding context, not just cited line. SOUL's L54 evidence chain was correct on the existence of drift but incomplete on the scope (missed L58-64 table aligning with canon).
+- **Pressure-tested**: 2026-05-19 — Operators-Manual §1.2 L54 prose "four Pillars (P1–P4)" contradicted its own table L58-64 (all 7 Pillars listed)
+- **Memory**: `feedback_canon_internal_contradiction`
 
 ---
 

@@ -438,7 +438,7 @@
     </div>
     <div class="header-title">
       <span class="ti-id">SQD</span>
-      <span class="ti-name">SQUAD DISPATCH</span>
+      <span class="ti-name">Run</span>
       <span class="ti-sub">OPERATOR CONSOLE</span>
     </div>
     <div class="header-tele">

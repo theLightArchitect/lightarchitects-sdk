@@ -153,23 +153,25 @@
     if (import.meta.env.DEV) (window as any).__e2e_ready = setupDone;
   });
 
-  // 5-tab nav: OPS · DISPATCH · BUILDS · COMMS · HELIX
-  // Tab order: read-heavy surfaces first (Ops → Builds), coordination (Comms), power-user last (Helix).
+  // 6-tab nav: Dashboard · Run · Builds · Activity · Knowledge · Diagrams
   const NAV_ITEMS = [
-    { label: 'OPS',      hash: '/ops',      hint: 'Live agent activity, alerts, and squad health',                    separator: false },
-    { label: 'DISPATCH', hash: '/dispatch', hint: 'Dispatch agents by domain — Engineer, Security, Ops (Cmd+K)',      separator: false },
-    { label: 'BUILDS',   hash: '/builds',   hint: 'All builds — past, in-flight, and queued',                         separator: false },
-    { label: 'COMMS',    hash: '/comms',    hint: 'Squad comms — cross-build coordination overview and task queue',    separator: false },
-    { label: 'HELIX',    hash: '/helix',    hint: 'Knowledge graph — agent memory strands and quality gates',          separator: false },
+    { label: 'Dashboard', hash: '/dashboard', hint: 'Live agent activity, alerts, and squad health',               separator: false },
+    { label: 'Run',       hash: '/run',       hint: 'Dispatch agents by domain — Engineer, Security, Ops (Cmd+K)',separator: false },
+    { label: 'Builds',    hash: '/builds',    hint: 'All builds — past, in-flight, and queued',                    separator: false },
+    { label: 'Activity',  hash: '/activity',  hint: 'Squad comms — cross-build coordination overview and task queue', separator: false },
+    { label: 'Knowledge', hash: '/knowledge', hint: 'Knowledge graph — agent memory strands and quality gates',    separator: false },
+    { label: 'Diagrams',  hash: '/diagrams',  hint: 'Architecture intelligence — extract, verify, render diagrams',separator: false },
   ];
 
   let activeRoute = $derived($currentRoute);
 
   function isActive(hash: string): boolean {
-    // /builds is the default landing — active on both '/' and '/builds*'
-    if (hash === '/builds') {
-      return activeRoute === '/' || activeRoute === '' || activeRoute.startsWith('/builds');
-    }
+    if (hash === '/dashboard') return activeRoute === '/' || activeRoute === '' || activeRoute.startsWith('/dashboard') || activeRoute.startsWith('/monitor') || activeRoute.startsWith('/ops');
+    if (hash === '/run')       return activeRoute.startsWith('/run') || activeRoute.startsWith('/dispatch');
+    if (hash === '/builds')    return activeRoute.startsWith('/builds') || activeRoute.startsWith('/manage');
+    if (hash === '/knowledge') return activeRoute.startsWith('/knowledge') || activeRoute.startsWith('/memory') || activeRoute.startsWith('/helix');
+    if (hash === '/activity')  return activeRoute.startsWith('/activity') || activeRoute.startsWith('/comms');
+    if (hash === '/diagrams')  return activeRoute.startsWith('/diagrams') || activeRoute.startsWith('/arch');
     return activeRoute.startsWith(hash);
   }
 
@@ -422,13 +424,11 @@
         {/each}
         <div class="ml-auto shrink-0 flex items-center gap-2">
           <ActiveBuildsChip />
-          <!-- G-1: OFFLINE status pill — only when connectivity is lost -->
+          <!-- G-1: OFFLINE dot — subtle indicator, click to retry -->
           {#if $ayinStatus === 'reconnecting' || $ayinStatus === 'offline'}
-            <div class="nav-offline-pill">
-              <span class="nav-offline-dot"></span>
-              <span>OFFLINE — reconnecting</span>
-              <button class="nav-offline-retry" onclick={connectGlobalSSE}>Retry</button>
-            </div>
+            <Tooltip content="Gateway offline — click to reconnect" side="bottom">
+              <button class="nav-offline-dot-btn" onclick={connectGlobalSSE} aria-label="Gateway offline — click to reconnect"></button>
+            </Tooltip>
           {/if}
           <!-- Events overlay toggle (Wave 1.5) — E key shortcut, handled in GlobalEventsOverlay -->
           <Tooltip content="Live events feed — activity, AYIN spans, gate verdicts, build output (E)" side="bottom">
@@ -446,13 +446,6 @@
               data-testid="memory-toggle"
             >{$memoryDrawerOpen ? 'Close Memory' : 'Memory'}</button>
           </Tooltip>
-          <Tooltip content="Architecture Intelligence — extract, verify, render, and emit architecture diagrams" side="bottom">
-            <button
-              onclick={() => navigate('/arch')}
-              class="px-2 py-1 text-[11px] transition-colors {activeRoute.startsWith('/arch') ? 'text-[#FFD700]' : 'text-[#475569] hover:text-[#FFD700]'}"
-              data-testid="arch-nav-btn"
-            >ARCH</button>
-          </Tooltip>
           <!-- 3D View toggle — visible at every viewport.
                Desktop (>=1024): toggles the inline right-hand panel.
                Tablet/mobile  : toggles a full-screen overlay so the WebGL
@@ -462,7 +455,7 @@
               onclick={() => { showHelix = !showHelix; }}
               class="px-2 py-1 text-[11px] text-[#475569] hover:text-[#FFD700] transition-colors"
               data-testid="helix-toggle"
-            >{showHelix ? 'Hide 3D View' : 'Show 3D View'}</button>
+            >{showHelix ? 'Hide 3D' : '3D'}</button>
           </Tooltip>
           <Tooltip content="What is the Helix? — color map of agents and LASDLC quality gates" side="bottom">
             <button

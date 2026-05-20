@@ -541,6 +541,19 @@ The following labels are CANONICAL and RESERVED — they must NOT be used for an
 - Plan authors MUST NOT re-use reserved tokens.
 - Review-tier authors (SCRUM, Canon Audit, /REVIEW) MUST use their canonical prefix.
 
+**Extension (2026-05-19 — artifact-internal Gn collision, candidate E2 from vault-migration-v1 soak-close audit)**:
+
+Within a **single artifact** (manifest.yaml, gate-evaluation report, soak_window block), the prefix `G<N>` MUST resolve to exactly ONE namespace among `{check_id, phase_gate, scrum_amendment}`. If two namespaces co-exist in the same artifact, the secondary namespace MUST use a disambiguator prefix:
+- `G1-check`, `G2-check` … for numbered check IDs (e.g. g1-report.yaml `checks` block)
+- `G1-phase`, `G2-phase` … for phase-gate labels (e.g. soak_window `gate:` field)
+- `G1-scrum`, `G2-scrum` … for SCRUM-round amendments
+
+**Demonstrated by**:
+- 2026-05-13 incident: `gateway-action-audit-claude-runtime` plan G1-G10 SCRUM labels collided with Playbook §15.3 pre-flight G1-G8 (caught Canon Audit Round 3).
+- 2026-05-19 incident: `vault-migration-v1/g1-report.yaml` used G1-G14 as `checks` IDs AND G2/G8 as `soak_window.gate` labels in the same artifact — discovered during LÆX soak-close audit. The g1-report's "G2 + G8 must hold continuously" line was unparseable without convention-disambiguator.
+
+**Rationale**: Cross-artifact collision is recoverable via `labeling_clarification` frontmatter; artifact-internal collision is not — both namespaces share the same parse surface. Disambiguator prefix is the only fix that doesn't require future-context.
+
 **Composition**: Canon XXXVIII reserves the gate-vocabulary tokens `[A+S+Q+C+O+P+K+D+T+R]` semantically. §7.6 reserves the operational labels (`G1-G8`, `Q1-Q4`, `N1-N2`, `S1`, `D1`, `C1-C8`) syntactically. Together they protect the canonical vocabulary at both the semantic and naming layers.
 
 ---
@@ -2437,4 +2450,56 @@ Solving the wrong problem confidently. The framing discipline is the gate that c
 
 ---
 
-*Agents Playbook v1.9 | Light Architects | updated 2026-05-18 at Phase 7 ratification close-out (added §7.9 Implementation-Readiness Audit + §7.10 Two-Problems Framing Discipline). v1.7 added §15.3.13 + §7.8 + §Phase-2A.5; v1.8 added §15.3.13.5 28-gate checklist. Full amendment narrative: see `agents-playbook.CHANGELOG.md` companion (created at Phase 7 per Canon XLII Tier-2 threshold).*
+## §15.3.14 — OD-N Locked-Contract Route-Edit Gate (2026-05-19 RATIFIED, candidate E6 from vault-migration-v1 soak-close audit)
+
+**Scope**: Any `/BUILD` touching files in `lightarchitects-sdk/lightarchitects-gateway/src/http/routes/` or `lightarchitects-sdk/lightarchitects-gateway/tests/` MUST run a preflight scan against the diff for additions / removals / signature changes to routes covered by an OD-N LOCK declaration.
+
+**Currently LOCKED contracts**:
+- OD-5 (2026-05-03): platform-helix-private-api-served — `/v1/platform/canon/*`, `/v1/platform/agents/*`, `/v1/platform/skills/*`, `/v1/platform/standards/*`, `/v1/platform/helix/*`
+  - Helix entry: `shared/entries/2026-05-03-od5-platform-helix-private-api-served.md`
+- OD-6 (2026-05-13): PlatformClient contract immutability — full SDK surface in `lightarchitects-sdk/lightarchitects/src/platform/client.rs`
+  - Helix entry: `shared/entries/2026-05-13-od6-platformclient-contract-immutability.md`
+
+**Preflight check**:
+1. Diff scan: `git diff feat/<build> | grep -E "^(\+|\-).*\.route\(|fn .*_get\(|fn .*_post\("` against `routes/platform.rs`
+2. If hit: HALT — require explicit `od_amendment_required: <OD-N>` field in `manifest.yaml` frontmatter, signed by Kevin (Canon XV).
+3. If no hit: proceed.
+
+**Rationale**: webshell-api-surface-v1.md L105 declares OD-5/OD-6 LOCKED but no enforcement mechanism exists today — the LOCK is honor-system. This gate moves enforcement from human-discipline to mechanical preflight. Without it, the LOCK has zero teeth — vault-migration-v1 soak-close audit 2026-05-19 nearly proposed a `/v1/platform/agents/eva` smoke-test misframing that would have been written to canon as "new work" rather than "verifying existing locked route."
+
+**Cross-references**:
+- OD-5 / OD-6 helix entries (LOCKED contracts)
+- webshell-api-surface-v1.md L105 (LOCK declaration)
+- §15.5.8 Build Closure Protocol (companion gate; both fire at /BUILD preflight)
+
+---
+
+## §15.5.8 — Build Closure Protocol (2026-05-19 CONDITIONALLY_RATIFIED, N=1, candidate E3+E4 from vault-migration-v1 soak-close audit)
+
+**Source**: vault-migration-v1 soak-close audit 2026-05-19 — drift detected between `manifest.yaml.phase_detail` (Phases 1-2 complete, 3-7 pending) and `completion-entry.md` narrative ("Phases 1-7 complete on 2026-05-16"). Two artifacts about the same build disagreed on close-state.
+
+**Rule**: When a build authors a `completion-entry.md` at `helix/corso/builds/<codename>/completion-entry.md`, the build's `manifest.yaml` MUST synchronously update to one of:
+- `status: shipped` (close complete; no open work)
+- `status: closed_with_carry_over` (close complete; explicit carry-over items declared)
+- `status: shipped_with_soak` (binary deployed; soak window active per soak_window block)
+
+**Required closure synchronization** (same commit or HITL-gated session):
+- `manifest.yaml.status` ∈ {`shipped`, `closed_with_carry_over`, `shipped_with_soak`}
+- `manifest.yaml.shipped` populated with ISO-8601 timestamp
+- `manifest.yaml.closure_note` summary — if any phase_detail vs completion-entry semantic drift exists, document it here (do NOT retroactively rewrite phase_detail)
+- `manifest.yaml.carry_over_items` enumerated (or `[]` if none)
+- `builds-registry.yaml` corresponding entry mirrors the status flip
+
+**Ownership**: `/BUILD` orchestrator writes during phase=close ritual. Operator override (Canon XV stamp) permitted in exceptional cases — direct edits MUST cite Canon XV in a `close_authority` field.
+
+**Cross-references**:
+- LASDLC CHANGELOG L30 (manifest.yaml owned by /BUILD orchestrator)
+- Cookbook §69 (Citation Integrity — extends to closure metadata)
+- Architects Blueprint §13.1 (manifest schema)
+- Canon XV (operator override authority)
+
+**Promotion status**: CONDITIONALLY_RATIFIED. Promote to fully ratified after second observed closure drift incidence; review at 2026-06-19.
+
+---
+
+*Agents Playbook v1.10 | Light Architects | updated 2026-05-19 at LÆX soak-close audit ratification (added §15.3 artifact-internal Gn extension + §15.3.14 OD-N Locked-Contract Route-Edit Gate + §15.5.8 Build Closure Protocol CONDITIONALLY_RATIFIED). v1.9 added §7.9 Implementation-Readiness Audit + §7.10 Two-Problems Framing Discipline. v1.7 added §15.3.13 + §7.8 + §Phase-2A.5. v1.8 added §15.3.13.5 28-gate checklist. Full amendment narrative: see `agents-playbook.CHANGELOG.md` companion (created at Phase 7 per Canon XLII Tier-2 threshold).*

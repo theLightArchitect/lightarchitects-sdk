@@ -56,7 +56,7 @@
   <div class="helix-right">
     <header class="helix-right-header">
       <div class="helix-title">
-        <span class="helix-label">HELIX</span>
+        <span class="helix-label">Knowledge</span>
         <span class="helix-sub">
           {totalCount > 0 ? `${totalCount} entries` : 'Knowledge Vault'}
         </span>

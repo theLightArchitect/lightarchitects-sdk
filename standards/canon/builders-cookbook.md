@@ -6903,9 +6903,54 @@ Detailed amendment narrative — sections added, source builds, canon references
 
 Mechanical history: `git log -- standards/canon/builders-cookbook.md`
 
+## §69 Citation Integrity Doctrine (2026-05-19 Phase 7 ratified, candidate #34 — downstream of Canon XXXV; compatible with Canon XLII)
+
+**Rule**: Tracking artifacts (`active.yaml`, `portfolio.md`, `_MOC-builds.md`, `roadmap.html`, `builds-registry.yaml`) and plan frontmatter (`~/.claude/plans/<codename>.md`) citing canonical concepts (Northstar Pillars, mechanical checks, Component Northstars, Canon sections, Cookbook §-numbers) MUST use **verbatim canon strings** OR explicitly flag deviation as `*(paraphrased "<short>")*` with citation to the canonical anchor.
+
+> **2026-05-19 amendment (E5 reconciliation, LÆX soak-close audit)**: `roadmap.html` added to canonical artifact list. Resolves Operators Manual L234 ↔ Cookbook §69 internal contradiction in favor of the 5-artifact merged set. Operators Manual L234 simultaneously amended to add `builds-registry.yaml`. Both docs now converge on: `{active.yaml, portfolio.md, _MOC-builds.md, roadmap.html, builds-registry.yaml}`.
+
+**Forbidden**:
+- Heuristic paraphrase without explicit flag (e.g. `pillar_mapping: "P4 — Operator-legible arc"` when canon says "P4 — Asynchronous Parallel Agent Collaboration")
+- Composite/aggregated citations without enumeration (e.g. `northstar: "both"`, `pillar_mapping: "all 7"`, `northstar: both_p1_p2`)
+- Implicit Pillar reference by number only without verifying current canon definition (canon evolves; `P4` in v1 ≠ `P4` in v4 — the Northstar canon migrated from 4-Pillar to 7-Pillar between v1.0 and v4.1)
+
+**Required**:
+- Verbatim canon heading: `**P6 — Operator-Legible Engineering Arc**`
+- Or paraphrase-with-flag: `**P6 — Operator-Legible Arc** *(paraphrased; canon: "Operator-Legible Engineering Arc")*`
+- Inline audit-correction comment when patching drift in-place: `northstar: p1_p6 # YYYY-MM-DD audit (severity): was p1_p4 — <rationale>` — see Tier-2 migration rule below
+
+**Canon XLII Tier-2 migration trigger**: When inline audit-correction comments accumulate to **≥3 entries in any single tracking-artifact file**, migrate the audit narrative to a companion `<file>.CHANGELOG.md` per Canon XLII §"Migration trigger thresholds" (Tier 2). Inline comments are valid only at Canon XLII Tier 0 (≤1 entry) or Tier 1 (≤2 entries with migration plan). Without this discipline, this rule sets up a future Canon XLII violation as accumulated steady-state — the active.yaml at the time of §69 ratification was already at Tier 2 trigger (5 entries) and required same-session migration.
+
+**Why**: Drift in tracking-artifact labels silently propagates into every downstream `northstar:` / `pillar_mapping:` citation. The drift becomes invisible until a cross-examination catches it. Pressure-tested 2026-05-19: 36% MIS-CITED rate (5 of 14 in-flight builds) after ~6 months of accumulated drift from pre-Northstar-v1.1 (4-Pillar era) vocabulary. The root cause was stale-canon "P4 = Operator-Legible Arc" propagating into both `active.yaml` `northstar:` fields and plan frontmatter `pillar_mapping:` fields for builds authored in that era.
+
+**Enforcement**:
+- `/SYNC --roadmap <codename> --dry-run` runs D-1 drift detector on every plan placement (catches pre-write)
+- `/SYNC --lint` (v1.1.0 — pending) blocks sync on HIGH-severity drift
+- `/XEA` Layer 2 (Northstar mechanical checks) verifies Pillar citations against current canon during plan validation
+- `/BUILD` reads `active.yaml` entry on Phase 0 — citation drift here propagates into manifest.yaml; pre-/BUILD `/SYNC --dry-run` is therefore mandatory
+
+**Empirical witnesses (Canon XXXIX item 4)**:
+- 5 MIS-CITED builds patched 2026-05-19: `gitforest-live-ops` (P1+P2+P4 → P1+P6), `replicated-greeting-robin` (P1+P4 → P1+P6+P7), `architecture-intelligence-substrate` (P1+P4 → P1+P6), `squishy-dancing-thimble-phase-a` ("both P1+P2" → P1+P6), `harvesting-converging-quasar` (both_p1_p2 → P2+P3+P5+P7)
+- Portfolio.md P4 column went sparse (2 builds), P6 column went dense (8 builds, 6 RE-CITED) after correction
+- `copilot-omniscience-read` iter-2 cross-exam B-1 self-correction (canary catching itself)
+
+**Convergent evidence (Canon XXXIX item 1)**: 3-of-3 /SCRUM siblings independently surfaced rule (LÆX RATIFY-AND-CODIFY, SOUL "insufficient → also Cookbook rule", CORSO APPROVE-WITH-FIXES "needs §"); QUANTUM citation audit produced 36% drift rate as empirical urgency signal.
+
+**Biblical grounding (item 2)**: *"He that answereth a matter before he heareth it, it is folly and shame unto him."* — Proverbs 18:13. Citing canon without reading canon is answering before hearing. Secondary: *"Prove all things; hold fast that which is good."* — 1 Thessalonians 5:21 (Canon XXXV parent grounding extended to tracking artifacts).
+
+**Cross-references**:
+- **Canon XXXV** (parent): verbatim citation discipline for decision-gating claims; §69 extends this to tracking-artifact labels
+- **Canon XLII** (compatible): single-line audit comments respect "current state only" at Tier 0; Tier-2 migration trigger above prevents accumulation
+- **Canon XXXIII** (related): self-validation ceiling — independent /SCRUM cross-examination caught what self-review would miss
+- **Cookbook §66** (adjacent): Context Assembly Discipline governs WHAT to fetch; §69 governs HOW to cite
+
+**LÆX ratification**: 2026-05-19 Phase 7, XEA-cleared with 3 conditions applied (placement §75 → §69, Canon XXXV + XLII cross-refs, Tier-2 migration trigger added). Operator stamp pending integration verification.
+
+---
+
 **Rule** (per separation-of-concerns refactor, 2026-05-18): no tail-amendment blocks or scattered per-section version-history entries in this file. Section content lives here; amendment narrative lives in the CHANGELOG companion.
 
-**Current version**: see CHANGELOG for latest. As of 2026-05-18: **v3.2.1** (Git-Context Preamble §64.8; LÆX candidate #19 pending Phase 7 ratification).
+**Current version**: see CHANGELOG for latest. As of 2026-05-19: **v3.3.0** (Citation Integrity Doctrine §69; LÆX candidate #34 ratified Phase 7).
 
 *Builders Cookbook · Light Architects · `canon://builders-cookbook`*
 

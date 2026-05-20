@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.10"  # bumped 2026-05-19: BuildDetail supervisor wiring — §2.13 frontend notes, §3.7/§3.10 BuildDetail supervisor strip + route mapping
+version: "1.0.11"  # bumped 2026-05-19: nav tab renames (Monitor/Run/Manage/Activity/Memory), stats bar (Approval/Idle), OFFLINE pill → dot, 3D toggle label
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
@@ -817,17 +817,17 @@ Screens are lazy-loaded per `screenModules` in `src/app.svelte:51`. Each entry m
 
 | Tab | Label | Hash | Keyboard | Hint |
 |-----|-------|------|----------|------|
-| 1 | OPS | `/ops` | `1` | Live agent activity, alerts, and squad health |
-| 2 | DISPATCH | `/dispatch` | `2`, `⌘K` | Dispatch agents by domain — Engineer, Security, Ops |
-| 3 | BUILDS | `/builds` | `3` | All builds — past, in-flight, and queued |
-| 4 | COMMS | `/comms` | `4` | Squad comms — cross-build coordination overview and task queue |
-| 5 | HELIX | `/helix` | `5` | Knowledge graph — agent memory strands and quality gates |
+| 1 | Monitor | `/ops` | `1` | Live agent activity, alerts, and squad health |
+| 2 | Run | `/dispatch` | `2`, `⌘K` | Dispatch agents by domain — Engineer, Security, Ops |
+| 3 | Manage | `/builds` | `3` | All builds — past, in-flight, and queued |
+| 4 | Activity | `/comms` | `4` | Squad comms — cross-build coordination overview and task queue |
+| 5 | Memory | `/helix` | `5` | Knowledge graph — agent memory strands and quality gates |
 
 **Global keyboard shortcuts** (registered via `hotkeyRegistry`):
 
 | Shortcut | Action | Scope |
 |----------|--------|-------|
-| `1` – `5` | Navigate to OPS / DISPATCH / BUILDS / COMMS / HELIX | Global (non-input) |
+| `1` – `5` | Navigate to Monitor / Run / Manage / Activity / Memory | Global (non-input) |
 | `⌘K` / `Ctrl+K` | Open Dispatch | Global |
 | `⌘/` / `Ctrl+/` | Toggle keymap legend | Global |
 | `Ctrl+\`` | Toggle Copilot drawer | Global |
@@ -841,7 +841,7 @@ Screens are lazy-loaded per `screenModules` in `src/app.svelte:51`. Each entry m
 | `MemoryDrawer` | Hot / cold / convergence memory browser | `⌘M` |
 | `CommandPalette` | Command palette | Rendered by `CommandPalette.svelte` |
 | `GlobalEventsOverlay` | Push-not-occlude 320px right panel — live events feed | `Events` button in nav |
-| `Helix3D` (inline) | 3D knowledge graph — inline right panel (desktop ≥1024px) or full-screen overlay (tablet/mobile) | `Show 3D View` button |
+| `Helix3D` (inline) | 3D knowledge graph — inline right panel (desktop ≥1024px) or full-screen overlay (tablet/mobile) | `3D` / `Hide 3D` button |
 | `StatusBar` | Bottom status strip | Always visible |
 | `AuthBanner` | Top-of-screen 401/403 affordance | Auto-shown |
 | `DiffPreview` | Operator-gated FS mutation flow | `la:fs-mutation-pending` event |
@@ -1004,7 +1004,7 @@ Expected after `copilot-supervised-orchestration` Phase 5 (2026-05-17): 92 + 7 =
 | **C9** | §3.2 `ScreenKey` union: exactly 11 keys (Ops Dispatch Builds Intake Helix BuildDetail ProjectDetail Comms Editor Git PullRequest) | `src/lib/routes.ts` | Lines 5–16 | Count = 11; no keys added or removed | `grep -c '\|' src/lib/routes.ts` then read lines 5–16 |
 | **C10** | §3.3 `ROUTES`: exactly 22 entries, ordered most-specific first, fallback = `Ops` | `src/lib/routes.ts` | Lines 42–67 | Count = 22; order preserved; pattern strings match §3.3 table | `grep -c '\[/' src/lib/routes.ts` (returns 21; +1 for `new RegExp(...)` entry = 22); read lines 42–67 |
 | **C11** | §3.7 `screenModules`: 11 entries; ScreenKey → correct `.svelte` import path | `src/app.svelte` | Lines 51–63 | Count = 11; every key maps to the documented component file | `grep -A15 'screenModules' src/app.svelte` |
-| **C12** | §3.8 NAV_ITEMS: 5 tabs (OPS/DISPATCH/BUILDS/COMMS/HELIX), hash paths `/ops` `/dispatch` `/builds` `/comms` `/helix` | `src/app.svelte` | Lines 156–162 | Tab count = 5; labels and paths exact | `grep -A10 'NAV_ITEMS' src/app.svelte` |
+| **C12** | §3.8 NAV_ITEMS: 5 tabs (Monitor/Run/Manage/Activity/Memory), hash paths `/ops` `/dispatch` `/builds` `/comms` `/helix` | `src/app.svelte` | Lines 156–162 | Tab count = 5; labels and paths exact | `grep -A10 'NAV_ITEMS' src/app.svelte` |
 | **C13** | §3.8 Keyboard shortcuts: 9 registered hotkeys — `1`–`5` (nav tabs), `⌘K` (Open Dispatch), `⌘/` (keymap legend), `⌃\`` (Toggle Copilot drawer), `⌘M` (Toggle Memory drawer) | `src/app.svelte` | Lines 244–326 | Count = 9; IDs, labels, and handlers exact | Read lines 244–326; compare label strings |
 | **C14** | §4.1 Session cookie: `la_session=<token>; HttpOnly; SameSite=Strict; Secure; Max-Age=28800` | `src/auth.rs` | ~Line 143 | All 5 cookie attributes present in `session_cookie_header()` | `grep -n 'HttpOnly\|SameSite\|Max-Age\|la_session' src/auth.rs` |
 | **C15** | §1.3 `auth_nonces`: `Arc<DashMap<Uuid, Instant>>`; 60-second TTL; consumed on first use | `src/server/mod.rs` | Lines 162–166 | Field name, key type (`Uuid` not `String`), and TTL comment match | `grep -n 'auth_nonces' src/server/mod.rs` |
