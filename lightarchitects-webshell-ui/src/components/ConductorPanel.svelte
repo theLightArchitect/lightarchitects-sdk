@@ -2,6 +2,7 @@
   import { conductorTasks, conductorStats } from '$lib/stores';
   import { SIBLING_COLORS } from '$lib/design-tokens';
   import type { ConductorTask, ConductorTaskStatus } from '$lib/types';
+  import MockBadge from '$lib/../components/MockBadge.svelte';
 
   interface Props {
     maxDisplay?: number;
@@ -51,9 +52,10 @@
 
 <div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] rounded-lg overflow-hidden">
   <!-- Header -->
-  <div class="px-4 py-2 border-b border-[var(--la-drawer-border)] flex items-center justify-between">
+  <div class="relative px-4 py-2 border-b border-[var(--la-drawer-border)] flex items-center justify-between">
     <h3 class="text-xs font-medium text-[var(--la-text-label)]">CONDUCTOR QUEUE</h3>
-    <div class="flex items-center gap-3 text-[10px]">
+    <MockBadge label="STREAM" detail="topic-SSE pending" position="top-right" />
+    <div class="flex items-center gap-3 text-[10px] pr-24">
       <span class="text-[var(--la-agent-engineer)]">{$conductorStats.running} running</span>
       <span class="text-[var(--la-agent-performance)]">{$conductorStats.pending} queued</span>
     </div>

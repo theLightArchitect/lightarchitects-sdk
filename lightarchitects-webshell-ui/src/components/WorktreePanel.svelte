@@ -1,6 +1,7 @@
 <script lang="ts">
   import { gitforestTree } from '$lib/stores';
   import type { BranchNode, WorktreeAssignment } from '$lib/gitforest';
+  import MockBadge from '$lib/../components/MockBadge.svelte';
 
   interface TreeRow {
     depth: number;
@@ -73,6 +74,10 @@
 </script>
 
 <div class="wt-panel">
+  <div class="wt-header" style="position: relative; padding: 4px 8px; border-bottom: 1px solid var(--la-hair-faint);">
+    <span style="font-size: 9px; color: var(--la-text-dim); letter-spacing: 0.08em; font-weight: 700;">WORKTREES</span>
+    <MockBadge label="META" detail="locked/created_at pending" position="top-right" />
+  </div>
   {#if rows.length === 0}
     <div class="wt-empty">
       <span class="wt-empty-icon">⌥</span>

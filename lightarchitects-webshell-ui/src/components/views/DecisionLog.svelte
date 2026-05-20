@@ -13,6 +13,8 @@ Listens for `la:escalation` on `window`; prepends entries when `ev.build_id` mat
   import { onMount, onDestroy } from 'svelte';
   import { api } from '$lib/api';
   import type { DecisionEntry } from '$lib/types';
+  import MockBadge from '$lib/../components/MockBadge.svelte';
+  import { MOCK_DECISION_ENTRIES } from '$lib/mock-surfaces';
 
   let { buildId }: { buildId: string } = $props();
 
@@ -54,8 +56,12 @@ Listens for `la:escalation` on `window`; prepends entries when `ev.build_id` mat
     error = null;
     try {
       const data = await api.getDecisions(buildId);
-      entries = [...data].reverse(); // newest first
+      // Fallback to mock entries when API returns empty (build has no decisions yet
+      // OR backend SSE stream is not implemented — see MockBadge "STREAM" in header).
+      entries = data.length > 0 ? [...data].reverse() : [...MOCK_DECISION_ENTRIES];
     } catch (e) {
+      // On error, render mock so panel is never blank.
+      entries = [...MOCK_DECISION_ENTRIES];
       error = e instanceof Error ? e.message : String(e);
     } finally {
       loading = false;
@@ -102,7 +108,10 @@ Listens for `la:escalation` on `window`; prepends entries when `ev.build_id` mat
 <div class="decision-log" data-testid="decision-log" data-build-id={buildId}>
   <!-- ── Header + filter ─────────────────────────────────────────────────────── -->
   <div class="dl-header">
-    <span class="dl-title">DECISION LOG</span>
+    <span class="dl-title" style="position: relative; padding-right: 80px;">
+      DECISION LOG
+      <MockBadge label="STREAM" detail="live SSE pending" position="top-right" />
+    </span>
     <div class="dl-filters" role="group" aria-label="Filter by decision level">
       {#each (['all', 'L1', 'L2', 'L3', 'L4'] as const) as lvl}
         <button

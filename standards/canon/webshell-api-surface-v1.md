@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.14"  # bumped 2026-05-20: §2.4b EVA ambient grounding (copilot-eva-ambient Phase 5) + §2.23-2.24 fleet SSE/snapshot (agent-teams-fleet Phase 3)
+version: "1.0.15"  # bumped 2026-05-20: §2.25-2.27 backend-gap stubs (webshell-mock-overlay-shipping) — conductor/events SSE, decisions/stream SSE, git/worktrees/{repo} REST
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
@@ -941,6 +941,55 @@ Point-in-time snapshot of the current fleet state for a build. Useful for initia
 **Errors**: `401` on invalid bearer, `404` on unknown `build_id`.
 
 **Note**: `worktree_path` is always `null` in V1 (OQ2 resolution). `turns` is always `0` in V1 (OQ4 resolution). `parent_agent_id` is inferred from the active-agent context stack at spawn time (OQ1 resolution).
+
+---
+
+### §2.25 Conductor Events SSE (webshell-mock-overlay-shipping — 2026-05-20 STUB)
+
+**Status:** Spec-defined; **NOT YET IMPLEMENTED**. Tracked by `webshell-event-bus-redesign` (LARGE follow-up plan).
+**Path:** `GET /api/conductor/events`
+**Response:** `text/event-stream`
+**Description:** Dedicated SSE stream for conductor queue + heartbeat events. Supplements `/api/events/global` (which IS implemented) with conductor-specific event types: `conductor_task`, `conductor_tick`. Debounced 250 ms. Retry: 5 000 ms.
+**Auth:** Bearer token.
+**Note:** `GET /api/conductor/status` (REST) IS implemented at server/mod.rs. This SSE endpoint is the live-push companion; until shipped, ConductorPanel reads via global SSE workaround (visible to operators via `MockBadge label="STREAM" detail="topic-SSE pending"` in the UI).
+**UI consumer:** `lightarchitects-webshell-ui/src/components/ConductorPanel.svelte` (currently displays MockBadge until backend lands).
+
+---
+
+### §2.26 Decisions Stream SSE (webshell-mock-overlay-shipping — 2026-05-20 STUB)
+
+**Status:** Spec-defined; **NOT YET IMPLEMENTED**. Tracked by `webshell-event-bus-redesign` (LARGE follow-up plan) Phase 3.
+**Path:** `GET /api/builds/{id}/decisions/stream`
+**Response:** `text/event-stream`; each event is JSONL-encoded `DecisionEntry`.
+**Description:** Live SSE feed of new HMAC-chained decision entries as they are written for build `{id}`. Clients use this for real-time `DecisionLog.svelte` updates without polling. Debounced 250 ms.
+**Auth:** Bearer token.
+**Note:** `GET /api/builds/{id}/decisions` (JSONL batch REST) IS implemented. This is the live companion. Until shipped, `DecisionLog.svelte` listens for `la:escalation` DOM events as a partial workaround and falls back to `MOCK_DECISION_ENTRIES` when empty (`MockBadge label="STREAM" detail="live SSE pending"`).
+**UI consumer:** `lightarchitects-webshell-ui/src/components/views/DecisionLog.svelte` (currently displays MockBadge + mock fallback until backend lands).
+
+---
+
+### §2.27 Git Worktrees Metadata (webshell-mock-overlay-shipping — 2026-05-20 STUB)
+
+**Status:** Spec-defined (2026-05-18 amendment); **NOT YET IMPLEMENTED**. Tracked by `webshell-backend-gaps` (separate SMALL follow-up plan).
+**Path:** `GET /api/git/worktrees/{repo}`
+**Response:** `200 OK` — JSON array of worktree metadata records.
+**Description:** Per-worktree metadata for `{repo}`. Richer than gitforest topology — adds `locked` and `created_at` fields absent from the topology response.
+**Auth:** Bearer token. `{repo}` path parameter validated against known-repos allowlist (same pattern as `github_proxy.rs`).
+**Response shape:**
+```json
+[
+  {
+    "path": "/Users/<u>/lightarchitects/worktrees/feat/foo",
+    "branch": "feat/foo",
+    "head_sha": "abc1234",
+    "status": "writing",
+    "locked": false,
+    "created_at": "2026-05-20T10:00:00Z"
+  }
+]
+```
+**Errors:** `400` on unknown `{repo}` (allowlist miss — same response as SSRF guard), `401` on missing/invalid bearer.
+**UI consumer:** `lightarchitects-webshell-ui/src/components/WorktreePanel.svelte` (currently uses `$gitforestTree` topology workaround + `MockBadge label="META" detail="locked/created_at pending"` until backend lands).
 
 ---
 
