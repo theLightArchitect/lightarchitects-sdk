@@ -52,6 +52,7 @@ use crate::{
 
 pub mod code_routes;
 pub mod exec_routes;
+pub mod fleet_routes;
 pub mod git_routes;
 pub mod roadmap;
 
@@ -596,6 +597,15 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/builds/{id}/agent/ws",
             get(agent::ws::agent_ws_handler),
+        )
+        // ── Fleet SSE + snapshot (agent-teams-fleet Phase 3) ────────────────
+        .route(
+            "/api/builds/{id}/fleet",
+            get(fleet_routes::fleet_sse_handler),
+        )
+        .route(
+            "/api/builds/{id}/fleet/snapshot",
+            get(fleet_routes::fleet_snapshot_handler),
         )
         // ── Northstar supervisor (copilot-supervised-orchestration) ──────────
         .route(

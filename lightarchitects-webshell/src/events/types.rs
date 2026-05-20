@@ -207,6 +207,11 @@ pub enum WebEvent {
     /// The `ReviewGate` uses `iteration` to enforce the per-gate fix-attempt
     /// limit (default: 3).
     FixAgentIteration(FixAgentIterationEvent),
+
+    /// Point-in-time fleet snapshot — emitted by the fleet broadcaster when
+    /// agent state changes. The frontend `FleetPanel` replaces its entire
+    /// agent tree on each event (snapshot semantics, no delta bookkeeping).
+    AgentFleetUpdate(lightarchitects::fleet::FleetSnapshot),
 }
 
 /// Northstar evaluation result broadcast after a `WAVE_COMPLETE` event.
@@ -1029,11 +1034,12 @@ mod tests {
     /// **If this test fails** you must update `EventType` in
     /// `lightarchitects-webshell-ui/src/lib/types.ts` to match before merging.
     ///
-    /// The canonical FE set at time of writing (2026-05-17):
+    /// The canonical FE set at time of writing (2026-05-19, agent-teams-fleet):
     ///   `ayin_span`, `ayin_status`, `helix_entry`, `build_update`, `control`,
     ///   `strand_activation`, `soul_promotion`, `gateway_notify`, `pillar_update`,
     ///   `strand_convergence`, `copilot_activity`, `copilot_response`,
-    ///   `permission_request`, `context_status`, `supervisor_update`
+    ///   `permission_request`, `context_status`, `supervisor_update`,
+    ///   `agent_fleet_update`
     #[allow(clippy::too_many_lines)]
     #[test]
     fn sse_contract_all_web_event_variants_have_known_type_tags() {
@@ -1157,6 +1163,13 @@ mod tests {
                     confidence: 0.9,
                     recommended_next: "Continue".to_owned(),
                     proposal_pending: false,
+                }),
+            ),
+            (
+                "agent_fleet_update",
+                WebEvent::AgentFleetUpdate(lightarchitects::fleet::FleetSnapshot {
+                    nodes: vec![],
+                    captured_at: "2026-05-19T00:00:00Z".to_owned(),
                 }),
             ),
         ];

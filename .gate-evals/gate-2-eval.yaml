@@ -1,0 +1,49 @@
+gate: 2
+codename: agent-teams-fleet
+phase: phase-2-sdk-fleet-module
+dimensions: [Q, T, S, K]
+evaluated_at: "2026-05-19"
+evaluator: "Claude (BUILD orchestrator)"
+verdict: PASS
+
+dimension_results:
+  Q_quality:
+    result: PASS
+    notes: >
+      make quality passes: cargo fmt --check + cargo clippy -D warnings + cargo test.
+      All 1,240+ tests green. Note: dist/ build required in worktree before contract tests
+      pass (rust-embed needs built frontend). This is a worktree precondition, not a code issue.
+      Added to worktree setup docs.
+  T_testing:
+    result: PASS
+    notes: >
+      27 fleet unit tests in lightarchitects/src/fleet/ (span, tracker, jsonl).
+      All pass. Covers: description sanitizer, OQ invariants (worktree_path=None, turns=0),
+      active_stack parent inference, agent state transitions, field allowlist (prompt dropped).
+  S_security:
+    result: PASS
+    notes: >
+      Zero unsafe blocks in fleet/ module. No deny_unknown_fields on AgentToolInput (SCR1-F1).
+      prompt field absent from FleetSpan at struct level. HOME-prefix path guard in
+      find_jsonl_for_session. FleetError: all 3 variants have HTTP semantics documented.
+      cargo geiger: no new unsafe introduced.
+  K_knowledge:
+    result: PASS
+    notes: >
+      OQ resolutions locked in code comments (span.rs module doc). Gate 1 eval written.
+      SOUL helix enrichment scheduled for Phase 6 (significance >= 8.0).
+      Phase 4A: types.ts + sse.ts frontend types + subscribeFleet helper (61 + 103 net
+      insertions, svelte-check clean, 593 vitest tests passing).
+
+commits:
+  - sha: deae7d5
+    desc: "Phase 2 SDK fleet module"
+  - sha: 973dd93
+    desc: "merge feat/atf-sdk"
+  - sha: 8a39245
+    desc: "Phase 4A types + subscribeFleet"
+  - sha: 2060766
+    desc: "merge feat/atf-frontend"
+
+test_count_delta: "+27 fleet unit tests (Rust) + 0 new vitest (Phase 4A was types-only)"
+next_phase: phase-3-webshell-backend

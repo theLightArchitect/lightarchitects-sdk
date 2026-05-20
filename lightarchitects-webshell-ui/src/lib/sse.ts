@@ -3,7 +3,7 @@
 // Uses fetch() instead of EventSource to support auth headers.
 // ============================================================================
 
-import type { EventType, Pillar } from './types';
+import type { EventType, Pillar, FleetEvent } from './types';
 import { authHeaders } from './auth';
 import {
   ayinStatus, authStatus, siblingHealth, waves, builds, findings,
@@ -764,4 +764,105 @@ export function disconnectSSE(): void {
  */
 export function reconnectSSE(buildId: string): void {
   connectSSE(buildId);
+}
+
+// ── Fleet SSE (agent-teams-fleet Phase 4A) ────────────────────────────────────
+
+const FLEET_INITIAL_DELAY = 1_000;
+const FLEET_MAX_BACKOFF   = 30_000;
+
+/**
+ * Subscribe to the per-build fleet SSE stream (`/api/builds/:id/fleet`).
+ *
+ * Uses the same fetch-streaming + auth-header pattern as {@link connectSSE}
+ * because native `EventSource` does not support custom request headers.
+ * Reconnects automatically with exponential back-off (1 s → 30 s cap).
+ *
+ * @param buildId  - UUID of the build whose fleet to observe.
+ * @param cb       - Called for every parsed {@link FleetEvent}.
+ * @returns A cleanup function — call it in `$effect` return or `onDestroy`.
+ */
+export function subscribeFleet(
+  buildId: string,
+  cb: (event: FleetEvent) => void,
+): () => void {
+  const abortCtrl = new AbortController();
+  let delay = FLEET_INITIAL_DELAY;
+  let reconnectHandle: ReturnType<typeof setTimeout> | null = null;
+
+  async function connect(): Promise<void> {
+    if (abortCtrl.signal.aborted) return;
+
+    let response: Response;
+    try {
+      response = await fetch(`/api/builds/${buildId}/fleet`, {
+        signal: abortCtrl.signal,
+        headers: authHeaders(),
+      });
+    } catch (err) {
+      if ((err as { name?: string }).name === 'AbortError') return;
+      schedule();
+      return;
+    }
+
+    if (!response.ok || !response.body) {
+      // Auth failures are terminal — don't retry.
+      if (response.status === 401 || response.status === 403) return;
+      schedule();
+      return;
+    }
+
+    // Connection established — reset backoff.
+    delay = FLEET_INITIAL_DELAY;
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const parsed = JSON.parse(line.slice(6)) as FleetEvent;
+              cb(parsed);
+            } catch {
+              // Non-JSON SSE comment or keep-alive — ignore.
+            }
+          }
+        }
+      }
+    } catch (err) {
+      if ((err as { name?: string }).name === 'AbortError') return;
+    }
+
+    // Stream ended — reconnect unless aborted.
+    if (!abortCtrl.signal.aborted) {
+      schedule();
+    }
+  }
+
+  function schedule(): void {
+    if (abortCtrl.signal.aborted) return;
+    reconnectHandle = setTimeout(() => {
+      delay = Math.min(delay * 2, FLEET_MAX_BACKOFF);
+      void connect();
+    }, delay);
+  }
+
+  void connect();
+
+  return () => {
+    abortCtrl.abort();
+    if (reconnectHandle !== null) {
+      clearTimeout(reconnectHandle);
+    }
+  };
 }

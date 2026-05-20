@@ -95,3 +95,10 @@ pub mod lightsquad;
 /// instrument lightsquad worker activity.
 #[cfg(feature = "lightsquad")]
 pub mod observability;
+
+/// Live agent fleet tracking — `FleetTracker`, `ClaudeJsonlTailer`, `FleetSpan`.
+///
+/// Consumes the Claude Code session JSONL and maintains a DashMap-backed state
+/// machine of agent spans for the webshell SSE dashboard.
+#[cfg(feature = "fleet")]
+pub mod fleet;
