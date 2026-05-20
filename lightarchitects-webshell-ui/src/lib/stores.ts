@@ -2,7 +2,7 @@
 // Svelte stores — reactive state management (replaces Zustand)
 // ============================================================================
 
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import type {
   Build, Workspace, Module, SiblingHealth, Finding,
   SiblingId, PillarGate, CopilotMessage, SiblingDispatch,
@@ -985,31 +985,21 @@ export function pushRecentEvent(source: string, payload: unknown): void {
  * from `currentRoute`, `selectedPillar`, and `siblingHealth` stores.
  */
 export function snapshotContextForCopilot(): CopilotContextSnapshot {
-  let buf: RecentEvent[] = [];
-  recentEventBuffer.subscribe(b => { buf = b; })();
-
-  const recentEvents = [...buf].reverse();
+  const recentEvents = [...get(recentEventBuffer)].reverse();
 
   const oversizeIndices = recentEvents
     .map((e, i) => ({ i, bytes: eventPayloadBytes(e.event) }))
     .filter(({ bytes }) => bytes > OVERSIZE_THRESHOLD_BYTES)
     .map(({ i }) => i);
 
-  let route = '/';
-  currentRoute.subscribe(r => { route = r; })();
-
-  let degraded: string[] = [];
-  siblingHealth.subscribe(health => {
-    degraded = Object.values(health)
-      .filter(h => h.status === 'degraded' || h.status === 'offline')
-      .map(h => h.id);
-  })();
-
-  const uiContext: UiContext = { route, degraded };
+  const route = get(currentRoute);
+  const degraded = Object.values(get(siblingHealth))
+    .filter(h => h.status === 'degraded' || h.status === 'offline')
+    .map(h => h.id);
 
   return {
     recentEvents,
-    uiContext,
+    uiContext: { route, degraded },
     capturedAt: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
     oversizeIndices,
   };

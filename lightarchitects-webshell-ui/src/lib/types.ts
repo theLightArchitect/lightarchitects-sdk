@@ -565,18 +565,6 @@ export interface ContextStatusEvent {
   used: number;
 }
 
-/** Context-window utilisation snapshot from the LightArchitects CLI subprocess. */
-export interface ContextStatusEvent {
-  /** Usage as a fraction of the context window (0.0–1.0). */
-  usage_pct: number;
-  /** Active compaction level: null, "l1", "l2", or "l3". */
-  level?: string;
-  /** Total token budget for this session. */
-  budget: number;
-  /** Tokens consumed so far in this session. */
-  used: number;
-}
-
 /** AYIN trace span forwarded from the backend. */
 export interface AyinSpanEvent {
   id: string;

@@ -5,9 +5,11 @@ import {
   spikeSibling, startWaveTick, stopWaveTick,
   waves,
   recentEventBuffer, pushRecentEvent, snapshotContextForCopilot,
+  currentRoute, siblingHealth,
 } from '$lib/stores';
 import { get } from 'svelte/store';
 import { PILLARS, SIBLINGS } from '$lib/types';
+import type { SiblingHealth, SiblingId } from '$lib/types';
 
 describe('stores', () => {
   describe('initial state', () => {
@@ -240,6 +242,41 @@ describe('stores', () => {
       // After reverse: [BuildRunner(big), CORSO(small)] → big at index 0
       expect(snap.oversizeIndices).toContain(0);
       expect(snap.oversizeIndices).not.toContain(1);
+    });
+
+    it('rolling window caps at 50 events and evicts oldest', () => {
+      for (let i = 0; i < 55; i++) {
+        pushRecentEvent('AYIN', { n: i });
+      }
+      const buf = get(recentEventBuffer);
+      expect(buf).toHaveLength(50);
+      // Newest (n:54) is at index 0; oldest retained is n:5
+      expect((buf[0].event as { n: number }).n).toBe(54);
+      expect((buf[49].event as { n: number }).n).toBe(5);
+    });
+
+    it('snapshotContextForCopilot captures currentRoute into uiContext', () => {
+      currentRoute.set('/builds/test-123');
+      const snap = snapshotContextForCopilot();
+      expect(snap.uiContext.route).toBe('/builds/test-123');
+      currentRoute.set('/');
+    });
+
+    it('snapshotContextForCopilot includes degraded siblings in uiContext', () => {
+      const health: Record<SiblingId, SiblingHealth> = {
+        corso: { id: 'corso', status: 'degraded', uptime: 0, lastHeartbeat: '', capabilities: [] },
+        eva:   { id: 'eva',   status: 'online',   uptime: 1, lastHeartbeat: '', capabilities: [] },
+        soul:  { id: 'soul',  status: 'offline',  uptime: 0, lastHeartbeat: '', capabilities: [] },
+        quantum:{ id: 'quantum', status: 'online', uptime: 1, lastHeartbeat: '', capabilities: [] },
+        seraph:{ id: 'seraph', status: 'online',  uptime: 1, lastHeartbeat: '', capabilities: [] },
+        ayin:  { id: 'ayin',  status: 'online',   uptime: 1, lastHeartbeat: '', capabilities: [] },
+        laex:  { id: 'laex',  status: 'online',   uptime: 1, lastHeartbeat: '', capabilities: [] },
+      };
+      siblingHealth.set(health);
+      const snap = snapshotContextForCopilot();
+      expect(snap.uiContext.degraded).toContain('corso');
+      expect(snap.uiContext.degraded).toContain('soul');
+      expect(snap.uiContext.degraded).not.toContain('eva');
     });
   });
 });

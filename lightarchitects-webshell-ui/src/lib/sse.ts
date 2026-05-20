@@ -193,7 +193,14 @@ function _connect(): void {
     });
 }
 
-/** Map SSE event types to allowlist-safe source identifiers (`[A-Za-z0-9_-]`). */
+/**
+ * Map SSE event types to allowlist-safe source identifiers.
+ *
+ * Return values must satisfy `[A-Za-z0-9_-]` — validated server-side in
+ * `context.rs::validate()` before prelude embedding. Any unknown EventType
+ * falls through to `'Platform'`. When adding new EventType variants, add
+ * a corresponding entry here to preserve semantic grouping in the context tray.
+ */
 function eventTypeToSource(type: EventType): string {
   const map: Partial<Record<EventType, string>> = {
     build_update:        'BuildRunner',
