@@ -12,6 +12,8 @@
   import PolytopeDecor from '$lib/../components/PolytopeDecor.svelte';
   import PhaseTimeline from '$lib/../components/PhaseTimeline.svelte';
   import PreflightPanel from '$lib/../components/PreflightPanel.svelte';
+  import MockBadge from '$lib/../components/MockBadge.svelte';
+  import { isEnabled } from '$lib/featureFlags';
   import type { PreflightReport } from '$lib/types';
 
   // Tutorial T1 — auto-fires on first visit; re-trigger via ?onboarding=t1.
@@ -622,13 +624,26 @@
         data-testid="exec-mode-interactive"
         title="Interactive mode — operator-supervised, single-agent"
       >Interactive</button>
-      <button
-        class="px-3 py-1 text-[10px] rounded transition-colors
-          {execMode === 'autonomous' ? 'bg-[var(--la-focus-ring)]/15 text-[var(--la-focus-ring)] border border-[var(--la-focus-ring)]/30' : 'text-[var(--la-text-dim)] border border-transparent hover:text-[var(--la-focus-ring)]'}"
-        onclick={() => { execMode = 'autonomous'; }}
-        data-testid="exec-mode-autonomous"
-        title="Autonomous mode — lightsquad conductor with wave-level parallelism"
-      >Autonomous</button>
+      {#if !isEnabled('parallelismEnabled')}
+        <button
+          class="relative px-3 py-1 text-[10px] rounded transition-colors opacity-60 cursor-not-allowed
+            text-[var(--la-text-dim)] border border-transparent"
+          disabled
+          data-testid="exec-mode-autonomous"
+          title="Autonomous mode — wave coordinator pending (webshell-event-bus-redesign)"
+        >
+          Autonomous
+          <MockBadge label="MOCK" detail="wave coord offline" position="top-right" />
+        </button>
+      {:else}
+        <button
+          class="px-3 py-1 text-[10px] rounded transition-colors
+            {execMode === 'autonomous' ? 'bg-[var(--la-focus-ring)]/15 text-[var(--la-focus-ring)] border border-[var(--la-focus-ring)]/30' : 'text-[var(--la-text-dim)] border border-transparent hover:text-[var(--la-focus-ring)]'}"
+          onclick={() => { execMode = 'autonomous'; }}
+          data-testid="exec-mode-autonomous"
+          title="Autonomous mode — lightsquad conductor with wave-level parallelism"
+        >Autonomous</button>
+      {/if}
     </div>
   </header>
 

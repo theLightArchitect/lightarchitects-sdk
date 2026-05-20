@@ -65,6 +65,14 @@
   --la-danger-text:   #FCA5A5;
   --la-danger-glow:   rgba(220, 38, 38, 0.35);
 
+  /* ── Mock / backend-gap overlay tokens (webshell-unplugged-audit) ──────── */
+  /* Aliased to --la-semantic-warn family per Phase 1 finding. */
+  /* Removal: delete this block + grep for --la-warn-mock- across the UI.    */
+  --la-warn-mock-fg:    var(--la-semantic-warn);
+  --la-warn-mock-glow:  var(--la-semantic-warn-glow);
+  --la-warn-mock-edge:  rgba(245, 158, 11, 0.45);
+  --la-warn-mock-bg:    rgba(245, 158, 11, 0.08);
+
   /* ── Focus ring ──────────────────────────────────────────────────────────── */
   --la-focus-ring:        #FFD700;
   --la-focus-ring-width:  2px;
