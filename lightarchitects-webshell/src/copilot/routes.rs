@@ -72,11 +72,21 @@ pub async fn copilot_chat_handler(
         String::new()
     };
 
+    // Git context grounding: branch + 10 commits + status, 800 ms hard timeout (Phase 3).
+    // Skipped silently when cwd is not a git repo or on timeout.
+    let git_ctx = tokio::time::timeout(
+        std::time::Duration::from_millis(800),
+        super::git_context::gather(&state.config.cwd),
+    )
+    .await
+    .unwrap_or(None);
+
     // Assemble the grounded prompt: context prelude prepended to the user message.
     // Passes event payloads verbatim — no silent truncation (§P check 2; northstar.md:491).
     let prelude = context::assemble_prompt_prelude(
         &identity_text,
         &soul_block,
+        git_ctx.as_ref(),
         &body.recent_events,
         body.ui_context.as_ref(),
     );

@@ -10,6 +10,7 @@
 
 pub mod context;
 pub mod eva_identity;
+pub mod git_context;
 pub mod routes;
 pub mod soul_grounding;
 pub mod voice;
