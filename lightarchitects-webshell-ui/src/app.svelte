@@ -57,7 +57,7 @@
     Helix:         () => import('./screens/Helix.svelte'),
     BuildDetail:   () => import('./screens/BuildDetail.svelte'),
     ProjectDetail: () => import('./screens/ProjectDetail.svelte'),
-    Comms:         () => import('./screens/Comms.svelte'),
+    Comms:         () => import('./screens/Cockpit.svelte'),
     Editor:        () => import('./screens/Editor.svelte'),
     Git:           () => import('./screens/Git.svelte'),
     PullRequest:   () => import('./screens/PullRequest.svelte'),
@@ -159,7 +159,7 @@
     { label: 'Dashboard', hash: '/dashboard', hint: 'Live agent activity, alerts, and squad health',               separator: false },
     { label: 'Run',       hash: '/run',       hint: 'Dispatch agents by domain — Engineer, Security, Ops (Cmd+K)',separator: false },
     { label: 'Builds',    hash: '/builds',    hint: 'All builds — past, in-flight, and queued',                    separator: false },
-    { label: 'Activity',  hash: '/activity',  hint: 'Squad comms — cross-build coordination overview and task queue', separator: false },
+    { label: 'Activity',  hash: '/activity',  hint: 'Build cockpit — live health, escalations, fleet and decisions', separator: false },
     { label: 'Knowledge', hash: '/knowledge', hint: 'Knowledge graph — agent memory strands and quality gates',    separator: false },
     { label: 'Diagrams',  hash: '/diagrams',  hint: 'Architecture intelligence — extract, verify, render diagrams',separator: false },
     { label: 'Roadmap',   hash: '/roadmap',   hint: 'Portfolio-level roadmap — active builds, phases, blockers',   separator: false },
@@ -168,8 +168,8 @@
   let activeRoute = $derived($currentRoute);
 
   function isActive(hash: string): boolean {
-    if (hash === '/dashboard') return activeRoute === '/' || activeRoute === '' || activeRoute.startsWith('/dashboard') || activeRoute.startsWith('/monitor') || activeRoute.startsWith('/ops');
-    if (hash === '/run')       return activeRoute.startsWith('/run') || activeRoute.startsWith('/dispatch');
+    if (hash === '/dashboard') return activeRoute.startsWith('/dashboard') || activeRoute.startsWith('/monitor') || activeRoute.startsWith('/ops');
+    if (hash === '/run')       return activeRoute === '/' || activeRoute === '' || activeRoute.startsWith('/run') || activeRoute.startsWith('/dispatch');
     if (hash === '/builds')    return activeRoute.startsWith('/builds') || activeRoute.startsWith('/manage');
     if (hash === '/knowledge') return activeRoute.startsWith('/knowledge') || activeRoute.startsWith('/memory') || activeRoute.startsWith('/helix');
     if (hash === '/activity')  return activeRoute.startsWith('/activity') || activeRoute.startsWith('/comms');

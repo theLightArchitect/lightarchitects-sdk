@@ -239,10 +239,11 @@
             </div>
           {/if}
 
-          <!-- Plan card -->
+          <!-- Plan card — left border keyed to polytope color as identity marker -->
           <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
           <div
-            class="bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg p-4 cursor-pointer hover:border-[var(--la-hair-strong)] hover:shadow-[0_0_12px_rgba(255,215,0,0.05)] transition-all group"
+            class="plan-card bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg p-4 cursor-pointer transition-all group"
+            style="border-left: 3px solid {polyColor}; --plan-poly: {polyColor}; box-shadow: inset 4px 0 16px color-mix(in srgb, {polyColor} 6%, transparent);"
             onclick={() => openBuild(build.id)}
             onkeydown={(e) => { if (e.key === 'Enter') openBuild(build.id); }}
           >
@@ -320,6 +321,13 @@
 </div>
 
 <style>
+  .plan-card:hover {
+    box-shadow:
+      inset 4px 0 16px color-mix(in srgb, var(--plan-poly) 6%, transparent),
+      0 0 16px color-mix(in srgb, var(--plan-poly) 12%, transparent);
+    border-color: color-mix(in srgb, var(--plan-poly) 40%, var(--la-hair-strong));
+  }
+
   @keyframes ambientDrift1 {
     0%, 100% { transform: translate(0, 0); }
     50% { transform: translate(30px, 20px); }

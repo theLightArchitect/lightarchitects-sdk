@@ -10,6 +10,7 @@
 
   import { builds, activityFeed, slotAssignments } from '$lib/stores';
   import type { BuildStatus } from '$lib/types';
+  import { navigate } from '$lib/routes';
 
   // ── Derived counters ──────────────────────────────────────────────────────
 
@@ -56,40 +57,40 @@
 </script>
 
 <div class="stats-topbar" role="status" aria-label="Build fleet status">
-  <span class="stat">
+  <button class="stat stat-btn" onclick={() => navigate('/builds')} title="All builds">
     <span class="stat-val">{totalBuilds}</span>
     <span class="stat-label">BUILDS</span>
-  </span>
+  </button>
   <span class="stat-sep" aria-hidden="true">·</span>
 
-  <span class="stat" class:stat-hot={activeBuilds > 0}>
+  <button class="stat stat-btn" class:stat-hot={activeBuilds > 0} onclick={() => navigate('/builds?filter=active')} title="Active builds">
     <span class="stat-val">{activeBuilds}</span>
     <span class="stat-label">ACTIVE</span>
-  </span>
+  </button>
   <span class="stat-sep" aria-hidden="true">·</span>
 
-  <span class="stat" class:stat-hot={activeAgents > 0}>
+  <button class="stat stat-btn" class:stat-hot={activeAgents > 0} onclick={() => navigate('/ops')} title="Agent fleet">
     <span class="stat-val">{activeAgents}</span>
     <span class="stat-label">AGENTS</span>
-  </span>
+  </button>
   <span class="stat-sep" aria-hidden="true">·</span>
 
-  <span class="stat">
+  <button class="stat stat-btn" onclick={() => navigate('/builds?filter=gates')} title="Recent gate verdicts">
     <span class="stat-val">{recentGates}</span>
     <span class="stat-label">GATES</span>
-  </span>
+  </button>
   <span class="stat-sep" aria-hidden="true">·</span>
 
-  <span class="stat" class:stat-warn={hitlPending > 0}>
+  <button class="stat stat-btn" class:stat-warn={hitlPending > 0} onclick={() => navigate('/run?tab=approval')} title="Pending approvals">
     <span class="stat-val">{hitlPending}</span>
     <span class="stat-label">Approval</span>
-  </span>
+  </button>
   <span class="stat-sep" aria-hidden="true">·</span>
 
-  <span class="stat" class:stat-warn={staleBuilds > 0}>
+  <button class="stat stat-btn" class:stat-warn={staleBuilds > 0} onclick={() => navigate('/ops')} title="Stale / idle builds">
     <span class="stat-val">{staleBuilds}</span>
     <span class="stat-label">Idle</span>
-  </span>
+  </button>
 </div>
 
 <style>
@@ -130,6 +131,22 @@
 
   .stat-hot .stat-val { color: var(--la-agent-researcher, #17c3b2); }
   .stat-warn .stat-val { color: var(--la-agent-performance, #f97316); }
+
+  .stat-btn {
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    margin: 0 -4px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background-color 120ms;
+  }
+  .stat-btn:hover {
+    background: color-mix(in srgb, var(--la-accent, #00BFFF) 8%, transparent);
+  }
+  .stat-btn:hover .stat-label {
+    color: var(--la-text-base, #c9d1d9);
+  }
 
   .stat-sep {
     color: var(--la-text-mute, #6e7681);

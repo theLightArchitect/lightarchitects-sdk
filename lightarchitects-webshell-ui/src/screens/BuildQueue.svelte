@@ -13,6 +13,7 @@
   import Tooltip from '$lib/../components/Tooltip.svelte';
   import GateStrip from '$lib/../components/GateStrip.svelte';
   import type { GateEntry } from '$lib/../components/GateStrip.svelte';
+  import DispatchCLI from '$lib/../components/cli/DispatchCLI.svelte';
   // View mode
   let viewMode = $state<'list' | 'card'>('card');
 
@@ -39,6 +40,12 @@
   // Navigate to intake (plan builder mode, return to /builds on submit)
   function newBuild() {
     window.location.hash = '/intake?return=/builds&prefill=manifest';
+  }
+
+  // Quick-dispatch from empty state: navigate to Run screen with task pre-filled.
+  // SquadDispatch.onMount reads ?task= from the hash URL to pre-fill its CLI.
+  function quickDispatch(task: string) {
+    window.location.hash = `/run?task=${encodeURIComponent(task)}`;
   }
 
   // Navigate to project detail (roadmap drill-down)
@@ -176,54 +183,89 @@
     </div>
   </header>
 
-  <!-- Stat strip — clickable filters -->
-  <div class="flex items-center flex-wrap gap-x-1 gap-y-1 px-4 md:px-6 py-2 bg-[var(--la-bg-frame)] border-b border-[var(--la-hair-strong)] text-xs">
-    {#each [
-      { key: 'in_progress', label: 'in progress', count: $buildStats.inProgress, color: 'var(--la-agent-researcher)' },
-      { key: 'queued',      label: 'queued',      count: $buildStats.pending,    color: 'var(--la-agent-engineer)' },
-      { key: 'completed',   label: 'completed',   count: $buildStats.completed,  color: 'var(--la-text-label)' },
-      { key: 'failed',      label: 'failed',      count: $buildStats.failed,     color: 'var(--la-danger-stroke)' },
-    ] as f}
-      <button
-        class="px-2 py-0.5 rounded-sm transition-all text-[11px] font-mono"
-        style="
-          color: {f.color};
-          background: {statusFilter === f.key ? `color-mix(in srgb, ${f.color} 14%, transparent)` : 'transparent'};
-          border: 1px solid {statusFilter === f.key ? f.color : 'transparent'};
-          opacity: {statusFilter && statusFilter !== f.key ? 0.45 : 1};
-        "
-        onclick={() => { statusFilter = statusFilter === f.key ? null : f.key; }}
-        title="{statusFilter === f.key ? 'Clear filter' : `Filter by ${f.label}`}"
-      >{f.count} {f.label}</button>
-      {#if f.key !== 'failed'}<span class="text-[var(--la-hair-strong)] select-none">·</span>{/if}
-    {/each}
-    {#if statusFilter}
-      <button
-        class="ml-2 text-[10px] text-[var(--la-text-mute)] hover:text-[var(--la-text-base)] transition-colors"
-        onclick={() => { statusFilter = null; }}
-      >✕ clear</button>
+  <!-- Stat strip — clickable filters + proportional segment bar -->
+  <div class="bg-[var(--la-bg-frame)] border-b border-[var(--la-hair-strong)]">
+    <div class="flex items-center flex-wrap gap-x-1 gap-y-1 px-4 md:px-6 py-1.5 text-xs">
+      {#each [
+        { key: 'in_progress', label: 'in progress', count: $buildStats.inProgress, color: 'var(--la-agent-researcher)' },
+        { key: 'queued',      label: 'queued',      count: $buildStats.pending,    color: 'var(--la-agent-engineer)' },
+        { key: 'completed',   label: 'completed',   count: $buildStats.completed,  color: 'var(--la-text-label)' },
+        { key: 'failed',      label: 'failed',      count: $buildStats.failed,     color: 'var(--la-danger-stroke)' },
+      ] as f}
+        <button
+          class="px-2 py-0.5 rounded-sm transition-all text-[11px] font-mono"
+          style="
+            color: {f.color};
+            background: {statusFilter === f.key ? `color-mix(in srgb, ${f.color} 14%, transparent)` : 'transparent'};
+            border: 1px solid {statusFilter === f.key ? f.color : 'transparent'};
+            opacity: {statusFilter && statusFilter !== f.key ? 0.45 : 1};
+          "
+          onclick={() => { statusFilter = statusFilter === f.key ? null : f.key; }}
+          title="{statusFilter === f.key ? 'Clear filter' : `Filter by ${f.label}`}"
+        >{f.count} {f.label}</button>
+        {#if f.key !== 'failed'}<span class="text-[var(--la-hair-strong)] select-none">·</span>{/if}
+      {/each}
+      {#if statusFilter}
+        <button
+          class="ml-2 text-[10px] text-[var(--la-text-mute)] hover:text-[var(--la-text-base)] transition-colors"
+          onclick={() => { statusFilter = null; }}
+        >✕ clear</button>
+      {/if}
+    </div>
+    <!-- Proportional segment bar — 2px, each color occupies its share of total builds -->
+    {#if $buildStats.total > 0}
+      {@const total = $buildStats.total}
+      <div
+        class="stat-seg-bar"
+        title="{$buildStats.inProgress} active · {$buildStats.pending} queued · {$buildStats.completed} done · {$buildStats.failed} failed"
+        role="img"
+        aria-label="Build status: {$buildStats.inProgress} active, {$buildStats.pending} queued, {$buildStats.completed} done, {$buildStats.failed} failed"
+      >
+        {#each [
+          { count: $buildStats.inProgress, color: 'var(--la-agent-researcher)' },
+          { count: $buildStats.pending,    color: 'var(--la-agent-engineer)' },
+          { count: $buildStats.completed,  color: '#475569' },
+          { count: $buildStats.failed,     color: 'var(--la-danger-stroke)' },
+        ] as seg}
+          {#if seg.count > 0}
+            <div class="stat-seg" style="width: {(seg.count / total) * 100}%; background: {seg.color};"></div>
+          {/if}
+        {/each}
+      </div>
+    {:else}
+      <div class="stat-seg-bar stat-seg-bar--empty"></div>
     {/if}
   </div>
 
   <!-- Build list/cards -->
   <div class="flex-1 overflow-y-auto p-6">
     {#if $builds.length === 0}
-      <div class="flex flex-col items-center justify-center h-full gap-4 text-center">
+      <div class="flex flex-col items-center justify-center h-full gap-5 text-center">
         <div class="space-y-2 max-w-md">
           <p class="text-lg text-[var(--la-text-label)]">No builds in flight.</p>
           <p class="text-sm text-[var(--la-text-dim)] leading-snug">
-            The squad is idle. Spin up a build and the agents will get to work — pillar-by-pillar, gated, observable.
+            The squad is idle. Describe a task below or start the intake form to get agents moving.
           </p>
         </div>
-        <button
-          class="px-4 py-2 bg-[var(--la-focus-ring)] text-[var(--la-bg-frame)] text-sm font-semibold rounded hover:bg-[var(--la-agent-quality)] hover:shadow-[0_0_18px_rgba(255,215,0,0.5)] transition-all"
-          onclick={newBuild}
-        >
-          + New Build
-        </button>
-        <p class="text-[10px] text-[var(--la-text-dim)]">
-          or press <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">⌘K</kbd> → <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">/build</kbd>
-        </p>
+        <!-- Inline quick-dispatch: navigates to Run screen with task pre-filled -->
+        <div class="w-full max-w-sm">
+          <DispatchCLI
+            inline
+            placeholder="describe task, ↵ to dispatch"
+            onDispatch={quickDispatch}
+          />
+        </div>
+        <div class="flex items-center gap-3">
+          <button
+            class="px-4 py-2 bg-[var(--la-focus-ring)] text-[var(--la-bg-frame)] text-sm font-semibold rounded hover:bg-[var(--la-agent-quality)] hover:shadow-[0_0_18px_rgba(255,215,0,0.5)] transition-all"
+            onclick={newBuild}
+          >
+            + New Build
+          </button>
+          <span class="text-[10px] text-[var(--la-text-dim)]">
+            or <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">⌘K</kbd> → <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">/build</kbd>
+          </span>
+        </div>
       </div>
     {:else if viewMode === 'card'}
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -448,6 +490,25 @@
 </div>
 
 <style>
+  /* Proportional build status segment bar */
+  .stat-seg-bar {
+    display: flex;
+    height: 2px;
+    width: 100%;
+    overflow: hidden;
+    gap: 1px;
+    flex-shrink: 0;
+  }
+  .stat-seg-bar--empty {
+    border-top: 1px dashed var(--la-hair-strong);
+    height: 1px;
+  }
+  .stat-seg {
+    height: 100%;
+    transition: width 500ms cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0;
+  }
+
   /* Portfolio strip — sits between header and scrollable content */
   .portfolio-strip {
     flex-shrink: 0;

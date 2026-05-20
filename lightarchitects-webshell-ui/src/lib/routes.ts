@@ -62,7 +62,7 @@ const ROUTES: RouteEntry[] = [
   [/^\/helix\/strand\/([^/]+)$/,                                            'Helix',         ['siblingKey']],
   [/^\/helix\/entry\/([^/]+)$/,                                             'Helix',         ['entryId']],
   [/^\/project\/([^/]+)$/,                                                  'ProjectDetail', ['projectId']],
-  [/^\/?$/,                                                                 'Ops',           []],
+  [/^\/?$/,                                                                 'Dispatch',      []],
   [/^\/dashboard(#.*)?$/,                                                   'Ops',           []],
   [/^\/monitor(#.*)?$/,                                                     'Ops',           []],
   [/^\/ops(#.*)?$/,                                                         'Ops',           []],

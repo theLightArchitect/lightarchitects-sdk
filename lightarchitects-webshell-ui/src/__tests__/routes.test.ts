@@ -3,12 +3,12 @@ import { matchRoute, type ScreenKey } from '$lib/routes';
 
 describe('routes', () => {
   describe('matchRoute() — top-level routes', () => {
-    it('/ → Ops', () => {
-      expect(matchRoute('/').screen).toBe('Ops');
+    it('/ → Dispatch (default landing is the operator console)', () => {
+      expect(matchRoute('/').screen).toBe('Dispatch');
     });
 
-    it('empty string → Ops', () => {
-      expect(matchRoute('').screen).toBe('Ops');
+    it('empty string → Dispatch (default landing is the operator console)', () => {
+      expect(matchRoute('').screen).toBe('Dispatch');
     });
 
     it('/builds → Builds', () => {

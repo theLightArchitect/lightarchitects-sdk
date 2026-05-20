@@ -5,12 +5,15 @@
     onDispatch: (taskText: string) => void;
     disabled?: boolean;
     placeholder?: string;
+    /** Inline mode: bordered box for embedding in content areas (no border-top chrome) */
+    inline?: boolean;
   }
 
   let {
     onDispatch,
     disabled = false,
     placeholder = 'type task, Enter to dispatch…',
+    inline = false,
   }: Props = $props();
 
   let inputEl: HTMLInputElement | null = $state(null);
@@ -48,7 +51,7 @@
   }
 </script>
 
-<div class="cli-row" aria-label="Quick dispatch CLI" role="search" data-testid="dispatch-cli">
+<div class="cli-row" class:cli-row--inline={inline} aria-label="Quick dispatch CLI" role="search" data-testid="dispatch-cli">
   <span class="cli-prompt" aria-hidden="true">/</span>
   <input
     bind:this={inputEl}
@@ -118,4 +121,16 @@
     text-transform: uppercase;
   }
   .cli-hint-key { opacity: 0.5; }
+
+  /* Inline variant — bordered box for embedding in content areas */
+  .cli-row--inline {
+    border-top: none;
+    border: 1px solid var(--la-hair-base, rgba(255,255,255,0.08));
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--la-bg-void, #050508) 85%, transparent);
+  }
+  .cli-row--inline:focus-within {
+    border-color: var(--la-agent-researcher, #00BFFF);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--la-agent-researcher, #00BFFF) 30%, transparent);
+  }
 </style>

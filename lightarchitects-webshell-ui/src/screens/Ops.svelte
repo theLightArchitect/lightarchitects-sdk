@@ -588,7 +588,7 @@
   }
 
   .preset-short {
-    font-size: 7px;
+    font-size: 8px;
     font-weight: 700;
     letter-spacing: 0.08em;
     color: var(--la-text-mute);
@@ -600,6 +600,7 @@
   }
   .preset-btn.active {
     border-bottom-color: var(--la-struct-primary);
+    background: color-mix(in srgb, rgba(0, 200, 255, 0.06) 100%, transparent);
   }
 
   /* ── EDIT button ──────────────────────────────────────────────────────────── */
