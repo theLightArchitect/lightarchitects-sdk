@@ -15,7 +15,7 @@ import type {
   ActivePlan, PlanPhase, PlanPhaseStatus,
   ScrumReport,
   TrainingConfig, TrainingRun, ScoringDimension,
-  RecentEvent, ContextRetrievalStatus, CopilotContextSnapshot, UiContext,
+  RecentEvent, ContextRetrievalStatus, CopilotContextSnapshot, UiContext, GroundingInfo,
 } from './types';
 import { SiblingWave, SIBLINGS, PILLARS } from './types';
 import { DEFAULT_SKIN, type HelixSkin } from './helix-skin';
@@ -940,6 +940,14 @@ export const recentEventBuffer = writable<RecentEvent[]>([]);
 
 /** Current state of the context capture workflow. */
 export const copilotContextStatus = writable<ContextRetrievalStatus>('idle');
+
+/**
+ * Grounding source indicators from the last copilot response.
+ *
+ * Parsed from `X-LA-Grounding` header by `api.ts` after each turn.
+ * `null` before the first response or after a session reset.
+ */
+export const copilotGrounding = writable<GroundingInfo | null>(null);
 
 /** Client-side sequence counter — monotone, resets on page load. */
 let _eventSeq = 0;

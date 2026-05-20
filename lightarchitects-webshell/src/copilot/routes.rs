@@ -3,7 +3,7 @@
 use axum::{
     Json,
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
 };
 use serde_json::json;
@@ -133,12 +133,37 @@ pub async fn copilot_chat_handler(
             call_subprocess(&grounded_message, &session.copilot_proc, &session).await
         }
     };
+    let headers = grounding_headers(&identity_text, &soul_block, git_ctx.as_ref());
+
     match result {
-        Ok(text) => (StatusCode::OK, Json(json!({ "response": text }))).into_response(),
+        Ok(text) => (StatusCode::OK, headers, Json(json!({ "response": text }))).into_response(),
         Err(reason) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": "provider_error", "reason": reason })),
         )
             .into_response(),
     }
+}
+
+/// Build the `X-LA-Grounding` response header for the `CopilotContextTray` (Phase 4).
+///
+/// Format: `eva=<0|1>,soul=<N>,git=<N>`
+fn grounding_headers(
+    identity: &str,
+    soul_block: &str,
+    git: Option<&super::git_context::GitContext>,
+) -> HeaderMap {
+    let soul_count = soul_block.lines().filter(|l| l.starts_with("- ")).count();
+    let git_count = git.map_or(0, |g| g.commits.len());
+    let value = format!(
+        "eva={},soul={},git={}",
+        i32::from(!identity.is_empty()),
+        soul_count,
+        git_count,
+    );
+    let mut headers = HeaderMap::new();
+    if let Ok(v) = HeaderValue::from_str(&value) {
+        headers.insert("x-la-grounding", v);
+    }
+    headers
 }

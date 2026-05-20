@@ -6,7 +6,7 @@
     buildBuildContext, authProfile, ollamaConfig, terminalConnected,
     builds, siblingHealth, alertStats, drawerHeightPx, waves,
     clearCopilotHistory, isNativeAgent, voiceEnabled, activityFeed,
-    snapshotContextForCopilot, copilotContextStatus, recentEventBuffer,
+    snapshotContextForCopilot, copilotContextStatus, recentEventBuffer, copilotGrounding,
   } from '$lib/stores';
   import { SIBLING_COLORS } from '$lib/design-tokens';
   import { api } from '$lib/api';
@@ -625,11 +625,12 @@
     // Fallback: legacy HTTP POST (non-native builds, Ollama, Anthropic CLI modes)
     try {
       const ctx = snapshotContextForCopilot();
-      const result = await api.copilotChat(
+      const { response: result, grounding } = await api.copilotChat(
         buildId!,
         `[Context]\n${contextString}\n\n[User]\n${text}`,
         { recentEvents: ctx.recentEvents, uiContext: ctx.uiContext },
       );
+      if (grounding !== null) copilotGrounding.set(grounding);
       const response = typeof result === 'object' && result !== null && 'response' in result
         ? String((result as Record<string, unknown>).response)
         : 'No response from provider.';
@@ -1106,6 +1107,7 @@
                 snapshot={contextSnapshot}
                 status={$copilotContextStatus}
                 onRefresh={() => { contextSnapshot = snapshotContextForCopilot(); }}
+                grounding={$copilotGrounding}
               />
               <div class="flex gap-2 relative">
                 <!-- Tesseract command palette trigger — left of input, helix gold glow -->

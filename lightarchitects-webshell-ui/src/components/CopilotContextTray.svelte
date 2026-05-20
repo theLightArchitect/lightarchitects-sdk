@@ -1,13 +1,14 @@
 <script lang="ts">
-  import type { CopilotContextSnapshot, ContextRetrievalStatus } from '$lib/types';
+  import type { CopilotContextSnapshot, ContextRetrievalStatus, GroundingInfo } from '$lib/types';
 
   interface Props {
     snapshot: CopilotContextSnapshot | null;
     status: ContextRetrievalStatus;
     onRefresh: () => void;
+    grounding?: GroundingInfo | null;
   }
 
-  let { snapshot, status, onRefresh }: Props = $props();
+  let { snapshot, status, onRefresh, grounding = null }: Props = $props();
 
   let expanded = $state(false);
 
@@ -135,6 +136,33 @@
         <span class="inline-block {spinning ? 'spin-once' : ''}">↻</span>
       </button>
     </div>
+
+    <!-- ── Grounding indicator row (Phase 4) ─────────────────── -->
+    {#if grounding !== null}
+      <div class="flex items-center gap-2 px-3 py-0.5 h-5 border-t border-[var(--la-drawer-border)]/30" aria-label="Grounding sources">
+        <!-- EVA chip -->
+        <span
+          class="text-[8px] font-mono {grounding.eva ? 'text-emerald-400' : 'text-[var(--la-text-dim)]/40'}"
+          title="EVA identity {grounding.eva ? 'injected' : 'absent'}"
+        >EVA{grounding.eva ? ' ✓' : ''}</span>
+
+        <span class="text-[var(--la-text-dim)]/30 text-[8px]">|</span>
+
+        <!-- SOUL chip -->
+        <span
+          class="text-[8px] font-mono {grounding.soul > 0 ? 'text-sky-400' : 'text-[var(--la-text-dim)]/40'}"
+          title="SOUL vault: {grounding.soul} entr{grounding.soul === 1 ? 'y' : 'ies'}"
+        >SOUL {grounding.soul}</span>
+
+        <span class="text-[var(--la-text-dim)]/30 text-[8px]">|</span>
+
+        <!-- Git chip -->
+        <span
+          class="text-[8px] font-mono {grounding.git > 0 ? 'text-amber-400' : 'text-[var(--la-text-dim)]/40'}"
+          title="Git: {grounding.git} commit{grounding.git === 1 ? '' : 's'}"
+        >Git {grounding.git}</span>
+      </div>
+    {/if}
 
     <!-- ── Expanded event list ─────────────────────────────── -->
     {#if expanded && snapshot}

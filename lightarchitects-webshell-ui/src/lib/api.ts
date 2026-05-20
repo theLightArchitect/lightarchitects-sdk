@@ -13,7 +13,7 @@ import type {
   NorthstarEvaluationEvent, SupervisorState,
   PreflightReport,
   DecisionEntry,
-  RecentEvent, UiContext,
+  RecentEvent, UiContext, GroundingInfo,
 } from './types';
 import type { SetupInfo, ModelOption, SaveRequest } from './setup';
 
@@ -28,6 +28,24 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error(`API ${res.status}: ${res.statusText} — ${path}`);
   }
   return res.json();
+}
+
+/**
+ * Parse the `X-LA-Grounding` header value into a {@link GroundingInfo} object.
+ *
+ * Expected format: `eva=<0|1>,soul=<N>,git=<N>`.
+ * Returns `null` when the header is absent or malformed.
+ */
+export function parseGroundingHeader(header: string | null): GroundingInfo | null {
+  if (!header) return null;
+  const parts = Object.fromEntries(
+    header.split(',').map((p) => p.split('=') as [string, string]),
+  );
+  const eva = parseInt(parts['eva'] ?? '', 10);
+  const soul = parseInt(parts['soul'] ?? '', 10);
+  const git = parseInt(parts['git'] ?? '', 10);
+  if (isNaN(eva) || isNaN(soul) || isNaN(git)) return null;
+  return { eva, soul, git };
 }
 
 // --- Builds ---
@@ -78,19 +96,27 @@ export const api = {
     request<BuildNotes>(`/builds/${buildId}/notes`, { method: 'PUT', body: JSON.stringify({ content: markdown }) }),
 
   // Copilot
-  copilotChat: (
+  copilotChat: async (
     buildId: string,
     message: string,
     context?: { recentEvents?: RecentEvent[]; uiContext?: UiContext },
-  ) =>
-    request<unknown>(`/builds/${buildId}/copilot`, {
+  ): Promise<{ response: unknown; grounding: GroundingInfo | null }> => {
+    const res = await fetch(`${API_BASE}/builds/${buildId}/copilot`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({
         message,
         ...(context?.recentEvents?.length ? { recent_events: context.recentEvents } : {}),
         ...(context?.uiContext ? { ui_context: context.uiContext } : {}),
       }),
-    }),
+    });
+    if (!res.ok) {
+      throw new Error(`API ${res.status}: ${res.statusText} — /builds/${buildId}/copilot`);
+    }
+    const grounding = parseGroundingHeader(res.headers.get('x-la-grounding'));
+    const body = await res.json();
+    return { response: body, grounding };
+  },
 
   /**
    * Fork the build's copilot session to a native terminal, so the user can
