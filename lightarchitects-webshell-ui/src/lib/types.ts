@@ -195,9 +195,9 @@ export const PILLAR_ACTIONS = QUALITY_GATE_LABELS;
 
 // --- Siblings ---
 
-export type SiblingId = 'soul' | 'eva' | 'corso' | 'quantum' | 'seraph' | 'ayin' | 'larc';
+export type SiblingId = 'soul' | 'eva' | 'corso' | 'quantum' | 'seraph' | 'ayin' | 'laex';
 
-export const SIBLINGS: SiblingId[] = ['soul', 'eva', 'corso', 'quantum', 'seraph', 'ayin', 'larc'];
+export const SIBLINGS: SiblingId[] = ['soul', 'eva', 'corso', 'quantum', 'seraph', 'ayin', 'laex'];
 
 export interface SiblingHealth {
   id: SiblingId;
@@ -551,18 +551,6 @@ export interface CopilotActivityEvent {
   timestamp: string;
   /** Number of agentic loop iterations at the time this event was emitted. */
   loop_count?: number;
-}
-
-/** Context-window utilisation snapshot from the LightArchitects CLI subprocess. */
-export interface ContextStatusEvent {
-  /** Usage as a fraction of the context window (0.0–1.0). */
-  usage_pct: number;
-  /** Active compaction level: null, "l1", "l2", or "l3". */
-  level?: string;
-  /** Total token budget for this session. */
-  budget: number;
-  /** Tokens consumed so far in this session. */
-  used: number;
 }
 
 /** Context-window utilisation snapshot from the LightArchitects CLI subprocess. */
@@ -1183,4 +1171,61 @@ export interface DecisionEntry {
   decision:    string;
   canon_ref?:  string;
   hmac_ok?:    boolean;
+}
+
+// --- Copilot context (copilot-omniscience-read) ---
+
+/**
+ * A single event entry captured by the frontend for copilot context.
+ *
+ * Mirrors the Rust `RecentEventEntry` DTO sent to `POST /api/builds/:id/copilot`.
+ * `source` must match `[A-Za-z0-9_-]` (server-validated) and `event` is the raw
+ * SSE payload forwarded verbatim — no truncation.
+ */
+export interface RecentEvent {
+  /** Monotonically increasing sequence counter (client-side, resets on page load). */
+  seq: number;
+  /** ISO 8601 UTC timestamp when the event was buffered. */
+  timestamp: string;
+  /** System origin identifier — must match `[A-Za-z0-9_-]`, max 64 chars. */
+  source: string;
+  /** Raw SSE event payload. */
+  event: unknown;
+}
+
+/**
+ * Operator UI state snapshot captured at copilot submit time.
+ *
+ * Mirrors the Rust `UiContext` struct. Fields drive the `<ui_context>` prelude
+ * block assembled server-side before prompt dispatch.
+ */
+export interface UiContext {
+  /** Current browser route path (e.g. `/builds/abc`). Max 512 bytes server-side. */
+  route: string;
+  /** Currently selected entity identifier (build ID, artifact ID, etc.). */
+  selection?: string;
+  /** Active panel / view name within the current route. */
+  view?: string;
+  /** Service names that are currently degraded or offline. */
+  degraded: string[];
+}
+
+/** State machine for the copilot context capture workflow. */
+export type ContextRetrievalStatus = 'idle' | 'capturing' | 'ready' | 'error';
+
+/**
+ * Assembled context snapshot ready for copilot submission.
+ *
+ * Produced by `snapshotContextForCopilot()` in stores.ts and consumed by
+ * `CopilotContextTray.svelte` (Phase 3) and the `sendMessage()` submit path.
+ */
+export interface CopilotContextSnapshot {
+  /** Chronological event slice (oldest-first, capped at 50). */
+  recentEvents: RecentEvent[];
+  /** Route + selection state at capture time. */
+  uiContext: UiContext;
+  /** ISO 8601 UTC timestamp when the snapshot was taken. */
+  capturedAt: string;
+  /** Indices (0-based) of events whose payload exceeds the 4 KiB warning threshold. */
+  oversizeIndices: number[];
 }

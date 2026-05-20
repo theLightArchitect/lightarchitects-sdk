@@ -20,6 +20,7 @@ import {
   contextUsage,
   gitforestTree, gitforestPulses,
   workerSlots, conductorState, mergeAgentEvents, fixAgentEvents,
+  pushRecentEvent,
 } from './stores';
 import { spikeSibling } from './stores';
 import { reconstructTopology } from './gitforest';
@@ -192,8 +193,53 @@ function _connect(): void {
     });
 }
 
+/**
+ * Map SSE event types to allowlist-safe source identifiers.
+ *
+ * Return values must satisfy `[A-Za-z0-9_-]` — validated server-side in
+ * `context.rs::validate()` before prelude embedding. Any unknown EventType
+ * falls through to `'Platform'`. When adding new EventType variants, add
+ * a corresponding entry here to preserve semantic grouping in the context tray.
+ */
+function eventTypeToSource(type: EventType): string {
+  const map: Partial<Record<EventType, string>> = {
+    build_update:        'BuildRunner',
+    finding:             'BuildRunner',
+    plan_update:         'BuildRunner',
+    pillar_update:       'CORSO',
+    copilot_activity:    'Copilot',
+    copilot_response:    'Copilot',
+    context_status:      'Copilot',
+    ayin_span:           'AYIN',
+    ayin_status:         'AYIN',
+    helix_entry:         'SOUL',
+    soul_promotion:      'SOUL',
+    sibling_status:      'Platform',
+    strand_activation:   'Platform',
+    gateway_notify:      'Platform',
+    control:             'Platform',
+    fs_mutation_pending: 'Platform',
+    permission_request:  'Platform',
+    strand_convergence:  'Platform',
+    arena_update:        'Conductor',
+    conductor_task:      'Conductor',
+    conductor_tick:      'Conductor',
+    worker_slot_gauge:   'Conductor',
+    supervisor_update:   'Supervisor',
+    scrum_report:        'Supervisor',
+    escalation:          'Supervisor',
+    training_progress:   'MLTraining',
+    mailbox_message:     'Mailbox',
+    gitforest_update:    'GitForest',
+    merge_agent_status:  'MergeAgent',
+    fix_agent_iteration: 'FixAgent',
+  };
+  return map[type] ?? 'Platform';
+}
+
 /** @internal Exposed for unit testing only */
 export function _handleEvent(event: { type: EventType; data: unknown }): void {
+  pushRecentEvent(eventTypeToSource(event.type), event.data);
   switch (event.type) {
     case 'ayin_status': {
       const status = event.data as string;

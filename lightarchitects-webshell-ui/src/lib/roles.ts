@@ -71,7 +71,7 @@ const SIBLING_DEFAULT: Record<string, AgentRole> = {
   eva:     'Presenter',
   soul:    'Learner',
   ayin:    'Supervisor',
-  larc:    'Supervisor',
+  laex:    'Supervisor',
 };
 
 /**
@@ -110,7 +110,7 @@ export function getAgentRole(sibling: string, action?: string): AgentRole {
       break;
 
     case 'ayin':
-    case 'larc':
+    case 'laex':
       return 'Supervisor';
   }
 

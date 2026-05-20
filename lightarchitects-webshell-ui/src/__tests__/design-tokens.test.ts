@@ -19,7 +19,7 @@ describe('design-tokens', () => {
       expect(SIBLINGS).toContain('quantum');
       expect(SIBLINGS).toContain('seraph');
       expect(SIBLINGS).toContain('ayin');
-      expect(SIBLINGS).toContain('larc');
+      expect(SIBLINGS).toContain('laex');
     });
   });
 
@@ -77,7 +77,7 @@ describe('design-tokens', () => {
 
   describe('SIBLING_POLYTOPES', () => {
     it('maps every sibling to a polytope with type, label, vertices, edges', () => {
-      for (const sib of SIBLINGS.slice(0, -1)) { // Exclude 'larc' which has no polytope
+      for (const sib of SIBLINGS.slice(0, -1)) { // Exclude 'laex' which has no polytope
         if (SIBLING_POLYTOPES[sib]) {
           expect(SIBLING_POLYTOPES[sib].type).toBeDefined();
           expect(SIBLING_POLYTOPES[sib].label).toBeDefined();

@@ -81,7 +81,7 @@ function tierLabel(tier: number | undefined): string {
 const SIBLING_CSS_COLORS: Record<string, string> = {
   soul: '#7C3AED', eva: '#FF1493', corso: '#00BFFF',
   quantum: '#B44AFF', seraph: '#FF0040', ayin: '#FF6D00',
-  larc: '#F59E0B', berean: '#c4b5fd',
+  laex: '#F59E0B', berean: '#c4b5fd',
 };
 
 function siblingColor(s: string): string {

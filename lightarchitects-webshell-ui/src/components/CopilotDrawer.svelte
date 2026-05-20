@@ -6,6 +6,7 @@
     buildBuildContext, authProfile, ollamaConfig, terminalConnected,
     builds, siblingHealth, alertStats, drawerHeightPx, waves,
     clearCopilotHistory, isNativeAgent, voiceEnabled, activityFeed,
+    snapshotContextForCopilot, copilotContextStatus, recentEventBuffer,
   } from '$lib/stores';
   import { SIBLING_COLORS } from '$lib/design-tokens';
   import { api } from '$lib/api';
@@ -14,6 +15,7 @@
   import { connectSSE, disconnectSSE, reconnectSSE, sseConnected } from '$lib/sse';
   import { TerminalWS, AgentWS } from '$lib/ws';
   import SiblingDispatch from './SiblingDispatch.svelte';
+  import CopilotContextTray from './CopilotContextTray.svelte';
   import ContextBar from './ContextBar.svelte';
   import OllamaConfigModal from './OllamaConfigModal.svelte';
   import SettingsOverlay from './SettingsOverlay.svelte';
@@ -21,7 +23,7 @@
   import { settingsOpen, pendingResumeSessionId, serverCwd } from '$lib/setup';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
   import { renderMarkdown } from '$lib/markdown';
-  import type { CopilotMessage, SiblingId, AgentEvent } from '$lib/types';
+  import type { CopilotMessage, SiblingId, AgentEvent, CopilotContextSnapshot } from '$lib/types';
   import { Terminal } from '@xterm/xterm';
   import { FitAddon } from '@xterm/addon-fit';
 
@@ -76,6 +78,11 @@
   let messagesEl: HTMLDivElement | undefined = $state();
   let oscillatorEl: HTMLCanvasElement | undefined = $state();
   let audioEl: HTMLAudioElement | undefined = $state();
+  // Re-derives whenever the event buffer changes so the tray stays fresh.
+  let contextSnapshot = $derived.by<CopilotContextSnapshot | null>(() => {
+    const _buf = $recentEventBuffer; // track store for reactivity
+    return _buf.length > 0 ? snapshotContextForCopilot() : null;
+  });
   let voicePlaying = $state(false);
 
   // --- Native agent bridge state ---
@@ -617,7 +624,12 @@
 
     // Fallback: legacy HTTP POST (non-native builds, Ollama, Anthropic CLI modes)
     try {
-      const result = await api.copilotChat(buildId!, `[Context]\n${contextString}\n\n[User]\n${text}`);
+      const ctx = snapshotContextForCopilot();
+      const result = await api.copilotChat(
+        buildId!,
+        `[Context]\n${contextString}\n\n[User]\n${text}`,
+        { recentEvents: ctx.recentEvents, uiContext: ctx.uiContext },
+      );
       const response = typeof result === 'object' && result !== null && 'response' in result
         ? String((result as Record<string, unknown>).response)
         : 'No response from provider.';
@@ -1090,6 +1102,11 @@
                 class={$copilotLoading ? 'oscilloscope-active' : ''}
                 style="width:100%;height:24px;display:block;border-radius:var(--la-radius-sm);margin-bottom:6px;opacity:0.85;"
               ></canvas>
+              <CopilotContextTray
+                snapshot={contextSnapshot}
+                status={$copilotContextStatus}
+                onRefresh={() => { contextSnapshot = snapshotContextForCopilot(); }}
+              />
               <div class="flex gap-2 relative">
                 <!-- Tesseract command palette trigger — left of input, helix gold glow -->
                 <button

@@ -5,7 +5,7 @@
 import { type Polytope4DType } from './polytopes4d-canvas2d';
 
 // --- Squad member names (internal canonical; vocabulary canon: preserve here) ---
-export const SIBLINGS = ['soul', 'eva', 'corso', 'quantum', 'seraph', 'ayin', 'larc'] as const;
+export const SIBLINGS = ['soul', 'eva', 'corso', 'quantum', 'seraph', 'ayin', 'laex'] as const;
 export type SiblingId = typeof SIBLINGS[number];
 
 // --- Squad member colors (roadmap-content.html palette) ---
@@ -15,7 +15,7 @@ export const SIBLING_COLORS: Record<string, string> = {
   corso:   '#00BFFF',
   quantum: '#B44AFF',
   seraph:  '#FFEAA7',
-  larc:    '#F59E0B',
+  laex:    '#F59E0B',
   ayin:    '#FF6D00',
 };
 

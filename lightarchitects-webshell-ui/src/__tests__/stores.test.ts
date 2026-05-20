@@ -4,9 +4,12 @@ import {
   buildStats, activeBuild, currentBuildId,
   spikeSibling, startWaveTick, stopWaveTick,
   waves,
+  recentEventBuffer, pushRecentEvent, snapshotContextForCopilot,
+  currentRoute, siblingHealth,
 } from '$lib/stores';
 import { get } from 'svelte/store';
 import { PILLARS, SIBLINGS } from '$lib/types';
+import type { SiblingHealth, SiblingId } from '$lib/types';
 
 describe('stores', () => {
   describe('initial state', () => {
@@ -181,6 +184,99 @@ describe('stores', () => {
       currentBuildId.set('nonexistent');
       expect(get(activeBuild)).toBeNull();
       currentBuildId.set(null);
+    });
+  });
+
+  describe('copilot context buffer (copilot-omniscience-read)', () => {
+    beforeEach(() => {
+      recentEventBuffer.set([]);
+    });
+
+    it('starts empty', () => {
+      expect(get(recentEventBuffer)).toHaveLength(0);
+    });
+
+    it('pushRecentEvent adds an entry with seq, timestamp, source, event', () => {
+      pushRecentEvent('BuildRunner', { type: 'BuildStarted' });
+      const buf = get(recentEventBuffer);
+      expect(buf).toHaveLength(1);
+      expect(buf[0].source).toBe('BuildRunner');
+      expect(buf[0].seq).toBeGreaterThan(0);
+      expect(buf[0].timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+      expect(buf[0].event).toEqual({ type: 'BuildStarted' });
+    });
+
+    it('pushRecentEvent inserts newest-first', () => {
+      pushRecentEvent('CORSO', { type: 'first' });
+      pushRecentEvent('AYIN', { type: 'second' });
+      const buf = get(recentEventBuffer);
+      expect((buf[0].event as { type: string }).type).toBe('second');
+      expect((buf[1].event as { type: string }).type).toBe('first');
+    });
+
+    it('pushRecentEvent increments seq monotonically', () => {
+      pushRecentEvent('Copilot', { a: 1 });
+      pushRecentEvent('Copilot', { b: 2 });
+      const buf = get(recentEventBuffer);
+      expect(buf[0].seq).toBeGreaterThan(buf[1].seq);
+    });
+
+    it('snapshotContextForCopilot returns chronological recentEvents', () => {
+      pushRecentEvent('BuildRunner', { type: 'A' });
+      pushRecentEvent('CORSO', { type: 'B' });
+      const snap = snapshotContextForCopilot();
+      expect(snap.recentEvents[0].source).toBe('BuildRunner');
+      expect(snap.recentEvents[1].source).toBe('CORSO');
+    });
+
+    it('snapshotContextForCopilot includes capturedAt ISO timestamp', () => {
+      const snap = snapshotContextForCopilot();
+      expect(snap.capturedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+    });
+
+    it('snapshotContextForCopilot marks oversize events', () => {
+      const bigPayload = { data: 'x'.repeat(5000) };
+      pushRecentEvent('BuildRunner', bigPayload);
+      pushRecentEvent('CORSO', { small: true });
+      const snap = snapshotContextForCopilot();
+      // After reverse: [BuildRunner(big), CORSO(small)] → big at index 0
+      expect(snap.oversizeIndices).toContain(0);
+      expect(snap.oversizeIndices).not.toContain(1);
+    });
+
+    it('rolling window caps at 50 events and evicts oldest', () => {
+      for (let i = 0; i < 55; i++) {
+        pushRecentEvent('AYIN', { n: i });
+      }
+      const buf = get(recentEventBuffer);
+      expect(buf).toHaveLength(50);
+      // Newest (n:54) is at index 0; oldest retained is n:5
+      expect((buf[0].event as { n: number }).n).toBe(54);
+      expect((buf[49].event as { n: number }).n).toBe(5);
+    });
+
+    it('snapshotContextForCopilot captures currentRoute into uiContext', () => {
+      currentRoute.set('/builds/test-123');
+      const snap = snapshotContextForCopilot();
+      expect(snap.uiContext.route).toBe('/builds/test-123');
+      currentRoute.set('/');
+    });
+
+    it('snapshotContextForCopilot includes degraded siblings in uiContext', () => {
+      const health: Record<SiblingId, SiblingHealth> = {
+        corso: { id: 'corso', status: 'degraded', uptime: 0, lastHeartbeat: '', capabilities: [] },
+        eva:   { id: 'eva',   status: 'online',   uptime: 1, lastHeartbeat: '', capabilities: [] },
+        soul:  { id: 'soul',  status: 'offline',  uptime: 0, lastHeartbeat: '', capabilities: [] },
+        quantum:{ id: 'quantum', status: 'online', uptime: 1, lastHeartbeat: '', capabilities: [] },
+        seraph:{ id: 'seraph', status: 'online',  uptime: 1, lastHeartbeat: '', capabilities: [] },
+        ayin:  { id: 'ayin',  status: 'online',   uptime: 1, lastHeartbeat: '', capabilities: [] },
+        laex:  { id: 'laex',  status: 'online',   uptime: 1, lastHeartbeat: '', capabilities: [] },
+      };
+      siblingHealth.set(health);
+      const snap = snapshotContextForCopilot();
+      expect(snap.uiContext.degraded).toContain('corso');
+      expect(snap.uiContext.degraded).toContain('soul');
+      expect(snap.uiContext.degraded).not.toContain('eva');
     });
   });
 });

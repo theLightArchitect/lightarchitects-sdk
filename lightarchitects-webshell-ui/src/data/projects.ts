@@ -97,6 +97,6 @@ export const ENTITY_INDEX: Record<string, number> = {
   corso: 1,
   quantum: 2,
   seraph: 3,
-  larc: 4,
+  laex: 4,
   ayin: 5,
 };
