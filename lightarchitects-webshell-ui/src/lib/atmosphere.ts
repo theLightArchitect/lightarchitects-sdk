@@ -42,7 +42,7 @@ export const ATMOSPHERE_SOURCE_COLORS: Record<string, string> = {
   corso:      '#00BFFF',
   quantum:    '#B44AFF',
   seraph:     '#FFEAA7',
-  larc:       '#F59E0B',
+  laex:       '#F59E0B',
   ayin:       '#FF6D00',
   // Domain agents (public-facing)
   engineer:   '#4d8eff',

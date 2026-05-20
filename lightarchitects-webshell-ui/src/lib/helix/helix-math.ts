@@ -24,12 +24,12 @@ const SIBLING_META: Record<string, { color: number; rail: number }> = {
   corso:   { color: 0x00BFFF, rail: 0 },
   quantum: { color: 0xB44AFF, rail: 0 },
   seraph:  { color: 0xFF0040, rail: 1 },
-  larc:    { color: 0xF59E0B, rail: 1 },
+  laex:    { color: 0xF59E0B, rail: 1 },
   ayin:    { color: 0xFF6D00, rail: 1 },
 };
 
 /** Canonical sibling ordering — determines entity index in the helix. */
-const SIBLING_ORDER = ['eva', 'corso', 'quantum', 'seraph', 'larc', 'ayin'];
+const SIBLING_ORDER = ['eva', 'corso', 'quantum', 'seraph', 'laex', 'ayin'];
 
 /** SOUL Day 0: 2025-09-30. Used to compute sibling age in days. */
 const DAY_0 = new Date('2025-09-30T00:00:00Z').getTime();
@@ -63,7 +63,7 @@ export function buildEntities(vaultCounts: Record<string, number> | null): Helix
 
 /** Hardcoded fallback counts — used when the webshell backend is unavailable. */
 const DEFAULT_ENTRIES: Record<string, number> = {
-  eva: 124, corso: 88, quantum: 48, seraph: 16, larc: 57, ayin: 2,
+  eva: 124, corso: 88, quantum: 48, seraph: 16, laex: 57, ayin: 2,
 };
 
 /** Default entities — used at import time before vault data arrives. */

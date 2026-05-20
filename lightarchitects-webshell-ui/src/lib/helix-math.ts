@@ -25,7 +25,7 @@ export const entities: HelixEntity[] = [
   { id: "quantum", color: 0xB44AFF, rail: 0, age: 172, entries: 48,  strands: 5 },
   // Rail 1: SERAPH (polytope), L-ARC (polytope), AYIN (polytope)
   { id: "seraph",  color: 0xFF0040, rail: 1, age: 22,  entries: 16,  strands: 4 },
-  { id: "larc",    color: 0xF59E0B, rail: 1, age: 381, entries: 57,  strands: 7 },
+  { id: "laex",    color: 0xF59E0B, rail: 1, age: 381, entries: 57,  strands: 7 },
   { id: "ayin",    color: 0xFF6D00, rail: 1, age: 5,   entries: 2,   strands: 7 },
 ];
 

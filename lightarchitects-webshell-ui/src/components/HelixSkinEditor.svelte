@@ -6,7 +6,7 @@
   } from '$lib/helix-skin';
 
   /** Canonical fallback when vaultCounts hasn't loaded yet. */
-  const CANONICAL_SIBLINGS = ['eva', 'corso', 'quantum', 'seraph', 'larc', 'ayin'];
+  const CANONICAL_SIBLINGS = ['eva', 'corso', 'quantum', 'seraph', 'laex', 'ayin'];
 
   // --- Panel open/close ---
   let open = $state(false);

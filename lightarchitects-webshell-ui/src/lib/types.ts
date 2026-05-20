@@ -195,9 +195,9 @@ export const PILLAR_ACTIONS = QUALITY_GATE_LABELS;
 
 // --- Siblings ---
 
-export type SiblingId = 'soul' | 'eva' | 'corso' | 'quantum' | 'seraph' | 'ayin' | 'larc';
+export type SiblingId = 'soul' | 'eva' | 'corso' | 'quantum' | 'seraph' | 'ayin' | 'laex';
 
-export const SIBLINGS: SiblingId[] = ['soul', 'eva', 'corso', 'quantum', 'seraph', 'ayin', 'larc'];
+export const SIBLINGS: SiblingId[] = ['soul', 'eva', 'corso', 'quantum', 'seraph', 'ayin', 'laex'];
 
 export interface SiblingHealth {
   id: SiblingId;
