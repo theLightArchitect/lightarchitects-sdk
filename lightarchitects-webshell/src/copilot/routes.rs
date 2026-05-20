@@ -167,3 +167,160 @@ fn grounding_headers(
     }
     headers
 }
+
+/// Phase 5 — integration tests: grounding pipeline assembly + graceful degradation.
+///
+/// These tests verify that `assemble_prompt_prelude` + `grounding_headers` compose correctly
+/// under nominal and failure-mode conditions, without invoking the AI backend.
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::doc_markdown)]
+mod integration_tests {
+    use super::{context, grounding_headers};
+    use crate::copilot::{git_context, soul_grounding, soul_grounding::GroundingEntry};
+    use std::path::Path;
+
+    /// All 3 grounding sources present — prelude contains all 4 blocks; header is non-zero.
+    #[tokio::test]
+    async fn grounding_e2e() {
+        let identity = "EVA identity: analytical, precision-first.";
+        let entries = vec![
+            GroundingEntry {
+                title: "QUAL gate failure causes".to_owned(),
+                excerpt: "Clippy -D warnings blocks the commit if any warning is emitted."
+                    .to_owned(),
+            },
+            GroundingEntry {
+                title: "cargo test configuration".to_owned(),
+                excerpt: "Run `cargo test --all-features` before every merge.".to_owned(),
+            },
+            GroundingEntry {
+                title: "CORS policy".to_owned(),
+                excerpt: "AllowOrigin::exact restricted to webshell origin.".to_owned(),
+            },
+        ];
+        let nonce = soul_grounding::vault_nonce();
+        let soul_block = soul_grounding::format_block(&nonce, &entries);
+
+        // Use the worktree itself — known git repo with commits.
+        let sdk_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap_or(Path::new("/tmp"));
+        let git_ctx = git_context::gather(sdk_root).await;
+
+        let prelude =
+            context::assemble_prompt_prelude(identity, &soul_block, git_ctx.as_ref(), &[], None);
+
+        // All four blocks present
+        assert!(
+            prelude.contains("[Identity]"),
+            "prelude missing [Identity] block"
+        );
+        assert!(
+            prelude.contains("[Knowledge]"),
+            "prelude missing [Knowledge] block"
+        );
+        assert!(prelude.contains("[Git:"), "prelude missing [Git] block");
+
+        // Grounding header reflects counts
+        let headers = grounding_headers(identity, &soul_block, git_ctx.as_ref());
+        let hdr = headers.get("x-la-grounding").unwrap().to_str().unwrap();
+        assert!(
+            hdr.starts_with("eva=1,"),
+            "header should show eva=1, got: {hdr}"
+        );
+        assert!(
+            hdr.contains(",soul=3,"),
+            "header should show soul=3, got: {hdr}"
+        );
+        // git count > 0 when run inside a git repo
+        let git_count: usize = hdr.rsplit("git=").next().unwrap().parse().unwrap_or(0);
+        assert!(git_count > 0, "header should show git>0, got: {hdr}");
+    }
+
+    /// SOUL timeout path: empty soul_block → prelude omits [Knowledge]; header shows soul=0.
+    #[test]
+    fn grounding_e2e_soul_timeout() {
+        let identity = "EVA identity string.";
+        // Simulate timeout result: empty block (what timeout returns on Err)
+        let soul_block = String::new();
+        let git_ctx: Option<git_context::GitContext> = None;
+
+        let prelude =
+            context::assemble_prompt_prelude(identity, &soul_block, git_ctx.as_ref(), &[], None);
+
+        assert!(
+            !prelude.contains("[Knowledge]"),
+            "timed-out soul should omit [Knowledge]"
+        );
+        assert!(
+            prelude.contains("[Identity]"),
+            "identity should still be present"
+        );
+
+        let headers = grounding_headers(identity, &soul_block, None);
+        let hdr = headers.get("x-la-grounding").unwrap().to_str().unwrap();
+        assert!(
+            hdr.contains("soul=0"),
+            "soul=0 expected on timeout, got: {hdr}"
+        );
+    }
+
+    /// Identity absent: empty string → prelude omits [Identity]; header shows eva=0.
+    #[test]
+    fn grounding_e2e_identity_absent() {
+        let identity = "";
+        let entries = vec![GroundingEntry {
+            title: "entry".to_owned(),
+            excerpt: "excerpt".to_owned(),
+        }];
+        let nonce = soul_grounding::vault_nonce();
+        let soul_block = soul_grounding::format_block(&nonce, &entries);
+        let git_ctx: Option<git_context::GitContext> = None;
+
+        let prelude =
+            context::assemble_prompt_prelude(identity, &soul_block, git_ctx.as_ref(), &[], None);
+
+        assert!(
+            !prelude.contains("[Identity]"),
+            "absent identity should omit [Identity]"
+        );
+        assert!(
+            prelude.contains("[Knowledge]"),
+            "vault entries should still appear"
+        );
+
+        let headers = grounding_headers(identity, &soul_block, None);
+        let hdr = headers.get("x-la-grounding").unwrap().to_str().unwrap();
+        assert!(
+            hdr.starts_with("eva=0,"),
+            "eva=0 expected when identity empty, got: {hdr}"
+        );
+    }
+
+    /// Git non-repo path: cwd outside any git repo → gather() returns None;
+    /// prelude omits [Git]; header shows git=0.
+    #[tokio::test]
+    async fn grounding_e2e_git_non_repo() {
+        let identity = "EVA identity string.";
+        let soul_block = String::new();
+        // /tmp is never a git repo
+        let git_ctx = git_context::gather(Path::new("/tmp")).await;
+
+        assert!(git_ctx.is_none(), "expected None for /tmp, got Some");
+
+        let prelude =
+            context::assemble_prompt_prelude(identity, &soul_block, git_ctx.as_ref(), &[], None);
+
+        assert!(
+            !prelude.contains("[Git:"),
+            "non-repo should omit [Git] block"
+        );
+
+        let headers = grounding_headers(identity, &soul_block, None);
+        let hdr = headers.get("x-la-grounding").unwrap().to_str().unwrap();
+        assert!(
+            hdr.ends_with("git=0"),
+            "git=0 expected for non-repo, got: {hdr}"
+        );
+    }
+}

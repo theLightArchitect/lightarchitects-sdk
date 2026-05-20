@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.12"  # bumped 2026-05-20: §2.4a copilot context grounding (recent_events + ui_context) — copilot-omniscience-read Phase 3
+version: "1.0.13"  # bumped 2026-05-20: §2.4b EVA ambient grounding (identity/vault/git) + X-LA-Grounding header — copilot-eva-ambient Phase 5
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
@@ -297,6 +297,54 @@ Added in `copilot-omniscience-read` Phase 1–3 (2026-05-20). All new fields are
 - `pushRecentEvent(source, payload)` — called by `sse.ts` `_handleEvent` for every incoming SSE event
 - `snapshotContextForCopilot()` — reverses buffer to chronological order, computes `oversizeIndices` (entries > 4 KiB payload), captures `currentRoute` + degraded siblings from `siblingHealth`
 - `CopilotContextTray.svelte` — compact 24px status bar (event count, token estimate, oversize warning) + expandable event inspector; wired below oscilloscope canvas in `CopilotDrawer.svelte`
+
+### §2.4b POST /api/builds/{id}/copilot — EVA Ambient Grounding (copilot-eva-ambient)
+
+Added in `copilot-eva-ambient` Phase 1–4 (2026-05-20). Extends §2.4a with three server-side grounding
+vectors injected into `assemble_prompt_prelude` before every copilot request.
+
+**Prompt prelude block order** (each block is optional — omitted when source is unavailable):
+
+| Block | Source | Header |
+|-------|--------|--------|
+| `[Identity]` | `eva/identity.md` (frontmatter stripped, 32 KiB ceiling) | EVA persona + operating principles |
+| `[Knowledge]` | SOUL FTS5 BM25 top-5 (400 ms hard timeout) | Vault entries relevant to current build + message |
+| `[Git: <branch>]` | `git rev-parse HEAD`, `git log --oneline -10`, `git status --short` (800 ms hard timeout) | Working-tree awareness for the operator's current repo |
+| `<recent_events>` | §2.4a event buffer | SSE context (from `copilot-omniscience-read`) |
+| `<ui_context>` | §2.4a UI snapshot | Route, selection, view mode (from `copilot-omniscience-read`) |
+
+**Grounding timeout limits** (both timeouts are per-request; SOUL and git run concurrently with handler I/O):
+
+| Vector | Hard timeout | Behaviour on miss |
+|--------|-------------|-------------------|
+| SOUL vault FTS5 | 400 ms | Block omitted; `X-LA-Grounding` shows `soul=0` |
+| Git context | 800 ms | Block omitted; `X-LA-Grounding` shows `git=0` |
+| EVA identity | None (cached, ~µs read) | Block omitted when file absent; `X-LA-Grounding` shows `eva=0` |
+
+**Response header** (`X-LA-Grounding`):
+
+Returned with every `200 OK` copilot response. Format: `eva=<0|1>,soul=<N>,git=<N>`
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `eva` | `0` or `1` | `1` if EVA identity was injected |
+| `soul` | integer ≥ 0 | Count of SOUL vault entries injected |
+| `git` | integer ≥ 0 | Count of git commits injected |
+
+Example: `X-LA-Grounding: eva=1,soul=3,git=10`
+
+**Security constraints (LLM02 — indirect prompt injection)**:
+
+- Vault entries are wrapped in `[VAULT-DATA::<8-hex-nonce>]...[/VAULT-DATA::<nonce>]` delimiters (SCR13)
+- Git commit messages are sanitized: max 72 chars, ASCII control chars stripped, `[` → `‹`, `]` → `›` (SCR20)
+- EVA identity file frontmatter is stripped before injection
+
+**Client-side behaviour**:
+
+- `copilotGrounding` (`writable<GroundingInfo | null>`) — updated after each copilot `200` response
+- `parseGroundingHeader(header: string | null): GroundingInfo | null` — exported from `$lib/api.ts`
+- `CopilotContextTray.svelte` — grounding indicator row (24px, hidden when `grounding === null`): `EVA ✓ | SOUL N | Git N` with per-source colour coding (emerald / sky / amber)
+- `GroundingInfo` — `{ eva: number; soul: number; git: number }` in `$lib/types.ts`
 
 ### §2.5 SOUL Vault
 
