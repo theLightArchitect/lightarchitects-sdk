@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.16"  # bumped 2026-05-20: §2.27 STUB → IMPLEMENTED (webshell-backend-gaps) — POST /api/git/worktrees with {cwd} body + safe_cwd() validation; convention-aligned with other /api/git/* routes
+version: "1.0.17"  # bumped 2026-05-20: §2.28–2.29 ADDED (webshell-hitl-inbox) — GET /api/gitforest/hitl-search + GET /api/gitforest/pr-metadata; SSRF allowlist (owner,repo) tuple pattern; AuthGuard + 60s moka cache
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
@@ -995,6 +995,89 @@ Point-in-time snapshot of the current fleet state for a build. Useful for initia
 **Errors:** `400` on missing/invalid `cwd` (path traversal or non-existent path), `401` on missing/invalid bearer, `500` if `git worktree list` fails.
 **UI consumer:** `lightarchitects-webshell-ui/src/components/WorktreePanel.svelte` (fetches on mount via `api.listWorktrees(cwd)`; merges by path with `$gitforestTree` topology; renders 🔒 lock icon + relative-time HEAD age). MockBadge "META — locked/created_at pending" REMOVED.
 
+### §2.28 HITL Search (webshell-hitl-inbox — 2026-05-20 ADDITION)
+
+GitHub PR review-requested queue surfaced in `HitlQueue.svelte` alongside paused builds. Returns all open PRs across `HITL_TRACKED_REPOS` where the authenticated user is a requested reviewer.
+
+**Path:** `GET /api/gitforest/hitl-search`
+**Auth:** Bearer token (`AuthGuard` extractor — `_: auth::AuthGuard`)
+**Response:** `200 OK` — `application/json` — `[HitlSearchItem]`
+
+| Status | Condition |
+|--------|-----------|
+| `200 OK` | Array of PR items (may be empty if no PAT configured or no matching PRs) |
+| `401 Unauthorized` | Missing or invalid bearer token |
+| `502 Bad Gateway` | GitHub API call failed (network error, rate limit, bad response) |
+
+**Response shape:**
+```json
+[
+  {
+    "number": 47,
+    "title": "feat(fleet): FleetTracker SSE + FleetPanel.svelte",
+    "html_url": "https://github.com/TheLightArchitects/lightarchitects-sdk/pull/47",
+    "owner": "TheLightArchitects",
+    "repo": "lightarchitects-sdk",
+    "author": "kft",
+    "updated_at": "2026-05-20T17:00:00Z",
+    "draft": false
+  }
+]
+```
+
+**SSRF allowlist:** `HITL_TRACKED_REPOS: &[(&str, &str)]` — `(owner, repo)` tuples. Queries only allowlisted repositories; GitHub search response items not matching the allowlist are filtered out before caching. This is strictly tighter than the existing `TRACKED_REPOS: &[&str]` (repo-name only) pattern, preventing a fork with an identical repo name from being queried.
+
+**GitHub query:** `is:pr is:open review-requested:@me` — GitHub resolves `@me` server-side for the authenticated PAT, eliminating the need for a `GET /user` login-resolution call.
+
+**Cache:** `HitlSearchCache` — moka `Cache<String, Arc<Vec<HitlSearchItem>>>`, 60s TTL, capacity 32. Cache key: `"me"`. Shared in `AppState`.
+
+**PAT handling:** If `load_github_pat()` returns `None`, the handler returns `200 OK` with an empty array. The frontend (`HitlQueue.svelte`) renders an empty list gracefully.
+
+**Source:** `lightarchitects-webshell/src/github_proxy.rs` — `fetch_hitl_search`, `HITL_TRACKED_REPOS`, `validate_html_url`; `lightarchitects-webshell/src/server/mod.rs` — `hitl_search_handler`.
+
+**Frontend wiring:** `HitlQueue.svelte` fetches this endpoint on mount and every 60 seconds via `$effect` + `setInterval` (cleanup via returned `clearInterval` from the effect). PR items render alongside paused builds with a `PR REVIEW` / `DRAFT PR` source badge and a `Review PR →` button that calls `window.open(pr.html_url, '_blank', 'noopener,noreferrer')`.
+
+---
+
+### §2.29 PR Metadata (webshell-hitl-inbox — 2026-05-20 ADDITION)
+
+Per-PR metadata lookup for a specific repository + PR number. Validates against `HITL_TRACKED_REPOS` before any outbound GitHub API call.
+
+**Path:** `GET /api/gitforest/pr-metadata?owner=<owner>&repo=<repo>&number=<pr_number>`
+**Auth:** Bearer token (`AuthGuard` extractor)
+**Response:** `200 OK` — `application/json` — `HitlPrMetadata`
+
+| Status | Condition |
+|--------|-----------|
+| `200 OK` | PR metadata object |
+| `400 Bad Request` | Missing required query params or non-integer `number` |
+| `401 Unauthorized` | Missing or invalid bearer token |
+| `403 Forbidden` | `owner/repo` not in `HITL_TRACKED_REPOS` (SSRF guard) |
+| `503 Service Unavailable` | GitHub PAT not configured |
+| `502 Bad Gateway` | GitHub API call failed |
+
+**Response shape:**
+```json
+{
+  "number": 47,
+  "title": "feat(fleet): FleetTracker SSE + FleetPanel.svelte",
+  "html_url": "https://github.com/TheLightArchitects/lightarchitects-sdk/pull/47",
+  "owner": "TheLightArchitects",
+  "repo": "lightarchitects-sdk",
+  "author": "kft",
+  "state": "open",
+  "draft": false,
+  "head_sha": "abc1234...",
+  "updated_at": "2026-05-20T17:00:00Z"
+}
+```
+
+**SSRF guard:** `is_hitl_tracked(owner, repo)` is the first check after param validation. Returns `403` before any network call if the `(owner, repo)` pair is not in `HITL_TRACKED_REPOS`.
+
+**Cache:** `PrMetadataCache` — moka `Cache<String, Arc<HitlPrMetadata>>`, 60s TTL, capacity 256. Cache key: `"{owner}/{repo}/{number}"`. Shared in `AppState`.
+
+**Source:** `lightarchitects-webshell/src/github_proxy.rs` — `fetch_pr_metadata`, `HitlPrMetadata`; `lightarchitects-webshell/src/server/mod.rs` — `pr_metadata_handler`.
+
 ---
 
 ## Part III — Frontend Route Catalogue
@@ -1194,7 +1277,7 @@ Which backend sections and route prefixes serve each screen. Use this to find re
 | `Ops` | §2.1 Auth & Health, §2.3 Events, §2.6 Workspaces (conductor tasks), §2.12 Misc, §2.14 Preflight, §2.17-2.20 GitForest | `/api/health`, `/api/events/global`, `/api/conductor/status`, `/api/polytopes`, `/api/preflight`, `/api/gitforest/*` |
 | `Dispatch` | §2.7 Dispatch Sub-Router, §2.3 Events | `/api/dispatch/*`, `/api/events` |
 | `Builds` | §2.4 Builds Core | `/api/builds` |
-| `BuildDetail` | §2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor, §2.17-2.19 GitForest, §2.21-2.22 Fleet | `/api/builds/{id}`, `/api/builds/{id}/terminal/ws`, `/api/builds/{id}/events`, `/api/builds/{id}/supervisor/state`, `/api/builds/{id}/supervisor/events`, `/api/builds/{id}/supervisor/acknowledge`, `/api/gitforest/*`, `/api/builds/{id}/fleet`, `/api/builds/{id}/fleet/snapshot` |
+| `BuildDetail` | §2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor, §2.17-2.20 GitForest, §2.21-2.22 Fleet | `/api/builds/{id}`, `/api/builds/{id}/terminal/ws`, `/api/builds/{id}/events`, `/api/builds/{id}/supervisor/state`, `/api/builds/{id}/supervisor/events`, `/api/builds/{id}/supervisor/acknowledge`, `/api/gitforest/*`, `/api/builds/{id}/fleet`, `/api/builds/{id}/fleet/snapshot` |
 | `Helix3D` (inline) | §2.15 Helix Node Snapshot | `/api/helix/nodes` |
 | `Intake` | §2.4 Builds Core, §2.6 Workspaces | `/api/builds/plan*`, `/api/builds` |
 | `Helix` | §2.5 SOUL Vault | `/api/soul/*` |
