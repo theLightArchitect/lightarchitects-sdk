@@ -3,7 +3,7 @@
 // Dispatch owns orphan runs; Helix owns strand/entry drilldown.
 
 export type ScreenKey =
-  | 'Ops'
+  | 'Dashboard'
   | 'Dispatch'
   | 'Builds'
   | 'Intake'
@@ -65,9 +65,9 @@ const ROUTES: RouteEntry[] = [
   [/^\/helix\/entry\/([^/]+)$/,                                             'Helix',         ['entryId']],
   [/^\/project\/([^/]+)$/,                                                  'ProjectDetail', ['projectId']],
   [/^\/?$/,                                                                 'Dispatch',      []],
-  [/^\/dashboard(#.*)?$/,                                                   'Ops',           []],
-  [/^\/monitor(#.*)?$/,                                                     'Ops',           []],
-  [/^\/ops(#.*)?$/,                                                         'Ops',           []],
+  [/^\/dashboard(#.*)?$/,                                                   'Dashboard',     []],
+  [/^\/monitor(#.*)?$/,                                                     'Dashboard',     []],
+  [/^\/ops(#.*)?$/,                                                         'Dashboard',     []],
   [/^\/run$/,                                                               'Dispatch',      []],
   [/^\/dispatch$/,                                                          'Dispatch',      []],
   [/^\/builds$/,                                                            'Builds',        []],
@@ -109,7 +109,7 @@ export function matchRoute(hash: string): RouteMatch {
       return { screen, params };
     }
   }
-  return { screen: 'Ops', params: {} };
+  return { screen: 'Dashboard', params: {} };
 }
 
 /** Checks current hash for legacy paths and rewrites via history.replaceState. */

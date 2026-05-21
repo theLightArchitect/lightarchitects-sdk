@@ -20,7 +20,6 @@
   import ScanLines from './components/atmosphere/ScanLines.svelte';
   import ProjectPicker from './components/ProjectPicker.svelte';
   import ActiveBuildsChip from './components/ActiveBuildsChip.svelte';
-  import Breadcrumb from './components/Breadcrumb.svelte';
   import GlobalEventsOverlay from './components/GlobalEventsOverlay.svelte';
   import StatsTopbar from './components/StatsTopbar.svelte';
   import {
@@ -50,7 +49,7 @@
 
   // Lazy-loaded screens (code-split per route)
   const screenModules = {
-    Ops:           () => import('./screens/Ops.svelte'),
+    Dashboard:     () => import('./screens/Dashboard.svelte'),
     Dispatch:      () => import('./screens/Dispatch.svelte'),
     Builds:        () => import('./screens/Builds.svelte'),
     Intake:        () => import('./screens/Intake.svelte'),
@@ -273,11 +272,11 @@
       registerHotkey({
         id: 'global-tab-1',
         keys: ['1'],
-        label: 'Go to Ops',
+        label: 'Go to Dashboard',
         group: 'Navigation',
         scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '1' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
-        handler: () => navigate('/ops'),
+        handler: () => navigate('/dashboard'),
       }),
       registerHotkey({
         id: 'global-tab-2',
@@ -468,9 +467,6 @@
     >
       <!-- Ambient particles — drifting helix-palette dots behind content -->
       <AmbientParticles />
-      <!-- Breadcrumb (Wave 1) — `LIGHT ARCHITECTS / {SCREEN} / {SUB} / LIVE`
-           sits above the tab nav and provides at-a-glance "where am I" chrome -->
-      <Breadcrumb route={activeRoute} />
       <!-- Top navigation strip — underline-only active indicator (#23) -->
       <nav class="la-nav flex items-stretch gap-1 px-3 border-b border-[#1e293b] bg-[#0a0a0f] shrink-0 overflow-x-auto" data-status={$ayinStatus}>
         <ProjectPicker />

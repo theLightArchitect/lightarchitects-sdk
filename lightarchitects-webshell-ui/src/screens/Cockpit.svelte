@@ -2,6 +2,9 @@
   import { AgentWS } from '$lib/ws';
   import { api } from '$lib/api';
   import PolytopeIcon from '$lib/../components/PolytopeIcon.svelte';
+  import PresetChips from '$lib/../components/Cockpit/PresetChips.svelte';
+  import TargetBreadcrumb from '$lib/../components/Cockpit/TargetBreadcrumb.svelte';
+  import QuickPickPalette from '$lib/../components/Cockpit/QuickPickPalette.svelte';
   import { navigate } from '$lib/routes';
   import { listOpenPRs, GITHUB_ORG, FOREST_REPO_NAMES } from '$lib/github';
   import type { PullRequest } from '$lib/github';
@@ -325,17 +328,23 @@
 <div class="cockpit">
   <!-- Header -->
   <header class="cockpit-hdr">
-    <span class="cockpit-title">COCKPIT</span>
-    <span class="cockpit-sub">force-multiplier dashboard</span>
-    <div class="hdr-badges">
-      {#if $activeBuild}
-        <span class="badge badge-active">{$activeBuild.codename ?? $activeBuild.id.slice(0, 8)}</span>
-      {:else}
-        <span class="badge badge-idle">no active build</span>
-      {/if}
-      <span class="badge badge-stat">{$buildStats.inProgress} active</span>
+    <div class="hdr-row-1">
+      <span class="cockpit-title">COCKPIT</span>
+      <PresetChips />
+      <div class="hdr-badges">
+        {#if $activeBuild}
+          <span class="badge badge-active">{$activeBuild.codename ?? $activeBuild.id.slice(0, 8)}</span>
+        {:else}
+          <span class="badge badge-idle">no active build</span>
+        {/if}
+        <span class="badge badge-stat">{$buildStats.inProgress} active</span>
+      </div>
+    </div>
+    <div class="hdr-row-2">
+      <TargetBreadcrumb />
     </div>
   </header>
+  <QuickPickPalette />
 
   <!-- Bento grid -->
   <div class="bento">
@@ -685,26 +694,32 @@
   /* ── Header ────────────────────────────────────────────────────────────── */
   .cockpit-hdr {
     display: flex;
-    align-items: baseline;
-    gap: 12px;
+    flex-direction: column;
+    gap: 6px;
     padding-bottom: 8px;
     border-bottom: 1px solid var(--la-hair-base);
+  }
+  .hdr-row-1 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .hdr-row-2 {
+    display: flex;
+    align-items: center;
   }
   .cockpit-title {
     font-size: 11px;
     font-weight: 700;
     letter-spacing: var(--la-tk-loose);
     color: var(--la-struct-primary);
-  }
-  .cockpit-sub {
-    font-size: 10px;
-    color: var(--la-text-mute);
-    letter-spacing: var(--la-tk-mid);
+    flex-shrink: 0;
   }
   .hdr-badges {
     margin-left: auto;
     display: flex;
     gap: 6px;
+    flex-shrink: 0;
   }
   .badge {
     font-size: 9px;

@@ -122,7 +122,7 @@ describe('Phase 8: Claude GUI Control + Polish', () => {
     // Helix.svelte now embeds Helix3D (Three.js) directly — extra time for the heavy import chain
     it('all active screens can be imported', async () => {
       const builds = await import('$lib/../screens/Builds.svelte');
-      const ops = await import('$lib/../screens/Ops.svelte');
+      const ops = await import('$lib/../screens/Dashboard.svelte');
       const intake = await import('$lib/../screens/Intake.svelte');
       const helix = await import('$lib/../screens/Helix.svelte');
       const dispatch = await import('$lib/../screens/Dispatch.svelte');

@@ -15,12 +15,12 @@ describe('routes', () => {
       expect(matchRoute('/builds').screen).toBe('Builds');
     });
 
-    it('/ops → Ops', () => {
-      expect(matchRoute('/ops').screen).toBe('Ops');
+    it('/ops → Dashboard', () => {
+      expect(matchRoute('/ops').screen).toBe('Dashboard');
     });
 
-    it('/ops#activity → Ops (hash fragment passes through)', () => {
-      expect(matchRoute('/ops#activity').screen).toBe('Ops');
+    it('/ops#activity → Dashboard (hash fragment passes through)', () => {
+      expect(matchRoute('/ops#activity').screen).toBe('Dashboard');
     });
 
     it('/dispatch → Dispatch', () => {
@@ -95,13 +95,13 @@ describe('routes', () => {
     // default Ops screen — by design. The user-visible deep link is still
     // preserved because applyRedirects() (run on every hashchange in app.svelte)
     // rewrites #/workspace/:id to #/builds/:id before this matcher is called.
-    it('/workspace falls through to Ops default (redirect handles user-visible navigation)', () => {
-      expect(matchRoute('/workspace').screen).toBe('Ops');
+    it('/workspace falls through to Dashboard default (redirect handles user-visible navigation)', () => {
+      expect(matchRoute('/workspace').screen).toBe('Dashboard');
     });
 
     it('/workspace/:buildId falls through, but redirect rewrites it to /builds/:buildId before matchRoute is called', () => {
       // Direct match (no redirect): falls through to default Ops.
-      expect(matchRoute('/workspace/proj-7').screen).toBe('Ops');
+      expect(matchRoute('/workspace/proj-7').screen).toBe('Dashboard');
       // After applyRedirects(), the URL becomes /builds/proj-7 and resolves correctly.
       // (applyRedirects has DOM side-effects so it's tested in the e2e suite, not here.)
       expect(matchRoute('/builds/proj-7').screen).toBe('BuildDetail');
@@ -127,7 +127,7 @@ describe('routes', () => {
       // would match "proj-7/bogus" if greedy — but [^/]+ stops at /, so the
       // pattern won't match a 2-segment tail and falls through to default Ops.
       const r = matchRoute('/builds/proj-7/bogus');
-      expect(r.screen).toBe('Ops'); // default fallthrough
+      expect(r.screen).toBe('Dashboard'); // default fallthrough
     });
 
     it('phase routes still take precedence over view-encoded route', () => {
@@ -150,7 +150,7 @@ describe('routes', () => {
   describe('matchRoute() — # prefix stripping', () => {
     it('strips leading # before matching', () => {
       expect(matchRoute('#/builds').screen).toBe('Builds');
-      expect(matchRoute('#/ops').screen).toBe('Ops');
+      expect(matchRoute('#/ops').screen).toBe('Dashboard');
     });
   });
 
@@ -162,14 +162,14 @@ describe('routes', () => {
     });
   });
 
-  describe('matchRoute() — unknown paths fall back to Ops', () => {
-    it('/unknown → Ops fallback', () => {
-      expect(matchRoute('/unknown').screen).toBe('Ops');
+  describe('matchRoute() — unknown paths fall back to Dashboard', () => {
+    it('/unknown → Dashboard fallback', () => {
+      expect(matchRoute('/unknown').screen).toBe('Dashboard');
     });
 
-    it('/builds/b/phase/p/wave/w/agent/a/extra → Ops fallback (too deep)', () => {
+    it('/builds/b/phase/p/wave/w/agent/a/extra → Dashboard fallback (too deep)', () => {
       const r = matchRoute('/builds/b/phase/p/wave/w/agent/a/extra');
-      expect(r.screen).toBe('Ops');
+      expect(r.screen).toBe('Dashboard');
     });
   });
 
