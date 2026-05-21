@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.18"  # bumped 2026-05-20: §2.28–2.29 ADDED (webshell-hitl-inbox) + §2.30 ADDED (webshell-event-bus-redesign) — HITL search/PR-metadata + topic-filtered SSE
+version: "1.0.19"  # bumped 2026-05-21: §1.7 ADDED (webshell-cockpit Phase 7 — Cockpit card-role taxonomy, 13 roles, exhaustiveness gate)
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
@@ -176,6 +176,37 @@ Two caller types; two auth mechanisms — never interchangeable.
 > **Why the split?** If the machine notify token were readable by browser JavaScript, an XSS vulnerability could exfiltrate it and forge agent callbacks — turning a UI-layer exploit into a server-side event injection. The token is excluded from `BuildResponse` (the JSON sent to the browser after build creation) by design. `AuthGuard` reads only the session cookie; the notify bearer path is a separate extractor. This is a deliberate CWE-306 prevention: two attack surfaces, separated in code, not just convention. See `src/agent/bridge.rs` for the omission point.
 
 **Cross-reference (2026-05-18 ADDITION)**: For autonomous-mode builds, program manifest integrity adds an Ed25519-signed `program.toml` + per-wave HKDF-SHA256 HMAC subkey chain. See `security-guardrails §SG-CRYPTO` for the full ceremony (Touch-ID-gated Keychain keygen, subkey-id stamping in decisions.md, revocation-via-restart). Program manifest verification fires pre-dispatch on every task; mismatch HALTS.
+
+---
+
+### §1.7 Card-Role Taxonomy (webshell-cockpit Phase 7 — 2026-05-21 ADDITION)
+
+Every load-bearing surface on the Cockpit screen declares `data-card-role` on its root element. The registry at `src/lib/cockpit/cardRoles.ts` exports `CockpitCardRole` (union), `COCKPIT_CARD_ROLES` (record), and `ALL_COCKPIT_CARD_ROLES` (array).
+
+Roles fall into four functional categories: **action** (operator takes immediate actions), **stream** (live data from backend), **status** (current system state), **navigation** (changes active target or preset).
+
+| `data-card-role` | Source file | Category | Conditional |
+|---|---|---|---|
+| `preset-chips` | `PresetChips.svelte` | navigation | No |
+| `target-breadcrumb` | `TargetBreadcrumb.svelte` | navigation | No |
+| `quick-pick-palette` | `QuickPickPalette.svelte` (panel div) | navigation | `{#if $quickPickOpen}` |
+| `build-health` | `Cockpit.svelte` bento card | status+stream | No |
+| `hitl-escalations` | `Cockpit.svelte` bento card | action | No |
+| `worker-fleet` | `Cockpit.svelte` bento card | stream | No |
+| `decision-feed` | `Cockpit.svelte` bento card | stream | No |
+| `git-state` | `Cockpit.svelte` bento card | status | No |
+| `builds-rail` | `Cockpit.svelte` bento card | navigation+status | No |
+| `hitl-inbox` | `Cockpit.svelte` bento card | action | No |
+| `pr-detail-panel` | `Cockpit.svelte` PR detail panel | action | `{#if selectedPr}` |
+| `engineer-zones` | `Cockpit.svelte` engineer zones | action+stream | `{#if $selectedPreset === 'engineer'}` |
+| `copilot-drawer` | `CopilotDrawer.svelte` | action+stream | No |
+
+**Exhaustiveness gate**: `src/__tests__/cockpit-card-roles.test.ts` verifies every registry key maps to a `data-card-role` attribute in the declared source file and every attribute in source is registered. Count assertion: 13 roles. Adding a new card requires updating the type union, the record, and the test.
+
+**P6 Northstar mechanical promises verified by this taxonomy**:
+- `hitl-inbox` in DOM within 60s (P6-N1 — verified by E2E G6)
+- `target-breadcrumb` always present (P6-N2 — never conditionally unmounted)
+- `copilot-drawer` context chip shows `{preset} · {target}` (P6-N3 — verified by E2E G5)
 
 ---
 

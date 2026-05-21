@@ -117,6 +117,7 @@
     role="dialog"
     aria-label="Target picker"
     aria-modal="true"
+    data-card-role="quick-pick-palette"
   >
     <!-- Search row -->
     <div class="qp-search-row">

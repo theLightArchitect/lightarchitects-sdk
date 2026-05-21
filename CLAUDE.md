@@ -259,3 +259,62 @@ The Ops/Dashboard screen (`/#/dashboard`) conductor queue-strip now always rende
 - **QuickPickPalette** — opens via `⌘T` (global hotkey registered in `QuickPickPalette.svelte#onMount` via `registerHotkey`). Also triggered by the ⌘T button in `TargetBreadcrumb.svelte`. Phase 2 wires `/api/builds`, manifest.yaml, and FS sources with fuzzy matching.
 
 The header is a two-row column layout: row-1 = `COCKPIT` title + PresetChips + badges; row-2 = TargetBreadcrumb. The global `Breadcrumb` component was removed from `app.svelte` as part of this phase (collapsed to single-row nav).
+
+### Cockpit Card-Role Taxonomy (webshell-cockpit Phase 7)
+
+Every load-bearing surface on the Cockpit screen declares `data-card-role` on its root element. The registry lives at `src/lib/cockpit/cardRoles.ts` and exports:
+
+- `CockpitCardRole` — union of all 13 valid role strings
+- `COCKPIT_CARD_ROLES` — `Record<CockpitCardRole, string>` with human-readable descriptions
+- `ALL_COCKPIT_CARD_ROLES` — all keys for exhaustiveness iteration
+
+Annotated surfaces (always-present unless conditional):
+
+| Role | Surface | Conditional? |
+|------|---------|-------------|
+| `preset-chips` | `PresetChips.svelte` root | No |
+| `target-breadcrumb` | `TargetBreadcrumb.svelte` root | No |
+| `quick-pick-palette` | `QuickPickPalette.svelte` panel | Opens on `⌘T` |
+| `build-health` | Cockpit bento card | No |
+| `hitl-escalations` | Cockpit bento card | No |
+| `worker-fleet` | Cockpit bento card | No |
+| `decision-feed` | Cockpit bento card | No |
+| `git-state` | Cockpit bento card | No |
+| `builds-rail` | Cockpit bento card | No |
+| `hitl-inbox` | Cockpit bento card | No |
+| `pr-detail-panel` | Cockpit PR detail panel | Yes — when PR target selected |
+| `engineer-zones` | Cockpit engineer zones | Yes — when preset === 'engineer' |
+| `copilot-drawer` | `CopilotDrawer.svelte` root | No |
+
+Exhaustiveness test at `src/__tests__/cockpit-card-roles.test.ts` ensures every registry key maps to a `data-card-role` attribute in the declared source file, and every attribute in the source is registered.
+
+**Adding a new card**: update `CockpitCardRole` union, add to `COCKPIT_CARD_ROLES`, add to `ANNOTATED_SOURCES` in the test, update the count assertion (currently 13).
+
+### Cockpit Copilot Integration (webshell-cockpit Phase 6)
+
+The `CopilotDrawer.svelte` header shows a context chip `{PRESET} · {target}`. Clicking it opens `QuickPickPalette`. The active preset + selected target are snapshotted into `UiContext.cockpit` at copilot submit time via `snapshotContextForCopilot()` in `src/lib/stores.ts`.
+
+On the Rust side, `assemble_prompt_prelude()` (`src/copilot/context.rs`) emits:
+```
+  cockpit.preset: engineer
+  cockpit.target: pr https://github.com/owner/repo/pull/42 (#42 (repo))
+```
+
+`parseChips(content, repoHint?)` in `src/lib/cockpit/copilotChips.ts` scans assistant messages for GitHub PR URLs and bare `PR #N` refs, returning `CopilotChip[]` action chips that set `selectedTarget`.
+
+### Cockpit E2E (webshell-cockpit Phase 7)
+
+Run with Playwright browser installed:
+```bash
+cd lightarchitects-webshell-ui
+PLAYWRIGHT_BASE_URL=http://localhost:5174 pnpm exec playwright test e2e/cockpit.spec.ts
+```
+
+7 golden paths covering:
+- G1: Full card inventory (all 10 always-present CARD_ROLES in DOM)
+- G2: Preset switch (engineer-zones conditional rendering)
+- G3: ⌘T opens palette, ESC closes (P6-N2 target accessibility)
+- G4: Target selection updates breadcrumb (P6-N2)
+- G5: Copilot context chip shows preset label (P6-N3)
+- G6: HITL Inbox within 60s (P6-N1 Northstar mechanical check)
+- G7: la:permission-request event → perm-card renders → APPROVE removes it

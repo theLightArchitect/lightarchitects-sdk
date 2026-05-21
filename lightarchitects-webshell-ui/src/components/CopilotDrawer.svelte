@@ -794,6 +794,7 @@
 <!-- Drawer container -->
 <div
   data-testid="copilot-drawer"
+  data-card-role="copilot-drawer"
   class="fixed bottom-0 left-0 right-0 z-30 flex flex-col"
   style="height: {open ? heightPx + 'px' : '32px'}; transition: height 0.18s ease;"
 >

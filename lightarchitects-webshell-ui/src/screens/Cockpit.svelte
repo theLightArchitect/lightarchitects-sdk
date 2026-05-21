@@ -335,7 +335,7 @@
   <div class="bento">
 
     <!-- ── BUILD HEALTH ─────────────────────────────────────────────────────── -->
-    <div class="card card-health" data-area="health">
+    <div class="card card-health" data-area="health" data-card-role="build-health">
       <div class="card-label">
         BUILD HEALTH
         {#if isIdle}
@@ -392,7 +392,7 @@
     </div>
 
     <!-- ── ESCALATIONS / HITL ────────────────────────────────────────────────── -->
-    <div class="card card-hitl" data-area="escalations">
+    <div class="card card-hitl" data-area="escalations" data-card-role="hitl-escalations">
       <div class="card-label">
         ESCALATIONS
         {#if pendingPermissions.length > 0}
@@ -428,7 +428,7 @@
     </div>
 
     <!-- ── WORKER FLEET ──────────────────────────────────────────────────────── -->
-    <div class="card card-fleet" data-area="fleet">
+    <div class="card card-fleet" data-area="fleet" data-card-role="worker-fleet">
       <div class="card-label">WORKER FLEET</div>
 
       {#if $workerSlots}
@@ -487,7 +487,7 @@
     </div>
 
     <!-- ── DECISION FEED ─────────────────────────────────────────────────────── -->
-    <div class="card card-decisions" data-area="decisions">
+    <div class="card card-decisions" data-area="decisions" data-card-role="decision-feed">
       <div class="card-label">
         DECISION FEED
         {#if !$activeBuild}<span class="dim-note"> — select a build</span>{/if}
@@ -533,7 +533,7 @@
     </div>
 
     <!-- ── GIT STATE ─────────────────────────────────────────────────────────── -->
-    <div class="card card-git" data-area="git">
+    <div class="card card-git" data-area="git" data-card-role="git-state">
       <div class="card-label">GIT STATE</div>
 
       <!-- Primary branch status (always shown) -->
@@ -595,7 +595,7 @@
     </div>
 
     <!-- ── BUILDS RAIL ─────────────────────────────────────────────────────── -->
-    <div class="card card-builds" data-area="builds">
+    <div class="card card-builds" data-area="builds" data-card-role="builds-rail">
       <div class="card-label">
         BUILDS
         <span class="dim-note">{$builds.length} total</span>
@@ -625,7 +625,7 @@
     </div>
 
     <!-- ── HITL INBOX ────────────────────────────────────────────────────────── -->
-    <div class="card card-pr" data-area="pr">
+    <div class="card card-pr" data-area="pr" data-card-role="hitl-inbox">
       <div class="card-label">
         HITL INBOX
         {#if $selectedTarget?.type === 'pr'}
@@ -639,7 +639,7 @@
 
   <!-- ── PR DETAIL PANEL — shown when a PR target is selected ─────────────── -->
   {#if selectedPr}
-    <div class="pr-detail-panel">
+    <div class="pr-detail-panel" data-card-role="pr-detail-panel">
       <div class="pr-detail-header">
         <span class="pr-detail-label">PR REVIEW</span>
         <span class="pr-detail-target">{$selectedTarget?.label ?? ''}</span>
@@ -670,7 +670,7 @@
 
   <!-- ── ENGINEER ZONES — shown when Engineer preset is active ─────────────── -->
   {#if $selectedPreset === 'engineer'}
-    <div class="engineer-zones">
+    <div class="engineer-zones" data-card-role="engineer-zones">
       <div class="ez-zone"><NeedsActionZone /></div>
       <div class="ez-zone"><InFlightZone /></div>
       <div class="ez-zone"><QuickActionsZone /></div>
