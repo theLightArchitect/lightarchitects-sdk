@@ -28,8 +28,8 @@ use uuid::Uuid;
 
 use crate::config::{AgentSession, ClaudeBackend, CodexBackend};
 use crate::copilot::CopilotProcess;
+use crate::events::WebEventV2;
 use crate::events::ayin_client::EVENT_CHANNEL_BUF;
-use crate::events::types::WebEvent;
 
 /// Broadcast ring-buffer capacity for raw PTY stdout bytes.
 ///
@@ -65,7 +65,7 @@ pub struct BuildSession {
     pub notify_token: [u8; 32],
     /// Per-build SSE broadcast channel. Handlers push `WebEvent`s here;
     /// the `/api/builds/:id/events` SSE handler subscribes.
-    pub event_tx: broadcast::Sender<WebEvent>,
+    pub event_tx: broadcast::Sender<WebEventV2>,
     /// PTY child killer, populated by the spawner (Phase C).
     ///
     /// `None` until the PTY is spawned; drop of the `Box` triggers `SIGKILL`

@@ -24,7 +24,7 @@ use lightarchitects::turnlog::promotion::{
 use tokio::sync::broadcast;
 use tracing::warn;
 
-use crate::events::types::WebEvent;
+use crate::events::{WebEventV2, types::WebEvent};
 use crate::memory::persistence::SoulPersistence;
 use crate::memory::types::{MemoryTier, PromotionEvent};
 
@@ -41,7 +41,7 @@ const LINEAGE_HOT_TTL_SECS: i64 = 24 * 60 * 60;
 /// plugin see it immediately.
 pub struct BroadcastingPromoter<P: HelixPromoter> {
     inner: P,
-    tx: broadcast::Sender<WebEvent>,
+    tx: broadcast::Sender<WebEventV2>,
     soul: Option<Arc<SoulPersistence>>,
 }
 
@@ -51,7 +51,7 @@ impl<P: HelixPromoter> BroadcastingPromoter<P> {
     /// Dual-write to `SOUL` `SQLite` is disabled; use [`with_soul`](Self::with_soul)
     /// to enable it.
     #[must_use]
-    pub fn new(inner: P, tx: broadcast::Sender<WebEvent>) -> Self {
+    pub fn new(inner: P, tx: broadcast::Sender<WebEventV2>) -> Self {
         Self {
             inner,
             tx,
@@ -167,7 +167,8 @@ impl<P: HelixPromoter> HelixPromoter for BroadcastingPromoter<P> {
                     promoted_at: Utc::now().to_rfc3339(),
                 };
                 // Failure to send means there are no live SSE subscribers — non-fatal.
-                if let Err(broadcast::error::SendError(_)) = tx.send(WebEvent::SoulPromotion(event))
+                if let Err(broadcast::error::SendError(_)) =
+                    tx.send(WebEventV2::from_event(WebEvent::SoulPromotion(event), None))
                 {
                     warn!(
                         target: "webshell",
@@ -426,7 +427,7 @@ mod tests {
 
     #[tokio::test]
     async fn promoted_emits_soul_promotion_event() {
-        let (tx, mut rx) = broadcast::channel::<WebEvent>(16);
+        let (tx, mut rx) = broadcast::channel::<WebEventV2>(16);
         let inner = FakePromoter {
             path: PathBuf::from("/tmp/helix/corso/entries/x.md"),
         };
@@ -437,7 +438,10 @@ mod tests {
 
         let event = rx.recv().await.unwrap();
         match event {
-            WebEvent::SoulPromotion(pe) => {
+            WebEventV2 {
+                inner: WebEvent::SoulPromotion(pe),
+                ..
+            } => {
                 assert_eq!(pe.memo_id, "sess-42:7");
                 assert_eq!(pe.sibling, "corso");
                 assert_eq!(pe.from, MemoryTier::Hot);
@@ -451,7 +455,7 @@ mod tests {
 
     #[tokio::test]
     async fn declined_does_not_emit_event() {
-        let (tx, mut rx) = broadcast::channel::<WebEvent>(16);
+        let (tx, mut rx) = broadcast::channel::<WebEventV2>(16);
         let promoter = BroadcastingPromoter::new(DecliningPromoter, tx);
         promoter.promote(make_candidate()).await.unwrap();
         // Channel should be empty — try_recv returns Err(Empty).

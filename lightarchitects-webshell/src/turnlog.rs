@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use tokio::sync::broadcast;
 use tracing::info;
 
-use crate::events::types::WebEvent;
+use crate::events::WebEventV2;
 use crate::memory::BroadcastingPromoter;
 use crate::memory::persistence::SoulPersistence;
 use std::sync::Arc;
@@ -38,7 +38,7 @@ pub struct WebshellTurnLog {
     /// Optional SSE broadcast channel for `soul_promotion` events.
     /// When set, post-close promotion uses a [`BroadcastingPromoter`] wrapper
     /// so successful Hot→Cold transitions surface in real time on `/api/events`.
-    event_tx: Option<broadcast::Sender<WebEvent>>,
+    event_tx: Option<broadcast::Sender<WebEventV2>>,
     /// Optional `SOUL` persistence handle for Phase 10.3 dual-write into the
     /// `helix.db` `SQLite` table. When `Some`, the promoter writes every
     /// successful helix entry into `SOUL` `SQLite` so subsequent `SOUL` `MCP`
@@ -65,7 +65,7 @@ impl WebshellTurnLog {
         project_root: PathBuf,
         host_cmd: &str,
         pepper: &SecretSlice<u8>,
-        event_tx: Option<broadcast::Sender<WebEvent>>,
+        event_tx: Option<broadcast::Sender<WebEventV2>>,
         soul: Option<Arc<SoulPersistence>>,
     ) -> anyhow::Result<Option<Self>> {
         let Some(layout) = StoreLayout::default_for_user() else {

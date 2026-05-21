@@ -1,19 +1,19 @@
 <!--
 @component
 Displays the HMAC-chained decision log for an autonomous build (L1–L4 levels).
-Supports level filtering and live escalation markers via the `la:escalation` DOM event.
+Supports level filtering and live L4 escalation entries via topic-filtered SSE.
 
 Props:
-- `buildId` — the active build's UUID; used to query decisions and filter SSE escalation events
+- `buildId` — the active build's UUID; used to query decisions and filter escalation events
 
 Level taxonomy: L1 ARCHITECTURAL · L2 IMPLEMENTATION · L3 QUALITY GATE · L4 ESCALATION.
-Listens for `la:escalation` on `window`; prepends entries when `ev.build_id` matches.
+Subscribes to `v1.supervisor.escalation` via topic SSE; prepends entries when `build_id` matches.
 -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { api } from '$lib/api';
   import type { DecisionEntry } from '$lib/types';
-  import MockBadge from '$lib/../components/MockBadge.svelte';
+  import { subscribeByTopic, type WebEventV2 } from '$lib/sse';
   import { MOCK_DECISION_ENTRIES } from '$lib/mock-surfaces';
 
   let { buildId }: { buildId: string } = $props();
@@ -25,17 +25,18 @@ Listens for `la:escalation` on `window`; prepends entries when `ev.build_id` mat
   let error   = $state<string | null>(null);
   let filter  = $state<LevelFilter>('all');
 
-  // ── Escalation DOM events from SSE ──────────────────────────────────────────
+  // ── Live escalation events via topic-filtered SSE ──────────────────────────
 
-  // Listen for la:escalation to append live escalation markers.
-  function onEscalation(e: Event) {
-    const ev = (e as CustomEvent).detail as import('$lib/types').EscalationEvent;
+  let unsubscribeEscalation: (() => void) | null = null;
+
+  function handleEscalation(event: WebEventV2): void {
+    const ev = event as WebEventV2 & { build_id?: string; reason?: string; canon_ref?: string };
     if (ev.build_id !== buildId) return;
     const entry: DecisionEntry = {
       line_n:    entries.length,
-      timestamp: new Date().toISOString(),
+      timestamp: event.timestamp,
       level:     'L4',
-      decision:  `ESCALATION: ${ev.reason}`,
+      decision:  `ESCALATION: ${ev.reason ?? ''}`,
       canon_ref: ev.canon_ref,
       hmac_ok:   undefined,
     };
@@ -43,12 +44,12 @@ Listens for `la:escalation` on `window`; prepends entries when `ev.build_id` mat
   }
 
   onMount(() => {
-    window.addEventListener('la:escalation', onEscalation);
     loadDecisions();
+    unsubscribeEscalation = subscribeByTopic('v1.conductor.escalation', handleEscalation);
   });
 
   onDestroy(() => {
-    window.removeEventListener('la:escalation', onEscalation);
+    unsubscribeEscalation?.();
   });
 
   async function loadDecisions() {
@@ -108,9 +109,8 @@ Listens for `la:escalation` on `window`; prepends entries when `ev.build_id` mat
 <div class="decision-log" data-testid="decision-log" data-build-id={buildId}>
   <!-- ── Header + filter ─────────────────────────────────────────────────────── -->
   <div class="dl-header">
-    <span class="dl-title" style="position: relative; padding-right: 80px;">
+    <span class="dl-title">
       DECISION LOG
-      <MockBadge label="STREAM" detail="live SSE pending" position="top-right" />
     </span>
     <div class="dl-filters" role="group" aria-label="Filter by decision level">
       {#each (['all', 'L1', 'L2', 'L3', 'L4'] as const) as lvl}

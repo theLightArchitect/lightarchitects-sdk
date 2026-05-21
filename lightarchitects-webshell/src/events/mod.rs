@@ -21,6 +21,7 @@ pub mod ayin_client;
 pub mod builds_handler;
 pub mod control;
 pub mod decisions;
+pub mod envelope;
 pub mod global_events;
 pub mod helix_watcher;
 pub mod lightsquad_bridge;
@@ -30,15 +31,18 @@ pub mod soul_routes; // shim during partial-split window; re-exports from soul::
 pub mod sse_handler;
 pub mod strand;
 pub mod supervisor_handler;
+pub mod topic_filter;
 pub mod types;
 
 pub use ayin_client::{AyinClient, EVENT_CHANNEL_BUF};
 pub use builds_handler::builds_handler;
 pub use control::control_handler;
+pub use envelope::{Severity, WebEventV2};
 pub use global_events::GlobalEventStore;
 pub use helix_watcher::HelixWatcher;
 pub use strand::{parse_strand_activations, window_aggregate};
 pub use supervisor_handler::SupervisorEntry;
+pub use topic_filter::TopicFilter;
 pub use types::{
     BuildEventKind, BuildUpdateEvent, ControlCommand, CopilotActivityEvent, GlobalEventEntry,
     StrandActivationEvent, WebEvent,

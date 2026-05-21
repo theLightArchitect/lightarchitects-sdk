@@ -33,6 +33,7 @@ use notify::{EventKind, RecursiveMode, Watcher};
 use tokio::sync::broadcast;
 use tracing::{info, warn};
 
+use super::envelope::WebEventV2;
 use super::types::{BuildEventKind, BuildUpdateEvent, HelixEntrySummary, HelixEventKind, WebEvent};
 
 /// Per-path debounce window in milliseconds.
@@ -50,7 +51,7 @@ impl HelixWatcher {
     /// If the helix root path is unavailable (vault not configured), logs at
     /// `WARN` and returns without spawning.  Callers do not need to handle the
     /// unavailable case — the system degrades gracefully to AYIN-only events.
-    pub fn spawn(tx: broadcast::Sender<WebEvent>) {
+    pub fn spawn(tx: broadcast::Sender<WebEventV2>) {
         let Some(root) = lightarchitects::core::paths::helix_root() else {
             warn!("helix_root unavailable — filesystem watcher not started");
             return;
@@ -60,7 +61,7 @@ impl HelixWatcher {
 }
 
 /// Blocking watcher loop.  Runs until the broadcast channel closes.
-fn run_watcher(root: PathBuf, tx: broadcast::Sender<WebEvent>) {
+fn run_watcher(root: PathBuf, tx: broadcast::Sender<WebEventV2>) {
     let (notify_tx, notify_rx) = std::sync::mpsc::channel::<notify::Result<notify::Event>>();
 
     let Ok(mut watcher) = notify::recommended_watcher(move |res| {
@@ -98,7 +99,7 @@ fn process_event(
     event: notify::Event,
     root: &Path,
     debounce: &mut HashMap<PathBuf, Instant>,
-    tx: &broadcast::Sender<WebEvent>,
+    tx: &broadcast::Sender<WebEventV2>,
 ) -> bool {
     let now = Instant::now();
 
@@ -137,7 +138,7 @@ fn process_event(
                 path: rel_path,
                 event_kind: event_kind.1,
             };
-            let _ = tx.send(WebEvent::BuildUpdate(entry));
+            let _ = tx.send(WebEventV2::from_event(WebEvent::BuildUpdate(entry), None));
         } else if is_helix_entry(&path) || is_sibling_output(&path) {
             // Parse front-matter synchronously (we're already in a spawn_blocking
             // task) to enrich the event with sibling/significance/strands/kind.
@@ -145,7 +146,7 @@ fn process_event(
             // reviews, and plans; kind is inferred from front-matter `type:`
             // or the path shape when front-matter is absent.
             let entry = build_enriched_summary(&rel_path, &path, event_kind.0);
-            let _ = tx.send(WebEvent::HelixEntry(entry));
+            let _ = tx.send(WebEventV2::from_event(WebEvent::HelixEntry(entry), None));
         }
         // Other file types are silently ignored.
     }

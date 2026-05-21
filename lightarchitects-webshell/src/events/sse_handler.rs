@@ -24,7 +24,7 @@
 use std::{convert::Infallible, sync::Arc};
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, RawQuery, State},
     http::StatusCode,
     response::{
         IntoResponse, Response,
@@ -36,7 +36,40 @@ use tokio::sync::broadcast::{self, error::RecvError};
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::{auth, events::WebEvent, server::AppState};
+use crate::{
+    auth,
+    events::{TopicFilter, WebEventV2},
+    server::AppState,
+};
+
+/// Parse `?topic=<pattern>` from a raw query string without external deps.
+///
+/// Returns `None` when the parameter is absent or the pattern is invalid.
+/// Invalid patterns are silently ignored — the connection continues unfiltered
+/// rather than returning an error, because SSE streams are long-lived and a
+/// bad pattern would silently break the connection if we returned 400.
+///
+/// Handles common percent-encoded characters in the pattern (`%2A` → `*`,
+/// `%3E` → `>`). Full percent-decoding is not required because topic pattern
+/// characters (`.`, `*`, `>`, alphanumerics) are valid query-string chars.
+fn topic_from_raw(raw: Option<&str>) -> Option<TopicFilter> {
+    raw.and_then(|q| {
+        q.split('&')
+            .find_map(|pair| {
+                let (k, v) = pair.split_once('=')?;
+                if k == "topic" { Some(v) } else { None }
+            })
+            .map(|v| {
+                // Minimal decode for the two percent-encoded chars that appear
+                // in NATS-style topic patterns when set via URLSearchParams.
+                v.replace("%2A", "*")
+                    .replace("%3E", ">")
+                    .replace("%2a", "*")
+                    .replace("%3e", ">")
+            })
+            .and_then(|v| TopicFilter::parse(&v).ok())
+    })
+}
 
 /// `GET /api/events` — authenticates and returns an SSE stream.
 ///
@@ -44,11 +77,16 @@ use crate::{auth, events::WebEvent, server::AppState};
 /// `Authorization: Bearer <token>` or a valid `la_session` cookie. The cookie
 /// path is what makes browser `EventSource` work: SSE cannot set Authorization
 /// headers, so cookies are its only durable auth channel.
-pub async fn sse_handler(_: auth::AuthGuard, State(state): State<AppState>) -> Response {
+pub async fn sse_handler(
+    _: auth::AuthGuard,
+    RawQuery(raw): RawQuery,
+    State(state): State<AppState>,
+) -> Response {
     let token: Arc<str> = Arc::from(state.config.token.as_str());
+    let filter = topic_from_raw(raw.as_deref());
     let rx = state.event_tx.subscribe();
 
-    let event_stream = stream::unfold((rx, token), drive_stream);
+    let event_stream = stream::unfold((rx, token, filter), drive_stream);
 
     Sse::new(event_stream)
         .keep_alive(KeepAlive::default())
@@ -70,6 +108,7 @@ pub async fn sse_handler(_: auth::AuthGuard, State(state): State<AppState>) -> R
 pub async fn sse_build_handler(
     _: auth::AuthGuard,
     Path(build_id): Path<Uuid>,
+    RawQuery(raw): RawQuery,
     State(state): State<AppState>,
 ) -> Response {
     let Some(session) = state.builds.get(build_id) else {
@@ -85,10 +124,14 @@ pub async fn sse_build_handler(
     // fix — the UI uses the per-build stream for all SSE, so it must see
     // both channels).
     let token: Arc<str> = Arc::from(state.config.token.as_str());
+    let filter = topic_from_raw(raw.as_deref());
     let session_rx = session.event_tx.subscribe();
     let global_rx = state.event_tx.subscribe();
 
-    let event_stream = stream::unfold((session_rx, global_rx, token), drive_multiplex_stream);
+    let event_stream = stream::unfold(
+        (session_rx, global_rx, token, filter),
+        drive_multiplex_stream,
+    );
 
     Sse::new(event_stream)
         .keep_alive(KeepAlive::default())
@@ -97,19 +140,35 @@ pub async fn sse_build_handler(
 
 /// State-machine step for the SSE stream.
 ///
-/// Returns the next serialised [`Event`] and the updated `(rx, token)` state,
-/// or `None` when the broadcast channel is closed.  On lag, emits a synthetic
+/// Returns the next serialised [`Event`] and the updated state, or `None`
+/// when the broadcast channel is closed.  On lag, emits a synthetic
 /// `{"type":"lag","skipped":N}` event and continues.
+///
+/// When `filter` is `Some`, events whose `topic` does not match are skipped
+/// silently — the loop continues without emitting anything to the client.
 async fn drive_stream(
-    state: (broadcast::Receiver<WebEvent>, Arc<str>),
+    state: (
+        broadcast::Receiver<WebEventV2>,
+        Arc<str>,
+        Option<TopicFilter>,
+    ),
 ) -> Option<(
     Result<Event, Infallible>,
-    (broadcast::Receiver<WebEvent>, Arc<str>),
+    (
+        broadcast::Receiver<WebEventV2>,
+        Arc<str>,
+        Option<TopicFilter>,
+    ),
 )> {
-    let (mut rx, token) = state;
+    let (mut rx, token, filter) = state;
     loop {
         match rx.recv().await {
             Ok(event) => {
+                if let Some(f) = &filter {
+                    if !f.matches(&event.topic) {
+                        continue;
+                    }
+                }
                 let data = match serde_json::to_string(&event) {
                     Ok(s) => redact(&s, &token),
                     Err(e) => {
@@ -117,12 +176,12 @@ async fn drive_stream(
                         continue;
                     }
                 };
-                return Some((Ok(Event::default().data(data)), (rx, token)));
+                return Some((Ok(Event::default().data(data)), (rx, token, filter)));
             }
             Err(RecvError::Lagged(n)) => {
                 warn!(skipped = n, "SSE subscriber lagged — events dropped");
                 let payload = format!(r#"{{"type":"lag","skipped":{n}}}"#);
-                return Some((Ok(Event::default().data(payload)), (rx, token)));
+                return Some((Ok(Event::default().data(payload)), (rx, token, filter)));
             }
             Err(RecvError::Closed) => return None,
         }
@@ -138,22 +197,27 @@ async fn drive_stream(
 /// `tokio::select!` races both receivers; whichever resolves first emits the
 /// next event. Closing the session channel is a hard exit; closing the global
 /// channel is not — the global channel may outlive any single build.
+///
+/// When `filter` is `Some`, events whose `topic` does not match are skipped
+/// silently.
 #[allow(clippy::future_not_send)]
 async fn drive_multiplex_stream(
     state: (
-        broadcast::Receiver<WebEvent>,
-        broadcast::Receiver<WebEvent>,
+        broadcast::Receiver<WebEventV2>,
+        broadcast::Receiver<WebEventV2>,
         Arc<str>,
+        Option<TopicFilter>,
     ),
 ) -> Option<(
     Result<Event, Infallible>,
     (
-        broadcast::Receiver<WebEvent>,
-        broadcast::Receiver<WebEvent>,
+        broadcast::Receiver<WebEventV2>,
+        broadcast::Receiver<WebEventV2>,
         Arc<str>,
+        Option<TopicFilter>,
     ),
 )> {
-    let (mut session_rx, mut global_rx, token) = state;
+    let (mut session_rx, mut global_rx, token, filter) = state;
     loop {
         let event = tokio::select! {
             r = session_rx.recv() => r,
@@ -161,6 +225,11 @@ async fn drive_multiplex_stream(
         };
         match event {
             Ok(ev) => {
+                if let Some(f) = &filter {
+                    if !f.matches(&ev.topic) {
+                        continue;
+                    }
+                }
                 let data = match serde_json::to_string(&ev) {
                     Ok(s) => redact(&s, &token),
                     Err(e) => {
@@ -170,7 +239,7 @@ async fn drive_multiplex_stream(
                 };
                 return Some((
                     Ok(Event::default().data(data)),
-                    (session_rx, global_rx, token),
+                    (session_rx, global_rx, token, filter),
                 ));
             }
             Err(RecvError::Lagged(n)) => {
@@ -178,7 +247,7 @@ async fn drive_multiplex_stream(
                 let payload = format!(r#"{{"type":"lag","skipped":{n}}}"#);
                 return Some((
                     Ok(Event::default().data(payload)),
-                    (session_rx, global_rx, token),
+                    (session_rx, global_rx, token, filter),
                 ));
             }
             Err(RecvError::Closed) => return None,

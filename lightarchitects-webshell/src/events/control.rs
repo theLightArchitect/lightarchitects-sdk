@@ -42,7 +42,7 @@ pub async fn control_handler(
     }
 
     // Broadcast the control command as a WebEvent.
-    let event = WebEvent::Control(cmd.clone());
+    let event = crate::events::WebEventV2::from_event(WebEvent::Control(cmd.clone()), None);
     let receiver_count = state
         .event_tx
         .send(event)
