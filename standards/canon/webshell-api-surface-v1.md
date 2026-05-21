@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.17"  # bumped 2026-05-20: §2.28–2.29 ADDED (webshell-hitl-inbox) — GET /api/gitforest/hitl-search + GET /api/gitforest/pr-metadata; SSRF allowlist (owner,repo) tuple pattern; AuthGuard + 60s moka cache
+version: "1.0.18"  # bumped 2026-05-20: §2.28–2.29 ADDED (webshell-hitl-inbox) + §2.30 ADDED (webshell-event-bus-redesign) — HITL search/PR-metadata + topic-filtered SSE
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
@@ -1077,6 +1077,53 @@ Per-PR metadata lookup for a specific repository + PR number. Validates against 
 **Cache:** `PrMetadataCache` — moka `Cache<String, Arc<HitlPrMetadata>>`, 60s TTL, capacity 256. Cache key: `"{owner}/{repo}/{number}"`. Shared in `AppState`.
 
 **Source:** `lightarchitects-webshell/src/github_proxy.rs` — `fetch_pr_metadata`, `HitlPrMetadata`; `lightarchitects-webshell/src/server/mod.rs` — `pr_metadata_handler`.
+
+---
+
+### §2.30 Topic-Filtered SSE (webshell-event-bus-redesign — 2026-05-20 IMPLEMENTED)
+
+**Status:** **IMPLEMENTED** 2026-05-20. Handler at `lightarchitects-webshell/src/server/sse_routes.rs::topic_filtered_sse`; route registered in `lightarchitects-webshell/src/server/mod.rs`.
+**Path:** `GET /api/events?topic=<pattern>`
+**Auth:** Bearer token (standard `check_auth` pattern).
+**Query param:** `topic` — NATS-style wildcard pattern. Syntax: `*` matches one segment, `>` matches one-or-more trailing segments (terminal only). Validated via `TopicFilter::parse` (returns `400` on malformed pattern).
+**Response:** `text/event-stream` — one JSON line per matching `WebEventV2` event emitted on the internal broadcast bus. Events are filtered server-side: only events whose `topic` field satisfies the pattern are forwarded to the client.
+**Event shape:**
+```json
+{
+  "topic": "v1.conductor.escalation",
+  "timestamp": "2026-05-20T12:00:00Z",
+  "agent_id": "claude",
+  "build_id": "550e8400-e29b-41d4-a716-446655440000",
+  "severity": "high",
+  "type": "escalation",
+  "reason": "Gate 3 blocked — complexity exceeds threshold",
+  "canon_ref": "Cookbook §14.2"
+}
+```
+**Topic taxonomy (canonical — `topic_for()` in `envelope.rs`):**
+
+| WebEvent variant | Topic |
+|---|---|
+| `Escalation` | `v1.conductor.escalation` |
+| `BuildUpdate` | `v1.build.update` |
+| `GitForestUpdate` | `v1.worktree.update` |
+| `AyinStatus(Connected)` | `v1.agent.ayin.connected` |
+| `AyinStatus(Disconnected)` | `v1.agent.ayin.disconnected` |
+| `AyinStatus(Reconnecting)` | `v1.agent.ayin.reconnecting` |
+| `CopilotActivity` | `v1.agent.claude.activity` |
+| `HelixEntry` | `v1.helix.entry.changed` |
+| `SoulPromotion` | `v1.helix.entry.promoted` |
+| `ConductorTick` | `v1.conductor.tick` |
+| `SupervisorUpdate` | `v1.build.supervisor.update` |
+
+**Errors:** `400` on invalid/missing `topic` param, `401` on missing/invalid bearer.
+**TS consumer:** `subscribeByTopic(pattern, cb)` in `lightarchitects-webshell-ui/src/lib/sse.ts` — fetch-streaming SSE loop with exponential backoff (1 s → 30 s) and `AbortController` cleanup.
+**UI subscribers:**
+- `StatusBar.svelte` → `v1.agent.ayin.*` (AYIN status live updates)
+- `WorktreePanel.svelte` → `v1.worktree.update` (triggers metadata re-fetch)
+- `ConductorPanel.svelte` → `v1.conductor.*` (conductor queue events)
+- `DecisionLog.svelte` → `v1.conductor.escalation` (L4 escalation entries)
+**Note on event-type-only events:** `conductor_task`, `arena_update`, and `finding` are legacy event types emitted only on the global SSE stream; they have no `topic` field and are not routable via this endpoint. UI components consuming them (`BuildPortfolio`, `ArenaPanel`, etc.) continue to receive them via the global `connectGlobalSSE` stream.
 
 ---
 
