@@ -1,7 +1,7 @@
 <!-- uuid: f2e8b3d7-6c41-4a9f-b825-1e3d7c9a0f42 -->
 <!--
 title: "Webshell API Surface"
-version: "1.0.11"
+version: "1.0.19"
 status: ratified
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-17"
@@ -649,6 +649,49 @@ classDiagram
     If the notify token were readable by browser JS, an XSS vulnerability could exfiltrate it and forge agent callbacks — turning a UI-layer exploit into server-side event injection. The two surfaces are separated in code, not just by convention. This is a CWE-306 prevention pattern: see <code>src/agent/bridge.rs</code> for the omission point.
   </div>
   </section>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="card-role-taxonomy">
+  <h2>§1.7 Card-Role Taxonomy <span style="font-size:0.75em;color:#6b7280">(webshell-cockpit Phase 7 — 2026-05-21)</span></h2>
+
+  <p>Every load-bearing surface on the Cockpit screen declares <code>data-card-role</code> on its root element. The registry at <code>src/lib/cockpit/cardRoles.ts</code> exports <code>CockpitCardRole</code> (union), <code>COCKPIT_CARD_ROLES</code> (record), and <code>ALL_COCKPIT_CARD_ROLES</code> (array).</p>
+
+  <p>Roles fall into four functional categories: <strong>action</strong> (operator takes immediate action), <strong>stream</strong> (live data from backend), <strong>status</strong> (current system state), <strong>navigation</strong> (changes active target or preset).</p>
+
+  <table>
+    <thead><tr><th><code>data-card-role</code></th><th>Source file</th><th>Category</th><th>Conditional</th></tr></thead>
+    <tbody>
+      <tr><td><code>preset-chips</code></td><td><code>PresetChips.svelte</code></td><td>navigation</td><td>No</td></tr>
+      <tr><td><code>target-breadcrumb</code></td><td><code>TargetBreadcrumb.svelte</code></td><td>navigation</td><td>No</td></tr>
+      <tr><td><code>quick-pick-palette</code></td><td><code>QuickPickPalette.svelte</code> (panel div)</td><td>navigation</td><td><code>{#if $quickPickOpen}</code></td></tr>
+      <tr><td><code>build-health</code></td><td><code>Cockpit.svelte</code> bento card</td><td>status+stream</td><td>No</td></tr>
+      <tr><td><code>hitl-escalations</code></td><td><code>Cockpit.svelte</code> bento card</td><td>action</td><td>No</td></tr>
+      <tr><td><code>worker-fleet</code></td><td><code>Cockpit.svelte</code> bento card</td><td>stream</td><td>No</td></tr>
+      <tr><td><code>decision-feed</code></td><td><code>Cockpit.svelte</code> bento card</td><td>stream</td><td>No</td></tr>
+      <tr><td><code>git-state</code></td><td><code>Cockpit.svelte</code> bento card</td><td>status</td><td>No</td></tr>
+      <tr><td><code>builds-rail</code></td><td><code>Cockpit.svelte</code> bento card</td><td>navigation+status</td><td>No</td></tr>
+      <tr><td><code>hitl-inbox</code></td><td><code>Cockpit.svelte</code> bento card</td><td>action</td><td>No</td></tr>
+      <tr><td><code>pr-detail-panel</code></td><td><code>Cockpit.svelte</code> PR detail panel</td><td>action</td><td><code>{#if selectedPr}</code></td></tr>
+      <tr><td><code>engineer-zones</code></td><td><code>Cockpit.svelte</code> engineer zones</td><td>action+stream</td><td><code>{#if $selectedPreset === 'engineer'}</code></td></tr>
+      <tr><td><code>copilot-drawer</code></td><td><code>CopilotDrawer.svelte</code></td><td>action+stream</td><td>No</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Exhaustiveness gate</strong>: <code>src/__tests__/cockpit-card-roles.test.ts</code> bidirectionally verifies every registry key maps to a <code>data-card-role</code> attribute in the declared source file and every attribute in source is registered. Count assertion: <strong>13 roles</strong>. Adding a new card requires updating the type union, the record, and the test.
+  </div>
+
+  <div class="callout secure">
+    <strong>P6 Northstar mechanical promises verified by this taxonomy:</strong>
+    <ul>
+      <li><code>hitl-inbox</code> in DOM within 60 s — <strong>P6-N1</strong> (verified by E2E G6: <code>toBeAttached({ timeout: 60_000 })</code>)</li>
+      <li><code>target-breadcrumb</code> always present — <strong>P6-N2</strong> (never conditionally unmounted; always-present invariant)</li>
+      <li><code>copilot-drawer</code> context chip shows preset · target — <strong>P6-N3</strong> (verified by E2E G5: drawer header chip text match)</li>
+    </ul>
+  </div>
+  </section>
+
 
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <section id="auth-exchange">
