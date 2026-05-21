@@ -210,6 +210,20 @@ Roles fall into four functional categories: **action** (operator takes immediate
 
 ---
 
+### §1.8 Verified Streaming Map (webshell-project-ingestion Phase 5 — PLACEHOLDER)
+
+> _This section will be populated at Phase 5. It codifies the per-view SSE topic subscriptions verified against `main` at ship time._
+
+Table format: View → SSE topics consumed → REST-only surfaces → active-dispatch-only surfaces.
+
+| View | SSE topics consumed | REST-only surfaces | Notes |
+|------|--------------------|--------------------|-------|
+| _Populated at Phase 5_ | — | — | — |
+
+**P1 Northstar mechanical promise**: `ProjectDetail` subscribes to `v1.project.update` (direct) and inherits `v1.build.update` via `$builds` store. Total: 0 → 2 topics consumed by ProjectDetail after this build.
+
+---
+
 ## Part II — Backend API Endpoints
 
 ### §2.1 Auth & Health
