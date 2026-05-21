@@ -1127,6 +1127,44 @@ Per-PR metadata lookup for a specific repository + PR number. Validates against 
 
 ---
 
+### §2.31 Cockpit GitHub Proxy (webshell-cockpit Phase 3 — 2026-05-21 ADDITION)
+
+**Status:** **IMPLEMENTED** 2026-05-21. Handlers at `lightarchitects-webshell/src/server/mod.rs::commit_metadata_handler` and `submit_pr_review_handler`; proxy functions at `lightarchitects-webshell/src/github_proxy.rs`.
+
+#### §2.31.1 Commit Metadata
+
+**Path:** `GET /api/github-proxy/commits/:owner/:repo/:sha`
+**Auth:** Bearer token (standard `AuthGuard` pattern).
+**SSRF guard:** `(owner, repo)` must be in `HITL_TRACKED_REPOS` (same allowlist as HITL inbox). Returns `403` before any network call for untracked repos.
+**Cache:** 60s moka TTL, max 512 entries, keyed `"{owner}/{repo}/{sha}"`.
+**Response (200):**
+```json
+{ "sha": "abc123…", "message": "feat(cockpit): Phase 3 …", "author_login": "kft", "committed_at": "2026-05-21T12:00:00Z" }
+```
+`message` = first line of commit message only.
+**Errors:** `403` — SSRF guard / PAT not configured, `503` — GitHub PAT not loaded, `502` — GitHub API error.
+
+#### §2.31.2 PR Review Submission
+
+**Path:** `POST /api/github-proxy/pr/:owner/:repo/:num/review`
+**Auth:** Bearer token (standard `AuthGuard` pattern).
+**SSRF guard:** same `HITL_TRACKED_REPOS` allowlist. Returns `403` for non-allowlisted repos.
+**Request body:**
+```json
+{ "event": "APPROVE" | "REQUEST_CHANGES" | "COMMENT", "body": "LGTM" }
+```
+**Security headers:**
+
+| Header | Requirement | Failure |
+|---|---|---|
+| `If-Match: "<head_sha>"` | Optional. When present, server fetches current PR HEAD SHA and compares. | `412 Precondition Failed` on mismatch — prevents approving force-pushed code |
+| `Origin` | Required. Must be one of `http://localhost:8733`, `http://127.0.0.1:8733`, `http://localhost:5173`, `http://127.0.0.1:5173` | `403 Forbidden` |
+
+**Errors:** `412` — SHA mismatch (replay defense), `403` — CSRF / SSRF, `503` — PAT not loaded, `502` — GitHub API error.
+**Security rationale:** Origin check mitigates CSRF from other browser tabs. `If-Match` replay defense prevents approving code that changed between diff-view and approval click.
+
+---
+
 ## Part III — Frontend Route Catalogue
 
 ### §3.1 Router Implementation

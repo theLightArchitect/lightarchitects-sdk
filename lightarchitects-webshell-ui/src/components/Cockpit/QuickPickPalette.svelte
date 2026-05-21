@@ -3,7 +3,7 @@
   import { quickPickOpen, selectedTarget, selectedPreset, type CockpitTarget } from '$lib/cockpit/stores';
   import { registerHotkey } from '$lib/hotkeyRegistry';
   import { rank } from '$lib/cockpit/fuzzyMatch';
-  import { getBuildList, getFileList, getBranchList } from '$lib/cockpit/localTargets';
+  import { getBuildList, getFileList, getBranchList, getPRTargets } from '$lib/cockpit/localTargets';
   import { onMount } from 'svelte';
 
   type SourceMode = 'local' | 'github';
@@ -17,7 +17,7 @@
 
   const TYPE_ICON: Record<string, string> = {
     project: '⬡', build: '◈', phase: '◇', wave: '∿',
-    file: '▣', commit: '◉', branch: '⎇', pr: '⌥',
+    file: '▣', commit: '◉', branch: '⎇', pr: '⎌',
   };
 
   function close() {
@@ -52,12 +52,17 @@
     loading = true;
     activeIdx = -1;
     try {
-      const [builds, files, branches] = await Promise.all([
-        Promise.resolve(getBuildList()),
-        getFileList(q),
-        getBranchList(),
-      ]);
-      const all: CockpitTarget[] = [...builds, ...files, ...branches];
+      let all: CockpitTarget[];
+      if (sourceMode === 'github') {
+        all = await getPRTargets();
+      } else {
+        const [builds, files, branches] = await Promise.all([
+          Promise.resolve(getBuildList()),
+          getFileList(q),
+          getBranchList(),
+        ]);
+        all = [...builds, ...files, ...branches];
+      }
       results = q ? rank(q, all, t => t.label) : all.slice(0, 50);
     } catch {
       results = [];
@@ -155,10 +160,14 @@
 
     <!-- Results -->
     <div class="qp-body" role="listbox" aria-label="Target results">
-      {#if sourceMode === 'github'}
-        <p class="qp-empty">GitHub sources connect in Phase 3.</p>
-      {:else if results.length === 0 && !loading}
-        <p class="qp-empty">{query ? 'No matches.' : 'Start typing to search.'}</p>
+      {#if results.length === 0 && !loading}
+        <p class="qp-empty">
+          {#if sourceMode === 'github'}
+            {query ? 'No matching PRs.' : 'No PRs awaiting review — or configure GitHub token in Dashboard.'}
+          {:else}
+            {query ? 'No matches.' : 'Start typing to search.'}
+          {/if}
+        </p>
       {:else}
         {#each results.slice(0, 50) as target, i (target.id)}
           <!-- svelte-ignore a11y_interactive_supports_focus -->

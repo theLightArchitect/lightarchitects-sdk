@@ -23,6 +23,12 @@ impl GitHubToken {
     pub fn as_str(&self) -> &str {
         self.0.expose_secret()
     }
+
+    /// Construct a token from a raw string — test use only.
+    #[cfg(test)]
+    pub fn new(raw: String) -> Self {
+        Self(SecretString::new(raw.into()))
+    }
 }
 
 impl std::fmt::Debug for GitHubToken {

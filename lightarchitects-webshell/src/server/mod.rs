@@ -240,6 +240,8 @@ pub struct AppState {
     pub hitl_search_cache: crate::github_proxy::HitlSearchCache,
     /// PR metadata cache — 60s TTL, max 256 entries keyed by `"{owner}/{repo}/{number}"`.
     pub pr_metadata_cache: crate::github_proxy::PrMetadataCache,
+    /// Commit metadata cache — 60s TTL, max 512 entries keyed by `"{owner}/{repo}/{sha}"`.
+    pub commit_metadata_cache: crate::github_proxy::CommitMetadataCache,
     /// Path to the pre-generated roadmap HTML artifact served by `GET /api/roadmap`.
     ///
     /// Written by `/SYNC --roadmap`; defaults to
@@ -404,6 +406,7 @@ impl AppState {
             check_run_cache: crate::github_proxy::check_run_cache(),
             hitl_search_cache: crate::github_proxy::hitl_search_cache(),
             pr_metadata_cache: crate::github_proxy::pr_metadata_cache(),
+            commit_metadata_cache: crate::github_proxy::commit_metadata_cache(),
             eva_identity,
         }
     }
@@ -511,6 +514,7 @@ impl AppState {
             check_run_cache: crate::github_proxy::check_run_cache(),
             hitl_search_cache: crate::github_proxy::hitl_search_cache(),
             pr_metadata_cache: crate::github_proxy::pr_metadata_cache(),
+            commit_metadata_cache: crate::github_proxy::commit_metadata_cache(),
             eva_identity: Arc::new(tokio::sync::RwLock::new(
                 crate::copilot::eva_identity::EvaIdentityCache::default(),
             )),
@@ -835,6 +839,15 @@ pub fn build_app(state: AppState) -> Router {
         // ── HITL inbox — GitHub PR review queue (webshell-hitl-inbox Phase 1) ─
         .route("/api/gitforest/hitl-search", get(hitl_search_handler))
         .route("/api/gitforest/pr-metadata", get(pr_metadata_handler))
+        // ── Cockpit GitHub proxy (webshell-cockpit Phase 3) ──────────────────
+        .route(
+            "/api/github-proxy/commits/:owner/:repo/:sha",
+            get(commit_metadata_handler),
+        )
+        .route(
+            "/api/github-proxy/pr/:owner/:repo/:num/review",
+            post(submit_pr_review_handler),
+        )
         // ── CSP violation reports (SEC-3b, Enforce phase) ────────────────────
         .route("/api/csp-report", post(csp::csp_report_handler))
         .fallback(static_assets::serve)
@@ -1109,6 +1122,93 @@ async fn pr_metadata_handler(
         Ok(meta) => (StatusCode::OK, Json((*meta).clone())).into_response(),
         Err(e) => {
             tracing::warn!(error = %e, "pr-metadata fetch failed");
+            StatusCode::BAD_GATEWAY.into_response()
+        }
+    }
+}
+
+// ── Cockpit GitHub proxy (webshell-cockpit Phase 3) ──────────────────────────
+
+use axum::extract::Path as AxumPath;
+
+/// `GET /api/github-proxy/commits/:owner/:repo/:sha`
+///
+/// Returns commit metadata (`sha`, first-line message, author login, `committed_at`).
+/// SSRF guard: `(owner, repo)` must be in `HITL_TRACKED_REPOS`.
+async fn commit_metadata_handler(
+    _: auth::AuthGuard,
+    State(state): State<AppState>,
+    AxumPath((owner, repo, sha)): AxumPath<(String, String, String)>,
+) -> impl axum::response::IntoResponse {
+    if !crate::github_proxy::is_hitl_tracked(&owner, &repo) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let Some(token) = crate::github_token_store::load_github_pat() else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let client = reqwest::Client::new();
+    match crate::github_proxy::fetch_commit_metadata(
+        &client,
+        &token,
+        &state.commit_metadata_cache,
+        &owner,
+        &repo,
+        &sha,
+    )
+    .await
+    {
+        Ok(meta) => (StatusCode::OK, Json((*meta).clone())).into_response(),
+        Err(e) if e.starts_with("403") => StatusCode::FORBIDDEN.into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "commit-metadata fetch failed");
+            StatusCode::BAD_GATEWAY.into_response()
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct PrReviewBody {
+    event: crate::github_proxy::PrReviewEvent,
+    body: String,
+}
+
+/// `POST /api/github-proxy/pr/:owner/:repo/:num/review`
+///
+/// Submits a GitHub PR review. Security controls:
+/// - `If-Match: "<head_sha>"` header → 412 on SHA mismatch (replay defense).
+/// - `Origin` header → 403 for non-allowlisted origins (CSRF).
+/// - SSRF allowlist via `is_hitl_tracked`.
+async fn submit_pr_review_handler(
+    _: auth::AuthGuard,
+    headers: axum::http::HeaderMap,
+    AxumPath((owner, repo, pr_num)): AxumPath<(String, String, u64)>,
+    Json(payload): Json<PrReviewBody>,
+) -> impl axum::response::IntoResponse {
+    let if_match = headers
+        .get("if-match")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim_matches('"').to_string());
+    let origin = headers
+        .get("origin")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from);
+    let Some(token) = crate::github_token_store::load_github_pat() else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let client = reqwest::Client::new();
+    let params = crate::github_proxy::PrReviewParams {
+        pr_number: pr_num,
+        event: payload.event,
+        body: payload.body,
+        if_match_sha: if_match.as_deref(),
+        request_origin: origin.as_deref(),
+    };
+    match crate::github_proxy::submit_pr_review(&client, &token, &owner, &repo, params).await {
+        Ok(()) => StatusCode::OK.into_response(),
+        Err(e) if e.starts_with("412") => StatusCode::PRECONDITION_FAILED.into_response(),
+        Err(e) if e.starts_with("403") => StatusCode::FORBIDDEN.into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "pr-review submit failed");
             StatusCode::BAD_GATEWAY.into_response()
         }
     }

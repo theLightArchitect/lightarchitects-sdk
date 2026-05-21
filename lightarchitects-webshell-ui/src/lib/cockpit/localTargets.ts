@@ -138,10 +138,42 @@ export async function getCommitList(): Promise<CockpitTarget[]> {
   }
 }
 
+// ── GitHub PRs (HITL inbox) ───────────────────────────────────────────────────
+
+interface HitlSearchItem {
+  number: number;
+  title: string;
+  html_url: string;
+  owner: string;
+  repo: string;
+  author: string;
+  updated_at: string;
+  draft: boolean;
+}
+
+/**
+ * Returns open PRs awaiting review from the HITL inbox (`GET /api/gitforest/hitl-search`).
+ * Falls back gracefully to an empty list when the GitHub PAT is not configured.
+ */
+export async function getPRTargets(): Promise<CockpitTarget[]> {
+  try {
+    const res = await fetch('/api/gitforest/hitl-search', { headers: authHeaders() });
+    if (!res.ok) return [];
+    const items: HitlSearchItem[] = await res.json();
+    return items.map(pr => ({
+      type: 'pr' as const,
+      id: pr.html_url,
+      label: `#${pr.number} ${pr.title} (${pr.repo})`,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 // ── Composite query ───────────────────────────────────────────────────────────
 
 /** All local target types, ordered by relevance for general search. */
-export type LocalSourceKey = 'build' | 'phase' | 'file' | 'branch' | 'commit';
+export type LocalSourceKey = 'build' | 'phase' | 'file' | 'branch' | 'commit' | 'pr';
 
 /**
  * Fetch all local sources in parallel and merge into a single list.
