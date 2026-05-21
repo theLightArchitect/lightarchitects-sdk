@@ -2,25 +2,65 @@
   import { builds } from '$lib/stores';
   import { navigate } from '$lib/routes';
 
+  interface HitlSearchItem {
+    number: number;
+    title: string;
+    html_url: string;
+    owner: string;
+    repo: string;
+    author: string;
+    updated_at: string;
+    draft: boolean;
+  }
+
   const paused = $derived($builds.filter(b => b.status === 'paused'));
 
-  function elapsed(updatedAt: string): string {
-    const ms = Date.now() - new Date(updatedAt).getTime();
+  let prItems = $state<HitlSearchItem[]>([]);
+  let prError = $state<string | null>(null);
+
+  async function fetchPrItems(): Promise<void> {
+    try {
+      const res = await fetch('/api/gitforest/hitl-search');
+      if (!res.ok) {
+        prError = `GitHub search error: ${res.status}`;
+        return;
+      }
+      prItems = await res.json();
+      prError = null;
+    } catch (e) {
+      prError = String(e);
+    }
+  }
+
+  $effect(() => {
+    fetchPrItems();
+    const id = setInterval(fetchPrItems, 60_000);
+    return () => clearInterval(id);
+  });
+
+  const totalCount = $derived(paused.length + prItems.length);
+
+  function elapsed(ts: string): string {
+    const ms = Date.now() - new Date(ts).getTime();
     const mins = Math.floor(ms / 60_000);
     if (mins < 60) return `${mins}m`;
     const hrs = Math.floor(mins / 60);
     if (hrs < 24) return `${hrs}h`;
     return `${Math.floor(hrs / 24)}d`;
   }
+
+  function openPr(url: string): void {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
 </script>
 
 <div class="hitl-queue">
   <header class="hq-header">
     <span class="hq-title">APPROVAL QUEUE</span>
-    <span class="hq-count">{paused.length} pending</span>
+    <span class="hq-count">{totalCount} pending</span>
   </header>
 
-  {#if paused.length === 0}
+  {#if totalCount === 0}
     <div class="hq-empty">
       <span class="hq-empty-icon">✓</span>
       <p class="hq-empty-msg">No builds awaiting approval — squad is unblocked.</p>
@@ -30,7 +70,10 @@
       {#each paused as build (build.id)}
         <li class="hq-row">
           <div class="hq-row-meta">
-            <span class="hq-build-name">{build.name ?? build.id}</span>
+            <div class="hq-row-top">
+              <span class="hq-source hq-source--build">PAUSED BUILD</span>
+              <span class="hq-build-name">{build.name ?? build.id}</span>
+            </div>
             {#if build.currentPillar}
               <span class="hq-phase">{build.currentPillar}</span>
             {/if}
@@ -46,7 +89,32 @@
           </div>
         </li>
       {/each}
+
+      {#each prItems as pr (`${pr.owner}/${pr.repo}/${pr.number}`)}
+        <li class="hq-row">
+          <div class="hq-row-meta">
+            <div class="hq-row-top">
+              <span class="hq-source hq-source--pr">{pr.draft ? 'DRAFT PR' : 'PR REVIEW'}</span>
+              <span class="hq-build-name" title={pr.title}>{pr.title}</span>
+            </div>
+            <span class="hq-phase">{pr.owner}/{pr.repo} #{pr.number} · {pr.author}</span>
+          </div>
+          <div class="hq-row-actions">
+            <span class="hq-elapsed" title="Updated {elapsed(pr.updated_at)} ago">{elapsed(pr.updated_at)}</span>
+            <button
+              class="hq-review-btn hq-review-btn--pr"
+              onclick={() => openPr(pr.html_url)}
+            >
+              Review PR →
+            </button>
+          </div>
+        </li>
+      {/each}
     </ul>
+  {/if}
+
+  {#if prError}
+    <p class="hq-pr-error" title={prError}>GitHub: unavailable</p>
   {/if}
 </div>
 
@@ -104,6 +172,7 @@
     margin: 0;
     padding: 0;
     overflow-y: auto;
+    flex: 1;
   }
 
   .hq-row {
@@ -122,6 +191,31 @@
     flex-direction: column;
     gap: 3px;
     min-width: 0;
+  }
+
+  .hq-row-top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .hq-source {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    padding: 1px 5px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    text-transform: uppercase;
+  }
+
+  .hq-source--build {
+    color: var(--la-agent-ops, #FF6B2B);
+    border: 1px solid color-mix(in srgb, var(--la-agent-ops, #FF6B2B) 40%, transparent);
+  }
+
+  .hq-source--pr {
+    color: var(--la-focus-ring, #60a5fa);
+    border: 1px solid color-mix(in srgb, var(--la-focus-ring, #60a5fa) 40%, transparent);
   }
 
   .hq-build-name {
@@ -167,5 +261,23 @@
   .hq-review-btn:hover {
     border-color: var(--la-focus-ring, #60a5fa);
     color: var(--la-text-bright);
+  }
+
+  .hq-review-btn--pr {
+    color: var(--la-agent-security, #22c55e);
+    border-color: color-mix(in srgb, var(--la-agent-security, #22c55e) 40%, transparent);
+  }
+
+  .hq-review-btn--pr:hover {
+    border-color: var(--la-agent-security, #22c55e);
+    color: var(--la-text-bright);
+  }
+
+  .hq-pr-error {
+    font-size: 10px;
+    color: var(--la-text-mute);
+    padding: 6px 20px;
+    margin: 0;
+    opacity: 0.6;
   }
 </style>

@@ -236,6 +236,10 @@ pub struct AppState {
     pub gitforest_cache: crate::gitforest::routes::TopologyMokaCache,
     /// GitHub CI check-run cache — 60s TTL, max 512 SHAs (Phase 4 Agent B).
     pub check_run_cache: crate::github_proxy::CheckRunCache,
+    /// HITL PR search cache — 60s TTL, keyed by `"me"` (webshell-hitl-inbox Phase 1).
+    pub hitl_search_cache: crate::github_proxy::HitlSearchCache,
+    /// PR metadata cache — 60s TTL, max 256 entries keyed by `"{owner}/{repo}/{number}"`.
+    pub pr_metadata_cache: crate::github_proxy::PrMetadataCache,
     /// Path to the pre-generated roadmap HTML artifact served by `GET /api/roadmap`.
     ///
     /// Written by `/SYNC --roadmap`; defaults to
@@ -398,6 +402,8 @@ impl AppState {
             preflight_last_refresh: Arc::new(AtomicU64::new(0)),
             gitforest_cache: crate::gitforest::routes::topology_cache(),
             check_run_cache: crate::github_proxy::check_run_cache(),
+            hitl_search_cache: crate::github_proxy::hitl_search_cache(),
+            pr_metadata_cache: crate::github_proxy::pr_metadata_cache(),
             eva_identity,
         }
     }
@@ -503,6 +509,8 @@ impl AppState {
             preflight_last_refresh: Arc::new(AtomicU64::new(0)),
             gitforest_cache: crate::gitforest::routes::topology_cache(),
             check_run_cache: crate::github_proxy::check_run_cache(),
+            hitl_search_cache: crate::github_proxy::hitl_search_cache(),
+            pr_metadata_cache: crate::github_proxy::pr_metadata_cache(),
             eva_identity: Arc::new(tokio::sync::RwLock::new(
                 crate::copilot::eva_identity::EvaIdentityCache::default(),
             )),
@@ -823,6 +831,9 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/git/worktrees", post(git_routes::worktrees_handler))
         // ── Roadmap artifact (webshell-roadmap-rendering) ────────────────────
         .route("/api/roadmap", get(roadmap::roadmap_handler))
+        // ── HITL inbox — GitHub PR review queue (webshell-hitl-inbox Phase 1) ─
+        .route("/api/gitforest/hitl-search", get(hitl_search_handler))
+        .route("/api/gitforest/pr-metadata", get(pr_metadata_handler))
         // ── CSP violation reports (SEC-3b, Enforce phase) ────────────────────
         .route("/api/csp-report", post(csp::csp_report_handler))
         .fallback(static_assets::serve)
@@ -1023,6 +1034,83 @@ pub async fn run_with_port_retry(
 
     // Unreachable: the loop above always returns in the final iteration.
     unreachable!("port retry loop exhausted without returning")
+}
+
+// ── HITL inbox handlers ───────────────────────────────────────────────────────
+
+/// `GET /api/gitforest/hitl-search` — open PRs review-requested from the
+/// authenticated GitHub user across all HITL-tracked repos.
+///
+/// Requires `Authorization: Bearer <token>` or `la_session` cookie.
+/// Returns an empty array when no GitHub PAT is configured — degrades gracefully.
+/// Results are cached 60s server-side via [`AppState::hitl_search_cache`].
+async fn hitl_search_handler(
+    _: auth::AuthGuard,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let Some(token) = crate::github_token_store::load_github_pat() else {
+        return (
+            StatusCode::OK,
+            Json(Vec::<crate::github_proxy::HitlSearchItem>::new()),
+        )
+            .into_response();
+    };
+    let client = reqwest::Client::new();
+    match crate::github_proxy::fetch_hitl_search(&client, &token, &state.hitl_search_cache).await {
+        Ok(items) => (StatusCode::OK, Json((*items).clone())).into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "hitl-search fetch failed");
+            StatusCode::BAD_GATEWAY.into_response()
+        }
+    }
+}
+
+/// `GET /api/gitforest/pr-metadata?owner=<owner>&repo=<repo>&number=<n>` —
+/// detailed metadata for a single PR.
+///
+/// Validates `(owner, repo)` against the SSRF allowlist before any outbound call.
+/// Requires `Authorization: Bearer <token>` or `la_session` cookie.
+/// Returns 403 when the repo is not allowlisted, 502 on upstream API failure.
+async fn pr_metadata_handler(
+    _: auth::AuthGuard,
+    State(state): State<AppState>,
+    AxumQuery(params): AxumQuery<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let Some(owner) = params.get("owner").cloned() else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let Some(repo) = params.get("repo").cloned() else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let Some(number_str) = params.get("number") else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let Ok(pr_number) = number_str.parse::<u64>() else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    if !crate::github_proxy::is_hitl_tracked(&owner, &repo) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let Some(token) = crate::github_token_store::load_github_pat() else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let client = reqwest::Client::new();
+    match crate::github_proxy::fetch_pr_metadata(
+        &client,
+        &token,
+        &state.pr_metadata_cache,
+        &owner,
+        &repo,
+        pr_number,
+    )
+    .await
+    {
+        Ok(meta) => (StatusCode::OK, Json((*meta).clone())).into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "pr-metadata fetch failed");
+            StatusCode::BAD_GATEWAY.into_response()
+        }
+    }
 }
 
 // ── File listing — @-file autocomplete support ───────────────────────────────
