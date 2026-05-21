@@ -8,13 +8,17 @@
   import HITLInbox from '$lib/../components/Cockpit/HITLInbox.svelte';
   import PRMetadataBlock from '$lib/../components/Cockpit/PRMetadataBlock.svelte';
   import PRVerbSurface from '$lib/../components/Cockpit/PRVerbSurface.svelte';
+  import NeedsActionZone from '$lib/../components/Cockpit/zones/NeedsActionZone.svelte';
+  import InFlightZone from '$lib/../components/Cockpit/zones/InFlightZone.svelte';
+  import QuickActionsZone from '$lib/../components/Cockpit/zones/QuickActionsZone.svelte';
+  import InsightsZone from '$lib/../components/Cockpit/zones/InsightsZone.svelte';
   import { navigate } from '$lib/routes';
   import type { WorktreeAssignment } from '$lib/gitforest';
   import {
     activeBuild, builds, isNativeAgent, buildStats, sparklineBuilds,
     workerSlots, conductorState, conductorTasks, gitStore, gitApi, gitforestTree,
   } from '$lib/stores';
-  import { selectedTarget } from '$lib/cockpit/stores';
+  import { selectedTarget, selectedPreset } from '$lib/cockpit/stores';
 
   // ── PR target parsing ─────────────────────────────────────────────────────
 
@@ -663,6 +667,17 @@
       </div>
     </div>
   {/if}
+
+  <!-- ── ENGINEER ZONES — shown when Engineer preset is active ─────────────── -->
+  {#if $selectedPreset === 'engineer'}
+    <div class="engineer-zones">
+      <div class="ez-zone"><NeedsActionZone /></div>
+      <div class="ez-zone"><InFlightZone /></div>
+      <div class="ez-zone"><QuickActionsZone /></div>
+      <div class="ez-zone"><InsightsZone /></div>
+    </div>
+  {/if}
+
 </div><!-- /cockpit -->
 
 <style>
@@ -1293,6 +1308,28 @@
   }
   .dim-note  { font-size: 8px; color: var(--la-text-mute); font-weight: 400; letter-spacing: 0; }
   .err-note  { font-size: 9px; color: var(--la-semantic-error); }
+
+  /* ── Engineer Zones ─────────────────────────────────────────────────────── */
+  .engineer-zones {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    flex-shrink: 0;
+  }
+
+  .ez-zone {
+    background: var(--la-bg-panel);
+    border: 1px solid var(--la-hair-base);
+    padding: 10px 12px;
+  }
+
+  @media (max-width: 960px) {
+    .engineer-zones { grid-template-columns: 1fr 1fr; }
+  }
+
+  @media (max-width: 600px) {
+    .engineer-zones { grid-template-columns: 1fr; }
+  }
 
   /* ── PR Detail Panel ────────────────────────────────────────────────────── */
   .pr-detail-panel {
