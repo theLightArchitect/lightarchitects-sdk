@@ -55,6 +55,9 @@ template_version: "2.6.0"
 # markers throughout this file identify when each field was introduced.
 #
 # Current minor at-a-glance (one-line summaries; full detail in CHANGELOG):
+# - v2.6.1 (2026-05-21): architecture_artifacts.schema extended — diagram_library (enum + required),
+#   diagrams_authored_phase (value: "1", required), a_gate_predicate (three conjuncts with
+#   initial/verified states). Aligns template schema with Canon XLI predicate and PLAN skill v2.4.0 T6.
 # - v2.6.0 (2026-05-20): stack_classification field (full-stack/frontend-only/backend-only/cli-tooling)
 #   + gate_checklist_variant per class + architecture_artifacts generator extension (arch-generate
 #   as default, extensible tool registry). Blueprint Parts XXVI + XXVII. Industry baselines:
@@ -81,6 +84,28 @@ architecture_artifacts:
       tier_LARGE: ["C1_context", "C2_container", "C3_component", "C4_code", "ERD_if_persisted_data", "sequence_for_async_flows"]
       tier_PROGRAM: ["all_LARGE_aggregated_at_program_level", "per_build_subset_at_build_level"]
       tier_XL: ["C1_context", "C2_container", "C3_component", "C4_code", "ERD_if_persisted_data", "sequence_for_async_flows", "deployment_topology_if_multi_binary"]
+    diagram_library:
+      description: "Architect-selected tool from industry-baseline. Choose from industry-baselines/architecture/diagrams/diagram-library.html (tool selection) and verify against DIAGRAMS.md (standards compliance)."
+      enum: ["mermaid", "d2", "plantuml", "likec4", "c4-native"]
+      required: true
+    diagrams_authored_phase:
+      description: "Phase in which architect draws diagrams as design input. Must be '1' per Canon XLI — drawn before any implementation begins."
+      value: "1"
+      required: true
+    a_gate_predicate:
+      description: "Canon XLI mechanical [A] gate predicate. All three conjuncts must be verified at every [A] gate."
+      diagram_present:
+        description: "Tier-appropriate architect-drawn diagrams exist (SMALL=C3; MEDIUM=C2+C3; LARGE=C1+C2+C3+C4+ERD+sequence)"
+        initial_value: "pending"
+        verified_value: "verified"
+      drift_clean:
+        description: "arch verify (or manual inspection until tooling ships) returns zero BLOCKING findings"
+        initial_value: "pending"
+        verified_value: "verified"
+      checklist_current:
+        description: "Compliance checklist xea_verified within TTL (Blueprint §24.4)"
+        initial_value: "pending"
+        verified_value: "verified"
     artifact_format: "Mermaid embedded in plan body OR Likec4 DSL referenced by path"
     source_anchor_discipline: "Each non-trivial relation carries source_anchor: {file, lines} OR source_anchor: architect_assertion. Architect-assertion <=20% per diagram per Canon XLI."
     compliance_checklist: "Per Blueprint Part XXIV - choose variant V1/V2/V3/V4 matching artifact type; verify commands restricted to cmd_exec allowlist per Cookbook §63.P2."
