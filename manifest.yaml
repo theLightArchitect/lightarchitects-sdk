@@ -23,8 +23,35 @@ phases:
     completed_at: "2026-05-21"
   phase_2:
     name: research-architecture
-    status: in_progress
+    status: complete
     started_at: "2026-05-21"
+    completed_at: "2026-05-21"
+    commit: "6c7f88a"
+    deliverables:
+      - sibling-lifecycle-audit.py (empirical: all 6 siblings PERSISTENT)
+      - docs/sibling-lifecycle.md
+      - docs/trust-model.md (5-layer model, ScopeGovernor API, CWE coverage)
+      - docs/schema-coverage.md (JSON Schema common-subset, ajv fallback)
+      - assets/sandbox-exec-default.sb (H1-a validated: EPERM on /etc/passwd read)
+      - research/r4-schema-survey/ (soul/seraph/ayin tools/list captures)
+      - research/sonatype-audit-2026-05-21.md (CVE-2026-42559 CVSS 8.8 in rmcp 0.7.0 → 1.7.0)
+    rmcp_upgrade: "0.7.0 → 1.7.0 (CVE-2026-42559 fixed; Apache-2.0)"
+  gate_2:
+    name: research-security
+    status: complete
+    started_at: "2026-05-21"
+    completed_at: "2026-05-21"
+    verdict: CONTINUE
+    lenses: [R, S, A, C]
+    blocking_gaps: 0
+    tracked_medium:
+      - "GATE2-M1: sandbox HOME subpath allow is broad — tighten to ~/.npm and ~/.node_modules only (Phase 4 task)"
+      - "GATE2-M2: @drawio/mcp schema not yet live-captured — live capture in Phase 3 server wiring"
+    tracked_low:
+      - "GATE2-L1: single ALLOWED_HOST_0 param per profile; multi-host needs N params (Phase 4 follow-on)"
+      - "GATE2-L2: Linux seccomp-bpf profile deferred (tech debt §7)"
+    test_count_worktree: 2  # worktree baseline; primary repo baseline=1288 applies post-merge
+    phase_3_unblocked: true
   phase_3:
     name: host-core
     status: pending
@@ -63,8 +90,9 @@ xea_gate_preflight:
     - "HIGH-1: Part XIV Phase 7 kroki reference stale (corrected 2026-05-21 per R-7)"
 
 test_counts:
-  phase_1_baseline: 1288  # full workspace on main before feat branch
-  current: 1288
+  phase_1_baseline: 1288  # full workspace on main before feat branch (primary repo)
+  worktree_baseline: 2    # worktree: 3 existing members; new crate added in Phase 3
+  current: 2
 
 canon_amendments_applied:
   - id: "GATE1-HIGH1"

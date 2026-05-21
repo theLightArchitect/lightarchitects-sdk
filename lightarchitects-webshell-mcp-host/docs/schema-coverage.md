@@ -45,9 +45,11 @@ Surveyed MCP server `tools/list` responses captured at `research/r4-schema-surve
 | SERAPH (`seraphTools`) | 1 aggregate dispatcher | `string` action enum, `object` params — common subset only |
 | AYIN (`ayinTools`) | 1 aggregate dispatcher | `string` action enum, `object` params — common subset only |
 | Reference server (`@modelcontextprotocol/server-everything`) | 13 | All primitive types, `enum`, `required`, `description`, `object`. No `$ref`/`oneOf`. |
-| @drawio/mcp (assumed v1.2.7) | TBD Phase 3 | Expected: `string` diagram content, `string` format enum — common subset |
+| @drawio/mcp v1.2.7 | 3 (`open_drawio_xml`, `open_drawio_csv`, `open_drawio_mermaid`) | `string content` (required), `boolean lightbox`, `string dark` enum `["auto","true","false"]` — common subset only. Captured 2026-05-21 Gate-2-M2. |
 
-**Survey conclusion**: 100% of observed real-world schemas in the survey use only the common subset. Unsupported constructs (`$ref`, `oneOf`, conditional) appear in JSON Schema 2020-12 spec examples but not in observed MCP server schemas. The raw-JSON fallback is a correctness guarantee for future servers, not a day-1 requirement.
+**Notable observation**: `dark` uses `type: "string"` + `enum: ["auto","true","false"]` (three-state: system/light/dark) rather than `type: "boolean"`. Form generator renders this as `<select>` via the `enum: [...]` rule — no special handling needed.
+
+**Survey conclusion**: 100% of observed real-world schemas in the survey use only the common subset (4 servers, 7 tools total). Unsupported constructs (`$ref`, `oneOf`, conditional) appear in JSON Schema 2020-12 spec examples but not in observed MCP server schemas. The raw-JSON fallback is a correctness guarantee for future servers, not a day-1 requirement.
 
 ## ajv Configuration (client-side fallback)
 
