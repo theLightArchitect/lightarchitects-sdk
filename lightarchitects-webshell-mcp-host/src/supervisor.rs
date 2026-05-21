@@ -90,6 +90,11 @@ impl Supervisor {
         self.state == SupervisorState::Ready
     }
 
+    /// Scope configuration for this server (used by ScopeGovernor).
+    pub fn scope(&self) -> &crate::config::ScopeConfig {
+        &self.entry.scope
+    }
+
     /// Spawn the process, perform the MCP handshake, and populate the catalog.
     ///
     /// On success the supervisor transitions to `Ready`.

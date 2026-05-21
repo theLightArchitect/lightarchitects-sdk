@@ -68,10 +68,17 @@ phases:
       - lightarchitects-webshell-mcp-host/src/supervisor.rs
     rmcp_version: "=1.7.0"
     unit_tests: 13
-    commit: pending
+    commit: "2266c8d"
   phase_4:
     name: trust-boundary
-    status: pending
+    status: complete
+    started_at: "2026-05-21"
+    completed_at: "2026-05-21"
+    files_created:
+      - lightarchitects-webshell-mcp-host/src/scope_governor.rs
+      - lightarchitects-webshell-mcp-host/src/schema_validator.rs
+    unit_tests: 28
+    hostile_fixtures: [H1-b, H1-c, H1-d]
   phase_5:
     name: http-surface
     status: pending
@@ -106,7 +113,7 @@ xea_gate_preflight:
 test_counts:
   phase_1_baseline: 1288  # full workspace on main before feat branch (primary repo)
   worktree_baseline: 2    # worktree: 3 existing members; new crate added in Phase 3
-  current: 13
+  current: 28
 
 canon_amendments_applied:
   - id: "GATE1-HIGH1"

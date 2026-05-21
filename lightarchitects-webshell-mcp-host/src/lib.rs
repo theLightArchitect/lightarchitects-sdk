@@ -9,6 +9,8 @@
 pub mod catalog;
 pub mod config;
 pub mod error;
+pub mod schema_validator;
+pub mod scope_governor;
 pub mod spawner;
 pub mod supervisor;
 pub mod transport;
@@ -96,6 +98,40 @@ impl HostManager {
             .get(server)?
             .into_iter()
             .find(|t| t.name == tool)
+    }
+
+    /// Layer 4 pre-call gate: scope + schema checks without invoking the tool.
+    ///
+    /// Returns `Ok(())` if the call is permitted and the input is well-formed.
+    /// Phase 5 will call this before forwarding to the live rmcp connection.
+    pub async fn check_call_policy(
+        &self,
+        server_name: &str,
+        tool_name: &str,
+        input: &serde_json::Value,
+    ) -> Result<(), McpHostError> {
+        let sup_arc = self
+            .supervisors
+            .get(server_name)
+            .ok_or_else(|| McpHostError::NotFound {
+                name: server_name.to_owned(),
+            })?;
+
+        let guard = sup_arc.lock().await;
+        if !guard.is_ready() {
+            return Err(McpHostError::NotReady {
+                name: server_name.to_owned(),
+            });
+        }
+
+        scope_governor::ScopeGovernor::new(server_name, guard.scope())
+            .check_call(tool_name, input)?;
+
+        if let Some(tool) = self.find_tool(server_name, tool_name) {
+            schema_validator::validate_input(&tool.input_schema, input, server_name, tool_name)?;
+        }
+
+        Ok(())
     }
 
     /// Cancel the root token, stopping all managed server connections.
