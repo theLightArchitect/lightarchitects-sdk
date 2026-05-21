@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { gitforestTree } from '$lib/stores';
+  import { api } from '$lib/api';
   import type { BranchNode, WorktreeAssignment } from '$lib/gitforest';
-  import MockBadge from '$lib/../components/MockBadge.svelte';
+  import type { WorktreeMeta } from '$lib/types';
 
   interface TreeRow {
     depth: number;
@@ -9,6 +11,32 @@
     label: string;
     node?: BranchNode;
     wt?: WorktreeAssignment;
+  }
+
+  // Worktree metadata (webshell-backend-gaps spec §2.27): merges by path with
+  // gitforest topology. Fetched once on mount; refresh via parent.
+  let metaByPath = $state<Record<string, WorktreeMeta>>({});
+
+  onMount(async () => {
+    try {
+      // cwd: the SDK root — server uses safe_cwd to canonicalize + reject traversal
+      const list = await api.listWorktrees('/Users/kft/Projects/lightarchitects-sdk');
+      metaByPath = Object.fromEntries(list.map(m => [m.path, m]));
+    } catch (e) {
+      // Non-fatal: panel still renders topology data; locked + created_at stay absent
+      console.warn('[WorktreePanel] /api/git/worktrees fetch failed:', e);
+    }
+  });
+
+  function relTime(iso: string | null | undefined): string {
+    if (!iso) return '';
+    try {
+      const diffMs = Date.now() - new Date(iso).getTime();
+      if (diffMs < 60_000) return 'just now';
+      if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)}m`;
+      if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)}h`;
+      return `${Math.floor(diffMs / 86_400_000)}d`;
+    } catch { return ''; }
   }
 
   function shortPath(p: string): string {
@@ -74,10 +102,6 @@
 </script>
 
 <div class="wt-panel">
-  <div class="wt-header" style="position: relative; padding: 4px 8px; border-bottom: 1px solid var(--la-hair-faint);">
-    <span style="font-size: 9px; color: var(--la-text-dim); letter-spacing: 0.08em; font-weight: 700;">WORKTREES</span>
-    <MockBadge label="META" detail="locked/created_at pending" position="top-right" />
-  </div>
   {#if rows.length === 0}
     <div class="wt-empty">
       <span class="wt-empty-icon">⌥</span>
@@ -122,11 +146,18 @@
           </div>
 
         {:else if row.kind === 'worktree' && row.wt}
-          <div class="wt-row wt-worktree" style="padding-left:{row.depth * 10 + 6}px" title={row.wt.worktree_path}>
+          {@const meta = metaByPath[row.wt.worktree_path]}
+          <div class="wt-row wt-worktree" style="padding-left:{row.depth * 10 + 6}px" title={meta?.created_at ? `${row.wt.worktree_path}\nHEAD ${meta.head_sha?.slice(0,7) ?? '?'} · ${new Date(meta.created_at).toISOString()}` : row.wt.worktree_path}>
             <span class="wt-connector dim">└╴</span>
             <span class="wt-state-dot" style="background:{stateColor(row.wt.state)}"></span>
             <span class="wt-domain">{row.wt.domain.slice(0, 3).toUpperCase()}</span>
             <span class="wt-path">{shortPath(row.wt.worktree_path)}</span>
+            {#if meta?.locked}
+              <span class="wt-lock" title="worktree locked">🔒</span>
+            {/if}
+            {#if meta?.created_at}
+              <span class="wt-age">{relTime(meta.created_at)}</span>
+            {/if}
             {#if row.wt.commits > 0}
               <span class="wt-commits">+{row.wt.commits}</span>
             {/if}
@@ -275,5 +306,18 @@
     font-size: 7px;
     color: #22c55e;
     flex-shrink: 0;
+  }
+
+  /* webshell-backend-gaps spec §2.27 metadata fields */
+  .wt-lock {
+    font-size: 8px;
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
+  .wt-age {
+    font-size: 7px;
+    color: var(--la-text-dim);
+    flex-shrink: 0;
+    font-family: var(--la-font-mono);
   }
 </style>

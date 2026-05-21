@@ -820,6 +820,7 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/git/pull", post(git_routes::pull_handler))
         .route("/api/git/pr/create", post(git_routes::create_pr_handler))
         .route("/api/git/pr/review", post(git_routes::review_pr_handler))
+        .route("/api/git/worktrees", post(git_routes::worktrees_handler))
         // ── Roadmap artifact (webshell-roadmap-rendering) ────────────────────
         .route("/api/roadmap", get(roadmap::roadmap_handler))
         // ── CSP violation reports (SEC-3b, Enforce phase) ────────────────────

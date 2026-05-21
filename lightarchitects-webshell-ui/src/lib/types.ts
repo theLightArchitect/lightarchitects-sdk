@@ -1309,3 +1309,23 @@ export type FleetEvent =
   | { type: 'agent_spawned'; node: FleetNode }
   | { type: 'agent_progress'; agent_id: string; elapsed_ms: number }
   | { type: 'agent_completed'; agent_id: string; exit_path: string; turns: number; duration_ms: number };
+
+// ── Worktree metadata (webshell-backend-gaps — spec §2.27) ──────────────────
+
+/**
+ * Per-worktree metadata returned by `POST /api/git/worktrees`.
+ *
+ * Supplements gitforest topology (`BranchNode.worktrees`) with locked + created_at
+ * fields not present in the topology response. `created_at` is the head commit
+ * time (ISO-8601 from `git log -1 --format=%cI`) — null if HEAD cannot be resolved.
+ *
+ * Source build: webshell-backend-gaps (2026-05-20).
+ */
+export interface WorktreeMeta {
+  path: string;
+  branch: string;
+  head_sha: string;
+  status: string;          // "active" in v1; future: derive from gitforest overlay
+  locked: boolean;
+  created_at: string | null;
+}

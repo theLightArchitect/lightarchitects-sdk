@@ -662,6 +662,136 @@ pub async fn review_pr_handler(
     }
 }
 
+// ── POST /api/git/worktrees ──────────────────────────────────────────────────
+
+/// Per-worktree metadata: path, branch, head SHA, status, locked flag, head commit time.
+///
+/// Body: `{"cwd": string}` — any path inside the target git repository
+/// Returns: `{"worktrees": [{path, branch, head_sha, status, locked, created_at}]}`
+/// where `created_at` is the head commit time (ISO-8601 from `git log -1 --format=%cI`).
+///
+/// Closes spec §2.27 (webshell-mock-overlay-shipping 2026-05-20 STUB).
+/// Removes the `MockBadge label="META" detail="locked/created_at pending"` from
+/// `WorktreePanel.svelte` once this handler ships and the frontend wires the call.
+pub async fn worktrees_handler(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(body): Json<Value>,
+) -> impl IntoResponse {
+    if let Err(r) = check_auth(&headers, &state.config.token) {
+        return r.into_response();
+    }
+    let Some(cwd_str) = body["cwd"].as_str() else {
+        return bad_request("missing required field: cwd").into_response();
+    };
+    let cwd = match safe_cwd(cwd_str) {
+        Ok(p) => p,
+        Err(e) => return bad_request(e).into_response(),
+    };
+    let out = match git_run(&["worktree", "list", "--porcelain"], &cwd, TIMEOUT_STATUS).await {
+        Ok(o) => o,
+        Err(r) => return r.into_response(),
+    };
+    if !out.status.success() {
+        return git_err("git worktree list failed").into_response();
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed = parse_worktree_porcelain(&stdout);
+    let enriched = enrich_with_created_at(&parsed, &cwd).await;
+    ok(json!({ "worktrees": enriched })).into_response()
+}
+
+/// One worktree row parsed from `git worktree list --porcelain` output.
+#[derive(Debug, Clone)]
+struct WorktreeRow {
+    path: String,
+    branch: String,
+    head_sha: String,
+    locked: bool,
+}
+
+/// Parse `git worktree list --porcelain` output into structured rows.
+///
+/// Porcelain format (one block per worktree, blank-line separated):
+/// ```text
+/// worktree /path/to/wt
+/// HEAD <sha>
+/// branch refs/heads/<name>   (or `detached`)
+/// locked                      (optional; may have a reason suffix)
+/// ```
+fn parse_worktree_porcelain(stdout: &str) -> Vec<WorktreeRow> {
+    let mut result = Vec::new();
+    let mut current: Option<WorktreeRow> = None;
+    for line in stdout.lines() {
+        if let Some(path) = line.strip_prefix("worktree ") {
+            if let Some(wt) = current.take() {
+                result.push(wt);
+            }
+            current = Some(WorktreeRow {
+                path: path.to_owned(),
+                branch: String::new(),
+                head_sha: String::new(),
+                locked: false,
+            });
+        } else if let Some(sha) = line.strip_prefix("HEAD ") {
+            if let Some(wt) = current.as_mut() {
+                sha.clone_into(&mut wt.head_sha);
+            }
+        } else if let Some(branch) = line.strip_prefix("branch ") {
+            if let Some(wt) = current.as_mut() {
+                let name = branch.strip_prefix("refs/heads/").unwrap_or(branch);
+                name.clone_into(&mut wt.branch);
+            }
+        } else if line == "detached" {
+            if let Some(wt) = current.as_mut() {
+                "(detached)".clone_into(&mut wt.branch);
+            }
+        } else if line == "locked" || line.starts_with("locked ") {
+            if let Some(wt) = current.as_mut() {
+                wt.locked = true;
+            }
+        }
+    }
+    if let Some(wt) = current.take() {
+        result.push(wt);
+    }
+    result
+}
+
+/// Add `created_at` (ISO-8601 head commit time) per row via `git log -1 --format=%cI <sha>`.
+async fn enrich_with_created_at(rows: &[WorktreeRow], cwd: &std::path::Path) -> Vec<Value> {
+    let mut out = Vec::with_capacity(rows.len());
+    for wt in rows {
+        let created_at = if wt.head_sha.is_empty() {
+            None
+        } else {
+            git_run(
+                &["log", "-1", "--format=%cI", &wt.head_sha],
+                cwd,
+                TIMEOUT_STATUS,
+            )
+            .await
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    Some(String::from_utf8_lossy(&o.stdout).trim().to_owned())
+                } else {
+                    None
+                }
+            })
+        };
+        out.push(json!({
+            "path": wt.path,
+            "branch": wt.branch,
+            "head_sha": wt.head_sha,
+            "status": "active",
+            "locked": wt.locked,
+            "created_at": created_at,
+        }));
+    }
+    out
+}
+
 // ── Smoke tests (Canon XXVII suite 6) ─────────────────────────────────────────
 
 #[cfg(test)]
@@ -715,5 +845,48 @@ mod tests {
         let (status, Json(body)) = ok(serde_json::json!({"branch": "main"}));
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["branch"], "main");
+    }
+
+    // ── Worktree porcelain parser tests (spec §2.27) ──────────────────────────
+
+    #[test]
+    fn parse_worktree_porcelain_handles_single_main_worktree() {
+        let stdout =
+            "worktree /Users/kft/Projects/repo\nHEAD abc123def\nbranch refs/heads/main\n\n";
+        let rows = super::parse_worktree_porcelain(stdout);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].path, "/Users/kft/Projects/repo");
+        assert_eq!(rows[0].branch, "main");
+        assert_eq!(rows[0].head_sha, "abc123def");
+        assert!(!rows[0].locked);
+    }
+
+    #[test]
+    fn parse_worktree_porcelain_handles_multiple_worktrees_with_lock() {
+        let stdout = "worktree /a\nHEAD aaa\nbranch refs/heads/main\n\n\
+                      worktree /b\nHEAD bbb\nbranch refs/heads/feat/foo\nlocked\n\n\
+                      worktree /c\nHEAD ccc\ndetached\n";
+        let rows = super::parse_worktree_porcelain(stdout);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].branch, "main");
+        assert!(!rows[0].locked);
+        assert_eq!(rows[1].branch, "feat/foo");
+        assert!(rows[1].locked);
+        assert_eq!(rows[2].branch, "(detached)");
+    }
+
+    #[test]
+    fn parse_worktree_porcelain_handles_locked_with_reason() {
+        let stdout =
+            "worktree /a\nHEAD aaa\nbranch refs/heads/main\nlocked manual lock for testing\n";
+        let rows = super::parse_worktree_porcelain(stdout);
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].locked);
+    }
+
+    #[test]
+    fn parse_worktree_porcelain_handles_empty_input() {
+        let rows = super::parse_worktree_porcelain("");
+        assert!(rows.is_empty());
     }
 }

@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.15"  # bumped 2026-05-20: §2.25-2.27 backend-gap stubs (webshell-mock-overlay-shipping) — conductor/events SSE, decisions/stream SSE, git/worktrees/{repo} REST
+version: "1.0.16"  # bumped 2026-05-20: §2.27 STUB → IMPLEMENTED (webshell-backend-gaps) — POST /api/git/worktrees with {cwd} body + safe_cwd() validation; convention-aligned with other /api/git/* routes
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
@@ -968,28 +968,32 @@ Point-in-time snapshot of the current fleet state for a build. Useful for initia
 
 ---
 
-### §2.27 Git Worktrees Metadata (webshell-mock-overlay-shipping — 2026-05-20 STUB)
+### §2.27 Git Worktrees Metadata (webshell-backend-gaps — 2026-05-20 IMPLEMENTED)
 
-**Status:** Spec-defined (2026-05-18 amendment); **NOT YET IMPLEMENTED**. Tracked by `webshell-backend-gaps` (separate SMALL follow-up plan).
-**Path:** `GET /api/git/worktrees/{repo}`
-**Response:** `200 OK` — JSON array of worktree metadata records.
-**Description:** Per-worktree metadata for `{repo}`. Richer than gitforest topology — adds `locked` and `created_at` fields absent from the topology response.
-**Auth:** Bearer token. `{repo}` path parameter validated against known-repos allowlist (same pattern as `github_proxy.rs`).
+**Status:** **IMPLEMENTED** 2026-05-20 via `webshell-backend-gaps`. Handler at `lightarchitects-webshell/src/server/git_routes.rs::worktrees_handler`; route registered in `lightarchitects-webshell/src/server/mod.rs`.
+**Path amendment:** **`POST /api/git/worktrees`** with `{cwd}` body — NOT the originally-drafted `GET /api/git/worktrees/{repo}`. Convention-aligned: every other `/api/git/*` route follows the POST + `{cwd}` body pattern with `safe_cwd()` validation (T-7 CWE-78 + path-traversal rejection). Following the existing security primitive is strictly safer than introducing a new per-repo allowlist mechanism for a single endpoint.
+**Body:** `{"cwd": "<path-inside-target-git-repo>"}` — validated via `safe_cwd()` (canonicalize + reject `..` components).
+**Response:** `200 OK` — `{"worktrees": [WorktreeMeta]}`
+**Description:** Per-worktree metadata. Supplements gitforest topology (paths + branches) with `locked` (worktree lock flag) and `created_at` (HEAD commit time, ISO-8601 from `git log -1 --format=%cI`).
+**Auth:** Bearer token (standard `check_auth` pattern).
 **Response shape:**
 ```json
-[
-  {
-    "path": "/Users/<u>/lightarchitects/worktrees/feat/foo",
-    "branch": "feat/foo",
-    "head_sha": "abc1234",
-    "status": "writing",
-    "locked": false,
-    "created_at": "2026-05-20T10:00:00Z"
-  }
-]
+{
+  "worktrees": [
+    {
+      "path": "/Users/<u>/lightarchitects/worktrees/feat/foo",
+      "branch": "feat/foo",
+      "head_sha": "abc1234def567...",
+      "status": "active",
+      "locked": false,
+      "created_at": "2026-05-20T10:00:00+00:00"
+    }
+  ]
+}
 ```
-**Errors:** `400` on unknown `{repo}` (allowlist miss — same response as SSRF guard), `401` on missing/invalid bearer.
-**UI consumer:** `lightarchitects-webshell-ui/src/components/WorktreePanel.svelte` (currently uses `$gitforestTree` topology workaround + `MockBadge label="META" detail="locked/created_at pending"` until backend lands).
+**Field notes:** `status` is `"active"` in v1 (placeholder for future gitforest-overlay-derived lifecycle state); `created_at` may be `null` if HEAD cannot be resolved.
+**Errors:** `400` on missing/invalid `cwd` (path traversal or non-existent path), `401` on missing/invalid bearer, `500` if `git worktree list` fails.
+**UI consumer:** `lightarchitects-webshell-ui/src/components/WorktreePanel.svelte` (fetches on mount via `api.listWorktrees(cwd)`; merges by path with `$gitforestTree` topology; renders 🔒 lock icon + relative-time HEAD age). MockBadge "META — locked/created_at pending" REMOVED.
 
 ---
 
