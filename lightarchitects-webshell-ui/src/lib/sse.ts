@@ -766,6 +766,145 @@ export function reconnectSSE(buildId: string): void {
   connectSSE(buildId);
 }
 
+// ── Topic-filtered SSE (webshell-event-bus-redesign Phase 2) ─────────────────
+
+const TOPIC_INITIAL_DELAY = 1_000;
+const TOPIC_MAX_BACKOFF   = 30_000;
+
+/**
+ * The shape of every envelope emitted by the gateway after Phase 1.
+ *
+ * The `type` discriminant (from the inner `WebEvent`) is present at the top
+ * level via `#[serde(flatten)]`; `topic`, `timestamp`, `severity`, and
+ * optional `build_id` are added by the `WebEventV2` wrapper.
+ */
+export interface WebEventV2 {
+  /** NATS-style dot-path topic, e.g. `"v1.copilot.activity"`. */
+  topic: string;
+  timestamp: string;
+  agent_id: string;
+  build_id?: string;
+  severity: 'info' | 'warn' | 'error';
+  /** Inner `WebEvent` discriminant (e.g. `"copilot_activity"`). */
+  type: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Subscribe to the gateway SSE stream filtered to events matching a
+ * NATS-style topic pattern.
+ *
+ * Pattern syntax:
+ * - `*` — matches exactly one dot-separated segment
+ * - `>` — matches one or more trailing segments (must be last)
+ *
+ * The filter is applied **server-side** via the `?topic=` query parameter.
+ * Uses the same fetch-streaming + auth-header pattern as {@link connectSSE}
+ * because native `EventSource` cannot send authorization headers.
+ * Reconnects automatically with exponential back-off (1 s → 30 s cap).
+ *
+ * @example
+ * ```ts
+ * // Stream only copilot events for this component's lifetime.
+ * const unsub = subscribeByTopic('v1.copilot.*', (ev) => console.log(ev));
+ * onDestroy(unsub);
+ *
+ * // Stream everything under v1. (all events).
+ * const unsub = subscribeByTopic('v1.>', handler);
+ * ```
+ *
+ * @param pattern - NATS-style topic pattern (e.g. `"v1.copilot.*"`).
+ * @param cb      - Called for every {@link WebEventV2} matching the pattern.
+ * @returns A cleanup function — call it in `$effect` return or `onDestroy`.
+ */
+export function subscribeByTopic(
+  pattern: string,
+  cb: (event: WebEventV2) => void,
+): () => void {
+  const abortCtrl = new AbortController();
+  let delay = TOPIC_INITIAL_DELAY;
+  let reconnectHandle: ReturnType<typeof setTimeout> | null = null;
+
+  // URLSearchParams handles percent-encoding of `>` → `%3E` automatically.
+  const params = new URLSearchParams({ topic: pattern });
+
+  async function connect(): Promise<void> {
+    if (abortCtrl.signal.aborted) return;
+
+    let response: Response;
+    try {
+      response = await fetch(`/api/events?${params.toString()}`, {
+        signal: abortCtrl.signal,
+        headers: authHeaders(),
+      });
+    } catch (err) {
+      if ((err as { name?: string }).name === 'AbortError') return;
+      schedule();
+      return;
+    }
+
+    if (!response.ok || !response.body) {
+      // Auth failures are terminal — don't retry until token changes.
+      if (response.status === 401 || response.status === 403) return;
+      schedule();
+      return;
+    }
+
+    // Connection established — reset backoff.
+    delay = TOPIC_INITIAL_DELAY;
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const parsed = JSON.parse(line.slice(6)) as WebEventV2;
+              cb(parsed);
+            } catch {
+              // Non-JSON SSE comment or keep-alive — ignore.
+            }
+          }
+        }
+      }
+    } catch (err) {
+      if ((err as { name?: string }).name === 'AbortError') return;
+    }
+
+    // Stream ended — reconnect unless deliberately aborted.
+    if (!abortCtrl.signal.aborted) {
+      schedule();
+    }
+  }
+
+  function schedule(): void {
+    if (abortCtrl.signal.aborted) return;
+    reconnectHandle = setTimeout(() => {
+      delay = Math.min(delay * 2, TOPIC_MAX_BACKOFF);
+      void connect();
+    }, delay);
+  }
+
+  void connect();
+
+  return () => {
+    abortCtrl.abort();
+    if (reconnectHandle !== null) {
+      clearTimeout(reconnectHandle);
+    }
+  };
+}
+
 // ── Fleet SSE (agent-teams-fleet Phase 4A) ────────────────────────────────────
 
 const FLEET_INITIAL_DELAY = 1_000;
