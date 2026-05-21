@@ -108,7 +108,16 @@ phases:
     svelte_check_errors: 0
   phase_7:
     name: day1-wiring-and-docs
-    status: pending
+    status: in_progress
+    started_at: "2026-05-21"
+    files_created:
+      - lightarchitects-webshell/assets/webshell-mcp.json.default
+      - lightarchitects-webshell-mcp-host/README.md
+    files_modified:
+      - lightarchitects-webshell/CLAUDE.md
+      - "~/lightarchitects/soul/helix/user/standards/canon/architects-blueprint.md (Part XXVIII CANDIDATE)"
+    config_files:
+      - "~/.lightarchitects/webshell-mcp.json (machine-specific, not committed)"
 
 preflight:
   g0_stack_classification: full-stack
