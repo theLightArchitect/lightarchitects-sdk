@@ -841,11 +841,11 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/gitforest/pr-metadata", get(pr_metadata_handler))
         // ── Cockpit GitHub proxy (webshell-cockpit Phase 3) ──────────────────
         .route(
-            "/api/github-proxy/commits/:owner/:repo/:sha",
+            "/api/github-proxy/commits/{owner}/{repo}/{sha}",
             get(commit_metadata_handler),
         )
         .route(
-            "/api/github-proxy/pr/:owner/:repo/:num/review",
+            "/api/github-proxy/pr/{owner}/{repo}/{num}/review",
             post(submit_pr_review_handler),
         )
         // ── CSP violation reports (SEC-3b, Enforce phase) ────────────────────
@@ -1132,7 +1132,7 @@ async fn pr_metadata_handler(
 
 use axum::extract::Path as AxumPath;
 
-/// `GET /api/github-proxy/commits/:owner/:repo/:sha`
+/// `GET /api/github-proxy/commits/{owner}/{repo}/{sha}`
 ///
 /// Returns commit metadata (`sha`, first-line message, author login, `committed_at`).
 /// SSRF guard: `(owner, repo)` must be in `HITL_TRACKED_REPOS`.
@@ -1173,7 +1173,7 @@ struct PrReviewBody {
     body: String,
 }
 
-/// `POST /api/github-proxy/pr/:owner/:repo/:num/review`
+/// `POST /api/github-proxy/pr/{owner}/{repo}/{num}/review`
 ///
 /// Submits a GitHub PR review. Security controls:
 /// - `If-Match: "<head_sha>"` header → 412 on SHA mismatch (replay defense).

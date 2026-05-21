@@ -1133,7 +1133,7 @@ Per-PR metadata lookup for a specific repository + PR number. Validates against 
 
 #### §2.31.1 Commit Metadata
 
-**Path:** `GET /api/github-proxy/commits/:owner/:repo/:sha`
+**Path:** `GET /api/github-proxy/commits/{owner}/{repo}/{sha}`
 **Auth:** Bearer token (standard `AuthGuard` pattern).
 **SSRF guard:** `(owner, repo)` must be in `HITL_TRACKED_REPOS` (same allowlist as HITL inbox). Returns `403` before any network call for untracked repos.
 **Cache:** 60s moka TTL, max 512 entries, keyed `"{owner}/{repo}/{sha}"`.
@@ -1146,7 +1146,7 @@ Per-PR metadata lookup for a specific repository + PR number. Validates against 
 
 #### §2.31.2 PR Review Submission
 
-**Path:** `POST /api/github-proxy/pr/:owner/:repo/:num/review`
+**Path:** `POST /api/github-proxy/pr/{owner}/{repo}/{num}/review`
 **Auth:** Bearer token (standard `AuthGuard` pattern).
 **SSRF guard:** same `HITL_TRACKED_REPOS` allowlist. Returns `403` for non-allowlisted repos.
 **Request body:**
