@@ -249,3 +249,13 @@ PLAYWRIGHT_BASE_URL=http://localhost:5173 pnpm exec playwright test e2e/webshell
 `Cockpit.svelte` (`/#/activity`) contains a PR QUEUE card that calls `listOpenPRs()` from `src/lib/github.ts` directly against `https://api.github.com` — NOT proxied through the gateway. It polls every 2 minutes across `FOREST_REPO_NAMES`. Requires `la_gh_token` in `localStorage` (set via the CONNECT button in Dashboard → TokenVault). If the token is absent, the card shows "configure GitHub token in Dashboard" instead of erroring.
 
 The Ops/Dashboard screen (`/#/dashboard`) conductor queue-strip now always renders (even when idle) — shows running tasks (blue pulsing) then pending tasks (amber).
+
+### Cockpit Preset × Target nav model (webshell-cockpit Phase 1+)
+
+`Cockpit.svelte` (`/#/cockpit`) uses a two-axis context model:
+
+- **Preset** — active domain role, one of 7: `engineer | security | ops | quality | knowledge | researcher | testing`. Stored in `src/lib/cockpit/stores.ts#selectedPreset`. UI: `PresetChips.svelte` — colored chips matching `DOMAIN_AGENT_COLORS` design tokens.
+- **Target** — scoped artifact (build, phase, wave, file, branch, PR, commit). Stored in `src/lib/cockpit/stores.ts#selectedTarget` (`CockpitTarget | null`). Phase 1 shell shows "no target selected" placeholder; Phase 2 wires fuzzy sources.
+- **QuickPickPalette** — opens via `⌘T` (global hotkey registered in `QuickPickPalette.svelte#onMount` via `registerHotkey`). Also triggered by the ⌘T button in `TargetBreadcrumb.svelte`. Phase 2 wires `/api/builds`, manifest.yaml, and FS sources with fuzzy matching.
+
+The header is a two-row column layout: row-1 = `COCKPIT` title + PresetChips + badges; row-2 = TargetBreadcrumb. The global `Breadcrumb` component was removed from `app.svelte` as part of this phase (collapsed to single-row nav).
