@@ -49,7 +49,7 @@
 # ============================================================================
 
 template_name: "LASDLC-TEMPLATE-v1"
-template_version: "2.6.0"
+template_version: "2.6.1"
 # Amendment history → standards/canon/LASDLC-TEMPLATE-v1.CHANGELOG.md
 # Schema file = current state only. Inline `added_in_template_version: "X.Y.Z"`
 # markers throughout this file identify when each field was introduced.
