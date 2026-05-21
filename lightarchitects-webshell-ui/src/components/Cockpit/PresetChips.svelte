@@ -18,7 +18,7 @@
   };
 </script>
 
-<div class="preset-chips" role="tablist" aria-label="Domain preset selector">
+<div class="preset-chips" role="tablist" aria-label="Domain preset selector" data-card-role="preset-chips">
   {#each PRESETS as preset}
     {@const color = DOMAIN_AGENT_COLORS[preset]}
     {@const active = $selectedPreset === preset}

@@ -300,6 +300,31 @@ pub struct UiContext {
     /// be incomplete.
     #[serde(default)]
     pub degraded: Vec<String>,
+    /// Cockpit state at submit time: active preset + selected target scope.
+    #[serde(default)]
+    pub cockpit: Option<CockpitUiContext>,
+}
+
+/// Active cockpit preset and target scope, injected into every copilot message.
+#[derive(Debug, Deserialize, Serialize, Default)]
+pub struct CockpitUiContext {
+    /// Domain preset key (e.g. `"engineer"`, `"security"`).
+    pub preset: String,
+    /// Currently selected target entity, or `null` when no target is pinned.
+    pub target: Option<CockpitTarget>,
+}
+
+/// A pinned target scope within the LASDLC hierarchy.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CockpitTarget {
+    /// Entity type: `"project"`, `"build"`, `"phase"`, `"wave"`, `"file"`,
+    /// `"commit"`, `"branch"`, or `"pr"`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Stable identifier (PR URL, build ID, file path, etc.).
+    pub id: String,
+    /// Human-readable display label.
+    pub label: String,
 }
 
 /// Per-session agent state held behind `tokio::sync::Mutex<Option<CopilotProcess>>`.

@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.18"  # bumped 2026-05-20: §2.28–2.29 ADDED (webshell-hitl-inbox) + §2.30 ADDED (webshell-event-bus-redesign) — HITL search/PR-metadata + topic-filtered SSE
+version: "1.0.19"  # bumped 2026-05-21: §1.7 ADDED (webshell-cockpit Phase 7 — Cockpit card-role taxonomy, 13 roles, exhaustiveness gate)
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
@@ -176,6 +176,37 @@ Two caller types; two auth mechanisms — never interchangeable.
 > **Why the split?** If the machine notify token were readable by browser JavaScript, an XSS vulnerability could exfiltrate it and forge agent callbacks — turning a UI-layer exploit into a server-side event injection. The token is excluded from `BuildResponse` (the JSON sent to the browser after build creation) by design. `AuthGuard` reads only the session cookie; the notify bearer path is a separate extractor. This is a deliberate CWE-306 prevention: two attack surfaces, separated in code, not just convention. See `src/agent/bridge.rs` for the omission point.
 
 **Cross-reference (2026-05-18 ADDITION)**: For autonomous-mode builds, program manifest integrity adds an Ed25519-signed `program.toml` + per-wave HKDF-SHA256 HMAC subkey chain. See `security-guardrails §SG-CRYPTO` for the full ceremony (Touch-ID-gated Keychain keygen, subkey-id stamping in decisions.md, revocation-via-restart). Program manifest verification fires pre-dispatch on every task; mismatch HALTS.
+
+---
+
+### §1.7 Card-Role Taxonomy (webshell-cockpit Phase 7 — 2026-05-21 ADDITION)
+
+Every load-bearing surface on the Cockpit screen declares `data-card-role` on its root element. The registry at `src/lib/cockpit/cardRoles.ts` exports `CockpitCardRole` (union), `COCKPIT_CARD_ROLES` (record), and `ALL_COCKPIT_CARD_ROLES` (array).
+
+Roles fall into four functional categories: **action** (operator takes immediate actions), **stream** (live data from backend), **status** (current system state), **navigation** (changes active target or preset).
+
+| `data-card-role` | Source file | Category | Conditional |
+|---|---|---|---|
+| `preset-chips` | `PresetChips.svelte` | navigation | No |
+| `target-breadcrumb` | `TargetBreadcrumb.svelte` | navigation | No |
+| `quick-pick-palette` | `QuickPickPalette.svelte` (panel div) | navigation | `{#if $quickPickOpen}` |
+| `build-health` | `Cockpit.svelte` bento card | status+stream | No |
+| `hitl-escalations` | `Cockpit.svelte` bento card | action | No |
+| `worker-fleet` | `Cockpit.svelte` bento card | stream | No |
+| `decision-feed` | `Cockpit.svelte` bento card | stream | No |
+| `git-state` | `Cockpit.svelte` bento card | status | No |
+| `builds-rail` | `Cockpit.svelte` bento card | navigation+status | No |
+| `hitl-inbox` | `Cockpit.svelte` bento card | action | No |
+| `pr-detail-panel` | `Cockpit.svelte` PR detail panel | action | `{#if selectedPr}` |
+| `engineer-zones` | `Cockpit.svelte` engineer zones | action+stream | `{#if $selectedPreset === 'engineer'}` |
+| `copilot-drawer` | `CopilotDrawer.svelte` | action+stream | No |
+
+**Exhaustiveness gate**: `src/__tests__/cockpit-card-roles.test.ts` verifies every registry key maps to a `data-card-role` attribute in the declared source file and every attribute in source is registered. Count assertion: 13 roles. Adding a new card requires updating the type union, the record, and the test.
+
+**P6 Northstar mechanical promises verified by this taxonomy**:
+- `hitl-inbox` in DOM within 60s (P6-N1 — verified by E2E G6)
+- `target-breadcrumb` always present (P6-N2 — never conditionally unmounted)
+- `copilot-drawer` context chip shows `{preset} · {target}` (P6-N3 — verified by E2E G5)
 
 ---
 
@@ -1124,6 +1155,89 @@ Per-PR metadata lookup for a specific repository + PR number. Validates against 
 - `ConductorPanel.svelte` → `v1.conductor.*` (conductor queue events)
 - `DecisionLog.svelte` → `v1.conductor.escalation` (L4 escalation entries)
 **Note on event-type-only events:** `conductor_task`, `arena_update`, and `finding` are legacy event types emitted only on the global SSE stream; they have no `topic` field and are not routable via this endpoint. UI components consuming them (`BuildPortfolio`, `ArenaPanel`, etc.) continue to receive them via the global `connectGlobalSSE` stream.
+
+---
+
+### §2.31 Cockpit GitHub Proxy (webshell-cockpit Phase 3 — 2026-05-21 ADDITION)
+
+**Status:** **IMPLEMENTED** 2026-05-21. Handlers at `lightarchitects-webshell/src/server/mod.rs::commit_metadata_handler` and `submit_pr_review_handler`; proxy functions at `lightarchitects-webshell/src/github_proxy.rs`.
+
+#### §2.31.1 Commit Metadata
+
+**Path:** `GET /api/github-proxy/commits/{owner}/{repo}/{sha}`
+**Auth:** Bearer token (standard `AuthGuard` pattern).
+**SSRF guard:** `(owner, repo)` must be in `HITL_TRACKED_REPOS` (same allowlist as HITL inbox). Returns `403` before any network call for untracked repos.
+**Cache:** 60s moka TTL, max 512 entries, keyed `"{owner}/{repo}/{sha}"`.
+**Response (200):**
+```json
+{ "sha": "abc123…", "message": "feat(cockpit): Phase 3 …", "author_login": "kft", "committed_at": "2026-05-21T12:00:00Z" }
+```
+`message` = first line of commit message only.
+**Errors:** `403` — SSRF guard / PAT not configured, `503` — GitHub PAT not loaded, `502` — GitHub API error.
+
+#### §2.31.2 PR Review Submission
+
+**Path:** `POST /api/github-proxy/pr/{owner}/{repo}/{num}/review`
+**Auth:** Bearer token (standard `AuthGuard` pattern).
+**SSRF guard:** same `HITL_TRACKED_REPOS` allowlist. Returns `403` for non-allowlisted repos.
+**Request body:**
+```json
+{ "event": "APPROVE" | "REQUEST_CHANGES" | "COMMENT", "body": "LGTM" }
+```
+**Security headers:**
+
+| Header | Requirement | Failure |
+|---|---|---|
+| `If-Match: "<head_sha>"` | Optional. When present, server fetches current PR HEAD SHA and compares. | `412 Precondition Failed` on mismatch — prevents approving force-pushed code |
+| `Origin` | Required. Must be one of `http://localhost:8733`, `http://127.0.0.1:8733`, `http://localhost:5173`, `http://127.0.0.1:5173` | `403 Forbidden` |
+
+**Errors:** `412` — SHA mismatch (replay defense), `403` — CSRF / SSRF, `503` — PAT not loaded, `502` — GitHub API error.
+**Security rationale:** Origin check mitigates CSRF from other browser tabs. `If-Match` replay defense prevents approving code that changed between diff-view and approval click.
+
+---
+
+### §2.32 Cockpit ↔ Copilot Context Schema (webshell-cockpit Phase 6 — 2026-05-21 ADDITION)
+
+Cockpit state is injected into every copilot message's `ui_context.cockpit` field (frontend `UiContext.cockpit`). The server renders it into the `<ui_context>` prelude block visible to the model.
+
+**TypeScript shape** (`src/lib/types.ts` `UiContext.cockpit`):
+```typescript
+cockpit?: {
+  preset: string;           // "engineer" | "security" | "ops" | "quality" | "knowledge" | "researcher" | "testing"
+  target: {
+    type: string;           // TargetType: "project" | "build" | "phase" | "wave" | "file" | "commit" | "branch" | "pr"
+    id: string;             // Stable identifier (PR URL, build ID, file path…)
+    label: string;          // Human-readable display label
+  } | null;
+}
+```
+
+**Rust shape** (`src/copilot/mod.rs` `UiContext.cockpit`):
+```rust
+#[serde(default)]
+pub cockpit: Option<CockpitUiContext>
+
+pub struct CockpitUiContext { pub preset: String, pub target: Option<CockpitTarget> }
+pub struct CockpitTarget    { pub kind: String, pub id: String, pub label: String }
+```
+
+**Validation limits** (enforced by `context.rs::validate()`):
+- `cockpit.preset` ≤ `MAX_UI_FIELD_BYTES` (256 B)
+- `cockpit.target.id` ≤ `MAX_ROUTE_BYTES` (512 B)
+- `cockpit.target.label` ≤ `MAX_UI_FIELD_BYTES` (256 B)
+
+**Prompt prelude emission** (when `cockpit` is set):
+```
+<ui_context>
+  route: /cockpit
+  cockpit.preset: engineer
+  cockpit.target: pr https://github.com/TheLightArchitects/webshell/pull/47 (#47 webshell)
+</ui_context>
+```
+
+**CopilotDrawer context chip**: Header bar shows `{PRESET} · {target label}` pill when drawer is open; clicking opens `QuickPickPalette` to change the target.
+
+**copilotChips.ts**: Scans assistant message text for GitHub PR URLs and bare `PR #N` references; renders inline `→ owner/repo#N` action chips that call `selectedTarget.set(...)`.
 
 ---
 

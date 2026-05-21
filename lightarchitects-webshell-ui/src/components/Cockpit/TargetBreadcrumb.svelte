@@ -25,7 +25,7 @@
   }
 </script>
 
-<div class="target-breadcrumb" data-testid="target-breadcrumb">
+<div class="target-breadcrumb" data-testid="target-breadcrumb" data-card-role="target-breadcrumb">
   {#if $selectedTarget}
     <button
       class="seg seg-type"

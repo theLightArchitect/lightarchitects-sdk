@@ -5,14 +5,40 @@
   import PresetChips from '$lib/../components/Cockpit/PresetChips.svelte';
   import TargetBreadcrumb from '$lib/../components/Cockpit/TargetBreadcrumb.svelte';
   import QuickPickPalette from '$lib/../components/Cockpit/QuickPickPalette.svelte';
+  import HITLInbox from '$lib/../components/Cockpit/HITLInbox.svelte';
+  import PRMetadataBlock from '$lib/../components/Cockpit/PRMetadataBlock.svelte';
+  import PRVerbSurface from '$lib/../components/Cockpit/PRVerbSurface.svelte';
+  import NeedsActionZone from '$lib/../components/Cockpit/zones/NeedsActionZone.svelte';
+  import InFlightZone from '$lib/../components/Cockpit/zones/InFlightZone.svelte';
+  import QuickActionsZone from '$lib/../components/Cockpit/zones/QuickActionsZone.svelte';
+  import InsightsZone from '$lib/../components/Cockpit/zones/InsightsZone.svelte';
   import { navigate } from '$lib/routes';
-  import { listOpenPRs, GITHUB_ORG, FOREST_REPO_NAMES } from '$lib/github';
-  import type { PullRequest } from '$lib/github';
   import type { WorktreeAssignment } from '$lib/gitforest';
   import {
     activeBuild, builds, isNativeAgent, buildStats, sparklineBuilds,
     workerSlots, conductorState, conductorTasks, gitStore, gitApi, gitforestTree,
   } from '$lib/stores';
+  import { selectedTarget, selectedPreset } from '$lib/cockpit/stores';
+
+  // ── PR target parsing ─────────────────────────────────────────────────────
+
+  function parsePrUrl(htmlUrl: string): { owner: string; repo: string; number: number } | null {
+    const m = htmlUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)$/);
+    if (!m) return null;
+    return { owner: m[1], repo: m[2], number: parseInt(m[3], 10) };
+  }
+
+  const selectedPr = $derived.by(() => {
+    const t = $selectedTarget;
+    if (!t || t.type !== 'pr') return null;
+    return parsePrUrl(t.id);
+  });
+
+  let prHeadSha = $state('');
+
+  $effect(() => {
+    if (!selectedPr) prHeadSha = '';
+  });
 
   // Git sub-store mirror (gitStore is a plain object of writables, not a single store)
   let gitBranch       = $state('');
@@ -280,47 +306,6 @@
     failed:  'var(--la-semantic-error)',
   };
 
-  // ── PR Queue ──────────────────────────────────────────────────────────────
-
-  let openPRs    = $state<PullRequest[]>([]);
-  let prError    = $state('');
-  let prLoading  = $state(false);
-
-  async function fetchPRs() {
-    prLoading = true;
-    try {
-      openPRs = await listOpenPRs(GITHUB_ORG, FOREST_REPO_NAMES);
-      prError = '';
-    } catch (e) {
-      prError = e instanceof Error ? e.message : 'fetch failed';
-    } finally {
-      prLoading = false;
-    }
-  }
-
-  $effect(() => {
-    fetchPRs();
-    const interval = setInterval(fetchPRs, 2 * 60 * 1000);
-    return () => clearInterval(interval);
-  });
-
-  function prAgeMs(pr: PullRequest): number {
-    return Date.now() - new Date(pr.updatedAt).getTime();
-  }
-
-  function prAgeLabel(pr: PullRequest): string {
-    const h = prAgeMs(pr) / 3_600_000;
-    if (h < 1) return `${Math.ceil(h * 60)}m`;
-    if (h < 24) return `${Math.floor(h)}h`;
-    return `${Math.floor(h / 24)}d`;
-  }
-
-  function prAgeBadge(pr: PullRequest): string {
-    const h = prAgeMs(pr) / 3_600_000;
-    if (h < 24) return 'age-fresh';
-    if (h < 72) return 'age-warn';
-    return 'age-stale';
-  }
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════════ TEMPLATE -->
@@ -350,7 +335,7 @@
   <div class="bento">
 
     <!-- ── BUILD HEALTH ─────────────────────────────────────────────────────── -->
-    <div class="card card-health" data-area="health">
+    <div class="card card-health" data-area="health" data-card-role="build-health">
       <div class="card-label">
         BUILD HEALTH
         {#if isIdle}
@@ -407,7 +392,7 @@
     </div>
 
     <!-- ── ESCALATIONS / HITL ────────────────────────────────────────────────── -->
-    <div class="card card-hitl" data-area="escalations">
+    <div class="card card-hitl" data-area="escalations" data-card-role="hitl-escalations">
       <div class="card-label">
         ESCALATIONS
         {#if pendingPermissions.length > 0}
@@ -443,7 +428,7 @@
     </div>
 
     <!-- ── WORKER FLEET ──────────────────────────────────────────────────────── -->
-    <div class="card card-fleet" data-area="fleet">
+    <div class="card card-fleet" data-area="fleet" data-card-role="worker-fleet">
       <div class="card-label">WORKER FLEET</div>
 
       {#if $workerSlots}
@@ -502,7 +487,7 @@
     </div>
 
     <!-- ── DECISION FEED ─────────────────────────────────────────────────────── -->
-    <div class="card card-decisions" data-area="decisions">
+    <div class="card card-decisions" data-area="decisions" data-card-role="decision-feed">
       <div class="card-label">
         DECISION FEED
         {#if !$activeBuild}<span class="dim-note"> — select a build</span>{/if}
@@ -548,7 +533,7 @@
     </div>
 
     <!-- ── GIT STATE ─────────────────────────────────────────────────────────── -->
-    <div class="card card-git" data-area="git">
+    <div class="card card-git" data-area="git" data-card-role="git-state">
       <div class="card-label">GIT STATE</div>
 
       <!-- Primary branch status (always shown) -->
@@ -610,7 +595,7 @@
     </div>
 
     <!-- ── BUILDS RAIL ─────────────────────────────────────────────────────── -->
-    <div class="card card-builds" data-area="builds">
+    <div class="card card-builds" data-area="builds" data-card-role="builds-rail">
       <div class="card-label">
         BUILDS
         <span class="dim-note">{$builds.length} total</span>
@@ -639,45 +624,60 @@
       {/if}
     </div>
 
-    <!-- ── PR QUEUE ─────────────────────────────────────────────────────────── -->
-    <div class="card card-pr" data-area="pr">
+    <!-- ── HITL INBOX ────────────────────────────────────────────────────────── -->
+    <div class="card card-pr" data-area="pr" data-card-role="hitl-inbox">
       <div class="card-label">
-        PR QUEUE
-        {#if openPRs.length > 0}<span class="dim-note">{openPRs.length} open</span>{/if}
-        {#if prError}<span class="err-note"> {prError}</span>{/if}
+        HITL INBOX
+        {#if $selectedTarget?.type === 'pr'}
+          <span class="dim-note">target selected</span>
+        {/if}
       </div>
-
-      {#if prLoading && openPRs.length === 0}
-        <div class="empty-state">checking GitHub…</div>
-      {:else if openPRs.length === 0}
-        <div class="empty-state">{prError ? 'configure GitHub token in Dashboard' : 'no open pull requests'}</div>
-      {:else}
-        <div class="pr-list">
-          {#each openPRs.slice(0, 10) as pr (`${pr.repo}#${pr.number}`)}
-            <div class="pr-row">
-              <span class="pr-num">#{pr.number}</span>
-              {#if pr.draft}<span class="pr-draft">DRAFT</span>{/if}
-              <span class="pr-branch">{pr.headBranch.replace(/^(?:feat|fix|chore)\//, '')}</span>
-              <span class="pr-repo">{pr.repo.slice(0, 14)}</span>
-              <span class="pr-author">@{pr.author.slice(0, 10)}</span>
-              <span class="pr-age {prAgeBadge(pr)}">{prAgeLabel(pr)}</span>
-              {#if pr.reviewersRequested > 0}
-                <span class="pr-review-req" title="{pr.reviewersRequested} reviewer(s) requested">↺</span>
-              {/if}
-              <button
-                class="pr-btn"
-                onclick={() => navigate('/pr/:number', { number: String(pr.number) })}
-              >REVIEW</button>
-            </div>
-          {/each}
-          {#if openPRs.length > 10}
-            <div class="pr-more">+{openPRs.length - 10} more</div>
-          {/if}
-        </div>
-      {/if}
+      <HITLInbox />
     </div>
 
   </div><!-- /bento -->
+
+  <!-- ── PR DETAIL PANEL — shown when a PR target is selected ─────────────── -->
+  {#if selectedPr}
+    <div class="pr-detail-panel" data-card-role="pr-detail-panel">
+      <div class="pr-detail-header">
+        <span class="pr-detail-label">PR REVIEW</span>
+        <span class="pr-detail-target">{$selectedTarget?.label ?? ''}</span>
+        <button class="pr-detail-close" onclick={() => selectedTarget.set(null)} aria-label="Close PR detail">✕</button>
+      </div>
+
+      <div class="pr-detail-body">
+        <div class="pr-detail-meta">
+          <PRMetadataBlock
+            owner={selectedPr.owner}
+            repo={selectedPr.repo}
+            prNumber={selectedPr.number}
+            onHeadSha={(sha) => { prHeadSha = sha; }}
+          />
+        </div>
+
+        <div class="pr-detail-verbs">
+          <PRVerbSurface
+            owner={selectedPr.owner}
+            repo={selectedPr.repo}
+            prNumber={selectedPr.number}
+            headSha={prHeadSha}
+          />
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- ── ENGINEER ZONES — shown when Engineer preset is active ─────────────── -->
+  {#if $selectedPreset === 'engineer'}
+    <div class="engineer-zones" data-card-role="engineer-zones">
+      <div class="ez-zone"><NeedsActionZone /></div>
+      <div class="ez-zone"><InFlightZone /></div>
+      <div class="ez-zone"><QuickActionsZone /></div>
+      <div class="ez-zone"><InsightsZone /></div>
+    </div>
+  {/if}
+
 </div><!-- /cockpit -->
 
 <style>
@@ -1299,99 +1299,6 @@
   .wt-commits { font-size: 7px; color: var(--la-text-mute); flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .wt-more   { font-size: 7px; color: var(--la-text-mute); font-style: italic; padding: 2px 0; }
 
-  /* ── PR Queue ────────────────────────────────────────────────────────────── */
-  .pr-list {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    overflow-y: auto;
-    flex: 1;
-    min-height: 0;
-  }
-  .pr-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 6px;
-    font-size: 9px;
-    border-left: 2px solid transparent;
-    transition: background var(--la-transition-fast);
-  }
-  .pr-row:hover { background: var(--la-bg-card); border-left-color: var(--la-hair-strong); }
-  .pr-num {
-    font-size: 10px;
-    font-weight: 700;
-    color: var(--la-struct-primary);
-    font-variant-numeric: tabular-nums;
-    width: 36px;
-    flex-shrink: 0;
-  }
-  .pr-draft {
-    font-size: 7px;
-    font-weight: 700;
-    letter-spacing: var(--la-tk-mid);
-    color: var(--la-text-mute);
-    border: 1px solid var(--la-hair-base);
-    padding: 0 3px;
-    flex-shrink: 0;
-  }
-  .pr-branch {
-    flex: 1;
-    color: var(--la-text-dim);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .pr-repo {
-    font-size: 8px;
-    color: var(--la-text-mute);
-    letter-spacing: var(--la-tk-tight);
-    flex-shrink: 0;
-  }
-  .pr-author {
-    font-size: 8px;
-    color: var(--la-text-mute);
-    flex-shrink: 0;
-    white-space: nowrap;
-  }
-  .pr-age {
-    font-size: 8px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    padding: 1px 4px;
-    flex-shrink: 0;
-    letter-spacing: var(--la-tk-tight);
-  }
-  .age-fresh { color: var(--la-semantic-ok);    border: 1px solid rgba(34, 197, 94, 0.3); }
-  .age-warn  { color: var(--la-semantic-warn);  border: 1px solid rgba(245,158, 11, 0.3); }
-  .age-stale { color: var(--la-semantic-error); border: 1px solid rgba(239, 68, 68, 0.3); }
-  .pr-review-req {
-    font-size: 11px;
-    color: var(--la-semantic-warn);
-    flex-shrink: 0;
-    line-height: 1;
-  }
-  .pr-btn {
-    font-family: var(--la-font-mono);
-    font-size: 8px;
-    font-weight: 700;
-    letter-spacing: var(--la-tk-mid);
-    padding: 2px 6px;
-    background: rgba(0, 200, 255, 0.06);
-    border: 1px solid rgba(0, 200, 255, 0.3);
-    color: var(--la-struct-primary);
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: background var(--la-transition-fast);
-  }
-  .pr-btn:hover { background: rgba(0, 200, 255, 0.14); }
-  .pr-more {
-    font-size: 8px;
-    color: var(--la-text-mute);
-    padding: 4px 6px;
-    font-style: italic;
-  }
-
   /* ── Shared ────────────────────────────────────────────────────────────── */
   .empty-state {
     font-size: 9px;
@@ -1401,6 +1308,98 @@
   }
   .dim-note  { font-size: 8px; color: var(--la-text-mute); font-weight: 400; letter-spacing: 0; }
   .err-note  { font-size: 9px; color: var(--la-semantic-error); }
+
+  /* ── Engineer Zones ─────────────────────────────────────────────────────── */
+  .engineer-zones {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    flex-shrink: 0;
+  }
+
+  .ez-zone {
+    background: var(--la-bg-panel);
+    border: 1px solid var(--la-hair-base);
+    padding: 10px 12px;
+  }
+
+  @media (max-width: 960px) {
+    .engineer-zones { grid-template-columns: 1fr 1fr; }
+  }
+
+  @media (max-width: 600px) {
+    .engineer-zones { grid-template-columns: 1fr; }
+  }
+
+  /* ── PR Detail Panel ────────────────────────────────────────────────────── */
+  .pr-detail-panel {
+    background: var(--la-bg-panel);
+    border: 1px solid var(--la-struct-primary);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    flex-shrink: 0;
+  }
+
+  .pr-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--la-hair-base);
+  }
+
+  .pr-detail-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: var(--la-tk-loose);
+    color: var(--la-struct-primary);
+    font-family: var(--la-font-mono, monospace);
+    flex-shrink: 0;
+  }
+
+  .pr-detail-target {
+    font-size: 9px;
+    color: var(--la-text-mute);
+    font-family: var(--la-font-mono, monospace);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+
+  .pr-detail-close {
+    background: transparent;
+    border: none;
+    color: var(--la-text-mute);
+    cursor: pointer;
+    font-size: 10px;
+    padding: 0 2px;
+    flex-shrink: 0;
+  }
+
+  .pr-detail-close:hover { color: var(--la-text-base); }
+
+  .pr-detail-body {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0;
+    min-height: 0;
+  }
+
+  .pr-detail-meta {
+    padding: 10px 12px;
+    border-right: 1px solid var(--la-hair-base);
+    overflow: hidden;
+  }
+
+  .pr-detail-verbs {
+    padding: 10px 12px;
+    min-width: 280px;
+    max-width: 360px;
+    display: flex;
+    flex-direction: column;
+  }
 
   /* ── Responsive ─────────────────────────────────────────────────────────── */
   @media (max-width: 960px) {

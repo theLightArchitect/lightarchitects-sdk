@@ -21,6 +21,8 @@
   import SettingsOverlay from './SettingsOverlay.svelte';
   import PolytopeIcon from './PolytopeIcon.svelte';
   import { settingsOpen, pendingResumeSessionId, serverCwd } from '$lib/setup';
+  import { selectedPreset, selectedTarget, PRESET_DISPLAY, quickPickOpen } from '$lib/cockpit/stores';
+  import { parseChips } from '$lib/cockpit/copilotChips';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
   import { renderMarkdown } from '$lib/markdown';
   import type { CopilotMessage, SiblingId, AgentEvent, CopilotContextSnapshot } from '$lib/types';
@@ -792,6 +794,7 @@
 <!-- Drawer container -->
 <div
   data-testid="copilot-drawer"
+  data-card-role="copilot-drawer"
   class="fixed bottom-0 left-0 right-0 z-30 flex flex-col"
   style="height: {open ? heightPx + 'px' : '32px'}; transition: height 0.18s ease;"
 >
@@ -849,6 +852,18 @@
     <!-- Context badge -->
     {#if open}
       <span class="text-[9px] text-[var(--la-text-dim)] truncate max-w-[200px]">{contextBadge()}</span>
+      <!-- Cockpit context chip — shows active preset × target; click to change -->
+      <button
+        onclick={() => quickPickOpen.set(true)}
+        class="flex items-center gap-1 px-1.5 py-0.5 rounded border border-[var(--la-struct-primary)]/30 bg-[var(--la-struct-primary)]/5 hover:bg-[var(--la-struct-primary)]/10 transition-colors shrink-0"
+        title="Cockpit context — click to change target"
+      >
+        <span class="text-[8px] font-mono font-bold text-[var(--la-struct-primary)]">{PRESET_DISPLAY[$selectedPreset]}</span>
+        {#if $selectedTarget}
+          <span class="text-[7px] text-[var(--la-text-dim)]">·</span>
+          <span class="text-[8px] font-mono text-[var(--la-text-label)] max-w-[120px] truncate">{$selectedTarget.label}</span>
+        {/if}
+      </button>
       <!-- Platform summary -->
       <div class="flex items-center gap-2 text-[9px] text-[var(--la-text-dim)]">
         <span>{$builds.length} builds</span>
@@ -1050,6 +1065,19 @@
                         <span class="chat-user-content">{msg.content}</span>
                       {:else}
                         <span class="chat-md-content">{@html renderMarkdown(msg.content)}</span>
+                        {#if msg.role === 'assistant'}
+                          {@const chips = parseChips(msg.content)}
+                          {#if chips.length > 0}
+                            <div class="flex flex-wrap gap-1 mt-1.5">
+                              {#each chips as chip (chip.id)}
+                                <button
+                                  onclick={chip.action}
+                                  class="text-[8px] px-1.5 py-0.5 border border-[var(--la-struct-primary)]/40 text-[var(--la-struct-primary)] hover:bg-[var(--la-struct-primary)]/10 transition-colors font-mono"
+                                >{chip.label}</button>
+                              {/each}
+                            </div>
+                          {/if}
+                        {/if}
                       {/if}
                     </div>
                   </div>
