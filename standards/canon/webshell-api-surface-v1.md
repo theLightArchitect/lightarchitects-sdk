@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.19"  # bumped 2026-05-21: §1.7 ADDED (webshell-cockpit Phase 7 — Cockpit card-role taxonomy, 13 roles, exhaustiveness gate)
+version: "1.0.20"  # bumped 2026-05-21: §2.33 ADDED (webshell-mcp-host post-merge canon backfill — /api/mcp/{servers,tools,invoke} routes shipped at sha 31ff97b without same-commit spec update; backfilled per `feedback_webshell_spec_update_gate`)
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
@@ -1238,6 +1238,83 @@ pub struct CockpitTarget    { pub kind: String, pub id: String, pub label: Strin
 **CopilotDrawer context chip**: Header bar shows `{PRESET} · {target label}` pill when drawer is open; clicking opens `QuickPickPalette` to change the target.
 
 **copilotChips.ts**: Scans assistant message text for GitHub PR URLs and bare `PR #N` references; renders inline `→ owner/repo#N` action chips that call `selectedTarget.set(...)`.
+
+---
+
+### §2.33 MCP Host Proxy (webshell-mcp-host — 2026-05-21 POST-MERGE BACKFILL)
+
+Generic stdio MCP server proxy. The webshell can host any MCP server declared in `~/.lightarchitects/webshell-mcp.json` and proxy tool invocations through a scope + JSON-Schema gate. 5-layer trust model (env isolation → sandbox-exec → process group → ScopeGovernor+SchemaValidator → TOCTOU-safe check) per `lightarchitects-webshell-mcp-host/docs/trust-model.md`.
+
+**Status note**: shipped at commit `31ff97b` (LARGE 7-phase build merged 2026-05-21). Routes registered at `lightarchitects-webshell/src/server/mod.rs:676-678`; handlers at `lightarchitects-webshell/src/server/mcp_routes.rs`. **This §2.33 entry is a post-merge canon backfill** — the build merged without updating the spec; this entry closes the gap per `feedback_webshell_spec_update_gate`. Same-commit-update discipline must hold for all future builds.
+
+**All routes require `AuthGuard` (cookie session, not bearer).** If no MCP host is configured (`~/.lightarchitects/webshell-mcp.json` absent), all three return **503** with `{"error":"mcp_host not configured"}`.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/mcp/servers` | List all managed servers with live state |
+| `GET` | `/api/mcp/tools` | List all cached tools across ready servers |
+| `POST` | `/api/mcp/invoke` | Invoke a single tool (scope + schema gated) |
+
+#### `GET /api/mcp/servers` → 200
+
+```json
+[
+  { "name": "soul", "state": "ready", "tool_count": 23 },
+  { "name": "corso", "state": "ready", "tool_count": 26 },
+  { "name": "eva", "state": "ready", "tool_count": 9 }
+]
+```
+
+`state` values: `ready` (connected + tools listed) | `connecting` | `failed` | `terminated`.
+
+#### `GET /api/mcp/tools` → 200
+
+```json
+[
+  { "server": "soul", "name": "soulTools", "description": "Knowledge graph operations" },
+  { "server": "corso", "name": "corsoTools", "description": "AppSec + build orchestration" }
+]
+```
+
+#### `POST /api/mcp/invoke` request body
+
+```json
+{
+  "server": "soul",
+  "tool": "soulTools",
+  "input": { "sibling": "shared", "action": "search", "query": "..." }
+}
+```
+
+`input` must match the tool's JSON Schema (validated server-side via `SchemaValidator`). Scope guard checks the (server, tool) tuple against `~/.lightarchitects/webshell-mcp.json#scope` allowlist before dispatch.
+
+#### `POST /api/mcp/invoke` → 200
+
+```json
+{ "output": { /* tool-specific JSON */ } }
+```
+
+#### Error responses
+
+| HTTP code | `error` body | Cause |
+|-----------|--------------|-------|
+| 401 | (AuthGuard middleware response) | Missing/invalid session cookie |
+| 503 | `{"error":"mcp_host not configured"}` | No `~/.lightarchitects/webshell-mcp.json` |
+| 400 | `{"error":"<message>"}` | Schema validation failure on `input` |
+| 403 | `{"error":"<message>"}` | Scope-governor denied (server/tool not in allowlist, or TTL expired) |
+| 500 | `{"error":"<message>"}` | Tool execution failure (upstream MCP returned error) |
+
+#### Frontend integration
+
+Panel 5 in `lightarchitects-webshell-ui/src/screens/Tools.svelte` — server-filter dropdown, tool card grid, `McpToolForm` modal (form generated from JSON Schema via `mcp-schema.ts` + `JsonSchemaField.svelte`), result panel. The Tools screen consumes `GET /api/mcp/servers` + `GET /api/mcp/tools` on mount and dispatches `POST /api/mcp/invoke` from the modal.
+
+#### Config template
+
+`lightarchitects-webshell/assets/webshell-mcp.json.default` — copy to `~/.lightarchitects/webshell-mcp.json` and update paths. Day-1: 6 siblings (CORSO, EVA, SOUL, QUANTUM, SERAPH, AYIN) + `@drawio/mcp` + 1 reserve slot.
+
+#### AppState wiring
+
+`AppState.mcp_host: McpHostHandle = Arc<RwLock<Option<HostManager>>>` initialized asynchronously via `tokio::spawn` in `AppState::new()` — webshell startup is non-blocking. Routes acquire a read guard and return `503` when host is `None`.
 
 ---
 
