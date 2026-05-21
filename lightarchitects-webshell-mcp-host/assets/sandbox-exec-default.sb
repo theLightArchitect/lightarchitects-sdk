@@ -1,0 +1,78 @@
+;;; sandbox-exec-default.sb — macOS sandbox profile for MCP server processes
+;;; Used by lightarchitects-webshell-mcp-host spawner.rs.
+;;;
+;;; This is a macOS sandbox-exec(1) scheme policy file. Not JavaScript.
+;;;
+;;; Design: default-deny; allow only explicitly declared resources.
+;;; Runtime -D flags injected by spawner.rs:
+;;;   ALLOWED_PATH_0 = scope.allowed_paths[0] (e.g. /tmp/diagrams)
+;;;   ALLOWED_HOST_0 = scope.allowed_net_hosts[0] (e.g. drawio.com)
+;;;   HOME = user home dir (needed for npx node_modules)
+;;;
+;;; Hostile fixture H1 validates:
+;;;   H1-a: file-read /etc/passwd -> EPERM
+;;;   H1-b: file-write /tmp/outside-scope -> EPERM
+;;;   H1-c: spawn of /bin/sh -> EPERM
+;;;   H1-d: TCP connect to 8.8.8.8:443 (not in ALLOWED_HOST_0) -> EPERM
+
+(version 1)
+
+;;; Default deny all
+(deny default)
+
+;;; System read (required for binary and library loading)
+(allow file-read*
+  (subpath "/usr/lib")
+  (subpath "/usr/share")
+  (subpath "/System/Library")
+  (subpath "/Library/Apple")
+  (subpath "/private/var/db/dyld")
+  (subpath "/nix/store")
+  (subpath "/opt/homebrew/lib")
+  (subpath "/opt/homebrew/Cellar")
+  (literal "/dev/null")
+  (literal "/dev/random")
+  (literal "/dev/urandom"))
+
+;;; Allow read of npm/node package cache dirs only (not entire home dir).
+;;; Needed by npx-based servers (e.g. @drawio/mcp) to locate cached packages.
+;;; GATE2-M1: tightened from (subpath HOME) to specific npm cache paths only.
+;;; Phase 4 task: empirically validate against live @drawio/mcp spawn; expand if needed.
+(allow file-read*
+  (subpath (string-append (param "HOME") "/.npm"))
+  (subpath (string-append (param "HOME") "/.nvm"))
+  (subpath (string-append (param "HOME") "/.node_modules"))
+  (subpath (string-append (param "HOME") "/.config/npm"))
+  (subpath "/usr/local/lib/node_modules")
+  (subpath "/opt/homebrew/lib/node_modules"))
+
+;;; Write restricted to declared allowed_paths only
+(allow file-write*
+  (subpath (param "ALLOWED_PATH_0")))
+
+;;; Process self-info and signaling
+(allow process-info* (target self))
+(allow signal (target self))
+
+;;; Spawning child processes is denied by default (CWE-78 mitigation).
+;;; Explicit deny here for documentation clarity even though default-deny covers it.
+(deny process-fork)
+
+;;; Network: DNS resolution always allowed (needed for hostname lookup)
+(allow network-outbound
+  (remote udp "*:53")
+  (remote tcp "*:53"))
+
+;;; Network: outbound TCP to declared host only (port 80 and 443)
+;;; Phase 4 follow-on: replace wildcard port with explicit 80/443 when sandbox-exec
+;;; supports parameterized port constraints without custom resolver.
+(allow network-outbound
+  (remote tcp (param "ALLOWED_HOST_0") "*"))
+
+;;; Mach IPC: logging and notification center only
+(allow mach-lookup
+  (global-name "com.apple.system.logger")
+  (global-name "com.apple.system.notification_center"))
+
+;;; Sysctl read-only (required by tokio runtime)
+(allow sysctl-read)

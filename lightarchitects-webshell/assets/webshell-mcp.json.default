@@ -1,0 +1,102 @@
+{
+  "mcpServers": {
+    "corso": {
+      "command": "${LIGHTARCHITECTS_HOME}/corso/bin/corso",
+      "args": [],
+      "env": {},
+      "scope": {
+        "lifecycle_mode": "persistent",
+        "allowed_tools": null,
+        "allowed_paths": ["${HOME}"],
+        "allowed_net_hosts": [],
+        "allowed_env_keys": ["HOME", "PATH", "USER", "ANTHROPIC_API_KEY"],
+        "max_concurrent_calls": 3,
+        "call_timeout_ms": 30000
+      }
+    },
+    "eva": {
+      "command": "${LIGHTARCHITECTS_HOME}/eva/bin/eva",
+      "args": [],
+      "env": {},
+      "scope": {
+        "lifecycle_mode": "persistent",
+        "allowed_tools": null,
+        "allowed_paths": ["${HOME}"],
+        "allowed_net_hosts": [],
+        "allowed_env_keys": ["HOME", "PATH", "USER", "ANTHROPIC_API_KEY"],
+        "max_concurrent_calls": 3,
+        "call_timeout_ms": 30000
+      }
+    },
+    "soul": {
+      "command": "${LIGHTARCHITECTS_HOME}/soul/.config/bin/soul",
+      "args": [],
+      "env": {},
+      "scope": {
+        "lifecycle_mode": "persistent",
+        "allowed_tools": null,
+        "allowed_paths": ["${HOME}"],
+        "allowed_net_hosts": [],
+        "allowed_env_keys": ["HOME", "PATH", "USER"],
+        "max_concurrent_calls": 3,
+        "call_timeout_ms": 30000
+      }
+    },
+    "quantum": {
+      "command": "${LIGHTARCHITECTS_HOME}/quantum/bin/quantum-q",
+      "args": ["mcp-server"],
+      "env": {},
+      "scope": {
+        "lifecycle_mode": "persistent",
+        "allowed_tools": null,
+        "allowed_paths": ["${HOME}"],
+        "allowed_net_hosts": [],
+        "allowed_env_keys": ["HOME", "PATH", "USER", "ANTHROPIC_API_KEY"],
+        "max_concurrent_calls": 3,
+        "call_timeout_ms": 60000
+      }
+    },
+    "seraph": {
+      "command": "${LIGHTARCHITECTS_HOME}/seraph/bin/seraph",
+      "args": [],
+      "env": {},
+      "scope": {
+        "lifecycle_mode": "persistent",
+        "allowed_tools": null,
+        "allowed_paths": ["${HOME}"],
+        "allowed_net_hosts": [],
+        "allowed_env_keys": ["HOME", "PATH", "USER", "ANTHROPIC_API_KEY"],
+        "max_concurrent_calls": 2,
+        "call_timeout_ms": 120000
+      }
+    },
+    "ayin": {
+      "command": "${LIGHTARCHITECTS_HOME}/ayin/bin/ayin-mcp",
+      "args": [],
+      "env": {},
+      "scope": {
+        "lifecycle_mode": "persistent",
+        "allowed_tools": null,
+        "allowed_paths": ["${HOME}"],
+        "allowed_net_hosts": ["127.0.0.1"],
+        "allowed_env_keys": ["HOME", "PATH", "USER"],
+        "max_concurrent_calls": 5,
+        "call_timeout_ms": 15000
+      }
+    },
+    "drawio": {
+      "command": "node",
+      "args": ["path/to/@drawio/mcp/src/index.js"],
+      "env": {},
+      "scope": {
+        "lifecycle_mode": "persistent",
+        "allowed_tools": null,
+        "allowed_paths": ["${HOME}/Projects", "/tmp"],
+        "allowed_net_hosts": ["embed.diagrams.net", "app.diagrams.net"],
+        "allowed_env_keys": ["HOME", "PATH", "USER"],
+        "max_concurrent_calls": 2,
+        "call_timeout_ms": 60000
+      }
+    }
+  }
+}

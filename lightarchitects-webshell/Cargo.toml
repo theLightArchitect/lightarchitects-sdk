@@ -14,6 +14,7 @@ name = "lightarchitects-webshell"
 path = "src/main.rs"
 
 [dependencies]
+lightarchitects-webshell-mcp-host = { path = "../lightarchitects-webshell-mcp-host" }
 # Canonical path resolution (unified-forging-vault Phase 1 helper)
 lightarchitects = { path = "../lightarchitects", features = [
     "credentials",

@@ -1,0 +1,61 @@
+{
+  "server": "soul",
+  "tool_count": 1,
+  "tools": [
+    {
+      "allowedCallers": [
+        "code_execution_20250825"
+      ],
+      "compliance": {
+        "composable": true,
+        "ptc_compliant": true,
+        "pure": true,
+        "risk_score": 0
+      },
+      "description": "SOUL Knowledge Graph \u2014 single entry point for all vault operations. Use action='list' to discover available tools and their schemas. Use action='<tool_name>' with params={...} to execute a specific tool.\n\nAvailable tools:\n\u2022 read_note \u2014 Read a note by path. params: {path}. Returns: {content, path}\n\u2022 write_note \u2014 Create a new note (rejects overwrites). params: {path, content}. Returns: {path, bytes_written}\n\u2022 list_notes \u2014 List notes in a directory. params: {path?, limit?}. Returns: {entries[], count}\n\u2022 search \u2014 Regex search across vault content. params: {pattern, path?, frontmatter_only?, limit?}. Returns: [{line, line_number, path}]\n\u2022 query_frontmatter \u2014 Query by YAML frontmatter fields. params: {field, operator, value?, path?, limit?}. Operators: ==, !=, >=, <=, >, <, contains, exists. Returns: {results[], count}\n\u2022 helix \u2014 Query consciousness entries with multi-dimensional filters. params: {sibling?, strands?, resonance?, themes?, epoch?, significance_min?, significance_max?, self_defining?, convergence?, convergence_with?, drill_down?, community_id?, sort_by?, limit?}. Returns: [{title, significance, strands, resonance, ...}]\n\u2022 tag_sync \u2014 Validate tags against canonical vocabulary (dry_run). params: {dry_run?}. Returns: {files_checked, issues[], error_count}\n\u2022 manifest \u2014 Read vault manifest.json. params: none. Returns: vault metadata JSON\n\u2022 validate \u2014 Validate entries against helix template. params: {path?, all?}. Returns: {issues[], count}\n\u2022 stats \u2014 Vault statistics (entries, strands, resonance, significance). params: {sibling?}. Returns: {total_entries, strand_frequency, resonance_frequency, ...}\n\u2022 health \u2014 System health check. params: none. Returns: {neo4j_connected, backend, node_count, edge_count, latency_ms, pool, vault_root}\n\u2022 speak \u2014 Voice synthesis via ElevenLabs TTS. params: {text, voice_id?, output_format?}. Returns: {audio_file, format, bytes, duration_estimate_ms, cost_chars, voice_id}\n\u2022 converse \u2014 Personality prompt assembly from SOUL vault. params: {sibling, message, session_id?}. Returns: {prompt_mode, system_prompt, user_message, voice_profile}\n\u2022 voice \u2014 Unified voice pipeline (batch prompts + TTS). params: {siblings?[], prompt?, synthesize?[{sibling,text}]}. Returns: {prompts?, script?, audio?, tts_available, pipeline_ms}\n\u2022 chat \u2014 Multi-sibling conversation engine. params: {sub_action, ...}. Sub-actions: chat_start, chat_stop, chat_status, chat_inject\n\u2022 query \u2014 4-signal hybrid retrieval (RAG) query. params: {query, owner?, strand?, epoch?, significance_min?, convergence_with?, drill_down?, community_id?, top_k?, token_budget?, rerank?}. Returns: {context, steps[], total_found, retrieval_mode, signal_counts}\n\u2022 convergences \u2014 N-way convergence query (SharedExperience nodes). params: {helix_ids?[], min_weight?, min_participants?, limit?}. Returns: {convergences[], total}\n\u2022 relate \u2014 Create explicit HelixLink between steps. params: {source_id, target_id, link_type, strength?, metadata?}. Returns: {created, source_id, target_id, link_type}\n\u2022 links \u2014 Query outgoing/incoming wikilinks for a step. params: {step_id, direction?, limit?}. Returns: {step_id, outgoing[], incoming[]}\n\u2022 research \u2014 Research aggregation service. params: {query?, sources?[], categories?[], limit?, mode?}. Modes: search (vault digests), digest (summary), refresh (fetch+write). Returns mode-specific results.\n\u2022 graphrag_ingest \u2014 GraphRAG document ingestion. params: {source: {type, path|text|source_id, format?}, domain?, sibling?, dry_run?}. Parses document into entities+relations, writes to knowledge graph. Returns: {nodes_created, edges_created, source_id, errors}.",
+      "inputSchema": {
+        "properties": {
+          "action": {
+            "description": "Action to perform. Use 'list' to discover available tools.",
+            "enum": [
+              "list",
+              "read_note",
+              "write_note",
+              "list_notes",
+              "search",
+              "query_frontmatter",
+              "helix",
+              "tag_sync",
+              "manifest",
+              "validate",
+              "stats",
+              "health",
+              "speak",
+              "dialogue",
+              "converse",
+              "voice",
+              "chat",
+              "ingest",
+              "graphrag_ingest",
+              "query",
+              "convergences",
+              "relate",
+              "links",
+              "soul_search"
+            ],
+            "type": "string"
+          },
+          "params": {
+            "description": "Parameters for the selected action (see action='list' for per-tool schemas)",
+            "type": "object"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "name": "soulTools"
+    }
+  ]
+}

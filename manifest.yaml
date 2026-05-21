@@ -1,0 +1,186 @@
+---
+codename: webshell-mcp-host
+project: lightarchitects-sdk
+branch: feat/webshell-mcp-host
+worktree: ~/lightarchitects/worktrees/webshell-mcp-host
+tier: LARGE
+stack_classification: full-stack
+gate_checklist_variant: full-stack
+status: in_progress
+northstar_pillars: [P1, P2]
+started_at: "2026-05-21"
+plan: ~/.claude/plans/webshell-mcp-host.md
+plan_validation_status: VALIDATED
+plan_xea_aggregate: 90.15
+plan_xea_band: EXEMPLARY-low
+plan_xea_iteration: 3
+
+phases:
+  phase_1:
+    name: scope
+    status: complete
+    started_at: "2026-05-21"
+    completed_at: "2026-05-21"
+  phase_2:
+    name: research-architecture
+    status: complete
+    started_at: "2026-05-21"
+    completed_at: "2026-05-21"
+    commit: "6c7f88a"
+    deliverables:
+      - sibling-lifecycle-audit.py (empirical: all 6 siblings PERSISTENT)
+      - docs/sibling-lifecycle.md
+      - docs/trust-model.md (5-layer model, ScopeGovernor API, CWE coverage)
+      - docs/schema-coverage.md (JSON Schema common-subset, ajv fallback)
+      - assets/sandbox-exec-default.sb (H1-a validated: EPERM on /etc/passwd read)
+      - research/r4-schema-survey/ (soul/seraph/ayin tools/list captures)
+      - research/sonatype-audit-2026-05-21.md (CVE-2026-42559 CVSS 8.8 in rmcp 0.7.0 → 1.7.0)
+    rmcp_upgrade: "0.7.0 → 1.7.0 (CVE-2026-42559 fixed; Apache-2.0)"
+  gate_2:
+    name: research-security
+    status: complete
+    started_at: "2026-05-21"
+    completed_at: "2026-05-21"
+    verdict: CONTINUE
+    lenses: [R, S, A, C]
+    blocking_gaps: 0
+    tracked_medium:
+      - "GATE2-M1: sandbox HOME subpath allow is broad — tighten to ~/.npm and ~/.node_modules only (Phase 4 task)"
+      - "GATE2-M2: @drawio/mcp schema not yet live-captured — live capture in Phase 3 server wiring"
+    tracked_low:
+      - "GATE2-L1: single ALLOWED_HOST_0 param per profile; multi-host needs N params (Phase 4 follow-on)"
+      - "GATE2-L2: Linux seccomp-bpf profile deferred (tech debt §7)"
+    test_count_worktree: 2  # worktree baseline; primary repo baseline=1288 applies post-merge
+    phase_3_unblocked: true
+  phase_3:
+    name: host-core
+    status: complete
+    started_at: "2026-05-21"
+    completed_at: "2026-05-21"
+    files_created:
+      - lightarchitects-webshell-mcp-host/Cargo.toml
+      - lightarchitects-webshell-mcp-host/src/lib.rs
+      - lightarchitects-webshell-mcp-host/src/error.rs
+      - lightarchitects-webshell-mcp-host/src/config.rs
+      - lightarchitects-webshell-mcp-host/src/spawner.rs
+      - lightarchitects-webshell-mcp-host/src/transport.rs
+      - lightarchitects-webshell-mcp-host/src/catalog.rs
+      - lightarchitects-webshell-mcp-host/src/supervisor.rs
+    rmcp_version: "=1.7.0"
+    unit_tests: 13
+    commit: "2266c8d"
+  phase_4:
+    name: trust-boundary
+    status: complete
+    started_at: "2026-05-21"
+    completed_at: "2026-05-21"
+    files_created:
+      - lightarchitects-webshell-mcp-host/src/scope_governor.rs
+      - lightarchitects-webshell-mcp-host/src/schema_validator.rs
+    unit_tests: 28
+    hostile_fixtures: [H1-b, H1-c, H1-d]
+  phase_5:
+    name: http-surface
+    status: complete
+    started_at: "2026-05-21"
+    completed_at: "2026-05-21"
+    commit: "1f17090"
+    files_created:
+      - lightarchitects-webshell/src/server/mcp_routes.rs
+    files_modified:
+      - lightarchitects-webshell-mcp-host/src/lib.rs
+      - lightarchitects-webshell/Cargo.toml
+      - lightarchitects-webshell/src/server/mod.rs
+  phase_6:
+    name: tools-ui
+    status: complete
+    started_at: "2026-05-21"
+    completed_at: "2026-05-21"
+    commit: "2170ad9"
+    files_created:
+      - lightarchitects-webshell-ui/src/lib/mcp-client.ts
+      - lightarchitects-webshell-ui/src/lib/mcp-schema.ts
+      - lightarchitects-webshell-ui/src/lib/mcp-schema.test.ts
+      - lightarchitects-webshell-ui/src/lib/components/JsonSchemaField.svelte
+      - lightarchitects-webshell-ui/src/lib/components/McpToolForm.svelte
+      - lightarchitects-webshell-ui/src/lib/components/SchemaRawJsonFallback.svelte
+    files_modified:
+      - lightarchitects-webshell-ui/src/screens/Tools.svelte
+    unit_tests: 676
+    svelte_check_errors: 0
+  phase_7:
+    name: day1-wiring-and-docs
+    status: complete
+    started_at: "2026-05-21"
+    completed_at: "2026-05-21"
+    commits:
+      - "816645f (docs + config template + README)"
+      - "da8e58f (E2E spec — 6 P1+P2 scenarios)"
+      - "dff378d (Dashboard import timeout fix)"
+    files_created:
+      - lightarchitects-webshell/assets/webshell-mcp.json.default
+      - lightarchitects-webshell-mcp-host/README.md
+      - lightarchitects-webshell-ui/e2e/mcp-tools-proxy.spec.ts
+      - "~/lightarchitects/soul/helix/shared/entries/2026-05-21-webshell-mcp-host-shipped.md"
+    files_modified:
+      - lightarchitects-webshell/CLAUDE.md
+      - "standards/canon/architects-blueprint.md (Part XXVIII CANDIDATE — soul/helix symlink target)"
+      - "lightarchitects-webshell-ui/src/__tests__/phase6.test.ts (Dashboard import timeout 5s→20s)"
+    config_files:
+      - "~/.lightarchitects/webshell-mcp.json (machine-specific, not committed)"
+    e2e_scenarios: 6
+    helix_entry: "significance 8.5 — shipped in soul repo @ 7bd637f"
+
+preflight:
+  g0_stack_classification: full-stack
+  g1_fetch: PASS
+  g2_local_vs_remote: WARN_ahead_by_1  # local has 1 unpushed commit (116a41d feat(arch))
+  g3_cargo_check: PASS
+  g4_make_quality: PASS  # 1288/1288 on quiet machine; one timing test flaky under load
+  g5_branch_worktree_collision: PASS
+  g6_active_yaml_entry: PASS  # /SYNC complete 2026-05-21 — all 4 tracking artifacts updated (sprint 13)
+  g7_parent_program: NA
+  g8_disk_free: PASS_97GB
+
+xea_gate_preflight:
+  result: VALIDATED
+  layer_0: PASS
+  layer_1: 90.15_EXEMPLARY-low
+  layer_2: PASS
+  layer_3: PASS
+  blocking_gaps: 0
+  tracked_high:
+    - "HIGH-1: Part XIV Phase 7 kroki reference stale (corrected 2026-05-21 per R-7)"
+
+gate_7:
+  name: pre-merge
+  status: PASS
+  evaluated_at: "2026-05-21"
+  q1_fmt: PASS
+  q2_clippy: PASS
+  q3_cargo_test: PASS  # workspace 1266+30+6+7+101+5+18+4+593 = all ok
+  q4_vitest_unit: PASS  # 676/676 (36 files)
+  svelte_check: PASS  # 0 errors, 31 warnings (pre-existing)
+  s2_cargo_deny: PRE-EXISTING  # native-tls/openssl from fastembed/hf-hub/ort; mcp-host crate clean
+  s4_no_bypass: PASS  # no --no-verify, --no-gpg-sign, --force in our commits
+  i1_rebased: PASS  # rebased on origin/main after a619d67
+  i2_no_conflicts: PASS
+  i3_post_rebase_build: PASS
+  n1_northstar_present: PASS  # P1+P2 in plan + manifest
+  n2_pillar_advancement: PASS  # P1: operator tools panel; P2: 3 invocation routes
+  d1_public_apis_documented: PASS  # InvokeRequest + all pub items have doc comments
+  d2_plan_updated: PASS
+  d3_active_yaml_updated: PASS
+  v1_e2e_spec: PASS  # mcp-tools-proxy.spec.ts — 6 CI-safe scenarios
+  verdict: APPROVED
+
+test_counts:
+  phase_1_baseline: 1288  # full workspace on main before feat branch (primary repo)
+  worktree_baseline: 2    # worktree: 3 existing members; new crate added in Phase 3
+  phase_3_rust: 28        # lightarchitects-webshell-mcp-host crate
+  final_vitest: 676       # unit tests (36 files)
+
+canon_amendments_applied:
+  - id: "GATE1-HIGH1"
+    description: "Fixed stale kroki references in plan Phase 7 deliverables, exit criteria, file-function map, phase-set table, and agent topology (5 locations). Count corrected 9→8 day-1 servers. Per R-7 iter-2 correction."
+    applied_at: "2026-05-21 gate-1 REMEDY"
