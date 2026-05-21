@@ -93,8 +93,10 @@ phases:
       - lightarchitects-webshell/src/server/mod.rs
   phase_6:
     name: tools-ui
-    status: in_progress
+    status: complete
     started_at: "2026-05-21"
+    completed_at: "2026-05-21"
+    commit: "2170ad9"
     files_created:
       - lightarchitects-webshell-ui/src/lib/mcp-client.ts
       - lightarchitects-webshell-ui/src/lib/mcp-schema.ts
@@ -104,20 +106,30 @@ phases:
       - lightarchitects-webshell-ui/src/lib/components/SchemaRawJsonFallback.svelte
     files_modified:
       - lightarchitects-webshell-ui/src/screens/Tools.svelte
-    unit_tests: 645
+    unit_tests: 676
     svelte_check_errors: 0
   phase_7:
     name: day1-wiring-and-docs
-    status: in_progress
+    status: complete
     started_at: "2026-05-21"
+    completed_at: "2026-05-21"
+    commits:
+      - "816645f (docs + config template + README)"
+      - "da8e58f (E2E spec — 6 P1+P2 scenarios)"
+      - "dff378d (Dashboard import timeout fix)"
     files_created:
       - lightarchitects-webshell/assets/webshell-mcp.json.default
       - lightarchitects-webshell-mcp-host/README.md
+      - lightarchitects-webshell-ui/e2e/mcp-tools-proxy.spec.ts
+      - "~/lightarchitects/soul/helix/shared/entries/2026-05-21-webshell-mcp-host-shipped.md"
     files_modified:
       - lightarchitects-webshell/CLAUDE.md
-      - "~/lightarchitects/soul/helix/user/standards/canon/architects-blueprint.md (Part XXVIII CANDIDATE)"
+      - "standards/canon/architects-blueprint.md (Part XXVIII CANDIDATE — soul/helix symlink target)"
+      - "lightarchitects-webshell-ui/src/__tests__/phase6.test.ts (Dashboard import timeout 5s→20s)"
     config_files:
       - "~/.lightarchitects/webshell-mcp.json (machine-specific, not committed)"
+    e2e_scenarios: 6
+    helix_entry: "significance 8.5 — shipped in soul repo @ 7bd637f"
 
 preflight:
   g0_stack_classification: full-stack
@@ -140,10 +152,33 @@ xea_gate_preflight:
   tracked_high:
     - "HIGH-1: Part XIV Phase 7 kroki reference stale (corrected 2026-05-21 per R-7)"
 
+gate_7:
+  name: pre-merge
+  status: PASS
+  evaluated_at: "2026-05-21"
+  q1_fmt: PASS
+  q2_clippy: PASS
+  q3_cargo_test: PASS  # workspace 1266+30+6+7+101+5+18+4+593 = all ok
+  q4_vitest_unit: PASS  # 676/676 (36 files)
+  svelte_check: PASS  # 0 errors, 31 warnings (pre-existing)
+  s2_cargo_deny: PRE-EXISTING  # native-tls/openssl from fastembed/hf-hub/ort; mcp-host crate clean
+  s4_no_bypass: PASS  # no --no-verify, --no-gpg-sign, --force in our commits
+  i1_rebased: PASS  # rebased on origin/main after a619d67
+  i2_no_conflicts: PASS
+  i3_post_rebase_build: PASS
+  n1_northstar_present: PASS  # P1+P2 in plan + manifest
+  n2_pillar_advancement: PASS  # P1: operator tools panel; P2: 3 invocation routes
+  d1_public_apis_documented: PASS  # InvokeRequest + all pub items have doc comments
+  d2_plan_updated: PASS
+  d3_active_yaml_updated: PASS
+  v1_e2e_spec: PASS  # mcp-tools-proxy.spec.ts — 6 CI-safe scenarios
+  verdict: APPROVED
+
 test_counts:
   phase_1_baseline: 1288  # full workspace on main before feat branch (primary repo)
   worktree_baseline: 2    # worktree: 3 existing members; new crate added in Phase 3
-  current: 28
+  phase_3_rust: 28        # lightarchitects-webshell-mcp-host crate
+  final_vitest: 676       # unit tests (36 files)
 
 canon_amendments_applied:
   - id: "GATE1-HIGH1"
