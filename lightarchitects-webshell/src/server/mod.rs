@@ -54,6 +54,7 @@ pub mod code_routes;
 pub mod exec_routes;
 pub mod fleet_routes;
 pub mod git_routes;
+pub mod mcp_routes;
 pub mod roadmap;
 
 /// Snapshot of the browser UI state, periodically reported by the frontend.
@@ -253,6 +254,9 @@ pub struct AppState {
     /// Background task is the sole writer (30s poll); per-request read lock only —
     /// no file I/O on the hot path.  Empty when the file is absent or unreadable.
     pub eva_identity: Arc<tokio::sync::RwLock<crate::copilot::eva_identity::EvaIdentityCache>>,
+    /// Optional MCP host — spawned from `~/.lightarchitects/webshell-mcp.json`
+    /// at startup. `None` until Phase 7 places the config file.
+    pub mcp_host: mcp_routes::McpHostHandle,
 }
 
 impl AppState {
@@ -408,6 +412,16 @@ impl AppState {
             pr_metadata_cache: crate::github_proxy::pr_metadata_cache(),
             commit_metadata_cache: crate::github_proxy::commit_metadata_cache(),
             eva_identity,
+            mcp_host: {
+                let handle = std::sync::Arc::new(tokio::sync::RwLock::new(None));
+                let h2 = handle.clone();
+                tokio::spawn(async move {
+                    if let Some(mgr) = mcp_routes::try_init_host().await {
+                        *h2.write().await = Some(mgr);
+                    }
+                });
+                handle
+            },
         }
     }
 
@@ -518,6 +532,7 @@ impl AppState {
             eva_identity: Arc::new(tokio::sync::RwLock::new(
                 crate::copilot::eva_identity::EvaIdentityCache::default(),
             )),
+            mcp_host: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
 }
@@ -657,6 +672,10 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/arch/emit",    post(crate::arch_proxy::emit_handler))
         .route("/api/arch/kroki",   post(crate::arch_proxy::kroki_handler))
         .route("/api/arch/health",  get(crate::arch_proxy::health_handler))
+        // ── MCP host proxy (webshell-mcp-host Phase 5) ────────────────────────
+        .route("/api/mcp/servers", get(mcp_routes::list_servers_handler))
+        .route("/api/mcp/tools",   get(mcp_routes::list_tools_handler))
+        .route("/api/mcp/invoke",  post(mcp_routes::invoke_handler))
         // ── Phase 9.5 / 10.5 SOUL vault hybrid memory routes ─────────────────
         .route("/api/soul/search", get(events::soul_routes::search_handler))
         .route(

@@ -81,7 +81,14 @@ phases:
     hostile_fixtures: [H1-b, H1-c, H1-d]
   phase_5:
     name: http-surface
-    status: pending
+    status: in_progress
+    started_at: "2026-05-21"
+    files_created:
+      - lightarchitects-webshell/src/server/mcp_routes.rs
+    files_modified:
+      - lightarchitects-webshell-mcp-host/src/lib.rs
+      - lightarchitects-webshell/Cargo.toml
+      - lightarchitects-webshell/src/server/mod.rs
   phase_6:
     name: tools-ui
     status: pending

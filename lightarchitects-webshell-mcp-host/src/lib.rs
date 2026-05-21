@@ -134,6 +134,52 @@ impl HostManager {
         Ok(())
     }
 
+    /// Invoke a tool on a live MCP server after running scope + schema checks.
+    ///
+    /// Holds the supervisor lock for the duration of the call. Concurrent calls
+    /// to the same server are serialized — acceptable for Phase 5; a per-server
+    /// semaphore can replace this in a later phase.
+    pub async fn invoke_tool(
+        &self,
+        server_name: &str,
+        tool_name: &str,
+        input: serde_json::Value,
+    ) -> Result<serde_json::Value, McpHostError> {
+        self.check_call_policy(server_name, tool_name, &input)
+            .await?;
+
+        let sup_arc = self
+            .supervisors
+            .get(server_name)
+            .ok_or_else(|| McpHostError::NotFound {
+                name: server_name.to_owned(),
+            })?;
+
+        let guard = sup_arc.lock().await;
+        let running = guard.running().ok_or_else(|| McpHostError::NotReady {
+            name: server_name.to_owned(),
+        })?;
+
+        let base = rmcp::model::CallToolRequestParams::new(tool_name.to_owned());
+        let params = input
+            .as_object()
+            .cloned()
+            .map_or(base.clone(), |args| base.with_arguments(args));
+
+        let result =
+            running
+                .peer()
+                .call_tool(params)
+                .await
+                .map_err(|e| McpHostError::ToolsCall {
+                    name: server_name.to_owned(),
+                    tool: tool_name.to_owned(),
+                    reason: e.to_string(),
+                })?;
+
+        Ok(serde_json::to_value(&result.content)?)
+    }
+
     /// Cancel the root token, stopping all managed server connections.
     pub fn shutdown(&self) {
         self.ct.cancel();
