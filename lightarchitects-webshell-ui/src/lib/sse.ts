@@ -779,7 +779,7 @@ const TOPIC_MAX_BACKOFF   = 30_000;
  * optional `build_id` are added by the `WebEventV2` wrapper.
  */
 export interface WebEventV2 {
-  /** NATS-style dot-path topic, e.g. `"v1.copilot.activity"`. */
+  /** NATS-style dot-path topic, e.g. `"v1.agent.claude.activity"`. */
   topic: string;
   timestamp: string;
   agent_id: string;
@@ -791,29 +791,146 @@ export interface WebEventV2 {
 }
 
 /**
- * Subscribe to the gateway SSE stream filtered to events matching a
+ * Client-side NATS-style topic pattern matching — mirrors `TopicFilter::matches`
+ * in `lightarchitects-webshell/src/events/topic_filter.rs`.
+ *
+ * Segments are split on `.`. Wildcards:
+ * - `*` — matches exactly one segment
+ * - `>` — matches one or more trailing segments (must be the last segment)
+ */
+function topicMatches(pattern: string, topic: string): boolean {
+  const pat = pattern.split('.');
+  const top = topic.split('.');
+
+  function matchFrom(pi: number, si: number): boolean {
+    if (si === pat.length) return pi === top.length;
+    const seg = pat[si];
+    if (seg === '>') return pi < top.length;
+    if (seg === '*') return pi < top.length && matchFrom(pi + 1, si + 1);
+    return pi < top.length && top[pi] === seg && matchFrom(pi + 1, si + 1);
+  }
+
+  return matchFrom(0, 0);
+}
+
+// ── Shared event-bus SSE connection ────────────────────────────────────────────
+// A single persistent fetch-stream to /api/events?topic=v1.%3E dispatches
+// events client-side to all in-memory topic subscribers. This replaces the
+// N-connection model where each subscribeByTopic call opened its own SSE fetch.
+
+const topicSubscribers = new Map<string, Set<(event: WebEventV2) => void>>();
+
+function dispatchToTopicSubscribers(event: WebEventV2): void {
+  for (const [pattern, callbacks] of topicSubscribers) {
+    if (topicMatches(pattern, event.topic)) {
+      for (const cb of callbacks) {
+        try { cb(event); } catch { /* isolate per-subscriber errors */ }
+      }
+    }
+  }
+}
+
+function totalTopicSubscriberCount(): number {
+  let n = 0;
+  for (const s of topicSubscribers.values()) n += s.size;
+  return n;
+}
+
+let eventBusAbort: AbortController | null = null;
+let eventBusDelay = TOPIC_INITIAL_DELAY;
+let eventBusTimer: ReturnType<typeof setTimeout> | null = null;
+
+function startEventBus(): void {
+  if (eventBusAbort !== null) return;
+  eventBusAbort = new AbortController();
+  eventBusDelay = TOPIC_INITIAL_DELAY;
+  void connectEventBus();
+}
+
+function stopEventBus(): void {
+  if (eventBusAbort === null) return;
+  eventBusAbort.abort();
+  eventBusAbort = null;
+  if (eventBusTimer !== null) {
+    clearTimeout(eventBusTimer);
+    eventBusTimer = null;
+  }
+}
+
+async function connectEventBus(): Promise<void> {
+  if (eventBusAbort === null || eventBusAbort.signal.aborted) return;
+  const { signal } = eventBusAbort;
+  const params = new URLSearchParams({ topic: 'v1.>' });
+
+  let response: Response;
+  try {
+    response = await fetch(`/api/events?${params.toString()}`, { signal, headers: authHeaders() });
+  } catch (err) {
+    if ((err as { name?: string }).name === 'AbortError') return;
+    scheduleEventBusReconnect();
+    return;
+  }
+
+  if (!response.ok || !response.body) {
+    if (response.status === 401 || response.status === 403) return;
+    scheduleEventBusReconnect();
+    return;
+  }
+
+  eventBusDelay = TOPIC_INITIAL_DELAY;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            dispatchToTopicSubscribers(JSON.parse(line.slice(6)) as WebEventV2);
+          } catch { /* non-JSON SSE line — ignore */ }
+        }
+      }
+    }
+  } catch (err) {
+    if ((err as { name?: string }).name === 'AbortError') return;
+  }
+
+  if (!signal.aborted) scheduleEventBusReconnect();
+}
+
+function scheduleEventBusReconnect(): void {
+  if (eventBusAbort === null || eventBusAbort.signal.aborted) return;
+  eventBusTimer = setTimeout(() => {
+    eventBusDelay = Math.min(eventBusDelay * 2, TOPIC_MAX_BACKOFF);
+    void connectEventBus();
+  }, eventBusDelay);
+}
+
+/**
+ * Subscribe to the global event-bus SSE stream for events matching a
  * NATS-style topic pattern.
  *
  * Pattern syntax:
  * - `*` — matches exactly one dot-separated segment
  * - `>` — matches one or more trailing segments (must be last)
  *
- * The filter is applied **server-side** via the `?topic=` query parameter.
- * Uses the same fetch-streaming + auth-header pattern as {@link connectSSE}
- * because native `EventSource` cannot send authorization headers.
+ * A single shared SSE connection to `/api/events?topic=v1.>` is maintained
+ * for all callers; events are dispatched client-side via {@link topicMatches}.
  * Reconnects automatically with exponential back-off (1 s → 30 s cap).
  *
  * @example
  * ```ts
- * // Stream only copilot events for this component's lifetime.
- * const unsub = subscribeByTopic('v1.copilot.*', (ev) => console.log(ev));
+ * const unsub = subscribeByTopic('v1.agent.ayin.*', (ev) => console.log(ev));
  * onDestroy(unsub);
- *
- * // Stream everything under v1. (all events).
- * const unsub = subscribeByTopic('v1.>', handler);
  * ```
  *
- * @param pattern - NATS-style topic pattern (e.g. `"v1.copilot.*"`).
+ * @param pattern - NATS-style topic pattern (e.g. `"v1.agent.ayin.*"`).
  * @param cb      - Called for every {@link WebEventV2} matching the pattern.
  * @returns A cleanup function — call it in `$effect` return or `onDestroy`.
  */
@@ -821,87 +938,20 @@ export function subscribeByTopic(
   pattern: string,
   cb: (event: WebEventV2) => void,
 ): () => void {
-  const abortCtrl = new AbortController();
-  let delay = TOPIC_INITIAL_DELAY;
-  let reconnectHandle: ReturnType<typeof setTimeout> | null = null;
-
-  // URLSearchParams handles percent-encoding of `>` → `%3E` automatically.
-  const params = new URLSearchParams({ topic: pattern });
-
-  async function connect(): Promise<void> {
-    if (abortCtrl.signal.aborted) return;
-
-    let response: Response;
-    try {
-      response = await fetch(`/api/events?${params.toString()}`, {
-        signal: abortCtrl.signal,
-        headers: authHeaders(),
-      });
-    } catch (err) {
-      if ((err as { name?: string }).name === 'AbortError') return;
-      schedule();
-      return;
-    }
-
-    if (!response.ok || !response.body) {
-      // Auth failures are terminal — don't retry until token changes.
-      if (response.status === 401 || response.status === 403) return;
-      schedule();
-      return;
-    }
-
-    // Connection established — reset backoff.
-    delay = TOPIC_INITIAL_DELAY;
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const parsed = JSON.parse(line.slice(6)) as WebEventV2;
-              cb(parsed);
-            } catch {
-              // Non-JSON SSE comment or keep-alive — ignore.
-            }
-          }
-        }
-      }
-    } catch (err) {
-      if ((err as { name?: string }).name === 'AbortError') return;
-    }
-
-    // Stream ended — reconnect unless deliberately aborted.
-    if (!abortCtrl.signal.aborted) {
-      schedule();
-    }
+  if (!topicSubscribers.has(pattern)) {
+    topicSubscribers.set(pattern, new Set());
   }
-
-  function schedule(): void {
-    if (abortCtrl.signal.aborted) return;
-    reconnectHandle = setTimeout(() => {
-      delay = Math.min(delay * 2, TOPIC_MAX_BACKOFF);
-      void connect();
-    }, delay);
-  }
-
-  void connect();
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  topicSubscribers.get(pattern)!.add(cb);
+  startEventBus();
 
   return () => {
-    abortCtrl.abort();
-    if (reconnectHandle !== null) {
-      clearTimeout(reconnectHandle);
+    const set = topicSubscribers.get(pattern);
+    if (set) {
+      set.delete(cb);
+      if (set.size === 0) topicSubscribers.delete(pattern);
     }
+    if (totalTopicSubscriberCount() === 0) stopEventBus();
   };
 }
 

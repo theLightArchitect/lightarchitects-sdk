@@ -1,9 +1,7 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
   import { conductorTasks, conductorStats } from '$lib/stores';
   import { SIBLING_COLORS } from '$lib/design-tokens';
   import type { ConductorTask, ConductorTaskStatus } from '$lib/types';
-  import { subscribeByTopic, type WebEventV2 } from '$lib/sse';
 
   interface Props {
     maxDisplay?: number;
@@ -37,25 +35,6 @@
     if (diff < 3600000) return `${Math.floor(diff / 60000)}m`;
     return `${Math.floor(diff / 3600000)}h`;
   }
-
-  let unsubscribe: (() => void) | null = null;
-
-  function handleConductorEvent(event: WebEventV2): void {
-    if (event.type === 'conductor_task') {
-      const nodes = (event as WebEventV2 & { nodes?: ConductorTask[] }).nodes;
-      if (Array.isArray(nodes)) {
-        conductorTasks.set(nodes);
-      }
-    }
-  }
-
-  onMount(() => {
-    unsubscribe = subscribeByTopic('v1.conductor.*', handleConductorEvent);
-  });
-
-  onDestroy(() => {
-    unsubscribe?.();
-  });
 
   let displayedTasks = $derived.by(() => {
     const seen = new Set<string>();

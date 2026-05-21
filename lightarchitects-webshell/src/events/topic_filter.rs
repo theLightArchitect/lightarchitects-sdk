@@ -176,12 +176,15 @@ mod tests {
         assert!(f.matches("v1.copilot.a.b.c"));
     }
 
-    // ── parity matrix — 20 topic strings ─────────────────────────────────────
-    // Verifies the Rust patterns that TS `subscribeByTopic` must agree with.
+    // ── parity matrix — algorithm coverage ───────────────────────────────────
+    // Tests the wildcard algorithm with a variety of pattern + topic strings.
+    // NOTE: these topic strings are *arbitrary algorithm-coverage examples*, NOT
+    // the actual production taxonomy from `topic_for()` in envelope.rs. For real
+    // taxonomy, see `actual_taxonomy_correctness` below.
 
     #[test]
     #[allow(clippy::panic)]
-    fn parity_matrix_all_events() {
+    fn parity_matrix_algorithm_coverage() {
         struct Case {
             pattern: &'static str,
             should_match: &'static [&'static str],
@@ -268,6 +271,123 @@ mod tests {
                     topic,
                 );
             }
+        }
+    }
+
+    // ── actual production taxonomy (from topic_for() in envelope.rs) ──────────
+    // These are the real topic strings the gateway emits. Any change to topic_for()
+    // must be reflected here — these tests anchor the TS subscribeByTopic() callers.
+
+    #[test]
+    fn actual_taxonomy_correctness() {
+        // AYIN status variants
+        assert!(
+            TopicFilter::parse("v1.agent.ayin.*")
+                .unwrap()
+                .matches("v1.agent.ayin.connected")
+        );
+        assert!(
+            TopicFilter::parse("v1.agent.ayin.*")
+                .unwrap()
+                .matches("v1.agent.ayin.disconnected")
+        );
+        assert!(
+            TopicFilter::parse("v1.agent.ayin.*")
+                .unwrap()
+                .matches("v1.agent.ayin.reconnecting")
+        );
+
+        // Worktree / gitforest
+        assert!(
+            TopicFilter::parse("v1.worktree.update")
+                .unwrap()
+                .matches("v1.worktree.update")
+        );
+        assert!(
+            !TopicFilter::parse("v1.worktree.update")
+                .unwrap()
+                .matches("v1.worktree.create")
+        );
+
+        // Conductor
+        assert!(
+            TopicFilter::parse("v1.conductor.escalation")
+                .unwrap()
+                .matches("v1.conductor.escalation")
+        );
+        assert!(
+            TopicFilter::parse("v1.conductor.*")
+                .unwrap()
+                .matches("v1.conductor.escalation")
+        );
+        assert!(
+            TopicFilter::parse("v1.conductor.*")
+                .unwrap()
+                .matches("v1.conductor.tick")
+        );
+        assert!(
+            !TopicFilter::parse("v1.conductor.*")
+                .unwrap()
+                .matches("v1.conductor.slot.gauge")
+        );
+
+        // Helix / SOUL
+        assert!(
+            TopicFilter::parse("v1.helix.>")
+                .unwrap()
+                .matches("v1.helix.entry.changed")
+        );
+        assert!(
+            TopicFilter::parse("v1.helix.>")
+                .unwrap()
+                .matches("v1.helix.entry.promoted")
+        );
+
+        // Copilot (actual prefix is v1.agent.claude, not v1.copilot)
+        assert!(
+            TopicFilter::parse("v1.agent.claude.*")
+                .unwrap()
+                .matches("v1.agent.claude.activity")
+        );
+        assert!(
+            TopicFilter::parse("v1.agent.claude.*")
+                .unwrap()
+                .matches("v1.agent.claude.response")
+        );
+        assert!(
+            !TopicFilter::parse("v1.agent.claude.*")
+                .unwrap()
+                .matches("v1.agent.ayin.connected")
+        );
+
+        // Build
+        assert!(
+            TopicFilter::parse("v1.build.>")
+                .unwrap()
+                .matches("v1.build.update")
+        );
+        assert!(
+            TopicFilter::parse("v1.build.>")
+                .unwrap()
+                .matches("v1.build.supervisor.update")
+        );
+        assert!(
+            TopicFilter::parse("v1.build.>")
+                .unwrap()
+                .matches("v1.build.pillar.update")
+        );
+
+        // Catch-all v1
+        let all = TopicFilter::parse("v1.>").unwrap();
+        for topic in &[
+            "v1.agent.ayin.connected",
+            "v1.worktree.update",
+            "v1.conductor.escalation",
+            "v1.helix.entry.changed",
+            "v1.agent.claude.activity",
+            "v1.build.update",
+        ] {
+            assert!(all.matches(topic), "v1.> should match {topic}");
         }
     }
 }
