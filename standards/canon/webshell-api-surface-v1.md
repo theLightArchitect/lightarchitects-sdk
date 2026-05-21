@@ -1165,6 +1165,51 @@ Per-PR metadata lookup for a specific repository + PR number. Validates against 
 
 ---
 
+### §2.32 Cockpit ↔ Copilot Context Schema (webshell-cockpit Phase 6 — 2026-05-21 ADDITION)
+
+Cockpit state is injected into every copilot message's `ui_context.cockpit` field (frontend `UiContext.cockpit`). The server renders it into the `<ui_context>` prelude block visible to the model.
+
+**TypeScript shape** (`src/lib/types.ts` `UiContext.cockpit`):
+```typescript
+cockpit?: {
+  preset: string;           // "engineer" | "security" | "ops" | "quality" | "knowledge" | "researcher" | "testing"
+  target: {
+    type: string;           // TargetType: "project" | "build" | "phase" | "wave" | "file" | "commit" | "branch" | "pr"
+    id: string;             // Stable identifier (PR URL, build ID, file path…)
+    label: string;          // Human-readable display label
+  } | null;
+}
+```
+
+**Rust shape** (`src/copilot/mod.rs` `UiContext.cockpit`):
+```rust
+#[serde(default)]
+pub cockpit: Option<CockpitUiContext>
+
+pub struct CockpitUiContext { pub preset: String, pub target: Option<CockpitTarget> }
+pub struct CockpitTarget    { pub kind: String, pub id: String, pub label: String }
+```
+
+**Validation limits** (enforced by `context.rs::validate()`):
+- `cockpit.preset` ≤ `MAX_UI_FIELD_BYTES` (256 B)
+- `cockpit.target.id` ≤ `MAX_ROUTE_BYTES` (512 B)
+- `cockpit.target.label` ≤ `MAX_UI_FIELD_BYTES` (256 B)
+
+**Prompt prelude emission** (when `cockpit` is set):
+```
+<ui_context>
+  route: /cockpit
+  cockpit.preset: engineer
+  cockpit.target: pr https://github.com/TheLightArchitects/webshell/pull/47 (#47 webshell)
+</ui_context>
+```
+
+**CopilotDrawer context chip**: Header bar shows `{PRESET} · {target label}` pill when drawer is open; clicking opens `QuickPickPalette` to change the target.
+
+**copilotChips.ts**: Scans assistant message text for GitHub PR URLs and bare `PR #N` references; renders inline `→ owner/repo#N` action chips that call `selectedTarget.set(...)`.
+
+---
+
 ## Part III — Frontend Route Catalogue
 
 ### §3.1 Router Implementation

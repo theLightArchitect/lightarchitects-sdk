@@ -1223,6 +1223,11 @@ export interface UiContext {
   view?: string;
   /** Service names that are currently degraded or offline. */
   degraded: string[];
+  /** Cockpit state at copilot submit time — preset + active target. */
+  cockpit?: {
+    preset: string;
+    target: { type: string; id: string; label: string } | null;
+  };
 }
 
 /** State machine for the copilot context capture workflow. */

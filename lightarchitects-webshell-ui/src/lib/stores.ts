@@ -19,6 +19,7 @@ import type {
 } from './types';
 import { SiblingWave, SIBLINGS, PILLARS } from './types';
 import { DEFAULT_SKIN, type HelixSkin } from './helix-skin';
+import { selectedPreset, selectedTarget } from './cockpit/stores';
 import type { TextureMode } from './helix/procedural-textures';
 export type { TextureMode };
 export { TEXTURE_MODES, TEXTURE_LABELS } from './helix/procedural-textures';
@@ -1032,9 +1033,19 @@ export function snapshotContextForCopilot(): CopilotContextSnapshot {
     .filter(h => h.status === 'degraded' || h.status === 'offline')
     .map(h => h.id);
 
+  const preset = get(selectedPreset);
+  const target = get(selectedTarget);
+
   return {
     recentEvents,
-    uiContext: { route, degraded },
+    uiContext: {
+      route,
+      degraded,
+      cockpit: {
+        preset,
+        target: target ? { type: target.type, id: target.id, label: target.label } : null,
+      },
+    },
     capturedAt: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
     oversizeIndices,
   };

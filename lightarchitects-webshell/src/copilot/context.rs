@@ -245,6 +245,31 @@ pub fn validate(
                 });
             }
         }
+        if let Some(cockpit) = &ctx.cockpit {
+            if cockpit.preset.len() > MAX_UI_FIELD_BYTES {
+                return Err(CopilotContextError::UiContextFieldTooLarge {
+                    field: "cockpit.preset",
+                    bytes: cockpit.preset.len(),
+                    limit: MAX_UI_FIELD_BYTES,
+                });
+            }
+            if let Some(t) = &cockpit.target {
+                if t.id.len() > MAX_ROUTE_BYTES {
+                    return Err(CopilotContextError::UiContextFieldTooLarge {
+                        field: "cockpit.target.id",
+                        bytes: t.id.len(),
+                        limit: MAX_ROUTE_BYTES,
+                    });
+                }
+                if t.label.len() > MAX_UI_FIELD_BYTES {
+                    return Err(CopilotContextError::UiContextFieldTooLarge {
+                        field: "cockpit.target.label",
+                        bytes: t.label.len(),
+                        limit: MAX_UI_FIELD_BYTES,
+                    });
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -333,6 +358,12 @@ pub fn assemble_prompt_prelude(
         if !ctx.degraded.is_empty() {
             let _ = writeln!(out, "  degraded: {}", ctx.degraded.join(", "));
         }
+        if let Some(cockpit) = &ctx.cockpit {
+            let _ = writeln!(out, "  cockpit.preset: {}", cockpit.preset);
+            if let Some(t) = &cockpit.target {
+                let _ = writeln!(out, "  cockpit.target: {} {} ({})", t.kind, t.id, t.label);
+            }
+        }
         out.push_str("</ui_context>\n");
     }
 
@@ -398,6 +429,7 @@ mod tests {
             selection: Some("build-abc".to_owned()),
             view: Some("activity".to_owned()),
             degraded: vec![],
+            cockpit: None,
         };
         let out = assemble_prompt_prelude("", "", None, &events, Some(&ctx));
         assert!(out.contains("<recent_events>"));
@@ -418,6 +450,7 @@ mod tests {
                 "stream_disconnected".to_owned(),
                 "gitforest_stale".to_owned(),
             ],
+            cockpit: None,
         };
         let out = assemble_prompt_prelude("", "", None, &[], Some(&ctx));
         assert!(out.contains("<ui_context>"));
@@ -473,6 +506,7 @@ mod tests {
             selection: None,
             view: None,
             degraded: vec![],
+            cockpit: None,
         };
         let err = validate(&[], Some(&ctx)).unwrap_err();
         assert!(matches!(
@@ -490,12 +524,63 @@ mod tests {
             degraded: (0..=MAX_DEGRADED_CODES)
                 .map(|i| format!("code-{i}"))
                 .collect(),
+            cockpit: None,
         };
         let err = validate(&[], Some(&ctx)).unwrap_err();
         assert!(matches!(
             err,
             CopilotContextError::UiContextFieldTooLarge {
                 field: "degraded",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn context_assembly_with_cockpit_preset_and_target() {
+        use super::super::{CockpitTarget, CockpitUiContext};
+        let ctx = UiContext {
+            route: "/cockpit".to_owned(),
+            selection: None,
+            view: None,
+            degraded: vec![],
+            cockpit: Some(CockpitUiContext {
+                preset: "engineer".to_owned(),
+                target: Some(CockpitTarget {
+                    kind: "pr".to_owned(),
+                    id: "https://github.com/TheLightArchitects/webshell/pull/47".to_owned(),
+                    label: "#47 webshell".to_owned(),
+                }),
+            }),
+        };
+        let out = assemble_prompt_prelude("", "", None, &[], Some(&ctx));
+        assert!(out.contains("cockpit.preset: engineer"));
+        assert!(out.contains("cockpit.target: pr"));
+        assert!(out.contains("pull/47"));
+    }
+
+    #[test]
+    fn validate_rejects_oversized_cockpit_target_id() {
+        use super::super::{CockpitTarget, CockpitUiContext};
+        let ctx = UiContext {
+            route: "/cockpit".to_owned(),
+            selection: None,
+            view: None,
+            degraded: vec![],
+            cockpit: Some(CockpitUiContext {
+                preset: "engineer".to_owned(),
+                target: Some(CockpitTarget {
+                    kind: "pr".to_owned(),
+                    id: "a".repeat(MAX_ROUTE_BYTES + 1),
+                    label: "label".to_owned(),
+                }),
+            }),
+        };
+        let err = validate(&[], Some(&ctx)).unwrap_err();
+        assert!(matches!(
+            err,
+            CopilotContextError::UiContextFieldTooLarge {
+                field: "cockpit.target.id",
                 ..
             }
         ));
