@@ -139,32 +139,8 @@ export const MOCK_DECISION_ENTRIES: DecisionEntry[] = [
   },
 ];
 
-// ── WorktreePanel mock: worktree metadata the REST endpoint will return ────
-
-export interface MockWorktreeInfo {
-  path: string;
-  branch: string;
-  head_sha: string;
-  status: 'writing' | 'gate' | 'done' | 'failed';
-  locked: boolean;
-  created_at: string;
-}
-
-export const MOCK_WORKTREES: MockWorktreeInfo[] = [
-  {
-    path: '~/wt/feat/ironclaw-spine',
-    branch: 'feat/ironclaw-spine',
-    head_sha: 'abc1234',
-    status: 'gate',
-    locked: false,
-    created_at: new Date(Date.now() - 4 * 3600_000).toISOString(),
-  },
-  {
-    path: '~/wt/feat/webshell-cockpit',
-    branch: 'feat/webshell-cockpit',
-    head_sha: 'def5678',
-    status: 'writing',
-    locked: false,
-    created_at: new Date(Date.now() - 2 * 3600_000).toISOString(),
-  },
-];
+// ── WorktreePanel mock: REMOVED 2026-05-20 — webshell-backend-gaps shipped
+// the /api/git/worktrees endpoint; WorktreePanel now consumes real data via
+// api.listWorktrees(). The MockWorktreeInfo + MOCK_WORKTREES exports were
+// deleted in this build. See WorktreePanel.svelte onMount + lib/types.ts
+// WorktreeMeta for the live shape.

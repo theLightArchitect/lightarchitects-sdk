@@ -527,6 +527,27 @@ export const api = {
     return new EventSource(`${API_BASE}/gitforest/live${params}`, { withCredentials: true });
   },
 
+  // ── Worktree metadata (webshell-backend-gaps — spec §2.27) ───────────────
+
+  /**
+   * List worktrees for a repository with locked + created_at metadata.
+   *
+   * Supplements gitforest topology (paths + branches) with the metadata fields
+   * (`locked`, `created_at`) not present in the topology response. Closes the
+   * WorktreePanel "META — locked/created_at pending" MockBadge.
+   *
+   * Body: `{cwd}` — any path inside the target git repository.
+   * Response: `{worktrees: WorktreeMeta[]}`.
+   */
+  listWorktrees: (cwd: string): Promise<import('$lib/types').WorktreeMeta[]> =>
+    fetch(`${API_BASE}/git/worktrees`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ cwd }),
+    })
+      .then(r => { if (!r.ok) throw new Error(`git/worktrees: ${r.status}`); return r.json() as Promise<{ worktrees: import('$lib/types').WorktreeMeta[] }>; })
+      .then(d => d.worktrees ?? []),
+
   // ── Task drill-down (Phase 5) ──────────────────────────────────────────────
 
   /**

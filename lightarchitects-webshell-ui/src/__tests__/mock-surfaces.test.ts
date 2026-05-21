@@ -3,7 +3,6 @@ import {
   getMockCommsThreads,
   MOCK_WAVE_STATUS,
   MOCK_DECISION_ENTRIES,
-  MOCK_WORKTREES,
   type MockThread,
 } from '$lib/mock-surfaces';
 
@@ -88,25 +87,6 @@ describe('MOCK_DECISION_ENTRIES', () => {
   });
 });
 
-describe('MOCK_WORKTREES', () => {
-  it('has ≥1 entry', () => {
-    expect(MOCK_WORKTREES.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('every entry has required fields', () => {
-    for (const w of MOCK_WORKTREES) {
-      expect(w.path).toBeTruthy();
-      expect(w.branch).toBeTruthy();
-      expect(w.head_sha).toBeTruthy();
-      expect(typeof w.locked).toBe('boolean');
-      expect(() => new Date(w.created_at)).not.toThrow();
-    }
-  });
-
-  it('status values are within enum', () => {
-    const valid = new Set(['writing', 'gate', 'done', 'failed']);
-    for (const w of MOCK_WORKTREES) {
-      expect(valid.has(w.status)).toBe(true);
-    }
-  });
-});
+// MOCK_WORKTREES describe block removed 2026-05-20 — webshell-backend-gaps shipped
+// /api/git/worktrees REST endpoint; WorktreePanel now consumes real data via
+// api.listWorktrees(). Test count drops by 3 (this describe had 3 it() blocks).
