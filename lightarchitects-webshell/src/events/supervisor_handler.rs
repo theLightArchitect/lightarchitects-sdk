@@ -44,7 +44,7 @@ use uuid::Uuid;
 
 use crate::{
     auth,
-    events::{WebEvent, types::NorthstarEvaluationEvent},
+    events::{WebEvent, WebEventV2, types::NorthstarEvaluationEvent},
     server::AppState,
     supervisor::{EvaluationStatus, SupervisorConfig, SupervisorState, WaveContext, evaluate_wave},
 };
@@ -124,7 +124,10 @@ pub async fn supervisor_sse_handler(
         async move {
             loop {
                 match rx.recv().await {
-                    Ok(WebEvent::SupervisorUpdate(ev)) if ev.build_id == id => {
+                    Ok(WebEventV2 {
+                        inner: WebEvent::SupervisorUpdate(ev),
+                        ..
+                    }) if ev.build_id == id => {
                         let Ok(json) = serde_json::to_string(&ev) else {
                             continue;
                         };
@@ -178,7 +181,10 @@ pub async fn supervisor_acknowledge_handler(
         recommended_next: "Proposal acknowledged — supervision resumed.".to_owned(),
         proposal_pending: false,
     };
-    let _ = session.event_tx.send(WebEvent::SupervisorUpdate(ev));
+    let _ = session.event_tx.send(WebEventV2::from_event(
+        WebEvent::SupervisorUpdate(ev),
+        Some(session.build_id),
+    ));
 
     StatusCode::NO_CONTENT.into_response()
 }
@@ -238,77 +244,80 @@ pub fn spawn_supervisor_watcher(
 
         loop {
             tokio::select! {
-                () = token.cancelled() => {
-                    info!(build_id = %session.build_id, "supervisor watcher cancelled");
-                    break;
-                }
-                result = rx.recv() => {
-                    match result {
-                        Ok(AgentEvent::WaveComplete { wave_num, summary }) => {
-                            let northstar_text = match entry.northstar_text.as_deref() {
-                                Some(t) => t.to_owned(),
-                                None => continue,
-                            };
-                            let ctx = WaveContext {
-                                northstar_text: &northstar_text,
-                                wave_num,
-                                wave_summary: &summary,
-                            };
-                            match evaluate_wave(&ctx, &client, ollama_base.as_deref(), &model).await {
-                                Ok(eval) => {
-                                    let mut supervisor = entry.state.lock().await;
-                                    let proposal_triggered = supervisor.record_evaluation(&eval);
-                                    let pending = supervisor.proposal_pending;
-                                    drop(supervisor);
-
-                                    let status = match eval.status {
-                                        EvaluationStatus::Advancing => "advancing",
-                                        EvaluationStatus::Neutral   => "neutral",
-                                        EvaluationStatus::Drifting  => "drifting",
+                        () = token.cancelled() => {
+                            info!(build_id = %session.build_id, "supervisor watcher cancelled");
+                            break;
+                        }
+                        result = rx.recv() => {
+                            match result {
+                                Ok(AgentEvent::WaveComplete { wave_num, summary }) => {
+                                    let northstar_text = match entry.northstar_text.as_deref() {
+                                        Some(t) => t.to_owned(),
+                                        None => continue,
                                     };
-                                    let ev = NorthstarEvaluationEvent {
-                                        build_id: session.build_id.to_string(),
-                                        wave_num: eval.wave_num,
-                                        status: status.to_owned(),
-                                        confidence: eval.confidence,
-                                        recommended_next: eval.recommended_next,
-                                        proposal_pending: pending,
-                                    };
-
-                                    if proposal_triggered {
-                                        info!(
-                                            build_id = %session.build_id,
-                                            wave_num,
-                                            recommended_next = %ev.recommended_next,
-                                            "supervisor drift threshold reached — proposal pending",
-                                        );
-                                    }
-
-                                    // Cache for GET /supervisor/state.
-                                    *entry.last_evaluation.lock().await = Some(ev.clone());
-                                    let _ = session.event_tx.send(WebEvent::SupervisorUpdate(ev));
-                                }
-                                Err(e) => {
-                                    warn!(
-                                        build_id = %session.build_id,
+                                    let ctx = WaveContext {
+                                        northstar_text: &northstar_text,
                                         wave_num,
-                                        error = %e,
-                                        "supervisor wave evaluation failed",
-                                    );
+                                        wave_summary: &summary,
+                                    };
+                                    match evaluate_wave(&ctx, &client, ollama_base.as_deref(), &model).await {
+                                        Ok(eval) => {
+                                            let mut supervisor = entry.state.lock().await;
+                                            let proposal_triggered = supervisor.record_evaluation(&eval);
+                                            let pending = supervisor.proposal_pending;
+                                            drop(supervisor);
+
+                                            let status = match eval.status {
+                                                EvaluationStatus::Advancing => "advancing",
+                                                EvaluationStatus::Neutral   => "neutral",
+                                                EvaluationStatus::Drifting  => "drifting",
+                                            };
+                                            let ev = NorthstarEvaluationEvent {
+                                                build_id: session.build_id.to_string(),
+                                                wave_num: eval.wave_num,
+                                                status: status.to_owned(),
+                                                confidence: eval.confidence,
+                                                recommended_next: eval.recommended_next,
+                                                proposal_pending: pending,
+                                            };
+
+                                            if proposal_triggered {
+                                                info!(
+                                                    build_id = %session.build_id,
+                                                    wave_num,
+                                                    recommended_next = %ev.recommended_next,
+                                                    "supervisor drift threshold reached — proposal pending",
+                                                );
+                                            }
+
+                                            // Cache for GET /supervisor/state.
+                                            *entry.last_evaluation.lock().await = Some(ev.clone());
+                                            let _ = session.event_tx.send(WebEventV2::from_event(
+                WebEvent::SupervisorUpdate(ev),
+                Some(session.build_id),
+            ));
+                                        }
+                                        Err(e) => {
+                                            warn!(
+                                                build_id = %session.build_id,
+                                                wave_num,
+                                                error = %e,
+                                                "supervisor wave evaluation failed",
+                                            );
+                                        }
+                                    }
+                                }
+                                Ok(_) => {}
+                                Err(broadcast::error::RecvError::Lagged(n)) => {
+                                    warn!(build_id = %session.build_id, lagged = n, "supervisor watcher lagged");
+                                }
+                                Err(broadcast::error::RecvError::Closed) => {
+                                    info!(build_id = %session.build_id, "agent event channel closed — supervisor watcher exiting");
+                                    break;
                                 }
                             }
                         }
-                        Ok(_) => {}
-                        Err(broadcast::error::RecvError::Lagged(n)) => {
-                            warn!(build_id = %session.build_id, lagged = n, "supervisor watcher lagged");
-                        }
-                        Err(broadcast::error::RecvError::Closed) => {
-                            info!(build_id = %session.build_id, "agent event channel closed — supervisor watcher exiting");
-                            break;
-                        }
                     }
-                }
-            }
         }
     });
 }

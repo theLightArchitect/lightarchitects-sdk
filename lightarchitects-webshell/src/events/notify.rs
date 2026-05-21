@@ -91,7 +91,8 @@ pub async fn notify_handler(
     // buffered gateway events for later subscribers would require the
     // channel to stay non-errored, but broadcast::Sender drops events when
     // no one is listening — acceptable UX (no browser → no UI update).
-    let event = WebEvent::GatewayNotify { payload };
+    let event =
+        crate::events::WebEventV2::from_event(WebEvent::GatewayNotify { payload }, Some(build_id));
     match session.event_tx.send(event) {
         Ok(n) => {
             debug!(build_id = %build_id, subscribers = n, "gateway notify broadcast");
@@ -146,12 +147,15 @@ mod tests {
         // with a live subscriber delivers the event end-to-end.
         let session = anthropic_session();
         let mut rx = session.event_tx.subscribe();
-        let event = WebEvent::GatewayNotify {
-            payload: serde_json::json!({"type": "refresh_sitrep"}),
-        };
+        let event = crate::events::WebEventV2::from_event(
+            WebEvent::GatewayNotify {
+                payload: serde_json::json!({"type": "refresh_sitrep"}),
+            },
+            Some(session.build_id),
+        );
         session.event_tx.send(event).unwrap();
         let received = rx.recv().await.unwrap();
-        let json = serde_json::to_value(&received).unwrap();
+        let json = serde_json::to_value(&received.inner).unwrap();
         assert_eq!(json["type"], "gateway_notify");
         assert_eq!(json["payload"]["type"], "refresh_sitrep");
     }

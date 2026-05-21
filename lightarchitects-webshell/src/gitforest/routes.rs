@@ -43,7 +43,7 @@ use tracing::{debug, instrument, warn};
 
 use crate::{
     auth::AuthGuard,
-    events::WebEvent,
+    events::{WebEvent, WebEventV2},
     gitforest::{BranchKind, BranchLifecycle, BranchNode, BranchOverlayMeta, CiStatus, HitlState},
     server::AppState,
 };
@@ -175,7 +175,10 @@ pub async fn handle_live(
     let event_stream = stream::unfold((rx, codename_filter), |(mut rx, filter)| async move {
         loop {
             match rx.recv().await {
-                Ok(WebEvent::GitForestUpdate { repo, root }) => {
+                Ok(WebEventV2 {
+                    inner: WebEvent::GitForestUpdate { repo, root },
+                    ..
+                }) => {
                     if let Some(ref cn) = filter {
                         if !repo.contains(cn.as_str()) {
                             continue;

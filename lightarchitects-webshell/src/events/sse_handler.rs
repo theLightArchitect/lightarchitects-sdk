@@ -36,7 +36,7 @@ use tokio::sync::broadcast::{self, error::RecvError};
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::{auth, events::WebEvent, server::AppState};
+use crate::{auth, events::WebEventV2, server::AppState};
 
 /// `GET /api/events` — authenticates and returns an SSE stream.
 ///
@@ -101,10 +101,10 @@ pub async fn sse_build_handler(
 /// or `None` when the broadcast channel is closed.  On lag, emits a synthetic
 /// `{"type":"lag","skipped":N}` event and continues.
 async fn drive_stream(
-    state: (broadcast::Receiver<WebEvent>, Arc<str>),
+    state: (broadcast::Receiver<WebEventV2>, Arc<str>),
 ) -> Option<(
     Result<Event, Infallible>,
-    (broadcast::Receiver<WebEvent>, Arc<str>),
+    (broadcast::Receiver<WebEventV2>, Arc<str>),
 )> {
     let (mut rx, token) = state;
     loop {
@@ -141,15 +141,15 @@ async fn drive_stream(
 #[allow(clippy::future_not_send)]
 async fn drive_multiplex_stream(
     state: (
-        broadcast::Receiver<WebEvent>,
-        broadcast::Receiver<WebEvent>,
+        broadcast::Receiver<WebEventV2>,
+        broadcast::Receiver<WebEventV2>,
         Arc<str>,
     ),
 ) -> Option<(
     Result<Event, Infallible>,
     (
-        broadcast::Receiver<WebEvent>,
-        broadcast::Receiver<WebEvent>,
+        broadcast::Receiver<WebEventV2>,
+        broadcast::Receiver<WebEventV2>,
         Arc<str>,
     ),
 )> {

@@ -21,7 +21,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::events::types::NorthstarEvaluationEvent;
+use crate::events::{WebEventV2, types::NorthstarEvaluationEvent};
 
 // ── ActionClass ───────────────────────────────────────────────────────────────
 
@@ -125,7 +125,10 @@ pub fn escalate_to_hitl(
     };
     session
         .event_tx
-        .send(crate::events::WebEvent::SupervisorUpdate(ev))
+        .send(WebEventV2::from_event(
+            crate::events::WebEvent::SupervisorUpdate(ev),
+            Some(session.build_id),
+        ))
         .is_ok()
 }
 
@@ -197,7 +200,7 @@ mod tests {
         );
 
         let received = rx.try_recv().unwrap();
-        let WebEvent::SupervisorUpdate(got) = received else {
+        let WebEvent::SupervisorUpdate(got) = received.inner else {
             unreachable!("expected SupervisorUpdate event");
         };
         assert!(

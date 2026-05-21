@@ -31,6 +31,7 @@ use lightarchitects::lightsquad::{
 };
 
 use crate::events::{
+    WebEventV2,
     builds_handler::TaskSpec,
     decisions::DecisionsWriter,
     types::{ConductorTickEvent, MergeAgentStatusEvent, WebEvent, WorkerSlotGaugeEvent},
@@ -52,8 +53,8 @@ pub struct BridgeContext {
     pub feat_branch: String,
     /// Wave-partitioned task specs (waves are sequential; tasks within a wave run in parallel).
     pub waves: Vec<Vec<TaskSpec>>,
-    /// SSE broadcast channel — every state change emits a [`WebEvent`].
-    pub event_tx: broadcast::Sender<WebEvent>,
+    /// SSE broadcast channel — every state change emits a [`WebEventV2`].
+    pub event_tx: broadcast::Sender<WebEventV2>,
     /// HMAC-chained decision log writer for this build.
     pub decisions_writer: DecisionsWriter,
     /// When `true`, use the hermetic mock worker instead of the real CLI.
@@ -166,12 +167,15 @@ async fn run_build(ctx: BridgeContext) {
                 None,
             );
             // Final conductor tick — queue_depth=0 signals completion
-            let _ = tx.send(WebEvent::ConductorTick(ConductorTickEvent {
-                build_id: build_id.to_string(),
-                tick_seq: u64::MAX,
-                queue_depth: 0,
-                active_workers: 0,
-            }));
+            let _ = tx.send(WebEventV2::from_event(
+                WebEvent::ConductorTick(ConductorTickEvent {
+                    build_id: build_id.to_string(),
+                    tick_seq: u64::MAX,
+                    queue_depth: 0,
+                    active_workers: 0,
+                }),
+                Some(build_id),
+            ));
         }
         Err(e) => {
             let _ = dw.append(
@@ -193,9 +197,9 @@ async fn run_build(ctx: BridgeContext) {
 fn make_worker(
     build_id: Uuid,
     _codename: String,
-    tx_slot: broadcast::Sender<WebEvent>,
-    tx_merge: broadcast::Sender<WebEvent>,
-    _tx_fix: broadcast::Sender<WebEvent>,
+    tx_slot: broadcast::Sender<WebEventV2>,
+    tx_merge: broadcast::Sender<WebEventV2>,
+    _tx_fix: broadcast::Sender<WebEventV2>,
     dw: DecisionsWriter,
     use_mock: bool,
 ) -> impl Fn(
@@ -214,12 +218,15 @@ fn make_worker(
             let task_id = spec.task.id.clone();
             let wt = spec.worktree_path.clone();
 
-            let _ = tx_slot.send(WebEvent::WorkerSlotGauge(WorkerSlotGaugeEvent {
-                build_id: build_id.to_string(),
-                wave_index: 0,
-                active: 1,
-                capacity: 7,
-            }));
+            let _ = tx_slot.send(WebEventV2::from_event(
+                WebEvent::WorkerSlotGauge(WorkerSlotGaugeEvent {
+                    build_id: build_id.to_string(),
+                    wave_index: 0,
+                    active: 1,
+                    capacity: 7,
+                }),
+                Some(build_id),
+            ));
 
             if use_mock {
                 // Hermetic mock: write artifact + git commit (no CLI needed).
@@ -253,12 +260,15 @@ fn make_worker(
                 );
             }
 
-            let _ = tx_merge.send(WebEvent::MergeAgentStatus(MergeAgentStatusEvent {
-                build_id: build_id.to_string(),
-                wave_index: 0,
-                phase: "merged".to_owned(),
-                commit_sha: None,
-            }));
+            let _ = tx_merge.send(WebEventV2::from_event(
+                WebEvent::MergeAgentStatus(MergeAgentStatusEvent {
+                    build_id: build_id.to_string(),
+                    wave_index: 0,
+                    phase: "merged".to_owned(),
+                    commit_sha: None,
+                }),
+                Some(build_id),
+            ));
 
             Ok(())
         })

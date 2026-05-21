@@ -26,7 +26,7 @@ use lightarchitects_webshell::{
     config::{AgentSession, Cli, Config},
     container::DockerCapability,
     events::{
-        WebEvent,
+        WebEvent, WebEventV2,
         supervisor_handler::{SupervisorEntry, spawn_supervisor_watcher},
     },
     server::{AppState, build_app},
@@ -196,7 +196,10 @@ async fn test_wave_complete_broadcasts_supervisor_update() {
     let received = tokio::time::timeout(timeout, async {
         loop {
             match web_rx.recv().await {
-                Ok(WebEvent::SupervisorUpdate(ev)) => return Some(ev),
+                Ok(WebEventV2 {
+                    inner: WebEvent::SupervisorUpdate(ev),
+                    ..
+                }) => return Some(ev),
                 Ok(_) => {}
                 Err(_) => return None,
             }

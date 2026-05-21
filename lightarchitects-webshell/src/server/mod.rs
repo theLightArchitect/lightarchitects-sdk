@@ -38,7 +38,7 @@ use crate::{
     container::{DockerCapability, ImageManager},
     coordination, copilot, csp,
     dispatch::{self, DispatchRegistry},
-    events::{self, EVENT_CHANNEL_BUF, WebEvent, builds_handler},
+    events::{self, EVENT_CHANNEL_BUF, WebEventV2, builds_handler},
     gitforest,
     init::telemetry::TelemetryHandle,
     polytope_data, preflight,
@@ -105,7 +105,7 @@ pub struct AppState {
     ///
     /// The Phase-5 SSE handler calls [`broadcast::Sender::subscribe`] on
     /// this to obtain a per-connection [`broadcast::Receiver`].
-    pub event_tx: broadcast::Sender<WebEvent>,
+    pub event_tx: broadcast::Sender<WebEventV2>,
     /// Latest browser UI state, updated periodically by the frontend.
     pub browser_state: Arc<RwLock<BrowserStateSnapshot>>,
     /// Cached build tracking data (active.yaml mtime + JSON bytes).

@@ -29,6 +29,7 @@ use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
 use tracing::{debug, info, warn};
 
+use super::envelope::WebEventV2;
 use super::strand::parse_strand_activations;
 use super::types::{AyinStatus, TraceSpanSummary, WebEvent};
 
@@ -58,13 +59,13 @@ impl AyinClient {
     /// exits; there is no explicit shutdown handle because the broadcast
     /// channel closing (all receivers dropped) causes `send` to return an
     /// error, which naturally terminates the loop on the next iteration.
-    pub fn spawn(tx: broadcast::Sender<WebEvent>) {
+    pub fn spawn(tx: broadcast::Sender<WebEventV2>) {
         drop(tokio::spawn(run_loop(tx)));
     }
 }
 
 /// Main reconnect loop — runs indefinitely until the process exits.
-async fn run_loop(tx: broadcast::Sender<WebEvent>) {
+async fn run_loop(tx: broadcast::Sender<WebEventV2>) {
     let client = Client::new();
     let mut attempt: u32 = 0;
 
@@ -72,7 +73,10 @@ async fn run_loop(tx: broadcast::Sender<WebEvent>) {
         if attempt > 0 {
             let delay = backoff_secs(attempt);
             debug!(attempt, delay_s = delay, "AYIN SSE reconnect backoff");
-            let _ = tx.send(WebEvent::AyinStatus(AyinStatus::Reconnecting { attempt }));
+            let _ = tx.send(WebEventV2::from_event(
+                WebEvent::AyinStatus(AyinStatus::Reconnecting { attempt }),
+                None,
+            ));
             sleep(Duration::from_secs(delay)).await;
         }
 
@@ -81,7 +85,10 @@ async fn run_loop(tx: broadcast::Sender<WebEvent>) {
             Err(e) => warn!(error = %e, attempt, "AYIN SSE error — scheduling reconnect"),
         }
 
-        let _ = tx.send(WebEvent::AyinStatus(AyinStatus::Disconnected));
+        let _ = tx.send(WebEventV2::from_event(
+            WebEvent::AyinStatus(AyinStatus::Disconnected),
+            None,
+        ));
         attempt = attempt.saturating_add(1);
     }
 }
@@ -92,7 +99,7 @@ async fn run_loop(tx: broadcast::Sender<WebEvent>) {
 /// Returns `Err` on HTTP errors, transport failures, or invalid UTF-8.
 async fn connect_and_stream(
     client: &Client,
-    tx: &broadcast::Sender<WebEvent>,
+    tx: &broadcast::Sender<WebEventV2>,
 ) -> Result<(), anyhow::Error> {
     let response = client
         .get(AYIN_SSE_URL)
@@ -107,7 +114,10 @@ async fn connect_and_stream(
         ));
     }
 
-    let _ = tx.send(WebEvent::AyinStatus(AyinStatus::Connected));
+    let _ = tx.send(WebEventV2::from_event(
+        WebEvent::AyinStatus(AyinStatus::Connected),
+        None,
+    ));
     info!("Connected to AYIN SSE at {AYIN_SSE_URL}");
 
     let mut stream = response.bytes_stream();
@@ -128,7 +138,7 @@ async fn connect_and_stream(
 ///
 /// SSE events are terminated by `\n\n`.  Any partial event at the end of
 /// `buf` (no terminator yet) is left for the next incoming chunk.
-fn drain_events(buf: &mut String, tx: &broadcast::Sender<WebEvent>) {
+fn drain_events(buf: &mut String, tx: &broadcast::Sender<WebEventV2>) {
     while let Some(pos) = buf.find("\n\n") {
         let event_text = buf[..pos].to_owned();
         *buf = buf[pos + 2..].to_owned();
@@ -140,7 +150,7 @@ fn drain_events(buf: &mut String, tx: &broadcast::Sender<WebEvent>) {
 ///
 /// Lines not starting with `data: ` (e.g. `event:`, `id:`, comments) are
 /// silently skipped.  Malformed JSON is logged at `WARN` and dropped.
-fn dispatch_event(event_text: &str, tx: &broadcast::Sender<WebEvent>) {
+fn dispatch_event(event_text: &str, tx: &broadcast::Sender<WebEventV2>) {
     for line in event_text.lines() {
         let Some(data) = line.strip_prefix("data: ") else {
             continue;
@@ -152,9 +162,12 @@ fn dispatch_event(event_text: &str, tx: &broadcast::Sender<WebEvent>) {
                 // its own WebEvent. Empty when the span has none, so the
                 // hot path stays cheap.
                 for activation in parse_strand_activations(&span) {
-                    let _ = tx.send(WebEvent::StrandActivation(activation));
+                    let _ = tx.send(WebEventV2::from_event(
+                        WebEvent::StrandActivation(activation),
+                        None,
+                    ));
                 }
-                let _ = tx.send(WebEvent::AyinSpan(span));
+                let _ = tx.send(WebEventV2::from_event(WebEvent::AyinSpan(span), None));
             }
             Err(e) => {
                 warn!(error = %e, "failed to parse AYIN span from SSE data line");
@@ -231,7 +244,13 @@ mod tests {
         let event_text = format!("data: {}", sample_span_json());
         dispatch_event(&event_text, &tx);
         let event = rx.try_recv().unwrap();
-        assert!(matches!(event, WebEvent::AyinSpan(_)));
+        assert!(matches!(
+            event,
+            WebEventV2 {
+                inner: WebEvent::AyinSpan(_),
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -273,9 +292,27 @@ mod tests {
         let first = rx.try_recv().unwrap();
         let second = rx.try_recv().unwrap();
         let third = rx.try_recv().unwrap();
-        assert!(matches!(first, WebEvent::StrandActivation(_)));
-        assert!(matches!(second, WebEvent::StrandActivation(_)));
-        assert!(matches!(third, WebEvent::AyinSpan(_)));
+        assert!(matches!(
+            first,
+            WebEventV2 {
+                inner: WebEvent::StrandActivation(_),
+                ..
+            }
+        ));
+        assert!(matches!(
+            second,
+            WebEventV2 {
+                inner: WebEvent::StrandActivation(_),
+                ..
+            }
+        ));
+        assert!(matches!(
+            third,
+            WebEventV2 {
+                inner: WebEvent::AyinSpan(_),
+                ..
+            }
+        ));
         assert!(rx.try_recv().is_err(), "no extra events expected");
     }
 
@@ -285,7 +322,13 @@ mod tests {
         let event_text = format!("data: {}", sample_span_json());
         dispatch_event(&event_text, &tx);
         let event = rx.try_recv().unwrap();
-        assert!(matches!(event, WebEvent::AyinSpan(_)));
+        assert!(matches!(
+            event,
+            WebEventV2 {
+                inner: WebEvent::AyinSpan(_),
+                ..
+            }
+        ));
         assert!(rx.try_recv().is_err(), "no StrandActivation expected");
     }
 

@@ -38,7 +38,10 @@ use lightarchitects::squad_registry::SquadRegistry;
 
 use crate::{
     auth,
-    events::types::{PillarUpdateEvent, WebEvent},
+    events::{
+        WebEventV2,
+        types::{PillarUpdateEvent, WebEvent},
+    },
     server::AppState,
 };
 
@@ -658,16 +661,20 @@ async fn run_pillar(
     subcommand: &'static str,
     objective: String,
     cwd: PathBuf,
-    event_tx: broadcast::Sender<WebEvent>,
+    event_tx: broadcast::Sender<WebEventV2>,
 ) {
-    let _ = event_tx.send(WebEvent::PillarUpdate(PillarUpdateEvent {
-        build_id: build_id.clone(),
-        pillar: pillar.clone(),
-        phase: "started".to_owned(),
-        line: Some(format!("corso {subcommand} --format json")),
-        exit_code: None,
-        artifact: None,
-    }));
+    let build_uuid = Uuid::parse_str(&build_id).ok();
+    let _ = event_tx.send(WebEventV2::from_event(
+        WebEvent::PillarUpdate(PillarUpdateEvent {
+            build_id: build_id.clone(),
+            pillar: pillar.clone(),
+            phase: "started".to_owned(),
+            line: Some(format!("corso {subcommand} --format json")),
+            exit_code: None,
+            artifact: None,
+        }),
+        build_uuid,
+    ));
 
     let mut command = tokio::process::Command::new(crate::copilot::resolve_binary("corso"));
     command
@@ -691,27 +698,33 @@ async fn run_pillar(
     let mut child = match command.spawn() {
         Ok(c) => c,
         Err(e) => {
-            let _ = event_tx.send(WebEvent::PillarUpdate(PillarUpdateEvent {
-                build_id,
-                pillar,
-                phase: "completed".to_owned(),
-                line: Some(format!("spawn failed: {e}")),
-                exit_code: Some(-1),
-                artifact: None,
-            }));
+            let _ = event_tx.send(WebEventV2::from_event(
+                WebEvent::PillarUpdate(PillarUpdateEvent {
+                    build_id,
+                    pillar,
+                    phase: "completed".to_owned(),
+                    line: Some(format!("spawn failed: {e}")),
+                    exit_code: Some(-1),
+                    artifact: None,
+                }),
+                build_uuid,
+            ));
             return;
         }
     };
 
     let Some(stdout_pipe) = child.stdout.take() else {
-        let _ = event_tx.send(WebEvent::PillarUpdate(PillarUpdateEvent {
-            build_id,
-            pillar,
-            phase: "completed".to_owned(),
-            line: Some("stdout unavailable".to_owned()),
-            exit_code: Some(-1),
-            artifact: None,
-        }));
+        let _ = event_tx.send(WebEventV2::from_event(
+            WebEvent::PillarUpdate(PillarUpdateEvent {
+                build_id,
+                pillar,
+                phase: "completed".to_owned(),
+                line: Some("stdout unavailable".to_owned()),
+                exit_code: Some(-1),
+                artifact: None,
+            }),
+            build_uuid,
+        ));
         return;
     };
     let mut stdout_lines = BufReader::new(stdout_pipe).lines();
@@ -720,14 +733,17 @@ async fn run_pillar(
     while let Ok(Some(line)) = stdout_lines.next_line().await {
         collected.push_str(&line);
         collected.push('\n');
-        let _ = event_tx.send(WebEvent::PillarUpdate(PillarUpdateEvent {
-            build_id: build_id.clone(),
-            pillar: pillar.clone(),
-            phase: "output".to_owned(),
-            line: Some(line),
-            exit_code: None,
-            artifact: None,
-        }));
+        let _ = event_tx.send(WebEventV2::from_event(
+            WebEvent::PillarUpdate(PillarUpdateEvent {
+                build_id: build_id.clone(),
+                pillar: pillar.clone(),
+                phase: "output".to_owned(),
+                line: Some(line),
+                exit_code: None,
+                artifact: None,
+            }),
+            build_uuid,
+        ));
     }
 
     let status = child.wait().await;
@@ -761,14 +777,17 @@ async fn run_pillar(
         false
     };
 
-    let _ = event_tx.send(WebEvent::PillarUpdate(PillarUpdateEvent {
-        build_id,
-        pillar,
-        phase: "completed".to_owned(),
-        line: None,
-        exit_code: Some(exit_code),
-        artifact: if persisted { Some(artifact_rel) } else { None },
-    }));
+    let _ = event_tx.send(WebEventV2::from_event(
+        WebEvent::PillarUpdate(PillarUpdateEvent {
+            build_id,
+            pillar,
+            phase: "completed".to_owned(),
+            line: None,
+            exit_code: Some(exit_code),
+            artifact: if persisted { Some(artifact_rel) } else { None },
+        }),
+        build_uuid,
+    ));
 }
 
 // ── Copilot + dispatch (pass-through stubs, kept for compat) ────────────────

@@ -26,6 +26,7 @@ use lightarchitects::helix::HelixDb;
 use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 
+use crate::events::WebEventV2;
 use crate::events::types::{StrandConvergenceEvent, WebEvent};
 use crate::memory::persistence::SoulPersistence;
 
@@ -49,7 +50,7 @@ const MIN_PARTICIPANTS: usize = 3;
 /// No-ops when Neo4j isn't attached. Surviving errors (Bolt failures,
 /// timeout) are logged at `warn` and the next poll is attempted on
 /// schedule — the detector never panics.
-pub fn spawn(soul: Arc<SoulPersistence>, event_tx: broadcast::Sender<WebEvent>) {
+pub fn spawn(soul: Arc<SoulPersistence>, event_tx: broadcast::Sender<WebEventV2>) {
     tokio::spawn(async move {
         let mut seen: HashSet<String> = HashSet::new();
         let mut ticker = tokio::time::interval(POLL_INTERVAL);
@@ -68,7 +69,7 @@ pub fn spawn(soul: Arc<SoulPersistence>, event_tx: broadcast::Sender<WebEvent>) 
 /// Single poll cycle — query Neo4j, filter by threshold, emit new events.
 async fn poll_once(
     soul: &SoulPersistence,
-    event_tx: &broadcast::Sender<WebEvent>,
+    event_tx: &broadcast::Sender<WebEventV2>,
     seen: &mut HashSet<String>,
 ) -> Result<(), String> {
     let Some(neo4j) = soul.neo4j_arc().await else {
@@ -160,7 +161,10 @@ async fn poll_once(
             memo_ids,
             detected_at: Utc::now().to_rfc3339(),
         };
-        if let Err(e) = event_tx.send(WebEvent::StrandConvergence(event)) {
+        if let Err(e) = event_tx.send(WebEventV2::from_event(
+            WebEvent::StrandConvergence(event),
+            None,
+        )) {
             // Send error only happens when there are zero subscribers — the
             // Phase-18B pattern.
             warn!(target: "soul.convergence", error = %e, "no SSE subscribers for convergence");

@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::{
     auth,
     config::{AgentSession, ClaudeBackend},
-    events::types::TraceSpanSummary,
+    events::{WebEventV2, types::TraceSpanSummary},
     server::AppState,
 };
 
@@ -228,9 +228,8 @@ fn emit_grounding_spans(
     prelude_bytes: usize,
 ) {
     let ts = chrono::Utc::now().to_rfc3339();
-    let _ = state
-        .event_tx
-        .send(crate::events::WebEvent::AyinSpan(TraceSpanSummary {
+    let _ = state.event_tx.send(WebEventV2::from_event(
+        crate::events::WebEvent::AyinSpan(TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
             parent_id: None,
             actor: "webshell".to_owned(),
@@ -243,10 +242,11 @@ fn emit_grounding_spans(
                 "timed_out": soul_timed_out,
             }),
             strand_activations: Vec::new(),
-        }));
-    let _ = state
-        .event_tx
-        .send(crate::events::WebEvent::AyinSpan(TraceSpanSummary {
+        }),
+        None,
+    ));
+    let _ = state.event_tx.send(WebEventV2::from_event(
+        crate::events::WebEvent::AyinSpan(TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
             parent_id: None,
             actor: "webshell".to_owned(),
@@ -260,10 +260,11 @@ fn emit_grounding_spans(
                 "timed_out": git_timed_out,
             }),
             strand_activations: Vec::new(),
-        }));
-    let _ = state
-        .event_tx
-        .send(crate::events::WebEvent::AyinSpan(TraceSpanSummary {
+        }),
+        None,
+    ));
+    let _ = state.event_tx.send(WebEventV2::from_event(
+        crate::events::WebEvent::AyinSpan(TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
             parent_id: None,
             actor: "webshell".to_owned(),
@@ -273,7 +274,9 @@ fn emit_grounding_spans(
             outcome: serde_json::json!("ok"),
             metadata: serde_json::json!({ "prelude_bytes": prelude_bytes }),
             strand_activations: Vec::new(),
-        }));
+        }),
+        None,
+    ));
 }
 
 /// Phase 5 — integration tests: grounding pipeline assembly + graceful degradation.

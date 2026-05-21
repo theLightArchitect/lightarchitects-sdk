@@ -27,6 +27,7 @@ use tokio::{
 
 use crate::{
     config::{AgentSession, ClaudeBackend, CodexBackend},
+    events::WebEventV2,
     session::BuildSession,
 };
 
@@ -355,16 +356,15 @@ fn dispatch_ndjson_line(line: &str, session: &BuildSession, build_id: &str) -> O
         Some("context") => {
             #[allow(clippy::cast_possible_truncation)]
             let usage_pct = val["usage_pct"].as_f64().unwrap_or(0.0).clamp(0.0, 1.0) as f32;
-            let _ = session
-                .event_tx
-                .send(crate::events::WebEvent::ContextStatus(
-                    crate::events::types::ContextStatusEvent {
-                        usage_pct,
-                        level: val["level"].as_str().map(ToOwned::to_owned),
-                        budget: val["budget"].as_u64().unwrap_or(0),
-                        used: val["used"].as_u64().unwrap_or(0),
-                    },
-                ));
+            let _ = session.event_tx.send(WebEventV2::from_event(
+                crate::events::WebEvent::ContextStatus(crate::events::types::ContextStatusEvent {
+                    usage_pct,
+                    level: val["level"].as_str().map(ToOwned::to_owned),
+                    budget: val["budget"].as_u64().unwrap_or(0),
+                    used: val["used"].as_u64().unwrap_or(0),
+                }),
+                Some(session.build_id),
+            ));
         }
         Some(kind @ ("tool_call" | "thinking")) => {
             let summary = if kind == "tool_call" {
@@ -374,9 +374,8 @@ fn dispatch_ndjson_line(line: &str, session: &BuildSession, build_id: &str) -> O
                     .as_str()
                     .map(|t| t.chars().take(120).collect::<String>())
             };
-            let _ = session
-                .event_tx
-                .send(crate::events::WebEvent::CopilotActivity(
+            let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+                crate::events::WebEvent::CopilotActivity(
                     crate::events::types::CopilotActivityEvent {
                         build_id: build_id.to_owned(),
                         kind: kind.to_owned(),
@@ -384,7 +383,9 @@ fn dispatch_ndjson_line(line: &str, session: &BuildSession, build_id: &str) -> O
                         raw: val,
                         timestamp: chrono::Utc::now().to_rfc3339(),
                     },
-                ));
+                ),
+                Some(session.build_id),
+            ));
         }
         _ => {}
     }
@@ -503,17 +504,16 @@ async fn run_print_turn(
 
         // Broadcast activity event for the Activity tab
         let summary = extract_activity_summary(&val);
-        let send_result = session
-            .event_tx
-            .send(crate::events::WebEvent::CopilotActivity(
-                crate::events::types::CopilotActivityEvent {
-                    build_id: build_id.clone(),
-                    kind: event_type.to_owned(),
-                    summary,
-                    raw: val.clone(),
-                    timestamp: chrono::Utc::now().to_rfc3339(),
-                },
-            ));
+        let send_result = session.event_tx.send(crate::events::WebEventV2::from_event(
+            crate::events::WebEvent::CopilotActivity(crate::events::types::CopilotActivityEvent {
+                build_id: build_id.clone(),
+                kind: event_type.to_owned(),
+                summary,
+                raw: val.clone(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            }),
+            Some(session.build_id),
+        ));
         if send_result.is_err() {
             tracing::warn!(
                 counter = "app.copilot.token_buffer.overflow_total",
@@ -526,18 +526,19 @@ async fn run_print_turn(
             && val["content_block"]["type"].as_str() == Some("tool_use")
         {
             let tool_name = val["content_block"]["name"].as_str().unwrap_or("unknown");
-            let _ = session.event_tx.send(crate::events::WebEvent::AyinSpan(
-                crate::events::types::TraceSpanSummary {
+            let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+                crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
                     id: uuid::Uuid::new_v4().to_string(),
                     parent_id: None,
                     actor: "eva".to_owned(),
                     action: format!("tool.{tool_name}"),
                     timestamp: chrono::Utc::now().to_rfc3339(),
-                    duration_ms: 0, // updated on content_block_stop if we track it
+                    duration_ms: 0,
                     outcome: serde_json::json!("started"),
                     metadata: serde_json::json!({ "build_id": build_id }),
                     strand_activations: Vec::new(),
-                },
+                }),
+                Some(session.build_id),
             ));
         }
 
@@ -549,13 +550,14 @@ async fn run_print_turn(
                     Ok(delta) => {
                         if delta.delta_type == "text_delta" {
                             let send_r =
-                                session
-                                    .event_tx
-                                    .send(crate::events::WebEvent::CopilotResponse {
+                                session.event_tx.send(crate::events::WebEventV2::from_event(
+                                    crate::events::WebEvent::CopilotResponse {
                                         chunk: delta.text.clone(),
                                         done: false,
                                         sibling: Some("claude".to_owned()),
-                                    });
+                                    },
+                                    Some(session.build_id),
+                                ));
                             if send_r.is_err() {
                                 tracing::warn!(
                                     counter = "app.copilot.token_buffer.overflow_total",
@@ -585,13 +587,14 @@ async fn run_print_turn(
 
         // Emit done:true on message_stop to signal end-of-turn to frontend.
         if event_type == "message_stop" {
-            let _ = session
-                .event_tx
-                .send(crate::events::WebEvent::CopilotResponse {
+            let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+                crate::events::WebEvent::CopilotResponse {
                     chunk: String::new(),
                     done: true,
                     sibling: Some("claude".to_owned()),
-                });
+                },
+                Some(session.build_id),
+            ));
         }
     }
 
@@ -781,17 +784,16 @@ async fn run_codex_turn(
 
         // Broadcast activity event for the Activity tab
         let summary = extract_codex_activity_summary(&val);
-        let _ = session
-            .event_tx
-            .send(crate::events::WebEvent::CopilotActivity(
-                crate::events::types::CopilotActivityEvent {
-                    build_id: build_id.clone(),
-                    kind: event_type.to_owned(),
-                    summary,
-                    raw: val.clone(),
-                    timestamp: chrono::Utc::now().to_rfc3339(),
-                },
-            ));
+        let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+            crate::events::WebEvent::CopilotActivity(crate::events::types::CopilotActivityEvent {
+                build_id: build_id.clone(),
+                kind: event_type.to_owned(),
+                summary,
+                raw: val.clone(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            }),
+            Some(session.build_id),
+        ));
 
         if event_type == "thread.started" {
             if let Some(id) = val["thread_id"].as_str() {
@@ -1026,13 +1028,14 @@ pub(super) async fn call_subprocess(
 
         // Broadcast the full response so the UI SSE handler can render it.
         // The HTTP body is discarded by the frontend; only SSE events are displayed.
-        let _ = session
-            .event_tx
-            .send(crate::events::WebEvent::CopilotResponse {
+        let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+            crate::events::WebEvent::CopilotResponse {
                 chunk: text.clone(),
                 done: true,
                 sibling: Some("vibe".to_owned()),
-            });
+            },
+            Some(session.build_id),
+        ));
 
         emit_turn_complete_span(
             session,
@@ -1199,8 +1202,8 @@ fn emit_turn_start_span(
     let span_id = uuid::Uuid::new_v4().to_string();
     let start = std::time::Instant::now();
     let start_ts = chrono::Utc::now().to_rfc3339();
-    let _ = session.event_tx.send(crate::events::WebEvent::AyinSpan(
-        crate::events::types::TraceSpanSummary {
+    let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+        crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
             id: span_id.clone(),
             parent_id: None,
             actor: actor.to_owned(),
@@ -1213,7 +1216,8 @@ fn emit_turn_start_span(
                 "build_id": session.build_id.to_string(),
             }),
             strand_activations: Vec::new(),
-        },
+        }),
+        Some(session.build_id),
     ));
     (span_id, start, start_ts)
 }
@@ -1227,8 +1231,8 @@ fn emit_turn_complete_span(
     elapsed: std::time::Duration,
     outcome: &str,
 ) {
-    let _ = session.event_tx.send(crate::events::WebEvent::AyinSpan(
-        crate::events::types::TraceSpanSummary {
+    let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+        crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
             parent_id: Some(parent_span_id.to_owned()),
             actor: actor.to_owned(),
@@ -1241,7 +1245,8 @@ fn emit_turn_complete_span(
                 "duration_s": format!("{:.1}", elapsed.as_secs_f64()),
             }),
             strand_activations: Vec::new(),
-        },
+        }),
+        Some(session.build_id),
     ));
 }
 
@@ -1555,7 +1560,7 @@ mod tests {
         assert!(
             matches!(
                 event,
-                crate::events::types::WebEvent::CopilotActivity(ref e) if e.kind == "tool_call"
+                crate::events::WebEventV2 { inner: crate::events::types::WebEvent::CopilotActivity(ref e), .. } if e.kind == "tool_call"
             ),
             "unexpected event variant: {event:?}"
         );
@@ -1577,7 +1582,7 @@ mod tests {
         assert!(
             matches!(
                 event,
-                crate::events::types::WebEvent::CopilotActivity(ref e) if e.kind == "thinking"
+                crate::events::WebEventV2 { inner: crate::events::types::WebEvent::CopilotActivity(ref e), .. } if e.kind == "thinking"
             ),
             "unexpected event variant: {event:?}"
         );
@@ -1599,7 +1604,7 @@ mod tests {
         assert!(
             matches!(
                 event,
-                crate::events::types::WebEvent::ContextStatus(ref e) if (e.usage_pct - 0.42).abs() < 0.01
+                crate::events::WebEventV2 { inner: crate::events::types::WebEvent::ContextStatus(ref e), .. } if (e.usage_pct - 0.42).abs() < 0.01
             ),
             "unexpected event variant: {event:?}"
         );
