@@ -4,6 +4,7 @@
   import { STATUS_COLORS } from '$lib/design-tokens';
   import { api } from '$lib/api';
   import type { OverallStatus } from '$lib/types';
+  import { subscribeByTopic, type WebEventV2 } from '$lib/sse';
 
   // Auth state takes precedence over connection state — a 401/403 is a more
   // urgent operator signal than "reconnecting" (#13 second-half: AuthBanner
@@ -28,6 +29,15 @@
   // Auth profile indicator
   let profileColor = $derived($authProfile === 'anthropic' ? '#F59E0B' : $authProfile === 'lightarchitects' ? '#22C55E' : '#6366F1');
   let profileLabel = $derived($authProfile === 'anthropic' ? 'Anthropic' : $authProfile === 'lightarchitects' ? 'CLI' : 'Ollama');
+
+  // AYIN status subscription — live topic events replace polling-only fallback.
+  let unsubscribeAyin: (() => void) | null = null;
+
+  function handleAyinEvent(event: WebEventV2): void {
+    if (event.topic.endsWith('.connected')) ayinStatus.set('connected');
+    else if (event.topic.endsWith('.disconnected')) ayinStatus.set('offline');
+    else if (event.topic.endsWith('.reconnecting')) ayinStatus.set('reconnecting');
+  }
 
   // Preflight dot — unauthenticated poll every 30 s so the badge stays current
   // without requiring the operator to open the panel.
@@ -60,9 +70,11 @@
   onMount(() => {
     void pollPreflight();
     pollInterval = setInterval(() => { void pollPreflight(); }, 30_000);
+    unsubscribeAyin = subscribeByTopic('v1.agent.ayin.*', handleAyinEvent);
   });
   onDestroy(() => {
     clearInterval(pollInterval);
+    unsubscribeAyin?.();
   });
 </script>
 

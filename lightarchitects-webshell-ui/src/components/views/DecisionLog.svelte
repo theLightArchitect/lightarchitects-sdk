@@ -45,7 +45,7 @@ Subscribes to `v1.supervisor.escalation` via topic SSE; prepends entries when `b
 
   onMount(() => {
     loadDecisions();
-    unsubscribeEscalation = subscribeByTopic('v1.supervisor.escalation', handleEscalation);
+    unsubscribeEscalation = subscribeByTopic('v1.conductor.escalation', handleEscalation);
   });
 
   onDestroy(() => {
