@@ -897,6 +897,7 @@ fn build_cors(port: u16) -> CorsLayer {
             header::AUTHORIZATION,
             header::CONTENT_TYPE,
             header::ACCEPT,
+            header::IF_MATCH,
             notify_header,
         ])
 }

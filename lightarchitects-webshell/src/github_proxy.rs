@@ -26,12 +26,12 @@ use crate::github_token_store::GitHubToken;
 
 // ── SSRF allowlist ────────────────────────────────────────────────────────────
 
-/// Repos that may be queried against the GitHub API.
-const TRACKED_REPOS: &[&str] = &["lightarchitects-sdk", "SOUL-DEV", "CORSO-DEV"];
-
 /// Returns `true` when `repo` is in the SSRF allowlist.
+///
+/// Derived from [`HITL_TRACKED_REPOS`] to prevent the two lists from drifting.
+/// Prefer [`is_hitl_tracked`] for write-path calls (owner + repo both required).
 pub fn is_tracked_repo(repo: &str) -> bool {
-    TRACKED_REPOS.contains(&repo)
+    HITL_TRACKED_REPOS.iter().any(|(_, r)| *r == repo)
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -99,10 +99,14 @@ struct GhCheckRun {
 /// Returns cached result when available. Performs exponential backoff on
 /// HTTP 429 responses (max 3 retries, starting at 1s).
 ///
+/// SSRF guard: `(owner, repo)` must be in [`HITL_TRACKED_REPOS`] — both owner
+/// and repo are validated to prevent token exfiltration via forked repos.
+///
 /// # Errors
 ///
-/// Returns `Err(String)` when the GitHub API returns a non-success status
-/// after all retries are exhausted, or when the response body cannot be parsed.
+/// Returns `Err("403:ssrf")` when the repo is not allowlisted, or `Err(String)`
+/// when the GitHub API returns a non-success status after all retries are
+/// exhausted, or when the response body cannot be parsed.
 #[instrument(skip(client, token, cache))]
 pub async fn fetch_check_runs(
     client: &Client,
@@ -112,6 +116,9 @@ pub async fn fetch_check_runs(
     repo: &str,
     sha: &str,
 ) -> Result<Arc<CheckRunSummary>, String> {
+    if !is_hitl_tracked(owner, repo) {
+        return Err("403:ssrf".to_string());
+    }
     let key = format!("{owner}/{repo}/{sha}");
 
     if let Some(hit) = cache.get(&key).await {
@@ -174,10 +181,10 @@ async fn fetch_with_backoff(
 
 // ── HITL inbox SSRF allowlist ─────────────────────────────────────────────────
 
-/// `(owner, repo)` pairs that may be queried for HITL PR search.
+/// `(owner, repo)` pairs that may be queried for HITL PR search and write-path ops.
 ///
-/// Stricter than [`TRACKED_REPOS`] — requires both owner and repo to match so
-/// a fork with the same repo name cannot be added to the queue.
+/// Requires both owner and repo to match so a fork with the same repo name
+/// cannot be added to the queue. [`is_tracked_repo`] is derived from this list.
 const HITL_TRACKED_REPOS: &[(&str, &str)] = &[
     ("TheLightArchitects", "lightarchitects-sdk"),
     ("TheLightArchitects", "SOUL-DEV"),
@@ -359,17 +366,17 @@ pub async fn fetch_hitl_search(
         return Ok(hit);
     }
 
-    // Build repo filter: "repo:Owner/Repo1+repo:Owner/Repo2+..."
+    // Build repo filter and use `.query()` so reqwest percent-encodes the value.
     let repo_filter: String = HITL_TRACKED_REPOS
         .iter()
         .map(|(o, r)| format!("repo:{o}/{r}"))
         .collect::<Vec<_>>()
-        .join("+");
-    let q = format!("type:pr+state:open+review-requested:@me+{repo_filter}");
-    let url = format!("https://api.github.com/search/issues?q={q}&per_page=30");
+        .join(" ");
+    let q = format!("type:pr state:open review-requested:@me {repo_filter}");
 
     let resp = client
-        .get(&url)
+        .get("https://api.github.com/search/issues")
+        .query(&[("q", &q), ("per_page", &"30".to_string())])
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28")
         .header("User-Agent", "lightarchitects-webshell/1.0")
@@ -574,7 +581,7 @@ pub async fn submit_pr_review(
         );
         let resp = client
             .get(&url)
-            .header("Authorization", format!("Bearer {}", token.as_str()))
+            .bearer_auth(token.as_str())
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
             .header("User-Agent", "lightarchitects-webshell")
@@ -600,7 +607,7 @@ pub async fn submit_pr_review(
     };
     let resp = client
         .post(&url)
-        .header("Authorization", format!("Bearer {}", token.as_str()))
+        .bearer_auth(token.as_str())
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28")
         .header("User-Agent", "lightarchitects-webshell")
@@ -690,7 +697,7 @@ pub async fn fetch_commit_metadata(
     let url = format!("https://api.github.com/repos/{owner}/{repo}/commits/{sha}");
     let resp = client
         .get(&url)
-        .header("Authorization", format!("Bearer {}", token.as_str()))
+        .bearer_auth(token.as_str())
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28")
         .header("User-Agent", "lightarchitects-webshell")
