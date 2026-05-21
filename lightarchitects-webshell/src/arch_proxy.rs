@@ -10,6 +10,7 @@
 //! - `POST /api/arch/verify`  → `POST /v1/platform/arch/verify`
 //! - `POST /api/arch/render`  → `POST /v1/platform/arch/render`
 //! - `POST /api/arch/emit`    → `POST /v1/platform/arch/emit`
+//! - `POST /api/arch/kroki`   → `POST /v1/platform/arch/kroki`
 //! - `GET  /api/arch/health`  → `GET  /v1/platform/arch/health`
 
 use axum::{
@@ -131,6 +132,27 @@ pub async fn emit_handler(
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
     match proxy_post("emit", body, bearer_from_headers(&headers).as_deref()).await {
+        Ok(r) => r.into_response(),
+        Err((s, j)) => (s, j).into_response(),
+    }
+}
+
+/// `POST /api/arch/kroki` — proxy to gateway `arch_kroki`.
+///
+/// Body: `{"diagram_type": "mermaid"|"d2"|"plantuml"|..., "source": "..."}`.
+/// Response: `{"svg": "<svg>...</svg>", "diagram_type": "..."}`.
+///
+/// Used by the `DiagramLibrary` screen to render catalogue examples server-side
+/// (avoids leaking the operator's browser to `kroki.io` and lets the deployment
+/// override `KROKI_URL` to a self-hosted Kroki).
+#[instrument(skip_all)]
+pub async fn kroki_handler(
+    _: AuthGuard,
+    headers: HeaderMap,
+    State(_state): State<AppState>,
+    Json(body): Json<Value>,
+) -> impl IntoResponse {
+    match proxy_post("kroki", body, bearer_from_headers(&headers).as_deref()).await {
         Ok(r) => r.into_response(),
         Err((s, j)) => (s, j).into_response(),
     }

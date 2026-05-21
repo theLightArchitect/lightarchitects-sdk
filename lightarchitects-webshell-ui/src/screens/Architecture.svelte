@@ -21,7 +21,9 @@
 
   // render format
   let renderFormat = $state<string>('mermaid');
-  const FORMATS = ['mermaid', 'd2', 'likec4', 'markdown', 'html'];
+  // kroki-svg renders the extracted model via Kroki and returns inline SVG
+  // (proxied through the gateway so KROKI_URL can be self-hosted).
+  const FORMATS = ['mermaid', 'd2', 'likec4', 'markdown', 'html', 'kroki-svg'];
 
   // blocking threshold for verify
   let blockingThreshold = $state<string>('high');
@@ -58,8 +60,31 @@
     const data = await res.json();
     // MCP tool-result envelope: { content: [{ type: "text", text: "..." }] }
     if (data?.content?.[0]?.text) return data.content[0].text as string;
+    // Gateway arch envelope: { output: "...", format: "..." } — unwrap to raw output
+    if (typeof data?.output === 'string') return data.output;
+    // Kroki passthrough: { svg: "...", diagram_type: "..." }
+    if (typeof data?.svg === 'string') return data.svg;
     return JSON.stringify(data, null, 2);
   }
+
+  // Encode a UTF-8 SVG string to a base64 `data:` URL. Using <img src=data:...>
+  // sandboxes the SVG against script execution (loaded as image, not document).
+  function svgToDataUrl(svg: string): string {
+    const utf8 = new TextEncoder().encode(svg);
+    let binary = '';
+    for (const byte of utf8) binary += String.fromCharCode(byte);
+    return `data:image/svg+xml;base64,${btoa(binary)}`;
+  }
+
+  // True when the current result should be presented as a rendered SVG image
+  // instead of a text dump. Conservative: requires both the format flag and a
+  // root <svg> tag in the payload.
+  const showAsSvg = $derived(
+    activeTab === 'render'
+      && renderFormat === 'kroki-svg'
+      && result !== null
+      && result.includes('<svg')
+  );
 
   async function runExtract() {
     const now = Date.now();
@@ -219,6 +244,11 @@
             >{tab.toUpperCase()}</button>
           {/each}
         </div>
+        <a
+          href="#/library"
+          class="mt-1 text-[10px] font-mono text-[#475569] hover:text-[#FFD700] transition-colors text-center"
+          data-testid="arch-link-library"
+        >↗ Browse Diagram Library</a>
       </div>
 
       <!-- Tab-specific controls -->
@@ -302,7 +332,24 @@
       {/if}
 
       {#if result}
-        <pre class="text-[10px] font-mono text-[#94a3b8] whitespace-pre-wrap break-all leading-relaxed" data-testid="arch-result">{result}</pre>
+        {#if showAsSvg}
+          <div class="space-y-3" data-testid="arch-result-svg">
+            <div class="bg-[#0f1724] border border-[#1e293b] rounded p-4 flex items-center justify-center min-h-[200px]">
+              <img
+                src={svgToDataUrl(result)}
+                alt="Kroki-rendered diagram"
+                class="max-w-full max-h-[600px]"
+                data-testid="arch-result-svg-img"
+              />
+            </div>
+            <details class="text-[10px] font-mono text-[#475569]">
+              <summary class="cursor-pointer hover:text-[#64748b] uppercase tracking-wider">SVG source</summary>
+              <pre class="mt-2 p-2 bg-[#0a0f1c] border border-[#1e293b] rounded text-[#94a3b8] whitespace-pre-wrap break-all leading-relaxed" data-testid="arch-result">{result}</pre>
+            </details>
+          </div>
+        {:else}
+          <pre class="text-[10px] font-mono text-[#94a3b8] whitespace-pre-wrap break-all leading-relaxed" data-testid="arch-result">{result}</pre>
+        {/if}
       {:else if !loading && !error}
         <div class="flex flex-col items-center justify-center h-full gap-2 opacity-40">
           <div class="text-[10px] font-mono text-[#475569]">

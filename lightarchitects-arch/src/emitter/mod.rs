@@ -6,6 +6,7 @@
 pub mod checklist;
 pub mod d2;
 pub mod html;
+pub mod kroki;
 pub mod likec4;
 pub mod markdown;
 pub mod mermaid;

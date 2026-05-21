@@ -2006,4 +2006,219 @@ When ironclaw-style autonomous backend ships alongside operator-visualization fr
 
 ---
 
-*Architects Blueprint v3.5 | Light Architects | updated 2026-05-18 at Phase 7 ratification close-out (added §19.A, §19.C, §14.4, §14.6, Part XXI.D); v3.4 added Part XXV Autonomous-Mode Planning Doctrine. Full amendment narrative: see `architects-blueprint.CHANGELOG.md` companion (created at Phase 7 per Canon XLII Tier-2 threshold).*
+## Part XXVI — Stack Classification Protocol (v3.6 ADDITION 2026-05-20)
+
+Every plan declares a **stack classification** as a build-time invariant. Declared at `/PLAN` Step 2.5 (or `/BUILD` Step 3 G0 for pre-v2.6.0 plans). Stored in LASDLC frontmatter: `stack_classification.value`.
+
+### §26.1 Classification Criteria
+
+| Value | When to declare | Signal criteria |
+|-------|-----------------|-----------------|
+| `full-stack` | Build touches both Svelte/TS frontend and Rust/backend simultaneously | WebEvent types + Svelte components + Rust routes changed in same plan |
+| `frontend-only` | Svelte/TS surface only — no new Rust handlers, no cargo changes | `lightarchitects-webshell-ui/` only; no `Cargo.toml` additions |
+| `backend-only` | Rust only — no Svelte components, no TS modules, no pnpm changes | Crate-level work; no `src/routes/`, no `.svelte` files |
+| `cli-tooling` | CLI binary or MCP server only — no webshell surface | `lightarchitects-gateway/` or MCP-only; no webshell dependency |
+
+**Decision rule**: classify by the PRIMARY surface that drives the build's Northstar delta. If ambiguous (e.g., adding a WebEvent that requires both a new Rust handler and a new Svelte panel), use `full-stack`.
+
+**Immutability**: `stack_classification` is locked at /PLAN time. Scope creep that would change the class (e.g., a `backend-only` plan discovers it needs a new Svelte view) is a **scope-expansion signal** → operator decision required: (a) keep current class + defer frontend work to follow-on build, or (b) upgrade to `full-stack` + re-run XEA.
+
+### §26.2 Gate Vocabulary Adjustments per Class
+
+All four LASDLC gate operators (`[A+S+Q+C+O+P+K+D+T+R]`) remain mandatory at every phase boundary regardless of class. What changes is the **mechanical gate set** within `[Q]` and `[T]`:
+
+| Class | Backend gates ([Q]+[T]) | Frontend gates ([Q]+[T]) |
+|-------|------------------------|--------------------------|
+| `full-stack` | `cargo_fmt_check` + `cargo_clippy` + `cargo_test` + `cargo_audit` | `svelte_check` + `pnpm_test_run` + `pnpm_vitest` + `pnpm_playwright` |
+| `frontend-only` | *(none — no Rust surface)* | `svelte_check` + `pnpm_test_run` + `pnpm_vitest` + `pnpm_playwright` |
+| `backend-only` | `cargo_fmt_check` + `cargo_clippy` + `cargo_test` + `cargo_audit` | *(none — no Svelte surface)* |
+| `cli-tooling` | `cargo_fmt_check` + `cargo_clippy` + `cargo_test` + `cargo_audit` | *(none)* |
+
+Security gate (`[S]`) always includes both `cargo_audit` (for Rust) and supply-chain checks regardless of class. A `frontend-only` plan with no Cargo.toml changes still runs npm/pnpm audit if new packages were added.
+
+### §26.3 Frontend-Only Build Discipline
+
+`frontend-only` plans have specific constraints that backend-experienced engineers commonly overlook:
+
+1. **No Rust handler for every new UI feature** — frontend-only plans may consume *existing* REST endpoints but MUST NOT add new Rust routes. New endpoint need → reclassify to `full-stack`.
+2. **Svelte store state machine** — any component with ≥4 states MUST declare a state-machine diagram (§26.4) in the `architecture_artifacts.generated_diagrams` list.
+3. **pnpm lockfile is the integrity record** — `pnpm-lock.yaml` changes require the same sonatype-guide supply chain check as `Cargo.toml` changes (Cookbook §62).
+4. **E2E gate owns the integration contract** — with no Rust surface, Playwright E2E is the ONLY gate that validates the backend↔frontend contract. Must include ≥3 scenarios per Northstar Pillar promise.
+
+### §26.4 Diagram Depth Override per Class
+
+Base tier requirements (Part III + Part XXVII) apply for all classes. The following **additions** apply per class:
+
+| Class | Required additions beyond tier baseline |
+|-------|----------------------------------------|
+| `full-stack` | Standard tier set + UI-flow diagrams (screen-flow + component hierarchy) if webshell surface touched (≥2 Svelte screens) |
+| `frontend-only` | Screen-flow diagram (navigation paths, always required); state-machine diagram (for ≥4 store states); component hierarchy (MEDIUM+) |
+| `backend-only` | Standard tier set; ERD if Neo4j/SQLite schema changes; deployment topology if multi-binary (LARGE+) |
+| `cli-tooling` | C3 component minimum regardless of tier (even SMALL tier needs L2 module diagram) |
+
+**Mermaid types** per diagram (canonical):
+
+| Diagram | Mermaid keyword | File suffix |
+|---------|----------------|-------------|
+| Screen-flow | `graph TD` | `-screen-flow.mmd` |
+| State-machine | `stateDiagram-v2` | `-state-machine.mmd` |
+| Component hierarchy | `graph TD` | `-component-hierarchy.mmd` |
+| ERD | `erDiagram` | `-erd.mmd` |
+| Sequence | `sequenceDiagram` | `-sequence.mmd` |
+| Deployment topology | `graph TB` with subgraph zones | `-deployment.mmd` |
+| Threat model | PlantUML `@startuml` STRIDE sequence or Mermaid `sequenceDiagram` | `-threat-model.puml` or `-threat-model.mmd` |
+| EDA topology | `flowchart LR` with async broker nodes | `-eda-topology.mmd` |
+
+### §26.5 LÆX Domain Assignment
+
+**Primary owner**: LÆX — canon keeper; owns LASDLC template versioning, XEA gate adjustments, ratification of `stack_classification` compliance checks.  
+**Secondary owner**: CORSO — architecture methodology; owns diagram generation toolchain, gate execution, Cookbook §64-67 compliance.  
+**Tertiary**: EVA — frontend UX domain (frontend-only builds invoke EVA [O] for deploy pipeline + Svelte store pattern review).
+
+### §26.6 Cross-Reference Table
+
+- LASDLC Template v2.6.0 `stack_classification` schema (mechanical values + gate_checklist_variant)
+- Part XXVII §27.2 — diagram depth by tier (base requirements)
+- Part XXVII §27.4 — `arch generate` command reference
+- Cookbook §64-67 — git operations + concurrency + context budget
+- Industry baselines: `user/standards/industry-baselines/architecture/diagrams/DIAGRAMS.md`
+- Northstar §C — Component Northstars §C-3 (screen-flow), §C-4 (state-machine), §C-7 (component hierarchy)
+
+---
+
+## Part XXVII — Architecture Diagram Generation Workflow (v3.6 ADDITION 2026-05-20)
+
+Architecture diagrams are **build planning inputs**, not post-implementation outputs (Canon XLI). Every LASDLC build plan includes a `diagrams/` subfolder with generated diagrams referenced in the plan frontmatter.
+
+### §27.1 Build Plan Folder Structure
+
+Every build plan's canonical folder:
+
+```
+$HELIX/corso/builds/<codename>/
+├── manifest.yaml           ← per-build LASDLC record
+├── plan.md                 ← working plan copy (canonical at ~/.claude/plans/<codename>.md)
+├── diagrams/               ← generated + custom architecture diagrams
+│   ├── L0-system-context.mmd
+│   ├── L1-container.mmd
+│   ├── L2-component.mmd
+│   ├── L3-data-flow.mmd    (MEDIUM+ or when async flows present)
+│   ├── L4-api-surface.mmd  (LARGE+)
+│   ├── L5-dependency.mmd   (LARGE+)
+│   ├── L6-security-boundary.mmd (LARGE+)
+│   ├── <slug>-screen-flow.mmd   (frontend-only / full-stack additions)
+│   ├── <slug>-state-machine.mmd (when ≥4 store states)
+│   └── <slug>-erd.mmd           (when Neo4j/SQLite schema touched)
+├── gate-evals/             ← per-phase gate evaluation records
+└── diagrams-manifest.md    ← index: name, type, level, generated_at, generator_id
+```
+
+The `diagrams/` subfolder is created at `/PLAN` Phase 0 or `/BUILD` Phase 1 (whichever runs first). The LASDLC template field `architecture_artifacts.generated_diagrams` is populated with one entry per diagram file: `{name, type, level, path, generated_at, generator_id}`.
+
+### §27.2 Required Diagrams per Tier
+
+Minimum set (exclusive of stack-class additions from §26.4):
+
+| Tier | Required diagrams | Waiver path |
+|------|-------------------|-------------|
+| SMALL | L2 (C3 component) | `diagram_waiver: true` (operator override, SMALL only — logs to LÆX retrospective) |
+| MEDIUM | L1 (C2 container) + L2 (C3 component) | No waiver |
+| LARGE | L0 (C1 system context) + L1 + L2 + L3 (data flow) + L6 (security boundary) | No waiver |
+| XL | All L0-L6 + deployment topology | No waiver |
+
+ERD is required at ANY tier when the build touches a Neo4j schema or SQLite table.  
+Sequence diagram is required at MEDIUM+ when async flows cross ≥2 binary/crate boundaries.  
+**Threat-model diagram** (`<slug>-threat-model.puml/.mmd`) is required when `security_classification: Restricted` or `Secret`. Distinct from L6 security-boundary view: L6 shows component scope; the threat model maps STRIDE threat paths (Spoofing, Tampering, Repudiation, Info disclosure, DoS, Elevation). Use STRIDE notation (PlantUML sequence with threat annotations preferred; Mermaid `sequenceDiagram` accepted). May not be auto-generated — use `tool_registry` entry `manual-threat-model`.  
+**EDA topology diagram** (`<slug>-eda-topology.mmd`) is required when the plan's `async_boundary_count ≥ 2` (i.e., ≥2 message-passing or event-bus boundaries cross binary/crate boundaries). Use Mermaid `flowchart LR` with broker nodes (topic, queue, channel) labeled and producers/consumers identified. Distinct from sequence diagram: EDA topology is structural (what connects), sequence is temporal (when messages flow).
+
+### §27.3 Default Diagram Tool — `arch generate`
+
+The platform's architecture-intelligence-substrate (shipped 2026-05-19, commit 5d829eb) provides L0-L6 Mermaid extraction.
+
+**Usage**:
+```bash
+# Run from project root during /PLAN Phase 0 or /BUILD Phase 1
+arch generate --output $HELIX/corso/builds/<codename>/diagrams/
+
+# Output: L0-system-context.mmd, L1-container.mmd, ... L6-security-boundary.mmd
+# Each file is valid Mermaid — renderable in webshell ARCH tab
+```
+
+**When to run**: At /PLAN Phase 0 (canonical) so diagrams inform architecture decisions before implementation begins. If diagram generation is deferred to /BUILD Phase 1, plan must declare `diagram_generation_deferred: true` with rationale.
+
+**Coverage**: `arch generate` produces L0-L6 structural diagrams. Stack-specific additions (screen-flow, state-machine, ERD) are authored manually or by specialized tools — reference `tool_registry` in LASDLC `architecture_artifacts.generator` for extensibility.
+
+### §27.4 Tool Registry + Extensibility
+
+The LASDLC template `architecture_artifacts.generator.tool_registry` supports multiple diagram generators:
+
+```yaml
+tool_registry:
+  - id: "arch-generate"           # default
+    command_template: "arch generate --output {diagrams_path}"
+    output_format: "mermaid"
+    description: "L0-L6 structural extraction (architecture-intelligence-substrate)"
+  - id: "arch-generate-erd"       # schema-aware ERD extraction
+    command_template: "arch generate --erd --output {diagrams_path}"
+    output_format: "mermaid"
+    description: "ERD generation from Neo4j/SQLite schema introspection (planned — command_template provisional)"
+  - id: "manual-mermaid"          # hand-authored
+    command_template: null
+    output_format: "mermaid"
+    description: "Manually authored Mermaid diagram for stack-specific types"
+  - id: "manual-threat-model"     # STRIDE threat model (requires security review)
+    command_template: null
+    output_format: "plantuml"
+    description: "STRIDE threat-model diagram; required for security_classification: Restricted+"
+  # future: plantuml-generate, d2, likec4
+```
+
+To add a new generator: add an entry to `tool_registry` with a unique `id`, register the file in `generated_diagrams` with `generator_id` pointing to the new entry.
+
+### §27.5 Diagram-to-Code Drift Detection (Canon XLI §C1f)
+
+Per Canon XLI (Diagram-First Doctrine) and the XEA confidence deduction table in `industry-baselines/architecture/diagrams/DIAGRAMS.md §6`:
+
+- **At /GATE (every phase boundary)**: CORSO [A] compares diagram structural claims against the code diff. Drift = deduction per the C1f table.
+- **Diagram-code drift ≥20% deviation** → BLOCKING until corrected before phase advance.
+- **`arch generate` re-run**: Required after any structural code change that would affect L0-L2 diagrams (new crate, new route handler, new MCP tool). Re-run output replaces the previous diagram file; `generated_at` is bumped in `generated_diagrams`.
+
+### §27.6 Diagram Lifecycle in `/PLAN` and `/BUILD`
+
+```
+/PLAN Phase 0:
+  → Create $HELIX/corso/builds/<codename>/diagrams/ folder
+  → Run: arch generate --output <diagrams_path>
+  → Author stack-specific diagrams (screen-flow, state-machine) if frontend or full-stack
+  → Populate plan frontmatter: architecture_artifacts.generated_diagrams[]
+  → Populate plan frontmatter: stack_classification (from Step 2.5)
+
+/BUILD Phase 1 (if not done at /PLAN):
+  → G0 stack_classification elicitation (fallback for pre-v2.6.0 plans)
+  → Verify diagrams/ folder exists and diagrams match current codebase (drift check)
+  → Re-run arch generate if L0-L2 would be stale
+
+/GATE (each phase):
+  → CORSO [A] drift check: compare diagram claims vs code diff
+  → Flag diagram-code drift findings per §27.5
+
+/BUILD Phase N (structural change):
+  → Re-run arch generate
+  → Author updated stack-specific diagrams
+  → Update generated_diagrams[] entries with new generated_at timestamps
+```
+
+### §27.7 Cross-Reference Table
+
+- LASDLC Template v2.6.0 `architecture_artifacts` schema (full generator extension)
+- Canon XLI — Diagram-First Doctrine (diagrams as design inputs)
+- Industry baselines: `user/standards/industry-baselines/architecture/diagrams/DIAGRAMS.md`
+  - C4 Model (Simon Brown), Arc42 (ISO/IEC/IEEE 42010:2011), L0-L6 levels, Mermaid platform standard
+- Part XXVI §26.4 — diagram depth overrides per stack class
+- Northstar §C — Component Northstars (§C-3 screen-flow, §C-4 state-machine, §C-7 component hierarchy)
+- Webshell ARCH tab — rendering target for `$HELIX/corso/builds/<codename>/diagrams/*.mmd`
+- Architecture-intelligence-substrate (shipped 5d829eb 2026-05-19) — `arch generate` CLI source
+
+---
+
+*Architects Blueprint v3.6 | Light Architects | updated 2026-05-20 (added Part XXVI Stack Classification Protocol + Part XXVII Architecture Diagram Generation Workflow; LASDLC Template v2.6.0; domain ownership: LÆX primary, CORSO secondary). v3.5 changes: see `architects-blueprint.CHANGELOG.md`.*

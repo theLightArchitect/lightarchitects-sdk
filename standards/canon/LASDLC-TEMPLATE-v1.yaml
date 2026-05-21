@@ -49,12 +49,16 @@
 # ============================================================================
 
 template_name: "LASDLC-TEMPLATE-v1"
-template_version: "2.5.4"
+template_version: "2.6.0"
 # Amendment history → standards/canon/LASDLC-TEMPLATE-v1.CHANGELOG.md
 # Schema file = current state only. Inline `added_in_template_version: "X.Y.Z"`
 # markers throughout this file identify when each field was introduced.
 #
 # Current minor at-a-glance (one-line summaries; full detail in CHANGELOG):
+# - v2.6.0 (2026-05-20): stack_classification field (full-stack/frontend-only/backend-only/cli-tooling)
+#   + gate_checklist_variant per class + architecture_artifacts generator extension (arch-generate
+#   as default, extensible tool registry). Blueprint Parts XXVI + XXVII. Industry baselines:
+#   industry-baselines/architecture/diagrams/. LÆX candidate #25.
 # - v2.5.4 (2026-05-18): runtime-mirror schema — manifest.runtime_state + NEW
 #   gate_receipts.ndjson (hash-chained) + active.yaml 3-field extension.
 #   LÆX candidate #20.
@@ -81,6 +85,20 @@ architecture_artifacts:
     source_anchor_discipline: "Each non-trivial relation carries source_anchor: {file, lines} OR source_anchor: architect_assertion. Architect-assertion <=20% per diagram per Canon XLI."
     compliance_checklist: "Per Blueprint Part XXIV - choose variant V1/V2/V3/V4 matching artifact type; verify commands restricted to cmd_exec allowlist per Cookbook §63.P2."
     xea_stamp: "Field xea_verified: YYYY-MM-DD; TTL by tier per Blueprint §24.4."
+    # v2.6.0 — generator + path extensions
+    generator:
+      default_id: "arch-generate"                   # architecture-intelligence-substrate (shipped 2026-05-19)
+      default_command: "arch generate --output $HELIX/corso/builds/<codename>/diagrams/"
+      extensible: true                              # register additional generators via tool_registry below
+      tool_registry:
+        # Format: { id, command_template, output_format, description }
+        - id: "arch-generate"
+          command_template: "arch generate --output {diagrams_path}"
+          output_format: "mermaid"
+          description: "architecture-intelligence-substrate L0-L6 extraction (Mermaid)"
+        # Add additional generators here; plans reference by id
+    output_path_template: "$HELIX/corso/builds/{codename}/diagrams/"
+    generated_diagrams_field: "List of { name, type, level, path, generated_at, generator_id } entries populated at /PLAN Phase 0 or BUILD Phase 1"
   operator_override:
     diagram_waiver:
       allowed_tiers: ["SMALL"]
@@ -90,6 +108,52 @@ architecture_artifacts:
       auto_flags: "LÆX retrospective review queue"
       not_allowed_for: ["MEDIUM", "LARGE", "PROGRAM"]
       override_path_for_higher_tiers: "Canon XV explicit operator authority invocation logged per Canon XXXIX §6.2"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# stack_classification — v2.6.0 (added 2026-05-20, Blueprint Part XXVI)
+# ─────────────────────────────────────────────────────────────────────────────
+stack_classification:
+  added_in_template_version: "2.6.0"
+  description: |
+    Declared at plan-time via HITL in /PLAN Step 2.5 (or /BUILD Step 3 G0 for
+    plans authored before v2.6.0). Drives gate_checklist_variant selection —
+    which quality gates are ACTIVE vs SKIPPED for this build. See Blueprint
+    Part XXVI for classification criteria and gate adjustment rules.
+  required_if: 'lasdlc_template_version >= "2.6.0"'
+  schema:
+    value:
+      type: "enum"
+      values:
+        - "full-stack"       # Rust backend + Svelte/TS frontend both touched
+        - "frontend-only"    # Only webshell-ui / .svelte / .ts files
+        - "backend-only"     # Only Rust crates, no frontend surface changes
+        - "cli-tooling"      # CLI binary, no HTTP/browser surface
+      declared_at: "pre-flight"
+      elicitation: "HITL in /PLAN Step 2.5 (preferred) OR /BUILD Step 3 G0 (fallback)"
+    gate_checklist_variant:
+      description: "Determines which quality gates are ACTIVE for this build"
+      full-stack:
+        backend_gates:  ["cargo_fmt_check", "cargo_clippy", "cargo_test", "cargo_audit"]
+        frontend_gates: ["svelte_check", "pnpm_test_run", "pnpm_vitest", "pnpm_playwright"]
+        shared_gates:   ["security_scan", "integration_tests", "e2e_tests"]
+      frontend-only:
+        backend_gates:  []          # SKIPPED — no Rust surface touched
+        frontend_gates: ["svelte_check", "pnpm_test_run", "pnpm_vitest", "pnpm_playwright"]
+        shared_gates:   ["security_scan", "integration_tests"]
+      backend-only:
+        backend_gates:  ["cargo_fmt_check", "cargo_clippy", "cargo_test", "cargo_audit"]
+        frontend_gates: []          # SKIPPED — no frontend surface touched
+        shared_gates:   ["security_scan", "integration_tests"]
+      cli-tooling:
+        backend_gates:  ["cargo_fmt_check", "cargo_clippy", "cargo_test", "cargo_audit"]
+        frontend_gates: []          # SKIPPED
+        shared_gates:   ["security_scan"]
+    diagram_depth_override:
+      description: "stack_classification may adjust required diagram set (see Blueprint Part XXVI §26.4)"
+      frontend-only: "Add UI-flow diagrams (screen-flow, state-machine) to tier-required set"
+      backend-only: "Standard tier-based diagram set per Part III"
+      full-stack: "Standard tier-based set + UI-flow diagrams if webshell surface touched"
+      cli-tooling: "C3 component minimum regardless of tier"
 
 framework: "LASDLC"
 framework_version: "1.0.0"

@@ -15,6 +15,7 @@ export type ScreenKey =
   | 'Git'
   | 'PullRequest'
   | 'Architecture'
+  | 'DiagramLibrary'
   | 'Roadmap'
   | 'Tools'; // §O Tool Surface Parity
 
@@ -81,6 +82,9 @@ const ROUTES: RouteEntry[] = [
   [/^\/helix$/,                                                             'Helix',         []],
   [/^\/activity$/,                                                          'Comms',         []],
   [/^\/comms$/,                                                             'Comms',         []],
+  // Diagram library — must precede the generic /diagrams/:project pattern
+  [/^\/diagrams\/library$/,                                                 'DiagramLibrary', []],
+  [/^\/library$/,                                                           'DiagramLibrary', []],
   [/^\/diagrams\/(.+)$/,                                                    'Architecture',  ['project']],
   [/^\/diagrams$/,                                                          'Architecture',  []],
   [/^\/editor\/(.+)$/,                                                      'Editor',        ['filepath']],

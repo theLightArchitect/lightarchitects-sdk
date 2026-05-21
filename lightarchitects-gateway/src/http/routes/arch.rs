@@ -20,7 +20,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use lightarchitects_arch::{
     ArchModel, Severity,
-    emitter::{emit_d2, emit_html, emit_likec4, emit_markdown, emit_mermaid},
+    emitter::{emit_d2, emit_html, emit_likec4, emit_markdown, emit_mermaid, kroki},
     extractor::{ExtractorConfig, walk_and_extract},
     security::path::canonicalize_and_check,
     verifier,
@@ -33,6 +33,14 @@ use tracing::instrument;
 
 use crate::http::state::PlatformState;
 
+/// Default Kroki endpoint when `KROKI_URL` env var is unset.
+const DEFAULT_KROKI_URL: &str = "https://kroki.io";
+
+/// Maximum bytes accepted in a Kroki source body — guards against oversize
+/// inputs that would either hit upstream rate limits or produce unrenderable
+/// payloads. 64 KiB covers the entire LASDLC v1 schema rendered as Mermaid.
+const KROKI_MAX_SOURCE_BYTES: usize = 64 * 1024;
+
 /// Register all arch routes.
 pub fn arch_routes() -> Router<Arc<PlatformState>> {
     Router::new()
@@ -40,6 +48,7 @@ pub fn arch_routes() -> Router<Arc<PlatformState>> {
         .route("/v1/platform/arch/verify", post(arch_verify))
         .route("/v1/platform/arch/render", post(arch_render))
         .route("/v1/platform/arch/emit", post(arch_emit))
+        .route("/v1/platform/arch/kroki", post(arch_kroki))
         .route("/v1/platform/arch/health", get(arch_health))
 }
 
@@ -72,6 +81,18 @@ pub struct RenderRequest {
     pub model: ArchModel,
     /// Output format: "mermaid", "d2", "likec4", "markdown", "html".
     pub format: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct KrokiRequest {
+    /// Kroki diagram type (e.g. "mermaid", "d2", "plantuml", "structurizr").
+    ///
+    /// Validated against [`lightarchitects_arch::emitter::kroki::SUPPORTED_TYPES`].
+    pub diagram_type: String,
+    /// Diagram DSL source. Forwarded verbatim to Kroki as `text/plain`.
+    ///
+    /// Size-capped at `KROKI_MAX_SOURCE_BYTES`.
+    pub source: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,9 +152,72 @@ fn dispatch_render(model: &ArchModel, format: &str) -> Result<String, String> {
         "markdown" => emit_markdown(model, None).map_err(|e| e.to_string()),
         "html" => emit_html(model, None, false).map_err(|e| e.to_string()),
         other => Err(format!(
-            "unknown format '{other}'; valid: mermaid|d2|likec4|markdown|html"
+            "unknown format '{other}'; valid: mermaid|d2|likec4|markdown|html|kroki-svg"
         )),
     }
+}
+
+/// Returns the configured Kroki endpoint (`KROKI_URL` env var, default
+/// `https://kroki.io`). Trailing slash stripped.
+fn kroki_base_url() -> String {
+    normalize_kroki_url(std::env::var("KROKI_URL").ok().as_deref())
+}
+
+/// Pure helper for [`kroki_base_url`] — easier to unit-test than the env-reading
+/// path because the crate forbids `unsafe` and therefore can't mutate process
+/// env from tests.
+fn normalize_kroki_url(raw: Option<&str>) -> String {
+    raw.unwrap_or(DEFAULT_KROKI_URL)
+        .trim_end_matches('/')
+        .to_owned()
+}
+
+/// Renders a diagram DSL to SVG via Kroki HTTP POST.
+///
+/// Sends the source as `text/plain` to `{base}/{type}/svg`. Caller is
+/// responsible for type and size validation; this function trusts both.
+///
+/// # Errors
+///
+/// Returns an `(HTTP status code, error message)` tuple on network failure
+/// (`502`), Kroki rejection (`422`), or any non-2xx upstream response
+/// (forwards Kroki status code).
+async fn kroki_render(diagram_type: &str, source: &str) -> Result<String, (StatusCode, String)> {
+    let base = kroki_base_url();
+    let url = format!("{base}/{diagram_type}/svg");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("kroki client init failed: {e}"),
+            )
+        })?;
+
+    let response = client
+        .post(&url)
+        .header("Content-Type", "text/plain")
+        .body(source.to_owned())
+        .send()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("kroki unreachable: {e}")))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        let snippet: String = body.chars().take(200).collect();
+        let mapped = StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+        return Err((mapped, format!("kroki error ({status}): {snippet}")));
+    }
+
+    response.text().await.map_err(|e| {
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("kroki body read failed: {e}"),
+        )
+    })
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -250,6 +334,12 @@ async fn arch_verify(
 }
 
 /// `POST /v1/platform/arch/render` — render an `ArchModel` to a diagram format.
+///
+/// Supports two render paths:
+/// - Pure emitters (`mermaid` / `d2` / `likec4` / `markdown` / `html`) — synchronous
+///   text output from `lightarchitects-arch` emitters.
+/// - External SVG rendering (`kroki-svg`) — first emits Mermaid from the model,
+///   then POSTs to Kroki and returns the SVG document as `output`.
 #[instrument(skip(_state, headers))]
 async fn arch_render(
     State(_state): State<Arc<PlatformState>>,
@@ -257,6 +347,31 @@ async fn arch_render(
     Json(req): Json<RenderRequest>,
 ) -> Response {
     tracing::info!(sibling_id = sibling_id(&headers), format = %req.format, "arch_render");
+
+    if req.format == "kroki-svg" {
+        let source = match emit_mermaid(&req.model) {
+            Ok(s) => s,
+            Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+        };
+        if source.len() > KROKI_MAX_SOURCE_BYTES {
+            return (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                format!(
+                    "rendered Mermaid is {} bytes; Kroki limit is {KROKI_MAX_SOURCE_BYTES}",
+                    source.len()
+                ),
+            )
+                .into_response();
+        }
+        return match kroki_render("mermaid", &source).await {
+            Ok(svg) => (
+                StatusCode::OK,
+                axum::Json(json!({"output": svg, "format": "kroki-svg"})),
+            )
+                .into_response(),
+            Err((status, msg)) => (status, msg).into_response(),
+        };
+    }
 
     match dispatch_render(&req.model, &req.format) {
         Ok(output) => (
@@ -266,6 +381,62 @@ async fn arch_render(
             .into_response(),
         Err(e) if e.starts_with("unknown format") => (StatusCode::BAD_REQUEST, e).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
+/// `POST /v1/platform/arch/kroki` — render arbitrary DSL source via Kroki.
+///
+/// Accepts any `lightarchitects_arch::emitter::kroki::SUPPORTED_TYPES` value
+/// plus raw source text. Returns `{"svg": "<svg>...</svg>", "diagram_type": "..."}`.
+///
+/// Source is size-capped at `KROKI_MAX_SOURCE_BYTES` (64 KiB). Diagram type is
+/// validated server-side against the supported-types registry — invalid types
+/// short-circuit with `400 Bad Request` before any network call is issued.
+#[instrument(skip(_state, headers), fields(diagram_type = %req.diagram_type))]
+async fn arch_kroki(
+    State(_state): State<Arc<PlatformState>>,
+    headers: HeaderMap,
+    Json(req): Json<KrokiRequest>,
+) -> Response {
+    tracing::info!(
+        sibling_id = sibling_id(&headers),
+        diagram_type = %req.diagram_type,
+        source_bytes = req.source.len(),
+        "arch_kroki",
+    );
+
+    if !kroki::is_supported_type(&req.diagram_type) {
+        return (
+            StatusCode::BAD_REQUEST,
+            format!(
+                "unsupported diagram_type '{}'; see lightarchitects_arch::emitter::kroki::SUPPORTED_TYPES",
+                req.diagram_type
+            ),
+        )
+            .into_response();
+    }
+
+    if req.source.is_empty() {
+        return (StatusCode::BAD_REQUEST, "source is empty").into_response();
+    }
+    if req.source.len() > KROKI_MAX_SOURCE_BYTES {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            format!(
+                "source is {} bytes; Kroki limit is {KROKI_MAX_SOURCE_BYTES}",
+                req.source.len()
+            ),
+        )
+            .into_response();
+    }
+
+    match kroki_render(&req.diagram_type, &req.source).await {
+        Ok(svg) => (
+            StatusCode::OK,
+            axum::Json(json!({"svg": svg, "diagram_type": req.diagram_type})),
+        )
+            .into_response(),
+        Err((status, msg)) => (status, msg).into_response(),
     }
 }
 
@@ -331,6 +502,7 @@ async fn arch_health() -> impl IntoResponse {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -361,5 +533,45 @@ mod tests {
         let model = ArchModel::new("test");
         let result = dispatch_render(&model, "mermaid");
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn dispatch_render_unknown_format_message_lists_kroki_svg() {
+        // Regression guard — UI surface advertises kroki-svg as a render format,
+        // so the error message must enumerate it alongside the legacy formats.
+        let model = ArchModel::new("test");
+        let Err(err) = dispatch_render(&model, "powerpoint") else {
+            panic!("expected Err for unknown format");
+        };
+        assert!(
+            err.contains("kroki-svg"),
+            "expected kroki-svg in error: {err}"
+        );
+    }
+
+    #[test]
+    fn normalize_kroki_url_defaults_when_unset() {
+        assert_eq!(normalize_kroki_url(None), DEFAULT_KROKI_URL);
+    }
+
+    #[test]
+    fn normalize_kroki_url_strips_trailing_slash() {
+        assert_eq!(
+            normalize_kroki_url(Some("http://localhost:8000/")),
+            "http://localhost:8000"
+        );
+        assert_eq!(
+            normalize_kroki_url(Some("http://localhost:8000///")),
+            "http://localhost:8000"
+        );
+    }
+
+    #[test]
+    fn normalize_kroki_url_preserves_paths() {
+        // KROKI_URL may include a path prefix when self-hosted behind a reverse proxy.
+        assert_eq!(
+            normalize_kroki_url(Some("https://k.lightarchitects.io/kroki")),
+            "https://k.lightarchitects.io/kroki"
+        );
     }
 }

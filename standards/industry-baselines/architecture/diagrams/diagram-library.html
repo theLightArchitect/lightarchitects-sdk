@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Architecture Diagram Library · Light Architects</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-deep:       #060e1a;
+      --bg-card:       #0c1b30;
+      --bg-source:     rgba(0,0,0,0.35);
+      --border:        rgba(0,160,220,0.1);
+      --border-hover:  rgba(0,212,255,0.3);
+      --text-primary:  #dceeff;
+      --text-secondary:#6a9ec0;
+      --text-muted:    #2e5470;
+      --grid-major:    rgba(0,160,220,0.035);
+      --grid-minor:    rgba(0,160,220,0.018);
+      --c4:      #00d4ff;
+      --uml:     #a855f7;
+      --mermaid: #22c55e;
+      --d2:      #ec4899;
+      --plantuml:#f59e0b;
+      --font-display:'Rajdhani', sans-serif;
+      --font-mono:   'JetBrains Mono', monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Full-page blueprint grid */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--grid-major) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+        linear-gradient(var(--grid-minor) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px);
+      background-size: 80px 80px, 80px 80px, 20px 20px, 20px 20px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    body::after {
+      content: '';
+      position: fixed;
+      top: -20vh; left: -10vw;
+      width: 70vw; height: 70vh;
+      background: radial-gradient(ellipse, rgba(0,80,140,0.18) 0%, transparent 65%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 0 32px 100px;
+    }
+
+    /* ── Header ────────────────────────────── */
+    header {
+      padding: 64px 0 48px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 44px;
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 32px;
+      align-items: start;
+    }
+
+    .header-eyebrow {
+      font-size: 10px;
+      font-weight: 400;
+      letter-spacing: 0.22em;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-eyebrow::before {
+      content: '';
+      display: inline-block;
+      width: 24px;
+      height: 1px;
+      background: var(--c4);
+      opacity: 0.5;
+    }
+
+    .header-title {
+      font-family: var(--font-display);
+      font-size: clamp(40px, 5.5vw, 72px);
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      line-height: 0.92;
+      color: var(--text-primary);
+      margin-bottom: 20px;
+    }
+
+    .header-title .accent { color: var(--c4); }
+
+    .header-desc {
+      font-size: 12px;
+      font-weight: 300;
+      color: var(--text-secondary);
+      line-height: 1.7;
+      max-width: 540px;
+    }
+
+    .blueprint-readout {
+      font-size: 10px;
+      font-weight: 300;
+      color: var(--text-muted);
+      text-align: right;
+      line-height: 2;
+      letter-spacing: 0.08em;
+      border-left: 1px solid var(--border);
+      padding-left: 20px;
+      margin-top: 6px;
+      opacity: 0.7;
+      white-space: nowrap;
+    }
+
+    .blueprint-readout .lbl { color: rgba(0,180,220,0.35); margin-right: 6px; }
+
+    /* ── Filters ───────────────────────────── */
+    .filters { display: flex; flex-direction: column; gap: 10px; margin-bottom: 28px; }
+
+    .filter-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+    .filter-label {
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      min-width: 68px;
+    }
+
+    .pill {
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      padding: 4px 13px;
+      border-radius: 2px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: color .14s, border-color .14s, background .14s, box-shadow .14s;
+      user-select: none;
+    }
+
+    .pill:hover { border-color: rgba(0,200,240,0.25); color: var(--text-primary); }
+
+    .pill.active[data-all]         { background: rgba(0,180,220,0.12); color: var(--c4); border-color: rgba(0,180,220,0.3); }
+    .pill.active[data-std="C4"]    { background: var(--c4);      color: #000; border-color: var(--c4);      box-shadow: 0 0 14px rgba(0,212,255,0.35); }
+    .pill.active[data-std="UML"]   { background: var(--uml);     color: #fff; border-color: var(--uml);     box-shadow: 0 0 14px rgba(168,85,247,0.35); }
+    .pill.active[data-std="Mermaid"]  { background: var(--mermaid);  color: #000; border-color: var(--mermaid);  box-shadow: 0 0 14px rgba(34,197,94,0.35); }
+    .pill.active[data-std="D2"]    { background: var(--d2);      color: #fff; border-color: var(--d2);      box-shadow: 0 0 14px rgba(236,72,153,0.35); }
+    .pill.active[data-std="PlantUML"] { background: var(--plantuml); color: #000; border-color: var(--plantuml); box-shadow: 0 0 14px rgba(245,158,11,0.35); }
+    .pill.active[data-stack]:not([data-all]),
+    .pill.active[data-tier]:not([data-all]) {
+      background: rgba(0,180,220,0.15); color: var(--c4);
+      border-color: rgba(0,180,220,0.4); box-shadow: 0 0 8px rgba(0,180,220,0.2);
+    }
+
+    /* ── Count bar ─────────────────────────── */
+    .count-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 36px;
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 0.1em;
+    }
+    .count-bar .n { color: var(--c4); font-weight: 600; font-size: 12px; }
+    .count-bar::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--border) 0%, transparent 100%); }
+
+    /* ── Grid ──────────────────────────────── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+      gap: 20px;
+    }
+
+    /* ── Card ──────────────────────────────── */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+      position: relative;
+      transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+      animation: cardIn .45s cubic-bezier(.22,1,.36,1) both;
+    }
+
+    /* Per-card coordinate grid */
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,160,220,.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,160,220,.03) 1px, transparent 1px);
+      background-size: 24px 24px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .card > * { position: relative; z-index: 1; }
+
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: var(--border-hover);
+      box-shadow: 0 16px 48px rgba(0,0,0,.45), 0 0 24px rgba(0,140,200,.07);
+    }
+
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .card-bar { height: 3px; flex-shrink: 0; }
+
+    .card-head {
+      padding: 16px 20px 12px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .card-title {
+      font-family: var(--font-display);
+      font-size: 19px;
+      font-weight: 600;
+      letter-spacing: .01em;
+      color: var(--text-primary);
+      line-height: 1.15;
+    }
+
+    .card-desc {
+      font-size: 10px;
+      font-weight: 300;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-top: 4px;
+      max-width: 280px;
+    }
+
+    .std-badge {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      padding: 3px 9px;
+      border-radius: 2px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .card-render {
+      margin: 0 20px;
+      border: 1px solid rgba(255,255,255,.05);
+      border-radius: 2px;
+      background: rgba(255,255,255,.02);
+      min-height: 160px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .card-render img {
+      width: 100%;
+      max-height: 230px;
+      object-fit: contain;
+      padding: 10px;
+      display: block;
+    }
+
+    .render-loading {
+      font-size: 10px;
+      font-weight: 300;
+      color: var(--text-muted);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      animation: blink 1.4s ease infinite;
+      position: absolute;
+    }
+
+    .card-render.loaded .render-loading { display: none; }
+
+    .render-error {
+      font-size: 10px;
+      color: rgba(236,72,153,.6);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      padding: 24px;
+      text-align: center;
+      line-height: 1.7;
+    }
+
+    @keyframes blink {
+      0%,100% { opacity: .35; }
+      50%      { opacity: .8; }
+    }
+
+    .card-tags {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      padding: 10px 20px;
+    }
+
+    .tag {
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 2px;
+      border: 1px solid;
+    }
+
+    .tag-stack { border-color: rgba(0,160,220,.18); color: rgba(0,160,220,.55); }
+    .tag-tier  { border-color: rgba(255,255,255,.08); color: var(--text-muted); }
+    .tag-level { border-color: rgba(255,210,0,.2); color: rgba(255,210,0,.55); }
+
+    .card-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 20px 0;
+    }
+
+    .btn-toggle {
+      font-size: 10px;
+      font-weight: 400;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color .14s;
+      font-family: var(--font-mono);
+    }
+
+    .btn-toggle:hover { color: var(--text-secondary); }
+
+    .chevron {
+      width: 8px; height: 8px;
+      border-right: 1.5px solid currentColor;
+      border-bottom: 1.5px solid currentColor;
+      transform: rotate(45deg);
+      transition: transform .2s;
+      flex-shrink: 0;
+    }
+
+    .btn-toggle.open .chevron { transform: rotate(-135deg); }
+
+    .btn-copy {
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      background: none;
+      border: 1px solid var(--border);
+      padding: 3px 11px;
+      border-radius: 2px;
+      cursor: pointer;
+      transition: color .14s, border-color .14s;
+      font-family: var(--font-mono);
+    }
+
+    .btn-copy:hover { color: var(--c4); border-color: rgba(0,180,220,.3); }
+    .btn-copy.ok { color: var(--mermaid); border-color: rgba(34,197,94,.4); }
+
+    .card-source {
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height .32s cubic-bezier(.4,0,.2,1);
+      margin: 0 20px;
+    }
+
+    .card-source.open { max-height: 380px; }
+
+    .card-source pre {
+      font-size: 10.5px;
+      font-weight: 300;
+      line-height: 1.65;
+      color: #5a90b4;
+      background: var(--bg-source);
+      border: 1px solid rgba(255,255,255,.05);
+      border-radius: 2px;
+      padding: 12px 14px;
+      margin-top: 8px;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .card-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 20px 14px;
+      margin-top: 8px;
+      border-top: 1px solid rgba(255,255,255,.04);
+    }
+
+    .card-foot a {
+      font-size: 9px;
+      font-weight: 400;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color .14s;
+    }
+
+    .card-foot a:hover { color: var(--text-secondary); }
+
+    .kroki-lbl { font-size: 9px; color: rgba(0,120,180,.35); letter-spacing: .06em; }
+
+    .empty {
+      grid-column: 1 / -1;
+      padding: 80px 20px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+      letter-spacing: .1em;
+      display: none;
+    }
+
+    @media (max-width: 960px) {
+      .grid { grid-template-columns: 1fr; }
+      .blueprint-readout { display: none; }
+      header { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 600px) {
+      .container { padding: 0 16px 60px; }
+      .header-title { font-size: 36px; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div>
+      <p class="header-eyebrow">Light Architects &middot; LASDLC Industry Baselines &middot; ISO/IEC 42010</p>
+      <h1 class="header-title">Architecture<br><span class="accent">Diagram</span> Library</h1>
+      <p class="header-desc">
+        Living reference for all diagram types used in /PLAN and /BUILD phases.<br>
+        Rendered via Kroki unified API &mdash; copy DSL source directly into build plans.
+      </p>
+    </div>
+    <div class="blueprint-readout">
+      <div><span class="lbl">REF&nbsp;</span>DIAGRAMS.md</div>
+      <div><span class="lbl">VER&nbsp;</span>2.0.0</div>
+      <div><span class="lbl">STD&nbsp;</span>ISO 42010:2011</div>
+      <div><span class="lbl">RND&nbsp;</span>kroki.io</div>
+      <div><span class="lbl">FMT&nbsp;</span>SVG inline</div>
+      <div><span class="lbl">CNT&nbsp;</span>15 diagrams</div>
+    </div>
+  </header>
+
+  <div class="filters">
+    <div class="filter-row">
+      <span class="filter-label">Standard</span>
+      <span class="pill active" data-filter="std" data-all data-val="all">All</span>
+      <span class="pill" data-filter="std" data-std="C4"       data-val="C4">C4 Model</span>
+      <span class="pill" data-filter="std" data-std="UML"      data-val="UML">UML 2.5.1</span>
+      <span class="pill" data-filter="std" data-std="Mermaid"  data-val="Mermaid">Mermaid</span>
+      <span class="pill" data-filter="std" data-std="D2"       data-val="D2">D2</span>
+      <span class="pill" data-filter="std" data-std="PlantUML" data-val="PlantUML">PlantUML</span>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">Stack class</span>
+      <span class="pill active" data-filter="stack" data-all data-val="all">All</span>
+      <span class="pill" data-filter="stack" data-stack="full-stack"    data-val="full-stack">Full-Stack</span>
+      <span class="pill" data-filter="stack" data-stack="backend-only"  data-val="backend-only">Backend</span>
+      <span class="pill" data-filter="stack" data-stack="frontend-only" data-val="frontend-only">Frontend</span>
+      <span class="pill" data-filter="stack" data-stack="cli-tooling"   data-val="cli-tooling">CLI</span>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">Tier</span>
+      <span class="pill active" data-filter="tier" data-all data-val="all">All</span>
+      <span class="pill" data-filter="tier" data-tier="SMALL"  data-val="SMALL">SMALL</span>
+      <span class="pill" data-filter="tier" data-tier="MEDIUM" data-val="MEDIUM">MEDIUM</span>
+      <span class="pill" data-filter="tier" data-tier="LARGE"  data-val="LARGE">LARGE</span>
+      <span class="pill" data-filter="tier" data-tier="XL"     data-val="XL">XL</span>
+    </div>
+  </div>
+
+  <div class="count-bar">
+    Showing&nbsp;<span class="n" id="count">15</span>&nbsp;of 15 diagrams
+  </div>
+
+  <div class="grid" id="grid">
+    <p class="empty" id="empty">No diagrams match the current filters.</p>
+  </div>
+
+</div>
+<script>
+'use strict';
+
+// ── Diagram catalogue ───────────────────────────────────────────────────────
+var DIAGRAMS = [
+  {
+    id: 'c4-context',
+    title: 'C4 System Context',
+    std: 'C4', type: 'mermaid',
+    stacks: ['full-stack','backend-only','frontend-only','cli-tooling'],
+    tiers: ['SMALL','MEDIUM','LARGE','XL'],
+    level: 'L0',
+    desc: 'Top-level view: actors, system boundary, external dependencies.',
+    anchor: '#c4-model',
+    src: [
+      'C4Context',
+      '  title System Context - Light Architects Platform',
+      '  Person(operator, "Operator", "Engineer using the platform")',
+      '  System(platform, "Light Architects", "AI orchestration platform with specialized siblings")',
+      '  System_Ext(claude_api, "Claude API", "Anthropic LLM inference endpoint")',
+      '  System_Ext(helix, "SOUL Helix", "Knowledge graph and vault")',
+      '  Rel(operator, platform, "Commands via Webshell", "HTTPS/WSS")',
+      '  Rel(platform, claude_api, "Inference calls", "HTTPS")',
+      '  Rel(platform, helix, "Knowledge retrieval", "SQLite/Neo4j")'
+    ].join('\n')
+  },
+  {
+    id: 'c4-container',
+    title: 'C4 Container',
+    std: 'C4', type: 'mermaid',
+    stacks: ['full-stack','backend-only'],
+    tiers: ['MEDIUM','LARGE','XL'],
+    level: 'L1',
+    desc: 'Application containers, databases, runtimes, communication channels.',
+    anchor: '#c4-model',
+    src: [
+      'C4Container',
+      '  title Container Diagram - Light Architects SDK',
+      '  Person(op, "Operator")',
+      '  Container(webshell, "Webshell UI", "SvelteKit/Svelte 5", "Browser-based engineering cockpit")',
+      '  Container(gateway, "lightarchitects-gateway", "Rust/Axum", "HTTP + WebSocket + SSE orchestration")',
+      '  Container(sdk, "lightarchitects-sdk", "Rust 12-crate", "Unified SDK and sibling clients")',
+      '  ContainerDb(soul_db, "SOUL Vault", "SQLite + Neo4j", "Knowledge graph and helix storage")',
+      '  Container(mcp, "MCP Servers", "Rust stdio JSON-RPC", "CORSO, EVA, SOUL, QUANTUM, SERAPH, AYIN")',
+      '  Rel(op, webshell, "Uses", "HTTPS")',
+      '  Rel(webshell, gateway, "API calls", "HTTP/WS/SSE")',
+      '  Rel(gateway, sdk, "Invokes siblings")',
+      '  Rel(sdk, mcp, "stdio JSON-RPC")',
+      '  Rel(sdk, soul_db, "Reads/writes")'
+    ].join('\n')
+  },
+  {
+    id: 'c4-component',
+    title: 'C4 Component',
+    std: 'C4', type: 'mermaid',
+    stacks: ['backend-only','full-stack'],
+    tiers: ['LARGE','XL'],
+    level: 'L2',
+    desc: 'Internal components of a container and their responsibilities.',
+    anchor: '#c4-model',
+    src: [
+      'C4Component',
+      '  title Component Diagram - Gateway Core',
+      '  Container_Boundary(gw, "lightarchitects-gateway") {',
+      '    Component(router, "HTTP Router", "Axum", "Route dispatch and middleware stack")',
+      '    Component(auth, "AuthGuard", "Tower middleware", "JWT and notify-token validation")',
+      '    Component(copilot, "CopilotController", "Rust async", "Plan/build streaming handler")',
+      '    Component(sse, "SSEBroadcast", "tokio broadcast", "Event fan-out to connected clients")',
+      '    Component(git, "GitController", "Rust + git2", "Worktree lifecycle operations")',
+      '  }',
+      '  Container(webshell, "Webshell UI", "SvelteKit")',
+      '  Container(sdk, "lightarchitects-sdk", "Rust")',
+      '  Rel(webshell, router, "HTTP/WS", "JSON")',
+      '  Rel(router, auth, "validates via")',
+      '  Rel(router, copilot, "delegates to")',
+      '  Rel(router, git, "delegates to")',
+      '  Rel(copilot, sse, "publishes to")',
+      '  Rel(copilot, sdk, "calls siblings via")'
+    ].join('\n')
+  },
+  {
+    id: 'uml-sequence',
+    title: 'UML Sequence',
+    std: 'UML', type: 'mermaid',
+    stacks: ['full-stack','backend-only','frontend-only','cli-tooling'],
+    tiers: ['MEDIUM','LARGE','XL'],
+    level: 'L3',
+    desc: 'Message flows and temporal ordering between system actors.',
+    anchor: '#uml-251',
+    src: [
+      'sequenceDiagram',
+      '  actor Op as Operator',
+      '  participant WS as Webshell UI',
+      '  participant GW as Gateway',
+      '  participant SOUL as SOUL MCP',
+      '  participant Claude as Claude API',
+      '',
+      '  Op->>WS: /PLAN copilot-feature',
+      '  WS->>GW: POST /api/copilot {prompt}',
+      '  GW->>SOUL: search helix "copilot-feature"',
+      '  SOUL-->>GW: prior decisions + patterns',
+      '  GW->>Claude: stream plan request',
+      '  loop SSE stream',
+      '    Claude-->>GW: plan token',
+      '    GW-->>WS: SSE WebEvent::PlanToken',
+      '    WS-->>Op: render in PLAN tab',
+      '  end',
+      '  GW->>SOUL: enrich {plan, sig: 8.5}',
+      '  Op->>WS: approve plan',
+      '  WS->>GW: POST /api/build/start'
+    ].join('\n')
+  },
+  {
+    id: 'uml-class',
+    title: 'UML Class',
+    std: 'UML', type: 'mermaid',
+    stacks: ['backend-only','full-stack'],
+    tiers: ['LARGE','XL'],
+    level: 'L2',
+    desc: 'Static structure: types, attributes, operations, and relationships.',
+    anchor: '#uml-251',
+    src: [
+      'classDiagram',
+      '  class BuildPlan {',
+      '    +String codename',
+      '    +String project',
+      '    +PlanStatus status',
+      '    +Tier tier',
+      '    +NorthstarLineage northstar',
+      '    +validate() Result~()~',
+      '    +to_manifest() Manifest',
+      '  }',
+      '  class Manifest {',
+      '    +String codename',
+      '    +PhaseSet phases',
+      '    +DateTime created',
+      '    +sync_active_yaml() Result',
+      '  }',
+      '  class Phase {',
+      '    +String name',
+      '    +PhaseStatus status',
+      '    +Vec~Wave~ waves',
+      '    +run_gate() GateResult',
+      '  }',
+      '  class Wave {',
+      '    +u32 number',
+      '    +GateResult gate_result',
+      '    +i32 test_delta',
+      '  }',
+      '  BuildPlan "1" --> "1" Manifest : generates',
+      '  Manifest "1" *-- "4..7" Phase : contains',
+      '  Phase "1" *-- "1..*" Wave : contains'
+    ].join('\n')
+  },
+  {
+    id: 'uml-state',
+    title: 'UML State Machine',
+    std: 'UML', type: 'mermaid',
+    stacks: ['full-stack','backend-only','frontend-only','cli-tooling'],
+    tiers: ['MEDIUM','LARGE'],
+    level: 'L2',
+    desc: 'Lifecycle states and transitions for a system entity.',
+    anchor: '#uml-251',
+    src: [
+      'stateDiagram-v2',
+      '  [*] --> Draft : /PLAN authored',
+      '  Draft --> XEAReview : auto-trigger',
+      '  XEAReview --> Validated : all 4 layers pass',
+      '  XEAReview --> Draft : gaps found, iterate',
+      '  Validated --> PreBuild : /BUILD invoked',
+      '  PreBuild --> InProgress : G0-G8 pass',
+      '  PreBuild --> Validated : preflight fail',
+      '  InProgress --> PhaseGate : phase complete',
+      '  PhaseGate --> InProgress : gate PASS',
+      '  PhaseGate --> Remediation : gate FAIL',
+      '  Remediation --> PhaseGate : fixes applied',
+      '  InProgress --> PreMerge : all phases done',
+      '  PreMerge --> Promoted : merge --no-ff',
+      '  PreMerge --> InProgress : pre-merge gate fail',
+      '  Promoted --> [*]'
+    ].join('\n')
+  },
+  {
+    id: 'mermaid-flowchart',
+    title: 'Mermaid Flowchart',
+    std: 'Mermaid', type: 'mermaid',
+    stacks: ['full-stack','backend-only','frontend-only','cli-tooling'],
+    tiers: ['SMALL','MEDIUM','LARGE'],
+    level: 'L1',
+    desc: 'Process flow with decision branches - ideal for skill and pipeline logic.',
+    anchor: '#mermaid-v11',
+    src: [
+      'flowchart TD',
+      '  A([User: /PLAN target]) --> B{Plan file exists?}',
+      '  B -- No --> C[Northstar elicitation]',
+      '  B -- Yes --> D[Load existing plan]',
+      '  C --> E[Stack classification G0]',
+      '  E --> F{--research flag?}',
+      '  F -- Yes --> G[QUANTUM + SOUL research]',
+      '  F -- No --> H',
+      '  G --> H[CORSO SCOUT draft]',
+      '  H --> I[/XEA review: L0+L1+L2+L3]',
+      '  I --> J{VALIDATED?}',
+      '  J -- Yes --> K[Write plan file]',
+      '  J -- No --> L{iter less than 3?}',
+      '  L -- Yes --> H',
+      '  L -- No --> M([HITL escalation])',
+      '  K --> N{Decision gate}',
+      '  N -- Build --> O[/BUILD codename]',
+      '  N -- SCRUM --> P[/SCRUM review]',
+      '  N -- Done --> Q([Plan saved])'
+    ].join('\n')
+  },
+  {
+    id: 'mermaid-er',
+    title: 'Mermaid ER Diagram',
+    std: 'Mermaid', type: 'mermaid',
+    stacks: ['backend-only','full-stack'],
+    tiers: ['MEDIUM','LARGE'],
+    level: 'L1',
+    desc: 'Entity-relationship model for database schema and data design.',
+    anchor: '#mermaid-v11',
+    src: [
+      'erDiagram',
+      '  BUILD_PLAN {',
+      '    string codename PK',
+      '    string project  FK',
+      '    string status',
+      '    string tier',
+      '    string validation_status',
+      '    date   created',
+      '  }',
+      '  PHASE {',
+      '    string codename    FK',
+      '    string name        PK',
+      '    string status',
+      '    string gate_result',
+      '  }',
+      '  WAVE {',
+      '    string phase_key   FK',
+      '    int    number      PK',
+      '    string gate_result',
+      '    int    test_delta',
+      '  }',
+      '  HELIX_ENTRY {',
+      '    uuid   id          PK',
+      '    string codename    FK',
+      '    float  significance',
+      '    string strand',
+      '  }',
+      '  BUILD_PLAN ||--o{ PHASE       : "contains"',
+      '  PHASE      ||--o{ WAVE        : "contains"',
+      '  BUILD_PLAN ||--o{ HELIX_ENTRY : "enriches"'
+    ].join('\n')
+  },
+  {
+    id: 'mermaid-gitgraph',
+    title: 'Mermaid Git Graph',
+    std: 'Mermaid', type: 'mermaid',
+    stacks: ['cli-tooling','backend-only','full-stack'],
+    tiers: ['SMALL','MEDIUM'],
+    level: 'L0',
+    desc: 'Git branch history - documents the build delivery topology.',
+    anchor: '#mermaid-v11',
+    src: [
+      'gitGraph',
+      '  commit id: "main baseline"',
+      '  branch feat/copilot-ambient',
+      '  checkout feat/copilot-ambient',
+      '  commit id: "Phase 1: scope"',
+      '  commit id: "Phase 2: build"',
+      '  commit id: "Phase 3: gate"',
+      '  checkout main',
+      '  branch feat/ironclaw-spine',
+      '  checkout feat/ironclaw-spine',
+      '  commit id: "P1: preflight"',
+      '  commit id: "P2: core impl"',
+      '  checkout main',
+      '  merge feat/copilot-ambient id: "merge --no-ff" tag: "v2.4.0"'
+    ].join('\n')
+  },
+  {
+    id: 'mermaid-gantt',
+    title: 'Mermaid Gantt',
+    std: 'Mermaid', type: 'mermaid',
+    stacks: ['full-stack','backend-only','frontend-only','cli-tooling'],
+    tiers: ['SMALL','MEDIUM','LARGE'],
+    level: 'L0',
+    desc: 'Phase timeline - maps LASDLC phases to calendar milestones.',
+    anchor: '#mermaid-v11',
+    src: [
+      'gantt',
+      '  title LASDLC MEDIUM Build - 6-Phase Timeline',
+      '  dateFormat  YYYY-MM-DD',
+      '  axisFormat  %b %d',
+      '  section Phase 1',
+      '    Scope and Preflight      :p1, 2026-05-20, 1d',
+      '    Gate 1                   :milestone, g1, after p1, 0d',
+      '  section Phase 2',
+      '    Research and Design      :p2, after g1, 2d',
+      '    Gate 2                   :milestone, g2, after p2, 0d',
+      '  section Phase 3',
+      '    Core Implementation      :p3, after g2, 3d',
+      '    Gate 3                   :milestone, g3, after p3, 0d',
+      '  section Phase 4',
+      '    Integration              :p4, after g3, 2d',
+      '    Gate 4                   :milestone, g4, after p4, 0d',
+      '  section Phase 5',
+      '    Testing and Verification :p5, after g4, 1d',
+      '    Gate 5                   :milestone, g5, after p5, 0d',
+      '  section Phase 6',
+      '    Pre-merge and Close      :p6, after g5, 1d'
+    ].join('\n')
+  },
+  {
+    id: 'mermaid-mindmap',
+    title: 'Mermaid Mind Map',
+    std: 'Mermaid', type: 'mermaid',
+    stacks: ['full-stack','backend-only','frontend-only','cli-tooling'],
+    tiers: ['SMALL'],
+    level: 'L0',
+    desc: 'Concept map - scope decomposition at the start of /PLAN.',
+    anchor: '#mermaid-v11',
+    src: [
+      'mindmap',
+      '  root((Light Architects))',
+      '    MCP Servers',
+      '      SOUL',
+      '        Knowledge Graph',
+      '        Helix Vault',
+      '      EVA',
+      '        Consciousness',
+      '        Memory',
+      '      CORSO',
+      '        Build Pipeline',
+      '        Guard',
+      '      QUANTUM',
+      '        Research',
+      '      SERAPH',
+      '        Red Team',
+      '      AYIN',
+      '        Observability',
+      '    SDK',
+      '      Gateway',
+      '        Axum HTTP',
+      '        WebSocket',
+      '        SSE',
+      '      Webshell UI',
+      '        SvelteKit',
+      '        Svelte 5',
+      '    Standards',
+      '      LASDLC',
+      '      Canon I-XL',
+      '      Cookbook',
+      '      Northstar'
+    ].join('\n')
+  },
+  {
+    id: 'mermaid-timeline',
+    title: 'Mermaid Timeline',
+    std: 'Mermaid', type: 'mermaid',
+    stacks: ['full-stack','backend-only','frontend-only','cli-tooling'],
+    tiers: ['SMALL'],
+    level: 'L0',
+    desc: 'Chronological roadmap - evolution of platform capabilities.',
+    anchor: '#mermaid-v11',
+    src: [
+      'timeline',
+      '  title Light Architects Platform Evolution',
+      '  section 2025',
+      '    Sep : Squad formation',
+      '          Initial MCP design',
+      '    Oct : SOUL knowledge graph',
+      '          Canon I through XV',
+      '  section 2026 Q1',
+      '    Jan : Trinity V7.0 architecture',
+      '    Mar : LASDLC v1.0 launched',
+      '          Northstar 7-Pillar system',
+      '  section 2026 Q2',
+      '    May : IronClaw delivery pipeline',
+      '          Webshell cockpit launched',
+      '          Copilot ambient shipped'
+    ].join('\n')
+  },
+  {
+    id: 'd2-architecture',
+    title: 'D2 Architecture',
+    std: 'D2', type: 'd2',
+    stacks: ['backend-only','full-stack'],
+    tiers: ['MEDIUM','LARGE'],
+    level: 'L1',
+    desc: 'Declarative architecture with readable prose-like syntax.',
+    anchor: '#d2',
+    src: [
+      'direction: right',
+      '',
+      'operator: Operator {shape: person}',
+      '',
+      'platform: Light Architects Platform {',
+      '  webshell: Webshell UI {shape: rectangle}',
+      '  gateway: Gateway Rust/Axum {shape: rectangle}',
+      '}',
+      '',
+      'soul: SOUL Vault {shape: cylinder}',
+      'claude: Claude API {shape: cloud}',
+      '',
+      'operator -> platform.webshell: commands',
+      'platform.webshell -> platform.gateway: HTTP/WS/SSE',
+      'platform.gateway -> soul: read/write helix',
+      'platform.gateway -> claude: inference'
+    ].join('\n')
+  },
+  {
+    id: 'plantuml-deployment',
+    title: 'PlantUML Deployment',
+    std: 'PlantUML', type: 'plantuml',
+    stacks: ['full-stack','backend-only'],
+    tiers: ['LARGE','XL'],
+    level: 'L3',
+    desc: 'Deployment topology - nodes, binaries, and network relationships.',
+    anchor: '#plantuml',
+    src: [
+      '@startuml',
+      'skinparam backgroundColor #0a1628',
+      'skinparam nodeBackgroundColor #0d1e35',
+      'skinparam nodeBorderColor #1e4a6e',
+      'skinparam componentBackgroundColor #112440',
+      'skinparam componentBorderColor #1e4a6e',
+      'skinparam defaultFontColor #7ab3d4',
+      'skinparam noteBorderColor #1e4a6e',
+      'skinparam noteBackgroundColor #0a1628',
+      '',
+      'node "macOS (Developer Machine)" {',
+      '  component "Webshell UI\\n:5173" as UI',
+      '  component "Gateway\\n:3000" as GW {',
+      '    component "Axum Router" as HTTP',
+      '    component "SSE Broadcast" as SSE',
+      '  }',
+      '  database "SOUL Vault\\nSQLite + Neo4j" as DB',
+      '  component "MCP Servers\\n(stdio JSON-RPC)" as MCP',
+      '}',
+      '',
+      'cloud "Anthropic Cloud" {',
+      '  component "Claude API\\nHTTPS" as CLAUDE',
+      '}',
+      '',
+      'UI --> GW : HTTP/WebSocket',
+      'GW --> DB : queries',
+      'GW --> MCP : stdio',
+      'GW --> CLAUDE : HTTPS',
+      'MCP ..> DB : reads helix',
+      '',
+      'note right of MCP',
+      '  CORSO  EVA  SOUL',
+      '  QUANTUM  SERAPH  AYIN',
+      'end note',
+      '@enduml'
+    ].join('\n')
+  },
+  {
+    id: 'mermaid-arch-beta',
+    title: 'Mermaid Architecture Beta',
+    std: 'Mermaid', type: 'mermaid',
+    stacks: ['full-stack','backend-only'],
+    tiers: ['MEDIUM','LARGE'],
+    level: 'L1',
+    desc: 'architecture-beta keyword - service groups with directional flows. Requires Mermaid v11+.',
+    anchor: '#mermaid-v11',
+    src: [
+      'architecture-beta',
+      '  group sdk(cloud)[lightarchitects-sdk]',
+      '  group platform(cloud)[Platform Runtime]',
+      '',
+      '  service webshell(internet)[Webshell UI] in platform',
+      '  service gateway(server)[Gateway :3000] in platform',
+      '  service soul(database)[SOUL Vault] in platform',
+      '  service corso(server)[CORSO MCP] in sdk',
+      '  service eva(server)[EVA MCP] in sdk',
+      '  service claude(internet)[Claude API]',
+      '',
+      '  webshell:R --> L:gateway',
+      '  gateway:R --> L:soul',
+      '  gateway:T --> B:corso',
+      '  gateway:B --> T:eva',
+      '  gateway:R --> L:claude'
+    ].join('\n')
+  }
+];
+
+// ── Standard accent map ─────────────────────────────────────────────────────
+var COLORS = { C4:'#00d4ff', UML:'#a855f7', Mermaid:'#22c55e', D2:'#ec4899', PlantUML:'#f59e0b' };
+
+// ── Filters state ───────────────────────────────────────────────────────────
+var F = { std:'all', stack:'all', tier:'all' };
+
+// ── Kroki URL ───────────────────────────────────────────────────────────────
+function krokiUrl(type, source) {
+  try {
+    var deflated = pako.deflate(source, { level: 9 });
+    var binary = '';
+    for (var i = 0; i < deflated.length; i++) {
+      binary += String.fromCharCode(deflated[i]);
+    }
+    var b64 = btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    return 'https://kroki.io/' + type + '/svg/' + b64;
+  } catch(e) { return null; }
+}
+
+// ── Safe element builder ────────────────────────────────────────────────────
+function el(tag, attrs, text) {
+  var e = document.createElement(tag);
+  if (attrs) Object.keys(attrs).forEach(function(k) { e.setAttribute(k, attrs[k]); });
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function append(parent) {
+  var children = Array.prototype.slice.call(arguments, 1);
+  children.forEach(function(c) { parent.appendChild(c); });
+  return parent;
+}
+
+// ── Build one card using DOM APIs only (no innerHTML) ───────────────────────
+function buildCard(d, idx) {
+  var color = COLORS[d.std];
+  var url   = krokiUrl(d.type, d.src);
+  var cid   = d.id;
+
+  var card = el('div', { class:'card' });
+  card.style.animationDelay = (idx * 55) + 'ms';
+
+  // Accent bar
+  var bar = el('div', { class:'card-bar' });
+  bar.style.background = color;
+  card.appendChild(bar);
+
+  // Head
+  var headLeft = el('div');
+  var titleEl = el('div', { class:'card-title' }, d.title);
+  var descEl  = el('div', { class:'card-desc' },  d.desc);
+  append(headLeft, titleEl, descEl);
+
+  var badge = el('span', { class:'std-badge' }, d.std);
+  badge.style.cssText = 'background:' + color + '22;color:' + color + ';border:1px solid ' + color + '44;';
+
+  var head = el('div', { class:'card-head' });
+  append(head, headLeft, badge);
+  card.appendChild(head);
+
+  // Render zone
+  var zone = el('div', { class:'card-render', id:'render-' + cid });
+  var loading = el('div', { class:'render-loading' }, 'Rendering…');
+  zone.appendChild(loading);
+
+  if (url) {
+    var img = new Image();
+    img.alt = d.title;
+    img.loading = 'lazy';
+    img.addEventListener('load', function() {
+      zone.classList.add('loaded');
+    });
+    img.addEventListener('error', function() {
+      var errEl = el('div', { class:'render-error' });
+      errEl.textContent = 'Kroki rendering unavailable\nOpen DIAGRAMS.md for reference.';
+      while (zone.firstChild) zone.removeChild(zone.firstChild);
+      zone.appendChild(errEl);
+    });
+    img.src = url; // set src AFTER event listeners
+    zone.appendChild(img);
+  } else {
+    var noUrl = el('div', { class:'render-error' }, 'Source preview - Kroki URL unavailable');
+    zone.appendChild(noUrl);
+  }
+  card.appendChild(zone);
+
+  // Tags
+  var tags = el('div', { class:'card-tags' });
+  d.stacks.forEach(function(s) { tags.appendChild(el('span', { class:'tag tag-stack' }, s)); });
+  d.tiers.forEach(function(t)  { tags.appendChild(el('span', { class:'tag tag-tier'  }, t)); });
+  tags.appendChild(el('span', { class:'tag tag-level' }, d.level));
+  card.appendChild(tags);
+
+  // Controls
+  var controls = el('div', { class:'card-controls' });
+
+  var toggleBtn = el('button', { class:'btn-toggle', id:'toggle-' + cid });
+  toggleBtn.appendChild(el('span', { class:'chevron' }));
+  toggleBtn.appendChild(document.createTextNode(' DSL Source (' + d.type + ')'));
+  toggleBtn.addEventListener('click', (function(id) {
+    return function() { toggleSrc(id); };
+  }(cid)));
+
+  var copyBtn = el('button', { class:'btn-copy', id:'copy-' + cid }, 'Copy');
+  copyBtn.addEventListener('click', (function(diagram) {
+    return function() { copySrc(diagram); };
+  }(d)));
+
+  append(controls, toggleBtn, copyBtn);
+  card.appendChild(controls);
+
+  // Source block
+  var srcDiv = el('div', { class:'card-source', id:'source-' + cid });
+  var pre = el('pre');
+  pre.textContent = d.src;
+  srcDiv.appendChild(pre);
+  card.appendChild(srcDiv);
+
+  // Footer
+  var foot  = el('div', { class:'card-foot' });
+  var link  = el('a', { href:'DIAGRAMS.md' + d.anchor, title:'View in DIAGRAMS.md' }, '↗ DIAGRAMS.md' + d.anchor);
+  var kLbl  = el('span', { class:'kroki-lbl' }, 'kroki.io/' + d.type + '/svg');
+  append(foot, link, kLbl);
+  card.appendChild(foot);
+
+  return card;
+}
+
+// ── Toggle source ───────────────────────────────────────────────────────────
+function toggleSrc(cid) {
+  var srcEl = document.getElementById('source-' + cid);
+  var btnEl = document.getElementById('toggle-' + cid);
+  if (srcEl) srcEl.classList.toggle('open');
+  if (btnEl) btnEl.classList.toggle('open');
+}
+
+// ── Copy to clipboard ───────────────────────────────────────────────────────
+function copySrc(d) {
+  var btnEl = document.getElementById('copy-' + d.id);
+  var finish = function() {
+    if (!btnEl) return;
+    btnEl.textContent = 'Copied!';
+    btnEl.classList.add('ok');
+    setTimeout(function() {
+      btnEl.textContent = 'Copy';
+      btnEl.classList.remove('ok');
+    }, 1600);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(d.src).then(finish).catch(finish);
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = d.src;
+    ta.style.cssText = 'position:fixed;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+    finish();
+  }
+}
+
+// ── Render ──────────────────────────────────────────────────────────────────
+function render() {
+  var grid  = document.getElementById('grid');
+  var empty = document.getElementById('empty');
+  var count = document.getElementById('count');
+
+  // Remove existing cards (leave the empty placeholder)
+  var cards = grid.querySelectorAll('.card');
+  for (var i = 0; i < cards.length; i++) grid.removeChild(cards[i]);
+
+  var visible = 0;
+  DIAGRAMS.forEach(function(d) {
+    var show =
+      (F.std   === 'all' || d.std            === F.std)   &&
+      (F.stack === 'all' || d.stacks.indexOf(F.stack) >= 0) &&
+      (F.tier  === 'all' || d.tiers.indexOf(F.tier)   >= 0);
+    if (!show) return;
+    grid.insertBefore(buildCard(d, visible), empty);
+    visible++;
+  });
+
+  count.textContent = String(visible);
+  empty.style.display = visible === 0 ? 'block' : 'none';
+}
+
+// ── Filter pills ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.pill').forEach(function(pill) {
+  pill.addEventListener('click', function() {
+    var filterKey = pill.dataset.filter;
+    var val       = pill.dataset.val;
+
+    document.querySelectorAll('.pill[data-filter="' + filterKey + '"]').forEach(function(p) {
+      p.classList.remove('active');
+    });
+    pill.classList.add('active');
+    F[filterKey] = val;
+    render();
+  });
+});
+
+// ── Initial render ───────────────────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>

@@ -61,9 +61,10 @@
     Editor:        () => import('./screens/Editor.svelte'),
     Git:           () => import('./screens/Git.svelte'),
     PullRequest:   () => import('./screens/PullRequest.svelte'),
-    Architecture:  () => import('./screens/Architecture.svelte'),
-    Roadmap:       () => import('./lib/components/RoadmapPanel.svelte'),
-    Tools:         () => import('./screens/Tools.svelte'),
+    Architecture:    () => import('./screens/Architecture.svelte'),
+    DiagramLibrary:  () => import('./screens/DiagramLibrary.svelte'),
+    Roadmap:         () => import('./lib/components/RoadmapPanel.svelte'),
+    Tools:           () => import('./screens/Tools.svelte'),
   };
 
   type ScreenModule = { default: any };
@@ -175,7 +176,7 @@
     if (hash === '/builds')    return activeRoute.startsWith('/builds') || activeRoute.startsWith('/manage');
     if (hash === '/knowledge') return activeRoute.startsWith('/knowledge') || activeRoute.startsWith('/memory') || activeRoute.startsWith('/helix');
     if (hash === '/activity')  return activeRoute.startsWith('/activity') || activeRoute.startsWith('/comms');
-    if (hash === '/diagrams')  return activeRoute.startsWith('/diagrams') || activeRoute.startsWith('/arch');
+    if (hash === '/diagrams')  return activeRoute.startsWith('/diagrams') || activeRoute.startsWith('/arch') || activeRoute.startsWith('/library');
     if (hash === '/roadmap')   return activeRoute.startsWith('/roadmap');
     return activeRoute.startsWith(hash);
   }
