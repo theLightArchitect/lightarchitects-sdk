@@ -973,6 +973,108 @@ fn load_sibling_identity(sibling: &str) -> String {
     String::new()
 }
 
+// ── Project identity endpoints (webshell-project-ingestion Phase 2) ──────────
+
+use crate::auth::AuthGuard;
+use crate::projects::types::{ProjectKind, ProjectMeta, Slug};
+
+/// Summary row returned by `GET /api/projects`.
+#[derive(Debug, Serialize)]
+pub struct ProjectSummary {
+    /// Stable UUID v7 for this project.
+    pub id: String,
+    /// DNS-subdomain slug (matches directory name under `~/Projects/`).
+    pub slug: String,
+    /// Human-readable project name from `project.toml`.
+    pub name: String,
+    /// Whether the project has a git remote.
+    pub kind: ProjectKind,
+    /// Absolute filesystem path to the project root directory.
+    pub path: String,
+}
+
+/// `GET /api/projects` — list projects that have a `.lightarchitects/project.toml`.
+///
+/// Scans `~/Projects/` for subdirectories containing the manifest. Directories
+/// without a manifest are silently skipped (they are uninitialized workspaces).
+pub async fn list_projects(_: AuthGuard, State(_state): State<AppState>) -> impl IntoResponse {
+    let Some(home) = home_dir() else {
+        return (StatusCode::OK, Json(json!([]))).into_response();
+    };
+    let projects_root = home.join("Projects");
+    let Ok(mut rd) = tokio::fs::read_dir(&projects_root).await else {
+        return (StatusCode::OK, Json(json!([]))).into_response();
+    };
+    let mut out: Vec<ProjectSummary> = Vec::new();
+    while let Ok(Some(entry)) = rd.next_entry().await {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let toml_path = dir.join(".lightarchitects").join("project.toml");
+        let Ok(content) = tokio::fs::read_to_string(&toml_path).await else {
+            continue;
+        };
+        let Ok(meta) = toml::from_str::<ProjectMeta>(&content) else {
+            continue;
+        };
+        out.push(ProjectSummary {
+            id: meta.project.id.to_string(),
+            slug: meta.project.slug.as_str().to_owned(),
+            name: meta.project.name.clone(),
+            kind: meta.project.kind,
+            path: dir.to_string_lossy().into_owned(),
+        });
+    }
+    (StatusCode::OK, Json(out)).into_response()
+}
+
+/// `GET /api/projects/:slug` — detail view for a single project.
+///
+/// Returns the full `ProjectMeta` on success. Returns 404 with `MANIFEST_MISSING`
+/// when the `.lightarchitects/project.toml` does not exist for the requested slug.
+pub async fn get_project(
+    Path(raw_slug): Path<String>,
+    _: AuthGuard,
+    State(_state): State<AppState>,
+) -> impl IntoResponse {
+    let slug = match Slug::validate(&raw_slug) {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"code": "SLUG_INVALID", "message": e.to_string()})),
+            )
+                .into_response();
+        }
+    };
+    let Some(home) = home_dir() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let project_dir = home.join("Projects").join(slug.as_str());
+    let toml_path = project_dir.join(".lightarchitects").join("project.toml");
+    let Ok(content) = tokio::fs::read_to_string(&toml_path).await else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "code": "MANIFEST_MISSING",
+                "message": format!("no .lightarchitects/project.toml at {}", project_dir.display()),
+                "path": toml_path.display().to_string(),
+                "hint": "POST /api/projects/init to create",
+            })),
+        )
+            .into_response();
+    };
+    match toml::from_str::<ProjectMeta>(&content) {
+        Ok(meta) => (StatusCode::OK, Json(meta)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"code": "TOML_PARSE", "message": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
 #[cfg(test)]
 mod mcp_server_tests {
     use super::{mcp_titlecase, parse_mcp_servers};

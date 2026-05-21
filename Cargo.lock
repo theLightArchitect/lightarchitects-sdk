@@ -2773,6 +2773,7 @@ dependencies = [
  "http-body-util",
  "keyring",
  "lightarchitects",
+ "lightarchitects-arch",
  "lightarchitects-webshell-mcp-host",
  "moka",
  "nix 0.29.0",
