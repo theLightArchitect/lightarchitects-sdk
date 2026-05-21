@@ -1,0 +1,20 @@
+[package]
+name = "lightarchitects-webshell-mcp-host"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Generic MCP host: spawn declared stdio MCP servers, handshake, cache tools, expose HTTP routes."
+
+[dependencies]
+rmcp = { version = "=1.7.0", features = ["client", "transport-child-process"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { version = "0.7", features = ["rt"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

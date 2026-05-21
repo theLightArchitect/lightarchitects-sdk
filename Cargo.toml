@@ -1,9 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
-    "lightarchitects",          # Unified SDK — all clients + advanced capabilities
-    "lightarchitects-webshell", # Binary: local web GUI (PTY + 3D helix panel)
-    "lightarchitects-arch",     # Architecture intelligence — extract, verify, emit
+    "lightarchitects",                   # Unified SDK — all clients + advanced capabilities
+    "lightarchitects-webshell",          # Binary: local web GUI (PTY + 3D helix panel)
+    "lightarchitects-arch",              # Architecture intelligence — extract, verify, emit
+    "lightarchitects-webshell-mcp-host", # Generic MCP host: spawn + handshake + HTTP surface
 ]
 exclude = [
     "lightarchitects-gateway",

@@ -54,7 +54,21 @@ phases:
     phase_3_unblocked: true
   phase_3:
     name: host-core
-    status: pending
+    status: complete
+    started_at: "2026-05-21"
+    completed_at: "2026-05-21"
+    files_created:
+      - lightarchitects-webshell-mcp-host/Cargo.toml
+      - lightarchitects-webshell-mcp-host/src/lib.rs
+      - lightarchitects-webshell-mcp-host/src/error.rs
+      - lightarchitects-webshell-mcp-host/src/config.rs
+      - lightarchitects-webshell-mcp-host/src/spawner.rs
+      - lightarchitects-webshell-mcp-host/src/transport.rs
+      - lightarchitects-webshell-mcp-host/src/catalog.rs
+      - lightarchitects-webshell-mcp-host/src/supervisor.rs
+    rmcp_version: "=1.7.0"
+    unit_tests: 13
+    commit: pending
   phase_4:
     name: trust-boundary
     status: pending
@@ -92,7 +106,7 @@ xea_gate_preflight:
 test_counts:
   phase_1_baseline: 1288  # full workspace on main before feat branch (primary repo)
   worktree_baseline: 2    # worktree: 3 existing members; new crate added in Phase 3
-  current: 2
+  current: 13
 
 canon_amendments_applied:
   - id: "GATE1-HIGH1"
