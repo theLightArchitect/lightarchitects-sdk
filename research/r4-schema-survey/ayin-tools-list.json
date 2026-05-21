@@ -1,0 +1,41 @@
+{
+  "server": "ayin",
+  "tool_count": 1,
+  "tools": [
+    {
+      "description": "AYIN Universal MCP Observability \u2014 query traces, metrics, anomalies, and get evidence-based recommendations. 12 actions across 4 categories.",
+      "inputSchema": {
+        "properties": {
+          "action": {
+            "description": "The observability action to perform",
+            "enum": [
+              "query",
+              "timeline",
+              "replay",
+              "diff",
+              "stats",
+              "health",
+              "cost",
+              "anomaly",
+              "correlate",
+              "blind_spots",
+              "recommend",
+              "audit"
+            ],
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "description": "Action-specific parameters",
+            "type": "object"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "name": "ayinTools"
+    }
+  ]
+}

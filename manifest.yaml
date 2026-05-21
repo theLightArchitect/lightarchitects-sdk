@@ -1,0 +1,72 @@
+---
+codename: webshell-mcp-host
+project: lightarchitects-sdk
+branch: feat/webshell-mcp-host
+worktree: ~/lightarchitects/worktrees/webshell-mcp-host
+tier: LARGE
+stack_classification: full-stack
+gate_checklist_variant: full-stack
+status: in_progress
+northstar_pillars: [P1, P2]
+started_at: "2026-05-21"
+plan: ~/.claude/plans/webshell-mcp-host.md
+plan_validation_status: VALIDATED
+plan_xea_aggregate: 90.15
+plan_xea_band: EXEMPLARY-low
+plan_xea_iteration: 3
+
+phases:
+  phase_1:
+    name: scope
+    status: complete
+    started_at: "2026-05-21"
+    completed_at: "2026-05-21"
+  phase_2:
+    name: research-architecture
+    status: in_progress
+    started_at: "2026-05-21"
+  phase_3:
+    name: host-core
+    status: pending
+  phase_4:
+    name: trust-boundary
+    status: pending
+  phase_5:
+    name: http-surface
+    status: pending
+  phase_6:
+    name: tools-ui
+    status: pending
+  phase_7:
+    name: day1-wiring-and-docs
+    status: pending
+
+preflight:
+  g0_stack_classification: full-stack
+  g1_fetch: PASS
+  g2_local_vs_remote: WARN_ahead_by_1  # local has 1 unpushed commit (116a41d feat(arch))
+  g3_cargo_check: PASS
+  g4_make_quality: PASS  # 1288/1288 on quiet machine; one timing test flaky under load
+  g5_branch_worktree_collision: PASS
+  g6_active_yaml_entry: PASS  # /SYNC complete 2026-05-21 — all 4 tracking artifacts updated (sprint 13)
+  g7_parent_program: NA
+  g8_disk_free: PASS_97GB
+
+xea_gate_preflight:
+  result: VALIDATED
+  layer_0: PASS
+  layer_1: 90.15_EXEMPLARY-low
+  layer_2: PASS
+  layer_3: PASS
+  blocking_gaps: 0
+  tracked_high:
+    - "HIGH-1: Part XIV Phase 7 kroki reference stale (corrected 2026-05-21 per R-7)"
+
+test_counts:
+  phase_1_baseline: 1288  # full workspace on main before feat branch
+  current: 1288
+
+canon_amendments_applied:
+  - id: "GATE1-HIGH1"
+    description: "Fixed stale kroki references in plan Phase 7 deliverables, exit criteria, file-function map, phase-set table, and agent topology (5 locations). Count corrected 9→8 day-1 servers. Per R-7 iter-2 correction."
+    applied_at: "2026-05-21 gate-1 REMEDY"

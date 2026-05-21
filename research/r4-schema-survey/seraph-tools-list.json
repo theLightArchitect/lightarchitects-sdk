@@ -1,0 +1,54 @@
+{
+  "server": "seraph",
+  "tool_count": 1,
+  "tools": [
+    {
+      "description": "SERAPH pentest orchestration platform \u2014 18 actions across 6 wings and 5 services",
+      "inputSchema": {
+        "properties": {
+          "action": {
+            "description": "The penTools action to invoke",
+            "enum": [
+              "capture",
+              "scan",
+              "analyze",
+              "osint",
+              "monitor",
+              "execute",
+              "detonate",
+              "orchestrate",
+              "knowledge_search",
+              "knowledge_read",
+              "knowledge_stats",
+              "investigate_start",
+              "investigate_advance",
+              "investigate_close",
+              "investigate_report",
+              "vault_sync",
+              "speak",
+              "status"
+            ],
+            "type": "string"
+          },
+          "backend": {
+            "description": "Execution backend: 'local' (default) or 'remote'",
+            "enum": [
+              "local",
+              "remote"
+            ],
+            "type": "string"
+          },
+          "params": {
+            "description": "Action-specific parameters",
+            "type": "object"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "name": "seraphTools"
+    }
+  ]
+}
