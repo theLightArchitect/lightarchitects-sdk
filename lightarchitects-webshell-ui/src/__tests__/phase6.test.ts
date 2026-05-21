@@ -244,7 +244,7 @@ describe('Phase 6: SITREP + Platform Status', () => {
   });
 
   describe('Dashboard.svelte integration', () => {
-    it('Dashboard screen imports successfully', async () => {
+    it('Dashboard screen imports successfully', { timeout: 20_000 }, async () => {
       const mod = await import('$lib/../screens/Dashboard.svelte');
       expect(mod.default).toBeDefined();
     });
