@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
   import { conductorTasks, conductorStats } from '$lib/stores';
   import { SIBLING_COLORS } from '$lib/design-tokens';
   import type { ConductorTask, ConductorTaskStatus } from '$lib/types';
-  import MockBadge from '$lib/../components/MockBadge.svelte';
+  import { subscribeByTopic, type WebEventV2 } from '$lib/sse';
 
   interface Props {
     maxDisplay?: number;
@@ -37,6 +38,25 @@
     return `${Math.floor(diff / 3600000)}h`;
   }
 
+  let unsubscribe: (() => void) | null = null;
+
+  function handleConductorEvent(event: WebEventV2): void {
+    if (event.type === 'conductor_task') {
+      const nodes = (event as WebEventV2 & { nodes?: ConductorTask[] }).nodes;
+      if (Array.isArray(nodes)) {
+        conductorTasks.set(nodes);
+      }
+    }
+  }
+
+  onMount(() => {
+    unsubscribe = subscribeByTopic('v1.conductor.*', handleConductorEvent);
+  });
+
+  onDestroy(() => {
+    unsubscribe?.();
+  });
+
   let displayedTasks = $derived.by(() => {
     const seen = new Set<string>();
     const unique: ConductorTask[] = [];
@@ -52,10 +72,9 @@
 
 <div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] rounded-lg overflow-hidden">
   <!-- Header -->
-  <div class="relative px-4 py-2 border-b border-[var(--la-drawer-border)] flex items-center justify-between">
+  <div class="px-4 py-2 border-b border-[var(--la-drawer-border)] flex items-center justify-between">
     <h3 class="text-xs font-medium text-[var(--la-text-label)]">CONDUCTOR QUEUE</h3>
-    <MockBadge label="STREAM" detail="topic-SSE pending" position="top-right" />
-    <div class="flex items-center gap-3 text-[10px] pr-24">
+    <div class="flex items-center gap-3 text-[10px]">
       <span class="text-[var(--la-agent-engineer)]">{$conductorStats.running} running</span>
       <span class="text-[var(--la-agent-performance)]">{$conductorStats.pending} queued</span>
     </div>

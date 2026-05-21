@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { gitforestTree } from '$lib/stores';
   import { api } from '$lib/api';
   import type { BranchNode, WorktreeAssignment } from '$lib/gitforest';
   import type { WorktreeMeta } from '$lib/types';
+  import { subscribeByTopic } from '$lib/sse';
 
   interface TreeRow {
     depth: number;
@@ -14,10 +15,10 @@
   }
 
   // Worktree metadata (webshell-backend-gaps spec §2.27): merges by path with
-  // gitforest topology. Fetched once on mount; refresh via parent.
+  // gitforest topology. Fetched once on mount; refreshed on v1.worktree.update events.
   let metaByPath = $state<Record<string, WorktreeMeta>>({});
 
-  onMount(async () => {
+  async function refreshMeta(): Promise<void> {
     try {
       // cwd: the SDK root — server uses safe_cwd to canonicalize + reject traversal
       const list = await api.listWorktrees('/Users/kft/Projects/lightarchitects-sdk');
@@ -26,6 +27,17 @@
       // Non-fatal: panel still renders topology data; locked + created_at stay absent
       console.warn('[WorktreePanel] /api/git/worktrees fetch failed:', e);
     }
+  }
+
+  let unsubscribeWorktree: (() => void) | null = null;
+
+  onMount(() => {
+    void refreshMeta();
+    unsubscribeWorktree = subscribeByTopic('v1.worktree.update', () => { void refreshMeta(); });
+  });
+
+  onDestroy(() => {
+    unsubscribeWorktree?.();
   });
 
   function relTime(iso: string | null | undefined): string {
