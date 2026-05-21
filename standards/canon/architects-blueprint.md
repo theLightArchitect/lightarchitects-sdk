@@ -2221,4 +2221,65 @@ Per Canon XLI (Diagram-First Doctrine) and the XEA confidence deduction table in
 
 ---
 
-*Architects Blueprint v3.6 | Light Architects | updated 2026-05-20 (added Part XXVI Stack Classification Protocol + Part XXVII Architecture Diagram Generation Workflow; LASDLC Template v2.6.0; domain ownership: LÆX primary, CORSO secondary). v3.5 changes: see `architects-blueprint.CHANGELOG.md`.*
+## Part XXVIII — MCP Tool Surface as a Tier Consideration (CANDIDATE — ratification pending 2026-05-28)
+
+> **Status**: LASDLC plan-authored candidate per Canon XXXIX (authored 2026-05-21, ratification window opens 2026-05-28). Treat as guidance, not normative, until LÆX ratifies. Source: `webshell-mcp-host` Phase 7, commit `46dff04`.
+
+### §28.1 — When to classify a feature as a Tier Consideration
+
+When a plan's Phase 7 (or close-out phase) involves exposing third-party MCP servers through the webshell HTTP surface, the planner MUST assess whether the capability creates a new operator-visible tool surface. If yes, the following additional requirements apply:
+
+**Tier MEDIUM and LARGE plans that proxy third-party MCP servers:**
+- MUST declare a `scope` block per server in `webshell-mcp.json` (§28.3 schema below).
+- MUST specify at minimum: `allowed_paths`, `allowed_net_hosts` (may be `[]`), `allowed_env_keys`.
+- MUST invoke `ScopeGovernor.check_call()` before any MCP tool call (Layer 4 mandatory gate).
+- MUST document hostile fixtures for CWE-22 (path traversal), CWE-918 (SSRF), CWE-285 (tool allowlist).
+
+**SMALL-tier plans** may reference an existing `ScopeGovernor` without authoring new hostile fixtures if the surface is read-only or scoped to already-trusted servers.
+
+### §28.2 — Trust model integration
+
+The 5-layer trust model from `lightarchitects-webshell-mcp-host` is the canonical template for future MCP proxy builds:
+
+| Layer | Mechanism | CWE |
+|-------|-----------|-----|
+| 1 | env_clear + explicit env key allowlist at spawn | CWE-209 |
+| 2 | `process_sandbox` (macOS sandbox-exec) for community servers | CWE-78 |
+| 3 | `process_group(0)` isolates child's signal group | CWE-400 |
+| 4 | `ScopeGovernor` (tool allowlist + path prefix + net host) + `SchemaValidator` | CWE-22, CWE-918, CWE-285 |
+| 5 | TOCTOU-safe binary path check before exec | CWE-367 |
+
+Layers 1–3 are spawn-time (one cost at server start). Layers 4–5 are call-time (per invoke). The call-time layers MUST NOT be elided even when the spawn-time layers are active.
+
+### §28.3 — `webshell-mcp.json` scope schema
+
+```json
+{
+  "scope": {
+    "lifecycle_mode": "persistent | one_shot",
+    "allowed_tools": null | [],
+    "allowed_paths": ["/absolute/prefix"],
+    "allowed_net_hosts": ["host.example.com"],
+    "allowed_env_keys": ["HOME", "PATH"],
+    "max_concurrent_calls": 3,
+    "call_timeout_ms": 30000
+  }
+}
+```
+
+`lifecycle_mode: "one_shot"` triggers spawn-per-invoke (~30 ms penalty). Use only for servers that close stdio after `initialize`. Default `"persistent"` is correct for all servers that conform to the MCP stdio transport spec.
+
+`allowed_tools: null` permits any tool; `[]` blocks all tools (use for reserve slots).
+
+### §28.4 — Tools panel form generation (UI guidance)
+
+Plans that include a Tools panel SHOULD use the common-subset JSON Schema form generator pattern established in `webshell-mcp-host` Phase 6:
+
+- Extract schema traversal as pure TS (`mcp-schema.ts` pattern) for unit testability.
+- Use `<svelte:self>` for recursive field rendering with an explicit depth guard (R-L — default MAX_DEPTH = 5).
+- Provide a raw-JSON textarea fallback for schemas with `$ref`/`oneOf`/`anyOf`/`allOf`.
+- Target ≥10 unit tests for the schema traversal module per plan.
+
+---
+
+*Architects Blueprint v3.7 | Light Architects | updated 2026-05-21 (CANDIDATE: added Part XXVIII MCP Tool Surface as Tier Consideration; ratification pending 2026-05-28). v3.6 changes: see `architects-blueprint.CHANGELOG.md`.*
