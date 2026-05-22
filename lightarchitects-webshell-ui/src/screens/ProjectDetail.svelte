@@ -1,53 +1,55 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
   import { builds, currentBuildId } from '$lib/stores';
   import { SIBLING_COLORS, ROADMAP, getMetaSkillPolytope, getMetaSkillColor } from '$lib/design-tokens';
-  import type { Build } from '$lib/types';
-  import type { PlanPhaseStatus } from '$lib/types';
+  import type { Build, PlanPhaseStatus, ProjectMeta, ProjectInitRequest } from '$lib/types';
+  import { api, ApiError } from '$lib/api';
   import PhaseTimeline from '$lib/../components/PhaseTimeline.svelte';
   import PolytopeIcon from '$lib/../components/PolytopeIcon.svelte';
   import PolytopeDecor from '$lib/../components/PolytopeDecor.svelte';
   import KanbanBoard from '$lib/../components/KanbanBoard.svelte';
   import ParticleCanvas from '$lib/../components/ParticleCanvas.svelte';
   import BuildDetailPanel from '$lib/../components/BuildDetailPanel.svelte';
+  import ProjectInitCard from '$lib/../components/ProjectInitCard.svelte';
 
-  // View mode
-  let viewMode = $state<'list' | 'kanban'>('list');
+  // ── 5-state machine ──────────────────────────────────────────────────────────
+  type ProjectState =
+    | { tag: 'loading' }
+    | { tag: 'missing-manifest'; slug: string }
+    | { tag: 'initializing'; slug: string }
+    | { tag: 'init-error'; slug: string; message: string }
+    | { tag: 'ready'; meta: ProjectMeta };
 
-  // Detail panel state
-  let selectedBuild = $state<Build | null>(null);
+  let projectState = $state<ProjectState>({ tag: 'loading' });
 
-  function openDetailPanel(build: Build) {
-    selectedBuild = build;
-  }
-
-  function closeDetailPanel() {
-    selectedBuild = null;
-  }
-
-  // Map pillar index to LASDLC phase name for the PhaseTimeline
-  const PILLAR_TO_LASDLC = ['Plan', 'Research', 'Implement', 'Harden', 'Verify', 'Ship', 'Learn'];
-
-  // Get project ID from hash: #/project/Projects-lightarchitects-sdk-lightarchitects-webshell-ui
+  // ── Derived URL context ───────────────────────────────────────────────────────
+  // projectId = everything after '#/project/' in the URL hash.
+  // Typical form: 'Projects-lightarchitects-sdk' (pathToId of normalizedPath).
+  // The slug is everything after the leading 'Projects-'.
   let projectId = $derived(window.location.hash.replace('#/project/', ''));
+  let slug = $derived(projectId.replace(/^Projects-/, ''));
 
-  // Denormalize project ID back to path segments for filtering
-  let pathSegments = $derived(projectId.split('-'));
+  // For display — last segment of the path-hash as a readable name.
+  let projectName = $derived(
+    projectState.tag === 'ready'
+      ? projectState.meta.project.name
+      : slug.split('-').at(-1) ?? slug
+  );
 
-  // Filter builds for this project — match by path (same logic as groupByProject)
+  let projectPath = $derived('~/Projects/' + slug);
+
+  // ── Build filtering (preserved from original) ────────────────────────────────
   let projectBuilds = $derived(
     $builds.filter((b: Build) => {
       const rawPath = b.path ?? b.name;
-      // Normalize path the same way groupByProject does: strip ~/, take first 3 segments
       const cleaned = rawPath.replace(/^~\//, '').replace(/\/$/, '');
       const parts = cleaned.split('/');
       const key = parts.slice(0, Math.min(parts.length, 3)).join('/');
-      // Convert to ID the same way: replace / with -
       const buildGroupId = key.replace(/\//g, '-');
       return buildGroupId === projectId || projectId.includes(buildGroupId) || buildGroupId.includes(projectId);
     })
   );
 
-  // Sort: in_progress first, then by priority
   let sortedBuilds = $derived(
     [...projectBuilds].sort((a: Build, b: Build) => {
       const statusOrder: Record<string, number> = {
@@ -56,7 +58,6 @@
       const sa = statusOrder[a.status] ?? 5;
       const sb = statusOrder[b.status] ?? 5;
       if (sa !== sb) return sa - sb;
-      // Secondary sort by priority
       const prioOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
       const pa = prioOrder[a.priority ?? ''] ?? 3;
       const pb = prioOrder[b.priority ?? ''] ?? 3;
@@ -64,17 +65,6 @@
     })
   );
 
-  // Project display name — last meaningful segment
-  let projectName = $derived(
-    projectId.split('-').at(-1) ?? projectId
-  );
-
-  // Full path reconstruction for display
-  let projectPath = $derived(
-    '~/' + projectId.replace(/-/g, '/')
-  );
-
-  // Stats
   let stats = $derived({
     total: projectBuilds.length,
     active: projectBuilds.filter((b: Build) => b.status === 'in_progress').length,
@@ -82,23 +72,82 @@
     completed: projectBuilds.filter((b: Build) => b.status === 'completed').length,
   });
 
-  // Navigate to a build workspace
+  // ── View state ────────────────────────────────────────────────────────────────
+  let viewMode = $state<'list' | 'kanban'>('list');
+  let selectedBuild = $state<Build | null>(null);
+
+  function openDetailPanel(build: Build) { selectedBuild = build; }
+  function closeDetailPanel() { selectedBuild = null; }
+
+  // ── Project metadata fetch ────────────────────────────────────────────────────
+  async function loadProject(projectSlug: string) {
+    projectState = { tag: 'loading' };
+    try {
+      const meta = await api.getProject(projectSlug);
+      projectState = { tag: 'ready', meta };
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404 && err.code === 'MANIFEST_MISSING') {
+        projectState = { tag: 'missing-manifest', slug: projectSlug };
+      } else {
+        // Non-manifest errors (PROJECT_ROOT_MISSING, network, etc.) —
+        // degrade gracefully by showing builds without metadata.
+        projectState = { tag: 'ready', meta: { project: { id: '', slug: projectSlug, name: slug, kind: 'folder', created_at: '', helix_link: '' }, agents: {} } };
+      }
+    }
+  }
+
+  async function handleInit(req: ProjectInitRequest) {
+    if (projectState.tag !== 'missing-manifest' && projectState.tag !== 'init-error') return;
+    const currentSlug = projectState.slug;
+    projectState = { tag: 'initializing', slug: currentSlug };
+    try {
+      await api.initProject(req);
+      // Reload metadata after successful init.
+      await loadProject(currentSlug);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : String(err);
+      projectState = { tag: 'init-error', slug: currentSlug, message };
+    }
+  }
+
+  function cancelInit() {
+    goBack();
+  }
+
+  // ── SSE project-update listener ───────────────────────────────────────────────
+  function onProjectUpdate(e: Event) {
+    const payload = (e as CustomEvent).detail as { slug: string; kind: string };
+    if (payload.slug === slug) {
+      loadProject(slug);
+    }
+  }
+
+  onMount(() => {
+    loadProject(slug);
+    window.addEventListener('la:project-update', onProjectUpdate);
+  });
+
+  onDestroy(() => {
+    window.removeEventListener('la:project-update', onProjectUpdate);
+  });
+
+  // ── Navigation ────────────────────────────────────────────────────────────────
   function openBuild(buildId: string) {
     currentBuildId.set(buildId);
     window.location.hash = `/workspace/${buildId}`;
   }
 
-  // Navigate back to queue
   function goBack() {
     window.location.hash = '/';
   }
 
-  // Navigate to intake
   function newPlan() {
     window.location.hash = '/intake';
   }
 
-  // Build phase data for PhaseTimeline
+  // ── Pillar/phase helpers (preserved) ─────────────────────────────────────────
+  const PILLAR_TO_LASDLC = ['Plan', 'Research', 'Implement', 'Harden', 'Verify', 'Ship', 'Learn'];
+
   function buildPhases(build: Build): { id: number; title: string; status: PlanPhaseStatus }[] {
     return build.pillars.map((p, i) => ({
       id: i + 1,
@@ -113,7 +162,6 @@
     }));
   }
 
-  // Priority badge styling
   function priorityBadge(priority: string | undefined): { label: string; color: string; bg: string } {
     switch (priority) {
       case 'high': return { label: 'HIGH', color: '#ef4444', bg: '#ef444420' };
@@ -123,7 +171,6 @@
     }
   }
 
-  // Status label styling
   function statusStyle(status: string): { bg: string; fg: string } {
     switch (status) {
       case 'in_progress': return { bg: '#22c55e20', fg: '#22c55e' };
@@ -136,18 +183,16 @@
 </script>
 
 <div class="h-full flex flex-col relative overflow-hidden">
-  <!-- Background layer — particle canvas in Kanban mode, polytope in list mode -->
+  <!-- Background layer -->
   {#if viewMode === 'kanban'}
     <div class="absolute inset-0 overflow-hidden pointer-events-none" style="z-index: 0;">
       <ParticleCanvas />
-      <!-- Grid overlay -->
       <div class="absolute inset-0" style="
         background-image: linear-gradient(rgba(240,192,64,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(240,192,64,0.02) 1px, transparent 1px);
         background-size: 60px 60px;
         mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black 30%, transparent 70%);
         -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black 30%, transparent 70%);
       "></div>
-      <!-- Ambient glow circles -->
       <div class="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full opacity-[0.04]" style="background: radial-gradient(circle, {ROADMAP.accent}, transparent 70%); animation: ambientDrift1 20s ease-in-out infinite;"></div>
       <div class="absolute -bottom-40 -right-40 w-[600px] h-[600px] rounded-full opacity-[0.03]" style="background: radial-gradient(circle, #60a5fa, transparent 70%); animation: ambientDrift2 25s ease-in-out infinite;"></div>
       <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full opacity-[0.02]" style="background: radial-gradient(circle, #a78bfa, transparent 70%); animation: ambientPulse 15s ease-in-out infinite;"></div>
@@ -176,11 +221,19 @@
         </button>
         <span class="text-[var(--la-hair-strong)]">/</span>
         <h1 class="text-lg font-semibold tracking-wide">{projectName}</h1>
+        {#if projectState.tag === 'loading'}
+          <span class="text-[10px] text-[var(--la-text-dim)] animate-pulse">loading…</span>
+        {:else if projectState.tag === 'ready' && projectState.meta.project.id}
+          <span class="text-[10px] text-[var(--la-agent-engineer)] font-mono px-1.5 rounded" style="background: #22c55e10;">initialized</span>
+        {:else if projectState.tag === 'missing-manifest' || projectState.tag === 'init-error'}
+          <span class="text-[10px] text-[var(--la-text-dim)] font-mono px-1.5 rounded" style="background: #64748b15;">not initialized</span>
+        {:else if projectState.tag === 'initializing'}
+          <span class="text-[10px] text-[var(--la-agent-researcher)] font-mono animate-pulse">initializing…</span>
+        {/if}
       </div>
       <span class="text-[10px] text-[var(--la-text-dim)] font-mono pl-0.5">{projectPath}</span>
     </div>
     <div class="flex items-center gap-3">
-      <!-- View toggle -->
       <div class="flex bg-[var(--la-drawer-border)] rounded overflow-hidden">
         <button
           class="px-3 py-1 text-xs {viewMode === 'list' ? 'bg-[var(--la-hair-strong)] text-white' : 'text-[var(--la-text-dim)]'}"
@@ -206,113 +259,155 @@
     </div>
   </header>
 
-  <!-- Stat strip -->
-  <div class="flex items-center flex-wrap gap-x-4 gap-y-1 px-4 md:px-6 py-2 bg-[var(--la-bg-frame)] border-b border-[var(--la-hair-strong)] text-xs">
-    <span class="text-[var(--la-text-label)]">{stats.total} plans</span>
-    <span class="text-[var(--la-agent-researcher)]">{stats.active} in progress</span>
-    <span class="text-[var(--la-text-dim)]">{stats.planned} planned</span>
-    <span class="text-[var(--la-agent-engineer)]">{stats.completed} completed</span>
-  </div>
+  <!-- Stat strip (only when metadata available) -->
+  {#if projectState.tag !== 'missing-manifest' && projectState.tag !== 'initializing' && projectState.tag !== 'init-error'}
+    <div class="flex items-center flex-wrap gap-x-4 gap-y-1 px-4 md:px-6 py-2 bg-[var(--la-bg-frame)] border-b border-[var(--la-hair-strong)] text-xs">
+      <span class="text-[var(--la-text-label)]">{stats.total} plans</span>
+      <span class="text-[var(--la-agent-researcher)]">{stats.active} in progress</span>
+      <span class="text-[var(--la-text-dim)]">{stats.planned} planned</span>
+      <span class="text-[var(--la-agent-engineer)]">{stats.completed} completed</span>
+      {#if projectState.tag === 'ready' && projectState.meta.git}
+        <span class="text-[var(--la-text-dim)] font-mono ml-auto truncate max-w-[200px]" title={projectState.meta.git.remote}>
+          ⎇ {projectState.meta.git.remote.replace(/^https?:\/\//, '').replace(/^git@[^:]+:/, '')}
+        </span>
+      {/if}
+    </div>
+  {/if}
 
-  <!-- Plan roadmap -->
+  <!-- Main content area -->
   <div class="flex-1 overflow-y-auto p-4 md:p-6">
-    {#if sortedBuilds.length === 0}
-      <div class="flex flex-col items-center justify-center h-full text-[var(--la-text-dim)]">
-        <p class="text-lg mb-2">No plans for this project</p>
-        <p class="text-sm">Create a new build plan with <kbd class="bg-[var(--la-drawer-border)] px-2 py-0.5 rounded text-xs">/build</kbd></p>
+    {#if projectState.tag === 'loading'}
+      <div class="flex items-center justify-center h-full text-[var(--la-text-dim)]">
+        <span class="animate-pulse text-sm">Loading project…</span>
       </div>
-    {:else if viewMode === 'kanban'}
-      <KanbanBoard builds={sortedBuilds} onOpenBuild={openBuild} onSelectBuild={openDetailPanel} />
-    {:else}
-      <div class="flex flex-col gap-3 max-w-4xl mx-auto">
-        {#each sortedBuilds as build, idx}
-          {@const polyType = getMetaSkillPolytope(build.metaSkill)}
-          {@const polyColor = getMetaSkillColor(build.metaSkill)}
-          {@const phases = buildPhases(build)}
-          {@const prio = priorityBadge(build.priority)}
-          {@const sstyle = statusStyle(build.status)}
 
-          <!-- Dependency connector line -->
-          {#if idx > 0 && build.blockedBy && build.blockedBy.length > 0}
-            <div class="flex items-center justify-center">
-              <div class="w-px h-6 bg-[var(--la-hair-strong)]"></div>
-            </div>
-          {/if}
-
-          <!-- Plan card — left border keyed to polytope color as identity marker -->
-          <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-          <div
-            class="plan-card bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg p-4 cursor-pointer transition-all group"
-            style="border-left: 3px solid {polyColor}; --plan-poly: {polyColor}; box-shadow: inset 4px 0 16px color-mix(in srgb, {polyColor} 6%, transparent);"
-            onclick={() => openBuild(build.id)}
-            onkeydown={(e) => { if (e.key === 'Enter') openBuild(build.id); }}
-          >
-            <!-- Row 1: Priority badge + Name + Status -->
-            <div class="flex items-start gap-3">
-              <!-- Priority badge -->
-              <span
-                class="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5"
-                style="color: {prio.color}; background-color: {prio.bg}; border: 1px solid {prio.color}30;"
-              >
-                P{build.priority === 'high' ? '1' : build.priority === 'medium' ? '2' : '3'} {prio.label}
-              </span>
-
-              <!-- Polytope + Name block -->
-              <div class="flex items-center gap-2 flex-1 min-w-0">
-                <div class="flex-shrink-0">
-                  <PolytopeIcon type={polyType} color={polyColor} size={28} />
-                </div>
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="font-semibold text-sm truncate">{build.name}</span>
-                    <span
-                      class="text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 font-mono"
-                      style="background-color: {sstyle.bg}; color: {sstyle.fg}"
-                    >
-                      {build.status.replace('_', ' ')}
-                    </span>
-                  </div>
-                  <!-- Description -->
-                  <p class="text-[11px] text-[var(--la-text-dim)] mt-0.5 line-clamp-2">
-                    {build.description ?? 'No description'}
-                  </p>
-                </div>
+    {:else if projectState.tag === 'missing-manifest' || projectState.tag === 'init-error'}
+      <ProjectInitCard
+        slug={projectState.slug}
+        onInit={handleInit}
+        onCancel={cancelInit}
+        loading={false}
+        error={projectState.tag === 'init-error' ? projectState.message : undefined}
+      />
+      {#if sortedBuilds.length > 0}
+        <div class="mt-6 opacity-50">
+          <p class="text-xs text-[var(--la-text-dim)] mb-3 text-center">Existing build plans (project unregistered)</p>
+          {#each sortedBuilds as build}
+            {@const polyType = getMetaSkillPolytope(build.metaSkill)}
+            {@const polyColor = getMetaSkillColor(build.metaSkill)}
+            {@const sstyle = statusStyle(build.status)}
+            <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+            <div
+              class="plan-card bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg p-3 cursor-pointer mb-2"
+              style="border-left: 3px solid {polyColor};"
+              onclick={() => openBuild(build.id)}
+              onkeydown={(e) => { if (e.key === 'Enter') openBuild(build.id); }}
+            >
+              <div class="flex items-center gap-2">
+                <PolytopeIcon type={polyType} color={polyColor} size={20} />
+                <span class="text-sm font-medium truncate flex-1">{build.name}</span>
+                <span class="text-[10px] font-mono px-1.5 rounded" style="background: {sstyle.bg}; color: {sstyle.fg}">
+                  {build.status.replace('_', ' ')}
+                </span>
               </div>
             </div>
+          {/each}
+        </div>
+      {/if}
 
-            <!-- Row 2: PhaseTimeline -->
-            <div class="mt-3 mb-2 pl-10">
-              <PhaseTimeline {phases} compact={true} />
-            </div>
+    {:else if projectState.tag === 'initializing'}
+      <div class="flex items-center justify-center h-full text-[var(--la-agent-researcher)]">
+        <span class="animate-pulse text-sm">Initializing project…</span>
+      </div>
 
-            <!-- Row 3: Siblings + blocked-by -->
-            <div class="flex items-center justify-between text-[9px] pl-10">
-              <div class="flex items-center gap-1">
-                {#if build.siblings && build.siblings.length > 0}
-                  {#each build.siblings as sib}
-                    <span
-                      class="px-1.5 py-0.5 rounded font-mono uppercase border"
-                      style="color: {SIBLING_COLORS[sib.toLowerCase()] ?? '#8B5CF6'}; border-color: {SIBLING_COLORS[sib.toLowerCase()] ?? '#8B5CF6'}30; opacity: 0.9"
-                    >
-                      {sib}
-                    </span>
-                  {/each}
+    {:else}
+      <!-- ready state — full build listing -->
+      {#if sortedBuilds.length === 0}
+        <div class="flex flex-col items-center justify-center h-full text-[var(--la-text-dim)]">
+          <p class="text-lg mb-2">No plans for this project</p>
+          <p class="text-sm">Create a new build plan with <kbd class="bg-[var(--la-drawer-border)] px-2 py-0.5 rounded text-xs">/build</kbd></p>
+        </div>
+      {:else if viewMode === 'kanban'}
+        <KanbanBoard builds={sortedBuilds} onOpenBuild={openBuild} onSelectBuild={openDetailPanel} />
+      {:else}
+        <div class="flex flex-col gap-3 max-w-4xl mx-auto">
+          {#each sortedBuilds as build, idx}
+            {@const polyType = getMetaSkillPolytope(build.metaSkill)}
+            {@const polyColor = getMetaSkillColor(build.metaSkill)}
+            {@const phases = buildPhases(build)}
+            {@const prio = priorityBadge(build.priority)}
+            {@const sstyle = statusStyle(build.status)}
+
+            {#if idx > 0 && build.blockedBy && build.blockedBy.length > 0}
+              <div class="flex items-center justify-center">
+                <div class="w-px h-6 bg-[var(--la-hair-strong)]"></div>
+              </div>
+            {/if}
+
+            <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+            <div
+              class="plan-card bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded-lg p-4 cursor-pointer transition-all group"
+              style="border-left: 3px solid {polyColor}; --plan-poly: {polyColor}; box-shadow: inset 4px 0 16px color-mix(in srgb, {polyColor} 6%, transparent);"
+              onclick={() => openBuild(build.id)}
+              onkeydown={(e) => { if (e.key === 'Enter') openBuild(build.id); }}
+            >
+              <div class="flex items-start gap-3">
+                <span
+                  class="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5"
+                  style="color: {prio.color}; background-color: {prio.bg}; border: 1px solid {prio.color}30;"
+                >
+                  P{build.priority === 'high' ? '1' : build.priority === 'medium' ? '2' : '3'} {prio.label}
+                </span>
+                <div class="flex items-center gap-2 flex-1 min-w-0">
+                  <div class="flex-shrink-0">
+                    <PolytopeIcon type={polyType} color={polyColor} size={28} />
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                      <span class="font-semibold text-sm truncate">{build.name}</span>
+                      <span
+                        class="text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 font-mono"
+                        style="background-color: {sstyle.bg}; color: {sstyle.fg}"
+                      >
+                        {build.status.replace('_', ' ')}
+                      </span>
+                    </div>
+                    <p class="text-[11px] text-[var(--la-text-dim)] mt-0.5 line-clamp-2">
+                      {build.description ?? 'No description'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-3 mb-2 pl-10">
+                <PhaseTimeline {phases} compact={true} />
+              </div>
+              <div class="flex items-center justify-between text-[9px] pl-10">
+                <div class="flex items-center gap-1">
+                  {#if build.siblings && build.siblings.length > 0}
+                    {#each build.siblings as sib}
+                      <span
+                        class="px-1.5 py-0.5 rounded font-mono uppercase border"
+                        style="color: {SIBLING_COLORS[sib.toLowerCase()] ?? '#8B5CF6'}; border-color: {SIBLING_COLORS[sib.toLowerCase()] ?? '#8B5CF6'}30; opacity: 0.9"
+                      >
+                        {sib}
+                      </span>
+                    {/each}
+                  {/if}
+                </div>
+                {#if build.blockedBy && build.blockedBy.length > 0}
+                  <span class="text-[var(--la-danger-stroke)] flex items-center gap-1" title="Blocked by: {build.blockedBy.join(', ')}">
+                    <span class="text-[11px]">&#x26D4;</span>
+                    blocks: {build.blockedBy.join(', ')}
+                  </span>
                 {/if}
               </div>
-              {#if build.blockedBy && build.blockedBy.length > 0}
-                <span class="text-[var(--la-danger-stroke)] flex items-center gap-1" title="Blocked by: {build.blockedBy.join(', ')}">
-                  <span class="text-[11px]">&#x26D4;</span>
-                  blocks: {build.blockedBy.join(', ')}
-                </span>
-              {/if}
             </div>
-          </div>
-        {/each}
-      </div>
+          {/each}
+        </div>
+      {/if}
     {/if}
   </div>
 
-  <!-- Build Detail Panel (slide-in on card click in Kanban mode) -->
   <BuildDetailPanel
     build={selectedBuild}
     onClose={closeDetailPanel}

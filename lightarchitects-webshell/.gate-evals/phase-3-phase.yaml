@@ -1,0 +1,28 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-21T17:35:00Z"
+build_id: webshell-project-ingestion
+phase_id: phase-3-backend-ingestion
+commit_sha: 9840712bccd7ee52744c0bd3a3c751e6cccfed43
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 622
+    tests_fail: 0
+    detail: "604 lib unit + 18 integration (5 security + 2 toctou + 4 contract @ real ~/Projects dirs + 7 existing); exit 0"
+  Q4_svelte: "n/a — Phase 3 is backend-only; no *-ui/ files modified"
+  D2_plan: pass
+
+notes:
+  - "contract tests (init_project_contract.rs) use real ~/Projects/lightarchitects-sdk and lightarchitects-cli dirs"
+  - "RAII Cleanup guards remove .lightarchitects/ on drop; no permanent pollution of real project dirs"
+  - "integration suite runtime 254s due to real FS I/O + canonicalize_and_check + helix dir creation"
+  - "18 integration tests (7 pre-existing Phase 2 + 11 new Phase 3); total webshell = 622"
+  - "Q3 counted from task b1if8tt36 (exit 0) confirmed by bxuq9rk6m (exit 0) and bx8q8zevz (exit 0)"
+  - "uuid v7 feature added to workspace Cargo.toml for Uuid::now_v7() in init.rs"
+  - "scope.toml written per Phase 3 SERAPH engagement scope requirement"

@@ -311,7 +311,8 @@ export type EventType =
   | 'conductor_tick'
   | 'merge_agent_status'
   | 'fix_agent_iteration'
-  | 'agent_fleet_update';
+  | 'agent_fleet_update'
+  | 'project_update';
 
 // --- Agent protocol (native agent bridge) ---
 
@@ -1333,4 +1334,55 @@ export interface WorktreeMeta {
   status: string;          // "active" in v1; future: derive from gitforest overlay
   locked: boolean;
   created_at: string | null;
+}
+
+// ── Project ingestion types (webshell-project-ingestion) ─────────────────────
+
+export type ProjectKind = 'git_repo' | 'folder' | 'workspace' | 'monorepo';
+
+export interface Project {
+  id: string;
+  slug: string;
+  name: string;
+  kind: ProjectKind;
+  created_at: string;
+  helix_link: string;
+}
+
+export interface ProjectGit {
+  remote: string;
+  branch: string;
+}
+
+export interface ProjectAgents {
+  active?: string[];
+}
+
+export interface ProjectMeta {
+  project: Project;
+  git?: ProjectGit;
+  agents: ProjectAgents;
+}
+
+export interface ProjectInitRequest {
+  slug: string;
+  name?: string;
+  kind?: ProjectKind;
+  agents?: ProjectAgents;
+}
+
+/** SSE payload for `project_update` events. */
+export interface ProjectUpdateEvent {
+  project_id: string;
+  slug: string;
+  kind: 'created' | 'updated';
+}
+
+/** 201 response body from `POST /api/projects/init`. */
+export interface InitResponse {
+  project_id: string;
+  slug: string;
+  toml_path: string;
+  helix_link: string;
+  helix_link_warning?: string;
 }

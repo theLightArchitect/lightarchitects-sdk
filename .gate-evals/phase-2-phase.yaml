@@ -1,0 +1,33 @@
+schema_version: 1
+gate: phase
+scope: phase
+scored_by: "/GATE"
+scored_at: "2026-05-21T23:31:34Z"
+build_id: webshell-project-ingestion
+phase_id: "2"
+commit_sha: 27d9930dda9556b42225c72e316f2a0720a39bba
+branch: feat/webshell-project-ingestion
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 597   # lightarchitects-webshell; full workspace passed exit 0
+    tests_fail: 0
+    tests_ignored: 1  # pre-existing (profiler::profile_checkpoint)
+    new_tests_added: 8  # 4 slug unit + 4 contract_projects_read
+    ratchet: up       # +8 from phase-1 baseline
+  Q4_svelte: "n/a"   # phase 2 touches no UI surface files
+  D2_plan: pass       # all 6 deliverables shipped as spec'd; no scope drift
+
+notes:
+  - "tokio::sync::Mutex used for HOME_LOCK in contract tests (not std::sync) to avoid
+     clippy::await_holding_lock across .await in async test bodies"
+  - "projects/path.rs omitted per plan iter-5 arch decision: reuse
+     lightarchitects_arch::security::path::canonicalize_and_check instead"
+  - "projects/csrf.rs omitted per plan iter-5 arch decision: SameSite=Strict + AuthGuard
+     already blocks cross-origin CSRF; third auth surface would violate two-auth-model invariant"
+  - "Slug::validate uses parse-don't-validate newtype; custom Deserialize calls validate
+     atomically; downstream code never holds unvalidated slug"

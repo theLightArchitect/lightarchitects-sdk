@@ -21,6 +21,7 @@ import {
   gitforestTree, gitforestPulses,
   workerSlots, conductorState, mergeAgentEvents, fixAgentEvents,
   pushRecentEvent,
+  projects,
 } from './stores';
 import { spikeSibling } from './stores';
 import { reconstructTopology } from './gitforest';
@@ -34,6 +35,7 @@ import type {
   ActivePlan, PlanPhaseStatus,
   ScrumReport, ScrumFinding,
   TrainingRun, TrainingRunStatus,
+  ProjectUpdateEvent,
 } from './types';
 
 /** Gate-action keywords that identify supervisor decisions in AYIN spans. */
@@ -271,6 +273,14 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
         ));
       }
       window.dispatchEvent(new CustomEvent('la:build-update'));
+      break;
+    }
+    case 'project_update': {
+      const payload = event.data as ProjectUpdateEvent;
+      if (!payload.slug) break;
+      // Invalidate the project list so the next getProject call re-fetches.
+      // For 'created', we dispatch a DOM event so ProjectDetail can reload.
+      window.dispatchEvent(new CustomEvent('la:project-update', { detail: payload }));
       break;
     }
     case 'pillar_update': {

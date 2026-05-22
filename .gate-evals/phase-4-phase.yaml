@@ -1,0 +1,33 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-21T18:35:00Z"
+build_id: webshell-project-ingestion
+phase_id: phase-4-frontend-wiring
+commit_sha: 4864b3b
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 622
+    tests_fail: 0
+    detail: "622 Rust tests pass (same count as Phase 3 — no new Rust tests in Phase 4); exit 0"
+  Q4_svelte:
+    result: pass
+    vitest_pass: 686
+    vitest_fail: 0
+    svelte_check_errors: 0
+    svelte_check_warnings: 35
+    detail: "686 vitest unit tests pass (10 new in project-detail.test.ts); svelte-check 0 errors (35 pre-existing warnings)"
+  D2_plan: pass
+
+notes:
+  - "Phase 4 delivers: ProjectInitCard.svelte (new), ProjectDetail.svelte rewrite (5-state machine), ApiError class, projects/projectsBySlug stores, project_update SSE case, api.ts project methods, build-mapper.ts name lookup, 10 new vitest tests"
+  - "5-state machine states: loading / missing-manifest / initializing / ready / init-error — exhaustive, no implicit fallthrough"
+  - "ApiError carries status+code so UI can distinguish MANIFEST_MISSING (404) from PROJECT_ROOT_MISSING (404) from network errors"
+  - "SSE project_update dispatches DOM event la:project-update; ProjectDetail subscribes in onMount + cleans up in onDestroy"
+  - "Playwright browser not installed on this machine — V3 E2E deferred to Phase 5 (condition: backend routes wired + dev server running)"
+  - "Q4 Playwright browser error is pre-existing infrastructure issue; all 686 unit tests pass without browser"

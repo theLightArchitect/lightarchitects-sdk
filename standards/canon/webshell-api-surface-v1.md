@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.20"  # bumped 2026-05-21: §2.33 ADDED (webshell-mcp-host post-merge canon backfill — /api/mcp/{servers,tools,invoke} routes shipped at sha 31ff97b without same-commit spec update; backfilled per `feedback_webshell_spec_update_gate`)
+version: "1.0.21"  # bumped 2026-05-21: §1.8 Streaming Map ADDED + §2.34/§2.35/§2.36 Project Registry endpoints + WebEvent::ProjectUpdate (webshell-project-ingestion Phase 5 — same-commit update per `feedback_webshell_spec_update_gate`)
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
@@ -207,6 +207,31 @@ Roles fall into four functional categories: **action** (operator takes immediate
 - `hitl-inbox` in DOM within 60s (P6-N1 — verified by E2E G6)
 - `target-breadcrumb` always present (P6-N2 — never conditionally unmounted)
 - `copilot-drawer` context chip shows `{preset} · {target}` (P6-N3 — verified by E2E G5)
+
+---
+
+### §1.8 Verified Streaming Map (webshell-project-ingestion Phase 5 — 2026-05-21 ADDITION)
+
+Per-view SSE topic subscriptions verified against `feat/webshell-project-ingestion` at Phase 5 merge time. Table format: View → SSE topics consumed (DOM event name) → REST-only surfaces → active-dispatch-only surfaces.
+
+| View | SSE topics consumed | DOM event name | REST-only surfaces | Notes |
+|------|---------------------|----------------|--------------------|-------|
+| `ProjectDetail.svelte` | `v1.project.update` | `la:project-update` | `GET /api/projects/:slug` (initial load + re-fetch) | Re-fetches on every `la:project-update` whose `slug` matches |
+| `ProjectDetail.svelte` (init flow) | — | — | `POST /api/projects/init` (on-demand; `missing-manifest` state only) | One-shot registration; triggers immediate GET re-fetch on 201 |
+| All views (inherited) | `v1.build.update`, `v1.fleet.update`, `v1.roadmap.update`, `v1.system.status` | via `la:*` event bus | — | Global SSE stream (§2.3) dispatches to topic-specific DOM events via `sse.ts` |
+
+**SSE → DOM bridge**: `lightarchitects-webshell-ui/src/lib/sse.ts` receives `WebEvent::ProjectUpdate { project_id, slug, kind }` on the `/api/events` stream and dispatches `window.dispatchEvent(new CustomEvent("la:project-update", { detail: { project_id, slug, kind } }))`. `ProjectDetail.svelte` registers a listener in `onMount`, cleans up in `onDestroy` (no leak across navigations — `{#if}` unmount fires `onDestroy`).
+
+**Topic → route mapping**:
+
+| SSE topic | WebEvent variant | Route (source) | Phase introduced |
+|-----------|-----------------|----------------|-----------------|
+| `v1.project.update` | `WebEvent::ProjectUpdate` | `GET /api/events` | webshell-project-ingestion |
+| `v1.build.update` | `WebEvent::BuildUpdate` | `GET /api/events` | Phase 0 (initial) |
+| `v1.fleet.update` | `WebEvent::FleetUpdate` | `GET /api/events` | Phase 0 (initial) |
+| `v1.roadmap.update` | `WebEvent::RoadmapUpdate` | `GET /api/events` | webshell-roadmap-rendering |
+
+**P1 Northstar mechanical promise**: `ProjectDetail` subscribes to `v1.project.update` (direct) and inherits `v1.build.update` via `$builds` store. Total: 0 → 2 topics consumed by `ProjectDetail` after this build. Verified against `G5` golden path in `e2e/project-ingestion.spec.ts`.
 
 ---
 
@@ -1315,6 +1340,130 @@ Panel 5 in `lightarchitects-webshell-ui/src/screens/Tools.svelte` — server-fil
 #### AppState wiring
 
 `AppState.mcp_host: McpHostHandle = Arc<RwLock<Option<HostManager>>>` initialized asynchronously via `tokio::spawn` in `AppState::new()` — webshell startup is non-blocking. Routes acquire a read guard and return `503` when host is `None`.
+
+---
+
+### §2.34 Project Registry Read (webshell-project-ingestion — 2026-05-21 ADDITION)
+
+Returns the stored `ProjectMeta` for a registered project slug, or 404 `MANIFEST_MISSING` if the project has not yet been initialized.
+
+**All routes require `AuthGuard` (cookie session).**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/projects/:slug` | Read project metadata by slug |
+
+#### `GET /api/projects/:slug` → 200
+
+```json
+{
+  "project": {
+    "id": "019501e0-0000-7000-8000-000000000001",
+    "slug": "lightarchitects-sdk",
+    "name": "Light Architects SDK",
+    "kind": "git_repo",
+    "created_at": "2026-05-21T00:00:00Z",
+    "helix_link": "/home/kft/lightarchitects/soul/helix/corso/projects/lightarchitects-sdk"
+  },
+  "git": {
+    "remote": "git@github.com:TheLightArchitects/lightarchitects-sdk.git",
+    "branch": "main"
+  },
+  "agents": {}
+}
+```
+
+#### Error responses
+
+| HTTP code | `error` body | `code` field | Cause |
+|-----------|--------------|--------------|-------|
+| 401 | (AuthGuard middleware) | — | Missing/invalid session cookie |
+| 404 | `{"error":"manifest not found","code":"MANIFEST_MISSING"}` | `MANIFEST_MISSING` | Slug not found in project registry (`~/.lightarchitects/projects/`) |
+| 400 | `{"error":"invalid slug"}` | `INVALID_SLUG` | Slug contains path separators or is empty |
+| 500 | `{"error":"<message>"}` | — | I/O error reading manifest |
+
+**Slug validation**: rejects empty strings, path separators (`/`, `\`), and non-ASCII. Validated at route entry before any filesystem access.
+
+#### Implementation
+
+Route registered at `lightarchitects-webshell/src/server/mod.rs`. Handler at `lightarchitects-webshell/src/server/project_routes.rs::get_project`. Manifest stored at `~/.lightarchitects/projects/<slug>.toml` (TOML format, written by `POST /api/projects/init`).
+
+---
+
+### §2.35 Project Registration (webshell-project-ingestion — 2026-05-21 ADDITION)
+
+Registers a new project in the local project registry by writing a TOML manifest. Uses `O_CREAT | O_EXCL` for atomic creation (no TOCTOU race).
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/projects/init` | Register a project and write its manifest |
+
+#### Request body
+
+```json
+{
+  "slug": "lightarchitects-sdk",
+  "name": "Light Architects SDK",
+  "kind": "git_repo",
+  "git_remote": "git@github.com:TheLightArchitects/lightarchitects-sdk.git",
+  "git_branch": "main"
+}
+```
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `slug` | `string` | Yes | URL-safe identifier; validated (no path separators, non-empty, ASCII) |
+| `name` | `string` | No | Display name; defaults to `slug` if omitted |
+| `kind` | `string` | Yes | `"git_repo"` \| `"local_dir"` |
+| `git_remote` | `string` | No | Git remote URL (for `git_repo` kind) |
+| `git_branch` | `string` | No | Branch name (for `git_repo` kind; defaults to `"main"`) |
+
+#### Response → 201
+
+```json
+{
+  "project_id": "019501e0-0000-7000-8000-000000000001",
+  "slug": "lightarchitects-sdk",
+  "toml_path": "~/.lightarchitects/projects/lightarchitects-sdk.toml",
+  "helix_link": "/home/kft/lightarchitects/soul/helix/corso/projects/lightarchitects-sdk"
+}
+```
+
+#### Error responses
+
+| HTTP code | `error` body | Cause |
+|-----------|--------------|-------|
+| 401 | (AuthGuard middleware) | Missing/invalid session cookie |
+| 400 | `{"error":"invalid slug"}` | Slug validation failure |
+| 409 | `{"error":"project already exists"}` | Manifest file already present (`O_CREAT\|O_EXCL` rejected) |
+| 500 | `{"error":"<message>"}` | I/O error writing manifest |
+
+**Atomicity guarantee**: `O_CREAT | O_EXCL` on `~/.lightarchitects/projects/<slug>.toml` prevents concurrent double-init race conditions. UUID generated with `uuid::Uuid::now_v7()` for time-ordered ordering.
+
+**Helix entry**: on 201, handler calls `write_helix_entry(slug, meta)` to create the project node in `~/lightarchitects/soul/helix/corso/projects/<slug>/`. Failure is non-fatal (logged via `tracing::warn!`); registration is still considered successful.
+
+#### Implementation
+
+Handler at `lightarchitects-webshell/src/server/project_routes.rs::init_project`. After write, broadcasts `WebEvent::ProjectUpdate { project_id, slug, kind: "created" }` to the SSE stream (§2.36).
+
+---
+
+### §2.36 `WebEvent::ProjectUpdate` (webshell-project-ingestion — 2026-05-21 ADDITION)
+
+New SSE event variant added to `WebEvent` enum in `lightarchitects-webshell/src/server/events.rs`. Serialized as `{"type":"project_update","project_id":"...","slug":"...","kind":"..."}` on the `/api/events` stream (§2.3).
+
+**Frontend bridge**: `sse.ts` maps `type === "project_update"` → `window.dispatchEvent(new CustomEvent("la:project-update", { detail: { project_id, slug, kind } }))`. `ProjectDetail.svelte` registers on `la:project-update` and calls `loadProject()` when `event.detail.slug === currentSlug`.
+
+| Field | Type | Values | Notes |
+|-------|------|--------|-------|
+| `type` | `string` | `"project_update"` | Serde discriminant |
+| `project_id` | `string` | UUID v7 | Stable project identity |
+| `slug` | `string` | URL-safe string | Matches the `slug` in registry |
+| `kind` | `string` | `"created"` \| `"updated"` \| `"deleted"` | Change type |
+
+**Broadcast trigger**: `POST /api/projects/init` (§2.35) broadcasts `kind: "created"` on 201. Future update/delete handlers broadcast `kind: "updated"` / `kind: "deleted"` respectively.
+
+**TypeScript type**: `ProjectUpdateEvent` in `lightarchitects-webshell-ui/src/lib/types.ts`.
 
 ---
 

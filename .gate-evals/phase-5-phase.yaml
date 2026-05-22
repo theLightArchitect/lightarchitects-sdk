@@ -1,0 +1,78 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-21T19:00:00Z"
+build_id: webshell-project-ingestion
+phase_id: phase-5-integration-and-canon
+commit_sha: pending  # written pre-commit; sha assigned at merge
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 622
+    tests_fail: 0
+    detail: "622 Rust tests pass (Phase 5 is pure canon/doc/E2E — no new Rust code; count unchanged from Phase 4)"
+  Q4_svelte:
+    result: pass
+    vitest_pass: 686
+    vitest_fail: 0
+    svelte_check_errors: 0
+    svelte_check_warnings: 35
+    detail: "686 vitest unit tests pass (no new unit tests in Phase 5 — E2E tests deferred per V3 condition); 0 svelte-check errors"
+  D2_plan: pass
+
+tier3_canon_audit:
+  scope: webshell-project-ingestion build deliverables
+  audited_at: "2026-05-21T19:00:00Z"
+  auditor: "Claude (Engineer)"
+  canon_docs_checked:
+    - platform-canon.md
+    - builders-cookbook.md
+    - agents-playbook.md
+    - security-guardrails.md
+    - webshell-api-surface-v1.md
+
+  findings:
+    - id: T3-C1
+      dimension: "[A] Architecture"
+      severity: PASS
+      detail: "Project ingestion routes follow established AppState injection pattern (Arc<AppState>). No new trust boundaries introduced beyond the existing AuthGuard pattern."
+
+    - id: T3-C2
+      dimension: "[S] Security"
+      severity: PASS
+      detail: "POST /api/projects/init uses O_CREAT|O_EXCL (atomic, no TOCTOU). Slug validation rejects path separators and empty strings. All routes gated by AuthGuard (cookie session). No bearer token exposure in responses."
+
+    - id: T3-C3
+      dimension: "[Q] Quality"
+      severity: PASS
+      detail: "Rust: cargo fmt + clippy clean (622 tests pass). TypeScript: 686 vitest pass, 0 svelte-check errors. No unwrap()/expect() in production paths. ApiError extends Error per Svelte non-negotiables."
+
+    - id: T3-C4
+      dimension: "[D] Documentation"
+      severity: PASS
+      detail: "webshell-api-surface-v1.md bumped v1.0.20→v1.0.21; §1.8 + §2.34/§2.35/§2.36 added. HTML pair updated same-commit (Cookbook §71 compliance). §2.33 HTML backfill included (gap from v1.0.20 closed)."
+
+    - id: T3-C5
+      dimension: "[T] Testing"
+      severity: CONDITIONAL_PASS
+      detail: "Unit: 10 vitest tests cover ApiError, projects store, SSE dispatch (Phase 4). E2E: e2e/project-ingestion.spec.ts authored (G1-G5 golden paths, mocked API). Playwright browser not installed on this machine — V3 E2E deferred to Phase 6 verification gate (condition: pnpm exec playwright install + dev server running)."
+
+    - id: T3-C6
+      dimension: "[C] Canon"
+      severity: PASS
+      detail: "All new types in types.ts (Project, ProjectMeta, ProjectInitRequest, ProjectUpdateEvent, InitResponse) match §2.34-36 contracts in webshell-api-surface-v1.md. SSE pipeline matches §1.8 streaming map exactly. ApiError.code discriminant matches 404 subcodes documented in §2.35."
+
+  v3_e2e_waiver:
+    condition: "Playwright browser installed + dev server running at localhost:5174"
+    target_phase: "Phase 6 / /GATE 6"
+    spec_path: "e2e/project-ingestion.spec.ts"
+    golden_paths: 5  # G1-G5
+
+notes:
+  - "Phase 5 deliverables: webshell-api-surface-v1.md v1.0.21 (§1.8 + §2.34/§2.35/§2.36), HTML pair updated (§2.33 backfill + new sections), e2e/project-ingestion.spec.ts (5 golden paths), playwright.config.ts testMatch updated"
+  - "Tier 3 canon audit: 6 dimensions checked, 5 PASS + 1 CONDITIONAL_PASS (V3 E2E deferred per pre-existing browser absence noted in Phase 4 gate eval)"
+  - "HTML pair: sidebar nav extended with 'Project Ingestion' section label; #project-ingestion-sse + #project-registry sections added"

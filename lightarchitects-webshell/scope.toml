@@ -1,0 +1,40 @@
+# SERAPH engagement scope — webshell-project-ingestion Phase 3.
+#
+# Covers the new write surface: POST /api/projects/init + audit trail.
+# Full adversarial lens: path traversal, symlink escape, TOML injection, auth bypass.
+
+[engagement]
+name = "webshell-project-ingestion"
+phase = 3
+classification = "internal"
+
+[[target]]
+kind = "route"
+method = "POST"
+path = "/api/projects/init"
+auth_model = "bearer-or-cookie"
+threat_classes = [
+    "path-traversal",
+    "symlink-escape",
+    "TOCTOU-race",
+    "slug-injection",
+    "unauthenticated-write",
+    "TOML-serialization-injection",
+]
+
+[[target]]
+kind = "filesystem"
+description = "~/Projects/<slug>/.lightarchitects/project.toml"
+threat_classes = [
+    "world-readable-file",
+    "directory-traversal",
+    "symlink-race",
+]
+
+[[target]]
+kind = "filesystem"
+description = "~/lightarchitects/soul/helix/corso/projects/<slug>/decisions.md"
+threat_classes = [
+    "audit-trail-tampering",
+    "path-traversal",
+]

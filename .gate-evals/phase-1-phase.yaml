@@ -1,0 +1,40 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-21T15:16:00Z"
+build_id: webshell-project-ingestion
+phase_id: "1"
+overall_verdict: pass
+
+schema_warn: "plan lasdlc_template_version=2.6.0 (expected 2.5.1) — WARN only, not blocking"
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 619
+    tests_fail: 0
+    note: "Phase 1 adds no new Rust tests; G6 baseline confirmed (exit 0)"
+  Q4_svelte:
+    result: pass
+    unit_tests_pass: 676
+    unit_tests_total: 676
+    svelte_check_errors: 0
+    svelte_check_warnings: 35
+    playwright_binary_flaky: "pre-existing (Playwright chromium binary missing in environment; 3 test files skipped, not a regression)"
+  D2_plan:
+    result: pass
+    note: "Phase 1 scope (6 diagrams, manifest.yaml, §1.8 placeholder, active.yaml entry) fully reflected in plan. Manifest shipped_means_5_conditions corrected (v1.0.20/§1.8/§2.33*) from stale v1.0.19/§1.7.1/§2.31*."
+
+phase_1_artifacts_verified:
+  diagrams:
+    - C1-system-context.mmd
+    - C2-container.mmd
+    - C3-component-server.mmd
+    - screen-flow-projectdetail.mmd
+    - state-projectdetail.mmd
+    - sequence-init-flow.mmd
+  manifest: "helix/corso/builds/webshell-project-ingestion/manifest.yaml"
+  active_yaml_entry: "helix/corso/builds/active.yaml"
+  spec_placeholder: "standards/canon/webshell-api-surface-v1.md §1.8 (commit 29a1b30)"

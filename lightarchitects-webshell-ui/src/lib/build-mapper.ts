@@ -4,6 +4,8 @@
 
 import type { Build, BuildStatus, Pillar, PillarGate, PillarStatus, Priority, ProjectGroup } from './types';
 import { PILLARS } from './types';
+import { get } from 'svelte/store';
+import { projectsBySlug } from './stores';
 
 /**
  * Maps a raw portfolio entry status string to the BuildStatus union.
@@ -242,9 +244,13 @@ export function groupByProject(builds: Build[]): ProjectGroup[] {
     const completed = plans.filter(b => b.status === 'completed').length;
     const total = plans.length || 1;
 
+    // Prefer the registered project name over the path-derived label.
+    const slugFromPath = pathToName(key);
+    const registeredName = get(projectsBySlug).get(slugFromPath)?.project?.name;
+
     result.push({
       id: pathToId(key),
-      name: project?.name ?? pathToName(key),
+      name: registeredName ?? project?.name ?? pathToName(key),
       path: group.path,
       project,
       plans: plans.length > 0 ? plans : group.builds,
