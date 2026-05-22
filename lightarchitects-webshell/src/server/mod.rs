@@ -360,6 +360,21 @@ impl AppState {
             });
         }
 
+        // F9: create oauth_states before Self so the eviction task can hold an Arc clone.
+        let oauth_states: Arc<DashMap<Uuid, crate::auth::credential::OAuthPendingState>> =
+            Arc::new(DashMap::new());
+        {
+            let eviction_states = Arc::clone(&oauth_states);
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+                loop {
+                    interval.tick().await;
+                    let now = std::time::Instant::now();
+                    eviction_states.retain(|_, v| now < v.expires_at);
+                }
+            });
+        }
+
         Self {
             config: Arc::new(config),
             turnlog_pepper: Arc::new(pepper),
@@ -379,7 +394,7 @@ impl AppState {
             telemetry,
             session_store,
             auth_nonces: Arc::new(DashMap::new()),
-            oauth_states: Arc::new(DashMap::new()),
+            oauth_states,
             credential_store: Arc::new(DashMap::new()),
             global_event_store: {
                 let data_dir = std::env::var("HOME").map_or_else(

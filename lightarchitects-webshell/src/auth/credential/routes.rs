@@ -46,6 +46,9 @@ use super::pkce;
 /// OAuth CSRF state TTL: 120 seconds (OA-2).
 const OAUTH_STATE_TTL: Duration = Duration::from_secs(120);
 
+/// Maximum accepted byte length for a stored API key (F10 — prevents oversized Keychain writes).
+const MAX_API_KEY_BYTES: usize = 1024;
+
 // ── Shared error helper ───────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
@@ -297,7 +300,10 @@ pub async fn provider_status(
                 format!("unknown provider: {provider}"),
             )
         })?;
-        match keychain::keychain_get(service) {
+        match tokio::task::spawn_blocking(move || keychain::keychain_get(service))
+            .await
+            .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, format!("task join: {e}")))?
+        {
             Ok(Some(_)) => CredentialState::Connected,
             Ok(None) => CredentialState::NotConnected,
             Err(e) => {
@@ -333,13 +339,16 @@ pub async fn provider_revoke(
         )
     })?;
 
-    keychain::keychain_delete(service).map_err(|e| {
-        tracing::error!(target: "credential", provider = %provider, error = %e, "keychain delete failed");
-        err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to remove credential from Keychain",
-        )
-    })?;
+    tokio::task::spawn_blocking(move || keychain::keychain_delete(service))
+        .await
+        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, format!("task join: {e}")))?
+        .map_err(|e| {
+            tracing::error!(target: "credential", provider = %provider, error = %e, "keychain delete failed");
+            err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to remove credential from Keychain",
+            )
+        })?;
 
     state
         .credential_store
@@ -378,13 +387,23 @@ pub async fn store_api_key(
         )
     })?;
 
-    keychain::keychain_set(service, &body.key).map_err(|e| {
-        tracing::error!(target: "credential", provider = %provider, error = %e, "keychain set failed");
-        err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to store credential in Keychain",
-        )
-    })?;
+    if body.key.len() > MAX_API_KEY_BYTES {
+        return Err(err(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("API key exceeds maximum length of {MAX_API_KEY_BYTES} bytes"),
+        ));
+    }
+    let key = body.key;
+    tokio::task::spawn_blocking(move || keychain::keychain_set(service, &key))
+        .await
+        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, format!("task join: {e}")))?
+        .map_err(|e| {
+            tracing::error!(target: "credential", provider = %provider, error = %e, "keychain set failed");
+            err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to store credential in Keychain",
+            )
+        })?;
 
     state
         .credential_store
@@ -610,13 +629,18 @@ pub async fn ollama_connect(
         ));
     };
 
-    let output = std::process::Command::new(&binary)
-        .args(&args)
-        .output()
-        .map_err(|e| {
-            tracing::error!(target: "credential.ollama", error = %e, binary = %binary.display(), "subprocess exec failed");
-            err(StatusCode::SERVICE_UNAVAILABLE, "Failed to run ollama binary")
-        })?;
+    let output = tokio::task::spawn_blocking(move || {
+        std::process::Command::new(&binary).args(&args).output()
+    })
+    .await
+    .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, format!("task join: {e}")))?
+    .map_err(|e| {
+        tracing::error!(target: "credential.ollama", error = %e, "subprocess exec failed");
+        err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Failed to run ollama binary",
+        )
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -765,5 +789,36 @@ mod tests {
     fn html_escape_encodes_all_special_chars() {
         let escaped = html_escape("& < > \" '");
         assert_eq!(escaped, "&amp; &lt; &gt; &quot; &#x27;");
+    }
+
+    // ── Property tests (V1 — proptest Suite 3) ───────────────────────────────
+
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Any arbitrary input must never produce raw angle brackets in the output.
+        /// This is the primary XSS defence — angle brackets start injected tags.
+        #[test]
+        fn html_escape_no_raw_angle_brackets(s in ".*") {
+            let out = html_escape(&s);
+            prop_assert!(!out.contains('<'), "raw '<' survived html_escape");
+            prop_assert!(!out.contains('>'), "raw '>' survived html_escape");
+        }
+
+        /// OA-12 invariant: every known provider must resolve to a Keychain service name.
+        /// Shrinking targets the specific provider that returns None.
+        #[test]
+        fn known_providers_always_have_keychain_service(
+            provider in prop_oneof![
+                Just("google"),
+                Just("github"),
+                Just("anthropic"),
+                Just("openai"),
+                Just("mistral"),
+                Just("ollama"),
+            ]
+        ) {
+            prop_assert!(provider_keychain_service(provider).is_some());
+        }
     }
 }
