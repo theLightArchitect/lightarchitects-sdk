@@ -150,6 +150,8 @@ pub fn clear_session_cookie_header() -> &'static str {
     "la_session=; HttpOnly; SameSite=Strict; Secure; Path=/; Max-Age=0"
 }
 
+pub mod credential;
+
 // ── AuthGuard extractor ─────────────────────────────────────────────────────
 
 /// Axum extractor that authenticates a request via **either** an

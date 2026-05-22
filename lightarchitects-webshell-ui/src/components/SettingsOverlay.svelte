@@ -7,6 +7,7 @@
   import { saveSettingsDebounced } from '$lib/settings-persistence';
   import { listSkills, resolveSkill, type SkillOverlay } from '$lib/skill-resolver';
   import { listPersonas, resolvePersona, type PersonaOverlay } from '$lib/persona-resolver';
+  import CredentialsPanel from './CredentialsPanel.svelte';
 
   const backends = [
     { id: 'lightarchitects', agent: 'lightarchitects_native', label: 'CLI' },
@@ -21,7 +22,7 @@
   let toast = $state<string | null>(null);
 
   // Tab state
-  let activeTab = $state<'backend' | 'personas' | 'skills'>('backend');
+  let activeTab = $state<'backend' | 'personas' | 'skills' | 'credentials'>('backend');
   let skillsList = $state<SkillOverlay[]>([]);
   let personasList = $state<PersonaOverlay[]>([]);
   let loadingSkills = $state(false);
@@ -128,6 +129,17 @@
       >
         Skills
       </button>
+      <button
+        role="tab"
+        id="tab-credentials"
+        aria-controls="panel-credentials"
+        class="tab-btn"
+        class:selected={activeTab === 'credentials'}
+        aria-selected={activeTab === 'credentials'}
+        onclick={() => { activeTab = 'credentials'; }}
+      >
+        Credentials
+      </button>
     </div>
 
     <!-- Backend tab -->
@@ -205,6 +217,13 @@
             </div>
           {/if}
         </div>
+      </div>
+    {/if}
+
+    <!-- Credentials tab -->
+    {#if activeTab === 'credentials'}
+      <div role="tabpanel" id="panel-credentials" aria-labelledby="tab-credentials">
+        <CredentialsPanel />
       </div>
     {/if}
 

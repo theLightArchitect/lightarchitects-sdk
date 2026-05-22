@@ -42,6 +42,54 @@ asynchronously via `tokio::spawn` in `AppState::new()` — webshell startup is n
 
 **Config template**: `assets/webshell-mcp.json.default` — copy to `~/.lightarchitects/webshell-mcp.json` and update paths. Day-1: 6 siblings + @drawio/mcp + 1 reserve slot.
 
+## Credential Substrate (§2.38 — cli-oauth-multi-provider, 2026-05-22)
+
+6-provider credential management. All persistence via `/usr/bin/security` only (OA-3).
+
+| Provider | Flow | Keychain service |
+|----------|------|-----------------|
+| Anthropic | ApiKey | `la-anthropic-credential` |
+| OpenAI | ApiKey | `la-openai-credential` |
+| Mistral | ApiKey | `la-mistral-credential` |
+| GitHub | RFC 8628 Device Flow | `la-github-credential` |
+| Ollama | CLI subprocess (`ollama list`) | `la-ollama-credential` |
+| Google | OAuth 2.0 PKCE + RFC 8252 loopback | `la-google-credential` |
+
+**8 routes (all require `AuthGuard` except the OAuth callback):**
+
+```
+POST   /api/auth/credential/google/init
+GET    /api/auth/credential/google/callback     # browser redirect — no AuthGuard
+POST   /api/auth/credential/github/device
+POST   /api/auth/credential/github/poll
+POST   /api/auth/credential/ollama/connect
+POST   /api/auth/credential/{provider}/key      # body limit: 2 KB (transport) + 1 KB (handler)
+GET    /api/auth/credential/{provider}/status
+DELETE /api/auth/credential/{provider}
+```
+
+**Security properties enforced:**
+
+- OA-1: PKCE 256-bit CSPRNG, SHA256 challenge (Google only)
+- OA-2: OAuth state UUID validated against `AppState::oauth_states` DashMap; 120 s TTL with background eviction (60 s interval)
+- OA-3: All credential I/O via `/usr/bin/security` argv only — no keyring, no log leakage
+- OA-5: `redirect_uri` locked to `127.0.0.1:{port}` from server config — not user-controllable
+- OA-7/8/10: Tokens and API keys never written to tracing spans
+- OA-9: GitHub Device Flow `interval` ≥ 5 s enforced in route handler
+- OA-12: All 6 service names are distinct compile-time constants (proptest + unit-verified)
+- F7: OAuth error callback HTML-escapes `params.error` before page interpolation (XSS)
+- F8: All keychain + subprocess calls run via `tokio::task::spawn_blocking`
+- F10: `POST /{provider}/key` — `DefaultBodyLimit::max(2 KB)` at transport layer; `MAX_API_KEY_BYTES = 1024` in handler
+
+**`AppState` fields added:**
+
+```rust
+pub oauth_states: Arc<DashMap<Uuid, OAuthPendingState>>   // TTL-evicted every 60 s
+pub credential_store: Arc<DashMap<String, CredentialState>> // in-memory cache
+```
+
+**Worktree spec-file trap**: `~/lightarchitects/soul/helix/user/standards` symlinks to primary worktree. Always edit `~/lightarchitects/worktrees/<codename>/standards/canon/webshell-api-surface-v1.*` — never via the helix path during a feature build.
+
 ## Build
 
 ```bash

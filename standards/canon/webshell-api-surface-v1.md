@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.22"  # bumped 2026-05-21: §2.37 ADDED (cli-multi-provider-backend — extended GET /api/setup/models with family/tool_use/vision/context_k fields; ollama-cloud 17-model registry; openrouter 5-model registry; ⌘⇧M model picker; coming-soon la-cloud gate)
+version: "1.0.23"  # bumped 2026-05-22: §2.38 ADDED (cli-oauth-multi-provider — 8 credential routes, 6-provider OAuth/DeviceFlow/ApiKey/CLI substrate, OA-1..OA-12 security guarantees, CredentialsPanel UI)
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
@@ -1525,6 +1525,133 @@ The `family` field drives grouped display in `ModelStep.svelte` via `$derived.by
 - `BackendStep.svelte` — 7-card grid; `la-cloud` card has `disabled={true}` + `opacity:0.45` + "Coming Soon" badge; `comingSoon` guard in `pick()` and `proceed()` prevents navigation.
 - `ModelStep.svelte` — `$derived.by` computes grouped `Map<family, ModelOption[]>` when any model has `family`; renders family headers + badge row (tools / vision / NNNk context window).
 - `CopilotDrawer.svelte` — `⌘⇧M` shortcut opens model picker overlay (`role="dialog"`, `aria-modal="true"`); `role="listbox"` + `aria-selected` per item; `{#if}` unmount (not `display:none`) ensures SSE/timer cleanup on close.
+
+---
+
+### §2.38 Provider Credential Substrate (cli-oauth-multi-provider — 2026-05-22 ADDITION)
+
+Multi-provider credential management with OAuth PKCE, RFC 8628 Device Flow, API key, and CLI subprocess flows. All routes require `AuthGuard` (Bearer token) except the OAuth callback which is browser-facing. Source: `lightarchitects-webshell/src/auth/credential/`.
+
+#### `AppState` additions
+
+Two new `DashMap` fields added to `AppState` (`src/server/mod.rs`):
+
+| Field | Type | TTL | Purpose |
+|-------|------|-----|---------|
+| `oauth_states` | `Arc<DashMap<Uuid, OAuthPendingState>>` | 120 s | In-flight PKCE state (OA-2) |
+| `credential_store` | `Arc<DashMap<String, CredentialState>>` | session | In-memory connection state cache |
+
+#### `CredentialState` enum (`src/auth/credential/mod.rs`)
+
+```rust
+pub enum CredentialState {
+    NotConnected,   // no credential stored
+    Authenticating, // flow in progress
+    Connected,      // credential present and verified
+    SignedOut,      // operator explicitly revoked
+    RefreshFailed,  // token renewal failed
+}
+```
+
+Serialized as snake_case JSON strings.
+
+#### Route catalogue
+
+| Method | Path | Auth | Flow | Handler |
+|--------|------|------|------|---------|
+| `POST` | `/api/auth/credential/google/init` | Bearer | OAuthRedirect | `google_init` |
+| `GET` | `/api/auth/credential/google/callback` | None | OAuthRedirect | `google_callback` |
+| `POST` | `/api/auth/credential/github/device` | Bearer | DeviceFlow | `github_device_init` |
+| `POST` | `/api/auth/credential/github/poll` | Bearer | DeviceFlow | `github_device_poll` |
+| `POST` | `/api/auth/credential/ollama/connect` | Bearer | CliSubprocess | `ollama_connect` |
+| `POST` | `/api/auth/credential/{provider}/key` | Bearer | ApiKey | `store_api_key` |
+| `GET` | `/api/auth/credential/{provider}/status` | Bearer | all | `provider_status` |
+| `DELETE` | `/api/auth/credential/{provider}` | Bearer | all | `provider_revoke` |
+
+Valid `{provider}` values: `google`, `github`, `anthropic`, `openai`, `mistral`, `ollama`.
+
+#### `POST /api/auth/credential/google/init` — Start Google OAuth
+
+Returns a Google authorization URL including PKCE challenge (OA-1), state UUID (OA-2), and locked redirect URI (OA-5). Reads `LA_GOOGLE_CLIENT_ID` from env.
+
+```json
+{ "redirect_url": "https://accounts.google.com/o/oauth2/v2/auth?..." }
+```
+
+#### `GET /api/auth/credential/google/callback` — OAuth Callback
+
+Validates CSRF state (OA-2: consumed on first use, expires at 120 s), exchanges code for refresh token, stores via Keychain subprocess (OA-3). Returns self-closing HTML.
+
+#### `POST /api/auth/credential/github/device` — Start Device Flow
+
+Calls `github.com/login/device/code` (RFC 8628 §3.2). Reads `LA_GITHUB_CLIENT_ID`.
+
+```json
+{
+  "user_code": "WDJB-MJHT",
+  "verification_uri": "https://github.com/login/device",
+  "device_code": "<opaque>",
+  "expires_in": 900,
+  "interval": 5
+}
+```
+
+`interval` is the minimum seconds between polls. Never returned below 5 (OA-9).
+
+#### `POST /api/auth/credential/github/poll` — Poll Device Flow
+
+```json
+// Request
+{ "device_code": "<opaque from /device>" }
+
+// Response
+{ "status": "pending" | "connected" | "slow_down" | "denied" | "expired" }
+```
+
+On `connected`, access token stored via Keychain subprocess (OA-3). On `slow_down`, UI must double the poll interval.
+
+#### `POST /api/auth/credential/ollama/connect` — Verify Ollama
+
+Runs `ollama list` via `CliSubprocess` (absolute binary path — Gate 1 F3). On success, stores `"connected"` sentinel in Keychain. Returns `201 Created` or `503 Service Unavailable`.
+
+#### `POST /api/auth/credential/{provider}/key` — Store API Key
+
+Request body: `{ "key": "<api-key>" }`. Key written via Keychain subprocess only (OA-3). Never appears in `tracing` spans (OA-7/8/10). Returns `201 Created`.
+
+#### `GET /api/auth/credential/{provider}/status` — Connection State
+
+Checks in-memory cache first; falls back to Keychain probe.
+
+```json
+{ "provider": "anthropic", "state": "connected" }
+```
+
+#### `DELETE /api/auth/credential/{provider}` — Revoke
+
+Deletes Keychain entry; updates in-memory cache to `signed_out`. Returns `204 No Content`.
+
+#### Security properties (OA-series)
+
+| Property | Guarantee |
+|----------|-----------|
+| OA-1 | PKCE: 32 bytes CSPRNG, SHA256 S256 challenge |
+| OA-2 | CSRF state: UUID keyed in `AppState::oauth_states`; consumed on first callback; 120 s TTL |
+| OA-3 | All secrets: `/usr/bin/security` subprocess only; never env, never keyring |
+| OA-5 | Redirect URI locked to `http://127.0.0.1:{port}/...`; never user-supplied |
+| OA-7/8/10 | API keys and tokens never appear in `tracing` spans |
+| OA-9 | Device Flow poll interval enforced ≥ 5 s |
+| OA-12 | Per-provider Keychain service names: `la-{provider}-credential` (compile-time constants) |
+
+#### Frontend components (`lightarchitects-webshell-ui/src/components/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `CredentialsPanel.svelte` | Tab panel listing all 6 providers; wired into `SettingsOverlay` |
+| `CredentialRow.svelte` | Per-provider status dot + connect/disconnect button |
+| `ApiKeyInputModal.svelte` | Password input modal for ApiKey providers |
+| `DeviceFlowModal.svelte` | GitHub Device Flow: shows user_code, opens browser, polls, handles backoff |
+
+`SettingsOverlay.svelte` gains a `'credentials'` tab (fourth tab after Backend / Personas / Skills).
 
 ---
 
