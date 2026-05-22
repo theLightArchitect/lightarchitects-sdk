@@ -671,11 +671,24 @@ fn success_page(provider: &str) -> String {
     )
 }
 
+/// HTML-encode a string for safe interpolation into an HTML body.
+///
+/// Prevents reflected XSS when user-controlled input (e.g. `params.error`
+/// from an OAuth redirect) is included in a response page.
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
+}
+
 /// Error HTML page shown on OAuth failure.
 fn error_page(msg: &str) -> String {
+    let safe = html_escape(msg);
     format!(
         r"<!DOCTYPE html><html><head><title>Authentication Error</title></head>
-<body><p>Error: {msg}</p><p>Close this tab and try again.</p></body></html>"
+<body><p>Error: {safe}</p><p>Close this tab and try again.</p></body></html>"
     )
 }
 
@@ -733,5 +746,24 @@ mod tests {
     fn error_page_contains_message() {
         let html = error_page("test error");
         assert!(html.contains("test error"));
+    }
+
+    #[test]
+    fn error_page_escapes_html_injection() {
+        let html = error_page("<script>alert(1)</script>");
+        assert!(
+            !html.contains("<script>"),
+            "XSS payload must not appear raw in output"
+        );
+        assert!(
+            html.contains("&lt;script&gt;"),
+            "payload must be HTML-escaped"
+        );
+    }
+
+    #[test]
+    fn html_escape_encodes_all_special_chars() {
+        let escaped = html_escape("& < > \" '");
+        assert_eq!(escaped, "&amp; &lt; &gt; &quot; &#x27;");
     }
 }
