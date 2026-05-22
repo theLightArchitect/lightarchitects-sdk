@@ -41,16 +41,39 @@
 //!
 //! [`LlmAgentProvider`]: crate::agent::LlmAgentProvider
 
+pub mod ach;
 pub mod budget;
 pub mod compose;
+pub mod cove;
 pub mod critique_refine;
+pub mod ensemble;
 pub mod error;
+pub mod itt;
 pub mod phase_span;
+pub mod react;
+pub mod reflexion;
 pub mod runner;
 pub mod trace;
 
+pub use ach::{
+    AchExecutor, AchPhase, AchScoringEngine, AchState, AchStrategy, ConfidenceLevel,
+    HypothesisTest, Prediction, TestResult, TestType,
+};
 pub use budget::Budget;
 pub use compose::{Layered, Parallel, Then};
+pub use cove::{
+    ClaimCategory, CoVeExecutor, CoVePhase, CoVeResult, CoVeState, CoVeStrategy,
+    VerificationStatus, VerifiedClaim,
+};
 pub use critique_refine::CritiqueRefineStrategy;
+pub use ensemble::{EnsembleState, EnsembleStrategy};
 pub use error::LoopError;
+pub use itt::{
+    EvidenceRef, InvestigationTaskTree, IttExecutor, IttStrategy, NodeId, QPhase, TreeNode,
+    VerificationResult,
+};
+pub use react::{ReActExecutor, ReActPhase, ReActPrompt, ReActStep, ReActStrategy};
+pub use reflexion::{
+    ReflexionEntry, ReflexionExecutor, ReflexionLoopState, ReflexionState, ReflexionStrategy,
+};
 pub use runner::{LoopRunner, Outcome, StepContext, StepResult, Strategy};
