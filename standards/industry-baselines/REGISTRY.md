@@ -9,7 +9,7 @@
 **Expanded**: 2026-05-04 (added 22 standards across D2/D4/D5/D6/D8/cross-cutting domains per gap analysis)
 **Reorganized**: 2026-05-04 (parent folders by LASDLC gate; issuing body retained as subfolder); **Expanded**: 2026-05-05 (gate vocabulary updated to [A+S+Q+C+O+P+K+D+T+R]; research/ folder added for [R] gate)
 **Refreshed**: 2026-05-12 (14 baseline files updated to latest official versions: ATT&CK v15→v19.1, SLSA v1.0→v1.2, NIST 800-63B→800-63-4 + 800-63B-4, OWASP ASVS v4.0→v5.0.0, CWE Top 25 2024→2025, OTel 1.29.0→1.56.0, DORA 2024→2025, SPDX v2.3→v3.0.1, OWASP LLM v1.1 deleted in favour of v2.0)
-**Total entries**: 54 (40 live-pulled + 8 academic + 6 paid-stubs)
+**Total entries**: 61 (47 live-pulled + 8 academic + 6 paid-stubs) — +7 added 2026-05-22 (Khadas Edge2 hardware/NPU/add-ons, Khadas Captain carrier board, Rockchip RK3588 RKLLM benchmarks, Ollama cloud routing)
 
 ---
 
@@ -47,6 +47,11 @@ Issuing body is preserved as a subfolder within each gate (e.g. `security/owasp/
 | Source | Status | File | Original URL | Re-pull |
 |--------|--------|------|--------------|---------|
 | **IEEE/ISO/IEC 42010:2022** (Architecture Description) | 🔒 SCAFFOLDED | `architecture/ieee/ieee-42010-2022-stub.md` | https://standards.ieee.org/ieee/42010/6846/ | per IEEE/ISO revision |
+
+### Khadas (Edge SBC carrier-board reference)
+| Source | Status | File | Original URL | Re-pull |
+|--------|--------|------|--------------|---------|
+| **Khadas Captain Carrier Board for Edge** | ✓ POPULATED | `architecture/khadas/khadas-captain-carrier-board-2026-05-22.md` | https://www.khadas.com/captain | per Khadas product revision |
 
 ## [S] Security
 
@@ -137,6 +142,11 @@ Issuing body is preserved as a subfolder within each gate (e.g. `security/owasp/
 | **Little 1961** — L = λW queuing | 📚 ACADEMIC | `performance/academic/little/little-1961.md` | Little, Operations Research 1961 | NEVER |
 | **Critical Path Method 1959** | 📚 ACADEMIC | `performance/academic/critical-path/kelley-walker-1959.md` | Kelley & Walker, EJCC 1959 | NEVER |
 
+### Rockchip RK3588 NPU inference
+| Source | Status | File | Original URL | Re-pull |
+|--------|--------|------|--------------|---------|
+| **DeepSeek-R1-Distill-Qwen-1.5B on RK3588 NPU (RKLLM benchmarks)** | ✓ POPULATED | `performance/rockchip/rk3588-npu-rkllm-benchmarks-2026-05-22.md` | https://www.electronics-lab.com/deepseek-r1-distill-qwen-1-5b-ai-model-deployed-on-rockchip-rk3588-soc-using-rkllm-toolkit/ | per RKLLM toolkit revision |
+
 ## [T] Testing
 
 | Source | Status | File | Original URL / Citation | Re-pull |
@@ -181,6 +191,19 @@ _Placeholder — no external standards anchored yet. See `documentation/README.m
 |--------|--------|------|----------|---------|
 | **SPACE Framework 2021** | 📚 ACADEMIC | `operations/academic/space/forsgren-2021.md` | Forsgren et al., ACM Queue 2021 | NEVER |
 | **Flow Framework 2018** | 📚 ACADEMIC | `operations/academic/flow/kersten-2018.md` | Kersten, IT Revolution 2018 | NEVER |
+
+### Khadas (Edge2 SBC operations)
+| Source | Status | File | Original URL | Re-pull |
+|--------|--------|------|--------------|---------|
+| **Khadas Edge2 Overview** (RK3588S spec) | ✓ POPULATED | `operations/khadas/khadas-edge2-overview-2026-05-22.md` | https://docs.khadas.com/products/sbc/edge2/start | per Khadas docs revision |
+| **Khadas Edge2 Hardware Interfaces** | ✓ POPULATED | `operations/khadas/khadas-edge2-hardware-interfaces-2026-05-22.md` | https://docs.khadas.com/products/sbc/edge2/hardware/interfaces | per Khadas docs revision |
+| **Khadas Edge2 NPU LLM Guide** (`khadas_llm.sh`) | ✓ POPULATED | `operations/khadas/khadas-edge2-npu-llm-guide-2026-05-22.md` | https://docs.khadas.com/products/sbc/edge2/npu/llm-on-edge2 | per Khadas docs revision |
+| **Khadas Edge2 Add-ons Catalogue** | ✓ POPULATED | `operations/khadas/khadas-edge2-addons-2026-05-22.md` | https://docs.khadas.com/products/sbc/edge2/add-ons/start | per Khadas docs revision |
+
+### Ollama (LLM runtime)
+| Source | Status | File | Original URL | Re-pull |
+|--------|--------|------|--------------|---------|
+| **Ollama Cloud Models — `:cloud` routing behaviour** | ✓ POPULATED | `operations/ollama/ollama-cloud-models-2026-05-22.md` | https://docs.ollama.com/cloud | per Ollama docs revision |
 
 ---
 
