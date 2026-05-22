@@ -872,79 +872,81 @@
       <span>TERM</span>
     </button>
 
-    <!-- ZONE B — Preset chip only (center, grows; stats live in StatsTopbar) -->
-    <div class="hdr-center">
-      {#if open}
+    <!-- Spacer — pushes ghost actions and collapse to the right -->
+    <div class="hdr-spacer"></div>
+
+    <!-- Ghost actions — invisible at rest, reveal on header hover (CSS only, no JS) -->
+    {#if open}
+      <div class="hdr-actions" role="toolbar" aria-label="Copilot actions">
+
+        <!-- Preset chip — leftmost in ghost group -->
         <button
           onclick={() => quickPickOpen.set(true)}
           class="hdr-preset"
           title="Active preset — click to change"
-        >
-          {PRESET_DISPLAY[$selectedPreset]}
-        </button>
-      {/if}
-    </div>
+        >{PRESET_DISPLAY[$selectedPreset]}</button>
 
-    <!-- ZONE C — Icon-only actions (right column cells) -->
-    {#if open}
-      {#if !$sseConnected && $currentBuildId}
-        <button
-          onclick={() => reconnectSSE($currentBuildId!)}
-          class="hdr-action hdr-action--warn"
-          title="SSE disconnected — click to reconnect"
-          aria-label="Reconnect SSE stream"
-        >⟳</button>
-      {/if}
-
-      {#if mode === 'chat'}
-        <button
-          onclick={forkToTerminal}
-          disabled={!canFork || forking}
-          class="hdr-action {canFork && !forking ? 'hdr-action--gold' : 'hdr-action--disabled'}"
-          title="{canFork ? 'Fork conversation to terminal (claude --resume)' : 'Send a message before forking'}"
-          aria-label="Fork to terminal"
-        >↗</button>
-        <button
-          onclick={() => { showSearch = !showSearch; if (!showSearch) searchQuery = ''; }}
-          class="hdr-action {showSearch ? 'hdr-action--on' : ''}"
-          title="Search history (Ctrl+F)"
-          aria-label="Toggle history search"
-        >⌕</button>
-        <button
-          onclick={() => { clearCopilotHistory(); searchQuery = ''; showSearch = false; }}
-          class="hdr-action"
-          title="Clear history"
-          aria-label="Clear chat history"
-        >✕</button>
-      {/if}
-
-      <button
-        onclick={() => { positionMode = positionMode === 'drawer' ? 'overlay' : 'drawer'; }}
-        class="hdr-action {positionMode === 'overlay' ? 'hdr-action--on' : ''}"
-        title="Toggle floating overlay mode"
-        aria-label="Toggle position mode"
-      >{positionMode === 'overlay' ? '⊠' : '⊡'}</button>
-
-      <div class="hdr-action-wrap" style="position: relative;">
-        <button
-          onclick={() => settingsOpen.update(v => !v)}
-          class="hdr-action {$settingsOpen ? 'hdr-action--on' : ''}"
-          title="Model / backend settings"
-          aria-label="Settings"
-        >⚙</button>
-        {#if $settingsOpen}
-          <div class="absolute bottom-full right-0 mb-1">
-            <SettingsOverlay />
-          </div>
+        <!-- SSE warn (persistent when disconnected) -->
+        {#if !$sseConnected && $currentBuildId}
+          <button
+            onclick={() => reconnectSSE($currentBuildId!)}
+            class="hdr-action hdr-action--warn"
+            title="SSE disconnected — reconnect"
+            aria-label="Reconnect SSE"
+          >⟳</button>
         {/if}
+
+        {#if mode === 'chat'}
+          <button
+            onclick={forkToTerminal}
+            disabled={!canFork || forking}
+            class="hdr-action {canFork && !forking ? 'hdr-action--gold' : 'hdr-action--disabled'}"
+            title="{canFork ? 'Fork to terminal (claude --resume)' : 'Send a message first'}"
+            aria-label="Fork to terminal"
+          >↗</button>
+          <button
+            onclick={() => { showSearch = !showSearch; if (!showSearch) searchQuery = ''; }}
+            class="hdr-action {showSearch ? 'hdr-action--on' : ''}"
+            title="Search history (Ctrl+F)"
+            aria-label="Search history"
+          >⌕</button>
+          <button
+            onclick={() => { clearCopilotHistory(); searchQuery = ''; showSearch = false; }}
+            class="hdr-action"
+            title="Clear history"
+            aria-label="Clear chat history"
+          >✕</button>
+        {/if}
+
+        <button
+          onclick={() => { positionMode = positionMode === 'drawer' ? 'overlay' : 'drawer'; }}
+          class="hdr-action {positionMode === 'overlay' ? 'hdr-action--on' : ''}"
+          title="Toggle overlay mode"
+          aria-label="Toggle position mode"
+        >{positionMode === 'overlay' ? '⊠' : '⊡'}</button>
+
+        <div class="hdr-action-wrap" style="position: relative;">
+          <button
+            onclick={() => settingsOpen.update(v => !v)}
+            class="hdr-action {$settingsOpen ? 'hdr-action--on' : ''}"
+            title="Settings"
+            aria-label="Settings"
+          >⚙</button>
+          {#if $settingsOpen}
+            <div class="absolute bottom-full right-0 mb-1">
+              <SettingsOverlay />
+            </div>
+          {/if}
+        </div>
+
       </div>
     {/if}
 
-    <!-- Collapse / expand — always rightmost -->
+    <!-- Collapse / expand — always visible, never ghosted -->
     <button
       onclick={() => { open = !open; }}
       class="hdr-action hdr-collapse"
-      title="{open ? 'Collapse copilot (Ctrl+`)' : 'Open copilot (Ctrl+`)'}"
+      title="{open ? 'Collapse (Ctrl+`)' : 'Open (Ctrl+`)'}"
       aria-label="{open ? 'Collapse' : 'Expand'} copilot"
     >{open ? '◂' : '▸'}</button>
   </div>
@@ -1335,80 +1337,54 @@
     color: var(--la-focus-ring, #FFD700);
   }
 
-  /* ZONE B — Identity + context (grows) */
-  .hdr-center {
+  /* Spacer — pushes ghost actions to the right */
+  .hdr-spacer {
+    flex: 1;
+  }
+
+  /* Ghost actions — invisible at rest, reveal on header hover.
+     CSS-only: no JS state needed. focus-within keeps them visible
+     for keyboard users once they tab into the group. */
+  .hdr-actions {
+    display: flex;
+    align-items: stretch;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 100ms ease;
+  }
+  .copilot-header:hover .hdr-actions,
+  .hdr-actions:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .hdr-actions .hdr-action-wrap {
+    display: flex;
+    align-items: stretch;
+    flex-shrink: 0;
+  }
+
+  /* Preset chip — inside ghost group */
+  .hdr-preset {
     display: flex;
     align-items: center;
-    gap: 5px;
-    flex: 1;
+    height: 100%;
     padding: 0 8px;
-    overflow: hidden;
-    min-width: 0;
-  }
-  .hdr-eva {
+    font-family: var(--la-font-mono, monospace);
     font-size: 8px;
     font-weight: 700;
-    letter-spacing: 0.14em;
-    color: var(--la-text-mute, #6e7681);
-    flex-shrink: 0;
-  }
-  .hdr-dot {
-    width: 4px;
-    height: 4px;
-    border-radius: 50%;
-    background: var(--la-text-dim, #a4b4c2);
-    flex-shrink: 0;
-  }
-  .hdr-dot--live {
-    background: #22c55e;
-    box-shadow: 0 0 4px rgba(34, 197, 94, 0.6);
-  }
-  .hdr-build-id {
-    font-size: 8px;
-    letter-spacing: 0.06em;
-    color: var(--la-text-dim, #a4b4c2);
-    flex-shrink: 0;
-  }
-  .hdr-preset {
-    font-size: 8px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--la-text-dim, #a4b4c2);
-    background: var(--la-bg-elev-1, #111214);
-    border: 1px solid var(--la-hair-faint, #1c2028);
-    border-radius: 0;
-    padding: 1px 5px;
+    color: var(--la-text-mute, #6e7681);
+    background: transparent;
+    border: none;
+    border-left: 1px solid var(--la-drawer-border, #1c2028);
     cursor: pointer;
     flex-shrink: 0;
-    transition: color 80ms, border-color 80ms;
+    transition: color 80ms, background 80ms;
   }
   .hdr-preset:hover {
     color: var(--la-focus-ring, #FFD700);
-    border-color: rgba(255, 215, 0, 0.3);
-  }
-  .hdr-sep {
-    width: 1px;
-    height: 10px;
-    background: var(--la-hair-faint, #1c2028);
-    flex-shrink: 0;
-  }
-  .hdr-stat {
-    display: inline-flex;
-    align-items: center;
-    gap: 1px;
-    font-size: 9px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    color: var(--la-text-dim, #a4b4c2);
-    flex-shrink: 0;
-  }
-  .hdr-stat--alert {
-    color: var(--la-semantic-warn, #f59e0b);
-  }
-  .hdr-stat-icon {
-    font-size: 8px;
-    color: var(--la-text-mute, #6e7681);
+    background: rgba(255, 215, 0, 0.04);
   }
 
   /* ZONE C — Icon-only action cells */
