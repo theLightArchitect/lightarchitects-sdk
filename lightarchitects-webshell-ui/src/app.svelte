@@ -2,7 +2,6 @@
   import { writable } from 'svelte/store';
   import { onMount } from 'svelte';
   import Helix3D from './components/Helix3D.svelte';
-  import StatusBar from './components/StatusBar.svelte';
   import CommandPalette from './components/CommandPalette.svelte';
   import SetupFlow from './screens/setup/SetupFlow.svelte';
   import CopilotDrawer from './components/CopilotDrawer.svelte';
@@ -557,7 +556,6 @@
   {/if}
   <!-- Global events overlay (Wave 1.5) — push-not-occlude, 320px right panel -->
   <GlobalEventsOverlay route={activeRoute} />
-  <StatusBar />
   <CommandPalette />
   <CopilotDrawer />
   <PolytopeButton />

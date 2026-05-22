@@ -776,6 +776,26 @@
     return () => window.removeEventListener('la:open-copilot', handler);
   });
 
+  // Polytope radial menu bridge — PolytopeButton fan actions route through
+  // window events so the button doesn't need to import this drawer's internals.
+  $effect(() => {
+    const forkHandler  = () => { if (!forking) void forkToTerminal(); };
+    const searchHandler = () => { showSearch = !showSearch; if (!showSearch) searchQuery = ''; };
+    const clearHandler  = () => { clearCopilotHistory(); searchQuery = ''; showSearch = false; };
+    const posHandler    = () => { positionMode = positionMode === 'drawer' ? 'overlay' : 'drawer'; };
+
+    window.addEventListener('la:copilot-fork',     forkHandler);
+    window.addEventListener('la:copilot-search',   searchHandler);
+    window.addEventListener('la:copilot-clear',    clearHandler);
+    window.addEventListener('la:copilot-position', posHandler);
+    return () => {
+      window.removeEventListener('la:copilot-fork',     forkHandler);
+      window.removeEventListener('la:copilot-search',   searchHandler);
+      window.removeEventListener('la:copilot-clear',    clearHandler);
+      window.removeEventListener('la:copilot-position', posHandler);
+    };
+  });
+
   // ── E2E injection bridge ────────────────────────────────────────────────────
   // Only active in dev/test. Allows Playwright tests to inject synthetic
   // AgentEvents without a real WebSocket connection.
