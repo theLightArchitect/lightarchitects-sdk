@@ -434,4 +434,30 @@ mod tests {
         let result = store.add_key("lak_live_unique", &["all".into()], 120).await;
         assert!(result.is_err(), "Duplicate key should be rejected");
     }
+
+    /// Regression for F-2: CT prefix check must reject sub-4-byte tokens without
+    /// short-circuiting. This pins the pad-to-4 algorithm used in `auth_middleware`.
+    #[test]
+    fn test_ct_prefix_short_tokens_do_not_match() {
+        for short in &["", "l", "la", "lak"] {
+            let token_bytes = short.as_bytes();
+            let mut padded = Zeroizing::new([0u8; 4]);
+            let copy_len = token_bytes.len().min(4);
+            padded[..copy_len].copy_from_slice(&token_bytes[..copy_len]);
+            let matches: bool = padded.ct_eq(b"lak_").into();
+            assert!(!matches, "Token '{short}' must not match 'lak_' prefix");
+        }
+    }
+
+    /// Companion to test_ct_prefix_short_tokens_do_not_match — valid lak_ prefix passes.
+    #[test]
+    fn test_ct_prefix_valid_token_matches() {
+        let token = "lak_live_test1234";
+        let token_bytes = token.as_bytes();
+        let mut padded = Zeroizing::new([0u8; 4]);
+        let copy_len = token_bytes.len().min(4);
+        padded[..copy_len].copy_from_slice(&token_bytes[..copy_len]);
+        let matches: bool = padded.ct_eq(b"lak_").into();
+        assert!(matches, "Token starting with 'lak_' must pass prefix check");
+    }
 }

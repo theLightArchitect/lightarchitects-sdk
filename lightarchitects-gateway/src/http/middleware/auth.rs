@@ -244,3 +244,27 @@ fn scope_error() -> impl IntoResponse {
         })),
     )
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+    use axum::response::IntoResponse;
+
+    /// Regression for NF-2: HTTP 401 must include RFC 7235 §3.1 `WWW-Authenticate` header.
+    #[test]
+    fn test_unauthorized_includes_www_authenticate() {
+        let response = unauthorized().into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let header = response.headers().get(axum::http::header::WWW_AUTHENTICATE);
+        assert!(
+            header.is_some(),
+            "HTTP 401 must include WWW-Authenticate header (RFC 7235 §3.1)"
+        );
+        assert_eq!(
+            header.unwrap(),
+            r#"Bearer realm="lightarchitects""#,
+            "WWW-Authenticate must declare Bearer scheme with realm"
+        );
+    }
+}
