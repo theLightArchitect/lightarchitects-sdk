@@ -591,6 +591,22 @@ pub fn build_app(state: AppState) -> Router {
             get(crate::auth::credential::routes::google_callback),
         )
         .route(
+            "/api/auth/credential/github/device",
+            post(crate::auth::credential::routes::github_device_init),
+        )
+        .route(
+            "/api/auth/credential/github/poll",
+            post(crate::auth::credential::routes::github_device_poll),
+        )
+        .route(
+            "/api/auth/credential/ollama/connect",
+            post(crate::auth::credential::routes::ollama_connect),
+        )
+        .route(
+            "/api/auth/credential/{provider}/key",
+            post(crate::auth::credential::routes::store_api_key),
+        )
+        .route(
             "/api/auth/credential/{provider}/status",
             get(crate::auth::credential::routes::provider_status),
         )

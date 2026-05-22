@@ -10,12 +10,22 @@
 //! | [`flow`] | `CredentialFlow` enum — acquisition protocol per provider |
 //! | [`pkce`] | PKCE challenge generation (OA-1) |
 //! | [`keychain`] | macOS Keychain subprocess helpers (OA-3, OA-12) |
-//! | [`google`] | `GoogleCredentialProvider` |
+//! | [`google`] | `GoogleCredentialProvider` — OAuth PKCE redirect |
+//! | [`github`] | `GitHubCredentialProvider` — RFC 8628 Device Flow |
+//! | [`anthropic`] | `AnthropicCredentialProvider` — API key |
+//! | [`openai`] | `OpenAiCredentialProvider` — API key |
+//! | [`mistral`] | `MistralCredentialProvider` — API key |
+//! | [`ollama`] | `OllamaCredentialProvider` — CLI subprocess |
 //! | [`routes`] | Axum handlers registered in `build_app` |
 
+pub mod anthropic;
 pub mod flow;
+pub mod github;
 pub mod google;
 pub mod keychain;
+pub mod mistral;
+pub mod ollama;
+pub mod openai;
 pub mod pkce;
 pub mod routes;
 

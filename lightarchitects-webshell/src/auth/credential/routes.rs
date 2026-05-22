@@ -6,13 +6,18 @@
 //! |--------|------|------|-------------|
 //! | POST | `/api/auth/credential/google/init` | Bearer | Start Google OAuth PKCE flow |
 //! | GET | `/api/auth/credential/google/callback` | None | OAuth callback (browser redirect) |
+//! | POST | `/api/auth/credential/github/device` | Bearer | Start GitHub Device Flow |
+//! | POST | `/api/auth/credential/github/poll` | Bearer | Poll for GitHub token |
+//! | POST | `/api/auth/credential/ollama/connect` | Bearer | Verify Ollama daemon via CLI |
+//! | POST | `/api/auth/credential/{provider}/key` | Bearer | Store API key (anthropic/openai/mistral) |
 //! | GET | `/api/auth/credential/{provider}/status` | Bearer | Connection state |
 //! | DELETE | `/api/auth/credential/{provider}` | Bearer | Revoke stored credential |
 //!
 //! Security properties enforced here:
 //! - OA-2: `state` UUID validated against `AppState::oauth_states`; expired entries rejected.
 //! - OA-5: `redirect_uri` constructed from the locked `127.0.0.1:{port}` address.
-//! - OA-7 / OA-8: Tokens never written to `tracing` spans.
+//! - OA-7 / OA-8 / OA-10: Tokens and API keys never written to `tracing` spans.
+//! - OA-9: GitHub Device Flow `interval` field enforced ≥ 5 s.
 
 use axum::{
     Json,
@@ -27,9 +32,11 @@ use uuid::Uuid;
 use crate::{
     auth::AuthGuard,
     auth::credential::{
-        CredentialState, OAuthPendingState, ProviderCredentialProvider,
+        CredentialFlow, CredentialState, OAuthPendingState, ProviderCredentialProvider,
+        github::{self, GitHubCredentialProvider},
         google::{self, GoogleCredentialProvider},
         keychain,
+        ollama::OllamaCredentialProvider,
     },
     server::AppState,
 };
@@ -341,15 +348,316 @@ pub async fn provider_revoke(
     Ok(StatusCode::NO_CONTENT)
 }
 
+// ── POST /api/auth/credential/{provider}/key ──────────────────────────────────
+
+/// Request body for storing an API key (OA-7, OA-8, OA-10).
+#[derive(Debug, Deserialize)]
+pub struct StoreKeyRequest {
+    /// API key — never logged (OA-7/8/10).
+    pub key: String,
+}
+
+/// Stores a static API key in the macOS Keychain for `ApiKey` providers.
+///
+/// Accepts `anthropic`, `openai`, and `mistral` as provider identifiers.
+/// The key is written via Keychain subprocess only (OA-3) and never logged.
+///
+/// # Errors
+///
+/// Returns `404` for unknown providers, `500` when the Keychain write fails.
+pub async fn store_api_key(
+    _auth: AuthGuard,
+    State(state): State<AppState>,
+    Path(provider): Path<String>,
+    Json(body): Json<StoreKeyRequest>,
+) -> Result<StatusCode, Response> {
+    let service = provider_keychain_service(&provider).ok_or_else(|| {
+        err(
+            StatusCode::NOT_FOUND,
+            format!("unknown provider: {provider}"),
+        )
+    })?;
+
+    keychain::keychain_set(service, &body.key).map_err(|e| {
+        tracing::error!(target: "credential", provider = %provider, error = %e, "keychain set failed");
+        err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to store credential in Keychain",
+        )
+    })?;
+
+    state
+        .credential_store
+        .insert(provider.clone(), CredentialState::Connected);
+    tracing::info!(target: "credential", provider = %provider, "API key stored");
+    Ok(StatusCode::CREATED)
+}
+
+// ── POST /api/auth/credential/github/device ───────────────────────────────────
+
+/// Internal GitHub device code response shape (RFC 8628 §3.2).
+#[derive(Debug, Deserialize)]
+struct GitHubDeviceCodeResponse {
+    device_code: String,
+    user_code: String,
+    verification_uri: String,
+    expires_in: u64,
+    interval: u64,
+}
+
+/// Response returned to the UI for the device flow initiation.
+#[derive(Debug, Serialize)]
+pub struct GitHubDeviceResponse {
+    /// Code the operator enters at `verification_uri`.
+    pub user_code: String,
+    /// URL the operator opens in a browser.
+    pub verification_uri: String,
+    /// Opaque device code — passed back in poll requests.
+    pub device_code: String,
+    /// Seconds until the device code expires.
+    pub expires_in: u64,
+    /// Minimum seconds between poll requests (OA-9 — enforced ≥ 5).
+    pub interval: u64,
+}
+
+/// Initiates the GitHub Device Flow (RFC 8628, OA-9).
+///
+/// Calls `github.com/login/device/code` with the configured client ID and
+/// returns the `user_code` + `verification_uri` for the operator to complete
+/// authentication on any browser.
+///
+/// # Errors
+///
+/// Returns `503` when `LA_GITHUB_CLIENT_ID` is not set, `502` on GitHub
+/// HTTP errors.
+pub async fn github_device_init(
+    _auth: AuthGuard,
+    State(_state): State<AppState>,
+) -> Result<Json<GitHubDeviceResponse>, Response> {
+    let client_id = std::env::var("LA_GITHUB_CLIENT_ID").map_err(|_| {
+        err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "LA_GITHUB_CLIENT_ID not configured",
+        )
+    })?;
+
+    let http = reqwest::Client::new();
+    let resp = http
+        .post(github::DEVICE_CODE_URL)
+        .header("Accept", "application/json")
+        .form(&[("client_id", client_id.as_str())])
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!(target: "credential.github", error = %e, "device code request failed");
+            err(StatusCode::BAD_GATEWAY, "GitHub device code request failed")
+        })?;
+
+    let device: GitHubDeviceCodeResponse = resp.json().await.map_err(|e| {
+        tracing::error!(target: "credential.github", error = %e, "device code parse error");
+        err(
+            StatusCode::BAD_GATEWAY,
+            "GitHub device code response malformed",
+        )
+    })?;
+
+    Ok(Json(GitHubDeviceResponse {
+        user_code: device.user_code,
+        verification_uri: device.verification_uri,
+        device_code: device.device_code,
+        expires_in: device.expires_in,
+        interval: device.interval.max(5), // OA-9: never below 5 s
+    }))
+}
+
+// ── POST /api/auth/credential/github/poll ────────────────────────────────────
+
+/// Request body for polling the GitHub Device Flow.
+#[derive(Debug, Deserialize)]
+pub struct GitHubPollRequest {
+    /// Device code returned by `github/device` — passed back to identify the
+    /// in-flight authorization.
+    pub device_code: String,
+}
+
+/// Poll outcome.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GitHubPollStatus {
+    /// Token received and stored in the Keychain.
+    Connected,
+    /// Operator has not yet approved — keep polling.
+    Pending,
+    /// GitHub says to slow down; the UI should double the interval.
+    SlowDown,
+    /// Operator denied access.
+    Denied,
+    /// Device code expired; restart the flow.
+    Expired,
+}
+
+/// Poll response body.
+#[derive(Debug, Serialize)]
+pub struct GitHubPollResponse {
+    /// Current polling outcome.
+    pub status: GitHubPollStatus,
+}
+
+/// Internal GitHub token poll response (RFC 8628 §3.5).
+#[derive(Debug, Deserialize)]
+struct GitHubTokenPollResponse {
+    access_token: Option<String>,
+    error: Option<String>,
+}
+
+/// Polls GitHub for a Device Flow token (RFC 8628, OA-9).
+///
+/// Makes a single poll attempt against `github.com/login/oauth/access_token`.
+/// On success, stores the access token in the Keychain (OA-3) and returns
+/// `{ status: "connected" }`.  The UI continues polling until `connected` or
+/// a terminal state (`denied` / `expired`).
+///
+/// # Errors
+///
+/// Returns `503` when `LA_GITHUB_CLIENT_ID` is not set, `502` on HTTP errors.
+pub async fn github_device_poll(
+    _auth: AuthGuard,
+    State(state): State<AppState>,
+    Json(body): Json<GitHubPollRequest>,
+) -> Result<Json<GitHubPollResponse>, Response> {
+    let client_id = std::env::var("LA_GITHUB_CLIENT_ID").map_err(|_| {
+        err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "LA_GITHUB_CLIENT_ID not configured",
+        )
+    })?;
+
+    let http = reqwest::Client::new();
+    let resp = http
+        .post(github::POLL_URL)
+        .header("Accept", "application/json")
+        .form(&[
+            ("client_id", client_id.as_str()),
+            ("device_code", body.device_code.as_str()),
+            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+        ])
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!(target: "credential.github", error = %e, "poll request failed");
+            err(StatusCode::BAD_GATEWAY, "GitHub poll request failed")
+        })?;
+
+    let poll: GitHubTokenPollResponse = resp.json().await.map_err(|e| {
+        tracing::error!(target: "credential.github", error = %e, "poll response parse error");
+        err(StatusCode::BAD_GATEWAY, "GitHub poll response malformed")
+    })?;
+
+    if let Some(token) = poll.access_token {
+        // OA-3: store token via Keychain subprocess; never logged.
+        GitHubCredentialProvider
+            .store_credential(&token)
+            .map_err(|e| {
+                tracing::error!(target: "credential.github", error = %e, "keychain store failed");
+                err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to store GitHub credential",
+                )
+            })?;
+        state
+            .credential_store
+            .insert("github".to_owned(), CredentialState::Connected);
+        tracing::info!(target: "credential.github", "GitHub token stored — provider connected");
+        return Ok(Json(GitHubPollResponse {
+            status: GitHubPollStatus::Connected,
+        }));
+    }
+
+    let status = match poll.error.as_deref() {
+        Some("slow_down") => GitHubPollStatus::SlowDown,
+        Some("access_denied") => GitHubPollStatus::Denied,
+        Some("expired_token") => GitHubPollStatus::Expired,
+        _ => GitHubPollStatus::Pending,
+    };
+    Ok(Json(GitHubPollResponse { status }))
+}
+
+// ── POST /api/auth/credential/ollama/connect ─────────────────────────────────
+
+/// Verifies Ollama is reachable by running `ollama list` via CLI subprocess.
+///
+/// On success, stores a `"connected"` sentinel in the Keychain so the UI
+/// can show connection state across restarts.  No secret is involved —
+/// Ollama is a local service with no API key.
+///
+/// # Errors
+///
+/// Returns `503` when the Ollama binary is not found or the daemon is not
+/// running, `500` when the Keychain write fails.
+pub async fn ollama_connect(
+    _auth: AuthGuard,
+    State(state): State<AppState>,
+) -> Result<StatusCode, Response> {
+    let flow = OllamaCredentialProvider.credential_flow().map_err(|e| {
+        tracing::error!(target: "credential.ollama", error = %e, "ollama binary not found");
+        err(StatusCode::SERVICE_UNAVAILABLE, format!("{e}"))
+    })?;
+
+    let CredentialFlow::CliSubprocess { binary, args } = flow else {
+        return Err(err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "unexpected flow type for Ollama",
+        ));
+    };
+
+    let output = std::process::Command::new(&binary)
+        .args(&args)
+        .output()
+        .map_err(|e| {
+            tracing::error!(target: "credential.ollama", error = %e, binary = %binary.display(), "subprocess exec failed");
+            err(StatusCode::SERVICE_UNAVAILABLE, "Failed to run ollama binary")
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::warn!(target: "credential.ollama", stderr = %stderr, "ollama list failed");
+        return Err(err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Ollama daemon not reachable",
+        ));
+    }
+
+    OllamaCredentialProvider
+        .store_credential("connected")
+        .map_err(|e| {
+            tracing::error!(target: "credential.ollama", error = %e, "keychain store failed");
+            err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to store Ollama state in Keychain",
+            )
+        })?;
+
+    state
+        .credential_store
+        .insert("ollama".to_owned(), CredentialState::Connected);
+    tracing::info!(target: "credential.ollama", "Ollama verified — provider connected");
+    Ok(StatusCode::CREATED)
+}
+
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 /// Maps a provider identifier to its Keychain service name.
 ///
 /// Returns `None` for unknown providers (HTTP 404 to callers).
 fn provider_keychain_service(provider: &str) -> Option<&'static str> {
+    use crate::auth::credential::{anthropic, github, mistral, ollama, openai};
     match provider {
         "google" => Some(google::KEYCHAIN_SERVICE),
-        // Phase 3 providers registered here.
+        "github" => Some(github::KEYCHAIN_SERVICE),
+        "anthropic" => Some(anthropic::KEYCHAIN_SERVICE),
+        "openai" => Some(openai::KEYCHAIN_SERVICE),
+        "mistral" => Some(mistral::KEYCHAIN_SERVICE),
+        "ollama" => Some(ollama::KEYCHAIN_SERVICE),
         _ => None,
     }
 }
@@ -381,6 +689,31 @@ mod tests {
         assert_eq!(
             provider_keychain_service("google"),
             Some(google::KEYCHAIN_SERVICE)
+        );
+    }
+
+    #[test]
+    fn provider_keychain_service_all_phase3_providers() {
+        use crate::auth::credential::{anthropic, github, mistral, ollama, openai};
+        assert_eq!(
+            provider_keychain_service("github"),
+            Some(github::KEYCHAIN_SERVICE)
+        );
+        assert_eq!(
+            provider_keychain_service("anthropic"),
+            Some(anthropic::KEYCHAIN_SERVICE)
+        );
+        assert_eq!(
+            provider_keychain_service("openai"),
+            Some(openai::KEYCHAIN_SERVICE)
+        );
+        assert_eq!(
+            provider_keychain_service("mistral"),
+            Some(mistral::KEYCHAIN_SERVICE)
+        );
+        assert_eq!(
+            provider_keychain_service("ollama"),
+            Some(ollama::KEYCHAIN_SERVICE)
         );
     }
 
