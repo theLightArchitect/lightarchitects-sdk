@@ -872,44 +872,16 @@
       <span>TERM</span>
     </button>
 
-    <!-- ZONE B — Identity + context (center, grows) -->
+    <!-- ZONE B — Preset chip only (center, grows; stats live in StatsTopbar) -->
     <div class="hdr-center">
-      <!-- EVA identity label -->
-      <span class="hdr-eva" title="EVA — copilot persona">EVA</span>
-
-      {#if sharedBuildId}
-        <span class="hdr-dot hdr-dot--live" aria-hidden="true"></span>
-        <span class="hdr-build-id" title="Active build">{sharedBuildId.slice(0, 7)}</span>
-      {/if}
-
       {#if open}
-        <!-- Preset chip — click to change via QuickPick -->
         <button
           onclick={() => quickPickOpen.set(true)}
           class="hdr-preset"
-          title="Cockpit preset — click to change"
+          title="Active preset — click to change"
         >
           {PRESET_DISPLAY[$selectedPreset]}
         </button>
-
-        <!-- Micro-stats: builds · agents · alerts -->
-        <span class="hdr-sep" aria-hidden="true"></span>
-        <span class="hdr-stat" title="{$builds.length} builds">
-          {$builds.length}<span class="hdr-stat-icon" aria-hidden="true">⊟</span>
-        </span>
-        <span class="hdr-stat" title="{Object.values($siblingHealth).filter(h => h?.status === 'online').length}/7 agents online">
-          {Object.values($siblingHealth).filter(h => h?.status === 'online').length}/7<span class="hdr-stat-icon" aria-hidden="true">⚡</span>
-        </span>
-        {#if $alertStats.unacknowledged > 0}
-          <span class="hdr-stat hdr-stat--alert" title="{$alertStats.unacknowledged} unacknowledged alerts">
-            {$alertStats.unacknowledged}<span class="hdr-stat-icon" aria-hidden="true">⚠</span>
-          </span>
-        {/if}
-        {#if latestLoopCount != null}
-          <span class="hdr-stat" title="Agentic loop iteration {latestLoopCount}">
-            L{latestLoopCount}
-          </span>
-        {/if}
       {/if}
     </div>
 
