@@ -23,6 +23,14 @@ pub use cloud_models::{CLOUD_MODEL_REGISTRY, CloudModel, CostTier};
 pub mod error;
 pub use error::OllamaError;
 
+/// L1 agentic loop substrate — [`Strategy`], [`LoopRunner`], combinators,
+/// `CritiqueRefine`. Provider-agnostic; enabled by the `loops-core` feature.
+///
+/// [`Strategy`]: loops::Strategy
+/// [`LoopRunner`]: loops::LoopRunner
+#[cfg(feature = "loops-core")]
+pub mod loops;
+
 #[cfg(feature = "agent-cli")]
 mod claude;
 #[cfg(feature = "agent-cli")]

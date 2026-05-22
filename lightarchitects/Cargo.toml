@@ -74,6 +74,10 @@ fleet = ["dep:dashmap"]
 # project_lightarchitects_sdk_extraction_candidates.md
 lightsquad = ["agent-cli", "http-client", "credentials"]
 
+# L1 agentic loop substrate — Strategy trait, LoopRunner, compose combinators,
+# CritiqueRefine, phase spans. Does NOT require agent-cli (provider-agnostic).
+loops-core = []
+
 # ── Always-on external deps (union of all 13 merged crates) ──────────────────
 
 [dependencies]
