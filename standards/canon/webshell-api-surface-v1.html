@@ -1,8 +1,8 @@
 <!-- uuid: f2e8b3d7-6c41-4a9f-b825-1e3d7c9a0f42 -->
 <!--
 title: "Webshell API Surface"
-version: "1.0.21"
-status: ratified
+version: "1.0.22"
+status: amended
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-17"
 ratified_by: "kevin"
@@ -1523,6 +1523,17 @@ sequenceDiagram
     <tbody>
       <tr><td><code>GET</code></td><td><code>/api/projects/:slug</code></td><td>cookie</td><td>Read project metadata (404 MANIFEST_MISSING if unregistered)</td></tr>
       <tr><td><code>POST</code></td><td><code>/api/projects/init</code></td><td>cookie</td><td>Register project (atomic O_CREAT|O_EXCL)</td></tr>
+    </tbody>
+  </table>
+
+  <h4>§ Setup — Multi-Provider (§2.37 — cli-multi-provider-backend 2026-05-21)</h4>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/api/setup/info</code></td><td>cookie</td><td>Backend configuration info + auth status</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/setup/models?backend=&lt;id&gt;</code></td><td>cookie</td><td>Model list; returns <code>family</code>/<code>tool_use</code>/<code>vision</code>/<code>context_k</code> for ollama-cloud (§2.37)</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/setup/save</code></td><td>cookie</td><td>Persist agent/backend/model selection</td></tr>
+      <tr><td><code>DELETE</code></td><td><code>/api/setup/reset</code></td><td>cookie</td><td>Reset to defaults</td></tr>
     </tbody>
   </table>
 
