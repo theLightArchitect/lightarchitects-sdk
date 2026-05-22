@@ -12,6 +12,7 @@
       authKey: 'claude' as const,
       authField: 'has_keychain_auth' as const,
       authBadge: 'OAuth detected ✓',
+      comingSoon: false,
     },
     {
       id: 'openai',
@@ -22,16 +23,18 @@
       authKey: 'codex' as const,
       authField: 'has_keychain_auth' as const,
       authBadge: 'ChatGPT auth ✓',
+      comingSoon: false,
     },
     {
       id: 'ollama-launch',
       agent: 'lightarchitects',
-      label: 'Ollama',
+      label: 'Ollama Local',
       description: 'Local LLM via Ollama',
       polytopeType: 'tesseract',
       authKey: 'ollama' as const,
       authField: null,
       authBadge: null,
+      comingSoon: false,
     },
     {
       id: 'mistral-vibe',
@@ -42,17 +45,54 @@
       authKey: 'mistral_vibe' as const,
       authField: null,
       authBadge: null,
+      comingSoon: false,
+    },
+    {
+      id: 'ollama-cloud',
+      agent: 'lightarchitects',
+      label: 'Ollama Cloud',
+      description: '17+ cloud models via Ollama (GLM, DeepSeek, Qwen…)',
+      polytopeType: 'tesseract',
+      authKey: 'ollama' as const,
+      authField: null,
+      authBadge: null,
+      comingSoon: false,
+    },
+    {
+      id: 'openrouter',
+      agent: 'lightarchitects',
+      label: 'OpenRouter',
+      description: '200+ models via OpenRouter API',
+      polytopeType: 'hexadecachoron',
+      authKey: 'ollama' as const,
+      authField: null,
+      authBadge: null,
+      comingSoon: false,
+    },
+    {
+      id: 'la-cloud',
+      agent: 'lightarchitects',
+      label: 'LA Cloud',
+      description: 'Light Architects managed cloud',
+      polytopeType: 'icositetrachoron',
+      authKey: 'claude' as const,
+      authField: null,
+      authBadge: null,
+      comingSoon: true,
     },
   ] as const;
 
   let selected = $state<string | null>($selectedBackend);
 
-  function pick(id: string, agent: string) { selected = id; }
+  function pick(id: string, agent: string, comingSoon: boolean) {
+    if (comingSoon) return;
+    selected = id;
+  }
 
   function proceed() {
     if (!selected) return;
     const b = backends.find(x => x.id === selected);
-    if (!b) return;
+    if (!b || b.comingSoon) return;
     selectedBackend.set(b.id);
     selectedAgent.set(b.agent);
     step.set('auth');
@@ -79,15 +119,19 @@
       <button
         class="card"
         class:selected={selected === b.id}
-        onclick={() => pick(b.id, b.agent)}
+        class:coming-soon={b.comingSoon}
+        disabled={b.comingSoon}
+        onclick={() => pick(b.id, b.agent, b.comingSoon)}
       >
         <div class="card-polytope">
-          <PolytopeIcon type={b.polytopeType} size={120} color="#64748b" />
+          <PolytopeIcon type={b.polytopeType} size={120} color={b.comingSoon ? '#334155' : '#64748b'} />
         </div>
         <div class="card-info">
           <div class="card-label">{b.label}</div>
           <div class="card-desc">{b.description}</div>
-          {#if badge}
+          {#if b.comingSoon}
+            <div class="badge coming-soon-badge">Coming Soon</div>
+          {:else if badge}
             <div class="badge">{badge}</div>
           {/if}
         </div>
@@ -126,6 +170,9 @@
   .card-label { font-family:'Raleway',sans-serif; font-size:1rem; font-weight:700; color:#e2e8f0; margin-bottom:0.25rem; }
   .card-desc { font-family:'IBM Plex Mono',monospace; font-size:0.65rem; color:#475569; line-height:1.4; }
   .badge { margin-top:0.5rem; font-family:'IBM Plex Mono',monospace; font-size:0.6rem; color:#00d26a; letter-spacing:0.05em; }
+  .coming-soon-badge { color:#475569; }
+  .card.coming-soon { opacity:0.45; cursor:not-allowed; }
+  .card.coming-soon:hover { border-color:#1e293b; }
 
   .footer { display:flex; gap:1rem; margin-top:1rem; }
   .btn-back { background:transparent; border:1px solid #334155; color:#64748b; padding:0.5rem 1.25rem; border-radius:6px; cursor:pointer; font-family:'IBM Plex Mono',monospace; font-size:0.8rem; transition:color 0.15s; }

@@ -42,6 +42,10 @@ export interface ModelOption {
   id: string;
   label: string;
   tier: string;
+  family?: string;
+  tool_use?: boolean;
+  vision?: boolean;
+  context_k?: number;
 }
 
 export interface SetupInfo {
