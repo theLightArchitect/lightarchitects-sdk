@@ -845,115 +845,120 @@
   <!-- Top gradient stripe -->
   <div class="h-px shrink-0 w-full" style="background: linear-gradient(90deg, transparent, rgba(255,215,0,0.3) 40%, rgba(255,20,147,0.15) 80%, transparent);"></div>
 
-  <!-- Toggle bar / header (top of sidebar) -->
-  <div class="flex items-center gap-2 px-3 bg-[var(--la-drawer-bg)] border-b border-[var(--la-drawer-border)] shrink-0 h-8">
-    <!-- Mode tabs (only when open) -->
-    {#if open}
-      <div class="flex rounded overflow-hidden border border-[var(--la-drawer-border)] shrink-0">
-        <button
-          onclick={() => { mode = 'chat'; }}
-          class="text-[9px] px-2 py-0.5 transition-colors {mode === 'chat' ? 'bg-[var(--la-focus-ring)] text-[var(--la-bg-frame)] font-semibold shadow-[0_0_6px_rgba(255,215,0,0.3)]' : 'bg-transparent text-[var(--la-text-dim)] hover:text-[var(--la-focus-ring)]'}"
-        >CHAT</button>
-        <button
-          onclick={() => { mode = 'terminal'; }}
-          class="text-[9px] px-2 py-0.5 transition-colors {mode === 'terminal' ? 'bg-[var(--la-focus-ring)] text-[var(--la-bg-frame)] font-semibold shadow-[0_0_6px_rgba(255,215,0,0.3)]' : 'bg-transparent text-[var(--la-text-dim)] hover:text-[var(--la-focus-ring)]'}"
-        >TERMINAL</button>
-      </div>
-    {/if}
+  <!-- ── Header — 3-zone geometric strip ──────────────────────────────────
+       Left:   mode tabs (CHAT / TERM) — underline-active, no border wrapper
+       Center: identity + preset chip + micro-stats
+       Right:  icon-only action column cells
+       ──────────────────────────────────────────────────────────────────── -->
+  <div class="copilot-header" aria-label="Copilot controls">
 
-    <!-- Identity pill — EVA is the copilot persona -->
+    <!-- ZONE A — Mode tabs (left column cells) -->
     <button
-      onclick={() => { open = !open; }}
-      aria-expanded={open}
-      class="flex items-center gap-1.5 text-[10px] text-[var(--la-text-label)] hover:text-[var(--la-text-bright)] transition-colors"
+      onclick={() => { mode = 'chat'; if (!open) open = true; }}
+      class="hdr-tab {mode === 'chat' && open ? 'hdr-tab--on' : ''}"
+      title="Chat mode"
+      aria-label="Chat mode"
     >
-      <span class="text-[var(--la-focus-ring)] font-semibold" style="text-shadow: 0 0 8px rgba(255,215,0,0.5);">⌨</span>
-      <span>EVA</span>
-      {#if sharedBuildId}
-        <span class="text-[var(--la-agent-researcher)]">●</span>
-        <span class="text-[var(--la-text-dim)] font-mono">{sharedBuildId.slice(0, 7)}</span>
-      {:else}
-        <span class="text-[var(--la-text-dim)]">—</span>
-      {/if}
+      <span class="hdr-tab-icon" aria-hidden="true">⌨</span>
+      <span>CHAT</span>
+    </button>
+    <button
+      onclick={() => { mode = 'terminal'; if (!open) open = true; }}
+      class="hdr-tab {mode === 'terminal' && open ? 'hdr-tab--on' : ''}"
+      title="Terminal (PTY)"
+      aria-label="Terminal mode"
+    >
+      <span class="hdr-tab-icon" aria-hidden="true">&gt;_</span>
+      <span>TERM</span>
     </button>
 
-    <!-- Context badge -->
-    {#if open}
-      <span class="text-[9px] text-[var(--la-text-dim)] truncate max-w-[200px]">{contextBadge()}</span>
-      <!-- Cockpit context chip — shows active preset × target; click to change -->
-      <button
-        onclick={() => quickPickOpen.set(true)}
-        class="flex items-center gap-1 px-1.5 py-0.5 rounded border border-[var(--la-struct-primary)]/30 bg-[var(--la-struct-primary)]/5 hover:bg-[var(--la-struct-primary)]/10 transition-colors shrink-0"
-        title="Cockpit context — click to change target"
-      >
-        <span class="text-[8px] font-mono font-bold text-[var(--la-struct-primary)]">{PRESET_DISPLAY[$selectedPreset]}</span>
-        {#if $selectedTarget}
-          <span class="text-[7px] text-[var(--la-text-dim)]">·</span>
-          <span class="text-[8px] font-mono text-[var(--la-text-label)] max-w-[120px] truncate">{$selectedTarget.label}</span>
+    <!-- ZONE B — Identity + context (center, grows) -->
+    <div class="hdr-center">
+      <!-- EVA identity label -->
+      <span class="hdr-eva" title="EVA — copilot persona">EVA</span>
+
+      {#if sharedBuildId}
+        <span class="hdr-dot hdr-dot--live" aria-hidden="true"></span>
+        <span class="hdr-build-id" title="Active build">{sharedBuildId.slice(0, 7)}</span>
+      {/if}
+
+      {#if open}
+        <!-- Preset chip — click to change via QuickPick -->
+        <button
+          onclick={() => quickPickOpen.set(true)}
+          class="hdr-preset"
+          title="Cockpit preset — click to change"
+        >
+          {PRESET_DISPLAY[$selectedPreset]}
+        </button>
+
+        <!-- Micro-stats: builds · agents · alerts -->
+        <span class="hdr-sep" aria-hidden="true"></span>
+        <span class="hdr-stat" title="{$builds.length} builds">
+          {$builds.length}<span class="hdr-stat-icon" aria-hidden="true">⊟</span>
+        </span>
+        <span class="hdr-stat" title="{Object.values($siblingHealth).filter(h => h?.status === 'online').length}/7 agents online">
+          {Object.values($siblingHealth).filter(h => h?.status === 'online').length}/7<span class="hdr-stat-icon" aria-hidden="true">⚡</span>
+        </span>
+        {#if $alertStats.unacknowledged > 0}
+          <span class="hdr-stat hdr-stat--alert" title="{$alertStats.unacknowledged} unacknowledged alerts">
+            {$alertStats.unacknowledged}<span class="hdr-stat-icon" aria-hidden="true">⚠</span>
+          </span>
         {/if}
-      </button>
-      <!-- Platform summary -->
-      <div class="flex items-center gap-2 text-[9px] text-[var(--la-text-dim)]">
-        <span>{$builds.length} builds</span>
-        <span>·</span>
-        <span>{Object.values($siblingHealth).filter(h => h?.status === 'online').length}/7 agents</span>
-        <span>·</span>
-        <span class="text-[#ef4444]">{$alertStats.unacknowledged} alerts</span>
         {#if latestLoopCount != null}
-          <span>·</span>
-          <span title="Agentic loop iterations">loop {latestLoopCount}</span>
+          <span class="hdr-stat" title="Agentic loop iteration {latestLoopCount}">
+            L{latestLoopCount}
+          </span>
         {/if}
-      </div>
-    {/if}
+      {/if}
+    </div>
 
-    <div class="flex-1"></div>
-
-    {#if open && !$sseConnected && $currentBuildId}
-      <button
-        onclick={() => reconnectSSE($currentBuildId!)}
-        class="text-[9px] px-1.5 py-0.5 border text-[var(--la-semantic-warn)] border-[var(--la-semantic-warn)]/40 hover:bg-[var(--la-semantic-warn)]/10 transition-colors"
-        title="SSE disconnected — click to reconnect"
-        aria-label="Reconnect SSE stream"
-      >⟳ Reconnect</button>
-    {/if}
-
+    <!-- ZONE C — Icon-only actions (right column cells) -->
     {#if open}
+      {#if !$sseConnected && $currentBuildId}
+        <button
+          onclick={() => reconnectSSE($currentBuildId!)}
+          class="hdr-action hdr-action--warn"
+          title="SSE disconnected — click to reconnect"
+          aria-label="Reconnect SSE stream"
+        >⟳</button>
+      {/if}
+
       {#if mode === 'chat'}
         <button
           onclick={forkToTerminal}
           disabled={!canFork || forking}
-          class="text-[9px] px-1.5 py-0.5 border transition-colors
-                 {canFork && !forking
-                   ? 'text-[var(--la-focus-ring)] border-[var(--la-focus-ring)]/40 hover:bg-[var(--la-focus-ring)]/10 shadow-[0_0_6px_rgba(255,215,0,0.2)]'
-                   : 'text-[var(--la-text-dim)] border-[var(--la-drawer-border)] cursor-not-allowed opacity-50'}"
-          title={canFork
-            ? 'Fork this conversation to a terminal (claude --resume / codex exec resume)'
-            : 'Send at least one message before forking to a terminal'}
-        >{forking ? 'Forking…' : '↗ Fork to Terminal'}</button>
+          class="hdr-action {canFork && !forking ? 'hdr-action--gold' : 'hdr-action--disabled'}"
+          title="{canFork ? 'Fork conversation to terminal (claude --resume)' : 'Send a message before forking'}"
+          aria-label="Fork to terminal"
+        >↗</button>
         <button
           onclick={() => { showSearch = !showSearch; if (!showSearch) searchQuery = ''; }}
-          class="text-[9px] px-1.5 py-0.5 border transition-colors
-            {showSearch ? 'text-[var(--la-focus-ring)] border-[var(--la-focus-ring)]/40 bg-[var(--la-focus-ring)]/10' : 'text-[var(--la-text-dim)] border-[var(--la-drawer-border)] hover:text-[var(--la-text-bright)]'}"
+          class="hdr-action {showSearch ? 'hdr-action--on' : ''}"
           title="Search history (Ctrl+F)"
           aria-label="Toggle history search"
         >⌕</button>
         <button
           onclick={() => { clearCopilotHistory(); searchQuery = ''; showSearch = false; }}
-          class="text-[9px] text-[var(--la-text-dim)] hover:text-[var(--la-text-bright)] px-1.5 py-0.5 border border-[var(--la-drawer-border)] transition-colors"
-        >Clear</button>
+          class="hdr-action"
+          title="Clear history"
+          aria-label="Clear chat history"
+        >✕</button>
       {/if}
+
       <button
         onclick={() => { positionMode = positionMode === 'drawer' ? 'overlay' : 'drawer'; }}
-        class="text-[9px] px-1.5 py-0.5 border transition-colors
-          {positionMode === 'overlay' ? 'text-[var(--la-focus-ring)] border-[var(--la-focus-ring)]/40 bg-[var(--la-focus-ring)]/10' : 'text-[var(--la-text-dim)] border-[var(--la-drawer-border)] hover:text-[var(--la-text-bright)]'}"
+        class="hdr-action {positionMode === 'overlay' ? 'hdr-action--on' : ''}"
         title="Toggle floating overlay mode"
-        aria-label="Toggle copilot position mode"
+        aria-label="Toggle position mode"
       >{positionMode === 'overlay' ? '⊠' : '⊡'}</button>
-      <div style="position: relative;">
+
+      <div class="hdr-action-wrap" style="position: relative;">
         <button
           onclick={() => settingsOpen.update(v => !v)}
-          class="text-[10px] text-[var(--la-text-dim)] hover:text-[var(--la-text-label)] px-1.5 py-0.5 border border-[var(--la-drawer-border)] transition-colors"
-          title="Switch backend / model (⚙)"
+          class="hdr-action {$settingsOpen ? 'hdr-action--on' : ''}"
+          title="Model / backend settings"
+          aria-label="Settings"
         >⚙</button>
         {#if $settingsOpen}
           <div class="absolute bottom-full right-0 mb-1">
@@ -963,12 +968,13 @@
       </div>
     {/if}
 
-    <!-- Collapse/expand -->
+    <!-- Collapse / expand — always rightmost -->
     <button
       onclick={() => { open = !open; }}
-      class="text-[10px] text-[var(--la-text-dim)] hover:text-[var(--la-text-bright)] w-5 h-5 flex items-center justify-center transition-colors"
-      title="{open ? 'Collapse (Ctrl+`)' : 'Open Copilot (Ctrl+`)'}"
-    >{open ? '▾' : '▴'}</button>
+      class="hdr-action hdr-collapse"
+      title="{open ? 'Collapse copilot (Ctrl+`)' : 'Open copilot (Ctrl+`)'}"
+      aria-label="{open ? 'Collapse' : 'Expand'} copilot"
+    >{open ? '◂' : '▸'}</button>
   </div>
 
   <!-- ── BODY (only when open) ───────────────────────────────── -->
@@ -1307,6 +1313,193 @@
 <audio bind:this={audioEl} aria-hidden="true" style="display:none"></audio>
 
 <style>
+  /* ── Copilot header — 3-zone geometric strip ─────────────────────────────── */
+  .copilot-header {
+    display: flex;
+    align-items: stretch;
+    height: 32px;
+    flex-shrink: 0;
+    background: var(--la-bg-void, #08090a);
+    border-bottom: 1px solid var(--la-drawer-border, #1c2028);
+    font-family: var(--la-font-mono, monospace);
+    overflow: hidden;
+  }
+
+  /* ZONE A — Mode tabs */
+  .hdr-tab {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 10px;
+    height: 100%;
+    font-family: var(--la-font-mono, monospace);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--la-text-mute, #6e7681);
+    background: transparent;
+    border: none;
+    border-right: 1px solid var(--la-drawer-border, #1c2028);
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 80ms, background 80ms, border-color 80ms;
+  }
+  .hdr-tab:hover {
+    color: var(--la-text-base, #c9d1d9);
+    background: var(--la-bg-elev-1, #111214);
+  }
+  .hdr-tab--on {
+    color: var(--la-focus-ring, #FFD700);
+    border-bottom-color: var(--la-focus-ring, #FFD700);
+    background: rgba(255, 215, 0, 0.04);
+  }
+  .hdr-tab-icon {
+    font-size: 9px;
+    color: var(--la-text-mute, #6e7681);
+    flex-shrink: 0;
+  }
+  .hdr-tab--on .hdr-tab-icon {
+    color: var(--la-focus-ring, #FFD700);
+  }
+
+  /* ZONE B — Identity + context (grows) */
+  .hdr-center {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 1;
+    padding: 0 8px;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .hdr-eva {
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: var(--la-text-mute, #6e7681);
+    flex-shrink: 0;
+  }
+  .hdr-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--la-text-dim, #a4b4c2);
+    flex-shrink: 0;
+  }
+  .hdr-dot--live {
+    background: #22c55e;
+    box-shadow: 0 0 4px rgba(34, 197, 94, 0.6);
+  }
+  .hdr-build-id {
+    font-size: 8px;
+    letter-spacing: 0.06em;
+    color: var(--la-text-dim, #a4b4c2);
+    flex-shrink: 0;
+  }
+  .hdr-preset {
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--la-text-dim, #a4b4c2);
+    background: var(--la-bg-elev-1, #111214);
+    border: 1px solid var(--la-hair-faint, #1c2028);
+    border-radius: 0;
+    padding: 1px 5px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 80ms, border-color 80ms;
+  }
+  .hdr-preset:hover {
+    color: var(--la-focus-ring, #FFD700);
+    border-color: rgba(255, 215, 0, 0.3);
+  }
+  .hdr-sep {
+    width: 1px;
+    height: 10px;
+    background: var(--la-hair-faint, #1c2028);
+    flex-shrink: 0;
+  }
+  .hdr-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    font-size: 9px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--la-text-dim, #a4b4c2);
+    flex-shrink: 0;
+  }
+  .hdr-stat--alert {
+    color: var(--la-semantic-warn, #f59e0b);
+  }
+  .hdr-stat-icon {
+    font-size: 8px;
+    color: var(--la-text-mute, #6e7681);
+  }
+
+  /* ZONE C — Icon-only action cells */
+  .hdr-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 100%;
+    font-size: 11px;
+    color: var(--la-text-mute, #6e7681);
+    background: transparent;
+    border: none;
+    border-left: 1px solid var(--la-drawer-border, #1c2028);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 80ms, background 80ms;
+  }
+  .hdr-action:hover {
+    color: var(--la-text-bright, #f1f5f9);
+    background: var(--la-bg-elev-1, #111214);
+  }
+  .hdr-action:disabled {
+    cursor: default;
+    opacity: 0.35;
+  }
+  .hdr-action--on {
+    color: var(--la-focus-ring, #FFD700);
+    background: rgba(255, 215, 0, 0.06);
+  }
+  .hdr-action--on:hover {
+    background: rgba(255, 215, 0, 0.1);
+  }
+  .hdr-action--gold {
+    color: var(--la-focus-ring, #FFD700);
+  }
+  .hdr-action--warn {
+    color: var(--la-semantic-warn, #f59e0b);
+    animation: hdr-warn-pulse 2s ease-in-out infinite;
+  }
+  @keyframes hdr-warn-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.55; }
+  }
+  .hdr-action--disabled {
+    color: var(--la-hair-strong, #44505e);
+    cursor: default;
+  }
+  .hdr-action-wrap {
+    display: flex;
+    align-items: stretch;
+    flex-shrink: 0;
+  }
+  .hdr-collapse {
+    border-left: 1px solid var(--la-drawer-border, #1c2028);
+    color: var(--la-text-mute, #6e7681);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hdr-tab, .hdr-action, .hdr-preset { transition: none; }
+    .hdr-action--warn { animation: none; }
+  }
+
   /* Markdown rendering inside chat bubbles.
      Scoped via .chat-md-content; paragraphs collapse margins so agent
      responses don't get disproportionate whitespace inside the tight
