@@ -1,7 +1,7 @@
 <!-- uuid: f2e8b3d7-6c41-4a9f-b825-1e3d7c9a0f42 -->
 <!--
 title: "Webshell API Surface"
-version: "1.0.19"
+version: "1.0.21"
 status: ratified
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-17"
@@ -218,7 +218,7 @@ tags:
 <nav class="sidebar">
   <div class="logo">
     <div class="title">Light Architects</div>
-    <div class="sub">Webshell API Surface v1.0.11</div>
+    <div class="sub">Webshell API Surface v1.0.21</div>
     <div class="sub" style="margin-top:4px;color:#FFD700;opacity:0.7;font-size:9px;letter-spacing:0.05em;">canon://webshell-api-surface</div>
   </div>
 
@@ -229,6 +229,7 @@ tags:
   <a href="#arch-system">System Topology</a>
   <a href="#arch-binaries">Binary Layer</a>
   <a href="#arch-state">AppState</a>
+  <a href="#streaming-map">Streaming Map</a>
 
   <div class="section-label">Coding Agents</div>
   <a href="#agents-overview">Agent Overview</a>
@@ -265,6 +266,11 @@ tags:
   <a href="#api-backend">Backend Endpoints</a>
   <a href="#api-frontend">Frontend Routes</a>
 
+  <div class="section-label">Project Ingestion</div>
+  <a href="#project-ingestion-sse">SSE Integration</a>
+  <a href="#project-registry">Project Registry</a>
+  <a href="#mcp-host">MCP Host Proxy</a>
+
   <div class="section-label">Compliance</div>
   <a href="#compliance-triggers">Triggers</a>
   <a href="#compliance-checklist">Checklist (C1–C17)</a>
@@ -292,7 +298,7 @@ tags:
       Neither is derived from the other — they are co-authored representations of the same spec.
     </div>
     <div class="meta" style="margin-top:16px;">
-      <div class="meta-item">Version <span>1.0.11</span></div>
+      <div class="meta-item">Version <span>1.0.21</span></div>
       <div class="meta-item">Status <span>ratified</span></div>
       <div class="meta-item">Date <span>2026-05-17</span></div>
       <div class="meta-item">Canon URI <span>canon://webshell-api-surface</span></div>
@@ -689,6 +695,49 @@ classDiagram
       <li><code>target-breadcrumb</code> always present — <strong>P6-N2</strong> (never conditionally unmounted; always-present invariant)</li>
       <li><code>copilot-drawer</code> context chip shows preset · target — <strong>P6-N3</strong> (verified by E2E G5: drawer header chip text match)</li>
     </ul>
+  </div>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="streaming-map">
+  <h2>§1.8 Verified Streaming Map <span style="font-size:0.75em;color:#6b7280">(webshell-project-ingestion Phase 5 — 2026-05-21)</span></h2>
+
+  <p>Per-view SSE topic subscriptions verified against <code>feat/webshell-project-ingestion</code> at Phase 5 merge time. Covers all views that register <code>la:*</code> custom-event listeners.</p>
+
+  <table>
+    <thead><tr><th>View</th><th>SSE topic</th><th>DOM event</th><th>REST surfaces</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>ProjectDetail.svelte</code></td>
+        <td><code>v1.project.update</code></td>
+        <td><code>la:project-update</code></td>
+        <td><code>GET /api/projects/:slug</code> (initial + re-fetch)</td>
+        <td>Re-fetches on every event whose <code>slug</code> matches current route param</td>
+      </tr>
+      <tr>
+        <td><code>ProjectDetail.svelte</code> (init flow)</td>
+        <td>—</td>
+        <td>—</td>
+        <td><code>POST /api/projects/init</code> (on-demand; <code>missing-manifest</code> state only)</td>
+        <td>One-shot registration; triggers immediate GET re-fetch on 201</td>
+      </tr>
+      <tr>
+        <td>All views (inherited)</td>
+        <td><code>v1.build.update</code>, <code>v1.fleet.update</code>, <code>v1.roadmap.update</code>, <code>v1.system.status</code></td>
+        <td>via <code>la:*</code> event bus</td>
+        <td>—</td>
+        <td>Global SSE stream (§2.3) dispatches to topic-specific DOM events via <code>sse.ts</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>SSE → DOM bridge</strong>: <code>sse.ts</code> receives <code>WebEvent::ProjectUpdate { project_id, slug, kind }</code> on <code>/api/events</code> and dispatches <code>window.dispatchEvent(new CustomEvent("la:project-update", { detail: { project_id, slug, kind } }))</code>. <code>ProjectDetail.svelte</code> registers in <code>onMount</code>, cleans up in <code>onDestroy</code> — <code>{#if}</code> unmount fires <code>onDestroy</code> so no SSE listener leaks across navigations.
+  </div>
+
+  <div class="callout info">
+    <strong>P1 Northstar mechanical promise</strong>: <code>ProjectDetail</code> subscribes to <code>v1.project.update</code> (direct) and inherits <code>v1.build.update</code> via <code>$builds</code> store. Total: 0 → 2 topics consumed by <code>ProjectDetail</code> after this build. Verified against <strong>G5</strong> golden path in <code>e2e/project-ingestion.spec.ts</code>.
   </div>
   </section>
 
@@ -1291,6 +1340,127 @@ flowchart LR
 
 
   <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="mcp-host">
+  <h2>§2.33 MCP Host Proxy <span style="font-size:0.75em;color:#6b7280">(webshell-mcp-host — 2026-05-21 POST-MERGE BACKFILL)</span></h2>
+
+  <p>Generic stdio MCP server proxy. The webshell can host any MCP server declared in <code>~/.lightarchitects/webshell-mcp.json</code> and proxy tool invocations through a scope + JSON-Schema gate.</p>
+
+  <div class="callout secure">
+    <strong>5-layer trust model</strong>: env isolation → sandbox-exec → process group → ScopeGovernor+SchemaValidator → TOCTOU-safe check. All routes require <code>AuthGuard</code> (cookie session, not bearer). If no MCP host is configured, all three return <strong>503</strong>.
+  </div>
+
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/api/mcp/servers</code></td><td>cookie</td><td>List all managed servers with live state</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/mcp/tools</code></td><td>cookie</td><td>List all cached tools across ready servers</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/mcp/invoke</code></td><td>cookie</td><td>Invoke a single tool (scope + schema gated)</td></tr>
+    </tbody>
+  </table>
+
+  <p style="font-size:12px;color:var(--mute);margin-top:8px;">Shipped at commit <code>31ff97b</code>. Handlers at <code>lightarchitects-webshell/src/server/mcp_routes.rs</code>. Post-merge canon backfill — same-commit-update discipline must hold for all future builds.</p>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="project-ingestion-sse">
+  <h2>§2.36 <code>WebEvent::ProjectUpdate</code> <span style="font-size:0.75em;color:#6b7280">(webshell-project-ingestion — 2026-05-21)</span></h2>
+
+  <p>New SSE event variant added to <code>WebEvent</code> enum. Serialized on the <code>/api/events</code> stream (§2.3) as <code>{"type":"project_update","project_id":"...","slug":"...","kind":"..."}</code>.</p>
+
+  <div class="diagram">
+    <div class="diagram-label">Sequence — Project Update SSE Flow</div>
+    <div class="mermaid">
+sequenceDiagram
+  participant POST as POST /api/projects/init
+  participant WS as Webshell AppState
+  participant SSE as GET /api/events
+  participant TS as sse.ts (browser)
+  participant PD as ProjectDetail.svelte
+
+  POST->>WS: 201 Created — broadcast ProjectUpdate
+  WS->>SSE: WebEvent::ProjectUpdate { project_id, slug, kind: "created" }
+  SSE-->>TS: data: {"type":"project_update","slug":"...","kind":"created"}
+  TS->>TS: dispatchEvent("la:project-update", { detail: { slug, kind } })
+  PD->>PD: event.detail.slug === currentSlug → loadProject()
+  PD->>WS: GET /api/projects/:slug
+  WS-->>PD: 200 ProjectMeta → render ready state
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th>Field</th><th>Type</th><th>Values</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>type</code></td><td>string</td><td><code>"project_update"</code></td><td>Serde discriminant</td></tr>
+      <tr><td><code>project_id</code></td><td>string</td><td>UUID v7</td><td>Stable project identity</td></tr>
+      <tr><td><code>slug</code></td><td>string</td><td>URL-safe string</td><td>Matches slug in registry</td></tr>
+      <tr><td><code>kind</code></td><td>string</td><td><code>"created"</code> | <code>"updated"</code> | <code>"deleted"</code></td><td>Change type</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>TypeScript type</strong>: <code>ProjectUpdateEvent</code> in <code>lightarchitects-webshell-ui/src/lib/types.ts</code>. <code>sse.ts</code> maps <code>type === "project_update"</code> → <code>window.dispatchEvent(new CustomEvent("la:project-update", { detail }))</code>.
+  </div>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section id="project-registry">
+  <h2>§2.34–§2.35 Project Registry <span style="font-size:0.75em;color:#6b7280">(webshell-project-ingestion — 2026-05-21)</span></h2>
+
+  <p>Two endpoints for registering and reading projects in the local project registry at <code>~/.lightarchitects/projects/</code>. All routes require <code>AuthGuard</code> (cookie session).</p>
+
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/api/projects/:slug</code></td><td>cookie</td><td>Read project metadata; 404 MANIFEST_MISSING if not registered</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/projects/init</code></td><td>cookie</td><td>Register project; write TOML manifest (O_CREAT|O_EXCL atomic)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout secure">
+    <strong>Security properties</strong>: Slug validation rejects path separators and empty strings at route entry. <code>POST /api/projects/init</code> uses <code>O_CREAT | O_EXCL</code> for atomic manifest creation — no TOCTOU race. Returns 409 if already exists. UUID generated with <code>uuid::Uuid::now_v7()</code>. Helix entry write failure is non-fatal (logged via <code>tracing::warn!</code>).
+  </div>
+
+  <h3>GET /api/projects/:slug → 200</h3>
+  <pre><code>{
+  "project": {
+    "id": "019501e0-0000-7000-8000-000000000001",
+    "slug": "lightarchitects-sdk",
+    "name": "Light Architects SDK",
+    "kind": "git_repo",
+    "created_at": "2026-05-21T00:00:00Z",
+    "helix_link": "~/.lightarchitects/helix/corso/projects/lightarchitects-sdk"
+  },
+  "git": { "remote": "git@github.com:...", "branch": "main" },
+  "agents": {}
+}</code></pre>
+
+  <h3>POST /api/projects/init → 201</h3>
+  <p><strong>Request</strong>: <code>{ "slug": "...", "name": "...", "kind": "git_repo", "git_remote": "...", "git_branch": "main" }</code></p>
+  <pre><code>{
+  "project_id": "019501e0-0000-7000-8000-000000000001",
+  "slug": "lightarchitects-sdk",
+  "toml_path": "~/.lightarchitects/projects/lightarchitects-sdk.toml",
+  "helix_link": "~/.lightarchitects/helix/corso/projects/lightarchitects-sdk"
+}</code></pre>
+
+  <h3>Error codes</h3>
+  <table>
+    <thead><tr><th>HTTP</th><th>code</th><th>Cause</th></tr></thead>
+    <tbody>
+      <tr><td>404</td><td><code>MANIFEST_MISSING</code></td><td>Slug not found (GET only)</td></tr>
+      <tr><td>400</td><td><code>INVALID_SLUG</code></td><td>Path separator or empty string in slug</td></tr>
+      <tr><td>409</td><td>—</td><td>Project already exists (POST only, O_CREAT|O_EXCL rejected)</td></tr>
+      <tr><td>500</td><td>—</td><td>I/O error reading/writing manifest</td></tr>
+    </tbody>
+  </table>
+
+  <p style="font-size:12px;color:var(--mute);margin-top:8px;">Handlers at <code>lightarchitects-webshell/src/server/project_routes.rs</code>. After 201, broadcasts <code>WebEvent::ProjectUpdate { kind: "created" }</code> (§2.36).</p>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
   <section id="api-backend">
   <h2>API Quick Reference</h2>
 
@@ -1337,6 +1507,25 @@ flowchart LR
     </tbody>
   </table>
 
+  <h4>§ MCP Host Proxy (§2.33)</h4>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/api/mcp/servers</code></td><td>cookie</td><td>List managed servers</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/mcp/tools</code></td><td>cookie</td><td>List cached tools</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/mcp/invoke</code></td><td>cookie</td><td>Invoke tool (scope + schema gated)</td></tr>
+    </tbody>
+  </table>
+
+  <h4>§ Project Registry (§2.34–§2.35)</h4>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/api/projects/:slug</code></td><td>cookie</td><td>Read project metadata (404 MANIFEST_MISSING if unregistered)</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/projects/init</code></td><td>cookie</td><td>Register project (atomic O_CREAT|O_EXCL)</td></tr>
+    </tbody>
+  </table>
+
   <h4>§ Builds, Events, SOUL — see <a href="webshell-api-surface-v1.md">webshell-api-surface-v1.md</a> for full tables</h4>
   </section>
 
@@ -1362,7 +1551,7 @@ flowchart LR
   </table>
 
   <p style="font-size:12px; color: var(--mute); margin-top: 24px;">
-    Canonical source: <a href="webshell-api-surface-v1.md">webshell-api-surface-v1.md</a> · Version 1.0.11 · 2026-05-19 · Derived from <code>src/server/mod.rs</code>, <code>src/dispatch/routes.rs</code>, <code>src/auth.rs</code>, <code>src/config.rs</code>, <code>src/agent/bridge.rs</code>, <code>src/screens/</code>
+    Canonical source: <a href="webshell-api-surface-v1.md">webshell-api-surface-v1.md</a> · Version 1.0.21 · 2026-05-21 · Derived from <code>src/server/mod.rs</code>, <code>src/dispatch/routes.rs</code>, <code>src/auth.rs</code>, <code>src/config.rs</code>, <code>src/agent/bridge.rs</code>, <code>src/screens/</code>
   </p>
   </section>
 
