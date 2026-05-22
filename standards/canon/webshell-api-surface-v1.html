@@ -1,7 +1,7 @@
 <!-- uuid: f2e8b3d7-6c41-4a9f-b825-1e3d7c9a0f42 -->
 <!--
 title: "Webshell API Surface"
-version: "1.0.22"
+version: "1.0.23"
 status: amended
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-17"
@@ -1534,6 +1534,22 @@ sequenceDiagram
       <tr><td><code>GET</code></td><td><code>/api/setup/models?backend=&lt;id&gt;</code></td><td>cookie</td><td>Model list; returns <code>family</code>/<code>tool_use</code>/<code>vision</code>/<code>context_k</code> for ollama-cloud (§2.37)</td></tr>
       <tr><td><code>POST</code></td><td><code>/api/setup/save</code></td><td>cookie</td><td>Persist agent/backend/model selection</td></tr>
       <tr><td><code>DELETE</code></td><td><code>/api/setup/reset</code></td><td>cookie</td><td>Reset to defaults</td></tr>
+    </tbody>
+  </table>
+
+  <h4>§ Provider Credential Substrate (§2.38 — cli-oauth-multi-provider 2026-05-22)</h4>
+  <p>8 credential routes supporting 6 providers via OAuth redirect, RFC 8628 Device Flow, API key input, and CLI subprocess. Credentials stored exclusively in macOS Keychain (<code>/usr/bin/security</code>). OA-1..OA-12 guarantees apply.</p>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/api/auth/credential/{provider}/status</code></td><td>bearer/cookie</td><td>Credential connection status (<code>connected</code> | <code>not_connected</code>)</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/auth/credential/{provider}/init</code></td><td>bearer/cookie</td><td>Initiate OAuth redirect flow; returns <code>redirect_url</code> (Google only)</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/auth/credential/{provider}/callback</code></td><td>public</td><td>OAuth redirect callback; exchanges code for token; stores in Keychain (Google only)</td></tr>
+      <tr><td><code>DELETE</code></td><td><code>/api/auth/credential/{provider}</code></td><td>bearer/cookie</td><td>Revoke credential — removes from Keychain + credential_store</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/auth/credential/{provider}/key</code></td><td>bearer/cookie</td><td>Store API key in Keychain (Anthropic, OpenAI, Mistral)</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/auth/credential/github/device</code></td><td>bearer/cookie</td><td>RFC 8628 Device Flow init; returns <code>user_code</code> + <code>verification_uri</code></td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/auth/credential/github/poll</code></td><td>bearer/cookie</td><td>RFC 8628 Device Flow poll; interval ≥ 5 s (OA-9); returns <code>connected</code> | <code>pending</code> | …</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/auth/credential/ollama/connect</code></td><td>bearer/cookie</td><td>Verify local Ollama via <code>CliSubprocess</code>; stores sentinel on success</td></tr>
     </tbody>
   </table>
 
