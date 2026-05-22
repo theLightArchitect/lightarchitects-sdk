@@ -31,6 +31,23 @@ pub use error::OllamaError;
 #[cfg(feature = "loops-core")]
 pub mod loops;
 
+/// L2 conversation session — structured turn management, memory, transport.
+///
+/// Promotes the gateway `AgentRunner` pattern into the SDK. Enabled by the
+/// `loops-core` feature (same gate as [`loops`]).
+///
+/// [`loops`]: crate::agent::loops
+#[cfg(feature = "loops-core")]
+pub mod conversation;
+
+/// Session lifecycle hooks — pre/post turn and pre/post tool callbacks.
+///
+/// Enabled alongside [`conversation`] by the `loops-core` feature.
+///
+/// [`conversation`]: crate::agent::conversation
+#[cfg(feature = "loops-core")]
+pub mod hooks;
+
 #[cfg(feature = "agent-cli")]
 mod claude;
 #[cfg(feature = "agent-cli")]

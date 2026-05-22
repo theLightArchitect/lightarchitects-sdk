@@ -1,5 +1,21 @@
 //! Interactive coding agent — NDJSON streaming mode for webshell bridge.
 //!
+//! ## Migration note
+//!
+//! The SDK-promoted counterparts of [`AgentRunner`] and the protocol types
+//! now live in `lightarchitects::agent::conversation`. New code should use
+//! those types directly. The re-exports below are provided for gradual
+//! migration; the gateway-local `AgentRunner` and `protocol` module remain
+//! fully functional.
+//!
+//! SDK re-exports (available when the `loops-core` feature is enabled):
+//!
+//! - [`ConversationSession`] — SDK-promoted `AgentRunner`
+//! - [`SessionConfig`] — frozen session configuration
+//! - [`ConversationEvent`] — SDK-native event enum (replaces `AgentEvent`)
+//! - [`Transport`] — outbound event sink trait
+//! - [`NdjsonTransport`] / [`TtyTransport`] — concrete transport implementations
+//!
 //! Entry point: [`run_ndjson`] — reads [`ControlMessage`] from stdin,
 //! runs an agent turn, emits [`AgentEvent`] to stdout.
 //!
@@ -24,6 +40,13 @@ pub mod protocol;
 pub mod runner;
 
 use runner::AgentRunner;
+
+// ── SDK re-exports (loops-core) ───────────────────────────────────────────────
+
+pub use lightarchitects::agent::conversation::{
+    ConversationEvent, ConversationSession, NdjsonTransport, SessionConfig, SessionError,
+    SessionState, TerminationReason, Transport, TtyTransport,
+};
 
 /// Maximum byte length for a caller-supplied system prompt.
 /// Prevents token-flood amplification when an untrusted caller controls the prompt.
