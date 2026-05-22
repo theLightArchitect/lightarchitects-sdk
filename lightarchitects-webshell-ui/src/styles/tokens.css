@@ -88,17 +88,17 @@
   --la-bg-elev-2: #16181b;
 
   /* ── Hair / border scale ─────────────────────────────────────────────────── */
-  --la-hair-faint:  #16181b;
-  --la-hair-base:   #25282d;
-  --la-hair-strong: #3a3f47;
+  --la-hair-faint:  #1c2028;   /* was #16181b — more visible grid lines        */
+  --la-hair-base:   #2c3140;   /* was #25282d — clearer card borders           */
+  --la-hair-strong: #44505e;   /* was #3a3f47 — stronger structural separators */
 
-  /* ── Text scale ──────────────────────────────────────────────────────────── */
-  --la-text-mute:   #5a6472;
-  --la-text-dim:    #96a2ae;
-  --la-text-base:   #b4bec8;
-  --la-text-bright: #f1f5f9;
-  --la-text-code:   #a8d8ea;
-  --la-text-stark:  #f8f9fa;
+  /* ── Text scale — WCAG AA-compliant on #0a0a0f ──────────────────────────── */
+  --la-text-mute:   #6e7f8f;   /* was #5a6472 (3.5:1 fail) → now 4.6:1 pass */
+  --la-text-dim:    #a4b4c2;   /* was #96a2ae → brighter, more scannable      */
+  --la-text-base:   #c8d4de;   /* was #b4bec8 → richer mid-tone               */
+  --la-text-bright: #f1f5f9;   /* unchanged — 15:1 AAA                        */
+  --la-text-code:   #b8e4f8;   /* was #a8d8ea → slightly warmer               */
+  --la-text-stark:  #ffffff;   /* was #f8f9fa → pure white for headings       */
 
   /* ── Semantic text aliases (component consumers use these) ───────────────── */
   --text-body:      var(--la-text-bright);
@@ -127,7 +127,7 @@
   /* ── Drawer chrome ───────────────────────────────────────────────────────── */
   --la-drawer-z:       30;
   --la-drawer-bg:      #0d1117;
-  --la-drawer-border:  #1e293b;
+  --la-drawer-border:  #2a3a4e;   /* was #1e293b — bumped for visible dividers */
   --la-drawer-shadow:  0 -4px 16px rgba(0, 0, 0, 0.4),
                        0 0 0 1px rgba(255, 215, 0, 0.05);
   --la-drawer-padding: 12px;

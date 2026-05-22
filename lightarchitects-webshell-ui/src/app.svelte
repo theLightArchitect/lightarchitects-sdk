@@ -7,6 +7,8 @@
   import SetupFlow from './screens/setup/SetupFlow.svelte';
   import CopilotDrawer from './components/CopilotDrawer.svelte';
   import MemoryDrawer from './components/MemoryDrawer.svelte';
+  import PolytopeButton from './components/PolytopeButton.svelte';
+  import NavDropdown from './components/NavDropdown.svelte';
   import AmbientParticles from './components/AmbientParticles.svelte';
   import HelixTooltip from './components/HelixTooltip.svelte';
   import HelixDetailPanel from './components/HelixDetailPanel.svelte';
@@ -23,7 +25,7 @@
   import GlobalEventsOverlay from './components/GlobalEventsOverlay.svelte';
   import StatsTopbar from './components/StatsTopbar.svelte';
   import {
-    ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, memoryDrawerOpen,
+    ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, drawerWidthPx, memoryDrawerOpen,
     builds, currentBuildId, findings, logEntries, artifacts, conductorTasks, arenaStatus, alerts,
     activePlan, latestScrumReport, hotMemory, coldMemory, activeHelixNode, selectedPillar,
     expandedFindings, supervisorAlerts, siblingHealth, copilotMessages,
@@ -155,30 +157,7 @@
     if (import.meta.env.DEV) (window as any).__e2e_ready = setupDone;
   });
 
-  // 8-tab nav: Dashboard · Run · Builds · Activity · Knowledge · Diagrams · Roadmap · Tools
-  const NAV_ITEMS = [
-    { label: 'Dashboard', hash: '/dashboard', hint: 'Live agent activity, alerts, and squad health',                          separator: false },
-    { label: 'Run',       hash: '/run',       hint: 'Dispatch agents by domain — Engineer, Security, Ops (Cmd+K)',            separator: false },
-    { label: 'Builds',    hash: '/builds',    hint: 'All builds — past, in-flight, and queued',                               separator: false },
-    { label: 'Activity',  hash: '/activity',  hint: 'Build cockpit — live health, escalations, fleet and decisions',          separator: false },
-    { label: 'Knowledge', hash: '/knowledge', hint: 'Knowledge graph — agent memory strands and quality gates',               separator: false },
-    { label: 'Diagrams',  hash: '/diagrams',  hint: 'Architecture intelligence — extract, verify, render diagrams',           separator: false },
-    { label: 'Roadmap',   hash: '/roadmap',   hint: 'Portfolio-level roadmap — active builds, phases, blockers',              separator: false },
-    { label: 'Tools',     hash: '/tools',     hint: 'MCP servers, squad agents, workspaces, meta-skills — tool surface §O',  separator: false },
-  ];
-
   let activeRoute = $derived($currentRoute);
-
-  function isActive(hash: string): boolean {
-    if (hash === '/dashboard') return activeRoute.startsWith('/dashboard') || activeRoute.startsWith('/monitor') || activeRoute.startsWith('/ops');
-    if (hash === '/run')       return activeRoute === '/' || activeRoute === '' || activeRoute.startsWith('/run') || activeRoute.startsWith('/dispatch');
-    if (hash === '/builds')    return activeRoute.startsWith('/builds') || activeRoute.startsWith('/manage');
-    if (hash === '/knowledge') return activeRoute.startsWith('/knowledge') || activeRoute.startsWith('/memory') || activeRoute.startsWith('/helix');
-    if (hash === '/activity')  return activeRoute.startsWith('/activity') || activeRoute.startsWith('/comms');
-    if (hash === '/diagrams')  return activeRoute.startsWith('/diagrams') || activeRoute.startsWith('/arch') || activeRoute.startsWith('/library');
-    if (hash === '/roadmap')   return activeRoute.startsWith('/roadmap');
-    return activeRoute.startsWith(hash);
-  }
 
   function handleHashChange() {
     applyRedirects();
@@ -272,7 +251,7 @@
       registerHotkey({
         id: 'global-tab-1',
         keys: ['1'],
-        label: 'Go to Dashboard',
+        label: 'Dashboard → Overview',
         group: 'Navigation',
         scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '1' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
@@ -281,34 +260,34 @@
       registerHotkey({
         id: 'global-tab-2',
         keys: ['2'],
-        label: 'Go to Dispatch',
+        label: 'Workspace → Build Studio',
         group: 'Navigation',
         scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '2' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
-        handler: () => navigate('/dispatch'),
+        handler: () => navigate('/builds'),
       }),
       registerHotkey({
         id: 'global-tab-3',
         keys: ['3'],
-        label: 'Go to Builds',
+        label: 'Workspace → Dispatch',
         group: 'Navigation',
         scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '3' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
-        handler: () => navigate('/builds'),
+        handler: () => navigate('/dispatch'),
       }),
       registerHotkey({
         id: 'global-tab-4',
         keys: ['4'],
-        label: 'Go to Comms',
+        label: 'Dashboard → Cockpit',
         group: 'Navigation',
         scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '4' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
-        handler: () => navigate('/comms'),
+        handler: () => navigate('/activity'),
       }),
       registerHotkey({
         id: 'global-tab-5',
         keys: ['5'],
-        label: 'Go to Helix',
+        label: 'Knowledge → Helix',
         group: 'Navigation',
         scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '5' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
@@ -459,64 +438,63 @@
          <768  : flex-col       (vertical stack — single-column flow)
          >=768 : flex-row       (side-by-side) — at 768..1023 the helix panel
                                 still hides; at >=1024 it renders inline. -->
-  <div class="flex flex-col md:flex-row" style="height: calc(100vh - {$drawerHeightPx}px);">
-    <!-- Left: Main content area — padding-right transitions when events overlay opens (push-not-occlude) -->
+  <div class="flex flex-col md:flex-row" style="height: 100vh; padding-left: {$drawerWidthPx}px; transition: padding-left 0.18s ease;">
+    <!-- Main content area — padding-right when events overlay opens (push-not-occlude) -->
     <div
       class="flex-1 flex flex-col overflow-hidden relative"
       style="padding-right: {$eventsOverlayOpen ? '320px' : '0'}; transition: padding-right 260ms cubic-bezier(0.4,0,0.2,1);"
     >
       <!-- Ambient particles — drifting helix-palette dots behind content -->
       <AmbientParticles />
-      <!-- Top navigation strip — underline-only active indicator (#23) -->
-      <nav class="la-nav flex items-stretch gap-1 px-3 border-b border-[#1e293b] bg-[#0a0a0f] shrink-0 overflow-x-auto" data-status={$ayinStatus}>
+      <!-- Top navigation strip — dropdown screen picker, column-separated right controls -->
+      <nav class="la-nav flex items-stretch border-b border-[var(--la-hair-base)] bg-[var(--la-bg-void)] shrink-0 overflow-visible" style="height: var(--la-header-height, 56px);" data-status={$ayinStatus}>
         <ProjectPicker />
-        {#each NAV_ITEMS as item}
-          <Tooltip content={item.hint} side="bottom">
-            <button
-              onclick={() => navigate(item.hash)}
-              class="shrink-0 px-3 text-[11px] transition-all self-stretch flex items-center border-b-2 {isActive(item.hash) ? 'border-[#FFD700] text-[#FFD700]' : 'border-transparent text-[#475569] hover:text-[#94a3b8]'}"
-            >{item.label}</button>
-          </Tooltip>
-        {/each}
-        <div class="ml-auto shrink-0 flex items-center gap-2">
-          <ActiveBuildsChip />
-          <!-- G-1: OFFLINE dot — subtle indicator, click to retry -->
+        <NavDropdown />
+
+        <!-- Right-side controls — each in its own column cell separated by 1px hairlines -->
+        <div class="ml-auto shrink-0 flex items-stretch">
+          <!-- G-1: OFFLINE dot -->
           {#if $ayinStatus === 'reconnecting' || $ayinStatus === 'offline'}
             <Tooltip content="Gateway offline — click to reconnect" side="bottom">
-              <button class="nav-offline-dot-btn" onclick={connectGlobalSSE} aria-label="Gateway offline — click to reconnect"></button>
+              <button class="nav-offline-dot-btn nav-cell" onclick={connectGlobalSSE} aria-label="Gateway offline — click to reconnect"></button>
             </Tooltip>
           {/if}
-          <!-- Events overlay toggle (Wave 1.5) — E key shortcut, handled in GlobalEventsOverlay -->
+
+          <ActiveBuildsChip />
+
+          <!-- Events -->
           <Tooltip content="Live events feed — activity, AYIN spans, gate verdicts, build output (E)" side="bottom">
             <button
               onclick={() => eventsOverlayOpen.update(v => !v)}
-              class="px-2 py-1 text-[11px] transition-colors relative {$eventsOverlayOpen ? 'text-[#FFD700]' : 'text-[#475569] hover:text-[#94a3b8]'}"
+              class="nav-cell nav-ctrl {$eventsOverlayOpen ? 'nav-ctrl--on' : ''}"
               data-testid="events-toggle"
             >Events</button>
           </Tooltip>
+
+          <!-- Memory -->
           <Tooltip content="Hot · Cold · Convergences — what each agent remembers (Cmd+M)" side="bottom">
             <button
               onclick={() => memoryDrawerOpen.update(v => !v)}
-              class="px-2 py-1 text-[11px] text-[#475569] hover:text-[#FFD700] transition-colors"
+              class="nav-cell nav-ctrl {$memoryDrawerOpen ? 'nav-ctrl--on' : ''}"
               title="Memory drawer (Cmd+M)"
               data-testid="memory-toggle"
-            >{$memoryDrawerOpen ? 'Close Memory' : 'Memory'}</button>
+            >Memory</button>
           </Tooltip>
-          <!-- 3D View toggle — visible at every viewport.
-               Desktop (>=1024): toggles the inline right-hand panel.
-               Tablet/mobile  : toggles a full-screen overlay so the WebGL
-                                bloom pass gets readable real estate. -->
+
+          <!-- 3D Helix toggle -->
           <Tooltip content="Toggle the 3D knowledge graph panel — live helix of agent memory strands" side="bottom">
             <button
               onclick={() => { showHelix = !showHelix; }}
-              class="px-2 py-1 text-[11px] text-[#475569] hover:text-[#FFD700] transition-colors"
+              class="nav-cell nav-ctrl {showHelix ? 'nav-ctrl--on' : ''}"
               data-testid="helix-toggle"
-            >{showHelix ? 'Hide 3D' : '3D'}</button>
+            >3D</button>
           </Tooltip>
+
+          <!-- Helix legend -->
           <Tooltip content="What is the Helix? — color map of agents and LASDLC quality gates" side="bottom">
             <button
               onclick={() => { window.dispatchEvent(new CustomEvent('la:toggle-helix-legend')); }}
-              class="px-1.5 py-1 text-[11px] text-[#334155] hover:text-[#f0c040] transition-colors rounded"
+              class="nav-cell nav-ctrl nav-ctrl--mute"
               aria-label="What is the Helix?"
               data-testid="helix-legend-trigger"
             >?</button>
@@ -582,6 +560,7 @@
   <StatusBar />
   <CommandPalette />
   <CopilotDrawer />
+  <PolytopeButton />
   <MemoryDrawer />
   <HelixTooltip />
   <HelixDetailPanel />

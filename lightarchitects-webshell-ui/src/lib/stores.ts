@@ -35,7 +35,9 @@ export const authStatus = writable<'ok' | 'unauthorized' | 'forbidden'>('ok');
 export const activeSkin = writable<HelixSkin>(DEFAULT_SKIN);
 
 // --- Drawer layout offset (px) — updated by CopilotDrawer so layout can compensate ---
-export const drawerHeightPx = writable<number>(32);
+export const drawerHeightPx = writable<number>(0);
+// Width claimed by the left-sidebar copilot panel (px); App.svelte adds this as padding-left.
+export const drawerWidthPx = writable<number>(0);
 
 // --- Routing ---
 export const currentRoute = writable<string>('/');

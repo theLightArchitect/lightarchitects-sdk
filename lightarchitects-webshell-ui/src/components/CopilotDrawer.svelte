@@ -21,6 +21,7 @@
   import SettingsOverlay from './SettingsOverlay.svelte';
   import PolytopeIcon from './PolytopeIcon.svelte';
   import { settingsOpen, pendingResumeSessionId, serverCwd, persistedConfig, selectedModel } from '$lib/setup';
+  import { drawerWidthPx } from '$lib/stores';
   import { selectedPreset, selectedTarget, PRESET_DISPLAY, quickPickOpen } from '$lib/cockpit/stores';
   import { parseChips } from '$lib/cockpit/copilotChips';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
@@ -31,7 +32,8 @@
 
   // --- Drawer state ---
   let open = $state(false);
-  let heightPx = $state(350);
+  let heightPx = $state(350);   // kept for compatibility; sidebar uses widthPx
+  let widthPx = $state(320);
 
   // P1-4: latest loop_count from the activity feed (CopilotActivityEvent).
   let latestLoopCount = $derived(
@@ -47,20 +49,23 @@
   );
   const MIN_HEIGHT = 180;
   const MAX_HEIGHT_RATIO = 0.85;
+  const MIN_WIDTH = 260;
+  const MAX_WIDTH_RATIO = 0.5;
 
-  // Publish drawer height to layout so content area can compensate.
-  // Guard: only write when value actually changes to avoid triggering
-  // the settings-persistence $effect in app.svelte (which re-reads this
-  // store), creating a reactive cycle → effect_update_depth_exceeded.
+  // Sidebar is a left panel — height is full viewport; publish width to layout.
   $effect(() => {
-    const next = open ? heightPx : 32;
-    if (get(drawerHeightPx) !== next) drawerHeightPx.set(next);
+    drawerHeightPx.set(0);
+  });
+  $effect(() => {
+    const next = open ? widthPx : 0;
+    if (get(drawerWidthPx) !== next) drawerWidthPx.set(next);
   });
 
-  // Clamp heightPx on window resize so drawer doesn't overflow small screens
   function onWindowResize() {
-    const max = Math.floor(window.innerHeight * MAX_HEIGHT_RATIO);
-    if (heightPx > max) heightPx = max;
+    const maxH = Math.floor(window.innerHeight * MAX_HEIGHT_RATIO);
+    if (heightPx > maxH) heightPx = maxH;
+    const maxW = Math.floor(window.innerWidth * MAX_WIDTH_RATIO);
+    if (widthPx > maxW) widthPx = maxW;
   }
 
   // --- Session state ---
@@ -681,32 +686,32 @@
   // Auto-scroll
   $effect(() => { $copilotMessages; if (messagesEl) requestAnimationFrame(() => { if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight; }); });
 
-  // --- Drag to resize ---
+  // --- Drag to resize (right edge — horizontal) ---
   let dragging = false;
-  let dragStartY = 0;
-  let dragStartH = 0;
+  let dragStartX = 0;
+  let dragStartW = 0;
 
   function onDragStart(e: MouseEvent) {
     dragging = true;
-    dragStartY = e.clientY;
-    dragStartH = heightPx;
+    dragStartX = e.clientX;
+    dragStartW = widthPx;
     e.preventDefault();
   }
 
   function onDragMove(e: MouseEvent) {
     if (!dragging) return;
-    const delta = dragStartY - e.clientY;
-    const maxH = Math.floor(window.innerHeight * MAX_HEIGHT_RATIO);
-    heightPx = Math.min(maxH, Math.max(MIN_HEIGHT, dragStartH + delta));
+    const delta = e.clientX - dragStartX;
+    const maxW = Math.floor(window.innerWidth * MAX_WIDTH_RATIO);
+    widthPx = Math.min(maxW, Math.max(MIN_WIDTH, dragStartW + delta));
   }
 
   function onDragEnd() { dragging = false; saveSettingsDebounced(); }
 
   function onSeparatorKeydown(e: KeyboardEvent) {
     const step = 20;
-    const maxH = Math.floor(window.innerHeight * MAX_HEIGHT_RATIO);
-    if (e.key === 'ArrowUp') { e.preventDefault(); heightPx = Math.min(maxH, heightPx + step); }
-    else if (e.key === 'ArrowDown') { e.preventDefault(); heightPx = Math.max(MIN_HEIGHT, heightPx - step); }
+    const maxW = Math.floor(window.innerWidth * MAX_WIDTH_RATIO);
+    if (e.key === 'ArrowRight') { e.preventDefault(); widthPx = Math.min(maxW, widthPx + step); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); widthPx = Math.max(MIN_WIDTH, widthPx - step); }
   }
 
   // ── Model picker (⌘⇧M) ─────────────────────────────────────────────────────
@@ -827,34 +832,21 @@
   onresize={onWindowResize}
 />
 
-<!-- Drawer container -->
+<!-- Sidebar container — left panel, full height below header -->
 <div
   data-testid="copilot-drawer"
   data-card-role="copilot-drawer"
-  class="fixed bottom-0 left-0 right-0 z-30 flex flex-col"
-  style="height: {open ? heightPx + 'px' : '32px'}; transition: height 0.18s ease;"
+  class="fixed top-[56px] left-0 bottom-0 z-30 flex flex-row"
+  style="width: {open ? widthPx + 'px' : '0px'}; overflow: hidden; transition: width 0.18s ease; border-right: 1px solid var(--la-drawer-border);"
 >
-  <!-- Top edge gradient — helix colors bleed into the drawer border -->
-  <div class="h-px shrink-0 w-full" style="background: linear-gradient(90deg, transparent, rgba(255,215,0,0.3) 30%, rgba(255,20,147,0.2) 70%, transparent);"></div>
+  <!-- Sidebar body (flex-col, full width) -->
+  <div class="flex flex-col flex-1 min-w-0 overflow-hidden">
 
-  <!-- Drag handle (only when open) -->
-  {#if open}
-    <div
-      class="h-1 bg-[var(--la-drawer-border)] hover:bg-[var(--la-focus-ring)] focus:bg-[var(--la-focus-ring)] cursor-ns-resize shrink-0 transition-colors outline-none focus:ring-1 focus:ring-[var(--la-focus-ring)]"
-      onmousedown={onDragStart}
-      onkeydown={onSeparatorKeydown}
-      role="slider"
-      aria-label="Resize copilot drawer"
-      aria-orientation="horizontal"
-      aria-valuenow={heightPx}
-      aria-valuemin={MIN_HEIGHT}
-      aria-valuemax={Math.floor(window.innerHeight * MAX_HEIGHT_RATIO)}
-      tabindex="0"
-    ></div>
-  {/if}
+  <!-- Top gradient stripe -->
+  <div class="h-px shrink-0 w-full" style="background: linear-gradient(90deg, transparent, rgba(255,215,0,0.3) 40%, rgba(255,20,147,0.15) 80%, transparent);"></div>
 
-  <!-- Toggle bar / header -->
-  <div class="flex items-center gap-2 px-3 bg-[var(--la-drawer-bg)] border-t border-[var(--la-drawer-border)] shrink-0 h-8">
+  <!-- Toggle bar / header (top of sidebar) -->
+  <div class="flex items-center gap-2 px-3 bg-[var(--la-drawer-bg)] border-b border-[var(--la-drawer-border)] shrink-0 h-8">
     <!-- Mode tabs (only when open) -->
     {#if open}
       <div class="flex rounded overflow-hidden border border-[var(--la-drawer-border)] shrink-0">
@@ -1257,6 +1249,22 @@
 
     </div>
   {/if}
+
+  </div><!-- end sidebar flex-col -->
+
+  <!-- Right-edge drag handle -->
+  <div
+    class="w-1 bg-[var(--la-drawer-border)] hover:bg-[var(--la-focus-ring)] focus:bg-[var(--la-focus-ring)] cursor-ew-resize shrink-0 transition-colors outline-none self-stretch"
+    onmousedown={onDragStart}
+    onkeydown={onSeparatorKeydown}
+    role="slider"
+    aria-label="Resize copilot sidebar"
+    aria-orientation="vertical"
+    aria-valuenow={widthPx}
+    aria-valuemin={MIN_WIDTH}
+    aria-valuemax={Math.floor(window.innerWidth * MAX_WIDTH_RATIO)}
+    tabindex="0"
+  ></div>
 </div>
 
 {#if showModelPicker}

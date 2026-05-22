@@ -49,31 +49,31 @@
     <span class="stat-val">{totalBuilds}</span>
     <span class="stat-label">BUILDS</span>
   </button>
-  <span class="stat-sep" aria-hidden="true">·</span>
+  <div class="stat-sep" aria-hidden="true"></div>
 
   <button class="stat stat-btn" class:stat-hot={activeBuilds > 0} onclick={() => navigate('/builds?filter=active')} title="Active builds">
     <span class="stat-val">{activeBuilds}</span>
     <span class="stat-label">ACTIVE</span>
   </button>
-  <span class="stat-sep" aria-hidden="true">·</span>
+  <div class="stat-sep" aria-hidden="true"></div>
 
   <button class="stat stat-btn" class:stat-hot={activeAgents > 0} onclick={() => navigate('/ops')} title="Agent fleet">
     <span class="stat-val">{activeAgents}</span>
     <span class="stat-label">AGENTS</span>
   </button>
-  <span class="stat-sep" aria-hidden="true">·</span>
+  <div class="stat-sep" aria-hidden="true"></div>
 
   <button class="stat stat-btn" onclick={() => navigate('/builds?filter=gates')} title="Recent gate verdicts">
     <span class="stat-val">{recentGates}</span>
     <span class="stat-label">GATES</span>
   </button>
-  <span class="stat-sep" aria-hidden="true">·</span>
+  <div class="stat-sep" aria-hidden="true"></div>
 
   <button class="stat stat-btn" class:stat-warn={hitlPending > 0} onclick={() => navigate('/run?tab=approval')} title="Pending approvals">
     <span class="stat-val">{hitlPending}</span>
     <span class="stat-label">Approval</span>
   </button>
-  <span class="stat-sep" aria-hidden="true">·</span>
+  <div class="stat-sep" aria-hidden="true"></div>
 
   <button class="stat stat-btn" class:stat-warn={staleCount > 0} onclick={() => navigate('/builds?filter=stale')} title="Stale / idle builds">
     <span class="stat-val">{staleCount}</span>
@@ -84,12 +84,12 @@
 <style>
   .stats-topbar {
     display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 0 10px;
+    align-items: stretch;
+    gap: 0;
+    padding: 0;
     height: 24px;
-    background: var(--la-bg-base, #0d1117);
-    border-bottom: 1px solid var(--la-hair-faint, rgba(255,255,255,0.06));
+    background: var(--la-bg-void, #08090a);
+    border-bottom: 1px solid var(--la-hair-faint, #1c2028);
     font-family: var(--la-font-mono, monospace);
     font-size: 9px;
     flex-shrink: 0;
@@ -97,8 +97,8 @@
 
   .stat {
     display: flex;
-    align-items: baseline;
-    gap: 3px;
+    align-items: center;
+    gap: 4px;
   }
 
   .stat-val {
@@ -123,23 +123,28 @@
   .stat-btn {
     background: none;
     border: none;
-    padding: 2px 4px;
-    margin: 0 -4px;
+    padding: 0 8px;
     cursor: pointer;
-    border-radius: 3px;
-    transition: background-color 120ms;
+    border-radius: 0;   /* zero-radius: angular surfaces */
+    height: 100%;
+    transition: background-color 80ms;
+    display: flex;
+    align-items: center;
+    gap: 3px;
   }
   .stat-btn:hover {
-    background: color-mix(in srgb, var(--la-accent, #00BFFF) 8%, transparent);
+    background: var(--la-bg-elev-1, #111214);
   }
   .stat-btn:hover .stat-label {
     color: var(--la-text-base, #c9d1d9);
   }
 
+  /* Hairline vertical separator — 1px structural line, not a glyph */
   .stat-sep {
-    color: var(--la-text-mute, #6e7681);
-    font-size: 8px;
-    user-select: none;
+    width: 1px;
+    height: 12px;
+    background: var(--la-hair-faint, #1c2028);
     flex-shrink: 0;
+    align-self: center;
   }
 </style>

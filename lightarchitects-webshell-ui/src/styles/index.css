@@ -4,6 +4,57 @@
 @import './tokens.css';
 @import './shepherd-theme.css';
 
+/* ── Nav column cell — each right-side control is its own column unit ───── */
+/* 1px left border acts as a structural separator, not decoration.          */
+.nav-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 12px;
+  border-left: 1px solid var(--la-hair-faint, #1c2028);
+  flex-shrink: 0;
+}
+
+/* Generic nav control button inside a cell */
+.nav-ctrl {
+  font-family: var(--la-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--la-text-mute, #6e7f8f);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 80ms, background 80ms;
+  white-space: nowrap;
+}
+
+.nav-ctrl:hover {
+  color: var(--la-text-bright, #f1f5f9);
+  background: var(--la-bg-elev-1, #111214);
+}
+
+/* Active / on state — gold accent */
+.nav-ctrl--on {
+  color: var(--la-focus-ring, #FFD700);
+}
+
+.nav-ctrl--on:hover {
+  color: var(--la-focus-ring, #FFD700);
+  background: rgba(255, 215, 0, 0.06);
+}
+
+/* Muted label (? button) */
+.nav-ctrl--mute {
+  color: var(--la-hair-strong, #44505e);
+  padding: 0 8px;
+}
+
+.nav-ctrl--mute:hover {
+  color: var(--la-focus-ring, #FFD700);
+}
+
 /* G-1: OFFLINE nav dominant state — amber glow when connectivity is lost */
 .la-nav[data-status="reconnecting"],
 .la-nav[data-status="offline"] {
