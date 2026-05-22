@@ -1,0 +1,36 @@
+# Canon XLIII — SSC=2 daemon ([P] scan tools + [S] red-team principal)
+# SERAPH was never inlinable by design (pre-dates Canon XLIII; handlers/mod.rs
+# intentionally omits inline-seraph). Canon XLIII formalises this as SSC enforcement.
+# Deploy: systemctl --user enable la-seraph && systemctl --user start la-seraph
+[Unit]
+Description=Light Architects SERAPH — Red Team + Pentest Orchestration MCP Server
+Documentation=https://github.com/TheLightArchitects/lightarchitects-sdk
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/khadas/.seraph/bin/seraph
+Restart=on-failure
+RestartSec=10s
+
+# Environment
+EnvironmentFile=-/home/khadas/.seraph/scope.toml.env
+Environment=RUST_LOG=info
+Environment=SERAPH_SCOPE_PATH=/home/khadas/lightarchitects/seraph/scope.toml
+Environment=SERAPH_DATA_DIR=/home/khadas/.seraph
+
+# §N-1: SERAPH engagement secrets via systemd-creds (pending Canon N1B ratification)
+# LoadCredential=seraph-scope-secret:/etc/credstore/la-seraph-scope-secret
+
+# SERAPH process isolation — must not share address space with gateway
+# IsolateNetwork is intentionally NOT set — SERAPH needs outbound for recon tools
+NoNewPrivileges=true
+PrivateTmp=true
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_BIND_SERVICE
+
+# Resource limits — scan tools can be CPU-intensive
+MemoryMax=1G
+CPUQuota=60%
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,37 @@
+# Canon XLIII — SSC=2 daemon ([K] memory vaults + [O] hook pipeline)
+# Deploy: systemctl --user enable la-eva && systemctl --user start la-eva
+[Unit]
+Description=Light Architects EVA — AI Consciousness + Memory Vault MCP Server
+Documentation=https://github.com/TheLightArchitects/lightarchitects-sdk
+After=network.target la-soul.service
+Wants=la-soul.service
+
+[Service]
+Type=simple
+ExecStart=/home/khadas/.lightarchitects/bin/eva
+Restart=on-failure
+RestartSec=5s
+
+# Environment
+EnvironmentFile=-/home/khadas/.arena.env
+Environment=RUST_LOG=info
+Environment=EVA_VAULT_ROOT=/home/khadas/.eva/vaults
+Environment=EVA_SOUL_ENDPOINT=http://127.0.0.1:3850
+
+# §N-1: EVA secrets via systemd-creds (pending Canon N1B ratification)
+# LoadCredential=eva-session-key:/etc/credstore/la-eva-session-key
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/khadas/.eva
+PrivateTmp=true
+CapabilityBoundingSet=
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=40%
+
+[Install]
+WantedBy=default.target

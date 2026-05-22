@@ -361,6 +361,28 @@ MD5 · SHA-1 · DES/3DES · RC4 · ECB mode · RSA < 2048 · ECDH P-192
 
 **Post-quantum cryptography (PQC) roadmap**: NIST finalized FIPS 203 (ML-KEM) and FIPS 204 (ML-DSA) in August 2024. NVD and major tooling began publishing CVSS 4.0 AI/ML-aware scores in 2024. Platform PQC migration plan required before 2028. Any new key exchange or signing implementation must support algorithm agility (negotiation without code changes) to enable seamless PQC transition.
 
+**Constant-time comparison — mandatory for all token and secret comparisons** (CWE-208):
+
+Variable-length input to `ct_eq()` without padding creates an observable timing oracle — an attacker can enumerate valid prefix lengths by measuring response latency. Required pattern for any prefix or equality check on secret material:
+
+```rust
+// WRONG — Option::is_some_and short-circuits on len < N (timing oracle)
+token.as_bytes().get(..4).is_some_and(|b| b.ct_eq(b"lak_").into())
+
+// CORRECT — pad to fixed length first, then ct_eq (CWE-208 closed)
+use subtle::ConstantTimeEq;
+use zeroize::Zeroizing;
+let token_bytes = token.as_bytes();
+let mut padded = Zeroizing::new([0u8; 4]);   // Zeroizing: auto-zeroes on drop (CWE-316)
+let copy_len = token_bytes.len().min(4);
+padded[..copy_len].copy_from_slice(&token_bytes[..copy_len]);
+let matches: bool = padded.ct_eq(b"lak_").into();
+```
+
+`Zeroizing<[u8; N]>` is required (not `[u8; N]`) so the padded buffer is zeroed on drop even on the rejection path. See §5.5 for the full zeroization policy.
+
+**Gate check ([S])**: any token comparison that uses `get(..N).is_some_and(...)`, length-conditional branching before `ct_eq`, or `==` operator on secret bytes is a CWE-208 MEDIUM finding.
+
 ### §3.4 Input Validation Policy
 
 Every value crossing a system boundary is untrusted until validated:
@@ -396,6 +418,14 @@ Reject at the first failing check. Log the rejection with the field name but **n
 
 All interactions with Personal Identifiable Information (PII) require **minimum AAL2** regardless of operation type (NIST SP 800-63-3 §4 directive).
 
+**HTTP 401 response contract** (RFC 7235 §3.1): every HTTP 401 Unauthorized response from a Bearer-authenticated service **must** include:
+```
+WWW-Authenticate: Bearer realm="<service-name>"
+```
+Omitting this header is a protocol compliance gap (RFC 7235 §3.1 — clients MUST be told the expected scheme). It also leaks no information — the realm is public. `axum::http::header::WWW_AUTHENTICATE` + `HeaderValue::from_static(r#"Bearer realm="<service>""#)` is the canonical implementation.
+
+**Gate check ([S])**: any handler returning 401 without `WWW-Authenticate` is a LOW finding (NF class — non-functional compliance gap). No bearer-token service is exempt.
+
 ### §3.5.1 Webshell Two-Auth-Model Invariant
 
 The webshell backend exposes two authentication models that must never be confused:
@@ -421,6 +451,29 @@ If no → wrong auth model. Switch the handler to `auth::AuthGuard`.
 
 This is a **BLOCKING** security finding — a browser-facing endpoint protected by machine-only
 credentials is an authentication bypass by design.
+
+### §3.5.2 Gateway Perimeter — Cloudflare Zero Trust Access
+
+For any gateway service exposed to the internet via Cloudflare tunnel, Cloudflare Zero Trust Access is the **mandatory perimeter control** in addition to application-layer bearer auth. These are two independent layers; neither substitutes for the other.
+
+| Layer | Mechanism | What it stops |
+|-------|-----------|---------------|
+| **Perimeter** (CF Access) | Cloudflare email identity + session cookie | Unauthenticated internet scans, credential-stuffing, attacker reconnaissance |
+| **Application** (bearer token) | `Authorization: Bearer <token>` checked server-side | Authenticated but unauthorized callers, token theft from perimeter-trusted session |
+
+**Required configuration**:
+- Self-hosted Access app covering the full domain (e.g. `api.lightarchitects.ai`)
+- Allow policy scoped to `kf.tan@lightarchitects.io` (or team email list)
+- **Separate bypass app** for health/metrics paths (e.g. `api.lightarchitects.ai/v1/platform/health`) with `decision: bypass, include: [everyone]` — CF evaluates most-specific domain match first
+
+**Path-bypass model** (two-app pattern): a bypass policy inside a single app applies to all paths. To exempt specific paths, create a more-specific app for each exempted path. CF's domain-specificity routing ensures the bypass app matches before the catch-all protected app.
+
+**Current LA implementation** (as of 2026-05-22):
+- Team: `la-seraph.cloudflareaccess.com`
+- Account: `a8f5bfec1ee15ccfddc7fb0d6d1158c8`
+- Tunnel: `64e55b5f-bddd-426c-96d9-3d8bda98701f` → `api.lightarchitects.ai`
+
+**Gate check ([S])**: any internet-exposed service without a CF Access allow policy is a HIGH finding (F-1 class). `/health` and `/metrics` exemptions are NOT optional — monitoring infrastructure must reach them unauthenticated.
 
 ### §3.6 Neo4j Hardening
 
@@ -622,6 +675,21 @@ All egress logged to AYIN with: timestamp, destination, bytes, agent identity, j
 - No secrets in log output (structured logging with field redaction)
 - Secrets rotation: CRITICAL tier rotated within 1 hour of suspected compromise; scheduled rotation ≤90 days
 - Keychain ACL: each secret scoped to specific binary only; no shared keychain entries across different services
+
+**Stack buffer zeroization — rejection paths** (CWE-316): `SecretString` handles heap-allocated secret storage, but stack buffers used in comparison paths also require explicit zeroization. Any `[u8; N]` buffer populated with a token fragment during a CT comparison **must** be wrapped as `Zeroizing<[u8; N]>`:
+
+```rust
+// WRONG — padded holds token bytes on the stack until stack frame reuse
+let mut padded = [0u8; 4];
+
+// CORRECT — zeroed automatically on drop, even on the rejection path
+use zeroize::Zeroizing;
+let mut padded = Zeroizing::new([0u8; 4]);
+```
+
+This applies to: prefix comparison buffers, rejection path token copies, intermediate hash inputs. `String::drop()` does NOT zero heap memory (CWE-316) — use `zeroize::Zeroize::zeroize(&mut t)` explicitly before drop on any rejected secret `String`.
+
+**Gate check ([S])**: any stack buffer or local variable containing secret material that is not wrapped in `Zeroizing<T>` or explicitly zeroized before drop is a MEDIUM finding (S1 class).
 
 ### §5.6 Device Security (L1 Physical)
 

@@ -1,0 +1,37 @@
+# Canon XLIII — SSC=2 daemon ([O] observability platform + [P] HTTP dashboard :3742)
+# Pattern C: AYIN was already an independent daemon before Canon XLIII.
+# Deploy: systemctl --user enable la-ayin && systemctl --user start la-ayin
+[Unit]
+Description=Light Architects AYIN — Observability Platform + Trace Dashboard
+Documentation=https://github.com/TheLightArchitects/lightarchitects-sdk
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/khadas/.lightarchitects/bin/ayin
+Restart=on-failure
+RestartSec=5s
+
+# Environment
+Environment=RUST_LOG=info
+Environment=AYIN_LISTEN_ADDR=127.0.0.1:3742
+Environment=AYIN_DATA_DIR=/home/khadas/.ayin
+Environment=AYIN_RETENTION_DAYS=7
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/khadas/.ayin
+PrivateTmp=true
+CapabilityBoundingSet=
+
+# AYIN serves the trace dashboard — must be reachable from localhost only
+# (gateway and siblings connect to 127.0.0.1:3742; never expose externally)
+
+# Resource limits
+MemoryMax=256M
+CPUQuota=20%
+
+[Install]
+WantedBy=default.target

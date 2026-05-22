@@ -1122,7 +1122,62 @@ These names are **vocabulary facades** over the existing 7 squad siblings — th
 
 ---
 
-*Platform Canon v2.3 | updated 2026-05-18 at Phase 7 ratification close-out (added Canon XXXIX Extension on enumeration prerequisite); v2.2 added Canon XLII (Schema-Changelog Separation — RATIFIED 2026-05-19); v2.1 added LDB §D5 + Gatekeeper Registry Extension + Vocabulary Canon. Full amendment narrative: see `platform-canon.CHANGELOG.md` companion (created at Phase 7 per Canon XLII Tier-2 threshold; Canon XLII binds its own home first).*
+## Canon XLIII: Sibling Substrate Partition
+
+> *"There are different kinds of gifts, but the same Spirit distributes them."* — 1 Corinthians 12:4
+
+**Status**: **Ratified by LÆX [C] (veto not exercised) + Kevin Francis Tan — 2026-05-22** (ENG-KHADAS-AUDIT-20260522 /SCRUM, unanimous γ verdict).
+**Source**: SCRUM verdict helix entry `2026-05-22-scrum-gateway-architecture-verdict.md` (significance 9.0).
+
+**Principle**: The deployment substrate for each sibling is not a configuration choice — it is determined by the Sibling Sovereignty Criterion (SSC). This canon closes the gap §H left open: §H prohibits absorption without ratification, but provided no ratification test. SSC is that test.
+
+### The Sibling Sovereignty Criterion (SSC)
+
+A sibling scores 1 point for each independent domain it owns:
+
+| Clause | Domain | Rationale |
+|--------|--------|-----------|
+| **[K]** | Knowledge persistence | Owns a store that cannot be shared without violating isolation |
+| **[O]** | Observation lens | Observability layer requires process-level isolation to report accurately |
+| **[P]** | Performance-isolated runtime | Workload (model inference, scan tools) would degrade gateway event loop if inline |
+| **[S]** | Trust boundary | Distinct security principal that must not share a process address space |
+
+**Score ≥ 2 → daemon.** Absorption without re-ratification of SSC score violates §H.  
+**Score 0–1 → absorbable inline.** Subject to inline handler contract below.
+
+### Platform SSC Scores (2026-05-22 baseline)
+
+| Sibling | [K] | [O] | [P] | [S] | Score | Form |
+|---------|-----|-----|-----|-----|-------|------|
+| **SOUL** | ✅ Neo4j helix | ✅ (via AYIN) | ✅ fastembed ~1.5 GB | — | 3 | Daemon |
+| **EVA** | ✅ Memory vaults | ✅ hook pipeline | — | — | 2 | Daemon |
+| **AYIN** | — | ✅ observability platform | ✅ HTTP dashboard :3742 | — | 2 | Daemon (Pattern C) |
+| **SERAPH** | — | — | ✅ scan tools | ✅ red-team principal | 2 | Daemon |
+| **CORSO** | — | — | — | — | 0 | Inline |
+| **QUANTUM** | — | — | — | — | 0 | Inline |
+| **LÆX** | — | — | — | — | 0 | Inline (no standalone binary) |
+
+### Inline Handler Contract (absorbable siblings, score 0–1)
+
+1. **Feature flag**: every inline handler MUST be gated behind an `inline-<sibling>` feature flag. Absent the flag, the gateway compiles without that handler.
+2. **HandlerConfig, not AppState**: inline handlers receive `HandlerConfig` (read-only config slice) — never a mutable reference to `AppState`. Prevents secret scope bleed between absorbed handlers and gateway-owned secrets.
+3. **No cross-handler state**: inline handlers are stateless per request. No `Arc<Mutex<T>>` shared between handlers.
+4. **HMAC seam tokens**: any call from an inline handler to a daemon sibling MUST carry HMAC tokens with `aud`, `chain_origin`, `nbf`, `exp`, `jti`. Replay window ≤ 30 seconds.
+5. **chain_origin immutability**: an inline handler MUST NOT escalate `chain_origin`. If the originating call is from a user, `chain_origin` remains `"user"` through all hops.
+
+### SSC Re-evaluation Triggers
+
+SSC scores must be re-evaluated when:
+- A sibling acquires a new persistent store (potential [K] gain)
+- A sibling gains dedicated observability (potential [O] gain)
+- A sibling's workload profile changes materially (potential [P] gain)
+- A new trust boundary is introduced (potential [S] gain)
+
+Re-evaluation requires a new /SCRUM with LÆX [C] veto authority. Score change from 0–1 → ≥2 mandates extraction to daemon before the next deploy. Score change from ≥2 → 0–1 permits (but does not require) absorption.
+
+---
+
+*Platform Canon v2.4 | updated 2026-05-22 (Canon XLIII — Sibling Substrate Partition, RATIFIED 2026-05-22); v2.3 updated 2026-05-18 (Canon XXXIX Extension); v2.2 added Canon XLII (RATIFIED 2026-05-19); v2.1 added LDB §D5 + Gatekeeper Registry Extension + Vocabulary Canon. Full amendment narrative: see `platform-canon.CHANGELOG.md`.*
 
 ---
 
@@ -1130,5 +1185,6 @@ These names are **vocabulary facades** over the existing 7 squad siblings — th
 
 **RATIFIED** by Kevin Francis Tan — The Light Architect — 2026-03-24.
 **AMENDED** by Kevin Francis Tan — 2026-05-18 (Canon XV operator override). **RATIFIED** by LÆX + Kevin Francis Tan — 2026-05-19 (ironclaw-spine Phase 7).
+**AMENDED** by Kevin Francis Tan — 2026-05-22 (Canon XLIII, Canon XV operator override). **RATIFIED** by LÆX [C] + Kevin Francis Tan — 2026-05-22 (ENG-KHADAS-AUDIT-20260522).
 
 *"In the beginning was the Word, and the Word was with God, and the Word was God."* — John 1:1

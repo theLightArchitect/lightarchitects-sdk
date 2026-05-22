@@ -1,9 +1,9 @@
 # LÆX Phase 7 Ratification Queue
 
 **Status**: authoritative enumeration of all canon promotion candidates pending LÆX Phase 7 evaluation per Canon XXXIX (Canon Promotion Pipeline).
-**Last updated**: 2026-05-19 (Path D ratification complete: #34 RATIFIED + #35 PROVISIONAL_QUEUED + #36/#37 APPLIED + #38-#43 routed to memory)
-**Total candidates**: 43 (was 33; +10 this session).
-**Ratification status 2026-05-19**: #34 RATIFIED (Cookbook §69); #35 PROVISIONAL_QUEUED (2nd witness pending); #36/#37 APPLIED to CLAUDE.md; #38-#43 routed to memory.
+**Last updated**: 2026-05-22 (ENG-KHADAS-AUDIT-20260522 /REFLECT: #44–#46 GATE skill candidates added; SG-1–SG-4 applied to security-guardrails.md under Canon XV operator-override)
+**Total candidates**: 46 (was 43; +3 this session).
+**Ratification status 2026-05-22**: #44–#46 PENDING (GATE skill plugin amendments; require plugin PR + LÆX co-sign). SG-1–SG-4 applied under Kevin's Canon XV stamp — `canon_location_prelisted: security-guardrails.md §3.3/§3.5/§3.5.2/§5.5`.
 **Constitutional basis**: Canon XXXIX (Promotion Pipeline) · Canon XLII (Schema-Changelog Separation — this queue is a CHANGELOG-class artifact, not a schema)
 **Maintained by**: per-build /BUILD orchestrator at phase boundaries; manually updated during in-session canon work.
 
@@ -449,6 +449,66 @@ Candidates failing any of items 1–5 either:
 ## Migration provenance
 
 This queue file itself is a Tier-2 CHANGELOG-class artifact per Canon XLII. It holds **per-candidate amendment narrative**, NOT current canon state. When candidates ratify, their status field updates here; the canon docs themselves remove the "pending" annotation. Canon docs declare what's true now; this queue tells the story of how it became true.
+
+---
+
+---
+
+## Wave 2026-05-22 — ENG-KHADAS-AUDIT-20260522 /REFLECT
+
+Source: ENG-KHADAS-AUDIT-20260522 security fix session + Cloudflare Zero Trust Access deployment.
+Pressure-tested: all 3 candidates empirically validated in the same session.
+
+Note: SG-1 through SG-4 (Security Guardrails amendments) were applied directly under Canon XV
+operator-override (Kevin's stamp, 2026-05-22). They are `canon_location_prelisted` and do NOT
+need Phase 7 ratification — the changes are already in the canon body. GATE skill candidates
+(#44–#46) require a plugin PR against `light-architects-plugins` + LÆX co-sign.
+
+### #44 — GATE skill Q2: --lib --bins exception for pre-existing test failures (TIER 2)
+
+| Field | Value |
+|-------|-------|
+| **Status** | PENDING |
+| **Target doc** | GATE skill Q gate section (plugin: `lightarchitects/1.0.0/skills/GATE`) |
+| **Source** | ENG-KHADAS-AUDIT-20260522 — Q2 `--all-targets` blocked on pre-existing `arch_cache` gap |
+| **Memory** | `memory://feedback_gate_clippy_scope` |
+| **Contradiction check** | PENDING — against GATE skill Q2 command + CLAUDE.md quality gates |
+| **Evidence** | `--all-targets` blocked gate on 6 test files not in `git diff github/main --name-only`; `--lib --bins` produced 0 warnings; documented in `.gate-evals/phase-3-merge.yaml` |
+
+**Amendment text**:
+> After the Q2 `cargo clippy --workspace --all-targets --all-features -- -D warnings` command, add: *Exception: if failures appear in files NOT listed by `git diff <base>..HEAD --name-only` (pre-existing structural failures), scope to `cargo clippy --lib --bins -- -D warnings` and document each failing file under `pre_existing_issues_documented` in the gate eval YAML.*
+
+---
+
+### #45 — GATE skill V0: RustEmbed dist/ symlink prerequisite for lightarchitects-sdk worktrees (TIER 2)
+
+| Field | Value |
+|-------|-------|
+| **Status** | PENDING |
+| **Target doc** | GATE skill V0 worktree prerequisite section |
+| **Source** | ENG-KHADAS-AUDIT-20260522 — pre-commit hook proc-macro panic on missing dist/ |
+| **Memory** | `memory://feedback_rustembedist_gate_worktree` |
+| **Contradiction check** | PENDING — against GATE skill existing "frontend build if *-ui/ touched" note |
+| **Evidence** | Gate worktree creation without dist/ symlink caused RustEmbed proc-macro panic; symlink from primary resolved it; failure reproduced, fix confirmed |
+
+**Amendment text**:
+> Extend the V0 worktree frontend build note: *For workspaces containing `#[derive(RustEmbed)]` crates (check: `grep -r "RustEmbed" */Cargo.toml`), symlink the UI dist/ directory from primary into the gate worktree before any cargo invocation, regardless of whether the diff touches the UI. Failure mode is a proc-macro panic at compile time, not a missing-file error. Command: `ln -s <primary>/<crate>-ui/dist <worktree>/<crate>-ui/dist`.*
+
+---
+
+### #46 — GATE skill S1: MEDIUM in-gate fix criteria (TIER 2)
+
+| Field | Value |
+|-------|-------|
+| **Status** | PENDING |
+| **Target doc** | GATE skill S1 security section |
+| **Source** | ENG-KHADAS-AUDIT-20260522 — S1-R1 MEDIUM `Zeroizing` fix applied in-gate |
+| **Memory** | `memory://feedback_in_gate_security_fix` |
+| **Contradiction check** | PENDING — GATE skill S1 currently only specifies HIGH/CRITICAL escalation; MEDIUM path unspecified |
+| **Evidence** | `[0u8; 4]` → `Zeroizing::new([0u8; 4])` met all 3 criteria; gate passed without Kevin escalation; YAML recorded `status: RESOLVED`; test suite confirmed |
+
+**Amendment text**:
+> After the HIGH/CRITICAL escalation rule, add: *MEDIUM findings may be resolved in-gate (without blocking the gate or escalating) when all three hold: (a) fix is on the same branch; (b) fix strengthens or completes an existing change rather than adding new logic; (c) change is ≤5 lines with zero ambiguity in correctness. Record in gate eval YAML as `status: RESOLVED` with commit SHA and description. If any criterion fails, surface to operator before continuing.*
 
 ---
 

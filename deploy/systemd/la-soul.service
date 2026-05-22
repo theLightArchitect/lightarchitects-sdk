@@ -1,0 +1,37 @@
+# Canon XLIII — SSC=3 daemon ([K] Neo4j helix + [O] AYIN + [P] fastembed)
+# Deploy: systemctl --user enable la-soul && systemctl --user start la-soul
+[Unit]
+Description=Light Architects SOUL — Knowledge Graph + Vault MCP Server
+Documentation=https://github.com/TheLightArchitects/lightarchitects-sdk
+After=network.target la-ayin.service
+Wants=la-ayin.service
+
+[Service]
+Type=simple
+ExecStart=/home/khadas/.lightarchitects/bin/soul
+Restart=on-failure
+RestartSec=5s
+
+# Environment
+EnvironmentFile=-/home/khadas/.arena.env
+Environment=RUST_LOG=info
+Environment=SOUL_DATA_DIR=/home/khadas/.soul
+Environment=SOUL_HELIX_ROOT=/home/khadas/lightarchitects/soul/helix
+
+# §N-1: SOUL_NEO4J_PASSWORD via systemd-creds (pending Canon N1B ratification)
+# LoadCredential=neo4j-password:/etc/credstore/la-soul-neo4j-password
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/khadas/.soul /home/khadas/lightarchitects/soul/helix
+PrivateTmp=true
+CapabilityBoundingSet=
+
+# Resource limits
+MemoryMax=2G
+CPUQuota=80%
+
+[Install]
+WantedBy=default.target

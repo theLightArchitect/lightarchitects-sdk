@@ -645,4 +645,41 @@ Invicti Security is transforming the way web applications are secured. An AppSec
 - [SITEMAP](https://owasp.org/sitemap/)
 - [CONTACT](https://owasp.org/contact/)
 
+---
+
+## LA Platform Annotations (2026-05-22)
+
+### RFC 7235 §3.1 — WWW-Authenticate header (maps to ASVS V9 API Security)
+
+The ASVS v5.0.0 document does not explicitly enumerate the RFC 7235 §3.1 requirement that
+HTTP 401 responses from Bearer-authenticated APIs include a `WWW-Authenticate` response header.
+This is a platform-mandatory control validated in ENG-KHADAS-AUDIT-20260522 (NF-2 finding).
+
+**Requirement (platform-canonical)**:
+Every HTTP 401 response from a Bearer-authenticated LA service must include:
+```
+WWW-Authenticate: Bearer realm="<service-name>"
+```
+
+**ASVS mapping**: V9.2 (RESTful Web Service Verification Requirements) — authentication and
+session management for APIs. RFC 7235 §3.1 compliance is the baseline for conformant Bearer
+authentication schemes.
+
+**Implementation (Rust/axum)**:
+```rust
+fn unauthorized() -> impl IntoResponse {
+    (
+        StatusCode::UNAUTHORIZED,
+        [(
+            axum::http::header::WWW_AUTHENTICATE,
+            axum::http::HeaderValue::from_static(r#"Bearer realm="lightarchitects""#),
+        )],
+        axum::Json(json!({"error": {"code": "unauthorized", "status": 401}})),
+    )
+}
+```
+
+**Gate check ([S])**: absence of `WWW-Authenticate` on a 401 response is a LOW (NF-class) finding
+per platform Security Guardrails §3.5.
+
 OWASP, the OWASP logo, and Global AppSec are registered trademarks and AppSec Days, AppSec California, AppSec Cali, SnowFROC, OWASP Boston Application Security Conference, and LASCON are trademarks of the OWASP Foundation, Inc. Unless otherwise specified, all content on the site is Creative Commons Attribution-ShareAlike v4.0 and provided without warranty of service or accuracy. For more information, please refer to our [General Disclaimer](https://policy.owasp.org/operational/general-disclaimer.html). OWASP does not endorse or recommend commercial products or services, allowing our community to remain vendor neutral with the collective wisdom of the best minds in software security worldwide. Copyright 2026, OWASP Foundation, Inc.

@@ -5,55 +5,67 @@
 //! [`SiblingHandler`](lightarchitects::core::handler::SiblingHandler) and are
 //! registered in a global [`HandlerRegistry`] at startup.
 //!
-//! # Feature flags
+//! # Canon XLIII — Sibling Substrate Partition
 //!
-//! | Feature | Handler | Notes |
-//! |---------|---------|-------|
-//! | `inline-ayin` | `AyinHandler` | JSONL storage, no external deps |
-//! | `inline-corso` | `CorsoHandler` | Trinity pipeline, PyO3 |
-//! | `inline-eva` | `EvaHandler` | Hook chain, LLM providers |
-//! | `inline-soul` | `SoulHandler` | Filesystem vault (use `helix` for Neo4j) |
-//! | `inline-quantum` | `QuantumHandler` | Hook system, providers |
-//! | `inline-laex` | `LaexHandler` | Inline-only — wraps `core_tools` canon-check / canon-evaluate; structured frameworks for governance reviews |
+//! The Sibling Sovereignty Criterion (SSC) determines whether a sibling may be
+//! absorbed inline. A sibling scoring ≥2 SSC clauses ([K] knowledge / [O] observation /
+//! [P] performance-isolated / [S] trust boundary) must exist as an independent daemon.
+//! Absorption of a daemon-class sibling violates §H without Canon XXXIX re-ratification.
 //!
-//! SERAPH is intentionally **not** inlinable — it stays spawner-only for
-//! process isolation (offensive security tools must not crash the gateway).
-//! LÆX is **inline-only** — it has no standalone binary, so spawner mode is
-//! not applicable.
+//! # Feature flags — SSC partition
+//!
+//! | Feature | Handler | SSC Score | Form | Notes |
+//! |---------|---------|-----------|------|-------|
+//! | `inline-corso` | `CorsoHandler` | 0 | **Inline** | Stateless ClaudeCliProvider dispatch |
+//! | `inline-quantum` | `QuantumHandler` | 0 | **Inline** | Stateless research dispatch |
+//! | `inline-laex` | `LaexHandler` | 0 | **Inline** (only form) | No standalone binary |
+//! | ~~`inline-soul`~~ | — | 3 | **Daemon** | [K] Neo4j + [O] AYIN + [P] fastembed; compile_error if enabled |
+//! | ~~`inline-eva`~~ | — | 2 | **Daemon** | [K] vaults + [O] hook pipeline; compile_error if enabled |
+//! | ~~`inline-ayin`~~ | — | 2 | **Daemon** (Pattern C) | [O] observability + [P] :3742; compile_error if enabled |
+//! | — (intentional) | — | 2 | **Daemon** (spawner-only) | SERAPH: [P] scan tools + [S] red-team principal |
+
+// ── Canon XLIII SSC enforcement — daemon siblings may not be absorbed inline ───
+// SSC scores ≥2 require daemon form. Enabling these features is a canon violation.
+
+#[cfg(feature = "inline-soul")]
+compile_error!(
+    "Canon XLIII violation: SOUL scores SSC=3 ([K] Neo4j + [O] AYIN + [P] fastembed). \
+     SOUL must remain a daemon. Remove `inline-soul` from your feature list. \
+     See platform-canon.md §Canon XLIII."
+);
+
+#[cfg(feature = "inline-eva")]
+compile_error!(
+    "Canon XLIII violation: EVA scores SSC=2 ([K] memory vaults + [O] hook pipeline). \
+     EVA must remain a daemon. Remove `inline-eva` from your feature list. \
+     See platform-canon.md §Canon XLIII."
+);
+
+#[cfg(feature = "inline-ayin")]
+compile_error!(
+    "Canon XLIII violation: AYIN scores SSC=2 ([O] observability platform + [P] :3742 dashboard). \
+     AYIN must remain a daemon (Pattern C). Remove `inline-ayin` from your feature list. \
+     See platform-canon.md §Canon XLIII."
+);
 
 #[cfg(any(
-    feature = "inline-ayin",
     feature = "inline-corso",
-    feature = "inline-eva",
-    feature = "inline-soul",
     feature = "inline-quantum",
     feature = "inline-laex",
 ))]
 mod registry;
 
 #[cfg(any(
-    feature = "inline-ayin",
     feature = "inline-corso",
-    feature = "inline-eva",
-    feature = "inline-soul",
     feature = "inline-quantum",
     feature = "inline-laex",
 ))]
 pub use registry::{init_handlers, registry};
 
-// ── Individual handler modules (feature-gated) ─────────────────────────────────
-
-#[cfg(feature = "inline-ayin")]
-mod ayin;
+// ── Individual handler modules (SSC-absorbable siblings only) ──────────────────
 
 #[cfg(feature = "inline-corso")]
 mod corso;
-
-#[cfg(feature = "inline-eva")]
-mod eva;
-
-#[cfg(feature = "inline-soul")]
-mod soul;
 
 #[cfg(feature = "inline-quantum")]
 mod quantum;
@@ -66,17 +78,8 @@ mod laex;
 #[cfg(feature = "inline-corso")]
 pub use corso::CorsoHandler;
 
-#[cfg(feature = "inline-eva")]
-pub use eva::EvaHandler;
-
-#[cfg(feature = "inline-soul")]
-pub use soul::SoulHandler;
-
 #[cfg(feature = "inline-quantum")]
 pub use quantum::QuantumHandler;
-
-#[cfg(feature = "inline-ayin")]
-pub use ayin::AyinHandler;
 
 #[cfg(feature = "inline-laex")]
 pub use laex::LaexHandler;
@@ -84,10 +87,7 @@ pub use laex::LaexHandler;
 // ── No inline handlers enabled — provide stub ──────────────────────────────────
 
 #[cfg(not(any(
-    feature = "inline-ayin",
     feature = "inline-corso",
-    feature = "inline-eva",
-    feature = "inline-soul",
     feature = "inline-quantum",
     feature = "inline-laex",
 )))]
@@ -97,10 +97,7 @@ pub fn init_handlers(_config: &crate::config::GatewayConfig) {
 }
 
 #[cfg(not(any(
-    feature = "inline-ayin",
     feature = "inline-corso",
-    feature = "inline-eva",
-    feature = "inline-soul",
     feature = "inline-quantum",
     feature = "inline-laex",
 )))]

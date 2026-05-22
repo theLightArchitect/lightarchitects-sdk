@@ -95,31 +95,35 @@ default = ["spawner"]
 ## still work.
 spawner = []
 
-## In-process sibling handlers — compile handler logic directly into the binary
-## instead of spawning a subprocess per call.
-## NOTE: inline-ayin and inline-corso deps removed — ayin-core/engine/mcp and
-## corso-server/trinity-core not yet published. Re-add when those crates are
-## available on crates.io or GitHub.
-inline-ayin = []
+## In-process sibling handlers — Canon XLIII SSC partition (2026-05-22)
+##
+## SSC-absorbable (score 0–1): inline-corso, inline-quantum, inline-laex
+## SSC-daemon (score ≥2): inline-soul / inline-eva / inline-ayin REMOVED — enabling them
+## triggers compile_error! (Canon XLIII violation). These flags are retained as
+## documented dead-ends so CI surfaces the violation immediately if re-added.
+##
+## SERAPH intentionally omitted — spawner-only ([P] scan tools + [S] red-team principal).
+## LÆX is inline-only by design (no standalone binary).
+
+## SSC-absorbable inline handlers (score 0):
 inline-corso = []
-inline-eva = []
-inline-soul = []
 inline-quantum = []
-# inline-seraph intentionally omitted — SERAPH stays spawner-only for process
-# isolation (offensive security tools must not crash the gateway).
-# LÆX is inline-only by design (no standalone binary); the inline-laex feature
-# is the canonical and only enable path.
 inline-laex = []
 
-## Convenience: enable all six inline handlers at once.
-inline-all = [
-    "inline-ayin", "inline-corso", "inline-eva",
-    "inline-soul", "inline-quantum", "inline-laex",
-]
+## SSC-daemon violations — kept for CI trap, always emit compile_error:
+## inline-soul: SSC=3 ([K] Neo4j + [O] AYIN + [P] fastembed) — DAEMON REQUIRED
+## inline-eva:  SSC=2 ([K] vaults + [O] hook pipeline) — DAEMON REQUIRED
+## inline-ayin: SSC=2 ([O] observability + [P] :3742) — DAEMON REQUIRED (Pattern C)
+inline-soul = []
+inline-eva = []
+inline-ayin = []
 
-## SOUL heavy dependencies (Neo4j + fastembed). Without this, the SOUL handler
-## uses the filesystem vault backend only — no graph database or embeddings.
-helix = ["inline-soul"]
+## Convenience: enable absorbable siblings only. Daemon violations excluded.
+inline-all = ["inline-corso", "inline-quantum", "inline-laex"]
+
+## helix feature kept as no-op stub (helix = ["inline-soul"] previously loaded SOUL with
+## Neo4j + fastembed; SOUL is now daemon-only per Canon XLIII SSC=3).
+helix = []
 
 [lints]
 workspace = true
