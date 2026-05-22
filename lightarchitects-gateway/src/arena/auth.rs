@@ -19,6 +19,7 @@ use secrecy::SecretString;
 use serde_json::json;
 use subtle::ConstantTimeEq;
 use tokio::sync::Mutex;
+use zeroize::Zeroizing;
 
 /// Authenticated request context — inserted into request extensions after validation.
 #[derive(Debug, Clone)]
@@ -276,7 +277,7 @@ pub async fn auth_middleware(
     // `.get(..4).is_some_and(...)` would short-circuit via Option::is_some for tokens
     // shorter than 4 bytes, creating a timing oracle. Padding guarantees the CT path runs.
     let token_bytes = token.as_bytes();
-    let mut padded = [0u8; 4];
+    let mut padded = Zeroizing::new([0u8; 4]);
     let copy_len = token_bytes.len().min(4);
     padded[..copy_len].copy_from_slice(&token_bytes[..copy_len]);
     let prefix_match: bool = padded.ct_eq(b"lak_").into();
