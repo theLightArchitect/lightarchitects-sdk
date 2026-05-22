@@ -6948,9 +6948,144 @@ Mechanical history: `git log -- standards/canon/builders-cookbook.md`
 
 ---
 
+## §70 Type-Annotation Exhaustiveness Testing (2026-05-21 ratified, webshell-cockpit Phase 7)
+
+### §70.1 The Problem Class
+
+When a TypeScript type union (or enum) maps 1:1 to `data-*` DOM attribute values declared across multiple source files, two silent divergence modes exist:
+
+1. **Forward drift** — a union member has no corresponding `data-attribute="<value>"` in any source file (dead type).
+2. **Reverse drift** — a `data-attribute="<value>"` in a source file is absent from the union (orphaned annotation, invisible to the type system).
+
+Neither TypeScript, eslint, nor the compiler catches cross-file attribute-to-type drift. Tests that query by role will silently pass if the attribute exists in the DOM even when the type union is stale.
+
+### §70.2 The Registry Pattern
+
+Maintain a single source-of-truth registry as a TypeScript `Record<UnionMember, string[]>` mapping each union member to the source files that declare it:
+
+```typescript
+const ROLE_FILES: Record<CardRole, string[]> = {
+  "agent-status":   ["src/components/AgentStatusCard.svelte"],
+  "health-monitor": ["src/components/HealthMonitor.svelte"],
+  // one entry per union member
+};
+```
+
+### §70.3 Mandatory Bidirectional Test Structure
+
+**Test 1 — forward direction** (every union member has at least one DOM annotation):
+
+```typescript
+for (const [role, files] of Object.entries(ROLE_FILES)) {
+  for (const file of files) {
+    const src = readFileSync(join(__dirname, "../..", file), "utf-8");
+    expect(src, `${file} missing data-card-role="${role}"`).toContain(
+      `data-card-role="${role}"`
+    );
+  }
+}
+```
+
+**Test 2 — reverse direction** (every DOM annotation is present in the type union):
+
+```typescript
+for (const file of new Set(Object.values(ROLE_FILES).flat())) {
+  const src = readFileSync(join(__dirname, "../..", file), "utf-8");
+  const found = [...src.matchAll(/data-card-role="([^"]+)"/g)].map(m => m[1]);
+  for (const role of found) {
+    expect(Object.keys(ROLE_FILES), `"${role}" in ${file} not in type union`).toContain(role);
+  }
+}
+```
+
+**Test 3 — count guard** (adding a role requires a conscious decision):
+
+```typescript
+expect(ALL_ROLES).toHaveLength(N); // update N when adding roles
+```
+
+The count guard is mandatory. Without it, a contributor can add to the registry without updating the test — the guard makes the count a deliberate commit.
+
+### §70.4 Trigger Conditions
+
+Apply this pattern when ALL three hold:
+1. A TypeScript type union (or string enum) represents a finite closed set of named values.
+2. Those values appear as `data-*` attribute literals in component source files.
+3. The components are maintained across ≥2 source files (single-file = compiler catches it).
+
+### §70.5 Generalizes Beyond Svelte
+
+The pattern is framework-agnostic. Replace `.svelte` files with `.tsx`, `.html`, `.vue`, or any text source. The `readFileSync` approach works wherever source files are on disk at test time (Vitest, Jest, Mocha, etc.). Do NOT use this pattern as a substitute for runtime type guards — it validates the source-level mapping, not the runtime value flow.
+
+### §70.6 Cross-references
+
+- **§57.5 (Selector Stability Hierarchy)** — governs which selector strategy to choose; §70 governs the mapping fidelity between the type set and the annotation set.
+- **§67.5 (Enum-not-String in Rust)** — governs using enums over strings in Rust; §70 is the TypeScript/DOM analog enforcement mechanism.
+- **§68 (Enum-Extension Collision Pre-check)** — governs pre-claiming enum positions before a new variant ships; §70 governs post-hoc verification that every claimed position exists in source.
+
+**Pressure-tested**: webshell-cockpit Phase 7 (2026-05-21) — 13 roles × 6 source files × 8 test cases. Pattern caught zero drift on first run because it was written alongside the taxonomy — that is the intended state. Forward value: a future contributor adding `data-card-role="foo"` to a Svelte file without updating the TypeScript union will now see a failing reverse-direction test and a failing count guard in CI.
+
+**LÆX ratification**: 2026-05-21, webshell-cockpit Phase 7 close-out. No contradictions across 7 canon documents. Operator stamp: Kevin Tan 2026-05-21.
+
+---
+
+## §71 Canonical Spec Pair Atomic Commit Rule (2026-05-21 ratified, webshell-cockpit Phase 7)
+
+### §71.1 The Problem
+
+Versioned specification documents that exist in both human-authored form (`.md`) and rendered form (`.html`) diverge when the `.html` update is deferred to a later commit. The rationalization is always the same: "I'll regenerate the HTML at the end of the build." This reliably produces multi-step version drift — the `.md` accumulates incremental bumps across many commits while the `.html` falls multiple versions behind, requiring a large catch-up commit at build close that obscures the change history.
+
+**Observed failure mode** (webshell-cockpit 2026-05-21): `webshell-api-surface-v1.md` advanced from v1.0.11 to v1.0.19 (8 version steps, 7 commits) while `webshell-api-surface-v1.html` was updated in a single catch-up commit at Phase 7 close-out.
+
+### §71.2 The Rule
+
+**Every commit that bumps the version field in a canonical spec `.md` file MUST include a co-located update to its `.html` canonical pair in the same commit.**
+
+A "canonical spec pair" is any pair of files of the form `<name>-v<N>.md` + `<name>-v<N>.html` that both represent the same versioned specification. The `.html` need not be fully regenerated — a minimal touch updating the version header is sufficient if no content changed. A complete update is required when content changed.
+
+### §71.3 Pre-commit Enforcement (Reference Implementation)
+
+```bash
+# .git/hooks/pre-commit
+# Any staged *-v*.md with a version bump must have a co-staged *-v*.html.
+staged_md=$(git diff --cached --name-only | grep -E '.*-v[0-9]+\.md$')
+for md in $staged_md; do
+  html="${md%.md}.html"
+  if git diff --cached --name-only | grep -qF "$html"; then
+    : # paired .html is staged — OK
+  else
+    echo "BLOCKED: $md staged without paired $html — §71 canonical pair rule"
+    exit 1
+  fi
+done
+```
+
+The hook is a reference implementation. Projects may substitute an equivalent CI check. The gate is mandatory; the mechanism is flexible.
+
+### §71.4 Scope
+
+Applies to:
+- `<name>-api-surface-v<N>.md` + `.html` pairs (primary trigger)
+- Any pair where a project's CLAUDE.md declares the two files as "canonical pair" artifacts
+
+Does NOT apply to:
+- `.md` files with no `.html` counterpart
+- Changelog companions (`*.CHANGELOG.md`) — amendment-narrative files per Canon XLII, not spec pairs
+- README.md and similar non-versioned documentation
+
+### §71.5 Cross-references
+
+- **Canon XLII (Schema-Changelog Separation)** — governs WHERE amendment narrative lives (CHANGELOG companion vs. current-state doc); §71 governs HOW current-state docs are kept in sync across formats. Orthogonal.
+- **§69 (Citation Integrity Doctrine)** — governs verbatim citation of canonical strings; §71 governs physical sync of paired spec files.
+- **Memory `feedback_html_md_canon_pair_drift.md`** — describes the symptom (5–6 location enumeration per bump, stealth-endpoint root cause). **Superseded by §71** as the governing rule; the memory entry remains valid as historical context.
+
+**LÆX ratification**: 2026-05-21, webshell-cockpit Phase 7 close-out. No contradictions across 7 canon documents. Operator stamp: Kevin Tan 2026-05-21.
+
+---
+
 **Rule** (per separation-of-concerns refactor, 2026-05-18): no tail-amendment blocks or scattered per-section version-history entries in this file. Section content lives here; amendment narrative lives in the CHANGELOG companion.
 
-**Current version**: see CHANGELOG for latest. As of 2026-05-19: **v3.3.0** (Citation Integrity Doctrine §69; LÆX candidate #34 ratified Phase 7).
+**Current version**: see CHANGELOG for latest. As of 2026-05-21: **v3.5.0** (§70 Type-Annotation Exhaustiveness Testing + §71 Canonical Spec Pair Atomic Commit Rule; LÆX ratified webshell-cockpit Phase 7).
 
 *Builders Cookbook · Light Architects · `canon://builders-cookbook`*
 

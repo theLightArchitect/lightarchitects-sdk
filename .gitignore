@@ -24,6 +24,7 @@ lightarchitects-webshell/tests/e2e/test-results/
 # Claude Code runtime artifacts
 .claude/
 .remember/
+.superpowers/
 
 # Coverage artifacts
 coverage-gateway/
