@@ -269,12 +269,12 @@
 
 <style>
   .overlay {
-    position: absolute; top: 2.5rem; right: 0.5rem; z-index: 200;
+    position: fixed; bottom: 2.75rem; right: 0.5rem; z-index: 200;
   }
 
   .panel {
     background: #0f172a; border: 1px solid #334155; border-radius: 8px;
-    padding: 1rem; width: 360px; max-height: 70vh; overflow-y: auto;
+    padding: 1rem; width: 360px; max-height: calc(100vh - 5rem); overflow-y: auto;
     box-shadow: 0 8px 32px rgba(0,0,0,0.6); display: flex; flex-direction: column; gap: 0.75rem;
   }
 

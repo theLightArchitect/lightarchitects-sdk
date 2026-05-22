@@ -28,6 +28,13 @@
   let showDeviceModal = $state(false);
   let error = $state<string | null>(null);
 
+  const flowMeta: Record<'oauth' | 'device' | 'apikey' | 'cli', { label: string }> = {
+    oauth:  { label: 'OAuth'  },
+    device: { label: 'Device' },
+    apikey: { label: 'Key'    },
+    cli:    { label: 'Local'  },
+  };
+
   $effect(() => {
     void loadStatus();
   });
@@ -128,13 +135,23 @@
   <span
     class="w-2 h-2 rounded-full flex-shrink-0 transition-colors"
     class:bg-green-500={status === 'connected'}
-    class:bg-[var(--la-text-dim)]={status === 'not_connected'}
+    class:bg-slate-600={status === 'not_connected'}
     class:bg-yellow-400={status === 'loading'}
+    class:animate-pulse={status === 'loading'}
     aria-hidden="true"
   ></span>
 
-  <!-- Label -->
-  <span class="text-sm text-[var(--la-text-bright)] flex-1 min-w-0 truncate">{label}</span>
+  <!-- Label + flow badge -->
+  <span class="text-sm text-[var(--la-text-bright)] flex-1 min-w-0 flex items-center gap-1.5">
+    <span class="truncate">{label}</span>
+    <span
+      class="flow-pill"
+      class:flow-oauth={flow === 'oauth'}
+      class:flow-device={flow === 'device'}
+      class:flow-apikey={flow === 'apikey'}
+      class:flow-cli={flow === 'cli'}
+    >{flowMeta[flow].label}</span>
+  </span>
 
   <!-- Status text -->
   <span class="text-[11px] text-[var(--la-text-dim)] w-20 text-right flex-shrink-0">
@@ -187,3 +204,21 @@
   onClose={() => { showDeviceModal = false; }}
   {onConnected}
 />
+
+<style>
+  .flow-pill {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.58rem;
+    font-weight: 600;
+    border: 1px solid;
+    border-radius: 3px;
+    padding: 0.1rem 0.3rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+    letter-spacing: 0.04em;
+  }
+  .flow-oauth  { color: #60a5fa; border-color: rgba(96,165,250,0.35);  background: rgba(96,165,250,0.08);  }
+  .flow-device { color: #c084fc; border-color: rgba(192,132,252,0.35); background: rgba(192,132,252,0.08); }
+  .flow-apikey { color: #fbbf24; border-color: rgba(251,191,36,0.35);  background: rgba(251,191,36,0.08);  }
+  .flow-cli    { color: #4ade80; border-color: rgba(74,222,128,0.35);  background: rgba(74,222,128,0.08);  }
+</style>
