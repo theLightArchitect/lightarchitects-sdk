@@ -276,6 +276,8 @@ fn spawn_detached(
         .env_remove("CLAUDECODE")
         .env_remove("CLAUDE_CODE_ENTRYPOINT")
         .env_remove("CLAUDE_CODE_EXECPATH")
+        // §N.1 / SG-3: ARENA_PEPPER must not propagate to child processes.
+        .env_remove("ARENA_PEPPER")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());

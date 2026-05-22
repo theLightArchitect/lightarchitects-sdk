@@ -42,6 +42,8 @@ pub async fn run(params: Value) -> Result<Value, GatewayError> {
     sh.arg("-c").arg(command);
     sh.stdout(std::process::Stdio::piped());
     sh.stderr(std::process::Stdio::piped());
+    // §N.1 / SG-3: scrub HMAC pepper before any shell execution.
+    sh.env_remove("ARENA_PEPPER");
     if let Some(dir) = cwd {
         sh.current_dir(dir);
     }

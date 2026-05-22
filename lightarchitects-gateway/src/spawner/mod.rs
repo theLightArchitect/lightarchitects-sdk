@@ -222,7 +222,9 @@ fn spawn_agent(
     cmd.stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit())
-        .env("LIGHTARCHITECTS_AUTOMATED", &token);
+        .env("LIGHTARCHITECTS_AUTOMATED", &token)
+        // §N.1 / SG-3: siblings must not inherit the gateway's HMAC pepper.
+        .env_remove("ARENA_PEPPER");
 
     // Some siblings use clap env var bindings for `--no-color` and expect a
     // boolean string. `NO_COLOR=1` is common, but may not parse as bool.

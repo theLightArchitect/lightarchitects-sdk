@@ -395,9 +395,9 @@ mod tests {
     }
 
     #[test]
-    fn all_tool_definitions_has_thirty_nine_entries() {
-        // 1 meta + 6 file + 3 platform + 11 squad (7 squad_comms + 4 original) + 4 exec + 6 code + 8 git
-        assert_eq!(all_tool_definitions().len(), 39);
+    fn all_tool_definitions_has_forty_three_entries() {
+        // 1 meta + 6 file + 3 platform + 15 squad (7 squad_comms + 4 original + 4 arch) + 4 exec + 6 code + 8 git
+        assert_eq!(all_tool_definitions().len(), 43);
     }
 
     #[test]
