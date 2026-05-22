@@ -1,0 +1,65 @@
+schema_version: 1
+gate: merge
+scope: merge
+scored_by: "/GATE"
+scored_at: "2026-05-22T12:00:00Z"
+build_id: cli-oauth-multi-provider
+phase_id: merge
+branch: feat/cli-oauth-multi-provider
+head_sha: "f9a8132"
+overall_verdict: pass
+
+dimensions:
+  V0_primary_on_main: pass
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 651
+    tests_fail: 0
+    ratchet: +7  # +2 F7 XSS tests, +2 V1 proptest, +1 OA-12 injectivity, +2 spawn_blocking unit coverage
+  Q4_svelte: pass
+  S1_security:
+    result: pass
+    fixed: [F7-xss-error-page, F8-blocking-subprocess-tokio, F9-dashmap-no-ttl-eviction, F10-handler-key-length, F10b-transport-body-limit, OA12-injectivity-unverified]
+    tracked_MEDIUM: [F5-ollama-which-non-absolute, F6-no-focus-trap]
+    notes:
+      F8: "all keychain + subprocess calls wrapped in tokio::task::spawn_blocking"
+      F9: "DashMap::retain eviction loop in AppState::new; 60 s interval; expires_at from OA-2 120 s TTL"
+      F10: "DefaultBodyLimit::max(2 KB) at transport layer + MAX_API_KEY_BYTES=1024 in handler; two independent guards"
+      F5: "ollama `which` non-absolute; attack requires pre-existing local access — accepted post-merge"
+      F6: "Tab can escape modals; WCAG 2.4.3 Medium — focus-trap utility deferred post-merge"
+  S2_supply_chain: pass
+  S3_laex: pass
+  I1_rebase: pass
+  I2_conflicts: pass
+  I3_build: pass
+  N1_northstar:
+    result: pass
+    pillar: "P1+P3"
+  N2_chain: pass
+  N3_exclusion_zones: pass
+  D1_docs: pass
+  D2_plan: pass
+  D3_claude_md: pass  # credential substrate section added to lightarchitects-webshell/CLAUDE.md
+  V1_pyramid:
+    result: pass
+    suites_present: [unit, integration, e2e, property, smoke]
+    notes: "proptest Suite 3: html_escape XSS invariant + OA-12 presence; injectivity unit test added. Regression pins and Svelte unit tests remain deferred post-merge."
+  V2_smoke: pass
+  V3_e2e: "deferred:Playwright not installed; golden path verified via Google OAuth live run 2026-05-22"
+
+cross_exam_corrections:
+  auth_nonces: "non-issue — retain() already called inline in auth_issue_nonce on every issuance"
+  body_limit_gap: "fixed — DefaultBodyLimit::max(2KB) at transport layer closes pre-deserialization DoS window"
+  oa12_injectivity: "fixed — keychain_service_names_are_injective unit test proves distinctness (was inspection-only)"
+  plaintext_filesystem_claim: "corrected — no unencrypted writes; Keychain is filesystem-backed but encrypted at rest"
+  p1_terminal_count_scope: "scoped — routing-level verified (16 E2E, 401 not 404); full Playwright UI flow deferred"
+  ui_a11y_scope: "scoped — code-review-level; runtime verification deferred (Playwright not installed)"
+
+summary: >
+  All hard gates PASS. 651 tests (0 failures). Cross-examination resolved all tracked
+  HIGH findings: F8 spawn_blocking, F9 TTL eviction, F10 body limit (two layers),
+  OA-12 injectivity test. F5 (ollama PATH) and F6 (focus-trap) remain tracked MEDIUM
+  accepted for post-merge follow-on. D3 CLAUDE.md updated with credential substrate
+  architecture. Ready to merge to main.
