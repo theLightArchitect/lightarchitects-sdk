@@ -20,7 +20,7 @@
   import OllamaConfigModal from './OllamaConfigModal.svelte';
   import SettingsOverlay from './SettingsOverlay.svelte';
   import PolytopeIcon from './PolytopeIcon.svelte';
-  import { settingsOpen, pendingResumeSessionId, serverCwd } from '$lib/setup';
+  import { settingsOpen, pendingResumeSessionId, serverCwd, persistedConfig, selectedModel } from '$lib/setup';
   import { selectedPreset, selectedTarget, PRESET_DISPLAY, quickPickOpen } from '$lib/cockpit/stores';
   import { parseChips } from '$lib/cockpit/copilotChips';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
@@ -709,12 +709,48 @@
     else if (e.key === 'ArrowDown') { e.preventDefault(); heightPx = Math.max(MIN_HEIGHT, heightPx - step); }
   }
 
+  // ── Model picker (⌘⇧M) ─────────────────────────────────────────────────────
+  let showModelPicker = $state(false);
+  let modelPickerModels = $state<Array<{ id: string; label: string; tier: string }>>([]);
+  let modelPickerLoading = $state(false);
+
+  async function openModelPicker() {
+    if (modelPickerModels.length === 0) {
+      modelPickerLoading = true;
+      try {
+        const backend = get(persistedConfig)?.backend ?? 'anthropic';
+        const url = new URL('/api/setup/models', window.location.origin);
+        url.searchParams.set('backend', backend);
+        const resp = await fetch(url.toString());
+        if (resp.ok) {
+          const data = await resp.json();
+          modelPickerModels = data.models ?? [];
+        }
+      } catch {
+        // silently ignore — picker stays empty
+      } finally {
+        modelPickerLoading = false;
+      }
+    }
+    showModelPicker = true;
+  }
+
+  function selectPickerModel(id: string) {
+    selectedModel.set(id);
+    showModelPicker = false;
+  }
+
   // Global keyboard shortcuts
   function onGlobalKeydown(e: KeyboardEvent) {
     if (e.key === '`' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       open = !open;
       if (!open) showSuggestions = false;
+    }
+    // ⌘⇧M — model picker
+    if (e.key === 'M' && e.shiftKey && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      if (showModelPicker) { showModelPicker = false; } else { openModelPicker(); }
     }
     // Ctrl+F inside the open drawer toggles history search
     if (e.key === 'f' && (e.ctrlKey || e.metaKey) && open && mode === 'chat') {
@@ -1223,6 +1259,41 @@
   {/if}
 </div>
 
+{#if showModelPicker}
+  <!-- Model picker overlay — ⌘⇧M; uses inert on close to suppress keyboard focus -->
+  <div
+    class="model-picker-backdrop"
+    role="dialog"
+    aria-label="Model picker"
+    aria-modal="true"
+    onkeydown={(e) => { if (e.key === 'Escape') showModelPicker = false; }}
+  >
+    <div class="model-picker-panel">
+      <div class="mp-header">
+        <span class="mp-title">Switch Model</span>
+        <button class="mp-close" onclick={() => { showModelPicker = false; }} aria-label="Close model picker">✕</button>
+      </div>
+      {#if modelPickerLoading}
+        <div class="mp-loading">Loading…</div>
+      {:else}
+        <ul class="mp-list" role="listbox" aria-label="Available models">
+          {#each modelPickerModels as m}
+            <li role="option" aria-selected={$selectedModel === m.id}>
+              <button
+                class="mp-item"
+                class:active={$selectedModel === m.id}
+                onclick={() => selectPickerModel(m.id)}
+              >
+                <span class="mp-model-label">{m.label || m.id}</span>
+                <span class="mp-model-tier">{m.tier}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+  </div>
+{/if}
 <OllamaConfigModal isOpen={showOllamaModal} onClose={() => { showOllamaModal = false; }} />
 <!-- Hidden audio element for EVA voice playback; aria-hidden prevents AT exposure -->
 <audio bind:this={audioEl} aria-hidden="true" style="display:none"></audio>
@@ -1354,4 +1425,36 @@
     box-shadow: 0 2px 8px rgba(255, 215, 0, 0.15);
     transition: border-color 0.3s, box-shadow 0.3s;
   }
+
+  /* ── Model picker (⌘⇧M) ─────────────────────────────────────────────────── */
+  .model-picker-backdrop {
+    position: fixed; inset: 0; z-index: 9000;
+    background: rgba(0,0,0,0.55);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding-top: 15vh;
+  }
+  .model-picker-panel {
+    background: #0f172a; border: 1px solid #334155; border-radius: 12px;
+    width: 420px; max-height: 55vh; display: flex; flex-direction: column;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+    overflow: hidden;
+  }
+  .mp-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.75rem 1rem; border-bottom: 1px solid #1e293b;
+  }
+  .mp-title { font-family: 'Raleway', sans-serif; font-size: 0.85rem; font-weight: 700; color: #e2e8f0; }
+  .mp-close { background: transparent; border: none; color: #475569; cursor: pointer; font-size: 0.9rem; padding: 0.15rem 0.4rem; border-radius: 4px; }
+  .mp-close:hover { color: #94a3b8; }
+  .mp-loading { padding: 1rem; font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; color: #475569; }
+  .mp-list { list-style: none; margin: 0; padding: 0.5rem; overflow-y: auto; }
+  .mp-item {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; padding: 0.55rem 0.75rem; border: none; border-radius: 6px;
+    background: transparent; cursor: pointer; text-align: left;
+  }
+  .mp-item:hover { background: #1e293b; }
+  .mp-item.active { background: rgba(255,102,0,0.12); }
+  .mp-model-label { font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; color: #94a3b8; }
+  .mp-model-tier { font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; }
 </style>

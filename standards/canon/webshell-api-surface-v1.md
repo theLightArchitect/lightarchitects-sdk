@@ -2,7 +2,7 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.21"  # bumped 2026-05-21: §1.8 Streaming Map ADDED + §2.34/§2.35/§2.36 Project Registry endpoints + WebEvent::ProjectUpdate (webshell-project-ingestion Phase 5 — same-commit update per `feedback_webshell_spec_update_gate`)
+version: "1.0.22"  # bumped 2026-05-21: §2.37 ADDED (cli-multi-provider-backend — extended GET /api/setup/models with family/tool_use/vision/context_k fields; ollama-cloud 17-model registry; openrouter 5-model registry; ⌘⇧M model picker; coming-soon la-cloud gate)
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
@@ -1464,6 +1464,67 @@ New SSE event variant added to `WebEvent` enum in `lightarchitects-webshell/src/
 **Broadcast trigger**: `POST /api/projects/init` (§2.35) broadcasts `kind: "created"` on 201. Future update/delete handlers broadcast `kind: "updated"` / `kind: "deleted"` respectively.
 
 **TypeScript type**: `ProjectUpdateEvent` in `lightarchitects-webshell-ui/src/lib/types.ts`.
+
+---
+
+### §2.37 Multi-Provider Backend Setup (cli-multi-provider-backend — 2026-05-21 ADDITION)
+
+Extends `GET /api/setup/models` and `POST /api/setup/save` for the five-provider substrate. All setup routes require `AuthGuard` (cookie session). Source: `lightarchitects-webshell/src/setup/handlers.rs`.
+
+#### `GET /api/setup/models?backend=<id>` — Extended Provider Coverage
+
+`backend` values now include: `anthropic`, `openai`, `ollama-launch`, `ollama-cloud`, `openrouter` (and `mistral-vibe`). The `ModelOption` response shape is extended with four optional fields:
+
+```json
+{
+  "models": [
+    {
+      "id": "glm4-9b",
+      "label": "GLM-4-9B Chat",
+      "tier": "fast",
+      "family": "GLM",
+      "tool_use": true,
+      "vision": false,
+      "context_k": 128
+    }
+  ]
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | `string` | ✓ | Provider model identifier |
+| `label` | `string` | ✓ | Human-readable display name |
+| `tier` | `string` | ✓ | `fast` \| `balanced` \| `capable` \| `flagship` |
+| `family` | `string` | optional | Model family group (e.g. `GLM`, `DeepSeek`, `Qwen`); present only for `ollama-cloud` |
+| `tool_use` | `bool` | optional | Model supports function/tool calling |
+| `vision` | `bool` | optional | Model accepts image input |
+| `context_k` | `u32` | optional | Context window in thousands of tokens |
+
+The `family` field drives grouped display in `ModelStep.svelte` via `$derived.by`. When no model in the list has a `family`, the UI falls back to a flat grid.
+
+**`ollama-cloud` registry**: 17-entry static `CLOUD_MODEL_REGISTRY` (GLM, Kimi, DeepSeek, Qwen, Gemma, MiniMax, Nemotron, Cogito, Mistral families). Mapped via `ollama_cloud_models()` in `handlers.rs`. All models mapped with `tool_use: true`, `vision: false`, and varying `context_k`.
+
+**`openrouter` registry**: 5 hardcoded curated models (`openai/gpt-4o`, `anthropic/claude-sonnet-4-6`, `meta-llama/llama-3.3-70b-instruct`, `google/gemini-2.0-flash-exp`, `deepseek/deepseek-r1`). Returned without `family` (flat grid display).
+
+#### `POST /api/setup/save` — Multi-Provider Body
+
+`ollama_base_url` is forwarded for all backends whose ID contains `"ollama"` (i.e. `ollama-launch` and `ollama-cloud`). For `openrouter` and `anthropic`, `ollama_base_url` is `null`.
+
+```json
+{
+  "agent": "lightarchitects",
+  "backend": "ollama-cloud",
+  "model": "glm4-9b",
+  "ollama_base_url": "http://localhost:11434"
+}
+```
+
+#### Frontend wiring
+
+- `BackendStep.svelte` — 7-card grid; `la-cloud` card has `disabled={true}` + `opacity:0.45` + "Coming Soon" badge; `comingSoon` guard in `pick()` and `proceed()` prevents navigation.
+- `ModelStep.svelte` — `$derived.by` computes grouped `Map<family, ModelOption[]>` when any model has `family`; renders family headers + badge row (tools / vision / NNNk context window).
+- `CopilotDrawer.svelte` — `⌘⇧M` shortcut opens model picker overlay (`role="dialog"`, `aria-modal="true"`); `role="listbox"` + `aria-selected` per item; `{#if}` unmount (not `display:none`) ensures SSE/timer cleanup on close.
 
 ---
 

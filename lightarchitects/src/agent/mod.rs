@@ -17,6 +17,12 @@ pub use provider::{
 mod dispatch;
 pub use dispatch::{ChainContext, dispatch_action};
 
+pub mod cloud_models;
+pub use cloud_models::{CLOUD_MODEL_REGISTRY, CloudModel, CostTier};
+
+pub mod error;
+pub use error::OllamaError;
+
 #[cfg(feature = "agent-cli")]
 mod claude;
 #[cfg(feature = "agent-cli")]
@@ -26,3 +32,20 @@ pub use claude::ClaudeCliProvider;
 pub mod permissions;
 #[cfg(feature = "agent-cli")]
 pub use permissions::{CostGate, PermissionMatrix};
+
+#[cfg(feature = "agent-cli")]
+mod ollama;
+#[cfg(feature = "agent-cli")]
+pub use ollama::OllamaCliProvider;
+
+#[cfg(feature = "agent-cli")]
+pub mod translator;
+#[cfg(feature = "agent-cli")]
+pub use translator::sanitize_prompt;
+
+#[cfg(feature = "agent-cli")]
+pub mod adk_supervisor;
+#[cfg(feature = "agent-cli")]
+pub use adk_supervisor::{
+    AdkVersion, RestartTracker, SupervisorError, allocate_ephemeral_port, probe,
+};

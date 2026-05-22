@@ -97,14 +97,26 @@ pub struct SetupInfoResponse {
 }
 
 /// A single model option returned by `GET /api/setup/models`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 pub struct ModelOption {
     /// Model identifier.
     pub id: String,
     /// Human-readable label.
     pub label: String,
-    /// Capability tier: `"flagship"`, `"balanced"`, or `"fast"`.
+    /// Capability tier: `"flagship"`, `"balanced"`, `"capable"`, or `"fast"`.
     pub tier: String,
+    /// Model family (e.g. `"GLM"`, `"DeepSeek"`). Populated for `ollama-cloud` only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub family: Option<String>,
+    /// Whether the model supports tool use / function calling.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_use: Option<bool>,
+    /// Whether the model supports vision (image) inputs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vision: Option<bool>,
+    /// Context window size in thousands of tokens (e.g. `128` for 128 K).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_k: Option<u32>,
 }
 
 /// Response shape for `GET /api/setup/models`.
@@ -258,31 +270,37 @@ fn lightarchitects_models() -> Vec<ModelOption> {
             id: "nemotron-3-super:120b-cloud".to_owned(),
             label: "Nemotron 3 Super 120B".to_owned(),
             tier: "capable".to_owned(),
+            ..Default::default()
         },
         ModelOption {
             id: "nemotron-3-super:cloud".to_owned(),
             label: "Nemotron 3 Super Cloud".to_owned(),
             tier: "capable".to_owned(),
+            ..Default::default()
         },
         ModelOption {
             id: "qwen3-coder:480b-cloud".to_owned(),
             label: "Qwen3 Coder 480B Cloud".to_owned(),
             tier: "balanced".to_owned(),
+            ..Default::default()
         },
         ModelOption {
             id: "claude-opus-4-7".to_owned(),
             label: "Claude Opus 4.7".to_owned(),
             tier: "flagship".to_owned(),
+            ..Default::default()
         },
         ModelOption {
             id: "claude-sonnet-4-6".to_owned(),
             label: "Claude Sonnet 4.6".to_owned(),
             tier: "balanced".to_owned(),
+            ..Default::default()
         },
         ModelOption {
             id: "claude-haiku-4-5-20251001".to_owned(),
             label: "Claude Haiku 4.5".to_owned(),
             tier: "fast".to_owned(),
+            ..Default::default()
         },
     ]
 }
@@ -293,16 +311,19 @@ fn anthropic_models() -> Vec<ModelOption> {
             id: "claude-opus-4-7".to_owned(),
             label: "Claude Opus 4.7".to_owned(),
             tier: "flagship".to_owned(),
+            ..Default::default()
         },
         ModelOption {
             id: "claude-sonnet-4-6".to_owned(),
             label: "Claude Sonnet 4.6".to_owned(),
             tier: "balanced".to_owned(),
+            ..Default::default()
         },
         ModelOption {
             id: "claude-haiku-4-5-20251001".to_owned(),
             label: "Claude Haiku 4.5".to_owned(),
             tier: "fast".to_owned(),
+            ..Default::default()
         },
     ]
 }
@@ -323,12 +344,14 @@ fn codex_models() -> Vec<ModelOption> {
             id: model.clone(),
             label: format!("{model} (from ~/.codex/config.toml)"),
             tier: "balanced".to_owned(),
+            ..Default::default()
         }]
     } else {
         vec![ModelOption {
             id: String::new(),
             label: "(from ~/.codex/config.toml)".to_owned(),
             tier: "balanced".to_owned(),
+            ..Default::default()
         }]
     }
 }
@@ -362,8 +385,67 @@ async fn ollama_models(base_url: &str) -> Vec<ModelOption> {
             label: m.name.clone(),
             id: m.name,
             tier: "balanced".to_owned(),
+            ..Default::default()
         })
         .collect()
+}
+
+/// Returns all Ollama Cloud models from the compiled `CLOUD_MODEL_REGISTRY`.
+fn ollama_cloud_models() -> Vec<ModelOption> {
+    use lightarchitects::agent::{CLOUD_MODEL_REGISTRY, CostTier};
+    CLOUD_MODEL_REGISTRY
+        .iter()
+        .map(|m| ModelOption {
+            id: m.slug.to_owned(),
+            label: format!("{} — {}", m.display_name, m.provider_org),
+            tier: match m.cost_tier {
+                CostTier::Low => "fast".to_owned(),
+                CostTier::Medium => "balanced".to_owned(),
+                CostTier::High => "capable".to_owned(),
+                CostTier::Premium => "flagship".to_owned(),
+            },
+            family: Some(m.family.to_owned()),
+            tool_use: Some(m.tool_use),
+            vision: Some(m.vision),
+            context_k: Some(m.context_length / 1_000),
+        })
+        .collect()
+}
+
+/// A curated set of popular `OpenRouter` models for initial selection.
+fn openrouter_models() -> Vec<ModelOption> {
+    vec![
+        ModelOption {
+            id: "openai/gpt-4o".to_owned(),
+            label: "GPT-4o (OpenAI via OpenRouter)".to_owned(),
+            tier: "balanced".to_owned(),
+            ..Default::default()
+        },
+        ModelOption {
+            id: "anthropic/claude-sonnet-4-6".to_owned(),
+            label: "Claude Sonnet 4.6 (via OpenRouter)".to_owned(),
+            tier: "balanced".to_owned(),
+            ..Default::default()
+        },
+        ModelOption {
+            id: "meta-llama/llama-3.3-70b-instruct".to_owned(),
+            label: "Llama 3.3 70B (via OpenRouter)".to_owned(),
+            tier: "fast".to_owned(),
+            ..Default::default()
+        },
+        ModelOption {
+            id: "google/gemini-2.0-flash-001".to_owned(),
+            label: "Gemini 2.0 Flash (via OpenRouter)".to_owned(),
+            tier: "fast".to_owned(),
+            ..Default::default()
+        },
+        ModelOption {
+            id: "deepseek/deepseek-r1".to_owned(),
+            label: "DeepSeek R1 (via OpenRouter)".to_owned(),
+            tier: "capable".to_owned(),
+            ..Default::default()
+        },
+    ]
 }
 
 // ── Build AgentSession from SaveRequest ──────────────────────────────────────
@@ -561,6 +643,8 @@ pub async fn setup_models(Query(q): Query<ModelsQuery>) -> impl IntoResponse {
             let url = q.base_url.as_deref().unwrap_or("http://localhost:11434");
             ollama_models(url).await
         }
+        "ollama-cloud" => ollama_cloud_models(),
+        "openrouter" => openrouter_models(),
         _ => vec![],
     };
     Json(ModelsResponse { models }).into_response()
