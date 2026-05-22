@@ -194,7 +194,7 @@ pub async fn init_project(
     // Step 4 — TOCTOU-safe resolution (two-pass: per-segment symlink + post-canonicalize).
     let project_dir = canonicalize_and_check(&raw_project_dir, &[projects_root])?;
 
-    // Step 5 — detect git remote (no subprocess — reads `.git/config` directly).
+    // Step 5 — detect git remote via subprocess (project_dir is pre-canonicalized).
     let git = detect_git_remote(&project_dir).await;
 
     // Step 6 — derive ProjectKind from git presence when not explicitly supplied.
@@ -210,14 +210,8 @@ pub async fn init_project(
     let project_id = Uuid::now_v7();
     let created_at = Utc::now();
 
-    // Step 8 — derive helix link path.
-    let helix_link = home
-        .join("lightarchitects")
-        .join("soul")
-        .join("helix")
-        .join("corso")
-        .join("projects")
-        .join(slug.as_str());
+    // Step 8 — derive helix link path (single source of truth in audit module).
+    let helix_link = audit::helix_project_dir(slug.as_str())?;
 
     // Step 9 — build ProjectMeta.
     let name = body.name.unwrap_or_else(|| slug.as_str().to_owned());
@@ -249,7 +243,10 @@ pub async fn init_project(
     let helix_link_warning = audit::write_helix_entry(&helix_link, &meta)
         .await
         .err()
-        .map(|e| e.to_string());
+        .map(|e| {
+            tracing::warn!(slug = slug.as_str(), error = %e, "helix entry write failed");
+            e.to_string()
+        });
 
     // Step 13 — broadcast SSE event (no receivers is fine — discard SendError).
     let _ = event_tx.send(WebEventV2::from_event(
@@ -293,44 +290,30 @@ pub(crate) fn write_atomic(path: &Path, content: &str) -> Result<(), InitError> 
     }
 }
 
-/// Detect a git `origin` remote by reading `.git/config` directly.
+/// Detect a git `origin` remote via `git remote get-url origin`.
 ///
-/// Returns `None` when the directory is not a git repo or has no `origin` remote.
-/// Avoids subprocess invocation to eliminate any injection surface.
+/// Returns `None` when the directory is not a git repo, has no `origin` remote,
+/// or `git` is unavailable. `project_dir` is pre-canonicalized and root-checked,
+/// so passing it as `current_dir` carries no injection surface.
 async fn detect_git_remote(project_dir: &Path) -> Option<ProjectGit> {
-    let config_path = project_dir.join(".git").join("config");
-    let content = tokio::fs::read_to_string(&config_path).await.ok()?;
-    parse_git_config_origin(&content)
-}
-
-/// Parse the `[remote "origin"]` section from a git config file.
-///
-/// Handles the minimal subset needed for project init — does not attempt
-/// full git-config parsing (multi-value, include directives, etc.).
-fn parse_git_config_origin(config: &str) -> Option<ProjectGit> {
-    let mut in_origin = false;
-    let mut remote_url: Option<String> = None;
-
-    for line in config.lines() {
-        let trimmed = line.trim();
-        if trimmed == r#"[remote "origin"]"# {
-            in_origin = true;
-            continue;
-        }
-        if trimmed.starts_with('[') {
-            in_origin = false;
-        }
-        if in_origin {
-            if let Some(url) = trimmed.strip_prefix("url = ") {
-                remote_url = Some(url.trim().to_owned());
-            }
-        }
+    let output = tokio::process::Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .current_dir(project_dir)
+        .output()
+        .await
+        .ok()?;
+    if !output.status.success() {
+        return None;
     }
-
-    remote_url.map(|remote| ProjectGit {
-        remote,
-        branch: "main".to_owned(),
-    })
+    let url = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    if url.is_empty() {
+        None
+    } else {
+        Some(ProjectGit {
+            remote: url,
+            branch: "main".to_owned(),
+        })
+    }
 }
 
 // ── Unit tests ────────────────────────────────────────────────────────────────
@@ -339,33 +322,6 @@ fn parse_git_config_origin(config: &str) -> Option<ProjectGit> {
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
-
-    #[test]
-    fn parse_git_config_extracts_origin_url() {
-        let config = concat!(
-            "[core]\n    repositoryformatversion = 0\n",
-            r#"[remote "origin"]"#,
-            "\n    url = https://github.com/TheLightArchitects/lightarchitects-sdk\n",
-            "    fetch = +refs/heads/*:refs/remotes/origin/*\n",
-            "[branch \"main\"]\n    remote = origin\n",
-        );
-        let git = parse_git_config_origin(config).unwrap();
-        assert_eq!(
-            git.remote,
-            "https://github.com/TheLightArchitects/lightarchitects-sdk"
-        );
-        assert_eq!(git.branch, "main");
-    }
-
-    #[test]
-    fn parse_git_config_no_origin_returns_none() {
-        assert!(parse_git_config_origin("[core]\n    repositoryformatversion = 0\n").is_none());
-    }
-
-    #[test]
-    fn parse_git_config_empty_returns_none() {
-        assert!(parse_git_config_origin("").is_none());
-    }
 
     #[test]
     fn write_atomic_sets_mode_0600() {

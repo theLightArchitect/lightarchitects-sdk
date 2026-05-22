@@ -120,7 +120,7 @@ pub async fn write_helix_entry(helix_link: &Path, meta: &ProjectMeta) -> std::io
 }
 
 /// Derive the helix project directory for `slug` from `HOME`.
-fn helix_project_dir(slug: &str) -> std::io::Result<std::path::PathBuf> {
+pub(crate) fn helix_project_dir(slug: &str) -> std::io::Result<std::path::PathBuf> {
     let home = std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set"))?;
