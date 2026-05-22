@@ -14,7 +14,7 @@
 //! schema-validated output.
 
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -26,6 +26,7 @@ use super::provider::{
     AgentResponse, LlmAgentProvider, ProviderCapabilities, ProviderError, SanitizedAgentRequest,
     SchemaMode, TokenUsage,
 };
+use super::translator::sanitize_prompt;
 
 // ── Rate table (approximate Ollama Cloud pricing by CostTier) ──────────────────
 // Exact per-model rates will be locked once Ollama publishes billing details.
@@ -108,9 +109,14 @@ impl LlmAgentProvider for OllamaCliProvider {
         })?;
 
         let prompt = req.safe_prompt();
-        sanitize_for_dispatch(prompt)?;
+        sanitize_prompt(prompt).map_err(|_| ProviderError::ParamSanitizationFailed {
+            param_name: "user_prompt".to_owned(),
+            reason: "prompt contains characters forbidden by translator sanitizer".to_owned(),
+        })?;
 
+        let t0 = Instant::now();
         let raw = dispatch_ollama(prompt, model, inner.max_turns).await?;
+        let latency_ms = u64::try_from(t0.elapsed().as_millis()).unwrap_or(u64::MAX);
 
         let input_tokens = u32::try_from(prompt.len() / 4).unwrap_or(u32::MAX);
         let output_tokens = u32::try_from(raw.len() / 4).unwrap_or(u32::MAX);
@@ -133,6 +139,7 @@ impl LlmAgentProvider for OllamaCliProvider {
             "agent.provider".to_owned(),
             Value::String("ollama-cli".to_owned()),
         );
+        attrs.insert("latency_ms".to_owned(), Value::Number(latency_ms.into()));
 
         info!(
             provider = "ollama-cli",
@@ -142,6 +149,7 @@ impl LlmAgentProvider for OllamaCliProvider {
             input_tokens,
             output_tokens,
             cost_usd = cost,
+            latency_ms,
             "ollama agent call completed"
         );
 
@@ -261,25 +269,6 @@ async fn dispatch_ollama(
     }
 }
 
-/// Secondary prompt guard against control characters.
-///
-/// Defense-in-depth: primary protection is `Command::new("ollama")` with args
-/// as separate Vec items (no shell interpolation). This rejects prompts
-/// containing raw control characters (except `\n` and `\t`) before they reach
-/// the subprocess argument list.
-fn sanitize_for_dispatch(prompt: &str) -> Result<(), ProviderError> {
-    let has_control = prompt
-        .chars()
-        .any(|c| (c as u32) < 0x20 && c != '\n' && c != '\t');
-    if has_control {
-        return Err(ProviderError::ParamSanitizationFailed {
-            param_name: "user_prompt".to_owned(),
-            reason: "contains control characters not permitted in Ollama dispatch".to_owned(),
-        });
-    }
-    Ok(())
-}
-
 /// Compute estimated cost in USD from token counts and a cost tier.
 fn cost_for_tier(tier: CostTier, input_tokens: u32, output_tokens: u32) -> f64 {
     let (in_rate, out_rate) = match tier {
@@ -353,24 +342,5 @@ mod tests {
             low < premium,
             "Low tier ({low}) must cost less than Premium ({premium})"
         );
-    }
-
-    #[test]
-    fn sanitize_rejects_null_byte() {
-        let result = sanitize_for_dispatch("hello\x00world");
-        assert!(result.is_err(), "null byte must be rejected");
-    }
-
-    #[test]
-    fn sanitize_accepts_newline_and_tab() {
-        assert!(sanitize_for_dispatch("line1\nline2").is_ok());
-        assert!(sanitize_for_dispatch("col1\tcol2").is_ok());
-    }
-
-    #[test]
-    fn sanitize_rejects_carriage_return() {
-        // CR (0x0D) is a control char; rejected unlike \n / \t
-        let result = sanitize_for_dispatch("hello\rworld");
-        assert!(result.is_err(), "carriage return must be rejected");
     }
 }

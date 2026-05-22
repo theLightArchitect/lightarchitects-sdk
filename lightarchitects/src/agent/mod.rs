@@ -37,3 +37,15 @@ pub use permissions::{CostGate, PermissionMatrix};
 mod ollama;
 #[cfg(feature = "agent-cli")]
 pub use ollama::OllamaCliProvider;
+
+#[cfg(feature = "agent-cli")]
+pub mod translator;
+#[cfg(feature = "agent-cli")]
+pub use translator::sanitize_prompt;
+
+#[cfg(feature = "agent-cli")]
+pub mod adk_supervisor;
+#[cfg(feature = "agent-cli")]
+pub use adk_supervisor::{
+    AdkVersion, RestartTracker, SupervisorError, allocate_ephemeral_port, probe,
+};
