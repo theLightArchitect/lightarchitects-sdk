@@ -19,7 +19,8 @@ Environment=RUST_LOG=info
 Environment=SERAPH_SCOPE_PATH=/home/khadas/lightarchitects/seraph/scope.toml
 Environment=SERAPH_DATA_DIR=/home/khadas/.seraph
 
-# §N-1: SERAPH engagement secrets via systemd-creds (pending Canon N1B ratification)
+# §N-1 / Canon N1B (RATIFIED 2026-05-22): migrate from EnvironmentFile to systemd-creds.
+# Activate after provisioning: sudo systemd-creds encrypt --name=seraph-scope-secret --tpm2-device=auto - /etc/credstore/la-seraph-scope-secret
 # LoadCredential=seraph-scope-secret:/etc/credstore/la-seraph-scope-secret
 
 # SERAPH process isolation — must not share address space with gateway

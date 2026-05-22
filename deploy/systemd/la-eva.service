@@ -18,7 +18,8 @@ Environment=RUST_LOG=info
 Environment=EVA_VAULT_ROOT=/home/khadas/.eva/vaults
 Environment=EVA_SOUL_ENDPOINT=http://127.0.0.1:3850
 
-# §N-1: EVA secrets via systemd-creds (pending Canon N1B ratification)
+# §N-1 / Canon N1B (RATIFIED 2026-05-22): migrate from EnvironmentFile to systemd-creds.
+# Activate after provisioning: sudo systemd-creds encrypt --name=eva-session-key --tpm2-device=auto - /etc/credstore/la-eva-session-key
 # LoadCredential=eva-session-key:/etc/credstore/la-eva-session-key
 
 # Security hardening

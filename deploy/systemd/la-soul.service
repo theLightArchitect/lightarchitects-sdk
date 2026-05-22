@@ -18,7 +18,8 @@ Environment=RUST_LOG=info
 Environment=SOUL_DATA_DIR=/home/khadas/.soul
 Environment=SOUL_HELIX_ROOT=/home/khadas/lightarchitects/soul/helix
 
-# §N-1: SOUL_NEO4J_PASSWORD via systemd-creds (pending Canon N1B ratification)
+# §N-1 / Canon N1B (RATIFIED 2026-05-22): migrate from EnvironmentFile to systemd-creds.
+# Activate after provisioning: sudo systemd-creds encrypt --name=neo4j-password --tpm2-device=auto - /etc/credstore/la-soul-neo4j-password
 # LoadCredential=neo4j-password:/etc/credstore/la-soul-neo4j-password
 
 # Security hardening

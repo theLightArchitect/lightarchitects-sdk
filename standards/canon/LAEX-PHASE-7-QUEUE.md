@@ -1,8 +1,8 @@
 # LÆX Phase 7 Ratification Queue
 
 **Status**: authoritative enumeration of all canon promotion candidates pending LÆX Phase 7 evaluation per Canon XXXIX (Canon Promotion Pipeline).
-**Last updated**: 2026-05-22 (ENG-KHADAS-AUDIT-20260522 /REFLECT: #44–#46 GATE skill candidates added; SG-1–SG-4 applied to security-guardrails.md under Canon XV operator-override)
-**Total candidates**: 46 (was 43; +3 this session).
+**Last updated**: 2026-05-22 (Canon N1B #47 RATIFIED — systemd-creds Linux credential delivery, §5.5.1 applied under Canon XV)
+**Total candidates**: 47 (was 46; +1 this session: #47 Canon N1B).
 **Ratification status 2026-05-22**: #44–#46 PENDING (GATE skill plugin amendments; require plugin PR + LÆX co-sign). SG-1–SG-4 applied under Kevin's Canon XV stamp — `canon_location_prelisted: security-guardrails.md §3.3/§3.5/§3.5.2/§5.5`.
 **Constitutional basis**: Canon XXXIX (Promotion Pipeline) · Canon XLII (Schema-Changelog Separation — this queue is a CHANGELOG-class artifact, not a schema)
 **Maintained by**: per-build /BUILD orchestrator at phase boundaries; manually updated during in-session canon work.
@@ -509,6 +509,31 @@ need Phase 7 ratification — the changes are already in the canon body. GATE sk
 
 **Amendment text**:
 > After the HIGH/CRITICAL escalation rule, add: *MEDIUM findings may be resolved in-gate (without blocking the gate or escalating) when all three hold: (a) fix is on the same branch; (b) fix strengthens or completes an existing change rather than adding new logic; (c) change is ≤5 lines with zero ambiguity in correctness. Record in gate eval YAML as `status: RESOLVED` with commit SHA and description. If any criterion fails, surface to operator before continuing.*
+
+---
+
+---
+
+### #47 — Canon N1B: Linux systemd Credential Delivery via `systemd-creds` + `LoadCredential=` (TIER 1)
+
+| Field | Value |
+|-------|-------|
+| **Status** | RATIFIED |
+| **Ratified by** | Kevin (Canon XV operator stamp) · LÆX |
+| **Ratified date** | 2026-05-22 |
+| **Target doc** | `security-guardrails.md` §5.5.1 (new subsection) |
+| **Source** | ENG-KHADAS-AUDIT-20260522 — F-3 HIGH: `EnvironmentFile=` pattern in Khadas sibling units violates §5.5 "no secrets in env vars in production" (CWE-214, T1552.001) |
+| **Contradiction check** | PASS — §5.5 bullet "no secrets in env vars" is the governing rule; §5.5.1 specifies the mechanism to satisfy it on Linux; no conflict with macOS Keychain pattern |
+| **Evidence** | `EnvironmentFile=-/home/khadas/.arena.env` in la-soul + la-eva; `EnvironmentFile=-/home/khadas/.seraph/scope.toml.env` in la-seraph; `LoadCredential=` stubs already present in all 3 units pre-ratification |
+
+**Amendment text**: added as §5.5.1 in `security-guardrails.md` — specifies `systemd-creds encrypt` provisioning, `LoadCredential=` unit syntax, `$CREDENTIALS_DIRECTORY` binary read pattern, [S] HIGH gate rule for EnvironmentFile credential delivery, and 5-step migration sequence.
+
+**Operational follow-up** (Kevin, Khadas box — separate from ratification):
+1. Provision secrets: `sudo systemd-creds encrypt --name=arena-pepper --tpm2-device=auto - /etc/credstore/la-arena-pepper`
+2. Equivalent for NEO4J_PASSWORD, EVA session key, SERAPH scope secret
+3. Activate stubs: uncomment `LoadCredential=` lines; remove `EnvironmentFile=` (secrets) from units
+4. Update sibling binaries to read from `$CREDENTIALS_DIRECTORY/` and rebuild + deploy
+5. `systemctl --user daemon-reload && systemctl --user restart la-soul la-eva la-seraph`
 
 ---
 

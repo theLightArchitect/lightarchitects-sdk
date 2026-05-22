@@ -691,6 +691,52 @@ This applies to: prefix comparison buffers, rejection path token copies, interme
 
 **Gate check ([S])**: any stack buffer or local variable containing secret material that is not wrapped in `Zeroizing<T>` or explicitly zeroized before drop is a MEDIUM finding (S1 class).
 
+#### §5.5.1 Linux Systemd Credential Delivery (Canon N1B)
+
+For services running under systemd on Linux, `EnvironmentFile=` is **prohibited** for credential delivery. Values loaded via `EnvironmentFile=` appear verbatim in `/proc/<pid>/environ`, visible to any process in the same user namespace — violating the §5.5 rule above (CWE-214, T1552.001).
+
+**Platform-canonical mechanism**: `systemd-creds` + `LoadCredential=`
+
+*Provision each secret (operator, one-time):*
+
+```bash
+# With TPM2 hardware binding (preferred — secrets bound to specific machine)
+systemd-creds encrypt --name=<credential-name> --tpm2-device=auto - /etc/credstore/<credential-name>
+# Without TPM2 (software-only; still eliminates /proc/environ exposure)
+systemd-creds encrypt --name=<credential-name> - /etc/credstore/<credential-name>
+chmod 600 /etc/credstore/<credential-name>
+```
+
+*Unit file:*
+
+```ini
+[Service]
+LoadCredential=<credential-name>:/etc/credstore/<credential-name>
+# Remove any EnvironmentFile= lines that delivered secrets
+```
+
+*Binary reads from `$CREDENTIALS_DIRECTORY/<credential-name>`:*
+
+```rust
+fn load_credential(name: &str) -> Option<SecretString> {
+    let dir = std::env::var_os("CREDENTIALS_DIRECTORY")?;
+    let bytes = std::fs::read(std::path::Path::new(&dir).join(name)).ok()?;
+    // SAFETY: SecretString zeroizes on drop; trim removes trailing newline from encrypt output.
+    Some(SecretString::from(String::from_utf8(bytes).ok()?.trim().to_owned()))
+}
+```
+
+**Gate check ([S])**: any Linux systemd unit with `EnvironmentFile=` delivering secret values (tokens, passwords, HMAC keys) is a **HIGH** finding (CWE-214 + T1552.001). Migration to `LoadCredential=` is required. Exception: `EnvironmentFile=` delivering only non-secret tuning values (log levels, data paths) is permitted.
+
+**Migration sequence** for existing `EnvironmentFile=` units:
+1. Provision each secret: `systemd-creds encrypt` → `/etc/credstore/`
+2. Replace `EnvironmentFile=` (secrets) with `LoadCredential=` lines in the unit
+3. Update binary to read from `$CREDENTIALS_DIRECTORY/` instead of env var
+4. `systemctl --user daemon-reload && systemctl --user restart <service>`
+5. Verify: `systemctl --user show <service> | grep CredentialPath`
+
+**Applies to**: all Khadas sibling units (`la-soul`, `la-eva`, `la-seraph`) and any future Linux-hosted LA services.
+
 ### §5.6 Device Security (L1 Physical)
 
 Physical security is the lowest layer of the OSI model and the hardest to monitor remotely. These controls govern every device used to develop, deploy, or operate the LA platform.
