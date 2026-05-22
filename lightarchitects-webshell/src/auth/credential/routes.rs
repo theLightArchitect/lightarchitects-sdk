@@ -821,4 +821,28 @@ mod tests {
             prop_assert!(provider_keychain_service(provider).is_some());
         }
     }
+
+    /// OA-12 injectivity: no two providers share a Keychain service name.
+    ///
+    /// Proptest samples presence; this test proves the mapping is injective —
+    /// a distinct invariant that presence alone does not imply.
+    #[test]
+    fn keychain_service_names_are_injective() {
+        use crate::auth::credential::{anthropic, github, mistral, ollama, openai};
+        use std::collections::HashSet;
+        let services = [
+            google::KEYCHAIN_SERVICE,
+            github::KEYCHAIN_SERVICE,
+            anthropic::KEYCHAIN_SERVICE,
+            openai::KEYCHAIN_SERVICE,
+            mistral::KEYCHAIN_SERVICE,
+            ollama::KEYCHAIN_SERVICE,
+        ];
+        let unique: HashSet<_> = services.iter().collect();
+        assert_eq!(
+            unique.len(),
+            services.len(),
+            "OA-12 violation: duplicate Keychain service name among providers"
+        );
+    }
 }

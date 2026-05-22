@@ -619,7 +619,11 @@ pub fn build_app(state: AppState) -> Router {
         )
         .route(
             "/api/auth/credential/{provider}/key",
-            post(crate::auth::credential::routes::store_api_key),
+            // DefaultBodyLimit rejects oversized bodies before Json deserialization (F10 — transport layer).
+            // 2 KB covers the largest real API key formats with JSON framing; MAX_API_KEY_BYTES (1 KB)
+            // is the secondary application-layer guard inside the handler.
+            post(crate::auth::credential::routes::store_api_key)
+                .layer(axum::extract::DefaultBodyLimit::max(2 * 1024)),
         )
         .route(
             "/api/auth/credential/{provider}/status",
