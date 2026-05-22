@@ -732,8 +732,12 @@ pub fn build_app(state: AppState) -> Router {
             "/api/debug/parity",
             get(events::soul_routes::parity_handler),
         )
-        // ── Project identity (webshell-project-ingestion §2.33) ─────────────
+        // ── Project identity (webshell-project-ingestion §2.33-2.34) ────────
         .route("/api/projects", get(real_data::list_projects))
+        .route(
+            "/api/projects/init",
+            post(crate::projects::init::init_project_handler),
+        )
         .route("/api/projects/{slug}", get(real_data::get_project))
         // ── Phase 9.8–9.10: real-data handlers (replaces mock_data::*) ──────
         .route("/api/workspaces", get(real_data::list_workspaces))

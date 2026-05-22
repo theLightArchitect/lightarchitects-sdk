@@ -16,12 +16,12 @@
 use lightarchitects::fleet::FleetSnapshot;
 use lightarchitects_webshell::events::types::{
     AyinStatus, ConductorTickEvent, EscalationEvent, FixAgentIterationEvent, MergeAgentStatusEvent,
-    WebEvent, WorkerSlotGaugeEvent,
+    ProjectUpdateKind, ProjectUpdatePayload, WebEvent, WorkerSlotGaugeEvent,
 };
 
 /// Total expected `WebEvent` variant count.  Update alongside the §1.2 table
 /// in `webshell-api-surface-v1.md` whenever variants are added or removed.
-const EXPECTED_VARIANT_COUNT: usize = 24;
+const EXPECTED_VARIANT_COUNT: usize = 25;
 
 /// Exhaustive match acting as a compiler-enforced variant count ratchet.
 ///
@@ -57,6 +57,8 @@ fn all_variants_matched(event: &WebEvent) {
         WebEvent::FixAgentIteration(_) => {}
         // ── agent-teams-fleet variant (Phase 3) ──────────────────────────────
         WebEvent::AgentFleetUpdate(_) => {}
+        // ── project identity (webshell-project-ingestion Phase 3) ────────────
+        WebEvent::ProjectUpdate(_) => {}
     }
 }
 
@@ -110,9 +112,16 @@ fn web_event_variant_count_matches_canon_doc() {
 
     // The EXPECTED_VARIANT_COUNT constant is the canonical check. If it ever
     // diverges from the actual variant count, update it and the §1.2 table.
+    let project_update_sample = WebEvent::ProjectUpdate(ProjectUpdatePayload {
+        project_id: uuid::Uuid::nil(),
+        slug: "test-project".into(),
+        kind: ProjectUpdateKind::Created,
+    });
+    all_variants_matched(&project_update_sample);
+
     assert_eq!(
-        EXPECTED_VARIANT_COUNT, 24,
-        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (24)"
+        EXPECTED_VARIANT_COUNT, 25,
+        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (25)"
     );
 }
 

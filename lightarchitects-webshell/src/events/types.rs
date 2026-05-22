@@ -212,6 +212,13 @@ pub enum WebEvent {
     /// agent state changes. The frontend `FleetPanel` replaces its entire
     /// agent tree on each event (snapshot semantics, no delta bookkeeping).
     AgentFleetUpdate(lightarchitects::fleet::FleetSnapshot),
+
+    // ── webshell-project-ingestion (Phase 3) ────────────────────────────────
+    /// A project was created or updated via `POST /api/projects/init`.
+    ///
+    /// Emitted after the atomic `.lightarchitects/project.toml` write succeeds.
+    /// Topic: `v1.project.update`. Wire tag: `"project_update"`.
+    ProjectUpdate(ProjectUpdatePayload),
 }
 
 /// Northstar evaluation result broadcast after a `WAVE_COMPLETE` event.
@@ -381,6 +388,32 @@ pub struct FixAgentIterationEvent {
     pub iteration: u32,
     /// Short summary of the failing gate dimension being addressed.
     pub issue_summary: String,
+}
+
+// ── webshell-project-ingestion payload types (Phase 3) ─────────────────────
+
+/// Payload for [`WebEvent::ProjectUpdate`].
+///
+/// Emitted by `POST /api/projects/init` after the atomic toml write succeeds.
+/// Wire tag: `"project_update"`. Topic: `v1.project.update`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectUpdatePayload {
+    /// UUID v7 of the newly created or updated project.
+    pub project_id: uuid::Uuid,
+    /// DNS-subdomain slug matching `~/Projects/<slug>/`.
+    pub slug: String,
+    /// Whether this is a first-time creation or a subsequent update.
+    pub kind: ProjectUpdateKind,
+}
+
+/// Classification of a `v1.project.update` event.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectUpdateKind {
+    /// First `POST /api/projects/init` for this slug — project.toml written fresh.
+    Created,
+    /// Reserved for future re-init (deferred per Part V Scope §V.2).
+    Updated,
 }
 
 /// Risk classification for a tool permission request.

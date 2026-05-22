@@ -158,6 +158,9 @@ fn topic_for(event: &WebEvent) -> String {
         WebEvent::ConductorTick(_) => "v1.conductor.tick",
         WebEvent::MergeAgentStatus(_) => "v1.conductor.merge.status",
         WebEvent::FixAgentIteration(_) => "v1.conductor.fix.iteration",
+
+        // ── Project identity (webshell-project-ingestion Phase 3) ───────────
+        WebEvent::ProjectUpdate(_) => "v1.project.update",
     }
     .to_owned()
 }
@@ -190,8 +193,8 @@ mod tests {
             AyinStatus, BuildEventKind, BuildUpdateEvent, ConductorTickEvent, ContextStatusEvent,
             ControlCommand, CopilotActivityEvent, EscalationEvent, FixAgentIterationEvent,
             HelixEntrySummary, HelixEventKind, MergeAgentStatusEvent, NorthstarEvaluationEvent,
-            PillarUpdateEvent, RiskTier, StrandActivationEvent, StrandConvergenceEvent,
-            TraceSpanSummary, WorkerSlotGaugeEvent,
+            PillarUpdateEvent, ProjectUpdateKind, ProjectUpdatePayload, RiskTier,
+            StrandActivationEvent, StrandConvergenceEvent, TraceSpanSummary, WorkerSlotGaugeEvent,
         };
         use crate::gitforest::{
             BranchKind, BranchLifecycle, BranchOverlayMeta, CiStatus, HitlState,
@@ -364,6 +367,11 @@ mod tests {
                 worker_slot: 0,
                 iteration: 1,
                 issue_summary: "test issue".into(),
+            }),
+            WebEvent::ProjectUpdate(ProjectUpdatePayload {
+                project_id: Uuid::nil(),
+                slug: "test-project".into(),
+                kind: ProjectUpdateKind::Created,
             }),
         ];
 
