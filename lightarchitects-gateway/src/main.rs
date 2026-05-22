@@ -638,8 +638,14 @@ fn load_admin_token() -> Option<secrecy::SecretBox<String>> {
         .and_then(|e| e.get_password().ok())
         .or_else(|| keychain_via_security_cli("soul-neo4j-local", "admin-token"))
         .or_else(|| std::env::var("LIGHTARCHITECTS_ADMIN_TOKEN").ok())
-        .filter(|t| t.len() >= MIN_ADMIN_TOKEN_LEN)
-        .map(|t| secrecy::SecretBox::new(Box::new(t)))
+        .and_then(|mut t| {
+            if t.len() < MIN_ADMIN_TOKEN_LEN {
+                // Explicitly zero rejected tokens — String::drop does not clear heap bytes.
+                zeroize::Zeroize::zeroize(&mut t);
+                return None;
+            }
+            Some(secrecy::SecretBox::new(Box::new(t)))
+        })
 }
 
 /// Load the bearer read token for non-admin, non-health endpoints.

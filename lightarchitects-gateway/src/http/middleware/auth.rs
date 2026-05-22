@@ -212,9 +212,15 @@ fn hard_lockout() -> impl IntoResponse {
 }
 
 /// HTTP 401 — no or invalid token.
+///
+/// Includes `WWW-Authenticate` per RFC 7235 §3.1 so clients know the expected scheme.
 fn unauthorized() -> impl IntoResponse {
     (
         StatusCode::UNAUTHORIZED,
+        [(
+            axum::http::header::WWW_AUTHENTICATE,
+            axum::http::HeaderValue::from_static(r#"Bearer realm="lightarchitects""#),
+        )],
         axum::Json(json!({
             "error": {
                 "code": "unauthorized",

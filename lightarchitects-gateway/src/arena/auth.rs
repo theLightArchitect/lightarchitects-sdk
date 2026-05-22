@@ -272,12 +272,14 @@ pub async fn auth_middleware(
         );
     };
 
-    // Constant-time prefix check: avoids timing oracle via short-circuit `starts_with`.
-    // Pad to 4 bytes if token is shorter to ensure a full CT comparison.
+    // Constant-time prefix check: always compare 4 bytes by zero-padding short tokens.
+    // `.get(..4).is_some_and(...)` would short-circuit via Option::is_some for tokens
+    // shorter than 4 bytes, creating a timing oracle. Padding guarantees the CT path runs.
     let token_bytes = token.as_bytes();
-    let prefix_match = token_bytes
-        .get(..4)
-        .is_some_and(|b| b.ct_eq(b"lak_").into());
+    let mut padded = [0u8; 4];
+    let copy_len = token_bytes.len().min(4);
+    padded[..copy_len].copy_from_slice(&token_bytes[..copy_len]);
+    let prefix_match: bool = padded.ct_eq(b"lak_").into();
     if !prefix_match {
         return error_response(
             StatusCode::UNAUTHORIZED,
