@@ -14,10 +14,23 @@ import type {
   PreflightReport,
   DecisionEntry,
   RecentEvent, UiContext, GroundingInfo,
+  ProjectMeta, ProjectInitRequest, InitResponse,
 } from './types';
 import type { SetupInfo, ModelOption, SaveRequest } from './setup';
 
 const API_BASE = '/api';
+
+/** Typed API error that carries the HTTP status code and backend error code. */
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -25,7 +38,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
   });
   if (!res.ok) {
-    throw new Error(`API ${res.status}: ${res.statusText} — ${path}`);
+    let code = `HTTP_${res.status}`;
+    let message = `${res.status}: ${res.statusText} — ${path}`;
+    try {
+      const body = await res.json() as { code?: string; message?: string };
+      if (body.code) code = body.code;
+      if (body.message) message = body.message;
+    } catch { /* non-JSON error body — keep defaults */ }
+    throw new ApiError(res.status, code, message);
   }
   return res.json();
 }
@@ -598,4 +618,21 @@ export const api = {
       return r.json() as Promise<DecisionEntry[]>;
     });
   },
+
+  // ── Project ingestion (webshell-project-ingestion) ────────────────────────
+
+  /** List all initialized projects. Returns `[]` when none exist yet. */
+  listProjects: (): Promise<ProjectMeta[]> => request<ProjectMeta[]>('/projects'),
+
+  /**
+   * Fetch a single project by slug.
+   * Throws `ApiError` with `status=404` + `code='MANIFEST_MISSING'` when the
+   * project directory exists but has not been initialized yet.
+   */
+  getProject: (slug: string): Promise<ProjectMeta> =>
+    request<ProjectMeta>(`/projects/${encodeURIComponent(slug)}`),
+
+  /** Initialize a project — creates `.lightarchitects/project.toml` atomically. */
+  initProject: (body: ProjectInitRequest): Promise<InitResponse> =>
+    request<InitResponse>('/projects/init', { method: 'POST', body: JSON.stringify(body) }),
 };

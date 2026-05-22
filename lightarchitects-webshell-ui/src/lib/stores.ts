@@ -16,6 +16,7 @@ import type {
   ScrumReport,
   TrainingConfig, TrainingRun, ScoringDimension,
   RecentEvent, ContextRetrievalStatus, CopilotContextSnapshot, UiContext, GroundingInfo,
+  ProjectMeta,
 } from './types';
 import { SiblingWave, SIBLINGS, PILLARS } from './types';
 import { DEFAULT_SKIN, type HelixSkin } from './helix-skin';
@@ -47,6 +48,13 @@ export const eventsOverlayOpen = writable<boolean>(false);
 // --- Build data ---
 export const workspaces = writable<Workspace[]>([]);
 export const builds = writable<Build[]>([]);
+
+// --- Project registry (webshell-project-ingestion) ---
+export const projects = writable<ProjectMeta[]>([]);
+/** Lookup map: slug → ProjectMeta, rebuilt whenever `projects` changes. */
+export const projectsBySlug = derived(projects, $p =>
+  new Map($p.map(p => [p.project.slug, p]))
+);
 
 // --- Findings ---
 export const findings = writable<Finding[]>([]);
