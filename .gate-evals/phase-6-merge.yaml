@@ -1,0 +1,63 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-21T19:20:00Z"
+build_id: webshell-project-ingestion
+phase_id: merge
+commit_sha: 83f291f11b2f80cd3f46c2046e5623b658eea541
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 2060
+    tests_fail: 0
+    tests_ignored: 6
+    detail: "2060 Rust tests pass (0 FAILED; 6 ignored = pre-existing flaky integration tests). Significant increase from Phase 4 count (622) due to --all-features enabling additional test modules."
+  Q4_svelte:
+    result: pass
+    vitest_pass: 686
+    vitest_fail: 0
+    svelte_check_errors: 0
+    svelte_check_warnings: 35
+    detail: "686 vitest unit tests pass; 0 svelte-check errors; 35 pre-existing a11y warnings unchanged. Browser project (vitest-browser-playwright) skipped — Playwright Chromium not installed (pre-existing infrastructure condition, V3 E2E deferred with waiver in phase-5 gate)."
+  S1_security:
+    result: pass
+    findings: []
+    detail: "All project routes (GET /api/projects/:slug, POST /api/projects/init, GET /api/projects) use AuthGuard (cookie session). Production code has no unwrap()/expect()/panic!. Test modules have explicit #![allow(clippy::unwrap_used)]. unsafe only in test env isolation (std::env::set_var with HOME lock). O_CREAT|O_EXCL atomic write confirmed in init.rs. Slug validation rejects path separators and empty strings at route entry (before fs access)."
+  S2_supply_chain: pass
+  S3_laex: "n/a"
+  I1_rebase:
+    result: pass
+    commits_ahead: 11
+    commits_behind: 0
+    detail: "Branch is a clean descendant of github/main. 11 commits ahead; 0 behind after rebase completed in Phase 6 setup."
+  N1_northstar:
+    result: pass
+    pillar: "P1"
+    detail: "northstar_lineage present in plan. ProjectDetail subscribes to v1.project.update (la:project-update DOM event) via onMount + onDestroy cleanup. SSE bridge chain verified: WebEvent::ProjectUpdate → sse.ts → CustomEvent → ProjectDetail.loadProject(). P1 mechanical promise: 0 → 2 topics consumed by ProjectDetail."
+  N2_chain:
+    result: pass
+    detail: "Chain is concrete: diff adds ProjectUpdateEvent variant + broadcast in init handler + sse.ts dispatch + ProjectDetail listener. Connection between 'manifest write' and 'UI reactive update' is direct and verifiable. Not aspirational."
+  D1_docs:
+    result: pass
+    detail: "webshell-api-surface-v1.md v1.0.21: §1.8 Streaming Map added (real content replacing placeholder), §2.34-§2.36 Project Registry routes documented. HTML pair webshell-api-surface-v1.html v1.0.21: 4 version bumps, sidebar extended with 'Project Ingestion' section label + 3 nav links, 3 new sections (#streaming-map, #mcp-host, #project-ingestion-sse, #project-registry). Cookbook §71 canonical pair discipline satisfied."
+  D2_plan: pass
+  V1_pyramid:
+    result: pass
+    detail: "Unit (686 vitest): ApiError, projects store, SSE dispatch, ProjectDetail state machine. Integration (Rust, 2060 total): slug validation, O_CREAT|O_EXCL atomicity, manifest write/read contract. E2E (5 golden paths, mocked API): G1 missing-manifest, G2 init→201→ready, G3 error→retry, G4 ready-immediately, G5 SSE refresh."
+  V2_smoke:
+    result: pass
+    detail: "cargo build implicit in cargo test --workspace --all-features (2060 tests executed = build succeeded)."
+  V3_e2e:
+    result: "deferred:playwright_browser_not_installed"
+    detail: "5 golden-path specs authored in e2e/project-ingestion.spec.ts (G1-G5). Playwright Chromium not installed on this machine — pre-existing infrastructure condition established in Phase 4. Unblock: pnpm exec playwright install chromium + pnpm dev in separate terminal. V3 waiver carried from phase-5-phase.yaml."
+
+notes:
+  - "Phase 6 deliverables: webshell-api-surface-v1.md + .html v1.0.21 (§1.8 real content + §2.33 HTML backfill + §2.34/§2.35/§2.36), gate-evals/phase-6-merge.yaml + .jsonl"
+  - "Q3 test count ratchet: 622 (Phase 4) → 2060 (Phase 6, --all-features). Zero regressions."
+  - "S1 all-clean: AuthGuard on all 3 project routes, no production unwrap, O_CREAT|O_EXCL atomic"
+  - "N chain verified against source: onMount/onDestroy in ProjectDetail.svelte lines 125-131, sse.ts line 283"
+  - "V3 E2E deferred from phase-5 waiver — unblocking condition unchanged"
