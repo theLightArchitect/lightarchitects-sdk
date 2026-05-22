@@ -173,6 +173,18 @@ pub struct AppState {
     /// Maps [`Uuid`] nonce → expiry [`std::time::Instant`] (60-second TTL).
     /// Consumed on first use; expired entries are discarded on access.
     pub auth_nonces: Arc<DashMap<Uuid, std::time::Instant>>,
+    /// OAuth CSRF state map — keyed by state UUID (OA-2).
+    ///
+    /// Separate from `auth_nonces`: different TTL (120 s vs 60 s) and a
+    /// provider-specific payload (`OAuthPendingState`) that `auth_nonces`
+    /// does not carry.  Entries are consumed on first valid callback or
+    /// evicted at TTL.
+    pub oauth_states: Arc<DashMap<Uuid, crate::auth::credential::OAuthPendingState>>,
+    /// Provider connection state cache — keyed by provider identifier.
+    ///
+    /// Avoids a Keychain subprocess call on every status request.
+    /// Written by init / callback / revoke handlers; read on status checks.
+    pub credential_store: Arc<DashMap<String, crate::auth::credential::CredentialState>>,
     /// Global event ring buffer — plan-builder-copilot-bridge Phase 3.
     ///
     /// Stores the last 1,000 [`GlobalEventEntry`] entries across all sources
@@ -367,6 +379,8 @@ impl AppState {
             telemetry,
             session_store,
             auth_nonces: Arc::new(DashMap::new()),
+            oauth_states: Arc::new(DashMap::new()),
+            credential_store: Arc::new(DashMap::new()),
             global_event_store: {
                 let data_dir = std::env::var("HOME").map_or_else(
                     |_| std::path::PathBuf::from("/tmp").join("lightarchitects-webshell"),
@@ -510,6 +524,8 @@ impl AppState {
             telemetry: TelemetryHandle::new(),
             session_store: Arc::new(std::sync::Mutex::new(SessionStore::noop())),
             auth_nonces: Arc::new(DashMap::new()),
+            oauth_states: Arc::new(DashMap::new()),
+            credential_store: Arc::new(DashMap::new()),
             global_event_store: events::GlobalEventStore::noop(),
             plan_draft_sessions: Arc::new(DashMap::new()),
             supervisor_states: Arc::new(DashMap::new()),
@@ -566,6 +582,22 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/auth/nonce-exchange", post(auth_nonce_exchange))
         .route("/api/auth/status", get(auth_status))
         .route("/api/auth/session", delete(auth_logout))
+        .route(
+            "/api/auth/credential/google/init",
+            post(crate::auth::credential::routes::google_init),
+        )
+        .route(
+            "/api/auth/credential/google/callback",
+            get(crate::auth::credential::routes::google_callback),
+        )
+        .route(
+            "/api/auth/credential/{provider}/status",
+            get(crate::auth::credential::routes::provider_status),
+        )
+        .route(
+            "/api/auth/credential/{provider}",
+            delete(crate::auth::credential::routes::provider_revoke),
+        )
         .route("/api/terminal/ws", get(terminal::ws::ws_handler))
         .route("/api/events", get(events::sse_handler::sse_handler))
         .route("/api/control", post(events::control_handler))

@@ -1,0 +1,404 @@
+//! HTTP route handlers for the credential substrate.
+//!
+//! Registered in [`crate::server::build_app`]:
+//!
+//! | Method | Path | Auth | Description |
+//! |--------|------|------|-------------|
+//! | POST | `/api/auth/credential/google/init` | Bearer | Start Google OAuth PKCE flow |
+//! | GET | `/api/auth/credential/google/callback` | None | OAuth callback (browser redirect) |
+//! | GET | `/api/auth/credential/{provider}/status` | Bearer | Connection state |
+//! | DELETE | `/api/auth/credential/{provider}` | Bearer | Revoke stored credential |
+//!
+//! Security properties enforced here:
+//! - OA-2: `state` UUID validated against `AppState::oauth_states`; expired entries rejected.
+//! - OA-5: `redirect_uri` constructed from the locked `127.0.0.1:{port}` address.
+//! - OA-7 / OA-8: Tokens never written to `tracing` spans.
+
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+    http::StatusCode,
+    response::{Html, IntoResponse, Response},
+};
+use serde::{Deserialize, Serialize};
+use std::time::{Duration, Instant};
+use uuid::Uuid;
+
+use crate::{
+    auth::AuthGuard,
+    auth::credential::{
+        CredentialState, OAuthPendingState, ProviderCredentialProvider,
+        google::{self, GoogleCredentialProvider},
+        keychain,
+    },
+    server::AppState,
+};
+
+use super::pkce;
+
+/// OAuth CSRF state TTL: 120 seconds (OA-2).
+const OAUTH_STATE_TTL: Duration = Duration::from_secs(120);
+
+// ── Shared error helper ───────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+struct ErrorBody {
+    error: String,
+}
+
+fn err(status: StatusCode, msg: impl Into<String>) -> Response {
+    (status, Json(ErrorBody { error: msg.into() })).into_response()
+}
+
+// ── Response types ────────────────────────────────────────────────────────────
+
+/// Response body for `POST /api/auth/credential/google/init`.
+#[derive(Debug, Serialize)]
+pub struct GoogleInitResponse {
+    /// Full Google authorization URL.  The frontend opens this in a new tab.
+    pub redirect_url: String,
+}
+
+/// Response body for `GET /api/auth/credential/{provider}/status`.
+#[derive(Debug, Serialize)]
+pub struct ProviderStatusResponse {
+    /// Provider identifier (e.g. `"google"`).
+    pub provider: String,
+    /// Current connection state.
+    pub state: CredentialState,
+}
+
+// ── POST /api/auth/credential/google/init ────────────────────────────────────
+
+/// Starts a Google OAuth 2.0 PKCE authorization flow.
+///
+/// Generates a fresh PKCE pair (OA-1), stores an `OAuthPendingState` keyed by
+/// a UUID `state` parameter (OA-2), and returns the authorization URL.
+/// The redirect URI is locked to `http://127.0.0.1:{port}/...` (OA-5).
+///
+/// # Errors
+///
+/// Returns a `503` when `LA_GOOGLE_CLIENT_ID` is not set, or `500` when the
+/// authorization URL cannot be constructed.
+pub async fn google_init(
+    _auth: AuthGuard,
+    State(state): State<AppState>,
+) -> Result<Json<GoogleInitResponse>, Response> {
+    let client_id = std::env::var("LA_GOOGLE_CLIENT_ID").map_err(|_| {
+        err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "LA_GOOGLE_CLIENT_ID not configured",
+        )
+    })?;
+
+    // OA-5: redirect_uri locked to localhost:{port} — never user-supplied.
+    let redirect_uri = format!(
+        "http://127.0.0.1:{}/api/auth/credential/google/callback",
+        state.config.port
+    );
+
+    // OA-1: 256-bit CSPRNG verifier + S256 challenge.
+    let (code_verifier, code_challenge) = pkce::generate_pkce_pair();
+    let state_uuid = Uuid::new_v4();
+
+    // OA-2: store CSRF state with locked redirect_uri and PKCE verifier.
+    state.oauth_states.insert(
+        state_uuid,
+        OAuthPendingState {
+            provider_id: "google".to_owned(),
+            code_verifier,
+            redirect_uri: redirect_uri.clone(),
+            expires_at: Instant::now() + OAUTH_STATE_TTL,
+        },
+    );
+
+    let mut auth_url = reqwest::Url::parse(google::AUTH_ENDPOINT).map_err(|e| {
+        err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("invalid auth endpoint: {e}"),
+        )
+    })?;
+
+    let scopes = google::SCOPES.join(" ");
+    auth_url
+        .query_pairs_mut()
+        .append_pair("client_id", &client_id)
+        .append_pair("redirect_uri", &redirect_uri)
+        .append_pair("response_type", "code")
+        .append_pair("scope", &scopes)
+        .append_pair("code_challenge", &code_challenge)
+        .append_pair("code_challenge_method", "S256")
+        .append_pair("state", &state_uuid.to_string())
+        .append_pair("access_type", "offline")
+        .append_pair("prompt", "consent");
+
+    Ok(Json(GoogleInitResponse {
+        redirect_url: auth_url.to_string(),
+    }))
+}
+
+// ── GET /api/auth/credential/google/callback ─────────────────────────────────
+
+/// Query parameters delivered by Google to the callback URL.
+#[derive(Debug, Deserialize)]
+pub struct GoogleCallbackParams {
+    /// Authorization code from Google.
+    pub code: Option<String>,
+    /// State UUID echoed back from the init request (OA-2 CSRF check).
+    pub state: Option<String>,
+    /// OAuth error code when the user denied access (e.g. `"access_denied"`).
+    pub error: Option<String>,
+}
+
+/// Token response from `oauth2.googleapis.com`.
+#[derive(Debug, Deserialize)]
+struct GoogleTokenResponse {
+    /// Short-lived access token (not persisted — OA-3).
+    #[allow(dead_code)]
+    access_token: String,
+    /// Refresh token (persisted to Keychain — OA-3, OA-12).
+    refresh_token: Option<String>,
+}
+
+/// Handles the OAuth callback from Google.
+///
+/// Validates the CSRF state (OA-2), exchanges the code for tokens, stores
+/// the refresh token in the Keychain (OA-3), and returns a self-closing page.
+///
+/// Unauthenticated — the browser follows the Google redirect and cannot
+/// carry a Bearer token.
+pub async fn google_callback(
+    State(state): State<AppState>,
+    Query(params): Query<GoogleCallbackParams>,
+) -> Response {
+    if let Some(ref error) = params.error {
+        let msg = format!("Google OAuth error: {error}");
+        tracing::warn!(target: "credential.google", error = %error, "OAuth denied");
+        return Html(error_page(&msg)).into_response();
+    }
+
+    let (Some(code), Some(state_str)) = (params.code, params.state) else {
+        return Html(error_page("Missing code or state parameter")).into_response();
+    };
+
+    // OA-2: validate and consume CSRF state.
+    let Ok(state_uuid) = state_str.parse::<Uuid>() else {
+        tracing::warn!(target: "credential.google", "callback received non-UUID state");
+        return Html(error_page("Invalid state parameter")).into_response();
+    };
+
+    let Some((_, pending)) = state.oauth_states.remove(&state_uuid) else {
+        tracing::warn!(target: "credential.google", state = %state_uuid, "state not found or consumed");
+        return Html(error_page("State not found or expired")).into_response();
+    };
+
+    if Instant::now() > pending.expires_at {
+        tracing::warn!(target: "credential.google", state = %state_uuid, "state expired");
+        return Html(error_page("OAuth state expired — please try again")).into_response();
+    }
+
+    let refresh_token = match perform_token_exchange(&code, &pending).await {
+        Ok(rt) => rt,
+        Err(msg) => return Html(error_page(&msg)).into_response(),
+    };
+
+    // OA-3: store refresh token via Keychain subprocess only.
+    if let Err(e) = GoogleCredentialProvider.store_credential(&refresh_token) {
+        tracing::error!(target: "credential.google", error = %e, "keychain store failed");
+        return Html(error_page("Failed to store credential in Keychain")).into_response();
+    }
+
+    state
+        .credential_store
+        .insert("google".to_owned(), CredentialState::Connected);
+    tracing::info!(target: "credential.google", "Google credential stored — provider connected");
+    Html(success_page("Google")).into_response()
+}
+
+/// Exchanges the authorization code for a Google refresh token.
+///
+/// Reads `LA_GOOGLE_CLIENT_ID` and `LA_GOOGLE_CLIENT_SECRET` from the
+/// environment.  The refresh token is returned; the access token is discarded
+/// (OA-3 — only the refresh token is persisted).
+///
+/// # Errors
+///
+/// Returns a human-readable error message string on failure (displayed in the
+/// browser page — not logged to `tracing` to avoid leaking token values).
+async fn perform_token_exchange(code: &str, pending: &OAuthPendingState) -> Result<String, String> {
+    let client_id = std::env::var("LA_GOOGLE_CLIENT_ID")
+        .map_err(|_| "LA_GOOGLE_CLIENT_ID not configured".to_owned())?;
+    let client_secret = std::env::var("LA_GOOGLE_CLIENT_SECRET")
+        .map_err(|_| "LA_GOOGLE_CLIENT_SECRET not configured".to_owned())?;
+
+    let http = reqwest::Client::builder().build().map_err(|e| {
+        tracing::error!(target: "credential.google", error = %e, "HTTP client build failed");
+        "Internal error during token exchange".to_owned()
+    })?;
+
+    let resp = http
+        .post(google::TOKEN_ENDPOINT)
+        .form(&[
+            ("code", code),
+            ("client_id", client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+            ("redirect_uri", pending.redirect_uri.as_str()),
+            ("code_verifier", pending.code_verifier.as_str()),
+            ("grant_type", "authorization_code"),
+        ])
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!(target: "credential.google", error = %e, "token exchange HTTP error");
+            "Token exchange request failed".to_owned()
+        })?;
+
+    let token: GoogleTokenResponse = resp.json().await.map_err(|e| {
+        tracing::error!(target: "credential.google", error = %e, "token response parse error");
+        "Token exchange response malformed".to_owned()
+    })?;
+
+    token.refresh_token.ok_or_else(|| {
+        tracing::warn!(
+            target: "credential.google",
+            "Google did not return a refresh_token"
+        );
+        "No refresh token returned — revoke access at myaccount.google.com and retry".to_owned()
+    })
+}
+
+// ── GET /api/auth/credential/{provider}/status ───────────────────────────────
+
+/// Returns the current connection state for a provider.
+///
+/// Checks the in-memory cache first, then falls back to a Keychain probe.
+///
+/// # Errors
+///
+/// Returns `404` for unknown provider identifiers.
+pub async fn provider_status(
+    _auth: AuthGuard,
+    State(state): State<AppState>,
+    Path(provider): Path<String>,
+) -> Result<Json<ProviderStatusResponse>, Response> {
+    let credential_state = if let Some(cached) = state.credential_store.get(&provider) {
+        cached.clone()
+    } else {
+        let service = provider_keychain_service(&provider).ok_or_else(|| {
+            err(
+                StatusCode::NOT_FOUND,
+                format!("unknown provider: {provider}"),
+            )
+        })?;
+        match keychain::keychain_get(service) {
+            Ok(Some(_)) => CredentialState::Connected,
+            Ok(None) => CredentialState::NotConnected,
+            Err(e) => {
+                tracing::warn!(target: "credential", provider = %provider, error = %e, "keychain probe failed");
+                CredentialState::NotConnected
+            }
+        }
+    };
+    Ok(Json(ProviderStatusResponse {
+        provider,
+        state: credential_state,
+    }))
+}
+
+// ── DELETE /api/auth/credential/{provider} ────────────────────────────────────
+
+/// Revokes a stored credential (sign-out).
+///
+/// Removes the Keychain entry and updates the in-memory state cache.
+///
+/// # Errors
+///
+/// Returns `404` for unknown providers, `500` when the Keychain delete fails.
+pub async fn provider_revoke(
+    _auth: AuthGuard,
+    State(state): State<AppState>,
+    Path(provider): Path<String>,
+) -> Result<StatusCode, Response> {
+    let service = provider_keychain_service(&provider).ok_or_else(|| {
+        err(
+            StatusCode::NOT_FOUND,
+            format!("unknown provider: {provider}"),
+        )
+    })?;
+
+    keychain::keychain_delete(service).map_err(|e| {
+        tracing::error!(target: "credential", provider = %provider, error = %e, "keychain delete failed");
+        err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to remove credential from Keychain",
+        )
+    })?;
+
+    state
+        .credential_store
+        .insert(provider.clone(), CredentialState::SignedOut);
+    tracing::info!(target: "credential", provider = %provider, "credential revoked");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+/// Maps a provider identifier to its Keychain service name.
+///
+/// Returns `None` for unknown providers (HTTP 404 to callers).
+fn provider_keychain_service(provider: &str) -> Option<&'static str> {
+    match provider {
+        "google" => Some(google::KEYCHAIN_SERVICE),
+        // Phase 3 providers registered here.
+        _ => None,
+    }
+}
+
+/// Self-closing HTML page shown after a successful OAuth callback.
+fn success_page(provider: &str) -> String {
+    format!(
+        r"<!DOCTYPE html><html><head><title>{provider} Connected</title></head>
+<body><p>{provider} credential saved. You can close this tab.</p>
+<script>window.close();</script></body></html>"
+    )
+}
+
+/// Error HTML page shown on OAuth failure.
+fn error_page(msg: &str) -> String {
+    format!(
+        r"<!DOCTYPE html><html><head><title>Authentication Error</title></head>
+<body><p>Error: {msg}</p><p>Close this tab and try again.</p></body></html>"
+    )
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provider_keychain_service_google() {
+        assert_eq!(
+            provider_keychain_service("google"),
+            Some(google::KEYCHAIN_SERVICE)
+        );
+    }
+
+    #[test]
+    fn provider_keychain_service_unknown_returns_none() {
+        assert!(provider_keychain_service("unknown-provider").is_none());
+    }
+
+    #[test]
+    fn success_page_contains_provider_name() {
+        let html = success_page("Google");
+        assert!(html.contains("Google"));
+        assert!(html.contains("window.close()"));
+    }
+
+    #[test]
+    fn error_page_contains_message() {
+        let html = error_page("test error");
+        assert!(html.contains("test error"));
+    }
+}
