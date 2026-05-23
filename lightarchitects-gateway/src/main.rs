@@ -366,10 +366,13 @@ async fn cli_dispatch(
             lightarchitects_gateway::cli::skills::execute(config, &args[1..]).await
         }
 
-        // Skill shorthand aliases — `lightarchitects plan "..."` etc.
+        // Skill shorthand aliases — every skill is directly addressable.
+        // `lightarchitects plan "..."`, `lightarchitects build my-feature`, etc.
+        // Works with any LLM provider; no Claude Code dependency.
         Some(
-            alias @ ("plan" | "research" | "reflect" | "observe" | "enrich" | "secure" | "review"
-            | "optimize" | "scrum" | "onboard" | "verify"),
+            alias @ ("plan" | "build" | "deploy" | "gate" | "xea" | "squad" | "verify" | "secure"
+            | "observe" | "reflect" | "enrich" | "research" | "review" | "optimize"
+            | "scrum" | "onboard" | "code-verify" | "risk" | "risk-analysis"),
         ) => {
             let mut skill_args = vec![alias.to_owned()];
             skill_args.extend_from_slice(&args[1..]);
@@ -404,7 +407,9 @@ async fn cli_dispatch(
                    lightarchitects loop <react|ach|itt|cove|reflexion> <goal>  Agentic strategy loop\n  \
                    lightarchitects webshell start|control|status               Web GUI\n  \
                    lightarchitects squad-comms tasks|add|claim|logs|inject     Squad Comms\n  \
-                   lightarchitects platform [--port 8080]                      Platform HTTP API (localhost)"
+                   lightarchitects platform [--port 8080]                      Platform HTTP API (localhost)\n  \
+                   lightarchitects skill list                                  List all skills\n  \
+                   lightarchitects <skill> [args]                              Run skill directly (plan/build/gate/xea/scrum/…)"
             );
             Err(GatewayError::UnknownTool(unknown.to_owned()))
         }

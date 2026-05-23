@@ -32,12 +32,13 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use lightarchitects::agent::{ChainContext, ClaudeCliProvider};
+use lightarchitects::agent::ChainContext;
 use tokio::io::AsyncBufReadExt as _;
 
 use crate::config::GatewayConfig;
 
 pub mod protocol;
+pub mod session_memory;
 pub mod strategy;
 
 // ── SDK re-exports (loops-core) ───────────────────────────────────────────────
@@ -46,6 +47,61 @@ pub use lightarchitects::agent::conversation::{
     ConversationEvent, ConversationSession, NdjsonTransport, SessionConfig, SessionError,
     SessionState, SseTransport, TerminationReason, Transport, TtyTransport,
 };
+
+// ── CapturingTransport ────────────────────────────────────────────────────────
+
+/// A [`Transport`] wrapper that forwards all events to an inner transport while
+/// accumulating [`ConversationEvent::Text`] chunks into a buffer.
+///
+/// After [`ConversationSession::run_turn`] returns, call [`take_buffer`] to
+/// retrieve (and clear) the full assistant response text for post-turn analysis.
+///
+/// [`take_buffer`]: CapturingTransport::take_buffer
+struct CapturingTransport<T: Transport> {
+    inner: T,
+    buffer: String,
+}
+
+impl<T: Transport> CapturingTransport<T> {
+    fn new(inner: T) -> Self {
+        Self {
+            inner,
+            buffer: String::new(),
+        }
+    }
+
+    /// Return accumulated text since the last call (or since construction) and
+    /// reset the internal buffer.
+    fn take_buffer(&mut self) -> String {
+        std::mem::take(&mut self.buffer)
+    }
+}
+
+#[async_trait::async_trait]
+impl<T: Transport> Transport for CapturingTransport<T> {
+    async fn emit(&mut self, event: &ConversationEvent) -> std::io::Result<()> {
+        if let ConversationEvent::Text { chunk } = event {
+            self.buffer.push_str(chunk);
+        }
+        self.inner.emit(event).await
+    }
+
+    async fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush().await
+    }
+}
+
+// ── Skill invocation extraction ───────────────────────────────────────────────
+
+/// Scan the last non-empty line of an LLM response for a skill slash command.
+///
+/// The LLM is instructed (via system prompt) to emit the command as its final
+/// line when it decides a skill should run. Checking only the last line avoids
+/// false positives from skill names quoted inline in prose.
+fn extract_skill_invocation(text: &str) -> Option<(String, Vec<String>)> {
+    let last = text.lines().rev().find(|l| !l.trim().is_empty())?;
+    crate::cli::skills::parse_skill_slash_command(last.trim())
+}
 
 /// Maximum byte length for a caller-supplied system prompt.
 /// Prevents token-flood amplification when an untrusted caller controls the prompt.
@@ -110,7 +166,9 @@ pub async fn run_ndjson(
         system_prompt,
         ..SessionConfig::default()
     };
-    let mut session = ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()));
+    let provider =
+        crate::cli::skills::build_provider().map_err(Box::<dyn std::error::Error>::from)?;
+    let mut session = ConversationSession::new(config, Arc::new(provider));
     let mut transport = NdjsonTransport::new(tokio::io::stdout());
     session.run_ndjson_loop(&mut transport).await;
     Ok(())
@@ -147,6 +205,7 @@ fn persist_inherited_key(key: &str, key_name: &str) {
 /// # Errors
 ///
 /// Returns an error if `system_prompt` fails validation.
+#[allow(clippy::too_many_lines)]
 pub async fn run_ndjson_with_strategies(
     cwd: &Path,
     system_prompt: Option<String>,
@@ -176,8 +235,11 @@ pub async fn run_ndjson_with_strategies(
         system_prompt,
         ..SessionConfig::default()
     };
+    let provider =
+        crate::cli::skills::build_provider().map_err(Box::<dyn std::error::Error>::from)?;
+    let memory = session_memory::HelixSessionMemory::open(cwd, 20);
     let mut session =
-        ConversationSession::new(session_config, Arc::new(ClaudeCliProvider::default()));
+        ConversationSession::new(session_config, Arc::new(provider)).with_memory(Box::new(memory));
     let mut transport = NdjsonTransport::new(tokio::io::stdout());
     let chain = ChainContext::default();
 
@@ -193,7 +255,7 @@ pub async fn run_ndjson_with_strategies(
         let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) else {
             let _ = transport
                 .emit(&ConversationEvent::Error {
-                    message: format!("parse error: not valid JSON"),
+                    message: "parse error: not valid JSON".to_owned(),
                     recoverable: Some(true),
                 })
                 .await;
@@ -341,20 +403,31 @@ pub async fn run_interactive_with_strategies(
         persist_inherited_key(&key, backend);
     }
 
+    let skill_prompt = crate::cli::skills::build_skill_system_prompt();
     let session_config = SessionConfig {
         cwd: cwd.to_path_buf(),
+        system_prompt: Some(skill_prompt),
         ..SessionConfig::default()
     };
+    let provider =
+        crate::cli::skills::build_provider().map_err(Box::<dyn std::error::Error>::from)?;
+    let memory = session_memory::HelixSessionMemory::open(cwd, 20);
+    let restored = memory.restored_turn_count();
     let mut session =
-        ConversationSession::new(session_config, Arc::new(ClaudeCliProvider::default()));
-    let mut transport = TtyTransport::new(tokio::io::stdout());
+        ConversationSession::new(session_config, Arc::new(provider)).with_memory(Box::new(memory));
+    let mut transport = CapturingTransport::new(TtyTransport::new(tokio::io::stdout()));
     let chain = ChainContext::default();
 
     let mut stdout = tokio::io::stdout();
+    let resume_note = if restored > 0 {
+        format!(" ({restored} prior turns restored)")
+    } else {
+        String::new()
+    };
     let banner = format!(
-        "Light Architects agent — cwd: {}\n\
-         Type '/strategy <kind> <goal>' for agentic loops, 'quit' to exit.\n\
-         Strategies: react | ach | itt | cove | reflexion\n",
+        "Light Architects agent — cwd: {}{resume_note}\n\
+         Skills: /plan /build /reflect /scrum /gate /xea … (or just describe what you need)\n\
+         Strategies: /strategy react|ach|itt|cove|reflexion <goal> | quit to exit\n",
         cwd.display()
     );
     let _ = stdout.write_all(banner.as_bytes()).await;
@@ -379,6 +452,7 @@ pub async fn run_interactive_with_strategies(
             break;
         }
 
+        // Explicit user slash commands — no LLM needed.
         if let Some(req) = strategy::parse_slash_command(input) {
             if let Err(e) = strategy::run_strategy(req, config, &mut transport).await {
                 eprintln!("Strategy error: {e}");
@@ -395,6 +469,7 @@ pub async fn run_interactive_with_strategies(
             continue;
         }
 
+        // Conversational turn — LLM responds; inspect last line for implicit skill dispatch.
         session.clear_interrupt();
         if let Err(e) = session.run_turn(input, &mut transport, &chain).await {
             let _ = transport
@@ -403,6 +478,17 @@ pub async fn run_interactive_with_strategies(
                     recoverable: Some(true),
                 })
                 .await;
+            continue;
+        }
+
+        let response = transport.take_buffer();
+        if let Some((slug, skill_args)) = extract_skill_invocation(&response) {
+            let mut full_args = vec![slug];
+            full_args.extend(skill_args);
+            if let Err(e) = crate::cli::skills::execute(config, &full_args).await {
+                eprintln!("Skill error: {e}");
+            }
+            // Skill session complete — fall back to the parent conversation loop.
         }
     }
 
@@ -438,7 +524,9 @@ pub async fn run_interactive(cwd: &Path) -> Result<(), Box<dyn std::error::Error
         cwd: cwd.to_path_buf(),
         ..SessionConfig::default()
     };
-    let mut session = ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()));
+    let provider =
+        crate::cli::skills::build_provider().map_err(Box::<dyn std::error::Error>::from)?;
+    let mut session = ConversationSession::new(config, Arc::new(provider));
     let mut transport = TtyTransport::new(tokio::io::stdout());
     session.run_interactive_loop(&mut transport).await;
     Ok(())

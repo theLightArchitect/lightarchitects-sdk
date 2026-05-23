@@ -211,6 +211,7 @@ async fn emit_error<T: Transport>(transport: &mut T, msg: String) -> Result<(), 
 ///
 /// Returns [`StrategyError`] if a sibling binary is not configured, fails to
 /// connect, or the loop encounters a fatal error.
+#[allow(clippy::too_many_lines)]
 pub async fn run_strategy<T: Transport>(
     req: StrategyRequest,
     config: &GatewayConfig,

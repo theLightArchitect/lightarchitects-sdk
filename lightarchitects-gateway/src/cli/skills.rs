@@ -1,13 +1,19 @@
 //! Native skill execution for the `lightarchitects` CLI/TUI.
 //!
-//! Three dispatch tiers:
+//! Two dispatch tiers:
 //!
 //! 1. **SDK-native** — OBSERVE→AYIN HTTP `:3742`, RESEARCH→`QuantumClient`,
 //!    ENRICH→`EvaClient`, SECURE→`SeraphClient`. Zero LLM calls.
-//! 2. **LLM-assisted** — SKILL.md loaded as `SessionConfig.system_prompt`; user
-//!    args become the first message, then enters an interactive TTY loop.
-//! 3. **Claude Code–only** — BUILD / DEPLOY / GATE require the `Skill` tool;
-//!    emit a clear warning and return an error so the user is not left confused.
+//! 2. **LLM-assisted** — SKILL.md loaded as `SessionConfig.system_prompt`; any
+//!    configured provider handles the session. Provider is auto-detected once at
+//!    startup and reused for all skill dispatches in the same process.
+//!
+//! # Provider auto-detection (`detect_provider`)
+//!
+//! 1. `LA_LLM` env var set explicitly → that backend
+//! 2. `OLLAMA_API_KEY` set (and no explicit override) → Ollama, model from `LA_MODEL`
+//! 3. `ANTHROPIC_API_KEY` set (debug builds only) → Anthropic direct
+//! 4. `claude` binary in PATH → Claude CLI (default)
 //!
 //! # Usage
 //!
@@ -15,25 +21,189 @@
 //! lightarchitects skill list
 //! lightarchitects skill reflect
 //! lightarchitects skill research "auth bug in soul handler"
-//! lightarchitects skill observe traces
-//! lightarchitects skill secure .
-//! lightarchitects skill enrich "today we shipped the strategy loop wiring"
 //! lightarchitects plan "my feature description"    ← alias for /plan
-//! lightarchitects research "quantum helix topic"   ← alias for /research
-//! lightarchitects observe status                   ← alias for /observe
+//! LA_LLM=ollama LA_MODEL=glm-5.1:cloud lightarchitects plan "..."  ← Ollama cloud
 //! ```
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
+use async_trait::async_trait;
 use lightarchitects::agent::conversation::{
     ConversationEvent, ConversationSession, SessionConfig, Transport, TtyTransport,
 };
-use lightarchitects::agent::{ChainContext, ClaudeCliProvider};
+use lightarchitects::agent::http::AnthropicHttpProvider;
+use lightarchitects::agent::{
+    AgentResponse, ChainContext, ClaudeCliProvider, LlmAgentProvider, OllamaCliProvider,
+    ProviderCapabilities, ProviderError, SanitizedAgentRequest,
+};
 use tokio::io::AsyncBufReadExt as _;
 
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
+
+// ── Active-provider registry ──────────────────────────────────────────────────
+
+/// Cached provider choice — detected once per process, then reused everywhere.
+static ACTIVE_PROVIDER: OnceLock<ProviderKind> = OnceLock::new();
+
+/// Which backend was selected at startup.
+#[derive(Debug, Clone)]
+enum ProviderKind {
+    Claude,
+    Ollama { model: String },
+    Anthropic { model: String, max_tokens: u32 },
+}
+
+/// Auto-detect the active LLM provider from the process environment.
+///
+/// Called at most once (results cached in [`ACTIVE_PROVIDER`]).
+fn detect_provider() -> ProviderKind {
+    // 1. Explicit override — `LA_LLM=ollama|anthropic|claude`
+    let explicit = std::env::var("LA_LLM").unwrap_or_default().to_lowercase();
+    let model = std::env::var("LA_MODEL").unwrap_or_default();
+
+    match explicit.as_str() {
+        "ollama" => {
+            return ProviderKind::Ollama {
+                model: if model.is_empty() {
+                    "glm-5.1:cloud".to_owned()
+                } else {
+                    model
+                },
+            };
+        }
+        "anthropic" | "claude-api" => {
+            let max_tokens = std::env::var("LA_MAX_TOKENS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(8192);
+            return ProviderKind::Anthropic {
+                model: if model.is_empty() {
+                    "claude-sonnet-4-6".to_owned()
+                } else {
+                    model
+                },
+                max_tokens,
+            };
+        }
+        "claude" => return ProviderKind::Claude,
+        _ => {}
+    }
+
+    // 2. OLLAMA_API_KEY set → Ollama is configured and active
+    if std::env::var("OLLAMA_API_KEY")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false)
+    {
+        return ProviderKind::Ollama {
+            model: if model.is_empty() {
+                "glm-5.1:cloud".to_owned()
+            } else {
+                model
+            },
+        };
+    }
+
+    // 3. ANTHROPIC_API_KEY set (debug builds only — release uses Keychain)
+    #[cfg(debug_assertions)]
+    if std::env::var("ANTHROPIC_API_KEY")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false)
+    {
+        let max_tokens = std::env::var("LA_MAX_TOKENS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(8192);
+        return ProviderKind::Anthropic {
+            model: if model.is_empty() {
+                "claude-sonnet-4-6".to_owned()
+            } else {
+                model
+            },
+            max_tokens,
+        };
+    }
+
+    // 4. Default: Claude CLI (requires `claude` binary in PATH)
+    ProviderKind::Claude
+}
+
+/// Return the active provider kind, detecting once and caching.
+fn active_provider_kind() -> &'static ProviderKind {
+    ACTIVE_PROVIDER.get_or_init(detect_provider)
+}
+
+// ── AnyProvider — unified enum wrapping all three concrete providers ───────────
+
+/// A single type that can hold any of the three supported LLM providers.
+///
+/// Implements [`LlmAgentProvider`] by delegating to the inner variant.
+/// Used by both the main agent session and all skill dispatch calls so they
+/// always run through exactly the same backend.
+pub enum AnyProvider {
+    /// Claude CLI backend — spawns `claude -p`.
+    Claude(ClaudeCliProvider),
+    /// Ollama backend — local daemon or cloud-routed model.
+    Ollama(OllamaCliProvider),
+    /// Anthropic HTTP backend — direct API call.
+    Anthropic(AnthropicHttpProvider),
+}
+
+#[async_trait]
+impl LlmAgentProvider for AnyProvider {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Claude(p) => p.name(),
+            Self::Ollama(p) => p.name(),
+            Self::Anthropic(p) => p.name(),
+        }
+    }
+
+    async fn spawn(&self, req: SanitizedAgentRequest) -> Result<AgentResponse, ProviderError> {
+        match self {
+            Self::Claude(p) => p.spawn(req).await,
+            Self::Ollama(p) => p.spawn(req).await,
+            Self::Anthropic(p) => p.spawn(req).await,
+        }
+    }
+
+    fn capabilities(&self) -> ProviderCapabilities {
+        match self {
+            Self::Claude(p) => p.capabilities(),
+            Self::Ollama(p) => p.capabilities(),
+            Self::Anthropic(p) => p.capabilities(),
+        }
+    }
+
+    fn estimate_cost(&self, input_tokens: u32, max_output_tokens: u32) -> f64 {
+        match self {
+            Self::Claude(p) => p.estimate_cost(input_tokens, max_output_tokens),
+            Self::Ollama(p) => p.estimate_cost(input_tokens, max_output_tokens),
+            Self::Anthropic(p) => p.estimate_cost(input_tokens, max_output_tokens),
+        }
+    }
+}
+
+/// Build an [`AnyProvider`] from the cached provider detection result.
+///
+/// # Errors
+///
+/// Returns an error string if the provider cannot be constructed (e.g. unknown
+/// Ollama model slug or Anthropic token limit out of range).
+pub fn build_provider() -> Result<AnyProvider, String> {
+    match active_provider_kind() {
+        ProviderKind::Ollama { model } => OllamaCliProvider::new(model)
+            .map(AnyProvider::Ollama)
+            .map_err(|e| e.to_string()),
+        ProviderKind::Anthropic { model, max_tokens } => {
+            AnthropicHttpProvider::new(model, *max_tokens)
+                .map(AnyProvider::Anthropic)
+                .map_err(|e| e.to_string())
+        }
+        ProviderKind::Claude => Ok(AnyProvider::Claude(ClaudeCliProvider::default())),
+    }
+}
 
 // ── Skill spec ────────────────────────────────────────────────────────────────
 
@@ -60,21 +230,16 @@ pub enum DispatchMode {
     /// Direct SDK call — no LLM tokens consumed.
     SdkNative,
     /// Load SKILL.md as system prompt; run interactive conversational session.
+    /// Applies to every skill — any configured LLM provider is sufficient.
     LlmAssisted,
-    /// Skill requires a live Claude Code session and the `Skill` tool.
-    ClaudeCodeOnly,
 }
 
 impl SkillSpec {
     /// Return the dispatch mode for this skill based on its slug.
     pub fn dispatch_mode(&self) -> DispatchMode {
         match self.slug.to_uppercase().as_str() {
-            "OBSERVE" | "AYIN" => DispatchMode::SdkNative,
-            "RESEARCH" | "Q" | "QUANTUM" => DispatchMode::SdkNative,
-            "ENRICH" | "EVA" => DispatchMode::SdkNative,
-            "SECURE" | "SERAPH" => DispatchMode::SdkNative,
-            // These require the Claude Code Skill tool — cannot run standalone.
-            "BUILD" | "DEPLOY" | "GATE" | "XEA" | "SQUAD" => DispatchMode::ClaudeCodeOnly,
+            "OBSERVE" | "AYIN" | "RESEARCH" | "Q" | "QUANTUM" | "ENRICH" | "EVA" | "SECURE"
+            | "SERAPH" => DispatchMode::SdkNative,
             _ => DispatchMode::LlmAssisted,
         }
     }
@@ -111,18 +276,18 @@ fn parse_frontmatter(content: &str) -> (String, String, bool) {
             break;
         }
         if line.trim() == "---" {
-            if !fm_open {
-                fm_open = true;
-            } else {
+            if fm_open {
                 fm_done = true;
+            } else {
+                fm_open = true;
             }
             continue;
         }
         if fm_open {
             if let Some(rest) = line.strip_prefix("name:") {
-                name = rest.trim().trim_matches('"').to_owned();
+                rest.trim().trim_matches('"').clone_into(&mut name);
             } else if let Some(rest) = line.strip_prefix("description:") {
-                description = rest.trim().trim_matches('"').to_owned();
+                rest.trim().trim_matches('"').clone_into(&mut description);
             } else if let Some(rest) = line.strip_prefix("user-invocable:") {
                 user_invocable = rest.trim() == "true";
             }
@@ -209,9 +374,63 @@ pub fn list_all() -> Vec<SkillSpec> {
     specs
 }
 
+// ── Skill-aware system prompt ─────────────────────────────────────────────────
+
+/// Build a compact system prompt that advertises the LA skill surface to the LLM.
+///
+/// The prompt tells the LLM which slash commands it can emit to invoke skills,
+/// and instructs it to emit the command as the **last line** of its response so
+/// the TUI can intercept and dispatch it without ambiguity.
+pub fn build_skill_system_prompt() -> String {
+    let skills = list_all();
+
+    let mut lines = vec![
+        "You are the Light Architects agent — a full-stack engineering assistant.".to_owned(),
+        String::new(),
+        "## Available skills".to_owned(),
+        String::new(),
+        "When the user asks for work that maps to a skill below, emit the corresponding".to_owned(),
+        "slash command as the LAST LINE of your response (nothing after it). The TUI will"
+            .to_owned(),
+        "intercept it and launch the skill session. Do not emit a skill command unless the"
+            .to_owned(),
+        "user's intent clearly maps to one.".to_owned(),
+        String::new(),
+    ];
+
+    for s in &skills {
+        let mode = match s.dispatch_mode() {
+            DispatchMode::SdkNative => "sdk",
+            DispatchMode::LlmAssisted => "llm",
+        };
+        lines.push(format!(
+            "  /{:<16} ({mode})  {}",
+            s.slug.to_lowercase(),
+            s.description
+        ));
+    }
+
+    lines.push(String::new());
+    lines.push(
+        "Example: user says \"plan a new SSE endpoint\" → respond with a brief plan summary,"
+            .to_owned(),
+    );
+    lines.push("then on the last line: /plan \"add SSE streaming endpoint\"".to_owned());
+    lines.push(String::new());
+    lines.push(
+        "For general engineering questions answer directly without invoking a skill.".to_owned(),
+    );
+
+    lines.join("\n")
+}
+
 // ── Output helpers ─────────────────────────────────────────────────────────────
 
 /// Print a formatted table of available skills.
+///
+/// # Errors
+///
+/// Returns an error if a skill slug cannot be resolved (unreachable in current implementation).
 pub fn cmd_list() -> Result<(), GatewayError> {
     let skills = list_all();
     if skills.is_empty() {
@@ -248,7 +467,6 @@ pub fn cmd_list() -> Result<(), GatewayError> {
         let mode_label = match s.dispatch_mode() {
             DispatchMode::SdkNative => "sdk-native",
             DispatchMode::LlmAssisted => "llm-assisted",
-            DispatchMode::ClaudeCodeOnly => "claude-code",
         };
         let desc = if s.description.len() > 60 {
             format!("{}…", &s.description[..59])
@@ -266,8 +484,7 @@ pub fn cmd_list() -> Result<(), GatewayError> {
 
     println!();
     println!("  sdk-native    No LLM required — calls sibling SDK clients directly");
-    println!("  llm-assisted  Loads SKILL.md as system prompt; interactive session");
-    println!("  claude-code   Requires Claude Code (lightarchitects or `claude` CLI)");
+    println!("  llm-assisted  Loads SKILL.md as system prompt; works with any LLM provider");
     Ok(())
 }
 
@@ -278,7 +495,7 @@ async fn dispatch_observe(args: &[String]) -> Result<(), GatewayError> {
     let port = std::env::var("AYIN_PORT").unwrap_or_else(|_| "3742".to_owned());
     let base = format!("http://127.0.0.1:{port}/api");
 
-    let sub = args.first().map(String::as_str).unwrap_or("status");
+    let sub = args.first().map_or("status", String::as_str);
     let url = match sub {
         "traces" | "trace" => format!("{base}/traces"),
         "spans" | "span" => format!("{base}/spans"),
@@ -358,8 +575,7 @@ async fn dispatch_secure(args: &[String]) -> Result<(), GatewayError> {
 
     let target = if args.is_empty() {
         std::env::current_dir()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| ".".to_owned())
+            .map_or_else(|_| ".".to_owned(), |p| p.to_string_lossy().into_owned())
     } else {
         args.join(" ")
     };
@@ -380,11 +596,14 @@ async fn dispatch_secure(args: &[String]) -> Result<(), GatewayError> {
 
 // ── LLM-assisted dispatch ──────────────────────────────────────────────────────
 
-/// Run a skill in LLM-assisted mode.
+/// Inner session runner — generic over any [`LlmAgentProvider`].
 ///
-/// Loads the SKILL.md content as `SessionConfig.system_prompt`, sends any
-/// provided CLI args as the first user message, then enters a TTY REPL loop.
-pub async fn dispatch_llm_assisted(spec: &SkillSpec, args: &[String]) -> Result<(), GatewayError> {
+/// Monomorphised at each call site to avoid boxing overhead.
+async fn run_session_with_provider<P: LlmAgentProvider>(
+    spec: &SkillSpec,
+    args: &[String],
+    provider: Arc<P>,
+) -> Result<(), GatewayError> {
     use tokio::io::AsyncWriteExt as _;
 
     let config = SessionConfig {
@@ -392,7 +611,7 @@ pub async fn dispatch_llm_assisted(spec: &SkillSpec, args: &[String]) -> Result<
         system_prompt: Some(spec.content.clone()),
         ..SessionConfig::default()
     };
-    let mut session = ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()));
+    let mut session = ConversationSession::new(config, provider);
     let mut transport = TtyTransport::new(tokio::io::stdout());
     let chain = ChainContext::default();
 
@@ -404,7 +623,6 @@ pub async fn dispatch_llm_assisted(spec: &SkillSpec, args: &[String]) -> Result<
     let _ = stdout.write_all(banner.as_bytes()).await;
     let _ = stdout.flush().await;
 
-    // Use CLI args as the initial user message if provided.
     if !args.is_empty() {
         let initial = args.join(" ");
         session.clear_interrupt();
@@ -418,7 +636,6 @@ pub async fn dispatch_llm_assisted(spec: &SkillSpec, args: &[String]) -> Result<
         }
     }
 
-    // Interactive follow-up loop.
     let reader = tokio::io::BufReader::new(tokio::io::stdin());
     let mut lines = reader.lines();
 
@@ -451,12 +668,30 @@ pub async fn dispatch_llm_assisted(spec: &SkillSpec, args: &[String]) -> Result<
     Ok(())
 }
 
+/// Run a skill in LLM-assisted mode.
+///
+/// Uses the process-wide cached provider (detected once via [`build_provider`]).
+/// All skill dispatches in a session therefore use the same backend as the main
+/// agent session — coherent by construction.
+///
+/// # Errors
+///
+/// Returns an error if the provider cannot be constructed or the session fails.
+pub async fn dispatch_llm_assisted(spec: &SkillSpec, args: &[String]) -> Result<(), GatewayError> {
+    let p = build_provider().map_err(GatewayError::Internal)?;
+    run_session_with_provider(spec, args, Arc::new(p)).await
+}
+
 // ── Public execute ─────────────────────────────────────────────────────────────
 
 /// Execute a skill from the CLI.
 ///
 /// `args[0]` is the skill name/slug; `args[1..]` are passed to the skill.
 /// With no args (or `list`), prints the skill table and exits.
+///
+/// # Errors
+///
+/// Returns an error if the skill is not found or dispatch fails.
 pub async fn execute(_config: &GatewayConfig, args: &[String]) -> Result<(), GatewayError> {
     let slug = match args.first().map(String::as_str) {
         None | Some("list" | "ls") => return cmd_list(),
@@ -480,40 +715,35 @@ pub async fn execute(_config: &GatewayConfig, args: &[String]) -> Result<(), Gat
             _ => dispatch_llm_assisted(&spec, skill_args).await,
         },
         DispatchMode::LlmAssisted => dispatch_llm_assisted(&spec, skill_args).await,
-        DispatchMode::ClaudeCodeOnly => {
-            eprintln!(
-                "/{} requires Claude Code — the Skill tool is not available outside a Claude session.",
-                spec.slug
-            );
-            eprintln!("  In Claude Code, type:  /{}", spec.slug.to_lowercase());
-            eprintln!("  Or launch the agent:   lightarchitects");
-            Err(GatewayError::UnknownTool(format!(
-                "{} is Claude Code–only",
-                spec.slug
-            )))
-        }
     }
 }
 
 /// Parse a `/skill <name> [args]` slash command from the TTY REPL.
 ///
-/// Recognises `/skill`, `/plan`, `/research`, `/reflect`, `/observe`,
-/// `/enrich`, `/secure`, `/review`, `/optimize`, `/scrum`, `/onboard`.
+/// Recognises `/skill` (generic dispatcher) plus a direct alias for every
+/// known skill slug. All skills are available — any LLM provider is sufficient.
 pub fn parse_skill_slash_command(line: &str) -> Option<(String, Vec<String>)> {
     const SKILL_ALIASES: &[&str] = &[
         "/skill",
+        // Lifecycle
         "/plan",
-        "/research",
-        "/reflect",
-        "/observe",
-        "/enrich",
+        "/build",
+        "/deploy",
+        "/verify",
+        "/gate",
+        "/xea",
+        "/squad",
+        // Domain
         "/secure",
+        "/observe",
+        "/reflect",
+        "/enrich",
+        "/research",
         "/review",
         "/optimize",
         "/scrum",
         "/onboard",
         "/code-verify",
-        "/verify",
         "/risk",
         "/risk-analysis",
     ];
@@ -530,11 +760,11 @@ pub fn parse_skill_slash_command(line: &str) -> Option<(String, Vec<String>)> {
     // For `/skill <name> [args…]` the first word is the skill name.
     // For all other aliases the alias itself IS the skill name.
     let (slug, remaining): (String, Vec<String>) = if *matched == "/skill" {
-        let name = parts.next().map(|s| s.to_owned()).unwrap_or_default();
-        (name, parts.map(|s| s.to_owned()).collect())
+        let name = parts.next().map(str::to_owned).unwrap_or_default();
+        (name, parts.map(str::to_owned).collect())
     } else {
         let slug = matched.trim_start_matches('/').to_owned();
-        (slug, parts.map(|s| s.to_owned()).collect())
+        (slug, parts.map(str::to_owned).collect())
     };
 
     if slug.is_empty() {
