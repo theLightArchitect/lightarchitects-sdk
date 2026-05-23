@@ -81,10 +81,10 @@
 </div>
 
 <style>
-  /* Wrapper — transparent spacer that holds all positioned children */
+  /* Wrapper — corner-parked; content layout reserves 56px at bottom so nothing hides here */
   .wrap {
     position: fixed;
-    bottom: 8px;
+    bottom: 0;
     z-index: 40;
     width: 60px;
     height: 330px;

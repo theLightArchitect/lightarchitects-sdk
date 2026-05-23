@@ -275,6 +275,8 @@ export interface CopilotMessage {
   content: string;
   sibling?: SiblingId;
   timestamp: string;
+  /** Discriminates thinking blocks from regular system messages for collapsible UI. */
+  kind?: 'thinking';
 }
 
 // --- Event types (SSE) ---

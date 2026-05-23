@@ -3,7 +3,6 @@
     siblingHealth, ayinStatus, authStatus, platformHealth,
     conductorStats, conductorTasks, alertStats, buildStats,
     projectGroups, activityFeed, logEntries,
-    mailboxUnread,
   } from '$lib/stores';
   import { STATUS_COLORS } from '$lib/design-tokens';
   import GitForest2D from '$lib/../components/topology/GitForest2D.svelte';
@@ -187,9 +186,6 @@
       <span class="tele-div">·</span>
       <span class="tele-stat tele-queue">{$conductorStats.queueDepth} QUEUED</span>
       <span class="tele-stat tele-alert">{$alertStats.unacknowledged} ALERTS</span>
-      {#if $mailboxUnread > 0}
-        <span class="tele-stat tele-mailbox">{$mailboxUnread} MAILBOX</span>
-      {/if}
       <span class="tele-div">·</span>
       <span class="tele-stat tele-clock">{wallClock}</span>
     </div>
@@ -382,7 +378,6 @@
   .tele-active { color: var(--la-agent-researcher); }
   .tele-queue  { color: var(--la-agent-performance); }
   .tele-alert   { color: var(--la-agent-security); }
-  .tele-mailbox { color: var(--la-struct-primary, #00c8ff); }
   .tele-clock  { color: var(--la-text-mute); }
   .tele-div    { color: var(--la-hair-strong); }
 

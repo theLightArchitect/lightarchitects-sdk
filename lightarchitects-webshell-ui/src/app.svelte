@@ -7,6 +7,8 @@
   import CopilotDrawer from './components/CopilotDrawer.svelte';
   import MemoryDrawer from './components/MemoryDrawer.svelte';
   import PolytopeButton from './components/PolytopeButton.svelte';
+  import StreamButton from './components/StreamButton.svelte';
+  import StreamDrawer from './components/StreamDrawer.svelte';
   import NavDropdown from './components/NavDropdown.svelte';
   import AmbientParticles from './components/AmbientParticles.svelte';
   import HelixTooltip from './components/HelixTooltip.svelte';
@@ -28,7 +30,7 @@
     builds, currentBuildId, findings, logEntries, artifacts, conductorTasks, arenaStatus, alerts,
     activePlan, latestScrumReport, hotMemory, coldMemory, activeHelixNode, selectedPillar,
     expandedFindings, supervisorAlerts, siblingHealth, copilotMessages,
-    intakeFormDirty, authStatus, commandPaletteOpen, eventsOverlayOpen,
+    intakeFormDirty, authStatus, commandPaletteOpen, eventsOverlayOpen, streamDrawerWidthPx,
   } from '$lib/stores';
   import { get } from 'svelte/store';
   import { setupComplete, step, loadSetupInfo, selectedBackend, selectedModel, selectedAgent } from '$lib/setup';
@@ -441,7 +443,7 @@
     <!-- Main content area — padding-right when events overlay opens (push-not-occlude) -->
     <div
       class="flex-1 flex flex-col overflow-hidden relative"
-      style="padding-right: {$eventsOverlayOpen ? '320px' : '0'}; transition: padding-right 260ms cubic-bezier(0.4,0,0.2,1);"
+      style="padding-right: {Math.max($eventsOverlayOpen ? 320 : 0, $streamDrawerWidthPx)}px; transition: padding-right 260ms cubic-bezier(0.4,0,0.2,1);"
     >
       <!-- Ambient particles — drifting helix-palette dots behind content -->
       <AmbientParticles />
@@ -516,6 +518,8 @@
           <ActiveScreen params={screenParams} />
         {/key}
       {/if}
+      <!-- Corner-button zone: 56px reserved so screens never hide beneath the polytope buttons -->
+      <div class="shrink-0" style="height: 56px;" aria-hidden="true"></div>
     </div>
 
     <!-- Desktop (>=1024): inline right-hand panel, user-resizable. -->
@@ -560,6 +564,8 @@
   <CopilotDrawer />
   <PolytopeButton />
   <MemoryDrawer />
+  <StreamDrawer />
+  <StreamButton />
   <HelixTooltip />
   <HelixDetailPanel />
   <ScrumReport />

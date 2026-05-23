@@ -380,8 +380,7 @@
         });
         break;
       case 'thinking':
-        // Render thinking as a subtle italic system message
-        addMessage('system', ev.content);
+        addMessage('system', ev.content, undefined, 'thinking');
         break;
       case 'tool_start':
         addMessage('system', `[${ev.name}] ${JSON.stringify(ev.input)}`);
@@ -559,8 +558,10 @@
   });
 
   // --- Messages ---
-  function addMessage(role: CopilotMessage['role'], content: string, sibling?: SiblingId) {
-    const msg: CopilotMessage = { id: crypto.randomUUID(), role, content, sibling, timestamp: new Date().toISOString() };
+  let thinkingOpen = $state<Record<string, boolean>>({});
+
+  function addMessage(role: CopilotMessage['role'], content: string, sibling?: SiblingId, kind?: CopilotMessage['kind']) {
+    const msg: CopilotMessage = { id: crypto.randomUUID(), role, content, sibling, timestamp: new Date().toISOString(), kind };
     copilotMessages.update(m => [...m, msg]);
     return msg;
   }
@@ -1079,36 +1080,56 @@
                 </div>
               {:else}
                 {#each filteredMessages as msg (msg.id)}
-                  <div class="flex {msg.role === 'user' ? 'justify-end' : msg.role === 'system' ? 'justify-center' : 'justify-start'}">
-                    <div class="max-w-[80%] px-3 py-1.5 rounded-lg text-xs chat-bubble
-                      {msg.role === 'user' ? 'bg-[var(--la-focus-ring)]/90 text-[var(--la-bg-frame)]' :
-                       msg.role === 'system' ? 'bg-[var(--la-drawer-border)]/50 text-[var(--la-text-dim)] border border-[var(--la-drawer-border)]' :
-                       'bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] text-[var(--la-text-bright)]'}">
-                      {#if msg.sibling}
-                        {@const color = SIBLING_COLORS[msg.sibling] ?? '#6b7280'}
-                        <span class="text-[10px] font-medium" style="color: {color}">{msg.sibling.toUpperCase()}</span>
-                        <span class="text-[var(--la-text-dim)] mx-1">·</span>
-                      {/if}
-                      {#if msg.role === 'user'}
-                        <span class="chat-user-content">{msg.content}</span>
-                      {:else}
-                        <span class="chat-md-content">{@html renderMarkdown(msg.content)}</span>
-                        {#if msg.role === 'assistant'}
-                          {@const chips = parseChips(msg.content)}
-                          {#if chips.length > 0}
-                            <div class="flex flex-wrap gap-1 mt-1.5">
-                              {#each chips as chip (chip.id)}
-                                <button
-                                  onclick={chip.action}
-                                  class="text-[8px] px-1.5 py-0.5 border border-[var(--la-struct-primary)]/40 text-[var(--la-struct-primary)] hover:bg-[var(--la-struct-primary)]/10 transition-colors font-mono"
-                                >{chip.label}</button>
-                              {/each}
-                            </div>
-                          {/if}
-                        {/if}
+                  {#if msg.kind === 'thinking'}
+                    <!-- Collapsible thinking block — full-width, no bubble chrome -->
+                    <div class="thinking-wrap">
+                      <button
+                        class="thinking-toggle"
+                        onclick={() => { thinkingOpen[msg.id] = !thinkingOpen[msg.id]; }}
+                        aria-expanded={thinkingOpen[msg.id] ?? false}
+                      >
+                        <span class="thinking-chevron">{thinkingOpen[msg.id] ? '▾' : '▸'}</span>
+                        <span class="thinking-label">Thinking</span>
+                        <span class="thinking-chars">{msg.content.length.toLocaleString()} chars</span>
+                      </button>
+                      {#if thinkingOpen[msg.id]}
+                        <div class="thinking-body">
+                          <span class="chat-md-content">{@html renderMarkdown(msg.content)}</span>
+                        </div>
                       {/if}
                     </div>
-                  </div>
+                  {:else}
+                    <div class="flex {msg.role === 'user' ? 'justify-end' : msg.role === 'system' ? 'justify-center' : 'justify-start'}">
+                      <div class="max-w-[80%] px-3 py-1.5 rounded-lg text-xs chat-bubble
+                        {msg.role === 'user' ? 'bg-[var(--la-focus-ring)]/90 text-[var(--la-bg-frame)]' :
+                         msg.role === 'system' ? 'bg-[var(--la-drawer-border)]/50 text-[var(--la-text-dim)] border border-[var(--la-drawer-border)]' :
+                         'bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] text-[var(--la-text-bright)]'}">
+                        {#if msg.sibling}
+                          {@const color = SIBLING_COLORS[msg.sibling] ?? '#6b7280'}
+                          <span class="text-[10px] font-medium" style="color: {color}">{msg.sibling.toUpperCase()}</span>
+                          <span class="text-[var(--la-text-dim)] mx-1">·</span>
+                        {/if}
+                        {#if msg.role === 'user'}
+                          <span class="chat-user-content">{msg.content}</span>
+                        {:else}
+                          <span class="chat-md-content">{@html renderMarkdown(msg.content)}</span>
+                          {#if msg.role === 'assistant'}
+                            {@const chips = parseChips(msg.content)}
+                            {#if chips.length > 0}
+                              <div class="flex flex-wrap gap-1 mt-1.5">
+                                {#each chips as chip (chip.id)}
+                                  <button
+                                    onclick={chip.action}
+                                    class="text-[8px] px-1.5 py-0.5 border border-[var(--la-struct-primary)]/40 text-[var(--la-struct-primary)] hover:bg-[var(--la-struct-primary)]/10 transition-colors font-mono"
+                                  >{chip.label}</button>
+                                {/each}
+                              </div>
+                            {/if}
+                          {/if}
+                        {/if}
+                      </div>
+                    </div>
+                  {/if}
                 {/each}
                 {#if $copilotLoading}
                   <div class="flex justify-start">
@@ -1466,6 +1487,49 @@
   @media (prefers-reduced-motion: reduce) {
     .hdr-tab, .hdr-action, .hdr-preset { transition: none; }
     .hdr-action--warn { animation: none; }
+  }
+
+  /* Collapsible thinking blocks */
+  .thinking-wrap {
+    width: 100%;
+    margin: 2px 0;
+  }
+  .thinking-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-left: 2px solid var(--la-hair-strong);
+    padding: 3px 8px;
+    cursor: pointer;
+    text-align: left;
+    color: var(--la-text-mute);
+    font-family: var(--la-font-mono, monospace);
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .thinking-toggle:hover {
+    border-color: var(--la-text-dim);
+    color: var(--la-text-dim);
+  }
+  .thinking-chevron { font-size: 7px; opacity: 0.6; flex-shrink: 0; }
+  .thinking-label { font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; flex: 1; }
+  .thinking-chars { font-size: 8px; opacity: 0.4; font-variant-numeric: tabular-nums; }
+  .thinking-body {
+    border-left: 2px solid var(--la-hair-base);
+    padding: 6px 10px 6px 8px;
+    font-size: 10px;
+    color: var(--la-text-mute);
+    font-style: italic;
+    line-height: 1.55;
+    animation: thinking-expand 0.12s ease both;
+  }
+  @keyframes thinking-expand {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
 
   /* Markdown rendering inside chat bubbles.

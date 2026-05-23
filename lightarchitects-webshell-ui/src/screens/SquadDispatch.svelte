@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { registerHotkey } from '$lib/hotkeyRegistry';
-  import { mailboxUnread } from '$lib/stores';
   import {
     classifyTask,
     executeDispatch,
@@ -64,7 +63,6 @@
 
   // Pre-fill task from ?task= query param when returning from /intake
   onMount(() => {
-    mailboxUnread.set(0); // clear global badge when user opens Dispatch
     const qs = window.location.hash.split('?')[1] ?? '';
     const params = new URLSearchParams(qs);
     const prefilled = params.get('task');
@@ -80,58 +78,6 @@
       String(d.getSeconds()).padStart(2, '0')
     );
   }
-
-  const mailboxRows = $derived.by((): StreamRow[] => {
-    const rows: StreamRow[] = [];
-    const base = performance.now(); // sub-ms precision — unique per row even in fast-burst derivations
-    for (let idx = 0; idx < events.length; idx++) {
-      const e = events[idx];
-      const ts = base + idx;
-      const time = eventTimes[idx] ?? fmtTime(new Date()); // receive-time, not derivation-time
-      if (e.type === 'mailbox_message') {
-        rows.push({
-          ts, time,
-          source: e.agent,
-          color: DOMAIN_AGENT_COLORS[e.agent] ?? '#64748b',
-          text: e.text,
-          severity: 'info',
-        });
-      } else if (e.type === 'per_agent_state' && e.message !== null) {
-        rows.push({
-          ts, time,
-          source: e.agent,
-          color: DOMAIN_AGENT_COLORS[e.agent] ?? '#64748b',
-          text: `[${e.state}] ${e.message}`,
-          severity: 'info',
-        });
-      } else if (e.type === 'tool_usage') {
-        rows.push({
-          ts, time,
-          source: e.agent,
-          color: DOMAIN_AGENT_COLORS[e.agent] ?? '#64748b',
-          text: `${e.tool} · ${e.action} [${e.status}]${e.latency_ms !== undefined ? ` ${e.latency_ms}ms` : ''}`,
-          severity: e.status === 'failed' ? 'err' : e.status === 'skipped' ? 'warn' : 'info',
-        });
-      } else if (isComplete(e)) {
-        rows.push({
-          ts, time,
-          source: 'system',
-          color: '#22c55e',
-          text: `Dispatch complete in ${(e.elapsed_ms / 1000).toFixed(1)}s`,
-          severity: 'ok',
-        });
-      } else if (isError(e)) {
-        rows.push({
-          ts, time,
-          source: e.agent ?? 'system',
-          color: e.agent ? (DOMAIN_AGENT_COLORS[e.agent] ?? '#ef4444') : '#ef4444',
-          text: e.message,
-          severity: 'err',
-        });
-      }
-    }
-    return rows.reverse();
-  });
 
   // ── Auto-classify with debounce ──────────────────────────────────────────────
 
@@ -641,24 +587,7 @@
     </div>
   </section>
 
-  <!-- ── Row 5: Mailbox ── -->
-  <section class="mailbox" data-onboarding="dispatch-mailbox">
-    <div class="mailbox-head">
-      <span>
-        <span class="idx">[ 04 ]</span>
-        MAILBOX {isLive ? '· ONLINE' : '· OFFLINE'}
-      </span>
-      <span>
-        <span class="idx">MSG </span>
-        <span class="msg-ctr">{String(events.length).padStart(3, '0')}</span>
-      </span>
-    </div>
-    <div class="mailbox-body">
-      <EventStream rows={mailboxRows} newestFirst maxDisplay={200} emptyMessage="— awaiting transmission —" />
-    </div>
-  </section>
-
-  <!-- ── Row 6: CLI quick-dispatch ── -->
+  <!-- ── Row 5: CLI quick-dispatch ── -->
   <DispatchCLI
     onDispatch={(t) => dispatch(t, dry, attachments, toolConfig)}
     disabled={isLive}
@@ -673,7 +602,7 @@
     width: 100%;
     height: 100%;
     display: grid;
-    grid-template-rows: 40px 36px auto 1fr 184px 36px;
+    grid-template-rows: 40px 36px auto 1fr 36px;
     background: var(--la-bg-void);
     color: var(--la-text-bright);
     overflow: hidden;
@@ -1030,8 +959,7 @@
 
   /* ── circuit trace left-border on zone headers ── */
   .cmd-label::before,
-  .rail-stage-head::before,
-  .mailbox-head::before {
+  .rail-stage-head::before {
     content: '';
     display: block;
     width: 8px;
@@ -1077,30 +1005,6 @@
   .vt-btn:disabled { cursor: default; opacity: 0.7; }
 
   .rails-wrap { flex: 1; overflow: hidden; position: relative; }
-
-  /* ── Row 5: mailbox ── */
-  .mailbox {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  .mailbox-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    color: var(--la-text-dim);
-    padding: 6px 16px;
-    border-bottom: 1px solid var(--la-hair-base);
-    flex-shrink: 0;
-    text-transform: uppercase;
-  }
-  .mailbox-head .idx { color: var(--la-text-mute); font-weight: 200; }
-  .msg-ctr { color: var(--la-text-bright); font-variant-numeric: tabular-nums; font-family: var(--la-font-mono); }
-
-  .mailbox-body { flex: 1; overflow-y: auto; min-height: 0; }
 
   /* ── cinematic dispatch flash ── */
   .dispatch-flash {

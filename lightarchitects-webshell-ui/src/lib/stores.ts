@@ -39,6 +39,12 @@ export const drawerHeightPx = writable<number>(0);
 // Width claimed by the left-sidebar copilot panel (px); App.svelte adds this as padding-left.
 export const drawerWidthPx = writable<number>(0);
 
+// --- Stream drawer (right-edge global agent output panel) ---
+export const streamDrawerOpen = writable<boolean>(false);
+// Width claimed when in 'right' mode (0 when top/closed); App.svelte adds as padding-right.
+export const streamDrawerWidthPx = writable<number>(0);
+export const streamDrawerMode = writable<'right' | 'top'>('right');
+
 // --- Routing ---
 export const currentRoute = writable<string>('/');
 export const currentBuildId = writable<string | null>(null);
