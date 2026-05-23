@@ -1,8 +1,8 @@
 # LÆX Phase 7 Ratification Queue
 
 **Status**: authoritative enumeration of all canon promotion candidates pending LÆX Phase 7 evaluation per Canon XXXIX (Canon Promotion Pipeline).
-**Last updated**: 2026-05-22 (Canon N1B #47 RATIFIED — systemd-creds Linux credential delivery, §5.5.1 applied under Canon XV)
-**Total candidates**: 47 (was 46; +1 this session: #47 Canon N1B).
+**Last updated**: 2026-05-23 (Canon N1B #47 RATIFIED prior session; #48-#52 PROMOTION-READY from /REFLECT 2026-05-23 — LÆX evaluation complete, contradiction-check PASS, canon-text-edits pending fresh-session batch application)
+**Total candidates**: 52 (was 47; +5 this session: #48 pre-/BUILD empirical spike, #49 HNSW dim lock, #50 GDS plugin not bundled, #51 probe-before-assert, #52 retrieval baseline target mode).
 **Ratification status 2026-05-22**: #44–#46 PENDING (GATE skill plugin amendments; require plugin PR + LÆX co-sign). SG-1–SG-4 applied under Kevin's Canon XV stamp — `canon_location_prelisted: security-guardrails.md §3.3/§3.5/§3.5.2/§5.5`.
 **Constitutional basis**: Canon XXXIX (Promotion Pipeline) · Canon XLII (Schema-Changelog Separation — this queue is a CHANGELOG-class artifact, not a schema)
 **Maintained by**: per-build /BUILD orchestrator at phase boundaries; manually updated during in-session canon work.
@@ -534,6 +534,117 @@ need Phase 7 ratification — the changes are already in the canon body. GATE sk
 3. Activate stubs: uncomment `LoadCredential=` lines; remove `EnvironmentFile=` (secrets) from units
 4. Update sibling binaries to read from `$CREDENTIALS_DIRECTORY/` and rebuild + deploy
 5. `systemctl --user daemon-reload && systemctl --user restart la-soul la-eva la-seraph`
+
+---
+
+---
+
+### #48 — Pre-/BUILD Empirical Spike Trigger (TIER 1 doctrine)
+
+| Field | Value |
+|-------|-------|
+| **Status** | PROMOTION-READY — Steps (a)/(b)/(c) complete; canon text-edit pending fresh-session batch application |
+| **Evaluated by** | LÆX (2026-05-23) |
+| **Target doc** | `architects-blueprint.md` Part IV (Research-First Doctrine) — new §4.12 OR Part VIII (Project Planning Framework) |
+| **Source** | khadas-npu-soul-embeddings Phase 2 spike (2026-05-22) — empirically caught RKNN INT8 catastrophic failure + bge-large regression BEFORE /BUILD committed |
+| **Contradiction check** | PASS — extends Canon XXXII (research-first) with empirical arm; no conflict with existing §4.x research doctrine; consistent with Canon XLI Diagram-First (same "intervene before commit" pattern at different lifecycle stage) |
+| **Witness count** | **N=2** — (a) khadas-npu-soul-embeddings spike 2026-05-22, (b) khadas-neo4j-foundation plan derived from spike outcome. MEETS Canon XXXIX threshold for planning-doctrine candidates. |
+| **Memory** | `memory://feedback-pre-build-empirical-spike` (write at canon application time) |
+
+**Amendment text** (LÆX draft, ready to apply):
+
+> **§4.12 (or §8.4) Empirical Spike Trigger (Pre-/BUILD)**
+>
+> When any SM-N tier-1 condition depends on a measurement with no published prior art (Context7 returns no library ID; arXiv/HF hub search returns 0 directly-applicable papers; no internal helix witness ≥N=1 with matching hardware/runtime profile), the plan MUST schedule a **standalone empirical spike** in a separate phase (or separate pre-build plan) **before** /BUILD invocation. The spike is a single-purpose measurement: run the exact pipeline against the exact substrate; record p50/p95/accuracy/cosine/etc. as an artifact committed to the build's `_research/` directory. If the spike outcome contradicts the SM-N target threshold, the plan REWRITES (different SM-N, different substrate, different stack) *before* /BUILD — not at gate-2 fallback. Pressure-tested 2026-05-22: khadas-npu-soul-embeddings spike measured RKNN encoder mean cosine 0.56 vs 0.95 SM-1 target → plan held → foundation build (khadas-neo4j-foundation) inserted upstream; saved ~5–9hr fallback arc + surfaced 6 HIGH integration issues unrelated to embeddings.
+
+**LASDLC-TEMPLATE-v1.yaml addition**: new optional `phase_0.empirical_spike` block.
+
+---
+
+### #49 — HNSW Vector Index Dimension Lock (TIER 2 gotcha)
+
+| Field | Value |
+|-------|-------|
+| **Status** | PROMOTION-READY |
+| **Evaluated by** | LÆX (2026-05-23) |
+| **Target doc** | `builders-cookbook.md` Neo4j-related section (new bullet under hardening/operations) |
+| **Source** | khadas-neo4j-foundation iter-1 SOUL R1 (2026-05-22) — caught default NomicEmbedTextV15 (768) vs deployed v10 index (384) mismatch |
+| **Contradiction check** | PASS — Cookbook has no existing HNSW-dim guidance; security-guardrails §3.6 Neo4j hardening covers auth/binding only; cross-link both. |
+| **Witness count** | N=1 with mechanical fix (single Cypher assertion) — Cookbook gotchas with concrete fix promote at N=1. |
+| **Memory** | (none yet — fold into Cookbook on apply) |
+
+**Amendment text** (LÆX draft):
+
+> **HNSW dimension lock** — Neo4j HNSW vector indexes have their dimension fixed at `CREATE INDEX` time. Any code path that assumes the embedding-provider config dimension matches the deployed index dimension MUST verify against the running database before use: `SHOW INDEXES WHERE name = '<index-name>' YIELD options` and assert `options.indexConfig['vector.dimensions']` equals the configured model's output dim. Dimension drift (e.g., default-config NomicEmbedTextV15 768-dim against an index built at 384-dim under migration v10) does NOT raise a clear error at query time — it returns spurious results or silent truncation. Add a startup-time check in any HelixStore-consuming binary; fail-fast with a canonical message naming both the configured dim and the index dim. Pressure-tested 2026-05-22 (khadas-neo4j-foundation iter-1 caught the default-NomicEmbedTextV15-768d vs deployed-384d mismatch before /BUILD).
+
+**Cross-canon**: security-guardrails §3.6 Neo4j hardening (cross-link); could become a [Q] gate item for any helix-touching build.
+
+---
+
+### #50 — Neo4j Community Docker Image: GDS Plugin NOT Bundled (TIER 2 deploy gotcha)
+
+| Field | Value |
+|-------|-------|
+| **Status** | PROMOTION-READY |
+| **Evaluated by** | LÆX (2026-05-23) |
+| **Target doc** | `operators-manual.md` Neo4j deployment section + `builders-cookbook.md` cross-link |
+| **Source** | khadas-neo4j-foundation iter-1 SOUL R1 (2026-05-22) — caught missing GDS plugin would silently fail Node2Vec writes |
+| **Contradiction check** | PASS — operators-manual has no Neo4j-Docker section currently; this CREATES the canonical entry. |
+| **Witness count** | N=1 with verbatim fix command — operational deploy gotchas promote at N=1 when fix is concrete. |
+
+**Amendment text** (LÆX draft):
+
+> **Neo4j community Docker image — GDS plugin not bundled.** The official `neo4j:5.21.2-community` image ships without the Graph Data Science (GDS) plugin. HelixDb migration v10 creates an HNSW index that depends on GDS at write-time. First write to the helix silently fails (or returns confusing "procedure not found" errors) unless the container is launched with `NEO4J_PLUGINS='["graph-data-science"]'` AND `NEO4J_dbms_security_procedures_unrestricted=gds.*`. Smoke test: `docker exec <container> cypher-shell -u neo4j -p <pwd> 'CALL gds.version()'` — must return a version string, not an error. Add to every Neo4j Docker deploy script.
+
+---
+
+### #51 — Probe-Before-Assert for Unfamiliar Systems (TIER 1 truthfulness control)
+
+| Field | Value |
+|-------|-------|
+| **Status** | PROMOTION-READY |
+| **Evaluated by** | LÆX (2026-05-23) |
+| **Target doc** | `agents-playbook.md` Communication Covenant operationalization section OR `platform-canon.md` (new Canon candidate) |
+| **Source** | 2026-05-22 Khadas optimal-architecture analysis — initial assessment contained 5+ fabricated claims (drive reformattable, NPU not loaded, 2.5GbE link speed, etc.) corrected only by direct hardware probes |
+| **Contradiction check** | PASS — extends Communication Covenant rule 8 (honest uncertainty, KNOW vs DON'T-KNOW vs ASSUMING) with operational mechanism; reinforces Canon XXXIII self-validation ceiling (independent probe = cross-verification); aligns with LÆX #37 audit-pending disclosure (truthful-by-disclosure family) and agents-playbook §15.4.5 post-commit tree verification. |
+| **Witness count** | **N=1 with 5+ fabricated claims caught**. Communication-Covenant operational extensions threshold: N≥1 with mechanical evidence chain. **MEETS THRESHOLD**. |
+
+**Amendment text** (LÆX draft):
+
+> **Probe-before-assert for unfamiliar systems.** When reasoning about hardware, deployed-system state, vendor toolchains, or any substrate not present in the assistant's training data with high coverage, an explicit mechanical probe (shell command output, `lsblk`, `lspci`, `ip link`, `dpkg -l`, container manifest inspect, vendor `--version`) MUST precede any assertion of fact about that system. Pattern-match from name (e.g., "Edge2 has 2.5GbE") is forbidden — it routinely fabricates plausible-sounding wrong claims. Pressure-tested 2026-05-22 khadas-neo4j-foundation prep: initial Khadas analysis included ≥5 fabricated claims (drive reformattable, NPU loaded, 2.5GbE link speed, etc.) — all corrected only after `ip link`, `lsblk`, `lsmod | grep rknpu`, `ethtool` probes ran. The Communication Covenant rule 8 *principle* (label KNOW vs ASSUMING) becomes operationally enforceable here: the **probe output is the KNOW**; without it, the claim is ASSUMING and must be labeled as such.
+
+---
+
+### #52 — Retrieval Baseline Must Exercise Target Retrieval Mode (TIER 2 benchmark-design rule)
+
+| Field | Value |
+|-------|-------|
+| **Status** | PROMOTION-READY |
+| **Evaluated by** | LÆX (2026-05-23) |
+| **Target doc** | `builders-cookbook.md` (new §retrieval-benchmarking) + `architects-blueprint.md` Part V (Shipped-Means) cross-link |
+| **Source** | khadas-neo4j-foundation iter-1 EVA + SOUL R1 concurrent finding (2026-05-22) — empty-helix p50 measurement triggers KeywordDominated mode (65/25/3/7 BM25), biasing baseline away from vector-path target |
+| **Contradiction check** | PASS — Cookbook has no benchmark-design entry; Blueprint Part V (Shipped-Means / SM-N tier-1 conditions) gains a cross-link. |
+| **Witness count** | N=1 (khadas-neo4j-foundation SM-5 / Phase 5.5). Concurrent SCRUM finding from 2 siblings increases confidence. Promote as Cookbook benchmark-design rule. |
+
+**Amendment text** (LÆX draft):
+
+> **Retrieval baseline must exercise the target retrieval mode.** SOUL's adaptive retrieval (4-signal RRF) picks weights based on corpus size: ≤24 steps → `KeywordDominated` (65/25/3/7); 25–99 → `Balanced` (25/35/30/10); ≥100 → `VectorDominated` (etc.). Any `soul.helix.retrieve` baseline measurement intended for apples-to-apples comparison against a later embedding-pipeline change MUST first seed the helix to the same retrieval-mode tier the post-change measurement will hit — otherwise the baseline measures BM25 latency, not vector-index latency. Concrete pattern: before measuring p50, ingest N canonical documents such that `25 ≤ step_count ≤ 99` (Balanced) or `≥100` (VectorDominated), assert the mode in test setup, then measure. Pressure-tested 2026-05-22 khadas-neo4j-foundation Phase 5.5: 8 canon docs seeded to land Balanced mode for SM-5 baseline.
+
+**Cross-canon**: Blueprint Part V; SOUL crate docs (4-signal RRF doc); EVA observability (AYIN trace must record retrieval-mode-selected per query for verification).
+
+---
+
+### #53 — Pre-/BUILD Integration-Surface Inspection (DEFERRED — N=2 trigger)
+
+| Field | Value |
+|-------|-------|
+| **Status** | DEFERRED pending N=2 witness |
+| **Evaluated by** | LÆX (2026-05-23) |
+| **Target doc** | `agents-playbook.md` §15.6 (new section) |
+| **Source** | khadas-neo4j-foundation pre-/BUILD inspection (2026-05-22) — caught 6 HIGH integration findings |
+| **Witness count** | N=1 substantial. Canon XXXIX strict threshold N≥2 for new agents-playbook sections. |
+| **Promotion trigger** | Next /BUILD against a running system that catches ≥1 HIGH finding via identical `ss -tnp` / `docker inspect` / `SHOW INDEXES` probing methodology. Memory-only entry NOW with explicit promotion-trigger annotation: `memory://feedback-pre-build-integration-inspection`. |
+| **Distinguished from LÆX #36** | /SYNC compares plan-to-tracking-artifacts; §15.6 (candidate) compares plan-to-running-system. Different problem class. |
 
 ---
 
