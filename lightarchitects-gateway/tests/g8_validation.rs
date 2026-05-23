@@ -85,6 +85,7 @@ fn build_state_with_graph(
 
     let canon_cache = moka::future::Cache::builder().max_capacity(50).build();
     let agent_cache = moka::future::Cache::builder().max_capacity(50).build();
+    let arch_cache = moka::future::Cache::builder().max_capacity(50).build();
 
     let admin_box = admin_token.map(|t| secrecy::SecretBox::new(Box::new(t.to_owned())));
 
@@ -103,6 +104,7 @@ fn build_state_with_graph(
         )),
         canon_cache,
         agent_cache,
+        arch_cache,
         config: PlatformConfig::default(),
         admin_token: admin_box,
         read_token: None,
@@ -262,6 +264,7 @@ async fn g8_09_unauthenticated_read_returns_401() {
         )),
         canon_cache: moka::future::Cache::builder().max_capacity(10).build(),
         agent_cache: moka::future::Cache::builder().max_capacity(10).build(),
+        arch_cache: moka::future::Cache::builder().max_capacity(10).build(),
         config: PlatformConfig::default(),
         admin_token: None,
         read_token: Some(secrecy::SecretBox::new(Box::new(read_token.to_owned()))),
@@ -313,6 +316,7 @@ async fn g8_10_read_bearer_on_admin_returns_403() {
         )),
         canon_cache: moka::future::Cache::builder().max_capacity(10).build(),
         agent_cache: moka::future::Cache::builder().max_capacity(10).build(),
+        arch_cache: moka::future::Cache::builder().max_capacity(10).build(),
         config: PlatformConfig::default(),
         admin_token: None,
         read_token: Some(secrecy::SecretBox::new(Box::new(read_token.to_owned()))),
@@ -626,6 +630,7 @@ async fn g8_06_admin_upload_with_read_bearer_returns_403() {
         )),
         canon_cache: moka::future::Cache::builder().max_capacity(10).build(),
         agent_cache: moka::future::Cache::builder().max_capacity(10).build(),
+        arch_cache: moka::future::Cache::builder().max_capacity(10).build(),
         config: PlatformConfig::default(),
         admin_token: Some(secrecy::SecretBox::new(Box::new(admin_tok))),
         read_token: Some(secrecy::SecretBox::new(Box::new(read_tok.to_owned()))),

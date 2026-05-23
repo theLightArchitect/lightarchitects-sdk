@@ -70,6 +70,7 @@ async fn build_neo4j_state(admin_token: Option<&str>) -> Arc<PlatformState> {
         )),
         canon_cache: moka::future::Cache::builder().max_capacity(10).build(),
         agent_cache: moka::future::Cache::builder().max_capacity(10).build(),
+        arch_cache: moka::future::Cache::builder().max_capacity(10).build(),
         config: PlatformConfig::default(),
         admin_token: admin_token.map(|t| secrecy::SecretBox::new(Box::new(t.to_owned()))),
         read_token: None,

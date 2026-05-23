@@ -38,6 +38,13 @@
 //! SOAK_DURATION_SECS=60 cargo test --test ironclaw-7-day soak_7_day -- --ignored
 //! ```
 
+#![allow(
+    clippy::cast_precision_loss,  // u64→f64 counter casts; values stay well within mantissa range
+    clippy::float_cmp,            // assert_eq!(0.0) on exact zero-path return
+    clippy::expect_used,          // test-file: expect() is idiomatic for test assertions
+    clippy::doc_markdown,         // test-file: doc comments don't need rigorous backtick coverage
+)]
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};

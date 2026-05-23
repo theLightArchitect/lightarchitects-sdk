@@ -43,17 +43,13 @@ proptest! {
     #[test]
     fn prompt_output_never_contains_raw_angle_brackets(prompt in ARBITRARY_PROMPT) {
         // identity plane uses a known-safe string so failures isolate to the prompt.
-        match sanitize_params("safe-identity", &prompt) {
-            Ok((_, safe_prompt)) => {
-                prop_assert!(
-                    !safe_prompt.contains('<') && !safe_prompt.contains('>'),
-                    "prompt output must not contain raw angle brackets; got {safe_prompt:?}"
-                );
-            }
-            Err(_) => {
-                // Oversized or forbidden-token errors are also acceptable — they mean
-                // the input was rejected, not that unsafe content passed through.
-            }
+        if let Ok((_, safe_prompt)) = sanitize_params("safe-identity", &prompt) {
+            prop_assert!(
+                !safe_prompt.contains('<') && !safe_prompt.contains('>'),
+                "prompt output must not contain raw angle brackets; got {safe_prompt:?}"
+            );
+            // Oversized or forbidden-token errors are also acceptable — they mean
+            // the input was rejected, not that unsafe content passed through.
         }
     }
 
@@ -115,7 +111,7 @@ proptest! {
             Ok((sanitized_identity, _)) => {
                 // If the sanitizer allowed it, the output must contain no raw control chars.
                 prop_assert!(
-                    !sanitized_identity.chars().any(|c| c.is_control()),
+                    !sanitized_identity.chars().any(char::is_control),
                     "sanitized identity must not contain raw control chars; got: {sanitized_identity:?}"
                 );
             }
