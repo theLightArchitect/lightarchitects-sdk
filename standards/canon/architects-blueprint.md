@@ -297,6 +297,16 @@ Every build is a squad operation. EVA, CORSO, QUANTUM, SOUL, SERAPH, AYIN, LÆX 
 
 **Why this matters:** Solo execution misses drift across dimensions. The squad completes the feedback loop that single-agent execution cannot.
 
+### §4.12 Empirical Spike Trigger (Pre-/BUILD) — RATIFIED 2026-05-23, Canon XV, Kevin Francis Tan
+
+When any SM-N tier-1 condition depends on a measurement with no published prior art (Context7 returns no library ID; arXiv/HF hub search returns 0 directly-applicable papers; no internal helix witness ≥N=1 with matching hardware/runtime profile), the plan MUST schedule a **standalone empirical spike** in a separate phase (or separate pre-build plan) **before** /BUILD invocation. The spike is a single-purpose measurement: run the exact pipeline against the exact substrate; record p50/p95/accuracy/cosine/etc. as an artifact committed to the build's `_research/` directory. If the spike outcome contradicts the SM-N target threshold, the plan REWRITES (different SM-N, different substrate, different stack) *before* /BUILD — not at gate-2 fallback.
+
+**LASDLC-TEMPLATE-v1.yaml**: new optional `phase_0.empirical_spike` block.
+
+**Pressure-tested 2026-05-22**: khadas-npu-soul-embeddings spike measured RKNN encoder mean cosine 0.56 vs 0.95 SM-1 target → plan held → foundation build (khadas-neo4j-foundation) inserted upstream; saved ~5–9hr fallback arc + surfaced 6 HIGH integration issues unrelated to embeddings.
+
+**Extends**: Canon XXXII (research-first). Consistent with Canon XLI Diagram-First (same "intervene before commit" pattern at different lifecycle stage). **Witness count**: N=2 — (a) khadas-npu-soul-embeddings spike 2026-05-22, (b) khadas-neo4j-foundation plan derived from spike outcome. **LÆX Queue**: #48, contradiction-check PASS 2026-05-23.
+
 ---
 
 ## Part V — Architecture Standards

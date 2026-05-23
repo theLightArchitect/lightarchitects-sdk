@@ -1,7 +1,7 @@
 # LÆX Phase 7 Ratification Queue
 
 **Status**: authoritative enumeration of all canon promotion candidates pending LÆX Phase 7 evaluation per Canon XXXIX (Canon Promotion Pipeline).
-**Last updated**: 2026-05-23 (Canon N1B #47 RATIFIED prior session; #48-#52 PROMOTION-READY from /REFLECT 2026-05-23 — LÆX evaluation complete, contradiction-check PASS, canon-text-edits pending fresh-session batch application)
+**Last updated**: 2026-05-23 (Canon N1B #47 RATIFIED prior session; #48-#52 RATIFIED 2026-05-23 via Canon XV, Kevin Francis Tan — batch application complete this session)
 **Total candidates**: 52 (was 47; +5 this session: #48 pre-/BUILD empirical spike, #49 HNSW dim lock, #50 GDS plugin not bundled, #51 probe-before-assert, #52 retrieval baseline target mode).
 **Ratification status 2026-05-22**: #44–#46 PENDING (GATE skill plugin amendments; require plugin PR + LÆX co-sign). SG-1–SG-4 applied under Kevin's Canon XV stamp — `canon_location_prelisted: security-guardrails.md §3.3/§3.5/§3.5.2/§5.5`.
 **Constitutional basis**: Canon XXXIX (Promotion Pipeline) · Canon XLII (Schema-Changelog Separation — this queue is a CHANGELOG-class artifact, not a schema)
@@ -419,12 +419,13 @@ Per `/REFLECT specifically for canon promotions` 2026-05-19. 10 candidates surfa
 
 | Status | Count | Sources |
 |---|---|---|
-| RATIFIED | 11 (#4–#14) | 2026-05-17 sessions |
+| RATIFIED | 18 (#4–#14, #34, #47–#52) | 2026-05-17 (11) · 2026-05-19 (#34) · 2026-05-23 (#47–#52) |
 | PENDING — Step b (memory + candidate identified, contradiction check pending) | 15 (#1–#3 + #22–#33) | 2026-05-15 + 2026-05-18 memory-sweep additions |
 | PENDING — Step c+ (Canon XV override applied; LÆX ratification pending) | 7 (#15–#21) | 2026-05-18 ironclaw-spine in-session canon edits |
-| **Total candidates** | **33** | 21 original + 12 sweep additions |
-| **Ratification target** | ≥11/33 at phase boundary | per ironclaw-spine manifest (target unchanged; absolute count grew) |
-| **Currently ratified** | 11/33 | already meets the absolute count of 11; coverage now 33% (was 52% pre-sweep) |
+| DEFERRED | 1 (#53) | N=2 trigger pending |
+| **Total candidates** | **41** | 33 pre-sweep + #34 + #47–#53 |
+| **Ratification target** | ≥11 at phase boundary | met; coverage now 44% (18/41) |
+| **Currently ratified** | 18/41 | phase boundary met; next batch promotion target ≥25 (Step-b promotions #15–#21 + #22–#33) |
 
 ---
 
@@ -543,7 +544,7 @@ need Phase 7 ratification — the changes are already in the canon body. GATE sk
 
 | Field | Value |
 |-------|-------|
-| **Status** | PROMOTION-READY — Steps (a)/(b)/(c) complete; canon text-edit pending fresh-session batch application |
+| **Status** | RATIFIED 2026-05-23, Canon XV, Kevin Francis Tan — `architects-blueprint.md` §4.12 authored |
 | **Evaluated by** | LÆX (2026-05-23) |
 | **Target doc** | `architects-blueprint.md` Part IV (Research-First Doctrine) — new §4.12 OR Part VIII (Project Planning Framework) |
 | **Source** | khadas-npu-soul-embeddings Phase 2 spike (2026-05-22) — empirically caught RKNN INT8 catastrophic failure + bge-large regression BEFORE /BUILD committed |
@@ -565,7 +566,7 @@ need Phase 7 ratification — the changes are already in the canon body. GATE sk
 
 | Field | Value |
 |-------|-------|
-| **Status** | PROMOTION-READY |
+| **Status** | RATIFIED 2026-05-23, Canon XV, Kevin Francis Tan — `builders-cookbook.md` §72 authored |
 | **Evaluated by** | LÆX (2026-05-23) |
 | **Target doc** | `builders-cookbook.md` Neo4j-related section (new bullet under hardening/operations) |
 | **Source** | khadas-neo4j-foundation iter-1 SOUL R1 (2026-05-22) — caught default NomicEmbedTextV15 (768) vs deployed v10 index (384) mismatch |
@@ -585,7 +586,7 @@ need Phase 7 ratification — the changes are already in the canon body. GATE sk
 
 | Field | Value |
 |-------|-------|
-| **Status** | PROMOTION-READY |
+| **Status** | RATIFIED 2026-05-23, Canon XV, Kevin Francis Tan — `operators-manual.md` §Neo4j-Docker-Deploy authored |
 | **Evaluated by** | LÆX (2026-05-23) |
 | **Target doc** | `operators-manual.md` Neo4j deployment section + `builders-cookbook.md` cross-link |
 | **Source** | khadas-neo4j-foundation iter-1 SOUL R1 (2026-05-22) — caught missing GDS plugin would silently fail Node2Vec writes |
@@ -602,7 +603,7 @@ need Phase 7 ratification — the changes are already in the canon body. GATE sk
 
 | Field | Value |
 |-------|-------|
-| **Status** | PROMOTION-READY |
+| **Status** | RATIFIED 2026-05-23, Canon XV, Kevin Francis Tan — `platform-canon.md` Canon XLIV authored |
 | **Evaluated by** | LÆX (2026-05-23) |
 | **Target doc** | `agents-playbook.md` Communication Covenant operationalization section OR `platform-canon.md` (new Canon candidate) |
 | **Source** | 2026-05-22 Khadas optimal-architecture analysis — initial assessment contained 5+ fabricated claims (drive reformattable, NPU not loaded, 2.5GbE link speed, etc.) corrected only by direct hardware probes |
@@ -619,7 +620,7 @@ need Phase 7 ratification — the changes are already in the canon body. GATE sk
 
 | Field | Value |
 |-------|-------|
-| **Status** | PROMOTION-READY |
+| **Status** | RATIFIED 2026-05-23, Canon XV, Kevin Francis Tan — `builders-cookbook.md` §73 authored |
 | **Evaluated by** | LÆX (2026-05-23) |
 | **Target doc** | `builders-cookbook.md` (new §retrieval-benchmarking) + `architects-blueprint.md` Part V (Shipped-Means) cross-link |
 | **Source** | khadas-neo4j-foundation iter-1 EVA + SOUL R1 concurrent finding (2026-05-22) — empty-helix p50 measurement triggers KeywordDominated mode (65/25/3/7 BM25), biasing baseline away from vector-path target |

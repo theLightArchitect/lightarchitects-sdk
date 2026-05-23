@@ -984,6 +984,25 @@ For long-running autonomous builds, the operator interacts via 4 lifecycle primi
 
 ---
 
+## §Neo4j-Docker-Deploy — Neo4j Community Docker Image: GDS Plugin NOT Bundled — RATIFIED 2026-05-23, Canon XV, Kevin Francis Tan
+
+The official `neo4j:5.21.2-community` image ships **without** the Graph Data Science (GDS) plugin. HelixDb migration v10 creates an HNSW vector index that depends on GDS at write-time. The first write to the helix silently fails (or returns confusing "procedure not found" errors) unless the container is launched with both environment variables:
+
+- `NEO4J_PLUGINS='["graph-data-science"]'`
+- `NEO4J_dbms_security_procedures_unrestricted=gds.*`
+
+**Smoke test** — run after every Neo4j Docker deploy:
+
+```bash
+docker exec <container> cypher-shell -u neo4j -p <password> 'CALL gds.version()'
+```
+
+Must return a version string (e.g. `2.7.0`), not a procedure-not-found error. Add this check to every Neo4j Docker deploy script and ops runbook before running any HelixDb migration.
+
+**Cross-reference**: Builders Cookbook §72 (HNSW Dimension Lock) assumes GDS is running. This section is the prerequisite — if GDS is absent, the §72 startup check will fail at the `SHOW INDEXES` stage with no matching vector index.
+
+---
+
 ## §Model-Routing-Doctrine — Route Intentionally (2026-05-18 ADDITION)
 
 Per ironclaw-architecture.html §12: rate limits are per-model and tracked separately. Using Haiku does not consume Sonnet quota. Using Ollama Cloud (fixed subscription) does not consume Anthropic API quota. **Route intentionally.**

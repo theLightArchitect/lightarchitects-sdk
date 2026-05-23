@@ -1177,7 +1177,50 @@ Re-evaluation requires a new /SCRUM with LÆX [C] veto authority. Score change f
 
 ---
 
-*Platform Canon v2.4 | updated 2026-05-22 (Canon XLIII — Sibling Substrate Partition, RATIFIED 2026-05-22); v2.3 updated 2026-05-18 (Canon XXXIX Extension); v2.2 added Canon XLII (RATIFIED 2026-05-19); v2.1 added LDB §D5 + Gatekeeper Registry Extension + Vocabulary Canon. Full amendment narrative: see `platform-canon.CHANGELOG.md`.*
+## Canon XLIV: Probe-Before-Assert for Unfamiliar Systems
+
+> *"Prove all things; hold fast that which is good."* — 1 Thessalonians 5:21
+
+**Status**: **Ratified by LÆX [C] (veto not exercised) + Kevin Francis Tan — 2026-05-23** (Canon XV mid-session operator override; pressure-tested 2026-05-22 Khadas hardware audit, ENG-KHADAS-AUDIT-20260522).
+
+**Principle**: When reasoning about hardware, deployed-system state, vendor toolchains, or any substrate not present in the conversation as verified output, an explicit mechanical probe MUST precede any assertion of fact about that substrate. Pattern-matching from device name, product family, or documentation alone is forbidden.
+
+### Applicability
+
+This canon applies when asserting:
+- Capability of a physical device (GPIO, NPU accelerator, SATA vs NVMe, GPU VRAM, USB controller variant)
+- State of a deployed system (service running, plugin installed, schema applied, port open)
+- Toolchain behavior (Rust target, cross-compilation flags, kernel module available)
+- Any property of a system not present in the current conversation as verified shell output
+
+### Canonical Probe Forms
+
+| Substrate | Probe command | Assertion gate |
+|-----------|--------------|----------------|
+| Block device type | `lsblk -d -o NAME,ROTA,TYPE` | `ROTA=0` → SSD/NVMe |
+| GPU / NPU | `lspci` or vendor CLI (`rknn_query`) | Device ID in output |
+| Network interface | `ip link show` | Interface name confirmed |
+| Service running | `systemctl is-active <svc>` | `active` in output |
+| Docker plugin | `docker exec cypher-shell 'CALL plugin.version()'` | Version string returned |
+| Port open | `ss -tlnp` or `curl -sf localhost:PORT/health` | Non-error response |
+| Rust target | `rustup target list --installed` | Target string present |
+
+### Violation vs Valid Pattern
+
+> **Violation**: "The Khadas VIM3 has an NPU accelerator" — stated without probe; fabrication risk.  
+> **Valid**: "`lspci` output shows Amlogic A311D — NPU confirmed present" — probe-anchored assertion.
+
+**Pressure-tested**: 2026-05-22 Khadas hardware audit. ≥5 fabricated hardware claims were corrected by actual `lspci`/`lsblk`/`ip` output. No claim stood that lacked probe support.
+
+### Enforcement
+
+- Implementation plans making hardware or deployed-system assertions MUST cite the probe command that will verify them.
+- SERAPH [S] and QUANTUM [R] treat probe-less assertions as MEDIUM findings in security/forensic audits.
+- LÆX [C] flags probe-less assertions in SCRUM rounds as Canon XLIV violations.
+
+---
+
+*Platform Canon v2.5 | updated 2026-05-23 (Canon XLIV — Probe-Before-Assert for Unfamiliar Systems, RATIFIED 2026-05-23); v2.4 updated 2026-05-22 (Canon XLIII — Sibling Substrate Partition, RATIFIED 2026-05-22); v2.3 updated 2026-05-18 (Canon XXXIX Extension); v2.2 added Canon XLII (RATIFIED 2026-05-19); v2.1 added LDB §D5 + Gatekeeper Registry Extension + Vocabulary Canon. Full amendment narrative: see `platform-canon.CHANGELOG.md`.*
 
 ---
 

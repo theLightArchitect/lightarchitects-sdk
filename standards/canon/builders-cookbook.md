@@ -7083,9 +7083,35 @@ Does NOT apply to:
 
 ---
 
+---
+
+## §72 — Neo4j HNSW Vector Index Dimension Lock — RATIFIED 2026-05-23, Canon XV, Kevin Francis Tan
+
+Neo4j HNSW vector indexes have their dimension fixed at `CREATE INDEX` time. Any code path that assumes the embedding-provider config dimension matches the deployed index dimension MUST verify against the running database before use:
+
+```cypher
+SHOW INDEXES WHERE name = '<index-name>' YIELD options
+```
+
+Assert `options.indexConfig['vector.dimensions']` equals the configured model's output dim. Dimension drift (e.g., default-config `NomicEmbedTextV15` 768-dim against an index built at 384-dim under migration v10) does NOT raise a clear error at query time — it returns spurious results or silent truncation. Add a startup-time check in any `HelixStore`-consuming binary; fail-fast with a canonical message naming both the configured dim and the index dim.
+
+**Cross-canon**: security-guardrails §3.6 Neo4j hardening (cross-link); [Q] gate item for any helix-touching build. **Witness**: N=1 with mechanical fix (concrete Cypher assertion). **Pressure-tested 2026-05-22**: khadas-neo4j-foundation iter-1 caught default-NomicEmbedTextV15-768d vs deployed-384d mismatch before /BUILD. **LÆX Queue**: #49, contradiction-check PASS 2026-05-23.
+
+---
+
+## §73 — Retrieval Baseline Must Exercise Target Retrieval Mode — RATIFIED 2026-05-23, Canon XV, Kevin Francis Tan
+
+SOUL's adaptive retrieval (4-signal RRF) picks weights based on corpus size: ≤24 steps → `KeywordDominated` (65/25/3/7); 25–99 → `Balanced` (25/35/30/10); ≥100 → `VectorDominated`. Any `soul.helix.retrieve` baseline measurement intended for apples-to-apples comparison against a later embedding-pipeline change MUST first seed the helix to the same retrieval-mode tier the post-change measurement will hit — otherwise the baseline measures BM25 latency, not vector-index latency.
+
+**Concrete pattern**: before measuring p50, ingest N canonical documents such that `25 ≤ step_count ≤ 99` (Balanced) or `≥100` (VectorDominated), assert the mode in test setup, then measure.
+
+**Cross-canon**: Blueprint Part V (Shipped-Means / SM-N tier-1 conditions); SOUL crate docs (4-signal RRF); EVA observability (AYIN trace must record `retrieval-mode-selected` per query for verification). **Witness**: N=1, concurrent SCRUM finding from 2 siblings. **Pressure-tested 2026-05-22**: khadas-neo4j-foundation Phase 5.5 — 8 canon docs seeded to land Balanced mode for SM-5 baseline. **LÆX Queue**: #52, contradiction-check PASS 2026-05-23.
+
+---
+
 **Rule** (per separation-of-concerns refactor, 2026-05-18): no tail-amendment blocks or scattered per-section version-history entries in this file. Section content lives here; amendment narrative lives in the CHANGELOG companion.
 
-**Current version**: see CHANGELOG for latest. As of 2026-05-21: **v3.5.0** (§70 Type-Annotation Exhaustiveness Testing + §71 Canonical Spec Pair Atomic Commit Rule; LÆX ratified webshell-cockpit Phase 7).
+**Current version**: see CHANGELOG for latest. As of 2026-05-23: **v3.7.0** (§72 Neo4j HNSW Dimension Lock + §73 Retrieval Baseline Mode; LÆX ratified khadas-neo4j-foundation Phase 5.5).
 
 *Builders Cookbook · Light Architects · `canon://builders-cookbook`*
 
