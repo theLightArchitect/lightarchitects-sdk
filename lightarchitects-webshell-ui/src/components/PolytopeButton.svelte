@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
   import PolytopeIcon from './PolytopeIcon.svelte';
   import { drawerWidthPx } from '$lib/stores';
   import { settingsOpen } from '$lib/setup';
@@ -7,6 +8,27 @@
   // ── Hover state — JS-managed to survive the pointer gap between polytope and buttons ──
   let menuOpen = $state(false);
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // ── Animated color: cycles between EVA pink (#FF1493) and CORSO blue (#00BFFF) ──
+  // These are the two primary helix strand colors from helix-math.ts.
+  const EVA:   [number, number, number] = [255,  20, 147];
+  const CORSO: [number, number, number] = [  0, 191, 255];
+  let pr = $state(EVA[0]), pg = $state(EVA[1]), pb = $state(EVA[2]);
+  let colorTimer: ReturnType<typeof setInterval> | null = null;
+  let startTs = 0;
+
+  function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
+
+  onMount(() => {
+    startTs = performance.now();
+    colorTimer = setInterval(() => {
+      const t = (Math.sin((performance.now() - startTs) * Math.PI * 2 / 8000) + 1) / 2;
+      pr = Math.round(lerp(EVA[0], CORSO[0], t));
+      pg = Math.round(lerp(EVA[1], CORSO[1], t));
+      pb = Math.round(lerp(EVA[2], CORSO[2], t));
+    }, 50);
+  });
+  onDestroy(() => { if (colorTimer) clearInterval(colorTimer); });
 
   function onEnter() {
     if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
@@ -45,7 +67,7 @@
 -->
 <div
   class="wrap"
-  style="left: calc(8px + {$drawerWidthPx}px)"
+  style="left: calc(8px + {$drawerWidthPx}px); --pc: {pr},{pg},{pb}"
   role="none"
 >
   <!-- Action buttons — fan straight up, staggered cascade -->
@@ -76,7 +98,7 @@
     title="Open Copilot (Ctrl+`)"
   >
     <div class="halo" class:halo--open={menuOpen}></div>
-    <PolytopeIcon type="tesseract" color="#FFD700" size={32} />
+    <PolytopeIcon type="tesseract" color="rgb({pr},{pg},{pb})" size={32} />
   </button>
 </div>
 
@@ -115,30 +137,30 @@
     position: absolute;
     inset: 0;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(255,215,0,0.18) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(var(--pc, 255,215,0), 0.20) 0%, transparent 70%);
     animation: halo-pulse 3s ease-in-out infinite;
     pointer-events: none;
-    transition: background 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+    transition: background 0.4s ease, transform 0.2s ease, opacity 0.2s ease;
   }
 
   .halo--open {
-    background: radial-gradient(circle, rgba(255,215,0,0.40) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(var(--pc, 255,215,0), 0.42) 0%, transparent 70%);
     animation: none;
     opacity: 1;
     transform: scale(1.2);
   }
 
   .polytope-btn:hover .halo:not(.halo--open) {
-    background: radial-gradient(circle, rgba(255,215,0,0.30) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(var(--pc, 255,215,0), 0.32) 0%, transparent 70%);
   }
 
   .polytope-btn:hover :global(canvas) {
-    filter: drop-shadow(0 0 10px rgba(255,215,0,0.85)) drop-shadow(0 0 24px rgba(255,215,0,0.4));
+    filter: drop-shadow(0 0 10px rgba(var(--pc, 255,215,0), 0.85)) drop-shadow(0 0 24px rgba(var(--pc, 255,215,0), 0.4));
   }
 
   :global(.wrap canvas) {
-    filter: drop-shadow(0 0 6px rgba(255,215,0,0.65)) drop-shadow(0 0 14px rgba(255,215,0,0.3));
-    transition: filter 0.2s ease;
+    filter: drop-shadow(0 0 6px rgba(var(--pc, 255,215,0), 0.65)) drop-shadow(0 0 14px rgba(var(--pc, 255,215,0), 0.3));
+    transition: filter 0.4s ease;
   }
 
   /* ── Radial menu buttons ───────────────────────────────────────────────── */
@@ -203,8 +225,8 @@
   }
 
   @keyframes halo-pulse {
-    0%, 100% { opacity: 0.6; transform: scale(0.9); }
-    50%       { opacity: 1;   transform: scale(1.15); }
+    0%, 100% { opacity: 0.5; transform: scale(0.88); }
+    50%       { opacity: 1;   transform: scale(1.16); }
   }
 
   @media (prefers-reduced-motion: reduce) {
