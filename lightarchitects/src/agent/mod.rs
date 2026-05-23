@@ -44,6 +44,18 @@ pub mod messages_stream_parser;
 #[cfg(feature = "loops-core")]
 pub mod loops;
 
+/// Indirect prompt injection defence — sentinel wrapping and pattern detection for
+/// tool results (B2 security fold, OWASP-LLM01-1.3, MITRE-ATLAS AML.T0051).
+pub mod indirect_injection_shield;
+pub use indirect_injection_shield::{
+    DetectedPattern, HitlReason, IndirectInjectionShield, InjectionSeverity,
+};
+
+/// Bash command-pattern policy — allowlist + denylist for LLM-driven bash tool calls
+/// (B3 security fold, Cookbook §63, OWASP-LLM02).
+pub mod bash_policy;
+pub use bash_policy::{BashPolicy, BashPolicyDecision};
+
 /// L2 conversation session — structured turn management, memory, transport.
 ///
 /// Promotes the gateway `AgentRunner` pattern into the SDK. Enabled by the

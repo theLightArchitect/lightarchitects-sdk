@@ -67,6 +67,17 @@ impl Default for PermissionMatrix {
 }
 
 impl PermissionMatrix {
+    /// Returns `true` when `tool_name` is permitted by this matrix.
+    ///
+    /// Performs a case-insensitive lookup against [`PermissionMatrix::effective_tools`].
+    #[must_use]
+    pub fn allows(&self, tool_name: &str) -> bool {
+        let name = tool_name.to_lowercase();
+        self.effective_tools()
+            .iter()
+            .any(|t| t.to_lowercase() == name)
+    }
+
     /// Derive the final tool allowlist, reconciled against the boolean gates.
     ///
     /// Tools that require a capability flag (e.g. `"Bash"` requires
