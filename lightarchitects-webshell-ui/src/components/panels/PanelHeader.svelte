@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PanelId } from '$lib/types';
   import { maximizedPanelId, editMode } from '$lib/layout';
+  import { draggingPanelId } from '$lib/drag';
 
   interface Props {
     panelId: PanelId;
@@ -67,6 +68,17 @@
     }
   }
 
+  function onDragStart(e: DragEvent) {
+    if (isMaximized) { e.preventDefault(); return; }
+    e.dataTransfer?.setData('text/plain', panelId);
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+    // Defer so the browser can snapshot the element before we style it
+    requestAnimationFrame(() => draggingPanelId.set(panelId));
+  }
+
+  function onDragEnd() {
+    draggingPanelId.set(null);
+  }
 
 </script>
 
@@ -75,11 +87,15 @@
 <div
   class="panel-header"
   class:maximized={isMaximized}
+  class:dragging={$draggingPanelId === panelId}
   bind:this={headerEl}
-  title="Double-click to maximize"
+  title="Drag to split · Double-click to maximize"
   role="toolbar"
   aria-label="{label} panel header"
   data-testid="panel-header-{panelId}"
+  draggable={!isMaximized}
+  ondragstart={onDragStart}
+  ondragend={onDragEnd}
   ondblclick={maximize}
 >
   <span class="panel-icon" style:color>{icon}</span>
@@ -118,11 +134,17 @@
     background: var(--la-bg-elev-1, #0f172a);
     border-bottom: 1px solid var(--la-hair-base, #1e293b);
     flex-shrink: 0;
-    cursor: default;
+    cursor: grab;
     user-select: none;
     font-family: var(--la-font-mono, 'JetBrains Mono', monospace);
+    transition: background 80ms, opacity 80ms;
   }
+  .panel-header:active { cursor: grabbing; }
   .panel-header.maximized { cursor: default; }
+  .panel-header.dragging {
+    opacity: 0.5;
+    cursor: grabbing;
+  }
 
   .panel-icon {
     font-size: 10px;

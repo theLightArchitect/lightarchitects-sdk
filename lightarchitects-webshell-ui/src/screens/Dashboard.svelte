@@ -295,14 +295,14 @@
         {#each activeTasks.slice(0, 3) as task}
           <span class="queue-chip queue-chip--running" title="{task.buildId} · {task.taskType} · running">
             <span class="queue-chip-pulse"></span>
-            <span class="queue-chip-sib">{task.sibling.toUpperCase()}</span>
+            <span class="queue-chip-sib">{task.sibling?.toUpperCase() ?? ''}</span>
             <span class="queue-chip-name">{task.buildId.replace(/^feat\//, '').slice(0, 18)}</span>
             <span class="queue-chip-type">{task.taskType}</span>
           </span>
         {/each}
         {#each pendingTasks.slice(0, 5) as task}
           <span class="queue-chip queue-chip--{task.priority}" title="{task.buildId} · {task.taskType}">
-            <span class="queue-chip-sib">{task.sibling.toUpperCase()}</span>
+            <span class="queue-chip-sib">{task.sibling?.toUpperCase() ?? ''}</span>
             <span class="queue-chip-name">{task.buildId.replace(/^feat\//, '').slice(0, 18)}</span>
             <span class="queue-chip-type">{task.taskType}</span>
           </span>

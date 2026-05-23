@@ -293,6 +293,68 @@ export function addPanel(panelId: PanelId): void {
   scheduleSave();
 }
 
+// ── iTerm2-style drag-to-split ────────────────────────────────────────────────
+
+export type SplitZone = 'left' | 'right' | 'top' | 'bottom';
+
+/** Remove a panel leaf from the tree. Returns null if the tree becomes empty. */
+function prunePanel(tree: PanelTree, panelId: PanelId): PanelTree | null {
+  if (tree.type === 'leaf') return tree.panelId === panelId ? null : tree;
+  if (tree.type === 'tabgroup') {
+    const tabs = tree.tabs.filter(t => t !== panelId);
+    if (tabs.length === 0) return null;
+    return { ...tree, tabs, activeIndex: Math.min(tree.activeIndex, tabs.length - 1) };
+  }
+  const newChildren: PanelTree[] = [];
+  const newFlexes: number[] = [];
+  for (let i = 0; i < tree.children.length; i++) {
+    const pruned = prunePanel(tree.children[i], panelId);
+    if (pruned !== null) { newChildren.push(pruned); newFlexes.push(tree.flexes[i]); }
+  }
+  if (newChildren.length === 0) return null;
+  if (newChildren.length === 1) return newChildren[0];
+  return { ...tree, children: newChildren, flexes: newFlexes };
+}
+
+/** Replace the target leaf with an axis split containing the dragged panel. */
+function insertSplit(
+  tree: PanelTree,
+  targetId: PanelId,
+  incoming: PanelTree,
+  zone: SplitZone,
+): PanelTree {
+  if (tree.type === 'leaf') {
+    if (tree.panelId !== targetId) return tree;
+    const direction: 'row' | 'column' = (zone === 'left' || zone === 'right') ? 'row' : 'column';
+    const before = zone === 'left' || zone === 'top';
+    const children: PanelTree[] = before ? [incoming, tree] : [tree, incoming];
+    return { type: 'axis', direction, children, flexes: [1, 1] };
+  }
+  if (tree.type === 'tabgroup') {
+    if (!tree.tabs.includes(targetId)) return tree;
+    const direction: 'row' | 'column' = (zone === 'left' || zone === 'right') ? 'row' : 'column';
+    const before = zone === 'left' || zone === 'top';
+    const children: PanelTree[] = before ? [incoming, tree] : [tree, incoming];
+    return { type: 'axis', direction, children, flexes: [1, 1] };
+  }
+  return { ...tree, children: tree.children.map(c => insertSplit(c, targetId, incoming, zone)) };
+}
+
+/**
+ * Drag a panel next to another panel, splitting it along the given edge.
+ * Handles pruning the dragged panel from its original position first.
+ */
+export function splitPanel(draggedId: PanelId, targetId: PanelId, zone: SplitZone): void {
+  if (draggedId === targetId) return;
+  layoutTree.update(tree => {
+    const pruned = prunePanel(tree, draggedId);
+    if (!pruned) return tree; // dragged was the only panel — can't remove
+    const incoming: PanelTree = { type: 'leaf', panelId: draggedId };
+    return validateFlex(insertSplit(pruned, targetId, incoming, zone));
+  });
+  scheduleSave();
+}
+
 // ── Focus bus ─────────────────────────────────────────────────────────────────
 
 /** Context written by the focused panel; read by CopilotDrawer. */

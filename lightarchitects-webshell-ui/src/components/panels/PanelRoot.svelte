@@ -1,10 +1,12 @@
 <script lang="ts">
   import type { PanelTree, PanelId } from '$lib/types';
-  import { layoutTree, maximizedPanelId, setLayout, collectPanelIds } from '$lib/layout';
+  import { layoutTree, maximizedPanelId, setLayout, collectPanelIds, splitPanel } from '$lib/layout';
+  import { draggingPanelId } from '$lib/drag';
   import AxisNode from './AxisNode.svelte';
   import TabGroupNode from './TabGroupNode.svelte';
   import PanelHeader from './PanelHeader.svelte';
   import PanelHost from './PanelHost.svelte';
+  import DropZoneOverlay from './DropZoneOverlay.svelte';
 
   const PANEL_META: Record<PanelId, { label: string; icon: string; color: string }> = {
     'copilot':       { label: 'Copilot',      icon: '◈', color: 'var(--la-struct-primary)' },
@@ -22,6 +24,7 @@
   // Track which panels are currently in the tree for visibility management
   let visiblePanels = $derived(collectPanelIds($layoutTree));
   let maxPanel = $derived($maximizedPanelId);
+  let draggedId = $derived($draggingPanelId);
 
   function removeLeaf(panelId: PanelId) {
     // Simple removal: replace the tree with a filtered copy.
@@ -73,6 +76,7 @@
         class="panel-leaf"
         class:is-maximized={maxPanel === node.panelId}
         class:is-dimmed={maxPanel !== null && maxPanel !== node.panelId}
+        class:is-dragging-source={draggedId === node.panelId}
         data-panel-id={node.panelId}
         data-testid="panel-leaf-{node.panelId}"
         inert={maxPanel !== null && maxPanel !== node.panelId ? true : undefined}
@@ -87,6 +91,9 @@
         <div class="panel-body">
           <PanelHost panelId={node.panelId} visible={true} />
         </div>
+        {#if draggedId !== null && draggedId !== node.panelId && maxPanel === null}
+          <DropZoneOverlay ondropzone={(zone) => splitPanel(draggedId, node.panelId, zone)} />
+        {/if}
       </div>
       {/if}
     {/if}
@@ -134,6 +141,13 @@
     min-height: 0;
     overflow: hidden;
     display: flex;
+  }
+
+  /* Panel being drag-relocated: ghost effect */
+  .panel-leaf.is-dragging-source {
+    opacity: 0.4;
+    outline: 1px dashed rgba(0, 200, 255, 0.3);
+    outline-offset: -1px;
   }
 
   /* Dimmed background panels during maximize */
