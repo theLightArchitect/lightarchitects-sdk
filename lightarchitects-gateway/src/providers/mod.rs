@@ -4,5 +4,7 @@
 //! agentic loop can swap backends without touching call sites.
 
 pub mod anthropic;
+pub mod tool_executor;
 
 pub use anthropic::AnthropicHttpProvider;
+pub use tool_executor::GatewayToolExecutor;
