@@ -1,23 +1,18 @@
 //! Interactive coding agent — NDJSON streaming mode for webshell bridge.
 //!
-//! ## Migration note
+//! All agent I/O is handled by [`ConversationSession`] from the SDK.
 //!
-//! The SDK-promoted counterparts of [`AgentRunner`] and the protocol types
-//! now live in `lightarchitects::agent::conversation`. New code should use
-//! those types directly. The re-exports below are provided for gradual
-//! migration; the gateway-local `AgentRunner` and `protocol` module remain
-//! fully functional.
+//! SDK re-exports:
 //!
-//! SDK re-exports (available when the `loops-core` feature is enabled):
-//!
-//! - [`ConversationSession`] — SDK-promoted `AgentRunner`
+//! - [`ConversationSession`] — primary session type
 //! - [`SessionConfig`] — frozen session configuration
-//! - [`ConversationEvent`] — SDK-native event enum (replaces `AgentEvent`)
+//! - [`ConversationEvent`] — event enum
 //! - [`Transport`] — outbound event sink trait
-//! - [`NdjsonTransport`] / [`TtyTransport`] — concrete transport implementations
+//! - [`NdjsonTransport`] / [`TtyTransport`] / [`SseTransport`] — concrete transports
 //!
-//! Entry point: [`run_ndjson`] — reads [`ControlMessage`] from stdin,
-//! runs an agent turn, emits [`AgentEvent`] to stdout.
+//! Entry points:
+//! - [`run_ndjson`] — NDJSON stdin→stdout loop (webshell bridge)
+//! - [`run_interactive`] — TTY REPL (human-facing)
 //!
 //! ## Tool surface
 //!
@@ -40,8 +35,6 @@ use std::sync::Arc;
 use lightarchitects::agent::ClaudeCliProvider;
 
 pub mod protocol;
-// runner remains pub for main.rs interactive mode; new callers use ConversationSession.
-pub mod runner;
 
 // ── SDK re-exports (loops-core) ───────────────────────────────────────────────
 
@@ -150,6 +143,21 @@ fn persist_inherited_key(key: &str, key_name: &str) {
 ///
 /// Returns an error if the LLM client cannot be initialised from environment.
 pub async fn run_interactive(cwd: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(key) = std::env::var("LA_INHERITED_API_KEY")
+        .ok()
+        .filter(|s| !s.is_empty())
+    {
+        let backend = std::env::var("LA_INHERITED_BACKEND")
+            .ok()
+            .and_then(|b| match b.to_lowercase().as_str() {
+                "anthropic" | "claude" => Some("ANTHROPIC_API_KEY"),
+                "openai" | "codex" => Some("OPENAI_API_KEY"),
+                "ollama" => Some("OLLAMA_API_KEY"),
+                _ => None,
+            })
+            .unwrap_or("ANTHROPIC_API_KEY");
+        persist_inherited_key(&key, backend);
+    }
     let config = SessionConfig {
         cwd: cwd.to_path_buf(),
         ..SessionConfig::default()

@@ -1,4 +1,4 @@
-//! `ReAct` agent loop — gives siblings tool-calling agency.
+//! Arena research agent — gives siblings tool-calling agency.
 //!
 //! Each heartbeat runs a multi-turn loop: the LLM generates text, and if it
 //! includes a `### TOOL_CALL` block, the tool is executed and the result is

@@ -433,15 +433,11 @@ async fn run_heartbeat(
     );
 
     // Run agent loop — sibling can call tools (fetch_paper, search_papers)
-    let prompt_with_tools = format!(
-        "{prompt}\n\n{}",
-        crate::arena::agent_loop::TOOL_DESCRIPTIONS
-    );
+    let prompt_with_tools = format!("{prompt}\n\n{}", crate::arena::agent::TOOL_DESCRIPTIONS);
 
     tracing::info!(sibling = %sibling, energy, "Heartbeat: agent loop starting");
     let agent_result =
-        crate::arena::agent_loop::run(llm, &prompt_with_tools, Some(mcp_pool), Some(data_dir))
-            .await?;
+        crate::arena::agent::run(llm, &prompt_with_tools, Some(mcp_pool), Some(data_dir)).await?;
     tracing::info!(
         sibling = %sibling,
         tool_calls = agent_result.tool_calls,

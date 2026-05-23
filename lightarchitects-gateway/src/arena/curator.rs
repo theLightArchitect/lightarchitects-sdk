@@ -720,10 +720,10 @@ fn fetch_intel_feed_if_needed(shared_dir: &std::path::Path) {
                 content.push_str("## arXiv Security × AI (recent)\n\n");
                 // Parse arXiv Atom XML — extract entries
                 for entry in body.split("<entry>").skip(1).take(10) {
-                    let title = super::agent_loop::extract_xml_tag(entry, "title")
+                    let title = super::agent::extract_xml_tag(entry, "title")
                         .unwrap_or_else(|| "Untitled".into())
                         .replace('\n', " ");
-                    let summary = super::agent_loop::extract_xml_tag(entry, "summary")
+                    let summary = super::agent::extract_xml_tag(entry, "summary")
                         .unwrap_or_default()
                         .replace('\n', " ");
                     let preview: String = summary.chars().take(400).collect();
