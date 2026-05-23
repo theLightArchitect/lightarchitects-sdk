@@ -44,6 +44,9 @@ export const streamDrawerOpen = writable<boolean>(false);
 // Width claimed when in 'right' mode (0 when top/closed); App.svelte adds as padding-right.
 export const streamDrawerWidthPx = writable<number>(0);
 export const streamDrawerMode = writable<'right' | 'top'>('right');
+// Ordered list of active panel tabs — each gets equal height via flex: 1.
+export type StreamDrawerTab = 'stream' | 'events' | 'memory' | '3d';
+export const streamDrawerActiveTabs = writable<StreamDrawerTab[]>(['stream']);
 
 // --- Routing ---
 export const currentRoute = writable<string>('/');

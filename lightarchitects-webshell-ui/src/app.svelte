@@ -31,7 +31,13 @@
     activePlan, latestScrumReport, hotMemory, coldMemory, activeHelixNode, selectedPillar,
     expandedFindings, supervisorAlerts, siblingHealth, copilotMessages,
     intakeFormDirty, authStatus, commandPaletteOpen, eventsOverlayOpen, streamDrawerWidthPx,
+    streamDrawerOpen, streamDrawerActiveTabs, type StreamDrawerTab,
   } from '$lib/stores';
+
+  function openStreamTab(tab: StreamDrawerTab) {
+    streamDrawerActiveTabs.update(tabs => tabs.includes(tab) ? tabs : [...tabs, tab]);
+    streamDrawerOpen.set(true);
+  }
   import { get } from 'svelte/store';
   import { setupComplete, step, loadSetupInfo, selectedBackend, selectedModel, selectedAgent } from '$lib/setup';
   import { connectGlobalSSE, disconnectGlobalSSE } from '$lib/sse';
@@ -364,7 +370,7 @@
         group: 'Drawers',
         scope: 'global',
         matches: e => (e.metaKey || e.ctrlKey) && e.key === 'm',
-        handler: () => memoryDrawerOpen.update(v => !v),
+        handler: () => openStreamTab('memory'),
       }),
     ];
 
@@ -443,7 +449,7 @@
     <!-- Main content area — padding-right when events overlay opens (push-not-occlude) -->
     <div
       class="flex-1 flex flex-col overflow-hidden relative"
-      style="padding-right: {Math.max($eventsOverlayOpen ? 320 : 0, $streamDrawerWidthPx)}px; transition: padding-right 260ms cubic-bezier(0.4,0,0.2,1);"
+      style="padding-right: {$streamDrawerWidthPx}px; transition: padding-right 260ms cubic-bezier(0.4,0,0.2,1);"
     >
       <!-- Ambient particles — drifting helix-palette dots behind content -->
       <AmbientParticles />
@@ -463,30 +469,30 @@
 
           <ActiveBuildsChip />
 
-          <!-- Events -->
-          <Tooltip content="Live events feed — activity, AYIN spans, gate verdicts, build output (E)" side="bottom">
+          <!-- Events → opens StreamDrawer on EVT tab -->
+          <Tooltip content="Live events feed — opens in the right stream panel (E)" side="bottom">
             <button
-              onclick={() => eventsOverlayOpen.update(v => !v)}
-              class="nav-cell nav-ctrl {$eventsOverlayOpen ? 'nav-ctrl--on' : ''}"
+              onclick={() => openStreamTab('events')}
+              class="nav-cell nav-ctrl {$streamDrawerActiveTabs.includes('events') ? 'nav-ctrl--on' : ''}"
               data-testid="events-toggle"
             >Events</button>
           </Tooltip>
 
-          <!-- Memory -->
-          <Tooltip content="Hot · Cold · Convergences — what each agent remembers (Cmd+M)" side="bottom">
+          <!-- Memory → opens StreamDrawer on MEM tab -->
+          <Tooltip content="Hot · Cold · Convergences — opens in the right stream panel (Cmd+M)" side="bottom">
             <button
-              onclick={() => memoryDrawerOpen.update(v => !v)}
-              class="nav-cell nav-ctrl {$memoryDrawerOpen ? 'nav-ctrl--on' : ''}"
-              title="Memory drawer (Cmd+M)"
+              onclick={() => openStreamTab('memory')}
+              class="nav-cell nav-ctrl {$streamDrawerActiveTabs.includes('memory') ? 'nav-ctrl--on' : ''}"
+              title="Memory panel (Cmd+M)"
               data-testid="memory-toggle"
             >Memory</button>
           </Tooltip>
 
-          <!-- 3D Helix toggle -->
-          <Tooltip content="Toggle the 3D knowledge graph panel — live helix of agent memory strands" side="bottom">
+          <!-- 3D → opens StreamDrawer on 3D tab -->
+          <Tooltip content="Toggle the 3D knowledge graph — opens in the right stream panel" side="bottom">
             <button
-              onclick={() => { showHelix = !showHelix; }}
-              class="nav-cell nav-ctrl {showHelix ? 'nav-ctrl--on' : ''}"
+              onclick={() => openStreamTab('3d')}
+              class="nav-cell nav-ctrl {$streamDrawerActiveTabs.includes('3d') ? 'nav-ctrl--on' : ''}"
               data-testid="helix-toggle"
             >3D</button>
           </Tooltip>

@@ -2,10 +2,12 @@
   import { onMount, onDestroy } from 'svelte';
   import {
     mailboxMessages, mailboxUnread,
-    streamDrawerOpen, streamDrawerWidthPx, streamDrawerMode,
+    streamDrawerOpen, streamDrawerWidthPx, streamDrawerMode, streamDrawerActiveTabs,
+    type StreamDrawerTab,
     builds, slotAssignments,
     drawerWidthPx,
   } from '$lib/stores';
+  import Helix3D from './Helix3D.svelte';
 
   // ── Constants ────────────────────────────────────────────
   const DEFAULT_WIDTH  = 300;
@@ -214,6 +216,23 @@
     window.removeEventListener('mouseup',   onMouseUp);
     streamDrawerWidthPx.set(0);
   });
+
+  // ── Tab panel system ─────────────────────────────────────
+  const TAB_ORDER: StreamDrawerTab[] = ['stream', 'events', 'memory', '3d'];
+  const TAB_SHORT: Record<StreamDrawerTab, string> = { stream: 'STRM', events: 'EVT', memory: 'MEM', '3d': '3D' };
+  const TAB_FULL:  Record<StreamDrawerTab, string> = { stream: 'Agent Stream', events: 'Events Feed', memory: 'Memory', '3d': 'Helix 3D' };
+  const TAB_COLOR: Record<StreamDrawerTab, string> = { stream: '#FFD700', events: '#17C3B2', memory: '#8B5CF6', '3d': '#3B82F6' };
+
+  function toggleTab(tab: StreamDrawerTab) {
+    streamDrawerActiveTabs.update(tabs =>
+      tabs.includes(tab) ? tabs.filter(t => t !== tab) : [...tabs, tab],
+    );
+    if (!$streamDrawerOpen) streamDrawerOpen.set(true);
+  }
+
+  function deactivateTab(tab: StreamDrawerTab) {
+    streamDrawerActiveTabs.update(tabs => tabs.filter(t => t !== tab));
+  }
 </script>
 
 <!-- ── RIGHT drawer ─────────────────────────────────────── -->
@@ -240,104 +259,147 @@
     <div class="header">
       <div class="header-title">
         <div class="live-dot" class:live-dot--idle={activeCount === 0}></div>
-        <span class="label">STREAM</span>
         {#if activeCount > 0}
-          <span class="agent-count">{activeCount} ACTIVE</span>
+          <span class="agent-count">{activeCount}</span>
         {/if}
+      </div>
+
+      <!-- Tab rail: STRM · EVT · MEM · 3D -->
+      <div class="tab-rail" role="group" aria-label="Panel tabs">
+        {#each TAB_ORDER as tab (tab)}
+          {@const active = $streamDrawerActiveTabs.includes(tab)}
+          <button
+            class="tab-btn"
+            class:tab-btn--active={active}
+            style="--tab-color: {TAB_COLOR[tab]}"
+            onclick={() => toggleTab(tab)}
+            title="{TAB_FULL[tab]} — click to {active ? 'hide' : 'show'}"
+            aria-pressed={active}
+          >{TAB_SHORT[tab]}</button>
+        {/each}
       </div>
 
       <div class="agent-dots" aria-hidden="true">
         {#each knownAgents as code (code)}
-          <div
-            class="agent-dot"
-            style="background: {agentColor(code)}"
-            title={code}
-          ></div>
+          <div class="agent-dot" style="background: {agentColor(code)}" title={code}></div>
         {/each}
       </div>
 
       <div class="spacer"></div>
 
-      <button class="ctrl" class:ctrl--active={mode === 'right'} onclick={() => setMode('right')} title="Right drawer">RIGHT</button>
-      <button class="ctrl" class:ctrl--active={mode === 'top'}   onclick={() => setMode('top')}   title="Top drawer">TOP</button>
-      <button class="ctrl" class:ctrl--active={pinned} onclick={() => { pinned = !pinned; }} title="Pin open">PIN</button>
+      <button class="ctrl" class:ctrl--active={mode === 'right'} onclick={() => setMode('right')} title="Right drawer">R</button>
+      <button class="ctrl" class:ctrl--active={mode === 'top'}   onclick={() => setMode('top')}   title="Top drawer">T</button>
+      <button class="ctrl" class:ctrl--active={pinned}           onclick={() => { pinned = !pinned; }} title="Pin open">PIN</button>
       <button class="ctrl ctrl--close" onclick={close} title="Collapse">▸</button>
     </div>
 
-    <!-- Filter rows -->
-    <div class="filters">
-      {#if knownBuildIds.length > 0}
-        <div class="filter-row">
-          <span class="filter-label">BUILD</span>
-          <div class="chips">
-            {#each knownBuildIds as id (id)}
-              <button
-                class="chip"
-                class:chip--off={buildFilter[id] === false}
-                style="color: {buildColor(id)}; border-color: {buildFilter[id] === false ? 'var(--la-hair-faint, #1c2028)' : buildColor(id) + '55'}"
-                onclick={() => toggleBuild(id)}
-                title={buildLabel(id)}
-              >{buildLabel(id)}</button>
-            {/each}
+    <!-- Multi-panel body — each active tab gets flex: 1 of the available height -->
+    <div class="panels">
+      {#each $streamDrawerActiveTabs as tab (tab)}
+        <div class="panel" style="--tab-color: {TAB_COLOR[tab]}">
+
+          <!-- Panel mini-header -->
+          <div class="panel-head">
+            <span class="panel-dot" style="background: {TAB_COLOR[tab]}"></span>
+            <span class="panel-label">{TAB_FULL[tab]}</span>
+            <button class="panel-close" onclick={() => deactivateTab(tab)} title="Close panel" aria-label="Close {TAB_FULL[tab]}">✕</button>
           </div>
-        </div>
-      {/if}
 
-      <div class="filter-row">
-        <span class="filter-label">AGENT</span>
-        <div class="chips">
-          {#each knownAgents as code (code)}
-            <button
-              class="chip"
-              class:chip--off={agentFilter[code] === false}
-              style="color: {agentColor(code)}; border-color: {agentFilter[code] === false ? 'var(--la-hair-faint, #1c2028)' : agentColor(code) + '44'}"
-              onclick={() => toggleAgent(code)}
-            >{code}</button>
-          {/each}
-        </div>
-        <input
-          class="search"
-          type="text"
-          placeholder="search…"
-          bind:value={searchQ}
-          oninput={() => { searchQ = searchQ.toLowerCase(); }}
-          aria-label="Filter stream output"
-        />
-      </div>
-    </div>
+          <!-- Panel content -->
+          <div class="panel-body">
+            {#if tab === 'stream'}
+              <!-- Filters -->
+              <div class="filters">
+                {#if knownBuildIds.length > 0}
+                  <div class="filter-row">
+                    <span class="filter-label">BUILD</span>
+                    <div class="chips">
+                      {#each knownBuildIds as id (id)}
+                        <button
+                          class="chip"
+                          class:chip--off={buildFilter[id] === false}
+                          style="color: {buildColor(id)}; border-color: {buildFilter[id] === false ? 'var(--la-hair-faint, #1c2028)' : buildColor(id) + '55'}"
+                          onclick={() => toggleBuild(id)}
+                          title={buildLabel(id)}
+                        >{buildLabel(id)}</button>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+                <div class="filter-row">
+                  <span class="filter-label">AGENT</span>
+                  <div class="chips">
+                    {#each knownAgents as code (code)}
+                      <button
+                        class="chip"
+                        class:chip--off={agentFilter[code] === false}
+                        style="color: {agentColor(code)}; border-color: {agentFilter[code] === false ? 'var(--la-hair-faint, #1c2028)' : agentColor(code) + '44'}"
+                        onclick={() => toggleAgent(code)}
+                      >{code}</button>
+                    {/each}
+                  </div>
+                  <input class="search" type="text" placeholder="search…" bind:value={searchQ}
+                    oninput={() => { searchQ = searchQ.toLowerCase(); }}
+                    aria-label="Filter stream output" />
+                </div>
+              </div>
+              <!-- Stream log -->
+              <div class="stream" bind:this={streamEl} onscroll={onScroll} role="log" aria-live="polite" aria-label="Agent output">
+                {#each filtered as msg (msg.id)}
+                  {@const code = normalizeAgent(msg.agent)}
+                  <div class="row" style="border-left-color: {agentColor(code)}55">
+                    <span class="row-ts">{formatTs(msg.ts)}</span>
+                    {#if msg.dispatchId}
+                      <span class="row-bld" style="color: {buildColor(msg.dispatchId)}">{buildLabel(msg.dispatchId)}</span>
+                    {/if}
+                    <span class="row-ag" style="color: {agentColor(code)}">{code}</span>
+                    <span class="row-bar" aria-hidden="true">│</span>
+                    <span class="row-tx">{msg.text}</span>
+                  </div>
+                {/each}
+                {#if filtered.length === 0}
+                  <div class="empty">{$mailboxMessages.length === 0 ? 'Waiting for agent output…' : 'No messages match filters'}</div>
+                {/if}
+              </div>
+              <!-- Footer -->
+              <div class="footer">
+                <span class="foot-item foot-item--live" class:foot-item--idle={activeCount === 0}>{activeCount > 0 ? '● LIVE' : '○ IDLE'}</span>
+                <span class="foot-item">{filtered.length} / {$mailboxMessages.length} ROWS</span>
+                <span class="foot-spacer"></span>
+                <span class="foot-item" class:foot-item--warn={!autoscroll}>AUTO-SCROLL {autoscroll ? '✓' : '✗'}</span>
+              </div>
 
-    <!-- Stream -->
-    <div class="stream" bind:this={streamEl} onscroll={onScroll} role="log" aria-live="polite" aria-label="Agent output">
-      {#each filtered as msg (msg.id)}
-        {@const code = normalizeAgent(msg.agent)}
-        <div class="row" style="border-left-color: {agentColor(code)}55">
-          <span class="row-ts">{formatTs(msg.ts)}</span>
-          {#if msg.dispatchId}
-            <span class="row-bld" style="color: {buildColor(msg.dispatchId)}">{buildLabel(msg.dispatchId)}</span>
-          {/if}
-          <span class="row-ag" style="color: {agentColor(code)}">{code}</span>
-          <span class="row-bar" aria-hidden="true">│</span>
-          <span class="row-tx">{msg.text}</span>
+            {:else if tab === 'events'}
+              <div class="panel-stub">
+                <span class="stub-icon">⚡</span>
+                <span class="stub-label">EVENTS FEED</span>
+                <span class="stub-hint">Live activity, AYIN spans, gate verdicts</span>
+                <span class="stub-note">Content integration in progress</span>
+              </div>
+
+            {:else if tab === 'memory'}
+              <div class="panel-stub">
+                <span class="stub-icon">◈</span>
+                <span class="stub-label">MEMORY</span>
+                <span class="stub-hint">Hot · Cold · Convergences</span>
+                <span class="stub-note">Content integration in progress</span>
+              </div>
+
+            {:else if tab === '3d'}
+              <div class="helix-wrap">
+                <Helix3D />
+              </div>
+            {/if}
+          </div>
+
         </div>
       {/each}
 
-      {#if filtered.length === 0}
-        <div class="empty">
-          {$mailboxMessages.length === 0 ? 'Waiting for agent output…' : 'No messages match filters'}
+      {#if $streamDrawerActiveTabs.length === 0}
+        <div class="no-panels">
+          <span class="no-panels-hint">Select a panel above</span>
         </div>
       {/if}
-    </div>
-
-    <!-- Footer -->
-    <div class="footer">
-      <span class="foot-item foot-item--live" class:foot-item--idle={activeCount === 0}>
-        {activeCount > 0 ? '● LIVE' : '○ IDLE'}
-      </span>
-      <span class="foot-item">{filtered.length} / {$mailboxMessages.length} ROWS</span>
-      <span class="foot-spacer"></span>
-      <span class="foot-item" class:foot-item--warn={!autoscroll}>
-        AUTO-SCROLL {autoscroll ? '✓' : '✗'}
-      </span>
     </div>
   </div>
 {/if}
@@ -366,14 +428,27 @@
 
     <div class="seam seam--top" class:seam--active={activeCount > 0}></div>
 
-    <!-- Header -->
+    <!-- Header — shared tab rail -->
     <div class="header">
       <div class="header-title">
         <div class="live-dot" class:live-dot--idle={activeCount === 0}></div>
-        <span class="label">STREAM</span>
         {#if activeCount > 0}
-          <span class="agent-count">{activeCount} ACTIVE</span>
+          <span class="agent-count">{activeCount}</span>
         {/if}
+      </div>
+
+      <div class="tab-rail" role="group" aria-label="Panel tabs">
+        {#each TAB_ORDER as tab (tab)}
+          {@const active = $streamDrawerActiveTabs.includes(tab)}
+          <button
+            class="tab-btn"
+            class:tab-btn--active={active}
+            style="--tab-color: {TAB_COLOR[tab]}"
+            onclick={() => toggleTab(tab)}
+            title="{TAB_FULL[tab]}"
+            aria-pressed={active}
+          >{TAB_SHORT[tab]}</button>
+        {/each}
       </div>
 
       <div class="agent-dots" aria-hidden="true">
@@ -383,83 +458,92 @@
       </div>
 
       <div class="spacer"></div>
-
-      <button class="ctrl" class:ctrl--active={mode === 'right'} onclick={() => setMode('right')} title="Right drawer">RIGHT</button>
-      <button class="ctrl" class:ctrl--active={mode === 'top'}   onclick={() => setMode('top')}   title="Top drawer">TOP</button>
+      <button class="ctrl" class:ctrl--active={mode === 'right'} onclick={() => setMode('right')} title="Right drawer">R</button>
+      <button class="ctrl" class:ctrl--active={mode === 'top'}   onclick={() => setMode('top')}   title="Top drawer">T</button>
       <button class="ctrl ctrl--close" onclick={close} title="Collapse">▾</button>
     </div>
 
-    <!-- Filters -->
-    <div class="filters">
-      {#if knownBuildIds.length > 0}
-        <div class="filter-row">
-          <span class="filter-label">BUILD</span>
-          <div class="chips">
-            {#each knownBuildIds as id (id)}
-              <button
-                class="chip"
-                class:chip--off={buildFilter[id] === false}
-                style="color: {buildColor(id)}; border-color: {buildFilter[id] === false ? 'var(--la-hair-faint, #1c2028)' : buildColor(id) + '55'}"
-                onclick={() => toggleBuild(id)}
-              >{buildLabel(id)}</button>
-            {/each}
+    <!-- Multi-panel body -->
+    <div class="panels">
+      {#each $streamDrawerActiveTabs as tab (tab)}
+        <div class="panel" style="--tab-color: {TAB_COLOR[tab]}">
+          <div class="panel-head">
+            <span class="panel-dot" style="background: {TAB_COLOR[tab]}"></span>
+            <span class="panel-label">{TAB_FULL[tab]}</span>
+            <button class="panel-close" onclick={() => deactivateTab(tab)} title="Close panel" aria-label="Close {TAB_FULL[tab]}">✕</button>
+          </div>
+          <div class="panel-body">
+            {#if tab === 'stream'}
+              <div class="filters">
+                {#if knownBuildIds.length > 0}
+                  <div class="filter-row">
+                    <span class="filter-label">BUILD</span>
+                    <div class="chips">
+                      {#each knownBuildIds as id (id)}
+                        <button class="chip" class:chip--off={buildFilter[id] === false}
+                          style="color: {buildColor(id)}; border-color: {buildFilter[id] === false ? 'var(--la-hair-faint, #1c2028)' : buildColor(id) + '55'}"
+                          onclick={() => toggleBuild(id)}>{buildLabel(id)}</button>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+                <div class="filter-row">
+                  <span class="filter-label">AGENT</span>
+                  <div class="chips">
+                    {#each knownAgents as code (code)}
+                      <button class="chip" class:chip--off={agentFilter[code] === false}
+                        style="color: {agentColor(code)}; border-color: {agentFilter[code] === false ? 'var(--la-hair-faint, #1c2028)' : agentColor(code) + '44'}"
+                        onclick={() => toggleAgent(code)}>{code}</button>
+                    {/each}
+                  </div>
+                  <input class="search" type="text" placeholder="search…" bind:value={searchQ}
+                    oninput={() => { searchQ = searchQ.toLowerCase(); }} aria-label="Filter stream output" />
+                </div>
+              </div>
+              <div class="stream" bind:this={streamEl} onscroll={onScroll} role="log" aria-live="polite" aria-label="Agent output">
+                {#each filtered as msg (msg.id)}
+                  {@const code = normalizeAgent(msg.agent)}
+                  <div class="row" style="border-left-color: {agentColor(code)}55">
+                    <span class="row-ts">{formatTs(msg.ts)}</span>
+                    {#if msg.dispatchId}<span class="row-bld" style="color: {buildColor(msg.dispatchId)}">{buildLabel(msg.dispatchId)}</span>{/if}
+                    <span class="row-ag" style="color: {agentColor(code)}">{code}</span>
+                    <span class="row-bar" aria-hidden="true">│</span>
+                    <span class="row-tx">{msg.text}</span>
+                  </div>
+                {/each}
+                {#if filtered.length === 0}
+                  <div class="empty">{$mailboxMessages.length === 0 ? 'Waiting for agent output…' : 'No messages match filters'}</div>
+                {/if}
+              </div>
+              <div class="footer">
+                <span class="foot-item foot-item--live" class:foot-item--idle={activeCount === 0}>{activeCount > 0 ? '● LIVE' : '○ IDLE'}</span>
+                <span class="foot-item">{filtered.length} / {$mailboxMessages.length} ROWS</span>
+                <span class="foot-spacer"></span>
+                <span class="foot-item" class:foot-item--warn={!autoscroll}>AUTO-SCROLL {autoscroll ? '✓' : '✗'}</span>
+              </div>
+            {:else if tab === 'events'}
+              <div class="panel-stub">
+                <span class="stub-icon">⚡</span>
+                <span class="stub-label">EVENTS FEED</span>
+                <span class="stub-hint">Live activity, AYIN spans, gate verdicts</span>
+                <span class="stub-note">Content integration in progress</span>
+              </div>
+            {:else if tab === 'memory'}
+              <div class="panel-stub">
+                <span class="stub-icon">◈</span>
+                <span class="stub-label">MEMORY</span>
+                <span class="stub-hint">Hot · Cold · Convergences</span>
+                <span class="stub-note">Content integration in progress</span>
+              </div>
+            {:else if tab === '3d'}
+              <div class="helix-wrap"><Helix3D /></div>
+            {/if}
           </div>
         </div>
-      {/if}
-
-      <div class="filter-row">
-        <span class="filter-label">AGENT</span>
-        <div class="chips">
-          {#each knownAgents as code (code)}
-            <button
-              class="chip"
-              class:chip--off={agentFilter[code] === false}
-              style="color: {agentColor(code)}; border-color: {agentFilter[code] === false ? 'var(--la-hair-faint, #1c2028)' : agentColor(code) + '44'}"
-              onclick={() => toggleAgent(code)}
-            >{code}</button>
-          {/each}
-        </div>
-        <input
-          class="search"
-          type="text"
-          placeholder="search…"
-          bind:value={searchQ}
-          oninput={() => { searchQ = searchQ.toLowerCase(); }}
-          aria-label="Filter stream output"
-        />
-      </div>
-    </div>
-
-    <!-- Stream -->
-    <div class="stream" bind:this={streamEl} onscroll={onScroll} role="log" aria-live="polite" aria-label="Agent output">
-      {#each filtered as msg (msg.id)}
-        {@const code = normalizeAgent(msg.agent)}
-        <div class="row" style="border-left-color: {agentColor(code)}55">
-          <span class="row-ts">{formatTs(msg.ts)}</span>
-          {#if msg.dispatchId}
-            <span class="row-bld" style="color: {buildColor(msg.dispatchId)}">{buildLabel(msg.dispatchId)}</span>
-          {/if}
-          <span class="row-ag" style="color: {agentColor(code)}">{code}</span>
-          <span class="row-bar" aria-hidden="true">│</span>
-          <span class="row-tx">{msg.text}</span>
-        </div>
       {/each}
-
-      {#if filtered.length === 0}
-        <div class="empty">
-          {$mailboxMessages.length === 0 ? 'Waiting for agent output…' : 'No messages match filters'}
-        </div>
+      {#if $streamDrawerActiveTabs.length === 0}
+        <div class="no-panels"><span class="no-panels-hint">Select a panel above</span></div>
       {/if}
-    </div>
-
-    <!-- Footer -->
-    <div class="footer">
-      <span class="foot-item foot-item--live" class:foot-item--idle={activeCount === 0}>
-        {activeCount > 0 ? '● LIVE' : '○ IDLE'}
-      </span>
-      <span class="foot-item">{filtered.length} / {$mailboxMessages.length} ROWS</span>
-      <span class="foot-spacer"></span>
-      <span class="foot-item" class:foot-item--warn={!autoscroll}>AUTO-SCROLL {autoscroll ? '✓' : '✗'}</span>
     </div>
   </div>
 {/if}
@@ -853,4 +937,184 @@
   .foot-item--warn { color: #f59e0b; }
 
   .foot-spacer { flex: 1; }
+
+  /* ── Tab rail ───────────────────────────────────────────── */
+  .tab-rail {
+    display: flex;
+    align-items: stretch;
+    height: 100%;
+    border-right: 1px solid var(--la-hair-faint, #1c2028);
+  }
+
+  .tab-btn {
+    position: relative;
+    background: none;
+    border: none;
+    border-right: 1px solid var(--la-hair-faint, #1c2028);
+    cursor: pointer;
+    color: var(--la-text-mute, #6e7681);
+    font-family: var(--la-font-mono, monospace);
+    font-size: 6.5px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    padding: 0 7px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    transition: color 80ms, background 80ms;
+  }
+  .tab-btn:last-child { border-right: none; }
+  .tab-btn:hover { color: var(--la-text-base, #c9d1d9); background: rgba(255,255,255,0.025); }
+  .tab-btn--active { color: var(--tab-color, #FFD700); }
+  .tab-btn--active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 4px;
+    right: 4px;
+    height: 1.5px;
+    background: var(--tab-color, #FFD700);
+    border-radius: 1px;
+  }
+
+  /* ── Multi-panel container ──────────────────────────────── */
+  .panels {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-top: 1px solid var(--tab-color, #2c3140);
+    border-top-color: color-mix(in srgb, var(--tab-color, #2c3140) 30%, transparent);
+  }
+  .panel:first-child { border-top: none; }
+
+  .panel-head {
+    flex-shrink: 0;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 7px;
+    background: color-mix(in srgb, var(--tab-color, #111214) 6%, var(--la-bg-void, #08090a));
+    border-bottom: 1px solid var(--la-hair-faint, #1c2028);
+  }
+
+  .panel-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    opacity: 0.8;
+  }
+
+  .panel-label {
+    flex: 1;
+    font-family: var(--la-font-mono, monospace);
+    font-size: 6.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: var(--la-text-mute, #6e7681);
+    text-transform: uppercase;
+  }
+
+  .panel-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--la-text-mute, #6e7681);
+    font-size: 7px;
+    padding: 0 2px;
+    line-height: 1;
+    transition: color 80ms;
+    opacity: 0.5;
+  }
+  .panel-close:hover { color: #ef4444; opacity: 1; }
+
+  .panel-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Stub panels (EVT / MEM pending integration) ────────── */
+  .panel-stub {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    background: var(--la-bg-void, #08090a);
+    background-image: repeating-linear-gradient(
+      0deg, transparent 0px, transparent 3px,
+      rgba(255,255,255,0.006) 3px, rgba(255,255,255,0.006) 4px
+    );
+  }
+
+  .stub-icon {
+    font-size: 18px;
+    opacity: 0.15;
+    margin-bottom: 4px;
+  }
+
+  .stub-label {
+    font-family: var(--la-font-mono, monospace);
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    color: var(--la-text-mute, #6e7681);
+    text-transform: uppercase;
+  }
+
+  .stub-hint {
+    font-family: var(--la-font-mono, monospace);
+    font-size: 7px;
+    color: var(--la-text-dim, #3e4551);
+    letter-spacing: 0.06em;
+  }
+
+  .stub-note {
+    font-family: var(--la-font-mono, monospace);
+    font-size: 6.5px;
+    color: var(--la-text-dim, #3e4551);
+    letter-spacing: 0.04em;
+    opacity: 0.6;
+    font-style: italic;
+  }
+
+  /* ── Helix 3D inline wrapper ────────────────────────────── */
+  .helix-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .helix-wrap :global(canvas) { flex: 1; min-height: 0; }
+
+  /* ── Empty state (no tabs selected) ────────────────────── */
+  .no-panels {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--la-bg-void, #08090a);
+  }
+  .no-panels-hint {
+    font-family: var(--la-font-mono, monospace);
+    font-size: 8px;
+    color: var(--la-text-dim, #3e4551);
+    letter-spacing: 0.1em;
+  }
 </style>
