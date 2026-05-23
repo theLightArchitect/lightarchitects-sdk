@@ -35,11 +35,13 @@
 //! Anthropic (added in this module's companion change to `arena::llm`).
 
 use std::path::Path;
+use std::sync::Arc;
+
+use lightarchitects::agent::ClaudeCliProvider;
 
 pub mod protocol;
+// runner remains pub for main.rs interactive mode; new callers use ConversationSession.
 pub mod runner;
-
-use runner::AgentRunner;
 
 // ── SDK re-exports (loops-core) ───────────────────────────────────────────────
 
@@ -106,13 +108,14 @@ pub async fn run_ndjson(
             .unwrap_or("ANTHROPIC_API_KEY");
         persist_inherited_key(&key, backend);
     }
-    let mut runner = AgentRunner::new(cwd)?;
-    if let Some(sp) = system_prompt {
-        runner
-            .set_system_prompt(sp)
-            .map_err(Box::<dyn std::error::Error>::from)?;
-    }
-    runner.run_ndjson_loop().await;
+    let config = SessionConfig {
+        cwd: cwd.to_path_buf(),
+        system_prompt,
+        ..SessionConfig::default()
+    };
+    let mut session = ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()));
+    let mut transport = NdjsonTransport::new(tokio::io::stdout());
+    session.run_ndjson_loop(&mut transport).await;
     Ok(())
 }
 
@@ -147,7 +150,12 @@ fn persist_inherited_key(key: &str, key_name: &str) {
 ///
 /// Returns an error if the LLM client cannot be initialised from environment.
 pub async fn run_interactive(cwd: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let mut runner = AgentRunner::new(cwd)?;
-    runner.run_interactive_loop().await;
+    let config = SessionConfig {
+        cwd: cwd.to_path_buf(),
+        ..SessionConfig::default()
+    };
+    let mut session = ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()));
+    let mut transport = TtyTransport::new(tokio::io::stdout());
+    session.run_interactive_loop(&mut transport).await;
     Ok(())
 }

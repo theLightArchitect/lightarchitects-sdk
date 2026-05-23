@@ -1,0 +1,69 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-22T00:00:00Z"
+build_id: agentic-loops-foundation
+phase_id: phase-6-l0-http-providers
+commit_sha: 30ee496473eef1452d512a08e5269f7c57f4cafe
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1192
+    tests_fail: 0
+    ratchet_delta: +13
+  Q4_svelte: "n/a"
+
+  S1_security:
+    result: pass
+    audit_artifact: lightarchitects/audit/SERAPH-OA-12-AnthropicHttpProvider.md
+    findings:
+      - id: OA-12a
+        description: "Keychain-only key resolution in release — structural #[cfg(debug_assertions)] gate"
+        severity: pass
+      - id: OA-12b
+        description: "SecretString wrapper; key exposed only at HTTP call site"
+        severity: pass
+      - id: OA-12c
+        description: "Error messages contain no key material"
+        severity: pass
+      - id: OA-12d
+        description: "G1 prompt-injection sanitization on all tool/function result paths (R-09/ADV-1)"
+        severity: pass
+      - id: OA-12e
+        description: "Env-var rejection in release is structural (compile-time exclusion)"
+        severity: pass
+      - id: OA-12f
+        description: "Chain depth guard fires before key resolution"
+        severity: pass
+      - id: OA-12g
+        description: "Budget guard enforced post-call before AgentResponse return"
+        severity: pass
+
+  S2_supply_chain: "n/a"  # No new Cargo.toml dependencies added
+  S3_laex: "n/a"           # No new cryptographic primitives; existing secrecy crate
+
+  N1_northstar:
+    result: pass
+    pillar: "P1+P2"
+    note: "L0 HTTP providers complete the direct-API path for the 4-layer SDK (P2 orchestration substrate)"
+
+  N2_chain: pass
+
+  D1_docs: pass
+  D2_plan: pass
+
+  V1_pyramid: pass
+  V2_smoke: pass
+  V3_e2e: "n/a"
+
+notes: |
+  Phase 6 delivers the L0 HTTP providers (AnthropicHttpProvider + VertexHttpProvider)
+  with full SERAPH OA-12 hardening. All 7 OA-12 audit items pass. The -D unsafe-code
+  project policy required removing env-var mutation from test code; the Keychain-only
+  release invariant is structurally enforced (compile-time gate, not runtime assertion).
+  sanitize_params(label, content) tuple index corrected: index 1 is the sanitized
+  content, not index 0 (the label). 13 new tests; total 1192 passing.
