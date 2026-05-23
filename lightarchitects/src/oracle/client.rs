@@ -1,4 +1,10 @@
 //! Oracle client — dispatches to multiple models in parallel, collects verdicts.
+//!
+//! When the `loops-core` feature is enabled, the internal fan-out uses
+//! [`EnsembleStrategy`] — making the L1/L3 boundary architecturally explicit.
+//! The public API (`OracleClient::query().call()`) is identical either way.
+//!
+//! [`EnsembleStrategy`]: crate::agent::loops::ensemble::EnsembleStrategy
 
 use std::time::{Duration, Instant};
 
@@ -9,6 +15,88 @@ use tracing::{info, warn};
 
 use crate::oracle::models::{self, KeySource, ModelConfig, ModelId, ModelRole, OracleMode};
 use crate::oracle::verdict::{Finding, FindingStatus, OracleVerdict};
+
+// ── EnsembleStrategy facade (loops-core) ──────────────────────────────────────
+
+/// Per-model call packaged as a single-step [`Strategy`].
+///
+/// Each branch performs one HTTP call and halts immediately. Driving N branches
+/// with [`EnsembleStrategy`] replaces the raw `tokio::spawn` fan-out while
+/// keeping the Oracle's public API unchanged.
+///
+/// [`Strategy`]: crate::agent::loops::runner::Strategy
+#[cfg(feature = "loops-core")]
+struct ModelCallBranch {
+    http: Client,
+    endpoint: String,
+    model_name: String,
+    full_prompt: String,
+    max_tokens: u32,
+    key: Option<String>,
+    id: ModelId,
+    role: ModelRole,
+    display: String,
+}
+
+#[cfg(feature = "loops-core")]
+#[async_trait::async_trait]
+impl crate::agent::loops::runner::Strategy for ModelCallBranch {
+    type State = ();
+    type Output = Finding;
+
+    async fn step(
+        &self,
+        _state: (),
+        _ctx: &crate::agent::loops::runner::StepContext,
+    ) -> Result<
+        crate::agent::loops::runner::Outcome<(), Finding>,
+        crate::agent::loops::error::LoopError,
+    > {
+        let t0 = Instant::now();
+        let result = call_single_model(
+            &self.http,
+            &self.endpoint,
+            &self.model_name,
+            &self.full_prompt,
+            self.max_tokens,
+            self.key.as_deref(),
+        )
+        .await;
+        let elapsed = t0.elapsed();
+
+        let finding = match result {
+            Ok((content, tokens_in, tokens_out)) => Finding {
+                model: self.id,
+                role: self.role,
+                display: self.display.clone(),
+                status: FindingStatus::Ok,
+                content,
+                elapsed,
+                tokens_in,
+                tokens_out,
+            },
+            Err(e) => {
+                warn!(model = %self.id, error = %e, "Model call failed");
+                Finding {
+                    model: self.id,
+                    role: self.role,
+                    display: self.display.clone(),
+                    status: FindingStatus::Error(e.to_string()),
+                    content: String::new(),
+                    elapsed,
+                    tokens_in: 0,
+                    tokens_out: 0,
+                }
+            }
+        };
+
+        Ok(crate::agent::loops::runner::Outcome::Halt(finding))
+    }
+
+    fn name(&self) -> &'static str {
+        "ModelCall"
+    }
+}
 
 /// Errors from the oracle client.
 #[derive(Debug, Error)]
@@ -143,72 +231,10 @@ impl OracleQuery<'_> {
 
         let start = Instant::now();
 
-        // Dispatch all models in parallel
-        let mut handles = Vec::with_capacity(configs.len());
-        for config in &configs {
-            let http = self.client.http.clone();
-            let prompt = self.prompt.clone();
-            let full_prompt = format!("{}{}", config.prompt_prefix, prompt);
-            let endpoint = config.endpoint.clone();
-            let model_name = config.model_name.to_string();
-            let max_tokens = config.max_tokens;
-            let key = resolve_key(&config.key_source);
-            let id = config.id;
-            let role = config.role;
-            let display = config.display.to_string();
-
-            let handle = tokio::spawn(async move {
-                let t0 = Instant::now();
-                let result = call_single_model(
-                    &http,
-                    &endpoint,
-                    &model_name,
-                    &full_prompt,
-                    max_tokens,
-                    key.as_deref(),
-                )
-                .await;
-                let elapsed = t0.elapsed();
-
-                match result {
-                    Ok((content, tokens_in, tokens_out)) => Finding {
-                        model: id,
-                        role,
-                        display,
-                        status: FindingStatus::Ok,
-                        content,
-                        elapsed,
-                        tokens_in,
-                        tokens_out,
-                    },
-                    Err(e) => {
-                        warn!(model = %id, error = %e, "Model call failed");
-                        Finding {
-                            model: id,
-                            role,
-                            display,
-                            status: FindingStatus::Error(e.to_string()),
-                            content: String::new(),
-                            elapsed,
-                            tokens_in: 0,
-                            tokens_out: 0,
-                        }
-                    }
-                }
-            });
-            handles.push(handle);
-        }
-
-        // Collect results
-        let mut findings = Vec::with_capacity(handles.len());
-        for handle in handles {
-            match handle.await {
-                Ok(finding) => findings.push(finding),
-                Err(e) => warn!(error = %e, "Task join error"),
-            }
-        }
+        let findings = dispatch_models(self.client, &configs, &self.prompt).await;
 
         // Sort by role priority: formal_proof first
+        let mut findings = findings;
         findings.sort_by_key(|f| match f.role {
             ModelRole::FormalProof => 0,
             ModelRole::Derivation => 1,
@@ -232,6 +258,123 @@ impl OracleQuery<'_> {
             models_total: total,
         })
     }
+}
+
+// ── Dispatch: EnsembleStrategy facade (loops-core) ────────────────────────────
+
+/// Dispatch model calls via [`EnsembleStrategy`] when `loops-core` is enabled.
+///
+/// Wraps each model config as a [`ModelCallBranch`] (zero-state `Strategy` that
+/// halts in one step), then drives them all with a single `EnsembleStrategy`
+/// step — replacing the raw `tokio::spawn` fan-out.
+#[cfg(feature = "loops-core")]
+async fn dispatch_models(
+    client: &OracleClient,
+    configs: &[&ModelConfig],
+    prompt: &str,
+) -> Vec<Finding> {
+    use futures_util::StreamExt as _;
+
+    use crate::agent::{
+        ChainContext,
+        loops::{Budget, LoopRunner, Outcome, ensemble::EnsembleStrategy},
+    };
+
+    let branches: Vec<ModelCallBranch> = configs
+        .iter()
+        .map(|config| ModelCallBranch {
+            http: client.http.clone(),
+            endpoint: config.endpoint.clone(),
+            model_name: config.model_name.to_string(),
+            full_prompt: format!("{}{}", config.prompt_prefix, prompt),
+            max_tokens: config.max_tokens,
+            key: resolve_key(&config.key_source),
+            id: config.id,
+            role: config.role,
+            display: config.display.to_string(),
+        })
+        .collect();
+
+    let n = branches.len();
+    let ensemble = EnsembleStrategy::new(branches);
+    let init = ensemble.initial_state(vec![(); n]);
+    let runner = LoopRunner::new(ensemble, Budget::new(1, f64::MAX));
+    let mut stream = runner.run(init, ChainContext::default(), None);
+
+    if let Some(Ok(step)) = stream.next().await {
+        if let Outcome::Halt(outputs) = step.outcome {
+            return outputs.into_iter().flatten().collect();
+        }
+    }
+
+    Vec::new()
+}
+
+/// Dispatch model calls via `tokio::spawn` when `loops-core` is NOT enabled.
+#[cfg(not(feature = "loops-core"))]
+async fn dispatch_models(
+    client: &OracleClient,
+    configs: &[&ModelConfig],
+    prompt: &str,
+) -> Vec<Finding> {
+    let mut handles = Vec::with_capacity(configs.len());
+    for config in configs {
+        let http = client.http.clone();
+        let full_prompt = format!("{}{}", config.prompt_prefix, prompt);
+        let endpoint = config.endpoint.clone();
+        let model_name = config.model_name.to_string();
+        let max_tokens = config.max_tokens;
+        let key = resolve_key(&config.key_source);
+        let id = config.id;
+        let role = config.role;
+        let display = config.display.to_string();
+
+        handles.push(tokio::spawn(async move {
+            let t0 = Instant::now();
+            let result = call_single_model(
+                &http,
+                &endpoint,
+                &model_name,
+                &full_prompt,
+                max_tokens,
+                key.as_deref(),
+            )
+            .await;
+            let elapsed = t0.elapsed();
+            match result {
+                Ok((content, tokens_in, tokens_out)) => Finding {
+                    model: id,
+                    role,
+                    display,
+                    status: FindingStatus::Ok,
+                    content,
+                    elapsed,
+                    tokens_in,
+                    tokens_out,
+                },
+                Err(e) => {
+                    warn!(model = %id, error = %e, "Model call failed");
+                    Finding {
+                        model: id,
+                        role,
+                        display,
+                        status: FindingStatus::Error(e.to_string()),
+                        content: String::new(),
+                        elapsed,
+                        tokens_in: 0,
+                        tokens_out: 0,
+                    }
+                }
+            }
+        }));
+    }
+    let mut findings = Vec::with_capacity(handles.len());
+    for h in handles {
+        if let Ok(f) = h.await {
+            findings.push(f);
+        }
+    }
+    findings
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────

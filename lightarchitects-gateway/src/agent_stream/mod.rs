@@ -1,5 +1,21 @@
 //! Interactive coding agent — NDJSON streaming mode for webshell bridge.
 //!
+//! ## Migration note
+//!
+//! The SDK-promoted counterparts of [`AgentRunner`] and the protocol types
+//! now live in `lightarchitects::agent::conversation`. New code should use
+//! those types directly. The re-exports below are provided for gradual
+//! migration; the gateway-local `AgentRunner` and `protocol` module remain
+//! fully functional.
+//!
+//! SDK re-exports (available when the `loops-core` feature is enabled):
+//!
+//! - [`ConversationSession`] — SDK-promoted `AgentRunner`
+//! - [`SessionConfig`] — frozen session configuration
+//! - [`ConversationEvent`] — SDK-native event enum (replaces `AgentEvent`)
+//! - [`Transport`] — outbound event sink trait
+//! - [`NdjsonTransport`] / [`TtyTransport`] — concrete transport implementations
+//!
 //! Entry point: [`run_ndjson`] — reads [`ControlMessage`] from stdin,
 //! runs an agent turn, emits [`AgentEvent`] to stdout.
 //!
@@ -19,11 +35,20 @@
 //! Anthropic (added in this module's companion change to `arena::llm`).
 
 use std::path::Path;
+use std::sync::Arc;
+
+use lightarchitects::agent::ClaudeCliProvider;
 
 pub mod protocol;
+// runner remains pub for main.rs interactive mode; new callers use ConversationSession.
 pub mod runner;
 
-use runner::AgentRunner;
+// ── SDK re-exports (loops-core) ───────────────────────────────────────────────
+
+pub use lightarchitects::agent::conversation::{
+    ConversationEvent, ConversationSession, NdjsonTransport, SessionConfig, SessionError,
+    SessionState, SseTransport, TerminationReason, Transport, TtyTransport,
+};
 
 /// Maximum byte length for a caller-supplied system prompt.
 /// Prevents token-flood amplification when an untrusted caller controls the prompt.
@@ -83,13 +108,14 @@ pub async fn run_ndjson(
             .unwrap_or("ANTHROPIC_API_KEY");
         persist_inherited_key(&key, backend);
     }
-    let mut runner = AgentRunner::new(cwd)?;
-    if let Some(sp) = system_prompt {
-        runner
-            .set_system_prompt(sp)
-            .map_err(Box::<dyn std::error::Error>::from)?;
-    }
-    runner.run_ndjson_loop().await;
+    let config = SessionConfig {
+        cwd: cwd.to_path_buf(),
+        system_prompt,
+        ..SessionConfig::default()
+    };
+    let mut session = ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()));
+    let mut transport = NdjsonTransport::new(tokio::io::stdout());
+    session.run_ndjson_loop(&mut transport).await;
     Ok(())
 }
 
@@ -124,7 +150,12 @@ fn persist_inherited_key(key: &str, key_name: &str) {
 ///
 /// Returns an error if the LLM client cannot be initialised from environment.
 pub async fn run_interactive(cwd: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let mut runner = AgentRunner::new(cwd)?;
-    runner.run_interactive_loop().await;
+    let config = SessionConfig {
+        cwd: cwd.to_path_buf(),
+        ..SessionConfig::default()
+    };
+    let mut session = ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()));
+    let mut transport = TtyTransport::new(tokio::io::stdout());
+    session.run_interactive_loop(&mut transport).await;
     Ok(())
 }

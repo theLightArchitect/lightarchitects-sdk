@@ -1,0 +1,29 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-22T16:10:00Z"
+build_id: agentic-loops-foundation
+phase_id: phase-2-strategy-ports
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1526
+    tests_fail: 0
+    flaky_pre_existing:
+      - test: helix::helix_toml::tests::load_helix_toml_perf_baseline_1000_iterations
+        reason: "Wall-clock timing test (1000× fs I/O, <100ms threshold). Fails under heavy
+          parallel compile load (141ms observed). Passes in all isolation runs.
+          Not a regression — test predates Phase 2 and touches no changed files."
+        classification: FLAKY_PRE_EXISTING
+  Q4_svelte: "n/a"
+  D2_plan: pass
+
+notes:
+  - "6 new Strategy ports: ReAct, ACH, CoVe, Reflexion, ITT, EnsembleStrategy"
+  - "compose.rs ChainContext wiring was pre-done in Phase 1 (marked complete per plan)"
+  - "test count ratchet: Phase 1 = 1484 → Phase 2 = 1526 (+42)"
+  - "ITT root-node bug fixed: active_branch checked before next_unexplored queue"

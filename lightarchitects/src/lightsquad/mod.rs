@@ -75,3 +75,30 @@ pub mod decisions;
 
 /// PAUSE/drain/resume state machine + atomic-write helper.
 pub mod pause;
+
+// ── DEPRECATED: orchestration re-exports ─────────────────────────────────────
+//
+// The bounded-concurrency pool and supervisor were lifted to
+// `crate::agent::orchestration` (Phase 5). These re-exports preserve
+// source compatibility for existing consumers until Phase 7 cleanup.
+
+#[cfg(feature = "loops-core")]
+#[deprecated(
+    since = "0.1.0",
+    note = "Use `crate::agent::orchestration::WorkerPool` instead."
+)]
+pub use crate::agent::orchestration::WorkerPool;
+
+#[cfg(feature = "loops-core")]
+#[deprecated(
+    since = "0.1.0",
+    note = "Use `crate::agent::orchestration::Supervisor` instead."
+)]
+pub use crate::agent::orchestration::Supervisor;
+
+#[cfg(feature = "loops-core")]
+#[deprecated(
+    since = "0.1.0",
+    note = "Use `crate::agent::orchestration::DEFAULT_CAPACITY` instead."
+)]
+pub use crate::agent::orchestration::DEFAULT_CAPACITY as SLOT_CAPACITY_ORCH;

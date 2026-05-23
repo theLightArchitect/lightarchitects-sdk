@@ -1,0 +1,32 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-22T23:30:00Z"
+build_id: agentic-loops-foundation
+phase_id: phase-3-l2-conversation-session
+commit_sha: 4832ec865c891f6ff65a9cc1daad93804d963471
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1538
+    tests_fail: 0
+    ratchet_from: 1526
+    ratchet_delta: +12
+    flaky_pre_existing:
+      - name: load_helix_toml_perf_baseline_1000_iterations
+        classification: FLAKY_PRE_EXISTING
+        reason: wall-clock test fails under heavy parallel compile load; passes in isolation
+  Q4_svelte: "n/a"
+  D2_plan:
+    result: soft-fail
+    note: >
+      Plan iter-2 G8 specified SessionConfig+SessionState+SessionResources decomp.
+      Delivered has SessionConfig+SessionState with memory/hooks/provider as direct
+      ConversationSession<P> fields. Functional decomp intent met; SessionResources
+      sub-struct folded into struct-level fields. Non-blocking.
+
+summary: "Phase 3 Q-gates all pass (1538 tests, +12 ratchet); D2 soft-fail on SessionResources naming (folded into direct fields — intent met). No blocking findings."

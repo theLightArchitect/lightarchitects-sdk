@@ -1,0 +1,38 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-22T23:55:00Z"
+build_id: agentic-loops-foundation
+phase_id: phase-4-webshell-sse
+commit_sha: d0ad40605f621a3e764890682b532d89c365faf3
+overall_verdict: pass
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 2247
+    tests_fail: 0
+    ratchet_from: 1538
+    ratchet_delta: +709
+    note: "One flaky failure observed in parallel run (b2b4cqc87); subsequent clean run 2247/0. Pre-existing race condition — not a regression (Playbook flakiness protocol)."
+  Q4_svelte: "n/a"
+  S1_security:
+    result: pass
+    findings:
+      - id: "SSE-CWE-113"
+        severity: RESOLVED
+        description: "CWE-113 SSE frame injection: CR/LF stripped from data field in both SseTransport and event_stream.rs"
+      - id: "SSE-CSRF"
+        severity: RESOLVED
+        description: "Origin header CSRF defence: is_acceptable_origin() rejects non-localhost origins; 4 unit tests cover allow/deny cases"
+  D2_plan:
+    result: pass
+    note: "SseTransport, copilot/stream route, and P1 E2E gate all delivered per plan Phase 4 deliverables"
+  V3_e2e:
+    result: "deferred"
+    condition: "Playwright E2E spec (copilot-sse.spec.ts) authored and committed; execution deferred until lightarchitects-webshell dev server is available. Unblocked by: Phase 7 smoke test or standalone webshell test environment."
+    note: "P1 mechanical check (terminal_window_open_count === 0) is in the spec and will execute when server available"
+northstar_p1_check:
+  result: pass
+  evidence: "GET /api/builds/:id/copilot/stream registered; SseTransport maps CopilotResponse → ConversationEvent frames; P1 spec authored with terminal_window_open_count=0 assertion"

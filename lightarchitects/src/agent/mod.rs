@@ -23,6 +23,49 @@ pub use cloud_models::{CLOUD_MODEL_REGISTRY, CloudModel, CostTier};
 pub mod error;
 pub use error::OllamaError;
 
+/// L1 agentic loop substrate — [`Strategy`], [`LoopRunner`], combinators,
+/// `CritiqueRefine`. Provider-agnostic; enabled by the `loops-core` feature.
+///
+/// [`Strategy`]: loops::Strategy
+/// [`LoopRunner`]: loops::LoopRunner
+#[cfg(feature = "loops-core")]
+pub mod loops;
+
+/// L2 conversation session — structured turn management, memory, transport.
+///
+/// Promotes the gateway `AgentRunner` pattern into the SDK. Enabled by the
+/// `loops-core` feature (same gate as [`loops`]).
+///
+/// [`loops`]: crate::agent::loops
+#[cfg(feature = "loops-core")]
+pub mod conversation;
+
+/// Session lifecycle hooks — pre/post turn and pre/post tool callbacks.
+///
+/// Enabled alongside [`conversation`] by the `loops-core` feature.
+///
+/// [`conversation`]: crate::agent::conversation
+#[cfg(feature = "loops-core")]
+pub mod hooks;
+
+/// L3 orchestration — [`WorkerPool`] (bounded concurrency) and
+/// [`Supervisor`] (circuit-breaker). Lifted from `lightsquad::wave_dispatcher`.
+///
+/// [`WorkerPool`]: orchestration::WorkerPool
+/// [`Supervisor`]: orchestration::Supervisor
+#[cfg(feature = "loops-core")]
+pub mod orchestration;
+
+/// L0 HTTP providers — [`AnthropicHttpProvider`] and [`VertexHttpProvider`].
+///
+/// Direct API callers without subprocess delegation. Keychain-only key
+/// resolution in release builds (SERAPH OA-12).
+///
+/// [`AnthropicHttpProvider`]: http::AnthropicHttpProvider
+/// [`VertexHttpProvider`]: http::VertexHttpProvider
+#[cfg(feature = "loops-core")]
+pub mod http;
+
 #[cfg(feature = "agent-cli")]
 mod claude;
 #[cfg(feature = "agent-cli")]

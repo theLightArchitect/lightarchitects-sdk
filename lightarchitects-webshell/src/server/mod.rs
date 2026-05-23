@@ -840,6 +840,10 @@ pub fn build_app(state: AppState) -> Router {
             post(copilot::copilot_chat_handler),
         )
         .route(
+            "/api/builds/{id}/copilot/stream",
+            get(copilot::copilot_event_stream_handler),
+        )
+        .route(
             "/api/builds/{id}/copilot/voice",
             post(copilot::copilot_voice_handler),
         )

@@ -1,0 +1,26 @@
+schema_version: 1
+gate: phase
+scope: phase
+scored_by: "/lightarchitects:GATE"
+scored_at: "2026-05-22T00:00:00Z"
+build_id: agentic-loops-foundation
+phase_id: phase-0-preflight
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 3
+    tests_fail: 0
+    note: "doc-tests only; unit tests at baseline (no source changes in Phase 0)"
+  Q4_svelte: n/a
+  D2_plan:
+    result: pass
+    note: "Plan frontmatter updated to status: in-progress; manifest.yaml seeded (IN-BUILD|PHASE-0, diagram_count: 10); active.yaml entry created; Phase 0 Wave 0-1 deliverables all complete"
+
+notes:
+  - "frontend dist/ missing in fresh worktree — built via pnpm install + build before Q2 (GATE skill §V0 prerequisite, full-stack classification)"
+  - "Phase 0 = administrative only (tracking artifacts, no source commits); quality baseline matches main HEAD a14090c"
+  - "lasdlc_template_version: 2.6.1 (plan) vs expected 2.5.1 — WARN logged; gates applied correctly per 2.6.1 schema"

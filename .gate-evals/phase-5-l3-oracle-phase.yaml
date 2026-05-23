@@ -1,0 +1,66 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-22T00:00:00Z"
+build_id: agentic-loops-foundation
+phase_id: phase-5-l3-oracle
+sha: 6814fed462a66d93106e4750d3851740500d5bb5
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1179
+    tests_fail: 0
+    ratchet_from: 1178
+    ratchet_delta: +1
+    flaky_pre_existing: none
+  Q4_svelte: "n/a"
+
+  S1_security:
+    result: pass
+    findings: []
+    notes: >
+      WorkerPool/Supervisor contain no I/O or trust boundaries.
+      Oracle EnsembleStrategy facade: no new HTTP code authored — delegates to
+      existing call_single_model helper unchanged. No new secrets handling.
+
+  N1_northstar:
+    result: pass
+    pillar: "P2 — Vibe Coding Orchestration substrate"
+    notes: >
+      L3 orchestration layer (WorkerPool + Supervisor) is the direct substrate
+      for lightsquad 7-slot wave_dispatcher generalisation. Deprecated re-exports
+      from lightsquad confirm architectural promotion.
+
+  D1_docs: pass
+  D2_plan: pass
+
+  V1_pyramid:
+    result: pass
+    suites_covered:
+      - unit (worker_pool ×4 + supervisor ×5 = 9 new tests)
+      - property (failure_rate_calculation uses epsilon comparison)
+    suites_deferred: [integration, E2E, smoke]
+    notes: >
+      Unit tests cover: capacity-bounded slot management, circuit-breaker
+      trip/no-trip transitions, deterministic ordering via capacity=1,
+      failure_rate arithmetic. Integration/E2E deferred — WorkerPool is a
+      pure-Rust generic; no external I/O surface to test end-to-end here.
+
+  V2_smoke: pass
+
+notes: >
+  Key design decisions:
+  1. Circuit-breaker test does_not_trip_below_threshold required capacity=1
+     (sequential ordering) to avoid non-deterministic first-completion ordering
+     with capacity=4. Documented in test comment.
+  2. Oracle dispatch_models uses dual-path: loops-core → EnsembleStrategy facade;
+     otherwise → tokio::spawn fallback. Public OracleClient API unchanged.
+  3. lightsquad deprecated re-exports use #[deprecated(since="0.1.0")] to guide
+     consumers toward agent::orchestration without breaking source compat until
+     Phase 7 cleanup.
+  4. usize→f64 cast: f64::from(x as u32) pattern with cast_possible_truncation
+     allow comment; task counts never reach u32::MAX in practice (comment in code).
