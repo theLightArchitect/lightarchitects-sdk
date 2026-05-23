@@ -66,9 +66,15 @@ mod client;
 mod content;
 /// Fluent builder for the `ideate` action.
 pub mod ideate;
+/// [`ReflexionExecutor`] bridge for `ReflexionStrategy` (requires `loops-core` feature).
+#[cfg(feature = "loops-core")]
+pub mod reflexion_executor;
 mod types;
 
 // ── Public API surface ────────────────────────────────────────────────────────
+
+#[cfg(feature = "loops-core")]
+pub use reflexion_executor::EvaReflexionExecutor;
 
 pub use actions::EvaAction;
 pub use client::{EvaClient, EvaClientBuilder};

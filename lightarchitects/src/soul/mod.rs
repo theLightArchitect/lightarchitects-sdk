@@ -132,6 +132,13 @@ pub mod sqlite;
 
 // ── Public API surface — MCP client ──────────────────────────────────────────
 
+/// [`ReflexionExecutor`] bridge for `ReflexionStrategy` (requires `loops-core` feature).
+#[cfg(feature = "loops-core")]
+pub mod reflexion_executor;
+
+#[cfg(feature = "loops-core")]
+pub use reflexion_executor::SoulReflexionExecutor;
+
 pub use actions::SoulAction;
 pub use client::{SoulClient, SoulClientBuilder};
 pub use graphrag_ingest::{GraphRagIngestBuilder, IngestSource, TextFormat};

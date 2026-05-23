@@ -40,20 +40,40 @@
 //! # Ok(()) }
 //! ```
 
+/// [`AchExecutor`] bridge for `AchStrategy` (requires `loops-core` feature).
+#[cfg(feature = "loops-core")]
+pub mod ach_executor;
 /// Canonical QUANTUM action enum — forensic investigation lifecycle.
 pub mod actions;
 mod client;
 mod content;
+/// [`CritiqueExecutor`] bridge for `CritiqueRefineStrategy` (requires `loops-core` feature).
+#[cfg(feature = "loops-core")]
+pub mod critique_executor;
 /// Stateful driver for the QUANTUM forensic investigation lifecycle.
 pub mod investigation;
+/// [`IttExecutor`] bridge for `IttStrategy` (requires `loops-core` feature).
+#[cfg(feature = "loops-core")]
+pub mod itt_executor;
+/// [`ReActExecutor`] bridge for `ReActStrategy` (requires `loops-core` feature).
+#[cfg(feature = "loops-core")]
+pub mod react_executor;
 /// Response types and investigation state tracking.
 pub mod types;
 
 // ── Public API surface ────────────────────────────────────────────────────────
 
+#[cfg(feature = "loops-core")]
+pub use ach_executor::QuantumAchExecutor;
 pub use actions::QuantumAction;
 pub use client::{QuantumClient, QuantumClientBuilder};
+#[cfg(feature = "loops-core")]
+pub use critique_executor::QuantumCritiqueExecutor;
 pub use investigation::{InvestigationPhase, QuantumInvestigation};
+#[cfg(feature = "loops-core")]
+pub use itt_executor::QuantumIttExecutor;
+#[cfg(feature = "loops-core")]
+pub use react_executor::QuantumReActExecutor;
 pub use types::{
     ActionOutput, CloseResult, DiscoverResult, HelixResult, InvestigationState, ListResult,
     MAX_ADVANCE_STEPS, PhaseRecord, ProbeResult, QuickResult, ResearchResult, SweepResult,

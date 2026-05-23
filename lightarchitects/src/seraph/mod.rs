@@ -49,10 +49,16 @@
 pub mod actions;
 mod client;
 mod content;
+/// [`CoVeExecutor`] bridge for `CoVeStrategy` (requires `loops-core` feature).
+#[cfg(feature = "loops-core")]
+pub mod cove_executor;
 /// Stateful driver for the SERAPH investigation lifecycle.
 pub mod engagement;
 /// Evidence chain accumulator and engagement logging.
 pub mod evidence;
+/// [`IttExecutor`] bridge for `IttStrategy` (requires `loops-core` feature).
+#[cfg(feature = "loops-core")]
+pub mod itt_executor;
 /// Typed parameter builders for SERAPH wing actions.
 pub mod params;
 /// SSH session pool for reusing connections across calls.
@@ -87,3 +93,8 @@ pub use types::{
     ActionOutput, ExamineResult, ReconResult, ReportResult, ScopeResult, StrikeResult,
     SurveyResult, Wing,
 };
+
+#[cfg(feature = "loops-core")]
+pub use cove_executor::SeraphCoVeExecutor;
+#[cfg(feature = "loops-core")]
+pub use itt_executor::SeraphIttExecutor;

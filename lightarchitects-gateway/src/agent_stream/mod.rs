@@ -32,9 +32,13 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use lightarchitects::agent::ClaudeCliProvider;
+use lightarchitects::agent::{ChainContext, ClaudeCliProvider};
+use tokio::io::AsyncBufReadExt as _;
+
+use crate::config::GatewayConfig;
 
 pub mod protocol;
+pub mod strategy;
 
 // ── SDK re-exports (loops-core) ───────────────────────────────────────────────
 
@@ -131,6 +135,278 @@ fn persist_inherited_key(key: &str, key_name: &str) {
     if let Ok(serialized) = toml::to_string_pretty(&keys) {
         let _ = std::fs::write(&path, serialized);
     }
+}
+
+/// Run the agent in NDJSON streaming mode with strategy loop interception.
+///
+/// Handles `{"action":"run_strategy",...}` lines by dispatching directly to
+/// the configured sibling strategy runners. All other NDJSON control messages
+/// (`send_message`, `interrupt`, `set_system_prompt`, `ping`) are forwarded
+/// to the [`ConversationSession`] via single-turn dispatch.
+///
+/// # Errors
+///
+/// Returns an error if `system_prompt` fails validation.
+pub async fn run_ndjson_with_strategies(
+    cwd: &Path,
+    system_prompt: Option<String>,
+    config: &GatewayConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(ref sp) = system_prompt {
+        validate_system_prompt(sp).map_err(Box::<dyn std::error::Error>::from)?;
+    }
+    if let Some(key) = std::env::var("LA_INHERITED_API_KEY")
+        .ok()
+        .filter(|s| !s.is_empty())
+    {
+        let backend = std::env::var("LA_INHERITED_BACKEND")
+            .ok()
+            .and_then(|b| match b.to_lowercase().as_str() {
+                "anthropic" | "claude" => Some("ANTHROPIC_API_KEY"),
+                "openai" | "codex" => Some("OPENAI_API_KEY"),
+                "ollama" => Some("OLLAMA_API_KEY"),
+                _ => None,
+            })
+            .unwrap_or("ANTHROPIC_API_KEY");
+        persist_inherited_key(&key, backend);
+    }
+
+    let session_config = SessionConfig {
+        cwd: cwd.to_path_buf(),
+        system_prompt,
+        ..SessionConfig::default()
+    };
+    let mut session =
+        ConversationSession::new(session_config, Arc::new(ClaudeCliProvider::default()));
+    let mut transport = NdjsonTransport::new(tokio::io::stdout());
+    let chain = ChainContext::default();
+
+    let reader = tokio::io::BufReader::new(tokio::io::stdin());
+    let mut lines = reader.lines();
+
+    while let Ok(Some(line)) = lines.next_line().await {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+            let _ = transport
+                .emit(&ConversationEvent::Error {
+                    message: format!("parse error: not valid JSON"),
+                    recoverable: Some(true),
+                })
+                .await;
+            continue;
+        };
+
+        let action = val.get("action").and_then(|a| a.as_str()).unwrap_or("");
+
+        if action == "run_strategy" {
+            match serde_json::from_value::<strategy::StrategyRequest>(val) {
+                Ok(req) => {
+                    if let Err(e) = strategy::run_strategy(req, config, &mut transport).await {
+                        let _ = transport
+                            .emit(&ConversationEvent::Error {
+                                message: e.to_string(),
+                                recoverable: Some(false),
+                            })
+                            .await;
+                    }
+                }
+                Err(e) => {
+                    let _ = transport
+                        .emit(&ConversationEvent::Error {
+                            message: format!("invalid strategy request: {e}"),
+                            recoverable: Some(true),
+                        })
+                        .await;
+                }
+            }
+            continue;
+        }
+
+        // {"action":"run_skill","skill":"reflect","args":["topic"]}
+        if action == "run_skill" {
+            let slug = val
+                .get("skill")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_owned();
+            let extra: Vec<String> = val
+                .get("args")
+                .and_then(|a| a.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(ToOwned::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            if slug.is_empty() {
+                let _ = transport
+                    .emit(&ConversationEvent::Error {
+                        message: "run_skill requires a 'skill' field".to_owned(),
+                        recoverable: Some(true),
+                    })
+                    .await;
+            } else {
+                let mut skill_args = vec![slug];
+                skill_args.extend(extra);
+                if let Err(e) = crate::cli::skills::execute(config, &skill_args).await {
+                    let _ = transport
+                        .emit(&ConversationEvent::Error {
+                            message: e.to_string(),
+                            recoverable: Some(false),
+                        })
+                        .await;
+                }
+            }
+            continue;
+        }
+
+        match action {
+            "send_message" => {
+                let text = val
+                    .get("text")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+                if !text.is_empty() {
+                    session.clear_interrupt();
+                    if let Err(e) = session.run_turn(&text, &mut transport, &chain).await {
+                        let _ = transport
+                            .emit(&ConversationEvent::Error {
+                                message: e.to_string(),
+                                recoverable: Some(false),
+                            })
+                            .await;
+                    }
+                }
+            }
+            "interrupt" => {
+                session.interrupt();
+                let _ = transport
+                    .emit(&ConversationEvent::Error {
+                        message: "interrupted".to_owned(),
+                        recoverable: Some(true),
+                    })
+                    .await;
+            }
+            "ping" => {
+                let _ = transport.emit(&ConversationEvent::Heartbeat).await;
+            }
+            _ => {
+                let _ = transport
+                    .emit(&ConversationEvent::Error {
+                        message: format!("unknown action: {action}"),
+                        recoverable: Some(true),
+                    })
+                    .await;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Run the agent in interactive TTY mode with strategy slash-command interception.
+///
+/// Reads lines from stdin. Lines matching `/strategy <kind> <goal>`, `/loop`, or
+/// `/run` are dispatched to the strategy runner; all other input is forwarded to
+/// the [`ConversationSession`] as conversational turns.
+///
+/// # Errors
+///
+/// Returns an error if the LLM client cannot be initialised from environment.
+pub async fn run_interactive_with_strategies(
+    cwd: &Path,
+    config: &GatewayConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use tokio::io::AsyncWriteExt as _;
+
+    if let Some(key) = std::env::var("LA_INHERITED_API_KEY")
+        .ok()
+        .filter(|s| !s.is_empty())
+    {
+        let backend = std::env::var("LA_INHERITED_BACKEND")
+            .ok()
+            .and_then(|b| match b.to_lowercase().as_str() {
+                "anthropic" | "claude" => Some("ANTHROPIC_API_KEY"),
+                "openai" | "codex" => Some("OPENAI_API_KEY"),
+                "ollama" => Some("OLLAMA_API_KEY"),
+                _ => None,
+            })
+            .unwrap_or("ANTHROPIC_API_KEY");
+        persist_inherited_key(&key, backend);
+    }
+
+    let session_config = SessionConfig {
+        cwd: cwd.to_path_buf(),
+        ..SessionConfig::default()
+    };
+    let mut session =
+        ConversationSession::new(session_config, Arc::new(ClaudeCliProvider::default()));
+    let mut transport = TtyTransport::new(tokio::io::stdout());
+    let chain = ChainContext::default();
+
+    let mut stdout = tokio::io::stdout();
+    let banner = format!(
+        "Light Architects agent — cwd: {}\n\
+         Type '/strategy <kind> <goal>' for agentic loops, 'quit' to exit.\n\
+         Strategies: react | ach | itt | cove | reflexion\n",
+        cwd.display()
+    );
+    let _ = stdout.write_all(banner.as_bytes()).await;
+    let _ = stdout.flush().await;
+
+    let reader = tokio::io::BufReader::new(tokio::io::stdin());
+    let mut lines = reader.lines();
+
+    loop {
+        let _ = stdout.write_all(b"> ").await;
+        let _ = stdout.flush().await;
+
+        let Ok(Some(line)) = lines.next_line().await else {
+            break;
+        };
+
+        let input = line.trim();
+        if input.is_empty() {
+            continue;
+        }
+        if input.eq_ignore_ascii_case("quit") || input.eq_ignore_ascii_case("exit") {
+            break;
+        }
+
+        if let Some(req) = strategy::parse_slash_command(input) {
+            if let Err(e) = strategy::run_strategy(req, config, &mut transport).await {
+                eprintln!("Strategy error: {e}");
+            }
+            continue;
+        }
+
+        if let Some((slug, skill_args)) = crate::cli::skills::parse_skill_slash_command(input) {
+            let mut full_args = vec![slug];
+            full_args.extend(skill_args);
+            if let Err(e) = crate::cli::skills::execute(config, &full_args).await {
+                eprintln!("Skill error: {e}");
+            }
+            continue;
+        }
+
+        session.clear_interrupt();
+        if let Err(e) = session.run_turn(input, &mut transport, &chain).await {
+            let _ = transport
+                .emit(&ConversationEvent::Error {
+                    message: e.to_string(),
+                    recoverable: Some(true),
+                })
+                .await;
+        }
+    }
+
+    Ok(())
 }
 
 /// Run the agent in interactive TTY mode (human-facing REPL).

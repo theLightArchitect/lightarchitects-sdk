@@ -36,9 +36,20 @@
 pub mod actions;
 mod client;
 mod content;
+/// [`CoVeExecutor`] bridge for `CoVeStrategy` (requires `loops-core` feature).
+#[cfg(feature = "loops-core")]
+pub mod cove_executor;
+/// [`ReflexionExecutor`] bridge for `ReflexionStrategy` (requires `loops-core` feature).
+#[cfg(feature = "loops-core")]
+pub mod reflexion_executor;
 mod types;
 
 // ── Public API surface ────────────────────────────────────────────────────────
+
+#[cfg(feature = "loops-core")]
+pub use cove_executor::CorsoCoVeExecutor;
+#[cfg(feature = "loops-core")]
+pub use reflexion_executor::CorsoReflexionExecutor;
 
 pub use actions::CorsoAction;
 pub use client::{CorsoClient, CorsoClientBuilder};

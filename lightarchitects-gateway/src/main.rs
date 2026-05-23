@@ -57,9 +57,27 @@ async fn main() {
     if stream_events {
         let cwd =
             cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-        if let Err(e) = lightarchitects_gateway::agent_stream::run_ndjson(&cwd, None).await {
-            eprintln!("Agent stream error: {e}");
-            std::process::exit(1);
+        // Attempt to load config for strategy-loop interception; fall back to
+        // plain chat mode if config is unavailable (e.g. first-run).
+        let (cfg_path, _) = parse_config_flag(raw_args.clone());
+        match load_config(cfg_path) {
+            Ok(config) => {
+                if let Err(e) = lightarchitects_gateway::agent_stream::run_ndjson_with_strategies(
+                    &cwd, None, &config,
+                )
+                .await
+                {
+                    eprintln!("Agent stream error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            Err(_) => {
+                if let Err(e) = lightarchitects_gateway::agent_stream::run_ndjson(&cwd, None).await
+                {
+                    eprintln!("Agent stream error: {e}");
+                    std::process::exit(1);
+                }
+            }
         }
         return;
     }
@@ -105,10 +123,20 @@ async fn main() {
             std::process::exit(status.code().unwrap_or(1));
         }
 
-        // Direct interactive TTY mode — delegates to SDK ConversationSession.
+        // Direct interactive TTY mode — strategy-aware when config is available.
         let cwd =
             cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-        if let Err(e) = lightarchitects_gateway::agent_stream::run_interactive(&cwd).await {
+        let (cfg_path_tty, _) = parse_config_flag(raw_args.clone());
+        let tty_result = match load_config(cfg_path_tty) {
+            Ok(config) => {
+                lightarchitects_gateway::agent_stream::run_interactive_with_strategies(
+                    &cwd, &config,
+                )
+                .await
+            }
+            Err(_) => lightarchitects_gateway::agent_stream::run_interactive(&cwd).await,
+        };
+        if let Err(e) = tty_result {
             eprintln!("Agent error: {e}");
             std::process::exit(1);
         }
@@ -328,6 +356,26 @@ async fn cli_dispatch(
         // Conversational mode — pair programmer in a box.
         Some("chat") => cli_chat(&args[1..]),
 
+        // Agentic strategy loops (react / ach / itt / cove / reflexion).
+        Some("loop" | "strategy") => {
+            lightarchitects_gateway::cli::loops::execute(config, &args[1..]).await
+        }
+
+        // Native skill execution — LLM-assisted or SDK-native dispatch.
+        Some("skill" | "skills") => {
+            lightarchitects_gateway::cli::skills::execute(config, &args[1..]).await
+        }
+
+        // Skill shorthand aliases — `lightarchitects plan "..."` etc.
+        Some(
+            alias @ ("plan" | "research" | "reflect" | "observe" | "enrich" | "secure" | "review"
+            | "optimize" | "scrum" | "onboard" | "verify"),
+        ) => {
+            let mut skill_args = vec![alias.to_owned()];
+            skill_args.extend_from_slice(&args[1..]);
+            lightarchitects_gateway::cli::skills::execute(config, &skill_args).await
+        }
+
         // Squad Comms subcommand — delegates to webshell coordination API.
         Some("squad-comms") => cli_squad_comms(&args[1..], config).await,
 
@@ -352,10 +400,11 @@ async fn cli_dispatch(
                    lightarchitects config                     Resolved configuration\n  \
                    lightarchitects builds list|show           Build portfolio\n  \
                    lightarchitects setup keys|voice|seraph    Configuration wizard\n  \
-                   lightarchitects chat                        Conversational brainstorm mode
-                   lightarchitects webshell start|control|status  Web GUI\n  \
-                   lightarchitects squad-comms tasks|add|claim|logs|inject  Squad Comms\n  \
-                   lightarchitects platform [--port 8080]                   Platform HTTP API (localhost)"
+                   lightarchitects chat                                          Conversational brainstorm mode\n  \
+                   lightarchitects loop <react|ach|itt|cove|reflexion> <goal>  Agentic strategy loop\n  \
+                   lightarchitects webshell start|control|status               Web GUI\n  \
+                   lightarchitects squad-comms tasks|add|claim|logs|inject     Squad Comms\n  \
+                   lightarchitects platform [--port 8080]                      Platform HTTP API (localhost)"
             );
             Err(GatewayError::UnknownTool(unknown.to_owned()))
         }
