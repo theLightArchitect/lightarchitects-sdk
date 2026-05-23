@@ -56,6 +56,16 @@ pub mod hooks;
 #[cfg(feature = "loops-core")]
 pub mod orchestration;
 
+/// L0 HTTP providers — [`AnthropicHttpProvider`] and [`VertexHttpProvider`].
+///
+/// Direct API callers without subprocess delegation. Keychain-only key
+/// resolution in release builds (SERAPH OA-12).
+///
+/// [`AnthropicHttpProvider`]: http::AnthropicHttpProvider
+/// [`VertexHttpProvider`]: http::VertexHttpProvider
+#[cfg(feature = "loops-core")]
+pub mod http;
+
 #[cfg(feature = "agent-cli")]
 mod claude;
 #[cfg(feature = "agent-cli")]
