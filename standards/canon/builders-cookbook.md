@@ -7109,9 +7109,57 @@ SOUL's adaptive retrieval (4-signal RRF) picks weights based on corpus size: ≤
 
 ---
 
+## §74 — Store Fields from External Service Boundaries Are Untrusted at Runtime — RATIFIED 2026-05-23, Canon XV, Kevin Francis Tan
+
+TypeScript's non-null guarantee (`field: string`, not `field?: string`) applies at compile time only. When a Svelte writable store is populated from data crossing a service boundary — SSE events, conductor task objects, MCP responses, WebSocket messages — the runtime values bypass the TypeScript compiler entirely. A field declared as required in the TypeScript type can be `undefined` at runtime if the external service omits it.
+
+**Rule:** For any field accessed from a store populated by an external service, always use optional chaining + nullish fallback at the rendering site:
+
+```svelte
+<!-- ✗ Crashes the reactive graph when sibling is undefined -->
+<span>{task.sibling.toUpperCase()}</span>
+
+<!-- ✓ Degrades gracefully -->
+<span>{task.sibling?.toUpperCase() ?? ''}</span>
+```
+
+This applies to: `conductorTasks`, copilot SSE frames, MCP tool results, any store whose source is an external process (conductor service, gateway, sibling MCP server). TypeScript `strict: true` does not catch this — the store type is correctly declared; the runtime service simply doesn't honour the contract at every call site.
+
+**Cross-canon:** §51.1 (trust boundary rule) covers sanitization for agentic prompt injection — a different concern. §74 covers the *TypeScript non-null contract failure* that occurs when external data enters Svelte reactive state. The threat model differs: §51 is adversarial; §74 is operational (service implementation gaps, version skew, optional fields added later, partial task objects from in-flight queue items).
+
+**Witness:** N=1. `conductorTasks` store in `Dashboard.svelte` — `task.sibling` declared `string` in TypeScript but `undefined` at runtime for conductor task entries not yet assigned a sibling. `.toUpperCase()` crashed the reactive graph, preventing the entire Dashboard component from mounting. Fix: `task.sibling?.toUpperCase() ?? ''` at lines 298 and 305. **Pressure-tested 2026-05-23:** webshell-drag-drop implementation session. **LÆX Queue**: #54, contradiction-check PASS 2026-05-23.
+
+---
+
+## §75 — Defer Drag-Source State in `ondragstart` via `requestAnimationFrame` — RATIFIED 2026-05-23, Canon XV, Kevin Francis Tan
+
+The browser synchronously snapshots the drag ghost (the element preview following the cursor) during the `ondragstart` event handler, before the handler returns. Any state mutation that triggers a visual change to the drag-source element — including Svelte store writes that cause reactive DOM updates — takes effect in the same synchronous frame. The ghost captures the POST-mutation appearance.
+
+**Rule:** In `ondragstart`, defer all store writes or class changes that affect the drag-source element's visual appearance with `requestAnimationFrame`:
+
+```typescript
+function onDragStart(e: DragEvent) {
+  e.dataTransfer?.setData('text/plain', panelId);
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+
+  // Defer — browser snapshots ghost before this frame fires
+  requestAnimationFrame(() => draggingPanelId.set(panelId));
+}
+```
+
+Without the defer, `draggingPanelId.set(panelId)` causes the panel header to immediately apply `.is-dragging-source { opacity: 0.4 }`, and the ghost captures that dimmed appearance — the user drags a semi-transparent ghost rather than a faithful copy of the element.
+
+**Scope:** Applies to any `ondragstart` handler that triggers a visual state change on the element being dragged. Does not apply to metadata writes that don't affect the element's rendered appearance (setting `dataTransfer` payload, logging, etc.).
+
+**Cross-canon:** No existing canon covers HTML5 DragEvent browser snapshot timing. This is a browser implementation behaviour, not a security or architectural concern.
+
+**Witness:** N=1. `PanelHeader.svelte` drag implementation — synchronous `draggingPanelId.set()` produced a dimmed drag ghost. Deferred via `requestAnimationFrame(() => draggingPanelId.set(panelId))` restored natural appearance. **Pressure-tested 2026-05-23:** webshell panel drag-drop implementation session. Pattern generalises to any Svelte component using drag-state stores. **LÆX Queue**: #55, contradiction-check PASS 2026-05-23.
+
+---
+
 **Rule** (per separation-of-concerns refactor, 2026-05-18): no tail-amendment blocks or scattered per-section version-history entries in this file. Section content lives here; amendment narrative lives in the CHANGELOG companion.
 
-**Current version**: see CHANGELOG for latest. As of 2026-05-23: **v3.7.0** (§72 Neo4j HNSW Dimension Lock + §73 Retrieval Baseline Mode; LÆX ratified khadas-neo4j-foundation Phase 5.5).
+**Current version**: see CHANGELOG for latest. As of 2026-05-23: **v3.8.0** (§74 Store Fields External Service Boundary + §75 requestAnimationFrame Drag Ghost Defer; LÆX ratified webshell-drag-drop session 2026-05-23).
 
 *Builders Cookbook · Light Architects · `canon://builders-cookbook`*
 

@@ -60,6 +60,9 @@ export const eventsOverlayOpen = writable<boolean>(false);
 export const workspaces = writable<Workspace[]>([]);
 export const builds = writable<Build[]>([]);
 
+/** Camera distance multiplier for the 3D helix panel. Set via control SSE `set_helix_zoom`. */
+export const helixZoomLevel = writable<number>(1.0);
+
 // --- Project registry (webshell-project-ingestion) ---
 export const projects = writable<ProjectMeta[]>([]);
 /** Lookup map: slug → ProjectMeta, rebuilt whenever `projects` changes. */

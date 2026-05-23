@@ -298,7 +298,7 @@ export function addPanel(panelId: PanelId): void {
 export type SplitZone = 'left' | 'right' | 'top' | 'bottom';
 
 /** Remove a panel leaf from the tree. Returns null if the tree becomes empty. */
-function prunePanel(tree: PanelTree, panelId: PanelId): PanelTree | null {
+export function prunePanel(tree: PanelTree, panelId: PanelId): PanelTree | null {
   if (tree.type === 'leaf') return tree.panelId === panelId ? null : tree;
   if (tree.type === 'tabgroup') {
     const tabs = tree.tabs.filter(t => t !== panelId);

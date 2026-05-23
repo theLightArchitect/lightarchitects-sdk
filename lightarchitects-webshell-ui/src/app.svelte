@@ -45,6 +45,7 @@
   import { saveSettingsDebounced } from '$lib/settings-persistence';
   import { registerHotkey, dispatchHotkey } from '$lib/hotkeyRegistry';
   import { matchRoute, applyRedirects, navigate } from '$lib/routes';
+  import { startLayoutSync } from '$lib/layout-sync';
 
   // Track persisted stores — save on any change after initial load.
   // Uses store.subscribe() instead of $effect to avoid Svelte 5's reactive
@@ -217,6 +218,7 @@
     loadScreen(window.location.hash.slice(1) || '/');
     const initializeStoresPromise = initializeStores(); // non-blocking; errors caught internally
     connectGlobalSSE(); // Phase 10.9 — global helix_entry / soul_promotion / strand_activation stream
+    const stopLayoutSync = startLayoutSync(); // push mosaic tree to gateway on every change
 
     // E4 session lifecycle — materialise a soul-chat session for this webshell visit.
     const e4SessionId = crypto.randomUUID();
@@ -399,6 +401,7 @@
 
     return () => {
       stopWaveTick();
+      stopLayoutSync();
       disconnectGlobalSSE();
       void fetch('/api/coordination/sessions/end', {
         method: 'POST',

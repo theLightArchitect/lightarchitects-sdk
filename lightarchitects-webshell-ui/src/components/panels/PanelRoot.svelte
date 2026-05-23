@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PanelTree, PanelId } from '$lib/types';
-  import { layoutTree, maximizedPanelId, setLayout, collectPanelIds, splitPanel } from '$lib/layout';
+  import { layoutTree, maximizedPanelId, setLayout, collectPanelIds, splitPanel, prunePanel } from '$lib/layout';
   import { draggingPanelId } from '$lib/drag';
   import AxisNode from './AxisNode.svelte';
   import TabGroupNode from './TabGroupNode.svelte';
@@ -27,27 +27,7 @@
   let draggedId = $derived($draggingPanelId);
 
   function removeLeaf(panelId: PanelId) {
-    // Simple removal: replace the tree with a filtered copy.
-    // If the removed leaf was the only child of a parent, collapse the parent.
-    function prune(node: PanelTree): PanelTree | null {
-      if (node.type === 'leaf') return node.panelId === panelId ? null : node;
-      if (node.type === 'tabgroup') {
-        const tabs = node.tabs.filter(t => t !== panelId);
-        if (tabs.length === 0) return null;
-        return { ...node, tabs, activeIndex: Math.min(node.activeIndex, tabs.length - 1) };
-      }
-      // axis: prune children, drop null, collapse to single child if needed
-      const newChildren: PanelTree[] = [];
-      const newFlexes: number[] = [];
-      for (let i = 0; i < node.children.length; i++) {
-        const pruned = prune(node.children[i]);
-        if (pruned !== null) { newChildren.push(pruned); newFlexes.push(node.flexes[i]); }
-      }
-      if (newChildren.length === 0) return null;
-      if (newChildren.length === 1) return newChildren[0];
-      return { ...node, children: newChildren, flexes: newFlexes };
-    }
-    const pruned = prune($layoutTree);
+    const pruned = prunePanel($layoutTree, panelId);
     if (pruned) setLayout(pruned);
   }
 

@@ -269,6 +269,10 @@ pub struct AppState {
     /// Optional MCP host — spawned from `~/.lightarchitects/webshell-mcp.json`
     /// at startup. `None` until Phase 7 places the config file.
     pub mcp_host: mcp_routes::McpHostHandle,
+    /// Last mosaic layout tree snapshot pushed by the browser via
+    /// `POST /api/layout/snapshot`. `None` until the first push arrives.
+    /// Used for cross-tab sync and session-recovery on reconnect.
+    pub layout_snapshot: Arc<tokio::sync::RwLock<Option<serde_json::Value>>>,
 }
 
 impl AppState {
@@ -381,6 +385,7 @@ impl AppState {
             session_count: Arc::new(AtomicUsize::new(0)),
             event_tx,
             browser_state: Arc::new(RwLock::new(BrowserStateSnapshot::default())),
+            layout_snapshot: Arc::new(tokio::sync::RwLock::new(None)),
             builds_cache: builds_handler::build_cache(),
             builds: Arc::new(BuildRegistry::new()),
             active_agent,
@@ -526,6 +531,7 @@ impl AppState {
             session_count: Arc::new(AtomicUsize::new(0)),
             event_tx,
             browser_state: Arc::new(RwLock::new(BrowserStateSnapshot::default())),
+            layout_snapshot: Arc::new(tokio::sync::RwLock::new(None)),
             builds_cache: builds_handler::build_cache(),
             builds: Arc::new(BuildRegistry::new()),
             active_agent,
@@ -717,6 +723,10 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/browser-state",
             get(read_browser_state).post(write_browser_state),
+        )
+        .route(
+            "/api/layout/snapshot",
+            get(read_layout_snapshot).post(write_layout_snapshot),
         )
         .route("/api/polytopes", get(polytopes))
         // ── GitForest live operational map (Phase 4) ──────────────────────────
@@ -1599,6 +1609,34 @@ async fn read_browser_state(
 ) -> impl IntoResponse {
     let snapshot = state.browser_state.read().await;
     Json(snapshot.clone()).into_response()
+}
+
+/// `GET /api/layout/snapshot` — returns the last mosaic layout tree pushed by the browser.
+///
+/// Returns `404 Not Found` with an empty body when no snapshot has been received yet.
+async fn read_layout_snapshot(
+    _: auth::AuthGuard,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let snap = state.layout_snapshot.read().await;
+    match snap.as_ref() {
+        Some(tree) => Json(tree.clone()).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// `POST /api/layout/snapshot` — stores the current mosaic layout tree for session recovery.
+///
+/// The browser calls this on startup and whenever the tree changes (debounced 500 ms).
+/// The body must be a valid JSON object representing the [`PanelTree`] root node.
+async fn write_layout_snapshot(
+    _: auth::AuthGuard,
+    State(state): State<AppState>,
+    Json(tree): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let mut snap = state.layout_snapshot.write().await;
+    *snap = Some(tree);
+    StatusCode::OK
 }
 
 /// `POST /api/browser-state` — updates the browser UI state snapshot.

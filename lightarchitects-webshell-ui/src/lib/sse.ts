@@ -23,7 +23,9 @@ import {
   pushRecentEvent,
   projects,
 } from './stores';
-import { spikeSibling } from './stores';
+import { spikeSibling, helixZoomLevel } from './stores';
+import { maximizedPanelId, prunePanel, setLayout, layoutTree, collectPanelIds, splitPanel } from './layout';
+import type { PanelId } from './types';
 import { reconstructTopology } from './gitforest';
 import { invalidate as invalidateGitForestCache } from './gitforestCache';
 import { get, writable } from 'svelte/store';
@@ -394,28 +396,74 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
       break;
     }
     case 'control': {
-      // POST /api/control dispatches ControlCommand variants. Today we only
-      // surface `notify` as a platform Alert; other variants (focus_panel,
-      // resize_panels, set_helix_zoom, set_panel_visibility) are consumed by
-      // their own subscribers at the component layer.
-      const ctrl = event as unknown as { type: 'control'; command: string; message?: string; level?: string };
-      if (ctrl.command === 'notify' && typeof ctrl.message === 'string') {
-        const level = (ctrl.level ?? 'info').toLowerCase();
-        // Map Rust's `level` strings to our AlertSeverity. Unknown → info.
-        const sev: 'info' | 'warning' | 'error' | 'critical' =
-          level === 'critical' ? 'critical' :
-          level === 'error' ? 'error' :
-          (level === 'warn' || level === 'warning') ? 'warning' : 'info';
-        const alert = {
-          id: `ctrl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          severity: sev,
-          source: 'system' as const,
-          title: sev === 'info' ? 'Notification' : sev.charAt(0).toUpperCase() + sev.slice(1),
-          message: ctrl.message,
-          timestamp: new Date().toISOString(),
-          acknowledged: false,
-        };
-        alerts.update(list => [alert, ...list].slice(0, 200));
+      // POST /api/control dispatches ControlCommand variants (tagged by `command` field).
+      const ctrl = event as unknown as { type: 'control'; command: string; [k: string]: unknown };
+      switch (ctrl.command) {
+        case 'notify': {
+          if (typeof ctrl.message !== 'string') break;
+          const rawLevel = ((ctrl.level as string | undefined) ?? 'info').toLowerCase();
+          const sev: 'info' | 'warning' | 'error' | 'critical' =
+            rawLevel === 'critical' ? 'critical' :
+            rawLevel === 'error'    ? 'error' :
+            (rawLevel === 'warn' || rawLevel === 'warning') ? 'warning' : 'info';
+          alerts.update(list => [{
+            id: `ctrl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            severity: sev,
+            source: 'system' as const,
+            title: sev === 'info' ? 'Notification' : sev.charAt(0).toUpperCase() + sev.slice(1),
+            message: ctrl.message as string,
+            timestamp: new Date().toISOString(),
+            acknowledged: false,
+          }, ...list].slice(0, 200));
+          break;
+        }
+        case 'focus_panel': {
+          const panelId = ctrl.panel as PanelId | undefined;
+          if (!panelId) break;
+          const visible = collectPanelIds(get(layoutTree));
+          maximizedPanelId.set(visible.has(panelId) ? panelId : null);
+          break;
+        }
+        case 'resize_panels': {
+          // Legacy 2-panel command: { terminal: u8, helix: u8 } percentages.
+          // Best-effort: if the root axis has exactly 2 children and one contains
+          // 'terminal', rescale its flex to the requested ratio. Otherwise skip.
+          const termPct = typeof ctrl.terminal === 'number' ? ctrl.terminal : null;
+          const helixPct = typeof ctrl.helix === 'number' ? ctrl.helix : null;
+          if (termPct === null || helixPct === null || termPct + helixPct === 0) break;
+          layoutTree.update(tree => {
+            if (tree.type !== 'axis' || tree.children.length !== 2) return tree;
+            const ids = tree.children.map(c => collectPanelIds(c));
+            const termIdx = ids.findIndex(s => s.has('terminal'));
+            if (termIdx === -1) return tree;
+            const total = termPct + helixPct;
+            const newFlexes = tree.flexes.map((_, i) =>
+              i === termIdx ? termPct / total * 2 : helixPct / total * 2,
+            );
+            return { ...tree, flexes: newFlexes };
+          });
+          break;
+        }
+        case 'set_helix_zoom': {
+          const level = typeof ctrl.level === 'number' ? ctrl.level : null;
+          if (level !== null && level > 0) helixZoomLevel.set(level);
+          break;
+        }
+        case 'set_panel_visibility': {
+          const panelId = ctrl.panel as PanelId | undefined;
+          const visible = typeof ctrl.visible === 'boolean' ? ctrl.visible : null;
+          if (!panelId || visible === null) break;
+          const tree = get(layoutTree);
+          if (!visible) {
+            const pruned = prunePanel(tree, panelId);
+            if (pruned) setLayout(pruned);
+          } else if (!collectPanelIds(tree).has(panelId)) {
+            // Panel not currently visible — split it to the right of the first leaf.
+            const firstVisible = [...collectPanelIds(tree)][0];
+            if (firstVisible) splitPanel(panelId, firstVisible, 'right');
+          }
+          break;
+        }
       }
       break;
     }

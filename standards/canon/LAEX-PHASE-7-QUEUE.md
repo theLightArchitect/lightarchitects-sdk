@@ -2,7 +2,7 @@
 
 **Status**: authoritative enumeration of all canon promotion candidates pending LÆX Phase 7 evaluation per Canon XXXIX (Canon Promotion Pipeline).
 **Last updated**: 2026-05-23 (Canon N1B #47 RATIFIED prior session; #48-#52 RATIFIED 2026-05-23 via Canon XV, Kevin Francis Tan — batch application complete this session)
-**Total candidates**: 52 (was 47; +5 this session: #48 pre-/BUILD empirical spike, #49 HNSW dim lock, #50 GDS plugin not bundled, #51 probe-before-assert, #52 retrieval baseline target mode).
+**Total candidates**: 55 (was 52; +3 this session: #53 pre-/BUILD integration-surface inspection DEFERRED, #54 store fields external service boundary, #55 requestAnimationFrame drag ghost defer — both RATIFIED 2026-05-23).
 **Ratification status 2026-05-22**: #44–#46 PENDING (GATE skill plugin amendments; require plugin PR + LÆX co-sign). SG-1–SG-4 applied under Kevin's Canon XV stamp — `canon_location_prelisted: security-guardrails.md §3.3/§3.5/§3.5.2/§5.5`.
 **Constitutional basis**: Canon XXXIX (Promotion Pipeline) · Canon XLII (Schema-Changelog Separation — this queue is a CHANGELOG-class artifact, not a schema)
 **Maintained by**: per-build /BUILD orchestrator at phase boundaries; manually updated during in-session canon work.
@@ -419,11 +419,11 @@ Per `/REFLECT specifically for canon promotions` 2026-05-19. 10 candidates surfa
 
 | Status | Count | Sources |
 |---|---|---|
-| RATIFIED | 18 (#4–#14, #34, #47–#52) | 2026-05-17 (11) · 2026-05-19 (#34) · 2026-05-23 (#47–#52) |
+| RATIFIED | 20 (#4–#14, #34, #47–#52, #54–#55) | 2026-05-17 (11) · 2026-05-19 (#34) · 2026-05-23 (#47–#52, #54–#55) |
 | PENDING — Step b (memory + candidate identified, contradiction check pending) | 15 (#1–#3 + #22–#33) | 2026-05-15 + 2026-05-18 memory-sweep additions |
 | PENDING — Step c+ (Canon XV override applied; LÆX ratification pending) | 7 (#15–#21) | 2026-05-18 ironclaw-spine in-session canon edits |
 | DEFERRED | 1 (#53) | N=2 trigger pending |
-| **Total candidates** | **41** | 33 pre-sweep + #34 + #47–#53 |
+| **Total candidates** | **43** | 33 pre-sweep + #34 + #47–#55 |
 | **Ratification target** | ≥11 at phase boundary | met; coverage now 44% (18/41) |
 | **Currently ratified** | 18/41 | phase boundary met; next batch promotion target ≥25 (Step-b promotions #15–#21 + #22–#33) |
 
@@ -646,6 +646,32 @@ need Phase 7 ratification — the changes are already in the canon body. GATE sk
 | **Witness count** | N=1 substantial. Canon XXXIX strict threshold N≥2 for new agents-playbook sections. |
 | **Promotion trigger** | Next /BUILD against a running system that catches ≥1 HIGH finding via identical `ss -tnp` / `docker inspect` / `SHOW INDEXES` probing methodology. Memory-only entry NOW with explicit promotion-trigger annotation: `memory://feedback-pre-build-integration-inspection`. |
 | **Distinguished from LÆX #36** | /SYNC compares plan-to-tracking-artifacts; §15.6 (candidate) compares plan-to-running-system. Different problem class. |
+
+---
+
+### #54 — Store Fields from External Service Boundaries Are Untrusted at Runtime (TIER 2 Svelte/TS gotcha)
+
+| Field | Value |
+|-------|-------|
+| **Status** | RATIFIED 2026-05-23, Canon XV, Kevin Francis Tan — `builders-cookbook.md` §74 authored |
+| **Evaluated by** | LÆX (2026-05-23) |
+| **Target doc** | `builders-cookbook.md` §74 (new) + `CLAUDE.md` Svelte non-negotiables summary line |
+| **Source** | webshell-drag-drop implementation session (2026-05-23) — `task.sibling.toUpperCase()` crashed Dashboard reactive graph; `task.sibling` declared `string` in TypeScript but `undefined` at runtime for in-flight conductor task entries |
+| **Contradiction check** | PASS — §51.1 (boundary sanitization) covers adversarial injection, not operational non-null contract failures. No other canon entry addresses TypeScript non-null guarantees at external service store boundaries. |
+| **Witness count** | N=1. Pattern generalises broadly across all stores fed by conductor/SSE/MCP. TIER 2 gotcha threshold met. |
+
+---
+
+### #55 — Defer Drag-Source State in `ondragstart` via `requestAnimationFrame` (TIER 2 browser API gotcha)
+
+| Field | Value |
+|-------|-------|
+| **Status** | RATIFIED 2026-05-23, Canon XV, Kevin Francis Tan — `builders-cookbook.md` §75 authored |
+| **Evaluated by** | LÆX (2026-05-23) |
+| **Target doc** | `builders-cookbook.md` §75 (new) + `CLAUDE.md` Svelte non-negotiables summary line |
+| **Source** | webshell-drag-drop implementation session (2026-05-23) — synchronous `draggingPanelId.set(panelId)` in `ondragstart` caused browser to snapshot dimmed drag ghost; fix: `requestAnimationFrame(() => draggingPanelId.set(panelId))` |
+| **Contradiction check** | PASS — no existing canon covers HTML5 DragEvent ghost snapshot timing. §74 and §75 are sibling Svelte runtime rules from the same session. |
+| **Witness count** | N=1. Behaviour is deterministic browser spec (ghost captured synchronously during dragstart handler). TIER 2 gotcha threshold met. |
 
 ---
 
