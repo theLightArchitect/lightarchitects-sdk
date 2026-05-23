@@ -1075,6 +1075,104 @@ pub async fn get_project(
     }
 }
 
+/// Candidate directory returned by `GET /api/projects/browse`.
+#[derive(Debug, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct ProjectCandidate {
+    /// Directory name (also used as the slug candidate).
+    pub name: String,
+    /// Absolute filesystem path.
+    pub path: String,
+    /// Slug derived from the directory name (lowercase + hyphens).
+    pub slug: String,
+    /// Whether the derived slug passes RFC-1035 validation.
+    pub slug_valid: bool,
+    /// `.git/` directory is present.
+    pub has_git: bool,
+    /// `Cargo.toml` is present (Rust project).
+    pub has_cargo_toml: bool,
+    /// `package.json` is present (Node.js/frontend project).
+    pub has_package_json: bool,
+    /// `pyproject.toml` or `setup.py` is present (Python project).
+    pub has_python: bool,
+    /// `CLAUDE.md` is present (Claude Code project).
+    pub has_claude_md: bool,
+    /// Already imported (`.lightarchitects/project.toml` exists).
+    pub initialized: bool,
+}
+
+/// Derive a slug candidate from a raw directory name.
+///
+/// Lowercases, replaces underscores and spaces with hyphens, and strips
+/// characters not matching `[a-z0-9-]`. Truncates to 63 characters.
+fn derive_slug(name: &str) -> String {
+    let lowered: String = name
+        .chars()
+        .map(|c| {
+            if c == '_' || c == ' ' {
+                '-'
+            } else {
+                c.to_ascii_lowercase()
+            }
+        })
+        .filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-')
+        .take(63)
+        .collect();
+    // Strip leading/trailing hyphens which would fail the slug validator.
+    lowered.trim_matches('-').to_owned()
+}
+
+/// `GET /api/projects/browse` — list all subdirectories of `~/Projects/`
+/// with language-marker metadata and initialisation status.
+///
+/// Returns `[]` when `~/Projects/` does not exist.
+/// Hidden directories (name starts with `.`) are excluded.
+pub async fn browse_projects(_: AuthGuard) -> impl IntoResponse {
+    let Some(home) = home_dir() else {
+        return (StatusCode::OK, Json(json!([]))).into_response();
+    };
+    let projects_root = home.join("Projects");
+    let Ok(mut rd) = tokio::fs::read_dir(&projects_root).await else {
+        return (StatusCode::OK, Json(json!([]))).into_response();
+    };
+    let mut candidates: Vec<ProjectCandidate> = Vec::new();
+    while let Ok(Some(entry)) = rd.next_entry().await {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let name = match dir.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_owned(),
+            None => continue,
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+        let slug = derive_slug(&name);
+        let slug_valid = !slug.is_empty() && Slug::validate(&slug).is_ok();
+        let has_git = dir.join(".git").is_dir();
+        let has_cargo_toml = dir.join("Cargo.toml").is_file();
+        let has_package_json = dir.join("package.json").is_file();
+        let has_python = dir.join("pyproject.toml").is_file() || dir.join("setup.py").is_file();
+        let has_claude_md = dir.join("CLAUDE.md").is_file();
+        let initialized = dir.join(".lightarchitects").join("project.toml").is_file();
+        candidates.push(ProjectCandidate {
+            name,
+            path: dir.to_string_lossy().into_owned(),
+            slug,
+            slug_valid,
+            has_git,
+            has_cargo_toml,
+            has_package_json,
+            has_python,
+            has_claude_md,
+            initialized,
+        });
+    }
+    candidates.sort_by(|a, b| a.name.cmp(&b.name));
+    (StatusCode::OK, Json(candidates)).into_response()
+}
+
 #[cfg(test)]
 mod mcp_server_tests {
     use super::{mcp_titlecase, parse_mcp_servers};

@@ -51,7 +51,7 @@
   // Six actions fanning straight up — icon, 2-letter label, title, handler
   const ACTIONS = [
     { icon: '⌨', label: 'MODE',   title: 'Change preset',       fn: () => { quickPickOpen.set(true); menuOpen = false; } },
-    { icon: '↗', label: 'FORK',   title: 'Fork to terminal',    fn: () => emit('la:copilot-fork') },
+    { icon: '⎋', label: 'FORK',   title: 'Fork to terminal',    fn: () => emit('la:copilot-fork') },
     { icon: '⌕', label: 'FIND',   title: 'Search history',      fn: () => emit('la:copilot-search') },
     { icon: '✕', label: 'CLR',    title: 'Clear conversation',  fn: () => emit('la:copilot-clear') },
     { icon: '⊡', label: 'LAY',    title: 'Toggle layout',       fn: () => emit('la:copilot-position') },

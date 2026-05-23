@@ -131,7 +131,7 @@
     {/if}
 
     <footer class="tt-footer">
-      <button class="tt-action" onclick={handleClick}>Open Builds →</button>
+      <button class="tt-action" onclick={handleClick}>Open Builds</button>
     </footer>
   {:else}
     <div class="tt-empty">Loading…</div>

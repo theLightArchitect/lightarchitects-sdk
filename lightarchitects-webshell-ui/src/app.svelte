@@ -258,7 +258,7 @@
       registerHotkey({
         id: 'global-tab-1',
         keys: ['1'],
-        label: 'Dashboard → Overview',
+        label: 'Dashboard: Overview',
         group: 'Navigation',
         scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '1' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
@@ -267,7 +267,7 @@
       registerHotkey({
         id: 'global-tab-2',
         keys: ['2'],
-        label: 'Workspace → Build Studio',
+        label: 'Workspace: Build Studio',
         group: 'Navigation',
         scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '2' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
@@ -276,7 +276,7 @@
       registerHotkey({
         id: 'global-tab-3',
         keys: ['3'],
-        label: 'Workspace → Dispatch',
+        label: 'Workspace: Dispatch',
         group: 'Navigation',
         scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '3' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
@@ -285,7 +285,7 @@
       registerHotkey({
         id: 'global-tab-4',
         keys: ['4'],
-        label: 'Dashboard → Cockpit',
+        label: 'Dashboard: Cockpit',
         group: 'Navigation',
         scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '4' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),
@@ -294,7 +294,7 @@
       registerHotkey({
         id: 'global-tab-5',
         keys: ['5'],
-        label: 'Knowledge → Helix',
+        label: 'Knowledge: Helix',
         group: 'Navigation',
         scope: 'global',
         matches: e => !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '5' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement),

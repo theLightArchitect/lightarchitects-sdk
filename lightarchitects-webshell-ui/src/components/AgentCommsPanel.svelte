@@ -15,7 +15,7 @@
   }
 
   const TYPE_ICON: Record<CommType, string> = {
-    wave: '→',
+    wave: '◈',
     gate: '✓',
     hitl: '⚠',
     pr:   '⤴',

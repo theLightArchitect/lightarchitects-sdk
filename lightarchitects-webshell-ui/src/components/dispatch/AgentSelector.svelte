@@ -112,7 +112,7 @@
   {/if}
 
   {#if showValidation && selected.length === 0 && !disabled}
-    <p class="cls-warn" role="alert">↑ Select at least one agent above to dispatch.</p>
+    <p class="cls-warn" role="alert">Select at least one agent above to dispatch.</p>
   {/if}
 </div>
 

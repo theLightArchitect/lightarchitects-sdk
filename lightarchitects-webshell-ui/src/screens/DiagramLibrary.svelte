@@ -575,7 +575,7 @@ GW --> CLAUDE : HTTPS
       href="#/diagrams"
       class="text-[10px] font-mono uppercase tracking-wider text-[#475569] hover:text-[#FFD700] transition-colors whitespace-nowrap"
       data-testid="diagram-library-back-to-arch"
-    >↗ Architecture extractor</a>
+    >Architecture extractor</a>
   </header>
 
   <!-- Filter bar -->

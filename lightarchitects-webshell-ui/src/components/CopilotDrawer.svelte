@@ -924,7 +924,7 @@
             class="hdr-action {canFork && !forking ? 'hdr-action--gold' : 'hdr-action--disabled'}"
             title="{canFork ? 'Fork to terminal (claude --resume)' : 'Send a message first'}"
             aria-label="Fork to terminal"
-          >↗</button>
+          >⎋</button>
           <button
             onclick={() => { showSearch = !showSearch; if (!showSearch) searchQuery = ''; }}
             class="hdr-action {showSearch ? 'hdr-action--on' : ''}"
@@ -1012,7 +1012,7 @@
             {:else if forkResult}
               {#if forkResult.launched}
                 <div class="px-3 py-1.5 border-b border-[var(--la-focus-ring)]/30 bg-[var(--la-focus-ring)]/5 flex items-center gap-2 shrink-0">
-                  <span class="text-[10px] text-[var(--la-agent-testing)]">↗ Opened in Terminal ({forkResult.platform}). Conversation continues in both places — same session.</span>
+                  <span class="text-[10px] text-[var(--la-agent-testing)]">Opened in Terminal ({forkResult.platform}). Conversation continues in both places — same session.</span>
                   <div class="flex-1"></div>
                   <button onclick={dismissForkResult} class="text-[10px] text-[var(--la-agent-testing)]/70 hover:text-[var(--la-agent-testing)]">✕</button>
                 </div>
@@ -1157,7 +1157,7 @@
                     </button>
                   {/each}
                   <div class="px-3 py-1 border-t border-[var(--la-drawer-border)] flex items-center gap-3 text-[9px] text-[var(--la-hair-strong)] select-none">
-                    <span>↑↓ navigate</span>
+                    <span>navigate</span>
                     <span>↵ select</span>
                     <span>Esc dismiss</span>
                   </div>

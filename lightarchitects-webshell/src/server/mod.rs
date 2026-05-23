@@ -801,6 +801,7 @@ pub fn build_app(state: AppState) -> Router {
         )
         // ── Project identity (webshell-project-ingestion §2.33-2.34) ────────
         .route("/api/projects", get(real_data::list_projects))
+        .route("/api/projects/browse", get(real_data::browse_projects))
         .route(
             "/api/projects/init",
             post(crate::projects::init::init_project_handler),

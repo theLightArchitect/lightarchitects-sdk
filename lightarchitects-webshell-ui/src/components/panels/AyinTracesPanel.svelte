@@ -207,7 +207,7 @@
           {#if span.tool}<span class="span-tool">[{span.tool.slice(0, 16)}]</span>{/if}
           <span class="span-duration">{span.duration_ms}ms</span>
           <span class="span-outcome" class:finish={span.outcome === 'Finish'}>
-            {span.outcome === 'Finish' ? '✓' : '→'}
+            {span.outcome === 'Finish' ? '✓' : '◌'}
           </span>
         </div>
       {/each}

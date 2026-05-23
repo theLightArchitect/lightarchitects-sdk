@@ -92,7 +92,7 @@
         autoScroll = true;
         if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
       }}
-    >↓ Jump to bottom</button>
+    >Jump to bottom</button>
   {/if}
 </div>
 

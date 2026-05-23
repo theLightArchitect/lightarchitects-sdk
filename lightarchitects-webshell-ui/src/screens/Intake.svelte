@@ -306,7 +306,7 @@
   }
 
   function formatPillarFlow(actions: Record<string, string>): string {
-    return Object.values(actions).join(' → ');
+    return Object.values(actions).join(' · ');
   }
 
   // ── Plan Builder functions ──────────────────────────────────────────────
@@ -598,7 +598,7 @@
   <!-- Header (#38 — fixed 56px band shared across all top-level screens) -->
   <header class="la-screen-header flex items-center gap-3 px-6 border-b border-[var(--la-hair-strong)]">
     <button onclick={() => { window.location.hash = '/'; }} class="text-[var(--la-text-dim)] hover:text-white text-xs">
-      ← Queue
+      Queue
     </button>
     <span class="text-[var(--la-hair-strong)]">/</span>
     <h1 class="text-lg font-semibold">New Build</h1>

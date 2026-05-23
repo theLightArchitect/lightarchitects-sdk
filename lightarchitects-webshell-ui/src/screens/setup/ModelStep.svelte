@@ -106,13 +106,13 @@
   {/if}
 
   <div class="footer">
-    <button class="btn-back" onclick={() => step.set('auth')}>← Back</button>
+    <button class="btn-back" onclick={() => step.set('auth')}>Back</button>
     <button
       class="btn-launch"
       disabled={!$selectedModel || $setupLoading || launching}
       onclick={launch}
     >
-      {launching ? 'Launching…' : 'Launch →'}
+      {launching ? 'Launching…' : 'Launch'}
     </button>
   </div>
 </div>

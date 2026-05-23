@@ -202,7 +202,7 @@
     <button
       onclick={() => navigate('/dashboard')}
       class="text-[10px] text-[#475569] hover:text-[#94a3b8] transition-colors px-2 py-1"
-    >← Back</button>
+    >Back</button>
   </div>
 
   <div class="flex flex-1 overflow-hidden">
@@ -248,7 +248,7 @@
           href="#/library"
           class="mt-1 text-[10px] font-mono text-[#475569] hover:text-[#FFD700] transition-colors text-center"
           data-testid="arch-link-library"
-        >↗ Browse Diagram Library</a>
+        >Browse Diagram Library</a>
       </div>
 
       <!-- Tab-specific controls -->

@@ -132,7 +132,7 @@
   {#if $agentTokenUsage.input > 0}
     <div class="w-px h-3 bg-[var(--la-hair-strong)] mx-1"></div>
     <span class="text-[10px] text-[var(--la-text-dim)] font-mono leading-none tabular-nums">
-      {$agentTokenUsage.input.toLocaleString()}→{$agentTokenUsage.output.toLocaleString()} tok
+      {$agentTokenUsage.input.toLocaleString()}/{$agentTokenUsage.output.toLocaleString()} tok
     </span>
   {/if}
 </div>

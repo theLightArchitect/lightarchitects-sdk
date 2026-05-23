@@ -163,7 +163,7 @@
       <button
         onclick={() => { navigate('/builds'); onClose(); }}
         class="w-full text-[9px] font-mono py-1 px-2 rounded border border-[#1e293b] text-[#94a3b8] hover:text-[#FFD700] hover:border-[#FFD700]/30 transition-colors text-left"
-      >OPEN BUILD DETAIL →</button>
+      >OPEN BUILD DETAIL</button>
       {#if displayBuild.branch}
         <div class="text-[9px] font-mono py-0.5 px-2 text-[#334155] truncate" title={displayBuild.branch}>
           {displayBuild.branch}

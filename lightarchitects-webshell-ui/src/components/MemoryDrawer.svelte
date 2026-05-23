@@ -667,7 +667,7 @@
   {#if $promotionFeed.length > 0}
     <div class="px-3 py-1.5 border-t border-[var(--la-drawer-border)] bg-[var(--la-focus-ring)]/10">
       <span class="text-[9px] text-[var(--la-agent-testing)]">
-        ↑ {$promotionFeed.length} recent promotion{$promotionFeed.length === 1 ? '' : 's'}
+        {$promotionFeed.length} recent promotion{$promotionFeed.length === 1 ? '' : 's'}
       </span>
     </div>
   {/if}

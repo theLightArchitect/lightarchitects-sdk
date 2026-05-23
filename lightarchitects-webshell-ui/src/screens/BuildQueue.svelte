@@ -308,14 +308,14 @@
               + New Build
             </button>
             <span class="text-[10px] text-[var(--la-text-dim)]">
-              or <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">⌘K</kbd> → <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">/build</kbd>
+              or <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">⌘K</kbd> then <kbd class="bg-[var(--la-bg-elev-2)] px-1.5 py-0.5 rounded">/build</kbd>
             </span>
           </div>
         {:else}
           <button
             class="text-xs text-[var(--la-text-mute)] hover:text-[var(--la-text-base)] transition-colors"
             onclick={() => { statusFilter = null; window.location.hash = '/builds'; }}
-          >← show all builds</button>
+          >show all builds</button>
         {/if}
       </div>
     {:else if viewMode === 'card'}

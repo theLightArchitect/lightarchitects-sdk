@@ -84,7 +84,7 @@
               class="hq-review-btn"
               onclick={() => navigate(`/builds/${build.id}/decisions`)}
             >
-              Review decisions →
+              Review decisions
             </button>
           </div>
         </li>
@@ -105,7 +105,7 @@
               class="hq-review-btn hq-review-btn--pr"
               onclick={() => openPr(pr.html_url)}
             >
-              Review PR →
+              Review PR
             </button>
           </div>
         </li>

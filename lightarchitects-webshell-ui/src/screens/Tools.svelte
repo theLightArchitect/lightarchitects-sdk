@@ -253,7 +253,7 @@
           <button
             class="btn-back"
             onclick={() => { invokeResult = null; }}
-          >← Back to form</button>
+          >Back to form</button>
         </div>
       {:else}
         <McpToolForm

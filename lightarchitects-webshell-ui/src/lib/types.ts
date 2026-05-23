@@ -1388,3 +1388,17 @@ export interface InitResponse {
   helix_link: string;
   helix_link_warning?: string;
 }
+
+/** Candidate directory from `GET /api/projects/browse`. */
+export interface ProjectCandidate {
+  name: string;
+  path: string;
+  slug: string;
+  slug_valid: boolean;
+  has_git: boolean;
+  has_cargo_toml: boolean;
+  has_package_json: boolean;
+  has_python: boolean;
+  has_claude_md: boolean;
+  initialized: boolean;
+}

@@ -149,7 +149,7 @@
                 {/if}
                 {#if finding.file}
                   <span class="text-[9px] text-[var(--la-text-dim)] font-mono">
-                    → {finding.file}{finding.line ? `:${finding.line}` : ''}
+                    {finding.file}{finding.line ? `:${finding.line}` : ''}
                   </span>
                 {/if}
               </div>

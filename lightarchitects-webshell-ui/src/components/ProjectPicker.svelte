@@ -2,10 +2,27 @@
   import { DropdownMenu } from 'bits-ui';
   import { builds } from '$lib/stores';
   import { selectedProject } from '$lib/project-filter';
+  import ProjectImportModal from './ProjectImportModal.svelte';
 
-  // Distinct project paths from the live builds store
+  // Registered project paths from the projects API (persists across builds)
+  let registeredPaths = $state<string[]>([]);
+
+  async function loadRegisteredProjects() {
+    try {
+      const res = await fetch('/api/projects');
+      if (res.ok) {
+        const list: { path: string }[] = await res.json();
+        // Normalize absolute home paths to ~/... so they match the builds store format
+        registeredPaths = list.map(p => p.path.replace(/^\/Users\/[^/]+\//, '~/'));
+      }
+    } catch { /* offline — builds store is still the fallback */ }
+  }
+
+  $effect(() => { loadRegisteredProjects(); });
+
+  // Distinct project paths: union of registered projects + live builds
   let paths = $derived.by(() => {
-    const seen = new Set<string>();
+    const seen = new Set<string>(registeredPaths);
     for (const b of $builds) {
       if (b.path) seen.add(b.path);
     }
@@ -13,15 +30,37 @@
   });
 
   let current = $derived($selectedProject);
+  let menuOpen = $state(false);
+  let showImport = $state(false);
 
   function label(path: string | null): string {
     if (!path) return 'ALL';
     const parts = path.replace(/^~\//, '').split('/');
     return parts[parts.length - 1].toUpperCase();
   }
+
+  function openImport() {
+    menuOpen = false;
+    showImport = true;
+  }
+
+  function handleImported(slug: string, path: string) {
+    const normalized = path.replace(/^\/Users\/[^/]+\//, '~/');
+    if (!registeredPaths.includes(normalized)) {
+      registeredPaths = [...registeredPaths, normalized].sort();
+    }
+    selectedProject.select(`~/Projects/${slug}`);
+  }
 </script>
 
-<DropdownMenu.Root>
+{#if showImport}
+  <ProjectImportModal
+    onclose={() => (showImport = false)}
+    onimported={handleImported}
+  />
+{/if}
+
+<DropdownMenu.Root bind:open={menuOpen}>
   <DropdownMenu.Trigger class="picker-trigger" aria-label="Filter by project">
     <span class="trigger-label">PROJECT</span>
     <span class="trigger-value">{label(current)}</span>
@@ -56,7 +95,13 @@
         <div class="picker-empty">no projects loaded</div>
       {/if}
 
-      <div class="picker-footer">filter only · multi-project gateway in v3</div>
+      <div class="picker-sep"></div>
+      <DropdownMenu.Item class="picker-item picker-item--import" onSelect={openImport}>
+        <span class="item-mark item-mark--plus">+</span>
+        Import folder…
+      </DropdownMenu.Item>
+
+      <div class="picker-footer">~/Projects/ · filter only · multi-project gateway in v3</div>
     </DropdownMenu.Content>
   </DropdownMenu.Portal>
 </DropdownMenu.Root>
@@ -154,6 +199,23 @@
 
   :global(.picker-item--active) .item-mark {
     color: var(--la-focus-ring);
+  }
+
+  :global(.picker-item--import) {
+    color: var(--la-focus-ring) !important;
+    opacity: 0.85;
+  }
+
+  :global(.picker-item--import:hover),
+  :global(.picker-item--import[data-highlighted]) {
+    opacity: 1;
+  }
+
+  .item-mark--plus {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--la-focus-ring);
+    line-height: 1;
   }
 
   .item-path {

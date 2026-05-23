@@ -1,12 +1,20 @@
 //! HTTP route handler for `POST /api/builds/:id/copilot`.
 
+use std::sync::Arc;
+
 use axum::{
     Json,
+    body::Body,
     extract::{Path, State},
-    http::{HeaderMap, HeaderValue, StatusCode},
-    response::IntoResponse,
+    http::{HeaderMap, HeaderValue, StatusCode, header},
+    response::{IntoResponse, Response},
+};
+use lightarchitects::agent::{
+    ChainContext, ClaudeCliProvider,
+    conversation::{ConversationSession, SessionConfig, SseTransport},
 };
 use serde_json::json;
+use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use crate::{
@@ -82,6 +90,18 @@ pub async fn copilot_chat_handler(
         )
             .into_response();
     };
+
+    let grounding_hdrs = grounding_headers(&identity_text, &soul_block, git_ctx.as_ref());
+
+    // Native path: drive ConversationSession with SseTransport, stream back to caller.
+    if matches!(session.agent, AgentSession::LightarchitectsNative(_)) {
+        return drive_native_sse(
+            grounded_message.as_ref(),
+            session.cwd.clone(),
+            grounding_hdrs,
+        );
+    }
+
     let result = match &session.agent {
         AgentSession::Lightarchitects(ClaudeBackend::Ollama(cfg)) => {
             call_ollama(
@@ -96,21 +116,66 @@ pub async fn copilot_chat_handler(
             ClaudeBackend::Anthropic | ClaudeBackend::OllamaLaunch(_),
         )
         | AgentSession::Codex(_)
-        | AgentSession::LightarchitectsNative(_)
-        | AgentSession::MistralVibe(_) => {
+        | AgentSession::MistralVibe(_)
+        | AgentSession::LightarchitectsNative(_) => {
             call_subprocess(&grounded_message, &session.copilot_proc, &session).await
         }
     };
-    let headers = grounding_headers(&identity_text, &soul_block, git_ctx.as_ref());
 
     match result {
-        Ok(text) => (StatusCode::OK, headers, Json(json!({ "response": text }))).into_response(),
+        Ok(text) => (
+            StatusCode::OK,
+            grounding_hdrs,
+            Json(json!({ "response": text })),
+        )
+            .into_response(),
         Err(reason) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": "provider_error", "reason": reason })),
         )
             .into_response(),
     }
+}
+
+/// Stream a single turn via [`ConversationSession`] + [`SseTransport`].
+///
+/// Creates a `tokio::io::duplex` pipe: one end feeds [`SseTransport`] (written by the
+/// spawned task), the other becomes the HTTP response body. The caller receives raw
+/// SSE frames (`event: …\ndata: …\n\n`) as they are emitted by the strategy engine.
+fn drive_native_sse(
+    grounded_message: &str,
+    cwd: std::path::PathBuf,
+    extra_headers: HeaderMap,
+) -> Response {
+    let (write_half, read_half) = tokio::io::duplex(64 * 1024);
+    let msg = grounded_message.to_owned();
+
+    tokio::spawn(async move {
+        let config = SessionConfig {
+            cwd,
+            ..SessionConfig::default()
+        };
+        let mut session = ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()));
+        let mut transport = SseTransport::new(write_half);
+        let ctx = ChainContext::default();
+        // Errors are surfaced as ConversationEvent::Error frames on the stream.
+        let _ = session.run_turn(&msg, &mut transport, &ctx).await;
+        // transport drop closes write_half → EOF on read_half
+    });
+
+    let stream = ReaderStream::new(read_half);
+    let mut response = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/event-stream")
+        .header(header::CACHE_CONTROL, "no-cache")
+        .header("X-Accel-Buffering", "no")
+        .body(Body::from_stream(stream))
+        .unwrap_or_else(|_| Response::new(Body::empty()));
+
+    for (k, v) in &extra_headers {
+        response.headers_mut().insert(k.clone(), v.clone());
+    }
+    response
 }
 
 /// Gather all three grounding vectors (SOUL + git) concurrently, assemble the prelude,

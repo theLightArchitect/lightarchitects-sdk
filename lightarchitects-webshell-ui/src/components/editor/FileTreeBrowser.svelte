@@ -79,7 +79,7 @@
 <div class="file-tree" data-testid="file-tree-browser">
   <div class="tree-header">
     {#if stack.length > 0}
-      <button class="back-btn" onclick={goBack} aria-label="Go up">←</button>
+      <button class="back-btn" onclick={goBack} aria-label="Go up">↩</button>
     {/if}
     <span class="tree-path">{path === '.' ? cwd : path}</span>
     <button class="refresh-btn" onclick={() => loadDir(path)} aria-label="Refresh">↻</button>

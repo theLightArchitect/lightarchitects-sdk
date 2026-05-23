@@ -1213,7 +1213,7 @@
                  bg-[var(--la-focus-ring)]/10 text-[9px] font-mono text-[var(--la-focus-ring)]/80"
         >
           <span class="w-1 h-1 rounded-full bg-[var(--la-focus-ring)] animate-ping"></span>
-          <span>hot→cold</span>
+          <span>hot·cold</span>
           <span class="text-[var(--la-focus-ring)]/70">{pulse.sibling}</span>
         </div>
       {/each}

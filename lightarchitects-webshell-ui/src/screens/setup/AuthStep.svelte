@@ -94,7 +94,7 @@
         placeholder="http://localhost:11434"
       />
       <button class="btn-test" onclick={testOllama} disabled={testingOllama}>
-        {testingOllama ? 'Testing…' : 'Test ↗'}
+        {testingOllama ? 'Testing…' : 'Test'}
       </button>
       {#if ollamaReachable === true}
         <span class="reachable-badge">Reachable ✓</span>
@@ -124,9 +124,9 @@
   {/if}
 
   <div class="footer">
-    <button class="btn-back" onclick={() => step.set('backend')}>← Back</button>
+    <button class="btn-back" onclick={() => step.set('backend')}>Back</button>
     <button class="btn-continue" disabled={!canProceed || $setupLoading} onclick={proceed}>
-      Continue →
+      Continue
     </button>
   </div>
 </div>

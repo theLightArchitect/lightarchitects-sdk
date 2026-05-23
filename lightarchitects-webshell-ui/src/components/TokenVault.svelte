@@ -17,9 +17,9 @@
       placeholder: 'ghp_xxxxxxxxxxxxxxxxxxxx',
       scopes:      ['repo', 'read:org'],
       steps: [
-        'github.com → Settings → Developer settings',
-        'Personal access tokens → Tokens (classic)',
-        'Generate new token → select scopes below',
+        'github.com / Settings / Developer settings',
+        'Personal access tokens / Tokens (classic)',
+        'Generate new token / select scopes below',
         'Paste token here — shown only once by GitHub',
       ],
       validate: (t: string) =>
@@ -30,7 +30,7 @@
       placeholder: 'glpat-xxxxxxxxxxxxxxxxxxxx',
       scopes:      ['read_repository', 'read_api'],
       steps: [
-        'gitlab.com → Profile → Preferences → Access Tokens',
+        'gitlab.com / Profile / Preferences / Access Tokens',
         'Or: your-instance/-/profile/personal_access_tokens',
         'Set expiry > 1 year and add scopes below',
         'Paste token here — shown only once by GitLab',

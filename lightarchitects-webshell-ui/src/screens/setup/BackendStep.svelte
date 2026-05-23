@@ -140,8 +140,8 @@
   </div>
 
   <div class="footer">
-    <button class="btn-back" onclick={() => step.set('splash')}>← Back</button>
-    <button class="btn-continue" disabled={!selected} onclick={proceed}>Continue →</button>
+    <button class="btn-back" onclick={() => step.set('splash')}>Back</button>
+    <button class="btn-continue" disabled={!selected} onclick={proceed}>Continue</button>
   </div>
 </div>
 

@@ -340,7 +340,7 @@
         {:else if ev.type === 'token_usage'}
           <div class="msg msg-meta">
             <PolytopeNode type="duoprism55" color="#475569" size={20} />
-            <span>tokens {ev.input} → {ev.output}</span>
+            <span>tokens {ev.input} / {ev.output}</span>
           </div>
 
         {:else if ev.type === 'pick_classified'}
@@ -382,7 +382,7 @@
         {:else if ev.type === 'security_violation'}
           <div class="msg msg-error">
             <PolytopeNode type="hexadecachoron" color="#ef4444" size={24} />
-            <span>{ev.event_type} via {ev.tool}{ev.path ? ` → ${ev.path}` : ''}: {ev.detail}</span>
+            <span>{ev.event_type} via {ev.tool}{ev.path ? ` · ${ev.path}` : ''}: {ev.detail}</span>
           </div>
 
         {:else if ev.type === 'sandbox_blocked'}
@@ -400,7 +400,7 @@
         {:else if ev.type === 'provider_fallback'}
           <div class="msg msg-meta">
             <PolytopeNode type="duoprism64" color="#475569" size={20} />
-            <span>provider: {ev.from} → {ev.to}</span>
+            <span>provider: {ev.from} / {ev.to}</span>
           </div>
 
         {:else if ev.type === 'lenses_selected'}
@@ -484,7 +484,7 @@
   <div class="console-foot">
     <span class="foot-meta">
       {#if tokenUsage().input > 0}
-        {tokenUsage().input}→{tokenUsage().output} tok
+        {tokenUsage().input}/{tokenUsage().output} tok
       {/if}
     </span>
     <span class="foot-meta foot-counters">

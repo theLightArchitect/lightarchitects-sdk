@@ -8,10 +8,9 @@
     icon: string;
     color: string;
     onClose?: () => void;
-    onDragStart?: (e: PointerEvent) => void;
   }
 
-  let { panelId, label, icon, color, onClose, onDragStart }: Props = $props();
+  let { panelId, label, icon, color, onClose }: Props = $props();
 
   let headerEl = $state<HTMLElement | null>(null);
   let isMaximized = $derived($maximizedPanelId === panelId);
@@ -68,38 +67,7 @@
     }
   }
 
-  const DRAG_THRESHOLD_PX = 4;
-  let pointerDownPos = { x: 0, y: 0 };
-  let isDraggingGesture = false;
 
-  function handlePointerDown(e: PointerEvent) {
-    if (isMaximized) return;
-    // Buttons inside the header (maximize, close) need their own click event.
-    // setPointerCapture redirects mouseup to the header, killing button onclick handlers.
-    if (e.target instanceof HTMLButtonElement) return;
-    pointerDownPos = { x: e.clientX, y: e.clientY };
-    isDraggingGesture = false;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }
-
-  function handlePointerMove(e: PointerEvent) {
-    if (isDraggingGesture || !onDragStart || isMaximized) return;
-    if (Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y) > DRAG_THRESHOLD_PX) {
-      isDraggingGesture = true;
-      // Release capture so drop zones on other panels can receive pointerup.
-      // Without this the header retains capture and consumes the pointerup event.
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-      onDragStart(e);
-    }
-  }
-
-  function handlePointerUp(e: PointerEvent) {
-    isDraggingGesture = false;
-    const el = e.currentTarget as HTMLElement;
-    if (el.hasPointerCapture(e.pointerId)) {
-      el.releasePointerCapture(e.pointerId);
-    }
-  }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -113,10 +81,6 @@
   aria-label="{label} panel header"
   data-testid="panel-header-{panelId}"
   ondblclick={maximize}
-  onpointerdown={handlePointerDown}
-  onpointermove={handlePointerMove}
-  onpointerup={handlePointerUp}
-  onpointercancel={handlePointerUp}
 >
   <span class="panel-icon" style:color>{icon}</span>
   <span class="panel-title">{label}</span>
@@ -154,11 +118,10 @@
     background: var(--la-bg-elev-1, #0f172a);
     border-bottom: 1px solid var(--la-hair-base, #1e293b);
     flex-shrink: 0;
-    cursor: grab;
+    cursor: default;
     user-select: none;
     font-family: var(--la-font-mono, 'JetBrains Mono', monospace);
   }
-  .panel-header:active { cursor: grabbing; }
   .panel-header.maximized { cursor: default; }
 
   .panel-icon {

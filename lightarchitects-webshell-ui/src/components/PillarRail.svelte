@@ -74,7 +74,7 @@
       </button>
       {#if i < pillars.length - 1}
         <div class="flex items-center text-[var(--la-hair-strong)]">
-          →
+          ·
         </div>
       {/if}
     {/each}

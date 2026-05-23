@@ -5,7 +5,7 @@
 
   const insights = $derived(deriveInsights($selectedTarget, $builds, $conductorTasks));
 
-  const TREND_ICON: Record<string, string> = { up: '↑', down: '↓', stable: '→' };
+  const TREND_ICON: Record<string, string> = { up: '▲', down: '▼', stable: '—' };
   const TREND_CLS:  Record<string, string> = {
     up: 'trend-up', down: 'trend-down', stable: 'trend-stable',
   };
