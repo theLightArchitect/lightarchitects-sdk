@@ -10,8 +10,8 @@
 mod provider;
 pub use provider::{
     AgentRequest, AgentResponse, LlmAgentProvider, MAX_CHAIN_DEPTH, MAX_PARAM_BYTES,
-    ProviderCapabilities, ProviderError, SanitizedAgentRequest, SchemaMode, TokenUsage,
-    sanitize_params,
+    ProviderCapabilities, ProviderError, ProviderEvent, SanitizedAgentRequest, SchemaMode,
+    TokenUsage, sanitize_params,
 };
 
 mod dispatch;
@@ -22,6 +22,19 @@ pub use cloud_models::{CLOUD_MODEL_REGISTRY, CloudModel, CostTier};
 
 pub mod error;
 pub use error::OllamaError;
+
+/// Tool execution surface — [`ToolExecutor`] trait + [`NullToolExecutor`] fail-closed default (TS-2 §6.1.2).
+///
+/// [`ToolExecutor`]: tool_executor::ToolExecutor
+/// [`NullToolExecutor`]: tool_executor::NullToolExecutor
+pub mod tool_executor;
+pub use tool_executor::{NullToolExecutor, ToolDefinition, ToolError, ToolExecutor, ToolOutput};
+
+/// Shared LLM stream parsers — framing, SSE (Anthropic/Ollama), NDJSON (Claude CLI).
+///
+/// All three sub-modules emit [`ProviderEvent`] so provider implementations
+/// share a single parsing path (TS-3 §21.3).
+pub mod messages_stream_parser;
 
 /// L1 agentic loop substrate — [`Strategy`], [`LoopRunner`], combinators,
 /// `CritiqueRefine`. Provider-agnostic; enabled by the `loops-core` feature.
