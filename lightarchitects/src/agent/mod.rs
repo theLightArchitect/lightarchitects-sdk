@@ -48,6 +48,14 @@ pub mod conversation;
 #[cfg(feature = "loops-core")]
 pub mod hooks;
 
+/// L3 orchestration — [`WorkerPool`] (bounded concurrency) and
+/// [`Supervisor`] (circuit-breaker). Lifted from `lightsquad::wave_dispatcher`.
+///
+/// [`WorkerPool`]: orchestration::WorkerPool
+/// [`Supervisor`]: orchestration::Supervisor
+#[cfg(feature = "loops-core")]
+pub mod orchestration;
+
 #[cfg(feature = "agent-cli")]
 mod claude;
 #[cfg(feature = "agent-cli")]
