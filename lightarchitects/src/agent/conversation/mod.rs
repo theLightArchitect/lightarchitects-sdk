@@ -13,4 +13,4 @@ pub mod transport;
 pub use event::{ConversationEvent, TerminationReason};
 pub use memory::{ConversationMemory, InMemoryConversationMemory, MessageRole, Turn};
 pub use session::{ControlMessage, ConversationSession, SessionConfig, SessionError, SessionState};
-pub use transport::{NdjsonTransport, Transport, TtyTransport};
+pub use transport::{NdjsonTransport, SseTransport, Transport, TtyTransport};

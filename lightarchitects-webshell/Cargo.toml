@@ -25,6 +25,7 @@ lightarchitects = { path = "../lightarchitects", features = [
     "credentials-display-names",
     "credentials-detailed-locator",
     "lightsquad",
+    "loops-core",
 ] }
 
 # Aho-Corasick multi-pattern substring matching for the task classifier (HIGH H-8, no ReDoS).

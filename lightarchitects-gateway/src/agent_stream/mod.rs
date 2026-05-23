@@ -45,7 +45,7 @@ use runner::AgentRunner;
 
 pub use lightarchitects::agent::conversation::{
     ConversationEvent, ConversationSession, NdjsonTransport, SessionConfig, SessionError,
-    SessionState, TerminationReason, Transport, TtyTransport,
+    SessionState, SseTransport, TerminationReason, Transport, TtyTransport,
 };
 
 /// Maximum byte length for a caller-supplied system prompt.

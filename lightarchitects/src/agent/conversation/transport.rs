@@ -134,6 +134,48 @@ impl<W: AsyncWrite + Unpin + Send> Transport for TtyTransport<W> {
     }
 }
 
+// ── SseTransport ─────────────────────────────────────────────────────────────
+
+/// SSE transport — serialises each [`ConversationEvent`] as one SSE frame.
+///
+/// Machine-facing; consumed by the webshell browser via `EventSource` or
+/// `ReadableStream`. Writes `event: <name>\ndata: <json>\n\n` to the sink.
+///
+/// ## Security
+///
+/// All `\r` and `\n` characters in the serialised JSON are stripped before
+/// writing the `data:` field to prevent SSE frame injection (CWE-113).
+/// Callers are responsible for Origin/Sec-Fetch-Site validation at the HTTP
+/// boundary; this transport enforces only the wire-level invariant.
+pub struct SseTransport<W> {
+    sink: W,
+}
+
+impl<W: AsyncWrite + Unpin + Send> SseTransport<W> {
+    /// Wrap an async writer.
+    pub fn new(sink: W) -> Self {
+        Self { sink }
+    }
+}
+
+#[async_trait]
+impl<W: AsyncWrite + Unpin + Send> Transport for SseTransport<W> {
+    async fn emit(&mut self, event: &ConversationEvent) -> io::Result<()> {
+        let json = serde_json::to_string(event)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        // Strip CR/LF to prevent SSE frame injection (CWE-113 SSE variant).
+        let safe_data: String = json.chars().filter(|&c| c != '\r' && c != '\n').collect();
+        let name = event.event_name();
+        let frame = format!("event: {name}\ndata: {safe_data}\n\n");
+        self.sink.write_all(frame.as_bytes()).await?;
+        self.sink.flush().await
+    }
+
+    async fn flush(&mut self) -> io::Result<()> {
+        self.sink.flush().await
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -187,5 +229,51 @@ mod tests {
         };
         let out = collect_tty(&ev).await;
         assert!(out.contains("[tool: bash]"));
+    }
+
+    async fn collect_sse(event: &ConversationEvent) -> String {
+        let mut buf = Vec::new();
+        SseTransport::new(&mut buf).emit(event).await.unwrap();
+        String::from_utf8(buf).unwrap()
+    }
+
+    #[tokio::test]
+    async fn sse_emits_event_and_data_fields() {
+        let ev = ConversationEvent::Text {
+            chunk: "hello sse".into(),
+        };
+        let frame = collect_sse(&ev).await;
+        assert!(frame.starts_with("event: text\n"), "frame: {frame}");
+        assert!(frame.contains("data: "), "frame: {frame}");
+        assert!(
+            frame.ends_with("\n\n"),
+            "frame must end with double newline: {frame}"
+        );
+    }
+
+    #[tokio::test]
+    async fn sse_strips_newlines_from_data() {
+        // A chunk containing a newline — must not appear raw in the SSE data field.
+        let ev = ConversationEvent::Text {
+            chunk: "line one\nline two".into(),
+        };
+        let frame = collect_sse(&ev).await;
+        // After the "data: " prefix, the remaining content up to \n\n must have no bare LF.
+        let data_line = frame
+            .split_once("data: ")
+            .map_or("", |(_, rest)| rest.trim_end_matches('\n'));
+        assert!(
+            !data_line.contains('\n'),
+            "data line contains LF: {data_line}"
+        );
+    }
+
+    #[tokio::test]
+    async fn sse_complete_event() {
+        let ev = ConversationEvent::Complete {
+            reason: super::super::event::TerminationReason::Complete,
+        };
+        let frame = collect_sse(&ev).await;
+        assert!(frame.starts_with("event: complete\n"), "frame: {frame}");
     }
 }
