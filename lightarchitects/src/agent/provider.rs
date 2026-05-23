@@ -141,20 +141,29 @@ pub fn sanitize_params(identity: &str, prompt: &str) -> Result<(String, String),
     Ok((safe_identity, safe_prompt))
 }
 
+/// Unicode and XML tokens that must never appear in the control-plane identity string.
+const FORBIDDEN_IDENTITY_TOKENS: &[(&str, &str)] = &[
+    ("</system>", "XML system-close tag"),
+    ("<system>", "XML system-open tag"),
+    ("\u{202E}", "RTL override (U+202E)"),
+    ("\u{200B}", "zero-width space (U+200B)"),
+    ("\u{200C}", "zero-width non-joiner (U+200C)"),
+    ("\u{200D}", "zero-width joiner (U+200D)"),
+    ("\u{200E}", "left-to-right mark (U+200E)"),
+    ("\u{200F}", "right-to-left mark (U+200F)"),
+    ("\u{FEFF}", "BOM / zero-width no-break space (U+FEFF)"),
+];
+
 fn reject_control_plane(s: &str) -> Result<String, ProviderError> {
-    const FORBIDDEN: &[(&str, &str)] = &[
-        ("</system>", "XML system-close tag"),
-        ("<system>", "XML system-open tag"),
-        ("\u{202E}", "RTL override (U+202E)"),
-        ("\x00", "null byte"),
-        ("\u{200B}", "zero-width space (U+200B)"),
-        ("\u{200C}", "zero-width non-joiner (U+200C)"),
-        ("\u{200D}", "zero-width joiner (U+200D)"),
-        ("\u{200E}", "left-to-right mark (U+200E)"),
-        ("\u{200F}", "right-to-left mark (U+200F)"),
-        ("\u{FEFF}", "BOM / zero-width no-break space (U+FEFF)"),
-    ];
-    for (token, description) in FORBIDDEN {
+    // Category gate: any ASCII control character (U+0000–U+001F, U+007F) is a
+    // control-plane injection vector regardless of intent.
+    if let Some(c) = s.chars().find(char::is_ascii_control) {
+        return Err(ProviderError::ParamSanitizationFailed {
+            param_name: "sibling_identity".to_owned(),
+            reason: format!("contains ASCII control character U+{:04X}", c as u32),
+        });
+    }
+    for (token, description) in FORBIDDEN_IDENTITY_TOKENS {
         if s.contains(token) {
             return Err(ProviderError::ParamSanitizationFailed {
                 param_name: "sibling_identity".to_owned(),

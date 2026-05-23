@@ -11,6 +11,8 @@ use async_trait::async_trait;
 use lightarchitects::agent::{ToolDefinition, ToolError, ToolExecutor, ToolOutput};
 use serde_json::{Value, json};
 
+use lightarchitects::agent::indirect_injection_shield::IndirectInjectionShield;
+
 use crate::config::GatewayConfig;
 use crate::core_tools::{bash, edit, glob, read, search, write};
 use crate::error::GatewayError;
@@ -53,11 +55,36 @@ fn gateway_err_to_tool_err(tool_name: &str, err: GatewayError) -> ToolError {
     }
 }
 
-/// Extract a plain text string from the MCP tool-result envelope.
-fn result_to_content(v: Value) -> Value {
-    // Standard envelope: {"content":[{"type":"text","text":"..."}]}
-    // Pass it through unchanged — callers can inspect the structure.
-    v
+/// Apply the B2 indirect injection defence to a tool result envelope.
+///
+/// Wraps the `text` field inside `content[0]` in
+/// `<tool_result_untrusted>` sentinel delimiters (OWASP-LLM01-1.3).
+/// Detected High-severity injection patterns are logged to the tracing
+/// subscriber; callers receive the wrapped, annotated envelope.
+fn shield_tool_result(tool_use_id: &str, tool_name: &str, v: Value) -> Value {
+    let shield = IndirectInjectionShield::new();
+
+    // Extract the text payload from the standard MCP envelope.
+    let text = v["content"][0]["text"].as_str().unwrap_or("").to_owned();
+
+    // Scan for injection patterns before wrapping.
+    let findings = shield.detect(&text);
+    for f in &findings {
+        tracing::warn!(
+            tool_use_id,
+            tool_name,
+            pattern = %f.pattern,
+            severity = ?f.severity,
+            offset = f.offset,
+            "indirect injection pattern detected in tool result"
+        );
+    }
+
+    let wrapped = shield.wrap_tool_result(tool_use_id, &text);
+
+    json!({
+        "content": [{"type": "text", "text": wrapped}]
+    })
 }
 
 #[async_trait]
@@ -184,8 +211,8 @@ impl ToolExecutor for GatewayToolExecutor {
 
         match result {
             Ok(v) => Ok(ToolOutput {
+                content: shield_tool_result(&tool_use_id, tool_name, v),
                 tool_use_id,
-                content: result_to_content(v),
                 is_error: false,
             }),
             Err(e) => {

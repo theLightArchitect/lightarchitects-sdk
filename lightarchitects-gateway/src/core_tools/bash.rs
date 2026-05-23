@@ -1,5 +1,8 @@
 //! `lightarchitects_bash` — execute a shell command and return its output.
 
+use std::fmt::Write as _;
+
+use lightarchitects::agent::bash_policy::{BashPolicy, BashPolicyDecision};
 use serde_json::{Value, json};
 use tokio::process::Command;
 
@@ -8,6 +11,12 @@ use crate::error::GatewayError;
 
 /// Default command timeout in milliseconds (120 seconds).
 const DEFAULT_TIMEOUT_MS: u64 = 120_000;
+
+/// Maximum combined stdout+stderr bytes returned to the LLM.
+///
+/// Outputs above this limit are truncated; a sentinel suffix reports the
+/// elided byte count so operators can investigate if needed.
+const MAX_BASH_OUTPUT_BYTES: usize = 256 * 1024; // 256 KB
 
 /// Execute `lightarchitects_bash`.
 ///
@@ -28,11 +37,18 @@ pub async fn run(params: Value) -> Result<Value, GatewayError> {
         .as_str()
         .ok_or(GatewayError::MissingParam("command"))?;
 
-    // Security: check against blocklist before execution.
+    // Security: check against the legacy transport-layer blocklist.
     if security::is_blocked_command(command) {
         return Err(GatewayError::Subprocess(
             "Command blocked: contains restricted pattern. Use a more specific command.".to_owned(),
         ));
+    }
+
+    // Security: SDK-level BashPolicy — allowlist + denylist (B3 fold, Cookbook §63).
+    if let BashPolicyDecision::Deny { reason } = BashPolicy::default().check(command) {
+        return Err(GatewayError::Subprocess(format!(
+            "Command denied by bash policy: {reason}"
+        )));
     }
 
     let timeout_ms = params["timeout_ms"].as_u64().unwrap_or(DEFAULT_TIMEOUT_MS);
@@ -73,9 +89,23 @@ pub async fn run(params: Value) -> Result<Value, GatewayError> {
         format!("{stdout}\n{stderr}")
     };
 
+    // Truncate output above the per-call cap (OA-12.12).
+    let output_field = if combined.len() > MAX_BASH_OUTPUT_BYTES {
+        let elided = combined.len() - MAX_BASH_OUTPUT_BYTES;
+        let total = combined.len();
+        let mut truncated = combined[..MAX_BASH_OUTPUT_BYTES].to_owned();
+        let _ = write!(
+            truncated,
+            "\n[truncated: {elided} bytes elided, total {total} bytes]"
+        );
+        truncated
+    } else {
+        combined
+    };
+
     let text = serde_json::to_string(&json!({
         "exit_code": exit_code,
-        "output": combined
+        "output": output_field
     }))?;
 
     Ok(json!({
@@ -99,9 +129,12 @@ mod tests {
 
     #[tokio::test]
     async fn nonzero_exit_is_not_an_error() {
-        let result = run(json!({"command": "exit 42"})).await.expect("run");
+        // grep exits 1 when no match found — an allowed binary with predictable non-zero exit.
+        let result = run(json!({"command": "grep -c NONEXISTENT_PATTERN_XYZ /dev/null"}))
+            .await
+            .expect("run");
         let text = result["content"][0]["text"].as_str().unwrap();
-        assert!(text.contains("\"exit_code\":42"));
+        assert!(text.contains("\"exit_code\":1"));
     }
 
     #[tokio::test]
