@@ -31,18 +31,20 @@ test.describe('helix-retrieval panels', () => {
   });
 
   async function goto(page: Page, path: string) {
+    // '/' maps to Dispatch (routes.ts line 67). Panel tests need Dashboard.
+    const targetPath = (path === '/' || path === '') ? '/dashboard' : path;
     await page.addInitScript(([token]) => {
       sessionStorage.setItem('la_webshell_token', token as string);
       for (let i = 1; i <= 6; i++) {
         localStorage.setItem(`la.tutorial.completed.t${i}`, 'true');
       }
+      // Enable mosaic mode so PanelRoot renders (required for panel tests).
+      localStorage.setItem('la_mosaic_mode', 'true');
     }, [pool.token] as [string]);
     await page.goto(pool.baseUrl);
     await page.waitForTimeout(400);
-    if (path !== '/') {
-      await page.evaluate((p) => { window.location.hash = p; }, path);
-      await page.waitForTimeout(600);
-    }
+    await page.evaluate((p) => { window.location.hash = p; }, targetPath);
+    await page.waitForTimeout(600);
   }
 
   // ── G1: RetrievalMetricsPanel renders ──────────────────────────────────────
@@ -50,20 +52,24 @@ test.describe('helix-retrieval panels', () => {
   test('G1: RetrievalMetricsPanel renders with data-card-role="retrieval-metrics"', async ({ page }) => {
     await goto(page, '/');
 
-    // Add the panel via the catalog (Dashboard mosaic mode)
-    const catalogBtn = page.locator('[data-testid="catalog-add-helix-retrieve"]');
-    if (await catalogBtn.count() === 0) {
-      // Open panel catalog first
-      const addBtn = page.locator('button', { hasText: /add panel/i }).first();
-      if (await addBtn.count() > 0) await addBtn.click();
-      await page.waitForTimeout(200);
-    }
-    if (await catalogBtn.count() > 0) {
-      await catalogBtn.click();
+    // Open the panel catalog via the edit-mode toggle button.
+    const editBtn = page.locator('[data-testid="edit-mode-btn"]');
+    if (await editBtn.count() > 0) {
+      await editBtn.click();
       await page.waitForTimeout(300);
     }
 
-    // The panel must exist in the DOM (even if not added via catalog — it's in the panel system)
+    // Click the catalog entry for helix-retrieve to add it to the layout.
+    const catalogBtn = page.locator('[data-testid="catalog-add-helix-retrieve"]');
+    if (await catalogBtn.count() > 0 && !(await catalogBtn.isDisabled())) {
+      await catalogBtn.click();
+      await page.waitForTimeout(400);
+    }
+
+    // Close the catalog so the panel is fully visible.
+    const closeBtn = page.locator('[data-testid="catalog-close-btn"]');
+    if (await closeBtn.count() > 0) await closeBtn.click();
+
     const panel = page.locator('[data-card-role="retrieval-metrics"]');
     await expect(panel).toBeAttached({ timeout: 5_000 });
   });
@@ -73,16 +79,20 @@ test.describe('helix-retrieval panels', () => {
   test('G2: CacheStatsPanel renders with data-card-role="cache-stats"', async ({ page }) => {
     await goto(page, '/');
 
-    const catalogBtn = page.locator('[data-testid="catalog-add-helix-cache-stats"]');
-    if (await catalogBtn.count() === 0) {
-      const addBtn = page.locator('button', { hasText: /add panel/i }).first();
-      if (await addBtn.count() > 0) await addBtn.click();
-      await page.waitForTimeout(200);
-    }
-    if (await catalogBtn.count() > 0) {
-      await catalogBtn.click();
+    const editBtn = page.locator('[data-testid="edit-mode-btn"]');
+    if (await editBtn.count() > 0) {
+      await editBtn.click();
       await page.waitForTimeout(300);
     }
+
+    const catalogBtn = page.locator('[data-testid="catalog-add-helix-cache-stats"]');
+    if (await catalogBtn.count() > 0 && !(await catalogBtn.isDisabled())) {
+      await catalogBtn.click();
+      await page.waitForTimeout(400);
+    }
+
+    const closeBtn = page.locator('[data-testid="catalog-close-btn"]');
+    if (await closeBtn.count() > 0) await closeBtn.click();
 
     const panel = page.locator('[data-card-role="cache-stats"]');
     await expect(panel).toBeAttached({ timeout: 5_000 });
