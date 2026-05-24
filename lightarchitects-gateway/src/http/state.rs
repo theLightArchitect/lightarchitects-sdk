@@ -109,7 +109,7 @@ pub struct PlatformConfig {
     pub helix_cache_ttl_secs: u64,
     /// Embedding backend: `"fastembed"` | `"ollama"` | `"mock"` (default `"fastembed"`).
     pub embedding_backend: String,
-    /// Embedding model tag interpreted by the chosen backend (default `"BGESmallENV15"`).
+    /// Embedding model tag interpreted by the chosen backend (default `"all-minilm-l6-v2"`).
     pub embedding_model: String,
     /// Expected embedding dimensionality — validated against the backend at startup.
     pub embedding_dim: usize,
@@ -127,7 +127,7 @@ impl Default for PlatformConfig {
             helix_cache_max_capacity_bytes: 67_108_864, // 64 MiB
             helix_cache_ttl_secs: 300,
             embedding_backend: "fastembed".to_owned(),
-            embedding_model: "BGESmallENV15".to_owned(),
+            embedding_model: "all-minilm-l6-v2".to_owned(),
             embedding_dim: 384,
         }
     }

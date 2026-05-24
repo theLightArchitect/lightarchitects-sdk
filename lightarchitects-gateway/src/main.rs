@@ -581,7 +581,7 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
     let embedding_backend =
         std::env::var("LA_EMBEDDING_BACKEND").unwrap_or_else(|_| "fastembed".to_owned());
     let embedding_model =
-        std::env::var("LA_EMBEDDING_MODEL").unwrap_or_else(|_| "BGESmallENV15".to_owned());
+        std::env::var("LA_EMBEDDING_MODEL").unwrap_or_else(|_| "all-minilm-l6-v2".to_owned());
     let embedding_dim: usize = std::env::var("LA_EMBEDDING_DIM")
         .ok()
         .and_then(|v| v.parse().ok())
