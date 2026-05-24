@@ -237,6 +237,12 @@ pub trait HelixDb: Send + Sync {
         embedding: &[f32],
     ) -> Result<(), HelixDbError>;
 
+    /// Fetch a batch of [`Step`] nodes by their IDs.
+    ///
+    /// Used by [`CachedRetriever`](crate::helix::soul_search::cached::CachedRetriever)
+    /// to hydrate full Step data after hybrid RRF fusion (which operates on step IDs only).
+    async fn get_steps_by_ids(&self, ids: &[String]) -> Result<Vec<Step>, HelixDbError>;
+
     /// Batch-upsert multiple [`Step`] nodes and their `HAS_STEP` relationships.
     ///
     /// Default implementation loops over [`upsert_step`].  Backends may override
@@ -500,8 +506,11 @@ pub struct HelixConfig {
     pub soul_home: PathBuf,
     /// Embedding model name for vector search (default: `nomic-embed-text`).
     pub embedding_model: String,
-    /// Maximum cache entries (default: 1000).
-    pub cache_capacity: u64,
+    /// Maximum byte budget for the in-memory cache (default: 64 MiB).
+    ///
+    /// Set via `HELIX_CACHE_CAPACITY_BYTES` (bytes). The cache uses a
+    /// `TinyLFU` weigher; this value is the total byte budget, not an entry count.
+    pub cache_capacity_bytes: u64,
     /// Cache entry time-to-live in seconds (default: 300).
     pub cache_ttl_seconds: u64,
 }
@@ -512,7 +521,7 @@ impl HelixConfig {
     /// - `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASS` — database connection
     /// - `SOUL_HOME` (default: `~/.soul`)
     /// - `HELIX_EMBEDDING_MODEL` (default: `nomic-embed-text`)
-    /// - `HELIX_CACHE_CAPACITY` (default: `1000`)
+    /// - `HELIX_CACHE_CAPACITY_BYTES` (default: `67108864` = 64 MiB)
     /// - `HELIX_CACHE_TTL` (default: `300`)
     ///
     /// # Errors
@@ -530,10 +539,10 @@ impl HelixConfig {
         let embedding_model =
             std::env::var("HELIX_EMBEDDING_MODEL").unwrap_or_else(|_| "nomic-embed-text".into());
 
-        let cache_capacity = std::env::var("HELIX_CACHE_CAPACITY")
+        let cache_capacity_bytes = std::env::var("HELIX_CACHE_CAPACITY_BYTES")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(1000);
+            .unwrap_or(64 * 1024 * 1024);
 
         let cache_ttl_seconds = std::env::var("HELIX_CACHE_TTL")
             .ok()
@@ -544,7 +553,7 @@ impl HelixConfig {
             neo4j,
             soul_home,
             embedding_model,
-            cache_capacity,
+            cache_capacity_bytes,
             cache_ttl_seconds,
         })
     }
@@ -553,7 +562,7 @@ impl HelixConfig {
     #[must_use]
     pub fn cache_config(&self) -> crate::helix::cache::HelixCacheConfig {
         crate::helix::cache::HelixCacheConfig::default()
-            .with_max_capacity(self.cache_capacity)
+            .with_max_capacity_bytes(self.cache_capacity_bytes)
             .with_ttl(Duration::from_secs(self.cache_ttl_seconds))
     }
 }
@@ -1889,6 +1898,30 @@ impl HelixDb for HelixNeo4j {
             });
         }
         Ok(out)
+    }
+
+    #[instrument(skip(self, ids), fields(neo4j.operation = "get_steps_by_ids", count = ids.len()))]
+    async fn get_steps_by_ids(&self, ids: &[String]) -> Result<Vec<Step>, HelixDbError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let limit = ids.len();
+        let cypher = format!(
+            "MATCH (s:Step) WHERE s.id IN $ids \
+             RETURN s.id AS id, s.helix_id AS helix_id, s.title AS title, \
+                    s.content AS content, s.significance AS significance, \
+                    s.step_date AS step_date, s.step_index AS step_index, \
+                    s.community_id AS community_id, s.expires AS expires, \
+                    s.created_at AS created_at, s.metadata AS metadata, \
+                    s.vault_path AS vault_path \
+             LIMIT {limit}"
+        );
+        let mut params = std::collections::BTreeMap::new();
+        params.insert("ids".into(), serde_json::json!(ids));
+        let records = self
+            .timed_execute("get_steps_by_ids", &cypher, params)
+            .await?;
+        Ok(records.iter().filter_map(Self::record_to_step).collect())
     }
 
     #[instrument(skip(self, steps), fields(neo4j.operation = "batch_upsert_steps", count = steps.len()))]

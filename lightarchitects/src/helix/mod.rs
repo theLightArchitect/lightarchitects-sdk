@@ -53,13 +53,14 @@ pub mod store;
 pub use store::{HelixSearchBuilder, HelixStore, HelixStoreError};
 
 // ── Re-export core public API (mirrors soul-helix's lib.rs exports) ──────────
-pub use cache::{HelixCache, HelixCacheConfig};
+pub use cache::{CachedEntry, HelixCache, HelixCacheConfig};
 pub use client::HelixClient;
 pub use db::{HelixConfig, HelixDb, HelixDbError, HelixNeo4j, Neo4jConfig, PoolMetrics};
 pub use embedding::{
-    Chunk, Chunker, ChunkerConfig, CloudEmbeddingProvider, EmbeddingError, EmbeddingPipelineConfig,
-    EmbeddingProvider, MockEmbeddingProvider, OllamaEmbeddingProvider, PrivacyLevel,
-    SemanticEmbeddingPipeline, StructuralEmbeddingPipeline,
+    Chunk, Chunker, ChunkerConfig, CloudEmbeddingProvider, EmbeddingConfig, EmbeddingError,
+    EmbeddingPipelineConfig, EmbeddingProvider, MockEmbeddingProvider, OllamaEmbeddingProvider,
+    PrivacyLevel, SemanticEmbeddingPipeline, StructuralEmbeddingPipeline,
+    create_embedding_provider,
 };
 pub use helix_toml::{HelixToml, HelixTomlSection, find_helix_root, load_helix_toml};
 pub use ingestion::{
@@ -72,11 +73,11 @@ pub use ingestion::{
 pub use query::HelixQuery;
 pub use search::{ScoredResult, SearchOptions};
 pub use soul_search::{
-    ContextFormatter, ConvergenceParams, ConvergenceResult, FulltextSearcher, GraphFilter,
-    GraphSearcher, HybridRetriever, HybridRetrieverConfig, PersonalityEngine,
-    PersonalityEngineConfig, Reranker, RerankerConfig, RetrievalMode, RetrievalResult,
-    RetrievalSignal, ScoredId, SemanticSearcher, StructuralSearcher, precision_at_k,
-    precision_at_k_patterns, recall_at_k,
+    CachedRetrievalResult, CachedRetriever, ContextFormatter, ConvergenceParams, ConvergenceResult,
+    FulltextSearcher, GraphFilter, GraphSearcher, HybridRetriever, HybridRetrieverConfig,
+    PersonalityEngine, PersonalityEngineConfig, Reranker, RerankerConfig, RetrievalMode,
+    RetrievalResult, RetrievalSignal, ScoredId, SemanticSearcher, StructuralSearcher,
+    precision_at_k, precision_at_k_patterns, recall_at_k,
 };
 pub use sqlite_backend::SqliteBackend;
 pub use storage::{

@@ -24,9 +24,10 @@ use std::sync::Arc;
 
 use tracing::instrument;
 
-use crate::helix::cache::HelixCache;
+use crate::helix::cache::{CachedEntry, HelixCache};
 use crate::helix::db::{HelixConfig, HelixDb, HelixDbError, HelixNeo4j};
 use crate::helix::search::{ScoredResult, SearchOptions};
+use crate::helix::soul_search::hybrid::RetrievalMode;
 use crate::helix::types::Step;
 
 // ============================================================================
@@ -97,12 +98,17 @@ impl HelixClient {
     ) -> Result<Vec<ScoredResult<Step>>, HelixDbError> {
         let key = self.cache.search_key(query, opts);
 
-        if let Some(results) = self.cache.get_search(&key).await {
-            return Ok(results.as_ref().clone());
+        if let Some(entry) = self.cache.get_search(&key).await {
+            return Ok(entry.results.as_ref().clone());
         }
 
         let results = self.db.fulltext_search(query, opts).await?;
-        self.cache.put_search(&key, results.clone()).await;
+        self.cache
+            .put_search(
+                &key,
+                CachedEntry::new(results.clone(), RetrievalMode::Balanced),
+            )
+            .await;
         Ok(results)
     }
 
@@ -119,12 +125,17 @@ impl HelixClient {
     ) -> Result<Vec<ScoredResult<Step>>, HelixDbError> {
         let key = self.cache.vector_key(embedding, index_name, opts);
 
-        if let Some(results) = self.cache.get_search(&key).await {
-            return Ok(results.as_ref().clone());
+        if let Some(entry) = self.cache.get_search(&key).await {
+            return Ok(entry.results.as_ref().clone());
         }
 
         let results = self.db.vector_search(embedding, index_name, opts).await?;
-        self.cache.put_search(&key, results.clone()).await;
+        self.cache
+            .put_search(
+                &key,
+                CachedEntry::new(results.clone(), RetrievalMode::Balanced),
+            )
+            .await;
         Ok(results)
     }
 
