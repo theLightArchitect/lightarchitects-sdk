@@ -199,20 +199,25 @@ impl Default for CodexConfig {
     }
 }
 
-/// Configuration for the lÆx0 native binary.
+/// Configuration for the lightarchitects native gateway binary in `--stream-events` mode.
+///
+/// Spawns `lightarchitects --stream-events --cwd <session.cwd>` as a persistent
+/// subprocess. The gateway runs `agent_stream::run_ndjson` and routes turns
+/// through the in-binary LLM loop with all gateway `core_tools` available.
+/// Replaces the legacy `lightarchitects-cli` (lÆx0) binary which no longer ships.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LightarchitectsNativeConfig {
-    /// Path to the `lightarchitects-cli` binary. Default: `"lightarchitects-cli"` (assumes on `$PATH`).
+    /// Path to the `lightarchitects` gateway binary. Default: `"lightarchitects"` (assumes on `$PATH`).
     #[serde(default = "default_lightarchitects_cli_binary")]
     pub binary: String,
-    /// Selected model ID (e.g. `"nemotron-3-super:cloud"`).
-    /// The CLI reads this from its own TOML config; this field is for UI introspection.
+    /// Selected model ID (e.g. `"nemotron-3-super:cloud"`, `"qwen3-coder:480b-cloud"`).
+    /// The gateway reads this from `LA_MODEL` env or its own TOML config; this field is for UI introspection.
     #[serde(default)]
     pub model: Option<String>,
 }
 
 fn default_lightarchitects_cli_binary() -> String {
-    "lightarchitects-cli".to_owned()
+    "lightarchitects".to_owned()
 }
 
 impl Default for LightarchitectsNativeConfig {
@@ -1055,7 +1060,7 @@ mod tests {
     #[test]
     fn lightarchitects_cli_native_config_defaults_to_lightarchitects_cli_binary() {
         let cfg = LightarchitectsNativeConfig::default();
-        assert_eq!(cfg.binary, "lightarchitects-cli");
+        assert_eq!(cfg.binary, "lightarchitects");
     }
 
     #[test]

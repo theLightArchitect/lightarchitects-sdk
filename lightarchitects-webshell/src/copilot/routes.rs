@@ -10,8 +10,10 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use lightarchitects::agent::{
-    ChainContext, ClaudeCliProvider,
-    conversation::{ConversationSession, SessionConfig, SseTransport},
+    ChainContext, ClaudeCliProvider, OllamaCliProvider,
+    conversation::{
+        ConversationEvent, ConversationSession, SessionConfig, SseTransport, Transport,
+    },
 };
 use serde_json::json;
 use tokio_util::io::ReaderStream;
@@ -94,12 +96,14 @@ pub async fn copilot_chat_handler(
     let grounding_hdrs = grounding_headers(&identity_text, &soul_block, git_ctx.as_ref());
 
     // Native path: drive ConversationSession with SseTransport, stream back to caller.
+    //
+    // We pass the UN-grounded user message — the OllamaCliProvider sanitizer
+    // enforces an 8,192-byte cap on user_prompt and the full grounding prelude
+    // (EVA identity + SOUL + git + recent events) routinely exceeds that.
+    // Grounding for the LA-native path is a follow-on (prelude trimming or
+    // system-prompt placement instead of inline injection).
     if matches!(session.agent, AgentSession::LightarchitectsNative(_)) {
-        return drive_native_sse(
-            grounded_message.as_ref(),
-            session.cwd.clone(),
-            grounding_hdrs,
-        );
+        return drive_native_sse(&body.message, session.cwd.clone(), grounding_hdrs);
     }
 
     let result = match &session.agent {
@@ -150,16 +154,61 @@ fn drive_native_sse(
     let (write_half, read_half) = tokio::io::duplex(64 * 1024);
     let msg = grounded_message.to_owned();
 
+    // Provider selection: prefer Ollama Cloud when OLLAMA_API_KEY is set
+    // (matches `agent_stream::run_ndjson` provider-build logic in the gateway),
+    // otherwise fall back to ClaudeCliProvider for legacy compatibility.
+    // ConversationSession is generic over a concrete provider type, so the
+    // branches construct independent sessions rather than sharing a trait object.
+    let use_ollama = std::env::var("OLLAMA_API_KEY")
+        .ok()
+        .filter(|k| !k.is_empty())
+        .is_some();
+    let model = std::env::var("LA_MODEL")
+        .ok()
+        .filter(|m| !m.is_empty())
+        .unwrap_or_else(|| "nemotron-3-super:cloud".to_owned());
+    let ollama_provider = if use_ollama {
+        OllamaCliProvider::new(&model).ok()
+    } else {
+        None
+    };
+
+    let provider_name = if ollama_provider.is_some() {
+        "ollama-cli"
+    } else {
+        "claude-cli"
+    };
+    tracing::info!(provider = provider_name, model = %model, "drive_native_sse spawning turn");
     tokio::spawn(async move {
         let config = SessionConfig {
             cwd,
             ..SessionConfig::default()
         };
-        let mut session = ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()));
         let mut transport = SseTransport::new(write_half);
         let ctx = ChainContext::default();
-        // Errors are surfaced as ConversationEvent::Error frames on the stream.
-        let _ = session.run_turn(&msg, &mut transport, &ctx).await;
+        let result = if let Some(provider) = ollama_provider {
+            let mut session = ConversationSession::new(config, Arc::new(provider));
+            session.run_turn(&msg, &mut transport, &ctx).await
+        } else {
+            let mut session =
+                ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()));
+            session.run_turn(&msg, &mut transport, &ctx).await
+        };
+        if let Err(e) = result {
+            tracing::error!(provider = provider_name, error = %e, "drive_native_sse run_turn failed");
+            // Surface the error to the SSE stream so the operator can see it.
+            let _ = transport
+                .emit(&ConversationEvent::Error {
+                    message: e.to_string(),
+                    recoverable: Some(false),
+                })
+                .await;
+        } else {
+            tracing::info!(
+                provider = provider_name,
+                "drive_native_sse run_turn completed"
+            );
+        }
         // transport drop closes write_half → EOF on read_half
     });
 

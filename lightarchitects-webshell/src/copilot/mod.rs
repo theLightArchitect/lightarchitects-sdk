@@ -366,46 +366,113 @@ fn dispatch_ndjson_line(line: &str, session: &BuildSession, build_id: &str) -> O
         return None;
     };
     match val["type"].as_str() {
-        Some("result") => {
-            return val["text"].as_str().map(ToOwned::to_owned);
-        }
-        Some("context") => {
-            #[allow(clippy::cast_possible_truncation)]
-            let usage_pct = val["usage_pct"].as_f64().unwrap_or(0.0).clamp(0.0, 1.0) as f32;
-            let _ = session.event_tx.send(WebEventV2::from_event(
-                crate::events::WebEvent::ContextStatus(crate::events::types::ContextStatusEvent {
-                    usage_pct,
-                    level: val["level"].as_str().map(ToOwned::to_owned),
-                    budget: val["budget"].as_u64().unwrap_or(0),
-                    used: val["used"].as_u64().unwrap_or(0),
-                }),
-                Some(session.build_id),
-            ));
-        }
+        Some("result") => return val["text"].as_str().map(ToOwned::to_owned),
+        Some("context") => dispatch_context_event(&val, session),
         Some(kind @ ("tool_call" | "thinking")) => {
-            let summary = if kind == "tool_call" {
-                val["tool_name"].as_str().map(ToOwned::to_owned)
-            } else {
-                val["text"]
-                    .as_str()
-                    .map(|t| t.chars().take(120).collect::<String>())
-            };
+            dispatch_activity_event(&val, session, build_id, kind);
+        }
+        // Gateway `agent_stream::ConversationEvent` taxonomy (lightarchitects --stream-events).
+        Some("text") => dispatch_la_text_chunk(&val, session),
+        Some("status_update") => dispatch_activity_event(&val, session, build_id, "status_update"),
+        Some("token_usage") => dispatch_token_usage(&val, session, build_id),
+        Some("complete") => {
             let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
-                crate::events::WebEvent::CopilotActivity(
-                    crate::events::types::CopilotActivityEvent {
-                        build_id: build_id.to_owned(),
-                        kind: kind.to_owned(),
-                        summary,
-                        raw: val,
-                        timestamp: chrono::Utc::now().to_rfc3339(),
-                    },
-                ),
+                crate::events::WebEvent::CopilotResponse {
+                    chunk: String::new(),
+                    done: true,
+                    sibling: Some("la-native".to_owned()),
+                },
                 Some(session.build_id),
             ));
+            return Some(String::new());
+        }
+        Some("error") => {
+            let msg = val["message"]
+                .as_str()
+                .unwrap_or("la-native error")
+                .to_owned();
+            let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+                crate::events::WebEvent::CopilotResponse {
+                    chunk: format!("[error] {msg}"),
+                    done: true,
+                    sibling: Some("la-native".to_owned()),
+                },
+                Some(session.build_id),
+            ));
+            return Some(format!("[error] {msg}"));
         }
         _ => {}
     }
     None
+}
+
+fn dispatch_context_event(val: &serde_json::Value, session: &BuildSession) {
+    #[allow(clippy::cast_possible_truncation)]
+    let usage_pct = val["usage_pct"].as_f64().unwrap_or(0.0).clamp(0.0, 1.0) as f32;
+    let _ = session.event_tx.send(WebEventV2::from_event(
+        crate::events::WebEvent::ContextStatus(crate::events::types::ContextStatusEvent {
+            usage_pct,
+            level: val["level"].as_str().map(ToOwned::to_owned),
+            budget: val["budget"].as_u64().unwrap_or(0),
+            used: val["used"].as_u64().unwrap_or(0),
+        }),
+        Some(session.build_id),
+    ));
+}
+
+fn dispatch_activity_event(
+    val: &serde_json::Value,
+    session: &BuildSession,
+    build_id: &str,
+    kind: &str,
+) {
+    let summary = match kind {
+        "tool_call" => val["tool_name"].as_str().map(ToOwned::to_owned),
+        "thinking" => val["text"].as_str().map(|t| t.chars().take(120).collect()),
+        _ => val["text"].as_str().map(ToOwned::to_owned),
+    };
+    let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+        crate::events::WebEvent::CopilotActivity(crate::events::types::CopilotActivityEvent {
+            build_id: build_id.to_owned(),
+            kind: kind.to_owned(),
+            summary,
+            raw: val.clone(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        }),
+        Some(session.build_id),
+    ));
+}
+
+fn dispatch_la_text_chunk(val: &serde_json::Value, session: &BuildSession) {
+    let chunk = val["chunk"].as_str().unwrap_or("").to_owned();
+    if !chunk.is_empty() {
+        let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+            crate::events::WebEvent::CopilotResponse {
+                chunk,
+                done: false,
+                sibling: Some("la-native".to_owned()),
+            },
+            Some(session.build_id),
+        ));
+    }
+}
+
+fn dispatch_token_usage(val: &serde_json::Value, session: &BuildSession, build_id: &str) {
+    let summary = Some(format!(
+        "tokens in={} out={}",
+        val["input"].as_u64().unwrap_or(0),
+        val["output"].as_u64().unwrap_or(0),
+    ));
+    let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+        crate::events::WebEvent::CopilotActivity(crate::events::types::CopilotActivityEvent {
+            build_id: build_id.to_owned(),
+            kind: "token_usage".to_owned(),
+            summary,
+            raw: val.clone(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        }),
+        Some(session.build_id),
+    ));
 }
 
 /// Spawn one turn of a `claude --print` subprocess for `Lightarchitects` backends.
@@ -902,21 +969,37 @@ async fn run_vibe_turn(message: &str, session: &BuildSession) -> Result<String, 
 /// stdin/stdout handles are unavailable.
 fn spawn_copilot(session: &BuildSession) -> Result<CopilotProcess, String> {
     let mut cmd = match &session.agent {
-        // LightArchitects CLI (formerly lÆx0) — single-shot `run <prompt>` mode.
-        // The webshell acts as auth broker: resolves credentials from OS keychain
-        // (stored by /api/setup/save) and injects them into the subprocess env.
+        // Lightarchitects gateway binary in `--stream-events` (NDJSON) mode.
+        // The webshell acts as auth broker: resolves credentials (Ollama Cloud
+        // primary, Anthropic fallback) and injects them so the gateway's LLM
+        // loop can dispatch to the configured provider.
         AgentSession::LightarchitectsNative(cfg) => {
             let resolved = resolve_binary(&cfg.binary);
             let mut c = tokio::process::Command::new(&resolved);
             c.env("PATH", augmented_path());
 
-            // ── Auth broker: inject credentials from webshell keychain ──
-            // Priority: keychain entry from setup/save → SDK credential registry → env fallback
+            // ── Auth broker: inject provider credentials ──
+            // Ollama Cloud (primary path) — pass-through from webshell process env.
+            // The gateway's `cli::skills::build_provider()` checks OLLAMA_API_KEY
+            // and selects Ollama as the LLM backend when set.
+            if let Ok(key) = std::env::var("OLLAMA_API_KEY") {
+                if !key.is_empty() {
+                    c.env("OLLAMA_API_KEY", &key);
+                }
+            }
+            // Anthropic (fallback) — keychain via existing helper.
             if let Some(key) = resolve_api_key_for_native() {
                 c.env("ANTHROPIC_API_KEY", &key);
             }
+            // Hint the gateway's `agent_stream::run_ndjson` setup to persist
+            // the Ollama key when present (gateway checks LA_INHERITED_BACKEND).
+            c.env("LA_INHERITED_BACKEND", "ollama");
+            // Operator-selected model (e.g. nemotron-3-super:cloud).
+            if let Some(model) = cfg.model.as_deref() {
+                c.env("LA_MODEL", model);
+            }
 
-            c.arg("run").arg("--yes").arg("--no-splash");
+            c.arg("--stream-events");
             if session.cwd.is_dir() {
                 c.arg("--cwd").arg(&session.cwd);
             }
@@ -1097,11 +1180,10 @@ pub(super) async fn call_subprocess(
         .as_mut()
         .ok_or_else(|| "copilot process unavailable".to_owned())?;
 
-    // Wrap prompt in a structured envelope (§2.1 LLM01 — structural isolation).
-    // The CLI's parse_stdin_prompt helper strips this envelope before forwarding
-    // to the LLM, ensuring operator text never lands verbatim in the system-prompt
-    // namespace.
-    let envelope = json!({"type": "prompt", "text": message});
+    // Wrap prompt as the gateway's `send_message` NDJSON action.
+    // Gateway dispatches via `agent_stream::run_ndjson` (`mod.rs:332-348`).
+    // The "text" field is required; empty text is silently no-op'd by the gateway.
+    let envelope = json!({"action": "send_message", "text": message});
     let envelope_str = envelope.to_string();
     let msg_bytes = [envelope_str.as_bytes(), b"\n"].concat();
     {

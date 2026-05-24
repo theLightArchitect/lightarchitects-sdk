@@ -100,6 +100,18 @@ Code sessions running `cargo test` in `lightarchitects-gateway/` simultaneously 
 indefinitely — they do NOT fail fast. Check before running: `lsof target/.cargo-lock 2>/dev/null`.
 Recovery: `pkill -9 -f "cargo test"` across all open windows before starting a fresh run.
 
+**`current_exe()` resolves to the test runner in integration test crates** — any function that
+calls `std::env::current_exe()` (e.g., `run_skill_tool()`) will resolve to
+`target/debug/deps/<test_crate>-*`, not the gateway binary, breaking E2E subprocess dispatch.
+Fix: check `LIGHTARCHITECTS_BIN` env var before `current_exe()`:
+```rust
+let bin = std::env::var("LIGHTARCHITECTS_BIN")
+    .map(std::path::PathBuf::from)
+    .unwrap_or_else(|_| std::env::current_exe().expect("current_exe"));
+```
+Set `LIGHTARCHITECTS_BIN` to `target/release/lightarchitects` (or the built binary) in the E2E
+test fixture. This was the V3 E2E gap in vibe-coding-loop, closed by commit b8e546b.
+
 ---
 
 ## Feature Flags (`lightarchitects`)
