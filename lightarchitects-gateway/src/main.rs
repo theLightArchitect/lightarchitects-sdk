@@ -578,6 +578,15 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
         .or_else(|_| std::env::var("USER"))
         .unwrap_or_else(|_| "local".to_owned());
 
+    let embedding_backend =
+        std::env::var("LA_EMBEDDING_BACKEND").unwrap_or_else(|_| "fastembed".to_owned());
+    let embedding_model =
+        std::env::var("LA_EMBEDDING_MODEL").unwrap_or_else(|_| "BGESmallENV15".to_owned());
+    let embedding_dim: usize = std::env::var("LA_EMBEDDING_DIM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(384);
+
     let config = PlatformConfig {
         port,
         neo4j_uri: uri.clone(),
@@ -585,6 +594,9 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
         api_version: "v1",
         user_id,
         identity_scope_policy: IdentityScopePolicy::AllowAuthenticated,
+        embedding_backend,
+        embedding_model,
+        embedding_dim,
         ..PlatformConfig::default()
     };
 
@@ -642,6 +654,12 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
                 std::process::exit(1);
             }
         };
+    tracing::info!(
+        backend = %config.embedding_backend,
+        model   = %config.embedding_model,
+        dim     = config.embedding_dim,
+        "Embedding provider initialised — dimension lock confirmed"
+    );
 
     let state = std::sync::Arc::new(PlatformState {
         graph,
