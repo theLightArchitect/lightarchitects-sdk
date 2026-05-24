@@ -22,7 +22,7 @@ use lightarchitects_gateway::providers::GatewayToolExecutor;
 // ── Operator-wins turn boundary ───────────────────────────────────────────────
 
 /// After `mark_operator_invoked`, `clear_operator_invocations` fully resets
-/// the registry so the NEXT turn can dispatch via tool_use again.
+/// the registry so the NEXT turn can dispatch via `tool_use` again.
 ///
 /// This models the turn lifecycle: each new LLM turn starts clean.
 #[test]
@@ -51,7 +51,7 @@ fn operator_wins_clears_per_turn_boundary() {
 /// Slugs are stored case-insensitively.
 ///
 /// The operator may type `/PLAN` or `/plan` — both must collide with a
-/// tool_use `name: "plan"` (which Anthropic normalises to lowercase).
+/// `tool_use` `name: "plan"` (which Anthropic normalises to lowercase).
 #[test]
 fn operator_wins_slug_is_case_insensitive() {
     let config = lightarchitects_gateway::config::GatewayConfig::default();
@@ -68,7 +68,7 @@ fn operator_wins_slug_is_case_insensitive() {
 
 /// Multiple concurrent operators can each claim a different skill.
 ///
-/// The HashSet must not conflate different slugs.
+/// The `HashSet` must not conflate different slugs.
 #[test]
 fn operator_wins_distinct_slugs_are_independent() {
     let config = lightarchitects_gateway::config::GatewayConfig::default();

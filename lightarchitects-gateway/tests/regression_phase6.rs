@@ -12,7 +12,7 @@
 //!        pattern (`any()` + `find().expect()`) could panic. Now uses `let-else`.
 //!        Verified by operator registry cycle never panicking.
 //!
-//! R6-3: `#[allow(clippy::expect_used)]` on `SECRET_PATTERNS` LazyLock —
+//! R6-3: `#[allow(clippy::expect_used)]` on `SECRET_PATTERNS` `LazyLock` —
 //!        compile-time-validated regex patterns. Verified by module init.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -21,7 +21,7 @@
 
 /// Ledger saved by `verify_or_pin` round-trips correctly.
 ///
-/// Regression: `write!` with `\n` replaced by `writeln!` (clippy::write_with_newline).
+/// Regression: `write!` with `\n` replaced by `writeln!` (`clippy::write_with_newline`).
 /// If the save format were broken, the TOML parser would mis-read the `[pins]`
 /// table and a subsequent `verify_or_pin` call would re-pin (not match), which
 /// means it would also return `Ok` but then FAIL on a third call with the original

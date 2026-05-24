@@ -21,11 +21,11 @@ use proptest::prelude::*;
 /// Derive a stable ledger slug from content for property tests.
 /// Uses the first 10 ASCII-printable characters from the content, uppercased,
 /// prefixed with "PT_" to namespace away from production entries.
-/// Falls back to "PT_FALLBACK" for empty or all-non-ASCII content.
+/// Falls back to `"PT_FALLBACK"` for empty or all-non-ASCII content.
 fn slug_for(content: &str) -> String {
     let ascii_part: String = content
         .chars()
-        .filter(|c| c.is_ascii_alphabetic())
+        .filter(char::is_ascii_alphabetic)
         .take(8)
         .collect::<String>()
         .to_uppercase();
