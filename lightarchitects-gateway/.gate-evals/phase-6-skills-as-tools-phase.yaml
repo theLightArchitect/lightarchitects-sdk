@@ -1,0 +1,58 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-24T04:06:09Z"
+build_id: vibe-coding-loop
+phase_id: phase-6-skills-as-tools
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 446
+    tests_fail: 0
+    notes: >
+      1 test marked ignored (pre-existing timing flake in session_memory,
+      documented in phase-5 gate eval — not a regression introduced by phase-6).
+  Q4_svelte: "n/a"
+  S1_security:
+    result: pass
+    findings:
+      - id: W6.1-trust-gate
+        severity: LOW
+        description: >
+          SkillTrustLedger SHA-256 pin path uses HOME env var fallback to ".".
+          Acceptable for current threat model; no writable attacker path in dev env.
+        resolution: noted
+  S2_supply_chain: "n/a"
+  S3_laex: "n/a"
+  I1_rebase: "n/a"
+  N1_northstar:
+    result: pass
+    pillar: "P1+P2+P3"
+  N2_chain: pass
+  D1_docs: pass
+  D2_plan: pass
+  V1_pyramid: pass
+  V2_smoke: pass
+  V3_e2e: "n/a"
+
+commits:
+  - sha: 34f27d0
+    description: "W6.1 SkillTrustLedger — SHA-256 hash pinning for SKILL.md tamper detection"
+  - sha: 8c60cfa
+    description: "W6.2 skills-as-tools — run_skill_tool() subprocess dispatch via current_exe()"
+  - sha: "081e2de"
+    description: "W6.3 operator-wins invariant — operator_active registry + mark/clear/check"
+  - sha: 7225169
+    description: "/GATE-6 clippy remediation — 11 pedantic fixes across 4 files"
+
+remediation_notes: >
+  11 clippy pedantic findings fixed in-gate (7225169): expect_used on LazyLock regex statics
+  (allow annotation, compile-time validated), too_many_lines on run_interactive_with_strategies
+  (allow annotation, natural function boundary), missing backticks in doc comments (2 sites),
+  writeln! vs write! with \n (skill_trust save()), missing # Errors section on verify_or_pin,
+  let-else replacing expect() in skill routing arm.
+  All classified as MEDIUM per §14.3 two-tier taxonomy — no plan body fold required.
