@@ -1,6 +1,7 @@
 //! Shared state for the Platform HTTP server.
 
 use governor::{RateLimiter, clock::DefaultClock, state::keyed::DefaultKeyedStateStore};
+use lightarchitects::helix::{EmbeddingProvider, HelixCache, HelixDb};
 use secrecy::SecretBox;
 use serde_json::Value;
 use std::net::IpAddr;
@@ -69,6 +70,22 @@ pub struct PlatformState {
     /// When `Some`, requests without a valid `Authorization: Bearer <token>` header
     /// receive HTTP 401.
     pub read_token: Option<SecretBox<String>>,
+    /// Helix-domain database accessor — used by `CachedRetriever` in retrieve handlers.
+    ///
+    /// Separate from `graph` (raw `neo4rs::Graph`) so helix operations use the
+    /// typed `HelixDb` interface with allowlist enforcement.
+    /// `HelixDb: Send + Sync` (supertrait) so `Arc<dyn>` is thread-safe.
+    pub helix_db: Arc<dyn HelixDb>,
+    /// `TinyLFU` byte-weight cache for helix retrieve results.
+    ///
+    /// Shared across all helix retrieve handlers. Hit ratio flows to the
+    /// `soul.helix.retrieve` AYIN span via `CachedRetriever`.
+    pub helix_cache: HelixCache,
+    /// Embedding provider — used by `CachedRetriever` on cache miss.
+    ///
+    /// Backend selected from `PlatformConfig::embedding_backend` at startup.
+    /// `EmbeddingProvider: Send + Sync` (supertrait) so `Arc<dyn>` is thread-safe.
+    pub embedding_provider: Arc<dyn EmbeddingProvider>,
 }
 
 /// Configuration for the platform HTTP server.
@@ -86,6 +103,16 @@ pub struct PlatformConfig {
     pub user_id: String,
     /// Identity scope policy for unauthenticated requests.
     pub identity_scope_policy: IdentityScopePolicy,
+    /// Max in-memory bytes for the helix retrieve `TinyLFU` cache (default 64 MiB).
+    pub helix_cache_max_capacity_bytes: u64,
+    /// TTL in seconds for helix cache entries (default 300 s = 5 min).
+    pub helix_cache_ttl_secs: u64,
+    /// Embedding backend: `"fastembed"` | `"ollama"` | `"mock"` (default `"fastembed"`).
+    pub embedding_backend: String,
+    /// Embedding model tag interpreted by the chosen backend (default `"BGESmallENV15"`).
+    pub embedding_model: String,
+    /// Expected embedding dimensionality — validated against the backend at startup.
+    pub embedding_dim: usize,
 }
 
 impl Default for PlatformConfig {
@@ -97,6 +124,11 @@ impl Default for PlatformConfig {
             api_version: "v1",
             user_id: "local".to_owned(),
             identity_scope_policy: IdentityScopePolicy::AllowAuthenticated,
+            helix_cache_max_capacity_bytes: 67_108_864, // 64 MiB
+            helix_cache_ttl_secs: 300,
+            embedding_backend: "fastembed".to_owned(),
+            embedding_model: "BGESmallENV15".to_owned(),
+            embedding_dim: 384,
         }
     }
 }

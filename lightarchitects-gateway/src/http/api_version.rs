@@ -30,10 +30,10 @@ pub const API_VERSION_DATE: &str = "2026-05-10";
 ///
 /// Update via `cargo test -p lightarchitects-gateway --test api_version_test -- --nocapture`.
 /// Any PR that changes this constant is a BREAKING CHANGE and requires changelog entry.
-pub const API_VERSION_HASH: &str = "2ce8dae12af41c12";
+pub const API_VERSION_HASH: &str = "c05c8e100bca0920";
 
 /// Number of route signatures included in the fingerprint (admin + platform combined).
-pub const CONTRACT_SURFACE_COUNT: usize = 23;
+pub const CONTRACT_SURFACE_COUNT: usize = 25;
 
 /// Compute a deterministic fingerprint of the admin + platform API contract surface.
 ///
@@ -53,13 +53,14 @@ pub fn compute_api_version_hash() -> String {
         "POST /v1/admin/standards/upload",
     ];
 
-    // Platform read surface (16 routes — includes /v1/version and POST helix/search).
+    // Platform read surface (18 routes — includes /v1/version, POST helix/search, helix retrieve + cache stats).
     let platform_routes = [
         "GET /v1/identity",
         "GET /v1/platform/agents/{sibling}",
         "GET /v1/platform/agents/{sibling}/strands",
         "GET /v1/platform/canon/{name}",
         "GET /v1/platform/health",
+        "GET /v1/platform/helix/cache/stats",
         "GET /v1/platform/helix/query",
         "GET /v1/platform/helix/search",
         "GET /v1/platform/helix/stream",
@@ -70,6 +71,7 @@ pub fn compute_api_version_hash() -> String {
         "GET /v1/platform/standards/{name}",
         "GET /v1/vault/info",
         "GET /v1/version",
+        "POST /v1/platform/helix/retrieve",
         "POST /v1/platform/helix/search",
     ];
 
