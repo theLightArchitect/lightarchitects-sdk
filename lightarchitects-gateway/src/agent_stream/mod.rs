@@ -382,6 +382,7 @@ pub async fn run_ndjson_with_strategies(
 /// # Errors
 ///
 /// Returns an error if the LLM client cannot be initialised from environment.
+#[allow(clippy::too_many_lines)]
 pub async fn run_interactive_with_strategies(
     cwd: &Path,
     config: &GatewayConfig,

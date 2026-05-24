@@ -313,12 +313,11 @@ impl ToolExecutor for GatewayToolExecutor {
                     );
                     return Err(ToolError::SupersededByOperatorAction);
                 }
-                // SAFETY: the `any()` guard above ensures a matching entry exists.
-                let skill = self
-                    .skills
-                    .iter()
-                    .find(|s| s.slug.to_lowercase() == name)
-                    .expect("matching skill exists — checked above");
+                // The `any()` guard ensures a matching entry exists; this branch
+                // is unreachable in practice but satisfies the non-panicking contract.
+                let Some(skill) = self.skills.iter().find(|s| s.slug.to_lowercase() == name) else {
+                    return Err(ToolError::UnknownTool(name.to_owned()));
+                };
                 return run_skill_tool(skill, input, &tool_use_id).await;
             }
             unknown => return Err(ToolError::UnknownTool(unknown.to_owned())),

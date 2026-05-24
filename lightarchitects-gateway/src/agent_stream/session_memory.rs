@@ -52,6 +52,7 @@ use lightarchitects::agent::conversation::memory::{ConversationMemory, MessageRo
 ///
 /// Applied before any turn content reaches disk. In-memory turns retain the
 /// original content so the agent's context is unaffected.
+#[allow(clippy::expect_used)] // Regex literals are compile-time-validated; failure is a programmer error.
 static SECRET_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
     vec![
         // Generic key/secret/token assignment: `api_key: sk-abc`, `TOKEN=xyz`, etc.

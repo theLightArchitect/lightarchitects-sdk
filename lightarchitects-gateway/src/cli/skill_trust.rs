@@ -1,4 +1,4 @@
-//! SKILL.md content hash pinning — SkillTrustLedger (W6.1).
+//! SKILL.md content hash pinning — `SkillTrustLedger` (W6.1).
 //!
 //! Prevents silent SKILL.md tampering. On first load the content hash is
 //! pinned to `~/.lightarchitects/skill-trust-ledger.toml`; on subsequent
@@ -99,7 +99,8 @@ impl Ledger {
         let mut sorted: Vec<(&String, &String)> = self.pins.iter().collect();
         sorted.sort_by_key(|(k, _)| k.as_str());
         for (slug, hash) in sorted {
-            out.push_str(&format!("\"{slug}\" = \"{hash}\"\n"));
+            use std::fmt::Write as _;
+            let _ = writeln!(out, "\"{slug}\" = \"{hash}\"");
         }
         let _ = std::fs::write(path, out);
     }
@@ -117,6 +118,11 @@ impl Ledger {
 ///
 /// All I/O failures are treated as non-fatal — the function logs at `debug`
 /// level and returns `Ok(())` so the session is never blocked by ledger I/O.
+///
+/// # Errors
+///
+/// Returns `Err` with a human-readable message if the pinned hash does not
+/// match the current content (potential tampering detected).
 pub fn verify_or_pin(slug: &str, content: &str) -> Result<(), String> {
     let actual = sha256_content(content);
     let mut ledger = Ledger::load();

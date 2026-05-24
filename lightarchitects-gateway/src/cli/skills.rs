@@ -222,6 +222,10 @@ pub struct SkillSpec {
     pub path: PathBuf,
     /// Whether this skill is user-invocable (`user-invocable: true` in frontmatter).
     pub user_invocable: bool,
+    /// Optional JSON Schema for the `tool_use` input when this skill is exposed as an
+    /// LLM tool. Parsed from `tool_schema:` in the SKILL.md frontmatter. When absent
+    /// the default schema `{args: string[]}` is used by `GatewayToolExecutor`.
+    pub tool_schema: Option<serde_json::Value>,
 }
 
 /// How a skill should be dispatched from the CLI.
@@ -261,13 +265,15 @@ fn skill_search_paths(slug: &str) -> Vec<PathBuf> {
     vec![cache_path, dev_path]
 }
 
-/// Parse `name:`, `description:`, and `user-invocable:` from SKILL.md frontmatter.
+/// Parse `name:`, `description:`, `user-invocable:`, and `tool_schema:` from SKILL.md frontmatter.
 ///
 /// Frontmatter is delimited by `---` lines; parsing stops at the closing `---`.
-fn parse_frontmatter(content: &str) -> (String, String, bool) {
+/// `tool_schema:` must be a single-line JSON value (e.g. an inlined object).
+fn parse_frontmatter(content: &str) -> (String, String, bool, Option<serde_json::Value>) {
     let mut name = String::new();
     let mut description = String::new();
     let mut user_invocable = false;
+    let mut tool_schema: Option<serde_json::Value> = None;
     let mut fm_open = false;
     let mut fm_done = false;
 
@@ -290,10 +296,12 @@ fn parse_frontmatter(content: &str) -> (String, String, bool) {
                 rest.trim().trim_matches('"').clone_into(&mut description);
             } else if let Some(rest) = line.strip_prefix("user-invocable:") {
                 user_invocable = rest.trim() == "true";
+            } else if let Some(rest) = line.strip_prefix("tool_schema:") {
+                tool_schema = serde_json::from_str(rest.trim()).ok();
             }
         }
     }
-    (name, description, user_invocable)
+    (name, description, user_invocable, tool_schema)
 }
 
 /// Load a skill by name/slug (case-insensitive). Returns `None` if not found.
@@ -308,7 +316,7 @@ pub fn load(slug: &str) -> Option<SkillSpec> {
         if let Ok(content) = std::fs::read_to_string(&path) {
             // Trust ledger: pin on first load; warn on hash mismatch.
             let _ = crate::cli::skill_trust::verify_or_pin(&upper, &content);
-            let (name, description, user_invocable) = parse_frontmatter(&content);
+            let (name, description, user_invocable, tool_schema) = parse_frontmatter(&content);
             return Some(SkillSpec {
                 name: if name.is_empty() { upper.clone() } else { name },
                 description,
@@ -316,6 +324,7 @@ pub fn load(slug: &str) -> Option<SkillSpec> {
                 content,
                 path,
                 user_invocable,
+                tool_schema,
             });
         }
     }
@@ -363,7 +372,7 @@ pub fn list_all() -> Vec<SkillSpec> {
             }
             let skill_md = entry.path().join("SKILL.md");
             if let Ok(content) = std::fs::read_to_string(&skill_md) {
-                let (name, description, user_invocable) = parse_frontmatter(&content);
+                let (name, description, user_invocable, tool_schema) = parse_frontmatter(&content);
                 if user_invocable {
                     specs.push(SkillSpec {
                         name: if name.is_empty() { slug.clone() } else { name },
@@ -372,6 +381,7 @@ pub fn list_all() -> Vec<SkillSpec> {
                         content,
                         path: skill_md,
                         user_invocable: true,
+                        tool_schema,
                     });
                 }
             }
