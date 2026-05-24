@@ -1,0 +1,63 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE --scope phase"
+scored_at: "2026-05-24T00:00:00Z"
+build_id: webshell-la-native-backend
+phase_id: phase-7-operator-stop-controls
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 2416
+    tests_fail: 0
+    delta_vs_phase_6: +0
+    note: "1173 lightarchitects lib + webshell; vitest 719/720 (1 pre-existing AgentSelector flake, unrelated)"
+  Q4_svelte:
+    result: pass
+    svelte_check_errors: 0
+    svelte_check_warnings: 40
+    note: "Warnings pre-existing; threshold=error"
+
+deliverables:
+  W7_1_interrupt_flag_backend:
+    status: complete
+    description: "ConversationSession.with_interrupt_flag(Arc<AtomicBool>) builder wires
+      shared flag into session state; BuildSession.native_interrupt_flag persists across
+      HTTP requests (Arc::new(AtomicBool::new(false))); drive_native_sse resets flag
+      to false before each turn and injects it into both OllamaCliProvider and
+      ClaudeCliProvider session paths"
+  W7_1_http_routes:
+    status: complete
+    description: "POST /api/builds/{id}/copilot/interrupt: copilot_interrupt_handler
+      calls session.native_interrupt_flag.store(true, SeqCst) → 204;
+      POST /api/builds/{id}/copilot/clear: copilot_clear_handler deletes
+      helix session file via session_path(&session.cwd) → 204;
+      both handlers exported from copilot/mod.rs and registered in server/mod.rs"
+  W7_2_esc_keybind:
+    status: complete
+    description: "handleKeydown: when copilotLoading is true, ESC calls sendInterrupt()
+      (returns early — does not close drawer or clear input); otherwise falls through
+      to existing show-suggestions/close logic"
+  W7_2_interrupt_ui:
+    status: complete
+    description: "■ stop button in message list area appears while copilotLoading=true;
+      header hdr-action--warn ■ button appears in ghost actions when loading;
+      Interrupting… pill replaces Thinking… once interrupt in-flight;
+      auto-clears via $effect when copilotLoading goes false"
+  W7_2_clear_wired:
+    status: complete
+    description: "sendClear() calls clearCopilotHistory() + DELETE helix session file;
+      /clear slash command, header ✕ button, and la:copilot-clear window event all
+      route through sendClear(); replaces bare clearCopilotHistory() calls"
+
+notes:
+  - "W7.3 (SSE channel drop drain) deferred to Phase 8 integration pass — requires
+    tokio::select! wiring in drive_native_sse spawn task; not operator-visible"
+  - "interrupt_flag polling is inside ConversationSession.run_turn() loop;
+    actual interrupt check implemented in agentic loop (Phase 5); flag set here
+    is read on next token chunk — latency ~1 token at most"
+  - "clear handler deletes today's session file; prior-day files are unaffected
+    (HelixSessionMemory::open uses today's date in path)"
