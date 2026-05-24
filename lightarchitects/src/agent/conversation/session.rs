@@ -168,6 +168,24 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
         self
     }
 
+    /// Inject a shared interrupt flag so an external caller (e.g. an HTTP route
+    /// handler) can cancel a turn running in another task without owning the session.
+    ///
+    /// The flag REPLACES the default flag created by [`SessionState::default`].
+    /// The caller retains its own `Arc` clone and calls `store(true, SeqCst)` to
+    /// signal cancellation.
+    #[must_use]
+    pub fn with_interrupt_flag(mut self, flag: Arc<AtomicBool>) -> Self {
+        self.state.interrupt_flag = flag;
+        self
+    }
+
+    /// Return a clone of the interrupt flag so the caller can signal cancellation.
+    #[must_use]
+    pub fn interrupt_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.state.interrupt_flag)
+    }
+
     /// Signal the in-flight turn to stop at the next iteration boundary.
     pub fn interrupt(&self) {
         self.state.interrupt_flag.store(true, Ordering::SeqCst);

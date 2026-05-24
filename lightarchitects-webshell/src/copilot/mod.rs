@@ -16,7 +16,7 @@ pub mod routes;
 pub mod soul_grounding;
 pub mod voice;
 pub use event_stream::copilot_event_stream_handler;
-pub use routes::copilot_chat_handler;
+pub use routes::{copilot_chat_handler, copilot_clear_handler, copilot_interrupt_handler};
 pub use voice::copilot_voice_handler;
 
 use secrecy::{ExposeSecret, SecretString};

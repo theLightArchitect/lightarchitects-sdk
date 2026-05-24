@@ -19,7 +19,7 @@
 
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex as StdMutex},
+    sync::{Arc, Mutex as StdMutex, atomic::AtomicBool},
 };
 
 use dashmap::DashMap;
@@ -78,6 +78,17 @@ pub struct BuildSession {
     /// The tokio mutex serializes turns and keeps the process alive between HTTP
     /// requests. Dropped with the session → SIGKILL via `kill_on_drop(true)`.
     pub copilot_proc: tokio::sync::Mutex<Option<CopilotProcess>>,
+
+    /// Shared interrupt flag for native (`LightarchitectsNative`) sessions.
+    ///
+    /// `POST /api/builds/:id/interrupt` sets this to `true`; the running
+    /// [`ConversationSession`] checks it at every iteration boundary and
+    /// returns [`SessionError::Interrupted`] when set.
+    ///
+    /// Injected into each `ConversationSession` via `with_interrupt_flag()` so
+    /// the flag survives across HTTP requests (a new `ConversationSession` is
+    /// created per turn, but they all share this `Arc`).
+    pub native_interrupt_flag: Arc<AtomicBool>,
 
     // ── Persistent PTY fields (populated on first WS connect) ──────────────
     /// Broadcast channel for raw PTY stdout bytes.
@@ -151,6 +162,7 @@ impl BuildSession {
             event_tx,
             child_killer: StdMutex::new(None),
             copilot_proc: tokio::sync::Mutex::new(None),
+            native_interrupt_flag: Arc::new(AtomicBool::new(false)),
             pty_output_tx,
             pty_input_tx: tokio::sync::Mutex::new(None),
             pty_master: StdMutex::new(None),

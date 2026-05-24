@@ -1,6 +1,9 @@
 //! HTTP route handler for `POST /api/builds/:id/copilot`.
 
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use axum::{
     Json,
@@ -107,7 +110,13 @@ pub async fn copilot_chat_handler(
         } else {
             Some(prelude)
         };
-        return drive_native_sse(&body.message, session.cwd.clone(), grounding_hdrs, system);
+        return drive_native_sse(
+            &body.message,
+            session.cwd.clone(),
+            grounding_hdrs,
+            system,
+            Arc::clone(&session.native_interrupt_flag),
+        );
     }
 
     let result = match &session.agent {
@@ -162,7 +171,11 @@ fn drive_native_sse(
     cwd: std::path::PathBuf,
     extra_headers: HeaderMap,
     system_prompt: Option<String>,
+    interrupt_flag: Arc<AtomicBool>,
 ) -> Response {
+    // Reset any prior interrupt before starting a new turn so the flag does
+    // not carry over from a previous cancelled request.
+    interrupt_flag.store(false, Ordering::SeqCst);
     let (write_half, read_half) = tokio::io::duplex(64 * 1024);
     let msg = grounded_message.to_owned();
 
@@ -216,13 +229,15 @@ fn drive_native_sse(
         let mut transport = SseTransport::new(write_half);
         let ctx = ChainContext::default();
         let result = if let Some(provider) = ollama_provider {
-            let mut session =
-                ConversationSession::new(config, Arc::new(provider)).with_memory(Box::new(memory));
+            let mut session = ConversationSession::new(config, Arc::new(provider))
+                .with_memory(Box::new(memory))
+                .with_interrupt_flag(Arc::clone(&interrupt_flag));
             session.run_turn(&msg, &mut transport, &ctx).await
         } else {
             let mut session =
                 ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()))
-                    .with_memory(Box::new(memory));
+                    .with_memory(Box::new(memory))
+                    .with_interrupt_flag(Arc::clone(&interrupt_flag));
             session.run_turn(&msg, &mut transport, &ctx).await
         };
         if let Err(e) = result {
@@ -422,6 +437,53 @@ fn emit_grounding_spans(
         }),
         None,
     ));
+}
+
+/// `POST /api/builds/:id/copilot/interrupt` — signal a running native turn to stop.
+///
+/// Sets the shared `native_interrupt_flag` on the build session. The running
+/// `ConversationSession` polls the flag after each chunk and returns early when
+/// it is set. Idempotent: safe to call when no turn is in flight.
+pub async fn copilot_interrupt_handler(
+    _: auth::AuthGuard,
+    Path(id): Path<Uuid>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let Some(session) = state.builds.get(id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "build_not_found" })),
+        )
+            .into_response();
+    };
+    session.native_interrupt_flag.store(true, Ordering::SeqCst);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// `POST /api/builds/:id/copilot/clear` — wipe the in-progress conversation memory.
+///
+/// Deletes today's helix session file for the build's `cwd`. The next turn
+/// will start with a blank context window. No-op if no file exists yet.
+pub async fn copilot_clear_handler(
+    _: auth::AuthGuard,
+    Path(id): Path<Uuid>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let Some(session) = state.builds.get(id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "build_not_found" })),
+        )
+            .into_response();
+    };
+    let path = lightarchitects::agent::conversation::helix_memory::session_path(&session.cwd);
+    if path.exists() {
+        if let Err(e) = std::fs::remove_file(&path) {
+            tracing::warn!(path = %path.display(), error = %e, "copilot_clear: failed to delete session file");
+        }
+    }
+    tracing::info!(build_id = %id, path = %path.display(), "copilot_clear: session memory wiped");
+    StatusCode::NO_CONTENT.into_response()
 }
 
 /// Phase 5 — integration tests: grounding pipeline assembly + graceful degradation.
