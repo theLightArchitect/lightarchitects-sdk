@@ -753,6 +753,7 @@ mod tests {
             chain_origin: None,
             chain_depth: 0,
             aud: None,
+            conversation_history: Vec::new(),
         }
         .sanitize()
         .unwrap();
@@ -867,6 +868,7 @@ mod tests {
             chain_origin: None,
             chain_depth: 0,
             aud: None,
+            conversation_history: Vec::new(),
         }
         .sanitize()
         .unwrap();
@@ -971,6 +973,7 @@ mod tests {
             chain_origin: None,
             chain_depth: 0,
             aud: None,
+            conversation_history: Vec::new(),
         }
         .sanitize()
         .unwrap();

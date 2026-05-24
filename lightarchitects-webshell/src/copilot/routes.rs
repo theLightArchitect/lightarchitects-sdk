@@ -13,6 +13,7 @@ use lightarchitects::agent::{
     ChainContext, ClaudeCliProvider, OllamaCliProvider,
     conversation::{
         ConversationEvent, ConversationSession, SessionConfig, SseTransport, Transport,
+        helix_memory::HelixSessionMemory,
     },
 };
 use serde_json::json;
@@ -180,6 +181,12 @@ fn drive_native_sse(
     };
     tracing::info!(provider = provider_name, model = %model, "drive_native_sse spawning turn");
     tokio::spawn(async move {
+        // Load up to 40 prior turns from the helix session file for this project.
+        // Falls back to ephemeral in-memory if the helix path is absent.
+        let memory = HelixSessionMemory::open(&cwd, 40);
+        let restored = memory.restored_turn_count();
+        tracing::debug!(restored_turns = restored, "helix session memory loaded");
+
         let config = SessionConfig {
             cwd,
             ..SessionConfig::default()
@@ -187,11 +194,13 @@ fn drive_native_sse(
         let mut transport = SseTransport::new(write_half);
         let ctx = ChainContext::default();
         let result = if let Some(provider) = ollama_provider {
-            let mut session = ConversationSession::new(config, Arc::new(provider));
+            let mut session =
+                ConversationSession::new(config, Arc::new(provider)).with_memory(Box::new(memory));
             session.run_turn(&msg, &mut transport, &ctx).await
         } else {
             let mut session =
-                ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()));
+                ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()))
+                    .with_memory(Box::new(memory));
             session.run_turn(&msg, &mut transport, &ctx).await
         };
         if let Err(e) = result {

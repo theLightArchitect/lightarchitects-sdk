@@ -204,6 +204,15 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
         // Pre-turn hooks.
         self.hooks.run_pre_turn(ctx).await;
 
+        // Snapshot history BEFORE pushing this turn (provider gets history + current user msg
+        // as separate fields so the current turn isn't duplicated in conversation_history).
+        let history: Vec<serde_json::Value> = self
+            .memory
+            .turns()
+            .iter()
+            .map(|t| serde_json::json!({"role": t.role.to_string(), "content": t.content}))
+            .collect();
+
         // Store user turn.
         self.memory.push(MessageRole::User, user_message.to_owned());
 
@@ -226,6 +235,7 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
             chain_origin: ctx.origin.clone(),
             chain_depth: ctx.depth,
             aud: ctx.aud.clone(),
+            conversation_history: history,
         };
 
         let sanitized = req.sanitize()?;

@@ -56,6 +56,13 @@ pub struct AgentRequest {
     pub chain_depth: u8,
     /// Audience claim — intended recipient of this request (Canon §2.6).
     pub aud: Option<String>,
+    /// Pre-assembled conversation history for multi-turn providers (Ollama Cloud).
+    ///
+    /// Each element is an Ollama-format `{"role":"user"|"assistant","content":"…"}` object.
+    /// Empty for single-turn providers; populated by [`ConversationSession::run_turn`] from
+    /// [`ConversationMemory`] **before** appending the current user message, which is always
+    /// carried separately in `user_prompt`.
+    pub conversation_history: Vec<serde_json::Value>,
 }
 
 impl AgentRequest {

@@ -234,8 +234,9 @@ impl LlmAgentProvider for OllamaCliProvider {
         let identity = req.safe_identity().to_owned();
         let client = self.client.clone();
         let base_url = self.base_url.clone();
-        // Phase 3 will prepend history turns here; for now single-message slice.
-        let msgs = vec![serde_json::json!({"role": "user", "content": prompt})];
+        // Build messages slice: history (if any) + current user turn.
+        let mut msgs = req.request().conversation_history.clone();
+        msgs.push(serde_json::json!({"role": "user", "content": prompt}));
         let system = if identity.is_empty() {
             None
         } else {
@@ -331,8 +332,8 @@ impl LlmAgentProvider for OllamaCliProvider {
 
 /// Build a `/v1/messages` (Anthropic-compat) request body for Ollama.
 ///
-/// `messages` is a pre-assembled slice of `{"role","content"}` objects — the
-/// caller is responsible for prepending history turns (Phase 3+).
+/// `messages` is a pre-assembled slice of `{"role","content"}` objects already
+/// containing history turns followed by the current user message.
 /// `tools` are serialized in Anthropic format: `{"name","description","input_schema"}`.
 fn build_v1_messages_body(
     model: &str,
@@ -961,5 +962,46 @@ mod tests {
         // Should produce TextDelta since done defaults to false.
         assert_eq!(events.len(), 1);
         assert!(matches!(&events[0], ProviderEvent::TextDelta { text, .. } if text == "hi"));
+    }
+
+    // ── W3.5: history prepending ──────────────────────────────────────────────
+
+    #[test]
+    fn history_prepended_in_api_chat_body() {
+        let history = vec![
+            json!({"role": "user", "content": "turn 1"}),
+            json!({"role": "assistant", "content": "response 1"}),
+        ];
+        let mut msgs = history.clone();
+        msgs.push(json!({"role": "user", "content": "turn 2"}));
+        let body = build_api_chat_body("m", &msgs, None, None);
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0]["content"], "turn 1");
+        assert_eq!(messages[1]["content"], "response 1");
+        assert_eq!(messages[2]["content"], "turn 2");
+    }
+
+    #[test]
+    fn history_prepended_in_v1_messages_body() {
+        let history = vec![
+            json!({"role": "user", "content": "q"}),
+            json!({"role": "assistant", "content": "a"}),
+        ];
+        let mut msgs = history.clone();
+        msgs.push(json!({"role": "user", "content": "follow-up"}));
+        let body = build_v1_messages_body("m", &msgs, None, None);
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[2]["content"], "follow-up");
+    }
+
+    #[test]
+    fn single_turn_no_history() {
+        let msgs = vec![json!({"role": "user", "content": "hello"})];
+        let body = build_api_chat_body("m", &msgs, None, None);
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], "user");
     }
 }

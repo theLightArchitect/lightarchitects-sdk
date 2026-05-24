@@ -6,6 +6,8 @@
 //! `lightarchitects-gateway/src/agent_stream/` for the DEPRECATED shim.
 
 pub mod event;
+#[cfg(feature = "agent-cli")]
+pub mod helix_memory;
 pub mod memory;
 pub mod session;
 pub mod transport;
