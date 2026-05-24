@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 203b12a8193118af45a28ceeaa486867675e6d39e5cedb68673123ff8c1a9e02 # shrinks to base = "/?\u{ac221}{\u{5f84a}\u{368e7}=🕴w=×𩣍\rH\u{dc0e3}\u{ba284}Y\"\"N/🕴\t{*\u{61b90}\"\u{12c2a}²𐪍K<.\u{109c09}'\u{5}\"{\\¦\u{bcae6};\u{d9320}\u{202e}¥\u{b}%/<&*�/\u{a9dc6}.\u{8bd56}\u{5636c}\u{c0d84}¥J\u{fdd26}\tL\u{1061d6}\u{feff}\u{202e}㩎'\u{8f}Y'ಆ.{`{0`ȺY?\u{cabc2}\u{1b}$\u{98}\u{7f}𫁷\u{a5d5d}鶃\u{10c075}'D\u{10eb79}:", suffix = "q2jm"
+cc 9f6843abc59899354484b679f0886faa18b4f547acbe856850598b3e44ccdc19 # shrinks to content = "\u{ba55c}`\u{ee3b0}*ç\0F`"

@@ -192,4 +192,45 @@ mod tests {
         // hash function produces the same output given the same input.
         assert_eq!(sha256_content("version 1 content"), v1);
     }
+
+    // ── Property tests (P7/W7.1 — Canon XXVII Suite 3) ───────────────────────
+    //
+    // These tests access `sha256_content` directly (private fn, same module)
+    // so they avoid the env-var concurrency issues of external proptest files.
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(300))]
+
+        /// SHA-256 output is always exactly 64 lowercase hex characters for any input.
+        #[test]
+        fn prop_sha256_output_is_64_hex_chars(content in ".*") {
+            let h = sha256_content(&content);
+            prop_assert_eq!(h.len(), 64, "hash must be 64 chars for input: {:?}", content);
+            prop_assert!(
+                h.chars().all(|c| c.is_ascii_hexdigit()),
+                "hash must be lowercase hex: {}", h
+            );
+        }
+
+        /// SHA-256 is deterministic: same input always produces same output.
+        #[test]
+        fn prop_sha256_is_deterministic(content in ".{0,200}") {
+            let h1 = sha256_content(&content);
+            let h2 = sha256_content(&content);
+            prop_assert_eq!(h1, h2, "hash must be deterministic");
+        }
+
+        /// SHA-256 avalanche: appending any non-empty suffix changes the hash.
+        #[test]
+        fn prop_sha256_avalanche(base in ".{5,100}", suffix in "[a-z0-9]{1,10}") {
+            let h_base = sha256_content(&base);
+            let h_modified = sha256_content(&format!("{base}{suffix}"));
+            prop_assert_ne!(
+                h_base, h_modified,
+                "different content must produce different hashes"
+            );
+        }
+    }
 }

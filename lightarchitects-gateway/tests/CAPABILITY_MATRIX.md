@@ -4,7 +4,7 @@ Maps every test file to production capabilities. If every test in a capability b
 
 ---
 
-## Capabilities (12)
+## Capabilities (13)
 
 | ID | Capability | Definition |
 |---|---|---|
@@ -20,6 +20,7 @@ Maps every test file to production capabilities. If every test in a capability b
 | J | **MCP Mesh** | Sibling spawn, reconnect, health, custom binary validation |
 | K | **State Machine / Task Queue** | Dependency DAG, cycle detection, cascade failure, scheduler |
 | L | **Output Grading** | Rubric application, score persistence, calibration drift detection |
+| M | **Skills-as-Tools** | Operator-wins invariant, turn-boundary lifecycle, SKILL.md content hash pinning, tamper detection via trust ledger |
 
 ---
 
@@ -33,6 +34,11 @@ Maps every test file to production capabilities. If every test in a capability b
 | `tests/vault_cli_tests.rs` | C, I | Vault clone, validate-for-push, sync-public, wikilink scanning |
 | `src/rubric.rs` (unit tests) | L | Score band boundaries, aggregate computation, component clamping, persistence roundtrip |
 | `src/conversational.rs` (unit tests) | H | Brainstorm, plan extraction, empty session, budget, monotonicity |
+| `tests/skills_as_tools_integration.rs` | M | Operator-wins turn boundary lifecycle; trust ledger pin+verify (Canon XXVII Suite 2) |
+| `tests/property_skill_trust.rs` | M | Public `verify_or_pin` API: first-call-ok and determinism properties (Canon XXVII Suite 3) |
+| `tests/regression_phase6.rs` | M | R6-1 writeln! ledger round-trip; R6-2 let-else no-panic; R6-3 LazyLock regex init (Canon XXVII Suite 5) |
+| `tests/smoke.rs` (Phase 6 additions) | M | `GatewayToolExecutor` construction; `verify_or_pin` smoke with stable slug (Canon XXVII Suite 6) |
+| `src/cli/skill_trust.rs` (unit + proptest) | M | `sha256_content` 64-hex-chars, determinism, avalanche; ledger round-trip; tamper detection (Canon XXVII Suite 1) |
 
 ---
 
@@ -49,6 +55,7 @@ Maps every test file to production capabilities. If every test in a capability b
 | I | Security boundary integration tests (injection, path traversal, HMAC) | MEDIUM |
 | K | State machine / task queue (scheduler, cascade failure) | MEDIUM |
 | L | Calibration drift detection — `RubricStore` query exists but no integration test | LOW |
+| M | `run_skill_tool()` subprocess dispatch — requires real gateway binary at `current_exe()`; in test harness `current_exe` resolves to the test runner, not the gateway binary. **Deferred to CI binary integration suite** (HIGH priority). | HIGH |
 
 ---
 
