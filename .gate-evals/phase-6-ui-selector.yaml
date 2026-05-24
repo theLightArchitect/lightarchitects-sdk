@@ -1,0 +1,52 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE --scope phase"
+scored_at: "2026-05-24T00:00:00Z"
+build_id: webshell-la-native-backend
+phase_id: phase-6-ui-selector
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 2416
+    tests_fail: 0
+    delta_vs_phase_5: +0
+    note: "Rust tests unchanged; vitest 719/720 (1 pre-existing AgentSelector flake, unrelated)"
+  Q4_svelte:
+    result: pass
+    svelte_check_errors: 0
+    svelte_check_warnings: 40
+    note: "Warnings pre-existing; threshold=error"
+
+deliverables:
+  W6_1_backend_step_card:
+    status: complete
+    description: "LA Native card inserted in BackendStep.svelte backends array between
+      ollama-cloud and openrouter: id='la-native', agent='lightarchitects_native',
+      label='LA Native', authKey='la_native', authField='has_api_key',
+      authBadge='OLLAMA_API_KEY ✓', polytopeType=icositetrachoron, comingSoon=false"
+  W6_2_ollama_api_key_probe:
+    status: complete
+    description: "LaNativeAuthStatus { has_api_key: bool } struct added to handlers.rs;
+      detect_la_native_auth() probes OLLAMA_API_KEY env var; AuthStatus.la_native field
+      added to GET /api/setup/info response; LaNativeAuthStatus interface added to setup.ts"
+  W6_3_save_route_reuse:
+    status: complete
+    description: "No new routes — POST /api/setup/save already maps AgentKind::LightarchitectsNative
+      per handlers.rs:496-502; GET /api/setup/models already returns CLOUD_MODEL_REGISTRY
+      for lightarchitects_native backend per handlers.rs:640"
+  W6_4_playwright_test:
+    status: complete
+    description: "e2e/la-native-backend.spec.ts: 4 tests covering card visibility, badge
+      display on OLLAMA_API_KEY set, model list load, and setup/save agent field verification;
+      SETUP_INFO exported from fixtures.ts; la_native field added to fixture mock"
+
+notes:
+  - "AgentSelector.svelte.test.ts:30 pre-existing flake: cannot find 'Select at least one
+    agent above to dispatch.' — DOM text differs from locator; pre-dates Phase 6; not a
+    regression"
+  - "BackendStep.svelte getAuthBadge() requires no changes — new la_native authKey follows
+    the existing $authStatus[b.authKey][b.authField] lookup path"
