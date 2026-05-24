@@ -297,10 +297,17 @@ fn parse_frontmatter(content: &str) -> (String, String, bool) {
 }
 
 /// Load a skill by name/slug (case-insensitive). Returns `None` if not found.
+///
+/// On load the content is verified against the [`crate::cli::skill_trust`] ledger:
+/// the first load pins the hash; subsequent loads verify it. A hash mismatch
+/// emits `tracing::warn!` (non-blocking — the skill still loads so the session
+/// continues, but the operator is alerted).
 pub fn load(slug: &str) -> Option<SkillSpec> {
     let upper = slug.to_uppercase();
     for path in skill_search_paths(&upper) {
         if let Ok(content) = std::fs::read_to_string(&path) {
+            // Trust ledger: pin on first load; warn on hash mismatch.
+            let _ = crate::cli::skill_trust::verify_or_pin(&upper, &content);
             let (name, description, user_invocable) = parse_frontmatter(&content);
             return Some(SkillSpec {
                 name: if name.is_empty() { upper.clone() } else { name },
