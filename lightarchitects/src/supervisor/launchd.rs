@@ -387,6 +387,6 @@ pub use inner::{LaunchdError, PLIST_LABEL, install_plist, load, unload};
 #[cfg(target_os = "macos")]
 pub use inner::plist_template;
 
-// Non-macOS: empty module — compiles cleanly, nothing to export.
+/// Non-macOS stub — launchd is macOS-only; this module intentionally empty.
 #[cfg(not(target_os = "macos"))]
 pub mod _non_macos {}
