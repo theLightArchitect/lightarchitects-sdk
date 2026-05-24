@@ -6,6 +6,7 @@
 //! Error conversion maps [`GatewayError`] variants to typed [`ToolError`]s.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use lightarchitects::agent::{ToolDefinition, ToolError, ToolExecutor, ToolOutput};
@@ -13,23 +14,58 @@ use serde_json::{Value, json};
 
 use lightarchitects::agent::indirect_injection_shield::IndirectInjectionShield;
 
+use crate::cli::skills::SkillSpec;
 use crate::config::GatewayConfig;
 use crate::core_tools::{bash, edit, glob, read, search, write};
 use crate::error::GatewayError;
 
-/// Tool executor that dispatches LLM `tool_use` blocks to gateway core tools.
+/// Default JSON Schema used for skill tools that have no `tool_schema:` in frontmatter.
+fn default_skill_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "args": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Positional arguments to pass to the skill."
+            }
+        }
+    })
+}
+
+/// Tool executor that dispatches LLM `tool_use` blocks to gateway core tools
+/// and user-invocable skills.
 ///
-/// Holds a shared [`GatewayConfig`] and exposes six tools:
-/// `bash`, `read`, `write`, `edit`, `glob`, `search`.
+/// Holds a shared [`GatewayConfig`] and exposes:
+/// - Six core tools: `bash`, `read`, `write`, `edit`, `glob`, `search`.
+/// - One tool per user-invocable skill loaded at construction time.
 pub struct GatewayToolExecutor {
     config: Arc<GatewayConfig>,
+    /// Skills exposed as tools. Populated at construction time from the plugin cache.
+    skills: Vec<SkillSpec>,
 }
 
 impl GatewayToolExecutor {
-    /// Create a new executor backed by the given config.
+    /// Create a new executor backed by the given config, with no skill tools.
     #[must_use]
     pub fn new(config: Arc<GatewayConfig>) -> Self {
-        Self { config }
+        Self {
+            config,
+            skills: Vec::new(),
+        }
+    }
+
+    /// Create an executor with user-invocable skills loaded from the plugin cache.
+    ///
+    /// Skills that have a `tool_schema:` field in their SKILL.md frontmatter
+    /// expose that schema in their `ToolDefinition`; others use the default
+    /// `{args: string[]}` schema. The skill tool name is the lowercase slug.
+    #[must_use]
+    pub fn new_with_skills(config: Arc<GatewayConfig>) -> Self {
+        Self {
+            config,
+            skills: crate::cli::skills::list_all(),
+        }
     }
 }
 
@@ -90,7 +126,7 @@ fn shield_tool_result(tool_use_id: &str, tool_name: &str, v: Value) -> Value {
 #[async_trait]
 impl ToolExecutor for GatewayToolExecutor {
     fn tool_definitions(&self) -> Vec<ToolDefinition> {
-        vec![
+        let mut defs = vec![
             ToolDefinition {
                 name: "bash".to_owned(),
                 description: "Execute a shell command and return stdout + stderr. Non-zero exit codes are not errors — the exit code is embedded in the response.".to_owned(),
@@ -169,7 +205,26 @@ impl ToolExecutor for GatewayToolExecutor {
                     "required": ["pattern"]
                 }),
             },
-        ]
+        ];
+
+        // Append one ToolDefinition per user-invocable skill (W6.2).
+        for skill in &self.skills {
+            let schema = skill
+                .tool_schema
+                .clone()
+                .unwrap_or_else(default_skill_schema);
+            defs.push(ToolDefinition {
+                name: skill.slug.to_lowercase(),
+                description: if skill.description.is_empty() {
+                    format!("Invoke the {} skill.", skill.slug)
+                } else {
+                    skill.description.clone()
+                },
+                input_schema: schema,
+            });
+        }
+
+        defs
     }
 
     async fn execute(
@@ -206,6 +261,11 @@ impl ToolExecutor for GatewayToolExecutor {
             }
             "glob" => glob::run(input, &config).await,
             "search" => search::run(input, &config).await,
+            // Skill routing (W6.2): if tool_name matches a loaded skill slug
+            // (lowercase), run it via subprocess and return captured output.
+            name if self.skills.iter().any(|s| s.slug.to_lowercase() == name) => {
+                return run_skill_tool(tool_name, input, &tool_use_id).await;
+            }
             unknown => return Err(ToolError::UnknownTool(unknown.to_owned())),
         };
 
@@ -235,6 +295,49 @@ impl ToolExecutor for GatewayToolExecutor {
             }
         }
     }
+}
+
+/// Run a user-invocable skill as a subprocess and capture its output.
+///
+/// Spawns `<current_exe> skill <tool_name> [args...]`, captures stdout+stderr,
+/// and returns a `ToolOutput` so the LLM can read the result.
+async fn run_skill_tool(
+    tool_name: &str,
+    input: Value,
+    tool_use_id: &str,
+) -> Result<ToolOutput, ToolError> {
+    let mut cmd_args = vec!["skill".to_owned(), tool_name.to_owned()];
+    if let Some(extra) = input["args"].as_array() {
+        cmd_args.extend(
+            extra
+                .iter()
+                .filter_map(|v| v.as_str().map(ToOwned::to_owned)),
+        );
+    }
+
+    let exe = std::env::current_exe()
+        .map_err(|e| ToolError::Internal(format!("cannot locate gateway binary: {e}")))?;
+
+    let child = tokio::process::Command::new(&exe).args(&cmd_args).output();
+
+    let output = tokio::time::timeout(Duration::from_secs(120), child)
+        .await
+        .map_err(|_| ToolError::Internal(format!("skill `{tool_name}` timed out after 120s")))?
+        .map_err(|e| ToolError::Internal(format!("skill subprocess error: {e}")))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let text = if stderr.is_empty() {
+        stdout.into_owned()
+    } else {
+        format!("{stdout}{stderr}")
+    };
+
+    Ok(ToolOutput {
+        tool_use_id: tool_use_id.to_owned(),
+        content: json!({"content": [{"type": "text", "text": text}]}),
+        is_error: !output.status.success(),
+    })
 }
 
 #[cfg(test)]
