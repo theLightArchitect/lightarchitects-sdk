@@ -5,17 +5,58 @@
  * G2: CacheStatsPanel renders and shows entry-count stat (data-card-role present)
  * G3: Mode badge is absent before any query; panel shows "Submit a query" hint
  * G4: CacheStatsPanel shows error state when gateway is unreachable
+ * G5: Full E2E — RetrievalMetricsPanel submits a query to live gateway, shows results
+ * G6: Full E2E — CacheStatsPanel shows real entry_count from live gateway
  *
- * These are structural smoke tests — they validate DOM shape without requiring
- * a live Neo4j instance.  Integration path (real retrieve call) is covered by
- * the Rust integration tests in tests/helix_retrieve_test.rs.
+ * G1–G4 are structural smoke tests — no live Neo4j required.
+ * G5–G6 require the platform server running at localhost:8080 and Neo4j at 7687.
+ * G5–G6 use a Playwright proxy route to forward cross-origin SPA→gateway calls
+ * (the gateway CORS allowlist covers only localhost:5173 and localhost:8080).
  *
  * Run:
- *   PLAYWRIGHT_BASE_URL=http://localhost:5174 pnpm exec playwright test e2e/helix-retrieval.spec.ts
+ *   pnpm exec playwright test e2e/helix-retrieval.spec.ts
+ * Run fullstack only:
+ *   pnpm exec playwright test e2e/helix-retrieval.spec.ts --grep "G5|G6"
  */
 
 import { test, expect, type Page } from '@playwright/test';
 import { startServerPool, type ServerPool } from './fixtures/server';
+
+const PLATFORM_API = 'http://localhost:8080';
+
+/** Install a Node.js proxy for all /v1/platform/helix/* calls so the browser
+ *  can reach the gateway despite the cross-origin port difference. */
+async function installHelixProxy(page: Page) {
+  await page.route('**/v1/platform/helix/**', async (route) => {
+    const req = route.request();
+    const url = new URL(req.url());
+    const target = `${PLATFORM_API}${url.pathname}${url.search}`;
+    const rawHeaders = await req.allHeaders();
+    // Strip hop-by-hop headers that break the Node.js fetch
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(rawHeaders)) {
+      if (!['host', 'origin', 'referer', 'accept-encoding'].includes(k)) {
+        headers[k] = v;
+      }
+    }
+    try {
+      const reqBody = req.method() !== 'GET' && req.method() !== 'HEAD'
+        ? await req.postDataBuffer()
+        : undefined;
+      const resp = await fetch(target, {
+        method: req.method(),
+        headers,
+        body: reqBody ?? undefined,
+      });
+      const body = Buffer.from(await resp.arrayBuffer());
+      const respHeaders: Record<string, string> = {};
+      resp.headers.forEach((v, k) => { respHeaders[k] = v; });
+      await route.fulfill({ status: resp.status, headers: respHeaders, body });
+    } catch {
+      await route.fulfill({ status: 502, body: '{"error":"proxy_error"}' });
+    }
+  });
+}
 
 test.describe.configure({ mode: 'serial' });
 
@@ -150,5 +191,85 @@ test.describe('helix-retrieval panels', () => {
 
     // Should start in loading state (spinner present) before the delayed response resolves
     await expect(panel.locator('[data-testid="cs-loading"]')).toBeVisible({ timeout: 2_000 });
+  });
+
+  // ── G5: Full E2E — submit query, show live results ────────────────────────
+
+  test('G5: RetrievalMetricsPanel submits query to live gateway and shows results', async ({ page }) => {
+    // Skip if platform server not reachable
+    try {
+      const probe = await fetch(`${PLATFORM_API}/v1/platform/helix/cache/stats`);
+      if (!probe.ok && probe.status !== 401) { test.skip(); return; }
+    } catch { test.skip(); return; }
+
+    await installHelixProxy(page);
+    await goto(page, '/');
+
+    const editBtn = page.locator('[data-testid="edit-mode-btn"]');
+    if (await editBtn.count() > 0) { await editBtn.click(); await page.waitForTimeout(300); }
+
+    const catalogBtn = page.locator('[data-testid="catalog-add-helix-retrieve"]');
+    if (await catalogBtn.count() > 0 && !(await catalogBtn.isDisabled())) {
+      await catalogBtn.click(); await page.waitForTimeout(400);
+    }
+    const closeBtn = page.locator('[data-testid="catalog-close-btn"]');
+    if (await closeBtn.count() > 0) await closeBtn.click();
+
+    const panel = page.locator('[data-testid="retrieval-metrics-panel"]').first();
+    await expect(panel).toBeAttached({ timeout: 5_000 });
+
+    // Empty state: no mode badge, submit hint visible
+    await expect(panel.locator('[data-testid="rm-mode-badge"]')).not.toBeVisible();
+    await expect(panel.locator('[data-testid="rm-empty"]')).toBeVisible();
+
+    // Submit a query via the button click (more reliable than requestSubmit)
+    await panel.locator('[data-testid="rm-query-input"]').fill('canon architecture');
+    await panel.locator('button[aria-label="Search"]').first().click();
+
+    // Wait for terminal state: rm-stats (success) or rm-error (failure).
+    // We skip asserting the loading indicator — with a warm TinyLFU cache the
+    // response arrives in <10ms and the loading div may flash faster than the
+    // 100ms Playwright poll interval.
+    await expect(
+      panel.locator('[data-testid="rm-stats"], [data-testid="rm-error"]'),
+    ).toBeVisible({ timeout: 20_000 });
+
+    // Confirm success path: stats panel visible, mode badge present
+    await expect(panel.locator('[data-testid="rm-stats"]')).toBeVisible();
+    await expect(panel.locator('[data-testid="rm-mode-badge"]')).toBeVisible();
+
+    // Count is a non-negative integer
+    const countText = await panel.locator('[data-testid="rm-count"]').textContent({ timeout: 5_000 });
+    expect(Number(countText?.trim())).toBeGreaterThanOrEqual(0);
+  });
+
+  // ── G6: Full E2E — CacheStatsPanel shows real entry_count ────────────────
+
+  test('G6: CacheStatsPanel shows entry_count from live gateway', async ({ page }) => {
+    try {
+      const probe = await fetch(`${PLATFORM_API}/v1/platform/helix/cache/stats`);
+      if (!probe.ok && probe.status !== 401) { test.skip(); return; }
+    } catch { test.skip(); return; }
+
+    await installHelixProxy(page);
+    await goto(page, '/');
+
+    const editBtn = page.locator('[data-testid="edit-mode-btn"]');
+    if (await editBtn.count() > 0) { await editBtn.click(); await page.waitForTimeout(300); }
+
+    const catalogBtn = page.locator('[data-testid="catalog-add-helix-cache-stats"]');
+    if (await catalogBtn.count() > 0 && !(await catalogBtn.isDisabled())) {
+      await catalogBtn.click(); await page.waitForTimeout(400);
+    }
+    const closeBtn = page.locator('[data-testid="catalog-close-btn"]');
+    if (await closeBtn.count() > 0) await closeBtn.click();
+
+    const panel = page.locator('[data-testid="cache-stats-panel"]').first();
+    await expect(panel).toBeAttached({ timeout: 5_000 });
+
+    // Stat (entry_count) must appear — not loading, not error
+    await expect(panel.locator('[data-testid="cs-loading"]')).not.toBeVisible({ timeout: 15_000 });
+    await expect(panel.locator('[data-testid="cs-error"]')).not.toBeAttached();
+    await expect(panel.locator('[data-testid="cs-entry-count"]')).toBeVisible({ timeout: 5_000 });
   });
 });
