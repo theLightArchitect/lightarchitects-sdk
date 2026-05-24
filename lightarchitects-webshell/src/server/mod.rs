@@ -981,6 +981,8 @@ pub fn build_app(state: AppState) -> Router {
 /// - `http://127.0.0.1:<port>` — same binary, loopback alias
 /// - `http://localhost:5173` — Vite dev server (**debug builds only**)
 fn build_cors(port: u16) -> CorsLayer {
+    // `mut` is only used in debug builds (Vite dev server push below).
+    #[allow(unused_mut)]
     let mut origins: Vec<String> = vec![
         format!("http://localhost:{port}"),
         format!("http://127.0.0.1:{port}"),
