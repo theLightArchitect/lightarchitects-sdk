@@ -18,6 +18,8 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+
+use crate::agent::tool_executor::ToolDefinition;
 use futures_util::stream::{self, BoxStream, StreamExt as _};
 use serde_json::Value;
 use tracing::warn;
@@ -63,6 +65,11 @@ pub struct AgentRequest {
     /// [`ConversationMemory`] **before** appending the current user message, which is always
     /// carried separately in `user_prompt`.
     pub conversation_history: Vec<serde_json::Value>,
+    /// Tool definitions forwarded to HTTP-native providers (Ollama Cloud).
+    ///
+    /// Populated by [`ConversationSession`] from its `ToolExecutor`. Subprocess
+    /// providers ignore this field — they resolve tools internally via `allowed_tools`.
+    pub tool_definitions: Vec<ToolDefinition>,
 }
 
 impl AgentRequest {

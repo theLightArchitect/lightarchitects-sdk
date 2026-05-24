@@ -235,12 +235,21 @@ impl LlmAgentProvider for OllamaCliProvider {
         let client = self.client.clone();
         let base_url = self.base_url.clone();
         // Build messages slice: history (if any) + current user turn.
+        // Empty prompt means the user turn is already the last entry in history
+        // (agentic loop iteration 2+: tool results absorbed into history).
         let mut msgs = req.request().conversation_history.clone();
-        msgs.push(serde_json::json!({"role": "user", "content": prompt}));
+        if !prompt.is_empty() {
+            msgs.push(serde_json::json!({"role": "user", "content": prompt}));
+        }
         let system = if identity.is_empty() {
             None
         } else {
             Some(identity.as_str())
+        };
+        let tools = if req.request().tool_definitions.is_empty() {
+            None
+        } else {
+            Some(req.request().tool_definitions.as_slice())
         };
         let bearer = self
             .auth_token
@@ -249,7 +258,7 @@ impl LlmAgentProvider for OllamaCliProvider {
 
         // Primary path: /v1/messages (Anthropic-compat SSE, Ollama ≥ 0.4)
         let v1_url = format!("{base_url}/v1/messages");
-        let v1_body = build_v1_messages_body(&model, &msgs, system, None);
+        let v1_body = build_v1_messages_body(&model, &msgs, system, tools);
         let mut v1_req = client
             .post(&v1_url)
             .header("content-type", "application/json")
@@ -288,7 +297,7 @@ impl LlmAgentProvider for OllamaCliProvider {
 
         // Fallback path: /api/chat (native Ollama NDJSON, all versions)
         let chat_url = format!("{base_url}/api/chat");
-        let chat_body = build_api_chat_body(&model, &msgs, system, None);
+        let chat_body = build_api_chat_body(&model, &msgs, system, tools);
         let mut chat_req = client
             .post(&chat_url)
             .header("content-type", "application/json")
