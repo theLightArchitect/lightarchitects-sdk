@@ -260,7 +260,8 @@ mod tests {
 
     #[test]
     fn redact_secrets_bearer_token() {
-        let input = "Authorization: Bearer sk-ant-api03-abc123";
+        // Key must be ≥20 chars after "sk-" to match the Anthropic-key pattern.
+        let input = "Authorization: Bearer sk-ant-api03-abcdefghijklmnopqrst12345";
         let out = redact_secrets(input);
         assert!(!out.contains("sk-ant"));
     }

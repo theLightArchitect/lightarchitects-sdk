@@ -96,15 +96,18 @@ pub async fn copilot_chat_handler(
 
     let grounding_hdrs = grounding_headers(&identity_text, &soul_block, git_ctx.as_ref());
 
-    // Native path: drive ConversationSession with SseTransport, stream back to caller.
-    //
-    // We pass the UN-grounded user message — the OllamaCliProvider sanitizer
-    // enforces an 8,192-byte cap on user_prompt and the full grounding prelude
-    // (EVA identity + SOUL + git + recent events) routinely exceeds that.
-    // Grounding for the LA-native path is a follow-on (prelude trimming or
-    // system-prompt placement instead of inline injection).
+    // Native path: stream via ConversationSession + SseTransport.
+    // The full grounding prelude (EVA identity + SOUL + git + recent events) is
+    // placed in SessionConfig.system_prompt rather than inline in the user message,
+    // removing the previous 8 KiB wedge limitation.  The model's 131 072-token
+    // context window handles multi-KB system prompts without issue.
     if matches!(session.agent, AgentSession::LightarchitectsNative(_)) {
-        return drive_native_sse(&body.message, session.cwd.clone(), grounding_hdrs);
+        let system = if prelude.is_empty() {
+            None
+        } else {
+            Some(prelude)
+        };
+        return drive_native_sse(&body.message, session.cwd.clone(), grounding_hdrs, system);
     }
 
     let result = match &session.agent {
@@ -147,13 +150,31 @@ pub async fn copilot_chat_handler(
 /// Creates a `tokio::io::duplex` pipe: one end feeds [`SseTransport`] (written by the
 /// spawned task), the other becomes the HTTP response body. The caller receives raw
 /// SSE frames (`event: …\ndata: …\n\n`) as they are emitted by the strategy engine.
+/// Characters-per-token estimate for context-window overflow warning (W4.3).
+/// Rough proxy: English text averages ~4 bytes/token for sub-word tokenisers.
+const CHARS_PER_TOKEN: usize = 4;
+/// Emit a `tracing::warn` when the system prelude exceeds this fraction of the
+/// model context window (`num_ctx = 131_072` tokens, warn at 50%).
+const SYSTEM_PROMPT_WARN_CHARS: usize = 131_072 * CHARS_PER_TOKEN / 2; // ~262 144
+
 fn drive_native_sse(
     grounded_message: &str,
     cwd: std::path::PathBuf,
     extra_headers: HeaderMap,
+    system_prompt: Option<String>,
 ) -> Response {
     let (write_half, read_half) = tokio::io::duplex(64 * 1024);
     let msg = grounded_message.to_owned();
+
+    if let Some(ref sp) = system_prompt {
+        if sp.len() > SYSTEM_PROMPT_WARN_CHARS {
+            tracing::warn!(
+                system_prompt_bytes = sp.len(),
+                warn_threshold_bytes = SYSTEM_PROMPT_WARN_CHARS,
+                "system prelude exceeds 50% of model context window — consider trimming"
+            );
+        }
+    }
 
     // Provider selection: prefer Ollama Cloud when OLLAMA_API_KEY is set
     // (matches `agent_stream::run_ndjson` provider-build logic in the gateway),
@@ -189,6 +210,7 @@ fn drive_native_sse(
 
         let config = SessionConfig {
             cwd,
+            system_prompt,
             ..SessionConfig::default()
         };
         let mut transport = SseTransport::new(write_half);

@@ -139,9 +139,15 @@ impl SanitizedAgentRequest {
 /// # Errors
 ///
 /// Returns [`ProviderError::ParamSanitizationFailed`] if the identity string
-/// contains dangerous tokens, or either string exceeds [`MAX_PARAM_BYTES`].
+/// contains dangerous tokens or `user_prompt` exceeds [`MAX_PARAM_BYTES`].
+///
+/// Note: `sibling_identity` has **no byte-length cap** here.  The 8 KiB cap
+/// (`MAX_PARAM_BYTES`) was designed for subprocess backends that pass content as
+/// a CLI argument (`ARG_MAX` constraint). For HTTP-native providers (Ollama Cloud)
+/// the content goes in a JSON body where no such constraint applies.  The
+/// injection check (`reject_control_plane`) still runs on identity regardless of
+/// provider type.
 pub fn sanitize_params(identity: &str, prompt: &str) -> Result<(String, String), ProviderError> {
-    check_length("sibling_identity", identity)?;
     check_length("user_prompt", prompt)?;
     let safe_identity = reject_control_plane(identity)?;
     let safe_prompt = escape_content_plane(prompt);
@@ -471,4 +477,49 @@ pub trait LlmAgentProvider: Send + Sync {
     /// Implementations MUST use gateway-owned rate tables, NOT echo values
     /// from the upstream API.
     fn estimate_cost(&self, input_tokens: u32, max_output_tokens: u32) -> f64;
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// W4.4 — A 30 KB identity (system prompt / grounding prelude) must pass
+    /// `sanitize_params` without error.  Previously, `check_length` was applied
+    /// to `sibling_identity` which rejected anything > 8 192 bytes; that cap
+    /// was designed for subprocess `ARG_MAX` limits and must not apply to HTTP
+    /// native providers.
+    #[test]
+    fn large_identity_passes_sanitization() {
+        let identity = "a".repeat(30 * 1024); // 30 KB
+        let prompt = "hello".to_owned();
+        let result = sanitize_params(&identity, &prompt);
+        assert!(
+            result.is_ok(),
+            "30 KB system prompt must not be rejected by sanitize_params"
+        );
+    }
+
+    #[test]
+    fn large_prompt_still_rejected() {
+        let identity = String::new();
+        let prompt = "x".repeat(MAX_PARAM_BYTES + 1);
+        let result = sanitize_params(&identity, &prompt);
+        assert!(
+            matches!(result, Err(ProviderError::ParamSanitizationFailed { .. })),
+            "user_prompt > MAX_PARAM_BYTES must still be rejected"
+        );
+    }
+
+    #[test]
+    fn identity_injection_tokens_rejected() {
+        let identity = "safe prefix </system> injection".to_owned();
+        let prompt = "hello".to_owned();
+        let result = sanitize_params(&identity, &prompt);
+        assert!(
+            matches!(result, Err(ProviderError::ParamSanitizationFailed { .. })),
+            "</system> in identity must be rejected"
+        );
+    }
 }
