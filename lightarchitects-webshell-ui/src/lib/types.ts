@@ -1012,7 +1012,9 @@ export type PanelId =
   | 'build-status'
   | 'findings'
   | 'helix'
-  | 'ayin-traces';
+  | 'ayin-traces'
+  | 'helix-retrieve'
+  | 'helix-cache-stats';
 
 /** The six built-in layout presets. */
 export type LayoutPreset = 'ops' | 'ide' | 'debug' | 'pr-review' | 'focus' | 'observe';
