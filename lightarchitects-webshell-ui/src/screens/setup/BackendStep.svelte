@@ -59,6 +59,17 @@
       comingSoon: false,
     },
     {
+      id: 'la-native',
+      agent: 'lightarchitects_native',
+      label: 'LA Native',
+      description: 'Nemotron / Qwen3 via Ollama Cloud (1M ctx, tool-use)',
+      polytopeType: 'icositetrachoron',
+      authKey: 'la_native' as const,
+      authField: 'has_api_key' as const,
+      authBadge: 'OLLAMA_API_KEY ✓',
+      comingSoon: false,
+    },
+    {
       id: 'openrouter',
       agent: 'lightarchitects',
       label: 'OpenRouter',

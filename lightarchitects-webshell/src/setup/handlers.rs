@@ -61,6 +61,13 @@ pub struct OllamaAuthStatus {
     pub reachable: bool,
 }
 
+/// Auth status for the LA-native backend (Ollama Cloud).
+#[derive(Debug, Clone, Serialize)]
+pub struct LaNativeAuthStatus {
+    /// `OLLAMA_API_KEY` is set and non-empty.
+    pub has_api_key: bool,
+}
+
 /// Full auth status snapshot returned by `GET /api/setup/info`.
 #[derive(Debug, Clone, Serialize)]
 pub struct AuthStatus {
@@ -70,6 +77,8 @@ pub struct AuthStatus {
     pub codex: CodexAuthStatus,
     /// Ollama connectivity status.
     pub ollama: OllamaAuthStatus,
+    /// LA-native (Ollama Cloud) auth status.
+    pub la_native: LaNativeAuthStatus,
 }
 
 /// Response shape for `GET /api/setup/info`.
@@ -258,6 +267,14 @@ async fn detect_ollama_status(base_url: &str) -> OllamaAuthStatus {
         base_url: base_url.to_owned(),
         reachable,
     }
+}
+
+/// Probe `OLLAMA_API_KEY` env var — presence indicates LA-native (Ollama Cloud) is configured.
+fn detect_la_native_auth() -> LaNativeAuthStatus {
+    let has_api_key = std::env::var("OLLAMA_API_KEY")
+        .map(|k| !k.is_empty())
+        .unwrap_or(false);
+    LaNativeAuthStatus { has_api_key }
 }
 
 // ── Model lists ───────────────────────────────────────────────────────────────
@@ -616,11 +633,13 @@ pub async fn setup_info(State(state): State<AppState>) -> impl IntoResponse {
         .and_then(|c| c.ollama_base_url.clone())
         .unwrap_or_else(|| "http://localhost:11434".to_owned());
     let ollama = detect_ollama_status(&ollama_url).await;
+    let la_native = detect_la_native_auth();
 
     let auth_status = AuthStatus {
         claude,
         codex,
         ollama,
+        la_native,
     };
 
     Json(SetupInfoResponse {

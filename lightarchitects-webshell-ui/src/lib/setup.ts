@@ -24,10 +24,15 @@ export interface OllamaAuthStatus {
   reachable: boolean;
 }
 
+export interface LaNativeAuthStatus {
+  has_api_key: boolean;
+}
+
 export interface AuthStatus {
   claude: ClaudeAuthStatus;
   codex: CodexAuthStatus;
   ollama: OllamaAuthStatus;
+  la_native: LaNativeAuthStatus;
 }
 
 export interface SetupConfig {
