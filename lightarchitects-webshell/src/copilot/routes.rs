@@ -133,10 +133,11 @@ pub async fn copilot_chat_handler(
             ClaudeBackend::Anthropic | ClaudeBackend::OllamaLaunch(_),
         )
         | AgentSession::Codex(_)
-        | AgentSession::MistralVibe(_)
-        | AgentSession::LightarchitectsNative(_) => {
+        | AgentSession::MistralVibe(_) => {
             call_subprocess(&grounded_message, &session.copilot_proc, &session).await
         }
+        // Guarded above by the `if matches!(…LightarchitectsNative…)` early return.
+        AgentSession::LightarchitectsNative(_) => unreachable!("native session not intercepted"),
     };
 
     match result {
