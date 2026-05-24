@@ -427,7 +427,8 @@ pub async fn run_interactive_with_strategies(
     let banner = format!(
         "Light Architects agent — cwd: {}{resume_note}\n\
          Skills: /plan /build /reflect /scrum /gate /xea … (or just describe what you need)\n\
-         Strategies: /strategy react|ach|itt|cove|reflexion <goal> | quit to exit\n",
+         Strategies: /strategy react|ach|itt|cove|reflexion <goal> | quit to exit\n\
+         AYIN dashboard: http://127.0.0.1:3742\n",
         cwd.display()
     );
     let _ = stdout.write_all(banner.as_bytes()).await;
@@ -435,6 +436,17 @@ pub async fn run_interactive_with_strategies(
 
     let reader = tokio::io::BufReader::new(tokio::io::stdin());
     let mut lines = reader.lines();
+
+    // H15: Ctrl-C mid-generation → interrupt in-flight turn and return to prompt.
+    // The watcher sets the session interrupt flag; run_turn's heartbeat loop checks it.
+    let interrupt_flag = std::sync::Arc::clone(&session.state.interrupt_flag);
+    let sigint_watcher = tokio::spawn(async move {
+        loop {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                interrupt_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+    });
 
     loop {
         let _ = stdout.write_all(b"> ").await;
@@ -492,6 +504,7 @@ pub async fn run_interactive_with_strategies(
         }
     }
 
+    sigint_watcher.abort();
     Ok(())
 }
 

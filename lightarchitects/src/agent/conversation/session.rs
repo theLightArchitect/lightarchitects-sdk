@@ -249,32 +249,65 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
         // TTFT: -1 = no text arrived (cancelled or empty response).
         let mut ttft_ms: i64 = -1;
 
-        while let Some(event) = stream.next().await {
-            if self.is_interrupted() {
-                break;
-            }
-            match event {
-                ProviderEvent::MessageStart {
-                    input_tokens: t, ..
-                } => {
-                    input_tokens = t;
-                }
-                ProviderEvent::TextDelta { text, .. } => {
-                    if ttft_ms < 0 {
-                        ttft_ms =
-                            i64::try_from(turn_start.elapsed().as_millis()).unwrap_or(i64::MAX);
+        // H13: heartbeat every 5s when the provider emits no new chunks.
+        let heartbeat = std::time::Duration::from_secs(5);
+
+        loop {
+            match tokio::time::timeout(heartbeat, stream.next()).await {
+                Ok(Some(event)) => {
+                    if self.is_interrupted() {
+                        break;
                     }
-                    output_text.push_str(&text);
+                    match event {
+                        ProviderEvent::MessageStart {
+                            input_tokens: t, ..
+                        } => {
+                            input_tokens = t;
+                        }
+                        // H12/H14: surface tool invocations inline to the operator.
+                        ProviderEvent::ContentBlockStart {
+                            block_type,
+                            tool_name,
+                            ..
+                        } if block_type == "tool_use" => {
+                            let name = tool_name.as_deref().unwrap_or("unknown");
+                            transport
+                                .emit(&ConversationEvent::StatusUpdate {
+                                    text: format!("[tool: {name}] ⏳"),
+                                })
+                                .await?;
+                        }
+                        ProviderEvent::TextDelta { text, .. } => {
+                            if ttft_ms < 0 {
+                                ttft_ms = i64::try_from(turn_start.elapsed().as_millis())
+                                    .unwrap_or(i64::MAX);
+                            }
+                            output_text.push_str(&text);
+                            transport
+                                .emit(&ConversationEvent::Text { chunk: text })
+                                .await?;
+                        }
+                        ProviderEvent::MessageDelta {
+                            output_tokens: t, ..
+                        } => {
+                            output_tokens = t;
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(None) => break, // stream exhausted
+                Err(_elapsed) => {
+                    // 5 seconds with no chunk — emit heartbeat status.
+                    let elapsed_secs = turn_start.elapsed().as_secs();
                     transport
-                        .emit(&ConversationEvent::Text { chunk: text })
+                        .emit(&ConversationEvent::StatusUpdate {
+                            text: format!("  …  ({elapsed_secs}s elapsed, {output_tokens} tokens)"),
+                        })
                         .await?;
+                    if self.is_interrupted() {
+                        break;
+                    }
                 }
-                ProviderEvent::MessageDelta {
-                    output_tokens: t, ..
-                } => {
-                    output_tokens = t;
-                }
-                _ => {}
             }
         }
 
