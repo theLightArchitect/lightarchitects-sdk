@@ -37,6 +37,7 @@ use tokio::io::AsyncBufReadExt as _;
 
 use crate::config::GatewayConfig;
 
+pub mod endpoint_policy;
 pub mod protocol;
 pub mod session_memory;
 pub mod strategy;
@@ -432,6 +433,17 @@ pub async fn run_interactive_with_strategies(
         cwd.display()
     );
     let _ = stdout.write_all(banner.as_bytes()).await;
+
+    // B5: warn if a non-default LLM endpoint is active (OWASP-LLM05/LLM06).
+    for var in &["ANTHROPIC_BASE_URL", "OLLAMA_BASE_URL", "LLM_API_URL"] {
+        if let Ok(url) = std::env::var(var) {
+            if !url.is_empty() && !endpoint_policy::is_default_allowed(&url) {
+                let warning = endpoint_policy::custom_endpoint_banner(&url);
+                let _ = stdout.write_all(warning.as_bytes()).await;
+            }
+        }
+    }
+
     let _ = stdout.flush().await;
 
     let reader = tokio::io::BufReader::new(tokio::io::stdin());
