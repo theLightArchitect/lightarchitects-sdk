@@ -35,7 +35,9 @@ struct NdjsonEnvelope {
 
 /// Parse a single NDJSON line emitted by `claude --output-format stream-json`.
 ///
-/// Empty lines and `system` / `debug` events are skipped (`Ok(None)`).
+/// Empty lines and `result` / `system` / `debug` events are skipped (`Ok(None)`).
+/// Delegates to [`parse_ndjson_value`] after the initial JSON parse so callers
+/// that already hold a [`Value`] can avoid a second deserialisation.
 ///
 /// # Errors
 ///
@@ -46,7 +48,26 @@ pub fn parse_ndjson_line(line: &str) -> Result<Option<ProviderEvent>, NdjsonPars
     if line.is_empty() {
         return Ok(None);
     }
-    let envelope: NdjsonEnvelope = serde_json::from_str(line)?;
+    let val: Value = serde_json::from_str(line)?;
+    parse_ndjson_value(&val)
+}
+
+/// Parse a pre-deserialised NDJSON [`Value`] into a [`ProviderEvent`].
+///
+/// Use this when the caller already holds the parsed `Value` (e.g. to extract
+/// other fields before routing) to avoid parsing the JSON a second time.
+///
+/// `result` / `system` / `debug` events are skipped (`Ok(None)`).
+///
+/// # Errors
+///
+/// Returns [`NdjsonParseError::UnknownEventType`] for unrecognised `type` fields
+/// that are not on the skip-list.
+pub fn parse_ndjson_value(val: &Value) -> Result<Option<ProviderEvent>, NdjsonParseError> {
+    let envelope = NdjsonEnvelope {
+        event_type: val["type"].as_str().unwrap_or("").to_owned(),
+        payload: val.clone(),
+    };
     let event = match envelope.event_type.as_str() {
         "message_start" => {
             let model = envelope.payload["message"]["model"]

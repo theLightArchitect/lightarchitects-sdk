@@ -27,25 +27,14 @@ use tokio::{
     process::{Child, ChildStdin, ChildStdout},
 };
 
+use lightarchitects::agent::ProviderEvent;
+use lightarchitects::agent::messages_stream_parser::stream_json::parse_ndjson_value;
+
 use crate::{
     config::{AgentSession, ClaudeBackend, CodexBackend},
     events::WebEventV2,
     session::BuildSession,
 };
-
-/// Parsed `content_block_delta` inner delta from Claude's `stream-json` output.
-///
-/// Uses `#[serde(rename = "type")]` because `delta.type` is a Rust reserved
-/// keyword — never access as `delta.type` (SA-20).
-#[derive(Debug, Deserialize)]
-struct ContentBlockDelta {
-    /// The delta type — `"text_delta"`, `"thinking_delta"`, `"input_json_delta"`, etc.
-    #[serde(rename = "type")]
-    delta_type: String,
-    /// Present when `delta_type == "text_delta"`.
-    #[serde(default)]
-    text: String,
-}
 
 /// Resolve a binary name to its full path by checking known install locations.
 /// Falls back to the bare name (relies on PATH) if not found in known locations.
@@ -548,80 +537,69 @@ async fn run_print_turn(
             );
         }
 
-        // Emit AYIN span for tool calls so they appear in the AYIN SPANS column
-        if event_type == "content_block_start"
-            && val["content_block"]["type"].as_str() == Some("tool_use")
-        {
-            let tool_name = val["content_block"]["name"].as_str().unwrap_or("unknown");
-            let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
-                crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    parent_id: None,
-                    actor: "eva".to_owned(),
-                    action: format!("tool.{tool_name}"),
-                    timestamp: chrono::Utc::now().to_rfc3339(),
-                    duration_ms: 0,
-                    outcome: serde_json::json!("started"),
-                    metadata: serde_json::json!({ "build_id": build_id }),
-                    strand_activations: Vec::new(),
-                }),
-                Some(session.build_id),
-            ));
-        }
-
-        // SA-20: extract text_delta — field named `delta_type` not `delta.type`
-        // (reserved keyword). SA-21: parse errors warn-and-continue, never `?`.
-        if event_type == "content_block_delta" {
-            if let Some(delta_val) = val.get("delta") {
-                match serde_json::from_value::<ContentBlockDelta>(delta_val.clone()) {
-                    Ok(delta) => {
-                        if delta.delta_type == "text_delta" {
-                            let send_r =
-                                session.event_tx.send(crate::events::WebEventV2::from_event(
-                                    crate::events::WebEvent::CopilotResponse {
-                                        chunk: delta.text.clone(),
-                                        done: false,
-                                        sibling: Some("claude".to_owned()),
-                                    },
-                                    Some(session.build_id),
-                                ));
-                            if send_r.is_err() {
-                                tracing::warn!(
-                                    counter = "app.copilot.token_buffer.overflow_total",
-                                    "channel send failed — receiver lagged or dropped"
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            build_id = %build_id,
-                            error = %e,
-                            "copilot delta parse error"
-                        );
-                        tracing::warn!(
-                            counter = "app.copilot.parse_error_total",
-                            "incrementing counter"
-                        );
-                    }
+        // Delegate stream-json event dispatch to the SDK parser (TS-3 §21.3).
+        // `val` is already parsed; `parse_ndjson_value` avoids a second JSON parse.
+        match parse_ndjson_value(&val) {
+            Ok(Some(ProviderEvent::ContentBlockStart {
+                block_type,
+                tool_name,
+                ..
+            })) if block_type == "tool_use" => {
+                let name = tool_name.as_deref().unwrap_or("unknown");
+                let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+                    crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        parent_id: None,
+                        actor: "eva".to_owned(),
+                        action: format!("tool.{name}"),
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        duration_ms: 0,
+                        outcome: serde_json::json!("started"),
+                        metadata: serde_json::json!({ "build_id": build_id }),
+                        strand_activations: Vec::new(),
+                    }),
+                    Some(session.build_id),
+                ));
+            }
+            Ok(Some(ProviderEvent::TextDelta { text, .. })) => {
+                let send_r = session.event_tx.send(crate::events::WebEventV2::from_event(
+                    crate::events::WebEvent::CopilotResponse {
+                        chunk: text,
+                        done: false,
+                        sibling: Some("claude".to_owned()),
+                    },
+                    Some(session.build_id),
+                ));
+                if send_r.is_err() {
+                    tracing::warn!(
+                        counter = "app.copilot.token_buffer.overflow_total",
+                        "channel send failed — receiver lagged or dropped"
+                    );
                 }
+            }
+            Ok(Some(ProviderEvent::MessageStop)) => {
+                let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+                    crate::events::WebEvent::CopilotResponse {
+                        chunk: String::new(),
+                        done: true,
+                        sibling: Some("claude".to_owned()),
+                    },
+                    Some(session.build_id),
+                ));
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(
+                    build_id = %build_id,
+                    error = %e,
+                    counter = "app.copilot.parse_error_total",
+                    "copilot NDJSON event parse error"
+                );
             }
         }
 
         if event_type == "result" && val["subtype"].as_str() == Some("success") {
             result_text = Some(val["result"].as_str().unwrap_or("").to_owned());
-        }
-
-        // Emit done:true on message_stop to signal end-of-turn to frontend.
-        if event_type == "message_stop" {
-            let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
-                crate::events::WebEvent::CopilotResponse {
-                    chunk: String::new(),
-                    done: true,
-                    sibling: Some("claude".to_owned()),
-                },
-                Some(session.build_id),
-            ));
         }
     }
 
