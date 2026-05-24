@@ -237,11 +237,8 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
             })
             .await?;
 
-        tracing::info!(
-            provider = self.provider.name(),
-            turn = self.state.turn_count + 1,
-            "session.run_turn: streaming start"
-        );
+        // W5.2 — AYIN span: record wall-clock start before the provider call.
+        let turn_start = std::time::Instant::now();
 
         // Stream events from provider; emit per-chunk Text events as they arrive (W5.1).
         let mut stream = self.provider.spawn_streaming(sanitized).await?;
@@ -249,6 +246,8 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
         let mut output_text = String::new();
         let mut input_tokens = 0u32;
         let mut output_tokens = 0u32;
+        // TTFT: -1 = no text arrived (cancelled or empty response).
+        let mut ttft_ms: i64 = -1;
 
         while let Some(event) = stream.next().await {
             if self.is_interrupted() {
@@ -261,6 +260,10 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
                     input_tokens = t;
                 }
                 ProviderEvent::TextDelta { text, .. } => {
+                    if ttft_ms < 0 {
+                        ttft_ms =
+                            i64::try_from(turn_start.elapsed().as_millis()).unwrap_or(i64::MAX);
+                    }
                     output_text.push_str(&text);
                     transport
                         .emit(&ConversationEvent::Text { chunk: text })
@@ -275,11 +278,22 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
             }
         }
 
+        // W5.2 — AYIN per-turn span: TTFT + duration + cancellation taxonomy.
+        let duration_ms = u64::try_from(turn_start.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let cancelled = self.is_interrupted();
+        let cancellation_reason = if cancelled { "user_interrupt" } else { "none" };
         tracing::info!(
+            provider = self.provider.name(),
+            turn = self.state.turn_count + 1,
+            model = self.config.model_hint.as_deref().unwrap_or("default"),
             input_tokens,
             output_tokens,
-            text_len = output_text.len(),
-            "session.run_turn: streaming complete"
+            ttft_ms,
+            duration_ms,
+            text_bytes = output_text.len(),
+            cancelled,
+            cancellation_reason,
+            "session.run_turn"
         );
 
         // Store assistant turn.
