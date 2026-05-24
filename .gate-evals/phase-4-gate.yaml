@@ -1,0 +1,37 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-23T18:30:00-07:00"
+build_id: vibe-coding-loop
+phase_id: phase-4-claude-cli-provider
+commit_sha: 0a63a2528fda843264a371e8666b409ad4602f3b
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    notes: >
+      lightarchitects SDK: 1446 passed, 0 failed, 1 ignored (keychain — requires live macOS
+      Keychain access). lightarchitects-webshell: 640 passed, 0 failed, 2 ignored.
+      Workspace integration suites: chain_depth_compose (5), helix_recursion (30),
+      lightsquad_wave (6), ollama_bfcl (6 unit / 1 ignored), oracle_integration (18),
+      wikilink_integration (5). Total workspace: ~2 307 passed, 0 failed.
+  Q4_svelte: n/a
+  D2_plan:
+    result: pass
+    notes: >
+      Plan W4.1–W4.3 deliverables all landed as specified: spawn_streaming() with
+      --output-format stream-json --verbose (W4.1); copilot/mod.rs NDJSON parser
+      refactored to use SDK parse_ndjson_value (W4.2); setsid pre_exec subprocess
+      isolation + mock-claude.sh fixture + make test-claude-fixture-refresh (W4.3).
+      No scope drift or deferred items.
+
+commits_in_phase:
+  - sha: 2c692da
+    subject: "P4/W4.1: ClaudeCliProvider spawn_streaming() via claude --output-format stream-json"
+  - sha: 3dea1cd
+    subject: "P4/W4.2: refactor copilot/mod.rs NDJSON parser to use SDK stream_json"
+  - sha: 0a63a25
+    subject: "P4/W4.3: setsid pre_exec subprocess isolation + mock-claude fixture policy"
