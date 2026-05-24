@@ -6,6 +6,7 @@
 //! Error conversion maps [`GatewayError`] variants to typed [`ToolError`]s.
 
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -77,6 +78,19 @@ impl GatewayToolExecutor {
         Self {
             config,
             skills: crate::cli::skills::list_all(),
+            operator_active: Arc::new(Mutex::new(HashSet::new())),
+        }
+    }
+
+    /// Create an executor with explicitly provided skill specs.
+    ///
+    /// For use in integration tests that need to exercise the skill dispatch
+    /// path without depending on the local plugin cache state.
+    #[must_use]
+    pub fn new_with_skill_specs(config: Arc<GatewayConfig>, skills: Vec<SkillSpec>) -> Self {
+        Self {
+            config,
+            skills,
             operator_active: Arc::new(Mutex::new(HashSet::new())),
         }
     }
@@ -385,8 +399,13 @@ async fn run_skill_tool(
         );
     }
 
-    let exe = std::env::current_exe()
-        .map_err(|e| ToolError::Internal(format!("cannot locate gateway binary: {e}")))?;
+    // Check LIGHTARCHITECTS_BIN first — allows test harnesses to inject the
+    // real binary path when current_exe() would return the test runner instead.
+    let exe: PathBuf = std::env::var("LIGHTARCHITECTS_BIN")
+        .ok()
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_exe().ok())
+        .ok_or_else(|| ToolError::Internal("cannot locate gateway binary".to_owned()))?;
 
     let child = tokio::process::Command::new(&exe).args(&cmd_args).output();
 

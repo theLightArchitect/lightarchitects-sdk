@@ -55,7 +55,7 @@ Maps every test file to production capabilities. If every test in a capability b
 | I | Security boundary integration tests (injection, path traversal, HMAC) | MEDIUM |
 | K | State machine / task queue (scheduler, cascade failure) | MEDIUM |
 | L | Calibration drift detection — `RubricStore` query exists but no integration test | LOW |
-| M | `run_skill_tool()` subprocess dispatch — requires real gateway binary at `current_exe()`; in test harness `current_exe` resolves to the test runner, not the gateway binary. **Deferred to CI binary integration suite** (HIGH priority). | HIGH |
+| M | `run_skill_tool()` subprocess dispatch — **CLOSED** (`tests/skills_gateway_e2e.rs`, 2026-05-23). Fix: `LIGHTARCHITECTS_BIN` env var override checked before `current_exe()`. 4 tests: binary smoke, unknown-skill error capture, trust gate tamper block, operator-wins gate. | CLOSED |
 
 ---
 
