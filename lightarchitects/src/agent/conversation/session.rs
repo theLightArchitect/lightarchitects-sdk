@@ -19,7 +19,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::agent::{AgentRequest, AgentResponse, ChainContext, LlmAgentProvider, ProviderError};
+use futures_util::StreamExt as _;
+
+use crate::agent::{
+    AgentRequest, AgentResponse, ChainContext, LlmAgentProvider, ProviderError, ProviderEvent,
+    TokenUsage,
+};
 
 use super::{
     event::{ConversationEvent, TerminationReason},
@@ -180,6 +185,7 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
     ///
     /// Returns [`SessionError`] on provider failure, transport I/O error, or
     /// if the interrupt flag is set before the turn begins.
+    #[allow(clippy::too_many_lines)]
     pub async fn run_turn<T: Transport>(
         &mut self,
         user_message: &str,
@@ -231,29 +237,60 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
             })
             .await?;
 
-        // Call provider.
-        let response = self.provider.spawn(sanitized).await?;
+        tracing::info!(
+            provider = self.provider.name(),
+            turn = self.state.turn_count + 1,
+            "session.run_turn: streaming start"
+        );
 
-        // Extract text output.
-        let output_text = match &response.output {
-            Value::String(s) => s.clone(),
-            other => other.to_string(),
-        };
+        // Stream events from provider; emit per-chunk Text events as they arrive (W5.1).
+        let mut stream = self.provider.spawn_streaming(sanitized).await?;
+
+        let mut output_text = String::new();
+        let mut input_tokens = 0u32;
+        let mut output_tokens = 0u32;
+
+        while let Some(event) = stream.next().await {
+            if self.is_interrupted() {
+                break;
+            }
+            match event {
+                ProviderEvent::MessageStart {
+                    input_tokens: t, ..
+                } => {
+                    input_tokens = t;
+                }
+                ProviderEvent::TextDelta { text, .. } => {
+                    output_text.push_str(&text);
+                    transport
+                        .emit(&ConversationEvent::Text { chunk: text })
+                        .await?;
+                }
+                ProviderEvent::MessageDelta {
+                    output_tokens: t, ..
+                } => {
+                    output_tokens = t;
+                }
+                _ => {}
+            }
+        }
+
+        tracing::info!(
+            input_tokens,
+            output_tokens,
+            text_len = output_text.len(),
+            "session.run_turn: streaming complete"
+        );
 
         // Store assistant turn.
         self.memory
             .push(MessageRole::Assistant, output_text.clone());
 
-        // Emit events.
-        if !output_text.is_empty() {
-            transport
-                .emit(&ConversationEvent::Text { chunk: output_text })
-                .await?;
-        }
+        // Emit token usage and completion.
         transport
             .emit(&ConversationEvent::TokenUsage {
-                input: u64::from(response.tokens.input),
-                output: u64::from(response.tokens.output),
+                input: u64::from(input_tokens),
+                output: u64::from(output_tokens),
             })
             .await?;
         transport
@@ -266,7 +303,17 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
         self.hooks.run_post_turn(ctx).await;
 
         self.state.turn_count += 1;
-        Ok(response)
+        Ok(AgentResponse {
+            output: Value::String(output_text),
+            turns_used: 1,
+            cost_usd: 0.0,
+            tokens: TokenUsage {
+                input: input_tokens,
+                output: output_tokens,
+            },
+            provider_attrs: std::collections::HashMap::new(),
+            retry_count: 0,
+        })
     }
 
     // ── NDJSON loop (machine-facing) ──────────────────────────────────────────
