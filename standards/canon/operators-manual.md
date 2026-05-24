@@ -1030,5 +1030,56 @@ Per ironclaw-architecture.html §12: rate limits are per-model and tracked separ
 
 ---
 
-*Operators Manual v1.2 | Light Architects | updated 2026-05-18 with §Run-Control-Primitives + §Model-Routing-Doctrine (closes ironclaw §8 + §12 canon gaps; LÆX Phase 7 ratification pending)*
+## §Vibe-Coding-Workflow — Skills-as-Tools: LLM Invokes Skills via tool_use (2026-05-24 ADDITION)
+
+> **What shipped in vibe-coding-loop Phase 6**: The gateway can now expose SKILL.md-defined operators as JSON-schema tools that the LLM invokes natively via `tool_use` blocks, with the operator retaining unconditional override authority at all times.
+
+### The Three Surfaces
+
+| Surface | File | What it does |
+|---------|------|--------------|
+| **Trust ledger** | `src/cli/skill_trust.rs` | SHA-256 pins each SKILL.md on first load; detects content tampering before LLM injection |
+| **Skill routing** | `src/providers/gateway_tool_executor.rs` | `GatewayToolExecutor` routes `tool_use` blocks to registered skills; surfaces `tool_schema` from SKILL.md frontmatter |
+| **Operator-wins** | `src/providers/gateway_tool_executor.rs` | Slash-command in the same turn as an LLM `tool_use` → `ToolError::SupersededByOperatorAction`; operator's explicit intent always wins |
+
+### Operator-Wins Invariant
+
+When an LLM issues `tool_use: { name: "plan" }` but the operator types `/plan` in the same turn, the operator's invocation proceeds and the LLM's tool_use request is silently aborted with:
+
+```json
+{ "type": "tool_result", "is_error": true,
+  "content": "superseded by operator" }
+```
+
+The LLM sees the error and adapts on its next turn. This invariant is per-turn and per-slug: each `clear_operator_invocations()` call starts a clean slate for the next LLM turn.
+
+**Lifecycle**:
+1. New LLM turn begins → `clear_operator_invocations()` resets the registry
+2. Operator types `/plan` → `mark_operator_invoked("plan")`
+3. LLM response arrives with `tool_use: { name: "plan" }` → `is_operator_invoked("plan")` returns true → abort with `SupersededByOperatorAction`
+
+### SKILL.md Trust Verification
+
+Before any SKILL.md content is injected into the system prompt as a tool definition:
+
+```rust
+skill_trust::verify_or_pin("PLAN", &skill_md_content)?;
+```
+
+**First load**: hash is computed and written to `~/.lightarchitects/skill-trust-ledger.toml`. Returns `Ok(())`.
+
+**Subsequent loads**: hash is recomputed and compared. Match → `Ok(())`. Mismatch → `tracing::warn!` + `Err("SKILL.md hash mismatch")`. Session continues (non-blocking) but the operator is notified.
+
+**Threat addressed**: supply-chain compromise of the plugin cache directory (`~/.claude/plugins/cache/`). An attacker who can write to that path could inject adversarial instructions into the system prompt. The ledger catches this on the next agent invocation.
+
+### Practical Guidance
+
+- **SKILL.md `tool_schema` field** is required for the gateway to expose a skill as an LLM tool. Skills without this field are operator-only (slash-command invokable, not LLM-callable).
+- **Slug casing**: slugs are stored uppercase in the ledger. `mark_operator_invoked("PLAN")` and `mark_operator_invoked("plan")` both match `tool_use { name: "plan" }`.
+- **Test slugs**: Integration tests that write to the real ledger must use namespaced slugs (`IT_*`, `PT_*`, `SMOKE_*`) to avoid collisions with production entries.
+- **E2E gap**: `run_skill_tool()` subprocess dispatch requires the real gateway binary at `current_exe()`. The test harness resolves `current_exe` to the test runner. Full subprocess coverage is deferred to the CI binary integration suite.
+
+---
+
+*Operators Manual v1.3 | Light Architects | updated 2026-05-24 with §Vibe-Coding-Workflow (closes vibe-coding-loop Phase 6 + Phase 7 canon gaps; LÆX Phase 8 ratification pending)*
 *Part of the Canonical Suite. Supersedes: northstar-v1.md, platform-architecture-v2.md, lens-driven-squad-selection.md, soul-cycle.md, secret-leak-runbook.md, ai-detection-checklist.md, tts-voice-production.md.*
