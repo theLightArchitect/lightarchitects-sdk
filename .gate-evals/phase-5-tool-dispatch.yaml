@@ -1,0 +1,53 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE --scope phase"
+scored_at: "2026-05-24T00:00:00Z"
+build_id: webshell-la-native-backend
+phase_id: phase-5-tool-dispatch
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 2416
+    tests_fail: 0
+    delta_vs_phase_4: +2
+  Q4_svelte: n/a
+
+deliverables:
+  W5_1_tool_definitions_field:
+    status: complete
+    description: "AgentRequest.tool_definitions: Vec<ToolDefinition> added; full JSON schema
+      forwarded to HTTP-native providers (Ollama Cloud); subprocess providers retain
+      allowed_tools: Vec<String>; all construction sites updated (session.rs, dispatch.rs,
+      claude.rs, anthropic.rs, ollama_bfcl.rs, llm_agent_trait_contract.rs)"
+  W5_2_input_json_delta_accumulator:
+    status: complete
+    description: "tool_blocks: HashMap<u32,(tool_use_id,tool_name,json_accumulator)> in
+      run_turn() inner loop; ContentBlockStart inserts entry on block_type=tool_use;
+      InputJsonDelta pushes partial_json to accumulator; MessageDelta captures stop_reason"
+  W5_3_agentic_loop:
+    status: complete
+    description: "Outer loop repeats inner streaming loop while stop_reason==tool_use &&
+      !tool_blocks.is_empty() && remaining_inner>0; each iteration rebuilds AgentRequest
+      with iter_history; iter_user_prompt cleared to empty string on iteration 2+ (absorbed
+      into history); Ollama empty-prompt guard skips appending duplicate user message"
+  W5_4_tool_executor_and_injection_shield:
+    status: complete
+    description: "ToolExecutor trait dispatches assembled JSON input; NullToolExecutor
+      fail-closed default; IndirectInjectionShield wraps tool results in untrusted sentinels
+      before Anthropic-format tool_result re-injection; detect() emits
+      IndirectInjectionWarning ConversationEvents for injection patterns; with_tool_executor()
+      builder on ConversationSession"
+
+notes:
+  - "4 clippy fixes: Map::default() (×2) replaces Value::Object(Default::default()), .values()
+    replaces iterating &HashMap with destructured (_, val), backtick tool_use in doc comment,
+    ToString::to_string replaces |v| v.to_string() closure"
+  - "Cargo.lock drift in lightarchitects/ and lightarchitects-gateway/ — unstaged; not a
+    Phase 5 deliverable"
+  - "ToolExecutor design note: tool_definitions forwarded to provider separately from
+    allowed_tools to avoid conflating HTTP-native full-schema path with subprocess string-list
+    path"
