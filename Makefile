@@ -1,7 +1,7 @@
 # l-arc-sdk — Light Architects SDK workspace
 # Standard Light Architects Makefile targets
 
-.PHONY: help quality test test-gateway-smoke test-features build deploy deploy-fast rollback doc fix push clean
+.PHONY: help quality test test-gateway-smoke test-features test-claude-fixture-refresh build deploy deploy-fast rollback doc fix push clean
 
 GATEWAY_BIN      := $(HOME)/.lightarchitects/bin/lightarchitects
 GATEWAY_PREV_BIN := $(HOME)/.lightarchitects/bin/lightarchitects.prev
@@ -118,6 +118,55 @@ push: quality ## Quality gates + git push
 
 doc: ## Build and open documentation
 	cargo doc --workspace --no-deps --open
+
+## Claude CLI fixture refresh — run when `claude --version` differs from
+## lightarchitects/tests/fixtures/mock-claude.version, or when the [Q] gate
+## detects event-shape divergence between fixture-replay and a live CLI run.
+##
+## Requires: real `claude` CLI accessible in PATH, network connectivity.
+## Records: mock-claude.sh (canned NDJSON stream) + mock-claude.version (pinned version).
+FIXTURE_DIR := lightarchitects/tests/fixtures
+MOCK_SCRIPT := $(FIXTURE_DIR)/mock-claude.sh
+VERSION_FILE := $(FIXTURE_DIR)/mock-claude.version
+
+test-claude-fixture-refresh: ## Refresh Claude CLI mock fixture against current CLI version
+	@command -v claude >/dev/null 2>&1 || \
+	    (echo "ERROR: 'claude' CLI not found in PATH. Install Claude Code first."; exit 1)
+	@echo "=== Refreshing Claude CLI fixture ==="
+	@pinned="$$(cat $(VERSION_FILE) 2>/dev/null || echo none)" && \
+	 live="$$(claude --version 2>/dev/null | head -1)" && \
+	 echo "  Pinned: $$pinned" && \
+	 echo "  Live:   $$live" && \
+	 if [ "$$pinned" = "$$live" ]; then \
+	     echo "  Versions match — fixture is current. Force-refresh with: make test-claude-fixture-refresh FORCE=1"; \
+	     [ "$${FORCE:-0}" = "1" ] || exit 0; \
+	 fi
+	@echo "  Recording new NDJSON stream..."
+	@printf '{"type":"system","subtype":"init","session_id":"mock-session-01","tools":[],"mcp_servers":[]}\n' > $(MOCK_SCRIPT).new
+	@claude -p "Say exactly: Hello, world!" \
+	    --output-format stream-json \
+	    --verbose \
+	    --max-turns 1 \
+	    2>/dev/null >> $(MOCK_SCRIPT).new || true
+	@echo "  Updating mock-claude.version..."
+	@claude --version 2>/dev/null | head -1 > $(VERSION_FILE)
+	@echo "  Updating mock-claude.sh..."
+	@echo '#!/usr/bin/env bash' > $(MOCK_SCRIPT)
+	@echo '# mock-claude.sh — refreshed by: make test-claude-fixture-refresh' >> $(MOCK_SCRIPT)
+	@echo '# Pinned version: '"$$(cat $(VERSION_FILE))" >> $(MOCK_SCRIPT)
+	@echo 'set -euo pipefail' >> $(MOCK_SCRIPT)
+	@echo 'FORMAT="json"; VERSION_FLAG=0' >> $(MOCK_SCRIPT)
+	@printf '%s\n' \
+	    'while [[ $$# -gt 0 ]]; do case "$$1" in --output-format) FORMAT="$${2:-json}"; shift 2;; --verbose) shift;; --version) VERSION_FLAG=1; shift;; *) shift;; esac; done' >> $(MOCK_SCRIPT)
+	@printf '%s\n' \
+	    'if [[ "$$VERSION_FLAG" -eq 1 ]]; then cat "$$(dirname "$$0")/mock-claude.version"; exit 0; fi' >> $(MOCK_SCRIPT)
+	@printf '%s\n' 'if [[ "$$FORMAT" == "stream-json" ]]; then' >> $(MOCK_SCRIPT)
+	@cat $(MOCK_SCRIPT).new | while IFS= read -r line; do printf "    printf '%%s\\\\n' '%s'\n" "$$line"; done >> $(MOCK_SCRIPT)
+	@printf '%s\n' '    exit 0; fi' >> $(MOCK_SCRIPT)
+	@printf '%s\n' 'printf '"'"'%s\n'"'"' '"'"'{"type":"result","subtype":"success","result":"Hello, world!"}'"'"'' >> $(MOCK_SCRIPT)
+	@chmod +x $(MOCK_SCRIPT)
+	@rm -f $(MOCK_SCRIPT).new
+	@echo "  Done. Run: cargo test -p lightarchitects --features agent-cli -- --test-threads=1"
 
 clean: ## Clean build artifacts
 	cargo clean

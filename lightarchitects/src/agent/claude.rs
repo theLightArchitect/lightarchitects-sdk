@@ -7,7 +7,7 @@
 //! |------|----------------|
 //! | G1 control-plane | [`sanitize_params`] rejects `</system>`, `<system>`, RTL U+202E, zero-width joiners, and null bytes |
 //! | G1 content-plane | [`sanitize_params`] escapes `<`/`>` and strips RTL/zero-width chars with `tracing::warn!` |
-//! | G10 subprocess hygiene | `kill_on_drop(true)` + `process_group(0)` + `libc::killpg` on timeout; stderr piped to `tracing::warn!` only |
+//! | G10 subprocess hygiene | `kill_on_drop(true)` + `setsid()` (new session, detached from TTY) + `libc::killpg` on timeout; stderr piped to `tracing::warn!` only |
 //! | G4 traceparent | `TRACEPARENT` env var injected from `parent_span_id` when present |
 //! | G-PM permission matrix | [`PermissionMatrix`] applied via `--tools` allowlist; fail-closed default |
 //! | G-CG cost gate | [`CostGate`] pre-flight estimate check; spawn rejected before subprocess launch |
@@ -418,7 +418,7 @@ impl LlmAgentProvider for ClaudeCliProvider {
 /// --verbose` so that the subprocess emits NDJSON events line-by-line on
 /// stdout.  When `false`, the command uses `--output-format json` (wait for
 /// complete output).
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, unsafe_code)]
 fn build_command(
     binary: &PathBuf,
     default_model: &str,
@@ -491,11 +491,23 @@ fn build_command(
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
 
-    // G10: put the subprocess in its own process group so that killpg on
-    // timeout reaches all grandchildren (e.g. claude spawning sub-agents).
-    // PGID == child PID when pgroup is 0.
+    // G10: new session via setsid() so the subprocess is fully detached from
+    // the controlling TTY.  Ctrl-C and SIGHUP from the operator terminal do
+    // not reach it; only explicit killpg(pgid, SIGKILL) on timeout does.
+    // setsid() also creates a new process group (PGID == child PID), which is
+    // what killpg needs.  pre_exec runs in the forked-but-not-yet-exec'd child
+    // so the closure is sound: libc::setsid is async-signal-safe.
     #[cfg(unix)]
-    cmd.process_group(0);
+    // SAFETY: pre_exec closure runs post-fork in the child process only.
+    // libc::setsid() is async-signal-safe per POSIX.  Return value (new SID or
+    // -1) is intentionally ignored — failure means we were already a session
+    // leader, which is harmless: the process group is still isolated.
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
 
     cmd
 }
@@ -923,6 +935,73 @@ mod tests {
         assert!(
             !b_args.contains(&"--verbose"),
             "--verbose must NOT be present for batch mode"
+        );
+    }
+
+    /// Fixture-replay: `spawn_streaming()` against mock-claude.sh emits the
+    /// expected `ProviderEvent` sequence without requiring a real Claude binary.
+    ///
+    /// Refresh fixture: `make test-claude-fixture-refresh`
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn fixture_replay_stream_produces_expected_events() {
+        use futures_util::StreamExt as _;
+
+        let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/mock-claude.sh");
+        assert!(
+            fixture.exists(),
+            "mock-claude.sh fixture missing — run: make test-claude-fixture-refresh"
+        );
+
+        let provider = ClaudeCliProvider {
+            claude_binary: fixture.clone(),
+            ..ClaudeCliProvider::default()
+        };
+
+        let req = AgentRequest {
+            sibling_identity: "fixture-test".to_owned(),
+            user_prompt: "ping".to_owned(),
+            schema: None,
+            allowed_tools: vec![],
+            max_turns: 1,
+            max_budget_usd: 0.10,
+            model_hint: None,
+            parent_span_id: None,
+            chain_origin: None,
+            chain_depth: 0,
+            aud: None,
+        }
+        .sanitize()
+        .unwrap();
+
+        let mut stream = provider
+            .spawn_streaming(req)
+            .await
+            .expect("stream must open");
+        let mut events: Vec<ProviderEvent> = Vec::new();
+        while let Some(ev) = stream.next().await {
+            events.push(ev);
+        }
+
+        // First event: MessageStart from mock fixture
+        assert!(
+            matches!(events.first(), Some(ProviderEvent::MessageStart { .. })),
+            "first event must be MessageStart, got: {:?}",
+            events.first()
+        );
+        // Must have at least one TextDelta
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, ProviderEvent::TextDelta { .. })),
+            "stream must contain at least one TextDelta"
+        );
+        // Last event: MessageStop
+        assert!(
+            matches!(events.last(), Some(ProviderEvent::MessageStop)),
+            "last event must be MessageStop, got: {:?}",
+            events.last()
         );
     }
 }
