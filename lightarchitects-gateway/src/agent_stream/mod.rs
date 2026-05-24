@@ -410,6 +410,13 @@ pub async fn run_interactive_with_strategies(
         system_prompt: Some(skill_prompt),
         ..SessionConfig::default()
     };
+
+    // W6.3: shared executor tracks operator-invoked skills so the operator-wins
+    // invariant can be enforced if the LLM emits tool_use for the same skill.
+    let executor = Arc::new(crate::providers::GatewayToolExecutor::new_with_skills(
+        Arc::new(config.clone()),
+    ));
+
     let provider =
         crate::cli::skills::build_provider().map_err(Box::<dyn std::error::Error>::from)?;
     let memory = session_memory::HelixSessionMemory::open(cwd, 20);
@@ -485,6 +492,10 @@ pub async fn run_interactive_with_strategies(
         }
 
         if let Some((slug, skill_args)) = crate::cli::skills::parse_skill_slash_command(input) {
+            // W6.3: mark the slug as operator-claimed before dispatching so that
+            // any concurrent LLM tool_use for the same skill returns
+            // SupersededByOperatorAction instead of double-executing.
+            executor.mark_operator_invoked(&slug);
             let mut full_args = vec![slug];
             full_args.extend(skill_args);
             if let Err(e) = crate::cli::skills::execute(config, &full_args).await {
@@ -492,6 +503,10 @@ pub async fn run_interactive_with_strategies(
             }
             continue;
         }
+
+        // Clear the operator-claimed set at the start of each conversational turn
+        // so stale claims from previous turns don't suppress new LLM tool_use.
+        executor.clear_operator_invocations();
 
         // Conversational turn — LLM responds; inspect last line for implicit skill dispatch.
         session.clear_interrupt();

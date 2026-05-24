@@ -5,7 +5,8 @@
 //! `glob`, `search`. Each maps to the corresponding `core_tools` handler.
 //! Error conversion maps [`GatewayError`] variants to typed [`ToolError`]s.
 
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -39,10 +40,20 @@ fn default_skill_schema() -> Value {
 /// Holds a shared [`GatewayConfig`] and exposes:
 /// - Six core tools: `bash`, `read`, `write`, `edit`, `glob`, `search`.
 /// - One tool per user-invocable skill loaded at construction time.
+///
+/// Implements the operator-wins invariant (W6.3): when the operator has
+/// explicitly invoked a skill via slash command in the current turn, any
+/// concurrent or subsequent LLM `tool_use` for the same skill returns
+/// [`ToolError::SupersededByOperatorAction`] rather than double-executing.
 pub struct GatewayToolExecutor {
     config: Arc<GatewayConfig>,
     /// Skills exposed as tools. Populated at construction time from the plugin cache.
     skills: Vec<SkillSpec>,
+    /// Slugs the operator has explicitly invoked this turn (lowercase).
+    ///
+    /// Protected by a `Mutex` because the interactive input loop writes it
+    /// while async tasks may read it concurrently.
+    operator_active: Arc<Mutex<HashSet<String>>>,
 }
 
 impl GatewayToolExecutor {
@@ -52,6 +63,7 @@ impl GatewayToolExecutor {
         Self {
             config,
             skills: Vec::new(),
+            operator_active: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -65,7 +77,34 @@ impl GatewayToolExecutor {
         Self {
             config,
             skills: crate::cli::skills::list_all(),
+            operator_active: Arc::new(Mutex::new(HashSet::new())),
         }
+    }
+
+    /// Mark a skill slug as operator-invoked for the current turn.
+    ///
+    /// Called by the interactive input loop immediately before executing an
+    /// explicit operator slash command so that any concurrent LLM `tool_use`
+    /// for the same skill returns [`ToolError::SupersededByOperatorAction`].
+    pub fn mark_operator_invoked(&self, slug: &str) {
+        if let Ok(mut set) = self.operator_active.lock() {
+            set.insert(slug.to_lowercase());
+        }
+    }
+
+    /// Clear the operator-claimed set at the start of a new input turn.
+    pub fn clear_operator_invocations(&self) {
+        if let Ok(mut set) = self.operator_active.lock() {
+            set.clear();
+        }
+    }
+
+    /// Return `true` if the operator has explicitly claimed this skill slug.
+    fn is_operator_claimed(&self, slug: &str) -> bool {
+        self.operator_active
+            .lock()
+            .map(|s| s.contains(slug))
+            .unwrap_or(false)
     }
 }
 
@@ -261,10 +300,26 @@ impl ToolExecutor for GatewayToolExecutor {
             }
             "glob" => glob::run(input, &config).await,
             "search" => search::run(input, &config).await,
-            // Skill routing (W6.2): if tool_name matches a loaded skill slug
-            // (lowercase), run it via subprocess and return captured output.
+            // Skill routing (W6.2/W6.3): if tool_name matches a loaded skill slug
+            // (lowercase), apply the operator-wins gate then dispatch.
             name if self.skills.iter().any(|s| s.slug.to_lowercase() == name) => {
-                return run_skill_tool(tool_name, input, &tool_use_id).await;
+                // W6.3: operator slash-command wins — if the operator already ran
+                // this skill directly in the current turn, the LLM tool_use is
+                // redundant and must not double-execute.
+                if self.is_operator_claimed(name) {
+                    tracing::info!(
+                        tool = name,
+                        "skill tool_use superseded by operator slash-command this turn"
+                    );
+                    return Err(ToolError::SupersededByOperatorAction);
+                }
+                // SAFETY: the `any()` guard above ensures a matching entry exists.
+                let skill = self
+                    .skills
+                    .iter()
+                    .find(|s| s.slug.to_lowercase() == name)
+                    .expect("matching skill exists — checked above");
+                return run_skill_tool(skill, input, &tool_use_id).await;
             }
             unknown => return Err(ToolError::UnknownTool(unknown.to_owned())),
         };
@@ -299,14 +354,30 @@ impl ToolExecutor for GatewayToolExecutor {
 
 /// Run a user-invocable skill as a subprocess and capture its output.
 ///
-/// Spawns `<current_exe> skill <tool_name> [args...]`, captures stdout+stderr,
+/// Before spawning, verifies the skill's SKILL.md content against the
+/// trust ledger (W6.1). A hash mismatch returns [`ToolError::SkillNotTrusted`]
+/// rather than executing potentially tampered instructions.
+///
+/// Spawns `<current_exe> skill <slug> [args...]`, captures stdout+stderr,
 /// and returns a `ToolOutput` so the LLM can read the result.
 async fn run_skill_tool(
-    tool_name: &str,
+    skill: &SkillSpec,
     input: Value,
     tool_use_id: &str,
 ) -> Result<ToolOutput, ToolError> {
-    let mut cmd_args = vec!["skill".to_owned(), tool_name.to_owned()];
+    // W6.1 trust gate — reject skills whose SKILL.md changed since pinning.
+    if let Err(reason) = crate::cli::skill_trust::verify_or_pin(&skill.slug, &skill.content) {
+        tracing::warn!(
+            skill = %skill.slug,
+            %reason,
+            "skill trust check failed — refusing tool_use execution"
+        );
+        return Err(ToolError::SkillNotTrusted {
+            skill_name: skill.slug.clone(),
+        });
+    }
+
+    let mut cmd_args = vec!["skill".to_owned(), skill.slug.to_lowercase()];
     if let Some(extra) = input["args"].as_array() {
         cmd_args.extend(
             extra
@@ -320,9 +391,10 @@ async fn run_skill_tool(
 
     let child = tokio::process::Command::new(&exe).args(&cmd_args).output();
 
+    let slug = &skill.slug;
     let output = tokio::time::timeout(Duration::from_secs(120), child)
         .await
-        .map_err(|_| ToolError::Internal(format!("skill `{tool_name}` timed out after 120s")))?
+        .map_err(|_| ToolError::Internal(format!("skill `{slug}` timed out after 120s")))?
         .map_err(|e| ToolError::Internal(format!("skill subprocess error: {e}")))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -393,5 +465,47 @@ mod tests {
         assert!(!out.is_error);
         let text = out.content["content"][0]["text"].as_str().unwrap_or("");
         assert!(text.contains("hello"));
+    }
+
+    // ── W6.3 — operator-wins tests ──────────────────────────────────────────
+
+    #[test]
+    fn mark_operator_invoked_records_lowercase_slug() {
+        let exec = make_executor();
+        exec.mark_operator_invoked("BUILD");
+        assert!(exec.is_operator_claimed("build"));
+        assert!(!exec.is_operator_claimed("plan"));
+    }
+
+    #[test]
+    fn clear_operator_invocations_resets_set() {
+        let exec = make_executor();
+        exec.mark_operator_invoked("plan");
+        exec.clear_operator_invocations();
+        assert!(!exec.is_operator_claimed("plan"));
+    }
+
+    #[tokio::test]
+    async fn execute_skill_returns_superseded_when_operator_claimed() {
+        // Build an executor with a synthetic SkillSpec injected directly.
+        let mut exec = make_executor();
+        exec.skills.push(SkillSpec {
+            name: "Plan".to_owned(),
+            description: "Test skill".to_owned(),
+            slug: "plan".to_owned(),
+            content: "---\nname: plan\nuser-invocable: true\n---\nBody.".to_owned(),
+            path: std::path::PathBuf::from("/tmp/fake-skill.md"),
+            user_invocable: true,
+            tool_schema: None,
+        });
+
+        // Simulate: operator typed `/plan` first.
+        exec.mark_operator_invoked("plan");
+
+        let err = exec.execute("id_sup", "plan", json!({})).await.unwrap_err();
+        assert!(
+            matches!(err, ToolError::SupersededByOperatorAction),
+            "expected SupersededByOperatorAction, got {err:?}"
+        );
     }
 }
