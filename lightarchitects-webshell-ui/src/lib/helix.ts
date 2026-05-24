@@ -8,7 +8,9 @@
 
 import { authHeaders } from './auth';
 
-const PLATFORM_API_BASE = 'http://localhost:3800';
+// Platform HTTP server (`lightarchitects platform --port 8080`).
+// Distinct from the Arena orchestrator (`lightarchitects serve`, port 3800).
+const PLATFORM_API_BASE = 'http://localhost:8080';
 
 export type RetrievalMode = 'keyword_dominated' | 'balanced' | 'graph_weighted';
 

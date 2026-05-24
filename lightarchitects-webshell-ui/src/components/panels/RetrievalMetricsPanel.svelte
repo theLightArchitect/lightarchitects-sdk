@@ -1,13 +1,5 @@
 <script lang="ts">
-  import type { RetrieveResult } from '$lib/helix';
-
-  interface Props {
-    result?: RetrieveResult | null;
-    loading?: boolean;
-    error?: string | null;
-  }
-
-  let { result = null, loading = false, error = null }: Props = $props();
+  import { retrieve, type RetrieveResult } from '$lib/helix';
 
   const MODE_LABELS: Record<string, string> = {
     keyword_dominated: 'KEYWORD',
@@ -15,9 +7,30 @@
     graph_weighted:    'GRAPH',
   };
 
+  let query   = $state('');
+  let result  = $state<RetrieveResult | null>(null);
+  let loading = $state(false);
+  let error   = $state<string | null>(null);
+
   let modeLabel = $derived(result ? (MODE_LABELS[result.mode] ?? result.mode.toUpperCase()) : '—');
   let hitPct    = $derived(result ? Math.round(result.cache_hit_ratio * 100) : null);
   let count     = $derived(result?.count ?? null);
+
+  async function submit(e: SubmitEvent) {
+    e.preventDefault();
+    const q = query.trim();
+    if (!q) return;
+    loading = true;
+    error   = null;
+    try {
+      result = await retrieve({ query: q });
+    } catch (err) {
+      error  = err instanceof Error ? err.message : String(err);
+      result = null;
+    } finally {
+      loading = false;
+    }
+  }
 </script>
 
 <div class="rm-panel" data-card-role="retrieval-metrics" data-testid="retrieval-metrics-panel">
@@ -27,6 +40,21 @@
       <span class="rm-mode-badge" data-testid="rm-mode-badge">{modeLabel}</span>
     {/if}
   </header>
+
+  <form class="rm-form" onsubmit={submit} data-testid="rm-query-form">
+    <input
+      class="rm-input"
+      type="text"
+      placeholder="Query helix…"
+      bind:value={query}
+      disabled={loading}
+      aria-label="Helix query"
+      data-testid="rm-query-input"
+    />
+    <button class="rm-submit" type="submit" disabled={loading || !query.trim()} aria-label="Search">
+      {loading ? '◌' : '⟳'}
+    </button>
+  </form>
 
   {#if loading}
     <div class="rm-state rm-loading" data-testid="rm-loading">
@@ -113,6 +141,44 @@
     padding: 1px 5px;
     border-radius: 2px;
   }
+
+  /* ── Query form ───────────────────────────────────────────────── */
+  .rm-form {
+    display: flex;
+    gap: 4px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--la-hair-faint, #1c2028);
+    flex-shrink: 0;
+  }
+
+  .rm-input {
+    flex: 1;
+    min-width: 0;
+    background: var(--la-bg-elev-1, #111214);
+    border: 1px solid var(--la-hair-strong, #3a3f4b);
+    border-radius: 2px;
+    color: var(--la-text-base, #c9d1d9);
+    font-family: inherit;
+    font-size: 10px;
+    padding: 4px 6px;
+    outline: none;
+  }
+  .rm-input:focus { border-color: var(--la-struct-primary, #00bfff); }
+  .rm-input::placeholder { color: var(--la-text-mute, #6e7681); }
+  .rm-input:disabled { opacity: 0.5; }
+
+  .rm-submit {
+    background: var(--la-bg-elev-1, #111214);
+    border: 1px solid var(--la-hair-strong, #3a3f4b);
+    border-radius: 2px;
+    color: var(--la-struct-primary, #00bfff);
+    font-size: 12px;
+    padding: 0 8px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .rm-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+  .rm-submit:not(:disabled):hover { border-color: var(--la-struct-primary, #00bfff); }
 
   /* ── Stats row ────────────────────────────────────────────────── */
   .rm-stats {
