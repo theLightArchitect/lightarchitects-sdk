@@ -31,14 +31,17 @@ use std::time::Duration;
 use tempfile::TempDir;
 
 use async_trait::async_trait;
+use futures_util::stream::{self, BoxStream};
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
+use tokio::io::AsyncBufReadExt as _;
 use tracing::{info, warn};
 
+use super::messages_stream_parser::stream_json::parse_ndjson_line;
 use super::permissions::{CostGate, PermissionMatrix};
 use super::provider::{
     AgentRequest, AgentResponse, LlmAgentProvider, ProviderCapabilities, ProviderError,
-    SanitizedAgentRequest, SchemaMode, TokenUsage,
+    ProviderEvent, SanitizedAgentRequest, SchemaMode, TokenUsage,
 };
 
 // ── Rate table ─────────────────────────────────────────────────────────────────
@@ -271,6 +274,7 @@ impl LlmAgentProvider for ClaudeCliProvider {
             &mcp_config,
             self.permission_matrix.as_ref(),
             self.traceparent.as_deref(),
+            false, // batch mode
         );
 
         let timeout_secs = u64::from(inner.max_turns) * 120 + 30;
@@ -309,6 +313,81 @@ impl LlmAgentProvider for ClaudeCliProvider {
         Ok(resp)
     }
 
+    /// Stream `claude --output-format stream-json --verbose` NDJSON events.
+    ///
+    /// Spawns the subprocess with stdout piped; the child is waited on in a
+    /// background task so the caller gets ownership of the [`BoxStream`]
+    /// without blocking.  The process group is killed (`kill_on_drop(true)`)
+    /// if the stream is dropped before the subprocess finishes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderError::MissingPermissionMatrix`] or
+    /// [`ProviderError::BudgetExceeded`] for the same pre-flight conditions as
+    /// [`LlmAgentProvider::spawn`].  Returns [`ProviderError::Internal`] if the
+    /// subprocess cannot be spawned.
+    async fn spawn_streaming(
+        &self,
+        req: SanitizedAgentRequest,
+    ) -> Result<BoxStream<'static, ProviderEvent>, ProviderError> {
+        if self.require_permission_matrix && self.permission_matrix.is_none() {
+            return Err(ProviderError::MissingPermissionMatrix);
+        }
+
+        let inner = req.request();
+
+        if let Some(gate) = &self.cost_gate {
+            let input_est =
+                u32::try_from(inner.sibling_identity.len() / 4 + inner.user_prompt.len() / 4)
+                    .unwrap_or(u32::MAX);
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let output_est = (inner.max_budget_usd * 10_000.0)
+                .max(0.0)
+                .min(f64::from(u32::MAX)) as u32;
+            let estimated = self.estimate_cost(input_est, output_est);
+            if estimated > gate.max_usd {
+                return Err(ProviderError::BudgetExceeded {
+                    cap_usd: gate.max_usd,
+                    actual_usd: estimated,
+                });
+            }
+        }
+
+        let mcp_dir = TempDir::with_prefix("la-")
+            .map_err(|e| ProviderError::Internal(format!("tempdir creation failed: {e}")))?;
+        let mcp_config = mcp_dir.path().join("mcp-null.json");
+        std::fs::write(&mcp_config, r#"{"mcpServers":{}}"#)
+            .map_err(|e| ProviderError::Internal(format!("mcp config write failed: {e}")))?;
+
+        let mut cmd = build_command(
+            &self.claude_binary,
+            &self.default_model,
+            &req,
+            self.api_key.as_ref().map(ExposeSecret::expose_secret),
+            &mcp_config,
+            self.permission_matrix.as_ref(),
+            self.traceparent.as_deref(),
+            true, // streaming
+        );
+
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| ProviderError::Internal(format!("subprocess spawn failed: {e}")))?;
+
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| ProviderError::Internal("stdout not piped".to_owned()))?;
+
+        // Background task: wait for child exit + clean up process-private tempdir.
+        tokio::spawn(async move {
+            let _ = child.wait().await;
+            drop(mcp_dir);
+        });
+
+        Ok(ndjson_stdout_to_stream(stdout))
+    }
+
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities {
             schema_enforcement: SchemaMode::BestEffort,
@@ -335,6 +414,11 @@ impl LlmAgentProvider for ClaudeCliProvider {
 /// `permission_matrix` overrides the request-level `allowed_tools` when `Some`:
 /// the effective tool list from [`PermissionMatrix::effective_tools`] is used
 /// instead.  `traceparent` is injected as `W3C_TRACEPARENT` when `Some`.
+/// When `streaming` is `true`, the command uses `--output-format stream-json
+/// --verbose` so that the subprocess emits NDJSON events line-by-line on
+/// stdout.  When `false`, the command uses `--output-format json` (wait for
+/// complete output).
+#[allow(clippy::too_many_arguments)]
 fn build_command(
     binary: &PathBuf,
     default_model: &str,
@@ -343,6 +427,7 @@ fn build_command(
     mcp_config: &Path,
     permission_matrix: Option<&PermissionMatrix>,
     traceparent: Option<&str>,
+    streaming: bool,
 ) -> tokio::process::Command {
     let inner = req.request();
     let mut cmd = tokio::process::Command::new(binary);
@@ -354,9 +439,15 @@ fn build_command(
         .arg("--max-turns")
         .arg(inner.max_turns.to_string())
         .arg("--max-budget-usd")
-        .arg(inner.max_budget_usd.to_string())
-        .arg("--output-format")
-        .arg("json");
+        .arg(inner.max_budget_usd.to_string());
+
+    if streaming {
+        cmd.arg("--output-format")
+            .arg("stream-json")
+            .arg("--verbose");
+    } else {
+        cmd.arg("--output-format").arg("json");
+    }
 
     let model = inner.model_hint.as_deref().unwrap_or(default_model);
     cmd.arg("--model").arg(model);
@@ -407,6 +498,36 @@ fn build_command(
     cmd.process_group(0);
 
     cmd
+}
+
+/// Convert `claude --output-format stream-json --verbose` stdout into a
+/// [`BoxStream`] of [`ProviderEvent`]s.
+///
+/// Lines that are empty, `result`, `system`, or `debug` events are silently
+/// skipped.  NDJSON parse errors are logged as warnings and skipped; the
+/// stream terminates cleanly at EOF or on an I/O error.
+fn ndjson_stdout_to_stream(
+    stdout: tokio::process::ChildStdout,
+) -> BoxStream<'static, ProviderEvent> {
+    let lines = tokio::io::BufReader::new(stdout).lines();
+    Box::pin(stream::unfold(lines, |mut lines| async move {
+        loop {
+            match lines.next_line().await {
+                Ok(Some(line)) => match parse_ndjson_line(&line) {
+                    Ok(Some(event)) => return Some((event, lines)),
+                    Ok(None) => {}
+                    Err(e) => {
+                        warn!(err = %e, "claude-cli NDJSON parse error; skipping line");
+                    }
+                },
+                Ok(None) => return None, // EOF
+                Err(e) => {
+                    warn!(err = %e, "claude-cli stdout read error");
+                    return None;
+                }
+            }
+        }
+    }))
 }
 
 /// Spawn the command and wait for it to complete within `timeout_dur`.
@@ -638,6 +759,7 @@ mod tests {
             &mcp_config,
             None,
             None,
+            false, // batch mode — tests the non-streaming path
         );
         let args: Vec<&OsStr> = cmd.as_std().get_args().collect();
         let args_str: Vec<&str> = args.iter().filter_map(|a| a.to_str()).collect();
@@ -713,6 +835,94 @@ mod tests {
             provider.allowed_tools.as_deref(),
             Some(tools.as_slice()),
             "allowed_tools must be stored"
+        );
+    }
+
+    /// Streaming command must use `--output-format stream-json` + `--verbose`;
+    /// batch command must use `--output-format json` with no `--verbose`.
+    #[test]
+    fn streaming_command_uses_stream_json_verbose() {
+        use std::ffi::OsStr;
+        let req = AgentRequest {
+            sibling_identity: "test".to_owned(),
+            user_prompt: "probe".to_owned(),
+            schema: None,
+            allowed_tools: vec![],
+            max_turns: 1,
+            max_budget_usd: 0.10,
+            model_hint: None,
+            parent_span_id: None,
+            chain_origin: None,
+            chain_depth: 0,
+            aud: None,
+        }
+        .sanitize()
+        .unwrap();
+        let provider = ClaudeCliProvider::default();
+        let mcp_dir = tempfile::TempDir::with_prefix("la-").unwrap();
+        let mcp_config = mcp_dir.path().join("mcp-null.json");
+        std::fs::write(&mcp_config, r#"{"mcpServers":{}}"#).unwrap();
+
+        let streaming_cmd = build_command(
+            &provider.claude_binary,
+            &provider.default_model,
+            &req,
+            None,
+            &mcp_config,
+            None,
+            None,
+            true,
+        );
+        let batch_cmd = build_command(
+            &provider.claude_binary,
+            &provider.default_model,
+            &req,
+            None,
+            &mcp_config,
+            None,
+            None,
+            false,
+        );
+
+        let s_args: Vec<&str> = streaming_cmd
+            .as_std()
+            .get_args()
+            .filter_map(OsStr::to_str)
+            .collect();
+        let b_args: Vec<&str> = batch_cmd
+            .as_std()
+            .get_args()
+            .filter_map(OsStr::to_str)
+            .collect();
+
+        // streaming: must have stream-json format AND --verbose
+        let fmt_pos = s_args
+            .iter()
+            .position(|a| *a == "--output-format")
+            .expect("--output-format must be present");
+        assert_eq!(
+            s_args.get(fmt_pos + 1).copied(),
+            Some("stream-json"),
+            "streaming must use stream-json format"
+        );
+        assert!(
+            s_args.contains(&"--verbose"),
+            "--verbose must be present for streaming"
+        );
+
+        // batch: must have json format and NO --verbose
+        let bfmt_pos = b_args
+            .iter()
+            .position(|a| *a == "--output-format")
+            .expect("--output-format must be present");
+        assert_eq!(
+            b_args.get(bfmt_pos + 1).copied(),
+            Some("json"),
+            "batch must use json format"
+        );
+        assert!(
+            !b_args.contains(&"--verbose"),
+            "--verbose must NOT be present for batch mode"
         );
     }
 }
