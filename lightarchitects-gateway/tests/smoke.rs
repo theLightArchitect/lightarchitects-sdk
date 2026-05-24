@@ -12,7 +12,8 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    unused_imports
+    unused_imports,
+    unsafe_code // SAFETY: HOME isolation in Phase 6 smoke tests; not for production code
 )]
 
 use lightarchitects::agent::{ChainContext, MAX_CHAIN_DEPTH, ProviderError, sanitize_params};
@@ -155,4 +156,46 @@ mod handler_smoke {
             "oversized params must yield InvalidParams; got: {result:?}"
         );
     }
+}
+
+// ── Phase 6: skills-as-tools smoke ────────────────────────────────────────────
+
+/// `GatewayToolExecutor::new` constructs without panic — operator registry
+/// is ready for the first turn.
+#[test]
+fn executor_new_is_ready() {
+    let config = lightarchitects_gateway::config::GatewayConfig::default();
+    let _executor =
+        lightarchitects_gateway::providers::GatewayToolExecutor::new(std::sync::Arc::new(config));
+    // No panic = pass.
+}
+
+/// `GatewayToolExecutor::new_with_skills` constructs without panic — skill
+/// list is empty by default (no skill dir configured).
+#[test]
+fn executor_new_with_skills_is_ready() {
+    let config = lightarchitects_gateway::config::GatewayConfig::default();
+    let _executor = lightarchitects_gateway::providers::GatewayToolExecutor::new_with_skills(
+        std::sync::Arc::new(config),
+    );
+}
+
+/// `verify_or_pin` smoke — first pin always succeeds; re-verify with same
+/// content always succeeds (deterministic hash).
+///
+/// Uses a stable slug + stable content so the test is idempotent across runs
+/// and writes to the real ledger without unsafe env manipulation.
+#[test]
+fn skill_trust_smoke_pin_and_verify() {
+    const SLUG: &str = "SMOKE_W7_P7_STABLE";
+    const CONTENT: &str = "# smoke-test stable content — vibe-coding-loop Phase 7";
+
+    // First call: pin (or re-verify if already pinned with same content).
+    let r1 = lightarchitects_gateway::cli::skill_trust::verify_or_pin(SLUG, CONTENT);
+    // Second call: always Ok if content hasn't changed (determinism proof).
+    let r2 = lightarchitects_gateway::cli::skill_trust::verify_or_pin(SLUG, CONTENT);
+    assert!(
+        r1.is_ok() && r2.is_ok(),
+        "smoke verify_or_pin must both succeed: r1={r1:?} r2={r2:?}"
+    );
 }

@@ -37,10 +37,67 @@
 //! Content extends until the next such header or EOF. This format renders
 //! cleanly in any markdown viewer and is straightforward to parse.
 
+use std::borrow::Cow;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
+
+use regex::Regex;
 
 use lightarchitects::agent::conversation::memory::{ConversationMemory, MessageRole, Turn};
+
+// ── Secret redaction (B6) ─────────────────────────────────────────────────────
+
+/// Compiled redaction patterns. Each entry is `(pattern, replacement)`.
+///
+/// Applied before any turn content reaches disk. In-memory turns retain the
+/// original content so the agent's context is unaffected.
+#[allow(clippy::expect_used)] // Regex literals are compile-time-validated; failure is a programmer error.
+static SECRET_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
+    vec![
+        // Generic key/secret/token assignment: `api_key: sk-abc`, `TOKEN=xyz`, etc.
+        (
+            Regex::new(r"(?i)(api[_-]?key|secret|token|password|bearer|credential)\s*[:=]\s*\S+")
+                .expect("static regex"),
+            "${1}=[REDACTED:secret-pattern]",
+        ),
+        // Anthropic API keys: `sk-ant-api03-...` or `sk-ant-...`
+        (
+            Regex::new(r"sk-[a-zA-Z0-9\-]{20,}").expect("static regex"),
+            "[REDACTED:anthropic-key]",
+        ),
+        // GitHub personal access tokens: `ghp_...` or `github_pat_...`
+        (
+            Regex::new(r"ghp_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9_]{82,}").expect("static regex"),
+            "[REDACTED:github-token]",
+        ),
+        // AWS access key IDs and secret keys.
+        (
+            Regex::new(r"AKIA[0-9A-Z]{16}").expect("static regex"),
+            "[REDACTED:aws-key-id]",
+        ),
+        (
+            Regex::new(r"(?i)aws_secret_access_key\s*[:=]\s*\S+").expect("static regex"),
+            "[REDACTED:aws-secret]",
+        ),
+    ]
+});
+
+/// Apply all redaction patterns to `content`, returning a `Cow::Borrowed` when
+/// nothing matches (zero-allocation fast path) or a `Cow::Owned` string with
+/// secrets replaced.
+fn redact_secrets(content: &str) -> Cow<'_, str> {
+    let mut result: Cow<'_, str> = Cow::Borrowed(content);
+    for (pattern, replacement) in SECRET_PATTERNS.iter() {
+        if pattern.is_match(result.as_ref()) {
+            let replaced = pattern
+                .replace_all(result.as_ref(), *replacement)
+                .into_owned();
+            result = Cow::Owned(replaced);
+        }
+    }
+    result
+}
 
 // ── Path helpers ──────────────────────────────────────────────────────────────
 
@@ -213,8 +270,10 @@ impl HelixSessionMemory {
 
 impl ConversationMemory for HelixSessionMemory {
     fn push(&mut self, role: MessageRole, content: String) {
-        // Best-effort write — failure doesn't break the session.
-        let _ = append_turn(&self.path, role, &content);
+        // Redact secrets before writing to disk (B6); in-memory turns keep the
+        // original so the agent's context window is unaffected.
+        let on_disk = redact_secrets(&content);
+        let _ = append_turn(&self.path, role, on_disk.as_ref());
         self.turns.push(Turn { role, content });
     }
 

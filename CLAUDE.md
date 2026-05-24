@@ -126,6 +126,35 @@ Canonical: `~/lightarchitects/soul/helix/user/standards/canon/builders-cookbook.
 
 ---
 
+## Agentic Loop — Skills-as-Tools (vibe-coding-loop Phase 6)
+
+The gateway exposes SKILL.md-defined operations as first-class JSON-schema tools that LLMs can invoke via `tool_use` blocks.
+
+### Key types
+
+| Type | Crate | Role |
+|------|-------|------|
+| `LlmAgentProvider` | `lightarchitects` | Streaming trait: `spawn_streaming()` primary; `spawn()` defaults to collect-stream |
+| `ToolExecutor` / `NullToolExecutor` | `lightarchitects` | Fail-closed tool dispatch; unknown tool names → `ToolError::NotPermitted` |
+| `IndirectInjectionShield` | `lightarchitects` | Content-layer injection detection on tool results (distinct from G1 transport-layer check) |
+| `GatewayToolExecutor` | `lightarchitects-gateway` | Routes LLM `tool_use` to registered skills; enforces operator-wins invariant |
+| `SkillTrustLedger` / `verify_or_pin` | `lightarchitects-gateway::cli::skill_trust` | SHA-256 pins SKILL.md content on first load; detects tampering on subsequent loads |
+| `messages_stream_parser/` | `lightarchitects` | Single SSE/NDJSON parser shared by Anthropic Cloud, Ollama, and Claude CLI providers |
+
+### Operator-wins invariant
+
+Per-turn, per-slug: `clear_operator_invocations()` resets at turn start. `mark_operator_invoked("plan")` before LLM response arrives means `GatewayToolExecutor` aborts `tool_use { name: "plan" }` with `ToolError::SupersededByOperatorAction`. The LLM sees `is_error: true, "superseded by operator"` and adapts.
+
+### bash_policy.rs allowlist
+
+The `bash` tool uses an explicit allowlist (cargo, git, ls, cat, grep, rg, jq, make, pnpm, npm). Unlisted commands → `NotPermitted`. Denylist alone always misses entries.
+
+### Trust ledger test hygiene
+
+Integration tests writing to `~/.lightarchitects/skill-trust-ledger.toml` must use namespaced slugs: `IT_*` (integration suite), `PT_*` (proptest), `SMOKE_*` (smoke). Content must be stable across runs — same slug + same content = idempotent. Never use `set_var("HOME", ...)` in tests; the workspace lint `unsafe_code = "deny"` blocks it in Rust 2024.
+
+---
+
 ## Key Design Decisions
 
 | Decision | Choice |

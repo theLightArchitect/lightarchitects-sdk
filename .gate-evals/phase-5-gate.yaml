@@ -1,0 +1,40 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-24T01:30:00-07:00"
+build_id: vibe-coding-loop
+phase_id: phase-5-operator-ux
+commit_sha: 12cbf307ab093cd001df503f4026d69cd04c45d1
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    notes: >
+      lightarchitects SDK: 1423 passed, 0 failed, 1 ignored. 1 pre-existing flake:
+      helix_toml::tests::load_helix_toml_perf_baseline_1000_iterations — timing
+      sensitivity under parallel test load; passes in isolation (10s budget). Not
+      a regression from Phase 5 changes (present since before this branch).
+      lightarchitects-gateway: 440 passed, 0 failed, 1 ignored. Includes 6 new
+      endpoint_policy unit tests (B5). Total: ~1863 passed, 0 failed.
+  Q4_svelte: n/a
+  D2_plan:
+    result: pass
+    notes: >
+      Phase 5 plan spec: W5.1 (spawn_streaming() wired, 71f2119), W5.2 (AYIN
+      span schema with TTFT/duration_ms/cancellation_reason, e079126), W5.3
+      (operator UX — 5s heartbeat, Ctrl-C SIGINT watcher, tool status inline
+      banners, ac26846), W5.4 (B6 secret redaction + B5 endpoint allowlist,
+      12cbf30). All 4 waves delivered as specified. No scope drift.
+
+commits_in_phase:
+  - sha: 71f2119
+    subject: "P5/W5.1: switch run_turn() from spawn() to spawn_streaming(); per-chunk Text events"
+  - sha: e079126
+    subject: "P5/W5.2: AYIN span schema — TTFT + duration_ms + cancellation taxonomy"
+  - sha: ac26846
+    subject: "P5/W5.3: operator UX cluster — heartbeat, Ctrl-C, tool status, AYIN banner"
+  - sha: 12cbf30
+    subject: "P5/W5.4: HelixSessionMemory secret redaction (B6) + endpoint allowlist (B5)"

@@ -10,8 +10,8 @@
 mod provider;
 pub use provider::{
     AgentRequest, AgentResponse, LlmAgentProvider, MAX_CHAIN_DEPTH, MAX_PARAM_BYTES,
-    ProviderCapabilities, ProviderError, SanitizedAgentRequest, SchemaMode, TokenUsage,
-    sanitize_params,
+    ProviderCapabilities, ProviderError, ProviderEvent, SanitizedAgentRequest, SchemaMode,
+    TokenUsage, sanitize_params,
 };
 
 mod dispatch;
@@ -23,6 +23,19 @@ pub use cloud_models::{CLOUD_MODEL_REGISTRY, CloudModel, CostTier};
 pub mod error;
 pub use error::OllamaError;
 
+/// Tool execution surface — [`ToolExecutor`] trait + [`NullToolExecutor`] fail-closed default (TS-2 §6.1.2).
+///
+/// [`ToolExecutor`]: tool_executor::ToolExecutor
+/// [`NullToolExecutor`]: tool_executor::NullToolExecutor
+pub mod tool_executor;
+pub use tool_executor::{NullToolExecutor, ToolDefinition, ToolError, ToolExecutor, ToolOutput};
+
+/// Shared LLM stream parsers — framing, SSE (Anthropic/Ollama), NDJSON (Claude CLI).
+///
+/// All three sub-modules emit [`ProviderEvent`] so provider implementations
+/// share a single parsing path (TS-3 §21.3).
+pub mod messages_stream_parser;
+
 /// L1 agentic loop substrate — [`Strategy`], [`LoopRunner`], combinators,
 /// `CritiqueRefine`. Provider-agnostic; enabled by the `loops-core` feature.
 ///
@@ -30,6 +43,18 @@ pub use error::OllamaError;
 /// [`LoopRunner`]: loops::LoopRunner
 #[cfg(feature = "loops-core")]
 pub mod loops;
+
+/// Indirect prompt injection defence — sentinel wrapping and pattern detection for
+/// tool results (B2 security fold, OWASP-LLM01-1.3, MITRE-ATLAS AML.T0051).
+pub mod indirect_injection_shield;
+pub use indirect_injection_shield::{
+    DetectedPattern, HitlReason, IndirectInjectionShield, InjectionSeverity,
+};
+
+/// Bash command-pattern policy — allowlist + denylist for LLM-driven bash tool calls
+/// (B3 security fold, Cookbook §63, OWASP-LLM02).
+pub mod bash_policy;
+pub use bash_policy::{BashPolicy, BashPolicyDecision};
 
 /// L2 conversation session — structured turn management, memory, transport.
 ///

@@ -111,6 +111,21 @@ pub enum ConversationEvent {
     /// Keepalive / heartbeat.
     Heartbeat,
 
+    /// An indirect prompt injection pattern was detected in a tool result.
+    ///
+    /// Emitted by [`IndirectInjectionShield`] before the result is re-injected.
+    /// The operator should review and decide whether to proceed.
+    ///
+    /// [`IndirectInjectionShield`]: crate::agent::indirect_injection_shield::IndirectInjectionShield
+    IndirectInjectionWarning {
+        /// The tool call whose result triggered the warning.
+        tool_use_id: String,
+        /// The matched injection pattern.
+        pattern: String,
+        /// Severity of the detected pattern.
+        severity: crate::agent::indirect_injection_shield::InjectionSeverity,
+    },
+
     /// Webshell-render metadata stub — wired in Phase 4 (SSE + P1 gate).
     WebshellRender {
         /// View identifier for the target panel.
@@ -134,6 +149,7 @@ impl ConversationEvent {
             Self::TokenUsage { .. } => "token_usage",
             Self::StatusUpdate { .. } => "status_update",
             Self::Heartbeat => "heartbeat",
+            Self::IndirectInjectionWarning { .. } => "indirect_injection_warning",
             Self::WebshellRender { .. } => "webshell_render",
         }
     }

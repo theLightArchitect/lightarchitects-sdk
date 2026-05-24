@@ -120,7 +120,9 @@ impl<W: AsyncWrite + Unpin + Send> Transport for TtyTransport<W> {
             ConversationEvent::TokenUsage { input, output } => {
                 Some(format!("[tokens in={input} out={output}]\n").into_bytes())
             }
-            ConversationEvent::Heartbeat | ConversationEvent::WebshellRender { .. } => None,
+            ConversationEvent::Heartbeat
+            | ConversationEvent::IndirectInjectionWarning { .. }
+            | ConversationEvent::WebshellRender { .. } => None,
         };
         if let Some(bytes) = rendered {
             self.sink.write_all(&bytes).await?;

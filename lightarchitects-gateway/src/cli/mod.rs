@@ -21,6 +21,7 @@ pub mod launcher;
 pub mod loops;
 pub mod output;
 pub mod setup;
+pub mod skill_trust;
 pub mod skills;
 pub mod status;
 pub mod webshell;

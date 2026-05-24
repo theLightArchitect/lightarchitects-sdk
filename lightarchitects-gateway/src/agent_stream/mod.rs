@@ -37,6 +37,7 @@ use tokio::io::AsyncBufReadExt as _;
 
 use crate::config::GatewayConfig;
 
+pub mod endpoint_policy;
 pub mod protocol;
 pub mod session_memory;
 pub mod strategy;
@@ -381,6 +382,7 @@ pub async fn run_ndjson_with_strategies(
 /// # Errors
 ///
 /// Returns an error if the LLM client cannot be initialised from environment.
+#[allow(clippy::too_many_lines)]
 pub async fn run_interactive_with_strategies(
     cwd: &Path,
     config: &GatewayConfig,
@@ -409,6 +411,13 @@ pub async fn run_interactive_with_strategies(
         system_prompt: Some(skill_prompt),
         ..SessionConfig::default()
     };
+
+    // W6.3: shared executor tracks operator-invoked skills so the operator-wins
+    // invariant can be enforced if the LLM emits tool_use for the same skill.
+    let executor = Arc::new(crate::providers::GatewayToolExecutor::new_with_skills(
+        Arc::new(config.clone()),
+    ));
+
     let provider =
         crate::cli::skills::build_provider().map_err(Box::<dyn std::error::Error>::from)?;
     let memory = session_memory::HelixSessionMemory::open(cwd, 20);
@@ -427,14 +436,37 @@ pub async fn run_interactive_with_strategies(
     let banner = format!(
         "Light Architects agent — cwd: {}{resume_note}\n\
          Skills: /plan /build /reflect /scrum /gate /xea … (or just describe what you need)\n\
-         Strategies: /strategy react|ach|itt|cove|reflexion <goal> | quit to exit\n",
+         Strategies: /strategy react|ach|itt|cove|reflexion <goal> | quit to exit\n\
+         AYIN dashboard: http://127.0.0.1:3742\n",
         cwd.display()
     );
     let _ = stdout.write_all(banner.as_bytes()).await;
+
+    // B5: warn if a non-default LLM endpoint is active (OWASP-LLM05/LLM06).
+    for var in &["ANTHROPIC_BASE_URL", "OLLAMA_BASE_URL", "LLM_API_URL"] {
+        if let Ok(url) = std::env::var(var) {
+            if !url.is_empty() && !endpoint_policy::is_default_allowed(&url) {
+                let warning = endpoint_policy::custom_endpoint_banner(&url);
+                let _ = stdout.write_all(warning.as_bytes()).await;
+            }
+        }
+    }
+
     let _ = stdout.flush().await;
 
     let reader = tokio::io::BufReader::new(tokio::io::stdin());
     let mut lines = reader.lines();
+
+    // H15: Ctrl-C mid-generation → interrupt in-flight turn and return to prompt.
+    // The watcher sets the session interrupt flag; run_turn's heartbeat loop checks it.
+    let interrupt_flag = std::sync::Arc::clone(&session.state.interrupt_flag);
+    let sigint_watcher = tokio::spawn(async move {
+        loop {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                interrupt_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+    });
 
     loop {
         let _ = stdout.write_all(b"> ").await;
@@ -461,6 +493,10 @@ pub async fn run_interactive_with_strategies(
         }
 
         if let Some((slug, skill_args)) = crate::cli::skills::parse_skill_slash_command(input) {
+            // W6.3: mark the slug as operator-claimed before dispatching so that
+            // any concurrent LLM tool_use for the same skill returns
+            // SupersededByOperatorAction instead of double-executing.
+            executor.mark_operator_invoked(&slug);
             let mut full_args = vec![slug];
             full_args.extend(skill_args);
             if let Err(e) = crate::cli::skills::execute(config, &full_args).await {
@@ -468,6 +504,10 @@ pub async fn run_interactive_with_strategies(
             }
             continue;
         }
+
+        // Clear the operator-claimed set at the start of each conversational turn
+        // so stale claims from previous turns don't suppress new LLM tool_use.
+        executor.clear_operator_invocations();
 
         // Conversational turn — LLM responds; inspect last line for implicit skill dispatch.
         session.clear_interrupt();
@@ -492,6 +532,7 @@ pub async fn run_interactive_with_strategies(
         }
     }
 
+    sigint_watcher.abort();
     Ok(())
 }
 
