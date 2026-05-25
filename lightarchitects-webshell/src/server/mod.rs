@@ -51,6 +51,7 @@ use crate::{
 };
 
 pub mod code_routes;
+pub mod conductor_routes;
 pub mod container_relay;
 pub mod exec_routes;
 pub mod fleet_routes;
@@ -849,6 +850,15 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/siblings", get(real_data::get_squad_status))
         .route("/api/sitrep", get(real_data::get_sitrep))
         .route("/api/conductor/status", get(real_data::get_conductor_status))
+        // ── Conductor HITL panel (container-hitl-audit L5) ───────────────────
+        .route(
+            "/api/conductor/hitl",
+            get(conductor_routes::list_hitl_handler),
+        )
+        .route(
+            "/api/conductor/hitl/{task_id}/resolve",
+            post(conductor_routes::resolve_hitl_handler),
+        )
         .route("/api/arena/status", get(real_data::get_arena_status))
         .route("/api/mcp-servers", get(real_data::list_mcp_servers))
         .route(

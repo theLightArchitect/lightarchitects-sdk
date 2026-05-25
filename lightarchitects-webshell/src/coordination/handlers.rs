@@ -46,7 +46,7 @@ use super::types::{
 /// for the full read → check → write sequence to prevent double-claim races.
 static QUEUE_LOCK: OnceLock<TokioMutex<()>> = OnceLock::new();
 
-fn queue_lock() -> &'static TokioMutex<()> {
+pub(crate) fn queue_lock() -> &'static TokioMutex<()> {
     QUEUE_LOCK.get_or_init(|| TokioMutex::new(()))
 }
 
@@ -58,42 +58,46 @@ fn queue_lock() -> &'static TokioMutex<()> {
 /// independent of `lightarchitects_gateway::conductor::queue::Task` lets the
 /// webshell stay a leaf consumer and not a dependency cycle target.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct OnDiskTask {
-    id: String,
-    title: String,
-    project: String,
-    prompt: String,
+pub(crate) struct OnDiskTask {
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) project: String,
+    pub(crate) prompt: String,
     #[serde(default)]
-    status: String,
+    pub(crate) status: String,
     #[serde(default)]
-    source: String,
+    pub(crate) source: String,
     #[serde(default)]
-    priority: String,
+    pub(crate) priority: String,
     #[serde(default)]
-    added: Option<String>,
+    pub(crate) added: Option<String>,
     #[serde(default)]
-    started: Option<String>,
+    pub(crate) started: Option<String>,
     #[serde(default)]
-    finished: Option<String>,
+    pub(crate) finished: Option<String>,
     #[serde(default)]
-    retries: u32,
+    pub(crate) retries: u32,
     #[serde(default)]
-    output_log: Option<String>,
+    pub(crate) output_log: Option<String>,
     #[serde(default)]
-    build_codename: Option<String>,
+    pub(crate) build_codename: Option<String>,
     #[serde(default)]
-    assignee: Option<String>,
+    pub(crate) assignee: Option<String>,
     #[serde(default)]
-    build_session_id: Option<String>,
+    pub(crate) build_session_id: Option<String>,
+    #[serde(default)]
+    pub(crate) awaiting_assertion_id: Option<String>,
+    #[serde(default)]
+    pub(crate) resolution_deadline: Option<String>,
 }
 
 /// Top-level shape of `~/.lightarchitects/tasks/queue.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct OnDiskQueue {
+pub(crate) struct OnDiskQueue {
     #[serde(default = "default_version")]
     version: String,
     #[serde(default)]
-    tasks: Vec<OnDiskTask>,
+    pub(crate) tasks: Vec<OnDiskTask>,
 }
 
 fn default_version() -> String {
@@ -198,6 +202,8 @@ pub async fn enqueue_dispatch(id: &str, title: &str, prompt: &str) -> Result<(),
         build_codename: None,
         assignee: None,
         build_session_id: None,
+        awaiting_assertion_id: None,
+        resolution_deadline: None,
     };
     queue.tasks.push(task);
     write_queue_async(queue_path, queue).await
@@ -284,6 +290,8 @@ pub async fn add_task(
         build_codename,
         assignee,
         build_session_id,
+        awaiting_assertion_id: None,
+        resolution_deadline: None,
     };
     queue.tasks.push(task);
 
@@ -824,7 +832,7 @@ fn is_authorised(headers: &HeaderMap, state: &AppState) -> bool {
 }
 
 /// Resolve the canonical conductor queue path: `~/.lightarchitects/tasks/queue.json`.
-fn queue_path() -> PathBuf {
+pub(crate) fn queue_path() -> PathBuf {
     home_dir()
         .join(".lightarchitects")
         .join("tasks")
@@ -846,7 +854,7 @@ fn home_dir() -> PathBuf {
 }
 
 #[derive(Debug)]
-enum QueueIoError {
+pub(crate) enum QueueIoError {
     Missing,
     Read(String),
     Parse(String),
@@ -871,7 +879,7 @@ fn read_queue(path: &Path) -> Result<OnDiskQueue, QueueIoError> {
 }
 
 /// Async wrapper — offloads blocking file I/O to a thread pool (MED H-90).
-async fn read_queue_async(path: PathBuf) -> Result<OnDiskQueue, QueueIoError> {
+pub(crate) async fn read_queue_async(path: PathBuf) -> Result<OnDiskQueue, QueueIoError> {
     tokio::task::spawn_blocking(move || read_queue(&path))
         .await
         .unwrap_or_else(|_| Err(QueueIoError::Read("blocking task panicked".to_owned())))
@@ -889,7 +897,7 @@ fn write_queue(path: &Path, queue: &OnDiskQueue) -> Result<(), String> {
 }
 
 /// Async wrapper — offloads blocking file I/O to a thread pool (MED H-90).
-async fn write_queue_async(path: PathBuf, queue: OnDiskQueue) -> Result<(), String> {
+pub(crate) async fn write_queue_async(path: PathBuf, queue: OnDiskQueue) -> Result<(), String> {
     tokio::task::spawn_blocking(move || write_queue(&path, &queue))
         .await
         .unwrap_or_else(|_| Err("blocking task panicked".to_owned()))
@@ -1163,6 +1171,8 @@ mod tests {
                 build_codename: None,
                 assignee: None,
                 build_session_id: None,
+                awaiting_assertion_id: None,
+                resolution_deadline: None,
             }],
         };
         write_queue(&path, &q).expect("write");
@@ -1198,6 +1208,8 @@ mod tests {
             build_codename: None,
             assignee: None,
             build_session_id: None,
+            awaiting_assertion_id: None,
+            resolution_deadline: None,
         };
         let s = to_summary(&task);
         assert_eq!(s.prompt_excerpt.len(), 240);
