@@ -21,8 +21,10 @@
 //!
 //! # Security
 //!
-//! Matrix file is read with size bounds (max 4MB). Path is verified against
-//! the allowed prefix before open to prevent path-traversal (Cookbook §31).
+//! Matrix file size is checked via metadata before reading (max 4 MB guard,
+//! `MAX_PROJECTION_BYTES`). Path validation is the caller's responsibility —
+//! callers constructing the path from user-controlled input must resolve and
+//! validate against an allowed prefix before passing to `load` (Cookbook §31).
 
 use std::path::Path;
 use std::sync::Arc;
@@ -68,6 +70,16 @@ impl ProjectionWeights {
     ///
     /// Returns `std::io::Error` if the file cannot be read or has wrong length.
     pub fn load(path: &Path) -> Result<Self, std::io::Error> {
+        // Reject oversized files before allocating (DoS guard, Cookbook §31).
+        let file_len = usize::try_from(std::fs::metadata(path)?.len()).unwrap_or(usize::MAX);
+        if file_len > MAX_PROJECTION_BYTES {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "sage_projection.bin: {file_len} bytes exceeds {MAX_PROJECTION_BYTES} limit"
+                ),
+            ));
+        }
         let bytes = std::fs::read(path)?;
         if bytes.len() != Self::EXPECTED_BYTES {
             return Err(std::io::Error::new(

@@ -1,0 +1,101 @@
+schema_version: 1
+type: ldb_verdict
+build: helix-gnn-substrate
+scored_by: QUANTUM (cold-context independent runner)
+scored_at: "2026-05-25T00:00:00Z"
+canon_xxxiii_compliance: true
+
+D1_request_fidelity: 92
+D1_notes: >
+  All four acceptance-criteria steps verified via gate N2_chain commit SHAs
+  (GraphSAGE substrate → HNSW migration v11 → query-conditioned graph scoring →
+  SSM session memory); graceful LCG fallback ensures structural slot never empty.
+  Minor single-source discount applied to consolidator stage 5b (gate YAML only,
+  consolidator source not independently read by runner).
+
+D2_iso_25010: 88
+D2_notes: >
+  Math oracle PROVEN on all four algorithms; Criterion bench harness present;
+  SSM sidecar corruption-detection test; clippy::pedantic clean.
+  Deducted for absence of a latency regression threshold in the gate YAML despite
+  the bench harness existing.
+
+D3_cisq: 84
+D3_notes: >
+  No .unwrap()/.expect() in production code; NaN guard and length checks
+  throughout; secret redaction before disk persist confirmed. Deducted because
+  the NaN guard in from_softmax is debug_assert! (disabled in release) rather
+  than assert!, leaving non-finite logits unguarded in release builds.
+
+D6_security: 85
+D6_notes: >
+  Re-scored after G2 fix: metadata pre-read size guard now enforces
+  MAX_PROJECTION_BYTES before allocation; module doc corrected to not falsely
+  claim path-traversal prefix checking. Secret redaction (5 patterns), 4MB guard,
+  wrong-size rejection tested, SSM sidecar at 0o600, no new network endpoints,
+  query text not logged.
+
+D8_parallel_performance: 42
+D8_notes: >
+  No AYIN spans added for GraphSAGE or SSM operations (acknowledged gap in both
+  build description and gate YAML). Consolidator stage 5b runs serially within
+  the 17-stage pipeline. Criterion bench harness covers weights_dynamic and
+  project() for regression only — no runtime observability, no latency tracing.
+
+# Aggregate formula: 0.20·D1 + 0.20·D2 + 0.15·D3 + 0.25·D6 + 0.20·D8
+# = 0.20×92 + 0.20×88 + 0.15×84 + 0.25×85 + 0.20×42
+# = 18.4 + 17.6 + 12.6 + 21.25 + 8.4 = 78.25
+aggregate: 78.25
+band: STRONG
+verdict: PASS
+
+gaps:
+  - id: G1
+    severity: MEDIUM
+    component: D8
+    status: deferred
+    description: >
+      No AYIN observability spans on GraphSAGE embed(), SSM update(), or
+      weights_dynamic() hot paths. Without spans there is no production latency
+      signal if projection or SSM becomes a bottleneck.
+    recommendation: >
+      Follow-on build: add tracing::instrument or manual span on
+      GraphSageProvider::embed and SsmState::update; register with AYIN
+      retrieval latency dashboard.
+
+  - id: G2
+    severity: MEDIUM
+    component: D6
+    status: RESOLVED
+    resolved_in: "graphsage_security_fix commit"
+    description: >
+      Module doc falsely claimed path-traversal prefix verification; load()
+      called std::fs::read(path) directly without canonicalize/prefix check.
+      MAX_PROJECTION_BYTES constant existed but was not used as a pre-read guard.
+    resolution: >
+      Added metadata pre-read size check before std::fs::read (DoS guard).
+      Updated module doc to correctly state that path validation is the caller's
+      responsibility and MAX_PROJECTION_BYTES is now enforced pre-read.
+
+  - id: G3
+    severity: LOW
+    component: D3
+    status: accepted
+    description: >
+      NaN guard in from_softmax uses debug_assert! — disabled in release builds.
+      Practical risk low (inputs from bounded f64 ops) but non-finite inputs
+      would cascade silently in release.
+    recommendation: >
+      Promote to assert! with #[cold] branch or document explicitly in function
+      contract that callers guarantee finite logits.
+
+  - id: G4
+    severity: LOW
+    component: D2
+    status: accepted
+    description: >
+      Criterion bench harness exists but no P50/P99 regression threshold is
+      recorded in gate YAML or benches/baseline.json.
+    recommendation: >
+      Run cargo bench --save-baseline helix-gnn-substrate and commit baseline;
+      add gate check for >20% regression.
