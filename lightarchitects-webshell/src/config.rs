@@ -34,8 +34,8 @@ pub const DEFAULT_OLLAMA_MODEL: &str = "qwen3-coder:480b-cloud";
 
 /// Agent backend discriminator — selects which CLI binary and protocol the webshell uses.
 ///
-/// Not all variants use the embedded PTY: `LightarchitectsNative` and `MistralVibe`
-/// route through subprocess bridges (`spawn_copilot` / `run_vibe_turn`) rather than a PTY.
+/// `LightarchitectsNative` routes through the LA SDK (`ConversationSession` / Ollama Cloud).
+/// `MistralVibe` and `Codex` use per-turn subprocess bridges. None use a PTY.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentKind {

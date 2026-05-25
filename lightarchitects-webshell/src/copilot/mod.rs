@@ -340,7 +340,7 @@ impl CopilotProcess {
 /// Uses `--output-format stream-json --verbose` (required combination for `--print`).
 /// Turn 1 (no `prev_session_id`): claude assigns a new session UUID returned in the result.
 /// Turn 2+ (`prev_session_id` is `Some`): `--resume <id>` continues the prior conversation
-/// from disk — giving full multi-turn context without a persistent subprocess.
+/// from disk — giving full multi-turn context without re-uploading history.
 ///
 /// Streams intermediate events (`assistant`, `tool_use`, `tool_result`) to the
 /// per-build `event_tx` as `WebEvent::CopilotActivity` so the Activity tab

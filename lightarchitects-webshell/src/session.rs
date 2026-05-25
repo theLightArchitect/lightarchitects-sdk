@@ -72,11 +72,10 @@ pub struct BuildSession {
     /// via `portable-pty`'s Drop impl, so removing a session from the
     /// registry is sufficient to clean up its child process.
     pub child_killer: StdMutex<Option<Box<dyn portable_pty::ChildKiller + Send>>>,
-    /// Persistent copilot subprocess (Anthropic backend only).
+    /// Per-turn copilot state (Lightarchitects / Codex backends).
     ///
-    /// `None` until the first copilot message; spawned lazily by `call_anthropic`.
-    /// The tokio mutex serializes turns and keeps the process alive between HTTP
-    /// requests. Dropped with the session → SIGKILL via `kill_on_drop(true)`.
+    /// Holds the `session_id` for conversation continuity across HTTP requests.
+    /// `None` until the first turn; the mutex serializes concurrent turn requests.
     pub copilot_proc: tokio::sync::Mutex<Option<CopilotProcess>>,
 
     /// Shared interrupt flag for native (`LightarchitectsNative`) sessions.
