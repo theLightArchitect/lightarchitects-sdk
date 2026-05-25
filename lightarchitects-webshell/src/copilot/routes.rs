@@ -12,6 +12,7 @@ use axum::{
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
+use futures_util::StreamExt as _;
 use lightarchitects::agent::{
     ChainContext, ClaudeCliProvider, OllamaCliProvider,
     conversation::{
@@ -21,6 +22,7 @@ use lightarchitects::agent::{
 };
 use serde_json::json;
 use tokio_util::io::ReaderStream;
+use tracing::Instrument as _;
 use uuid::Uuid;
 
 use crate::{
@@ -111,6 +113,7 @@ pub async fn copilot_chat_handler(
             Some(prelude)
         };
         return drive_native_sse(
+            id,
             &body.message,
             session.cwd.clone(),
             grounding_hdrs,
@@ -167,7 +170,66 @@ const CHARS_PER_TOKEN: usize = 4;
 /// model context window (`num_ctx = 131_072` tokens, warn at 50%).
 const SYSTEM_PROMPT_WARN_CHARS: usize = 131_072 * CHARS_PER_TOKEN / 2; // ~262 144
 
+/// Abort guard: calls `AbortHandle::abort()` when dropped.
+///
+/// Stored inside the SSE body stream's `map` closure so the in-flight
+/// `native_turn_task` is cancelled when the HTTP client disconnects and the
+/// response `Body` is dropped (W7.3).
+struct AbortOnDrop(tokio::task::AbortHandle);
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// Body of the spawned turn task — separated from [`drive_native_sse`] to keep
+/// that function within the 100-line clippy limit.
+async fn native_turn_task(
+    cwd: std::path::PathBuf,
+    system_prompt: Option<String>,
+    write_half: tokio::io::DuplexStream,
+    msg: String,
+    ollama_provider: Option<OllamaCliProvider>,
+    interrupt_flag: Arc<AtomicBool>,
+) {
+    let memory = HelixSessionMemory::open(&cwd, 40);
+    let restored = memory.restored_turn_count();
+    tracing::debug!(restored_turns = restored, "helix session memory loaded");
+
+    let config = SessionConfig {
+        cwd,
+        system_prompt,
+        ..SessionConfig::default()
+    };
+    let mut transport = SseTransport::new(write_half);
+    let ctx = ChainContext::default();
+    let result = if let Some(provider) = ollama_provider {
+        let mut session = ConversationSession::new(config, Arc::new(provider))
+            .with_memory(Box::new(memory))
+            .with_interrupt_flag(Arc::clone(&interrupt_flag));
+        session.run_turn(&msg, &mut transport, &ctx).await
+    } else {
+        let mut session = ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()))
+            .with_memory(Box::new(memory))
+            .with_interrupt_flag(Arc::clone(&interrupt_flag));
+        session.run_turn(&msg, &mut transport, &ctx).await
+    };
+    if let Err(e) = result {
+        tracing::error!(error = %e, "run_turn failed");
+        let _ = transport
+            .emit(&ConversationEvent::Error {
+                message: e.to_string(),
+                recoverable: Some(false),
+            })
+            .await;
+    } else {
+        tracing::info!("run_turn completed");
+    }
+    // transport drop closes write_half → EOF on read_half
+}
+
 fn drive_native_sse(
+    build_id: Uuid,
     grounded_message: &str,
     cwd: std::path::PathBuf,
     extra_headers: HeaderMap,
@@ -204,7 +266,20 @@ fn drive_native_sse(
         .filter(|m| !m.is_empty())
         .unwrap_or_else(|| "nemotron-3-super:cloud".to_owned());
     let ollama_provider = if use_ollama {
-        OllamaCliProvider::new(&model).ok()
+        match OllamaCliProvider::new(&model) {
+            Ok(p) => Some(p),
+            Err(e) => {
+                // W8.2: surface provider-construction failure so the operator
+                // can see why we fell back to ClaudeCliProvider rather than
+                // silently degrading without explanation.
+                tracing::warn!(
+                    error = %e,
+                    model = %model,
+                    "OllamaCliProvider construction failed — falling back to ClaudeCliProvider"
+                );
+                None
+            }
+        }
     } else {
         None
     };
@@ -214,52 +289,37 @@ fn drive_native_sse(
     } else {
         "claude-cli"
     };
-    tracing::info!(provider = provider_name, model = %model, "drive_native_sse spawning turn");
-    tokio::spawn(async move {
-        // Load up to 40 prior turns from the helix session file for this project.
-        // Falls back to ephemeral in-memory if the helix path is absent.
-        let memory = HelixSessionMemory::open(&cwd, 40);
-        let restored = memory.restored_turn_count();
-        tracing::debug!(restored_turns = restored, "helix session memory loaded");
 
-        let config = SessionConfig {
+    // Span carries build_id so every tracing event inside run_turn is correlated
+    // in AYIN's dashboard under the same trace root (W8.4).
+    let span = tracing::info_span!(
+        "native_turn",
+        build_id = %build_id,
+        provider = provider_name,
+        model = %model,
+    );
+    tracing::info!(parent: &span, "drive_native_sse spawning turn");
+
+    let handle = tokio::spawn(
+        native_turn_task(
             cwd,
             system_prompt,
-            ..SessionConfig::default()
-        };
-        let mut transport = SseTransport::new(write_half);
-        let ctx = ChainContext::default();
-        let result = if let Some(provider) = ollama_provider {
-            let mut session = ConversationSession::new(config, Arc::new(provider))
-                .with_memory(Box::new(memory))
-                .with_interrupt_flag(Arc::clone(&interrupt_flag));
-            session.run_turn(&msg, &mut transport, &ctx).await
-        } else {
-            let mut session =
-                ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()))
-                    .with_memory(Box::new(memory))
-                    .with_interrupt_flag(Arc::clone(&interrupt_flag));
-            session.run_turn(&msg, &mut transport, &ctx).await
-        };
-        if let Err(e) = result {
-            tracing::error!(provider = provider_name, error = %e, "drive_native_sse run_turn failed");
-            // Surface the error to the SSE stream so the operator can see it.
-            let _ = transport
-                .emit(&ConversationEvent::Error {
-                    message: e.to_string(),
-                    recoverable: Some(false),
-                })
-                .await;
-        } else {
-            tracing::info!(
-                provider = provider_name,
-                "drive_native_sse run_turn completed"
-            );
-        }
-        // transport drop closes write_half → EOF on read_half
-    });
+            write_half,
+            msg,
+            ollama_provider,
+            interrupt_flag,
+        )
+        .instrument(span),
+    );
 
-    let stream = ReaderStream::new(read_half);
+    // W7.3: AbortOnDrop (module-level struct) lives inside the stream's map
+    // closure. When the response Body is dropped on client disconnect, the
+    // closure drops, firing abort_handle.abort() on the in-flight task.
+    let abort_guard = AbortOnDrop(handle.abort_handle());
+    let stream = ReaderStream::new(read_half).map(move |b| {
+        let _ = &abort_guard;
+        b
+    });
     let mut response = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/event-stream")
