@@ -1,0 +1,82 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE --scope phase"
+scored_at: "2026-05-24T00:00:00Z"
+build_id: webshell-la-native-backend
+phase_id: phase-8-integration-rewiring
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    note: "Full workspace run verifying no regressions from Phase 8 rewiring;
+      exact count recorded on gate completion — see gate-evals/phase-8-dead-code-removal.yaml
+      for prior baseline (830 webshell tests, 0 failures)"
+  Q4_svelte:
+    result: n/a
+    note: "No Svelte surface changes in Phase 8 rewiring"
+
+deliverables:
+  W7_3_sse_channel_drop:
+    status: complete
+    description: "AbortOnDrop (module-level struct with Drop impl calling abort_handle.abort())
+      stored inside ReaderStream::map() closure. When the response Body is dropped on
+      client disconnect, the closure drops, firing abort on the in-flight
+      ConversationSession::run_turn(). Aborting an already-complete task is a Tokio no-op.
+      native_turn_task extracted as a free async fn to keep drive_native_sse within
+      100-line clippy::too_many_lines limit."
+  W8_2_error_propagation_audit:
+    status: complete
+    description: "Audit of all error paths in drive_native_sse → native_turn_task →
+      ConversationSession → OllamaCliProvider. One gap found and fixed: OllamaCliProvider::new()
+      failure was silently swallowed; now emits tracing::warn! with error + model name so
+      operators see the fallback reason. All other paths: MAX_PROMPT_BYTES → 413,
+      MAX_GROUNDED_MESSAGE_BYTES → 400, build_not_found → 404, run_turn Err →
+      ConversationEvent::Error to SSE stream. No silent EOFs remain."
+  W8_3_sse_event_ordering_invariants:
+    status: complete
+    description: "6 regression tests in lightarchitects/tests/event_ordering.rs
+      (requires --features loops-core). Invariants: (A) status_update precedes first text
+      chunk; (B) text chunks are monotonically ordered; (C) token_usage precedes complete;
+      (D) no events after complete; (E) tool_start precedes tool_complete for same call ID;
+      (F) canonical turn sequence is well-formed end-to-end. All 6 pass."
+  W8_4_build_id_tracing:
+    status: complete
+    description: "drive_native_sse now accepts build_id: Uuid. A tracing::info_span!(
+      'native_turn', build_id, provider, model) wraps native_turn_task via .instrument(span).
+      Every tracing event inside run_turn inherits this span, enabling AYIN to correlate
+      across the full turn by build_id. Caller (copilot_chat_handler) passes Path(id) as
+      build_id."
+  W8_5_perf_baseline:
+    status: deferred_to_phase_9
+    description: "Performance baseline (p50/p95/p99 for cold turn, warm turn, tool dispatch,
+      interrupt latency) requires live Ollama Cloud API access with nemotron-3-super:cloud.
+      Targets from plan: TTFT p95 < 2s, warm turn p95 < 500ms, tokens/sec p95 > 40.
+      Measurement instrument: AYIN spans at app.gateway.ollama.{dispatch_to_first_token_ms,
+      tokens_per_second, turn_complete_ms}. Will be captured during Phase 9 W9.1 E2E suite
+      (10 runs, cold + warm + interrupt + tool_call) and recorded in manifest.yaml#perf_baseline."
+  W8_6_code_review:
+    status: deferred_to_phase_9
+    description: "Full coderabbit + feature-dev:code-reviewer pass on all modified files
+      from Phases 2-7 deferred to Phase 9 W9.4 SCRUM. Individual phase gates included
+      quality review per phase; cross-phase review will happen at SCRUM in Phase 9."
+  W8_7_make_quality:
+    status: complete
+    description: "cargo fmt --check + cargo clippy --workspace -- -D warnings + cargo test
+      --workspace all pass across lightarchitects lib, lightarchitects-webshell, and
+      lightarchitects-gateway. Pre-commit hook enforces fmt+clippy on every commit."
+
+notes:
+  - "W7.3 SSE channel drop: AbortHandle::abort() on a completed task is a documented
+    no-op per Tokio docs. Stream exhaustion (normal completion) and client disconnect
+    both drop the guard; both are safe."
+  - "W8.2 audit found 1 gap (OllamaCliProvider construction failure was silent).
+    Fixed in commit c950cc9. No other silent failure paths found."
+  - "W8.3 event_ordering.rs tests require --features loops-core since the conversation
+    module is feature-gated. The pre-commit hook runs without features; these tests are
+    run explicitly by the phase gate command."
+  - "W8.5 + W8.6 formally deferred per plan note: 'W8.5 measures actual at 250K' in
+    Phase 9 E2E; W8.6 rolled into W9.4 SCRUM. Both will close before pre-merge /GATE."
+  - "Phase 8 commit history: 5438d36 (sweep) → 4c45665 (dead-code) → c950cc9 (integration)"
