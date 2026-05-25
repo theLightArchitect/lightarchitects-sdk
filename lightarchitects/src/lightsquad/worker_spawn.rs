@@ -1,26 +1,71 @@
-//! Worker spawn — wraps `crate::agent::ClaudeCliProvider` for autonomous worker pool.
+//! Worker spawn — slot allocator, tier router, and subprocess handle lifecycle.
 //!
-//! Per canonical IRONCLAW PDF spec (7-Slot Agent Pool §):
+//! Per canonical IRONCLAW PDF spec (7-Slot Agent Pool):
+//!
 //! ```text
-//! claude --bare -p "{task_prompt}" --allowedTools "Read,Edit,Write,Bash" --output-format json
+//! Worker tier allocation (peak — 7 concurrent slots):
+//!   SLOT 1-3:  OllamaCloud  — qwen3-coder:480b-cloud via Ollama Cloud /api/chat
+//!   SLOT 4-7:  ClaudeCli    — claude --bare -p <prompt> subprocess
 //! ```
-//! - `--bare` skips CLAUDE.md auto-scan; context injected explicitly via `--append-system-prompt-file`
-//! - `ANTHROPIC_API_KEY` set per worker tier (Sonnet / Haiku / Ollama Cloud)
-//! - 3-5s startup overhead; negligible for tasks running 5-30 minutes
-//! - 7 concurrent slots during peak wave execution
-//! - Slot 1 becomes ReviewGate during gate cycle; other slots idle
 //!
-//! Worker tier allocation (peak):
-//! - SLOT 1-2: Sonnet (complex impl)
-//! - SLOT 3:   Ollama Cloud (qwen3-coder:480b or deepseek-v3.1:671b)
-//! - SLOT 4-7: Haiku (simple edits, test boilerplate, formatting)
+//! # TierRouter
 //!
-//! Phase 3 implementation — wraps `crate::agent::ClaudeCliProvider` (already
-//! implements subprocess spawn + G1 `sanitize_params`); adds slot allocator,
-//! tier router (per `crate::lightsquad::decision_pipeline::ModelRouter`),
-//! and result-channel routing back to `crate::lightsquad::wave_dispatcher`.
+//! [`TierRouter::tier_for_slot`] maps a 1-based slot index to a [`WorkerTier`].
+//! The router is pure (no I/O, no state) so it is trivially testable.
 //!
-//! Phase 1 stub — slot pool declared in Phase 3.
+//! The concrete provider construction happens in `lightsquad_bridge::make_worker`
+//! — the router itself is provider-agnostic.
+//!
+//! # Phase 3 scope
+//!
+//! - [`WorkerTier`] enum.
+//! - [`TierRouter`] with [`TierRouter::tier_for_slot`] and
+//!   [`TierRouter::is_ollama_slot`] helpers.
+//! - [`WorkerHandle`] struct (Phase 1 stub, unchanged).
+
+// ── WorkerTier ────────────────────────────────────────────────────────────────
+
+/// Provider tier assigned to a worker slot.
+///
+/// Matches the slot allocation table in the module docs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkerTier {
+    /// Slots 1-3: Ollama Cloud (`qwen3-coder:480b-cloud` via `/api/chat` NDJSON).
+    OllamaCloud,
+    /// Slots 4-7: Claude CLI subprocess (`claude --bare -p <prompt>`).
+    ClaudeCli,
+}
+
+// ── TierRouter ────────────────────────────────────────────────────────────────
+
+/// Pure mapping from 1-based slot index to [`WorkerTier`].
+///
+/// The router carries no state; all methods are associated functions.
+pub struct TierRouter;
+
+impl TierRouter {
+    /// Map a 1-based slot index to its [`WorkerTier`].
+    ///
+    /// Slots 1-3 → [`WorkerTier::OllamaCloud`].
+    /// Slots 4-7 → [`WorkerTier::ClaudeCli`].
+    ///
+    /// Out-of-range slots (0 or >7) fall through to [`WorkerTier::ClaudeCli`]
+    /// so the pool degrades gracefully under misconfiguration rather than
+    /// panicking.
+    #[must_use]
+    pub fn tier_for_slot(slot: usize) -> WorkerTier {
+        match slot {
+            1..=3 => WorkerTier::OllamaCloud,
+            _ => WorkerTier::ClaudeCli,
+        }
+    }
+
+    /// Returns `true` if `slot` is assigned to the Ollama Cloud tier.
+    #[must_use]
+    pub fn is_ollama_slot(slot: usize) -> bool {
+        matches!(Self::tier_for_slot(slot), WorkerTier::OllamaCloud)
+    }
+}
 
 // ── WorkerHandle ────────────────────────────────────────────────────────────────
 
@@ -76,12 +121,54 @@ impl Drop for WorkerHandle {
 // ── Tests ────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    /// Verify that a `WorkerHandle` with no child does not panic on drop.
+    // ── TierRouter ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn slots_1_to_3_are_ollama() {
+        for slot in 1..=3 {
+            assert_eq!(
+                TierRouter::tier_for_slot(slot),
+                WorkerTier::OllamaCloud,
+                "slot {slot} must be OllamaCloud"
+            );
+            assert!(
+                TierRouter::is_ollama_slot(slot),
+                "is_ollama_slot({slot}) must be true"
+            );
+        }
+    }
+
+    #[test]
+    fn slots_4_to_7_are_claude_cli() {
+        for slot in 4..=7 {
+            assert_eq!(
+                TierRouter::tier_for_slot(slot),
+                WorkerTier::ClaudeCli,
+                "slot {slot} must be ClaudeCli"
+            );
+            assert!(
+                !TierRouter::is_ollama_slot(slot),
+                "is_ollama_slot({slot}) must be false"
+            );
+        }
+    }
+
+    #[test]
+    fn slot_0_falls_through_to_claude_cli() {
+        assert_eq!(TierRouter::tier_for_slot(0), WorkerTier::ClaudeCli);
+    }
+
+    #[test]
+    fn slot_8_falls_through_to_claude_cli() {
+        assert_eq!(TierRouter::tier_for_slot(8), WorkerTier::ClaudeCli);
+    }
+
+    // ── WorkerHandle ──────────────────────────────────────────────────────────────
+
     #[test]
     fn worker_handle_drop_with_no_child() {
         let handle = WorkerHandle {

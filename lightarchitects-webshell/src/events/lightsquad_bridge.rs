@@ -24,10 +24,13 @@ use std::path::PathBuf;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use lightarchitects::lightsquad::{
-    program::{Program, ProgramConfig},
-    types::Task,
-    wave_dispatcher::WorkerSpec,
+use lightarchitects::{
+    agent::OllamaCloudCodingProvider,
+    lightsquad::{
+        program::{Program, ProgramConfig},
+        types::Task,
+        wave_dispatcher::WorkerSpec,
+    },
 };
 
 use crate::events::{
@@ -241,21 +244,17 @@ fn make_worker(
                     Some("canon://builders-cookbook#§66"),
                 );
             } else {
-                // Spawn real CLI worker.
-                let status = tokio::process::Command::new("lightarchitects")
-                    .args(["--bare", "-p", &prompt])
-                    .current_dir(&wt)
-                    .status()
+                // Ollama Cloud coding worker — structured output + 4-gate validation.
+                let provider = OllamaCloudCodingProvider::default_coding()
+                    .map_err(|e| format!("provider init failed: {e}"))?;
+                provider
+                    .execute_task(&task_id, &prompt, &wt)
                     .await
-                    .map_err(|e| format!("spawn failed: {e}"))?;
-
-                if !status.success() {
-                    return Err(format!("worker exited {:?}", status.code()));
-                }
+                    .map_err(|e| format!("ollama task failed: {e}"))?;
 
                 let _ = dw.append(
                     "L2",
-                    &format!("Task '{task_id}' completed by CLI worker"),
+                    &format!("Task '{task_id}' completed by OllamaCloud"),
                     Some("canon://builders-cookbook#§66"),
                 );
             }
