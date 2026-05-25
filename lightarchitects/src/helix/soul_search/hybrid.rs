@@ -279,6 +279,11 @@ impl SignalWeights {
     /// Use with [`RetrievalMode::weights_dynamic`] for query-conditioned fusion.
     #[must_use]
     pub fn from_softmax(logits: [f64; 4]) -> Self {
+        // Non-finite inputs produce NaN exps which cascade through rounding.
+        debug_assert!(
+            logits.iter().all(|l| l.is_finite()),
+            "from_softmax received non-finite logit: {logits:?}"
+        );
         // Numerically stable: subtract max before exponentiation.
         let max = logits.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         let exps: [f64; 4] = logits.map(|x| (x - max).exp());
