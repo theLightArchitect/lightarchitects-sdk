@@ -472,6 +472,7 @@ fn maybe_spawn_autonomous(
         event_tx: state.event_tx.clone(),
         decisions_writer,
         mock_workers: state.mock_workers,
+        hitl_queue: state.hitl_queue.clone(),
     });
     state.lightsquad_programs.insert(build_id, handle);
     info!(build_id = %build_id, "lightsquad autonomous build spawned");
@@ -1370,6 +1371,178 @@ pub fn record_broadcast_lag(send_start: std::time::Instant) {
         );
     }
 }
+// ── Operator request surface (Phase 4) ───────────────────────────────────────
+
+/// Response body for `GET /api/builds/:id/autonomous/status`.
+#[derive(Debug, serde::Serialize)]
+pub struct AutonomousStatusResponse {
+    /// UUID of the build session.
+    pub build_id: String,
+    /// `"running"` | `"completed"` | `"not_found"`
+    pub status: String,
+    /// HITL escalations currently awaiting operator resolution.
+    pub pending_hitl: Vec<PendingHitlSummary>,
+}
+
+/// Minimal projection of a [`crate::events::hitl_relay::HitlEntry`] for the status endpoint.
+#[derive(Debug, serde::Serialize)]
+pub struct PendingHitlSummary {
+    /// Server-minted UUID used as path param in the resolve endpoint.
+    pub call_id: String,
+    /// Task that originated the escalation.
+    pub task_id: String,
+    /// Human-readable escalation reason.
+    pub reason: String,
+    /// Zero-based wave index at escalation time.
+    pub wave_index: u32,
+    /// Slot number (1–7) blocked by this escalation.
+    pub worker_slot: u8,
+    /// Wall-clock time the escalation was created.
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// `GET /api/builds/:id/autonomous/status` — current wave progress + pending HITL list.
+///
+/// Returns `404` when the build is not found. Returns `status = "completed"` when
+/// the build finished (handle is absent from `lightsquad_programs`). Pending HITL
+/// entries are read from the shared queue — the list shrinks as the operator resolves
+/// them via `POST /api/builds/:id/hitl/:call_id`.
+pub async fn autonomous_status_handler(
+    _: crate::auth::AuthGuard,
+    axum::extract::Path(build_id): axum::extract::Path<uuid::Uuid>,
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> impl axum::response::IntoResponse {
+    use axum::response::IntoResponse as _;
+
+    if state.builds.get(build_id).is_none() {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
+    }
+
+    let status = if state.lightsquad_programs.contains_key(&build_id) {
+        "running"
+    } else {
+        "completed"
+    };
+
+    let pending_hitl: Vec<PendingHitlSummary> = state
+        .hitl_queue
+        .iter()
+        .filter(|e| e.value().build_id == build_id)
+        .map(|e| PendingHitlSummary {
+            call_id: e.value().call_id.to_string(),
+            task_id: e.value().task_id.clone(),
+            reason: e.value().reason.clone(),
+            wave_index: e.value().wave_index,
+            worker_slot: e.value().worker_slot,
+            created_at: e.value().created_at,
+        })
+        .collect();
+
+    (
+        axum::http::StatusCode::OK,
+        axum::Json(AutonomousStatusResponse {
+            build_id: build_id.to_string(),
+            status: status.to_owned(),
+            pending_hitl,
+        }),
+    )
+        .into_response()
+}
+
+/// `DELETE /api/builds/:id/autonomous` — cancel an in-flight autonomous build.
+///
+/// Aborts the `JoinHandle` in `lightsquad_programs` and removes it from the map.
+/// Responds `204 No Content` on success. Returns `404` when no autonomous build
+/// is running for this `build_id`, and `409` when the build is not in `"autonomous"`
+/// mode (i.e., `lightsquad_programs` has no entry).
+pub async fn autonomous_cancel_handler(
+    _: crate::auth::AuthGuard,
+    axum::extract::Path(build_id): axum::extract::Path<uuid::Uuid>,
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> impl axum::response::IntoResponse {
+    use axum::response::IntoResponse as _;
+
+    if state.builds.get(build_id).is_none() {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
+    }
+
+    let Some((_, handle)) = state.lightsquad_programs.remove(&build_id) else {
+        return axum::http::StatusCode::CONFLICT.into_response();
+    };
+
+    handle.abort();
+
+    // Drain any pending HITL entries for this build so workers don't leak oneshots.
+    state
+        .hitl_queue
+        .retain(|_, entry| entry.build_id != build_id);
+
+    tracing::info!(build_id = %build_id, "autonomous build cancelled by operator");
+    axum::http::StatusCode::NO_CONTENT.into_response()
+}
+
+/// Request body for `POST /api/builds/:id/hitl/:call_id`.
+#[derive(Debug, serde::Deserialize)]
+pub struct HitlResolveRequest {
+    /// `true` = approve the blocked action; `false` = reject it.
+    pub approved: bool,
+    /// Optional operator-supplied justification written to the decision log.
+    pub reason: Option<String>,
+}
+
+/// `POST /api/builds/:id/hitl/:call_id` — resolve a pending HITL escalation.
+///
+/// Sends on the escalation's oneshot channel, unblocking the worker. Responds
+/// `200 OK` on success. Returns:
+/// - `404` when `build_id` is unknown or the `call_id` is not in the queue.
+/// - `410 Gone` when the escalation has already been resolved (sender dropped).
+///
+/// # Anti-IDOR
+///
+/// `call_id` is server-minted at escalation time — callers cannot supply an
+/// arbitrary index to resolve another build's escalation.
+pub async fn hitl_resolve_handler(
+    _: crate::auth::AuthGuard,
+    axum::extract::Path((build_id, call_id)): axum::extract::Path<(uuid::Uuid, uuid::Uuid)>,
+    axum::extract::State(state): axum::extract::State<AppState>,
+    axum::Json(body): axum::Json<HitlResolveRequest>,
+) -> impl axum::response::IntoResponse {
+    use axum::response::IntoResponse as _;
+
+    if state.builds.get(build_id).is_none() {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
+    }
+
+    let Some((_, entry)) = state.hitl_queue.remove(&call_id) else {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
+    };
+
+    // Verify the escalation actually belongs to the stated build (belt-and-suspenders IDOR guard).
+    if entry.build_id != build_id {
+        // Re-insert so it isn't silently dropped, then reject.
+        state.hitl_queue.insert(call_id, entry);
+        return axum::http::StatusCode::FORBIDDEN.into_response();
+    }
+
+    let decision = crate::events::hitl_relay::HitlDecision {
+        approved: body.approved,
+        operator_reason: body.reason,
+    };
+
+    if entry.resolve_tx.send(decision).is_err() {
+        // Worker already dropped the receiver (timed out or was cancelled).
+        return axum::http::StatusCode::GONE.into_response();
+    }
+
+    tracing::info!(
+        build_id = %build_id,
+        call_id = %call_id,
+        approved = body.approved,
+        "HITL escalation resolved by operator"
+    );
+    axum::http::StatusCode::OK.into_response()
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

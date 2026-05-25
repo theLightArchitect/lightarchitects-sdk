@@ -63,6 +63,8 @@ pub struct BridgeContext {
     /// When `true`, use the hermetic mock worker instead of the real CLI.
     /// Set from [`AppState::mock_workers`] — always `false` in production.
     pub mock_workers: bool,
+    /// Shared HITL escalation queue — workers park here when `UserEscalation` fires.
+    pub hitl_queue: crate::events::hitl_relay::HitlQueue,
 }
 
 /// Spawn the autonomous build as a detached Tokio task.
@@ -87,6 +89,7 @@ async fn run_build(ctx: BridgeContext) {
         event_tx,
         decisions_writer,
         mock_workers,
+        hitl_queue,
     } = ctx;
 
     // Translate TaskSpec → lightsquad::Task
@@ -150,6 +153,7 @@ async fn run_build(ctx: BridgeContext) {
         tx_fix,
         dw_worker,
         mock_workers,
+        hitl_queue,
     );
 
     // L1 decision: build started
@@ -197,6 +201,7 @@ async fn run_build(ctx: BridgeContext) {
 /// `use_mock = true` activates the hermetic mock path (write file + git commit)
 /// instead of spawning the real `lightarchitects --bare` CLI. The flag is
 /// captured by value and applies to every task in the closure's lifetime.
+#[allow(clippy::too_many_arguments)]
 fn make_worker(
     build_id: Uuid,
     _codename: String,
@@ -205,6 +210,7 @@ fn make_worker(
     _tx_fix: broadcast::Sender<WebEventV2>,
     dw: DecisionsWriter,
     use_mock: bool,
+    hitl_queue: crate::events::hitl_relay::HitlQueue,
 ) -> impl Fn(
     WorkerSpec,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
@@ -216,6 +222,7 @@ fn make_worker(
         let tx_slot = tx_slot.clone();
         let tx_merge = tx_merge.clone();
         let dw = dw.clone();
+        let hitl_queue = hitl_queue.clone();
         let prompt = spec.task.prompt.clone();
         Box::pin(async move {
             let task_id = spec.task.id.clone();
@@ -247,16 +254,65 @@ fn make_worker(
                 // Ollama Cloud coding worker — structured output + 4-gate validation.
                 let provider = OllamaCloudCodingProvider::default_coding()
                     .map_err(|e| format!("provider init failed: {e}"))?;
-                provider
-                    .execute_task(&task_id, &prompt, &wt)
-                    .await
-                    .map_err(|e| format!("ollama task failed: {e}"))?;
 
-                let _ = dw.append(
-                    "L2",
-                    &format!("Task '{task_id}' completed by OllamaCloud"),
-                    Some("canon://builders-cookbook#§66"),
-                );
+                match provider.execute_task(&task_id, &prompt, &wt).await {
+                    Ok(_) => {
+                        let _ = dw.append(
+                            "L2",
+                            &format!("Task '{task_id}' completed by OllamaCloud"),
+                            Some("canon://builders-cookbook#§66"),
+                        );
+                    }
+                    Err(e) => {
+                        // Security violations and validation errors escalate to the
+                        // operator via HITL rather than halting the build silently.
+                        let reason = e.to_string();
+                        let (call_id, resolve_rx) = crate::events::hitl_relay::park(
+                            &hitl_queue,
+                            build_id,
+                            task_id.clone(),
+                            reason.clone(),
+                            0, // wave_index — TODO: thread wave index through WorkerSpec
+                            1, // worker_slot — TODO: thread slot number through WorkerSpec
+                        );
+
+                        let _ = tx_slot.send(WebEventV2::from_event(
+                            WebEvent::Escalation(crate::events::types::EscalationEvent {
+                                build_id: build_id.to_string(),
+                                wave_index: 0,
+                                worker_slot: 1,
+                                reason: reason.clone(),
+                                call_id: call_id.to_string(),
+                            }),
+                            Some(build_id),
+                        ));
+
+                        let _ = dw.append(
+                            "L4",
+                            &format!("ESCALATION task '{task_id}': {reason} — awaiting operator (call_id={call_id})"),
+                            Some("canon://security-guardrails#§G-DENY"),
+                        );
+
+                        // Await operator decision — block this worker slot.
+                        match resolve_rx.await {
+                            Ok(decision) if decision.approved => {
+                                let _ = dw.append(
+                                    "L4",
+                                    &format!(
+                                        "APPROVED by operator (call_id={call_id}): {}",
+                                        decision.operator_reason.as_deref().unwrap_or("no reason")
+                                    ),
+                                    None,
+                                );
+                            }
+                            Ok(_) | Err(_) => {
+                                return Err(format!(
+                                    "task '{task_id}' rejected by operator or HITL dropped (call_id={call_id})"
+                                ));
+                            }
+                        }
+                    }
+                }
             }
 
             let _ = tx_merge.send(WebEventV2::from_event(
