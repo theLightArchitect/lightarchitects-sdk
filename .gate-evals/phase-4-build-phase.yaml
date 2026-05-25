@@ -1,0 +1,33 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-25T00:00:00Z"
+build_id: helix-gnn-substrate
+phase_id: phase-4-build
+commit: 442573c8e2700251c4f887f46fb3dd0e75a524b1
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1509
+    tests_fail: 0
+    notes: >
+      1500 lightarchitects crate + 5 dynamic_weights_test + 4 graphsage_integration unit.
+      copilot_mistral_dispatch (lightarchitects-webshell) FLAKY pre-existing — fails on
+      HTTP server startup race under parallel load; predates this branch (7d20cf7);
+      passes in isolation. Not blocking.
+  Q4_svelte: "n/a"
+  D2_plan: pass
+
+notes: >
+  Phase 4 Wave B deliverables: query-conditioned graph.rs scoring (0.6×topological +
+  0.4×query_affinity via sage_embedding), dark-deploy fallback when sage_embedding=null,
+  SignalWeights::from_softmax (numerically-stable softmax + largest-remainder rounding,
+  sum=exactly 100), RetrievalMode::weights_dynamic, 5 property tests in
+  dynamic_weights_test.rs. All 8 Cypher builders updated to RETURN sage_embedding.
+  cast_precision_loss allow on q.len() as f64 (embedding dims bounded by architecture ≤4096).
+  cast_possible_truncation/sign_loss allow in from_softmax floors (p ∈ [0.0,100.0] by
+  softmax construction, clamp enforced). many_single_char_names allow in test file only.
