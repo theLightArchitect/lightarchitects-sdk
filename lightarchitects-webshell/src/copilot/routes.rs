@@ -320,13 +320,27 @@ fn drive_native_sse(
         let _ = &abort_guard;
         b
     });
-    let mut response = Response::builder()
+    let response_result = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/event-stream")
         .header(header::CACHE_CONTROL, "no-cache")
         .header("X-Accel-Buffering", "no")
-        .body(Body::from_stream(stream))
-        .unwrap_or_else(|_| Response::new(Body::empty()));
+        .body(Body::from_stream(stream));
+
+    let mut response = match response_result {
+        Ok(r) => r,
+        Err(e) => {
+            // Static header names/values cannot produce an error in practice;
+            // this branch exists to satisfy the no-unwrap/no-expect policy.
+            // Dropping `stream` here also drops `abort_guard`, cancelling the task.
+            tracing::error!(error = %e, "BUG: failed to construct SSE response with static headers");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "sse_response_construction_failed" })),
+            )
+                .into_response();
+        }
+    };
 
     for (k, v) in &extra_headers {
         response.headers_mut().insert(k.clone(), v.clone());
