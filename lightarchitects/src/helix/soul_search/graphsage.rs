@@ -120,11 +120,16 @@ impl ProjectionWeights {
         std::fs::write(path, &bytes)
     }
 
-    /// Reproducible random-stable initialisation (LCG seeded at `0xDEAD_BEEF`).
+    /// Reproducible random-stable projection weights (LCG seeded at `0xDEAD_BEEF`).
     ///
-    /// Produces L2-normalised row vectors so the fallback behaves like a
-    /// real projection — structural HNSW distances remain meaningful.
-    fn random_stable() -> Self {
+    /// Produces L2-normalised row vectors — the fallback behaves like a real projection.
+    /// Use in tests and when `sage_projection.bin` is absent.
+    #[must_use]
+    pub fn random_stable() -> Self {
+        Self::random_stable_impl()
+    }
+
+    fn random_stable_impl() -> Self {
         let mut state: u64 = 0xDEAD_BEEF_CAFE_1234;
         let mut next = move || -> f32 {
             state = state

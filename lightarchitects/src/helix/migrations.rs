@@ -13,6 +13,7 @@
 //!   v8:    `Step.vault_path` index for wikilink slug resolution
 //!   v9:    `:HotMemo` tier — Tier-1 ephemeral memos with TTL (Phase 18 dual-write)
 //!   v10:   Fix `step-embeddings` dimension: drop 768-dim, recreate at 384-dim
+//!   v11:   HNSW vector index for `GraphSAGE` structural embeddings (`step-sage-embeddings`, 128-dim)
 
 use crate::helix::graph::schema::Migration;
 
@@ -154,9 +155,24 @@ const V10_STATEMENTS: &[&str] = &[
      OPTIONS { indexConfig: { `vector.dimensions`: 384, `vector.similarity_function`: 'cosine' } }",
 ];
 
+// ── Migration v11: GraphSAGE HNSW index ──────────────────────────────
+
+/// v11 adds the HNSW vector index for `GraphSAGE` inductive structural embeddings.
+///
+/// `GDS gds.beta.graphSage.write` writes a 128-dim float array to `Step.sage_embedding`
+/// during the nightly consolidator run. This index serves the `step-sage-embeddings`
+/// slot in [`StructuralSearcher`]'s fallback chain (SAGE → `Node2Vec` → empty).
+///
+/// Coexists with:
+/// - `step-embeddings` (384-dim semantic, `Step.embedding`)
+/// - `step-struct-embeddings` (128-dim `Node2Vec`, `Step.struct_embedding`)
+const V11_STATEMENTS: &[&str] = &["CREATE VECTOR INDEX `step-sage-embeddings` IF NOT EXISTS \
+     FOR (s:Step) ON (s.sage_embedding) \
+     OPTIONS { indexConfig: { `vector.dimensions`: 128, `vector.similarity_function`: 'cosine' } }"];
+
 // ── Public API ────────────────────────────────────────────────────────
 
-/// All helix migrations (v3-v10), ordered by version.
+/// All helix migrations (v3-v11), ordered by version.
 ///
 /// These extend graph-engine's core migrations (v1-v2).
 /// Use [`helix_pending_migrations`] to filter by already-applied versions.
@@ -200,6 +216,11 @@ pub const HELIX_MIGRATIONS: &[Migration] = &[
         version: 10,
         description: "Fix step-embeddings dimension: drop 768-dim HNSW index, recreate at 384-dim to match stored embeddings",
         statements: V10_STATEMENTS,
+    },
+    Migration {
+        version: 11,
+        description: "Add step-sage-embeddings HNSW index (128-dim cosine) for GraphSAGE structural embeddings",
+        statements: V11_STATEMENTS,
     },
 ];
 
@@ -353,13 +374,13 @@ mod tests {
     #[test]
     fn test_pending_all() {
         let pending = helix_pending_migrations(&[]);
-        assert_eq!(pending.len(), 8, "All 8 helix migrations pending");
+        assert_eq!(pending.len(), 9, "All 9 helix migrations pending");
     }
 
     #[test]
     fn test_pending_partial() {
         let pending = helix_pending_migrations(&[3]);
-        assert_eq!(pending.len(), 7, "v4, v5, v6, v7, v8, v9, and v10 pending");
+        assert_eq!(pending.len(), 8, "v4-v11 pending");
         assert_eq!(pending[0].version, 4);
         assert_eq!(pending[1].version, 5);
         assert_eq!(pending[2].version, 6);
@@ -367,11 +388,12 @@ mod tests {
         assert_eq!(pending[4].version, 8);
         assert_eq!(pending[5].version, 9);
         assert_eq!(pending[6].version, 10);
+        assert_eq!(pending[7].version, 11);
     }
 
     #[test]
     fn test_pending_none() {
-        let pending = helix_pending_migrations(&[3, 4, 5, 6, 7, 8, 9, 10]);
+        let pending = helix_pending_migrations(&[3, 4, 5, 6, 7, 8, 9, 10, 11]);
         assert!(pending.is_empty(), "No pending migrations");
     }
 
@@ -551,8 +573,10 @@ mod tests {
 
     #[test]
     fn test_v10_corrects_embedding_dimension() {
-        // v10 is the last migration (index 7 in the 0-based array).
-        let v10 = HELIX_MIGRATIONS.last().expect("at least one migration");
+        let v10 = HELIX_MIGRATIONS
+            .iter()
+            .find(|m| m.version == 10)
+            .expect("v10 migration must exist");
         assert_eq!(v10.version, 10);
         assert_eq!(
             v10.statements.len(),
@@ -588,6 +612,34 @@ mod tests {
         assert!(
             create_stmt.contains("cosine"),
             "v10 must use cosine similarity: {create_stmt}"
+        );
+    }
+
+    #[test]
+    fn test_v11_sage_embeddings_index() {
+        let v11 = HELIX_MIGRATIONS.last().expect("at least one migration");
+        assert_eq!(v11.version, 11);
+        assert_eq!(v11.statements.len(), 1, "v11 must have exactly 1 statement");
+        let stmt = v11.statements[0];
+        assert!(
+            stmt.contains("step-sage-embeddings"),
+            "v11 must create step-sage-embeddings: {stmt}"
+        );
+        assert!(
+            stmt.contains("sage_embedding"),
+            "v11 must index sage_embedding property: {stmt}"
+        );
+        assert!(
+            stmt.contains("128"),
+            "v11 must declare 128 dimensions: {stmt}"
+        );
+        assert!(
+            stmt.contains("cosine"),
+            "v11 must use cosine similarity: {stmt}"
+        );
+        assert!(
+            stmt.contains("IF NOT EXISTS"),
+            "v11 must be idempotent: {stmt}"
         );
     }
 

@@ -1,0 +1,32 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-25T00:00:00Z"
+build_id: helix-gnn-substrate
+phase_id: phase-1-architecture
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1204
+    tests_fail: 0
+    flaky_pre_existing:
+      - test: ollama_bfcl
+        classification: "FLAKY (pre-existing) — confirmed on base branch"
+      - test: multi_turn_fixture
+        classification: "FLAKY (pre-existing) — confirmed on base branch"
+      - test: event_ordering
+        classification: "FLAKY (pre-existing) — confirmed on base branch"
+  Q4_svelte: "n/a — backend-only stack classification"
+  D2_plan: pass
+
+notes:
+  - "Phase 1 deliverables: Step.graph_embedding, STEP_SAGE_EMBEDDINGS, GraphSageProvider
+     (two-layer ReLU projection, IEEE 754 LCG init, load/save sage_projection.bin),
+     StructuralSearcher HNSW fallback (SAGE→Node2Vec→empty), record_to_step Neo4j read"
+  - "LCG cast_precision_loss resolved via IEEE 754 bit manipulation (f32::from_bits)"
+  - "a_gate_predicate.diagram_present=verified; drift_clean+checklist_current=pending (Phase 2+)"
+  - "Commit: c4f26cf on feat/helix-gnn-substrate"
