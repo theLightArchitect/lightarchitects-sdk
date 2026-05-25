@@ -157,6 +157,7 @@ proptest       = { workspace = true }
 pretty_assertions = { workspace = true }
 mockito        = { workspace = true }
 criterion      = { workspace = true }
+futures-util   = { workspace = true }
 serde_json     = { workspace = true }
 testcontainers-modules = { version = "0.9", features = ["neo4j"] }
 secrecy                = { workspace = true }
