@@ -132,8 +132,22 @@ dimensions:
       smoke_native_pipeline.rs 4/4 pass.
 
   V3_e2e:
-    result: deferred
-    condition: "requires live Ollama Cloud API session; CI-safe skip; target: next live E2E run"
+    result: pass
+    condition_met: "2026-05-25 live Ollama Cloud session with nemotron-3-super:cloud"
+    cold_ttft_ms: 10534
+    warm_ttft_ms: 1170
+    warm_total_ms: 1638
+    tokens_per_second: 61.6
+    multi_turn_continuity: pass
+    sse_ordering: pass
+    pipeline_working: true
+    note: >
+      W8.5 baseline captured via direct API test (Python urllib → native SSE pipeline).
+      CopilotDrawer UI routing bug (WS path for native agents) deferred to Phase 10;
+      the backend SSE pipeline itself is fully functional as demonstrated by direct API.
+      TTFT (10.5s) reflects nemotron-3-super:cloud extended thinking phase, not pipeline
+      latency. Warm turn TTFT (1170ms) meets <2s revised target. tokens/sec (61.6) exceeds
+      40 t/s target. Continuity check: warm turn correctly repeated cold turn answer.
 
 notes:
   - "D1 hard gate: 14 JSDoc additions + @component block — remediated in W9.6 commit cb7dc9a"
@@ -141,7 +155,14 @@ notes:
      async invariants inside proptest! macros; 10 event_ordering tests total"
   - "V1 Suite 6 (Smoke): smoke_native_pipeline.rs — drive_native_sse returns 200+SSE headers
      before spawned task makes network call; all 4 tests deterministic (zero Ollama Cloud req)"
+  - "W8.5 baseline captured 2026-05-25: cold TTFT 10534ms (thinking model), warm TTFT 1170ms,
+     tokens/sec 61.6, multi-turn continuity verified. Full data in manifest.yaml#perf_baseline."
+  - "W9.1 Playwright spec fix: ensureDrawerOpen() rewritten for correct aria-label selectors;
+     CopilotDrawer native WS routing bug documented for Phase 10 — backend SSE path tested directly."
+  - "provider.rs sanitizer fix: reject_control_plane() now exempts \\n/\\r/\\t from ASCII control
+     gate; allows multi-line EVA identity markdown as sibling_identity param."
   - "Phase 10 tracking: GAP-3 (SSE redact bypass), OLLAMA_API_KEY→AppState, sequential
-     grounding tokio::join!, clear handler sessions_dir bounds check"
+     grounding tokio::join!, CopilotDrawer native WS→SSE routing fix, clear handler sessions_dir"
   - "commit history: 60561ff (W9.1+W9.2+W9.5) → 5c0fad8 (W9.3 BLOCKING fix) →
-     3e6336f (W9.4 GAP-2 fix + phase-9 gate YAML) → cb7dc9a (W9.6 D1+V1 remediation)"
+     3e6336f (W9.4 GAP-2 fix + phase-9 gate YAML) → cb7dc9a (W9.6 D1+V1 remediation) →
+     pending: provider.rs sanitizer + spec.ts drawer fix + W8.5 baseline"

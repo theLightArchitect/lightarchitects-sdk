@@ -175,9 +175,14 @@ const FORBIDDEN_IDENTITY_TOKENS: &[(&str, &str)] = &[
 ];
 
 fn reject_control_plane(s: &str) -> Result<String, ProviderError> {
-    // Category gate: any ASCII control character (U+0000–U+001F, U+007F) is a
-    // control-plane injection vector regardless of intent.
-    if let Some(c) = s.chars().find(char::is_ascii_control) {
+    // Category gate: ASCII control characters (U+0000–U+001F, U+007F) are
+    // control-plane injection vectors.  Printable whitespace (\n, \r, \t) is
+    // exempt — the identity string is a multi-line markdown file, and these
+    // characters are structurally required content, not injection vectors.
+    let bad_ctrl = s
+        .chars()
+        .find(|c| c.is_ascii_control() && !matches!(c, '\n' | '\r' | '\t'));
+    if let Some(c) = bad_ctrl {
         return Err(ProviderError::ParamSanitizationFailed {
             param_name: "sibling_identity".to_owned(),
             reason: format!("contains ASCII control character U+{:04X}", c as u32),

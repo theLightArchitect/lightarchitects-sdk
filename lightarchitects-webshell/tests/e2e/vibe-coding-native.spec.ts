@@ -73,13 +73,16 @@ test.afterAll(async () => {
 });
 
 // Helper: open drawer if not already open.
+// "Expand copilot" aria-label means the drawer is currently collapsed.
 async function ensureDrawerOpen() {
-  const handle = page.locator('[role="separator"][aria-label="Resize copilot drawer"]');
-  if (!(await handle.isVisible().catch(() => false))) {
+  const expandBtn = page.locator('[aria-label="Expand copilot"]');
+  if (await expandBtn.isVisible().catch(() => false)) {
     await page.keyboard.press('Control+`');
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(600);
   }
-  await expect(handle).toBeVisible();
+  // Confirm the chat input is reachable — the definitive open-state indicator.
+  await expect(page.locator('input[placeholder*="Type a message"]'))
+    .toBeVisible({ timeout: 5000 });
 }
 
 async function chatInput() {
