@@ -539,9 +539,12 @@ where
 /// Format: `/<prefix> <kind> <goal...>`
 /// Example: `/strategy react investigate auth bug in soul handler`
 ///
+/// `default_budget_usd` is applied as `max_budget_usd` when the user does not
+/// supply one inline — typically `config.budgets.default_max_budget_usd`.
+///
 /// Returns `None` if the line does not start with a recognised prefix.
 #[must_use]
-pub fn parse_slash_command(line: &str) -> Option<StrategyRequest> {
+pub fn parse_slash_command(line: &str, default_budget_usd: f64) -> Option<StrategyRequest> {
     let line = line.trim();
     let rest = line
         .strip_prefix("/strategy ")
@@ -566,7 +569,39 @@ pub fn parse_slash_command(line: &str) -> Option<StrategyRequest> {
         goal,
         executor: None,
         max_turns: None,
-        max_budget_usd: None,
+        max_budget_usd: Some(default_budget_usd),
         session_id: None,
     })
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_slash_command_applies_default_budget() {
+        let req = parse_slash_command("/strategy react investigate the auth bug", 3.5)
+            .expect("should parse");
+        assert!(
+            matches!(req.strategy, StrategyKind::React),
+            "strategy kind must be React"
+        );
+        assert_eq!(req.goal, "investigate the auth bug");
+        assert!(
+            (req.max_budget_usd.unwrap() - 3.5).abs() < f64::EPSILON,
+            "default_budget_usd wired into max_budget_usd"
+        );
+    }
+
+    #[test]
+    fn parse_slash_command_returns_none_for_unknown_kind() {
+        assert!(parse_slash_command("/strategy unknown goal", 5.0).is_none());
+    }
+
+    #[test]
+    fn parse_slash_command_accepts_loop_prefix() {
+        let req = parse_slash_command("/loop ach my goal", 1.0).expect("should parse");
+        assert!(matches!(req.strategy, StrategyKind::Ach));
+    }
 }

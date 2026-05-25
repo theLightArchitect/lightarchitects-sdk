@@ -1028,8 +1028,8 @@ async fn resolve_assertion(
         build_id: build_id.clone(),
         tool: "resolve-assertion".into(),
         timestamp_iso8601: timestamp.clone(),
-        authorized_builds: Vec::new(), // empty = all builds (loopback trust model)
-        allowed_tools: Vec::new(),     // empty = unrestricted
+        authorized_builds: vec![build_id.clone()],
+        allowed_tools: Vec::new(), // empty = unrestricted
         concurrent_count: 0,
         concurrent_limit: 5,
     };

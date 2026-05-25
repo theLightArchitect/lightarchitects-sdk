@@ -1,0 +1,52 @@
+schema_version: 1
+gate: phase
+scored_by: /GATE
+scored_at: "2026-05-25T18:30:00Z"
+build_id: container-hitl-audit
+phase_id: phase-5-e2e
+sha: 3d236620de0eb0afd9c55c9036562f314f86ef3e
+overall_verdict: pass
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: "17 new integration tests (12 webshell HITL + 5 gateway budget/audit)"
+    tests_fail: 0
+    new_tests: 17
+    note: |
+      New tests (webshell — conductor_hitl_e2e.rs, 12 tests):
+        list_hitl_returns_empty_array_when_no_queue_file,
+        list_hitl_rejects_unauthenticated_request,
+        resolve_rejects_unauthenticated_request,
+        resolve_unknown_action_returns_422,
+        resolve_approve_with_no_queue_returns_503,
+        list_hitl_filters_only_awaiting_tasks,
+        resolve_approve_transitions_task_to_pending,
+        resolve_reject_transitions_task_to_failed,
+        resolve_missing_task_returns_404,
+        resolve_non_awaiting_task_returns_409,
+        docker_unavailable_capability_does_not_attempt_spawn,
+        docker_guarded_container_spawn_probe.
+      New tests (gateway — container_hitl_audit_e2e.rs, 5 tests):
+        budget_default_five_usd_threads_through_slash_command,
+        budget_custom_ceiling_threads_through_slash_command,
+        parse_slash_command_zero_budget_is_accepted,
+        parse_slash_command_returns_none_for_non_strategy_prefix,
+        audit_log_chain_verifies_across_multiple_entries.
+      Workspace: all crates pass (0 failures). Gateway --lib: 456 pass.
+      Pre-existing g8_* integration failures: none observed in this scope.
+  D2_plan:
+    result: pass
+    note: |
+      Plan Phase 5 scope (two integration test files) matches delivered artifacts:
+        - lightarchitects-webshell/tests/conductor_hitl_e2e.rs (HITL endpoint contract tests)
+        - lightarchitects-gateway/tests/container_hitl_audit_e2e.rs (budget/audit integration)
+      Docker-guarded probe and HOME_LOCK serialization match plan spec.
+      No scope additions or deferrals.
+notes:
+  - "HOME_LOCK: Mutex<()> static serializes all HOME-redirecting tests within the binary — avoids env-var races without tokio::sync (incompatible with cross-runtime sharing)"
+  - "Docker probe uses socket-existence check (stat-only) — avoids blocking on slow Docker Desktop daemon startup vs docker info approach"
+  - "clippy::await_holding_lock suppressed with rationale: guard is test-only (HOME_LOCK), never held by handler code, spans awaits for atomic HOME ownership"
+  - "SHA-256 prev_hash chain verified independently in-test (genesis = 64 zeros; entry N prev_hash = sha256(raw line N-1))"
+  - "parse_slash_command valid kinds: react/ach/itt/cove/reflexion; /loop <kind> prefix also accepted"

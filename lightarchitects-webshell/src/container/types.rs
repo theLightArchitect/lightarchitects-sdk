@@ -38,6 +38,18 @@ impl ContainerMode {
     }
 }
 
+/// Result of successfully spawning a container session.
+///
+/// Returned by `container_spawn` so the caller can route the WebSocket
+/// relay without knowing the internal container naming scheme.
+#[derive(Debug, Clone)]
+pub struct ContainerHandle {
+    /// Docker container ID returned by `docker run -d` (e.g., `la-<build_id>`).
+    pub container_id: String,
+    /// Absolute WebSocket path for the relay endpoint served by the webshell.
+    pub relay_url: String,
+}
+
 /// Errors specific to container operations.
 #[derive(Debug, thiserror::Error)]
 pub enum ContainerError {

@@ -6,6 +6,7 @@
   import TargetBreadcrumb from '$lib/../components/Cockpit/TargetBreadcrumb.svelte';
   import QuickPickPalette from '$lib/../components/Cockpit/QuickPickPalette.svelte';
   import HITLInbox from '$lib/../components/Cockpit/HITLInbox.svelte';
+  import ConductorHitlPanel from '$lib/../components/Cockpit/ConductorHitlPanel.svelte';
   import PRMetadataBlock from '$lib/../components/Cockpit/PRMetadataBlock.svelte';
   import PRVerbSurface from '$lib/../components/Cockpit/PRVerbSurface.svelte';
   import NeedsActionZone from '$lib/../components/Cockpit/zones/NeedsActionZone.svelte';
@@ -425,6 +426,9 @@
           {#if esc.canon_ref}<span class="esc-canon">{esc.canon_ref}</span>{/if}
         </div>
       {/each}
+
+      <!-- Conductor HITL blocked tasks (container-hitl-audit L5) -->
+      <ConductorHitlPanel />
     </div>
 
     <!-- ── WORKER FLEET ──────────────────────────────────────────────────────── -->

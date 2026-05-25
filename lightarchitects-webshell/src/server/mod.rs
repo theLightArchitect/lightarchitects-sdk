@@ -51,6 +51,8 @@ use crate::{
 };
 
 pub mod code_routes;
+pub mod conductor_routes;
+pub mod container_relay;
 pub mod exec_routes;
 pub mod fleet_routes;
 pub mod git_routes;
@@ -611,6 +613,7 @@ impl AppState {
 /// `Router` is already `#[must_use]` so this function is not re-annotated.
 #[allow(clippy::too_many_lines)]
 pub fn build_app(state: AppState) -> Router {
+    container_relay::spawn_reaper();
     let cors = build_cors(state.config.port);
     Router::new()
         .route("/api/health", get(health))
@@ -659,6 +662,10 @@ pub fn build_app(state: AppState) -> Router {
             delete(crate::auth::credential::routes::provider_revoke),
         )
         .route("/api/terminal/ws", get(terminal::ws::ws_handler))
+        .route(
+            "/api/terminal/container/{id}",
+            get(container_relay::ws_relay_handler),
+        )
         .route("/api/events", get(events::sse_handler::sse_handler))
         .route("/api/control", post(events::control_handler))
         .route(
@@ -843,6 +850,15 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/siblings", get(real_data::get_squad_status))
         .route("/api/sitrep", get(real_data::get_sitrep))
         .route("/api/conductor/status", get(real_data::get_conductor_status))
+        // ── Conductor HITL panel (container-hitl-audit L5) ───────────────────
+        .route(
+            "/api/conductor/hitl",
+            get(conductor_routes::list_hitl_handler),
+        )
+        .route(
+            "/api/conductor/hitl/{task_id}/resolve",
+            post(conductor_routes::resolve_hitl_handler),
+        )
         .route("/api/arena/status", get(real_data::get_arena_status))
         .route("/api/mcp-servers", get(real_data::list_mcp_servers))
         .route(
