@@ -12,6 +12,7 @@ use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
 use serde::Deserialize;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
 use lightarchitects::helix::{
@@ -38,6 +39,7 @@ const ALLOWED_MODES: &[&str] = &["keyword_dominated", "balanced", "graph_weighte
 // ── Request body ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RetrieveRequest {
     /// Query string (max 2 KiB).
     query: String,
@@ -109,6 +111,26 @@ async fn helix_retrieve(
         }
     };
 
+    // F8 — helix_id character-set + length validation (Security Guardrails §3.4).
+    if let Some(ref hid) = body.helix_id {
+        if hid.len() > 128
+            || !hid
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '/')
+        {
+            return Err((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({
+                    "error": {
+                        "code": "invalid_helix_id",
+                        "message": "helix_id must be ≤128 bytes, alphanumeric/hyphen/slash only"
+                    }
+                })),
+            )
+                .into_response());
+        }
+    }
+
     let top_k = body.top_k.unwrap_or(20).clamp(1, 100);
 
     let opts = {
@@ -150,8 +172,8 @@ async fn helix_retrieve(
                 .into_response()
         })?;
 
-    // ETag derived from the cache key — stable across identical queries (F7).
-    let etag_value = format!("\"{}\"", &result.cache_key);
+    // ETag: SHA-256 of cache key so query text is not exposed in response headers (OWASP LLM02).
+    let etag_value = format!("\"{:x}\"", Sha256::digest(result.cache_key.as_bytes()));
     if let Some(inm) = headers.get(header::IF_NONE_MATCH) {
         if inm.as_bytes() == etag_value.as_bytes() {
             return Ok((StatusCode::NOT_MODIFIED, [("etag", etag_value)]).into_response());
@@ -179,14 +201,19 @@ async fn helix_retrieve(
         .into_response())
 }
 
-/// `GET /v1/platform/helix/cache/stats` — moka cache telemetry.
+/// `GET /v1/platform/helix/cache/stats` — moka cache telemetry (admin-only).
 ///
-/// Forces `run_pending_tasks()` before reading counters so that in-flight
-/// evictions are reflected in the response.
-async fn helix_cache_stats(State(s): State<Arc<PlatformState>>) -> Json<serde_json::Value> {
+/// Requires `x-admin-token` header (Security Guardrails §3.5 RBAC — operational
+/// telemetry is not user-facing). Forces `run_pending_tasks()` before reading
+/// counters so that in-flight evictions are reflected in the response.
+async fn helix_cache_stats(
+    State(s): State<Arc<PlatformState>>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, Response> {
+    super::admin::require_admin_token(&s, &headers)?;
     s.helix_cache.run_pending_tasks().await;
-    Json(json!({
+    Ok(Json(json!({
         "entry_count": s.helix_cache.entry_count(),
         "weighted_size_bytes": s.helix_cache.weighted_size(),
-    }))
+    })))
 }

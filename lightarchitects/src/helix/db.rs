@@ -1905,19 +1905,20 @@ impl HelixDb for HelixNeo4j {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
-        let limit = ids.len();
-        let cypher = format!(
-            "MATCH (s:Step) WHERE s.id IN $ids \
+        // §3.6: LIMIT via $limit parameter — no string interpolation into Cypher.
+        let limit = i64::try_from(ids.len()).unwrap_or(i64::MAX);
+        let cypher = "MATCH (s:Step) WHERE s.id IN $ids \
              RETURN s.id AS id, s.helix_id AS helix_id, s.title AS title, \
                     s.content AS content, s.significance AS significance, \
                     s.step_date AS step_date, s.step_index AS step_index, \
                     s.community_id AS community_id, s.expires AS expires, \
                     s.created_at AS created_at, s.metadata AS metadata, \
                     s.vault_path AS vault_path \
-             LIMIT {limit}"
-        );
+             LIMIT $limit"
+            .to_owned();
         let mut params = std::collections::BTreeMap::new();
         params.insert("ids".into(), serde_json::json!(ids));
+        params.insert("limit".into(), serde_json::json!(limit));
         let records = self
             .timed_execute("get_steps_by_ids", &cypher, params)
             .await?;

@@ -865,7 +865,7 @@ async fn delete_override(
 /// Verify `x-admin-token` header. Returns `Err(response)` on failure.
 // Response is a large type by design — boxing it would require changing all handler return types.
 #[allow(clippy::result_large_err)]
-fn require_admin_token(s: &PlatformState, headers: &HeaderMap) -> Result<(), Response> {
+pub(crate) fn require_admin_token(s: &PlatformState, headers: &HeaderMap) -> Result<(), Response> {
     match &s.admin_token {
         None => Err((
             StatusCode::SERVICE_UNAVAILABLE,

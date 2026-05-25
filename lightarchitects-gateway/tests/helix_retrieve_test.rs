@@ -107,8 +107,8 @@ async fn build_neo4j_state() -> Arc<PlatformState> {
         helix_cache: lightarchitects::helix::HelixCache::new(
             &lightarchitects::helix::HelixCacheConfig::default(),
         ),
-        // 768 matches the `step-embeddings` HNSW index dimension lock.
-        embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(768)),
+        // 384 matches the `step-embeddings` HNSW index (bge-small-en-v1.5, khadas-npu Phase 2).
+        embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
     })
 }
 
@@ -262,8 +262,8 @@ async fn a5_03_integration_no_token_returns_401() {
         helix_cache: lightarchitects::helix::HelixCache::new(
             &lightarchitects::helix::HelixCacheConfig::default(),
         ),
-        // 768 matches the `step-embeddings` HNSW index dimension lock.
-        embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(768)),
+        // 384 matches the `step-embeddings` HNSW index (bge-small-en-v1.5, khadas-npu Phase 2).
+        embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
     });
 
     let app = build_http_router(state);
