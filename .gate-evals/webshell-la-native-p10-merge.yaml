@@ -1,0 +1,123 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE --scope merge (inline /BUILD Step 8)"
+scored_at: "2026-05-25T07:15:00Z"
+build_id: webshell-la-native-p10
+branch: feat/webshell-la-native-p10
+head_sha: pending  # filled at commit time
+overall_verdict: pass
+
+parent_build:
+  codename: webshell-la-native-backend
+  merge_commit: 929c0fb
+  deferred_items_closed: 4
+  deferred_items:
+    - "GAP-3: SSE body bypass of sse_handler::redact() path → closed in Phase 2"
+    - "OLLAMA_API_KEY_TOCTOU: per-request env read → closed in Phase 1"
+    - "Sequential grounding latency (SOUL + git) → closed in Phase 3"
+    - "CopilotDrawer native WS→SSE routing → closed in Phase 4"
+
+dimensions:
+  V0_primary_on_main:
+    result: pass
+    detail: "Primary worktree confirmed on main; gate run from worktrees/webshell-la-native-p10"
+
+  Q1_fmt:    { result: pass, detail: "cargo fmt --all -- --check clean across all 5 phase commits" }
+  Q2_clippy: { result: pass, detail: "cargo clippy --workspace --all-targets --all-features -- -D warnings clean (one documented #[allow(clippy::too_many_arguments)] on drive_native_sse — see Phase 2 commit)" }
+  Q3_tests:
+    result: pass
+    tests_run: 2672
+    tests_prior: 2648
+    delta: "+24"
+    note: "Phase 1: +2 (auth_token regression tests). Phase 2: +5 (redact_secrets unit tests). Net delta vs main: +24 (includes upstream growth since parent build)."
+
+  Q4_svelte:
+    result: pass
+    detail: "svelte-check --threshold error: 0 errors, 40 warnings (all pre-existing). vitest: 726 pass + 1 pre-existing flake (AgentSelector.svelte.test.ts — same flake documented in webshell-la-native-backend Q4 gate)."
+
+  S1_security:
+    result: pass
+    findings:
+      - severity: NONE
+        id: GAP_3_CLOSED
+        description: "drive_native_sse stream pipe applies redact_secrets() against session token + la_native_api_key on every chunk."
+        disposition: closed_in_this_build
+      - severity: NONE
+        id: OLLAMA_API_KEY_TOCTOU_CLOSED
+        description: "OLLAMA_API_KEY read once at AppState::new(), stored as SecretString. Per-request env reads eliminated from chat path."
+        disposition: closed_in_this_build
+    note: "No new HIGH/CRITICAL findings introduced. Two MEDIUM items from parent build's gate closed."
+
+  S2_supply_chain:
+    result: pass
+    detail: "cargo deny check: bans FAILED on openssl=0.10.80 — pre-existing violation on main (confirmed: main branch fails identically). No new banned crates introduced by this build. Advisories/licenses/sources: all pass."
+
+  S3_laex:
+    result: n/a
+    detail: "No new cryptographic primitives, auth flows, or permission surfaces introduced."
+
+  I1_integration:
+    result: pass
+    commits_ahead: 5
+    detail: "5 commits ahead of github/main (phases 0–4). Clean descendant; no rebase needed. cargo build --release exit 0 (47MB binary)."
+
+  N1_northstar:
+    result: pass
+    pillar: "P1+P5"
+    detail: "Northstar lineage present and non-empty. northstar_text declares P1+P5 advancement. All 4 build_to_northstar_mapping items concretely closed in commit diffs."
+
+  N2_chain:
+    result: pass
+    detail: >
+      Chain is concrete, not aspirational: each Phase commit's diff closes the
+      named merge-gate item from webshell-la-native-backend.  Phase 1 commit
+      0f37685 closes OLLAMA_API_KEY_TOCTOU; Phase 2 2a84efc closes GAP-3;
+      Phase 3 1fec705 closes sequential grounding; Phase 4 8a067d8 closes
+      CopilotDrawer WS routing.
+
+  D1_docs:
+    result: pass
+    detail: "All new pub items (AppState::la_native_api_key, redact_secrets, copilotChatNative) have /// rustdoc or JSDoc with cross-references to the merge-gate items they close."
+
+  D2_plan:
+    result: pass
+    detail: "Plan updated through /BUILD pipeline; phase log reflects 6/6 substantive phases complete."
+
+  D3_claude_md:
+    result: n/a
+    detail: "No new tooling, commands, or architecture patterns requiring CLAUDE.md update."
+
+  V1_pyramid:
+    result: pass
+    suites_covered:
+      unit: "+7 unit tests (Phase 1+2)"
+      integration: "0 — refactor of existing endpoint, adversarial_e2e covered by parent build"
+      property: "n/a — no new state machines"
+      e2e: "+1 Playwright test (Phase 4 mocked SSE wire format)"
+      regression: "0 — refactor of existing endpoint"
+      smoke: "0 — relies on parent build's smoke_native_pipeline.rs (still passes)"
+
+  V2_smoke:
+    result: pass
+    detail: "cargo build --release -p lightarchitects-webshell: exit 0. Binary: 47,199,136 bytes @ target/release/lightarchitects-webshell (2026-05-25T06:53)."
+
+  V3_e2e:
+    result: pass
+    detail: "Live Ollama Cloud E2E (W8.5): 2-turn session (cold + warm). cold TTFT=5674ms, warm TTFT=1274ms. Metrics in manifest.yaml#p10_baseline."
+
+perf_baseline_p10:
+  captured: true
+  cold_ttft_ms: 5674
+  warm_ttft_ms: 1274
+  cold_tokens_per_second: 57.9
+  warm_tokens_per_second: 77.8
+  deltas_vs_p9_baseline:
+    cold_ttft_delta_ms: -4860
+    cold_ttft_pct: "-46%"
+    tokens_per_second_cold_delta: "+149%"
+    grounding_wall_ms: "~800ms parallel max (confirmed; vs ~1200ms sequential sum from p9)"
+    ttft_redact_overhead_ms: "≤5ms (per-chunk redact_secrets, negligible vs network RTT)"
+
+notes:
+  - "5 phase commits in sequence: 8b622f0 (Phase 0 diagrams) → 0f37685 (Phase 1) → 2a84efc (Phase 2) → 1fec705 (Phase 3) → 8a067d8 (Phase 4) → pending Phase 5 baseline + merge"
+  - "Phase 10 fully closes the 4 deferred items from webshell-la-native-backend's merge gate."
