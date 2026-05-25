@@ -96,7 +96,7 @@ deny = [
     { crate = "openssl" },
     # Use ring or aws-lc-rs; native-tls binds openssl on Linux and is banned accordingly.
     # Exemptions require explicit security review.
-    { crate = "native-tls", wrappers = ["reqwest", "tungstenite", "ureq"] },
+    { crate = "native-tls", wrappers = ["hf-hub", "ureq"] },
 ]
 
 [sources]

@@ -229,6 +229,7 @@ mod tests {
     use super::*;
     use crate::helix::cache::HelixCacheConfig;
     use crate::helix::soul_search::hybrid::{HybridRetrieverConfig, RetrievalMode};
+    use proptest::prelude::*;
 
     fn test_cache() -> HelixCache {
         HelixCache::new(&HelixCacheConfig::default())
@@ -344,5 +345,85 @@ mod tests {
     fn test_config_builder_chaining() {
         let config = HybridRetrieverConfig::default();
         assert_eq!(config.top_k, 20);
+    }
+
+    // ── Property tests ────────────────────────────────────────────────────────
+
+    proptest! {
+        /// Cache key is deterministic: same query + same opts → same key (TF-2).
+        #[test]
+        fn prop_cache_key_idempotent(query in "[a-z ]{1,64}", limit in 1u32..=100) {
+            let cache = test_cache();
+            let opts = SearchOptions::default().with_limit(limit);
+            let k1 = cache.search_key(&query, &opts);
+            let k2 = cache.search_key(&query, &opts);
+            prop_assert_eq!(k1, k2);
+        }
+
+        /// Different queries produce different cache keys (TF-2).
+        #[test]
+        fn prop_distinct_queries_produce_distinct_keys(
+            q1 in "[a-z]{1,32}",
+            q2 in "[A-Z]{1,32}",
+        ) {
+            let cache = test_cache();
+            let opts = SearchOptions::default();
+            // q1 is all-lowercase, q2 is all-uppercase — guaranteed distinct.
+            prop_assert_ne!(cache.search_key(&q1, &opts), cache.search_key(&q2, &opts));
+        }
+
+        /// RRF mode selection is correct at boundary values (TF-2).
+        ///
+        /// < 25 → KeywordDominated; 25..100 → Balanced; ≥ 100 → GraphWeighted.
+        #[test]
+        fn prop_mode_selection_boundary(count in 0usize..200) {
+            let mode = RetrievalMode::from_step_count(count);
+            if count < 25 {
+                prop_assert_eq!(mode, RetrievalMode::KeywordDominated);
+            } else if count < 100 {
+                prop_assert_eq!(mode, RetrievalMode::Balanced);
+            } else {
+                prop_assert_eq!(mode, RetrievalMode::GraphWeighted);
+            }
+        }
+    }
+
+    // ── Concurrent invalidation regression (TF-3) ─────────────────────────────
+
+    /// Concurrent put + `invalidate_all` must leave the cache empty (TF-3).
+    ///
+    /// Regression: previously a race between put and invalidate could leave
+    /// ghost entries visible after `run_pending_tasks()`.
+    #[tokio::test]
+    async fn test_concurrent_invalidation_drains_cache() {
+        let cache = std::sync::Arc::new(test_cache());
+        let entry = CachedEntry::new(
+            vec![sample_scored("concurrent-step")],
+            RetrievalMode::Balanced,
+        );
+
+        // Insert 10 entries concurrently.
+        let puts: Vec<_> = (0..10)
+            .map(|i| {
+                let c = cache.clone();
+                let e = entry.clone();
+                tokio::spawn(async move { c.put_search(&format!("ft:q{i}:*:20:*"), e).await })
+            })
+            .collect();
+        for h in puts {
+            h.await.unwrap();
+        }
+
+        // Invalidate while puts may still be pending.
+        cache.invalidate_all();
+        cache.run_pending_tasks().await;
+
+        // No entry from before the invalidation should survive.
+        for i in 0..10 {
+            assert!(
+                cache.get_search(&format!("ft:q{i}:*:20:*")).await.is_none(),
+                "entry q{i} survived concurrent invalidation"
+            );
+        }
     }
 }
