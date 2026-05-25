@@ -324,6 +324,17 @@ impl SsmState {
         }
     }
 
+    /// Project query text to a 384-dim input vector for SSM update.
+    ///
+    /// Deterministic and allocation-minimal — no embedding provider needed.
+    /// Proportionally samples the content's byte values, normalising each to
+    /// `[-1.0, 1.0]`. Identical to the internal projection used by
+    /// [`crate::agent::conversation::helix_memory::HelixSessionMemory::push`].
+    #[must_use]
+    pub fn input_vec_for_query(text: &str) -> Vec<f32> {
+        content_to_input_vec(text)
+    }
+
     /// Advance hidden state: `h_t = A ⊙ h_{t-1} + B · x_t`.
     ///
     /// `input_embed` is the 384-dim input projection of the current turn.

@@ -23,6 +23,7 @@
 //! lightarchitects platform [--port 8080]          Platform HTTP API (localhost:8080)
 //! ```
 
+use lightarchitects::helix::soul_search::GraphSageProvider;
 use lightarchitects::helix::{
     EmbeddingConfig, HelixCache, HelixCacheConfig, HelixNeo4j, Neo4jConfig,
     create_embedding_provider,
@@ -661,6 +662,29 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
         "Embedding provider initialised — dimension lock confirmed"
     );
 
+    // GraphSAGE structural provider — wraps embedding_provider with the learned
+    // 128-dim projection.  Falls back to random-stable weights when the file is
+    // absent (consolidator has not yet written sage_projection.bin).
+    let sage_projection_path = dirs_next::home_dir()
+        .unwrap_or_default()
+        .join(".lightarchitects")
+        .join("sage_projection.bin");
+    let sage_provider: std::sync::Arc<dyn lightarchitects::helix::EmbeddingProvider> =
+        std::sync::Arc::new(GraphSageProvider::new(
+            std::sync::Arc::clone(&embedding_provider),
+            &sage_projection_path,
+        ));
+    tracing::info!(
+        ?sage_projection_path,
+        "GraphSAGE structural provider initialised"
+    );
+
+    // Per-session SSM store: bounded to 10 K active sessions, 1-hour idle TTL.
+    let session_ssm_store = moka::future::Cache::builder()
+        .max_capacity(10_000)
+        .time_to_idle(std::time::Duration::from_secs(3_600))
+        .build();
+
     let state = std::sync::Arc::new(PlatformState {
         graph,
         config,
@@ -679,6 +703,8 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
         helix_db,
         helix_cache,
         embedding_provider,
+        sage_provider,
+        session_ssm_store,
     });
     let addr = format!("127.0.0.1:{port}")
         .parse()

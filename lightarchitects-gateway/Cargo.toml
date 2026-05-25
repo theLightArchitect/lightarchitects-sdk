@@ -130,7 +130,7 @@ workspace = true
 
 [dependencies]
 # ── Unified SDK (replaces all individual sibling crate deps) ──────────────────
-lightarchitects = { path = "../lightarchitects", features = ["agent-cli", "lightsquad", "loops-core"] }
+lightarchitects = { path = "../lightarchitects", features = ["agent-cli", "lightsquad", "loops-core", "rerank"] }
 lightarchitects-arch = { path = "../lightarchitects-arch" }
 
 # ── Shared (both MCP + Arena modes) ──────────────────────────────────────────

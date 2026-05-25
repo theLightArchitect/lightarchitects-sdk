@@ -237,6 +237,20 @@ pub trait HelixDb: Send + Sync {
         embedding: &[f32],
     ) -> Result<(), HelixDbError>;
 
+    /// Write a BGE-projected 128-dim structural embedding to a Step node.
+    ///
+    /// Uses `db.create.setNodeVectorProperty()` to update the `step-sage-embeddings`
+    /// HNSW index. Called by [`BgeSageProjectionPipeline`] to align the index
+    /// space with the query-time [`GraphSageProvider`] projection.
+    ///
+    /// [`BgeSageProjectionPipeline`]: crate::helix::soul_search::BgeSageProjectionPipeline
+    /// [`GraphSageProvider`]: crate::helix::soul_search::graphsage::GraphSageProvider
+    async fn set_step_sage_embedding(
+        &self,
+        step_id: &str,
+        embedding: &[f32],
+    ) -> Result<(), HelixDbError>;
+
     /// Fetch a batch of [`Step`] nodes by their IDs.
     ///
     /// Used by [`CachedRetriever`](crate::helix::soul_search::cached::CachedRetriever)
@@ -1718,6 +1732,27 @@ impl HelixDb for HelixNeo4j {
         params.insert("vector".into(), serde_json::json!(embedding_json));
 
         self.timed_execute("set_step_embedding", cypher, params)
+            .await?;
+        Ok(())
+    }
+
+    #[instrument(skip(self, embedding), fields(neo4j.operation = "set_step_sage_embedding", dims = embedding.len()))]
+    async fn set_step_sage_embedding(
+        &self,
+        step_id: &str,
+        embedding: &[f32],
+    ) -> Result<(), HelixDbError> {
+        // setNodeVectorProperty triggers the HNSW index update for step-sage-embeddings.
+        let cypher = "MATCH (s:Step {id: $step_id}) \
+                      CALL db.create.setNodeVectorProperty(s, 'sage_embedding', $vector)";
+        let embedding_json: Vec<serde_json::Value> = embedding
+            .iter()
+            .map(|&v| serde_json::json!(f64::from(v)))
+            .collect();
+        let mut params = BTreeMap::new();
+        params.insert("step_id".into(), serde_json::json!(step_id));
+        params.insert("vector".into(), serde_json::json!(embedding_json));
+        self.timed_execute("set_step_sage_embedding", cypher, params)
             .await?;
         Ok(())
     }

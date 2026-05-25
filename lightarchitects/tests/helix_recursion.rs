@@ -255,6 +255,14 @@ impl HelixDb for MockHelixDb {
         Ok(())
     }
 
+    async fn set_step_sage_embedding(
+        &self,
+        _step_id: &str,
+        _embedding: &[f32],
+    ) -> Result<(), HelixDbError> {
+        Ok(())
+    }
+
     async fn execute_cypher(&self, _cypher: &str) -> Result<Vec<Record>, HelixDbError> {
         Ok(Vec::new())
     }

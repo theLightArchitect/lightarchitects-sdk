@@ -36,6 +36,8 @@ use tokio::process::{Child, Command};
 use tokio::time::timeout;
 use tracing::{debug, info, instrument, warn};
 
+use lightarchitects::ayin::span::{Actor, TraceContext, TraceOutcome};
+
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
 use crate::governance;
@@ -48,6 +50,9 @@ const MCP_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Minimum JSON-RPC id to use for the `tools/call` request.
 const CALL_ID: u64 = 2;
+
+/// AYIN span name for gateway routing decisions.
+const SPAN_GATEWAY_ROUTE: &str = "gateway.route";
 
 /// Spawn a route binary, execute one MCP `tools/call`, and return the result.
 ///
@@ -190,7 +195,7 @@ pub async fn call_agent(
     // 10. Extract result or propagate error.
     let result = extract_result(response, agent_name)?;
 
-    // 11. Emit timing event for AYIN observability (SB-6).
+    // 11. Emit timing — tracing log + AYIN routing decision span (SB-6).
     let elapsed_ms = u64::try_from(call_start.elapsed().as_millis()).unwrap_or(u64::MAX);
     info!(
         route = agent_name,
@@ -199,6 +204,7 @@ pub async fn call_agent(
         elapsed_ms,
         "agent call completed"
     );
+    emit_routing_span(agent_name, action, elapsed_ms, TraceOutcome::Continue);
 
     // Child drops here — the OS SIGKILL handles cleanup.
     Ok(result)
@@ -471,6 +477,81 @@ fn sha256_file(path: &std::path::Path, agent_name: &str) -> Result<String, Gatew
             agent: agent_name.to_owned(),
             reason: "shasum produced no output".to_owned(),
         })
+}
+
+// ── AYIN routing span helpers ──────────────────────────────────────────────────
+
+/// Emit a `gateway.route` AYIN span for a completed sibling tool call.
+///
+/// Fire-and-forget via `tokio::spawn` — never blocks the caller.
+/// Only emits when a tokio runtime is active (i.e., during normal gateway
+/// operation; skipped in sync test contexts that don't call this path).
+fn emit_routing_span(agent_name: &str, action: &str, latency_ms: u64, outcome: TraceOutcome) {
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        return;
+    };
+    let agent_name = agent_name.to_owned();
+    let action = action.to_owned();
+    handle.spawn(async move {
+        let ctx = TraceContext::new(Actor::new("gateway"), SPAN_GATEWAY_ROUTE).decision(
+            "route_selected",
+            &action,
+            &agent_name,
+            Some(1.0),
+            latency_ms,
+        );
+        let ctx = match ctx {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(error = %e, "AYIN route decision point failed");
+                return;
+            }
+        };
+        let metadata = serde_json::json!({
+            "lasdlc.route": &agent_name,
+            "lasdlc.latency_ms": latency_ms,
+            "gateway.action": &action,
+        });
+        let ctx = ctx.metadata(metadata).outcome(outcome);
+        write_routing_span(ctx).await;
+    });
+}
+
+/// Write a completed routing span to the AYIN traces directory.
+async fn write_routing_span(ctx: TraceContext) {
+    let span = match ctx.finish() {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(error = %e, "AYIN route span build failed");
+            return;
+        }
+    };
+    let base = dirs_next::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("lightarchitects/soul/helix/ayin/traces");
+    let dir = base
+        .join(span.actor.as_str())
+        .join(span.timestamp.format("%Y-%m-%d").to_string());
+    if let Err(e) = tokio::fs::create_dir_all(&dir).await {
+        tracing::warn!(error = %e, "AYIN route dir create failed");
+        return;
+    }
+    let safe_action = span.action.replace('/', "_");
+    let id_str = span.id.to_string();
+    let filename = format!(
+        "{}-{}-{}.json",
+        span.timestamp.format("%H-%M-%S"),
+        safe_action,
+        &id_str[..8]
+    );
+    match serde_json::to_vec(&span) {
+        Ok(bytes) => {
+            if let Err(e) = tokio::fs::write(dir.join(&filename), bytes).await {
+                tracing::warn!(error = %e, "AYIN route span write failed");
+            }
+        }
+        Err(e) => tracing::warn!(error = %e, "AYIN route span serialize failed"),
+    }
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────

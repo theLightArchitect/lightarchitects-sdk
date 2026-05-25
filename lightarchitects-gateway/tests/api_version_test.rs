@@ -172,6 +172,11 @@ async fn integration_version_endpoint_200() {
             &lightarchitects::helix::HelixCacheConfig::default(),
         ),
         embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
+        sage_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(128)),
+        session_ssm_store: moka::future::Cache::builder()
+            .max_capacity(10)
+            .time_to_idle(std::time::Duration::from_secs(3_600))
+            .build(),
     });
 
     let app = build_http_router(state);
@@ -269,6 +274,11 @@ async fn integration_version_hash_header_present() {
             &lightarchitects::helix::HelixCacheConfig::default(),
         ),
         embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
+        sage_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(128)),
+        session_ssm_store: moka::future::Cache::builder()
+            .max_capacity(10)
+            .time_to_idle(std::time::Duration::from_secs(3_600))
+            .build(),
     });
 
     let app = build_http_router(state);

@@ -109,6 +109,11 @@ async fn build_neo4j_state() -> Arc<PlatformState> {
         ),
         // 384 matches the `step-embeddings` HNSW index (bge-small-en-v1.5, khadas-npu Phase 2).
         embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
+        sage_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(128)),
+        session_ssm_store: moka::future::Cache::builder()
+            .max_capacity(10)
+            .time_to_idle(std::time::Duration::from_secs(3_600))
+            .build(),
     })
 }
 
@@ -264,6 +269,11 @@ async fn a5_03_integration_no_token_returns_401() {
         ),
         // 384 matches the `step-embeddings` HNSW index (bge-small-en-v1.5, khadas-npu Phase 2).
         embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
+        sage_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(128)),
+        session_ssm_store: moka::future::Cache::builder()
+            .max_capacity(10)
+            .time_to_idle(std::time::Duration::from_secs(3_600))
+            .build(),
     });
 
     let app = build_http_router(state);

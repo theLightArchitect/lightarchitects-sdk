@@ -15,6 +15,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
+use lightarchitects::agent::conversation::helix_memory::SsmState;
 use lightarchitects::helix::{
     CachedRetriever, HybridRetriever, HybridRetrieverConfig, RetrievalMode, SearchOptions,
 };
@@ -133,6 +134,30 @@ async fn helix_retrieve(
 
     let top_k = body.top_k.unwrap_or(20).clamp(1, 100);
 
+    // F9 — session key is SHA-256(Authorization header bytes), never the raw token.
+    let session_key = headers
+        .get(header::AUTHORIZATION)
+        .map(|v| format!("{:x}", Sha256::digest(v.as_bytes())))
+        .unwrap_or_default();
+
+    // Get or create the bounded SSM state for this session (10 K cap, 1-hour idle TTL).
+    let ssm_entry = s
+        .session_ssm_store
+        .get_with(session_key, async {
+            std::sync::Arc::new(tokio::sync::Mutex::new(SsmState::new()))
+        })
+        .await;
+
+    // Read accumulated context bias before search; lock dropped immediately (not Send across await).
+    let ssm_bias: Option<Vec<f32>> = {
+        let ssm = ssm_entry.lock().await;
+        if ssm.turn_count > 0 {
+            Some(ssm.query_vec())
+        } else {
+            None
+        }
+    };
+
     let opts = {
         let mut o = SearchOptions::default().with_limit(top_k);
         if let Some(ref hid) = body.helix_id {
@@ -149,14 +174,15 @@ async fn helix_retrieve(
             model: s.config.embedding_model.clone(),
             dim: s.config.embedding_dim,
         },
+        ssm_query_bias: ssm_bias,
         ..HybridRetrieverConfig::default()
     };
 
-    // Build the retriever from state — embedding_provider is Arc-cloned so
-    // both semantic and structural signals share the same backend instance.
+    // Semantic slot: general embedding backend (768-dim).
+    // Structural slot: GraphSAGE provider (128-dim, queries step-sage-embeddings HNSW index).
     let retriever = HybridRetriever::new(
         Arc::clone(&s.embedding_provider),
-        Arc::clone(&s.embedding_provider),
+        Arc::clone(&s.sage_provider),
     );
     let cached = CachedRetriever::new(s.helix_cache.clone(), retriever);
 
@@ -171,6 +197,21 @@ async fn helix_retrieve(
             )
                 .into_response()
         })?;
+
+    // Update SSM with a semantic embedding of the query (P1: replaces byte-position sampler).
+    // The embed call is intentionally outside the lock so no await crosses the critical section.
+    // Falls back to the byte-sampler when the embedding provider is temporarily unavailable.
+    let ssm_input = s
+        .embedding_provider
+        .embed(&[body.query.as_str()])
+        .await
+        .ok()
+        .and_then(|mut v| v.pop())
+        .unwrap_or_else(|| SsmState::input_vec_for_query(&body.query));
+    {
+        let mut ssm = ssm_entry.lock().await;
+        ssm.update(&ssm_input);
+    }
 
     // ETag: SHA-256 of cache key so query text is not exposed in response headers (OWASP LLM02).
     let etag_value = format!("\"{:x}\"", Sha256::digest(result.cache_key.as_bytes()));

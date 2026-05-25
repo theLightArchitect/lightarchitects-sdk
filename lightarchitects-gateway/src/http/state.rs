@@ -1,6 +1,7 @@
 //! Shared state for the Platform HTTP server.
 
 use governor::{RateLimiter, clock::DefaultClock, state::keyed::DefaultKeyedStateStore};
+use lightarchitects::agent::conversation::helix_memory::SsmState;
 use lightarchitects::helix::{EmbeddingProvider, HelixCache, HelixDb};
 use secrecy::SecretBox;
 use serde_json::Value;
@@ -86,6 +87,24 @@ pub struct PlatformState {
     /// Backend selected from `PlatformConfig::embedding_backend` at startup.
     /// `EmbeddingProvider: Send + Sync` (supertrait) so `Arc<dyn>` is thread-safe.
     pub embedding_provider: Arc<dyn EmbeddingProvider>,
+    /// `GraphSAGE` structural embedding provider (128-dim).
+    ///
+    /// Wraps `embedding_provider` with the learned projection from
+    /// `~/.lightarchitects/sage_projection.bin`. Falls back to random-stable
+    /// weights when the file is absent (consolidator has not run yet).
+    /// Passed as the structural slot of `HybridRetriever::new` so the
+    /// `step-sage-embeddings` HNSW index is queried with correctly-dimensioned
+    /// 128-dim vectors.
+    pub sage_provider: Arc<dyn EmbeddingProvider>,
+    /// Per-session `SsmState` store — bounded cache (10 K sessions, 1-hour TTL).
+    ///
+    /// Keyed on `SHA-256(Authorization header)` (hex string, first 64 chars) so
+    /// the raw bearer token is never stored as a map key. The `SsmState` hidden
+    /// vector accumulates query context across helix retrieve calls in a session,
+    /// biasing `weights_dynamic()` toward the retrieval mode the session has
+    /// historically favoured.
+    pub session_ssm_store:
+        moka::future::Cache<String, std::sync::Arc<tokio::sync::Mutex<SsmState>>>,
 }
 
 /// Configuration for the platform HTTP server.

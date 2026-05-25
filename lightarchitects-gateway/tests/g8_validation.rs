@@ -125,6 +125,11 @@ fn build_state_with_graph(
             &lightarchitects::helix::HelixCacheConfig::default(),
         ),
         embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
+        sage_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(128)),
+        session_ssm_store: moka::future::Cache::builder()
+            .max_capacity(10)
+            .time_to_idle(std::time::Duration::from_secs(3_600))
+            .build(),
     })
 }
 
@@ -226,6 +231,61 @@ fn post_bearer(uri: &str, body: serde_json::Value, token: &str, ip: SocketAddr) 
         .unwrap()
 }
 
+/// Seed all fixture nodes required by integration tests via idempotent MERGE.
+///
+/// Covers:
+/// - `g8-test-canon`          (PlatformEntry) — G8-1, G8-2, G8-3, G8-13
+/// - `g8-acme` OrgOverride    for g8-test-canon — G8-3
+/// - `g8-locked-canon`        (PlatformEntry with locked_fields) — G8-4
+/// - `g8-skill-{a-e}`         (Skill, published: true, ×5) — G8-12
+async fn seed_g8_fixtures(graph: &neo4rs::Graph) {
+    let stmts: &[&str] = &[
+        // G8-1/2/3/13: base canon entry
+        "MERGE (p:PlatformEntry {path: 'g8-test-canon'}) \
+         SET p.kind = 'canon', p.content_text = 'G8 fixture canon content', \
+             p.content_json = '{}', p.version = '1.0.0', \
+             p.content_hash = 'g8fixture1hash', \
+             p.updated_at = '2026-01-01T00:00:00Z', p.locked_fields = []",
+        // G8-3: org override
+        "MERGE (o:OrgOverride {org_id: 'g8-acme', target_path: 'g8-test-canon'}) \
+         SET o.override_value = '{\"org_label\": \"ACME override applied\"}'",
+        // G8-4: locked canon entry
+        "MERGE (p:PlatformEntry {path: 'g8-locked-canon'}) \
+         SET p.kind = 'canon', p.content_text = 'Locked G8 fixture', \
+             p.content_json = '{}', p.version = '1.0.0', \
+             p.content_hash = 'g8lockedhash', \
+             p.updated_at = '2026-01-01T00:00:00Z', \
+             p.locked_fields = ['content_text', 'version']",
+        // G8-12: 5 published skills (names sort as g8-skill-a < b < c < d < e)
+        "MERGE (s:Skill {name: 'g8-skill-a'}) \
+         SET s.published = true, s.description = 'G8 skill A', s.version = '1.0.0', \
+             s.trigger_patterns = ['g8-a'], s.content_hash = 'hash-a', \
+             s.updated_at = '2026-01-01T00:00:00Z'",
+        "MERGE (s:Skill {name: 'g8-skill-b'}) \
+         SET s.published = true, s.description = 'G8 skill B', s.version = '1.0.0', \
+             s.trigger_patterns = ['g8-b'], s.content_hash = 'hash-b', \
+             s.updated_at = '2026-01-01T00:00:00Z'",
+        "MERGE (s:Skill {name: 'g8-skill-c'}) \
+         SET s.published = true, s.description = 'G8 skill C', s.version = '1.0.0', \
+             s.trigger_patterns = ['g8-c'], s.content_hash = 'hash-c', \
+             s.updated_at = '2026-01-01T00:00:00Z'",
+        "MERGE (s:Skill {name: 'g8-skill-d'}) \
+         SET s.published = true, s.description = 'G8 skill D', s.version = '1.0.0', \
+             s.trigger_patterns = ['g8-d'], s.content_hash = 'hash-d', \
+             s.updated_at = '2026-01-01T00:00:00Z'",
+        "MERGE (s:Skill {name: 'g8-skill-e'}) \
+         SET s.published = true, s.description = 'G8 skill E', s.version = '1.0.0', \
+             s.trigger_patterns = ['g8-e'], s.content_hash = 'hash-e', \
+             s.updated_at = '2026-01-01T00:00:00Z'",
+    ];
+    for stmt in stmts {
+        graph
+            .run(neo4rs::query(stmt))
+            .await
+            .unwrap_or_else(|e| panic!("seed_g8_fixtures failed on: {stmt}\n  Error: {e}"));
+    }
+}
+
 // ── G8 STRUCTURAL TESTS (no data dependency) ─────────────────────────────────
 
 /// G8-8: GET /v1/platform/health → 200 { status: "healthy" }
@@ -299,6 +359,11 @@ async fn g8_09_unauthenticated_read_returns_401() {
             &lightarchitects::helix::HelixCacheConfig::default(),
         ),
         embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
+        sage_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(128)),
+        session_ssm_store: moka::future::Cache::builder()
+            .max_capacity(10)
+            .time_to_idle(std::time::Duration::from_secs(3_600))
+            .build(),
     });
     let app = build_http_router(state);
     let resp = app
@@ -365,6 +430,11 @@ async fn g8_10_read_bearer_on_admin_returns_403() {
             &lightarchitects::helix::HelixCacheConfig::default(),
         ),
         embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
+        sage_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(128)),
+        session_ssm_store: moka::future::Cache::builder()
+            .max_capacity(10)
+            .time_to_idle(std::time::Duration::from_secs(3_600))
+            .build(),
     });
     let app = build_http_router(state);
     let body =
@@ -427,6 +497,7 @@ async fn g8_11_rate_limit_returns_429_with_retry_after() {
 async fn g8_13_integration_cache_control_on_canon() {
     let tok = admin_token();
     let state = build_neo4j_state(Some(&tok)).await;
+    seed_g8_fixtures(&state.graph).await;
     let app = build_http_router(state);
     let resp = app
         .oneshot(get("/v1/platform/canon/g8-test-canon", TEST_IP))
@@ -478,6 +549,7 @@ async fn g8_14_version_header_present_on_all_responses() {
 #[tokio::test]
 async fn g8_01_integration_canon_get_200_with_content_hash() {
     let state = build_neo4j_state(None).await;
+    seed_g8_fixtures(&state.graph).await;
     let app = build_http_router(state);
     let resp = app
         .oneshot(get("/v1/platform/canon/g8-test-canon", TEST_IP))
@@ -496,6 +568,7 @@ async fn g8_01_integration_canon_get_200_with_content_hash() {
 #[tokio::test]
 async fn g8_02_integration_etag_304_on_repeat() {
     let state = build_neo4j_state(None).await;
+    seed_g8_fixtures(&state.graph).await;
     let app = build_http_router(state);
 
     // First request — get the ETag.
@@ -542,6 +615,7 @@ async fn g8_02_integration_etag_304_on_repeat() {
 #[tokio::test]
 async fn g8_03_integration_org_override_composite() {
     let state = build_neo4j_state(None).await;
+    seed_g8_fixtures(&state.graph).await;
     let app = build_http_router(state);
 
     // Base (no org header)
@@ -582,6 +656,7 @@ async fn g8_03_integration_org_override_composite() {
 async fn g8_04_integration_locked_field_violation() {
     let tok = admin_token();
     let state = build_neo4j_state(Some(&tok)).await;
+    seed_g8_fixtures(&state.graph).await;
     let app = build_http_router(state);
 
     let body = serde_json::json!({
@@ -693,6 +768,11 @@ async fn g8_06_admin_upload_with_read_bearer_returns_403() {
             &lightarchitects::helix::HelixCacheConfig::default(),
         ),
         embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
+        sage_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(128)),
+        session_ssm_store: moka::future::Cache::builder()
+            .max_capacity(10)
+            .time_to_idle(std::time::Duration::from_secs(3_600))
+            .build(),
     });
     let app = build_http_router(state);
 
@@ -745,6 +825,7 @@ async fn g8_07_integration_vault_info_schema() {
 #[tokio::test]
 async fn g8_12_integration_skills_cursor_pagination() {
     let state = build_neo4j_state(None).await;
+    seed_g8_fixtures(&state.graph).await;
     let app = build_http_router(state);
 
     // Fetch first 2 of the 5 g8-skill-* fixtures.

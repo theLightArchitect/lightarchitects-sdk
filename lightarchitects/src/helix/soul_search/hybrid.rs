@@ -369,6 +369,14 @@ pub struct HybridRetrieverConfig {
     /// Defaults to `false` for rollout safety. Enable once the Phase 4 bench
     /// gate confirms p99 latency increase is within budget (<15%).
     pub enable_dynamic_weights: bool,
+    /// Accumulated session context vector (384-dim) from `SsmState::query_vec()`.
+    ///
+    /// When `Some`, passed to [`RetrievalMode::weights_dynamic`] so the signal
+    /// weights are biased toward the retrieval mode the session has historically
+    /// used. Computed by the gateway route handler from the per-session
+    /// [`crate::agent::conversation::helix_memory::SsmState`] and injected here
+    /// rather than inside `search()` to keep the retriever stateless.
+    pub ssm_query_bias: Option<Vec<f32>>,
 }
 
 impl Default for HybridRetrieverConfig {
@@ -383,6 +391,7 @@ impl Default for HybridRetrieverConfig {
             reranker_config: None,
             embedding: crate::helix::embedding::EmbeddingConfig::default(),
             enable_dynamic_weights: false,
+            ssm_query_bias: None,
         }
     }
 }
@@ -470,7 +479,12 @@ impl HybridRetriever {
         } else {
             RetrievalMode::Balanced
         };
-        let weights = mode.weights();
+        // Use dynamic weights when an SSM session bias is available or the flag is set.
+        let weights = if config.enable_dynamic_weights || config.ssm_query_bias.is_some() {
+            mode.weights_dynamic(config.ssm_query_bias.as_deref())
+        } else {
+            mode.weights()
+        };
 
         // Merge caller's limit preference with per-signal cap.
         let signal_opts = SearchOptions {

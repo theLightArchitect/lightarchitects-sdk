@@ -12,6 +12,7 @@
 //! Optional re-ranking pass available behind the `rerank` feature gate
 //! (signal-diversity reranker that boosts multi-signal results).
 
+pub mod bge_sage_pipeline;
 pub mod cached;
 pub mod context;
 pub mod convergence;
@@ -25,6 +26,7 @@ pub mod semantic;
 pub mod structural;
 
 // Re-exports
+pub use bge_sage_pipeline::BgeSageProjectionPipeline;
 pub use cached::{CachedRetrievalResult, CachedRetriever};
 pub use context::{ContextFormatter, FormattedContext};
 pub use convergence::{ConvergenceParams, ConvergenceParticipant, ConvergenceResult};

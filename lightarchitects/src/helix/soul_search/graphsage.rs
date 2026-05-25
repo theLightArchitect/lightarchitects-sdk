@@ -10,8 +10,9 @@
 //! ```
 //!
 //! The projection matrices are loaded from `sage_projection.bin` (a flat f32
-//! array: W₀ concatenated with W₁, row-major). At startup these are all-zero
-//! stubs; the consolidator populates them via truncated SVD on BGE embeddings.
+//! array: W₀ concatenated with W₁, row-major). The nightly consolidator writes
+//! `sage_embedding` on each Step by projecting stored BGE-384 vectors through
+//! these weights via [`BgeSageProjectionPipeline`].
 //!
 //! # Graceful fallback
 //!
