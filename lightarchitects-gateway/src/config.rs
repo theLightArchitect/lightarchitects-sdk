@@ -206,6 +206,24 @@ impl Default for PrivacyConfig {
     }
 }
 
+/// `[budgets]` section — cost ceilings for strategy and agent loops.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BudgetsConfig {
+    /// Default USD ceiling applied to every strategy loop when the caller
+    /// does not supply an explicit `max_budget_usd`.
+    ///
+    /// Set to `f64::MAX` to restore the old unlimited behaviour.
+    pub default_max_budget_usd: f64,
+}
+
+impl Default for BudgetsConfig {
+    fn default() -> Self {
+        Self {
+            default_max_budget_usd: 5.0,
+        }
+    }
+}
+
 /// `[vault]` section — vault-as-git operations and public companion sync.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VaultConfig {
@@ -280,6 +298,9 @@ pub struct GatewayConfig {
     /// `[privacy]` section.
     #[serde(default)]
     pub privacy: PrivacyConfig,
+    /// `[budgets]` section — cost ceilings for strategy and agent loops.
+    #[serde(default)]
+    pub budgets: BudgetsConfig,
     /// `[vault]` section — vault-as-git git operations and public companion sync.
     #[serde(default)]
     pub vault: VaultConfig,
@@ -343,6 +364,7 @@ impl Default for GatewayConfig {
             identity_scope_policy: IdentityScopePolicy::AllowAuthenticated,
             allowed_directories: Vec::new(),
             active_preset: default_preset_name(),
+            budgets: BudgetsConfig::default(),
             first_run: false,
             api_keys: HashMap::new(),
         }
@@ -747,5 +769,29 @@ tier = "local"
         let mut sorted = names.clone();
         sorted.sort_unstable();
         assert_eq!(names, sorted);
+    }
+
+    #[test]
+    fn budgets_default_is_five_usd() {
+        let cfg = GatewayConfig::default();
+        assert!(
+            (cfg.budgets.default_max_budget_usd - 5.0).abs() < f64::EPSILON,
+            "default budget ceiling must be $5.00"
+        );
+    }
+
+    #[test]
+    fn budgets_config_roundtrips_toml() {
+        // BudgetsConfig is a flat struct — deserialize without a table header.
+        let toml = "default_max_budget_usd = 12.5\n";
+        let b: BudgetsConfig = toml::from_str(toml).expect("parse");
+        assert!((b.default_max_budget_usd - 12.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn gateway_config_accepts_budgets_section() {
+        let toml = "[budgets]\ndefault_max_budget_usd = 2.5\n";
+        let cfg: GatewayConfig = toml::from_str(toml).expect("parse gateway config with budgets");
+        assert!((cfg.budgets.default_max_budget_usd - 2.5).abs() < f64::EPSILON);
     }
 }

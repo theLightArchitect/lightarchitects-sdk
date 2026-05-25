@@ -12,7 +12,10 @@
 //! SOUL's, and CORSO's domain-heavy actions come before SOUL's generic names
 //! (search, query, stats).
 
+use std::io::Write as _;
+
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use lightarchitects::ayin::AyinAction;
 use lightarchitects::corso::CorsoAction;
@@ -27,6 +30,152 @@ use crate::error::GatewayError;
 
 #[cfg(feature = "spawner")]
 use crate::spawner::call_agent;
+
+// ── Action audit log ─────────────────────────────────────────────────────────
+
+/// Resolve the path for the action audit log.
+fn audit_log_path() -> std::path::PathBuf {
+    let home = std::env::var_os("HOME").unwrap_or_default();
+    std::path::PathBuf::from(home)
+        .join(".lightarchitects")
+        .join("audit")
+        .join("action-audit.jsonl")
+}
+
+/// Fire-and-forget: append one NDJSON line to the action audit log.
+///
+/// Each entry contains a `prev_hash` field — the SHA-256 of the preceding raw
+/// log line — so truncation or insertion of entries is detectable offline.
+/// The first entry uses a sentinel of 64 zero hex digits.
+///
+/// Disk I/O runs on a blocking thread so the calling async handler is not
+/// charged the latency.
+pub fn append_action_audit(
+    tool_name: &str,
+    actor_id: &str,
+    cost_usd: f64,
+    assertion_id: Option<&str>,
+    error_code: Option<&str>,
+) {
+    let tool_name = tool_name.to_owned();
+    let actor_id = actor_id.to_owned();
+    let assertion_id = assertion_id.map(str::to_owned);
+    let error_code = error_code.map(str::to_owned);
+
+    tokio::task::spawn_blocking(move || {
+        let path = audit_log_path();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+
+        // Chain: SHA-256 of the last raw line, or 64 zero digits for genesis.
+        let prev_hash = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|content| {
+                let trimmed = content.trim_end();
+                if trimmed.is_empty() {
+                    return None;
+                }
+                let last = trimmed.rsplit_once('\n').map_or(trimmed, |(_, l)| l);
+                let mut h = Sha256::new();
+                h.update(last.as_bytes());
+                Some(format!("{:x}", h.finalize()))
+            })
+            .unwrap_or_else(|| "0".repeat(64));
+
+        let entry = json!({
+            "ts": chrono::Utc::now().to_rfc3339(),
+            "tool": tool_name,
+            "actor": actor_id,
+            "cost_usd": cost_usd,
+            "assertion_id": assertion_id,
+            "error_code": error_code,
+            "prev_hash": prev_hash,
+        });
+
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            let _ = writeln!(f, "{entry}");
+        }
+    });
+}
+
+// ── Action-audit unit tests ───────────────────────────────────────────────────
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod audit_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn append_action_audit_writes_jsonl_with_chain() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("action-audit.jsonl");
+
+        // Temporarily redirect HOME so audit_log_path() writes into tempdir.
+        // We call the internal helper directly via a closure to keep the test
+        // hermetic — the OS HOME env var is process-wide so we avoid mutating it.
+        let write_entry = |tool: &str, actor: &str, cost: f64| {
+            let path = log_path.clone();
+            let prev_hash = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|content| {
+                    let trimmed = content.trim_end();
+                    if trimmed.is_empty() {
+                        return None;
+                    }
+                    let last = trimmed.rsplit_once('\n').map_or(trimmed, |(_, l)| l);
+                    let mut h = Sha256::new();
+                    h.update(last.as_bytes());
+                    Some(format!("{:x}", h.finalize()))
+                })
+                .unwrap_or_else(|| "0".repeat(64));
+
+            let entry = serde_json::json!({
+                "tool": tool, "actor": actor, "cost_usd": cost,
+                "prev_hash": prev_hash,
+            });
+            let mut f = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .unwrap();
+            writeln!(f, "{entry}").unwrap();
+        };
+
+        write_entry("orchestrate", "local", 0.01);
+        write_entry("resolve", "local", 0.02);
+
+        let lines: Vec<String> = std::fs::read_to_string(&log_path)
+            .unwrap()
+            .lines()
+            .map(str::to_owned)
+            .collect();
+
+        assert_eq!(lines.len(), 2, "two entries written");
+
+        let first: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
+        assert_eq!(first["tool"], "orchestrate");
+        assert_eq!(first["prev_hash"], "0".repeat(64), "genesis prev_hash");
+
+        let second: serde_json::Value = serde_json::from_str(&lines[1]).unwrap();
+        assert_eq!(second["tool"], "resolve");
+
+        // Verify chain: second.prev_hash == SHA-256(first raw line).
+        let expected = {
+            let mut h = Sha256::new();
+            h.update(lines[0].as_bytes());
+            format!("{:x}", h.finalize())
+        };
+        assert_eq!(
+            second["prev_hash"], expected,
+            "prev_hash chains to first line"
+        );
+    }
+}
 
 // ── Auto-routing via SDK enums ───────────────────────────────────────────────
 

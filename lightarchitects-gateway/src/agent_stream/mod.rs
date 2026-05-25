@@ -485,7 +485,9 @@ pub async fn run_interactive_with_strategies(
         }
 
         // Explicit user slash commands — no LLM needed.
-        if let Some(req) = strategy::parse_slash_command(input) {
+        if let Some(req) =
+            strategy::parse_slash_command(input, config.budgets.default_max_budget_usd)
+        {
             if let Err(e) = strategy::run_strategy(req, config, &mut transport).await {
                 eprintln!("Strategy error: {e}");
             }
