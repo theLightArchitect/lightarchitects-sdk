@@ -17,6 +17,7 @@ pub mod context;
 pub mod convergence;
 pub mod fulltext;
 pub mod graph;
+pub mod graphsage;
 pub mod hybrid;
 pub mod personality;
 pub mod reranker;
@@ -29,6 +30,7 @@ pub use context::{ContextFormatter, FormattedContext};
 pub use convergence::{ConvergenceParams, ConvergenceParticipant, ConvergenceResult};
 pub use fulltext::FulltextSearcher;
 pub use graph::{GraphFilter, GraphSearcher};
+pub use graphsage::{GraphSageProvider, ProjectionWeights};
 pub use hybrid::{
     HybridRetriever, HybridRetrieverConfig, RetrievalMode, RetrievalResult, precision_at_k,
     precision_at_k_patterns, recall_at_k,

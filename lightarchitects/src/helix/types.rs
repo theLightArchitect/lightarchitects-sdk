@@ -326,6 +326,14 @@ pub struct Step {
     /// `None` for steps created outside the markdown vault pipeline.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vault_path: Option<String>,
+
+    /// `GraphSAGE` inductive embedding (128-dim, written by GDS nightly enrichment).
+    ///
+    /// Set by `gds.beta.graphSage.write(writeProperty:'sage_embedding')`.
+    /// Used by [`StructuralSearcher`] via the `step-sage-embeddings` HNSW index.
+    /// `None` until GDS consolidation has run at least once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub graph_embedding: Option<Vec<f32>>,
 }
 
 impl Step {
@@ -680,6 +688,7 @@ mod tests {
             created_at: Utc::now(),
             metadata: serde_json::json!({"resonance": ["wonder", "joy"]}),
             vault_path: None,
+            graph_embedding: None,
         };
 
         let json = serde_json::to_string(&step).expect("serialize");
@@ -711,6 +720,7 @@ mod tests {
             created_at: Utc::now(),
             metadata: serde_json::Value::Null,
             vault_path: None,
+            graph_embedding: None,
         };
         assert!(step.is_permanent());
         assert!(!step.is_expired());
@@ -734,6 +744,7 @@ mod tests {
             created_at: Utc::now(),
             metadata: serde_json::Value::Null,
             vault_path: None,
+            graph_embedding: None,
         };
         assert!(!expired.is_permanent());
         assert!(expired.is_expired());
@@ -753,6 +764,7 @@ mod tests {
             created_at: Utc::now(),
             metadata: serde_json::Value::Null,
             vault_path: None,
+            graph_embedding: None,
         };
         assert!(!fresh.is_permanent());
         assert!(!fresh.is_expired());
@@ -773,6 +785,7 @@ mod tests {
             created_at: Utc::now(),
             metadata: serde_json::Value::Null,
             vault_path: None,
+            graph_embedding: None,
         };
         let json = serde_json::to_string(&step).expect("serialize");
         // skip_serializing_if = "Option::is_none" — expires must not appear in JSON
@@ -799,6 +812,7 @@ mod tests {
             created_at: Utc::now(),
             metadata: serde_json::Value::Null,
             vault_path: None,
+            graph_embedding: None,
         };
         let json = serde_json::to_string(&step).expect("serialize");
         assert!(

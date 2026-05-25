@@ -1,7 +1,9 @@
-//! Structural searcher — HNSW vector similarity via `Node2Vec` embeddings.
+//! Structural searcher — HNSW vector similarity via `GraphSAGE` inductive embeddings.
 //!
-//! Searches the `step-struct-embeddings` HNSW index (128-dim cosine) in Neo4j.
-//! Falls back gracefully if the index does not exist (GDS not run yet).
+//! Searches the `step-sage-embeddings` HNSW index (128-dim cosine) in Neo4j.
+//! Falls back to `step-struct-embeddings` (`Node2Vec`) if the `GraphSAGE` index does
+//! not yet exist (GDS consolidation hasn't run). Falls back to empty if neither
+//! index exists.
 
 use std::sync::Arc;
 
@@ -17,14 +19,19 @@ use super::{RetrievalSignal, ScoredId};
 // StructuralSearcher
 // ============================================================================
 
-/// Structural similarity search over 128-dim `Node2Vec` Step embeddings.
+/// Structural similarity search over 128-dim `GraphSAGE` Step embeddings.
 ///
-/// `Node2Vec` captures graph-neighborhood similarity: two Steps that play
-/// the same structural role in the helix get similar vectors even if their
-/// content is completely different.
+/// `GraphSAGE` is an **inductive** GNN: it produces embeddings for new Steps
+/// immediately (no nightly GDS batch required), unlike `Node2Vec` which needs
+/// a full graph re-training pass.
 ///
-/// **Graceful fallback**: if `step-struct-embeddings` index does not exist
-/// (GDS hasn't run yet), returns an empty list and logs a warning.
+/// Two Steps that play the same structural role in the helix get similar
+/// vectors even if their content differs — this is the P5 structural signal.
+///
+/// **Index fallback order**:
+/// 1. `step-sage-embeddings` (`GraphSAGE`, written by GDS consolidation)
+/// 2. `step-struct-embeddings` (`Node2Vec`, legacy — used during migration)
+/// 3. Empty list (GDS not yet run, no structural signal available)
 pub struct StructuralSearcher {
     provider: Arc<dyn EmbeddingProvider>,
 }
@@ -69,25 +76,36 @@ impl StructuralSearcher {
             return Ok(Vec::new());
         };
 
-        // Search HNSW index — graceful fallback if index missing
-        match db
-            .vector_search(&query_vec, index_names::STEP_STRUCT_EMBEDDINGS, opts)
-            .await
-        {
-            Ok(results) => Ok(results
-                .into_iter()
-                .map(|r| ScoredId {
-                    step_id: r.item.id,
-                    score: r.score,
-                    signal: RetrievalSignal::Structural,
-                })
-                .collect()),
-            Err(e) => {
-                // Graceful fallback: index may not exist if GDS hasn't run
-                warn!(error = %e, "Structural search unavailable — returning empty results");
-                Ok(Vec::new())
+        // Try GraphSAGE index first; fall back to Node2Vec; then empty.
+        let sage_result = db
+            .vector_search(&query_vec, index_names::STEP_SAGE_EMBEDDINGS, opts)
+            .await;
+
+        let results = match sage_result {
+            Ok(r) if !r.is_empty() => r,
+            Ok(_) | Err(_) => {
+                // SAGE index absent or empty — try legacy Node2Vec index
+                match db
+                    .vector_search(&query_vec, index_names::STEP_STRUCT_EMBEDDINGS, opts)
+                    .await
+                {
+                    Ok(r) => r,
+                    Err(e) => {
+                        warn!(error = %e, "Structural search unavailable — returning empty results");
+                        return Ok(Vec::new());
+                    }
+                }
             }
-        }
+        };
+
+        Ok(results
+            .into_iter()
+            .map(|r| ScoredId {
+                step_id: r.item.id,
+                score: r.score,
+                signal: RetrievalSignal::Structural,
+            })
+            .collect())
     }
 }
 

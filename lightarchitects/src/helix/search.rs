@@ -168,6 +168,12 @@ pub mod index_names {
 
     /// HNSW vector index on `Step.struct_embedding` (128-dim, `Node2Vec`).
     pub const STEP_STRUCT_EMBEDDINGS: &str = "step-struct-embeddings";
+
+    /// HNSW vector index on `Step.sage_embedding` (128-dim, `GraphSAGE` inductive).
+    ///
+    /// Written by `gds.beta.graphSage.write(writeProperty:'sage_embedding')`.
+    /// Falls back to `STEP_STRUCT_EMBEDDINGS` during migration.
+    pub const STEP_SAGE_EMBEDDINGS: &str = "step-sage-embeddings";
 }
 
 // ============================================================================

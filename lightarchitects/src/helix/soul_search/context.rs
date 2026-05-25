@@ -152,6 +152,7 @@ mod tests {
             expires: None,
             metadata: serde_json::json!({"owner": "eva"}),
             vault_path: None,
+            graph_embedding: None,
         }
     }
 

@@ -176,6 +176,7 @@ impl DirectoryIngester {
                 "source_type": "directory",
             }),
             vault_path: None,
+            graph_embedding: None,
         };
 
         match db.upsert_step(&step).await {

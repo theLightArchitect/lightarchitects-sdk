@@ -131,6 +131,7 @@ impl HelixStore {
                 created_at: entry.created_at,
                 metadata: serde_json::Value::Null,
                 vault_path: None,
+                graph_embedding: None,
             };
 
             self.db

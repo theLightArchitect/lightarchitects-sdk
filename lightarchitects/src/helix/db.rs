@@ -2293,6 +2293,10 @@ impl HelixNeo4j {
             .get("vault_path")
             .and_then(serde_json::Value::as_str)
             .map(String::from);
+        // Read GraphSAGE embedding written by GDS consolidation (null until first run).
+        let graph_embedding = record
+            .get("sage_embedding")
+            .and_then(|v| serde_json::from_value::<Vec<f32>>(v.clone()).ok());
 
         Some(Step {
             id,
@@ -2307,6 +2311,7 @@ impl HelixNeo4j {
             created_at,
             metadata,
             vault_path,
+            graph_embedding,
         })
     }
 
