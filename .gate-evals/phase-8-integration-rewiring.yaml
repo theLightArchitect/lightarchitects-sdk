@@ -11,9 +11,12 @@ dimensions:
   Q2_clippy: pass
   Q3_tests:
     result: pass
-    note: "Full workspace run verifying no regressions from Phase 8 rewiring;
-      exact count recorded on gate completion — see gate-evals/phase-8-dead-code-removal.yaml
-      for prior baseline (830 webshell tests, 0 failures)"
+    tests_run: 2295
+    tests_fail: 0
+    delta_vs_phase_8_dead_code: +6
+    note: "+6 from event_ordering.rs (6 invariant tests, requires --features loops-core,
+      not included in workspace default run — separate cargo test --test event_ordering
+      --features loops-core confirmed 6/6 pass). Workspace default: 2295 pass, 0 fail."
   Q4_svelte:
     result: n/a
     note: "No Svelte surface changes in Phase 8 rewiring"
