@@ -173,9 +173,6 @@ async fn no_events_after_complete() {
         ConversationEvent::Complete {
             reason: TerminationReason::Complete,
         },
-        // A rogue emission that MUST NOT appear after complete in any real turn.
-        // We include it here to prove the ordering invariant test is meaningful:
-        // if the session emitted this, the test would catch it.
     ];
 
     let frames = collect_frames(&events).await;
@@ -190,6 +187,39 @@ async fn no_events_after_complete() {
         complete_pos,
         names.len() - 1,
         "no events may appear after complete; got: {names:?}"
+    );
+}
+
+/// Companion to `no_events_after_complete`: demonstrates the checker is NOT
+/// tautological.  `SseTransport` is a pass-through — it emits whatever the
+/// caller provides.  A rogue post-complete event DOES appear in the stream,
+/// so the `complete_pos == names.len() - 1` invariant check would fire red
+/// in a session that violates the ordering contract.
+#[tokio::test]
+async fn post_complete_rogue_event_is_detectable() {
+    let events = vec![
+        ConversationEvent::Complete {
+            reason: TerminationReason::Complete,
+        },
+        // Rogue event after complete — simulates a misbehaving session.
+        ConversationEvent::Text {
+            chunk: "rogue post-complete chunk".into(),
+        },
+    ];
+
+    let frames = collect_frames(&events).await;
+    let names = event_names(&frames);
+    let complete_pos = names
+        .iter()
+        .position(|&n| n == "complete")
+        .expect("complete must be present");
+
+    // The transport emits the rogue event — proving the checker above would
+    // catch a real violation (complete_pos < names.len() - 1 here).
+    assert_ne!(
+        complete_pos,
+        names.len() - 1,
+        "rogue post-complete event must make complete non-terminal: {names:?}"
     );
 }
 
