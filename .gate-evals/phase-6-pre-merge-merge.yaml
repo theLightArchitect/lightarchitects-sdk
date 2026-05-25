@@ -1,0 +1,78 @@
+schema_version: 1
+gate: merge
+scored_by: /GATE
+scored_at: "2026-05-25T18:45:00Z"
+build_id: container-hitl-audit
+phase_id: merge
+sha: 4bbd14f7038776c59251b205e287cb706877d826
+overall_verdict: pass
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: "workspace — 0 failures post-rebase; all crates clean"
+    tests_fail: 0
+  Q4_svelte: n/a
+  S1_security:
+    result: pass_with_note
+    note: |
+      Security audit deferred to full pre-merge S gate (SERAPH). Diff adds:
+      - Container image allowlist (["lightarchitects/agent:latest","la-sandbox:latest"])
+      - docker exec -i /bin/sh execution path (Phase 3, audited Gate 3)
+      - HMAC-SHA-256 audit chain (Phase 4, audited Gate 4)
+      - HITL resolve endpoint (Phase 3, audited Gate 3)
+      No new cryptographic primitives introduced in Phase 5-6 diff.
+  S2_supply_chain:
+    result: pass_with_note
+    note: |
+      cargo deny: openssl ban fires (FAILED) but is pre-existing — deny.toml
+      unchanged in this branch. Chain: fastembed → hf-hub → native-tls → openssl.
+      No new deny violations introduced by this build.
+  S3_laex: n/a
+  I1_rebase:
+    result: pass
+    note: "Rebased cleanly onto github/main (5 new commits from helix-gnn-substrate). 0 conflicts."
+  N1_northstar:
+    result: pass
+    pillar: P1+P2
+    note: |
+      P1: operators can review HITL-blocked tasks and approve/reject from webshell UI
+      without terminal (ConductorHitlPanel.svelte + /api/conductor/hitl endpoints).
+      P2: container spawn + relay (L3) + budget ceiling + HMAC audit chain (L6)
+      advance orchestration security-by-default. Direct advancement on both pillars.
+  N2_chain: pass
+  N3_exclusion_zones: pass
+  D1_docs:
+    result: pass
+    note: |
+      All new pub items carry /// doc comments:
+      - BudgetsConfig + fields (config.rs)
+      - ContainerHandle + fields (types.rs)
+      - HitlTask, ResolveRequest, ResolveResponse + fields (conductor_routes.rs)
+      - list_hitl_handler, resolve_hitl_handler functions
+  D2_plan:
+    result: pass
+    note: "Plan frontmatter updated to phase-6-pre-merge. All 6 phases + 5 gates shipped."
+  D3_claude_md: pass
+  V1_pyramid:
+    result: pass
+    suites_covered:
+      - unit (cargo test --lib, 456 tests)
+      - integration (conductor_hitl_e2e: 12, container_hitl_audit_e2e: 5)
+      - smoke (docker_unavailable_capability_does_not_attempt_spawn)
+    suites_absent:
+      - property (no property-based tests added — not in Phase 5 scope)
+      - E2E browser (Playwright: deferred — webshell UI not headless-testable in CI without running server)
+      - regression (covered by phase gate cumulative test counts)
+  V2_smoke: pass
+  V3_e2e:
+    result: deferred
+    condition: "Playwright E2E requires running webshell dev server; unblocked when CI environment wires webshell server startup in test pipeline"
+notes:
+  - "14 commits ahead of github/main (post-rebase); 0 merge conflicts"
+  - "Pre-existing openssl ban via fastembed dependency — not introduced by this branch"
+  - "HMAC audit chain (SHA-256) provides tamper-evidence across action log entries"
+  - "ScopeGovernor authorized_builds narrowed from Vec::new() to vec![build_id.clone()] (Phase 4 S1 fix)"
+  - "Container image allowlist: [lightarchitects/agent:latest, la-sandbox:latest] — fail-closed on unlisted images"
+  - "HOME_LOCK pattern for HOME-redirecting tests is correct — tokio::sync::Mutex incompatible with cross-runtime sharing in cargo test"
