@@ -1,0 +1,66 @@
+schema_version: 1
+gate: phase
+scored_by: /GATE → /XEA --no-iterate
+scored_at: "2026-05-25T00:00:00Z"
+build_id: ironclaw-autonomous-e2e
+phase_id: phase-1-architecture
+sha: e541a48
+overall_verdict: pass
+dimensions:
+  Q1_fmt: pass  # pre-commit hook verified on Phase 1 commit
+  Q2_clippy: pass  # pre-commit hook verified
+  Q3_tests: pass  # no new Rust code; workspace tests pass (28 from G4)
+  Q4_svelte: n/a  # no frontend changes at Phase 1
+  A_gate:
+    result: pass
+    canon: Canon XLI
+    predicate: "diagram_present ∧ drift_clean ∧ checklist_current"
+    diagram_present: verified  # 10 files in docs/architecture/; 8 required diagram types covered
+    drift_clean: verified  # no implementation yet — no drift possible
+    checklist_current: verified  # ADR-001 + ADR-002 authored
+  S1_security:
+    result: pass
+    note: |
+      ADR-001 (Ollama Cloud as SLOT 3): satisfies Security-Guardrails §5.4 — LLM output
+      treated as untrusted; OllamaResponseValidator is the schema gate.
+      ADR-002 (CategoricalExclusion): strengthens OWASP LLM08 + Security-Guardrails §1.1 —
+      no contradiction found.
+      security_classification: Restricted — SERAPH D6i pen-test scheduled Phase 6,
+      LÆX Layer 4 at gate-3.
+  N1_northstar:
+    result: pass
+    pillar: P2
+    note: "§S Autonomous Delivery Spine mapped at Plan Part II.9. All 8 mechanical checks assigned to phases."
+  N2_chain: pass
+  N3_exclusion_zones: pass
+  D1_docs:
+    result: n/a
+    note: "No new pub Rust items at Phase 1 (architecture docs only)"
+  D2_plan:
+    result: pass
+    note: |
+      Plan phase field updated: phase-0-preflight → phase-1-architecture.
+      a_gate_predicate all 3 sub-predicates verified.
+      generated_diagrams[] populated.
+  V1_pyramid:
+    result: pass
+    note: "Phase 1 is Plan phase — test pyramid gate deferred to gate-2+"
+  xea_gate1:
+    result: validated
+    iteration: gate-1-pass
+    layer_0: pass
+    layer_1: carry-forward  # 95.45 EXEMPLARY (iter-4; no plan body changes)
+    layer_2:
+      result: pass
+      checks_passed: [N1, N2, N3, N4, N5, N6]
+      note: "N6 per-phase predicates confirmed closed (C7c table at Part II.9)"
+    layer_3: carry-forward
+    adr_contradiction_check: pass
+    informational:
+      - "state_machine embedded in screen-flow.md (compound deliverable — acceptable)"
+notes:
+  - "Phase 1 delivered: 10 files in docs/architecture/ (613 lines)"
+  - "Canon XLI [A] gate: diagram_present ∧ drift_clean ∧ checklist_current = PASS"
+  - "R10: 8 arXiv papers; multi-source cross-validation confirmed; C2b single-source cap N/A"
+  - "ADR-002 CategoricalExclusion: Layer-0 pre-screen for destructive/secret/dep/unsafe ops"
+  - "Plan phase advanced to phase-1-architecture"
