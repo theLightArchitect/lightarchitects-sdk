@@ -266,6 +266,29 @@ fn redact(json: &str, token: &str) -> String {
     json.replace(token, "[REDACTED]")
 }
 
+/// Multi-secret variant of [`redact`].
+///
+/// Used by `drive_native_sse` to redact both the session bearer token AND the
+/// Ollama Cloud API key from native SSE stream chunks before the bytes cross
+/// the wire to the operator's browser.  Closes merge-gate finding GAP-3
+/// (SSE body bypass of `sse_handler::redact()` path) from
+/// webshell-la-native-backend.
+///
+/// Empty strings in `secrets` are skipped to support
+/// `Option<SecretString>::map(...)` patterns at the call site.
+pub(crate) fn redact_secrets(input: &str, secrets: &[&str]) -> String {
+    let mut out = input.to_owned();
+    for s in secrets {
+        if s.is_empty() {
+            continue;
+        }
+        if out.contains(*s) {
+            out = out.replace(*s, "[REDACTED]");
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -301,5 +324,63 @@ mod tests {
         let json = r#"{"a":"secret","b":"secret"}"#;
         let result = redact(json, "secret");
         assert_eq!(result.matches("[REDACTED]").count(), 2);
+    }
+
+    // ── redact_secrets (multi-secret variant, Phase-10 GAP-3 close) ──
+
+    #[test]
+    fn redact_secrets_handles_multiple_distinct_secrets() {
+        let body = r#"{"err":"auth failed: token=sess-abc-123 key=bearer-xyz-456 stack..."}"#;
+        let result = redact_secrets(body, &["sess-abc-123", "bearer-xyz-456"]);
+        assert!(
+            !result.contains("sess-abc-123"),
+            "session token must be redacted: {result}"
+        );
+        assert!(
+            !result.contains("bearer-xyz-456"),
+            "API key must be redacted: {result}"
+        );
+        assert_eq!(
+            result.matches("[REDACTED]").count(),
+            2,
+            "both secrets must be replaced: {result}"
+        );
+    }
+
+    #[test]
+    fn redact_secrets_skips_empty_strings() {
+        // Models Option<SecretString>::map(...).as_deref() → "" → still safe.
+        let body = r#"{"text":"hello world"}"#;
+        let result = redact_secrets(body, &["", ""]);
+        assert_eq!(result, body, "empty secrets must not modify input");
+    }
+
+    #[test]
+    fn redact_secrets_with_empty_list_is_identity() {
+        let body = r#"{"chunk":"streaming text"}"#;
+        let result = redact_secrets(body, &[]);
+        assert_eq!(result, body);
+    }
+
+    #[test]
+    fn redact_secrets_preserves_ordinary_error_text() {
+        // Positive regression: non-secret content passes through unchanged.
+        // Phase-2 Risk R6 (sanitizer hides real error message from operator).
+        let body = r#"{"type":"error","message":"provider error: unknown model"}"#;
+        let result = redact_secrets(body, &["sess-abc", "bearer-xyz"]);
+        assert_eq!(
+            result, body,
+            "ordinary error text must pass through verbatim: {result}"
+        );
+    }
+
+    #[test]
+    fn redact_secrets_redacts_both_when_one_substring_of_other() {
+        // Edge case: la_native_api_key might share a prefix with session token.
+        // Ensure both still redacted independently.
+        let body = "prefix-12345 prefix-12345-extra";
+        let result = redact_secrets(body, &["prefix-12345-extra", "prefix-12345"]);
+        // The longer one was replaced first, then the shorter one — both gone.
+        assert!(!result.contains("prefix-12345"), "got: {result}");
     }
 }

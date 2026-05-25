@@ -1,0 +1,39 @@
+schema_version: 1
+gate: phase
+scope: phase-4-drawer-routing
+scored_by: "/BUILD Step 7.3 inline /GATE"
+scored_at: "2026-05-25T06:50:00Z"
+build_id: webshell-la-native-p10
+commit: 8a067d8
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt:    { result: pass, detail: "cargo fmt --all clean (no Rust changes this phase but kept clean)" }
+  Q4_svelte:
+    result: pass
+    detail: "svelte-check --threshold error: 0 errors, 40 warnings (pre-existing); vitest 726 pass, 1 pre-existing flake (AgentSelector.svelte.test.ts, same flake documented in webshell-la-native-backend gate)"
+
+  V3_e2e_added:
+    result: pass
+    detail: >
+      Added Playwright test "native POST returns SSE; drawer renders chunks via
+      api.copilotChatNative" — mocks the SSE wire format and verifies POST
+      reaches /copilot with Accept: text/event-stream and frames arrive in
+      expected order.
+
+  N1_northstar:
+    result: pass
+    pillar: "P1"
+    detail: "Phase-4 advances P1 (operator UX correctness): native agents can now actually complete vibe-coding turns from the drawer; previously hit the WS bridge dead-end."
+
+routing_audit:
+  ws_bridge_for_native: "disabled — $effect skips AgentWS construction when isLaNative"
+  pendingMessages_queue: "removed entirely (was tied to WS handshake race)"
+  premature_loading_reset_on_ws_close_for_native: "eliminated — non-native branch only"
+  api_method_added: "copilotChatNative — fetch + ReadableStream + SSE frame parser → onEvent callback"
+  handleAgentEvent_compat: "handleAgentEvent already handles text/status_update/complete/error/token_usage; same handler from the WS path now consumes SSE frames"
+
+next_phase: phase-5-verify-and-merge
+notes:
+  - "AgentWS class is still used for non-native agent kinds — kept intact."
+  - "The Playwright test mocks the wire format because driving the actual drawer against a real native build requires bootstrapping a build session — out of scope for this E2E layer; Phase 5 covers live integration."

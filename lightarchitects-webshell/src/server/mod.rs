@@ -273,6 +273,15 @@ pub struct AppState {
     /// `POST /api/layout/snapshot`. `None` until the first push arrives.
     /// Used for cross-tab sync and session-recovery on reconnect.
     pub layout_snapshot: Arc<tokio::sync::RwLock<Option<serde_json::Value>>>,
+    /// Ollama Cloud bearer token, read once at startup from `OLLAMA_API_KEY`.
+    ///
+    /// Stored as [`secrecy::SecretString`] (zeroed on drop, never captured in
+    /// spans/logs).  Read by `drive_native_sse` to construct
+    /// `OllamaCliProvider` without a per-request `std::env::var` call —
+    /// closes the TOCTOU window documented in webshell-la-native-backend
+    /// merge gate `OLLAMA_API_KEY_TOCTOU`.  `None` when the env var is unset
+    /// or empty at server startup.
+    pub la_native_api_key: Option<secrecy::SecretString>,
 }
 
 impl AppState {
@@ -363,6 +372,14 @@ impl AppState {
                 }
             });
         }
+
+        // Ollama Cloud bearer token — read ONCE at startup; eliminates the
+        // per-request `std::env::var("OLLAMA_API_KEY")` TOCTOU window
+        // documented in webshell-la-native-backend merge gate.
+        let la_native_api_key = std::env::var("OLLAMA_API_KEY")
+            .ok()
+            .filter(|k| !k.is_empty())
+            .map(secrecy::SecretString::from);
 
         // F9: create oauth_states before Self so the eviction task can hold an Arc clone.
         let oauth_states: Arc<DashMap<Uuid, crate::auth::credential::OAuthPendingState>> =
@@ -456,6 +473,7 @@ impl AppState {
                 });
                 handle
             },
+            la_native_api_key,
         }
     }
 
@@ -570,6 +588,7 @@ impl AppState {
                 crate::copilot::eva_identity::EvaIdentityCache::default(),
             )),
             mcp_host: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+            la_native_api_key: None,
         }
     }
 }

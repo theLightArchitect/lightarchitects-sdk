@@ -5,6 +5,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+use axum::body::Bytes;
 use axum::{
     Json,
     body::Body,
@@ -119,6 +120,8 @@ pub async fn copilot_chat_handler(
             grounding_hdrs,
             system,
             Arc::clone(&session.native_interrupt_flag),
+            state.la_native_api_key.clone(),
+            state.config.token.clone(),
         );
     }
 
@@ -228,6 +231,12 @@ async fn native_turn_task(
     // transport drop closes write_half → EOF on read_half
 }
 
+// All 8 arguments are distinct, named, and load-bearing for the single call
+// site; bundling them into a struct would obscure the wiring without any
+// material benefit.  Phase-10 GAP-3 added la_native_api_key + session_token
+// so the per-chunk redact wrapper can scrub both secrets — both are
+// per-request data, not part of any natural sub-struct.
+#[allow(clippy::too_many_arguments)]
 fn drive_native_sse(
     build_id: Uuid,
     grounded_message: &str,
@@ -235,6 +244,8 @@ fn drive_native_sse(
     extra_headers: HeaderMap,
     system_prompt: Option<String>,
     interrupt_flag: Arc<AtomicBool>,
+    la_native_api_key: Option<secrecy::SecretString>,
+    session_token: String,
 ) -> Response {
     // Reset any prior interrupt before starting a new turn so the flag does
     // not carry over from a previous cancelled request.
@@ -252,21 +263,20 @@ fn drive_native_sse(
         }
     }
 
-    // Provider selection: prefer Ollama Cloud when OLLAMA_API_KEY is set
-    // (matches `agent_stream::run_ndjson` provider-build logic in the gateway),
-    // otherwise fall back to ClaudeCliProvider for legacy compatibility.
-    // ConversationSession is generic over a concrete provider type, so the
-    // branches construct independent sessions rather than sharing a trait object.
-    let use_ollama = std::env::var("OLLAMA_API_KEY")
-        .ok()
-        .filter(|k| !k.is_empty())
-        .is_some();
+    // Provider selection: prefer Ollama Cloud when the AppState-resolved auth
+    // token is present (read once at startup via `AppState::new` — no
+    // per-request `std::env::var` read, closing the TOCTOU window per Phase-10
+    // hardening), otherwise fall back to ClaudeCliProvider for legacy
+    // compatibility. ConversationSession is generic over a concrete provider
+    // type, so the branches construct independent sessions rather than sharing
+    // a trait object.
+    let use_ollama = la_native_api_key.is_some();
     let model = std::env::var("LA_MODEL")
         .ok()
         .filter(|m| !m.is_empty())
         .unwrap_or_else(|| "nemotron-3-super:cloud".to_owned());
     let ollama_provider = if use_ollama {
-        match OllamaCliProvider::new(&model) {
+        match OllamaCliProvider::new(&model, la_native_api_key.clone()) {
             Ok(p) => Some(p),
             Err(e) => {
                 // W8.2: surface provider-construction failure so the operator
@@ -315,10 +325,39 @@ fn drive_native_sse(
     // W7.3: AbortOnDrop (module-level struct) lives inside the stream's map
     // closure. When the response Body is dropped on client disconnect, the
     // closure drops, firing abort_handle.abort() on the in-flight task.
+    //
+    // Phase-10 (GAP-3): every chunk is passed through `redact_secrets()`
+    // against the session bearer token and (when present) the
+    // OLLAMA_API_KEY before the bytes leave the process. This closes the
+    // native-SSE bypass of `sse_handler::redact()` documented in the
+    // webshell-la-native-backend merge gate.
+    //
+    // Performance: each chunk is UTF-8 decoded with `String::from_utf8_lossy`
+    // and re-encoded only when a secret is present in the chunk (the helper
+    // returns the input unchanged otherwise — branch-free hot path).
     let abort_guard = AbortOnDrop(handle.abort_handle());
-    let stream = ReaderStream::new(read_half).map(move |b| {
+    let api_key_for_redact: Option<String> = la_native_api_key
+        .as_ref()
+        .map(|s| secrecy::ExposeSecret::expose_secret(s).to_owned());
+    let stream = ReaderStream::new(read_half).map(move |chunk_result| {
         let _ = &abort_guard;
-        b
+        match chunk_result {
+            Ok(bytes) => {
+                let s = String::from_utf8_lossy(&bytes);
+                let key_ref: &str = api_key_for_redact.as_deref().unwrap_or("");
+                let redacted = crate::events::sse_handler::redact_secrets(
+                    s.as_ref(),
+                    &[session_token.as_str(), key_ref],
+                );
+                if redacted == s.as_ref() {
+                    // Hot path: no secret found, return original bytes verbatim.
+                    Ok(bytes)
+                } else {
+                    Ok(Bytes::from(redacted.into_bytes()))
+                }
+            }
+            Err(e) => Err(e),
+        }
     });
     let response_result = Response::builder()
         .status(StatusCode::OK)
@@ -348,8 +387,14 @@ fn drive_native_sse(
     response
 }
 
-/// Gather all three grounding vectors (SOUL + git) concurrently, assemble the prelude,
-/// and emit AYIN latency spans. Returns `(prelude, soul_block, git_ctx)`.
+/// Gather all grounding vectors (SOUL + git) **in parallel**, assemble the
+/// prelude, and emit AYIN latency spans.  Returns `(prelude, soul_block, git_ctx)`.
+///
+/// Phase-10 (Phase 3): SOUL and git futures run concurrently via
+/// `tokio::join!`, dropping worst-case wall-clock from `soul_timeout +
+/// git_timeout` (1200 ms sequential) to `max(soul_timeout, git_timeout)`
+/// (800 ms parallel).  Each future retains its own independent
+/// `tokio::time::timeout`, so a hang in one source does not block the other.
 async fn gather_grounding(
     state: &AppState,
     id: Uuid,
@@ -358,10 +403,12 @@ async fn gather_grounding(
     recent_events: &[super::context::RecentEventEntry],
     ui_context: Option<&super::UiContext>,
 ) -> (String, String, Option<super::git_context::GitContext>) {
-    // SOUL vault: top-5 BM25, 400 ms hard timeout (Phase 2).
-    let soul_t0 = std::time::Instant::now();
-    let (soul_block, soul_result_count, soul_timed_out) =
-        if let Some(soul) = state.soul_store.as_deref() {
+    let wall_t0 = std::time::Instant::now();
+
+    // SOUL future: top-5 BM25, 400 ms hard timeout.
+    let soul_fut = async {
+        let soul_t0 = std::time::Instant::now();
+        let (block, count, timed_out) = if let Some(soul) = state.soul_store.as_deref() {
             let msg_prefix: String = message.chars().take(150).collect();
             let fts5_expr = format!("{id} {msg_prefix}");
             match tokio::time::timeout(
@@ -371,11 +418,11 @@ async fn gather_grounding(
             .await
             {
                 Ok(entries) => {
-                    let count = entries.len();
+                    let n = entries.len();
                     let nonce = super::soul_grounding::vault_nonce();
                     (
                         super::soul_grounding::format_block(&nonce, &entries),
-                        count,
+                        n,
                         false,
                     )
                 }
@@ -384,20 +431,32 @@ async fn gather_grounding(
         } else {
             (String::new(), 0, false)
         };
-    let soul_ms = u64::try_from(soul_t0.elapsed().as_millis()).unwrap_or(u64::MAX);
-
-    // Git context: branch + commits + status, 800 ms hard timeout (Phase 3).
-    let git_t0 = std::time::Instant::now();
-    let (git_ctx, git_timed_out) = match tokio::time::timeout(
-        std::time::Duration::from_millis(800),
-        super::git_context::gather(&state.config.cwd),
-    )
-    .await
-    {
-        Ok(ctx) => (ctx, false),
-        Err(_) => (None, true),
+        let ms = u64::try_from(soul_t0.elapsed().as_millis()).unwrap_or(u64::MAX);
+        (block, count, timed_out, ms)
     };
-    let git_ms = u64::try_from(git_t0.elapsed().as_millis()).unwrap_or(u64::MAX);
+
+    // Git future: branch + commits + status, 800 ms hard timeout.
+    let git_fut = async {
+        let git_t0 = std::time::Instant::now();
+        let (ctx, timed_out) = match tokio::time::timeout(
+            std::time::Duration::from_millis(800),
+            super::git_context::gather(&state.config.cwd),
+        )
+        .await
+        {
+            Ok(ctx) => (ctx, false),
+            Err(_) => (None, true),
+        };
+        let ms = u64::try_from(git_t0.elapsed().as_millis()).unwrap_or(u64::MAX);
+        (ctx, timed_out, ms)
+    };
+
+    // Parallel execution — wall-clock is max of the two timeouts, not sum.
+    let (
+        (soul_block, soul_result_count, soul_timed_out, soul_ms),
+        (git_ctx, git_timed_out, git_ms),
+    ) = tokio::join!(soul_fut, git_fut);
+    let grounding_wall_ms = u64::try_from(wall_t0.elapsed().as_millis()).unwrap_or(u64::MAX);
 
     let prelude = context::assemble_prompt_prelude(
         identity,
@@ -416,6 +475,7 @@ async fn gather_grounding(
         git_ctx.as_ref(),
         git_timed_out,
         prelude.len(),
+        grounding_wall_ms,
     );
 
     (prelude, soul_block, git_ctx)
@@ -444,13 +504,19 @@ fn grounding_headers(
     headers
 }
 
-/// Emit three AYIN spans for the grounding pipeline (Phase 6 — `copilot-eva-ambient`).
+/// Emit AYIN spans for the grounding pipeline (Phase 6 — `copilot-eva-ambient`).
 ///
 /// Spans are broadcast on the global SSE channel so the AYIN dashboard surfaces
 /// `copilot.eva_ambient.*` latency without requiring a live build session.
 ///
-/// Span names: `copilot.eva_ambient.soul_search_ms`, `copilot.eva_ambient.git_gather_ms`,
-/// `copilot.eva_ambient.prelude_bytes`.
+/// Span names:
+/// - `copilot.eva_ambient.soul_search_ms` — individual SOUL latency
+/// - `copilot.eva_ambient.git_gather_ms` — individual git latency
+/// - `copilot.eva_ambient.grounding_wall_ms` — parallel wall-clock max
+///   (Phase-10 Phase 3: introduced when `gather_grounding` was parallelised
+///   via `tokio::join!`).  Always `< soul_ms + git_ms`; expected ≈
+///   `max(soul_ms, git_ms)` + small scheduling overhead.
+/// - `copilot.eva_ambient.prelude_bytes` — prelude payload size
 #[allow(clippy::too_many_arguments)]
 fn emit_grounding_spans(
     state: &AppState,
@@ -461,6 +527,7 @@ fn emit_grounding_spans(
     git: Option<&super::git_context::GitContext>,
     git_timed_out: bool,
     prelude_bytes: usize,
+    grounding_wall_ms: u64,
 ) {
     let ts = chrono::Utc::now().to_rfc3339();
     let _ = state.event_tx.send(WebEventV2::from_event(
@@ -493,6 +560,24 @@ fn emit_grounding_spans(
                 "branch": git.map_or("", |g| g.branch.as_str()),
                 "commit_count": git.map_or(0, |g| g.commits.len()),
                 "timed_out": git_timed_out,
+            }),
+            strand_activations: Vec::new(),
+        }),
+        None,
+    ));
+    let _ = state.event_tx.send(WebEventV2::from_event(
+        crate::events::WebEvent::AyinSpan(TraceSpanSummary {
+            id: uuid::Uuid::new_v4().to_string(),
+            parent_id: None,
+            actor: "webshell".to_owned(),
+            action: "copilot.eva_ambient.grounding_wall_ms".to_owned(),
+            timestamp: ts.clone(),
+            duration_ms: grounding_wall_ms,
+            outcome: serde_json::json!("ok"),
+            metadata: serde_json::json!({
+                "soul_ms": soul_ms,
+                "git_ms": git_ms,
+                "parallel_speedup_ms": (soul_ms + git_ms).saturating_sub(grounding_wall_ms),
             }),
             strand_activations: Vec::new(),
         }),

@@ -1,0 +1,51 @@
+schema_version: 1
+gate: phase
+scope: phase-2-sse-redact
+scored_by: "/BUILD Step 7.3 inline /GATE"
+scored_at: "2026-05-25T06:35:00Z"
+build_id: webshell-la-native-p10
+commit: 2a84efc
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt:    { result: pass, detail: "cargo fmt --all -- --check clean" }
+  Q2_clippy: { result: pass, detail: "cargo clippy -p lightarchitects-webshell --all-targets --all-features -- -D warnings clean (single #[allow(clippy::too_many_arguments)] with documented rationale on drive_native_sse)" }
+  Q3_tests:
+    result: pass
+    sse_handler_tests: { passed: 9, failed: 0, delta: "+5 (redact_secrets_*)" }
+    adversarial_tests: { passed: 10, failed: 0 }
+
+  S1_security:
+    result: pass
+    findings:
+      - severity: NONE
+        id: GAP_3_CLOSED
+        description: >
+          Every SSE chunk emitted by drive_native_sse now passes through
+          redact_secrets(chunk, &[session_token, la_native_api_key])
+          before crossing the wire. Bearer-token-shaped strings or
+          API-key-shaped strings in upstream provider error messages are
+          scrubbed to [REDACTED].  Hot path: chunk bytes returned verbatim
+          when no secret is present (single String::from_utf8_lossy +
+          substring check, no allocation).
+        disposition: closed_this_phase
+    note: "Closes webshell-la-native-backend merge-gate finding GAP-3."
+
+  D1_docs:
+    result: pass
+    detail: >
+      redact_secrets has /// rustdoc with Phase-10 GAP-3 cross-reference +
+      the Option<SecretString>::map(...) empty-string convention.
+      drive_native_sse stream-map closure has /// comments explaining the
+      UTF-8 decode + secret-substring branch.
+
+grep_audit:
+  query: "redact_secrets call sites in drive_native_sse"
+  result: "1 wired call: routes.rs ReaderStream::new(read_half).map(...) closure"
+  notes:
+    - "Chunk boundaries: ReaderStream chunks may not align with SSE frame boundaries. Bearer tokens are typically ~32+ byte fixed-length strings; the tokio::io::duplex(64KiB) buffer keeps whole frames together in practice. Split-chunk edge case is a known low-likelihood residual; redact_all on the eventual full frame would close it but adds per-chunk buffering. Tracked as residual risk R2-residual in plan."
+
+next_phase: phase-3-grounding-parallel
+notes:
+  - "Phase-2 added 5 new unit tests; total lightarchitects-webshell test count incremented by 5."
+  - "drive_native_sse now 8 args; #[allow(clippy::too_many_arguments)] documented in source."

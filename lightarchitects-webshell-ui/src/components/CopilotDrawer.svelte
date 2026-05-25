@@ -93,32 +93,31 @@
   let voicePlaying = $state(false);
 
   // --- Native agent bridge state ---
+  //
+  // Phase-10 (Phase 4): native agents (`lightarchitects_native`) route through
+  // the HTTP SSE path `POST /api/builds/:id/copilot` directly — no WebSocket
+  // bridge. The bridge spawned a sub-process that immediately exited, leaving
+  // the drawer stuck in a "Thinking…" state with no provider response. Other
+  // agent kinds keep their WS bridge until they too move to SSE.
   let agentWs: AgentWS | null = $state(null);
   let buildAgentKind = $state<string | undefined>(undefined);
-  let pendingMessages: string[] = $state([]);
-  const MAX_PENDING = 50;
 
-  // Wire AgentWS when a native-agent build is active and we're in chat mode
+  // Wire AgentWS only for non-native agent kinds that still use the WS bridge.
+  // For `lightarchitects_native`, sendMessage() uses api.copilotChatNative
+  // directly (HTTP SSE).
   $effect(() => {
     const buildId = sharedBuildId;
-    const native = $isNativeAgent || buildAgentKind === 'lightarchitects_native';
-    if (!buildId || !native) {
+    const isLaNative = $isNativeAgent || buildAgentKind === 'lightarchitects_native';
+    if (!buildId || isLaNative) {
       agentWs?.disconnect();
       agentWs = null;
-      pendingMessages = [];
       return;
     }
 
     const ws = new AgentWS(
       buildId,
       (ev: AgentEvent) => handleAgentEvent(ev),
-      () => {
-        // connected — flush any messages queued while handshake was in progress
-        while (pendingMessages.length > 0) {
-          const msg = pendingMessages.shift();
-          if (msg) ws.sendMessage(msg);
-        }
-      },
+      () => { /* connected — no-op; non-native bridge has no queue today */ },
       () => {
         // disconnected — if we were mid-turn, surface it so the UI doesn't hang
         if (get(copilotLoading)) {
@@ -649,24 +648,35 @@
     try { buildId = await ensureBuild(); }
     catch { mockStream('Could not create build session. Is the webshell running?'); copilotLoading.set(false); return; }
 
-    // Native agent bridge path: streaming NDJSON via WebSocket
+    // Native agent path (Phase-10 Phase 4): streaming SSE via HTTP POST.
+    // Replaces the WebSocket bridge (which spawned a sub-process that exited
+    // immediately, leaving the drawer with no response).  Each SSE frame is
+    // routed through handleAgentEvent — the same handler the WS path used —
+    // so chat UI logic stays unchanged.
     const isNative = buildAgentKind === 'lightarchitects_native' || get(isNativeAgent);
-    if (agentWs) {
-      if (agentWs.connected) {
-        agentWs.sendMessage(text);
-      } else if (pendingMessages.length < MAX_PENDING) {
-        pendingMessages.push(text);
-      } else {
-        addMessage('system', 'Message queue full — connection pending. Please wait or retry.');
+    if (isNative) {
+      try {
+        const ctx = snapshotContextForCopilot();
+        const { grounding } = await api.copilotChatNative(
+          buildId!,
+          text,
+          (ev) => handleAgentEvent(ev as AgentEvent),
+          { recentEvents: ctx.recentEvents, uiContext: ctx.uiContext },
+        );
+        if (grounding !== null) copilotGrounding.set(grounding);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : 'Unknown error';
+        handleAgentEvent({ type: 'error', message: `Native SSE failed: ${detail}` } as AgentEvent);
       }
       return;
     }
-    if (isNative) {
-      // WS hasn't been created yet (effect pending) — queue for flush on connect
-      if (pendingMessages.length < MAX_PENDING) {
-        pendingMessages.push(text);
+
+    // Non-native WS bridge path (Claude CLI / Codex CLI agent kinds today).
+    if (agentWs) {
+      if (agentWs.connected) {
+        agentWs.sendMessage(text);
       } else {
-        addMessage('system', 'Message queue full — connection pending. Please wait or retry.');
+        addMessage('system', 'Agent bridge connecting — please resend shortly.');
       }
       return;
     }
