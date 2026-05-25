@@ -51,6 +51,7 @@ use crate::{
 };
 
 pub mod code_routes;
+pub mod container_relay;
 pub mod exec_routes;
 pub mod fleet_routes;
 pub mod git_routes;
@@ -611,6 +612,7 @@ impl AppState {
 /// `Router` is already `#[must_use]` so this function is not re-annotated.
 #[allow(clippy::too_many_lines)]
 pub fn build_app(state: AppState) -> Router {
+    container_relay::spawn_reaper();
     let cors = build_cors(state.config.port);
     Router::new()
         .route("/api/health", get(health))
@@ -659,6 +661,10 @@ pub fn build_app(state: AppState) -> Router {
             delete(crate::auth::credential::routes::provider_revoke),
         )
         .route("/api/terminal/ws", get(terminal::ws::ws_handler))
+        .route(
+            "/api/terminal/container/{id}",
+            get(container_relay::ws_relay_handler),
+        )
         .route("/api/events", get(events::sse_handler::sse_handler))
         .route("/api/control", post(events::control_handler))
         .route(

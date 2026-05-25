@@ -42,9 +42,10 @@ use tokio::{
 use crate::{auth, server::AppState};
 
 /// Regex for Docker container IDs: lowercase hex, 12–64 characters.
-fn container_id_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"^[a-f0-9]{12,64}$").expect("valid static regex"))
+fn container_id_re() -> Option<&'static Regex> {
+    static RE: OnceLock<Option<Regex>> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"^[a-f0-9]{12,64}$").ok())
+        .as_ref()
 }
 
 /// Axum handler for `GET /api/terminal/container/:id`.
@@ -59,7 +60,7 @@ pub async fn ws_relay_handler(
     State(state): State<AppState>,
 ) -> Response {
     // Allowlist guard: reject non-hex or out-of-range IDs before any auth.
-    if !container_id_re().is_match(&container_id) {
+    if !container_id_re().is_some_and(|re| re.is_match(&container_id)) {
         return StatusCode::BAD_REQUEST.into_response();
     }
 
@@ -105,8 +106,14 @@ async fn relay(socket: WebSocket, container_id: String) {
         }
     };
 
-    let mut stdin = child.stdin.take().expect("stdin is piped");
-    let mut stdout = child.stdout.take().expect("stdout is piped");
+    let Some(mut stdin) = child.stdin.take() else {
+        tracing::error!(container_id = %container_id, "docker exec missing stdin handle");
+        return;
+    };
+    let Some(mut stdout) = child.stdout.take() else {
+        tracing::error!(container_id = %container_id, "docker exec missing stdout handle");
+        return;
+    };
 
     let (mut ws_sink, mut ws_stream) = socket.split();
 
@@ -207,7 +214,8 @@ impl ContainerDropGuard {
 impl Drop for ContainerDropGuard {
     fn drop(&mut self) {
         let id = self.container_id.clone();
-        let _ = tokio::spawn(async move {
+        // Drop the JoinHandle to detach — fire-and-forget cleanup.
+        drop(tokio::spawn(async move {
             let _ = Command::new("docker")
                 .args(["stop", "--time", "3", &id])
                 .output()
@@ -217,7 +225,7 @@ impl Drop for ContainerDropGuard {
                 .output()
                 .await;
             tracing::info!(container_id = %id, "container stopped and removed");
-        });
+        }));
     }
 }
 
@@ -266,39 +274,41 @@ pub fn spawn_reaper() {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::container_id_re;
 
+    fn matches(s: &str) -> bool {
+        container_id_re().unwrap().is_match(s)
+    }
+
     #[test]
     fn accepts_full_sha() {
-        let sha = "a".repeat(64);
-        assert!(container_id_re().is_match(&sha));
+        assert!(matches(&"a".repeat(64)));
     }
 
     #[test]
     fn accepts_short_id() {
-        let short = "abc123def456";
-        assert!(container_id_re().is_match(short));
+        assert!(matches("abc123def456"));
     }
 
     #[test]
     fn rejects_uppercase() {
-        assert!(!container_id_re().is_match("ABC123DEF456"));
+        assert!(!matches("ABC123DEF456"));
     }
 
     #[test]
     fn rejects_non_hex() {
-        assert!(!container_id_re().is_match("la-my-container"));
+        assert!(!matches("la-my-container"));
     }
 
     #[test]
     fn rejects_too_short() {
-        assert!(!container_id_re().is_match("abc1234")); // 7 chars
+        assert!(!matches("abc1234")); // 7 chars
     }
 
     #[test]
     fn rejects_too_long() {
-        let long = "a".repeat(65);
-        assert!(!container_id_re().is_match(&long));
+        assert!(!matches(&"a".repeat(65)));
     }
 }
