@@ -1,3 +1,11 @@
+<!--
+  @component
+  Backend selection step of the setup wizard.
+
+  Displays a card grid of available backends (Claude Code, Codex, Ollama,
+  LA Native). Selecting a card sets `selectedBackend` and `selectedAgent`
+  in the setup stores and advances the wizard to the next step.
+-->
 <script lang="ts">
   import { step, selectedBackend, selectedAgent, authStatus } from '$lib/setup';
   import PolytopeIcon from '../../components/PolytopeIcon.svelte';

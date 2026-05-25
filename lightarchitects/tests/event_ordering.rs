@@ -269,6 +269,69 @@ async fn tool_start_precedes_tool_complete_for_same_id() {
     );
 }
 
+// ── Suite 3: Property tests — SseTransport pass-through invariants ────────────
+
+use proptest::prelude::*;
+
+proptest! {
+    /// Each emitted event must produce exactly one SSE frame.
+    /// `SseTransport` is a pure pass-through; one `emit()` call → one `event:/data:` block.
+    #[test]
+    fn proptest_each_event_produces_exactly_one_frame(n in 1usize..=20usize) {
+        let events: Vec<ConversationEvent> = (0..n)
+            .map(|i| ConversationEvent::Text { chunk: format!("chunk-{i}") })
+            .collect();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let frames = rt.block_on(collect_frames(&events));
+        prop_assert_eq!(frames.len(), n, "one SSE frame must be emitted per event");
+    }
+
+    /// Text chunk content must survive the SSE serialisation round-trip verbatim.
+    /// Any printable ASCII string must appear unchanged in the `chunk` JSON field.
+    #[test]
+    fn proptest_text_chunk_survives_sse_round_trip(content in "[ -~]{0,120}") {
+        let events = vec![ConversationEvent::Text { chunk: content.clone() }];
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let frames = rt.block_on(collect_frames(&events));
+        prop_assert_eq!(frames.len(), 1);
+        let json: serde_json::Value =
+            serde_json::from_str(&frames[0]["text:".len()..]).unwrap();
+        prop_assert_eq!(json["chunk"].as_str().unwrap_or("MISSING"), content);
+    }
+
+    /// A `Complete` event followed by an arbitrary number of additional events
+    /// must produce `n+1` frames total — the transport does NOT gate on complete.
+    /// (The session layer owns that invariant; the transport is unconditional.)
+    #[test]
+    fn proptest_complete_then_extra_events_all_appear(extra in 1usize..=8usize) {
+        let mut events = vec![ConversationEvent::Complete {
+            reason: TerminationReason::Complete,
+        }];
+        events.extend(
+            (0..extra).map(|i| ConversationEvent::Text { chunk: format!("rogue-{i}") }),
+        );
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let frames = rt.block_on(collect_frames(&events));
+        prop_assert_eq!(
+            frames.len(),
+            extra + 1,
+            "transport emits all events including those after complete"
+        );
+        let names = event_names(&frames);
+        prop_assert_eq!(names[0], "complete");
+        prop_assert!(names[1..].iter().all(|&n| n == "text"), "rogue events must appear");
+    }
+}
+
 // ── Invariant F: full canonical turn sequence is well-formed ─────────────────
 
 #[tokio::test]

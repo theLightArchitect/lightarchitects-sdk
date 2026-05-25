@@ -24,6 +24,7 @@ export interface OllamaAuthStatus {
   reachable: boolean;
 }
 
+/** LA-native backend authentication state: whether an Ollama Cloud API key has been stored in the webshell config. */
 export interface LaNativeAuthStatus {
   has_api_key: boolean;
 }
@@ -79,9 +80,13 @@ export interface SaveRequest {
 }
 
 // --- Stores ---
+/** Current setup wizard step. Drives which screen is mounted. */
 export const step = writable<SetupStep>('splash');
+/** Whether the setup wizard has been completed at least once. */
 export const setupComplete = writable<boolean>(false);
+/** True while any setup API request is in-flight. */
 export const setupLoading = writable<boolean>(false);
+/** Error message from the most recent failed setup API call, or null. */
 export const setupError = writable<string | null>(null);
 
 /**
@@ -93,14 +98,20 @@ export const setupInfoLoaded: Promise<void> = new Promise((resolve) => {
   _resolveSetupInfo = resolve;
 });
 
+/** The chosen backend slug (e.g. "anthropic", "la-native", "ollama-launch"). */
 export const selectedBackend = writable<string | null>(null);
+/** The chosen agent archetype (e.g. "lightarchitects", "codex"). */
 export const selectedAgent = writable<string | null>(null);
+/** The chosen model ID for the selected backend. */
 export const selectedModel = writable<string | null>(null);
+/** Transient Ollama Cloud API key typed by the operator; cleared on successful save. */
 export const apiKeyInput = writable<string>('');
 export const ollamaBaseUrlInput = writable<string>('http://localhost:11434');
 export const authStatus = writable<AuthStatus | null>(null);
 export const persistedConfig = writable<SetupConfig | null>(null);
+/** Models returned by `/api/setup/models` for the current backend selection. */
 export const availableModels = writable<ModelOption[]>([]);
+/** Controls whether the settings panel is open. */
 export const settingsOpen = writable<boolean>(false);
 
 /**
@@ -117,6 +128,7 @@ export const pendingResumeSessionId = writable<string | null>(null);
 export const serverCwd = writable<string>('/tmp');
 
 // --- Actions ---
+/** Fetch current setup state from `/api/setup/info` and hydrate all setup stores. */
 export async function loadSetupInfo(): Promise<void> {
   setupLoading.set(true);
   setupError.set(null);
@@ -150,6 +162,10 @@ export async function loadSetupInfo(): Promise<void> {
   }
 }
 
+/**
+ * Fetch available models for the given backend from `/api/setup/models`.
+ * Updates {@link availableModels} with the returned list.
+ */
 export async function loadModels(backend: string, baseUrl?: string): Promise<void> {
   setupLoading.set(true);
   setupError.set(null);
@@ -200,6 +216,10 @@ export async function autoCompleteFromInherited(
   }
 }
 
+/**
+ * POST the current wizard selections to `/api/setup/save` and advance to the init step.
+ * Clears {@link apiKeyInput} on success.
+ */
 export async function saveSetup(): Promise<void> {
   const agent = get(selectedAgent);
   const backend = get(selectedBackend);
@@ -233,6 +253,7 @@ export async function saveSetup(): Promise<void> {
   }
 }
 
+/** DELETE `/api/setup/reset` to wipe the persisted config and return the wizard to the splash step. */
 export async function resetSetup(): Promise<void> {
   setupLoading.set(true);
   setupError.set(null);
@@ -257,7 +278,7 @@ export async function resetSetup(): Promise<void> {
   }
 }
 
-// Hydrate existing stores from persisted config on load
+/** Hydrate backend-specific stores from a persisted {@link SetupConfig} on startup. */
 export function applyPersistedConfig(cfg: SetupConfig): void {
   if (cfg.backend === 'lightarchitects') {
     authProfile.set('lightarchitects');
