@@ -117,3 +117,16 @@ pub mod adk_supervisor;
 pub use adk_supervisor::{
     AdkVersion, RestartTracker, SupervisorError, allocate_ephemeral_port, probe,
 };
+
+/// Ollama Cloud coding provider — executes autonomous ironclaw tasks via
+/// structured LLM output + 4-gate security validation before worktree writes.
+///
+/// Gated on `lightsquad` (not `agent-cli`) because it imports
+/// [`crate::lightsquad::ollama_response_validator`].
+#[cfg(feature = "lightsquad")]
+pub mod ollama_cloud_provider;
+#[cfg(feature = "lightsquad")]
+pub use ollama_cloud_provider::{
+    CodingProviderError, DEFAULT_CODING_MODEL, OLLAMA_TASK_TIMEOUT_DEFAULT_S,
+    OllamaCloudCodingProvider, TaskOutcome,
+};
