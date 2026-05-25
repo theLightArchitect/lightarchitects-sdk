@@ -1,0 +1,32 @@
+%% Sequence — warm turn with SSE redact (Phase 2)
+%% Shows the new redact() pass on the SSE body. Phase 4 routing is implicit
+%% (drawer is on the HTTP SSE path, no WS bridge).
+
+sequenceDiagram
+    autonumber
+    actor Operator
+    participant Drawer as CopilotDrawer.svelte
+    participant Routes as drive_native_sse
+    participant Stream as ReaderStream pipe
+    participant Redact as sse_handler::redact()
+    participant Memory as HelixSessionMemory
+    participant Provider as OllamaCliProvider
+    participant Cloud as Ollama Cloud
+
+    Note over Drawer: Phase 4: native agents use HTTP SSE,<br/>no WS bridge, no pendingMessages queue
+    Operator->>Drawer: types follow-up + Enter
+    Drawer->>Routes: POST /api/builds/:id/copilot (session continues)
+    Routes->>Memory: load_turns(build_id)
+    Memory-->>Routes: conversation_history (replayed verbatim)
+    Routes->>Provider: spawn_streaming(SanitizedAgentRequest{messages, system, tools})
+    Provider->>Cloud: POST /v1/messages
+    Cloud-->>Provider: SSE stream
+    Provider-->>Stream: ProviderEvent::Text(chunk)
+    Note over Stream,Redact: Phase 2: every chunk passes through redact()<br/>against session_token + la_native_api_key<br/>before crossing the SSE wire to the client
+    Stream->>Redact: redact(chunk, token, api_key)
+    Redact-->>Stream: clean chunk (or [REDACTED] markers)
+    Stream-->>Drawer: event: text {"chunk":"clean"}
+    Provider-->>Stream: ProviderEvent::Complete
+    Stream-->>Drawer: event: complete
+    Drawer-->>Operator: append assistant bubble; hide Thinking…
+    Drawer->>Memory: persist turn (assistant role)

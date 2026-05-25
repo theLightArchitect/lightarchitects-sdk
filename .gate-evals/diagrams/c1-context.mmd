@@ -1,0 +1,51 @@
+%% C1 Context — webshell-la-native-p10 hardening surface
+%% Shows the 4 Phase-10 fix points relative to the native SSE pipeline shipped
+%% in webshell-la-native-backend (merge 929c0fb).
+
+flowchart LR
+    subgraph Browser["Browser (operator)"]
+        Drawer["CopilotDrawer.svelte"]
+    end
+
+    subgraph Webshell["lightarchitects-webshell (Rust)"]
+        AppState["AppState
+        (server/mod.rs:98)"]
+        Routes["drive_native_sse
+        (copilot/routes.rs:231)"]
+        Grounding["gather_grounding
+        (copilot/routes.rs:353)"]
+        Redact["sse_handler::redact()
+        (events/sse_handler.rs:262)"]
+    end
+
+    subgraph Lib["lightarchitects (Rust)"]
+        Provider["OllamaCliProvider
+        (agent/ollama.rs:102)"]
+    end
+
+    subgraph SoulGit["Grounding sources"]
+        Soul["SOUL helix
+        (400ms timeout)"]
+        Git["git_context::gather
+        (800ms timeout)"]
+    end
+
+    Cloud["Ollama Cloud
+    /v1/messages"]
+
+    Drawer -.->|"FIX #1: WS dead-end today,
+    HTTP SSE after Phase 4"| Routes
+    AppState -->|"FIX #3: provider gets
+    auth_token at init (Phase 1)"| Provider
+    Routes --> AppState
+    Routes -->|"FIX #4: redact SSE body
+    (Phase 2)"| Redact
+    Routes --> Grounding
+    Grounding -->|"FIX #2: tokio::join!
+    (Phase 3)"| Soul
+    Grounding -.->|"sequential today,
+    parallel after Phase 3"| Git
+    Provider -->|"Authorization: Bearer"| Cloud
+
+    classDef fix fill:#ffe8a3,stroke:#a05500,stroke-width:2px
+    class Drawer,AppState,Provider,Routes,Redact,Grounding fix

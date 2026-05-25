@@ -1,0 +1,45 @@
+%% Sequence — cold turn (post-Phase-10)
+%% Phase 1 + Phase 3 changes are highlighted: AppState key reuse + tokio::join! grounding.
+
+sequenceDiagram
+    autonumber
+    actor Operator
+    participant Drawer as CopilotDrawer.svelte
+    participant Routes as drive_native_sse
+    participant State as AppState
+    participant Grounding as gather_grounding
+    participant Soul as SOUL helix
+    participant Git as git_context
+    participant Provider as OllamaCliProvider
+    participant Cloud as Ollama Cloud
+
+    Note over State: Phase 1: la_native_api_key read once at AppState::new()<br/>(eliminates per-request std::env::var TOCTOU)
+    Operator->>Drawer: types message + Enter
+    Drawer->>Routes: POST /api/builds/:id/copilot (HTTP SSE)
+    Routes->>State: read la_native_api_key (Some)
+    State-->>Routes: SecretString clone
+    Note over Routes,Grounding: Phase 3: tokio::join!(soul_fut, git_fut)<br/>wall = max(soul_ms, git_ms), not sum
+    par parallel grounding
+        Routes->>Grounding: spawn soul_fut (400ms timeout)
+        Grounding->>Soul: search (BM25 top-5)
+        Soul-->>Grounding: results
+    and
+        Routes->>Grounding: spawn git_fut (800ms timeout)
+        Grounding->>Git: branch + commits + status
+        Git-->>Grounding: GitContext
+    end
+    Grounding-->>Routes: (soul_block, git_ctx, grounding_wall_ms)
+    Routes->>Provider: OllamaCliProvider::new(model, Some(key))
+    Note over Provider: Phase 1: no internal env read; key passed in
+    Provider->>Cloud: POST /v1/messages (Authorization: Bearer)
+    Cloud-->>Provider: SSE stream (thinking + text deltas)
+    Provider-->>Routes: stream<Result<ProviderEvent>>
+    Routes-->>Drawer: event: status_update {"text":"Calling ollama-cli …"}
+    loop streaming
+        Cloud-->>Provider: content_block_delta
+        Provider-->>Routes: text(chunk)
+        Routes-->>Drawer: event: text {"chunk":"…"}
+    end
+    Routes-->>Drawer: event: token_usage {input,output}
+    Routes-->>Drawer: event: complete {reason:"complete"}
+    Drawer-->>Operator: render assistant bubble + hide Thinking…

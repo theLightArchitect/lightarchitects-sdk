@@ -1,0 +1,36 @@
+%% State machine — CopilotDrawer for lightarchitects_native agents (Phase 4)
+%% Today (BEFORE Phase 4): native agents route through the WS agent bridge
+%% which spawns the standard `lightarchitects` binary; that binary immediately
+%% exits, WS closes, copilotLoading is reset before any user-visible response.
+%%
+%% After Phase 4: native agents bypass the WS bridge entirely and use the
+%% existing api.copilotChat SSE path (the legacy fallback block).
+
+stateDiagram-v2
+    [*] --> Idle: drawer mounted
+
+    Idle --> Sending: operator types + Enter\n(buildAgentKind === 'lightarchitects_native')
+
+    state "Sending" as Sending {
+        [*] --> SSE_OPEN: api.copilotChat(buildId, message)\nHTTP SSE, no WS bridge
+        SSE_OPEN --> StatusUpdate: status_update frame
+        StatusUpdate --> Streaming: first text chunk
+        Streaming --> Streaming: chunk frame (append to assistant bubble)
+        Streaming --> TokenUsage: token_usage frame
+        TokenUsage --> Done: complete frame
+        SSE_OPEN --> Error: error frame
+        Streaming --> Error: error frame
+    }
+
+    Sending --> Idle: complete or error\n(copilotLoading set false here, not on WS close)
+
+    Idle --> Interrupted: operator presses Esc
+    Interrupted --> Idle: POST /api/builds/:id/copilot/interrupt\nthen status reset
+
+    note right of Sending
+      Phase 4 removes:
+       1. pendingMessages queue (only native agents had this)
+       2. WS bridge spawn path (lightarchitects_native branch)
+       3. Premature copilotLoading.set(false) on WS close
+      Non-native agents (claude_cli, codex_cli) keep their WS paths.
+    end note
