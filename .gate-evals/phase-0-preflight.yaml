@@ -1,0 +1,62 @@
+schema_version: 1
+gate: phase
+scope: phase-0-preflight
+scored_by: "/BUILD Step 7.3 inline /GATE"
+scored_at: "2026-05-25T06:10:00Z"
+build_id: webshell-la-native-p10
+overall_verdict: pass
+
+dimensions:
+  G0_stack_class:
+    result: pass
+    detail: "stack_classification.value=full-stack declared in plan frontmatter"
+  G1_fetch:
+    result: pass
+  G2_local_eq_remote:
+    result: pass
+    detail: "after pushing helix-cache-retrieval gate artifact e9692c3; local main == github/main"
+  G3_cargo_check:
+    result: pass
+    detail: "cargo check --workspace clean (exit 0)"
+  G4_fmt_check:
+    result: pass
+    detail: "cargo fmt --check clean (full make quality deferred to per-phase gates)"
+  G5_no_collision:
+    result: pass
+    detail: "branch feat/webshell-la-native-p10 + worktree path were fresh"
+  G6_active_yaml:
+    result: pass
+    detail: "active.yaml entry added 2026-05-25 (between webshell-la-native-backend and helix-cache-retrieval)"
+  G7_parent_program:
+    result: n/a
+    detail: "no parent program; standalone hardening build"
+  G8_disk_free:
+    result: pass
+    detail: "97Gi free on ~/lightarchitects"
+  worktree_dist_symlink:
+    result: pass
+    detail: "dist/ symlinked to primary worktree dist/ (RustEmbed proc-macro prerequisite)"
+
+architecture_artifacts_a_gate:
+  diagrams_present:
+    initial: false
+    verified: true
+    detail: "4 mermaid diagrams in .gate-evals/diagrams/: c1-context, seq-cold-turn, seq-warm-turn, state-copilot-drawer"
+  diagrams_match_code:
+    initial: false
+    verified: true
+    detail: |
+      Each diagram cites the exact file:line of every fix point
+      (server/mod.rs:98, copilot/routes.rs:231/260/319/353, ollama.rs:102,
+      events/sse_handler.rs:262, CopilotDrawer.svelte:98-130/653-660).
+      Verified by reading the files on main during plan authoring.
+  diagrams_referenced_in_review:
+    initial: false
+    verified: false  # diagrams will be referenced at Phase 5 pre-merge /GATE review
+    detail: "will mark verified=true at Phase 5 when pre-merge /GATE reviews the build holistically"
+
+next_phase: phase-1-api-key-app-state
+notes:
+  - "Phase 0 has no source-code changes — only manifest.yaml, active.yaml entry, and 4 architecture diagrams."
+  - "Phase-0 commit on worktree branch: 8b622f0"
+  - "Per Canon XLI a_gate_predicate: 2 of 3 conjuncts verified; 3rd (referenced in review) deferred to Phase 5 by design."

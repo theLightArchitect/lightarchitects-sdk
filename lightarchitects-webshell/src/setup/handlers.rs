@@ -269,12 +269,14 @@ async fn detect_ollama_status(base_url: &str) -> OllamaAuthStatus {
     }
 }
 
-/// Probe `OLLAMA_API_KEY` env var — presence indicates LA-native (Ollama Cloud) is configured.
-fn detect_la_native_auth() -> LaNativeAuthStatus {
-    let has_api_key = std::env::var("OLLAMA_API_KEY")
-        .map(|k| !k.is_empty())
-        .unwrap_or(false);
-    LaNativeAuthStatus { has_api_key }
+/// Probe whether the LA-native (Ollama Cloud) bearer token was resolved at
+/// [`AppState`] init.  Sourced from `state.la_native_api_key` rather than a
+/// per-request `std::env::var` read — matches the TOCTOU-eliminating pattern
+/// used by [`drive_native_sse`].
+fn detect_la_native_auth(state: &AppState) -> LaNativeAuthStatus {
+    LaNativeAuthStatus {
+        has_api_key: state.la_native_api_key.is_some(),
+    }
 }
 
 // ── Model lists ───────────────────────────────────────────────────────────────
@@ -633,7 +635,7 @@ pub async fn setup_info(State(state): State<AppState>) -> impl IntoResponse {
         .and_then(|c| c.ollama_base_url.clone())
         .unwrap_or_else(|| "http://localhost:11434".to_owned());
     let ollama = detect_ollama_status(&ollama_url).await;
-    let la_native = detect_la_native_auth();
+    let la_native = detect_la_native_auth(&state);
 
     let auth_status = AuthStatus {
         claude,

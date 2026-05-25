@@ -119,6 +119,7 @@ pub async fn copilot_chat_handler(
             grounding_hdrs,
             system,
             Arc::clone(&session.native_interrupt_flag),
+            state.la_native_api_key.clone(),
         );
     }
 
@@ -235,6 +236,7 @@ fn drive_native_sse(
     extra_headers: HeaderMap,
     system_prompt: Option<String>,
     interrupt_flag: Arc<AtomicBool>,
+    la_native_api_key: Option<secrecy::SecretString>,
 ) -> Response {
     // Reset any prior interrupt before starting a new turn so the flag does
     // not carry over from a previous cancelled request.
@@ -252,21 +254,20 @@ fn drive_native_sse(
         }
     }
 
-    // Provider selection: prefer Ollama Cloud when OLLAMA_API_KEY is set
-    // (matches `agent_stream::run_ndjson` provider-build logic in the gateway),
-    // otherwise fall back to ClaudeCliProvider for legacy compatibility.
-    // ConversationSession is generic over a concrete provider type, so the
-    // branches construct independent sessions rather than sharing a trait object.
-    let use_ollama = std::env::var("OLLAMA_API_KEY")
-        .ok()
-        .filter(|k| !k.is_empty())
-        .is_some();
+    // Provider selection: prefer Ollama Cloud when the AppState-resolved auth
+    // token is present (read once at startup via `AppState::new` — no
+    // per-request `std::env::var` read, closing the TOCTOU window per Phase-10
+    // hardening), otherwise fall back to ClaudeCliProvider for legacy
+    // compatibility. ConversationSession is generic over a concrete provider
+    // type, so the branches construct independent sessions rather than sharing
+    // a trait object.
+    let use_ollama = la_native_api_key.is_some();
     let model = std::env::var("LA_MODEL")
         .ok()
         .filter(|m| !m.is_empty())
         .unwrap_or_else(|| "nemotron-3-super:cloud".to_owned());
     let ollama_provider = if use_ollama {
-        match OllamaCliProvider::new(&model) {
+        match OllamaCliProvider::new(&model, la_native_api_key.clone()) {
             Ok(p) => Some(p),
             Err(e) => {
                 // W8.2: surface provider-construction failure so the operator

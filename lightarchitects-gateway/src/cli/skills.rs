@@ -193,9 +193,19 @@ impl LlmAgentProvider for AnyProvider {
 /// Ollama model slug or Anthropic token limit out of range).
 pub fn build_provider() -> Result<AnyProvider, String> {
     match active_provider_kind() {
-        ProviderKind::Ollama { model } => OllamaCliProvider::new(model)
-            .map(AnyProvider::Ollama)
-            .map_err(|e| e.to_string()),
+        ProviderKind::Ollama { model } => {
+            // Gateway CLI is a short-lived process; reading env here is the
+            // only point of capture, mirroring AppState::la_native_api_key
+            // in the webshell.  No TOCTOU window because the process exits
+            // after a single command.
+            let auth_token = std::env::var("OLLAMA_API_KEY")
+                .ok()
+                .filter(|k| !k.is_empty())
+                .map(secrecy::SecretString::from);
+            OllamaCliProvider::new(model, auth_token)
+                .map(AnyProvider::Ollama)
+                .map_err(|e| e.to_string())
+        }
         ProviderKind::Anthropic { model, max_tokens } => {
             AnthropicHttpProvider::new(model, *max_tokens)
                 .map(AnyProvider::Anthropic)

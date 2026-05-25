@@ -360,7 +360,11 @@ async fn qwen3_bfcl_tool_call_accuracy_70pct() {
         return;
     }
 
-    let provider = OllamaCliProvider::new(&model).expect("model in registry");
+    let auth_token = std::env::var("OLLAMA_API_KEY")
+        .ok()
+        .filter(|k| !k.is_empty())
+        .map(secrecy::SecretString::from);
+    let provider = OllamaCliProvider::new(&model, auth_token).expect("model in registry");
     let cases = bfcl_cases();
     let total = cases.len();
     let mut passed = 0_usize;

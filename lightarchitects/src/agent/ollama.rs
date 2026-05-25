@@ -71,7 +71,7 @@ const OLLAMA_STREAM_TIMEOUT: Duration = Duration::from_secs(300);
 ///
 /// ```rust,no_run
 /// # use lightarchitects::agent::OllamaCliProvider;
-/// let provider = OllamaCliProvider::new("glm-5.1:cloud").unwrap();
+/// let provider = OllamaCliProvider::new("glm-5.1:cloud", None).unwrap();
 /// ```
 #[derive(Debug, Clone)]
 pub struct OllamaCliProvider {
@@ -95,11 +95,20 @@ impl OllamaCliProvider {
     /// Reads `OLLAMA_HOST` for the server base URL; falls back to
     /// `http://localhost:11434` when the variable is absent.
     ///
+    /// The bearer token is passed explicitly by the caller — the provider does
+    /// not read `OLLAMA_API_KEY` from the process environment.  Callers that
+    /// need the env value should read it once at startup (eliminates the
+    /// per-request TOCTOU race documented in webshell-la-native-backend merge
+    /// gate `OLLAMA_API_KEY_TOCTOU`).
+    ///
     /// # Errors
     ///
     /// Returns [`OllamaError::UnknownModel`] if `model_slug` is not in
     /// `CLOUD_MODEL_REGISTRY`.
-    pub fn new(model_slug: impl Into<String>) -> Result<Self, OllamaError> {
+    pub fn new(
+        model_slug: impl Into<String>,
+        auth_token: Option<SecretString>,
+    ) -> Result<Self, OllamaError> {
         let slug = model_slug.into();
         if lookup(&slug).is_none() {
             return Err(OllamaError::UnknownModel(slug));
@@ -111,10 +120,6 @@ impl OllamaCliProvider {
             "http://localhost:11434"
         };
         let base_url = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| default_host.to_owned());
-        let auth_token = std::env::var("OLLAMA_API_KEY")
-            .ok()
-            .filter(|v| !v.is_empty())
-            .map(SecretString::from);
         Ok(Self {
             default_model: slug,
             rate_table_version: "2026-05-21",
@@ -718,14 +723,14 @@ mod tests {
 
     #[test]
     fn provider_new_valid_slug_succeeds() {
-        let p = OllamaCliProvider::new("glm-5.1:cloud").unwrap();
+        let p = OllamaCliProvider::new("glm-5.1:cloud", None).unwrap();
         assert_eq!(p.default_model, "glm-5.1:cloud");
         assert_eq!(p.name(), "ollama-cli");
     }
 
     #[test]
     fn provider_new_unknown_slug_fails() {
-        let err = OllamaCliProvider::new("not-a-model:cloud").unwrap_err();
+        let err = OllamaCliProvider::new("not-a-model:cloud", None).unwrap_err();
         assert!(
             matches!(err, OllamaError::UnknownModel(ref s) if s == "not-a-model:cloud"),
             "unexpected error: {err}"
@@ -737,7 +742,7 @@ mod tests {
         // Verify the struct exposes base_url as a non-empty String.
         // Env-var mutation is not tested here to avoid unsafe-code lint and
         // parallel-test races; the logic is a trivial env::var-or-default.
-        let p = OllamaCliProvider::new("glm-5.1:cloud").unwrap();
+        let p = OllamaCliProvider::new("glm-5.1:cloud", None).unwrap();
         assert!(!p.base_url.is_empty());
         assert!(
             p.base_url.starts_with("http"),
@@ -748,7 +753,7 @@ mod tests {
 
     #[test]
     fn capabilities_reports_no_native_enforcement() {
-        let p = OllamaCliProvider::new("glm-5.1:cloud").unwrap();
+        let p = OllamaCliProvider::new("glm-5.1:cloud", None).unwrap();
         let caps = p.capabilities();
         assert!(!caps.native_budget_cap);
         assert!(!caps.native_turn_cap);
@@ -759,7 +764,7 @@ mod tests {
     #[test]
     fn estimate_cost_non_negative_for_all_registry_models() {
         for m in CLOUD_MODEL_REGISTRY {
-            let p = OllamaCliProvider::new(m.slug).unwrap();
+            let p = OllamaCliProvider::new(m.slug, None).unwrap();
             let cost = p.estimate_cost(1_000, 500);
             assert!(cost >= 0.0, "estimate_cost negative for '{}'", m.slug);
         }
@@ -770,6 +775,38 @@ mod tests {
         let low = cost_for_tier(CostTier::Low, 100_000, 100_000);
         let premium = cost_for_tier(CostTier::Premium, 100_000, 100_000);
         assert!(low < premium);
+    }
+
+    // ── Auth token wiring (Phase-10 TOCTOU close) ──
+    //
+    // Provider holds auth_token verbatim from the constructor arg; no internal
+    // env read. These tests pin both the absent (None) and present (Some)
+    // shapes against the `Option<SecretString>` field so a future regression
+    // (e.g. reintroducing the env::var read) breaks the build.
+
+    #[test]
+    fn provider_new_with_none_token_stores_none() {
+        let p = OllamaCliProvider::new("glm-5.1:cloud", None).unwrap();
+        assert!(
+            p.auth_token.is_none(),
+            "provider must store None auth_token when constructed with None"
+        );
+    }
+
+    #[test]
+    fn provider_new_with_some_token_stores_token() {
+        let p = OllamaCliProvider::new(
+            "glm-5.1:cloud",
+            Some(SecretString::from("test-bearer-pin-do-not-leak")),
+        )
+        .unwrap();
+        let token = p.auth_token.as_ref().expect("Some token stored");
+        // ExposeSecret only used here in test code under explicit assertion.
+        assert_eq!(
+            token.expose_secret(),
+            "test-bearer-pin-do-not-leak",
+            "stored token bytes must match constructor arg verbatim"
+        );
     }
 
     // ── build_v1_messages_body ──
