@@ -11,17 +11,17 @@ dimensions:
   Q2_clippy: pass
   Q3_tests:
     result: pass
-    tests_run: 2619
+    tests_run: 2648
     tests_fail: 0
-    delta_vs_phase_8_integration: +324
+    delta_vs_phase_8_integration: +353
     note: >
       +1 event_ordering companion test (post_complete_rogue_event_is_detectable, loops-core).
       +6 adversarial_e2e W9.2 tests (interrupt/clear auth + 404, oversized prompt 413).
       +4 multi_turn_fixture W9.5 stress tests (loops-core).
-      Workspace default run: 2619 pass, 0 fail.
-      Feature-gated tests run separately:
-        event_ordering (loops-core): 7/0
-        multi_turn_fixture (loops-core): 4/0
+      +3 proptest cases (event_ordering Suite 3: one-frame, round-trip, post-complete, loops-core).
+      +4 smoke_native_pipeline tests (Suite 6: boots, 200+SSE, 204 interrupt, 401 no-auth).
+      +11 additional tests from D1/V1 gate remediation (W9.6).
+      Workspace all-features run (--all-features): 2648 pass, 0 fail.
   Q4_svelte:
     result: n/a
     note: "No Svelte surface changes in Phase 9"

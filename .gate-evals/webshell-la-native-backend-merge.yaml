@@ -1,0 +1,147 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE --scope merge"
+scored_at: "2026-05-24T00:00:00Z"
+build_id: webshell-la-native-backend
+branch: feat/webshell-la-native-backend
+head_sha: cb7dc9a17168dc84efee11c15fff54ceaedd7622
+overall_verdict: pass
+
+dimensions:
+  V0_primary_on_main:
+    result: pass
+    detail: "Primary worktree confirmed on main; gate run from worktrees/webshell-la-native-backend"
+
+  Q1_fmt:
+    result: pass
+    detail: "cargo fmt --all -- --check: clean"
+
+  Q2_clippy:
+    result: pass
+    detail: "cargo clippy --workspace --all-targets --all-features -- -D warnings: 0 warnings"
+
+  Q3_tests:
+    result: pass
+    tests_run: 2648
+    tests_fail: 0
+    note: >
+      --all-features (includes loops-core feature gates).
+      Suites covered: unit, integration, property (proptest), adversarial, stress, smoke.
+      Pre-existing flake: none in Rust. Svelte: AgentSelector.svelte.test.ts:35
+      (1/720 vitest) — pre-existing timing race since Phase 6, not introduced by this branch.
+
+  Q4_svelte:
+    result: pass
+    detail: >
+      pnpm exec svelte-check --threshold error: 0 errors.
+      pnpm test:run: 719/720 (1 pre-existing flake — AgentSelector.svelte.test.ts:35).
+      Flake classification: FLAKY (pre-existing) per Q-gate flakiness protocol.
+
+  S1_security:
+    result: pass
+    findings:
+      - severity: MEDIUM
+        id: GAP-3
+        description: >
+          Native SSE body in drive_native_sse bypasses global sse_handler.rs redact() path.
+          Normal operation: bearer token does not appear in SOUL vault entries or user messages.
+          Defense-in-depth improvement queued for Phase 10. TODO comment added at stream
+          assembly site in drive_native_sse.
+        disposition: deferred_phase_10
+      - severity: MEDIUM
+        id: OLLAMA_API_KEY_TOCTOU
+        description: >
+          OLLAMA_API_KEY read per-request via std::env rather than once at AppState init.
+          Creates a narrow TOCTOU window; not exploitable in typical deployment (key set at
+          startup). Improvement: move to AppState::la_native_api_key at startup.
+        disposition: deferred_phase_10
+    note: "No CRITICAL or HIGH findings. 2 MEDIUM findings documented, deferred to Phase 10."
+
+  S2_supply_chain:
+    result: pass
+    detail: "cargo deny check: clean"
+
+  S3_laex:
+    result: n/a
+    detail: "No new cryptographic primitives, auth flows, or permission surfaces introduced"
+
+  I1_integration:
+    result: pass
+    commits_ahead: 18
+    detail: >
+      18 commits on feat/webshell-la-native-backend ahead of github/main.
+      Clean descendant — no rebase needed. cargo build --workspace --all-features: clean.
+
+  N1_northstar:
+    result: pass
+    pillar: "P1 + P2 + P3"
+    detail: >
+      Northstar lineage present and non-empty. northstar_text: 'Operator completes a full
+      native vibe-coding session (Ollama Cloud, 1M ctx, tool-use) from the LA Webshell UI
+      without terminal fallback.' build_to_northstar_mapping: 7 concrete steps, all
+      present in diff.
+
+  N2_chain:
+    result: pass
+    detail: >
+      Chain is concrete, not aspirational: native SSE pipeline wired (routes, handler,
+      drive_native_sse, interrupt, clear), LA Native card in BackendStep, auth flow
+      (OLLAMA_API_KEY), 6-suite Canon XXVII pyramid complete. Each mapping step directly
+      verifiable in the diff.
+
+  D1_docs:
+    result: pass
+    detail: >
+      BLOCKING gaps remediated in commit cb7dc9a:
+      - setup.ts: 14 JSDoc additions (LaNativeAuthStatus interface, all exported stores
+        and functions)
+      - BackendStep.svelte: @component documentation block added
+      All public exports now documented.
+
+  D2_plan:
+    result: soft_fail
+    note: >
+      Plan phase log references phases 1-9; Phase 9 deliverables (W9.1-W9.5) complete
+      per gate YAML. Soft-fail: plan body not updated to reflect Phase 9 W9.6 gate
+      closure inline — gate YAML is authoritative per Canon XLII (changelog separation).
+      Not blocking merge.
+
+  D3_claude_md:
+    result: n/a
+    detail: "No new tooling, commands, or architecture patterns requiring CLAUDE.md update"
+
+  V1_pyramid:
+    result: pass
+    suites_covered:
+      unit: "pass — agent/conversation/ unit tests"
+      integration: "pass — adversarial_e2e.rs (10 tests), phase_8 integration tests"
+      property: "pass — proptest Suite 3 in event_ordering.rs (3 cases)"
+      e2e: "deferred — vibe-coding-native.spec.ts requires live Ollama Cloud session (W9.1)"
+      regression: "pass — multi_turn_fixture.rs (4 stress regression tests, loops-core)"
+      smoke: "pass — smoke_native_pipeline.rs (4 tests, Suite 6)"
+    e2e_waiver: >
+      V3 deferred: vibe-coding-native.spec.ts (W9.1) requires live Ollama Cloud API access
+      (WEBSHELL_URL + TOKEN env vars) and a headed browser session. CI-safe skip when vars
+      unset. Unblocking condition: next live Ollama Cloud E2E session. W8.5 perf baseline
+      (TTFT p95, tokens/sec p95) captured during the same session.
+
+  V2_smoke:
+    result: pass
+    detail: >
+      cargo build --release -p lightarchitects-webshell: exit 0.
+      smoke_native_pipeline.rs 4/4 pass.
+
+  V3_e2e:
+    result: deferred
+    condition: "requires live Ollama Cloud API session; CI-safe skip; target: next live E2E run"
+
+notes:
+  - "D1 hard gate: 14 JSDoc additions + @component block — remediated in W9.6 commit cb7dc9a"
+  - "V1 Suite 3 (Property): 3 proptest cases added to event_ordering.rs; uses block_on for
+     async invariants inside proptest! macros; 10 event_ordering tests total"
+  - "V1 Suite 6 (Smoke): smoke_native_pipeline.rs — drive_native_sse returns 200+SSE headers
+     before spawned task makes network call; all 4 tests deterministic (zero Ollama Cloud req)"
+  - "Phase 10 tracking: GAP-3 (SSE redact bypass), OLLAMA_API_KEY→AppState, sequential
+     grounding tokio::join!, clear handler sessions_dir bounds check"
+  - "commit history: 60561ff (W9.1+W9.2+W9.5) → 5c0fad8 (W9.3 BLOCKING fix) →
+     3e6336f (W9.4 GAP-2 fix + phase-9 gate YAML) → cb7dc9a (W9.6 D1+V1 remediation)"
