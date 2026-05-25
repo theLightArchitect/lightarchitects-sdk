@@ -5,6 +5,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+use axum::body::Bytes;
 use axum::{
     Json,
     body::Body,
@@ -120,6 +121,7 @@ pub async fn copilot_chat_handler(
             system,
             Arc::clone(&session.native_interrupt_flag),
             state.la_native_api_key.clone(),
+            state.config.token.clone(),
         );
     }
 
@@ -229,6 +231,12 @@ async fn native_turn_task(
     // transport drop closes write_half → EOF on read_half
 }
 
+// All 8 arguments are distinct, named, and load-bearing for the single call
+// site; bundling them into a struct would obscure the wiring without any
+// material benefit.  Phase-10 GAP-3 added la_native_api_key + session_token
+// so the per-chunk redact wrapper can scrub both secrets — both are
+// per-request data, not part of any natural sub-struct.
+#[allow(clippy::too_many_arguments)]
 fn drive_native_sse(
     build_id: Uuid,
     grounded_message: &str,
@@ -237,6 +245,7 @@ fn drive_native_sse(
     system_prompt: Option<String>,
     interrupt_flag: Arc<AtomicBool>,
     la_native_api_key: Option<secrecy::SecretString>,
+    session_token: String,
 ) -> Response {
     // Reset any prior interrupt before starting a new turn so the flag does
     // not carry over from a previous cancelled request.
@@ -316,10 +325,39 @@ fn drive_native_sse(
     // W7.3: AbortOnDrop (module-level struct) lives inside the stream's map
     // closure. When the response Body is dropped on client disconnect, the
     // closure drops, firing abort_handle.abort() on the in-flight task.
+    //
+    // Phase-10 (GAP-3): every chunk is passed through `redact_secrets()`
+    // against the session bearer token and (when present) the
+    // OLLAMA_API_KEY before the bytes leave the process. This closes the
+    // native-SSE bypass of `sse_handler::redact()` documented in the
+    // webshell-la-native-backend merge gate.
+    //
+    // Performance: each chunk is UTF-8 decoded with `String::from_utf8_lossy`
+    // and re-encoded only when a secret is present in the chunk (the helper
+    // returns the input unchanged otherwise — branch-free hot path).
     let abort_guard = AbortOnDrop(handle.abort_handle());
-    let stream = ReaderStream::new(read_half).map(move |b| {
+    let api_key_for_redact: Option<String> = la_native_api_key
+        .as_ref()
+        .map(|s| secrecy::ExposeSecret::expose_secret(s).to_owned());
+    let stream = ReaderStream::new(read_half).map(move |chunk_result| {
         let _ = &abort_guard;
-        b
+        match chunk_result {
+            Ok(bytes) => {
+                let s = String::from_utf8_lossy(&bytes);
+                let key_ref: &str = api_key_for_redact.as_deref().unwrap_or("");
+                let redacted = crate::events::sse_handler::redact_secrets(
+                    s.as_ref(),
+                    &[session_token.as_str(), key_ref],
+                );
+                if redacted == s.as_ref() {
+                    // Hot path: no secret found, return original bytes verbatim.
+                    Ok(bytes)
+                } else {
+                    Ok(Bytes::from(redacted.into_bytes()))
+                }
+            }
+            Err(e) => Err(e),
+        }
     });
     let response_result = Response::builder()
         .status(StatusCode::OK)

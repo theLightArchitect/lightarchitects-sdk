@@ -312,3 +312,12 @@ async fn oversized_prompt_returns_413_before_build_lookup() {
         "413 body must not leak the auth token: {body}"
     );
 }
+
+// ── Phase-10 GAP-3: redact_secrets coverage lives in sse_handler unit tests
+//
+// `redact_secrets` is `pub(crate)` so it's not importable from this
+// integration crate.  The contract is covered by 5 unit tests in
+// `events::sse_handler::tests::redact_secrets_*`.  An integration test
+// driving live SSE through `drive_native_sse` would require a mock
+// `OllamaCliProvider` (today it always hits the network); the grep audit
+// in .gate-evals/phase-2-sse-redact.yaml verifies the wiring on the path.

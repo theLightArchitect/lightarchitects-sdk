@@ -1,0 +1,57 @@
+schema_version: 1
+gate: phase
+scope: phase-1-api-key-app-state
+scored_by: "/BUILD Step 7.3 inline /GATE"
+scored_at: "2026-05-25T06:25:00Z"
+build_id: webshell-la-native-p10
+commit: 0f37685
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt:
+    result: pass
+    detail: "cargo fmt --all -- --check clean"
+  Q2_clippy:
+    result: pass
+    detail: "cargo clippy -p lightarchitects -p lightarchitects-webshell --all-targets --all-features -- -D warnings clean (one clippy::doc_markdown fix applied)"
+  Q3_tests:
+    result: pass
+    lib_tests: { passed: 1190, failed: 0, ignored: 1, delta_vs_main: "+2 (auth_token regression tests)" }
+    webshell_tests: { passed: 849, failed: 0 }
+    detail: "Workspace-wide test run deferred to Phase 5 pre-merge gate; targeted runs for changed crates clean."
+
+  S1_security:
+    result: pass
+    findings:
+      - severity: NONE
+        id: TOCTOU_CLOSED
+        description: >
+          Per-request std::env::var("OLLAMA_API_KEY") removed from
+          drive_native_sse, detect_la_native_auth, and OllamaCliProvider::new.
+          Env read happens exactly once at AppState::new() and is stored as
+          SecretString (zeroed on drop, never logged).
+        disposition: closed_this_phase
+    note: "Closes webshell-la-native-backend merge-gate finding OLLAMA_API_KEY_TOCTOU."
+
+  D1_docs:
+    result: pass
+    detail: "New pub field la_native_api_key has full ///rustdoc with cross-reference to drive_native_sse; new fn signatures have ///rustdoc with explicit no-env-read contract."
+
+  N1_northstar:
+    result: pass
+    pillar: "P5"
+    detail: "Phase-1 advances P5 (security) by eliminating a documented TOCTOU finding. P1 dependency (CopilotDrawer) untouched."
+
+grep_audit:
+  query: "std::env::var.*OLLAMA_API_KEY OR env::var.*OLLAMA_API_KEY (excluding tests)"
+  result_count_in_chat_path: 0
+  result_count_remaining:
+    - file: lightarchitects-webshell/src/server/mod.rs:379
+      reason: "Single read point at AppState::new() — intended location"
+    - file: lightarchitects/src/soul/embedding/ollama.rs:69
+      reason: "Local embedding provider (different code path from chat); out of scope for this Phase-10 build"
+
+next_phase: phase-2-sse-redact
+notes:
+  - "OllamaCliProvider::new signature is now a breaking change for any future external caller; documented in fn-level /// rustdoc."
+  - "Local embedding provider TOCTOU is a separate finding that could be addressed in a future hardening pass — not in scope here per merge-gate citation."
