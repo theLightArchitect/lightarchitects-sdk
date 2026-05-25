@@ -251,6 +251,7 @@ impl MarkdownVaultIngester {
             created_at: Utc::now(),
             metadata: Self::build_metadata(fm),
             vault_path,
+            graph_embedding: None,
         }
     }
 

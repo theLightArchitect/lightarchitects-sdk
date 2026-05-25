@@ -244,6 +244,7 @@ impl<'db> GraphBuilder<'db> {
             created_at: Utc::now(),
             metadata: meta,
             vault_path: None,
+            graph_embedding: None,
         };
         // M-3: upsert_step instead of create_step so MERGE match ≠ new node.
         let (id, was_created) = self.db.upsert_step(&step).await?;

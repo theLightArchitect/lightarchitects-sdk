@@ -124,6 +124,55 @@ impl RetrievalMode {
                 .expect("GraphWeighted weights sum to 100 (Lean-verified)"),
         }
     }
+
+    /// Compute `SignalWeights` using query-embedding attention when enabled.
+    ///
+    /// When `query_embed` is `Some`, biases the static weights using query
+    /// characteristics (embedding density and magnitude) via softmax. Falls
+    /// back to static [`weights`][Self::weights] when `query_embed` is `None`
+    /// or the embedding is zero.
+    ///
+    /// The static mode weights serve as logit priors, so the dynamic output
+    /// is always close to the static baseline — no signal can be starved to
+    /// zero from reasonable query embeddings.
+    #[must_use]
+    pub fn weights_dynamic(&self, query_embed: Option<&[f32]>) -> SignalWeights {
+        let Some(q) = query_embed else {
+            return self.weights();
+        };
+        if q.is_empty() {
+            return self.weights();
+        }
+
+        let static_w = self.weights();
+        let priors = [
+            static_w.fulltext(),
+            static_w.semantic(),
+            static_w.structural(),
+            static_w.graph(),
+        ];
+
+        // Query embedding characteristics as attention bias:
+        // Dense embeddings (high mean_abs) → semantic signal relatively stronger.
+        // Sparse embeddings (low mean_abs) → keyword signal relatively stronger.
+        // Embedding dimensions are bounded by model architecture (≤4096); precision loss impossible.
+        #[allow(clippy::cast_precision_loss)]
+        let q_mean_abs = q.iter().map(|x| f64::from(x.abs())).sum::<f64>() / q.len() as f64;
+        let q_norm = q
+            .iter()
+            .map(|x| f64::from(*x) * f64::from(*x))
+            .sum::<f64>()
+            .sqrt();
+
+        let logits = [
+            priors[0] + (1.0 - q_mean_abs).max(0.0) * 0.1, // fulltext: stronger for sparse queries
+            priors[1] + q_mean_abs * 0.1,                  // semantic: stronger for dense queries
+            priors[2],                                     // structural: static prior only
+            priors[3] + (q_norm / 4.0 - 1.0) * 0.05,       // graph: norm-biased
+        ];
+
+        SignalWeights::from_softmax(logits)
+    }
 }
 
 impl std::fmt::Display for RetrievalMode {
@@ -220,6 +269,59 @@ impl SignalWeights {
             self.graph_pct,
         )
     }
+
+    /// Construct `SignalWeights` from softmax over 4 raw logits.
+    ///
+    /// Applies numerically-stable softmax, then rounds to `u8` percentages
+    /// using the largest-remainder method to guarantee the four values sum to
+    /// exactly 100.
+    ///
+    /// Use with [`RetrievalMode::weights_dynamic`] for query-conditioned fusion.
+    #[must_use]
+    pub fn from_softmax(logits: [f64; 4]) -> Self {
+        // Non-finite inputs produce NaN exps which cascade through rounding.
+        debug_assert!(
+            logits.iter().all(|l| l.is_finite()),
+            "from_softmax received non-finite logit: {logits:?}"
+        );
+        // Numerically stable: subtract max before exponentiation.
+        let max = logits.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let exps: [f64; 4] = logits.map(|x| (x - max).exp());
+        let total: f64 = exps.iter().sum();
+        let exact = exps.map(|e| e / total * 100.0);
+
+        // Largest-remainder method: floor each value, then distribute the
+        // remaining points to the components with the largest fractional parts.
+        let floors: [u8; 4] = exact.map(|p| {
+            // p ∈ [0.0, 100.0] by softmax construction; floor and cast are safe.
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            {
+                p.floor().clamp(0.0, 100.0) as u8
+            }
+        });
+        let floor_sum: u16 = floors.iter().map(|&p| u16::from(p)).sum();
+        let deficit = 100u16.saturating_sub(floor_sum);
+
+        let fracs = exact.map(f64::fract);
+        let mut indices = [0usize, 1, 2, 3];
+        indices.sort_unstable_by(|&a, &b| {
+            fracs[b]
+                .partial_cmp(&fracs[a])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let mut pcts = floors;
+        for i in 0..(deficit as usize).min(4) {
+            pcts[indices[i]] = pcts[indices[i]].saturating_add(1);
+        }
+
+        Self {
+            fulltext_pct: pcts[0],
+            semantic_pct: pcts[1],
+            structural_pct: pcts[2],
+            graph_pct: pcts[3],
+        }
+    }
 }
 
 // ============================================================================
@@ -261,6 +363,12 @@ pub struct HybridRetrieverConfig {
     pub reranker_config: Option<RerankerConfig>,
     /// Embedding backend config — backend name is recorded in AYIN spans (F11).
     pub embedding: crate::helix::embedding::EmbeddingConfig,
+    /// When `true`, dynamically compute `SignalWeights` from query-embedding
+    /// dot-products using softmax attention (see [`RetrievalMode::weights_dynamic`]).
+    ///
+    /// Defaults to `false` for rollout safety. Enable once the Phase 4 bench
+    /// gate confirms p99 latency increase is within budget (<15%).
+    pub enable_dynamic_weights: bool,
 }
 
 impl Default for HybridRetrieverConfig {
@@ -274,6 +382,7 @@ impl Default for HybridRetrieverConfig {
             convergence_boost: false,
             reranker_config: None,
             embedding: crate::helix::embedding::EmbeddingConfig::default(),
+            enable_dynamic_weights: false,
         }
     }
 }
@@ -469,7 +578,7 @@ impl HybridRetriever {
             FulltextSearcher::search(db, query, opts),
             self.semantic.search(db, query, opts),
             self.structural.search(db, query, opts),
-            GraphSearcher::search(db, graph_filter, graph_limit),
+            GraphSearcher::search(db, graph_filter, graph_limit, None),
         );
 
         let fulltext = ft_result?;

@@ -160,3 +160,7 @@ criterion      = { workspace = true }
 serde_json     = { workspace = true }
 testcontainers-modules = { version = "0.9", features = ["neo4j"] }
 secrecy                = { workspace = true }
+
+[[bench]]
+name    = "retrieval_queries"
+harness = false

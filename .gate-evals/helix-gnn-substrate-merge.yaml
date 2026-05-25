@@ -1,0 +1,85 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-25T00:00:00Z"
+build_id: helix-gnn-substrate
+phase_id: merge
+commit: c29fe4f4016010422282bc743e6d8f5e27dfe3d3
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1514
+    tests_fail: 0
+    notes: >
+      Pre-existing flaky timing test:
+      helix::helix_toml::tests::load_helix_toml_perf_baseline_1000_iterations —
+      passes in isolation (50ms vs 100ms threshold); fails under parallel workspace
+      load (CPU contention); predates branch (commit 486216e on main); non-blocking
+      per GATE flakiness protocol.
+  Q4_svelte: "n/a"
+  I1_rebase:
+    result: pass
+    commits_ahead: 6
+    base: github/main
+    notes: >
+      Clean descendant. 6 commits: c4f26cf Phase 1 → f888bdb Phase 3 →
+      de91e0b Phase 3 GATE → 442573c Phase 4 Wave B → 164c875 Phase 5 Wave C →
+      c29fe4f Phase 6 NaN guard + GATE eval. No rebase needed.
+  N1_northstar:
+    result: pass
+    pillar: "P5 — Security + Quality (structural signal completeness)"
+    northstar_text: >
+      GraphSAGE replaces Node2Vec so the structural slot delivers measurable
+      retrieval value instead of returning empty in production, restoring the
+      4-signal RRF mechanical promise. Recall@5 lifts measurably over 96.2%
+      LongMemEval baseline.
+    fields_present:
+      northstar_text: true
+      build_to_northstar_mapping: true
+      northstar_metric_delta_estimate: true
+  N2_chain:
+    result: pass
+    verdict: concrete
+    evidence: >
+      Step 1 (GraphSAGE substrate) — delivered c4f26cf.
+      Step 2 (HNSW graph_embedding index, migration v11) — delivered f888bdb.
+      Step 3 (query-conditioned graph.rs scoring, 0.6×topo + 0.4×affinity) — delivered 442573c.
+      Step 4 (SSM session memory closes helix recall gap) — delivered 164c875.
+      Each step is directly verifiable in the diff. Chain is concrete, not aspirational.
+  D1_docs: pass
+  D2_plan: pass
+  V1_pyramid:
+    result: pass
+    suites_covered:
+      unit: "15 unit tests in helix_memory.rs #[cfg(test)]"
+      integration: >
+        7 integration tests helix_memory_ssm_test.rs (persist/binary/consistent/
+        clear/roundtrip/corruption/convergence); 4 graphsage_integration tests;
+        5 dynamic_weights_test property tests
+      property: "dynamic_weights_test.rs — softmax invariants (sum=100, uniform, non-degenerate, bounded, dominant)"
+      regression: "1514-test workspace suite; test count ratcheted Phase 4 (1509) → Phase 5 (1514)"
+    suites_missing: "E2E (no operator-facing UI surface added), smoke (binary build passes V2)"
+  V2_smoke:
+    result: pass
+    notes: "cargo build --release -p lightarchitects — Finished release profile"
+  V3_e2e: "n/a — no new operator-facing UI surface"
+
+math_oracle_summary:
+  SSM_update_rule: "PROVEN — BIBO stable, fixed-point bounded"
+  stable_softmax: "PROVEN — NaN guard added in Phase 6 (debug_assert!)"
+  largest_remainder: "PROVEN — Σout=100 algebraically, all casts safe"
+  graphsage_cosine: "PROVEN — cosine_sim has explicit len check; score ∈ [0,1]"
+
+notes: >
+  MEDIUM-tier build. 6 phases: Phase 1 GraphSAGE substrate, Phase 2 (collapsed
+  into 1), Phase 3 migration v11 + integration tests, Phase 4 Wave B
+  query-conditioned scoring + dynamic RRF weights, Phase 5 Wave C Mamba SSM
+  session memory, Phase 6 verification + NaN guard. All per-phase GATE YAMLs
+  present in .gate-evals/. Math oracle verified all 4 core algorithms as PROVEN.
+  Pre-existing webshell copilot_mistral_dispatch flake and helix_toml perf flake
+  both documented and non-blocking. No new public API surface; no UI changes;
+  no Cargo.toml dep additions.

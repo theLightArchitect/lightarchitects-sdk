@@ -1,0 +1,26 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-25T00:00:00Z"
+build_id: helix-gnn-substrate
+phase_id: phase-2-research
+overall_verdict: pass
+
+dimensions:
+  R1_research:
+    result: pass
+    evidence_source: "Context7 + IBM GNN article (2026-05-25); pre-done during plan authoring"
+    decisions:
+      - "GDS native path: CONFIRMED — gds.beta.graphSage.train/write, no Rust training code"
+      - "pyo3+torch-geometric: REJECTED — Python runtime, cross-platform issues"
+      - "candle (HF Rust ML): NOT NEEDED — GDS is server-side"
+      - "nalgebra: NOT IN WORKSPACE (plan correction) — plain Vec<f32> row-major used; no new dep"
+  S2_supply_chain:
+    result: pass
+    new_deps: 0
+    note: "Zero new Cargo deps; GDS is Neo4j server-side"
+  S3_laex: "n/a — no new auth/crypto surface"
+
+notes:
+  - "Plan stated 'nalgebra already in workspace' — corrected: nalgebra absent. Vec<f32> used instead; zero-dep outcome."
+  - "Phase 3 Wave A scope note: GraphSageProvider + types.rs + search.rs + structural.rs delivered early in Phase 1 commit c4f26cf. Phase 3 remaining: create_graph_embedding_index() in db.rs + integration tests + consolidator graphsage_train.rs."

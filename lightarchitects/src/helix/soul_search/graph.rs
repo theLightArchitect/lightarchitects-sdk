@@ -1,7 +1,16 @@
 //! Graph searcher — Cypher traversal patterns for helix graph navigation.
 //!
 //! Generates parameterized Cypher for each filter type and converts graph
-//! distance into a relevance score: `1.0 / (1.0 + distance)`.
+//! distance into a relevance score. When a `query_embed` vector is provided
+//! and the step has a `sage_embedding` property, the score is blended:
+//!
+//! ```text
+//! score = 0.6 × topological + 0.4 × query_affinity
+//! topological  = 1.0 / (1.0 + distance)
+//! query_affinity = cosine_sim(query_embed, sage_embedding).max(0.0)
+//! ```
+//!
+//! Without a query embedding, falls back to pure topological scoring.
 //!
 //! All fractal traversal uses quantified path patterns with inline predicates
 //! and depth bound `{1,7}` (capped by [`MAX_TRAVERSAL_DEPTH`]).
@@ -87,14 +96,19 @@ impl GraphSearcher {
     ///
     /// Returns scored IDs sorted by graph relevance (highest first).
     ///
+    /// When `query_embed` is provided and the step has a `sage_embedding`
+    /// property, the score is blended: `0.6 × topological + 0.4 × cosine_affinity`.
+    /// When `query_embed` is `None`, falls back to `1.0 / (1.0 + distance)`.
+    ///
     /// # Errors
     ///
     /// Returns `HelixDbError` if the Cypher query fails.
-    #[instrument(skip(db), fields(filter = %filter_label(filter)))]
+    #[instrument(skip(db, query_embed), fields(filter = %filter_label(filter)))]
     pub async fn search(
         db: &dyn HelixDb,
         filter: &GraphFilter,
         limit: u32,
+        query_embed: Option<&[f32]>,
     ) -> Result<Vec<ScoredId>, HelixDbError> {
         let (cypher, params) = build_cypher(filter, limit);
         let records = db.execute_cypher_with_params(&cypher, params).await?;
@@ -105,7 +119,15 @@ impl GraphSearcher {
             let distance = extract_f64(record, "distance");
 
             if let Some(id) = step_id {
-                let score = 1.0 / (1.0 + distance.unwrap_or(0.0));
+                let topological = 1.0_f64 / (1.0 + distance.unwrap_or(0.0));
+                let score = match (query_embed, extract_f32_vec(record, "sage_embedding")) {
+                    (Some(q), Some(ref sage)) if !sage.is_empty() => {
+                        // Affinity ∈ [-1, 1]; clamp to [0, 1] before blending.
+                        let affinity = cosine_sim(q, sage).max(0.0);
+                        0.6 * topological + 0.4 * affinity
+                    }
+                    _ => topological,
+                };
                 results.push(ScoredId {
                     step_id: id,
                     score,
@@ -240,7 +262,7 @@ fn build_cypher(filter: &GraphFilter, limit: u32) -> CypherWithParams {
 fn cypher_owner(owner: &str, limit: u32) -> CypherWithParams {
     let cypher = format!(
         "MATCH (h:Helix {{owner: $owner}})-[:HAS_STEP]->(s:Step) \
-         RETURN s.id AS step_id, 0 AS distance \
+         RETURN s.id AS step_id, 0 AS distance, s.sage_embedding AS sage_embedding \
          ORDER BY COALESCE(s.step_date, toString(s.step_index), \
          toString(s.created_at)) DESC \
          LIMIT {limit}"
@@ -253,7 +275,7 @@ fn cypher_owner(owner: &str, limit: u32) -> CypherWithParams {
 fn cypher_strand(strand_name: &str, limit: u32) -> CypherWithParams {
     let cypher = format!(
         "MATCH (s:Step)-[:MEMBER_OF]->(st:Strand {{name: $strand_name}}) \
-         RETURN s.id AS step_id, 0 AS distance \
+         RETURN s.id AS step_id, 0 AS distance, s.sage_embedding AS sage_embedding \
          ORDER BY s.significance DESC \
          LIMIT {limit}"
     );
@@ -268,7 +290,7 @@ fn cypher_convergence(helix_owner: &str, other_owner: &str, limit: u32) -> Cyphe
          MATCH (a)-[:PARTICIPATES_IN]->(se:SharedExperience)\
          <-[:PARTICIPATES_IN]-(b:Step) \
          MATCH (hb:Helix {{owner: $other_owner}})-[:HAS_STEP]->(b) \
-         RETURN a.id AS step_id, (1.0 / se.weight) AS distance \
+         RETURN a.id AS step_id, (1.0 / se.weight) AS distance, a.sage_embedding AS sage_embedding \
          ORDER BY se.weight DESC \
          LIMIT {limit}"
     );
@@ -296,7 +318,7 @@ fn cypher_drill_down(
          -[:HAS_STEP]->(child:Step) \
          WHERE child.id <> $step_id{sig_filter} \
          WITH child, length(shortestPath((start)-[*]-(child))) AS dist \
-         RETURN child.id AS step_id, dist AS distance \
+         RETURN child.id AS step_id, dist AS distance, child.sage_embedding AS sage_embedding \
          ORDER BY dist ASC, child.significance DESC \
          LIMIT {limit}"
     );
@@ -311,7 +333,7 @@ fn cypher_drill_down(
 fn cypher_backlinks(step_id: &str, limit: u32) -> CypherWithParams {
     let cypher = format!(
         "MATCH (source:Step)-[:LINKS_TO]->(target:Step {{id: $step_id}}) \
-         RETURN source.id AS step_id, 1 AS distance \
+         RETURN source.id AS step_id, 1 AS distance, source.sage_embedding AS sage_embedding \
          ORDER BY source.significance DESC \
          LIMIT {limit}"
     );
@@ -323,7 +345,7 @@ fn cypher_backlinks(step_id: &str, limit: u32) -> CypherWithParams {
 fn cypher_outgoing(step_id: &str, limit: u32) -> CypherWithParams {
     let cypher = format!(
         "MATCH (source:Step {{id: $step_id}})-[r:LINKS_TO]->(target:Step) \
-         RETURN target.id AS step_id, 1 AS distance \
+         RETURN target.id AS step_id, 1 AS distance, target.sage_embedding AS sage_embedding \
          ORDER BY r.strength DESC, target.significance DESC \
          LIMIT {limit}"
     );
@@ -337,7 +359,7 @@ fn cypher_by_day(owner: &str, start_date: &str, end_date: &str, limit: u32) -> C
         "MATCH (h:Helix {{owner: $owner}})-[:HAS_STEP]->(s:Step) \
          WHERE s.step_date >= date($start_date) \
          AND s.step_date <= date($end_date) \
-         RETURN s.id AS step_id, 0 AS distance \
+         RETURN s.id AS step_id, 0 AS distance, s.sage_embedding AS sage_embedding \
          ORDER BY s.step_date ASC \
          LIMIT {limit}"
     );
@@ -351,7 +373,7 @@ fn cypher_by_day(owner: &str, start_date: &str, end_date: &str, limit: u32) -> C
 fn cypher_community(community_id: i64, limit: u32) -> CypherWithParams {
     let cypher = format!(
         "MATCH (s:Step {{community_id: $community_id}}) \
-         RETURN s.id AS step_id, 0 AS distance \
+         RETURN s.id AS step_id, 0 AS distance, s.sage_embedding AS sage_embedding \
          ORDER BY s.significance DESC \
          LIMIT {limit}"
     );
@@ -371,6 +393,52 @@ fn extract_string(record: &crate::helix::graph::Record, key: &str) -> Option<Str
 /// Extract a float field from a graph-engine Record.
 fn extract_f64(record: &crate::helix::graph::Record, key: &str) -> Option<f64> {
     record.fields.get(key).and_then(serde_json::Value::as_f64)
+}
+
+/// Extract a `Vec<f32>` from a JSON array field in a graph-engine Record.
+///
+/// Returns `None` if the field is absent or not a JSON array. Non-numeric
+/// elements are silently skipped.
+fn extract_f32_vec(record: &crate::helix::graph::Record, key: &str) -> Option<Vec<f32>> {
+    record.fields.get(key)?.as_array().map(|arr| {
+        arr.iter()
+            .filter_map(serde_json::Value::as_f64)
+            .map(|v| {
+                // Embedding values ∈ [-1.0, 1.0]; f64→f32 truncation is intentional.
+                #[allow(clippy::cast_possible_truncation)]
+                let fv = v as f32;
+                fv
+            })
+            .collect()
+    })
+}
+
+/// Cosine similarity between two `f32` slices.
+///
+/// Returns `0.0` for mismatched lengths, empty inputs, or zero-norm vectors.
+fn cosine_sim(a: &[f32], b: &[f32]) -> f64 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let dot: f64 = a
+        .iter()
+        .zip(b)
+        .map(|(x, y)| f64::from(*x) * f64::from(*y))
+        .sum();
+    let norm_a: f64 = a
+        .iter()
+        .map(|x| f64::from(*x) * f64::from(*x))
+        .sum::<f64>()
+        .sqrt();
+    let norm_b: f64 = b
+        .iter()
+        .map(|x| f64::from(*x) * f64::from(*x))
+        .sum::<f64>()
+        .sqrt();
+    if norm_a < 1e-10 || norm_b < 1e-10 {
+        return 0.0;
+    }
+    dot / (norm_a * norm_b)
 }
 
 /// Human-readable label for tracing.

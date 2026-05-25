@@ -298,6 +298,7 @@ mod tests {
             created_at: chrono::Utc::now(),
             metadata: serde_json::Value::Null,
             vault_path: None,
+            graph_embedding: None,
         }
     }
 

@@ -75,6 +75,7 @@ fn make_step(id: &str, vault_path: Option<&str>) -> Step {
         created_at: Utc::now(),
         metadata: serde_json::Value::Null,
         vault_path: vault_path.map(str::to_owned),
+        graph_embedding: None,
     }
 }
 
