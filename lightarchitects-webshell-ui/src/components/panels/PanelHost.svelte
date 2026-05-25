@@ -10,6 +10,8 @@
   import CopilotDrawer from '$lib/../components/CopilotDrawer.svelte';
   import DiffPreview from '$lib/../components/DiffPreview.svelte';
   import AyinTracesPanel from '$lib/../components/panels/AyinTracesPanel.svelte';
+  import RetrievalMetricsPanel from '$lib/../components/panels/RetrievalMetricsPanel.svelte';
+  import CacheStatsPanel from '$lib/../components/panels/CacheStatsPanel.svelte';
 
   interface Props {
     panelId: PanelId;
@@ -20,16 +22,18 @@
 
   // Panel metadata for header + context writes
   const PANEL_META: Record<PanelId, { label: string; icon: string; color: string }> = {
-    'copilot':       { label: 'Copilot',        icon: '◈', color: 'var(--la-struct-primary)' },
-    'terminal':      { label: 'Terminal',        icon: '⌨', color: 'var(--la-text-dim)' },
-    'git-forest':    { label: 'Git Forest',      icon: '⬡', color: 'var(--la-agent-devops, #00c8ff)' },
-    'agent-console': { label: 'Agent Console',   icon: '◉', color: 'var(--la-agent-researcher)' },
-    'file-diff':     { label: 'Diff',            icon: '⊞', color: 'var(--la-agent-quality)' },
-    'file-explorer': { label: 'Explorer',        icon: '⊟', color: 'var(--la-text-dim)' },
-    'build-status':  { label: 'Build Status',    icon: '◧', color: 'var(--la-agent-security)' },
-    'findings':      { label: 'Findings',        icon: '⊛', color: 'var(--la-semantic-warn)' },
-    'helix':         { label: 'Helix',           icon: '⬡', color: 'var(--la-struct-accent)' },
-    'ayin-traces':   { label: 'AYIN Traces',     icon: '◎', color: 'var(--la-agent-ops, #f97316)' },
+    'copilot':            { label: 'Copilot',          icon: '◈', color: 'var(--la-struct-primary)' },
+    'terminal':           { label: 'Terminal',          icon: '⌨', color: 'var(--la-text-dim)' },
+    'git-forest':         { label: 'Git Forest',        icon: '⬡', color: 'var(--la-agent-devops, #00c8ff)' },
+    'agent-console':      { label: 'Agent Console',     icon: '◉', color: 'var(--la-agent-researcher)' },
+    'file-diff':          { label: 'Diff',              icon: '⊞', color: 'var(--la-agent-quality)' },
+    'file-explorer':      { label: 'Explorer',          icon: '⊟', color: 'var(--la-text-dim)' },
+    'build-status':       { label: 'Build Status',      icon: '◧', color: 'var(--la-agent-security)' },
+    'findings':           { label: 'Findings',          icon: '⊛', color: 'var(--la-semantic-warn)' },
+    'helix':              { label: 'Helix',             icon: '⬡', color: 'var(--la-struct-accent)' },
+    'ayin-traces':        { label: 'AYIN Traces',       icon: '◎', color: 'var(--la-agent-ops, #f97316)' },
+    'helix-retrieve':     { label: 'Helix Retrieve',    icon: '⟳', color: 'var(--la-struct-primary, #00bfff)' },
+    'helix-cache-stats':  { label: 'Helix Cache Stats', icon: '◫', color: 'var(--la-agent-researcher, #17c3b2)' },
   };
 
   let meta = $derived(PANEL_META[panelId]);
@@ -110,6 +114,16 @@
   {:else if panelId === 'ayin-traces'}
     <div class="panel-fill">
       <AyinTracesPanel />
+    </div>
+
+  {:else if panelId === 'helix-retrieve'}
+    <div class="panel-fill">
+      <RetrievalMetricsPanel />
+    </div>
+
+  {:else if panelId === 'helix-cache-stats'}
+    <div class="panel-fill">
+      <CacheStatsPanel />
     </div>
   {/if}
 </div>

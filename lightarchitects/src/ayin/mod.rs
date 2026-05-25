@@ -146,6 +146,10 @@ mod observe_impl {
     /// Write a span as JSON to the AYIN traces directory.
     ///
     /// Path: `~/lightarchitects/soul/helix/ayin/traces/{actor}/{YYYY-MM-DD}/{HH-MM-SS}-{action}-{id8}.json`
+    pub(super) async fn write_span_public(span: &TraceSpan) {
+        write_span(span).await;
+    }
+
     async fn write_span(span: &TraceSpan) {
         let base = dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
@@ -178,6 +182,28 @@ mod observe_impl {
 
 #[cfg(feature = "observe")]
 pub use observe_impl::ObservableTransport;
+
+/// Emit a finished [`TraceSpan`] asynchronously (fire-and-forget).
+///
+/// The span is serialised and written to
+/// `~/lightarchitects/soul/helix/ayin/traces/{actor}/{YYYY-MM-DD}/...json`
+/// via `tokio::spawn`. The caller is never blocked by I/O.
+///
+/// No-op (zero cost) when the `observe` feature is disabled.
+#[cfg(feature = "observe")]
+pub fn emit_span_background(ctx: crate::ayin::span::TraceContext) {
+    tokio::spawn(async move {
+        match ctx.finish() {
+            Ok(span) => observe_impl::write_span_public(&span).await,
+            Err(e) => tracing::warn!(error = %e, "AYIN span build failed"),
+        }
+    });
+}
+
+/// No-op stub — compiles away entirely when `observe` is disabled.
+#[cfg(not(feature = "observe"))]
+#[inline]
+pub fn emit_span_background(_ctx: crate::ayin::span::TraceContext) {}
 
 // ── Feature-disabled: zero-cost newtype ───────────────────────────────────────
 

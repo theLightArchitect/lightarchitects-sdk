@@ -271,6 +271,10 @@ impl HelixDb for MockHelixDb {
         Ok(0)
     }
 
+    async fn get_steps_by_ids(&self, _ids: &[String]) -> Result<Vec<Step>, HelixDbError> {
+        Ok(Vec::new())
+    }
+
     async fn health(&self) -> Result<HealthStatus, HelixDbError> {
         Ok(HealthStatus {
             connected: true,

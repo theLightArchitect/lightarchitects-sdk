@@ -23,6 +23,10 @@
 //! lightarchitects platform [--port 8080]          Platform HTTP API (localhost:8080)
 //! ```
 
+use lightarchitects::helix::{
+    EmbeddingConfig, HelixCache, HelixCacheConfig, HelixNeo4j, Neo4jConfig,
+    create_embedding_provider,
+};
 use lightarchitects_gateway::{
     cli::OutputMode,
     config::{GatewayConfig, IdentityScopePolicy, expand_tilde},
@@ -543,6 +547,16 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
 
     let graph = platform_http::neo4j::connect(&uri, &user, &password).await?;
 
+    // Helix-domain db — separate typed accessor over the same Neo4j instance.
+    let helix_db = HelixNeo4j::connect(&Neo4jConfig {
+        uri: uri.clone(),
+        user: user.clone(),
+        password: secrecy::SecretString::from(password.clone()),
+    })
+    .await
+    .map_err(|e| GatewayError::Io(std::io::Error::other(format!("helix_db connect: {e}"))))?;
+    let helix_db = std::sync::Arc::new(helix_db);
+
     let report = platform_http::neo4j::apply_migrations(&graph).await?;
     tracing::info!(
         applied = report.applied_count,
@@ -564,6 +578,15 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
         .or_else(|_| std::env::var("USER"))
         .unwrap_or_else(|_| "local".to_owned());
 
+    let embedding_backend =
+        std::env::var("LA_EMBEDDING_BACKEND").unwrap_or_else(|_| "fastembed".to_owned());
+    let embedding_model =
+        std::env::var("LA_EMBEDDING_MODEL").unwrap_or_else(|_| "nomic-embed-text-v1.5".to_owned());
+    let embedding_dim: usize = std::env::var("LA_EMBEDDING_DIM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(768);
+
     let config = PlatformConfig {
         port,
         neo4j_uri: uri.clone(),
@@ -571,6 +594,10 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
         api_version: "v1",
         user_id,
         identity_scope_policy: IdentityScopePolicy::AllowAuthenticated,
+        embedding_backend,
+        embedding_model,
+        embedding_dim,
+        ..PlatformConfig::default()
     };
 
     // Tiered quotas — NonZeroU32::MIN.saturating_add(N-1) avoids unwrap/unsafe.
@@ -607,6 +634,33 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
         .time_to_live(std::time::Duration::from_secs(300))
         .build();
 
+    // Helix retrieve cache — byte-weight TinyLFU, 64 MiB / 300 s TTL.
+    let helix_cache = HelixCache::new(&HelixCacheConfig {
+        max_capacity_bytes: config.helix_cache_max_capacity_bytes,
+        ttl: std::time::Duration::from_secs(config.helix_cache_ttl_secs),
+    });
+
+    // Embedding provider — backend selected from config; validated at startup.
+    let embedding_cfg = EmbeddingConfig {
+        backend: config.embedding_backend.clone(),
+        model: config.embedding_model.clone(),
+        dim: config.embedding_dim,
+    };
+    let embedding_provider: std::sync::Arc<dyn lightarchitects::helix::EmbeddingProvider> =
+        match create_embedding_provider(&embedding_cfg) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to initialize embedding provider — aborting");
+                std::process::exit(1);
+            }
+        };
+    tracing::info!(
+        backend = %config.embedding_backend,
+        model   = %config.embedding_model,
+        dim     = config.embedding_dim,
+        "Embedding provider initialised — dimension lock confirmed"
+    );
+
     let state = std::sync::Arc::new(PlatformState {
         graph,
         config,
@@ -622,6 +676,9 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
         arch_cache,
         admin_token,
         read_token,
+        helix_db,
+        helix_cache,
+        embedding_provider,
     });
     let addr = format!("127.0.0.1:{port}")
         .parse()

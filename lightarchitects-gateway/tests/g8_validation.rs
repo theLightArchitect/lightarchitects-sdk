@@ -22,6 +22,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use tower::ServiceExt as _;
 
+use lightarchitects::helix::{HelixDb, HelixNeo4j, Neo4jConfig};
 use lightarchitects_gateway::http::{
     build_http_router,
     state::{PlatformConfig, PlatformState},
@@ -54,7 +55,17 @@ async fn build_neo4j_state(admin_token: Option<&str>) -> Arc<PlatformState> {
         .await
         .expect("neo4j connect");
 
-    build_state_with_graph(graph, admin_token)
+    let helix_db: Arc<dyn HelixDb> = Arc::new(
+        HelixNeo4j::connect(&Neo4jConfig {
+            uri: uri.clone(),
+            user: user.clone(),
+            password: secrecy::SecretString::from(pass.clone()),
+        })
+        .await
+        .expect("helix_db connect"),
+    );
+
+    build_state_with_graph(graph, helix_db, admin_token)
 }
 
 /// Build a `PlatformState` with no Neo4j (structural tests only — health/auth paths).
@@ -67,6 +78,7 @@ async fn build_structural_state(admin_token: Option<&str>) -> Arc<PlatformState>
 
 fn build_state_with_graph(
     graph: Arc<neo4rs::Graph>,
+    helix_db: Arc<dyn HelixDb>,
     admin_token: Option<&str>,
 ) -> Arc<PlatformState> {
     let read_limiter = Arc::new(governor::RateLimiter::keyed(governor::Quota::per_minute(
@@ -108,6 +120,11 @@ fn build_state_with_graph(
         config: PlatformConfig::default(),
         admin_token: admin_box,
         read_token: None,
+        helix_db,
+        helix_cache: lightarchitects::helix::HelixCache::new(
+            &lightarchitects::helix::HelixCacheConfig::default(),
+        ),
+        embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
     })
 }
 
@@ -241,6 +258,15 @@ async fn g8_09_unauthenticated_read_returns_401() {
         .expect("neo4j connect");
 
     let read_token = "g8-test-read-token-for-401-check";
+    let helix_db: Arc<dyn HelixDb> = Arc::new(
+        HelixNeo4j::connect(&Neo4jConfig {
+            uri: uri.clone(),
+            user: user.clone(),
+            password: secrecy::SecretString::from(pass.clone()),
+        })
+        .await
+        .expect("helix_db connect"),
+    );
     let state = Arc::new(PlatformState {
         graph,
         read_limiter: Arc::new(governor::RateLimiter::keyed(governor::Quota::per_minute(
@@ -268,6 +294,11 @@ async fn g8_09_unauthenticated_read_returns_401() {
         config: PlatformConfig::default(),
         admin_token: None,
         read_token: Some(secrecy::SecretBox::new(Box::new(read_token.to_owned()))),
+        helix_db,
+        helix_cache: lightarchitects::helix::HelixCache::new(
+            &lightarchitects::helix::HelixCacheConfig::default(),
+        ),
+        embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
     });
     let app = build_http_router(state);
     let resp = app
@@ -293,6 +324,15 @@ async fn g8_10_read_bearer_on_admin_returns_403() {
         .expect("neo4j connect");
 
     let read_token = "g8-test-read-token-for-403-check";
+    let helix_db: Arc<dyn HelixDb> = Arc::new(
+        HelixNeo4j::connect(&Neo4jConfig {
+            uri: uri.clone(),
+            user: user.clone(),
+            password: secrecy::SecretString::from(pass.clone()),
+        })
+        .await
+        .expect("helix_db connect"),
+    );
     let state = Arc::new(PlatformState {
         graph,
         read_limiter: Arc::new(governor::RateLimiter::keyed(governor::Quota::per_minute(
@@ -320,6 +360,11 @@ async fn g8_10_read_bearer_on_admin_returns_403() {
         config: PlatformConfig::default(),
         admin_token: None,
         read_token: Some(secrecy::SecretBox::new(Box::new(read_token.to_owned()))),
+        helix_db,
+        helix_cache: lightarchitects::helix::HelixCache::new(
+            &lightarchitects::helix::HelixCacheConfig::default(),
+        ),
+        embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
     });
     let app = build_http_router(state);
     let body =
@@ -607,6 +652,15 @@ async fn g8_06_admin_upload_with_read_bearer_returns_403() {
         .await
         .expect("neo4j connect");
 
+    let helix_db: Arc<dyn HelixDb> = Arc::new(
+        HelixNeo4j::connect(&Neo4jConfig {
+            uri: uri.clone(),
+            user: user.clone(),
+            password: secrecy::SecretString::from(pass.clone()),
+        })
+        .await
+        .expect("helix_db connect"),
+    );
     let state = Arc::new(PlatformState {
         graph,
         read_limiter: Arc::new(governor::RateLimiter::keyed(governor::Quota::per_minute(
@@ -634,6 +688,11 @@ async fn g8_06_admin_upload_with_read_bearer_returns_403() {
         config: PlatformConfig::default(),
         admin_token: Some(secrecy::SecretBox::new(Box::new(admin_tok))),
         read_token: Some(secrecy::SecretBox::new(Box::new(read_tok.to_owned()))),
+        helix_db,
+        helix_cache: lightarchitects::helix::HelixCache::new(
+            &lightarchitects::helix::HelixCacheConfig::default(),
+        ),
+        embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
     });
     let app = build_http_router(state);
 

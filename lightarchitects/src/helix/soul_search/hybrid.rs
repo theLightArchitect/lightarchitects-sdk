@@ -85,6 +85,16 @@ impl RetrievalMode {
         }
     }
 
+    /// Return the mode as a static string for span attributes and logging.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::KeywordDominated => "keyword_dominated",
+            Self::Balanced => "balanced",
+            Self::GraphWeighted => "graph_weighted",
+        }
+    }
+
     /// Get the signal weight for each retrieval signal.
     ///
     /// See [`RetrievalMode`] doc comment for full tuning rationale.
@@ -249,6 +259,8 @@ pub struct HybridRetrieverConfig {
     ///
     /// When `None`, no reranking is applied (default).
     pub reranker_config: Option<RerankerConfig>,
+    /// Embedding backend config — backend name is recorded in AYIN spans (F11).
+    pub embedding: crate::helix::embedding::EmbeddingConfig,
 }
 
 impl Default for HybridRetrieverConfig {
@@ -261,6 +273,7 @@ impl Default for HybridRetrieverConfig {
             strand_affinity_weight: 0.20,
             convergence_boost: false,
             reranker_config: None,
+            embedding: crate::helix::embedding::EmbeddingConfig::default(),
         }
     }
 }

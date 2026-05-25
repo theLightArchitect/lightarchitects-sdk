@@ -20,6 +20,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use tower::ServiceExt as _;
 
+use lightarchitects::helix::{HelixDb, HelixNeo4j, Neo4jConfig};
 use lightarchitects_gateway::http::{
     api_version::{
         API_VERSION_DATE, API_VERSION_HASH, CONTRACT_SURFACE_COUNT, compute_api_version_hash,
@@ -66,9 +67,9 @@ fn api_version_hash_is_16_hex_chars() {
 /// `CONTRACT_SURFACE_COUNT` must equal the actual number of route signatures hashed.
 #[test]
 fn contract_surface_count_is_accurate() {
-    // 7 admin routes + 16 platform routes = 23 total.
+    // 7 admin routes + 18 platform routes = 25 total.
     assert_eq!(
-        CONTRACT_SURFACE_COUNT, 23,
+        CONTRACT_SURFACE_COUNT, 25,
         "CONTRACT_SURFACE_COUNT must match actual route count"
     );
 }
@@ -129,6 +130,16 @@ async fn integration_version_endpoint_200() {
         .await
         .expect("neo4j connect");
 
+    let helix_db: Arc<dyn HelixDb> = Arc::new(
+        HelixNeo4j::connect(&Neo4jConfig {
+            uri: uri.clone(),
+            user: user.clone(),
+            password: secrecy::SecretString::from(neo4j_pass.clone()),
+        })
+        .await
+        .expect("helix_db connect"),
+    );
+
     let state = Arc::new(PlatformState {
         graph,
         read_limiter: Arc::new(governor::RateLimiter::keyed(governor::Quota::per_minute(
@@ -156,6 +167,11 @@ async fn integration_version_endpoint_200() {
         config: PlatformConfig::default(),
         admin_token: None,
         read_token: None,
+        helix_db,
+        helix_cache: lightarchitects::helix::HelixCache::new(
+            &lightarchitects::helix::HelixCacheConfig::default(),
+        ),
+        embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
     });
 
     let app = build_http_router(state);
@@ -211,6 +227,16 @@ async fn integration_version_hash_header_present() {
         .await
         .expect("neo4j connect");
 
+    let helix_db: Arc<dyn HelixDb> = Arc::new(
+        HelixNeo4j::connect(&Neo4jConfig {
+            uri: uri.clone(),
+            user: user.clone(),
+            password: secrecy::SecretString::from(neo4j_pass.clone()),
+        })
+        .await
+        .expect("helix_db connect"),
+    );
+
     let state = Arc::new(PlatformState {
         graph,
         read_limiter: Arc::new(governor::RateLimiter::keyed(governor::Quota::per_minute(
@@ -238,6 +264,11 @@ async fn integration_version_hash_header_present() {
         config: PlatformConfig::default(),
         admin_token: None,
         read_token: None,
+        helix_db,
+        helix_cache: lightarchitects::helix::HelixCache::new(
+            &lightarchitects::helix::HelixCacheConfig::default(),
+        ),
+        embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
     });
 
     let app = build_http_router(state);

@@ -27,6 +27,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use tower::ServiceExt as _;
 
+use lightarchitects::helix::{HelixDb, HelixNeo4j, Neo4jConfig};
 use lightarchitects_gateway::http::{
     build_http_router,
     state::{PlatformConfig, PlatformState},
@@ -46,6 +47,16 @@ async fn build_neo4j_state(admin_token: Option<&str>) -> Arc<PlatformState> {
     let graph = lightarchitects_gateway::http::neo4j::connect(&uri, &user, &pass)
         .await
         .expect("neo4j connect");
+
+    let helix_db: Arc<dyn HelixDb> = Arc::new(
+        HelixNeo4j::connect(&Neo4jConfig {
+            uri: uri.clone(),
+            user: user.clone(),
+            password: secrecy::SecretString::from(pass.clone()),
+        })
+        .await
+        .expect("helix_db connect"),
+    );
 
     Arc::new(PlatformState {
         graph,
@@ -74,6 +85,11 @@ async fn build_neo4j_state(admin_token: Option<&str>) -> Arc<PlatformState> {
         config: PlatformConfig::default(),
         admin_token: admin_token.map(|t| secrecy::SecretBox::new(Box::new(t.to_owned()))),
         read_token: None,
+        helix_db,
+        helix_cache: lightarchitects::helix::HelixCache::new(
+            &lightarchitects::helix::HelixCacheConfig::default(),
+        ),
+        embedding_provider: Arc::new(lightarchitects::helix::MockEmbeddingProvider::new(384)),
     })
 }
 

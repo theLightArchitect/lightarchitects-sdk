@@ -15,6 +15,7 @@
 
 pub mod chunker;
 pub mod cloud;
+pub mod factory;
 #[cfg(feature = "fastembed")]
 pub mod fastembed_provider;
 pub mod mock;
@@ -30,6 +31,7 @@ pub use crate::soul::{EmbeddingError, EmbeddingProvider, EmbeddingResult, Privac
 // ── Re-export concrete implementations ───────────────────────────────────────
 pub use chunker::{Chunk, Chunker, ChunkerConfig};
 pub use cloud::CloudEmbeddingProvider;
+pub use factory::{EmbeddingConfig, create_embedding_provider};
 #[cfg(feature = "fastembed")]
 pub use fastembed_provider::{FastEmbedConfig, FastEmbedModel, FastEmbedProvider};
 pub use mock::MockEmbeddingProvider;
