@@ -1,0 +1,142 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-24T00:00:00Z"
+build_id: helix-cache-retrieval
+phase_id: merge
+overall_verdict: pass
+branch: main
+head_sha: e3b73a89f58179f10201652673e046c29427bffa
+commits_ahead_of_github_main: 15
+
+dimensions:
+  V0_primary_on_main:
+    result: pass
+    detail: "Primary worktree on main; gate ran post-merge"
+
+  Q1_fmt:
+    result: pass
+
+  Q2_clippy:
+    result: pass
+    note: "One in-gate fix required: cast_possible_wrap on ids.len() as i64 → i64::try_from()"
+
+  Q3_tests:
+    result: pass
+    tests_run: 117
+    tests_fail: 0
+    pre_existing_failures:
+      - suite: g8_validation
+        count: 6
+        reason: "Environmental — canon endpoint reads filesystem paths not present in test env; confirmed pre-existing (fail on original merged commit)"
+    note: "SDK: 109 pass. Gateway helix: 8/8 pass (including a5_01/a5_02 after 384-dim mock fix)."
+
+  Q4_svelte:
+    result: n/a
+    reason: "No Svelte changes in security-fix commit"
+
+  S1_security:
+    result: pass
+    findings_resolved_in_gate:
+      - id: F-CRIT-1
+        severity: CRITICAL
+        rule: "Security Guardrails §3.6"
+        description: "LIMIT string-interpolated into Cypher in get_steps_by_ids"
+        fix: "Bolt $limit parameter; i64::try_from() to satisfy clippy::cast_possible_wrap"
+      - id: F-HIGH-1
+        severity: HIGH
+        rule: "Security Guardrails §3.4"
+        description: "helix_id accepted without character-set or length validation"
+        fix: "alphanumeric/hyphen/slash only, ≤128 bytes; 422 on violation"
+      - id: F-HIGH-2
+        severity: HIGH
+        rule: "OWASP API3:2023"
+        description: "RetrieveRequest missing deny_unknown_fields — unknown JSON fields accepted"
+        fix: "#[serde(deny_unknown_fields)] on RetrieveRequest"
+      - id: F-HIGH-3
+        severity: HIGH
+        rule: "Security Guardrails §3.5 RBAC"
+        description: "GET /v1/platform/helix/cache/stats accessible with user read-token"
+        fix: "require_admin_token() guard added; pub(crate) visibility on helper"
+      - id: F-MEDIUM-1
+        severity: MEDIUM
+        rule: "OWASP LLM02"
+        description: "Raw cache_key exposed in ETag header (query text leakage)"
+        fix: "SHA-256 hash of cache_key used as ETag value"
+    tracked_non_blocking:
+      - id: F-MEDIUM-2
+        severity: MEDIUM
+        rule: "cargo deny"
+        description: "deny.toml stale native-tls wrapper config; RUSTSEC-2026-0105 informational"
+        action: "Follow-on: update deny.toml allow list"
+
+  S2_supply_chain:
+    result: fail
+    detail: "cargo deny: unmatched wrapper (native-tls/tungstenite) — pre-existing stale deny.toml; no new CVEs introduced by this build"
+    blocking: false
+    note: "Pre-existing configuration drift; not caused by helix-cache-retrieval deps"
+
+  S3_laex:
+    result: n/a
+    reason: "No new cryptographic primitives or auth flows added"
+
+  I1_integration:
+    result: pass
+    detail: "15 commits ahead of github/main; 0 commits behind; clean descendant; workspace build passes"
+
+  N1_northstar:
+    result: pass
+    pillar: "P3 (observable adaptive routing) + P5 (4-signal RRF, persistent knowledge)"
+    fields_present: true
+
+  N2_chain:
+    result: pass
+    detail: "Chain is concrete: each phase maps to specific P3/P5 mechanical proof (AYIN histograms, gateway route, 4-signal participation)"
+
+  N3_exclusion_zones:
+    result: pass
+    detail: "No open exclusion zones declared in plan"
+
+  D1_docs:
+    result: pass
+    detail: "0 documentation gaps across 5 audited files; all pub items carry /// rustdoc"
+
+  D2_plan:
+    result: pass
+    detail: "Plan updated: status=promoted, phase=merged"
+
+  D3_claude_md:
+    result: pass
+    detail: "No new tooling or architecture patterns requiring CLAUDE.md update"
+
+  V1_pyramid:
+    result: pass
+    suites_present: [unit, integration, e2e]
+    suites_absent: [property, regression, smoke]
+    tests_total: 20
+    note: "Missing property/regression/smoke flagged as MEDIUM tracked findings; unit+integration+E2E present per Canon XXVII minimum"
+
+  V2_smoke:
+    result: pass
+    detail: "cargo build --release -p lightarchitects-gateway: clean (1m05s)"
+
+  V3_e2e:
+    result: pass
+    detail: "E2E suite present: lightarchitects-webshell-ui/e2e/helix-retrieval.spec.ts; 6 golden paths"
+
+tracked_findings:
+  - id: TF-1
+    severity: MEDIUM
+    description: "cargo deny native-tls/tungstenite stale config — follow-on: update deny.toml"
+  - id: TF-2
+    severity: MEDIUM
+    description: "Property tests absent: cache key idempotence, RRF mode selection boundary"
+  - id: TF-3
+    severity: MEDIUM
+    description: "Regression tests absent: ghost-vector prevention, cache invalidation timing"
+  - id: TF-4
+    severity: LOW
+    description: "Smoke suite absent: no dedicated <30s health-check binary test"
+  - id: TF-5
+    severity: LOW
+    description: "g8_validation 6 tests pre-existing fail (environmental, filesystem paths)"
