@@ -115,6 +115,77 @@ export const api = {
   updateNotes:    (buildId: string, markdown: string) =>
     request<BuildNotes>(`/builds/${buildId}/notes`, { method: 'PUT', body: JSON.stringify({ content: markdown }) }),
 
+  // Copilot — native SSE streaming (Phase-10).
+  //
+  // For builds whose backend is `lightarchitects_native`, the POST returns a
+  // text/event-stream response from `drive_native_sse` (Rust side). This
+  // helper reads that stream chunk-by-chunk and emits one parsed frame per
+  // `onEvent` callback.  Replaces the prior WebSocket agent-bridge path
+  // documented in webshell-la-native-backend merge gate as a deferred fix.
+  //
+  // Returns when the stream emits `{type: "complete"}`, `{type: "error"}`,
+  // or the underlying reader closes.
+  copilotChatNative: async (
+    buildId: string,
+    message: string,
+    onEvent: (ev: { type: string; [k: string]: unknown }) => void,
+    context?: { recentEvents?: RecentEvent[]; uiContext?: UiContext },
+  ): Promise<{ grounding: GroundingInfo | null }> => {
+    const res = await fetch(`${API_BASE}/builds/${buildId}/copilot`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...authHeaders(),
+      },
+      body: JSON.stringify({
+        message,
+        ...(context?.recentEvents?.length ? { recent_events: context.recentEvents } : {}),
+        ...(context?.uiContext ? { ui_context: context.uiContext } : {}),
+      }),
+    });
+    if (!res.ok || !res.body) {
+      throw new Error(`API ${res.status}: ${res.statusText} — /builds/${buildId}/copilot`);
+    }
+    const grounding = parseGroundingHeader(res.headers.get('x-la-grounding'));
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buf = '';
+    let event = '';
+    let data = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      // SSE frames are separated by a blank line ("\n\n"); a frame is a
+      // sequence of "event: …" and "data: …" lines.
+      let nl: number;
+      while ((nl = buf.indexOf('\n')) !== -1) {
+        const line = buf.slice(0, nl).replace(/\r$/, '');
+        buf = buf.slice(nl + 1);
+        if (line.startsWith('event: ')) {
+          event = line.slice('event: '.length).trim();
+        } else if (line.startsWith('data: ')) {
+          data = line.slice('data: '.length).trim();
+        } else if (line === '' && event) {
+          try {
+            const parsed = JSON.parse(data) as { type: string; [k: string]: unknown };
+            onEvent(parsed);
+            if (parsed.type === 'complete' || parsed.type === 'error') {
+              try { await reader.cancel(); } catch { /* ignore */ }
+              return { grounding };
+            }
+          } catch { /* malformed frame — skip */ }
+          event = '';
+          data = '';
+        }
+      }
+    }
+    return { grounding };
+  },
+
   // Copilot
   copilotChat: async (
     buildId: string,

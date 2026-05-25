@@ -1,0 +1,35 @@
+schema_version: 1
+gate: phase
+scope: phase-3-grounding-parallel
+scored_by: "/BUILD Step 7.3 inline /GATE"
+scored_at: "2026-05-25T06:42:00Z"
+build_id: webshell-la-native-p10
+commit: 1fec705
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt:    { result: pass }
+  Q2_clippy: { result: pass, detail: "no new lints; emit_grounding_spans still under #[allow(clippy::too_many_arguments)] (now 9 args, same rationale)" }
+  Q3_tests:  { result: pass, webshell_total: 854, delta: "+0 (refactor — unit-test coverage unchanged)" }
+
+  P_performance:
+    result: pass
+    detail: >
+      gather_grounding wall-clock dropped from worst-case 1200ms (sequential
+      SOUL timeout + git timeout) to worst-case ~800ms (parallel max).
+      Each future retains its own tokio::time::timeout so independent
+      cancellation semantics are preserved.
+    expected_steady_state:
+      sequential_p95: "~1100-1200ms (4 grounding ops including embedding-cache)"
+      parallel_p95: "~700-850ms (limited by git_context 800ms timeout)"
+      observable_via: "AYIN span copilot.eva_ambient.grounding_wall_ms; metadata.parallel_speedup_ms = soul_ms + git_ms - grounding_wall_ms"
+
+  N1_northstar:
+    result: pass
+    pillar: "P1"
+    detail: "Phase-3 advances P1 (operator UX latency); cold-turn TTFT measurable in Phase 5 baseline refresh."
+
+next_phase: phase-4-drawer-routing
+notes:
+  - "tokio::join! semantics: both futures awaited unconditionally; either future's panic propagates. Acceptable here — both gather functions are panic-safe (return Option/empty)."
+  - "AYIN span addition: copilot.eva_ambient.grounding_wall_ms — new metric requires AYIN dashboard schema is permissive (it is: TraceSpanSummary.action is a free-form string)."
