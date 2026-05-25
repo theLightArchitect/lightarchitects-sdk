@@ -447,6 +447,47 @@
     return resp.build_id;
   }
 
+  // ── Native interrupt / clear controls ─────────────────────────────────────
+  /** True while an interrupt POST is in-flight (shows "Interrupting…" pill). */
+  let interrupting = $state(false);
+
+  /** Auto-clear interrupting flag once the turn finishes. */
+  $effect(() => { if (!$copilotLoading) interrupting = false; });
+
+  /**
+   * Signal the server to stop the current native turn.
+   * Idempotent — safe to call when nothing is running.
+   */
+  async function sendInterrupt() {
+    const buildId = sharedBuildId;
+    if (!buildId) return;
+    interrupting = true;
+    try {
+      await fetch(`/api/builds/${buildId}/copilot/interrupt`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+    } catch { /* best-effort; turn will time out naturally */ }
+  }
+
+  /**
+   * Clear the conversation: wipe local history and delete the server-side
+   * helix session file so the next turn starts from a blank context.
+   */
+  async function sendClear() {
+    clearCopilotHistory();
+    searchQuery = '';
+    showSearch = false;
+    const buildId = sharedBuildId;
+    if (!buildId) return;
+    try {
+      await fetch(`/api/builds/${buildId}/copilot/clear`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+    } catch { /* best-effort */ }
+  }
+
   // Fork-to-terminal state — enabled once at least one chat turn has
   // landed (server-side session_id is populated after turn 1). The button
   // sits in the chat-mode header; clicking POSTs /api/session/fork which
@@ -594,7 +635,7 @@
     // Control commands (clear, focus, navigate, etc.) execute locally — no copilot turn.
     if (command && ['clear', 'focus', 'navigate', 'notify', 'terminal', 'settings', 'theme', 'panel'].includes(command.name)) {
       addMessage('system', `/${command.name} ${args}`.trim());
-      if (command.name === 'clear') { clearCopilotHistory(); searchQuery = ''; showSearch = false; return; }
+      if (command.name === 'clear') { void sendClear(); return; }
       try { await command.execute(args); }
       catch (err) { addMessage('system', `Error: ${err instanceof Error ? err.message : 'Unknown error'}`); }
       return;
@@ -652,7 +693,12 @@
   function selectCommand(name: string) { input = `/${name} `; showSuggestions = false; }
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-    if (e.key === 'Escape') { showSuggestions = false; if (!input) open = false; }
+    if (e.key === 'Escape') {
+      // Priority: interrupt running turn > close suggestions > clear input > close drawer
+      if ($copilotLoading) { void sendInterrupt(); return; }
+      showSuggestions = false;
+      if (!input) open = false;
+    }
   }
   function handleInput() {
     const isSlash = input.startsWith('/');
@@ -782,7 +828,7 @@
   $effect(() => {
     const forkHandler  = () => { if (!forking) void forkToTerminal(); };
     const searchHandler = () => { showSearch = !showSearch; if (!showSearch) searchQuery = ''; };
-    const clearHandler  = () => { clearCopilotHistory(); searchQuery = ''; showSearch = false; };
+    const clearHandler  = () => { void sendClear(); };
     const posHandler    = () => { positionMode = positionMode === 'drawer' ? 'overlay' : 'drawer'; };
 
     window.addEventListener('la:copilot-fork',     forkHandler);
@@ -918,6 +964,14 @@
         {/if}
 
         {#if mode === 'chat'}
+          {#if $copilotLoading}
+            <button
+              onclick={() => void sendInterrupt()}
+              class="hdr-action hdr-action--warn"
+              title="Stop generation (Esc)"
+              aria-label="Stop generation"
+            >■</button>
+          {/if}
           <button
             onclick={forkToTerminal}
             disabled={!canFork || forking}
@@ -932,9 +986,9 @@
             aria-label="Search history"
           >⌕</button>
           <button
-            onclick={() => { clearCopilotHistory(); searchQuery = ''; showSearch = false; }}
+            onclick={() => void sendClear()}
             class="hdr-action"
-            title="Clear history"
+            title="Clear history + server memory"
             aria-label="Clear chat history"
           >✕</button>
         {/if}
@@ -1132,10 +1186,20 @@
                   {/if}
                 {/each}
                 {#if $copilotLoading}
-                  <div class="flex justify-start">
-                    <div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] px-3 py-1.5 rounded-lg">
-                      <span class="text-[var(--la-text-dim)] text-xs animate-pulse">Thinking…</span>
+                  <div class="flex justify-start items-center gap-2">
+                    <div class="bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] px-3 py-1.5 rounded-lg flex items-center gap-2">
+                      {#if interrupting}
+                        <span class="text-[var(--la-semantic-warn,#f59e0b)] text-xs animate-pulse">Interrupting…</span>
+                      {:else}
+                        <span class="text-[var(--la-text-dim)] text-xs animate-pulse">Thinking…</span>
+                      {/if}
                     </div>
+                    <button
+                      onclick={() => void sendInterrupt()}
+                      title="Stop (Esc)"
+                      aria-label="Stop generation"
+                      class="text-[9px] px-2 py-1 rounded border border-[var(--la-drawer-border)] text-[var(--la-text-dim)] hover:border-[var(--la-semantic-warn,#f59e0b)] hover:text-[var(--la-semantic-warn,#f59e0b)] transition-colors font-mono"
+                    >■ stop</button>
                   </div>
                 {/if}
               {/if}

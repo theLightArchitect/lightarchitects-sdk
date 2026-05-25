@@ -168,7 +168,7 @@ export const REAL_VAULT = {
 
 // ─── Setup mock (auto-complete flow) ──────────────────────────────────────────
 
-const SETUP_INFO = {
+export const SETUP_INFO = {
   setup_complete: true,
   config: {
     agent: 'lightarchitects_native',
@@ -193,6 +193,9 @@ const SETUP_INFO = {
     ollama: {
       base_url: 'http://localhost:11434',
       reachable: false,
+    },
+    la_native: {
+      has_api_key: false,
     },
   },
   cwd: '/tmp/e2e',

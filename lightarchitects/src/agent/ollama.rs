@@ -19,6 +19,7 @@
 //! | Registry guard | Model slug validated against `CLOUD_MODEL_REGISTRY` before dispatch |
 //! | No shell interpolation | `Command::new("ollama")` with args as separate `Vec` items — execve(2) semantics |
 //! | H1 HTTP streaming | Dual-path: `/v1/messages` SSE → `/api/chat` NDJSON fallback |
+//! | S-auth | `Authorization: Bearer` via `SecretString`; never logged or exposed in spans |
 //!
 //! [`AnthropicHttpProvider`]: crate::agent::AnthropicHttpProvider
 
@@ -27,6 +28,7 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use futures_util::stream::{BoxStream, StreamExt as _};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
@@ -39,6 +41,7 @@ use super::provider::{
     AgentResponse, LlmAgentProvider, ProviderCapabilities, ProviderError, ProviderEvent,
     SanitizedAgentRequest, SchemaMode, TokenUsage,
 };
+use super::tool_executor::ToolDefinition;
 use super::translator::sanitize_prompt;
 
 // ── Rate table (approximate Ollama Cloud pricing by CostTier) ──────────────────
@@ -78,8 +81,12 @@ pub struct OllamaCliProvider {
     pub rate_table_version: &'static str,
     /// HTTP client for the Ollama REST API.
     client: reqwest::Client,
-    /// Ollama server base URL (from `OLLAMA_HOST`, default `http://localhost:11434`).
+    /// Ollama server base URL (from `OLLAMA_HOST`; defaults to `https://ollama.com`
+    /// for `:cloud` slugs or `http://localhost:11434` for local models).
     base_url: String,
+    /// Bearer token for Ollama Cloud (`OLLAMA_API_KEY`). Stored as `SecretString`
+    /// so the value is zeroed on drop and never captured in spans or logs.
+    auth_token: Option<SecretString>,
 }
 
 impl OllamaCliProvider {
@@ -97,13 +104,23 @@ impl OllamaCliProvider {
         if lookup(&slug).is_none() {
             return Err(OllamaError::UnknownModel(slug));
         }
-        let base_url =
-            std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_owned());
+        let is_cloud = slug.ends_with(":cloud");
+        let default_host = if is_cloud {
+            "https://ollama.com"
+        } else {
+            "http://localhost:11434"
+        };
+        let base_url = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| default_host.to_owned());
+        let auth_token = std::env::var("OLLAMA_API_KEY")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(SecretString::from);
         Ok(Self {
             default_model: slug,
             rate_table_version: "2026-05-21",
             client: reqwest::Client::new(),
             base_url,
+            auth_token,
         })
     }
 }
@@ -217,19 +234,40 @@ impl LlmAgentProvider for OllamaCliProvider {
         let identity = req.safe_identity().to_owned();
         let client = self.client.clone();
         let base_url = self.base_url.clone();
+        // Build messages slice: history (if any) + current user turn.
+        // Empty prompt means the user turn is already the last entry in history
+        // (agentic loop iteration 2+: tool results absorbed into history).
+        let mut msgs = req.request().conversation_history.clone();
+        if !prompt.is_empty() {
+            msgs.push(serde_json::json!({"role": "user", "content": prompt}));
+        }
+        let system = if identity.is_empty() {
+            None
+        } else {
+            Some(identity.as_str())
+        };
+        let tools = if req.request().tool_definitions.is_empty() {
+            None
+        } else {
+            Some(req.request().tool_definitions.as_slice())
+        };
+        let bearer = self
+            .auth_token
+            .as_ref()
+            .map(|t| format!("Bearer {}", t.expose_secret()));
 
         // Primary path: /v1/messages (Anthropic-compat SSE, Ollama ≥ 0.4)
         let v1_url = format!("{base_url}/v1/messages");
-        let v1_body = build_v1_messages_body(&model, &prompt, &identity);
-
-        let v1_result = client
+        let v1_body = build_v1_messages_body(&model, &msgs, system, tools);
+        let mut v1_req = client
             .post(&v1_url)
             .header("content-type", "application/json")
             .header("accept", "text/event-stream")
-            .timeout(OLLAMA_STREAM_TIMEOUT)
-            .json(&v1_body)
-            .send()
-            .await;
+            .timeout(OLLAMA_STREAM_TIMEOUT);
+        if let Some(ref token) = bearer {
+            v1_req = v1_req.header("authorization", token);
+        }
+        let v1_result = v1_req.json(&v1_body).send().await;
 
         match v1_result {
             Ok(resp) if resp.status().is_success() => {
@@ -259,18 +297,17 @@ impl LlmAgentProvider for OllamaCliProvider {
 
         // Fallback path: /api/chat (native Ollama NDJSON, all versions)
         let chat_url = format!("{base_url}/api/chat");
-        let chat_body = build_api_chat_body(&model, &prompt, &identity);
-
-        let chat_resp = client
+        let chat_body = build_api_chat_body(&model, &msgs, system, tools);
+        let mut chat_req = client
             .post(&chat_url)
             .header("content-type", "application/json")
-            .timeout(OLLAMA_STREAM_TIMEOUT)
-            .json(&chat_body)
-            .send()
-            .await
-            .map_err(|e| {
-                ProviderError::Internal(format!("Ollama /api/chat request failed: {e}"))
-            })?;
+            .timeout(OLLAMA_STREAM_TIMEOUT);
+        if let Some(ref token) = bearer {
+            chat_req = chat_req.header("authorization", token);
+        }
+        let chat_resp = chat_req.json(&chat_body).send().await.map_err(|e| {
+            ProviderError::Internal(format!("Ollama /api/chat request failed: {e}"))
+        })?;
 
         if !chat_resp.status().is_success() {
             let status = chat_resp.status();
@@ -303,31 +340,64 @@ impl LlmAgentProvider for OllamaCliProvider {
 // ── HTTP streaming helpers ─────────────────────────────────────────────────────
 
 /// Build a `/v1/messages` (Anthropic-compat) request body for Ollama.
-fn build_v1_messages_body(model: &str, prompt: &str, identity: &str) -> serde_json::Value {
+///
+/// `messages` is a pre-assembled slice of `{"role","content"}` objects already
+/// containing history turns followed by the current user message.
+/// `tools` are serialized in Anthropic format: `{"name","description","input_schema"}`.
+fn build_v1_messages_body(
+    model: &str,
+    messages: &[serde_json::Value],
+    system: Option<&str>,
+    tools: Option<&[ToolDefinition]>,
+) -> serde_json::Value {
     let mut body = serde_json::json!({
         "model": model,
         "max_tokens": 8192_u32,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": messages,
         "stream": true,
     });
-    if !identity.is_empty() {
-        body["system"] = serde_json::Value::String(identity.to_owned());
+    if let Some(s) = system {
+        body["system"] = serde_json::Value::String(s.to_owned());
+    }
+    if let Some(defs) = tools {
+        let arr: Vec<serde_json::Value> = defs
+            .iter()
+            .map(|t| serde_json::json!({"name": t.name, "description": t.description, "input_schema": t.input_schema}))
+            .collect();
+        body["tools"] = serde_json::Value::Array(arr);
     }
     body
 }
 
-/// Build a `/api/chat` (native Ollama) request body.
-fn build_api_chat_body(model: &str, prompt: &str, identity: &str) -> serde_json::Value {
-    let mut messages: Vec<serde_json::Value> = Vec::new();
-    if !identity.is_empty() {
-        messages.push(serde_json::json!({"role": "system", "content": identity}));
+/// Build a `/api/chat` (native Ollama / Ollama Cloud) request body.
+///
+/// `messages` is pre-assembled; system prompt is prepended as a `role:system`
+/// entry when present. Tools follow `OpenAI` function-calling format.
+fn build_api_chat_body(
+    model: &str,
+    messages: &[serde_json::Value],
+    system: Option<&str>,
+    tools: Option<&[ToolDefinition]>,
+) -> serde_json::Value {
+    let mut full_messages: Vec<serde_json::Value> = Vec::new();
+    if let Some(s) = system {
+        full_messages.push(serde_json::json!({"role": "system", "content": s}));
     }
-    messages.push(serde_json::json!({"role": "user", "content": prompt}));
-    serde_json::json!({
+    full_messages.extend_from_slice(messages);
+    let mut body = serde_json::json!({
         "model": model,
-        "messages": messages,
+        "messages": full_messages,
         "stream": true,
-    })
+        "options": {"num_ctx": 131_072_u32},
+    });
+    if let Some(defs) = tools {
+        let arr: Vec<serde_json::Value> = defs
+            .iter()
+            .map(|t| serde_json::json!({"type":"function","function":{"name":t.name,"description":t.description,"parameters":t.input_schema}}))
+            .collect();
+        body["tools"] = serde_json::Value::Array(arr);
+    }
+    body
 }
 
 /// Convert a successful `/v1/messages` SSE response into a `ProviderEvent` stream.
@@ -704,46 +774,124 @@ mod tests {
 
     // ── build_v1_messages_body ──
 
+    fn user_msg(content: &str) -> serde_json::Value {
+        json!({"role": "user", "content": content})
+    }
+
+    fn assistant_msg(content: &str) -> serde_json::Value {
+        json!({"role": "assistant", "content": content})
+    }
+
     #[test]
     fn v1_body_contains_required_fields() {
-        let body = build_v1_messages_body("qwen3:4b", "hello", "");
+        let msgs = vec![user_msg("hello")];
+        let body = build_v1_messages_body("qwen3:4b", &msgs, None, None);
         assert_eq!(body["model"], "qwen3:4b");
         assert_eq!(body["stream"], true);
         assert_eq!(body["messages"][0]["content"], "hello");
         assert_eq!(body["messages"][0]["role"], "user");
-        assert!(
-            body["system"].is_null(),
-            "empty identity should omit system field"
-        );
+        assert!(body["system"].is_null(), "None system → no system field");
     }
 
     #[test]
-    fn v1_body_includes_system_when_identity_set() {
-        let body = build_v1_messages_body("qwen3:4b", "hi", "You are a helpful assistant.");
-        assert_eq!(body["system"], "You are a helpful assistant.");
+    fn v1_body_includes_system_when_some() {
+        let msgs = vec![user_msg("hi")];
+        let body = build_v1_messages_body("qwen3:4b", &msgs, Some("You are helpful."), None);
+        assert_eq!(body["system"], "You are helpful.");
+    }
+
+    #[test]
+    fn v1_body_multi_turn_history_preserved() {
+        let msgs = vec![
+            user_msg("turn1"),
+            assistant_msg("reply1"),
+            user_msg("turn2"),
+        ];
+        let body = build_v1_messages_body("qwen3:4b", &msgs, None, None);
+        let arr = body["messages"].as_array().unwrap();
+        assert_eq!(arr.len(), 3);
+        assert_eq!(arr[2]["content"], "turn2");
+    }
+
+    #[test]
+    fn v1_body_tools_in_anthropic_format() {
+        let tools = vec![ToolDefinition {
+            name: "read".to_owned(),
+            description: "Read a file".to_owned(),
+            input_schema: json!({"type": "object", "properties": {"path": {"type": "string"}}}),
+        }];
+        let msgs = vec![user_msg("hi")];
+        let body = build_v1_messages_body("qwen3:4b", &msgs, None, Some(&tools));
+        let t = &body["tools"][0];
+        assert_eq!(t["name"], "read");
+        assert_eq!(t["description"], "Read a file");
+        assert!(!t["input_schema"].is_null());
+        assert!(t["type"].is_null(), "v1 format has no 'type' wrapper");
+    }
+
+    #[test]
+    fn v1_body_no_tools_field_when_none() {
+        let msgs = vec![user_msg("hi")];
+        let body = build_v1_messages_body("qwen3:4b", &msgs, None, None);
+        assert!(body["tools"].is_null());
     }
 
     // ── build_api_chat_body ──
 
     #[test]
-    fn chat_body_stream_true() {
-        let body = build_api_chat_body("qwen3:4b", "hello", "");
+    fn chat_body_stream_true_and_num_ctx() {
+        let msgs = vec![user_msg("hello")];
+        let body = build_api_chat_body("qwen3:4b", &msgs, None, None);
         assert_eq!(body["stream"], true);
         assert_eq!(body["model"], "qwen3:4b");
-        // No system message when identity is empty.
-        let msgs = body["messages"].as_array().unwrap();
-        assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0]["role"], "user");
+        assert_eq!(body["options"]["num_ctx"], 131_072_u32);
+        let arr = body["messages"].as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["role"], "user");
     }
 
     #[test]
     fn chat_body_prepends_system_message() {
-        let body = build_api_chat_body("qwen3:4b", "hi", "sys prompt");
-        let msgs = body["messages"].as_array().unwrap();
-        assert_eq!(msgs.len(), 2);
-        assert_eq!(msgs[0]["role"], "system");
-        assert_eq!(msgs[0]["content"], "sys prompt");
-        assert_eq!(msgs[1]["role"], "user");
+        let msgs = vec![user_msg("hi")];
+        let body = build_api_chat_body("qwen3:4b", &msgs, Some("sys prompt"), None);
+        let arr = body["messages"].as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["role"], "system");
+        assert_eq!(arr[0]["content"], "sys prompt");
+        assert_eq!(arr[1]["role"], "user");
+    }
+
+    #[test]
+    fn chat_body_multi_turn_history_after_system() {
+        let msgs = vec![user_msg("q1"), assistant_msg("a1"), user_msg("q2")];
+        let body = build_api_chat_body("qwen3:4b", &msgs, Some("sys"), None);
+        let arr = body["messages"].as_array().unwrap();
+        // system + 3 history = 4
+        assert_eq!(arr.len(), 4);
+        assert_eq!(arr[0]["role"], "system");
+        assert_eq!(arr[3]["content"], "q2");
+    }
+
+    #[test]
+    fn chat_body_tools_in_openai_format() {
+        let tools = vec![ToolDefinition {
+            name: "read".to_owned(),
+            description: "Read a file".to_owned(),
+            input_schema: json!({"type": "object"}),
+        }];
+        let msgs = vec![user_msg("hi")];
+        let body = build_api_chat_body("qwen3:4b", &msgs, None, Some(&tools));
+        let t = &body["tools"][0];
+        assert_eq!(t["type"], "function");
+        assert_eq!(t["function"]["name"], "read");
+        assert_eq!(t["function"]["description"], "Read a file");
+    }
+
+    #[test]
+    fn chat_body_no_tools_field_when_none() {
+        let msgs = vec![user_msg("hi")];
+        let body = build_api_chat_body("qwen3:4b", &msgs, None, None);
+        assert!(body["tools"].is_null());
     }
 
     // ── ollama_chat_to_provider_events ──
@@ -823,5 +971,46 @@ mod tests {
         // Should produce TextDelta since done defaults to false.
         assert_eq!(events.len(), 1);
         assert!(matches!(&events[0], ProviderEvent::TextDelta { text, .. } if text == "hi"));
+    }
+
+    // ── W3.5: history prepending ──────────────────────────────────────────────
+
+    #[test]
+    fn history_prepended_in_api_chat_body() {
+        let history = vec![
+            json!({"role": "user", "content": "turn 1"}),
+            json!({"role": "assistant", "content": "response 1"}),
+        ];
+        let mut msgs = history.clone();
+        msgs.push(json!({"role": "user", "content": "turn 2"}));
+        let body = build_api_chat_body("m", &msgs, None, None);
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0]["content"], "turn 1");
+        assert_eq!(messages[1]["content"], "response 1");
+        assert_eq!(messages[2]["content"], "turn 2");
+    }
+
+    #[test]
+    fn history_prepended_in_v1_messages_body() {
+        let history = vec![
+            json!({"role": "user", "content": "q"}),
+            json!({"role": "assistant", "content": "a"}),
+        ];
+        let mut msgs = history.clone();
+        msgs.push(json!({"role": "user", "content": "follow-up"}));
+        let body = build_v1_messages_body("m", &msgs, None, None);
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[2]["content"], "follow-up");
+    }
+
+    #[test]
+    fn single_turn_no_history() {
+        let msgs = vec![json!({"role": "user", "content": "hello"})];
+        let body = build_api_chat_body("m", &msgs, None, None);
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], "user");
     }
 }

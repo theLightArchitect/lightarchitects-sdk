@@ -157,6 +157,8 @@ pub async fn dispatch_action(
         chain_origin: chain.origin,
         chain_depth: chain.depth,
         aud: chain.aud,
+        conversation_history: Vec::new(),
+        tool_definitions: Vec::new(),
     }
     .sanitize()
     .map_err(|e| map_provider_error(sibling, action, e))?;

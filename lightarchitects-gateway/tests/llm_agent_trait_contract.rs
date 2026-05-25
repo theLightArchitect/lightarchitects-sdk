@@ -76,6 +76,8 @@ fn mock_request(budget: f64) -> AgentRequest {
         chain_origin: None,
         chain_depth: 0,
         aud: None,
+        conversation_history: Vec::new(),
+            tool_definitions: Vec::new(),
     }
 }
 

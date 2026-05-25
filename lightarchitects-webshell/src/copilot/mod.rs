@@ -6,7 +6,6 @@
 //! `Codex` backend: each HTTP request spawns `codex exec` (Turn 1) or
 //! `codex exec resume <thread_id>` (Turn 2+) with disk-persistent session continuity.
 //!
-//! `LightarchitectsNative` backend: persistent subprocess with piped I/O.
 
 pub mod context;
 pub mod eva_identity;
@@ -16,23 +15,19 @@ pub mod routes;
 pub mod soul_grounding;
 pub mod voice;
 pub use event_stream::copilot_event_stream_handler;
-pub use routes::copilot_chat_handler;
+pub use routes::{copilot_chat_handler, copilot_clear_handler, copilot_interrupt_handler};
 pub use voice::copilot_voice_handler;
 
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, Lines},
-    process::{Child, ChildStdin, ChildStdout},
-};
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 use lightarchitects::agent::ProviderEvent;
 use lightarchitects::agent::messages_stream_parser::stream_json::parse_ndjson_value;
 
 use crate::{
     config::{AgentSession, ClaudeBackend, CodexBackend},
-    events::WebEventV2,
     session::BuildSession,
 };
 
@@ -320,21 +315,11 @@ pub struct CockpitTarget {
 
 /// Per-session agent state held behind `tokio::sync::Mutex<Option<CopilotProcess>>`.
 ///
-/// **`Lightarchitects`**, **`Codex`**: only `session_id` is populated; stdin/stdout/child are `None`.
-/// Per-turn processes are short-lived and not stored here.
-///
-/// **`LightarchitectsNative`**: all fields populated; child is killed on drop via
-/// `kill_on_drop(true)` (RAII cleanup).
+/// Only `session_id` is populated; per-turn processes are short-lived and not stored here.
 pub struct CopilotProcess {
     /// Session ID for conversation continuity: passed as `--resume` on the next turn
-    /// (`Lightarchitects`) or extracted from stdout (`Codex`/`LightarchitectsNative`).
+    /// (`Lightarchitects`) or extracted from stdout (`Codex`).
     pub session_id: Option<String>,
-    /// Persistent stdin (`Codex`, `LightarchitectsNative` only).
-    stdin: Option<BufWriter<ChildStdin>>,
-    /// Persistent stdout reader (`Codex`, `LightarchitectsNative` only).
-    stdout: Option<Lines<BufReader<ChildStdout>>>,
-    /// Subprocess handle — `kill_on_drop(true)` sends SIGKILL on drop.
-    _child: Option<Child>,
 }
 
 impl CopilotProcess {
@@ -346,133 +331,8 @@ impl CopilotProcess {
     pub fn seed_from_session_id(session_id: String) -> Self {
         Self {
             session_id: Some(session_id),
-            stdin: None,
-            stdout: None,
-            _child: None,
         }
     }
-}
-
-/// Dispatch a single NDJSON event line from the CLI stream to the webshell event bus.
-///
-/// Returns `Some(text)` when `line` is the `{"type":"result","text":"..."}` event.
-/// Returns `None` for any other event type (caller should continue reading).
-fn dispatch_ndjson_line(line: &str, session: &BuildSession, build_id: &str) -> Option<String> {
-    let trimmed = line.trim();
-    if trimmed.is_empty() || !trimmed.starts_with('{') {
-        return None;
-    }
-    let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) else {
-        return None;
-    };
-    match val["type"].as_str() {
-        Some("result") => return val["text"].as_str().map(ToOwned::to_owned),
-        Some("context") => dispatch_context_event(&val, session),
-        Some(kind @ ("tool_call" | "thinking")) => {
-            dispatch_activity_event(&val, session, build_id, kind);
-        }
-        // Gateway `agent_stream::ConversationEvent` taxonomy (lightarchitects --stream-events).
-        Some("text") => dispatch_la_text_chunk(&val, session),
-        Some("status_update") => dispatch_activity_event(&val, session, build_id, "status_update"),
-        Some("token_usage") => dispatch_token_usage(&val, session, build_id),
-        Some("complete") => {
-            let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
-                crate::events::WebEvent::CopilotResponse {
-                    chunk: String::new(),
-                    done: true,
-                    sibling: Some("la-native".to_owned()),
-                },
-                Some(session.build_id),
-            ));
-            return Some(String::new());
-        }
-        Some("error") => {
-            let msg = val["message"]
-                .as_str()
-                .unwrap_or("la-native error")
-                .to_owned();
-            let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
-                crate::events::WebEvent::CopilotResponse {
-                    chunk: format!("[error] {msg}"),
-                    done: true,
-                    sibling: Some("la-native".to_owned()),
-                },
-                Some(session.build_id),
-            ));
-            return Some(format!("[error] {msg}"));
-        }
-        _ => {}
-    }
-    None
-}
-
-fn dispatch_context_event(val: &serde_json::Value, session: &BuildSession) {
-    #[allow(clippy::cast_possible_truncation)]
-    let usage_pct = val["usage_pct"].as_f64().unwrap_or(0.0).clamp(0.0, 1.0) as f32;
-    let _ = session.event_tx.send(WebEventV2::from_event(
-        crate::events::WebEvent::ContextStatus(crate::events::types::ContextStatusEvent {
-            usage_pct,
-            level: val["level"].as_str().map(ToOwned::to_owned),
-            budget: val["budget"].as_u64().unwrap_or(0),
-            used: val["used"].as_u64().unwrap_or(0),
-        }),
-        Some(session.build_id),
-    ));
-}
-
-fn dispatch_activity_event(
-    val: &serde_json::Value,
-    session: &BuildSession,
-    build_id: &str,
-    kind: &str,
-) {
-    let summary = match kind {
-        "tool_call" => val["tool_name"].as_str().map(ToOwned::to_owned),
-        "thinking" => val["text"].as_str().map(|t| t.chars().take(120).collect()),
-        _ => val["text"].as_str().map(ToOwned::to_owned),
-    };
-    let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
-        crate::events::WebEvent::CopilotActivity(crate::events::types::CopilotActivityEvent {
-            build_id: build_id.to_owned(),
-            kind: kind.to_owned(),
-            summary,
-            raw: val.clone(),
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        }),
-        Some(session.build_id),
-    ));
-}
-
-fn dispatch_la_text_chunk(val: &serde_json::Value, session: &BuildSession) {
-    let chunk = val["chunk"].as_str().unwrap_or("").to_owned();
-    if !chunk.is_empty() {
-        let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
-            crate::events::WebEvent::CopilotResponse {
-                chunk,
-                done: false,
-                sibling: Some("la-native".to_owned()),
-            },
-            Some(session.build_id),
-        ));
-    }
-}
-
-fn dispatch_token_usage(val: &serde_json::Value, session: &BuildSession, build_id: &str) {
-    let summary = Some(format!(
-        "tokens in={} out={}",
-        val["input"].as_u64().unwrap_or(0),
-        val["output"].as_u64().unwrap_or(0),
-    ));
-    let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
-        crate::events::WebEvent::CopilotActivity(crate::events::types::CopilotActivityEvent {
-            build_id: build_id.to_owned(),
-            kind: "token_usage".to_owned(),
-            summary,
-            raw: val.clone(),
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        }),
-        Some(session.build_id),
-    ));
 }
 
 /// Spawn one turn of a `claude --print` subprocess for `Lightarchitects` backends.
@@ -480,7 +340,7 @@ fn dispatch_token_usage(val: &serde_json::Value, session: &BuildSession, build_i
 /// Uses `--output-format stream-json --verbose` (required combination for `--print`).
 /// Turn 1 (no `prev_session_id`): claude assigns a new session UUID returned in the result.
 /// Turn 2+ (`prev_session_id` is `Some`): `--resume <id>` continues the prior conversation
-/// from disk — giving full multi-turn context without a persistent subprocess.
+/// from disk — giving full multi-turn context without re-uploading history.
 ///
 /// Streams intermediate events (`assistant`, `tool_use`, `tool_result`) to the
 /// per-build `event_tx` as `WebEvent::CopilotActivity` so the Activity tab
@@ -957,83 +817,6 @@ async fn run_vibe_turn(message: &str, session: &BuildSession) -> Result<String, 
     Ok(text)
 }
 
-/// Spawn a persistent agent subprocess for the `LightarchitectsNative` backend.
-///
-/// | Session | Binary | Extra env |
-/// |---------|--------|-----------|
-/// | `LightarchitectsNative` | `<cfg.binary>` | none |
-///
-/// # Errors
-///
-/// Returns a descriptive string if the subprocess cannot be spawned or if
-/// stdin/stdout handles are unavailable.
-fn spawn_copilot(session: &BuildSession) -> Result<CopilotProcess, String> {
-    let mut cmd = match &session.agent {
-        // Lightarchitects gateway binary in `--stream-events` (NDJSON) mode.
-        // The webshell acts as auth broker: resolves credentials (Ollama Cloud
-        // primary, Anthropic fallback) and injects them so the gateway's LLM
-        // loop can dispatch to the configured provider.
-        AgentSession::LightarchitectsNative(cfg) => {
-            let resolved = resolve_binary(&cfg.binary);
-            let mut c = tokio::process::Command::new(&resolved);
-            c.env("PATH", augmented_path());
-
-            // ── Auth broker: inject provider credentials ──
-            // Ollama Cloud (primary path) — pass-through from webshell process env.
-            // The gateway's `cli::skills::build_provider()` checks OLLAMA_API_KEY
-            // and selects Ollama as the LLM backend when set.
-            if let Ok(key) = std::env::var("OLLAMA_API_KEY") {
-                if !key.is_empty() {
-                    c.env("OLLAMA_API_KEY", &key);
-                }
-            }
-            // Anthropic (fallback) — keychain via existing helper.
-            if let Some(key) = resolve_api_key_for_native() {
-                c.env("ANTHROPIC_API_KEY", &key);
-            }
-            // Hint the gateway's `agent_stream::run_ndjson` setup to persist
-            // the Ollama key when present (gateway checks LA_INHERITED_BACKEND).
-            c.env("LA_INHERITED_BACKEND", "ollama");
-            // Operator-selected model (e.g. nemotron-3-super:cloud).
-            if let Some(model) = cfg.model.as_deref() {
-                c.env("LA_MODEL", model);
-            }
-
-            c.arg("--stream-events");
-            if session.cwd.is_dir() {
-                c.arg("--cwd").arg(&session.cwd);
-            }
-            c
-        }
-        _ => return Err("spawn_copilot called for non-persistent-subprocess backend".to_owned()),
-    };
-
-    cmd.kill_on_drop(true)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null());
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("failed to spawn agent: {e}"))?;
-
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "agent stdin unavailable".to_owned())?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "agent stdout unavailable".to_owned())?;
-
-    Ok(CopilotProcess {
-        session_id: None,
-        stdin: Some(BufWriter::new(stdin)),
-        stdout: Some(BufReader::new(stdout).lines()),
-        _child: Some(child),
-    })
-}
-
 /// Send `message` to the agent and return its response.
 ///
 /// Public entry point for dispatch — routes a prompt through the copilot
@@ -1044,9 +827,6 @@ fn spawn_copilot(session: &BuildSession) -> Result<CopilotProcess, String> {
 ///
 /// `Codex`: spawns `codex exec` (Turn 1) or `codex exec resume` (Turn 2+); session
 /// continuity via `thread_id` with disk persistence.
-///
-/// `LightarchitectsNative`: writes to a persistent subprocess stdin and reads
-/// until the EOT marker.  Spawns lazily on first call or after a crash.
 ///
 /// The mutex serializes turns — correct for a sequential chat UI.
 ///
@@ -1091,9 +871,6 @@ pub(super) async fn call_subprocess(
         } else {
             *guard = Some(CopilotProcess {
                 session_id: new_session_id,
-                stdin: None,
-                stdout: None,
-                _child: None,
             });
         }
 
@@ -1152,9 +929,6 @@ pub(super) async fn call_subprocess(
         } else {
             *guard = Some(CopilotProcess {
                 session_id: new_session_id,
-                stdin: None,
-                stdout: None,
-                _child: None,
             });
         }
 
@@ -1171,79 +945,10 @@ pub(super) async fn call_subprocess(
         return Ok(text);
     }
 
-    // Persistent subprocess path — `LightarchitectsNative` CLI with NDJSON streaming.
-    if guard.is_none() {
-        *guard = Some(spawn_copilot(session)?);
-    }
-
-    let proc = guard
-        .as_mut()
-        .ok_or_else(|| "copilot process unavailable".to_owned())?;
-
-    // Wrap prompt as the gateway's `send_message` NDJSON action.
-    // Gateway dispatches via `agent_stream::run_ndjson` (`mod.rs:332-348`).
-    // The "text" field is required; empty text is silently no-op'd by the gateway.
-    let envelope = json!({"action": "send_message", "text": message});
-    let envelope_str = envelope.to_string();
-    let msg_bytes = [envelope_str.as_bytes(), b"\n"].concat();
-    {
-        let stdin = proc
-            .stdin
-            .as_mut()
-            .ok_or_else(|| "no stdin for persistent subprocess".to_owned())?;
-        stdin
-            .write_all(&msg_bytes)
-            .await
-            .map_err(|e| format!("stdin write: {e}"))?;
-        stdin
-            .flush()
-            .await
-            .map_err(|e| format!("stdin flush: {e}"))?;
-    }
-
-    let build_id = session.build_id.to_string();
-    let result_text: Option<String> = loop {
-        // Borrow proc.stdout only within this inner block to allow accessing
-        // proc.session_id (a different field) in the match arms below.
-        let next_line = if let Some(stdout) = proc.stdout.as_mut() {
-            stdout.next_line().await
-        } else {
-            *guard = None;
-            return Err("no stdout for persistent subprocess".to_owned());
-        };
-        match next_line {
-            Ok(Some(line)) if !line.is_empty() => {
-                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
-                    if let Some(id) = val["session_id"].as_str() {
-                        proc.session_id = Some(id.to_owned());
-                    }
-                }
-                if let Some(text) = dispatch_ndjson_line(&line, session, &build_id) {
-                    break Some(text);
-                }
-            }
-            Ok(None) => {
-                *guard = None;
-                return Err("agent process exited unexpectedly".to_owned());
-            }
-            Ok(Some(_)) => {}
-            Err(e) => {
-                *guard = None;
-                return Err(format!("stdout read: {e}"));
-            }
-        }
-    };
-
-    let text = result_text.ok_or_else(|| "no result in agent stream output".to_owned())?;
-    emit_turn_complete_span(
-        session,
-        &span_id,
-        actor,
-        &start_ts,
-        start.elapsed(),
-        "success",
-    );
-    Ok(text)
+    Err(format!(
+        "call_subprocess: unsupported agent session type {:?}",
+        session.agent.kind()
+    ))
 }
 
 /// POST to Ollama-compatible `/v1/chat/completions` endpoint.
@@ -1521,17 +1226,6 @@ pub async fn spawn_plan_draft(
 mod tests {
     use super::*;
 
-    // ── Test helpers ─────────────────────────────────────────────────────────
-
-    fn make_test_session() -> crate::session::BuildSession {
-        crate::session::BuildSession::new(
-            std::path::PathBuf::from("/tmp"),
-            crate::config::AgentSession::LightarchitectsNative(
-                crate::config::LightarchitectsNativeConfig::default(),
-            ),
-        )
-    }
-
     // ── resolve_mistral_api_key — property suite ─────────────────────────────
     //
     // Tests the filtering predicate directly (no env mutation → no parallel race).
@@ -1610,138 +1304,6 @@ mod tests {
             !env_key_is_valid(""),
             "empty string must be rejected by env filter"
         );
-    }
-
-    // ── dispatch_ndjson_line — unit suite ─────────────────────────────────────
-
-    #[test]
-    fn dispatch_result_line_returns_text() {
-        let session = make_test_session();
-        let result = dispatch_ndjson_line(
-            r#"{"type":"result","text":"Hello, world!"}"#,
-            &session,
-            "build-1",
-        );
-        assert_eq!(result.as_deref(), Some("Hello, world!"));
-    }
-
-    #[test]
-    fn dispatch_result_with_no_text_returns_none() {
-        let session = make_test_session();
-        let result = dispatch_ndjson_line(r#"{"type":"result"}"#, &session, "b");
-        assert!(result.is_none());
-    }
-
-    // ── dispatch_ndjson_line — integration suite (crosses event-bus boundary) ─
-
-    #[test]
-    fn dispatch_tool_call_sends_activity_event() {
-        let session = make_test_session();
-        let mut rx = session.event_tx.subscribe();
-        let result =
-            dispatch_ndjson_line(r#"{"type":"tool_call","tool_name":"Read"}"#, &session, "b1");
-        assert!(result.is_none(), "tool_call must not return text");
-        let event = rx
-            .try_recv()
-            .expect("expected CopilotActivity event on event_tx");
-        assert!(
-            matches!(
-                event,
-                crate::events::WebEventV2 { inner: crate::events::types::WebEvent::CopilotActivity(ref e), .. } if e.kind == "tool_call"
-            ),
-            "unexpected event variant: {event:?}"
-        );
-    }
-
-    #[test]
-    fn dispatch_thinking_sends_activity_event() {
-        let session = make_test_session();
-        let mut rx = session.event_tx.subscribe();
-        let result = dispatch_ndjson_line(
-            r#"{"type":"thinking","text":"Planning step."}"#,
-            &session,
-            "b2",
-        );
-        assert!(result.is_none());
-        let event = rx
-            .try_recv()
-            .expect("expected CopilotActivity event on event_tx");
-        assert!(
-            matches!(
-                event,
-                crate::events::WebEventV2 { inner: crate::events::types::WebEvent::CopilotActivity(ref e), .. } if e.kind == "thinking"
-            ),
-            "unexpected event variant: {event:?}"
-        );
-    }
-
-    #[test]
-    fn dispatch_context_sends_context_status_event() {
-        let session = make_test_session();
-        let mut rx = session.event_tx.subscribe();
-        let result = dispatch_ndjson_line(
-            r#"{"type":"context","usage_pct":0.42,"level":null,"budget":200000,"used":84000}"#,
-            &session,
-            "b3",
-        );
-        assert!(result.is_none());
-        let event = rx
-            .try_recv()
-            .expect("expected ContextStatus event on event_tx");
-        assert!(
-            matches!(
-                event,
-                crate::events::WebEventV2 { inner: crate::events::types::WebEvent::ContextStatus(ref e), .. } if (e.usage_pct - 0.42).abs() < 0.01
-            ),
-            "unexpected event variant: {event:?}"
-        );
-    }
-
-    // ── dispatch_ndjson_line — smoke suite (happy-path gate) ─────────────────
-
-    #[test]
-    fn dispatch_smoke_result_roundtrip() {
-        let session = make_test_session();
-        assert_eq!(
-            dispatch_ndjson_line(r#"{"type":"result","text":"done"}"#, &session, "smoke")
-                .as_deref(),
-            Some("done")
-        );
-    }
-
-    // ── dispatch_ndjson_line — regression suite ───────────────────────────────
-
-    #[test]
-    fn dispatch_empty_line_returns_none_no_panic() {
-        let session = make_test_session();
-        assert!(dispatch_ndjson_line("", &session, "b").is_none());
-        assert!(dispatch_ndjson_line("   ", &session, "b").is_none());
-    }
-
-    #[test]
-    fn dispatch_non_json_returns_none_no_panic() {
-        let session = make_test_session();
-        assert!(dispatch_ndjson_line("tracing INFO span", &session, "b").is_none());
-        assert!(dispatch_ndjson_line("plain text output", &session, "b").is_none());
-    }
-
-    #[test]
-    fn dispatch_unknown_type_returns_none_no_event() {
-        let session = make_test_session();
-        let mut rx = session.event_tx.subscribe();
-        let result = dispatch_ndjson_line(r#"{"type":"unknown_future_type","x":1}"#, &session, "b");
-        assert!(result.is_none());
-        assert!(
-            rx.try_recv().is_err(),
-            "no event expected for unrecognised type"
-        );
-    }
-
-    #[test]
-    fn dispatch_malformed_json_does_not_panic() {
-        let session = make_test_session();
-        // Truncated JSON that starts with '{' — must not panic.
-        dispatch_ndjson_line(r#"{"type":"result","text":"#, &session, "b");
     }
 
     fn is_hex(c: char) -> bool {

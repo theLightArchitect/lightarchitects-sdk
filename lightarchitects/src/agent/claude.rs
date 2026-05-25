@@ -707,13 +707,14 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_rejects_oversized_identity() {
+    fn sanitize_allows_large_identity() {
+        // Phase 4 (W4.1): the byte-length cap was removed from sibling_identity
+        // because HTTP-native providers (Ollama Cloud) carry the system prompt
+        // in a JSON body with no ARG_MAX constraint.  Only injection tokens are
+        // rejected; large safe identities must pass.
         let big = "x".repeat(MAX_PARAM_BYTES + 1);
         let result = sanitize_params(&big, "ok");
-        assert!(
-            result.is_err(),
-            "should reject identity exceeding MAX_PARAM_BYTES"
-        );
+        assert!(result.is_ok(), "large identity must now be accepted");
     }
 
     #[test]
@@ -753,6 +754,8 @@ mod tests {
             chain_origin: None,
             chain_depth: 0,
             aud: None,
+            conversation_history: Vec::new(),
+            tool_definitions: Vec::new(),
         }
         .sanitize()
         .unwrap();
@@ -867,6 +870,8 @@ mod tests {
             chain_origin: None,
             chain_depth: 0,
             aud: None,
+            conversation_history: Vec::new(),
+            tool_definitions: Vec::new(),
         }
         .sanitize()
         .unwrap();
@@ -971,6 +976,8 @@ mod tests {
             chain_origin: None,
             chain_depth: 0,
             aud: None,
+            conversation_history: Vec::new(),
+            tool_definitions: Vec::new(),
         }
         .sanitize()
         .unwrap();

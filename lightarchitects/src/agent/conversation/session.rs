@@ -12,18 +12,19 @@
 //! counterpart. New code should use [`ConversationSession`]; the gateway shim
 //! re-exports this type for gradual migration.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use futures_util::StreamExt as _;
 
 use crate::agent::{
-    AgentRequest, AgentResponse, ChainContext, LlmAgentProvider, ProviderError, ProviderEvent,
-    TokenUsage,
+    AgentRequest, AgentResponse, ChainContext, IndirectInjectionShield, LlmAgentProvider,
+    NullToolExecutor, ProviderError, ProviderEvent, TokenUsage, ToolExecutor,
 };
 
 use super::{
@@ -124,6 +125,8 @@ pub struct ConversationSession<P> {
     pub memory: Box<dyn ConversationMemory>,
     /// Lifecycle hook registry.
     pub hooks: Hooks,
+    /// Tool dispatcher — exposes tool definitions to the model and executes calls.
+    pub tool_executor: Arc<dyn ToolExecutor>,
     provider: Arc<P>,
 }
 
@@ -135,6 +138,7 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
             state: SessionState::default(),
             memory: Box::new(InMemoryConversationMemory::new()),
             hooks: Hooks::default(),
+            tool_executor: Arc::new(NullToolExecutor),
             provider,
         }
     }
@@ -151,6 +155,35 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
     pub fn with_hooks(mut self, hooks: Hooks) -> Self {
         self.hooks = hooks;
         self
+    }
+
+    /// Replace the default `NullToolExecutor` with a concrete tool dispatcher.
+    ///
+    /// When an executor is wired, tool definitions are forwarded to the model and
+    /// completed `tool_use` blocks are executed, with results re-injected via
+    /// [`IndirectInjectionShield`].
+    #[must_use]
+    pub fn with_tool_executor(mut self, executor: Arc<dyn ToolExecutor>) -> Self {
+        self.tool_executor = executor;
+        self
+    }
+
+    /// Inject a shared interrupt flag so an external caller (e.g. an HTTP route
+    /// handler) can cancel a turn running in another task without owning the session.
+    ///
+    /// The flag REPLACES the default flag created by [`SessionState::default`].
+    /// The caller retains its own `Arc` clone and calls `store(true, SeqCst)` to
+    /// signal cancellation.
+    #[must_use]
+    pub fn with_interrupt_flag(mut self, flag: Arc<AtomicBool>) -> Self {
+        self.state.interrupt_flag = flag;
+        self
+    }
+
+    /// Return a clone of the interrupt flag so the caller can signal cancellation.
+    #[must_use]
+    pub fn interrupt_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.state.interrupt_flag)
     }
 
     /// Signal the in-flight turn to stop at the next iteration boundary.
@@ -204,6 +237,15 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
         // Pre-turn hooks.
         self.hooks.run_pre_turn(ctx).await;
 
+        // Snapshot history BEFORE pushing this turn (provider gets history + current user msg
+        // as separate fields so the current turn isn't duplicated in conversation_history).
+        let history: Vec<serde_json::Value> = self
+            .memory
+            .turns()
+            .iter()
+            .map(|t| serde_json::json!({"role": t.role.to_string(), "content": t.content}))
+            .collect();
+
         // Store user turn.
         self.memory.push(MessageRole::User, user_message.to_owned());
 
@@ -214,7 +256,8 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
             .clone()
             .unwrap_or_else(|| "You are a helpful coding assistant.".to_owned());
 
-        let req = AgentRequest {
+        let tool_defs = self.tool_executor.tool_definitions();
+        let base_req = AgentRequest {
             sibling_identity: system_identity,
             user_prompt: user_message.to_owned(),
             schema: None,
@@ -226,9 +269,9 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
             chain_origin: ctx.origin.clone(),
             chain_depth: ctx.depth,
             aud: ctx.aud.clone(),
+            conversation_history: history,
+            tool_definitions: tool_defs,
         };
-
-        let sanitized = req.sanitize()?;
 
         // Status update while the provider is running.
         transport
@@ -239,76 +282,190 @@ impl<P: LlmAgentProvider> ConversationSession<P> {
 
         // W5.2 — AYIN span: record wall-clock start before the provider call.
         let turn_start = std::time::Instant::now();
-
-        // Stream events from provider; emit per-chunk Text events as they arrive (W5.1).
-        let mut stream = self.provider.spawn_streaming(sanitized).await?;
-
-        let mut output_text = String::new();
-        let mut input_tokens = 0u32;
-        let mut output_tokens = 0u32;
-        // TTFT: -1 = no text arrived (cancelled or empty response).
-        let mut ttft_ms: i64 = -1;
-
         // H13: heartbeat every 5s when the provider emits no new chunks.
         let heartbeat = std::time::Duration::from_secs(5);
 
+        let shield = IndirectInjectionShield::new();
+
+        // Agentic outer loop — repeats while stop_reason == "tool_use".
+        let mut output_text = String::new();
+        let mut input_tokens = 0u32;
+        let mut output_tokens = 0u32;
+        let mut ttft_ms: i64 = -1;
+        // Mutable request state for agentic iterations.
+        let mut iter_history = base_req.conversation_history.clone();
+        let mut iter_user_prompt = base_req.user_prompt.clone();
+        let mut remaining_inner = self.config.max_turns.max(1);
+
         loop {
-            match tokio::time::timeout(heartbeat, stream.next()).await {
-                Ok(Some(event)) => {
-                    if self.is_interrupted() {
-                        break;
-                    }
-                    match event {
-                        ProviderEvent::MessageStart {
-                            input_tokens: t, ..
-                        } => {
-                            input_tokens = t;
+            let iter_req = AgentRequest {
+                conversation_history: iter_history.clone(),
+                user_prompt: iter_user_prompt.clone(),
+                tool_definitions: self.tool_executor.tool_definitions(),
+                ..base_req.clone()
+            };
+            let sanitized = iter_req.sanitize()?;
+            let mut stream = self.provider.spawn_streaming(sanitized).await?;
+
+            // Per-block tracking: index → (tool_use_id, tool_name, json_accumulator)
+            let mut tool_blocks: HashMap<u32, (String, String, String)> = HashMap::new();
+            let mut stop_reason = "end_turn".to_owned();
+            let mut inner_text = String::new();
+            let mut inner_input_tokens = 0u32;
+            let mut inner_output_tokens = 0u32;
+
+            loop {
+                match tokio::time::timeout(heartbeat, stream.next()).await {
+                    Ok(Some(event)) => {
+                        if self.is_interrupted() {
+                            break;
                         }
-                        // H12/H14: surface tool invocations inline to the operator.
-                        ProviderEvent::ContentBlockStart {
-                            block_type,
-                            tool_name,
-                            ..
-                        } if block_type == "tool_use" => {
-                            let name = tool_name.as_deref().unwrap_or("unknown");
-                            transport
-                                .emit(&ConversationEvent::StatusUpdate {
-                                    text: format!("[tool: {name}] ⏳"),
-                                })
-                                .await?;
-                        }
-                        ProviderEvent::TextDelta { text, .. } => {
-                            if ttft_ms < 0 {
-                                ttft_ms = i64::try_from(turn_start.elapsed().as_millis())
-                                    .unwrap_or(i64::MAX);
+                        match event {
+                            ProviderEvent::MessageStart {
+                                input_tokens: t, ..
+                            } => {
+                                inner_input_tokens = t;
                             }
-                            output_text.push_str(&text);
-                            transport
-                                .emit(&ConversationEvent::Text { chunk: text })
-                                .await?;
+                            ProviderEvent::ContentBlockStart {
+                                index,
+                                block_type,
+                                tool_use_id,
+                                tool_name,
+                            } if block_type == "tool_use" => {
+                                let id = tool_use_id.unwrap_or_default();
+                                let name = tool_name.clone().unwrap_or_default();
+                                transport
+                                    .emit(&ConversationEvent::StatusUpdate {
+                                        text: format!(
+                                            "[tool: {}] ⏳",
+                                            tool_name.as_deref().unwrap_or("unknown")
+                                        ),
+                                    })
+                                    .await?;
+                                tool_blocks.insert(index, (id, name, String::new()));
+                            }
+                            ProviderEvent::InputJsonDelta {
+                                index,
+                                partial_json,
+                            } => {
+                                if let Some((_, _, json)) = tool_blocks.get_mut(&index) {
+                                    json.push_str(&partial_json);
+                                }
+                            }
+                            ProviderEvent::TextDelta { text, .. } => {
+                                if ttft_ms < 0 {
+                                    ttft_ms = i64::try_from(turn_start.elapsed().as_millis())
+                                        .unwrap_or(i64::MAX);
+                                }
+                                inner_text.push_str(&text);
+                                output_text.push_str(&text);
+                                transport
+                                    .emit(&ConversationEvent::Text { chunk: text })
+                                    .await?;
+                            }
+                            ProviderEvent::MessageDelta {
+                                output_tokens: t,
+                                stop_reason: r,
+                                ..
+                            } => {
+                                inner_output_tokens = t;
+                                stop_reason = r;
+                            }
+                            _ => {}
                         }
-                        ProviderEvent::MessageDelta {
-                            output_tokens: t, ..
-                        } => {
-                            output_tokens = t;
-                        }
-                        _ => {}
                     }
-                }
-                Ok(None) => break, // stream exhausted
-                Err(_elapsed) => {
-                    // 5 seconds with no chunk — emit heartbeat status.
-                    let elapsed_secs = turn_start.elapsed().as_secs();
-                    transport
-                        .emit(&ConversationEvent::StatusUpdate {
-                            text: format!("  …  ({elapsed_secs}s elapsed, {output_tokens} tokens)"),
-                        })
-                        .await?;
-                    if self.is_interrupted() {
-                        break;
+                    Ok(None) => break,
+                    Err(_elapsed) => {
+                        let elapsed_secs = turn_start.elapsed().as_secs();
+                        transport
+                            .emit(&ConversationEvent::StatusUpdate {
+                                text: format!(
+                                    "  …  ({elapsed_secs}s elapsed, {inner_output_tokens} tokens)"
+                                ),
+                            })
+                            .await?;
+                        if self.is_interrupted() {
+                            break;
+                        }
                     }
                 }
             }
+
+            input_tokens = input_tokens.saturating_add(inner_input_tokens);
+            output_tokens = output_tokens.saturating_add(inner_output_tokens);
+
+            // Exit when no tool calls, end of turn, or budget exhausted.
+            if stop_reason != "tool_use" || tool_blocks.is_empty() || remaining_inner == 0 {
+                break;
+            }
+            remaining_inner -= 1;
+
+            // Build assistant content block list (tool_use entries).
+            let assistant_content: Vec<Value> = tool_blocks
+                .values()
+                .map(|(id, name, input)| {
+                    let input_json: Value =
+                        serde_json::from_str(input).unwrap_or(Value::Object(Map::default()));
+                    serde_json::json!({
+                        "type": "tool_use",
+                        "id": id,
+                        "name": name,
+                        "input": input_json
+                    })
+                })
+                .collect();
+
+            // Execute each tool call and build tool_result content blocks.
+            let mut tool_results: Vec<Value> = Vec::new();
+            for (id, name, input) in tool_blocks.values() {
+                let input_json: Value =
+                    serde_json::from_str(input).unwrap_or(Value::Object(Map::default()));
+                let (result_str, is_error) =
+                    match self.tool_executor.execute(id, name, input_json).await {
+                        Ok(out) => (out.content.to_string(), out.is_error),
+                        Err(e) => (format!("tool error: {e}"), true),
+                    };
+
+                // Detect injection patterns and emit warnings.
+                for detected in shield.detect(&result_str) {
+                    transport
+                        .emit(&ConversationEvent::IndirectInjectionWarning {
+                            tool_use_id: id.clone(),
+                            pattern: detected.pattern,
+                            severity: detected.severity,
+                        })
+                        .await?;
+                }
+
+                let wrapped = shield.wrap_tool_result(id, &result_str);
+                tool_results.push(serde_json::json!({
+                    "type": "tool_result",
+                    "tool_use_id": id,
+                    "content": wrapped,
+                    "is_error": is_error
+                }));
+            }
+
+            // Absorb user message + assistant tool_use + tool_results into history.
+            if !iter_user_prompt.is_empty() {
+                iter_history.push(serde_json::json!({"role": "user", "content": iter_user_prompt}));
+            }
+            if inner_text.is_empty() {
+                iter_history.push(serde_json::json!({
+                    "role": "assistant",
+                    "content": assistant_content
+                }));
+            } else {
+                let mut mixed = vec![serde_json::json!({"type": "text", "text": inner_text})];
+                mixed.extend(assistant_content);
+                iter_history.push(serde_json::json!({"role": "assistant", "content": mixed}));
+            }
+            iter_history.push(serde_json::json!({
+                "role": "user",
+                "content": tool_results
+            }));
+            // Subsequent iterations have no separate user prompt — it's in history.
+            iter_user_prompt = String::new();
         }
 
         // W5.2 — AYIN per-turn span: TTFT + duration + cancellation taxonomy.
@@ -504,11 +661,13 @@ pub enum ControlMessage {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::agent::provider::{SchemaMode, TokenUsage};
-    use crate::agent::{AgentResponse, ProviderCapabilities, ProviderError};
+    use crate::agent::{
+        AgentResponse, ProviderCapabilities, ProviderError, ToolDefinition, ToolError, ToolOutput,
+    };
 
     // Minimal no-op provider for unit tests.
     struct EchoProvider;
@@ -596,5 +755,190 @@ mod tests {
             .run_turn("hi", &mut transport, &ChainContext::default())
             .await;
         assert!(result.is_ok());
+    }
+
+    // ── Phase 5: tool round-trip tests ────────────────────────────────────────
+
+    /// Provider that emits a `tool_use` block on call 1, then a text response on call 2.
+    struct ToolCallProvider {
+        call_count: std::sync::atomic::AtomicU32,
+    }
+
+    impl ToolCallProvider {
+        fn new() -> Self {
+            Self {
+                call_count: std::sync::atomic::AtomicU32::new(0),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl LlmAgentProvider for ToolCallProvider {
+        fn name(&self) -> &'static str {
+            "tool-call-mock"
+        }
+
+        fn capabilities(&self) -> ProviderCapabilities {
+            ProviderCapabilities {
+                schema_enforcement: SchemaMode::None,
+                native_budget_cap: false,
+                native_turn_cap: false,
+                auth_inherits_session: true,
+            }
+        }
+
+        fn estimate_cost(&self, _input: u32, _output: u32) -> f64 {
+            0.0
+        }
+
+        async fn spawn(
+            &self,
+            _req: crate::agent::SanitizedAgentRequest,
+        ) -> Result<AgentResponse, ProviderError> {
+            Err(ProviderError::Internal("use spawn_streaming".into()))
+        }
+
+        async fn spawn_streaming(
+            &self,
+            req: crate::agent::SanitizedAgentRequest,
+        ) -> Result<futures_util::stream::BoxStream<'static, ProviderEvent>, ProviderError>
+        {
+            use futures_util::StreamExt as _;
+            use futures_util::stream;
+            let call = self
+                .call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let events = if call == 0 {
+                // First call: emit a tool_use block for "ping".
+                vec![
+                    ProviderEvent::MessageStart {
+                        model: "mock".into(),
+                        input_tokens: 10,
+                    },
+                    ProviderEvent::ContentBlockStart {
+                        index: 0,
+                        block_type: "tool_use".into(),
+                        tool_use_id: Some("tu-001".into()),
+                        tool_name: Some("ping".into()),
+                    },
+                    ProviderEvent::InputJsonDelta {
+                        index: 0,
+                        partial_json: r#"{"msg":"hello"}"#.into(),
+                    },
+                    ProviderEvent::ContentBlockStop { index: 0 },
+                    ProviderEvent::MessageDelta {
+                        stop_reason: "tool_use".into(),
+                        output_tokens: 5,
+                    },
+                    ProviderEvent::MessageStop,
+                ]
+            } else {
+                // Second call: echo back the last history entry to prove tool result arrived.
+                let last = req
+                    .request()
+                    .conversation_history
+                    .last()
+                    .map(ToString::to_string)
+                    .unwrap_or_default();
+                vec![
+                    ProviderEvent::MessageStart {
+                        model: "mock".into(),
+                        input_tokens: 20,
+                    },
+                    ProviderEvent::ContentBlockStart {
+                        index: 0,
+                        block_type: "text".into(),
+                        tool_use_id: None,
+                        tool_name: None,
+                    },
+                    ProviderEvent::TextDelta {
+                        index: 0,
+                        text: format!("result:{last}"),
+                    },
+                    ProviderEvent::ContentBlockStop { index: 0 },
+                    ProviderEvent::MessageDelta {
+                        stop_reason: "end_turn".into(),
+                        output_tokens: 15,
+                    },
+                    ProviderEvent::MessageStop,
+                ]
+            };
+            Ok(stream::iter(events).boxed())
+        }
+    }
+
+    /// Tool executor that returns a fixed result for the "ping" tool.
+    struct PingToolExecutor;
+
+    #[async_trait::async_trait]
+    impl ToolExecutor for PingToolExecutor {
+        fn tool_definitions(&self) -> Vec<ToolDefinition> {
+            vec![ToolDefinition {
+                name: "ping".into(),
+                description: "Echoes its input".into(),
+                input_schema: serde_json::json!({"type":"object","properties":{"msg":{"type":"string"}}}),
+            }]
+        }
+
+        async fn execute(
+            &self,
+            _tool_use_id: &str,
+            tool_name: &str,
+            _input: Value,
+        ) -> Result<ToolOutput, ToolError> {
+            if tool_name == "ping" {
+                Ok(ToolOutput {
+                    tool_use_id: _tool_use_id.to_owned(),
+                    content: serde_json::json!("pong"),
+                    is_error: false,
+                })
+            } else {
+                Err(ToolError::UnknownTool(tool_name.to_owned()))
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn tool_round_trip_executes_and_injects_result() {
+        let config = SessionConfig::default();
+        let provider = Arc::new(ToolCallProvider::new());
+        let mut session = ConversationSession::new(config, provider.clone())
+            .with_tool_executor(Arc::new(PingToolExecutor));
+
+        let mut buf = Vec::new();
+        let mut transport = crate::agent::conversation::NdjsonTransport::new(&mut buf);
+        let result = session
+            .run_turn("call ping", &mut transport, &ChainContext::default())
+            .await;
+        assert!(result.is_ok(), "run_turn failed: {result:?}");
+
+        // Provider must have been called twice (once for tool_use, once for continuation).
+        assert_eq!(
+            provider
+                .call_count
+                .load(std::sync::atomic::Ordering::SeqCst),
+            2
+        );
+
+        // The final output should contain the tool result echoed back.
+        let output = String::from_utf8(buf).unwrap();
+        // Second provider call echoes last history entry which contains "tool_result".
+        assert!(
+            output.contains("tool_result"),
+            "expected tool_result in output, got: {output}"
+        );
+    }
+
+    #[tokio::test]
+    async fn tool_definitions_forwarded_to_provider() {
+        let config = SessionConfig::default();
+        let provider = Arc::new(EchoProvider);
+        let session = ConversationSession::new(config, provider)
+            .with_tool_executor(Arc::new(PingToolExecutor));
+
+        // Verify the tool executor exposes the "ping" tool definition.
+        let defs = session.tool_executor.tool_definitions();
+        assert_eq!(defs.len(), 1);
+        assert_eq!(defs[0].name, "ping");
     }
 }

@@ -1,6 +1,9 @@
 //! HTTP route handler for `POST /api/builds/:id/copilot`.
 
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use axum::{
     Json,
@@ -9,14 +12,17 @@ use axum::{
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
+use futures_util::StreamExt as _;
 use lightarchitects::agent::{
     ChainContext, ClaudeCliProvider, OllamaCliProvider,
     conversation::{
         ConversationEvent, ConversationSession, SessionConfig, SseTransport, Transport,
+        helix_memory::HelixSessionMemory,
     },
 };
 use serde_json::json;
 use tokio_util::io::ReaderStream;
+use tracing::Instrument as _;
 use uuid::Uuid;
 
 use crate::{
@@ -95,15 +101,25 @@ pub async fn copilot_chat_handler(
 
     let grounding_hdrs = grounding_headers(&identity_text, &soul_block, git_ctx.as_ref());
 
-    // Native path: drive ConversationSession with SseTransport, stream back to caller.
-    //
-    // We pass the UN-grounded user message — the OllamaCliProvider sanitizer
-    // enforces an 8,192-byte cap on user_prompt and the full grounding prelude
-    // (EVA identity + SOUL + git + recent events) routinely exceeds that.
-    // Grounding for the LA-native path is a follow-on (prelude trimming or
-    // system-prompt placement instead of inline injection).
+    // Native path: stream via ConversationSession + SseTransport.
+    // The full grounding prelude (EVA identity + SOUL + git + recent events) is
+    // placed in SessionConfig.system_prompt rather than inline in the user message,
+    // removing the previous 8 KiB wedge limitation.  The model's 131 072-token
+    // context window handles multi-KB system prompts without issue.
     if matches!(session.agent, AgentSession::LightarchitectsNative(_)) {
-        return drive_native_sse(&body.message, session.cwd.clone(), grounding_hdrs);
+        let system = if prelude.is_empty() {
+            None
+        } else {
+            Some(prelude)
+        };
+        return drive_native_sse(
+            id,
+            &body.message,
+            session.cwd.clone(),
+            grounding_hdrs,
+            system,
+            Arc::clone(&session.native_interrupt_flag),
+        );
     }
 
     let result = match &session.agent {
@@ -120,10 +136,11 @@ pub async fn copilot_chat_handler(
             ClaudeBackend::Anthropic | ClaudeBackend::OllamaLaunch(_),
         )
         | AgentSession::Codex(_)
-        | AgentSession::MistralVibe(_)
-        | AgentSession::LightarchitectsNative(_) => {
+        | AgentSession::MistralVibe(_) => {
             call_subprocess(&grounded_message, &session.copilot_proc, &session).await
         }
+        // Guarded above by the `if matches!(…LightarchitectsNative…)` early return.
+        AgentSession::LightarchitectsNative(_) => unreachable!("native session not intercepted"),
     };
 
     match result {
@@ -146,13 +163,94 @@ pub async fn copilot_chat_handler(
 /// Creates a `tokio::io::duplex` pipe: one end feeds [`SseTransport`] (written by the
 /// spawned task), the other becomes the HTTP response body. The caller receives raw
 /// SSE frames (`event: …\ndata: …\n\n`) as they are emitted by the strategy engine.
+/// Characters-per-token estimate for context-window overflow warning (W4.3).
+/// Rough proxy: English text averages ~4 bytes/token for sub-word tokenisers.
+const CHARS_PER_TOKEN: usize = 4;
+/// Emit a `tracing::warn` when the system prelude exceeds this fraction of the
+/// model context window (`num_ctx = 131_072` tokens, warn at 50%).
+const SYSTEM_PROMPT_WARN_CHARS: usize = 131_072 * CHARS_PER_TOKEN / 2; // ~262 144
+
+/// Abort guard: calls `AbortHandle::abort()` when dropped.
+///
+/// Stored inside the SSE body stream's `map` closure so the in-flight
+/// `native_turn_task` is cancelled when the HTTP client disconnects and the
+/// response `Body` is dropped (W7.3).
+struct AbortOnDrop(tokio::task::AbortHandle);
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// Body of the spawned turn task — separated from [`drive_native_sse`] to keep
+/// that function within the 100-line clippy limit.
+async fn native_turn_task(
+    cwd: std::path::PathBuf,
+    system_prompt: Option<String>,
+    write_half: tokio::io::DuplexStream,
+    msg: String,
+    ollama_provider: Option<OllamaCliProvider>,
+    interrupt_flag: Arc<AtomicBool>,
+) {
+    let memory = HelixSessionMemory::open(&cwd, 40);
+    let restored = memory.restored_turn_count();
+    tracing::debug!(restored_turns = restored, "helix session memory loaded");
+
+    let config = SessionConfig {
+        cwd,
+        system_prompt,
+        ..SessionConfig::default()
+    };
+    let mut transport = SseTransport::new(write_half);
+    let ctx = ChainContext::default();
+    let result = if let Some(provider) = ollama_provider {
+        let mut session = ConversationSession::new(config, Arc::new(provider))
+            .with_memory(Box::new(memory))
+            .with_interrupt_flag(Arc::clone(&interrupt_flag));
+        session.run_turn(&msg, &mut transport, &ctx).await
+    } else {
+        let mut session = ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()))
+            .with_memory(Box::new(memory))
+            .with_interrupt_flag(Arc::clone(&interrupt_flag));
+        session.run_turn(&msg, &mut transport, &ctx).await
+    };
+    if let Err(e) = result {
+        tracing::error!(error = %e, "run_turn failed");
+        let _ = transport
+            .emit(&ConversationEvent::Error {
+                message: e.to_string(),
+                recoverable: Some(false),
+            })
+            .await;
+    } else {
+        tracing::info!("run_turn completed");
+    }
+    // transport drop closes write_half → EOF on read_half
+}
+
 fn drive_native_sse(
+    build_id: Uuid,
     grounded_message: &str,
     cwd: std::path::PathBuf,
     extra_headers: HeaderMap,
+    system_prompt: Option<String>,
+    interrupt_flag: Arc<AtomicBool>,
 ) -> Response {
+    // Reset any prior interrupt before starting a new turn so the flag does
+    // not carry over from a previous cancelled request.
+    interrupt_flag.store(false, Ordering::SeqCst);
     let (write_half, read_half) = tokio::io::duplex(64 * 1024);
     let msg = grounded_message.to_owned();
+
+    if let Some(ref sp) = system_prompt {
+        if sp.len() > SYSTEM_PROMPT_WARN_CHARS {
+            tracing::warn!(
+                system_prompt_bytes = sp.len(),
+                warn_threshold_bytes = SYSTEM_PROMPT_WARN_CHARS,
+                "system prelude exceeds 50% of model context window — consider trimming"
+            );
+        }
+    }
 
     // Provider selection: prefer Ollama Cloud when OLLAMA_API_KEY is set
     // (matches `agent_stream::run_ndjson` provider-build logic in the gateway),
@@ -168,7 +266,20 @@ fn drive_native_sse(
         .filter(|m| !m.is_empty())
         .unwrap_or_else(|| "nemotron-3-super:cloud".to_owned());
     let ollama_provider = if use_ollama {
-        OllamaCliProvider::new(&model).ok()
+        match OllamaCliProvider::new(&model) {
+            Ok(p) => Some(p),
+            Err(e) => {
+                // W8.2: surface provider-construction failure so the operator
+                // can see why we fell back to ClaudeCliProvider rather than
+                // silently degrading without explanation.
+                tracing::warn!(
+                    error = %e,
+                    model = %model,
+                    "OllamaCliProvider construction failed — falling back to ClaudeCliProvider"
+                );
+                None
+            }
+        }
     } else {
         None
     };
@@ -178,48 +289,58 @@ fn drive_native_sse(
     } else {
         "claude-cli"
     };
-    tracing::info!(provider = provider_name, model = %model, "drive_native_sse spawning turn");
-    tokio::spawn(async move {
-        let config = SessionConfig {
-            cwd,
-            ..SessionConfig::default()
-        };
-        let mut transport = SseTransport::new(write_half);
-        let ctx = ChainContext::default();
-        let result = if let Some(provider) = ollama_provider {
-            let mut session = ConversationSession::new(config, Arc::new(provider));
-            session.run_turn(&msg, &mut transport, &ctx).await
-        } else {
-            let mut session =
-                ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()));
-            session.run_turn(&msg, &mut transport, &ctx).await
-        };
-        if let Err(e) = result {
-            tracing::error!(provider = provider_name, error = %e, "drive_native_sse run_turn failed");
-            // Surface the error to the SSE stream so the operator can see it.
-            let _ = transport
-                .emit(&ConversationEvent::Error {
-                    message: e.to_string(),
-                    recoverable: Some(false),
-                })
-                .await;
-        } else {
-            tracing::info!(
-                provider = provider_name,
-                "drive_native_sse run_turn completed"
-            );
-        }
-        // transport drop closes write_half → EOF on read_half
-    });
 
-    let stream = ReaderStream::new(read_half);
-    let mut response = Response::builder()
+    // Span carries build_id so every tracing event inside run_turn is correlated
+    // in AYIN's dashboard under the same trace root (W8.4).
+    let span = tracing::info_span!(
+        "native_turn",
+        build_id = %build_id,
+        provider = provider_name,
+        model = %model,
+    );
+    tracing::info!(parent: &span, "drive_native_sse spawning turn");
+
+    let handle = tokio::spawn(
+        native_turn_task(
+            cwd,
+            system_prompt,
+            write_half,
+            msg,
+            ollama_provider,
+            interrupt_flag,
+        )
+        .instrument(span),
+    );
+
+    // W7.3: AbortOnDrop (module-level struct) lives inside the stream's map
+    // closure. When the response Body is dropped on client disconnect, the
+    // closure drops, firing abort_handle.abort() on the in-flight task.
+    let abort_guard = AbortOnDrop(handle.abort_handle());
+    let stream = ReaderStream::new(read_half).map(move |b| {
+        let _ = &abort_guard;
+        b
+    });
+    let response_result = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/event-stream")
         .header(header::CACHE_CONTROL, "no-cache")
         .header("X-Accel-Buffering", "no")
-        .body(Body::from_stream(stream))
-        .unwrap_or_else(|_| Response::new(Body::empty()));
+        .body(Body::from_stream(stream));
+
+    let mut response = match response_result {
+        Ok(r) => r,
+        Err(e) => {
+            // Static header names/values cannot produce an error in practice;
+            // this branch exists to satisfy the no-unwrap/no-expect policy.
+            // Dropping `stream` here also drops `abort_guard`, cancelling the task.
+            tracing::error!(error = %e, "BUG: failed to construct SSE response with static headers");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "sse_response_construction_failed" })),
+            )
+                .into_response();
+        }
+    };
 
     for (k, v) in &extra_headers {
         response.headers_mut().insert(k.clone(), v.clone());
@@ -391,6 +512,53 @@ fn emit_grounding_spans(
         }),
         None,
     ));
+}
+
+/// `POST /api/builds/:id/copilot/interrupt` — signal a running native turn to stop.
+///
+/// Sets the shared `native_interrupt_flag` on the build session. The running
+/// `ConversationSession` polls the flag after each chunk and returns early when
+/// it is set. Idempotent: safe to call when no turn is in flight.
+pub async fn copilot_interrupt_handler(
+    _: auth::AuthGuard,
+    Path(id): Path<Uuid>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let Some(session) = state.builds.get(id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "build_not_found" })),
+        )
+            .into_response();
+    };
+    session.native_interrupt_flag.store(true, Ordering::SeqCst);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// `POST /api/builds/:id/copilot/clear` — wipe the in-progress conversation memory.
+///
+/// Deletes today's helix session file for the build's `cwd`. The next turn
+/// will start with a blank context window. No-op if no file exists yet.
+pub async fn copilot_clear_handler(
+    _: auth::AuthGuard,
+    Path(id): Path<Uuid>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let Some(session) = state.builds.get(id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "build_not_found" })),
+        )
+            .into_response();
+    };
+    let path = lightarchitects::agent::conversation::helix_memory::session_path(&session.cwd);
+    if path.exists() {
+        if let Err(e) = std::fs::remove_file(&path) {
+            tracing::warn!(path = %path.display(), error = %e, "copilot_clear: failed to delete session file");
+        }
+    }
+    tracing::info!(build_id = %id, path = %path.display(), "copilot_clear: session memory wiped");
+    StatusCode::NO_CONTENT.into_response()
 }
 
 /// Phase 5 — integration tests: grounding pipeline assembly + graceful degradation.

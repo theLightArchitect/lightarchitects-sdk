@@ -1,0 +1,62 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE --scope phase"
+scored_at: "2026-05-24T00:00:00Z"
+build_id: webshell-la-native-backend
+phase_id: phase-8-dead-code-removal
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 840
+    tests_fail: 0
+    delta_vs_phase_7: -10
+    note: "Removed 10 dispatch_ndjson_line unit/integration/smoke/regression tests
+      alongside the dead subprocess path they covered"
+  Q4_svelte:
+    result: n/a
+    note: "No Svelte surface changes in this phase"
+
+deliverables:
+  W8_dead_code_subprocess_path:
+    status: complete
+    description: "Removed entire `LightarchitectsNative` persistent subprocess path:
+      fn spawn_copilot (66 lines), persistent subprocess block at end of call_subprocess
+      (73 lines), unreachable match arm in call_subprocess actor match,
+      unreachable | AgentSession::LightarchitectsNative(_) arm in routes.rs match
+      (replaced with unreachable! guard comment)"
+  W8_dead_struct_fields:
+    status: complete
+    description: "Removed CopilotProcess.stdin (Option<BufWriter<ChildStdin>>),
+      .stdout (Option<Lines<BufReader<ChildStdout>>>), ._child (Option<Child>);
+      updated seed_from_session_id + 2 live per-turn initializers to single-field form;
+      removed associated LightarchitectsNative doc lines from struct"
+  W8_dead_imports:
+    status: complete
+    description: "Removed BufWriter, AsyncWriteExt from tokio::io imports;
+      removed process::{Child, ChildStdin, ChildStdout}; removed events::WebEventV2
+      shorthand import (all surviving callers use crate::events::WebEventV2 fully qualified)"
+  W8_dead_event_dispatchers:
+    status: complete
+    description: "Removed dispatch_ndjson_line + 4 helpers (dispatch_context_event,
+      dispatch_activity_event, dispatch_la_text_chunk, dispatch_token_usage) and
+      their 10 accompanying tests — all tested functionality that no longer executes
+      in any production path"
+  W8_module_doc:
+    status: complete
+    description: "Removed stale module-level doc sentence describing LightarchitectsNative
+      as a persistent subprocess backend"
+
+notes:
+  - "call_subprocess now ends with Err(format!(...session.agent.kind()...)) for
+    exhaustiveness — the LightarchitectsNative arm in routes.rs is marked unreachable!
+    since drive_native_sse guards intercept it before call_subprocess is reached"
+  - "actor match in call_subprocess merges Lightarchitects | LightarchitectsNative => 'eva'
+    to satisfy clippy::match_same_arms (both map to the same span label)"
+  - "dispatch_ndjson_line function was private but referenced from #[cfg(test)] tests;
+    cargo check in release mode sees it as dead_code; removed function + tests together"
+  - "resolve_api_key_for_native() is pub and thus not subject to dead_code lint;
+    retained — it may be useful for future native auth flows"

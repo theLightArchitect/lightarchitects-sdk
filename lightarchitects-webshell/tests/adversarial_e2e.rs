@@ -6,6 +6,8 @@
 //! - XSS / injection patterns are serialised as safe JSON (not raw HTML)
 //! - Edge-case token shapes are still correctly redacted
 //! - Invalid auth attempts do not cause 5xx responses
+//! - Interrupt / clear endpoints enforce auth and return correct error codes (W9.2)
+//! - Oversized prompt is rejected before build registry lookup (W9.2)
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -21,6 +23,7 @@ use lightarchitects_webshell::{
     server::{AppState, build_app},
 };
 use tower::ServiceExt;
+use uuid::Uuid;
 
 const TOKEN: &str = "super-secret-hmac-token-adversarial";
 
@@ -185,5 +188,127 @@ fn redact_handles_512_char_token() {
     assert!(
         !redacted.contains(&long_token),
         "512-char token must be fully redacted",
+    );
+}
+
+// ── W9.2: interrupt / clear endpoint security ────────────────────────────────
+
+#[tokio::test]
+async fn interrupt_without_auth_returns_401() {
+    let id = Uuid::new_v4();
+    let resp = make_app()
+        .oneshot(
+            Request::post(format!("/api/builds/{id}/copilot/interrupt"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "interrupt endpoint must require auth"
+    );
+}
+
+#[tokio::test]
+async fn interrupt_with_unknown_build_returns_404() {
+    // Valid auth, UUID not in registry → 404 with `build_not_found` error key.
+    // The token itself must not appear in the response body.
+    let id = Uuid::new_v4();
+    let resp = make_app()
+        .oneshot(
+            Request::post(format!("/api/builds/{id}/copilot/interrupt"))
+                .header("authorization", format!("Bearer {TOKEN}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let body = body_string(resp).await;
+    assert!(
+        body.contains("build_not_found"),
+        "error must name the cause: {body}"
+    );
+    assert!(
+        !body.contains(TOKEN),
+        "404 body must not leak the auth token: {body}"
+    );
+}
+
+#[tokio::test]
+async fn clear_without_auth_returns_401() {
+    let id = Uuid::new_v4();
+    let resp = make_app()
+        .oneshot(
+            Request::post(format!("/api/builds/{id}/copilot/clear"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "clear endpoint must require auth"
+    );
+}
+
+#[tokio::test]
+async fn clear_with_unknown_build_returns_404() {
+    let id = Uuid::new_v4();
+    let resp = make_app()
+        .oneshot(
+            Request::post(format!("/api/builds/{id}/copilot/clear"))
+                .header("authorization", format!("Bearer {TOKEN}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let body = body_string(resp).await;
+    assert!(
+        body.contains("build_not_found"),
+        "error must name the cause: {body}"
+    );
+}
+
+// ── W9.2: prompt injection guard — oversized message ─────────────────────────
+
+#[tokio::test]
+async fn oversized_prompt_returns_413_before_build_lookup() {
+    // MAX_PROMPT_BYTES = 8 192 (§3.4). The size check fires *before* the build
+    // registry lookup, so any UUID works — the route never reaches DashMap.
+    let id = Uuid::new_v4();
+    let big_message = "x".repeat(8193);
+    let body_json = serde_json::json!({
+        "message": big_message,
+        "recent_events": [],
+    });
+    let resp = make_app()
+        .oneshot(
+            Request::post(format!("/api/builds/{id}/copilot"))
+                .header("authorization", format!("Bearer {TOKEN}"))
+                .header("content-type", "application/json")
+                .body(Body::from(body_json.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "8 193-byte message must be rejected with 413"
+    );
+    let body = body_string(resp).await;
+    assert!(
+        body.contains("prompt_too_large"),
+        "error key must identify the cause: {body}"
+    );
+    assert!(
+        !body.contains(TOKEN),
+        "413 body must not leak the auth token: {body}"
     );
 }

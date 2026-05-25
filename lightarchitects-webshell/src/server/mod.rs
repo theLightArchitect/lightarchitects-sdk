@@ -858,6 +858,15 @@ pub fn build_app(state: AppState) -> Router {
             "/api/builds/{id}/copilot/voice",
             post(copilot::copilot_voice_handler),
         )
+        // ── Native copilot controls (Phase 7) ────────────────────────────────
+        .route(
+            "/api/builds/{id}/copilot/interrupt",
+            post(copilot::copilot_interrupt_handler),
+        )
+        .route(
+            "/api/builds/{id}/copilot/clear",
+            post(copilot::copilot_clear_handler),
+        )
         .route(
             "/api/builds/{id}/dispatch",
             post(real_data::dispatch_sibling),

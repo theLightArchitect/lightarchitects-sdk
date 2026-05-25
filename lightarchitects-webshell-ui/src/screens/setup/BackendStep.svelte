@@ -1,3 +1,11 @@
+<!--
+  @component
+  Backend selection step of the setup wizard.
+
+  Displays a card grid of available backends (Claude Code, Codex, Ollama,
+  LA Native). Selecting a card sets `selectedBackend` and `selectedAgent`
+  in the setup stores and advances the wizard to the next step.
+-->
 <script lang="ts">
   import { step, selectedBackend, selectedAgent, authStatus } from '$lib/setup';
   import PolytopeIcon from '../../components/PolytopeIcon.svelte';
@@ -56,6 +64,17 @@
       authKey: 'ollama' as const,
       authField: null,
       authBadge: null,
+      comingSoon: false,
+    },
+    {
+      id: 'la-native',
+      agent: 'lightarchitects_native',
+      label: 'LA Native',
+      description: 'Nemotron / Qwen3 via Ollama Cloud (1M ctx, tool-use)',
+      polytopeType: 'icositetrachoron',
+      authKey: 'la_native' as const,
+      authField: 'has_api_key' as const,
+      authBadge: 'OLLAMA_API_KEY ✓',
       comingSoon: false,
     },
     {
