@@ -329,9 +329,9 @@ pub struct Step {
 
     /// `GraphSAGE` inductive embedding (128-dim, written by GDS nightly enrichment).
     ///
-    /// Set by `gds.beta.graphSage.write(writeProperty:'sage_embedding')`.
+    /// Written by [`BgeSageProjectionPipeline`] during the nightly consolidator run.
     /// Used by [`StructuralSearcher`] via the `step-sage-embeddings` HNSW index.
-    /// `None` until GDS consolidation has run at least once.
+    /// `None` until the BGE projection pipeline has run at least once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub graph_embedding: Option<Vec<f32>>,
 }

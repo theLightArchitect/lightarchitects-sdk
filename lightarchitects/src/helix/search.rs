@@ -171,7 +171,7 @@ pub mod index_names {
 
     /// HNSW vector index on `Step.sage_embedding` (128-dim, `GraphSAGE` inductive).
     ///
-    /// Written by `gds.beta.graphSage.write(writeProperty:'sage_embedding')`.
+    /// Written by [`BgeSageProjectionPipeline`] during the nightly consolidator run.
     /// Falls back to `STEP_STRUCT_EMBEDDINGS` during migration.
     pub const STEP_SAGE_EMBEDDINGS: &str = "step-sage-embeddings";
 }

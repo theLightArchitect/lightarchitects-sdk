@@ -159,7 +159,7 @@ const V10_STATEMENTS: &[&str] = &[
 
 /// v11 adds the HNSW vector index for `GraphSAGE` inductive structural embeddings.
 ///
-/// `GDS gds.beta.graphSage.write` writes a 128-dim float array to `Step.sage_embedding`
+/// [`BgeSageProjectionPipeline`] writes a 128-dim float array to `Step.sage_embedding`
 /// during the nightly consolidator run. This index serves the `step-sage-embeddings`
 /// slot in [`StructuralSearcher`]'s fallback chain (SAGE → `Node2Vec` → empty).
 ///
