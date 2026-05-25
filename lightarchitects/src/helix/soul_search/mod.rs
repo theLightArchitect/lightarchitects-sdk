@@ -32,8 +32,8 @@ pub use fulltext::FulltextSearcher;
 pub use graph::{GraphFilter, GraphSearcher};
 pub use graphsage::{GraphSageProvider, ProjectionWeights};
 pub use hybrid::{
-    HybridRetriever, HybridRetrieverConfig, RetrievalMode, RetrievalResult, precision_at_k,
-    precision_at_k_patterns, recall_at_k,
+    HybridRetriever, HybridRetrieverConfig, RetrievalMode, RetrievalResult, SignalWeights,
+    precision_at_k, precision_at_k_patterns, recall_at_k,
 };
 pub use personality::{PersonalityEngine, PersonalityEngineConfig};
 pub use reranker::{Reranker, RerankerConfig};

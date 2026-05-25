@@ -76,8 +76,8 @@ pub use soul_search::{
     CachedRetrievalResult, CachedRetriever, ContextFormatter, ConvergenceParams, ConvergenceResult,
     FulltextSearcher, GraphFilter, GraphSearcher, HybridRetriever, HybridRetrieverConfig,
     PersonalityEngine, PersonalityEngineConfig, Reranker, RerankerConfig, RetrievalMode,
-    RetrievalResult, RetrievalSignal, ScoredId, SemanticSearcher, StructuralSearcher,
-    precision_at_k, precision_at_k_patterns, recall_at_k,
+    RetrievalResult, RetrievalSignal, ScoredId, SemanticSearcher, SignalWeights,
+    StructuralSearcher, precision_at_k, precision_at_k_patterns, recall_at_k,
 };
 pub use sqlite_backend::SqliteBackend;
 pub use storage::{
