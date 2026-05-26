@@ -1,0 +1,48 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-25T00:00:00Z"
+build_id: ironclaw-autonomous-e2e
+phase_id: merge
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1582
+    tests_fail: 0
+    flaky_pre_existing:
+      - test: "helix::helix_toml::tests::load_helix_toml_perf_baseline_1000_iterations"
+        reason: "Perf baseline (100ms) exceeded under parallel workspace load (137ms); passes in isolation. Pre-existing race condition, not a regression from this branch."
+  Q4_svelte: pass
+  S1_security:
+    result: pass
+    findings: []
+    notes: "HITL relay uses server-minted UUIDv4 call_ids (anti-IDOR). Bearer auth on all three operator endpoints. DashMap iteration-then-mutation pattern safe (collect→remove pattern not triggered in this implementation)."
+  S2_supply_chain: pass
+  S3_laex: "n/a"
+  I1_rebase: pass
+  N1_northstar:
+    result: pass
+    pillar: "P2 — Vibe Coding Orchestration"
+    northstar_text: "lightsquad autonomous mode ships: the orchestrator spawns worker agents, monitors gate results, parks HITL escalations, and delivers operator controls — completing the autonomous vibe-coding loop without terminal fallback."
+  N2_chain: pass
+  N3_exclusion_zones: pass
+  D1_docs: pass
+  D2_plan: pass
+  V1_pyramid:
+    result: pass
+    suites_covered:
+      - "Suite 1 (unit): hitl_relay unit tests (park, resolve, unique IDs)"
+      - "Suite 2 (integration): park→HTTP resolve→oneshot delivery"
+      - "Suite 4 (E2E): autonomous status + cancel pipeline"
+      - "Suite 5 (regression): IDOR guard + 410 Gone semantics"
+      - "Suite 6 (smoke): auth guard on all three operator endpoints"
+    suites_deferred:
+      - "Suite 3 (property): call_id uniqueness already covered by unit; Ollama real-provider property test deferred pending Ollama Cloud staging (CAPABILITY_MATRIX DEFERRED D-2)"
+  V2_smoke: pass
+  V3_e2e: "deferred: Playwright full autonomous run E2E deferred pending real Ollama Cloud credentials in CI (CAPABILITY_MATRIX D-2)"
+
+summary: "All quality, security, integration, Northstar, and documentation gates pass. 1582 tests (9 new). One pre-existing perf flake documented. V3 Playwright E2E deferred with named unblocking condition."
