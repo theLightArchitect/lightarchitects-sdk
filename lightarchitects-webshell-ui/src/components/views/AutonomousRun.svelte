@@ -12,8 +12,68 @@ Consumed stores: `workerSlots` (slot capacity + active count + wave index),
 <script lang="ts">
   import { workerSlots, conductorState, mergeAgentEvents, fixAgentEvents } from '$lib/stores';
   import type { MergeAgentStatusEvent, FixAgentIterationEvent } from '$lib/types';
+  import { authHeaders } from '$lib/auth';
+  import HitlEscalationModal from '../HitlEscalationModal.svelte';
 
   let { buildId }: { buildId: string } = $props();
+
+  // ── Autonomous status polling ─────────────────────────────────────────────
+
+  interface PendingHitlSummary {
+    call_id:     string;
+    task_id:     string;
+    reason:      string;
+    wave_index:  number;
+    worker_slot: number;
+    created_at:  string;
+    build_id:    string;
+  }
+
+  let buildStatus    = $state<'running' | 'completed' | null>(null);
+  let pendingHitl    = $state<PendingHitlSummary[]>([]);
+  let cancelPending  = $state(false);
+  let cancelError    = $state('');
+
+  async function pollStatus() {
+    try {
+      const res = await fetch(`/api/builds/${buildId}/autonomous/status`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) return;
+      const data = await res.json() as { status: string; pending_hitl: Omit<PendingHitlSummary, 'build_id'>[] };
+      buildStatus = data.status as 'running' | 'completed';
+      pendingHitl = data.pending_hitl.map(it => ({ ...it, build_id: buildId }));
+    } catch {
+      // network error; keep last known state
+    }
+  }
+
+  $effect(() => {
+    void pollStatus();
+    const interval = setInterval(() => { void pollStatus(); }, 8_000);
+    return () => clearInterval(interval);
+  });
+
+  async function cancelBuild() {
+    if (cancelPending) return;
+    cancelPending = true;
+    cancelError = '';
+    try {
+      const res = await fetch(`/api/builds/${buildId}/autonomous`, {
+        method:  'DELETE',
+        headers: authHeaders(),
+      });
+      if (!res.ok && res.status !== 204) {
+        cancelError = `${res.status}`;
+      } else {
+        buildStatus = 'completed';
+      }
+    } catch (e) {
+      cancelError = e instanceof Error ? e.message : 'cancel failed';
+    } finally {
+      cancelPending = false;
+    }
+  }
 
   const CAPACITY = 7;
 
@@ -50,14 +110,35 @@ Consumed stores: `workerSlots` (slot capacity + active count + wave index),
   }
 </script>
 
+<HitlEscalationModal {buildId} initialItems={pendingHitl} />
+
 <div class="autonomous-run" data-testid="autonomous-run" data-build-id={buildId}>
   <!-- ── Header ─────────────────────────────────────────────────────────────── -->
   <div class="ar-header">
     <span class="ar-label">AUTONOMOUS RUN</span>
+    {#if buildStatus}
+      <span class="ar-status" class:ar-status-done={buildStatus === 'completed'}>{buildStatus}</span>
+    {/if}
     {#if tick}
       <span class="ar-seq">tick #{tick.tick_seq}</span>
     {:else}
       <span class="ar-idle">waiting for conductor…</span>
+    {/if}
+    {#if pendingHitl.length > 0}
+      <span class="ar-hitl-badge">{pendingHitl.length} HITL</span>
+    {/if}
+    {#if buildStatus === 'running'}
+      <button
+        class="ar-cancel-btn"
+        disabled={cancelPending}
+        onclick={cancelBuild}
+        aria-label="Cancel autonomous build"
+      >
+        {cancelPending ? '…' : 'CANCEL'}
+      </button>
+    {/if}
+    {#if cancelError}
+      <span class="ar-cancel-error">{cancelError}</span>
     {/if}
   </div>
 
@@ -174,6 +255,69 @@ Consumed stores: `workerSlots` (slot capacity + active count + wave index),
     font-size: 10px;
     color: var(--la-text-dim);
     font-style: italic;
+  }
+
+  .ar-status {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    padding: 1px 6px;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--la-focus-ring) 18%, transparent);
+    color: var(--la-focus-ring);
+    border: 1px solid color-mix(in srgb, var(--la-focus-ring) 35%, transparent);
+    text-transform: uppercase;
+  }
+
+  .ar-status.ar-status-done {
+    background: color-mix(in srgb, var(--la-strand-sec) 14%, transparent);
+    color: var(--la-strand-sec);
+    border-color: color-mix(in srgb, var(--la-strand-sec) 30%, transparent);
+  }
+
+  .ar-hitl-badge {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 1px 6px;
+    border-radius: 2px;
+    background: var(--la-semantic-warn);
+    color: var(--la-bg-base);
+    animation: pulse-warn 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-warn {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  .ar-cancel-btn {
+    margin-left: auto;
+    font-family: var(--la-font-mono, monospace);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    padding: 2px 10px;
+    border: 1px solid var(--la-semantic-error);
+    border-radius: 2px;
+    color: var(--la-semantic-error);
+    background: transparent;
+    cursor: pointer;
+    transition: background 150ms;
+  }
+
+  .ar-cancel-btn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--la-semantic-error) 12%, transparent);
+  }
+
+  .ar-cancel-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .ar-cancel-error {
+    font-size: 9px;
+    color: var(--la-semantic-error);
   }
 
   .ar-summary-row {
