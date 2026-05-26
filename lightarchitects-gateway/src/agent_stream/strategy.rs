@@ -46,7 +46,10 @@ use lightarchitects::quantum::{
 use lightarchitects::seraph::{SeraphClient, SeraphCoVeExecutor, SeraphIttExecutor};
 use lightarchitects::soul::{SoulClient, SoulReflexionExecutor};
 
+use lightarchitects::ayin::span::{Actor, TraceContext, TraceOutcome};
+
 use crate::config::GatewayConfig;
+use crate::span_context::{span_dir, spawn_with_span_context, write_span_to_disk};
 
 use super::{ConversationEvent, TerminationReason, Transport};
 
@@ -223,6 +226,10 @@ pub async fn run_strategy<T: Transport>(
     );
     let chain = ChainContext::default();
     let session_id = req.session_id.clone();
+
+    // Emit session-root span so AYIN Lineage Circuit shows a gateway.session.start
+    // node at the root of each agentic loop run. Fire-and-forget — never blocks strategy.
+    emit_session_start_span(session_id.as_deref(), &req.strategy.to_string());
 
     emit_status(
         transport,
@@ -572,6 +579,32 @@ pub fn parse_slash_command(line: &str, default_budget_usd: f64) -> Option<Strate
         max_budget_usd: Some(default_budget_usd),
         session_id: None,
     })
+}
+
+/// Emit a `gateway.session.start` AYIN span at strategy entry — fire-and-forget.
+fn emit_session_start_span(session_id: Option<&str>, strategy: &str) {
+    let strategy = strategy.to_owned();
+    let session_id = session_id.map(ToOwned::to_owned);
+    spawn_with_span_context(async move {
+        let mut builder = TraceContext::new(Actor::new("gateway"), "gateway.session.start")
+            .outcome(TraceOutcome::Continue)
+            .metadata(serde_json::json!({ "strategy": strategy }));
+        if let Some(ref sid) = session_id {
+            builder = builder.session_id(sid);
+        }
+        match builder.finish() {
+            Ok(span) => {
+                let base = dirs_next::home_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .join("lightarchitects/soul/helix/ayin/traces");
+                let dir = span_dir(&base, "gateway", &span.timestamp);
+                if let Err(e) = write_span_to_disk(&span, &dir).await {
+                    tracing::warn!(error = %e, "gateway.session.start AYIN span write failed");
+                }
+            }
+            Err(e) => tracing::warn!(error = %e, "gateway.session.start AYIN span build failed"),
+        }
+    });
 }
 
 #[cfg(test)]
