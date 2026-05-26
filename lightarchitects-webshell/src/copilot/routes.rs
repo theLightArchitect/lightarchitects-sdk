@@ -65,6 +65,22 @@ pub async fn copilot_chat_handler(
     }
 
     let identity_text = state.eva_identity.read().await.text().to_owned();
+
+    let Some(session) = state.builds.get(id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "build_not_found" })),
+        )
+            .into_response();
+    };
+    // Peek the session_span_id from the prior turn so grounding spans can be
+    // parented to the session root.  On the first turn the field is None and
+    // grounding spans remain orphaned — acceptable since the root doesn't exist yet.
+    let grounding_parent_id: Option<String> = {
+        let guard = session.copilot_proc.lock().await;
+        guard.as_ref().and_then(|p| p.session_span_id.clone())
+    };
+
     let (prelude, soul_block, git_ctx) = gather_grounding(
         &state,
         id,
@@ -72,6 +88,8 @@ pub async fn copilot_chat_handler(
         &body.message,
         &body.recent_events,
         body.ui_context.as_ref(),
+        Some(id),
+        grounding_parent_id,
     )
     .await;
 
@@ -91,14 +109,6 @@ pub async fn copilot_chat_handler(
         )
             .into_response();
     }
-
-    let Some(session) = state.builds.get(id) else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "build_not_found" })),
-        )
-            .into_response();
-    };
 
     let grounding_hdrs = grounding_headers(&identity_text, &soul_block, git_ctx.as_ref());
 
@@ -395,6 +405,7 @@ fn drive_native_sse(
 /// git_timeout` (1200 ms sequential) to `max(soul_timeout, git_timeout)`
 /// (800 ms parallel).  Each future retains its own independent
 /// `tokio::time::timeout`, so a hang in one source does not block the other.
+#[allow(clippy::too_many_arguments)]
 async fn gather_grounding(
     state: &AppState,
     id: Uuid,
@@ -402,6 +413,8 @@ async fn gather_grounding(
     message: &str,
     recent_events: &[super::context::RecentEventEntry],
     ui_context: Option<&super::UiContext>,
+    build_id: Option<Uuid>,
+    parent_span_id: Option<String>,
 ) -> (String, String, Option<super::git_context::GitContext>) {
     let wall_t0 = std::time::Instant::now();
 
@@ -476,6 +489,8 @@ async fn gather_grounding(
         git_timed_out,
         prelude.len(),
         grounding_wall_ms,
+        build_id,
+        parent_span_id.as_deref(),
     );
 
     (prelude, soul_block, git_ctx)
@@ -528,12 +543,15 @@ fn emit_grounding_spans(
     git_timed_out: bool,
     prelude_bytes: usize,
     grounding_wall_ms: u64,
+    build_id: Option<Uuid>,
+    parent_id: Option<&str>,
 ) {
     let ts = chrono::Utc::now().to_rfc3339();
+    let parent = parent_id.map(ToOwned::to_owned);
     let _ = state.event_tx.send(WebEventV2::from_event(
         crate::events::WebEvent::AyinSpan(TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
-            parent_id: None,
+            parent_id: parent.clone(),
             actor: "webshell".to_owned(),
             action: "copilot.eva_ambient.soul_search_ms".to_owned(),
             timestamp: ts.clone(),
@@ -545,12 +563,12 @@ fn emit_grounding_spans(
             }),
             strand_activations: Vec::new(),
         }),
-        None,
+        build_id,
     ));
     let _ = state.event_tx.send(WebEventV2::from_event(
         crate::events::WebEvent::AyinSpan(TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
-            parent_id: None,
+            parent_id: parent.clone(),
             actor: "webshell".to_owned(),
             action: "copilot.eva_ambient.git_gather_ms".to_owned(),
             timestamp: ts.clone(),
@@ -563,12 +581,12 @@ fn emit_grounding_spans(
             }),
             strand_activations: Vec::new(),
         }),
-        None,
+        build_id,
     ));
     let _ = state.event_tx.send(WebEventV2::from_event(
         crate::events::WebEvent::AyinSpan(TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
-            parent_id: None,
+            parent_id: parent.clone(),
             actor: "webshell".to_owned(),
             action: "copilot.eva_ambient.grounding_wall_ms".to_owned(),
             timestamp: ts.clone(),
@@ -581,12 +599,12 @@ fn emit_grounding_spans(
             }),
             strand_activations: Vec::new(),
         }),
-        None,
+        build_id,
     ));
     let _ = state.event_tx.send(WebEventV2::from_event(
         crate::events::WebEvent::AyinSpan(TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
-            parent_id: None,
+            parent_id: parent,
             actor: "webshell".to_owned(),
             action: "copilot.eva_ambient.prelude_bytes".to_owned(),
             timestamp: ts,
@@ -595,7 +613,7 @@ fn emit_grounding_spans(
             metadata: serde_json::json!({ "prelude_bytes": prelude_bytes }),
             strand_activations: Vec::new(),
         }),
-        None,
+        build_id,
     ));
 }
 
