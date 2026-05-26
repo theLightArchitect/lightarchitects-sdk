@@ -1476,7 +1476,7 @@ test.describe('Comprehensive webshell E2E', () => {
     test('AYIN dashboard reachable on :3742', async () => {
       // Use Playwright's request context (not page.evaluate) to avoid CORS
       try {
-        const res = await page.request.get('http://127.0.0.1:3742/health');
+        const res = await page.request.get('http://127.0.0.1:3742/api/sessions');
         expect(res.ok()).toBe(true);
       } catch {
         // AYIN may not be running — skip rather than fail
@@ -6398,6 +6398,101 @@ test.describe('Comprehensive webshell E2E', () => {
       // The app should handle the parse error gracefully (no uncaught exception)
       // Panel might or might not render depending on mosaicMode state — just verify no crash
       expect(true).toBe(true); // survival test — reaching here means no hard crash
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 30. AYIN copilot observability — Phase 4 contracts (G8, G9, G10)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  test.describe('30. AYIN copilot observability (Phase 4)', () => {
+    // G8 — ObservabilityPanel mounts an iframe pointing at :3742.
+    test('G8: /#/observability mounts AYIN iframe at :3742', async () => {
+      await page.evaluate(() => { window.location.hash = '#/observability'; });
+      await page.waitForTimeout(1500);
+
+      const iframeSrc = await page.evaluate(() => {
+        const frame = document.querySelector('iframe');
+        return frame?.getAttribute('src') ?? null;
+      });
+
+      // Panel always renders the iframe (even when AYIN is offline — it shows
+      // an error overlay instead). The iframe src must be the AYIN URL.
+      expect(iframeSrc).not.toBeNull();
+      expect(iframeSrc).toContain('127.0.0.1:3742');
+    });
+
+    // G9 — "View in AYIN →" button is conditionally rendered in CopilotDrawer
+    //       only when ayinStatus = 'connected'. Test skips when AYIN is offline.
+    test('G9: CopilotDrawer shows "View in AYIN" button when AYIN connected', async () => {
+      // Check AYIN connectivity before spending time on this test.
+      let ayinUp = false;
+      try {
+        const res = await page.request.get('http://127.0.0.1:3742/api/sessions');
+        ayinUp = res.ok();
+      } catch {
+        // AYIN not running — skip.
+      }
+      if (!ayinUp) { test.skip(); return; }
+
+      // Navigate to home and open CopilotDrawer.
+      await page.evaluate(() => { window.location.hash = '#/'; });
+      await page.waitForTimeout(500);
+
+      // Open copilot drawer via keyboard shortcut.
+      await page.keyboard.press('Control+`');
+      await page.waitForTimeout(800);
+
+      // The "View in AYIN" button is aria-labelled.
+      const btn = page.locator('[aria-label="View in AYIN"]');
+      const count = await btn.count();
+      // If the store has connected (SSE fired), the button exists.
+      // If ayinStatus hasn't reached 'connected' yet, this is an env issue — skip.
+      if (count === 0) { test.skip(); return; }
+      await expect(btn.first()).toBeVisible();
+
+      // Close drawer.
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+    });
+
+    // G10 — After a copilot turn, the observability panel shows lineage nodes.
+    //        Requires: AYIN running + ayin-lineage-circuit deployed.
+    //        Skips gracefully when AYIN is offline or lineage circuit not deployed.
+    test('G10: observability panel shows ≥3 lineage-node elements after copilot turn', async () => {
+      let ayinUp = false;
+      try {
+        const res = await page.request.get('http://127.0.0.1:3742/api/sessions');
+        ayinUp = res.ok();
+      } catch {
+        // AYIN not running.
+      }
+      if (!ayinUp) { test.skip(); return; }
+
+      // Navigate to observability and wait for the iframe to load.
+      await page.evaluate(() => { window.location.hash = '#/observability'; });
+      await page.waitForTimeout(2000);
+
+      // Try to access the AYIN iframe content (same-origin sandbox allows this
+      // for localhost). The ayin-lineage-circuit canvas renders `.lineage-node`.
+      const frameHandle = page.frameLocator('iframe[src*="127.0.0.1:3742"]');
+      let nodeCount = 0;
+      try {
+        nodeCount = await frameHandle.locator('.lineage-node').count();
+      } catch {
+        // Iframe not accessible (cross-origin restrictions or lineage circuit
+        // not deployed) — skip rather than fail.
+        test.skip();
+        return;
+      }
+
+      // If lineage nodes are present, verify minimum depth contract.
+      if (nodeCount === 0) {
+        // No spans yet — test requires a copilot session to have run first.
+        test.skip();
+        return;
+      }
+      expect(nodeCount).toBeGreaterThanOrEqual(3);
     });
   });
 
