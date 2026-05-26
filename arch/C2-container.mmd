@@ -1,0 +1,26 @@
+graph TB
+  subgraph "lightarchitects-webshell-ui (Svelte SPA)"
+    CD[CopilotDrawer.svelte\nChat + inline Mermaid]
+    OP[ObservabilityPanel.svelte\nFull AYIN iframe]
+    AU[ayin-traces-utils.ts\nTraceSpan type + diagram builders]
+    CD --> AU
+  end
+
+  subgraph "lightarchitects-webshell (Rust binary)"
+    CM[copilot/mod.rs\ncall_subprocess + emit_turn_start/complete_span]
+    CR[copilot/routes.rs\nEVA ambient gathering + emit_grounding_spans]
+    EV[events/types.rs\nTraceSpanSummary SSE type]
+    CM --> EV
+    CR --> EV
+  end
+
+  subgraph "AYIN HTTP service :3742"
+    SSE[/events SSE endpoint\nBroadcasts TraceSpan JSON]
+    TS[TraceStore\nIn-memory span buffer]
+    TS --> SSE
+  end
+
+  CD -->|EventSource :3742/events| SSE
+  OP -->|iframe embed| SSE
+  CM -->|HTTP POST /span| TS
+  CR -->|HTTP POST /span| TS

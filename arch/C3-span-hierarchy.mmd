@@ -1,0 +1,24 @@
+graph TD
+  subgraph "AFTER this build"
+    SR[session-root-span\nNEW: first turn of session]
+    T1[turn-N-span\nparent = session-root]
+    EA1[eva_ambient.soul_search_ms\nparent = turn-N]
+    EA2[eva_ambient.git_gather_ms\nparent = turn-N]
+    EA3[eva_ambient.grounding_wall_ms\nparent = turn-N]
+    EA4[eva_ambient.prelude_bytes\nparent = turn-N]
+    TC[tool.call_X\nparent = turn-N]
+    TD[copilot.turn.completed\nparent = turn-N]
+    SR --> T1
+    T1 --> EA1
+    T1 --> EA2
+    T1 --> EA3
+    T1 --> EA4
+    T1 --> TC
+    T1 --> TD
+  end
+  subgraph "BEFORE this build — all orphans"
+    O1[turn-N-span: parent=None]
+    O2[eva_ambient.*: parent=None x4]
+    O3[tool.call_X: parent=None]
+    O4[turn.completed: parent=turn_span_id CORRECT]
+  end
