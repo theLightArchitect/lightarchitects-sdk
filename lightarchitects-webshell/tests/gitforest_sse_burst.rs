@@ -30,6 +30,7 @@ fn make_span_event(seq: usize) -> WebEvent {
         outcome: serde_json::Value::String("success".to_owned()),
         metadata: serde_json::Value::Null,
         strand_activations: vec![],
+        decision_points: vec![],
     })
 }
 

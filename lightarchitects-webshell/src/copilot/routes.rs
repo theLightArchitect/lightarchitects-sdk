@@ -47,6 +47,7 @@ const MAX_PROMPT_BYTES: usize = 8192;
 const MAX_GROUNDED_MESSAGE_BYTES: usize = 256 * 1024;
 
 /// `POST /api/builds/:id/copilot` — dispatch to subprocess or HTTP backend.
+#[allow(clippy::too_many_lines)]
 pub async fn copilot_chat_handler(
     _: auth::AuthGuard,
     Path(id): Path<Uuid>,
@@ -80,6 +81,16 @@ pub async fn copilot_chat_handler(
         let guard = session.copilot_proc.lock().await;
         guard.as_ref().and_then(|p| p.session_span_id.clone())
     };
+    // Clone before grounding_parent_id is moved into gather_grounding so that
+    // message spans (user + assistant) can be parented to the same session root.
+    let session_parent_id = grounding_parent_id.clone();
+    emit_message_span(
+        &state,
+        "user",
+        &body.message,
+        session_parent_id.as_deref(),
+        Some(id),
+    );
 
     let (prelude, soul_block, git_ctx) = gather_grounding(
         &state,
@@ -157,12 +168,21 @@ pub async fn copilot_chat_handler(
     };
 
     match result {
-        Ok(text) => (
-            StatusCode::OK,
-            grounding_hdrs,
-            Json(json!({ "response": text })),
-        )
-            .into_response(),
+        Ok(text) => {
+            emit_message_span(
+                &state,
+                "assistant",
+                &text,
+                session_parent_id.as_deref(),
+                Some(id),
+            );
+            (
+                StatusCode::OK,
+                grounding_hdrs,
+                Json(json!({ "response": text })),
+            )
+                .into_response()
+        }
         Err(reason) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": "provider_error", "reason": reason })),
@@ -519,6 +539,37 @@ fn grounding_headers(
     headers
 }
 
+/// Emit a user or assistant message span parented to the session root.
+///
+/// `kind` is `"user"` or `"assistant"`. Makes conversation turns visible as
+/// first-class nodes in the AYIN Lineage Circuit dashboard.
+fn emit_message_span(
+    state: &AppState,
+    kind: &str,
+    content: &str,
+    parent_id: Option<&str>,
+    build_id: Option<Uuid>,
+) {
+    let _ = state.event_tx.send(WebEventV2::from_event(
+        crate::events::WebEvent::AyinSpan(TraceSpanSummary {
+            id: uuid::Uuid::new_v4().to_string(),
+            parent_id: parent_id.map(ToOwned::to_owned),
+            actor: kind.to_owned(),
+            action: format!("copilot.message.{kind}"),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            duration_ms: 0,
+            outcome: serde_json::json!("ok"),
+            metadata: serde_json::json!({
+                "kind": kind,
+                "preview": &content[..content.len().min(200)],
+            }),
+            strand_activations: Vec::new(),
+            decision_points: Vec::new(),
+        }),
+        build_id,
+    ));
+}
+
 /// Emit AYIN spans for the grounding pipeline (Phase 6 — `copilot-eva-ambient`).
 ///
 /// Spans are broadcast on the global SSE channel so the AYIN dashboard surfaces
@@ -532,7 +583,12 @@ fn grounding_headers(
 ///   via `tokio::join!`).  Always `< soul_ms + git_ms`; expected ≈
 ///   `max(soul_ms, git_ms)` + small scheduling overhead.
 /// - `copilot.eva_ambient.prelude_bytes` — prelude payload size
-#[allow(clippy::too_many_arguments)]
+// Duration values are bounded by 400 ms timeout; f64 has enough precision.
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    clippy::cast_precision_loss
+)]
 fn emit_grounding_spans(
     state: &AppState,
     soul_ms: u64,
@@ -548,6 +604,18 @@ fn emit_grounding_spans(
 ) {
     let ts = chrono::Utc::now().to_rfc3339();
     let parent = parent_id.map(ToOwned::to_owned);
+    let degraded = soul_timed_out || git_timed_out;
+    let parallel_efficiency: f64 = if degraded {
+        0.0
+    } else {
+        let total = soul_ms + git_ms;
+        if total == 0 {
+            1.0
+        } else {
+            let speedup = total.saturating_sub(grounding_wall_ms);
+            (speedup as f64 / total as f64).min(0.99)
+        }
+    };
     let _ = state.event_tx.send(WebEventV2::from_event(
         crate::events::WebEvent::AyinSpan(TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
@@ -562,6 +630,13 @@ fn emit_grounding_spans(
                 "timed_out": soul_timed_out,
             }),
             strand_activations: Vec::new(),
+            decision_points: vec![serde_json::json!({
+                "name": "grounding_source",
+                "input": "soul_fts5",
+                "decision": if soul_timed_out { "timed_out_fallback" } else { "retrieved" },
+                "confidence": if soul_timed_out { 0.0_f64 } else { 0.85_f64 },
+                "duration_ms": soul_ms,
+            })],
         }),
         build_id,
     ));
@@ -580,6 +655,13 @@ fn emit_grounding_spans(
                 "timed_out": git_timed_out,
             }),
             strand_activations: Vec::new(),
+            decision_points: vec![serde_json::json!({
+                "name": "git_available",
+                "input": "git_context",
+                "decision": if git_timed_out { "timed_out" } else if git.is_some() { "available" } else { "absent" },
+                "confidence": if git_timed_out { 0.0_f64 } else if git.is_some() { 0.95_f64 } else { 0.80_f64 },
+                "duration_ms": git_ms,
+            })],
         }),
         build_id,
     ));
@@ -596,8 +678,16 @@ fn emit_grounding_spans(
                 "soul_ms": soul_ms,
                 "git_ms": git_ms,
                 "parallel_speedup_ms": (soul_ms + git_ms).saturating_sub(grounding_wall_ms),
+                "pivot": degraded,
             }),
             strand_activations: Vec::new(),
+            decision_points: vec![serde_json::json!({
+                "name": "parallel_efficiency",
+                "input": "grounding",
+                "decision": if degraded { "degraded" } else { "optimal" },
+                "confidence": parallel_efficiency,
+                "duration_ms": grounding_wall_ms,
+            })],
         }),
         build_id,
     ));
@@ -612,6 +702,7 @@ fn emit_grounding_spans(
             outcome: serde_json::json!("ok"),
             metadata: serde_json::json!({ "prelude_bytes": prelude_bytes }),
             strand_activations: Vec::new(),
+            decision_points: Vec::new(),
         }),
         build_id,
     ));

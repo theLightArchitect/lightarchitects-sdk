@@ -507,6 +507,7 @@ async fn run_print_turn(
                         outcome: serde_json::json!("started"),
                         metadata: serde_json::json!({ "build_id": build_id }),
                         strand_activations: Vec::new(),
+                        decision_points: Vec::new(),
                     }),
                     Some(session.build_id),
                 ));
@@ -1038,6 +1039,7 @@ fn emit_session_start_span(session: &BuildSession, actor: &str) -> String {
             outcome: serde_json::json!("pending"),
             metadata: serde_json::json!({ "build_id": session.build_id.to_string() }),
             strand_activations: Vec::new(),
+            decision_points: Vec::new(),
         }),
         Some(session.build_id),
     ));
@@ -1069,6 +1071,7 @@ fn emit_turn_start_span(
                 "build_id": session.build_id.to_string(),
             }),
             strand_activations: Vec::new(),
+            decision_points: Vec::new(),
         }),
         Some(session.build_id),
     ));
@@ -1098,6 +1101,7 @@ fn emit_turn_complete_span(
                 "duration_s": format!("{:.1}", elapsed.as_secs_f64()),
             }),
             strand_activations: Vec::new(),
+            decision_points: Vec::new(),
         }),
         Some(session.build_id),
     ));

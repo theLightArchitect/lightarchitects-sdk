@@ -145,6 +145,7 @@ mod tests {
             outcome: json!("success"),
             metadata,
             strand_activations: Vec::new(),
+            decision_points: Vec::new(),
         }
     }
 
@@ -161,6 +162,7 @@ mod tests {
             outcome: json!("success"),
             metadata: serde_json::Value::Null,
             strand_activations: arr,
+            decision_points: Vec::new(),
         }
     }
 

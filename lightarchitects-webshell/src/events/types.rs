@@ -600,6 +600,13 @@ pub struct TraceSpanSummary {
     /// (top-level wins). Empty when absent.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub strand_activations: Vec<serde_json::Value>,
+    /// Decision checkpoints recorded during this span's execution.
+    ///
+    /// Each entry is a JSON object matching AYIN's `DecisionPoint` schema:
+    /// `{ name, input, decision, confidence?, duration_ms }`. Kept as raw
+    /// [`serde_json::Value`] to avoid coupling to the AYIN crate. Empty when absent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decision_points: Vec<serde_json::Value>,
 }
 
 /// AYIN connection lifecycle status.
@@ -933,6 +940,7 @@ mod tests {
             outcome: serde_json::Value::String("success".to_owned()),
             metadata: serde_json::Value::Null,
             strand_activations: Vec::new(),
+            decision_points: Vec::new(),
         };
         let event = WebEvent::AyinSpan(span);
         let json = serde_json::to_string(&event).unwrap();
@@ -954,6 +962,7 @@ mod tests {
             outcome: serde_json::json!("success"),
             metadata: serde_json::Value::Null,
             strand_activations: Vec::new(),
+            decision_points: Vec::new(),
         };
         let json = serde_json::to_string(&span).unwrap();
         assert!(
@@ -974,6 +983,7 @@ mod tests {
             outcome: serde_json::json!("success"),
             metadata: serde_json::Value::Null,
             strand_activations: Vec::new(),
+            decision_points: Vec::new(),
         };
         let json = serde_json::to_string(&span).unwrap();
         assert!(
@@ -1093,6 +1103,7 @@ mod tests {
             outcome: serde_json::Value::Null,
             metadata: serde_json::Value::Null,
             strand_activations: Vec::new(),
+            decision_points: Vec::new(),
         };
         let helix = HelixEntrySummary::minimal("p".to_owned(), HelixEventKind::Created);
         let build_ev = BuildUpdateEvent {

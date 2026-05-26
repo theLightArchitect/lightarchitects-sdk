@@ -213,6 +213,7 @@ mod tests {
                 outcome: serde_json::Value::Null,
                 metadata: serde_json::Value::Null,
                 strand_activations: vec![],
+                decision_points: vec![],
             }),
             WebEvent::AyinStatus(AyinStatus::Connected),
             WebEvent::AyinStatus(AyinStatus::Disconnected),
