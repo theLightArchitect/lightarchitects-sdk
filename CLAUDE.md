@@ -29,7 +29,7 @@ Light Architects unified Rust SDK. **v0.2.0 — HTTP-first platform model.**
 | `eva` | EVA MCP client — 9 tools, dual-path adapter |
 | `quantum` | QUANTUM MCP client — 13 actions (qsTools) |
 | `seraph` | SERAPH MCP client — 18 actions, Content-Length framing (penTools) |
-| `ayin` | AYIN observability — TraceSpan types + ObservableTransport + HTTP viewer client |
+| `ayin` | AYIN observability — TraceSpan types + ObservableTransport + HTTP viewer client. `GatewaySpanContext` task-local in `lightarchitects-gateway/src/span_context.rs` + LOD-aware Lineage Circuit (FULL/COMPACT/SHAPES) in AYIN dashboard |
 | `arena` | Training data factory — discover → generate → execute → score → export |
 | `oracle` | Multi-model mathematical verification (Lean 4 + DeepSeek + Qwen + Kimi) |
 | `helix` | Neo4j graph backend — HelixStore, 5 primitives, 4-signal RRF retrieval |
