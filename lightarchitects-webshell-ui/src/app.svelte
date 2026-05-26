@@ -73,6 +73,7 @@
     Architecture:    () => import('./screens/Architecture.svelte'),
     DiagramLibrary:  () => import('./screens/DiagramLibrary.svelte'),
     Roadmap:         () => import('./lib/components/RoadmapPanel.svelte'),
+    Observability:   () => import('./lib/components/ObservabilityPanel.svelte'),
     Tools:           () => import('./screens/Tools.svelte'),
   };
 

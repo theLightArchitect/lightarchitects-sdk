@@ -34,6 +34,8 @@ pub mod config;
 pub mod conversational;
 /// Core tool implementations.
 pub mod core_tools;
+/// Real-time helix enrichment worker — sage projection after SOUL writes.
+pub mod enrichment;
 /// Error types.
 pub mod error;
 /// Scope governance — trust and scope enforcement for agent orchestration.

@@ -86,6 +86,54 @@ impl BgeSageProjectionPipeline {
         Ok(total)
     }
 
+    /// Project up to `limit` Step nodes that have a BGE embedding but no
+    /// `sage_embedding` yet.
+    ///
+    /// Used by the real-time enrichment worker to catch up newly written steps
+    /// without scanning the full vault. Returns the number of steps projected.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HelixDbError`] on any Neo4j query or write failure.
+    #[instrument(skip(self, db), fields(limit))]
+    pub async fn project_pending(
+        &self,
+        db: &dyn HelixDb,
+        limit: usize,
+    ) -> Result<usize, HelixDbError> {
+        let cypher = "MATCH (s:Step) \
+                      WHERE s.embedding IS NOT NULL AND s.sage_embedding IS NULL \
+                      RETURN s.id AS id, s.embedding AS embedding \
+                      LIMIT $limit";
+
+        let limit_i64 = i64::try_from(limit)
+            .map_err(|_| HelixDbError::Validation("limit value overflows i64".into()))?;
+
+        let mut params = BTreeMap::new();
+        params.insert("limit".into(), serde_json::json!(limit_i64));
+
+        let records = db.execute_cypher_with_params(cypher, params).await?;
+
+        let mut count = 0usize;
+        for record in &records {
+            let Some(id) = record.get("id").and_then(serde_json::Value::as_str) else {
+                warn!("BGE sage pending: record missing id — skipping");
+                continue;
+            };
+            let Some(bge_vec) = extract_f32_array(record.get("embedding")) else {
+                warn!(
+                    step_id = id,
+                    "BGE sage pending: cannot extract embedding — skipping"
+                );
+                continue;
+            };
+            let projected = self.weights.project(&bge_vec);
+            db.set_step_sage_embedding(id, &projected).await?;
+            count = count.saturating_add(1);
+        }
+        Ok(count)
+    }
+
     #[instrument(skip(self, db), fields(skip, limit))]
     async fn project_page(
         &self,

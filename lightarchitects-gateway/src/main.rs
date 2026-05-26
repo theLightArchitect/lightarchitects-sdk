@@ -234,6 +234,9 @@ async fn main() {
             routes = config.enabled_agents().len(),
             "lightarchitects gateway starting"
         );
+        // Real-time enrichment: project sage embeddings after SOUL writes.
+        // No-op unless SOUL_ENRICH_ASYNC=true and Neo4j credentials are available.
+        lightarchitects_gateway::enrichment::start_worker_if_enabled().await;
         if let Err(e) = server::run(&config).await {
             tracing::error!("Gateway error: {e}");
             std::process::exit(1);

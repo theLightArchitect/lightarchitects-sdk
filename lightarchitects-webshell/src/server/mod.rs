@@ -463,7 +463,7 @@ impl AppState {
                         .join("roadmap.html")
                 },
             ),
-            mock_workers: false,
+            mock_workers: std::env::var("LIGHTSQUAD_MOCK_WORKERS").is_ok(),
             preflight: Arc::new(RwLock::new(preflight)),
             preflight_last_refresh: Arc::new(AtomicU64::new(0)),
             gitforest_cache: crate::gitforest::routes::topology_cache(),

@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc e440fbdab9c23d8010f790ca452afedb83d7d1eef22c37765f9e8c76caba2ab9 # shrinks to control_prefix = "\u{1}", safe_suffix = ""
+cc f9d6a0d2567f770741b61dc18e654d3764b72a27ee6d9dc160f7b110eafc2afe # shrinks to control_prefix = "\t", safe_suffix = ""

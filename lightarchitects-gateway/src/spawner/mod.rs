@@ -206,6 +206,10 @@ pub async fn call_agent(
     );
     emit_routing_span(agent_name, action, elapsed_ms, TraceOutcome::Continue);
 
+    // Fire real-time sage-projection for SOUL write actions (no-op when
+    // SOUL_ENRICH_ASYNC is not set or the worker is not running).
+    crate::enrichment::maybe_enrich(agent_name, action);
+
     // Child drops here — the OS SIGKILL handles cleanup.
     Ok(result)
 }

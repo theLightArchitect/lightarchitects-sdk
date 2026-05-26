@@ -17,6 +17,7 @@ export type ScreenKey =
   | 'Architecture'
   | 'DiagramLibrary'
   | 'Roadmap'
+  | 'Observability'
   | 'Tools'; // §O Tool Surface Parity
 
 export interface RouteMatch {
@@ -95,6 +96,8 @@ const ROUTES: RouteEntry[] = [
   [/^\/arch\/(.+)$/,                                                        'Architecture',  ['project']],
   [/^\/arch$/,                                                              'Architecture',  []],
   [/^\/roadmap$/,                                                           'Roadmap',       []],
+  [/^\/observability$/,                                                     'Observability', []],
+  [/^\/ayin$/,                                                              'Observability', []],
   [/^\/tools$/,                                                             'Tools',         []],
 ];
 

@@ -1418,10 +1418,19 @@ pub async fn autonomous_status_handler(
         return axum::http::StatusCode::NOT_FOUND.into_response();
     }
 
-    let status = if state.lightsquad_programs.contains_key(&build_id) {
-        "running"
-    } else {
-        "completed"
+    // A build is "completed" when either (a) the JoinHandle is absent (was
+    // explicitly cancelled via DELETE) or (b) the handle is present but the
+    // task has finished. We avoid removing the handle here so the build entry
+    // remains queryable; the DELETE endpoint cleans it up on operator request.
+    let status = match state.lightsquad_programs.get(&build_id) {
+        None => "completed",
+        Some(handle) => {
+            if handle.is_finished() {
+                "completed"
+            } else {
+                "running"
+            }
+        }
     };
 
     let pending_hitl: Vec<PendingHitlSummary> = state

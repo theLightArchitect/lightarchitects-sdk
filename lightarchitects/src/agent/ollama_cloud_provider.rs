@@ -201,17 +201,42 @@ impl OllamaCloudCodingProvider {
         })
     }
 
-    /// Construct a provider using [`DEFAULT_CODING_MODEL`] and `OLLAMA_API_KEY`
+    /// Construct a provider using [`DEFAULT_CODING_MODEL`] (or
+    /// `LIGHTSQUAD_CODING_MODEL` env var override) and `OLLAMA_API_KEY`
     /// from the environment.
+    ///
+    /// When `LIGHTSQUAD_CODING_MODEL` is set the registry check is skipped so
+    /// that local Ollama models (e.g. `llama3.2:3b`) can be used without being
+    /// present in `CLOUD_MODEL_REGISTRY`. This path is intended for local
+    /// integration tests only — production deployments should leave the variable
+    /// unset.
     ///
     /// # Errors
     ///
-    /// Returns [`CodingProviderError::UnknownModel`] if [`DEFAULT_CODING_MODEL`]
-    /// is not in `CLOUD_MODEL_REGISTRY`.
+    /// Returns [`CodingProviderError::UnknownModel`] if no override is set and
+    /// [`DEFAULT_CODING_MODEL`] is not in `CLOUD_MODEL_REGISTRY`.
     pub fn default_coding() -> Result<Self, CodingProviderError> {
         let token = std::env::var("OLLAMA_API_KEY")
             .ok()
+            .filter(|s| !s.is_empty())
             .map(|s| SecretString::new(s.into()));
+        if let Ok(override_model) = std::env::var("LIGHTSQUAD_CODING_MODEL") {
+            // Local / dev path — skip registry validation.
+            let base_url =
+                std::env::var("OLLAMA_HOST").unwrap_or_else(|_| OLLAMA_CLOUD_BASE_URL.to_owned());
+            let timeout_s = std::env::var("LIGHTSQUAD_OLLAMA_TIMEOUT_S")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(OLLAMA_TASK_TIMEOUT_DEFAULT_S);
+            return Ok(Self {
+                model: override_model,
+                client: reqwest::Client::new(),
+                base_url,
+                auth_token: token,
+                task_timeout: Duration::from_secs(timeout_s),
+                validator: OllamaResponseValidator::new(),
+            });
+        }
         Self::new(DEFAULT_CODING_MODEL, token)
     }
 
