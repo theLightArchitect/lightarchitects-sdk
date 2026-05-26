@@ -6,7 +6,7 @@ export interface TraceSpan {
   timestamp: string;
   duration_ms: number;
   outcome: 'Continue' | 'Finish' | string;
-  parent_span_id?: string | null;
+  parent_id?: string | null;
   tool?: string | null;
   model?: string | null;
   token_count?: number | null;
@@ -25,17 +25,39 @@ export function buildSequenceDiagram(spans: TraceSpan[]): string {
   const actors = [...new Set(spans.map(s => s.actor))];
   const lines: string[] = ['sequenceDiagram'];
   for (const a of actors) lines.push(`  participant ${sanitize(a)}`);
+
+  const spanIds = new Set(spans.map(s => s.span_id));
+  const childrenOf = new Map<string, TraceSpan[]>();
+  const roots: TraceSpan[] = [];
   for (const span of spans) {
+    if (span.parent_id && spanIds.has(span.parent_id)) {
+      const list = childrenOf.get(span.parent_id) ?? [];
+      list.push(span);
+      childrenOf.set(span.parent_id, list);
+    } else {
+      roots.push(span);
+    }
+  }
+
+  function emitSpan(span: TraceSpan): void {
     const actor = sanitize(span.actor);
     const action = sanitize(span.action);
     const dur = coerceDuration(span.duration_ms);
     const durationLabel = dur > 0 ? ` (${dur}ms)` : '';
     const tool = span.tool ? ` [${sanitize(span.tool)}]` : '';
+    const children = childrenOf.get(span.span_id) ?? [];
     lines.push(`  Note over ${actor}: ${action}${tool}${durationLabel}`);
+    if (children.length > 0) {
+      lines.push(`  activate ${actor}`);
+      for (const child of children) emitSpan(child);
+      lines.push(`  deactivate ${actor}`);
+    }
     if (span.outcome === 'Finish') {
       lines.push(`  ${actor}-->>+${actor}: ✓ finish`);
     }
   }
+
+  for (const root of roots) emitSpan(root);
   return lines.join('\n');
 }
 
@@ -56,29 +78,32 @@ export function buildFlowDiagram(spans: TraceSpan[]): string {
   const lines: string[] = ['graph LR'];
   const nodeIds = new Map<string, string>();
   let nodeIdx = 0;
-  function nodeId(actor: string, action: string): string {
-    const key = `${actor}::${action}`;
-    if (!nodeIds.has(key)) nodeIds.set(key, `N${nodeIdx++}`);
-    return nodeIds.get(key)!;
+  function nodeId(spanId: string): string {
+    if (!nodeIds.has(spanId)) nodeIds.set(spanId, `N${nodeIdx++}`);
+    return nodeIds.get(spanId)!;
   }
-  for (let i = 0; i < spans.length - 1; i++) {
-    const a = spans[i];
-    const b = spans[i + 1];
-    const idA = nodeId(a.actor, a.action);
-    const idB = nodeId(b.actor, b.action);
-    const labelA = mermaidLabel(a.actor, a.action);
-    const labelB = mermaidLabel(b.actor, b.action);
-    if (a.outcome === 'Finish') {
-      const dur = coerceDuration(a.duration_ms);
-      lines.push(`  ${idA}["${labelA}"] -->|${dur}ms| ${idB}["${labelB}"]`);
-    } else {
-      lines.push(`  ${idA}["${labelA}"] -.->|→| ${idB}["${labelB}"]`);
+  const knownSpanIds = new Set(spans.map(s => s.span_id));
+
+  // Pass 1: define all nodes
+  for (const span of spans) {
+    const nid = nodeId(span.span_id);
+    const label = mermaidLabel(span.actor, span.action);
+    const isRoot = !span.parent_id || !knownSpanIds.has(span.parent_id);
+    lines.push(`  ${nid}${isRoot ? `(["${label}"])` : `["${label}"]`}`);
+  }
+
+  // Pass 2: edges via parent_id
+  for (const span of spans) {
+    if (span.parent_id && knownSpanIds.has(span.parent_id)) {
+      const pnid = nodeId(span.parent_id);
+      const nid = nodeId(span.span_id);
+      const dur = coerceDuration(span.duration_ms);
+      if (span.outcome === 'Finish') {
+        lines.push(`  ${pnid} -->|${dur}ms| ${nid}`);
+      } else {
+        lines.push(`  ${pnid} -.->|→| ${nid}`);
+      }
     }
-  }
-  if (spans.length === 1) {
-    const s = spans[0];
-    const id = nodeId(s.actor, s.action);
-    lines.push(`  ${id}["${mermaidLabel(s.actor, s.action)}"]`);
   }
   return lines.join('\n');
 }

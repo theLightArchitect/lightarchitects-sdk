@@ -7,7 +7,9 @@
     builds, siblingHealth, alertStats, drawerHeightPx, waves,
     clearCopilotHistory, isNativeAgent, voiceEnabled, activityFeed,
     snapshotContextForCopilot, copilotContextStatus, recentEventBuffer, copilotGrounding,
+    ayinStatus,
   } from '$lib/stores';
+  import { navigate } from '$lib/routes';
   import { SIBLING_COLORS } from '$lib/design-tokens';
   import { api } from '$lib/api';
   import { authHeaders } from '$lib/auth';
@@ -1003,6 +1005,15 @@
           >✕</button>
         {/if}
 
+        {#if $ayinStatus === 'connected'}
+          <button
+            onclick={() => navigate('/observability')}
+            class="hdr-action hdr-action--ayin"
+            title="View session spans in AYIN Lineage Circuit"
+            aria-label="View in AYIN"
+          >AYIN →</button>
+        {/if}
+
         <button
           onclick={() => { positionMode = positionMode === 'drawer' ? 'overlay' : 'drawer'; }}
           class="hdr-action {positionMode === 'overlay' ? 'hdr-action--on' : ''}"
@@ -1547,6 +1558,11 @@
   .hdr-action--disabled {
     color: var(--la-hair-strong, #44505e);
     cursor: default;
+  }
+  .hdr-action--ayin {
+    color: var(--la-cyan, #1ecbe1);
+    font-size: 9px;
+    letter-spacing: 0.04em;
   }
   .hdr-action-wrap {
     display: flex;

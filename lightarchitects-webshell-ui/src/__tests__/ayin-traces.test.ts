@@ -87,12 +87,14 @@ describe('DSL generation — XSS regression', () => {
   });
 
   it('buildFlowDiagram: duration_ms DSL injection is neutralized to 0', () => {
+    const root = span({ span_id: 's0', outcome: 'Continue' });
     const injected = span({
+      span_id: 's1',
+      parent_id: 's0',
       outcome: 'Finish',
       duration_ms: '0ms| N3["<evil>"]' as unknown as number,
     });
-    const next = span({ span_id: 's2', actor: 'EVA', action: 'deploy' });
-    const dsl = buildFlowDiagram([injected, next]);
+    const dsl = buildFlowDiagram([root, injected]);
     expect(dsl).not.toContain('evil');
     expect(dsl).toContain('-->|0ms|');
   });
