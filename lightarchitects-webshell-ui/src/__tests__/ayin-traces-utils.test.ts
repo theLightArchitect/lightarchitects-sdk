@@ -1,13 +1,14 @@
 /**
- * Unit tests for the Phase 3 (copilot-ayin-instrumentation) changes:
+ * Unit tests for the Phase 3+4 (copilot-ayin-instrumentation) changes:
  *   - TraceSpan.parent_id field (renamed from parent_span_id)
  *   - buildSequenceDiagram: ACTIVATE/DEACTIVATE for parent-child spans
  *   - buildFlowDiagram: parent_id edge graph instead of positional adjacency
  *   - ayinStatus store observable (G9 — button conditionality contract)
+ *   - Adversarial Mermaid sanitizer fixtures (SERAPH R1+R2 — OWASP LLM01)
  */
 import { describe, it, expect } from 'vitest';
 import { get } from 'svelte/store';
-import { buildSequenceDiagram, buildFlowDiagram } from '$lib/ayin-traces-utils';
+import { buildSequenceDiagram, buildFlowDiagram, sanitize } from '$lib/ayin-traces-utils';
 import type { TraceSpan } from '$lib/ayin-traces-utils';
 import { ayinStatus } from '$lib/stores';
 
@@ -143,5 +144,79 @@ describe('G9: ayinStatus store — AYIN button conditionality', () => {
     ayinStatus.set('offline');
     expect(get(ayinStatus)).toBe('offline');
     ayinStatus.set('reconnecting'); // restore
+  });
+});
+
+// ── G-ADV: Adversarial Mermaid sanitizer (SERAPH R1+R2 — OWASP LLM01) ────────
+// sanitize() is an allowlist [a-zA-Z0-9_.\-:/ ] — every char outside that set
+// is replaced with '_'.  Unicode control/injection chars are excluded by the
+// allowlist; they never reach the Mermaid renderer.
+
+describe('Adversarial sanitizer — OWASP LLM01 second-order injection', () => {
+  it('RTL override (U+202E) is replaced with underscore', () => {
+    const RTL = '‮';
+    const result = sanitize('tool' + RTL + 'malicious');
+    expect(result).not.toContain(RTL);
+    expect(result).toBe('tool_malicious');
+  });
+
+  it('zero-width space (U+200B) is replaced with underscore', () => {
+    const ZWSP = '​';
+    const result = sanitize('tool' + ZWSP + 'name');
+    expect(result).not.toContain(ZWSP);
+    expect(result).toBe('tool_name');
+  });
+
+  it('zero-width joiner (U+200D) is replaced with underscore', () => {
+    const ZWJ = '‍';
+    const result = sanitize('tool' + ZWJ + 'name');
+    expect(result).not.toContain(ZWJ);
+    expect(result).toBe('tool_name');
+  });
+
+  it('NUL byte (U+0000) is replaced with underscore', () => {
+    const result = sanitize('tool\x00name');
+    expect(result).not.toContain('\x00');
+    expect(result).toBe('tool_name');
+  });
+
+  it('output is truncated at 40 characters', () => {
+    const long = 'a'.repeat(100);
+    const result = sanitize(long);
+    expect(result.length).toBe(40);
+  });
+
+  it('__proto__ in action name: passes through allowlist, safe as Mermaid label', () => {
+    const root = span({ span_id: 's0', action: '__proto__' });
+    const child = span({ span_id: 's1', parent_id: 's0', action: 'child.action' });
+    const dsl = buildSequenceDiagram([root, child]);
+    expect(dsl).toContain('__proto__');
+    expect(dsl).toContain('activate');
+    // must not contain raw HTML tag injection
+    expect(dsl).not.toContain('<script');
+    expect(dsl).not.toContain('</');
+  });
+
+  it('buildSequenceDiagram: RTL override in action name is stripped before rendering', () => {
+    const RTL = '‮';
+    const s = span({ action: 'malicious' + RTL + 'payload' });
+    const dsl = buildSequenceDiagram([s]);
+    expect(dsl).not.toContain(RTL);
+    expect(dsl).toContain('Note over');
+  });
+
+  it('buildFlowDiagram: ZWSP in actor name produces clean Mermaid node', () => {
+    const ZWSP = '​';
+    const s = span({ actor: 'gate' + ZWSP + 'way', action: 'llm.call' });
+    const dsl = buildFlowDiagram([s]);
+    expect(dsl).not.toContain(ZWSP);
+    expect(dsl).toContain('llm.call');
+  });
+
+  it('homoglyph checkmark in actor name does not crash buildFlowDiagram', () => {
+    const s = span({ actor: 'tool✓', action: 'dispatch' });
+    const dsl = buildFlowDiagram([s]);
+    expect(dsl).not.toContain('✓');
+    expect(dsl).toContain('dispatch');
   });
 });

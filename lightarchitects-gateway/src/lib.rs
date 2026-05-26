@@ -55,6 +55,8 @@ pub mod rubric;
 pub mod security;
 /// MCP server loop and tool dispatch.
 pub mod server;
+/// Gateway-wide AYIN span context — task-local propagation + atomic disk write.
+pub mod span_context;
 /// Sibling subprocess spawner and MCP proxy.
 ///
 /// Only compiled when the `spawner` feature is enabled (default).

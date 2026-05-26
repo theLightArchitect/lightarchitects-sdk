@@ -9,13 +9,19 @@
 //! When `LLM_BACKEND=openai`, reads `LLM_API_URL` and `LLM_API_KEY`.
 //! This enables the Arena to run on Light Architect Genesis instead of Ollama models.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use lightarchitects::ayin::span::{Actor, TraceContext, TraceOutcome};
 use tokio::sync::Semaphore;
 use tokio::time;
 use zeroize::Zeroizing;
+
+use crate::span_context::{
+    current_span_ctx, span_dir, spawn_with_span_context, write_span_to_disk,
+};
 
 /// HTTP timeout for LLM generation (cloud models may be slow).
 const LLM_TIMEOUT: Duration = Duration::from_secs(120);
@@ -178,7 +184,8 @@ impl LlmClient {
 
         if matches!(client_arc.backend, LlmBackend::Ollama) {
             let heartbeat = Arc::clone(&client_arc);
-            tokio::spawn(run_ollama_heartbeat(heartbeat));
+            // spawn_with_span_context forwards any enclosing SPAN_CTX into the heartbeat task.
+            spawn_with_span_context(run_ollama_heartbeat(heartbeat));
         }
 
         Ok(client_arc)
@@ -213,11 +220,60 @@ impl LlmClient {
             .await
             .map_err(|e| format!("LLM semaphore closed: {e}"))?;
 
-        match self.backend {
+        let call_start = Instant::now();
+        let result = match self.backend {
             LlmBackend::Ollama => self.generate_ollama(model, prompt).await,
             LlmBackend::OpenAi => self.generate_openai(model, prompt).await,
             LlmBackend::Anthropic => self.generate_anthropic(model, prompt).await,
-        }
+        };
+        self.emit_llm_span(model, call_start, &result);
+        result
+    }
+
+    /// Emit a fire-and-forget `llm.call` AYIN span for the completed LLM call.
+    fn emit_llm_span(&self, model: &str, start: Instant, result: &Result<String, String>) {
+        let backend_str = match self.backend {
+            LlmBackend::Ollama => "ollama",
+            LlmBackend::OpenAi => "openai",
+            LlmBackend::Anthropic => "anthropic",
+        };
+        let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let outcome = if result.is_ok() {
+            TraceOutcome::Continue
+        } else {
+            TraceOutcome::Block
+        };
+        let ctx = current_span_ctx();
+        let model = model.to_owned();
+        let backend = backend_str.to_owned();
+
+        spawn_with_span_context(async move {
+            let mut builder = TraceContext::new(Actor::new("gateway"), "llm.call")
+                .outcome(outcome)
+                .metadata(serde_json::json!({
+                    "model": model,
+                    "backend": backend,
+                    "duration_ms": duration_ms,
+                }));
+            if let Some(pid) = ctx.parent_id {
+                builder = builder.parent(pid);
+            }
+            if let Some(ref sid) = ctx.session_id {
+                builder = builder.session_id(sid);
+            }
+            match builder.finish() {
+                Ok(span) => {
+                    let base = dirs_next::home_dir()
+                        .unwrap_or_else(|| PathBuf::from("."))
+                        .join("lightarchitects/soul/helix/ayin/traces");
+                    let dir = span_dir(&base, "gateway", &span.timestamp);
+                    if let Err(e) = write_span_to_disk(&span, &dir).await {
+                        tracing::warn!(error = %e, "llm.call AYIN span write failed");
+                    }
+                }
+                Err(e) => tracing::warn!(error = %e, "llm.call AYIN span build failed"),
+            }
+        });
     }
 
     /// Generate via Ollama `/api/generate` with streaming.

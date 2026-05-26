@@ -23,6 +23,7 @@ use tokio::sync::mpsc;
 use zeroize::Zeroizing;
 
 use crate::llm::resolve_key;
+use crate::span_context::spawn_with_span_context;
 
 /// HTTP timeout for a single SSE streaming call.
 const STREAM_TIMEOUT: Duration = Duration::from_secs(300);
@@ -196,7 +197,7 @@ impl LlmAgentProvider for AnthropicHttpProvider {
 
         // Background task: byte stream → line splitter → SSE parser → channel.
         let byte_stream = response.bytes_stream();
-        tokio::spawn(async move {
+        spawn_with_span_context(async move {
             let mut splitter = LineSplitter::new();
             tokio::pin!(byte_stream);
 

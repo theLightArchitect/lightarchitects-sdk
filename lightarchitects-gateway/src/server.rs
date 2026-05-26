@@ -1,11 +1,15 @@
 //! MCP server: stdin/stdout JSON-RPC loop, tool registry, and dispatch.
 
+use std::path::PathBuf;
+
+use lightarchitects::ayin::span::{Actor, TraceContext, TraceOutcome};
 use serde_json::{Value, json};
 use tracing::instrument;
 
 use crate::config::GatewayConfig;
 use crate::core_tools;
 use crate::error::GatewayError;
+use crate::span_context::{span_dir, spawn_with_span_context, write_span_to_disk};
 use crate::squad_comms;
 
 // ── Tool schema definitions ───────────────────────────────────────────────────
@@ -288,14 +292,44 @@ async fn handle_tools_call(id: Value, request: &Value, config: &GatewayConfig) -
     };
     let params = request["params"]["arguments"].clone();
 
-    match dispatch(&name, params, config).await {
-        Ok(result) => json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "result": result
-        }),
+    let call_start = std::time::Instant::now();
+    let result = dispatch(&name, params, config).await;
+    emit_tool_dispatch_span(name, call_start, &result);
+
+    match result {
+        Ok(v) => json!({ "jsonrpc": "2.0", "id": id, "result": v }),
         Err(e) => error_response(id, -32_603, &e.to_string()),
     }
+}
+
+/// Fire-and-forget `gateway.tool.dispatch` AYIN span after each MCP tool call.
+fn emit_tool_dispatch_span(
+    tool: String,
+    start: std::time::Instant,
+    result: &Result<Value, GatewayError>,
+) {
+    let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+    let outcome = if result.is_ok() {
+        TraceOutcome::Continue
+    } else {
+        TraceOutcome::Block
+    };
+    spawn_with_span_context(async move {
+        let Ok(span) = TraceContext::new(Actor::new("gateway"), "gateway.tool.dispatch")
+            .outcome(outcome)
+            .metadata(serde_json::json!({ "tool": tool, "duration_ms": duration_ms }))
+            .finish()
+        else {
+            return;
+        };
+        let base = dirs_next::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("lightarchitects/soul/helix/ayin/traces");
+        let dir = span_dir(&base, "gateway", &span.timestamp);
+        if let Err(e) = write_span_to_disk(&span, &dir).await {
+            tracing::warn!(error = %e, "gateway.tool.dispatch AYIN span write failed");
+        }
+    });
 }
 
 /// Route a tool call to the correct handler.
