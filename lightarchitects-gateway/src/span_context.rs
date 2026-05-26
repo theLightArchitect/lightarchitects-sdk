@@ -10,6 +10,7 @@
 
 use lightarchitects::ayin::span::TraceSpan;
 use std::future::Future;
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -72,8 +73,16 @@ pub fn current_span_ctx() -> GatewaySpanContext {
 const SPAN_BUDGET_BYTES: usize = 64 * 1024;
 
 /// Span sub-directory layout: `<base>/<actor>/<YYYY-MM-DD>/`.
+///
+/// `actor` is sanitised to `[a-z0-9_-]` (max 32 chars) before path join,
+/// mirroring the shell hook's `ACTOR_RE` and preventing path traversal (S1 gate).
 pub fn span_dir(base: &Path, actor: &str, timestamp: &chrono::DateTime<chrono::Utc>) -> PathBuf {
-    base.join(actor)
+    let safe: String = actor
+        .chars()
+        .filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-' || *c == '_')
+        .take(32)
+        .collect();
+    base.join(if safe.is_empty() { "unknown" } else { &safe })
         .join(timestamp.format("%Y-%m-%d").to_string())
 }
 
@@ -119,6 +128,10 @@ pub async fn write_span_to_disk(span: &TraceSpan, dir: &PathBuf) -> Result<(), S
     tokio::fs::write(&tmp, &bytes)
         .await
         .map_err(|e| format!("ayin tmp write: {e}"))?;
+    // Harden before rename: ensure 0600 regardless of process umask (S1 gate).
+    tokio::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))
+        .await
+        .map_err(|e| format!("ayin tmp chmod: {e}"))?;
 
     match tokio::fs::rename(&tmp, &dest).await {
         Ok(()) => {
@@ -131,6 +144,9 @@ pub async fn write_span_to_disk(span: &TraceSpan, dir: &PathBuf) -> Result<(), S
             tokio::fs::write(&dest, &bytes)
                 .await
                 .map_err(|e| format!("ayin EXDEV write: {e}"))?;
+            tokio::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o600))
+                .await
+                .map_err(|e| format!("ayin EXDEV chmod: {e}"))?;
             fullfsync_path(&dest);
             Ok(())
         }

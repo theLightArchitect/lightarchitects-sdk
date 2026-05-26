@@ -1,0 +1,142 @@
+schema_version: 1
+gate: merge
+scope: merge
+scored_by: "/GATE"
+scored_at: "2026-05-26T20:37:31Z"
+build_id: copilot-ayin-instrumentation
+phase_id: phase-6-ship-closeout
+branch: feat/copilot-ayin-instrumentation
+merge_sha: 1c3308d
+head_sha: ed1130e8aaeb2e3dd68ca71b226dc010f22384b0
+overall_verdict: pass
+
+dimensions:
+  V0_primary_on_main:
+    result: pass
+    detail: "Primary worktree on main; gate worktree used for review"
+
+  Q1_fmt:
+    result: pass
+    detail: "cargo fmt --all -- --check: exit 0"
+
+  Q2_clippy:
+    result: pass
+    detail: "cargo clippy --workspace --all-targets --all-features -- -D warnings: exit 0; CORSO patch warnings pre-existing (non-blocking)"
+
+  Q3_tests:
+    result: pass
+    tests_run: 1634
+    tests_fail: 0
+    detail: "cargo test --workspace --all-features: 1634 pass, 0 fail, 2 ignored (pre-existing skips). NOTE: lightarchitects-gateway is workspace-excluded; gateway tests covered separately via cd lightarchitects-gateway && cargo test (Phase 5 gate-5 verification: all pass)"
+
+  Q4_svelte:
+    result: pass
+    detail: "pnpm test:run: 723 pass. svelte-check --threshold error: 0 errors. Pre-existing chromium-playwright missing (BrowserPool.runTests Unhandled Error) — same as gate-5, not a regression"
+
+  S1_security:
+    result: pass
+    detail: "Security agent found 3 MEDIUM + 2 LOW findings. 0 HIGH, 0 CRITICAL. No supply chain issues. Two MEDIUM findings fixed in-gate (GATE-4 criteria: same branch + strengthens existing + ≤5 lines each)."
+    findings:
+      - id: S1-M1
+        severity: MEDIUM
+        confidence: 0.92
+        title: "Gateway span files written without explicit 0600 permissions"
+        status: RESOLVED_IN_GATE
+        resolution: "Added tokio::fs::set_permissions(0o600) on tmp file before rename + EXDEV fallback path in span_context.rs"
+        guardrails_section: "§3.2 C8, §3.1 A09"
+      - id: S1-M2
+        severity: MEDIUM
+        confidence: 0.90
+        title: "PrivacyFilter not applied on gateway disk-write path"
+        status: TRACKED
+        resolution: "Requires PrivacyFilter integration into write_span_to_disk — follow-up commit on main"
+        guardrails_section: "§2.1 LLM02, §3.2 C8"
+        followup_issue: "Apply PrivacyFilter::default() to span JSON before write in write_span_to_disk"
+      - id: S1-M3
+        severity: MEDIUM
+        confidence: 0.88
+        title: "span_dir() actor field unvalidated — path traversal for future callsites"
+        status: RESOLVED_IN_GATE
+        resolution: "Added [a-z0-9_-] allowlist filter (max 32 chars) to span_dir(), mirroring shell hook ACTOR_RE"
+        guardrails_section: "§1.2 SOUL vault, CWE-22"
+      - id: S1-L4
+        severity: LOW
+        confidence: 0.85
+        title: "safe_action filename sanitisation does not strip null bytes"
+        status: TRACKED
+        guardrails_section: "§3.2 C4"
+      - id: S1-L5
+        severity: LOW
+        confidence: 0.80
+        title: "python3 in trace-tracespan.sh resolved via PATH (inconsistent with pinned-binary design)"
+        status: TRACKED
+        guardrails_section: "§2.4 IPC Bridge, §3.2 C5"
+
+  S2_supply_chain:
+    result: fail
+    classification: pre_existing
+    detail: "cargo deny check: exit 2 (bans FAILED). openssl v0.10.80 banned unconditionally but present as transitive dep: fastembed v5.13.4 → native-tls v0.2.18 → openssl v0.10.80. fastembed was in lightarchitects/Cargo.toml default features before this branch (confirmed via git log). This branch introduced no new deps. Pre-existing issue — not a regression. Recommended fix: add wrappers=[\"native-tls\"] to the openssl ban entry in deny.toml, or skip-tree fastembed's openssl path."
+    introduced_by_this_branch: false
+
+  S3_laex:
+    result: "n/a"
+    detail: "No new cryptographic primitives, auth flows, or permission surfaces introduced. AYIN remains localhost:3742 only. Span files are local 0600 files. S3 not triggered."
+
+  I1_integration:
+    result: pass
+    detail: "Branch rebased on github/main before merge. 0 drift post-merge. Already merged to main as 1c3308d. Build passes on main."
+
+  N1_northstar:
+    result: pass
+    pillar: "P6+P4"
+    northstar_text_present: true
+    build_to_northstar_mapping_present: true
+    pillar_mapping_set: true
+    detail: "northstar_text: operator sees real-time lineage tree across all providers. pillar_mapping: P6 (primary, Operator-Legible Arc) + P4 (secondary, Async Parallel Collaboration). build_to_northstar_mapping: Phase 2→P6-N1, Phase 3→P4-N3, Phase 4→P6-N3, Phase 5→verification."
+
+  N2_northstar_chain:
+    result: pass
+    detail: "Chain is CONCRETE: before this build gateway emitted ZERO llm.call spans (confirmed in northstar_origin citations from gateway source). After: emit_tool_dispatch_span() + emit_llm_span() in production server.rs/llm.rs. Connection is direct and verifiable in diff."
+
+  N3_exclusion_zones:
+    result: pass
+    detail: "No first_of_kind, security_compliance_pre_laex, or irreversible_production_op flags in plan body."
+
+  D1_docs:
+    result: pass
+    detail: "10/10 new public Rust items documented (100% coverage). span_context.rs: 9/9 items. ayin_trace.rs: 1/1 public item. All items have meaningful doc comments."
+
+  D2_plan:
+    result: pass
+    detail: "Plan frontmatter: status=promoted, shipped=2026-05-26, merge_sha=1c3308d. Current and reflects completion."
+
+  D3_claude_md:
+    result: pass
+    detail: "lightarchitects-gateway/CLAUDE.md created (new). AYIN-DEV/CLAUDE.md updated (CLI hook integration section). lightarchitects-sdk/CLAUDE.md updated (GatewaySpanContext + LOD-aware Lineage Circuit in ayin module row)."
+
+  V1_pyramid:
+    result: pass
+    suites_covered:
+      - unit: "COVERED — span_context.rs mod tests, span_atomic_write.rs, span_context_spawn_safety.rs"
+      - integration: "COVERED — gateway_span_chain.rs (169L), gateway_ayin_contract.rs (124L), handler_dispatch_contract.rs, exec_comms_integration.rs"
+      - property: "MISSING — no proptest for concurrent context isolation or write atomicity under I/O failures"
+      - e2e: "COVERED — ayin-lineage.spec.ts 9 Playwright tests (gate-5 verified)"
+      - regression: "COVERED — regression_phase6.rs (121L)"
+      - smoke: "COVERED — smoke.rs (201L) + gateway_burst_load.rs (125L)"
+    detail: "5/6 Canon XXVII suites covered. Property test gap is HIGH/non-blocking per testing agent verdict. Recommend adding property_span_context_isolation.rs in follow-up."
+
+  V2_smoke:
+    result: pass
+    detail: "Gateway binary deployed to ~/.lightarchitects/bin/lightarchitects (release build). MCP handshake verified via pipe-based JSON-RPC initialize subprocess test: result.serverInfo.name == 'lightarchitects'. PASS."
+
+  V3_e2e:
+    result: pass
+    detail: "ayin-lineage.spec.ts: 9/9 tests pass (verified in gate-5). No new operator-facing UI surface introduced in Phase 6 (ship/close-out). E2E coverage carried from gate-5."
+
+notes:
+  lasdlc_template_version_mismatch: "Plan declares lasdlc_template_version: 2.6.1; gate expects 2.5.1. WARN-level known variance — plan uses forward schema."
+  s2_followup: "cargo deny openssl ban: add wrappers=[\"native-tls\"] or configure fastembed to disable native-tls feature. Separate fix, not blocking this build."
+  s1_m2_followup: "PrivacyFilter integration into write_span_to_disk: follow-up commit on main. Not blocking — no user-controlled input reaches the gateway write path today."
+  v1_property_followup: "Add property_span_context_isolation.rs before next gateway feature build."
+
+summary: "gate-6 PASS — all blocking dimensions clean; S2 pre-existing (openssl ban, fastembed dep chain, not introduced by this branch); S1 MEDIUM findings: 2 resolved in-gate (0600 perms + actor allowlist), 1 tracked (PrivacyFilter); V1 property gap tracked; N/D/I/V all pass"
