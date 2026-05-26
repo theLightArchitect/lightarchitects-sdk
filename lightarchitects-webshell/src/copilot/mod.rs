@@ -315,11 +315,17 @@ pub struct CockpitTarget {
 
 /// Per-session agent state held behind `tokio::sync::Mutex<Option<CopilotProcess>>`.
 ///
-/// Only `session_id` is populated; per-turn processes are short-lived and not stored here.
+/// Holds conversation-continuity IDs that persist across turns within one session.
 pub struct CopilotProcess {
     /// Session ID for conversation continuity: passed as `--resume` on the next turn
     /// (`Lightarchitects`) or extracted from stdout (`Codex`).
     pub session_id: Option<String>,
+    /// ID of the session-root AYIN span emitted on the first turn.
+    ///
+    /// All per-turn spans use this as `parent_id` to form the lineage chain visible
+    /// in the AYIN Lineage Circuit.  `None` only for slots seeded externally before
+    /// the first real turn; [`call_subprocess`] always populates it on first use.
+    pub session_span_id: Option<String>,
 }
 
 impl CopilotProcess {
@@ -331,8 +337,25 @@ impl CopilotProcess {
     pub fn seed_from_session_id(session_id: String) -> Self {
         Self {
             session_id: Some(session_id),
+            session_span_id: None,
         }
     }
+}
+
+/// Parent-span IDs threaded through one copilot turn for AYIN span hierarchy.
+///
+/// `session_span_id` — the session-root span emitted once on the first turn and
+/// stored in [`CopilotProcess`].  Reused as parent for every turn span so the
+/// Lineage Circuit can draw the full session tree.
+///
+/// `turn_span_id` — this turn's start-span ID; used by [`routes`] to link
+/// EVA-ambient and tool-call spans as children of the turn.
+#[derive(Clone, Debug)]
+pub struct TurnSpanContext {
+    /// ID of the session-root span (emitted once, first turn).
+    pub session_span_id: String,
+    /// ID of this turn's start span (parent for EVA-ambient + tool-call spans).
+    pub turn_span_id: String,
 }
 
 /// Spawn one turn of a `claude --print` subprocess for `Lightarchitects` backends.
@@ -854,7 +877,16 @@ pub(super) async fn call_subprocess(
         AgentSession::Codex(_) => "codex",
         AgentSession::MistralVibe(_) => "vibe",
     };
-    let (span_id, start, start_ts) = emit_turn_start_span(session, actor, message);
+    // Retrieve or create the session-root AYIN span ID (parent of all turn spans).
+    let session_span_id: String = guard
+        .as_ref()
+        .and_then(|p| p.session_span_id.as_deref())
+        .map_or_else(
+            || emit_session_start_span(session, actor),
+            ToOwned::to_owned,
+        );
+    let (span_id, start, start_ts) =
+        emit_turn_start_span(session, actor, message, Some(&session_span_id));
 
     // Per-turn path for Lightarchitects (claude --print + disk-persistent sessions).
     if matches!(&session.agent, AgentSession::Lightarchitects(_)) {
@@ -868,9 +900,13 @@ pub(super) async fn call_subprocess(
 
         if let Some(ref mut proc) = *guard {
             proc.session_id = new_session_id;
+            // Backfill for guards seeded via seed_from_session_id (session_span_id: None).
+            proc.session_span_id
+                .get_or_insert_with(|| session_span_id.clone());
         } else {
             *guard = Some(CopilotProcess {
                 session_id: new_session_id,
+                session_span_id: Some(session_span_id.clone()),
             });
         }
 
@@ -926,9 +962,12 @@ pub(super) async fn call_subprocess(
 
         if let Some(ref mut proc) = *guard {
             proc.session_id = new_session_id;
+            proc.session_span_id
+                .get_or_insert_with(|| session_span_id.clone());
         } else {
             *guard = Some(CopilotProcess {
                 session_id: new_session_id,
+                session_span_id: Some(session_span_id.clone()),
             });
         }
 
@@ -984,12 +1023,34 @@ pub(super) async fn call_ollama(
         .ok_or_else(|| "unexpected Ollama response shape".to_owned())
 }
 
+/// Emit a session-root AYIN span for a new copilot session and return its ID.
+/// Subsequent turn spans use this ID as their `parent_id`.
+fn emit_session_start_span(session: &BuildSession, actor: &str) -> String {
+    let span_id = uuid::Uuid::new_v4().to_string();
+    let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+        crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
+            id: span_id.clone(),
+            parent_id: None,
+            actor: actor.to_owned(),
+            action: "copilot.session.started".to_owned(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            duration_ms: 0,
+            outcome: serde_json::json!("pending"),
+            metadata: serde_json::json!({ "build_id": session.build_id.to_string() }),
+            strand_activations: Vec::new(),
+        }),
+        Some(session.build_id),
+    ));
+    span_id
+}
+
 /// Emit a turn-start AYIN span and return `(span_id, Instant, timestamp)` for
 /// the caller to pass to [`emit_turn_complete_span`] when the turn finishes.
 fn emit_turn_start_span(
     session: &BuildSession,
     actor: &str,
     message: &str,
+    session_span_id: Option<&str>,
 ) -> (String, std::time::Instant, String) {
     let span_id = uuid::Uuid::new_v4().to_string();
     let start = std::time::Instant::now();
@@ -997,7 +1058,7 @@ fn emit_turn_start_span(
     let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
         crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
             id: span_id.clone(),
-            parent_id: None,
+            parent_id: session_span_id.map(ToOwned::to_owned),
             actor: actor.to_owned(),
             action: "copilot.turn.started".to_owned(),
             timestamp: start_ts.clone(),
