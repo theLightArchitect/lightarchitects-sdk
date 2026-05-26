@@ -1128,12 +1128,13 @@ export type BuildMode = 'interactive' | 'autonomous';
 
 /** HITL escalation — gate threshold crossed. */
 export interface EscalationEvent {
-  type:       'escalation';
-  build_id:   string;
-  wave_index: number;
-  call_id:    string;
-  reason:     string;
-  canon_ref?: string;
+  type:        'escalation';
+  build_id:    string;
+  wave_index:  number;
+  worker_slot?: number;
+  call_id:     string;
+  reason:      string;
+  canon_ref?:  string;
 }
 
 /** Per-slot task context (populated when conductor tracks per-slot assignment). */

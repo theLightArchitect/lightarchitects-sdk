@@ -57,7 +57,7 @@ pub struct CloudModel {
     pub cost_tier: CostTier,
 }
 
-/// 17-entry registry of Ollama Cloud models with capability metadata.
+/// 18-entry registry of Ollama Cloud models with capability metadata.
 ///
 /// All slugs end with `:cloud`. Used by the model picker UI and cost-gate
 /// enforcement. Families: `GLM`, `Kimi`, `DeepSeek`, `Qwen`, `Gemma`, `MiniMax`,
@@ -153,6 +153,18 @@ pub const CLOUD_MODEL_REGISTRY: &[CloudModel] = &[
         tool_use: true,
         vision: false,
         params_billion: Some(397),
+        cost_tier: CostTier::Premium,
+    },
+    // ironclaw Phase 3 default coding model (SLOT 1-3 workers)
+    CloudModel {
+        slug: "qwen3-coder:480b-cloud",
+        display_name: "Qwen 3 Coder (480B)",
+        family: "Qwen",
+        provider_org: "Alibaba",
+        context_length: 1_000_000,
+        tool_use: false,
+        vision: false,
+        params_billion: Some(480),
         cost_tier: CostTier::Premium,
     },
     CloudModel {
@@ -287,11 +299,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registry_has_exactly_17_entries() {
+    fn registry_has_exactly_18_entries() {
         assert_eq!(
             CLOUD_MODEL_REGISTRY.len(),
-            17,
-            "CLOUD_MODEL_REGISTRY must have exactly 17 entries per §XXI.2"
+            18,
+            "CLOUD_MODEL_REGISTRY must have exactly 18 entries (entry 18: qwen3-coder:480b-cloud)"
         );
     }
 

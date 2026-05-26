@@ -224,6 +224,12 @@ pub struct AppState {
     /// The `JoinHandle` can be aborted on build cancellation; it resolves
     /// when all waves complete or the first `WaveError` halts the run.
     pub lightsquad_programs: Arc<DashMap<Uuid, tokio::task::JoinHandle<()>>>,
+    /// Pending HITL escalations awaiting operator resolution — keyed by `call_id`.
+    ///
+    /// Workers park here when the `DecisionPipeline` returns `UserEscalation`.
+    /// The HTTP handler at `POST /api/builds/:id/hitl/:call_id` sends on the
+    /// embedded oneshot to unblock the worker.
+    pub hitl_queue: events::hitl_relay::HitlQueue,
     /// Directory where per-build NDJSON decision logs are written.
     ///
     /// One file per build: `<decisions_dir>/<build_id>.ndjson`.
@@ -435,6 +441,7 @@ impl AppState {
             plan_draft_sessions: Arc::new(DashMap::new()),
             supervisor_states: Arc::new(DashMap::new()),
             lightsquad_programs: Arc::new(DashMap::new()),
+            hitl_queue: events::hitl_relay::hitl_queue(),
             decisions_dir: std::env::var("HOME").map_or_else(
                 |_| std::path::PathBuf::from("/tmp").join("la-decisions"),
                 |h| {
@@ -571,6 +578,7 @@ impl AppState {
             plan_draft_sessions: Arc::new(DashMap::new()),
             supervisor_states: Arc::new(DashMap::new()),
             lightsquad_programs: Arc::new(DashMap::new()),
+            hitl_queue: events::hitl_relay::hitl_queue(),
             decisions_dir: std::env::temp_dir().join("la-decisions-test"),
             roadmap_html_path: std::env::temp_dir().join("la-roadmap-test.html"),
             mock_workers: true,
@@ -706,6 +714,19 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/builds/{id}/decisions",
             get(builds_handler::build_decisions_handler),
+        )
+        // ── Autonomous build operator surface (ironclaw Phase 4) ─────────────
+        .route(
+            "/api/builds/{id}/autonomous/status",
+            get(builds_handler::autonomous_status_handler),
+        )
+        .route(
+            "/api/builds/{id}/autonomous",
+            delete(builds_handler::autonomous_cancel_handler),
+        )
+        .route(
+            "/api/builds/{id}/hitl/{call_id}",
+            post(builds_handler::hitl_resolve_handler),
         )
         .route(
             "/api/builds/{id}/notify",

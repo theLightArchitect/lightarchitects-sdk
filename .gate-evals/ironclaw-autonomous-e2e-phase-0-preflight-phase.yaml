@@ -1,0 +1,56 @@
+schema_version: 1
+gate: phase
+scored_by: /GATE
+scored_at: "2026-05-25T00:00:00Z"
+build_id: ironclaw-autonomous-e2e
+phase_id: phase-0-preflight
+sha: 285061cfb5e4ba6881fcdc51d4450313f390adf6
+overall_verdict: pass
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass  # no new code; identical to G4 main quality pass
+  Q3_tests: pass   # no new code; 28 tests pass (from G4 make quality)
+  Q4_svelte: n/a   # no frontend changes at phase 0
+  S1_security:
+    result: n/a
+    note: "No code changes at phase 0 preflight; security gate deferred to gate-1+"
+  S2_supply_chain: n/a
+  S3_laex: n/a
+  I1_rebase:
+    result: pass
+    note: "Clean descendant of github/main (d615085). Branch cut at 285061c (2 local commits ahead: BGE pipeline + GDS docs)."
+  N1_northstar:
+    result: pass
+    pillar: P2
+    note: |
+      northstar_lineage present in plan (validation_status: VALIDATED, score 95.45 EXEMPLARY).
+      northstar_text: "Close the autonomous coding loop — operator submits goal, platform ships
+      features via Supervisor + 4-layer DecisionPipeline + Ollama Cloud workers."
+      pillar_mapping: P2 (primary), P1+P4 secondary.
+      Chain concrete: ironclaw-spine shipped spine; this build implements 3 stubs +
+      OllamaCloudCodingProvider + HITL relay + frontend + real-Ollama E2E.
+  N2_chain: pass
+  N3_exclusion_zones: pass
+  D1_docs:
+    result: n/a
+    note: "No new public items at phase 0 preflight."
+  D2_plan:
+    result: pass
+    note: |
+      Plan updated: status in-progress, generated_diagrams[] populated with 2 baseline
+      artifacts (c2-container-baseline.md + c3-lightsquad-baseline.md).
+      active.yaml entry created. Phase frontmatter current.
+  D3_claude_md: pass
+  V1_pyramid:
+    result: pass
+    note: "Phase 0 is preflight-only; test pyramid gate deferred to gate-1+."
+  V2_smoke: n/a
+  V3_e2e: n/a
+notes:
+  - "Worktree: ~/lightarchitects/worktrees/ironclaw-autonomous-e2e on feat/ironclaw-autonomous-e2e"
+  - "Baseline diagrams: c2-container-baseline.md + c3-lightsquad-baseline.md @ $HELIX/corso/builds/ironclaw-autonomous-e2e/diagrams/"
+  - "Gap inventory documented in c2-container-baseline: 9 gaps across phases 2-6"
+  - "active.yaml entry created for ironclaw-autonomous-e2e (EXEMPLARY 95.45)"
+  - "Plan status: draft → in-progress"
+  - "Pre-flight G1-G8: all pass (G6 warn resolved)"
+  - "lasdlc_template_version: 2.6.1 (plan) vs BUILD expected 2.5.1 — WARN; gates applied correctly"

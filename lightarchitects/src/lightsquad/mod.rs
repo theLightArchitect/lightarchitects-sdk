@@ -73,6 +73,9 @@ pub mod hmac;
 /// Decision log subsystem — HMAC-chained NDJSON gate decisions.
 pub mod decisions;
 
+/// Response validator — 4-gate security screen for Ollama-generated code patches.
+pub mod ollama_response_validator;
+
 /// PAUSE/drain/resume state machine + atomic-write helper.
 pub mod pause;
 
