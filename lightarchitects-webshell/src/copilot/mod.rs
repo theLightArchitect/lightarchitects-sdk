@@ -377,6 +377,7 @@ async fn run_print_turn(
     message: &str,
     session: &BuildSession,
     prev_session_id: Option<&str>,
+    turn_span_id: Option<&str>,
 ) -> Result<(String, Option<String>), String> {
     let AgentSession::Lightarchitects(backend) = &session.agent else {
         return Err("run_print_turn: not a Lightarchitects session".to_owned());
@@ -499,7 +500,7 @@ async fn run_print_turn(
                 let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
                     crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
                         id: uuid::Uuid::new_v4().to_string(),
-                        parent_id: None,
+                        parent_id: turn_span_id.map(ToOwned::to_owned),
                         actor: "eva".to_owned(),
                         action: format!("tool.{name}"),
                         timestamp: chrono::Utc::now().to_rfc3339(),
@@ -897,7 +898,7 @@ pub(super) async fn call_subprocess(
             .map(ToOwned::to_owned);
 
         let (text, new_session_id) =
-            run_print_turn(message, session, prev_session_id.as_deref()).await?;
+            run_print_turn(message, session, prev_session_id.as_deref(), Some(&span_id)).await?;
 
         if let Some(ref mut proc) = *guard {
             proc.session_id = new_session_id;
