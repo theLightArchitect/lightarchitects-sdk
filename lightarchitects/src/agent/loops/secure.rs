@@ -68,9 +68,10 @@ impl Strategy for SecureStrategy {
                     HitlRequest {
                         question: "Recon complete. Approve active scanning of identified targets?"
                             .into(),
+                        // SECURITY: Options are binary (Approve/Cancel) — "Limit scope" is
+                        // a false affordance until strategy can receive and honour the choice.
                         options: vec![
                             "Approve — begin active scan".into(),
-                            "Limit scope".into(),
                             "Cancel assessment".into(),
                         ],
                         header: "Scope gate".into(),
