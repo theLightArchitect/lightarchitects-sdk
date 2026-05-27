@@ -43,16 +43,22 @@
 
 pub mod ach;
 pub mod budget;
+pub mod build;
 pub mod compose;
 pub mod cove;
 pub mod critique_refine;
+pub mod enrich;
 pub mod ensemble;
 pub mod error;
 pub mod itt;
+pub mod meta_skill;
 pub mod phase_span;
 pub mod react;
 pub mod reflexion;
+pub mod registry;
 pub mod runner;
+pub mod scrum;
+pub mod secure;
 pub mod trace;
 
 pub use ach::{
@@ -76,4 +82,12 @@ pub use react::{ReActExecutor, ReActPhase, ReActPrompt, ReActStep, ReActStrategy
 pub use reflexion::{
     ReflexionEntry, ReflexionExecutor, ReflexionLoopState, ReflexionState, ReflexionStrategy,
 };
-pub use runner::{LoopRunner, Outcome, StepContext, StepResult, Strategy};
+pub use runner::{HitlRequest, LoopRunner, Outcome, StepContext, StepResult, Strategy};
+
+// Chatroom strategy loops (Phase 4)
+pub use build::BuildStrategy;
+pub use enrich::EnrichStrategy;
+pub use meta_skill::{LoopOutput, LoopState, MetaSkill};
+pub use registry::{RegisteredStrategy, StrategyRegistry};
+pub use scrum::{ScrumMode, ScrumStrategy};
+pub use secure::SecureStrategy;

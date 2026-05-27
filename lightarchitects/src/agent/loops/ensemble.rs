@@ -169,6 +169,11 @@ where
                     new_active[i] = None;
                     new_outputs[i] = Some(out);
                 }
+                Outcome::Pause(_, _) => {
+                    return Err(LoopError::StepFailed(
+                        "ensemble branch requested HITL pause; use StrategyRegistry for interactive strategies".into(),
+                    ));
+                }
             }
         }
 

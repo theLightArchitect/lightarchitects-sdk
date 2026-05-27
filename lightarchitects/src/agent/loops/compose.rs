@@ -114,6 +114,7 @@ where
         match state {
             ThenState::First(a_state) => match self.first.step(a_state, &child_ctx).await? {
                 Outcome::Continue(a_next) => Ok(Outcome::Continue(ThenState::First(a_next))),
+                Outcome::Pause(a_next, req) => Ok(Outcome::Pause(ThenState::First(a_next), req)),
                 Outcome::Halt(a_out) => {
                     // Transition: A's output becomes B's initial state.
                     Ok(Outcome::Continue(ThenState::Second(a_out.into())))
@@ -121,6 +122,7 @@ where
             },
             ThenState::Second(b_state) => match self.second.step(b_state, &child_ctx).await? {
                 Outcome::Continue(b_next) => Ok(Outcome::Continue(ThenState::Second(b_next))),
+                Outcome::Pause(b_next, req) => Ok(Outcome::Pause(ThenState::Second(b_next), req)),
                 Outcome::Halt(b_out) => Ok(Outcome::Halt(b_out)),
             },
         }

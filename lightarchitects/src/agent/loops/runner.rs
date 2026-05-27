@@ -40,18 +40,40 @@ fn fallback_span() -> crate::ayin::span::TraceSpan {
         .expect("fallback span is always valid")
 }
 
+// ── HitlRequest ───────────────────────────────────────────────────────────────
+
+/// A human-in-the-loop request emitted by a paused strategy.
+///
+/// When a strategy returns [`Outcome::Pause`], the loop runner surfaces this
+/// request to the operator. The operator's reply resumes execution from the
+/// same `State` the strategy yielded.
+#[derive(Debug, Clone)]
+pub struct HitlRequest {
+    /// The question presented to the operator.
+    pub question: String,
+    /// Ordered list of option labels the operator may choose.
+    pub options: Vec<String>,
+    /// Short chip label (≤12 chars) shown as context in the UI.
+    pub header: String,
+}
+
 // ── Outcome ───────────────────────────────────────────────────────────────────
 
 /// Return value of a single strategy step.
 ///
-/// Signals whether execution should continue with a new `State` or halt with
-/// a terminal `Output`.
+/// Signals whether execution should continue with a new `State`, halt with
+/// a terminal `Output`, or pause to await a human decision.
 #[derive(Debug)]
 pub enum Outcome<State, Output> {
     /// Step completed; loop continues with the new state.
     Continue(State),
     /// Loop is done; this is the final result.
     Halt(Output),
+    /// Loop suspended; operator input required before resuming.
+    ///
+    /// The `State` is the resumable snapshot — pass it back into the next
+    /// `Strategy::step` call once the operator responds to the [`HitlRequest`].
+    Pause(State, HitlRequest),
 }
 
 // ── StepContext ───────────────────────────────────────────────────────────────
@@ -268,7 +290,10 @@ impl<S: Strategy> LoopRunner<S> {
                 return Some((Err(e), None));
             }
 
-            let halted = matches!(outcome, Outcome::Halt(_));
+            // Pause is treated as terminal: the stream ends so the operator can
+            // intervene. The caller resumes by constructing a new LoopRunner
+            // with the state preserved in Outcome::Pause.
+            let done = matches!(outcome, Outcome::Halt(_) | Outcome::Pause(_, _));
 
             // Dual-emit: tracing::info! + AYIN TraceSpan (iter-2 G5).
             let span = trace::emit_step(
@@ -276,13 +301,14 @@ impl<S: Strategy> LoopRunner<S> {
                 turn,
                 cost_usd,
                 start,
-                halted,
+                done,
                 session_id.as_deref(),
             )
             .unwrap_or_else(|_| fallback_span());
 
-            if halted {
-                // Terminal step: emit result, then send None to end stream.
+            if done {
+                // Terminal step (Halt) or HITL pause: emit result, then send
+                // None to end the stream.
                 let result = StepResult {
                     turn,
                     outcome,
@@ -293,7 +319,7 @@ impl<S: Strategy> LoopRunner<S> {
             } else {
                 // Extract the next state from Continue before building StepResult.
                 let Outcome::Continue(next_state) = outcome else {
-                    unreachable!("halted is false → outcome is Continue");
+                    unreachable!("done is false → outcome is Continue");
                 };
                 let next_seed = RunState {
                     state: next_state.clone(),
