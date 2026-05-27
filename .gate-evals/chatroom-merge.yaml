@@ -1,0 +1,182 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-27T19:30:00Z"
+build_id: copilot-chatroom-core
+phase_id: merge-2-chatroom
+branch: feat/copilot-chatroom-core
+worktree: ~/lightarchitects/worktrees/copilot-chatroom-core
+commits_ahead_of_main: 14
+overall_verdict: pass
+
+dimensions:
+  V0_primary_on_main: pass   # git branch --show-current = main in primary
+
+  Q1_fmt: pass               # cargo fmt --all -- --check clean
+  Q2_clippy:
+    result: pass
+    scope: "--workspace --all-targets --all-features"
+    note: "dist/ symlink in place; full workspace scope (no scoping needed)"
+  Q3_tests:
+    result: pass
+    tests_run: 3033
+    tests_fail: 0
+    suites: 63
+  Q4_svelte:
+    result: pass
+    errors: 0
+    warnings: 41
+    threshold: error
+
+  S1_security:
+    result: conditional_pass
+    findings:
+      - id: S1-F1
+        severity: MEDIUM
+        status: resolved_in_gate
+        description: >
+          copilot_hitl_resolve_handler accepts `choice: usize` from HTTP body but
+          did not validate choice < hitl.options.len() — doc comment promises 422
+          but code did not implement it.
+        fix: >
+          Added `options_count: usize` field to ParkedState; updated ResumeRegistry::park()
+          to accept and store options_count (passed as hitl.options.len() by dispatcher);
+          updated take() return type to 3-tuple (LoopState, String, usize); handler now
+          checks body.choice >= options_count → 422 UNPROCESSABLE_ENTITY before proceeding.
+          All webshell tests pass (exit 0). Committed post-gate.
+        in_gate_criteria_met:
+          same_branch: true
+          strengthens_existing: true
+          lines_changed: 18
+
+      - id: S1-F2
+        severity: MEDIUM
+        status: resolved_in_gate
+        description: >
+          SSE strategy_pause handler passed payload.options directly as string[]
+          without element-type validation. Non-string array elements would reach
+          strategyHitl store and render as [object Object] in StrategyPhaseRibbon.
+        fix: >
+          Applied type predicate filter and 16-element cap:
+          (payload.options as unknown[]).filter((o): o is string => typeof o === 'string').slice(0, 16)
+          Committed at f000cf7.
+        in_gate_criteria_met:
+          same_branch: true
+          strengthens_existing: true
+          lines_changed: 1
+
+      - id: S1-F3
+        severity: LOW
+        status: resolved_in_gate
+        description: >
+          window.__e2e bridge guarded only by import.meta.env.DEV (compile-time).
+          If webshell bundled with --mode development for staging, bridge is live
+          in a non-local deployment, exposing all writable Svelte stores.
+        fix: >
+          Added runtime belt-and-suspenders: DEV check AND window.location.hostname === 'localhost'.
+          Prevents staging exposure even on development-mode builds.
+          Committed at f000cf7.
+        in_gate_criteria_met:
+          same_branch: true
+          strengthens_existing: true
+          lines_changed: 2
+
+      - id: S1-F4
+        severity: INFO
+        status: accepted
+        description: >
+          StrategyPhaseRibbon dismiss does not POST to /api/copilot/hitl/resolve —
+          the ResumeRegistry nonce is not consumed on dismiss. Parked LoopState
+          leaks until TTL eviction (~5 minutes). Not exploitable (session binding
+          prevents cross-session access). Minor resource leak + operator-confusion
+          (server thinks strategy still paused while UI shows dismissed).
+        accepted_rationale: >
+          INFO severity; TTL eviction handles cleanup. Follow-on: add dismissed sentinel.
+
+  S2_supply_chain:
+    result: pre_existing
+    tool: cargo deny
+    finding: "openssl = 0.10.80 ban — pre-existing on main, same as loops-l1 gate"
+    action: documented, not blocking
+
+  S3_laex: "n/a"  # No new crypto primitives; Phase 5 HITL auth already reviewed at gate-5
+
+  I1_rebase:
+    result: pass
+    commits_ahead: 14
+    commits_behind: 0
+    base: github/main
+    note: "14 = 9 chatroom commits + 5 from Merge 1 (loops-l1 + gate-7a) rebased in"
+    build: pass
+
+  N1_northstar:
+    result: pass
+    pillar: "P1+P2"
+    northstar_text: >
+      Multi-voice sibling chatroom closes the L1 copilot loop so operators
+      see named-sibling responses with HITL gates, advancing P1 (E2E engineering
+      without terminal) and P2 (orchestration with HITL pause/resume).
+    chain_concrete: true
+    p1_advancement: >
+      SiblingBadge + StrategyPhaseRibbon in CopilotDrawer — operator sees
+      attributed sibling voices and HITL gates from the webshell UI.
+    p2_advancement: >
+      Strategy loops (Merge 1) + HITL resolve route + SSE strategy_pause events
+      complete the end-to-end orchestration loop.
+
+  N2_chain: pass
+  N3_exclusion_zones: pass
+
+  D1_docs:
+    result: pass
+    note: "cargo doc --no-deps reports 0 missing_doc warnings on new pub items"
+
+  D2_plan:
+    result: pass
+    note: "Plan reflects all 7 phases; close-out block is next step"
+
+  D3_claude_md:
+    result: soft_fail
+    note: >
+      CLAUDE.md not updated for strategy loop patterns, LoopRunner generic,
+      MultiVoiceSynthesizer, or window.__e2e bridge. Non-blocking (D3 is soft-fail).
+
+  V1_pyramid:
+    result: pass_with_gap
+    suites_present: [unit, integration, e2e]
+    suites_missing: [property, regression, smoke]
+    note: >
+      E2E: 3 Playwright tests (chatroom-renders-attributed-multi-voice,
+      strategy-loop-build-mock ribbon, strategy-loop-build-mock dismiss) — ALL PASS.
+      Integration: strategy_loops_e2e.rs (185 lines). Unit: inline per module.
+      Property tests (proptest for interest scorer distributions) deferred.
+
+  V2_smoke:
+    result: pass
+    command: "cargo build --workspace --all-features"
+
+  V3_e2e:
+    result: pass
+    tests: 3
+    tests_pass: 3
+    runner: "Playwright 1.59.1 headless Chromium 147"
+    base_url: "http://localhost:5173"
+    note: >
+      Tests use window.__e2e store injection bridge; no live backend required.
+      Shepherd.js overlay removed via page.evaluate before click assertions.
+
+  QUANTUM_verification:
+    result: partial
+    claims_verified: 2
+    claims_partial: 2
+    partial_notes:
+      - "LOC claim 800-1000 lines soul-chat reuse: actual ~2333 LOC (2-3x understated)"
+      - "D8 in-process dispatch: true for LightarchitectsNative session type only; subprocess active for Anthropic/Ollama/Codex/Mistral backends"
+    non_blocking: true
+
+summary: >
+  feat/copilot-chatroom-core (Phases 1-3, 5-7) passes pre-merge gate.
+  3,033 tests pass. 3/3 E2E tests pass.
+  S1-F1 (choice bounds) + S1-F2 (SSE options filter) + S1-F3 (localhost guard) ALL RESOLVED in-gate.
+  S1-F4 INFO accepted. S2 openssl pre-existing on main. All MEDIUM findings resolved.
+  Operator approval required before merge.

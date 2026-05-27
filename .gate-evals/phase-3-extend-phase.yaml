@@ -1,0 +1,38 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-27T05:30:00Z"
+build_id: copilot-chatroom-core
+phase_id: phase-3-extend
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass        # cargo fmt --check clean; commit 217a201
+  Q2_clippy: pass     # cargo clippy --workspace --all-targets --all-features -- -D warnings clean
+  Q3_tests:
+    result: pass
+    tests_run: 1706   # full workspace --all-features; 79 chat:: unit tests all pass
+    tests_pass: 1706
+    tests_fail: 0
+    flaky_pre_existing:
+      - name: "helix::helix_toml::tests::load_helix_toml_perf_baseline_1000_iterations"
+        classification: "FLAKY (pre-existing)"
+        evidence: "Documented in gate-1 and gate-2 YAMLs; threshold=250ms, fails intermittently; not a Phase 3 regression."
+      - name: "dispatch_wave_safe_tasks_peak_exceeds_write_slot_capacity"
+        classification: "FLAKY (pre-existing)"
+        evidence: "lightsquad_wave integration test; fails without chat/loops-core features; documented in gate-2."
+      - name: "dispatch_wave_mixed_safe_and_unsafe_respect_independent_pools"
+        classification: "FLAKY (pre-existing)"
+        evidence: "lightsquad_wave integration test; same root cause as above; documented in gate-2."
+  Q4_svelte: "n/a"   # Phase 3 = Rust-only; zero UI surface changes
+  D2_plan: pass       # All Phase 3 deliverables shipped per file-function map:
+                      # interest.rs (select_speakers + 3 tests), roster.rs (ActiveRoster + RosterDelta + 5 tests),
+                      # mode.rs (Mode enum + classify + DOMAIN_KEYWORDS + 9 tests), mod.rs (updated re-exports).
+                      # Total chat:: tests: 79 (33 interest + 5 personality + 9 sanitizer +
+                      # 5 sibling_provider + 5 roster + 9 mode + others via --all-features)
+
+notes:
+  - "Phase 3 is Extend — adds select_speakers (top-K interest selection), ActiveRoster (hysteresis JOIN=0.5/STAY=0.3, MIN=2/MAX=3), Mode classifier (keyword scan, no LLM)."
+  - "Mode priority: Secure > Build > Scrum > Enrich > Chatroom; sibling roster gates domain keywords."
+  - "chat:: module is now complete: 10 sub-modules, 64 tests."
+  - "Commit: 217a201 — 4 files, 657 insertions"

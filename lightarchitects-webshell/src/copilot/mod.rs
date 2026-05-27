@@ -7,16 +7,22 @@
 //! `codex exec resume <thread_id>` (Turn 2+) with disk-persistent session continuity.
 //!
 
+pub mod chatroom;
 pub mod context;
 pub mod eva_identity;
 pub mod event_stream;
 pub mod git_context;
 pub mod lightsquad_tool;
+pub mod persona_cache;
 pub mod routes;
 pub mod soul_grounding;
+pub mod strategy_runner;
 pub mod voice;
 pub use event_stream::copilot_event_stream_handler;
-pub use routes::{copilot_chat_handler, copilot_clear_handler, copilot_interrupt_handler};
+pub use routes::{
+    copilot_chat_handler, copilot_clear_handler, copilot_hitl_resolve_handler,
+    copilot_interrupt_handler,
+};
 pub use voice::copilot_voice_handler;
 
 use secrecy::{ExposeSecret, SecretString};

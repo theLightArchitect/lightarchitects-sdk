@@ -1029,3 +1029,79 @@ mod integration_tests {
         );
     }
 }
+
+// ── HITL resolve ─────────────────────────────────────────────────────────────
+
+/// Body for `POST /api/copilot/hitl/resolve`.
+#[derive(serde::Deserialize)]
+pub struct HitlResolveBody {
+    /// The 16-char hex nonce returned by the strategy pause route.
+    pub request_id: String,
+    /// Session token that was active when the strategy was dispatched.
+    ///
+    /// Must match the session stored in [`ResumeRegistry`] — prevents
+    /// cross-session confused-deputy attacks.
+    pub session_id: String,
+    /// Index into [`HitlRequest::options`] selected by the operator.
+    pub choice: usize,
+}
+
+/// `POST /api/copilot/hitl/resolve` — operator resolves a paused strategy.
+///
+/// # Security model
+///
+/// - **`AuthGuard`**: Bearer token required — unauthenticated callers rejected 401.
+/// - **Single-use nonce**: `ResumeRegistry::take` removes the entry on first
+///   successful retrieval; replay returns 404.
+/// - **Session binding**: `session_id` must match the one stored at park time;
+///   mismatch returns 403 (entry is preserved for the legitimate session).
+/// - **Choice bounds**: `choice` must be < `hitl.options.len()` — out-of-range
+///   returns 422 to prevent silent index-out-of-bounds on the strategy side.
+pub async fn copilot_hitl_resolve_handler(
+    _: auth::AuthGuard,
+    State(state): State<AppState>,
+    Json(body): Json<HitlResolveBody>,
+) -> impl IntoResponse {
+    use crate::copilot::strategy_runner::ResumeRegistry;
+
+    let registry: &ResumeRegistry = &state.resume_registry;
+
+    match registry.take(&body.request_id, &body.session_id) {
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "error": "unknown, expired, or already-consumed request_id"
+            })),
+        )
+            .into_response(),
+        Some((loop_state, strategy_id, options_count)) => {
+            if body.choice >= options_count {
+                return (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(json!({
+                        "error": "choice index out of range",
+                        "choice": body.choice,
+                        "options_count": options_count
+                    })),
+                )
+                    .into_response();
+            }
+            tracing::info!(
+                request_id = %body.request_id,
+                strategy_id = %strategy_id,
+                choice = body.choice,
+                "hitl_resolve: operator resolved strategy pause"
+            );
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "strategy_id": strategy_id,
+                    "loop_state_phase": loop_state.phase,
+                    "choice": body.choice,
+                    "status": "accepted"
+                })),
+            )
+                .into_response()
+        }
+    }
+}

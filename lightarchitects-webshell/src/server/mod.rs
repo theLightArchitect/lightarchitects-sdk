@@ -274,6 +274,13 @@ pub struct AppState {
     /// Background task is the sole writer (30s poll); per-request read lock only —
     /// no file I/O on the hot path.  Empty when the file is absent or unreadable.
     pub eva_identity: Arc<tokio::sync::RwLock<crate::copilot::eva_identity::EvaIdentityCache>>,
+    /// Single-use, session-bound HITL resume registry (Phase 5 — copilot-chatroom-core).
+    ///
+    /// Strategy loops park suspended [`LoopState`] here on `Outcome::Pause`; the
+    /// operator resolves the pause via `POST /api/copilot/hitl/resolve`.
+    /// Nonces are 8-byte CSPRNG values with a 30-minute TTL and single-use
+    /// semantics — confused-deputy prevention per `strategy_runner` security model.
+    pub resume_registry: Arc<crate::copilot::strategy_runner::ResumeRegistry>,
     /// Optional MCP host — spawned from `~/.lightarchitects/webshell-mcp.json`
     /// at startup. `None` until Phase 7 places the config file.
     pub mcp_host: mcp_routes::McpHostHandle,
@@ -472,6 +479,7 @@ impl AppState {
             pr_metadata_cache: crate::github_proxy::pr_metadata_cache(),
             commit_metadata_cache: crate::github_proxy::commit_metadata_cache(),
             eva_identity,
+            resume_registry: Arc::new(crate::copilot::strategy_runner::ResumeRegistry::new()),
             mcp_host: {
                 let handle = std::sync::Arc::new(tokio::sync::RwLock::new(None));
                 let h2 = handle.clone();
@@ -597,6 +605,7 @@ impl AppState {
             eva_identity: Arc::new(tokio::sync::RwLock::new(
                 crate::copilot::eva_identity::EvaIdentityCache::default(),
             )),
+            resume_registry: Arc::new(crate::copilot::strategy_runner::ResumeRegistry::new()),
             mcp_host: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
             la_native_api_key: None,
         }
@@ -922,6 +931,11 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/builds/{id}/copilot/clear",
             post(copilot::copilot_clear_handler),
+        )
+        // ── Strategy HITL resume (copilot-chatroom-core Phase 5) ─────────────
+        .route(
+            "/api/copilot/hitl/resolve",
+            post(copilot::copilot_hitl_resolve_handler),
         )
         .route(
             "/api/builds/{id}/dispatch",

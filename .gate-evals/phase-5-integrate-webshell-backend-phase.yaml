@@ -1,0 +1,40 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-27T00:00:00Z"
+build_id: copilot-chatroom-core
+phase_id: phase-5-integrate-webshell-backend
+commit_sha: ec9f8dd2510f4aa9427f350f4f6fb4479c8fa36a
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    suites_run: 3
+    tests_pass: 15
+    tests_fail: 0
+    tests_ignored: 1
+    notes: |
+      Ran cargo test -p lightarchitects-webshell (exit 0).
+      New suites: chatroom (6), persona_cache (6), strategy_runner (3 pass + 1 ignored).
+      Pre-commit hook (fmt + clippy) also passed at commit time.
+  Q4_svelte: "n/a — Phase 5 is backend-only; no Svelte surface touched"
+  D2_plan:
+    result: pass
+    notes: |
+      Phase 5 deliverables match plan spec exactly:
+        (a) PersonaCacheStore with SHA-256 tamper-detection pin — ✅ persona_cache.rs
+        (b) MultiVoiceSynthesizer parallel synthesis — ✅ chatroom.rs
+        (c) ChatroomFormatter SSE attribution — ✅ chatroom.rs
+        (d) ResumeRegistry + StrategyDispatcher — ✅ strategy_runner.rs
+        (e) AppState.resume_registry + POST /api/copilot/hitl/resolve — ✅ server/mod.rs + routes.rs
+      Soft note: plan frontmatter `phase:` still reads `phase-1-architecture`
+      (stale from build start) — updated in this gate commit.
+      Soft note: lasdlc_template_version is "2.6.1" (schema WARN: expected 2.5.1).
+
+notes:
+  - "Disk full incident mid-phase — resolved by clearing worktree target/ dirs (~437GB freed)"
+  - "12 clippy pedantic violations fixed post-commit (semicolons, doc_markdown, matches!, panics-doc, items_after_statements, unused_self)"
+  - "NONCE_COUNTER promoted to module-level static (was inline static in generate_nonce — items_after_statements violation)"

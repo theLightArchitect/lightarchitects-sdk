@@ -78,6 +78,10 @@ lightsquad = ["agent-cli", "http-client", "credentials"]
 # CritiqueRefine, phase spans. Does NOT require agent-cli (provider-agnostic).
 loops-core = []
 
+# Multi-voice sibling chatroom engine — speaker selection, personality engine,
+# sibling discovery. Requires the agent provider layer (always-on).
+chat = []
+
 # ── Always-on external deps (union of all 13 merged crates) ──────────────────
 
 [dependencies]

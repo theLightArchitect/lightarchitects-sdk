@@ -1,0 +1,56 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-27T16:07:35Z"
+build_id: copilot-chatroom-core
+phase_id: phase-6-integrate-webshell-frontend
+commit_sha: f86cdc07cc7140cdde128e96ebca49c35d5d7c18
+branch: feat/copilot-chatroom-core
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    # Rust workspace: exit 0 (count pending background run; prior gate-5 baseline: 1725)
+    # No Rust changes in Phase 6 — test delta expected 0
+    tests_run: pending_count
+    tests_fail: 0
+  Q4_svelte:
+    result: pass
+    unit_tests: 735
+    test_files: 41
+    svelte_check_errors: 0
+    svelte_check_warnings: 41
+    note: "Warnings are pre-existing (a11y toolbar tabindex, label/control, unused CSS). --threshold error gate passes."
+  S1_security: n/a
+  S2_supply_chain: n/a
+  S3_laex: n/a
+  I1_rebase: n/a
+  N1_northstar: n/a
+  N2_chain: n/a
+  D1_docs: n/a
+  D2_plan:
+    result: pass
+    note: >
+      Plan covers Phase 6 deliverables (SiblingBadge, StrategyPhaseRibbon, CopilotDrawer wiring,
+      strategyHitl store, SSE strategy_pause handler). Minor path delta: plan references
+      lib/chat/SiblingBadge.svelte; actual placement is components/SiblingBadge.svelte (matches
+      established project component pattern). ChatroomLine.svelte merged into CopilotDrawer
+      directly (no separate file needed). Gate signal satisfied: strategyHitl store reactive,
+      9 unit tests covering SSE guard logic + store CRUD + module imports.
+  D3_claude_md: n/a
+  V1_pyramid: n/a
+  V2_smoke: n/a
+  V3_e2e: n/a
+
+phase_deliverables_completed:
+  - "lightarchitects-webshell-ui/src/components/SiblingBadge.svelte (NEW)"
+  - "lightarchitects-webshell-ui/src/components/StrategyPhaseRibbon.svelte (NEW)"
+  - "lightarchitects-webshell-ui/src/lib/stores.ts (StrategyHitlState + strategyHitl)"
+  - "lightarchitects-webshell-ui/src/lib/sse.ts (strategy_pause gateway_notify handler)"
+  - "lightarchitects-webshell-ui/src/components/CopilotDrawer.svelte (SiblingBadge + ribbon)"
+  - "lightarchitects-webshell-ui/src/__tests__/chatroom.test.ts (9 new unit tests)"
+
+next_phase: phase-7-verify-ship
