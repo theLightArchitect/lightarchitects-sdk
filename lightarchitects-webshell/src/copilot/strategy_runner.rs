@@ -55,6 +55,8 @@ struct ParkedState {
     state: LoopState,
     strategy_id: String,
     session_id: String,
+    /// Number of options in the original [`HitlRequest`]; validated on resolve.
+    options_count: usize,
     parked_at: Instant,
 }
 
@@ -93,6 +95,7 @@ impl ResumeRegistry {
         state: LoopState,
         strategy_id: impl Into<String>,
         session_id: impl Into<String>,
+        options_count: usize,
     ) -> Option<String> {
         #[allow(clippy::unwrap_used)]
         let mut guard = self.inner.lock().unwrap();
@@ -110,6 +113,7 @@ impl ResumeRegistry {
                 state,
                 strategy_id: strategy_id.into(),
                 session_id: session_id.into(),
+                options_count,
                 parked_at: Instant::now(),
             },
         );
@@ -126,7 +130,7 @@ impl ResumeRegistry {
     ///
     /// Panics if the internal `Mutex` is poisoned (only if a concurrent
     /// writer panicked while holding the lock — not expected in normal use).
-    pub fn take(&self, request_id: &str, session_id: &str) -> Option<(LoopState, String)> {
+    pub fn take(&self, request_id: &str, session_id: &str) -> Option<(LoopState, String, usize)> {
         #[allow(clippy::unwrap_used)]
         let mut guard = self.inner.lock().unwrap();
 
@@ -147,7 +151,7 @@ impl ResumeRegistry {
             return None;
         }
 
-        Some((entry.state, entry.strategy_id))
+        Some((entry.state, entry.strategy_id, entry.options_count))
     }
 }
 
@@ -243,8 +247,12 @@ impl StrategyDispatcher {
                         return DispatchResult::Halted { phases_run };
                     }
                     Outcome::Pause(state, hitl) => {
-                        let Some(request_id) = self.registry.park(state, &strategy_id, &session_id)
-                        else {
+                        let Some(request_id) = self.registry.park(
+                            state,
+                            &strategy_id,
+                            &session_id,
+                            hitl.options.len(),
+                        ) else {
                             return DispatchResult::Error(
                                 "resume_registry full — HITL rejected".into(),
                             );
@@ -296,18 +304,19 @@ mod tests {
     fn park_and_take_succeeds() {
         let reg = ResumeRegistry::new();
         let state = LoopState::new("test context");
-        let id = reg.park(state, "build", "sess-abc").unwrap();
+        let id = reg.park(state, "build", "sess-abc", 3).unwrap();
         assert_eq!(id.len(), 16, "request_id must be 16 hex chars");
-        let (recovered, strategy_id) = reg.take(&id, "sess-abc").unwrap();
+        let (recovered, strategy_id, options_count) = reg.take(&id, "sess-abc").unwrap();
         assert_eq!(recovered.context, "test context");
         assert_eq!(strategy_id, "build");
+        assert_eq!(options_count, 3);
     }
 
     #[test]
     fn take_is_single_use() {
         let reg = ResumeRegistry::new();
         let state = LoopState::new("ctx");
-        let id = reg.park(state, "secure", "sess-1").unwrap();
+        let id = reg.park(state, "secure", "sess-1", 2).unwrap();
         assert!(reg.take(&id, "sess-1").is_some());
         assert!(reg.take(&id, "sess-1").is_none(), "second take must fail");
     }
@@ -322,7 +331,7 @@ mod tests {
     fn take_rejects_mismatched_session() {
         let reg = ResumeRegistry::new();
         let state = LoopState::new("ctx");
-        let id = reg.park(state, "scrum", "sess-correct").unwrap();
+        let id = reg.park(state, "scrum", "sess-correct", 1).unwrap();
         assert!(
             reg.take(&id, "sess-wrong").is_none(),
             "mismatched session must be rejected"

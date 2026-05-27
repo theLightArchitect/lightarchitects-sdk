@@ -1053,7 +1053,18 @@ pub async fn copilot_hitl_resolve_handler(
             })),
         )
             .into_response(),
-        Some((loop_state, strategy_id)) => {
+        Some((loop_state, strategy_id, options_count)) => {
+            if body.choice >= options_count {
+                return (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(json!({
+                        "error": "choice index out of range",
+                        "choice": body.choice,
+                        "options_count": options_count
+                    })),
+                )
+                    .into_response();
+            }
             tracing::info!(
                 request_id = %body.request_id,
                 strategy_id = %strategy_id,
