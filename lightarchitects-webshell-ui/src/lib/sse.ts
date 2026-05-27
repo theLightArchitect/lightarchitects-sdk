@@ -489,14 +489,14 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
       // Streaming copilot chunks from the backend.
       // Backend uses #[serde(tag = "type")] — fields are inlined at the top level,
       // not nested under `data`. Read from `event` directly (same pattern as pillar_update).
-      const resp = event as unknown as { chunk?: string; done?: boolean; sibling?: SiblingId };
+      const resp = event as unknown as { chunk?: string; done?: boolean; sibling?: SiblingId; turn_span_id?: string };
       copilotMessages.update(msgs => {
         const last = msgs[msgs.length - 1];
         if (last && last.role === 'assistant') {
-          // Append chunk to the existing assistant message
+          // Append chunk to the existing assistant message; merge turn_span_id when present on done event.
           return msgs.map((m, i) =>
             i === msgs.length - 1
-              ? { ...m, content: m.content + (resp.chunk ?? '') }
+              ? { ...m, content: m.content + (resp.chunk ?? ''), ...(resp.turn_span_id ? { turn_span_id: resp.turn_span_id } : {}) }
               : m
           );
         }
@@ -507,6 +507,7 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
           content: resp.chunk ?? '',
           sibling: resp.sibling,
           timestamp: new Date().toISOString(),
+          ...(resp.turn_span_id ? { turn_span_id: resp.turn_span_id } : {}),
         }];
       });
       if (resp.done) {

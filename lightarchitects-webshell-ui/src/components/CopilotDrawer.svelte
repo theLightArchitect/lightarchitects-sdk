@@ -18,7 +18,9 @@
   import { TerminalWS, AgentWS } from '$lib/ws';
   import SiblingDispatch from './SiblingDispatch.svelte';
   import SiblingBadge from './SiblingBadge.svelte';
+  import TurnLineageStrip from './TurnLineageStrip.svelte';
   import StrategyPhaseRibbon from './StrategyPhaseRibbon.svelte';
+  import AyinTracesPanel from './panels/AyinTracesPanel.svelte';
   import CopilotContextTray from './CopilotContextTray.svelte';
   import ContextBar from './ContextBar.svelte';
   import OllamaConfigModal from './OllamaConfigModal.svelte';
@@ -85,6 +87,7 @@
   let showSuggestions = $state(false);
   let slashSuggestionIndex = $state(0);
   let tesseractOpen = $state(false);
+  let tracesOpen = $state(false);
   let searchQuery = $state('');
   let showSearch = $state(false);
   let messagesEl: HTMLDivElement | undefined = $state();
@@ -1215,6 +1218,9 @@
                                 {/each}
                               </div>
                             {/if}
+                            {#if msg.turn_span_id}
+                              <TurnLineageStrip turnSpanId={msg.turn_span_id} />
+                            {/if}
                           {/if}
                         {/if}
                       </div>
@@ -1238,6 +1244,27 @@
                     >■ stop</button>
                   </div>
                 {/if}
+              {/if}
+            </div>
+
+            <!-- AYIN Traces Panel (Gap 4) — collapsible; mounts panel on open to avoid orphan SSE connection -->
+            <div class="border-t border-[var(--la-drawer-border)] shrink-0">
+              <button
+                class="w-full flex items-center gap-1.5 px-3 py-1 text-[9px] font-mono text-[var(--la-text-dim)] hover:text-[rgba(255,215,0,0.7)] transition-colors"
+                onclick={() => { tracesOpen = !tracesOpen; }}
+                data-testid="traces-toggle"
+                aria-expanded={tracesOpen}
+              >
+                <span class="text-[rgba(255,215,0,0.5)]">{tracesOpen ? '▾' : '▸'}</span>
+                <span>AYIN Lineage Circuit</span>
+                {#if tracesOpen}
+                  <span class="ml-auto text-[rgba(255,215,0,0.4)]">● live</span>
+                {/if}
+              </button>
+              {#if tracesOpen}
+                <div class="h-48 overflow-hidden">
+                  <AyinTracesPanel />
+                </div>
               {/if}
             </div>
 

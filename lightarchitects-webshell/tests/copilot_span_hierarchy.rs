@@ -70,7 +70,7 @@ async fn span_hierarchy_session_root_then_turn() {
 
     let turn_start = spans
         .iter()
-        .find(|s| s.action == "copilot.turn.started")
+        .find(|s| s.action == "user.message")
         .expect("turn-start span must be emitted");
 
     assert!(
@@ -119,7 +119,7 @@ async fn span_hierarchy_second_turn_reuses_session_root() {
 
     let turn_start = spans
         .iter()
-        .find(|s| s.action == "copilot.turn.started")
+        .find(|s| s.action == "user.message")
         .expect("turn-2 turn-start span must be emitted");
     assert_eq!(
         turn_start.parent_id.as_deref(),

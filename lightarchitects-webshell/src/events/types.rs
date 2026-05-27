@@ -99,6 +99,10 @@ pub enum WebEvent {
         /// Source sibling identifier, e.g. `"claude"`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sibling: Option<String>,
+        /// AYIN span ID for this turn (included on the `done: true` event so the
+        /// frontend can render the `TurnLineageStrip` deeplink after the turn ends).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        turn_span_id: Option<String>,
     },
     /// Tool permission request streamed to the operator.
     ///
@@ -1179,6 +1183,7 @@ mod tests {
                     chunk: "hello".to_owned(),
                     done: false,
                     sibling: Some("claude".to_owned()),
+                    turn_span_id: None,
                 },
             ),
             (
@@ -1249,12 +1254,14 @@ mod tests {
                     chunk: format!("chunk{i}"),
                     done: false,
                     sibling: Some("claude".to_owned()),
+                    turn_span_id: None,
                 });
             }
             let _ = tx2.send(WebEvent::CopilotResponse {
                 chunk: String::new(),
                 done: true,
                 sibling: Some("claude".to_owned()),
+                turn_span_id: None,
             });
         });
 
@@ -1298,6 +1305,7 @@ mod tests {
             chunk: "hello".to_owned(),
             done: true,
             sibling: None,
+            turn_span_id: None,
         };
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains(r#""type":"copilot_response""#), "{json}");

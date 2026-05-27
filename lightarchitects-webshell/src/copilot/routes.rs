@@ -1044,6 +1044,12 @@ pub struct HitlResolveBody {
     pub session_id: String,
     /// Index into [`HitlRequest::options`] selected by the operator.
     pub choice: usize,
+    /// S1-F4: when `true`, the operator dismissed without selecting an option.
+    ///
+    /// Consumes the nonce (preventing replay) but skips choice bounds validation
+    /// and strategy execution. The strategy loop is abandoned at this pause point.
+    #[serde(default)]
+    pub dismissed: bool,
 }
 
 /// `POST /api/copilot/hitl/resolve` — operator resolves a paused strategy.
@@ -1075,6 +1081,15 @@ pub async fn copilot_hitl_resolve_handler(
         )
             .into_response(),
         Some((loop_state, strategy_id, options_count)) => {
+            // S1-F4: dismiss consumes the nonce but skips strategy execution.
+            if body.dismissed {
+                tracing::info!(
+                    request_id = %body.request_id,
+                    strategy_id = %strategy_id,
+                    "hitl_resolve: operator dismissed strategy pause"
+                );
+                return (StatusCode::OK, Json(json!({ "status": "dismissed" }))).into_response();
+            }
             if body.choice >= options_count {
                 return (
                     StatusCode::UNPROCESSABLE_ENTITY,

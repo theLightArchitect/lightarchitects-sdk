@@ -537,6 +537,7 @@ async fn run_print_turn(
                         chunk: text,
                         done: false,
                         sibling: Some("claude".to_owned()),
+                        turn_span_id: None,
                     },
                     Some(session.build_id),
                 ));
@@ -553,6 +554,7 @@ async fn run_print_turn(
                         chunk: String::new(),
                         done: true,
                         sibling: Some("claude".to_owned()),
+                        turn_span_id: turn_span_id.map(ToOwned::to_owned),
                     },
                     Some(session.build_id),
                 ));
@@ -953,6 +955,7 @@ pub(super) async fn call_subprocess(
                 chunk: text.clone(),
                 done: true,
                 sibling: Some("vibe".to_owned()),
+                turn_span_id: None,
             },
             Some(session.build_id),
         ));
@@ -1261,6 +1264,7 @@ fn push_copilot_chunk(store: &crate::events::GlobalEventStore, pid: u32, text: &
             chunk: text.to_owned(),
             done: false,
             sibling: Some("eva".into()),
+            turn_span_id: None,
         },
     );
 }

@@ -279,6 +279,7 @@ mod tests {
                 chunk: "hello".into(),
                 done: false,
                 sibling: None,
+                turn_span_id: None,
             },
             WebEvent::PermissionRequest {
                 call_id: "c".into(),

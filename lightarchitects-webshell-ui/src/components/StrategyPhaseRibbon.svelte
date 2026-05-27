@@ -31,6 +31,22 @@
   let resolving = $state(false);
   let error = $state<string | null>(null);
 
+  // S1-F4: consume the nonce on dismiss so it cannot be replayed until TTL.
+  async function dismiss() {
+    if (resolving) return;
+    resolving = true;
+    try {
+      await fetch('/api/copilot/hitl/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ request_id: requestId, session_id: sessionId, choice: 0, dismissed: true }),
+      });
+    } catch { /* dismiss errors are non-fatal */ } finally {
+      resolving = false;
+    }
+    onResolved?.();
+  }
+
   async function resolve(choiceIndex: number) {
     if (resolving) return;
     resolving = true;
@@ -102,7 +118,7 @@
     <button
       class="ribbon__dismiss"
       data-testid="strategy-dismiss"
-      onclick={() => onResolved?.()}
+      onclick={() => void dismiss()}
       disabled={resolving}
       aria-label="Dismiss strategy HITL"
     >✕</button>

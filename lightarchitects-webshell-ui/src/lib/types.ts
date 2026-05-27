@@ -277,6 +277,8 @@ export interface CopilotMessage {
   timestamp: string;
   /** Discriminates thinking blocks from regular system messages for collapsible UI. */
   kind?: 'thinking';
+  /** AYIN span ID emitted with the `done: true` SSE event. Drives TurnLineageStrip deeplink. */
+  turn_span_id?: string;
 }
 
 // --- Event types (SSE) ---

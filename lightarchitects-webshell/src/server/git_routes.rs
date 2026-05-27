@@ -1,6 +1,6 @@
 //! HTTP handlers for `git.*` tools (EEF E3 — git-and-pr).
 //!
-//! Provides eight REST endpoints backed by `tokio::process::Command::new("git")`
+//! Provides endpoints backed by `tokio::process::Command::new("git")`
 //! (structured argv, never a shell string — T-7 CWE-78 mitigation):
 //!
 //! - `POST /api/git/status`    — porcelain working-tree status
@@ -11,15 +11,16 @@
 //! - `POST /api/git/pull`      — fast-forward pull
 //! - `POST /api/git/pr/create` — create a GitHub pull request via REST API
 //! - `POST /api/git/pr/review` — submit a GitHub PR review via REST API
+//! - `GET  /api/git/log`       — commit log + branch list for `GitForest` visualization
 //!
 //! All endpoints require bearer authentication. The GitHub PAT is loaded via the
 //! 3-tier ladder: OS keyring → macOS `security` CLI → env var `LIGHTARCHITECTS_GITHUB_PAT`.
 
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use axum::{
     Json,
-    extract::State,
+    extract::{Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
@@ -34,6 +35,7 @@ const TIMEOUT_STATUS: Duration = Duration::from_secs(5);
 const TIMEOUT_BRANCH: Duration = Duration::from_secs(5);
 const TIMEOUT_DIFF: Duration = Duration::from_secs(5);
 const TIMEOUT_COMMIT: Duration = Duration::from_secs(15);
+const TIMEOUT_LOG: Duration = Duration::from_secs(10);
 const TIMEOUT_PUSH: Duration = Duration::from_secs(60);
 const TIMEOUT_PULL: Duration = Duration::from_secs(30);
 const TIMEOUT_PR: Duration = Duration::from_secs(15);
@@ -790,6 +792,127 @@ async fn enrich_with_created_at(rows: &[WorktreeRow], cwd: &std::path::Path) -> 
         }));
     }
     out
+}
+
+// ── GET /api/git/log ─────────────────────────────────────────────────────────
+
+/// Commit log + branch list for the `GitForest` visualization.
+///
+/// Query params: `cwd=<path>` (required), `limit=<n>` (optional, default 40, max 100).
+/// Returns `{ commits: [...], branches: [...] }`.
+///
+/// Each commit: `{ sha, short_sha, message, author, timestamp, parent_shas, refs }`.
+/// Each branch: `{ name, head_sha, is_current }`.
+#[allow(clippy::implicit_hasher)]
+pub async fn log_handler(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    if let Err(r) = check_auth(&headers, &state.config.token) {
+        return r.into_response();
+    }
+    let Some(cwd_str) = params.get("cwd").filter(|s| !s.is_empty()) else {
+        return bad_request("missing required query param: cwd").into_response();
+    };
+    let cwd = match safe_cwd(cwd_str) {
+        Ok(p) => p,
+        Err(e) => return bad_request(e).into_response(),
+    };
+    let limit = params
+        .get("limit")
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(40)
+        .min(100);
+    let limit_arg = format!("-n{limit}");
+
+    // git log --all --format="%H\t%h\t%s\t%an\t%ai\t%P\t%D" -nN
+    let log_out = match git_run(
+        &[
+            "log",
+            "--all",
+            "--format=%H\t%h\t%s\t%an\t%ai\t%P\t%D",
+            &limit_arg,
+        ],
+        &cwd,
+        TIMEOUT_LOG,
+    )
+    .await
+    {
+        Ok(o) => o,
+        Err(r) => return r.into_response(),
+    };
+    if !log_out.status.success() {
+        return git_err("git log failed").into_response();
+    }
+
+    let log_stdout = String::from_utf8_lossy(&log_out.stdout);
+    let commits: Vec<Value> = log_stdout
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|line| {
+            let mut parts = line.splitn(7, '\t');
+            let sha = parts.next().unwrap_or("");
+            let short_sha = parts.next().unwrap_or("");
+            let message = parts.next().unwrap_or("");
+            let author = parts.next().unwrap_or("");
+            let timestamp = parts.next().unwrap_or("");
+            let parents_raw = parts.next().unwrap_or("");
+            let refs_raw = parts.next().unwrap_or("");
+
+            let parent_shas: Vec<&str> = parents_raw.split_whitespace().collect();
+            let refs: Vec<&str> = refs_raw
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect();
+
+            json!({
+                "sha": sha,
+                "short_sha": short_sha,
+                "message": message,
+                "author": author,
+                "timestamp": timestamp,
+                "parent_shas": parent_shas,
+                "refs": refs,
+            })
+        })
+        .collect();
+
+    // git branch -a --format=%(refname:short)\t%(objectname:short)\t%(HEAD)
+    let branch_out = match git_run(
+        &[
+            "branch",
+            "-a",
+            "--format=%(refname:short)\t%(objectname:short)\t%(HEAD)",
+        ],
+        &cwd,
+        TIMEOUT_LOG,
+    )
+    .await
+    {
+        Ok(o) => o,
+        Err(r) => return r.into_response(),
+    };
+
+    let branch_stdout = String::from_utf8_lossy(&branch_out.stdout);
+    let branches: Vec<Value> = branch_stdout
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|line| {
+            let mut parts = line.splitn(3, '\t');
+            let name = parts.next().unwrap_or("");
+            let head_sha = parts.next().unwrap_or("");
+            let is_current = parts.next().unwrap_or("") == "*";
+            json!({
+                "name": name,
+                "head_sha": head_sha,
+                "is_current": is_current,
+            })
+        })
+        .collect();
+
+    ok(json!({ "commits": commits, "branches": branches })).into_response()
 }
 
 // ── Smoke tests (Canon XXVII suite 6) ─────────────────────────────────────────

@@ -194,6 +194,7 @@ mod tests {
                 chunk: "hello".to_owned(),
                 done: false,
                 sibling: None,
+                turn_span_id: None,
             },
             None,
         ));
@@ -210,6 +211,7 @@ mod tests {
                 chunk: String::new(),
                 done: true,
                 sibling: None,
+                turn_span_id: None,
             },
             None,
         ));
@@ -239,6 +241,7 @@ mod tests {
                 chunk: "first chunk".to_owned(),
                 done: false,
                 sibling: None,
+                turn_span_id: None,
             },
             None,
         ));
