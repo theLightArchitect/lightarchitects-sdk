@@ -157,6 +157,11 @@ test.describe('strategy-loop-build-mock', () => {
     const ribbon = page.locator('[data-testid="strategy-phase-ribbon"]');
     await expect(ribbon).toBeVisible({ timeout: 3_000 });
 
+    // Dismiss Shepherd.js tour overlay if present — it intercepts pointer events.
+    await page.evaluate(() => {
+      document.querySelectorAll('.shepherd-modal-overlay-container, .shepherd-element').forEach(el => el.remove());
+    });
+
     // Click dismiss.
     await page.locator('[data-testid="strategy-dismiss"]').click();
     await page.waitForTimeout(300);

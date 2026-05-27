@@ -367,7 +367,7 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
           requestId: payload.request_id as string,
           question: payload.question as string,
           header: payload.header as string,
-          options: payload.options as string[],
+          options: (payload.options as unknown[]).filter((o): o is string => typeof o === 'string').slice(0, 16),
           buildId: typeof payload.build_id === 'string' ? payload.build_id : '',
           sessionId: typeof payload.session_id === 'string' ? payload.session_id : '',
         });

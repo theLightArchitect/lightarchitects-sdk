@@ -184,8 +184,9 @@
 
     loadSetupInfo(); // check setup state before anything else
     // E2E hook — lets Playwright bypass setup flow by setting stores directly.
-    // Guarded by DEV so it's tree-shaken in production builds (CORSO sec review).
-    if (import.meta.env.DEV) {
+    // SECURITY: belt-and-suspenders — tree-shaken in prod builds AND restricted
+    // to localhost at runtime (prevents staging exposure on dev-mode builds).
+    if (import.meta.env.DEV && window.location.hostname === 'localhost') {
       (window as any).__e2e = {
         setupComplete, step,
         // Stores for E2E data injection (Workspace, ScrumReport, Helix, etc.)
