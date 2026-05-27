@@ -19,6 +19,7 @@ lightarchitects-webshell-mcp-host = { path = "../lightarchitects-webshell-mcp-ho
 lightarchitects-arch = { path = "../lightarchitects-arch" }
 # Canonical path resolution (unified-forging-vault Phase 1 helper)
 lightarchitects = { path = "../lightarchitects", features = [
+    "chat",
     "credentials",
     "providers-anthropic",
     "providers-openai",
