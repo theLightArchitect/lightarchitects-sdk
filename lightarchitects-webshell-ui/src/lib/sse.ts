@@ -22,6 +22,7 @@ import {
   workerSlots, conductorState, mergeAgentEvents, fixAgentEvents,
   pushRecentEvent,
   projects,
+  strategyHitl,
 } from './stores';
 import { spikeSibling, helixZoomLevel } from './stores';
 import { maximizedPanelId, prunePanel, setLayout, layoutTree, collectPanelIds, splitPanel } from './layout';
@@ -353,6 +354,23 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
       const { payload } = notify;
       if (payload.type === 'focus_pillar' && typeof payload.pillar === 'string') {
         selectedPillar.set(payload.pillar as Pillar);
+      }
+      // strategy_pause — StrategyDispatcher fired Outcome::Pause; show HITL ribbon.
+      if (
+        payload.type === 'strategy_pause' &&
+        typeof payload.request_id === 'string' &&
+        typeof payload.question === 'string' &&
+        typeof payload.header === 'string' &&
+        Array.isArray(payload.options)
+      ) {
+        strategyHitl.set({
+          requestId: payload.request_id as string,
+          question: payload.question as string,
+          header: payload.header as string,
+          options: payload.options as string[],
+          buildId: typeof payload.build_id === 'string' ? payload.build_id : '',
+          sessionId: typeof payload.session_id === 'string' ? payload.session_id : '',
+        });
       }
       // Other sub-types (refresh_sitrep, flag_finding, etc.) handled by
       // consuming components via their own SSE subscriptions if needed.

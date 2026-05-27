@@ -1072,3 +1072,28 @@ export function snapshotContextForCopilot(): CopilotContextSnapshot {
     oversizeIndices,
   };
 }
+
+// ── Strategy HITL state (copilot-chatroom-core Phase 6) ──────────────────────
+//
+// Set by the SSE handler when a `gateway_notify` event arrives with
+// `payload.type === "strategy_pause"` — populated by the backend when
+// `StrategyDispatcher` fires `Outcome::Pause` and parks state in
+// `ResumeRegistry`.  Cleared by `StrategyPhaseRibbon` on resolve or dismiss.
+
+export interface StrategyHitlState {
+  /** 16-char hex nonce from ResumeRegistry::park(); passed to /api/copilot/hitl/resolve. */
+  requestId: string;
+  /** The question presented to the operator. */
+  question: string;
+  /** Short chip label (≤12 chars). */
+  header: string;
+  /** Ordered option labels the operator may select. */
+  options: string[];
+  /** Build ID used for the resolve call (session scoping). */
+  buildId: string;
+  /** Session token for confused-deputy prevention. */
+  sessionId: string;
+}
+
+/** Pending strategy HITL request.  `null` when no pause is active. */
+export const strategyHitl = writable<StrategyHitlState | null>(null);

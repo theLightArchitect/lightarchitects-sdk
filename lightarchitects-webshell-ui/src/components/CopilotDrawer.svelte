@@ -17,12 +17,15 @@
   import { connectSSE, disconnectSSE, reconnectSSE, sseConnected } from '$lib/sse';
   import { TerminalWS, AgentWS } from '$lib/ws';
   import SiblingDispatch from './SiblingDispatch.svelte';
+  import SiblingBadge from './SiblingBadge.svelte';
+  import StrategyPhaseRibbon from './StrategyPhaseRibbon.svelte';
   import CopilotContextTray from './CopilotContextTray.svelte';
   import ContextBar from './ContextBar.svelte';
   import OllamaConfigModal from './OllamaConfigModal.svelte';
   import SettingsOverlay from './SettingsOverlay.svelte';
   import PolytopeIcon from './PolytopeIcon.svelte';
   import { settingsOpen, pendingResumeSessionId, serverCwd, persistedConfig, selectedModel } from '$lib/setup';
+  import { strategyHitl } from '$lib/stores';
   import { drawerWidthPx } from '$lib/stores';
   import { selectedPreset, selectedTarget, PRESET_DISPLAY, quickPickOpen } from '$lib/cockpit/stores';
   import { parseChips } from '$lib/cockpit/copilotChips';
@@ -1128,6 +1131,19 @@
                 >✕</button>
               </div>
             {/if}
+            {#if $strategyHitl}
+              <div class="px-3 pt-2 shrink-0">
+                <StrategyPhaseRibbon
+                  requestId={$strategyHitl.requestId}
+                  question={$strategyHitl.question}
+                  header={$strategyHitl.header}
+                  options={$strategyHitl.options}
+                  buildId={$strategyHitl.buildId || sharedBuildId || ''}
+                  sessionId={$strategyHitl.sessionId}
+                  onResolved={() => strategyHitl.set(null)}
+                />
+              </div>
+            {/if}
             <div
               bind:this={messagesEl}
               class="flex-1 overflow-y-auto p-3 space-y-2 transition-colors {dragOver ? 'bg-[var(--la-focus-ring)]/5 ring-1 ring-inset ring-[var(--la-focus-ring)]/20' : ''}"
@@ -1180,8 +1196,7 @@
                          msg.role === 'system' ? 'bg-[var(--la-drawer-border)]/50 text-[var(--la-text-dim)] border border-[var(--la-drawer-border)]' :
                          'bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] text-[var(--la-text-bright)]'}">
                         {#if msg.sibling}
-                          {@const color = SIBLING_COLORS[msg.sibling] ?? '#6b7280'}
-                          <span class="text-[10px] font-medium" style="color: {color}">{msg.sibling.toUpperCase()}</span>
+                          <SiblingBadge sibling={msg.sibling} size="sm" />
                           <span class="text-[var(--la-text-dim)] mx-1">·</span>
                         {/if}
                         {#if msg.role === 'user'}
