@@ -14,6 +14,7 @@
   import HelixTooltip from './components/HelixTooltip.svelte';
   import HelixDetailPanel from './components/HelixDetailPanel.svelte';
   import ScrumReport from './components/ScrumReport.svelte';
+  import NotificationStack from './components/notifications/NotificationStack.svelte';
   import Tooltip from './components/Tooltip.svelte';
   import AuthBanner from './components/AuthBanner.svelte';
   import DiffPreview from './components/DiffPreview.svelte';
@@ -579,5 +580,6 @@
   <HelixTooltip />
   <HelixDetailPanel />
   <ScrumReport />
+  <NotificationStack />
 </div>
 {/if}

@@ -85,7 +85,7 @@ pub async fn copilot_chat_handler(
     // Clone before grounding_parent_id is moved into gather_grounding so that
     // message spans (user + assistant) can be parented to the same session root.
     let session_parent_id = grounding_parent_id.clone();
-    emit_message_span(
+    let turn_span_id = emit_message_span(
         &state,
         "user",
         &body.message,
@@ -145,6 +145,7 @@ pub async fn copilot_chat_handler(
             state.la_native_api_key.clone(),
             state.config.token.clone(),
             build_lightsquad_executor(&state),
+            turn_span_id,
         );
     }
 
@@ -171,13 +172,7 @@ pub async fn copilot_chat_handler(
 
     match result {
         Ok(text) => {
-            emit_message_span(
-                &state,
-                "assistant",
-                &text,
-                session_parent_id.as_deref(),
-                Some(id),
-            );
+            emit_message_span(&state, "assistant", &text, Some(&turn_span_id), Some(id));
             (
                 StatusCode::OK,
                 grounding_hdrs,
@@ -219,6 +214,8 @@ impl Drop for AbortOnDrop {
 
 /// Body of the spawned turn task — separated from [`drive_native_sse`] to keep
 /// that function within the 100-line clippy limit.
+// 9 args are all distinct per-turn data; a struct wrapper would obscure the call site.
+#[allow(clippy::too_many_arguments)]
 async fn native_turn_task(
     cwd: std::path::PathBuf,
     system_prompt: Option<String>,
@@ -227,6 +224,8 @@ async fn native_turn_task(
     ollama_provider: Option<OllamaCliProvider>,
     interrupt_flag: Arc<AtomicBool>,
     tool_executor: Arc<LightsquadToolExecutor>,
+    turn_span_id: String,
+    build_id: Uuid,
 ) {
     let memory = HelixSessionMemory::open(&cwd, 40);
     let restored = memory.restored_turn_count();
@@ -262,6 +261,14 @@ async fn native_turn_task(
             .await;
     } else {
         tracing::info!("run_turn completed");
+        emit_disk_span(
+            "claude",
+            "assistant.response",
+            serde_json::json!({}),
+            lightarchitects::ayin::TraceOutcome::Continue,
+            turn_span_id.parse::<uuid::Uuid>().ok(),
+            Some(build_id),
+        );
     }
     // transport drop closes write_half → EOF on read_half
 }
@@ -271,7 +278,7 @@ async fn native_turn_task(
 // material benefit.  Phase-10 GAP-3 added la_native_api_key + session_token
 // so the per-chunk redact wrapper can scrub both secrets — both are
 // per-request data, not part of any natural sub-struct.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn drive_native_sse(
     build_id: Uuid,
     grounded_message: &str,
@@ -282,6 +289,7 @@ fn drive_native_sse(
     la_native_api_key: Option<secrecy::SecretString>,
     session_token: String,
     tool_executor: Arc<LightsquadToolExecutor>,
+    turn_span_id: String,
 ) -> Response {
     // Reset any prior interrupt before starting a new turn so the flag does
     // not carry over from a previous cancelled request.
@@ -355,6 +363,8 @@ fn drive_native_sse(
             ollama_provider,
             interrupt_flag,
             tool_executor,
+            turn_span_id,
+            build_id,
         )
         .instrument(span),
     );
@@ -579,22 +589,32 @@ fn emit_disk_span(
 ///
 /// `kind` is `"user"` or `"assistant"`. Makes conversation turns visible as
 /// first-class nodes in the AYIN Lineage Circuit dashboard.
+/// Emit an AYIN turn boundary span and return the new span ID.
+///
+/// `kind = "user"` → `action: "user.message"`, `actor: "user"` (gold in Lineage Circuit).
+/// `kind = "assistant"` → `action: "assistant.response"`, `actor: "claude"` (gold leaf).
 fn emit_message_span(
     state: &AppState,
     kind: &str,
     content: &str,
     parent_id: Option<&str>,
     build_id: Option<Uuid>,
-) {
+) -> String {
+    let span_id = uuid::Uuid::new_v4().to_string();
+    let (actor, action) = if kind == "user" {
+        ("user", "user.message")
+    } else {
+        ("claude", "assistant.response")
+    };
     let _ = state.event_tx.send(WebEventV2::from_event(
         crate::events::WebEvent::AyinSpan(TraceSpanSummary {
-            id: uuid::Uuid::new_v4().to_string(),
+            id: span_id.clone(),
             parent_id: parent_id.map(ToOwned::to_owned),
-            actor: kind.to_owned(),
-            action: format!("copilot.message.{kind}"),
+            actor: actor.to_owned(),
+            action: action.to_owned(),
             timestamp: chrono::Utc::now().to_rfc3339(),
             duration_ms: 0,
-            outcome: serde_json::json!("ok"),
+            outcome: serde_json::json!("Continue"),
             metadata: serde_json::json!({
                 "kind": kind,
                 "preview": &content[..content.len().min(200)],
@@ -605,8 +625,8 @@ fn emit_message_span(
         build_id,
     ));
     emit_disk_span(
-        kind,
-        &format!("copilot.message.{kind}"),
+        actor,
+        action,
         json!({
             "kind": kind,
             "preview": &content[..content.len().min(200)],
@@ -615,6 +635,7 @@ fn emit_message_span(
         parent_id.and_then(|s| s.parse::<Uuid>().ok()),
         build_id,
     );
+    span_id
 }
 
 /// Emit AYIN spans for the grounding pipeline (Phase 6 — `copilot-eva-ambient`).
