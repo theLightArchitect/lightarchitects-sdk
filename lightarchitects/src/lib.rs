@@ -102,3 +102,8 @@ pub mod observability;
 /// machine of agent spans for the webshell SSE dashboard.
 #[cfg(feature = "fleet")]
 pub mod fleet;
+
+/// Multi-voice sibling chatroom engine — interest-scored speaker selection,
+/// in-character response generation, sibling discovery, and response sanitization.
+#[cfg(feature = "chat")]
+pub mod chat;
