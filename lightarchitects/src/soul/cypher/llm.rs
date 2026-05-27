@@ -172,6 +172,15 @@ impl LlmCypherGenerator {
             self.config.endpoint.trim_end_matches('/')
         );
 
+        // POLICY EXCEPTION — non-streaming.
+        //
+        // The platform-wide default is `stream: true` (see contract_supervisor
+        // module doc). Non-streaming is reserved for "smaller situations": this
+        // Cypher generator caps output at `max_tokens: 512` (≈2 KB), produces
+        // a single short structured statement, and typically completes in
+        // <3 s — well inside any upstream idle window. The upstream-EOF
+        // failure mode that motivated the policy applies to long-running
+        // generations, not bounded short ones.
         let mut builder = self.client.post(&url).json(&json!({
             "model": self.config.model,
             "messages": [

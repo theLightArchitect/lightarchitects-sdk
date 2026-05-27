@@ -49,7 +49,11 @@ use lightarchitects::soul::{SoulClient, SoulReflexionExecutor};
 use lightarchitects::ayin::span::{Actor, TraceContext, TraceOutcome};
 
 use crate::config::GatewayConfig;
-use crate::span_context::{span_dir, spawn_with_span_context, write_span_to_disk};
+use uuid::Uuid;
+
+use crate::span_context::{
+    GatewaySpanContext, span_dir, spawn_with_span_context, with_span_context, write_span_to_disk,
+};
 
 use super::{ConversationEvent, TerminationReason, Transport};
 
@@ -227,10 +231,33 @@ pub async fn run_strategy<T: Transport>(
     let chain = ChainContext::default();
     let session_id = req.session_id.clone();
 
-    // Emit session-root span so AYIN Lineage Circuit shows a gateway.session.start
-    // node at the root of each agentic loop run. Fire-and-forget — never blocks strategy.
-    emit_session_start_span(session_id.as_deref(), &req.strategy.to_string());
+    // Build the session-root span synchronously to capture its UUID, then seed the
+    // task-local span context so all child spans (llm.call, gateway.tool.dispatch)
+    // inherit parent_id = session_start.id — enabling the AYIN Lineage Circuit to
+    // render a radial dendrogram instead of scattered roots.
+    let session_uuid = emit_session_start_span(session_id.as_deref(), &req.strategy.to_string());
+    let span_ctx = GatewaySpanContext {
+        session_id: session_id.clone(),
+        parent_id: session_uuid,
+    };
 
+    with_span_context(
+        span_ctx,
+        dispatch_strategy(req, budget, chain, session_id, config, transport),
+    )
+    .await
+}
+
+/// Inner strategy dispatch — runs inside the seeded [`GatewaySpanContext`] scope.
+#[allow(clippy::too_many_lines)]
+async fn dispatch_strategy<T: Transport>(
+    req: StrategyRequest,
+    budget: Budget,
+    chain: ChainContext,
+    session_id: Option<String>,
+    config: &GatewayConfig,
+    transport: &mut T,
+) -> Result<(), StrategyError> {
     emit_status(
         transport,
         format!("Running {} strategy on: {}", req.strategy, req.goal),
@@ -581,19 +608,21 @@ pub fn parse_slash_command(line: &str, default_budget_usd: f64) -> Option<Strate
     })
 }
 
-/// Emit a `gateway.session.start` AYIN span at strategy entry — fire-and-forget.
-fn emit_session_start_span(session_id: Option<&str>, strategy: &str) {
-    let strategy = strategy.to_owned();
-    let session_id = session_id.map(ToOwned::to_owned);
-    spawn_with_span_context(async move {
-        let mut builder = TraceContext::new(Actor::new("gateway"), "gateway.session.start")
-            .outcome(TraceOutcome::Continue)
-            .metadata(serde_json::json!({ "strategy": strategy }));
-        if let Some(ref sid) = session_id {
-            builder = builder.session_id(sid);
-        }
-        match builder.finish() {
-            Ok(span) => {
+/// Emit a `gateway.session.start` AYIN span synchronously (build span, write async).
+///
+/// Returns the span's UUID so the caller can seed [`GatewaySpanContext::parent_id`],
+/// enabling child spans (llm.call, gateway.tool.dispatch) to link back to this root.
+fn emit_session_start_span(session_id: Option<&str>, strategy: &str) -> Option<Uuid> {
+    let mut builder = TraceContext::new(Actor::new("gateway"), "gateway.session.start")
+        .outcome(TraceOutcome::Continue)
+        .metadata(serde_json::json!({ "strategy": strategy }));
+    if let Some(sid) = session_id {
+        builder = builder.session_id(sid);
+    }
+    match builder.finish() {
+        Ok(span) => {
+            let id = span.id;
+            spawn_with_span_context(async move {
                 let base = dirs_next::home_dir()
                     .unwrap_or_else(|| std::path::PathBuf::from("."))
                     .join("lightarchitects/soul/helix/ayin/traces");
@@ -601,10 +630,14 @@ fn emit_session_start_span(session_id: Option<&str>, strategy: &str) {
                 if let Err(e) = write_span_to_disk(&span, &dir).await {
                     tracing::warn!(error = %e, "gateway.session.start AYIN span write failed");
                 }
-            }
-            Err(e) => tracing::warn!(error = %e, "gateway.session.start AYIN span build failed"),
+            });
+            Some(id)
         }
-    });
+        Err(e) => {
+            tracing::warn!(error = %e, "gateway.session.start AYIN span build failed");
+            None
+        }
+    }
 }
 
 #[cfg(test)]

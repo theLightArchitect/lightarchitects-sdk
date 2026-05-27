@@ -9,7 +9,10 @@ use tracing::instrument;
 use crate::config::GatewayConfig;
 use crate::core_tools;
 use crate::error::GatewayError;
-use crate::span_context::{span_dir, spawn_with_span_context, write_span_to_disk};
+use crate::span_context::{
+    GatewaySpanContext, current_span_ctx, span_dir, spawn_with_span_context, with_span_context,
+    write_span_to_disk,
+};
 use crate::squad_comms;
 
 // ── Tool schema definitions ───────────────────────────────────────────────────
@@ -191,6 +194,47 @@ fn git_tool_defs() -> Vec<Value> {
 /// request errors are encoded as JSON-RPC error responses and do not terminate
 /// the loop.
 pub async fn run(config: &GatewayConfig) -> Result<(), GatewayError> {
+    let ctx = init_mcp_span_ctx();
+    with_span_context(ctx, run_mcp_loop(config)).await
+}
+
+/// Emit `gateway.session.start` for the MCP session and return the seeded
+/// [`GatewaySpanContext`] so child spans can link back to this root as their
+/// `parent_id`, enabling the AYIN Lineage Circuit to render a radial tree.
+fn init_mcp_span_ctx() -> GatewaySpanContext {
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let mut builder = TraceContext::new(Actor::new("gateway"), "gateway.session.start")
+        .outcome(TraceOutcome::Continue)
+        .metadata(serde_json::json!({ "mode": "mcp-server" }));
+    builder = builder.session_id(&session_id);
+    match builder.finish() {
+        Ok(span) => {
+            let root_id = span.id;
+            tokio::spawn(async move {
+                let base = dirs_next::home_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .join("lightarchitects/soul/helix/ayin/traces");
+                let dir = span_dir(&base, "gateway", &span.timestamp);
+                if let Err(e) = write_span_to_disk(&span, &dir).await {
+                    tracing::warn!(error = %e, "mcp gateway.session.start AYIN span write failed");
+                }
+            });
+            GatewaySpanContext {
+                session_id: Some(session_id),
+                parent_id: Some(root_id),
+            }
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "mcp gateway.session.start span build failed");
+            GatewaySpanContext::default()
+        }
+    }
+}
+
+/// Inner MCP stdio loop — runs within the seeded [`GatewaySpanContext`] scope so
+/// all `gateway.tool.dispatch` and `llm.call` spans inherit `session_id` and
+/// `parent_id` from the process-level `gateway.session.start` root.
+async fn run_mcp_loop(config: &GatewayConfig) -> Result<(), GatewayError> {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
     let stdin = tokio::io::stdin();
@@ -303,11 +347,15 @@ async fn handle_tools_call(id: Value, request: &Value, config: &GatewayConfig) -
 }
 
 /// Fire-and-forget `gateway.tool.dispatch` AYIN span after each MCP tool call.
+///
+/// Reads [`current_span_ctx`] to attach `parent_id` and `session_id` from the
+/// enclosing MCP session context, linking this span to `gateway.session.start`.
 fn emit_tool_dispatch_span(
     tool: String,
     start: std::time::Instant,
     result: &Result<Value, GatewayError>,
 ) {
+    let ctx = current_span_ctx();
     let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
     let outcome = if result.is_ok() {
         TraceOutcome::Continue
@@ -315,11 +363,16 @@ fn emit_tool_dispatch_span(
         TraceOutcome::Block
     };
     spawn_with_span_context(async move {
-        let Ok(span) = TraceContext::new(Actor::new("gateway"), "gateway.tool.dispatch")
+        let mut builder = TraceContext::new(Actor::new("gateway"), "gateway.tool.dispatch")
             .outcome(outcome)
-            .metadata(serde_json::json!({ "tool": tool, "duration_ms": duration_ms }))
-            .finish()
-        else {
+            .metadata(serde_json::json!({ "tool": tool, "duration_ms": duration_ms }));
+        if let Some(pid) = ctx.parent_id {
+            builder = builder.parent(pid);
+        }
+        if let Some(ref sid) = ctx.session_id {
+            builder = builder.session_id(sid);
+        }
+        let Ok(span) = builder.finish() else {
             return;
         };
         let base = dirs_next::home_dir()

@@ -187,7 +187,8 @@ impl<'a, T: Transport> GraphRagIngestBuilder<'a, T> {
 
         let envelope = serde_json::json!({ "action": "graphrag_ingest", "params": params });
         let raw = self.inner.call_tool("soulTools", envelope).await?;
-        serde_json::from_value(raw).map_err(SdkError::from)
+        let unwrapped = crate::soul::content::unwrap_json(raw, "graphrag_ingest")?;
+        serde_json::from_value(unwrapped).map_err(SdkError::from)
     }
 }
 
@@ -206,7 +207,7 @@ fn build_source_param(source: IngestSource) -> serde_json::Value {
             format,
         } => {
             let mut v = serde_json::json!({
-                "type": "inline",
+                "type": "text",
                 "source_id": source_id,
                 "text": text,
             });
@@ -249,7 +250,7 @@ mod tests {
             format: Some(TextFormat::Markdown),
         };
         let v = build_source_param(src);
-        assert_eq!(v["type"], "inline");
+        assert_eq!(v["type"], "text");
         assert_eq!(v["source_id"], "test");
         assert_eq!(v["text"], "Hello world.");
         assert_eq!(v["format"], "markdown");
@@ -283,12 +284,16 @@ mod tests {
     async fn call_with_file_source_sends_correct_params() {
         use crate::core::{McpClient, MockTransport, RetryConfig};
 
-        let expected_response = serde_json::json!({
+        let inner = serde_json::json!({
             "source_id": "paper",
             "nodes_created": 5,
             "edges_created": 3,
             "errors": [],
             "dry_run": false
+        });
+        let expected_response = serde_json::json!({
+            "content": [{ "type": "text", "text": inner.to_string() }],
+            "isError": false
         });
         let transport = MockTransport::ok(expected_response);
         let client: McpClient<MockTransport> = McpClient::new(transport, RetryConfig::default());
@@ -312,12 +317,16 @@ mod tests {
     async fn dry_run_propagated_to_server() {
         use crate::core::{McpClient, MockTransport, RetryConfig};
 
-        let expected_response = serde_json::json!({
+        let inner = serde_json::json!({
             "source_id": "doc",
             "nodes_created": 0,
             "edges_created": 0,
             "errors": [],
             "dry_run": true
+        });
+        let expected_response = serde_json::json!({
+            "content": [{ "type": "text", "text": inner.to_string() }],
+            "isError": false
         });
         let transport = MockTransport::ok(expected_response);
         let client: McpClient<MockTransport> = McpClient::new(transport, RetryConfig::default());
@@ -361,8 +370,8 @@ mod tests {
         assert!(v.get("text").is_none(), "File source must not include text");
     }
 
-    /// `IngestSource::Inline` serialises to `type = "inline"` plus `source_id`
-    /// and `text` fields.
+    /// `IngestSource::Inline` serialises to `type = "text"` plus `source_id`
+    /// and `text` fields (SOUL's `validate()` accepts `"text"`, not `"inline"`).
     #[test]
     fn ingest_source_text_serializes_correctly() {
         let src = IngestSource::Inline {
@@ -372,8 +381,8 @@ mod tests {
         };
         let v = build_source_param(src);
         assert_eq!(
-            v["type"], "inline",
-            "Inline source must have type == \"inline\"; got: {}",
+            v["type"], "text",
+            "Inline source must have type == \"text\"; got: {}",
             v["type"]
         );
         assert_eq!(v["source_id"], "meeting-notes-2026");

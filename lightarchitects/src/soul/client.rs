@@ -810,10 +810,14 @@ mod tests {
     /// `from_client` bridge compiles and works end-to-end.
     #[tokio::test]
     async fn from_client_helix_parses_canned_response() {
-        let payload = serde_json::json!([
+        let inner = serde_json::json!([
             { "title": "Test Entry", "significance": 8.5 },
             { "title": "Second Entry", "significance": 6.0 }
         ]);
+        let payload = serde_json::json!({
+            "content": [{ "type": "text", "text": inner.to_string() }],
+            "isError": false
+        });
         let transport = MockTransport::ok(payload);
         let inner = McpClient::new(transport, RetryConfig::default());
         let soul = SoulClient::from_client(inner);
@@ -834,8 +838,12 @@ mod tests {
     /// `from_client` and `from_transport` share no state — clone semantics.
     #[tokio::test]
     async fn from_client_clone_does_not_share_state() {
-        let t1 = MockTransport::ok(serde_json::json!([]));
-        let t2 = MockTransport::ok(serde_json::json!([]));
+        let empty = serde_json::json!({
+            "content": [{ "type": "text", "text": "[]" }],
+            "isError": false
+        });
+        let t1 = MockTransport::ok(empty.clone());
+        let t2 = MockTransport::ok(empty);
         let c1 = SoulClient::from_client(McpClient::new(t1, RetryConfig::default()));
         let c2 = SoulClient::from_client(McpClient::new(t2, RetryConfig::default()));
 

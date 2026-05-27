@@ -248,6 +248,16 @@ impl TraceContext {
         }
     }
 
+    /// Return the auto-generated span ID.
+    ///
+    /// Callers that need to link child spans to this span should capture this
+    /// ID before calling [`emit_span_background`] and pass it as `parent_id`
+    /// to the child [`TraceContext`].
+    #[must_use]
+    pub fn span_id(&self) -> Uuid {
+        self.id
+    }
+
     /// Set a parent span for nesting.
     #[must_use]
     pub fn parent(mut self, parent_id: Uuid) -> Self {

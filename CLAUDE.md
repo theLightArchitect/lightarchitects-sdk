@@ -136,6 +136,54 @@ Canonical: `~/lightarchitects/soul/helix/user/standards/canon/builders-cookbook.
 - Cyclomatic complexity ≤ 10, functions ≤ 60 lines
 - Tests override via `#[allow(clippy::unwrap_used, clippy::expect_used)]`
 
+### LLM HTTP dispatch — streaming-by-default policy
+
+**Default: `stream: true` for every LLM HTTP call.** Non-streaming is the opt-out, used only for genuinely short, bounded interactions and accompanied by an explicit comment justifying the exception.
+
+**Why:** Local Ollama proxies (and many cloud gateways) buffer the entire response when `stream: false`. On long generations (reasoning models, large prompts, supervisor evaluations), the upstream connection idle-times-out mid-buffer and the proxy returns HTTP 500 `"Post …: unexpected EOF"`. Streaming pipes chunks as they arrive, eliminating the monolithic buffer. Confirmed against Ollama's official docs (`/api/streaming`): *"Streaming is better suited for long generations. Non-streaming is better for short responses."*
+
+**Pattern for streaming Ollama (NDJSON `/api/chat`):** accumulate `message.content` from every line; treat any `{"error": "..."}` line as a streamed error.
+
+**Pattern for OpenAI-compatible (SSE `/chat/completions`):** parse `data: ` prefixed lines; accumulate `choices[0].delta.content`; terminator is `data: [DONE]`.
+
+**Exception cases (must be commented inline):**
+- Bounded short outputs with `max_tokens ≤ 1024` AND structured output (e.g., Cypher generator, classification heads)
+- Single-turn introspection (model list, health checks)
+- Where a downstream parser explicitly requires the buffered shape
+
+Pair every long-running HTTP dispatch with a transient-error retry wrapper (3 attempts, exponential backoff on 5xx + connection errors). Streaming reduces failures; retry handles residual blips.
+
+### Concurrency primitives — fan-out doctrine
+
+**`futures::stream::buffer_unordered(n)` is the platform's standard primitive for bounded fan-out of independent async operations.** Equivalent in semantics to Claude Code's `all(generators, n)` combinator — see `lightarchitects-cli/reference/claude-code-fork-main/src/utils/generators.ts`. Both: run N futures concurrently, yield results as they complete, refill the slot when one finishes.
+
+**Two slot pools at the wave-dispatch layer**, mirroring Claude Code's concurrency-safe vs unsafe partition lifted to wave tasks:
+
+| Pool | Cap | Override | Used for |
+|------|----|----------|----------|
+| **Write tasks** (`Task::concurrency_safe == false`) | `SLOT_CAPACITY = 7` | hardcoded (Ironclaw §6) | code-producing tasks: every task that creates/modifies/commits files |
+| **Read tasks** (`Task::concurrency_safe == true`) | `SLOT_CAPACITY_READ_DEFAULT = 16` | `LIGHTSQUAD_READ_SLOT_CAPACITY` env var | context-gathering tasks: codebase exploration, context7 doc retrieval, prior-art lookup, dependency mapping — no FS writes, no git mutations |
+
+The two pools fill independently in `wave_dispatcher::dispatch_wave` — a wave with 6 safe + 8 unsafe tasks can have all 6 reads + 7 writes running concurrently (13 parallel workers), provided DAG dependencies and file_ownership disjointness allow it.
+
+**When to mark a wave task `concurrency_safe = true`:**
+- No filesystem writes (no `fs::write`, no `git add/commit`, no worktree mutations beyond ephemeral reads)
+- No shared external state mutations (no `POST` to mutable endpoints)
+- Pure investigation: reads from FS, calls to `Read`/`Grep`/`Glob`/context7, returns a context bundle for downstream write tasks
+
+**When NOT to mark it safe:** literally any code-producing task. Generation, refactoring, test addition, doc edits — all write-class.
+
+**For internal fan-out inside a single worker** (e.g., parallel file reads within `collect_rs_files`, parallel per-dimension scoring inside `ContractSupervisor`, parallel sibling MCP calls within SCRUM): use `futures::stream::buffer_unordered(n)` directly. Do NOT spin up a new `tokio::JoinSet` with `SLOT_CAPACITY` semantics — that pool is reserved for wave dispatch. Pick `n` based on the operation:
+
+| Operation | Recommended `n` | Why |
+|-----------|----------------|-----|
+| File-content reads | 8 | Saturates SSD random-read without touching `ulimit -n` (256 on macOS default) |
+| HTTP calls to same endpoint | 4–8 | Avoid hammering a single upstream — context7, OpenRouter, etc. |
+| HTTP calls to different endpoints | 16 | Independent endpoints; bound by network not server |
+| In-process CPU-light work | 32+ | Lightweight; bound by `tokio::Runtime` worker count |
+
+Reference implementation: `lightarchitects-webshell/src/events/lightsquad_bridge.rs::collect_rs_files` (Phase 1 sequential dir walk, Phase 2 `buffer_unordered(8)` file reads).
+
 ---
 
 ## Agentic Loop — Skills-as-Tools (vibe-coding-loop Phase 6)

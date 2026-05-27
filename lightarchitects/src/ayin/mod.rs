@@ -78,21 +78,35 @@ use crate::core::error::SdkError;
 use crate::core::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 use crate::core::transport::Transport;
 
+// ── Shared writer: atomic disk write + task-local propagation ─────────────────
+
+/// Atomic span writer and task-local context propagation helpers.
+///
+/// All three LA binaries (gateway, webshell, CLI) share this module so span
+/// durability semantics and propagation patterns are uniform with zero
+/// duplication.
+#[cfg(feature = "observe")]
+pub mod writer;
+
+#[cfg(feature = "observe")]
+pub use writer::{
+    SPAN_CTX, SpanContext, current_span_ctx, default_trace_base, span_dir, spawn_with_span_context,
+    with_span_context, write_span_to_disk,
+};
+
 // ── Feature-enabled: full AYIN instrumentation ────────────────────────────────
 
 #[cfg(feature = "observe")]
 mod observe_impl {
-    use std::path::PathBuf;
-
-    use crate::ayin::span::{Actor, TraceContext, TraceOutcome, TraceSpan};
+    use crate::ayin::span::{Actor, TraceContext, TraceOutcome};
 
     use super::{JsonRpcRequest, JsonRpcResponse, SdkError, Transport};
 
     /// Transport wrapper that records an AYIN [`TraceSpan`] for every MCP call.
     ///
     /// Construct via [`ObservableTransport::new`]. Spans are written
-    /// asynchronously — a `tokio::spawn` fire-and-forget ensures trace I/O
-    /// never blocks the caller.
+    /// asynchronously via [`writer::write_span_to_disk`] (atomic, EXDEV-safe,
+    /// macOS `F_FULLFSYNC`) — trace I/O never blocks the caller.
     pub struct ObservableTransport<T: Transport> {
         inner: T,
         actor: Actor,
@@ -100,8 +114,6 @@ mod observe_impl {
 
     impl<T: Transport> ObservableTransport<T> {
         /// Wrap `inner` and record AYIN spans using the `lightarchitects-sdk` actor.
-        ///
-        /// Spans are written to `~/lightarchitects/soul/helix/ayin/traces/`.
         #[must_use]
         pub fn new(inner: T) -> Self {
             Self {
@@ -132,50 +144,21 @@ mod observe_impl {
 
             // Build and persist the span asynchronously — never blocks the caller.
             let ctx = TraceContext::new(self.actor.clone(), &action).outcome(outcome);
-            tokio::spawn(async move {
+            super::writer::spawn_with_span_context(async move {
+                let base = super::writer::default_trace_base();
                 match ctx.finish() {
-                    Ok(span) => write_span(&span).await,
+                    Ok(span) => {
+                        let dir =
+                            super::writer::span_dir(&base, span.actor.as_str(), &span.timestamp);
+                        if let Err(e) = super::writer::write_span_to_disk(&span, &dir).await {
+                            tracing::warn!(error = %e, "AYIN ObservableTransport span write failed");
+                        }
+                    }
                     Err(e) => tracing::warn!(error = %e, "AYIN span build failed"),
                 }
             });
 
             result
-        }
-    }
-
-    /// Write a span as JSON to the AYIN traces directory.
-    ///
-    /// Path: `~/lightarchitects/soul/helix/ayin/traces/{actor}/{YYYY-MM-DD}/{HH-MM-SS}-{action}-{id8}.json`
-    pub(super) async fn write_span_public(span: &TraceSpan) {
-        write_span(span).await;
-    }
-
-    async fn write_span(span: &TraceSpan) {
-        let base = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("lightarchitects/soul/helix/ayin/traces");
-        let dir = base
-            .join(span.actor.as_str())
-            .join(span.timestamp.format("%Y-%m-%d").to_string());
-        if let Err(e) = tokio::fs::create_dir_all(&dir).await {
-            tracing::warn!(error = %e, "AYIN trace dir create failed");
-            return;
-        }
-        let safe_action = span.action.replace('/', "_");
-        let id8 = &span.id.to_string()[..8];
-        let name = format!(
-            "{}-{}-{}.json",
-            span.timestamp.format("%H-%M-%S"),
-            safe_action,
-            id8
-        );
-        match serde_json::to_vec(span) {
-            Ok(bytes) => {
-                if let Err(e) = tokio::fs::write(dir.join(name), bytes).await {
-                    tracing::warn!(error = %e, "AYIN trace write failed");
-                }
-            }
-            Err(e) => tracing::warn!(error = %e, "AYIN span serialize failed"),
         }
     }
 }
@@ -185,16 +168,23 @@ pub use observe_impl::ObservableTransport;
 
 /// Emit a finished [`TraceSpan`] asynchronously (fire-and-forget).
 ///
-/// The span is serialised and written to
-/// `~/lightarchitects/soul/helix/ayin/traces/{actor}/{YYYY-MM-DD}/...json`
-/// via `tokio::spawn`. The caller is never blocked by I/O.
+/// Writes to `~/lightarchitects/soul/helix/ayin/traces/{actor}/{YYYY-MM-DD}/...json`
+/// via [`writer::write_span_to_disk`] (atomic tmp→rename, EXDEV fallback, macOS
+/// `F_FULLFSYNC`). Inherits the caller's [`SpanContext`] via
+/// [`spawn_with_span_context`] so child spans carry the correct session/parent.
 ///
 /// No-op (zero cost) when the `observe` feature is disabled.
 #[cfg(feature = "observe")]
 pub fn emit_span_background(ctx: crate::ayin::span::TraceContext) {
-    tokio::spawn(async move {
+    let base = writer::default_trace_base();
+    writer::spawn_with_span_context(async move {
         match ctx.finish() {
-            Ok(span) => observe_impl::write_span_public(&span).await,
+            Ok(span) => {
+                let dir = writer::span_dir(&base, span.actor.as_str(), &span.timestamp);
+                if let Err(e) = writer::write_span_to_disk(&span, &dir).await {
+                    tracing::warn!(error = %e, "AYIN span disk write failed");
+                }
+            }
             Err(e) => tracing::warn!(error = %e, "AYIN span build failed"),
         }
     });

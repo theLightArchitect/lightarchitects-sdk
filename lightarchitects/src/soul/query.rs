@@ -146,6 +146,7 @@ impl<'a, T: Transport> QueryBuilder<'a, T> {
 
         let params = serde_json::json!({ "action": "query", "params": p });
         let raw = self.inner.call_tool("soulTools", params).await?;
-        serde_json::from_value(raw).map_err(SdkError::from)
+        let unwrapped = crate::soul::content::unwrap_json(raw, "query")?;
+        serde_json::from_value(unwrapped).map_err(SdkError::from)
     }
 }

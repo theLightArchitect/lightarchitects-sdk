@@ -165,3 +165,25 @@ secrecy                = { workspace = true }
 [[bench]]
 name    = "retrieval_queries"
 harness = false
+
+# Real-Ollama smoke test — gated behind `lightsquad` (the only feature that
+# exports OllamaCloudCodingProvider) and marked `#[ignore]` so it only runs
+# when invoked explicitly with OLLAMA_API_KEY.
+[[test]]
+name             = "ollama_real_codegen"
+path             = "tests/ollama_real_codegen.rs"
+required-features = ["lightsquad"]
+
+# Real-Ollama practical-utility test — regenerate the L0-L7 platform diagram
+# from current source-tree facts. Same gating as ollama_real_codegen.
+[[test]]
+name             = "ollama_diagram_regen"
+path             = "tests/ollama_diagram_regen.rs"
+required-features = ["lightsquad"]
+
+# Contract-driven regen with supervisor feedback loop — the load-bearing
+# remediation for the topology/hallucination/layer gaps observed in v2.
+[[test]]
+name             = "ollama_diagram_regen_v3"
+path             = "tests/ollama_diagram_regen_v3.rs"
+required-features = ["lightsquad"]

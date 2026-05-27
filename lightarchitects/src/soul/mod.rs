@@ -54,6 +54,7 @@
 /// Canonical SOUL action enum — vault operations, queries, voice, research.
 pub(crate) mod actions;
 pub(crate) mod client;
+pub(crate) mod content;
 pub(crate) mod graphrag_ingest;
 pub(crate) mod helix;
 pub(crate) mod ingest;

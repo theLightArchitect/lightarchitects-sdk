@@ -211,7 +211,8 @@ impl<'a, T: Transport> ResearchBuilder<'a, T> {
 
         let params = serde_json::json!({ "action": "soul_search", "params": p });
         let raw = self.inner.call_tool("soulTools", params).await?;
-        serde_json::from_value(raw).map_err(SdkError::from)
+        let unwrapped = crate::soul::content::unwrap_json(raw, "soul_search")?;
+        serde_json::from_value(unwrapped).map_err(SdkError::from)
     }
 }
 

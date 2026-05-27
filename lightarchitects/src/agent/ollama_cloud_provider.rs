@@ -127,6 +127,10 @@ pub enum CodingProviderError {
     #[error("git commit failed: {0}")]
     GitCommit(String),
 
+    /// `git add -A` staged nothing — the LLM produced byte-identical output.
+    #[error("LLM produced no staged file changes (byte-identical to current state)")]
+    NoChanges,
+
     /// Task exceeded the configured per-task timeout.
     #[error("task timed out after {0}s")]
     Timeout(u64),
@@ -205,23 +209,34 @@ impl OllamaCloudCodingProvider {
     /// `LIGHTSQUAD_CODING_MODEL` env var override) and `OLLAMA_API_KEY`
     /// from the environment.
     ///
-    /// When `LIGHTSQUAD_CODING_MODEL` is set the registry check is skipped so
-    /// that local Ollama models (e.g. `llama3.2:3b`) can be used without being
-    /// present in `CLOUD_MODEL_REGISTRY`. This path is intended for local
-    /// integration tests only — production deployments should leave the variable
-    /// unset.
+    /// Model resolution order:
+    /// 1. `LIGHTSQUAD_CODING_MODEL` — explicit override, skips registry check.
+    /// 2. `OLLAMA_MODEL` — ambient model from the shell environment (e.g.
+    ///    `qwen3.5:397b-cloud`). Also skips registry check so local Ollama
+    ///    can route cloud-tagged models via its own credentials.
+    /// 3. [`DEFAULT_CODING_MODEL`] — registry-validated production default.
+    ///
+    /// Paths 1 and 2 are intended for local development / integration tests;
+    /// production deployments should leave both env vars unset.
     ///
     /// # Errors
     ///
-    /// Returns [`CodingProviderError::UnknownModel`] if no override is set and
-    /// [`DEFAULT_CODING_MODEL`] is not in `CLOUD_MODEL_REGISTRY`.
+    /// Returns [`CodingProviderError::UnknownModel`] if neither override is set
+    /// and [`DEFAULT_CODING_MODEL`] is not in `CLOUD_MODEL_REGISTRY`.
     pub fn default_coding() -> Result<Self, CodingProviderError> {
         let token = std::env::var("OLLAMA_API_KEY")
             .ok()
             .filter(|s| !s.is_empty())
             .map(|s| SecretString::new(s.into()));
-        if let Ok(override_model) = std::env::var("LIGHTSQUAD_CODING_MODEL") {
-            // Local / dev path — skip registry validation.
+
+        // Paths 1 + 2: explicit override or ambient OLLAMA_MODEL — both skip
+        // registry validation so local and cloud-proxied models work equally.
+        let env_model = std::env::var("LIGHTSQUAD_CODING_MODEL")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .or_else(|| std::env::var("OLLAMA_MODEL").ok().filter(|s| !s.is_empty()));
+
+        if let Some(override_model) = env_model {
             let base_url =
                 std::env::var("OLLAMA_HOST").unwrap_or_else(|_| OLLAMA_CLOUD_BASE_URL.to_owned());
             let timeout_s = std::env::var("LIGHTSQUAD_OLLAMA_TIMEOUT_S")
@@ -237,7 +252,31 @@ impl OllamaCloudCodingProvider {
                 validator: OllamaResponseValidator::new(),
             });
         }
+
         Self::new(DEFAULT_CODING_MODEL, token)
+    }
+
+    /// Construct a provider with the given model slug, bypassing registry validation.
+    ///
+    /// Intended for internal routing dispatch where the model slug is selected by
+    /// `select_model` against a known-good set of routing targets.
+    #[must_use]
+    pub fn with_model(model: impl Into<String>, auth_token: Option<SecretString>) -> Self {
+        let slug = model.into();
+        let base_url =
+            std::env::var("OLLAMA_HOST").unwrap_or_else(|_| OLLAMA_CLOUD_BASE_URL.to_owned());
+        let timeout_s = std::env::var("LIGHTSQUAD_OLLAMA_TIMEOUT_S")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(OLLAMA_TASK_TIMEOUT_DEFAULT_S);
+        Self {
+            model: slug,
+            client: reqwest::Client::new(),
+            base_url,
+            auth_token,
+            task_timeout: Duration::from_secs(timeout_s),
+            validator: OllamaResponseValidator::new(),
+        }
     }
 
     /// Execute a coding task: send the prompt to Ollama Cloud, validate the
@@ -497,6 +536,21 @@ impl OllamaCloudCodingProvider {
             return Err(CodingProviderError::GitCommit(format!(
                 "git add -A failed (task {task_id}): {stderr}"
             )));
+        }
+
+        // Detect byte-identical output: exit 0 means no staged changes.
+        let diff_check = tokio::process::Command::new("git")
+            .args(["diff", "--cached", "--quiet"])
+            .current_dir(worktree_root)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| {
+                CodingProviderError::GitCommit(format!("git diff --cached spawn failed: {e}"))
+            })?;
+        if diff_check.status.success() {
+            return Err(CodingProviderError::NoChanges);
         }
 
         let commit_body = format!("{message}\n\nironclaw-task-id: {task_id}");
