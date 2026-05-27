@@ -280,10 +280,15 @@ async fn dispatch_strategy<T: Transport>(
                         format!("Phase {} — turn {}", state.phase, step.turn)
                     }
                     Outcome::Halt(state) => format!("COMPLETE — {} steps", state.steps.len()),
+                    Outcome::Pause(_, req) => format!("PAUSED — HITL: {}", req.question),
                 };
                 emit_status(transport, label).await?;
+                if matches!(&step.outcome, Outcome::Pause(_, _)) {
+                    break;
+                }
                 let state = match &step.outcome {
                     Outcome::Halt(s) | Outcome::Continue(s) => s,
+                    Outcome::Pause(_, _) => unreachable!("handled above"),
                 };
                 if let Some(last) = state.steps.last() {
                     let chunk = format!(
@@ -312,6 +317,10 @@ async fn dispatch_strategy<T: Transport>(
                             format!("ACH phase {:?} — turn {}", state.phase, step.turn),
                         )
                         .await?;
+                    }
+                    Outcome::Pause(_, req) => {
+                        emit_status(transport, format!("PAUSED — HITL: {}", req.question)).await?;
+                        break;
                     }
                     Outcome::Halt(tests) => {
                         let summary = tests
@@ -471,6 +480,10 @@ where
                 )
                 .await?;
             }
+            Outcome::Pause(_, req) => {
+                emit_status(transport, format!("PAUSED — HITL: {}", req.question)).await?;
+                break;
+            }
         }
     }
     Ok(())
@@ -500,6 +513,10 @@ where
                     format!("CoVe phase {:?} — turn {}", state.phase, step.turn),
                 )
                 .await?;
+            }
+            Outcome::Pause(_, req) => {
+                emit_status(transport, format!("PAUSED — HITL: {}", req.question)).await?;
+                break;
             }
             Outcome::Halt(cove_result) => {
                 let verified = cove_result.verified_count;
@@ -558,6 +575,10 @@ where
             }
             Outcome::Halt(entry) => {
                 emit_text(transport, entry.to_markdown()).await?;
+            }
+            Outcome::Pause(_, req) => {
+                emit_status(transport, format!("PAUSED — HITL: {}", req.question)).await?;
+                break;
             }
         }
     }
