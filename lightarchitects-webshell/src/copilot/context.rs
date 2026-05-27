@@ -367,6 +367,11 @@ pub fn assemble_prompt_prelude(
         out.push_str("</ui_context>\n");
     }
 
+    // Append the LightSquad routing hint so the LLM knows when to call
+    // `lightsquad_plan` vs stay with the streaming provider.
+    out.push_str(include_str!("lightsquad_routing_prompt.md"));
+    out.push('\n');
+
     out
 }
 

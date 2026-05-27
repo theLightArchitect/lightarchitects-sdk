@@ -120,6 +120,7 @@ impl Program {
 
         for (wave_idx, wave) in self.config.waves.iter().enumerate() {
             let result = wave_dispatcher::dispatch_wave(
+                wave_idx,
                 wave,
                 &self.coordinator,
                 &self.worktree_manager,
@@ -142,7 +143,7 @@ impl Program {
                         self.set_build_status(BuildStatus::Failed).await;
                         return Err(WaveError::TaskFailures(total_failed));
                     }
-                    let _ = (wave_idx, failed_ids);
+                    let _ = failed_ids;
                 }
                 Err(WaveError::TaskFailures(n)) => {
                     total_failed += n;

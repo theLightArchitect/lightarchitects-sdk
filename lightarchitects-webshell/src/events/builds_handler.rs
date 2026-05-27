@@ -362,6 +362,18 @@ pub struct TaskSpec {
     /// IDs of tasks that must complete before this one may start.
     #[serde(default)]
     pub depends_on: Vec<String>,
+    /// Worktree-relative file paths this task is exclusively allowed to
+    /// write. Empty = opt-out of ownership enforcement (legacy behaviour).
+    /// Non-empty = the wave dispatcher verifies disjoint sets across the
+    /// wave and the worker fails if it writes outside this list.
+    #[serde(default)]
+    pub file_ownership: Vec<String>,
+    /// Read-only investigation task — no writes, no git mutations. Routed
+    /// through the larger `SLOT_CAPACITY_READ` budget (default 16) so
+    /// context-gathering doesn't burn the write-task budget of 7.
+    /// See [`lightarchitects::lightsquad::types::Task::concurrency_safe`].
+    #[serde(default)]
+    pub concurrency_safe: bool,
 }
 
 /// Public response shape for `POST /api/builds` and `GET /api/builds/:id`.

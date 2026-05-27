@@ -31,6 +31,7 @@ lightarchitects = { path = "../lightarchitects", features = [
 
 # Aho-Corasick multi-pattern substring matching for the task classifier (HIGH H-8, no ReDoS).
 aho-corasick = "1"
+async-trait = "0.1"
 
 # Squad Dispatch TeamManager path-dep (C-1 fix — added when lockfile collision resolved).
 # CRITICAL C-1: LHS key MUST be the package name "lightarchitects-cli", not "lightarchitects_cli".

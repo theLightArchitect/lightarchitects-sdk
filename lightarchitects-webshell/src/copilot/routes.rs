@@ -5,6 +5,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+use super::lightsquad_tool::{LightsquadToolExecutor, build_lightsquad_executor};
 use axum::body::Bytes;
 use axum::{
     Json,
@@ -143,6 +144,7 @@ pub async fn copilot_chat_handler(
             Arc::clone(&session.native_interrupt_flag),
             state.la_native_api_key.clone(),
             state.config.token.clone(),
+            build_lightsquad_executor(&state),
         );
     }
 
@@ -224,6 +226,7 @@ async fn native_turn_task(
     msg: String,
     ollama_provider: Option<OllamaCliProvider>,
     interrupt_flag: Arc<AtomicBool>,
+    tool_executor: Arc<LightsquadToolExecutor>,
 ) {
     let memory = HelixSessionMemory::open(&cwd, 40);
     let restored = memory.restored_turn_count();
@@ -239,12 +242,14 @@ async fn native_turn_task(
     let result = if let Some(provider) = ollama_provider {
         let mut session = ConversationSession::new(config, Arc::new(provider))
             .with_memory(Box::new(memory))
-            .with_interrupt_flag(Arc::clone(&interrupt_flag));
+            .with_interrupt_flag(Arc::clone(&interrupt_flag))
+            .with_tool_executor(tool_executor);
         session.run_turn(&msg, &mut transport, &ctx).await
     } else {
         let mut session = ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()))
             .with_memory(Box::new(memory))
-            .with_interrupt_flag(Arc::clone(&interrupt_flag));
+            .with_interrupt_flag(Arc::clone(&interrupt_flag))
+            .with_tool_executor(tool_executor);
         session.run_turn(&msg, &mut transport, &ctx).await
     };
     if let Err(e) = result {
@@ -276,6 +281,7 @@ fn drive_native_sse(
     interrupt_flag: Arc<AtomicBool>,
     la_native_api_key: Option<secrecy::SecretString>,
     session_token: String,
+    tool_executor: Arc<LightsquadToolExecutor>,
 ) -> Response {
     // Reset any prior interrupt before starting a new turn so the flag does
     // not carry over from a previous cancelled request.
@@ -348,6 +354,7 @@ fn drive_native_sse(
             msg,
             ollama_provider,
             interrupt_flag,
+            tool_executor,
         )
         .instrument(span),
     );
@@ -539,6 +546,35 @@ fn grounding_headers(
     headers
 }
 
+/// Emit a webshell AYIN span to disk (fire-and-forget, alongside SSE).
+///
+/// Persists spans so the AYIN Lineage Circuit dashboard at `:3742` can build
+/// the session tree from disk files, not only from the live SSE stream.
+fn emit_disk_span(
+    actor: &str,
+    action: &str,
+    metadata: serde_json::Value,
+    outcome: lightarchitects::ayin::TraceOutcome,
+    parent_id: Option<Uuid>,
+    session_id: Option<Uuid>,
+) {
+    use lightarchitects::ayin::{
+        emit_span_background,
+        span::{Actor, TraceContext},
+    };
+    let mut ctx = TraceContext::new(Actor::new(actor), action)
+        .outcome(outcome)
+        .metadata(metadata);
+    if let Some(pid) = parent_id {
+        ctx = ctx.parent(pid);
+    }
+    let sid_str = session_id.map(|u| u.to_string());
+    if let Some(ref sid) = sid_str {
+        ctx = ctx.session_id(sid);
+    }
+    emit_span_background(ctx);
+}
+
 /// Emit a user or assistant message span parented to the session root.
 ///
 /// `kind` is `"user"` or `"assistant"`. Makes conversation turns visible as
@@ -568,6 +604,17 @@ fn emit_message_span(
         }),
         build_id,
     ));
+    emit_disk_span(
+        kind,
+        &format!("copilot.message.{kind}"),
+        json!({
+            "kind": kind,
+            "preview": &content[..content.len().min(200)],
+        }),
+        lightarchitects::ayin::TraceOutcome::Continue,
+        parent_id.and_then(|s| s.parse::<Uuid>().ok()),
+        build_id,
+    );
 }
 
 /// Emit AYIN spans for the grounding pipeline (Phase 6 — `copilot-eva-ambient`).
@@ -604,6 +651,7 @@ fn emit_grounding_spans(
 ) {
     let ts = chrono::Utc::now().to_rfc3339();
     let parent = parent_id.map(ToOwned::to_owned);
+    let span_pid = parent_id.and_then(|s| s.parse::<Uuid>().ok());
     let degraded = soul_timed_out || git_timed_out;
     let parallel_efficiency: f64 = if degraded {
         0.0
@@ -640,6 +688,18 @@ fn emit_grounding_spans(
         }),
         build_id,
     ));
+    emit_disk_span(
+        "webshell",
+        "copilot.eva_ambient.soul_search_ms",
+        json!({ "result_count": soul_result_count, "timed_out": soul_timed_out }),
+        if soul_timed_out {
+            lightarchitects::ayin::TraceOutcome::Block
+        } else {
+            lightarchitects::ayin::TraceOutcome::Continue
+        },
+        span_pid,
+        build_id,
+    );
     let _ = state.event_tx.send(WebEventV2::from_event(
         crate::events::WebEvent::AyinSpan(TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
@@ -665,6 +725,22 @@ fn emit_grounding_spans(
         }),
         build_id,
     ));
+    emit_disk_span(
+        "webshell",
+        "copilot.eva_ambient.git_gather_ms",
+        json!({
+            "branch": git.map_or("", |g| g.branch.as_str()),
+            "commit_count": git.map_or(0, |g| g.commits.len()),
+            "timed_out": git_timed_out,
+        }),
+        if git_timed_out {
+            lightarchitects::ayin::TraceOutcome::Block
+        } else {
+            lightarchitects::ayin::TraceOutcome::Continue
+        },
+        span_pid,
+        build_id,
+    );
     let _ = state.event_tx.send(WebEventV2::from_event(
         crate::events::WebEvent::AyinSpan(TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
@@ -691,6 +767,19 @@ fn emit_grounding_spans(
         }),
         build_id,
     ));
+    emit_disk_span(
+        "webshell",
+        "copilot.eva_ambient.grounding_wall_ms",
+        json!({
+            "soul_ms": soul_ms,
+            "git_ms": git_ms,
+            "parallel_speedup_ms": (soul_ms + git_ms).saturating_sub(grounding_wall_ms),
+            "pivot": degraded,
+        }),
+        lightarchitects::ayin::TraceOutcome::Continue,
+        span_pid,
+        build_id,
+    );
     let _ = state.event_tx.send(WebEventV2::from_event(
         crate::events::WebEvent::AyinSpan(TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
@@ -706,6 +795,14 @@ fn emit_grounding_spans(
         }),
         build_id,
     ));
+    emit_disk_span(
+        "webshell",
+        "copilot.eva_ambient.prelude_bytes",
+        json!({ "prelude_bytes": prelude_bytes }),
+        lightarchitects::ayin::TraceOutcome::Continue,
+        span_pid,
+        build_id,
+    );
 }
 
 /// `POST /api/builds/:id/copilot/interrupt` — signal a running native turn to stop.

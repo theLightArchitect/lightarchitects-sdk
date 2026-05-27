@@ -97,6 +97,26 @@ pub struct Task {
     pub branch: String,
     /// IDs of tasks that must reach [`TaskStatus::Complete`] before this one starts.
     pub depends_on: Vec<String>,
+    /// Worktree-relative file paths this task is exclusively allowed to write.
+    ///
+    /// When empty, ownership enforcement is opt-out (legacy / interactive
+    /// mode). When non-empty, the wave dispatcher rejects the wave if any
+    /// two tasks claim the same file (`WaveError::OwnershipConflict`) and the
+    /// worker fails if it writes files outside this set (post-task PoT-1
+    /// gate per agents-playbook §15.3.13).
+    #[serde(default)]
+    pub file_ownership: Vec<String>,
+    /// Declares this task as a read-only investigation (no filesystem writes,
+    /// no git mutations, no shared external state). The wave dispatcher uses a
+    /// separate, larger slot budget (`SLOT_CAPACITY_READ`, default 16) for
+    /// these tasks so context-gathering doesn't burn the
+    /// `SLOT_CAPACITY` (7) budget reserved for write tasks.
+    ///
+    /// Mirrors Claude Code's per-tool `isConcurrencySafe()` predicate, lifted
+    /// to the wave-task layer. Use for: codebase exploration, dependency
+    /// research, prior-art lookup via context7, doc retrieval.
+    #[serde(default)]
+    pub concurrency_safe: bool,
     /// Context bundles for the worker's system-prompt injection.
     pub context_tiers: Vec<ContextTier>,
     /// Prompt describing the task for the worker subprocess.
@@ -185,6 +205,8 @@ mod tests {
             id: id.to_owned(),
             branch: format!("task/{id}"),
             depends_on: deps.iter().map(|s| (*s).to_owned()).collect(),
+            file_ownership: vec![],
+            concurrency_safe: false,
             context_tiers: vec![],
             prompt: "test".to_owned(),
         }

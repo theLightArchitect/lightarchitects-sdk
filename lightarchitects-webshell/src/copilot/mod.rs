@@ -11,6 +11,7 @@ pub mod context;
 pub mod eva_identity;
 pub mod event_stream;
 pub mod git_context;
+pub mod lightsquad_tool;
 pub mod routes;
 pub mod soul_grounding;
 pub mod voice;
@@ -512,6 +513,14 @@ async fn run_print_turn(
                     }),
                     Some(session.build_id),
                 ));
+                emit_disk_span(
+                    "eva",
+                    &format!("tool.{name}"),
+                    serde_json::json!({ "build_id": build_id }),
+                    lightarchitects::ayin::TraceOutcome::Continue,
+                    turn_span_id.and_then(|s| s.parse::<uuid::Uuid>().ok()),
+                    session.build_id,
+                );
             }
             Ok(Some(ProviderEvent::TextDelta { text, .. })) => {
                 let send_r = session.event_tx.send(crate::events::WebEventV2::from_event(
@@ -1025,6 +1034,29 @@ pub(super) async fn call_ollama(
         .ok_or_else(|| "unexpected Ollama response shape".to_owned())
 }
 
+/// Emit a webshell AYIN span to disk (fire-and-forget, alongside SSE).
+fn emit_disk_span(
+    actor: &str,
+    action: &str,
+    metadata: serde_json::Value,
+    outcome: lightarchitects::ayin::TraceOutcome,
+    parent_id: Option<uuid::Uuid>,
+    session_id: uuid::Uuid,
+) {
+    use lightarchitects::ayin::{
+        emit_span_background,
+        span::{Actor, TraceContext},
+    };
+    let mut ctx = TraceContext::new(Actor::new(actor), action)
+        .outcome(outcome)
+        .metadata(metadata)
+        .session_id(&session_id.to_string());
+    if let Some(pid) = parent_id {
+        ctx = ctx.parent(pid);
+    }
+    emit_span_background(ctx);
+}
+
 /// Emit a session-root AYIN span for a new copilot session and return its ID.
 /// Subsequent turn spans use this ID as their `parent_id`.
 fn emit_session_start_span(session: &BuildSession, actor: &str) -> String {
@@ -1044,6 +1076,14 @@ fn emit_session_start_span(session: &BuildSession, actor: &str) -> String {
         }),
         Some(session.build_id),
     ));
+    emit_disk_span(
+        actor,
+        "copilot.session.started",
+        serde_json::json!({ "build_id": session.build_id.to_string(), "actor": actor }),
+        lightarchitects::ayin::TraceOutcome::Continue,
+        None,
+        session.build_id,
+    );
     span_id
 }
 
@@ -1076,6 +1116,17 @@ fn emit_turn_start_span(
         }),
         Some(session.build_id),
     ));
+    emit_disk_span(
+        actor,
+        "copilot.turn.started",
+        serde_json::json!({
+            "message_preview": &message[..message.len().min(200)],
+            "build_id": session.build_id.to_string(),
+        }),
+        lightarchitects::ayin::TraceOutcome::Continue,
+        session_span_id.and_then(|s| s.parse::<uuid::Uuid>().ok()),
+        session.build_id,
+    );
     (span_id, start, start_ts)
 }
 
@@ -1088,6 +1139,7 @@ fn emit_turn_complete_span(
     elapsed: std::time::Duration,
     outcome: &str,
 ) {
+    let duration_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
     let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
         crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
@@ -1095,7 +1147,7 @@ fn emit_turn_complete_span(
             actor: actor.to_owned(),
             action: "copilot.turn.completed".to_owned(),
             timestamp: start_ts.to_owned(),
-            duration_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
+            duration_ms,
             outcome: serde_json::json!(outcome),
             metadata: serde_json::json!({
                 "build_id": session.build_id.to_string(),
@@ -1106,6 +1158,22 @@ fn emit_turn_complete_span(
         }),
         Some(session.build_id),
     ));
+    emit_disk_span(
+        actor,
+        "copilot.turn.completed",
+        serde_json::json!({
+            "build_id": session.build_id.to_string(),
+            "duration_s": format!("{:.1}", elapsed.as_secs_f64()),
+            "actor": actor,
+        }),
+        if outcome == "error" {
+            lightarchitects::ayin::TraceOutcome::Block
+        } else {
+            lightarchitects::ayin::TraceOutcome::Continue
+        },
+        parent_span_id.parse::<uuid::Uuid>().ok(),
+        session.build_id,
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

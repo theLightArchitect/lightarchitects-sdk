@@ -135,7 +135,14 @@ fn build_evaluation_prompt(ctx: &WaveContext<'_>) -> String {
     )
 }
 
-/// POST to Ollama `/api/generate` and return the `response` field.
+/// POST to Ollama `/api/generate` with streaming + NDJSON accumulation.
+///
+/// Streaming-by-default per the platform policy — wave evaluations can run
+/// 30 s+ on reasoning models, and non-streaming buffered responses are
+/// prone to upstream EOFs when the local Ollama proxy waits past its
+/// upstream's idle window. Per Ollama docs (`/api/streaming`): streaming
+/// is "better suited for long generations." We accumulate the `response`
+/// field from every NDJSON chunk.
 async fn call_ollama_generate(
     client: &reqwest::Client,
     base: &str,
@@ -146,7 +153,7 @@ async fn call_ollama_generate(
     let body = serde_json::json!({
         "model": model,
         "prompt": prompt,
-        "stream": false
+        "stream": true,
     });
 
     let resp = client
@@ -160,11 +167,27 @@ async fn call_ollama_generate(
         return Err(format!("HTTP {}", resp.status()));
     }
 
-    let v: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    v["response"]
-        .as_str()
-        .map(str::to_owned)
-        .ok_or_else(|| "missing `response` field in Ollama reply".to_owned())
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    let mut accumulated = String::new();
+    for line in bytes.split(|b| *b == b'\n') {
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(val) = serde_json::from_slice::<serde_json::Value>(line) else {
+            continue;
+        };
+        // Mid-stream error per Ollama's documented format.
+        if let Some(err) = val.get("error").and_then(serde_json::Value::as_str) {
+            return Err(format!("ollama streamed error: {err}"));
+        }
+        if let Some(chunk) = val.get("response").and_then(serde_json::Value::as_str) {
+            accumulated.push_str(chunk);
+        }
+    }
+    if accumulated.is_empty() {
+        return Err("ollama streamed response produced no content".to_owned());
+    }
+    Ok(accumulated)
 }
 
 /// Intermediate deserialization target for the model's JSON verdict.

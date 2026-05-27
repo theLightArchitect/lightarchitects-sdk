@@ -29,6 +29,9 @@
 //! promotion to standalone workspace crate when sub-module count ≥ 10 or
 //! independent-publish need emerges.
 
+/// JSON-schema type definitions for the `lightsquad_plan` copilot tool.
+pub mod plan_schema;
+
 /// Core status enums, task definition, shared state, and scheduling predicate.
 pub mod types;
 
@@ -78,6 +81,16 @@ pub mod ollama_response_validator;
 
 /// PAUSE/drain/resume state machine + atomic-write helper.
 pub mod pause;
+
+/// Per-task LASDLC contract — shared vocabulary between worker and supervisor.
+pub mod contract;
+
+/// Contract-driven prompt builders for the worker and supervisor.
+pub mod contract_prompt;
+
+/// HTTP-based contract supervisor — evaluates an artifact against a contract
+/// and returns a [`contract::Verdict`].
+pub mod contract_supervisor;
 
 // ── DEPRECATED: orchestration re-exports ─────────────────────────────────────
 //
