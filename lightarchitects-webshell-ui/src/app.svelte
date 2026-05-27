@@ -29,7 +29,7 @@
     ayinStatus, startWaveTick, stopWaveTick, initializeStores, drawerHeightPx, drawerWidthPx, memoryDrawerOpen,
     builds, currentBuildId, findings, logEntries, artifacts, conductorTasks, arenaStatus, alerts,
     activePlan, latestScrumReport, hotMemory, coldMemory, activeHelixNode, selectedPillar,
-    expandedFindings, supervisorAlerts, siblingHealth, copilotMessages,
+    expandedFindings, supervisorAlerts, siblingHealth, copilotMessages, strategyHitl,
     intakeFormDirty, authStatus, commandPaletteOpen, eventsOverlayOpen, streamDrawerWidthPx,
     streamDrawerOpen, streamDrawerActiveTabs, type StreamDrawerTab,
   } from '$lib/stores';
@@ -193,7 +193,7 @@
         conductorTasks, arenaStatus, alerts, activePlan,
         latestScrumReport, hotMemory, coldMemory, activeHelixNode,
         selectedPillar, expandedFindings, supervisorAlerts,
-        siblingHealth, copilotMessages,
+        siblingHealth, copilotMessages, strategyHitl,
         // Wave 3 P0s: AuthBanner status (#13), Intake dirty state (#15)
         authStatus, intakeFormDirty,
         // §11 command palette — Cmd+K conflicts with dispatch nav, use store for tests
