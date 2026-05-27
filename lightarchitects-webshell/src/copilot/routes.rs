@@ -1068,55 +1068,131 @@ pub async fn copilot_hitl_resolve_handler(
     State(state): State<AppState>,
     Json(body): Json<HitlResolveBody>,
 ) -> impl IntoResponse {
-    use crate::copilot::strategy_runner::ResumeRegistry;
+    let registry = &state.resume_registry;
 
-    let registry: &ResumeRegistry = &state.resume_registry;
-
-    match registry.take(&body.request_id, &body.session_id) {
-        None => (
+    let Some((loop_state, strategy_id, options_count)) =
+        registry.take(&body.request_id, &body.session_id)
+    else {
+        return (
             StatusCode::NOT_FOUND,
+            Json(json!({ "error": "unknown, expired, or already-consumed request_id" })),
+        )
+            .into_response();
+    };
+
+    // S1-F4: dismiss consumes the nonce but skips strategy execution.
+    if body.dismissed {
+        tracing::info!(
+            request_id = %body.request_id,
+            strategy_id = %strategy_id,
+            "hitl_resolve: operator dismissed strategy pause"
+        );
+        return (StatusCode::OK, Json(json!({ "status": "dismissed" }))).into_response();
+    }
+
+    if body.choice >= options_count {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
             Json(json!({
-                "error": "unknown, expired, or already-consumed request_id"
+                "error": "choice index out of range",
+                "choice": body.choice,
+                "options_count": options_count
             })),
         )
-            .into_response(),
-        Some((loop_state, strategy_id, options_count)) => {
-            // S1-F4: dismiss consumes the nonce but skips strategy execution.
-            if body.dismissed {
-                tracing::info!(
-                    request_id = %body.request_id,
-                    strategy_id = %strategy_id,
-                    "hitl_resolve: operator dismissed strategy pause"
-                );
-                return (StatusCode::OK, Json(json!({ "status": "dismissed" }))).into_response();
-            }
-            if body.choice >= options_count {
-                return (
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    Json(json!({
-                        "error": "choice index out of range",
-                        "choice": body.choice,
-                        "options_count": options_count
-                    })),
-                )
-                    .into_response();
-            }
-            tracing::info!(
-                request_id = %body.request_id,
-                strategy_id = %strategy_id,
-                choice = body.choice,
-                "hitl_resolve: operator resolved strategy pause"
-            );
-            (
-                StatusCode::OK,
-                Json(json!({
-                    "strategy_id": strategy_id,
-                    "loop_state_phase": loop_state.phase,
-                    "choice": body.choice,
-                    "status": "accepted"
-                })),
-            )
-                .into_response()
-        }
+            .into_response();
     }
+
+    let Some(strategy) = lightarchitects::agent::loops::StrategyRegistry::lookup(&strategy_id)
+    else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "strategy not in registry", "strategy_id": strategy_id })),
+        )
+            .into_response();
+    };
+
+    tracing::info!(
+        request_id = %body.request_id,
+        strategy_id = %strategy_id,
+        choice = body.choice,
+        "hitl_resolve: resuming strategy from operator choice"
+    );
+
+    let mut resumed_state = loop_state;
+    resumed_state
+        .meta
+        .insert("hitl_choice".to_owned(), body.choice.to_string());
+
+    spawn_hitl_continuation(
+        strategy,
+        resumed_state,
+        body.session_id.clone(),
+        strategy_id.clone(),
+        state.event_tx.clone(),
+        std::sync::Arc::clone(&state.resume_registry),
+    );
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "strategy_id": strategy_id,
+            "choice": body.choice,
+            "status": "resuming"
+        })),
+    )
+        .into_response()
+}
+
+/// Spawns the mpsc-bridge and continuation tasks for a resumed HITL strategy.
+fn spawn_hitl_continuation(
+    strategy: lightarchitects::agent::loops::RegisteredStrategy,
+    resumed_state: lightarchitects::agent::loops::LoopState,
+    session_id: String,
+    strategy_id: String,
+    event_tx: tokio::sync::broadcast::Sender<crate::events::WebEventV2>,
+    registry: std::sync::Arc<crate::copilot::strategy_runner::ResumeRegistry>,
+) {
+    use crate::copilot::strategy_runner::{DispatchResult, StrategyDispatcher};
+
+    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<String>(64);
+    let event_tx_bridge = event_tx.clone();
+    tokio::spawn(async move {
+        while let Some(msg) = progress_rx.recv().await {
+            let _ = event_tx_bridge.send(crate::events::WebEventV2::from_event(
+                crate::events::WebEvent::CopilotResponse {
+                    chunk: msg,
+                    done: false,
+                    sibling: None,
+                    turn_span_id: None,
+                },
+                None,
+            ));
+        }
+    });
+
+    let sid_label = strategy_id.clone();
+    tokio::spawn(async move {
+        let dispatcher = StrategyDispatcher::new(registry);
+        let result = dispatcher
+            .dispatch(strategy, resumed_state, session_id, progress_tx)
+            .await;
+        let summary = match &result {
+            DispatchResult::Halted { phases_run } => {
+                format!("[{sid_label}] complete ({phases_run} phases)")
+            }
+            DispatchResult::Error(e) => format!("[{sid_label}] error: {e}"),
+            DispatchResult::Paused { hitl, .. } => {
+                format!("[{sid_label}] paused: {}", hitl.question)
+            }
+        };
+        let _ = event_tx.send(crate::events::WebEventV2::from_event(
+            crate::events::WebEvent::CopilotResponse {
+                chunk: summary,
+                done: true,
+                sibling: None,
+                turn_span_id: None,
+            },
+            None,
+        ));
+    });
 }

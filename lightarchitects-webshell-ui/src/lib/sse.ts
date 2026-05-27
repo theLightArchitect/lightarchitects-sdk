@@ -496,7 +496,7 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
           // Append chunk to the existing assistant message; merge turn_span_id when present on done event.
           return msgs.map((m, i) =>
             i === msgs.length - 1
-              ? { ...m, content: m.content + (resp.chunk ?? ''), ...(resp.turn_span_id ? { turn_span_id: resp.turn_span_id } : {}) }
+              ? { ...m, content: m.content + (resp.chunk ?? ''), ...(resp.done && resp.turn_span_id ? { turn_span_id: resp.turn_span_id } : {}) }
               : m
           );
         }
@@ -507,7 +507,7 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
           content: resp.chunk ?? '',
           sibling: resp.sibling,
           timestamp: new Date().toISOString(),
-          ...(resp.turn_span_id ? { turn_span_id: resp.turn_span_id } : {}),
+          ...(resp.done && resp.turn_span_id ? { turn_span_id: resp.turn_span_id } : {}),
         }];
       });
       if (resp.done) {

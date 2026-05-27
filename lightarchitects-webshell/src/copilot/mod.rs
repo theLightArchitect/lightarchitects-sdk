@@ -917,8 +917,24 @@ pub(super) async fn call_subprocess(
             .and_then(|p| p.session_id.as_deref())
             .map(ToOwned::to_owned);
 
-        let (text, new_session_id) =
-            run_print_turn(message, session, prev_session_id.as_deref(), Some(&span_id)).await?;
+        let turn_result =
+            run_print_turn(message, session, prev_session_id.as_deref(), Some(&span_id)).await;
+        if let Err(ref e) = turn_result {
+            tracing::warn!(
+                error = %e,
+                "subprocess exited before MessageStop; emitting fallback done=true to unblock UI"
+            );
+            let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+                crate::events::WebEvent::CopilotResponse {
+                    chunk: String::new(),
+                    done: true,
+                    sibling: None,
+                    turn_span_id: None,
+                },
+                Some(session.build_id),
+            ));
+        }
+        let (text, new_session_id) = turn_result?;
 
         if let Some(ref mut proc) = *guard {
             proc.session_id = new_session_id;

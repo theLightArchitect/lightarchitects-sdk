@@ -102,7 +102,12 @@ async fn drive_copilot_stream(
             Ok(ev) => {
                 let inner = ev.inner;
                 let conversation_ev = match inner {
-                    WebEvent::CopilotResponse { chunk, done, .. } => {
+                    WebEvent::CopilotResponse {
+                        chunk,
+                        done,
+                        sibling: _,
+                        turn_span_id: _,
+                    } => {
                         if done {
                             // done=true may carry the final chunk; emit Text first if
                             // non-empty, then Complete. We can only return one event per

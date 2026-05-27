@@ -18,11 +18,8 @@
 
 use std::{
     collections::HashMap,
-    sync::{
-        Mutex,
-        atomic::{AtomicU64, Ordering},
-    },
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    sync::Mutex,
+    time::{Duration, Instant},
 };
 
 use futures_util::StreamExt as _;
@@ -39,9 +36,6 @@ use tracing::{info, warn};
 
 /// TTL for parked HITL states (30 minutes).
 const RESUME_TTL: Duration = Duration::from_secs(30 * 60);
-
-/// Per-process nonce counter — XOR'd with the timestamp for uniqueness.
-static NONCE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Maximum number of parked HITL states (safety cap against OOM).
 const MAX_PARKED_STATES: usize = 256;
@@ -134,22 +128,30 @@ impl ResumeRegistry {
         #[allow(clippy::unwrap_used)]
         let mut guard = self.inner.lock().unwrap();
 
-        let entry = guard.remove(request_id)?;
-
-        if entry.parked_at.elapsed() > RESUME_TTL {
+        // Peek TTL before removing — prevents TOCTOU where a remove() fires
+        // before the TTL check and silently destroys the parked state on expiry.
+        let ttl_ok = guard
+            .get(request_id)
+            .is_some_and(|e| e.parked_at.elapsed() <= RESUME_TTL);
+        if !ttl_ok {
+            guard.remove(request_id); // evict the expired entry
             warn!(request_id, "resume_registry: TTL expired — rejecting take");
             return None;
         }
 
-        if entry.session_id != session_id {
-            // Re-insert to allow legitimate retry, then reject.
-            guard.insert(request_id.to_owned(), entry);
+        // Session-id check before removal so we can reject without consuming the entry.
+        let session_ok = guard
+            .get(request_id)
+            .is_some_and(|e| e.session_id == session_id);
+        if !session_ok {
             warn!(
                 request_id,
                 "resume_registry: session_id mismatch — rejecting"
             );
             return None;
         }
+
+        let entry = guard.remove(request_id)?;
 
         Some((entry.state, entry.strategy_id, entry.options_count))
     }
@@ -275,18 +277,11 @@ impl StrategyDispatcher {
 // ---------------------------------------------------------------------------
 
 /// Generate an 8-byte CSPRNG nonce as a 16-char hex string.
-///
-/// Mixes subsecond timestamp with a monotonic per-process counter so nonces
-/// are unique even when called within the same nanosecond.  Production
-/// deployments should replace this with `rand::thread_rng().gen::<[u8; 8]>()`.
 fn generate_nonce() -> String {
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos();
-    let counter = NONCE_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let combined: u64 = (u64::from(ts) << 32) ^ counter ^ 0x7A9B_3C1D_CAFE_0000;
-    format!("{combined:016x}")
+    use rand::RngCore as _;
+    let mut bytes = [0u8; 8];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    format!("{:016x}", u64::from_be_bytes(bytes))
 }
 
 // ---------------------------------------------------------------------------
