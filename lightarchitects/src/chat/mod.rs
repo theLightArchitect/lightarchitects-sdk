@@ -14,7 +14,9 @@
 pub mod error;
 pub mod formats;
 pub mod interest;
+pub mod mode;
 pub mod personality;
+pub mod roster;
 pub mod sanitizer;
 pub mod sibling_provider;
 pub mod types;
@@ -22,7 +24,9 @@ pub mod types;
 pub use error::{ChatError, ChatResult};
 pub use formats::{CanonEvaluation, ConversationFormat, RubberDuck, Slot};
 pub use interest::{InterestScore, InterestScorer};
+pub use mode::{DOMAIN_KEYWORDS, Mode};
 pub use personality::PersonalityEngine;
+pub use roster::{ActiveRoster, RosterDelta};
 pub use sanitizer::{DefaultSanitizer, ResponseSanitizer};
 pub use sibling_provider::{SiblingProvider, StaticSiblingProvider};
 pub use types::{

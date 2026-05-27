@@ -314,6 +314,52 @@ impl InterestScorer {
         let recovered = depleted + NOVELTY_RECOVERY_PER_TURN * turns_f32;
         recovered.clamp(0.0, 1.0)
     }
+
+    /// Select the top-`k` speakers by interest score, filtered above the
+    /// silence threshold.
+    ///
+    /// Returns a ranked `Vec<InterestScore>` (index 0 = highest interest).
+    /// If fewer eligible siblings than `k` exist above the threshold, the
+    /// returned vec will be shorter. The LÆX canon-check exemption applies
+    /// to prevent canon slot siblings from being filtered out.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ChatError::SpeakerSelection`] if `siblings` is empty.
+    pub fn select_speakers(
+        siblings: &[SiblingInfo],
+        context: &ConversationContext,
+        active_format: Option<&dyn ConversationFormat>,
+        top_k: usize,
+    ) -> ChatResult<Vec<InterestScore>> {
+        if siblings.is_empty() {
+            return Err(ChatError::SpeakerSelection("no siblings available".into()));
+        }
+
+        let canon_active = has_canon_check_slot(active_format) || is_canon_check_slot(context);
+
+        let mut scores: Vec<InterestScore> =
+            siblings.iter().map(|s| Self::score(s, context)).collect();
+
+        scores.sort_by(|a, b| {
+            b.total
+                .partial_cmp(&a.total)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for (rank, score) in scores.iter_mut().enumerate() {
+            score.rank = rank.saturating_add(1);
+        }
+
+        let eligible: Vec<InterestScore> = scores
+            .into_iter()
+            .filter(|s| {
+                s.total >= SILENCE_THRESHOLD || (canon_active && is_laex_sibling(&s.sibling_id))
+            })
+            .take(top_k)
+            .collect();
+
+        Ok(eligible)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1248,5 +1294,110 @@ mod tests {
             KNOWN_SIBLINGS_LEN, 7,
             "KNOWN_SIBLINGS should have 7 entries after adding ayin and exodus"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // select_speakers (top-K) — Phase 3 tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn select_speakers_returns_ranked() {
+        // eva has security + emotional strands; topic is security → eva should rank high
+        let siblings = vec![
+            make_sibling("eva", &["emotional", "growth"]),
+            make_sibling("corso", &["security", "tactical"]),
+            make_sibling("quantum", &["forensic", "analysis"]),
+        ];
+        let ctx = ConversationContext {
+            messages: vec![ChatMessage::new(
+                "kevin".into(),
+                "let's review the security posture".into(),
+            )],
+            current_topic: Some("security review".into()),
+            emotional_state: None,
+            participants: vec!["eva".into(), "corso".into(), "quantum".into()],
+            span_id: None,
+        };
+
+        let results = InterestScorer::select_speakers(&siblings, &ctx, None, 3)
+            .expect("select_speakers should succeed");
+
+        assert!(!results.is_empty(), "should return at least one speaker");
+        // Results must be ordered by rank (ascending rank = higher interest)
+        let ranks: Vec<usize> = results.iter().map(|s| s.rank).collect();
+        for window in ranks.windows(2) {
+            assert!(
+                window[0] <= window[1],
+                "results must be sorted by rank ascending: {ranks:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn select_speakers_caps_at_top_k() {
+        let siblings = vec![
+            make_sibling("eva", &["emotional"]),
+            make_sibling("corso", &["security"]),
+            make_sibling("quantum", &["research"]),
+            make_sibling("seraph", &["pentest"]),
+        ];
+        let ctx = ConversationContext {
+            messages: vec![ChatMessage::new(
+                "kevin".into(),
+                "discuss everything".into(),
+            )],
+            current_topic: Some("broad discussion".into()),
+            emotional_state: None,
+            participants: vec![
+                "eva".into(),
+                "corso".into(),
+                "quantum".into(),
+                "seraph".into(),
+            ],
+            span_id: None,
+        };
+
+        let results = InterestScorer::select_speakers(&siblings, &ctx, None, 2)
+            .expect("select_speakers should succeed");
+
+        assert!(
+            results.len() <= 2,
+            "must not exceed top_k=2, got {}",
+            results.len()
+        );
+    }
+
+    #[test]
+    fn select_speakers_filters_below_threshold() {
+        // Give all siblings zero-stake topics so most fall below the silence threshold
+        let siblings = vec![
+            make_sibling("eva", &["irrelevant-strand-xyz"]),
+            make_sibling("corso", &["another-irrelevant-strand"]),
+        ];
+        // Topic is totally unrelated to any strand → both should score near zero
+        let ctx = ConversationContext {
+            messages: vec![ChatMessage::new(
+                "kevin".into(),
+                "random unrelated content 12345".into(),
+            )],
+            current_topic: Some("unrelated-xyzzy-topic-not-a-strand".into()),
+            emotional_state: None,
+            participants: vec!["eva".into(), "corso".into()],
+            span_id: None,
+        };
+
+        // Empty result is valid when all siblings are below silence threshold
+        let results = InterestScorer::select_speakers(&siblings, &ctx, None, 3)
+            .expect("should not error even when no eligible speakers");
+
+        // All results must be at or above silence threshold
+        for r in &results {
+            assert!(
+                r.total >= 0.2,
+                "all returned speakers must be above silence threshold 0.2; got total={:.3} for {}",
+                r.total,
+                r.sibling_id
+            );
+        }
     }
 }
