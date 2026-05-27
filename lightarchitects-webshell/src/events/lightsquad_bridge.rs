@@ -147,12 +147,24 @@ async fn run_build(ctx: BridgeContext) {
     sort_waves_by_fan_out(&mut ls_waves);
     let wave_count = ls_waves.len();
 
-    // AYIN: root span for the entire autonomous build — no parent.
+    // AYIN Phase 3: user.message root anchors the entire conductor turn in the
+    // Lineage Circuit (gold ring).  All squad spans hang below it.
+    let user_turn_span_id = {
+        let ctx = TraceContext::new(Actor::new("user"), "user.message")
+            .outcome(TraceOutcome::Continue)
+            .metadata(serde_json::json!({"codename": &codename, "wave_count": wave_count}))
+            .session_id(&build_id.to_string());
+        let span_id = ctx.span_id();
+        emit_span_background(ctx);
+        span_id
+    };
+
+    // AYIN: build-root span parented to the user.message turn span.
     let build_span_id = emit_squad_span(
         "squad.build.started",
         serde_json::json!({"codename": &codename, "wave_count": wave_count}),
         TraceOutcome::Continue,
-        None,
+        Some(user_turn_span_id),
         build_id,
     );
 
@@ -207,7 +219,7 @@ async fn run_build(ctx: BridgeContext) {
         Some("canon://agents-playbook#§15"),
     );
 
-    match program.run(worker_fn).await {
+    let outcome = match program.run(worker_fn).await {
         Ok(summary) => {
             let _ = dw.append(
                 "L1",
@@ -238,6 +250,7 @@ async fn run_build(ctx: BridgeContext) {
                 }),
                 Some(build_id),
             ));
+            TraceOutcome::Continue
         }
         Err(e) => {
             let _ = dw.append(
@@ -252,7 +265,19 @@ async fn run_build(ctx: BridgeContext) {
                 Some(build_span_id),
                 build_id,
             );
+            TraceOutcome::Error(e.to_string())
         }
+    };
+
+    // AYIN Phase 3: assistant.response leaf closes the turn (gold ring at outer
+    // radius, paired with the user.message root above).
+    {
+        let ctx = TraceContext::new(Actor::new("claude"), "assistant.response")
+            .outcome(outcome)
+            .metadata(serde_json::json!({"codename": &codename}))
+            .session_id(&build_id.to_string())
+            .parent(user_turn_span_id);
+        emit_span_background(ctx);
     }
 }
 

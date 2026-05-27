@@ -504,15 +504,18 @@ async fn run_print_turn(
                 ..
             })) if block_type == "tool_use" => {
                 let name = tool_name.as_deref().unwrap_or("unknown");
+                // Actor "copilot" → no actor-role mapping → color driven by
+                // outcome (Continue → cyan), creating a visual mid-tier between
+                // the gold user.message root and the gold assistant.response leaf.
                 let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
                     crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
                         id: uuid::Uuid::new_v4().to_string(),
                         parent_id: turn_span_id.map(ToOwned::to_owned),
-                        actor: "eva".to_owned(),
+                        actor: "copilot".to_owned(),
                         action: format!("tool.{name}"),
                         timestamp: chrono::Utc::now().to_rfc3339(),
                         duration_ms: 0,
-                        outcome: serde_json::json!("started"),
+                        outcome: serde_json::json!("Continue"),
                         metadata: serde_json::json!({ "build_id": build_id }),
                         strand_activations: Vec::new(),
                         decision_points: Vec::new(),
@@ -520,7 +523,7 @@ async fn run_print_turn(
                     Some(session.build_id),
                 ));
                 emit_disk_span(
-                    "eva",
+                    "copilot",
                     &format!("tool.{name}"),
                     serde_json::json!({ "build_id": build_id }),
                     lightarchitects::ayin::TraceOutcome::Continue,
@@ -927,14 +930,13 @@ pub(super) async fn call_subprocess(
             });
         }
 
-        // Emit turn-complete AYIN span
-        emit_turn_complete_span(
+        emit_assistant_response_span(
             session,
             &span_id,
-            actor,
             &start_ts,
             start.elapsed(),
             "success",
+            &text,
         );
 
         return Ok(text);
@@ -955,13 +957,13 @@ pub(super) async fn call_subprocess(
             Some(session.build_id),
         ));
 
-        emit_turn_complete_span(
+        emit_assistant_response_span(
             session,
             &span_id,
-            actor,
             &start_ts,
             start.elapsed(),
             "success",
+            &text,
         );
 
         return Ok(text);
@@ -988,14 +990,13 @@ pub(super) async fn call_subprocess(
             });
         }
 
-        // Emit turn-complete AYIN span
-        emit_turn_complete_span(
+        emit_assistant_response_span(
             session,
             &span_id,
-            actor,
             &start_ts,
             start.elapsed(),
             "success",
+            &text,
         );
 
         return Ok(text);
@@ -1093,11 +1094,15 @@ fn emit_session_start_span(session: &BuildSession, actor: &str) -> String {
     span_id
 }
 
-/// Emit a turn-start AYIN span and return `(span_id, Instant, timestamp)` for
-/// the caller to pass to [`emit_turn_complete_span`] when the turn finishes.
+/// Emit a `user.message` AYIN span (turn root) and return `(span_id, Instant, timestamp)`
+/// for the caller to pass to [`emit_assistant_response_span`] when the turn finishes.
+///
+/// Actor is always `"user"` so the Lineage Circuit renders the node in gold,
+/// distinguishing the human input from tool calls (cyan) and the assistant
+/// response (gold leaf via `"claude"` actor).
 fn emit_turn_start_span(
     session: &BuildSession,
-    actor: &str,
+    _actor: &str,
     message: &str,
     session_span_id: Option<&str>,
 ) -> (String, std::time::Instant, String) {
@@ -1108,8 +1113,8 @@ fn emit_turn_start_span(
         crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
             id: span_id.clone(),
             parent_id: session_span_id.map(ToOwned::to_owned),
-            actor: actor.to_owned(),
-            action: "copilot.turn.started".to_owned(),
+            actor: "user".to_owned(),
+            action: "user.message".to_owned(),
             timestamp: start_ts.clone(),
             duration_ms: 0,
             outcome: serde_json::json!("pending"),
@@ -1123,8 +1128,8 @@ fn emit_turn_start_span(
         Some(session.build_id),
     ));
     emit_disk_span(
-        actor,
-        "copilot.turn.started",
+        "user",
+        "user.message",
         serde_json::json!({
             "message_preview": &message[..message.len().min(200)],
             "build_id": session.build_id.to_string(),
@@ -1136,28 +1141,33 @@ fn emit_turn_start_span(
     (span_id, start, start_ts)
 }
 
-/// Emit a turn-complete AYIN span with real duration measurement.
-fn emit_turn_complete_span(
+/// Emit an `assistant.response` AYIN span — the terminal leaf of every turn.
+///
+/// Actor is always `"claude"` (the CLI agent that produced the response).
+/// The Lineage Circuit renders this gold at the outermost radius, bookending
+/// the turn: gold `user.message` root → cyan tool calls → gold leaf here.
+fn emit_assistant_response_span(
     session: &BuildSession,
     parent_span_id: &str,
-    actor: &str,
     start_ts: &str,
     elapsed: std::time::Duration,
     outcome: &str,
+    response_preview: &str,
 ) {
     let duration_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
     let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
         crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
             parent_id: Some(parent_span_id.to_owned()),
-            actor: actor.to_owned(),
-            action: "copilot.turn.completed".to_owned(),
+            actor: "claude".to_owned(),
+            action: "assistant.response".to_owned(),
             timestamp: start_ts.to_owned(),
             duration_ms,
             outcome: serde_json::json!(outcome),
             metadata: serde_json::json!({
                 "build_id": session.build_id.to_string(),
                 "duration_s": format!("{:.1}", elapsed.as_secs_f64()),
+                "response_preview": &response_preview[..response_preview.len().min(200)],
             }),
             strand_activations: Vec::new(),
             decision_points: Vec::new(),
@@ -1165,12 +1175,12 @@ fn emit_turn_complete_span(
         Some(session.build_id),
     ));
     emit_disk_span(
-        actor,
-        "copilot.turn.completed",
+        "claude",
+        "assistant.response",
         serde_json::json!({
             "build_id": session.build_id.to_string(),
             "duration_s": format!("{:.1}", elapsed.as_secs_f64()),
-            "actor": actor,
+            "response_preview": &response_preview[..response_preview.len().min(200)],
         }),
         if outcome == "error" {
             lightarchitects::ayin::TraceOutcome::Block
