@@ -206,6 +206,7 @@ mod tests {
             WebEvent::AyinSpan(TraceSpanSummary {
                 id: "x".into(),
                 parent_id: None,
+                session_id: None,
                 actor: "gateway".into(),
                 action: "test".into(),
                 timestamp: Utc::now().to_rfc3339(),

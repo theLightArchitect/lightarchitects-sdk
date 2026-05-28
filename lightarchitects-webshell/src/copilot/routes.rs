@@ -78,24 +78,25 @@ pub async fn copilot_chat_handler(
         )
             .into_response();
     };
-    // Peek the session_span_id from the prior turn so grounding spans can be
-    // parented to the session root.  On the first turn the field is None and
-    // grounding spans remain orphaned — acceptable since the root doesn't exist yet.
-    let grounding_parent_id: Option<String> = {
+    // Emit the user.message span FIRST so that grounding spans and tool spans
+    // can be parented to the turn.  Use session_span_id (from a prior turn) as
+    // the parent of the user message, creating a proper session → turn hierarchy.
+    // If session_span_id is None (first turn), the user message becomes a root —
+    // still correct because the turn IS the root of that interaction.
+    let session_span_id: Option<String> = {
         let guard = session.copilot_proc.lock().await;
         guard.as_ref().and_then(|p| p.session_span_id.clone())
     };
-    // Clone before grounding_parent_id is moved into gather_grounding so that
-    // message spans (user + assistant) can be parented to the same session root.
-    let session_parent_id = grounding_parent_id.clone();
     let turn_span_id = emit_message_span(
         &state,
         "user",
         &body.message,
-        session_parent_id.as_deref(),
+        session_span_id.as_deref(),
         Some(id),
     );
 
+    // Grounding spans are parented to the turn (not the session root) so they
+    // appear as children of the user's message in the Lineage Circuit.
     let (prelude, soul_block, git_ctx) = gather_grounding(
         &state,
         id,
@@ -104,7 +105,7 @@ pub async fn copilot_chat_handler(
         &body.recent_events,
         body.ui_context.as_ref(),
         Some(id),
-        grounding_parent_id,
+        Some(turn_span_id.clone()),
     )
     .await;
 
@@ -670,7 +671,7 @@ fn grounding_headers(
 ///
 /// Persists spans so the AYIN Lineage Circuit dashboard at `:3742` can build
 /// the session tree from disk files, not only from the live SSE stream.
-fn emit_disk_span(
+pub(crate) fn emit_disk_span(
     actor: &str,
     action: &str,
     metadata: serde_json::Value,
@@ -730,6 +731,7 @@ fn emit_message_span(
                 "preview": &content[..content.len().min(200)],
             }),
             strand_activations: Vec::new(),
+            session_id: build_id.map(|id| id.to_string()),
             decision_points: Vec::new(),
         }),
         build_id,
@@ -799,6 +801,7 @@ fn emit_grounding_spans(
         crate::events::WebEvent::AyinSpan(TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
             parent_id: parent.clone(),
+            session_id: build_id.map(|id| id.to_string()),
             actor: "webshell".to_owned(),
             action: "copilot.eva_ambient.soul_search_ms".to_owned(),
             timestamp: ts.clone(),
@@ -835,6 +838,7 @@ fn emit_grounding_spans(
         crate::events::WebEvent::AyinSpan(TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
             parent_id: parent.clone(),
+            session_id: build_id.map(|id| id.to_string()),
             actor: "webshell".to_owned(),
             action: "copilot.eva_ambient.git_gather_ms".to_owned(),
             timestamp: ts.clone(),
@@ -876,6 +880,7 @@ fn emit_grounding_spans(
         crate::events::WebEvent::AyinSpan(TraceSpanSummary {
             id: uuid::Uuid::new_v4().to_string(),
             parent_id: parent.clone(),
+            session_id: build_id.map(|id| id.to_string()),
             actor: "webshell".to_owned(),
             action: "copilot.eva_ambient.grounding_wall_ms".to_owned(),
             timestamp: ts.clone(),
@@ -922,6 +927,7 @@ fn emit_grounding_spans(
             outcome: serde_json::json!("ok"),
             metadata: serde_json::json!({ "prelude_bytes": prelude_bytes }),
             strand_activations: Vec::new(),
+            session_id: build_id.map(|id| id.to_string()),
             decision_points: Vec::new(),
         }),
         build_id,

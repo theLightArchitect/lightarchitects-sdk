@@ -31,6 +31,8 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use crate::copilot::routes::emit_disk_span;
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -283,6 +285,7 @@ impl StrategyDispatcher {
 /// build session's SSE broadcast channel (the same channel the frontend
 /// subscribes to for copilot responses). Returns a JSON acknowledgement so
 /// the frontend knows the strategy has started and can watch for events.
+#[allow(clippy::too_many_lines)]
 pub async fn dispatch_strategy_initial(
     strategy: RegisteredStrategy,
     build_id: Uuid,
@@ -299,13 +302,31 @@ pub async fn dispatch_strategy_initial(
     let session_id = build_id.to_string();
     let span_id_for_response = turn_span_id.clone();
 
+    // ── AYIN lineage: strategy dispatch span ──
+    let strategy_span_id = uuid::Uuid::new_v4().to_string();
+    emit_strategy_start_span(
+        &event_tx,
+        &strategy_id,
+        build_id,
+        &turn_span_id,
+        &strategy_span_id,
+    );
+
     let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<String>(64);
 
     // Bridge: forward progress messages as CopilotResponse events.
     let event_tx_progress = event_tx.clone();
     let span_for_progress = turn_span_id.clone();
+    let strategy_span_for_progress = strategy_span_id.clone();
     tokio::spawn(async move {
         while let Some(msg) = progress_rx.recv().await {
+            // Per-phase AYIN span — child of strategy dispatch span.
+            emit_phase_span(
+                &event_tx_progress,
+                build_id,
+                &strategy_span_for_progress,
+                &msg,
+            );
             let _ = event_tx_progress.send(crate::events::WebEventV2::from_event(
                 crate::events::WebEvent::CopilotResponse {
                     chunk: msg,
@@ -322,11 +343,22 @@ pub async fn dispatch_strategy_initial(
     let event_tx_final = event_tx;
     let span_for_final = turn_span_id;
     let sid_for_final = strategy_id.clone();
+    let strategy_span_for_final = strategy_span_id;
+    let build_id_for_final = build_id;
     tokio::spawn(async move {
         let dispatcher = StrategyDispatcher::new(resume_registry);
         let result = dispatcher
             .dispatch(strategy, initial_state, session_id, progress_tx)
             .await;
+
+        emit_strategy_result_span(
+            &event_tx_final,
+            &sid_for_final,
+            build_id_for_final,
+            &strategy_span_for_final,
+            &result,
+        );
+
         let summary = match &result {
             DispatchResult::Halted { phases_run } => {
                 format!("[{sid_for_final}] complete ({phases_run} phases)")
@@ -363,6 +395,124 @@ pub async fn dispatch_strategy_initial(
 
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Emit the initial AYIN strategy dispatch span (child of `turn_span_id`).
+fn emit_strategy_start_span(
+    event_tx: &tokio::sync::broadcast::Sender<crate::events::WebEventV2>,
+    strategy_id: &str,
+    build_id: Uuid,
+    turn_span_id: &str,
+    strategy_span_id: &str,
+) {
+    let _ = event_tx.send(crate::events::WebEventV2::from_event(
+        crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
+            id: strategy_span_id.to_owned(),
+            parent_id: Some(turn_span_id.to_owned()),
+            actor: "copilot".to_owned(),
+            action: format!("strategy.dispatch.{strategy_id}"),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            duration_ms: 0,
+            outcome: serde_json::json!("Continue"),
+            metadata: serde_json::json!({
+                "strategy_id": strategy_id,
+                "build_id": build_id.to_string(),
+            }),
+            strand_activations: Vec::new(),
+            session_id: None,
+            decision_points: Vec::new(),
+        }),
+        Some(build_id),
+    ));
+    emit_disk_span(
+        "copilot",
+        &format!("strategy.dispatch.{strategy_id}"),
+        serde_json::json!({
+            "strategy_id": strategy_id,
+            "build_id": build_id.to_string(),
+        }),
+        lightarchitects::ayin::TraceOutcome::Continue,
+        turn_span_id.parse::<Uuid>().ok(),
+        Some(build_id),
+    );
+}
+
+/// Emit a per-phase AYIN span (child of the strategy dispatch span).
+fn emit_phase_span(
+    event_tx: &tokio::sync::broadcast::Sender<crate::events::WebEventV2>,
+    build_id: Uuid,
+    strategy_span_id: &str,
+    message: &str,
+) {
+    let phase_span_id = uuid::Uuid::new_v4().to_string();
+    let _ = event_tx.send(crate::events::WebEventV2::from_event(
+        crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
+            id: phase_span_id,
+            parent_id: Some(strategy_span_id.to_owned()),
+            actor: "copilot".to_owned(),
+            action: format!("strategy.phase.{message}"),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            duration_ms: 0,
+            outcome: serde_json::json!("Continue"),
+            metadata: serde_json::json!({
+                "build_id": build_id.to_string(),
+            }),
+            strand_activations: Vec::new(),
+            session_id: None,
+            decision_points: Vec::new(),
+        }),
+        Some(build_id),
+    ));
+}
+
+/// Emit a terminal AYIN span for the strategy outcome.
+fn emit_strategy_result_span(
+    event_tx: &tokio::sync::broadcast::Sender<crate::events::WebEventV2>,
+    strategy_id: &str,
+    build_id: Uuid,
+    strategy_span_id: &str,
+    result: &DispatchResult,
+) {
+    let (outcome, outcome_json) = match result {
+        DispatchResult::Halted { phases_run } => (
+            "Finish",
+            serde_json::json!({
+                "phases_run": phases_run,
+                "build_id": build_id.to_string(),
+            }),
+        ),
+        DispatchResult::Error(e) => (
+            "Error",
+            serde_json::json!({
+                "error": e,
+                "build_id": build_id.to_string(),
+            }),
+        ),
+        DispatchResult::Paused { hitl, .. } => (
+            "Paused",
+            serde_json::json!({
+                "question": &hitl.question,
+                "options_count": hitl.options.len(),
+                "build_id": build_id.to_string(),
+            }),
+        ),
+    };
+    let _ = event_tx.send(crate::events::WebEventV2::from_event(
+        crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
+            id: uuid::Uuid::new_v4().to_string(),
+            parent_id: Some(strategy_span_id.to_owned()),
+            actor: "copilot".to_owned(),
+            action: format!("strategy.{outcome}.{strategy_id}"),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            duration_ms: 0,
+            outcome: serde_json::json!(outcome),
+            metadata: outcome_json,
+            strand_activations: Vec::new(),
+            session_id: None,
+            decision_points: Vec::new(),
+        }),
+        Some(build_id),
+    ));
+}
 
 /// Generate an 8-byte CSPRNG nonce as a 16-char hex string.
 fn generate_nonce() -> String {

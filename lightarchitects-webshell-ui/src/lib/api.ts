@@ -655,11 +655,12 @@ export const api = {
   getAgentTraces: (
     buildId: string,
     agentKey: string,
-    opts?: { limit?: number; since?: string },
+    opts?: { limit?: number; since?: string; session_id?: string },
   ): Promise<import('$lib/types').AyinSpanEvent[]> => {
     const params = new URLSearchParams({ build_id: buildId, agent_key: agentKey });
     if (opts?.limit) params.set('limit', String(opts.limit));
     if (opts?.since) params.set('since', opts.since);
+    if (opts?.session_id) params.set('session_id', opts.session_id);
     return fetch(`${API_BASE}/ayin/traces?${params}`, {
       headers: authHeaders(),
     }).then(r => {

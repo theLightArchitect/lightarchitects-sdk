@@ -5,6 +5,12 @@
   import DOMPurify from 'dompurify';
   import { sanitize, coerceDuration, buildSequenceDiagram, buildFlowDiagram, type TraceSpan } from '$lib/ayin-traces-utils';
 
+  interface Props {
+    compact?: boolean;
+  }
+
+  let { compact = false }: Props = $props();
+
   // ── State ─────────────────────────────────────────────────────────────────
 
   const AYIN_SSE_URL = 'http://localhost:3742/events';
@@ -125,7 +131,7 @@
   });
 </script>
 
-<div class="ayin-panel">
+<div class="ayin-panel" class:ayin-panel--compact={compact}>
   <!-- Header bar -->
   <div class="ayin-header">
     <span class="ayin-title">◎ AYIN TRACES</span>
@@ -198,7 +204,7 @@
   </div>
 
   <!-- Span list (last 8, below diagram) -->
-  {#if spans.length > 0}
+  {#if spans.length > 0 && !compact}
     <div class="span-log" role="log" aria-label="Recent AYIN spans">
       {#each spans.slice(-8).toReversed() as span (span.span_id)}
         <div class="span-row" class:finish={span.outcome === 'Finish'}>
@@ -225,6 +231,32 @@
     background: var(--la-bg-base, #0a0a12);
     font-family: var(--la-font-mono, 'JetBrains Mono', monospace);
     overflow: hidden;
+  }
+
+  .ayin-panel--compact .ayin-header {
+    padding: 4px 8px;
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+
+  .ayin-panel--compact .ayin-title,
+  .ayin-panel--compact .ayin-status,
+  .ayin-panel--compact .span-count,
+  .ayin-panel--compact .reconnect-btn,
+  .ayin-panel--compact .clear-btn {
+    font-size: 8px;
+  }
+
+  .ayin-panel--compact .ayin-body {
+    min-height: 120px;
+  }
+
+  .ayin-panel--compact .diagram-scroll {
+    min-height: 120px;
+  }
+
+  .ayin-panel--compact .ayin-empty {
+    padding: 12px;
   }
 
   /* ── Header ──────────────────────────────────────────────────────────────── */

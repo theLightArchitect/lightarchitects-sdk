@@ -96,6 +96,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 
 use lightarchitects::agent::ProviderEvent;
 use lightarchitects::agent::messages_stream_parser::stream_json::parse_ndjson_value;
+use std::collections::HashMap;
 
 use crate::{
     config::{AgentSession, ClaudeBackend, CodexBackend},
@@ -530,6 +531,10 @@ async fn run_print_turn(
         let mut found_session_id: Option<String> = None;
         let build_id = session.build_id.to_string();
 
+        // Track tool call start times so we can emit AYIN spans with actual duration
+        // at ContentBlockStop instead of duration_ms: 0 at ContentBlockStart.
+        let mut tool_start_times: HashMap<u32, (String, std::time::Instant)> = HashMap::new();
+
         // OTel semconv v1.56.0 — SA-23: emit a structured event instead of `.entered()`
         // because EnteredSpan is !Send; holding it across .await makes the future !Send,
         // breaking axum's Handler trait. Use tracing::info! to preserve the span semantics.
@@ -585,35 +590,47 @@ async fn run_print_turn(
                 Ok(Some(ProviderEvent::ContentBlockStart {
                     block_type,
                     tool_name,
+                    index,
                     ..
                 })) if block_type == "tool_use" => {
-                    let name = tool_name.as_deref().unwrap_or("unknown");
-                    // Actor "copilot" → no actor-role mapping → color driven by
-                    // outcome (Continue → cyan), creating a visual mid-tier between
-                    // the gold user.message root and the gold assistant.response leaf.
-                    let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
-                        crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
-                            id: uuid::Uuid::new_v4().to_string(),
-                            parent_id: turn_span_id.map(ToOwned::to_owned),
-                            actor: "copilot".to_owned(),
-                            action: format!("tool.{name}"),
-                            timestamp: chrono::Utc::now().to_rfc3339(),
-                            duration_ms: 0,
-                            outcome: serde_json::json!("Continue"),
-                            metadata: serde_json::json!({ "build_id": build_id }),
-                            strand_activations: Vec::new(),
-                            decision_points: Vec::new(),
-                        }),
-                        Some(session.build_id),
-                    ));
-                    emit_disk_span(
-                        "copilot",
-                        &format!("tool.{name}"),
-                        serde_json::json!({ "build_id": build_id }),
-                        lightarchitects::ayin::TraceOutcome::Continue,
-                        turn_span_id.and_then(|s| s.parse::<uuid::Uuid>().ok()),
-                        session.build_id,
-                    );
+                    // Record start time — span emitted at ContentBlockStop with actual duration.
+                    let name = tool_name.as_deref().unwrap_or("unknown").to_owned();
+                    tool_start_times.insert(index, (name, std::time::Instant::now()));
+                }
+                Ok(Some(ProviderEvent::ContentBlockStop { index })) => {
+                    if let Some((name, start)) = tool_start_times.remove(&index) {
+                        // Truncation-safe: tool calls never approach u64::MAX ms.
+                        #[allow(clippy::cast_possible_truncation)]
+                        let duration_ms = start.elapsed().as_millis() as u64;
+                        let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+                            crate::events::WebEvent::AyinSpan(
+                                crate::events::types::TraceSpanSummary {
+                                    id: uuid::Uuid::new_v4().to_string(),
+                                    parent_id: turn_span_id.map(ToOwned::to_owned),
+                                    actor: "copilot".to_owned(),
+                                    action: format!("tool.{name}"),
+                                    timestamp: chrono::Utc::now().to_rfc3339(),
+                                    duration_ms,
+                                    outcome: serde_json::json!("Continue"),
+                                    metadata: serde_json::json!({
+                                        "build_id": build_id
+                                    }),
+                                    strand_activations: Vec::new(),
+                                    session_id: None,
+                                    decision_points: Vec::new(),
+                                },
+                            ),
+                            Some(session.build_id),
+                        ));
+                        emit_disk_span(
+                            "copilot",
+                            &format!("tool.{name}"),
+                            serde_json::json!({ "build_id": build_id, "duration_ms": duration_ms }),
+                            lightarchitects::ayin::TraceOutcome::Continue,
+                            turn_span_id.and_then(|s| s.parse::<uuid::Uuid>().ok()),
+                            session.build_id,
+                        );
+                    }
                 }
                 Ok(Some(ProviderEvent::TextDelta { text, .. })) => {
                     let send_r = session.event_tx.send(crate::events::WebEventV2::from_event(
@@ -1263,6 +1280,7 @@ fn emit_session_start_span(session: &BuildSession, actor: &str) -> String {
             metadata: serde_json::json!({ "build_id": session.build_id.to_string() }),
             strand_activations: Vec::new(),
             decision_points: Vec::new(),
+            session_id: None,
         }),
         Some(session.build_id),
     ));
@@ -1307,6 +1325,7 @@ fn emit_turn_start_span(
             }),
             strand_activations: Vec::new(),
             decision_points: Vec::new(),
+            session_id: None,
         }),
         Some(session.build_id),
     ));
@@ -1354,6 +1373,7 @@ fn emit_assistant_response_span(
             }),
             strand_activations: Vec::new(),
             decision_points: Vec::new(),
+            session_id: None,
         }),
         Some(session.build_id),
     ));

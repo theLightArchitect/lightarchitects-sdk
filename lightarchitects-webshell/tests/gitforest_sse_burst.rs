@@ -23,6 +23,7 @@ fn make_span_event(seq: usize) -> WebEvent {
     WebEvent::AyinSpan(TraceSpanSummary {
         id: format!("burst-span-{seq}"),
         parent_id: None,
+        session_id: None,
         actor: format!("burst-actor-{}", seq % 7),
         action: "burst_write".to_owned(),
         timestamp: "2026-05-18T00:00:00Z".to_owned(),

@@ -583,6 +583,12 @@ pub struct TraceSpanSummary {
     /// Parent span UUID, if this span is a child of another.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_id: Option<String>,
+    /// Session UUID grouping related spans across actors into a single
+    /// interaction trace.  When present, the Lineage Circuit can reconstruct
+    /// the full session tree even when spans arrive from different actors
+    /// (copilot, user, webshell) or across SSE reconnections.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     /// Actor identifier, e.g. `"soul"`, `"claude_code"`, `"corso"`.
     pub actor: String,
     /// Action name, e.g. `"rag.query.started"`, `"tool.call"`.
@@ -944,6 +950,7 @@ mod tests {
             outcome: serde_json::Value::String("success".to_owned()),
             metadata: serde_json::Value::Null,
             strand_activations: Vec::new(),
+            session_id: None,
             decision_points: Vec::new(),
         };
         let event = WebEvent::AyinSpan(span);
@@ -966,6 +973,7 @@ mod tests {
             outcome: serde_json::json!("success"),
             metadata: serde_json::Value::Null,
             strand_activations: Vec::new(),
+            session_id: None,
             decision_points: Vec::new(),
         };
         let json = serde_json::to_string(&span).unwrap();
@@ -987,6 +995,7 @@ mod tests {
             outcome: serde_json::json!("success"),
             metadata: serde_json::Value::Null,
             strand_activations: Vec::new(),
+            session_id: None,
             decision_points: Vec::new(),
         };
         let json = serde_json::to_string(&span).unwrap();
@@ -1107,6 +1116,7 @@ mod tests {
             outcome: serde_json::Value::Null,
             metadata: serde_json::Value::Null,
             strand_activations: Vec::new(),
+            session_id: None,
             decision_points: Vec::new(),
         };
         let helix = HelixEntrySummary::minimal("p".to_owned(), HelixEventKind::Created);

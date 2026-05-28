@@ -579,6 +579,7 @@ export interface ContextStatusEvent {
 export interface AyinSpanEvent {
   id: string;
   parent_id?: string;
+  session_id?: string;
   actor: string;
   action: string;
   timestamp: string;

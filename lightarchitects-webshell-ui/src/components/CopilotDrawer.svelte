@@ -43,7 +43,7 @@
   // Sync open → shared store so PolytopeButton can reflect active state
   $effect(() => { copilotDrawerOpen.set(open); });
   let heightPx = $state(350);   // kept for compatibility; sidebar uses widthPx
-  let widthPx = $state(320);
+  let widthPx = $state(420);
 
   // P1-4: latest loop_count from the activity feed (CopilotActivityEvent).
   let latestLoopCount = $derived(
@@ -59,8 +59,8 @@
   );
   const MIN_HEIGHT = 180;
   const MAX_HEIGHT_RATIO = 0.85;
-  const MIN_WIDTH = 260;
-  const MAX_WIDTH_RATIO = 0.5;
+  const MIN_WIDTH = 340;
+  const MAX_WIDTH_RATIO = 0.58;
 
   // Sidebar is a left panel — height is full viewport; publish width to layout.
   $effect(() => {
@@ -1230,7 +1230,7 @@
             {/if}
             <div
               bind:this={messagesEl}
-              class="flex-1 overflow-y-auto p-3 space-y-2 transition-colors {dragOver ? 'bg-[var(--la-focus-ring)]/5 ring-1 ring-inset ring-[var(--la-focus-ring)]/20' : ''}"
+              class="flex-1 overflow-y-auto px-2.5 py-2 space-y-1.5 transition-colors {dragOver ? 'bg-[var(--la-focus-ring)]/5 ring-1 ring-inset ring-[var(--la-focus-ring)]/20' : ''}"
               role="log"
               aria-label="Chat messages"
               aria-live="polite"
@@ -1275,7 +1275,7 @@
                     </div>
                   {:else}
                     <div class="flex {msg.role === 'user' ? 'justify-end' : msg.role === 'system' ? 'justify-center' : 'justify-start'}">
-                      <div class="max-w-[80%] px-3 py-1.5 rounded-lg text-xs chat-bubble
+                      <div class="max-w-[78%] px-3 py-1.5 rounded-lg text-xs chat-bubble leading-snug
                         {msg.role === 'user' ? 'bg-[var(--la-focus-ring)]/90 text-[var(--la-bg-frame)]' :
                          msg.role === 'system' ? 'bg-[var(--la-drawer-border)]/50 text-[var(--la-text-dim)] border border-[var(--la-drawer-border)]' :
                          'bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] text-[var(--la-text-bright)]'}">
@@ -1343,8 +1343,8 @@
                 {/if}
               </button>
               {#if tracesOpen}
-                <div class="h-48 overflow-hidden">
-                  <AyinTracesPanel />
+                <div class="h-40 overflow-hidden">
+                  <AyinTracesPanel compact={true} />
                 </div>
               {/if}
             </div>
@@ -1385,9 +1385,9 @@
             {/if}
 
             <!-- Input -->
-            <div class="border-t border-[var(--la-drawer-border)] px-3 py-2 relative shrink-0" data-onboarding="copilot-input">
+            <div class="border-t border-[var(--la-drawer-border)] px-2.5 py-2 relative shrink-0" data-onboarding="copilot-input">
               {#if showSuggestions && matchingCommands.length > 0}
-                <div class="absolute bottom-full left-3 right-3 mb-1 bg-[var(--la-bg-void)] border border-[var(--la-drawer-border)] rounded-lg overflow-hidden shadow-xl z-10 max-h-48 overflow-y-auto">
+                <div class="absolute bottom-full left-2.5 right-2.5 mb-1 bg-[var(--la-bg-void)] border border-[var(--la-drawer-border)] rounded-lg overflow-hidden shadow-xl z-10 max-h-48 overflow-y-auto">
                   {#each matchingCommands as cmd, i}
                     <button
                       class="w-full text-left px-3 py-1.5 text-xs flex items-baseline gap-2 transition-colors
@@ -1421,7 +1421,7 @@
                 width={800}
                 height={48}
                 class={$copilotLoading ? 'oscilloscope-active' : ''}
-                style="width:100%;height:24px;display:block;border-radius:var(--la-radius-sm);margin-bottom:6px;opacity:0.85;"
+                style="width:100%;height:18px;display:block;border-radius:var(--la-radius-sm);margin-bottom:5px;opacity:0.78;"
               ></canvas>
               <CopilotContextTray
                 snapshot={contextSnapshot}
@@ -1740,7 +1740,7 @@
   /* Collapsible thinking blocks */
   .thinking-wrap {
     width: 100%;
-    margin: 2px 0;
+    margin: 1px 0;
   }
   .thinking-toggle {
     display: flex;
@@ -1750,12 +1750,12 @@
     background: transparent;
     border: none;
     border-left: 2px solid var(--la-hair-strong);
-    padding: 3px 8px;
+    padding: 2px 8px;
     cursor: pointer;
     text-align: left;
     color: var(--la-text-mute);
     font-family: var(--la-font-mono, monospace);
-    font-size: 9px;
+    font-size: 8px;
     letter-spacing: 0.05em;
     transition: border-color 0.15s ease, color 0.15s ease;
   }
@@ -1768,11 +1768,11 @@
   .thinking-chars { font-size: 8px; opacity: 0.4; font-variant-numeric: tabular-nums; }
   .thinking-body {
     border-left: 2px solid var(--la-hair-base);
-    padding: 6px 10px 6px 8px;
-    font-size: 10px;
+    padding: 5px 10px 5px 8px;
+    font-size: 9px;
     color: var(--la-text-mute);
     font-style: italic;
-    line-height: 1.55;
+    line-height: 1.45;
     animation: thinking-expand 0.12s ease both;
   }
   @keyframes thinking-expand {

@@ -7,10 +7,31 @@ export interface TraceSpan {
   duration_ms: number;
   outcome: 'Continue' | 'Finish' | string;
   parent_id?: string | null;
+  session_id?: string | null;
   tool?: string | null;
   model?: string | null;
   token_count?: number | null;
   tags?: Record<string, string> | null;
+}
+
+/** Group spans by session_id for cross-actor trace reconstruction.
+ *
+ * Spans without a `session_id` are placed in a `"unknown"` group.
+ * Returns a Map keyed by session_id with each value being an array of spans
+ * belonging to that session, sorted by timestamp.
+ */
+export function groupBySession(spans: TraceSpan[]): Map<string, TraceSpan[]> {
+  const groups = new Map<string, TraceSpan[]>();
+  for (const span of spans) {
+    const key = span.session_id ?? 'unknown';
+    const group = groups.get(key) ?? [];
+    group.push(span);
+    groups.set(key, group);
+  }
+  for (const group of groups.values()) {
+    group.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  }
+  return groups;
 }
 
 export function sanitize(s: string): string {

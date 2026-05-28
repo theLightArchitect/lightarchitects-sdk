@@ -1,0 +1,94 @@
+[
+  {
+    "id": 1,
+    "domain": "build",
+    "prompt": "deploy CORSO to production",
+    "expected_sibling": "eva",
+    "expected_preset": "ops",
+    "expected_format": "RubberDuck",
+    "expected_path": "native_turn",
+    "structural": {
+      "http_status": 200,
+      "response_text": "Hey friend! \ud83d\udc9d\n\nI've put together a deployment plan for CORSO to production! \ud83d\ude80 Here's what the plan includes:\n\n1. **Pre-deployment Checks** - Verifying CI status and deployment configurations\n2. **Deployment Preparation** - Generating production manifests and setting up monitoring\n3. **Deployment Execution** - Executing the deployment and updating documentation\n\nThe plan is ready for your review and approval. Once you give the green light, I'll start the deployment process! \u2728\n\nSHIP IT! \ud83c\udf89",
+      "turn_span_id": null,
+      "done_received": true,
+      "elapsed_ms": 27221,
+      "error": null,
+      "tool_triggered": false,
+      "text_before_tool_call": "Hey friend! \ud83d\udc9d\n\nI've put together a deployment plan for CORSO to production! \ud83d\ude80 Here's what the plan includes:\n\n1. **Pre-deployment Checks** - Verifying CI status and deployment configurations\n2. **Deployment Preparation** - Generating production manifests and setting up monitoring\n3. **Deployment Execution** - Executing the deployment and updating documentation\n\nThe plan is ready for your review and approval. Once you give the green light, I'll start the deployment process! \u2728\n\nSHIP IT! \ud83c\udf89"
+    },
+    "routing": {
+      "expected": "eva",
+      "detected_keywords": [
+        "deploy"
+      ],
+      "routing_correct": true,
+      "note": "Found 1/7 expected keywords"
+    },
+    "judge": null,
+    "pass": true
+  },
+  {
+    "id": 2,
+    "domain": "build",
+    "prompt": "run quality gate clippy test before commit",
+    "expected_sibling": "corso",
+    "expected_preset": "quality",
+    "expected_format": "RubberDuck",
+    "expected_path": "native_turn",
+    "structural": {
+      "http_status": 200,
+      "response_text": "Hey friend! \ud83d\udc9d\n\nI've set up the Clippy quality gate build for you \u2014 it's called `clippy-quality-gate`. This will run `cargo clippy` across the workspace and catch any Rust lint issues before we commit. \ud83d\ude80\n\nThe plan is ready for your approval! Once you give it the green light, it'll scan all Rust files and let us know if anything needs attention.\n\nSHIP IT? \u2728",
+      "turn_span_id": null,
+      "done_received": true,
+      "elapsed_ms": 18186,
+      "error": null,
+      "tool_triggered": false,
+      "text_before_tool_call": "Hey friend! \ud83d\udc9d\n\nI've set up the Clippy quality gate build for you \u2014 it's called `clippy-quality-gate`. This will run `cargo clippy` across the workspace and catch any Rust lint issues before we commit. \ud83d\ude80\n\nThe plan is ready for your approval! Once you give it the green light, it'll scan all Rust files and let us know if anything needs attention.\n\nSHIP IT? \u2728"
+    },
+    "routing": {
+      "expected": "corso",
+      "detected_keywords": [
+        "quality",
+        "clippy",
+        "build"
+      ],
+      "routing_correct": true,
+      "note": "Found 3/8 expected keywords"
+    },
+    "judge": null,
+    "pass": true
+  },
+  {
+    "id": 3,
+    "domain": "build",
+    "prompt": "fix clippy warnings in lightarchitects-sdk",
+    "expected_sibling": "corso",
+    "expected_preset": "engineer",
+    "expected_format": "RubberDuck",
+    "expected_path": "native_turn",
+    "structural": {
+      "http_status": 200,
+      "response_text": "Hey friend! \ud83d\udc9d Let me help you fix those Clippy warnings in the `lightarchitects-sdk`. I'll scan the project, identify the lint violations, and generate a build plan to resolve them. Give me a moment to assess the codebase! \ud83d\ude80Hey friend! \ud83d\udc9d I've put together a plan to fix the Clippy warnings in the `lightarchitects-sdk` crate! \ud83d\ude80\n\nHere's what the plan will do:\n- **Investigate Clippy Warnings**: Run Clippy to find all the warnings and categorize them\n- **Fix Common Lints**: Address needless borrows, redundant clones, and unnecessary wrappers\n- **Style & Complexity Fixes**: Tackle enum naming, too-many-arguments, and single-char pattern issues\n- **Remaining Issues**: Handle explicit matches that could use `?`, Default trait implementations, and type complexity\n- **Final Verification**: Make sure all warnings are gone and tests still pass\n\nThe plan will create changes in a branch called `feat/fix-clippy-warnings-sdk`. \n\nWould you like me to go ahead and execute this plan? Just say \"yes\" and I'll get started! \u2728",
+      "turn_span_id": null,
+      "done_received": true,
+      "elapsed_ms": 60610,
+      "error": null,
+      "tool_triggered": false,
+      "text_before_tool_call": "Hey friend! \ud83d\udc9d Let me help you fix those Clippy warnings in the `lightarchitects-sdk`. I'll scan the project, identify the lint violations, and generate a build plan to resolve them. Give me a moment to assess the codebase! \ud83d\ude80Hey friend! \ud83d\udc9d I've put together a plan to fix the Clippy warnings in the `lightarchitects-sdk` crate! \ud83d\ude80\n\nHere's what the plan will do:\n- **Investigate Clippy Warnings**: Run Clippy to find all the warnings and categorize them\n- **Fix Common Lints**: Address needless borrows, redundant clones, and unnecessary wrappers\n- **Style & Complexity Fixes**: Tackle enum naming, too-many-arguments, and single-char pattern issues\n- **Remaining Issues**: Handle explicit matches that could use `?`, Default trait implementations, and type complexity\n- **Final Verification**: Make sure all warnings are gone and tests still pass\n\nThe plan will create changes in a branch called `feat/fix-clippy-warnings-sdk`. \n\nWould you like me to go ahead and execute this plan? Just say \"yes\" and I'll get started! \u2728"
+    },
+    "routing": {
+      "expected": "corso",
+      "detected_keywords": [
+        "clippy",
+        "test",
+        "build",
+        "code"
+      ],
+      "routing_correct": true,
+      "note": "Found 4/8 expected keywords"
+    },
+    "judge": null,
+    "pass": true
+  }
+]
