@@ -7,6 +7,7 @@
   import { saveSettingsDebounced } from '$lib/settings-persistence';
   import { listSkills, resolveSkill, type SkillOverlay } from '$lib/skill-resolver';
   import { listPersonas, resolvePersona, type PersonaOverlay } from '$lib/persona-resolver';
+  import { devModeEnabled } from '$lib/stores';
   import CredentialsPanel from './CredentialsPanel.svelte';
 
   const backends = [
@@ -140,6 +141,19 @@
       >
         Credentials
       </button>
+      {#if import.meta.env.DEV}
+        <button
+          role="tab"
+          id="tab-dev"
+          aria-controls="panel-dev"
+          class="tab-btn"
+          class:selected={activeTab === 'dev'}
+          aria-selected={activeTab === 'dev'}
+          onclick={() => { activeTab = 'dev'; }}
+        >
+          Dev
+        </button>
+      {/if}
     </div>
 
     <!-- Backend tab -->
@@ -224,6 +238,28 @@
     {#if activeTab === 'credentials'}
       <div role="tabpanel" id="panel-credentials" aria-labelledby="tab-credentials">
         <CredentialsPanel />
+      </div>
+    {/if}
+
+    <!-- Dev tab (dev-mode only) -->
+    {#if import.meta.env.DEV && activeTab === 'dev'}
+      <div role="tabpanel" id="panel-dev" aria-labelledby="tab-dev">
+        <div class="tab-content">
+          <div class="section-label">Development</div>
+          <label class="flex items-center gap-2 cursor-pointer select-none text-xs text-[var(--la-text-dim)]">
+            <input
+              type="checkbox"
+              bind:checked={$devModeEnabled}
+              class="accent-[var(--la-focus-ring)] w-3.5 h-3.5"
+            />
+            <span>Enable dev-mode features (Playwright CDP, screenshot, DOM inspection)</span>
+          </label>
+          <p class="text-[10px] text-[var(--la-text-dim)] mt-2 leading-snug">
+            Dev mode enables browser inspection tools in the copilot header.
+            Requires the backend to be running with <code class="text-[var(--la-focus-ring)]">--dev-mode</code>
+            and the <code class="text-[var(--la-focus-ring)]">playwright</code> feature flag.
+          </p>
+        </div>
       </div>
     {/if}
 

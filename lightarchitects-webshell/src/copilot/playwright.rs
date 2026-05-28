@@ -315,6 +315,14 @@ pub struct InitResponse {
 /// Initializes a `PlaywrightBridge` (if none exists) and returns the auth token.
 /// Dev-mode only — the frontend calls this once when dev tools are activated.
 pub async fn handle_init(State(state): State<crate::server::AppState>) -> axum::response::Response {
+    if !state.config.playwright_enabled() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "playwright_not_enabled"})),
+        )
+            .into_response();
+    }
+
     let mut guard = state.playwright_state.lock().await;
     if let Some(bridge) = guard.as_ref() {
         return (
@@ -371,6 +379,14 @@ pub async fn handle_screenshot(
     State(state): State<crate::server::AppState>,
     Json(req): Json<ScreenshotRequest>,
 ) -> axum::response::Response {
+    if !state.config.playwright_enabled() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "playwright_not_enabled"})),
+        )
+            .into_response();
+    }
+
     let guard = state.playwright_state.lock().await;
     let Some(bridge) = guard.as_ref() else {
         return (
@@ -419,6 +435,14 @@ pub async fn handle_dom_snapshot(
     State(state): State<crate::server::AppState>,
     Json(req): Json<DomSnapshotRequest>,
 ) -> axum::response::Response {
+    if !state.config.playwright_enabled() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "playwright_not_enabled"})),
+        )
+            .into_response();
+    }
+
     let guard = state.playwright_state.lock().await;
     let Some(bridge) = guard.as_ref() else {
         return (

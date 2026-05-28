@@ -29,7 +29,7 @@
   import { settingsOpen, pendingResumeSessionId, serverCwd, persistedConfig, selectedModel } from '$lib/setup';
   import { strategyHitl, copilotDrawerOpen } from '$lib/stores';
   import { drawerWidthPx } from '$lib/stores';
-  import { cdpToken, cdpLoading, cdpScreenshotUri, cdpDomSnapshot, cdpError } from '$lib/stores';
+  import { cdpToken, cdpLoading, cdpScreenshotUri, cdpDomSnapshot, cdpError, devModeEnabled } from '$lib/stores';
   import { selectedPreset, selectedTarget, PRESET_DISPLAY, quickPickOpen } from '$lib/cockpit/stores';
   import { parseChips } from '$lib/cockpit/copilotChips';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
@@ -1084,7 +1084,7 @@
           >AYIN →</button>
         {/if}
 
-        {#if import.meta.env.DEV}
+        {#if $devModeEnabled}
           <button
             onclick={cdpScreenshot}
             class="hdr-action {$cdpLoading ? 'hdr-action--warn' : ''}"
@@ -1350,7 +1350,7 @@
             </div>
 
             <!-- CDP dev-mode preview (screenshot / DOM snapshot) -->
-            {#if import.meta.env.DEV && ($cdpScreenshotUri || $cdpDomSnapshot || $cdpError)}
+            {#if $devModeEnabled && ($cdpScreenshotUri || $cdpDomSnapshot || $cdpError)}
               <div class="border-t border-[var(--la-drawer-border)] px-3 py-2 text-xs space-y-2 shrink-0" data-card-role="cdp-preview">
                 {#if $cdpError}
                   <div class="text-red-400 break-all">{$cdpError}</div>

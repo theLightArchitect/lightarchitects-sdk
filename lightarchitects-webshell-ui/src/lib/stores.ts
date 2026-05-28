@@ -1137,3 +1137,6 @@ export const cdpDomSnapshot = writable<import('./types').CdpDomSnapshotResponse 
 
 /** CDP error message. Cleared on next successful request. */
 export const cdpError = writable<string | null>(null);
+
+/** Whether dev-mode features (CDP, Playwright) are enabled. Defaults to Vite's DEV flag. */
+export const devModeEnabled = writable<boolean>(import.meta.env.DEV ?? false);
