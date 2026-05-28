@@ -281,13 +281,28 @@ export const focusedSibling = writable<SiblingId | null>(null);
 const COPILOT_HISTORY_KEY = 'la_copilot_history';
 const HISTORY_CAP = 200;
 
+/** Deduplicate messages by id, keeping the last occurrence. */
+function dedupMessages(msgs: CopilotMessage[]): CopilotMessage[] {
+  const seen = new Set<string>();
+  const result: CopilotMessage[] = [];
+  // Iterate in reverse so the last occurrence wins.
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (!seen.has(msgs[i].id)) {
+      seen.add(msgs[i].id);
+      result.unshift(msgs[i]);
+    }
+  }
+  return result;
+}
+
 function loadCopilotHistory(): CopilotMessage[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(COPILOT_HISTORY_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as CopilotMessage[]).slice(-HISTORY_CAP) : [];
+    if (!Array.isArray(parsed)) return [];
+    return dedupMessages((parsed as CopilotMessage[]).slice(-HISTORY_CAP));
   } catch {
     return [];
   }
@@ -304,11 +319,14 @@ export function clearCopilotHistory(): void {
 
 // Enforce in-memory cap on every change — prevents unbounded growth between
 // localStorage persists. The slice keeps the most recent messages.
+// Also deduplicates by id to prevent Svelte each_key_duplicate errors.
 let _capping = false;
 copilotMessages.subscribe(msgs => {
-  if (_capping || msgs.length <= HISTORY_CAP) return;
+  if (_capping) return;
+  const deduped = dedupMessages(msgs);
+  if (deduped.length === msgs.length && msgs.length <= HISTORY_CAP) return;
   _capping = true;
-  copilotMessages.set(msgs.slice(-HISTORY_CAP));
+  copilotMessages.set(deduped.slice(-HISTORY_CAP));
   _capping = false;
 });
 

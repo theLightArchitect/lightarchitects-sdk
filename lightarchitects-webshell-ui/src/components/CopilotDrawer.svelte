@@ -1371,7 +1371,7 @@
                     <div class="mt-1 max-h-40 overflow-y-auto break-all font-mono text-[10px] leading-tight">
                       <div class="mb-1">URL: {$cdpDomSnapshot.url}</div>
                       <div class="mb-1">Elements: {$cdpDomSnapshot.elements.length}</div>
-                      {#each $cdpDomSnapshot.elements.slice(0, 20) as el}
+                      {#each $cdpDomSnapshot.elements.slice(0, 20) as el, i (el.tag + '-' + (el.id ?? i))}
                         <div>&lt;{el.tag}{el.id ? `#${el.id}` : ''}{el.cardRole ? ` [${el.cardRole}]` : ''}&gt; {el.text.slice(0, 80)}</div>
                       {/each}
                     </div>
@@ -1549,7 +1549,7 @@
         <div class="mp-loading">Loading…</div>
       {:else}
         <ul class="mp-list" role="listbox" aria-label="Available models">
-          {#each modelPickerModels as m}
+          {#each modelPickerModels as m (m.id)}
             <li role="option" aria-selected={$selectedModel === m.id}>
               <button
                 class="mp-item"
