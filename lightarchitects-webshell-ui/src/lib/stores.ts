@@ -302,6 +302,16 @@ export function clearCopilotHistory(): void {
   try { localStorage.removeItem(COPILOT_HISTORY_KEY); } catch { /* quota */ }
 }
 
+// Enforce in-memory cap on every change — prevents unbounded growth between
+// localStorage persists. The slice keeps the most recent messages.
+let _capping = false;
+copilotMessages.subscribe(msgs => {
+  if (_capping || msgs.length <= HISTORY_CAP) return;
+  _capping = true;
+  copilotMessages.set(msgs.slice(-HISTORY_CAP));
+  _capping = false;
+});
+
 // Persist copilotMessages to localStorage on every change (debounced, cap 200).
 let _historyTimer: ReturnType<typeof setTimeout> | null = null;
 copilotMessages.subscribe(msgs => {
@@ -414,6 +424,7 @@ voiceEnabled.subscribe(v => {
 
 
 // --- Agent reactive state (native agent bridge) ---
+const AGENT_EVENTS_CAP = 500;
 export const agentConnected = writable(false);
 export const agentEvents = writable<import('./types').AgentEvent[]>([]);
 export const agentInput = writable('');
@@ -425,6 +436,15 @@ export const agentTokenUsage = derived(agentEvents, ($evs) => {
     if (ev.type === 'token_usage') { input += ev.input; output += ev.output; }
   }
   return { input, output };
+});
+
+// Enforce sliding window cap on agentEvents.
+let _agentCapping = false;
+agentEvents.subscribe(evs => {
+  if (_agentCapping || evs.length <= AGENT_EVENTS_CAP) return;
+  _agentCapping = true;
+  agentEvents.set(evs.slice(-AGENT_EVENTS_CAP));
+  _agentCapping = false;
 });
 
 // --- Derived: active build ---
