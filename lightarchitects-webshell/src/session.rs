@@ -19,7 +19,10 @@
 
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex as StdMutex, atomic::AtomicBool},
+    sync::{
+        Arc, Mutex as StdMutex,
+        atomic::{AtomicBool, AtomicU32},
+    },
 };
 
 use dashmap::DashMap;
@@ -130,6 +133,10 @@ pub struct BuildSession {
     /// Holds the `FleetTracker` + JSONL tailer + ticker tasks for this build.
     /// Initialised under the mutex to prevent TOCTOU races.
     pub fleet_broadcaster: tokio::sync::Mutex<Option<Arc<crate::agent::fleet::FleetBroadcaster>>>,
+    /// Cumulative turn count for this build session.  Used to detect context
+    /// window exhaustion — after `max_context_prompts` turns, the session is
+    /// auto-cleared to prevent the model from producing empty responses.
+    pub turn_count: AtomicU32,
 }
 
 impl BuildSession {
@@ -170,6 +177,7 @@ impl BuildSession {
             mode: "interactive".to_owned(),
             agent_host: tokio::sync::Mutex::new(None),
             fleet_broadcaster: tokio::sync::Mutex::new(None),
+            turn_count: AtomicU32::new(0),
         }
     }
 

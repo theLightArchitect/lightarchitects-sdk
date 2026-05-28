@@ -51,8 +51,8 @@ fn container_id_re() -> Option<&'static Regex> {
 /// Axum handler for `GET /api/terminal/container/:id`.
 ///
 /// Validates the container ID format, authenticates via
-/// `Sec-WebSocket-Protocol: bearer.<token>`, then upgrades to WebSocket and
-/// runs the byte-pipe relay.
+/// `Sec-WebSocket-Protocol: bearer.<token>` or `la_session` cookie, then
+/// upgrades to WebSocket and runs the byte-pipe relay.
 pub async fn ws_relay_handler(
     Path(container_id): Path<String>,
     ws: WebSocketUpgrade,
@@ -69,14 +69,19 @@ pub async fn ws_relay_handler(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if !auth::validate_ws_subprotocol(subproto, &state.config.token) {
+    if !auth::validate_ws_headers(&headers, &state.config.token) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
 
-    ws.protocols([subproto.to_owned()])
-        .on_upgrade(move |socket| async move {
-            relay(socket, container_id).await;
-        })
+    let upgrade = if subproto.is_empty() {
+        ws
+    } else {
+        ws.protocols([subproto.to_owned()])
+    };
+
+    upgrade.on_upgrade(move |socket| async move {
+        relay(socket, container_id).await;
+    })
 }
 
 /// Bridge a WebSocket connection to `docker exec -i <id> /bin/sh`.

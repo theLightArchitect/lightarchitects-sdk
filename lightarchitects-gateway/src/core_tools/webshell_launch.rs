@@ -17,6 +17,8 @@
 //!   conversation. Passed to the webshell binary as `--resume-session <id>`.
 //!   Only applied when the webshell is not already running — an already-
 //!   running webshell keeps whatever session it was launched with.
+//! - `dev_mode`: `bool` — pass `--dev-mode` to the webshell binary so it
+//!   allows the loopback Vite dev server and relaxed HMR CSP.
 //!
 //! Response shape:
 //! ```json
@@ -100,6 +102,10 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_owned);
+    let dev_mode = params
+        .get("dev_mode")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
 
     // Resolve (port, already_running):
     //   - explicit port  → use exactly, whatever its state
@@ -121,6 +127,7 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
             &host_cmd,
             cwd.as_deref(),
             session_id.as_deref(),
+            dev_mode,
         )?;
         wait_for_health(port).await?;
         "started"
@@ -166,6 +173,8 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
         "resumed_session": resumed_session,
         "session_mismatch": session_mismatch,
         "kill_hint": kill_hint,
+        "dev_mode": !already_running && dev_mode,
+        "dev_mode_requested": dev_mode,
     }))?))
 }
 
@@ -245,6 +254,7 @@ fn spawn_detached(
     host_cmd: &str,
     cwd: Option<&std::path::Path>,
     session_id: Option<&str>,
+    dev_mode: bool,
 ) -> Result<(), GatewayError> {
     let bin_path = config.agents.get("webshell").map_or_else(
         || {
@@ -286,6 +296,9 @@ fn spawn_detached(
     }
     if let Some(sid) = session_id {
         proc.arg("--resume-session").arg(sid);
+    }
+    if dev_mode {
+        proc.arg("--dev-mode");
     }
     // Detach: do not `wait` on the child. The Child is dropped, but since
     // stdio is null and we don't need exit status, this is fine.

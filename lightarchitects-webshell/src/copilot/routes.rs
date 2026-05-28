@@ -34,6 +34,9 @@ use crate::{
     server::AppState,
 };
 
+use lightarchitects::chat::mode::Mode;
+
+use super::strategy_runner::dispatch_strategy_initial;
 use super::{CopilotRequest, call_ollama, call_subprocess, context};
 
 /// Maximum prompt size accepted by the copilot endpoint (§3.4 — 8 KiB).
@@ -123,6 +126,36 @@ pub async fn copilot_chat_handler(
     }
 
     let grounding_hdrs = grounding_headers(&identity_text, &soul_block, git_ctx.as_ref());
+
+    // ── Strategy pre-emption ──
+    // Slash commands (/BUILD, /SECURE, /ENRICH, /SCRUM) route directly to the
+    // strategy engine instead of the LLM.  This prevents the LLM from generating
+    // a conversational explanation instead of taking action.
+    let mode = Mode::classify(
+        &body.message,
+        &lightarchitects::chat::roster::ActiveRoster::new(),
+    );
+    if let Some(strategy_id) = mode.strategy_id() {
+        if let Some(strategy) =
+            lightarchitects::agent::loops::registry::StrategyRegistry::lookup(strategy_id)
+        {
+            tracing::info!(strategy_id, build_id = %id, "strategy pre-emption: routing slash command to strategy engine");
+            return dispatch_strategy_initial(
+                strategy,
+                id,
+                &body.message,
+                turn_span_id,
+                session.event_tx.clone(),
+                Arc::clone(&state.resume_registry),
+            )
+            .await;
+        }
+        // Fall through to LLM if strategy not found (unknown future mode).
+        tracing::warn!(
+            strategy_id,
+            "strategy pre-emption: unknown strategy ID, falling through to LLM"
+        );
+    }
 
     // Native path: stream via ConversationSession + SseTransport.
     // The full grounding prelude (EVA identity + SOUL + git + recent events) is

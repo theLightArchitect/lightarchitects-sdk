@@ -629,6 +629,7 @@ mod tests {
                 agent: AgentSession::default(),
                 claude_agent_template: None,
                 container_mode: crate::container::ContainerMode::Auto,
+                dev_mode: false,
             },
             crate::container::DockerCapability::Unavailable,
         )

@@ -81,7 +81,7 @@ pub async fn agent_ws_handler(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if !auth::validate_ws_subprotocol(subproto, &state.config.token) {
+    if !auth::validate_ws_headers(&headers, &state.config.token) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
 
@@ -100,12 +100,17 @@ pub async fn agent_ws_handler(
             .into_response();
     }
 
-    ws.protocols([subproto.to_owned()])
-        .on_upgrade(move |socket| async move {
-            let (event_tx, control_tx) = super::ensure_agent_host(&session).await;
+    let upgrade = if subproto.is_empty() {
+        ws
+    } else {
+        ws.protocols([subproto.to_owned()])
+    };
 
-            handle_agent_socket(socket, build_id, session, event_tx, control_tx).await;
-        })
+    upgrade.on_upgrade(move |socket| async move {
+        let (event_tx, control_tx) = super::ensure_agent_host(&session).await;
+
+        handle_agent_socket(socket, build_id, session, event_tx, control_tx).await;
+    })
 }
 
 async fn handle_agent_socket(

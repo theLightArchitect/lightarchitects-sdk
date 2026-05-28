@@ -543,7 +543,7 @@ async fn run_print_turn(
                         chunk: text,
                         done: false,
                         sibling: Some("claude".to_owned()),
-                        turn_span_id: None,
+                        turn_span_id: turn_span_id.map(ToOwned::to_owned),
                     },
                     Some(session.build_id),
                 ));
@@ -946,7 +946,7 @@ pub(super) async fn call_subprocess(
                     chunk: String::new(),
                     done: true,
                     sibling: None,
-                    turn_span_id: None,
+                    turn_span_id: Some(span_id.clone()),
                 },
                 Some(session.build_id),
             ));

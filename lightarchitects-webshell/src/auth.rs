@@ -16,7 +16,7 @@
 //!   underlying constant-time comparator both surfaces call.
 
 use axum::extract::FromRequestParts;
-use axum::http::{StatusCode, header, request::Parts};
+use axum::http::{HeaderMap, StatusCode, header, request::Parts};
 use axum::response::{IntoResponse, Response};
 use constant_time_eq::constant_time_eq;
 
@@ -83,6 +83,25 @@ pub fn validate_ws_subprotocol(subprotocol: &str, expected_token: &str) -> bool 
         return false;
     }
     constant_time_eq(candidate.as_bytes(), expected_token.as_bytes())
+}
+
+/// Validates a WebSocket upgrade request via either bearer sub-protocol or
+/// the same `la_session` cookie accepted by [`AuthGuard`].
+#[must_use]
+pub fn validate_ws_headers(headers: &HeaderMap, expected_token: &str) -> bool {
+    let subprotocol_ok = headers
+        .get("sec-websocket-protocol")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|s| validate_ws_subprotocol(s, expected_token));
+
+    if subprotocol_ok {
+        return true;
+    }
+
+    headers
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|s| validate_session_cookie(s, expected_token))
 }
 
 // ── Cookie-based session auth (v0.4.0) ─────────────────────────────────────
@@ -333,6 +352,26 @@ mod tests {
         // RFC 7235 §2.1: auth-scheme is case-insensitive.
         assert!(validate_ws_subprotocol("Bearer.abc123", "abc123"));
         assert!(validate_ws_subprotocol("BEARER.abc123", "abc123"));
+    }
+
+    #[test]
+    fn ws_headers_accept_bearer_subprotocol() {
+        let mut headers = HeaderMap::new();
+        headers.insert("sec-websocket-protocol", "bearer.abc123".parse().unwrap());
+        assert!(validate_ws_headers(&headers, "abc123"));
+    }
+
+    #[test]
+    fn ws_headers_accept_session_cookie() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::COOKIE, "la_session=abc123".parse().unwrap());
+        assert!(validate_ws_headers(&headers, "abc123"));
+    }
+
+    #[test]
+    fn ws_headers_reject_missing_credentials() {
+        let headers = HeaderMap::new();
+        assert!(!validate_ws_headers(&headers, "abc123"));
     }
 
     // ── cookie session auth ─────────────────────────────────────────────────

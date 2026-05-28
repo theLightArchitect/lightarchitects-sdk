@@ -61,7 +61,7 @@ pub async fn ws_handler(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if !auth::validate_ws_subprotocol(subproto, &state.config.token) {
+    if !auth::validate_ws_headers(&headers, &state.config.token) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
 
@@ -76,44 +76,50 @@ pub async fn ws_handler(
 
     let config = Arc::clone(&state.config);
 
-    // Auth and cap checks pass — perform the WebSocket upgrade.
-    // Echo the subprotocol back (RFC 6455 §4.1 — browsers reject if omitted).
+    // Auth and cap checks pass — perform the WebSocket upgrade. Echo the
+    // subprotocol only for bearer-subprotocol auth; cookie-authenticated
+    // browsers do not send one.
     // The session task owns `guard`; dropping it decrements the count.
-    ws.protocols([subproto.to_owned()])
-        .on_upgrade(move |socket| async move {
-            let pepper = Arc::clone(&state.turnlog_pepper);
-            let session_id = uuid::Uuid::new_v4().to_string();
-            let cwd = config.cwd.clone();
-            let host_cmd_str = config.host_cmd.clone().into_string().unwrap_or_default();
-            let turnlog = if pepper.expose_secret().is_empty() {
-                None
-            } else {
-                let tl = crate::turnlog::WebshellTurnLog::open(
-                    session_id,
-                    cwd,
-                    &host_cmd_str,
-                    &pepper,
-                    Some(state.event_tx.clone()),
-                    state.soul_store.clone(),
-                )
-                .await
-                .ok()
-                .flatten();
-                // Phase 19c.2 — attach hot-reload policy when available.
-                tl.map(|t| {
-                    if let Some(policy) = state.promotion_policy.clone() {
-                        t.with_policy(policy)
-                    } else {
-                        t
-                    }
-                })
-            };
-            session::run_session(socket, config, None, guard).await;
-            if let Some(tl) = turnlog {
-                tl.close(lightarchitects::turnlog::EndReason::Complete)
-                    .await;
-            }
-        })
+    let upgrade = if subproto.is_empty() {
+        ws
+    } else {
+        ws.protocols([subproto.to_owned()])
+    };
+
+    upgrade.on_upgrade(move |socket| async move {
+        let pepper = Arc::clone(&state.turnlog_pepper);
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let cwd = config.cwd.clone();
+        let host_cmd_str = config.host_cmd.clone().into_string().unwrap_or_default();
+        let turnlog = if pepper.expose_secret().is_empty() {
+            None
+        } else {
+            let tl = crate::turnlog::WebshellTurnLog::open(
+                session_id,
+                cwd,
+                &host_cmd_str,
+                &pepper,
+                Some(state.event_tx.clone()),
+                state.soul_store.clone(),
+            )
+            .await
+            .ok()
+            .flatten();
+            // Phase 19c.2 — attach hot-reload policy when available.
+            tl.map(|t| {
+                if let Some(policy) = state.promotion_policy.clone() {
+                    t.with_policy(policy)
+                } else {
+                    t
+                }
+            })
+        };
+        session::run_session(socket, config, None, guard).await;
+        if let Some(tl) = turnlog {
+            tl.close(lightarchitects::turnlog::EndReason::Complete)
+                .await;
+        }
+    })
 }
 
 /// Axum handler for `GET /api/builds/:id/terminal/ws` (Phase C).

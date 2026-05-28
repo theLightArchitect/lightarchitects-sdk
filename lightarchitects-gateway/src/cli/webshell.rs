@@ -11,6 +11,16 @@ use std::process::Command;
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
 
+struct StartOptions<'a> {
+    port: u16,
+    host_cmd: &'a str,
+    cwd: Option<&'a std::path::Path>,
+    agent_kind: Option<String>,
+    backend: Option<String>,
+    ollama_model: Option<String>,
+    dev_mode: bool,
+}
+
 /// Webshell subcommands (parsed from args, not clap).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WebshellCommand {
@@ -28,6 +38,8 @@ pub enum WebshellCommand {
         backend: Option<String>,
         /// Ollama model override (`--ollama-model`).
         ollama_model: Option<String>,
+        /// Enable webshell local frontend development mode.
+        dev_mode: bool,
     },
     /// Check if the webshell server is running.
     Status {
@@ -57,16 +69,17 @@ pub async fn execute(config: &GatewayConfig, args: &[String]) -> Result<(), Gate
             let agent_kind = parse_flag(args, "--agent-kind");
             let backend = parse_flag(args, "--backend");
             let ollama_model = parse_flag(args, "--ollama-model");
+            let dev_mode = has_flag(args, "--dev-mode") || has_flag(args, "--dev");
 
-            start_server(
-                config,
+            start_server(config, StartOptions {
                 port,
-                &host_cmd,
-                cwd.as_deref(),
+                host_cmd: &host_cmd,
+                cwd: cwd.as_deref(),
                 agent_kind,
                 backend,
                 ollama_model,
-            )
+                dev_mode,
+            })
         }
         Some("status") => {
             let port = parse_flag(args, "--port")
@@ -86,19 +99,25 @@ pub async fn execute(config: &GatewayConfig, args: &[String]) -> Result<(), Gate
             eprintln!("Available: start, control, status");
             Err(GatewayError::UnknownTool(other.to_owned()))
         }
-        None => start_server(config, 8733, "claude", None, None, None, None),
+        None => start_server(config, StartOptions::default()),
     }
 }
 
-fn start_server(
-    config: &GatewayConfig,
-    port: u16,
-    host_cmd: &str,
-    cwd: Option<&std::path::Path>,
-    agent_kind: Option<String>,
-    backend: Option<String>,
-    ollama_model: Option<String>,
-) -> Result<(), GatewayError> {
+impl Default for StartOptions<'_> {
+    fn default() -> Self {
+        Self {
+            port: 8733,
+            host_cmd: "claude",
+            cwd: None,
+            agent_kind: None,
+            backend: None,
+            ollama_model: None,
+            dev_mode: false,
+        }
+    }
+}
+
+fn start_server(config: &GatewayConfig, options: StartOptions<'_>) -> Result<(), GatewayError> {
     let binary = config.agents.get("webshell").map_or_else(
         || {
             let home = std::env::var_os("HOME").unwrap_or_default();
@@ -113,19 +132,22 @@ fn start_server(
     );
 
     let mut child = Command::new(&binary);
-    child.arg("--port").arg(port.to_string());
-    child.arg("--host-cmd").arg(host_cmd);
-    if let Some(cwd_path) = cwd {
+    child.arg("--port").arg(options.port.to_string());
+    child.arg("--host-cmd").arg(options.host_cmd);
+    if let Some(cwd_path) = options.cwd {
         child.arg("--cwd").arg(cwd_path);
     }
-    if let Some(kind) = agent_kind {
+    if let Some(kind) = options.agent_kind {
         child.arg("--agent").arg(kind);
     }
-    if let Some(b) = backend {
+    if let Some(b) = options.backend {
         child.arg("--backend").arg(b);
     }
-    if let Some(m) = ollama_model {
+    if let Some(m) = options.ollama_model {
         child.arg("--ollama-model").arg(m);
+    }
+    if options.dev_mode {
+        child.arg("--dev-mode");
     }
 
     let status = child.status().map_err(|e| GatewayError::SpawnFailed {
@@ -244,4 +266,8 @@ fn parse_flag(args: &[String], flag: &str) -> Option<String> {
     args.iter()
         .position(|a| a == flag)
         .and_then(|i| args.get(i + 1).cloned())
+}
+
+fn has_flag(args: &[String], flag: &str) -> bool {
+    args.iter().any(|a| a == flag)
 }

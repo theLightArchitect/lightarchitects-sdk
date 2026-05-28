@@ -669,8 +669,9 @@ impl AppState {
 #[allow(clippy::too_many_lines)]
 pub fn build_app(state: AppState) -> Router {
     container_relay::spawn_reaper();
-    let cors = build_cors(state.config.port);
-    Router::new()
+    let cors = build_cors(state.config.port, state.config.dev_mode);
+    let dev_mode = state.config.dev_mode;
+    let router = Router::new()
         .route("/api/health", get(health))
         .route("/api/preflight", get(preflight_status_handler))
         .route("/api/preflight/refresh", post(preflight_refresh_handler))
@@ -1077,11 +1078,17 @@ pub fn build_app(state: AppState) -> Router {
         // ── CSP violation reports (SEC-3b, Enforce phase) ────────────────────
         .route("/api/csp-report", post(csp::csp_report_handler))
         .fallback(static_assets::serve)
-        // SEC-3b: Enforce-mode CSP — violations are blocked.
-        .layer(axum::middleware::from_fn(csp::enforce_layer))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
-        .with_state(state)
+        .with_state(state);
+
+    // SEC-3b: Enforce-mode CSP — violations are blocked. Dev mode uses a
+    // loopback-only relaxed policy so the Vite frontend can hot reload.
+    if dev_mode {
+        router.layer(axum::middleware::from_fn(csp::dev_enforce_layer))
+    } else {
+        router.layer(axum::middleware::from_fn(csp::enforce_layer))
+    }
 }
 
 /// Constructs a CORS layer that restricts allowed origins to localhost only.
@@ -1097,18 +1104,20 @@ pub fn build_app(state: AppState) -> Router {
 /// Allowed origins:
 /// - `http://localhost:<port>` — production (same-origin serving)
 /// - `http://127.0.0.1:<port>` — same binary, loopback alias
-/// - `http://localhost:5173` — Vite dev server (**debug builds only**)
-fn build_cors(port: u16) -> CorsLayer {
+/// - `http://localhost:5173` — Vite dev server (debug builds or `--dev-mode`)
+fn build_cors(port: u16, dev_mode: bool) -> CorsLayer {
     // `mut` is only used in debug builds (Vite dev server push below).
     #[allow(unused_mut)]
     let mut origins: Vec<String> = vec![
         format!("http://localhost:{port}"),
         format!("http://127.0.0.1:{port}"),
     ];
-    // Vite dev server origin: present only in debug builds so that release
-    // binaries cannot be cross-origin requested from an arbitrary port.
-    #[cfg(debug_assertions)]
-    origins.push("http://localhost:5173".to_owned());
+    // Vite dev server origin: present in debug builds or explicit dev mode
+    // so release binaries stay closed unless the operator opts in.
+    if dev_mode || cfg!(debug_assertions) {
+        origins.push("http://localhost:5173".to_owned());
+        origins.push("http://127.0.0.1:5173".to_owned());
+    }
 
     let allowed_origins: Vec<HeaderValue> = origins.iter().filter_map(|s| s.parse().ok()).collect();
 

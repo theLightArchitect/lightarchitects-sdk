@@ -77,6 +77,13 @@ async fn main() -> ExitCode {
     eprintln!();
     eprintln!("  Open in your browser:");
     eprintln!("    http://localhost:{port}#token={token}");
+    if config.dev_mode {
+        eprintln!("  Dev UI:");
+        eprintln!(
+            "    LA_BACKEND_URL=http://localhost:{port} pnpm --dir lightarchitects-webshell-ui dev"
+        );
+        eprintln!("    http://localhost:5173#token={token}");
+    }
     eprintln!();
     eprintln!("  Token:    {token_preview}  (via {source_label})");
     eprintln!("  Keychain: ~/.lightarchitects/webshell/.token");

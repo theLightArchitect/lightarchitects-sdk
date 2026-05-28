@@ -65,15 +65,21 @@ const CANON_KEYWORD: &str = "canon";
 const AYIN_NAME: &str = "ayin";
 
 /// Observability keywords that trigger AYIN's stake boost.
+///
+/// Includes common variants: "error" (not just "`error_rate`"),
+/// "metrics" (plural of "metric"), and "dashboard" (AYIN's UI surface).
 const AYIN_OBSERVABILITY_KEYWORDS: &[&str] = &[
     "trace",
     "span",
     "latency",
     "error_rate",
+    "error",
     "anomaly",
     "observe",
     "metric",
+    "metrics",
     "telemetry",
+    "dashboard",
 ];
 
 /// Stake bonus applied to AYIN when the topic contains observability keywords.

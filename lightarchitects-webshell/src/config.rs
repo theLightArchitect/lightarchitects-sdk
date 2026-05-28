@@ -337,6 +337,14 @@ pub struct Cli {
     /// Only used when `--agent=lightarchitects-native`.
     #[arg(long)]
     pub lightarchitects_cli_binary: Option<String>,
+
+    /// Enable local frontend development mode.
+    ///
+    /// Allows Vite's default origin (`localhost:5173` / `127.0.0.1:5173`)
+    /// through CORS and emits the relaxed CSP needed for HMR. This flag is
+    /// operator-local only; release mode remains strict by default.
+    #[arg(long)]
+    pub dev_mode: bool,
 }
 
 impl Default for Cli {
@@ -356,6 +364,7 @@ impl Default for Cli {
             ollama_key: None,
             claude_agent: None,
             lightarchitects_cli_binary: None,
+            dev_mode: false,
         }
     }
 }
@@ -386,6 +395,13 @@ pub struct Config {
     pub claude_agent_template: Option<String>,
     /// Container mode override (env var `LA_CONTAINER_MODE`).
     pub container_mode: crate::container::ContainerMode,
+    /// Whether the server is running as the API backend for a local Vite UI.
+    pub dev_mode: bool,
+    /// Maximum copilot turns before auto-clearing the model context to prevent
+    /// context window exhaustion.  After this many turns, the copilot session
+    /// is cleared (the underlying process is killed and restarted on the next
+    /// request).  Default: 50 (conservative — eval showed exhaustion at ~60).
+    pub max_context_prompts: u32,
 }
 
 /// Where the auth token was resolved from.
@@ -823,6 +839,7 @@ impl Config {
             agent,
             claude_agent_template,
             container_mode,
+            dev_mode: cli.dev_mode,
         })
     }
 
@@ -901,6 +918,7 @@ mod tests {
             ollama_key: None,
             claude_agent: None,
             lightarchitects_cli_binary: None,
+            dev_mode: false,
         }
     }
 
@@ -924,10 +942,12 @@ mod tests {
             ollama_key: None,
             claude_agent: None,
             lightarchitects_cli_binary: None,
+            dev_mode: true,
         };
         let cfg = Config::resolve(cli).unwrap();
         assert_eq!(cfg.host_cmd, OsString::from("/custom/lightarchitects-cli"));
         assert_eq!(cfg.cwd, PathBuf::from("/tmp/session"));
+        assert!(cfg.dev_mode);
     }
 
     #[test]

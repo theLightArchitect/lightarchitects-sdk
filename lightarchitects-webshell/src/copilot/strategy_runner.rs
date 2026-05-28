@@ -18,7 +18,7 @@
 
 use std::{
     collections::HashMap,
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -29,6 +29,7 @@ use lightarchitects::agent::{
 };
 use tokio::sync::mpsc;
 use tracing::{info, warn};
+use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -273,6 +274,93 @@ impl StrategyDispatcher {
 }
 
 // ---------------------------------------------------------------------------
+// Initial dispatch (pre-emption router)
+// ---------------------------------------------------------------------------
+
+/// Dispatch a strategy turn from the copilot's pre-emption router.
+///
+/// Spawns the strategy on a background task and streams progress through the
+/// build session's SSE broadcast channel (the same channel the frontend
+/// subscribes to for copilot responses). Returns a JSON acknowledgement so
+/// the frontend knows the strategy has started and can watch for events.
+pub async fn dispatch_strategy_initial(
+    strategy: RegisteredStrategy,
+    build_id: Uuid,
+    message: &str,
+    turn_span_id: String,
+    event_tx: tokio::sync::broadcast::Sender<crate::events::WebEventV2>,
+    resume_registry: Arc<ResumeRegistry>,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    let strategy_id = strategy.name().to_owned();
+    let initial_state = LoopState::new(message);
+    let session_id = build_id.to_string();
+    let span_id_for_response = turn_span_id.clone();
+
+    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<String>(64);
+
+    // Bridge: forward progress messages as CopilotResponse events.
+    let event_tx_progress = event_tx.clone();
+    let span_for_progress = turn_span_id.clone();
+    tokio::spawn(async move {
+        while let Some(msg) = progress_rx.recv().await {
+            let _ = event_tx_progress.send(crate::events::WebEventV2::from_event(
+                crate::events::WebEvent::CopilotResponse {
+                    chunk: msg,
+                    done: false,
+                    sibling: None,
+                    turn_span_id: Some(span_for_progress.clone()),
+                },
+                None,
+            ));
+        }
+    });
+
+    // Strategy execution: dispatch to completion or HITL pause.
+    let event_tx_final = event_tx;
+    let span_for_final = turn_span_id;
+    let sid_for_final = strategy_id.clone();
+    tokio::spawn(async move {
+        let dispatcher = StrategyDispatcher::new(resume_registry);
+        let result = dispatcher
+            .dispatch(strategy, initial_state, session_id, progress_tx)
+            .await;
+        let summary = match &result {
+            DispatchResult::Halted { phases_run } => {
+                format!("[{sid_for_final}] complete ({phases_run} phases)")
+            }
+            DispatchResult::Error(e) => format!("[{sid_for_final}] error: {e}"),
+            DispatchResult::Paused { hitl, .. } => {
+                format!("[{sid_for_final}] paused: {}", hitl.question)
+            }
+        };
+        let _ = event_tx_final.send(crate::events::WebEventV2::from_event(
+            crate::events::WebEvent::CopilotResponse {
+                chunk: summary,
+                done: true,
+                sibling: None,
+                turn_span_id: Some(span_for_final),
+            },
+            None,
+        ));
+    });
+
+    // Return immediately with a JSON acknowledgement — the frontend receives
+    // the strategy progress and result through the SSE event stream.
+    (
+        StatusCode::OK,
+        axum::Json(serde_json::json!({
+            "status": "strategy_dispatched",
+            "strategy_id": strategy_id,
+            "build_id": build_id.to_string(),
+            "turn_span_id": span_id_for_response,
+        })),
+    )
+        .into_response()
+}
+
 // Helpers
 // ---------------------------------------------------------------------------
 

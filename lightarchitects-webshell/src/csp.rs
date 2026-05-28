@@ -44,6 +44,22 @@ pub const CSP_POLICY: &str = concat!(
     "report-uri /api/csp-report",
 );
 
+/// Relaxed CSP used only when `--dev-mode` is set.
+///
+/// Vite HMR needs inline/eval script allowances plus loopback WebSocket
+/// endpoints. Production never selects this policy.
+pub const DEV_CSP_POLICY: &str = concat!(
+    "default-src 'self'; ",
+    "script-src 'self' 'unsafe-eval' 'unsafe-inline' http://localhost:5173 http://127.0.0.1:5173; ",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com http://localhost:5173 http://127.0.0.1:5173; ",
+    "font-src 'self' https://fonts.gstatic.com data: http://localhost:5173 http://127.0.0.1:5173; ",
+    "connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:* ws://127.0.0.1:* http://127.0.0.1:*; ",
+    "img-src 'self' data: blob:; ",
+    "worker-src 'self' blob:; ",
+    "frame-ancestors 'none'; ",
+    "report-uri /api/csp-report",
+);
+
 /// Axum middleware that injects `Content-Security-Policy-Report-Only`.
 ///
 /// Attach via `.layer(axum::middleware::from_fn(csp::report_only_layer))`.
@@ -63,8 +79,17 @@ pub async fn report_only_layer(req: Request<Body>, next: Next) -> Response {
 /// Replaces `report_only_layer` once the report stream confirms no violations.
 /// Attach via `.layer(axum::middleware::from_fn(csp::enforce_layer))`.
 pub async fn enforce_layer(req: Request<Body>, next: Next) -> Response {
+    enforce_with_policy(req, next, CSP_POLICY).await
+}
+
+/// Axum middleware that injects a dev-mode enforcing CSP.
+pub async fn dev_enforce_layer(req: Request<Body>, next: Next) -> Response {
+    enforce_with_policy(req, next, DEV_CSP_POLICY).await
+}
+
+async fn enforce_with_policy(req: Request<Body>, next: Next, policy: &str) -> Response {
     let mut response = next.run(req).await;
-    if let Ok(val) = HeaderValue::from_str(CSP_POLICY) {
+    if let Ok(val) = HeaderValue::from_str(policy) {
         response
             .headers_mut()
             .insert(HeaderName::from_static("content-security-policy"), val);
@@ -146,6 +171,28 @@ mod tests {
                 .contains_key("content-security-policy-report-only"),
             "report-only header must NOT be present in enforce mode"
         );
+    }
+
+    #[tokio::test]
+    async fn dev_enforce_header_allows_vite_loopback() {
+        let app = Router::new()
+            .route("/", get(ok_handler))
+            .layer(axum::middleware::from_fn(dev_enforce_layer));
+
+        let resp = app
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let hdr = resp
+            .headers()
+            .get("content-security-policy")
+            .expect("dev enforce header must be present");
+        let val = hdr.to_str().unwrap();
+        assert!(val.contains("http://localhost:5173"));
+        assert!(val.contains("ws://127.0.0.1:*"));
+        assert!(val.contains("'unsafe-inline'"));
     }
 
     #[tokio::test]
