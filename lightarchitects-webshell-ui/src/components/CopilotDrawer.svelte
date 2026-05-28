@@ -69,6 +69,16 @@
     const next = open ? widthPx : 0;
     if (get(drawerWidthPx) !== next) drawerWidthPx.set(next);
   });
+  // Cleanup @-file autocomplete timer on drawer close/unmount.
+  $effect(() => {
+    if (!open && atFetchTimer !== null) {
+      clearTimeout(atFetchTimer);
+      atFetchTimer = null;
+    }
+    return () => {
+      if (atFetchTimer !== null) clearTimeout(atFetchTimer);
+    };
+  });
 
   function onWindowResize() {
     const maxH = Math.floor(window.innerHeight * MAX_HEIGHT_RATIO);
@@ -636,7 +646,7 @@
 
   async function sendMessage() {
     const text = input.trim();
-    if (!text) return;
+    if (!text || get(copilotLoading)) return;
     input = '';
     showSuggestions = false;
     const { command, args } = parseCommand(text);
@@ -759,6 +769,7 @@
   let dragStartW = 0;
 
   function onDragStart(e: MouseEvent) {
+    if (!open) return;
     dragging = true;
     dragStartX = e.clientX;
     dragStartW = widthPx;
@@ -766,7 +777,7 @@
   }
 
   function onDragMove(e: MouseEvent) {
-    if (!dragging) return;
+    if (!dragging || !open) return;
     const delta = e.clientX - dragStartX;
     const maxW = Math.floor(window.innerWidth * MAX_WIDTH_RATIO);
     widthPx = Math.min(maxW, Math.max(MIN_WIDTH, dragStartW + delta));

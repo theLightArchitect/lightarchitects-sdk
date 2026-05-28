@@ -39,6 +39,13 @@ use crate::{
     session::BuildSession,
 };
 
+/// Wall-clock cap for copilot subprocess turns (5 minutes).
+const TURN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// Shared HTTP client for Ollama calls — avoids per-request TLS handshake + connection pool.
+static OLLAMA_HTTP_CLIENT: std::sync::LazyLock<reqwest::Client> =
+    std::sync::LazyLock::new(reqwest::Client::new);
+
 /// Resolve a binary name to its full path by checking known install locations.
 /// Falls back to the bare name (relies on PATH) if not found in known locations.
 pub fn resolve_binary(name: &str) -> String {
@@ -414,7 +421,9 @@ async fn run_print_turn(
     // Ensure cwd exists — spawn fails with misleading "No such file or directory"
     // (referring to cwd, not the binary) if current_dir doesn't exist.
     if !session.cwd.is_dir() {
-        let _ = std::fs::create_dir_all(&session.cwd);
+        if let Err(e) = std::fs::create_dir_all(&session.cwd) {
+            tracing::warn!(path = %session.cwd.display(), error = %e, "failed to create cwd for claude");
+        }
     }
     c.current_dir(&session.cwd);
     c.env_remove("ANTHROPIC_API_KEY");
@@ -439,161 +448,176 @@ async fn run_print_turn(
     // Stderr is piped to null — we only read stdout. Piped stderr without a drain
     // task risks deadlock when the child writes more than the OS pipe buffer (64KB).
     c.stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null());
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
 
-    let mut child = c.spawn().map_err(|e| format!("spawn claude: {e}"))?;
+    let mut child = c.spawn().map_err(|e| {
+        tracing::warn!(error = %e, "failed to spawn claude subprocess");
+        "claude_spawn_failed".to_owned()
+    })?;
 
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "claude stdout unavailable".to_owned())?;
-    let mut reader = BufReader::new(stdout).lines();
+    let turn = async {
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "claude stdout unavailable".to_owned())?;
+        let mut reader = BufReader::new(stdout).lines();
 
-    let mut result_text: Option<String> = None;
-    let mut found_session_id: Option<String> = None;
-    let build_id = session.build_id.to_string();
+        let mut result_text: Option<String> = None;
+        let mut found_session_id: Option<String> = None;
+        let build_id = session.build_id.to_string();
 
-    // OTel semconv v1.56.0 — SA-23: emit a structured event instead of `.entered()`
-    // because EnteredSpan is !Send; holding it across .await makes the future !Send,
-    // breaking axum's Handler trait. Use tracing::info! to preserve the span semantics.
-    tracing::info!(build_id = %build_id, "app.copilot.turn starting");
+        // OTel semconv v1.56.0 — SA-23: emit a structured event instead of `.entered()`
+        // because EnteredSpan is !Send; holding it across .await makes the future !Send,
+        // breaking axum's Handler trait. Use tracing::info! to preserve the span semantics.
+        tracing::info!(build_id = %build_id, "app.copilot.turn starting");
 
-    while let Some(line) = reader
-        .next_line()
-        .await
-        .map_err(|e| format!("read stdout: {e}"))?
-    {
-        // SA-21: parse errors are non-fatal — warn and skip the line.
-        let val = match serde_json::from_str::<serde_json::Value>(&line) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(build_id = %build_id, error = %e, "copilot NDJSON parse error");
-                tracing::warn!(
-                    counter = "app.copilot.parse_error_total",
-                    "incrementing counter"
-                );
-                continue;
-            }
-        };
-
-        if let Some(id) = val["session_id"].as_str() {
-            found_session_id = Some(id.to_owned());
-        }
-
-        let event_type = val["type"].as_str().unwrap_or("unknown");
-
-        // Broadcast activity event for the Activity tab
-        let summary = extract_activity_summary(&val);
-        let send_result = session.event_tx.send(crate::events::WebEventV2::from_event(
-            crate::events::WebEvent::CopilotActivity(crate::events::types::CopilotActivityEvent {
-                build_id: build_id.clone(),
-                kind: event_type.to_owned(),
-                summary,
-                raw: val.clone(),
-                timestamp: chrono::Utc::now().to_rfc3339(),
-            }),
-            Some(session.build_id),
-        ));
-        if send_result.is_err() {
-            tracing::warn!(
-                counter = "app.copilot.token_buffer.overflow_total",
-                "channel send failed — receiver lagged or dropped"
-            );
-        }
-
-        // Delegate stream-json event dispatch to the SDK parser (TS-3 §21.3).
-        // `val` is already parsed; `parse_ndjson_value` avoids a second JSON parse.
-        match parse_ndjson_value(&val) {
-            Ok(Some(ProviderEvent::ContentBlockStart {
-                block_type,
-                tool_name,
-                ..
-            })) if block_type == "tool_use" => {
-                let name = tool_name.as_deref().unwrap_or("unknown");
-                // Actor "copilot" → no actor-role mapping → color driven by
-                // outcome (Continue → cyan), creating a visual mid-tier between
-                // the gold user.message root and the gold assistant.response leaf.
-                let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
-                    crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        parent_id: turn_span_id.map(ToOwned::to_owned),
-                        actor: "copilot".to_owned(),
-                        action: format!("tool.{name}"),
-                        timestamp: chrono::Utc::now().to_rfc3339(),
-                        duration_ms: 0,
-                        outcome: serde_json::json!("Continue"),
-                        metadata: serde_json::json!({ "build_id": build_id }),
-                        strand_activations: Vec::new(),
-                        decision_points: Vec::new(),
-                    }),
-                    Some(session.build_id),
-                ));
-                emit_disk_span(
-                    "copilot",
-                    &format!("tool.{name}"),
-                    serde_json::json!({ "build_id": build_id }),
-                    lightarchitects::ayin::TraceOutcome::Continue,
-                    turn_span_id.and_then(|s| s.parse::<uuid::Uuid>().ok()),
-                    session.build_id,
-                );
-            }
-            Ok(Some(ProviderEvent::TextDelta { text, .. })) => {
-                let send_r = session.event_tx.send(crate::events::WebEventV2::from_event(
-                    crate::events::WebEvent::CopilotResponse {
-                        chunk: text,
-                        done: false,
-                        sibling: Some("claude".to_owned()),
-                        turn_span_id: turn_span_id.map(ToOwned::to_owned),
-                    },
-                    Some(session.build_id),
-                ));
-                if send_r.is_err() {
+        while let Some(line) = reader
+            .next_line()
+            .await
+            .map_err(|e| format!("read stdout: {e}"))?
+        {
+            // SA-21: parse errors are non-fatal — warn and skip the line.
+            let val = match serde_json::from_str::<serde_json::Value>(&line) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!(build_id = %build_id, error = %e, "copilot NDJSON parse error");
                     tracing::warn!(
-                        counter = "app.copilot.token_buffer.overflow_total",
-                        "channel send failed — receiver lagged or dropped"
+                        counter = "app.copilot.parse_error_total",
+                        "incrementing counter"
+                    );
+                    continue;
+                }
+            };
+
+            if let Some(id) = val["session_id"].as_str() {
+                found_session_id = Some(id.to_owned());
+            }
+
+            let event_type = val["type"].as_str().unwrap_or("unknown");
+
+            // Broadcast activity event for the Activity tab
+            let summary = extract_activity_summary(&val);
+            let send_result = session.event_tx.send(crate::events::WebEventV2::from_event(
+                crate::events::WebEvent::CopilotActivity(
+                    crate::events::types::CopilotActivityEvent {
+                        build_id: build_id.clone(),
+                        kind: event_type.to_owned(),
+                        summary,
+                        raw: val.clone(),
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                    },
+                ),
+                Some(session.build_id),
+            ));
+            if send_result.is_err() {
+                tracing::warn!(
+                    counter = "app.copilot.token_buffer.overflow_total",
+                    "channel send failed — receiver lagged or dropped"
+                );
+            }
+
+            // Delegate stream-json event dispatch to the SDK parser (TS-3 §21.3).
+            // `val` is already parsed; `parse_ndjson_value` avoids a second JSON parse.
+            match parse_ndjson_value(&val) {
+                Ok(Some(ProviderEvent::ContentBlockStart {
+                    block_type,
+                    tool_name,
+                    ..
+                })) if block_type == "tool_use" => {
+                    let name = tool_name.as_deref().unwrap_or("unknown");
+                    // Actor "copilot" → no actor-role mapping → color driven by
+                    // outcome (Continue → cyan), creating a visual mid-tier between
+                    // the gold user.message root and the gold assistant.response leaf.
+                    let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+                        crate::events::WebEvent::AyinSpan(crate::events::types::TraceSpanSummary {
+                            id: uuid::Uuid::new_v4().to_string(),
+                            parent_id: turn_span_id.map(ToOwned::to_owned),
+                            actor: "copilot".to_owned(),
+                            action: format!("tool.{name}"),
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                            duration_ms: 0,
+                            outcome: serde_json::json!("Continue"),
+                            metadata: serde_json::json!({ "build_id": build_id }),
+                            strand_activations: Vec::new(),
+                            decision_points: Vec::new(),
+                        }),
+                        Some(session.build_id),
+                    ));
+                    emit_disk_span(
+                        "copilot",
+                        &format!("tool.{name}"),
+                        serde_json::json!({ "build_id": build_id }),
+                        lightarchitects::ayin::TraceOutcome::Continue,
+                        turn_span_id.and_then(|s| s.parse::<uuid::Uuid>().ok()),
+                        session.build_id,
+                    );
+                }
+                Ok(Some(ProviderEvent::TextDelta { text, .. })) => {
+                    let send_r = session.event_tx.send(crate::events::WebEventV2::from_event(
+                        crate::events::WebEvent::CopilotResponse {
+                            chunk: text,
+                            done: false,
+                            sibling: Some("claude".to_owned()),
+                            turn_span_id: turn_span_id.map(ToOwned::to_owned),
+                        },
+                        Some(session.build_id),
+                    ));
+                    if send_r.is_err() {
+                        tracing::warn!(
+                            counter = "app.copilot.token_buffer.overflow_total",
+                            "channel send failed — receiver lagged or dropped"
+                        );
+                    }
+                }
+                Ok(Some(ProviderEvent::MessageStop)) => {
+                    let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+                        crate::events::WebEvent::CopilotResponse {
+                            chunk: String::new(),
+                            done: true,
+                            sibling: Some("claude".to_owned()),
+                            turn_span_id: turn_span_id.map(ToOwned::to_owned),
+                        },
+                        Some(session.build_id),
+                    ));
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!(
+                        build_id = %build_id,
+                        error = %e,
+                        counter = "app.copilot.parse_error_total",
+                        "copilot NDJSON event parse error"
                     );
                 }
             }
-            Ok(Some(ProviderEvent::MessageStop)) => {
-                let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
-                    crate::events::WebEvent::CopilotResponse {
-                        chunk: String::new(),
-                        done: true,
-                        sibling: Some("claude".to_owned()),
-                        turn_span_id: turn_span_id.map(ToOwned::to_owned),
-                    },
-                    Some(session.build_id),
-                ));
-            }
-            Ok(_) => {}
-            Err(e) => {
-                tracing::warn!(
-                    build_id = %build_id,
-                    error = %e,
-                    counter = "app.copilot.parse_error_total",
-                    "copilot NDJSON event parse error"
-                );
+
+            if event_type == "result" && val["subtype"].as_str() == Some("success") {
+                result_text = Some(val["result"].as_str().unwrap_or("").to_owned());
             }
         }
 
-        if event_type == "result" && val["subtype"].as_str() == Some("success") {
-            result_text = Some(val["result"].as_str().unwrap_or("").to_owned());
-        }
-    }
+        // Wait for the child to exit so we can check status
+        let status = child.wait().await.map_err(|e| {
+            tracing::warn!(error = %e, "wait claude failed");
+            "claude_wait_failed".to_owned()
+        })?;
 
-    // Wait for the child to exit so we can check status
-    let status = child
-        .wait()
+        result_text.map(|t| (t, found_session_id)).ok_or_else(|| {
+            if status.success() {
+                "no_result_event".to_owned()
+            } else {
+                "claude_nonzero_exit".to_owned()
+            }
+        })
+    };
+
+    tokio::time::timeout(TURN_TIMEOUT, turn)
         .await
-        .map_err(|e| format!("wait claude: {e}"))?;
-
-    result_text.map(|t| (t, found_session_id)).ok_or_else(|| {
-        if status.success() {
-            "no result event in claude output".to_owned()
-        } else {
-            format!("claude exited with status {status}")
-        }
-    })
+        .map_err(|_| {
+            tracing::warn!("claude turn exceeded {TURN_TIMEOUT:?} — killing");
+            "claude_turn_timeout".to_owned()
+        })?
 }
 
 /// Extract a human-readable summary from a stream-json event for the Activity tab.
@@ -698,6 +722,7 @@ fn extract_codex_activity_summary(val: &serde_json::Value) -> Option<String> {
 /// # Errors
 ///
 /// Returns a descriptive string on spawn failure, non-zero exit, or missing result.
+#[allow(clippy::too_many_lines)]
 async fn run_codex_turn(
     message: &str,
     session: &BuildSession,
@@ -733,14 +758,22 @@ async fn run_codex_turn(
     // file relative to the current project, so cwd must match what the
     // session was originally created in.
     if !session.cwd.is_dir() {
-        let _ = std::fs::create_dir_all(&session.cwd);
+        if let Err(e) = std::fs::create_dir_all(&session.cwd) {
+            tracing::warn!(path = %session.cwd.display(), error = %e, "failed to create cwd for codex");
+        }
     }
     c.current_dir(&session.cwd);
+    // Prevent API key leakage — codex should not inherit the host's Anthropic key.
+    c.env_remove("ANTHROPIC_API_KEY");
     c.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
 
-    let mut child = c.spawn().map_err(|e| format!("spawn codex: {e}"))?;
+    let mut child = c.spawn().map_err(|e| {
+        tracing::warn!(error = %e, "failed to spawn codex subprocess");
+        "codex_spawn_failed".to_owned()
+    })?;
 
     let stdout = child
         .stdout
@@ -748,76 +781,92 @@ async fn run_codex_turn(
         .ok_or_else(|| "codex stdout unavailable".to_owned())?;
     let mut reader = BufReader::new(stdout).lines();
 
-    let mut thread_id: Option<String> = None;
-    let mut text = String::new();
-    let mut turn_done = false;
-    let mut turn_error: Option<String> = None;
-    let build_id = session.build_id.to_string();
+    let turn = async {
+        let mut thread_id: Option<String> = None;
+        let mut text = String::new();
+        let mut turn_done = false;
+        let mut turn_error: Option<String> = None;
+        let build_id = session.build_id.to_string();
 
-    while let Some(line) = reader
-        .next_line()
-        .await
-        .map_err(|e| format!("read stdout: {e}"))?
-    {
-        let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
-            tracing::warn!(
-                build_id = %build_id,
-                raw = %&line[..line.len().min(256)],
-                "run_codex_turn: NDJSON parse error — skipping line"
-            );
-            continue;
-        };
+        while let Some(line) = reader
+            .next_line()
+            .await
+            .map_err(|e| format!("read stdout: {e}"))?
+        {
+            let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
+                tracing::warn!(
+                    build_id = %build_id,
+                    raw = %&line[..line.len().min(256)],
+                    "run_codex_turn: NDJSON parse error — skipping line"
+                );
+                continue;
+            };
 
-        let event_type = val["type"].as_str().unwrap_or("unknown");
+            let event_type = val["type"].as_str().unwrap_or("unknown");
 
-        // Broadcast activity event for the Activity tab
-        let summary = extract_codex_activity_summary(&val);
-        let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
-            crate::events::WebEvent::CopilotActivity(crate::events::types::CopilotActivityEvent {
-                build_id: build_id.clone(),
-                kind: event_type.to_owned(),
-                summary,
-                raw: val.clone(),
-                timestamp: chrono::Utc::now().to_rfc3339(),
-            }),
-            Some(session.build_id),
-        ));
+            // Broadcast activity event for the Activity tab
+            let summary = extract_codex_activity_summary(&val);
+            let _ = session.event_tx.send(crate::events::WebEventV2::from_event(
+                crate::events::WebEvent::CopilotActivity(
+                    crate::events::types::CopilotActivityEvent {
+                        build_id: build_id.clone(),
+                        kind: event_type.to_owned(),
+                        summary,
+                        raw: val.clone(),
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                    },
+                ),
+                Some(session.build_id),
+            ));
 
-        if event_type == "thread.started" {
-            if let Some(id) = val["thread_id"].as_str() {
-                thread_id = Some(id.to_owned());
-            }
-        }
-        if event_type == "item.completed" && val["item"]["type"].as_str() == Some("agent_message") {
-            if let Some(t) = val["item"]["text"].as_str() {
-                if !text.is_empty() {
-                    text.push('\n');
+            if event_type == "thread.started" {
+                if let Some(id) = val["thread_id"].as_str() {
+                    thread_id = Some(id.to_owned());
                 }
-                text.push_str(t);
+            }
+            if event_type == "item.completed"
+                && val["item"]["type"].as_str() == Some("agent_message")
+            {
+                if let Some(t) = val["item"]["text"].as_str() {
+                    if !text.is_empty() {
+                        text.push('\n');
+                    }
+                    text.push_str(t);
+                }
+            }
+            if event_type == "turn.completed" {
+                turn_done = true;
+            }
+            if event_type == "turn.failed" {
+                let msg = val["error"]["message"]
+                    .as_str()
+                    .unwrap_or("unknown turn failure");
+                turn_error = Some(msg.to_owned());
             }
         }
-        if event_type == "turn.completed" {
-            turn_done = true;
-        }
-        if event_type == "turn.failed" {
-            let msg = val["error"]["message"]
-                .as_str()
-                .unwrap_or("unknown turn failure");
-            turn_error = Some(msg.to_owned());
-        }
-    }
 
-    // Wait for the child to exit
-    let status = child.wait().await.map_err(|e| format!("wait codex: {e}"))?;
+        // Wait for the child to exit
+        let _status = child.wait().await.map_err(|e| {
+            tracing::warn!(error = %e, "wait codex failed");
+            "codex_wait_failed".to_owned()
+        })?;
 
-    if let Some(err) = turn_error {
-        return Err(format!("codex turn failed: {err}"));
-    }
-    if turn_done {
-        Ok((text, thread_id))
-    } else {
-        Err(format!("no turn.completed in codex output (exit {status})"))
-    }
+        if let Some(_err) = turn_error {
+            return Err("codex_turn_failed".to_owned());
+        }
+        if turn_done {
+            Ok((text, thread_id))
+        } else {
+            Err("codex_no_turn_completed".to_owned())
+        }
+    };
+
+    tokio::time::timeout(TURN_TIMEOUT, turn)
+        .await
+        .map_err(|_| {
+            tracing::warn!("codex turn exceeded {TURN_TIMEOUT:?} — killing");
+            "codex_turn_timeout".to_owned()
+        })?
 }
 
 /// Send a single turn to the Mistral Vibe CLI (`vibe -p`) and return the text response.
@@ -843,17 +892,28 @@ async fn run_vibe_turn(message: &str, session: &BuildSession) -> Result<String, 
         c.arg("--workdir").arg(&session.cwd);
     }
     if !session.cwd.is_dir() {
-        let _ = std::fs::create_dir_all(&session.cwd);
+        if let Err(e) = std::fs::create_dir_all(&session.cwd) {
+            tracing::warn!(path = %session.cwd.display(), error = %e, "failed to create cwd for vibe");
+        }
     }
     c.current_dir(&session.cwd);
+    // Prevent API key leakage — vibe only gets MISTRAL_API_KEY explicitly set above.
+    c.env_remove("ANTHROPIC_API_KEY");
     c.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
 
-    let output = c.output().await.map_err(|e| {
-        tracing::warn!(error = %e, "failed to spawn vibe subprocess");
-        "vibe_spawn_failed".to_owned()
-    })?;
+    let output = tokio::time::timeout(TURN_TIMEOUT, c.output())
+        .await
+        .map_err(|_| {
+            tracing::warn!("vibe turn exceeded {TURN_TIMEOUT:?}");
+            "vibe_turn_timeout".to_owned()
+        })?
+        .map_err(|e| {
+            tracing::warn!(error = %e, "failed to spawn vibe subprocess");
+            "vibe_spawn_failed".to_owned()
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -868,7 +928,7 @@ async fn run_vibe_turn(message: &str, session: &BuildSession) -> Result<String, 
 
     let text = String::from_utf8_lossy(&output.stdout).trim().to_owned();
     if text.is_empty() {
-        return Err("vibe returned empty response".to_owned());
+        return Err("vibe_empty_response".to_owned());
     }
     Ok(text)
 }
@@ -1038,10 +1098,7 @@ pub(super) async fn call_subprocess(
         return Ok(text);
     }
 
-    Err(format!(
-        "call_subprocess: unsupported agent session type {:?}",
-        session.agent.kind()
-    ))
+    Err("unsupported_agent_session".to_owned())
 }
 
 /// POST to Ollama-compatible `/v1/chat/completions` endpoint.
@@ -1057,7 +1114,7 @@ pub(super) async fn call_ollama(
 ) -> Result<String, String> {
     tracing::debug!(base_url, model, "call_ollama: sending request");
     let start = std::time::Instant::now();
-    let mut builder = reqwest::Client::new()
+    let mut builder = OLLAMA_HTTP_CLIENT
         .post(format!("{base_url}/v1/chat/completions"))
         .json(&json!({
             "model": model,
@@ -1068,7 +1125,7 @@ pub(super) async fn call_ollama(
     }
     let res = builder.send().await.map_err(|e| {
         tracing::warn!(base_url, model, error = %e, "call_ollama: request failed");
-        e.to_string()
+        "ollama_request_failed".to_owned()
     })?;
     if !res.status().is_success() {
         let code = res.status().as_u16();
@@ -1080,13 +1137,16 @@ pub(super) async fn call_ollama(
             body = %&body[..body.len().min(512)],
             "call_ollama: non-2xx response"
         );
-        return Err(format!("Ollama {code}: {body}"));
+        return Err("ollama_upstream_error".to_owned());
     }
-    let val: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    let val: serde_json::Value = res.json().await.map_err(|e| {
+        tracing::warn!(base_url, model, error = %e, "call_ollama: json parse failed");
+        "ollama_json_error".to_owned()
+    })?;
     let result = val["choices"][0]["message"]["content"]
         .as_str()
         .map(str::to_owned)
-        .ok_or_else(|| "unexpected Ollama response shape".to_owned());
+        .ok_or_else(|| "ollama_unexpected_shape".to_owned());
     let latency_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
     match &result {
         Ok(text) => tracing::debug!(
