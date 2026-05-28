@@ -1279,8 +1279,8 @@ fn emit_session_start_span(session: &BuildSession, actor: &str) -> String {
             outcome: serde_json::json!("pending"),
             metadata: serde_json::json!({ "build_id": session.build_id.to_string() }),
             strand_activations: Vec::new(),
-            decision_points: Vec::new(),
             session_id: None,
+            decision_points: Vec::new(),
         }),
         Some(session.build_id),
     ));
@@ -1324,8 +1324,8 @@ fn emit_turn_start_span(
                 "build_id": session.build_id.to_string(),
             }),
             strand_activations: Vec::new(),
-            decision_points: Vec::new(),
             session_id: None,
+            decision_points: Vec::new(),
         }),
         Some(session.build_id),
     ));
@@ -1372,8 +1372,8 @@ fn emit_assistant_response_span(
                 "response_preview": &response_preview[..response_preview.len().min(200)],
             }),
             strand_activations: Vec::new(),
-            decision_points: Vec::new(),
             session_id: None,
+            decision_points: Vec::new(),
         }),
         Some(session.build_id),
     ));

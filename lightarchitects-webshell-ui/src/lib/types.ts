@@ -1408,34 +1408,3 @@ export interface ProjectCandidate {
   has_claude_md: boolean;
   initialized: boolean;
 }
-
-// --- CDP bridge types (dev-mode Playwright) ---
-
-/** Response from `POST /api/copilot/playwright/init`. */
-export interface CdpInitResponse {
-  token: string;
-  session_id: string;
-}
-
-/** Response from `POST /api/copilot/playwright/screenshot`. */
-export interface CdpScreenshotResponse {
-  image: string; // base64-encoded PNG
-  mime: string;  // "image/png"
-}
-
-/** DOM element extracted by `POST /api/copilot/playwright/dom-snapshot`. */
-export interface CdpDomElement {
-  tag: string;
-  id?: string;
-  role?: string;
-  cardRole?: string;
-  text: string;
-}
-
-/** Response from `POST /api/copilot/playwright/dom-snapshot`. */
-export interface CdpDomSnapshotResponse {
-  url: string;
-  title: string;
-  body: string;
-  elements: CdpDomElement[];
-}
