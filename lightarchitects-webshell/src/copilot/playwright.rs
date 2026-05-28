@@ -36,6 +36,15 @@ const AUTH_TOKEN_BYTES: usize = 16;
 /// Maximum concurrent CDP operations per session.
 const MAX_CONCURRENT_OPS: usize = 4;
 
+/// Maximum DOM body text length returned to callers (prevents oversized responses).
+const DOM_BODY_CAP: usize = 10_000;
+
+/// Maximum text length per DOM element returned to callers.
+const DOM_ELEMENT_TEXT_CAP: usize = 500;
+
+/// Maximum number of DOM elements returned per snapshot.
+const DOM_ELEMENT_COUNT_CAP: usize = 100;
+
 /// Wall-clock timeout for individual CDP operations.
 const CDP_OP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
@@ -195,29 +204,33 @@ impl PlaywrightBridge {
         // Wait for page to settle before extracting DOM.
         let _ = tokio::time::timeout(CDP_OP_TIMEOUT, page.wait_for_navigation_response()).await;
 
-        let dom_json = tokio::time::timeout(
-            CDP_OP_TIMEOUT,
-            page.evaluate(
-                r"JSON.stringify({
-                    url: location.href,
-                    title: document.title,
-                    body: document.body ? document.body.innerText.substring(0, 50000) : '',
-                    elements: Array.from(document.querySelectorAll('[id],[data-testid],[data-card-role]')).slice(0, 200).map(el => ({
-                        tag: el.tagName,
-                        id: el.id || undefined,
-                        role: el.getAttribute('role') || undefined,
-                        cardRole: el.getAttribute('data-card-role') || undefined,
-                        text: (el.textContent || '').substring(0, 500),
-                    }))
-                })",
-            ),
-        )
-        .await
-        .map_err(|_| "cdp_dom_eval_timeout".to_owned())?
-        .map_err(|e| {
-            warn!(url, error = %e, "playwright: DOM evaluation failed");
-            "cdp_dom_eval_failed".to_owned()
-        })?;
+        #[allow(clippy::uninlined_format_args)]
+        let js_expr = format!(
+            "JSON.stringify({{\
+                url: location.href,\
+                title: document.title,\
+                body: document.body ? document.body.innerText.substring(0, {body_cap}) : '',\
+                elements: Array.from(document.querySelectorAll('[id],[data-testid],[data-card-role]'))\
+                    .slice(0, {elem_cap}).map(el => ({{\
+                        tag: el.tagName,\
+                        id: el.id || undefined,\
+                        role: el.getAttribute('role') || undefined,\
+                        cardRole: el.getAttribute('data-card-role') || undefined,\
+                        text: (el.textContent || '').substring(0, {text_cap}),\
+                    }}))\
+            }})",
+            body_cap = DOM_BODY_CAP,
+            elem_cap = DOM_ELEMENT_COUNT_CAP,
+            text_cap = DOM_ELEMENT_TEXT_CAP,
+        );
+
+        let dom_json = tokio::time::timeout(CDP_OP_TIMEOUT, page.evaluate(js_expr))
+            .await
+            .map_err(|_| "cdp_dom_eval_timeout".to_owned())?
+            .map_err(|e| {
+                warn!(url, error = %e, "playwright: DOM evaluation failed");
+                "cdp_dom_eval_failed".to_owned()
+            })?;
 
         let dom_str = dom_json
             .value()
