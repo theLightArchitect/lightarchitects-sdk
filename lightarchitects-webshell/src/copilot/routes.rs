@@ -157,6 +157,40 @@ pub async fn copilot_chat_handler(
         );
     }
 
+    // ── Context window rotation ──
+    // After `max_context_prompts` turns, the cumulative model context can exhaust
+    // the Ollama context window, producing empty responses.  Auto-clear the session
+    // to reset the context.  The HelixSessionMemory will still reload recent turns
+    // from disk, but the cumulative token load is shed.
+    let turn_count = session.turn_count.load(std::sync::atomic::Ordering::SeqCst);
+    if turn_count >= state.config.max_context_prompts {
+        tracing::warn!(
+            build_id = %id,
+            turns = turn_count,
+            max = state.config.max_context_prompts,
+            "auto-clearing copilot session to prevent context window exhaustion"
+        );
+        // Kill any in-progress copilot session and wipe the helix memory file.
+        // The next turn starts with a fresh context window while HelixSessionMemory
+        // reloads recent turns from disk (bounded by the `open(&cwd, 40)` limit).
+        {
+            let mut guard = session.copilot_proc.lock().await;
+            guard.take();
+        }
+        let path = lightarchitects::agent::conversation::helix_memory::session_path(&session.cwd);
+        if path.exists() {
+            if let Err(e) = std::fs::remove_file(&path) {
+                tracing::warn!(path = %path.display(), error = %e, "auto-clear: failed to delete session file");
+            }
+        }
+        session
+            .turn_count
+            .store(0, std::sync::atomic::Ordering::SeqCst);
+    }
+    session
+        .turn_count
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
     // Native path: stream via ConversationSession + SseTransport.
     // The full grounding prelude (EVA identity + SOUL + git + recent events) is
     // placed in SessionConfig.system_prompt rather than inline in the user message,

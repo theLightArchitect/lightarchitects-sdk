@@ -840,6 +840,7 @@ impl Config {
             claude_agent_template,
             container_mode,
             dev_mode: cli.dev_mode,
+            max_context_prompts: 50,
         })
     }
 

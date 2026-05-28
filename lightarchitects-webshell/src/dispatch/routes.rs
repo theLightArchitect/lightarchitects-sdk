@@ -630,6 +630,7 @@ mod tests {
                 claude_agent_template: None,
                 container_mode: crate::container::ContainerMode::Auto,
                 dev_mode: false,
+                max_context_prompts: 50,
             },
             crate::container::DockerCapability::Unavailable,
         )
