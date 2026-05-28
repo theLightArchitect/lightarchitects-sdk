@@ -15,6 +15,58 @@ pub mod event_stream;
 pub mod git_context;
 pub mod lightsquad_tool;
 pub mod persona_cache;
+#[cfg(feature = "playwright")]
+pub mod playwright;
+#[cfg(not(feature = "playwright"))]
+#[allow(missing_docs, unused_imports)]
+pub mod playwright {
+    //! Stub module — playwright feature is disabled.
+
+    use axum::Json;
+    use axum::extract::State;
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+    use serde::Deserialize;
+
+    /// Shared state placeholder when playwright feature is disabled.
+    pub type PlaywrightState = std::sync::Arc<tokio::sync::Mutex<Option<()>>>;
+
+    #[derive(Debug, Deserialize)]
+    pub struct ScreenshotRequest {
+        pub url: String,
+        pub token: String,
+    }
+
+    #[derive(Debug, Deserialize)]
+    pub struct DomSnapshotRequest {
+        pub url: String,
+        pub token: String,
+    }
+
+    /// Returns 503 — playwright feature is disabled at compile time.
+    pub async fn handle_screenshot(
+        State(_state): State<crate::server::AppState>,
+        Json(_req): Json<ScreenshotRequest>,
+    ) -> axum::response::Response {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "playwright_feature_disabled"})),
+        )
+            .into_response()
+    }
+
+    /// Returns 503 — playwright feature is disabled at compile time.
+    pub async fn handle_dom_snapshot(
+        State(_state): State<crate::server::AppState>,
+        Json(_req): Json<DomSnapshotRequest>,
+    ) -> axum::response::Response {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "playwright_feature_disabled"})),
+        )
+            .into_response()
+    }
+}
 pub mod routes;
 pub mod soul_grounding;
 pub mod strategy_runner;
