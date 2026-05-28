@@ -302,6 +302,43 @@ fn validate_url(url: &str) -> Result<(), String> {
 /// Shared state for Playwright routes — holds the bridge behind an Arc<Mutex>.
 pub type PlaywrightState = Arc<Mutex<Option<PlaywrightBridge>>>;
 
+/// Response body for CDP session init endpoint.
+#[derive(Debug, Serialize)]
+#[allow(missing_docs)]
+pub struct InitResponse {
+    pub token: String,
+    pub session_id: String,
+}
+
+/// POST /api/copilot/playwright/init
+///
+/// Initializes a `PlaywrightBridge` (if none exists) and returns the auth token.
+/// Dev-mode only — the frontend calls this once when dev tools are activated.
+pub async fn handle_init(State(state): State<crate::server::AppState>) -> axum::response::Response {
+    let mut guard = state.playwright_state.lock().await;
+    if let Some(bridge) = guard.as_ref() {
+        return (
+            StatusCode::OK,
+            Json(InitResponse {
+                token: bridge.auth_token.clone(),
+                session_id: bridge.session_id.clone(),
+            }),
+        )
+            .into_response();
+    }
+
+    let bridge = PlaywrightBridge::new();
+    let resp = InitResponse {
+        token: bridge.auth_token.clone(),
+        session_id: bridge.session_id.clone(),
+    };
+    *guard = Some(bridge);
+    drop(guard);
+
+    info!("playwright: bridge initialized via API");
+    (StatusCode::OK, Json(resp)).into_response()
+}
+
 /// Request body for CDP screenshot endpoint.
 #[derive(Debug, Deserialize)]
 #[allow(missing_docs)]

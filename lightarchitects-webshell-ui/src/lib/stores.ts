@@ -1120,3 +1120,20 @@ export interface StrategyHitlState {
 
 /** Pending strategy HITL request.  `null` when no pause is active. */
 export const strategyHitl = writable<StrategyHitlState | null>(null);
+
+// --- CDP bridge (dev-mode Playwright) ---
+
+/** Auth token for the current CDP session. `null` until `cdpInit()` succeeds. */
+export const cdpToken = writable<string | null>(null);
+
+/** Whether a CDP screenshot or DOM-snapshot request is in flight. */
+export const cdpLoading = writable(false);
+
+/** Last captured screenshot as a data-URI string. `null` when none captured. */
+export const cdpScreenshotUri = writable<string | null>(null);
+
+/** Last captured DOM snapshot. `null` when none captured. */
+export const cdpDomSnapshot = writable<import('./types').CdpDomSnapshotResponse | null>(null);
+
+/** CDP error message. Cleared on next successful request. */
+export const cdpError = writable<string | null>(null);

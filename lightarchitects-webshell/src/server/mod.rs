@@ -986,6 +986,10 @@ pub fn build_app(state: AppState) -> Router {
         )
         // ── CDP bridge — Playwright screenshot + DOM snapshot (dev-mode only) ───
         .route(
+            "/api/copilot/playwright/init",
+            post(crate::copilot::playwright::handle_init),
+        )
+        .route(
             "/api/copilot/playwright/screenshot",
             post(crate::copilot::playwright::handle_screenshot),
         )

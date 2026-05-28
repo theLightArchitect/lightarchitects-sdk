@@ -44,6 +44,17 @@ pub mod playwright {
     }
 
     /// Returns 503 — playwright feature is disabled at compile time.
+    pub async fn handle_init(
+        State(_state): State<crate::server::AppState>,
+    ) -> axum::response::Response {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "playwright_feature_disabled"})),
+        )
+            .into_response()
+    }
+
+    /// Returns 503 — playwright feature is disabled at compile time.
     pub async fn handle_screenshot(
         State(_state): State<crate::server::AppState>,
         Json(_req): Json<ScreenshotRequest>,

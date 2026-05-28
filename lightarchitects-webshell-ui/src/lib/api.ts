@@ -15,6 +15,7 @@ import type {
   DecisionEntry,
   RecentEvent, UiContext, GroundingInfo,
   ProjectMeta, ProjectInitRequest, InitResponse,
+  CdpInitResponse, CdpScreenshotResponse, CdpDomSnapshotResponse,
 } from './types';
 import type { SetupInfo, ModelOption, SaveRequest } from './setup';
 
@@ -706,4 +707,23 @@ export const api = {
   /** Initialize a project — creates `.lightarchitects/project.toml` atomically. */
   initProject: (body: ProjectInitRequest): Promise<InitResponse> =>
     request<InitResponse>('/projects/init', { method: 'POST', body: JSON.stringify(body) }),
+
+  // --- CDP bridge (dev-mode Playwright) ---
+  /** Initialize the CDP bridge and retrieve the session auth token. */
+  cdpInit: (): Promise<CdpInitResponse> =>
+    request<CdpInitResponse>('/copilot/playwright/init', { method: 'POST' }),
+
+  /** Take a screenshot of a localhost URL via CDP. */
+  cdpScreenshot: (token: string, url: string): Promise<CdpScreenshotResponse> =>
+    request<CdpScreenshotResponse>('/copilot/playwright/screenshot', {
+      method: 'POST',
+      body: JSON.stringify({ url, token }),
+    }),
+
+  /** Capture a DOM snapshot of a localhost URL via CDP. */
+  cdpDomSnapshot: (token: string, url: string): Promise<CdpDomSnapshotResponse> =>
+    request<CdpDomSnapshotResponse>('/copilot/playwright/dom-snapshot', {
+      method: 'POST',
+      body: JSON.stringify({ url, token }),
+    }),
 };

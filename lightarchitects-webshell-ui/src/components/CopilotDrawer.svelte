@@ -29,6 +29,7 @@
   import { settingsOpen, pendingResumeSessionId, serverCwd, persistedConfig, selectedModel } from '$lib/setup';
   import { strategyHitl, copilotDrawerOpen } from '$lib/stores';
   import { drawerWidthPx } from '$lib/stores';
+  import { cdpToken, cdpLoading, cdpScreenshotUri, cdpDomSnapshot, cdpError } from '$lib/stores';
   import { selectedPreset, selectedTarget, PRESET_DISPLAY, quickPickOpen } from '$lib/cockpit/stores';
   import { parseChips } from '$lib/cockpit/copilotChips';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
@@ -876,6 +877,54 @@
     };
   });
 
+  // ── CDP dev-mode helpers ──────────────────────────────────────────────────
+  async function ensureCdpToken(): Promise<string | null> {
+    let token = get(cdpToken);
+    if (token) return token;
+    try {
+      const resp = await api.cdpInit();
+      token = resp.token;
+      cdpToken.set(token);
+      cdpError.set(null);
+      return token;
+    } catch (e) {
+      cdpError.set(`CDP init failed: ${e instanceof Error ? e.message : String(e)}`);
+      return null;
+    }
+  }
+
+  async function cdpScreenshot() {
+    const token = await ensureCdpToken();
+    if (!token) return;
+    cdpLoading.set(true);
+    cdpError.set(null);
+    try {
+      const url = `http://localhost:${window.location.port || '5173'}/`;
+      const resp = await api.cdpScreenshot(token, url);
+      cdpScreenshotUri.set(`data:${resp.mime};base64,${resp.image}`);
+    } catch (e) {
+      cdpError.set(`Screenshot failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      cdpLoading.set(false);
+    }
+  }
+
+  async function cdpSnapshot() {
+    const token = await ensureCdpToken();
+    if (!token) return;
+    cdpLoading.set(true);
+    cdpError.set(null);
+    try {
+      const url = `http://localhost:${window.location.port || '5173'}/`;
+      const resp = await api.cdpDomSnapshot(token, url);
+      cdpDomSnapshot.set(resp);
+    } catch (e) {
+      cdpError.set(`DOM snapshot failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      cdpLoading.set(false);
+    }
+  }
+
   // ── E2E injection bridge ────────────────────────────────────────────────────
   // Only active in dev/test. Allows Playwright tests to inject synthetic
   // AgentEvents without a real WebSocket connection.
@@ -1033,6 +1082,23 @@
             title="View session spans in AYIN Lineage Circuit"
             aria-label="View in AYIN"
           >AYIN →</button>
+        {/if}
+
+        {#if import.meta.env.DEV}
+          <button
+            onclick={cdpScreenshot}
+            class="hdr-action {$cdpLoading ? 'hdr-action--warn' : ''}"
+            title="Screenshot localhost page (dev mode)"
+            aria-label="Screenshot page"
+            disabled={$cdpLoading}
+          >📷</button>
+          <button
+            onclick={cdpSnapshot}
+            class="hdr-action {$cdpLoading ? 'hdr-action--warn' : ''}"
+            title="DOM snapshot (dev mode)"
+            aria-label="DOM snapshot"
+            disabled={$cdpLoading}
+          >🔍</button>
         {/if}
 
         <button
@@ -1282,6 +1348,41 @@
                 </div>
               {/if}
             </div>
+
+            <!-- CDP dev-mode preview (screenshot / DOM snapshot) -->
+            {#if import.meta.env.DEV && ($cdpScreenshotUri || $cdpDomSnapshot || $cdpError)}
+              <div class="border-t border-[var(--la-drawer-border)] px-3 py-2 text-xs space-y-2 shrink-0" data-card-role="cdp-preview">
+                {#if $cdpError}
+                  <div class="text-red-400 break-all">{$cdpError}</div>
+                {/if}
+                {#if $cdpScreenshotUri}
+                  <div class="relative">
+                    <img src={$cdpScreenshotUri} alt="CDP screenshot" class="w-full rounded border border-[var(--la-drawer-border)]" />
+                    <button
+                      class="absolute top-1 right-1 bg-[var(--la-bg-void)] border border-[var(--la-drawer-border)] rounded px-1 text-[10px] text-[var(--la-text-dim)]"
+                      onclick={() => cdpScreenshotUri.set(null)}
+                      aria-label="Close screenshot"
+                    >✕</button>
+                  </div>
+                {/if}
+                {#if $cdpDomSnapshot}
+                  <details class="text-[var(--la-text-dim)]">
+                    <summary class="cursor-pointer select-none">DOM: {$cdpDomSnapshot.title || $cdpDomSnapshot.url}</summary>
+                    <div class="mt-1 max-h-40 overflow-y-auto break-all font-mono text-[10px] leading-tight">
+                      <div class="mb-1">URL: {$cdpDomSnapshot.url}</div>
+                      <div class="mb-1">Elements: {$cdpDomSnapshot.elements.length}</div>
+                      {#each $cdpDomSnapshot.elements.slice(0, 20) as el}
+                        <div>&lt;{el.tag}{el.id ? `#${el.id}` : ''}{el.cardRole ? ` [${el.cardRole}]` : ''}&gt; {el.text.slice(0, 80)}</div>
+                      {/each}
+                    </div>
+                  </details>
+                  <button
+                    class="text-[10px] text-[var(--la-text-dim)] underline"
+                    onclick={() => cdpDomSnapshot.set(null)}
+                  >Close snapshot</button>
+                {/if}
+              </div>
+            {/if}
 
             <!-- Input -->
             <div class="border-t border-[var(--la-drawer-border)] px-3 py-2 relative shrink-0" data-onboarding="copilot-input">
