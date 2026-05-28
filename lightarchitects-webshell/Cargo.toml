@@ -64,7 +64,7 @@ tower-http = { workspace = true, features = ["cors", "trace"] }
 rust-embed = { version = "8", features = ["mime-guess"] }
 
 # Constant-time HMAC byte comparison (avoids timing side-channels)
-constant_time_eq = "0.3"
+constant_time_eq = "0.5"
 
 # PTY terminal bridge (Phase 2).
 # 0.9 is the current stable release; pre_exec handles setsid+TIOCSCTTY natively (plan RG1-A1).
