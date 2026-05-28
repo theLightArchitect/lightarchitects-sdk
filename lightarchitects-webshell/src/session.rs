@@ -422,7 +422,7 @@ mod tests {
     fn ollama_session() -> AgentSession {
         AgentSession::Lightarchitects(ClaudeBackend::Ollama(OllamaConfig {
             base_url: "http://localhost:11434".to_owned(),
-            model: "qwen3-coder:480b-cloud".to_owned(),
+            model: crate::config::DEFAULT_OLLAMA_MODEL.to_owned(),
             auth_token: "ollama-secret-xyz".to_owned(),
         }))
     }
@@ -529,7 +529,10 @@ mod tests {
             Some(&"http://localhost:11434")
         );
         assert_eq!(map.get("ANTHROPIC_AUTH_TOKEN"), Some(&"ollama-secret-xyz"));
-        assert_eq!(map.get("ANTHROPIC_MODEL"), Some(&"qwen3-coder:480b-cloud"));
+        assert_eq!(
+            map.get("ANTHROPIC_MODEL"),
+            Some(&crate::config::DEFAULT_OLLAMA_MODEL)
+        );
     }
 
     #[test]

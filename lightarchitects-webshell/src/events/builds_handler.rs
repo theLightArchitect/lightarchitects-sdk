@@ -1588,7 +1588,7 @@ mod tests {
         use crate::config::OllamaConfig;
         let oc = OllamaConfig {
             base_url: "http://localhost:11434".to_owned(),
-            model: "qwen3-coder:480b-cloud".to_owned(),
+            model: crate::config::DEFAULT_OLLAMA_MODEL.to_owned(),
             auth_token: "sk-super-secret".to_owned(),
         };
         let sess = AgentSession::Lightarchitects(ClaudeBackend::Ollama(oc));

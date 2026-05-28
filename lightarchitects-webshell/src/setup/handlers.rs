@@ -12,8 +12,8 @@ use tracing::info;
 use crate::{
     auth,
     config::{
-        AgentKind, ClaudeBackend, CodexBackend, CodexConfig, Config, MistralVibeConfig,
-        OllamaLaunchConfig, SetupConfig,
+        AgentKind, ClaudeBackend, CodexBackend, CodexConfig, Config, DEFAULT_OLLAMA_BASE_URL,
+        DEFAULT_OLLAMA_MODEL, MistralVibeConfig, OllamaLaunchConfig, SetupConfig,
     },
     server::AppState,
 };
@@ -479,11 +479,11 @@ fn agent_session_from_save(req: &SaveRequest) -> Option<crate::config::AgentSess
                         model: req
                             .model
                             .clone()
-                            .unwrap_or_else(|| "qwen3-coder:480b-cloud".to_owned()),
+                            .unwrap_or_else(|| DEFAULT_OLLAMA_MODEL.to_owned()),
                         base_url: req
                             .ollama_base_url
                             .clone()
-                            .unwrap_or_else(|| "http://localhost:11434".to_owned()),
+                            .unwrap_or_else(|| DEFAULT_OLLAMA_BASE_URL.to_owned()),
                     })
                 }
                 _ => return None,
@@ -498,11 +498,11 @@ fn agent_session_from_save(req: &SaveRequest) -> Option<crate::config::AgentSess
                         model: req
                             .model
                             .clone()
-                            .unwrap_or_else(|| "qwen3-coder:480b-cloud".to_owned()),
+                            .unwrap_or_else(|| DEFAULT_OLLAMA_MODEL.to_owned()),
                         base_url: req
                             .ollama_base_url
                             .clone()
-                            .unwrap_or_else(|| "http://localhost:11434".to_owned()),
+                            .unwrap_or_else(|| DEFAULT_OLLAMA_BASE_URL.to_owned()),
                     })
                 }
                 _ => return None,

@@ -30,7 +30,7 @@ pub const DEFAULT_HOST_CMD: &str = "claude";
 pub const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
 
 /// Default Ollama model when the cloud profile is selected without an explicit model.
-pub const DEFAULT_OLLAMA_MODEL: &str = "qwen3-coder:480b-cloud";
+pub const DEFAULT_OLLAMA_MODEL: &str = "glm-5.1:cloud";
 
 /// Agent backend discriminator — selects which CLI binary and protocol the webshell uses.
 ///
