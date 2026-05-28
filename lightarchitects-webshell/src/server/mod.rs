@@ -308,6 +308,12 @@ pub struct AppState {
     /// merge gate `OLLAMA_API_KEY_TOCTOU`.  `None` when the env var is unset
     /// or empty at server startup.
     pub la_native_api_key: Option<secrecy::SecretString>,
+    /// CDP bridge state for dev-mode browser inspection.
+    ///
+    /// `None` when no bridge has been initialized. The frontend calls
+    /// `/api/copilot/playwright/*` to request screenshots and DOM snapshots
+    /// via Chrome `DevTools` Protocol. Returns 503 when the feature is disabled.
+    pub playwright_state: crate::copilot::playwright::PlaywrightState,
 }
 
 impl AppState {
@@ -528,6 +534,7 @@ impl AppState {
                 handle
             },
             la_native_api_key,
+            playwright_state: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 
@@ -646,6 +653,7 @@ impl AppState {
             resume_registry: Arc::new(crate::copilot::strategy_runner::ResumeRegistry::new()),
             mcp_host: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
             la_native_api_key: None,
+            playwright_state: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 }
@@ -975,6 +983,19 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/copilot/hitl/resolve",
             post(copilot::copilot_hitl_resolve_handler),
+        )
+        // ── CDP bridge — Playwright screenshot + DOM snapshot (dev-mode only) ───
+        .route(
+            "/api/copilot/playwright/init",
+            post(crate::copilot::playwright::handle_init),
+        )
+        .route(
+            "/api/copilot/playwright/screenshot",
+            post(crate::copilot::playwright::handle_screenshot),
+        )
+        .route(
+            "/api/copilot/playwright/dom-snapshot",
+            post(crate::copilot::playwright::handle_dom_snapshot),
         )
         .route(
             "/api/builds/{id}/dispatch",

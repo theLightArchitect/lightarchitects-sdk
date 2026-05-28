@@ -844,6 +844,16 @@ impl Config {
         })
     }
 
+    /// Whether the Playwright/CDP bridge is available at runtime.
+    ///
+    /// Returns `true` only when both the compile-time `playwright` feature is
+    /// enabled AND the runtime `--dev-mode` flag is set. Production mode is
+    /// zero-trust by default — no CDP access even if the feature is compiled in.
+    #[must_use]
+    pub fn playwright_enabled(&self) -> bool {
+        self.dev_mode && cfg!(feature = "playwright")
+    }
+
     /// Loads the persisted setup config from disk.
     ///
     /// Returns `None` if the file does not exist, is unreadable, or fails to parse.

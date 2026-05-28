@@ -281,13 +281,28 @@ export const focusedSibling = writable<SiblingId | null>(null);
 const COPILOT_HISTORY_KEY = 'la_copilot_history';
 const HISTORY_CAP = 200;
 
+/** Deduplicate messages by id, keeping the last occurrence. */
+function dedupMessages(msgs: CopilotMessage[]): CopilotMessage[] {
+  const seen = new Set<string>();
+  const result: CopilotMessage[] = [];
+  // Iterate in reverse so the last occurrence wins.
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (!seen.has(msgs[i].id)) {
+      seen.add(msgs[i].id);
+      result.unshift(msgs[i]);
+    }
+  }
+  return result;
+}
+
 function loadCopilotHistory(): CopilotMessage[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(COPILOT_HISTORY_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as CopilotMessage[]).slice(-HISTORY_CAP) : [];
+    if (!Array.isArray(parsed)) return [];
+    return dedupMessages((parsed as CopilotMessage[]).slice(-HISTORY_CAP));
   } catch {
     return [];
   }
@@ -301,6 +316,19 @@ export function clearCopilotHistory(): void {
   copilotMessages.set([]);
   try { localStorage.removeItem(COPILOT_HISTORY_KEY); } catch { /* quota */ }
 }
+
+// Enforce in-memory cap on every change — prevents unbounded growth between
+// localStorage persists. The slice keeps the most recent messages.
+// Also deduplicates by id to prevent Svelte each_key_duplicate errors.
+let _capping = false;
+copilotMessages.subscribe(msgs => {
+  if (_capping) return;
+  const deduped = dedupMessages(msgs);
+  if (deduped.length === msgs.length && msgs.length <= HISTORY_CAP) return;
+  _capping = true;
+  copilotMessages.set(deduped.slice(-HISTORY_CAP));
+  _capping = false;
+});
 
 // Persist copilotMessages to localStorage on every change (debounced, cap 200).
 let _historyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -414,6 +442,7 @@ voiceEnabled.subscribe(v => {
 
 
 // --- Agent reactive state (native agent bridge) ---
+const AGENT_EVENTS_CAP = 500;
 export const agentConnected = writable(false);
 export const agentEvents = writable<import('./types').AgentEvent[]>([]);
 export const agentInput = writable('');
@@ -425,6 +454,15 @@ export const agentTokenUsage = derived(agentEvents, ($evs) => {
     if (ev.type === 'token_usage') { input += ev.input; output += ev.output; }
   }
   return { input, output };
+});
+
+// Enforce sliding window cap on agentEvents.
+let _agentCapping = false;
+agentEvents.subscribe(evs => {
+  if (_agentCapping || evs.length <= AGENT_EVENTS_CAP) return;
+  _agentCapping = true;
+  agentEvents.set(evs.slice(-AGENT_EVENTS_CAP));
+  _agentCapping = false;
 });
 
 // --- Derived: active build ---
@@ -1100,3 +1138,23 @@ export interface StrategyHitlState {
 
 /** Pending strategy HITL request.  `null` when no pause is active. */
 export const strategyHitl = writable<StrategyHitlState | null>(null);
+
+// --- CDP bridge (dev-mode Playwright) ---
+
+/** Auth token for the current CDP session. `null` until `cdpInit()` succeeds. */
+export const cdpToken = writable<string | null>(null);
+
+/** Whether a CDP screenshot or DOM-snapshot request is in flight. */
+export const cdpLoading = writable(false);
+
+/** Last captured screenshot as a data-URI string. `null` when none captured. */
+export const cdpScreenshotUri = writable<string | null>(null);
+
+/** Last captured DOM snapshot. `null` when none captured. */
+export const cdpDomSnapshot = writable<import('./types').CdpDomSnapshotResponse | null>(null);
+
+/** CDP error message. Cleared on next successful request. */
+export const cdpError = writable<string | null>(null);
+
+/** Whether dev-mode features (CDP, Playwright) are enabled. Defaults to Vite's DEV flag. */
+export const devModeEnabled = writable<boolean>(import.meta.env.DEV ?? false);
