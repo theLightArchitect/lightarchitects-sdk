@@ -55,6 +55,22 @@
   color: var(--la-focus-ring, #FFD700);
 }
 
+/* Navigation back / home affordance buttons */
+.nav-ctrl--nav {
+  color: var(--la-text-dim, #6e7681);
+  padding: 0 10px;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  opacity: 0.75;
+  transition: opacity 120ms, color 120ms, background 120ms;
+}
+
+.nav-ctrl--nav:hover {
+  color: var(--la-text-base, #c9d1d9);
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.04);
+}
+
 /* G-1: OFFLINE nav dominant state — amber glow when connectivity is lost */
 .la-nav[data-status="reconnecting"],
 .la-nav[data-status="offline"] {

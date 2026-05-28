@@ -119,16 +119,15 @@ impl LightsquadToolExecutor {
         self.operator_codenames.write().await.clear();
     }
 
-    /// Gate on operator HITL approval before launching a build.
+    /// Emit a HITL escalation event and park the plan for async operator approval.
     ///
-    /// Returns `Ok(())` when approved (or when the plan is all-safe and
-    /// `LIGHTSQUAD_AUTO_APPROVE_SAFE=1` is set), otherwise a [`ToolError`].
-    async fn run_hitl_gate(
-        &self,
-        plan: &PlanInput,
-        build_id: Uuid,
-        tool_name: &str,
-    ) -> Result<(), ToolError> {
+    /// Returns `call_id` immediately — does NOT block on operator decision.
+    /// A background task awaits the oneshot and calls [`launch_program_for_plan`]
+    /// when approved, or silently drops the plan when rejected.
+    ///
+    /// For all-safe plans with `LIGHTSQUAD_AUTO_APPROVE_SAFE=1`, launches
+    /// synchronously on a spawned task and returns a synthetic `call_id`.
+    fn offer_plan_nonblocking(&self, plan: &PlanInput, build_id: Uuid) -> Uuid {
         let all_safe = plan
             .waves
             .iter()
@@ -136,7 +135,28 @@ impl LightsquadToolExecutor {
             .all(|t| t.concurrency_safe);
 
         if all_safe && auto_approve_safe() {
-            return Ok(());
+            // Auto-approve path: spawn launch immediately, no HITL entry needed.
+            let plan = plan.clone();
+            let repo_root = self.repo_root.clone();
+            let worktree_root = self.worktree_root.clone();
+            let hitl_queue = self.hitl_queue.clone();
+            let event_tx = self.event_tx.clone();
+            let decisions_dir = self.decisions_dir.clone();
+            let turnlog_pepper = self.turnlog_pepper.clone();
+            let mock_workers = self.mock_workers;
+            tokio::spawn(async move {
+                let exec = LightsquadToolExecutor::new(
+                    repo_root,
+                    worktree_root,
+                    hitl_queue,
+                    event_tx,
+                    decisions_dir,
+                    turnlog_pepper,
+                    mock_workers,
+                );
+                let _ = exec.launch_program_for_plan(&plan, build_id).await;
+            });
+            return build_id;
         }
 
         let summary = format!(
@@ -164,18 +184,36 @@ impl LightsquadToolExecutor {
             }),
             Some(build_id),
         ));
-        let decision = rx
-            .await
-            .map_err(|_| ToolError::Internal("HITL channel closed before decision".to_string()))?;
-        if !decision.approved {
-            return Err(ToolError::PermissionDenied {
-                tool_name: tool_name.to_string(),
-                reason: decision
-                    .operator_reason
-                    .unwrap_or_else(|| "operator rejected".to_string()),
-            });
-        }
-        Ok(())
+
+        // Clone all fields needed by the background task before returning.
+        let plan = plan.clone();
+        let repo_root = self.repo_root.clone();
+        let worktree_root = self.worktree_root.clone();
+        let hitl_queue = self.hitl_queue.clone();
+        let event_tx = self.event_tx.clone();
+        let decisions_dir = self.decisions_dir.clone();
+        let turnlog_pepper = self.turnlog_pepper.clone();
+        let mock_workers = self.mock_workers;
+
+        // Background task: awaits operator decision, then launches (or drops).
+        tokio::spawn(async move {
+            let Ok(decision) = rx.await else { return };
+            if !decision.approved {
+                return;
+            }
+            let exec = LightsquadToolExecutor::new(
+                repo_root,
+                worktree_root,
+                hitl_queue,
+                event_tx,
+                decisions_dir,
+                turnlog_pepper,
+                mock_workers,
+            );
+            let _ = exec.launch_program_for_plan(&plan, build_id).await;
+        });
+
+        call_id
     }
 
     /// Translate an approved plan into a running [`Program`] and return its summary.
@@ -306,20 +344,23 @@ impl ToolExecutor for LightsquadToolExecutor {
         }
 
         let build_id = Uuid::new_v4();
-        self.run_hitl_gate(&plan, build_id, tool_name).await?;
-        let summary = self.launch_program_for_plan(&plan, build_id).await?;
+        let call_id = self.offer_plan_nonblocking(&plan, build_id);
 
+        // Return immediately so the SSE stream can deliver the prose answer.
+        // The build launches asynchronously once the operator approves the plan card.
         Ok(ToolOutput {
             tool_use_id: tool_use_id.to_string(),
             content: serde_json::json!({
-                "tool_use_id": tool_use_id,
+                "status": "plan_offered",
+                "call_id": call_id.to_string(),
                 "build_id": build_id.to_string(),
                 "codename": plan.codename,
-                "succeeded": summary.succeeded,
-                "failed": summary.failed,
-                "status": if summary.failed == 0 { "all_passed" } else { "partial_failure" }
+                "message": format!(
+                    "Plan '{}' presented to operator. The build will start once approved.",
+                    plan.codename
+                ),
             }),
-            is_error: summary.failed > 0,
+            is_error: false,
         })
     }
 }

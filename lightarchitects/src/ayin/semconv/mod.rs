@@ -4,4 +4,5 @@
 //! `AYIN-DEV/ayin/src/semconv/`. Both must be kept in sync when attribute keys
 //! are added or renamed — the canonical source is AYIN-DEV; this mirror is the
 //! integration surface for gateway and webshell consumers.
+pub mod helix_generation;
 pub mod lasdlc;

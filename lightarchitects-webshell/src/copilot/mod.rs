@@ -8,6 +8,7 @@
 //!
 
 pub mod chatroom;
+pub mod code_grounding;
 pub mod context;
 pub mod eva_identity;
 pub mod event_stream;
@@ -430,10 +431,15 @@ async fn run_print_turn(
         ClaudeBackend::Anthropic | ClaudeBackend::Ollama(_) => {}
     }
     if let Some(id) = prev_session_id {
+        tracing::debug!(session_id = %id, "run_print_turn: resuming prior session");
         c.arg("--resume").arg(id);
+    } else {
+        tracing::debug!("run_print_turn: starting new session");
     }
+    // Stderr is piped to null — we only read stdout. Piped stderr without a drain
+    // task risks deadlock when the child writes more than the OS pipe buffer (64KB).
     c.stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+        .stderr(std::process::Stdio::null());
 
     let mut child = c.spawn().map_err(|e| format!("spawn claude: {e}"))?;
 
@@ -754,6 +760,11 @@ async fn run_codex_turn(
         .map_err(|e| format!("read stdout: {e}"))?
     {
         let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
+            tracing::warn!(
+                build_id = %build_id,
+                raw = %&line[..line.len().min(256)],
+                "run_codex_turn: NDJSON parse error — skipping line"
+            );
             continue;
         };
 
@@ -910,6 +921,12 @@ pub(super) async fn call_subprocess(
     let (span_id, start, start_ts) =
         emit_turn_start_span(session, actor, message, Some(&session_span_id));
 
+    tracing::debug!(
+        agent = %actor,
+        build_id = %session.build_id,
+        "call_subprocess: dispatching turn"
+    );
+
     // Per-turn path for Lightarchitects (claude --print + disk-persistent sessions).
     if matches!(&session.agent, AgentSession::Lightarchitects(_)) {
         let prev_session_id = guard
@@ -1038,6 +1055,8 @@ pub(super) async fn call_ollama(
     auth_token: &str,
     message: &str,
 ) -> Result<String, String> {
+    tracing::debug!(base_url, model, "call_ollama: sending request");
+    let start = std::time::Instant::now();
     let mut builder = reqwest::Client::new()
         .post(format!("{base_url}/v1/chat/completions"))
         .json(&json!({
@@ -1047,17 +1066,41 @@ pub(super) async fn call_ollama(
     if auth_token != "ollama" {
         builder = builder.header("authorization", format!("Bearer {auth_token}"));
     }
-    let res = builder.send().await.map_err(|e| e.to_string())?;
+    let res = builder.send().await.map_err(|e| {
+        tracing::warn!(base_url, model, error = %e, "call_ollama: request failed");
+        e.to_string()
+    })?;
     if !res.status().is_success() {
         let code = res.status().as_u16();
         let body = res.text().await.unwrap_or_default();
+        tracing::warn!(
+            base_url,
+            model,
+            status = code,
+            body = %&body[..body.len().min(512)],
+            "call_ollama: non-2xx response"
+        );
         return Err(format!("Ollama {code}: {body}"));
     }
     let val: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
-    val["choices"][0]["message"]["content"]
+    let result = val["choices"][0]["message"]["content"]
         .as_str()
         .map(str::to_owned)
-        .ok_or_else(|| "unexpected Ollama response shape".to_owned())
+        .ok_or_else(|| "unexpected Ollama response shape".to_owned());
+    let latency_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+    match &result {
+        Ok(text) => tracing::debug!(
+            base_url,
+            model,
+            latency_ms,
+            response_len = text.len(),
+            "call_ollama: completed"
+        ),
+        Err(e) => {
+            tracing::warn!(base_url, model, latency_ms, error = %e, "call_ollama: unexpected response shape");
+        }
+    }
+    result
 }
 
 /// Emit a webshell AYIN span to disk (fire-and-forget, alongside SSE).

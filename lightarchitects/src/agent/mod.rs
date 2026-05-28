@@ -14,6 +14,14 @@ pub use provider::{
     TokenUsage, sanitize_params,
 };
 
+/// Canonical [`OpenAIFlavor`] enum — shared by the agentic-loop HTTP provider
+/// ([`openai_compat`]) and the helix generation completers.  Not feature-gated
+/// so it is available to all crate consumers regardless of feature set.
+///
+/// [`openai_compat`]: crate::agent::openai_compat
+pub mod openai_flavor;
+pub use openai_flavor::OpenAIFlavor;
+
 mod dispatch;
 pub use dispatch::{ChainContext, dispatch_action};
 
@@ -117,6 +125,18 @@ pub mod adk_supervisor;
 pub use adk_supervisor::{
     AdkVersion, RestartTracker, SupervisorError, allocate_ephemeral_port, probe,
 };
+
+/// OpenAI-compatible HTTP streaming provider — targets any endpoint speaking
+/// the OpenAI `/chat/completions` SSE wire format (RunPod vLLM, Together AI,
+/// Fireworks, self-hosted vLLM).  Reads credentials from env vars:
+/// `LA_OPENAI_COMPAT_BASE_URL`, `LA_OPENAI_COMPAT_API_KEY`,
+/// `LA_OPENAI_COMPAT_MODEL`.
+///
+/// [`OpenAICompatProvider`]: openai_compat::OpenAICompatProvider
+#[cfg(feature = "loops-core")]
+pub mod openai_compat;
+#[cfg(feature = "loops-core")]
+pub use openai_compat::OpenAICompatProvider;
 
 /// Ollama Cloud coding provider — executes autonomous ironclaw tasks via
 /// structured LLM output + 4-gate security validation before worktree writes.

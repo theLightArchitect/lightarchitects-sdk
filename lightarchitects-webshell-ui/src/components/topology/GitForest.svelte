@@ -4,9 +4,6 @@
   import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
   import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
   import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-  import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
-  import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
-  import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
   import { gitforestTree, gitforestPulses } from '$lib/stores';
   import { get } from 'svelte/store';
   import type { GitForestTopology, BranchNode } from '$lib/gitforest';
@@ -14,6 +11,10 @@
   import { PulseLayer } from '$lib/pulseLayer';
   import { navigate } from '$lib/routes';
   import BranchTooltip from '$lib/../components/topology/BranchTooltip.svelte';
+  import { fetchGitLog, commitTypeColor, localBranchName } from '$lib/gitlog';
+  import type { GitLogData, GitCommit, GitBranch } from '$lib/gitlog';
+  import { FOREST_REPO_NAMES } from '$lib/github';
+  import { getToken } from '$lib/auth';
 
   // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -187,6 +188,18 @@
     },
   ];
 
+  // ─── Local filesystem paths for each FOREST_REPO_NAMES entry ────────────
+  // Used by /api/git/log to fetch real commit history.
+  // If a path fails to resolve, the component falls back to seed data.
+  const REPO_LOCAL_PATHS: Record<string, string> = {
+    'lightarchitects-sdk': `${window.location.origin.includes('localhost') ? '' : ''}/Users/kft/Projects/lightarchitects-sdk`,
+    'SOUL-DEV':            '/Users/kft/Projects/SOUL/SOUL-DEV',
+    'CORSO-DEV':           '/Users/kft/Projects/CORSO/MCP/CORSO-DEV',
+  };
+
+  // ─── Git log data per repo (fetched from /api/git/log) ────────────────────
+  let gitLogs = $state<Map<string, GitLogData>>(new Map());
+
   // ─── Live repos state (seed until gitforestTree store populates) ─────────
   // Phase 5 wires the SSE stream → gitforestTree store → repos reactive update.
   // GitHub PAT is server-side only (github_token_store.rs, Phase 4) — no
@@ -259,6 +272,21 @@
     return unsubscribe;
   });
 
+  // ─── Fetch real git log data for each repo ────────────────────────────────
+  $effect(() => {
+    const token = getToken() ?? '';
+    const names = Object.keys(REPO_LOCAL_PATHS) as (keyof typeof REPO_LOCAL_PATHS)[];
+    for (const name of names) {
+      const cwd = REPO_LOCAL_PATHS[name] ?? '';
+      if (!cwd) continue;
+      fetchGitLog(cwd, 40, token || undefined)
+        .then(data => {
+          gitLogs = new Map(gitLogs).set(name, data);
+        })
+        .catch(() => { /* fall back to seed data silently */ });
+    }
+  });
+
   // ─── Scale constants ──────────────────────────────────────────────────────
   //
   // Previous values produced invisible trunks:
@@ -313,12 +341,6 @@
 
   let selectedRepoIdx = $state<number | null>(null);
 
-  // Cubic Bezier scalar interpolation (used by 2D renderer)
-  function bezierPoint(p0: number, p1: number, p2: number, p3: number, t: number): number {
-    const u = 1 - t;
-    return u*u*u*p0 + 3*u*u*t*p1 + 3*u*t*t*p2 + t*t*t*p3;
-  }
-
   // ─── Component bindings ───────────────────────────────────────────────────
 
   let container: HTMLDivElement | undefined = $state();
@@ -334,7 +356,8 @@
     const h = container.clientHeight || 300;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x020408);
+    // Transparent background — canvas2d git graph renders below this layer.
+    // scene.background intentionally omitted (alpha: true on renderer).
     scene.fog = new THREE.FogExp2(0x020408, 0.007);  // reduced — was 0.012 (ate trunks)
 
     // Pre-compute max trunk height so lookAt can be set to keep all trunks in frame.
@@ -358,18 +381,19 @@
     }
     applySph();
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setSize(w, h);
+    renderer.setClearColor(0x000000, 0);  // fully transparent clear
     renderer.toneMapping = THREE.ReinhardToneMapping;
-    renderer.toneMappingExposure = 1.4;
+    renderer.toneMappingExposure = 0.9;  // slightly dimmed — background atmosphere role
     while (container.firstChild) container.removeChild(container.firstChild);
     container.appendChild(renderer.domElement);
 
     // Holographic bloom pipeline (§19)
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.65, 0.38, 0.12);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.40, 0.30, 0.18);
     composer.addPass(bloomPass);
     composer.addPass(new OutputPass());
 
@@ -941,12 +965,236 @@
     }
     resize();
 
-    const maxCommits = Math.max(...repos.map(r => r.commitCount));
     let animId: number;
 
     function hexColor(n: number): string {
       return `#${n.toString(16).padStart(6, '0')}`;
     }
+
+    /** Hash a string to one of 7 branch-lane accent colors. */
+    function hashColor(str: string): number {
+      let h = 0;
+      for (let i = 0; i < str.length; i++) { h = ((h << 5) - h) + str.charCodeAt(i); h |= 0; }
+      const palette = [0x38bdf8, 0x4dff8e, 0xa78bfa, 0xf97316, 0x4dffe6, 0xff7eb6, 0xf5d440];
+      return palette[Math.abs(h) % palette.length] ?? 0x94a3b8;
+    }
+
+    /** Convert hex int to CSS color string with optional alpha hex suffix. */
+    function hc(n: number, a = ''): string { return hexColor(n) + a; }
+
+    // Hover state for commit tooltip
+    let hoveredRepo: string | null = null;
+    let hoveredCommitIdx = -1;
+
+    // ─── Draw commit tooltip overlay ────────────────────────────────────────
+    function drawCommitTooltip(c: GitCommit, ax: number, ay: number, px: number, pw: number) {
+      const W = 190; const H = 62;
+      let tx = ax - W / 2;
+      tx = Math.max(px + 4, Math.min(px + pw - W - 4, tx));
+      const ty = ay < canvas.height * 0.5 ? ay + 14 : ay - H - 10;
+      ctx.fillStyle = 'rgba(2,4,12,0.97)';
+      ctx.strokeStyle = '#1e3a5f';
+      ctx.lineWidth = 1;
+      // @ts-expect-error — roundRect is modern Canvas 2D API, present in Chrome 99+
+      if (ctx.roundRect) { ctx.beginPath(); (ctx as CanvasRenderingContext2D & { roundRect: (x:number,y:number,w:number,h:number,r:number)=>void }).roundRect(tx, ty, W, H, 3); ctx.fill(); ctx.stroke(); }
+      else { ctx.fillRect(tx, ty, W, H); ctx.strokeRect(tx, ty, W, H); }
+      ctx.font = `700 8.5px 'JetBrains Mono Variable', monospace`;
+      ctx.fillStyle = hc(commitTypeColor(c.message));
+      ctx.fillText(c.shortSha, tx + 8, ty + 14);
+      ctx.font = `8.5px 'JetBrains Mono Variable', monospace`;
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillText(c.message.slice(0, 28) + (c.message.length > 28 ? '…' : ''), tx + 8, ty + 27);
+      ctx.font = `7.5px 'JetBrains Mono Variable', monospace`;
+      ctx.fillStyle = '#64748b';
+      ctx.fillText(c.author, tx + 8, ty + 40);
+      ctx.fillText(c.timestamp.slice(0, 16), tx + 8, ty + 52);
+    }
+
+    // ─── Draw a repo panel using real git log data ───────────────────────────
+    function drawGitGraph(
+      data: GitLogData, repo: Repo, ri: number,
+      panelX: number, panelW: number,
+      graphY0: number, graphH: number,
+      t: number,
+    ) {
+      const [tcN] = repoTrunkColor(ri);
+      const tc = hc(tcN);
+
+      // Lane assignment: main=0, feat/→1,2,3 upward, fix/→-1,-2 downward
+      const laneMap = new Map<string, number>();
+      const allLocal = data.branches
+        .map(b => localBranchName(b.name))
+        .filter(n => !n.startsWith('remotes/') && n.length > 0);
+      const sorted = [
+        ...allLocal.filter(n => n === 'main' || n === 'master'),
+        ...allLocal.filter(n => n.startsWith('feat/')),
+        ...allLocal.filter(n => !['main','master'].includes(n) && !n.startsWith('feat/') && !n.startsWith('fix/')),
+        ...allLocal.filter(n => n.startsWith('fix/')),
+      ];
+      let laneUp = 0; let laneDn = -1;
+      sorted.forEach(n => {
+        if (n === 'main' || n === 'master') laneMap.set(n, 0);
+        else if (n.startsWith('fix/')) laneMap.set(n, laneDn--);
+        else laneMap.set(n, ++laneUp);
+      });
+      const maxUp = laneUp; const maxDn = Math.abs(laneDn) - 1;
+      const totalLanes = maxUp + maxDn + 1;
+      const laneSpacing = graphH / Math.max(totalLanes + 1, 4);
+      function laneY(lane: number): number {
+        return graphY0 + (maxUp - lane + 1) * laneSpacing;
+      }
+
+      // Commit area geometry
+      const RAIL_W = 68;
+      const cax = panelX + RAIL_W;
+      const caw = panelW - RAIL_W - 6;
+      const commits = data.commits;
+      const N = Math.min(commits.length, 22);
+      const sp = N > 1 ? caw / (N - 1) : caw;
+
+      const shaIdx = new Map<string, number>(commits.map((c, i) => [c.sha, i]));
+      const shortIdx = new Map<string, number>(commits.map((c, i) => [c.shortSha, i]));
+
+      function getCLane(c: GitCommit): number {
+        for (const ref of c.refs) {
+          const stripped = ref.replace(/^HEAD -> /, '').replace(/^(origin|upstream)\//, '').trim();
+          const l = laneMap.get(stripped); if (l !== undefined) return l;
+        }
+        const pSha = c.parentShas[0] ?? '';
+        const pIdx = shaIdx.get(pSha) ?? shortIdx.get(pSha) ?? -1;
+        return pIdx >= 0 ? getCLane(commits[pIdx]!) : 0;
+      }
+      function cx2(idx: number): number {
+        return N <= 1 ? cax + caw / 2 : cax + (N - 1 - idx) * sp;
+      }
+
+      // Draw dashed lane lines + labels
+      const drawnLanes = new Set<number>();
+      sorted.slice(0, 8).forEach(name => {
+        const lane = laneMap.get(name) ?? 0;
+        if (drawnLanes.has(lane)) return; drawnLanes.add(lane);
+        const ly = laneY(lane);
+        const lcolor = lane === 0 ? tc : hc(hashColor(name));
+        ctx.strokeStyle = lcolor + '35';
+        ctx.lineWidth = 0.8;
+        ctx.setLineDash([3, 5]);
+        ctx.beginPath(); ctx.moveTo(cax, ly); ctx.lineTo(cax + caw, ly); ctx.stroke();
+        ctx.setLineDash([]);
+
+        const brLabel = name.replace(/^(feat|fix|chore|refactor)\//, '').slice(0, 12);
+        ctx.font = `8px 'JetBrains Mono Variable', monospace`;
+        ctx.fillStyle = lcolor + 'bb';
+        ctx.textAlign = 'right';
+        ctx.fillText(brLabel, cax - 5, ly + 3);
+        ctx.textAlign = 'left';
+
+        const isCurrent = data.branches.some(b => b.isCurrent && localBranchName(b.name) === name);
+        if (isCurrent) {
+          ctx.font = `700 7px 'JetBrains Mono Variable', monospace`;
+          ctx.fillStyle = lcolor;
+          ctx.fillText('◈', panelX + 2, ly + 3);
+        }
+      });
+
+      // Draw edges
+      for (let i = 0; i < N - 1; i++) {
+        const c = commits[i]!; const nc = commits[i + 1]!;
+        const x1 = cx2(i); const y1 = laneY(getCLane(c));
+        const x2 = cx2(i + 1); const y2 = laneY(getCLane(nc));
+        const lane = getCLane(c);
+        const edgeColor = lane === 0 ? tc : hc(hashColor(sorted.find(n => (laneMap.get(n) ?? -99) === lane) ?? ''));
+        ctx.strokeStyle = edgeColor + '60'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(x2, y2);
+        if (Math.abs(y1 - y2) < 2) ctx.lineTo(x1, y1);
+        else ctx.bezierCurveTo(x2 + sp * 0.45, y2, x1 - sp * 0.45, y1, x1, y1);
+        ctx.stroke();
+        // Merge arcs
+        if (c.parentShas.length > 1) {
+          c.parentShas.slice(1).forEach(ps => {
+            const pi = shaIdx.get(ps) ?? shortIdx.get(ps) ?? -1;
+            if (pi < 0 || pi >= N) return;
+            const mx = cx2(pi); const my = laneY(getCLane(commits[pi]!));
+            ctx.strokeStyle = '#a78bfa55'; ctx.lineWidth = 0.8;
+            ctx.beginPath(); ctx.moveTo(x1, y1);
+            ctx.quadraticCurveTo((x1 + mx) / 2, y1, mx, my); ctx.stroke();
+          });
+        }
+      }
+
+      // Draw commit nodes
+      for (let i = 0; i < N; i++) {
+        const c = commits[i]!;
+        const x = cx2(i); const lane = getCLane(c); const y = laneY(lane);
+        const isMerge = c.parentShas.length > 1;
+        const dotCol = commitTypeColor(c.message);
+        const isHovered = hoveredRepo === repo.name && hoveredCommitIdx === i;
+        const pulse = 0.7 + 0.3 * Math.sin(t * 1.6 + i * 0.8);
+
+        if (isHovered) {
+          ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2);
+          ctx.strokeStyle = hc(dotCol, 'aa'); ctx.lineWidth = 1.5; ctx.stroke();
+        }
+        if (isMerge) {
+          ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2);
+          ctx.strokeStyle = '#a78bfa55'; ctx.lineWidth = 0.8; ctx.stroke();
+        }
+        ctx.beginPath(); ctx.arc(x, y, isMerge ? 4.5 : 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = hc(dotCol); ctx.globalAlpha = lane === 0 ? 0.95 : 0.70;
+        ctx.fill(); ctx.globalAlpha = 1;
+
+        // SHA below node
+        ctx.font = `7.5px 'JetBrains Mono Variable', monospace`;
+        ctx.fillStyle = '#334155'; ctx.textAlign = 'center';
+        ctx.fillText(c.shortSha, x, y + 13); ctx.textAlign = 'left';
+
+        // Message above for recent main-lane commits
+        if (lane === 0 && i < 6) {
+          const m = c.message.slice(0, 12) + (c.message.length > 12 ? '…' : '');
+          ctx.font = `7px 'JetBrains Mono Variable', monospace`;
+          ctx.fillStyle = hc(dotCol) + (isHovered ? 'ee' : '80');
+          ctx.textAlign = 'center'; ctx.fillText(m, x, y - 7); ctx.textAlign = 'left';
+        }
+
+        // Tooltip
+        if (isHovered) drawCommitTooltip(c, x, y, panelX, panelW);
+
+        // A11y hitbox
+        hitboxPending.push({ id: `${repo.name}/${c.shortSha}`, label: `${c.shortSha}: ${c.message}`, gateState: 'clean', x, y, cw: canvas.width, ch: canvas.height });
+      }
+    }
+
+    // ─── Fallback graph when git data not yet available ──────────────────────
+    function drawSeedGraph(repo: Repo, ri: number, panelX: number, panelW: number, graphY0: number, graphH: number, t: number) {
+      const [tcN] = repoTrunkColor(ri);
+      const tc = hc(tcN);
+      const cax = panelX + 10;
+      const centerY = graphY0 + graphH * 0.5;
+      // Minimal "loading" indicator
+      ctx.font = `8px 'JetBrains Mono Variable', monospace`;
+      ctx.fillStyle = tc + '55';
+      ctx.textAlign = 'left';
+      const dots = '.'.repeat(1 + Math.floor(t) % 3);
+      ctx.fillText(`loading git data${dots}`, cax, centerY);
+      ctx.textAlign = 'left';
+      // Pulse line
+      ctx.strokeStyle = tc + '22'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(cax, centerY + 10); ctx.lineTo(panelX + panelW - 6, centerY + 10); ctx.stroke();
+      // Seed branches (placeholder dots)
+      repo.branches.slice(0, 3).forEach((b, bi) => {
+        const bColor = hc(GATE_COLORS[b.gateState]);
+        const bx = cax + (panelW - 80) * (0.3 + bi * 0.3);
+        const by = centerY + (bi - 1) * 16;
+        ctx.beginPath(); ctx.arc(bx, by, 3, 0, Math.PI * 2);
+        ctx.fillStyle = bColor + '66'; ctx.fill();
+        ctx.font = `7px 'JetBrains Mono Variable', monospace`;
+        ctx.fillStyle = bColor + '66'; ctx.textAlign = 'center';
+        ctx.fillText(b.name.slice(0, 10), bx, by + 10); ctx.textAlign = 'left';
+      });
+    }
+
+    // ─── Main draw loop ──────────────────────────────────────────────────────
+    const HEADER_H = 38;
+    const PAD_X = 8;
 
     function draw() {
       animId = requestAnimationFrame(draw);
@@ -954,375 +1202,110 @@
       const ch = canvas.height;
       const t = performance.now() * 0.001;
 
+      // Semi-transparent fill so Three.js polytopes show through subtly
       ctx.clearRect(0, 0, cw, ch);
-      ctx.fillStyle = '#020408';
+      ctx.fillStyle = 'rgba(2,4,8,0.93)';
       ctx.fillRect(0, 0, cw, ch);
 
-      // Blueprint grid — cell size relative to canvas so it adapts to any viewport
-      const gs = Math.max(cw, ch) / 20;
-      ctx.lineWidth = 0.5;
+      // Blueprint grid
+      const gs = Math.max(cw, ch) / 22;
+      ctx.lineWidth = 0.4;
       for (let x = 0; x < cw; x += gs) {
-        ctx.strokeStyle = (Math.round(x / gs) % 4 === 0) ? 'rgba(26,110,192,0.2)' : 'rgba(26,110,192,0.07)';
+        ctx.strokeStyle = (Math.round(x / gs) % 4 === 0) ? 'rgba(26,110,192,0.16)' : 'rgba(26,110,192,0.05)';
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ch); ctx.stroke();
       }
       for (let y = 0; y < ch; y += gs) {
-        ctx.strokeStyle = (Math.round(y / gs) % 4 === 0) ? 'rgba(26,110,192,0.2)' : 'rgba(26,110,192,0.07)';
+        ctx.strokeStyle = (Math.round(y / gs) % 4 === 0) ? 'rgba(26,110,192,0.16)' : 'rgba(26,110,192,0.05)';
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke();
       }
 
-      // ── Layout constants that scale with repo count ───────────────────────
-      // Two-pass sizing: compute font sizes first (needed for padX), then
-      // derive padX from the longest label so no name ever clips at the edge.
       const n = repos.length;
+      const panelW = (cw - PAD_X * 2 - (n - 1)) / n;
+      l1ColW = panelW;
+      l1PadX = PAD_X;
 
-      // Preliminary colW estimate (padX unknown yet — use 5% placeholder)
-      const colWEst     = (cw * 0.90) / n;
-      const nameFontSz  = Math.max(7, Math.min(11, Math.floor(colWEst * 0.075)));
-      const statsFontSz = Math.max(6, Math.min(9,  Math.floor(colWEst * 0.058)));
-      const labelFontSz = Math.max(6, Math.min(8,  Math.floor(colWEst * 0.052)));
-
-      // Half-width of the longest repo label in px (monospace ≈ 0.62× font size)
-      const maxNameLen  = Math.max(...repos.map(r => r.name.length));
-      const labelHalfW  = (maxNameLen * nameFontSz * 0.62) / 2;
-      // padX must also accommodate the outermost branch overhang (colWEst * 0.46)
-      const branchOverhang = colWEst * 0.46;
-      const padX   = Math.max(labelHalfW + 6, branchOverhang + 4, cw * 0.03);
-      const drawW  = cw - 2 * padX;
-      const colW   = drawW / n;
-      const labelH = Math.max(28, ch * 0.09);
-      const baseY  = ch - labelH;
-      const availH = baseY - 12;
-
-      // Update layout refs for click/hover handlers
-      l1ColW = colW;
-      l1PadX = padX;
-
-      // ── L2: hero mode for a selected repo ──────────────────────────────
+      // Hero mode: full-panel single repo
       if (selectedRepoIdx !== null && selectedRepoIdx < repos.length) {
-        drawHero(repos[selectedRepoIdx], selectedRepoIdx);
+        const repo = repos[selectedRepoIdx]!;
+        const ri = selectedRepoIdx;
+        const data = gitLogs.get(repo.name);
+        drawPanelHeader(repo, ri, PAD_X, cw - PAD_X * 2, ch, true);
+        if (data && data.commits.length > 0) {
+          drawGitGraph(data, repo, ri, PAD_X, cw - PAD_X * 2, HEADER_H + 6, ch - HEADER_H - 6, t);
+        } else {
+          drawSeedGraph(repo, ri, PAD_X, cw - PAD_X * 2, HEADER_H + 6, ch - HEADER_H - 6, t);
+        }
+        // Back button
+        ctx.font = '700 9px monospace';
+        ctx.fillStyle = '#475569';
+        ctx.fillText('← ALL', PAD_X + 4, ch - 8);
+        hitboxPending = [];
+        hitboxFrame = (hitboxFrame + 1) % 15;
+        if (hitboxFrame === 0) hitboxes = hitboxPending;
         return;
       }
 
       repos.forEach((repo, ri) => {
-        const cx       = padX + colW * (ri + 0.5);
-        // Trunk height fills most of availH, scaled by sqrt(commitCount)/sqrt(max)
-        const trunkPx  = (Math.sqrt(repo.commitCount) / Math.sqrt(maxCommits)) * availH * 0.88;
-        const topY     = baseY - trunkPx;
-        const [tcN, wcN] = repoTrunkColor(ri);
-        const tc       = hexColor(tcN);
-        const wc       = hexColor(wcN);
-
-        // Trunk gradient
-        const grad = ctx.createLinearGradient(cx, baseY, cx, topY);
-        grad.addColorStop(0, tc + '55');
-        grad.addColorStop(1, wc + 'dd');
-        ctx.strokeStyle = grad;
-        ctx.lineWidth = Math.max(1.5, colW * 0.016);
-        ctx.setLineDash([]);
-        ctx.beginPath();
-        ctx.moveTo(cx, baseY);
-        ctx.lineTo(cx, topY);
-        ctx.stroke();
-
-        // Milestone tick marks
-        const ringCount = Math.min(Math.floor(repo.commitCount / 25), 12);
-        for (let mi = 1; mi <= ringCount; mi++) {
-          const frac  = mi / (ringCount + 1);
-          const ringY = baseY - frac * trunkPx;
-          const len   = mi % 4 === 0 ? Math.max(6, colW * 0.06) : Math.max(3, colW * 0.03);
-          ctx.strokeStyle = mi % 2 === 0 ? tc + 'aa' : '#e2e8f0' + '55';
-          ctx.lineWidth = 0.8;
+        const panelX = PAD_X + ri * (panelW + 1);
+        const data = gitLogs.get(repo.name);
+        drawPanelHeader(repo, ri, panelX, panelW, ch, false);
+        if (data && data.commits.length > 0) {
+          drawGitGraph(data, repo, ri, panelX, panelW, HEADER_H + 4, ch - HEADER_H - 8, t);
+        } else {
+          drawSeedGraph(repo, ri, panelX, panelW, HEADER_H + 4, ch - HEADER_H - 8, t);
+        }
+        // Panel divider
+        if (ri < repos.length - 1) {
+          ctx.strokeStyle = 'rgba(30,58,95,0.45)';
+          ctx.lineWidth = 0.5;
           ctx.beginPath();
-          ctx.moveTo(cx - len, ringY);
-          ctx.lineTo(cx + len, ringY);
+          ctx.moveTo(panelX + panelW + 0.5, HEADER_H);
+          ctx.lineTo(panelX + panelW + 0.5, ch - 4);
           ctx.stroke();
         }
-
-        // Trunk tip glow pulse
-        const tipPulse = 0.65 + 0.35 * Math.sin(t * 1.4 + ri * 1.2);
-        ctx.fillStyle = tc;
-        ctx.globalAlpha = tipPulse;
-        ctx.beginPath();
-        ctx.arc(cx, topY, Math.max(2.5, colW * 0.025), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-
-        // Branches — length capped at colW * 0.46 so they stay within their column
-        repo.branches.forEach((branch, bi) => {
-          const forkFrac = branch.divergeCommit / repo.commitCount;
-          const forkY    = baseY - forkFrac * trunkPx;
-          const branchPx = Math.min(branch.commitCount * (colW * 0.055), colW * 0.46);
-          const dir      = bi % 2 === 0 ? 1 : -1;
-          const bColor   = hexColor(GATE_COLORS[branch.gateState]);
-
-          const cp1X = cx + dir * branchPx * 0.25;
-          const cp1Y = forkY - branchPx * 0.08;
-          const cp2X = cx + dir * branchPx * 0.65;
-          const cp2Y = forkY - branchPx * 0.38;
-          const tipX = cx + dir * branchPx;
-          const tipY = forkY - branchPx * 0.52;
-
-          if (branch.isGhost) {
-            ctx.setLineDash([4, 3]);
-            ctx.strokeStyle = bColor;
-            ctx.globalAlpha = 0.22;
-          } else {
-            ctx.setLineDash([]);
-            ctx.strokeStyle = bColor;
-            ctx.globalAlpha = 0.88;
-          }
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.moveTo(cx, forkY);
-          ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, tipX, tipY);
-          ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.globalAlpha = 1;
-
-          // Collect hitbox for a11y overlay (Phase 3.5 — flushed to $state at 4Hz)
-          hitboxPending.push({ id: `${repo.name}/${branch.name}`, label: branch.name, gateState: branch.gateState, x: tipX, y: tipY, cw: canvas.width, ch: canvas.height });
-
-          if (!branch.isGhost) {
-            // Commit dots with staggered pulse
-            const nodeCap = Math.min(branch.commitCount, 8);
-            for (let ni = 0; ni < nodeCap; ni++) {
-              const nt   = (ni + 1) / (nodeCap + 1);
-              const dotX = bezierPoint(cx, cp1X, cp2X, tipX, nt);
-              const dotY = bezierPoint(forkY, cp1Y, cp2Y, tipY, nt);
-              const pulse = 0.5 + 0.5 * Math.sin(t * 2.2 + ni * 0.9 + bi * 1.5 + ri * 2.3);
-              ctx.fillStyle = bColor;
-              ctx.globalAlpha = pulse;
-              ctx.beginPath();
-              ctx.arc(dotX, dotY, Math.max(1.5, colW * 0.013), 0, Math.PI * 2);
-              ctx.fill();
-              ctx.globalAlpha = 1;
-            }
-
-            // Branch label near tip — char limit scales with column width
-            const maxChars = Math.max(8, Math.floor(colW / (labelFontSz * 0.62)));
-            ctx.font = `${labelFontSz}px monospace`;
-            ctx.fillStyle = bColor;
-            ctx.globalAlpha = 0.65;
-            ctx.textAlign = dir > 0 ? 'left' : 'right';
-            const shortName = branch.name.replace(/^(feat|fix|chore)\//, '').slice(0, maxChars);
-            ctx.fillText(shortName, tipX + dir * 4, tipY - 2);
-            ctx.globalAlpha = 1;
-            ctx.textAlign = 'left';
-
-            // Worktree sub-branches
-            branch.worktrees.forEach((wt, wi) => {
-              const wtT   = Math.min(0.42 + wi * 0.22, 0.88);
-              const wtX   = bezierPoint(cx, cp1X, cp2X, tipX, wtT);
-              const wtY2  = bezierPoint(forkY, cp1Y, cp2Y, tipY, wtT);
-              const wtLen = wt.commitCount * Math.max(6, colW * 0.06);
-              const wtCol = hexColor(AGENT_COLORS[wt.domain]);
-              const offX  = dir * 0.4 + (wi % 2 === 0 ? 0.9 : -0.9);
-              const offY  = -1;
-              const mag   = Math.sqrt(offX*offX + offY*offY);
-              ctx.strokeStyle = wtCol;
-              ctx.lineWidth = 1;
-              ctx.globalAlpha = 0.72;
-              ctx.beginPath();
-              ctx.moveTo(wtX, wtY2);
-              ctx.lineTo(wtX + (offX/mag)*wtLen, wtY2 + (offY/mag)*wtLen);
-              ctx.stroke();
-              ctx.globalAlpha = 1;
-            });
-          }
-        });
-
-        // Repo name + stats label
-        ctx.textAlign = 'center';
-        ctx.font = `bold ${nameFontSz}px monospace`;
-        ctx.fillStyle = tc;
-        ctx.fillText(repo.name, cx, baseY + labelH * 0.42);
-        ctx.font = `${statsFontSz}px monospace`;
-        ctx.fillStyle = '#475569';
-        ctx.fillText(`${repo.commitCount}c · ${repo.fileCount}f`, cx, baseY + labelH * 0.80);
-        ctx.textAlign = 'left';
       });
 
-      // Flush hitbox positions to $state every ~15 frames (≈4Hz at 60fps)
       hitboxFrame = (hitboxFrame + 1) % 15;
-      if (hitboxFrame === 0) {
-        hitboxes = hitboxPending;
-      }
+      if (hitboxFrame === 0) hitboxes = hitboxPending;
       hitboxPending = [];
     }
 
-    // ── L2 hero renderer ─────────────────────────────────────────────────
-    // Draws a single repo in full-canvas detail mode.
+    // ─── Panel header: repo name + stats ────────────────────────────────────
+    function drawPanelHeader(repo: Repo, ri: number, panelX: number, panelW: number, ch: number, hero: boolean) {
+      const [tcN, wcN] = repoTrunkColor(ri);
+      const tc = hc(tcN); const wc = hc(wcN);
+      const data = gitLogs.get(repo.name);
+      const commitCount = data ? data.commits.length : repo.commitCount;
+      const branchCount = data
+        ? new Set(data.branches.map(b => localBranchName(b.name)).filter(n => n && !n.includes('HEAD'))).size
+        : repo.branches.length;
+      const activeBranch = data?.branches.find(b => b.isCurrent)?.name ?? 'main';
 
-    function drawHero(repo: Repo, riOrig: number) {
-      const cw   = canvas.width;
-      const ch   = canvas.height;
-      const t    = performance.now() * 0.001;
-      const cx   = cw / 2;
+      // Subtle header background
+      ctx.fillStyle = 'rgba(2,4,12,0.6)';
+      ctx.fillRect(panelX, 0, panelW, HEADER_H - 2);
 
-      const labelH = Math.max(28, ch * 0.09);
-      const baseY  = ch - labelH;
-      const availH = baseY - 48;   // reserve 48px at top for title
+      // Accent bar at top
+      const grad = ctx.createLinearGradient(panelX, 0, panelX + panelW, 0);
+      grad.addColorStop(0, tc + '00'); grad.addColorStop(0.3, tc + 'cc'); grad.addColorStop(1, wc + '44');
+      ctx.fillStyle = grad;
+      ctx.fillRect(panelX, 0, panelW, 2);
 
-      const [tcN, wcN] = repoTrunkColor(riOrig);
-      const tc = hexColor(tcN);
-      const wc = hexColor(wcN);
-
-      // Title
-      ctx.textAlign = 'center';
-      ctx.font = 'bold 13px monospace';
+      const fontSize = hero ? 12 : Math.max(9, Math.min(11, Math.floor(panelW * 0.065)));
+      ctx.font = `700 ${fontSize}px 'JetBrains Mono Variable', monospace`;
       ctx.fillStyle = tc;
-      ctx.fillText(repo.name, cx, 22);
-      ctx.font = '9px monospace';
-      ctx.fillStyle = '#475569';
-      ctx.fillText(`${repo.commitCount} commits  ·  ${repo.fileCount} files`, cx, 36);
       ctx.textAlign = 'left';
+      const nameLabel = hero ? repo.name : repo.name.slice(0, Math.floor(panelW / (fontSize * 0.62)));
+      ctx.fillText(nameLabel, panelX + 5, 15);
 
-      const trunkPx = availH * 0.92;
-      const topY    = baseY - trunkPx;
+      ctx.font = `${Math.max(7, fontSize - 2)}px 'JetBrains Mono Variable', monospace`;
+      ctx.fillStyle = '#475569';
+      ctx.fillText(`${commitCount}+ c · ${branchCount} br · ${activeBranch.slice(0, 12)}`, panelX + 5, 28);
 
-      // Trunk
-      const grad = ctx.createLinearGradient(cx, baseY, cx, topY);
-      grad.addColorStop(0, tc + '55');
-      grad.addColorStop(1, wc + 'dd');
-      ctx.strokeStyle = grad;
-      ctx.lineWidth = 3;
-      ctx.setLineDash([]);
-      ctx.beginPath();
-      ctx.moveTo(cx, baseY);
-      ctx.lineTo(cx, topY);
-      ctx.stroke();
-
-      // Milestone rings + commit count labels
-      const ringCount = Math.min(Math.floor(repo.commitCount / 25), 12);
-      for (let mi = 1; mi <= ringCount; mi++) {
-        const frac   = mi / (ringCount + 1);
-        const ringY  = baseY - frac * trunkPx;
-        const tickW  = mi % 4 === 0 ? 18 : 9;
-        ctx.strokeStyle = mi % 2 === 0 ? tc + 'aa' : '#e2e8f0' + '55';
-        ctx.lineWidth = 0.8;
-        ctx.beginPath();
-        ctx.moveTo(cx - tickW, ringY);
-        ctx.lineTo(cx + tickW, ringY);
-        ctx.stroke();
-        if (mi % 4 === 0) {
-          ctx.font = '7px monospace';
-          ctx.fillStyle = '#334155';
-          ctx.textAlign = 'right';
-          ctx.fillText(`${Math.floor(frac * repo.commitCount)}c`, cx - tickW - 3, ringY + 3);
-          ctx.textAlign = 'left';
-        }
-      }
-
-      // Trunk tip pulse
-      const tipPulse = 0.65 + 0.35 * Math.sin(t * 1.4 + riOrig * 1.2);
-      ctx.fillStyle = tc;
-      ctx.globalAlpha = tipPulse;
-      ctx.beginPath();
-      ctx.arc(cx, topY, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-
-      // Branches — full horizontal spread
-      const maxHalf = cw * 0.42;
-      repo.branches.forEach((branch, bi) => {
-        const forkFrac = branch.divergeCommit / repo.commitCount;
-        const forkY    = baseY - forkFrac * trunkPx;
-        const branchPx = Math.min(branch.commitCount * 18, maxHalf);
-        const dir      = bi % 2 === 0 ? 1 : -1;
-        const bColor   = hexColor(GATE_COLORS[branch.gateState]);
-
-        const cp1X = cx + dir * branchPx * 0.25;
-        const cp1Y = forkY - branchPx * 0.08;
-        const cp2X = cx + dir * branchPx * 0.65;
-        const cp2Y = forkY - branchPx * 0.38;
-        const tipX = cx + dir * branchPx;
-        const tipY = forkY - branchPx * 0.52;
-
-        if (branch.isGhost) {
-          ctx.setLineDash([6, 4]); ctx.globalAlpha = 0.25;
-        } else {
-          ctx.setLineDash([]);     ctx.globalAlpha = 0.9;
-        }
-        ctx.strokeStyle = bColor;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(cx, forkY);
-        ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, tipX, tipY);
-        ctx.stroke();
-        ctx.setLineDash([]); ctx.globalAlpha = 1;
-
-        if (!branch.isGhost) {
-          // Commit nodes with index labels
-          const nodeCap = Math.min(branch.commitCount, 10);
-          for (let ni = 0; ni < nodeCap; ni++) {
-            const nt   = (ni + 1) / (nodeCap + 1);
-            const dotX = bezierPoint(cx, cp1X, cp2X, tipX, nt);
-            const dotY = bezierPoint(forkY, cp1Y, cp2Y, tipY, nt);
-            const pulse = 0.6 + 0.4 * Math.sin(t * 2.2 + ni * 0.9 + bi * 1.5);
-            ctx.fillStyle = bColor;
-            ctx.globalAlpha = pulse;
-            ctx.beginPath();
-            ctx.arc(dotX, dotY, 3.5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.globalAlpha = 0.5;
-            ctx.font = '7px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText(`C${nodeCap - ni}`, dotX, dotY - 6);
-            ctx.globalAlpha = 1;
-            ctx.textAlign = 'left';
-          }
-
-          // Branch name + metadata at tip
-          ctx.textAlign = dir > 0 ? 'left' : 'right';
-          const lx = tipX + dir * 8;
-          ctx.font = 'bold 9px monospace';
-          ctx.fillStyle = bColor;
-          ctx.fillText(branch.name, lx, tipY - 4);
-          ctx.font = '7px monospace';
-          ctx.fillStyle = '#475569';
-          ctx.fillText(`${branch.commitCount}c · ${branch.filesModified}f`, lx, tipY + 7);
-          ctx.textAlign = 'left';
-
-          // Worktrees — labeled
-          branch.worktrees.forEach((wt, wi) => {
-            const wtT   = Math.min(0.42 + wi * 0.22, 0.88);
-            const wtX   = bezierPoint(cx, cp1X, cp2X, tipX, wtT);
-            const wtY2  = bezierPoint(forkY, cp1Y, cp2Y, tipY, wtT);
-            const wtLen = wt.commitCount * 22;
-            const wtCol = hexColor(AGENT_COLORS[wt.domain]);
-            const offX  = dir * 0.4 + (wi % 2 === 0 ? 0.9 : -0.9);
-            const offY  = -1;
-            const mag   = Math.sqrt(offX * offX + offY * offY);
-            const wtTX  = wtX + (offX / mag) * wtLen;
-            const wtTY  = wtY2 + (offY / mag) * wtLen;
-            ctx.strokeStyle = wtCol;
-            ctx.lineWidth = 1.5;
-            ctx.globalAlpha = 0.82;
-            ctx.beginPath();
-            ctx.moveTo(wtX, wtY2);
-            ctx.lineTo(wtTX, wtTY);
-            ctx.stroke();
-            ctx.globalAlpha = 0.7;
-            ctx.font = '7px monospace';
-            ctx.fillStyle = wtCol;
-            ctx.textAlign = 'center';
-            ctx.fillText(wt.domain, wtTX, wtTY - 5);
-            ctx.globalAlpha = 1;
-            ctx.textAlign = 'left';
-          });
-        }
-      });
-
-      // Back button — fixed top-left
-      const bx = 8, by = 8, bw = 72, bh = 22;
-      ctx.fillStyle = 'rgba(2,4,8,0.8)';
-      ctx.fillRect(bx, by, bw, bh);
-      ctx.strokeStyle = 'rgba(58,63,71,0.8)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(bx, by, bw, bh);
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '700 9px monospace';
-      ctx.fillText('< FOREST', bx + 9, by + 14);
+      // Header bottom rule
+      ctx.strokeStyle = tc + '18';
+      ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.moveTo(panelX, HEADER_H); ctx.lineTo(panelX + panelW, HEADER_H); ctx.stroke();
     }
 
     // ── Layout refs shared with click/hover handlers ───────────────────
@@ -1493,11 +1476,13 @@
     inset: 0;
     width: 100%;
     height: 100%;
+    z-index: 2;
     will-change: transform;
   }
   .forest-three {
     position: absolute;
     inset: 0;
+    z-index: 1;
     pointer-events: none;
     will-change: transform;
   }

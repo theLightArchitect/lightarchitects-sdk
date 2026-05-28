@@ -169,11 +169,33 @@
 
   let activeRoute = $derived($currentRoute);
 
+  // ── Navigation history — powers the back button ──────────────────────────
+  const HOME_ROUTES = new Set(['/dashboard', '/dispatch', '/run', '/']);
+  let navStack = $state<string[]>([]);
+  let canGoBack = $derived(navStack.length > 1);
+
+  function trackNav(path: string) {
+    navStack = [...navStack.slice(-19), path];
+  }
+
+  function goBack() {
+    if (navStack.length > 1) {
+      navStack = navStack.slice(0, -1);
+      window.history.back();
+    }
+  }
+
+  function goHome() {
+    navStack = [];
+    navigate('/dashboard');
+  }
+
   function handleHashChange() {
     applyRedirects();
     const path = window.location.hash.slice(1) || '/';
     currentRoute.set(path);
     loadScreen(path);
+    trackNav(path);
   }
 
   onMount(() => {
@@ -463,6 +485,28 @@
       <nav class="la-nav flex items-stretch border-b border-[var(--la-hair-base)] bg-[var(--la-bg-void)] shrink-0 overflow-visible" style="height: var(--la-header-height, 56px);" data-status={$ayinStatus}>
         <ProjectPicker />
         <NavDropdown />
+
+        <!-- Back / Home nav affordance — appears when navigated away from root -->
+        {#if canGoBack}
+          <Tooltip content="Go back (Alt+←)" side="bottom">
+            <button
+              class="nav-cell nav-ctrl nav-ctrl--nav"
+              onclick={goBack}
+              aria-label="Navigate back"
+              data-testid="nav-back"
+            >←</button>
+          </Tooltip>
+        {/if}
+        {#if !HOME_ROUTES.has(activeRoute)}
+          <Tooltip content="Go to Dashboard (home)" side="bottom">
+            <button
+              class="nav-cell nav-ctrl nav-ctrl--nav"
+              onclick={goHome}
+              aria-label="Go to dashboard"
+              data-testid="nav-home"
+            >⌂</button>
+          </Tooltip>
+        {/if}
 
         <!-- Right-side controls — each in its own column cell separated by 1px hairlines -->
         <div class="ml-auto shrink-0 flex items-stretch">

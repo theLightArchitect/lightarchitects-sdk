@@ -36,6 +36,7 @@ pub mod canon;
 pub mod client;
 pub mod db;
 pub mod embedding;
+pub mod generation;
 pub mod graph;
 pub mod helix_toml;
 pub mod ingestion;

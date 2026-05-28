@@ -1,12 +1,26 @@
 //! SOUL vault grounding for the copilot prompt prelude.
 //!
-//! Queries the local `SQLite` FTS5 index for top-5 BM25-ranked entries
-//! relevant to the current request, then formats them into a
-//! `[Knowledge]` block for injection.  Each block is wrapped in
-//! nonce-prefixed structural delimiters to bound indirect prompt
-//! injection per OWASP LLM02 (SCR13 — vault delimiter hardening).
+//! Two retrieval tiers:
+//! - **4-signal RRF** via [`SoulClient`] (primary): BM25 + semantic HNSW +
+//!   graph traversal + structural `Node2Vec`. Used when the SOUL MCP client
+//!   is initialised in [`AppState`].
+//! - **BM25 `SQLite`** via [`SoulPersistence`] (fallback): FTS5 fulltext only,
+//!   400 ms timeout. Used when the MCP client is not yet ready.
+//!
+//! Each block is wrapped in nonce-prefixed structural delimiters to bound
+//! indirect prompt injection per OWASP LLM02 (SCR13 — vault delimiter
+//! hardening).
+//!
+//! **Write-back** — after each copilot turn the Q&A pair is persisted to
+//! the SOUL vault via [`spawn_write_turn`].  SOUL's async write-through
+//! indexes the entry in `SQLite` FTS5 and HNSW so future turns can retrieve
+//! it via either tier.
 
 use std::fmt::Write as _;
+use std::sync::Arc;
+
+use lightarchitects::{core::StdioTransport, soul::SoulClient};
+use uuid::Uuid;
 
 use crate::memory::persistence::SoulPersistence;
 
@@ -74,6 +88,113 @@ pub fn format_block(nonce: &str, entries: &[GroundingEntry]) -> String {
     let _ = writeln!(out, "[/VAULT-DATA::{nonce}]");
     out
 }
+
+// ── 4-signal RRF retrieval ────────────────────────────────────────────────────
+
+/// 4-signal RRF query via the SOUL MCP client.
+///
+/// Returns `(block, result_count, timed_out, elapsed_ms)`.
+/// The block is either empty or a nonce-wrapped `[VAULT-DATA::]` section
+/// ready for injection into the copilot prelude.
+///
+/// Timeout: 600 ms (higher than the BM25 path's 400 ms because the MCP
+/// round-trip adds latency, but hybrid retrieval quality justifies the
+/// extra budget).
+pub async fn query_rrf(
+    client: &SoulClient<StdioTransport>,
+    build_id: Uuid,
+    message: &str,
+) -> (String, usize, bool, u64) {
+    let t0 = std::time::Instant::now();
+    let query = format!(
+        "{} {}",
+        build_id,
+        message.chars().take(150).collect::<String>()
+    );
+
+    let outcome = tokio::time::timeout(
+        std::time::Duration::from_millis(600),
+        client.query(&query).top_k(5).token_budget(1500).call(),
+    )
+    .await;
+
+    let ms = u64::try_from(t0.elapsed().as_millis()).unwrap_or(u64::MAX);
+    match outcome {
+        Ok(Ok(r)) if !r.context.is_empty() => {
+            let n = usize::try_from(r.total_found).unwrap_or(0);
+            let nonce = vault_nonce();
+            let block = format!(
+                "[VAULT-DATA::{nonce}]\n{}\n[/VAULT-DATA::{nonce}]\n",
+                r.context
+            );
+            (block, n, false, ms)
+        }
+        Ok(Ok(_)) => (String::new(), 0, false, ms),
+        Ok(Err(e)) => {
+            tracing::debug!(error = %e, "soul_grounding: rrf query error");
+            (String::new(), 0, false, ms)
+        }
+        Err(_timeout) => (String::new(), 0, true, ms),
+    }
+}
+
+// ── Turn write-back ───────────────────────────────────────────────────────────
+
+/// Persist a completed copilot Q&A turn to the SOUL vault (fire-and-forget).
+///
+/// SOUL's async write-through indexes the entry in `SQLite` FTS5 and the HNSW
+/// embedding store, making it retrievable by both [`search`] and [`query_rrf`]
+/// on subsequent turns.  Errors are logged at `debug` level — the copilot
+/// response has already been returned to the user, so write failures are
+/// non-critical.
+pub fn spawn_write_turn(
+    client: Arc<SoulClient<StdioTransport>>,
+    build_id: Uuid,
+    question: String,
+    answer: String,
+) {
+    tokio::spawn(async move {
+        write_turn_inner(&client, build_id, &question, &answer).await;
+    });
+}
+
+async fn write_turn_inner(
+    client: &SoulClient<StdioTransport>,
+    build_id: Uuid,
+    question: &str,
+    answer: &str,
+) {
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let path = format!(
+        "claude/entries/{today}-copilot-{}-{}.md",
+        &build_id.to_string()[..8],
+        vault_nonce()
+    );
+
+    // Truncate to keep entries concise: 600-char question + 2000-char answer.
+    let q_trunc = truncate_to_bytes(question, 600);
+    let a_trunc = truncate_to_bytes(answer, 2000);
+    let title_raw = question.chars().take(72).collect::<String>();
+
+    let mut content = String::with_capacity(q_trunc.len() + a_trunc.len() + 256);
+    let _ = writeln!(content, "---");
+    let _ = writeln!(content, "title: \"Copilot — {title_raw}\"");
+    let _ = writeln!(content, "significance: 5.5");
+    let _ = writeln!(content, "step_date: {today}");
+    let _ = writeln!(content, "tags: [copilot, qa, webshell]");
+    let _ = writeln!(content, "---");
+    let _ = writeln!(content);
+    let _ = writeln!(content, "## Question\n{q_trunc}");
+    let _ = writeln!(content);
+    let _ = writeln!(content, "## Answer\n{a_trunc}");
+
+    match client.write_note(&path, &content).await {
+        Ok(_) => tracing::debug!(path, "soul_grounding: turn persisted to vault"),
+        Err(e) => tracing::debug!(error = %e, path, "soul_grounding: write_turn failed"),
+    }
+}
+
+// ── Vault nonce ───────────────────────────────────────────────────────────────
 
 /// Generate an 8-char hex nonce for vault delimiter hardening.
 pub fn vault_nonce() -> String {

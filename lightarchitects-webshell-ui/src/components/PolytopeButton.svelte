@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import PolytopeIcon from './PolytopeIcon.svelte';
-  import { drawerWidthPx } from '$lib/stores';
+  import { drawerWidthPx, copilotDrawerOpen } from '$lib/stores';
   import { settingsOpen } from '$lib/setup';
   import { quickPickOpen } from '$lib/cockpit/stores';
 
@@ -88,16 +88,17 @@
     {/each}
   {/if}
 
-  <!-- Polytope — always at the bottom; click opens copilot, hover reveals menu -->
+  <!-- Polytope — always at the bottom; click toggles copilot, hover reveals menu -->
   <button
     class="polytope-btn"
+    class:polytope-btn--active={$copilotDrawerOpen}
     onmouseenter={onEnter}
     onmouseleave={onLeave}
     onclick={openCopilot}
-    aria-label="Open copilot"
-    title="Open Copilot (Ctrl+`)"
+    aria-label={$copilotDrawerOpen ? 'Close copilot' : 'Open copilot'}
+    title={$copilotDrawerOpen ? 'Close Copilot (Ctrl+`)' : 'Open Copilot (Ctrl+`)'}
   >
-    <div class="halo" class:halo--open={menuOpen}></div>
+    <div class="halo" class:halo--open={menuOpen || $copilotDrawerOpen}></div>
     <PolytopeIcon type="tesseract" color="rgb({pr},{pg},{pb})" size={32} />
   </button>
 </div>
@@ -148,6 +149,10 @@
     animation: none;
     opacity: 1;
     transform: scale(1.2);
+  }
+
+  .polytope-btn--active :global(canvas) {
+    filter: drop-shadow(0 0 12px rgba(var(--pc, 255,215,0), 1.0)) drop-shadow(0 0 28px rgba(var(--pc, 255,215,0), 0.5)) !important;
   }
 
   .polytope-btn:hover .halo:not(.halo--open) {

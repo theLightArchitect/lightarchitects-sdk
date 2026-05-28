@@ -22,6 +22,7 @@
 use std::path::{Path, PathBuf};
 
 use tokio::sync::broadcast;
+use tracing::{debug, warn};
 use uuid::Uuid;
 
 use lightarchitects::{
@@ -160,6 +161,7 @@ async fn run_build(ctx: BridgeContext) {
     };
 
     // AYIN: build-root span parented to the user.message turn span.
+    debug!(codename = %codename, wave_count, "squad: build started");
     let build_span_id = emit_squad_span(
         "squad.build.started",
         serde_json::json!({"codename": &codename, "wave_count": wave_count}),
@@ -229,6 +231,12 @@ async fn run_build(ctx: BridgeContext) {
                 ),
                 None,
             );
+            debug!(
+                codename = %codename,
+                succeeded = summary.succeeded,
+                failed = summary.failed,
+                "squad: build completed"
+            );
             emit_squad_span(
                 "squad.build.completed",
                 serde_json::json!({
@@ -258,6 +266,7 @@ async fn run_build(ctx: BridgeContext) {
                 &format!("ESCALATION: build halted — {e:?}"),
                 Some("canon://agents-playbook#§15"),
             );
+            warn!(codename = %codename, error = %e, "squad: build failed");
             emit_squad_span(
                 "squad.build.failed",
                 serde_json::json!({"codename": &codename, "error": e.to_string()}),
@@ -328,6 +337,7 @@ pub(crate) fn make_worker(
         let depends_on = spec.task.depends_on.clone();
         let file_ownership = spec.task.file_ownership.clone();
         // AYIN: per-task span; parent = root build span.
+        debug!(task_id = %task_id, wave_index, "squad: task started");
         let task_span_id = emit_squad_span(
             "squad.task.started",
             serde_json::json!({"task_id": &task_id, "wave_index": wave_index}),
@@ -538,6 +548,7 @@ async fn escalate_to_hitl(
     tx_slot: &broadcast::Sender<WebEventV2>,
     dw: &DecisionsWriter,
 ) -> Result<(), String> {
+    warn!(task_id = %task_id, reason = %reason, wave_index, "squad: task escalated to HITL");
     emit_squad_span(
         "squad.task.escalation",
         serde_json::json!({"task_id": task_id, "reason": &reason}),
@@ -766,6 +777,7 @@ async fn worker_body(
         }
     }
 
+    debug!(task_id = %task_id, wave_index, "squad: task completed");
     emit_squad_span(
         "squad.task.completed",
         serde_json::json!({"task_id": &task_id, "wave_index": wave_index}),

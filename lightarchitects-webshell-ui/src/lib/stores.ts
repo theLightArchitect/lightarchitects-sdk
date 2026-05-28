@@ -136,6 +136,9 @@ export const promotionFeed = writable<SoulPromotionPayload[]>([]);
 /** UI toggle for the MemoryDrawer overlay. */
 export const memoryDrawerOpen = writable<boolean>(false);
 
+/** UI toggle for the CopilotDrawer — exported so corner buttons can read open state. */
+export const copilotDrawerOpen = writable<boolean>(false);
+
 // --- SOUL vault health (drives helix entity data) ---
 
 /** Per-sibling entry counts from /api/soul/health. Null until fetched. */

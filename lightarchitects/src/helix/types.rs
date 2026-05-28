@@ -202,6 +202,41 @@ pub enum ScopeTier {
     Shared,
 }
 
+/// Inferred intent of a user query against a `Helix`. Callers can use this to
+/// select an optimal `RetrievalMode` and generation prompt.
+///
+/// Empirically derived from a 500-question study on `LongMemEval-S`
+/// (2026-05-27, Sonnet 4.6 + 3-judge ensemble). Per-intent winning strategies:
+///
+/// | Intent       | Optimal retrieval                | Optimal prompt policy           | Sonnet 4.6 acc |
+/// |--------------|----------------------------------|---------------------------------|---------------:|
+/// | `Literal`    | hybrid RRF top-10                | "exact specific answer + UNKNOWN" |   0.94-0.97  |
+/// | `Preference` | hybrid RRF top-10                | "describe user's stored preference" |   0.833    |
+/// | `Temporal`   | hybrid RRF top-10 + temporal boost | "compute date arithmetic"     |   0.795    |
+/// | `Counting`   | **full context (no retrieval)**  | "enumerate + dedupe + count"    |   0.760    |
+/// | `Abstention` | hybrid RRF top-10                | LITERAL with UNKNOWN-with-related |   0.933    |
+///
+/// See `helix::generation` module for the canonical prompt policies and
+/// `RetrievalMode::FullContext` for the `Counting` recommendation.
+///
+/// `Counting` + `FullContext` is **Sonnet-class capability dependent**: cheap
+/// long-context models (e.g. Llama 4 Scout) collapsed -45.9pp on this exact
+/// combination because long-context attention quality varies by model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum QuestionIntent {
+    /// Single-fact lookup ("What did I buy?"). Optimal: hybrid retrieval.
+    Literal,
+    /// Preference inference ("What would I like?"). Optimal: hybrid retrieval + preference prompt.
+    Preference,
+    /// Date arithmetic or temporal ordering ("How many days ago…"). Optimal: retrieval + temporal boost.
+    Temporal,
+    /// Counting or enumeration across history ("How many X total"). Optimal: full context (no retrieval).
+    Counting,
+    /// Question whose answer is genuinely absent from history ("Did I mention my hamster?").
+    /// Optimal: hybrid retrieval + `UNKNOWN`-with-related-fact prompt.
+    Abstention,
+}
+
 impl std::fmt::Display for ScopeTier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

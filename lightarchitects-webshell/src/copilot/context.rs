@@ -294,12 +294,14 @@ pub fn validate(
 pub fn assemble_prompt_prelude(
     identity: &str,
     soul_block: &str,
+    code_block: &str,
     git: Option<&GitContext>,
     events: &[RecentEventEntry],
     ui: Option<&UiContext>,
 ) -> String {
     if identity.is_empty()
         && soul_block.is_empty()
+        && code_block.is_empty()
         && git.is_none()
         && events.is_empty()
         && ui.is_none()
@@ -312,6 +314,7 @@ pub fn assemble_prompt_prelude(
     });
     let estimated = identity.len()
         + soul_block.len()
+        + code_block.len()
         + git_size
         + events.len() * OVERHEAD_PER_EVENT
         + ui.map_or(0, |ctx| ctx.route.len() + 128);
@@ -326,6 +329,12 @@ pub fn assemble_prompt_prelude(
     if !soul_block.is_empty() {
         out.push_str("[Knowledge]\n");
         out.push_str(soul_block);
+        out.push('\n');
+    }
+
+    if !code_block.is_empty() {
+        out.push_str("[Code]\n");
+        out.push_str(code_block);
         out.push('\n');
     }
 
@@ -413,13 +422,13 @@ mod tests {
 
     #[test]
     fn context_assembly_empty() {
-        assert!(assemble_prompt_prelude("", "", None, &[], None).is_empty());
+        assert!(assemble_prompt_prelude("", "", "", None, &[], None).is_empty());
     }
 
     #[test]
     fn context_assembly_events_only() {
         let events = vec![entry(1, sjson!({"type": "BuildStarted"}))];
-        let out = assemble_prompt_prelude("", "", None, &events, None);
+        let out = assemble_prompt_prelude("", "", "", None, &events, None);
         assert!(out.contains("<recent_events>"));
         assert!(out.contains("seq=1"));
         assert!(out.contains("BuildRunner"));
@@ -436,7 +445,7 @@ mod tests {
             degraded: vec![],
             cockpit: None,
         };
-        let out = assemble_prompt_prelude("", "", None, &events, Some(&ctx));
+        let out = assemble_prompt_prelude("", "", "", None, &events, Some(&ctx));
         assert!(out.contains("<recent_events>"));
         assert!(out.contains("seq=42"));
         assert!(out.contains("<ui_context>"));
@@ -457,7 +466,7 @@ mod tests {
             ],
             cockpit: None,
         };
-        let out = assemble_prompt_prelude("", "", None, &[], Some(&ctx));
+        let out = assemble_prompt_prelude("", "", "", None, &[], Some(&ctx));
         assert!(out.contains("<ui_context>"));
         assert!(out.contains("degraded: stream_disconnected, gitforest_stale"));
     }
@@ -558,7 +567,7 @@ mod tests {
                 }),
             }),
         };
-        let out = assemble_prompt_prelude("", "", None, &[], Some(&ctx));
+        let out = assemble_prompt_prelude("", "", "", None, &[], Some(&ctx));
         assert!(out.contains("cockpit.preset: engineer"));
         assert!(out.contains("cockpit.target: pr"));
         assert!(out.contains("pull/47"));

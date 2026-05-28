@@ -222,9 +222,16 @@ pub fn lightsquad_plan_tool_definition() -> ToolDefinition {
 
     ToolDefinition {
         name: "lightsquad_plan".to_string(),
-        description: "Launch an autonomous LightSquad build with wave-partitioned parallel tasks. \
-            USE when the request spans ≥3 files OR requires ≥2 independent investigation threads. \
-            SKIP for single-file/single-thread work — that is cheaper via the streaming provider. \
+        description: "Launch an autonomous LightSquad build: spawns parallel workers that write \
+            code, run tests, and commit results across multiple files. \
+            INVOKE ONLY when the operator explicitly requests implementation work — e.g. \
+            'build X', 'implement Y', 'add feature Z', 'create a new module for ...', \
+            or when a /BUILD / /SQUAD skill is invoked. \
+            DO NOT invoke for: questions ('how do I...', 'what is...', 'explain...'), \
+            explanations of code or concepts, debugging advice, code review, \
+            single-file edits, or any request that does not explicitly ask you to write \
+            and commit code into a git branch. \
+            When in doubt, answer the question directly in the streaming response instead. \
             The operator must approve the plan via HITL before execution begins. \
             Returns a BuildSummary with succeeded/failed task counts when complete."
             .to_string(),

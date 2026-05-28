@@ -258,6 +258,20 @@ impl TraceContext {
         self.id
     }
 
+    /// Override the auto-generated span id with a caller-supplied UUID.
+    ///
+    /// Useful when the id must be known *before* the span is finalised so
+    /// that child operations (executed inside the same logical scope) can
+    /// reference it as their `parent_id`. The canonical use case is
+    /// [`crate::helix::generation::telemetry::PipelineSpan`], which seeds
+    /// the task-local context with the pipeline span's id before running
+    /// the wrapped pipeline closure.
+    #[must_use]
+    pub fn with_id(mut self, id: Uuid) -> Self {
+        self.id = id;
+        self
+    }
+
     /// Set a parent span for nesting.
     #[must_use]
     pub fn parent(mut self, parent_id: Uuid) -> Self {

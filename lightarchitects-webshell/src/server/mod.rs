@@ -134,6 +134,17 @@ pub struct AppState {
     /// entries ingested from Claude Code are immediately visible here without
     /// an extra fetch layer.
     pub soul_store: Option<Arc<crate::memory::persistence::SoulPersistence>>,
+    /// SOUL MCP client for 4-signal RRF retrieval and per-turn write-back.
+    ///
+    /// Populated asynchronously at startup by spawning the SOUL binary.
+    /// Handlers call `.get()` — `None` until the MCP handshake completes
+    /// (~200 ms); the copilot grounding path degrades to BM25 `SQLite` in
+    /// the interim and whenever the binary is unavailable.
+    pub soul_client: Arc<
+        tokio::sync::OnceCell<
+            Arc<lightarchitects::soul::SoulClient<lightarchitects::core::StdioTransport>>,
+        >,
+    >,
     /// Phase 19c.2 — hot-reloadable promotion policy handle.
     ///
     /// `None` when the policy YAML could not be resolved (e.g. `HOME` unavailable).
@@ -329,6 +340,31 @@ impl AppState {
                 (Some(h), Some(std::sync::Arc::new(w)))
             });
 
+        // SOUL MCP client — 4-signal RRF retrieval + turn write-back.
+        // Spawned asynchronously so server boot is not gated on the subprocess handshake.
+        let soul_client: Arc<
+            tokio::sync::OnceCell<
+                Arc<lightarchitects::soul::SoulClient<lightarchitects::core::StdioTransport>>,
+            >,
+        > = Arc::default();
+        {
+            let cell = Arc::clone(&soul_client);
+            tokio::spawn(async move {
+                match lightarchitects::soul::SoulClient::local_builder()
+                    .build()
+                    .await
+                {
+                    Ok(c) => {
+                        let _ = cell.set(Arc::new(c));
+                        tracing::info!(target: "soul", "SOUL MCP client ready — 4-signal RRF active");
+                    }
+                    Err(e) => {
+                        tracing::warn!(target: "soul", error = %e, "SOUL client init failed — BM25 fallback active");
+                    }
+                }
+            });
+        }
+
         // Phase 11.1 — auto-backfill SQLite from filesystem on startup.
         // Phase 11.3 — attach Neo4j if WEBSHELL_NEO4J_URI is set + reachable.
         // Both are fire-and-forget so server boot doesn't wait on I/O.
@@ -422,6 +458,7 @@ impl AppState {
             builds: Arc::new(BuildRegistry::new()),
             active_agent,
             soul_store,
+            soul_client,
             promotion_policy,
             _policy_watcher: policy_watcher,
             embedding_provider: Arc::new(tokio::sync::OnceCell::new()),
@@ -571,6 +608,7 @@ impl AppState {
             builds: Arc::new(BuildRegistry::new()),
             active_agent,
             soul_store: None,
+            soul_client: Arc::default(),
             promotion_policy: None,
             _policy_watcher: None,
             embedding_provider: Arc::new(tokio::sync::OnceCell::new()),
@@ -1021,6 +1059,7 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/git/pr/create", post(git_routes::create_pr_handler))
         .route("/api/git/pr/review", post(git_routes::review_pr_handler))
         .route("/api/git/worktrees", post(git_routes::worktrees_handler))
+        .route("/api/git/log", get(git_routes::log_handler))
         // ── Roadmap artifact (webshell-roadmap-rendering) ────────────────────
         .route("/api/roadmap", get(roadmap::roadmap_handler))
         // ── HITL inbox — GitHub PR review queue (webshell-hitl-inbox Phase 1) ─

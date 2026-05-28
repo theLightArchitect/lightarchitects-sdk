@@ -9,7 +9,7 @@ use lightarchitects::chat::{
     ActiveRoster, ConversationContext, PersonalityEngine, SiblingProvider,
 };
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{debug, warn};
 
 // ---------------------------------------------------------------------------
 // AttributedResponse
@@ -76,6 +76,10 @@ impl MultiVoiceSynthesizer {
         }
 
         // Spawn parallel tasks — one per sibling.
+        debug!(
+            sibling_count = infos.len(),
+            "chatroom: dispatching parallel personality generation"
+        );
         let engine = Arc::clone(&self.engine);
         let context = context.clone();
 
@@ -97,6 +101,7 @@ impl MultiVoiceSynthesizer {
         for handle in handles {
             match handle.await {
                 Ok((idx, sibling, Ok(msg))) => {
+                    debug!(%sibling, frame_idx = idx, content_len = msg.content.len(), "chatroom: personality generated");
                     responses.push(AttributedResponse {
                         sibling,
                         content: msg.content,

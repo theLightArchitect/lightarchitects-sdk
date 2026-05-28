@@ -51,6 +51,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
 
+use crate::agent::OpenAIFlavor;
 use crate::lightsquad::contract::{Dimension, DimensionScore, TaskContract, Verdict};
 use crate::lightsquad::contract_prompt::build_evaluator_prompt;
 
@@ -191,60 +192,6 @@ pub enum SupervisorProvider {
     },
 }
 
-/// Flavors of OpenAI-compatible providers. Each variant only differs in its
-/// default base URL and the env vars used to populate `api_key`; the HTTP
-/// dispatch code path is identical.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OpenAIFlavor {
-    /// Native OpenAI API (`https://api.openai.com/v1`).
-    Native,
-    /// OpenRouter (`https://openrouter.ai/api/v1`) — model names like
-    /// `anthropic/claude-sonnet-4`, `openai/gpt-5`, `google/gemini-2.5`.
-    OpenRouter,
-    /// LiteLLM proxy (default `http://localhost:4000/v1`) — proxies many
-    /// backends including Vertex AI under the OpenAI shape.
-    LiteLLM,
-    /// Generic OpenAI-compatible endpoint — used when `LIGHTSQUAD_SUPERVISOR_PROVIDER`
-    /// is `openai-compatible` or `generic` and a base URL is supplied explicitly.
-    /// Used to route Together, Groq, Fireworks, Azure OpenAI, etc.
-    Generic,
-}
-
-impl OpenAIFlavor {
-    /// Short identifier — appears in `SupervisorProvider::name()` output.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Native => "openai",
-            Self::OpenRouter => "openrouter",
-            Self::LiteLLM => "litellm",
-            Self::Generic => "openai-compatible",
-        }
-    }
-
-    /// Default base URL when the operator hasn't supplied one.
-    #[must_use]
-    pub const fn default_base_url(self) -> &'static str {
-        match self {
-            Self::Native => "https://api.openai.com/v1",
-            Self::OpenRouter => "https://openrouter.ai/api/v1",
-            Self::LiteLLM => "http://localhost:4000/v1",
-            Self::Generic => "", // forces operator to supply LIGHTSQUAD_SUPERVISOR_BASE_URL
-        }
-    }
-
-    /// Provider-specific API-key env var (checked after `LIGHTSQUAD_SUPERVISOR_API_KEY`).
-    #[must_use]
-    pub const fn default_api_key_env(self) -> &'static str {
-        match self {
-            Self::Native => "OPENAI_API_KEY",
-            Self::OpenRouter => "OPENROUTER_API_KEY",
-            Self::LiteLLM => "LITELLM_API_KEY",
-            Self::Generic => "LIGHTSQUAD_SUPERVISOR_API_KEY",
-        }
-    }
-}
-
 impl SupervisorProvider {
     /// Resolve the supervisor provider from environment variables.
     ///
@@ -268,7 +215,7 @@ impl SupervisorProvider {
         match kind.as_str() {
             "codex" => Self::codex_from_env(),
             "ollama" | "ollama-cloud" => Self::ollama_from_env(),
-            "openai" | "openai-native" => Self::openai_compatible_from_env(OpenAIFlavor::Native),
+            "openai" | "openai-native" => Self::openai_compatible_from_env(OpenAIFlavor::OpenAi),
             "openrouter" => Self::openai_compatible_from_env(OpenAIFlavor::OpenRouter),
             "litellm" | "litellm-proxy" => Self::openai_compatible_from_env(OpenAIFlavor::LiteLLM),
             "openai-compatible" | "generic" | "vertex" | "vertex-ai" => {
@@ -370,7 +317,7 @@ impl SupervisorProvider {
             .filter(|s| !s.is_empty())
             .or_else(|| {
                 let provider_url_env = match flavor {
-                    OpenAIFlavor::Native => "OPENAI_BASE_URL",
+                    OpenAIFlavor::OpenAi => "OPENAI_BASE_URL",
                     OpenAIFlavor::OpenRouter => "OPENROUTER_BASE_URL",
                     OpenAIFlavor::LiteLLM => "LITELLM_BASE_URL",
                     OpenAIFlavor::Generic => "LIGHTSQUAD_SUPERVISOR_BASE_URL",
@@ -761,8 +708,8 @@ impl ContractSupervisor {
         let url = format!("{base_url}/api/chat");
         let api_key_owned = api_key.map(|k| k.expose_secret().to_owned());
 
+        let client = reqwest::Client::new();
         let bytes = with_transient_retry("ollama", || async {
-            let client = reqwest::Client::new();
             let mut req = client.post(&url).json(&body);
             if let Some(token) = &api_key_owned {
                 req = req.bearer_auth(token);
@@ -861,8 +808,8 @@ impl ContractSupervisor {
         let url = format!("{base_url}/chat/completions");
         let api_key_owned = api_key.expose_secret().to_owned();
 
+        let client = reqwest::Client::new();
         let bytes = with_transient_retry("openai-compatible", || async {
-            let client = reqwest::Client::new();
             let mut req = client.post(&url).json(&body).bearer_auth(&api_key_owned);
             // OpenRouter-specific app-attribution headers (optional but
             // recommended — improves rate-limit treatment per their docs).
@@ -1338,7 +1285,7 @@ mod tests {
     fn openai_compatible_flavors_name_and_describe_correctly() {
         let cases = [
             (
-                OpenAIFlavor::Native,
+                OpenAIFlavor::OpenAi,
                 "openai",
                 "https://api.openai.com/v1",
                 "gpt-5",
@@ -1357,7 +1304,7 @@ mod tests {
             ),
             (
                 OpenAIFlavor::Generic,
-                "openai-compatible",
+                "openai-compat",
                 "http://acme.local/v1",
                 "custom-model",
             ),
@@ -1382,10 +1329,10 @@ mod tests {
     #[test]
     fn openai_flavor_defaults_match_canonical_values() {
         assert_eq!(
-            OpenAIFlavor::Native.default_base_url(),
+            OpenAIFlavor::OpenAi.default_base_url(),
             "https://api.openai.com/v1"
         );
-        assert_eq!(OpenAIFlavor::Native.default_api_key_env(), "OPENAI_API_KEY");
+        assert_eq!(OpenAIFlavor::OpenAi.default_api_key_env(), "OPENAI_API_KEY");
 
         assert_eq!(
             OpenAIFlavor::OpenRouter.default_base_url(),

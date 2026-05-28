@@ -11,9 +11,11 @@ Light Architects unified Rust SDK. **v0.2.0 — HTTP-first platform model.**
 
 | Crate | Type | Purpose |
 |-------|------|---------|
-| `lightarchitects` | Library | Unified SDK — all 13 modules |
+| `lightarchitects` | Library | Unified SDK — all 25+ modules |
 | `lightarchitects-gateway` | Binary | MCP server + Arena HTTP + Conductor |
 | `lightarchitects-webshell` | Binary | Local web GUI (PTY + 3D helix panel) |
+| `lightarchitects-arch` | Library | Architecture intelligence — extract, verify, emit |
+| `lightarchitects-webshell-mcp-host` | Library | Generic MCP host — spawn, handshake, HTTP surface |
 
 ---
 
@@ -24,16 +26,23 @@ Light Architects unified Rust SDK. **v0.2.0 — HTTP-first platform model.**
 | `core` | Wire protocol, stdio transport, JSON-RPC, retry, errors |
 | `crypto` | HKDF, HMAC, AES-256-GCM, Ed25519, SecretStore |
 | `auth` | API key validation — 3-tier degradation (NoKey / GracePeriod / Valid) |
+| `agent` | LlmAgentProvider trait, AgentRequest, streaming provider adapters |
+| `chat` | Multi-voice sibling chatroom — speaker selection, personality engine, sibling discovery (Phase 2-3) |
 | `soul` | SOUL MCP client — 23 actions (soulTools) |
 | `corso` | CORSO MCP client — 26 actions (corsoTools) |
 | `eva` | EVA MCP client — 9 tools, dual-path adapter |
 | `quantum` | QUANTUM MCP client — 13 actions (qsTools) |
 | `seraph` | SERAPH MCP client — 18 actions, Content-Length framing (penTools) |
-| `ayin` | AYIN observability — TraceSpan types + ObservableTransport + HTTP viewer client. `GatewaySpanContext` task-local in `lightarchitects-gateway/src/span_context.rs` + LOD-aware Lineage Circuit (FULL/COMPACT/SHAPES) in AYIN dashboard |
-| `arena` | Training data factory — discover → generate → execute → score → export |
+| `ayin` | AYIN observability — TraceSpan types + ObservableTransport + HTTP viewer client |
+| `arena` / `research_arena` | Training data factory — discover → generate → execute → score → export |
 | `oracle` | Multi-model mathematical verification (Lean 4 + DeepSeek + Qwen + Kimi) |
 | `helix` | Neo4j graph backend — HelixStore, 5 primitives, 4-signal RRF retrieval |
 | `turnlog` | Tier-1 ephemeral transactional log — HMAC chaining, helix promotion |
+| `fleet` | Live agent fleet tracking — DashMap state machine + JSONL tailer |
+| `lightsquad` | Autonomous code-delivery orchestration engine (IronClaw) |
+| `platform` | Gateway HTTP routes — platform API, Arena, ETag generation |
+| `credentials` | Credential management — API key load, provider auth wiring |
+| `observability` | Observability — GatewaySpanContext, turn_span_id, lineage circuit |
 
 ---
 
@@ -116,11 +125,23 @@ test fixture. This was the V3 E2E gap in vibe-coding-loop, closed by commit b8e5
 
 ## Feature Flags (`lightarchitects`)
 
-Default: all enabled (`sqlite`, `search`, `ingestion`, `compaction`, `cypher`,
+Default (all enabled): `sqlite`, `search`, `ingestion`, `compaction`, `cypher`,
 `embedding-ollama`, `embedding-fastembed`, `embedding-llama-cpp`, `observe`,
-`conversations`, `http-client`, `neo4j`, `file`, `dual`, `fastembed`, `rerank`, `ssh`, `cli`).
+`conversations`, `http-client`, `neo4j`, `file`, `dual`, `fastembed`, `rerank`,
+`ssh`, `cli`, `fleet`.
 
-Optional (off by default): `keychain`, `text2cypher`, `test-utils`.
+Optional (off by default): `keychain`, `text2cypher`, `test-utils`, `agent-cli`,
+`credentials`, `credentials-display-names`, `credentials-detailed-locator`,
+`providers-anthropic`, `providers-openai`, `providers-google`, `lightsquad`,
+`loops-core`, `chat`.
+
+**Composite features**:
+- `lightsquad` ⇒ `agent-cli` + `http-client` + `credentials` (IronClaw autonomous delivery)
+- `loops-core` — Strategy trait, LoopRunner, compose combinators (provider-agnostic)
+- `chat` — Multi-voice sibling chatroom engine (Phase 2-3 delivered)
+- `dual` ⇒ `neo4j` + `file` (dual persistence mode)
+- `providers-*` ⇒ `credentials` (each provider wires its own auth)
+- `credentials-display-names` / `credentials-detailed-locator` ⇒ `credentials`
 
 ---
 
@@ -316,6 +337,15 @@ Symptom: process exits immediately with code 137, no output, no error message.
 ## No External Path Dependencies
 
 All dependencies resolve from crates.io. No path deps to other workspace repos.
+
+## Non-Code Directories
+
+| Directory | Purpose |
+|-----------|---------|
+| `arch/` | Architecture artifacts — ADRs, C2 container diagrams, C3 span hierarchy, screen flows |
+| `seraph/` | SERAPH pentest scope configuration (`scope.toml`) |
+| `standards/` | Canonical coding standards (symlink to primary worktree — use worktree-relative path when editing) |
+| `eval/` | Eval runner — Ollama judge, 100-sample evals, plan_schema tests |
 
 ---
 

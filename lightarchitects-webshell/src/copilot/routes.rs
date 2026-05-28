@@ -173,6 +173,16 @@ pub async fn copilot_chat_handler(
     match result {
         Ok(text) => {
             emit_message_span(&state, "assistant", &text, Some(&turn_span_id), Some(id));
+            // Persist Q&A to SOUL vault so future turns can retrieve this exchange
+            // via 4-signal RRF.  Fire-and-forget — client already has the response.
+            if let Some(client) = state.soul_client.get() {
+                super::soul_grounding::spawn_write_turn(
+                    std::sync::Arc::clone(client),
+                    id,
+                    body.message.clone(),
+                    text.clone(),
+                );
+            }
             (
                 StatusCode::OK,
                 grounding_hdrs,
@@ -226,7 +236,13 @@ async fn native_turn_task(
     tool_executor: Arc<LightsquadToolExecutor>,
     turn_span_id: String,
     build_id: Uuid,
+    model: String,
 ) {
+    let provider_name = if ollama_provider.is_some() {
+        "ollama-cli"
+    } else {
+        "claude-cli"
+    };
     let memory = HelixSessionMemory::open(&cwd, 40);
     let restored = memory.restored_turn_count();
     tracing::debug!(restored_turns = restored, "helix session memory loaded");
@@ -238,6 +254,7 @@ async fn native_turn_task(
     };
     let mut transport = SseTransport::new(write_half);
     let ctx = ChainContext::default();
+    let start = std::time::Instant::now();
     let result = if let Some(provider) = ollama_provider {
         let mut session = ConversationSession::new(config, Arc::new(provider))
             .with_memory(Box::new(memory))
@@ -251,8 +268,9 @@ async fn native_turn_task(
             .with_tool_executor(tool_executor);
         session.run_turn(&msg, &mut transport, &ctx).await
     };
+    let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
     if let Err(e) = result {
-        tracing::error!(error = %e, "run_turn failed");
+        tracing::error!(error = %e, provider = provider_name, model = %model, "run_turn failed");
         let _ = transport
             .emit(&ConversationEvent::Error {
                 message: e.to_string(),
@@ -260,11 +278,16 @@ async fn native_turn_task(
             })
             .await;
     } else {
-        tracing::info!("run_turn completed");
+        tracing::info!(provider = provider_name, model = %model, duration_ms, "run_turn completed");
         emit_disk_span(
             "claude",
             "assistant.response",
-            serde_json::json!({}),
+            serde_json::json!({
+                "build_id": build_id.to_string(),
+                "provider": provider_name,
+                "model": model,
+                "duration_ms": duration_ms,
+            }),
             lightarchitects::ayin::TraceOutcome::Continue,
             turn_span_id.parse::<uuid::Uuid>().ok(),
             Some(build_id),
@@ -365,6 +388,7 @@ fn drive_native_sse(
             tool_executor,
             turn_span_id,
             build_id,
+            model.clone(),
         )
         .instrument(span),
     );
@@ -455,9 +479,20 @@ async fn gather_grounding(
 ) -> (String, String, Option<super::git_context::GitContext>) {
     let wall_t0 = std::time::Instant::now();
 
-    // SOUL future: top-5 BM25, 400 ms hard timeout.
+    // SOUL future: prefer 4-signal RRF via MCP client; fall back to BM25.
     let soul_fut = async {
         let soul_t0 = std::time::Instant::now();
+
+        // Primary: 4-signal RRF (BM25 + semantic + graph + structural).
+        if let Some(client) = state.soul_client.get() {
+            let (block, count, timed_out, ms) =
+                super::soul_grounding::query_rrf(client, id, message).await;
+            if !block.is_empty() || timed_out {
+                return (block, count, timed_out, ms);
+            }
+        }
+
+        // Fallback: BM25 SQLite when the MCP client is unavailable or empty.
         let (block, count, timed_out) = if let Some(soul) = state.soul_store.as_deref() {
             let msg_prefix: String = message.chars().take(150).collect();
             let fts5_expr = format!("{id} {msg_prefix}");
@@ -501,16 +536,24 @@ async fn gather_grounding(
         (ctx, timed_out, ms)
     };
 
-    // Parallel execution — wall-clock is max of the two timeouts, not sum.
+    // Code-grounding future: grep the source tree for symbols in the message.
+    // `search_code` handles its own 500 ms internal timeout; we just join it.
+    let code_root = state.config.cwd.clone();
+    let code_fut = super::code_grounding::search_code(&code_root, message);
+
+    // Parallel execution — wall-clock is max of the three timeouts, not sum.
     let (
         (soul_block, soul_result_count, soul_timed_out, soul_ms),
         (git_ctx, git_timed_out, git_ms),
-    ) = tokio::join!(soul_fut, git_fut);
+        code_block,
+    ) = tokio::join!(soul_fut, git_fut, code_fut);
+    let code_block = code_block.unwrap_or_default();
     let grounding_wall_ms = u64::try_from(wall_t0.elapsed().as_millis()).unwrap_or(u64::MAX);
 
     let prelude = context::assemble_prompt_prelude(
         identity,
         &soul_block,
+        &code_block,
         git_ctx.as_ref(),
         recent_events,
         ui_context,
@@ -912,8 +955,14 @@ mod integration_tests {
             .unwrap_or(Path::new("/tmp"));
         let git_ctx = git_context::gather(sdk_root).await;
 
-        let prelude =
-            context::assemble_prompt_prelude(identity, &soul_block, git_ctx.as_ref(), &[], None);
+        let prelude = context::assemble_prompt_prelude(
+            identity,
+            &soul_block,
+            "",
+            git_ctx.as_ref(),
+            &[],
+            None,
+        );
 
         // All four blocks present
         assert!(
@@ -950,8 +999,14 @@ mod integration_tests {
         let soul_block = String::new();
         let git_ctx: Option<git_context::GitContext> = None;
 
-        let prelude =
-            context::assemble_prompt_prelude(identity, &soul_block, git_ctx.as_ref(), &[], None);
+        let prelude = context::assemble_prompt_prelude(
+            identity,
+            &soul_block,
+            "",
+            git_ctx.as_ref(),
+            &[],
+            None,
+        );
 
         assert!(
             !prelude.contains("[Knowledge]"),
@@ -982,8 +1037,14 @@ mod integration_tests {
         let soul_block = soul_grounding::format_block(&nonce, &entries);
         let git_ctx: Option<git_context::GitContext> = None;
 
-        let prelude =
-            context::assemble_prompt_prelude(identity, &soul_block, git_ctx.as_ref(), &[], None);
+        let prelude = context::assemble_prompt_prelude(
+            identity,
+            &soul_block,
+            "",
+            git_ctx.as_ref(),
+            &[],
+            None,
+        );
 
         assert!(
             !prelude.contains("[Identity]"),
@@ -1013,8 +1074,14 @@ mod integration_tests {
 
         assert!(git_ctx.is_none(), "expected None for /tmp, got Some");
 
-        let prelude =
-            context::assemble_prompt_prelude(identity, &soul_block, git_ctx.as_ref(), &[], None);
+        let prelude = context::assemble_prompt_prelude(
+            identity,
+            &soul_block,
+            "",
+            git_ctx.as_ref(),
+            &[],
+            None,
+        );
 
         assert!(
             !prelude.contains("[Git:"),

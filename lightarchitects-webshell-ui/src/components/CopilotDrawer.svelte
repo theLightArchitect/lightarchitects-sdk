@@ -27,7 +27,7 @@
   import SettingsOverlay from './SettingsOverlay.svelte';
   import PolytopeIcon from './PolytopeIcon.svelte';
   import { settingsOpen, pendingResumeSessionId, serverCwd, persistedConfig, selectedModel } from '$lib/setup';
-  import { strategyHitl } from '$lib/stores';
+  import { strategyHitl, copilotDrawerOpen } from '$lib/stores';
   import { drawerWidthPx } from '$lib/stores';
   import { selectedPreset, selectedTarget, PRESET_DISPLAY, quickPickOpen } from '$lib/cockpit/stores';
   import { parseChips } from '$lib/cockpit/copilotChips';
@@ -39,6 +39,8 @@
 
   // --- Drawer state ---
   let open = $state(false);
+  // Sync open → shared store so PolytopeButton can reflect active state
+  $effect(() => { copilotDrawerOpen.set(open); });
   let heightPx = $state(350);   // kept for compatibility; sidebar uses widthPx
   let widthPx = $state(320);
 
@@ -830,15 +832,17 @@
     }
   }
 
-  // Custom event bridge — empty-state CTAs in other screens dispatch
-  // `la:open-copilot` instead of importing/refactoring this drawer's local
-  // open state. Idempotent: re-dispatching while already open is a no-op.
-  // Registered via $effect (not svelte:window on:) because Svelte's
-  // SvelteWindowAttributes doesn't recognise our custom event name.
+  // Custom event bridge — other screens dispatch `la:open-copilot` (open/toggle)
+  // or `la:toggle-copilot` (Ctrl+` hotkey in app.svelte) to drive this drawer
+  // without importing its local state.
   $effect(() => {
-    const handler = () => { if (!open) open = true; };
+    const handler = () => { open = !open; if (!open) showSuggestions = false; };
     window.addEventListener('la:open-copilot', handler);
-    return () => window.removeEventListener('la:open-copilot', handler);
+    window.addEventListener('la:toggle-copilot', handler);
+    return () => {
+      window.removeEventListener('la:open-copilot', handler);
+      window.removeEventListener('la:toggle-copilot', handler);
+    };
   });
 
   // Polytope radial menu bridge — PolytopeButton fan actions route through
