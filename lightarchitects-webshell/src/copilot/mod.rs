@@ -472,11 +472,10 @@ async fn run_print_turn(
         // breaking axum's Handler trait. Use tracing::info! to preserve the span semantics.
         tracing::info!(build_id = %build_id, "app.copilot.turn starting");
 
-        while let Some(line) = reader
-            .next_line()
-            .await
-            .map_err(|e| format!("read stdout: {e}"))?
-        {
+        while let Some(line) = reader.next_line().await.map_err(|e| {
+            tracing::warn!(error = %e, "claude stdout read failed");
+            "claude_read_failed".to_owned()
+        })? {
             // SA-21: parse errors are non-fatal — warn and skip the line.
             let val = match serde_json::from_str::<serde_json::Value>(&line) {
                 Ok(v) => v,
@@ -788,11 +787,10 @@ async fn run_codex_turn(
         let mut turn_error: Option<String> = None;
         let build_id = session.build_id.to_string();
 
-        while let Some(line) = reader
-            .next_line()
-            .await
-            .map_err(|e| format!("read stdout: {e}"))?
-        {
+        while let Some(line) = reader.next_line().await.map_err(|e| {
+            tracing::warn!(error = %e, "codex stdout read failed");
+            "codex_read_failed".to_owned()
+        })? {
             let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
                 tracing::warn!(
                     build_id = %build_id,
