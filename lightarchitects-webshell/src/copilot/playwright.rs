@@ -273,22 +273,25 @@ pub struct DomElement {
 // ---------------------------------------------------------------------------
 
 /// Validate that a URL targets localhost only. Rejects private IPs and
-/// non-local origins to prevent SSRF.
+/// non-local origins to prevent SSRF (Security Guardrails §5.4).
+///
+/// Uses `url::Host` enum variants to avoid string-prefix bypass (e.g.
+/// `127.0.0.1.attacker.com` would pass `starts_with("127.")`).
 fn validate_url(url: &str) -> Result<(), String> {
     let parsed = url::Url::parse(url).map_err(|e| {
         warn!(url, error = %e, "playwright: invalid URL");
         "invalid_url".to_owned()
     })?;
 
-    let host = parsed.host_str().unwrap_or("");
-    let is_allowed = host == "localhost"
-        || host == "127.0.0.1"
-        || host == "::1"
-        || host.starts_with("127.")
-        || host.starts_with("[::1]");
+    let is_allowed = match parsed.host() {
+        Some(url::Host::Domain(d)) => d == "localhost",
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        None => false,
+    };
 
     if !is_allowed {
-        warn!(url, host, "playwright: URL rejected — non-local host");
+        warn!(url, host = ?parsed.host(), "playwright: URL rejected — non-local host");
         return Err("url_not_local".to_owned());
     }
 
@@ -314,7 +317,11 @@ pub struct InitResponse {
 ///
 /// Initializes a `PlaywrightBridge` (if none exists) and returns the auth token.
 /// Dev-mode only — the frontend calls this once when dev tools are activated.
-pub async fn handle_init(State(state): State<crate::server::AppState>) -> axum::response::Response {
+/// Requires Bearer auth (same as other authenticated endpoints).
+pub async fn handle_init(
+    _: crate::auth::AuthGuard,
+    State(state): State<crate::server::AppState>,
+) -> axum::response::Response {
     if !state.config.playwright_enabled() {
         return (
             StatusCode::FORBIDDEN,
@@ -493,6 +500,9 @@ mod tests {
         assert!(validate_url("http://localhost:5173/").is_ok());
         assert!(validate_url("http://127.0.0.1:8733/cockpit").is_ok());
         assert!(validate_url("http://[::1]:5173/").is_ok());
+        // 127.x.x.x loopback range is accepted via Ipv4::is_loopback()
+        assert!(validate_url("http://127.0.0.2:3000/").is_ok());
+        assert!(validate_url("http://127.255.255.255:3000/").is_ok());
     }
 
     #[test]
@@ -501,6 +511,9 @@ mod tests {
         assert!(validate_url("http://192.168.1.1/").is_err());
         assert!(validate_url("http://10.0.0.1/").is_err());
         assert!(validate_url("http://172.16.0.1/").is_err());
+        // SSRF bypass: hostname starting with "127." is NOT a loopback IP
+        assert!(validate_url("http://127.0.0.1.attacker.com/").is_err());
+        assert!(validate_url("http://127.0.0.1.evil.example.com/").is_err());
     }
 
     #[test]

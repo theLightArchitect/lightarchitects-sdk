@@ -1486,7 +1486,9 @@ pub async fn spawn_plan_draft(
     c.arg("--print").arg("-p").arg(&prompt);
     c.arg("--session-id").arg(&args.session_id);
     c.stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null());
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
 
     let mut child = c.spawn().map_err(|_| {
         // Opaque spawn error — internal path redacted from all responses.
