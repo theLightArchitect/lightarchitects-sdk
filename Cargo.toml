@@ -13,9 +13,10 @@ exclude = [
 [workspace.package]
 edition = "2024"
 rust-version = "1.87"
-authors = ["KFT <kf.tan@lightarchitects.io>"]
+authors = ["Kevin Francis Tan <kevinfrancis.tan@gmail.com>"]
 license = "MPL-2.0"
-repository = "https://github.com/TheLightArchitects/lightarchitects-sdk"
+repository = "https://github.com/theLightArchitect/lightarchitects-sdk"
+homepage = "https://github.com/theLightArchitect/lightarchitects-platform"
 
 [workspace.lints.clippy]
 pedantic = { level = "deny", priority = -1 }

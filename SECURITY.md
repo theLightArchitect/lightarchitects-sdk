@@ -28,7 +28,9 @@ Include:
 
 ### Scope
 
-In scope: `lightarchitects`, `lightarchitects-gateway`, `lightarchitects-webshell`.
+In scope: `lightarchitects` (the unified SDK library) and `lightarchitects-webshell` (the local
+web GUI). The `lightarchitects-gateway` binary is workspace-excluded from this repository and
+available on request — security reports for the gateway are also accepted via the contact above.
 
 Out of scope: vulnerabilities in upstream dependencies (report those to the upstream
 project directly); issues that require physical access to the machine running the binary.
