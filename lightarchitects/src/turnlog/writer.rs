@@ -479,6 +479,7 @@ async fn finalise(active: &std::path::Path, ended: &std::path::Path) -> Result<(
 ///
 /// The span's actor is always `claude` (the turnlog writer is Claude's
 /// persistence layer). Outcome is `Continue` for all lifecycle entries.
+#[allow(clippy::expect_used)]
 fn make_span(session_id: &str, action: &str, metadata: serde_json::Value) -> TraceSpan {
     // SAFETY: outcome is always set here — TraceContext::finish() only fails
     // when outcome is None, which cannot happen with our explicit `.outcome()` call.
@@ -491,20 +492,11 @@ fn make_span(session_id: &str, action: &str, metadata: serde_json::Value) -> Tra
         .finish()
         .unwrap_or_else(|e| {
             warn!(target: "turnlog", "span construction failed for {action}: {e}; using fallback");
-            // Construct a minimal span directly when the builder fails (should never happen).
-            TraceSpan {
-                id: uuid::Uuid::new_v4(),
-                parent_id: None,
-                session_id: Some(session_id.to_owned()),
-                actor: Actor::claude(),
-                action: action.to_owned(),
-                timestamp: chrono::Utc::now(),
-                duration_ms: 0,
-                decision_points: Vec::new(),
-                strand_activations: Vec::new(),
-                outcome: TraceOutcome::Continue,
-                metadata: serde_json::Value::Null,
-            }
+            TraceContext::new(Actor::claude(), action)
+                .session_id(session_id)
+                .outcome(TraceOutcome::Continue)
+                .finish()
+                .expect("fallback span: outcome is always set")
         })
 }
 

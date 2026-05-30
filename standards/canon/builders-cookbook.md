@@ -4580,6 +4580,7 @@ Performance:
 Concurrency:
 - S48.2w: No `std::fs::` or `std::thread::sleep` inside `async fn` — use tokio equivalents
 - S48.2x: No `std::sync::Mutex` held across `.await` — use `tokio::sync::Mutex`
+- S48.2y: No `#[derive(Debug)]` on structs containing API keys, auth tokens, or secret fields — implement `Debug` manually with redacted fields (`format!("{} keys REDACTED", self.keys.len())`). Combine with S48.2d (`#[serde(skip_serializing)]`) for complete secret hygiene.
 
 **Tier 3: ARCHITECTURAL (phase gates only — checked by /GATE, not individual agents)**
 
@@ -6740,6 +6741,8 @@ pub struct Task { status: String, ... }  // "completed" vs "Completed" vs "compl
 
 Closed sum types prevent typo-class bugs; serde derives JSON encode/decode correctly; match exhaustiveness catches new-variant handling. (Already in Cookbook §4 spirit; §67 makes the autonomous-state-machine application explicit.)
 
+**Scope qualifier (2026-05-29 amendment)**: §67.5 applies to **internal/crate-private enums** where exhaustiveness aids correctness. Public API enums in crates intended for external consumption MUST be `#[non_exhaustive]` to allow adding variants without breaking downstream. See §68 for the public API stability rule. (Already in Cookbook §4 spirit; §67 makes the autonomous-state-machine application explicit.)
+
 ### §67.6 Cross-references
 
 - §64 Serialized git-ops mutex pattern
@@ -6747,6 +6750,34 @@ Closed sum types prevent typo-class bugs; serde derives JSON encode/decode corre
 - §66 Context Assembly Discipline
 - `feedback_cargo_build_lock_playbook_gap` (memory)
 - ironclaw-architecture.html §15
+
+## §68 Public API Stability for Published Crates (2026-05-29 ADDITION)
+
+**Scope**: All `pub` types in crates intended for crates.io publication or cross-crate consumption. Internal/private types are exempt.
+
+**Rule**: Every public struct and enum in a published crate MUST use `#[non_exhaustive]` to prevent breaking downstream when fields or variants are added in future minor versions.
+
+**Checklist (applied per type before v0.1.0 publication)**:
+
+| # | Requirement | Rationale |
+|---|-------------|-----------|
+| 1 | `#[non_exhaustive]` on all public structs and enums | Blocks external struct-literal construction and exhaustive match arms |
+| 2 | `pub fn new()` constructor for every `#[non_exhaustive]` struct | Struct-literal construction is blocked from outside the crate |
+| 3 | `#[serde(default)]` on every optional field in `#[non_exhaustive]` structs | Future fields deserialize as `None` without breaking old JSON |
+| 4 | `#[serde(skip_serializing_if = "Option::is_none")]` on optional fields | Clean wire format |
+| 5 | `#[serde(rename_all = "snake_case")]` or `"SCREAMING_SNAKE_CASE"` on enums | Consistent casing across wire format |
+| 6 | Custom `Debug` impl redacting secret fields (api_keys, auth_token) | See S48.2d and S48.2y |
+| 7 | `#[must_use]` on constructors and pure accessors | Prevents silent discard of important values |
+| 8 | Integration tests use `new()` not struct-literal | E0639 catches this at compile time |
+| 9 | Test-only helpers gated `#[cfg(test)]` | Clippy `dead_code` catches violations |
+
+**Why**: Three-pass review on 5 LA crates (lightsquad, ayinspan, soulstrand, gateway, benchmark) found these issues incrementally — pass 1 caught security leaks, pass 2 caught W3C spec violations, pass 3 caught remaining non_exhaustive gaps. A systematic checklist catches all in one pass.
+
+**Cross-references**:
+- §48.2y (Debug redaction for secrets)
+- §67.5 (Enum-not-String — scope qualifier: internal enums only)
+- §50.5 (Contract tests — forward compatibility Pattern B)
+- `feedback_v010_semver_checklist` (memory)
 
 ---
 
@@ -7157,9 +7188,89 @@ Without the defer, `draggingPanelId.set(panelId)` causes the panel header to imm
 
 ---
 
+## §76 — Cross-Crate Type-Bridge Round-Trip Scoping — RATIFIED 2026-05-29, Canon XV, Kevin Francis Tan
+
+When two crates define types that bridge across a boundary (one crate's facade re-exports / lightweight mirror of another's internal type), the round-trip lossless test `assert_eq!(A::from(B::from(a)), a)` will FAIL deterministically when the field sets are disjoint. `From` impls cannot synthesize information that wasn't carried in the source type — fields present only in A are dropped on A→B and not restored on B→A.
+
+**Rule:** Before authoring a round-trip test for cross-crate bridge types:
+
+1. Enumerate fields in both type definitions.
+2. **If field sets are equal**: full `assert_eq!` is correct.
+3. **If field sets are disjoint**: scope the assertion to the shared invariant only.
+4. **Document why other fields are intentionally not preserved** — the shared invariant is the contract; non-shared fields are implementation details of the source crate that the destination crate has no obligation to round-trip.
+
+**Reference implementation** — depth-only scoping for ChainContext bridge:
+
+```rust
+// SDK ChainContext: { origin: Option<String>, depth: u8, aud: Option<String> }
+// la-loops ChainContext: { depth: u8, parent_id: Option<String> }
+// Field sets are disjoint. Shared invariant: depth ≤ 7 (Canon §2.6).
+
+#[test]
+fn chain_context_depth_preservation_round_trip() {
+    let sdk_ctx = SdkChainContext { origin: Some("agent-1".into()), depth: 3, aud: None };
+    let la_ctx: LaLoopsChainContext = sdk_ctx.into();
+    let round_tripped: SdkChainContext = la_ctx.into();
+    // CORRECT: depth-only assertion (the actual invariant)
+    assert_eq!(round_tripped.depth, sdk_ctx.depth);
+    // WRONG: assert_eq!(round_tripped, sdk_ctx) — origin/aud always dropped
+}
+```
+
+**Why disjointness is the trap:** `From` is a trait whose contract is "convert from source"; it has no metadata-recovery hook. If A has fields B doesn't, A→B→A loses them. The test will pass on trivial cases (default-valued source fields) and fail on populated cases — the worst kind of test, since it passes locally and fails in CI when fixture data changes.
+
+**Scope:** Applies to any cross-crate type bridge — public facade crates (e.g. `la-loops` re-exporting SDK types), serialization round-trips with disjoint schemas, MCP wire format ↔ internal struct, and storage-layer DTOs ↔ domain types. Does NOT apply to isomorphic mirrors (same field set, different visibility/derives), where full `assert_eq!` is correct.
+
+**Cross-canon:** §70 (Type-Annotation Exhaustiveness Testing) covers Svelte registry exhaustiveness — related but distinct concern (per-variant coverage vs round-trip preservation). §66 (Context Assembly Discipline) frames the broader "plausible vs correct" principle: a plausible round-trip test can hide a correctness bug.
+
+**Witness:** N=1 production. `loop-strategy-expansion` plan (LASDLC MEDIUM) §1.5 point 3 originally specified `assert_eq!(SdkChainContext::from(LaLoopsChainContext::from(sdk_ctx)), sdk_ctx)`; 4-lens REVIEW iter-4 caught the field-set disjointness. Plan corrected to depth-only assertion in iter-5. Pressure-tested in plan-hardening; awaiting Phase 5 implementation pressure-test. **LÆX Queue**: #57, contradiction-check PASS 2026-05-29.
+
+---
+
+## §77 — Pre-Allocated Span IDs for Child-Before-Parent Emission — RATIFIED 2026-05-29, Canon XV, Kevin Francis Tan
+
+If a function emits child spans internally (e.g. `step()` checks convergence mid-execution and wants each convergence check as a child span) and the wrapping code creates the parent span AFTER the function returns (`trace::emit_step()` runs after `step().await`), the child spans have no parent.id to reference at emission time. Default span construction is "wrap on exit" — but mid-execution events need the parent ID **before** exit completes.
+
+**Rule:** When a function emits child spans whose parent is the function's own wrap span, pre-allocate the span ID in the caller and pass it into the function's context:
+
+```rust
+// CALLER (wrapping function — runner.rs::run_step)
+let step_span_id = Uuid::new_v4();   // pre-allocate
+let ctx = StepContext {
+    step_span_id,                    // pass into inner function
+    /* ... */
+};
+let result = strategy.step(&ctx).await?;
+trace::emit_step(step_span_id, &ctx, &result);   // use same ID for wrap span
+
+// INNER (function emitting child spans — strategy::step)
+async fn step(&self, ctx: &StepContext) -> Result<StepResult, LoopError> {
+    // child span references caller's pre-allocated parent ID
+    let convergence_span = TraceContext::new()
+        .parent(ctx.step_span_id)
+        .action("loop.convergence_check");
+    // ... emit child span ...
+}
+```
+
+**Why pre-allocation works:** UUIDs are value types (`Uuid` is `Copy`, 128 bits). Allocating before vs after the inner call has no runtime cost. The constraint being solved is **temporal**: child spans need the parent ID to exist at emission time, and emission happens during `step()` execution. Pre-allocating gives both caller and callee the same ID without introducing lifetimes, channels, or post-hoc parent backfill.
+
+**Anti-patterns:** 
+- **Post-hoc parent assignment** (`span.set_parent(id)` after emission): requires mutable span storage; complicates immutable AYIN ndjson append model.
+- **Channels** (sender passed into `step()`, parent rendezvous on exit): introduces async sync overhead and ordering hazards.
+- **Synthetic root spans** (emit child with `parent: None`): breaks the trace tree; AYIN can't reconstruct critical-path analysis.
+
+**Scope:** AYIN spans, OpenTelemetry spans, W3C TraceContext propagation. Any tracing primitive where parent.id must be known at child emission time AND the parent span construction is wrapped around the inner function.
+
+**Cross-canon:** Composes with `observability-canon.md` AYIN span schema (parent_id is required for trace-tree reconstruction). No contradiction with Cookbook §64 (Serialized Git-Operations Mutex) — different primitive. Aligns with W3C Trace Context spec — parent IDs are intentionally pre-allocatable for exactly this distributed-tracing scenario.
+
+**Witness:** N=1 production. `loop-strategy-expansion` plan §1.5 point 1 specified convergence child spans inside `step()` with `TraceContext::new().parent(step_span.id)`. Code review caught that `runner.rs` L299-307 creates the step span AFTER `step()` returns, making `step_span.id` unavailable inside `step()`. Plan corrected to pre-allocation pattern in iter-4. Pressure-tested in plan-hardening; awaiting Phase 3 implementation pressure-test. **LÆX Queue**: #58, contradiction-check PASS 2026-05-29.
+
+---
+
 **Rule** (per separation-of-concerns refactor, 2026-05-18): no tail-amendment blocks or scattered per-section version-history entries in this file. Section content lives here; amendment narrative lives in the CHANGELOG companion.
 
-**Current version**: see CHANGELOG for latest. As of 2026-05-23: **v3.8.0** (§74 Store Fields External Service Boundary + §75 requestAnimationFrame Drag Ghost Defer; LÆX ratified webshell-drag-drop session 2026-05-23).
+**Current version**: see CHANGELOG for latest. As of 2026-05-29: **v3.9.0** (§76 Cross-Crate Type-Bridge Round-Trip Scoping + §77 Pre-Allocated Span IDs for Child-Before-Parent Emission; LÆX ratified loop-strategy-expansion XEA iter-5 session 2026-05-29).
 
 *Builders Cookbook · Light Architects · `canon://builders-cookbook`*
 

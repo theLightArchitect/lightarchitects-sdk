@@ -8,6 +8,30 @@ Companion changelog for `builders-cookbook.md`. The cookbook holds **current sta
 
 ---
 
+## v3.9.0 — Loop-Strategy-Expansion LÆX ratifications (2026-05-29, XEA iter-5)
+
+**Source**: LÆX Canon XXXIX ratification of /REFLECT proposals from `loop-strategy-expansion` plan-hardening session. Two PROMOTION-PENDING-KEVIN candidates approved for Cookbook insertion.
+
+### §76 — Cross-Crate Type-Bridge Round-Trip Scoping
+**Candidate**: #4 (queue #57) — promoted from `feedback_assert_eq_round_trip_isomorphism`
+**Wave**: 4-lens REVIEW iter-4 / XEA iter-5 closure
+**Rationale**: When two crates define types that bridge across a boundary (public facade re-export, lightweight mirror, serialization DTO, MCP wire format), the round-trip test `assert_eq!(A::from(B::from(a)), a)` fails deterministically when field sets are disjoint. `From` impls cannot synthesize information not carried in the source — fields present only in A are dropped on A→B and not restored on B→A. Worst-case failure mode: passes on trivial cases (default-valued fields), fails in CI when fixture data is populated. Fix: enumerate fields in both definitions; if disjoint, scope assertion to the shared invariant only and document why other fields are intentionally not preserved. Reference implementation: depth-only scoping for SDK ChainContext ↔ la-loops ChainContext (shared invariant: depth ≤ 7 per Canon §2.6).
+**Cross-canon ties**: §70 (Type-Annotation Exhaustiveness — related but distinct: per-variant coverage vs round-trip preservation); §66 (Context Assembly Discipline — plausible vs correct framing applies)
+**Pressure-tested**: 2026-05-29 `loop-strategy-expansion` §1.5 point 3 + shipped_means #7 originally specified full-equality round-trip; field-set disjointness caught by 4-lens REVIEW; corrected to depth-only assertion in iter-5. Awaiting Phase 5 implementation pressure-test for N=2.
+
+### §77 — Pre-Allocated Span IDs for Child-Before-Parent Emission
+**Candidate**: #5 (queue #58) — promoted from `feedback_preallocate_span_id_for_child_parent`
+**Wave**: 4-lens REVIEW iter-4 / XEA iter-5 closure
+**Rationale**: When a function emits child spans internally (e.g. mid-execution convergence checks) and the wrapping code creates the parent span AFTER the function returns, child spans have no parent.id at emission time. Default "wrap on exit" span construction breaks this. Fix: pre-allocate `span_id: Uuid = Uuid::new_v4()` in the caller, pass into inner function's StepContext, use same ID for both child .parent() references and the wrap span construction. UUIDs are 128-bit value types — no runtime cost. Anti-patterns covered: post-hoc parent assignment (mutable span storage incompatible with AYIN immutable ndjson append), channels (async sync overhead + ordering hazards), synthetic root spans (breaks trace tree for critical-path analysis).
+**Cross-canon ties**: Aligns with observability-canon AYIN span schema (parent_id required for trace-tree reconstruction); aligns with W3C Trace Context spec (parent IDs intentionally pre-allocatable for distributed tracing); no contradiction with §64 (Serialized Git-Operations Mutex — different primitive)
+**Pressure-tested**: 2026-05-29 `loop-strategy-expansion` §1.5 point 1 — convergence child spans inside `step()` initially specified `TraceContext::new().parent(step_span.id)` but `runner.rs` L299-307 creates step span AFTER `step()` returns. Plan corrected to pre-allocation pattern in iter-4. Awaiting Phase 3 implementation pressure-test for N=2.
+
+**Companion canon updates this batch**: Blueprint §22.4 AMENDMENT + §22.4.1 NEW + §22.4.2 NEW (separate ratification — see architects-blueprint.CHANGELOG.md v3.6).
+
+**LÆX queue housekeeping**: candidates #57 + #58 marked RATIFIED 2026-05-29; queue indices advanced to #59.
+
+---
+
 ## v3.3.0 — Phase 7 ratifications (2026-05-18, iter-19)
 
 **Source**: LÆX Phase 7 ratification walkthrough (see `LAEX-PHASE-7-QUEUE.md`).

@@ -39,14 +39,13 @@ use crate::config::GatewayConfig;
 
 pub mod endpoint_policy;
 pub mod protocol;
-pub mod session_memory;
 pub mod strategy;
 
 // ── SDK re-exports (loops-core) ───────────────────────────────────────────────
 
 pub use lightarchitects::agent::conversation::{
-    ConversationEvent, ConversationSession, NdjsonTransport, SessionConfig, SessionError,
-    SessionState, SseTransport, TerminationReason, Transport, TtyTransport,
+    ConversationEvent, ConversationSession, HelixSessionMemory, NdjsonTransport, SessionConfig,
+    SessionError, SessionState, SseTransport, TerminationReason, Transport, TtyTransport,
 };
 
 // ── CapturingTransport ────────────────────────────────────────────────────────
@@ -238,7 +237,7 @@ pub async fn run_ndjson_with_strategies(
     };
     let provider =
         crate::cli::skills::build_provider().map_err(Box::<dyn std::error::Error>::from)?;
-    let memory = session_memory::HelixSessionMemory::open(cwd, 20);
+    let memory = HelixSessionMemory::open(cwd, 20);
     let mut session =
         ConversationSession::new(session_config, Arc::new(provider)).with_memory(Box::new(memory));
     let mut transport = NdjsonTransport::new(tokio::io::stdout());
@@ -420,7 +419,7 @@ pub async fn run_interactive_with_strategies(
 
     let provider =
         crate::cli::skills::build_provider().map_err(Box::<dyn std::error::Error>::from)?;
-    let memory = session_memory::HelixSessionMemory::open(cwd, 20);
+    let memory = HelixSessionMemory::open(cwd, 20);
     let restored = memory.restored_turn_count();
     let mut session =
         ConversationSession::new(session_config, Arc::new(provider)).with_memory(Box::new(memory));

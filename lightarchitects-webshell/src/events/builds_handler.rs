@@ -1662,7 +1662,7 @@ mod tests {
         assert_eq!(d.backend, "native");
         let json = serde_json::to_string(&d).unwrap();
         assert!(
-            !json.contains("lightarchitects-cli"),
+            !json.contains(r#""lightarchitects""#),
             "binary path must not leak: {json}"
         );
     }

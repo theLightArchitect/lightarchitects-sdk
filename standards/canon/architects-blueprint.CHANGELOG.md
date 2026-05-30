@@ -8,6 +8,33 @@ Companion changelog for `architects-blueprint.md`. Schema doc holds **current st
 
 ---
 
+## v3.6 — XEA Layer 3 Anchor-Alignment Refresh (2026-05-29, `loop-strategy-expansion` iter-5)
+
+**Source**: LÆX Canon XXXIX ratification of /REFLECT proposals from `loop-strategy-expansion` plan-hardening session. Joint amendment closing canon-internal drift between Blueprint §22.4 L1-L8 table and LASDLC-TEMPLATE-v1.yaml v2.6.x D-component refactor.
+
+**Sections amended/added (3)**:
+
+### §22.4 AMENDMENT — L1-L8 → L1-L9 table refresh
+**Candidates**: #1 (XEA L3 anchor-alignment gap) + #7 (D-component anchor-standard contracts) — joint RATIFY-AND-CODIFY
+**Rationale**: Blueprint §22.4 L1-L8 table was authored against an earlier LASDLC schema (D3=security_control_coverage / OWASP ASVS; D4=maintainability / CISQ; D6=test_pyramid; D7=northstar_integration). LASDLC v2.6.x has since refactored D-components: D2=ISO/IEC 25010 (security carved out), D3=CISQ ISO/IEC 5055, D4=DORA, D5=domain-conditional non-security, D6=security adversarial (first-class with 10 sub-components a-j; weighting by security_classification), D7=comparative baseline, D8=performance + parallel agentic orchestration. §22.4 table refreshed to match v2.6.x verbatim. L8 (independent_runner) renumbered L9 to accommodate D8 anchor row. §22.6 verdict format updated `failed_checks: [L1..L8]` → `[L1..L9]` + new `failed_anchor_membership` field. validation_status mapping clause updated.
+**Cross-canon ties**: LASDLC-TEMPLATE-v1 §7.7 (D-component spec), Canon XXXIII (independent runner), Canon XXXV (citation gate), §22.4.1 + §22.4.2 (new sub-sections below)
+**Pressure-tested**: 2026-05-29 `loop-strategy-expansion` iter-3/iter-4 passed L3 with §9 D2f="Security", D4="Security", D5="Reliability", D7="Documentation", D8="Testability" — all wrong vs template. iter-5 literal-chunk-audit caught 8 mislabels; §9 rewrite restored anchor compliance.
+
+### §22.4.1 NEW — Literal Anchor-Set Membership Check
+**Candidate**: #1 (XEA L3 anchor-alignment gap)
+**Rationale**: Existence-only Layer 3 (L1-L9 row present) is too weak — a plan can declare a D2f row labeled "Security" (relabeled) and pass existence while violating the template anchor (D2f = Maintainability per template; security carved to D6). Anchor-set membership check verifies the label matches `LASDLC-TEMPLATE-v1.yaml deliverable_benchmark.components.Dx.{label,measure,characteristic,standard}` as literal string equality. Synonyms, paraphrases, and author-invented categories all FAIL. Failing labels surface as BLOCKING because they break the contract with the cold-context close-out scorer.
+**Cross-canon ties**: Canon XXXIII (no self-scoring), Canon XXXV (citation gate), §22.4.2 (contract rule below)
+
+### §22.4.2 NEW — D-Component Anchor-Standard Contract Rule
+**Candidate**: #7 (D-component anchor-standard contracts)
+**Rationale**: D1-D8 labels are anchor-standard CONTRACTS (with ISO/IEC 25010, CISQ, OWASP, MITRE, NIST SSDF, SLSA, etc.), not author descriptions. Four-clause rule: (1) copy headers verbatim from template; (2) inapplicable components declared N/A with run_when rationale, never renamed; (3) sub-components follow same rule (D2f Maintainability NOT Security; D6c OWASP LLM Top 10 NOT Input Validation); (4) required sub-components per `security_classification` weighting must all be declared. Rationale: cold-context benchmark agent reads template-anchor; if D-labels don't match, agent falls back to scoring plan's narrative → circular validation per Canon XXXIII.
+**Cross-canon ties**: Canon XXXIII, Canon XXXV, Canon XLII (schema-changelog separation; D-labels ARE schema), Cookbook §69 (Citation Integrity)
+**Pressure-tested**: same incident as §22.4.1 — 8 mislabels in loop-strategy-expansion §9 violated contract; iter-5 rewrite restored compliance + N/A declarations for D4 (DORA — library not independently deployable) and D7 (N<3 builds in decision class → suppressed per template).
+
+**Companion canon updates this batch**: Cookbook §76 + §77 (separate ratification — see builders-cookbook.CHANGELOG.md).
+
+---
+
 ## v3.5 — Phase 7 ratifications (2026-05-18, iter-19)
 
 **Source**: LÆX Phase 7 ratification walkthrough — 6 waves × cold-context Explore-agent supervisor verdicts under Canon XV operator-delegated authority. See `LAEX-PHASE-7-QUEUE.md` for the authoritative candidate enumeration and per-wave verdict details.

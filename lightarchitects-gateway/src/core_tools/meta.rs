@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 
 use super::{
     ask_user, ayin_http, bash, canon_check, canon_evaluate, discover, edit, glob, import_adapter,
-    initialize, orchestrate, preset, read, search, text_result, ui, write,
+    initialize, orchestrate, preset, read, search, text_result, ui, webshell_launch, write,
 };
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
@@ -35,6 +35,7 @@ const CORE_ACTIONS: &[&str] = &[
     "canon_check",
     "canon_evaluate",
     "preset",
+    "launch_webshell",
 ];
 
 /// Arena action names — not available in this release.
@@ -84,6 +85,7 @@ fn list_actions(config: &GatewayConfig) -> Result<Value, GatewayError> {
             "canon_check":    "Validate a decision against the canon registry (decision, verbose?)",
             "canon_evaluate": "Evaluate a canon candidate against 5-criteria framework (candidate)",
             "preset":         "Switch or view the active preset archetype (name?). Changes routing priority.",
+            "launch_webshell": "Launch the Light Architects webshell GUI (session_id?, port?, host_cmd?, cwd?, dev_mode?). Returns {url, status, resumed_session, session_mismatch?, kill_hint?}. Default port 8733; auto-scans free port when session_id supplied to sidestep LaunchAgent collision.",
         },
         "setup": {
             "initialize":     "Interactive gateway setup wizard (step?)",
@@ -227,6 +229,7 @@ async fn dispatch_core(
         "canon_evaluate" => canon_evaluate::run(params, config),
         "initialize" => initialize::run(params, config).await,
         "import" => import_adapter::run(params, config),
+        "launch_webshell" => webshell_launch::run(params, config).await,
         "preset" => preset::run(params),
         _ => Err(GatewayError::UnknownTool(action.to_owned())),
     }

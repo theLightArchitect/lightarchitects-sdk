@@ -338,10 +338,8 @@ impl PipelineSpan {
     {
         let pipeline_id = self.span_id;
         let session_id = self.session_id.clone();
-        let nested_ctx = SpanContext {
-            session_id: session_id.clone(),
-            parent_id: Some(pipeline_id),
-        };
+        let nested_ctx =
+            SpanContext::seeded(session_id.clone().unwrap_or_default(), Some(pipeline_id));
         let run_ctx = PipelineRunCtx::new(pipeline_id);
         let decisions_handle = run_ctx.decisions.clone();
 

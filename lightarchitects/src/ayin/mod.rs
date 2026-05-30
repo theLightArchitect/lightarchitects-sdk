@@ -90,51 +90,97 @@ pub mod writer;
 
 #[cfg(feature = "observe")]
 pub use writer::{
-    SPAN_CTX, SpanContext, current_span_ctx, default_trace_base, span_dir, spawn_with_span_context,
-    with_span_context, write_span_to_disk,
+    DynSpanEmitter, FileSpanEmitter, SPAN_CTX, SpanContext, SpanEmitError, current_span_ctx,
+    default_trace_base, span_dir, spawn_with_span_context, with_span_context, write_span_to_disk,
 };
 
 // ── Feature-enabled: full AYIN instrumentation ────────────────────────────────
 
 #[cfg(feature = "observe")]
 mod observe_impl {
-    use crate::ayin::span::{Actor, TraceContext, TraceOutcome};
+    use std::sync::Arc;
 
+    use la_ayinspan::observe::SpanObserve;
+    use la_ayinspan::turn::TurnContext;
+
+    use crate::ayin::span::{Actor, TraceContext, TraceOutcome, TraceSpan};
+
+    use super::writer::{DynSpanEmitter, FileSpanEmitter};
     use super::{JsonRpcRequest, JsonRpcResponse, SdkError, Transport};
 
     /// Transport wrapper that records an AYIN [`TraceSpan`] for every MCP call.
     ///
-    /// Construct via [`ObservableTransport::new`]. Spans are written
-    /// asynchronously via [`writer::write_span_to_disk`] (atomic, EXDEV-safe,
-    /// macOS `F_FULLFSYNC`) — trace I/O never blocks the caller.
+    /// Implements [`SpanObserve`]: `on_action_start` is a no-op (reserved for
+    /// future pre-call telemetry); `on_action_finish` clones the span and fires
+    /// `emitter.emit` on a blocking thread so async callers are never stalled.
+    ///
+    /// Construct via [`ObservableTransport::new`] (uses [`FileSpanEmitter`]) or
+    /// [`ObservableTransport::with_emitter`] for a custom backend.
     pub struct ObservableTransport<T: Transport> {
         inner: T,
         actor: Actor,
+        emitter: Arc<DynSpanEmitter>,
     }
 
     impl<T: Transport> ObservableTransport<T> {
-        /// Wrap `inner` and record AYIN spans using the `lightarchitects-sdk` actor.
+        /// Wrap `inner` using the default [`FileSpanEmitter`] at the canonical trace dir.
         #[must_use]
         pub fn new(inner: T) -> Self {
             Self {
                 inner,
                 actor: Actor::new("lightarchitects-sdk"),
+                emitter: Arc::from(FileSpanEmitter::with_default_base().into_dyn()),
             }
         }
 
-        /// Wrap `inner`, using a custom actor name for the trace spans.
+        /// Wrap `inner` with a custom actor name and the default [`FileSpanEmitter`].
         #[must_use]
         pub fn with_actor(inner: T, actor: impl Into<String>) -> Self {
             Self {
                 inner,
                 actor: Actor::new(actor),
+                emitter: Arc::from(FileSpanEmitter::with_default_base().into_dyn()),
             }
+        }
+
+        /// Wrap `inner` with a fully custom emitter backend.
+        #[must_use]
+        pub fn with_emitter(inner: T, emitter: Arc<DynSpanEmitter>) -> Self {
+            Self {
+                inner,
+                actor: Actor::new("lightarchitects-sdk"),
+                emitter,
+            }
+        }
+    }
+
+    impl<T: Transport> SpanObserve for ObservableTransport<T> {
+        fn on_action_start(&self, _actor: &Actor, _action: &str, _ctx: Option<&TurnContext>) {
+            // Reserved for pre-call telemetry (timing, rate-limit counters).
+        }
+
+        fn on_action_finish(&self, span: &TraceSpan) {
+            // TraceSpan == la_ayinspan::TraceSpan (same type via re-export in span.rs).
+            let span = span.clone();
+            let emitter = Arc::clone(&self.emitter);
+            super::writer::spawn_with_span_context(async move {
+                let result = tokio::task::spawn_blocking(move || emitter.emit(span)).await;
+                match result {
+                    Ok(Err(e)) => {
+                        tracing::warn!(error = %e, "AYIN ObservableTransport span emit failed");
+                    }
+                    Err(e) => tracing::warn!(error = %e, "AYIN span emit task panicked"),
+                    Ok(Ok(())) => {}
+                }
+            });
         }
     }
 
     impl<T: Transport> Transport for ObservableTransport<T> {
         async fn send(&self, request: JsonRpcRequest) -> Result<JsonRpcResponse, SdkError> {
             let action = request.method.clone();
+            self.on_action_start(&self.actor, &action, None);
+
             let result = self.inner.send(request).await;
 
             let outcome = match &result {
@@ -142,21 +188,12 @@ mod observe_impl {
                 Err(e) => TraceOutcome::Error(e.to_string()),
             };
 
-            // Build and persist the span asynchronously — never blocks the caller.
-            let ctx = TraceContext::new(self.actor.clone(), &action).outcome(outcome);
-            super::writer::spawn_with_span_context(async move {
-                let base = super::writer::default_trace_base();
-                match ctx.finish() {
-                    Ok(span) => {
-                        let dir =
-                            super::writer::span_dir(&base, span.actor.as_str(), &span.timestamp);
-                        if let Err(e) = super::writer::write_span_to_disk(&span, &dir).await {
-                            tracing::warn!(error = %e, "AYIN ObservableTransport span write failed");
-                        }
-                    }
-                    Err(e) => tracing::warn!(error = %e, "AYIN span build failed"),
-                }
-            });
+            if let Ok(span) = TraceContext::new(self.actor.clone(), &action)
+                .outcome(outcome)
+                .finish()
+            {
+                self.on_action_finish(&span);
+            }
 
             result
         }

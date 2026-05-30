@@ -1407,28 +1407,63 @@ The **LASDLC Deliverable Benchmark (LDB v1.0)** defines 8 D-components anchored 
 
 **Why independent**: Canon XXXIII prohibits the build's own agents from self-scoring the LDB. The plan must name a cold-context agent or human verifier.
 
-**Checks**:
+**Checks** (D-component labels MUST match `LASDLC-TEMPLATE-v1.yaml` `deliverable_benchmark.components.*` verbatim — see §22.4.1):
 
-| Code | Check | Standard anchored |
+| Code | Check | Anchor standard |
 |------|-------|---|
-| L1 | `deliverable_benchmark.D1_functional_completeness` declared with measurement method | ISO/IEC 25010 §4.1 |
-| L2 | `D2_reliability_fault_tolerance` declared | ISO/IEC 25010 §4.3 |
-| L3 | `D3_security_control_coverage` declared with OWASP ASVS level | OWASP ASVS 4.0 |
-| L4 | `D4_maintainability_technical_debt` declared with CISQ measurement plan | CISQ ASCRM |
-| L5 | `D5_deployment_frequency` declared (DORA metric target) | DORA 2023 |
-| L6 | `D6_test_pyramid_coverage` declared with ≥90% target per Canon XXVII | Agents Playbook §XXVII |
-| L7 | `D7_northstar_integration` declared: how the deliverable advances a named Pillar mechanical check, measurable post-ship | northstar-v1.md |
-| L8 | `independent_runner` named — a cold-context agent or human who will score the LDB at close-out (NOT the build's own agents) | Canon XXXIII |
+| L1 | `deliverable_benchmark.D1_request_fidelity` declared (acceptance criteria + Northstar predicate + operator validation) | LASDLC §7.7 D1 |
+| L2 | `D2_iso_25010_conformance` declared (D2a–D2g sub-characteristics; security carved to D6) | ISO/IEC 25010:2011 |
+| L3 | `D3_cisq_automated` declared (D3a Reliability / D3b Performance / D3c Maintainability / D3d Cyclomatic / D3e CVE / D3f Defect density) | CISQ / ISO/IEC 5055:2021 |
+| L4 | `D4_dora_operational` declared OR N/A with `run_when` rationale (e.g. library not independently deployable) | DORA Accelerate |
+| L5 | `D5_domain_conditional_non_security` declared (WCAG / OpenAPI / ML Test Score per build profile triggers) | per-domain anchors |
+| L6 | `D6_security_adversarial_robustness` declared with required sub-components per `security_classification` weighting (Public={a,e,g}; Confidential={a,c,e,g,h}; Restricted={a,c,d,e,g,h,i}; Secret={a..j}) | OWASP ASVS + ISO 27001/27034 + OWASP LLM Top 10 + MITRE ATLAS/ATT&CK + CWE Top 25 + NIST SSDF + SLSA + STRIDE/LINDDUN |
+| L7 | `D7_comparative_baseline` declared OR N/A (suppressed when N<3 builds in decision class) | self-baseline + industry baseline |
+| L8 | `D8_performance_parallel_agentic_orchestration` declared (D8a–D8j; AYIN spans named; compression claim explicit if made) | DORA + SPACE + Flow + Amdahl + Karp-Flatt + Apdex + OpenTelemetry + AYIN |
+| L9 | `independent_runner` named — cold-context agent or human who will score the LDB at close-out (NOT the build's own agents) | Canon XXXIII |
 
 **shipped_means_5_conditions** (LASDLC §shipped_means): Layer 3 also verifies all 5 ship conditions are declared with verification owners:
 
 1. All Canon XXVII test pyramid suites green
-2. LDB aggregate meets declared target (minimum threshold: D3 ASVS L2, D6 ≥90%)
+2. LDB aggregate meets declared target (D6 sub-components present per `security_classification`; Canon XXVII coverage ≥90% per Cookbook §57)
 3. C1–C8 rubric close-out score ≥75 STRONG (independent runner audited)
 4. Northstar mechanical checks N2/N3 verifiably advanced (post-ship observable)
 5. Handoff checklist (Part XVII) completed by independent reviewer
 
-**Layer 3 PASS condition**: L1–L8 all declared (not necessarily measured — declared). All 5 shipped_means conditions have named verification owners.
+**Layer 3 PASS condition**: L1–L9 all declared (not necessarily measured — declared) AND each label passes the literal anchor-set membership check (§22.4.1). All 5 shipped_means conditions have named verification owners.
+
+---
+
+### §22.4.1 — Literal Anchor-Set Membership Check
+
+Each L1–L9 check verifies two conjuncts:
+
+1. **Existence**: the D-component row is declared in `deliverable_benchmark`.
+2. **Anchor membership**: the row's label matches `LASDLC-TEMPLATE-v1.yaml` `deliverable_benchmark.components.Dx.{label,measure,characteristic,standard}` as a literal string-equality check.
+
+**Why both conjuncts**: existence alone is insufficient. A plan can declare a `D2f` row labeled "Security" (relabeled by the author) and pass an existence-only check, but the label is wrong — template `D2f` is "Maintainability"; security is carved out to D6. The cold-context benchmark agent at close-out reads the template anchor, not the plan's narrative — relabeled headers trigger circular validation per Canon XXXIII.
+
+**Implementation**: XEA Layer 3 (and `/XEA` skill) MUST run anchor-set membership as a literal string comparison against the template schema. Synonyms, paraphrases, and author-invented categories all FAIL this check.
+
+**Failing labels surface as BLOCKING** (not HIGH/MEDIUM) — they break the contract between the plan and the close-out scorer (§22.4.2).
+
+**Pressure-tested 2026-05-29 (`loop-strategy-expansion` iter-5)**: existence-only Layer 3 passed iter-3/iter-4 verdicts with `xea_layer_3.result: PASS` while §9 had D2f="Security", D4="Security", D5="Reliability", D7="Documentation", D8="Testability" — all wrong vs template. Anchor-membership pass caught all 8 mislabels.
+
+---
+
+### §22.4.2 — D-Component Anchor-Standard Contract Rule
+
+D1–D8 labels are **anchor-standard contracts**, not author descriptions. The contract binds:
+
+1. **Plans MUST copy D-headers verbatim** from `LASDLC-TEMPLATE-v1.yaml` `deliverable_benchmark.components`. Relabeling is prohibited — even if the relabel is "more descriptive" for the build's domain.
+2. **Inapplicable components MUST be declared `N/A`** with `run_when` rationale (e.g. "D4 N/A — library not independently deployable; DORA tracked at gateway-deploy level"). Renaming an inapplicable slot to fit a different concept (e.g. labeling D4 "Security" when D4 is DORA) is the highest-class violation.
+3. **Sub-components follow the same rule**: D2f is Maintainability (not Security), D2g is Portability (not Accessibility), D6c is OWASP LLM Top 10 + MITRE ATLAS (not Input Validation), etc. The template's sub-component fields are the source of truth.
+4. **Required sub-components are weighted by `security_classification`** (see L6 table). Plans MUST declare all required sub-components for their classification; missing ones are BLOCKING.
+
+**Rationale**: The cold-context benchmark agent at close-out (Canon XXXIII `independent_runner`) reads the template-anchor standard and scores the deliverable against THAT — not against the plan's narrative. If the plan's D-labels don't match template anchors, the agent has no external standard to score against and falls back to scoring the plan's own words. That is **circular validation** — the plan validates itself by being read by an agent with no independent yardstick.
+
+**Composes with**: Canon XXXIII (no self-scoring), Canon XXXV (citation gate — anchor standards ARE the citation), Canon XLII (schema-changelog separation — D-labels are schema; renaming = schema drift), Cookbook §69 (Citation Integrity Doctrine).
+
+**Pressure-tested 2026-05-29**: same incident as §22.4.1.
 
 ---
 
@@ -1474,7 +1509,8 @@ xea_verdict:
     pillar_cited: "P1 | P2 | both | none"
   layer_3_ldb:
     result: PASS | FAIL
-    failed_checks: [L1..L8]
+    failed_checks: [L1..L9]
+    failed_anchor_membership: [Dx: "<wrong-label>"]  # §22.4.1 literal anchor check
     independent_runner: "<named>"
   validation_status: VALIDATED | INSUFFICIENT_EVIDENCE | UNVALIDATED | DISPUTED
   blocking_gaps_folded: ["amendment-id", ...]
@@ -1482,7 +1518,7 @@ xea_verdict:
 ```
 
 **validation_status** mapping:
-- **VALIDATED**: Layer 0 PASS + Layer 1 ≥75 STRONG + Layer 2 N1-N6 all PASS + Layer 3 L1-L8 all declared
+- **VALIDATED**: Layer 0 PASS + Layer 1 ≥75 STRONG + Layer 2 N1-N6 all PASS + Layer 3 L1-L9 all declared AND anchor-membership check (§22.4.1) passes for every D-label
 - **INSUFFICIENT_EVIDENCE**: Layer 1 aggregate 60–74 ACCEPTABLE or Layer 2 N5 measurability uncertain — needs targeted research
 - **UNVALIDATED**: Layer 0 FAIL, or Layer 1 <60, or Layer 2 N1/N2 FAIL (no concrete Northstar chain)
 - **DISPUTED**: ≥2 canon citations conflict — escalate to LÆX + HITL tiebreaker

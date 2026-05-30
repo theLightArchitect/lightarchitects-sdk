@@ -14,10 +14,7 @@ use std::time::Instant;
 
 use tracing::info;
 
-use crate::ayin::{
-    TraceError,
-    span::{Actor, TraceContext, TraceOutcome, TraceSpan},
-};
+use crate::ayin::span::{Actor, TraceContext, TraceError, TraceOutcome, TraceSpan};
 
 /// Record a single loop step and return the corresponding AYIN [`TraceSpan`].
 ///

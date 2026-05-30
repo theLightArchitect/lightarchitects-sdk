@@ -72,7 +72,7 @@ fleet = ["dep:dashmap"]
 #
 # Extraction candidate — see ~/.claude/projects/-Users-kft-Projects/memory/
 # project_lightarchitects_sdk_extraction_candidates.md
-lightsquad = ["agent-cli", "http-client", "credentials"]
+lightsquad = ["agent-cli", "http-client", "credentials", "dep:la-lightsquad"]
 
 # L1 agentic loop substrate — Strategy trait, LoopRunner, compose combinators,
 # CritiqueRefine, phase spans. Does NOT require agent-cli (provider-agnostic).
@@ -85,6 +85,12 @@ chat = []
 # ── Always-on external deps (union of all 13 merged crates) ──────────────────
 
 [dependencies]
+# Observability span types (public crate — traits + types, zero runtime deps)
+la-ayinspan = { path = "../../theLightArchitect/la-crates/crates/la-ayinspan" }
+
+# Structured Delivery Protocol (public crate — archetype framework + delivery vocabulary)
+la-lightsquad = { path = "../../theLightArchitect/la-crates/crates/la-lightsquad", optional = true }
+
 # Core runtime
 libc        = { workspace = true }
 rand        = { workspace = true }

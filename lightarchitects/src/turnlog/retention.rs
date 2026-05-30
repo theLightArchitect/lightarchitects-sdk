@@ -14,8 +14,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::ayin::span::TraceSpan;
-use crate::ayin::span::{Actor, TraceOutcome};
+use crate::ayin::span::{Actor, TraceContext, TraceOutcome, TraceSpan};
 use chrono::{NaiveDate, Utc};
 use secrecy::SecretSlice;
 use tracing::warn;
@@ -306,6 +305,7 @@ fn split_warm(entries: &[TurnEntry]) -> (Vec<TurnEntry>, Vec<TurnEntry>) {
     (retained, dropped)
 }
 
+#[allow(clippy::expect_used)]
 fn make_rollup_span(session_id: &str, tier: Tier, dropped: &[TurnEntry]) -> TraceSpan {
     let mut dropped_counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut dropped_rows = Vec::with_capacity(dropped.len());
@@ -326,23 +326,16 @@ fn make_rollup_span(session_id: &str, tier: Tier, dropped: &[TurnEntry]) -> Trac
         Tier::Cold => "cold",
     };
 
-    TraceSpan {
-        id: uuid::Uuid::new_v4(),
-        parent_id: None,
-        session_id: Some(session_id.to_owned()),
-        actor: Actor::claude(),
-        action: "session_rollup".to_owned(),
-        timestamp: Utc::now(),
-        duration_ms: 0,
-        decision_points: Vec::new(),
-        strand_activations: Vec::new(),
-        outcome: TraceOutcome::Continue,
-        metadata: serde_json::json!({
+    TraceContext::new(Actor::claude(), "session_rollup")
+        .session_id(session_id)
+        .outcome(TraceOutcome::Continue)
+        .metadata(serde_json::json!({
             "tier": tier_str,
             "dropped_counts": dropped_counts,
             "dropped_entries": dropped_rows,
-        }),
-    }
+        }))
+        .finish()
+        .expect("session_rollup span: outcome is always set")
 }
 
 fn rechain(
@@ -402,20 +395,14 @@ mod tests {
         SecretSlice::from(vec![0x11_u8; 32])
     }
 
+    #[allow(clippy::expect_used)]
     fn span(session_id: &str, action: &str, meta: serde_json::Value) -> TraceSpan {
-        TraceSpan {
-            id: uuid::Uuid::new_v4(),
-            parent_id: None,
-            session_id: Some(session_id.to_owned()),
-            actor: Actor::claude(),
-            action: action.to_owned(),
-            timestamp: Utc::now(),
-            duration_ms: 1,
-            decision_points: Vec::new(),
-            strand_activations: Vec::new(),
-            outcome: TraceOutcome::Continue,
-            metadata: meta,
-        }
+        TraceContext::new(Actor::claude(), action)
+            .session_id(session_id)
+            .outcome(TraceOutcome::Continue)
+            .metadata(meta)
+            .finish()
+            .expect("test span: outcome is always set")
     }
 
     #[tokio::test]

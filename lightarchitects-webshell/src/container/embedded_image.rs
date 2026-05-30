@@ -11,7 +11,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 ca-certificates git openssh-client nodejs npm \
     && rm -rf /var/lib/apt/lists/*
 COPY lightarchitects /usr/local/bin/
-COPY lightarchitects-cli /usr/local/bin/
 COPY agent-entrypoint.sh /entrypoint.sh
 RUN useradd -m -u 1000 agent
 USER 1000:1000

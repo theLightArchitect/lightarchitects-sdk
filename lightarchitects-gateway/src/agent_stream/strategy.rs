@@ -236,10 +236,7 @@ pub async fn run_strategy<T: Transport>(
     // inherit parent_id = session_start.id — enabling the AYIN Lineage Circuit to
     // render a radial dendrogram instead of scattered roots.
     let session_uuid = emit_session_start_span(session_id.as_deref(), &req.strategy.to_string());
-    let span_ctx = GatewaySpanContext {
-        session_id: session_id.clone(),
-        parent_id: session_uuid,
-    };
+    let span_ctx = GatewaySpanContext::seeded(session_id.clone().unwrap_or_default(), session_uuid);
 
     with_span_context(
         span_ctx,

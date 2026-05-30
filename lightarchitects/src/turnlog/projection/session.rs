@@ -108,26 +108,20 @@ impl SessionProjection {
 mod tests {
     use super::*;
     use crate::ayin::span::{Actor, TraceOutcome};
-    use chrono::Utc;
-    use uuid::Uuid;
 
+    #[allow(clippy::expect_used)]
     fn span(action: &str, session_id: &str, meta: serde_json::Value) -> TurnEntry {
+        use crate::ayin::span::TraceContext;
+        let span = TraceContext::new(Actor::claude(), action)
+            .session_id(session_id)
+            .metadata(meta)
+            .outcome(TraceOutcome::Continue)
+            .finish()
+            .expect("valid test span");
         TurnEntry {
             seq: 0,
             parent_seq: None,
-            span: crate::ayin::span::TraceSpan {
-                id: Uuid::new_v4(),
-                parent_id: None,
-                session_id: Some(session_id.to_owned()),
-                actor: Actor::claude(),
-                action: action.to_owned(),
-                timestamp: Utc::now(),
-                duration_ms: 1,
-                decision_points: Vec::new(),
-                strand_activations: Vec::new(),
-                outcome: TraceOutcome::Continue,
-                metadata: meta,
-            },
+            span,
             hmac_prev: String::new(),
             hmac_self: String::new(),
         }

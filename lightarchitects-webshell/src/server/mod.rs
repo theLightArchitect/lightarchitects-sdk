@@ -308,6 +308,21 @@ pub struct AppState {
     /// merge gate `OLLAMA_API_KEY_TOCTOU`.  `None` when the env var is unset
     /// or empty at server startup.
     pub la_native_api_key: Option<secrecy::SecretString>,
+    /// Persistent native-session pool for `lightarchitects_native` builds.
+    ///
+    /// Keyed by build UUID.  Each entry is an `Arc<Mutex<NativeSession>>` —
+    /// a live [`crate::copilot::native_session::NativeSession`] whose
+    /// `ConversationSession` (provider, memory, hooks, tool executor, turn
+    /// counter, interrupt flag) is reused across HTTP turns within a single
+    /// process lifetime.  This realises the same "live session per UUID"
+    /// contract Claude Code provides via `claude --resume <id>`, while
+    /// supporting multi-provider streaming (Ollama Cloud, Claude CLI,
+    /// `OpenRouter`) through the [`NativeSession`] enum.
+    ///
+    /// First access cold-starts memory from `HelixSessionMemory` (SOUL disk
+    /// recovery); subsequent turns hit the in-memory session directly.  The
+    /// helix is also written-through on every turn for durable persistence.
+    pub native_session_pool: crate::copilot::native_session::NativeSessionPool,
     /// CDP bridge state for dev-mode browser inspection.
     ///
     /// `None` when no bridge has been initialized. The frontend calls
@@ -534,6 +549,7 @@ impl AppState {
                 handle
             },
             la_native_api_key,
+            native_session_pool: crate::copilot::native_session::new_pool(),
             playwright_state: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
@@ -653,6 +669,7 @@ impl AppState {
             resume_registry: Arc::new(crate::copilot::strategy_runner::ResumeRegistry::new()),
             mcp_host: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
             la_native_api_key: None,
+            native_session_pool: crate::copilot::native_session::new_pool(),
             playwright_state: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }

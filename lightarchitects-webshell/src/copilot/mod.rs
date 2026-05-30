@@ -14,6 +14,7 @@ pub mod eva_identity;
 pub mod event_stream;
 pub mod git_context;
 pub mod lightsquad_tool;
+pub mod native_session;
 pub mod persona_cache;
 #[cfg(feature = "playwright")]
 pub mod playwright;
@@ -137,12 +138,10 @@ fn resolve_binary_with_home(name: &str, home: &str) -> String {
             "/opt/homebrew/bin/codex".to_owned(),
             "/usr/local/bin/codex".to_owned(),
         ],
-        "lightarchitects-cli" => vec![
-            format!("{home}/.local/bin/lightarchitects-cli"),
-            format!("{home}/.lightarchitects/cli/bin/lightarchitects-cli"),
-            "/usr/local/bin/lightarchitects-cli".to_owned(),
-        ],
         "lightarchitects" => vec![
+            // CLI binary (agent runner) takes priority over the gateway binary.
+            // The CLI installs here via `make deploy-fast` in lightarchitects-cli.
+            format!("{home}/lightarchitects/cli/bin/lightarchitects"),
             format!("{home}/.lightarchitects/bin/lightarchitects"),
             format!("{home}/.local/bin/lightarchitects"),
             "/usr/local/bin/lightarchitects".to_owned(),

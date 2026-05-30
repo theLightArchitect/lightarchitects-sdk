@@ -1,4 +1,6 @@
-# CLAUDE.md — lightarchitects-sdk
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 Light Architects unified Rust SDK. **v0.2.0 — HTTP-first platform model.**
 

@@ -219,10 +219,7 @@ fn init_mcp_span_ctx() -> GatewaySpanContext {
                     tracing::warn!(error = %e, "mcp gateway.session.start AYIN span write failed");
                 }
             });
-            GatewaySpanContext {
-                session_id: Some(session_id),
-                parent_id: Some(root_id),
-            }
+            GatewaySpanContext::seeded(session_id, Some(root_id))
         }
         Err(e) => {
             tracing::warn!(error = %e, "mcp gateway.session.start span build failed");

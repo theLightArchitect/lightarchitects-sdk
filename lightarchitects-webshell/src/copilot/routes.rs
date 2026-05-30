@@ -5,7 +5,6 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use super::lightsquad_tool::{LightsquadToolExecutor, build_lightsquad_executor};
 use axum::body::Bytes;
 use axum::{
     Json,
@@ -15,14 +14,11 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use futures_util::StreamExt as _;
-use lightarchitects::agent::{
-    ChainContext, ClaudeCliProvider, OllamaCliProvider,
-    conversation::{
-        ConversationEvent, ConversationSession, SessionConfig, SseTransport, Transport,
-        helix_memory::HelixSessionMemory,
-    },
+use lightarchitects::agent::conversation::{
+    ConversationEvent, SseTransport, Transport, event::TerminationReason,
 };
 use serde_json::json;
+use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
 use tracing::Instrument as _;
 use uuid::Uuid;
@@ -36,6 +32,7 @@ use crate::{
 
 use lightarchitects::chat::mode::Mode;
 
+use super::native_session::{CliSubprocessHandle, NativeSessionPool};
 use super::strategy_runner::dispatch_strategy_initial;
 use super::{CopilotRequest, call_ollama, call_subprocess, context};
 
@@ -192,28 +189,21 @@ pub async fn copilot_chat_handler(
         .turn_count
         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-    // Native path: stream via ConversationSession + SseTransport.
-    // The full grounding prelude (EVA identity + SOUL + git + recent events) is
-    // placed in SessionConfig.system_prompt rather than inline in the user message,
-    // removing the previous 8 KiB wedge limitation.  The model's 131 072-token
-    // context window handles multi-KB system prompts without issue.
+    // Native path: forward the raw user message to the persistent `lightarchitects`
+    // subprocess, which handles its own grounding via HelixSessionMemory.
+    // The prelude is not injected into stdin — the CLI reads stdin line-by-line
+    // and a multi-line prelude would be split into multiple turns.
     if matches!(session.agent, AgentSession::LightarchitectsNative(_)) {
-        let system = if prelude.is_empty() {
-            None
-        } else {
-            Some(prelude)
-        };
         return drive_native_sse(
             id,
             &body.message,
             session.cwd.clone(),
             grounding_hdrs,
-            system,
             Arc::clone(&session.native_interrupt_flag),
             state.la_native_api_key.clone(),
             state.config.token.clone(),
-            build_lightsquad_executor(&state),
             turn_span_id,
+            Arc::clone(&state.native_session_pool),
         );
     }
 
@@ -266,17 +256,11 @@ pub async fn copilot_chat_handler(
     }
 }
 
-/// Stream a single turn via [`ConversationSession`] + [`SseTransport`].
-///
-/// Creates a `tokio::io::duplex` pipe: one end feeds [`SseTransport`] (written by the
-/// spawned task), the other becomes the HTTP response body. The caller receives raw
-/// SSE frames (`event: …\ndata: …\n\n`) as they are emitted by the strategy engine.
-/// Characters-per-token estimate for context-window overflow warning (W4.3).
-/// Rough proxy: English text averages ~4 bytes/token for sub-word tokenisers.
-const CHARS_PER_TOKEN: usize = 4;
-/// Emit a `tracing::warn` when the system prelude exceeds this fraction of the
-/// model context window (`num_ctx = 131_072` tokens, warn at 50%).
-const SYSTEM_PROMPT_WARN_CHARS: usize = 131_072 * CHARS_PER_TOKEN / 2; // ~262 144
+// Stream a single turn via [`ConversationSession`] + [`SseTransport`].
+//
+// Creates a `tokio::io::duplex` pipe: one end feeds [`SseTransport`] (written by the
+// spawned task), the other becomes the HTTP response body. The caller receives raw
+// SSE frames (`event: …\ndata: …\n\n`) as they are emitted by the strategy engine.
 
 /// Abort guard: calls `AbortHandle::abort()` when dropped.
 ///
@@ -292,155 +276,287 @@ impl Drop for AbortOnDrop {
 
 /// Body of the spawned turn task — separated from [`drive_native_sse`] to keep
 /// that function within the 100-line clippy limit.
-// 9 args are all distinct per-turn data; a struct wrapper would obscure the call site.
-#[allow(clippy::too_many_arguments)]
+//
+// Subprocess model: one persistent `lightarchitects --output-format stream-json`
+// process per build UUID, kept alive in `session_pool` across HTTP turns.
+// Prompts are written to stdin one line at a time; NDJSON events are read from
+// stdout until the terminal `{"type":"result",…}` line arrives.
+// On EOF, error, or interrupt the subprocess is evicted from the pool so the
+// next turn cold-starts a fresh process.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn native_turn_task(
     cwd: std::path::PathBuf,
-    system_prompt: Option<String>,
     write_half: tokio::io::DuplexStream,
     msg: String,
-    ollama_provider: Option<OllamaCliProvider>,
     interrupt_flag: Arc<AtomicBool>,
-    tool_executor: Arc<LightsquadToolExecutor>,
     turn_span_id: String,
     build_id: Uuid,
     model: String,
+    session_pool: NativeSessionPool,
+    binary: String,
 ) {
-    let provider_name = if ollama_provider.is_some() {
-        "ollama-cli"
-    } else {
-        "claude-cli"
-    };
-    let memory = HelixSessionMemory::open(&cwd, 40);
-    let restored = memory.restored_turn_count();
-    tracing::debug!(restored_turns = restored, "helix session memory loaded");
-
-    let config = SessionConfig {
-        cwd,
-        system_prompt,
-        ..SessionConfig::default()
-    };
     let mut transport = SseTransport::new(write_half);
-    let ctx = ChainContext::default();
     let start = std::time::Instant::now();
-    let result = if let Some(provider) = ollama_provider {
-        let mut session = ConversationSession::new(config, Arc::new(provider))
-            .with_memory(Box::new(memory))
-            .with_interrupt_flag(Arc::clone(&interrupt_flag))
-            .with_tool_executor(tool_executor);
-        session.run_turn(&msg, &mut transport, &ctx).await
-    } else {
-        let mut session = ConversationSession::new(config, Arc::new(ClaudeCliProvider::default()))
-            .with_memory(Box::new(memory))
-            .with_interrupt_flag(Arc::clone(&interrupt_flag))
-            .with_tool_executor(tool_executor);
-        session.run_turn(&msg, &mut transport, &ctx).await
+
+    // ── Acquire or spawn the persistent subprocess ────────────────────────
+    let session_arc = match session_pool.entry(build_id) {
+        dashmap::mapref::entry::Entry::Occupied(o) => o.get().clone(),
+        dashmap::mapref::entry::Entry::Vacant(v) => {
+            match CliSubprocessHandle::try_spawn(
+                &cwd,
+                build_id,
+                &binary,
+                Arc::clone(&interrupt_flag),
+            ) {
+                Ok(handle) => {
+                    tracing::info!(build_id = %build_id, binary = %binary, "native_turn: cold-start subprocess");
+                    let arc = Arc::new(tokio::sync::Mutex::new(handle));
+                    let cloned = Arc::clone(&arc);
+                    v.insert(arc);
+                    cloned
+                }
+                Err(e) => {
+                    tracing::error!(build_id = %build_id, error = %e, "native_turn: subprocess spawn failed");
+                    let _ = transport
+                        .emit(&ConversationEvent::Error {
+                            message: format!("subprocess spawn failed: {e}"),
+                            recoverable: Some(false),
+                        })
+                        .await;
+                    return;
+                }
+            }
+        }
     };
-    let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
-    if let Err(e) = result {
-        tracing::error!(error = %e, provider = provider_name, model = %model, "run_turn failed");
+
+    // ── Lock the session for this turn (serialises concurrent turns) ─────
+    let mut handle = session_arc.lock().await;
+
+    // Write the prompt line; subprocess reads one line = one turn.
+    let prompt_line = format!("{msg}\n");
+    if let Err(e) = handle.stdin.write_all(prompt_line.as_bytes()).await {
+        tracing::error!(build_id = %build_id, error = %e, "native_turn: stdin write failed");
+        session_pool.remove(&build_id);
         let _ = transport
             .emit(&ConversationEvent::Error {
-                message: e.to_string(),
+                message: format!("stdin write failed: {e}"),
                 recoverable: Some(false),
             })
             .await;
-    } else {
-        tracing::info!(provider = provider_name, model = %model, duration_ms, "run_turn completed");
-        emit_disk_span(
-            "claude",
-            "assistant.response",
-            serde_json::json!({
-                "build_id": build_id.to_string(),
-                "provider": provider_name,
-                "model": model,
-                "duration_ms": duration_ms,
-            }),
-            lightarchitects::ayin::TraceOutcome::Continue,
-            turn_span_id.parse::<uuid::Uuid>().ok(),
-            Some(build_id),
-        );
+        return;
     }
-    // transport drop closes write_half → EOF on read_half
-}
+    if let Err(e) = handle.stdin.flush().await {
+        tracing::error!(build_id = %build_id, error = %e, "native_turn: stdin flush failed");
+        session_pool.remove(&build_id);
+        let _ = transport
+            .emit(&ConversationEvent::Error {
+                message: format!("stdin flush failed: {e}"),
+                recoverable: Some(false),
+            })
+            .await;
+        return;
+    }
 
-// All 8 arguments are distinct, named, and load-bearing for the single call
-// site; bundling them into a struct would obscure the wiring without any
-// material benefit.  Phase-10 GAP-3 added la_native_api_key + session_token
-// so the per-chunk redact wrapper can scrub both secrets — both are
-// per-request data, not part of any natural sub-struct.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-fn drive_native_sse(
-    build_id: Uuid,
-    grounded_message: &str,
-    cwd: std::path::PathBuf,
-    extra_headers: HeaderMap,
-    system_prompt: Option<String>,
-    interrupt_flag: Arc<AtomicBool>,
-    la_native_api_key: Option<secrecy::SecretString>,
-    session_token: String,
-    tool_executor: Arc<LightsquadToolExecutor>,
-    turn_span_id: String,
-) -> Response {
-    // Reset any prior interrupt before starting a new turn so the flag does
-    // not carry over from a previous cancelled request.
-    interrupt_flag.store(false, Ordering::SeqCst);
-    let (write_half, read_half) = tokio::io::duplex(64 * 1024);
-    let msg = grounded_message.to_owned();
-
-    if let Some(ref sp) = system_prompt {
-        if sp.len() > SYSTEM_PROMPT_WARN_CHARS {
-            tracing::warn!(
-                system_prompt_bytes = sp.len(),
-                warn_threshold_bytes = SYSTEM_PROMPT_WARN_CHARS,
-                "system prelude exceeds 50% of model context window — consider trimming"
-            );
+    // ── NDJSON → SSE translation loop ────────────────────────────────────
+    //
+    // CLI event types (from `run_stream_json_loop`):
+    //   thinking   → ConversationEvent::Thinking
+    //   tool_use   → ConversationEvent::ToolStart   (synthetic id = "tool-N")
+    //   tool_result→ ConversationEvent::ToolComplete (same id)
+    //   context    → ConversationEvent::TokenUsage  (used tokens as `input`)
+    //   result     → ConversationEvent::Text + Complete (terminal line; break)
+    //   error / strategy_halt → ConversationEvent::Error (evict subprocess)
+    let mut tool_counter: u64 = 0;
+    loop {
+        if handle.interrupt_flag.load(Ordering::SeqCst) {
+            tracing::info!(build_id = %build_id, "native_turn: interrupted");
+            session_pool.remove(&build_id);
+            let _ = transport
+                .emit(&ConversationEvent::Error {
+                    message: "interrupted".to_owned(),
+                    recoverable: Some(false),
+                })
+                .await;
+            return;
+        }
+        match handle.stdout.next_line().await {
+            Ok(Some(line)) if !line.is_empty() => {
+                let val: serde_json::Value = match serde_json::from_str(&line) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                match val["type"].as_str().unwrap_or("") {
+                    "thinking" => {
+                        let content = val["text"].as_str().unwrap_or("").to_owned();
+                        let _ = transport
+                            .emit(&ConversationEvent::Thinking { content })
+                            .await;
+                    }
+                    "tool_use" => {
+                        tool_counter += 1;
+                        let name = val["tool"].as_str().unwrap_or("unknown").to_owned();
+                        let summary = val["input_summary"].as_str().unwrap_or("").to_owned();
+                        let _ = transport
+                            .emit(&ConversationEvent::ToolStart {
+                                name,
+                                id: format!("tool-{tool_counter}"),
+                                input: serde_json::json!({ "summary": summary }),
+                            })
+                            .await;
+                    }
+                    "tool_result" => {
+                        let success = val["success"].as_bool().unwrap_or(true);
+                        let duration_ms = val["duration_ms"].as_u64().unwrap_or(0);
+                        let result = val["preview"].as_str().map(ToOwned::to_owned);
+                        let _ = transport
+                            .emit(&ConversationEvent::ToolComplete {
+                                id: format!("tool-{tool_counter}"),
+                                success,
+                                duration_ms,
+                                result,
+                            })
+                            .await;
+                    }
+                    "context" => {
+                        let used = val["used"].as_u64().unwrap_or(0);
+                        let _ = transport
+                            .emit(&ConversationEvent::TokenUsage {
+                                input: used,
+                                output: 0,
+                            })
+                            .await;
+                    }
+                    "result" => {
+                        // CLI emits {"type":"result","subtype":"success","result":"..."}
+                        // or {"type":"result","subtype":"error","error":"..."}.
+                        // Fall back to "text" for forward compatibility.
+                        if val["subtype"] == "error" {
+                            let message = val["error"].as_str().unwrap_or("agent error").to_owned();
+                            tracing::warn!(build_id = %build_id, message = %message, "native_turn: result error");
+                            session_pool.remove(&build_id);
+                            let _ = transport
+                                .emit(&ConversationEvent::Error {
+                                    message,
+                                    recoverable: Some(false),
+                                })
+                                .await;
+                            return;
+                        }
+                        let text = val["result"]
+                            .as_str()
+                            .or_else(|| val["text"].as_str())
+                            .unwrap_or("")
+                            .to_owned();
+                        if !text.is_empty() {
+                            let _ = transport
+                                .emit(&ConversationEvent::Text { chunk: text })
+                                .await;
+                        }
+                        let _ = transport
+                            .emit(&ConversationEvent::Complete {
+                                reason: TerminationReason::Complete,
+                            })
+                            .await;
+                        break;
+                    }
+                    "strategy_halt" | "error" => {
+                        let message = val["message"]
+                            .as_str()
+                            .or_else(|| val["text"].as_str())
+                            .or_else(|| val["error"].as_str())
+                            .unwrap_or("agent halted")
+                            .to_owned();
+                        tracing::warn!(build_id = %build_id, message = %message, "native_turn: subprocess halt");
+                        session_pool.remove(&build_id);
+                        let _ = transport
+                            .emit(&ConversationEvent::Error {
+                                message,
+                                recoverable: Some(false),
+                            })
+                            .await;
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Some(_)) => {} // empty line — skip
+            Ok(None) => {
+                // EOF — subprocess exited unexpectedly
+                tracing::warn!(build_id = %build_id, "native_turn: subprocess stdout EOF");
+                session_pool.remove(&build_id);
+                let _ = transport
+                    .emit(&ConversationEvent::Error {
+                        message: "subprocess exited unexpectedly".to_owned(),
+                        recoverable: Some(false),
+                    })
+                    .await;
+                return;
+            }
+            Err(e) => {
+                tracing::error!(build_id = %build_id, error = %e, "native_turn: stdout read error");
+                session_pool.remove(&build_id);
+                let _ = transport
+                    .emit(&ConversationEvent::Error {
+                        message: format!("subprocess read error: {e}"),
+                        recoverable: Some(false),
+                    })
+                    .await;
+                return;
+            }
         }
     }
 
-    // Provider selection: prefer Ollama Cloud when the AppState-resolved auth
-    // token is present (read once at startup via `AppState::new` — no
-    // per-request `std::env::var` read, closing the TOCTOU window per Phase-10
-    // hardening), otherwise fall back to ClaudeCliProvider for legacy
-    // compatibility. ConversationSession is generic over a concrete provider
-    // type, so the branches construct independent sessions rather than sharing
-    // a trait object.
-    let use_ollama = la_native_api_key.is_some();
+    drop(handle); // release mutex before span emit
+
+    let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+    tracing::info!(build_id = %build_id, model = %model, duration_ms, "native_turn: completed");
+    emit_disk_span(
+        "lightarchitects-cli",
+        "assistant.response",
+        serde_json::json!({
+            "build_id": build_id.to_string(),
+            "provider": "lightarchitects",
+            "model": model,
+            "duration_ms": duration_ms,
+        }),
+        lightarchitects::ayin::TraceOutcome::Continue,
+        turn_span_id.parse::<uuid::Uuid>().ok(),
+        Some(build_id),
+    );
+    // transport drop closes write_half → EOF on read_half
+}
+
+// la_native_api_key is retained for secret-redaction only (OA-3: scrub tokens
+// before bytes leave the process); provider selection is handled entirely by
+// the subprocess binary, which reads its own credentials at startup.
+#[allow(clippy::too_many_arguments)]
+fn drive_native_sse(
+    build_id: Uuid,
+    msg: &str,
+    cwd: std::path::PathBuf,
+    extra_headers: HeaderMap,
+    interrupt_flag: Arc<AtomicBool>,
+    la_native_api_key: Option<secrecy::SecretString>,
+    session_token: String,
+    turn_span_id: String,
+    session_pool: NativeSessionPool,
+) -> Response {
+    // Reset any prior interrupt before starting a new turn.
+    interrupt_flag.store(false, Ordering::SeqCst);
+    let (write_half, read_half) = tokio::io::duplex(64 * 1024);
+    let msg = msg.to_owned();
+
+    let binary = super::resolve_binary("lightarchitects");
     let model = std::env::var("LA_MODEL")
         .ok()
         .filter(|m| !m.is_empty())
         .unwrap_or_else(|| "nemotron-3-super:cloud".to_owned());
-    let ollama_provider = if use_ollama {
-        match OllamaCliProvider::new(&model, la_native_api_key.clone()) {
-            Ok(p) => Some(p),
-            Err(e) => {
-                // W8.2: surface provider-construction failure so the operator
-                // can see why we fell back to ClaudeCliProvider rather than
-                // silently degrading without explanation.
-                tracing::warn!(
-                    error = %e,
-                    model = %model,
-                    "OllamaCliProvider construction failed — falling back to ClaudeCliProvider"
-                );
-                None
-            }
-        }
-    } else {
-        None
-    };
 
-    let provider_name = if ollama_provider.is_some() {
-        "ollama-cli"
-    } else {
-        "claude-cli"
-    };
-
-    // Span carries build_id so every tracing event inside run_turn is correlated
-    // in AYIN's dashboard under the same trace root (W8.4).
+    // Span carries build_id so AYIN correlates all tracing events for this turn.
     let span = tracing::info_span!(
         "native_turn",
         build_id = %build_id,
-        provider = provider_name,
+        provider = "lightarchitects",
         model = %model,
     );
     tracing::info!(parent: &span, "drive_native_sse spawning turn");
@@ -448,32 +564,21 @@ fn drive_native_sse(
     let handle = tokio::spawn(
         native_turn_task(
             cwd,
-            system_prompt,
             write_half,
             msg,
-            ollama_provider,
             interrupt_flag,
-            tool_executor,
             turn_span_id,
             build_id,
-            model.clone(),
+            model,
+            session_pool,
+            binary,
         )
         .instrument(span),
     );
 
-    // W7.3: AbortOnDrop (module-level struct) lives inside the stream's map
-    // closure. When the response Body is dropped on client disconnect, the
-    // closure drops, firing abort_handle.abort() on the in-flight task.
-    //
-    // Phase-10 (GAP-3): every chunk is passed through `redact_secrets()`
-    // against the session bearer token and (when present) the
-    // OLLAMA_API_KEY before the bytes leave the process. This closes the
-    // native-SSE bypass of `sse_handler::redact()` documented in the
-    // webshell-la-native-backend merge gate.
-    //
-    // Performance: each chunk is UTF-8 decoded with `String::from_utf8_lossy`
-    // and re-encoded only when a secret is present in the chunk (the helper
-    // returns the input unchanged otherwise — branch-free hot path).
+    // W7.3: AbortOnDrop cancels the in-flight task on client disconnect.
+    // GAP-3: every chunk is scrubbed for the session token and OLLAMA_API_KEY
+    // before the bytes leave the process (branch-free hot path when no secret present).
     let abort_guard = AbortOnDrop(handle.abort_handle());
     let api_key_for_redact: Option<String> = la_native_api_key
         .as_ref()
@@ -489,7 +594,6 @@ fn drive_native_sse(
                     &[session_token.as_str(), key_ref],
                 );
                 if redacted == s.as_ref() {
-                    // Hot path: no secret found, return original bytes verbatim.
                     Ok(bytes)
                 } else {
                     Ok(Bytes::from(redacted.into_bytes()))
@@ -510,7 +614,6 @@ fn drive_native_sse(
         Err(e) => {
             // Static header names/values cannot produce an error in practice;
             // this branch exists to satisfy the no-unwrap/no-expect policy.
-            // Dropping `stream` here also drops `abort_guard`, cancelling the task.
             tracing::error!(error = %e, "BUG: failed to construct SSE response with static headers");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,

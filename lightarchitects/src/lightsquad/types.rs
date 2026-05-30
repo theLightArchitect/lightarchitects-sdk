@@ -4,71 +4,22 @@
 //! [`SharedState`] is accessed through an `Arc<RwLock<_>>` because reads
 //! dominate during wave execution. [`Coordinator`] distributes `Arc`-cloned
 //! handles so all downstream components share the same state and mutex.
+//!
+//! # Re-exports from `la_lightsquad`
+//!
+//! The four status enums ([`TaskStatus`], [`WaveStatus`], [`BuildStatus`],
+//! [`AgentStatus`]) are re-exported from the public `la_lightsquad` crate.
+//! This ensures wire-format compatibility between the SDK and any external
+//! consumer that depends on `la_lightsquad` directly.
 
 use std::{collections::HashMap, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, Notify, RwLock};
 
-// ── Status enums ──────────────────────────────────────────────────────────────
+// ── Status enums (re-exported from la_lightsquad) ───────────────────────────
 
-/// Status of a single task within a wave.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TaskStatus {
-    /// Queued but dependencies have not yet completed.
-    Pending,
-    /// Actively running in a worker slot.
-    InProgress,
-    /// Completed successfully and ready to merge.
-    Complete,
-    /// Encountered an unrecoverable error.
-    Failed,
-}
-
-/// Status of a wave (a batch of tasks dispatched in parallel).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WaveStatus {
-    /// Queued, not yet dispatched.
-    Pending,
-    /// At least one task is currently running.
-    Running,
-    /// All tasks completed and merged successfully.
-    Complete,
-    /// At least one task failed; wave halted.
-    Failed,
-}
-
-/// Status of the overall build.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BuildStatus {
-    /// Queued; preflight not yet run.
-    Pending,
-    /// At least one wave is in progress.
-    Running,
-    /// A gate is being evaluated between waves.
-    Gating,
-    /// All waves completed and merged.
-    Complete,
-    /// Halted due to an unrecoverable error.
-    Failed,
-}
-
-/// Status of an individual agent (worker subprocess) in a slot.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AgentStatus {
-    /// Slot is unassigned.
-    Idle,
-    /// Agent subprocess is running.
-    Running,
-    /// Agent is blocked on a PAUSE/drain signal.
-    Paused,
-    /// Agent subprocess has exited.
-    Done,
-}
+pub use la_lightsquad::{AgentStatus, BuildStatus, TaskStatus, WaveStatus};
 
 // ── Task definition ───────────────────────────────────────────────────────────
 

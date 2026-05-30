@@ -17,7 +17,23 @@ use std::path::{Path, PathBuf};
 
 use uuid::Uuid;
 
+use la_ayinspan::turn::{TurnContext, TurnTracker, TurnTracking};
+use la_ayinspan::{Actor, TraceError, TraceSpan as AyinTraceSpan};
+
 use crate::ayin::span::TraceSpan;
+
+// ── Span emit error + dyn alias ───────────────────────────────────────────────
+
+/// Opaque emission error — wraps any backend failure message.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct SpanEmitError(pub String);
+
+/// Object-safe, type-erased [`la_ayinspan::SpanEmit`] with a uniform error type.
+///
+/// Use [`FileSpanEmitter::into_dyn`] to convert a concrete emitter. Hold as
+/// `Arc<DynSpanEmitter>` for cheap clone across transport/observer pairs.
+pub type DynSpanEmitter = dyn la_ayinspan::emit::SpanEmit<Error = SpanEmitError> + Send + Sync;
 
 // ── Span context ──────────────────────────────────────────────────────────────
 
@@ -25,12 +41,69 @@ use crate::ayin::span::TraceSpan;
 ///
 /// Propagated via `tokio::task_local!`. Use [`with_span_context`] to seed
 /// a scope and [`spawn_with_span_context`] to forward across `tokio::spawn`.
+///
+/// Also implements [`TurnTracking`] so the gateway and copilot can advance
+/// the turn counter directly on the context before seeding it into scope.
+/// Cloned contexts (via [`spawn_with_span_context`]) share the same session
+/// snapshot; the turn tracker is embedded by value and is cloned too (the
+/// next `start_turn` call on a child clone diverges independently).
 #[derive(Clone, Debug, Default)]
 pub struct SpanContext {
     /// Stable session identifier — groups all spans for a single interaction.
     pub session_id: Option<String>,
+    /// 0-based turn counter — mirrors [`TurnContext::turn_index`].
+    pub turn_index: Option<u32>,
     /// Parent span UUID — links child spans to their logical parent.
     pub parent_id: Option<Uuid>,
+    /// Embedded turn state machine — `None` until [`TurnTracking::start_turn`] is called.
+    tracker: Option<TurnTracker>,
+}
+
+impl SpanContext {
+    /// Construct a context pre-seeded with a session ID and optional parent span.
+    ///
+    /// Also initialises the embedded [`TurnTracker`] so
+    /// [`TurnTracking::start_turn`] is immediately callable.
+    pub fn seeded(session_id: impl Into<String>, parent_id: Option<Uuid>) -> Self {
+        let s = session_id.into();
+        Self {
+            session_id: Some(s.clone()),
+            turn_index: None,
+            parent_id,
+            tracker: Some(TurnTracker::new(s)),
+        }
+    }
+}
+
+impl TurnTracking for SpanContext {
+    fn start_turn(&mut self, actor: Actor, action: &str) -> Result<AyinTraceSpan, TraceError> {
+        let session_id = self.session_id.clone().unwrap_or_default();
+        let tracker = self
+            .tracker
+            .get_or_insert_with(|| TurnTracker::new(&session_id));
+        let span = tracker.start_turn(actor, action)?;
+        if let Some(ctx) = tracker.current_context() {
+            self.turn_index = Some(ctx.turn_index);
+            self.parent_id = Some(ctx.turn_root_id);
+        }
+        Ok(span)
+    }
+
+    fn current_context(&self) -> Option<&TurnContext> {
+        self.tracker.as_ref()?.current_context()
+    }
+
+    fn finish_turn(&mut self) {
+        if let Some(tracker) = &mut self.tracker {
+            tracker.finish_turn();
+            self.turn_index = None;
+            self.parent_id = None;
+        }
+    }
+
+    fn session_id(&self) -> &str {
+        self.session_id.as_deref().unwrap_or("")
+    }
 }
 
 tokio::task_local! {
@@ -170,6 +243,96 @@ fn is_exdev(e: &std::io::Error) -> bool {
     e.raw_os_error() == Some(libc::EXDEV)
 }
 
+// ── FileSpanEmitter ───────────────────────────────────────────────────────────
+
+/// Synchronous file-backed [`la_ayinspan::SpanEmit`] implementation.
+///
+/// Uses the same atomic tmp→rename pattern as [`write_span_to_disk`] but via
+/// synchronous `std::fs` — required because [`la_ayinspan::SpanEmit::emit`]
+/// is a sync method (callable from `on_action_finish` hooks).
+pub struct FileSpanEmitter {
+    base: PathBuf,
+}
+
+impl FileSpanEmitter {
+    /// Create an emitter rooted at `base`.
+    #[must_use]
+    pub fn new(base: PathBuf) -> Self {
+        Self { base }
+    }
+
+    /// Create an emitter rooted at the canonical AYIN trace directory.
+    #[must_use]
+    pub fn with_default_base() -> Self {
+        Self {
+            base: default_trace_base(),
+        }
+    }
+}
+
+impl FileSpanEmitter {
+    /// Box this emitter as a [`DynSpanEmitter`] for use with [`ObservableTransport`].
+    #[must_use]
+    pub fn into_dyn(self) -> Box<DynSpanEmitter> {
+        Box::new(self)
+    }
+}
+
+impl la_ayinspan::SpanEmit for FileSpanEmitter {
+    type Error = SpanEmitError;
+
+    fn emit(&self, span: la_ayinspan::TraceSpan) -> Result<(), Self::Error> {
+        use std::io::Write as _;
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let bytes =
+            serde_json::to_vec(&span).map_err(|e| SpanEmitError(format!("span serialize: {e}")))?;
+        if bytes.len() > SPAN_BUDGET_BYTES {
+            tracing::warn!(span_id = %span.id, "AYIN span dropped: payload exceeds 64 KB budget");
+            return Ok(());
+        }
+
+        let dir = span_dir(&self.base, span.actor.name(), &span.timestamp);
+        std::fs::create_dir_all(&dir).map_err(|e| SpanEmitError(format!("ayin trace dir: {e}")))?;
+
+        let safe_action = span.action.replace('/', "_");
+        let id_prefix = &span.id.to_string()[..8];
+        let filename = format!(
+            "{}-{safe_action}-{id_prefix}.json",
+            span.timestamp.format("%H-%M-%S")
+        );
+
+        let dest = dir.join(&filename);
+        let tmp = dir.join(format!("{filename}.tmp"));
+
+        {
+            let mut f = std::fs::File::create(&tmp)
+                .map_err(|e| SpanEmitError(format!("ayin tmp create: {e}")))?;
+            f.write_all(&bytes)
+                .map_err(|e| SpanEmitError(format!("ayin tmp write: {e}")))?;
+        }
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| SpanEmitError(format!("ayin tmp chmod: {e}")))?;
+
+        match std::fs::rename(&tmp, &dest) {
+            Ok(()) => {
+                fullfsync_path(&dest);
+                Ok(())
+            }
+            Err(ref e) if is_exdev(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                std::fs::write(&dest, &bytes)
+                    .map_err(|e| SpanEmitError(format!("ayin EXDEV write: {e}")))?;
+                std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o600))
+                    .map_err(|e| SpanEmitError(format!("ayin EXDEV chmod: {e}")))?;
+                fullfsync_path(&dest);
+                Ok(())
+            }
+            Err(e) => Err(SpanEmitError(format!("ayin span rename: {e}"))),
+        }
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn fullfsync_path(path: &Path) {
     use std::os::unix::io::AsRawFd;
@@ -200,7 +363,9 @@ mod tests {
     async fn span_ctx_propagates_through_scope() {
         let ctx = SpanContext {
             session_id: Some("sess-123".to_owned()),
+            turn_index: None,
             parent_id: Some(Uuid::new_v4()),
+            tracker: None,
         };
         let seen = with_span_context(ctx.clone(), async { current_span_ctx() }).await;
         assert_eq!(seen.session_id, ctx.session_id);
@@ -212,6 +377,7 @@ mod tests {
     async fn current_span_ctx_returns_default_outside_scope() {
         let ctx = current_span_ctx();
         assert!(ctx.session_id.is_none());
+        assert!(ctx.turn_index.is_none());
         assert!(ctx.parent_id.is_none());
     }
 
@@ -221,7 +387,9 @@ mod tests {
         let expected_session = "forward-test".to_owned();
         let ctx = SpanContext {
             session_id: Some(expected_session.clone()),
+            turn_index: None,
             parent_id: None,
+            tracker: None,
         };
         #[allow(clippy::async_yields_async)]
         let handle = with_span_context(ctx, async {
@@ -278,5 +446,29 @@ mod tests {
             .filter_map(std::result::Result::ok)
             .collect();
         assert_eq!(entries.len(), 0, "oversized span should not be written");
+    }
+
+    #[allow(clippy::unwrap_used, clippy::expect_used)]
+    #[test]
+    fn file_span_emitter_writes_la_ayinspan() {
+        use la_ayinspan::{
+            Actor as LaActor, SpanEmit, TraceContext as LaCtx, TraceOutcome as LaOut,
+        };
+
+        let tmp_dir = tempfile::tempdir().expect("tempdir");
+        let emitter = FileSpanEmitter::new(PathBuf::from(tmp_dir.path()));
+
+        let span = LaCtx::new(LaActor::new("gateway"), "test.emit")
+            .outcome(LaOut::Continue)
+            .finish()
+            .expect("span");
+
+        emitter.emit(span).expect("emit");
+
+        let entries: Vec<_> = std::fs::read_dir(tmp_dir.path())
+            .expect("readdir")
+            .filter_map(std::result::Result::ok)
+            .collect();
+        assert_eq!(entries.len(), 1, "expected one date-subdirectory");
     }
 }

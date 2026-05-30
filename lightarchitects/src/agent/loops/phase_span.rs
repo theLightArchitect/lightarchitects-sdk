@@ -4,10 +4,7 @@
 //! contract (manifest.yaml `observability_contract`). These complement the
 //! per-step spans in [`super::trace`] with coarser phase-boundary events.
 
-use crate::ayin::{
-    TraceError,
-    span::{Actor, TraceContext, TraceOutcome, TraceSpan},
-};
+use crate::ayin::span::{Actor, TraceContext, TraceError, TraceOutcome, TraceSpan};
 
 /// Emit an AYIN [`TraceSpan`] marking the start of a named loop phase.
 ///

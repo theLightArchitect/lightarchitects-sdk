@@ -108,18 +108,11 @@ impl ImageManager {
         );
 
         let gateway_bin = host_bin.join("lightarchitects");
-        let cli_bin = host_bin.join("lightarchitects-cli");
 
         if gateway_bin.is_file() {
             std::fs::copy(&gateway_bin, tmp.join("lightarchitects"))?;
         } else {
-            tracing::warn!(path = %gateway_bin.display(), "gateway binary not found — image may be incomplete");
-        }
-
-        if cli_bin.is_file() {
-            std::fs::copy(&cli_bin, tmp.join("lightarchitects-cli"))?;
-        } else {
-            tracing::warn!(path = %cli_bin.display(), "cli binary not found — image may be incomplete");
+            tracing::warn!(path = %gateway_bin.display(), "lightarchitects binary not found — image may be incomplete");
         }
 
         tracing::info!(target: "container", image = %self.image_name, path = %tmp.display(), "building image from embedded Dockerfile");
