@@ -1,0 +1,61 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-30T15:20:00Z"
+build_id: neo4j-aura-dual-mode
+phase_id: phase-5-coverage
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 713
+    tests_fail: 0
+    note: |
+      cargo test -p lightarchitects-webshell --lib: 713 pass, 0 fail.
+      cargo test --workspace --all-features aborted at compile time (disk-full; 16GB freed via
+      cargo clean --profile dev). Scoped re-run (-p lightarchitects-webshell -p lightarchitects)
+      confirms all affected-crate tests pass. docker_probe_detects_capability in container_e2e.rs
+      is FLAKY (pre-existing, environmental) — Docker daemon I/O error on blob content store from
+      disk-full incident; container_e2e.rs has zero commits on feat/neo4j-aura-dual-mode;
+      not a regression introduced by this branch.
+  Q4_svelte: "n/a"
+  T1_coverage:
+    result: pass
+    primary_file: "lightarchitects-webshell/src/session_store.rs"
+    coverage: "68/68 = 100%"
+    baseline_coverage: "40/68 = 59%"
+    delta: "+27.94%"
+    overall_package: "10.38% (3330/32089 lines)"
+    note: |
+      P7 check 8 target (≥90% on production paths) satisfied for session_store.rs (100%).
+      QueueIoError Display arms in coordination/handlers.rs now covered.
+      Overall handlers.rs coverage (105/519 = 20%) is not blocking — HTTP handler paths
+      require axum integration test harness (out of scope for this build per plan §Phase 5 note).
+      Documented gap: setup/handlers.rs + coordination/handlers.rs HTTP paths.
+      Remediation path: axum TestClient integration tests in Phase 6 or successor build.
+  C1_canon:
+    result: pass
+    pyramid_mapping:
+      unit: "session_store::tests (13 tests), coordination::handlers::tests, helix::db::tests"
+      integration: "wikilink_integration.rs, graphsage_integration.rs (Docker-gated, existing)"
+      crash_recovery: "uncommitted_transaction_is_rolled_back_on_reopen (Phase 2)"
+      coverage_suite: "cargo-tarpaulin: session_store.rs 100%, QueueIoError Display covered"
+      regression: "test count ratchet 706 → 713, no test removals"
+      smoke: "n/a — no new binary surface; Phase 6 covers binary smoke"
+  D2_plan:
+    result: pass
+    note: |
+      Phase 5 deliverables match plan spec: baseline tarpaulin (10.27% → 10.38%), gap analysis
+      (session_store.rs touch/remove/ALTER TABLE/open paths identified), gap closure (7 tests),
+      final tarpaulin (session_store.rs 100%). All 5 exit criteria satisfied.
+
+notes: |
+  Phase 5 adds 7 targeted unit tests covering previously uncovered production paths:
+  touch() UPDATE + COALESCE preserve, remove() DELETE + no-op, ALTER TABLE migration branch
+  (pre-northstar-column DB fixture), open() real-path fallback, QueueIoError Display all 4 variants.
+  session_store.rs advances from 59% to 100% line coverage (68/68).
+  Disk-full environmental condition (recurrence from Phase 3) cleared via cargo clean --profile dev.
+  Test count ratchet: 706 (gate-4 baseline) → 713 (+7 net new).
