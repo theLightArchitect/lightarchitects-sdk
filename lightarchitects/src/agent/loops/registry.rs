@@ -23,8 +23,10 @@ use super::{
     build::BuildStrategy,
     enrich::EnrichStrategy,
     error::LoopError,
+    gate::GateStrategy,
     meta_skill::{LoopOutput, LoopState, MetaSkill},
     runner::{Outcome, StepContext, Strategy},
+    scope_governor::ScopeGovernorStrategy,
     scrum::{ScrumMode, ScrumStrategy},
     secure::SecureStrategy,
 };
@@ -44,6 +46,10 @@ pub enum RegisteredStrategy {
     Scrum(ScrumStrategy),
     /// EVA-primary memory enrichment.
     Enrich(EnrichStrategy),
+    /// LASDLC 7-gate sequential evaluation loop.
+    Gate(GateStrategy),
+    /// SERAPH 5-gate AND-validation scope governance loop.
+    ScopeGovernor(ScopeGovernorStrategy),
 }
 
 #[async_trait]
@@ -61,6 +67,8 @@ impl Strategy for RegisteredStrategy {
             Self::Secure(s) => s.step(state, ctx).await,
             Self::Scrum(s) => s.step(state, ctx).await,
             Self::Enrich(s) => s.step(state, ctx).await,
+            Self::Gate(s) => s.step(state, ctx).await,
+            Self::ScopeGovernor(s) => s.step(state, ctx).await,
         }
     }
 
@@ -70,6 +78,8 @@ impl Strategy for RegisteredStrategy {
             Self::Secure(s) => s.name(),
             Self::Scrum(s) => s.name(),
             Self::Enrich(s) => s.name(),
+            Self::Gate(s) => s.name(),
+            Self::ScopeGovernor(s) => s.name(),
         }
     }
 
@@ -79,6 +89,8 @@ impl Strategy for RegisteredStrategy {
             Self::Secure(s) => s.estimated_step_cost_usd(),
             Self::Scrum(s) => s.estimated_step_cost_usd(),
             Self::Enrich(s) => s.estimated_step_cost_usd(),
+            Self::Gate(s) => s.estimated_step_cost_usd(),
+            Self::ScopeGovernor(s) => s.estimated_step_cost_usd(),
         }
     }
 }
@@ -104,6 +116,10 @@ impl StrategyRegistry {
             MetaSkill::Secure => Some(RegisteredStrategy::Secure(SecureStrategy::new())),
             MetaSkill::Scrum => Some(RegisteredStrategy::Scrum(ScrumStrategy::review())),
             MetaSkill::Enrich => Some(RegisteredStrategy::Enrich(EnrichStrategy::new())),
+            MetaSkill::Gate => Some(RegisteredStrategy::Gate(GateStrategy::new())),
+            MetaSkill::ScopeGovernor => Some(RegisteredStrategy::ScopeGovernor(
+                ScopeGovernorStrategy::new(),
+            )),
         }
     }
 
@@ -115,6 +131,10 @@ impl StrategyRegistry {
             MetaSkill::Secure => RegisteredStrategy::Secure(SecureStrategy::new()),
             MetaSkill::Scrum => RegisteredStrategy::Scrum(ScrumStrategy::review()),
             MetaSkill::Enrich => RegisteredStrategy::Enrich(EnrichStrategy::new()),
+            MetaSkill::Gate => RegisteredStrategy::Gate(GateStrategy::new()),
+            MetaSkill::ScopeGovernor => {
+                RegisteredStrategy::ScopeGovernor(ScopeGovernorStrategy::new())
+            }
         }
     }
 
@@ -134,7 +154,14 @@ mod tests {
 
     #[test]
     fn lookup_all_registered_ids() {
-        for id in ["build", "secure", "scrum", "enrich"] {
+        for id in [
+            "build",
+            "secure",
+            "scrum",
+            "enrich",
+            "gate",
+            "scope_governor",
+        ] {
             assert!(
                 StrategyRegistry::lookup(id).is_some(),
                 "id '{id}' should be registered"

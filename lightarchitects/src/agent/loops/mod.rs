@@ -42,21 +42,28 @@
 //! [`LlmAgentProvider`]: crate::agent::LlmAgentProvider
 
 pub mod ach;
+pub mod bcra;
 pub mod budget;
 pub mod build;
 pub mod compose;
+pub mod convergence;
 pub mod cove;
 pub mod critique_refine;
+pub mod drain;
 pub mod enrich;
 pub mod ensemble;
 pub mod error;
+pub mod gate;
 pub mod itt;
 pub mod meta_skill;
+pub mod multipass;
 pub mod phase_span;
 pub mod react;
+pub mod red_team;
 pub mod reflexion;
 pub mod registry;
 pub mod runner;
+pub mod scope_governor;
 pub mod scrum;
 pub mod secure;
 pub mod trace;
@@ -85,9 +92,19 @@ pub use reflexion::{
 pub use runner::{HitlRequest, LoopRunner, Outcome, StepContext, StepResult, Strategy};
 
 // Chatroom strategy loops (Phase 4)
+pub use bcra::{BcraExecutor, BcraOutput, BcraPhase, BcraState, BcraStrategy};
 pub use build::BuildStrategy;
+pub use convergence::{
+    BlastScore, ConvergenceGate, ConvergenceResult, InterestDecay, IntervalWatch, NPassVerifier,
+    QueueDrain,
+};
+pub use drain::{DrainExecutor, DrainOutput, DrainState, DrainStrategy};
 pub use enrich::EnrichStrategy;
+pub use gate::{GatePhase, GateStrategy};
 pub use meta_skill::{LoopOutput, LoopState, MetaSkill};
+pub use multipass::{MultiPassExecutor, MultiPassOutput, MultiPassState, MultiPassVerifyStrategy};
+pub use red_team::{RedTeamExecutor, RedTeamOutput, RedTeamPhase, RedTeamState, RedTeamStrategy};
 pub use registry::{RegisteredStrategy, StrategyRegistry};
+pub use scope_governor::{ScopeGate, ScopeGovernorStrategy};
 pub use scrum::{ScrumMode, ScrumStrategy};
 pub use secure::SecureStrategy;
