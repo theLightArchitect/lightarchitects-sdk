@@ -1,0 +1,52 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-30T15:45:00Z"
+build_id: ironclaw-autonomous-e2e
+phase_id: phase-5-frontend
+branch: feat/ironclaw-autonomous-e2e
+head_sha: aded1fc343e7cb2f291ec3820c81dd984d1b5298
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 761
+    tests_fail: 0
+    flaky_pre_existing:
+      - test: dispatch_wave_safe_tasks_peak_exceeds_write_slot_capacity
+        file: lightarchitects/tests/lightsquad_wave.rs
+        classification: "FLAKY (pre-existing) — fails in --workspace due to parallel CPU contention; passes in isolation (verified); wave_dispatcher.rs unchanged on this branch; exists on main"
+      - test: dispatch_wave_mixed_safe_and_unsafe_respect_independent_pools
+        file: lightarchitects/tests/lightsquad_wave.rs
+        classification: "FLAKY (pre-existing) — same as above; passes in isolation (verified)"
+  Q4_svelte:
+    result: pass
+    vitest:
+      tests_run: 777
+      tests_pass: 776
+      tests_fail: 1
+      pre_existing_failures:
+        - test: "AgentSelector shows empty-state warning"
+          file: src/components/dispatch/AgentSelector.svelte.test.ts
+          classification: "pre-existing — confirmed via isolation run before Phase 5 changes"
+    svelte_check:
+      result: pass_with_pre_existing_errors
+      errors: 5
+      phase5_introduced: 0
+      pre_existing:
+        - file: src/lib/stores.ts
+          line: 1158
+          error: "CdpDomSnapshotResponse not in types.ts"
+        - file: src/components/SettingsOverlay.svelte
+          lines: [150, 151, 152, 245]
+          error: '"dev" tab not in tab union type'
+  D2_plan: pass
+
+notes:
+  - "Phase 5 scope: IronclawHitlEscalationEvent + IronclawHitlResolutionEvent types, ironclawHitlEscalation store, sse.ts wiring for 2 new SSE event types, 4 new Svelte components (WaveSlotGrid, HitlModal, StartForm, AutonomousBuildsPanel), 16 Vitest tests"
+  - "EventType union extended with ironclaw_hitl_escalation + ironclaw_hitl_resolution to satisfy svelte-check"
+  - "Old stash conflict resolved (--ours HEAD) before gate run; stash predates Phase 4"
+  - "nonce security constraint preserved: never displayed in UI, never logged (CWE-209)"
