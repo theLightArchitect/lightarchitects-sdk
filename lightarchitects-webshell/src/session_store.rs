@@ -69,7 +69,13 @@ impl SessionStore {
         Self { conn }
     }
 
+    /// Initialises the sessions schema.
+    ///
+    /// Sets WAL journaling mode for crash-safe operation (P7 check 4): data committed
+    /// before an abnormal process termination is preserved on restart. Idempotent —
+    /// safe to call on an existing WAL-mode database.
     fn init_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
         conn.execute(
             "CREATE TABLE IF NOT EXISTS sessions (
                 build_id TEXT PRIMARY KEY,
@@ -301,5 +307,56 @@ mod tests {
             .set_northstar_text("ghost-build", "irrelevant")
             .unwrap();
         assert_eq!(store.count().unwrap(), 0);
+    }
+
+    #[test]
+    fn wal_mode_is_active_after_init_schema() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let conn = Connection::open(tmp.path()).unwrap();
+        SessionStore::init_schema(&conn).unwrap();
+        let mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            mode, "wal",
+            "journal_mode must be WAL after init_schema (P7 check 4)"
+        );
+    }
+
+    #[test]
+    fn uncommitted_transaction_is_rolled_back_on_reopen() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        {
+            let conn = Connection::open(tmp.path()).unwrap();
+            SessionStore::init_schema(&conn).unwrap();
+            conn.execute(
+                "INSERT INTO sessions (build_id, cwd, agent_kind, created_at, updated_at, containerized)
+                 VALUES ('committed', '/tmp', 'la', 1, 1, 0)",
+                [],
+            )
+            .unwrap();
+            // Begin a transaction, insert, then drop without committing — WAL rollback path.
+            let tx = conn.unchecked_transaction().unwrap();
+            tx.execute(
+                "INSERT INTO sessions (build_id, cwd, agent_kind, created_at, updated_at, containerized)
+                 VALUES ('uncommitted', '/tmp', 'la', 1, 1, 0)",
+                [],
+            )
+            .unwrap();
+            drop(tx); // rollback
+        }
+        // Reopen — committed row must survive; uncommitted row must not.
+        let conn2 = Connection::open(tmp.path()).unwrap();
+        let count: i64 = conn2
+            .query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            count, 1,
+            "only the committed row should survive after WAL rollback"
+        );
+        let id: String = conn2
+            .query_row("SELECT build_id FROM sessions", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(id, "committed");
     }
 }
