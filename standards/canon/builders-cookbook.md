@@ -4895,6 +4895,38 @@ web dashboard SSE, session persistence) MUST have a serialization round-trip tes
 **Rule S50.5b**: Every type that may receive data from a future version of the producer
 (stored sessions, config files, MCP messages) MUST have a forward compatibility test.
 
+**Rule S50.5c — Emission Existence (SSE and broadcast event boundaries)**: A type
+declaration does not prove emission. For every SSE or `tokio::sync::broadcast` event type
+that crosses a subsystem or build boundary, audit that the producer source contains an
+active emission callsite — not merely that the type compiles or that the SSE parser can
+deserialize its shape. Type-checker, SSE parser, and contract round-trip tests (S50.5a/b)
+all pass when the emission callsite is deleted; only runtime behavior breaks silently.
+
+```rust
+// Pattern D — Emission existence check (in the producer's test suite):
+// Assert that at least one callsite emits the boundary type.
+// Without this, the type compiles and S50.5a passes, but no events arrive at consumers.
+//
+// Example: verify escalate_to_hitl() still emits the event after refactor.
+#[test]
+fn escalation_callsite_emits_ironclaw_hitl_event() {
+    // Drive the production code path; assert the event variant appears on the channel.
+    let (tx, mut rx) = tokio::sync::broadcast::channel(16);
+    // ... exercise the producer ...
+    let received = rx.try_recv().expect("emission callsite must fire");
+    assert!(matches!(received, WebEvent::IronclawHitlEscalation(_)));
+}
+```
+
+**Cross-build corollary**: When plan A produces SSE events consumed by plan B,
+cross-examine plan A for both the type declaration task AND the emission task — they can
+diverge silently. A plan may say "do NOT modify `EscalationEvent`" (type preserved) AND
+"Remove `WebEvent::Escalation` from `escalate_to_hitl()`" (callsite deleted) in the same
+phase. Grep the producer plan for both, not just for the type name.
+
+*Source*: ironclaw-autonomous-e2e × cockpit-wave-composer cross-build audit, 2026-05-30.
+Ratified by LÆX (S50.5c), confidence HIGH.
+
 ### §50.6 Idempotency and Test Data Hygiene
 
 **Rule S50.6a — No real filesystem side effects**: Tests MUST NOT read from or write to

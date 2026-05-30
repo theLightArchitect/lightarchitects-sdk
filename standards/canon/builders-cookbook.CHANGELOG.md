@@ -8,6 +8,21 @@ Companion changelog for `builders-cookbook.md`. The cookbook holds **current sta
 
 ---
 
+## v3.10.0 — SSE Emission Existence — Rule S50.5c (2026-05-30, LÆX ratification)
+
+**Source**: /REFLECT session post cockpit-wave-composer × ironclaw-autonomous-e2e cross-build plan audit. Caught pre-merge in plan cross-examination; would have been a silent production bug.
+
+### §50.5c — Emission Existence (SSE and broadcast event boundaries)
+**Candidate**: /REFLECT proposal L1 — promoted from `feedback_sse_emission_vs_type_declaration`
+**LÆX verdict**: PROMOTE, confidence HIGH
+**Rationale**: The emission-vs-declaration failure class is genuinely absent from existing canon. §48.2r covers TraceSpan emission for I/O (addition direction). §512 covers config-driven consumer audit (consumer direction, single-build scope). §50.5a/b cover shape and forward-compatibility. None cover producer-side callsite existence as distinct from type existence. A type can be declared in `types.rs`, compile cleanly, parse correctly in SSE deserializers, and pass all contract round-trip tests — while the emission callsite has been deleted in the same phase, leaving consumers receiving zero events at runtime. The failure is invisible to all automated gates; canon is exactly where rules invisible to tooling live.
+**Generality**: Applies to any async pub/sub boundary — tokio broadcast channels, webhook pipelines, gRPC server streams, WebSocket message variants — wherever type registration and emission are separate operations that can diverge independently.
+**Cross-build corollary**: ironclaw Phase 4 kept `EscalationEvent` type (line 730: "do NOT modify") while removing `WebEvent::Escalation` emission from `escalate_to_hitl()` (line 770: "Remove...emission"). cockpit-wave-composer Phase 4 badge filter watched `WebEvent::Escalation` — caught in plan cross-examination before build started.
+**Cross-canon ties**: §50.5a (shape contract — not sufficient alone); §512 (consumer audit — inverse direction); Canon XLII (this entry is the narrative; §50.5c in cookbook is current state only).
+**Pressure-tested**: N=1 (ironclaw × cockpit, 2026-05-30, pre-merge plan audit). LÆX judgment: promote at N=1 because the logical foundation is complete, the canon home is unambiguous, and the failure is invisible to all automated tooling.
+
+---
+
 ## v3.9.0 — Loop-Strategy-Expansion LÆX ratifications (2026-05-29, XEA iter-5)
 
 **Source**: LÆX Canon XXXIX ratification of /REFLECT proposals from `loop-strategy-expansion` plan-hardening session. Two PROMOTION-PENDING-KEVIN candidates approved for Cookbook insertion.

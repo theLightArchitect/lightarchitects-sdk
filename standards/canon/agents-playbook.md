@@ -511,6 +511,31 @@ GATE_REVIEW(verdict=hitl)
       {operator_id, justification, commit_sha, dimension, confidence}
 ```
 
+### 7.5.1 Frontend HITL Surface Implementation Contract (Ratified 2026-05-30 per Canon XXXIX, LÆX #56)
+
+Every webshell HITL surface that displays an agent escalation **must ship with a resolution
+action path**. Display-only rendering — showing escalation data with no Approve/Reject action —
+is not a valid HITL implementation. It provides false assurance to operators while the
+underlying agent remains blocked indefinitely.
+
+**Three requirements (all mandatory):**
+
+1. **Action path required** — every HITL card renders at minimum an Approve and Reject action.
+   The resolution call must be a POST to a named backend endpoint, not a fire-and-forget event.
+
+2. **Typed subscription for new events** — legacy event pipelines that feed display-only arrays
+   (e.g., `la:escalation` window event → `pendingEscalations` in Cockpit.svelte) must not be
+   repurposed for new agent action flows. New agent HITL events use a dedicated typed SSE
+   subscription via `subscribeByTopic()`.
+
+3. **Nonce-validated resolution** — resolution endpoints for agent actions must validate a
+   server-minted escalation nonce (UUIDv7) to prevent replay attacks. The nonce is embedded in
+   the resolution request body and verified server-side against a replay-kill set. The nonce must
+   never appear in logs or error messages (Security Guardrails §3.3, CWE-209).
+
+**Violation class**: a HITL surface that renders agent escalation data but carries no resolution
+action path is a [S] gate violation, routed to SERAPH.
+
 ### 7.6 Reserved Gate-Label Namespace + Amendment-Label Convention (Ratified 2026-05-13 per Canon XXXIX)
 
 The following labels are CANONICAL and RESERVED — they must NOT be used for any other purpose (e.g., SCRUM amendment IDs, ad-hoc review-finding tags, plan-internal tracking IDs). Re-purposing reserved labels causes vocabulary collision that obscures gate semantics in plans, manifests, and audit logs.

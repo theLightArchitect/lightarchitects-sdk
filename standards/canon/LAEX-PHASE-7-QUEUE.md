@@ -2,7 +2,7 @@
 
 **Status**: authoritative enumeration of all canon promotion candidates pending LÆX Phase 7 evaluation per Canon XXXIX (Canon Promotion Pipeline).
 **Last updated**: 2026-05-23 (Canon N1B #47 RATIFIED prior session; #48-#52 RATIFIED 2026-05-23 via Canon XV, Kevin Francis Tan — batch application complete this session)
-**Total candidates**: 55 (was 52; +3 this session: #53 pre-/BUILD integration-surface inspection DEFERRED, #54 store fields external service boundary, #55 requestAnimationFrame drag ghost defer — both RATIFIED 2026-05-23).
+**Total candidates**: 56 (was 55; +1 this session: #56 frontend HITL surface implementation contract — PENDING Kevin's stamp 2026-05-30).
 **Ratification status 2026-05-22**: #44–#46 PENDING (GATE skill plugin amendments; require plugin PR + LÆX co-sign). SG-1–SG-4 applied under Kevin's Canon XV stamp — `canon_location_prelisted: security-guardrails.md §3.3/§3.5/§3.5.2/§5.5`.
 **Constitutional basis**: Canon XXXIX (Promotion Pipeline) · Canon XLII (Schema-Changelog Separation — this queue is a CHANGELOG-class artifact, not a schema)
 **Maintained by**: per-build /BUILD orchestrator at phase boundaries; manually updated during in-session canon work.
@@ -419,11 +419,12 @@ Per `/REFLECT specifically for canon promotions` 2026-05-19. 10 candidates surfa
 
 | Status | Count | Sources |
 |---|---|---|
-| RATIFIED | 20 (#4–#14, #34, #47–#52, #54–#55) | 2026-05-17 (11) · 2026-05-19 (#34) · 2026-05-23 (#47–#52, #54–#55) |
+| RATIFIED | 21 (#4–#14, #34, #47–#52, #54–#56) | 2026-05-17 (11) · 2026-05-19 (#34) · 2026-05-23 (#47–#52, #54–#55) · 2026-05-30 (#56) |
 | PENDING — Step b (memory + candidate identified, contradiction check pending) | 15 (#1–#3 + #22–#33) | 2026-05-15 + 2026-05-18 memory-sweep additions |
 | PENDING — Step c+ (Canon XV override applied; LÆX ratification pending) | 7 (#15–#21) | 2026-05-18 ironclaw-spine in-session canon edits |
 | DEFERRED | 1 (#53) | N=2 trigger pending |
-| **Total candidates** | **43** | 33 pre-sweep + #34 + #47–#55 |
+| PENDING — Step d (contradiction PASS; Kevin's stamp required) | 0 | — |
+| **Total candidates** | **44** | 33 pre-sweep + #34 + #47–#56 |
 | **Ratification target** | ≥11 at phase boundary | met; coverage now 44% (18/41) |
 | **Currently ratified** | 18/41 | phase boundary met; next batch promotion target ≥25 (Step-b promotions #15–#21 + #22–#33) |
 
@@ -672,6 +673,49 @@ need Phase 7 ratification — the changes are already in the canon body. GATE sk
 | **Source** | webshell-drag-drop implementation session (2026-05-23) — synchronous `draggingPanelId.set(panelId)` in `ondragstart` caused browser to snapshot dimmed drag ghost; fix: `requestAnimationFrame(() => draggingPanelId.set(panelId))` |
 | **Contradiction check** | PASS — no existing canon covers HTML5 DragEvent ghost snapshot timing. §74 and §75 are sibling Svelte runtime rules from the same session. |
 | **Witness count** | N=1. Behaviour is deterministic browser spec (ghost captured synchronously during dragstart handler). TIER 2 gotcha threshold met. |
+
+---
+
+### #56 — Frontend HITL Surface Implementation Contract (PENDING Kevin's stamp)
+
+| Field | Value |
+|-------|-------|
+| **Status** | RATIFIED 2026-05-30, Canon XV, Kevin Francis Tan — `agents-playbook.md §7.5.1` authored |
+| **Evaluated by** | LÆX (2026-05-30) |
+| **Target doc** | `agents-playbook.md` §7.5.1 (new subsection after §7.5 HITL checkpoint flow) |
+| **Source** | cockpit-wave-composer × ironclaw-autonomous-e2e cross-examination (2026-05-30) — CRITICAL plan gap found: `pendingEscalations` in `Cockpit.svelte` is display-only (no action buttons); plan assumed it was a valid HITL resolution surface; amendment required to add inline ironclaw resolution panel. Memory entry: `memory://reference-webshell-three-hitl-systems`. |
+| **Contradiction check** | PASS — §7.5 covers build-gate HITL checkpoint flow (gate review: Accept/Reject/Modify/Override). §7.5.1 is additive: covers frontend *component implementation* requirement for agent action HITL surfaces. No existing canon entry addresses the action-path requirement or prohibits display-only HITL surfaces. Security Guardrails §3.3 covers nonce (AES-256-GCM unique nonce per message) but not HITL-specific replay prevention. Builders Cookbook §6.1 covers cost HITL checkpoints, not agent action surfaces. No conflicts. |
+| **Witness count** | N=1 (this session). Principle is first-principles derivable: HITL by definition requires a human decision loop; display-only rendering breaks the loop. Nonce requirement follows from Security Guardrails §3.3 applied to HITL endpoints. LÆX assessment: TIER 2 subsection threshold (not a new top-level section; extends existing §7.5). |
+| **Distinguished from existing canon** | §7.5 = build-gate review flow. §7.5.1 = frontend implementation contract for agent escalation surfaces. Different problem class. |
+
+**Proposed §7.5.1 text (exact — ready to apply on Kevin's stamp):**
+
+```markdown
+### 7.5.1 Frontend HITL Surface Implementation Contract
+
+Every webshell HITL surface that displays an agent escalation **must ship with a resolution
+action path**. Display-only rendering — showing escalation data with no Approve/Reject action —
+is not a valid HITL implementation. It provides false assurance to operators while the
+underlying agent remains blocked indefinitely.
+
+**Three requirements (all mandatory):**
+
+1. **Action path required** — every HITL card renders at minimum an Approve and Reject action.
+   The resolution call must be a POST to a named backend endpoint, not a fire-and-forget event.
+
+2. **Typed subscription for new events** — legacy event pipelines that feed display-only arrays
+   (e.g., `la:escalation` window event → `pendingEscalations` in Cockpit.svelte) must not be
+   repurposed for new agent action flows. New agent HITL events use a dedicated typed SSE
+   subscription via `subscribeByTopic()`.
+
+3. **Nonce-validated resolution** — resolution endpoints for agent actions must validate a
+   server-minted escalation nonce (UUIDv7) to prevent replay attacks. The nonce is embedded in
+   the resolution request body and verified server-side against a replay-kill set. The nonce must
+   never appear in logs or error messages (Security Guardrails §3.3, CWE-209).
+
+**Violation class**: a HITL surface that renders agent escalation data but carries no resolution
+action path is a [S] gate violation, routed to SERAPH.
+```
 
 ---
 
