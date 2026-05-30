@@ -34,6 +34,8 @@ use lightarchitects::lightsquad::{
     types::Task,
 };
 
+use crate::config::HermesMcpConfig;
+use crate::copilot::hitl_relay as hermes_hitl;
 use crate::events::{
     WebEventV2,
     decisions::DecisionsWriter,
@@ -73,6 +75,9 @@ pub struct LightsquadToolExecutor {
     /// When `true`, spawns a hermetic mock worker (write file + git commit)
     /// instead of the real `lightarchitects --bare` CLI.
     mock_workers: bool,
+    /// Hermes MCP relay configuration — used to forward HITL escalations to the
+    /// operator's Hermes agent as a supplemental notification channel.
+    hermes_mcp: HermesMcpConfig,
     /// Codenames already issued by the operator this turn.
     ///
     /// Checked before launching any build.  Populated by `POST /api/builds`
@@ -83,6 +88,7 @@ pub struct LightsquadToolExecutor {
 impl LightsquadToolExecutor {
     /// Create a new executor.  Call [`build_lightsquad_executor`] in the webshell
     /// context instead of constructing this directly.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         repo_root: PathBuf,
         worktree_root: PathBuf,
@@ -91,6 +97,7 @@ impl LightsquadToolExecutor {
         decisions_dir: PathBuf,
         turnlog_pepper: Arc<SecretSlice<u8>>,
         mock_workers: bool,
+        hermes_mcp: HermesMcpConfig,
     ) -> Self {
         Self {
             repo_root,
@@ -100,6 +107,7 @@ impl LightsquadToolExecutor {
             decisions_dir,
             turnlog_pepper,
             mock_workers,
+            hermes_mcp,
             operator_codenames: Arc::new(RwLock::new(HashSet::new())),
         }
     }
@@ -144,6 +152,7 @@ impl LightsquadToolExecutor {
             let decisions_dir = self.decisions_dir.clone();
             let turnlog_pepper = self.turnlog_pepper.clone();
             let mock_workers = self.mock_workers;
+            let hermes_mcp = self.hermes_mcp.clone();
             tokio::spawn(async move {
                 let exec = LightsquadToolExecutor::new(
                     repo_root,
@@ -153,6 +162,7 @@ impl LightsquadToolExecutor {
                     decisions_dir,
                     turnlog_pepper,
                     mock_workers,
+                    hermes_mcp,
                 );
                 let _ = exec.launch_program_for_plan(&plan, build_id).await;
             });
@@ -185,6 +195,22 @@ impl LightsquadToolExecutor {
             Some(build_id),
         ));
 
+        // Fire-and-forget Hermes relay — supplemental notification only.
+        // Non-authoritative: the real approval gate remains the HITL oneshot above.
+        if let Some(client) = hermes_hitl::HermesMcpClient::from_config(&self.hermes_mcp) {
+            let relay_summary = format!(
+                "LightSquad plan '{}': {} wave(s) — {}",
+                plan.codename,
+                plan.waves.len(),
+                plan.intent
+            );
+            let build_id_str = build_id.to_string();
+            tokio::spawn(async move {
+                let _ =
+                    hermes_hitl::relay_hitl_approval(&relay_summary, &build_id_str, &client).await;
+            });
+        }
+
         // Clone all fields needed by the background task before returning.
         let plan = plan.clone();
         let repo_root = self.repo_root.clone();
@@ -194,6 +220,7 @@ impl LightsquadToolExecutor {
         let decisions_dir = self.decisions_dir.clone();
         let turnlog_pepper = self.turnlog_pepper.clone();
         let mock_workers = self.mock_workers;
+        let hermes_mcp = self.hermes_mcp.clone();
 
         // Background task: awaits operator decision, then launches (or drops).
         tokio::spawn(async move {
@@ -209,6 +236,7 @@ impl LightsquadToolExecutor {
                 decisions_dir,
                 turnlog_pepper,
                 mock_workers,
+                hermes_mcp,
             );
             let _ = exec.launch_program_for_plan(&plan, build_id).await;
         });
@@ -379,6 +407,7 @@ pub fn build_lightsquad_executor(state: &crate::server::AppState) -> Arc<Lightsq
         state.decisions_dir.clone(),
         state.turnlog_pepper.clone(),
         state.mock_workers,
+        state.config.hermes_mcp.clone(),
     ))
 }
 
@@ -401,6 +430,7 @@ mod tests {
             std::env::temp_dir().join("la-test-decisions"),
             Arc::new(SecretSlice::from(vec![0u8; 32])),
             true, // mock_workers
+            HermesMcpConfig::default(),
         )
     }
 

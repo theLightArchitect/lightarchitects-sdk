@@ -910,6 +910,25 @@ async fn run_codex_turn(
     c.current_dir(&session.cwd);
     // Prevent API key leakage — codex should not inherit the host's Anthropic key.
     c.env_remove("ANTHROPIC_API_KEY");
+    // LiteLLM vault injection for Codex (OpenAI-compat protocol).
+    // Codex uses OPENAI_API_KEY / OPENAI_BASE_URL, not ANTHROPIC_* vars.
+    if session.litellm.is_active() {
+        let proxy_url = session
+            .litellm
+            .proxy_url
+            .as_deref()
+            .unwrap_or("http://localhost:4000");
+        if is_proxy_reachable(proxy_url).await {
+            let stub_key = session.litellm.generate_stub_key();
+            c.env("OPENAI_API_KEY", stub_key);
+            c.env("OPENAI_BASE_URL", format!("{proxy_url}/v1"));
+        } else {
+            tracing::warn!(
+                proxy_url,
+                "LiteLLM proxy unreachable for Codex; skipping vault injection"
+            );
+        }
+    }
     c.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
