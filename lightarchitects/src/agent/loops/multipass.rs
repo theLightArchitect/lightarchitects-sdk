@@ -89,8 +89,9 @@ pub trait MultiPassExecutor: Send + Sync {
 
 /// N-pass independent verification loop.
 ///
-/// Requires a [`MultiPassExecutor`] to perform each pass.
-/// Phase 3 implements the full `step()` logic.
+/// Requires a [`MultiPassExecutor`] to perform each pass. Each step runs one
+/// pass via [`MultiPassExecutor::verify_pass`]. After all `max_passes` are
+/// complete, calls [`MultiPassExecutor::aggregate`] and halts.
 pub struct MultiPassVerifyStrategy<E: MultiPassExecutor> {
     /// Executor that performs individual verification passes.
     pub executor: E,
@@ -110,22 +111,167 @@ impl<E: MultiPassExecutor + 'static> Strategy for MultiPassVerifyStrategy<E> {
 
     async fn step(
         &self,
-        state: MultiPassState,
-        _ctx: &StepContext,
+        mut state: MultiPassState,
+        ctx: &StepContext,
     ) -> Result<Outcome<MultiPassState, MultiPassOutput>, LoopError> {
-        // Phase 3 implements N-pass execution and aggregation.
-        let passes_run = state.pass_index;
-        #[allow(clippy::cast_possible_truncation)]
-        let passes_passed = state.pass_results.iter().filter(|&&p| p).count() as u32;
-        Ok(Outcome::Halt(MultiPassOutput {
-            passes_run,
-            passes_passed,
-            verdict: String::new(),
-            notes: state.notes,
-        }))
+        // All passes complete — aggregate and halt.
+        if state.pass_index >= state.max_passes {
+            let verdict = self
+                .executor
+                .aggregate(&state.pass_results, &state.notes, ctx)
+                .await?;
+            #[allow(clippy::cast_possible_truncation)]
+            let passes_passed = state.pass_results.iter().filter(|&&p| p).count() as u32;
+            return Ok(Outcome::Halt(MultiPassOutput {
+                passes_run: state.pass_index,
+                passes_passed,
+                verdict,
+                notes: state.notes,
+            }));
+        }
+
+        // Execute next pass.
+        let (passed, note) = self
+            .executor
+            .verify_pass(state.pass_index, &state.subject, ctx)
+            .await?;
+
+        state.pass_results.push(passed);
+        if !note.is_empty() {
+            state.notes.push(note);
+        }
+        state.pass_index += 1;
+
+        Ok(Outcome::Continue(state))
     }
 
     fn name(&self) -> &'static str {
         "multipass_verify"
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::agent::{ChainContext, loops::runner::StepContext};
+
+    fn ctx() -> StepContext {
+        StepContext {
+            turn: 1,
+            chain: ChainContext::default(),
+            session_id: None,
+        }
+    }
+
+    /// Executor that always passes with a fixed note.
+    struct AlwaysPass;
+
+    #[async_trait]
+    impl MultiPassExecutor for AlwaysPass {
+        async fn verify_pass(
+            &self,
+            n: u32,
+            _subject: &str,
+            _ctx: &StepContext,
+        ) -> Result<(bool, String), LoopError> {
+            Ok((true, format!("pass {n} ok")))
+        }
+
+        async fn aggregate(
+            &self,
+            results: &[bool],
+            _notes: &[String],
+            _ctx: &StepContext,
+        ) -> Result<String, LoopError> {
+            let passed = results.iter().filter(|&&p| p).count();
+            Ok(format!("PASS {passed}/{}", results.len()))
+        }
+    }
+
+    /// Executor where pass 1 (0-based) always fails.
+    struct FailSecondPass;
+
+    #[async_trait]
+    impl MultiPassExecutor for FailSecondPass {
+        async fn verify_pass(
+            &self,
+            n: u32,
+            _subject: &str,
+            _ctx: &StepContext,
+        ) -> Result<(bool, String), LoopError> {
+            Ok((n != 1, String::new()))
+        }
+
+        async fn aggregate(
+            &self,
+            results: &[bool],
+            _notes: &[String],
+            _ctx: &StepContext,
+        ) -> Result<String, LoopError> {
+            let passed = results.iter().filter(|&&p| p).count();
+            Ok(if passed == results.len() {
+                "PASS".into()
+            } else {
+                "FAIL".into()
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn three_pass_all_succeed() {
+        let strategy = MultiPassVerifyStrategy::new(AlwaysPass);
+        let mut state = MultiPassState::new("src/lib.rs", 3);
+
+        // Steps 0, 1, 2 run passes; step 3 aggregates and halts.
+        for _ in 0..=3 {
+            match strategy.step(state.clone(), &ctx()).await.unwrap() {
+                Outcome::Continue(s) => state = s,
+                Outcome::Halt(out) => {
+                    assert_eq!(out.passes_run, 3);
+                    assert_eq!(out.passes_passed, 3);
+                    assert!(out.verdict.contains("3/3"));
+                    assert_eq!(out.notes.len(), 3);
+                    return;
+                }
+                Outcome::Pause(..) => panic!("MultiPassVerify should not pause"),
+            }
+        }
+        panic!("should have halted after 3 passes");
+    }
+
+    #[tokio::test]
+    async fn one_failing_pass_reflected_in_verdict() {
+        let strategy = MultiPassVerifyStrategy::new(FailSecondPass);
+        let mut state = MultiPassState::new("lib.rs", 3);
+
+        for _ in 0..=3 {
+            match strategy.step(state.clone(), &ctx()).await.unwrap() {
+                Outcome::Continue(s) => state = s,
+                Outcome::Halt(out) => {
+                    assert_eq!(out.passes_passed, 2);
+                    assert_eq!(out.verdict, "FAIL");
+                    return;
+                }
+                Outcome::Pause(..) => panic!(),
+            }
+        }
+        panic!("should have halted");
+    }
+
+    #[tokio::test]
+    async fn zero_passes_aggregates_immediately() {
+        let strategy = MultiPassVerifyStrategy::new(AlwaysPass);
+        let state = MultiPassState::new("lib.rs", 0);
+
+        let outcome = strategy.step(state, &ctx()).await.unwrap();
+        let out = match outcome {
+            Outcome::Halt(o) => o,
+            other => panic!("expected Halt, got {other:?}"),
+        };
+        assert_eq!(out.passes_run, 0);
+        assert_eq!(out.passes_passed, 0);
     }
 }

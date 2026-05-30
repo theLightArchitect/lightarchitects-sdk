@@ -7,7 +7,13 @@
 //! L0 class: custom [`DrainState`] and [`DrainOutput`]; not registered in
 //! `RegisteredStrategy`. Requires a [`DrainExecutor`] for item processing.
 //!
-//! Full step logic implemented in Phase 3.
+//! ## Step topology
+//!
+//! Each step call:
+//! 1. Asks the executor for the next item via [`DrainExecutor::next_item`].
+//! 2. Calls [`DrainExecutor::process`] on that item.
+//! 3. Moves the item to `processed` (success) or `failed` (failure) and pops it from the queue.
+//! 4. Calls [`DrainExecutor::is_empty`] — if `true`, halts; otherwise returns `Continue`.
 
 use async_trait::async_trait;
 
@@ -107,8 +113,8 @@ pub trait DrainExecutor: Send + Sync {
 
 /// Bounded queue-drain processing loop.
 ///
-/// Requires a [`DrainExecutor`] for item processing.
-/// Phase 3 implements the full topology-based `step()` logic.
+/// Requires a [`DrainExecutor`] for item processing. Each step pops one item
+/// from the queue, processes it, and checks the drain convergence condition.
 pub struct DrainStrategy<E: DrainExecutor> {
     /// Executor responsible for item processing.
     pub executor: E,
@@ -128,21 +134,170 @@ impl<E: DrainExecutor + 'static> Strategy for DrainStrategy<E> {
 
     async fn step(
         &self,
-        state: DrainState,
-        _ctx: &StepContext,
+        mut state: DrainState,
+        ctx: &StepContext,
     ) -> Result<Outcome<DrainState, DrainOutput>, LoopError> {
-        // Phase 3 implements queue-drain topology: next_item → process → convergence check.
-        let drain_fraction = state.drain_fraction();
-        let remaining = state.queue.clone();
-        Ok(Outcome::Halt(DrainOutput {
-            processed_count: state.processed.len(),
-            failed_count: state.failed.len(),
-            drain_fraction,
-            remaining,
-        }))
+        // Topology: next_item → process → convergence check.
+
+        let Some(item) = self.executor.next_item(&state.queue, ctx).await? else {
+            // Executor signalled logical exhaustion even though queue may be non-empty.
+            return Ok(Outcome::Halt(DrainOutput {
+                processed_count: state.processed.len(),
+                failed_count: state.failed.len(),
+                drain_fraction: state.drain_fraction(),
+                remaining: state.queue,
+            }));
+        };
+
+        // Remove the item from the queue (front-of-queue pop by matching value).
+        if let Some(pos) = state.queue.iter().position(|q| q == &item) {
+            state.queue.remove(pos);
+        }
+
+        let succeeded = self.executor.process(&item, ctx).await?;
+        if succeeded {
+            state.processed.push(item);
+        } else {
+            state.failed.push(item);
+        }
+
+        // Check convergence after processing.
+        if self.executor.is_empty(&state, ctx).await? {
+            return Ok(Outcome::Halt(DrainOutput {
+                processed_count: state.processed.len(),
+                failed_count: state.failed.len(),
+                drain_fraction: state.drain_fraction(),
+                remaining: state.queue,
+            }));
+        }
+
+        Ok(Outcome::Continue(state))
     }
 
     fn name(&self) -> &'static str {
         "drain"
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::agent::{ChainContext, loops::runner::StepContext};
+
+    fn ctx() -> StepContext {
+        StepContext {
+            turn: 1,
+            chain: ChainContext::default(),
+            session_id: None,
+        }
+    }
+
+    /// Simple executor: processes all items successfully, drains by queue emptiness.
+    struct PassAllExecutor;
+
+    #[async_trait]
+    impl DrainExecutor for PassAllExecutor {
+        async fn next_item(
+            &self,
+            queue: &[String],
+            _ctx: &StepContext,
+        ) -> Result<Option<String>, LoopError> {
+            Ok(queue.first().cloned())
+        }
+
+        async fn process(&self, _item: &str, _ctx: &StepContext) -> Result<bool, LoopError> {
+            Ok(true)
+        }
+
+        async fn is_empty(
+            &self,
+            state: &DrainState,
+            _ctx: &StepContext,
+        ) -> Result<bool, LoopError> {
+            Ok(state.queue.is_empty())
+        }
+    }
+
+    /// Executor that always fails items.
+    struct FailAllExecutor;
+
+    #[async_trait]
+    impl DrainExecutor for FailAllExecutor {
+        async fn next_item(
+            &self,
+            queue: &[String],
+            _ctx: &StepContext,
+        ) -> Result<Option<String>, LoopError> {
+            Ok(queue.first().cloned())
+        }
+
+        async fn process(&self, _item: &str, _ctx: &StepContext) -> Result<bool, LoopError> {
+            Ok(false)
+        }
+
+        async fn is_empty(
+            &self,
+            state: &DrainState,
+            _ctx: &StepContext,
+        ) -> Result<bool, LoopError> {
+            Ok(state.queue.is_empty())
+        }
+    }
+
+    #[tokio::test]
+    async fn drains_all_items_successfully() {
+        let strategy = DrainStrategy::new(PassAllExecutor);
+        let mut state = DrainState::new(vec!["a".into(), "b".into(), "c".into()]);
+
+        for _ in 0..3 {
+            state = match strategy.step(state, &ctx()).await.unwrap() {
+                Outcome::Continue(s) => s,
+                Outcome::Halt(out) => {
+                    assert_eq!(out.processed_count, 3);
+                    assert_eq!(out.failed_count, 0);
+                    assert!((out.drain_fraction - 1.0).abs() < f64::EPSILON);
+                    assert!(out.remaining.is_empty());
+                    return;
+                }
+                Outcome::Pause(..) => panic!("DrainStrategy should not pause"),
+            };
+        }
+        panic!("should have halted after draining 3 items");
+    }
+
+    #[tokio::test]
+    async fn failed_items_go_to_failed_vec() {
+        let strategy = DrainStrategy::new(FailAllExecutor);
+        let mut state = DrainState::new(vec!["x".into()]);
+
+        let outcome = strategy.step(state.clone(), &ctx()).await.unwrap();
+        state = match outcome {
+            Outcome::Halt(out) => {
+                assert_eq!(out.failed_count, 1);
+                assert_eq!(out.processed_count, 0);
+                return;
+            }
+            Outcome::Continue(s) => s,
+            Outcome::Pause(..) => panic!(),
+        };
+        // If single item didn't halt, it means queue has more items.
+        let _ = state;
+    }
+
+    #[test]
+    fn drain_fraction_empty_queue_is_one() {
+        let state = DrainState::new(vec![]);
+        assert!((state.drain_fraction() - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn drain_fraction_partial() {
+        let mut state = DrainState::new(vec!["a".into(), "b".into()]);
+        state.processed.push("a".into());
+        let frac = state.drain_fraction();
+        assert!((frac - 0.5).abs() < f64::EPSILON);
     }
 }

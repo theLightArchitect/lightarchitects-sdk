@@ -171,19 +171,182 @@ impl<E: RedTeamExecutor + 'static> Strategy for RedTeamStrategy<E> {
 
     async fn step(
         &self,
-        state: RedTeamState,
-        _ctx: &StepContext,
+        mut state: RedTeamState,
+        ctx: &StepContext,
     ) -> Result<Outcome<RedTeamState, RedTeamOutput>, LoopError> {
-        // Phase 3 implements the full 5-phase red-team step logic.
-        Ok(Outcome::Halt(RedTeamOutput {
-            final_phase: state.phase,
-            attack_surface: state.attack_surface,
-            exploit_chain: state.exploit_chain,
-            verdict: String::new(),
-        }))
+        match state.phase {
+            // Phase 0 — MANDATORY: load scope and control anchors.
+            // SERAPH SKILL.md §0: Hydrate MUST NOT be skipped.
+            RedTeamPhase::Hydrate => {
+                state.control_anchors = self.executor.hydrate(&state.scope, ctx).await?;
+                state.phase = RedTeamPhase::Surface;
+                Ok(Outcome::Continue(state))
+            }
+            RedTeamPhase::Surface => {
+                state.attack_surface = self
+                    .executor
+                    .surface(&state.scope, &state.control_anchors, ctx)
+                    .await?;
+                state.phase = RedTeamPhase::Probe;
+                Ok(Outcome::Continue(state))
+            }
+            RedTeamPhase::Probe => {
+                state.probe_findings = self.executor.probe(&state.attack_surface, ctx).await?;
+                state.phase = RedTeamPhase::Chain;
+                Ok(Outcome::Continue(state))
+            }
+            RedTeamPhase::Chain => {
+                state.exploit_chain = self.executor.chain(&state.probe_findings, ctx).await?;
+                state.phase = RedTeamPhase::Verdict;
+                Ok(Outcome::Continue(state))
+            }
+            RedTeamPhase::Verdict => {
+                let verdict = self.executor.verdict(&state, ctx).await?;
+                Ok(Outcome::Halt(RedTeamOutput {
+                    final_phase: RedTeamPhase::Verdict,
+                    attack_surface: state.attack_surface,
+                    exploit_chain: state.exploit_chain,
+                    verdict,
+                }))
+            }
+        }
     }
 
     fn name(&self) -> &'static str {
         "red_team"
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::agent::{ChainContext, loops::runner::StepContext};
+
+    fn ctx() -> StepContext {
+        StepContext {
+            turn: 1,
+            chain: ChainContext::default(),
+            session_id: None,
+        }
+    }
+
+    struct FixedExecutor;
+
+    #[async_trait]
+    impl RedTeamExecutor for FixedExecutor {
+        async fn hydrate(
+            &self,
+            _scope: &str,
+            _ctx: &StepContext,
+        ) -> Result<Vec<String>, LoopError> {
+            Ok(vec!["anchor-auth".into(), "anchor-net".into()])
+        }
+
+        async fn surface(
+            &self,
+            _scope: &str,
+            _anchors: &[String],
+            _ctx: &StepContext,
+        ) -> Result<Vec<String>, LoopError> {
+            Ok(vec!["api/admin".into(), "auth/token".into()])
+        }
+
+        async fn probe(
+            &self,
+            _surface: &[String],
+            _ctx: &StepContext,
+        ) -> Result<Vec<String>, LoopError> {
+            Ok(vec!["SQLi-found".into()])
+        }
+
+        async fn chain(
+            &self,
+            _findings: &[String],
+            _ctx: &StepContext,
+        ) -> Result<String, LoopError> {
+            Ok("SQLi → admin-bypass → data-exfil".into())
+        }
+
+        async fn verdict(
+            &self,
+            state: &RedTeamState,
+            _ctx: &StepContext,
+        ) -> Result<String, LoopError> {
+            Ok(format!(
+                "CRITICAL: {} surface entries exploitable",
+                state.attack_surface.len()
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn full_red_team_cycle_reaches_verdict() {
+        let strategy = RedTeamStrategy::new(FixedExecutor);
+        let mut state = RedTeamState::new("api.example.com");
+
+        // 4 Continue steps + 1 Halt.
+        for _ in 0..=4 {
+            match strategy.step(state.clone(), &ctx()).await.unwrap() {
+                Outcome::Continue(s) => state = s,
+                Outcome::Halt(out) => {
+                    assert_eq!(out.final_phase, RedTeamPhase::Verdict);
+                    assert_eq!(out.attack_surface.len(), 2);
+                    assert!(out.exploit_chain.contains("SQLi"));
+                    assert!(out.verdict.contains("CRITICAL"));
+                    return;
+                }
+                Outcome::Pause(..) => panic!("RedTeamStrategy should not pause"),
+            }
+        }
+        panic!("should have halted at Verdict");
+    }
+
+    #[tokio::test]
+    async fn hydrate_always_first_loads_control_anchors() {
+        let strategy = RedTeamStrategy::new(FixedExecutor);
+        let state = RedTeamState::new("scope");
+        let next = match strategy.step(state, &ctx()).await.unwrap() {
+            Outcome::Continue(s) => s,
+            other => panic!("expected Continue after Hydrate, got {other:?}"),
+        };
+        assert_eq!(next.phase, RedTeamPhase::Surface);
+        assert_eq!(next.control_anchors, vec!["anchor-auth", "anchor-net"]);
+    }
+
+    #[tokio::test]
+    async fn chain_phase_builds_exploit_narrative() {
+        let strategy = RedTeamStrategy::new(FixedExecutor);
+        let mut state = RedTeamState::new("scope");
+        state.control_anchors = vec!["a".into()];
+        state.attack_surface = vec!["api/admin".into()];
+        state.probe_findings = vec!["SQLi-found".into()];
+        state.phase = RedTeamPhase::Chain;
+
+        let next = match strategy.step(state, &ctx()).await.unwrap() {
+            Outcome::Continue(s) => s,
+            other => panic!("expected Continue after Chain, got {other:?}"),
+        };
+        assert_eq!(next.phase, RedTeamPhase::Verdict);
+        assert!(next.exploit_chain.contains("SQLi"));
+    }
+
+    #[test]
+    fn red_team_phase_labels() {
+        assert_eq!(RedTeamPhase::Hydrate.label(), "hydrate");
+        assert_eq!(RedTeamPhase::Surface.label(), "surface");
+        assert_eq!(RedTeamPhase::Probe.label(), "probe");
+        assert_eq!(RedTeamPhase::Chain.label(), "chain");
+        assert_eq!(RedTeamPhase::Verdict.label(), "verdict");
+    }
+
+    #[test]
+    fn red_team_phase_from_index_round_trips() {
+        for i in 0..5u32 {
+            assert!(RedTeamPhase::from_index(i).is_some());
+        }
+        assert!(RedTeamPhase::from_index(5).is_none());
     }
 }
