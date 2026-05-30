@@ -178,8 +178,8 @@ pub async fn enqueue_dispatch(id: &str, title: &str, prompt: &str) -> Result<(),
             version: default_version(),
             tasks: Vec::new(),
         },
-        Err(QueueIoError::Read(msg) | QueueIoError::Parse(msg)) => {
-            return Err(msg);
+        Err(QueueIoError::Read | QueueIoError::Parse | QueueIoError::Write) => {
+            return Err("queue_read_error".to_owned());
         }
     };
     // Idempotent — skip if a task with this dispatch ID already exists.
@@ -206,7 +206,9 @@ pub async fn enqueue_dispatch(id: &str, title: &str, prompt: &str) -> Result<(),
         resolution_deadline: None,
     };
     queue.tasks.push(task);
-    write_queue_async(queue_path, queue).await
+    write_queue_async(queue_path, queue)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Mark a dispatch queue entry as `"completed"`.
@@ -251,8 +253,8 @@ pub async fn add_task(
             version: default_version(),
             tasks: Vec::new(),
         },
-        Err(QueueIoError::Read(msg) | QueueIoError::Parse(msg)) => {
-            tracing::warn!(error = %msg, "queue read failed on add_task");
+        Err(QueueIoError::Read | QueueIoError::Parse | QueueIoError::Write) => {
+            tracing::warn!("queue read failed on add_task");
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
@@ -536,8 +538,9 @@ pub async fn chat_inject(
         })
         .into_response(),
         Err(err) => {
-            tracing::warn!(error = %err, "soul chat inject failed");
-            (StatusCode::BAD_GATEWAY, err).into_response()
+            let sanitized = err.replace(['\n', '\r'], " ");
+            tracing::warn!(error = %sanitized, "soul chat inject failed");
+            StatusCode::BAD_GATEWAY.into_response()
         }
     }
 }
@@ -626,11 +629,7 @@ pub async fn spawn_worker(
                 error = %e,
                 "spawn-worker: conductor spawn failed"
             );
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("spawn failed: {e}"),
-            )
-                .into_response()
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
 }
@@ -853,19 +852,29 @@ fn home_dir() -> PathBuf {
     std::env::var_os("HOME").map_or_else(|| PathBuf::from("/Users/kft"), PathBuf::from)
 }
 
+/// Error type for queue and session file I/O (P7 check 5 — opaque HTTP codes, CWE-209).
+///
+/// Unit variants prevent raw OS/serde error strings from reaching HTTP responses.
+/// Internal detail is captured at the error site via `tracing::warn!`.
 #[derive(Debug)]
 pub(crate) enum QueueIoError {
+    /// Queue file does not exist; treat as an empty queue on read paths.
     Missing,
-    Read(String),
-    Parse(String),
+    /// Queue file exists but could not be read from disk.
+    Read,
+    /// Queue file was read but could not be parsed as JSON.
+    Parse,
+    /// Queue could not be written (dir creation, serialization, or rename failure).
+    Write,
 }
 
 impl std::fmt::Display for QueueIoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Missing => f.write_str("queue file missing"),
-            Self::Read(m) => write!(f, "read: {m}"),
-            Self::Parse(m) => write!(f, "parse: {m}"),
+            Self::Read => f.write_str("queue read error"),
+            Self::Parse => f.write_str("queue parse error"),
+            Self::Write => f.write_str("queue write error"),
         }
     }
 }
@@ -874,50 +883,92 @@ fn read_queue(path: &Path) -> Result<OnDiskQueue, QueueIoError> {
     if !path.exists() {
         return Err(QueueIoError::Missing);
     }
-    let content = std::fs::read_to_string(path).map_err(|e| QueueIoError::Read(e.to_string()))?;
-    serde_json::from_str(&content).map_err(|e| QueueIoError::Parse(e.to_string()))
+    let content = std::fs::read_to_string(path).map_err(|e| {
+        tracing::warn!(error = %e, path = %path.display(), "queue read failed");
+        QueueIoError::Read
+    })?;
+    serde_json::from_str(&content).map_err(|e| {
+        tracing::warn!(error = %e, path = %path.display(), "queue parse failed");
+        QueueIoError::Parse
+    })
 }
 
 /// Async wrapper — offloads blocking file I/O to a thread pool (MED H-90).
 pub(crate) async fn read_queue_async(path: PathBuf) -> Result<OnDiskQueue, QueueIoError> {
     tokio::task::spawn_blocking(move || read_queue(&path))
         .await
-        .unwrap_or_else(|_| Err(QueueIoError::Read("blocking task panicked".to_owned())))
+        .unwrap_or_else(|_| {
+            tracing::warn!("queue read blocking task panicked");
+            Err(QueueIoError::Read)
+        })
 }
 
-fn write_queue(path: &Path, queue: &OnDiskQueue) -> Result<(), String> {
+fn write_queue(path: &Path, queue: &OnDiskQueue) -> Result<(), QueueIoError> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(parent).map_err(|e| {
+            tracing::warn!(error = %e, path = %path.display(), "queue dir create failed");
+            QueueIoError::Write
+        })?;
     }
-    let body = serde_json::to_string_pretty(queue).map_err(|e| e.to_string())?;
+    let body = serde_json::to_string_pretty(queue).map_err(|e| {
+        tracing::warn!(error = %e, "queue serialise failed");
+        QueueIoError::Write
+    })?;
     let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, body.as_bytes()).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
+    std::fs::write(&tmp, body.as_bytes()).map_err(|e| {
+        tracing::warn!(error = %e, path = %tmp.display(), "queue tmp write failed");
+        QueueIoError::Write
+    })?;
+    std::fs::rename(&tmp, path).map_err(|e| {
+        tracing::warn!(error = %e, "queue atomic rename failed");
+        QueueIoError::Write
+    })?;
     Ok(())
 }
 
 /// Async wrapper — offloads blocking file I/O to a thread pool (MED H-90).
-pub(crate) async fn write_queue_async(path: PathBuf, queue: OnDiskQueue) -> Result<(), String> {
+pub(crate) async fn write_queue_async(
+    path: PathBuf,
+    queue: OnDiskQueue,
+) -> Result<(), QueueIoError> {
     tokio::task::spawn_blocking(move || write_queue(&path, &queue))
         .await
-        .unwrap_or_else(|_| Err("blocking task panicked".to_owned()))
+        .unwrap_or_else(|_| {
+            tracing::warn!("queue write blocking task panicked");
+            Err(QueueIoError::Write)
+        })
 }
 
-fn write_session(dir: &Path, record: &OnDiskSession) -> Result<(), String> {
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+fn write_session(dir: &Path, record: &OnDiskSession) -> Result<(), QueueIoError> {
+    std::fs::create_dir_all(dir).map_err(|e| {
+        tracing::warn!(error = %e, dir = %dir.display(), "session dir create failed");
+        QueueIoError::Write
+    })?;
     let path = dir.join(format!("{}.json", record.session_id));
-    let body = serde_json::to_string_pretty(record).map_err(|e| e.to_string())?;
+    let body = serde_json::to_string_pretty(record).map_err(|e| {
+        tracing::warn!(error = %e, "session serialise failed");
+        QueueIoError::Write
+    })?;
     let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, body.as_bytes()).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    std::fs::write(&tmp, body.as_bytes()).map_err(|e| {
+        tracing::warn!(error = %e, path = %tmp.display(), "session tmp write failed");
+        QueueIoError::Write
+    })?;
+    std::fs::rename(&tmp, &path).map_err(|e| {
+        tracing::warn!(error = %e, "session atomic rename failed");
+        QueueIoError::Write
+    })?;
     Ok(())
 }
 
 /// Async wrapper — offloads blocking file I/O to a thread pool (MED H-90).
-async fn write_session_async(dir: PathBuf, record: OnDiskSession) -> Result<(), String> {
+async fn write_session_async(dir: PathBuf, record: OnDiskSession) -> Result<(), QueueIoError> {
     tokio::task::spawn_blocking(move || write_session(&dir, &record))
         .await
-        .unwrap_or_else(|_| Err("blocking task panicked".to_owned()))
+        .unwrap_or_else(|_| {
+            tracing::warn!("session write blocking task panicked");
+            Err(QueueIoError::Write)
+        })
 }
 
 fn read_sessions_dir(dir: &Path) -> Option<Vec<ChatSessionSummary>> {
@@ -1229,5 +1280,13 @@ mod tests {
         assert_eq!(s.status, "running");
         assert_eq!(s.participants.len(), 2);
         assert_eq!(s.current_topic.as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn queue_io_error_display_all_variants() {
+        assert_eq!(QueueIoError::Missing.to_string(), "queue file missing");
+        assert_eq!(QueueIoError::Read.to_string(), "queue read error");
+        assert_eq!(QueueIoError::Parse.to_string(), "queue parse error");
+        assert_eq!(QueueIoError::Write.to_string(), "queue write error");
     }
 }

@@ -56,7 +56,9 @@ pub use store::{HelixSearchBuilder, HelixStore, HelixStoreError};
 // ── Re-export core public API (mirrors soul-helix's lib.rs exports) ──────────
 pub use cache::{CachedEntry, HelixCache, HelixCacheConfig};
 pub use client::HelixClient;
-pub use db::{HelixConfig, HelixDb, HelixDbError, HelixNeo4j, Neo4jConfig, PoolMetrics};
+pub use db::{
+    HelixConfig, HelixDb, HelixDbError, HelixNeo4j, Neo4jConfig, Neo4jConnectionMode, PoolMetrics,
+};
 pub use embedding::{
     Chunk, Chunker, ChunkerConfig, CloudEmbeddingProvider, EmbeddingConfig, EmbeddingError,
     EmbeddingPipelineConfig, EmbeddingProvider, MockEmbeddingProvider, OllamaEmbeddingProvider,

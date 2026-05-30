@@ -23,7 +23,8 @@ use crate::soul::{RetrievalHit, RetrievalSignal};
 use thiserror::Error;
 
 use crate::helix::{
-    HelixDb as _, HelixNeo4j, HelixOrderingMode, Neo4jConfig, ScopeTier, SearchOptions, Step,
+    HelixDb as _, HelixNeo4j, HelixOrderingMode, Neo4jConfig, Neo4jConnectionMode, ScopeTier,
+    SearchOptions, Step,
 };
 
 // ============================================================================
@@ -79,6 +80,7 @@ impl HelixStore {
             uri: uri.to_owned(),
             user: user.to_owned(),
             password: SecretString::from(pass.to_owned()),
+            mode: Neo4jConnectionMode::Local,
         };
         let db = HelixNeo4j::connect(&config)
             .await

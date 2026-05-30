@@ -95,7 +95,7 @@ fn provider_metadata() {
 #[tokio::test]
 #[ignore = "Requires Docker — run with: cargo test -p lightarchitects graphsage -- --ignored"]
 async fn sage_embeddings_index_created_by_migration() {
-    use lightarchitects::helix::{HelixDb, HelixNeo4j, Neo4jConfig};
+    use lightarchitects::helix::{HelixDb, HelixNeo4j, Neo4jConfig, Neo4jConnectionMode};
     use secrecy::SecretString;
     use testcontainers_modules::neo4j::{Neo4j, Neo4jImage};
     use testcontainers_modules::testcontainers::ContainerAsync;
@@ -116,6 +116,7 @@ async fn sage_embeddings_index_created_by_migration() {
         uri,
         user: "neo4j".to_owned(),
         password: SecretString::new("testpassword".to_owned().into()),
+        mode: Neo4jConnectionMode::Local,
     };
 
     let db = HelixNeo4j::connect(&config)

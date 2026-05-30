@@ -1,0 +1,26 @@
+%%{init: {'theme': 'base'}}%%
+C4Component
+    title "C3 Component — neo4j-aura-dual-mode (P7 checks 4+5+8)"
+
+    Container_Boundary(webshell_b, "lightarchitects-webshell") {
+        Component(init_schema, "SessionStore::init_schema()", "rusqlite fn", "Phase 2: ADD PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; before CREATE TABLE — P7 check 4")
+        Component(queue_error, "QueueIoError + IntoResponse", "Axum error type", "Phase 4: Unit variants with opaque HTTP codes — queue_read_error, queue_parse_error, queue_write_error. tracing::warn! for internal detail — P7 check 5")
+        Component(cov_tests, "Coverage gap tests", "Rust #[cfg(test)] modules", "Phase 5: targeted unit tests added to reach ≥90% tarpaulin line coverage — P7 check 8")
+    }
+
+    Container_Boundary(lib_b, "lightarchitects") {
+        Component(mode_enum, "Neo4jConnectionMode", "Rust enum", "Phase 3: Local (default) | Aura (TLS-enforced) | Auto (URI-detected). #[derive(Default)] — backward-compatible — P7 check 5b")
+        Component(neo4j_config, "Neo4jConfig + from_env()", "Rust struct + fn", "Phase 3: ADD mode: Neo4jConnectionMode field; ADD new() constructor; UPDATE from_env() to read NEO4J_MODE env var with validation")
+        Component(connect, "HelixStore::connect()", "Rust async fn", "Phase 3: TLS gate — Aura mode enforces neo4j+s:// URI; Local accepts bolt://; Auto infers from URI prefix")
+    }
+
+    Container_Ext(sqlite_file, "SQLite file (WAL mode)", "After Phase 2: WAL journaling active — crash-safe restart, no data loss on SIGKILL")
+    Container_Ext(neo4j_bolt, "Neo4j bolt://", "Local development target")
+    Container_Ext(neo4j_tls, "Neo4j neo4j+s://", "Aura TLS target")
+
+    Rel(init_schema, sqlite_file, "execute_batch(PRAGMA WAL) → idempotent, returns 'wal' on re-set")
+    Rel(neo4j_config, mode_enum, "reads mode field; validates NEO4J_MODE at startup")
+    Rel(connect, neo4j_bolt, "Local / Auto+bolt:// path")
+    Rel(connect, neo4j_tls, "Aura / Auto+neo4j+s:// path — TLS enforced")
+    Rel(connect, neo4j_config, "reads uri + mode to determine connection target")
+    Rel(queue_error, cov_tests, "opaque error test: assert body has code not raw Rust string")

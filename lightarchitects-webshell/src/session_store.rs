@@ -29,6 +29,8 @@ pub struct SessionRow {
     pub containerized: bool,
     /// Northstar text captured at build creation; injected into supervisor evaluation
     /// prompts so each wave is scored against the operator's declared intent.
+    /// Not serialized in HTTP list responses (CWE-200 / Security Guardrails §9.1).
+    #[serde(skip_serializing)]
     pub northstar_text: Option<String>,
 }
 
@@ -51,6 +53,23 @@ impl SessionStore {
             std::env::temp_dir().join(format!("la_sessions_{}.db", std::process::id()))
         });
         let conn = Connection::open(&path)?;
+        // Restrict db file + parent dir so WAL sidecar files (-wal/-shm) are not world-readable.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = std::fs::metadata(&path) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o600);
+                let _ = std::fs::set_permissions(&path, perms);
+            }
+            if let Some(parent) = path.parent() {
+                if let Ok(meta) = std::fs::metadata(parent) {
+                    let mut perms = meta.permissions();
+                    perms.set_mode(0o700);
+                    let _ = std::fs::set_permissions(parent, perms);
+                }
+            }
+        }
         Self::init_schema(&conn)?;
         tracing::info!(target: "session_store", path = %path.display(), "SQLite session store opened");
         Ok(Self { conn })
@@ -69,7 +88,13 @@ impl SessionStore {
         Self { conn }
     }
 
+    /// Initialises the sessions schema.
+    ///
+    /// Sets WAL journaling mode for crash-safe operation (P7 check 4): data committed
+    /// before an abnormal process termination is preserved on restart. Idempotent —
+    /// safe to call on an existing WAL-mode database.
     fn init_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
         conn.execute(
             "CREATE TABLE IF NOT EXISTS sessions (
                 build_id TEXT PRIMARY KEY,
@@ -301,5 +326,165 @@ mod tests {
             .set_northstar_text("ghost-build", "irrelevant")
             .unwrap();
         assert_eq!(store.count().unwrap(), 0);
+    }
+
+    #[test]
+    fn wal_mode_is_active_after_init_schema() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let conn = Connection::open(tmp.path()).unwrap();
+        SessionStore::init_schema(&conn).unwrap();
+        let mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            mode, "wal",
+            "journal_mode must be WAL after init_schema (P7 check 4)"
+        );
+    }
+
+    #[test]
+    fn touch_updates_backend_and_model() {
+        let store = store_with_row();
+
+        let rows = store.list().unwrap();
+        assert!(
+            rows[0].backend.is_none(),
+            "backend should be NULL on insert"
+        );
+        assert!(rows[0].model.is_none(), "model should be NULL on insert");
+
+        store
+            .touch("build-1", Some("litellm"), Some("claude-opus-4"))
+            .unwrap();
+
+        let rows = store.list().unwrap();
+        assert_eq!(rows[0].backend.as_deref(), Some("litellm"));
+        assert_eq!(rows[0].model.as_deref(), Some("claude-opus-4"));
+    }
+
+    #[test]
+    fn touch_with_none_preserves_existing_values() {
+        let store = SessionStore::noop();
+        store
+            .insert(
+                "build-2",
+                "/tmp",
+                "la",
+                Some("anthropic"),
+                Some("sonnet"),
+                false,
+            )
+            .unwrap();
+
+        // None args → COALESCE keeps existing values.
+        store.touch("build-2", None, None).unwrap();
+
+        let rows = store.list().unwrap();
+        assert_eq!(rows[0].backend.as_deref(), Some("anthropic"));
+        assert_eq!(rows[0].model.as_deref(), Some("sonnet"));
+    }
+
+    #[test]
+    fn remove_deletes_row() {
+        let store = store_with_row();
+        assert_eq!(store.count().unwrap(), 1);
+
+        store.remove("build-1").unwrap();
+
+        assert_eq!(store.count().unwrap(), 0);
+        assert!(store.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn remove_missing_row_is_noop() {
+        let store = SessionStore::noop();
+        store.remove("ghost").unwrap();
+        assert_eq!(store.count().unwrap(), 0);
+    }
+
+    #[test]
+    fn migration_adds_northstar_text_to_legacy_schema() {
+        // Simulate a pre-migration database that has no northstar_text column.
+        // init_schema must detect the absence and run ALTER TABLE (line 125).
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
+            .unwrap();
+        conn.execute(
+            "CREATE TABLE sessions (
+                build_id TEXT PRIMARY KEY,
+                cwd TEXT NOT NULL,
+                agent_kind TEXT NOT NULL,
+                backend TEXT,
+                model TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                containerized INTEGER NOT NULL DEFAULT 0
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at)",
+            [],
+        )
+        .unwrap();
+
+        // Column absent → init_schema must ADD it.
+        SessionStore::init_schema(&conn).unwrap();
+
+        let count: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'northstar_text'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "ALTER TABLE must add northstar_text column");
+    }
+
+    #[test]
+    fn open_returns_usable_store() {
+        // open() uses db_path() (requires LA root) or falls back to a tmp file.
+        // Either way the returned store must be functional — schema accessible.
+        let store = SessionStore::open().unwrap();
+        // count() must not error — table exists and schema is current.
+        let _ = store.count().expect("count must not fail on open() store");
+    }
+
+    #[test]
+    fn uncommitted_transaction_is_rolled_back_on_reopen() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        {
+            let conn = Connection::open(tmp.path()).unwrap();
+            SessionStore::init_schema(&conn).unwrap();
+            conn.execute(
+                "INSERT INTO sessions (build_id, cwd, agent_kind, created_at, updated_at, containerized)
+                 VALUES ('committed', '/tmp', 'la', 1, 1, 0)",
+                [],
+            )
+            .unwrap();
+            // Begin a transaction, insert, then drop without committing — WAL rollback path.
+            let tx = conn.unchecked_transaction().unwrap();
+            tx.execute(
+                "INSERT INTO sessions (build_id, cwd, agent_kind, created_at, updated_at, containerized)
+                 VALUES ('uncommitted', '/tmp', 'la', 1, 1, 0)",
+                [],
+            )
+            .unwrap();
+            drop(tx); // rollback
+        }
+        // Reopen — committed row must survive; uncommitted row must not.
+        let conn2 = Connection::open(tmp.path()).unwrap();
+        let count: i64 = conn2
+            .query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            count, 1,
+            "only the committed row should survive after WAL rollback"
+        );
+        let id: String = conn2
+            .query_row("SELECT build_id FROM sessions", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(id, "committed");
     }
 }

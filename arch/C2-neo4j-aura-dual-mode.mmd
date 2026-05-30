@@ -1,0 +1,26 @@
+%%{init: {'theme': 'base'}}%%
+C4Context
+    title "C2 Container — neo4j-aura-dual-mode"
+    UpdateLayoutConfig($c4ShapeInRow: "3", $c4BoundaryInRow: "2")
+
+    Person(operator, "Operator", "Configures NEO4J_MODE env var; observes crash-safe session restarts and structured HTTP errors")
+
+    System_Boundary(sdk, "lightarchitects-sdk workspace") {
+        Container(webshell, "lightarchitects-webshell", "Rust binary (Axum)", "Local web GUI — coordination HTTP handlers, session management")
+        Container(lib, "lightarchitects", "Rust library", "Helix module — Neo4j client, HelixStore, Neo4jConfig, Neo4jConnectionMode enum")
+    }
+
+    System_Ext(sqlite, "SQLite (WAL mode)", "File-based session store — crash-safe after Phase 2")
+    System_Ext(neo4j_local, "Neo4j Local", "bolt:// — Local mode (default)")
+    System_Ext(neo4j_aura, "Neo4j Aura", "neo4j+s:// — TLS-enforced Aura mode")
+
+    Rel(operator, webshell, "HTTP requests to /v1/coordination/*; reads build state")
+    Rel(operator, lib, "Sets NEO4J_MODE=aura|auto|local env var at startup")
+    Rel(webshell, sqlite, "Reads/writes session rows via rusqlite — WAL PRAGMA in init_schema()")
+    Rel(lib, neo4j_local, "bolt:// connection when mode=Local or mode=Auto+bolt://")
+    Rel(lib, neo4j_aura, "neo4j+s:// TLS connection when mode=Aura or mode=Auto+neo4j+s://")
+
+    UpdateRelStyle(operator, webshell, $textColor="black", $lineColor="gray")
+    UpdateRelStyle(webshell, sqlite, $textColor="black", $lineColor="#2196F3")
+    UpdateRelStyle(lib, neo4j_local, $textColor="black", $lineColor="#4CAF50")
+    UpdateRelStyle(lib, neo4j_aura, $textColor="black", $lineColor="#FF9800")

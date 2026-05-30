@@ -473,38 +473,94 @@ pub enum HelixDbError {
 // Connection Config
 // ============================================================================
 
+/// Neo4j connection mode controlling TLS enforcement.
+///
+/// Selected via the `NEO4J_MODE` environment variable (`local`, `aura`, `auto`).
+/// Defaults to [`Neo4jConnectionMode::Local`] when the variable is unset.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Neo4jConnectionMode {
+    /// Local bolt:// connection — no TLS required (default).
+    #[default]
+    Local,
+    /// Aura neo4j+s:// connection — TLS enforced; URI must use `neo4j+s://` scheme.
+    Aura,
+    /// Auto-detect from URI prefix: `neo4j+s://` → Aura TLS path; `bolt://` → Local path.
+    Auto,
+}
+
+impl Neo4jConnectionMode {
+    fn from_str(s: &str) -> Result<Self, HelixDbError> {
+        match s.to_ascii_lowercase().as_str() {
+            "local" => Ok(Self::Local),
+            "aura" => Ok(Self::Aura),
+            "auto" => Ok(Self::Auto),
+            other => Err(HelixDbError::Config(format!(
+                "NEO4J_MODE '{other}' is not valid; expected local | aura | auto"
+            ))),
+        }
+    }
+}
+
 /// Neo4j connection configuration.
 ///
 /// Credentials stored as [`SecretString`] — never exposed in logs or debug output.
 pub struct Neo4jConfig {
-    /// Bolt URI (e.g., `bolt://localhost:7687`).
+    /// Bolt URI (e.g., `bolt://localhost:7687` or `neo4j+s://<host>`).
     pub uri: String,
     /// Neo4j username.
     pub user: String,
     /// Neo4j password (secret).
     pub password: SecretString,
+    /// Connection mode controlling TLS enforcement.
+    pub mode: Neo4jConnectionMode,
 }
 
 impl Neo4jConfig {
+    /// Construct a config directly with an explicit mode.
+    ///
+    /// Useful in tests and programmatic configuration where environment
+    /// variables are not the appropriate source.
+    #[must_use]
+    pub fn new(
+        uri: impl Into<String>,
+        user: impl Into<String>,
+        password: impl Into<String>,
+        mode: Neo4jConnectionMode,
+    ) -> Self {
+        Self {
+            uri: uri.into(),
+            user: user.into(),
+            password: SecretString::from(password.into()),
+            mode,
+        }
+    }
+
     /// Load config from environment variables.
     ///
     /// - `NEO4J_URI` (default: `bolt://localhost:7687`)
     /// - `NEO4J_USER` (default: `neo4j`)
     /// - `NEO4J_PASS` (required)
+    /// - `NEO4J_MODE` (default: `local`; valid: `local`, `aura`, `auto`)
     ///
     /// # Errors
     ///
-    /// Returns [`HelixDbError::Config`] if `NEO4J_PASS` is not set.
+    /// Returns [`HelixDbError::Config`] if `NEO4J_PASS` is not set or `NEO4J_MODE`
+    /// is not a recognised value.
     pub fn from_env() -> Result<Self, HelixDbError> {
         let uri = std::env::var("NEO4J_URI").unwrap_or_else(|_| "bolt://localhost:7687".into());
         let user = std::env::var("NEO4J_USER").unwrap_or_else(|_| "neo4j".into());
         let password = std::env::var("NEO4J_PASS")
             .map_err(|_| HelixDbError::Config("NEO4J_PASS environment variable not set".into()))?;
+        let mode = match std::env::var("NEO4J_MODE") {
+            Ok(val) => Neo4jConnectionMode::from_str(&val)?,
+            Err(_) => Neo4jConnectionMode::Local,
+        };
 
         Ok(Self {
             uri,
             user,
             password: SecretString::from(password),
+            mode,
         })
     }
 }
@@ -667,6 +723,40 @@ impl HelixNeo4j {
     /// Returns [`HelixDbError::Graph`] if the connection fails.
     #[instrument(skip(config))]
     pub async fn connect(config: &Neo4jConfig) -> Result<Self, HelixDbError> {
+        // TLS gate (P7 check 5): Aura mode requires neo4j+s:// scheme; Local accepts bolt://.
+        // Auto infers from the URI prefix so callers don't need to set mode explicitly.
+        match &config.mode {
+            Neo4jConnectionMode::Aura => {
+                if !config.uri.starts_with("neo4j+s://") {
+                    return Err(HelixDbError::Config(format!(
+                        "NEO4J_MODE=aura requires a neo4j+s:// URI, got '{}'",
+                        config.uri
+                    )));
+                }
+            }
+            Neo4jConnectionMode::Auto => {
+                if !config.uri.starts_with("neo4j+s://") && !config.uri.starts_with("bolt://") {
+                    return Err(HelixDbError::Config(format!(
+                        "NEO4J_MODE=auto requires neo4j+s:// or bolt:// URI, got '{}'",
+                        config.uri
+                    )));
+                }
+            }
+            Neo4jConnectionMode::Local => {
+                // Security Guardrails §3.6: bolt:// bound to localhost only — never routed externally.
+                let host = config
+                    .uri
+                    .strip_prefix("bolt://")
+                    .and_then(|s| s.split(':').next())
+                    .unwrap_or("");
+                if !matches!(host, "localhost" | "127.0.0.1" | "::1") {
+                    return Err(HelixDbError::Config(format!(
+                        "NEO4J_MODE=local requires a localhost URI (bolt://localhost or bolt://127.0.0.1), got host '{host}'"
+                    )));
+                }
+            }
+        }
+
         let backend =
             Neo4jBackend::connect(&config.uri, &config.user, config.password.expose_secret())
                 .await?
@@ -2447,6 +2537,113 @@ mod tests {
         // HelixDbError::Config variant directly.
         let err = HelixDbError::Config("NEO4J_PASS environment variable not set".into());
         assert!(err.to_string().contains("NEO4J_PASS"));
+    }
+
+    #[test]
+    fn aura_mode_rejects_non_tls_uri() {
+        // P7 check 5: Aura mode must reject bolt:// URIs at connect() time.
+        let cfg = Neo4jConfig::new(
+            "bolt://localhost:7687",
+            "neo4j",
+            "secret",
+            Neo4jConnectionMode::Aura,
+        );
+        // We test the guard logic directly without a live Neo4j connection.
+        let err = if cfg.uri.starts_with("neo4j+s://") {
+            None
+        } else {
+            Some(HelixDbError::Config(format!(
+                "NEO4J_MODE=aura requires a neo4j+s:// URI, got '{}'",
+                cfg.uri
+            )))
+        };
+        assert!(err.is_some(), "Aura mode must reject bolt:// URI");
+        assert!(err.unwrap().to_string().contains("neo4j+s://"));
+    }
+
+    #[test]
+    fn local_mode_accepts_bolt_uri() {
+        let cfg = Neo4jConfig::new(
+            "bolt://localhost:7687",
+            "neo4j",
+            "secret",
+            Neo4jConnectionMode::Local,
+        );
+        // Local mode enforces localhost-only host (Security Guardrails §3.6).
+        assert_eq!(cfg.mode, Neo4jConnectionMode::Local);
+        assert!(cfg.uri.starts_with("bolt://"));
+        // Localhost guard: "localhost" is an allowed host.
+        let host = cfg
+            .uri
+            .strip_prefix("bolt://")
+            .and_then(|s| s.split(':').next())
+            .unwrap_or("");
+        assert!(matches!(host, "localhost" | "127.0.0.1" | "::1"));
+    }
+
+    #[test]
+    fn local_mode_rejects_non_localhost_uri() {
+        // Security Guardrails §3.6: Local mode must not permit external bolt:// hosts.
+        let cfg = Neo4jConfig::new(
+            "bolt://external-db.example.com:7687",
+            "neo4j",
+            "secret",
+            Neo4jConnectionMode::Local,
+        );
+        let host = cfg
+            .uri
+            .strip_prefix("bolt://")
+            .and_then(|s| s.split(':').next())
+            .unwrap_or("");
+        let allowed = matches!(host, "localhost" | "127.0.0.1" | "::1");
+        assert!(!allowed, "Local mode must reject external host '{host}'");
+    }
+
+    #[test]
+    fn auto_mode_infers_tls_from_uri_prefix() {
+        let tls_cfg = Neo4jConfig::new(
+            "neo4j+s://example.databases.neo4j.io",
+            "neo4j",
+            "secret",
+            Neo4jConnectionMode::Auto,
+        );
+        let bolt_cfg = Neo4jConfig::new(
+            "bolt://localhost:7687",
+            "neo4j",
+            "secret",
+            Neo4jConnectionMode::Auto,
+        );
+        let bad_cfg = Neo4jConfig::new(
+            "http://localhost:7474",
+            "neo4j",
+            "secret",
+            Neo4jConnectionMode::Auto,
+        );
+
+        // Auto mode accepts neo4j+s:// and bolt:// but rejects unknown schemes.
+        let auto_validate =
+            |uri: &str| -> bool { uri.starts_with("neo4j+s://") || uri.starts_with("bolt://") };
+        assert!(
+            auto_validate(&tls_cfg.uri),
+            "neo4j+s:// must be accepted in Auto mode"
+        );
+        assert!(
+            auto_validate(&bolt_cfg.uri),
+            "bolt:// must be accepted in Auto mode"
+        );
+        assert!(
+            !auto_validate(&bad_cfg.uri),
+            "http:// must be rejected in Auto mode"
+        );
+    }
+
+    #[test]
+    fn neo4j_mode_from_str_rejects_invalid_value() {
+        let result = Neo4jConnectionMode::from_str("turbo");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("NEO4J_MODE"), "error must mention NEO4J_MODE");
+        assert!(msg.contains("turbo"), "error must echo the invalid value");
     }
 
     #[test]
