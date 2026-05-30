@@ -1001,6 +1001,7 @@ import type {
   ConductorTickEvent,
   MergeAgentStatusEvent,
   FixAgentIterationEvent,
+  IronclawHitlEscalationEvent,
 } from './types';
 
 /** Latest worker slot occupancy — null until first gauge event arrives. */
@@ -1014,6 +1015,9 @@ export const mergeAgentEvents = writable<MergeAgentStatusEvent[]>([]);
 
 /** Rolling window of fix agent iteration events (newest first, max 100). */
 export const fixAgentEvents = writable<FixAgentIterationEvent[]>([]);
+
+/** Active ironclaw HITL escalation awaiting operator decision. Null when idle. */
+export const ironclawHitlEscalation = writable<IronclawHitlEscalationEvent | null>(null);
 
 // --- Copilot context buffer (copilot-omniscience-read) ---
 

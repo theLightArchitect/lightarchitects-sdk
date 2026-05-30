@@ -315,6 +315,8 @@ export type EventType =
   | 'conductor_tick'
   | 'merge_agent_status'
   | 'fix_agent_iteration'
+  | 'ironclaw_hitl_escalation'
+  | 'ironclaw_hitl_resolution'
   | 'agent_fleet_update'
   | 'project_update';
 
@@ -1185,6 +1187,32 @@ export interface FixAgentIterationEvent {
   worker_slot:   number;
   iteration:     number;
   issue_summary: string;
+}
+
+/** Ironclaw HITL escalation — gate threshold crossed; operator approval required. */
+export interface IronclawHitlEscalationEvent {
+  type:                'ironclaw_hitl_escalation';
+  build_id:            string;
+  task_id:             string;
+  decision_topic:      string;
+  layer_failed:        number;
+  escalation_question: string;
+  deadline?:           string;
+  traceparent?:        string;
+  /** UUIDv7 nonce — identifies this escalation; embedded in POST /api/control body. */
+  nonce:               string;
+}
+
+/** Ironclaw HITL resolution — operator decision recorded in helix, pipeline resumed. */
+export interface IronclawHitlResolutionEvent {
+  type:        'ironclaw_hitl_resolution';
+  build_id:    string;
+  task_id:     string;
+  resolution:  'Approve' | 'Reject';
+  operator_id: string;
+  decided_at:  string;
+  /** Matches the originating escalation nonce. */
+  nonce:       string;
 }
 
 /** A single decision entry from GET /api/builds/:id/decisions. */

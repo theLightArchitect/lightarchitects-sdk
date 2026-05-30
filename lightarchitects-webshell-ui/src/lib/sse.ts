@@ -20,6 +20,7 @@ import {
   contextUsage,
   gitforestTree, gitforestPulses,
   workerSlots, conductorState, mergeAgentEvents, fixAgentEvents,
+  ironclawHitlEscalation,
   pushRecentEvent,
   projects,
   strategyHitl,
@@ -723,6 +724,18 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
     case 'fix_agent_iteration': {
       const payload = event as unknown as import('./types').FixAgentIterationEvent;
       fixAgentEvents.update(list => [payload, ...list].slice(0, 100));
+      break;
+    }
+    case 'ironclaw_hitl_escalation': {
+      const payload = event as unknown as import('./types').IronclawHitlEscalationEvent;
+      ironclawHitlEscalation.set(payload);
+      window.dispatchEvent(new CustomEvent('la:ironclaw_hitl_escalation', { detail: payload }));
+      break;
+    }
+    case 'ironclaw_hitl_resolution': {
+      const payload = event as unknown as import('./types').IronclawHitlResolutionEvent;
+      ironclawHitlEscalation.update(cur => (cur?.nonce === payload.nonce ? null : cur));
+      window.dispatchEvent(new CustomEvent('la:ironclaw_hitl_resolution', { detail: payload }));
       break;
     }
     default:
