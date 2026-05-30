@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import PolytopeIcon from './PolytopeIcon.svelte';
   import {
-    streamDrawerOpen, streamDrawerWidthPx, mailboxUnread, slotAssignments,
+    streamDrawerOpen, streamDrawerMode, mailboxUnread, slotAssignments,
     streamDrawerActiveTabs, type StreamDrawerTab,
   } from '$lib/stores';
 
@@ -24,6 +24,9 @@
   }
 
   function toggle() {
+    // Force the docked mode when launching from the button so it does not
+    // reopen in the alternate top layout.
+    streamDrawerMode.set('right');
     streamDrawerOpen.update(v => !v);
     menuOpen = false;
   }
@@ -38,6 +41,7 @@
 
   function activateTab(tab: StreamDrawerTab) {
     streamDrawerActiveTabs.update(tabs => tabs.includes(tab) ? tabs : [...tabs, tab]);
+    streamDrawerMode.set('right');
     streamDrawerOpen.set(true);
     menuOpen = false;
   }
@@ -72,7 +76,7 @@
 -->
 <div
   class="wrap"
-  style="right: calc(8px + {$streamDrawerWidthPx}px); --pc: {pr},{pg},{pb}"
+  style="right: 8px; --pc: {pr},{pg},{pb}"
   role="none"
 >
   <!-- Panel action buttons — fan straight up, staggered cascade -->

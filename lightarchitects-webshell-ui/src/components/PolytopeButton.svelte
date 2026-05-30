@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import PolytopeIcon from './PolytopeIcon.svelte';
-  import { drawerWidthPx, copilotDrawerOpen } from '$lib/stores';
+  import { copilotDrawerOpen } from '$lib/stores';
   import { settingsOpen } from '$lib/setup';
   import { quickPickOpen } from '$lib/cockpit/stores';
 
@@ -40,7 +40,7 @@
   }
 
   function openCopilot() {
-    window.dispatchEvent(new CustomEvent('la:open-copilot'));
+    window.dispatchEvent(new CustomEvent('la:toggle-copilot'));
   }
 
   function emit(event: string) {
@@ -67,7 +67,7 @@
 -->
 <div
   class="wrap"
-  style="left: calc(8px + {$drawerWidthPx}px); --pc: {pr},{pg},{pb}"
+  style="left: 8px; --pc: {pr},{pg},{pb}"
   role="none"
 >
   <!-- Action buttons — fan straight up, staggered cascade -->

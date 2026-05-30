@@ -37,6 +37,7 @@ const REDIRECTS: [string, string][] = [
   ['/helix',          '/knowledge'],
   ['/memory',         '/knowledge'],
   ['/arch',           '/diagrams'],
+  ['/architecture',   '/diagrams'],
   ['/manage',         '/builds'],
 ];
 

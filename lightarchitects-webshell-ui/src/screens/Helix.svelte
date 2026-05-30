@@ -1,8 +1,17 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { helixEntries, vaultCounts } from '$lib/stores';
+  import { api } from '$lib/api';
   import Helix3D from '$lib/../components/Helix3D.svelte';
   import HelixHUD from '$lib/../components/helix/HelixHUD.svelte';
   import HelixSearch from '$lib/../components/helix/HelixSearch.svelte';
+
+  onMount(async () => {
+    try {
+      const result = await api.getHelixNodes();
+      helixEntries.set(result.nodes);
+    } catch { /* non-fatal — SSE events will backfill as they arrive */ }
+  });
 
   let counts = $derived($vaultCounts);
   let totalCount = $derived(

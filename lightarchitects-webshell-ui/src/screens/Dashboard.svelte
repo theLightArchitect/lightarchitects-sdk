@@ -296,14 +296,14 @@
           <span class="queue-chip queue-chip--running" title="{task.buildId} · {task.taskType} · running">
             <span class="queue-chip-pulse"></span>
             <span class="queue-chip-sib">{task.sibling?.toUpperCase() ?? ''}</span>
-            <span class="queue-chip-name">{task.buildId.replace(/^feat\//, '').slice(0, 18)}</span>
+            <span class="queue-chip-name">{(task.buildId ?? '').replace(/^feat\//, '').slice(0, 18)}</span>
             <span class="queue-chip-type">{task.taskType}</span>
           </span>
         {/each}
         {#each pendingTasks.slice(0, 5) as task}
           <span class="queue-chip queue-chip--{task.priority}" title="{task.buildId} · {task.taskType}">
             <span class="queue-chip-sib">{task.sibling?.toUpperCase() ?? ''}</span>
-            <span class="queue-chip-name">{task.buildId.replace(/^feat\//, '').slice(0, 18)}</span>
+            <span class="queue-chip-name">{(task.buildId ?? '').replace(/^feat\//, '').slice(0, 18)}</span>
             <span class="queue-chip-type">{task.taskType}</span>
           </span>
         {/each}
@@ -685,6 +685,15 @@
     z-index: var(--z-panel);
     display: flex;
     flex-direction: column;
+    /* Transparent to pointer events so panel header × / ⊞ buttons remain
+       clickable. The PanelCatalog child re-enables events for its own content. */
+    pointer-events: none;
+  }
+
+  /* Re-enable pointer events for all direct children of the overlay
+     (PanelCatalog and any future siblings). */
+  .catalog-overlay > :global(*) {
+    pointer-events: auto;
   }
 
   /* Custom tooltip — immediate, no OS delay, styled with design tokens */

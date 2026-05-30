@@ -519,7 +519,7 @@ GW --> CLAUDE : HTTPS
       document.body.removeChild(ta);
     }
     copyFlash[d.id] = true;
-    setTimeout(() => { copyFlash[d.id] = false; }, 1500);
+    setTimeout(() => { copyFlash[d.id] = false; }, 2000);
   }
 
   function toggleSource(id: string): void {
@@ -708,11 +708,11 @@ GW --> CLAUDE : HTTPS
                 type="button"
                 class="text-[9px] font-mono uppercase tracking-wider px-2.5 py-0.5 rounded border transition-all
                   {copyFlash[d.id]
-                    ? 'border-green-500/40 text-green-400'
+                    ? 'border-green-500/60 text-green-400 bg-green-500/10 scale-105'
                     : 'border-[#1e293b] text-[#475569] hover:border-[#FFD700]/30 hover:text-[#FFD700]'}"
                 onclick={() => copySrc(d)}
                 data-testid="copy-src-{d.id}"
-              >{copyFlash[d.id] ? 'Copied!' : 'Copy'}</button>
+              >{copyFlash[d.id] ? '✓ Copied!' : 'Copy'}</button>
             </div>
 
             {#if openSource[d.id]}

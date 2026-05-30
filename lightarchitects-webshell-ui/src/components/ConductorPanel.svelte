@@ -27,10 +27,12 @@
     }
   }
 
-  function formatTime(iso: string): string {
+  function formatTime(iso: string | undefined): string {
+    if (!iso) return '—';
     const d = new Date(iso);
-    const now = Date.now();
-    const diff = now - d.getTime();
+    const ms = d.getTime();
+    if (isNaN(ms)) return '—';
+    const diff = Date.now() - ms;
     if (diff < 60000) return 'now';
     if (diff < 3600000) return `${Math.floor(diff / 60000)}m`;
     return `${Math.floor(diff / 3600000)}h`;

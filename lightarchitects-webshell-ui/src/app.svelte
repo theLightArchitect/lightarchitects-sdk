@@ -40,7 +40,8 @@
     streamDrawerOpen.set(true);
   }
   import { get } from 'svelte/store';
-  import { setupComplete, step, loadSetupInfo, selectedBackend, selectedModel, selectedAgent } from '$lib/setup';
+  import { setupComplete, step, loadSetupInfo, selectedBackend, selectedModel, selectedAgent, settingsOpen } from '$lib/setup';
+  import SettingsOverlay from './components/SettingsOverlay.svelte';
   import { connectGlobalSSE, disconnectGlobalSSE } from '$lib/sse';
   import { authHeaders } from '$lib/auth';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
@@ -626,5 +627,8 @@
   <HelixDetailPanel />
   <ScrumReport />
   <NotificationStack />
+  {#if $settingsOpen}
+    <SettingsOverlay />
+  {/if}
 </div>
 {/if}

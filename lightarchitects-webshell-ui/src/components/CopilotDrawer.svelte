@@ -26,6 +26,7 @@
   import OllamaConfigModal from './OllamaConfigModal.svelte';
   import SettingsOverlay from './SettingsOverlay.svelte';
   import PolytopeIcon from './PolytopeIcon.svelte';
+  import QuickPickPalette from './Cockpit/QuickPickPalette.svelte';
   import { settingsOpen, pendingResumeSessionId, serverCwd, persistedConfig, selectedModel } from '$lib/setup';
   import { strategyHitl, copilotDrawerOpen } from '$lib/stores';
   import { drawerWidthPx } from '$lib/stores';
@@ -101,6 +102,20 @@
     return _buf.length > 0 ? snapshotContextForCopilot() : null;
   });
   let voicePlaying = $state(false);
+
+  function openEmbeddedDrawer() {
+    positionMode = 'drawer';
+    open = true;
+  }
+
+  function openDrawerWithQuickPalette() {
+    openEmbeddedDrawer();
+    tesseractOpen = true;
+  }
+
+  function toggleVoice() {
+    voiceEnabled.update(v => !v);
+  }
 
   // --- Native agent bridge state ---
   //
@@ -423,7 +438,18 @@
   }
 
   async function ensureBuild(): Promise<string> {
-    if (sharedBuildId) return sharedBuildId;
+    if (sharedBuildId) {
+      // Populate agent kind for restored sessions (page reload path).
+      // buildAgentKind is only set on CREATE; on RESUME it stays undefined,
+      // which causes sendMessage() to fall through to the WS bridge path.
+      if (!buildAgentKind) {
+        try {
+          const r = await api.getBuild(sharedBuildId);
+          if (r?.agent?.kind) buildAgentKind = r.agent.kind;
+        } catch { /* non-fatal — older sessions may not have agent field */ }
+      }
+      return sharedBuildId;
+    }
     const existing = $currentBuildId;
     if (existing) { sharedBuildId = existing; return existing; }
     const profile = $authProfile;
@@ -836,12 +862,24 @@
   // or `la:toggle-copilot` (Ctrl+` hotkey in app.svelte) to drive this drawer
   // without importing its local state.
   $effect(() => {
-    const handler = () => { open = !open; if (!open) showSuggestions = false; };
-    window.addEventListener('la:open-copilot', handler);
-    window.addEventListener('la:toggle-copilot', handler);
+    const openHandler = () => { openEmbeddedDrawer(); };
+    const quickOpenHandler = () => { openDrawerWithQuickPalette(); };
+    const toggleHandler = () => {
+      if (open) {
+        open = false;
+        showSuggestions = false;
+        tesseractOpen = false;
+        return;
+      }
+      openEmbeddedDrawer();
+    };
+    window.addEventListener('la:open-copilot', openHandler);
+    window.addEventListener('la:open-copilot-quick', quickOpenHandler);
+    window.addEventListener('la:toggle-copilot', toggleHandler);
     return () => {
-      window.removeEventListener('la:open-copilot', handler);
-      window.removeEventListener('la:toggle-copilot', handler);
+      window.removeEventListener('la:open-copilot', openHandler);
+      window.removeEventListener('la:open-copilot-quick', quickOpenHandler);
+      window.removeEventListener('la:toggle-copilot', toggleHandler);
     };
   });
 
@@ -1318,14 +1356,6 @@
                 grounding={$copilotGrounding}
               />
               <div class="flex gap-2 relative">
-                <!-- Tesseract command palette trigger — left of input, helix gold glow -->
-                <button
-                  onclick={() => { tesseractOpen = !tesseractOpen; }}
-                  class="{$copilotLoading ? 'tesseract-glow-thinking' : 'tesseract-glow'} w-9 h-9 flex items-center justify-center rounded-lg shrink-0 transition-all duration-200 {tesseractOpen ? 'border border-[var(--la-focus-ring)] bg-[var(--la-focus-ring)]/15 shadow-[0_0_14px_rgba(255,215,0,0.5)]' : 'border border-[var(--la-drawer-border)] hover:border-[var(--la-focus-ring)]/50 hover:shadow-[0_0_8px_rgba(255,215,0,0.25)]'}"
-                  title="Command palette"
-                >
-                  <PolytopeIcon type="tesseract" color={tesseractOpen ? '#FFD700' : '#D4A017'} size={22} />
-                </button>
                 <input
                   type="text"
                   bind:value={input}
@@ -1335,7 +1365,7 @@
                   onfocus={() => { if (input.startsWith('/')) showSuggestions = true; }}
                   onblur={() => { setTimeout(() => { showSuggestions = false; atSuggestions = []; }, 200); }}
                   placeholder="Type a message or /command… · @ for files"
-                  class="flex-1 bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] rounded px-3 py-1.5 text-xs text-[var(--la-text-bright)] placeholder-[var(--la-text-dim)] outline-none focus:border-[var(--la-focus-ring)]/60 transition-colors"
+                  class="flex-1 bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] rounded px-3 py-[5px] text-[11px] leading-5 text-[var(--la-text-bright)] placeholder-[var(--la-text-dim)] outline-none focus:border-[var(--la-focus-ring)]/60 transition-colors"
                 />
                 <!-- @-file autocomplete dropdown -->
                 {#if atSuggestions.length > 0}
@@ -1349,31 +1379,46 @@
                     {/each}
                   </div>
                 {/if}
-                <!-- Voice toggle button — activates EVA voice output after each response -->
-                <button
-                  onclick={() => voiceEnabled.update(v => !v)}
-                  aria-pressed={$voiceEnabled}
-                  title={$voiceEnabled ? 'Voice on — click to mute EVA' : 'Click to enable EVA voice'}
-                  class="w-9 h-9 flex items-center justify-center rounded-lg shrink-0 border transition-all duration-200
-                    {$voiceEnabled
-                      ? 'border-[var(--la-focus-ring)] bg-[var(--la-focus-ring)]/15 shadow-[0_0_8px_rgba(255,215,0,0.3)] text-[var(--la-focus-ring)]'
-                      : 'border-[var(--la-drawer-border)] text-[var(--la-text-dim)] hover:border-[var(--la-focus-ring)]/40'}"
-                >
-                  {#if voicePlaying}
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
-                  {:else}
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
-                  {/if}
-                </button>
                 <button
                   onclick={sendMessage}
                   disabled={$copilotLoading}
                   class="px-3 py-1.5 bg-[var(--la-focus-ring)] text-[var(--la-bg-frame)] text-xs font-semibold rounded hover:bg-[var(--la-focus-ring)] disabled:opacity-50 transition-colors"
                 >Send</button>
 
-                <!-- Tesseract popover — DISPATCH / CONTEXT / QUICK -->
-                {#if tesseractOpen}
-                  <div class="absolute bottom-full left-0 mb-2 w-[280px] bg-[var(--la-drawer-bg)] border border-[var(--la-focus-ring)]/20 rounded-lg shadow-[0_0_20px_rgba(255,215,0,0.1)] p-3 flex flex-col gap-3 z-50">
+                <div class="relative shrink-0">
+                  <button
+                    onclick={() => { tesseractOpen = !tesseractOpen; }}
+                    class="{$copilotLoading ? 'tesseract-glow-thinking' : 'tesseract-glow'} w-9 h-9 flex items-center justify-center rounded-lg shrink-0 transition-all duration-200 {tesseractOpen ? 'border border-[var(--la-focus-ring)] bg-[var(--la-focus-ring)]/15 shadow-[0_0_14px_rgba(255,215,0,0.5)]' : 'border border-[var(--la-drawer-border)] hover:border-[var(--la-focus-ring)]/50 hover:shadow-[0_0_8px_rgba(255,215,0,0.25)]'}"
+                    title="Command palette"
+                    aria-pressed={tesseractOpen}
+                  >
+                    <PolytopeIcon type="tesseract" color={tesseractOpen ? '#FFD700' : '#D4A017'} size={22} />
+                  </button>
+
+                  <!-- Tesseract popover — DISPATCH / CONTEXT / QUICK -->
+                  {#if tesseractOpen}
+                  <div class="absolute bottom-full right-0 mb-2 w-[280px] bg-[var(--la-drawer-bg)] border border-[var(--la-focus-ring)]/20 rounded-lg shadow-[0_0_20px_rgba(255,215,0,0.1)] p-3 flex flex-col gap-3 z-50">
+                    <button
+                      onclick={toggleVoice}
+                      aria-pressed={$voiceEnabled}
+                      class="flex items-center justify-between gap-3 w-full px-3 py-2 rounded border transition-colors
+                        {$voiceEnabled
+                          ? 'border-[var(--la-focus-ring)] bg-[var(--la-focus-ring)]/10 text-[var(--la-focus-ring)]'
+                          : 'border-[var(--la-drawer-border)] text-[var(--la-text-dim)] hover:border-[var(--la-focus-ring)]/40'}"
+                      title={$voiceEnabled ? 'Voice on — click to mute EVA' : 'Click to enable EVA voice'}
+                    >
+                      <span class="text-[9px] font-medium uppercase tracking-[0.12em]">Voice</span>
+                      <span class="flex items-center gap-2">
+                        {#if voicePlaying}
+                          <span class="text-[10px] text-[var(--la-focus-ring)]">playing</span>
+                        {/if}
+                        {#if $voiceEnabled}
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+                        {:else}
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                        {/if}
+                      </span>
+                    </button>
                     <div>
                       <h3 class="text-[9px] font-medium text-[var(--la-text-dim)] mb-2">DISPATCH</h3>
                       <SiblingDispatch onDispatch={(sib, prompt) => { tesseractOpen = false; handleDispatch(sib, prompt); }} selectedSibling={$focusedSibling} />
@@ -1392,7 +1437,8 @@
                       </div>
                     </div>
                   </div>
-                {/if}
+                  {/if}
+                </div>
               </div>
             </div>
           </div>
@@ -1404,7 +1450,10 @@
 
   </div><!-- end sidebar flex-col -->
 
-  <!-- Right-edge drag handle -->
+  <!-- Right-edge drag handle — removed from DOM when drawer is closed so it
+       doesn't leave a visible 4px strip (flex-shrink:0 overflows the 0px
+       container even with overflow:hidden on the parent). -->
+  {#if open}
   <div
     class="w-1 bg-[var(--la-drawer-border)] hover:bg-[var(--la-focus-ring)] focus:bg-[var(--la-focus-ring)] cursor-ew-resize shrink-0 transition-colors outline-none self-stretch"
     onmousedown={onDragStart}
@@ -1417,7 +1466,12 @@
     aria-valuemax={Math.floor(window.innerWidth * MAX_WIDTH_RATIO)}
     tabindex="0"
   ></div>
+  {/if}
 </div>
+
+{#if $quickPickOpen}
+  <QuickPickPalette />
+{/if}
 
 {#if showModelPicker}
   <!-- Model picker overlay — ⌘⇧M; uses inert on close to suppress keyboard focus -->

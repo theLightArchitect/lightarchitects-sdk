@@ -51,6 +51,9 @@
         tabSize: 2,
         renderWhitespace: 'selection',
       });
+      // automaticLayout fires on resize events only — force a layout pass on the
+      // next paint to handle containers that start with 0 computed height.
+      requestAnimationFrame(() => { editor?.layout(); });
 
       editor.onDidChangeModelContent(() => {
         const val = editor.getValue();

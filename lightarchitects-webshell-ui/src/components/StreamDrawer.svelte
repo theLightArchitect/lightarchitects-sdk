@@ -227,7 +227,10 @@
     streamDrawerActiveTabs.update(tabs =>
       tabs.includes(tab) ? tabs.filter(t => t !== tab) : [...tabs, tab],
     );
-    if (!$streamDrawerOpen) streamDrawerOpen.set(true);
+    if (!$streamDrawerOpen) {
+      streamDrawerMode.set('right');
+      streamDrawerOpen.set(true);
+    }
   }
 
   function deactivateTab(tab: StreamDrawerTab) {
