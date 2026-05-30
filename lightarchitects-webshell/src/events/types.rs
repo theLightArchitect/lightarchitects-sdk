@@ -229,7 +229,7 @@ pub enum WebEvent {
     /// Ironclaw HITL escalation requiring operator approval.
     ///
     /// Emitted by the lightsquad bridge when `UserEscalation` fires and the
-    /// worker parks in the HITL queue. Nonce is UUIDv7, single-use — validated
+    /// worker parks in the HITL queue. Nonce is `UUIDv7`, single-use — validated
     /// server-side on resolution (SERAPH#3 anti-replay). Wire tag:
     /// `"ironclaw_hitl_escalation"`.
     IronclawHitlEscalation(IronclawHitlEscalationEvent),
@@ -337,7 +337,7 @@ pub enum HitlResolution {
 /// Payload for [`WebEvent::IronclawHitlEscalation`].
 ///
 /// Emitted when a lightsquad worker parks in the HITL queue. `nonce` is a
-/// UUIDv7 minted per-escalation; it is embedded in the `callback_data` of any
+/// `UUIDv7` minted per-escalation; it is embedded in the `callback_data` of any
 /// Telegram inline keyboard button and validated server-side on resolution to
 /// prevent replay attacks (SERAPH#3, CWE-209 — nonce must never appear in logs).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -362,7 +362,7 @@ pub struct IronclawHitlEscalationEvent {
     /// W3C `traceparent` for AYIN span stitching across the SSE round-trip.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub traceparent: Option<String>,
-    /// Server-minted UUIDv7 — single-use replay-kill token.
+    /// Server-minted `UUIDv7` — single-use replay-kill token.
     /// Embedded in Telegram `callback_data`; validated against outstanding nonce
     /// set on resolution. SECURITY: must never appear in logs or error messages.
     pub nonce: Uuid,

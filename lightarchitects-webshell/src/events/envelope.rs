@@ -161,6 +161,10 @@ fn topic_for(event: &WebEvent) -> String {
 
         // ── Project identity (webshell-project-ingestion Phase 3) ───────────
         WebEvent::ProjectUpdate(_) => "v1.project.update",
+
+        // ── IronClaw HITL (ironclaw-autonomous-e2e Phase 4) ─────────────────
+        WebEvent::IronclawHitlEscalation(_) => "v1.ironclaw.hitl.escalation",
+        WebEvent::IronclawHitlResolution(_) => "v1.ironclaw.hitl.resolution",
     }
     .to_owned()
 }

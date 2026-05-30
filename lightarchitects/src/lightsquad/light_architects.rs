@@ -170,6 +170,7 @@ impl Recommendation {
 ///
 /// Built from a static table at construction; the table mirrors
 /// `$HELIX/user/standards/canon/gatekeeper-registry.yaml`.
+#[derive(Debug)]
 pub struct LightArchitectRegistry {
     entries: [LightArchitectEntry; 10],
 }
@@ -266,11 +267,12 @@ impl LightArchitectRegistry {
 
     /// Consult the `LightArchitect` for `dimension` on a given `description`.
     ///
-    /// Phase 2: returns a stub [`Recommendation`] (approved, confidence 0.5).
-    /// Phase 4: dispatches to the primary sibling via `crate::squad_registry`.
+    /// Routes to `crate::squad_registry::consult`, which maps the dimension to
+    /// its registered primary sibling (e.g. Security → SERAPH, Quality → CORSO)
+    /// and returns a [`Recommendation`]. Security never auto-approves.
     #[must_use]
-    pub fn consult(&self, dimension: GateDimension, _description: &str) -> Recommendation {
-        Recommendation::stub_approval(dimension)
+    pub fn consult(&self, dimension: GateDimension, description: &str) -> Recommendation {
+        crate::squad_registry::consult(dimension, description)
     }
 
     /// Determine the most relevant dimension for a given action description
@@ -345,12 +347,34 @@ mod tests {
     }
 
     #[test]
-    fn consult_returns_stub_in_phase2() {
+    fn consult_dispatches_to_squad_registry_not_stub() {
         let registry = LightArchitectRegistry::new();
+        // Architecture → CORSO → approved, confidence 0.75 (not 0.5 stub).
         let rec = registry.consult(GateDimension::Architecture, "design new API surface");
         assert!(rec.approved);
         assert_eq!(rec.dimension, GateDimension::Architecture);
-        assert!(rec.confidence > 0.0 && rec.confidence <= 1.0);
+        assert!(
+            (rec.confidence - 0.75).abs() < f32::EPSILON,
+            "squad_registry returns 0.75; stub returns 0.5"
+        );
+        assert!(
+            rec.citation.is_some(),
+            "squad_registry always sets citation"
+        );
+    }
+
+    #[test]
+    fn consult_security_dimension_never_approves() {
+        let registry = LightArchitectRegistry::new();
+        let rec = registry.consult(GateDimension::Security, "add new auth endpoint");
+        assert!(
+            !rec.approved,
+            "Security dimension must never auto-approve — always escalates to SERAPH+human"
+        );
+        assert!(
+            rec.confidence < f32::EPSILON,
+            "Security confidence must be 0.0"
+        );
     }
 
     #[test]

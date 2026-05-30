@@ -15,13 +15,14 @@
 
 use lightarchitects::fleet::FleetSnapshot;
 use lightarchitects_webshell::events::types::{
-    AyinStatus, ConductorTickEvent, EscalationEvent, FixAgentIterationEvent, MergeAgentStatusEvent,
+    AyinStatus, ConductorTickEvent, EscalationEvent, FixAgentIterationEvent, HitlResolution,
+    IronclawHitlEscalationEvent, IronclawHitlResolutionEvent, MergeAgentStatusEvent,
     ProjectUpdateKind, ProjectUpdatePayload, WebEvent, WorkerSlotGaugeEvent,
 };
 
 /// Total expected `WebEvent` variant count.  Update alongside the §1.2 table
 /// in `webshell-api-surface-v1.md` whenever variants are added or removed.
-const EXPECTED_VARIANT_COUNT: usize = 25;
+const EXPECTED_VARIANT_COUNT: usize = 27;
 
 /// Exhaustive match acting as a compiler-enforced variant count ratchet.
 ///
@@ -59,6 +60,9 @@ fn all_variants_matched(event: &WebEvent) {
         WebEvent::AgentFleetUpdate(_) => {}
         // ── project identity (webshell-project-ingestion Phase 3) ────────────
         WebEvent::ProjectUpdate(_) => {}
+        // ── ironclaw HITL events (Phase 4 — ironclaw-autonomous-e2e) ─────────
+        WebEvent::IronclawHitlEscalation(_) => {}
+        WebEvent::IronclawHitlResolution(_) => {}
     }
 }
 
@@ -119,9 +123,32 @@ fn web_event_variant_count_matches_canon_doc() {
     });
     all_variants_matched(&project_update_sample);
 
+    let nil = uuid::Uuid::nil();
+    let hitl_esc = WebEvent::IronclawHitlEscalation(IronclawHitlEscalationEvent {
+        build_id: nil,
+        task_id: "task-1".to_owned(),
+        decision_topic: "security gate".to_owned(),
+        layer_failed: 0,
+        escalation_question: "Approve?".to_owned(),
+        deadline: None,
+        traceparent: None,
+        nonce: nil,
+    });
+    all_variants_matched(&hitl_esc);
+
+    let hitl_res = WebEvent::IronclawHitlResolution(IronclawHitlResolutionEvent {
+        build_id: nil,
+        task_id: "task-1".to_owned(),
+        resolution: HitlResolution::Approve,
+        operator_id: "webshell:operator".to_owned(),
+        decided_at: chrono::Utc::now(),
+        nonce: nil,
+    });
+    all_variants_matched(&hitl_res);
+
     assert_eq!(
-        EXPECTED_VARIANT_COUNT, 25,
-        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (25)"
+        EXPECTED_VARIANT_COUNT, 27,
+        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (27)"
     );
 }
 

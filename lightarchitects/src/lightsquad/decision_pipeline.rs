@@ -24,7 +24,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::lightsquad::decisions::hash_chain::DecisionLayer;
+use crate::lightsquad::{
+    decisions::hash_chain::DecisionLayer, light_architects::LightArchitectRegistry,
+};
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
@@ -363,28 +365,30 @@ impl PipelineResult {
 
 /// Evaluates [`DecisionContext`] through the 4-layer pipeline.
 ///
-/// Phase 2 uses a static rule set for Layers 1–3. Phase 4 replaces these with
-/// async `PlatformClient` calls while keeping this struct's public API unchanged.
+/// Holds a [`LightArchitectRegistry`] for Layer 3 dimension-aware routing.
+/// Phase 4 wires Layer 3 to `squad_registry::consult` via the registry.
 #[derive(Debug, Default)]
-pub struct DecisionPipeline;
+pub struct DecisionPipeline {
+    registry: LightArchitectRegistry,
+}
 
 impl DecisionPipeline {
-    /// Create a new pipeline instance.
+    /// Create a new pipeline instance with a fresh registry.
     #[must_use]
     pub fn new() -> Self {
-        Self
+        Self {
+            registry: LightArchitectRegistry::new(),
+        }
     }
 
     /// Evaluate `ctx` through all pipeline layers and return a verdict.
     ///
     /// # Layer sequence
     ///
-    /// 1. Layer 0 — [`CategoricalExclusion::screen`]: if a match is found,
-    ///    immediately return [`PipelineResult::UserEscalation`].
+    /// 1. Layer 0 — [`CategoricalExclusion::screen`]: categorical exclusion pre-screen.
     /// 2. Layer 1 — Canon: static rule check against core canon principles.
     /// 3. Layer 2 — Northstar: pillar regression check.
-    /// 4. Layer 3 — `LightArchitect`: default domain approval (Phase 2 stub;
-    ///    Phase 4 dispatches to `LightArchitectRegistry`).
+    /// 4. Layer 3 — `LightArchitect`: dimension-aware routing via `squad_registry::consult`.
     #[must_use]
     pub fn evaluate(&self, ctx: &DecisionContext) -> PipelineResult {
         // Layer 0: categorical exclusion pre-screen (ADR-002).
@@ -405,11 +409,22 @@ impl DecisionPipeline {
             return result;
         }
 
-        // Layer 3: LightArchitect domain approval (Phase 2 default — always approves
-        // actions that cleared Layers 0–2; Phase 4 adds specialist routing).
-        PipelineResult::Approved {
-            layer: DecisionLayer::LightArchitect,
-            citation: Some("Phase 2 default: cleared L0-L2".to_owned()),
+        // Layer 3: LightArchitect — infer dimension + consult registry.
+        let dimension = self
+            .registry
+            .infer_dimension(&ctx.description)
+            .unwrap_or(crate::lightsquad::light_architects::GateDimension::Architecture);
+        let rec = self.registry.consult(dimension, &ctx.description);
+        if rec.approved {
+            PipelineResult::Approved {
+                layer: DecisionLayer::LightArchitect,
+                citation: rec.citation,
+            }
+        } else {
+            PipelineResult::UserEscalation {
+                reason: rec.rationale,
+                exclusion: None,
+            }
         }
     }
 

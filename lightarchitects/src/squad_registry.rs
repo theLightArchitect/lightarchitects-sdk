@@ -20,7 +20,9 @@
 use serde::Deserialize;
 use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
-use tracing::warn;
+use tracing::{info, warn};
+
+use crate::lightsquad::light_architects::{GateDimension, Recommendation};
 
 /// Error from [`SquadRegistry::validate_entry`].
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -157,6 +159,57 @@ impl SquadRegistry {
             }
         }
         Ok(())
+    }
+}
+
+/// Consult the appropriate squad sibling for a gate-dimension decision.
+///
+/// Maps `dimension` to the registered primary sibling per
+/// `gatekeeper-registry.yaml` and derives a [`Recommendation`].
+///
+/// Phase 4: synchronous routing based on the dimension → sibling table.
+/// Async MCP dispatch to a live sibling subprocess is deferred to a
+/// follow-on build once the full sibling process management surface is
+/// available. Security (`[S]`) never auto-approves — it always escalates
+/// to user review regardless of context.
+#[must_use]
+pub fn consult(dimension: GateDimension, description: &str) -> Recommendation {
+    let (primary_sibling, rationale) = match dimension {
+        GateDimension::Architecture => (
+            "corso",
+            "CORSO: architectural correctness and API design review",
+        ),
+        GateDimension::Security => (
+            "seraph",
+            "SERAPH: threat surface and vulnerability assessment — requires human review",
+        ),
+        GateDimension::Quality => ("corso", "CORSO: code quality, clippy, fmt, complexity gate"),
+        GateDimension::Canon => ("laex", "LÆX: constitutional canon compliance check"),
+        GateDimension::Operations => ("eva", "EVA: deploy pipeline and operational correctness"),
+        GateDimension::Performance => ("eva", "EVA+AYIN: latency and throughput gate"),
+        GateDimension::Knowledge => ("soul", "SOUL: helix enrichment and citation quality"),
+        GateDimension::Documentation => ("soul", "SOUL+EVA: documentation completeness gate"),
+        GateDimension::Testing => ("corso", "CORSO: test pyramid coverage and correctness"),
+        GateDimension::Research => ("quantum", "QUANTUM: prior art and dependency risk scoring"),
+    };
+
+    // Security never auto-approves — the [S] gate always escalates to SERAPH+human.
+    let approved = dimension != GateDimension::Security;
+    let confidence: f32 = if approved { 0.75 } else { 0.0 };
+
+    info!(
+        sibling = primary_sibling,
+        dimension = ?dimension,
+        approved = approved,
+        "squad_registry::consult routing LightArchitect decision"
+    );
+
+    Recommendation {
+        dimension,
+        approved,
+        rationale: format!("{rationale}. Action: {description}"),
+        citation: Some(format!("gatekeeper-registry.yaml#{primary_sibling}")),
+        confidence,
     }
 }
 
