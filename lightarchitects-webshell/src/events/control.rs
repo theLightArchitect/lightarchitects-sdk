@@ -140,11 +140,71 @@ fn handle_ironclaw_hitl_resolution(
             StatusCode::CONFLICT
         }
         Err(ResolveError::NotFound(_)) => {
-            // Nonce omitted from log — CWE-209.
-            warn!(target: "webshell", "IronclawHitlResolution: no pending escalation for nonce");
-            StatusCode::NOT_FOUND
+            // System A had no entry — fall back to System B (bridge-parked HitlQueue).
+            resolve_via_hitl_queue(state, escalation_nonce, approved, operator_reason)
         }
     }
+}
+
+/// Resolve a HITL escalation parked in the bridge [`HitlQueue`] (System B).
+///
+/// The queue is keyed by `call_id` but stores `escalation_nonce`, so a
+/// linear scan (O(n), n ≤ 7 concurrent slots) finds the matching entry.
+fn resolve_via_hitl_queue(
+    state: &AppState,
+    escalation_nonce: uuid::Uuid,
+    approved: bool,
+    operator_reason: Option<String>,
+) -> StatusCode {
+    let bridge_call_id = state.hitl_queue.iter().find_map(|e| {
+        if e.value().escalation_nonce == escalation_nonce {
+            Some(*e.key())
+        } else {
+            None
+        }
+    });
+    let Some(call_id) = bridge_call_id else {
+        // Nonce omitted from log — CWE-209.
+        warn!(target: "webshell", "IronclawHitlResolution: no pending escalation for nonce");
+        return StatusCode::NOT_FOUND;
+    };
+    let Some((_, entry)) = state.hitl_queue.remove(&call_id) else {
+        // Race: removed between iter and remove.
+        warn!(target: "webshell", "IronclawHitlResolution: no pending escalation for nonce");
+        return StatusCode::NOT_FOUND;
+    };
+    let task_id = entry.task_id.clone();
+    let _ = entry
+        .resolve_tx
+        .send(crate::events::hitl_relay::HitlDecision {
+            approved,
+            operator_reason: operator_reason.clone(),
+        });
+    let resolution = if approved {
+        HitlResolution::Approve
+    } else {
+        HitlResolution::Reject
+    };
+    tracing::info!("[security] Pre-send audit: IronclawHitlResolution SSE emitted (bridge path)");
+    let event = crate::events::WebEventV2::from_event(
+        WebEvent::IronclawHitlResolution(IronclawHitlResolutionEvent {
+            build_id: uuid::Uuid::nil(),
+            task_id: task_id.clone(),
+            resolution,
+            operator_id: "webshell:operator".to_owned(),
+            decided_at: chrono::Utc::now(),
+            nonce: escalation_nonce,
+        }),
+        None,
+    );
+    let _ = state.event_tx.send(event);
+    info!(
+        target: "webshell",
+        task_id = %task_id,
+        approved,
+        "IronclawHitlResolution: bridge worker unblocked"
+    );
+    StatusCode::OK
 }
 
 /// Resolve `raw_path` to an absolute path within `cwd`, rejecting traversal.
@@ -166,6 +226,10 @@ fn resolve_safe_path(raw_path: &str, cwd: &std::path::Path) -> Option<std::path:
         .components()
         .any(|c| c == std::path::Component::ParentDir)
     {
+        return None;
+    }
+    // Reject absolute paths that escape cwd (symlink-safe containment check).
+    if p.is_absolute() && !resolved.starts_with(cwd) {
         return None;
     }
     Some(resolved)

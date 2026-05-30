@@ -72,7 +72,16 @@ pub fn write_hitl_decision(
     Ok(())
 }
 
+/// Strip characters that could escape a YAML double-quoted scalar.
+///
+/// Newlines terminate the quoted value; `"` without a backslash closes it.
+/// Both allow injecting arbitrary YAML keys into the frontmatter.
+fn sanitize_yaml_scalar(s: &str) -> String {
+    s.replace(['\n', '\r', '\0'], " ").replace('"', "\\\"")
+}
+
 fn render_entry(record: &HitlDecisionRecord, verdict: &str) -> String {
+    let safe_task_id = sanitize_yaml_scalar(&record.task_id);
     let title = format!(
         "HITL {}: task '{}' (build {})",
         if record.approved {
@@ -80,7 +89,7 @@ fn render_entry(record: &HitlDecisionRecord, verdict: &str) -> String {
         } else {
             "Rejected"
         },
-        record.task_id,
+        safe_task_id,
         &record.build_id.to_string()[..8],
     );
     let date_str = record.decided_at.format("%Y-%m-%d").to_string();
@@ -88,12 +97,12 @@ fn render_entry(record: &HitlDecisionRecord, verdict: &str) -> String {
     let reason_line = record
         .operator_reason
         .as_deref()
-        .map(|r| format!("\noperator_reason: \"{r}\""))
+        .map(|r| format!("\noperator_reason: \"{}\"", sanitize_yaml_scalar(r)))
         .unwrap_or_default();
     let body_reason = record
         .operator_reason
         .as_deref()
-        .map(|r| format!("\n**Operator note**: {r}"))
+        .map(|r| format!("\n**Operator note**: {}", sanitize_yaml_scalar(r)))
         .unwrap_or_default();
 
     format!(
@@ -129,7 +138,7 @@ Operator resolved an ironclaw HITL escalation at `{timestamp}`.
         date_str = date_str,
         title = title,
         build_id = record.build_id,
-        task_id = record.task_id,
+        task_id = safe_task_id,
         verdict = verdict,
         timestamp = timestamp,
         reason_line = reason_line,

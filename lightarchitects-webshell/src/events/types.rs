@@ -1331,6 +1331,30 @@ mod tests {
                     captured_at: "2026-05-19T00:00:00Z".to_owned(),
                 }),
             ),
+            (
+                "ironclaw_hitl_escalation",
+                WebEvent::IronclawHitlEscalation(IronclawHitlEscalationEvent {
+                    build_id: uuid::Uuid::nil(),
+                    task_id: "t".to_owned(),
+                    decision_topic: "dep-add".to_owned(),
+                    layer_failed: 4,
+                    escalation_question: "Approve?".to_owned(),
+                    deadline: None,
+                    traceparent: None,
+                    nonce: uuid::Uuid::nil(),
+                }),
+            ),
+            (
+                "ironclaw_hitl_resolution",
+                WebEvent::IronclawHitlResolution(IronclawHitlResolutionEvent {
+                    build_id: uuid::Uuid::nil(),
+                    task_id: "t".to_owned(),
+                    resolution: HitlResolution::Approve,
+                    operator_id: "webshell:operator".to_owned(),
+                    decided_at: chrono::Utc::now(),
+                    nonce: uuid::Uuid::nil(),
+                }),
+            ),
         ];
 
         for (expected_tag, event) in cases {

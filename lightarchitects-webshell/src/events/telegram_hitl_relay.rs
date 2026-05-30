@@ -349,13 +349,14 @@ impl TelegramHitlRelay {
             .json(body)
             .send()
             .await
-            .map_err(|e| format!("{method} HTTP error: {e}"))?;
+            // without_url() strips the token-embedded URL from reqwest's Display (CWE-209).
+            .map_err(|e| format!("{method} HTTP error: {}", e.without_url()))?;
 
         let status = resp.status();
         let json: Value = resp
             .json()
             .await
-            .map_err(|e| format!("{method} body parse error: {e}"))?;
+            .map_err(|e| format!("{method} body parse error: {}", e.without_url()))?;
 
         if !status.is_success() || json["ok"].as_bool() != Some(true) {
             return Err(format!(
