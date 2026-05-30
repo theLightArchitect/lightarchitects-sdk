@@ -51,6 +51,23 @@ impl SessionStore {
             std::env::temp_dir().join(format!("la_sessions_{}.db", std::process::id()))
         });
         let conn = Connection::open(&path)?;
+        // Restrict db file + parent dir so WAL sidecar files (-wal/-shm) are not world-readable.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = std::fs::metadata(&path) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o600);
+                let _ = std::fs::set_permissions(&path, perms);
+            }
+            if let Some(parent) = path.parent() {
+                if let Ok(meta) = std::fs::metadata(parent) {
+                    let mut perms = meta.permissions();
+                    perms.set_mode(0o700);
+                    let _ = std::fs::set_permissions(parent, perms);
+                }
+            }
+        }
         Self::init_schema(&conn)?;
         tracing::info!(target: "session_store", path = %path.display(), "SQLite session store opened");
         Ok(Self { conn })
