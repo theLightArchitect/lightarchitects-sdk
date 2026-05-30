@@ -13,6 +13,7 @@
  *   G5: Copilot context chip — drawer shows preset label; with target shows target label (P6-N3)
  *   G6: HITL Inbox within 60s — hitl-inbox card visible within P1 budget (P6-N1)
  *   G7: HITL escalation — dispatch la:permission-request, verify card + approve
+ *   G8: Strategy catalogue — all 10 tiles render; L2 tiles toggle aria-pressed; L0 tiles disabled
  *
  * Run (headed, required — Playwright needs browser installed):
  *   PLAYWRIGHT_BASE_URL=http://localhost:5174 pnpm exec playwright test e2e/cockpit.spec.ts
@@ -145,6 +146,7 @@ test('G1: all always-present CARD_ROLES render in DOM within 5s', async ({ page 
     'builds-rail',
     'hitl-inbox',
     'copilot-drawer',
+    'strategy-catalogue',
   ];
 
   for (const role of ALWAYS_PRESENT) {
@@ -153,7 +155,7 @@ test('G1: all always-present CARD_ROLES render in DOM within 5s', async ({ page 
   }
 
   // Verify registry size — exhaustiveness sanity check in E2E context
-  expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(13);
+  expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(14);
 });
 
 // ── G2: Preset switch ─────────────────────────────────────────────────────────
@@ -308,4 +310,43 @@ test('G7: la:permission-request event renders perm-card; APPROVE removes it', as
 
   // Perm-card should be removed (approved and dismissed)
   await expect(escalationsCard.locator('.perm-tool').filter({ hasText: 'Bash' })).not.toBeAttached({ timeout: 2000 });
+});
+
+// ── G8: Strategy catalogue ─────────────────────────────────────────────────────
+
+test('G8: strategy-catalogue renders all 10 tiles; L2 tiles toggle; L0 tiles are disabled', async ({ page }) => {
+  await setupCockpit(page);
+  await page.goto(`${BASE}/#/activity`);
+
+  const catalogue = page.locator('[data-card-role="strategy-catalogue"]');
+  await expect(catalogue).toBeAttached({ timeout: 5000 });
+
+  // All 10 strategy tiles present
+  const tiles = catalogue.locator('.strat-tile');
+  await expect(tiles).toHaveCount(10);
+
+  // L2 tiles: aria-pressed starts false, click toggles to true, click again deselects
+  const l2Tile = tiles.filter({ hasClass: 'strat-tile-l2' }).first();
+  await expect(l2Tile).toBeAttached();
+  await expect(l2Tile).toHaveAttribute('aria-pressed', 'false');
+  await l2Tile.click();
+  await expect(l2Tile).toHaveAttribute('aria-pressed', 'true');
+  await l2Tile.click();
+  await expect(l2Tile).toHaveAttribute('aria-pressed', 'false');
+
+  // L0 tiles: disabled — aria-pressed always false, click does not toggle
+  const l0Tile = tiles.filter({ hasClass: 'strat-tile-l0' }).first();
+  await expect(l0Tile).toBeAttached();
+  await expect(l0Tile).toHaveAttribute('aria-pressed', 'false');
+  await l0Tile.click();
+  await expect(l0Tile).toHaveAttribute('aria-pressed', 'false');
+
+  // L2 classification badge visible on each L2 tile
+  const l2Badge = l2Tile.locator('.strat-cls');
+  await expect(l2Badge).toContainText('L2');
+
+  // Executor badge visible on L0 tiles
+  const execBadge = l0Tile.locator('.strat-exec-badge');
+  await expect(execBadge).toBeAttached();
+  await expect(execBadge).toContainText('executor');
 });
