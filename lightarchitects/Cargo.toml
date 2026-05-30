@@ -200,3 +200,8 @@ required-features = ["lightsquad"]
 name             = "ollama_diagram_regen_v3"
 path             = "tests/ollama_diagram_regen_v3.rs"
 required-features = ["lightsquad"]
+
+# Property-based tests for HMAC-chained decision ledger invariants.
+[[test]]
+name = "decision_ledger_chain"
+path = "tests/property/decision_ledger_chain.rs"

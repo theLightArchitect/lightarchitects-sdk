@@ -18,7 +18,8 @@ export type ScreenKey =
   | 'DiagramLibrary'
   | 'Roadmap'
   | 'Observability'
-  | 'Tools'; // §O Tool Surface Parity
+  | 'Tools'           // §O Tool Surface Parity
+  | 'AutonomousBuilds'; // ironclaw autonomous build panel
 
 export interface RouteMatch {
   screen: ScreenKey;
@@ -100,6 +101,7 @@ const ROUTES: RouteEntry[] = [
   [/^\/observability$/,                                                     'Observability', []],
   [/^\/ayin$/,                                                              'Observability', []],
   [/^\/tools$/,                                                             'Tools',         []],
+  [/^\/autonomous$/,                                                        'AutonomousBuilds', []],
 ];
 
 /** Matches a hash-fragment path (with or without leading #) to a screen + params. */

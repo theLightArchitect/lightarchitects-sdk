@@ -77,6 +77,7 @@
     Roadmap:         () => import('./lib/components/RoadmapPanel.svelte'),
     Observability:   () => import('./lib/components/ObservabilityPanel.svelte'),
     Tools:           () => import('./screens/Tools.svelte'),
+    AutonomousBuilds: () => import('./screens/AutonomousBuilds.svelte'),
   };
 
   type ScreenModule = { default: any };
