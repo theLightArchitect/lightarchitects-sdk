@@ -1,0 +1,76 @@
+# LiteLLM routing config for the lightarchitects platform.
+# All subprocess traffic routes here via ANTHROPIC_BASE_URL=http://localhost:4000.
+# Real credentials live ONLY in .env — never in this file.
+#
+# Usage: docker compose up -d
+# Health: curl http://localhost:4000/health
+
+model_list:
+  # Primary engineering — Anthropic direct
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-opus-4-7
+    litellm_params:
+      model: anthropic/claude-opus-4-7
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-haiku-4-5
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # OpenRouter routing target — 200+ models, cloud-level provider fallback.
+  # upstream_inference_cost field passes through for AYIN cost observability.
+  - model_name: openrouter/*
+    litellm_params:
+      model: openrouter/*
+      api_key: os.environ/OPENROUTER_API_KEY
+      extra_body:
+        route: "fallback"
+
+  # Ollama local inference
+  - model_name: ollama/*
+    litellm_params:
+      model: ollama/*
+      api_base: http://localhost:11434
+
+  # RunPod / Nemotron (training proxy — existing litellm.config.yaml pattern)
+  - model_name: claude-code-runpod
+    litellm_params:
+      model: openai/nemotron-super-49b-udq4kxl
+      api_base: https://1pt2lzajoxxjb0.api.runpod.ai/v1
+      api_key: os.environ/RUNPOD_API_KEY
+      max_tokens: 32768
+      timeout: 360
+    model_info:
+      mode: chat
+      supports_function_calling: true
+      drop_params: true
+
+  # Vertex AI (enterprise lane — uncomment when GCP credentials configured)
+  # - model_name: gemini-2.5-pro
+  #   litellm_params:
+  #     model: vertex_ai/gemini-2.5-pro
+  #     vertex_project: os.environ/VERTEX_PROJECT
+  #     vertex_location: us-central1
+
+router_settings:
+  # Semantic caching (optional) — requires redis service in docker-compose.yml.
+  # Enable: (1) add redis service, (2) uncomment below.
+  # cache_responses: true
+  # cache_params:
+  #   type: redis
+  #   host: redis
+  #   port: 6379
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  drop_params: true
+  store_model_in_db: true
+
+litellm_settings:
+  telemetry: false

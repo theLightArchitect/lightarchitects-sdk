@@ -128,6 +128,91 @@ impl Default for OllamaConfig {
     }
 }
 
+/// [`LiteLLM`] proxy configuration for vault-sidecar credential isolation.
+///
+/// When `proxy_url` is `Some`, subprocess spawns inject `ANTHROPIC_BASE_URL` pointing
+/// to the [`LiteLLM`] proxy and a per-session stub key instead of the real API key.
+/// The proxy swaps stub → real credential at the wire level, keeping real keys out
+/// of subprocess environments, crash dumps, and tracing spans.
+///
+/// Loaded from env: `LITELLM_PROXY_URL` (required to activate).
+///
+/// [`LiteLLM`]: https://docs.litellm.ai
+#[derive(Debug, Clone)]
+pub struct LiteLLMConfig {
+    /// Base URL of the running [`LiteLLM`] proxy (e.g. `http://localhost:4000`).
+    /// `None` means vault sidecar is inactive — direct Anthropic auth used.
+    ///
+    /// [`LiteLLM`]: https://docs.litellm.ai
+    pub proxy_url: Option<String>,
+    /// Stub key prefix. Per-session UUID is appended: `{prefix}{uuid}`.
+    /// Default: `"stub-la-"`.
+    pub stub_key_prefix: String,
+}
+
+impl LiteLLMConfig {
+    /// Load from `LITELLM_PROXY_URL` env var. Returns inactive config if unset.
+    pub fn from_env() -> Self {
+        Self {
+            proxy_url: std::env::var("LITELLM_PROXY_URL")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            stub_key_prefix: std::env::var("LITELLM_STUB_PREFIX")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "stub-la-".to_owned()),
+        }
+    }
+
+    /// Returns `true` when the vault sidecar is active (proxy URL is configured).
+    pub fn is_active(&self) -> bool {
+        self.proxy_url.is_some()
+    }
+
+    /// Generate a per-session stub key: `{prefix}{uuid}`.
+    pub fn generate_stub_key(&self) -> String {
+        format!("{}{}", self.stub_key_prefix, uuid::Uuid::new_v4())
+    }
+}
+
+impl Default for LiteLLMConfig {
+    fn default() -> Self {
+        Self {
+            proxy_url: None,
+            stub_key_prefix: "stub-la-".to_owned(),
+        }
+    }
+}
+
+/// Hermes MCP bridge configuration for mobile HITL approvals.
+///
+/// When `enabled` is `true` and `serve_url` points to a running `hermes mcp serve`
+/// instance, approval-required gate events are relayed to the operator's configured
+/// Telegram/Discord/Slack account via the native MCP tool interface.
+///
+/// Loaded from env: `HERMES_MCP_URL` (optional).
+#[derive(Debug, Clone, Default)]
+pub struct HermesMcpConfig {
+    /// URL of the running `hermes mcp serve` instance (e.g. `http://localhost:7890`).
+    pub serve_url: Option<String>,
+    /// When `false`, HITL relay is skipped entirely. Default: `true` if `serve_url` set.
+    pub enabled: bool,
+}
+
+impl HermesMcpConfig {
+    /// Load from `HERMES_MCP_URL` env var.
+    pub fn from_env() -> Self {
+        let serve_url = std::env::var("HERMES_MCP_URL")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let enabled = serve_url.is_some()
+            && std::env::var("HERMES_MCP_ENABLED")
+                .map(|v| v != "false" && v != "0")
+                .unwrap_or(true);
+        Self { serve_url, enabled }
+    }
+}
+
 /// Fully-resolved Claude Code backend configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -402,6 +487,14 @@ pub struct Config {
     /// is cleared (the underlying process is killed and restarted on the next
     /// request).  Default: 50 (conservative — eval showed exhaustion at ~60).
     pub max_context_prompts: u32,
+    /// [`LiteLLM`] vault sidecar configuration. Inactive by default; activated by
+    /// `LITELLM_PROXY_URL` env var. When active, subprocess spawns receive stub
+    /// credentials instead of real API keys.
+    ///
+    /// [`LiteLLM`]: https://docs.litellm.ai
+    pub litellm: LiteLLMConfig,
+    /// Hermes MCP bridge for mobile HITL approvals. Activated by `HERMES_MCP_URL`.
+    pub hermes_mcp: HermesMcpConfig,
 }
 
 /// Where the auth token was resolved from.
@@ -841,6 +934,8 @@ impl Config {
             container_mode,
             dev_mode: cli.dev_mode,
             max_context_prompts: 50,
+            litellm: LiteLLMConfig::from_env(),
+            hermes_mcp: HermesMcpConfig::from_env(),
         })
     }
 
