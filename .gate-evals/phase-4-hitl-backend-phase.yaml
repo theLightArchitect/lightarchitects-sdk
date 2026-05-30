@@ -1,0 +1,42 @@
+schema_version: 1
+gate: phase
+scored_by: /GATE
+scored_at: "2026-05-30T20:55:00Z"
+build_id: ironclaw-autonomous-e2e
+phase_id: phase-4-hitl-backend
+branch: feat/ironclaw-autonomous-e2e
+head_sha: 9190c2ffa048053f270f0108af7a535ca340ec88
+overall_verdict: pass
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 2532
+    tests_fail: 0
+    breakdown:
+      lightarchitects_lib: 1802
+      lightarchitects_webshell_lib: 730
+  Q4_svelte: "n/a — Phase 4 is backend-only; no UI surface in this phase"
+  D2_plan: pass
+notes:
+  - "Q1: cargo fmt --check clean on full workspace"
+  - "Q2: cargo clippy --workspace --all-targets --all-features -D warnings: 0 errors"
+  - "D2: plan phase_4 names all deliverables shipped (IronclawHitlEscalationEvent,
+    IronclawHitlResolutionEvent, helix_decision_writer.rs, POST /api/control HITL
+    branch, supervisor.rs nonce+resume, telegram_hitl_relay.rs)"
+  - "Q4: n/a — no Svelte/TS surface modified in Phase 4"
+phase_4_deliverables_shipped:
+  - "events/types.rs: IronclawHitlEscalationEvent + IronclawHitlResolutionEvent + IronclawHitlResolver variants"
+  - "lightsquad/supervisor.rs: escalation_nonce minted UUIDv7 + EscalationHook + IronclawHitlResolver + Default impl"
+  - "events/control.rs: IronclawHitlResolution ControlCommand variant + handle_ironclaw_hitl_resolution() sync handler"
+  - "events/helix_decision_writer.rs: write_hitl_decision() + resolve_helix_root() + HitlDecisionRecord (5 tests, CWE-209 nonce-absent)"
+  - "events/telegram_hitl_relay.rs: TelegramHitlRelay + OA-3 keychain + SERAPH#3 DashSet replay-kill + HTML injection escaping (7 tests)"
+  - "server/mod.rs: AppState.hitl_resolver field wired"
+  - "lightsquad_bridge.rs: PipelineResult::UserEscalation wrapping at 4 callsites"
+  - "lightarchitects/light_architects.rs: real consult() dispatch replacing stub"
+security_properties:
+  cwe209_nonce_exclusion: "escalation_nonce NEVER appears in helix entries, log fields, or error responses"
+  oa3_keychain: "bot token read exclusively via /usr/bin/security find-generic-password argv"
+  seraph3_anti_replay: "DashSet<Uuid> consumes nonce on first insert; duplicate callbacks rejected"
+  html_injection: "html_escape() sanitises task_id + reason before Telegram HTML parse_mode injection"
