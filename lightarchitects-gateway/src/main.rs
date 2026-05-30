@@ -25,7 +25,7 @@
 
 use lightarchitects::helix::soul_search::GraphSageProvider;
 use lightarchitects::helix::{
-    EmbeddingConfig, HelixCache, HelixCacheConfig, HelixNeo4j, Neo4jConfig,
+    EmbeddingConfig, HelixCache, HelixCacheConfig, HelixNeo4j, Neo4jConfig, Neo4jConnectionMode,
     create_embedding_provider,
 };
 use lightarchitects_gateway::{
@@ -556,6 +556,7 @@ async fn cli_platform(args: &[String]) -> Result<(), GatewayError> {
         uri: uri.clone(),
         user: user.clone(),
         password: secrecy::SecretString::from(password.clone()),
+        mode: Neo4jConnectionMode::Local,
     })
     .await
     .map_err(|e| GatewayError::Io(std::io::Error::other(format!("helix_db connect: {e}"))))?;

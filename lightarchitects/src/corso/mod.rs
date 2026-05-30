@@ -39,6 +39,12 @@ mod content;
 /// [`CoVeExecutor`] bridge for `CoVeStrategy` (requires `loops-core` feature).
 #[cfg(feature = "loops-core")]
 pub mod cove_executor;
+/// [`DrainExecutor`] bridge for `DrainStrategy` (requires `loops-core` feature).
+#[cfg(feature = "loops-core")]
+pub mod drain_executor;
+/// [`MultiPassExecutor`] bridge for `MultiPassVerifyStrategy` (requires `loops-core` feature).
+#[cfg(feature = "loops-core")]
+pub mod multipass_executor;
 /// [`ReflexionExecutor`] bridge for `ReflexionStrategy` (requires `loops-core` feature).
 #[cfg(feature = "loops-core")]
 pub mod reflexion_executor;
@@ -48,6 +54,10 @@ mod types;
 
 #[cfg(feature = "loops-core")]
 pub use cove_executor::CorsoCoVeExecutor;
+#[cfg(feature = "loops-core")]
+pub use drain_executor::CorsoDrainExecutor;
+#[cfg(feature = "loops-core")]
+pub use multipass_executor::CorsoMultiPassExecutor;
 #[cfg(feature = "loops-core")]
 pub use reflexion_executor::CorsoReflexionExecutor;
 

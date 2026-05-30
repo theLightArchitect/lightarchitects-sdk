@@ -128,6 +128,27 @@ impl OllamaCliProvider {
             auth_token,
         })
     }
+
+    /// Construct a provider for a **local** Ollama model, bypassing the cloud registry.
+    ///
+    /// No slug validation is performed. The model must already be pulled in the
+    /// Ollama server reachable at `OLLAMA_HOST` (default `http://localhost:11434`).
+    ///
+    /// Cost estimation always returns `CostTier::Low` (local inference = $0).
+    /// Use this constructor for on-device models such as `"llama3.2:3b"` or
+    /// `"qwen2.5-coder:7b"` that are not in the Ollama Cloud registry.
+    #[must_use]
+    pub fn new_local(model_slug: impl Into<String>, auth_token: Option<SecretString>) -> Self {
+        let base_url =
+            std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_owned());
+        Self {
+            default_model: model_slug.into(),
+            rate_table_version: "2026-05-21",
+            client: reqwest::Client::new(),
+            base_url,
+            auth_token,
+        }
+    }
 }
 
 // ── LlmAgentProvider impl ──────────────────────────────────────────────────────
@@ -152,11 +173,12 @@ impl LlmAgentProvider for OllamaCliProvider {
         let inner = req.request();
         let model = inner.model_hint.as_deref().unwrap_or(&self.default_model);
 
-        let model_meta = lookup(model).ok_or_else(|| {
-            ProviderError::Internal(format!(
-                "ollama-cli: unknown model '{model}' (not in CLOUD_MODEL_REGISTRY)"
-            ))
-        })?;
+        // Registry lookup is best-effort; local models not in CLOUD_MODEL_REGISTRY
+        // still dispatch correctly — cost is free, family/org tagged as "local".
+        let (family, provider_org, cost_tier) = lookup(model)
+            .map_or(("local", "local", CostTier::Low), |m| {
+                (m.family, m.provider_org, m.cost_tier)
+            });
 
         let prompt = req.safe_prompt();
         sanitize_prompt(prompt).map_err(|_| ProviderError::ParamSanitizationFailed {
@@ -170,20 +192,17 @@ impl LlmAgentProvider for OllamaCliProvider {
 
         let input_tokens = u32::try_from(prompt.len() / 4).unwrap_or(u32::MAX);
         let output_tokens = u32::try_from(raw.len() / 4).unwrap_or(u32::MAX);
-        let cost = cost_for_tier(model_meta.cost_tier, input_tokens, output_tokens);
+        let cost = cost_for_tier(cost_tier, input_tokens, output_tokens);
 
         let mut attrs = HashMap::new();
-        attrs.insert(
-            "model.family".to_owned(),
-            Value::String(model_meta.family.to_owned()),
-        );
+        attrs.insert("model.family".to_owned(), Value::String(family.to_owned()));
         attrs.insert(
             "model.provider_org".to_owned(),
-            Value::String(model_meta.provider_org.to_owned()),
+            Value::String(provider_org.to_owned()),
         );
         attrs.insert(
             "model.cost_tier".to_owned(),
-            Value::String(model_meta.cost_tier.as_str().to_owned()),
+            Value::String(cost_tier.as_str().to_owned()),
         );
         attrs.insert(
             "agent.provider".to_owned(),
@@ -194,8 +213,8 @@ impl LlmAgentProvider for OllamaCliProvider {
         info!(
             provider = "ollama-cli",
             model,
-            family = model_meta.family,
-            cost_tier = model_meta.cost_tier.as_str(),
+            family,
+            cost_tier = cost_tier.as_str(),
             input_tokens,
             output_tokens,
             cost_usd = cost,

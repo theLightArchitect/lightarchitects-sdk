@@ -6,8 +6,44 @@
 //! |-------|------|----------|
 //! | L0 | [`LlmAgentProvider`] | `agent::provider` |
 //! | L1 | [`Strategy`] + [`LoopRunner`] | **this module** |
-//! | L2 | `ConversationSession` | `agent::session` (Phase 3) |
-//! | L3 | `WorkerPool` | `lightsquad::worker_pool` (Phase 5) |
+//! | L2 | `ConversationSession` | `agent::session` |
+//! | L3 | `WorkerPool` | `lightsquad::worker_pool` |
+//!
+//! ## Strategy classes
+//!
+//! Strategies fall into two classes based on their state/output types:
+//!
+//! ### Class A — Registered (L1 registry, shared `LoopState`/`LoopOutput`)
+//!
+//! Dispatchable via [`StrategyRegistry::lookup`]. All share the same
+//! `State = LoopState` and `Output = LoopOutput` types.
+//!
+//! | Strategy | ID |
+//! |----------|----|
+//! | [`BuildStrategy`] | `"build"` |
+//! | [`SecureStrategy`] | `"secure"` |
+//! | [`ScrumStrategy`] | `"scrum"` |
+//! | [`EnrichStrategy`] | `"enrich"` |
+//! | [`GateStrategy`] | `"gate"` |
+//! | [`ScopeGovernorStrategy`] | `"scope_governor"` |
+//!
+//! ### Class B — Custom (L0, own `State`/`Output` types)
+//!
+//! Require a caller-constructed executor. Not registered; use directly.
+//!
+//! | Strategy | Executor trait | Primary sibling |
+//! |----------|---------------|-----------------|
+//! | [`ReActStrategy`] | [`ReActExecutor`] | — |
+//! | [`BcraStrategy`] | [`BcraExecutor`] | SERAPH |
+//! | [`RedTeamStrategy`] | [`RedTeamExecutor`] | SERAPH |
+//! | [`CoVeStrategy`] | [`CoVeExecutor`] | SERAPH / CORSO |
+//! | [`IttStrategy`] | [`IttExecutor`] | QUANTUM |
+//! | [`ReflexionStrategy`] | [`ReflexionExecutor`] | CORSO |
+//! | [`MultiPassVerifyStrategy`] | [`MultiPassExecutor`] | CORSO |
+//! | [`CritiqueRefineStrategy`] | — | — |
+//! | [`DrainStrategy`] | [`DrainExecutor`] | CORSO |
+//! | [`EnsembleStrategy`] | — | — |
+//! | [`AchStrategy`] | [`AchExecutor`] | — |
 //!
 //! # Quick start
 //!
@@ -57,7 +93,6 @@ pub mod gate;
 pub mod itt;
 pub mod meta_skill;
 pub mod multipass;
-pub mod phase_span;
 pub mod react;
 pub mod red_team;
 pub mod reflexion;
@@ -73,7 +108,7 @@ pub use ach::{
     HypothesisTest, Prediction, TestResult, TestType,
 };
 pub use budget::Budget;
-pub use compose::{Layered, Parallel, Then};
+pub use compose::{Layered, Parallel, Race, Then};
 pub use cove::{
     ClaimCategory, CoVeExecutor, CoVePhase, CoVeResult, CoVeState, CoVeStrategy,
     VerificationStatus, VerifiedClaim,

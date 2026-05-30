@@ -56,6 +56,7 @@ pub mod container_relay;
 pub mod exec_routes;
 pub mod fleet_routes;
 pub mod git_routes;
+pub mod loops_demo;
 pub mod mcp_routes;
 pub mod roadmap;
 
@@ -1115,6 +1116,10 @@ pub fn build_app(state: AppState) -> Router {
         )
         // ── CSP violation reports (SEC-3b, Enforce phase) ────────────────────
         .route("/api/csp-report", post(csp::csp_report_handler))
+        // ── ReAct loop engine demo (no auth — local dev) ─────────────────────
+        .route("/api/loops/demo", get(loops_demo::demo_sse_handler))
+        .route("/loop-demo",      get(loops_demo::demo_page_handler))
+        .route("/loop-demo.js",   get(loops_demo::demo_js_handler))
         .fallback(static_assets::serve)
         .layer(cors)
         .layer(TraceLayer::new_for_http())

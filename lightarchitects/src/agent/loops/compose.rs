@@ -219,6 +219,108 @@ where
     }
 }
 
+// ── Race ──────────────────────────────────────────────────────────────────────
+
+/// Run strategy `A` and strategy `B` concurrently; the **first to halt wins**.
+///
+/// On every step both branches are driven via [`tokio::join!`]. As soon as
+/// either branch produces [`Outcome::Halt`], the `Race` halts with that
+/// output — the other branch is abandoned. When both branches halt in the same
+/// step, `A`'s output wins (converted via `A::Output: Into<B::Output>`).
+///
+/// [`Outcome::Pause`] signals from either branch are treated as continue
+/// signals for the purposes of the race — the state is preserved but the HITL
+/// request is discarded. Use [`Parallel`] or custom orchestration when you need
+/// to honour HITL pauses inside a race.
+///
+/// Like [`Parallel`], each branch receives a separate [`ChainContext::child()`]
+/// to model independent chains rather than a single deeper chain.
+pub struct Race<A, B> {
+    left: A,
+    right: B,
+}
+
+impl<A: Strategy, B: Strategy> Race<A, B>
+where
+    A::Output: Into<B::Output>,
+{
+    /// Compose `left` and `right` as a racing pair; first to halt wins.
+    #[must_use]
+    pub fn new(left: A, right: B) -> Self {
+        Self { left, right }
+    }
+}
+
+#[async_trait]
+impl<A, B> Strategy for Race<A, B>
+where
+    A: Strategy,
+    B: Strategy,
+    A::Output: Into<B::Output>,
+{
+    /// Independent sub-states; both advance until one halts.
+    type State = (A::State, B::State);
+    /// The winner's output — `A::Output` is converted via `Into<B::Output>`.
+    type Output = B::Output;
+
+    async fn step(
+        &self,
+        (a_state, b_state): (A::State, B::State),
+        ctx: &StepContext,
+    ) -> Result<Outcome<(A::State, B::State), B::Output>, LoopError> {
+        // Each branch gets its own child context (Canon §2.6 — parallel chains).
+        let left_chain = ctx
+            .chain
+            .child()
+            .map_err(|_| LoopError::ChainDepthExceeded {
+                depth: ctx.chain.depth,
+            })?;
+        let right_chain = ctx
+            .chain
+            .child()
+            .map_err(|_| LoopError::ChainDepthExceeded {
+                depth: ctx.chain.depth,
+            })?;
+
+        let left_ctx = StepContext {
+            chain: left_chain,
+            ..ctx.clone()
+        };
+        let right_ctx = StepContext {
+            chain: right_chain,
+            ..ctx.clone()
+        };
+
+        let (a_result, b_result) = tokio::join!(
+            self.left.step(a_state, &left_ctx),
+            self.right.step(b_state, &right_ctx)
+        );
+
+        match (a_result?, b_result?) {
+            // A halts first (or both halt simultaneously — A wins).
+            (Outcome::Halt(a_out), _) => Ok(Outcome::Halt(a_out.into())),
+            // B halts; A has not yet halted.
+            (_, Outcome::Halt(b_out)) => Ok(Outcome::Halt(b_out)),
+            // Neither halted; extract next states (Pause treated as Continue).
+            (a_outcome, b_outcome) => {
+                let a_next = match a_outcome {
+                    Outcome::Continue(s) | Outcome::Pause(s, _) => s,
+                    Outcome::Halt(_) => unreachable!(),
+                };
+                let b_next = match b_outcome {
+                    Outcome::Continue(s) | Outcome::Pause(s, _) => s,
+                    Outcome::Halt(_) => unreachable!(),
+                };
+                Ok(Outcome::Continue((a_next, b_next)))
+            }
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "Race"
+    }
+}
+
 // ── Layered ───────────────────────────────────────────────────────────────────
 
 /// Type-erased strategy wrapper — erase concrete `State`/`Output` types behind
@@ -289,6 +391,18 @@ pub trait StrategyExt: Strategy + Sized {
         Self::State: Clone,
     {
         Layered::new(self)
+    }
+
+    /// Race `self` against `other`; first to halt wins.
+    ///
+    /// Requires `Self::Output: Into<Other::Output>` so both outputs share a
+    /// common target type.
+    fn race<Other>(self, other: Other) -> Race<Self, Other>
+    where
+        Other: Strategy,
+        Self::Output: Into<Other::Output>,
+    {
+        Race::new(self, other)
     }
 }
 

@@ -137,22 +137,28 @@ impl HermesMcpClient {
     /// # Errors
     ///
     /// Returns a descriptive string on MCP protocol failure.
-    pub async fn send_message(&self, platform: &str, content: &str) -> Result<Value, String> {
+    pub async fn send_message(&self, target: &str, content: &str) -> Result<Value, String> {
         self.call_tool(
-            "send_message",
-            json!({"platform": platform, "content": content}),
+            "messages_send",
+            json!({"target": target, "message": content}),
         )
         .await
     }
 
-    /// Poll for operator events.
+    /// Block until an operator event arrives or the timeout elapses.
+    ///
+    /// Uses `events_wait` (long-poll) rather than `events_poll` (snapshot)
+    /// so a single call covers the full wait window without a polling loop.
     ///
     /// # Errors
     ///
     /// Returns a descriptive string on MCP protocol failure or timeout.
     pub async fn poll_events(&self, timeout_secs: u64) -> Result<Value, String> {
-        self.call_tool("poll_events", json!({"timeout_secs": timeout_secs}))
-            .await
+        self.call_tool(
+            "events_wait",
+            json!({"timeout_ms": timeout_secs.saturating_mul(1000)}),
+        )
+        .await
     }
 }
 

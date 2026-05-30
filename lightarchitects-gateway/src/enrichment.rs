@@ -21,7 +21,7 @@
 use std::sync::{Arc, OnceLock};
 
 use lightarchitects::helix::soul_search::BgeSageProjectionPipeline;
-use lightarchitects::helix::{HelixDb, HelixNeo4j, Neo4jConfig};
+use lightarchitects::helix::{HelixDb, HelixNeo4j, Neo4jConfig, Neo4jConnectionMode};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
@@ -81,6 +81,7 @@ async fn do_start(uri: String, user: String, password: String) -> Result<(), Str
         uri: uri.clone(),
         user,
         password: secrecy::SecretString::from(password),
+        mode: Neo4jConnectionMode::Local,
     })
     .await
     .map_err(|e| format!("Neo4j connect: {e}"))?;

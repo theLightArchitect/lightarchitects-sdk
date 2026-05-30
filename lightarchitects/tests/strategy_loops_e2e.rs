@@ -23,8 +23,15 @@ fn initial_state(ctx: &str) -> LoopState {
 // ── registry lookup ───────────────────────────────────────────────────────────
 
 #[test]
-fn registry_resolves_all_four_ids() {
-    for id in ["build", "secure", "scrum", "enrich"] {
+fn registry_resolves_all_six_ids() {
+    for id in [
+        "build",
+        "secure",
+        "scrum",
+        "enrich",
+        "gate",
+        "scope_governor",
+    ] {
         assert!(
             StrategyRegistry::lookup(id).is_some(),
             "registry must resolve '{id}'"
@@ -182,4 +189,66 @@ async fn budget_zero_steps_terminates_immediately() {
         step.is_err(),
         "zero-step budget should return an error immediately"
     );
+}
+
+// ── GateStrategy: all 7 gates pass on a clean state ──────────────────────────
+
+#[tokio::test]
+async fn gate_strategy_runs_all_7_gates_to_pass() {
+    let strategy = StrategyRegistry::lookup("gate").unwrap();
+    // Fresh LoopState has no "gate_<label>" = "fail" entries — all gates pass.
+    let mut stream = LoopRunner::new(strategy, Budget::unlimited()).run(
+        initial_state("gate validation"),
+        ChainContext::default(),
+        None,
+    );
+
+    let mut halted = false;
+    while let Some(result) = stream.next().await {
+        let step = result.unwrap();
+        assert!(
+            !matches!(step.outcome, Outcome::Pause(_, _)),
+            "GateStrategy with all-pass meta must never pause"
+        );
+        if let Outcome::Halt(ref out) = step.outcome {
+            assert!(
+                out.summary.contains("VALIDATED"),
+                "halt summary must contain 'VALIDATED', got: {}",
+                out.summary
+            );
+            halted = true;
+        }
+    }
+    assert!(halted, "gate strategy must reach Halt");
+}
+
+// ── ScopeGovernorStrategy: all 5 gates pass on a clean state ─────────────────
+
+#[tokio::test]
+async fn scope_governor_halts_valid_on_clean_state() {
+    let strategy = StrategyRegistry::lookup("scope_governor").unwrap();
+    // Fresh LoopState has no "scope_gate_<label>" = "fail" entries — all gates pass.
+    let mut stream = LoopRunner::new(strategy, Budget::unlimited()).run(
+        initial_state("scope check"),
+        ChainContext::default(),
+        None,
+    );
+
+    let mut halted = false;
+    while let Some(result) = stream.next().await {
+        let step = result.unwrap();
+        assert!(
+            !matches!(step.outcome, Outcome::Pause(_, _)),
+            "ScopeGovernorStrategy with all-pass meta must never pause"
+        );
+        if let Outcome::Halt(ref out) = step.outcome {
+            assert!(
+                out.summary.contains("SCOPE_VALID"),
+                "halt summary must contain 'SCOPE_VALID', got: {}",
+                out.summary
+            );
+            halted = true;
+        }
+    }
+    assert!(halted, "scope governor must reach Halt");
 }

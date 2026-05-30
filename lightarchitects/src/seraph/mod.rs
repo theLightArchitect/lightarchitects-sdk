@@ -47,6 +47,9 @@
 
 /// Canonical SERAPH action enum — pentest orchestration and investigation.
 pub mod actions;
+/// [`BcraExecutor`] bridge for `BcraStrategy` (requires `loops-core` feature).
+#[cfg(feature = "loops-core")]
+pub mod bcra_executor;
 mod client;
 mod content;
 /// [`CoVeExecutor`] bridge for `CoVeStrategy` (requires `loops-core` feature).
@@ -64,6 +67,9 @@ pub mod params;
 /// SSH session pool for reusing connections across calls.
 #[cfg(feature = "ssh")]
 pub mod pool;
+/// [`RedTeamExecutor`] bridge for `RedTeamStrategy` (requires `loops-core` feature).
+#[cfg(feature = "loops-core")]
+pub mod red_team_executor;
 /// Engagement scope management (`~/lightarchitects/seraph/scope.toml`).
 pub mod scope;
 /// SSH transport for remote SERAPH instances.
@@ -95,6 +101,10 @@ pub use types::{
 };
 
 #[cfg(feature = "loops-core")]
+pub use bcra_executor::SeraphBcraExecutor;
+#[cfg(feature = "loops-core")]
 pub use cove_executor::SeraphCoVeExecutor;
 #[cfg(feature = "loops-core")]
 pub use itt_executor::SeraphIttExecutor;
+#[cfg(feature = "loops-core")]
+pub use red_team_executor::SeraphRedTeamExecutor;
