@@ -314,7 +314,7 @@ impl BuildSession {
             ("LA_GUI_URL".to_owned(), gui_url.to_owned()),
         ];
         match &self.agent {
-            AgentSession::Lightarchitects(ClaudeBackend::Anthropic)
+            AgentSession::Lightarchitects(ClaudeBackend::Anthropic | ClaudeBackend::LiteLlm(_))
             | AgentSession::LightarchitectsNative(_)
             | AgentSession::MistralVibe(_) => {}
             AgentSession::Lightarchitects(ClaudeBackend::OllamaLaunch(lc)) => {

@@ -64,7 +64,11 @@ pub enum ClaudeBackendKind {
     /// Persistent subprocess via Ollama — replicates `ollama launch claude --model <model>`.
     OllamaLaunch,
     /// Stateless HTTP to Ollama's Anthropic-compat `/v1/messages` endpoint.
+    ///
+    /// Prefer [`ClaudeBackendKind::LiteLlm`] — configure Ollama as a `litellm.config.yaml` target.
     Ollama,
+    /// Route through the `LiteLLM` proxy with stub credential injection.
+    LiteLlm,
 }
 
 impl Default for ClaudeBackendKind {
@@ -213,6 +217,17 @@ impl HermesMcpConfig {
     }
 }
 
+/// Config for the `LiteLLM`-backed Claude Code provider.
+///
+/// At spawn time the webshell injects a per-session stub credential and sets
+/// `ANTHROPIC_BASE_URL` to the proxy URL; the `LiteLLM` sidecar swaps the stub
+/// for a real key at the wire level.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LiteLlmBackendConfig {
+    /// `LiteLLM` virtual model name (e.g. `anthropic/claude-sonnet-4-5`).
+    pub model: String,
+}
+
 /// Fully-resolved Claude Code backend configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -222,7 +237,11 @@ pub enum ClaudeBackend {
     /// Persistent subprocess via Ollama (replicates `ollama launch claude`).
     OllamaLaunch(OllamaLaunchConfig),
     /// Stateless HTTP to Ollama's Anthropic-compat endpoint.
+    ///
+    /// Prefer [`ClaudeBackend::LiteLlm`] — configure Ollama as a `litellm.config.yaml` target.
     Ollama(OllamaConfig),
+    /// Route through the `LiteLLM` proxy with per-session stub credential injection.
+    LiteLlm(LiteLlmBackendConfig),
 }
 
 impl Default for ClaudeBackend {
@@ -239,6 +258,7 @@ impl ClaudeBackend {
             Self::Anthropic => ClaudeBackendKind::Anthropic,
             Self::OllamaLaunch(_) => ClaudeBackendKind::OllamaLaunch,
             Self::Ollama(_) => ClaudeBackendKind::Ollama,
+            Self::LiteLlm(_) => ClaudeBackendKind::LiteLlm,
         }
     }
 }
@@ -589,6 +609,12 @@ fn resolve_claude_backend(cli: &Cli) -> ClaudeBackend {
                 .ollama_base_url
                 .clone()
                 .unwrap_or_else(default_ollama_launch_base_url),
+        }),
+        ClaudeBackendKind::LiteLlm => ClaudeBackend::LiteLlm(crate::config::LiteLlmBackendConfig {
+            model: cli
+                .ollama_model
+                .clone()
+                .unwrap_or_else(|| "anthropic/claude-sonnet-4-5".to_owned()),
         }),
         ClaudeBackendKind::Ollama => {
             let mut cfg = load_ollama_config().unwrap_or_default();

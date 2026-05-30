@@ -547,6 +547,27 @@ async fn run_print_turn(
                 }
             }
         }
+        ClaudeBackend::LiteLlm(lc) => {
+            // Explicit LiteLLM backend — vault injection is always active.
+            let proxy_url = session
+                .litellm
+                .proxy_url
+                .as_deref()
+                .unwrap_or("http://localhost:4000");
+            if is_proxy_reachable(proxy_url).await {
+                let stub_key = session.litellm.generate_stub_key();
+                c.env("ANTHROPIC_API_KEY", stub_key);
+                c.env("ANTHROPIC_BASE_URL", proxy_url);
+                if !lc.model.is_empty() {
+                    c.arg("--model").arg(&lc.model);
+                }
+            } else {
+                tracing::warn!(
+                    proxy_url,
+                    "LiteLLM proxy unreachable for LiteLlm backend; subprocess may fail"
+                );
+            }
+        }
     }
     if let Some(id) = prev_session_id {
         tracing::debug!(session_id = %id, "run_print_turn: resuming prior session");

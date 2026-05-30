@@ -426,6 +426,10 @@ impl AgentDescriptor {
                 kind: "lightarchitects",
                 backend: "ollama",
             },
+            AgentSession::Lightarchitects(ClaudeBackend::LiteLlm(_)) => Self {
+                kind: "lightarchitects",
+                backend: "lite_llm",
+            },
             AgentSession::Codex(cfg) => Self {
                 kind: "codex",
                 backend: match &cfg.backend {

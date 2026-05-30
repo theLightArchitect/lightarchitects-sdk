@@ -218,7 +218,7 @@ pub async fn copilot_chat_handler(
             .await
         }
         AgentSession::Lightarchitects(
-            ClaudeBackend::Anthropic | ClaudeBackend::OllamaLaunch(_),
+            ClaudeBackend::Anthropic | ClaudeBackend::OllamaLaunch(_) | ClaudeBackend::LiteLlm(_),
         )
         | AgentSession::Codex(_)
         | AgentSession::MistralVibe(_) => {
