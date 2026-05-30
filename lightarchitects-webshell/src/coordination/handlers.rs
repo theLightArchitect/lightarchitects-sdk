@@ -858,9 +858,13 @@ fn home_dir() -> PathBuf {
 /// Internal detail is captured at the error site via `tracing::warn!`.
 #[derive(Debug)]
 pub(crate) enum QueueIoError {
+    /// Queue file does not exist; treat as an empty queue on read paths.
     Missing,
+    /// Queue file exists but could not be read from disk.
     Read,
+    /// Queue file was read but could not be parsed as JSON.
     Parse,
+    /// Queue could not be written (dir creation, serialization, or rename failure).
     Write,
 }
 

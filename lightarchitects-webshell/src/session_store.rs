@@ -29,6 +29,8 @@ pub struct SessionRow {
     pub containerized: bool,
     /// Northstar text captured at build creation; injected into supervisor evaluation
     /// prompts so each wave is scored against the operator's declared intent.
+    /// Not serialized in HTTP list responses (CWE-200 / Security Guardrails §9.1).
+    #[serde(skip_serializing)]
     pub northstar_text: Option<String>,
 }
 

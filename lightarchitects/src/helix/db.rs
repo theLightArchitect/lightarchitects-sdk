@@ -742,7 +742,19 @@ impl HelixNeo4j {
                     )));
                 }
             }
-            Neo4jConnectionMode::Local => {}
+            Neo4jConnectionMode::Local => {
+                // Security Guardrails §3.6: bolt:// bound to localhost only — never routed externally.
+                let host = config
+                    .uri
+                    .strip_prefix("bolt://")
+                    .and_then(|s| s.split(':').next())
+                    .unwrap_or("");
+                if !matches!(host, "localhost" | "127.0.0.1" | "::1") {
+                    return Err(HelixDbError::Config(format!(
+                        "NEO4J_MODE=local requires a localhost URI (bolt://localhost or bolt://127.0.0.1), got host '{host}'"
+                    )));
+                }
+            }
         }
 
         let backend =
@@ -2557,10 +2569,34 @@ mod tests {
             "secret",
             Neo4jConnectionMode::Local,
         );
-        // Local mode: no scheme restriction — the guard in connect() is a no-op.
-        // Verify the mode field is correct and URI is preserved unchanged.
+        // Local mode enforces localhost-only host (Security Guardrails §3.6).
         assert_eq!(cfg.mode, Neo4jConnectionMode::Local);
         assert!(cfg.uri.starts_with("bolt://"));
+        // Localhost guard: "localhost" is an allowed host.
+        let host = cfg
+            .uri
+            .strip_prefix("bolt://")
+            .and_then(|s| s.split(':').next())
+            .unwrap_or("");
+        assert!(matches!(host, "localhost" | "127.0.0.1" | "::1"));
+    }
+
+    #[test]
+    fn local_mode_rejects_non_localhost_uri() {
+        // Security Guardrails §3.6: Local mode must not permit external bolt:// hosts.
+        let cfg = Neo4jConfig::new(
+            "bolt://external-db.example.com:7687",
+            "neo4j",
+            "secret",
+            Neo4jConnectionMode::Local,
+        );
+        let host = cfg
+            .uri
+            .strip_prefix("bolt://")
+            .and_then(|s| s.split(':').next())
+            .unwrap_or("");
+        let allowed = matches!(host, "localhost" | "127.0.0.1" | "::1");
+        assert!(!allowed, "Local mode must reject external host '{host}'");
     }
 
     #[test]
