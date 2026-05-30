@@ -1277,4 +1277,12 @@ mod tests {
         assert_eq!(s.participants.len(), 2);
         assert_eq!(s.current_topic.as_deref(), Some("x"));
     }
+
+    #[test]
+    fn queue_io_error_display_all_variants() {
+        assert_eq!(QueueIoError::Missing.to_string(), "queue file missing");
+        assert_eq!(QueueIoError::Read.to_string(), "queue read error");
+        assert_eq!(QueueIoError::Parse.to_string(), "queue parse error");
+        assert_eq!(QueueIoError::Write.to_string(), "queue write error");
+    }
 }

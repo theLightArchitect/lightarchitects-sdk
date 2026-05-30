@@ -341,6 +341,115 @@ mod tests {
     }
 
     #[test]
+    fn touch_updates_backend_and_model() {
+        let store = store_with_row();
+
+        let rows = store.list().unwrap();
+        assert!(
+            rows[0].backend.is_none(),
+            "backend should be NULL on insert"
+        );
+        assert!(rows[0].model.is_none(), "model should be NULL on insert");
+
+        store
+            .touch("build-1", Some("litellm"), Some("claude-opus-4"))
+            .unwrap();
+
+        let rows = store.list().unwrap();
+        assert_eq!(rows[0].backend.as_deref(), Some("litellm"));
+        assert_eq!(rows[0].model.as_deref(), Some("claude-opus-4"));
+    }
+
+    #[test]
+    fn touch_with_none_preserves_existing_values() {
+        let store = SessionStore::noop();
+        store
+            .insert(
+                "build-2",
+                "/tmp",
+                "la",
+                Some("anthropic"),
+                Some("sonnet"),
+                false,
+            )
+            .unwrap();
+
+        // None args → COALESCE keeps existing values.
+        store.touch("build-2", None, None).unwrap();
+
+        let rows = store.list().unwrap();
+        assert_eq!(rows[0].backend.as_deref(), Some("anthropic"));
+        assert_eq!(rows[0].model.as_deref(), Some("sonnet"));
+    }
+
+    #[test]
+    fn remove_deletes_row() {
+        let store = store_with_row();
+        assert_eq!(store.count().unwrap(), 1);
+
+        store.remove("build-1").unwrap();
+
+        assert_eq!(store.count().unwrap(), 0);
+        assert!(store.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn remove_missing_row_is_noop() {
+        let store = SessionStore::noop();
+        store.remove("ghost").unwrap();
+        assert_eq!(store.count().unwrap(), 0);
+    }
+
+    #[test]
+    fn migration_adds_northstar_text_to_legacy_schema() {
+        // Simulate a pre-migration database that has no northstar_text column.
+        // init_schema must detect the absence and run ALTER TABLE (line 125).
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
+            .unwrap();
+        conn.execute(
+            "CREATE TABLE sessions (
+                build_id TEXT PRIMARY KEY,
+                cwd TEXT NOT NULL,
+                agent_kind TEXT NOT NULL,
+                backend TEXT,
+                model TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                containerized INTEGER NOT NULL DEFAULT 0
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at)",
+            [],
+        )
+        .unwrap();
+
+        // Column absent → init_schema must ADD it.
+        SessionStore::init_schema(&conn).unwrap();
+
+        let count: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'northstar_text'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "ALTER TABLE must add northstar_text column");
+    }
+
+    #[test]
+    fn open_returns_usable_store() {
+        // open() uses db_path() (requires LA root) or falls back to a tmp file.
+        // Either way the returned store must be functional — schema accessible.
+        let store = SessionStore::open().unwrap();
+        // count() must not error — table exists and schema is current.
+        let _ = store.count().expect("count must not fail on open() store");
+    }
+
+    #[test]
     fn uncommitted_transaction_is_rolled_back_on_reopen() {
         let tmp = tempfile::NamedTempFile::new().unwrap();
         {
