@@ -8,11 +8,12 @@
 //! with the auth token) can programmatically control the web app UI.
 
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
+use lightarchitects::lightsquad::supervisor::ResolveError;
 use tracing::{info, warn};
 
 use crate::{auth, server::AppState};
 
-use super::types::{ControlCommand, WebEvent};
+use super::types::{ControlCommand, HitlResolution, IronclawHitlResolutionEvent, WebEvent};
 
 /// `POST /api/control` — accepts a control command and broadcasts it.
 ///
@@ -30,6 +31,22 @@ pub async fn control_handler(
     State(state): State<AppState>,
     Json(cmd): Json<ControlCommand>,
 ) -> impl IntoResponse {
+    // IronclawHitlResolution is handled locally and short-circuits the generic
+    // broadcast path — it emits its own SSE event and returns a specific status.
+    if let ControlCommand::IronclawHitlResolution {
+        escalation_nonce,
+        approved,
+        operator_reason,
+    } = &cmd
+    {
+        return handle_ironclaw_hitl_resolution(
+            &state,
+            *escalation_nonce,
+            *approved,
+            operator_reason.clone(),
+        );
+    }
+
     // Handle local-execution commands before broadcasting.
     match &cmd {
         ControlCommand::OpenInEditor { file, line } => {
@@ -55,6 +72,65 @@ pub async fn control_handler(
     );
 
     StatusCode::OK
+}
+
+/// Handle `POST /api/control { kind: "ironclaw_hitl_resolution" }`.
+///
+/// Validates the `UUIDv7` nonce (single-use, SERAPH#3 anti-replay), unblocks the
+/// parked worker, and emits `WebEvent::IronclawHitlResolution` SSE.
+///
+/// # Security
+///
+/// The `escalation_nonce` is NEVER included in log messages or error responses
+/// (CWE-209). All logged fields are non-secret.
+fn handle_ironclaw_hitl_resolution(
+    state: &AppState,
+    escalation_nonce: uuid::Uuid,
+    approved: bool,
+    operator_reason: Option<String>,
+) -> StatusCode {
+    match state
+        .hitl_resolver
+        .resolve(escalation_nonce, approved, operator_reason.clone())
+    {
+        Ok(task_id) => {
+            let resolution = if approved {
+                HitlResolution::Approve
+            } else {
+                HitlResolution::Reject
+            };
+            tracing::info!("[security] Pre-send audit: IronclawHitlResolution SSE emitted");
+            let event = crate::events::WebEventV2::from_event(
+                WebEvent::IronclawHitlResolution(IronclawHitlResolutionEvent {
+                    build_id: uuid::Uuid::nil(), // populated by bridge; nil here is intentional
+                    task_id: task_id.clone(),
+                    resolution,
+                    operator_id: "webshell:operator".to_owned(),
+                    decided_at: chrono::Utc::now(),
+                    nonce: escalation_nonce,
+                }),
+                None,
+            );
+            let _ = state.event_tx.send(event);
+            info!(
+                target: "webshell",
+                task_id = %task_id,
+                approved,
+                "IronclawHitlResolution: worker unblocked"
+            );
+            StatusCode::OK
+        }
+        Err(ResolveError::ReplayAttack(_)) => {
+            // Nonce omitted from log — CWE-209.
+            warn!(target: "webshell", "IronclawHitlResolution: nonce already consumed (replay)");
+            StatusCode::CONFLICT
+        }
+        Err(ResolveError::NotFound(_)) => {
+            // Nonce omitted from log — CWE-209.
+            warn!(target: "webshell", "IronclawHitlResolution: no pending escalation for nonce");
+            StatusCode::NOT_FOUND
+        }
+    }
 }
 
 /// Resolve `raw_path` to an absolute path within `cwd`, rejecting traversal.
@@ -137,7 +213,7 @@ fn reveal_in_finder(raw_path: &str, cwd: &std::path::Path) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -266,6 +342,59 @@ mod tests {
     fn control_command_missing_field_is_error() {
         let json = r#"{"command":"focus_panel"}"#;
         assert!(serde_json::from_str::<ControlCommand>(json).is_err());
+    }
+
+    #[test]
+    fn ironclaw_hitl_resolution_command_round_trips() {
+        let nonce = uuid::Uuid::now_v7();
+        let json = format!(
+            r#"{{"command":"ironclaw_hitl_resolution","escalation_nonce":"{nonce}","approved":true,"operator_reason":"looks good"}}"#
+        );
+        let cmd: ControlCommand = serde_json::from_str(&json).unwrap();
+        assert!(
+            matches!(
+                &cmd,
+                ControlCommand::IronclawHitlResolution { approved: true, .. }
+            ),
+            "unexpected variant: {cmd:?}"
+        );
+    }
+
+    #[test]
+    fn ironclaw_hitl_resolution_command_rejected_round_trips() {
+        let nonce = uuid::Uuid::now_v7();
+        let json = format!(
+            r#"{{"command":"ironclaw_hitl_resolution","escalation_nonce":"{nonce}","approved":false,"operator_reason":null}}"#
+        );
+        let cmd: ControlCommand = serde_json::from_str(&json).unwrap();
+        assert!(
+            matches!(
+                &cmd,
+                ControlCommand::IronclawHitlResolution {
+                    approved: false,
+                    operator_reason: None,
+                    ..
+                }
+            ),
+            "unexpected variant: {cmd:?}"
+        );
+    }
+
+    #[test]
+    fn ironclaw_hitl_resolution_nonce_field_parses() {
+        let nonce = uuid::Uuid::nil();
+        let json = format!(
+            r#"{{"command":"ironclaw_hitl_resolution","escalation_nonce":"{nonce}","approved":true,"operator_reason":null}}"#
+        );
+        let cmd: ControlCommand = serde_json::from_str(&json).unwrap();
+        if let ControlCommand::IronclawHitlResolution {
+            escalation_nonce, ..
+        } = cmd
+        {
+            assert_eq!(escalation_nonce, uuid::Uuid::nil());
+        } else {
+            panic!("wrong variant");
+        }
     }
 
     #[test]

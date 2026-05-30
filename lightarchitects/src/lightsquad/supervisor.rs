@@ -109,7 +109,26 @@ pub struct IronclawHitlResolver {
     used_nonces: Arc<DashSet<Uuid>>,
 }
 
+impl Default for IronclawHitlResolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IronclawHitlResolver {
+    /// Construct a new, empty resolver.
+    ///
+    /// Call [`Supervisor::resolver`] to get a resolver already wired to the
+    /// supervisor's pending map.  Use `new()` only when you need a standalone
+    /// resolver (e.g. initialising `AppState` before any supervisor is created).
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            pending: Arc::new(DashMap::new()),
+            used_nonces: Arc::new(DashSet::new()),
+        }
+    }
+
     /// Resolve a pending escalation identified by `nonce`.
     ///
     /// Validates that the nonce has not been used before (SERAPH#3 anti-replay).

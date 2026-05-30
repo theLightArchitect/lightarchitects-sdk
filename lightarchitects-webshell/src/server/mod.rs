@@ -241,6 +241,15 @@ pub struct AppState {
     /// The HTTP handler at `POST /api/builds/:id/hitl/:call_id` sends on the
     /// embedded oneshot to unblock the worker.
     pub hitl_queue: events::hitl_relay::HitlQueue,
+    /// Nonce-keyed HITL resolver for the ironclaw autonomous pipeline.
+    ///
+    /// Handles `POST /api/control { kind: "ironclaw_hitl_resolution" }`:
+    /// validates the `UUIDv7` nonce (single-use, SERAPH#3 anti-replay), then
+    /// sends the operator verdict on the parked worker's oneshot channel.
+    ///
+    /// Shared between `AppState` (HTTP handlers) and the build pipeline
+    /// (supervisor wired via `EscalationHook`).
+    pub hitl_resolver: lightarchitects::lightsquad::supervisor::IronclawHitlResolver,
     /// Directory where per-build NDJSON decision logs are written.
     ///
     /// One file per build: `<decisions_dir>/<build_id>.ndjson`.
@@ -507,6 +516,7 @@ impl AppState {
             supervisor_states: Arc::new(DashMap::new()),
             lightsquad_programs: Arc::new(DashMap::new()),
             hitl_queue: events::hitl_relay::hitl_queue(),
+            hitl_resolver: lightarchitects::lightsquad::supervisor::IronclawHitlResolver::new(),
             decisions_dir: std::env::var("HOME").map_or_else(
                 |_| std::path::PathBuf::from("/tmp").join("la-decisions"),
                 |h| {
@@ -648,6 +658,7 @@ impl AppState {
             supervisor_states: Arc::new(DashMap::new()),
             lightsquad_programs: Arc::new(DashMap::new()),
             hitl_queue: events::hitl_relay::hitl_queue(),
+            hitl_resolver: lightarchitects::lightsquad::supervisor::IronclawHitlResolver::new(),
             decisions_dir: std::env::temp_dir().join("la-decisions-test"),
             roadmap_html_path: std::env::temp_dir().join("la-roadmap-test.html"),
             mock_workers: true,

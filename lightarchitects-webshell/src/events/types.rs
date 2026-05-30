@@ -782,6 +782,21 @@ pub enum ControlCommand {
         /// Absolute or workspace-relative path to reveal.
         path: String,
     },
+    /// Resolve a pending ironclaw HITL escalation.
+    ///
+    /// The `escalation_nonce` (`UUIDv7`) must match the nonce embedded in
+    /// the `IronclawHitlEscalation` SSE event.  The nonce is validated for
+    /// single-use (SERAPH#3 anti-replay) before the parked worker is unblocked.
+    ///
+    /// Wire tag: `"ironclaw_hitl_resolution"`.
+    IronclawHitlResolution {
+        /// `UUIDv7` nonce minted at escalation time — consumed exactly once.
+        escalation_nonce: uuid::Uuid,
+        /// `true` = operator approved the blocked action; `false` = rejected.
+        approved: bool,
+        /// Optional free-text reason from the operator.
+        operator_reason: Option<String>,
+    },
 }
 
 // ────────────────────────────────────────────────────────────────────────────
