@@ -64,6 +64,10 @@ pub enum MetaSkill {
     Scrum,
     /// EVA-primary 3-phase memory enrichment.
     Enrich,
+    /// LASDLC 7-gate sequential evaluation loop.
+    Gate,
+    /// SERAPH 5-gate AND-validation scope governance loop.
+    ScopeGovernor,
 }
 
 impl MetaSkill {
@@ -75,6 +79,8 @@ impl MetaSkill {
             "secure" => Some(Self::Secure),
             "scrum" => Some(Self::Scrum),
             "enrich" => Some(Self::Enrich),
+            "gate" => Some(Self::Gate),
+            "scope_governor" => Some(Self::ScopeGovernor),
             _ => None,
         }
     }
@@ -87,6 +93,8 @@ impl MetaSkill {
             Self::Secure => "secure",
             Self::Scrum => "scrum",
             Self::Enrich => "enrich",
+            Self::Gate => "gate",
+            Self::ScopeGovernor => "scope_governor",
         }
     }
 
@@ -95,9 +103,10 @@ impl MetaSkill {
     pub fn primary_sibling(self) -> &'static str {
         match self {
             Self::Build => "corso",
-            Self::Secure => "seraph",
+            Self::Secure | Self::ScopeGovernor => "seraph",
             Self::Scrum => "claude",
             Self::Enrich => "eva",
+            Self::Gate => "laex",
         }
     }
 }
@@ -111,7 +120,14 @@ mod tests {
 
     #[test]
     fn from_id_round_trips() {
-        for id in ["build", "secure", "scrum", "enrich"] {
+        for id in [
+            "build",
+            "secure",
+            "scrum",
+            "enrich",
+            "gate",
+            "scope_governor",
+        ] {
             let skill = MetaSkill::from_id(id).unwrap();
             assert_eq!(skill.strategy_id(), id);
         }
@@ -129,6 +145,8 @@ mod tests {
         assert_eq!(MetaSkill::Secure.primary_sibling(), "seraph");
         assert_eq!(MetaSkill::Scrum.primary_sibling(), "claude");
         assert_eq!(MetaSkill::Enrich.primary_sibling(), "eva");
+        assert_eq!(MetaSkill::Gate.primary_sibling(), "laex");
+        assert_eq!(MetaSkill::ScopeGovernor.primary_sibling(), "seraph");
     }
 
     #[test]

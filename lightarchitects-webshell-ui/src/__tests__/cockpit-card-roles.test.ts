@@ -23,6 +23,7 @@ const ANNOTATED_SOURCES: Record<CockpitCardRole, string[]> = {
   'pr-detail-panel':    ['src/screens/Cockpit.svelte'],
   'engineer-zones':     ['src/screens/Cockpit.svelte'],
   'copilot-drawer':     ['src/components/CopilotDrawer.svelte'],
+  'strategy-catalogue': ['src/screens/Cockpit.svelte'],
 };
 
 describe('Cockpit card-role registry', () => {
@@ -81,7 +82,7 @@ describe('Cockpit card-role registry', () => {
     }
   });
 
-  it('registry has exactly 13 roles — adding a card requires updating this test', () => {
-    expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(13);
+  it('registry has exactly 14 roles — adding a card requires updating this test', () => {
+    expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(14);
   });
 });
