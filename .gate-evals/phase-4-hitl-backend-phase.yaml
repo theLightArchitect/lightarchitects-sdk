@@ -40,3 +40,41 @@ security_properties:
   oa3_keychain: "bot token read exclusively via /usr/bin/security find-generic-password argv"
   seraph3_anti_replay: "DashSet<Uuid> consumes nonce on first insert; duplicate callbacks rejected"
   html_injection: "html_escape() sanitises task_id + reason before Telegram HTML parse_mode injection"
+post_gate_review:
+  reviewed_at: "2026-05-30T21:30:00Z"
+  review_commit: "0178359"
+  method: "3-agent parallel /REVIEW (quality + security + logic)"
+  findings_resolved: 5
+  findings:
+    - id: R1
+      severity: CRITICAL
+      category: testing
+      description: "SSE canary (§50.5c) missing IronclawHitlEscalation + IronclawHitlResolution variants"
+      file: "events/types.rs"
+      resolution: "Added both variants to sse_contract_all_web_event_variants_have_known_type_tags test"
+    - id: R2
+      severity: CRITICAL
+      category: logic
+      description: "Dual HITL nonce gap — bridge-parked workers (HitlQueue/call_id) never resolved by control handler (IronclawHitlResolver/nonce)"
+      file: "events/control.rs"
+      resolution: "Added resolve_via_hitl_queue() fallback that scans HitlQueue by escalation_nonce when System A returns NotFound"
+    - id: R3
+      severity: HIGH
+      category: security
+      description: "resolve_safe_path() accepted absolute paths outside cwd (only checked .. components)"
+      file: "events/control.rs"
+      resolution: "Added starts_with(cwd) guard after ParentDir component check"
+    - id: R4
+      severity: HIGH
+      category: security
+      description: "Bot token leaked via reqwest::Error::Display — URL embeds token, logged as %e"
+      file: "events/telegram_hitl_relay.rs"
+      resolution: "Changed to .without_url() on both error paths in bot_api() (CWE-209)"
+    - id: R5
+      severity: HIGH
+      category: security
+      description: "YAML/Markdown injection via operator_reason and task_id in YAML frontmatter quoted scalars"
+      file: "events/helix_decision_writer.rs"
+      resolution: "Added sanitize_yaml_scalar() stripping \\n\\r\\0 and escaping \" before interpolation"
+  post_review_tests: "761 passed, 0 failed (730 lib + 10 control + 14 helix_decision + 7 telegram)"
+  overall_verdict: pass
