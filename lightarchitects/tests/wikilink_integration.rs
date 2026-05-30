@@ -18,7 +18,9 @@
 )]
 
 use chrono::Utc;
-use lightarchitects::helix::{HelixDb, HelixLink, HelixNeo4j, LinkType, Neo4jConfig, Step};
+use lightarchitects::helix::{
+    HelixDb, HelixLink, HelixNeo4j, LinkType, Neo4jConfig, Neo4jConnectionMode, Step,
+};
 use secrecy::SecretString;
 use testcontainers_modules::neo4j::{Neo4j, Neo4jImage};
 use testcontainers_modules::testcontainers::ContainerAsync;
@@ -51,6 +53,7 @@ async fn setup_neo4j() -> (ContainerAsync<Neo4jImage>, HelixNeo4j) {
         uri,
         user: TEST_USER.to_owned(),
         password: SecretString::new(TEST_PASS.to_owned().into()),
+        mode: Neo4jConnectionMode::Local,
     };
 
     let db = HelixNeo4j::connect(&config)
