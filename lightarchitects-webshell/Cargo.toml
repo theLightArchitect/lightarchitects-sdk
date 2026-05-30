@@ -138,8 +138,9 @@ hex = "0.4"
 chromiumoxide = { version = "=0.9.1", optional = true }
 # URL parsing for CDP localhost validation (playwright feature).
 url = "2"
-# Base64 encoding for screenshot API response (playwright feature).
-base64 = { version = "0.22", optional = true }
+# Base64 encoding for screenshot API response (playwright feature) and
+# Telegram callback_data nonce encoding (always compiled).
+base64 = "0.22"
 
 [features]
 # Gate the real TeamManager subprocess path behind a feature until lightarchitects-cli is
@@ -147,7 +148,7 @@ base64 = { version = "0.22", optional = true }
 team-manager = []
 # CDP bridge — chromiumoxide for Chrome DevTools Protocol (dev-mode browser inspection).
 # NOT the @playwright/test npm package — that's E2E test only.
-playwright = ["dep:chromiumoxide", "dep:base64"]
+playwright = ["dep:chromiumoxide"]
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.29", features = ["signal"] }

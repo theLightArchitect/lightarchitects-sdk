@@ -33,6 +33,7 @@ pub mod soul_routes; // shim during partial-split window; re-exports from soul::
 pub mod sse_handler;
 pub mod strand;
 pub mod supervisor_handler;
+pub mod telegram_hitl_relay;
 pub mod topic_filter;
 pub mod types;
 
