@@ -107,6 +107,33 @@ use crate::{
 /// Wall-clock cap for copilot subprocess turns (5 minutes).
 const TURN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
+/// Check if a [`LiteLLM`] proxy TCP endpoint is reachable within 200ms.
+///
+/// Called before vault injection — an unreachable proxy must not break agent spawns.
+/// Returns `true` on successful TCP connect; `false` on timeout or connection refused.
+///
+/// [`LiteLLM`]: https://docs.litellm.ai
+pub async fn is_proxy_reachable(proxy_url: &str) -> bool {
+    let host_port = proxy_url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .unwrap_or("localhost:4000");
+    let addr = if host_port.contains(':') {
+        host_port.to_owned()
+    } else {
+        format!("{host_port}:80")
+    };
+    tokio::time::timeout(
+        std::time::Duration::from_millis(200),
+        tokio::net::TcpStream::connect(addr.as_str()),
+    )
+    .await
+    .map(|r| r.is_ok())
+    .unwrap_or(false)
+}
+
 /// Shared HTTP client for Ollama calls — avoids per-request TLS handshake + connection pool.
 static OLLAMA_HTTP_CLIENT: std::sync::LazyLock<reqwest::Client> =
     std::sync::LazyLock::new(reqwest::Client::new);
@@ -500,7 +527,25 @@ async fn run_print_turn(
             c.env("ANTHROPIC_DEFAULT_HAIKU_MODEL", &lc.model);
             c.arg("--model").arg(&lc.model);
         }
-        ClaudeBackend::Anthropic | ClaudeBackend::Ollama(_) => {}
+        ClaudeBackend::Anthropic | ClaudeBackend::Ollama(_) => {
+            if session.litellm.is_active() {
+                let proxy_url = session
+                    .litellm
+                    .proxy_url
+                    .as_deref()
+                    .unwrap_or("http://localhost:4000");
+                if is_proxy_reachable(proxy_url).await {
+                    let stub_key = session.litellm.generate_stub_key();
+                    c.env("ANTHROPIC_API_KEY", stub_key);
+                    c.env("ANTHROPIC_BASE_URL", proxy_url);
+                } else {
+                    tracing::warn!(
+                        proxy_url,
+                        "LiteLLM proxy unreachable; skipping vault injection (subprocess falls back to direct Anthropic)"
+                    );
+                }
+            }
+        }
     }
     if let Some(id) = prev_session_id {
         tracing::debug!(session_id = %id, "run_print_turn: resuming prior session");
