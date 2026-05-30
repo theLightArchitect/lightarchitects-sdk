@@ -23,6 +23,7 @@ pub mod control;
 pub mod decisions;
 pub mod envelope;
 pub mod global_events;
+pub mod helix_decision_writer;
 pub mod helix_watcher;
 pub mod hitl_relay;
 pub mod lightsquad_bridge;

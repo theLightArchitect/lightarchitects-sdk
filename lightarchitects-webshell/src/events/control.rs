@@ -112,6 +112,20 @@ fn handle_ironclaw_hitl_resolution(
                 None,
             );
             let _ = state.event_tx.send(event);
+            let helix_root = crate::events::helix_decision_writer::resolve_helix_root();
+            let decision_record = crate::events::helix_decision_writer::HitlDecisionRecord {
+                build_id: uuid::Uuid::nil(),
+                task_id: task_id.clone(),
+                approved,
+                operator_reason: operator_reason.clone(),
+                decided_at: chrono::Utc::now(),
+            };
+            if let Err(e) = crate::events::helix_decision_writer::write_hitl_decision(
+                &helix_root,
+                &decision_record,
+            ) {
+                warn!(target: "webshell", error = %e, "helix_decision_writer: write failed (non-blocking)");
+            }
             info!(
                 target: "webshell",
                 task_id = %task_id,
