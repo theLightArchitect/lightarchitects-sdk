@@ -8,6 +8,7 @@ use crate::gitforest::BranchNode;
 use crate::memory::types::PromotionEvent;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// Broadcast event emitted by the webshell backend.
 ///
@@ -223,6 +224,21 @@ pub enum WebEvent {
     /// Emitted after the atomic `.lightarchitects/project.toml` write succeeds.
     /// Topic: `v1.project.update`. Wire tag: `"project_update"`.
     ProjectUpdate(ProjectUpdatePayload),
+
+    // ── ironclaw-autonomous-e2e (Phase 4) ───────────────────────────────────
+    /// Ironclaw HITL escalation requiring operator approval.
+    ///
+    /// Emitted by the lightsquad bridge when `UserEscalation` fires and the
+    /// worker parks in the HITL queue. Nonce is UUIDv7, single-use — validated
+    /// server-side on resolution (SERAPH#3 anti-replay). Wire tag:
+    /// `"ironclaw_hitl_escalation"`.
+    IronclawHitlEscalation(IronclawHitlEscalationEvent),
+
+    /// Ironclaw HITL resolution emitted after the operator resolves an escalation.
+    ///
+    /// Emitted by `POST /api/control { kind: "ironclaw_hitl_resolution" }` after
+    /// nonce validation succeeds. Wire tag: `"ironclaw_hitl_resolution"`.
+    IronclawHitlResolution(IronclawHitlResolutionEvent),
 }
 
 /// Northstar evaluation result broadcast after a `WAVE_COMPLETE` event.
@@ -305,6 +321,75 @@ pub struct ContextStatusEvent {
 }
 
 // ── ironclaw-spine / lightsquad payload types (Phase 2A.5) ──────────────────
+
+// ── ironclaw-autonomous-e2e Phase 4 types ───────────────────────────────────
+
+/// Operator decision for an ironclaw HITL escalation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HitlResolution {
+    /// Operator approved the blocked action.
+    Approve,
+    /// Operator rejected the blocked action.
+    Reject,
+}
+
+/// Payload for [`WebEvent::IronclawHitlEscalation`].
+///
+/// Emitted when a lightsquad worker parks in the HITL queue. `nonce` is a
+/// UUIDv7 minted per-escalation; it is embedded in the `callback_data` of any
+/// Telegram inline keyboard button and validated server-side on resolution to
+/// prevent replay attacks (SERAPH#3, CWE-209 — nonce must never appear in logs).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IronclawHitlEscalationEvent {
+    /// Build the escalated task belongs to.
+    pub build_id: Uuid,
+    /// Task identifier within the build.
+    pub task_id: String,
+    /// Human-readable decision topic (e.g. gate dimension + rule summary).
+    pub decision_topic: String,
+    /// Which pipeline layer triggered the escalation.
+    ///
+    /// `0` = categorical exclusion (pre-Layer-1 screen).
+    /// `1`–`3` = Layer N check failed.
+    /// `4` = full pipeline passed Layers 0–3; operator must decide.
+    pub layer_failed: u8,
+    /// Full escalation question surfaced to the operator.
+    pub escalation_question: String,
+    /// Optional hard deadline for the operator decision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deadline: Option<DateTime<Utc>>,
+    /// W3C `traceparent` for AYIN span stitching across the SSE round-trip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traceparent: Option<String>,
+    /// Server-minted UUIDv7 — single-use replay-kill token.
+    /// Embedded in Telegram `callback_data`; validated against outstanding nonce
+    /// set on resolution. SECURITY: must never appear in logs or error messages.
+    pub nonce: Uuid,
+}
+
+/// Payload for [`WebEvent::IronclawHitlResolution`].
+///
+/// Emitted by `POST /api/control { kind: "ironclaw_hitl_resolution" }` after
+/// the server validates the nonce and removes the entry from the HITL queue.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IronclawHitlResolutionEvent {
+    /// Build the resolved escalation belonged to.
+    pub build_id: Uuid,
+    /// Task identifier within the build.
+    pub task_id: String,
+    /// Operator decision.
+    pub resolution: HitlResolution,
+    /// Operator identifier (e.g. `"telegram:chat_id"` or `"webshell:operator"`).
+    pub operator_id: String,
+    /// Wall-clock time the operator resolved the escalation.
+    pub decided_at: DateTime<Utc>,
+    /// Echo of the nonce from the escalation event — for frontend correlation.
+    /// NOT logged; only broadcast on the SSE stream (encrypted in transit).
+    pub nonce: Uuid,
+}
+
+// ── Legacy escalation type (ironclaw-spine Phase 2A.5) ───────────────────────
 
 /// Payload for [`WebEvent::Escalation`].
 ///
