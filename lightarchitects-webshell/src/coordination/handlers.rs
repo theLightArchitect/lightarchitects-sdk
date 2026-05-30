@@ -538,8 +538,9 @@ pub async fn chat_inject(
         })
         .into_response(),
         Err(err) => {
-            tracing::warn!(error = %err, "soul chat inject failed");
-            (StatusCode::BAD_GATEWAY, err).into_response()
+            let sanitized = err.replace(['\n', '\r'], " ");
+            tracing::warn!(error = %sanitized, "soul chat inject failed");
+            StatusCode::BAD_GATEWAY.into_response()
         }
     }
 }
@@ -628,11 +629,7 @@ pub async fn spawn_worker(
                 error = %e,
                 "spawn-worker: conductor spawn failed"
             );
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("spawn failed: {e}"),
-            )
-                .into_response()
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
 }
