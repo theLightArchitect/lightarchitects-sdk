@@ -921,6 +921,8 @@ fn config_max_context_prompts_default() {
         container_mode: lightarchitects_webshell::container::ContainerMode::Auto,
         dev_mode: false,
         max_context_prompts: 50,
+        litellm: lightarchitects_webshell::config::LiteLLMConfig::default(),
+        hermes_mcp: lightarchitects_webshell::config::HermesMcpConfig::default(),
     };
     assert_eq!(
         config.max_context_prompts, 50,

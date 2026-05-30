@@ -631,6 +631,8 @@ mod tests {
                 container_mode: crate::container::ContainerMode::Auto,
                 dev_mode: false,
                 max_context_prompts: 50,
+                litellm: crate::config::LiteLLMConfig::default(),
+                hermes_mcp: crate::config::HermesMcpConfig::default(),
             },
             crate::container::DockerCapability::Unavailable,
         )

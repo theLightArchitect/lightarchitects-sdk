@@ -150,3 +150,6 @@ pub use ollama_cloud_provider::{
     CodingProviderError, DEFAULT_CODING_MODEL, OLLAMA_TASK_TIMEOUT_DEFAULT_S,
     OllamaCloudCodingProvider, TaskOutcome,
 };
+
+/// Skill utilities — SKILL.md parsing, agentskills.io export, registry helpers.
+pub mod skills;

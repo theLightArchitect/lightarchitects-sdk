@@ -331,6 +331,14 @@ pub async fn check_agent_credentials(agent: &AgentSession) -> CheckResult {
                 detail: "Ollama backend — no API key required".to_owned(),
                 remediation: None,
             },
+            ClaudeBackend::LiteLlm(_) => CheckResult {
+                id: "agent_credentials",
+                label: "Agent credentials (LiteLLM proxy)",
+                category: Category::Core,
+                status: CheckStatus::Pass,
+                detail: "LiteLLM backend — credentials managed by proxy sidecar".to_owned(),
+                remediation: None,
+            },
         },
 
         AgentSession::Codex(c) => match &c.backend {

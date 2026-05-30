@@ -40,6 +40,7 @@ pub fn all_tool_definitions() -> Vec<Value> {
     tools.extend(exec_tool_defs());
     tools.extend(code_tool_defs());
     tools.extend(git_tool_defs());
+    tools.extend(hermes_tool_defs());
     tools
 }
 
@@ -179,6 +180,17 @@ fn git_tool_defs() -> Vec<Value> {
         json!({"name": "lightarchitects_git_pull", "description": "Pull with --ff-only. Returns {merged, commits}.", "inputSchema": {"type": "object", "properties": {"cwd": {"type": "string", "description": "Working directory."}}, "required": ["cwd"]}}),
         json!({"name": "lightarchitects_git_create_pr", "description": "Create a GitHub pull request via the REST API. Requires a GitHub PAT in keyring or LIGHTARCHITECTS_GITHUB_PAT env var. Returns {number, url, title}.", "inputSchema": {"type": "object", "properties": {"owner": {"type": "string", "description": "GitHub repository owner."}, "repo": {"type": "string", "description": "GitHub repository name."}, "title": {"type": "string", "description": "PR title."}, "head": {"type": "string", "description": "Head branch."}, "base": {"type": "string", "description": "Base branch."}, "body": {"type": "string", "description": "PR description (optional)."}}, "required": ["owner", "repo", "title", "head", "base"]}}),
         json!({"name": "lightarchitects_git_review_pr", "description": "Submit a GitHub PR review via the REST API. Inline comments must use comments[].position (diff-position integer). Returns {id, state}.", "inputSchema": {"type": "object", "properties": {"owner": {"type": "string", "description": "GitHub repository owner."}, "repo": {"type": "string", "description": "GitHub repository name."}, "number": {"type": "integer", "description": "PR number."}, "event": {"type": "string", "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT"], "description": "Review event."}, "body": {"type": "string", "description": "Review body (optional)."}, "comments": {"type": "array", "description": "Inline review comments. Each must include path, position (diff-position integer), and body.", "items": {"type": "object"}}}, "required": ["owner", "repo", "number", "event"]}}),
+    ]
+}
+
+/// Hermes MCP bridge tool definitions.
+///
+/// Both actions are no-ops (return a disabled message) when `HERMES_MCP_ENABLED`
+/// is absent or `false`, so they are safe to advertise unconditionally.
+fn hermes_tool_defs() -> Vec<Value> {
+    vec![
+        json!({"name": "lightarchitects_mcp_hermes_send_message", "description": "Relay a message to an operator via Hermes (Telegram, Discord, etc.). Spawns `hermes mcp serve` and calls its send_message tool. Returns a disabled message when HERMES_MCP_ENABLED is not set.", "inputSchema": {"type": "object", "properties": {"platform": {"type": "string", "description": "Target platform (e.g. 'telegram', 'discord'). Default: 'telegram'."}, "content": {"type": "string", "description": "Message content to send."}}, "required": ["content"]}}),
+        json!({"name": "lightarchitects_mcp_hermes_poll_events", "description": "Poll for operator responses from Hermes with a configurable timeout. Returns events or times out gracefully. Returns a disabled message when HERMES_MCP_ENABLED is not set.", "inputSchema": {"type": "object", "properties": {"timeout_secs": {"type": "integer", "description": "Poll timeout in seconds (default: 30, max: 300)."}}}}),
     ]
 }
 
@@ -452,6 +464,13 @@ async fn dispatch(
         "lightarchitects_git_pull" => core_tools::git_comms::run_pull(params).await,
         "lightarchitects_git_create_pr" => core_tools::git_comms::run_create_pr(params).await,
         "lightarchitects_git_review_pr" => core_tools::git_comms::run_review_pr(params).await,
+        // Hermes MCP bridge — relay messages + poll events via `hermes mcp serve`.
+        "lightarchitects_mcp_hermes_send_message" => {
+            core_tools::hermes_mcp::run_send_message(params, config).await
+        }
+        "lightarchitects_mcp_hermes_poll_events" => {
+            core_tools::hermes_mcp::run_poll_events(params, config).await
+        }
         _ => Err(GatewayError::UnknownTool(tool_name.to_owned())),
     }
 }

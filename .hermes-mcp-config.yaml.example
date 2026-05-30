@@ -1,0 +1,45 @@
+# Hermes MCP — operator configuration example
+#
+# Copy to .hermes-mcp-config.yaml (gitignored) and set the env vars below
+# before starting the webshell.  The webshell reads HERMES_MCP_URL at startup;
+# .hermes-mcp-config.yaml is consumed by `hermes mcp serve`.
+#
+# Quick start:
+#   1. Install Hermes: https://docs.hermes.ai/install
+#   2. Authenticate: hermes login
+#   3. Start the MCP server: hermes mcp serve --port 7890
+#   4. Export the URL:       export HERMES_MCP_URL=http://localhost:7890
+#   5. Start the webshell:   make run
+#
+# The webshell will forward HITL escalation events (lightsquad_plan approvals)
+# to Hermes as supplemental notifications.  Approval decisions still route
+# through the internal HITL queue — Hermes relay is non-authoritative.
+#
+# To disable Hermes relay entirely:
+#   export HERMES_MCP_ENABLED=false
+
+hermes_mcp:
+  # URL where `hermes mcp serve` is listening.
+  serve_url: "http://localhost:7890"
+
+  # Set to false to suppress relay for a running webshell without restarting.
+  # Equivalent to HERMES_MCP_ENABLED=false env var.
+  enabled: true
+
+# LiteLLM sidecar — runs alongside the webshell to proxy Claude API calls.
+# Required when ClaudeBackend = LiteLlm.
+#
+# Quick start:
+#   pip install litellm
+#   litellm --model anthropic/claude-sonnet-4-5 --port 4000
+#   export LITELLM_PROXY_URL=http://localhost:4000
+#   export CLAUDE_BACKEND=lite_llm
+#   export ANTHROPIC_API_KEY=<your real key>   # held by LiteLLM, never in agent env
+
+litellm:
+  # URL of the LiteLLM proxy (default: http://localhost:4000).
+  proxy_url: "http://localhost:4000"
+
+  # Model string passed through to LiteLLM (e.g. anthropic/claude-sonnet-4-5).
+  # Overrides OLLAMA_MODEL env var when ClaudeBackend = LiteLlm.
+  model: "anthropic/claude-sonnet-4-5"

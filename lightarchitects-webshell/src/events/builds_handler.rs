@@ -426,6 +426,10 @@ impl AgentDescriptor {
                 kind: "lightarchitects",
                 backend: "ollama",
             },
+            AgentSession::Lightarchitects(ClaudeBackend::LiteLlm(_)) => Self {
+                kind: "lightarchitects",
+                backend: "lite_llm",
+            },
             AgentSession::Codex(cfg) => Self {
                 kind: "codex",
                 backend: match &cfg.backend {
@@ -508,6 +512,7 @@ pub async fn create_build_handler(
     // Use the active agent session (updated live by /api/setup/save).
     let agent = state.active_agent.read().await.clone();
     let mut session = BuildSession::new(body.cwd.clone(), agent);
+    session.litellm = state.config.litellm.clone();
     session.claude_agent_template = body
         .claude_agent_template
         .or_else(|| state.config.claude_agent_template.clone());

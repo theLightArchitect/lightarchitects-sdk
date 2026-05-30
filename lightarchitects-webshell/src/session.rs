@@ -29,7 +29,7 @@ use dashmap::DashMap;
 use tokio::sync::{broadcast, mpsc};
 use uuid::Uuid;
 
-use crate::config::{AgentSession, ClaudeBackend, CodexBackend};
+use crate::config::{AgentSession, ClaudeBackend, CodexBackend, LiteLLMConfig};
 use crate::copilot::CopilotProcess;
 use crate::events::WebEventV2;
 use crate::events::ayin_client::EVENT_CHANNEL_BUF;
@@ -137,6 +137,14 @@ pub struct BuildSession {
     /// window exhaustion — after `max_context_prompts` turns, the session is
     /// auto-cleared to prevent the model from producing empty responses.
     pub turn_count: AtomicU32,
+    /// [`LiteLLM`] vault sidecar config for this session.
+    ///
+    /// When active, subprocess spawns receive per-session stub credentials
+    /// (`stub-la-{uuid}`) instead of real API keys. Propagated from [`Config::litellm`]
+    /// at session creation time.
+    ///
+    /// [`LiteLLM`]: https://docs.litellm.ai
+    pub litellm: LiteLLMConfig,
 }
 
 impl BuildSession {
@@ -178,6 +186,7 @@ impl BuildSession {
             agent_host: tokio::sync::Mutex::new(None),
             fleet_broadcaster: tokio::sync::Mutex::new(None),
             turn_count: AtomicU32::new(0),
+            litellm: LiteLLMConfig::default(),
         }
     }
 
@@ -305,7 +314,7 @@ impl BuildSession {
             ("LA_GUI_URL".to_owned(), gui_url.to_owned()),
         ];
         match &self.agent {
-            AgentSession::Lightarchitects(ClaudeBackend::Anthropic)
+            AgentSession::Lightarchitects(ClaudeBackend::Anthropic | ClaudeBackend::LiteLlm(_))
             | AgentSession::LightarchitectsNative(_)
             | AgentSession::MistralVibe(_) => {}
             AgentSession::Lightarchitects(ClaudeBackend::OllamaLaunch(lc)) => {

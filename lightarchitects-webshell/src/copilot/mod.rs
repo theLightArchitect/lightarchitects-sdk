@@ -13,6 +13,7 @@ pub mod context;
 pub mod eva_identity;
 pub mod event_stream;
 pub mod git_context;
+pub mod hitl_relay;
 pub mod lightsquad_tool;
 pub mod native_session;
 pub mod persona_cache;
@@ -106,6 +107,33 @@ use crate::{
 
 /// Wall-clock cap for copilot subprocess turns (5 minutes).
 const TURN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// Check if a [`LiteLLM`] proxy TCP endpoint is reachable within 200ms.
+///
+/// Called before vault injection — an unreachable proxy must not break agent spawns.
+/// Returns `true` on successful TCP connect; `false` on timeout or connection refused.
+///
+/// [`LiteLLM`]: https://docs.litellm.ai
+pub async fn is_proxy_reachable(proxy_url: &str) -> bool {
+    let host_port = proxy_url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .unwrap_or("localhost:4000");
+    let addr = if host_port.contains(':') {
+        host_port.to_owned()
+    } else {
+        format!("{host_port}:80")
+    };
+    tokio::time::timeout(
+        std::time::Duration::from_millis(200),
+        tokio::net::TcpStream::connect(addr.as_str()),
+    )
+    .await
+    .map(|r| r.is_ok())
+    .unwrap_or(false)
+}
 
 /// Shared HTTP client for Ollama calls — avoids per-request TLS handshake + connection pool.
 static OLLAMA_HTTP_CLIENT: std::sync::LazyLock<reqwest::Client> =
@@ -500,7 +528,46 @@ async fn run_print_turn(
             c.env("ANTHROPIC_DEFAULT_HAIKU_MODEL", &lc.model);
             c.arg("--model").arg(&lc.model);
         }
-        ClaudeBackend::Anthropic | ClaudeBackend::Ollama(_) => {}
+        ClaudeBackend::Anthropic | ClaudeBackend::Ollama(_) => {
+            if session.litellm.is_active() {
+                let proxy_url = session
+                    .litellm
+                    .proxy_url
+                    .as_deref()
+                    .unwrap_or("http://localhost:4000");
+                if is_proxy_reachable(proxy_url).await {
+                    let stub_key = session.litellm.generate_stub_key();
+                    c.env("ANTHROPIC_API_KEY", stub_key);
+                    c.env("ANTHROPIC_BASE_URL", proxy_url);
+                } else {
+                    tracing::warn!(
+                        proxy_url,
+                        "LiteLLM proxy unreachable; skipping vault injection (subprocess falls back to direct Anthropic)"
+                    );
+                }
+            }
+        }
+        ClaudeBackend::LiteLlm(lc) => {
+            // Explicit LiteLLM backend — vault injection is always active.
+            let proxy_url = session
+                .litellm
+                .proxy_url
+                .as_deref()
+                .unwrap_or("http://localhost:4000");
+            if is_proxy_reachable(proxy_url).await {
+                let stub_key = session.litellm.generate_stub_key();
+                c.env("ANTHROPIC_API_KEY", stub_key);
+                c.env("ANTHROPIC_BASE_URL", proxy_url);
+                if !lc.model.is_empty() {
+                    c.arg("--model").arg(&lc.model);
+                }
+            } else {
+                tracing::warn!(
+                    proxy_url,
+                    "LiteLLM proxy unreachable for LiteLlm backend; subprocess may fail"
+                );
+            }
+        }
     }
     if let Some(id) = prev_session_id {
         tracing::debug!(session_id = %id, "run_print_turn: resuming prior session");
@@ -843,6 +910,25 @@ async fn run_codex_turn(
     c.current_dir(&session.cwd);
     // Prevent API key leakage — codex should not inherit the host's Anthropic key.
     c.env_remove("ANTHROPIC_API_KEY");
+    // LiteLLM vault injection for Codex (OpenAI-compat protocol).
+    // Codex uses OPENAI_API_KEY / OPENAI_BASE_URL, not ANTHROPIC_* vars.
+    if session.litellm.is_active() {
+        let proxy_url = session
+            .litellm
+            .proxy_url
+            .as_deref()
+            .unwrap_or("http://localhost:4000");
+        if is_proxy_reachable(proxy_url).await {
+            let stub_key = session.litellm.generate_stub_key();
+            c.env("OPENAI_API_KEY", stub_key);
+            c.env("OPENAI_BASE_URL", format!("{proxy_url}/v1"));
+        } else {
+            tracing::warn!(
+                proxy_url,
+                "LiteLLM proxy unreachable for Codex; skipping vault injection"
+            );
+        }
+    }
     c.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
