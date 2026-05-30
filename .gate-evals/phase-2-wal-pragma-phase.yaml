@@ -1,0 +1,60 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-30T00:00:00Z"
+build_id: neo4j-aura-dual-mode
+phase_id: phase-2-wal-pragma
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1867
+    tests_fail: 0
+    tests_ignored: 3
+  Q4_svelte: "n/a"
+  S1_security:
+    result: pass
+    findings:
+      - id: F1
+        severity: LOW
+        cwe: CWE-732
+        description: "WAL sidecar files (-wal/-shm) inherited world-readable ACL from parent dir"
+        status: RESOLVED_IN_GATE
+        resolution: "chmod 0600 db + 0700 parent in SessionStore::open() before init_schema; commit b4e59f8"
+      - id: F2
+        severity: INFO
+        description: "unchecked_transaction() in test code — safe within #[cfg(test)]"
+        status: NO_ACTION
+      - id: F3
+        severity: INFO
+        description: "PRAGMA journal_mode query result — no disclosure risk"
+        status: NO_ACTION
+      - id: F4
+        severity: INFO
+        description: "tempfile v3.27.0 supply chain — clean, existing transitive dep"
+        status: NO_ACTION
+      - id: F5
+        severity: INFO
+        description: "synchronous=NORMAL durability posture — not a security issue"
+        status: NO_ACTION
+  S2_supply_chain: pass
+  S3_laex: "n/a"
+  N1_northstar:
+    result: pass
+    pillar: "P7 (Production-Grade Platform Reliability)"
+  N2_chain: pass
+  D1_docs: pass
+  D2_plan: pass
+  V1_pyramid: pass
+  V2_smoke: pass
+  V3_e2e: "n/a"
+
+notes: |
+  Phase 2 delivers PRAGMA journal_mode=WAL + synchronous=NORMAL in init_schema()
+  (P7 check 4). Two targeted tests verify WAL mode active + rollback semantics on
+  crash/reopen. S1 LOW finding (WAL sidecar world-readable) resolved in-gate at b4e59f8.
+  Test ratchet: 1867 workspace tests, up from pre-branch baseline (7 net-new session_store
+  unit tests including 2 WAL-specific assertions).

@@ -1,0 +1,36 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-30T00:00:00Z"
+build_id: neo4j-aura-dual-mode
+phase_id: phase-3-neo4j-mode
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 9
+    tests_fail: 0
+    note: "helix::db::tests suite — 4 net-new Phase 3 tests + 5 pre-existing"
+  Q4_svelte: "n/a"
+  N1_northstar:
+    result: pass
+    pillar: "P7 (Production-Grade Platform Reliability)"
+  N2_chain: pass
+  D1_docs: pass
+  D2_plan: pass
+  V1_pyramid: pass
+  V2_smoke: pass
+  V3_e2e: "n/a"
+
+notes: |
+  Phase 3 delivers Neo4jConnectionMode { Local (default), Aura, Auto } enum +
+  mode field on Neo4jConfig + TLS gate in HelixStore::connect() (P7 check 5).
+  from_env() reads NEO4J_MODE env var; invalid values return Config error.
+  Integration test initialisers in wikilink_integration.rs and graphsage_integration.rs
+  updated to supply explicit Local mode field. Disk-full incident (29.8GB cleared via
+  cargo clean) resolved before gate completion.
+  Architecture drift: C3 diagram correctly predicted QueueIoError and coverage gap
+  tests — those are Phase 4+5. No drift on Phase 3 deliverables.

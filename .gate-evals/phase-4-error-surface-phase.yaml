@@ -1,0 +1,58 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-30T00:00:00Z"
+build_id: neo4j-aura-dual-mode
+phase_id: phase-4-error-surface
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 706
+    tests_fail: 0
+  Q4_svelte: "n/a"
+  S1_security:
+    result: pass
+    findings:
+      - id: Q3a
+        severity: MEDIUM
+        cwe: CWE-209
+        description: "spawn_worker: OS error string in HTTP response body via format!()"
+        status: RESOLVED_IN_GATE
+        resolution: "StatusCode::INTERNAL_SERVER_ERROR.into_response() — opaque body; commit b6fa743"
+      - id: Q1
+        severity: LOW
+        cwe: CWE-117
+        description: "chat_inject stderr log injection via unguarded newlines in tracing::warn!"
+        status: RESOLVED_IN_GATE
+        resolution: "replace([n, r], ' ') normalization applied; commit b6fa743"
+      - id: Q3b
+        severity: LOW
+        cwe: CWE-209
+        description: "chat_inject stderr verbatim in HTTP body — bearer-auth compensating control"
+        status: ACCEPTED_EXCEPTION
+        resolution: "Operator-only endpoint; bearer auth gates access; logged as LOW exception per Security Guardrails §1.5; 90-day TTL"
+      - id: Q4
+        severity: INFO
+        description: "QueueIoError::Write on read path — unreachable in practice; structural note only"
+        status: NO_ACTION
+  S2_supply_chain: pass
+  S3_laex: "n/a"
+  N1_northstar:
+    result: pass
+    pillar: "P7 (Production-Grade Platform Reliability)"
+  N2_chain: pass
+  D1_docs: pass
+  D2_plan: pass
+  V1_pyramid: pass
+  V2_smoke: pass
+  V3_e2e: "n/a"
+
+notes: |
+  Phase 4 converts QueueIoError to unit variants (10 .to_string() sites remediated).
+  Gate-4 security review found MEDIUM (Q3a) + LOW (Q1) resolvable in-gate; both fixed
+  at b6fa743. Q3b accepted as LOW exception (bearer-auth compensating control, §1.5).
+  Test count 706 unchanged — no test regressions from the refactor.
