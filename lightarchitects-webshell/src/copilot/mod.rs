@@ -13,6 +13,7 @@ pub mod context;
 pub mod eva_identity;
 pub mod event_stream;
 pub mod git_context;
+pub mod hitl_relay;
 pub mod lightsquad_tool;
 pub mod native_session;
 pub mod persona_cache;
