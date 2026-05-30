@@ -29,6 +29,7 @@ fn make_config(dir: &TempDir, codename: &str) -> SupervisorConfig {
         codename: codename.to_owned(),
         decisions_dir: dir.path().to_path_buf(),
         chain_key: [0xDE; 32],
+        on_user_escalation: None,
     }
 }
 

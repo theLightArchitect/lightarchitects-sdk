@@ -72,7 +72,7 @@ fleet = ["dep:dashmap"]
 #
 # Extraction candidate — see ~/.claude/projects/-Users-kft-Projects/memory/
 # project_lightarchitects_sdk_extraction_candidates.md
-lightsquad = ["agent-cli", "http-client", "credentials", "dep:la-lightsquad"]
+lightsquad = ["agent-cli", "http-client", "credentials", "dep:la-lightsquad", "dep:dashmap"]
 
 # L1 agentic loop substrate — Strategy trait, LoopRunner, compose combinators,
 # CritiqueRefine, phase spans. Does NOT require agent-cli (provider-agnostic).

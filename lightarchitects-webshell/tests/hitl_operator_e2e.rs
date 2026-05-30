@@ -83,7 +83,7 @@ async fn hitl_resolve_delivers_decision_via_oneshot() {
     let (base, queue, builds) = spawn_server().await;
     let build_id = register_build(&builds);
 
-    let (call_id, rx) = hitl_relay::park(
+    let (call_id, _nonce, rx) = hitl_relay::park(
         &queue,
         build_id,
         "task-resolve-test".to_owned(),
@@ -123,7 +123,7 @@ async fn hitl_resolve_reject_delivers_rejection() {
     let (base, queue, builds) = spawn_server().await;
     let build_id = register_build(&builds);
 
-    let (call_id, rx) = hitl_relay::park(
+    let (call_id, _nonce, rx) = hitl_relay::park(
         &queue,
         build_id,
         "task-reject-test".to_owned(),
@@ -159,7 +159,7 @@ async fn hitl_resolve_wrong_build_id_returns_403() {
     let real_build_id = register_build(&builds);
     let attacker_build_id = register_build(&builds); // also registered — only call_id is wrong
 
-    let (call_id, _rx) = hitl_relay::park(
+    let (call_id, _nonce, _rx) = hitl_relay::park(
         &queue,
         real_build_id,
         "task-idor-test".to_owned(),
@@ -313,8 +313,8 @@ async fn autonomous_cancel_drains_hitl_queue_for_build() {
     let build_id = register_build(&builds);
 
     // Park two escalations.
-    let (ca, _) = hitl_relay::park(&queue, build_id, "t1".to_owned(), "r1".to_owned(), 0, 1);
-    let (cb, _) = hitl_relay::park(&queue, build_id, "t2".to_owned(), "r2".to_owned(), 0, 2);
+    let (ca, _, _) = hitl_relay::park(&queue, build_id, "t1".to_owned(), "r1".to_owned(), 0, 1);
+    let (cb, _, _) = hitl_relay::park(&queue, build_id, "t2".to_owned(), "r2".to_owned(), 0, 2);
 
     assert!(queue.contains_key(&ca));
     assert!(queue.contains_key(&cb));
@@ -342,7 +342,7 @@ async fn autonomous_cancel_drains_hitl_queue_for_build() {
 async fn hitl_endpoints_reject_unauthenticated_requests() {
     let (base, queue, builds) = spawn_server().await;
     let build_id = register_build(&builds);
-    let (call_id, _rx) = hitl_relay::park(
+    let (call_id, _nonce, _rx) = hitl_relay::park(
         &queue,
         build_id,
         "task-auth-test".to_owned(),

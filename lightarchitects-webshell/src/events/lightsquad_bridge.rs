@@ -69,7 +69,10 @@ use crate::events::{
     WebEventV2,
     builds_handler::TaskSpec,
     decisions::DecisionsWriter,
-    types::{ConductorTickEvent, MergeAgentStatusEvent, WebEvent, WorkerSlotGaugeEvent},
+    types::{
+        ConductorTickEvent, IronclawHitlEscalationEvent, MergeAgentStatusEvent, WebEvent,
+        WorkerSlotGaugeEvent,
+    },
 };
 
 // ── Public entry point ────────────────────────────────────────────────────────
@@ -533,14 +536,19 @@ async fn build_fix_prompt(
     )
 }
 
-/// Escalate a task to the HITL queue and wait for operator decision.
+/// Route a pipeline result for a task — the 3-branch HITL dispatcher.
 ///
-/// Returns `Ok(())` if the operator approves, `Err(String)` on rejection or
-/// dropped channel.
+/// - `Approved` → log the citation and return `Ok(())`.
+/// - `Blocked` → return `Err` immediately (no operator input needed).
+/// - `UserEscalation` → park in HITL queue, emit `IronclawHitlEscalationEvent`
+///   SSE, and await the operator decision (approved → `Ok(())`, rejected → `Err`).
+///
+/// The `escalation_nonce` embedded in the SSE event is a `UUIDv7` single-use
+/// token (SERAPH#3). It is NEVER logged or included in any error string (CWE-209).
 #[allow(clippy::too_many_arguments)]
 async fn escalate_to_hitl(
     task_id: &str,
-    reason: String,
+    pipeline_result: lightarchitects::lightsquad::decision_pipeline::PipelineResult,
     build_id: Uuid,
     task_span_id: Uuid,
     wave_index: usize,
@@ -548,52 +556,95 @@ async fn escalate_to_hitl(
     tx_slot: &broadcast::Sender<WebEventV2>,
     dw: &DecisionsWriter,
 ) -> Result<(), String> {
-    warn!(task_id = %task_id, reason = %reason, wave_index, "squad: task escalated to HITL");
-    emit_squad_span(
-        "squad.task.escalation",
-        serde_json::json!({"task_id": task_id, "reason": &reason}),
-        TraceOutcome::Block,
-        Some(task_span_id),
-        build_id,
-    );
-    let (call_id, resolve_rx) = crate::events::hitl_relay::park(
-        hitl_queue,
-        build_id,
-        task_id.to_owned(),
-        reason.clone(),
-        u32::try_from(wave_index).unwrap_or(0),
-        1,
-    );
-    let _ = tx_slot.send(WebEventV2::from_event(
-        WebEvent::Escalation(crate::events::types::EscalationEvent {
-            build_id: build_id.to_string(),
-            wave_index: u32::try_from(wave_index).unwrap_or(0),
-            worker_slot: 1,
-            reason: reason.clone(),
-            call_id: call_id.to_string(),
-        }),
-        Some(build_id),
-    ));
-    let _ = dw.append(
-        "L4",
-        &format!("ESCALATION task '{task_id}': {reason} — awaiting operator (call_id={call_id})"),
-        Some("canon://security-guardrails#§G-DENY"),
-    );
-    match resolve_rx.await {
-        Ok(decision) if decision.approved => {
+    use lightarchitects::lightsquad::decision_pipeline::PipelineResult;
+
+    match pipeline_result {
+        PipelineResult::Approved { citation, .. } => {
+            let cite = citation.as_deref().unwrap_or("auto-approved");
             let _ = dw.append(
-                "L4",
-                &format!(
-                    "APPROVED by operator (call_id={call_id}): {}",
-                    decision.operator_reason.as_deref().unwrap_or("no reason")
-                ),
-                None,
+                "L3",
+                &format!("task '{task_id}' APPROVED — {cite}"),
+                citation.as_deref(),
             );
             Ok(())
         }
-        Ok(_) | Err(_) => Err(format!(
-            "task '{task_id}' rejected by operator or HITL dropped (call_id={call_id})"
-        )),
+
+        PipelineResult::Blocked { reason, .. } => {
+            Err(format!("task '{task_id}' BLOCKED by policy: {reason}"))
+        }
+
+        PipelineResult::UserEscalation { reason, .. } => {
+            warn!(task_id = %task_id, reason = %reason, wave_index, "squad: task escalated to HITL");
+            emit_squad_span(
+                "squad.task.escalation",
+                serde_json::json!({"task_id": task_id, "reason": &reason}),
+                TraceOutcome::Block,
+                Some(task_span_id),
+                build_id,
+            );
+
+            let wave_u32 = u32::try_from(wave_index).unwrap_or(0);
+            let (call_id, escalation_nonce, resolve_rx) = crate::events::hitl_relay::park(
+                hitl_queue,
+                build_id,
+                task_id.to_owned(),
+                reason.clone(),
+                wave_u32,
+                1,
+            );
+
+            // Emit IronclawHitlEscalationEvent (nonce is NOT logged — CWE-209).
+            let _ = tx_slot.send(WebEventV2::from_event(
+                WebEvent::IronclawHitlEscalation(IronclawHitlEscalationEvent {
+                    build_id,
+                    task_id: task_id.to_owned(),
+                    decision_topic: reason.clone(),
+                    layer_failed: 4,
+                    escalation_question: format!(
+                        "Task '{task_id}' requires operator approval: {reason}"
+                    ),
+                    deadline: None,
+                    traceparent: None,
+                    nonce: escalation_nonce,
+                }),
+                Some(build_id),
+            ));
+
+            tracing::info!("[security] Pre-send audit: IronclawHitlEscalation SSE emitted");
+
+            let _ = dw.append(
+                "L4",
+                &format!("ESCALATION task '{task_id}': {reason} — awaiting operator"),
+                Some("canon://security-guardrails#§G-DENY"),
+            );
+
+            // Also emit the legacy Escalation event for backward-compat with old frontend.
+            let _ = tx_slot.send(WebEventV2::from_event(
+                WebEvent::Escalation(crate::events::types::EscalationEvent {
+                    build_id: build_id.to_string(),
+                    wave_index: wave_u32,
+                    worker_slot: 1,
+                    reason: reason.clone(),
+                    call_id: call_id.to_string(),
+                }),
+                Some(build_id),
+            ));
+
+            match resolve_rx.await {
+                Ok(decision) if decision.approved => {
+                    let _ = dw.append(
+                        "L4",
+                        &format!(
+                            "APPROVED by operator: {}",
+                            decision.operator_reason.as_deref().unwrap_or("no reason")
+                        ),
+                        None,
+                    );
+                    Ok(())
+                }
+                Ok(_) | Err(_) => Err(format!("task '{task_id}' rejected or HITL channel dropped")),
+            }
+        }
     }
 }
 
@@ -674,7 +725,10 @@ async fn worker_body(
                             );
                             return escalate_to_hitl(
                                 &task_id,
-                                reason,
+                                lightarchitects::lightsquad::decision_pipeline::PipelineResult::UserEscalation {
+                                    reason,
+                                    exclusion: None,
+                                },
                                 build_id,
                                 task_span_id,
                                 wave_index,
@@ -703,7 +757,10 @@ async fn worker_body(
                             );
                             return escalate_to_hitl(
                                 &task_id,
-                                reason,
+                                lightarchitects::lightsquad::decision_pipeline::PipelineResult::UserEscalation {
+                                    reason,
+                                    exclusion: None,
+                                },
                                 build_id,
                                 task_span_id,
                                 wave_index,
@@ -740,7 +797,10 @@ async fn worker_body(
                         );
                         return escalate_to_hitl(
                             &task_id,
-                            reason,
+                            lightarchitects::lightsquad::decision_pipeline::PipelineResult::UserEscalation {
+                                reason,
+                                exclusion: None,
+                            },
                             build_id,
                             task_span_id,
                             wave_index,
@@ -763,7 +823,10 @@ async fn worker_body(
                     // Security violations, validation failures → HITL.
                     return escalate_to_hitl(
                         &task_id,
-                        e.to_string(),
+                        lightarchitects::lightsquad::decision_pipeline::PipelineResult::UserEscalation {
+                            reason: e.to_string(),
+                            exclusion: None,
+                        },
                         build_id,
                         task_span_id,
                         wave_index,

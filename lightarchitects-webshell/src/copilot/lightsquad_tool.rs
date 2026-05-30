@@ -176,7 +176,7 @@ impl LightsquadToolExecutor {
             plan.waves.iter().map(|w| w.tasks.len()).sum::<usize>(),
             plan.intent
         );
-        let (call_id, rx) = hitl_relay::park(
+        let (call_id, _escalation_nonce, rx) = hitl_relay::park(
             &self.hitl_queue,
             build_id,
             format!("lightsquad_plan:{}", plan.codename),

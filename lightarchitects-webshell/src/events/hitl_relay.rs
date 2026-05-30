@@ -1,16 +1,19 @@
 //! HITL relay — pending escalation queue for autonomous ironclaw builds.
 //!
 //! When a worker encounters a `UserEscalation` (`DecisionPipeline` Layer 4), the
-//! bridge parks a [`HitlEntry`] here and sends a [`WebEvent::Escalation`] SSE
-//! event. The operator resolves the escalation via
-//! `POST /api/builds/:id/hitl/:call_id`, which sends on the embedded oneshot
-//! and unblocks the waiting worker.
+//! bridge parks a [`HitlEntry`] here and sends a [`WebEvent::IronclawHitlEscalation`]
+//! SSE event. The operator resolves the escalation via
+//! `POST /api/control { kind: "ironclaw_hitl_resolution", escalation_nonce, ... }`,
+//! which sends on the embedded oneshot and unblocks the waiting worker.
 //!
-//! # Anti-IDOR design
+//! # Anti-IDOR + anti-replay design
 //!
-//! `call_id` is a server-minted `UUIDv4` (never client-supplied). The queue is
-//! keyed by `call_id` so the resolve endpoint can look up the entry directly
-//! without accepting a caller-controlled index.
+//! - `call_id` — server-minted `UUIDv4` (never client-supplied). The queue is
+//!   keyed by `call_id`; the legacy resolve endpoint uses this.
+//! - `escalation_nonce` — server-minted `UUIDv7` embedded in Telegram
+//!   `callback_data` (URL-safe base64). Validated by the `IronclawHitlResolver`
+//!   on resolution; consumed exactly once (SERAPH#3 anti-replay, CWE-209).
+//!   The nonce is NEVER logged or included in error messages.
 
 use std::sync::Arc;
 
@@ -23,8 +26,12 @@ use uuid::Uuid;
 
 /// A pending HITL escalation awaiting operator resolution.
 pub struct HitlEntry {
-    /// Server-minted UUID — used as the path parameter in the resolve endpoint.
+    /// Server-minted `UUIDv4` — used as the path parameter in the legacy resolve endpoint.
     pub call_id: Uuid,
+    /// Server-minted `UUIDv7` — single-use anti-replay token (SERAPH#3).
+    /// Embedded in Telegram `callback_data`; validated by the control handler.
+    /// SECURITY: never log or include in error messages (CWE-209).
+    pub escalation_nonce: Uuid,
     /// Build that triggered this escalation.
     pub build_id: Uuid,
     /// Task that originated the escalation.
@@ -62,10 +69,13 @@ pub fn hitl_queue() -> HitlQueue {
     Arc::new(DashMap::new())
 }
 
-/// Insert a new escalation into the queue and return the `call_id` + decision receiver.
+/// Insert a new escalation into the queue and return the
+/// `(call_id, escalation_nonce, decision_receiver)` triple.
 ///
-/// The caller should immediately send a [`WebEvent::Escalation`] SSE event using
-/// the returned `call_id` so the frontend can render the approve/reject modal.
+/// - `call_id` — identifies the entry for legacy HTTP resolution.
+/// - `escalation_nonce` — `UUIDv7` anti-replay token; embed in
+///   `IronclawHitlEscalationEvent.nonce` and Telegram `callback_data`.
+/// - `decision_receiver` — worker awaits this for the operator verdict.
 #[must_use]
 pub fn park(
     queue: &HitlQueue,
@@ -74,13 +84,15 @@ pub fn park(
     reason: String,
     wave_index: u32,
     worker_slot: u8,
-) -> (Uuid, oneshot::Receiver<HitlDecision>) {
+) -> (Uuid, Uuid, oneshot::Receiver<HitlDecision>) {
     let call_id = Uuid::new_v4();
+    let escalation_nonce = Uuid::now_v7();
     let (resolve_tx, resolve_rx) = oneshot::channel();
     queue.insert(
         call_id,
         HitlEntry {
             call_id,
+            escalation_nonce,
             build_id,
             task_id,
             reason,
@@ -90,7 +102,7 @@ pub fn park(
             resolve_tx,
         },
     );
-    (call_id, resolve_rx)
+    (call_id, escalation_nonce, resolve_rx)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -103,7 +115,7 @@ mod tests {
     #[test]
     fn park_inserts_entry_and_returns_matching_call_id() {
         let q = hitl_queue();
-        let (call_id, _rx) = park(
+        let (call_id, _nonce, _rx) = park(
             &q,
             Uuid::new_v4(),
             "task-1".to_owned(),
@@ -115,9 +127,41 @@ mod tests {
     }
 
     #[test]
+    fn park_returns_distinct_call_id_and_nonce() {
+        let q = hitl_queue();
+        let (call_id, nonce, _rx) = park(
+            &q,
+            Uuid::new_v4(),
+            "task-1".to_owned(),
+            "unsafe code".to_owned(),
+            0,
+            1,
+        );
+        assert_ne!(call_id, nonce, "call_id and nonce must be distinct UUIDs");
+    }
+
+    #[test]
+    fn escalation_nonce_stored_in_entry() {
+        let q = hitl_queue();
+        let (call_id, nonce, _rx) = park(
+            &q,
+            Uuid::new_v4(),
+            "task-2".to_owned(),
+            "dep-add".to_owned(),
+            1,
+            3,
+        );
+        let entry = q.get(&call_id).unwrap();
+        assert_eq!(
+            entry.escalation_nonce, nonce,
+            "entry.escalation_nonce must match the returned nonce"
+        );
+    }
+
+    #[test]
     fn resolve_removes_entry() {
         let q = hitl_queue();
-        let (call_id, _rx) = park(
+        let (call_id, _nonce, _rx) = park(
             &q,
             Uuid::new_v4(),
             "task-2".to_owned(),
@@ -134,7 +178,8 @@ mod tests {
     async fn decision_is_received_by_worker() {
         let q = hitl_queue();
         let build_id = Uuid::new_v4();
-        let (call_id, rx) = park(&q, build_id, "task-3".to_owned(), "reason".to_owned(), 0, 2);
+        let (call_id, _nonce, rx) =
+            park(&q, build_id, "task-3".to_owned(), "reason".to_owned(), 0, 2);
 
         let entry = q.remove(&call_id).unwrap().1;
         entry
@@ -151,11 +196,12 @@ mod tests {
     }
 
     #[test]
-    fn different_parks_get_unique_call_ids() {
+    fn different_parks_get_unique_ids() {
         let q = hitl_queue();
         let bid = Uuid::new_v4();
-        let (id1, _) = park(&q, bid, "t1".to_owned(), "r".to_owned(), 0, 1);
-        let (id2, _) = park(&q, bid, "t2".to_owned(), "r".to_owned(), 0, 2);
-        assert_ne!(id1, id2);
+        let (id1, n1, _) = park(&q, bid, "t1".to_owned(), "r".to_owned(), 0, 1);
+        let (id2, n2, _) = park(&q, bid, "t2".to_owned(), "r".to_owned(), 0, 2);
+        assert_ne!(id1, id2, "call_ids must be unique");
+        assert_ne!(n1, n2, "nonces must be unique");
     }
 }
