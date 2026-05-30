@@ -131,6 +131,41 @@ OLLAMA_MODEL=qwen3.5:397b-cloud \
 
 Use `LIGHTSQUAD_MOCK_WORKERS=1` to test orchestration flow without burning LLM tokens.
 
+### Ironclaw HITL Resolution — `POST /api/control`
+
+Resolves an escalated ironclaw HITL decision (e.g., approve a dependency-add or reject a secret-write):
+
+```
+POST /api/control
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "command": "ironclaw_hitl_resolution", "escalation_nonce": "<nonce>", "approved": true, "operator_note": "approved via webshell" }
+```
+
+- **Auth**: same `AuthGuard` bearer token as all other API routes
+- **Nonce**: UUID minted per escalation; carried in Telegram `callback_data` and POST body only — never logged, never displayed in UI (CWE-209)
+- **Response codes**: 200 resolved · 400 invalid JSON · 401 bad token · 404 nonce not found · 409 already resolved
+- **Handler**: `lightarchitects-webshell/src/events/control.rs → control_handler`
+
+### Telegram HITL Relay
+
+When an ironclaw build escalates a decision to HITL, the relay sends a Telegram message to the operator and waits for their response (approve/reject via callback button or webshell UI).
+
+**Keychain configuration** (macOS; required for relay to activate):
+
+| Keychain service | Account name | Value |
+|---|---|---|
+| `la-telegram-credential` | `bot_token` | Telegram bot token |
+| `la-telegram-credential` | `chat_id` | Telegram chat ID (numeric string) |
+
+If either keychain entry is absent, the relay silently deactivates — no relay is created and HITL resolution falls back to the webshell UI only.
+
+- **Timeout**: 5 minutes per escalation; build continues if no response
+- **Anti-replay**: SERAPH#3 pattern — `DashSet<Uuid>` of used nonces; duplicate callbacks rejected
+- **Security**: `.without_url()` on all reqwest errors to prevent bot token leaking in logs
+- **Source**: `lightarchitects-webshell/src/events/telegram_hitl_relay.rs`
+
 ## Build
 
 ```bash

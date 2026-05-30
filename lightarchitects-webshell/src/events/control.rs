@@ -216,23 +216,54 @@ fn resolve_safe_path(raw_path: &str, cwd: &std::path::Path) -> Option<std::path:
         return None;
     }
     let p = std::path::Path::new(raw_path);
-    let resolved = if p.is_absolute() {
+    let joined = if p.is_absolute() {
         p.to_path_buf()
     } else {
         cwd.join(p)
     };
-    // Reject paths that contain `..` components (pre-canonicalise check).
-    if resolved
+    // Reject `..` components before canonicalization as a fast fail.
+    if joined
         .components()
         .any(|c| c == std::path::Component::ParentDir)
     {
         return None;
     }
-    // Reject absolute paths that escape cwd (symlink-safe containment check).
-    if p.is_absolute() && !resolved.starts_with(cwd) {
+    // Symlink-safe containment (CWE-22): canonicalize the cwd and the nearest
+    // existing ancestor of the target path, then check containment.
+    // When cwd itself doesn't exist (synthetic test environments), fall back
+    // to lexical starts_with — safe because non-existent paths have no symlinks.
+    let canonical_cwd = std::fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
+
+    let canonical = if let Ok(c) = std::fs::canonicalize(&joined) {
+        // Path exists — canonical form directly available.
+        c
+    } else {
+        // Path doesn't exist yet. Walk up to find the nearest existing ancestor
+        // and canonicalize it, then reattach the remaining suffix. This catches
+        // symlinked-directory attacks (e.g., cwd/link/ → /etc/).
+        let mut check = joined.as_path();
+        let mut resolved = joined.clone();
+        while let Some(parent) = check.parent() {
+            if parent == check {
+                break;
+            }
+            check = parent;
+            if check.exists() {
+                if let Ok(canon_parent) = std::fs::canonicalize(check) {
+                    if let Ok(suffix) = joined.strip_prefix(check) {
+                        resolved = canon_parent.join(suffix);
+                    }
+                }
+                break;
+            }
+        }
+        resolved
+    };
+
+    if !canonical.starts_with(&canonical_cwd) {
         return None;
     }
-    Some(resolved)
+    Some(canonical)
 }
 
 /// Spawn `open -t <file>` (macOS) or `$EDITOR <file>:<line>`.

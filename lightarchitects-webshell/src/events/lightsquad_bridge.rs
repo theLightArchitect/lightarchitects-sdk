@@ -295,11 +295,6 @@ async fn run_build(ctx: BridgeContext) {
 
 // ── Worker selection ──────────────────────────────────────────────────────────
 
-/// Build the per-task worker closure.
-///
-/// `use_mock = true` activates the hermetic mock path (write file + git commit)
-/// instead of spawning the real `lightarchitects --bare` CLI. The flag is
-/// captured by value and applies to every task in the closure's lifetime.
 /// Captured context for a single worker invocation.
 struct WorkerCtx {
     build_id: Uuid,
@@ -318,6 +313,11 @@ struct WorkerCtx {
     file_ownership: Vec<String>,
 }
 
+/// Build the per-task worker closure.
+///
+/// `use_mock = true` activates the hermetic mock path (write file + git commit)
+/// instead of spawning the real `lightarchitects --bare` CLI. The flag is
+/// captured by value and applies to every task in the closure's lifetime.
 pub(crate) fn make_worker(
     build_id: Uuid,
     build_span_id: Uuid,

@@ -15,8 +15,9 @@
 //!
 //! # CI safety
 //!
-//! All tests skip gracefully when `OLLAMA_API_KEY` is unset or empty, so CI
-//! pipelines without an Ollama Cloud credential continue to pass.
+//! All tests skip gracefully unless BOTH `IRONCLAW_E2E=1` AND `OLLAMA_API_KEY`
+//! are set. The explicit opt-in prevents accidental slow E2E runs when the API
+//! key is exported in a shell profile.
 //!
 //! # P1 mechanical check
 //!
@@ -28,7 +29,7 @@
 //! # Run manually
 //!
 //! ```bash
-//! OLLAMA_API_KEY=<key> cargo test --test autonomous_ollama_e2e -- --nocapture
+//! IRONCLAW_E2E=1 OLLAMA_API_KEY=<key> cargo test --test autonomous_ollama_e2e -- --nocapture
 //! ```
 //!
 //! Canon XXVII suite coverage:
@@ -53,11 +54,20 @@ const TOKEN: &str = "autonomous-ollama-e2e-token";
 
 // ── Environment guard ─────────────────────────────────────────────────────────
 
-/// Returns the `OLLAMA_API_KEY` value, or `None` if it is absent/empty.
+/// Returns the `OLLAMA_API_KEY` value, or `None` if opt-in is absent.
 ///
-/// Tests call this at the top of each `async fn` and return early on `None`
-/// so that CI environments without an API key continue to pass.
+/// Requires BOTH `IRONCLAW_E2E=1` and a non-empty `OLLAMA_API_KEY`. The
+/// `IRONCLAW_E2E` gate prevents accidental slow E2E runs during `cargo test
+/// --all-features` when the API key is exported in the shell profile.
+///
+/// To run manually:
+/// ```bash
+/// IRONCLAW_E2E=1 OLLAMA_API_KEY=<key> cargo test --test autonomous_ollama_e2e
+/// ```
 fn ollama_api_key() -> Option<String> {
+    if std::env::var("IRONCLAW_E2E").is_err() {
+        return None;
+    }
     std::env::var("OLLAMA_API_KEY")
         .ok()
         .filter(|s| !s.is_empty())

@@ -27,6 +27,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use dashmap::DashSet;
 use reqwest::Client;
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -82,14 +83,15 @@ fn read_keychain(service: &str, account: &str) -> Result<String, String> {
 #[derive(Clone)]
 pub struct TelegramHitlRelay {
     client: Client,
-    bot_token: Arc<String>,
+    /// Bot token (zeroized on drop — CWE-316).
+    bot_token: Arc<SecretString>,
     chat_id: Arc<String>,
     /// Nonces that have already been consumed (SERAPH#3 replay-kill).
     used_nonces: Arc<DashSet<Uuid>>,
     /// URL of the local webshell for resolution POST-back.
     webshell_url: Arc<String>,
-    /// Pre-shared auth token for `POST /api/control`.
-    webshell_auth_token: Arc<String>,
+    /// Pre-shared auth token for `POST /api/control` (zeroized on drop — CWE-316).
+    webshell_auth_token: Arc<SecretString>,
 }
 
 impl TelegramHitlRelay {
@@ -112,11 +114,11 @@ impl TelegramHitlRelay {
 
         Ok(Self {
             client,
-            bot_token: Arc::new(bot_token),
+            bot_token: Arc::new(SecretString::new(bot_token.into())),
             chat_id: Arc::new(chat_id),
             used_nonces: Arc::new(DashSet::new()),
             webshell_url: Arc::new(webshell_url),
-            webshell_auth_token: Arc::new(webshell_auth_token),
+            webshell_auth_token: Arc::new(SecretString::new(webshell_auth_token.into())),
         })
     }
 
@@ -311,7 +313,7 @@ impl TelegramHitlRelay {
         match self
             .client
             .post(&url)
-            .bearer_auth(&*self.webshell_auth_token)
+            .bearer_auth(self.webshell_auth_token.expose_secret())
             .json(&body)
             .send()
             .await
@@ -342,7 +344,11 @@ impl TelegramHitlRelay {
     ///
     /// Returns a description on HTTP error or non-success JSON response.
     async fn bot_api(&self, method: &str, body: &Value) -> Result<Value, String> {
-        let url = format!("https://api.telegram.org/bot{}/{}", self.bot_token, method);
+        let url = format!(
+            "https://api.telegram.org/bot{}/{}",
+            self.bot_token.expose_secret(),
+            method
+        );
         let resp = self
             .client
             .post(&url)
