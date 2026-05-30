@@ -21,6 +21,7 @@ pub mod edit;
 pub mod exec_comms;
 pub mod git_comms;
 pub mod glob;
+pub mod hermes_mcp;
 pub mod import_adapter;
 pub mod initialize;
 pub mod meta;
