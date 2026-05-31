@@ -1,6 +1,7 @@
 //! Lazy image provisioning — inspect → pull → build from embedded strings.
 
 use crate::container::{
+    docker_cmd,
     embedded_image::{AGENT_DOCKERFILE, AGENT_ENTRYPOINT},
     types::{ContainerError, DockerCapability},
 };
@@ -48,29 +49,14 @@ impl ImageManager {
         }
 
         // 1. Check if image exists locally
-        let exists = tokio::process::Command::new("docker")
-            .args(["image", "inspect", &self.image_name])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .await
-            .is_ok_and(|s| s.success());
-
-        if exists {
+        if docker_cmd::image_exists(&self.image_name).await {
             tracing::debug!(target: "container", image = %self.image_name, "image already present");
             return Ok(());
         }
 
         // 2. Try pull from registry (fast path)
         tracing::info!(target: "container", image = %self.image_name, "attempting docker pull");
-        let pull = tokio::process::Command::new("docker")
-            .args(["pull", &self.image_name])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .await;
-
-        match pull {
+        match docker_cmd::pull(&self.image_name).await {
             Ok(st) if st.success() => {
                 tracing::info!(target: "container", image = %self.image_name, "pull succeeded");
                 return Ok(());
@@ -91,11 +77,9 @@ impl ImageManager {
         let tmp = std::env::temp_dir().join(format!("la-agent-build-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&tmp)?;
 
-        // Write embedded strings to temp dir
         std::fs::write(tmp.join("Dockerfile"), AGENT_DOCKERFILE)?;
         std::fs::write(tmp.join("agent-entrypoint.sh"), AGENT_ENTRYPOINT)?;
 
-        // Copy binaries from host deploy path into build context
         let host_bin = lightarchitects::core::paths::root().map_or_else(
             || {
                 std::env::var_os("HOME")
@@ -108,7 +92,6 @@ impl ImageManager {
         );
 
         let gateway_bin = host_bin.join("lightarchitects");
-
         if gateway_bin.is_file() {
             std::fs::copy(&gateway_bin, tmp.join("lightarchitects"))?;
         } else {
@@ -117,14 +100,11 @@ impl ImageManager {
 
         tracing::info!(target: "container", image = %self.image_name, path = %tmp.display(), "building image from embedded Dockerfile");
 
-        let status = tokio::process::Command::new("docker")
-            .args(["build", "-t", &self.image_name, tmp.to_str().unwrap_or(".")])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .await?;
+        let context = tmp.to_str().unwrap_or(".");
+        let status = docker_cmd::build(&self.image_name, context)
+            .await
+            .map_err(|e| ContainerError::ImageBuildFailed(format!("{}: {e}", self.image_name)))?;
 
-        // Best-effort cleanup of temp dir
         let _ = std::fs::remove_dir_all(&tmp);
 
         if !status.success() {

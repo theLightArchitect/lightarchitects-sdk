@@ -221,14 +221,8 @@ impl Drop for ContainerDropGuard {
         let id = self.container_id.clone();
         // Drop the JoinHandle to detach — fire-and-forget cleanup.
         drop(tokio::spawn(async move {
-            let _ = Command::new("docker")
-                .args(["stop", "--time", "3", &id])
-                .output()
-                .await;
-            let _ = Command::new("docker")
-                .args(["rm", "-f", &id])
-                .output()
-                .await;
+            crate::container::docker_cmd::stop(&id).await;
+            crate::container::docker_cmd::rm_force(&[&id]).await;
             tracing::info!(container_id = %id, "container stopped and removed");
         }));
     }
@@ -245,31 +239,13 @@ pub fn spawn_reaper() {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
-            let Ok(out) = Command::new("docker")
-                .args([
-                    "ps",
-                    "-a",
-                    "-q",
-                    "--filter",
-                    "label=managed-by=la-hitl",
-                    "--filter",
-                    "status=exited",
-                ])
-                .output()
-                .await
-            else {
-                continue;
-            };
-
-            let stdout_str = String::from_utf8_lossy(&out.stdout);
-            let ids: Vec<&str> = stdout_str.split_whitespace().collect();
+            let ids =
+                crate::container::docker_cmd::ps_exited_with_label("managed-by=la-hitl").await;
             if ids.is_empty() {
                 continue;
             }
-
-            let mut args = vec!["rm", "-f"];
-            args.extend_from_slice(&ids);
-            let _ = Command::new("docker").args(&args).output().await;
+            let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+            crate::container::docker_cmd::rm_force(&id_refs).await;
             tracing::info!(
                 count = ids.len(),
                 "reaper removed exited la-hitl containers"

@@ -1,11 +1,11 @@
 //! Session spawner — transparent router between container and native PTY paths.
 
 use std::path::Path;
-use std::process::Stdio;
 
-use tokio::process::Command;
-
-use crate::container::types::{ContainerError, ContainerHandle, ContainerMode, DockerCapability};
+use crate::container::{
+    docker_cmd,
+    types::{ContainerError, ContainerHandle, ContainerMode, DockerCapability},
+};
 use crate::server::AppState;
 
 /// Default image name — mirrors `ImageManager::DEFAULT_IMAGE_NAME`.
@@ -65,7 +65,6 @@ async fn container_spawn(
 ) -> Result<ContainerHandle, ContainerError> {
     let image = std::env::var("LA_AGENT_IMAGE").unwrap_or_else(|_| DEFAULT_IMAGE_NAME.to_owned());
 
-    // Image allowlist guard — reject unknown images before any subprocess call.
     if !ALLOWED_IMAGES.contains(&image.as_str()) {
         return Err(ContainerError::Io(std::io::Error::other(format!(
             "image '{image}' is not in the container allowlist"
@@ -74,31 +73,25 @@ async fn container_spawn(
 
     let container_name = format!("la-{}", sanitize_build_id(build_id));
 
-    let output = Command::new("docker")
-        .args([
-            "run",
-            "-d",
-            "--name",
-            &container_name,
-            "--memory",
-            "512m",
-            "--cpus",
-            "1.0",
-            "--pids-limit",
-            "256",
-            "--security-opt",
-            "no-new-privileges",
-            "--label",
-            "managed-by=la-hitl",
-            "--restart",
-            "no",
-            &image,
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(ContainerError::Io)?;
+    let output = docker_cmd::run_detached(&[
+        "--name",
+        &container_name,
+        "--memory",
+        "512m",
+        "--cpus",
+        "1.0",
+        "--pids-limit",
+        "256",
+        "--security-opt",
+        "no-new-privileges",
+        "--label",
+        "managed-by=la-hitl",
+        "--restart",
+        "no",
+        &image,
+    ])
+    .await
+    .map_err(ContainerError::Io)?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
