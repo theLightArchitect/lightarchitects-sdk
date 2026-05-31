@@ -267,15 +267,15 @@ test('hitl bridge: double-answer returns 404 on second submission', async ({ req
 
   await longPollPromise;
 
-  if (capturedId) {
-    // A second POST to the same id should 404 (atomically removed on first answer).
-    const second = await request.post(`${BASE}/api/question/${capturedId}/answer`, {
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      data: { answers: [['Pass']] },
-    });
-    expect(second.status()).toBe(404);
-    console.log(`  ✓ double-answer for ${capturedId} → 404`);
-  } else {
-    console.log('  ⚠ could not capture tool_use_id via SSE; skipping double-answer assertion');
-  }
+  // Hard-fail if interception missed the ID — silent skip hides the invariant.
+  // If this fails in CI, verify the webshell SSE endpoint URL contains "/events" or "/sse".
+  expect(capturedId, 'tool_use_id not captured via SSE response interception').not.toBeNull();
+
+  // A second POST to the same id should 404 (atomically removed on first answer).
+  const second = await request.post(`${BASE}/api/question/${capturedId}/answer`, {
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
+    data: { answers: [['Pass']] },
+  });
+  expect(second.status()).toBe(404);
+  console.log(`  ✓ double-answer for ${capturedId} → 404`);
 });

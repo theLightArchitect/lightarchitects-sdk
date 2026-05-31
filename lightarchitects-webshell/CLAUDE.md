@@ -309,3 +309,26 @@ Every copilot message automatically carries `ui_context.cockpit = { preset, targ
 ### Card roles (`data-card-role` taxonomy)
 
 Every load-bearing Cockpit card declares `data-card-role` on its root element. Registry: `src/lib/cockpit/cardRoles.ts`. Exhaustiveness test: `src/__tests__/cockpit-card-roles.test.ts`. 15 roles total — adding a card requires updating both files and bumping the count assertion.
+
+---
+
+## HITL Question Bridge security constraints
+
+`POST /api/question` + `POST /api/question/:id/answer` — Phase 6 hardened.
+
+### F1 — Timing oracle (answer handler 404 path)
+Both "ID never registered" and "ID registered but receiver dropped" return `404 Not Found`. Never return `410 Gone` on the answer path — `410` vs `404` leaks whether a UUID was ever valid (timing oracle). The `warn!` log on both 404 sub-paths is safe because `AuthGuard` is the first Axum extractor — unauthenticated callers are rejected before the registry is consulted.
+
+### F4 — Answer allowlist (OWASP LLM01 prompt injection guard)
+Answer labels are validated against `QuestionPending::questions[i].options` **before** the oneshot fires. The guard rejects: (a) labels not in the declared option set, (b) more answer vectors than declared questions, (c) absent metadata (`None` metadata + live registry entry = TTL race → 422, not bypass).
+
+The validation runs server-side. The Svelte `QuestionCard` client-side guard is UX-only — never trust it as a security control.
+
+### F5 — Body size limit
+Both routes carry `DefaultBodyLimit::max(32 * 1024)` (32 KB). Do not remove this limit; large payloads from a compromised gateway could exhaust memory before deserialization.
+
+### Single-operator contract (`QuestionPending`)
+`QuestionPending` has no `session_id` or `build_id`. `SseGuard::drop()` therefore drains **all** pending questions globally on any SSE disconnect. This is correct for the single-operator model (one human, one browser tab). If the webshell is ever extended to multi-operator sessions, `QuestionPending` MUST gain a `session_id` field and `SseGuard` must scope its drain to the disconnecting session — otherwise tab-A's disconnect cancels tab-B's pending questions.
+
+### headless_policy caution
+Skills that call `question` with `headless_policy: AutoFirst` will auto-approve the first option if the webshell is unreachable. Never use `AutoFirst` on questions where the first option is a destructive or security-gated action. Before promoting a skill to production, audit: `grep -r "AutoFirst" ~/lightarchitects/skills/` should return zero matches on gated paths.

@@ -1121,6 +1121,16 @@ pub enum QuestionHeadlessPolicy {
 ///
 /// Kept in `AppState.question_metadata` for the 300 s TTL eviction loop and
 /// for returning metadata to the browser on `GET /api/sessions/:id/question`.
+///
+/// # Single-operator contract
+///
+/// This struct carries no `session_id` or `build_id` field. The corresponding
+/// `SseGuard::drop()` drain therefore covers **all** pending entries regardless
+/// of originating build. This is intentional — the webshell is a
+/// single-operator tool and one SSE disconnect means the operator is gone.
+/// Any future extension to multi-operator sessions MUST add a `session_id`
+/// field here and scope the drain accordingly; otherwise tab-A's disconnect
+/// will cancel tab-B's pending questions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuestionPending {
     /// Correlates to the gateway `tool_use_id`.

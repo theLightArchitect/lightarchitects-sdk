@@ -217,6 +217,14 @@ mod tests {
     static SSE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
+    fn sse_guard_is_send() {
+        // Compile-time guard: SseGuard must be Send to cross .await in drive_agent_stream.
+        // If a future refactor adds a !Send field, this test will fail to compile.
+        fn assert_send<T: Send>() {}
+        assert_send::<SseGuard>();
+    }
+
+    #[test]
     fn sse_guard_decrements_global_counter_on_drop() {
         let _lock = SSE_TEST_LOCK.lock().unwrap();
         // Snapshot before — don't store(0): resetting races with in-flight async

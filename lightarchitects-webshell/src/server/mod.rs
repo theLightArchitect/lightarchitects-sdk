@@ -525,9 +525,19 @@ impl AppState {
                             }
                         })
                         .collect();
-                    for id in expired {
-                        meta.remove(&id);
-                        reg.remove(&id);
+                    for id in &expired {
+                        tracing::warn!(
+                            tool_use_id = %id,
+                            "HITL question TTL eviction: gateway long-poll will 408; browser card will not auto-dismiss"
+                        );
+                        meta.remove(id);
+                        reg.remove(id);
+                    }
+                    if !expired.is_empty() {
+                        tracing::warn!(
+                            count = expired.len(),
+                            "HITL question TTL eviction complete"
+                        );
                     }
                 }
             });

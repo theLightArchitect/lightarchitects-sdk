@@ -20,6 +20,7 @@ use axum::{
 use chrono::Utc;
 use serde::Deserialize;
 use tokio::time::timeout;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::{
@@ -92,6 +93,11 @@ pub(crate) async fn question_submit_handler(
     let tool_use_id = Uuid::new_v4();
     let (tx, rx) = tokio::sync::oneshot::channel::<QuestionAnswer>();
 
+    info!(
+        tool_use_id = %tool_use_id,
+        question_count = body.questions.len(),
+        "HITL question submitted; awaiting operator answer (300 s TTL)"
+    );
     state.question_registry.insert(tool_use_id, tx);
     state.question_metadata.insert(
         tool_use_id,
@@ -116,6 +122,7 @@ pub(crate) async fn question_submit_handler(
 
     match timeout(Duration::from_secs(QUESTION_LONG_POLL_SECS), rx).await {
         Ok(Ok(answer)) => {
+            info!(tool_use_id = %tool_use_id, "HITL question answered by operator");
             // Emit QuestionAnswered so the browser clears the pending card.
             let _ = state.event_tx.send(WebEventV2::from_event(
                 WebEvent::QuestionAnswered(QuestionAnsweredEvent {
@@ -134,6 +141,7 @@ pub(crate) async fn question_submit_handler(
         }
         Err(_elapsed) => {
             // 300 s budget exhausted; gateway will handle via headless fallback.
+            warn!(tool_use_id = %tool_use_id, "HITL question timed out (300 s); browser card will not auto-dismiss");
             state.question_registry.remove(&tool_use_id);
             state.question_metadata.remove(&tool_use_id);
             StatusCode::REQUEST_TIMEOUT.into_response()
@@ -154,8 +162,16 @@ pub(crate) async fn question_submit_handler(
 /// - **404** — `id` not registered (already answered, TTL-expired, or receiver
 ///   dropped). Returns `404` rather than `410` to avoid disclosing whether the
 ///   ID existed (F1 — timing oracle prevention).
-/// - **422** — one or more answer labels are not in the declared option set
-///   (F4 — prompt injection guard).
+/// - **422** — one or more answer labels are not in the declared option set,
+///   there are more answer vectors than declared questions, or question metadata
+///   is absent while the registry entry is still live (F4 — prompt injection guard).
+///
+/// # Partial-answer behaviour
+///
+/// Validation passes if all *provided* answer vectors are valid; the handler
+/// does not require that every declared question slot receives an answer. If
+/// exhaustive coverage is required, callers should assert `answers.len() ==
+/// questions.len()` before submitting.
 ///
 /// Requires `Authorization: Bearer <token>`.
 pub(crate) async fn question_answer_handler(
@@ -173,40 +189,78 @@ pub(crate) async fn question_answer_handler(
         .get(&id)
         .map(|entry| entry.questions.clone());
 
-    if let Some(questions) = declared_questions {
-        for (i, answers_i) in body.answers.iter().enumerate() {
-            let Some(q) = questions.get(i) else {
+    // F4 guard: if metadata is absent but a live registry entry exists (TTL race:
+    // eviction removed metadata before registry), reject rather than bypass the
+    // allowlist. "Metadata absent + registry live" is an inconsistent state that
+    // must not silently pass validation (SERAPH SA-F4-1).
+    let Some(questions) = declared_questions else {
+        if state.question_registry.contains_key(&id) {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                axum::Json(serde_json::json!({
+                    "error": "question metadata unavailable; answer rejected"
+                })),
+            )
+                .into_response();
+        }
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    // F4 — every declared question must have exactly one answer vector.
+    // The loop only iterates body.answers, so fewer vectors than questions
+    // would silently accept an incomplete answer; catch that here.
+    if body.answers.len() != questions.len() {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            axum::Json(serde_json::json!({
+                "error": format!(
+                    "expected {} answer vector(s), received {}",
+                    questions.len(),
+                    body.answers.len()
+                )
+            })),
+        )
+            .into_response();
+    }
+
+    for (i, answers_i) in body.answers.iter().enumerate() {
+        // questions.get(i) is guaranteed Some here because lengths were verified above,
+        // but the guard is kept as a defensive belt-and-suspenders for future refactors.
+        let Some(q) = questions.get(i) else {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                axum::Json(serde_json::json!({
+                    "error": "more answer vectors than questions declared"
+                })),
+            )
+                .into_response();
+        };
+        for label in answers_i {
+            if !q.options.iter().any(|opt| &opt.label == label) {
                 return (
                     StatusCode::UNPROCESSABLE_ENTITY,
                     axum::Json(serde_json::json!({
-                        "error": "more answer vectors than questions declared"
+                        "error": format!(
+                            "answer '{label}' not in declared options for question {i}"
+                        )
                     })),
                 )
                     .into_response();
-            };
-            for label in answers_i {
-                if !q.options.iter().any(|opt| &opt.label == label) {
-                    return (
-                        StatusCode::UNPROCESSABLE_ENTITY,
-                        axum::Json(serde_json::json!({
-                            "error": format!(
-                                "answer '{label}' not in declared options for question {i}"
-                            )
-                        })),
-                    )
-                        .into_response();
-                }
             }
         }
     }
 
     let Some((_, tx)) = state.question_registry.remove(&id) else {
+        // debug! not warn! — this fires on every TTL-expired retry; warn! would
+        // flood logs in normal operation. auth-gated so no adversarial amplification.
+        tracing::debug!(tool_use_id = %id, "answer for unknown or expired question (F1: 404)");
         return StatusCode::NOT_FOUND.into_response();
     };
 
     if tx.send(body).is_err() {
         // F1: return 404 rather than 410 — avoids disclosing that the ID existed
         // but its receiver timed out (timing oracle).
+        warn!(tool_use_id = %id, "answer delivered but receiver already dropped (timeout race)");
         return StatusCode::NOT_FOUND.into_response();
     }
 
@@ -284,6 +338,8 @@ mod tests {
         let (tx, rx) = tokio::sync::oneshot::channel::<QuestionAnswer>();
         let id = Uuid::new_v4();
         state.question_registry.insert(id, tx);
+        // Populate metadata so F4 allowlist validation runs against declared options.
+        state.question_metadata.insert(id, make_pending(id));
 
         let app = crate::server::build_app(state);
         let req = Request::builder()
@@ -291,23 +347,23 @@ mod tests {
             .uri(format!("/api/question/{id}/answer"))
             .header("content-type", "application/json")
             .header("authorization", format!("Bearer {TEST_TOKEN}"))
-            .body(Body::from(
-                json!({"answers": [["Proceed"], ["Read", "Write"]]}).to_string(),
-            ))
+            .body(Body::from(json!({"answers": [["Yes"]]}).to_string()))
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
         let answer = rx.await.unwrap();
-        assert_eq!(answer.answers[0], vec!["Proceed".to_owned()]);
-        assert_eq!(
-            answer.answers[1],
-            vec!["Read".to_owned(), "Write".to_owned()]
-        );
+        assert_eq!(answer.answers[0], vec!["Yes".to_owned()]);
     }
 
     // ── F4 allowlist tests ───────────────────────────────────────────────────
+    // TODO(property-test): add proptest covering "for all valid labels, answer passes" and
+    // "for all labels not in options, answer returns 422" across variable-length question/answer
+    // vectors. Hypothesis: allowlist is monotonic on the option set (Canon XXVII T-suite gap).
 
+    /// Builds a minimal [`QuestionPending`] with options `["Yes", "No"]` for
+    /// F4 allowlist tests. Each test should create a fresh state (via
+    /// `test_state()`) to avoid cross-test contamination via `DashMap`.
     fn make_pending(id: Uuid) -> crate::events::types::QuestionPending {
         use crate::events::types::{QuestionItem, QuestionOptionItem};
         crate::events::types::QuestionPending {
@@ -330,6 +386,28 @@ mod tests {
             headless_policy: None,
             inserted_at: chrono::Utc::now(),
         }
+    }
+
+    /// F4: fewer answer vectors than declared questions → 422 (partial-answer bypass closed).
+    #[tokio::test]
+    async fn answer_too_few_vectors_returns_422() {
+        let state = test_state();
+        let (tx, _rx) = tokio::sync::oneshot::channel::<QuestionAnswer>();
+        let id = Uuid::new_v4();
+        state.question_registry.insert(id, tx);
+        // make_pending declares 1 question; submitting 0 answer vectors must be rejected.
+        state.question_metadata.insert(id, make_pending(id));
+
+        let app = crate::server::build_app(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/api/question/{id}/answer"))
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {TEST_TOKEN}"))
+            .body(Body::from(json!({"answers": []}).to_string()))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     /// F4: answer label not in declared options → 422 Unprocessable Content.
