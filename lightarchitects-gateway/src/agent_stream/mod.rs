@@ -29,13 +29,16 @@
 //! Uses the same `LlmClient` as Arena — Ollama, OpenAI-compatible, or
 //! Anthropic (added in this module's companion change to `arena::llm`).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 
-use lightarchitects::agent::ChainContext;
+use lightarchitects::agent::{ChainContext, LlmAgentProvider as _};
+use lightarchitects::ayin::span::{Actor, TraceContext, TraceOutcome};
 use tokio::io::AsyncBufReadExt as _;
 
 use crate::config::GatewayConfig;
+use crate::span_context::{span_dir, spawn_with_span_context, write_span_to_disk};
 
 pub mod endpoint_policy;
 pub mod protocol;
@@ -419,12 +422,41 @@ pub async fn run_interactive_with_strategies(
 
     let provider =
         crate::cli::skills::build_provider().map_err(Box::<dyn std::error::Error>::from)?;
+    let provider_name = provider.name();
+    let session_id = uuid::Uuid::new_v4().to_string();
     let memory = HelixSessionMemory::open(cwd, 20);
     let restored = memory.restored_turn_count();
     let mut session =
         ConversationSession::new(session_config, Arc::new(provider)).with_memory(Box::new(memory));
     let mut transport = CapturingTransport::new(TtyTransport::new(tokio::io::stdout()));
     let chain = ChainContext::default();
+
+    // Emit interactive.session span — one per CLI invocation.
+    {
+        let sid = session_id.clone();
+        spawn_with_span_context(async move {
+            let base = dirs_next::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("lightarchitects/soul/helix/ayin/traces");
+            match TraceContext::new(Actor::new("gateway"), "interactive.session")
+                .outcome(TraceOutcome::Continue)
+                .session_id(&sid)
+                .metadata(serde_json::json!({
+                    "provider": provider_name,
+                    "restored_turns": restored,
+                }))
+                .finish()
+            {
+                Ok(span) => {
+                    let dir = span_dir(&base, "gateway", &span.timestamp);
+                    if let Err(e) = write_span_to_disk(&span, &dir).await {
+                        tracing::warn!(error = %e, "interactive.session AYIN span write failed");
+                    }
+                }
+                Err(e) => tracing::warn!(error = %e, "interactive.session AYIN span build failed"),
+            }
+        });
+    }
 
     let mut stdout = tokio::io::stdout();
     let resume_note = if restored > 0 {
@@ -512,7 +544,40 @@ pub async fn run_interactive_with_strategies(
 
         // Conversational turn — LLM responds; inspect last line for implicit skill dispatch.
         session.clear_interrupt();
-        if let Err(e) = session.run_turn(input, &mut transport, &chain).await {
+        let turn_start = Instant::now();
+        let input_len = input.len();
+        let turn_result = session.run_turn(input, &mut transport, &chain).await;
+        let duration_ms = u64::try_from(turn_start.elapsed().as_millis()).unwrap_or(u64::MAX);
+        if let Err(e) = turn_result {
+            {
+                let sid = session_id.clone();
+                let turn_idx = session.state.turn_count;
+                spawn_with_span_context(async move {
+                    let base = dirs_next::home_dir()
+                        .unwrap_or_else(|| PathBuf::from("."))
+                        .join("lightarchitects/soul/helix/ayin/traces");
+                    match TraceContext::new(Actor::new("gateway"), "interactive.turn")
+                        .outcome(TraceOutcome::Block)
+                        .session_id(&sid)
+                        .metadata(serde_json::json!({
+                            "turn_index": turn_idx,
+                            "input_len": input_len,
+                            "duration_ms": duration_ms,
+                        }))
+                        .finish()
+                    {
+                        Ok(span) => {
+                            let dir = span_dir(&base, "gateway", &span.timestamp);
+                            if let Err(we) = write_span_to_disk(&span, &dir).await {
+                                tracing::warn!(error = %we, "interactive.turn AYIN span write failed");
+                            }
+                        }
+                        Err(we) => {
+                            tracing::warn!(error = %we, "interactive.turn AYIN span build failed");
+                        }
+                    }
+                });
+            }
             let _ = transport
                 .emit(&ConversationEvent::Error {
                     message: e.to_string(),
@@ -523,6 +588,35 @@ pub async fn run_interactive_with_strategies(
         }
 
         let response = transport.take_buffer();
+        {
+            let sid = session_id.clone();
+            let response_len = response.len();
+            let turn_idx = session.state.turn_count;
+            spawn_with_span_context(async move {
+                let base = dirs_next::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join("lightarchitects/soul/helix/ayin/traces");
+                match TraceContext::new(Actor::new("gateway"), "interactive.turn")
+                    .outcome(TraceOutcome::Continue)
+                    .session_id(&sid)
+                    .metadata(serde_json::json!({
+                        "turn_index": turn_idx,
+                        "input_len": input_len,
+                        "response_len": response_len,
+                        "duration_ms": duration_ms,
+                    }))
+                    .finish()
+                {
+                    Ok(span) => {
+                        let dir = span_dir(&base, "gateway", &span.timestamp);
+                        if let Err(e) = write_span_to_disk(&span, &dir).await {
+                            tracing::warn!(error = %e, "interactive.turn AYIN span write failed");
+                        }
+                    }
+                    Err(e) => tracing::warn!(error = %e, "interactive.turn AYIN span build failed"),
+                }
+            });
+        }
         if let Some((slug, skill_args)) = extract_skill_invocation(&response) {
             let mut full_args = vec![slug];
             full_args.extend(skill_args);
