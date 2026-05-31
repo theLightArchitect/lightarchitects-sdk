@@ -193,29 +193,8 @@ pub async fn cockpit_wave_handler(
     let task_specs = build_task_specs(&body);
 
     // PW-6 pre-spawn ownership gate (agents-playbook §15.3.13).
-    // Minimal Task stubs — only id + file_ownership are read by validate_wave_ownership.
-    let stubs: Vec<Task> = task_specs
-        .iter()
-        .map(|s| Task {
-            id: s.id.clone(),
-            branch: String::new(),
-            depends_on: vec![],
-            file_ownership: s.file_ownership.clone(),
-            concurrency_safe: false,
-            context_tiers: vec![],
-            prompt: String::new(),
-        })
-        .collect();
-
-    if let Err(WaveError::OwnershipConflict { file, tasks }) = validate_wave_ownership(&stubs) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "error": "ownership_conflict",
-                "detail": format!("file '{file}' claimed by tasks {tasks:?}")
-            })),
-        )
-            .into_response();
+    if let Err(err_response) = ownership_gate(&task_specs) {
+        return err_response;
     }
 
     let build_id = Uuid::new_v4();
@@ -264,6 +243,42 @@ pub async fn cockpit_wave_handler(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// PW-6 pre-spawn ownership gate — returns `Err(Response)` on conflict or unexpected error.
+///
+/// Constructs minimal [`Task`] stubs (only `id` + `file_ownership` are read by
+/// [`validate_wave_ownership`]) and runs the gate before any worktree is created.
+#[allow(clippy::result_large_err)] // axum::response::Response is intrinsically large; boxing adds allocation without benefit
+fn ownership_gate(task_specs: &[TaskSpec]) -> Result<(), axum::response::Response> {
+    let stubs: Vec<Task> = task_specs
+        .iter()
+        .map(|s| Task {
+            id: s.id.clone(),
+            branch: String::new(),
+            depends_on: vec![],
+            file_ownership: s.file_ownership.clone(),
+            concurrency_safe: false,
+            context_tiers: vec![],
+            prompt: String::new(),
+        })
+        .collect();
+
+    match validate_wave_ownership(&stubs) {
+        Ok(()) => Ok(()),
+        Err(WaveError::OwnershipConflict { file, tasks }) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "ownership_conflict",
+                "detail": format!("file '{file}' claimed by tasks {tasks:?}")
+            })),
+        )
+            .into_response()),
+        Err(e) => {
+            tracing::error!(error = %e, "unexpected ownership gate error — wave aborted");
+            Err(StatusCode::INTERNAL_SERVER_ERROR.into_response())
+        }
+    }
+}
+
 /// Translate `AgentAssignmentPayload` list → `TaskSpec` list for the bridge.
 ///
 /// Each spec gets a Git-Context preamble (Cookbook §64.8) so the worker knows
@@ -291,7 +306,12 @@ fn build_task_specs(body: &WaveComposerRequest) -> Vec<TaskSpec> {
                 id: format!("wc-{preset}-{i}", preset = a.preset.as_str()),
                 prompt,
                 depends_on: vec![],
-                file_ownership: a.file_ownership.clone(),
+                file_ownership: {
+                    let mut v = a.file_ownership.clone();
+                    v.sort_unstable();
+                    v.dedup();
+                    v
+                },
                 concurrency_safe: false,
             }
         })
