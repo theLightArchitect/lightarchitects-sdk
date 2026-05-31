@@ -1,0 +1,62 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-31T00:00:00Z"
+build_id: cockpit-wave-composer
+phase_id: phase-4-realtime-feedback
+branch: feat/cockpit-wave-composer
+sha: a346af8
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 778
+    tests_fail: 0
+    flaky_pre_existing:
+      - test: "autonomous_build_emits_sse_worker_slot_and_merge_events"
+        crate: lightarchitects-webshell
+        suite: autonomous_e2e
+        classification: "FLAKY (pre-existing) — Docker E2E; passes 3/3 in isolation; fails under parallel workspace load; no Rust changes in Phase 4 diff (0 lines)"
+      - test: "autonomous_dispatch_runs_mock_worker_and_writes_decisions"
+        crate: lightarchitects-webshell
+        suite: autonomous_e2e
+        classification: "FLAKY (pre-existing) — Docker E2E; passes in isolation; pre-existing parallel race condition"
+  Q4_svelte:
+    result: pass_with_pre_existing_errors
+    errors_total: 5
+    errors_new: 0
+    pre_existing_errors:
+      - file: "src/components/SettingsOverlay.svelte"
+        count: 4
+        note: "Tab type literal 'dev' overlap — pre-existing on main; not in Phase 4 diff"
+      - file: "src/lib/stores.ts"
+        count: 1
+        note: "CdpDomSnapshotResponse missing export — pre-existing on main"
+    browser_tests:
+      result: pass
+      tests_run: 760
+      note: "Playwright chromium binary absent (pre-existing infrastructure gap); 760 jsdom tests pass"
+
+  D2_plan:
+    result: pass
+    note: >
+      Plan phase_4_realtime_feedback entry matches delivered scope:
+      wave-status health indicator, fleet wave-active banner, ironclaw HITL
+      inline resolution panel with FROM COMPOSER tag. No scope additions or
+      deferrals vs plan.
+
+phase_4_deliverables:
+  - stores_ts: "lastWaveAgentCount writable<number>(0) added"
+  - wave_composer_svelte: "lastWaveAgentCount.set(resp.agent_count) on dispatch success"
+  - cockpit_svelte_health: "wave-status card with pulsing dot, agent count, wave ID prefix"
+  - cockpit_svelte_fleet: "wave-active-banner — fires when lastWaveId + workerSlots.active > 0; auto-hides on wave completion"
+  - cockpit_svelte_escalations: "ironclaw HITL inline resolution panel — approve/reject via POST /api/control; IRONCLAW_LAYER_LABEL badge; FROM COMPOSER tag when build_id matches lastWaveId; nonce never logged"
+  - css: "wave-status, wave-status-dot/label/id, wave-active-banner, wab-dot/id/agents, esc-ironclaw, esc-ironclaw-header/topic/question/err, esc-badge-ironclaw, esc-from-composer — all new classes added"
+
+security_notes:
+  - "escalation_nonce never logged — resolution strictly via /api/control with server-side nonce validation"
+  - "fetch('/api/control', ...) with authHeaders() — AuthGuard enforced upstream"
+  - "No new trust boundaries introduced; phase is purely frontend event wiring + display"

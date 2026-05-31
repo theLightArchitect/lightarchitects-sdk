@@ -1,0 +1,167 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-31T00:00:00Z"
+build_id: cockpit-wave-composer
+phase_id: merge
+branch: feat/cockpit-wave-composer
+sha: f61619d
+overall_verdict: pass
+
+dimensions:
+  V0_primary_on_main:
+    result: pass
+    note: >
+      Primary worktree on main; all build work performed in
+      ~/lightarchitects/worktrees/cockpit-wave-composer (feat/cockpit-wave-composer).
+
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 832
+    tests_fail: 0
+    note: "25 cockpit_wave lib tests (incl. 4 property + 4 regression suites); workspace total 832 pass"
+    flaky_pre_existing:
+      - test: "autonomous_build_emits_sse_worker_slot_and_merge_events"
+        crate: lightarchitects-webshell
+        suite: autonomous_e2e
+        classification: "FLAKY (pre-existing) — Docker E2E; passes 3/3 in isolation; fails under parallel workspace load; 0 Rust lines changed in Phase 4–5 diff"
+      - test: "autonomous_dispatch_runs_mock_worker_and_writes_decisions"
+        crate: lightarchitects-webshell
+        suite: autonomous_e2e
+        classification: "FLAKY (pre-existing) — Docker E2E; passes in isolation; pre-existing parallel race condition"
+  Q4_svelte:
+    result: pass_with_pre_existing_errors
+    errors_total: 5
+    errors_new: 0
+    pre_existing_errors:
+      - file: "src/components/SettingsOverlay.svelte"
+        count: 4
+        note: "Tab type literal 'dev' overlap — pre-existing on main; not in branch diff"
+      - file: "src/lib/stores.ts"
+        count: 1
+        note: "CdpDomSnapshotResponse missing export — pre-existing on main"
+    browser_tests:
+      result: pass
+      tests_run: 760
+      note: "Playwright chromium binary absent (pre-existing infrastructure gap); 760 jsdom tests pass"
+
+  S1_security:
+    result: pass
+    findings_new: 0
+    resolved_in_gate:
+      - id: TM-CW-01
+        severity: HIGH
+        description: >
+          validate_worktree_path did not canonicalize nearest existing ancestor;
+          symlink at intermediate dir could escape to /etc (CWE-61).
+        fix: >
+          Ancestor-walk canonicalization (§63.P5): walk to nearest existing dir,
+          canonicalize(), verify canonical path starts with $HOME, /tmp, or /var/folders.
+          Committed f61619d.
+      - id: TM-CW-02
+        severity: MEDIUM
+        description: >
+          onIronclawEscalation queue unbounded; adversarial SSE flood could fill
+          pendingIronclawEscalations unboundedly.
+        fix: ".slice(0, 8) depth cap applied. Committed f61619d."
+      - id: TM-CW-04
+        severity: LOW
+        description: >
+          genCodename() used Date.now().toString(36) — timing-predictable, low entropy.
+        fix: "crypto.getRandomValues(Uint32Array(2)) — 64 bits CSPRNG entropy. Committed f61619d."
+    tracked_medium_product_decision:
+      - id: TM-CW-03
+        severity: MEDIUM
+        description: >
+          IndirectInjectionShield passes medium-severity patterns through without
+          HITL gate; requires product decision (block-on-Medium vs operator-acknowledge).
+        status: tracked — requires /PLAN for operator-acknowledge UX
+      - id: TM-CW-06
+        severity: LOW
+        description: "No codename deduplication guard on POST /api/cockpit/wave."
+        status: tracked — accept or add 409 Conflict in maintenance pass
+    security_invariants:
+      - "escalation_nonce never logged — resolveIronclawEscalation uses /api/control POST only"
+      - "IndirectInjectionShield scans task_description fields (OWASP LLM01)"
+      - "validate_wave_ownership() called before spawn_autonomous_build() (F-1)"
+      - "operator-supplied skill value dropped; preset-derived skill only (F-4)"
+      - "AuthGuard bearer token enforced on all /api/cockpit/* routes"
+
+  S2_supply_chain:
+    result: pass_with_pre_existing_bans
+    note: >
+      cargo deny bans fail on base64 v0.13.1/v0.22.1 duplicate (tokenizers/fastembed
+      vs axum). Pre-existing on main; not introduced by this branch. No new bans.
+
+  S3_laex: n/a
+
+  I1_integration:
+    result: pass
+    commits_ahead: 20
+    rebase_status: clean_descendant
+    build: pass
+    note: "feat/cockpit-wave-composer is a clean descendant of github/main"
+
+  N1_northstar:
+    result: pass
+    pillar: P2
+    northstar_text: >
+      Operator selects agents, sets target, dispatches a multi-agent wave from the
+      browser — no terminal opened (terminal_window_open_count === 0).
+  N2_chain:
+    result: pass
+    chain: >
+      WaveComposer.svelte → POST /api/cockpit/wave → IronClaw autonomous build →
+      SSE fan-out (wave_id filter) → fleet wave-active banner + HITL ironclaw panel.
+      Operator never needs a terminal; all actions via cockpit UI.
+  N3_exclusion_zones: pass
+
+  D1_docs:
+    result: pass
+    pre_existing_gap_closed:
+      - "WaveComposer.svelte @component block: stray @prop annotations not present in actual file"
+    note: >
+      D1 audit confirmed no stray @prop lines in WaveComposer.svelte @component block.
+      validate_worktree_path doc comment updated to reflect CWE-61 fix.
+
+  D2_plan:
+    result: pass
+    note: >
+      Plan cockpit-wave-composer.md reflects all 6 phases delivered.
+      Phase 5 and gate-5 remediations match planned deliverables.
+
+  D3_claude_md:
+    result: pass
+    note: "No new tooling, commands, or architectural patterns requiring CLAUDE.md updates."
+
+  V1_pyramid:
+    result: pass
+    suites_present:
+      - unit: "cockpit_wave::tests — 17 unit tests (F-1 through F-8 coverage)"
+      - integration: "build_task_specs + ownership gate integration tests"
+      - property: "cockpit_wave::tests::property_tests — 4 proptest property tests (path fuzzing, CODENAME_RE boundaries)"
+      - e2e: "e2e/cockpit-wave-composer.spec.ts — 7 golden paths (WC-G1 through WC-G7)"
+      - regression: "cockpit_wave::tests::regression_tests — 4 regression-pin tests (F-2/F-4/ownership/ID stability)"
+      - smoke: "WaveComposer dispatch smoke + validate_worktree_path edge cases"
+    missing_suites: []
+    note: "All 6 Canon XXVII suites now present. V1 BLOCKING resolved in-gate."
+
+  V2_smoke:
+    result: pass
+    note: "cargo build --release -p lightarchitects-webshell passed in ~4m (prior gate-5 verification)"
+
+  V3_e2e:
+    result: deferred
+    condition: "pnpm exec playwright install — Chromium binary absent (pre-existing infrastructure gap)"
+    authored: "e2e/cockpit-wave-composer.spec.ts — 7 golden paths WC-G1 through WC-G7"
+    unblocking: >
+      Run `pnpm exec playwright install` in lightarchitects-webshell-ui.
+      Tests authored and ready to execute once Chromium is installed.
+
+security_notes:
+  - "All 3 in-gate security fixes committed f61619d (TM-CW-01 HIGH, TM-CW-02 MEDIUM, TM-CW-04 LOW)"
+  - "escalation_nonce never logged — verified in resolveIronclawEscalation"
+  - "No new trust boundaries vs Phase 4 baseline"
+  - "S2 base64 ban pre-existing on main; not a regression"

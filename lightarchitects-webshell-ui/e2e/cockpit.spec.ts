@@ -147,6 +147,7 @@ test('G1: all always-present CARD_ROLES render in DOM within 5s', async ({ page 
     'hitl-inbox',
     'copilot-drawer',
     'strategy-catalogue',
+    'wave-composer',
   ];
 
   for (const role of ALWAYS_PRESENT) {
@@ -155,7 +156,8 @@ test('G1: all always-present CARD_ROLES render in DOM within 5s', async ({ page 
   }
 
   // Verify registry size — exhaustiveness sanity check in E2E context
-  expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(14);
+  // Phase 3 (cockpit-wave-composer) added wave-composer: 14 → 15
+  expect(ALL_COCKPIT_CARD_ROLES).toHaveLength(15);
 });
 
 // ── G2: Preset switch ─────────────────────────────────────────────────────────

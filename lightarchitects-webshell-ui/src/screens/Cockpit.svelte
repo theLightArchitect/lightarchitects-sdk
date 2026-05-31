@@ -7,6 +7,7 @@
   import QuickPickPalette from '$lib/../components/Cockpit/QuickPickPalette.svelte';
   import HITLInbox from '$lib/../components/Cockpit/HITLInbox.svelte';
   import ConductorHitlPanel from '$lib/../components/Cockpit/ConductorHitlPanel.svelte';
+  import WaveComposer from '$lib/../components/Cockpit/WaveComposer.svelte';
   import PRMetadataBlock from '$lib/../components/Cockpit/PRMetadataBlock.svelte';
   import PRVerbSurface from '$lib/../components/Cockpit/PRVerbSurface.svelte';
   import NeedsActionZone from '$lib/../components/Cockpit/zones/NeedsActionZone.svelte';
@@ -19,7 +20,9 @@
     activeBuild, builds, isNativeAgent, buildStats, sparklineBuilds,
     workerSlots, conductorState, conductorTasks, gitStore, gitApi, gitforestTree,
   } from '$lib/stores';
-  import { selectedTarget, selectedPreset } from '$lib/cockpit/stores';
+  import { selectedTarget, selectedPreset, lastWaveId, lastWaveAgentCount } from '$lib/cockpit/stores';
+  import type { IronclawHitlEscalationEvent } from '$lib/types';
+  import { authHeaders } from '$lib/auth';
 
   // ── PR target parsing ─────────────────────────────────────────────────────
 
@@ -76,6 +79,8 @@
 
   let pendingPermissions = $state<PendingPermission[]>([]);
   let pendingEscalations = $state<EscalationEvent[]>([]);
+  let pendingIronclawEscalations = $state<IronclawHitlEscalationEvent[]>([]);
+  let ironclawResolveErr = $state<Record<string, string>>({});
   let now = $state(Date.now());
 
   // AgentWS for routing approve/deny back to the active build session
@@ -133,6 +138,51 @@
     pendingEscalations = [detail, ...pendingEscalations].slice(0, 4);
   }
 
+  // ── Ironclaw HITL escalations ─────────────────────────────────────────────
+
+  const IRONCLAW_LAYER_LABEL: Record<number, string> = {
+    0: 'CAT',   // Categorical exclusion
+    1: 'L1',
+    2: 'L2',
+    3: 'L3',
+    4: 'FULL',  // Full pipeline failure
+  };
+
+  function onIronclawEscalation(e: Event) {
+    const detail = (e as CustomEvent<IronclawHitlEscalationEvent>).detail;
+    pendingIronclawEscalations = [detail, ...pendingIronclawEscalations].slice(0, 8);
+  }
+
+  function onIronclawResolution(e: Event) {
+    const detail = (e as CustomEvent<{ nonce: string }>).detail;
+    pendingIronclawEscalations = pendingIronclawEscalations.filter(x => x.nonce !== detail.nonce);
+  }
+
+  async function resolveIronclawEscalation(esc: IronclawHitlEscalationEvent, decision: 'approve' | 'reject') {
+    try {
+      const res = await fetch('/api/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        // SECURITY: escalation_nonce must not be logged; resolution via /api/control only (nonce validated server-side)
+        body: JSON.stringify({ kind: 'ironclaw_hitl_resolution', escalation_nonce: esc.nonce, decision }),
+      });
+      if (!res.ok) {
+        const msg = await res.text().catch(() => res.statusText);
+        ironclawResolveErr = { ...ironclawResolveErr, [esc.nonce]: msg.slice(0, 80) };
+        return;
+      }
+      pendingIronclawEscalations = pendingIronclawEscalations.filter(x => x.nonce !== esc.nonce);
+      const errs = { ...ironclawResolveErr };
+      delete errs[esc.nonce];
+      ironclawResolveErr = errs;
+    } catch (err) {
+      ironclawResolveErr = {
+        ...ironclawResolveErr,
+        [esc.nonce]: err instanceof Error ? err.message : 'request failed',
+      };
+    }
+  }
+
   function approve(p: PendingPermission) {
     ws?.sendApprove(p.callId);
     pendingPermissions = pendingPermissions.filter(x => x.callId !== p.callId);
@@ -146,9 +196,13 @@
   $effect(() => {
     window.addEventListener('la:permission-request', onPermissionRequest);
     window.addEventListener('la:escalation', onEscalation);
+    window.addEventListener('la:ironclaw_hitl_escalation', onIronclawEscalation);
+    window.addEventListener('la:ironclaw_hitl_resolution', onIronclawResolution);
     return () => {
       window.removeEventListener('la:permission-request', onPermissionRequest);
       window.removeEventListener('la:escalation', onEscalation);
+      window.removeEventListener('la:ironclaw_hitl_escalation', onIronclawEscalation);
+      window.removeEventListener('la:ironclaw_hitl_resolution', onIronclawResolution);
     };
   });
 
@@ -421,6 +475,14 @@
           <span class="ab-conf">{Math.round(($activeBuild.confidence ?? 0) * 100)}%</span>
         </div>
       {/if}
+
+      {#if $lastWaveId}
+        <div class="wave-status" data-testid="health-wave-status">
+          <span class="wave-status-dot"></span>
+          <span class="wave-status-label">Wave dispatched: {$lastWaveAgentCount} agent{$lastWaveAgentCount !== 1 ? 's' : ''}</span>
+          <span class="wave-status-id">{$lastWaveId.slice(0, 8)}</span>
+        </div>
+      {/if}
     </div>
 
     <!-- ── ESCALATIONS / HITL ────────────────────────────────────────────────── -->
@@ -458,6 +520,37 @@
         </div>
       {/each}
 
+      <!-- Ironclaw HITL escalations — operator resolution panel (cockpit Phase 4) -->
+      {#each pendingIronclawEscalations as esc (esc.nonce)}
+        <div class="esc-card esc-ironclaw" data-testid="ironclaw-esc-{esc.nonce.slice(0, 8)}">
+          <div class="esc-ironclaw-header">
+            <span class="esc-badge esc-badge-ironclaw"
+              >{IRONCLAW_LAYER_LABEL[esc.layer_failed] ?? `L${esc.layer_failed}`}</span
+            >
+            <span class="esc-ironclaw-topic">{esc.decision_topic}</span>
+            {#if $lastWaveId && esc.build_id === $lastWaveId}
+              <span class="esc-from-composer" data-testid="esc-from-composer">FROM COMPOSER</span>
+            {/if}
+          </div>
+          <div class="esc-ironclaw-question">{esc.escalation_question}</div>
+          {#if ironclawResolveErr[esc.nonce]}
+            <div class="esc-ironclaw-err">{ironclawResolveErr[esc.nonce]}</div>
+          {/if}
+          <div class="perm-actions">
+            <button
+              class="btn-approve"
+              data-testid="ironclaw-approve-{esc.nonce.slice(0, 8)}"
+              onclick={() => resolveIronclawEscalation(esc, 'approve')}>APPROVE</button
+            >
+            <button
+              class="btn-deny"
+              data-testid="ironclaw-deny-{esc.nonce.slice(0, 8)}"
+              onclick={() => resolveIronclawEscalation(esc, 'reject')}>REJECT</button
+            >
+          </div>
+        </div>
+      {/each}
+
       <!-- Conductor HITL blocked tasks (container-hitl-audit L5) -->
       <ConductorHitlPanel />
     </div>
@@ -465,6 +558,14 @@
     <!-- ── WORKER FLEET ──────────────────────────────────────────────────────── -->
     <div class="card card-fleet" data-area="fleet" data-card-role="worker-fleet">
       <div class="card-label">WORKER FLEET</div>
+
+      {#if $lastWaveId && $workerSlots && $workerSlots.active > 0}
+        <div class="wave-active-banner" data-testid="fleet-wave-banner">
+          <span class="wab-dot"></span>
+          WAVE <span class="wab-id">{$lastWaveId.slice(0, 8)}</span>
+          <span class="wab-agents">{$workerSlots.active} agent{$workerSlots.active !== 1 ? 's' : ''} running</span>
+        </div>
+      {/if}
 
       {#if $workerSlots}
         <div class="fleet-meta">
@@ -708,6 +809,11 @@
       </div>
     </div>
 
+    <!-- ── WAVE COMPOSER ─────────────────────────────────────────────────────── -->
+    <div class="card-wave" data-area="wave-composer">
+      <WaveComposer />
+    </div>
+
   </div><!-- /bento -->
 
   <!-- ── PR DETAIL PANEL — shown when a PR target is selected ─────────────── -->
@@ -809,12 +915,13 @@
   .bento {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    grid-template-rows: auto 1fr auto auto;
+    grid-template-rows: auto 1fr auto auto auto;
     grid-template-areas:
       "health escalations fleet"
       "decisions decisions builds"
       "pr pr git"
-      "strategies strategies strategies";
+      "strategies strategies strategies"
+      "wave wave wave";
     gap: 12px;
     flex: 1;
     min-height: 0;
@@ -851,6 +958,7 @@
   .card-builds      { grid-area: builds; overflow-y: auto; }
   .card-pr          { grid-area: pr; overflow-y: auto; }
   .card-strategies  { grid-area: strategies; }
+  .card-wave        { grid-area: wave; }
 
   /* ── Build Health ────────────────────────────────────────────────────────── */
   .sparkline-wrap {
@@ -1594,18 +1702,159 @@
     color: var(--la-text-dim);
   }
 
+  /* ── Phase 4: Wave status + Ironclaw escalation + Fleet banner ─────────── */
+
+  .wave-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    border: 1px solid color-mix(in srgb, var(--la-semantic-ok, #4dff8e) 30%, transparent);
+    background: color-mix(in srgb, var(--la-semantic-ok, #4dff8e) 5%, transparent);
+    font-family: var(--la-font-mono, monospace);
+    font-size: 8px;
+    color: var(--la-semantic-ok, #4dff8e);
+  }
+
+  .wave-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--la-semantic-ok, #4dff8e);
+    flex-shrink: 0;
+    animation: pulse-ok 1.4s ease-in-out infinite;
+  }
+
+  @keyframes pulse-ok {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.35; }
+  }
+
+  .wave-status-label {
+    flex: 1;
+    letter-spacing: 0.06em;
+  }
+
+  .wave-status-id {
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    opacity: 0.7;
+  }
+
+  /* Ironclaw escalation cards */
+  .esc-ironclaw {
+    border-color: color-mix(in srgb, var(--la-semantic-warn, #ffd166) 40%, transparent);
+    background: color-mix(in srgb, var(--la-semantic-warn, #ffd166) 4%, transparent);
+  }
+
+  .esc-ironclaw-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+  }
+
+  .esc-badge-ironclaw {
+    background: color-mix(in srgb, var(--la-semantic-warn, #ffd166) 18%, transparent);
+    color: var(--la-semantic-warn, #ffd166);
+    border-color: color-mix(in srgb, var(--la-semantic-warn, #ffd166) 50%, transparent);
+  }
+
+  .esc-ironclaw-topic {
+    font-family: var(--la-font-mono, monospace);
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--la-text-base);
+    letter-spacing: 0.06em;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .esc-from-composer {
+    font-family: var(--la-font-mono, monospace);
+    font-size: 7px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--la-struct-primary, #4d8eff);
+    border: 1px solid color-mix(in srgb, var(--la-struct-primary, #4d8eff) 40%, transparent);
+    padding: 1px 4px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .esc-ironclaw-question {
+    font-family: var(--la-font-mono, monospace);
+    font-size: 9px;
+    color: var(--la-text-dim);
+    line-height: 1.4;
+    margin-bottom: 6px;
+  }
+
+  .esc-ironclaw-err {
+    font-family: var(--la-font-mono, monospace);
+    font-size: 8px;
+    color: var(--la-semantic-error, #ff4d4d);
+    margin-top: 4px;
+  }
+
+  /* Fleet wave-active banner */
+  .wave-active-banner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border: 1px solid color-mix(in srgb, var(--la-struct-primary, #4d8eff) 35%, transparent);
+    background: color-mix(in srgb, var(--la-struct-primary, #4d8eff) 6%, transparent);
+    font-family: var(--la-font-mono, monospace);
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--la-struct-primary, #4d8eff);
+    margin-bottom: 4px;
+  }
+
+  .wab-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--la-struct-primary, #4d8eff);
+    flex-shrink: 0;
+    animation: pulse-primary 1s ease-in-out infinite;
+  }
+
+  @keyframes pulse-primary {
+    0%, 100% { opacity: 1; box-shadow: 0 0 4px var(--la-struct-primary, #4d8eff); }
+    50%       { opacity: 0.4; box-shadow: none; }
+  }
+
+  .wab-id {
+    letter-spacing: 0.08em;
+    opacity: 0.8;
+  }
+
+  .wab-agents {
+    margin-left: auto;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    color: var(--la-text-dim);
+  }
+
   /* ── Responsive ─────────────────────────────────────────────────────────── */
   @media (max-width: 960px) {
     .bento {
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: auto auto auto auto auto auto;
+      grid-template-rows: auto auto auto auto auto auto auto;
       grid-template-areas:
         "health escalations"
         "fleet fleet"
         "decisions decisions"
         "builds builds"
         "pr git"
-        "strategies strategies";
+        "strategies strategies"
+        "wave wave";
     }
     .strat-grid { grid-template-columns: repeat(3, 1fr); }
   }
@@ -1620,7 +1869,8 @@
         "builds"
         "pr"
         "git"
-        "strategies";
+        "strategies"
+        "wave";
     }
     .strat-grid { grid-template-columns: 1fr 1fr; }
   }
