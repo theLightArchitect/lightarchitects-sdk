@@ -1,0 +1,50 @@
+schema_version: 1
+gate: phase
+scope: phase
+scored_by: "/GATE"
+scored_at: "2026-05-30T17:50:00Z"
+build_id: unified-litellm-router
+branch: feat/unified-litellm-router
+sha: bbe7d340ece93f76691aedbccbb468497c20fb6d
+phase_id: phase-2-research
+overall_verdict: pass
+
+dimensions:
+  R1_keychain:
+    result: pass
+    finding: >
+      auth/credential/keychain.rs exists with keychain_set/get/delete (security(1) CLI subprocess,
+      service name routing). provider_keychain_service() needs one new "litellm" arm pointing to
+      "lightarchitects-litellm" service. New litellm.rs credential module follows exact pattern
+      of mistral.rs / ollama.rs.
+  R2_virtual_key:
+    result: pass
+    decision: "direct passthrough — operator key stored in keychain, forwarded as Bearer header"
+    deferred: "virtual-key model (multi-user) deferred to follow-on platform build"
+  R3_security:
+    result: pass
+    findings:
+      - "Key injection: LOW — operator-typed + existing keychain_key_is_valid() validation blocks placeholders"
+      - "Provider downgrade: MEDIUM — mitigated by AYIN audit log on every config change"
+      - "LIGHTSQUAD_CODING_MODEL env override: preserved per CLAUDE.md contract"
+  R4_overhead:
+    result: pass
+    finding: "reqwest::Client pool reuse; for_litellm() only wraps the struct — negligible overhead"
+  R5_backward_compat:
+    result: pass
+    finding: >
+      LA_MODEL at copilot/routes.rs:550 is a bootstrap fallback. AppState.litellm_config
+      supersedes it at dispatch time. LIGHTSQUAD_CODING_MODEL env override MUST take precedence.
+  R6_context7:
+    result: pass
+    finding: >
+      LiteLLM proxy: POST /v1/chat/completions, Authorization: Bearer <key>, stream:true,
+      model prefix routing (anthropic/, ollama_chat/, openai/, etc.).
+      OpenAICompatProvider::for_litellm() implementation confirmed correct.
+      Cached in: .review-record/phase-2-context7-litellm.md
+
+gate_findings: []
+notes: >
+  All R1-R6 research questions resolved. Phase 3 implementation can proceed.
+  Key Wave 3 constraint: LIGHTSQUAD_CODING_MODEL env override takes precedence over
+  AppState.litellm_config.model in lightsquad_bridge.rs.

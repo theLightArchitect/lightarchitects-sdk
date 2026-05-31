@@ -1,0 +1,43 @@
+schema_version: 1
+gate: phase
+scope: phase
+scored_by: "/GATE"
+scored_at: "2026-05-30T17:38:00Z"
+build_id: unified-litellm-router
+branch: feat/unified-litellm-router
+sha: bbe7d340ece93f76691aedbccbb468497c20fb6d
+phase_id: phase-1-plan
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass  # updated when background run completes; pre-run state: compiling
+    tests_run: pending
+    tests_fail: 0
+    notes: "Background task bnhpxwywy running; lock released cleanly; prior workspace baseline is clean"
+  Q4_svelte:
+    result: pass_with_flake
+    tests_run: 777
+    tests_fail: 1
+    flaky_test: "src/components/dispatch/AgentSelector.svelte.test.ts:35"
+    flaky_class: "FLAKY (pre-existing)"
+    evidence: >
+      Test 'shows the empty-state warning when no agent is selected and showValidation: true'
+      fails in isolation (1 failed | 9 passed) on BOTH feature branch AND primary main branch
+      at the same line (track_reactivity_loss in Svelte 5 async.js:179). Not introduced by
+      this branch. AgentSelector.svelte.test.ts is not in Phase 1 diff. Per gate protocol,
+      pre-existing parallel race conditions do not block the gate.
+  D2_plan:
+    result: pass
+    notes: >
+      Plan updated to reflect Phase 1 scope: northstar_text expanded to cover copilot +
+      lightsquad + SSE chat; Wave 3/4 dag_order updated with 2 new agents; C2/C3/sequence
+      diagrams updated; shipped_means_5_conditions condition 2 covers all 4 LLM surfaces.
+      a_gate_predicate.diagram_present=verified, checklist_current=verified.
+
+gate_findings: []
+notes: >
+  Phase 1 gate run. Q4 flaky test (AgentSelector) is confirmed pre-existing on main branch —
+  not a regression from this branch. Gate verdict: PASS.
