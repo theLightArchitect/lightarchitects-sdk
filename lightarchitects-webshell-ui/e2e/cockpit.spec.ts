@@ -118,6 +118,8 @@ async function setupCockpit(page: Page): Promise<void> {
 
   // Conductor / worker fleet (204 = no data)
   await page.route('**/api/conductor**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+  // Dispatch approve/reject (DiffPreview modal close path)
+  await page.route('**/api/dispatch/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
   await page.route('**/api/gitforest**', r => r.fulfill({ status: 200, contentType: 'application/json', body: 'null' }));
   await page.route('**/api/events**',    r => r.fulfill({ status: 200, contentType: 'text/event-stream', body: '' }));
   await page.route('**/api/github**',    r => r.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
@@ -243,13 +245,13 @@ test('G5: copilot drawer header shows active preset label (P6-N3 context injecti
 
   await expect(page.locator('[data-card-role="preset-chips"]')).toBeAttached({ timeout: 5000 });
 
-  // Open the copilot drawer by clicking the handle
-  const drawerHandle = page.locator('[data-testid="copilot-drawer"] button').first()
-    .or(page.locator('[data-card-role="copilot-drawer"] button').first());
-  await drawerHandle.click();
+  // Open the copilot drawer via its event bus (the drawer starts closed at width:0;
+  // clicking a button inside a width:0/overflow:hidden container is unreliable).
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent('la:open-copilot'));
+  });
 
-  // The context chip in the drawer header should display the current preset
-  // Default preset is 'engineer'
+  // Drawer element is always in the DOM; wait for it to be visible (non-zero width)
   const drawerEl = page.locator('[data-card-role="copilot-drawer"]');
   await expect(drawerEl).toBeAttached({ timeout: 2000 });
 
@@ -307,7 +309,16 @@ test('G7: la:permission-request event renders perm-card; APPROVE removes it', as
   await expect(timer).toBeAttached();
   await expect(timer).toContainText(/\d+s/);
 
-  // Click APPROVE
+  // la:permission-request also opens the DiffPreview modal overlay which intercepts
+  // pointer events. Dismiss it via its own Approve button (synchronous close path)
+  // so the cockpit card APPROVE is reachable.
+  const diffModal = page.locator('[data-testid="diff-preview"]');
+  if (await diffModal.isVisible({ timeout: 500 }).catch(() => false)) {
+    await diffModal.locator('button').filter({ hasText: /^Approve$/i }).click();
+    await expect(diffModal).not.toBeVisible({ timeout: 5000 });
+  }
+
+  // Click APPROVE on the cockpit card
   await escalationsCard.locator('.btn-approve').first().click();
 
   // Perm-card should be removed (approved and dismissed)
@@ -327,8 +338,9 @@ test('G8: strategy-catalogue renders all 10 tiles; L2 tiles toggle; L0 tiles are
   const tiles = catalogue.locator('.strat-tile');
   await expect(tiles).toHaveCount(10);
 
-  // L2 tiles: aria-pressed starts false, click toggles to true, click again deselects
-  const l2Tile = tiles.filter({ hasClass: 'strat-tile-l2' }).first();
+  // L2 tiles: aria-pressed starts false, click toggles to true, click again deselects.
+  // Use compound CSS selector — Playwright's filter({ hasClass }) is not a valid option.
+  const l2Tile = catalogue.locator('.strat-tile.strat-tile-l2').first();
   await expect(l2Tile).toBeAttached();
   await expect(l2Tile).toHaveAttribute('aria-pressed', 'false');
   await l2Tile.click();
@@ -336,11 +348,10 @@ test('G8: strategy-catalogue renders all 10 tiles; L2 tiles toggle; L0 tiles are
   await l2Tile.click();
   await expect(l2Tile).toHaveAttribute('aria-pressed', 'false');
 
-  // L0 tiles: disabled — aria-pressed always false, click does not toggle
-  const l0Tile = tiles.filter({ hasClass: 'strat-tile-l0' }).first();
+  // L0 tiles: disabled attribute set — browser prevents click events entirely.
+  const l0Tile = catalogue.locator('.strat-tile.strat-tile-l0').first();
   await expect(l0Tile).toBeAttached();
-  await expect(l0Tile).toHaveAttribute('aria-pressed', 'false');
-  await l0Tile.click();
+  await expect(l0Tile).toHaveAttribute('disabled', '');
   await expect(l0Tile).toHaveAttribute('aria-pressed', 'false');
 
   // L2 classification badge visible on each L2 tile

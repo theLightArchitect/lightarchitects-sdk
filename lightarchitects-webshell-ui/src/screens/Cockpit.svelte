@@ -790,6 +790,7 @@
             class:strat-tile-selected={selectedStrategy === s.id}
             class:strat-tile-disabled={!s.registered}
             onclick={() => selectStrategy(s.id, s.registered)}
+            disabled={!s.registered}
             title={s.registered ? `Click to select ${s.label}` : 'L0 — requires executor injection'}
             aria-pressed={selectedStrategy === s.id}
           >

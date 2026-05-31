@@ -26,7 +26,7 @@
   import OllamaConfigModal from './OllamaConfigModal.svelte';
   import SettingsOverlay from './SettingsOverlay.svelte';
   import PolytopeIcon from './PolytopeIcon.svelte';
-  import QuickPickPalette from './Cockpit/QuickPickPalette.svelte';
+  
   import { settingsOpen, pendingResumeSessionId, serverCwd, persistedConfig, selectedModel } from '$lib/setup';
   import { strategyHitl, copilotDrawerOpen } from '$lib/stores';
   import { drawerWidthPx } from '$lib/stores';
@@ -1492,9 +1492,6 @@
   {/if}
 </div>
 
-{#if $quickPickOpen}
-  <QuickPickPalette />
-{/if}
 
 {#if showModelPicker}
   <!-- Model picker overlay — ⌘⇧M; uses inert on close to suppress keyboard focus -->
