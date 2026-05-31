@@ -1,89 +1,60 @@
 <script lang="ts">
-  import { authHeaders } from '$lib/auth';
   import { selectedTarget } from '$lib/cockpit/stores';
-  import type { CockpitTarget } from '$lib/cockpit/stores';
+  import { hitlItems, type HITLItem } from '$lib/cockpit/hitlPoller';
 
-  interface HitlItem {
-    number: number;
-    title: string;
-    html_url: string;
-    owner: string;
-    repo: string;
-    author: string;
-    updated_at: string;
-    draft: boolean;
-  }
+  const SOURCE_ICON: Record<string, string> = {
+    github_pr: '⎌',
+    platform:  '◈',
+  };
 
-  let items   = $state<HitlItem[]>([]);
-  let loading = $state(false);
-  let error   = $state('');
-
-  async function fetchInbox() {
-    try {
-      const res = await fetch('/api/gitforest/hitl-search', { headers: authHeaders() });
-      if (!res.ok) { error = `${res.status}`; return; }
-      items = await res.json();
-      error = '';
-    } catch (e) {
-      error = e instanceof Error ? e.message : 'fetch failed';
-    } finally {
-      loading = false;
-    }
-  }
-
-  $effect(() => {
-    loading = true;
-    void fetchInbox();
-    const interval = setInterval(() => { void fetchInbox(); }, 60_000);
-    return () => clearInterval(interval);
-  });
-
-  function ageLabel(updatedAt: string): string {
-    const h = (Date.now() - new Date(updatedAt).getTime()) / 3_600_000;
+  function ageLabel(secs: number): string {
+    const h = secs / 3600;
     if (h < 1)  return `${Math.ceil(h * 60)}m`;
     if (h < 24) return `${Math.floor(h)}h`;
     return `${Math.floor(h / 24)}d`;
   }
 
-  function ageCls(updatedAt: string): string {
-    const h = (Date.now() - new Date(updatedAt).getTime()) / 3_600_000;
-    if (h < 24) return 'age-fresh';
-    if (h < 72) return 'age-warn';
-    return 'age-stale';
+  function ageCls(severity: HITLItem['severity']): string {
+    if (severity === 'block') return 'age-stale';
+    if (severity === 'warn')  return 'age-warn';
+    return 'age-fresh';
   }
 
-  function select(item: HitlItem) {
-    const target: CockpitTarget = {
-      type: 'pr',
-      id: item.html_url,
-      label: `#${item.number} ${item.title} (${item.repo})`,
-    };
-    selectedTarget.set(target);
+  function select(item: HITLItem) {
+    selectedTarget.set({
+      type:  item.source === 'github_pr' ? 'pr' : 'build',
+      id:    item.url,
+      label: item.source === 'github_pr'
+        ? `#${item.prNumber} ${item.title} (${item.repo})`
+        : item.title,
+    });
   }
 </script>
 
-{#if loading && items.length === 0}
-  <div class="empty-state">checking inbox…</div>
-{:else if items.length === 0}
-  <div class="empty-state">
-    {error ? 'configure GitHub PAT in Dashboard' : 'no PRs awaiting review'}
-  </div>
+{#if $hitlItems.length === 0}
+  <div class="empty-state">no PRs or tasks awaiting review</div>
 {:else}
   <div class="hitl-list">
-    {#each items as item (`${item.owner}/${item.repo}#${item.number}`)}
+    {#each $hitlItems as item (item.id)}
       <!-- svelte-ignore a11y_interactive_supports_focus -->
       <div
         class="hitl-row"
-        class:hitl-row-sel={$selectedTarget?.id === item.html_url}
+        class:hitl-row-sel={$selectedTarget?.id === item.url}
         role="option"
-        aria-selected={$selectedTarget?.id === item.html_url}
+        aria-selected={$selectedTarget?.id === item.url}
         onclick={() => select(item)}
+        data-source={item.source}
       >
-        <span class="hitl-num">#{item.number}</span>
-        {#if item.draft}<span class="hitl-draft">DRAFT</span>{/if}
+        <span class="hitl-src-icon" aria-hidden="true">{SOURCE_ICON[item.source] ?? '◌'}</span>
+        {#if item.source === 'github_pr'}
+          <span class="hitl-num">#{item.prNumber}</span>
+          {#if item.draft}<span class="hitl-draft">DRAFT</span>{/if}
+        {/if}
         <span class="hitl-title">{item.title}</span>
-        <span class="hitl-repo">{item.repo.slice(0, 14)}</span>
-        <span class="hitl-age {ageCls(item.updated_at)}">{ageLabel(item.updated_at)}</span>
+        {#if item.repo}
+          <span class="hitl-repo">{item.repo.slice(0, 14)}</span>
+        {/if}
+        <span class="hitl-age {ageCls(item.severity)}">{ageLabel(item.age_seconds)}</span>
       </div>
     {/each}
   </div>
@@ -120,6 +91,14 @@
   .hitl-row-sel {
     border-color: var(--la-struct-primary);
     background: color-mix(in srgb, var(--la-struct-primary) 10%, transparent);
+  }
+
+  .hitl-src-icon {
+    font-size: 9px;
+    color: var(--la-struct-primary);
+    flex-shrink: 0;
+    width: 12px;
+    text-align: center;
   }
 
   .hitl-num {

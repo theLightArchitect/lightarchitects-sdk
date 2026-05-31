@@ -1,0 +1,44 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-31T01:57:00-07:00"
+build_id: webshell-cockpit
+phase_id: phase-3-github-integration
+overall_verdict: pass
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 774
+    tests_fail: 0
+    flaky_preexisting:
+      - "server::cockpit_wave::tests::validate_worktree_path_accepts_absolute_clean (workspace-parallel, passes in isolation)"
+      - "server::cockpit_wave::tests::validate_worktree_path_accepts_deep_absolute (workspace-parallel, passes in isolation)"
+      - "server::litellm_state::tests::build_provider_constructs_under_1ms_p99 (workspace-parallel timing, passes in isolation)"
+  Q4_svelte:
+    result: pass
+    vitest:
+      tests_run: 787
+      tests_fail: 3
+      flaky_preexisting:
+        - "AgentSelector.svelte.test.ts > shows the empty-state warning... (Svelte5 async tracker, confirmed pre-existing via stash test)"
+    svelte_check:
+      result: pass
+      errors: 5
+      notes: "All 5 errors pre-existing in stores.ts and SettingsOverlay.svelte; none in changed files"
+  D2_plan:
+    result: soft-fail
+    note: |
+      Component inventory table (plan §268-332) is stale: marks QuickPickPalette.svelte,
+      HITLInbox.svelte, PRMetadataBlock.svelte, ForkConfirmationModal.svelte, PRVerbSurface.svelte
+      as MISSING — all were delivered by cockpit-wave-composer (44dd270).
+      Functional Phase 3 scope correctly implemented. Plan body needs table update.
+
+phase_3_deliverables_verified:
+  backend_github_proxy_rs: "delivered by cockpit-wave-composer (44dd270) — 4 handlers + SSRF tuple allowlist + CSRF + replay guard"
+  backend_routes_mod_rs: "delivered by cockpit-wave-composer — 4 routes registered"
+  frontend_github_ts: "delivered this phase (757ff8f) — fetchHITLSearch/fetchPRMetadata/submitPRReview/fetchCommitMetadata + typed interfaces"
+  frontend_quickpickpalette_debounce: "fixed this phase (757ff8f) — 120ms → 250ms"
+  quickpickpalette_github_mode: "delivered by cockpit-wave-composer (44dd270)"
+  ssrf_allowlist: "HITL_TRACKED_REPOS: &[(&str, &str)] tuple — correct per R-9 resolution"
