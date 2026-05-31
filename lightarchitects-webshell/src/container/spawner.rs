@@ -180,6 +180,7 @@ fn sanitize_build_id(build_id: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::sanitize_build_id;
 
@@ -197,5 +198,42 @@ mod tests {
     fn sanitize_truncates_at_48() {
         let long = "a".repeat(60);
         assert_eq!(sanitize_build_id(&long).len(), 48);
+    }
+
+    /// Airgapped network negative-control: `--network=none` containers cannot
+    /// reach external IPs.  Gated behind `AIRGAPPED_E2E=1` so it only runs in
+    /// environments with a live Docker daemon.  Proves P2 Northstar predicate:
+    /// "Airgapped container curl `https://1.1.1.1` → exit code != 0."
+    ///
+    /// Run manually: `AIRGAPPED_E2E=1 cargo test -p lightarchitects-webshell airgapped_network`
+    #[test]
+    fn airgapped_network_blocks_outbound_traffic() {
+        if std::env::var("AIRGAPPED_E2E").is_err() {
+            return; // skip when Docker not explicitly requested
+        }
+
+        let out = std::process::Command::new("docker")
+            .args([
+                "run",
+                "--rm",
+                "--network",
+                "none",
+                // alpine:latest has `ping` via busybox; no curl/wget needed
+                "alpine",
+                "ping",
+                "-c",
+                "1",
+                "-W",
+                "2",
+                "1.1.1.1",
+            ])
+            .output()
+            .expect("docker must be on $PATH for AIRGAPPED_E2E test");
+
+        assert!(
+            !out.status.success(),
+            "Airgapped container (--network=none) should NOT be able to reach 1.1.1.1, \
+             but ping exited successfully — network isolation is broken"
+        );
     }
 }

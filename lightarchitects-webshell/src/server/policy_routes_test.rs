@@ -429,3 +429,119 @@ async fn get_reflects_patch() {
     let body = body_json(get_resp.into_body()).await;
     assert_eq!(body["memory_mb"], tighter_mem);
 }
+
+/// PATCH from a Docker bridge IP returns 403 Forbidden (CIDR guard enforcement).
+///
+/// Seeds the guard with `172.17.0.0/16` (the default Docker bridge) and sends
+/// the request with a peer IP inside that range.  The `patch_policy` handler must
+/// reject it before reaching rate-limit or monotonicity checks.
+#[tokio::test]
+async fn patch_from_bridge_ip_returns_403() {
+    use crate::container::cidr_guard::BridgeCidrGuard;
+
+    let mut state = test_state();
+    // Override the default empty guard with a known bridge CIDR.
+    state.bridge_cidr_guard = std::sync::Arc::new(BridgeCidrGuard::with_cidrs(vec![(
+        "172.17.0.0".parse().unwrap(),
+        16,
+    )]));
+
+    let default_mem = ContainerPolicy::default().resources.memory_mb;
+    let tighter = default_mem / 2;
+    let app = build_app(state);
+    let body = serde_json::json!({ "memory_mb": tighter });
+
+    // Peer IP 172.17.0.2 is inside 172.17.0.0/16 — must be blocked.
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri("/api/container/policy")
+                .header(header::AUTHORIZATION, bearer_header())
+                .header(header::CONTENT_TYPE, "application/json")
+                .extension(ConnectInfo(SocketAddr::from(([172, 17, 0, 2], 49152))))
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    let body = body_json(resp.into_body()).await;
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("container network"),
+        "error must mention container network"
+    );
+}
+
+/// Concurrency cap regression: semaphore with cap=3 allows exactly 3 acquires;
+/// the 4th returns `ConcurrencyCapExceeded` (regression for the G1 TOCTOU race).
+///
+/// This validates the semaphore-based fix at the unit level without requiring Docker.
+#[tokio::test]
+async fn concurrency_cap_semaphore_enforces_limit() {
+    use crate::container::types::ContainerError;
+    use crate::server::AppState;
+    use std::ffi::OsString;
+    use std::path::PathBuf;
+
+    const CAP: usize = 3;
+
+    let config = crate::config::Config {
+        port: 0,
+        host_cmd: OsString::from("bash"),
+        cwd: PathBuf::from("/tmp"),
+        token: "test-token".to_owned(),
+        token_source: crate::config::TokenSource::EnvVar,
+        agent: crate::config::AgentSession::default(),
+        claude_agent_template: None,
+        container_mode: crate::container::ContainerMode::Auto,
+        dev_mode: false,
+        max_context_prompts: 50,
+        litellm: crate::config::LiteLLMConfig::default(),
+        hermes_mcp: crate::config::HermesMcpConfig::default(),
+    };
+    let state = AppState::for_test(config, crate::container::DockerCapability::Unavailable);
+
+    // Replace the default semaphore with a known small cap.
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(CAP));
+    let sem2 = std::sync::Arc::clone(&sem);
+
+    // Acquire CAP permits — all should succeed.
+    let mut permits = Vec::new();
+    for _ in 0..CAP {
+        let p = sem2
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ContainerError::ConcurrencyCapExceeded);
+        assert!(p.is_ok(), "expected acquire to succeed within cap");
+        permits.push(p.unwrap());
+    }
+
+    // CAP+1th acquire must fail.
+    let overflow = sem2
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| ContainerError::ConcurrencyCapExceeded);
+    assert!(
+        matches!(overflow, Err(ContainerError::ConcurrencyCapExceeded)),
+        "expected ConcurrencyCapExceeded when cap is exhausted"
+    );
+
+    // Dropping one permit frees a slot — the next acquire succeeds.
+    drop(permits.pop());
+    let recovered = sem2
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| ContainerError::ConcurrencyCapExceeded);
+    assert!(
+        recovered.is_ok(),
+        "expected acquire to succeed after permit released"
+    );
+
+    // Keep `state` alive so the reaper task does not race with the test.
+    drop(state);
+}

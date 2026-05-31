@@ -23,6 +23,15 @@ pub struct BridgeCidrGuard {
 }
 
 impl BridgeCidrGuard {
+    /// Constructs a guard pre-seeded with the given CIDRs — test use only.
+    ///
+    /// Allows route-level integration tests to exercise the 403 path without
+    /// requiring a live Docker daemon.
+    #[cfg(test)]
+    pub fn with_cidrs(cidrs: Vec<(std::net::Ipv4Addr, u8)>) -> Self {
+        Self { cidrs }
+    }
+
     /// Probes Docker for all bridge network CIDRs at startup.
     ///
     /// Returns an empty guard (no blocks) when Docker is unavailable or the
