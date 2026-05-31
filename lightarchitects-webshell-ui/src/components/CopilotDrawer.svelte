@@ -26,6 +26,9 @@
   import OllamaConfigModal from './OllamaConfigModal.svelte';
   import SettingsOverlay from './SettingsOverlay.svelte';
   import PolytopeIcon from './PolytopeIcon.svelte';
+  import ProviderPill from './litellm/ProviderPill.svelte';
+  import ProviderPickerPanel from './litellm/ProviderPickerPanel.svelte';
+  import CredentialForm from './litellm/CredentialForm.svelte';
   
   import { settingsOpen, pendingResumeSessionId, serverCwd, persistedConfig, selectedModel } from '$lib/setup';
   import { strategyHitl, copilotDrawerOpen } from '$lib/stores';
@@ -86,6 +89,9 @@
   let sharedBuildId = $state<string | null>(null);
   let cwd = $derived($serverCwd);
   let showOllamaModal = $state(false);
+  let showProviderPanel = $state(false);
+  let showLitellmConfig = $state(false);
+  let litellmPresetModel = $state('');
   let input = $state('');
   let showSuggestions = $state(false);
   let slashSuggestionIndex = $state(0);
@@ -1027,6 +1033,27 @@
           title="Active preset — click to change"
         >{PRESET_DISPLAY[$selectedPreset]}</button>
 
+        <!-- Provider pill — shows active LiteLLM model; click opens provider switcher -->
+        <div class="relative" style="height:100%;display:flex;align-items:stretch;">
+          <ProviderPill onclick={() => { showProviderPanel = !showProviderPanel; }} />
+          {#if showProviderPanel}
+            <ProviderPickerPanel
+              show={showProviderPanel}
+              currentModel={''}
+              onClose={() => { showProviderPanel = false; }}
+              onSelectPreset={(m) => { litellmPresetModel = m; showProviderPanel = false; showLitellmConfig = true; }}
+              onOpenConfig={() => { litellmPresetModel = ''; showProviderPanel = false; showLitellmConfig = true; }}
+            />
+            <!-- Click-outside dismiss -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="fixed inset-0 z-40"
+              onclick={() => { showProviderPanel = false; }}
+              aria-hidden="true"
+            ></div>
+          {/if}
+        </div>
+
         <!-- SSE warn (persistent when disconnected) -->
         {#if !$sseConnected && $currentBuildId}
           <button
@@ -1529,6 +1556,12 @@
   </div>
 {/if}
 <OllamaConfigModal isOpen={showOllamaModal} onClose={() => { showOllamaModal = false; }} />
+<CredentialForm
+  isOpen={showLitellmConfig}
+  initialModel={litellmPresetModel}
+  onClose={() => { showLitellmConfig = false; litellmPresetModel = ''; }}
+  onSaved={() => { window.dispatchEvent(new CustomEvent('la:litellm-config-saved')); }}
+/>
 <!-- Hidden audio element for EVA voice playback; aria-hidden prevents AT exposure -->
 <audio bind:this={audioEl} aria-hidden="true" style="display:none"></audio>
 
