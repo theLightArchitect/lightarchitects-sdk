@@ -142,6 +142,9 @@ url = "2"
 # Telegram callback_data nonce encoding (always compiled).
 base64 = "0.22"
 
+# ── question tool — rmcp HTTP MCP server (webshell exposes /mcp for Claude CLI) ──
+rmcp = { version = "=1.7.0", features = ["server", "macros", "transport-streamable-http-server", "transport-streamable-http-server-session", "schemars"] }
+
 [features]
 # Gate the real TeamManager subprocess path behind a feature until lightarchitects-cli is
 # published to crates.io (workspace rule C-1 prohibits external path deps).

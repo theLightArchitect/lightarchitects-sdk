@@ -1,0 +1,91 @@
+schema_version: 1
+gate: phase
+scope: "[A+C]"
+scored_by: "/GATE --scope phase (inline, Phase 0)"
+scored_at: "2026-05-31T00:00:00Z"
+build_id: webshell-hitl-bridge
+phase_id: phase-0-preflight
+overall_verdict: pass
+
+dimensions:
+  A_architecture:
+    result: pass
+    diagram_present: "verified — 4/4 diagrams committed at 38ef658"
+    diagrams_checked:
+      - path: "helix/corso/builds/webshell-hitl-bridge/diagrams/C2_container.mmd"
+        status: present
+        architectural_review: |
+          PASS. Correctly shows: operator → webshell-ui → webshell-backend
+          (QuestionRegistry + SSE + POST/GET API routes + rmcp /mcp), gateway
+          (GatewayToolExecutor + QuestionTool + 4 transport adapters), Claude CLI
+          subprocess, Anthropic/Ollama external. Gateway→webshell relationship is
+          correct: HTTP POST /api/sessions/:id/question + GET .../answer/await.
+      - path: "helix/corso/builds/webshell-hitl-bridge/diagrams/C3_component.mmd"
+        status: present
+        architectural_review: |
+          PASS (authoritative). QuestionRegistry correctly placed in webshell subgraph
+          as Arc<DashMap<Uuid, oneshot::Sender<QuestionAnswer>>> + pending_metadata
+          DashMap with 300s TTL. POST_Q inserts tx + broadcasts QuestionPrompt.
+          POST_ANS resolves tx. GET_AWAIT long-polls rx with 55s timeout.
+          NOTE: Plan body inline C3 draft (plan.md lines 282-310) incorrectly places
+          QuestionRegistry in gateway subgraph — tracked finding GATE0-TF1; Phase 1
+          W1.6 corrects it.
+      - path: "helix/corso/builds/webshell-hitl-bridge/diagrams/screen-flow.mmd"
+        status: present
+        architectural_review: |
+          PASS. All 4 transport paths shown: WebshellTransport (LA_WEBSHELL_URL),
+          CliTransport (tty detected), PassthroughTransport (Claude Code subprocess),
+          HeadlessTransport (CI/HEADLESS=1). Tool_result convergence point correct.
+      - path: "helix/corso/builds/webshell-hitl-bridge/diagrams/state-machine.mmd"
+        status: present
+        architectural_review: |
+          PASS. Three state machines: QuestionRegistry entry lifecycle
+          (Idle→Pending→Broadcasting→AwaitingAnswer→Answered/TimedOut), transport
+          adapter detection (Detecting→WebshellActive/CliActive/PassthroughActive/
+          HeadlessActive), QuestionCard.svelte UI (Hidden→Visible→Focused→
+          Submitted→Hidden). 300s TTL + 55s long-poll timeouts shown correctly.
+    drift_clean: "n/a — no implementation in Phase 0; drift check deferred to Gate 1"
+    checklist_current: "verified — G1-G8 PASS, all 4 diagrams present, dep audit complete"
+    canon_xli_predicate: "diagram_present=verified; drift_clean=deferred-n/a; checklist_current=verified"
+
+  C_canon:
+    result: pass
+    lasdlc_template_version: "2.7.0 (plan matches template)"
+    gate_vocabulary_at_phase_boundaries:
+      gate_0: "present — [A+S+Q+C+O+P+K+D+T+R]"
+      gate_1: "present — [A+S+Q+C+O+P+K+D+T+R]"
+      gate_2: "present — [A+S+Q+C+O+P+K+D+T+R]"
+      gate_3: "present — [A+S+Q+C+O+P+K+D+T+R]"
+      gate_4: "present — [A+S+Q+C+O+P+K+D+T+R]"
+    northstar_lineage_present: true
+    northstar_pillar_mapping: "P1+P2"
+    shipped_means_5_conditions: "present, all 5 with verification owners"
+    validation_status: "VALIDATED"
+    phase_count_vs_tier: "6 phases (MEDIUM tier — correct)"
+    pre_flight_block: "G1-G8 present"
+    close_out_block: "present"
+    file_function_map: "present"
+    deliverable_benchmark: "D1-D8 scope declared, independent_runner: Explore agent"
+    security_compliance_block: "present, security_classification: Restricted"
+    agent_topology_schema: "present"
+    operator_experience_layer: "present, per_phase_operator_view for all 6 phases"
+
+tracked_findings:
+  GATE0-TF1:
+    severity: HIGH
+    classification: track-in-record
+    description: |
+      Plan body inline C3 draft (plan.md Architecture Overview section) places
+      QuestionRegistry inside the gateway subgraph. This is architecturally incorrect —
+      gateway and webshell are separate binaries; QuestionRegistry lives in webshell
+      AppState and is accessed via HTTP by the gateway. The authoritative
+      C3_component.mmd correctly shows QuestionRegistry in the webshell subgraph.
+    resolution: "Phase 1 W1.6: refine plan body C3 diagram with correct type placement"
+    blocking: false
+
+summary: |
+  Gate 0 [A+C] PASS. Phase 0 pre-flight artifacts verified: 4/4 architecture diagrams
+  present and architecturally sound at authoritative .mmd files. Canon XLI
+  diagram_present predicate verified. LASDLC v2.7.0 compliance confirmed. One tracked
+  HIGH finding (GATE0-TF1): plan body inline C3 draft has QuestionRegistry misplaced in
+  gateway — Phase 1 W1.6 corrects it. Proceed to RESEARCH Phase 1.

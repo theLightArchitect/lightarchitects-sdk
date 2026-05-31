@@ -28,6 +28,7 @@ pub mod meta;
 pub mod ollama;
 pub mod orchestrate;
 pub mod preset;
+pub mod question;
 pub mod read;
 pub mod search;
 pub mod security;
