@@ -1,0 +1,46 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-31T02:20:00-07:00"
+build_id: webshell-cockpit
+phase_id: phase-6-copilot-omniscience-coupling
+overall_verdict: pass
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1823
+    tests_fail: 0
+    note: "No Rust changes in Phase 6 (Svelte-only diff); result matches stable Phase 4+5 baseline"
+    flaky_preexisting:
+      - "helix::helix_toml::tests::load_helix_toml_perf_baseline_1000_iterations (workspace-parallel timing, passes in isolation)"
+  Q4_svelte:
+    result: pass
+    vitest:
+      tests_run: 787
+      tests_fail: 1
+      flaky_preexisting:
+        - "AgentSelector.svelte.test.ts (Svelte5 async tracker, confirmed pre-existing)"
+    svelte_check:
+      result: pass
+      errors: 5
+      notes: "All 5 errors pre-existing (stores.ts CdpDomSnapshotResponse + SettingsOverlay.svelte); none in changed files"
+  D2_plan:
+    result: pass
+    note: "Plan updated: status=phase-6-shipped; phases_remaining=[7]; phase_6_sha recorded"
+
+phase_6_deliverables_verified:
+  CopilotDrawer_header_chip: |
+    Preset × Target chip added to CopilotDrawer.svelte header button (~line 1034).
+    Renders '{PRESET_DISPLAY[$selectedPreset]} × {$selectedTarget.label.slice(0,22)}…'
+    when selectedTarget is non-null. CSS class .hdr-target-chip: gold colour,
+    opacity 0.7, font-weight 400, letter-spacing 0.06em.
+  snapshotContextForCopilot: |
+    Verified pre-existing at stores.ts:1090-1119 — already injects
+    ui_context.cockpit = {preset, target} on every copilot message send.
+    No new copilotContext.ts needed; exit criterion satisfied by stores.ts.
+
+exit_criteria_verified:
+  "1_copilot_context_injected": "pass — snapshotContextForCopilot() in stores.ts:1090-1119 reads selectedPreset + selectedTarget and injects cockpit context on every message"
+  "2_target_chip_visible": "pass — CopilotDrawer.svelte header button shows preset × target label (truncated at 22 chars) when selectedTarget non-null"
