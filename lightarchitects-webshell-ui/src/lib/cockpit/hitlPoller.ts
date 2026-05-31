@@ -44,7 +44,12 @@ interface PlatformHitlRaw {
   added?: string;
 }
 
-function mapGh(item: GhHitlRaw): HITLItem {
+// SECURITY: COCKPIT-2026-002 — validate html_url at ingestion; parsePrUrl adds a
+// second layer downstream but unvalidated URLs must not enter the store.
+const GH_PR_URL_RE = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/;
+
+function mapGh(item: GhHitlRaw): HITLItem | null {
+  if (!GH_PR_URL_RE.test(item.html_url)) return null;
   const ageMs = Date.now() - new Date(item.updated_at).getTime();
   const ageH  = ageMs / 3_600_000;
   return {
@@ -60,14 +65,19 @@ function mapGh(item: GhHitlRaw): HITLItem {
   };
 }
 
+// SECURITY: COCKPIT-2026-002 — allowlist build_codename to [a-z0-9-] to prevent
+// path traversal (e.g., build_codename='../../api/control') in URL construction.
+const SAFE_CODENAME_RE = /^[a-z0-9-]+$/;
+
 function mapPlatform(task: PlatformHitlRaw): HITLItem {
-  const ageMs = task.added ? Date.now() - new Date(task.added).getTime() : 0;
-  const p     = (task.priority ?? '').toUpperCase();
+  const ageMs    = task.added ? Date.now() - new Date(task.added).getTime() : 0;
+  const p        = (task.priority ?? '').toUpperCase();
+  const safeName = SAFE_CODENAME_RE.test(task.build_codename ?? '') ? task.build_codename : null;
   return {
     source:      'platform',
     id:          task.id,
     title:       task.title,
-    url:         task.build_codename ? `/builds/${task.build_codename}` : '/builds',
+    url:         safeName ? `/builds/${safeName}` : '/builds',
     age_seconds: ageMs / 1000,
     severity:    p === 'CRITICAL' ? 'block' : p === 'HIGH' ? 'warn' : 'info',
   };
@@ -86,7 +96,7 @@ async function fetchBoth(): Promise<HITLItem[]> {
     const data: GhHitlRaw[] = await ghRes.value.json() as GhHitlRaw[];
     for (const item of data) {
       const mapped = mapGh(item);
-      if (!seen.has(mapped.id)) { seen.add(mapped.id); items.push(mapped); }
+      if (mapped && !seen.has(mapped.id)) { seen.add(mapped.id); items.push(mapped); }
     }
   }
 
@@ -101,6 +111,7 @@ async function fetchBoth(): Promise<HITLItem[]> {
   return items.sort((a, b) => b.age_seconds - a.age_seconds);
 }
 
+/** Readable store of unified HITL items. Polls every 60s; auto-starts on first subscriber, stops on last unsubscribe. */
 export const hitlItems = readable<HITLItem[]>([], (set) => {
   void fetchBoth().then(set);
   const timer = setInterval(() => { void fetchBoth().then(set); }, 60_000);

@@ -108,6 +108,9 @@ export interface PullRequest {
 
 // ── HTTP helpers ────────────────────────────────────────────────────────────
 
+// SECURITY: COCKPIT-2026-001 — CWE-312 tech debt. la_gh_token stored in localStorage
+// is readable by any same-origin JS. Accepted for MVP; migrate to httpOnly session cookie
+// via server-side token exchange before operator-facing deploy. Track: LA-SEC-2026-001.
 function resolveToken(overrideToken?: string): string | undefined {
   if (overrideToken) return overrideToken;
   try {
@@ -445,9 +448,11 @@ export async function submitPRReview(
     ...authHeaders(),
   };
   if (ifMatchSha) headers['If-Match'] = `"${ifMatchSha}"`;
+  // SECURITY: COCKPIT-2026-003 — cap review body to prevent oversized payloads.
+  const safeBody = body.slice(0, 8192);
   const res = await fetch(
     `/api/github-proxy/pr/${owner}/${repo}/${prNumber}/review`,
-    { method: 'POST', headers, body: JSON.stringify({ event, body }) },
+    { method: 'POST', headers, body: JSON.stringify({ event, body: safeBody }) },
   );
   if (!res.ok) {
     const text = await res.text().catch(() => '');

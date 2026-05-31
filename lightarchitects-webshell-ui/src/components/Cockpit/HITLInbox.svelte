@@ -1,3 +1,9 @@
+<!--
+  @component
+  HITLInbox — renders the unified HITL item list (GitHub PRs + platform tasks) sourced
+  from the hitlPoller store. Clicking a row sets selectedTarget in the cockpit store.
+  Items are sorted by age (oldest first) and colour-coded by severity.
+-->
 <script lang="ts">
   import { selectedTarget } from '$lib/cockpit/stores';
   import { hitlItems, type HITLItem } from '$lib/cockpit/hitlPoller';
@@ -21,6 +27,9 @@
   }
 
   function select(item: HITLItem) {
+    // SECURITY: COCKPIT-2026-004 — item.url is validated at ingestion (mapGh rejects
+    // non-github.com html_urls; mapPlatform restricts build_codename to [a-z0-9-]).
+    // No further sanitisation needed here; do not interpolate item.url into innerHTML.
     selectedTarget.set({
       type:  item.source === 'github_pr' ? 'pr' : 'build',
       id:    item.url,
