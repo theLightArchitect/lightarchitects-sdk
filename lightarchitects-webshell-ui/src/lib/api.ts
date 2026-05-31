@@ -15,6 +15,7 @@ import type {
   DecisionEntry,
   RecentEvent, UiContext, GroundingInfo,
   ProjectMeta, ProjectInitRequest, InitResponse,
+  ContainerPolicyResponse, ContainerPolicyPatch,
 } from './types';
 import type { SetupInfo, ModelOption, SaveRequest } from './setup';
 
@@ -707,4 +708,29 @@ export const api = {
   /** Initialize a project — creates `.lightarchitects/project.toml` atomically. */
   initProject: (body: ProjectInitRequest): Promise<InitResponse> =>
     request<InitResponse>('/projects/init', { method: 'POST', body: JSON.stringify(body) }),
+
+  // ── Container spawn policy (container-spawn-policy) ────────────────────────
+
+  /** `GET /api/container/policy` — read the active spawn policy snapshot. */
+  getContainerPolicy: (): Promise<ContainerPolicyResponse> =>
+    request<ContainerPolicyResponse>('/container/policy'),
+
+  /**
+   * `PATCH /api/container/policy` — tighten the active policy (monotonic only).
+   *
+   * Sends an `If-Match` header with `version` when provided so the server can
+   * detect concurrent mutations and return 412 instead of silently overwriting.
+   */
+  updateContainerPolicy: (
+    patch: ContainerPolicyPatch,
+    ifMatchVersion?: string,
+  ): Promise<ContainerPolicyResponse> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (ifMatchVersion != null) headers['If-Match'] = ifMatchVersion;
+    return request<ContainerPolicyResponse>('/container/policy', {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(patch),
+    });
+  },
 };

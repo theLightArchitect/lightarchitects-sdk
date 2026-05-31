@@ -76,6 +76,7 @@
     DiagramLibrary:  () => import('./screens/DiagramLibrary.svelte'),
     Roadmap:         () => import('./lib/components/RoadmapPanel.svelte'),
     Observability:   () => import('./lib/components/ObservabilityPanel.svelte'),
+    Security:        () => import('./lib/components/ContainerPolicyPanel.svelte'),
     Tools:           () => import('./screens/Tools.svelte'),
     AutonomousBuilds: () => import('./screens/AutonomousBuilds.svelte'),
     Chat:            () => import('./screens/Chat.svelte'),

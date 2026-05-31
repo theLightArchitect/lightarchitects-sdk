@@ -22,6 +22,7 @@
         { label: 'Overview',        hash: '/dashboard',     hint: 'Mission control — live agent activity, alerts, squad health' },
         { label: 'Cockpit',         hash: '/activity',      hint: 'Build cockpit — live health, escalations, fleet and decisions' },
         { label: 'Observability',   hash: '/observability', hint: 'AYIN observability dashboard — traces, waterfall, lineage circuit' },
+        { label: 'Security',        hash: '/security',      hint: 'Container spawn policy — iso-mode, network policy, resource caps' },
       ],
     },
     {
