@@ -62,7 +62,7 @@ use crate::core_tools::text_result;
 use crate::error::GatewayError;
 
 const DEFAULT_PORT: u16 = 8733;
-const STARTUP_MAX_WAIT: Duration = Duration::from_secs(3);
+const STARTUP_MAX_WAIT: Duration = Duration::from_secs(20);
 const STARTUP_POLL_INTERVAL: Duration = Duration::from_millis(100);
 /// When a `session_id` is supplied and the caller did not pin a specific
 /// port, we scan this many consecutive ports starting at `DEFAULT_PORT`
@@ -260,8 +260,7 @@ fn spawn_detached(
         || {
             let home = std::env::var_os("HOME").unwrap_or_default();
             PathBuf::from(&home)
-                .join("lightarchitects")
-                .join("webshell")
+                .join(".lightarchitects")
                 .join("bin")
                 .join("lightarchitects-webshell")
         },
@@ -294,9 +293,9 @@ fn spawn_detached(
     if let Some(cwd_path) = cwd {
         proc.arg("--cwd").arg(cwd_path);
     }
-    if let Some(sid) = session_id {
-        proc.arg("--resume-session").arg(sid);
-    }
+    // `--resume-session` is not yet implemented in the webshell binary — omit
+    // to avoid silent exit-2 during spawn (unsupported arg, stderr=null).
+    let _ = session_id;
     if dev_mode {
         proc.arg("--dev-mode");
     }

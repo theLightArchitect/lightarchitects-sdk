@@ -50,6 +50,63 @@ pub struct ContainerHandle {
     pub relay_url: String,
 }
 
+/// Isolation level applied to spawned agent containers.
+///
+/// Controlled by the `LA_ISO_MODE` environment variable. Graduated levels
+/// layer additional Docker security flags on top of the standard resource
+/// limits already applied in [`Standard`] mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum IsoMode {
+    /// Standard resource limits: memory, CPU, pids, no-new-privileges.
+    #[default]
+    Standard,
+    /// Hardened: standard + read-only root fs + `/tmp` tmpfs (256 MiB).
+    ///
+    /// Prevents agents from writing to the container filesystem outside of
+    /// explicitly mounted tmpfs paths. Workspace writes go to `/tmp`.
+    Hardened,
+    /// Airgapped: hardened + `--network none`.
+    ///
+    /// Agents have no outbound network access. Use when the agent task is
+    /// purely local (code analysis, refactoring) and must not exfiltrate data.
+    Airgapped,
+}
+
+impl IsoMode {
+    /// Resolve from `LA_ISO_MODE` env var.
+    ///
+    /// - `"hardened"` → [`Hardened`](Self::Hardened)
+    /// - `"airgapped"` → [`Airgapped`](Self::Airgapped)
+    /// - unset / any other value → [`Standard`](Self::Standard)
+    #[must_use]
+    pub fn from_env() -> Self {
+        match std::env::var("LA_ISO_MODE").ok().as_deref() {
+            Some("hardened") => Self::Hardened,
+            Some("airgapped") => Self::Airgapped,
+            _ => Self::Standard,
+        }
+    }
+
+    /// Extra `docker run` args for this isolation level.
+    ///
+    /// These are appended after the fixed resource-limit args in
+    /// [`container_spawn`](crate::container::spawner::container_spawn).
+    #[must_use]
+    pub fn docker_args(self) -> &'static [&'static str] {
+        match self {
+            Self::Standard => &[],
+            Self::Hardened => &["--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m"],
+            Self::Airgapped => &[
+                "--read-only",
+                "--tmpfs",
+                "/tmp:rw,noexec,nosuid,size=256m",
+                "--network",
+                "none",
+            ],
+        }
+    }
+}
+
 /// Errors specific to container operations.
 #[derive(Debug, thiserror::Error)]
 pub enum ContainerError {
