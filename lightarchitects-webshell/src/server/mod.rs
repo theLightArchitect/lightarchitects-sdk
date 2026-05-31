@@ -1199,13 +1199,17 @@ pub fn build_app(state: AppState) -> Router {
             post(submit_pr_review_handler),
         )
         // ── Native question tool (webshell-hitl-bridge) ──────────────────────
+        // F5: 32 KB body cap — sufficient for any HITL prompt while blocking
+        // oversized payloads from the gateway or a rogue browser submission.
         .route(
             "/api/question",
-            post(question_routes::question_submit_handler),
+            post(question_routes::question_submit_handler)
+                .layer(axum::extract::DefaultBodyLimit::max(32 * 1024)),
         )
         .route(
             "/api/question/{id}/answer",
-            post(question_routes::question_answer_handler),
+            post(question_routes::question_answer_handler)
+                .layer(axum::extract::DefaultBodyLimit::max(32 * 1024)),
         )
         // ── CSP violation reports (SEC-3b, Enforce phase) ────────────────────
         .route("/api/csp-report", post(csp::csp_report_handler))
