@@ -1,0 +1,50 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-31T21:30:00Z"
+build_id: webshell-hitl-bridge
+phase_id: phase-4-skill-marker-syntax
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1295
+    tests_fail: 0
+    notes: |
+      Webshell: 806 pass (775 lib + 31 integration; pre-existing 3 ignored unchanged).
+      Gateway lib: 484 pass (up 11 from 473 — new ask_marker tests).
+      skills_gateway_e2e: 6/6 pass (2 new W4.4 tests pass:
+        ask_block_in_skill_content_is_rewritten_to_checkpoint ✓
+        skill_content_without_ask_blocks_is_unchanged ✓).
+      Pre-existing: helix_retrieve_test + span_context_spawn_safety integration
+        tests fail on schema version drift (Neo4jConfig missing `mode`, struct
+        literal API change) — confirmed pre-existing, not Phase 4 regressions.
+  Q4_svelte:
+    result: "n/a"
+    notes: "Phase 4 has no UI surface changes."
+  D2_plan:
+    result: pass
+    notes: |
+      Phase 4 exit criteria satisfied:
+      - Marker parser handles single-select, multi-select, multi-question array,
+        headless_policy, nested options with embedded newlines — all tested.
+      - Parser rejects malformed YAML with line-number error (unclosed_block,
+        malformed_yaml tests pass).
+      - run_skill_tool integration: rewrite_ask_blocks() integrated into
+        run_session_with_provider; tracing::debug! emitted on rewrite.
+      - make lint-ask reports: 0 ```ask markers, 27 AskUserQuestion files
+        (Phase 5 migration baseline confirmed).
+      Arch deviation documented: plan specified src/skills/ask_marker.rs but
+        codebase structure places skill code in src/cli/; file created at
+        src/cli/ask_marker.rs and noted in commit message.
+
+notable:
+  - Gateway lib test count ratchet: 473 (GATE 3) → 484 (GATE 4) = +11 (W4.4 tests).
+  - lint-ask target baseline established: 27 SKILL.md files with AskUserQuestion
+    prose; this is the Phase 5 migration target.
+  - incremental cache race condition on commit: cleared target/debug/incremental/
+    to unblock pre-commit hook; root cause is concurrent gateway test builds using
+    same workspace target directory.
