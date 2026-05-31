@@ -135,6 +135,8 @@ sha2 = { workspace = true }
 hmac = { workspace = true }
 rand = { workspace = true }
 hex = "0.4"
+tempfile = { workspace = true }
+dirs-next = { workspace = true }
 
 # CDP bridge — Chrome DevTools Protocol client (feature-gated, dev-mode only).
 chromiumoxide = { version = "=0.9.1", optional = true }
@@ -168,6 +170,10 @@ proptest = { workspace = true }
 
 [[bench]]
 name = "classifier"
+harness = false
+
+[[bench]]
+name = "spawn_overhead"
 harness = false
 
 [lints]

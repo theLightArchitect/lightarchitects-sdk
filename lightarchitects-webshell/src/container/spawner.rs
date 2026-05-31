@@ -86,7 +86,23 @@ async fn container_spawn(
         .try_acquire_owned()
         .map_err(|_| ContainerError::ConcurrencyCapExceeded)?;
 
-    let docker_args = policy
+    // For Hardened/Airgapped: resolve seccomp profile to a private temp file.
+    // `_seccomp` keeps the NamedTempFile alive (and path valid) until after
+    // `run_detached` returns; it is deleted on drop.
+    let _seccomp;
+    let policy_for_args;
+    if policy.iso_mode.requires_read_only_root() {
+        let tmp = super::seccomp_resolver::write_seccomp_profile().map_err(ContainerError::Io)?;
+        let mut p = (*policy).clone();
+        p.seccomp_profile_path = Some(tmp.path().to_path_buf());
+        _seccomp = Some(tmp);
+        policy_for_args = p;
+    } else {
+        _seccomp = None;
+        policy_for_args = (*policy).clone();
+    }
+
+    let docker_args = policy_for_args
         .build_docker_args()
         .map_err(|e| ContainerError::PolicyError(e.to_string()))?;
 

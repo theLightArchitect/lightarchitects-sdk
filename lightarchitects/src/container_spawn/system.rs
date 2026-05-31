@@ -25,9 +25,25 @@ impl ContainerResources {
         let raw_memory_mb = detect_memory_mb().unwrap_or(MIN_MEMORY_MB * 8);
         let raw_cpus = detect_cpu_count().unwrap_or(2.0);
 
-        let memory_mb = (raw_memory_mb / 2).clamp(MIN_MEMORY_MB * 4, MAX_MEMORY_MB_ABSOLUTE / 2);
+        let ceiling_memory = MAX_MEMORY_MB_ABSOLUTE / 2;
+        if raw_memory_mb / 2 > ceiling_memory {
+            tracing::warn!(
+                detected_mb = raw_memory_mb,
+                ceiling_mb = ceiling_memory,
+                "detected memory/2 exceeds policy ceiling — clamping to ceiling"
+            );
+        }
+        let memory_mb = (raw_memory_mb / 2).clamp(MIN_MEMORY_MB * 4, ceiling_memory);
 
-        let cpus = (raw_cpus / 2.0).clamp(MIN_CPUS * 2.0, MAX_CPUS / 2.0);
+        let ceiling_cpus = MAX_CPUS / 2.0;
+        if raw_cpus / 2.0 > ceiling_cpus {
+            tracing::warn!(
+                detected_cpus = raw_cpus,
+                ceiling_cpus = ceiling_cpus,
+                "detected cpus/2 exceeds policy ceiling — clamping to ceiling"
+            );
+        }
+        let cpus = (raw_cpus / 2.0).clamp(MIN_CPUS * 2.0, ceiling_cpus);
 
         Self {
             memory_mb,

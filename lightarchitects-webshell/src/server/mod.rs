@@ -374,6 +374,21 @@ pub struct AppState {
     /// Uses `std::sync::RwLock` (not tokio) because `ContainerDropGuard::drop`
     /// is a synchronous context and cannot `await` a tokio lock.
     pub active_containers: Arc<std::sync::RwLock<HashMap<String, Instant>>>,
+    /// Monotonic `ETag` counter for `GET /api/container/policy`.
+    ///
+    /// Incremented on every successful `PATCH /api/container/policy`.
+    /// Returned as `ETag: "<N>"` on GET; PATCH validates `If-Match: "<N>"`.
+    pub policy_version: Arc<std::sync::atomic::AtomicU64>,
+    /// Per-token rate limiter for `PATCH /api/container/policy`.
+    ///
+    /// Keyed by `SipHash` of the Bearer token; value is the last successful
+    /// PATCH instant.  Enforces 1 PATCH/sec per token (429 on burst).
+    pub patch_rate_limiter: Arc<DashMap<u64, Instant>>,
+    /// Docker bridge CIDR guard — blocks policy mutation from container IPs.
+    ///
+    /// Probed at startup via `docker network ls` + `docker network inspect`.
+    /// Requests from any Docker bridge CIDR are rejected with 403.
+    pub bridge_cidr_guard: Arc<crate::container::cidr_guard::BridgeCidrGuard>,
 }
 
 impl AppState {
@@ -403,6 +418,8 @@ impl AppState {
         let policy_semaphore = Arc::new(tokio::sync::Semaphore::new(
             ContainerPolicy::default().resources.max_concurrent,
         ));
+        let bridge_cidr_guard =
+            Arc::new(crate::container::cidr_guard::BridgeCidrGuard::from_docker());
 
         // Phase 19c.2 — hot-reloadable promotion policy.
         // Gracefully absent when the YAML file doesn't exist yet.
@@ -608,6 +625,9 @@ impl AppState {
             policy: policy_store.handle(),
             policy_semaphore: Arc::clone(&policy_semaphore),
             active_containers: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            policy_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            patch_rate_limiter: Arc::new(DashMap::new()),
+            bridge_cidr_guard: Arc::clone(&bridge_cidr_guard),
         }
     }
 
@@ -738,6 +758,9 @@ impl AppState {
                 ContainerPolicy::default().resources.max_concurrent,
             )),
             active_containers: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            policy_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            patch_rate_limiter: Arc::new(DashMap::new()),
+            bridge_cidr_guard: Arc::new(crate::container::cidr_guard::BridgeCidrGuard::default()),
         }
     }
 }

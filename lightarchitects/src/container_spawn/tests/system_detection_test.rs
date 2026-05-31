@@ -73,6 +73,28 @@ fn from_system_concurrent_in_valid_range() {
     );
 }
 
+/// Regardless of raw host values, `from_system()` always clamps to the policy ceiling.
+///
+/// This verifies the clamp+warn path is correct: even on a machine with extreme
+/// resources the returned values must not exceed `MAX_MEMORY_MB_ABSOLUTE / 2` or
+/// `MAX_CPUS / 2`.
+#[test]
+fn from_system_never_exceeds_ceiling() {
+    let r = ContainerResources::from_system();
+    assert!(
+        r.memory_mb <= MAX_MEMORY_MB_ABSOLUTE / 2,
+        "from_system ceiling violated: memory_mb={} > ceiling={}",
+        r.memory_mb,
+        MAX_MEMORY_MB_ABSOLUTE / 2
+    );
+    assert!(
+        r.cpus <= MAX_CPUS / 2.0,
+        "from_system ceiling violated: cpus={:.2} > ceiling={:.2}",
+        r.cpus,
+        MAX_CPUS / 2.0
+    );
+}
+
 #[test]
 fn from_system_validates_in_container_policy() {
     use crate::container_spawn::policy::{AgentTier, ContainerPolicy};

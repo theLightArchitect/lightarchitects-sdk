@@ -224,6 +224,156 @@ async fn patch_empty_body_no_change() {
     assert_eq!(body["iso_mode"], "standard");
 }
 
+/// GET /api/container/policy returns an `ETag` header with the version.
+#[tokio::test]
+async fn get_returns_etag_header() {
+    let state = test_state();
+    let app = build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/container/policy")
+                .header(header::AUTHORIZATION, bearer_header())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let etag = resp.headers().get(header::ETAG).unwrap().to_str().unwrap();
+    assert_eq!(etag, "\"0\"", "initial version should be 0");
+}
+
+/// PATCH without `If-Match` succeeds (header is optional for non-conditional clients).
+#[tokio::test]
+async fn patch_without_if_match_succeeds() {
+    let state = test_state();
+    let default_mem = ContainerPolicy::default().resources.memory_mb;
+    let tighter = default_mem / 2;
+    let app = build_app(state);
+    let body = serde_json::json!({ "memory_mb": tighter });
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri("/api/container/policy")
+                .header(header::AUTHORIZATION, bearer_header())
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+/// PATCH with a correct `If-Match` header advances the version and returns the new `ETag`.
+#[tokio::test]
+async fn patch_with_correct_if_match_returns_new_etag() {
+    let state = test_state();
+    let default_mem = ContainerPolicy::default().resources.memory_mb;
+    let tighter = default_mem / 2;
+    let app = build_app(state);
+    let body = serde_json::json!({ "memory_mb": tighter });
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri("/api/container/policy")
+                .header(header::AUTHORIZATION, bearer_header())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::IF_MATCH, "\"0\"")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let etag = resp.headers().get(header::ETAG).unwrap().to_str().unwrap();
+    assert_eq!(
+        etag, "\"1\"",
+        "version should advance to 1 after first PATCH"
+    );
+}
+
+/// PATCH with a stale `If-Match` value returns 412 Precondition Failed.
+#[tokio::test]
+async fn patch_stale_if_match_returns_412() {
+    let state = test_state();
+    let default_mem = ContainerPolicy::default().resources.memory_mb;
+    let tighter = default_mem / 2;
+    let app = build_app(state);
+    let body = serde_json::json!({ "memory_mb": tighter });
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri("/api/container/policy")
+                .header(header::AUTHORIZATION, bearer_header())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::IF_MATCH, "\"99\"") // stale — current version is 0
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::PRECONDITION_FAILED);
+    let body = body_json(resp.into_body()).await;
+    assert!(body["current_version"].as_u64().is_some());
+}
+
+/// Two PATCH requests within 1 second from the same token → second returns 429.
+#[tokio::test]
+async fn rate_limit_second_patch_within_one_second_returns_429() {
+    let state = test_state();
+    let default_mem = ContainerPolicy::default().resources.memory_mb;
+    let tighter = (default_mem / 4).max(1);
+    let app = build_app(state);
+
+    // First PATCH — should succeed.
+    let body1 = serde_json::json!({ "memory_mb": tighter });
+    let resp1 = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri("/api/container/policy")
+                .header(header::AUTHORIZATION, bearer_header())
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body1.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp1.status(), StatusCode::OK);
+
+    // Second PATCH immediately after — rate limited.
+    let body2 = serde_json::json!({ "memory_mb": tighter });
+    let resp2 = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri("/api/container/policy")
+                .header(header::AUTHORIZATION, bearer_header())
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body2.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp2.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(resp2.headers().contains_key(header::RETRY_AFTER));
+}
+
 /// PATCH policy update is immediately visible on the next GET.
 #[tokio::test]
 async fn get_reflects_patch() {
