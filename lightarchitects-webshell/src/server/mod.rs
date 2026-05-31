@@ -50,6 +50,7 @@ use crate::{
     setup, static_assets, terminal,
 };
 
+pub mod cockpit_wave;
 pub mod code_routes;
 pub mod conductor_routes;
 pub mod container_relay;
@@ -1115,6 +1116,12 @@ pub fn build_app(state: AppState) -> Router {
         // ── HITL inbox — GitHub PR review queue (webshell-hitl-inbox Phase 1) ─
         .route("/api/gitforest/hitl-search", get(hitl_search_handler))
         .route("/api/gitforest/pr-metadata", get(pr_metadata_handler))
+        // ── Cockpit wave composer (cockpit-wave-composer) ────────────────────
+        .route(
+            "/api/cockpit/wave",
+            post(cockpit_wave::cockpit_wave_handler)
+                .layer(axum::extract::DefaultBodyLimit::max(16 * 1024)),
+        )
         // ── Cockpit GitHub proxy (webshell-cockpit Phase 3) ──────────────────
         .route(
             "/api/github-proxy/commits/{owner}/{repo}/{sha}",

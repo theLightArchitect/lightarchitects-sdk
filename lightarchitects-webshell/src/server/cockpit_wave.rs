@@ -53,12 +53,19 @@ const MAX_AGENT_SLOTS: usize = 7;
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum CockpitPreset {
+    /// General software engineering tasks.
     Engineer,
+    /// Security auditing and threat modelling.
     Security,
+    /// Operations, CI/CD, and deployment.
     Ops,
+    /// Code quality and standards enforcement.
     Quality,
+    /// Knowledge graph enrichment and documentation.
     Knowledge,
+    /// Research and investigation.
     Researcher,
+    /// Test design and pyramid coverage.
     Testing,
 }
 
