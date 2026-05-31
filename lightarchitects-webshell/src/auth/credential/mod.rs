@@ -14,6 +14,7 @@
 //! | [`github`] | `GitHubCredentialProvider` — RFC 8628 Device Flow |
 //! | [`anthropic`] | `AnthropicCredentialProvider` — API key |
 //! | [`openai`] | `OpenAiCredentialProvider` — API key |
+//! | [`litellm`] | `LitellmCredentialProvider` — API key |
 //! | [`mistral`] | `MistralCredentialProvider` — API key |
 //! | [`ollama`] | `OllamaCredentialProvider` — CLI subprocess |
 //! | [`routes`] | Axum handlers registered in `build_app` |
@@ -23,6 +24,7 @@ pub mod flow;
 pub mod github;
 pub mod google;
 pub mod keychain;
+pub mod litellm;
 pub mod mistral;
 pub mod ollama;
 pub mod openai;

@@ -11,9 +11,14 @@
 //! All surfaces that need an [`OpenAICompatProvider`] should call
 //! [`LitellmConfig::build_provider`] rather than reading env vars directly.
 
+use axum::{Json, extract::State, http::StatusCode};
 use chrono::{DateTime, Utc};
 use lightarchitects::agent::openai_compat::OpenAICompatProvider;
 use secrecy::{ExposeSecret, SecretString};
+use serde::{Deserialize, Serialize};
+use tokio::task::spawn_blocking;
+
+use crate::server::AppState;
 
 /// Active `LiteLLM` endpoint configuration.
 #[derive(Debug, Clone)]
@@ -65,6 +70,88 @@ impl LitellmConfig {
             self.model.clone(),
         )
     }
+}
+
+/// Request body for `POST /api/litellm/config`.
+#[derive(Debug, Deserialize)]
+pub struct ConfigUpdateRequest {
+    /// `LiteLLM` proxy base URL (e.g. `http://localhost:4000`).
+    pub base_url: String,
+    /// API key forwarded as `Bearer` token.
+    pub api_key: String,
+    /// Model name (e.g. `anthropic/claude-opus-4-7`).
+    pub model: String,
+}
+
+/// Response body for `GET /api/litellm/config`.
+#[derive(Debug, Serialize)]
+pub struct ConfigStatusResponse {
+    /// Active `LiteLLM` proxy base URL.
+    pub base_url: String,
+    /// Active model name routed by the proxy.
+    pub model: String,
+    /// Whether an API key is currently stored in the Keychain.
+    pub has_key: bool,
+    /// Timestamp of the last config update.
+    pub updated_at: DateTime<Utc>,
+}
+
+/// `POST /api/litellm/config` — store key in keychain + update `AppState`.
+///
+/// Stores the API key in the macOS Keychain (`la-litellm-credential`) and
+/// writes all three fields to `AppState.litellm_config` atomically.
+///
+/// # Errors
+///
+/// Returns 400 if `api_key` is empty; 500 if the keychain write fails.
+pub async fn update_config(
+    State(state): State<AppState>,
+    Json(req): Json<ConfigUpdateRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    if req.api_key.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "api_key must not be empty".to_owned(),
+        ));
+    }
+
+    let key = req.api_key.clone();
+    spawn_blocking(move || {
+        crate::auth::credential::keychain::keychain_set(
+            crate::auth::credential::litellm::KEYCHAIN_SERVICE,
+            &key,
+        )
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let mut cfg = state.litellm_config.write().await;
+    cfg.base_url = req.base_url;
+    cfg.api_key = SecretString::from(req.api_key);
+    cfg.model = req.model;
+    cfg.updated_at = Utc::now();
+
+    tracing::info!(
+        target: "litellm.config",
+        base_url = %cfg.base_url,
+        model = %cfg.model,
+        "LiteLLM config updated by operator"
+    );
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `GET /api/litellm/config` — return current config (key redacted).
+pub async fn get_config(State(state): State<AppState>) -> Json<ConfigStatusResponse> {
+    let cfg = state.litellm_config.read().await;
+    let has_key = !cfg.api_key.expose_secret().is_empty();
+    Json(ConfigStatusResponse {
+        base_url: cfg.base_url.clone(),
+        model: cfg.model.clone(),
+        has_key,
+        updated_at: cfg.updated_at,
+    })
 }
 
 #[cfg(test)]

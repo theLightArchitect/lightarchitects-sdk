@@ -763,6 +763,10 @@ pub fn build_app(state: AppState) -> Router {
             "/api/auth/credential/{provider}",
             delete(crate::auth::credential::routes::provider_revoke),
         )
+        .route(
+            "/api/litellm/config",
+            get(litellm_state::get_config).post(litellm_state::update_config),
+        )
         .route("/api/terminal/ws", get(terminal::ws::ws_handler))
         .route(
             "/api/terminal/container/{id}",
