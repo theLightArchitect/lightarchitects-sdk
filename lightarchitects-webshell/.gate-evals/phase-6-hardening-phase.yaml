@@ -1,0 +1,60 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-31T00:00:00Z"
+build_id: webshell-hitl-bridge
+phase_id: phase-6-hardening
+commit: e9d9e01
+overall_verdict: pass
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 780
+    tests_fail: 0
+  Q4_svelte: "n/a"
+  S1_security:
+    result: pass
+    findings:
+      - id: "S-F4-metadata-absent"
+        severity: MEDIUM
+        status: RESOLVED
+        description: "Metadata-absent TTL-race bypass: let Some(q) else → 422 when registry live"
+      - id: "S-F4-partial-answer"
+        severity: MEDIUM
+        status: RESOLVED
+        description: "Partial answers (fewer vectors than questions) silently accepted → added length check"
+      - id: "S-F1-timing-oracle"
+        severity: LOW
+        status: RESOLVED
+        description: "Unknown-ID 404 log demoted from warn! to debug! (auth-gated, not amplifiable)"
+      - id: "S-SEND-assertion"
+        severity: HIGH
+        status: RESOLVED
+        description: "SseGuard: Send assertion test added — compile-time guard against !Send refactors"
+  S2_supply_chain: pass
+  S3_laex: "n/a"
+  D1_docs:
+    result: pass
+    notes: "QuestionPending single-operator contract doc; CLAUDE.md HITL security section; question_answer_handler partial-answer behaviour; make_pending() doc"
+  D2_plan: pass
+  V1_pyramid:
+    result: pass
+    suites: "unit(6 question_routes + 5 sse) integration(Tower oneshot smoke) E2E(5 Playwright opt-in)"
+    gap_tracked: "TODO(property-test) on F4 validation — Canon XXVII gap documented, Phase 7 scope"
+  V2_smoke: pass
+  V3_e2e: "deferred:live-server-required (opt-in via WEBSHELL_URL + WEBSHELL_TOKEN)"
+scrum_round_status:
+  R1_completed: true
+  R2_completed: true
+  R3_in_progress: true
+  R1_blockers_resolved: 9
+  R2_new_blockers_resolved: 2
+  remaining_non_blocking: 4
+notes: |
+  Phase 6 pre-merge hardening complete. All SCRUM R1/R2 blocking findings resolved
+  in-gate. Key security improvements: F4 metadata-race guard, partial-answer count
+  validation, F1 timing oracle log level, SseGuard Send assertion, full lifecycle
+  observability (info!/warn!/debug!), CLAUDE.md D3 gate satisfied.
+  SCRUM R3 in progress; final verdicts pending.
