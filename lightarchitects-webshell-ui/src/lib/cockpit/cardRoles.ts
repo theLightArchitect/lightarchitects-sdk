@@ -27,7 +27,8 @@ export type CockpitCardRole =
   | 'pr-detail-panel'
   | 'engineer-zones'
   | 'copilot-drawer'
-  | 'strategy-catalogue';
+  | 'strategy-catalogue'
+  | 'wave-composer';
 
 /** Human-readable description for each card role. */
 export const COCKPIT_CARD_ROLES: Record<CockpitCardRole, string> = {
@@ -45,6 +46,7 @@ export const COCKPIT_CARD_ROLES: Record<CockpitCardRole, string> = {
   'engineer-zones':      'action+stream — NeedsAction / InFlight / QuickActions / Insights panels for engineer preset',
   'copilot-drawer':      'action+stream — AI assistant; context-aware to cockpit preset and selected target',
   'strategy-catalogue':  'status — all 10 loop strategies (6 L2 registered + 4 L0 executor-backed); L2 tiles are selectable',
+  'wave-composer':       'action — compose and dispatch a multi-agent wave from domain preset chips and per-agent task descriptions',
 };
 
 /** All card role keys, derived from the registry for exhaustiveness checks. */

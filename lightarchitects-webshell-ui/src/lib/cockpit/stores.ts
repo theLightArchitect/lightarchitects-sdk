@@ -39,3 +39,29 @@ export const selectedTarget = writable<CockpitTarget | null>(null);
 
 /** Controls QuickPickPalette visibility. */
 export const quickPickOpen = writable<boolean>(false);
+
+// ── Wave Composer stores (cockpit-wave-composer) ──────────────────────────────
+
+/** One agent assignment row in the wave composer. */
+export interface AgentTaskRow {
+  preset: CockpitPreset;
+  /** Skill key, e.g. `"lightarchitects:engineer"`. */
+  skill: string;
+  taskDescription: string;
+  fileOwnership: string[];
+}
+
+/** Presets selected for the current wave (multi-select). */
+export const selectedAgents = writable<Set<CockpitPreset>>(new Set());
+
+/** Per-agent task rows — one entry per selected preset. */
+export const agentTaskRows = writable<AgentTaskRow[]>([]);
+
+/** Controls WaveComposer card expand/collapse. */
+export const waveComposerOpen = writable<boolean>(false);
+
+/** True while a wave dispatch request is in-flight. */
+export const waveDispatchPending = writable<boolean>(false);
+
+/** UUID of the last successfully dispatched wave. Null until first dispatch. */
+export const lastWaveId = writable<string | null>(null);
