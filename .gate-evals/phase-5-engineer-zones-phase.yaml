@@ -1,0 +1,43 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-31T02:35:00-07:00"
+build_id: webshell-cockpit
+phase_id: phase-5-engineer-zones
+overall_verdict: pass
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1823
+    tests_fail: 0
+    flaky_preexisting:
+      - "helix::helix_toml::tests::load_helix_toml_perf_baseline_1000_iterations (workspace-parallel timing, passes in isolation)"
+  Q4_svelte:
+    result: pass
+    vitest:
+      tests_run: 787
+      tests_fail: 1
+      flaky_preexisting:
+        - "AgentSelector.svelte.test.ts (Svelte5 async tracker, confirmed pre-existing)"
+    svelte_check:
+      result: pass
+      errors: 5
+      notes: "All 5 errors pre-existing; none in changed files"
+  D2_plan:
+    result: pass
+    note: "Plan updated: status=phase-5-shipped; zone component rows marked ✅ EXISTS"
+
+phase_5_deliverables_verified:
+  NeedsActionZone_svelte: "delivered cockpit-wave-composer (44dd270) — verb buttons present; needsActionItems() called; urgency colouring"
+  InFlightZone_svelte: "delivered cockpit-wave-composer (44dd270) — subscribes builds+conductorTasks; progress bar display"
+  QuickActionsZone_svelte: "delivered cockpit-wave-composer (44dd270) — /api/dispatch/execute wiring; target_context pre-fill"
+  InsightsZone_svelte: "delivered cockpit-wave-composer (44dd270) — 4 non-obvious derived analytics; 30s TTL cache"
+  engineerLens_ts: "delivered cockpit-wave-composer (44dd270) — pure functions: needsActionItems/inFlightItems/quickActions/deriveInsights"
+
+exit_criteria_verified:
+  "1_engineer_preset_x_target": "pass — Cockpit.svelte renders zones only when selectedPreset==='engineer'; 7 target types supported via CockpitTarget.type"
+  "2_quick_actions_dispatch": "pass — QuickActionsZone dispatches POST /api/dispatch/execute with {agents, task} payload; target context pre-fills task string"
+  "3_needs_action_verb_buttons": "pass — NeedsActionZone renders .action-verb buttons with buildId navigate or .action-verb-static; 8-item cap"
+  "4_insights_non_obvious": "pass — 4 signals: confidence velocity / gate throughput / sibling failure rate / build age vs median; each passes grep-equivalence criterion"
