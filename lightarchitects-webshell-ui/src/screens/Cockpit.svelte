@@ -7,6 +7,7 @@
   import QuickPickPalette from '$lib/../components/Cockpit/QuickPickPalette.svelte';
   import HITLInbox from '$lib/../components/Cockpit/HITLInbox.svelte';
   import ConductorHitlPanel from '$lib/../components/Cockpit/ConductorHitlPanel.svelte';
+  import WaveComposer from '$lib/../components/Cockpit/WaveComposer.svelte';
   import PRMetadataBlock from '$lib/../components/Cockpit/PRMetadataBlock.svelte';
   import PRVerbSurface from '$lib/../components/Cockpit/PRVerbSurface.svelte';
   import NeedsActionZone from '$lib/../components/Cockpit/zones/NeedsActionZone.svelte';
@@ -708,6 +709,11 @@
       </div>
     </div>
 
+    <!-- ── WAVE COMPOSER ─────────────────────────────────────────────────────── -->
+    <div class="card-wave" data-area="wave-composer">
+      <WaveComposer />
+    </div>
+
   </div><!-- /bento -->
 
   <!-- ── PR DETAIL PANEL — shown when a PR target is selected ─────────────── -->
@@ -809,12 +815,13 @@
   .bento {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    grid-template-rows: auto 1fr auto auto;
+    grid-template-rows: auto 1fr auto auto auto;
     grid-template-areas:
       "health escalations fleet"
       "decisions decisions builds"
       "pr pr git"
-      "strategies strategies strategies";
+      "strategies strategies strategies"
+      "wave wave wave";
     gap: 12px;
     flex: 1;
     min-height: 0;
@@ -851,6 +858,7 @@
   .card-builds      { grid-area: builds; overflow-y: auto; }
   .card-pr          { grid-area: pr; overflow-y: auto; }
   .card-strategies  { grid-area: strategies; }
+  .card-wave        { grid-area: wave; }
 
   /* ── Build Health ────────────────────────────────────────────────────────── */
   .sparkline-wrap {
@@ -1598,14 +1606,15 @@
   @media (max-width: 960px) {
     .bento {
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: auto auto auto auto auto auto;
+      grid-template-rows: auto auto auto auto auto auto auto;
       grid-template-areas:
         "health escalations"
         "fleet fleet"
         "decisions decisions"
         "builds builds"
         "pr git"
-        "strategies strategies";
+        "strategies strategies"
+        "wave wave";
     }
     .strat-grid { grid-template-columns: repeat(3, 1fr); }
   }
@@ -1620,7 +1629,8 @@
         "builds"
         "pr"
         "git"
-        "strategies";
+        "strategies"
+        "wave";
     }
     .strat-grid { grid-template-columns: 1fr 1fr; }
   }
