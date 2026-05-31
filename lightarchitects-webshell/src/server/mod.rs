@@ -530,8 +530,10 @@ impl AppState {
                             tool_use_id = %id,
                             "HITL question TTL eviction: gateway long-poll will 408; browser card will not auto-dismiss"
                         );
-                        meta.remove(id);
+                        // Remove registry first: a racing answer handler sees "not in registry → 404"
+                        // rather than "metadata absent + registry live → 422 (F4 guard)".
                         reg.remove(id);
+                        meta.remove(id);
                     }
                     if !expired.is_empty() {
                         tracing::warn!(

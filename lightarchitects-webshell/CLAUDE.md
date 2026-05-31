@@ -327,6 +327,9 @@ The validation runs server-side. The Svelte `QuestionCard` client-side guard is 
 ### F5 — Body size limit
 Both routes carry `DefaultBodyLimit::max(32 * 1024)` (32 KB). Do not remove this limit; large payloads from a compromised gateway could exhaust memory before deserialization.
 
+### SseGuard: Send assertion
+`SseGuard` crosses an `.await` boundary inside `drive_agent_stream`. A compile-time assertion in `src/agent/sse.rs` (`fn assert_send::<SseGuard>()`) enforces that `SseGuard` remains `Send`. If you ever add a `!Send` field (e.g., `Rc<T>`, `MutexGuard`, `tracing::span::EnteredSpan`) the test crate will fail to compile at the call site — the error manifests at `assert_send::<SseGuard>()`, not at the field definition.
+
 ### Single-operator contract (`QuestionPending`)
 `QuestionPending` has no `session_id` or `build_id`. `SseGuard::drop()` therefore drains **all** pending questions globally on any SSE disconnect. This is correct for the single-operator model (one human, one browser tab). If the webshell is ever extended to multi-operator sessions, `QuestionPending` MUST gain a `session_id` field and `SseGuard` must scope its drain to the disconnecting session — otherwise tab-A's disconnect cancels tab-B's pending questions.
 
