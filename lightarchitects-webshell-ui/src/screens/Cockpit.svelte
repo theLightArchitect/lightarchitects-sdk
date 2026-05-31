@@ -150,7 +150,7 @@
 
   function onIronclawEscalation(e: Event) {
     const detail = (e as CustomEvent<IronclawHitlEscalationEvent>).detail;
-    pendingIronclawEscalations = [detail, ...pendingIronclawEscalations];
+    pendingIronclawEscalations = [detail, ...pendingIronclawEscalations].slice(0, 8);
   }
 
   function onIronclawResolution(e: Event) {

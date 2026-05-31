@@ -73,7 +73,9 @@
   );
 
   function genCodename(): string {
-    return `wave-${Date.now().toString(36)}`;
+    const buf = new Uint32Array(2);
+    crypto.getRandomValues(buf);
+    return `wave-${buf[0].toString(36)}${buf[1].toString(36)}`;
   }
 
   async function dispatch() {

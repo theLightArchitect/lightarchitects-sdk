@@ -405,9 +405,10 @@ static CODENAME_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new
 
 /// Validate and return a `PathBuf` for the operator-supplied worktree path.
 ///
-/// Enforces F-2 (CWE-22 path traversal): requires absolute path; rejects `..`
-/// components. Mirrors the `safe_cwd` pattern from `git_routes.rs:165-174` but
-/// without `canonicalize` (worktree may not exist yet).
+/// Enforces F-2 (CWE-22/CWE-61): requires absolute path; rejects `..`
+/// components; canonicalizes the nearest existing ancestor to detect symlink
+/// escapes (§63.P5). Allowed canonical roots: `$HOME`, `/tmp`, `/private/tmp`,
+/// `/var/folders`, `/private/var/folders`.
 fn validate_worktree_path(worktree: &str) -> Result<PathBuf, &'static str> {
     let p = PathBuf::from(worktree);
     if !p.is_absolute() {
@@ -415,6 +416,28 @@ fn validate_worktree_path(worktree: &str) -> Result<PathBuf, &'static str> {
     }
     if p.components().any(|c| c == std::path::Component::ParentDir) {
         return Err("worktree path must not contain '..' components");
+    }
+    // CWE-61: walk to nearest existing ancestor, canonicalize to surface symlink escapes.
+    let mut check = p.as_path();
+    let canon = loop {
+        if check.exists() {
+            break check.canonicalize().ok();
+        }
+        match check.parent() {
+            Some(parent) if parent != check => check = parent,
+            _ => break None,
+        }
+    };
+    if let Some(canon) = canon {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let safe = (!home.is_empty() && canon.starts_with(&home))
+            || canon.starts_with("/tmp")
+            || canon.starts_with("/private/tmp")
+            || canon.starts_with("/var/folders")
+            || canon.starts_with("/private/var/folders");
+        if !safe {
+            return Err("worktree path resolves outside permitted roots");
+        }
     }
     Ok(p)
 }
@@ -684,16 +707,130 @@ mod tests {
 
     #[test]
     fn validate_worktree_path_accepts_deep_absolute() {
-        // Deeply nested absolute paths within the allowed root must be accepted.
-        assert!(
-            validate_worktree_path("/Users/kft/lightarchitects/worktrees/proj/sub/wave-abc123")
-                .is_ok()
-        );
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/kft".into());
+        let path = format!("{home}/lightarchitects/worktrees/proj/sub/wave-abc123");
+        assert!(validate_worktree_path(&path).is_ok());
     }
 
     #[test]
     fn validate_worktree_path_rejects_tilde_home() {
         // ~ is not expanded by PathBuf::from; such paths are not absolute.
         assert!(validate_worktree_path("~/lightarchitects/worktrees/my-build").is_err());
+    }
+
+    // ── Property: systematic boundary and invariant checks ────────────────────
+
+    mod property_tests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn pt_dotdot_anywhere_is_rejected(
+                prefix in "[a-z]{2,8}",
+                suffix in "[a-z]{2,8}",
+            ) {
+                // Property: any path containing ".." must always be rejected.
+                let path = format!("/{prefix}/../{suffix}");
+                prop_assert!(validate_worktree_path(&path).is_err());
+            }
+
+            #[test]
+            fn pt_absolute_path_without_dotdot_passes_format_check(
+                seg1 in "[a-z]{3,10}",
+                seg2 in "[a-z]{3,10}",
+                seg3 in "[a-z0-9-]{3,20}",
+            ) {
+                // Property: absolute paths with no ".." pass the format checks
+                // (symlink check is best-effort; tmp paths are in the allowed set).
+                let path = format!("/tmp/{seg1}/{seg2}/{seg3}");
+                prop_assert!(validate_worktree_path(&path).is_ok());
+            }
+
+            #[test]
+            fn pt_codename_re_valid_slugs_accepted(
+                slug in "[a-z][a-z0-9-]{2,30}",
+            ) {
+                prop_assert!(
+                    CODENAME_RE.is_match(&slug),
+                    "valid slug rejected: {slug}"
+                );
+            }
+
+            #[test]
+            fn pt_codename_re_rejects_uppercase(
+                upper in "[A-Z][a-zA-Z0-9-]{2,20}",
+            ) {
+                prop_assert!(!CODENAME_RE.is_match(&upper));
+            }
+        }
+    }
+
+    // ── Regression: pin fixes from gate-2/gate-5 security findings ────────────
+
+    mod regression_tests {
+        use super::*;
+
+        fn specs_to_task_stubs(specs: &[TaskSpec]) -> Vec<Task> {
+            specs
+                .iter()
+                .map(|s| Task {
+                    id: s.id.clone(),
+                    branch: String::new(),
+                    depends_on: vec![],
+                    file_ownership: s.file_ownership.clone(),
+                    concurrency_safe: false,
+                    context_tiers: vec![],
+                    prompt: String::new(),
+                })
+                .collect()
+        }
+
+        #[test]
+        fn reg_f2_traversal_at_path_end_rejected() {
+            // Regression F-2: traversal suffix ("/etc/../etc") is rejected.
+            assert!(validate_worktree_path("/tmp/wt/../etc/passwd").is_err());
+            assert!(validate_worktree_path("/tmp/../../etc").is_err());
+        }
+
+        #[test]
+        fn reg_f4_adversarial_skill_never_reaches_prompt() {
+            // Regression F-4: operator-supplied skill value is dropped; only
+            // the preset-derived skill appears in the agent prompt (gate-2 fix).
+            let req = make_request(vec![AgentAssignmentPayload {
+                preset: CockpitPreset::Engineer,
+                skill: "lightarchitects:seraph".into(), // adversarial spoof
+                task_description: "task".into(),
+                file_ownership: vec![],
+            }]);
+            let specs = build_task_specs(&req);
+            assert!(specs[0].prompt.contains("[skill:lightarchitects:engineer]"));
+            assert!(!specs[0].prompt.contains("seraph"));
+        }
+
+        #[test]
+        fn reg_ownership_conflict_error_not_silent() {
+            // Regression: overlapping file_ownership must surface as
+            // OwnershipConflict, not be silently ignored (gate-2 C2b fix).
+            let req = make_request(vec![
+                engineer_agent("A", vec!["src/shared.rs"]),
+                engineer_agent("B", vec!["src/shared.rs"]),
+            ]);
+            let specs = build_task_specs(&req);
+            let stubs = specs_to_task_stubs(&specs);
+            assert!(matches!(
+                validate_wave_ownership(&stubs),
+                Err(WaveError::OwnershipConflict { .. })
+            ));
+        }
+
+        #[test]
+        fn reg_task_id_deterministic_and_stable() {
+            // Regression: task IDs must be stable across calls (no random suffix).
+            let req = make_request(vec![engineer_agent("task", vec![])]);
+            let s1 = build_task_specs(&req);
+            let s2 = build_task_specs(&req);
+            assert_eq!(s1[0].id, s2[0].id, "task IDs must be deterministic");
+        }
     }
 }
