@@ -7,6 +7,8 @@
 
 use std::{collections::HashMap, convert::Infallible, sync::Arc};
 
+use secrecy::{ExposeSecret, SecretString};
+
 use crate::server::AppState;
 use async_trait::async_trait;
 use axum::{
@@ -51,7 +53,7 @@ struct DemoExec {
 impl DemoExec {
     fn new(
         base_url: String,
-        api_key: String,
+        api_key: SecretString,
         model: String,
         tx: tokio::sync::mpsc::Sender<String>,
     ) -> Result<Self, String> {
@@ -61,7 +63,8 @@ impl DemoExec {
             model = %model,
             "DemoExec routing through LiteLLM proxy"
         );
-        let provider = OpenAICompatProvider::for_litellm(Some(base_url), api_key, model.clone())
+        let provider =
+            OpenAICompatProvider::for_litellm(Some(base_url), api_key.expose_secret(), model.clone())
             .map_err(|e| {
                 tracing::error!(target: "loops_demo", error = %e, "LiteLLM provider construction failed");
                 e
@@ -581,7 +584,7 @@ async fn run_strategy_sse(
     name: &str,
     query: String,
     base_url: String,
-    api_key: String,
+    api_key: SecretString,
     model: String,
     tx: tokio::sync::mpsc::Sender<String>,
 ) {
@@ -1334,8 +1337,7 @@ pub async fn demo_dispatch_handler(
 
     let cfg = state.litellm_config.read().await;
     let base_url = cfg.base_url.clone();
-    use secrecy::ExposeSecret as _;
-    let api_key = cfg.api_key.expose_secret().to_owned();
+    let api_key = cfg.api_key.clone();
     let model = cfg.model.clone();
     drop(cfg);
 

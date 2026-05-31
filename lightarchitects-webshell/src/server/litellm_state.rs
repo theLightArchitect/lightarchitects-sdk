@@ -18,6 +18,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use tokio::task::spawn_blocking;
 
+use crate::auth::AuthGuard;
 use crate::server::AppState;
 
 /// Active `LiteLLM` endpoint configuration.
@@ -114,9 +115,10 @@ pub struct ConfigStatusResponse {
 ///
 /// # Errors
 ///
-/// Returns 400 if `api_key` is empty; 500 if the keychain write fails.
+/// Returns 400 if validation fails; 500 if the keychain write fails.
 pub async fn update_config(
     State(state): State<AppState>,
+    _auth: AuthGuard,
     Json(req): Json<ConfigUpdateRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     if req.api_key.trim().is_empty() {
@@ -124,6 +126,41 @@ pub async fn update_config(
             StatusCode::BAD_REQUEST,
             "api_key must not be empty".to_owned(),
         ));
+    }
+    // F-3: length caps prevent oversized input reaching AppState / reqwest.
+    if req.base_url.len() > 512 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "base_url exceeds 512-byte limit".to_owned(),
+        ));
+    }
+    if req.model.len() > 256 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "model exceeds 256-byte limit".to_owned(),
+        ));
+    }
+    // F-2: SSRF guard — only https (any host) or http (localhost-only) accepted.
+    let parsed = url::Url::parse(&req.base_url)
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid base_url: {e}")))?;
+    match parsed.scheme() {
+        "https" => {}
+        "http" => {
+            let host = parsed.host_str().unwrap_or("");
+            if !matches!(host, "127.0.0.1" | "localhost" | "::1" | "[::1]") {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "http base_url only permitted for localhost; use https for remote proxies"
+                        .to_owned(),
+                ));
+            }
+        }
+        scheme => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("unsupported scheme '{scheme}' — use https or http://localhost"),
+            ));
+        }
     }
 
     let key = req.api_key.clone();
@@ -154,7 +191,10 @@ pub async fn update_config(
 }
 
 /// `GET /api/litellm/config` — return current config (key redacted).
-pub async fn get_config(State(state): State<AppState>) -> Json<ConfigStatusResponse> {
+pub async fn get_config(
+    State(state): State<AppState>,
+    _auth: AuthGuard,
+) -> Json<ConfigStatusResponse> {
     let cfg = state.litellm_config.read().await;
     let has_key = !cfg.api_key.expose_secret().is_empty();
     Json(ConfigStatusResponse {

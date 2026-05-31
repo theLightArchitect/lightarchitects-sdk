@@ -184,6 +184,22 @@ Copilot turns now write AYIN spans via `ayin_traces_utils.ts` (frontend) and `co
 - `View in AYIN →` deeplink in `CopilotDrawer.svelte` navigates to AYIN dashboard at `:3742`
 - Frontend tests: `src/__tests__/ayin-traces-utils.test.ts` (expanded to full span-diagram builder coverage)
 
+## Runtime LiteLLM Provider Config (unified-litellm-router — shipped 2026-05-30)
+
+`AppState.litellm_config: Arc<RwLock<LitellmConfig>>` — runtime-switchable LLM endpoint. No restart needed.
+
+| Route | Auth | Purpose |
+|-------|------|---------|
+| `PUT /api/litellm/config` | Bearer | Store key in keychain + update AppState atomically |
+| `GET /api/litellm/config` | Bearer | Return `{base_url, model, has_key, updated_at}` — never the raw key |
+| `POST /api/litellm/chat` | Bearer | SSE chat stream via `LitellmConfig.build_provider()` |
+
+**SSRF guard**: `base_url` must be `https://…` (any host) or `http://localhost`. Plain `http://` to remote IPs is rejected 400.
+
+**Key pattern**: `security(1)` CLI subprocess writes to macOS keychain. In-memory: `secrecy::SecretString`. Subprocess workers receive `stub-la-{uuid}`, never the real key.
+
+**Module**: `server/litellm_state.rs` (config struct + handlers) · `server/litellm_chat.rs` (SSE) · `auth/credential/litellm.rs` (keychain I/O)
+
 ## Autonomous Build Pipeline (ironclaw-autonomous-e2e — shipped 2026-05-30)
 
 Wires `POST /api/builds { mode: "autonomous", cwd, waves: [[Task]] }` through the full IronClaw path:

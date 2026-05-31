@@ -31,6 +31,7 @@ use tokio::time::Duration;
 use lightarchitects::agent::openai_compat::OpenAICompatProvider;
 use lightarchitects::agent::{AgentRequest, LlmAgentProvider, ProviderEvent};
 
+use crate::auth::AuthGuard;
 use crate::server::AppState;
 
 /// One message in the prior conversation. Wire shape mirrors `OpenAI`'s
@@ -134,7 +135,11 @@ impl ThinkSplitter {
 }
 
 /// `POST /api/litellm/chat` — SSE chat stream.
-pub async fn chat_handler(State(state): State<AppState>, Json(req): Json<ChatRequest>) -> Response {
+pub async fn chat_handler(
+    State(state): State<AppState>,
+    _auth: AuthGuard,
+    Json(req): Json<ChatRequest>,
+) -> Response {
     let (tx, rx) = tokio::sync::mpsc::channel::<String>(128);
 
     let cfg = state.litellm_config.read().await;
