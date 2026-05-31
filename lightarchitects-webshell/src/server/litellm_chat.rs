@@ -18,6 +18,7 @@ use std::{convert::Infallible, sync::Arc};
 
 use axum::{
     Json,
+    extract::State,
     response::{
         IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
@@ -29,6 +30,8 @@ use tokio::time::Duration;
 
 use lightarchitects::agent::openai_compat::OpenAICompatProvider;
 use lightarchitects::agent::{AgentRequest, LlmAgentProvider, ProviderEvent};
+
+use crate::server::AppState;
 
 /// One message in the prior conversation. Wire shape mirrors `OpenAI`'s
 /// `messages[]` array — `role` is `"user" | "assistant" | "system"`.
@@ -48,16 +51,6 @@ pub struct ChatRequest {
     /// Prior turns in this conversation. Optional; default empty.
     #[serde(default)]
     pub history: Vec<HistoryTurn>,
-}
-
-/// Construct a fresh `LiteLLM` provider per request. Cheap — the wrapped
-/// `reqwest::Client` is a connection-pool handle, not a fresh socket.
-fn build_provider() -> Result<OpenAICompatProvider, String> {
-    let base_url =
-        std::env::var("LA_LITELLM_BASE_URL").unwrap_or_else(|_| "http://localhost:4000".to_owned());
-    let api_key = std::env::var("LA_LITELLM_API_KEY").unwrap_or_else(|_| "la-local-dev".to_owned());
-    let model = std::env::var("LA_LITELLM_MODEL").unwrap_or_else(|_| "local-llama".to_owned());
-    OpenAICompatProvider::for_litellm(Some(base_url), api_key, model)
 }
 
 /// Stateful classifier that walks a token stream and assigns each delta
@@ -141,12 +134,12 @@ impl ThinkSplitter {
 }
 
 /// `POST /api/litellm/chat` — SSE chat stream.
-pub async fn chat_handler(Json(req): Json<ChatRequest>) -> Response {
+pub async fn chat_handler(State(state): State<AppState>, Json(req): Json<ChatRequest>) -> Response {
     let (tx, rx) = tokio::sync::mpsc::channel::<String>(128);
 
-    // Build provider in a blocking way — if construction fails we want
-    // the error to surface as the first SSE frame so the UI can render it.
-    let provider = match build_provider() {
+    let cfg = state.litellm_config.read().await;
+    let model = cfg.model.clone();
+    let provider = match cfg.build_provider() {
         Ok(p) => Arc::new(p),
         Err(e) => {
             tokio::spawn(async move {
@@ -158,9 +151,10 @@ pub async fn chat_handler(Json(req): Json<ChatRequest>) -> Response {
             return sse_response(rx);
         }
     };
+    drop(cfg);
 
     tokio::spawn(async move {
-        run_chat_sse(provider, req, tx).await;
+        run_chat_sse(provider, model, req, tx).await;
     });
 
     sse_response(rx)
@@ -186,11 +180,10 @@ fn sse_response(rx: tokio::sync::mpsc::Receiver<String>) -> Response {
 /// into SSE frames for the frontend.
 async fn run_chat_sse(
     provider: Arc<OpenAICompatProvider>,
+    model: String,
     req: ChatRequest,
     tx: tokio::sync::mpsc::Sender<String>,
 ) {
-    let model = std::env::var("LA_LITELLM_MODEL").unwrap_or_else(|_| "local-llama".to_owned());
-
     // Translate history into the OpenAI-shape JSON the provider's builder expects.
     let history: Vec<serde_json::Value> = req
         .history

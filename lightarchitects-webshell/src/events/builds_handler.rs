@@ -454,6 +454,9 @@ fn maybe_spawn_autonomous(
     state: &AppState,
     session: &Arc<BuildSession>,
     waves: Option<Vec<Vec<TaskSpec>>>,
+    litellm_base_url: String,
+    litellm_api_key: secrecy::SecretString,
+    litellm_model: String,
 ) {
     use crate::events::{
         decisions::DecisionsWriter,
@@ -489,6 +492,9 @@ fn maybe_spawn_autonomous(
         decisions_writer,
         mock_workers: state.mock_workers,
         hitl_queue: state.hitl_queue.clone(),
+        litellm_base_url,
+        litellm_api_key,
+        litellm_model,
     });
     state.lightsquad_programs.insert(build_id, handle);
     info!(build_id = %build_id, "lightsquad autonomous build spawned");
@@ -596,7 +602,19 @@ pub async fn create_build_handler(
 
     // Dispatch to lightsquad when mode = "autonomous" and waves were provided.
     if mode == "autonomous" {
-        maybe_spawn_autonomous(&state, &session, body.waves);
+        let litellm = state.litellm_config.read().await;
+        let litellm_base_url = litellm.base_url.clone();
+        let litellm_api_key = litellm.api_key.clone();
+        let litellm_model = litellm.model.clone();
+        drop(litellm);
+        maybe_spawn_autonomous(
+            &state,
+            &session,
+            body.waves,
+            litellm_base_url,
+            litellm_api_key,
+            litellm_model,
+        );
     }
 
     info!(build_id = %resp.build_id, cwd = %body.cwd.display(), "build session created");

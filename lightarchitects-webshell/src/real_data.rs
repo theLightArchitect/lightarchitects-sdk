@@ -844,9 +844,14 @@ pub async fn dispatch_sibling(
          {}",
         body.sibling, body.prompt,
     );
-    let result =
-        crate::copilot::call_subprocess_public(&dispatch_prompt, &session.copilot_proc, &session)
-            .await;
+    let litellm_base_url = state.litellm_config.read().await.base_url.clone();
+    let result = crate::copilot::call_subprocess_public(
+        &dispatch_prompt,
+        &session.copilot_proc,
+        &session,
+        &litellm_base_url,
+    )
+    .await;
     match result {
         Ok(text) => (
             StatusCode::OK,

@@ -59,7 +59,7 @@ async fn span_hierarchy_session_root_then_turn() {
     let proc_lock = Mutex::new(None::<CopilotProcess>);
 
     // Call will fail (no real claude binary in CI), but spans fire before spawn.
-    let _ = call_subprocess_public("hello", &proc_lock, &session).await;
+    let _ = call_subprocess_public("hello", &proc_lock, &session, "").await;
 
     let spans = drain_ayin_spans(&mut rx);
 
@@ -93,7 +93,7 @@ async fn span_hierarchy_second_turn_reuses_session_root() {
     let proc_lock = Mutex::new(None::<CopilotProcess>);
 
     // Turn 1 — populates session_span_id in proc_lock.
-    let _ = call_subprocess_public("turn 1", &proc_lock, &session).await;
+    let _ = call_subprocess_public("turn 1", &proc_lock, &session, "").await;
 
     let session_span_id_after_turn1 = proc_lock
         .lock()
@@ -104,7 +104,7 @@ async fn span_hierarchy_second_turn_reuses_session_root() {
 
     // Turn 2 — subscribe AFTER turn 1 completes so we only see turn-2 spans.
     let mut rx = session.event_tx.subscribe();
-    let _ = call_subprocess_public("turn 2", &proc_lock, &session).await;
+    let _ = call_subprocess_public("turn 2", &proc_lock, &session, "").await;
     let spans = drain_ayin_spans(&mut rx);
 
     let new_roots: Vec<_> = spans

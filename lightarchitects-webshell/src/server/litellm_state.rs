@@ -33,6 +33,17 @@ pub struct LitellmConfig {
     pub updated_at: DateTime<Utc>,
 }
 
+impl Default for LitellmConfig {
+    fn default() -> Self {
+        Self {
+            base_url: String::new(),
+            api_key: SecretString::from(String::new()),
+            model: String::new(),
+            updated_at: DateTime::UNIX_EPOCH,
+        }
+    }
+}
+
 impl LitellmConfig {
     /// Construct from `LA_LITELLM_BASE_URL / API_KEY / MODEL` env vars.
     ///

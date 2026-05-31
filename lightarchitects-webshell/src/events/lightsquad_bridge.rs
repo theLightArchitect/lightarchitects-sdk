@@ -100,6 +100,13 @@ pub struct BridgeContext {
     pub mock_workers: bool,
     /// Shared HITL escalation queue — workers park here when `UserEscalation` fires.
     pub hitl_queue: crate::events::hitl_relay::HitlQueue,
+    /// `LiteLLM` proxy base URL from [`AppState::litellm_config`].
+    pub litellm_base_url: String,
+    /// `LiteLLM` proxy API key from [`AppState::litellm_config`].
+    pub litellm_api_key: secrecy::SecretString,
+    /// `LiteLLM` model name from [`AppState::litellm_config`].
+    /// Overridden per-task by `LIGHTSQUAD_CODING_MODEL` env var when set.
+    pub litellm_model: String,
 }
 
 /// Spawn the autonomous build as a detached Tokio task.
@@ -126,6 +133,9 @@ async fn run_build(ctx: BridgeContext) {
         decisions_writer,
         mock_workers,
         hitl_queue,
+        litellm_base_url,
+        litellm_api_key,
+        litellm_model,
     } = ctx;
 
     // Translate TaskSpec → lightsquad::Task
@@ -215,6 +225,9 @@ async fn run_build(ctx: BridgeContext) {
         dw_worker,
         mock_workers,
         hitl_queue,
+        litellm_base_url,
+        litellm_api_key,
+        litellm_model,
     );
 
     // L1 decision: build started
@@ -307,10 +320,12 @@ struct WorkerCtx {
     dw: DecisionsWriter,
     hitl_queue: crate::events::hitl_relay::HitlQueue,
     use_mock: bool,
-    depends_on: Vec<String>,
     /// Worktree-relative paths the worker may write. Empty = no restriction
     /// (legacy / interactive). Non-empty = strict subset check post-task.
     file_ownership: Vec<String>,
+    litellm_base_url: String,
+    litellm_api_key: secrecy::SecretString,
+    litellm_model: String,
 }
 
 /// Build the per-task worker closure.
@@ -318,6 +333,7 @@ struct WorkerCtx {
 /// `use_mock = true` activates the hermetic mock path (write file + git commit)
 /// instead of spawning the real `lightarchitects --bare` CLI. The flag is
 /// captured by value and applies to every task in the closure's lifetime.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn make_worker(
     build_id: Uuid,
     build_span_id: Uuid,
@@ -326,6 +342,9 @@ pub(crate) fn make_worker(
     dw: DecisionsWriter,
     use_mock: bool,
     hitl_queue: crate::events::hitl_relay::HitlQueue,
+    litellm_base_url: String,
+    litellm_api_key: secrecy::SecretString,
+    litellm_model: String,
 ) -> impl Fn(
     WorkerSpec,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
@@ -337,7 +356,6 @@ pub(crate) fn make_worker(
         let wt = spec.worktree_path.clone();
         let prompt = spec.task.prompt.clone();
         let wave_index = spec.wave_index;
-        let depends_on = spec.task.depends_on.clone();
         let file_ownership = spec.task.file_ownership.clone();
         // AYIN: per-task span; parent = root build span.
         debug!(task_id = %task_id, wave_index, "squad: task started");
@@ -357,8 +375,10 @@ pub(crate) fn make_worker(
             dw: dw.clone(),
             hitl_queue: hitl_queue.clone(),
             use_mock,
-            depends_on,
             file_ownership,
+            litellm_base_url: litellm_base_url.clone(),
+            litellm_api_key: litellm_api_key.clone(),
+            litellm_model: litellm_model.clone(),
         };
         Box::pin(worker_body(task_id, wt, prompt, ctx))
     }
@@ -406,18 +426,10 @@ fn max_fix_attempts() -> u32 {
         .unwrap_or(3)
 }
 
-/// Select the Ollama model for a task based on prompt complexity and dependency depth.
-///
-/// - Has dependencies AND long prompt (>800 chars) → heavyweight reasoning model
-/// - Has dependencies OR medium prompt (400-800) → balanced model
-/// - Short independent prompt → lightweight fast model
-fn select_model(prompt: &str, depends_on: &[String]) -> &'static str {
-    match (!depends_on.is_empty(), prompt.len()) {
-        (true, c) if c > 800 => "qwen3-coder:480b-cloud",
-        (true, _) | (_, 400..) => "kimi-k2.5:cloud",
-        _ => "gemma4:31b-cloud",
-    }
-}
+// Select the Ollama model for a task based on prompt complexity and dependency depth.
+// - Has dependencies AND long prompt (>800 chars) → heavyweight reasoning model
+// - Has dependencies OR medium prompt (400-800) → balanced model
+// - Short independent prompt → lightweight fast model
 
 /// Run `cargo check --message-format=json` in `worktree` and return rendered
 /// compile errors that are genuine bugs — filtering out expected wave-isolation
@@ -664,8 +676,10 @@ async fn worker_body(
         dw,
         hitl_queue,
         use_mock,
-        depends_on,
         file_ownership,
+        litellm_base_url,
+        litellm_api_key,
+        litellm_model,
     } = ctx;
 
     let _ = tx_slot.send(WebEventV2::from_event(
@@ -690,14 +704,21 @@ async fn worker_body(
             Some("canon://builders-cookbook#§66"),
         );
     } else {
-        // Ollama Cloud coding worker — structured output + 4-gate validation.
-        // Model is selected per-task based on prompt complexity and dependency depth.
-        let model = select_model(&prompt, &depends_on);
-        let auth_token = std::env::var("OLLAMA_API_KEY")
+        // LiteLLM-routed coding worker — structured output + 4-gate validation.
+        // Uses Ollama-compat /api/chat that LiteLLM exposes for Ollama backends.
+        // LIGHTSQUAD_CODING_MODEL env var overrides AppState model per-process.
+        use secrecy::ExposeSecret as _;
+        let task_model = std::env::var("LIGHTSQUAD_CODING_MODEL")
             .ok()
             .filter(|s| !s.is_empty())
-            .map(|s| secrecy::SecretString::new(s.into()));
-        let provider = OllamaCloudCodingProvider::with_model(model, auth_token);
+            .unwrap_or_else(|| litellm_model.clone());
+        let auth = if litellm_api_key.expose_secret().is_empty() {
+            None
+        } else {
+            Some(litellm_api_key.clone())
+        };
+        let provider =
+            OllamaCloudCodingProvider::with_base_url(&task_model, auth, litellm_base_url.clone());
         let context = read_src_context(&wt).await;
         let hydrated_prompt = build_hydrated_prompt(&prompt, &context);
 
@@ -775,7 +796,7 @@ async fn worker_body(
                     }
                     let _ = dw.append(
                         "L2",
-                        &format!("Task '{task_id}' completed by OllamaCloud (model={model})"),
+                        &format!("Task '{task_id}' completed by OllamaCloud (model={task_model})"),
                         Some("canon://builders-cookbook#§66"),
                     );
                     break;

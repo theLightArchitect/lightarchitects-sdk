@@ -482,6 +482,7 @@ pub struct TurnSpanContext {
 async fn run_print_turn(
     message: &str,
     session: &BuildSession,
+    litellm_base_url: &str,
     prev_session_id: Option<&str>,
     turn_span_id: Option<&str>,
 ) -> Result<(String, Option<String>), String> {
@@ -529,19 +530,14 @@ async fn run_print_turn(
             c.arg("--model").arg(&lc.model);
         }
         ClaudeBackend::Anthropic | ClaudeBackend::Ollama(_) => {
-            if session.litellm.is_active() {
-                let proxy_url = session
-                    .litellm
-                    .proxy_url
-                    .as_deref()
-                    .unwrap_or("http://localhost:4000");
-                if is_proxy_reachable(proxy_url).await {
-                    let stub_key = session.litellm.generate_stub_key();
+            if !litellm_base_url.is_empty() {
+                if is_proxy_reachable(litellm_base_url).await {
+                    let stub_key = format!("stub-la-{}", uuid::Uuid::new_v4());
                     c.env("ANTHROPIC_API_KEY", stub_key);
-                    c.env("ANTHROPIC_BASE_URL", proxy_url);
+                    c.env("ANTHROPIC_BASE_URL", litellm_base_url);
                 } else {
                     tracing::warn!(
-                        proxy_url,
+                        proxy_url = litellm_base_url,
                         "LiteLLM proxy unreachable; skipping vault injection (subprocess falls back to direct Anthropic)"
                     );
                 }
@@ -549,21 +545,16 @@ async fn run_print_turn(
         }
         ClaudeBackend::LiteLlm(lc) => {
             // Explicit LiteLLM backend — vault injection is always active.
-            let proxy_url = session
-                .litellm
-                .proxy_url
-                .as_deref()
-                .unwrap_or("http://localhost:4000");
-            if is_proxy_reachable(proxy_url).await {
-                let stub_key = session.litellm.generate_stub_key();
+            if is_proxy_reachable(litellm_base_url).await {
+                let stub_key = format!("stub-la-{}", uuid::Uuid::new_v4());
                 c.env("ANTHROPIC_API_KEY", stub_key);
-                c.env("ANTHROPIC_BASE_URL", proxy_url);
+                c.env("ANTHROPIC_BASE_URL", litellm_base_url);
                 if !lc.model.is_empty() {
                     c.arg("--model").arg(&lc.model);
                 }
             } else {
                 tracing::warn!(
-                    proxy_url,
+                    proxy_url = litellm_base_url,
                     "LiteLLM proxy unreachable for LiteLlm backend; subprocess may fail"
                 );
             }
@@ -871,6 +862,7 @@ fn extract_codex_activity_summary(val: &serde_json::Value) -> Option<String> {
 async fn run_codex_turn(
     message: &str,
     session: &BuildSession,
+    litellm_base_url: &str,
     prev_session_id: Option<&str>,
 ) -> Result<(String, Option<String>), String> {
     let AgentSession::Codex(cfg) = &session.agent else {
@@ -912,19 +904,14 @@ async fn run_codex_turn(
     c.env_remove("ANTHROPIC_API_KEY");
     // LiteLLM vault injection for Codex (OpenAI-compat protocol).
     // Codex uses OPENAI_API_KEY / OPENAI_BASE_URL, not ANTHROPIC_* vars.
-    if session.litellm.is_active() {
-        let proxy_url = session
-            .litellm
-            .proxy_url
-            .as_deref()
-            .unwrap_or("http://localhost:4000");
-        if is_proxy_reachable(proxy_url).await {
-            let stub_key = session.litellm.generate_stub_key();
+    if !litellm_base_url.is_empty() {
+        if is_proxy_reachable(litellm_base_url).await {
+            let stub_key = format!("stub-la-{}", uuid::Uuid::new_v4());
             c.env("OPENAI_API_KEY", stub_key);
-            c.env("OPENAI_BASE_URL", format!("{proxy_url}/v1"));
+            c.env("OPENAI_BASE_URL", format!("{litellm_base_url}/v1"));
         } else {
             tracing::warn!(
-                proxy_url,
+                proxy_url = litellm_base_url,
                 "LiteLLM proxy unreachable for Codex; skipping vault injection"
             );
         }
@@ -1116,8 +1103,9 @@ pub async fn call_subprocess_public(
     message: &str,
     proc_lock: &tokio::sync::Mutex<Option<CopilotProcess>>,
     session: &BuildSession,
+    litellm_base_url: &str,
 ) -> Result<String, String> {
-    call_subprocess(message, proc_lock, session).await
+    call_subprocess(message, proc_lock, session, litellm_base_url).await
 }
 
 #[allow(clippy::too_many_lines)]
@@ -1125,6 +1113,7 @@ pub(super) async fn call_subprocess(
     message: &str,
     proc_lock: &tokio::sync::Mutex<Option<CopilotProcess>>,
     session: &BuildSession,
+    litellm_base_url: &str,
 ) -> Result<String, String> {
     let mut guard = proc_lock.lock().await;
 
@@ -1157,8 +1146,14 @@ pub(super) async fn call_subprocess(
             .and_then(|p| p.session_id.as_deref())
             .map(ToOwned::to_owned);
 
-        let turn_result =
-            run_print_turn(message, session, prev_session_id.as_deref(), Some(&span_id)).await;
+        let turn_result = run_print_turn(
+            message,
+            session,
+            litellm_base_url,
+            prev_session_id.as_deref(),
+            Some(&span_id),
+        )
+        .await;
         if let Err(ref e) = turn_result {
             tracing::warn!(
                 error = %e,
@@ -1235,8 +1230,13 @@ pub(super) async fn call_subprocess(
             .and_then(|p| p.session_id.as_deref())
             .map(ToOwned::to_owned);
 
-        let (text, new_session_id) =
-            run_codex_turn(message, session, prev_session_id.as_deref()).await?;
+        let (text, new_session_id) = run_codex_turn(
+            message,
+            session,
+            litellm_base_url,
+            prev_session_id.as_deref(),
+        )
+        .await?;
 
         if let Some(ref mut proc) = *guard {
             proc.session_id = new_session_id;

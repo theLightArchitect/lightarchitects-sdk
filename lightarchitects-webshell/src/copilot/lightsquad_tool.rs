@@ -43,6 +43,7 @@ use crate::events::{
     lightsquad_bridge::{emit_squad_span, make_worker},
     types::{EscalationEvent, WebEvent},
 };
+use crate::server::litellm_state::LitellmConfig;
 
 // ── Env override for all-safe plan HITL skip ─────────────────────────────────
 
@@ -83,6 +84,9 @@ pub struct LightsquadToolExecutor {
     /// Checked before launching any build.  Populated by `POST /api/builds`
     /// at the start of each copilot turn via [`LightsquadToolExecutor::register_operator_codename`].
     operator_codenames: Arc<RwLock<HashSet<String>>>,
+    /// Runtime `LiteLLM` provider config — read at build-launch time so updates
+    /// via `PUT /api/litellm/config` take effect without restarting the server.
+    litellm_config: Arc<tokio::sync::RwLock<LitellmConfig>>,
 }
 
 impl LightsquadToolExecutor {
@@ -98,6 +102,7 @@ impl LightsquadToolExecutor {
         turnlog_pepper: Arc<SecretSlice<u8>>,
         mock_workers: bool,
         hermes_mcp: HermesMcpConfig,
+        litellm_config: Arc<tokio::sync::RwLock<LitellmConfig>>,
     ) -> Self {
         Self {
             repo_root,
@@ -109,6 +114,7 @@ impl LightsquadToolExecutor {
             mock_workers,
             hermes_mcp,
             operator_codenames: Arc::new(RwLock::new(HashSet::new())),
+            litellm_config,
         }
     }
 
@@ -153,6 +159,7 @@ impl LightsquadToolExecutor {
             let turnlog_pepper = self.turnlog_pepper.clone();
             let mock_workers = self.mock_workers;
             let hermes_mcp = self.hermes_mcp.clone();
+            let litellm_config = self.litellm_config.clone();
             tokio::spawn(async move {
                 let exec = LightsquadToolExecutor::new(
                     repo_root,
@@ -163,6 +170,7 @@ impl LightsquadToolExecutor {
                     turnlog_pepper,
                     mock_workers,
                     hermes_mcp,
+                    litellm_config,
                 );
                 let _ = exec.launch_program_for_plan(&plan, build_id).await;
             });
@@ -221,6 +229,7 @@ impl LightsquadToolExecutor {
         let turnlog_pepper = self.turnlog_pepper.clone();
         let mock_workers = self.mock_workers;
         let hermes_mcp = self.hermes_mcp.clone();
+        let litellm_config = self.litellm_config.clone();
 
         // Background task: awaits operator decision, then launches (or drops).
         tokio::spawn(async move {
@@ -237,6 +246,7 @@ impl LightsquadToolExecutor {
                 turnlog_pepper,
                 mock_workers,
                 hermes_mcp,
+                litellm_config,
             );
             let _ = exec.launch_program_for_plan(&plan, build_id).await;
         });
@@ -303,6 +313,11 @@ impl LightsquadToolExecutor {
             build_id,
         );
         let tx = self.event_tx.clone();
+        let litellm = self.litellm_config.read().await;
+        let litellm_base_url = litellm.base_url.clone();
+        let litellm_api_key = litellm.api_key.clone();
+        let litellm_model = litellm.model.clone();
+        drop(litellm);
         let worker_fn = make_worker(
             build_id,
             build_span_id,
@@ -311,6 +326,9 @@ impl LightsquadToolExecutor {
             dw.clone(),
             self.mock_workers,
             self.hitl_queue.clone(),
+            litellm_base_url,
+            litellm_api_key,
+            litellm_model,
         );
 
         let config = ProgramConfig {
@@ -408,6 +426,7 @@ pub fn build_lightsquad_executor(state: &crate::server::AppState) -> Arc<Lightsq
         state.turnlog_pepper.clone(),
         state.mock_workers,
         state.config.hermes_mcp.clone(),
+        state.litellm_config.clone(),
     ))
 }
 
@@ -431,6 +450,7 @@ mod tests {
             Arc::new(SecretSlice::from(vec![0u8; 32])),
             true, // mock_workers
             HermesMcpConfig::default(),
+            Arc::new(tokio::sync::RwLock::new(LitellmConfig::default())),
         )
     }
 

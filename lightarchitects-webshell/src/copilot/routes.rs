@@ -222,7 +222,14 @@ pub async fn copilot_chat_handler(
         )
         | AgentSession::Codex(_)
         | AgentSession::MistralVibe(_) => {
-            call_subprocess(&grounded_message, &session.copilot_proc, &session).await
+            let litellm_base_url = state.litellm_config.read().await.base_url.clone();
+            call_subprocess(
+                &grounded_message,
+                &session.copilot_proc,
+                &session,
+                &litellm_base_url,
+            )
+            .await
         }
         // Guarded above by the `if matches!(…LightarchitectsNative…)` early return.
         AgentSession::LightarchitectsNative(_) => unreachable!("native session not intercepted"),
