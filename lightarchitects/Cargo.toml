@@ -62,6 +62,10 @@ agent-cli = []
 # Live agent fleet tracking — DashMap state machine + JSONL tailer.
 fleet = ["dep:dashmap"]
 
+# container-spawn — SpawnPolicy trait, ContainerPolicy, isolation modes, lock-free
+# policy store via ArcSwap.  Phase 2 adds NetworkPolicy::Balanced + CredentialStrategy::Proxy.
+container-spawn = ["dep:arc-swap"]
+
 # lightsquad — autonomous code-delivery orchestration engine.
 # Phase 1 stub: gates module compilation only. Phase 3+ wires in nearai/ironclaw
 # upstream crates (ironclaw_engine, ironclaw_approvals, ironclaw_capabilities,
@@ -158,9 +162,16 @@ tempfile = { workspace = true }
 # Fleet tracking (optional — gated behind `fleet` feature)
 dashmap = { workspace = true, optional = true }
 
+# Lock-free policy store (optional — gated behind `container-spawn` feature)
+arc-swap = { workspace = true, optional = true }
+
 # macOS keychain (crypto keychain feature)
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { workspace = true }
+
+# Windows system-info probe for ContainerResources::from_system()
+[target.'cfg(target_os = "windows")'.dependencies]
+sysinfo = { workspace = true }
 
 [dev-dependencies]
 tokio          = { workspace = true, features = ["macros", "rt", "test-util"] }
