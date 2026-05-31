@@ -1,32 +1,30 @@
 schema_version: 1
 gate: phase
-scored_by: "/GATE"
-scored_at: "2026-05-25T00:00:00Z"
-build_id: helix-gnn-substrate
+scored_by: /GATE
+scored_at: "2026-05-30T00:00:00Z"
+build_id: cockpit-wave-composer
 phase_id: phase-1-architecture
 overall_verdict: pass
+schema_version_warn: "plan lasdlc_template_version 2.6.1 != 2.5.1 — forward-compat; checks applied"
 
 dimensions:
   Q1_fmt: pass
   Q2_clippy: pass
   Q3_tests:
     result: pass
-    tests_run: 1204
-    tests_fail: 0
-    flaky_pre_existing:
-      - test: ollama_bfcl
-        classification: "FLAKY (pre-existing) — confirmed on base branch"
-      - test: multi_turn_fixture
-        classification: "FLAKY (pre-existing) — confirmed on base branch"
-      - test: event_ordering
-        classification: "FLAKY (pre-existing) — confirmed on base branch"
-  Q4_svelte: "n/a — backend-only stack classification"
+    note: "cargo check --workspace clean 37.95s; G3 pre-flight confirmed full suite; no production code changed"
+  Q4_svelte: n/a
+
+  A_architecture:
+    result: pass
+    diagram_present: "VERIFIED — C2/C3/screen-flow/stateDiagram-v2 at §3.3"
+    drift_clean: "VERIFIED — 8 integration surfaces confirmed against live HEAD"
+    checklist_current: "VERIFIED — Phase 1 exit criteria checked 2026-05-30"
+    drift_correction: "cardRoles 13->14 corrected to 14->15 (strategy-catalogue d44c7dc 2026-05-29)"
+
+  S_security: n/a
+  C_canon: pass
+
   D2_plan: pass
 
-notes:
-  - "Phase 1 deliverables: Step.graph_embedding, STEP_SAGE_EMBEDDINGS, GraphSageProvider
-     (two-layer ReLU projection, IEEE 754 LCG init, load/save sage_projection.bin),
-     StructuralSearcher HNSW fallback (SAGE→Node2Vec→empty), record_to_step Neo4j read"
-  - "LCG cast_precision_loss resolved via IEEE 754 bit manipulation (f32::from_bits)"
-  - "a_gate_predicate.diagram_present=verified; drift_clean+checklist_current=pending (Phase 2+)"
-  - "Commit: c4f26cf on feat/helix-gnn-substrate"
+summary: "Phase 1 architecture verification complete. 4 diagrams present. 8 surfaces confirmed. 1 drift corrected. Ready for Phase 2."
