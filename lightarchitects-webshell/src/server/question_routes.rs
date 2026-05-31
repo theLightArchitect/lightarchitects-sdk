@@ -41,6 +41,14 @@ use crate::{
 /// client timeout fires).
 const QUESTION_LONG_POLL_SECS: u64 = 300;
 
+/// Maximum number of questions a single `POST /api/question` body may contain.
+/// Prevents amplified TTL-eviction cost and over-sized SSE payloads.
+pub(crate) const MAX_QUESTIONS_PER_SUBMIT: usize = 20;
+
+/// Maximum number of questions that may be pending simultaneously across all
+/// active gateway calls. Bounds registry and metadata map memory usage.
+pub(crate) const MAX_CONCURRENT_QUESTIONS: usize = 32;
+
 /// Incoming body shape — mirrors the gateway `QuestionInput` camelCase wire format.
 ///
 /// Defined locally because the webshell crate does not depend on the gateway crate.
@@ -84,6 +92,33 @@ pub(crate) async fn question_submit_handler(
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": "questions must not be empty"})),
+        )
+            .into_response();
+    }
+
+    // F-QCOUNT: cap questions per submission to bound SSE payload and eviction cost.
+    if body.questions.len() > MAX_QUESTIONS_PER_SUBMIT {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({
+                "error": format!(
+                    "too many questions: max {MAX_QUESTIONS_PER_SUBMIT}, received {}",
+                    body.questions.len()
+                )
+            })),
+        )
+            .into_response();
+    }
+
+    // F-REGCAP: reject when too many questions are already pending to bound memory.
+    if state.question_registry.len() >= MAX_CONCURRENT_QUESTIONS {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": format!(
+                    "question registry full: max {MAX_CONCURRENT_QUESTIONS} concurrent questions"
+                )
+            })),
         )
             .into_response();
     }
@@ -235,6 +270,20 @@ pub(crate) async fn question_answer_handler(
             )
                 .into_response();
         };
+        // F-MULTI: single-select questions must receive exactly one label.
+        if !q.multi_select && answers_i.len() != 1 {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                axum::Json(serde_json::json!({
+                    "error": format!(
+                        "question {i} is single-select (multi_select: false) but received {} label(s)",
+                        answers_i.len()
+                    )
+                })),
+            )
+                .into_response();
+        }
+
         for label in answers_i {
             if !q.options.iter().any(|opt| &opt.label == label) {
                 return (
@@ -356,10 +405,109 @@ mod tests {
         assert_eq!(answer.answers[0], vec!["Yes".to_owned()]);
     }
 
-    // ── F4 allowlist tests ───────────────────────────────────────────────────
-    // TODO(property-test): add proptest covering "for all valid labels, answer passes" and
-    // "for all labels not in options, answer returns 422" across variable-length question/answer
-    // vectors. Hypothesis: allowlist is monotonic on the option set (Canon XXVII T-suite gap).
+    // ── F4 + F-MULTI property tests ─────────────────────────────────────────
+    // Canon XXVII T-suite gap (documented at Phase 6): allowlist monotonicity and
+    // single-select cardinality enforcement.
+
+    proptest::proptest! {
+        /// For any non-empty subset of the declared option labels, a single-select
+        /// answer containing exactly one of them must return 200.
+        #[test]
+        fn prop_valid_label_always_passes(
+            idx in 0usize..2usize,   // "Yes" (0) or "No" (1)
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let state = test_state();
+                let (tx, _rx) = tokio::sync::oneshot::channel::<QuestionAnswer>();
+                let id = Uuid::new_v4();
+                state.question_registry.insert(id, tx);
+                state.question_metadata.insert(id, make_pending(id));
+                let label = if idx == 0 { "Yes" } else { "No" };
+                let app = crate::server::build_app(state);
+                let req = Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/question/{id}/answer"))
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {TEST_TOKEN}"))
+                    .body(Body::from(
+                        serde_json::json!({"answers": [[label]]}).to_string(),
+                    ))
+                    .unwrap();
+                let resp = app.oneshot(req).await.unwrap();
+                proptest::prop_assert_eq!(resp.status(), StatusCode::OK);
+                Ok(())
+            })?;
+        }
+
+        /// Any label that is NOT in the declared option set must return 422.
+        #[test]
+        fn prop_invalid_label_always_rejects(
+            bad_label in "[A-Za-z]{5,20}",
+        ) {
+            proptest::prop_assume!(bad_label != "Yes" && bad_label != "No");
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let state = test_state();
+                let (tx, _rx) = tokio::sync::oneshot::channel::<QuestionAnswer>();
+                let id = Uuid::new_v4();
+                state.question_registry.insert(id, tx);
+                state.question_metadata.insert(id, make_pending(id));
+                let app = crate::server::build_app(state);
+                let req = Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/question/{id}/answer"))
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {TEST_TOKEN}"))
+                    .body(Body::from(
+                        serde_json::json!({"answers": [[bad_label]]}).to_string(),
+                    ))
+                    .unwrap();
+                let resp = app.oneshot(req).await.unwrap();
+                proptest::prop_assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+                Ok(())
+            })?;
+        }
+
+        /// F-MULTI: single-select question with >1 label must return 422.
+        #[test]
+        fn prop_single_select_multi_label_rejects(
+            extra in 1usize..=4usize,
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let state = test_state();
+                let (tx, _rx) = tokio::sync::oneshot::channel::<QuestionAnswer>();
+                let id = Uuid::new_v4();
+                state.question_registry.insert(id, tx);
+                state.question_metadata.insert(id, make_pending(id));
+                // Submit 1 + extra labels for a single-select question.
+                let labels: Vec<&str> = std::iter::repeat_n("Yes", 1 + extra).collect();
+                let app = crate::server::build_app(state);
+                let req = Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/question/{id}/answer"))
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {TEST_TOKEN}"))
+                    .body(Body::from(
+                        serde_json::json!({"answers": [labels]}).to_string(),
+                    ))
+                    .unwrap();
+                let resp = app.oneshot(req).await.unwrap();
+                proptest::prop_assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+                Ok(())
+            })?;
+        }
+    }
 
     /// Builds a minimal [`QuestionPending`] with options `["Yes", "No"]` for
     /// F4 allowlist tests. Each test should create a fresh state (via
@@ -386,6 +534,83 @@ mod tests {
             headless_policy: None,
             inserted_at: chrono::Utc::now(),
         }
+    }
+
+    /// F-QCOUNT: questions array exceeds `MAX_QUESTIONS_PER_SUBMIT` → 422.
+    #[tokio::test]
+    async fn submit_too_many_questions_returns_422() {
+        let questions: Vec<serde_json::Value> = (0..=MAX_QUESTIONS_PER_SUBMIT)
+            .map(|i| {
+                serde_json::json!({
+                    "question": format!("Q{i}"),
+                    "header": format!("H{i}"),
+                    "multiSelect": false,
+                    "options": [{"label": "Yes", "description": ""}]
+                })
+            })
+            .collect();
+        let app = crate::server::build_app(test_state());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/question")
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {TEST_TOKEN}"))
+            .body(Body::from(
+                serde_json::json!({"questions": questions}).to_string(),
+            ))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    /// F-REGCAP: registry at `MAX_CONCURRENT_QUESTIONS` → 503 Service Unavailable.
+    #[tokio::test]
+    async fn submit_when_registry_full_returns_503() {
+        let state = test_state();
+        // Fill the registry to capacity with phantom senders (never consumed).
+        for _ in 0..MAX_CONCURRENT_QUESTIONS {
+            let (tx, _rx) = tokio::sync::oneshot::channel::<QuestionAnswer>();
+            state.question_registry.insert(Uuid::new_v4(), tx);
+        }
+        let app = crate::server::build_app(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/question")
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {TEST_TOKEN}"))
+            .body(Body::from(
+                serde_json::json!({"questions": [{
+                    "question": "Q", "header": "H", "multiSelect": false,
+                    "options": [{"label": "Yes", "description": ""}]
+                }]})
+                .to_string(),
+            ))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    /// F-MULTI: single-select question with two labels → 422.
+    #[tokio::test]
+    async fn answer_single_select_multi_label_returns_422() {
+        let state = test_state();
+        let (tx, _rx) = tokio::sync::oneshot::channel::<QuestionAnswer>();
+        let id = Uuid::new_v4();
+        state.question_registry.insert(id, tx);
+        state.question_metadata.insert(id, make_pending(id));
+
+        let app = crate::server::build_app(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/api/question/{id}/answer"))
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {TEST_TOKEN}"))
+            .body(Body::from(
+                serde_json::json!({"answers": [["Yes", "No"]]}).to_string(),
+            ))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     /// F4: fewer answer vectors than declared questions → 422 (partial-answer bypass closed).

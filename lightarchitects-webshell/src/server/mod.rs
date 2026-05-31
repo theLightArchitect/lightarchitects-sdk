@@ -773,6 +773,8 @@ impl AppState {
 /// - `GET /api/browser-state` — read current browser UI state.
 /// - `POST /api/browser-state` — update browser UI state (from frontend).
 /// - `GET /api/polytopes` — per-sibling 4D polytope assignments (authenticated).
+/// - `POST /api/question` — HITL long-poll: gateway submits question, blocks up to 300 s (authenticated).
+/// - `POST /api/question/:id/answer` — operator submits answer, unblocks the long-poll (authenticated).
 /// - Fallback — serves the embedded `../lightarchitects-webshell-ui/dist/` bundle.
 ///
 /// `Router` is already `#[must_use]` so this function is not re-annotated.

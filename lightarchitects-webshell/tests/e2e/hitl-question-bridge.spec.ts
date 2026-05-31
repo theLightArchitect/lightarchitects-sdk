@@ -74,7 +74,7 @@ let page: Page;
 
 test.beforeAll(async () => {
   if (!LIVE) return;
-  browser = await chromium.launch({ headless: false, slowMo: 150 });
+  browser = await chromium.launch({ headless: process.env['PLAYWRIGHT_HEADLESS'] === '1', slowMo: 150 });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   page = await ctx.newPage();
 });

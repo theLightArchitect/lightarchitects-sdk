@@ -335,3 +335,18 @@ Both routes carry `DefaultBodyLimit::max(32 * 1024)` (32 KB). Do not remove this
 
 ### headless_policy caution
 Skills that call `question` with `headless_policy: AutoFirst` will auto-approve the first option if the webshell is unreachable. Never use `AutoFirst` on questions where the first option is a destructive or security-gated action. Before promoting a skill to production, audit: `grep -r "AutoFirst" ~/lightarchitects/skills/` should return zero matches on gated paths.
+
+### Answer re-entry trust boundary (LÆX canon candidate)
+`POST /api/question/:id/answer` is the first webshell surface where operator-supplied data flows
+directly into an LLM `tool_result` payload. The F4 allowlist (label membership + count + single-select
+cardinality) is the primary guard. This pattern is a **LÆX Platform Canon XIV candidate** — trust
+boundary between the operator browser and the LLM context. Before any future answer-path refactor,
+verify: (a) the F4 guard still runs before the oneshot fires, (b) no raw user string reaches the
+LLM context without going through the allowlist, (c) the single-operator contract holds.
+
+### Registry and submission limits (Phase 7 hardening)
+Two caps guard against resource exhaustion from authenticated-but-misbehaving callers:
+- `MAX_QUESTIONS_PER_SUBMIT = 20` — questions per `POST /api/question` body.
+- `MAX_CONCURRENT_QUESTIONS = 32` — simultaneous pending questions across all gateway calls.
+Both are `pub(crate)` constants in `src/server/question_routes.rs`. Raise them only after measuring
+memory impact at the new ceiling under sustained 300 s long-polls.
