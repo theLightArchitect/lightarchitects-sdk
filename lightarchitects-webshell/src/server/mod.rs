@@ -57,6 +57,7 @@ pub mod exec_routes;
 pub mod fleet_routes;
 pub mod git_routes;
 pub mod litellm_chat;
+pub mod litellm_state;
 pub mod mcp_routes;
 pub mod roadmap;
 
@@ -339,6 +340,12 @@ pub struct AppState {
     /// `/api/copilot/playwright/*` to request screenshots and DOM snapshots
     /// via Chrome `DevTools` Protocol. Returns 503 when the feature is disabled.
     pub playwright_state: crate::copilot::playwright::PlaywrightState,
+    /// Runtime-switchable `LiteLLM` provider configuration.
+    ///
+    /// Written by `POST /api/litellm/config`; read by every LLM surface
+    /// (copilot, lightsquad, SSE chat) via [`litellm_state::LitellmConfig::build_provider`].
+    /// Bootstrap values come from `LA_LITELLM_*` env vars at startup.
+    pub litellm_config: Arc<RwLock<litellm_state::LitellmConfig>>,
 }
 
 impl AppState {
@@ -562,6 +569,7 @@ impl AppState {
             la_native_api_key,
             native_session_pool: crate::copilot::native_session::new_pool(),
             playwright_state: Arc::new(tokio::sync::Mutex::new(None)),
+            litellm_config: Arc::new(RwLock::new(litellm_state::LitellmConfig::from_env())),
         }
     }
 
@@ -683,6 +691,7 @@ impl AppState {
             la_native_api_key: None,
             native_session_pool: crate::copilot::native_session::new_pool(),
             playwright_state: Arc::new(tokio::sync::Mutex::new(None)),
+            litellm_config: Arc::new(RwLock::new(litellm_state::LitellmConfig::from_env())),
         }
     }
 }
