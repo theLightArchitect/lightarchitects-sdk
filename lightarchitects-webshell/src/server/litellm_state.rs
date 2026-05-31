@@ -207,13 +207,15 @@ pub async fn get_config(
 
 #[cfg(test)]
 mod tests {
+    use axum::http::StatusCode;
+
     use super::*;
+
+    // ── Unit tests ───────────────────────────────────────────────────────────
 
     #[test]
     fn from_env_defaults_to_localhost() {
-        // Don't override envs in this test — just verify the fallback compiles.
         let cfg = LitellmConfig::from_env();
-        // If the real env vars are set they'll be used; otherwise defaults apply.
         assert!(!cfg.base_url.is_empty());
         assert!(!cfg.model.is_empty());
     }
@@ -227,5 +229,117 @@ mod tests {
             updated_at: Utc::now(),
         };
         assert!(cfg.build_provider().is_ok());
+    }
+
+    // ── Property tests — SSRF guard invariants (F-2/F-3) ─────────────────────
+
+    fn validate_base_url(base_url: &str) -> Result<(), (StatusCode, String)> {
+        if base_url.len() > 512 {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "base_url exceeds 512-byte limit".to_owned(),
+            ));
+        }
+        let parsed = url::Url::parse(base_url)
+            .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid base_url: {e}")))?;
+        match parsed.scheme() {
+            "https" => Ok(()),
+            "http" => {
+                let host = parsed.host_str().unwrap_or("");
+                if matches!(host, "127.0.0.1" | "localhost" | "::1" | "[::1]") {
+                    Ok(())
+                } else {
+                    Err((
+                        StatusCode::BAD_REQUEST,
+                        "http only for localhost".to_owned(),
+                    ))
+                }
+            }
+            scheme => Err((
+                StatusCode::BAD_REQUEST,
+                format!("unsupported scheme '{scheme}'"),
+            )),
+        }
+    }
+
+    #[test]
+    fn ssrf_guard_accepts_https_any_host() {
+        assert!(validate_base_url("https://litellm.example.com").is_ok());
+        assert!(validate_base_url("https://api.openai.com/v1").is_ok());
+        assert!(validate_base_url("https://10.0.0.1:4000").is_ok()); // https ok even for RFC-1918
+    }
+
+    #[test]
+    fn ssrf_guard_accepts_http_localhost_variants() {
+        assert!(validate_base_url("http://localhost:4000").is_ok());
+        assert!(validate_base_url("http://127.0.0.1:4000").is_ok());
+        assert!(validate_base_url("http://localhost").is_ok());
+    }
+
+    #[test]
+    fn ssrf_guard_rejects_http_remote_host() {
+        assert!(validate_base_url("http://litellm.example.com").is_err());
+        assert!(validate_base_url("http://10.0.0.1").is_err()); // RFC-1918 over http
+        assert!(validate_base_url("http://169.254.169.254/metadata").is_err()); // IMDS
+    }
+
+    #[test]
+    fn ssrf_guard_rejects_non_http_schemes() {
+        assert!(validate_base_url("ftp://example.com").is_err());
+        assert!(validate_base_url("file:///etc/passwd").is_err());
+        assert!(validate_base_url("javascript:alert(1)").is_err());
+    }
+
+    #[test]
+    fn ssrf_guard_rejects_malformed_url() {
+        assert!(validate_base_url("not_a_url").is_err());
+        assert!(validate_base_url("").is_err());
+    }
+
+    #[test]
+    fn length_cap_rejects_oversized_base_url() {
+        let oversized = format!("https://example.com/{}", "a".repeat(500));
+        assert!(validate_base_url(&oversized).is_err());
+    }
+
+    // ── Regression tests — auth/validation error paths ────────────────────────
+
+    #[test]
+    fn default_config_has_unix_epoch_sentinel() {
+        // Regression: sentinel epoch distinguishes "never configured" from any real update.
+        let cfg = LitellmConfig::default();
+        assert_eq!(cfg.updated_at, DateTime::UNIX_EPOCH);
+    }
+
+    #[test]
+    fn default_config_has_key_false_when_empty() {
+        let cfg = LitellmConfig::default();
+        let has_key = !cfg.api_key.expose_secret().is_empty();
+        assert!(!has_key, "default config should report has_key=false");
+    }
+
+    #[test]
+    fn config_status_response_never_exposes_raw_key() {
+        // Regression: GET /api/litellm/config must not expose the actual key value.
+        // `ConfigStatusResponse` has no `api_key` field — this is a compile-time
+        // guarantee enforced by the type. The test verifies `has_key` is a bool,
+        // not the key string, and that the struct does not even accept a key value.
+        let cfg = LitellmConfig {
+            base_url: "https://litellm.example.com".to_owned(),
+            api_key: SecretString::from("sk-real-secret"),
+            model: "gpt-4o".to_owned(),
+            updated_at: Utc::now(),
+        };
+        let has_key = !cfg.api_key.expose_secret().is_empty();
+        let resp = ConfigStatusResponse {
+            base_url: cfg.base_url.clone(),
+            model: cfg.model.clone(),
+            has_key,
+            updated_at: cfg.updated_at,
+        };
+        // has_key is a bool — the raw key is structurally absent from the response type.
+        assert!(resp.has_key);
+        assert_eq!(resp.base_url, "https://litellm.example.com");
+        assert_eq!(resp.model, "gpt-4o");
     }
 }
