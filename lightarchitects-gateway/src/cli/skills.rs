@@ -35,7 +35,7 @@ use lightarchitects::agent::conversation::{
 use lightarchitects::agent::http::AnthropicHttpProvider;
 use lightarchitects::agent::{
     AgentResponse, ChainContext, ClaudeCliProvider, LlmAgentProvider, OllamaCliProvider,
-    ProviderCapabilities, ProviderError, SanitizedAgentRequest,
+    OpenAICompatProvider, ProviderCapabilities, ProviderError, SanitizedAgentRequest,
 };
 use tokio::io::AsyncBufReadExt as _;
 
@@ -51,8 +51,19 @@ static ACTIVE_PROVIDER: OnceLock<ProviderKind> = OnceLock::new();
 #[derive(Debug, Clone)]
 enum ProviderKind {
     Claude,
-    Ollama { model: String },
-    Anthropic { model: String, max_tokens: u32 },
+    Ollama {
+        model: String,
+    },
+    Anthropic {
+        model: String,
+        max_tokens: u32,
+    },
+    /// `LiteLLM` proxy — OpenAI-compatible endpoint; selected via `LA_LLM=litellm`.
+    LiteLLM {
+        base_url: String,
+        api_key: String,
+        model: String,
+    },
 }
 
 /// Auto-detect the active LLM provider from the process environment.
@@ -88,6 +99,16 @@ fn detect_provider() -> ProviderKind {
             };
         }
         "claude" => return ProviderKind::Claude,
+        "litellm" => {
+            let base_url = std::env::var("LA_LITELLM_BASE_URL").unwrap_or_default();
+            let api_key = std::env::var("LA_LITELLM_API_KEY").unwrap_or_default();
+            let litellm_model = std::env::var("LA_LITELLM_MODEL").unwrap_or_default();
+            return ProviderKind::LiteLLM {
+                base_url,
+                api_key,
+                model: litellm_model,
+            };
+        }
         _ => {}
     }
 
@@ -148,6 +169,8 @@ pub enum AnyProvider {
     Ollama(OllamaCliProvider),
     /// Anthropic HTTP backend — direct API call.
     Anthropic(AnthropicHttpProvider),
+    /// `LiteLLM` proxy backend — OpenAI-compatible HTTP dispatch.
+    LiteLLM(OpenAICompatProvider),
 }
 
 #[async_trait]
@@ -157,6 +180,7 @@ impl LlmAgentProvider for AnyProvider {
             Self::Claude(p) => p.name(),
             Self::Ollama(p) => p.name(),
             Self::Anthropic(p) => p.name(),
+            Self::LiteLLM(p) => p.name(),
         }
     }
 
@@ -165,6 +189,7 @@ impl LlmAgentProvider for AnyProvider {
             Self::Claude(p) => p.spawn(req).await,
             Self::Ollama(p) => p.spawn(req).await,
             Self::Anthropic(p) => p.spawn(req).await,
+            Self::LiteLLM(p) => p.spawn(req).await,
         }
     }
 
@@ -173,6 +198,7 @@ impl LlmAgentProvider for AnyProvider {
             Self::Claude(p) => p.capabilities(),
             Self::Ollama(p) => p.capabilities(),
             Self::Anthropic(p) => p.capabilities(),
+            Self::LiteLLM(p) => p.capabilities(),
         }
     }
 
@@ -181,6 +207,7 @@ impl LlmAgentProvider for AnyProvider {
             Self::Claude(p) => p.estimate_cost(input_tokens, max_output_tokens),
             Self::Ollama(p) => p.estimate_cost(input_tokens, max_output_tokens),
             Self::Anthropic(p) => p.estimate_cost(input_tokens, max_output_tokens),
+            Self::LiteLLM(p) => p.estimate_cost(input_tokens, max_output_tokens),
         }
     }
 }
@@ -212,6 +239,20 @@ pub fn build_provider() -> Result<AnyProvider, String> {
                 .map_err(|e| e.to_string())
         }
         ProviderKind::Claude => Ok(AnyProvider::Claude(ClaudeCliProvider::default())),
+        ProviderKind::LiteLLM {
+            base_url,
+            api_key,
+            model,
+        } => OpenAICompatProvider::for_litellm(
+            if base_url.is_empty() {
+                None
+            } else {
+                Some(base_url.clone())
+            },
+            api_key.as_str(),
+            model.clone(),
+        )
+        .map(AnyProvider::LiteLLM),
     }
 }
 
@@ -799,4 +840,20 @@ pub fn parse_skill_slash_command(line: &str) -> Option<(String, Vec<String>)> {
     }
 
     Some((slug, remaining))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn litellm_any_provider_constructs_ok() {
+        let result = OpenAICompatProvider::for_litellm(
+            Some("http://localhost:4000".to_owned()),
+            "test-key",
+            "anthropic/claude-opus-4-7".to_owned(),
+        )
+        .map(AnyProvider::LiteLLM);
+        assert!(result.is_ok());
+    }
 }
