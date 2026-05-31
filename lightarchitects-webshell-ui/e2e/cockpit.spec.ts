@@ -295,9 +295,12 @@ test('G7: la:permission-request event renders perm-card; APPROVE removes it', as
     window.dispatchEvent(new CustomEvent('la:permission-request', {
       detail: {
         call_id:      'e2e-perm-001',
+        dispatch_id:  'cockpit-e2e-build',
         build_id:     'cockpit-e2e-build',
         tool:         'Bash',
         summary:      'Run: cargo test --all-features',
+        input_preview:'cargo test --all-features',
+        risk_tier:    'medium',
         timeout_secs: 120,
       },
     }));
@@ -317,7 +320,7 @@ test('G7: la:permission-request event renders perm-card; APPROVE removes it', as
   // so the cockpit card APPROVE is reachable.
   const diffModal = page.locator('[data-testid="diff-preview"]');
   if (await diffModal.isVisible({ timeout: 500 }).catch(() => false)) {
-    await diffModal.locator('button').filter({ hasText: /^Approve$/i }).click();
+    await diffModal.locator('[data-testid="approve-btn"]').click();
     await expect(diffModal).not.toBeVisible({ timeout: 5000 });
   }
 
