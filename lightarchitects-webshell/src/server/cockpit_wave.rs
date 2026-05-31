@@ -284,6 +284,12 @@ pub async fn cockpit_wave_handler(
         }
     };
 
+    let litellm = state.litellm_config.read().await;
+    let litellm_base_url = litellm.base_url.clone();
+    let litellm_api_key = litellm.api_key.clone();
+    let litellm_model = litellm.model.clone();
+    drop(litellm);
+
     let handle = spawn_autonomous_build(BridgeContext {
         build_id,
         codename: body.codename.clone(),
@@ -295,6 +301,9 @@ pub async fn cockpit_wave_handler(
         decisions_writer,
         mock_workers: state.mock_workers,
         hitl_queue: state.hitl_queue.clone(),
+        litellm_base_url,
+        litellm_api_key,
+        litellm_model,
     });
     state.lightsquad_programs.insert(build_id, handle);
 
