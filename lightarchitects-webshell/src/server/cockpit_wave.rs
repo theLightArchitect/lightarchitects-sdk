@@ -81,6 +81,20 @@ impl CockpitPreset {
             Self::Testing => "testing",
         }
     }
+
+    /// Canonical skill key for this preset — derived server-side so the
+    /// operator cannot spoof a privileged skill via the API (F-4 / OWASP LLM02).
+    fn skill(&self) -> &'static str {
+        match self {
+            Self::Engineer => "lightarchitects:engineer",
+            Self::Security => "lightarchitects:security",
+            Self::Ops => "lightarchitects:ops",
+            Self::Quality => "lightarchitects:quality",
+            Self::Knowledge => "lightarchitects:knowledge",
+            Self::Researcher => "lightarchitects:researcher",
+            Self::Testing => "lightarchitects:testing",
+        }
+    }
 }
 
 /// Target entity within the LASDLC hierarchy.
@@ -144,6 +158,7 @@ pub struct WaveComposerResponse {
 ///
 /// Auth-gated. Body ≤ 16 KB. Returns `200 WaveComposerResponse` immediately;
 /// build runs in background and emits events via the global SSE stream.
+#[allow(clippy::too_many_lines)] // security validation + dispatch in one handler; extraction would split the borrow chain
 pub async fn cockpit_wave_handler(
     _: crate::auth::AuthGuard,
     State(state): State<AppState>,
@@ -170,23 +185,84 @@ pub async fn cockpit_wave_handler(
             .into_response();
     }
 
-    // OWASP LLM01: scan task_description for indirect injection patterns before
-    // promoting operator input into a worker system prompt (Cookbook §65).
+    // F-6: validate codename against git branch name allowlist (CWE-78 §3.4).
+    if !CODENAME_RE.is_match(&body.codename) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "invalid_codename",
+                "detail": "codename must be 3-64 lowercase alphanumeric or hyphen characters"
+            })),
+        )
+            .into_response();
+    }
+
+    // F-2: validate worktree path — reject traversal before PathBuf promotion (CWE-22 §SG-CRYPTO.6).
+    let repo_root = match validate_worktree_path(&body.worktree) {
+        Ok(p) => p,
+        Err(detail) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "invalid_worktree", "detail": detail})),
+            )
+                .into_response();
+        }
+    };
+
+    // F-1 + F-5: scan all prompt-injected fields — codename, target id/label/type
+    // flow into the git-context preamble; skill flows into the [skill:...] token.
+    // Only task_description was previously covered; extend the shield surface.
     let shield = IndirectInjectionShield::new();
-    for assignment in &body.agents {
-        let patterns = shield.detect(&assignment.task_description);
-        let high = patterns
+    for field in [
+        body.codename.as_str(),
+        body.target.id.as_str(),
+        body.target.label.as_str(),
+        body.target.target_type.as_str(),
+    ] {
+        let patterns = shield.detect(field);
+        if patterns
             .iter()
-            .any(|p| matches!(p.severity, InjectionSeverity::High));
-        if high {
+            .any(|p| matches!(p.severity, InjectionSeverity::High))
+        {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 Json(serde_json::json!({
                     "error": "injection_detected",
-                    "detail": "task_description contains suspicious patterns"
+                    "detail": "request contains suspicious patterns"
                 })),
             )
                 .into_response();
+        }
+    }
+    for assignment in &body.agents {
+        for field in [
+            assignment.task_description.as_str(),
+            assignment.skill.as_str(),
+        ] {
+            let patterns = shield.detect(field);
+            let high = patterns
+                .iter()
+                .any(|p| matches!(p.severity, InjectionSeverity::High));
+            if high {
+                return (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(serde_json::json!({
+                        "error": "injection_detected",
+                        "detail": "request contains suspicious patterns"
+                    })),
+                )
+                    .into_response();
+            }
+            // F-5: log medium-severity detections so shield hits are visible in AYIN.
+            if patterns
+                .iter()
+                .any(|p| matches!(p.severity, InjectionSeverity::Medium))
+            {
+                tracing::warn!(
+                    preset = assignment.preset.as_str(),
+                    "injection_shield: medium-severity pattern detected — passing through"
+                );
+            }
         }
     }
 
@@ -211,7 +287,7 @@ pub async fn cockpit_wave_handler(
     let handle = spawn_autonomous_build(BridgeContext {
         build_id,
         codename: body.codename.clone(),
-        repo_root: PathBuf::from(&body.worktree),
+        repo_root,
         worktree_root: std::env::temp_dir().join(format!("la-wt-{build_id}")),
         feat_branch: format!("feat/{}", body.codename),
         waves: vec![task_specs],
@@ -298,7 +374,7 @@ fn build_task_specs(body: &WaveComposerRequest) -> Vec<TaskSpec> {
             let prompt = format!(
                 "[preset:{preset}] [skill:{skill}]\n{preamble}{desc}",
                 preset = a.preset.as_str(),
-                skill = a.skill,
+                skill = a.preset.skill(),
                 preamble = git_preamble,
                 desc = a.task_description,
             );
@@ -316,6 +392,31 @@ fn build_task_specs(body: &WaveComposerRequest) -> Vec<TaskSpec> {
             }
         })
         .collect()
+}
+
+// ── Security helpers ─────────────────────────────────────────────────────────
+
+/// Allowlist for build codenames — lowercase alphanumeric + hyphen, 3-64 chars.
+/// Guards `feat/{codename}` branch interpolation (F-6 / CWE-78 §3.4).
+#[allow(clippy::expect_used)] // static literal regex cannot fail; LazyLock init is equivalent to a compile-time constant
+static CODENAME_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"^[a-z0-9][a-z0-9\-]{2,63}$").expect("static regex is valid")
+});
+
+/// Validate and return a `PathBuf` for the operator-supplied worktree path.
+///
+/// Enforces F-2 (CWE-22 path traversal): requires absolute path; rejects `..`
+/// components. Mirrors the `safe_cwd` pattern from `git_routes.rs:165-174` but
+/// without `canonicalize` (worktree may not exist yet).
+fn validate_worktree_path(worktree: &str) -> Result<PathBuf, &'static str> {
+    let p = PathBuf::from(worktree);
+    if !p.is_absolute() {
+        return Err("worktree must be an absolute path");
+    }
+    if p.components().any(|c| c == std::path::Component::ParentDir) {
+        return Err("worktree path must not contain '..' components");
+    }
+    Ok(p)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -429,5 +530,170 @@ mod tests {
         assert_eq!(CockpitPreset::Engineer.as_str(), "engineer");
         assert_eq!(CockpitPreset::Security.as_str(), "security");
         assert_eq!(CockpitPreset::Testing.as_str(), "testing");
+    }
+
+    // ── Unit: security helpers (F-1/F-2/F-4/F-6) ─────────────────────────────
+
+    #[test]
+    fn skill_derived_from_preset_not_operator_supplied() {
+        // F-4: skill is computed server-side; operator-supplied value is not promoted.
+        let req = make_request(vec![AgentAssignmentPayload {
+            preset: CockpitPreset::Quality,
+            skill: "lightarchitects:seraph".into(), // adversarial spoofed skill
+            task_description: "audit".into(),
+            file_ownership: vec![],
+        }]);
+        let specs = build_task_specs(&req);
+        assert_eq!(specs.len(), 1);
+        assert!(
+            specs[0].prompt.contains("[skill:lightarchitects:quality]"),
+            "prompt must use preset-derived skill, not operator-supplied value"
+        );
+        assert!(
+            !specs[0].prompt.contains("lightarchitects:seraph"),
+            "adversarial skill must not reach the prompt"
+        );
+    }
+
+    #[test]
+    fn all_presets_have_canonical_skill_keys() {
+        // F-4: every preset maps to its canonical skill string.
+        let pairs = [
+            (CockpitPreset::Engineer, "lightarchitects:engineer"),
+            (CockpitPreset::Security, "lightarchitects:security"),
+            (CockpitPreset::Ops, "lightarchitects:ops"),
+            (CockpitPreset::Quality, "lightarchitects:quality"),
+            (CockpitPreset::Knowledge, "lightarchitects:knowledge"),
+            (CockpitPreset::Researcher, "lightarchitects:researcher"),
+            (CockpitPreset::Testing, "lightarchitects:testing"),
+        ];
+        for (preset, expected) in pairs {
+            assert_eq!(preset.skill(), expected);
+        }
+    }
+
+    #[test]
+    fn validate_worktree_path_accepts_absolute_clean() {
+        // F-2: well-formed absolute paths accepted.
+        assert!(validate_worktree_path("/Users/kft/lightarchitects/worktrees/my-build").is_ok());
+        assert!(validate_worktree_path("/tmp/wt-abc").is_ok());
+    }
+
+    #[test]
+    fn validate_worktree_path_rejects_relative() {
+        // F-2: relative paths have no safe base — reject them.
+        assert!(validate_worktree_path("worktrees/my-build").is_err());
+        assert!(validate_worktree_path("./wt").is_err());
+    }
+
+    #[test]
+    fn validate_worktree_path_rejects_parent_dir_traversal() {
+        // F-2: path traversal must be blocked before PathBuf promotion.
+        assert!(validate_worktree_path("/tmp/wt/../../etc/passwd").is_err());
+        assert!(validate_worktree_path("/Users/kft/../../../etc").is_err());
+    }
+
+    #[test]
+    fn codename_regex_allows_valid_slugs() {
+        // F-6: standard codenames must pass.
+        assert!(CODENAME_RE.is_match("cockpit-wave-composer"));
+        assert!(CODENAME_RE.is_match("my-build-01"));
+        assert!(CODENAME_RE.is_match("abc"));
+    }
+
+    #[test]
+    fn codename_regex_rejects_invalid_slugs() {
+        // F-6: special characters and too-short names must be rejected.
+        assert!(!CODENAME_RE.is_match("ab")); // too short
+        assert!(!CODENAME_RE.is_match("my build")); // space
+        assert!(!CODENAME_RE.is_match("UPPERCASE"));
+        assert!(!CODENAME_RE.is_match("feat/my-build")); // slash (branch injection)
+        assert!(!CODENAME_RE.is_match("../escape")); // traversal
+    }
+
+    // ── Integration: build_task_specs prompt structure ────────────────────────
+
+    #[test]
+    fn build_task_specs_includes_git_context_preamble() {
+        // Cookbook §64.8: git-context preamble must be present in every prompt.
+        let req = WaveComposerRequest {
+            codename: "my-wave".into(),
+            agents: vec![engineer_agent("implement feature", vec![])],
+            target: CockpitTargetPayload {
+                target_type: "pr".into(),
+                id: "42".into(),
+                label: "Add wave composer".into(),
+            },
+            worktree: "/tmp/wt".into(),
+        };
+        let specs = build_task_specs(&req);
+        let prompt = &specs[0].prompt;
+        assert!(prompt.contains("codename=my-wave"));
+        assert!(prompt.contains("target=pr:42"));
+        assert!(prompt.contains("branch=feat/my-wave"));
+        assert!(prompt.contains("Add wave composer"));
+        assert!(prompt.contains("implement feature"));
+    }
+
+    #[test]
+    fn build_task_specs_deduplicates_file_ownership() {
+        // Duplicate files in one agent's ownership list must be deduplicated.
+        let req = make_request(vec![AgentAssignmentPayload {
+            preset: CockpitPreset::Engineer,
+            skill: "lightarchitects:engineer".into(),
+            task_description: "task".into(),
+            file_ownership: vec!["src/a.rs".into(), "src/a.rs".into(), "src/b.rs".into()],
+        }]);
+        let specs = build_task_specs(&req);
+        assert_eq!(specs[0].file_ownership, vec!["src/a.rs", "src/b.rs"]);
+    }
+
+    #[test]
+    fn build_task_specs_all_presets_produce_valid_ids() {
+        // Each preset must produce a stable task ID containing the preset name.
+        let presets = [
+            (CockpitPreset::Engineer, "engineer"),
+            (CockpitPreset::Security, "security"),
+            (CockpitPreset::Ops, "ops"),
+            (CockpitPreset::Quality, "quality"),
+            (CockpitPreset::Knowledge, "knowledge"),
+            (CockpitPreset::Researcher, "researcher"),
+            (CockpitPreset::Testing, "testing"),
+        ];
+        let agents: Vec<_> = presets
+            .iter()
+            .map(|(preset, _)| AgentAssignmentPayload {
+                preset: preset.clone(),
+                skill: preset.skill().into(),
+                task_description: "task".into(),
+                file_ownership: vec![],
+            })
+            .collect();
+        let req = make_request(agents);
+        let specs = build_task_specs(&req);
+        for (i, (_, name)) in presets.iter().enumerate() {
+            assert!(
+                specs[i].id.contains(name),
+                "task id '{}' should contain preset name '{name}'",
+                specs[i].id
+            );
+        }
+    }
+
+    // ── Smoke: validate_worktree_path edge cases ──────────────────────────────
+
+    #[test]
+    fn validate_worktree_path_accepts_deep_absolute() {
+        // Deeply nested absolute paths within the allowed root must be accepted.
+        assert!(
+            validate_worktree_path("/Users/kft/lightarchitects/worktrees/proj/sub/wave-abc123")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn validate_worktree_path_rejects_tilde_home() {
+        // ~ is not expanded by PathBuf::from; such paths are not absolute.
+        assert!(validate_worktree_path("~/lightarchitects/worktrees/my-build").is_err());
     }
 }
