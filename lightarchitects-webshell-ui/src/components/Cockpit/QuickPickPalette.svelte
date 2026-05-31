@@ -78,7 +78,7 @@
     const mode = sourceMode;
     void mode; // track mode reactively
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => { void loadResults(q); }, 120);
+    debounceTimer = setTimeout(() => { void loadResults(q); }, 250);
     return () => clearTimeout(debounceTimer);
   });
 
