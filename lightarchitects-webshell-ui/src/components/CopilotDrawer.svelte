@@ -1026,12 +1026,13 @@
     {#if open}
       <div class="hdr-actions" role="toolbar" aria-label="Copilot actions">
 
-        <!-- Preset chip — leftmost in ghost group -->
+        <!-- Preset × Target context chip — auto-shows without operator action (Phase 6) -->
         <button
           onclick={() => quickPickOpen.set(true)}
           class="hdr-preset"
-          title="Active preset — click to change"
-        >{PRESET_DISPLAY[$selectedPreset]}</button>
+          title="Active preset — click to change target"
+          aria-label="Active preset: {PRESET_DISPLAY[$selectedPreset]}{$selectedTarget ? ' × ' + $selectedTarget.label : ''}"
+        >{PRESET_DISPLAY[$selectedPreset]}{#if $selectedTarget}<span class="hdr-target-chip"> × {$selectedTarget.label.slice(0, 22)}{$selectedTarget.label.length > 22 ? '…' : ''}</span>{/if}</button>
 
         <!-- Provider pill — shows active LiteLLM model; click opens provider switcher -->
         <div class="relative" style="height:100%;display:flex;align-items:stretch;">
@@ -1664,6 +1665,15 @@
   .hdr-preset:hover {
     color: var(--la-focus-ring, #FFD700);
     background: rgba(255, 215, 0, 0.04);
+  }
+
+  .hdr-target-chip {
+    color: var(--la-struct-primary, #FFD700);
+    opacity: 0.7;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: none;
+    margin-left: 2px;
   }
 
   /* ZONE C — Icon-only action cells */
