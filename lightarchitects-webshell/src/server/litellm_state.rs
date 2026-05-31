@@ -342,4 +342,38 @@ mod tests {
         assert_eq!(resp.base_url, "https://litellm.example.com");
         assert_eq!(resp.model, "gpt-4o");
     }
+
+    // ── Performance assertion — build_provider() must be sub-millisecond (p99) ──
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn build_provider_constructs_under_1ms_p99() {
+        // `build_provider()` is called on every LLM request across all 4 surfaces.
+        // It must remain allocation-light: URL parse + reqwest::Client construction.
+        const N: usize = 1_000;
+        const P99_LIMIT_MICROS: u128 = 1_000; // 1 ms
+
+        let cfg = LitellmConfig {
+            base_url: "http://localhost:4000".to_owned(),
+            api_key: SecretString::from("sk-bench-key"),
+            model: "anthropic/claude-opus-4-7".to_owned(),
+            updated_at: DateTime::UNIX_EPOCH,
+        };
+
+        let mut timings: Vec<u128> = Vec::with_capacity(N);
+        for _ in 0..N {
+            let t0 = std::time::Instant::now();
+            let _ = cfg.build_provider().unwrap();
+            timings.push(t0.elapsed().as_micros());
+        }
+
+        timings.sort_unstable();
+        let p99_idx = (N * 99 / 100).min(N - 1); // integer percentile, no float cast
+        let p99 = timings[p99_idx];
+
+        assert!(
+            p99 < P99_LIMIT_MICROS,
+            "build_provider() p99={p99}µs exceeds {P99_LIMIT_MICROS}µs limit"
+        );
+    }
 }
