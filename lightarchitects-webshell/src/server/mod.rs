@@ -8,6 +8,7 @@
 //! Phase 3/5 will add `/api/events` (SSE fan-out).
 
 use std::{
+    collections::HashMap,
     future::Future,
     net::SocketAddr,
     pin::Pin,
@@ -16,9 +17,12 @@ use std::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     task::{Context, Poll},
+    time::Instant,
 };
 
+use arc_swap::ArcSwap;
 use dashmap::DashMap;
+use lightarchitects::container_spawn::{ContainerPolicy, PolicyStore};
 use uuid::Uuid;
 
 use axum::{
@@ -61,6 +65,7 @@ pub mod litellm_chat;
 pub mod litellm_state;
 pub mod mcp_routes;
 pub mod roadmap;
+pub mod spawn_reaper;
 
 /// Snapshot of the browser UI state, periodically reported by the frontend.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -347,6 +352,28 @@ pub struct AppState {
     /// (copilot, lightsquad, SSE chat) via [`litellm_state::LitellmConfig::build_provider`].
     /// Bootstrap values come from `LA_LITELLM_*` env vars at startup.
     pub litellm_config: Arc<RwLock<litellm_state::LitellmConfig>>,
+    /// Container spawn policy store — owns the live `ArcSwap` and enforces the
+    /// monotonic-tightening invariant via `tighten_for_build`.
+    ///
+    /// Used by `PATCH /api/container/policy`; initialized from
+    /// [`ContainerPolicy::default()`] at startup.
+    pub policy_store: Arc<PolicyStore>,
+    /// Lock-free handle to the active container policy.
+    ///
+    /// Derived from `policy_store.handle()` — shares the same `ArcSwap`.
+    /// Spawner reads this once at function entry (M10 single-load idiom).
+    pub policy: Arc<ArcSwap<ContainerPolicy>>,
+    /// Concurrent container cap semaphore.
+    ///
+    /// Sized from `ContainerPolicy::default().resources.max_concurrent` at
+    /// startup.  Spawner calls `try_acquire_owned()` then `permit.forget()`;
+    /// relay's `ContainerDropGuard` calls `add_permits(1)` on drop.
+    pub policy_semaphore: Arc<tokio::sync::Semaphore>,
+    /// Registry of running containers — keyed by container ID, value is spawn time.
+    ///
+    /// Uses `std::sync::RwLock` (not tokio) because `ContainerDropGuard::drop`
+    /// is a synchronous context and cannot `await` a tokio lock.
+    pub active_containers: Arc<std::sync::RwLock<HashMap<String, Instant>>>,
 }
 
 impl AppState {
@@ -370,6 +397,12 @@ impl AppState {
             SessionStore::open().unwrap_or_else(|_| SessionStore::noop()),
         ));
         let image_manager = ImageManager::new(docker_capable);
+
+        // Container spawn policy — PolicyStore::default() is infallible.
+        let policy_store = Arc::new(PolicyStore::default());
+        let policy_semaphore = Arc::new(tokio::sync::Semaphore::new(
+            ContainerPolicy::default().resources.max_concurrent,
+        ));
 
         // Phase 19c.2 — hot-reloadable promotion policy.
         // Gracefully absent when the YAML file doesn't exist yet.
@@ -571,6 +604,10 @@ impl AppState {
             native_session_pool: crate::copilot::native_session::new_pool(),
             playwright_state: Arc::new(tokio::sync::Mutex::new(None)),
             litellm_config: Arc::new(RwLock::new(litellm_state::LitellmConfig::from_env())),
+            policy_store: Arc::clone(&policy_store),
+            policy: policy_store.handle(),
+            policy_semaphore: Arc::clone(&policy_semaphore),
+            active_containers: Arc::new(std::sync::RwLock::new(HashMap::new())),
         }
     }
 
@@ -640,6 +677,8 @@ impl AppState {
     pub fn for_test(config: Config, docker_capable: DockerCapability) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_BUF);
         let active_agent = Arc::new(RwLock::new(config.agent.clone()));
+        let test_policy_store = Arc::new(PolicyStore::default());
+        let test_policy_handle = test_policy_store.handle();
         Self {
             config: Arc::new(config),
             turnlog_pepper: Arc::new(secrecy::SecretSlice::from(vec![])),
@@ -693,6 +732,12 @@ impl AppState {
             native_session_pool: crate::copilot::native_session::new_pool(),
             playwright_state: Arc::new(tokio::sync::Mutex::new(None)),
             litellm_config: Arc::new(RwLock::new(litellm_state::LitellmConfig::from_env())),
+            policy_store: test_policy_store,
+            policy: test_policy_handle,
+            policy_semaphore: Arc::new(tokio::sync::Semaphore::new(
+                ContainerPolicy::default().resources.max_concurrent,
+            )),
+            active_containers: Arc::new(std::sync::RwLock::new(HashMap::new())),
         }
     }
 }
@@ -715,7 +760,10 @@ impl AppState {
 /// `Router` is already `#[must_use]` so this function is not re-annotated.
 #[allow(clippy::too_many_lines)]
 pub fn build_app(state: AppState) -> Router {
-    container_relay::spawn_reaper();
+    spawn_reaper::spawn(
+        Arc::clone(&state.active_containers),
+        Arc::clone(&state.policy_semaphore),
+    );
     let cors = build_cors(state.config.port, state.config.dev_mode);
     let dev_mode = state.config.dev_mode;
     let router = Router::new()
@@ -772,6 +820,12 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/terminal/container/{id}",
             get(container_relay::ws_relay_handler),
+        )
+        // ── Container spawn policy API ────────────────────────────────────────
+        .route(
+            "/api/container/policy",
+            get(crate::container::policy_routes::get_policy)
+                .patch(crate::container::policy_routes::patch_policy),
         )
         .route("/api/events", get(events::sse_handler::sse_handler))
         .route("/api/control", post(events::control_handler))
@@ -1201,7 +1255,13 @@ fn build_cors(port: u16, dev_mode: bool) -> CorsLayer {
     let notify_header: HeaderName = HeaderName::from_static("x-la-notify-token");
     CorsLayer::new()
         .allow_origin(allowed_origins)
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::OPTIONS])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::OPTIONS,
+        ])
         .allow_headers([
             header::AUTHORIZATION,
             header::CONTENT_TYPE,
@@ -1924,6 +1984,9 @@ fn load_turnlog_pepper() -> secrecy::SecretSlice<u8> {
 }
 
 // ── walk_files unit tests ─────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod policy_routes_test;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

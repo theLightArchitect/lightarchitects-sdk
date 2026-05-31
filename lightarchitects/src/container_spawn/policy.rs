@@ -34,6 +34,11 @@ pub const MAX_CONCURRENT: usize = 64;
 ///
 /// The active level is announced via the `la.iso_mode` Docker label so that
 /// AYIN traces can group containers by isolation tier.
+///
+/// This enum is `#[non_exhaustive]` — downstream crates must include a
+/// wildcard arm when matching it.  New isolation tiers may be added in minor
+/// releases without a semver bump.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum IsoMode {
     /// Standard resource limits: memory, CPU, pids, `no-new-privileges`.
@@ -565,6 +570,19 @@ impl SpawnPolicy for PolicyStore {
         new_policy.validate()?;
         self.inner.store(Arc::new(new_policy));
         Ok(())
+    }
+}
+
+impl Default for PolicyStore {
+    /// Creates a `PolicyStore` from [`ContainerPolicy::default()`].
+    ///
+    /// The default policy always passes validation; this constructor is
+    /// infallible. Use [`PolicyStore::new`] when you need to supply a
+    /// custom policy and handle the validation error.
+    fn default() -> Self {
+        Self {
+            inner: Arc::new(ArcSwap::from_pointee(ContainerPolicy::default())),
+        }
     }
 }
 

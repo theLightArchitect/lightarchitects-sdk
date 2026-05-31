@@ -17,11 +17,17 @@
 //! 2. `docker exec -i <id> /bin/sh` — raw byte pipe (no PTY allocated).
 //! 3. Two interleaved relay halves: docker stdout → WebSocket binary frames;
 //!    WebSocket text/binary frames → docker stdin.
-//! 4. Drop guard — on disconnect: `docker stop --time 3` then `docker rm -f`.
-//! 5. Background reaper — 5-minute interval, label-based cleanup of orphaned
-//!    exited containers (`managed-by=la-hitl`).
+//! 4. Drop guard — on disconnect: returns semaphore slot, removes from
+//!    `active_containers`, then `docker stop --time 3` + `docker rm -f`.
+//! 5. Background reaper — [`super::spawn_reaper`] reconciles the registry
+//!    against `docker ps` every 10 seconds.
 
-use std::{process::Stdio, sync::OnceLock};
+use std::{
+    collections::HashMap,
+    process::Stdio,
+    sync::{Arc, OnceLock},
+    time::Instant,
+};
 
 use axum::{
     extract::{
@@ -80,12 +86,12 @@ pub async fn ws_relay_handler(
     };
 
     upgrade.on_upgrade(move |socket| async move {
-        relay(socket, container_id).await;
+        relay(socket, container_id, state).await;
     })
 }
 
 /// Bridge a WebSocket connection to `docker exec -i <id> /bin/sh`.
-async fn relay(socket: WebSocket, container_id: String) {
+async fn relay(socket: WebSocket, container_id: String, state: AppState) {
     let span = tracing::info_span!("container.exec_session", container_id = %container_id);
     let _enter = span.enter();
 
@@ -146,8 +152,12 @@ async fn relay(socket: WebSocket, container_id: String) {
         let _ = done_tx.send(());
     });
 
-    // Drop guard: stop + remove container when relay ends (fires on any exit path).
-    let _guard = ContainerDropGuard::new(container_id.clone());
+    // Drop guard: returns semaphore slot + removes from active_containers + cleans up container.
+    let _guard = ContainerDropGuard::new(
+        container_id.clone(),
+        Arc::clone(&state.active_containers),
+        Arc::clone(&state.policy_semaphore),
+    );
 
     // Main relay loop: WebSocket → docker stdin.
     loop {
@@ -201,57 +211,48 @@ async fn wait_for_running(container_id: &str) -> bool {
     .is_ok()
 }
 
-/// RAII guard: stops and removes the container when the relay session ends.
+/// RAII guard: returns the semaphore slot, evicts from `active_containers`,
+/// then stops and removes the container when the relay session ends.
 ///
-/// Uses `docker stop --time 3` (3-second grace period) then `docker rm -f`.
-/// The cleanup is fire-and-forget — it runs inside the existing tokio runtime
-/// so the relay call-stack can return immediately.
+/// Slot return via `add_permits(1)` matches the `permit.forget()` pattern in
+/// the spawner — the two operations are paired and must be kept in sync.
+/// The docker cleanup is fire-and-forget so the relay call-stack can return immediately.
 struct ContainerDropGuard {
     container_id: String,
+    active_containers: Arc<std::sync::RwLock<HashMap<String, Instant>>>,
+    semaphore: Arc<tokio::sync::Semaphore>,
 }
 
 impl ContainerDropGuard {
-    fn new(container_id: String) -> Self {
-        Self { container_id }
+    fn new(
+        container_id: String,
+        active_containers: Arc<std::sync::RwLock<HashMap<String, Instant>>>,
+        semaphore: Arc<tokio::sync::Semaphore>,
+    ) -> Self {
+        Self {
+            container_id,
+            active_containers,
+            semaphore,
+        }
     }
 }
 
 impl Drop for ContainerDropGuard {
     fn drop(&mut self) {
         let id = self.container_id.clone();
-        // Drop the JoinHandle to detach — fire-and-forget cleanup.
+        // Return the semaphore slot (paired with permit.forget() in the spawner).
+        self.semaphore.add_permits(1);
+        // Remove from active tracking.
+        if let Ok(mut guard) = self.active_containers.write() {
+            guard.remove(&id);
+        }
+        // Fire-and-forget container cleanup.
         drop(tokio::spawn(async move {
             crate::container::docker_cmd::stop(&id).await;
             crate::container::docker_cmd::rm_force(&[&id]).await;
             tracing::info!(container_id = %id, "container stopped and removed");
         }));
     }
-}
-
-/// Spawn the background reaper task.
-///
-/// Removes exited containers labelled `managed-by=la-hitl` every 5 minutes.
-/// Label-based discovery means it survives gateway restarts — no in-memory
-/// state is required.
-pub fn spawn_reaper() {
-    tokio::spawn(async {
-        let mut interval = tokio::time::interval(Duration::from_secs(300));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        loop {
-            interval.tick().await;
-            let ids =
-                crate::container::docker_cmd::ps_exited_with_label("managed-by=la-hitl").await;
-            if ids.is_empty() {
-                continue;
-            }
-            let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
-            crate::container::docker_cmd::rm_force(&id_refs).await;
-            tracing::info!(
-                count = ids.len(),
-                "reaper removed exited la-hitl containers"
-            );
-        }
-    });
 }
 
 #[cfg(test)]
