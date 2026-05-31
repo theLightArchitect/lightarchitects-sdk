@@ -201,6 +201,96 @@ async fn executor_trust_gate_blocks_tampered_skill() {
     );
 }
 
+// ── W4.4 ask-marker integration ──────────────────────────────────────────────
+
+/// A synthetic skill containing an `ask` fenced block is rewritten to a
+/// deterministic HITL checkpoint instruction before the content reaches the LLM.
+///
+/// This test verifies the W4.2 integration path end-to-end at the content level
+/// (without spawning an LLM session — the transport boundary is the system_prompt
+/// field which is validated here).
+#[test]
+fn ask_block_in_skill_content_is_rewritten_to_checkpoint() {
+    use lightarchitects_gateway::cli::ask_marker::rewrite_ask_blocks;
+
+    // Synthetic SCRUM-style skill content with one ask block.
+    let skill_content = r#"---
+name: synthetic-scrum
+description: A synthetic SCRUM skill for testing ask-block rewriting
+user-invocable: true
+---
+
+## Round 3 verdict
+
+After all sibling evaluations, present the consolidated verdict.
+
+```ask
+questions:
+  - question: "Accept or reject the SCRUM verdict?"
+    header: "Verdict"
+    multiSelect: false
+    options:
+      - label: "Accept"
+        description: "Proceed with merge as validated"
+      - label: "Reject"
+        description: "Return to remediation phase"
+```
+
+Continue with the operator's selection.
+"#;
+
+    let (rewritten, count, errors) = rewrite_ask_blocks(skill_content);
+
+    // Exactly one ask block parsed and rewritten.
+    assert_eq!(count, 1, "expected 1 ask block, got {count}");
+    assert_eq!(errors, 0, "expected 0 parse errors, got {errors}");
+
+    // The rewritten content contains the HITL checkpoint marker.
+    assert!(
+        rewritten.contains("[HITL CHECKPOINT"),
+        "rewritten content must contain HITL CHECKPOINT marker"
+    );
+    assert!(
+        rewritten.contains("question tool"),
+        "rewritten content must reference the question tool"
+    );
+
+    // The raw ask fence is gone.
+    assert!(
+        !rewritten.contains("```ask"),
+        "raw ```ask fence must be removed from rewritten content"
+    );
+
+    // Context outside the block is preserved.
+    assert!(
+        rewritten.contains("Round 3 verdict"),
+        "content before ask block must be preserved"
+    );
+    assert!(
+        rewritten.contains("Continue with the operator"),
+        "content after ask block must be preserved"
+    );
+
+    // The JSON payload contains the question text.
+    assert!(
+        rewritten.contains("Accept or reject the SCRUM verdict?")
+            || rewritten.contains("Accept or reject"),
+        "HITL checkpoint must contain the question text"
+    );
+}
+
+/// Skill content with no ask blocks is returned unchanged.
+#[test]
+fn skill_content_without_ask_blocks_is_unchanged() {
+    use lightarchitects_gateway::cli::ask_marker::rewrite_ask_blocks;
+
+    let content = "# A skill with no ask blocks\n\nJust regular markdown.";
+    let (rewritten, count, errors) = rewrite_ask_blocks(content);
+    assert_eq!(count, 0);
+    assert_eq!(errors, 0);
+    assert_eq!(rewritten, content);
+}
+
 /// Operator-wins gate and subprocess dispatch interact correctly.
 ///
 /// When `mark_operator_invoked` is set for a slug, `execute()` returns
