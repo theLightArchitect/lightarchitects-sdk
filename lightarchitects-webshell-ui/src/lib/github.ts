@@ -1,9 +1,14 @@
 /**
- * GitHub REST API client for GitForest data.
+ * GitHub REST API client for GitForest data and cockpit HITL proxy calls.
  *
- * Repos are private (TheLightArchitects org) — a PAT with `repo` scope is required.
- * Token resolution order: argument > localStorage('la_gh_token') > unauthenticated (60 req/hr).
+ * Two call patterns exist in this file:
+ *  - GitForest functions: direct GitHub REST calls from the browser using a PAT
+ *    from localStorage. Token resolution: argument > localStorage('la_gh_token') > unauthed.
+ *  - HITL cockpit proxy functions: calls to the webshell backend proxy
+ *    (`/api/gitforest/*`, `/api/github-proxy/*`), which holds the PAT server-side.
+ *    These use `authHeaders()` from `$lib/auth` (webshell session token).
  */
+import { authHeaders } from '$lib/auth';
 
 export const GITHUB_ORG = 'TheLightArchitects';
 
@@ -103,6 +108,9 @@ export interface PullRequest {
 
 // ── HTTP helpers ────────────────────────────────────────────────────────────
 
+// SECURITY: COCKPIT-2026-001 — CWE-312 tech debt. la_gh_token stored in localStorage
+// is readable by any same-origin JS. Accepted for MVP; migrate to httpOnly session cookie
+// via server-side token exchange before operator-facing deploy. Track: LA-SEC-2026-001.
 function resolveToken(overrideToken?: string): string | undefined {
   if (overrideToken) return overrideToken;
   try {
@@ -359,4 +367,111 @@ export async function listOpenPRs(
   return results.sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
+}
+
+// ── Cockpit HITL proxy wrappers (call webshell backend, not GitHub directly) ──
+// Backend holds the PAT; these use authHeaders() for the webshell session token.
+
+/** Open PR awaiting review — mirrors `HitlSearchItem` in `github_proxy.rs`. */
+export interface HitlSearchItem {
+  number: number;
+  title: string;
+  html_url: string;
+  owner: string;
+  repo: string;
+  author: string;
+  updated_at: string;
+  draft: boolean;
+}
+
+/** PR detail — mirrors `HitlPrMetadata` in `github_proxy.rs`. */
+export interface HitlPrMetadata {
+  number: number;
+  title: string;
+  html_url: string;
+  owner: string;
+  repo: string;
+  author: string;
+  state: string;
+  draft: boolean;
+  head_sha: string;
+  updated_at: string;
+}
+
+/** Commit detail — mirrors `CommitMetadata` in `github_proxy.rs`. */
+export interface CommitMetadata {
+  sha: string;
+  message: string;
+  author_login: string;
+  committed_at: string;
+}
+
+/**
+ * Returns open PRs awaiting review, sourced from `GET /api/gitforest/hitl-search`.
+ * Results cached 60s server-side. Returns empty array on auth failure.
+ */
+export async function fetchHITLSearch(): Promise<HitlSearchItem[]> {
+  const res = await fetch('/api/gitforest/hitl-search', { headers: authHeaders() });
+  if (!res.ok) return [];
+  return res.json() as Promise<HitlSearchItem[]>;
+}
+
+/**
+ * Fetches full PR metadata from `GET /api/gitforest/pr-metadata`.
+ * Results cached 60s server-side keyed by `{owner}/{repo}/{number}`.
+ */
+export async function fetchPRMetadata(
+  owner: string,
+  repo: string,
+  number: number,
+): Promise<HitlPrMetadata> {
+  const params = new URLSearchParams({ owner, repo, number: String(number) });
+  const res = await fetch(`/api/gitforest/pr-metadata?${params}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`pr-metadata ${res.status}`);
+  return res.json() as Promise<HitlPrMetadata>;
+}
+
+/**
+ * Submits a PR review via `POST /api/github-proxy/pr/{owner}/{repo}/{num}/review`.
+ * `ifMatchSha` is the current HEAD SHA used for replay-attack prevention (If-Match header).
+ */
+export async function submitPRReview(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT',
+  body: string,
+  ifMatchSha?: string,
+): Promise<void> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...authHeaders(),
+  };
+  if (ifMatchSha) headers['If-Match'] = `"${ifMatchSha}"`;
+  // SECURITY: COCKPIT-2026-003 — cap review body to prevent oversized payloads.
+  const safeBody = body.slice(0, 8192);
+  const res = await fetch(
+    `/api/github-proxy/pr/${owner}/${repo}/${prNumber}/review`,
+    { method: 'POST', headers, body: JSON.stringify({ event, body: safeBody }) },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`submit-review ${res.status}: ${text}`);
+  }
+}
+
+/**
+ * Fetches commit metadata from `GET /api/github-proxy/commits/{owner}/{repo}/{sha}`.
+ * Results cached 60s server-side.
+ */
+export async function fetchCommitMetadata(
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<CommitMetadata> {
+  const res = await fetch(`/api/github-proxy/commits/${owner}/${repo}/${sha}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(`commit-metadata ${res.status}`);
+  return res.json() as Promise<CommitMetadata>;
 }

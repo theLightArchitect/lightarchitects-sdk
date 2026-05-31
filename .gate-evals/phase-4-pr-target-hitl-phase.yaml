@@ -1,0 +1,37 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-31T02:20:00-07:00"
+build_id: webshell-cockpit
+phase_id: phase-4-pr-target-hitl
+overall_verdict: pass
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1823
+    tests_fail: 0
+    flaky_preexisting:
+      - "helix::helix_toml::tests::load_helix_toml_perf_baseline_1000_iterations (workspace-parallel timing 406ms vs 100ms in isolation, passes in isolation)"
+  Q4_svelte:
+    result: pass
+    vitest:
+      tests_run: 787
+      tests_fail: 1
+      flaky_preexisting:
+        - "AgentSelector.svelte.test.ts > shows the empty-state warning... (Svelte5 async tracker, confirmed pre-existing)"
+    svelte_check:
+      result: pass
+      errors: 5
+      notes: "All 5 errors pre-existing in stores.ts and SettingsOverlay.svelte; none in changed files"
+  D2_plan:
+    result: pass
+    note: "Plan updated: status=phase-4-shipped, hitlPoller.ts row marked ✅ EXISTS"
+
+phase_4_deliverables_verified:
+  hitlPoller_ts: "delivered this phase (a8759a3) — Contract 4 HITLItem shape; combines /api/gitforest/hitl-search + /api/conductor/hitl; 60s poll; dedup by id"
+  HITLInbox_svelte: "updated this phase (a8759a3) — consumes hitlPoller store; renders github_pr + platform items with ⎌/◈ source icons; severity-mapped age colours"
+  PRMetadataBlock_svelte: "delivered cockpit-wave-composer (44dd270) — verified at Phase 4"
+  PRVerbSurface_svelte: "delivered cockpit-wave-composer (44dd270) — verified at Phase 4"
+  ForkConfirmationModal_svelte: "delivered cockpit-wave-composer (44dd270) — SERAPH bypass resistance verified"

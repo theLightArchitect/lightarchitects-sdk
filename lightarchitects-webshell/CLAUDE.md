@@ -261,3 +261,51 @@ All credentials read via `security find-generic-password -s la-telegram-credenti
 ### `resolve_safe_path` — symlink-safe path canonicalization (CWE-22)
 
 `events/control.rs::resolve_safe_path` uses ancestor-walk canonicalization: when the target path doesn't exist yet (new file), walk up to the nearest existing ancestor, canonicalize that, reattach the suffix. This catches symlinked-directory attacks (e.g., `cwd/link/ → /etc/`) even for non-existent target paths where `std::fs::canonicalize` would fail. Synthetic test paths like `/project/src/main.rs` fall through to lexical containment check since root `/` is always canonicalizable.
+
+## Cockpit — Operator Domain Console (webshell-cockpit — shipped 2026-05-31)
+
+The Cockpit is the primary operator surface at `/#/activity`. It replaces the generic Dashboard with a domain-preset × target-scope model: the operator picks a **preset** (their current role) and a **target** (what they're working on), and the Cockpit renders role-appropriate views.
+
+### Preset × Target mental model
+
+```
+Preset   — WHAT ROLE AM I IN?     e.g. engineer / security / ops / research
+Target   — WHAT AM I WORKING ON?  e.g. a PR, a build, a phase, a project
+```
+
+The combination gates which cards render. The **Engineer preset** renders the 4 domain zones:
+- **NeedsAction** — builds/tasks requiring operator verb action (approve/review/unblock); 8-item cap
+- **InFlight** — active builds and conductor tasks with progress bars and status dots
+- **QuickActions** — one-click agent dispatch pre-filled with the active target context
+- **Insights** — 4 non-obvious derived signals: confidence velocity, gate throughput, sibling failure rate, build age vs median
+
+### Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `⌘T` | Open the Quick-Pick Palette — keyboard-first target selector; supports all 7 target types |
+| `ESC` | Close Quick-Pick Palette or Copilot Drawer |
+| Click HITL row | Sets `selectedTarget` to that PR/build |
+
+### HITL Inbox
+
+The `HITLInbox` card polls two endpoints every 60 seconds and merges results:
+- `GET /api/gitforest/hitl-search` — GitHub PRs (⎌ icon) awaiting review
+- `GET /api/conductor/hitl` — platform tasks (◈ icon) awaiting operator decision
+
+Age colors: **green** = fresh (info severity), **amber** = warn, **red** = block. Clicking a row sets `selectedTarget` to that PR or build — downstream cards (PRMetadataBlock, PRVerbSurface) update accordingly.
+
+### Copilot context injection
+
+Every copilot message automatically carries `ui_context.cockpit = { preset, target }` via `snapshotContextForCopilot()` (`stores.ts:1090-1119`). The CopilotDrawer header button displays the active preset and, when a target is selected, appends `× <label>` (truncated at 22 chars). This means the AI assistant always knows what the operator is working on without requiring manual context-paste.
+
+### Security invariants
+
+- GitHub PAT never leaves the backend (`github_token_store`); never reaches the frontend; never logged
+- All GitHub API calls funnel through `github_proxy.rs` — no direct browser-to-GitHub calls
+- Fork PR confirmation modal (`ForkConfirmationModal.svelte`) cannot be bypassed via routing or programmatic invocation
+- SSRF allowlist uses `(owner, repo)` tuple list — not repo-name-only; not env/config-driven
+
+### Card roles (`data-card-role` taxonomy)
+
+Every load-bearing Cockpit card declares `data-card-role` on its root element. Registry: `src/lib/cockpit/cardRoles.ts`. Exhaustiveness test: `src/__tests__/cockpit-card-roles.test.ts`. 15 roles total — adding a card requires updating both files and bumping the count assertion.

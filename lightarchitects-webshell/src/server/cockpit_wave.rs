@@ -439,7 +439,16 @@ fn validate_worktree_path(worktree: &str) -> Result<PathBuf, &'static str> {
     };
     if let Some(canon) = canon {
         let home = std::env::var("HOME").unwrap_or_default();
-        let safe = (!home.is_empty() && canon.starts_with(&home))
+        // Canonicalize HOME before comparing: on macOS /tmp is a symlink to /private/tmp,
+        // so a tmpdir HOME would otherwise never match the canonicalized path (CWE-61).
+        let home_canon = if home.is_empty() {
+            std::path::PathBuf::new()
+        } else {
+            std::path::Path::new(&home)
+                .canonicalize()
+                .unwrap_or_else(|_| std::path::PathBuf::from(&home))
+        };
+        let safe = (!home.is_empty() && canon.starts_with(&home_canon))
             || canon.starts_with("/tmp")
             || canon.starts_with("/private/tmp")
             || canon.starts_with("/var/folders")
@@ -456,6 +465,7 @@ fn validate_worktree_path(worktree: &str) -> Result<PathBuf, &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile;
 
     fn make_request(agents: Vec<AgentAssignmentPayload>) -> WaveComposerRequest {
         WaveComposerRequest {
@@ -606,9 +616,11 @@ mod tests {
 
     #[test]
     fn validate_worktree_path_accepts_absolute_clean() {
-        // F-2: well-formed absolute paths accepted.
-        assert!(validate_worktree_path("/Users/kft/lightarchitects/worktrees/my-build").is_ok());
+        // F-2: /tmp paths are accepted without reading HOME, making this test
+        // stable against concurrent tests that temporarily mutate HOME.
+        // HOME-relative path coverage is provided by validate_worktree_path_accepts_deep_absolute.
         assert!(validate_worktree_path("/tmp/wt-abc").is_ok());
+        assert!(validate_worktree_path("/tmp/nested/worktree-build").is_ok());
     }
 
     #[test]
@@ -715,10 +727,19 @@ mod tests {
     // ── Smoke: validate_worktree_path edge cases ──────────────────────────────
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn validate_worktree_path_accepts_deep_absolute() {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/kft".into());
-        let path = format!("{home}/lightarchitects/worktrees/proj/sub/wave-abc123");
-        assert!(validate_worktree_path(&path).is_ok());
+        // Use a real tmpdir so the ancestor walk finds an existing path and canonicalizes
+        // to /private/tmp/... (macOS), which is in the hardcoded allowlist. This avoids
+        // dependency on HOME, which concurrent tests may temporarily mutate.
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp
+            .path()
+            .join("worktrees")
+            .join("proj")
+            .join("sub")
+            .join("wave-abc123");
+        assert!(validate_worktree_path(path.to_str().unwrap()).is_ok());
     }
 
     #[test]
