@@ -19,7 +19,8 @@ export type ScreenKey =
   | 'Roadmap'
   | 'Observability'
   | 'Tools'           // §O Tool Surface Parity
-  | 'AutonomousBuilds'; // ironclaw autonomous build panel
+  | 'AutonomousBuilds' // ironclaw autonomous build panel
+  | 'Chat'; // Polished LiteLLM streaming chat panel
 
 export interface RouteMatch {
   screen: ScreenKey;
@@ -102,6 +103,7 @@ const ROUTES: RouteEntry[] = [
   [/^\/ayin$/,                                                              'Observability', []],
   [/^\/tools$/,                                                             'Tools',         []],
   [/^\/autonomous$/,                                                        'AutonomousBuilds', []],
+  [/^\/chat$/,                                                              'Chat',          []],
 ];
 
 /** Matches a hash-fragment path (with or without leading #) to a screen + params. */

@@ -183,3 +183,65 @@ Copilot turns now write AYIN spans via `ayin_traces_utils.ts` (frontend) and `co
 - Tool-use spans reference `turn_span_id` as `parent_id` → enables Lineage Circuit visualization in AYIN
 - `View in AYIN →` deeplink in `CopilotDrawer.svelte` navigates to AYIN dashboard at `:3742`
 - Frontend tests: `src/__tests__/ayin-traces-utils.test.ts` (expanded to full span-diagram builder coverage)
+
+## Autonomous Build Pipeline (ironclaw-autonomous-e2e — shipped 2026-05-30)
+
+Wires `POST /api/builds { mode: "autonomous", cwd, waves: [[Task]] }` through the full IronClaw path:
+`spawn_autonomous_build` → `OllamaCloudCodingProvider::execute_task` → `git commit` → `DecisionsWriter::append` → SSE broadcast.
+
+### Key types
+
+| Type | Module | Role |
+|------|--------|------|
+| `AppState.mock_workers` | `server/mod.rs` | `true` → no LLM calls; `false` → real `OllamaCloudCodingProvider`. Set by `AppState::for_test` (default `true`), override for E2E. |
+| `OllamaCloudCodingProvider` | `events/coding_provider.rs` | Reads `OLLAMA_API_KEY` from env at worker-spawn time (NOT at server startup). |
+| `DecisionsWriter` | `events/decisions_writer.rs` | HMAC-chained NDJSON ledger; path `$TMPDIR/la-decisions-{build_id}.ndjson`. |
+| `WorkerSlotGauge` / `MergeAgentStatus` | `events/types.rs` | SSE events broadcast on slot changes and wave completions. |
+
+### Test gate: `IRONCLAW_E2E=1` required opt-in
+
+```bash
+# Smoke tests (no LLM, no network) — always run with cargo test
+cargo test --test smoke_autonomous_pipeline
+
+# Real Ollama Cloud E2E — explicit opt-in required
+IRONCLAW_E2E=1 OLLAMA_API_KEY=<key> cargo test --test autonomous_ollama_e2e -- --nocapture
+```
+
+`OLLAMA_API_KEY` alone does NOT activate E2E (prevents accidental 90s runs when key is in shell profile). Both `IRONCLAW_E2E=1` AND a non-empty `OLLAMA_API_KEY` are required.
+
+### Smoke test pattern (`tower::ServiceExt::oneshot`)
+
+```rust
+let app = build_app(AppState::for_test(cfg, DockerCapability::Unavailable));
+let resp = app.oneshot(Request::post("/api/builds").header(...).body(...).unwrap()).await.unwrap();
+```
+
+No TCP port required. `AppState::for_test` sets `mock_workers = true` — zero LLM calls.
+
+**`doc_markdown` lint gotcha**: field names in `///` comments must be wrapped in backticks, e.g. `` (`mock_workers` = true) `` not `(mock_workers = true)`. The pre-commit hook enforces this via `clippy::doc_markdown`.
+
+## Telegram HITL Relay (ironclaw-autonomous-e2e — shipped 2026-05-30)
+
+`TelegramHitlRelay` (`events/telegram_hitl_relay.rs`) delivers escalation messages to a Telegram bot and processes callback answers from the operator.
+
+### Keychain layout (service: `la-telegram-credential`)
+
+| Account (`-a`) | Value |
+|---|---|
+| `bot-token` | Telegram Bot API token |
+| `chat-id` | Operator Telegram chat ID |
+| `webshell-auth-token` | Pre-shared token for `POST /api/control` |
+
+All credentials read via `security find-generic-password -s la-telegram-credential -a <account> -w` (OA-3: no `keyring` crate, no env var fallback for production).
+
+### Security invariants (NEVER violate)
+
+- **CWE-316 fix**: `bot_token` and `webshell_auth_token` stored as `Arc<SecretString>` — zeroized on last-clone drop. Access only via `.expose_secret()`. Never stored as `String` or `Arc<String>`.
+- **CWE-209 fix**: `reqwest` errors use `.without_url()` in `bot_api()` — bot token is never in an error string or log field.
+- **escalation_nonce** (anti-replay): embedded in Telegram `callback_data` as URL-safe base64; `DashSet<String>` rejects duplicate callbacks (SERAPH#3). Nonce is NEVER logged, NEVER in UI, NEVER in error messages.
+- **`POST /api/control` resolution path**: `{ command: "ironclaw_hitl_resolution", escalation_nonce, resolution, ... }` — NOT `/api/builds/:id/hitl/:call_id`. Nonce carried in request body only.
+
+### `resolve_safe_path` — symlink-safe path canonicalization (CWE-22)
+
+`events/control.rs::resolve_safe_path` uses ancestor-walk canonicalization: when the target path doesn't exist yet (new file), walk up to the nearest existing ancestor, canonicalize that, reattach the suffix. This catches symlinked-directory attacks (e.g., `cwd/link/ → /etc/`) even for non-existent target paths where `std::fs::canonicalize` would fail. Synthetic test paths like `/project/src/main.rs` fall through to lexical containment check since root `/` is always canonicalizable.

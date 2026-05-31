@@ -10,7 +10,7 @@
     ayinStatus,
   } from '$lib/stores';
   import { navigate } from '$lib/routes';
-  import { SIBLING_COLORS } from '$lib/design-tokens';
+  import { SIBLING_COLORS, getChatActorPolytope } from '$lib/design-tokens';
   import { api } from '$lib/api';
   import { authHeaders } from '$lib/auth';
   import { parseCommand, SLASH_COMMANDS } from '$lib/commands';
@@ -904,11 +904,11 @@
   });
 
   // ── E2E injection bridge ────────────────────────────────────────────────────
-  // Only active in dev/test. Allows Playwright tests to inject synthetic
-  // AgentEvents without a real WebSocket connection.
+  // Allows Playwright + local demos to inject synthetic AgentEvents and
+  // sibling-attributed seed messages. Requires page access (and therefore
+  // the auth token), so no additional gating beyond that — the channel is
+  // additive only (no privileged operations behind it).
   $effect(() => {
-    if (import.meta.env.PROD) return;
-
     const injectHandler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { events?: import('$lib/types').AgentEvent[] } | undefined;
       if (!detail?.events) return;
@@ -917,6 +917,19 @@
       }
     };
     window.addEventListener('la:e2e-inject-agent-events', injectHandler);
+
+    // Polytope-identity demo seeder. Drops one bubble per entry so the
+    // sibling avatars render in their canonical 4D figures side-by-side.
+    const siblingSeedHandler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as
+        | { messages?: { role: 'user' | 'assistant' | 'system'; sibling?: SiblingId; content: string }[] }
+        | undefined;
+      if (!detail?.messages) return;
+      for (const m of detail.messages) {
+        addMessage(m.role, m.content, m.sibling);
+      }
+    };
+    window.addEventListener('la:demo-inject-sibling-messages', siblingSeedHandler);
 
     const rawHandler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { raw?: string } | undefined;
@@ -946,6 +959,7 @@
 
     return () => {
       window.removeEventListener('la:e2e-inject-agent-events', injectHandler);
+      window.removeEventListener('la:demo-inject-sibling-messages', siblingSeedHandler);
       window.removeEventListener('la:e2e-inject-raw-ws', rawHandler);
       window.removeEventListener('la:e2e-simulate-ws-disconnect', disconnectHandler);
     };
@@ -1215,7 +1229,7 @@
                   <p class="text-xs">No messages match "<span class="text-[var(--la-text-dim)] font-mono">{searchQuery}</span>"</p>
                 </div>
               {:else}
-                {#each filteredMessages as msg (msg.id)}
+                {#each filteredMessages as msg, msgIdx (msg.id)}
                   {#if msg.kind === 'thinking'}
                     <!-- Collapsible thinking block — full-width, no bubble chrome -->
                     <div class="thinking-wrap">
@@ -1225,7 +1239,7 @@
                         aria-expanded={thinkingOpen[msg.id] ?? false}
                       >
                         <span class="thinking-chevron">{thinkingOpen[msg.id] ? '▾' : '▸'}</span>
-                        <span class="thinking-label">Thinking</span>
+                        <span class="thinking-label">[ thinking ]</span>
                         <span class="thinking-chars">{msg.content.length.toLocaleString()} chars</span>
                       </button>
                       {#if thinkingOpen[msg.id]}
@@ -1235,13 +1249,22 @@
                       {/if}
                     </div>
                   {:else}
+                    {@const poly = getChatActorPolytope(msg.role, msg.sibling)}
                     <div class="flex {msg.role === 'user' ? 'justify-end' : msg.role === 'system' ? 'justify-center' : 'justify-start'}">
-                      <div class="max-w-[78%] px-3 py-1.5 rounded-lg text-xs chat-bubble leading-snug
+                      <div class:streaming-live={$copilotLoading && msg.role === 'assistant' && msgIdx === filteredMessages.length - 1} class="max-w-[78%] px-3 py-1.5 rounded-lg text-xs chat-bubble leading-snug
                         {msg.role === 'user' ? 'bg-[var(--la-focus-ring)]/90 text-[var(--la-bg-frame)]' :
                          msg.role === 'system' ? 'bg-[var(--la-drawer-border)]/50 text-[var(--la-text-dim)] border border-[var(--la-drawer-border)]' :
                          'bg-[var(--la-bg-elev-1)] border border-[var(--la-drawer-border)] text-[var(--la-text-bright)]'}">
+                        {#if msg.role !== 'system'}
+                          <!-- Polytope avatar — sibling identity uses their
+                               canonical 4D figure; default user/assistant
+                               get the hexacosichoron / doubleHelix4D. -->
+                          <span class="msg-poly" aria-hidden="true">
+                            <PolytopeIcon type={poly.type} color={poly.color} size={18} />
+                          </span>
+                        {/if}
                         {#if msg.sibling}
-                          <SiblingBadge sibling={msg.sibling} size="sm" />
+                          <span class="msg-sib-name" style="color:{SIBLING_COLORS[msg.sibling.toLowerCase()] ?? 'var(--la-focus-ring)'}">{msg.sibling.toUpperCase()}</span>
                           <span class="text-[var(--la-text-dim)] mx-1">·</span>
                         {/if}
                         {#if msg.role === 'user'}
@@ -1680,46 +1703,114 @@
   }
 
   /* Collapsible thinking blocks */
+  /* ── Thinking block — parchment card with gold rule + scan-line texture.
+     Brought in alignment with /chat aesthetic but scaled to drawer size. */
   .thinking-wrap {
     width: 100%;
-    margin: 1px 0;
+    margin: 2px 0;
+    border-left: 2px solid var(--la-focus-ring);
+    background-image:
+      linear-gradient(90deg, rgba(255, 215, 0, 0.04) 0%, transparent 30%),
+      repeating-linear-gradient(
+        0deg,
+        transparent 0px,
+        transparent 3px,
+        rgba(255, 215, 0, 0.025) 3px,
+        rgba(255, 215, 0, 0.025) 4px
+      );
   }
   .thinking-toggle {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     width: 100%;
     background: transparent;
     border: none;
-    border-left: 2px solid var(--la-hair-strong);
-    padding: 2px 8px;
+    padding: 4px 10px;
     cursor: pointer;
     text-align: left;
-    color: var(--la-text-mute);
-    font-family: var(--la-font-mono, monospace);
-    font-size: 8px;
-    letter-spacing: 0.05em;
-    transition: border-color 0.15s ease, color 0.15s ease;
-  }
-  .thinking-toggle:hover {
-    border-color: var(--la-text-dim);
     color: var(--la-text-dim);
-  }
-  .thinking-chevron { font-size: 7px; opacity: 0.6; flex-shrink: 0; }
-  .thinking-label { font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; flex: 1; }
-  .thinking-chars { font-size: 8px; opacity: 0.4; font-variant-numeric: tabular-nums; }
-  .thinking-body {
-    border-left: 2px solid var(--la-hair-base);
-    padding: 5px 10px 5px 8px;
+    font-family: var(--la-font-mono, monospace);
     font-size: 9px;
-    color: var(--la-text-mute);
+    letter-spacing: 0.05em;
+    transition: color 0.15s ease;
+  }
+  .thinking-toggle:hover { color: var(--la-text-bright); }
+  .thinking-chevron {
+    font-size: 8px;
+    color: var(--la-focus-ring);
+    flex-shrink: 0;
+  }
+  /* [ thinking ] — small-caps serif italic to match /chat's [THINKING] tag. */
+  .thinking-label {
+    font-family: 'New York', 'Charter', 'Iowan Old Style', Georgia, serif;
     font-style: italic;
-    line-height: 1.45;
-    animation: thinking-expand 0.12s ease both;
+    font-variant: small-caps;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    color: var(--la-focus-ring);
+    font-size: 10px;
+    flex: 1;
+  }
+  .thinking-chars {
+    font-size: 8px;
+    color: var(--la-text-mute);
+    letter-spacing: 0.08em;
+    font-variant-numeric: tabular-nums;
+  }
+  .thinking-body {
+    padding: 3px 12px 8px 22px;
+    font-family: 'New York', 'Charter', Georgia, serif;
+    font-style: italic;
+    font-size: 10.5px;
+    line-height: 1.55;
+    color: var(--la-text-dim);
+    animation: thinking-expand 0.14s ease both;
   }
   @keyframes thinking-expand {
     from { opacity: 0; transform: translateY(-4px); }
     to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Polytope avatar inside the bubble — a tiny 4D figure that
+     identifies the speaker. Floats inline before the content so
+     identity reads first, before the words. */
+  .msg-poly {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-right: 6px;
+    vertical-align: -3px;
+    filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.18));
+  }
+  .msg-sib-name {
+    font-family: var(--la-font-mono);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    font-weight: 600;
+    vertical-align: 1px;
+  }
+
+  /* ── Streaming caret — pixel-block, blinking, gold. Painted as a
+     pseudo-element on the live assistant bubble so no template churn
+     beyond the class:streaming-live binding. */
+  :global(.streaming-live .chat-md-content)::after {
+    content: '▌';
+    display: inline-block;
+    color: var(--la-focus-ring);
+    margin-left: 2px;
+    font-weight: 800;
+    font-size: 11px;
+    line-height: 1;
+    transform: translateY(1px);
+    text-shadow: 0 0 6px rgba(255, 215, 0, 0.55);
+    animation: drawer-caret 0.85s steps(2, end) infinite;
+  }
+  @keyframes drawer-caret {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0.05; }
   }
 
   /* Markdown rendering inside chat bubbles.
@@ -1742,30 +1833,44 @@
     font-weight: 600;
     color: var(--la-text-stark);
   }
+  /* Editorial emphasis — serif italic, gold-tinted. Matches /chat's
+     <em> treatment so any text that breaks the prose reads like a
+     considered aside instead of a typographic shrug. */
   :global(.chat-md-content em) {
+    font-family: 'New York', 'Charter', 'Iowan Old Style', Georgia, serif;
     font-style: italic;
-  }
-  :global(.chat-md-content code) {
-    background: rgba(255, 215, 0, 0.08);
     color: var(--la-focus-ring);
-    padding: 0.1em 0.35em;
-    border-radius: var(--la-radius-sm);
+  }
+  /* Inline code — quiet panel surface, monospace, code-blue. Was
+     gold-tinted; now blends with the bubble and only differentiates
+     via the subtle border + font shift. */
+  :global(.chat-md-content code) {
+    background: var(--la-bg-elev-1);
+    border: 1px solid var(--la-bg-elev-2);
+    color: var(--la-text-code);
+    padding: 0.06em 0.4em;
     font-family: var(--la-font-mono);
     font-size: 0.92em;
     word-break: break-word;
   }
+  /* Fenced code — hard edges + 2px gold left-rule + the same subtle gold
+     halo /chat uses. Reads as a discrete artifact inside the bubble. */
   :global(.chat-md-content pre) {
     background: var(--la-bg-frame);
-    border: 1px solid var(--la-drawer-border);
-    border-radius: var(--la-radius-sm);
-    padding: 8px 10px;
-    margin: 0.4em 0;
+    border: 1px solid var(--la-bg-elev-2);
+    border-left: 2px solid var(--la-focus-ring);
+    border-radius: 0;
+    padding: 8px 10px 7px;
+    margin: 0.5em 0;
     overflow-x: auto;
     font-size: 11px;
+    line-height: 1.55;
+    box-shadow: 0 0 0 1px rgba(255, 215, 0, 0.04);
   }
   :global(.chat-md-content pre code) {
     background: transparent;
-    color: var(--la-text-bright);
+    border: 0;
+    color: var(--la-text-code);
     padding: 0;
     font-size: inherit;
   }
@@ -1777,17 +1882,22 @@
   :global(.chat-md-content li) {
     margin: 0.1em 0;
   }
+  /* Headings — New York / Charter serif at slightly larger weight.
+     Tracks tightened a hair (-0.005em) to keep the editorial feel
+     even at the drawer's compressed scale. */
   :global(.chat-md-content h1),
   :global(.chat-md-content h2),
   :global(.chat-md-content h3),
   :global(.chat-md-content h4) {
-    margin: 0.5em 0 0.3em 0;
-    font-weight: 600;
+    margin: 0.55em 0 0.3em 0;
+    font-family: 'New York', 'Charter', 'Iowan Old Style', Georgia, serif;
+    font-weight: 500;
     color: var(--la-text-stark);
-    line-height: 1.3;
+    line-height: 1.25;
+    letter-spacing: -0.005em;
   }
-  :global(.chat-md-content h1) { font-size: 1.15em; }
-  :global(.chat-md-content h2) { font-size: 1.05em; }
+  :global(.chat-md-content h1) { font-size: 1.2em; }
+  :global(.chat-md-content h2) { font-size: 1.08em; }
   :global(.chat-md-content h3) { font-size: 1em; }
   :global(.chat-md-content h4) { font-size: 0.95em; }
   :global(.chat-md-content a) {
@@ -1798,11 +1908,18 @@
   :global(.chat-md-content a:hover) {
     color: var(--la-focus-ring);
   }
+  /* Blockquote — gold rule + serif italic. Matches /chat: when an
+     agent quotes itself or another voice, the typography signals it
+     as a different register. */
   :global(.chat-md-content blockquote) {
-    border-left: 2px solid var(--la-hair-strong);
-    padding-left: 0.7em;
-    margin: 0.4em 0;
-    color: var(--la-text-label);
+    border-left: 2px solid var(--la-focus-ring);
+    padding: 2px 0 2px 0.8em;
+    margin: 0.5em 0;
+    font-family: 'New York', 'Charter', Georgia, serif;
+    font-style: italic;
+    color: var(--la-text-dim);
+    font-size: 1.02em;
+    line-height: 1.5;
   }
   :global(.chat-md-content hr) {
     border: none;

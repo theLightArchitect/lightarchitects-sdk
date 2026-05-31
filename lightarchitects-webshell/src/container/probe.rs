@@ -1,8 +1,12 @@
 //! Docker capability probe — three-check cascade.
 
 use std::path::Path;
+use std::time::Duration;
 
 use crate::container::types::DockerCapability;
+
+/// Per-command timeout for Docker subprocess checks.
+const DOCKER_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Probe Docker availability with a three-check cascade.
 ///
@@ -11,8 +15,9 @@ use crate::container::types::DockerCapability;
 ///    communication.
 /// 3. Run `docker run --rm hello-world` to verify we can actually spawn containers.
 ///
-/// The full cascade takes ~1–3 s on a warm daemon. Called once at startup and
-/// cached in [`AppState`](crate::server::AppState).
+/// Each subprocess step is bounded by [`DOCKER_PROBE_TIMEOUT`] (5 s) so a
+/// hung or slow daemon never blocks webshell startup. Called once at startup
+/// and cached in [`AppState`](crate::server::AppState).
 pub async fn probe_docker() -> DockerCapability {
     // Check 1: socket exists and writable
     let socket = Path::new("/var/run/docker.sock");
@@ -35,40 +40,54 @@ pub async fn probe_docker() -> DockerCapability {
         return DockerCapability::Unavailable;
     }
 
-    // Check 2: docker CLI responds
-    let version = tokio::process::Command::new("docker")
-        .args(["version", "--format", "{{.Server.Version}}"])
-        .output()
-        .await;
+    // Check 2: docker CLI responds (bounded)
+    let version_result = tokio::time::timeout(
+        DOCKER_PROBE_TIMEOUT,
+        tokio::process::Command::new("docker")
+            .args(["version", "--format", "{{.Server.Version}}"])
+            .output(),
+    )
+    .await;
 
-    match version {
-        Ok(out) if out.status.success() => {
+    match version_result {
+        Ok(Ok(out)) if out.status.success() => {
             let ver = String::from_utf8_lossy(&out.stdout).trim().to_owned();
             tracing::debug!(target: "container", version = %ver, "docker version OK");
         }
-        _ => {
+        Ok(_) => {
             tracing::debug!(target: "container", "docker version failed");
+            return DockerCapability::Unavailable;
+        }
+        Err(_) => {
+            tracing::warn!(target: "container", "docker version timed out");
             return DockerCapability::Unavailable;
         }
     }
 
-    // Check 3: permission check — can we run a trivial container?
-    let test = tokio::process::Command::new("docker")
-        .args(["run", "--rm", "hello-world"])
-        .status()
-        .await;
+    // Check 3: permission check — can we run a trivial container? (bounded)
+    let test_result = tokio::time::timeout(
+        DOCKER_PROBE_TIMEOUT,
+        tokio::process::Command::new("docker")
+            .args(["run", "--rm", "hello-world"])
+            .status(),
+    )
+    .await;
 
-    match test {
-        Ok(st) if st.success() => {
+    match test_result {
+        Ok(Ok(st)) if st.success() => {
             tracing::info!(target: "container", "docker_capable=Ready");
             DockerCapability::Ready
         }
-        Ok(_) => {
+        Ok(Ok(_)) => {
             tracing::warn!(target: "container", "docker_capable=NoPermission");
             DockerCapability::NoPermission
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             tracing::warn!(target: "container", error = %e, "docker hello-world failed");
+            DockerCapability::Unavailable
+        }
+        Err(_) => {
+            tracing::warn!(target: "container", "docker hello-world timed out");
             DockerCapability::Unavailable
         }
     }
