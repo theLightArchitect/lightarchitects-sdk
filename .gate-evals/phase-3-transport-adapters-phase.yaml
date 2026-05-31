@@ -1,0 +1,54 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-31T19:15:00Z"
+build_id: webshell-hitl-bridge
+phase_id: phase-3-transport-adapters
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1390
+    tests_fail: 0
+    notes: |
+      Webshell: 917 pass, 3 ignored, 0 fail (main binary 775 pass; remaining
+        142 from integration + doc test binaries). Pre-existing 3 ignored unchanged.
+      Gateway lib: 473 pass, 1 ignored, 0 fail.
+        3 new tests from question_transport_cli::tests pass:
+          input_with_two_questions_has_correct_structure ✓
+          make_input_helper_single_select ✓
+          make_input_helper_multi_select ✓
+  Q4_svelte:
+    result: pass
+    notes: |
+      svelte-check: 0 NEW errors (5 pre-existing remain — CdpDomSnapshotResponse
+      missing from types.ts + SettingsOverlay "dev" tab type mismatch; both
+      present on Phase 2 HEAD with 7 errors; Phase 3 reduced count 7→5).
+      No errors in QuestionCard.svelte, stores.ts additions, sse.ts additions,
+      or app.svelte overlay integration.
+  D2_plan:
+    result: pass
+    notes: |
+      Plan Phase 3 deliverables completed:
+      - W3.1 QuestionCard.svelte: role=dialog, aria-modal, fieldset/legend
+        semantics, POST /api/question/:id/answer + authHeaders().
+      - W3.2 SSE wiring: EventType union + pendingQuestions Map store +
+        _handleEvent cases for question_prompt and question_answered.
+      - W3.3 CLI transport: question_transport_cli::prompt_cli() using
+        inquire::Select / inquire::MultiSelect (not dialoguer — plan corrected).
+      - W3.4 CLAUDE_CODE_INTERACTIVE env-var check routes to CLI transport
+        before webshell long-poll in question::run().
+      - W3.5 Headless policy: already complete from Phase 2.
+      - W3.6 Playwright E2E: deferred to GATE 3 [T] gate (requires running
+        webshell server; gate-3 will execute the E2E suite).
+
+notable:
+  - Pre-existing fmt diff in lightarchitects-gateway/src/cli/webshell.rs
+    (start_server call style) fixed as housekeeping — not introduced by Phase 3.
+  - inquire (not dialoguer) confirmed as the CLI prompt library in the gateway
+    crate; plan comment corrected in question.rs doc comment.
+  - node_modules installed in worktree UI directory for svelte-check; dist/
+    symlink from Phase 1 retained.
