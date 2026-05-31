@@ -8,6 +8,32 @@ Companion changelog for `builders-cookbook.md`. The cookbook holds **current sta
 
 ---
 
+## v3.11.0 — §78 LLM HTTP Dispatch Doctrine (2026-05-30, webshell-litellm-adapter ratification)
+
+**Source**: /REFLECT session post webshell-litellm-adapter implementation. Three rules consolidated into one new top-level §78 covering streaming-by-default, provider unification, and the streaming-to-UX corollary.
+
+### §78 — LLM HTTP Dispatch Doctrine (new section)
+**Candidates**: /REFLECT proposals — promoted from `feedback_litellm_provider_unifier.md` (#3 in candidate doc) + `feedback_streaming_tx_forwarding.md` (#4). Streaming-by-default at the wire (§78.1) is **promotion of a previously-project-local CLAUDE.md rule** to canonical status — the policy existed in `lightarchitects-sdk/CLAUDE.md` but had never been ratified into canon.
+**LÆX0-pattern verdict**: PROMOTE-WITH-RESHAPE. Author's original candidates #3 + #4 were independent; LÆX0 cold-context review folded them into a single doctrine where #3 (provider unifier) is the routing topology and #4 (tx-forwarding) is its streaming corollary. The new §78 therefore composes three rules under one canonical header rather than two scattered ones.
+**Rationale**:
+- The webshell-litellm-adapter session pressure-tested all three rules across `loops_demo` + `/chat` panel + `litellm_chat` SSE route (N=3 surfaces, 1 session). Before §78.3 forwarding: 10-15s silences in browser between phase markers. After: ~18ms token cadence end-to-end. The §78.2 unification eliminated the `OllamaCliProvider` dual-path 429/403 fallback logic from the affected surfaces — fallback complexity now lives in one proxy, not N surfaces.
+- The "streaming-by-default" rule itself had been operationally enforced via project-local CLAUDE.md for several builds (hermes-litellm-integration earlier on 2026-05-30; webshell-la-native-backend prior). Canon promotion brings the rule into the corpus governed by Canon XII (Living Standard) and gives the Q-gate a citable reference instead of project-local CLAUDE.md.
+- Operational implementation specifics (which OpenAI-compatible proxy, env names, config path) are explicitly **out of canon scope** and routed to Operators Manual. Canon holds the doctrine; the manual holds the implementation.
+**Generality**: Applies to every LLM-touching surface the platform builds. Exception path is explicit (subprocess agent paths for tool-use stay direct, e.g. drawer's `lightarchitects_native`).
+**Cross-canon ties**: Composes with §15.1 (structured log format for compliance audit) and Canon XL (Mixture-of-Experts Platform Architecture — §78 is how the MoE router speaks to its experts). No conflict with any other canon section.
+**Companion memory entries**:
+- `feedback_litellm_provider_unifier.md` (PROMOTED — provides implementation specifics, env contract)
+- `feedback_streaming_tx_forwarding.md` (PROMOTED — pressure-test details)
+- `feedback_ollama_v1_messages_anthropic_proxy.md` (operational — the failure mode §78.2 eliminates)
+- `feedback_ollama_cloud_suffix_variants.md` (operational — Ollama-specific gotcha)
+- `reference_ollama_no_cloud_disable.md` (operational reference)
+**Promotion candidates held in memory (NOT promoted)**:
+- `feedback_svelte5_push_then_mutate.md` — DEFERRED, pending N≥2 cross-session witness (LÆX0 verdict: 0.66 aggregate, N=1 insufficient)
+- `feedback_svelte5_const_placement.md` — REJECTED for cookbook, kept in memory (LÆX0 verdict: compiler self-documents; 0.53 aggregate)
+**Pressure-tested**: N=3 surfaces in 1 session (loops_demo, /chat, litellm_chat). LÆX0 aggregate scores: #3 principle 0.80, #4 corollary 0.75 — both clear ratification threshold.
+
+---
+
 ## v3.10.0 — SSE Emission Existence — Rule S50.5c (2026-05-30, LÆX ratification)
 
 **Source**: /REFLECT session post cockpit-wave-composer × ironclaw-autonomous-e2e cross-build plan audit. Caught pre-merge in plan cross-examination; would have been a silent production bug.

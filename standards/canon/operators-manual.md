@@ -1081,5 +1081,75 @@ skill_trust::verify_or_pin("PLAN", &skill_md_content)?;
 
 ---
 
-*Operators Manual v1.3 | Light Architects | updated 2026-05-24 with §Vibe-Coding-Workflow (closes vibe-coding-loop Phase 6 + Phase 7 canon gaps; LÆX Phase 8 ratification pending)*
+## §LLM-Proxy — LiteLLM as the Canonical OpenAI-Compatible Adapter (2026-05-30 ADDITION)
+
+Canonical implementation of Cookbook §78.2 (Provider unification through one OpenAI-compatible adapter). The doctrine lives in canon; the implementation lives here so the proxy choice can evolve without canon revision.
+
+### Why LiteLLM
+
+The webshell platform routes all non-agent LLM dispatch through a single LiteLLM proxy. LiteLLM normalises every backend — Ollama, Anthropic, OpenAI, OpenRouter, Vertex via LiteLLM, Bedrock via LiteLLM, Groq, Together, Fireworks, Azure OpenAI, Databricks — to one OpenAI Chat Completions shape with `stream: true`. Per-surface fallback complexity (Cookbook §78.1 streaming-by-default) collapses to one proxy.
+
+Surfaces that go through the proxy:
+- `loops_demo` (17-strategy demo panel)
+- `/chat` (polished LiteLLM chat panel)
+- `litellm_chat` SSE route (`POST /api/litellm/chat`)
+- LightSquad `ContractSupervisor` (see `lightsquad-orchestration-spec.md` §C-Supervisor)
+
+Surfaces that **do not** go through the proxy (per Cookbook §78.2 exception clause — agent capabilities the proxy doesn't expose):
+- `CopilotDrawer` native session path (subprocess + session pool + tool execution + helix write-back)
+- Direct CLI dispatch (Claude Code CLI, Codex CLI, Mistral Vibe ACP bridge)
+
+### Local-dev configuration
+
+```bash
+# Install once
+pip install litellm
+
+# Config: ~/.lightarchitects/litellm.config.yaml
+cat > ~/.lightarchitects/litellm.config.yaml <<'YAML'
+model_list:
+  - model_name: local-llama
+    litellm_params:
+      model: ollama_chat/llama3.2:3b
+      api_base: http://localhost:11434
+      stream: true
+general_settings:
+  master_key: la-local-dev
+litellm_settings:
+  drop_params: true
+  set_verbose: false
+YAML
+
+# Start the proxy
+litellm --config ~/.lightarchitects/litellm.config.yaml --port 4000
+```
+
+### Webshell env contract
+
+The webshell `loops_demo`, `/chat`, and `litellm_chat` paths read three environment variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LA_LITELLM_BASE_URL` | `http://localhost:4000` | LiteLLM proxy URL. |
+| `LA_LITELLM_API_KEY`  | `la-local-dev`         | Bearer key — match the proxy's `master_key`. |
+| `LA_LITELLM_MODEL`    | `local-llama`          | Model alias declared in `litellm.config.yaml#model_list`. |
+
+The SDK constructor is `OpenAICompatProvider::for_litellm(Some(base_url), api_key, model)` in `lightarchitects::agent::openai_compat`.
+
+### Operator workflow
+
+1. **Add a model**: edit `litellm.config.yaml`, append a new `model_list` entry. No webshell restart needed if the model alias is read via env at request time.
+2. **Switch backends**: change `litellm_params.model` (e.g. `ollama_chat/llama3.2:3b` → `anthropic/claude-sonnet-4.5`) without changing webshell envs. The model alias (e.g. `local-llama`) stays stable; the backend behind it changes.
+3. **Inspect health**: `curl -H "Authorization: Bearer la-local-dev" http://localhost:4000/health` — returns the healthy/unhealthy endpoint set.
+4. **Force local-only Ollama mode**: see memory `reference_ollama_no_cloud_disable.md` — set `OLLAMA_NO_CLOUD=1` on the `ollama serve` process AND ensure the model name is not `:cloud` / `-cloud` suffixed (see `feedback_ollama_cloud_suffix_variants.md`).
+
+### Cross-references
+
+- **Cookbook §78** — the canonical doctrine this section implements.
+- **`canon://platform-canon` Canon XL** — Mixture-of-Experts Platform Architecture; LiteLLM is the routing substrate for MoE expert dispatch.
+- **`canon://operators-manual` §Model-Routing-Doctrine** (above) — model selection by intent; this section is one layer below: the routing topology.
+
+---
+
+*Operators Manual v1.4 | Light Architects | updated 2026-05-30 with §LLM-Proxy (Cookbook §78.2 implementation; webshell-litellm-adapter session ratification)*
 *Part of the Canonical Suite. Supersedes: northstar-v1.md, platform-architecture-v2.md, lens-driven-squad-selection.md, soul-cycle.md, secret-leak-runbook.md, ai-detection-checklist.md, tts-voice-production.md.*

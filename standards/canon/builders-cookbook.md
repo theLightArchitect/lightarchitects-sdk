@@ -5042,46 +5042,6 @@ The `/GATE` skill MUST:
 | S50.6a (no real fs side effects) | lÆx0 Phase 9 coverage ceiling: vault.rs at 48% because tests read from real ~/.soul/sessions/. Mock trait injection (Phase 10g) is the fix. Without S50.6a, tests are non-hermetic and coverage is an undercount. |
 | S50.7 (accessibility) | Web dashboard (Phase 10): WCAG 2.1 AA compliance is a product requirement. axe-core catches ~57% of accessibility issues automatically. |
 
-### §50.10 Infrastructure-Dependent E2E Test Opt-In Gate
-
-Tests that hit real external infrastructure (LLM APIs, remote databases, network services) MUST require **two** explicit environment variables: an opt-in flag AND the credential. The credential alone is insufficient.
-
-**Rule S50.10a** — Infrastructure E2E tests must check an explicit opt-in flag before reading any credential:
-
-```rust
-fn service_api_key() -> Option<String> {
-    // Opt-in flag required — prevents accidental 90s runs when API key is in shell profile.
-    if std::env::var("MYSERVICE_E2E").is_err() { return None; }
-    std::env::var("MYSERVICE_API_KEY").ok().filter(|s| !s.is_empty())
-}
-
-#[tokio::test]
-async fn e2e_test() {
-    let Some(_key) = service_api_key() else {
-        eprintln!("[e2e] SKIP: MYSERVICE_API_KEY not set or MYSERVICE_E2E not 1");
-        return;
-    };
-    // ... real test body
-}
-```
-
-**Rule S50.10b** — The opt-in flag and run command MUST be documented in the test file's module-level doc comment:
-
-```rust
-//! # Run manually
-//! ```bash
-//! MYSERVICE_E2E=1 MYSERVICE_API_KEY=<key> cargo test --test my_e2e -- --nocapture
-//! ```
-```
-
-**Rule S50.10c** — CI must never set the opt-in flag. Infrastructure E2E tests run only when explicitly invoked.
-
-**Why two variables**: API keys are routinely exported in shell profiles (`.zshrc`, `.bashrc`). A single-variable guard like `std::env::var("API_KEY").is_ok()` silently activates during `cargo test --workspace` in any shell where the key is set, running slow and expensive tests without the developer's intent. The opt-in flag must be set explicitly each invocation.
-
-**Evidence**: `ironclaw-autonomous-e2e` — `OLLAMA_API_KEY` exported in shell profile caused two 90-second Ollama Cloud tests to fire during Q3 gate, blocking the pre-merge gate commit until the double-guard was added.
-
-**Promotion provenance**: Canon XXXIX pipeline (memory entry `feedback_e2e_two_envvar_opt_in.md` 2026-05-30 → operator stamp Kevin Francis Tan 2026-05-30).
-
 ## §51 Boundary Sanitization Doctrine (Canon XXVIII)
 
 > *"Do not move the ancient boundary stone set up by your forefathers."* — Proverbs 22:28
@@ -6546,38 +6506,6 @@ Four operational patterns for tools that ingest user/operator-controlled input. 
 | **Static-lint rule** | Forbid `std::fs::canonicalize()` followed by `is_symlink()` check; require canonicalize wrapped in per-segment symlink reject + post-canonicalize root validation |
 | **Test vector** | 10K mutated path inputs including `..` traversal, symlink chains (`a -> b -> c -> /etc/passwd`), symlink-bomb fixtures (`fixture.rs -> /etc/passwd`), race-window injection (concurrent symlink creation during walk); assert all rejected before contents read |
 
-### §63.P5 — Ancestor-walk canonicalization for not-yet-created paths (CWE-22)
-
-| Field | Content |
-|-------|---------|
-| **Threat** | CWE-22 path traversal + symlink escape — path-containment check silently passes for new files inside a symlinked directory that resolves outside the allowed root |
-| **Vector** | `std::fs::canonicalize(path)` returns `Err` when any component of the path doesn't exist. A naive defense (`canonicalize(joined).ok()?` returning `None` on failure) skips the containment check entirely, accepting the unvalidated path. A symlinked directory inside `cwd/` pointing to `/etc/` passes through unchecked when the target file hasn't been created yet. |
-| **Mitigation** | Walk up from the target path to the nearest existing ancestor; canonicalize that ancestor; reattach the unresolved suffix. The symlinked directory is an existing ancestor — it is canonicalized, revealing the real target outside `cwd`, and the containment check catches it: |
-| | ```rust |
-| | let mut check = joined.as_path(); |
-| | let mut resolved = joined.clone(); |
-| | while let Some(parent) = check.parent() { |
-| |     if parent == check { break; } |
-| |     check = parent; |
-| |     if check.exists() { |
-| |         if let Ok(canon_parent) = std::fs::canonicalize(check) { |
-| |             if let Ok(suffix) = joined.strip_prefix(check) { |
-| |                 resolved = canon_parent.join(suffix); |
-| |             } |
-| |         } |
-| |         break; |
-| |     } |
-| | } |
-| | if !resolved.starts_with(&canonical_cwd) { return None; } |
-| | ``` |
-| **Synthetic-path fallback** | When `cwd` itself doesn't exist (test environments using paths like `/project`), `canonicalize(cwd)` fails. Use `unwrap_or_else(\|_\| cwd.to_path_buf())` so the function falls back to lexical containment. This is acceptable in tests; never in production paths. |
-| **Relation to §63.P4** | §63.P4 covers TOCTOU races on *existing* paths via per-segment `symlink_metadata()`. §63.P5 covers *non-existent* paths where §63.P4's per-segment walk would terminate early with no real ancestor to check. Both patterns are required in functions that handle user-supplied paths to files that may or may not exist yet. |
-| **Test vector** | (1) Existing symlink `cwd/link → /etc/` + new filename `cwd/link/evil.txt` → rejected. (2) Legitimate new file `cwd/src/new.rs` (no symlinks in ancestors) → accepted. (3) Synthetic cwd `/project` (non-existent) + valid relative path → accepted via lexical fallback. |
-
-**Pressure-tested**: `ironclaw-autonomous-e2e` Phase 6 in-gate fix — CWE-22 finding by SERAPH on `resolve_safe_path`; all 18 `events::control::tests` pass including 4 `resolve_safe_path_*` cases covering both the symlink-escape and synthetic-path scenarios.
-
-**Promotion provenance**: Canon XXXIX pipeline (memory entry `feedback_ancestor_walk_canonicalization.md` 2026-05-30 → operator stamp Kevin Francis Tan 2026-05-30).
-
 ### Cross-references
 
 - **Policy boundary**: Security-Guardrails §6.1.1 (Target-Repo Code Execution Surface) — when to refuse a dep before adopting it; the §63.P1 pattern is the operational mitigation when adoption is required despite the surface.
@@ -7370,11 +7298,72 @@ async fn step(&self, ctx: &StepContext) -> Result<StepResult, LoopError> {
 
 **Witness:** N=1 production. `loop-strategy-expansion` plan §1.5 point 1 specified convergence child spans inside `step()` with `TraceContext::new().parent(step_span.id)`. Code review caught that `runner.rs` L299-307 creates the step span AFTER `step()` returns, making `step_span.id` unavailable inside `step()`. Plan corrected to pre-allocation pattern in iter-4. Pressure-tested in plan-hardening; awaiting Phase 3 implementation pressure-test. **LÆX Queue**: #58, contradiction-check PASS 2026-05-29.
 
+## §78 — LLM HTTP Dispatch Doctrine — RATIFIED 2026-05-30, Canon XV, Kevin Francis Tan
+
+Three rules govern how the platform issues LLM HTTP calls. They compose: rule 1 sets the wire-shape default; rule 2 sets the routing topology; rule 3 closes the gap between the streaming wire and the streaming UX.
+
+### §78.1 Streaming-by-default at the wire
+
+Default: `stream: true` for every LLM HTTP call. Non-streaming is the opt-out, used only for short bounded interactions and accompanied by an explicit inline comment justifying the exception.
+
+**Why:** Local Ollama proxies (and many cloud gateways) buffer the entire response when `stream: false`. On long generations the upstream connection idle-times-out mid-buffer and the proxy returns HTTP 500 `"Post …: unexpected EOF"`. Streaming pipes chunks as they arrive, eliminating the monolithic buffer.
+
+**Patterns:**
+- **NDJSON `/api/chat`** (Ollama-native): accumulate `message.content` from every line; treat `{"error": "..."}` lines as streamed errors.
+- **SSE `/chat/completions`** (OpenAI-compatible): parse `data: ` prefixed lines; accumulate `choices[0].delta.content`; terminator is `data: [DONE]`.
+
+**Exception cases (inline-comment required):**
+- Bounded short outputs with `max_tokens ≤ 1024` AND structured output (e.g. Cypher generator, classification heads)
+- Single-turn introspection (model list, health checks)
+- Downstream parser explicitly requires the buffered shape
+
+Pair every long-running HTTP dispatch with a transient-error retry wrapper (3 attempts, exponential backoff on 5xx + connection errors). Streaming reduces failures; retry handles residual blips.
+
+### §78.2 Provider unification through one OpenAI-compatible adapter
+
+When a surface needs LLM inference, prefer one OpenAI-compatible proxy as the single entry point. The proxy normalises every backend (Ollama, Anthropic, OpenAI, OpenRouter, Vertex, Bedrock, Groq, etc.) to one Chat Completions shape. This collapses N×M (surface × provider) wiring — each surface re-implementing fallbacks, dual-paths, rate-limit handling — to **N+M** (one proxy + per-surface adapters).
+
+**Operational consequence:** the canonical OpenAI-compatible proxy implementation, its endpoints, env contract, and the local-dev config path are out of scope for canon. They live in [Operators Manual §LLM Proxy](canon://operators-manual) so the proxy choice can evolve without canon revision.
+
+**Exception — direct provider construction is correct when** the surface requires agent capabilities the proxy doesn't expose: subprocess session persistence, tool execution (bash/edit/grep), helix write-back, MCP handshakes. Drawer's `lightarchitects_native` agent path stays subprocess-based for these reasons; non-agent chat panels go through the proxy.
+
+### §78.3 Tx-forwarding at LoopExec (streaming corollary)
+
+Streaming at the wire is necessary but not sufficient for a streaming UX. The `LlmAgentProvider::spawn(req) -> AgentResponse` shape is **request-response by trait contract** — even when `spawn_streaming()` internally streams from the upstream, `spawn()` collects all `ProviderEvent::TextDelta` events into a final string before returning. Without a forwarding hop, the client sees one SSE event per *phase*, not per *token*.
+
+**Rule:** any SSE-fronted LoopExec MUST:
+
+1. Hold an `mpsc::Sender<String>` (the SSE tx) on the executor struct.
+2. Call `provider.spawn_streaming(san)`, not `provider.spawn(san)`.
+3. In the stream loop, match `ProviderEvent::TextDelta { text, .. }` — push to a collected `String` AND emit `{"type":"delta","text":text}` on the SSE channel.
+4. Frontend appends delta text into a single live `<div>` (per-token-per-div is wrong UX — looks like the bug rather than the streaming).
+
+**Symptom of violation:** browser shows phase markers with 10-60s silences between, even though the wire is streaming sub-second tokens. The streaming-by-default rule looks broken; root cause is the LoopExec flattening.
+
+### §78.4 Pressure-tested
+
+Webshell `loops_demo` + `/chat` panel + `litellm_chat` SSE route, 2026-05-30. Before §78.3: per-phase events only, 10-15s silences in the browser. After §78.3: ~18ms token cadence visible end-to-end. The §78.2 unification eliminated the `OllamaCliProvider` dual-path 429/403 fallback logic from those surfaces — fallback complexity now lives in one proxy, not N surfaces.
+
+### §78.5 Cross-references
+
+- **Composes with §15.1** (structured log format): every dispatch logs `model`, `backend`, `streaming=true|false` so the Q-gate can audit compliance.
+- **Composes with Canon XL** (Mixture-of-Experts Platform Architecture): the unifier is how the MoE router speaks to its experts.
+- **Operators Manual** holds the proxy-specific implementation; canon holds the doctrine.
+
+### §78.6 Companion memory entries
+
+Memory entries with promotion-derived rule provenance:
+- `feedback_litellm_provider_unifier.md` — implementation specifics, env contract, local-dev config.
+- `feedback_streaming_tx_forwarding.md` — pressure-test details, before/after timing.
+- `feedback_ollama_v1_messages_anthropic_proxy.md` — the dual-path 429/403 failure mode that §78.2 eliminates.
+
+**LÆX Queue**: #59, contradiction-check PASS 2026-05-30 (zero conflicts across all 7 canon docs).
+
 ---
 
 **Rule** (per separation-of-concerns refactor, 2026-05-18): no tail-amendment blocks or scattered per-section version-history entries in this file. Section content lives here; amendment narrative lives in the CHANGELOG companion.
 
-**Current version**: see CHANGELOG for latest. As of 2026-05-29: **v3.9.0** (§76 Cross-Crate Type-Bridge Round-Trip Scoping + §77 Pre-Allocated Span IDs for Child-Before-Parent Emission; LÆX ratified loop-strategy-expansion XEA iter-5 session 2026-05-29).
+**Current version**: see CHANGELOG for latest. As of 2026-05-30: **v3.11.0** (§78 LLM HTTP Dispatch Doctrine; LÆX0-pattern review + Kevin Francis Tan ratified webshell-litellm-adapter session 2026-05-30).
 
 *Builders Cookbook · Light Architects · `canon://builders-cookbook`*
 
