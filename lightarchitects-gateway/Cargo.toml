@@ -178,8 +178,10 @@ tempfile = { workspace = true }
 fs2 = { workspace = true }
 similar = { workspace = true }
 
-# ── question tool — JSON Schema generation for MCP tool registration ──────────
+# ── question tool — JSON Schema generation + SSRF URL validation ──────────────
 schemars = { version = "0.8", features = ["derive"] }
+# URL parsing for question tool SSRF localhost guard (mirrors webshell dep).
+url = "2"
 
 # ── Platform-specific ─────────────────────────────────────────────────────────
 [target.'cfg(target_os = "macos")'.dependencies]

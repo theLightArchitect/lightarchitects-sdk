@@ -60,6 +60,7 @@ pub mod git_routes;
 pub mod litellm_chat;
 pub mod litellm_state;
 pub mod mcp_routes;
+pub mod question_routes;
 pub mod roadmap;
 
 /// Snapshot of the browser UI state, periodically reported by the frontend.
@@ -1196,6 +1197,15 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/github-proxy/pr/{owner}/{repo}/{num}/review",
             post(submit_pr_review_handler),
+        )
+        // ── Native question tool (webshell-hitl-bridge) ──────────────────────
+        .route(
+            "/api/question",
+            post(question_routes::question_submit_handler),
+        )
+        .route(
+            "/api/question/{id}/answer",
+            post(question_routes::question_answer_handler),
         )
         // ── CSP violation reports (SEC-3b, Enforce phase) ────────────────────
         .route("/api/csp-report", post(csp::csp_report_handler))
