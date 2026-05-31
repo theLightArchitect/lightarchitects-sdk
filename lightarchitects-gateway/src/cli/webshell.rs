@@ -71,15 +71,18 @@ pub async fn execute(config: &GatewayConfig, args: &[String]) -> Result<(), Gate
             let ollama_model = parse_flag(args, "--ollama-model");
             let dev_mode = has_flag(args, "--dev-mode") || has_flag(args, "--dev");
 
-            start_server(config, StartOptions {
-                port,
-                host_cmd: &host_cmd,
-                cwd: cwd.as_deref(),
-                agent_kind,
-                backend,
-                ollama_model,
-                dev_mode,
-            })
+            start_server(
+                config,
+                StartOptions {
+                    port,
+                    host_cmd: &host_cmd,
+                    cwd: cwd.as_deref(),
+                    agent_kind,
+                    backend,
+                    ollama_model,
+                    dev_mode,
+                },
+            )
         }
         Some("status") => {
             let port = parse_flag(args, "--port")

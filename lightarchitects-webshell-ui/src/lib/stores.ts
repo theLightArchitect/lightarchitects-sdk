@@ -1143,6 +1143,37 @@ export interface StrategyHitlState {
 /** Pending strategy HITL request.  `null` when no pause is active. */
 export const strategyHitl = writable<StrategyHitlState | null>(null);
 
+// ── Native question tool HITL state (webshell-hitl-bridge Phase 3) ──────────
+//
+// Populated by the SSE handler when a `question_prompt` event arrives.
+// Cleared per-entry (keyed by `tool_use_id`) when `question_answered` fires
+// or when `QuestionCard` submits the operator's answer.
+//
+// Using a Map (not null-singleton) because the gateway may fire multiple
+// concurrent `question` tool calls — each long-polls independently.
+
+export interface QuestionOption {
+  label: string;
+  description: string;
+}
+
+export interface QuestionItemState {
+  question: string;
+  header: string;
+  /** `true` when the operator may select more than one option. */
+  multiSelect: boolean;
+  options: QuestionOption[];
+}
+
+export interface QuestionPendingState {
+  toolUseId: string;
+  questions: QuestionItemState[];
+  headlessPolicy: string | null;
+}
+
+/** All questions currently awaiting an operator answer.  Empty map when idle. */
+export const pendingQuestions = writable<Map<string, QuestionPendingState>>(new Map());
+
 // --- CDP bridge (dev-mode Playwright) ---
 
 /** Auth token for the current CDP session. `null` until `cdpInit()` succeeds. */

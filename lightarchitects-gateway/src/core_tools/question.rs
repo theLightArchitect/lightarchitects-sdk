@@ -174,6 +174,17 @@ pub async fn run(params: Value, _config: &GatewayConfig) -> Result<Value, Gatewa
     let input: QuestionInput = serde_json::from_value(params)
         .map_err(|e| GatewayError::InvalidRequest(format!("question: invalid input: {e}")))?;
 
+    // W3.4 — Claude Code passthrough: when CLAUDE_CODE_INTERACTIVE is set the
+    // operator's terminal is available.  Use the CLI inquire transport directly
+    // instead of the webshell long-poll — avoids an unnecessary HTTP round-trip
+    // when the webshell is not open.
+    if std::env::var("CLAUDE_CODE_INTERACTIVE").is_ok() {
+        return match super::question_transport_cli::prompt_cli(&input) {
+            Ok(answer) => Ok(text_result(answer.to_tool_result_text())),
+            Err(e) => headless_fallback(&input, Some(e.to_string())),
+        };
+    }
+
     let webshell_url = format!("{WEBSHELL_BASE}/api/question");
     assert_localhost(&webshell_url)?;
 

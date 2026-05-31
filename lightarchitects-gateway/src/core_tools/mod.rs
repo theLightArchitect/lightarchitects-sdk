@@ -29,6 +29,7 @@ pub mod ollama;
 pub mod orchestrate;
 pub mod preset;
 pub mod question;
+pub mod question_transport_cli;
 pub mod read;
 pub mod search;
 pub mod security;
