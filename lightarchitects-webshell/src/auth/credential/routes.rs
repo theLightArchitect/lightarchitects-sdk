@@ -674,7 +674,7 @@ pub async fn ollama_connect(
 ///
 /// Returns `None` for unknown providers (HTTP 404 to callers).
 fn provider_keychain_service(provider: &str) -> Option<&'static str> {
-    use crate::auth::credential::{anthropic, github, mistral, ollama, openai};
+    use crate::auth::credential::{anthropic, github, litellm, mistral, ollama, openai};
     match provider {
         "google" => Some(google::KEYCHAIN_SERVICE),
         "github" => Some(github::KEYCHAIN_SERVICE),
@@ -682,6 +682,7 @@ fn provider_keychain_service(provider: &str) -> Option<&'static str> {
         "openai" => Some(openai::KEYCHAIN_SERVICE),
         "mistral" => Some(mistral::KEYCHAIN_SERVICE),
         "ollama" => Some(ollama::KEYCHAIN_SERVICE),
+        "litellm" => Some(litellm::KEYCHAIN_SERVICE),
         _ => None,
     }
 }
@@ -731,7 +732,7 @@ mod tests {
 
     #[test]
     fn provider_keychain_service_all_phase3_providers() {
-        use crate::auth::credential::{anthropic, github, mistral, ollama, openai};
+        use crate::auth::credential::{anthropic, github, litellm, mistral, ollama, openai};
         assert_eq!(
             provider_keychain_service("github"),
             Some(github::KEYCHAIN_SERVICE)
@@ -751,6 +752,10 @@ mod tests {
         assert_eq!(
             provider_keychain_service("ollama"),
             Some(ollama::KEYCHAIN_SERVICE)
+        );
+        assert_eq!(
+            provider_keychain_service("litellm"),
+            Some(litellm::KEYCHAIN_SERVICE)
         );
     }
 

@@ -159,23 +159,32 @@ impl LlmAgentProvider for OllamaCliProvider {
         "ollama-cli"
     }
 
-    /// Dispatch a one-shot prompt via `ollama run <model>`.
+    /// Dispatch a one-shot prompt via HTTP streaming (collect) — streaming-by-default policy.
     ///
-    /// The effective model is `model_hint` when provided, otherwise
-    /// `default_model`. Both must be present in `CLOUD_MODEL_REGISTRY`.
+    /// Delegates to [`Self::spawn_streaming`] and collects all [`ProviderEvent::TextDelta`]
+    /// chunks into a single `AgentResponse`. Uses the HTTP path (`/v1/messages` SSE →
+    /// `/api/chat` NDJSON fallback) so the Ollama server never buffers a monolithic response.
     ///
     /// # Errors
     ///
-    /// Returns [`ProviderError::Internal`] for unknown model, missing CLI, or
-    /// subprocess failure. Returns [`ProviderError::SubprocessTimeout`] when the
-    /// wall-clock budget is exceeded.
+    /// Returns [`ProviderError::Internal`] when the HTTP streaming path fails for both
+    /// Ollama endpoints.
     async fn spawn(&self, req: SanitizedAgentRequest) -> Result<AgentResponse, ProviderError> {
-        let inner = req.request();
-        let model = inner.model_hint.as_deref().unwrap_or(&self.default_model);
+        // Collect all borrowed data as owned values before `req` is moved into
+        // `spawn_streaming`. `inner` borrows `req`; owning `model` as a `String`
+        // breaks that chain so the borrow ends at `drop(inner)`.
+        let model: String = {
+            let inner = req.request();
+            inner
+                .model_hint
+                .as_deref()
+                .unwrap_or(&self.default_model)
+                .to_owned()
+        };
 
         // Registry lookup is best-effort; local models not in CLOUD_MODEL_REGISTRY
         // still dispatch correctly — cost is free, family/org tagged as "local".
-        let (family, provider_org, cost_tier) = lookup(model)
+        let (family, provider_org, cost_tier) = lookup(&model)
             .map_or(("local", "local", CostTier::Low), |m| {
                 (m.family, m.provider_org, m.cost_tier)
             });
@@ -186,12 +195,41 @@ impl LlmAgentProvider for OllamaCliProvider {
             reason: "prompt contains characters forbidden by translator sanitizer".to_owned(),
         })?;
 
-        let t0 = Instant::now();
-        let raw = dispatch_ollama(prompt, model, inner.max_turns).await?;
-        let latency_ms = u64::try_from(t0.elapsed().as_millis()).unwrap_or(u64::MAX);
+        // Estimate input tokens before consuming req (prompt len ÷ 4 heuristic).
+        let estimated_input = u32::try_from(prompt.len() / 4).unwrap_or(u32::MAX);
 
-        let input_tokens = u32::try_from(prompt.len() / 4).unwrap_or(u32::MAX);
-        let output_tokens = u32::try_from(raw.len() / 4).unwrap_or(u32::MAX);
+        let t0 = Instant::now();
+        let mut stream = self.spawn_streaming(req).await?;
+
+        let mut text = String::new();
+        let mut input_tokens = estimated_input;
+        let mut output_tokens = 0u32;
+
+        while let Some(event) = stream.next().await {
+            match event {
+                ProviderEvent::MessageStart {
+                    input_tokens: reported,
+                    ..
+                } if reported > 0 => {
+                    input_tokens = reported;
+                }
+                ProviderEvent::TextDelta { text: delta, .. } => text.push_str(&delta),
+                ProviderEvent::MessageDelta {
+                    output_tokens: reported,
+                    ..
+                } if reported > 0 => {
+                    output_tokens = reported;
+                }
+                _ => {}
+            }
+        }
+
+        // Fall back to heuristic if the server did not report output tokens.
+        if output_tokens == 0 {
+            output_tokens = u32::try_from(text.len() / 4).unwrap_or(u32::MAX);
+        }
+
+        let latency_ms = u64::try_from(t0.elapsed().as_millis()).unwrap_or(u64::MAX);
         let cost = cost_for_tier(cost_tier, input_tokens, output_tokens);
 
         let mut attrs = HashMap::new();
@@ -206,12 +244,12 @@ impl LlmAgentProvider for OllamaCliProvider {
         );
         attrs.insert(
             "agent.provider".to_owned(),
-            Value::String("ollama-cli".to_owned()),
+            Value::String("ollama-http".to_owned()),
         );
         attrs.insert("latency_ms".to_owned(), Value::Number(latency_ms.into()));
 
         info!(
-            provider = "ollama-cli",
+            provider = "ollama-http",
             model,
             family,
             cost_tier = cost_tier.as_str(),
@@ -223,7 +261,7 @@ impl LlmAgentProvider for OllamaCliProvider {
         );
 
         Ok(AgentResponse {
-            output: Value::String(raw),
+            output: Value::String(text),
             turns_used: 1,
             cost_usd: cost,
             tokens: TokenUsage {
@@ -258,6 +296,13 @@ impl LlmAgentProvider for OllamaCliProvider {
         let identity = req.safe_identity().to_owned();
         let client = self.client.clone();
         let base_url = self.base_url.clone();
+        tracing::info!(
+            target: "ollama_http",
+            model = %model,
+            base_url = %base_url,
+            has_bearer = self.auth_token.is_some(),
+            "spawn_streaming dispatching"
+        );
         // Build messages slice: history (if any) + current user turn.
         // Empty prompt means the user turn is already the last entry in history
         // (agentic loop iteration 2+: tool results absorbed into history).
@@ -297,18 +342,17 @@ impl LlmAgentProvider for OllamaCliProvider {
             Ok(resp) if resp.status().is_success() => {
                 return Ok(sse_response_to_stream(resp));
             }
-            Ok(resp) if resp.status().as_u16() == 404 => {
-                warn!(
-                    provider = "ollama-http",
-                    "Ollama /v1/messages not available (404), falling back to /api/chat"
-                );
-            }
+            // `/v1/messages` is an opportunistic Anthropic-compat path. ANY non-success
+            // status (404 not implemented, 429 cloud rate-limit, 403 cloud-disabled, 5xx)
+            // falls through to native `/api/chat`, which is supported by every Ollama
+            // version and respects `OLLAMA_NO_CLOUD=1`.
             Ok(resp) => {
                 let status = resp.status();
-                let text = resp.text().await.unwrap_or_default();
-                return Err(ProviderError::Internal(format!(
-                    "Ollama /v1/messages returned {status}: {text}"
-                )));
+                warn!(
+                    provider = "ollama-http",
+                    status = %status,
+                    "Ollama /v1/messages returned non-success, falling back to /api/chat"
+                );
             }
             Err(e) => {
                 warn!(
@@ -628,92 +672,6 @@ pub(super) fn ollama_chat_to_provider_events(
         }
     } else {
         vec![]
-    }
-}
-
-// ── Subprocess helper ──────────────────────────────────────────────────────────
-
-/// Invoke `ollama run <model> <prompt>` and return trimmed stdout.
-///
-/// Uses `kill_on_drop(true)` and a `process_group(0)` so that `killpg` on
-/// timeout reaches any grandchild processes the ollama CLI may spawn.
-async fn dispatch_ollama(
-    prompt: &str,
-    model: &str,
-    max_turns: u32,
-) -> Result<String, ProviderError> {
-    let timeout_dur = Duration::from_secs(u64::from(max_turns) * 120 + 30);
-
-    // execve(2) semantics — no shell; args are separate Vec items.
-    // model is validated against CLOUD_MODEL_REGISTRY (known slugs) before this call.
-    let mut cmd = tokio::process::Command::new("ollama");
-    cmd.args(["run", model, prompt])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-
-    #[cfg(unix)]
-    cmd.process_group(0);
-
-    let child = cmd.spawn().map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            warn!(provider = "ollama-cli", "ollama binary not found on PATH");
-            ProviderError::Internal("ollama CLI not found on PATH".to_owned())
-        } else {
-            warn!(provider = "ollama-cli", err = %e, "subprocess spawn failed");
-            ProviderError::Internal(format!("ollama spawn failed: {e}"))
-        }
-    })?;
-
-    let pgid = child.id();
-
-    let result = tokio::time::timeout(timeout_dur, child.wait_with_output()).await;
-
-    match result {
-        Ok(Ok(out)) => {
-            if !out.stderr.is_empty() {
-                warn!(
-                    provider = "ollama-cli",
-                    stderr_bytes = out.stderr.len(),
-                    "subprocess wrote to stderr"
-                );
-            }
-            if !out.status.success() {
-                let code = out.status.code().unwrap_or(-1);
-                warn!(provider = "ollama-cli", exit_code = code, "non-zero exit");
-                return Err(ProviderError::Internal(format!(
-                    "ollama exited with status {code}"
-                )));
-            }
-            Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
-        }
-        Ok(Err(e)) => {
-            warn!(provider = "ollama-cli", err = %e, "wait_with_output failed");
-            Err(ProviderError::Internal("subprocess I/O error".to_owned()))
-        }
-        Err(_elapsed) => {
-            #[cfg(unix)]
-            if let Some(pid) = pgid {
-                // SAFETY: killpg is async-signal-safe. `pid` is a valid u32 from the OS,
-                // bounded by PID_MAX (≤4_194_304 on Linux, 99_999 on macOS) — well within
-                // i32::MAX, so the cast cannot wrap. Negative return value means the group
-                // already exited; safe to ignore.
-                #[allow(unsafe_code, clippy::cast_possible_wrap)]
-                unsafe {
-                    libc::killpg(pid as libc::pid_t, libc::SIGKILL);
-                }
-            }
-            warn!(
-                provider = "ollama-cli",
-                timeout_secs = timeout_dur.as_secs(),
-                "subprocess timed out; process group killed"
-            );
-            Err(ProviderError::SubprocessTimeout {
-                used_turns: 0,
-                used_budget_usd: 0.0,
-            })
-        }
     }
 }
 

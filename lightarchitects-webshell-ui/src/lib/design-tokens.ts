@@ -98,7 +98,44 @@ export const SIBLING_POLYTOPES: Record<string, { type: Polytope4DType; label: st
   quantum: { type: 'pentachoron',      label: '5-cell',            vertices: 5,  edges: 10 },
   seraph:  { type: 'duoprism64',       label: '(6,4)-duoprism',    vertices: 24, edges: 48 },
   ayin:    { type: 'tesseract',        label: 'Tesseract',         vertices: 16, edges: 32 },
+  // Canon keeper — a polytope and its dual together, evokes the keeper of
+  // standards that bind opposing positions into one figure.
+  laex:    { type: 'dualCompound',     label: 'Dual Compound',     vertices: 13, edges: 36 },
 };
+
+// --- Chat actor polytopes — for assistant / user message avatars when
+// no specific sibling identity is present. Distinct from SIBLING_POLYTOPES
+// so the squad set stays intact for the dispatch surfaces. ---
+export const CHAT_ACTOR_POLYTOPES: Record<string, { type: Polytope4DType; color: string; label: string }> = {
+  // Operator's voice — the most complex regular 4-polytope. Architect-grade
+  // density, ordered into one figure.
+  user:      { type: 'hexacosichoron', color: '#FFD700', label: '600-cell' },
+  // Default assistant identity — two strands twisting, suggests reasoning
+  // and articulation moving together.
+  assistant: { type: 'doubleHelix4D',  color: '#9ed59e', label: 'Double Helix' },
+};
+
+/**
+ * Resolve a polytope + color for a chat message author. If the message
+ * carries a sibling identity, the sibling's polytope wins (e.g. EVA
+ * speaking gets the rectified 5-cell). Otherwise falls back to the
+ * actor default (assistant or user).
+ */
+export function getChatActorPolytope(
+  role: 'user' | 'assistant' | 'system',
+  sibling?: string | null,
+): { type: Polytope4DType; color: string } {
+  if (sibling) {
+    const sib = sibling.toLowerCase();
+    const sibPoly = SIBLING_POLYTOPES[sib];
+    const sibColor = SIBLING_COLORS[sib];
+    if (sibPoly && sibColor) {
+      return { type: sibPoly.type, color: sibColor };
+    }
+  }
+  const actor = role === 'user' ? CHAT_ACTOR_POLYTOPES.user : CHAT_ACTOR_POLYTOPES.assistant;
+  return { type: actor.type, color: actor.color };
+}
 
 // --- Layout constants ---
 export const LAYOUT = {

@@ -27,7 +27,8 @@ use serde_json::Value;
 use crate::config::GatewayConfig;
 #[cfg(test)]
 use lightarchitects::agent::ProviderError;
-use lightarchitects::agent::{ChainContext, ClaudeCliProvider, LlmAgentProvider, dispatch_action};
+use lightarchitects::agent::openai_compat::OpenAICompatProvider;
+use lightarchitects::agent::{ChainContext, LlmAgentProvider, dispatch_action};
 
 /// Canonical CORSO action names — matches `tool_routes.rs` ROUTES array.
 const CORSO_ACTIONS: &[&str] = &[
@@ -99,12 +100,16 @@ pub struct CorsoHandler {
 }
 
 impl CorsoHandler {
-    /// Create a new CORSO handler backed by the default [`ClaudeCliProvider`].
-    #[must_use]
-    pub fn new(_config: &GatewayConfig) -> Self {
-        Self {
-            provider: Arc::new(ClaudeCliProvider::default()),
-        }
+    /// Create a new CORSO handler backed by the LiteLLM proxy.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be built (system-level failure).
+    pub fn new(_config: &GatewayConfig) -> Result<Self, String> {
+        let provider = crate::providers::litellm::build_provider()?;
+        Ok(Self {
+            provider: Arc::new(provider),
+        })
     }
 
     /// Create a handler with an injected provider (used in tests).
@@ -168,7 +173,7 @@ mod tests {
     };
 
     fn handler() -> CorsoHandler {
-        CorsoHandler::new(&GatewayConfig::default())
+        CorsoHandler::new(&GatewayConfig::default()).unwrap()
     }
 
     // ── Stub provider for unit tests ─────────────────────────────────────────

@@ -5042,6 +5042,46 @@ The `/GATE` skill MUST:
 | S50.6a (no real fs side effects) | lÆx0 Phase 9 coverage ceiling: vault.rs at 48% because tests read from real ~/.soul/sessions/. Mock trait injection (Phase 10g) is the fix. Without S50.6a, tests are non-hermetic and coverage is an undercount. |
 | S50.7 (accessibility) | Web dashboard (Phase 10): WCAG 2.1 AA compliance is a product requirement. axe-core catches ~57% of accessibility issues automatically. |
 
+### §50.10 Infrastructure-Dependent E2E Test Opt-In Gate
+
+Tests that hit real external infrastructure (LLM APIs, remote databases, network services) MUST require **two** explicit environment variables: an opt-in flag AND the credential. The credential alone is insufficient.
+
+**Rule S50.10a** — Infrastructure E2E tests must check an explicit opt-in flag before reading any credential:
+
+```rust
+fn service_api_key() -> Option<String> {
+    // Opt-in flag required — prevents accidental 90s runs when API key is in shell profile.
+    if std::env::var("MYSERVICE_E2E").is_err() { return None; }
+    std::env::var("MYSERVICE_API_KEY").ok().filter(|s| !s.is_empty())
+}
+
+#[tokio::test]
+async fn e2e_test() {
+    let Some(_key) = service_api_key() else {
+        eprintln!("[e2e] SKIP: MYSERVICE_API_KEY not set or MYSERVICE_E2E not 1");
+        return;
+    };
+    // ... real test body
+}
+```
+
+**Rule S50.10b** — The opt-in flag and run command MUST be documented in the test file's module-level doc comment:
+
+```rust
+//! # Run manually
+//! ```bash
+//! MYSERVICE_E2E=1 MYSERVICE_API_KEY=<key> cargo test --test my_e2e -- --nocapture
+//! ```
+```
+
+**Rule S50.10c** — CI must never set the opt-in flag. Infrastructure E2E tests run only when explicitly invoked.
+
+**Why two variables**: API keys are routinely exported in shell profiles (`.zshrc`, `.bashrc`). A single-variable guard like `std::env::var("API_KEY").is_ok()` silently activates during `cargo test --workspace` in any shell where the key is set, running slow and expensive tests without the developer's intent. The opt-in flag must be set explicitly each invocation.
+
+**Evidence**: `ironclaw-autonomous-e2e` — `OLLAMA_API_KEY` exported in shell profile caused two 90-second Ollama Cloud tests to fire during Q3 gate, blocking the pre-merge gate commit until the double-guard was added.
+
+**Promotion provenance**: Canon XXXIX pipeline (memory entry `feedback_e2e_two_envvar_opt_in.md` 2026-05-30 → operator stamp Kevin Francis Tan 2026-05-30).
+
 ## §51 Boundary Sanitization Doctrine (Canon XXVIII)
 
 > *"Do not move the ancient boundary stone set up by your forefathers."* — Proverbs 22:28
@@ -6505,6 +6545,38 @@ Four operational patterns for tools that ingest user/operator-controlled input. 
 | **Mitigation** | (1) Walk path per-segment; (2) `symlink_metadata()` each segment; reject if `is_symlink()`; (3) THEN `canonicalize()`; (4) THEN **post-canonicalize root re-check** under allowlist (defeats TOCTOU race where a directory becomes a symlink between segment walk and canonicalize) |
 | **Static-lint rule** | Forbid `std::fs::canonicalize()` followed by `is_symlink()` check; require canonicalize wrapped in per-segment symlink reject + post-canonicalize root validation |
 | **Test vector** | 10K mutated path inputs including `..` traversal, symlink chains (`a -> b -> c -> /etc/passwd`), symlink-bomb fixtures (`fixture.rs -> /etc/passwd`), race-window injection (concurrent symlink creation during walk); assert all rejected before contents read |
+
+### §63.P5 — Ancestor-walk canonicalization for not-yet-created paths (CWE-22)
+
+| Field | Content |
+|-------|---------|
+| **Threat** | CWE-22 path traversal + symlink escape — path-containment check silently passes for new files inside a symlinked directory that resolves outside the allowed root |
+| **Vector** | `std::fs::canonicalize(path)` returns `Err` when any component of the path doesn't exist. A naive defense (`canonicalize(joined).ok()?` returning `None` on failure) skips the containment check entirely, accepting the unvalidated path. A symlinked directory inside `cwd/` pointing to `/etc/` passes through unchecked when the target file hasn't been created yet. |
+| **Mitigation** | Walk up from the target path to the nearest existing ancestor; canonicalize that ancestor; reattach the unresolved suffix. The symlinked directory is an existing ancestor — it is canonicalized, revealing the real target outside `cwd`, and the containment check catches it: |
+| | ```rust |
+| | let mut check = joined.as_path(); |
+| | let mut resolved = joined.clone(); |
+| | while let Some(parent) = check.parent() { |
+| |     if parent == check { break; } |
+| |     check = parent; |
+| |     if check.exists() { |
+| |         if let Ok(canon_parent) = std::fs::canonicalize(check) { |
+| |             if let Ok(suffix) = joined.strip_prefix(check) { |
+| |                 resolved = canon_parent.join(suffix); |
+| |             } |
+| |         } |
+| |         break; |
+| |     } |
+| | } |
+| | if !resolved.starts_with(&canonical_cwd) { return None; } |
+| | ``` |
+| **Synthetic-path fallback** | When `cwd` itself doesn't exist (test environments using paths like `/project`), `canonicalize(cwd)` fails. Use `unwrap_or_else(\|_\| cwd.to_path_buf())` so the function falls back to lexical containment. This is acceptable in tests; never in production paths. |
+| **Relation to §63.P4** | §63.P4 covers TOCTOU races on *existing* paths via per-segment `symlink_metadata()`. §63.P5 covers *non-existent* paths where §63.P4's per-segment walk would terminate early with no real ancestor to check. Both patterns are required in functions that handle user-supplied paths to files that may or may not exist yet. |
+| **Test vector** | (1) Existing symlink `cwd/link → /etc/` + new filename `cwd/link/evil.txt` → rejected. (2) Legitimate new file `cwd/src/new.rs` (no symlinks in ancestors) → accepted. (3) Synthetic cwd `/project` (non-existent) + valid relative path → accepted via lexical fallback. |
+
+**Pressure-tested**: `ironclaw-autonomous-e2e` Phase 6 in-gate fix — CWE-22 finding by SERAPH on `resolve_safe_path`; all 18 `events::control::tests` pass including 4 `resolve_safe_path_*` cases covering both the symlink-escape and synthetic-path scenarios.
+
+**Promotion provenance**: Canon XXXIX pipeline (memory entry `feedback_ancestor_walk_canonicalization.md` 2026-05-30 → operator stamp Kevin Francis Tan 2026-05-30).
 
 ### Cross-references
 

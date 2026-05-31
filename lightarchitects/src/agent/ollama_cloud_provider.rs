@@ -279,6 +279,33 @@ impl OllamaCloudCodingProvider {
         }
     }
 
+    /// Construct a provider with an explicit `base_url` and `auth_token`.
+    ///
+    /// Use when the base URL is supplied by runtime configuration (e.g. from
+    /// [`AppState`]) rather than the `OLLAMA_HOST` environment variable.
+    /// The provider calls `{base_url}/api/chat` — compatible with both native
+    /// Ollama and `LiteLLM` proxy Ollama-compat routing.
+    ///
+    /// [`AppState`]: crate::server::AppState
+    pub fn with_base_url(
+        model: impl Into<String>,
+        auth_token: Option<SecretString>,
+        base_url: impl Into<String>,
+    ) -> Self {
+        let timeout_s = std::env::var("LIGHTSQUAD_OLLAMA_TIMEOUT_S")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(OLLAMA_TASK_TIMEOUT_DEFAULT_S);
+        Self {
+            model: model.into(),
+            client: reqwest::Client::new(),
+            base_url: base_url.into(),
+            auth_token,
+            task_timeout: Duration::from_secs(timeout_s),
+            validator: OllamaResponseValidator::new(),
+        }
+    }
+
     /// Execute a coding task: send the prompt to Ollama Cloud, validate the
     /// response, write file patches to the worktree, and create a git commit.
     ///

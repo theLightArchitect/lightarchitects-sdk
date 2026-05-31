@@ -57,6 +57,8 @@ pub mod container_relay;
 pub mod exec_routes;
 pub mod fleet_routes;
 pub mod git_routes;
+pub mod litellm_chat;
+pub mod litellm_state;
 pub mod mcp_routes;
 pub mod roadmap;
 
@@ -339,6 +341,12 @@ pub struct AppState {
     /// `/api/copilot/playwright/*` to request screenshots and DOM snapshots
     /// via Chrome `DevTools` Protocol. Returns 503 when the feature is disabled.
     pub playwright_state: crate::copilot::playwright::PlaywrightState,
+    /// Runtime-switchable `LiteLLM` provider configuration.
+    ///
+    /// Written by `POST /api/litellm/config`; read by every LLM surface
+    /// (copilot, lightsquad, SSE chat) via [`litellm_state::LitellmConfig::build_provider`].
+    /// Bootstrap values come from `LA_LITELLM_*` env vars at startup.
+    pub litellm_config: Arc<RwLock<litellm_state::LitellmConfig>>,
 }
 
 impl AppState {
@@ -562,6 +570,7 @@ impl AppState {
             la_native_api_key,
             native_session_pool: crate::copilot::native_session::new_pool(),
             playwright_state: Arc::new(tokio::sync::Mutex::new(None)),
+            litellm_config: Arc::new(RwLock::new(litellm_state::LitellmConfig::from_env())),
         }
     }
 
@@ -683,6 +692,7 @@ impl AppState {
             la_native_api_key: None,
             native_session_pool: crate::copilot::native_session::new_pool(),
             playwright_state: Arc::new(tokio::sync::Mutex::new(None)),
+            litellm_config: Arc::new(RwLock::new(litellm_state::LitellmConfig::from_env())),
         }
     }
 }
@@ -753,6 +763,10 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/auth/credential/{provider}",
             delete(crate::auth::credential::routes::provider_revoke),
+        )
+        .route(
+            "/api/litellm/config",
+            get(litellm_state::get_config).post(litellm_state::update_config),
         )
         .route("/api/terminal/ws", get(terminal::ws::ws_handler))
         .route(
@@ -1113,6 +1127,8 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/git/log", get(git_routes::log_handler))
         // ── Roadmap artifact (webshell-roadmap-rendering) ────────────────────
         .route("/api/roadmap", get(roadmap::roadmap_handler))
+        // ── LiteLLM polished chat panel (direct streaming, bypasses subprocess) ─
+        .route("/api/litellm/chat", post(litellm_chat::chat_handler))
         // ── HITL inbox — GitHub PR review queue (webshell-hitl-inbox Phase 1) ─
         .route("/api/gitforest/hitl-search", get(hitl_search_handler))
         .route("/api/gitforest/pr-metadata", get(pr_metadata_handler))
