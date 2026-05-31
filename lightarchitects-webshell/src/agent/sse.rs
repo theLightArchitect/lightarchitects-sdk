@@ -16,6 +16,7 @@
 //! ring-buffer.  If the ring has wrapped, a synthetic `lag` event is emitted.
 
 use std::convert::Infallible;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use axum::{
@@ -26,12 +27,17 @@ use axum::{
         sse::{Event, KeepAlive, Sse},
     },
 };
+use dashmap::DashMap;
 use futures_util::stream;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, oneshot};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::{auth, server::AppState};
+use crate::{
+    auth,
+    events::types::{QuestionAnswer, QuestionPending},
+    server::AppState,
+};
 
 use super::protocol::AgentEvent;
 
@@ -82,15 +88,53 @@ pub async fn agent_sse_handler(
 
     info!(build_id = %build_id, resume_seq, "agent SSE stream connected");
 
-    let event_stream = stream::unfold((rx, resume_seq, SseGuard), drive_agent_stream);
+    let event_stream = stream::unfold(
+        (
+            rx,
+            resume_seq,
+            SseGuard::new(
+                state.question_registry.clone(),
+                state.question_metadata.clone(),
+            ),
+        ),
+        drive_agent_stream,
+    );
 
     Sse::new(event_stream)
         .keep_alive(KeepAlive::default())
         .into_response()
 }
 
-/// Drop guard that decrements the global SSE counter on stream end.
-struct SseGuard;
+/// Drop guard that decrements the global SSE counter and drains pending
+/// operator questions when the browser stream disconnects.
+///
+/// Dropping a sender causes the gateway's long-poll receiver to get
+/// `Err(RecvError)` → returns 410 Gone, unblocking the skill.
+struct SseGuard {
+    question_registry: Arc<DashMap<Uuid, oneshot::Sender<QuestionAnswer>>>,
+    question_metadata: Arc<DashMap<Uuid, QuestionPending>>,
+}
+
+impl SseGuard {
+    fn new(
+        question_registry: Arc<DashMap<Uuid, oneshot::Sender<QuestionAnswer>>>,
+        question_metadata: Arc<DashMap<Uuid, QuestionPending>>,
+    ) -> Self {
+        Self {
+            question_registry,
+            question_metadata,
+        }
+    }
+
+    /// Empty guard for tests — carries no-op registry handles.
+    #[cfg(test)]
+    fn empty() -> Self {
+        Self {
+            question_registry: Arc::new(DashMap::new()),
+            question_metadata: Arc::new(DashMap::new()),
+        }
+    }
+}
 
 impl Drop for SseGuard {
     fn drop(&mut self) {
@@ -103,6 +147,21 @@ impl Drop for SseGuard {
         #[cfg(test)]
         let _ =
             AGENT_SSE_COUNT.fetch_update(Ordering::AcqRel, Ordering::Relaxed, |n| n.checked_sub(1));
+
+        // Drain pending questions — collect keys first to avoid DashMap
+        // shard-level deadlock (Security Guardrails: DashMap iteration +
+        // mutation in the same pass deadlocks on shared shard locks).
+        let pending: Vec<Uuid> = self.question_registry.iter().map(|e| *e.key()).collect();
+        for id in &pending {
+            self.question_registry.remove(id);
+            self.question_metadata.remove(id);
+        }
+        if !pending.is_empty() {
+            info!(
+                count = pending.len(),
+                "SSE disconnect: drained pending questions"
+            );
+        }
     }
 }
 
@@ -158,6 +217,14 @@ mod tests {
     static SSE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
+    fn sse_guard_is_send() {
+        // Compile-time guard: SseGuard must be Send to cross .await in drive_agent_stream.
+        // If a future refactor adds a !Send field, this test will fail to compile.
+        fn assert_send<T: Send>() {}
+        assert_send::<SseGuard>();
+    }
+
+    #[test]
     fn sse_guard_decrements_global_counter_on_drop() {
         let _lock = SSE_TEST_LOCK.lock().unwrap();
         // Snapshot before — don't store(0): resetting races with in-flight async
@@ -165,7 +232,7 @@ mod tests {
         // 0 and wrap to u64::MAX.
         let before = AGENT_SSE_COUNT.load(Ordering::SeqCst);
         {
-            let _guard = SseGuard;
+            let _guard = SseGuard::empty();
             AGENT_SSE_COUNT.fetch_add(1, Ordering::SeqCst);
         }
         // SseGuard::drop() called fetch_sub(1) → net delta = 0.
@@ -182,7 +249,9 @@ mod tests {
         let _ = tx.send(AgentEvent::Heartbeat);
 
         // rx will be lagged because channel capacity is 2 and we sent 4
-        let (result, (_rx, seq, _guard)) = drive_agent_stream((rx, 0, SseGuard)).await.unwrap();
+        let (result, (_rx, seq, _guard)) = drive_agent_stream((rx, 0, SseGuard::empty()))
+            .await
+            .unwrap();
         let _event = result.unwrap();
         assert_eq!(seq, 1);
     }
@@ -195,8 +264,42 @@ mod tests {
             chunk: "hello".to_owned(),
         });
 
-        let (result, (_rx, seq, _guard)) = drive_agent_stream((rx, 0, SseGuard)).await.unwrap();
+        let (result, (_rx, seq, _guard)) = drive_agent_stream((rx, 0, SseGuard::empty()))
+            .await
+            .unwrap();
         let _event = result.unwrap();
         assert_eq!(seq, 1);
+    }
+
+    /// Verify that dropping `SseGuard` drains pending senders from the registry,
+    /// causing any waiting receiver to get Err(RecvError) → 410 Gone.
+    #[test]
+    fn sse_guard_drop_drains_question_registry() {
+        let _lock = SSE_TEST_LOCK.lock().unwrap();
+        let registry: Arc<DashMap<Uuid, oneshot::Sender<crate::events::types::QuestionAnswer>>> =
+            Arc::new(DashMap::new());
+        let metadata: Arc<DashMap<Uuid, QuestionPending>> = Arc::new(DashMap::new());
+
+        let id = Uuid::new_v4();
+        let (tx, mut rx) = oneshot::channel::<crate::events::types::QuestionAnswer>();
+        registry.insert(id, tx);
+        metadata.insert(
+            id,
+            QuestionPending {
+                tool_use_id: id,
+                questions: vec![],
+                headless_policy: None,
+                inserted_at: chrono::Utc::now(),
+            },
+        );
+
+        assert_eq!(registry.len(), 1);
+        drop(SseGuard::new(registry.clone(), metadata.clone()));
+
+        // Both registries cleared.
+        assert!(registry.is_empty());
+        assert!(metadata.is_empty());
+        // Receiver receives Err — sender was dropped.
+        assert!(rx.try_recv().is_err());
     }
 }

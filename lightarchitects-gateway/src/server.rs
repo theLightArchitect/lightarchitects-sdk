@@ -83,11 +83,12 @@ fn file_tool_defs() -> Vec<Value> {
     ]
 }
 
-/// Platform tool definitions: discover, `ask_user`, orchestrate.
+/// Platform tool definitions: discover, `ask_user`, `question`, orchestrate.
 fn platform_tool_defs() -> Vec<Value> {
     vec![
         json!({"name": "lightarchitects_discover", "description": "Report gateway version, available core tools, and agent status.", "inputSchema": {"type": "object", "properties": {}}}),
         json!({"name": "lightarchitects_ask_user", "description": "Present a question to the user. Writes to stderr so the host can intercept and collect a response.", "inputSchema": {"type": "object", "properties": {"question": {"type": "string", "description": "Question to ask the user."}, "options": {"type": "array", "items": {"type": "string"}, "description": "Optional list of allowed answer choices."}}, "required": ["question"]}}),
+        json!({"name": "lightarchitects_question", "description": "Present one or more structured questions to the operator and wait for answers. Dispatches to the webshell QuestionCard UI (POST /api/question) when available; falls back to headlessPolicy otherwise. Matches the Anthropic AskUserQuestion schema so SKILL.md files migrate without changes.", "inputSchema": {"type": "object", "properties": {"questions": {"type": "array", "description": "One or more questions to present sequentially.", "items": {"type": "object", "properties": {"question": {"type": "string", "description": "Question text shown as the modal heading."}, "header": {"type": "string", "description": "Short chip label (max 12 chars)."}, "multiSelect": {"type": "boolean", "description": "Allow selecting multiple options (default false)."}, "options": {"type": "array", "description": "Selectable options.", "items": {"type": "object", "properties": {"label": {"type": "string", "description": "Short display label."}, "description": {"type": "string", "description": "Explanation shown beneath the label."}}, "required": ["label", "description"]}}}, "required": ["question", "header", "options"]}}, "headlessPolicy": {"type": "string", "enum": ["fail_loud", "auto_first", "auto_skip"], "description": "Behaviour when no interactive transport is available (default: fail_loud)."}}, "required": ["questions"]}}),
         json!({
             "name": "lightarchitects_orchestrate",
             "description": "Route a request to a Light Architects target (CORSO, EVA, SOUL, QUANTUM, SERAPH, AYIN). Auto-routes by action keyword if agent is not specified. Returns a structured error when the target is not enabled.",
@@ -416,6 +417,7 @@ async fn dispatch(
         "lightarchitects_glob" => core_tools::glob::run(params, config).await,
         "lightarchitects_discover" => core_tools::discover::run(params, config),
         "lightarchitects_ask_user" => core_tools::ask_user::run(params),
+        "lightarchitects_question" => core_tools::question::run(params, config).await,
         "lightarchitects_orchestrate" => core_tools::orchestrate::run(params, config).await,
         "lightarchitects_arch_extract" => core_tools::arch::run_extract(params, config),
         "lightarchitects_arch_verify" => core_tools::arch::run_verify(params, config),
@@ -499,9 +501,12 @@ mod tests {
 
     #[test]
     fn all_tool_definitions_has_forty_five_entries() {
-        // 1 meta + 6 file + 3 platform + 15 squad (7 squad_comms + 4 original + 4 arch) + 4 exec + 6 code + 8 git
+        // 1 meta + 6 file + 4 platform (+ question) + 15 squad + 4 exec + 6 code + 8 git
         // + 2 litellm (config + chat) added by unified-litellm-router
-        assert_eq!(all_tool_definitions().len(), 45);
+        // + 2 hermes = 48; wait — recount: 1+6+4+15+4+6+8+2+2 = 48? Let me count per function:
+        // meta_tool_def=1, file_tool_defs=6, platform_tool_defs=4, squad_tool_defs=15,
+        // exec_tool_defs=4, code_tool_defs=6, git_tool_defs=8, hermes_tool_defs=2 → 46
+        assert_eq!(all_tool_definitions().len(), 46);
     }
 
     #[test]

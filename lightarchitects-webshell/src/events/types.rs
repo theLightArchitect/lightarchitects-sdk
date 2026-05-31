@@ -239,6 +239,26 @@ pub enum WebEvent {
     /// Emitted by `POST /api/control { kind: "ironclaw_hitl_resolution" }` after
     /// nonce validation succeeds. Wire tag: `"ironclaw_hitl_resolution"`.
     IronclawHitlResolution(IronclawHitlResolutionEvent),
+
+    // ── webshell-hitl-bridge (Phase 1) ──────────────────────────────────────
+    /// An in-flight operator question emitted by the gateway `question` tool.
+    ///
+    /// Emitted when the gateway dispatches a `question` `tool_use` to the webshell
+    /// via `POST /api/sessions/:id/question`. The browser renders
+    /// `QuestionCard.svelte` on receipt. Operator's answer returns via
+    /// `POST /api/sessions/:id/answer`. Wire tag: `"question_prompt"`.
+    ///
+    /// # Security
+    /// `tool_use_id` is a `Uuid::new_v4()` minted server-side — never
+    /// client-supplied (IDOR prevention, per `PermissionRequest` SA-4 pattern).
+    QuestionPrompt(QuestionPromptEvent),
+
+    /// Confirmation that an operator answered a pending `question` tool invocation.
+    ///
+    /// Emitted by `POST /api/sessions/:id/answer` after the oneshot receiver
+    /// resolves. Browser clears the matching `pendingQuestions` store entry on
+    /// receipt. Wire tag: `"question_answered"`.
+    QuestionAnswered(QuestionAnsweredEvent),
 }
 
 /// Northstar evaluation result broadcast after a `WAVE_COMPLETE` event.
@@ -1021,6 +1041,120 @@ pub struct EventFilter {
     pub build_id: Option<String>,
     /// Only events for the tool with this name.
     pub tool_name: Option<String>,
+}
+
+// ── webshell-hitl-bridge — question tool payload types (Phase 1) ─────────────
+
+/// Payload for [`WebEvent::QuestionPrompt`].
+///
+/// Schema mirrors the gateway's `QuestionInput` verbatim so the browser can
+/// render `QuestionCard.svelte` without a secondary fetch. All fields are
+/// serialised with `camelCase` to match Anthropic's `AskUserQuestion` wire
+/// format.
+///
+/// # Security
+/// `tool_use_id` is always a `Uuid::new_v4()` minted at dispatch time —
+/// never derived from client input.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuestionPromptEvent {
+    /// Server-minted `UUIDv4` correlating this prompt to the gateway's
+    /// `tool_use` block. Echoed on `POST /api/sessions/:id/answer`.
+    pub tool_use_id: Uuid,
+    /// Questions to present to the operator, in order.
+    pub questions: Vec<QuestionItem>,
+    /// How to handle the question when no interactive transport is available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headless_policy: Option<QuestionHeadlessPolicy>,
+}
+
+/// Payload for [`WebEvent::QuestionAnswered`].
+///
+/// Emitted after `POST /api/sessions/:id/answer` resolves the registry oneshot.
+/// The browser clears the matching `pendingQuestions` entry on receipt.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuestionAnsweredEvent {
+    /// Echoed from [`QuestionPromptEvent::tool_use_id`] for correlation.
+    pub tool_use_id: Uuid,
+    /// Per-question selected labels (or free text). One inner `Vec` per question.
+    pub answers: Vec<Vec<String>>,
+}
+
+/// A single question within a [`QuestionPromptEvent`].
+///
+/// Field names are `camelCase` to match Anthropic's `AskUserQuestion` schema.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionItem {
+    /// Question text shown as the modal heading.
+    pub question: String,
+    /// Short chip label (max 12 chars).
+    pub header: String,
+    /// Whether the operator may select multiple options.
+    #[serde(default)]
+    pub multi_select: bool,
+    /// Selectable options.
+    pub options: Vec<QuestionOptionItem>,
+}
+
+/// One option within a [`QuestionItem`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuestionOptionItem {
+    /// Short display label.
+    pub label: String,
+    /// Explanation shown beneath the label.
+    pub description: String,
+}
+
+/// Headless behaviour for [`QuestionPromptEvent`] — mirrors the gateway enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QuestionHeadlessPolicy {
+    /// Return an error `tool_result` with the question text (default).
+    FailLoud,
+    /// Silently select the first option and continue.
+    AutoFirst,
+    /// Skip the question (return empty answers) and continue.
+    AutoSkip,
+}
+
+/// Pending-question registry entry stored alongside the oneshot sender.
+///
+/// Kept in `AppState.question_metadata` for the 300 s TTL eviction loop and
+/// for returning metadata to the browser on `GET /api/sessions/:id/question`.
+///
+/// # Single-operator contract
+///
+/// This struct carries no `session_id` or `build_id` field. The corresponding
+/// `SseGuard::drop()` drain therefore covers **all** pending entries regardless
+/// of originating build. This is intentional — the webshell is a
+/// single-operator tool and one SSE disconnect means the operator is gone.
+/// Any future extension to multi-operator sessions MUST add a `session_id`
+/// field here and scope the drain accordingly; otherwise tab-A's disconnect
+/// will cancel tab-B's pending questions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuestionPending {
+    /// Correlates to the gateway `tool_use_id`.
+    pub tool_use_id: Uuid,
+    /// Original questions (verbatim from the gateway payload).
+    pub questions: Vec<QuestionItem>,
+    /// Headless behaviour if set by the gateway.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headless_policy: Option<QuestionHeadlessPolicy>,
+    /// Wall-clock time the question was registered (for TTL eviction).
+    pub inserted_at: DateTime<Utc>,
+}
+
+/// Browser-submitted answer to a [`QuestionPending`] question set.
+///
+/// Sent via `POST /api/sessions/:id/answer`; transmitted over the oneshot
+/// channel in [`AppState::question_registry`] to unblock the gateway long-poll.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuestionAnswer {
+    /// Per-question selected labels — one inner `Vec<String>` per [`QuestionItem`].
+    ///
+    /// Single-select questions: inner vec has exactly one element.
+    /// Multi-select questions: inner vec may have zero or more elements.
+    pub answers: Vec<Vec<String>>,
 }
 
 #[cfg(test)]

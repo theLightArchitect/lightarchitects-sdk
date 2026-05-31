@@ -318,7 +318,10 @@ export type EventType =
   | 'ironclaw_hitl_escalation'
   | 'ironclaw_hitl_resolution'
   | 'agent_fleet_update'
-  | 'project_update';
+  | 'project_update'
+  // ── webshell-hitl-bridge: native question tool (Phase 3) ────────────────
+  | 'question_prompt'
+  | 'question_answered';
 
 // --- Agent protocol (native agent bridge) ---
 

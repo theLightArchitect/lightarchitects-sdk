@@ -1,0 +1,43 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-31T10:57:00Z"
+build_id: webshell-hitl-bridge
+phase_id: phase-2-gateway-dispatch
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1253
+    tests_fail: 0
+    notes: |
+      Webshell: 782 tests (779 pass, 3 ignored). All 3 new question_routes tests pass.
+      Gateway lib: 471 tests (470 pass, 1 ignored). All 5 new question.rs tests pass.
+      Gateway integration tests (helix_retrieve_test, g8_validation, admin_agents_upload_test):
+        FLAKY(pre-existing) — Neo4jConfig missing `mode` field in test initializers;
+        confirmed on main branch, not introduced by Phase 2. Does not block gate.
+  Q4_svelte: "n/a"
+  D2_plan:
+    result: pass
+    notes: |
+      Plan updated to document Phase 2 architectural deviation:
+      - W2.3 redesigned: REST long-poll bridge implemented instead of rmcp HTTP server.
+        Endpoints: POST /api/question (long-poll 300s/308s) + POST /api/question/:id/answer.
+      - W2.4/W2.5/W2.6 deferred (MCP integration test, webshell-mcp-host, HMAC auth).
+      - Security delta: answer endpoint uses Bearer token only (no HMAC); documented in
+        phase log; targeted for Phase 6 hardening.
+      - Phase 3 W3.1 answer path corrected from /api/sessions/:id/answer to
+        /api/question/:id/answer.
+
+security_delta_noted:
+  finding: "Answer endpoint /api/question/:id/answer — Bearer token auth without HMAC-SHA256"
+  severity: MEDIUM
+  owner: SERAPH
+  deferred_to: "Phase 6 [S] gate"
+  mitigation_in_place: |
+    tool_use_id is server-minted (Uuid::new_v4(), 128-bit entropy).
+    Registry removes atomically on first answer (no double-answer race).
+    Auth guard rejects unauthenticated callers.

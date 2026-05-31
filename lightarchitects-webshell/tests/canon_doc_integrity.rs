@@ -17,12 +17,13 @@ use lightarchitects::fleet::FleetSnapshot;
 use lightarchitects_webshell::events::types::{
     AyinStatus, ConductorTickEvent, EscalationEvent, FixAgentIterationEvent, HitlResolution,
     IronclawHitlEscalationEvent, IronclawHitlResolutionEvent, MergeAgentStatusEvent,
-    ProjectUpdateKind, ProjectUpdatePayload, WebEvent, WorkerSlotGaugeEvent,
+    ProjectUpdateKind, ProjectUpdatePayload, QuestionAnsweredEvent, QuestionHeadlessPolicy,
+    QuestionItem, QuestionOptionItem, QuestionPromptEvent, WebEvent, WorkerSlotGaugeEvent,
 };
 
 /// Total expected `WebEvent` variant count.  Update alongside the §1.2 table
 /// in `webshell-api-surface-v1.md` whenever variants are added or removed.
-const EXPECTED_VARIANT_COUNT: usize = 27;
+const EXPECTED_VARIANT_COUNT: usize = 29;
 
 /// Exhaustive match acting as a compiler-enforced variant count ratchet.
 ///
@@ -63,6 +64,9 @@ fn all_variants_matched(event: &WebEvent) {
         // ── ironclaw HITL events (Phase 4 — ironclaw-autonomous-e2e) ─────────
         WebEvent::IronclawHitlEscalation(_) => {}
         WebEvent::IronclawHitlResolution(_) => {}
+        // ── webshell-hitl-bridge (Phase 1) ────────────────────────────────────
+        WebEvent::QuestionPrompt(_) => {}
+        WebEvent::QuestionAnswered(_) => {}
     }
 }
 
@@ -146,9 +150,33 @@ fn web_event_variant_count_matches_canon_doc() {
     });
     all_variants_matched(&hitl_res);
 
+    let nil = uuid::Uuid::nil();
+    let q_option = QuestionOptionItem {
+        label: "Yes".to_owned(),
+        description: "Approve".to_owned(),
+    };
+    let q_item = QuestionItem {
+        question: "Proceed?".to_owned(),
+        header: "Confirm".to_owned(),
+        multi_select: false,
+        options: vec![q_option],
+    };
+    let q_prompt = WebEvent::QuestionPrompt(QuestionPromptEvent {
+        tool_use_id: nil,
+        questions: vec![q_item.clone()],
+        headless_policy: Some(QuestionHeadlessPolicy::FailLoud),
+    });
+    all_variants_matched(&q_prompt);
+
+    let q_answered = WebEvent::QuestionAnswered(QuestionAnsweredEvent {
+        tool_use_id: nil,
+        answers: vec![vec!["Yes".to_owned()]],
+    });
+    all_variants_matched(&q_answered);
+
     assert_eq!(
-        EXPECTED_VARIANT_COUNT, 27,
-        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (27)"
+        EXPECTED_VARIANT_COUNT, 29,
+        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (29)"
     );
 }
 

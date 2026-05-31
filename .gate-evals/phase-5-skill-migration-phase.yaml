@@ -1,0 +1,49 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-05-31T22:45:00Z"
+build_id: webshell-hitl-bridge
+phase_id: phase-5-skill-migration
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1295
+    tests_fail: 0
+    notes: |
+      No Rust/Svelte code changed in Phase 5 — test count identical to GATE 4.
+      Webshell: 806 pass (775 lib + 31 integration).
+      Gateway lib: 484 pass (unchanged).
+      skills_gateway_e2e: 6/6 pass (unchanged).
+      Pre-existing: helix_retrieve_test + span_context_spawn_safety integration
+        tests fail on schema version drift — confirmed pre-existing, unchanged.
+  Q4_svelte:
+    result: "n/a"
+    notes: "Phase 5 has no Svelte/UI surface changes."
+  D2_plan:
+    result: pass
+    notes: |
+      Phase 5 exit criteria satisfied:
+      - W5.1 GATE: draft_residual block → ```ask (1 block); graceful-deg table updated.
+      - W5.2 SCRUM: no changes — SCRUM SKILL.md had 0 AskUserQuestion.
+      - W5.3 XEA: iteration>7 escalation → ```ask (1 block); pseudocode reference updated.
+      - W5.4 BUILD: 5 ```ask blocks (draft_residual waiver, XEA HALT, G6, Step 4 launch
+        disclosure, Step 5 worktree topology); 4 prose references updated.
+      - W5.5 PLAN: 3 ```ask blocks (Step 6.1 residual escalation, Step 8 main loop,
+        Step 8 edit-branch); 7 prose/header references updated. Kevin paired and approved.
+      - W5.6 lint-ask sweep: 0 AskUserQuestion in all 5 target skills.
+        Global baseline: 27 files → 23 (4 skills cleared; SCRUM was already 0).
+      Plugin source committed to light-architects-plugins @ c83fd05:
+        feat(hitl-bridge): migrate GATE/XEA/BUILD/PLAN skills from AskUserQuestion to question tool.
+
+notable:
+  - ask_block totals in migrated skills: GATE=1 XEA=1 BUILD=5 PLAN=3 (SCRUM=0) = 10 total.
+  - light-architects-plugins/hooks/hooks.json has unrelated AYIN trace hook additions
+    (UserPromptSubmit/PreToolUse/PostToolUse/Stop); NOT included in Phase 5 commit — will be
+    committed separately in a follow-up.
+  - Kevin pairing on W5.5 (PLAN): Kevin approved migration via question tool HITL checkpoint.
+  - lint-ask measures global plugin cache; remaining 23 = non-target skills (not in-scope for
+    Phase 5). Phase 5 scope = GATE+SCRUM+XEA+BUILD+PLAN only.

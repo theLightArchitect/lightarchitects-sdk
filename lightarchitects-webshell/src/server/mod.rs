@@ -28,7 +28,7 @@ use axum::{
     response::IntoResponse,
     routing::{delete, get, post, put},
 };
-use tokio::sync::{Mutex, RwLock, broadcast};
+use tokio::sync::{Mutex, RwLock, broadcast, oneshot};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
@@ -60,6 +60,7 @@ pub mod git_routes;
 pub mod litellm_chat;
 pub mod litellm_state;
 pub mod mcp_routes;
+pub mod question_routes;
 pub mod roadmap;
 
 /// Snapshot of the browser UI state, periodically reported by the frontend.
@@ -347,6 +348,18 @@ pub struct AppState {
     /// (copilot, lightsquad, SSE chat) via [`litellm_state::LitellmConfig::build_provider`].
     /// Bootstrap values come from `LA_LITELLM_*` env vars at startup.
     pub litellm_config: Arc<RwLock<litellm_state::LitellmConfig>>,
+    /// In-flight operator questions awaiting browser response — keyed by `tool_use_id`.
+    ///
+    /// Gateway inserts via `POST /api/sessions/:id/question`; browser resolves
+    /// via `POST /api/sessions/:id/answer`. Entries older than 300 s are evicted
+    /// by a background task; the gateway's long-poll returns a timeout error.
+    pub question_registry:
+        Arc<DashMap<Uuid, oneshot::Sender<crate::events::types::QuestionAnswer>>>,
+    /// Metadata for in-flight questions — surface to browser without blocking.
+    ///
+    /// Mirrors [`Self::question_registry`] keys; carries [`crate::events::types::QuestionPending`]
+    /// for `GET /api/sessions/:id/question` display and TTL eviction.
+    pub question_metadata: Arc<DashMap<Uuid, crate::events::types::QuestionPending>>,
 }
 
 impl AppState {
@@ -486,6 +499,52 @@ impl AppState {
             });
         }
 
+        // webshell-hitl-bridge W1.3 — question registry with 300 s TTL eviction.
+        // Pre-created so the eviction task holds Arc clones before Self is moved.
+        let question_registry: Arc<
+            DashMap<Uuid, oneshot::Sender<crate::events::types::QuestionAnswer>>,
+        > = Arc::new(DashMap::new());
+        let question_metadata: Arc<DashMap<Uuid, crate::events::types::QuestionPending>> =
+            Arc::new(DashMap::new());
+        {
+            let reg = Arc::clone(&question_registry);
+            let meta = Arc::clone(&question_metadata);
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+                loop {
+                    interval.tick().await;
+                    let now = chrono::Utc::now();
+                    // Collect-then-mutate: never mutate while iterating a DashMap shard.
+                    let expired: Vec<Uuid> = meta
+                        .iter()
+                        .filter_map(|e| {
+                            if now.signed_duration_since(e.inserted_at).num_seconds() >= 300 {
+                                Some(*e.key())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    for id in &expired {
+                        tracing::warn!(
+                            tool_use_id = %id,
+                            "HITL question TTL eviction: gateway long-poll will 408; browser card will not auto-dismiss"
+                        );
+                        // Remove registry first: a racing answer handler sees "not in registry → 404"
+                        // rather than "metadata absent + registry live → 422 (F4 guard)".
+                        reg.remove(id);
+                        meta.remove(id);
+                    }
+                    if !expired.is_empty() {
+                        tracing::warn!(
+                            count = expired.len(),
+                            "HITL question TTL eviction complete"
+                        );
+                    }
+                }
+            });
+        }
+
         Self {
             config: Arc::new(config),
             turnlog_pepper: Arc::new(pepper),
@@ -571,6 +630,8 @@ impl AppState {
             native_session_pool: crate::copilot::native_session::new_pool(),
             playwright_state: Arc::new(tokio::sync::Mutex::new(None)),
             litellm_config: Arc::new(RwLock::new(litellm_state::LitellmConfig::from_env())),
+            question_registry,
+            question_metadata,
         }
     }
 
@@ -693,6 +754,8 @@ impl AppState {
             native_session_pool: crate::copilot::native_session::new_pool(),
             playwright_state: Arc::new(tokio::sync::Mutex::new(None)),
             litellm_config: Arc::new(RwLock::new(litellm_state::LitellmConfig::from_env())),
+            question_registry: Arc::new(DashMap::new()),
+            question_metadata: Arc::new(DashMap::new()),
         }
     }
 }
@@ -1146,6 +1209,19 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/github-proxy/pr/{owner}/{repo}/{num}/review",
             post(submit_pr_review_handler),
+        )
+        // ── Native question tool (webshell-hitl-bridge) ──────────────────────
+        // F5: 32 KB body cap — sufficient for any HITL prompt while blocking
+        // oversized payloads from the gateway or a rogue browser submission.
+        .route(
+            "/api/question",
+            post(question_routes::question_submit_handler)
+                .layer(axum::extract::DefaultBodyLimit::max(32 * 1024)),
+        )
+        .route(
+            "/api/question/{id}/answer",
+            post(question_routes::question_answer_handler)
+                .layer(axum::extract::DefaultBodyLimit::max(32 * 1024)),
         )
         // ── CSP violation reports (SEC-3b, Enforce phase) ────────────────────
         .route("/api/csp-report", post(csp::csp_report_handler))

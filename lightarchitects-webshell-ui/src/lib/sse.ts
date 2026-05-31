@@ -24,6 +24,7 @@ import {
   pushRecentEvent,
   projects,
   strategyHitl,
+  pendingQuestions,
 } from './stores';
 import { spikeSibling, helixZoomLevel } from './stores';
 import { maximizedPanelId, prunePanel, setLayout, layoutTree, collectPanelIds, splitPanel } from './layout';
@@ -736,6 +737,38 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
       const payload = event as unknown as import('./types').IronclawHitlResolutionEvent;
       ironclawHitlEscalation.update(cur => (cur?.nonce === payload.nonce ? null : cur));
       window.dispatchEvent(new CustomEvent('la:ironclaw_hitl_resolution', { detail: payload }));
+      break;
+    }
+    // ── webshell-hitl-bridge: native question tool (Phase 3) ──────────────
+    case 'question_prompt': {
+      // Rust sends fields at the top level (WebEvent tag = "type").
+      // QuestionItem uses camelCase (serde rename_all); QuestionPromptEvent uses snake_case.
+      const payload = event as unknown as {
+        type: 'question_prompt';
+        tool_use_id: string;
+        questions: import('./stores').QuestionItemState[];
+        headless_policy: string | null;
+      };
+      if (!payload.tool_use_id) break;
+      pendingQuestions.update(m => {
+        const next = new Map(m);
+        next.set(payload.tool_use_id, {
+          toolUseId: payload.tool_use_id,
+          questions: payload.questions,
+          headlessPolicy: payload.headless_policy ?? null,
+        });
+        return next;
+      });
+      break;
+    }
+    case 'question_answered': {
+      const payload = event as unknown as { type: 'question_answered'; tool_use_id: string };
+      if (!payload.tool_use_id) break;
+      pendingQuestions.update(m => {
+        const next = new Map(m);
+        next.delete(payload.tool_use_id);
+        return next;
+      });
       break;
     }
     default:

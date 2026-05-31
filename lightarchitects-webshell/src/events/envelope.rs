@@ -165,6 +165,10 @@ fn topic_for(event: &WebEvent) -> String {
         // ── IronClaw HITL (ironclaw-autonomous-e2e Phase 4) ─────────────────
         WebEvent::IronclawHitlEscalation(_) => "v1.ironclaw.hitl.escalation",
         WebEvent::IronclawHitlResolution(_) => "v1.ironclaw.hitl.resolution",
+
+        // ── webshell-hitl-bridge question tool (Phase 1) ─────────────────────
+        WebEvent::QuestionPrompt(_) => "v1.conductor.question.prompt",
+        WebEvent::QuestionAnswered(_) => "v1.conductor.question.answered",
     }
     .to_owned()
 }
@@ -174,6 +178,7 @@ fn severity_for(event: &WebEvent) -> Severity {
     match event {
         WebEvent::Escalation(_)
         | WebEvent::PermissionRequest { .. }
+        | WebEvent::QuestionPrompt(_)
         | WebEvent::AyinStatus(AyinStatus::Disconnected | AyinStatus::Reconnecting { .. }) => {
             Severity::Warn
         }
@@ -379,6 +384,24 @@ mod tests {
                 project_id: Uuid::nil(),
                 slug: "test-project".into(),
                 kind: ProjectUpdateKind::Created,
+            }),
+            // webshell-hitl-bridge (Phase 1)
+            WebEvent::QuestionPrompt(crate::events::types::QuestionPromptEvent {
+                tool_use_id: Uuid::nil(),
+                questions: vec![crate::events::types::QuestionItem {
+                    question: "Pick one".into(),
+                    header: "Choice".into(),
+                    multi_select: false,
+                    options: vec![crate::events::types::QuestionOptionItem {
+                        label: "A".into(),
+                        description: "Option A".into(),
+                    }],
+                }],
+                headless_policy: None,
+            }),
+            WebEvent::QuestionAnswered(crate::events::types::QuestionAnsweredEvent {
+                tool_use_id: Uuid::nil(),
+                answers: vec![vec!["A".into()]],
             }),
         ];
 

@@ -1,0 +1,114 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-31T23:00:52Z"
+build_id: webshell-hitl-bridge
+phase_id: merge
+commit: 8458e48
+overall_verdict: pass
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1928
+    tests_fail: 0
+    note: "--workspace --all-features; includes lightarchitects crate (1823) + webshell crate suites"
+  Q4_svelte: "n/a"
+  S1_security:
+    result: pass
+    findings:
+      - id: "F4-RACE"
+        severity: MEDIUM
+        status: RESOLVED
+        description: "TTL eviction removed metadata before registry; reversed order so racing answer handler gets 404 not 422; F4 guard remains as defense-in-depth"
+      - id: "F-MULTI"
+        severity: LOW
+        status: OPEN
+        description: "multi_select:false not enforced server-side; Phase 7 scope"
+      - id: "F-REGCAP"
+        severity: LOW
+        status: OPEN
+        description: "question_registry unbounded; localhost deployment + bearer auth mitigates; Phase 7 scope"
+      - id: "F-QCOUNT"
+        severity: LOW
+        status: OPEN
+        description: "questions array per submission has no upper bound beyond 32 KB body cap; Phase 7 scope"
+      - id: "F-SSEDRN"
+        severity: LOW
+        status: OPEN
+        description: "SseGuard drain is global; safe under single-operator contract; escalates to MEDIUM if multi-SSE-consumer support added; Phase 7 scope"
+      - id: "F4-TTL-422"
+        severity: MEDIUM
+        status: RESOLVED
+        description: "metadata-absent + registry-live inconsistent state returns 422 (Phase 6 W6.2)"
+      - id: "F4-LENGTH"
+        severity: MEDIUM
+        status: RESOLVED
+        description: "answers.len() != questions.len() returns 422 before entering label loop (Phase 6 W6.2)"
+      - id: "F1-LOGGING"
+        severity: LOW
+        status: RESOLVED
+        description: "unknown-ID answer path uses debug! not warn! — auth-gated, not amplifiable"
+      - id: "SA-4-IDOR"
+        severity: HIGH
+        status: RESOLVED
+        description: "tool_use_id minted server-side via Uuid::new_v4(); never client-supplied"
+      - id: "AUTH-TIMING"
+        severity: HIGH
+        status: RESOLVED
+        description: "constant_time_eq on bearer token comparison across all question routes"
+      - id: "SEND-ASSERT"
+        severity: LOW
+        status: RESOLVED
+        description: "fn assert_send::<SseGuard>() compile-time test prevents !Send regressions"
+  S2_supply_chain: pass
+  S3_laex: "n/a"
+  S3_note: |
+    Literal S3 triggers not met: no new crypto primitives, no new auth flows, no new
+    permission surfaces (reuses AuthGuard bearer). Security agent recommended LÆX annotation
+    for answer-re-entry surface and single-operator contract — tracked as Phase 7 non-blocking
+    follow-up, not a merge blocker.
+  I1_rebase:
+    result: pass
+    note: "Clean descendant of github/main @ 9f06a92; local main 1 commit ahead (bdbd0ce cockpit-full E2E, unpushed)"
+  N1_northstar:
+    result: pass
+    pillar: "P1+P2"
+  N2_chain:
+    result: pass
+    note: "Concrete — question tool registration + POST /api/question + SSE + transport adapters all delivered"
+  N3_exclusion_zones: pass
+  D1_docs:
+    result: pass
+    gaps:
+      - "AGENT_SSE_COUNT (sse.rs pub static) — SOFT, no /// explaining saturating-update behavior"
+      - "build_app (mod.rs pub fn) — SOFT, /// summary does not enumerate new /api/question routes"
+  D2_plan: pass
+  D3_claude_md:
+    result: pass
+    note: "SseGuard Send assertion doc added in W6.6 in-gate commit (8458e48)"
+  V1_pyramid:
+    result: pass
+    suites: "unit(question_routes + sse) integration(Tower oneshot smoke) E2E(5 Playwright opt-in)"
+    gap_tracked: "TODO(property-test) on F4 validation — Canon XXVII gap documented, Phase 7 scope"
+  V2_smoke: pass
+  V3_e2e: "deferred:live-server-required (opt-in via WEBSHELL_URL + WEBSHELL_TOKEN)"
+lasdlc_version_note: "Plan declares lasdlc_template_version: 2.7.0; gate expected 2.5.1 — WARN only, not blocking"
+scrum_round_status:
+  R1_completed: true
+  R2_completed: true
+  R3_completed: true
+  unanimous_verdict: APPROVED_FOR_MERGE
+  soul_vault_written: "hitl/phase6-security-learnings.md"
+in_gate_fixes:
+  - commit: 8458e48
+    fixes:
+      - "F4-RACE: reversed TTL eviction order (reg.remove before meta.remove)"
+      - "D3: SseGuard Send assertion documented in CLAUDE.md"
+notes: |
+  Pre-merge gate complete. All blocking/HIGH security findings resolved. One MEDIUM
+  finding (F4-RACE eviction order) fixed in-gate at 8458e48. Four LOW open findings
+  tracked for Phase 7. S3 not triggered (no new crypto/auth/permission surfaces).
+  1928 tests passing, 0 failures. V2 smoke clean. V3 E2E deferred (live server
+  required, opt-in test suite exists). Branch is merge-ready.

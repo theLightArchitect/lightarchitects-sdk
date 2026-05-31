@@ -21,6 +21,7 @@
   import KeymapLegend from './components/KeymapLegend.svelte';
   import HelixLegend from './components/HelixLegend.svelte';
   import CornerBrackets from '$lib/components/CornerBrackets.svelte';
+  import QuestionCard from '$lib/components/QuestionCard.svelte';
   import ScanLines from './components/atmosphere/ScanLines.svelte';
   import ProjectPicker from './components/ProjectPicker.svelte';
   import ActiveBuildsChip from './components/ActiveBuildsChip.svelte';
@@ -33,6 +34,7 @@
     expandedFindings, supervisorAlerts, siblingHealth, copilotMessages, strategyHitl,
     intakeFormDirty, authStatus, commandPaletteOpen, eventsOverlayOpen, streamDrawerWidthPx,
     streamDrawerOpen, streamDrawerActiveTabs, type StreamDrawerTab,
+    pendingQuestions,
   } from '$lib/stores';
 
   function openStreamTab(tab: StreamDrawerTab) {
@@ -631,6 +633,25 @@
   <NotificationStack />
   {#if $settingsOpen}
     <SettingsOverlay />
+  {/if}
+  <!-- Question HITL overlay (webshell-hitl-bridge) — rendered above all content.
+       Each card maps to one pending gateway `question` tool call identified by tool_use_id. -->
+  {#if $pendingQuestions.size > 0}
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      data-testid="question-overlay"
+      role="presentation"
+    >
+      <div class="flex flex-col gap-3 w-full max-w-xl px-4">
+        {#each [...$pendingQuestions] as [toolUseId, state] (toolUseId)}
+          <QuestionCard
+            {toolUseId}
+            questions={state.questions}
+            onAnswered={() => pendingQuestions.update(m => { const n = new Map(m); n.delete(toolUseId); return n; })}
+          />
+        {/each}
+      </div>
+    </div>
   {/if}
 </div>
 {/if}

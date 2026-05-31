@@ -674,9 +674,19 @@ async fn run_session_with_provider<P: LlmAgentProvider>(
 ) -> Result<(), GatewayError> {
     use tokio::io::AsyncWriteExt as _;
 
+    let (rewritten, ask_count, ask_errors) =
+        crate::cli::ask_marker::rewrite_ask_blocks(&spec.content);
+    if ask_count > 0 {
+        tracing::debug!(
+            skill = %spec.slug,
+            ask_blocks = ask_count,
+            parse_errors = ask_errors,
+            "rewrote ask blocks to inline HITL instructions"
+        );
+    }
     let config = SessionConfig {
         cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-        system_prompt: Some(spec.content.clone()),
+        system_prompt: Some(rewritten),
         ..SessionConfig::default()
     };
     let mut session = ConversationSession::new(config, provider);

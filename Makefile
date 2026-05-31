@@ -1,7 +1,7 @@
 # l-arc-sdk — Light Architects SDK workspace
 # Standard Light Architects Makefile targets
 
-.PHONY: help quality test test-gateway-smoke test-features test-claude-fixture-refresh build deploy deploy-fast rollback doc fix push clean
+.PHONY: help quality test test-gateway-smoke test-features test-claude-fixture-refresh build deploy deploy-fast rollback doc fix push clean lint-ask
 
 GATEWAY_BIN      := $(HOME)/.lightarchitects/bin/lightarchitects
 GATEWAY_PREV_BIN := $(HOME)/.lightarchitects/bin/lightarchitects.prev
@@ -56,6 +56,18 @@ test-features: ## Isolated feature-gate tests (catches cross-feature contaminati
 	@echo "=== Feature: all ==="
 	cargo test --workspace --all-features
 	@echo "All feature combinations pass."
+
+lint-ask: ## Count AskUserQuestion prose vs ```ask markers across installed SKILL.md files
+	@echo "=== lint-ask: scanning SKILL.md files for HITL syntax ==="
+	@SKILLS_DIR="$${HOME}/.claude/plugins/cache/light-architects/lightarchitects/1.0.0/skills"; \
+	 if [ ! -d "$$SKILLS_DIR" ]; then \
+	   echo "  SKIP: plugin cache not found at $$SKILLS_DIR"; exit 0; \
+	 fi; \
+	 ask_count=$$(grep -rl '^\`\`\`ask' "$$SKILLS_DIR" 2>/dev/null | wc -l | tr -d ' '); \
+	 prose_count=$$(grep -rl 'AskUserQuestion' "$$SKILLS_DIR" 2>/dev/null | wc -l | tr -d ' '); \
+	 echo "  \`\`\`ask markers : $$ask_count skill file(s)"; \
+	 echo "  AskUserQuestion prose : $$prose_count skill file(s)"; \
+	 echo "  app.skill.text_question_inline_total=$$ask_count"
 
 build: ## Build all crates (release)
 	cargo build --workspace --release

@@ -1,0 +1,66 @@
+schema_version: 1
+gate: phase
+scope: phase
+scored_by: "/GATE"
+scored_at: "2026-05-31T17:20:00Z"
+build_id: webshell-hitl-bridge
+phase_id: phase-1-foundations
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 1244
+    tests_fail: 0
+    breakdown:
+      webshell_lib: 772
+      gateway_lib: 470
+      canon_doc_integrity: 2
+  Q4_svelte: "n/a — no frontend surface in Phase 1"
+  A_architecture:
+    result: pass
+    findings: []
+    notes: >
+      QuestionRegistry correctly in webshell AppState (not gateway).
+      GATE0-TF1 resolved: plan C3 updated to match authoritative C3_component.mmd.
+      TTL eviction uses collect-then-mutate (DashMap deadlock-safe per feedback memory).
+  S_security:
+    result: pass
+    findings: []
+    notes: >
+      Phase 1 adds types + struct fields only. No HTTP routes or network surface.
+      [S] CRITICAL gate (SSRF + auth) deferred to gate-2a per plan.
+      oneshot::Sender values not logged/serialized. answers field carries no secrets.
+  C_canon:
+    result: pass
+    notes: >
+      No .unwrap()/.expect() in production paths. clippy::pedantic clean.
+      All pub items documented. QuestionAnswer mirrors gateway QuestionInput
+      wire format (camelCase JSON contract).
+  T_testing:
+    result: pass
+    notes: >
+      5 gateway unit tests (question.rs): roundtrip, multi-select, headless_policy
+      serde, answer formatting, schema_generates_without_panic.
+      2 canon_doc_integrity tests: variant ratchet 27→29, type-tag coverage.
+  D_docs:
+    result: pass
+    notes: >
+      All new pub structs (QuestionInput, Question, QuestionOption, HeadlessPolicy,
+      QuestionAnswer, QuestionPending, QuestionItem, QuestionOptionItem,
+      QuestionHeadlessPolicy, QuestionPromptEvent, QuestionAnsweredEvent) have
+      /// doc comments. AppState fields have cross-reference docs.
+
+tracked_findings: []
+
+blocking_gaps_closed:
+  - "GATE0-TF1: plan-body C3 QuestionRegistry placement corrected (webshell, not gateway)"
+
+gate_verdict: PASS
+notes: >
+  Phase 1 establishes the type layer and AppState registry without any HTTP surface.
+  Phase 2 wires the gateway tool registration and the two HTTP endpoints
+  (POST /api/sessions/:id/question + GET /api/sessions/:id/answer/await).
+  [S] CRITICAL gate (SSRF allowlist, auth token validation) triggers at gate-2a.

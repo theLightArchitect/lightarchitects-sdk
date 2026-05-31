@@ -13,6 +13,7 @@
 //! Every command accepts `--output-format <json|text>` (default: `text`).
 //! In JSON mode, sensitive fields are redacted before printing.
 
+pub mod ask_marker;
 pub mod auth;
 pub mod builds;
 pub mod config_cmd;
