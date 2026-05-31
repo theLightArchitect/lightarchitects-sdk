@@ -1,4 +1,13 @@
 <script lang="ts">
+  /**
+   * @component WaveComposer
+   *
+   * Collapsible Cockpit card that lets the operator compose and dispatch a
+   * multi-agent wave. Reads `selectedAgents`, `agentTaskRows`, `selectedTarget`,
+   * `waveComposerOpen`, and `waveDispatchPending` from `$lib/cockpit/stores`.
+   * Posts to `POST /api/cockpit/wave` via `dispatchWave`. On success, deeplinks
+   * to `/autonomous` via `navigate()`.
+   */
   import {
     selectedAgents, agentTaskRows, waveComposerOpen, waveDispatchPending, lastWaveId,
     selectedTarget, PRESET_DISPLAY, type CockpitPreset, type AgentTaskRow,

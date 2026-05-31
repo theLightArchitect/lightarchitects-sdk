@@ -44,10 +44,13 @@ export const quickPickOpen = writable<boolean>(false);
 
 /** One agent assignment row in the wave composer. */
 export interface AgentTaskRow {
+  /** Domain preset for this agent. */
   preset: CockpitPreset;
   /** Skill key, e.g. `"lightarchitects:engineer"`. */
   skill: string;
+  /** Operator-supplied task description, injected into the worker prompt. */
   taskDescription: string;
+  /** Worktree-relative file paths this agent may write. Empty = no enforcement. */
   fileOwnership: string[];
 }
 

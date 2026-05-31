@@ -1,4 +1,14 @@
 <script lang="ts">
+  /**
+   * @component AgentTaskRow
+   *
+   * Renders one agent assignment row inside WaveComposer: preset badge with
+   * `DOMAIN_AGENT_COLORS`, skill label, task description textarea, and an
+   * optional file-ownership input.
+   *
+   * @prop row - The `AgentTaskRow` data for this slot.
+   * @prop onUpdate - Callback invoked with a partial `AgentTaskRow` on any field change.
+   */
   import { DOMAIN_AGENT_COLORS } from '$lib/design-tokens';
   import { PRESET_DISPLAY, type CockpitPreset, type AgentTaskRow } from '$lib/cockpit/stores';
 
