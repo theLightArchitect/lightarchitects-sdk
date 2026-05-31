@@ -56,6 +56,7 @@ pub mod container_relay;
 pub mod exec_routes;
 pub mod fleet_routes;
 pub mod git_routes;
+pub mod litellm_chat;
 pub mod mcp_routes;
 pub mod roadmap;
 
@@ -1112,6 +1113,8 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/git/log", get(git_routes::log_handler))
         // ── Roadmap artifact (webshell-roadmap-rendering) ────────────────────
         .route("/api/roadmap", get(roadmap::roadmap_handler))
+        // ── LiteLLM polished chat panel (direct streaming, bypasses subprocess) ─
+        .route("/api/litellm/chat", post(litellm_chat::chat_handler))
         // ── HITL inbox — GitHub PR review queue (webshell-hitl-inbox Phase 1) ─
         .route("/api/gitforest/hitl-search", get(hitl_search_handler))
         .route("/api/gitforest/pr-metadata", get(pr_metadata_handler))

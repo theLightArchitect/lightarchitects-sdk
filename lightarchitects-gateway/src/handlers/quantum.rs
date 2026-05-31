@@ -22,7 +22,8 @@ use serde_json::Value;
 use crate::config::GatewayConfig;
 #[cfg(test)]
 use lightarchitects::agent::ProviderError;
-use lightarchitects::agent::{ChainContext, ClaudeCliProvider, LlmAgentProvider, dispatch_action};
+use lightarchitects::agent::openai_compat::OpenAICompatProvider;
+use lightarchitects::agent::{ChainContext, LlmAgentProvider, dispatch_action};
 
 /// All QUANTUM actions supported by the inline handler.
 ///
