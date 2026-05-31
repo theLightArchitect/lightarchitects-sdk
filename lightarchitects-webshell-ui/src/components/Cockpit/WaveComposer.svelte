@@ -10,7 +10,7 @@
    */
   import {
     selectedAgents, agentTaskRows, waveComposerOpen, waveDispatchPending, lastWaveId,
-    selectedTarget, PRESET_DISPLAY, type CockpitPreset, type AgentTaskRow,
+    lastWaveAgentCount, selectedTarget, PRESET_DISPLAY, type CockpitPreset, type AgentTaskRow,
   } from '$lib/cockpit/stores';
   import { dispatchWave } from '$lib/cockpit/waveComposer';
   import { DOMAIN_AGENT_COLORS } from '$lib/design-tokens';
@@ -99,6 +99,7 @@
         worktree: worktree.trim() || `~/lightarchitects/worktrees/${codename}`,
       });
       lastWaveId.set(resp.wave_id);
+      lastWaveAgentCount.set(resp.agent_count);
       successBuildId = resp.build_id;
       selectedAgents.set(new Set());
       agentTaskRows.set([]);

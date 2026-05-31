@@ -68,3 +68,6 @@ export const waveDispatchPending = writable<boolean>(false);
 
 /** UUID of the last successfully dispatched wave. Null until first dispatch. */
 export const lastWaveId = writable<string | null>(null);
+
+/** Number of agents in the last successfully dispatched wave. */
+export const lastWaveAgentCount = writable<number>(0);
