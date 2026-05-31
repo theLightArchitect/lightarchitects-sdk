@@ -48,10 +48,12 @@ dimensions:
 scrum_round_status:
   R1_completed: true
   R2_completed: true
-  R3_in_progress: true
+  R3_completed: true
   R1_blockers_resolved: 9
   R2_new_blockers_resolved: 2
-  remaining_non_blocking: 4
+  remaining_non_blocking: 3
+  soul_vault_written: "hitl/phase6-security-learnings.md"
+  unanimous_verdict: APPROVED_FOR_MERGE
 notes: |
   Phase 6 pre-merge hardening complete. All SCRUM R1/R2 blocking findings resolved
   in-gate. Key security improvements: F4 metadata-race guard, partial-answer count
