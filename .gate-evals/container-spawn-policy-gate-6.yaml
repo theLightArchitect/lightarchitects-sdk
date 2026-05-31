@@ -1,0 +1,52 @@
+# Phase 6 Ship Gate — container-spawn-policy
+gate: gate-6-ship
+build: container-spawn-policy
+date: 2026-05-31
+verdict: PASS
+
+checks:
+  rebase:
+    status: PASS
+    base: origin/main (9f06a92)
+    commits_rebased: 6
+    conflicts_resolved: 1  # cockpit_wave.rs validate_worktree_path tests (took HEAD version)
+    post_rebase_tests: "796 passed, 0 failed, 3 ignored"
+
+  gateway_deploy:
+    status: PASS
+    binary: ~/.lightarchitects/bin/lightarchitects
+    codesign: verified_strict
+    sha: 9713b461135134362ff932326af3c8ff67b14876
+
+  webshell_deploy:
+    status: PASS
+    binary: ~/.lightarchitects/bin/lightarchitects-webshell
+    version: "0.2.0 (sha:9713b46, ui:62be9b26e7fe, built:2026-05-31)"
+    codesign: verified_strict
+    size_mb: 46
+
+  sbom:
+    status: PASS
+    format: cargo-metadata
+    total_components: 691
+    artifact: .gate-evals/container-spawn-policy-provenance.json
+
+  slsa_l1:
+    status: PASS
+    provenance_artifact: .gate-evals/container-spawn-policy-provenance.json
+    deploy_manifest: ~/.lightarchitects/deploy-manifest.json
+    builder_id: "github.com/TheLightArchitects/lightarchitects-sdk@feat/container-spawn-policy"
+    buildType: "https://github.com/TheLightArchitects/lightarchitects-sdk/blob/main/.github/workflows/build.yml"
+    externalParameters:
+      repo: github.com/TheLightArchitects/lightarchitects-sdk
+      ref: refs/heads/feat/container-spawn-policy
+      commit: 9713b461135134362ff932326af3c8ff67b14876
+
+northstar_advancement:
+  pillar: P2
+  predicate: "secure-by-default spawn policy enforced — agent containers cannot mutate their own constraints"
+  mechanical_checks:
+    - "CIDR guard blocks PATCH /api/container/policy from Docker bridge IPs (172.17.0.0/16)"
+    - "Semaphore enforces max_concurrent cap atomically (no TOCTOU window)"
+    - "Monotonic-tightening enforced SDK-side via tighten_for_build"
+    - "Airgapped --network=none containers cannot reach 1.1.1.1 (E2E negative-control)"
