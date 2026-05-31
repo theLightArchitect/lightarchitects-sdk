@@ -4,7 +4,7 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 120_000,
   expect: { timeout: 10_000 },
-  testMatch: ['**/cockpit.spec.ts', '**/cockpit-wave-composer.spec.ts'],
+  testMatch: ['**/cockpit.spec.ts', '**/cockpit-wave-composer.spec.ts', '**/cockpit-full.spec.ts'],
   retries: 0,
   workers: 1,
   reporter: [['list']],

@@ -43,7 +43,7 @@
 {#if $hitlItems.length === 0}
   <div class="empty-state">no PRs or tasks awaiting review</div>
 {:else}
-  <div class="hitl-list">
+  <div class="hitl-list" role="listbox" aria-label="HITL items awaiting review">
     {#each $hitlItems as item (item.id)}
       <!-- svelte-ignore a11y_interactive_supports_focus -->
       <div
