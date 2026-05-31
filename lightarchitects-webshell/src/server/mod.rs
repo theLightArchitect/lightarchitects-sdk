@@ -1364,7 +1364,12 @@ pub async fn run(
 
     info!(bind = %addr, "webshell server listening");
 
-    axum::serve(listener, app).await.map_err(ServerError::Serve)
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .map_err(ServerError::Serve)
 }
 
 /// Maximum number of sequential ports tried beyond the configured port.
@@ -1411,10 +1416,13 @@ pub async fn run_with_port_retry(
                 info!(bind = %addr, "webshell server listening");
                 let driver = ServerDriver {
                     inner: Box::pin(async move {
-                        axum::serve(listener, app)
-                            .with_graceful_shutdown(crate::init::shutdown::shutdown_signal())
-                            .await
-                            .map_err(ServerError::Serve)
+                        axum::serve(
+                            listener,
+                            app.into_make_service_with_connect_info::<SocketAddr>(),
+                        )
+                        .with_graceful_shutdown(crate::init::shutdown::shutdown_signal())
+                        .await
+                        .map_err(ServerError::Serve)
                     }),
                 };
                 return Ok((port, driver));

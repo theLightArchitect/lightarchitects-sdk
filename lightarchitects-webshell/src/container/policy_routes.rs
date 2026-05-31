@@ -22,11 +22,18 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-use axum::{Json, extract::State, http::HeaderMap, http::StatusCode, response::IntoResponse};
+use axum::{
+    Json,
+    extract::{ConnectInfo, State},
+    http::HeaderMap,
+    http::StatusCode,
+    response::IntoResponse,
+};
 use lightarchitects::container_spawn::{
     AgentTier, ContainerPolicy, ContainerResources, IsoMode, NetworkPolicy, SpawnError, SpawnPolicy,
 };
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 
 use crate::{auth, server::AppState};
 
@@ -184,6 +191,7 @@ fn build_proposed_policy(
 /// Requires `Authorization: Bearer <token>` or `la_session` cookie.
 pub async fn patch_policy(
     guard: auth::AuthGuard,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(req): Json<PatchPolicyRequest>,
@@ -208,6 +216,17 @@ pub async fn patch_policy(
                     .into_response();
             }
         }
+    }
+
+    // ── CIDR guard: block requests from Docker bridge IPs (G4 + M1) ──────────
+    if state.bridge_cidr_guard.is_blocked(peer.ip()) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "error": "policy mutation from container network addresses is not permitted"
+            })),
+        )
+            .into_response();
     }
 
     // ── If-Match version check ────────────────────────────────────────────────

@@ -10,11 +10,13 @@ use std::path::PathBuf;
 
 use axum::{
     body::Body,
+    extract::ConnectInfo,
     http::{Method, Request, StatusCode, header},
 };
 use http_body_util::BodyExt;
 use lightarchitects::container_spawn::ContainerPolicy;
 use serde_json::Value;
+use std::net::SocketAddr;
 use tower::ServiceExt;
 
 use crate::{
@@ -111,6 +113,7 @@ async fn patch_tighter_memory_succeeds() {
                 .uri("/api/container/policy")
                 .header(header::AUTHORIZATION, bearer_header())
                 .header(header::CONTENT_TYPE, "application/json")
+                .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
                 .body(Body::from(body.to_string()))
                 .unwrap(),
         )
@@ -139,6 +142,7 @@ async fn patch_looser_memory_rejected() {
                 .uri("/api/container/policy")
                 .header(header::AUTHORIZATION, bearer_header())
                 .header(header::CONTENT_TYPE, "application/json")
+                .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
                 .body(Body::from(body.to_string()))
                 .unwrap(),
         )
@@ -164,6 +168,7 @@ async fn patch_iso_mode_tighter_succeeds() {
                 .uri("/api/container/policy")
                 .header(header::AUTHORIZATION, bearer_header())
                 .header(header::CONTENT_TYPE, "application/json")
+                .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
                 .body(Body::from(body.to_string()))
                 .unwrap(),
         )
@@ -189,6 +194,7 @@ async fn patch_unknown_iso_mode_rejected() {
                 .uri("/api/container/policy")
                 .header(header::AUTHORIZATION, bearer_header())
                 .header(header::CONTENT_TYPE, "application/json")
+                .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
                 .body(Body::from(body.to_string()))
                 .unwrap(),
         )
@@ -213,6 +219,7 @@ async fn patch_empty_body_no_change() {
                 .uri("/api/container/policy")
                 .header(header::AUTHORIZATION, bearer_header())
                 .header(header::CONTENT_TYPE, "application/json")
+                .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
                 .body(Body::from("{}"))
                 .unwrap(),
         )
@@ -263,6 +270,7 @@ async fn patch_without_if_match_succeeds() {
                 .uri("/api/container/policy")
                 .header(header::AUTHORIZATION, bearer_header())
                 .header(header::CONTENT_TYPE, "application/json")
+                .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
                 .body(Body::from(body.to_string()))
                 .unwrap(),
         )
@@ -289,6 +297,7 @@ async fn patch_with_correct_if_match_returns_new_etag() {
                 .header(header::AUTHORIZATION, bearer_header())
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::IF_MATCH, "\"0\"")
+                .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
                 .body(Body::from(body.to_string()))
                 .unwrap(),
         )
@@ -320,6 +329,7 @@ async fn patch_stale_if_match_returns_412() {
                 .header(header::AUTHORIZATION, bearer_header())
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::IF_MATCH, "\"99\"") // stale — current version is 0
+                .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
                 .body(Body::from(body.to_string()))
                 .unwrap(),
         )
@@ -349,6 +359,7 @@ async fn rate_limit_second_patch_within_one_second_returns_429() {
                 .uri("/api/container/policy")
                 .header(header::AUTHORIZATION, bearer_header())
                 .header(header::CONTENT_TYPE, "application/json")
+                .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
                 .body(Body::from(body1.to_string()))
                 .unwrap(),
         )
@@ -365,6 +376,7 @@ async fn rate_limit_second_patch_within_one_second_returns_429() {
                 .uri("/api/container/policy")
                 .header(header::AUTHORIZATION, bearer_header())
                 .header(header::CONTENT_TYPE, "application/json")
+                .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
                 .body(Body::from(body2.to_string()))
                 .unwrap(),
         )
@@ -393,6 +405,7 @@ async fn get_reflects_patch() {
                 .uri("/api/container/policy")
                 .header(header::AUTHORIZATION, bearer_header())
                 .header(header::CONTENT_TYPE, "application/json")
+                .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
                 .body(Body::from(patch_body.to_string()))
                 .unwrap(),
         )
