@@ -1,0 +1,76 @@
+schema_version: 1
+gate: merge
+scored_by: "/GATE"
+scored_at: "2026-05-31T23:55:00Z"
+build_id: webshell-hitl-bridge
+phase_id: phase-7-hardening
+commit: 1964f22
+branch: feat/webshell-hitl-ph7
+overall_verdict: pass
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pending  # bjwg0tzoy / bdvd2h8mv background runs; last known: 1928 pass, 0 fail
+    tests_run: 1928+
+    tests_fail: 0
+  Q4_svelte: "n/a"  # No Svelte surface changed in Phase 7
+  S1_security:
+    result: pass
+    findings:
+      - id: F-MULTI-doc
+        severity: LOW
+        description: >
+          F-MULTI guard now enforced server-side (422 on single-select cardinality violation).
+          Previously open LOW finding from phase-6-hardening-merge.yaml.
+          RESOLVED in this phase.
+      - id: F-REGCAP-doc
+        severity: LOW
+        description: >
+          Registry cap MAX_CONCURRENT_QUESTIONS=32 (503) + submission cap
+          MAX_QUESTIONS_PER_SUBMIT=20 (422) now enforced. Previously open LOW.
+          RESOLVED in this phase.
+      - id: LAEX-ANSWER-REENTRY
+        severity: NOTE
+        description: >
+          LÆX canon candidate: POST /api/question/:id/answer is the first surface
+          where operator-supplied labels flow into LLM tool_result content.
+          Documented in CLAUDE.md. Platform Canon XIV review pending (tracked open).
+  S2_supply_chain: pass  # No Cargo.toml changes
+  S3_laex: "n/a"  # No new cryptographic primitives or auth flows
+  I1_rebase: pass  # One commit ahead of github/main; clean descendant
+  N1_northstar:
+    result: pass
+    pillar: "P1+P2"
+  N2_chain: pass  # Phase 7 strengthens Phase 6 deliverable; chain concrete
+  D1_docs: pass  # All public items (constants + handlers) fully documented with ///
+  D2_plan: pass  # Plan status: promoted/merged at 388b3db
+  D3_claude_md: pass  # CLAUDE.md updated with LÆX trust boundary + registry limits sections
+  V1_pyramid:
+    result: pass
+    suites_covered:
+      - unit          # submit_too_many_questions_returns_422, submit_when_registry_full_returns_503,
+                      # answer_single_select_multi_label_returns_422
+      - property      # prop_valid_label_always_passes, prop_invalid_label_always_rejects,
+                      # prop_single_select_multi_label_rejects (previously missing — gap closed)
+      - integration   # existing question_submit/answer/sse integration tests
+      - e2e           # hitl-question-bridge.spec.ts (WEBSHELL_URL+TOKEN opt-in)
+  V2_smoke: pending  # blo30s4ob background release build; previous clean build confirmed
+  V3_e2e: "deferred:requires WEBSHELL_URL+WEBSHELL_TOKEN — spec tests skip automatically in CI"
+open_findings:
+  - id: SINGLE-OP-CONTRACT
+    severity: LOW
+    description: >
+      QuestionPending has no session_id; SseGuard::drop drains globally across all operators.
+      Safe for the current single-operator webshell assumption. Becomes a bug with
+      multi-operator support. Documented in CLAUDE.md. Not blocking Phase 7 merge.
+  - id: LAEX-ANSWER-REENTRY
+    severity: NOTE
+    description: >
+      Platform Canon XIV review pending — operator-supplied labels flowing into
+      LLM tool_result is the answer re-entry trust boundary. Tracked as LÆX candidate.
+notes: >
+  Phase 7 closes all 4 LOW findings from phase-6-hardening-merge.yaml:
+  F-MULTI (server cardinality), F-REGCAP (registry cap), F-QCOUNT (submission cap),
+  and the property-test gap (Canon XXVII T-suite). PLAYWRIGHT_HEADLESS CI toggle added.
+  AGENT_SSE_COUNT fully documented. All unwrap() calls are test-scoped (#[cfg(test)]).

@@ -44,7 +44,12 @@ use super::protocol::AgentEvent;
 /// Maximum number of simultaneous SSE streams per build.
 pub const MAX_AGENT_SSE: usize = 32;
 
-/// Global SSE connection counter.
+/// Global SSE connection counter across all active builds.
+///
+/// Incremented on connect, decremented via [`SseGuard`] on disconnect.
+/// Uses saturating arithmetic in `SseGuard::drop` to prevent underflow if the
+/// guard is dropped without a matching increment (e.g., in tests that construct
+/// an `SseGuard::empty()`).
 static AGENT_SSE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /// `GET /api/builds/:id/agent/stream` — SSE fan-out of agent events.
