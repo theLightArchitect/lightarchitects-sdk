@@ -14,6 +14,8 @@
  *   G6: HITL Inbox within 60s — hitl-inbox card visible within P1 budget (P6-N1)
  *   G7: HITL escalation — dispatch la:permission-request, verify card + approve
  *   G8: Strategy catalogue — all 10 tiles render; L2 tiles toggle aria-pressed; L0 tiles disabled
+ *   G9: axe-core WCAG 2.1 AA — 0 critical violations on cockpit screen (Phase 7 exit criterion)
+ *   G5b: Copilot header chip shows preset × target label after target selected (Phase 6)
  *
  * Run (headed, required — Playwright needs browser installed):
  *   PLAYWRIGHT_BASE_URL=http://localhost:5174 pnpm exec playwright test e2e/cockpit.spec.ts
@@ -22,6 +24,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 import { ALL_COCKPIT_CARD_ROLES } from '../src/lib/cockpit/cardRoles';
 
 const BASE  = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5174';
@@ -362,4 +365,53 @@ test('G8: strategy-catalogue renders all 10 tiles; L2 tiles toggle; L0 tiles are
   const execBadge = l0Tile.locator('.strat-exec-badge');
   await expect(execBadge).toBeAttached();
   await expect(execBadge).toContainText('executor');
+});
+
+// ── G9: Accessibility — axe-core WCAG 2.1 AA (Phase 7 exit criterion) ─────────
+
+test('G9: cockpit screen has no critical axe-core violations (WCAG 2.1 AA)', async ({ page }) => {
+  await setupCockpit(page);
+  await page.goto(`${BASE}/#/activity`);
+
+  // Wait for cockpit to stabilise
+  await expect(page.locator('[data-card-role="preset-chips"]')).toBeAttached({ timeout: 5000 });
+
+  const results = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa'])
+    .disableRules(['color-contrast']) // dark-theme variables trigger false positives at scan time
+    .analyze();
+
+  const critical = results.violations.filter(v => v.impact === 'critical');
+  if (critical.length > 0) {
+    console.warn('[G9 a11y] Critical violations:', critical.map(v => `${v.id}: ${v.description} (${v.nodes.length} nodes)`));
+  }
+  expect(critical, `${critical.length} critical a11y violations found`).toHaveLength(0);
+});
+
+// ── G5b: Copilot header chip shows target label after target selection (Phase 6) ─
+
+test('G5b: copilot header shows preset × target chip after target selected', async ({ page }) => {
+  await setupCockpit(page);
+  await page.goto(`${BASE}/#/activity`);
+
+  await expect(page.locator('[data-card-role="target-breadcrumb"]')).toBeAttached({ timeout: 5000 });
+
+  // Inject a selected target directly into the Svelte store via the event bus
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent('la:set-target', {
+      detail: { type: 'build', id: 'cockpit-e2e-build', label: 'cockpit-e2e-build' },
+    }));
+  });
+
+  // Open copilot drawer
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent('la:open-copilot'));
+  });
+
+  const drawerEl = page.locator('[data-card-role="copilot-drawer"]');
+  await expect(drawerEl).toBeAttached({ timeout: 2000 });
+
+  // Header button should contain the × separator when target is set
+  const headerBtn = drawerEl.locator('button').filter({ hasText: /×/ }).first();
+  await expect(headerBtn).toBeAttached({ timeout: 2000 });
 });
