@@ -983,6 +983,10 @@ pub fn build_app(state: AppState) -> Router {
                 .patch(crate::container::policy_routes::patch_policy)
                 .layer(axum::extract::DefaultBodyLimit::max(4 * 1024)),
         )
+        .route(
+            "/api/container/active",
+            get(crate::container::active_routes::get_active_containers),
+        )
         .route("/api/events", get(events::sse_handler::sse_handler))
         .route("/api/control", post(events::control_handler))
         .route(

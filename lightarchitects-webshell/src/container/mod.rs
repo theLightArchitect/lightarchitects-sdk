@@ -7,6 +7,7 @@
 //! All container logic is self-contained — no `Dockerfile` in the project root.
 //! The agent image is built from embedded string constants on first spawn.
 
+pub mod active_routes;
 pub mod cidr_guard;
 pub(crate) mod docker_cmd;
 pub mod embedded_image;

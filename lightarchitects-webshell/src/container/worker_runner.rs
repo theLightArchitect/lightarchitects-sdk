@@ -33,7 +33,7 @@ use lightarchitects::{
 use crate::{
     container::{
         docker_cmd,
-        spawner::build_container_run_args,
+        spawner::{build_container_run_args, network_str},
         types::{ActiveContainerEntry, ContainerError, ContainerHandle, ContainerKind},
     },
     server::AppState,
@@ -111,6 +111,7 @@ pub async fn spawn_worker_container(
 
     // Forget permit ONLY after docker run succeeds (H1 pattern).
     let iso_mode = effective_policy.iso_mode;
+    let network_policy_at_spawn = network_str(effective_policy.network);
     permit.forget();
 
     let entry = ActiveContainerEntry {
@@ -120,6 +121,7 @@ pub async fn spawn_worker_container(
         },
         started_at: Instant::now(),
         policy_snapshot_iso_mode: iso_mode,
+        network_policy_at_spawn,
     };
 
     let inserted = state

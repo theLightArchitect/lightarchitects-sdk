@@ -16,8 +16,11 @@
     userns: 'Remapped' | 'Host' | 'Unsupported';
   }
 
+  type ContainerKind = { type: 'Pty' } | { type: 'WorkerTask'; task_id: string; wave_index: number };
+
   interface ActiveContainer {
     container_id: string;
+    kind: ContainerKind;
     iso_mode_at_spawn: string;
     network_policy_at_spawn: string;
     hardening_actual: HardeningActual;
@@ -76,6 +79,15 @@
   function usernsClass(userns: HardeningActual['userns']): string {
     return { Remapped: 'userns-remapped', Host: 'userns-host', Unsupported: 'userns-unsup' }[userns];
   }
+
+  function kindLabel(kind: ContainerKind): string {
+    return kind.type === 'WorkerTask' ? 'worker' : 'pty';
+  }
+
+  function workerTaskTooltip(kind: ContainerKind): string | undefined {
+    if (kind.type !== 'WorkerTask') return undefined;
+    return `task: ${kind.task_id} · wave: ${kind.wave_index}`;
+  }
 </script>
 
 <section class="active-containers" aria-label="Active containers">
@@ -96,6 +108,7 @@
         <thead>
           <tr>
             <th>ID</th>
+            <th>Kind</th>
             <th>ISO mode</th>
             <th>Network</th>
             <th title="seccomp profile applied">seccomp</th>
@@ -106,8 +119,16 @@
         </thead>
         <tbody>
           {#each containers as c (c.container_id)}
-            <tr>
+            <tr data-kind={c.kind.type}>
               <td class="mono" title={c.container_id}>{truncateId(c.container_id)}</td>
+              <td>
+                <span
+                  class="kind-badge kind-{kindLabel(c.kind)}"
+                  title={workerTaskTooltip(c.kind)}
+                >
+                  {kindLabel(c.kind)}
+                </span>
+              </td>
               <td>{c.iso_mode_at_spawn}</td>
               <td>{c.network_policy_at_spawn}</td>
               <td class="check-cell">{c.hardening_actual.seccomp ? '✓' : '✗'}</td>
@@ -212,5 +233,29 @@
   .userns-unsup {
     background: rgba(200, 80, 80, 0.2);
     color: #e55;
+  }
+
+  /* ── Kind column ─────────────────────────────────────────────────────── */
+
+  .kind-badge {
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.72rem;
+    font-family: monospace;
+  }
+
+  .kind-pty {
+    background: rgba(120, 200, 120, 0.15);
+    color: #7cc87c;
+  }
+
+  .kind-worker {
+    background: rgba(160, 120, 230, 0.15);
+    color: #a078e6;
+  }
+
+  /* Row-level tinting: worker-task rows get a faint purple stripe */
+  tr[data-kind='WorkerTask'] {
+    background: rgba(160, 120, 230, 0.04);
   }
 </style>

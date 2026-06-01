@@ -67,8 +67,10 @@ pub struct ActiveContainerEntry {
     pub kind: ContainerKind,
     /// Wall-clock time at which `docker run` succeeded.
     pub started_at: Instant,
-    /// `IsoMode` snapshot at spawn time — used for audit logging.
+    /// `IsoMode` snapshot at spawn time — used for audit logging and the active-containers API.
     pub policy_snapshot_iso_mode: lightarchitects::container_spawn::IsoMode,
+    /// Network policy string at spawn time (e.g. `"bridge"`, `"none"`).
+    pub network_policy_at_spawn: String,
 }
 
 /// Result of successfully spawning a container session.

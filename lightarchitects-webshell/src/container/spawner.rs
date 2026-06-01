@@ -110,12 +110,14 @@ async fn container_spawn(
     // on drop, returning the slot. If active_containers write fails (poisoned lock),
     // we add the permit back manually before returning the error.
     let iso_mode = policy.iso_mode;
+    let network_policy_at_spawn = network_str(policy.network);
     permit.forget();
 
     let entry = ActiveContainerEntry {
         kind: ContainerKind::Pty,
         started_at: std::time::Instant::now(),
         policy_snapshot_iso_mode: iso_mode,
+        network_policy_at_spawn,
     };
 
     let inserted = state
@@ -194,6 +196,19 @@ pub(crate) async fn build_container_run_args(
     docker_args.extend_from_slice(&["--name".to_owned(), container_name.to_owned(), image]);
 
     Ok((docker_args, seccomp_tmp))
+}
+
+/// Maps [`lightarchitects::container_spawn::NetworkPolicy`] to its wire-format string.
+pub(crate) fn network_str(policy: lightarchitects::container_spawn::NetworkPolicy) -> String {
+    use lightarchitects::container_spawn::NetworkPolicy as N;
+    match policy {
+        N::Bridge => "bridge",
+        N::Host => "host",
+        N::None => "none",
+        N::Balanced => "balanced",
+        _ => "unknown",
+    }
+    .to_owned()
 }
 
 /// Sanitizes a build ID for use in a Docker container name.
