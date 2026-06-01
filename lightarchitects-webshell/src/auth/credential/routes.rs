@@ -674,7 +674,9 @@ pub async fn ollama_connect(
 ///
 /// Returns `None` for unknown providers (HTTP 404 to callers).
 fn provider_keychain_service(provider: &str) -> Option<&'static str> {
-    use crate::auth::credential::{anthropic, github, litellm, mistral, ollama, openai};
+    use crate::auth::credential::{
+        anthropic, deepseek, github, litellm, mistral, ollama, ollama_cloud, openai, vertex,
+    };
     match provider {
         "google" => Some(google::KEYCHAIN_SERVICE),
         "github" => Some(github::KEYCHAIN_SERVICE),
@@ -683,6 +685,9 @@ fn provider_keychain_service(provider: &str) -> Option<&'static str> {
         "mistral" => Some(mistral::KEYCHAIN_SERVICE),
         "ollama" => Some(ollama::KEYCHAIN_SERVICE),
         "litellm" => Some(litellm::KEYCHAIN_SERVICE),
+        "ollama-cloud" => Some(ollama_cloud::KEYCHAIN_SERVICE),
+        "deepseek" => Some(deepseek::KEYCHAIN_SERVICE),
+        "google-vertex" => Some(vertex::KEYCHAIN_SERVICE),
         _ => None,
     }
 }
@@ -731,8 +736,10 @@ mod tests {
     }
 
     #[test]
-    fn provider_keychain_service_all_phase3_providers() {
-        use crate::auth::credential::{anthropic, github, litellm, mistral, ollama, openai};
+    fn provider_keychain_service_all_byok_providers() {
+        use crate::auth::credential::{
+            anthropic, deepseek, github, litellm, mistral, ollama, ollama_cloud, openai, vertex,
+        };
         assert_eq!(
             provider_keychain_service("github"),
             Some(github::KEYCHAIN_SERVICE)
@@ -756,6 +763,18 @@ mod tests {
         assert_eq!(
             provider_keychain_service("litellm"),
             Some(litellm::KEYCHAIN_SERVICE)
+        );
+        assert_eq!(
+            provider_keychain_service("ollama-cloud"),
+            Some(ollama_cloud::KEYCHAIN_SERVICE)
+        );
+        assert_eq!(
+            provider_keychain_service("deepseek"),
+            Some(deepseek::KEYCHAIN_SERVICE)
+        );
+        assert_eq!(
+            provider_keychain_service("google-vertex"),
+            Some(vertex::KEYCHAIN_SERVICE)
         );
     }
 

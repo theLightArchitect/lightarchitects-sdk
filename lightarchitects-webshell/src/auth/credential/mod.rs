@@ -17,9 +17,13 @@
 //! | [`litellm`] | `LitellmCredentialProvider` — API key |
 //! | [`mistral`] | `MistralCredentialProvider` — API key |
 //! | [`ollama`] | `OllamaCredentialProvider` — CLI subprocess |
+//! | [`ollama_cloud`] | `OllamaCloudCredentialProvider` — API key (Bearer) |
+//! | [`deepseek`] | `DeepSeekCredentialProvider` — API key |
+//! | [`vertex`] | `GoogleVertexCredentialProvider` — service account JSON |
 //! | [`routes`] | Axum handlers registered in `build_app` |
 
 pub mod anthropic;
+pub mod deepseek;
 pub mod flow;
 pub mod github;
 pub mod google;
@@ -27,9 +31,11 @@ pub mod keychain;
 pub mod litellm;
 pub mod mistral;
 pub mod ollama;
+pub mod ollama_cloud;
 pub mod openai;
 pub mod pkce;
 pub mod routes;
+pub mod vertex;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};

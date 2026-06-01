@@ -81,6 +81,36 @@ pub struct OpenRouterAuthStatus {
     pub login_source: Option<String>,
 }
 
+/// Auth status for the Ollama Cloud backend.
+#[derive(Debug, Clone, Serialize)]
+pub struct OllamaCloudAuthStatus {
+    /// Bearer token stored in macOS Keychain.
+    pub has_api_key: bool,
+    /// Human-readable source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub login_source: Option<String>,
+}
+
+/// Auth status for the `DeepSeek` backend.
+#[derive(Debug, Clone, Serialize)]
+pub struct DeepSeekAuthStatus {
+    /// API key stored in macOS Keychain.
+    pub has_api_key: bool,
+    /// Human-readable source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub login_source: Option<String>,
+}
+
+/// Auth status for the Google Vertex AI backend.
+#[derive(Debug, Clone, Serialize)]
+pub struct GoogleVertexAuthStatus {
+    /// Service account JSON stored in macOS Keychain.
+    pub has_service_account: bool,
+    /// GCP project ID if configured.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+}
+
 /// Full auth status snapshot returned by `GET /api/setup/info`.
 #[derive(Debug, Clone, Serialize)]
 pub struct AuthStatus {
@@ -92,8 +122,15 @@ pub struct AuthStatus {
     pub ollama: OllamaAuthStatus,
     /// Mistral API auth status.
     pub mistral: MistralAuthStatus,
-    /// `OpenRouter` API auth status.
-    pub openrouter: OpenRouterAuthStatus,
+    /// `OpenRouter` API auth status (deprecated — kept for wire-format compat).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub openrouter: Option<OpenRouterAuthStatus>,
+    /// Ollama Cloud Bearer token auth status.
+    pub ollama_cloud: OllamaCloudAuthStatus,
+    /// `DeepSeek` API key auth status.
+    pub deepseek: DeepSeekAuthStatus,
+    /// Google Vertex AI service account auth status.
+    pub google_vertex: GoogleVertexAuthStatus,
 }
 
 /// Response shape for `GET /api/setup/info`.
@@ -339,26 +376,61 @@ fn detect_mistral_auth() -> MistralAuthStatus {
     }
 }
 
-/// Detect whether an `OpenRouter` API key is available (keychain or env var).
-fn detect_openrouter_auth() -> OpenRouterAuthStatus {
-    if keychain_stored_key("openrouter").is_some() {
-        return OpenRouterAuthStatus {
+/// Detect whether an Ollama Cloud Bearer token is available (Keychain only).
+fn detect_ollama_cloud_auth() -> OllamaCloudAuthStatus {
+    use crate::auth::credential::ollama_cloud;
+    match crate::auth::credential::keychain::keychain_get(ollama_cloud::KEYCHAIN_SERVICE) {
+        Ok(Some(_)) => OllamaCloudAuthStatus {
+            has_api_key: true,
+            login_source: Some("macOS Keychain".to_owned()),
+        },
+        _ => OllamaCloudAuthStatus {
+            has_api_key: false,
+            login_source: None,
+        },
+    }
+}
+
+/// Detect whether a `DeepSeek` API key is available (Keychain or env var).
+fn detect_deepseek_auth() -> DeepSeekAuthStatus {
+    use crate::auth::credential::deepseek;
+    if crate::auth::credential::keychain::keychain_get(deepseek::KEYCHAIN_SERVICE)
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        return DeepSeekAuthStatus {
             has_api_key: true,
             login_source: Some("macOS Keychain".to_owned()),
         };
     }
-    if std::env::var("OPENROUTER_API_KEY")
+    if std::env::var("DEEPSEEK_API_KEY")
         .map(|k| !k.is_empty())
         .unwrap_or(false)
     {
-        return OpenRouterAuthStatus {
+        return DeepSeekAuthStatus {
             has_api_key: true,
-            login_source: Some("OPENROUTER_API_KEY env".to_owned()),
+            login_source: Some("DEEPSEEK_API_KEY env".to_owned()),
         };
     }
-    OpenRouterAuthStatus {
+    DeepSeekAuthStatus {
         has_api_key: false,
         login_source: None,
+    }
+}
+
+/// Detect whether Google Vertex AI credentials are configured (Keychain only).
+fn detect_google_vertex_auth() -> GoogleVertexAuthStatus {
+    use crate::auth::credential::vertex;
+    let has_service_account =
+        crate::auth::credential::keychain::keychain_get(vertex::KEYCHAIN_SERVICE)
+            .ok()
+            .flatten()
+            .is_some();
+    let project_id = vertex::load_project_id().ok().flatten();
+    GoogleVertexAuthStatus {
+        has_service_account,
+        project_id,
     }
 }
 
@@ -740,14 +812,19 @@ pub async fn setup_info(State(state): State<AppState>) -> impl IntoResponse {
         .unwrap_or_else(|| "http://localhost:11434".to_owned());
     let ollama = detect_ollama_status(&ollama_url).await;
     let mistral = detect_mistral_auth();
-    let openrouter = detect_openrouter_auth();
+    let ollama_cloud = detect_ollama_cloud_auth();
+    let deepseek = detect_deepseek_auth();
+    let google_vertex = detect_google_vertex_auth();
 
     let auth_status = AuthStatus {
         claude,
         codex,
         ollama,
         mistral,
-        openrouter,
+        openrouter: None,
+        ollama_cloud,
+        deepseek,
+        google_vertex,
     };
 
     Json(SetupInfoResponse {
