@@ -196,9 +196,10 @@ impl WorkerExecutor for ContainerExecutor {
             // Validate network: overrides must be equal or stricter.
             if let Some(ref_net) = override_req.network {
                 let net_rank = |n: NetworkPolicy| match n {
-                    NetworkPolicy::Bridge | NetworkPolicy::Host => 0u8, // Host is not stricter than Bridge
-                    NetworkPolicy::None => 2,
-                    NetworkPolicy::Balanced => 1,
+                    NetworkPolicy::Host => 0u8, // least restrictive: shares host net namespace
+                    NetworkPolicy::Bridge => 1, // isolated bridge
+                    NetworkPolicy::Balanced => 2,
+                    NetworkPolicy::None => 3, // most restrictive: no network
                 };
                 if net_rank(ref_net) < net_rank(effective.network) {
                     return Err(WorkerError::Policy(
@@ -341,6 +342,21 @@ mod tests {
         // Standard < Hardened — loosening must be rejected.
         let ov = TaskPolicyOverride {
             iso_mode: Some(IsoMode::Standard),
+            ..TaskPolicyOverride::default()
+        };
+        let result = exec.dispatch_one(make_spec(Some(ov))).await;
+        assert!(matches!(result, Err(WorkerError::Policy(_))));
+    }
+
+    #[tokio::test]
+    async fn container_executor_host_over_bridge_rejected() {
+        // Host is less restrictive than Bridge — override must be rejected.
+        let exec = ContainerExecutor {
+            policy: Arc::new(FixedPolicy::new(IsoMode::Standard, NetworkPolicy::Bridge)),
+            semaphore: Arc::new(Semaphore::new(4)),
+        };
+        let ov = TaskPolicyOverride {
+            network: Some(NetworkPolicy::Host),
             ..TaskPolicyOverride::default()
         };
         let result = exec.dispatch_one(make_spec(Some(ov))).await;
