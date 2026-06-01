@@ -494,6 +494,32 @@ After each phase completes, deliver an educational note explaining what was buil
 - [ ] No dead code: everything compiled/imported is reachable from an entry point
 - [ ] User acceptance: does it solve the original problem the user stated in §4.1?
 
+### §8.9.1 Multi-Binary Real-Services Sub-Rehearsal (2026-05-31 LÆX RATIFY-WITH-MERGE, candidate A from litellm-platform-integration /REFLECT)
+
+**Trigger**: §8.9 Integration Verification MUST escalate to a real-services sub-rehearsal when ANY of the following hold:
+- The Northstar mechanical chain spans ≥3 distinct binaries / processes / external services
+- The plan introduces new outbound paid-API egress paths (cloud LLM providers, paid OTLP collectors, third-party billing endpoints)
+- Security classification ≥ Restricted
+
+**Sub-rehearsal mechanics**:
+1. **Two-envvar opt-in** (per `feedback_e2e_two_envvar_opt_in.md` — pending promotion as Cookbook §50.10): explicit opt-in flag (e.g. `REHEARSAL=1` AND `E2E=1`) AND the credential. Credential alone MUST NOT activate paid-API tests during `cargo test --workspace`.
+2. **One sub-rehearsal per claimed Northstar Pillar** with the Pillar's mechanical assertion (per Cookbook §57.11 — that rule already mandates ≥3 named scenarios per Pillar; this sub-section binds them to real services for multi-binary chains).
+3. **Hard spend cap** declared in the plan body (e.g. `rehearsal_spend_cap_usd: 1.00`); tracked via service-side spend-logs API; rehearsal HALTS and FAILS on cap breach mid-run.
+4. **Evidence artifact**: aggregated to `$HELIX/corso/builds/<codename>/wiring-rehearsal-<ISO8601>.md` with screenshots + span IDs + dashboard URLs + spend ledger.
+5. **Negative path**: include at least one forged-upstream-signal scenario (e.g. forged provider 429 with malicious payload but missing trust header) asserting the system does NOT halt on forged signals.
+
+**Gate exit**: Phase 5b passes only when every claimed-Pillar sub-rehearsal asserts its mechanical claim verifiably against the real running stack, the spend cap was not breached, and the negative path proved trust-boundary enforcement.
+
+**Pressure-tested**: `litellm-platform-integration` iter-6 (2026-05-31) — operator caught that P1+P2+P3 mechanical claims were each tested individually but never as a single end-to-end chain with the real proxy → cloud provider → collector → dashboard pipeline. N=1 cross-session; canon RATIFY-WITH-MERGE pending N=2 corroboration of the `northstar_mechanical_chain_verified` field name.
+
+**Composition**: §8.9 (mandates the wiring checklist) + Cookbook §57.11 (mandates ≥3 named scenarios per Pillar) + this rule (mandates real services + paid-egress opt-in + spend cap when the chain spans ≥3 binaries). The three compose into mechanical Phase 5b coverage for multi-binary chains.
+
+**Cross-references**: Cookbook §50.10 (two-envvar opt-in — **pending promotion as of 2026-05-31; see §50.10 reconciliation gap**), Cookbook §57.11 (per-Pillar E2E mapping), Canon XXXV (verbatim citation discipline for Pillar mechanical claims), Cookbook §69.1 (integration claim grep verification — sister 2026-05-31 ratification).
+
+**Memory source**: `feedback_pre_deploy_wiring_rehearsal_phase.md`.
+
+**Operator stamp**: Kevin, 2026-05-31 — RATIFIED. Core mechanics + §8.9.1 placement stamped. The `northstar_mechanical_chain_verified: true` field name held DEFERRED pending N≥2 corroboration per LÆX verdict.
+
 ### §8.10 Supply Chain Checklist (Phase 5a)
 - [ ] All dependencies audited (zero critical/high CVEs)
 - [ ] Lockfile committed and up to date

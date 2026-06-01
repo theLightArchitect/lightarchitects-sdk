@@ -1079,6 +1079,50 @@ skill_trust::verify_or_pin("PLAN", &skill_md_content)?;
 - **Test slugs**: Integration tests that write to the real ledger must use namespaced slugs (`IT_*`, `PT_*`, `SMOKE_*`) to avoid collisions with production entries.
 - **E2E gap**: `run_skill_tool()` subprocess dispatch requires the real gateway binary at `current_exe()`. The test harness resolves `current_exe` to the test runner. Full subprocess coverage is deferred to the CI binary integration suite.
 
+### CLI Vibe-Coding Workflow — LiteLLM Provider + AYIN Observability (2026-05-31 ADDITION)
+
+> **What shipped in vibe-coding-loop (Phase 1–3)**: The gateway CLI now accepts `LA_LLM=litellm`, routing interactive sessions through the unified LiteLLM proxy without a terminal restart for provider switches. Interactive turns emit AYIN spans visible on the observability dashboard.
+
+#### Launching with LiteLLM
+
+```bash
+# 1. Start the proxy (see §LLM-Proxy for full config)
+litellm --config ~/.lightarchitects/litellm.config.yaml --port 4000
+
+# 2. Set env
+export LA_LLM=litellm
+export LA_LITELLM_BASE_URL=http://localhost:4000   # default
+export LA_LITELLM_API_KEY=la-local-dev              # match proxy master_key
+export LA_LITELLM_MODEL=local-llama                 # alias in litellm.config.yaml
+
+# 3. Launch interactive session
+lightarchitects --interactive
+```
+
+The provider can also be switched from the **webshell ProviderPill drawer** — no terminal session restart required. The CLI reads env vars at startup; the webshell drawer writes them to the arena state, which the CLI picks up on the next launch.
+
+#### Session Memory
+
+Session history is written to `~/lightarchitects/soul/helix/ayin/session/<session-id>.json` after each turn via `HelixSessionMemory`. On the next `--interactive` invocation, prior turns are automatically restored. The session ID is printed at startup.
+
+#### Ctrl-C Behaviour
+
+Ctrl-C sends `SIGINT` → `Arc<AtomicBool>` cancellation signal → graceful exit within 100ms. The current LLM call is abandoned; no partial turn is written to session history.
+
+#### AYIN Span Lookup
+
+After a `run_interactive` session, the following spans are visible at `http://127.0.0.1:3742/api/ironclaw`:
+
+| Span label | When emitted | Key metadata |
+|---|---|---|
+| `interactive.session` | Once at session start | `provider`, `restored_turns` |
+| `interactive.turn` | Per LLM call | `turn_index`, `input_len`, `duration_ms` |
+
+```bash
+# Inspect interactive turns (AYIN dashboard must be running)
+curl -s http://127.0.0.1:3742/api/ironclaw | jq '.[] | select(.label=="interactive.turn")'
+```
+
 ---
 
 ## §LLM-Proxy — LiteLLM as the Canonical OpenAI-Compatible Adapter (2026-05-30 ADDITION)
@@ -1151,5 +1195,5 @@ The SDK constructor is `OpenAICompatProvider::for_litellm(Some(base_url), api_ke
 
 ---
 
-*Operators Manual v1.4 | Light Architects | updated 2026-05-30 with §LLM-Proxy (Cookbook §78.2 implementation; webshell-litellm-adapter session ratification)*
+*Operators Manual v1.5 | Light Architects | updated 2026-05-31 with §Vibe-Coding-Workflow CLI addendum (vibe-coding-loop build: LiteLLM CLI provider, AYIN interactive spans, session memory) and §LLM-Proxy (Cookbook §78.2 implementation; webshell-litellm-adapter session ratification)*
 *Part of the Canonical Suite. Supersedes: northstar-v1.md, platform-architecture-v2.md, lens-driven-squad-selection.md, soul-cycle.md, secret-leak-runbook.md, ai-detection-checklist.md, tts-voice-production.md.*

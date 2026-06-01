@@ -1,6 +1,6 @@
 <script lang="ts">
   import {
-    step, selectedBackend, authStatus, apiKeyInput, ollamaBaseUrlInput,
+    step, selectedBackend, selectedTier, authStatus, apiKeyInput, ollamaBaseUrlInput,
     loadModels, setupLoading,
   } from '$lib/setup';
 
@@ -11,12 +11,18 @@
   let testingOllama = $state(false);
 
   const backend = $derived($selectedBackend ?? '');
-  const isOllama = $derived(backend.includes('ollama'));
-  const isClaude = $derived(backend === 'anthropic');
-  const isCodex = $derived(backend === 'openai');
+  const isOllama     = $derived(backend.includes('ollama'));
+  const isClaude     = $derived(backend === 'anthropic');
+  const isCodex      = $derived(backend === 'openai');
+  const isOpenRouter = $derived(backend === 'openrouter');
+  const isMistral    = $derived(backend === 'mistral-vibe');
 
-  const claudeAuth = $derived($authStatus?.claude);
-  const codexAuth = $derived($authStatus?.codex);
+  const claudeAuth     = $derived($authStatus?.claude);
+  const codexAuth      = $derived($authStatus?.codex);
+  const openrouterAuth = $derived($authStatus?.openrouter);
+  const mistralAuth    = $derived($authStatus?.mistral);
+
+  const backStep = $derived($selectedTier === 'local' ? 'source' : 'provider');
 
   async function testOllama() {
     testingOllama = true;
@@ -33,6 +39,7 @@
 
   const canProceed = $derived(
     isOllama ? (ollamaReachable === true) :
+    (isOpenRouter || isMistral) ? $apiKeyInput.trim().length > 0 :
     authMode === 'existing' ? true :
     $apiKeyInput.trim().length > 0
   );
@@ -102,11 +109,23 @@
         <span class="unreachable-badge">Unreachable ✗</span>
       {/if}
     </div>
+  {:else if isOpenRouter}
+    <p class="hint">Enter your OpenRouter API key</p>
+    {#if openrouterAuth?.has_api_key}
+      <span class="auth-badge standalone">Key stored ✓</span>
+    {/if}
+  {:else if isMistral}
+    <p class="hint">Enter your Mistral API key</p>
+    {#if mistralAuth?.has_api_key}
+      <span class="auth-badge standalone">Key stored ✓</span>
+    {/if}
   {/if}
 
-  {#if (isClaude || isCodex) && authMode === 'apikey'}
+  {#if (isClaude || isCodex) && authMode === 'apikey' || isOpenRouter || isMistral}
     <div class="key-field">
-      <label class="field-label" for="api-key-input">{isClaude ? 'Anthropic' : 'OpenAI'} API Key</label>
+      <label class="field-label" for="api-key-input">
+        {#if isClaude}Anthropic{:else if isCodex}OpenAI{:else if isOpenRouter}OpenRouter{:else}Mistral{/if} API Key
+      </label>
       <div class="key-wrap">
         <input
           id="api-key-input"
@@ -124,7 +143,7 @@
   {/if}
 
   <div class="footer">
-    <button class="btn-back" onclick={() => step.set('backend')}>Back</button>
+    <button class="btn-back" onclick={() => step.set(backStep)}>Back</button>
     <button class="btn-continue" disabled={!canProceed || $setupLoading} onclick={proceed}>
       Continue
     </button>
@@ -139,6 +158,7 @@
   .radio-group { display:flex; flex-direction:column; gap:0.75rem; width:100%; }
   .radio-label { display:flex; align-items:center; gap:0.75rem; color:#94a3b8; font-family:'IBM Plex Mono',monospace; font-size:0.85rem; cursor:pointer; }
   .auth-badge { margin-left:0.5rem; color:#00d26a; font-size:0.7rem; }
+  .auth-badge.standalone { margin-left:0; font-family:'IBM Plex Mono',monospace; font-size:0.8rem; }
   .auth-source { display:block; margin-top:0.25rem; margin-left:1.25rem; color:#64748b; font-size:0.65rem; font-family:'IBM Plex Mono',monospace; }
 
   .ollama-form { display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; width:100%; }

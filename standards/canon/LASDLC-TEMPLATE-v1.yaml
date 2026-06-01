@@ -49,12 +49,18 @@
 # ============================================================================
 
 template_name: "LASDLC-TEMPLATE-v1"
-template_version: "2.6.1"
+template_version: "2.7.0"
 # Amendment history → standards/canon/LASDLC-TEMPLATE-v1.CHANGELOG.md
 # Schema file = current state only. Inline `added_in_template_version: "X.Y.Z"`
 # markers throughout this file identify when each field was introduced.
 #
 # Current minor at-a-glance (one-line summaries; full detail in CHANGELOG):
+# - v2.7.0 (2026-05-31): Section 1.8 RESEARCH+GATE INTERLEAVING PROTOCOL — mandatory
+#   RESEARCH step (Context7+HuggingFace+Firecrawl+SOUL+codebase) before every phase/wave/task;
+#   GATE step (/lightarchitects:GATE) after every wave+phase+merge; context-aware: gate verifies
+#   impl vs researched approach. Scope levels: full|standard|light. Tool selection heuristic.
+#   Extends Section 2.7 hydration with external research channels. webshell widgets for both steps.
+#   Adds 1.6+1.7 to section_numbering_convention (were in file but not in index).
 # - v2.6.1 (2026-05-21): architecture_artifacts.schema extended — diagram_library (enum + required),
 #   diagrams_authored_phase (value: "1", required), a_gate_predicate (three conjuncts with
 #   initial/verified states). Aligns template schema with Canon XLI predicate and PLAN skill v2.4.0 T6.
@@ -591,6 +597,9 @@ section_numbering_convention:
     - "0.7": AUTO-DECISION ELIGIBILITY GATE (added v2.3.0 — Canon XXXVI Phase 3; three preconditions P1 mechanically-checkable Northstar + P2 ≥3 calibrated examples + P3 ≥95% with citations; exclusion zones first-of-kind/contested-Northstar/security-compliance/irreversible; fail-open-to-HITL on any miss)
     - 1: TIER DEFINITIONS
     - "1.5": TIER HIERARCHY (added v2.1.0; v2.2.0 corrected to 6-tier — project → program → build → phase → wave → task)
+    - "1.6": TIER ORCHESTRATION TOPOLOGY (added v2.5.0 — meta-skill dispatch model per tier; SMALL/MEDIUM/LARGE autonomy levels + HITL triggers)
+    - "1.7": GIT ORCHESTRATION TOPOLOGY (added v2.5.1 — per-task git_scope; git_branching_invariants; reference-table integrity)
+    - "1.8": RESEARCH+GATE INTERLEAVING PROTOCOL (added v2.7.0 — RESEARCH before every phase/wave/task using Context7+HuggingFace+Firecrawl+SOUL+codebase; GATE after every wave+phase+merge; context-aware gate verifies impl vs researched approach; scope levels full|standard|light; canonical sandwich: RESEARCH→IMPLEMENT→GATE)
     - 2: EXECUTION PHASES
     - "2.5": LOOP CYCLE (added v2.1.0 — pre-flight → implementation → cross-validation → feedback → correction)
     - "2.6": PHASE-LEVEL SCHEMAS (added v2.1.0 — cost_budget, observability_contract, expected_deliverables, agent_capability_declaration)
@@ -2254,6 +2263,234 @@ git_orchestration_topology:
       - "Security-critical path changes → SERAPH pentest (not analyze) + LÆX Layer 1+4 review"
       - "First-of-kind merge strategy → HITL mandatory regardless of gate pass"
       - "Contested Northstar interpretation → escalate to LÆX Layer 3"
+
+# ============================================================================
+# SECTION 1.8: RESEARCH+GATE INTERLEAVING PROTOCOL (NEW v2.7.0)
+# ============================================================================
+# Every implementation unit — phase, wave, or task — is sandwiched between a
+# RESEARCH step (before) and a GATE step (after). This enforces "precision over
+# plausibility" (Section 2.7): code must be demonstrably correct against
+# researched evidence, not just compilable.
+#
+# RESEARCH answers: "What is the correct, robust, elegant, secure, load-bearing
+#   approach for this specific change?"
+# GATE verifies: "Does the implementation match the answer RESEARCH produced?"
+#
+# Without RESEARCH, a passing GATE only confirms the code compiles and lints.
+# Without GATE, RESEARCH produces unused context. Together they make quality
+# structural, not accidental.
+
+research_gate_interleaving_protocol:
+  added_in_template_version: "2.7.0"
+  description: |
+    Mandatory RESEARCH → IMPLEMENT → GATE sandwich at every implementation
+    granularity level. Applies to: every phase (including non-Implement phases),
+    every wave within Implement phases, and every task within non-Implement phases.
+    Failure to complete RESEARCH before implementation OR to pass GATE after is
+    a Canon XXVI violation (post-edit gates). Both steps are BLOCKING.
+  canon_reference: "Canon XXVI (post-edit gates), Section 2.7 (surgical context hydration)"
+
+  # ─── RESEARCH STEP ────────────────────────────────────────────────────────
+  research_step:
+    description: |
+      Context-gathering step that runs BEFORE any implementation task is dispatched.
+      The agent must answer: "What is the most correct, robust, elegant, secure,
+      and load-bearing implementation approach for this specific change?" — with
+      evidence from primary sources, not from memory or assumption.
+    when_required: "Before every wave (Implement phase) AND before every task (non-Implement phases) AND before every phase that has an Implement sub-structure"
+    blocking: true
+    failure_action: "Halt agent dispatch; surface missing research categories to operator"
+
+    scope:
+      description: |
+        RESEARCH scope is calibrated to the task's novelty and risk surface.
+        Security-touching or first-of-kind tasks require deeper research;
+        routine tasks (e.g., adding a struct field with established pattern)
+        may satisfy RESEARCH with codebase reads alone.
+      levels:
+        full:
+          required_when: ["security-touching wave", "new external dependency", "first-of-kind in this codebase", "architecture-defining decision", "protocol/API integration"]
+          min_tools: ["codebase_read", "canon_check", "one_external_source"]
+        standard:
+          required_when: ["new feature wave", "non-trivial refactor", "test pyramid expansion"]
+          min_tools: ["codebase_read", "canon_check"]
+        light:
+          required_when: ["incremental extension of established pattern", "typo/rename/format-only"]
+          min_tools: ["codebase_read"]
+
+    tools:
+      description: "Use where beneficial — not all tools for every task. Select based on task scope level above."
+      primary:
+        context7:
+          purpose: "Library/framework/API documentation — always preferred over training-data recall"
+          usage: |
+            mcp__plugin_context7_context7__resolve-library-id  # step 1: get library ID
+            mcp__plugin_context7_context7__query-docs           # step 2: fetch relevant docs
+          when: "Any task that touches a library, framework, SDK, or external API — even well-known ones (axum, rmcp, dialoguer, svelte, etc.)"
+          cache_path: "<build_root>/.context/context7/<library_id_slug>/<topic_slug>-<YYYY-MM-DD>.md"
+        huggingface:
+          purpose: "Academic papers, model architectures, ML research, dataset schema references"
+          usage: |
+            mcp__claude_ai_Hugging_Face__paper_search   # search for relevant papers
+            mcp__claude_ai_Hugging_Face__hf_doc_fetch   # fetch HuggingFace docs
+          when: "Tasks involving ML inference, embedding models, tokenization, or where academic precedent informs the design (e.g., security pattern with published research)"
+          cache_path: "<build_root>/.context/huggingface/<topic_slug>-<YYYY-MM-DD>.md"
+        firecrawl:
+          purpose: "Live web content, post-cutoff documentation, changelogs, crate release notes"
+          usage: "firecrawl scrape <url> | firecrawl search <query>"
+          when: "Context7 returns no match OR content is post-cutoff (crate changelog, RFC, recent spec update) OR topic is too narrow for Context7 indexing"
+          cache_path: "<build_root>/.context/firecrawl/<domain>/<url-slug>-<YYYY-MM-DD>.md"
+          priority: "Context7 first; fall back to Firecrawl when library ID unavailable or content is URL-specific"
+        soul_helix:
+          purpose: "Prior decisions, existing patterns, historical context from helix"
+          usage: "mcp__plugin_lightarchitects_lightarchitects__tools sibling:soul action:search query:<topic>"
+          when: "Any task where prior decisions may exist in the helix (architecture choices, security patterns, naming conventions)"
+        codebase:
+          purpose: "Ground truth about existing types, callers, tests, and patterns"
+          usage: "Grep + Read + LSP — never assume; read the actual code"
+          when: "Every task — always required as part of standard scope"
+      tool_selection_heuristic: |
+        1. Always: codebase reads (git status, affected files, callers, existing tests)
+        2. Always (if any library involved): Context7 → resolve-library-id → query-docs
+        3. When post-cutoff or URL-specific: Firecrawl (fallback from Context7)
+        4. When academic/ML angle: HuggingFace paper_search
+        5. When prior decision relevant: SOUL helix search
+        Parallelise independent lookups in a single message for efficiency.
+
+    exit_criterion:
+      description: |
+        RESEARCH is complete when the agent can articulate, with evidence:
+        (a) the correct implementation approach for this task/wave/phase,
+        (b) which existing patterns in the codebase to follow,
+        (c) which canon/cookbook rules apply,
+        (d) what security surface this change exposes (even if minimal).
+      evidence_artifact: "Update category_3_source_of_truth and category_4_northstar in Section 2.7 hydration artifact; cite cache paths"
+      anti_pattern: "Declaring RESEARCH complete based on training-data recall alone. Evidence must be traceable to a tool call in this session."
+
+    per_build_manifest_field:
+      description: "Declare once per wave/task in manifest.yaml under research_evidence"
+      schema:
+        research_evidence:
+          wave_or_task_id: "<agent_key or phase-N-wave-M>"
+          scope_level: "<full|standard|light>"
+          tools_used: ["<context7|huggingface|firecrawl|soul|codebase>"]
+          key_findings: "<1-3 sentences summarising what RESEARCH produced>"
+          cache_artifacts: ["<build_root>/.context/<tool>/<slug>-<date>.md"]
+          completed_at: "<ISO-8601>"
+
+  # ─── GATE STEP ────────────────────────────────────────────────────────────
+  gate_step:
+    description: |
+      Context-aware quality control that runs AFTER every implementation unit.
+      'Context-aware' means gate reviewers evaluate the implementation against
+      the RESEARCH evidence gathered before — not just mechanical lint/test
+      pass, but correctness relative to the intended approach.
+      Invoked via the /lightarchitects:GATE skill with scope matching granularity.
+    when_required: "After every wave commit (Implement phase) AND after every phase completion (all phases)"
+    blocking: true
+    failure_action: "Block next wave/phase start; surface failing dimension to operator"
+
+    scope_levels:
+      task_level:
+        description: "Inline check after each task commit within a wave"
+        gates: ["Q1 (cargo fmt --check)", "Q2 (cargo clippy -- -D warnings)"]
+        tool: "Bash (inline — no skill invocation)"
+        when: "After every task commit before the wave reviewer runs"
+
+      wave_level:
+        description: "Post-wave review by the wave reviewer_agent"
+        gates:
+          backend: ["Q1 (fmt)", "Q2 (clippy)", "Q3 (cargo test --lib --tests)", "S1 (security surface scan if wave is security-touching)"]
+          frontend: ["Q4 (svelte-check + pnpm test:run)", "D1 (JSDoc on new public components)"]
+          shared: ["T (test count must ratchet up vs wave start baseline)"]
+        tool: "lightarchitects:quality (or lightarchitects:security for security-touching waves)"
+        context_check: |
+          Reviewer explicitly compares implementation against research_evidence.key_findings
+          from the RESEARCH step. The gate should catch: wrong API usage (Context7 said use X,
+          agent used Y), missing security pattern (RESEARCH identified OWASP threat, no mitig.),
+          pattern mismatch (helix says existing pattern Z, agent invented new pattern W).
+        when: "After all tasks in a wave signal IMPLEMENTATION_COMPLETE; blocks next wave"
+
+      phase_level:
+        description: "Full /lightarchitects:GATE skill invocation after each phase"
+        gates: "All [A+S+Q+C+O+P+K+D+T+R] dimensions scoped to the phase's gate_checklist_variant"
+        tool: "/lightarchitects:GATE --scope phase"
+        context_check: |
+          Phase gate reviewer loads RESEARCH evidence from all waves in the phase and
+          verifies the overall phase deliverables are correct relative to the researched
+          approach — not just individually correct waves.
+        when: "After all waves in an Implement phase complete; or after any non-Implement phase task set completes"
+        output: ".gate-evals/<phase-id>-phase.yaml + GATE_REVIEW JSONL"
+
+      pre_merge:
+        description: "Full /lightarchitects:GATE --scope merge before merging to main"
+        gates: "V0+Q+S+I+N+D+V (all seven gate families)"
+        tool: "/lightarchitects:GATE --scope merge"
+        context_check: |
+          Merge gate reviewer loads all RESEARCH evidence from the entire build and
+          verifies the final branch is coherent with the original research approach.
+          Look for: research said use library X, but Cargo.toml has library Y instead.
+        when: "After Phase 6 (final phase) GATE passes; before merge to main"
+
+    gate_phase_interleave_pattern:
+      description: "Canonical pattern for declaring RESEARCH+GATE in a build plan phase table"
+      example: |
+        # Phase N — <name>
+        # RESEARCH N: gather precise context (scope: full|standard|light)
+        #   - Tools: [context7, huggingface, firecrawl, soul, codebase] (as applicable)
+        #   - Exit criterion: implementation approach documented in research_evidence
+        # IMPLEMENT N: <phase deliverables per plan>
+        #   Wave N.1 — <purpose>: [agent tasks]
+        #     Task-level GATE: Q1+Q2 after each task commit
+        #   Wave-level GATE N.1: quality agent review [Q+S+T]
+        #   Wave N.2 — <purpose>: [agent tasks]
+        #     Task-level GATE: Q1+Q2 after each task commit
+        #   Wave-level GATE N.2: quality agent review [Q+T] OR security agent [S]
+        # GATE N: /lightarchitects:GATE --scope phase [A+S+Q+C+O+P+K+D+T+R]
+        #   Context-aware: check implementation vs RESEARCH N evidence
+        #   Blocks Phase N+1 start
+      notes:
+        - "Non-Implement phases (Plan, Research, Harden, Verify, Ship, Learn) still require RESEARCH before their tasks and a GATE after"
+        - "For non-Implement phases, wave-level gates collapse to task-level + phase-level only"
+        - "RESEARCH for the RESEARCH phase itself = SOUL helix + Context7 literature scan (meta-research)"
+
+    manifest_field:
+      description: "Per-phase gate receipt in manifest.yaml"
+      schema:
+        gate_receipts:
+          phase_id: "<phase-N-name>"
+          scope: "<task|wave|phase|merge>"
+          gate_result: "<pass|fail|blocked>"
+          researched_approach_verified: "<boolean — did gate check vs RESEARCH evidence?>"
+          dimensions_checked: ["<A|S|Q|C|O|P|K|D|T|R>"]
+          completed_at: "<ISO-8601>"
+          artifact: "<path to .gate-evals/<id>-<scope>.yaml>"
+
+  # ─── INTERACTION WITH SECTION 2.7 ─────────────────────────────────────────
+  relation_to_surgical_context_hydration:
+    description: |
+      Section 1.8 RESEARCH formalizes and extends Section 2.7 surgical context hydration.
+      Section 2.7 defines the 5 hydration categories and the hydration_gate. Section 1.8
+      adds the external research tools (Context7, HuggingFace, Firecrawl) as mandatory
+      contributors to category_3 (source of truth) and specifies the gate-facing evidence
+      contract that makes GATE context-aware.
+    complementary_not_redundant: true
+    section_2_7_coverage: "Codebase + architecture + source-of-truth (internal) + northstar + project actuals"
+    section_1_8_extension: "External library docs (Context7) + academic/ML research (HuggingFace) + live web (Firecrawl) + SOUL helix prior decisions"
+    combined_coverage: "All 5 Section 2.7 categories + 4 external research channels = complete pre-implementation context"
+
+  webshell_render:
+    description: "RESEARCH and GATE steps each have a webshell widget for operator visibility"
+    research_widget:
+      widget: "research_step_panel"
+      view_mode: "/builds/<codename>/phase/<phase>/wave/<wave>/research"
+      fields: ["scope_level", "tools_used", "key_findings", "cache_artifacts", "completed_at"]
+      update_signal: "sse_subscribe(research_step_events)"
+    gate_widget:
+      widget: "gate_step_panel"
+      view_mode: "/builds/<codename>/phase/<phase>/gate"
+      fields: ["scope", "dimensions_checked", "researched_approach_verified", "gate_result"]
+      update_signal: "sse_subscribe(gate_step_events)"
 
 # ============================================================================
 # SECTION 2: EXECUTION PHASES

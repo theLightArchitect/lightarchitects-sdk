@@ -8,6 +8,34 @@ Companion changelog for `architects-blueprint.md`. Schema doc holds **current st
 
 ---
 
+## v3.7 — §8.9.1 Multi-Binary Real-Services Sub-Rehearsal (2026-05-31, litellm-platform-integration /REFLECT — LÆX Candidate A, RATIFIED)
+
+**Source**: /REFLECT session post `litellm-platform-integration` plan-authoring (6 iterations). Canon XXXIX Step (c) contradiction check + Step (d) ratification verdict by LÆX. **Operator stamp: Kevin, 2026-05-31 — RATIFIED.**
+
+**Same-day companion**: Cookbook §50.10 (Two-Envvar Opt-In) landed in same batch, closing the previously-stale forward-reference from §8.9.1. The `§8.9.1 cross-reference to §50.10` is no longer pointing at vapor.
+
+### §8.9.1 — Multi-Binary Real-Services Sub-Rehearsal (new sub-section under §8.9 Integration Verification Phase 5b)
+
+**Rule**: Phase 5b Integration Verification MUST escalate to a real-services sub-rehearsal when Northstar mechanical chain spans ≥3 binaries/processes/external services, OR plan introduces new outbound paid-API egress, OR security_classification ≥ Restricted. Sub-rehearsal mechanics: two-envvar opt-in + per-Pillar mechanical assertion + hard spend cap with halt-and-fail + evidence artifact + negative path.
+
+**Source memory**: `feedback_pre_deploy_wiring_rehearsal_phase.md`.
+
+**Pressure-test**: `litellm-platform-integration` iter-6 (2026-05-31) — operator caught structural gap that P1+P2+P3 Northstar mechanical claims were each tested individually (per-provider Playwright walks, mock-429 budget, OTLP smoke) but never as a single end-to-end chain with real proxy → cloud provider → collector → dashboard pipeline.
+
+**LÆX verdict**: RATIFY-WITH-MERGE — rejected the candidate's proposed "Phase 4.5" as a new phase number because **Blueprint §8.3 + §8.9 already define Phase 5b Wiring Gate** with an Integration Verification Checklist. The candidate's novel mechanics (real-services trigger when chain spans ≥3 binaries, hard spend cap with halt-and-fail, two-envvar opt-in re-affirmation, evidence artifact format) merge into §8.9 as a sub-section §8.9.1 rather than creating a parallel phase.
+
+**Composition with existing canon**:
+- Extends §8.9 (mandates wiring checklist) by escalating to real-services rehearsal for multi-binary chains
+- Composes with Cookbook §57.11 (mandates ≥3 named scenarios per Northstar Pillar) by binding those scenarios to real services
+- References Cookbook §50.10 two-envvar opt-in pattern (**flagged: §50.10 pending promotion as of 2026-05-31 — see §50.10 reconciliation gap below**)
+- Composes with Cookbook §69.1 (integration claim grep verification — sister 2026-05-31 ratification) — §69.1 verifies the integration exists; §8.9.1 verifies it works under load
+
+**N=1 caveat**: Cross-session N=1 (litellm-platform-integration iter-6 only). Specific `northstar_mechanical_chain_verified: true` field name held in DEFER status pending N≥2 corroboration.
+
+**§50.10 reconciliation gap surfaced by LÆX**: Memory `feedback_e2e_two_envvar_opt_in.md` claims PROMOTED to Cookbook §50.10 on 2026-05-30, but `grep -n "§50.10"` in builders-cookbook.md returns zero hits. Either §50.10 needs landing OR the memory frontmatter PROMOTED claim needs correcting. Tracked as separate Step (d) item.
+
+---
+
 ## v3.6 — XEA Layer 3 Anchor-Alignment Refresh (2026-05-29, `loop-strategy-expansion` iter-5)
 
 **Source**: LÆX Canon XXXIX ratification of /REFLECT proposals from `loop-strategy-expansion` plan-hardening session. Joint amendment closing canon-internal drift between Blueprint §22.4 L1-L8 table and LASDLC-TEMPLATE-v1.yaml v2.6.x D-component refactor.
