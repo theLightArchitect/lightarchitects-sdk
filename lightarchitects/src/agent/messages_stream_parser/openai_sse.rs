@@ -67,6 +67,12 @@ pub struct OpenAiChoice {
 pub struct OpenAiDelta {
     /// Text fragment; mutually exclusive with `tool_calls`.
     pub content: Option<String>,
+    /// `DeepSeek` R1 chain-of-thought fragment. `LiteLLM` passes this through
+    /// as-is from the native `DeepSeek` API. Emitted as `<think>…</think>`
+    /// so the [`crate::agent::ThinkSplitter`] in downstream consumers can
+    /// classify it without additional state.
+    #[serde(default)]
+    pub reasoning_content: Option<String>,
     /// Tool-call fragments; accumulate across multiple chunks.
     #[serde(default)]
     pub tool_calls: Vec<OpenAiToolCallDelta>,
@@ -231,6 +237,19 @@ impl OpenAiStreamState {
         }
 
         for choice in chunk.choices {
+            // ── Reasoning content delta (DeepSeek R1 / QwQ) ──────────────────
+            // LiteLLM passes `delta.reasoning_content` through from the native
+            // DeepSeek API. Wrap in `<think>…</think>` so downstream
+            // `ThinkSplitter` consumers classify it as thinking without extra
+            // state. Each chunk is self-contained — no cross-chunk tag pairing
+            // needed because each wrapping is a complete open+close pair.
+            if let Some(reasoning) = choice.delta.reasoning_content {
+                if !reasoning.is_empty() {
+                    let text = format!("<think>{reasoning}</think>");
+                    events.push(ProviderEvent::TextDelta { index: 0, text });
+                }
+            }
+
             // ── Text content delta ────────────────────────────────────────────
             if let Some(text) = choice.delta.content {
                 if !text.is_empty() {
@@ -525,5 +544,41 @@ mod tests {
             ProviderEvent::InputJsonDelta { index: 1, partial_json }
             if partial_json == "{\"command\":"
         )));
+    }
+
+    #[test]
+    fn reasoning_content_wrapped_in_think_tags() {
+        // DeepSeek R1 / LiteLLM pass-through: reasoning_content in the delta.
+        let line = r#"data: {"id":"r1","object":"chat.completion.chunk","model":"deepseek-reasoner","choices":[{"index":0,"delta":{"reasoning_content":"Let me think"},"finish_reason":null}],"usage":null}"#;
+        let chunk = parse_openai_sse_line(line).unwrap().unwrap();
+        assert_eq!(
+            chunk.choices[0].delta.reasoning_content.as_deref(),
+            Some("Let me think")
+        );
+
+        let mut state = OpenAiStreamState::new();
+        let events = state.apply(chunk);
+        let text_delta = events.iter().find_map(|e| {
+            if let ProviderEvent::TextDelta { text, .. } = e {
+                Some(text.as_str())
+            } else {
+                None
+            }
+        });
+        assert_eq!(text_delta, Some("<think>Let me think</think>"));
+    }
+
+    #[test]
+    fn reasoning_content_empty_string_is_suppressed() {
+        let line = r#"data: {"id":"r1","object":"chat.completion.chunk","model":"deepseek-reasoner","choices":[{"index":0,"delta":{"reasoning_content":""},"finish_reason":null}],"usage":null}"#;
+        let chunk = parse_openai_sse_line(line).unwrap().unwrap();
+        let mut state = OpenAiStreamState::new();
+        let events = state.apply(chunk);
+        assert!(
+            !events.iter().any(
+                |e| matches!(e, ProviderEvent::TextDelta { text, .. } if text.contains("<think>"))
+            ),
+            "empty reasoning_content must not emit think tags"
+        );
     }
 }
