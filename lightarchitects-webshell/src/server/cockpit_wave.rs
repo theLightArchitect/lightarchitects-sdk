@@ -616,11 +616,11 @@ mod tests {
 
     #[test]
     fn validate_worktree_path_accepts_absolute_clean() {
-        // F-2: /tmp paths are accepted without reading HOME, making this test
-        // stable against concurrent tests that temporarily mutate HOME.
-        // HOME-relative path coverage is provided by validate_worktree_path_accepts_deep_absolute.
+        // F-2: well-formed absolute paths accepted.
+        // Use /tmp paths only — avoids HOME env var dependency that causes flakiness
+        // when audit.rs tests remove HOME in a parallel thread.
         assert!(validate_worktree_path("/tmp/wt-abc").is_ok());
-        assert!(validate_worktree_path("/tmp/nested/worktree-build").is_ok());
+        assert!(validate_worktree_path("/private/tmp/wt-xyz/my-build").is_ok());
     }
 
     #[test]

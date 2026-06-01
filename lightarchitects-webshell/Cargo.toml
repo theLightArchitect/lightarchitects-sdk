@@ -20,6 +20,7 @@ lightarchitects-arch = { path = "../lightarchitects-arch" }
 # Canonical path resolution (unified-forging-vault Phase 1 helper)
 lightarchitects = { path = "../lightarchitects", features = [
     "chat",
+    "container-spawn",
     "credentials",
     "providers-anthropic",
     "providers-openai",
@@ -29,6 +30,7 @@ lightarchitects = { path = "../lightarchitects", features = [
     "loops-core",
     "agent-cli",
 ] }
+arc-swap = { workspace = true }
 
 # Aho-Corasick multi-pattern substring matching for the task classifier (HIGH H-8, no ReDoS).
 aho-corasick = "1"
@@ -133,6 +135,8 @@ sha2 = { workspace = true }
 hmac = { workspace = true }
 rand = { workspace = true }
 hex = "0.4"
+tempfile = { workspace = true }
+dirs-next = { workspace = true }
 
 # CDP bridge — Chrome DevTools Protocol client (feature-gated, dev-mode only).
 chromiumoxide = { version = "=0.9.1", optional = true }
@@ -169,6 +173,10 @@ proptest = { workspace = true }
 
 [[bench]]
 name = "classifier"
+harness = false
+
+[[bench]]
+name = "spawn_overhead"
 harness = false
 
 [lints]

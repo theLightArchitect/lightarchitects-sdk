@@ -107,3 +107,10 @@ pub mod fleet;
 /// in-character response generation, sibling discovery, and response sanitization.
 #[cfg(feature = "chat")]
 pub mod chat;
+
+/// Container spawn policy — `SpawnPolicy` trait, isolation modes, network policy,
+/// resource caps, and lock-free policy store via `ArcSwap`.
+///
+/// Enable with the `container-spawn` Cargo feature.
+#[cfg(feature = "container-spawn")]
+pub mod container_spawn;

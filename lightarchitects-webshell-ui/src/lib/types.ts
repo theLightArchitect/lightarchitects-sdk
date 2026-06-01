@@ -1439,3 +1439,51 @@ export interface ProjectCandidate {
   has_claude_md: boolean;
   initialized: boolean;
 }
+
+// ── Container spawn policy (container-spawn-policy) ─────────────────────────
+
+/** mirrors SDK::container_spawn::IsoMode */
+export type IsoMode = 'standard' | 'hardened' | 'airgapped';
+
+/** mirrors SDK::container_spawn::NetworkPolicy */
+export type NetworkPolicy = 'bridge' | 'host' | 'none' | 'balanced';
+
+/** mirrors SDK::container_spawn::AgentTier */
+export type AgentTier = 'coordinator' | 'worker' | 'custom';
+
+/** mirrors SDK::container_spawn::ContainerResources */
+export interface ContainerResources {
+  memory_mb: number;
+  cpus: number;
+  pids_limit: number;
+  max_concurrent: number;
+}
+
+/** mirrors SDK::container_spawn::ContainerPolicy (GET /api/container/policy response) */
+export interface ContainerPolicyResponse {
+  iso_mode: IsoMode;
+  network: NetworkPolicy;
+  memory_mb: number;
+  cpus: number;
+  pids_limit: number;
+  max_concurrent: number;
+}
+
+/** Body for PATCH /api/container/policy — all fields optional, tightening only */
+export interface ContainerPolicyPatch {
+  iso_mode?: IsoMode;
+  network?: NetworkPolicy;
+  memory_mb?: number;
+  cpus?: number;
+  pids_limit?: number;
+  max_concurrent?: number;
+}
+
+/**
+ * Phase 2 disclosure string — rendered in the UI wherever Balanced network
+ * or Proxy credential strategy would appear.
+ *
+ * Single source of truth for the UI; mirrors SDK::container_spawn::disclosure::PHASE_2_DISCLOSURE.
+ */
+export const PHASE_2_DISCLOSURE =
+  'Available in Phase 2. This option requires additional configuration and is not yet enabled.';

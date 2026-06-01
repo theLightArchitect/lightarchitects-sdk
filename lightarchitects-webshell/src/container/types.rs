@@ -40,7 +40,7 @@ impl ContainerMode {
 
 /// Result of successfully spawning a container session.
 ///
-/// Returned by `container_spawn` so the caller can route the WebSocket
+/// Returned by `spawn_session` so the caller can route the WebSocket
 /// relay without knowing the internal container naming scheme.
 #[derive(Debug, Clone)]
 pub struct ContainerHandle {
@@ -48,63 +48,6 @@ pub struct ContainerHandle {
     pub container_id: String,
     /// Absolute WebSocket path for the relay endpoint served by the webshell.
     pub relay_url: String,
-}
-
-/// Isolation level applied to spawned agent containers.
-///
-/// Controlled by the `LA_ISO_MODE` environment variable. Graduated levels
-/// layer additional Docker security flags on top of the standard resource
-/// limits already applied in [`Standard`] mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum IsoMode {
-    /// Standard resource limits: memory, CPU, pids, no-new-privileges.
-    #[default]
-    Standard,
-    /// Hardened: standard + read-only root fs + `/tmp` tmpfs (256 MiB).
-    ///
-    /// Prevents agents from writing to the container filesystem outside of
-    /// explicitly mounted tmpfs paths. Workspace writes go to `/tmp`.
-    Hardened,
-    /// Airgapped: hardened + `--network none`.
-    ///
-    /// Agents have no outbound network access. Use when the agent task is
-    /// purely local (code analysis, refactoring) and must not exfiltrate data.
-    Airgapped,
-}
-
-impl IsoMode {
-    /// Resolve from `LA_ISO_MODE` env var.
-    ///
-    /// - `"hardened"` → [`Hardened`](Self::Hardened)
-    /// - `"airgapped"` → [`Airgapped`](Self::Airgapped)
-    /// - unset / any other value → [`Standard`](Self::Standard)
-    #[must_use]
-    pub fn from_env() -> Self {
-        match std::env::var("LA_ISO_MODE").ok().as_deref() {
-            Some("hardened") => Self::Hardened,
-            Some("airgapped") => Self::Airgapped,
-            _ => Self::Standard,
-        }
-    }
-
-    /// Extra `docker run` args for this isolation level.
-    ///
-    /// These are appended after the fixed resource-limit args in
-    /// [`container_spawn`](crate::container::spawner::container_spawn).
-    #[must_use]
-    pub fn docker_args(self) -> &'static [&'static str] {
-        match self {
-            Self::Standard => &[],
-            Self::Hardened => &["--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m"],
-            Self::Airgapped => &[
-                "--read-only",
-                "--tmpfs",
-                "/tmp:rw,noexec,nosuid,size=256m",
-                "--network",
-                "none",
-            ],
-        }
-    }
 }
 
 /// Errors specific to container operations.
@@ -128,4 +71,13 @@ pub enum ContainerError {
     /// The container WebSocket relay is not yet implemented.
     #[error("container WebSocket relay not implemented")]
     RelayNotImplemented,
+    /// Active container count has reached the configured concurrent cap.
+    ///
+    /// The operator must wait for an existing session to end, or increase
+    /// [`ContainerPolicy::resources.max_concurrent`] via the policy API.
+    #[error("concurrent container cap reached — no semaphore permits available")]
+    ConcurrencyCapExceeded,
+    /// Policy produced an invalid or unsupported docker-args configuration.
+    #[error("policy error: {0}")]
+    PolicyError(String),
 }

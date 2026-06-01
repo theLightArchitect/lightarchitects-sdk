@@ -8,6 +8,7 @@
 //! Phase 3/5 will add `/api/events` (SSE fan-out).
 
 use std::{
+    collections::HashMap,
     future::Future,
     net::SocketAddr,
     pin::Pin,
@@ -16,9 +17,12 @@ use std::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     task::{Context, Poll},
+    time::Instant,
 };
 
+use arc_swap::ArcSwap;
 use dashmap::DashMap;
+use lightarchitects::container_spawn::{ContainerPolicy, PolicyStore};
 use uuid::Uuid;
 
 use axum::{
@@ -62,6 +66,7 @@ pub mod litellm_state;
 pub mod mcp_routes;
 pub mod question_routes;
 pub mod roadmap;
+pub mod spawn_reaper;
 
 /// Snapshot of the browser UI state, periodically reported by the frontend.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -360,6 +365,43 @@ pub struct AppState {
     /// Mirrors [`Self::question_registry`] keys; carries [`crate::events::types::QuestionPending`]
     /// for `GET /api/sessions/:id/question` display and TTL eviction.
     pub question_metadata: Arc<DashMap<Uuid, crate::events::types::QuestionPending>>,
+    /// Container spawn policy store — owns the live `ArcSwap` and enforces the
+    /// monotonic-tightening invariant via `tighten_for_build`.
+    ///
+    /// Used by `PATCH /api/container/policy`; initialized from
+    /// [`ContainerPolicy::default()`] at startup.
+    pub policy_store: Arc<PolicyStore>,
+    /// Lock-free handle to the active container policy.
+    ///
+    /// Derived from `policy_store.handle()` — shares the same `ArcSwap`.
+    /// Spawner reads this once at function entry (M10 single-load idiom).
+    pub policy: Arc<ArcSwap<ContainerPolicy>>,
+    /// Concurrent container cap semaphore.
+    ///
+    /// Sized from `ContainerPolicy::default().resources.max_concurrent` at
+    /// startup.  Spawner calls `try_acquire_owned()` then `permit.forget()`;
+    /// relay's `ContainerDropGuard` calls `add_permits(1)` on drop.
+    pub policy_semaphore: Arc<tokio::sync::Semaphore>,
+    /// Registry of running containers — keyed by container ID, value is spawn time.
+    ///
+    /// Uses `std::sync::RwLock` (not tokio) because `ContainerDropGuard::drop`
+    /// is a synchronous context and cannot `await` a tokio lock.
+    pub active_containers: Arc<std::sync::RwLock<HashMap<String, Instant>>>,
+    /// Monotonic `ETag` counter for `GET /api/container/policy`.
+    ///
+    /// Incremented on every successful `PATCH /api/container/policy`.
+    /// Returned as `ETag: "<N>"` on GET; PATCH validates `If-Match: "<N>"`.
+    pub policy_version: Arc<std::sync::atomic::AtomicU64>,
+    /// Per-token rate limiter for `PATCH /api/container/policy`.
+    ///
+    /// Keyed by `SipHash` of the Bearer token; value is the last successful
+    /// PATCH instant.  Enforces 1 PATCH/sec per token (429 on burst).
+    pub patch_rate_limiter: Arc<DashMap<u64, Instant>>,
+    /// Docker bridge CIDR guard — blocks policy mutation from container IPs.
+    ///
+    /// Probed at startup via `docker network ls` + `docker network inspect`.
+    /// Requests from any Docker bridge CIDR are rejected with 403.
+    pub bridge_cidr_guard: Arc<crate::container::cidr_guard::BridgeCidrGuard>,
 }
 
 impl AppState {
@@ -384,6 +426,14 @@ impl AppState {
         ));
         let _session_store_for_litellm = session_store.clone();
         let image_manager = ImageManager::new(docker_capable);
+
+        // Container spawn policy — PolicyStore::default() is infallible.
+        let policy_store = Arc::new(PolicyStore::default());
+        let policy_semaphore = Arc::new(tokio::sync::Semaphore::new(
+            ContainerPolicy::default().resources.max_concurrent,
+        ));
+        let bridge_cidr_guard =
+            Arc::new(crate::container::cidr_guard::BridgeCidrGuard::from_docker());
 
         // Phase 19c.2 — hot-reloadable promotion policy.
         // Gracefully absent when the YAML file doesn't exist yet.
@@ -546,6 +596,19 @@ impl AppState {
             });
         }
 
+        // Create patch_rate_limiter before Self so the eviction task can hold an Arc clone.
+        let patch_rate_limiter: Arc<DashMap<u64, std::time::Instant>> = Arc::new(DashMap::new());
+        {
+            let eviction_rl = Arc::clone(&patch_rate_limiter);
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+                loop {
+                    interval.tick().await;
+                    eviction_rl.retain(|_, ts| ts.elapsed() < std::time::Duration::from_secs(60));
+                }
+            });
+        }
+
         Self {
             config: Arc::new(config),
             turnlog_pepper: Arc::new(pepper),
@@ -633,6 +696,13 @@ impl AppState {
             litellm_config: Arc::new(RwLock::new(litellm_state::LitellmConfig::from_env())),
             question_registry,
             question_metadata,
+            policy_store: Arc::clone(&policy_store),
+            policy: policy_store.handle(),
+            policy_semaphore: Arc::clone(&policy_semaphore),
+            active_containers: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            policy_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            patch_rate_limiter,
+            bridge_cidr_guard: Arc::clone(&bridge_cidr_guard),
         }
     }
 
@@ -702,6 +772,8 @@ impl AppState {
     pub fn for_test(config: Config, docker_capable: DockerCapability) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_BUF);
         let active_agent = Arc::new(RwLock::new(config.agent.clone()));
+        let test_policy_store = Arc::new(PolicyStore::default());
+        let test_policy_handle = test_policy_store.handle();
         Self {
             config: Arc::new(config),
             turnlog_pepper: Arc::new(secrecy::SecretSlice::from(vec![])),
@@ -757,6 +829,15 @@ impl AppState {
             litellm_config: Arc::new(RwLock::new(litellm_state::LitellmConfig::from_env())),
             question_registry: Arc::new(DashMap::new()),
             question_metadata: Arc::new(DashMap::new()),
+            policy_store: test_policy_store,
+            policy: test_policy_handle,
+            policy_semaphore: Arc::new(tokio::sync::Semaphore::new(
+                ContainerPolicy::default().resources.max_concurrent,
+            )),
+            active_containers: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            policy_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            patch_rate_limiter: Arc::new(DashMap::new()),
+            bridge_cidr_guard: Arc::new(crate::container::cidr_guard::BridgeCidrGuard::default()),
         }
     }
 }
@@ -781,7 +862,10 @@ impl AppState {
 /// `Router` is already `#[must_use]` so this function is not re-annotated.
 #[allow(clippy::too_many_lines)]
 pub fn build_app(state: AppState) -> Router {
-    container_relay::spawn_reaper();
+    spawn_reaper::spawn(
+        Arc::clone(&state.active_containers),
+        Arc::clone(&state.policy_semaphore),
+    );
     let cors = build_cors(state.config.port, state.config.dev_mode);
     let dev_mode = state.config.dev_mode;
     let router = Router::new()
@@ -838,6 +922,15 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/terminal/container/{id}",
             get(container_relay::ws_relay_handler),
+        )
+        // ── Container spawn policy API ────────────────────────────────────────
+        // DefaultBodyLimit applies to the MethodRouter (GET + PATCH); for GET it
+        // is a no-op since GET bodies are empty.
+        .route(
+            "/api/container/policy",
+            get(crate::container::policy_routes::get_policy)
+                .patch(crate::container::policy_routes::patch_policy)
+                .layer(axum::extract::DefaultBodyLimit::max(4 * 1024)),
         )
         .route("/api/events", get(events::sse_handler::sse_handler))
         .route("/api/control", post(events::control_handler))
@@ -1280,7 +1373,13 @@ fn build_cors(port: u16, dev_mode: bool) -> CorsLayer {
     let notify_header: HeaderName = HeaderName::from_static("x-la-notify-token");
     CorsLayer::new()
         .allow_origin(allowed_origins)
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::OPTIONS])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::OPTIONS,
+        ])
         .allow_headers([
             header::AUTHORIZATION,
             header::CONTENT_TYPE,
@@ -1360,7 +1459,12 @@ pub async fn run(
 
     info!(bind = %addr, "webshell server listening");
 
-    axum::serve(listener, app).await.map_err(ServerError::Serve)
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .map_err(ServerError::Serve)
 }
 
 /// Maximum number of sequential ports tried beyond the configured port.
@@ -1407,10 +1511,13 @@ pub async fn run_with_port_retry(
                 info!(bind = %addr, "webshell server listening");
                 let driver = ServerDriver {
                     inner: Box::pin(async move {
-                        axum::serve(listener, app)
-                            .with_graceful_shutdown(crate::init::shutdown::shutdown_signal())
-                            .await
-                            .map_err(ServerError::Serve)
+                        axum::serve(
+                            listener,
+                            app.into_make_service_with_connect_info::<SocketAddr>(),
+                        )
+                        .with_graceful_shutdown(crate::init::shutdown::shutdown_signal())
+                        .await
+                        .map_err(ServerError::Serve)
                     }),
                 };
                 return Ok((port, driver));
@@ -2003,6 +2110,9 @@ fn load_turnlog_pepper() -> secrecy::SecretSlice<u8> {
 }
 
 // ── walk_files unit tests ─────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod policy_routes_test;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

@@ -149,6 +149,40 @@ pub(crate) async fn rm_force(ids: &[&str]) {
     let _ = timeout(RM_TIMEOUT, Command::new("docker").args(&args).output()).await;
 }
 
+/// Lists running container IDs matching `label` (e.g. `"managed-by=la-hitl"`).
+/// Returns an empty vec on timeout or daemon error.
+pub(crate) async fn ps_running_with_label(label: &str) -> Vec<String> {
+    let result = timeout(
+        PS_TIMEOUT,
+        Command::new("docker")
+            .args([
+                "ps",
+                "-q",
+                "--filter",
+                &format!("label={label}"),
+                "--filter",
+                "status=running",
+            ])
+            .output(),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(out)) if out.status.success() => String::from_utf8_lossy(&out.stdout)
+            .split_whitespace()
+            .map(str::to_owned)
+            .collect(),
+        Ok(_) => {
+            tracing::warn!(target: "container", label, "docker ps (running) failed");
+            vec![]
+        }
+        Err(_) => {
+            tracing::warn!(target: "container", label, "docker ps (running) timed out");
+            vec![]
+        }
+    }
+}
+
 /// Lists exited container IDs matching `label` (e.g. `"managed-by=la-hitl"`).
 /// Returns an empty vec on timeout or daemon error.
 pub(crate) async fn ps_exited_with_label(label: &str) -> Vec<String> {

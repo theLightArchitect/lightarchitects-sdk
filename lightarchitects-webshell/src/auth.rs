@@ -45,7 +45,7 @@ pub fn validate_bearer(header: &str, expected_token: &str) -> bool {
 /// Case-insensitive on the scheme per RFC 7235 §2.1 (auth-scheme token is
 /// case-insensitive). Only the scheme prefix is lowercased — the token body
 /// is returned verbatim from the original string to preserve its case.
-fn extract_bearer(header: &str) -> Option<&str> {
+pub(crate) fn extract_bearer(header: &str) -> Option<&str> {
     const SCHEME_LEN: usize = 7; // b e a r e r SPACE
     let trimmed = header.trim();
     if trimmed.len() < SCHEME_LEN {
