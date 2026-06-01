@@ -115,8 +115,8 @@ model_list:
 # ---------------------------------------------------------------------------
 general_settings:
   # Master key for proxy admin operations; stored in Keychain.
-  # Keychain service: la-litellm-master-key
-  master_key: "os.environ/la-litellm-master-key"
+  # Keychain service: la-litellm-credential (account: master_key per _ACCOUNT_OVERRIDES)
+  master_key: "os.environ/la-litellm-credential"
 
   # Enable OTEL traces — required alongside callbacks: ["otel"] in litellm_settings.
   otel: true

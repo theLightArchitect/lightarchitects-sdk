@@ -83,12 +83,12 @@ Ollama (local) routes through `SourceStep` tier-local → `selectedBackend = 'ol
 
 | # | Provider ID | Label | Subtitle | Auth type | Keychain service |
 |---|-------------|-------|----------|-----------|-----------------|
-| 1 | `anthropic` | Anthropic | Claude Sonnet · Opus · Haiku | API key | `lightarchitects.anthropic.api_key` |
-| 2 | `openai` | OpenAI | GPT-4o · o3 · o4-mini | API key | `lightarchitects.openai.api_key` |
-| 3 | `ollama-cloud` | Ollama Cloud | Llama 3.3 · Qwen3 · Phi-4 | API key (Bearer) | `lightarchitects.ollama_cloud.api_key` |
-| 4 | `deepseek` | DeepSeek | DeepSeek-V3 · DeepSeek-R1 | API key | `lightarchitects.deepseek.api_key` |
-| 5 | `google-vertex` | Google Vertex | Gemini 2.5 Pro · Flash | Service account JSON (OAuth) | `lightarchitects.vertex.service_account` |
-| 6 | `mistral` | Mistral | Mistral Large · Codestral | API key | `lightarchitects.mistral.api_key` |
+| 1 | `anthropic` | Anthropic | Claude Sonnet · Opus · Haiku | API key | `la-anthropic-credential` |
+| 2 | `openai` | OpenAI | GPT-4o · o3 · o4-mini | API key | `la-openai-credential` |
+| 3 | `ollama-cloud` | Ollama Cloud | Llama 3.3 · Qwen3 · Phi-4 | API key (Bearer) | `la-ollama-cloud-credential` |
+| 4 | `deepseek` | DeepSeek | DeepSeek-V3 · DeepSeek-R1 | API key | `la-deepseek-credential` |
+| 5 | `google-vertex` | Google Vertex | Gemini 2.5 Pro · Flash | Service account JSON | `la-vertex-credential` (JSON) + `la-vertex-project` (project ID) |
+| 6 | `mistral` | Mistral | Mistral Large · Codestral | API key | `la-mistral-credential` |
 
 ### OpenRouter status
 
