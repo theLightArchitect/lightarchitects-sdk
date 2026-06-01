@@ -64,6 +64,7 @@ pub mod git_routes;
 pub mod litellm_chat;
 pub mod litellm_state;
 pub mod mcp_routes;
+pub mod observability_spans;
 pub mod question_routes;
 pub mod roadmap;
 pub mod spawn_reaper;
