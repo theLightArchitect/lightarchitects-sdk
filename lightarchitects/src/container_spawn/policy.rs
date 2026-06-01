@@ -140,6 +140,7 @@ pub enum CredentialStrategy {
 /// Tiers map to opinionated `ContainerResources` defaults.  Use `Custom`
 /// when the predefined limits do not fit the workload, then populate
 /// `ContainerPolicy::resources` explicitly.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AgentTier {
     /// 512 MiB memory · 0.5 CPU · 64 pids · max 2 concurrent.
@@ -299,6 +300,11 @@ impl ContainerPolicy {
                 self.resources.memory_mb, MAX_MEMORY_MB_ABSOLUTE
             )));
         }
+        if !self.resources.cpus.is_finite() {
+            return Err(SpawnError::ResourceOutOfBounds(
+                "cpus must be finite (NaN and ±Infinity are not valid)".to_owned(),
+            ));
+        }
         if self.resources.cpus < MIN_CPUS {
             return Err(SpawnError::ResourceOutOfBounds(format!(
                 "cpus {:.2} is below MIN_CPUS {:.2}",
@@ -371,18 +377,9 @@ impl ContainerPolicy {
             args.push(format!("seccomp={}", path.display()));
         }
 
-        // 3–4. --cap-drop ALL + --cap-add NET_BIND_SERVICE (Hardened/Airgapped)
+        // 3–5. cap-drop/cap-add/user (Hardened/Airgapped)
         if self.iso_mode.requires_read_only_root() {
-            args.push("--cap-drop".to_owned());
-            args.push("ALL".to_owned());
-            args.push("--cap-add".to_owned());
-            args.push("NET_BIND_SERVICE".to_owned());
-        }
-
-        // 5. --user 65534:65534 (Hardened/Airgapped — nobody:nobody)
-        if self.iso_mode.requires_read_only_root() {
-            args.push("--user".to_owned());
-            args.push("65534:65534".to_owned());
+            append_hardened_caps_and_user(&mut args);
         }
 
         // 6. --memory
@@ -411,17 +408,10 @@ impl ContainerPolicy {
         args.push("--network".to_owned());
         args.push(network_flag.to_owned());
 
-        // 10. --read-only (Hardened/Airgapped)
+        // 10–11. --read-only + --tmpfs /tmp:rw,nosuid,size=256m (Hardened/Airgapped)
+        // NOTE: `noexec` intentionally absent — agents execute Python bytecode in /tmp.
         if self.iso_mode.requires_read_only_root() {
-            args.push("--read-only".to_owned());
-        }
-
-        // 11. --tmpfs /tmp:rw,nosuid,size=256m (Hardened/Airgapped)
-        // NOTE: `noexec` is intentionally absent — agents execute Python
-        // bytecode in /tmp (M3 fix, CORSO Round 2).
-        if self.iso_mode.requires_read_only_root() {
-            args.push("--tmpfs".to_owned());
-            args.push("/tmp:rw,nosuid,size=256m".to_owned());
+            append_hardened_fs(&mut args);
         }
 
         // 12. --label la.iso_mode=<level>
@@ -563,6 +553,13 @@ impl SpawnPolicy for PolicyStore {
                 override_policy.iso_mode, current.iso_mode
             )));
         }
+        // Network policy must be at least as strict.
+        if network_rank(override_policy.network) < network_rank(current.network) {
+            return Err(SpawnError::PolicyTighteningViolation(format!(
+                "per-build NetworkPolicy {:?} is less strict than system NetworkPolicy {:?}",
+                override_policy.network, current.network
+            )));
+        }
         Ok(Arc::new(override_policy.clone()))
     }
 
@@ -594,6 +591,35 @@ fn isolation_rank(mode: IsoMode) -> u8 {
         IsoMode::Hardened => 1,
         IsoMode::Airgapped => 2,
     }
+}
+
+/// Returns a monotonically increasing rank for network policies so that
+/// `tighten_for_build` can enforce that overrides are never less strict.
+fn network_rank(policy: NetworkPolicy) -> u8 {
+    match policy {
+        NetworkPolicy::Host => 0,
+        NetworkPolicy::Bridge | NetworkPolicy::Balanced => 1,
+        NetworkPolicy::None => 2,
+    }
+}
+
+/// Appends `--cap-drop ALL`, `--cap-add NET_BIND_SERVICE`, and
+/// `--user 65534:65534` for Hardened/Airgapped containers.
+fn append_hardened_caps_and_user(args: &mut Vec<String>) {
+    args.push("--cap-drop".to_owned());
+    args.push("ALL".to_owned());
+    args.push("--cap-add".to_owned());
+    args.push("NET_BIND_SERVICE".to_owned());
+    args.push("--user".to_owned());
+    args.push("65534:65534".to_owned());
+}
+
+/// Appends `--read-only` and `--tmpfs /tmp:rw,nosuid,size=256m` for
+/// Hardened/Airgapped containers.  `noexec` is intentionally absent.
+fn append_hardened_fs(args: &mut Vec<String>) {
+    args.push("--read-only".to_owned());
+    args.push("--tmpfs".to_owned());
+    args.push("/tmp:rw,nosuid,size=256m".to_owned());
 }
 
 // ── SpawnError ────────────────────────────────────────────────────────────────

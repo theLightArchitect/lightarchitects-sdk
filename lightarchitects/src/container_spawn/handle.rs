@@ -18,6 +18,7 @@ pub struct ContainerHandle {
 /// Remapping maps root inside the container to an unprivileged UID on the
 /// host, reducing the blast radius of a container-escape to a non-root host
 /// process.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsernsState {
     /// `/proc/sys/kernel/unprivileged_userns_clone` is 1 and the Docker

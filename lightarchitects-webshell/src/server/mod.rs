@@ -536,6 +536,19 @@ impl AppState {
             });
         }
 
+        // Create patch_rate_limiter before Self so the eviction task can hold an Arc clone.
+        let patch_rate_limiter: Arc<DashMap<u64, std::time::Instant>> = Arc::new(DashMap::new());
+        {
+            let eviction_rl = Arc::clone(&patch_rate_limiter);
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+                loop {
+                    interval.tick().await;
+                    eviction_rl.retain(|_, ts| ts.elapsed() < std::time::Duration::from_secs(60));
+                }
+            });
+        }
+
         Self {
             config: Arc::new(config),
             turnlog_pepper: Arc::new(pepper),
@@ -626,7 +639,7 @@ impl AppState {
             policy_semaphore: Arc::clone(&policy_semaphore),
             active_containers: Arc::new(std::sync::RwLock::new(HashMap::new())),
             policy_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            patch_rate_limiter: Arc::new(DashMap::new()),
+            patch_rate_limiter,
             bridge_cidr_guard: Arc::clone(&bridge_cidr_guard),
         }
     }
@@ -845,10 +858,13 @@ pub fn build_app(state: AppState) -> Router {
             get(container_relay::ws_relay_handler),
         )
         // ── Container spawn policy API ────────────────────────────────────────
+        // DefaultBodyLimit applies to the MethodRouter (GET + PATCH); for GET it
+        // is a no-op since GET bodies are empty.
         .route(
             "/api/container/policy",
             get(crate::container::policy_routes::get_policy)
-                .patch(crate::container::policy_routes::patch_policy),
+                .patch(crate::container::policy_routes::patch_policy)
+                .layer(axum::extract::DefaultBodyLimit::max(4 * 1024)),
         )
         .route("/api/events", get(events::sse_handler::sse_handler))
         .route("/api/control", post(events::control_handler))

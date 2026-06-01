@@ -63,7 +63,13 @@ impl PolicyView {
                 IsoMode::Standard => "standard",
                 IsoMode::Hardened => "hardened",
                 IsoMode::Airgapped => "airgapped",
-                _ => "unknown",
+                _ => {
+                    tracing::warn!(
+                        target: "container.policy",
+                        "PolicyView: unrecognized IsoMode variant — serializing as \"unknown\""
+                    );
+                    "unknown"
+                }
             }
             .to_owned(),
             network: match p.network {
@@ -71,7 +77,13 @@ impl PolicyView {
                 NetworkPolicy::Host => "host",
                 NetworkPolicy::None => "none",
                 NetworkPolicy::Balanced => "balanced",
-                _ => "unknown",
+                _ => {
+                    tracing::warn!(
+                        target: "container.policy",
+                        "PolicyView: unrecognized NetworkPolicy variant — serializing as \"unknown\""
+                    );
+                    "unknown"
+                }
             }
             .to_owned(),
             memory_mb: p.resources.memory_mb,
@@ -217,6 +229,8 @@ pub async fn patch_policy(
             }
         }
     }
+    // Record this attempt regardless of outcome — failed PATCHes count against the rate limit.
+    state.patch_rate_limiter.insert(token_hash, Instant::now());
 
     // ── CIDR guard: block requests from Docker bridge IPs (G4 + M1) ──────────
     if state.bridge_cidr_guard.is_blocked(peer.ip()) {
@@ -229,20 +243,27 @@ pub async fn patch_policy(
             .into_response();
     }
 
-    // ── If-Match version check ────────────────────────────────────────────────
+    // ── If-Match version check (mandatory — 428 when absent) ─────────────────
     let current_version = state.policy_version.load(Ordering::SeqCst);
-    if let Some(if_match) = headers.get(axum::http::header::IF_MATCH) {
-        let expected = format!("\"{current_version}\"");
-        if if_match.to_str().unwrap_or("") != expected {
-            return (
-                StatusCode::PRECONDITION_FAILED,
-                Json(serde_json::json!({
-                    "error": "If-Match mismatch — re-fetch GET /api/container/policy and retry",
-                    "current_version": current_version,
-                })),
-            )
-                .into_response();
-        }
+    let Some(if_match_header) = headers.get(axum::http::header::IF_MATCH) else {
+        return (
+            StatusCode::PRECONDITION_REQUIRED,
+            Json(serde_json::json!({
+                "error": "If-Match header required — fetch GET /api/container/policy for the current ETag",
+            })),
+        )
+            .into_response();
+    };
+    let expected = format!("\"{current_version}\"");
+    if if_match_header.to_str().unwrap_or("") != expected {
+        return (
+            StatusCode::PRECONDITION_FAILED,
+            Json(serde_json::json!({
+                "error": "If-Match mismatch — re-fetch GET /api/container/policy and retry",
+                "current_version": current_version,
+            })),
+        )
+            .into_response();
     }
 
     // ── Apply policy ──────────────────────────────────────────────────────────
@@ -266,9 +287,8 @@ pub async fn patch_policy(
                     .into_response();
             }
 
-            // Increment version and record rate-limit timestamp.
+            // Increment version counter.
             let new_version = state.policy_version.fetch_add(1, Ordering::SeqCst) + 1;
-            state.patch_rate_limiter.insert(token_hash, Instant::now());
 
             let etag = format!("\"{new_version}\"");
             (
@@ -294,7 +314,11 @@ pub async fn patch_policy(
     }
 }
 
-/// `SipHash` of a string — stable, fast, non-cryptographic key for rate-limit map.
+/// Non-cryptographic hash of a string for rate-limit bucketing.
+///
+/// Uses `DefaultHasher` (SipHash-1-3 variant), which is **not stable** across
+/// Rust versions or process restarts — suitable only for ephemeral, in-process
+/// state such as this rate-limit map.
 fn siphash(s: &str) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     let mut h = DefaultHasher::new();
