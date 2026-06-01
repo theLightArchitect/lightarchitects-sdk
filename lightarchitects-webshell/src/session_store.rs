@@ -126,6 +126,17 @@ impl SessionStore {
         if !col_exists {
             conn.execute("ALTER TABLE sessions ADD COLUMN northstar_text TEXT", [])?;
         }
+        // Singleton config table — survives server restarts; operator-configured
+        // LiteLLM base_url + model are recovered on boot without env vars.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS litellm_config (
+                id       INTEGER PRIMARY KEY CHECK (id = 1),
+                base_url TEXT NOT NULL DEFAULT '',
+                model    TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT ''
+            )",
+            [],
+        )?;
         Ok(())
     }
 
@@ -199,6 +210,37 @@ impl SessionStore {
         self.conn.execute(
             "UPDATE sessions SET northstar_text = ?1 WHERE build_id = ?2",
             params![northstar_text, build_id],
+        )?;
+        Ok(())
+    }
+
+    /// Load the persisted `LiteLLM` `base_url` and `model` from the singleton config row.
+    ///
+    /// Returns `None` when no row has been persisted yet (first launch or env-var-only setup).
+    #[must_use]
+    pub fn load_litellm_config(&self) -> Option<(String, String)> {
+        self.conn
+            .query_row(
+                "SELECT base_url, model FROM litellm_config WHERE id = 1",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .ok()
+    }
+
+    /// Upsert the `LiteLLM` `base_url` and `model` into the singleton config row.
+    ///
+    /// The API key is **not** stored here — it lives in the macOS Keychain.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`rusqlite::Error`] on SQL execution failure.
+    pub fn save_litellm_config(&self, base_url: &str, model: &str) -> Result<(), rusqlite::Error> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT OR REPLACE INTO litellm_config (id, base_url, model, updated_at)
+             VALUES (1, ?1, ?2, ?3)",
+            params![base_url, model, now],
         )?;
         Ok(())
     }
