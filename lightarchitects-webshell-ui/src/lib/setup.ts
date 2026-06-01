@@ -35,12 +35,39 @@ export interface OpenRouterAuthStatus {
   login_source?: string;
 }
 
+export interface OllamaCloudAuthStatus {
+  has_api_key: boolean;
+  login_source?: string;
+}
+
+export interface DeepSeekAuthStatus {
+  has_api_key: boolean;
+  login_source?: string;
+}
+
+export interface GoogleVertexAuthStatus {
+  has_service_account: boolean;
+  project_id?: string;
+}
+
+/** BYOK provider selected in ProviderStep. */
+export type Provider =
+  | 'anthropic'
+  | 'openai'
+  | 'ollama-cloud'
+  | 'deepseek'
+  | 'google-vertex'
+  | 'mistral';
+
 export interface AuthStatus {
   claude: ClaudeAuthStatus;
   codex: CodexAuthStatus;
   ollama: OllamaAuthStatus;
   mistral: MistralAuthStatus;
-  openrouter: OpenRouterAuthStatus;
+  openrouter?: OpenRouterAuthStatus;
+  ollama_cloud: OllamaCloudAuthStatus;
+  deepseek: DeepSeekAuthStatus;
+  google_vertex: GoogleVertexAuthStatus;
 }
 
 export interface SetupConfig {

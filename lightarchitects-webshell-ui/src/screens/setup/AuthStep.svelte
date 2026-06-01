@@ -11,16 +11,20 @@
   let testingOllama = $state(false);
 
   const backend = $derived($selectedBackend ?? '');
-  const isOllama     = $derived(backend.includes('ollama'));
-  const isClaude     = $derived(backend === 'anthropic');
-  const isCodex      = $derived(backend === 'openai');
-  const isOpenRouter = $derived(backend === 'openrouter');
-  const isMistral    = $derived(backend === 'mistral-vibe');
+  const isOllamaLocal  = $derived(backend === 'ollama-launch' || backend === 'ollama_launch');
+  const isClaude       = $derived(backend === 'anthropic');
+  const isCodex        = $derived(backend === 'openai');
+  const isOllamaCloud  = $derived(backend === 'ollama-cloud');
+  const isDeepSeek     = $derived(backend === 'deepseek');
+  const isGoogleVertex = $derived(backend === 'google-vertex');
+  const isMistral      = $derived(backend === 'mistral' || backend === 'mistral-vibe');
 
-  const claudeAuth     = $derived($authStatus?.claude);
-  const codexAuth      = $derived($authStatus?.codex);
-  const openrouterAuth = $derived($authStatus?.openrouter);
-  const mistralAuth    = $derived($authStatus?.mistral);
+  const claudeAuth      = $derived($authStatus?.claude);
+  const codexAuth       = $derived($authStatus?.codex);
+  const mistralAuth     = $derived($authStatus?.mistral);
+  const ollamaCloudAuth = $derived($authStatus?.ollama_cloud);
+  const deepseekAuth    = $derived($authStatus?.deepseek);
+  const vertexAuth      = $derived($authStatus?.google_vertex);
 
   const backStep = $derived($selectedTier === 'local' ? 'source' : 'provider');
 
@@ -37,9 +41,11 @@
     }
   }
 
+  const needsKeyEntry = $derived(isOllamaCloud || isDeepSeek || isGoogleVertex || isMistral);
+
   const canProceed = $derived(
-    isOllama ? (ollamaReachable === true) :
-    (isOpenRouter || isMistral) ? $apiKeyInput.trim().length > 0 :
+    isOllamaLocal ? (ollamaReachable === true) :
+    needsKeyEntry ? $apiKeyInput.trim().length > 0 :
     authMode === 'existing' ? true :
     $apiKeyInput.trim().length > 0
   );
@@ -89,7 +95,7 @@
         <span>Enter OpenAI API key</span>
       </label>
     </div>
-  {:else if isOllama}
+  {:else if isOllamaLocal}
     <p class="hint">Configure your Ollama endpoint</p>
     <div class="ollama-form">
       <label class="field-label" for="ollama-url-input">Base URL</label>
@@ -109,10 +115,23 @@
         <span class="unreachable-badge">Unreachable ✗</span>
       {/if}
     </div>
-  {:else if isOpenRouter}
-    <p class="hint">Enter your OpenRouter API key</p>
-    {#if openrouterAuth?.has_api_key}
+  {:else if isOllamaCloud}
+    <p class="hint">Enter your Ollama Cloud Bearer token</p>
+    {#if ollamaCloudAuth?.has_api_key}
+      <span class="auth-badge standalone">Token stored ✓</span>
+    {/if}
+  {:else if isDeepSeek}
+    <p class="hint">Enter your DeepSeek API key</p>
+    {#if deepseekAuth?.has_api_key}
       <span class="auth-badge standalone">Key stored ✓</span>
+    {/if}
+  {:else if isGoogleVertex}
+    <p class="hint">Paste your GCP service account JSON (or file path)</p>
+    {#if vertexAuth?.has_service_account}
+      <span class="auth-badge standalone">Service account stored ✓</span>
+      {#if vertexAuth.project_id}
+        <span class="auth-source standalone">Project: {vertexAuth.project_id}</span>
+      {/if}
     {/if}
   {:else if isMistral}
     <p class="hint">Enter your Mistral API key</p>
@@ -121,10 +140,16 @@
     {/if}
   {/if}
 
-  {#if (isClaude || isCodex) && authMode === 'apikey' || isOpenRouter || isMistral}
+  {#if (isClaude || isCodex) && authMode === 'apikey' || needsKeyEntry}
     <div class="key-field">
       <label class="field-label" for="api-key-input">
-        {#if isClaude}Anthropic{:else if isCodex}OpenAI{:else if isOpenRouter}OpenRouter{:else}Mistral{/if} API Key
+        {#if isClaude}Anthropic API Key
+        {:else if isCodex}OpenAI API Key
+        {:else if isOllamaCloud}Ollama Cloud Bearer Token
+        {:else if isDeepSeek}DeepSeek API Key
+        {:else if isGoogleVertex}Service Account JSON
+        {:else}Mistral API Key
+        {/if}
       </label>
       <div class="key-wrap">
         <input
@@ -132,7 +157,7 @@
           class="input"
           type={showKey ? 'text' : 'password'}
           bind:value={$apiKeyInput}
-          placeholder="sk-..."
+          placeholder={isGoogleVertex ? '{"type":"service_account",...}' : 'sk-...'}
           autocomplete="off"
           spellcheck="false"
         />
@@ -160,6 +185,7 @@
   .auth-badge { margin-left:0.5rem; color:#00d26a; font-size:0.7rem; }
   .auth-badge.standalone { margin-left:0; font-family:'IBM Plex Mono',monospace; font-size:0.8rem; }
   .auth-source { display:block; margin-top:0.25rem; margin-left:1.25rem; color:#64748b; font-size:0.65rem; font-family:'IBM Plex Mono',monospace; }
+  .auth-source.standalone { margin-left:0; }
 
   .ollama-form { display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; width:100%; }
   .key-field { display:flex; flex-direction:column; gap:0.5rem; width:100%; }

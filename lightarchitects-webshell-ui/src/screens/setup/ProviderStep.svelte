@@ -2,26 +2,29 @@
   @component
   Second wizard step for the BYOK tier — choose a cloud LLM provider.
 
-  Four mutually-exclusive choices:
-    anthropic   → Anthropic API (Claude models)
-    openai      → OpenAI API (GPT models)
-    openrouter  → OpenRouter (multi-provider hub)
-    mistral-vibe → Mistral AI
+  Six mutually-exclusive choices:
+    anthropic     → Anthropic API (Claude models)
+    openai        → OpenAI API (GPT models)
+    ollama-cloud  → Ollama Cloud (hosted Ollama)
+    deepseek      → DeepSeek (PRC-jurisdiction advisory shown)
+    google-vertex → Google Vertex AI (service account JSON)
+    mistral       → Mistral AI
 
   Selecting a provider and pressing Continue sets selectedBackend +
   selectedAgent ('lightarchitects' for all) and advances to 'auth'.
 -->
 <script lang="ts">
   import { step, selectedBackend, selectedAgent, authStatus } from '$lib/setup';
-
-  type Provider = 'anthropic' | 'openai' | 'openrouter' | 'mistral-vibe';
+  import type { Provider } from '$lib/setup';
 
   let chosen = $state<Provider | null>(null);
 
-  const claudeHasKey  = $derived($authStatus?.claude?.has_api_key || $authStatus?.claude?.has_keychain_auth);
-  const openaiHasKey  = $derived($authStatus?.codex?.has_api_key  || $authStatus?.codex?.has_keychain_auth);
-  const orHasKey      = $derived($authStatus?.openrouter?.has_api_key);
-  const mistralHasKey = $derived($authStatus?.mistral?.has_api_key);
+  const claudeHasKey    = $derived($authStatus?.claude?.has_api_key || $authStatus?.claude?.has_keychain_auth);
+  const openaiHasKey    = $derived($authStatus?.codex?.has_api_key  || $authStatus?.codex?.has_keychain_auth);
+  const ollamaCloudKey  = $derived($authStatus?.ollama_cloud?.has_api_key);
+  const deepseekHasKey  = $derived($authStatus?.deepseek?.has_api_key);
+  const vertexHasSA     = $derived($authStatus?.google_vertex?.has_service_account);
+  const mistralHasKey   = $derived($authStatus?.mistral?.has_api_key);
 
   function proceed() {
     if (!chosen) return;
@@ -84,29 +87,73 @@
       </div>
     </button>
 
-    <!-- OPENROUTER -->
+    <!-- OLLAMA CLOUD -->
     <button
       class="provider-card"
-      class:selected={chosen === 'openrouter'}
-      onclick={() => chosen = 'openrouter'}
-      data-testid="provider-openrouter"
+      class:selected={chosen === 'ollama-cloud'}
+      onclick={() => chosen = 'ollama-cloud'}
+      data-testid="provider-ollama-cloud"
     >
       <div class="provider-icon">
         <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="8"  cy="20" r="4" stroke="currentColor" stroke-width="1.5"/>
-          <circle cx="32" cy="12" r="4" stroke="currentColor" stroke-width="1.5"/>
-          <circle cx="32" cy="28" r="4" stroke="currentColor" stroke-width="1.5"/>
-          <line x1="12" y1="20" x2="28" y2="14" stroke="currentColor" stroke-width="1.5" opacity="0.7"/>
-          <line x1="12" y1="20" x2="28" y2="26" stroke="currentColor" stroke-width="1.5" opacity="0.7"/>
-          <circle cx="20" cy="17" r="2" fill="currentColor" opacity="0.5"/>
-          <circle cx="20" cy="23" r="2" fill="currentColor" opacity="0.5"/>
+          <ellipse cx="20" cy="22" rx="12" ry="9" stroke="currentColor" stroke-width="2"/>
+          <path d="M12 18 Q16 10, 24 14 Q28 16, 32 14" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+          <circle cx="16" cy="22" r="2" fill="currentColor" opacity="0.7"/>
+          <circle cx="24" cy="22" r="2" fill="currentColor" opacity="0.7"/>
         </svg>
       </div>
       <div class="provider-body">
-        <div class="provider-label">OpenRouter</div>
-        <div class="provider-sub">200+ models · one API key</div>
-        {#if orHasKey}
+        <div class="provider-label">Ollama Cloud</div>
+        <div class="provider-sub">Hosted Llama · Qwen · Phi</div>
+        {#if ollamaCloudKey}
           <span class="key-badge">Key stored ✓</span>
+        {/if}
+      </div>
+    </button>
+
+    <!-- DEEPSEEK -->
+    <button
+      class="provider-card"
+      class:selected={chosen === 'deepseek'}
+      onclick={() => chosen = 'deepseek'}
+      data-testid="provider-deepseek"
+    >
+      <div class="provider-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="20" cy="20" r="13" stroke="currentColor" stroke-width="2"/>
+          <path d="M14 26 Q17 18, 20 20 Q23 22, 26 14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <circle cx="20" cy="20" r="3" fill="currentColor" opacity="0.5"/>
+        </svg>
+      </div>
+      <div class="provider-body">
+        <div class="provider-label">DeepSeek</div>
+        <div class="provider-sub">R1 Reasoning · V3 Chat</div>
+        {#if deepseekHasKey}
+          <span class="key-badge">Key stored ✓</span>
+        {/if}
+        <span class="jurisdiction-badge" title="DeepSeek is operated by a PRC entity. Data may be subject to PRC law.">⚠ PRC</span>
+      </div>
+    </button>
+
+    <!-- GOOGLE VERTEX -->
+    <button
+      class="provider-card"
+      class:selected={chosen === 'google-vertex'}
+      onclick={() => chosen = 'google-vertex'}
+      data-testid="provider-google-vertex"
+    >
+      <div class="provider-icon">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="20,6 34,30 6,30" stroke="currentColor" stroke-width="2" fill="none"/>
+          <line x1="20" y1="14" x2="20" y2="26" stroke="currentColor" stroke-width="1.5" opacity="0.6"/>
+          <line x1="14" y1="26" x2="26" y2="26" stroke="currentColor" stroke-width="1.5" opacity="0.6"/>
+        </svg>
+      </div>
+      <div class="provider-body">
+        <div class="provider-label">Google Vertex</div>
+        <div class="provider-sub">Gemini 2.0 · Claude via GCP</div>
+        {#if vertexHasSA}
+          <span class="key-badge">Service account ✓</span>
         {/if}
       </div>
     </button>
@@ -114,8 +161,8 @@
     <!-- MISTRAL -->
     <button
       class="provider-card"
-      class:selected={chosen === 'mistral-vibe'}
-      onclick={() => chosen = 'mistral-vibe'}
+      class:selected={chosen === 'mistral'}
+      onclick={() => chosen = 'mistral'}
       data-testid="provider-mistral"
     >
       <div class="provider-icon">
@@ -165,7 +212,7 @@
 
   .providers {
     display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center;
-    max-width: 860px;
+    max-width: 1100px;
   }
 
   .provider-card {
@@ -202,6 +249,11 @@
   .key-badge {
     font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem;
     color: #00d26a; margin-top: 0.15rem;
+  }
+  .jurisdiction-badge {
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem;
+    color: #f59e0b; margin-top: 0.1rem;
+    cursor: help;
   }
 
   .footer { display: flex; gap: 1rem; }

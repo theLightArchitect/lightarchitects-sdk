@@ -622,6 +622,90 @@ fn openrouter_models() -> Vec<ModelOption> {
     ]
 }
 
+fn deepseek_models() -> Vec<ModelOption> {
+    vec![
+        ModelOption {
+            id: "deepseek/deepseek-chat".to_owned(),
+            label: "DeepSeek V3 (Chat)".to_owned(),
+            tier: "balanced".to_owned(),
+            tool_use: Some(true),
+            ..Default::default()
+        },
+        ModelOption {
+            id: "deepseek/deepseek-reasoner".to_owned(),
+            label: "DeepSeek R1 (Reasoning)".to_owned(),
+            tier: "capable".to_owned(),
+            tool_use: Some(false),
+            ..Default::default()
+        },
+        ModelOption {
+            id: "deepseek/deepseek-coder".to_owned(),
+            label: "DeepSeek Coder V2".to_owned(),
+            tier: "balanced".to_owned(),
+            tool_use: Some(true),
+            ..Default::default()
+        },
+    ]
+}
+
+fn mistral_models() -> Vec<ModelOption> {
+    vec![
+        ModelOption {
+            id: "mistral/mistral-large-latest".to_owned(),
+            label: "Mistral Large".to_owned(),
+            tier: "capable".to_owned(),
+            tool_use: Some(true),
+            ..Default::default()
+        },
+        ModelOption {
+            id: "mistral/mistral-small-latest".to_owned(),
+            label: "Mistral Small".to_owned(),
+            tier: "fast".to_owned(),
+            tool_use: Some(true),
+            ..Default::default()
+        },
+        ModelOption {
+            id: "mistral/codestral-latest".to_owned(),
+            label: "Codestral (Code)".to_owned(),
+            tier: "balanced".to_owned(),
+            tool_use: Some(false),
+            ..Default::default()
+        },
+    ]
+}
+
+fn google_vertex_models() -> Vec<ModelOption> {
+    vec![
+        ModelOption {
+            id: "vertex_ai/gemini-1.5-pro".to_owned(),
+            label: "Gemini 1.5 Pro".to_owned(),
+            tier: "capable".to_owned(),
+            family: None,
+            tool_use: Some(true),
+            vision: Some(true),
+            context_k: Some(1_000),
+        },
+        ModelOption {
+            id: "vertex_ai/gemini-2.0-flash".to_owned(),
+            label: "Gemini 2.0 Flash".to_owned(),
+            tier: "fast".to_owned(),
+            family: None,
+            tool_use: Some(true),
+            vision: Some(true),
+            context_k: Some(1_000),
+        },
+        ModelOption {
+            id: "vertex_ai/claude-sonnet-4-5@20251001".to_owned(),
+            label: "Claude Sonnet 4.5 (via Vertex)".to_owned(),
+            tier: "balanced".to_owned(),
+            family: None,
+            tool_use: Some(true),
+            vision: Some(true),
+            context_k: Some(200),
+        },
+    ]
+}
+
 // ── Build AgentSession from SaveRequest ──────────────────────────────────────
 
 fn agent_session_from_save(req: &SaveRequest) -> Option<crate::config::AgentSession> {
@@ -654,7 +738,7 @@ fn agent_session_from_save(req: &SaveRequest) -> Option<crate::config::AgentSess
                         .clone()
                         .unwrap_or_else(|| "openrouter/openai/gpt-4o".to_owned()),
                 }),
-                "mistral-vibe" | "mistral_vibe" => {
+                "mistral" | "mistral-vibe" | "mistral_vibe" => {
                     ClaudeBackend::LiteLlm(crate::config::LiteLlmBackendConfig {
                         model: req
                             .model
@@ -662,6 +746,24 @@ fn agent_session_from_save(req: &SaveRequest) -> Option<crate::config::AgentSess
                             .unwrap_or_else(|| "mistral/mistral-large-latest".to_owned()),
                     })
                 }
+                "ollama-cloud" => ClaudeBackend::LiteLlm(crate::config::LiteLlmBackendConfig {
+                    model: req
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| "ollama_chat/llama3.2".to_owned()),
+                }),
+                "deepseek" => ClaudeBackend::LiteLlm(crate::config::LiteLlmBackendConfig {
+                    model: req
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| "deepseek/deepseek-chat".to_owned()),
+                }),
+                "google-vertex" => ClaudeBackend::LiteLlm(crate::config::LiteLlmBackendConfig {
+                    model: req
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| "vertex_ai/gemini-1.5-pro".to_owned()),
+                }),
                 _ => return None,
             };
             Some(crate::config::AgentSession::Lightarchitects(backend))
@@ -849,6 +951,9 @@ pub async fn setup_models(Query(q): Query<ModelsQuery>) -> impl IntoResponse {
         }
         "ollama-cloud" => ollama_cloud_models(),
         "openrouter" => openrouter_models(),
+        "deepseek" => deepseek_models(),
+        "mistral" | "mistral-vibe" | "mistral_vibe" => mistral_models(),
+        "google-vertex" => google_vertex_models(),
         _ => vec![],
     };
     Json(ModelsResponse { models }).into_response()
