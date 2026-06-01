@@ -403,7 +403,7 @@ pub struct Cli {
     pub cwd: Option<PathBuf>,
 
     /// Agent CLI to spawn (`l-aex0` = claude, `codex` = openai codex).
-    #[arg(long, value_enum, default_value_t = AgentKind::Lightarchitects)]
+    #[arg(long, value_enum, default_value_t = AgentKind::LightarchitectsNative)]
     pub agent: AgentKind,
 
     /// Backend for the selected agent.
@@ -462,7 +462,7 @@ impl Default for Cli {
             port: DEFAULT_PORT,
             host_cmd: OsString::from(DEFAULT_HOST_CMD),
             cwd: None,
-            agent: AgentKind::Lightarchitects,
+            agent: AgentKind::LightarchitectsNative,
             backend: ClaudeBackendKind::Anthropic,
             ollama_base_url: None,
             ollama_model: None,
@@ -1043,7 +1043,7 @@ mod tests {
             port,
             host_cmd: OsString::from("claude"),
             cwd: Some(PathBuf::from("/tmp")),
-            agent: AgentKind::Lightarchitects,
+            agent: AgentKind::LightarchitectsNative,
             backend: ClaudeBackendKind::Anthropic,
             ollama_base_url: None,
             ollama_model: None,
@@ -1067,7 +1067,7 @@ mod tests {
             port: 8733,
             host_cmd: OsString::from("/custom/lightarchitects-cli"),
             cwd: Some(PathBuf::from("/tmp/session")),
-            agent: AgentKind::Lightarchitects,
+            agent: AgentKind::LightarchitectsNative,
             backend: ClaudeBackendKind::Anthropic,
             ollama_base_url: None,
             ollama_model: None,
@@ -1108,7 +1108,7 @@ mod tests {
 
     #[test]
     #[allow(clippy::panic, unsafe_code)]
-    fn default_agent_is_claude_code_with_anthropic() {
+    fn default_agent_is_lightarchitects_native() {
         // Redirect to a temp dir so no real setup.json is found — tests the
         // CLI-default path without interference from the operator's saved config.
         let tmp = std::env::temp_dir().join(format!("la-test-{}", std::process::id()));
@@ -1116,11 +1116,10 @@ mod tests {
         unsafe { std::env::set_var("LIGHTARCHITECTS_HOME", &tmp) };
         let result = std::panic::catch_unwind(|| {
             let cfg = Config::resolve(cli_with(8733)).unwrap();
-            assert_eq!(cfg.agent.kind(), AgentKind::Lightarchitects);
-            let AgentSession::Lightarchitects(backend) = &cfg.agent else {
-                panic!("expected Lightarchitects session");
+            assert_eq!(cfg.agent.kind(), AgentKind::LightarchitectsNative);
+            let AgentSession::LightarchitectsNative(_) = &cfg.agent else {
+                panic!("expected LightarchitectsNative session");
             };
-            assert_eq!(backend.kind(), ClaudeBackendKind::Anthropic);
         });
         // SAFETY: restoring env after test.
         unsafe { std::env::remove_var("LIGHTARCHITECTS_HOME") };

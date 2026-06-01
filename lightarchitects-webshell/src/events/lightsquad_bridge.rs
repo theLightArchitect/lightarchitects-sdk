@@ -24,7 +24,7 @@ use std::{
     sync::Arc,
 };
 
-use tokio::sync::broadcast;
+use tokio::{sync::broadcast, time::Duration};
 use tracing::{debug, warn};
 use uuid::Uuid;
 
@@ -395,12 +395,40 @@ pub(crate) fn make_worker(
         if app_state.docker_capable == DockerCapability::Ready && !use_mock {
             let state = app_state.clone();
             return Box::pin(async move {
+                // Budget: env-configurable wall-clock cap; default 30 minutes.
+                // A hung container would otherwise block the wave task indefinitely
+                // — `docker wait` has no built-in timeout.
+                let budget_secs: u64 = std::env::var("WORKER_TASK_TIMEOUT_SECS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(1800);
+                let budget = Duration::from_secs(budget_secs);
+
                 let handle = spawn_worker_container(&spec, &state)
                     .await
                     .map_err(|e| e.to_string())?;
-                let outcome = await_worker_exit(&handle.container_id)
-                    .await
-                    .map_err(|e| e.to_string())?;
+
+                let outcome = match tokio::time::timeout(
+                    budget,
+                    await_worker_exit(&handle.container_id),
+                )
+                .await
+                {
+                    Ok(Ok(o)) => o,
+                    Ok(Err(e)) => {
+                        reap_worker(&handle.container_id, &state);
+                        return Err(e.to_string());
+                    }
+                    Err(_elapsed) => {
+                        // Container hung past budget — stop it, then reap.
+                        crate::container::docker_cmd::stop(&handle.container_id).await;
+                        reap_worker(&handle.container_id, &state);
+                        return Err(format!(
+                            "task {task_id} container exceeded {budget_secs}s budget — timed out"
+                        ));
+                    }
+                };
+
                 reap_worker(&handle.container_id, &state);
                 if outcome.exit_code != 0 {
                     return Err(format!(
