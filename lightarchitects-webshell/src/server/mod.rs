@@ -416,11 +416,17 @@ pub struct AppState {
     /// startup.  Spawner calls `try_acquire_owned()` then `permit.forget()`;
     /// relay's `ContainerDropGuard` calls `add_permits(1)` on drop.
     pub policy_semaphore: Arc<tokio::sync::Semaphore>,
-    /// Registry of running containers — keyed by container ID, value is spawn time.
+    /// Registry of running containers — keyed by container ID.
     ///
     /// Uses `std::sync::RwLock` (not tokio) because `ContainerDropGuard::drop`
     /// is a synchronous context and cannot `await` a tokio lock.
-    pub active_containers: Arc<std::sync::RwLock<HashMap<String, Instant>>>,
+    ///
+    /// Each entry carries a [`ContainerKind`] so the reaper and relay can
+    /// apply kind-appropriate grace periods and access policies.
+    ///
+    /// [`ContainerKind`]: crate::container::types::ContainerKind
+    pub active_containers:
+        Arc<std::sync::RwLock<HashMap<String, crate::container::types::ActiveContainerEntry>>>,
     /// Monotonic `ETag` counter for `GET /api/container/policy`.
     ///
     /// Incremented on every successful `PATCH /api/container/policy`.
@@ -474,6 +480,18 @@ impl AppState {
         ));
         let bridge_cidr_guard =
             Arc::new(crate::container::cidr_guard::BridgeCidrGuard::from_docker());
+
+        // SERAPH C2 (T8): provision the dedicated worker-task bridge network.
+        // Idempotent; failures are non-blocking (logged as warnings).
+        if docker_capable == crate::container::types::DockerCapability::Ready {
+            if let Err(e) = crate::container::network_setup::ensure_worker_bridge() {
+                tracing::warn!(
+                    target: "container",
+                    error = %e,
+                    "la-worker-bridge setup failed — worker containers will use default network"
+                );
+            }
+        }
 
         // Phase 19c.2 — hot-reloadable promotion policy.
         // Gracefully absent when the YAML file doesn't exist yet.
@@ -976,6 +994,10 @@ pub fn build_app(state: AppState) -> Router {
             get(crate::container::policy_routes::get_policy)
                 .patch(crate::container::policy_routes::patch_policy)
                 .layer(axum::extract::DefaultBodyLimit::max(4 * 1024)),
+        )
+        .route(
+            "/api/container/active",
+            get(crate::container::active_routes::get_active_containers),
         )
         .route("/api/events", get(events::sse_handler::sse_handler))
         .route("/api/control", post(events::control_handler))

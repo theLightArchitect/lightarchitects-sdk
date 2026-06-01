@@ -29,7 +29,6 @@
 //! [`MergeAgent::merge_task_to_feat`]: super::merge_agent::MergeAgent::merge_task_to_feat
 
 use std::{
-    future::Future,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -39,6 +38,7 @@ use tokio::{sync::RwLock, task::JoinSet};
 use super::{
     merge_agent::{MergeAgent, MergeError},
     types::{Coordinator, SharedState, Task, TaskStatus},
+    worker_executor::WorkerExecutor,
     worktree_manager::{WorktreeError, WorktreeManager},
 };
 
@@ -167,9 +167,9 @@ pub fn validate_wave_ownership(tasks: &[Task]) -> Result<(), WaveError> {
 
 /// Dispatch all ready tasks in `tasks` as a concurrent wave.
 ///
-/// `worker_fn` receives a [`WorkerSpec`] and returns `Ok(())` on success or
-/// `Err(String)` with an error summary on failure. The dispatcher merges
-/// successful workers and removes all worktrees unconditionally.
+/// `executor` is called once per ready task via [`WorkerExecutor::dispatch_one`].
+/// The dispatcher merges successful workers and removes all worktrees
+/// unconditionally.
 ///
 /// Concurrency is bounded to [`SLOT_CAPACITY`] live workers.
 ///
@@ -178,7 +178,7 @@ pub fn validate_wave_ownership(tasks: &[Task]) -> Result<(), WaveError> {
 /// Returns [`WaveError::TaskFailures`] if any task fails. Returns
 /// [`WaveError::Worktree`] or [`WaveError::Merge`] on infrastructure failures.
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
-pub async fn dispatch_wave<F, Fut>(
+pub async fn dispatch_wave(
     wave_index: usize,
     tasks: &[Task],
     coordinator: &Coordinator,
@@ -186,12 +186,8 @@ pub async fn dispatch_wave<F, Fut>(
     merge_agent: &MergeAgent,
     feat_branch: &str,
     worktree_root: &Path,
-    worker_fn: F,
-) -> Result<WaveResult, WaveError>
-where
-    F: Fn(WorkerSpec) -> Fut + Clone + Send + 'static,
-    Fut: Future<Output = Result<(), String>> + Send + 'static,
-{
+    executor: Arc<dyn WorkerExecutor>,
+) -> Result<WaveResult, WaveError> {
     // Pre-wave ownership gate (agents-playbook §15.3.13 PW-6): reject the
     // wave before any worktree is created if two tasks claim the same file.
     validate_wave_ownership(tasks)?;
@@ -238,7 +234,7 @@ where
                 worktree_root,
                 worktree_manager,
                 coordinator,
-                &worker_fn,
+                &executor,
                 &mut join_set,
             )
             .await?;
@@ -254,7 +250,7 @@ where
                 worktree_root,
                 worktree_manager,
                 coordinator,
-                &worker_fn,
+                &executor,
                 &mut join_set,
             )
             .await?;
@@ -372,24 +368,20 @@ struct TaskOutcome {
 
 /// Spawn a single task into the `JoinSet` — extracted to keep `dispatch_wave`'s
 /// dual-pool fill loop readable. Creates the worktree, marks the task
-/// `InProgress`, and submits the worker future. The spawned future stamps the
-/// task's `concurrency_safe` flag onto the resulting [`TaskOutcome`] so the
-/// drain loop knows which slot pool to decrement.
+/// `InProgress`, and submits the worker future via [`WorkerExecutor::dispatch_one`].
+/// The spawned future stamps the task's `concurrency_safe` flag onto the resulting
+/// [`TaskOutcome`] so the drain loop knows which slot pool to decrement.
 #[allow(clippy::too_many_arguments)]
-async fn spawn_task_slot<F, Fut>(
+async fn spawn_task_slot(
     task: &Task,
     wave_index: usize,
     concurrency_safe: bool,
     worktree_root: &Path,
     worktree_manager: &WorktreeManager,
     coordinator: &Coordinator,
-    worker_fn: &F,
+    executor: &Arc<dyn WorkerExecutor>,
     join_set: &mut JoinSet<TaskOutcome>,
-) -> Result<(), WaveError>
-where
-    F: Fn(WorkerSpec) -> Fut + Clone + Send + 'static,
-    Fut: Future<Output = Result<(), String>> + Send + 'static,
-{
+) -> Result<(), WaveError> {
     let wt_branch = format!("task/build/{}", task.id);
     let wt_path = worktree_root.join(&task.id);
 
@@ -401,18 +393,22 @@ where
         worktree_path: handle.path.clone(),
         wave_index,
     };
-    let worker = worker_fn.clone();
+    let exec = Arc::clone(executor);
     let task_id = task.id.clone();
     let branch = handle.branch.clone();
 
     join_set.spawn(async move {
-        let outcome = worker(spec).await;
+        let result = exec
+            .dispatch_one(spec)
+            .await
+            .map(|_outcome| ())
+            .map_err(|e| e.to_string());
         TaskOutcome {
             task_id,
             branch,
             worktree_path: handle.path,
             concurrency_safe,
-            result: outcome,
+            result,
         }
     });
     Ok(())
@@ -472,6 +468,7 @@ mod tests {
             concurrency_safe: false,
             context_tiers: vec![],
             prompt: format!("implement {id}"),
+            policy_override: None,
         }
     }
 

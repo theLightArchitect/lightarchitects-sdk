@@ -63,6 +63,11 @@ pub mod supervisor;
 /// Worker spawn — wraps `crate::agent::ClaudeCliProvider` for autonomous worker pool.
 pub mod worker_spawn;
 
+/// Worker executor — [`WorkerExecutor`] trait with [`InProcessExecutor`] and
+/// [`ContainerExecutor`] (Phase-3 stub, Phase-4 docker wiring).  Selected by
+/// `lightsquad_bridge` based on `AppState::docker_capable`.
+pub mod worker_executor;
+
 /// LightArchitects — 10 gate-dimension specialists ([A+S+Q+C+O+P+K+D+T+R])
 /// routed to existing siblings via `crate::squad_registry`.
 pub mod light_architects;

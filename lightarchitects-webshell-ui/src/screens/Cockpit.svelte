@@ -369,6 +369,29 @@
 
   const runningTasks = $derived($conductorTasks.filter(t => t.status === 'running').slice(0, 3));
 
+  // ── Worker fleet — task-container count from /api/container/active ──────────
+
+  let taskContainerCount = $state<number>(0);
+
+  async function fetchTaskContainerCount() {
+    try {
+      const res = await fetch('/api/container/active', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('la_token') ?? ''}` },
+      });
+      if (!res.ok) return;
+      const containers = (await res.json()) as Array<{ kind: { type: string } }>;
+      taskContainerCount = containers.filter(c => c.kind.type === 'WorkerTask').length;
+    } catch {
+      // non-fatal — badge simply stays at last known value
+    }
+  }
+
+  $effect(() => {
+    fetchTaskContainerCount();
+    const interval = setInterval(fetchTaskContainerCount, 5000);
+    return () => clearInterval(interval);
+  });
+
   // ── Git state — per-worktree from gitforestTree ───────────────────────────
 
   const activeWorktrees = $derived.by((): WorktreeAssignment[] => {
@@ -564,6 +587,9 @@
           <span class="wab-dot"></span>
           WAVE <span class="wab-id">{$lastWaveId.slice(0, 8)}</span>
           <span class="wab-agents">{$workerSlots.active} agent{$workerSlots.active !== 1 ? 's' : ''} running</span>
+          {#if taskContainerCount > 0}
+            <span class="wab-containers" data-testid="fleet-container-count">{taskContainerCount} container{taskContainerCount !== 1 ? 's' : ''}</span>
+          {/if}
         </div>
       {/if}
 
@@ -1841,6 +1867,15 @@
     font-weight: 400;
     letter-spacing: 0.06em;
     color: var(--la-text-dim);
+  }
+
+  .wab-containers {
+    margin-left: 0.5rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.72rem;
+    background: rgba(160, 120, 230, 0.15);
+    color: #a078e6;
   }
 
   /* ── Responsive ─────────────────────────────────────────────────────────── */

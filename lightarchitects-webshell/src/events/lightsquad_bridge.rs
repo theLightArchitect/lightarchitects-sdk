@@ -19,7 +19,10 @@
 //!   <prompt>` in the task worktree. Requires the `lightarchitects` binary on
 //!   `PATH`.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use tokio::sync::broadcast;
 use tracing::{debug, warn};
@@ -36,7 +39,18 @@ use lightarchitects::{
         program::{Program, ProgramConfig},
         types::Task,
         wave_dispatcher::WorkerSpec,
+        worker_executor::InProcessExecutor,
     },
+};
+
+use crate::{
+    container::{
+        types::DockerCapability,
+        worker_runner::{
+            await_worker_exit, reap_worker, scan_staged_diff_for_secrets, spawn_worker_container,
+        },
+    },
+    server::AppState,
 };
 
 /// Emit a `LightSquad` AYIN span to disk (fire-and-forget) and return its ID.
@@ -107,6 +121,9 @@ pub struct BridgeContext {
     /// `LiteLLM` model name from [`AppState::litellm_config`].
     /// Overridden per-task by `LIGHTSQUAD_CODING_MODEL` env var when set.
     pub litellm_model: String,
+    /// Full application state — used to select the container executor path
+    /// when [`AppState::docker_capable`] is [`DockerCapability::Ready`].
+    pub app_state: AppState,
 }
 
 /// Spawn the autonomous build as a detached Tokio task.
@@ -136,6 +153,7 @@ async fn run_build(ctx: BridgeContext) {
         litellm_base_url,
         litellm_api_key,
         litellm_model,
+        app_state,
     } = ctx;
 
     // Translate TaskSpec → lightsquad::Task
@@ -151,6 +169,7 @@ async fn run_build(ctx: BridgeContext) {
                     context_tiers: vec![],
                     prompt: spec.prompt,
                     id: spec.id,
+                    policy_override: None,
                 })
                 .collect()
         })
@@ -200,15 +219,6 @@ async fn run_build(ctx: BridgeContext) {
         return;
     }
 
-    let config = ProgramConfig {
-        codename: codename.clone(),
-        repo_root,
-        worktree_root,
-        feat_branch,
-        waves: ls_waves,
-    };
-
-    let program = Program::new(config);
     let dw = decisions_writer.clone();
     let tx = event_tx.clone();
 
@@ -228,7 +238,19 @@ async fn run_build(ctx: BridgeContext) {
         litellm_base_url,
         litellm_api_key,
         litellm_model,
+        app_state.clone(),
     );
+
+    let config = ProgramConfig {
+        codename: codename.clone(),
+        repo_root,
+        worktree_root,
+        feat_branch,
+        waves: ls_waves,
+        executor: Arc::new(InProcessExecutor::new(worker_fn)),
+    };
+
+    let program = Program::new(config);
 
     // L1 decision: build started
     let _ = dw.append(
@@ -237,7 +259,7 @@ async fn run_build(ctx: BridgeContext) {
         Some("canon://agents-playbook#§15"),
     );
 
-    let outcome = match program.run(worker_fn).await {
+    let outcome = match program.run().await {
         Ok(summary) => {
             let _ = dw.append(
                 "L1",
@@ -345,6 +367,7 @@ pub(crate) fn make_worker(
     litellm_base_url: String,
     litellm_api_key: secrecy::SecretString,
     litellm_model: String,
+    app_state: AppState,
 ) -> impl Fn(
     WorkerSpec,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
@@ -366,6 +389,35 @@ pub(crate) fn make_worker(
             Some(build_span_id),
             build_id,
         );
+
+        // Container path: when Docker is ready and not mocking, spawn the task
+        // in a policy-enforced container and await its exit.
+        if app_state.docker_capable == DockerCapability::Ready && !use_mock {
+            let state = app_state.clone();
+            return Box::pin(async move {
+                let handle = spawn_worker_container(&spec, &state)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let outcome = await_worker_exit(&handle.container_id)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                reap_worker(&handle.container_id, &state);
+                if outcome.exit_code != 0 {
+                    return Err(format!(
+                        "task {task_id} container exited with code {}",
+                        outcome.exit_code
+                    ));
+                }
+                // SERAPH C1 (T7): scan the task's committed diff for secret
+                // patterns before allowing the merge agent to propagate the
+                // result to the feat branch.
+                scan_staged_diff_for_secrets(&spec.worktree_path, &spec.task.id)
+                    .map_err(|v| format!("SERAPH C1 violation: {v}"))?;
+                Ok(())
+            })
+                as std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>;
+        }
+
         let ctx = WorkerCtx {
             build_id,
             task_span_id,
@@ -1171,6 +1223,7 @@ mod tests {
             concurrency_safe: false,
             context_tiers: vec![],
             prompt: format!("implement {id}"),
+            policy_override: None,
         }
     }
 

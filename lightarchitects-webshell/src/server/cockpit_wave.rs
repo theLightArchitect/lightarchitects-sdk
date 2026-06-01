@@ -304,6 +304,7 @@ pub async fn cockpit_wave_handler(
         litellm_base_url,
         litellm_api_key,
         litellm_model,
+        app_state: state.clone(),
     });
     state.lightsquad_programs.insert(build_id, handle);
 
@@ -344,6 +345,7 @@ fn ownership_gate(task_specs: &[TaskSpec]) -> Result<(), axum::response::Respons
             concurrency_safe: false,
             context_tiers: vec![],
             prompt: String::new(),
+            policy_override: None,
         })
         .collect();
 
@@ -528,6 +530,7 @@ mod tests {
                 concurrency_safe: false,
                 context_tiers: vec![],
                 prompt: String::new(),
+                policy_override: None,
             })
             .collect();
         assert!(matches!(
@@ -553,6 +556,7 @@ mod tests {
                 concurrency_safe: false,
                 context_tiers: vec![],
                 prompt: String::new(),
+                policy_override: None,
             })
             .collect();
         assert!(validate_wave_ownership(&stubs).is_ok());
@@ -812,6 +816,7 @@ mod tests {
                     concurrency_safe: false,
                     context_tiers: vec![],
                     prompt: String::new(),
+                    policy_override: None,
                 })
                 .collect()
         }

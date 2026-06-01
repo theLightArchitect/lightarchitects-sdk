@@ -277,6 +277,7 @@ mod tests {
                 token_estimate: 0,
             }],
             prompt: "test".to_owned(),
+            policy_override: None,
         }
     }
 

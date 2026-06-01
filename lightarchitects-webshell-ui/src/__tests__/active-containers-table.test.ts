@@ -68,4 +68,32 @@ describe('ActiveContainersTable source assertions', () => {
   it('shows age in human-readable format', () => {
     expect(src).toContain('formatAge');
   });
+
+  it('includes kind discriminated union type with Pty and WorkerTask variants', () => {
+    expect(src).toContain("type: 'Pty'");
+    expect(src).toContain("type: 'WorkerTask'");
+    expect(src).toContain('task_id: string');
+    expect(src).toContain('wave_index: number');
+  });
+
+  it('renders Kind column header', () => {
+    expect(src).toContain('<th>Kind</th>');
+  });
+
+  it('renders kind badge with kindLabel helper', () => {
+    expect(src).toContain('kindLabel');
+    expect(src).toContain('kind-badge');
+    expect(src).toContain('kind-pty');
+    expect(src).toContain('kind-worker');
+  });
+
+  it('sets data-kind attribute on rows for per-kind CSS targeting', () => {
+    expect(src).toContain('data-kind={c.kind.type}');
+  });
+
+  it('shows WorkerTask tooltip with task_id and wave_index', () => {
+    expect(src).toContain('workerTaskTooltip');
+    expect(src).toContain('task_id');
+    expect(src).toContain('wave_index');
+  });
 });

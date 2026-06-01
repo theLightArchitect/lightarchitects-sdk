@@ -39,7 +39,7 @@ pub const MAX_CONCURRENT: usize = 64;
 /// wildcard arm when matching it.  New isolation tiers may be added in minor
 /// releases without a semver bump.
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum IsoMode {
     /// Standard resource limits: memory, CPU, pids, `no-new-privileges`.
     #[default]
@@ -88,7 +88,7 @@ impl IsoMode {
 /// wildcard arm when matching.  `Balanced` is declared for Phase-2 API
 /// stability but returns [`SpawnError::NotYetImplemented`] from
 /// [`ContainerPolicy::build_docker_args`] until Phase 2 ships.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
 pub enum NetworkPolicy {
     /// Standard Docker bridge network — agents can reach the internet via
@@ -108,6 +108,12 @@ pub enum NetworkPolicy {
     /// [`ContainerPolicy::build_docker_args`] with this variant returns
     /// [`SpawnError::NotYetImplemented`].
     Balanced,
+    /// Dedicated `la-worker-bridge` Docker bridge network.
+    ///
+    /// Worker-task containers run on this isolated network rather than the
+    /// default `docker0` bridge, providing namespace separation from PTY
+    /// session containers (SERAPH T8 mitigation).
+    WorkerBridge,
 }
 
 // ── Credential strategy ───────────────────────────────────────────────────────
@@ -401,6 +407,7 @@ impl ContainerPolicy {
             NetworkPolicy::Bridge => "bridge",
             NetworkPolicy::Host => "host",
             NetworkPolicy::None => "none",
+            NetworkPolicy::WorkerBridge => "la-worker-bridge",
             NetworkPolicy::Balanced => {
                 return Err(SpawnError::NotYetImplemented(PHASE_2_DISCLOSURE));
             }
@@ -598,7 +605,7 @@ fn isolation_rank(mode: IsoMode) -> u8 {
 fn network_rank(policy: NetworkPolicy) -> u8 {
     match policy {
         NetworkPolicy::Host => 0,
-        NetworkPolicy::Bridge | NetworkPolicy::Balanced => 1,
+        NetworkPolicy::Bridge | NetworkPolicy::Balanced | NetworkPolicy::WorkerBridge => 1,
         NetworkPolicy::None => 2,
     }
 }

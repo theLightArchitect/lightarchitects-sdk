@@ -7,15 +7,18 @@
 //! All container logic is self-contained — no `Dockerfile` in the project root.
 //! The agent image is built from embedded string constants on first spawn.
 
+pub mod active_routes;
 pub mod cidr_guard;
 pub(crate) mod docker_cmd;
 pub mod embedded_image;
 pub mod image_manager;
+pub mod network_setup;
 pub mod policy_routes;
 pub mod probe;
 pub mod seccomp_resolver;
 pub mod spawner;
 pub mod types;
+pub mod worker_runner;
 
 pub use image_manager::ImageManager;
 pub use types::{ContainerError, ContainerMode, DockerCapability};

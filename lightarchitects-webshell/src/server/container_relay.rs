@@ -26,7 +26,6 @@ use std::{
     collections::HashMap,
     process::Stdio,
     sync::{Arc, OnceLock},
-    time::Instant,
 };
 
 use axum::{
@@ -45,7 +44,11 @@ use tokio::{
     time::{Duration, sleep, timeout},
 };
 
-use crate::{auth, server::AppState};
+use crate::{
+    auth,
+    container::types::{ActiveContainerEntry, ContainerKind},
+    server::AppState,
+};
 
 /// Regex for Docker container IDs: lowercase hex, 12–64 characters.
 fn container_id_re() -> Option<&'static Regex> {
@@ -77,6 +80,22 @@ pub async fn ws_relay_handler(
 
     if !auth::validate_ws_headers(&headers, &state.config.token) {
         return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    // Kind guard: only Pty containers accept WebSocket relay.
+    // WorkerTask containers run autonomously and must not accept interactive
+    // connections — reject to prevent an attacker from escalating a task
+    // container to the 5-minute PTY grace path via a crafted WebSocket.
+    let is_pty = state
+        .active_containers
+        .read()
+        .map(|g| {
+            g.get(&container_id)
+                .is_some_and(|e| e.kind == ContainerKind::Pty)
+        })
+        .unwrap_or(false);
+    if !is_pty {
+        return StatusCode::FORBIDDEN.into_response();
     }
 
     let upgrade = if subproto.is_empty() {
@@ -219,14 +238,14 @@ async fn wait_for_running(container_id: &str) -> bool {
 /// The docker cleanup is fire-and-forget so the relay call-stack can return immediately.
 struct ContainerDropGuard {
     container_id: String,
-    active_containers: Arc<std::sync::RwLock<HashMap<String, Instant>>>,
+    active_containers: Arc<std::sync::RwLock<HashMap<String, ActiveContainerEntry>>>,
     semaphore: Arc<tokio::sync::Semaphore>,
 }
 
 impl ContainerDropGuard {
     fn new(
         container_id: String,
-        active_containers: Arc<std::sync::RwLock<HashMap<String, Instant>>>,
+        active_containers: Arc<std::sync::RwLock<HashMap<String, ActiveContainerEntry>>>,
         semaphore: Arc<tokio::sync::Semaphore>,
     ) -> Self {
         Self {
