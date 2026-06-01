@@ -1,0 +1,19 @@
+# G-supp-8: DEFERRED — 2026-05-31
+# No DEEPSEEK_API_KEY found in env or keychain (tried: env DEEPSEEK_API_KEY/DEEPSEEK_KEY,
+# keychain service=la-deepseek-credential account=api_key/apikey/key/token).
+# Keychain entry "la-deepseek-credential/api_key" exists but contains empty value.
+#
+# Phase 2 research will use documentation-based fixture only.
+# DeepSeek R1 parser will be verified against live fixture at Phase 4 E2E stage.
+#
+# Expected delta shape per DeepSeek API docs (to be confirmed live at Phase 4):
+# {"id":"...","object":"chat.completion.chunk","model":"deepseek-reasoner","choices":[
+#   {"index":0,"delta":{"role":"assistant","reasoning_content":"<thinking token>","content":null},"finish_reason":null}
+# ]}
+# ... (reasoning_content chunks during CoT phase)
+# {"choices":[{"delta":{"reasoning_content":null,"content":"<answer token>"},"finish_reason":null}]}
+# ... (content chunks during answer phase)
+# {"choices":[{"delta":{},"finish_reason":"stop"}]}
+#
+# Key parser invariant: reasoning_content and content are mutually exclusive per chunk.
+# reasoning_content appears first (CoT phase), then content (answer phase).
