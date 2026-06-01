@@ -1068,4 +1068,87 @@ mod tests {
             "absent model passes through as None — vibe uses its own config"
         );
     }
+
+    // ── Phase 4 unit tests: LiteLLM BYOK routing ────────────────────────────
+
+    #[allow(clippy::panic)]
+    fn assert_litellm_model(sess: crate::config::AgentSession, expected_model: &str) {
+        let crate::config::AgentSession::Lightarchitects(backend) = sess else {
+            panic!("expected Lightarchitects session");
+        };
+        let crate::config::ClaudeBackend::LiteLlm(cfg) = backend else {
+            panic!("expected LiteLlm backend");
+        };
+        assert_eq!(cfg.model, expected_model);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn litellm_deepseek_default_model() {
+        let req = save_req(AgentKind::Lightarchitects, "deepseek", None);
+        let sess = agent_session_from_save(&req).unwrap();
+        assert_litellm_model(sess, "deepseek/deepseek-chat");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn litellm_deepseek_explicit_model() {
+        let req = save_req(
+            AgentKind::Lightarchitects,
+            "deepseek",
+            Some("deepseek/deepseek-r1"),
+        );
+        let sess = agent_session_from_save(&req).unwrap();
+        assert_litellm_model(sess, "deepseek/deepseek-r1");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn litellm_google_vertex_default_model() {
+        let req = save_req(AgentKind::Lightarchitects, "google-vertex", None);
+        let sess = agent_session_from_save(&req).unwrap();
+        assert_litellm_model(sess, "vertex_ai/gemini-1.5-pro");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn litellm_google_vertex_explicit_model() {
+        let req = save_req(
+            AgentKind::Lightarchitects,
+            "google-vertex",
+            Some("vertex_ai/gemini-2.0-flash"),
+        );
+        let sess = agent_session_from_save(&req).unwrap();
+        assert_litellm_model(sess, "vertex_ai/gemini-2.0-flash");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn litellm_ollama_cloud_default_model() {
+        let req = save_req(AgentKind::Lightarchitects, "ollama-cloud", None);
+        let sess = agent_session_from_save(&req).unwrap();
+        assert_litellm_model(sess, "ollama_chat/llama3.2");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn litellm_mistral_backend_default_model() {
+        let req = save_req(AgentKind::Lightarchitects, "mistral", None);
+        let sess = agent_session_from_save(&req).unwrap();
+        assert_litellm_model(sess, "mistral/mistral-large-latest");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn litellm_openai_backend_default_model() {
+        let req = save_req(AgentKind::Lightarchitects, "openai", None);
+        let sess = agent_session_from_save(&req).unwrap();
+        assert_litellm_model(sess, "openai/gpt-4o");
+    }
+
+    #[test]
+    fn litellm_unknown_backend_returns_none() {
+        let req = save_req(AgentKind::Lightarchitects, "unknown-provider-xyz", None);
+        assert!(agent_session_from_save(&req).is_none());
+    }
 }

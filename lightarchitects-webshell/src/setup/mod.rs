@@ -8,4 +8,7 @@
 
 pub mod handlers;
 
-pub use handlers::{setup_info, setup_models, setup_reset, setup_save};
+pub use handlers::{
+    DeepSeekAuthStatus, GoogleVertexAuthStatus, ModelOption, OllamaCloudAuthStatus, setup_info,
+    setup_models, setup_reset, setup_save,
+};
