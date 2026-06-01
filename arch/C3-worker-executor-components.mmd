@@ -1,0 +1,36 @@
+---
+title: C3 — Worker Executor Components (agent-runner-policy-store-wiring)
+---
+graph TB
+  subgraph "lightarchitects crate (SDK) — NEW"
+    WET["WorkerExecutor trait\nsrc/lightsquad/worker_executor.rs\n\nexecute(spec: WorkerSpec) → Result\nis_container_capable() → bool"]
+    IPE["InProcessExecutor\nsrc/lightsquad/worker_executor.rs\n\nWraps existing in-process worker_fn\nSelected: docker_capable=Absent\nNo policy tightening (existing path)"]
+    CE["ContainerExecutor\nsrc/lightsquad/worker_executor.rs\n\nCalls worker_runner::spawn_worker_container\nForwards TRACEPARENT + LA_LITELLM_* env\nSelected: docker_capable=Ready"]
+    WET --> IPE
+    WET --> CE
+  end
+
+  subgraph "lightarchitects-webshell — MODIFIED"
+    WR["container/worker_runner.rs (NEW)\n\nspawn_worker_container(spec, state)\nShared semaphore acquire (PTY + WorkerTask)\nPolicyStore.tighten_for_build(spec.policy_override)\nbuild_docker_args → docker run"]
+
+    SPW["container/spawner.rs (MODIFIED)\n\nExtract shared spawn helper\nspawn_container_inner() used by\nboth spawn_session (PTY) and\nspawn_worker_container (WorkerTask)"]
+
+    CK["container/types.rs (MODIFIED)\n\nContainerKind { Pty, WorkerTask }\nactive_containers: HashMap<String, (Instant, ContainerKind)>"]
+
+    RPR["container/reaper.rs (MODIFIED)\n\nKind-aware grace period:\n  Pty → 5min timeout (existing)\n  WorkerTask → 0 grace (terminate on done)"]
+
+    PTY["container/relay.rs (MODIFIED)\n\nPTY relay WebSocket handler\nFilters active_containers by ContainerKind::Pty\nWorkerTask containers: no WebSocket relay"]
+
+    BRG["events/lightsquad_bridge.rs (MODIFIED)\n\nmake_worker() rewired:\n  docker_capable=Ready → WorkerExecutor::Container\n  docker_capable=Absent → WorkerExecutor::InProcess\nTask.policy_override field threaded through"]
+
+    APP["server/mod.rs (MODIFIED)\n\nAppState.container_semaphore: Arc<Semaphore>\nShared between PTY and WorkerTask spawns\n(deliberate — busy build reduces PTY avail)\nappstate.active_containers type updated"]
+  end
+
+  CE -->|"calls"| WR
+  WR -->|"shared helper"| SPW
+  WR -->|"acquires permit"| APP
+  WR -->|"tighten_for_build"| SPW
+  SPW -->|"records ContainerKind"| CK
+  CK -->|"kind filter"| PTY
+  CK -->|"kind-aware grace"| RPR
+  BRG -->|"selects executor"| WET

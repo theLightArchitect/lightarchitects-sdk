@@ -1,0 +1,41 @@
+---
+title: Sequence — Worker Task Container Spawn (ContainerExecutor path)
+---
+sequenceDiagram
+  participant WD as wave_dispatcher
+  participant BRG as lightsquad_bridge<br/>make_worker()
+  participant CE as ContainerExecutor
+  participant WR as worker_runner<br/>spawn_worker_container()
+  participant PS as PolicyStore<br/>(ArcSwap)
+  participant SEM as Semaphore<br/>(shared PTY+Worker)
+  participant DR as docker run
+
+  WD->>BRG: dispatch_wave(tasks, executor)
+  BRG->>BRG: check docker_capable == Ready
+  BRG->>CE: WorkerExecutor::execute(WorkerSpec)
+  CE->>WR: spawn_worker_container(spec, &state)
+
+  Note over WR,PS: M10: single ArcSwap load at entry
+  WR->>PS: policy.load_full() → Arc<ContainerPolicy>
+  WR->>PS: tighten_for_build(spec.policy_override)
+  PS-->>WR: tightened ContainerPolicy
+
+  WR->>SEM: acquire_owned() [blocks if cap exceeded]
+  SEM-->>WR: OwnedSemaphorePermit
+
+  WR->>WR: build_docker_args(policy, spec)
+  Note over WR: Injects: TRACEPARENT, LA_LITELLM_BASE_URL,<br/>LA_LITELLM_MODEL, LA_LITELLM_API_KEY stub
+
+  WR->>DR: docker run --rm --network=none<br/>--security-opt seccomp=...<br/>-e TRACEPARENT=... -e LA_LITELLM_*=...<br/>lightarchitects/agent:latest worker <task_id>
+
+  WR->>WR: active_containers.insert(id, (now, ContainerKind::WorkerTask))
+  WR-->>CE: ContainerHandle { permit }
+
+  Note over DR: Worker executes task, calls LiteLLM at<br/>host.docker.internal:4000 via forwarded env
+
+  DR-->>WR: exit 0 (success) or exit N (failure)
+  WR->>WR: active_containers.remove(id)
+  Note over SEM: SemaphorePermit drops → slot released
+  WR-->>CE: Result<(), ContainerError>
+  CE-->>BRG: Result<(), String>
+  BRG-->>WD: wave task complete

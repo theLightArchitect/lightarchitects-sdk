@@ -1,0 +1,25 @@
+---
+title: C2 — Worker Executor Container View (agent-runner-policy-store-wiring)
+---
+graph TB
+  Operator["[Person]\nOperator\nKFT or agent-runner CLI"]
+
+  subgraph "lightarchitects-sdk workspace"
+    WS["[Container: Rust binary]\nlightarchitects-webshell\n\nHTTP service :8733\nIronClaw wave_dispatcher\nPolicyStore (ArcSwap)\nShared semaphore (PTY + WorkerTask)"]
+  end
+
+  subgraph "WorkerExecutor dispatch (NEW)"
+    IE["[Container: tokio task]\nInProcessExecutor\n\nCurrent in-process path\nSelected when docker_capable=Absent"]
+    CE["[Container: Docker container]\nContainerExecutor → docker run\nlightarchitects/agent:latest\n\nPolicyStore.tighten_for_build\nbuild_docker_args → seccomp + caps\nLiteLLM env forwarded via -e\nSelected when docker_capable=Ready"]
+  end
+
+  LLM["[External System]\nLiteLLM Proxy\nhttp://host.docker.internal:4000\nor 172.17.0.1:4000\n\nLA_LITELLM_* env vars\nvirtual-key auth (future)"]
+
+  PolicyStore["[Database: ArcSwap]\nPolicyStore\n\nContainerPolicy snapshot\ntighten_for_build hook\nper-task policy_override field"]
+
+  Operator -->|"POST /api/builds\nwave: [[Task]]"| WS
+  WS -->|"dispatch_wave WorkerExecutor\ndocker_capable=Absent"| IE
+  WS -->|"dispatch_wave WorkerExecutor\ndocker_capable=Ready"| CE
+  CE -->|"LA_LITELLM_BASE_URL\nLA_LITELLM_MODEL env"| LLM
+  IE -->|"reads policy for validation"| PolicyStore
+  CE -->|"tighten_for_build\nbuild_docker_args"| PolicyStore
