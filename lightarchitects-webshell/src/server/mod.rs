@@ -481,6 +481,18 @@ impl AppState {
         let bridge_cidr_guard =
             Arc::new(crate::container::cidr_guard::BridgeCidrGuard::from_docker());
 
+        // SERAPH C2 (T8): provision the dedicated worker-task bridge network.
+        // Idempotent; failures are non-blocking (logged as warnings).
+        if docker_capable == crate::container::types::DockerCapability::Ready {
+            if let Err(e) = crate::container::network_setup::ensure_worker_bridge() {
+                tracing::warn!(
+                    target: "container",
+                    error = %e,
+                    "la-worker-bridge setup failed — worker containers will use default network"
+                );
+            }
+        }
+
         // Phase 19c.2 — hot-reloadable promotion policy.
         // Gracefully absent when the YAML file doesn't exist yet.
         let (promotion_policy, policy_watcher) =

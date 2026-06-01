@@ -23,7 +23,7 @@
 //!   └─ docker stop + docker rm -f (fire-and-forget)
 //! ```
 
-use std::{sync::Arc, time::Instant};
+use std::{path::Path, sync::Arc, time::Instant};
 
 use lightarchitects::{
     container_spawn::{ContainerPolicy, SpawnPolicy},
@@ -38,6 +38,160 @@ use crate::{
     },
     server::AppState,
 };
+
+// ── SERAPH C1 — pre-merge secret scan ────────────────────────────────────────
+
+/// A secret pattern found in a staged diff (SERAPH T7 threat mitigation).
+#[derive(Debug)]
+pub struct SecretScanViolation {
+    /// Short identifier for the matched denylist pattern.
+    pub pattern_id: &'static str,
+    /// File where the pattern was found, relative to the worktree root.
+    pub file: std::path::PathBuf,
+    /// 1-based line number within the `git show HEAD` diff output.
+    pub line: u32,
+    /// First 20 characters of the matched region followed by `"..."`.
+    /// Never the full secret value.
+    pub redacted_excerpt: String,
+}
+
+impl std::fmt::Display for SecretScanViolation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "secret pattern '{}' at {}:{} — {}",
+            self.pattern_id,
+            self.file.display(),
+            self.line,
+            self.redacted_excerpt,
+        )
+    }
+}
+
+/// SERAPH C1 — pre-merge secret scan.
+///
+/// Runs `git show HEAD --patch --format=` in `worktree` and scans every
+/// added line for patterns from the T7 denylist:
+/// `LA_LITELLM_API_KEY=`, `LITELLM_API_KEY=`, `API_KEY=`,
+/// `sk-[A-Za-z0-9]{20,}`, `Bearer [A-Za-z0-9_-]{20,}`.
+///
+/// Returns the first [`SecretScanViolation`] found, or `Ok(())` if the diff
+/// is clean. Fails open on git errors — a missing binary or empty worktree
+/// never blocks a build unintentionally.
+///
+/// # Redaction
+///
+/// The `redacted_excerpt` in the returned violation contains only the first
+/// 20 characters of the matched region followed by `"..."`. The full secret
+/// value is never stored, logged, or transmitted.
+///
+/// # Errors
+///
+/// Returns [`Err(SecretScanViolation)`] when a denylist pattern is found in
+/// the diff. All git I/O failures (missing binary, empty repo) return `Ok(())`
+/// — the scan fails open rather than blocking a build on a git error.
+pub fn scan_staged_diff_for_secrets(
+    worktree: &Path,
+    _branch: &str,
+) -> Result<(), SecretScanViolation> {
+    let Ok(output) = std::process::Command::new("git")
+        .args(["show", "HEAD", "--patch", "--format="])
+        .current_dir(worktree)
+        .output()
+    else {
+        return Ok(());
+    };
+
+    if !output.status.success() {
+        return Ok(());
+    }
+
+    let diff = String::from_utf8_lossy(&output.stdout);
+    let mut current_file = std::path::PathBuf::new();
+
+    for (idx, line) in diff.lines().enumerate() {
+        if let Some(path) = line.strip_prefix("+++ b/") {
+            current_file = std::path::PathBuf::from(path);
+            continue;
+        }
+        if !line.starts_with('+') || line.starts_with("+++") {
+            continue;
+        }
+        let content = &line[1..];
+        let line_num = u32::try_from(idx + 1).unwrap_or(u32::MAX);
+
+        if let Some(v) = check_diff_line(content, &current_file, line_num) {
+            return Err(v);
+        }
+    }
+
+    Ok(())
+}
+
+/// Checks a single diff line (`+` prefix already stripped) against all
+/// denylist patterns. Returns the first violation found, or `None`.
+fn check_diff_line(content: &str, file: &Path, line_num: u32) -> Option<SecretScanViolation> {
+    // Fixed key=value patterns — any occurrence is a violation.
+    const FIXED: &[(&str, &str)] = &[
+        ("LA_LITELLM_API_KEY", "LA_LITELLM_API_KEY="),
+        ("LITELLM_API_KEY", "LITELLM_API_KEY="),
+        ("API_KEY", "API_KEY="),
+    ];
+    for &(id, needle) in FIXED {
+        if let Some(pos) = content.find(needle) {
+            return Some(SecretScanViolation {
+                pattern_id: id,
+                file: file.to_path_buf(),
+                line: line_num,
+                redacted_excerpt: redact_at(content, pos),
+            });
+        }
+    }
+
+    // `sk-` followed by ≥20 alphanumeric chars (API key prefix pattern).
+    if let Some(pos) = content.find("sk-") {
+        let suffix = &content[pos + 3..];
+        if suffix.len() >= 20 && suffix.chars().take(20).all(|c| c.is_ascii_alphanumeric()) {
+            return Some(SecretScanViolation {
+                pattern_id: "sk-prefix",
+                file: file.to_path_buf(),
+                line: line_num,
+                redacted_excerpt: redact_at(content, pos),
+            });
+        }
+    }
+
+    // `Bearer ` followed by ≥20 alphanumeric-or-dash-or-underscore chars.
+    if let Some(pos) = content.find("Bearer ") {
+        let suffix = &content[pos + 7..];
+        if suffix.len() >= 20
+            && suffix
+                .chars()
+                .take(20)
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+        {
+            return Some(SecretScanViolation {
+                pattern_id: "bearer-token",
+                file: file.to_path_buf(),
+                line: line_num,
+                redacted_excerpt: redact_at(content, pos),
+            });
+        }
+    }
+
+    None
+}
+
+/// Returns the first 20 characters of `s[pos..]` followed by `"..."`.
+/// Never returns more than 20 characters of potential secret material.
+fn redact_at(s: &str, pos: usize) -> String {
+    let excerpt = &s[pos..];
+    if excerpt.len() > 20 {
+        format!("{}...", &excerpt[..20])
+    } else {
+        format!("{excerpt}...")
+    }
+}
 
 /// Exit status from a completed worker container.
 #[derive(Debug, Clone)]
@@ -254,5 +408,114 @@ mod tests {
     fn sanitize_truncates_at_32() {
         let long = "a".repeat(50);
         assert_eq!(sanitize_id(&long).len(), 32);
+    }
+
+    // ── SERAPH C1 — scan_staged_diff_for_secrets unit tests ──────────────────
+
+    #[test]
+    fn check_diff_line_detects_la_litellm_key() {
+        let v = check_diff_line(
+            "  export LA_LITELLM_API_KEY=sk-realvalue123",
+            std::path::Path::new(".env"),
+            7,
+        );
+        assert!(v.is_some());
+        let v = v.unwrap();
+        assert_eq!(v.pattern_id, "LA_LITELLM_API_KEY");
+        assert!(v.redacted_excerpt.ends_with("..."));
+    }
+
+    #[test]
+    fn check_diff_line_detects_litellm_key() {
+        let v = check_diff_line(
+            "LITELLM_API_KEY=verysecretvalue",
+            std::path::Path::new("cfg.py"),
+            1,
+        );
+        assert!(v.is_some());
+        assert_eq!(v.unwrap().pattern_id, "LITELLM_API_KEY");
+    }
+
+    #[test]
+    fn check_diff_line_detects_sk_prefix_with_long_suffix() {
+        let v = check_diff_line(
+            "const KEY = \"sk-abcdefghijklmnopqrstuvwxyz\";",
+            std::path::Path::new("src/lib.rs"),
+            42,
+        );
+        assert!(v.is_some());
+        assert_eq!(v.unwrap().pattern_id, "sk-prefix");
+    }
+
+    #[test]
+    fn check_diff_line_ignores_short_sk_suffix() {
+        let v = check_diff_line(
+            "let x = \"sk-short\";",
+            std::path::Path::new("src/lib.rs"),
+            1,
+        );
+        assert!(v.is_none(), "sk- with < 20 chars should not trigger");
+    }
+
+    #[test]
+    fn check_diff_line_detects_bearer_with_long_token() {
+        let v = check_diff_line(
+            "Authorization: Bearer abcdefghijklmnopqrstuvwxyz",
+            std::path::Path::new("http.rs"),
+            5,
+        );
+        assert!(v.is_some());
+        assert_eq!(v.unwrap().pattern_id, "bearer-token");
+    }
+
+    #[test]
+    fn check_diff_line_ignores_short_bearer() {
+        let v = check_diff_line(
+            "Authorization: Bearer tooshort",
+            std::path::Path::new("x.rs"),
+            1,
+        );
+        assert!(v.is_none(), "Bearer with < 20 chars should not trigger");
+    }
+
+    #[test]
+    fn redact_at_truncates_long_string() {
+        let s = "ABC123456789012345678901234567890";
+        let r = redact_at(s, 0);
+        assert!(r.ends_with("..."), "should end with ...");
+        assert_eq!(r.len(), 23, "20 chars + 3 for ...");
+    }
+
+    #[test]
+    fn redact_at_short_string_gets_ellipsis() {
+        let r = redact_at("short", 0);
+        assert!(r.ends_with("..."));
+    }
+
+    /// SERAPH T7 regression: planting a fake `LiteLLM` key in a diff line triggers
+    /// the scan.
+    #[test]
+    fn scan_staged_detects_litellm_key_in_diff_line() {
+        let violation = check_diff_line(
+            "LA_LITELLM_API_KEY=sk-fake12345verylongsecretvalue",
+            std::path::Path::new("config.env"),
+            1,
+        );
+        assert!(violation.is_some(), "T7 regression: secret not detected");
+        let v = violation.unwrap();
+        // Redacted excerpt must NOT contain more than 20 chars of the secret.
+        assert!(
+            v.redacted_excerpt.len() <= 23,
+            "redacted excerpt leaks too much: {}",
+            v.redacted_excerpt
+        );
+    }
+
+    #[test]
+    fn scan_staged_diff_returns_ok_for_non_existent_path() {
+        // Non-existent worktree — should fail open, not panic.
+        let result =
+            scan_staged_diff_for_secrets(std::path::Path::new("/tmp/does-not-exist-xyz"), "main");
+        assert!(result.is_ok(), "should fail open on git error");
     }
 }

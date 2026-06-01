@@ -46,7 +46,9 @@ use lightarchitects::{
 use crate::{
     container::{
         types::DockerCapability,
-        worker_runner::{await_worker_exit, reap_worker, spawn_worker_container},
+        worker_runner::{
+            await_worker_exit, reap_worker, scan_staged_diff_for_secrets, spawn_worker_container,
+        },
     },
     server::AppState,
 };
@@ -406,6 +408,11 @@ pub(crate) fn make_worker(
                         outcome.exit_code
                     ));
                 }
+                // SERAPH C1 (T7): scan the task's committed diff for secret
+                // patterns before allowing the merge agent to propagate the
+                // result to the feat branch.
+                scan_staged_diff_for_secrets(&spec.worktree_path, &spec.task.id)
+                    .map_err(|v| format!("SERAPH C1 violation: {v}"))?;
                 Ok(())
             })
                 as std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>;

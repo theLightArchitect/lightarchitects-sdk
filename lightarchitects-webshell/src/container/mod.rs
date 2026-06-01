@@ -12,6 +12,7 @@ pub mod cidr_guard;
 pub(crate) mod docker_cmd;
 pub mod embedded_image;
 pub mod image_manager;
+pub mod network_setup;
 pub mod policy_routes;
 pub mod probe;
 pub mod seccomp_resolver;
