@@ -99,7 +99,7 @@ fn in_cidr_v4(ip: Ipv4Addr, network: Ipv4Addr, prefix: u8) -> bool {
 
 /// Lists all Docker bridge network names via `docker network ls`.
 fn list_bridge_networks() -> std::io::Result<Vec<String>> {
-    let out = std::process::Command::new("docker")
+    let out = std::process::Command::new(crate::container::docker_cmd::docker_bin())
         .args([
             "network",
             "ls",
@@ -124,7 +124,7 @@ fn list_bridge_networks() -> std::io::Result<Vec<String>> {
 
 /// Inspects a network and returns its bridge CIDRs.
 fn inspect_network_cidrs(network: &str) -> std::io::Result<Vec<(Ipv4Addr, u8)>> {
-    let out = std::process::Command::new("docker")
+    let out = std::process::Command::new(crate::container::docker_cmd::docker_bin())
         .args([
             "network",
             "inspect",

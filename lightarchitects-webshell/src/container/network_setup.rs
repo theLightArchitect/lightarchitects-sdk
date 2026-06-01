@@ -81,7 +81,7 @@ pub fn ensure_worker_bridge() -> Result<(), BridgeSetupError> {
 
 /// Returns `true` when `la-worker-bridge` is listed by `docker network ls`.
 fn worker_bridge_exists() -> bool {
-    std::process::Command::new("docker")
+    std::process::Command::new(crate::container::docker_cmd::docker_bin())
         .args([
             "network",
             "ls",
@@ -103,7 +103,7 @@ fn worker_bridge_exists() -> bool {
 
 /// Runs `docker network create --driver bridge la-worker-bridge`.
 fn create_worker_bridge() -> Result<(), BridgeSetupError> {
-    let out = std::process::Command::new("docker")
+    let out = std::process::Command::new(crate::container::docker_cmd::docker_bin())
         .args([
             "network",
             "create",
@@ -130,7 +130,7 @@ fn create_worker_bridge() -> Result<(), BridgeSetupError> {
 /// Removes any containers still attached to `la-worker-bridge` from a previous
 /// gateway session. Fire-and-forget: failures are logged but never block startup.
 fn sweep_orphan_containers() {
-    let Ok(out) = std::process::Command::new("docker")
+    let Ok(out) = std::process::Command::new(crate::container::docker_cmd::docker_bin())
         .args([
             "ps",
             "-q",
@@ -158,7 +158,7 @@ fn sweep_orphan_containers() {
         "sweeping orphan worker containers from previous gateway session on la-worker-bridge"
     );
 
-    let mut cmd = std::process::Command::new("docker");
+    let mut cmd = std::process::Command::new(crate::container::docker_cmd::docker_bin());
     cmd.arg("rm").arg("-f");
     for id in &ids {
         cmd.arg(id);

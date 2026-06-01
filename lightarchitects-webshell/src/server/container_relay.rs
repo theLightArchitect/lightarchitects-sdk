@@ -122,7 +122,7 @@ async fn relay(socket: WebSocket, container_id: String, state: AppState) {
         return;
     }
 
-    let mut child = match Command::new("docker")
+    let mut child = match Command::new(crate::container::docker_cmd::docker_bin())
         .args(["exec", "-i", &container_id, "/bin/sh"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -215,7 +215,7 @@ async fn relay(socket: WebSocket, container_id: String, state: AppState) {
 async fn wait_for_running(container_id: &str) -> bool {
     timeout(Duration::from_secs(10), async {
         loop {
-            let running = Command::new("docker")
+            let running = Command::new(crate::container::docker_cmd::docker_bin())
                 .args(["inspect", "--format", "{{.State.Running}}", container_id])
                 .output()
                 .await

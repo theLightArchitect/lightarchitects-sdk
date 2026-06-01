@@ -330,7 +330,7 @@ pub async fn spawn_worker_container(
 /// Returns [`ContainerError::Io`] if the `docker wait` command fails to spawn
 /// or produces non-UTF-8 output.
 pub async fn await_worker_exit(container_id: &str) -> Result<WorkerOutcome, ContainerError> {
-    let output = tokio::process::Command::new("docker")
+    let output = tokio::process::Command::new(crate::container::docker_cmd::docker_bin())
         .args(["wait", container_id])
         .output()
         .await
