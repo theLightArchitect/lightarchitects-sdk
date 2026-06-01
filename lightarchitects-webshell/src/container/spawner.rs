@@ -3,10 +3,14 @@
 use std::path::Path;
 
 use lightarchitects::container_spawn::ContainerPolicy;
+use tempfile::NamedTempFile;
 
 use crate::container::{
     docker_cmd,
-    types::{ContainerError, ContainerHandle, ContainerMode, DockerCapability},
+    types::{
+        ActiveContainerEntry, ContainerError, ContainerHandle, ContainerKind, ContainerMode,
+        DockerCapability,
+    },
 };
 use crate::server::AppState;
 
@@ -70,13 +74,6 @@ async fn container_spawn(
     // M10: SINGLE-LOAD — snapshot policy ONCE at function entry; use throughout.
     let policy: std::sync::Arc<ContainerPolicy> = state.policy.load_full();
 
-    let image = std::env::var("LA_AGENT_IMAGE").unwrap_or_else(|_| DEFAULT_IMAGE_NAME.to_owned());
-    if !ALLOWED_IMAGES.contains(&image.as_str()) {
-        return Err(ContainerError::Io(std::io::Error::other(format!(
-            "image '{image}' is not in the container allowlist"
-        ))));
-    }
-
     // Acquire semaphore BEFORE docker run — enforces max_concurrent cap atomically.
     // The permit is held until docker run either succeeds (permit forgotten) or
     // fails (permit dropped automatically → slot returned).
@@ -86,33 +83,14 @@ async fn container_spawn(
         .try_acquire_owned()
         .map_err(|_| ContainerError::ConcurrencyCapExceeded)?;
 
-    // For Hardened/Airgapped: resolve seccomp profile to a private temp file.
-    // `_seccomp` keeps the NamedTempFile alive (and path valid) until after
-    // `run_detached` returns; it is deleted on drop.
-    let _seccomp;
-    let policy_for_args;
-    if policy.iso_mode.requires_read_only_root() {
-        let tmp = super::seccomp_resolver::write_seccomp_profile().map_err(ContainerError::Io)?;
-        let mut p = (*policy).clone();
-        p.seccomp_profile_path = Some(tmp.path().to_path_buf());
-        _seccomp = Some(tmp);
-        policy_for_args = p;
-    } else {
-        _seccomp = None;
-        policy_for_args = (*policy).clone();
-    }
-
-    let docker_args = policy_for_args
-        .build_docker_args()
-        .map_err(|e| ContainerError::PolicyError(e.to_string()))?;
-
     let container_name = format!("la-{}", sanitize_build_id(build_id));
 
-    // Compose full arg list: policy-derived args + --name <name> + image.
-    let mut full_args: Vec<&str> = docker_args.iter().map(String::as_str).collect();
-    full_args.extend_from_slice(&["--name", &container_name, &image]);
+    // Shared helper handles seccomp profile resolution + arg composition.
+    // `_seccomp` keeps the NamedTempFile alive until after `run_detached` returns.
+    let (full_args, _seccomp) = build_container_run_args(&policy, &container_name).await?;
 
-    let output = docker_cmd::run_detached(&full_args)
+    let full_arg_refs: Vec<&str> = full_args.iter().map(String::as_str).collect();
+    let output = docker_cmd::run_detached(&full_arg_refs)
         .await
         .map_err(ContainerError::Io)?;
 
@@ -131,13 +109,20 @@ async fn container_spawn(
     // active_containers. The relay's ContainerDropGuard will call add_permits(1)
     // on drop, returning the slot. If active_containers write fails (poisoned lock),
     // we add the permit back manually before returning the error.
+    let iso_mode = policy.iso_mode;
     permit.forget();
+
+    let entry = ActiveContainerEntry {
+        kind: ContainerKind::Pty,
+        started_at: std::time::Instant::now(),
+        policy_snapshot_iso_mode: iso_mode,
+    };
 
     let inserted = state
         .active_containers
         .write()
         .map(|mut g| {
-            g.insert(container_id.clone(), std::time::Instant::now());
+            g.insert(container_id.clone(), entry);
         })
         .is_ok();
 
@@ -158,7 +143,7 @@ async fn container_spawn(
         target: "container",
         container_id = %container_id,
         container_name = %container_name,
-        iso_mode = ?policy.iso_mode,
+        ?iso_mode,
         "container spawned"
     );
 
@@ -166,6 +151,49 @@ async fn container_spawn(
         container_id,
         relay_url,
     })
+}
+
+/// Build the full `docker run` arg list for a given policy and container name.
+///
+/// Handles seccomp profile resolution for `Hardened`/`Airgapped` iso modes.
+/// The returned `NamedTempFile` (if any) must stay alive until `docker run`
+/// completes — drop it only after the subprocess exits.
+///
+/// # Errors
+///
+/// Returns [`ContainerError::Io`] if the seccomp temp file cannot be written,
+/// or [`ContainerError::PolicyError`] if `build_docker_args` fails.
+pub(crate) async fn build_container_run_args(
+    policy: &ContainerPolicy,
+    container_name: &str,
+) -> Result<(Vec<String>, Option<NamedTempFile>), ContainerError> {
+    let image = std::env::var("LA_AGENT_IMAGE").unwrap_or_else(|_| DEFAULT_IMAGE_NAME.to_owned());
+    if !ALLOWED_IMAGES.contains(&image.as_str()) {
+        return Err(ContainerError::Io(std::io::Error::other(format!(
+            "image '{image}' is not in the container allowlist"
+        ))));
+    }
+
+    let seccomp_tmp;
+    let policy_for_args;
+    if policy.iso_mode.requires_read_only_root() {
+        let tmp = super::seccomp_resolver::write_seccomp_profile().map_err(ContainerError::Io)?;
+        let mut p = policy.clone();
+        p.seccomp_profile_path = Some(tmp.path().to_path_buf());
+        seccomp_tmp = Some(tmp);
+        policy_for_args = p;
+    } else {
+        seccomp_tmp = None;
+        policy_for_args = policy.clone();
+    }
+
+    let mut docker_args = policy_for_args
+        .build_docker_args()
+        .map_err(|e| ContainerError::PolicyError(e.to_string()))?;
+
+    docker_args.extend_from_slice(&["--name".to_owned(), container_name.to_owned(), image]);
+
+    Ok((docker_args, seccomp_tmp))
 }
 
 /// Sanitizes a build ID for use in a Docker container name.

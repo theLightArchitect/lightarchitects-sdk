@@ -43,6 +43,14 @@ use lightarchitects::{
     },
 };
 
+use crate::{
+    container::{
+        types::DockerCapability,
+        worker_runner::{await_worker_exit, reap_worker, spawn_worker_container},
+    },
+    server::AppState,
+};
+
 /// Emit a `LightSquad` AYIN span to disk (fire-and-forget) and return its ID.
 ///
 /// The returned [`Uuid`] is the span's own disk-file ID — pass it as
@@ -111,6 +119,9 @@ pub struct BridgeContext {
     /// `LiteLLM` model name from [`AppState::litellm_config`].
     /// Overridden per-task by `LIGHTSQUAD_CODING_MODEL` env var when set.
     pub litellm_model: String,
+    /// Full application state — used to select the container executor path
+    /// when [`AppState::docker_capable`] is [`DockerCapability::Ready`].
+    pub app_state: AppState,
 }
 
 /// Spawn the autonomous build as a detached Tokio task.
@@ -140,6 +151,7 @@ async fn run_build(ctx: BridgeContext) {
         litellm_base_url,
         litellm_api_key,
         litellm_model,
+        app_state,
     } = ctx;
 
     // Translate TaskSpec → lightsquad::Task
@@ -224,6 +236,7 @@ async fn run_build(ctx: BridgeContext) {
         litellm_base_url,
         litellm_api_key,
         litellm_model,
+        app_state.clone(),
     );
 
     let config = ProgramConfig {
@@ -352,6 +365,7 @@ pub(crate) fn make_worker(
     litellm_base_url: String,
     litellm_api_key: secrecy::SecretString,
     litellm_model: String,
+    app_state: AppState,
 ) -> impl Fn(
     WorkerSpec,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
@@ -373,6 +387,30 @@ pub(crate) fn make_worker(
             Some(build_span_id),
             build_id,
         );
+
+        // Container path: when Docker is ready and not mocking, spawn the task
+        // in a policy-enforced container and await its exit.
+        if app_state.docker_capable == DockerCapability::Ready && !use_mock {
+            let state = app_state.clone();
+            return Box::pin(async move {
+                let handle = spawn_worker_container(&spec, &state)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let outcome = await_worker_exit(&handle.container_id)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                reap_worker(&handle.container_id, &state);
+                if outcome.exit_code != 0 {
+                    return Err(format!(
+                        "task {task_id} container exited with code {}",
+                        outcome.exit_code
+                    ));
+                }
+                Ok(())
+            })
+                as std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>;
+        }
+
         let ctx = WorkerCtx {
             build_id,
             task_span_id,

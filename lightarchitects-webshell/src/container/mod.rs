@@ -16,6 +16,7 @@ pub mod probe;
 pub mod seccomp_resolver;
 pub mod spawner;
 pub mod types;
+pub mod worker_runner;
 
 pub use image_manager::ImageManager;
 pub use types::{ContainerError, ContainerMode, DockerCapability};

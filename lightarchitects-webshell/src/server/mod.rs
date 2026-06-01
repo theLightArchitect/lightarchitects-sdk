@@ -416,11 +416,17 @@ pub struct AppState {
     /// startup.  Spawner calls `try_acquire_owned()` then `permit.forget()`;
     /// relay's `ContainerDropGuard` calls `add_permits(1)` on drop.
     pub policy_semaphore: Arc<tokio::sync::Semaphore>,
-    /// Registry of running containers — keyed by container ID, value is spawn time.
+    /// Registry of running containers — keyed by container ID.
     ///
     /// Uses `std::sync::RwLock` (not tokio) because `ContainerDropGuard::drop`
     /// is a synchronous context and cannot `await` a tokio lock.
-    pub active_containers: Arc<std::sync::RwLock<HashMap<String, Instant>>>,
+    ///
+    /// Each entry carries a [`ContainerKind`] so the reaper and relay can
+    /// apply kind-appropriate grace periods and access policies.
+    ///
+    /// [`ContainerKind`]: crate::container::types::ContainerKind
+    pub active_containers:
+        Arc<std::sync::RwLock<HashMap<String, crate::container::types::ActiveContainerEntry>>>,
     /// Monotonic `ETag` counter for `GET /api/container/policy`.
     ///
     /// Incremented on every successful `PATCH /api/container/policy`.

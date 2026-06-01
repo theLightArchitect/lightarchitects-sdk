@@ -4,8 +4,12 @@
 //! against `docker ps` to detect containers that exited without signalling the
 //! relay (e.g. daemon restart, SIGKILL).
 //!
-//! A 15-second age guard (H4 fix) prevents the reaper from evicting containers
-//! that are still in the process of connecting their relay WebSocket.
+//! # Kind-aware grace periods
+//!
+//! | Kind | Minimum age before reap | Rationale |
+//! |------|------------------------|-----------|
+//! | `Pty` | 15 s | Container may still be connecting its relay WebSocket |
+//! | `WorkerTask` | 0 s | Task containers have no relay; immediate cleanup on exit |
 
 use std::{
     collections::HashMap,
@@ -13,11 +17,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Age threshold below which containers are not considered orphaned.
+use crate::container::types::{ActiveContainerEntry, ContainerKind};
+
+/// Age threshold for PTY containers below which entries are not considered orphaned.
 ///
-/// Containers younger than this skip reconciliation — they may be in-flight
+/// PTY containers are exempt from reaping for this window — they may be in-flight
 /// between `docker run` success and the relay WebSocket being established.
-const MIN_AGE_FOR_REAP: Duration = Duration::from_secs(15);
+const PTY_MIN_AGE_FOR_REAP: Duration = Duration::from_secs(15);
 
 /// Reconciliation interval.
 const REAP_INTERVAL: Duration = Duration::from_secs(10);
@@ -28,7 +34,7 @@ const REAP_INTERVAL: Duration = Duration::from_secs(10);
 /// so orphan eviction returns slots to the pool.
 #[allow(clippy::implicit_hasher)]
 pub fn spawn(
-    active_containers: Arc<std::sync::RwLock<HashMap<String, Instant>>>,
+    active_containers: Arc<std::sync::RwLock<HashMap<String, ActiveContainerEntry>>>,
     semaphore: Arc<tokio::sync::Semaphore>,
 ) {
     tokio::spawn(async move {
@@ -43,14 +49,22 @@ pub fn spawn(
 }
 
 /// Compares `active_containers` to running Docker containers; evicts stale entries.
+///
+/// Grace periods are kind-aware:
+/// - [`ContainerKind::Pty`] — skip containers younger than [`PTY_MIN_AGE_FOR_REAP`].
+/// - [`ContainerKind::WorkerTask`] — no minimum age; reap as soon as exit is detected.
 async fn reconcile(
-    active_containers: &Arc<std::sync::RwLock<HashMap<String, Instant>>>,
+    active_containers: &Arc<std::sync::RwLock<HashMap<String, ActiveContainerEntry>>>,
     semaphore: &Arc<tokio::sync::Semaphore>,
 ) {
-    // Snapshot currently tracked IDs and spawn times.
-    let tracked: Vec<(String, Instant)> = active_containers
+    // Snapshot currently tracked IDs and entry metadata.
+    let tracked: Vec<(String, ContainerKind, Instant)> = active_containers
         .read()
-        .map(|g| g.iter().map(|(k, v)| (k.clone(), *v)).collect())
+        .map(|g| {
+            g.iter()
+                .map(|(k, e)| (k.clone(), e.kind.clone(), e.started_at))
+                .collect()
+        })
         .unwrap_or_default();
 
     if tracked.is_empty() {
@@ -64,9 +78,15 @@ async fn reconcile(
 
     let now = Instant::now();
     let mut stale: Vec<String> = Vec::new();
-    for (id, spawned_at) in &tracked {
-        // H4 fix: skip containers younger than MIN_AGE_FOR_REAP.
-        if now.duration_since(*spawned_at) < MIN_AGE_FOR_REAP {
+
+    for (id, kind, spawned_at) in &tracked {
+        // Kind-aware grace period: PTY containers get a 15s window; WorkerTask containers
+        // have no grace period — they should be reaped immediately once exited.
+        let grace = match kind {
+            ContainerKind::Pty => PTY_MIN_AGE_FOR_REAP,
+            ContainerKind::WorkerTask { .. } => Duration::ZERO,
+        };
+        if now.duration_since(*spawned_at) < grace {
             continue;
         }
         if !running_set.contains(id.as_str()) {

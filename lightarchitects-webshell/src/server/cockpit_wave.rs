@@ -304,6 +304,7 @@ pub async fn cockpit_wave_handler(
         litellm_base_url,
         litellm_api_key,
         litellm_model,
+        app_state: state.clone(),
     });
     state.lightsquad_programs.insert(build_id, handle);
 

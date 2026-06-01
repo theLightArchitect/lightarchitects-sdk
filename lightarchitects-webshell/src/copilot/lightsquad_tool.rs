@@ -88,6 +88,9 @@ pub struct LightsquadToolExecutor {
     /// Runtime `LiteLLM` provider config — read at build-launch time so updates
     /// via `PUT /api/litellm/config` take effect without restarting the server.
     litellm_config: Arc<tokio::sync::RwLock<LitellmConfig>>,
+    /// Full webshell application state — used to select the container executor
+    /// path when [`AppState::docker_capable`] is [`DockerCapability::Ready`].
+    app_state: crate::server::AppState,
 }
 
 impl LightsquadToolExecutor {
@@ -104,6 +107,7 @@ impl LightsquadToolExecutor {
         mock_workers: bool,
         hermes_mcp: HermesMcpConfig,
         litellm_config: Arc<tokio::sync::RwLock<LitellmConfig>>,
+        app_state: crate::server::AppState,
     ) -> Self {
         Self {
             repo_root,
@@ -116,6 +120,7 @@ impl LightsquadToolExecutor {
             hermes_mcp,
             operator_codenames: Arc::new(RwLock::new(HashSet::new())),
             litellm_config,
+            app_state,
         }
     }
 
@@ -132,6 +137,24 @@ impl LightsquadToolExecutor {
     /// Clear the per-turn codename registry at the start of each new copilot turn.
     pub async fn clear_operator_codenames(&self) {
         self.operator_codenames.write().await.clear();
+    }
+
+    /// Forward the HITL escalation to the Hermes MCP relay as a supplemental
+    /// notification. Non-authoritative: the real gate is the `hitl_relay::park` oneshot.
+    fn relay_hitl_to_hermes(&self, plan: &PlanInput, build_id: Uuid) {
+        if let Some(client) = hermes_hitl::HermesMcpClient::from_config(&self.hermes_mcp) {
+            let relay_summary = format!(
+                "LightSquad plan '{}': {} wave(s) — {}",
+                plan.codename,
+                plan.waves.len(),
+                plan.intent
+            );
+            let build_id_str = build_id.to_string();
+            tokio::spawn(async move {
+                let _ =
+                    hermes_hitl::relay_hitl_approval(&relay_summary, &build_id_str, &client).await;
+            });
+        }
     }
 
     /// Emit a HITL escalation event and park the plan for async operator approval.
@@ -161,6 +184,7 @@ impl LightsquadToolExecutor {
             let mock_workers = self.mock_workers;
             let hermes_mcp = self.hermes_mcp.clone();
             let litellm_config = self.litellm_config.clone();
+            let app_state = self.app_state.clone();
             tokio::spawn(async move {
                 let exec = LightsquadToolExecutor::new(
                     repo_root,
@@ -172,6 +196,7 @@ impl LightsquadToolExecutor {
                     mock_workers,
                     hermes_mcp,
                     litellm_config,
+                    app_state,
                 );
                 let _ = exec.launch_program_for_plan(&plan, build_id).await;
             });
@@ -205,20 +230,7 @@ impl LightsquadToolExecutor {
         ));
 
         // Fire-and-forget Hermes relay — supplemental notification only.
-        // Non-authoritative: the real approval gate remains the HITL oneshot above.
-        if let Some(client) = hermes_hitl::HermesMcpClient::from_config(&self.hermes_mcp) {
-            let relay_summary = format!(
-                "LightSquad plan '{}': {} wave(s) — {}",
-                plan.codename,
-                plan.waves.len(),
-                plan.intent
-            );
-            let build_id_str = build_id.to_string();
-            tokio::spawn(async move {
-                let _ =
-                    hermes_hitl::relay_hitl_approval(&relay_summary, &build_id_str, &client).await;
-            });
-        }
+        self.relay_hitl_to_hermes(plan, build_id);
 
         // Clone all fields needed by the background task before returning.
         let plan = plan.clone();
@@ -231,6 +243,7 @@ impl LightsquadToolExecutor {
         let mock_workers = self.mock_workers;
         let hermes_mcp = self.hermes_mcp.clone();
         let litellm_config = self.litellm_config.clone();
+        let app_state = self.app_state.clone();
 
         // Background task: awaits operator decision, then launches (or drops).
         tokio::spawn(async move {
@@ -248,6 +261,7 @@ impl LightsquadToolExecutor {
                 mock_workers,
                 hermes_mcp,
                 litellm_config,
+                app_state,
             );
             let _ = exec.launch_program_for_plan(&plan, build_id).await;
         });
@@ -331,6 +345,7 @@ impl LightsquadToolExecutor {
             litellm_base_url,
             litellm_api_key,
             litellm_model,
+            self.app_state.clone(),
         );
 
         let config = ProgramConfig {
@@ -430,6 +445,7 @@ pub fn build_lightsquad_executor(state: &crate::server::AppState) -> Arc<Lightsq
         state.mock_workers,
         state.config.hermes_mcp.clone(),
         state.litellm_config.clone(),
+        state.clone(),
     ))
 }
 
@@ -438,9 +454,32 @@ pub fn build_lightsquad_executor(state: &crate::server::AppState) -> Arc<Lightsq
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
+    use std::ffi::OsString;
+
     use super::*;
     use lightarchitects::agent::tool_executor::ToolExecutor;
     use lightarchitects::lightsquad::plan_schema::{PlanInput, TaskInput, WaveInput};
+
+    use crate::config::{AgentSession, Config, TokenSource};
+    use crate::container::DockerCapability;
+
+    fn test_app_state() -> crate::server::AppState {
+        let config = Config {
+            port: 0,
+            host_cmd: OsString::from("bash"),
+            cwd: std::path::PathBuf::from("/tmp"),
+            token: "test-token".to_owned(),
+            token_source: TokenSource::EnvVar,
+            agent: AgentSession::default(),
+            claude_agent_template: None,
+            container_mode: crate::container::ContainerMode::Auto,
+            dev_mode: false,
+            max_context_prompts: 50,
+            litellm: crate::config::LiteLLMConfig::default(),
+            hermes_mcp: HermesMcpConfig::default(),
+        };
+        crate::server::AppState::for_test(config, DockerCapability::Unavailable)
+    }
 
     fn make_executor() -> LightsquadToolExecutor {
         let (tx, _) = broadcast::channel(16);
@@ -454,6 +493,7 @@ mod tests {
             true, // mock_workers
             HermesMcpConfig::default(),
             Arc::new(tokio::sync::RwLock::new(LitellmConfig::default())),
+            test_app_state(),
         )
     }
 

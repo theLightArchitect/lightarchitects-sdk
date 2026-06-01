@@ -1,5 +1,7 @@
 //! Docker capability types for transparent containerization.
 
+use std::time::Instant;
+
 /// Result of probing the Docker daemon at startup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DockerCapability {
@@ -36,6 +38,37 @@ impl ContainerMode {
             _ => Self::Auto,
         }
     }
+}
+
+/// Discriminates active container entries by how they were spawned.
+///
+/// Used by the reaper to apply kind-appropriate grace periods and by
+/// the WebSocket relay to reject connections to non-PTY containers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContainerKind {
+    /// Interactive PTY session spawned by a browser WebSocket connect.
+    Pty,
+    /// Autonomous wave-task container spawned by `wave_dispatcher`.
+    WorkerTask {
+        /// `IronClaw` task identifier.
+        task_id: String,
+        /// Wave index within the build (zero-based).
+        wave_index: usize,
+    },
+}
+
+/// An entry in the `active_containers` registry.
+///
+/// Replaces the previous bare `Instant` value so the reaper and relay
+/// can make kind-aware decisions.
+#[derive(Debug, Clone)]
+pub struct ActiveContainerEntry {
+    /// Whether this is a PTY session or an autonomous worker task.
+    pub kind: ContainerKind,
+    /// Wall-clock time at which `docker run` succeeded.
+    pub started_at: Instant,
+    /// `IsoMode` snapshot at spawn time — used for audit logging.
+    pub policy_snapshot_iso_mode: lightarchitects::container_spawn::IsoMode,
 }
 
 /// Result of successfully spawning a container session.

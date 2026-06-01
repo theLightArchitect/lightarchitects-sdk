@@ -495,6 +495,7 @@ fn maybe_spawn_autonomous(
         litellm_base_url,
         litellm_api_key,
         litellm_model,
+        app_state: state.clone(),
     });
     state.lightsquad_programs.insert(build_id, handle);
     info!(build_id = %build_id, "lightsquad autonomous build spawned");
