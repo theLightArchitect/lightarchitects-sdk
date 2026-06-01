@@ -33,6 +33,19 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Determine the base class at module import time so isinstance() checks pass.
+# LiteLLM performs isinstance(provider, CustomSecretManager) — duck typing is
+# not sufficient. When litellm is not installed (e.g., arch review, CI without
+# litellm dep), fall back to object to keep the module importable.
+# ---------------------------------------------------------------------------
+try:
+    from litellm.integrations.custom_secret_manager import (
+        CustomSecretManager as _LiteLLMBase,
+    )
+except ImportError:
+    _LiteLLMBase = object  # type: ignore[assignment,misc]
+
+# ---------------------------------------------------------------------------
 # Accounts that differ from the default.
 # Most services use "api_key" as the account name.
 # List exceptions here (service_name → account_name).
@@ -47,12 +60,12 @@ _ACCOUNT_OVERRIDES: dict[str, str] = {
 _DEFAULT_ACCOUNT = "api_key"
 
 
-class LAKeychainSecretProvider:
+class LAKeychainSecretProvider(_LiteLLMBase):
     """Custom LiteLLM secret provider that reads from macOS Keychain.
 
-    Inherits from ``litellm.integrations.custom_secret_manager.CustomSecretManager``.
-    LiteLLM requires both ``async_read_secret`` and ``sync_read_secret`` to be
-    implemented. Both delegate to the same ``_read_from_keychain`` helper.
+    Inherits from ``litellm.integrations.custom_secret_manager.CustomSecretManager``
+    (resolved at import time). LiteLLM performs an isinstance check — proper
+    class-level inheritance is required, not duck typing.
 
     Referenced in litellm_config.yaml under
     ``general_settings.key_management_settings.custom_secret_manager``.
@@ -62,15 +75,8 @@ class LAKeychainSecretProvider:
     secret_manager_name: str = "la_keychain_secrets"
 
     def __init__(self) -> None:
-        # Attempt to inherit from LiteLLM's base class when available.
-        # Fall back gracefully if litellm is not installed (e.g., during arch review).
-        try:
-            from litellm.integrations.custom_secret_manager import CustomSecretManager
-            # Re-parent dynamically to satisfy LiteLLM's isinstance checks.
-            self.__class__.__bases__ = (CustomSecretManager,)
-            CustomSecretManager.__init__(self, secret_manager_name=self.secret_manager_name)
-        except ImportError:
-            pass
+        if _LiteLLMBase is not object:
+            super().__init__(secret_manager_name=self.secret_manager_name)
 
     async def async_read_secret(
         self,
