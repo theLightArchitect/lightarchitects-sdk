@@ -352,3 +352,40 @@ No new HTTP endpoints required. The enforcement is fully SSE-push — the browse
 | `BudgetState` home | `BuildSession` field (not `AppState`) — per-session scope |
 | `AppState` addition | `ironclaw_config: Option<Arc<IronclawConfig>>` only |
 | New SSE variants | `BudgetExhausted` + `BudgetWarning` — both need SSE contract test + FE `EventType` |
+
+---
+
+## Task 4 — Latency Budget + Egress Allowlist (GATE 2 [P]+[S])
+
+### Latency budget (R2 risk register, plan §6)
+
+| Path | Budget | Measurement phase | Regression cap |
+|------|--------|------------------|----------------|
+| Semantic filter (`mcp_semantic_tool_filter`) end-to-end overhead | 200ms | Phase 4 AYIN baseline | Ship with filter OFF if exceeded |
+| `la_keychain_secret_provider._read_from_keychain()` | 5s timeout (subprocess) | Phase 4 smoke | n/a — subprocess timeout enforced |
+| LiteLLM proxy cold-start | <3s | Phase 4.5 wiring rehearsal | — |
+| Budget guard `record_turn()` (in-process) | <1ms (atomic CAS) | Phase 4 unit test | — |
+
+### Approved egress domains (SERAPH F8)
+
+LiteLLM proxy outbound is constrained by **explicit `api_base` values per model entry** in `litellm_config.yaml` (not arbitrary URL injection). The approved egress domain list:
+
+```
+api.anthropic.com        (Anthropic)
+api.openai.com           (OpenAI)
+ollama.com               (Ollama Cloud)
+api.deepseek.com         (DeepSeek)
+*-aiplatform.googleapis.com  (Google Vertex AI)
+api.mistral.ai           (Mistral)
+localhost:11434          (Ollama local — loopback only)
+```
+
+Each model entry in `litellm_config.yaml` carries a hardcoded `api_base`. LiteLLM will not route to any other domain. Phase 3 W1 adds a Rust-side `check_litellm_base_url()` guard (allowlist against above) when the operator saves a custom `base_url` via `POST /api/setup/install_litellm`.
+
+### Agentic Loop Hook reconciliation (CORSO C1 / GATE 2 [R])
+
+Decision: **`CustomLogger.async_pre_call_hook`** (not Agentic Loop Hook) for pre-dispatch tool filtering.
+
+- Agentic Loop Hook patches post-call follow-up messages — operates on the response side.
+- `async_pre_call_hook` fires before the outgoing LLM call — correct placement for `mcp_semantic_tool_filter` which filters the `tools[]` array before dispatch.
+- LiteLLM's native `mcp_semantic_tool_filter` (a `litellm_settings` key) handles this without a custom callback — no `CustomLogger` implementation needed for P3 (simplifies the scope).

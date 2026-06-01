@@ -1,46 +1,72 @@
 schema_version: 1
 gate: phase
-scored_by: "/GATE"
-scored_at: "2026-05-14T05:00:00Z"
-build_id: git-and-pr
+scope: phase
+scored_by: "/lightarchitects:GATE inline (GATE skill unavailable — 5-step protocol inlined)"
+scored_at: "2026-05-31T21:45:00Z"
+build_id: litellm-platform-integration
 phase_id: phase-2-research
+
 overall_verdict: pass
-notes: |
-  Branch base corrected: feat/eef/git-and-pr was initialized from main (c903764) instead
-  of feat/embodied-engineering-forge (90d64f3). Reset performed (approved by operator) since
-  Phase 2 was research-only (zero own commits). One pre-existing EEF merge artifact fixed:
-  duplicate voiceEnabled export in stores.ts (committed as fix: 02f53f6).
-  All Q1-Q4 gates clean after frontend build.
+
 dimensions:
-  Q1_fmt: pass
-  Q2_clippy: pass
-  Q3_tests:
+  A_architecture:
     result: pass
-    tests_run: 94
-    tests_fail: 0
-  Q4_svelte:
-    pnpm_test_run:
-      result: pass
-      tests_run: 473
-      tests_fail: 0
-    svelte_check:
-      result: pass
-      errors: 0
-      warnings: 9
-  D2_plan:
+    note: >
+      Keychain service name drift resolved — la-litellm-master-key → la-litellm-credential
+      (commit f264532). surface-design.md table consistent with litellm_config.yaml
+      and webshell CLAUDE.md. No remaining drift.
+  S_security:
     result: pass
-    notes: >
-      Phase 2 exit criteria all [x] COMPLETE. Phase 3 entry blockers updated:
-      R-5, latency budget, reqwest auth span marked [x] (completed in Phase 2).
-      PAT storage + T-8 UI disclosure remain [ ] (Phase 3 implementation gates).
-      Plan frontmatter updated: phase=gate-2, updated=2026-05-14.
-infrastructure_fix:
-  branch_base_reset:
-    from: c903764bb1063aeb113e5d3519ccf1e150cc88cd
-    to: 90d64f3 (feat/embodied-engineering-forge tip, E2 merged)
-    reason: Branch was erroneously created from main instead of EEF parent
-    approved_by: operator
-  stores_ts_fix:
-    commit: 02f53f6
-    description: Remove duplicate voiceEnabled export (E2 merge artifact)
-    pre_existing: true
+    notes:
+      - "Keychain layout reviewed: 6 providers × la-<provider>-credential convention confirmed"
+      - "Secret manager design reviewed: class-level inheritance via module-level try/except (commit e42c5c1)"
+      - "api_base allowlist documented (SERAPH F8): explicit api_base per model; 7 egress domains in surface-design.md Task 4"
+      - "la-vertex-credential for SA JSON; la-vertex-project for project ID"
+  Q_quality:
+    result: n/a
+    note: "[Q] not required at 2→3 transition per plan §3 gate table"
+  C_canon:
+    result: pass
+    note: "Gates active. LASDLC v2.7.0 RESEARCH→IMPLEMENT→GATE sandwich present."
+  O_operations:
+    result: pass
+    note: >
+      Route map: sequence-setup-byok.mmd + sequence-budget-failclosed.mmd + obs-plane.mmd
+      all committed (Phase 1). Complete operator→webshell→LiteLLM→provider paths present.
+  P_performance:
+    result: pass
+    note: >
+      Latency budget in surface-design.md Task 4: semantic filter <200ms (R2 regression cap),
+      keychain subprocess 5s timeout, BudgetState.record_turn() <1ms, cold-start <3s.
+  K_knowledge:
+    result: n/a
+    note: "[K] not required at 2→3 per plan"
+  D_documentation:
+    result: pass
+    note: >
+      API surface spec: PUT /api/auth/credential/{provider}/key + POST /api/setup/install_litellm
+      documented in sequence-setup-byok.mmd. Consistent with webshell CLAUDE.md auth route table.
+  T_testing:
+    result: n/a
+    note: "[T] not required at 2→3 per plan"
+  R_research:
+    result: pass
+    note: >
+      Agentic-Loop-Hook reconciliation complete (CORSO C1): async_pre_call_hook is the
+      pre-dispatch hook; mcp_semantic_tool_filter is native — no custom CustomLogger needed.
+      Documented in surface-design.md Task 4.
+
+context_aware_checks:
+  design_artifacts_cite_research_2_evidence: pass
+  config_key_paths_match_context7_verified_shapes: pass
+
+commits_this_phase:
+  - sha: e42c5c1
+    message: "fix: class-level inheritance for LAKeychainSecretProvider + Phase 2 surface design"
+  - sha: f264532
+    message: "fix: align keychain service names across config + design docs"
+
+open_tracked_findings:
+  - id: gate2-t1
+    severity: LOW
+    description: "cargo test background not awaited (n/a at 2→3); capture baseline at WAVE GATE 3.1"
