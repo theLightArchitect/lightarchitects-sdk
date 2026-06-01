@@ -55,7 +55,7 @@ dimensions:
                       # prop_single_select_multi_label_rejects (previously missing — gap closed)
       - integration   # existing question_submit/answer/sse integration tests
       - e2e           # hitl-question-bridge.spec.ts (WEBSHELL_URL+TOKEN opt-in)
-  V2_smoke: pending  # blo30s4ob background release build; previous clean build confirmed
+  V2_smoke: pass  # cargo build --release -p lightarchitects-webshell exit 0 (5m 22s, buqi83djk)
   V3_e2e: "deferred:requires WEBSHELL_URL+WEBSHELL_TOKEN — spec tests skip automatically in CI"
 open_findings:
   - id: SINGLE-OP-CONTRACT

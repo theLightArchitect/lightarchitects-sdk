@@ -46,6 +46,47 @@ impl Default for LitellmConfig {
 }
 
 impl LitellmConfig {
+    /// Construct from persisted `SQLite` config + Keychain, falling back to env vars.
+    ///
+    /// Priority chain (highest first):
+    /// 1. `SQLite` `litellm_config` row — `base_url` + `model` (operator-set at runtime)
+    /// 2. macOS Keychain — `api_key` (written by `POST /api/litellm/config`)
+    /// 3. `LA_LITELLM_*` env vars — fallback for all three fields
+    ///
+    /// This ensures operators don't lose their provider config after a server restart
+    /// even when env vars have not been updated to reflect runtime changes.
+    #[must_use]
+    pub fn from_db_or_env(store: &crate::session_store::SessionStore) -> Self {
+        let env = Self::from_env();
+
+        let (base_url, model) = store
+            .load_litellm_config()
+            .filter(|(b, m)| !b.is_empty() && !m.is_empty())
+            .unwrap_or_else(|| (env.base_url.clone(), env.model.clone()));
+
+        // Try keychain for the API key; fall back to the env-var value.
+        let api_key = crate::auth::credential::keychain::keychain_get(
+            crate::auth::credential::litellm::KEYCHAIN_SERVICE,
+        )
+        .ok()
+        .flatten()
+        .filter(|k| !k.is_empty())
+        .map_or_else(|| env.api_key.clone(), SecretString::from);
+
+        let updated_at = if base_url != env.base_url || model != env.model {
+            Utc::now()
+        } else {
+            env.updated_at
+        };
+
+        Self {
+            base_url,
+            api_key,
+            model,
+            updated_at,
+        }
+    }
+
     /// Construct from `LA_LITELLM_BASE_URL / API_KEY / MODEL` env vars.
     ///
     /// Falls back to sensible defaults so the server starts even when the
@@ -163,6 +204,10 @@ pub async fn update_config(
         }
     }
 
+    // Clone before moves — needed for SQLite persistence after the RwLock write.
+    let base_url = req.base_url.clone();
+    let model = req.model.clone();
+
     let key = req.api_key.clone();
     spawn_blocking(move || {
         crate::auth::credential::keychain::keychain_set(
@@ -174,18 +219,27 @@ pub async fn update_config(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let mut cfg = state.litellm_config.write().await;
-    cfg.base_url = req.base_url;
-    cfg.api_key = SecretString::from(req.api_key);
-    cfg.model = req.model;
-    cfg.updated_at = Utc::now();
+    {
+        let mut cfg = state.litellm_config.write().await;
+        cfg.base_url = req.base_url;
+        cfg.api_key = SecretString::from(req.api_key);
+        cfg.model = req.model;
+        cfg.updated_at = Utc::now();
+        tracing::info!(
+            target: "litellm.config",
+            base_url = %cfg.base_url,
+            model = %cfg.model,
+            "LiteLLM config updated by operator"
+        );
+    } // RwLockWriteGuard released before SQLite lock
 
-    tracing::info!(
-        target: "litellm.config",
-        base_url = %cfg.base_url,
-        model = %cfg.model,
-        "LiteLLM config updated by operator"
-    );
+    // Persist base_url + model to SQLite so they survive server restarts.
+    // Best-effort — the config is already live in AppState; a write failure is logged only.
+    if let Ok(store) = state.session_store.lock() {
+        if let Err(e) = store.save_litellm_config(&base_url, &model) {
+            tracing::warn!(target: "litellm.config", error = %e, "SQLite persist failed");
+        }
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }

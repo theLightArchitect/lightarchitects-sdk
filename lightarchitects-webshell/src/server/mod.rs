@@ -382,6 +382,7 @@ impl AppState {
         let session_store = Arc::new(std::sync::Mutex::new(
             SessionStore::open().unwrap_or_else(|_| SessionStore::noop()),
         ));
+        let _session_store_for_litellm = session_store.clone();
         let image_manager = ImageManager::new(docker_capable);
 
         // Phase 19c.2 — hot-reloadable promotion policy.

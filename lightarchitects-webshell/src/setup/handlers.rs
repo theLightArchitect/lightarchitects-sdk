@@ -61,11 +61,24 @@ pub struct OllamaAuthStatus {
     pub reachable: bool,
 }
 
-/// Auth status for the LA-native backend (Ollama Cloud).
+/// Auth status for the Mistral backend.
 #[derive(Debug, Clone, Serialize)]
-pub struct LaNativeAuthStatus {
-    /// `OLLAMA_API_KEY` is set and non-empty.
+pub struct MistralAuthStatus {
+    /// API key is stored in macOS Keychain or `MISTRAL_API_KEY` env.
     pub has_api_key: bool,
+    /// Human-readable source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub login_source: Option<String>,
+}
+
+/// Auth status for the `OpenRouter` backend.
+#[derive(Debug, Clone, Serialize)]
+pub struct OpenRouterAuthStatus {
+    /// API key is stored in macOS Keychain or `OPENROUTER_API_KEY` env.
+    pub has_api_key: bool,
+    /// Human-readable source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub login_source: Option<String>,
 }
 
 /// Full auth status snapshot returned by `GET /api/setup/info`.
@@ -77,8 +90,10 @@ pub struct AuthStatus {
     pub codex: CodexAuthStatus,
     /// Ollama connectivity status.
     pub ollama: OllamaAuthStatus,
-    /// LA-native (Ollama Cloud) auth status.
-    pub la_native: LaNativeAuthStatus,
+    /// Mistral API auth status.
+    pub mistral: MistralAuthStatus,
+    /// `OpenRouter` API auth status.
+    pub openrouter: OpenRouterAuthStatus,
 }
 
 /// Response shape for `GET /api/setup/info`.
@@ -269,13 +284,81 @@ async fn detect_ollama_status(base_url: &str) -> OllamaAuthStatus {
     }
 }
 
-/// Probe whether the LA-native (Ollama Cloud) bearer token was resolved at
-/// [`AppState`] init.  Sourced from `state.la_native_api_key` rather than a
-/// per-request `std::env::var` read — matches the TOCTOU-eliminating pattern
-/// used by [`drive_native_sse`].
-fn detect_la_native_auth(state: &AppState) -> LaNativeAuthStatus {
-    LaNativeAuthStatus {
-        has_api_key: state.la_native_api_key.is_some(),
+/// Read a stored API key from the webshell setup keychain service, using
+/// `security(1)` CLI to avoid GUI dialogs with ad-hoc-signed binaries.
+fn keychain_stored_key(account: &str) -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("security")
+            .args([
+                "find-generic-password",
+                "-s",
+                "lightarchitects-webshell-setup",
+                "-a",
+                account,
+                "-w",
+            ])
+            .output()
+            .ok()?;
+        if out.status.success() {
+            let s = String::from_utf8(out.stdout).ok()?;
+            let t = s.trim().to_owned();
+            if !t.is_empty() {
+                return Some(t);
+            }
+        }
+        None
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = account;
+        None
+    }
+}
+
+/// Detect whether a Mistral API key is available (keychain or env var).
+fn detect_mistral_auth() -> MistralAuthStatus {
+    if keychain_stored_key("mistral-vibe").is_some() {
+        return MistralAuthStatus {
+            has_api_key: true,
+            login_source: Some("macOS Keychain".to_owned()),
+        };
+    }
+    if std::env::var("MISTRAL_API_KEY")
+        .map(|k| !k.is_empty())
+        .unwrap_or(false)
+    {
+        return MistralAuthStatus {
+            has_api_key: true,
+            login_source: Some("MISTRAL_API_KEY env".to_owned()),
+        };
+    }
+    MistralAuthStatus {
+        has_api_key: false,
+        login_source: None,
+    }
+}
+
+/// Detect whether an `OpenRouter` API key is available (keychain or env var).
+fn detect_openrouter_auth() -> OpenRouterAuthStatus {
+    if keychain_stored_key("openrouter").is_some() {
+        return OpenRouterAuthStatus {
+            has_api_key: true,
+            login_source: Some("macOS Keychain".to_owned()),
+        };
+    }
+    if std::env::var("OPENROUTER_API_KEY")
+        .map(|k| !k.is_empty())
+        .unwrap_or(false)
+    {
+        return OpenRouterAuthStatus {
+            has_api_key: true,
+            login_source: Some("OPENROUTER_API_KEY env".to_owned()),
+        };
+    }
+    OpenRouterAuthStatus {
+        has_api_key: false,
+        login_source: None,
     }
 }
 
@@ -486,6 +569,27 @@ fn agent_session_from_save(req: &SaveRequest) -> Option<crate::config::AgentSess
                             .unwrap_or_else(|| DEFAULT_OLLAMA_BASE_URL.to_owned()),
                     })
                 }
+                // BYOK cloud providers routed via LiteLLM proxy.
+                "openai" => ClaudeBackend::LiteLlm(crate::config::LiteLlmBackendConfig {
+                    model: req
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| "openai/gpt-4o".to_owned()),
+                }),
+                "openrouter" => ClaudeBackend::LiteLlm(crate::config::LiteLlmBackendConfig {
+                    model: req
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| "openrouter/openai/gpt-4o".to_owned()),
+                }),
+                "mistral-vibe" | "mistral_vibe" => {
+                    ClaudeBackend::LiteLlm(crate::config::LiteLlmBackendConfig {
+                        model: req
+                            .model
+                            .clone()
+                            .unwrap_or_else(|| "mistral/mistral-large-latest".to_owned()),
+                    })
+                }
                 _ => return None,
             };
             Some(crate::config::AgentSession::Lightarchitects(backend))
@@ -635,13 +739,15 @@ pub async fn setup_info(State(state): State<AppState>) -> impl IntoResponse {
         .and_then(|c| c.ollama_base_url.clone())
         .unwrap_or_else(|| "http://localhost:11434".to_owned());
     let ollama = detect_ollama_status(&ollama_url).await;
-    let la_native = detect_la_native_auth(&state);
+    let mistral = detect_mistral_auth();
+    let openrouter = detect_openrouter_auth();
 
     let auth_status = AuthStatus {
         claude,
         codex,
         ollama,
-        la_native,
+        mistral,
+        openrouter,
     };
 
     Json(SetupInfoResponse {
