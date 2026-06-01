@@ -1,0 +1,80 @@
+gate: phase-4-5-wiring-rehearsal
+build_codename: litellm-platform-integration
+evaluated_at: 2026-06-01T18:30:00Z
+evaluator: claude-sonnet-4-6
+overall_verdict: PASS_WITH_DEFERRED
+
+spend_usd: ~0.002  # mistral-small-latest, 2 round-trips (PONG + ONE)
+spend_cap_usd: 1.0
+spend_within_cap: true
+
+sub_rehearsals:
+  sub_a:
+    label: "Direct LiteLLM proxy round-trip via Mistral"
+    status: LIVE_VERIFIED
+    evidence: |
+      LiteLLM at :4000 (PID 57246), master_key=la-local-dev, 5 models healthy.
+      Switched rehearsal webshell model to mistral/mistral-small-latest via
+      POST /api/litellm/config → 204.
+      POST /api/litellm/chat {"message":"Reply with exactly: PONG"} →
+        data: {"text":"P","type":"delta"}
+        data: {"text":"ONG","type":"delta"}
+        data: {"type":"complete"}
+      PONG received in 2 tokenized delta frames. Round-trip PASS.
+    commit: ~
+
+  sub_b:
+    label: "BudgetExhausted SSE wiring"
+    status: GAP_CLOSED_COMMITTED
+    evidence: |
+      DISCOVERY: OllamaCloudCodingProvider.chat_collect() correctly raises
+      CodingProviderError::BudgetExhausted{spent_usd, limit_usd} when LiteLLM
+      returns 429 with {"error":{"type":"budget_exceeded"}}. However, worker_body
+      in lightsquad_bridge.rs had no match arm for this variant — it fell through
+      to the catch-all Err(e) → HITL escalation path, silently losing the typed
+      BudgetExhausted signal.
+
+      FIX: Added Err(CodingProviderError::BudgetExhausted{spent_usd, limit_usd})
+      match arm in worker_body (lightsquad_bridge.rs:843) that broadcasts
+      WebEvent::BudgetExhausted(BudgetExhaustedEvent{build_id, spent_usd, limit_usd})
+      on tx_slot and returns Err (halts the task cleanly).
+      BudgetExhaustedEvent → topic "v1.ironclaw.budget.exhausted" per envelope.rs.
+
+      Committed: feat/litellm-platform-integration@67e0aff
+      Integration tests post-fix: 12/12 pass (provider_consolidation.rs)
+    commit: 67e0aff
+
+  sub_c:
+    label: "MCP semantic filter span + AYIN cost-per-turn card"
+    status: DEFERRED
+    deferred_gaps:
+      - gap: "observability_spans.rs record_litellm_request/response not called from production paths"
+        blocker: "litellm_chat.rs uses OpenAICompatProvider::spawn_streaming() with no pre/post hooks;
+                  threading build_id + turn_span_id into the chat SSE handler is Phase 5+ work"
+      - gap: "record_mcp_semantic_filter not wired (semantic filter middleware not implemented)"
+        blocker: "MCP top-K semantic filtering is a future feature; stubs exist for when it ships"
+      - gap: "AYIN not running in this environment"
+        blocker: "ayin process not started; OTLP endpoint at :3742 unavailable"
+      - gap: "x-litellm-response-cost header not extracted from streaming response"
+        blocker: "ProviderEvent stream from OpenAICompatProvider doesn't surface response headers"
+    evidence: |
+      observability_spans.rs: 3 span helpers (record_litellm_request,
+      record_litellm_response, record_mcp_semantic_filter) exist with correct
+      tracing macros. Unit tests pass:
+        record_litellm_request_returns_instant_in_past: ok
+        record_mcp_semantic_filter_zero_tools_does_not_panic: ok
+        record_litellm_response_zero_cost_allowed: ok
+      Infrastructure is correct; callsite wiring is deferred.
+
+quality_gates:
+  cargo_fmt_check: PASS
+  cargo_clippy: PASS  # 0 warnings, -D warnings, after BudgetExhausted wiring commit
+  integration_tests: PASS  # 12/12 provider_consolidation
+  spend_cap: PASS  # ~$0.002 << $1.00
+
+northstar_alignment: |
+  P1 — Sub-A validates the core LiteLLM provider routing from UI to model.
+  The /api/litellm/chat endpoint is the CopilotDrawer's direct streaming surface;
+  PONG confirms the full chain: webshell → LiteLLM proxy → Mistral → SSE → client.
+  Sub-B closes a P2 safety gap: budget enforcement now terminates tasks cleanly
+  rather than HITL-escalating on a typed budget error.
