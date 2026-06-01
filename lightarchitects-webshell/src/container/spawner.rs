@@ -256,7 +256,7 @@ mod tests {
             return; // skip when Docker not explicitly requested
         }
 
-        let out = std::process::Command::new("docker")
+        let out = std::process::Command::new(crate::container::docker_cmd::docker_bin())
             .args([
                 "run",
                 "--rm",

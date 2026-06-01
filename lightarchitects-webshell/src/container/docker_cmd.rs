@@ -4,9 +4,40 @@
 //! module. Timeouts are defined once here — callers never interact with
 //! `tokio::time::timeout` or raw `tokio::process::Command` directly.
 
-use std::{process::Stdio, time::Duration};
+use std::{process::Stdio, sync::OnceLock, time::Duration};
 
 use tokio::{process::Command, time::timeout};
+
+// ── Docker binary resolution ─────────────────────────────────────────────────
+
+/// Resolves the Docker binary path once at first call and caches it.
+///
+/// `LaunchAgent` environments inherit a stripped PATH (`/usr/bin:/bin:/usr/sbin:/sbin`)
+/// that excludes `/usr/local/bin` and `/opt/homebrew/bin`, so `Command::new(docker_bin())`
+/// silently fails. Probe common install locations before falling back to `"docker"`.
+pub(crate) fn docker_bin() -> &'static str {
+    static DOCKER: OnceLock<String> = OnceLock::new();
+    DOCKER.get_or_init(|| {
+        // Check DOCKER_PATH env override first (for testing / non-standard installs).
+        if let Ok(p) = std::env::var("DOCKER_PATH") {
+            if std::path::Path::new(&p).exists() {
+                return p;
+            }
+        }
+        // Probe common install locations in order of prevalence on macOS + Linux.
+        for candidate in &[
+            "/usr/local/bin/docker",
+            "/opt/homebrew/bin/docker",
+            "/usr/bin/docker",
+            "/snap/bin/docker",
+        ] {
+            if std::path::Path::new(candidate).exists() {
+                return (*candidate).to_owned();
+            }
+        }
+        "docker".to_owned()
+    })
+}
 
 // ── Timeout budget per operation ────────────────────────────────────────────
 
@@ -26,7 +57,7 @@ const BUILD_TIMEOUT: Duration = Duration::from_secs(300);
 pub(crate) async fn version() -> Option<String> {
     let out = timeout(
         VERSION_TIMEOUT,
-        Command::new("docker")
+        Command::new(docker_bin())
             .args(["version", "--format", "{{.Server.Version}}"])
             .output(),
     )
@@ -46,7 +77,7 @@ pub(crate) async fn version() -> Option<String> {
 pub(crate) async fn image_exists(image: &str) -> bool {
     timeout(
         INSPECT_TIMEOUT,
-        Command::new("docker")
+        Command::new(docker_bin())
             .args(["image", "inspect", image])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -61,7 +92,7 @@ pub(crate) async fn image_exists(image: &str) -> bool {
 pub(crate) async fn pull(image: &str) -> std::io::Result<std::process::ExitStatus> {
     timeout(
         PULL_TIMEOUT,
-        Command::new("docker")
+        Command::new(docker_bin())
             .args(["pull", image])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -82,7 +113,7 @@ pub(crate) async fn build(
 ) -> std::io::Result<std::process::ExitStatus> {
     timeout(
         BUILD_TIMEOUT,
-        Command::new("docker")
+        Command::new(docker_bin())
             .args(["build", "-t", tag, context_path])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -103,7 +134,7 @@ pub(crate) async fn run_detached(args: &[&str]) -> std::io::Result<std::process:
 
     timeout(
         RUN_TIMEOUT,
-        Command::new("docker")
+        Command::new(docker_bin())
             .args(&cmd_args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -118,7 +149,7 @@ pub(crate) async fn run_detached(args: &[&str]) -> std::io::Result<std::process:
 pub(crate) async fn check_run_permission() -> bool {
     timeout(
         RUN_TIMEOUT,
-        Command::new("docker")
+        Command::new(docker_bin())
             .args(["run", "--rm", "hello-world"])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -132,7 +163,7 @@ pub(crate) async fn check_run_permission() -> bool {
 pub(crate) async fn stop(container_id: &str) {
     let _ = timeout(
         STOP_TIMEOUT,
-        Command::new("docker")
+        Command::new(docker_bin())
             .args(["stop", "--time", "3", container_id])
             .output(),
     )
@@ -146,7 +177,7 @@ pub(crate) async fn rm_force(ids: &[&str]) {
     }
     let mut args = vec!["rm", "-f"];
     args.extend_from_slice(ids);
-    let _ = timeout(RM_TIMEOUT, Command::new("docker").args(&args).output()).await;
+    let _ = timeout(RM_TIMEOUT, Command::new(docker_bin()).args(&args).output()).await;
 }
 
 /// Lists running container IDs matching `label` (e.g. `"managed-by=la-hitl"`).
@@ -154,7 +185,7 @@ pub(crate) async fn rm_force(ids: &[&str]) {
 pub(crate) async fn ps_running_with_label(label: &str) -> Vec<String> {
     let result = timeout(
         PS_TIMEOUT,
-        Command::new("docker")
+        Command::new(docker_bin())
             .args([
                 "ps",
                 "-q",
@@ -188,7 +219,7 @@ pub(crate) async fn ps_running_with_label(label: &str) -> Vec<String> {
 pub(crate) async fn ps_exited_with_label(label: &str) -> Vec<String> {
     let result = timeout(
         PS_TIMEOUT,
-        Command::new("docker")
+        Command::new(docker_bin())
             .args([
                 "ps",
                 "-a",
