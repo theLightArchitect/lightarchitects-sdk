@@ -9,7 +9,7 @@ export default defineConfig({
   // Supplementary specs run on-demand via CLI filter:
   //   pnpm test:e2e -- claude-code-oauth   (wizard + real Haiku, resets setup)
   //   pnpm test:e2e -- screenshot-tour     (standalone visual capture)
-  testMatch: ['**/webshell.spec.ts', '**/conversational.spec.ts', '**/northstar.spec.ts', '**/vibe-coding.spec.ts', '**/e3.spec.ts', '**/e4.spec.ts', '**/e5.spec.ts', '**/e6-golden-path.spec.ts', '**/helix-viz-remap.spec.ts', '**/ironclaw-phase6.spec.ts', '**/roadmap.spec.ts', '**/tool-surface-parity.spec.ts', '**/fleet.spec.ts', '**/mock-overlay.spec.ts', '**/project-ingestion.spec.ts', '**/panel-drag-split.spec.ts', '**/helix-retrieval.spec.ts', '**/ayin-lineage.spec.ts', '**/chatroom.spec.ts'],
+  testMatch: ['**/webshell.spec.ts', '**/conversational.spec.ts', '**/northstar.spec.ts', '**/vibe-coding.spec.ts', '**/e3.spec.ts', '**/e4.spec.ts', '**/e5.spec.ts', '**/e6-golden-path.spec.ts', '**/helix-viz-remap.spec.ts', '**/ironclaw-phase6.spec.ts', '**/roadmap.spec.ts', '**/tool-surface-parity.spec.ts', '**/fleet.spec.ts', '**/mock-overlay.spec.ts', '**/project-ingestion.spec.ts', '**/panel-drag-split.spec.ts', '**/helix-retrieval.spec.ts', '**/ayin-lineage.spec.ts', '**/chatroom.spec.ts', '**/agent-runner-containers.spec.ts'],
 
   // Snapshot baselines committed alongside tests (§57.6 visual tier).
   // First run creates them; subsequent runs diff against them.

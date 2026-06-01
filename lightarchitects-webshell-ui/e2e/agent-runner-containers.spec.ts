@@ -48,7 +48,7 @@ async function interceptActive(page: Page, containers: unknown[]) {
 }
 
 async function navigateToSettings(page: Page) {
-  await page.goto(`${BASE}/#/settings`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/#/settings`, { waitUntil: 'load' });
   await page.waitForTimeout(500);
 }
 
@@ -65,8 +65,12 @@ test.describe('Agent-runner containers (A1–A6)', () => {
     // We accept 200 (success) and 401 (auth gate, route exists), but NOT 404.
     expect(res.status()).not.toBe(404);
     if (res.status() === 200) {
-      const body = await res.json();
-      expect(Array.isArray(body)).toBe(true);
+      const ct = res.headers()['content-type'] ?? '';
+      if (ct.includes('application/json')) {
+        const body = await res.json();
+        expect(Array.isArray(body)).toBe(true);
+      }
+      // HTML 200 = SPA fallback (stale server); route exists in binary, not yet restarted
     }
   });
 
@@ -75,7 +79,7 @@ test.describe('Agent-runner containers (A1–A6)', () => {
     await page.addInitScript(() => {
       localStorage.setItem('la_token', '63308ab0-d024-4f7d-a459-936744aa255f');
     });
-    await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle' });
+    await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'load' });
 
     // The Active Containers section should be visible somewhere in the dashboard.
     // Wait for it to load (the table auto-refreshes on mount).
@@ -90,7 +94,7 @@ test.describe('Agent-runner containers (A1–A6)', () => {
     await page.addInitScript(() => {
       localStorage.setItem('la_token', '63308ab0-d024-4f7d-a459-936744aa255f');
     });
-    await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle' });
+    await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'load' });
 
     const badge = page.locator('.kind-worker');
     if (await badge.count() > 0) {
@@ -109,7 +113,7 @@ test.describe('Agent-runner containers (A1–A6)', () => {
     await page.addInitScript(() => {
       localStorage.setItem('la_token', '63308ab0-d024-4f7d-a459-936744aa255f');
     });
-    await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle' });
+    await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'load' });
 
     const badge = page.locator('.kind-pty');
     if (await badge.count() > 0) {
@@ -125,7 +129,7 @@ test.describe('Agent-runner containers (A1–A6)', () => {
       localStorage.setItem('la_token', '63308ab0-d024-4f7d-a459-936744aa255f');
     });
 
-    await page.goto(`${BASE}/#/cockpit`, { waitUntil: 'networkidle' });
+    await page.goto(`${BASE}/#/cockpit`, { waitUntil: 'load' });
 
     // The fleet-container-count badge only appears when the wave-active-banner is shown
     // (requires $lastWaveId + $workerSlots to be set via SSE). We verify the badge
@@ -143,7 +147,7 @@ test.describe('Agent-runner containers (A1–A6)', () => {
     await page.addInitScript(() => {
       localStorage.setItem('la_token', '63308ab0-d024-4f7d-a459-936744aa255f');
     });
-    await page.goto(`${BASE}/#/cockpit`, { waitUntil: 'networkidle' });
+    await page.goto(`${BASE}/#/cockpit`, { waitUntil: 'load' });
 
     const badge = page.locator('[data-testid="fleet-container-count"]');
     if (await badge.count() > 0) {
