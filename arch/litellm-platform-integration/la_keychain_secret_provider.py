@@ -46,18 +46,21 @@ except ImportError:
     _LiteLLMBase = object  # type: ignore[assignment,misc]
 
 # ---------------------------------------------------------------------------
-# Accounts that differ from the default.
-# Most services use "api_key" as the account name.
-# List exceptions here (service_name → account_name).
+# The Rust keychain module (src/auth/credential/keychain.rs) uses
+# ACCOUNT = "lightarchitects" for all entries it writes.
+# Use that as the default so the Python reader is compatible with the Rust
+# writer for all API key providers.
+#
+# Exceptions listed below (service_name → account_name):
 # ---------------------------------------------------------------------------
 _ACCOUNT_OVERRIDES: dict[str, str] = {
-    "la-deepseek-credential": "api_key",
-    # master_key for LiteLLM's own admin auth
+    # LiteLLM master key is the proxy admin password — stored under a
+    # different account from the proxy API key (account "lightarchitects").
     "la-litellm-credential": "master_key",
 }
 
-# Default account name for all Keychain lookups.
-_DEFAULT_ACCOUNT = "api_key"
+# Default account name — MUST match keychain.rs ACCOUNT constant ("lightarchitects").
+_DEFAULT_ACCOUNT = "lightarchitects"
 
 
 class LAKeychainSecretProvider(_LiteLLMBase):
