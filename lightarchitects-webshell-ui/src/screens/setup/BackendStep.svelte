@@ -72,7 +72,7 @@
       label: 'LA Native',
       description: 'Nemotron / Qwen3 via Ollama Cloud (1M ctx, tool-use)',
       polytopeType: 'icositetrachoron',
-      authKey: 'la_native' as const,
+      authKey: 'claude' as const,
       authField: 'has_api_key' as const,
       authBadge: 'OLLAMA_API_KEY ✓',
       comingSoon: false,

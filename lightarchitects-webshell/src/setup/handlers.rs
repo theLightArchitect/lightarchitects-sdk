@@ -81,6 +81,36 @@ pub struct OpenRouterAuthStatus {
     pub login_source: Option<String>,
 }
 
+/// Auth status for the Ollama Cloud backend.
+#[derive(Debug, Clone, Serialize)]
+pub struct OllamaCloudAuthStatus {
+    /// Bearer token stored in macOS Keychain.
+    pub has_api_key: bool,
+    /// Human-readable source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub login_source: Option<String>,
+}
+
+/// Auth status for the `DeepSeek` backend.
+#[derive(Debug, Clone, Serialize)]
+pub struct DeepSeekAuthStatus {
+    /// API key stored in macOS Keychain.
+    pub has_api_key: bool,
+    /// Human-readable source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub login_source: Option<String>,
+}
+
+/// Auth status for the Google Vertex AI backend.
+#[derive(Debug, Clone, Serialize)]
+pub struct GoogleVertexAuthStatus {
+    /// Service account JSON stored in macOS Keychain.
+    pub has_service_account: bool,
+    /// GCP project ID if configured.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+}
+
 /// Full auth status snapshot returned by `GET /api/setup/info`.
 #[derive(Debug, Clone, Serialize)]
 pub struct AuthStatus {
@@ -92,8 +122,15 @@ pub struct AuthStatus {
     pub ollama: OllamaAuthStatus,
     /// Mistral API auth status.
     pub mistral: MistralAuthStatus,
-    /// `OpenRouter` API auth status.
-    pub openrouter: OpenRouterAuthStatus,
+    /// `OpenRouter` API auth status (deprecated — kept for wire-format compat).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub openrouter: Option<OpenRouterAuthStatus>,
+    /// Ollama Cloud Bearer token auth status.
+    pub ollama_cloud: OllamaCloudAuthStatus,
+    /// `DeepSeek` API key auth status.
+    pub deepseek: DeepSeekAuthStatus,
+    /// Google Vertex AI service account auth status.
+    pub google_vertex: GoogleVertexAuthStatus,
 }
 
 /// Response shape for `GET /api/setup/info`.
@@ -339,26 +376,61 @@ fn detect_mistral_auth() -> MistralAuthStatus {
     }
 }
 
-/// Detect whether an `OpenRouter` API key is available (keychain or env var).
-fn detect_openrouter_auth() -> OpenRouterAuthStatus {
-    if keychain_stored_key("openrouter").is_some() {
-        return OpenRouterAuthStatus {
+/// Detect whether an Ollama Cloud Bearer token is available (Keychain only).
+fn detect_ollama_cloud_auth() -> OllamaCloudAuthStatus {
+    use crate::auth::credential::ollama_cloud;
+    match crate::auth::credential::keychain::keychain_get(ollama_cloud::KEYCHAIN_SERVICE) {
+        Ok(Some(_)) => OllamaCloudAuthStatus {
+            has_api_key: true,
+            login_source: Some("macOS Keychain".to_owned()),
+        },
+        _ => OllamaCloudAuthStatus {
+            has_api_key: false,
+            login_source: None,
+        },
+    }
+}
+
+/// Detect whether a `DeepSeek` API key is available (Keychain or env var).
+fn detect_deepseek_auth() -> DeepSeekAuthStatus {
+    use crate::auth::credential::deepseek;
+    if crate::auth::credential::keychain::keychain_get(deepseek::KEYCHAIN_SERVICE)
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        return DeepSeekAuthStatus {
             has_api_key: true,
             login_source: Some("macOS Keychain".to_owned()),
         };
     }
-    if std::env::var("OPENROUTER_API_KEY")
+    if std::env::var("DEEPSEEK_API_KEY")
         .map(|k| !k.is_empty())
         .unwrap_or(false)
     {
-        return OpenRouterAuthStatus {
+        return DeepSeekAuthStatus {
             has_api_key: true,
-            login_source: Some("OPENROUTER_API_KEY env".to_owned()),
+            login_source: Some("DEEPSEEK_API_KEY env".to_owned()),
         };
     }
-    OpenRouterAuthStatus {
+    DeepSeekAuthStatus {
         has_api_key: false,
         login_source: None,
+    }
+}
+
+/// Detect whether Google Vertex AI credentials are configured (Keychain only).
+fn detect_google_vertex_auth() -> GoogleVertexAuthStatus {
+    use crate::auth::credential::vertex;
+    let has_service_account =
+        crate::auth::credential::keychain::keychain_get(vertex::KEYCHAIN_SERVICE)
+            .ok()
+            .flatten()
+            .is_some();
+    let project_id = vertex::load_project_id().ok().flatten();
+    GoogleVertexAuthStatus {
+        has_service_account,
+        project_id,
     }
 }
 
@@ -550,6 +622,90 @@ fn openrouter_models() -> Vec<ModelOption> {
     ]
 }
 
+fn deepseek_models() -> Vec<ModelOption> {
+    vec![
+        ModelOption {
+            id: "deepseek/deepseek-chat".to_owned(),
+            label: "DeepSeek V3 (Chat)".to_owned(),
+            tier: "balanced".to_owned(),
+            tool_use: Some(true),
+            ..Default::default()
+        },
+        ModelOption {
+            id: "deepseek/deepseek-reasoner".to_owned(),
+            label: "DeepSeek R1 (Reasoning)".to_owned(),
+            tier: "capable".to_owned(),
+            tool_use: Some(false),
+            ..Default::default()
+        },
+        ModelOption {
+            id: "deepseek/deepseek-coder".to_owned(),
+            label: "DeepSeek Coder V2".to_owned(),
+            tier: "balanced".to_owned(),
+            tool_use: Some(true),
+            ..Default::default()
+        },
+    ]
+}
+
+fn mistral_models() -> Vec<ModelOption> {
+    vec![
+        ModelOption {
+            id: "mistral/mistral-large-latest".to_owned(),
+            label: "Mistral Large".to_owned(),
+            tier: "capable".to_owned(),
+            tool_use: Some(true),
+            ..Default::default()
+        },
+        ModelOption {
+            id: "mistral/mistral-small-latest".to_owned(),
+            label: "Mistral Small".to_owned(),
+            tier: "fast".to_owned(),
+            tool_use: Some(true),
+            ..Default::default()
+        },
+        ModelOption {
+            id: "mistral/codestral-latest".to_owned(),
+            label: "Codestral (Code)".to_owned(),
+            tier: "balanced".to_owned(),
+            tool_use: Some(false),
+            ..Default::default()
+        },
+    ]
+}
+
+fn google_vertex_models() -> Vec<ModelOption> {
+    vec![
+        ModelOption {
+            id: "vertex_ai/gemini-1.5-pro".to_owned(),
+            label: "Gemini 1.5 Pro".to_owned(),
+            tier: "capable".to_owned(),
+            family: None,
+            tool_use: Some(true),
+            vision: Some(true),
+            context_k: Some(1_000),
+        },
+        ModelOption {
+            id: "vertex_ai/gemini-2.0-flash".to_owned(),
+            label: "Gemini 2.0 Flash".to_owned(),
+            tier: "fast".to_owned(),
+            family: None,
+            tool_use: Some(true),
+            vision: Some(true),
+            context_k: Some(1_000),
+        },
+        ModelOption {
+            id: "vertex_ai/claude-sonnet-4-5@20251001".to_owned(),
+            label: "Claude Sonnet 4.5 (via Vertex)".to_owned(),
+            tier: "balanced".to_owned(),
+            family: None,
+            tool_use: Some(true),
+            vision: Some(true),
+            context_k: Some(200),
+        },
+    ]
+}
+
 // ── Build AgentSession from SaveRequest ──────────────────────────────────────
 
 fn agent_session_from_save(req: &SaveRequest) -> Option<crate::config::AgentSession> {
@@ -582,7 +738,7 @@ fn agent_session_from_save(req: &SaveRequest) -> Option<crate::config::AgentSess
                         .clone()
                         .unwrap_or_else(|| "openrouter/openai/gpt-4o".to_owned()),
                 }),
-                "mistral-vibe" | "mistral_vibe" => {
+                "mistral" | "mistral-vibe" | "mistral_vibe" => {
                     ClaudeBackend::LiteLlm(crate::config::LiteLlmBackendConfig {
                         model: req
                             .model
@@ -590,6 +746,24 @@ fn agent_session_from_save(req: &SaveRequest) -> Option<crate::config::AgentSess
                             .unwrap_or_else(|| "mistral/mistral-large-latest".to_owned()),
                     })
                 }
+                "ollama-cloud" => ClaudeBackend::LiteLlm(crate::config::LiteLlmBackendConfig {
+                    model: req
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| "ollama_chat/llama3.2".to_owned()),
+                }),
+                "deepseek" => ClaudeBackend::LiteLlm(crate::config::LiteLlmBackendConfig {
+                    model: req
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| "deepseek/deepseek-chat".to_owned()),
+                }),
+                "google-vertex" => ClaudeBackend::LiteLlm(crate::config::LiteLlmBackendConfig {
+                    model: req
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| "vertex_ai/gemini-1.5-pro".to_owned()),
+                }),
                 _ => return None,
             };
             Some(crate::config::AgentSession::Lightarchitects(backend))
@@ -740,14 +914,19 @@ pub async fn setup_info(State(state): State<AppState>) -> impl IntoResponse {
         .unwrap_or_else(|| "http://localhost:11434".to_owned());
     let ollama = detect_ollama_status(&ollama_url).await;
     let mistral = detect_mistral_auth();
-    let openrouter = detect_openrouter_auth();
+    let ollama_cloud = detect_ollama_cloud_auth();
+    let deepseek = detect_deepseek_auth();
+    let google_vertex = detect_google_vertex_auth();
 
     let auth_status = AuthStatus {
         claude,
         codex,
         ollama,
         mistral,
-        openrouter,
+        openrouter: None,
+        ollama_cloud,
+        deepseek,
+        google_vertex,
     };
 
     Json(SetupInfoResponse {
@@ -772,6 +951,9 @@ pub async fn setup_models(Query(q): Query<ModelsQuery>) -> impl IntoResponse {
         }
         "ollama-cloud" => ollama_cloud_models(),
         "openrouter" => openrouter_models(),
+        "deepseek" => deepseek_models(),
+        "mistral" | "mistral-vibe" | "mistral_vibe" => mistral_models(),
+        "google-vertex" => google_vertex_models(),
         _ => vec![],
     };
     Json(ModelsResponse { models }).into_response()
@@ -885,5 +1067,88 @@ mod tests {
             cfg.model, None,
             "absent model passes through as None — vibe uses its own config"
         );
+    }
+
+    // ── Phase 4 unit tests: LiteLLM BYOK routing ────────────────────────────
+
+    #[allow(clippy::panic)]
+    fn assert_litellm_model(sess: crate::config::AgentSession, expected_model: &str) {
+        let crate::config::AgentSession::Lightarchitects(backend) = sess else {
+            panic!("expected Lightarchitects session");
+        };
+        let crate::config::ClaudeBackend::LiteLlm(cfg) = backend else {
+            panic!("expected LiteLlm backend");
+        };
+        assert_eq!(cfg.model, expected_model);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn litellm_deepseek_default_model() {
+        let req = save_req(AgentKind::Lightarchitects, "deepseek", None);
+        let sess = agent_session_from_save(&req).unwrap();
+        assert_litellm_model(sess, "deepseek/deepseek-chat");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn litellm_deepseek_explicit_model() {
+        let req = save_req(
+            AgentKind::Lightarchitects,
+            "deepseek",
+            Some("deepseek/deepseek-r1"),
+        );
+        let sess = agent_session_from_save(&req).unwrap();
+        assert_litellm_model(sess, "deepseek/deepseek-r1");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn litellm_google_vertex_default_model() {
+        let req = save_req(AgentKind::Lightarchitects, "google-vertex", None);
+        let sess = agent_session_from_save(&req).unwrap();
+        assert_litellm_model(sess, "vertex_ai/gemini-1.5-pro");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn litellm_google_vertex_explicit_model() {
+        let req = save_req(
+            AgentKind::Lightarchitects,
+            "google-vertex",
+            Some("vertex_ai/gemini-2.0-flash"),
+        );
+        let sess = agent_session_from_save(&req).unwrap();
+        assert_litellm_model(sess, "vertex_ai/gemini-2.0-flash");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn litellm_ollama_cloud_default_model() {
+        let req = save_req(AgentKind::Lightarchitects, "ollama-cloud", None);
+        let sess = agent_session_from_save(&req).unwrap();
+        assert_litellm_model(sess, "ollama_chat/llama3.2");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn litellm_mistral_backend_default_model() {
+        let req = save_req(AgentKind::Lightarchitects, "mistral", None);
+        let sess = agent_session_from_save(&req).unwrap();
+        assert_litellm_model(sess, "mistral/mistral-large-latest");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn litellm_openai_backend_default_model() {
+        let req = save_req(AgentKind::Lightarchitects, "openai", None);
+        let sess = agent_session_from_save(&req).unwrap();
+        assert_litellm_model(sess, "openai/gpt-4o");
+    }
+
+    #[test]
+    fn litellm_unknown_backend_returns_none() {
+        let req = save_req(AgentKind::Lightarchitects, "unknown-provider-xyz", None);
+        assert!(agent_session_from_save(&req).is_none());
     }
 }

@@ -3,5 +3,5 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   ...base,
   testDir: '.',
-  testMatch: ['**/provider-model.spec.ts'],
+  testMatch: ['**/provider-model.spec.ts', '**/provider-auth-ab.spec.ts', '**/wizard-screenshot-walk.spec.ts'],
 });

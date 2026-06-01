@@ -8,6 +8,52 @@ Companion changelog for `builders-cookbook.md`. The cookbook holds **current sta
 
 ---
 
+## v3.13.0 — §50.10 Two-Envvar Opt-In landed + §69.1 Integration Claim Verification (2026-05-31, litellm-platform-integration /REFLECT — both stamped)
+
+**Source**: /REFLECT session post `litellm-platform-integration` plan-authoring (6 iterations). Two canon sections landed and stamped in this batch:
+
+### §50.10 — Two-Envvar Opt-In for Real-Infrastructure Tests (NEW section landing — closes 2026-05-30 promotion-gap)
+
+**Background**: Memory `feedback_e2e_two_envvar_opt_in.md` claimed PROMOTED to §50.10 on 2026-05-30 but `grep -n "§50.10"` in the cookbook returned ZERO hits. LÆX surfaced this gap during 2026-05-31 Canon XXXIX Step (c) sweep. This v3.13.0 closes the gap by landing the verbatim rule.
+
+**Rule**: Tests calling real APIs / databases / paid infra with wall-clock >5s or dollar cost >0 MUST be gated on TWO env vars (opt-in flag + credential). Reference implementation in §50.10 body. Cross-referenced by Blueprint §8.9.1 (sister ratification 2026-05-31) and Cookbook §69.1 (sister ratification 2026-05-31).
+
+**Operator stamp**: Kevin, 2026-05-31 — RATIFIED.
+
+### §69.1 — Integration Claim Verification (operator stamp landed)
+
+**Rule** (from v3.12.0): Plan claims of integration ("X federates from Y") MUST be verified via grep against integration code. Zero hits → integration is fiction.
+
+**Operator stamp**: Kevin, 2026-05-31 — RATIFIED (previously "pending"). v3.12.0 superseded by v3.13.0.
+
+**Composition note**: §50.10 + §69.1 form a verify-twice pattern. §69.1 verifies the integration exists at plan-time via grep. §50.10 verifies it works at test-time via gated real-infra rehearsal. Together they cover both citation-discipline (claim-time) and execution-discipline (test-time) for the integration class.
+
+---
+
+## v3.12.0 — §69.1 Integration Claim Verification (2026-05-31, litellm-platform-integration /REFLECT — LÆX Candidate B)
+
+**Source**: /REFLECT session post `litellm-platform-integration` plan-authoring (6 iterations). Canon XXXIX Step (c) contradiction check + Step (d) ratification verdict by LÆX. **Superseded by v3.13.0** (operator stamp landed + §50.10 sister section landed in same batch).
+
+### §69.1 — Integration Claim Verification (new sub-section under §69 Citation Integrity Doctrine)
+
+**Rule**: Any plan claim of the form "X integrates with Y" / "X federates from Y" / "X consumes Z's output" MUST be verified by grep against the integration code itself BEFORE plan reaches VALIDATED status. Integration code IS the citation; grep is the verification. Zero hits → integration is fiction; demote claim to deferred OR build the integration this build.
+
+**Source memory**: `feedback_integration_claims_need_grep_not_assertion.md`.
+
+**Pressure-test**: `litellm-platform-integration` iter-2 SCRUM. Plan asserted "AYIN federates from SigNoz over its existing HTTP client path — no AYIN code changes required" without verification. AYIN sibling grep returned ZERO matches. Federation did not exist. Forced honest Northstar P3 demotion to deferred status. Caught a class of false-witness invisible to iter-1 self-review because self-review never grepped the integration code.
+
+**LÆX verdict**: RATIFY-AND-CODIFY, N=1 cross-session, convergent with Canon XXXV + §69 + Communication Covenant Rules 2+11. Biblical grounding: 2 Corinthians 13:1 (two witnesses for every word).
+
+**Composition with existing canon**:
+- Strengthens Canon XXXV (verbatim citation gate for decision-gating claims) — adds integration-claim corollary
+- Extends §69 Citation Integrity Doctrine (tracking-artifact citation) — adds plan-body integration citation
+- Operationalizes Communication Covenant Rule 2 (no false witness) for the integration-claim class
+- Composes with Rule 11 (audit-pending disclosure) as the honest deferral mechanism
+
+**No contradictions** with platform-canon / agents-playbook / architects-blueprint / operators-manual / security-guardrails / LASDLC-TEMPLATE-v1 / northstar.
+
+---
+
 ## v3.11.0 — §78 LLM HTTP Dispatch Doctrine (2026-05-30, webshell-litellm-adapter ratification)
 
 **Source**: /REFLECT session post webshell-litellm-adapter implementation. Three rules consolidated into one new top-level §78 covering streaming-by-default, provider unification, and the streaming-to-UX corollary.

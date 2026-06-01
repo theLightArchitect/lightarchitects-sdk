@@ -41,6 +41,39 @@ use crate::events::ayin_client::EVENT_CHANNEL_BUF;
 /// memory budget while giving a slow browser tab time to drain.
 pub const PTY_OUTPUT_CHANNEL_CAP: usize = 1024;
 
+/// Per-session spend tracking for `IronClaw` budget enforcement.
+///
+/// Accumulates `LiteLLM` usage costs reported via HTTP 429 / usage headers.
+/// Stored on [`BuildSession`] so each build has its own budget window.
+pub struct BudgetState {
+    /// Configured spend cap in USD for this session (from [`IronclawConfig`]).
+    pub limit_usd: f64,
+    /// Accumulated spend in USD — updated from `LiteLLM` response headers.
+    pub spent_usd: StdMutex<f64>,
+    /// Set once limit is exceeded; prevents further SSE `BudgetExhausted` spam.
+    pub exhausted: AtomicBool,
+    /// Set once the warning threshold is crossed; prevents repeated warnings.
+    pub warned: AtomicBool,
+}
+
+impl BudgetState {
+    /// Create a fresh `BudgetState` with the given cap.
+    pub fn new(limit_usd: f64) -> Self {
+        Self {
+            limit_usd,
+            spent_usd: StdMutex::new(0.0),
+            exhausted: AtomicBool::new(false),
+            warned: AtomicBool::new(false),
+        }
+    }
+}
+
+impl Default for BudgetState {
+    fn default() -> Self {
+        Self::new(0.0)
+    }
+}
+
 /// Per-build session — owned by `Arc` inside `BuildRegistry`.
 pub struct BuildSession {
     /// Unique identifier surfaced in all build-scoped routes (`/api/builds/:id/...`).
@@ -145,6 +178,10 @@ pub struct BuildSession {
     ///
     /// [`LiteLLM`]: https://docs.litellm.ai
     pub litellm: LiteLLMConfig,
+    /// Per-session `IronClaw` spend tracking.
+    ///
+    /// Initialised from [`AppState::ironclaw_config`] at session creation.
+    pub budget_state: BudgetState,
 }
 
 impl BuildSession {
@@ -187,6 +224,7 @@ impl BuildSession {
             fleet_broadcaster: tokio::sync::Mutex::new(None),
             turn_count: AtomicU32::new(0),
             litellm: LiteLLMConfig::default(),
+            budget_state: BudgetState::default(),
         }
     }
 

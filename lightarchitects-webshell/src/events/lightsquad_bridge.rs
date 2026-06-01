@@ -70,8 +70,8 @@ use crate::events::{
     builds_handler::TaskSpec,
     decisions::DecisionsWriter,
     types::{
-        ConductorTickEvent, IronclawHitlEscalationEvent, MergeAgentStatusEvent, WebEvent,
-        WorkerSlotGaugeEvent,
+        BudgetExhaustedEvent, ConductorTickEvent, IronclawHitlEscalationEvent,
+        MergeAgentStatusEvent, WebEvent, WorkerSlotGaugeEvent,
     },
 };
 
@@ -839,6 +839,23 @@ async fn worker_body(
                         &pre_sha,
                     )
                     .await;
+                }
+                Err(CodingProviderError::BudgetExhausted {
+                    spent_usd,
+                    limit_usd,
+                }) => {
+                    // LiteLLM reported budget_exceeded — emit SSE and halt the task.
+                    let _ = tx_slot.send(WebEventV2::from_event(
+                        WebEvent::BudgetExhausted(BudgetExhaustedEvent {
+                            build_id: build_id.to_string(),
+                            spent_usd,
+                            limit_usd,
+                        }),
+                        Some(build_id),
+                    ));
+                    return Err(format!(
+                        "task '{task_id}' halted: budget exhausted (${spent_usd:.4} of ${limit_usd:.4})"
+                    ));
                 }
                 Err(e) => {
                     // Security violations, validation failures → HITL.

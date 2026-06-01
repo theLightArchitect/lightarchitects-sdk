@@ -1,0 +1,57 @@
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#1e3a5f'}}}%%
+graph LR
+    subgraph "LA Webshell (port 8733)"
+        WS[Copilot Turn Handler<br/>copilot/mod.rs]
+        LLMProv[LitellmProvider<br/>litellm_state.rs]
+        SSE[SSE Stream<br/>litellm_chat.rs]
+        AYIN_TS[ayin_traces_utils.ts<br/>turn_span_id mint]
+    end
+
+    subgraph "LiteLLM Proxy (:4000)"
+        LPROXY[litellm proxy<br/>litellm_config.yaml]
+        OTELcb["otel callback<br/>[callbacks: otel]"]
+        BUDGET["budget guard<br/>max_budget: $0.50/1d"]
+        LKSP[LAKeychainSecretProvider<br/>async_read_secret]
+    end
+
+    subgraph "OTLP Pipeline"
+        OTELCOL["SigNoz OtelCollector<br/>127.0.0.1:4317 (SERAPH F3)"]
+        SIGNOZ[SigNoz<br/>:8080]
+    end
+
+    subgraph "Providers"
+        ANT[Anthropic]
+        OAI[OpenAI]
+        OLL[Ollama local]
+        OLC[Ollama Cloud]
+        DSK[DeepSeek]
+        VTX[Vertex AI]
+        MST[Mistral]
+    end
+
+    subgraph "macOS Keychain"
+        KC["/usr/bin/security<br/>la-*-credential"]
+    end
+
+    WS -->|"LitellmConfig.build_provider()"| LLMProv
+    LLMProv -->|"POST /v1/chat/completions<br/>+ W3C traceparent"| LPROXY
+    LPROXY -->|"x-litellm-call-id →"| SSE
+    AYIN_TS -->|"turn_span_id"| WS
+
+    LPROXY --> BUDGET
+    BUDGET -->|"429 budget_exceeded → fail-closed"| LLMProv
+
+    LKSP -->|"security CLI subprocess"| KC
+    LPROXY -->|"startup secret resolution"| LKSP
+
+    LPROXY --> ANT
+    LPROXY --> OAI
+    LPROXY --> OLL
+    LPROXY --> OLC
+    LPROXY --> DSK
+    LPROXY --> VTX
+    LPROXY --> MST
+
+    OTELcb -->|"gRPC OTLP"| OTELCOL
+    OTELCOL --> SIGNOZ
+    LPROXY --> OTELcb

@@ -42,6 +42,7 @@ use std::time::{Duration, Instant};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
 use tracing::{error, info, instrument, warn};
+use uuid::Uuid;
 
 use crate::agent::cloud_models::lookup;
 use crate::lightsquad::ollama_response_validator::{
@@ -138,6 +139,31 @@ pub enum CodingProviderError {
     /// Prompt was rejected by G1 content sanitization.
     #[error("prompt sanitization failed: {0}")]
     SanitizationFailed(String),
+
+    /// `LiteLLM` proxy returned a budget-exhaustion signal (HTTP 429/400 with
+    /// body `{"error":{"type":"budget_exceeded",...}}`).
+    ///
+    /// The caller MUST halt the wave — no direct-provider fallback is permitted
+    /// (fail-closed per SERAPH R2-3).
+    #[error("budget exhausted: spent ${spent_usd:.4} of ${limit_usd:.4} limit")]
+    BudgetExhausted {
+        /// Accumulated spend in USD reported by `LiteLLM`.
+        spent_usd: f64,
+        /// Configured spend limit in USD.
+        limit_usd: f64,
+    },
+
+    /// `LiteLLM` proxy unreachable (connection refused or DNS failure).
+    ///
+    /// Fail-closed: callers MUST NOT bypass the proxy and call the upstream
+    /// provider directly (SERAPH R2-5 origin-verification requirement).
+    #[error("LiteLLM proxy unavailable: {0}")]
+    ProxyUnavailable(String),
+
+    /// Non-budget HTTP error status returned after reading the response body
+    /// (occurs when 400/429 body does not carry `type: budget_exceeded`).
+    #[error("HTTP {0} from provider")]
+    HttpStatus(u16),
 }
 
 // ── OllamaCloudCodingProvider ─────────────────────────────────────────────────
@@ -449,12 +475,83 @@ impl OllamaCloudCodingProvider {
     /// Returns [`CodingProviderError::Http`] for transport or HTTP-status errors.
     async fn chat_collect(&self, body: &serde_json::Value) -> Result<String, CodingProviderError> {
         let url = format!("{}/api/chat", self.base_url);
-        let mut req = self.client.post(&url).json(body);
+
+        // W3C traceparent v00: `00-<32hex trace_id>-<16hex parent_id>-01`
+        // trace_id = one UUID v4 (128 bits → 32 hex); parent_id = 8 bytes of a second UUID.
+        let trace_uuid = Uuid::new_v4();
+        let parent_uuid = Uuid::new_v4();
+        let trace_id = trace_uuid.simple().to_string();
+        let parent_id = &parent_uuid.simple().to_string()[..16];
+        let traceparent = format!("00-{trace_id}-{parent_id}-01");
+
+        let mut req = self
+            .client
+            .post(&url)
+            .header("traceparent", &traceparent)
+            .header("X-LA-LiteLLM-Origin", "ollama-cloud-coding-provider")
+            .json(body);
         if let Some(token) = &self.auth_token {
             req = req.bearer_auth(token.expose_secret());
         }
-        let resp = req.send().await?.error_for_status()?;
 
+        // Fail-closed: map connection-level failures to ProxyUnavailable.
+        // Callers must NOT retry against the upstream provider directly.
+        let resp = req.send().await.map_err(|e| {
+            if e.is_connect() || e.is_timeout() {
+                warn!(
+                    url = %url,
+                    error = %e,
+                    "ollama_cloud_provider.proxy_unavailable"
+                );
+                CodingProviderError::ProxyUnavailable(e.to_string())
+            } else {
+                CodingProviderError::Http(e)
+            }
+        })?;
+
+        // 429 / 400 budget-exhaustion: match on body `type` field, not status alone.
+        // LiteLLM may return either 400 or 429 for budget_exceeded depending on version
+        // (QUANTUM F2 audit).  A status-only check would mis-classify upstream 429s
+        // (e.g., Anthropic throttle) as budget exhaustion.
+        let status = resp.status();
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS
+            || status == reqwest::StatusCode::BAD_REQUEST
+        {
+            let bytes = resp.bytes().await.unwrap_or_default();
+            if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                let err_type = val
+                    .pointer("/error/type")
+                    .or_else(|| val.get("type"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if err_type == "budget_exceeded" {
+                    let spent_usd = val
+                        .pointer("/error/spent_usd")
+                        .or_else(|| val.pointer("/spent_usd"))
+                        .and_then(serde_json::Value::as_f64)
+                        .unwrap_or(0.0);
+                    let limit_usd = val
+                        .pointer("/error/limit_usd")
+                        .or_else(|| val.pointer("/limit_usd"))
+                        .and_then(serde_json::Value::as_f64)
+                        .unwrap_or(0.0);
+                    warn!(
+                        spent_usd,
+                        limit_usd,
+                        status = status.as_u16(),
+                        "ollama_cloud_provider.budget_exhausted"
+                    );
+                    return Err(CodingProviderError::BudgetExhausted {
+                        spent_usd,
+                        limit_usd,
+                    });
+                }
+            }
+            // Non-budget-exhaustion 429/400 — body already consumed; return status.
+            return Err(CodingProviderError::HttpStatus(status.as_u16()));
+        }
+
+        let resp = resp.error_for_status()?;
         let bytes = resp.bytes().await?;
         let mut out = String::new();
         for line in bytes.split(|b| *b == b'\n') {
@@ -728,6 +825,72 @@ mod tests {
         assert!(
             (c2 - 2.0 * c1).abs() < 1e-9,
             "cost must scale linearly with token count"
+        );
+    }
+
+    // ── T5.1 W3C traceparent format ──────────────────────────────────────────────
+
+    /// Validate the format of the traceparent value we generate.
+    ///
+    /// W3C format: `00-<32 lowercase hex>-<16 lowercase hex>-<2 hex flags>`
+    /// (matches `ayin/src/propagation.rs validate_traceparent` pattern).
+    #[test]
+    fn traceparent_format_matches_w3c_spec() {
+        let trace_uuid = Uuid::new_v4();
+        let parent_uuid = Uuid::new_v4();
+        let trace_id = trace_uuid.simple().to_string();
+        let parent_id = &parent_uuid.simple().to_string()[..16];
+        let traceparent = format!("00-{trace_id}-{parent_id}-01");
+
+        let re = regex::Regex::new(r"^00-[a-f0-9]{32}-[a-f0-9]{16}-[a-f0-9]{2}$").unwrap();
+        assert!(
+            re.is_match(&traceparent),
+            "traceparent '{traceparent}' does not match W3C v00 format"
+        );
+    }
+
+    // ── T5.2 budget-exhaustion body-shape discrimination ─────────────────────────
+
+    /// `budget_exceeded` JSON body (429 shape from `LiteLLM`) is correctly
+    /// mapped to `CodingProviderError::BudgetExhausted`, not `HttpStatus`.
+    #[test]
+    fn budget_exhausted_body_parsed_correctly() {
+        let body = serde_json::json!({
+            "error": {
+                "type": "budget_exceeded",
+                "spent_usd": 1.23,
+                "limit_usd": 1.00
+            }
+        });
+        let err_type = body
+            .pointer("/error/type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert_eq!(err_type, "budget_exceeded");
+        let spent = body
+            .pointer("/error/spent_usd")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0);
+        assert!((spent - 1.23).abs() < 1e-9);
+    }
+
+    /// A 429 body with `type != budget_exceeded` does NOT trigger
+    /// `BudgetExhausted` — it must fall through to `HttpStatus`.
+    #[test]
+    fn non_budget_429_body_not_classified_as_exhaustion() {
+        let body = serde_json::json!({
+            "error": {
+                "type": "rate_limit_exceeded",
+                "message": "Too many requests"
+            }
+        });
+        let err_type = body
+            .pointer("/error/type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert_ne!(
+            err_type, "budget_exceeded",
+            "rate_limit_exceeded must NOT be treated as budget_exceeded"
         );
     }
 }

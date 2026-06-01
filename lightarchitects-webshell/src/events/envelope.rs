@@ -169,6 +169,10 @@ fn topic_for(event: &WebEvent) -> String {
         // ── webshell-hitl-bridge question tool (Phase 1) ─────────────────────
         WebEvent::QuestionPrompt(_) => "v1.conductor.question.prompt",
         WebEvent::QuestionAnswered(_) => "v1.conductor.question.answered",
+
+        // ── IronClaw budget enforcement (litellm-platform-integration W3.4) ──
+        WebEvent::BudgetExhausted(_) => "v1.ironclaw.budget.exhausted",
+        WebEvent::BudgetWarning(_) => "v1.ironclaw.budget.warning",
     }
     .to_owned()
 }
@@ -402,6 +406,18 @@ mod tests {
             WebEvent::QuestionAnswered(crate::events::types::QuestionAnsweredEvent {
                 tool_use_id: Uuid::nil(),
                 answers: vec![vec!["A".into()]],
+            }),
+            // litellm-platform-integration W3.4 — budget enforcement events
+            WebEvent::BudgetExhausted(crate::events::types::BudgetExhaustedEvent {
+                build_id: "b".into(),
+                spent_usd: 1.5,
+                limit_usd: 1.0,
+            }),
+            WebEvent::BudgetWarning(crate::events::types::BudgetWarningEvent {
+                build_id: "b".into(),
+                spent_usd: 0.8,
+                limit_usd: 1.0,
+                fraction: 0.8,
             }),
         ];
 

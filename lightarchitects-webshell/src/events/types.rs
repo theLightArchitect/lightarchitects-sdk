@@ -259,6 +259,22 @@ pub enum WebEvent {
     /// resolves. Browser clears the matching `pendingQuestions` store entry on
     /// receipt. Wire tag: `"question_answered"`.
     QuestionAnswered(QuestionAnsweredEvent),
+
+    // ── litellm-platform-integration (Wave 3.4) ─────────────────────────────
+    /// `LiteLLM` virtual-key budget exhausted — build must halt (fail-closed).
+    ///
+    /// Emitted when the `LiteLLM` proxy returns HTTP 429 with a key-budget
+    /// exhaustion payload for the current build's virtual key. The frontend
+    /// surfaces a permanent error banner and disables the Run button until the
+    /// operator resets or tops up the budget. Wire tag: `"budget_exhausted"`.
+    BudgetExhausted(BudgetExhaustedEvent),
+
+    /// `LiteLLM` budget warning — spend has crossed the warn threshold.
+    ///
+    /// Emitted once per build session when `spent_usd ≥ limit_usd × warn_threshold`
+    /// (default 80%). The frontend shows a dismissible warning badge. Does not
+    /// halt the build. Wire tag: `"budget_warning"`.
+    BudgetWarning(BudgetWarningEvent),
 }
 
 /// Northstar evaluation result broadcast after a `WAVE_COMPLETE` event.
@@ -1155,6 +1171,37 @@ pub struct QuestionAnswer {
     /// Single-select questions: inner vec has exactly one element.
     /// Multi-select questions: inner vec may have zero or more elements.
     pub answers: Vec<Vec<String>>,
+}
+
+/// Payload for [`WebEvent::BudgetExhausted`].
+///
+/// Wire tag: `"budget_exhausted"`. The frontend should surface a permanent
+/// error state and disable the Run button. The build is halted fail-closed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BudgetExhaustedEvent {
+    /// Build UUID whose virtual key budget ran out.
+    pub build_id: String,
+    /// Cumulative spend in USD at the point of exhaustion.
+    pub spent_usd: f64,
+    /// The per-build budget limit that was exceeded.
+    pub limit_usd: f64,
+}
+
+/// Payload for [`WebEvent::BudgetWarning`].
+///
+/// Wire tag: `"budget_warning"`. Emitted once per session when spend crosses
+/// `warn_threshold` (default 80%). The build continues; the frontend shows
+/// a dismissible amber badge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BudgetWarningEvent {
+    /// Build UUID whose spend crossed the warning threshold.
+    pub build_id: String,
+    /// Cumulative spend in USD at the time of the warning.
+    pub spent_usd: f64,
+    /// The per-build budget limit.
+    pub limit_usd: f64,
+    /// Fraction of budget consumed (0.0–1.0).
+    pub fraction: f64,
 }
 
 #[cfg(test)]

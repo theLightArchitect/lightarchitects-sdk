@@ -1,0 +1,167 @@
+# LiteLLM Proxy Configuration — litellm-platform-integration
+#
+# API keys are pulled from macOS Keychain via the custom secret provider.
+# Each `os.environ/<key>` reference below documents the Keychain service name
+# used by la_keychain_secret_provider.py.
+#
+# Start proxy: litellm --config litellm_config.yaml
+# Health check: curl http://localhost:4000/health
+
+# ---------------------------------------------------------------------------
+# Model List — 7 providers
+# ---------------------------------------------------------------------------
+model_list:
+
+  # ── Anthropic ─────────────────────────────────────────────────────────────
+  - model_name: claude-opus-4-5
+    litellm_params:
+      model: anthropic/claude-opus-4-5
+      api_key: "os.environ/la-anthropic-credential"  # Keychain service: la-anthropic-credential
+
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: "os.environ/la-anthropic-credential"  # Keychain service: la-anthropic-credential
+
+  - model_name: claude-haiku-3-5
+    litellm_params:
+      model: anthropic/claude-haiku-3-5
+      api_key: "os.environ/la-anthropic-credential"  # Keychain service: la-anthropic-credential
+
+  # ── OpenAI ────────────────────────────────────────────────────────────────
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: "os.environ/la-openai-credential"  # Keychain service: la-openai-credential
+
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: "os.environ/la-openai-credential"  # Keychain service: la-openai-credential
+
+  - model_name: o3-mini
+    litellm_params:
+      model: openai/o3-mini
+      api_key: "os.environ/la-openai-credential"  # Keychain service: la-openai-credential
+
+  # ── Ollama (local, no auth) ───────────────────────────────────────────────
+  - model_name: ollama/llama3.2
+    litellm_params:
+      model: ollama/llama3.2
+      api_base: "http://localhost:11434"
+
+  - model_name: ollama/qwen2.5-coder-32b
+    litellm_params:
+      model: ollama/qwen2.5-coder-32b
+      api_base: "http://localhost:11434"
+
+  - model_name: ollama/nomic-embed-text
+    litellm_params:
+      model: ollama/nomic-embed-text
+      api_base: "http://localhost:11434"
+
+  # ── Ollama Cloud ──────────────────────────────────────────────────────────
+  - model_name: ollama-cloud/nemotron-super
+    litellm_params:
+      model: openai/nemotron-super           # Ollama Cloud exposes OpenAI-compat endpoint
+      api_base: "https://ollama.ai/v1"
+      api_key: "os.environ/la-ollama-cloud-credential"  # Keychain service: la-ollama-cloud-credential
+
+  - model_name: ollama-cloud/qwen3-coder-480b
+    litellm_params:
+      model: openai/qwen3-coder-480b-cloud
+      api_base: "https://ollama.ai/v1"
+      api_key: "os.environ/la-ollama-cloud-credential"  # Keychain service: la-ollama-cloud-credential
+
+  # ── DeepSeek ──────────────────────────────────────────────────────────────
+  - model_name: deepseek/deepseek-r1
+    litellm_params:
+      model: deepseek/deepseek-reasoner
+      api_key: "os.environ/la-deepseek-credential"  # Keychain service: la-deepseek-credential, account: api_key
+
+  - model_name: deepseek/deepseek-chat
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: "os.environ/la-deepseek-credential"  # Keychain service: la-deepseek-credential, account: api_key
+
+  # ── Google Vertex AI ──────────────────────────────────────────────────────
+  - model_name: vertex/gemini-2.0-flash
+    litellm_params:
+      model: vertex_ai/gemini-2.0-flash-001
+      vertex_project: "os.environ/la-vertex-project"   # Keychain service: la-vertex-project
+      vertex_location: "us-central1"
+      vertex_credentials: "os.environ/la-vertex-credential"  # Keychain service: la-vertex-credential (JSON SA key)
+
+  - model_name: vertex/gemini-1.5-pro
+    litellm_params:
+      model: vertex_ai/gemini-1.5-pro-002
+      vertex_project: "os.environ/la-vertex-project"   # Keychain service: la-vertex-project
+      vertex_location: "us-central1"
+      vertex_credentials: "os.environ/la-vertex-credential"  # Keychain service: la-vertex-credential (JSON SA key)
+
+  # ── Mistral ───────────────────────────────────────────────────────────────
+  - model_name: mistral/mistral-large
+    litellm_params:
+      model: mistral/mistral-large-latest
+      api_key: "os.environ/la-mistral-credential"  # Keychain service: la-mistral-credential
+
+  - model_name: mistral/codestral
+    litellm_params:
+      model: mistral/codestral-latest
+      api_key: "os.environ/la-mistral-credential"  # Keychain service: la-mistral-credential
+
+# ---------------------------------------------------------------------------
+# General Settings
+# ---------------------------------------------------------------------------
+general_settings:
+  # Master key for proxy admin operations; stored in Keychain.
+  # Keychain service: la-litellm-credential (account: master_key per _ACCOUNT_OVERRIDES)
+  master_key: "os.environ/la-litellm-credential"
+
+  # Enable OTEL traces — required alongside callbacks: ["otel"] in litellm_settings.
+  otel: true
+
+  # Custom secret manager — reads from macOS Keychain via /usr/bin/security.
+  # LiteLLM calls async_read_secret() / sync_read_secret() on this class for
+  # every os.environ/ reference above before the proxy starts.
+  # Module must be on PYTHONPATH (run from arch/litellm-platform-integration/).
+  key_management_system: "custom"
+  key_management_settings:
+    custom_secret_manager: "la_keychain_secret_provider.LAKeychainSecretProvider"
+
+  # SQLite persistence for virtual keys, spend tracking, and audit log.
+  database_url: "sqlite:///litellm.db"
+
+  # IronClaw worker virtual key budget constraints.
+  # The actual virtual key is created via the /key/generate endpoint (see README).
+  # These defaults apply to new keys that omit explicit budget fields.
+  default_max_budget: 0.50
+  default_budget_duration: "1d"
+
+# ---------------------------------------------------------------------------
+# LiteLLM Settings
+# ---------------------------------------------------------------------------
+litellm_settings:
+  # OTEL callback exports traces to SigNoz at :4317.
+  # Trace correlation: use the `x-litellm-call-id` response header.
+  callbacks: ["otel"]
+
+  # Drop unmapped parameters instead of erroring (provider compat safety).
+  drop_params: true
+
+  # Forward upstream response headers (exposes x-litellm-call-id for trace correlation).
+  return_response_headers: true
+
+  # Forward the request timeout to the upstream provider.
+  request_timeout: 120
+
+# ---------------------------------------------------------------------------
+# OTEL / SigNoz export
+# ---------------------------------------------------------------------------
+environment_variables:
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://127.0.0.1:4317"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+  OTEL_SERVICE_NAME: "litellm-proxy"
+  OTEL_TRACES_EXPORTER: "otlp"
+  OTEL_METRICS_EXPORTER: "otlp"
+  OTEL_LOGS_EXPORTER: "otlp"

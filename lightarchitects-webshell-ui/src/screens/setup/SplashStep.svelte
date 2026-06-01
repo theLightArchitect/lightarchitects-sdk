@@ -39,7 +39,7 @@
     const skipped = await tryAutoSkip();
     if (skipped) return; // autoCompleteFromInherited already set step to 'done'
     // Guard again — loadSetupInfo() may have resolved during tryAutoSkip().
-    setTimeout(() => { if (get(step) !== 'done') step.set('backend'); }, 600);
+    setTimeout(() => { if (get(step) !== 'done') step.set('source'); }, 600);
   }
 
   /**

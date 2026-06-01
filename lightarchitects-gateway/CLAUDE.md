@@ -161,7 +161,7 @@ Per-turn, per-slug: `clear_operator_invocations()` resets at turn start. If the 
 Explicit allowlist (cargo, git, ls, cat, grep, rg, jq, make, pnpm, npm). Unlisted commands → `NotPermitted`. Fail-closed.
 
 ---
-## AYIN Span Instrumentation (Phase 1-5, shipped 2026-05-26)
+## AYIN Span Instrumentation (Phase 1-5, shipped 2026-05-26; extended vibe-coding-loop, 2026-05-31)
 
 Spans written via `GatewaySpanContext` (task-local) + `write_span_to_disk` (atomic `tmp→rename` + `F_FULLFSYNC`).
 
@@ -174,6 +174,20 @@ Spans written via `GatewaySpanContext` (task-local) + `write_span_to_disk` (atom
 | `src/llm.rs` | `llm.call` span with `parent_id` from `current_span_ctx()` |
 | `src/http/middleware/ayin_trace.rs` | `platform.http.request` span per Arena HTTP request |
 | `src/agent_stream/strategy.rs` | `gateway.session.start` span at strategy entry |
+| `src/agent_stream/mod.rs` | `interactive.session` span per CLI invocation; `interactive.turn` span per LLM turn |
+
+**Span name reference** (for AYIN dashboard queries):
+
+| Span label | Emitted by | Metadata fields |
+|---|---|---|
+| `gateway.tool.dispatch` | `server.rs` | `tool`, `actor` |
+| `llm.call` | `llm.rs` | `model`, `stop_reason`, `parent_id` |
+| `platform.http.request` | `ayin_trace.rs` | `method`, `path`, `status` |
+| `gateway.session.start` | `strategy.rs` | `strategy` |
+| `interactive.session` | `agent_stream/mod.rs` | `provider`, `restored_turns` |
+| `interactive.turn` | `agent_stream/mod.rs` | `turn_index`, `input_len`, `duration_ms` |
+
+Query interactive turns: `curl -s http://127.0.0.1:3742/api/ironclaw | jq '.[] | select(.label=="interactive.turn")'`
 
 **Rules**:
 - Use `spawn_with_span_context(async move { ... })` NOT bare `tokio::spawn` for async span writes
@@ -181,6 +195,24 @@ Spans written via `GatewaySpanContext` (task-local) + `write_span_to_disk` (atom
 - Spans >64KB are silently dropped (eviction-attack mitigation)
 - Trace files: `~/lightarchitects/soul/helix/ayin/traces/gateway/<YYYY-MM-DD>/`
 - `.cargo/ci-denylist.sh` enforces `spawn_with_span_context` usage
+
+---
+## Environment Variables (CLI + Agent Stream)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LA_LLM` | `claude` | Provider selector: `anthropic` · `claude` · `ollama` · `litellm` |
+| `LA_LITELLM_BASE_URL` | `http://localhost:4000` | LiteLLM proxy URL (read when `LA_LLM=litellm`) |
+| `LA_LITELLM_API_KEY` | `la-local-dev` | LiteLLM bearer key — matches proxy `master_key` |
+| `LA_LITELLM_MODEL` | `local-llama` | Model alias declared in `litellm.config.yaml#model_list` |
+| `LIGHTARCHITECTS_BIN` | `lightarchitects` | Path to the gateway binary for E2E integration tests |
+
+**Vibe-coding CLI workflow** (`LA_LLM=litellm`):
+1. Start LiteLLM proxy: `litellm --config ~/.lightarchitects/litellm.config.yaml --port 4000`
+2. Set env: `export LA_LLM=litellm LA_LITELLM_MODEL=<alias>`
+3. Launch: `lightarchitects --interactive` (or from webshell provider drawer)
+4. Ctrl-C exits cleanly within 100ms via `Arc<AtomicBool>` cancellation signal
+5. Session history written to `~/lightarchitects/soul/helix/ayin/session/<session-id>.json`; next run restores it automatically via `HelixSessionMemory`
 
 ---
 ## Integration Tests

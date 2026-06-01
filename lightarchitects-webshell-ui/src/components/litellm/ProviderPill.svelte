@@ -1,63 +1,54 @@
 <script lang="ts">
-  import { authHeaders } from '$lib/auth';
+  import { providerConfig, loadProvider } from '$lib/providerStore';
 
   let { onclick }: { onclick: () => void } = $props();
 
-  let model = $state('');
-  let hasKey = $state(false);
-  let loading = $state(true);
-
-  async function refresh() {
-    try {
-      const resp = await fetch('/api/litellm/config', { headers: authHeaders() });
-      if (!resp.ok) return;
-      const data: { model: string; has_key: boolean } = await resp.json();
-      model = data.model;
-      hasKey = data.has_key;
-    } catch { /* non-fatal */ } finally {
-      loading = false;
-    }
-  }
-
-  $effect(() => { void refresh(); });
-
-  // External refresh trigger — parent dispatches `la:litellm-config-saved` after a save.
   $effect(() => {
-    const handler = () => { void refresh(); };
-    window.addEventListener('la:litellm-config-saved', handler);
-    return () => window.removeEventListener('la:litellm-config-saved', handler);
+    if ($providerConfig === null) void loadProvider();
   });
 
-  // Truncate "anthropic/claude-opus-4-7" → "claude-opus-4-7" (drop prefix)
-  let displayModel = $derived(
-    loading ? '…'
-    : !model ? 'no provider'
-    : model.includes('/') ? model.split('/').slice(1).join('/').slice(0, 18)
-    : model.slice(0, 18)
-  );
+  let display = $derived(() => {
+    const cfg = $providerConfig;
+    if (cfg === null) return { vendor: null, model: '…', configured: false };
+    if (!cfg?.model) return { vendor: null, model: 'no provider', configured: false };
+    const slash = cfg.model.indexOf('/');
+    if (slash !== -1) {
+      return {
+        vendor: cfg.model.slice(0, slash),
+        model: cfg.model.slice(slash + 1, slash + 22),
+        configured: !!(cfg.has_key && cfg.model),
+      };
+    }
+    return { vendor: null, model: cfg.model.slice(0, 22), configured: !!(cfg.has_key && cfg.model) };
+  });
 </script>
 
 <button
-  class="hdr-provider-pill {!hasKey || !model ? 'hdr-provider-pill--uncfg' : ''}"
+  class="hdr-provider-pill"
+  class:hdr-provider-pill--live={display().configured}
   {onclick}
-  title="LiteLLM provider: {model || 'not configured'} · click to switch"
+  title="Provider: {$providerConfig?.model ?? 'not configured'} · click to configure"
   data-testid="provider-pill"
 >
-  <span class="provider-dot" class:provider-dot--ok={hasKey && !!model}></span>
-  {displayModel}
+  <span class="pp-dot" class:pp-dot--live={display().configured}></span>
+  <span class="pp-text">
+    {#if display().vendor}
+      <span class="pp-vendor">{display().vendor}</span><span class="pp-slash">/</span>
+    {/if}<span class="pp-model">{display().model}</span>
+  </span>
 </button>
 
 <style>
   .hdr-provider-pill {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     height: 100%;
-    padding: 0 8px;
+    padding: 0 10px 0 9px;
     font-family: var(--la-font-mono, monospace);
     font-size: 9px;
     letter-spacing: 0.04em;
-    color: var(--la-focus-ring, #FFD700);
+    color: var(--la-text-dim, #6b7280);
     background: transparent;
     border: none;
     border-left: 1px solid var(--la-drawer-border, #1c2028);
@@ -65,24 +56,53 @@
     white-space: nowrap;
     transition: background 0.12s, color 0.12s;
   }
+
+  .hdr-provider-pill--live {
+    color: var(--la-focus-ring, #FFD700);
+  }
+
   .hdr-provider-pill:hover {
-    background: rgba(255, 215, 0, 0.06);
+    background: color-mix(in srgb, var(--la-focus-ring, #FFD700) 6%, transparent);
+    color: var(--la-focus-ring, #FFD700);
   }
-  .hdr-provider-pill--uncfg {
-    color: var(--la-text-dim, #6b7280);
-  }
-  .hdr-provider-pill--uncfg:hover {
-    color: var(--la-agent-performance, #f59e0b);
-  }
-  .provider-dot {
+
+  .pp-dot {
     width: 5px;
     height: 5px;
     border-radius: 50%;
     background: var(--la-text-dim, #6b7280);
     flex-shrink: 0;
+    transition: background 0.3s;
   }
-  .provider-dot--ok {
+
+  .pp-dot--live {
     background: #22c55e;
-    box-shadow: 0 0 4px #22c55e80;
+    animation: dot-pulse 2.8s ease-in-out infinite;
+  }
+
+  @keyframes dot-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+    50%       { box-shadow: 0 0 0 3.5px rgba(34, 197, 94, 0); }
+  }
+
+  .pp-text {
+    display: flex;
+    align-items: baseline;
+  }
+
+  .pp-vendor {
+    font-size: 8px;
+    opacity: 0.5;
+  }
+
+  .pp-slash {
+    font-size: 8px;
+    opacity: 0.3;
+    margin: 0 0.5px;
+  }
+
+  .hdr-provider-pill--live .pp-vendor,
+  .hdr-provider-pill--live .pp-slash {
+    color: inherit;
   }
 </style>

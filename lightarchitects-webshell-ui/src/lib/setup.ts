@@ -3,7 +3,8 @@ import { resolveToken } from './auth';
 import { authProfile, ollamaConfig } from './stores';
 import type { AuthProfile } from './types';
 
-export type SetupStep = 'splash' | 'backend' | 'auth' | 'model' | 'init' | 'done';
+export type SetupStep = 'splash' | 'source' | 'provider' | 'auth' | 'model' | 'init' | 'done';
+export type SetupTier = 'local' | 'byok' | 'la-platform';
 
 export interface ClaudeAuthStatus {
   has_keychain_auth: boolean;
@@ -24,16 +25,49 @@ export interface OllamaAuthStatus {
   reachable: boolean;
 }
 
-/** LA-native backend authentication state: whether an Ollama Cloud API key has been stored in the webshell config. */
-export interface LaNativeAuthStatus {
+export interface MistralAuthStatus {
   has_api_key: boolean;
+  login_source?: string;
 }
+
+export interface OpenRouterAuthStatus {
+  has_api_key: boolean;
+  login_source?: string;
+}
+
+export interface OllamaCloudAuthStatus {
+  has_api_key: boolean;
+  login_source?: string;
+}
+
+export interface DeepSeekAuthStatus {
+  has_api_key: boolean;
+  login_source?: string;
+}
+
+export interface GoogleVertexAuthStatus {
+  has_service_account: boolean;
+  project_id?: string;
+}
+
+/** BYOK provider selected in ProviderStep. */
+export type Provider =
+  | 'anthropic'
+  | 'openai'
+  | 'ollama-cloud'
+  | 'deepseek'
+  | 'google-vertex'
+  | 'mistral';
 
 export interface AuthStatus {
   claude: ClaudeAuthStatus;
   codex: CodexAuthStatus;
   ollama: OllamaAuthStatus;
-  la_native: LaNativeAuthStatus;
+  mistral: MistralAuthStatus;
+  openrouter?: OpenRouterAuthStatus;
+  ollama_cloud: OllamaCloudAuthStatus;
+  deepseek: DeepSeekAuthStatus;
+  google_vertex: GoogleVertexAuthStatus;
 }
 
 export interface SetupConfig {
@@ -98,7 +132,9 @@ export const setupInfoLoaded: Promise<void> = new Promise((resolve) => {
   _resolveSetupInfo = resolve;
 });
 
-/** The chosen backend slug (e.g. "anthropic", "la-native", "ollama-launch"). */
+/** Which top-level tier was chosen: local, byok, or la-platform. */
+export const selectedTier = writable<SetupTier | null>(null);
+/** The chosen backend slug (e.g. "anthropic", "openrouter", "ollama-launch"). */
 export const selectedBackend = writable<string | null>(null);
 /** The chosen agent archetype (e.g. "lightarchitects", "codex"). */
 export const selectedAgent = writable<string | null>(null);
@@ -266,6 +302,7 @@ export async function resetSetup(): Promise<void> {
     if (!resp.ok) throw new Error(`setup/reset: ${resp.status}`);
     setupComplete.set(false);
     step.set('splash');
+    selectedTier.set(null);
     selectedBackend.set(null);
     selectedAgent.set(null);
     selectedModel.set(null);

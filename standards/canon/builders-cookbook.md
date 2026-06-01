@@ -5042,6 +5042,38 @@ The `/GATE` skill MUST:
 | S50.6a (no real fs side effects) | lÆx0 Phase 9 coverage ceiling: vault.rs at 48% because tests read from real ~/.soul/sessions/. Mock trait injection (Phase 10g) is the fix. Without S50.6a, tests are non-hermetic and coverage is an undercount. |
 | S50.7 (accessibility) | Web dashboard (Phase 10): WCAG 2.1 AA compliance is a product requirement. axe-core catches ~57% of accessibility issues automatically. |
 
+### §50.10 Two-Envvar Opt-In for Real-Infrastructure Tests (2026-05-31 RATIFIED — closes 2026-05-30 promotion gap surfaced by LÆX during litellm-platform-integration /REFLECT)
+
+**Rule**: Any Rust test calling a real API, database, network service, or paid infrastructure with wall-clock cost > 5s OR dollar cost > 0 MUST be gated on TWO independent environment variables:
+1. An explicit opt-in flag (e.g., `MYSERVICE_E2E=1`, `IRONCLAW_E2E=1`, `LITELLM_REHEARSAL=1`)
+2. The infrastructure credential (e.g., `OLLAMA_API_KEY`, `GROQ_API_KEY`)
+
+Credential-only guards fire silently during `cargo test --workspace` when the key is exported in `~/.zshrc` or shell profile. The double-guard ensures CI + workspace runs NEVER hit real infrastructure unless explicitly opted-in.
+
+**Reference implementation**:
+```rust
+fn service_api_key() -> Option<String> {
+    if std::env::var("MYSERVICE_E2E").is_err() { return None; }
+    std::env::var("MYSERVICE_API_KEY").ok().filter(|s| !s.is_empty())
+}
+```
+
+**Documentation requirement**: Both env vars MUST be documented in the module-level doc comment with a `# Run manually:` example. CI configuration MUST never set the opt-in flag.
+
+**Why**: `OLLAMA_API_KEY` exported in shell profile caused two 90-second Ollama Cloud E2E tests to fire unintentionally during `ironclaw-autonomous-e2e` Q3 gate. Blocked the pre-merge gate commit until the double-guard was added. The opt-in flag is the human-intent signal; the credential alone is ambient state.
+
+**Application beyond tests**: Same pattern applies to wiring rehearsals (per Blueprint §8.9.1) and any operation that hits paid external APIs. The trigger is "wall-clock or dollar cost requires explicit opt-in" — not specifically the `--test` cargo subcommand.
+
+**Cross-references**:
+- **Blueprint §8.9.1** (Multi-Binary Real-Services Sub-Rehearsal — 2026-05-31): cross-references this §50.10 as the canonical opt-in pattern for paid-API rehearsals
+- **Cookbook §69.1** (Integration Claim Verification — 2026-05-31): sister 2026-05-31 ratification governing the citation-discipline side of integration claims; §50.10 governs the runtime-execution-discipline side
+- **Cookbook §57** (E2E discipline): §50.10 is the gating layer for §57's "real-services" scenarios
+- **Communication Covenant Rule 11** (audit-pending disclosure): when CI cannot run the gated test, disclose `_audit pending_` on dependent claims rather than silent-skip
+
+**Source memory**: `feedback_e2e_two_envvar_opt_in.md` — originally claimed PROMOTED 2026-05-30 but the canon-side landing didn't occur. LÆX Canon XXXIX Step (c) sweep on 2026-05-31 surfaced the gap; this section closes it with the verbatim rule from the memory + cross-references added by 2026-05-31 sister ratifications.
+
+**Operator stamp**: Kevin, 2026-05-31 — RATIFIED. Closes the 2026-05-30 PROMOTED-but-not-landed gap; restores §50.10 cross-references in §8.9.1 + §69.1 from forward-references to landed canon.
+
 ## §51 Boundary Sanitization Doctrine (Canon XXVIII)
 
 > *"Do not move the ancient boundary stone set up by your forefathers."* — Proverbs 22:28
@@ -7008,6 +7040,43 @@ Mechanical history: `git log -- standards/canon/builders-cookbook.md`
 - **Cookbook §66** (adjacent): Context Assembly Discipline governs WHAT to fetch; §69 governs HOW to cite
 
 **LÆX ratification**: 2026-05-19 Phase 7, XEA-cleared with 3 conditions applied (placement §75 → §69, Canon XXXV + XLII cross-refs, Tier-2 migration trigger added). Operator stamp pending integration verification.
+
+### §69.1 Integration Claim Verification (2026-05-31 LÆX RATIFY-AND-CODIFY, candidate B from litellm-platform-integration /REFLECT)
+
+**Rule**: Any plan claim of the form "X integrates with Y", "X federates from Y", "X consumes Z's output", "X polls Y", "X subscribes to Y", "X uses Y's existing client" MUST be verified by **grep against the integration code itself** BEFORE the plan reaches VALIDATED status. Architectural assumption is the dominant source of false-witness in plan bodies. The integration code IS the citation; grep is the verification.
+
+**Verification command pattern**:
+```
+grep -rn "<other_system_name>\|<protocol_name>\|<endpoint_pattern>" <claimed_system_root>/ --include="*.rs" --include="*.py" --include="*.toml"
+```
+
+If grep returns **zero hits**, the integration is fiction. Two valid responses:
+1. **Build the integration in this build** (escalates tier if previously not in scope)
+2. **Honestly demote the claim to "deferred"** with explicit out-of-scope declaration and Communication Covenant Rule 11 audit-pending disclosure (`_audit pending_` field flag pointing to the deferred work)
+
+Forbidden: leaving the claim un-grepped while VALIDATING the plan. Forbidden: "should integrate" / "is expected to integrate" / "seamlessly integrates" (the word *seamlessly* is a tell).
+
+**Verification candidates to flag during SCRUM/XEA**:
+- "X federates from Y" / "X polls Y" / "X subscribes to Y events"
+- "X reads Y's output" / "X consumes Y's stream"
+- "X uses Y's existing client" (especially when the existing client isn't named in the plan)
+- "X integrates seamlessly with Y"
+- "no Y code changes required" (the most dangerous shape — invites zero verification)
+
+**Why**: Pressure-tested 2026-05-31 in `litellm-platform-integration` iter-2 SCRUM. Plan asserted "AYIN federates from SigNoz over its existing HTTP client path — no AYIN code changes required" without verification. AYIN sibling executed `grep -rn "signoz\|otlp\|federat" ~/Projects/AYIN/AYIN-DEV/ --include="*.rs"` and got ZERO matches. The federation didn't exist. The asserted infrastructure was fiction. This forced a Northstar P3 mechanical-chain demotion to "SigNoz UI renders LiteLLM spans + AYIN renders LA-emitted spans only; federation deferred to follow-on build" — preserved truthful-by-disclosure over truthful-by-omission.
+
+**Cross-references**:
+- **Canon XXXV** (parent): verbatim primary-source citation for decision-gating claims; §69.1 establishes that for integration claims, the integration code IS the primary source.
+- **§69** (sibling): tracking-artifact citation integrity; §69.1 governs plan-body integration citations.
+- **Communication Covenant Rule 2** (governing): no false witness. Asserting an integration that does not exist is bearing false witness about the infrastructure.
+- **Communication Covenant Rule 11** (audit-pending disclosure): the honest fallback when integration is deferred is `_audit pending_` flagging, not silent assertion.
+- **Memory**: `feedback_authored_from_summary_not_source.md` (broader parent pattern — assertions from summary not source); `feedback_integration_claims_need_grep_not_assertion.md` (this rule's memory source).
+
+**Biblical grounding**: *"In the mouth of two or three witnesses shall every word be established."* — 2 Corinthians 13:1. Two witnesses for integration claims = (a) the claim in the plan + (b) the integration code that the claim references. Without witness (b), the claim is unestablished.
+
+**LÆX ratification**: 2026-05-31, Canon XXXIX pipeline (Step c+d). N=1 cross-session with convergent evidence from Canon XXXV + §69 + Communication Covenant Rules 2 + 11 + parent memory `feedback_authored_from_summary_not_source.md`.
+
+**Operator stamp**: Kevin, 2026-05-31 — RATIFIED. Canon XXXIX pipeline complete.
 
 ---
 
