@@ -196,10 +196,10 @@ impl WorkerExecutor for ContainerExecutor {
             // Validate network: overrides must be equal or stricter.
             if let Some(ref_net) = override_req.network {
                 let net_rank = |n: NetworkPolicy| match n {
-                    NetworkPolicy::Host => 0u8, // least restrictive: shares host net namespace
-                    NetworkPolicy::Bridge => 1, // isolated bridge
+                    NetworkPolicy::Host => 0u8,
+                    NetworkPolicy::Bridge | NetworkPolicy::WorkerBridge => 1,
                     NetworkPolicy::Balanced => 2,
-                    NetworkPolicy::None => 3, // most restrictive: no network
+                    NetworkPolicy::None => 3,
                 };
                 if net_rank(ref_net) < net_rank(effective.network) {
                     return Err(WorkerError::Policy(

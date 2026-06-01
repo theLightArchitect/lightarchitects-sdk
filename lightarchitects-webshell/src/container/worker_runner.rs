@@ -26,7 +26,7 @@
 use std::{path::Path, sync::Arc, time::Instant};
 
 use lightarchitects::{
-    container_spawn::{ContainerPolicy, SpawnPolicy},
+    container_spawn::{ContainerPolicy, NetworkPolicy, SpawnPolicy},
     lightsquad::wave_dispatcher::WorkerSpec,
 };
 
@@ -231,6 +231,12 @@ pub async fn spawn_worker_container(
     } else {
         Arc::clone(&base_policy)
     };
+
+    // SERAPH C2 (T8): worker tasks always run on la-worker-bridge for namespace
+    // isolation from PTY session containers, regardless of the system base policy.
+    let mut worker_policy = (*effective_policy).clone();
+    worker_policy.network = NetworkPolicy::WorkerBridge;
+    let effective_policy = Arc::new(worker_policy);
 
     // Acquire semaphore before docker run.
     let permit = state

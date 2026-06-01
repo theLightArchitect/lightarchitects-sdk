@@ -205,6 +205,7 @@ pub(crate) fn network_str(policy: lightarchitects::container_spawn::NetworkPolic
         N::Bridge => "bridge",
         N::Host => "host",
         N::None => "none",
+        N::WorkerBridge => "la-worker-bridge",
         N::Balanced => "balanced",
         _ => "unknown",
     }
