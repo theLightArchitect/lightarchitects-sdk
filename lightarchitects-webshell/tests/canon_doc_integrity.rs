@@ -15,15 +15,16 @@
 
 use lightarchitects::fleet::FleetSnapshot;
 use lightarchitects_webshell::events::types::{
-    AyinStatus, ConductorTickEvent, EscalationEvent, FixAgentIterationEvent, HitlResolution,
-    IronclawHitlEscalationEvent, IronclawHitlResolutionEvent, MergeAgentStatusEvent,
-    ProjectUpdateKind, ProjectUpdatePayload, QuestionAnsweredEvent, QuestionHeadlessPolicy,
-    QuestionItem, QuestionOptionItem, QuestionPromptEvent, WebEvent, WorkerSlotGaugeEvent,
+    AyinStatus, BudgetExhaustedEvent, BudgetWarningEvent, ConductorTickEvent, EscalationEvent,
+    FixAgentIterationEvent, HitlResolution, IronclawHitlEscalationEvent,
+    IronclawHitlResolutionEvent, MergeAgentStatusEvent, ProjectUpdateKind, ProjectUpdatePayload,
+    QuestionAnsweredEvent, QuestionHeadlessPolicy, QuestionItem, QuestionOptionItem,
+    QuestionPromptEvent, WebEvent, WorkerSlotGaugeEvent,
 };
 
 /// Total expected `WebEvent` variant count.  Update alongside the §1.2 table
 /// in `webshell-api-surface-v1.md` whenever variants are added or removed.
-const EXPECTED_VARIANT_COUNT: usize = 29;
+const EXPECTED_VARIANT_COUNT: usize = 31;
 
 /// Exhaustive match acting as a compiler-enforced variant count ratchet.
 ///
@@ -67,10 +68,14 @@ fn all_variants_matched(event: &WebEvent) {
         // ── webshell-hitl-bridge (Phase 1) ────────────────────────────────────
         WebEvent::QuestionPrompt(_) => {}
         WebEvent::QuestionAnswered(_) => {}
+        // ── litellm-platform-integration W3.4 — IronClaw budget events ────────
+        WebEvent::BudgetExhausted(_) => {}
+        WebEvent::BudgetWarning(_) => {}
     }
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn web_event_variant_count_matches_canon_doc() {
     // Build one representative instance of each ironclaw variant and route
     // each through the exhaustive matcher to prove the match arms compile.
@@ -174,9 +179,24 @@ fn web_event_variant_count_matches_canon_doc() {
     });
     all_variants_matched(&q_answered);
 
+    let budget_exhausted = WebEvent::BudgetExhausted(BudgetExhaustedEvent {
+        build_id: "b".to_owned(),
+        spent_usd: 1.5,
+        limit_usd: 1.0,
+    });
+    all_variants_matched(&budget_exhausted);
+
+    let budget_warning = WebEvent::BudgetWarning(BudgetWarningEvent {
+        build_id: "b".to_owned(),
+        spent_usd: 0.8,
+        limit_usd: 1.0,
+        fraction: 0.8,
+    });
+    all_variants_matched(&budget_warning);
+
     assert_eq!(
-        EXPECTED_VARIANT_COUNT, 29,
-        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (29)"
+        EXPECTED_VARIANT_COUNT, 31,
+        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (31)"
     );
 }
 

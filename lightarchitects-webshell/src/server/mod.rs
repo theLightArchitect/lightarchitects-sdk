@@ -101,6 +101,39 @@ impl Default for BrowserStateSnapshot {
     }
 }
 
+/// Global `IronClaw` budget enforcement config — read once at startup.
+///
+/// Applied per-session: each new [`crate::session::BuildSession`] receives a
+/// clone of `budget_usd` as its spend cap.
+#[derive(Debug, Clone)]
+pub struct IronclawConfig {
+    /// Maximum USD spend per build session before `LiteLLM` requests are blocked.
+    /// `0.0` disables enforcement (default when env var is absent).
+    pub budget_usd: f64,
+    /// Fraction of `budget_usd` at which a `BudgetWarning` SSE event fires.
+    /// Default `0.8` (80%).
+    pub warn_threshold: f64,
+}
+
+impl IronclawConfig {
+    /// Read config from `LA_IRONCLAW_BUDGET_USD` and `LA_IRONCLAW_WARN_THRESHOLD`.
+    pub fn from_env() -> Self {
+        let budget_usd = std::env::var("LA_IRONCLAW_BUDGET_USD")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(0.0);
+        let warn_threshold = std::env::var("LA_IRONCLAW_WARN_THRESHOLD")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .filter(|&t| (0.0..=1.0).contains(&t))
+            .unwrap_or(0.8);
+        Self {
+            budget_usd,
+            warn_threshold,
+        }
+    }
+}
+
 /// Shared application state threaded into every handler.
 ///
 /// Cloning is cheap — both inner values live behind [`Arc`]s, and
@@ -402,6 +435,12 @@ pub struct AppState {
     /// Probed at startup via `docker network ls` + `docker network inspect`.
     /// Requests from any Docker bridge CIDR are rejected with 403.
     pub bridge_cidr_guard: Arc<crate::container::cidr_guard::BridgeCidrGuard>,
+    /// Global `IronClaw` budget enforcement configuration.
+    ///
+    /// Read from `LA_IRONCLAW_*` env vars at startup. Each new
+    /// [`crate::session::BuildSession`] copies `budget_usd` into its own
+    /// [`crate::session::BudgetState`].
+    pub ironclaw_config: IronclawConfig,
 }
 
 impl AppState {
@@ -703,6 +742,7 @@ impl AppState {
             policy_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             patch_rate_limiter,
             bridge_cidr_guard: Arc::clone(&bridge_cidr_guard),
+            ironclaw_config: IronclawConfig::from_env(),
         }
     }
 
@@ -838,6 +878,10 @@ impl AppState {
             policy_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             patch_rate_limiter: Arc::new(DashMap::new()),
             bridge_cidr_guard: Arc::new(crate::container::cidr_guard::BridgeCidrGuard::default()),
+            ironclaw_config: IronclawConfig {
+                budget_usd: 0.0,
+                warn_threshold: 0.8,
+            },
         }
     }
 }
