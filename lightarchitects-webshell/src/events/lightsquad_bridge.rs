@@ -19,7 +19,10 @@
 //!   <prompt>` in the task worktree. Requires the `lightarchitects` binary on
 //!   `PATH`.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use tokio::sync::broadcast;
 use tracing::{debug, warn};
@@ -36,6 +39,7 @@ use lightarchitects::{
         program::{Program, ProgramConfig},
         types::Task,
         wave_dispatcher::WorkerSpec,
+        worker_executor::InProcessExecutor,
     },
 };
 
@@ -151,6 +155,7 @@ async fn run_build(ctx: BridgeContext) {
                     context_tiers: vec![],
                     prompt: spec.prompt,
                     id: spec.id,
+                    policy_override: None,
                 })
                 .collect()
         })
@@ -200,15 +205,6 @@ async fn run_build(ctx: BridgeContext) {
         return;
     }
 
-    let config = ProgramConfig {
-        codename: codename.clone(),
-        repo_root,
-        worktree_root,
-        feat_branch,
-        waves: ls_waves,
-    };
-
-    let program = Program::new(config);
     let dw = decisions_writer.clone();
     let tx = event_tx.clone();
 
@@ -230,6 +226,17 @@ async fn run_build(ctx: BridgeContext) {
         litellm_model,
     );
 
+    let config = ProgramConfig {
+        codename: codename.clone(),
+        repo_root,
+        worktree_root,
+        feat_branch,
+        waves: ls_waves,
+        executor: Arc::new(InProcessExecutor::new(worker_fn)),
+    };
+
+    let program = Program::new(config);
+
     // L1 decision: build started
     let _ = dw.append(
         "L1",
@@ -237,7 +244,7 @@ async fn run_build(ctx: BridgeContext) {
         Some("canon://agents-playbook#§15"),
     );
 
-    let outcome = match program.run(worker_fn).await {
+    let outcome = match program.run().await {
         Ok(summary) => {
             let _ = dw.append(
                 "L1",
@@ -1171,6 +1178,7 @@ mod tests {
             concurrency_safe: false,
             context_tiers: vec![],
             prompt: format!("implement {id}"),
+            policy_override: None,
         }
     }
 

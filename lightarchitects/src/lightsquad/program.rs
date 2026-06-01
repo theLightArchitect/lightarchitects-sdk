@@ -25,12 +25,13 @@
 //! gating — it advances waves sequentially and exposes the build codename so
 //! external gate logic can read/write `SharedState`.
 
-use std::{future::Future, path::PathBuf};
+use std::{path::PathBuf, sync::Arc};
 
 use crate::lightsquad::{
     merge_agent::MergeAgent,
     types::{BuildStatus, Coordinator, Task, TaskStatus},
-    wave_dispatcher::{self, WaveError, WaveResult, WorkerSpec},
+    wave_dispatcher::{self, WaveError, WaveResult},
+    worker_executor::WorkerExecutor,
     worktree_manager::WorktreeManager,
 };
 
@@ -51,6 +52,14 @@ pub struct ProgramConfig {
     /// the outer ordering is sequential (wave N+1 starts only after wave N
     /// completes).
     pub waves: Vec<Vec<Task>>,
+    /// Executor used for every task in every wave.
+    ///
+    /// Typically [`InProcessExecutor`] (Phase 3) or [`ContainerExecutor`] (Phase 4+).
+    /// Set at construction time; shared across all waves via `Arc::clone`.
+    ///
+    /// [`InProcessExecutor`]: super::worker_executor::InProcessExecutor
+    /// [`ContainerExecutor`]: super::worker_executor::ContainerExecutor
+    pub executor: Arc<dyn WorkerExecutor>,
 }
 
 /// Top-level orchestrator for one lightsquad autonomous build.
@@ -86,22 +95,18 @@ impl Program {
         self.coordinator.clone()
     }
 
-    /// Run the full build.
+    /// Run the full build using the executor from [`ProgramConfig::executor`].
     ///
-    /// `worker_fn` is called once per task with a [`WorkerSpec`] containing
-    /// the task definition and its exclusive worktree path. It returns `Ok(())`
-    /// on success or `Err(String)` with an error summary on failure.
+    /// Each task receives a [`WorkerSpec`] via [`WorkerExecutor::dispatch_one`].
+    /// The executor is `Arc`-cloned per wave so concurrent waves share the same
+    /// underlying executor instance.
     ///
     /// # Errors
     ///
     /// Returns the first [`WaveError`] that causes the build to halt.
     /// Build status in `SharedState` reflects the terminal state
     /// (`Complete` or `Failed`) before this function returns.
-    pub async fn run<F, Fut>(&self, worker_fn: F) -> Result<BuildSummary, WaveError>
-    where
-        F: Fn(WorkerSpec) -> Fut + Clone + Send + 'static,
-        Fut: Future<Output = Result<(), String>> + Send + 'static,
-    {
+    pub async fn run(&self) -> Result<BuildSummary, WaveError> {
         // Seed all task statuses as Pending.
         {
             let mut state = self.coordinator.state.write().await;
@@ -127,7 +132,7 @@ impl Program {
                 &self.merge_agent,
                 &self.config.feat_branch,
                 &self.config.worktree_root,
-                worker_fn.clone(),
+                Arc::clone(&self.config.executor),
             )
             .await;
 
@@ -190,12 +195,14 @@ mod tests {
     use super::*;
 
     fn make_config(waves: Vec<Vec<Task>>) -> ProgramConfig {
+        use crate::lightsquad::worker_executor::InProcessExecutor;
         ProgramConfig {
             codename: "test-build".to_owned(),
             repo_root: PathBuf::from("/tmp/test-repo"),
             worktree_root: PathBuf::from("/tmp/test-worktrees"),
             feat_branch: "feat/test-build".to_owned(),
             waves,
+            executor: Arc::new(InProcessExecutor::new(|_spec| async { Ok(()) })),
         }
     }
 
@@ -221,7 +228,7 @@ mod tests {
     async fn run_empty_waves_completes() {
         let config = make_config(vec![]);
         let program = Program::new(config);
-        let result = program.run(|_spec| async { Ok(()) }).await;
+        let result = program.run().await;
         assert!(result.is_ok());
         let summary = result.unwrap();
         assert_eq!(summary.succeeded, 0);

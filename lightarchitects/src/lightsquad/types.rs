@@ -72,6 +72,32 @@ pub struct Task {
     pub context_tiers: Vec<ContextTier>,
     /// Prompt describing the task for the worker subprocess.
     pub prompt: String,
+    /// Per-task container policy override — may only *tighten* the system-wide
+    /// policy enforced by `ContainerExecutor`.  `None` = use system defaults.
+    /// Ignored by `InProcessExecutor`.
+    #[serde(default)]
+    pub policy_override: Option<TaskPolicyOverride>,
+}
+
+/// Per-task policy tightening hook for container-executor builds.
+///
+/// All fields are optional (`None` = use system default).  A non-`None` value
+/// that is *less restrictive* than the effective system policy causes
+/// [`WorkerError::Policy`] in `ContainerExecutor::dispatch_one`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TaskPolicyOverride {
+    /// Isolation mode — must be ≥ system `iso_mode` strictness when set.
+    #[serde(default)]
+    pub iso_mode: Option<crate::container_spawn::IsoMode>,
+    /// Network policy — must be ≥ system `network` strictness when set.
+    #[serde(default)]
+    pub network: Option<crate::container_spawn::NetworkPolicy>,
+    /// Memory cap in MiB — must be ≤ system cap when set.
+    #[serde(default)]
+    pub memory_mb: Option<u64>,
+    /// CPU allocation — must be ≤ system cap when set.
+    #[serde(default)]
+    pub cpus: Option<f64>,
 }
 
 // ── Shared state ──────────────────────────────────────────────────────────────
@@ -160,6 +186,7 @@ mod tests {
             concurrency_safe: false,
             context_tiers: vec![],
             prompt: "test".to_owned(),
+            policy_override: None,
         }
     }
 

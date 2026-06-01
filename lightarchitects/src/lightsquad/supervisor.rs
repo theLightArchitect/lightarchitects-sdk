@@ -406,7 +406,7 @@ mod tests {
     use tokio::sync::mpsc as test_mpsc;
 
     use super::*;
-    use crate::lightsquad::decision_pipeline::ActionKind;
+    use crate::lightsquad::{decision_pipeline::ActionKind, worker_executor::InProcessExecutor};
 
     fn test_config(dir: &TempDir) -> SupervisorConfig {
         SupervisorConfig {
@@ -668,6 +668,7 @@ mod tests {
             worktree_root: PathBuf::from("/worktrees"),
             feat_branch: "feat/my-build".to_owned(),
             waves: vec![],
+            executor: Arc::new(InProcessExecutor::new(|_| async { Ok(()) })),
         };
         let sc = SupervisorConfig::from_program(&config, [0u8; 32]);
         assert_eq!(sc.codename, "my-build");

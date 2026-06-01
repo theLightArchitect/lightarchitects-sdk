@@ -26,6 +26,7 @@ use lightarchitects::lightsquad::{
     preflight::{check_deps, check_plan, init_build_state},
     types::{BuildStatus, Coordinator, Task, TaskStatus},
     wave_dispatcher::{SLOT_CAPACITY, WorkerSpec, dispatch_wave, read_slot_capacity},
+    worker_executor::InProcessExecutor,
     worktree_manager::WorktreeManager,
 };
 use std::sync::Arc;
@@ -67,6 +68,7 @@ fn make_task(id: &str) -> Task {
         concurrency_safe: false,
         context_tiers: vec![],
         prompt: format!("implement {id}"),
+        policy_override: None,
     }
 }
 
@@ -79,6 +81,7 @@ fn make_task_with_dep(id: &str, dep: &str) -> Task {
         concurrency_safe: false,
         context_tiers: vec![],
         prompt: format!("implement {id}"),
+        policy_override: None,
     }
 }
 
@@ -151,7 +154,7 @@ async fn dispatch_wave_three_independent_tasks_all_succeed() {
         &ma,
         feat_branch,
         &wt_root,
-        mock_worker,
+        Arc::new(InProcessExecutor::new(mock_worker)),
     )
     .await;
 
@@ -217,7 +220,9 @@ async fn dispatch_wave_failing_worker_marks_task_failed() {
         &ma,
         feat_branch,
         &wt_root,
-        |_spec| async { Err("intentional test failure".to_owned()) },
+        Arc::new(InProcessExecutor::new(|_spec| async {
+            Err("intentional test failure".to_owned())
+        })),
     )
     .await;
 
@@ -374,11 +379,11 @@ async fn dispatch_wave_safe_tasks_peak_exceeds_write_slot_capacity() {
         &ma,
         feat_branch,
         &wt_root,
-        move |spec| {
+        Arc::new(InProcessExecutor::new(move |spec| {
             let active = Arc::clone(&active_for_worker);
             let peak = Arc::clone(&peak_for_worker);
             async move { peak_counting_worker(spec, active, peak, HOLD_MS).await }
-        },
+        })),
     )
     .await;
 
@@ -457,11 +462,11 @@ async fn dispatch_wave_unsafe_tasks_peak_respects_write_slot_capacity() {
         &ma,
         feat_branch,
         &wt_root,
-        move |spec| {
+        Arc::new(InProcessExecutor::new(move |spec| {
             let active = Arc::clone(&active_for_worker);
             let peak = Arc::clone(&peak_for_worker);
             async move { peak_counting_worker(spec, active, peak, HOLD_MS).await }
-        },
+        })),
     )
     .await;
 
@@ -534,11 +539,11 @@ async fn dispatch_wave_mixed_safe_and_unsafe_respect_independent_pools() {
         &ma,
         feat_branch,
         &wt_root,
-        move |spec| {
+        Arc::new(InProcessExecutor::new(move |spec| {
             let active = Arc::clone(&active_for_worker);
             let peak = Arc::clone(&peak_for_worker);
             async move { peak_counting_worker(spec, active, peak, HOLD_MS).await }
-        },
+        })),
     )
     .await;
 

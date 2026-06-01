@@ -39,7 +39,7 @@ pub const MAX_CONCURRENT: usize = 64;
 /// wildcard arm when matching it.  New isolation tiers may be added in minor
 /// releases without a semver bump.
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum IsoMode {
     /// Standard resource limits: memory, CPU, pids, `no-new-privileges`.
     #[default]
@@ -88,7 +88,7 @@ impl IsoMode {
 /// wildcard arm when matching.  `Balanced` is declared for Phase-2 API
 /// stability but returns [`SpawnError::NotYetImplemented`] from
 /// [`ContainerPolicy::build_docker_args`] until Phase 2 ships.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
 pub enum NetworkPolicy {
     /// Standard Docker bridge network — agents can reach the internet via

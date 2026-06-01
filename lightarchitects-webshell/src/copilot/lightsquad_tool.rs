@@ -32,6 +32,7 @@ use lightarchitects::lightsquad::{
     plan_schema::{PlanInput, lightsquad_plan_tool_definition, validate_plan},
     program::{BuildSummary, Program, ProgramConfig},
     types::Task,
+    worker_executor::InProcessExecutor,
 };
 
 use crate::config::HermesMcpConfig;
@@ -275,6 +276,7 @@ impl LightsquadToolExecutor {
                         concurrency_safe: t.concurrency_safe,
                         context_tiers: vec![],
                         prompt: t.prompt.clone(),
+                        policy_override: None,
                     })
                     .collect()
             })
@@ -337,9 +339,10 @@ impl LightsquadToolExecutor {
             worktree_root: self.worktree_root.join(format!("la-copilot-{build_id}")),
             feat_branch,
             waves: ls_waves,
+            executor: Arc::new(InProcessExecutor::new(worker_fn)),
         };
         let program = Program::new(config);
-        let summary = spawn_with_span_context(async move { program.run(worker_fn).await })
+        let summary = spawn_with_span_context(async move { program.run().await })
             .await
             .map_err(|e| ToolError::Internal(format!("program task join error: {e}")))?
             .map_err(|e| ToolError::Internal(format!("build error: {e}")))?;

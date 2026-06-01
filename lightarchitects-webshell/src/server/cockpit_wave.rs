@@ -344,6 +344,7 @@ fn ownership_gate(task_specs: &[TaskSpec]) -> Result<(), axum::response::Respons
             concurrency_safe: false,
             context_tiers: vec![],
             prompt: String::new(),
+            policy_override: None,
         })
         .collect();
 
@@ -528,6 +529,7 @@ mod tests {
                 concurrency_safe: false,
                 context_tiers: vec![],
                 prompt: String::new(),
+                policy_override: None,
             })
             .collect();
         assert!(matches!(
@@ -553,6 +555,7 @@ mod tests {
                 concurrency_safe: false,
                 context_tiers: vec![],
                 prompt: String::new(),
+                policy_override: None,
             })
             .collect();
         assert!(validate_wave_ownership(&stubs).is_ok());
@@ -812,6 +815,7 @@ mod tests {
                     concurrency_safe: false,
                     context_tiers: vec![],
                     prompt: String::new(),
+                    policy_override: None,
                 })
                 .collect()
         }
