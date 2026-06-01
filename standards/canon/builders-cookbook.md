@@ -68,7 +68,7 @@ The authoritative documents governing the platform. Every operational question h
 | **[Agents Playbook](agents-playbook.md)** | *How agents operate* — roles, A2A protocol, state machines, Gatekeeper, HITL, git lifecycle | `canon://agents-playbook` |
 | **[Architects Blueprint](architects-blueprint.md)** | *How to plan builds* — research-first doctrine, scaffolding, tracking files, pre-finalization C1–C8 gate, 21 Parts | `canon://architects-blueprint` |
 | **[Operators Manual](operators-manual.md)** | *How to use the platform* — setup, squad ops, vault ops, security, voice, observability | `canon://operators-manual` |
-| **[LASDLC Template](./LASDLC-TEMPLATE-v1.yaml)** | *Build schema* — tier/phase/gate structure (v2.5.1) | `canon://lasdlc-template` |
+| **[LASDLC Template](./LASDLC-TEMPLATE-v1.yaml)** | *Build schema* — tier/phase/gate structure (v2.8.0) | `canon://lasdlc-template` |
 | **[Security Guardrails](security-guardrails.md)** | *How to stay secure* — threat model, agentic AI security, sandboxing, CVE management, red team, compliance | `canon://security-guardrails` |
 
 ---
@@ -7430,9 +7430,88 @@ Memory entries with promotion-derived rule provenance:
 
 ---
 
+---
+
+## §79 — Skill Interleaving Protocol — RATIFIED 2026-06-01, Canon XV, Kevin Francis Tan
+
+Every LASDLC build plan (v2.8.0+) must interleave quality-and-security skill invocations at four close boundaries. The canonical sandwich is:
+
+```
+RESEARCH → IMPLEMENT → [task_close] → [wave_close] → wave GATE → [phase_close] → [build_close]
+```
+
+**Binding**: LASDLC Template §1.9 (authoritative, machine-readable). This section is the prose doctrine.
+
+### §79.1 Close-boundary skill schedule
+
+| Boundary | Required skill invocations | Industry baseline anchors |
+|----------|---------------------------|--------------------------|
+| **task_close** | Q1–Q4 gates + `IMPLEMENTATION_COMPLETE` | Cookbook Q1-Q4 |
+| **wave_close** | `/VERIFY` → `/GUARD` | [T] OWASP WSTG; [S] CWE Top 25 |
+| **wave GATE** | Gatekeeper [A+S+Q+C+O+P+K+D+T+R] | per §7.2 |
+| **phase_close** | `/REVIEW` → `/OBSERVE` → `/ENRICH` (sig ≥ 5.0) | [Q] ISO 25010; [O] DORA; [K] Canon XXX |
+| **build_close** | `/SCRUM` → `/ENRICH` (sig ≥ 7.0) + merge GATE | [all] SPACE Framework |
+
+### §79.2 BLOCKING removal
+
+Removing any BLOCKING skill_close invocation (task_close Q1-Q4, wave_close /VERIFY, wave_close /GUARD, build_close /SCRUM) requires a LÆX waiver recorded in the plan. Deviation note format: `# DEVIATION: <skill> removed — reason: <rationale> — LÆX waiver: #<ticket>`.
+
+### §79.3 Composition
+
+- **Composes with §7.2** (Gatekeeper): Gatekeeper IS the wave GATE; §79 schedules the skills that feed it.
+- **Composes with §7.7** (Hypothesis Verification): task_close `/VERIFY` fires AFTER §7.7 review, not instead of it.
+- **Composes with §54** (Build Plan Template Standard): all plans on LASDLC v2.8.0+ declare their skill_close positions in Section 1.9.
+
+**LÆX Queue**: #60, 2026-06-01.
+
+---
+
+## §80 — Structural Completeness Rubric — RATIFIED 2026-06-01, Canon XV, Kevin Francis Tan
+
+Every LASDLC plan emits a `structural_rubric` verdict block before `/BUILD` accepts it. The rubric is defined in full in LASDLC Template §9.8. This section is the prose doctrine.
+
+**Binding**: LASDLC Template §9.8 (authoritative). `canon://lasdlc-template` §9.8 is the machine-readable spec.
+
+### §80.1 Blocking field checklist
+
+A plan FAILS the rubric if any of these are absent or wrong:
+
+| Field ID | Check | Consequence |
+|----------|-------|-------------|
+| FM1 | `project` in frontmatter | BLOCKING |
+| FM2 | `codename` in frontmatter | BLOCKING |
+| FM3 | `lasdlc_template_version: "2.8.0"` | BLOCKING |
+| FM4 | `canonical_hierarchy: SMALL\|MEDIUM\|LARGE` matches declared tier | BLOCKING |
+| FM5 | `exit_gate` present per phase | BLOCKING |
+| FM6 | `structural_rubric.overall: PASS` or `WARN` in frontmatter | BLOCKING |
+| RC1 | SOUL search record cited for MEDIUM/LARGE | BLOCKING |
+| RC2 | Context7 citation present for library-touching phases | BLOCKING |
+| RC3 | `research_evidence:` block present for MEDIUM/LARGE | BLOCKING |
+
+### §80.2 Citation requirements (WARNING)
+
+Missing any of the following generates a WARN (not FAIL) if a deviation note explains the absence:
+
+| Citation type | When required | Deviation note prefix |
+|---------------|---------------|----------------------|
+| Context7 | Any library/framework API usage | `# RUBRIC NOTE: context7 —` |
+| HuggingFace | ML model / paper evidence | `# RUBRIC NOTE: huggingface —` |
+| Firecrawl | Post-cutoff or live web research | `# RUBRIC NOTE: firecrawl —` |
+| SOUL search | Prior decisions on the topic | `# RUBRIC NOTE: SOUL search —` |
+
+### §80.3 Enforcement
+
+- `/PLAN` Step 5.6 emits the rubric verdict YAML (see PLAN skill v2.4.0+).
+- `/BUILD` Step 1.5 checks the rubric verdict before accepting the plan. `overall: FAIL` = hard halt.
+- `/SCRUM` R1 includes rubric compliance as a dimension for each sibling's review.
+
+**LÆX Queue**: #61, 2026-06-01.
+
+---
+
 **Rule** (per separation-of-concerns refactor, 2026-05-18): no tail-amendment blocks or scattered per-section version-history entries in this file. Section content lives here; amendment narrative lives in the CHANGELOG companion.
 
-**Current version**: see CHANGELOG for latest. As of 2026-05-30: **v3.11.0** (§78 LLM HTTP Dispatch Doctrine; LÆX0-pattern review + Kevin Francis Tan ratified webshell-litellm-adapter session 2026-05-30).
+**Current version**: see CHANGELOG for latest. As of 2026-06-01: **v3.12.0** (§79 Skill Interleaving Protocol + §80 Structural Completeness Rubric; LASDLC v2.8.0 binding; LÆX0-pattern + Kevin Francis Tan ratified 2026-06-01).
 
 *Builders Cookbook · Light Architects · `canon://builders-cookbook`*
 

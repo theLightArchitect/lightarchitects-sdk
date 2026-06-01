@@ -49,12 +49,21 @@
 # ============================================================================
 
 template_name: "LASDLC-TEMPLATE-v1"
-template_version: "2.7.0"
+template_version: "2.8.0"
 # Amendment history → standards/canon/LASDLC-TEMPLATE-v1.CHANGELOG.md
 # Schema file = current state only. Inline `added_in_template_version: "X.Y.Z"`
 # markers throughout this file identify when each field was introduced.
 #
 # Current minor at-a-glance (one-line summaries; full detail in CHANGELOG):
+# - v2.8.0 (2026-06-01): Section 1.9 SKILL INTERLEAVING PROTOCOL — mandatory /lightarchitects
+#   skill invocations at task_close (fmt+IMPL_COMPLETE attestation), wave_close (/VERIFY+/GUARD,
+#   +/SECURE if sec-touching), phase_close (/REVIEW+/OBSERVE+/SECURE+/ENRICH sig≥5.0),
+#   build_close (/SCRUM+/ENRICH sig≥7.0+IMPL_COMPLETE). Each skill mapped to industry-baseline
+#   anchors from helix/user/standards/industry-baselines/ (OWASP/NIST/MITRE/ISO/DORA/OTel/SPACE).
+#   post_unit_attestation step added: IMPLEMENTATION_COMPLETE required at all granularities;
+#   BROADCAST_CAPACITY ≥1024; trust_boundary unverified_pre_2.10; fire-and-forget EVA synthesis.
+#   Canonical lifecycle: RESEARCH→IMPLEMENT→task_close→wave_close→wave GATE→phase_close→
+#   IMPL_COMPLETE→phase GATE→build_close→merge GATE. Composes with §1.8.
 # - v2.7.0 (2026-05-31): Section 1.8 RESEARCH+GATE INTERLEAVING PROTOCOL — mandatory
 #   RESEARCH step (Context7+HuggingFace+Firecrawl+SOUL+codebase) before every phase/wave/task;
 #   GATE step (/lightarchitects:GATE) after every wave+phase+merge; context-aware: gate verifies
@@ -600,6 +609,9 @@ section_numbering_convention:
     - "1.6": TIER ORCHESTRATION TOPOLOGY (added v2.5.0 — meta-skill dispatch model per tier; SMALL/MEDIUM/LARGE autonomy levels + HITL triggers)
     - "1.7": GIT ORCHESTRATION TOPOLOGY (added v2.5.1 — per-task git_scope; git_branching_invariants; reference-table integrity)
     - "1.8": RESEARCH+GATE INTERLEAVING PROTOCOL (added v2.7.0 — RESEARCH before every phase/wave/task using Context7+HuggingFace+Firecrawl+SOUL+codebase; GATE after every wave+phase+merge; context-aware gate verifies impl vs researched approach; scope levels full|standard|light; canonical sandwich: RESEARCH→IMPLEMENT→GATE)
+    - "1.9": SKILL INTERLEAVING PROTOCOL (added v2.8.0 — mandatory /lightarchitects skill invocations at task_close/wave_close/phase_close/build_close; each skill mapped to industry-baseline anchors; composes with §1.8 to form: RESEARCH→IMPLEMENT→task_close skills→wave_close skills→wave GATE→phase_close skills→IMPL_COMPLETE→phase GATE→build_close skills→merge GATE; post_unit_attestation IMPLEMENTATION_COMPLETE required at all granularities per §T Northstar)
+    - "1.10": CANONICAL PHASE-WAVE-TASK HIERARCHIES (added v2.8.0 — pre-built reusable phase/wave/task templates for SMALL/MEDIUM/LARGE tiers; instantiate by tier selection; each phase-type has canonical wave count + default tasks + skill_close positions; reduces plan authoring overhead; plans cite which canonical hierarchy they used and note deviations)
+    - "1.11": PLAN-SYNC INTERLEAVING PROTOCOL (added v2.8.0 — agent must sync build plan + manifest + TaskList at task_close, wave_close, phase_close, build_close; ensures build state docs never drift from execution reality; drift is a Canon XXXIV violation)
     - 2: EXECUTION PHASES
     - "2.5": LOOP CYCLE (added v2.1.0 — pre-flight → implementation → cross-validation → feedback → correction)
     - "2.6": PHASE-LEVEL SCHEMAS (added v2.1.0 — cost_budget, observability_contract, expected_deliverables, agent_capability_declaration)
@@ -2491,6 +2503,1018 @@ research_gate_interleaving_protocol:
       view_mode: "/builds/<codename>/phase/<phase>/gate"
       fields: ["scope", "dimensions_checked", "researched_approach_verified", "gate_result"]
       update_signal: "sse_subscribe(gate_step_events)"
+
+# ============================================================================
+# SECTION 1.9: SKILL INTERLEAVING PROTOCOL (NEW v2.8.0)
+# ============================================================================
+# The RESEARCH → IMPLEMENT → GATE sandwich (Section 1.8) provides the correctness
+# foundation. Skill interleaving layers specialized /lightarchitects domain agents
+# at defined lifecycle boundaries to enforce quality, security, performance, and
+# knowledge consistency against cached industry baselines (REGISTRY.md).
+#
+# INTERLEAVING POSITIONS (ascending granularity):
+#   task_close:   fmt+clippy inline → IMPLEMENTATION_COMPLETE attestation (v2.8.0 §T)
+#   wave_close:   /VERIFY + /GUARD (+ /SECURE if security-touching) → wave GATE
+#   phase_close:  /REVIEW + /OBSERVE (+ /SECURE for sec phases) + /ENRICH sig≥5.0
+#                 → IMPLEMENTATION_COMPLETE → phase GATE
+#   build_close:  /SCRUM (all gates, 7 siblings) + /ENRICH sig≥7.0
+#                 → IMPLEMENTATION_COMPLETE → merge GATE
+#
+# Industry-baseline anchors per skill (helix/user/standards/industry-baselines/):
+#   /VERIFY    [T]    OWASP WSTG v4.2 · ML Test Score (Breck 2017) · WCAG 2.2
+#   /GUARD     [S]    OWASP ASVS v5.0 · NIST SSDF v1.1 · CWE Top 25 2025 · CIS Controls v8
+#   /SECURE    [S]    OWASP LLM Top 10 v2.0 · MITRE ATT&CK v19.1 · MITRE ATLAS v4.5 · STRIDE · LINDDUN
+#   /REVIEW    [Q]    ISO/IEC 25010:2023 · CISQ ASCQM · ISO/IEC 5055:2021
+#   /OBSERVE   [O][P] OpenTelemetry SemConv 1.56.0 · DORA 2025 · SRE Golden Signals · Apdex v1.0
+#   /SCRUM     [all]  All gates · SPACE Framework 2021 · Flow Framework 2018
+#   /ENRICH    [K][D] Helix significance thresholds · Canon XXX strand mosaic
+
+skill_interleaving_protocol:
+  added_in_template_version: "2.8.0"
+  description: |
+    Mandatory /lightarchitects skill invocations interleaved at defined lifecycle
+    boundaries. Composes with Section 1.8 RESEARCH+GATE: skills run WITHIN or as
+    a prerequisite to GATE evaluation. All skills verify against industry baselines
+    cached in helix/user/standards/industry-baselines/. Skill outputs feed the
+    subsequent GATE as additional evidence — gate reviewers cite baseline findings.
+  canon_reference: |
+    Gatekeeper Registry (gatekeeper-registry.yaml) · Canon XXX (10-strand mosaic) ·
+    Builders Cookbook §60.9 (inline citation protocol) · CLAUDE.md Implementation SOP
+    (two concurrent code-reviewer agents for security-sensitive changes) · §T Northstar
+    (IMPLEMENTATION_COMPLETE attestation at every unit close — canon://northstar)
+
+  positions:
+
+    task_close:
+      description: |
+        After every task commit within a wave. Inline only — no agent dispatch.
+        Formatting + linting qualify the task; IMPLEMENTATION_COMPLETE attestation
+        feeds the observability layer for Lineage Circuit threading.
+      blocking: true
+      skills:
+        - id: "inline_fmt_clippy"
+          invocation: |
+            Rust tasks:    cargo fmt --check && cargo clippy -- -D warnings
+            Frontend tasks: pnpm exec svelte-check --threshold error && pnpm test:run (if test files changed)
+          tool: "Bash (inline — no agent dispatch)"
+          gates: ["Q1 (fmt)", "Q2 (clippy / svelte-check)"]
+          industry_baselines:
+            quality: "quality/iso/iso-25010-2023-stub.md §Q2.2.3 (maintainability: correctness) + §Q2.4.1 (modularity)"
+        - id: "impl_complete_attestation"
+          description: "Emit IMPLEMENTATION_COMPLETE attestation (self_report layer). Full schema per post_unit_attestation v2.8.0 (Section 1.9 positions + §T Northstar)."
+          invocation: "A2A bus emit OR manifest.yaml entry until BUILD 15 (webshell-impl-complete-attestation) ships"
+          tool: "A2A bus (post-BUILD-15); manifest.yaml task_attestations[] (pre-BUILD-15)"
+          gates: ["§T (Implementation Attestation Northstar)"]
+          blocking: false   # advisory until BUILD 15 ships; escalates to blocking after ship
+          industry_baselines:
+            operations: "operations/cncf/opentelemetry-semconv-2026-05-12.md (span lifecycle, task-granularity spans)"
+
+    wave_close:
+      description: |
+        After all tasks in a wave signal IMPLEMENTATION_COMPLETE, before the wave-level
+        GATE (Section 1.8). Two skills mandatory; one conditional on security surface.
+        Blocking: next wave does not start until all wave_close skills pass.
+      blocking: true
+      skills:
+        - id: "verify"
+          skill: "/lightarchitects:VERIFY"
+          subagent_type: "lightarchitects:testing"
+          invocation: "/VERIFY --scope wave"
+          gates: ["T (test count ratchets vs wave start baseline)", "Q3 (cargo test --lib --tests)", "Q4 (pnpm test:run — frontend waves)"]
+          required_when: "every wave"
+          industry_baselines:
+            testing: "testing/owasp/owasp-wstg-v4.2-2026-05-04.md (WSTG-ATHN/AUTHZ/INFO test procedures)"
+            ml_readiness: "testing/academic/ml-test-score/breck-2017.md (production-readiness test score — applicable when ML inference surface touched)"
+            accessibility: "quality/w3c/w3c-wcag-2.2-2026-05-04.md (Success Criteria 1-3 — when UI surface touched)"
+
+        - id: "guard"
+          skill: "/lightarchitects:SECURE"
+          subagent_type: "lightarchitects:security"
+          invocation: "/SECURE --scope wave --mode guard"
+          description: "CORSO GUARD sub-skill — static analysis + dependency audit + security surface scan."
+          gates: ["S1 (security surface scan)", "S2 (cargo-audit + cargo-deny if new crates)", "S3 (SSDF PW.6.2 — code review before merge)"]
+          required_when: "every wave"
+          industry_baselines:
+            asvs: "security/owasp/owasp-asvs-v5.0.0-2026-05-12.md (ASVS L1 minimum — V1.1, V2.1, V5.1, V12.1, V14.1)"
+            ssdf: "security/nist/nist-ssdf-v1.1-2026-05-04.md (PW.6.2 code review + PW.7.2 vulnerability testing)"
+            cwe: "security/mitre/mitre-cwe-top-25-2025-2026-05-12.md (Top 25 scan — CWE-79, CWE-89, CWE-284, CWE-287 priority)"
+            cis: "security/cis/cis-controls-v8-2026-05-04.md (Control 16: Application Software Security)"
+
+        - id: "seraph_scan"
+          skill: "/lightarchitects:SECURE"
+          subagent_type: "lightarchitects:security"
+          invocation: "/SECURE --scope wave --mode seraph"
+          description: "SERAPH red-team lens — LLM threat surface + injection vectors + adversarial ML patterns."
+          gates: ["S4 (OWASP LLM threat surface scan)", "S5 (indirect prompt injection — LLM01)", "S6 (MITRE ATT&CK surface mapping)"]
+          required_when: "security-touching waves: auth, LLM output sinks, PTY shell, file system writes, network egress, helix reads"
+          industry_baselines:
+            llm: "security/owasp/owasp-llm-top-10-v2.0-2026-05-05.md (LLM01 Prompt Injection through LLM10 Unbounded Consumption)"
+            attack: "security/mitre/mitre-attack-enterprise-2026-05-12.md (TA0001 Initial Access, TA0003 Persistence, TA0040 Impact)"
+            atlas: "security/mitre/mitre-atlas-2026-05-04.md (ML-specific adversarial techniques)"
+
+    phase_close:
+      description: |
+        After all waves in a phase complete their wave_close skills and pass wave GATE.
+        Three mandatory skills + one conditional + one advisory enrichment, in sequence.
+        Skills run BEFORE IMPLEMENTATION_COMPLETE attestation and BEFORE phase GATE.
+        Phase GATE receives all skill findings as supplementary evidence.
+      blocking: true
+      skill_sequence: "sequential — each skill's output informs the next"
+      skills:
+        - id: "review"
+          skill: "/lightarchitects:REVIEW"
+          subagent_type: "lightarchitects:quality"
+          invocation: "/REVIEW --scope phase"
+          gates: ["Q (ISO 25010 conformance across all 8 characteristics)", "Q (CISQ ASCQM complexity + security)", "C (Canon compliance — LASDLC schema + Builders Cookbook + Architects Blueprint)"]
+          required_when: "every phase"
+          industry_baselines:
+            quality_iso: "quality/iso/iso-25010-2023-stub.md (all 8 quality characteristics: functional suitability, reliability, performance efficiency, usability, security, compatibility, maintainability, portability)"
+            quality_cisq: "quality/cisq/cisq-cost-poor-quality-2022-2026-05-04.md (technical debt proxy — cost of poor quality)"
+            quality_5055: "quality/iso/iso-5055-2021-stub.md (CISQ ASCQM automated measures: reliability, security, performance efficiency, maintainability)"
+
+        - id: "observe"
+          skill: "/lightarchitects:OBSERVE"
+          subagent_type: "lightarchitects:ops"
+          invocation: "/OBSERVE --scope phase"
+          gates: ["O (DORA metrics — deploy frequency, lead time, MTTR, change failure rate)", "P (latency budget within p99 SLO target)", "O (trace context propagation verified end-to-end)", "O (Apdex T-threshold compliance)"]
+          required_when: "every phase"
+          industry_baselines:
+            observability: "operations/cncf/opentelemetry-semconv-2026-05-12.md (span naming, attribute conventions, resource detection)"
+            dora: "operations/google-cloud/state-of-devops-2025-2026-05-12.md (DORA 2025 elite performer thresholds: deployment frequency ≥1/day, lead time ≤1hr, MTTR ≤1hr, change failure rate ≤5%)"
+            sre: "operations/google/google-sre-golden-signals-2026-05-04.md (latency + errors + traffic + saturation)"
+            apdex: "operations/cncf/apdex-spec-v1.0-2026-05-04.md (user-visible response time SLO — T=0.5s for interactive, T=4.0s for batch)"
+            trace_context: "operations/w3c/w3c-trace-context-v1-2026-05-04.md (W3C traceparent propagation)"
+
+        - id: "secure_phase"
+          skill: "/lightarchitects:SECURE"
+          subagent_type: "lightarchitects:security"
+          invocation: "/SECURE --scope phase --mode full"
+          gates: ["S (STRIDE threat model review — all 6 categories)", "S (OWASP ASVS L2 for persistent changes)", "S (supply chain: cargo-audit + cargo-deny + npm-audit)", "S (LINDDUN privacy threat review — when PII surface touched)"]
+          required_when: "security-touching phases + all Implement phases with auth/LLM/PTY/file/network surface"
+          optional_when: "non-security-touching phases (advisory: findings surface as WARNING not BLOCKING)"
+          industry_baselines:
+            stride: "security/microsoft/microsoft-stride-2026-05-04.md (STRIDE: Spoofing, Tampering, Repudiation, Information Disclosure, DoS, Elevation)"
+            linddun: "security/linddun/linddun-2026-05-04.md (privacy threat modelling — Linking, Identifying, Non-repudiation, Detecting, Disclosure, Unawareness, Non-compliance)"
+            asvs_l2: "security/owasp/owasp-asvs-v5.0.0-2026-05-12.md (L2 for all changes touching auth/storage/crypto/session)"
+            slsa: "security/openssf/slsa-spec-v1.2-2026-05-12.md (SLSA L2 for release artifacts — provenance + build platform)"
+            sbom: "security/owasp/cyclonedx-v1.6-2026-05-04.md + security/linux-foundation/spdx-v3.0.1-2026-05-12.md (SBOM per artifact)"
+            nist_csf: "security/nist/nist-csf-v2.0-2026-05-04.md (Govern + Identify + Protect functions)"
+
+        - id: "enrich_phase"
+          skill: "/lightarchitects:ENRICH"
+          subagent_type: "lightarchitects:knowledge"
+          invocation: "/ENRICH --significance-threshold 5.0 --scope phase"
+          gates: ["K (helix enrichment — strand coverage per Canon XXX)", "D (rustdoc + JSDoc coverage on all new public surfaces)"]
+          required_when: "phase significance ≥ 5.0 (EVA-assessed post-/REVIEW output)"
+          optional_when: "phase significance < 5.0 (advisory enrichment recommended, not blocking)"
+          fire_position: "after /REVIEW+/OBSERVE+/SECURE_PHASE; before IMPLEMENTATION_COMPLETE attestation"
+          industry_baselines:
+            knowledge: "Canon XXX strand mosaic — every strand ([A][S][Q][C][O][P][K][D][T][R]) must have a gate home; orphan strands are policy violations"
+            documentation: "documentation/README.md (Diátaxis framework: tutorials, how-to guides, reference, explanation — match phase output type)"
+
+      impl_complete_position: "AFTER all phase_close skills pass; BEFORE phase GATE evaluation — phase-level IMPLEMENTATION_COMPLETE with self_report + ayin_witness layers (eva_synthesis optional but recommended)"
+
+    build_close:
+      description: |
+        After the final phase of a build and all phase_close skills pass. Squad-level
+        review + helix enrichment + build-level IMPLEMENTATION_COMPLETE attestation.
+        These are the highest-cost skill invocations — reserve for genuine build close.
+        Blocks merge-to-main GATE. SCRUM runs first (findings feed ENRICH); ENRICH after;
+        IMPLEMENTATION_COMPLETE last before merge GATE.
+      blocking: true
+      skill_sequence: "SCRUM → ENRICH → IMPLEMENTATION_COMPLETE → merge GATE"
+      skills:
+        - id: "scrum"
+          skill: "/lightarchitects:SCRUM"
+          invocation: "/SCRUM <build-codename>"
+          round_protocol: "3-round structured review per SCRUM §A3-A6 (R1 parallel assessments → R2 cross-critique → R3 moderation synthesis)"
+          gates: ["A+S+Q+C+O+P+K+D+T+R (all 10 quality dimensions, 7 siblings in parallel)"]
+          required_when: "every build close (before merge to main)"
+          industry_baselines:
+            all_sibling_baselines: "helix/{corso,eva,soul,quantum,seraph,ayin,laex0}/industry-baselines.md — each sibling loads their gate-filtered baseline set during /SCRUM R1"
+            productivity_space: "operations/academic/space/forsgren-2021.md (SPACE: Satisfaction, Performance, Activity, Communication, Efficiency — verify build does not degrade composite)"
+            productivity_flow: "operations/academic/flow/kersten-2018.md (flow time + flow efficiency per build — cycle time should not regress)"
+            security_api: "security/owasp/owasp-api-security-top-10-2023-2026-05-04.md (API-specific findings SERAPH checks in R1)"
+
+        - id: "enrich_build"
+          skill: "/lightarchitects:ENRICH"
+          subagent_type: "lightarchitects:knowledge"
+          invocation: "/ENRICH --significance-threshold 7.0 --scope build"
+          gates: ["K (helix enrichment at sig≥7.0 — build-level memory always qualifies)", "D (full doc audit before merge — 90% rustdoc/JSDoc coverage on public surfaces)"]
+          required_when: "every build close (build significance is always ≥7.0 per canon)"
+          fire_position: "after /SCRUM findings processed; before IMPLEMENTATION_COMPLETE attestation"
+          industry_baselines:
+            knowledge: "Canon XXX + Canon XXXIX (4-step promotion pipeline for session learnings)"
+            documentation: "documentation/README.md (Diátaxis framework — ensure build produces at least one doc type: reference, explanation, or how-to)"
+
+      impl_complete_position: "AFTER /SCRUM + /ENRICH; BEFORE merge GATE — build-level IMPLEMENTATION_COMPLETE with all three attestation layers (self_report required; ayin_witness required; eva_synthesis recommended at build granularity)"
+
+  # ─── COMPOSIBILITY WITH SECTION 1.8 ──────────────────────────────────────
+  relation_to_research_gate_protocol:
+    description: |
+      Skill interleaving (Section 1.9) composes with the RESEARCH+GATE sandwich
+      (Section 1.8) as follows. Skills do not replace gates — they feed them.
+    canonical_lifecycle_sandwich: |
+      RESEARCH (§1.8) →
+        IMPLEMENT:
+          [task_close: fmt+clippy → IMPLEMENTATION_COMPLETE] → (per task)
+          [wave_close: /VERIFY + /GUARD (+ /SECURE if sec-touching)] → wave GATE (§1.8) → (per wave)
+        [phase_close: /REVIEW + /OBSERVE + /SECURE (sec phases) + /ENRICH sig≥5.0] →
+        IMPLEMENTATION_COMPLETE (phase-level, §T) →
+        phase GATE (§1.8) →
+      (repeat per phase)
+      [build_close: /SCRUM + /ENRICH sig≥7.0] →
+      IMPLEMENTATION_COMPLETE (build-level, §T) →
+      merge GATE (§1.8)
+    gate_receives_skill_output: |
+      Each GATE (wave/phase/merge) receives the preceding skill invocation findings
+      as supplementary evidence. The gate reviewer should cite: "/GUARD found CWE-79
+      risk in wave_close — remediated before wave GATE" rather than re-discovering it.
+      Skill outputs are GATE input, not GATE replacement.
+
+  # ─── SCOPE CALIBRATION BY TIER ───────────────────────────────────────────
+  scope_calibration:
+    description: |
+      Skill invocation depth scales with build tier. Do not invoke full /SCRUM
+      at wave_close — cost and time are disproportionate. Tier governs which skills
+      are REQUIRED vs OPTIONAL at each position.
+    tiers:
+      SMALL:
+        task_close:  ["inline_fmt_clippy", "impl_complete_attestation"]
+        wave_close:  ["verify", "guard"]
+        phase_close: ["review", "observe", "enrich_phase (sig≥5.0)"]
+        build_close: ["scrum", "enrich_build"]
+        notes: "seraph_scan and secure_phase are ADVISORY for SMALL (surface area typically limited)"
+      MEDIUM:
+        task_close:  ["inline_fmt_clippy", "impl_complete_attestation"]
+        wave_close:  ["verify", "guard", "seraph_scan (security-touching waves)"]
+        phase_close: ["review", "observe", "secure_phase (security-touching phases)", "enrich_phase (sig≥5.0)"]
+        build_close: ["scrum", "enrich_build"]
+      LARGE:
+        task_close:  ["inline_fmt_clippy", "impl_complete_attestation"]
+        wave_close:  ["verify", "guard", "seraph_scan (security-touching waves — REQUIRED not advisory)"]
+        phase_close: ["review", "observe", "secure_phase (EVERY phase — not just security-touching)", "enrich_phase (sig≥5.0)"]
+        build_close: ["scrum", "enrich_build"]
+        notes: "For LARGE builds, secure_phase is required at every phase boundary regardless of security surface"
+
+  # ─── INDUSTRY BASELINE QUICK REFERENCE ───────────────────────────────────
+  industry_baseline_map:
+    description: |
+      Canonical mapping of /lightarchitects skills to their primary industry baseline
+      anchors. Source: helix/user/standards/industry-baselines/REGISTRY.md.
+      Each sibling loads their gate-filtered subset during /SCRUM R1 from:
+      helix/{corso,eva,soul,quantum,seraph,ayin,laex0}/industry-baselines.md
+    skills:
+      VERIFY:
+        gate: "[T]"
+        primary:
+          - "testing/owasp/owasp-wstg-v4.2-2026-05-04.md"
+          - "testing/academic/ml-test-score/breck-2017.md"
+        conditional:
+          - "quality/w3c/w3c-wcag-2.2-2026-05-04.md  (when accessibility surface touched)"
+      GUARD:
+        gate: "[S]"
+        primary:
+          - "security/owasp/owasp-asvs-v5.0.0-2026-05-12.md"
+          - "security/nist/nist-ssdf-v1.1-2026-05-04.md"
+          - "security/mitre/mitre-cwe-top-25-2025-2026-05-12.md"
+          - "security/cis/cis-controls-v8-2026-05-04.md"
+      SECURE:
+        gate: "[S]"
+        threat_modelling:
+          - "security/microsoft/microsoft-stride-2026-05-04.md"
+          - "security/linddun/linddun-2026-05-04.md"
+        llm_adversarial:
+          - "security/owasp/owasp-llm-top-10-v2.0-2026-05-05.md"
+          - "security/mitre/mitre-attack-enterprise-2026-05-12.md"
+          - "security/mitre/mitre-atlas-2026-05-04.md"
+        supply_chain:
+          - "security/openssf/slsa-spec-v1.2-2026-05-12.md"
+          - "security/openssf/slsa-levels-v1.2-2026-05-12.md"
+          - "security/linux-foundation/spdx-v3.0.1-2026-05-12.md"
+          - "security/owasp/cyclonedx-v1.6-2026-05-04.md"
+      REVIEW:
+        gate: "[Q]"
+        primary:
+          - "quality/iso/iso-25010-2023-stub.md"
+          - "quality/iso/iso-5055-2021-stub.md"
+          - "quality/cisq/cisq-cost-poor-quality-2022-2026-05-04.md"
+      OBSERVE:
+        gate: "[O][P]"
+        observability:
+          - "operations/cncf/opentelemetry-semconv-2026-05-12.md"
+          - "operations/cncf/opentelemetry-trace-api-2026-05-12.md"
+          - "operations/w3c/w3c-trace-context-v1-2026-05-04.md"
+        dora_sre:
+          - "operations/google-cloud/state-of-devops-2025-2026-05-12.md"
+          - "operations/google/google-sre-golden-signals-2026-05-04.md"
+          - "operations/cncf/apdex-spec-v1.0-2026-05-04.md"
+        performance_theory:
+          - "performance/academic/little/little-1961.md"
+          - "performance/academic/amdahl/amdahl-1967.md"
+      SCRUM:
+        gate: "[A+S+Q+C+O+P+K+D+T+R]"
+        primary: "All sibling-specific baseline sets in helix/{sibling}/industry-baselines.md"
+        productivity:
+          - "operations/academic/space/forsgren-2021.md"
+          - "operations/academic/flow/kersten-2018.md"
+        api_security:
+          - "security/owasp/owasp-api-security-top-10-2023-2026-05-04.md"
+      ENRICH:
+        gate: "[K][D]"
+        knowledge: "Canon XXX (10-strand mosaic — every strand must have a gate home)"
+        documentation: "documentation/README.md (Diátaxis framework)"
+
+  # ─── MANIFEST FIELD ───────────────────────────────────────────────────────
+  manifest_field:
+    description: "Per-granularity skill invocation record in manifest.yaml under skill_invocations[]"
+    schema:
+      skill_invocations:
+        granularity: "<task|wave|phase|build>"
+        position: "<task_close|wave_close|phase_close|build_close>"
+        skill_ids: ["<inline_fmt_clippy|verify|guard|seraph_scan|review|observe|secure_phase|enrich_phase|scrum|enrich_build>"]
+        baseline_anchors_loaded: ["<path to industry-baselines file used>"]
+        findings_summary: "<1-3 sentences; PASS / BLOCKING / WARNING / ADVISORY>"
+        completed_at: "<ISO-8601>"
+    added_in_template_version: "2.8.0"
+
+  # ─── WEBSHELL RENDER CONTRACT ─────────────────────────────────────────────
+  webshell_render:
+    description: "Skill invocation widgets for operator visibility in the webshell"
+    skill_timeline_widget:
+      widget: "skill_invocation_timeline"
+      view_mode: "/builds/<codename>/phase/<phase>/skills"
+      fields: ["granularity", "position", "skill_ids", "findings_summary", "completed_at"]
+      update_signal: "sse_subscribe(skill_invocation_events)"
+    baseline_evidence_panel:
+      widget: "industry_baseline_evidence_panel"
+      view_mode: "/builds/<codename>/baselines"
+      fields: ["skill", "gate", "baseline_anchors_loaded", "findings_summary"]
+      description: "Shows which industry baselines were loaded for each skill invocation and what they found"
+
+# ============================================================================
+# SECTION 1.10: CANONICAL PHASE-WAVE-TASK HIERARCHIES (NEW v2.8.0)
+# ============================================================================
+# Pre-built reusable hierarchy templates for SMALL/MEDIUM/LARGE tiers.
+# Plans INSTANTIATE one of these templates by declaring:
+#   canonical_hierarchy: SMALL|MEDIUM|LARGE
+#   deviations: [<phase-id>: <reason> ...]
+#
+# Using a canonical hierarchy:
+# 1. Select your tier
+# 2. Copy the phases[] list for your tier
+# 3. Populate file_function_map per wave
+# 4. Declare deviations where your build differs
+# 5. DO NOT deviate from skill_close positions without LÆX waiver
+#
+# The canonical hierarchy bakes in Section 1.9 skill positions so plans
+# authored from this template automatically get the full quality/security/
+# observability skill sandwich without per-plan re-specification.
+
+canonical_phase_wave_task_hierarchies:
+  added_in_template_version: "2.8.0"
+  description: |
+    Pre-built phase/wave/task structures for each tier. Instantiate by tier;
+    document deviations. Skill_close positions from Section 1.9 are embedded
+    — do not remove them. Research citations (Context7, HuggingFace, Firecrawl)
+    are required at each RESEARCH step; cite in research_evidence.cache_artifacts.
+
+  # ─── SMALL TIER (4 phases) ────────────────────────────────────────────────
+  SMALL:
+    phases: 4
+    sequence: [Plan, Implement, Verify, Ship]
+    description: "Single-surface change, 1-2 agents, 1-2 weeks. No external dependency changes."
+
+    Plan:
+      order: 1
+      waves: 1
+      skill_close_position: "phase_close: /REVIEW (advisory only at Plan phase)"
+      canonical_tasks:
+        - id: "P1.1"
+          label: "Read current codebase files (affected + callers)"
+          tool: "Read + Grep + LSP"
+          skill_close: "task_close: inline_fmt_clippy (N/A — no code yet)"
+        - id: "P1.2"
+          label: "RESEARCH: Context7 for any library touched"
+          tool: "mcp__plugin_context7_context7__resolve-library-id → query-docs"
+          citation_required: true   # cache to <build_root>/.context/context7/<slug>-<date>.md
+        - id: "P1.3"
+          label: "RESEARCH: SOUL helix search for prior decisions"
+          tool: "mcp__plugin_lightarchitects_lightarchitects__tools sibling:soul action:search"
+          citation_required: true
+        - id: "P1.4"
+          label: "Write file-function map (which files, which functions, which agent)"
+          tool: "Write plan section"
+        - id: "P1.5"
+          label: "Declare assumption_register (A1..An)"
+          tool: "Fill assumption_register[] in plan frontmatter"
+        - id: "P1.6"
+          label: "HITL: Kevin approves scope before Phase 2"
+          tool: "AskUserQuestion"
+      exit_gate: "[A+Q+C] — architecture, quality, canon check"
+      research_evidence_required: true
+      citation_fields:
+        - "research_evidence.context7_cache_paths"
+        - "research_evidence.soul_helix_query_results"
+
+    Implement:
+      order: 2
+      waves: 2
+      skill_close_position: "wave_close: /VERIFY + /GUARD; phase_close: /REVIEW + /OBSERVE + IMPL_COMPLETE"
+      canonical_waves:
+        Wave_2_1:
+          label: "Core implementation"
+          canonical_tasks:
+            - id: "W2.1.1"
+              label: "RESEARCH: confirm approach vs research_evidence from Phase 1"
+              citation_required: true
+            - id: "W2.1.2"
+              label: "Implement primary change (Rust or Svelte)"
+              skill_close: "task_close: inline_fmt_clippy → IMPL_COMPLETE attestation"
+            - id: "W2.1.3"
+              label: "Write unit tests (Cookbook §27 — 6-suite pyramid minimum: unit + integration)"
+              skill_close: "task_close: inline_fmt_clippy → IMPL_COMPLETE attestation"
+          wave_close_skills: ["verify", "guard"]
+          wave_gate: "[Q+S+T]"
+        Wave_2_2:
+          label: "Integration wiring + tests"
+          canonical_tasks:
+            - id: "W2.2.1"
+              label: "Wire into existing callers / API surface"
+              skill_close: "task_close: inline_fmt_clippy → IMPL_COMPLETE attestation"
+            - id: "W2.2.2"
+              label: "Add integration test (hits real subsystem, no mocks per feedback_integration_claims)"
+              skill_close: "task_close: inline_fmt_clippy → IMPL_COMPLETE attestation"
+            - id: "W2.2.3"
+              label: "RESEARCH: Firecrawl for any post-cutoff spec or changelog (if applicable)"
+              citation_required: true   # cache to .context/firecrawl/<slug>-<date>.md
+          wave_close_skills: ["verify", "guard"]
+          wave_gate: "[Q+S+T]"
+      phase_close_skills: ["review", "observe", "enrich_phase (sig≥5.0)"]
+      impl_complete: "phase-level IMPLEMENTATION_COMPLETE after phase_close skills"
+      exit_gate: "[A+S+Q+C+O+P+K+D+T+R]"
+      research_evidence_required: true
+
+    Verify:
+      order: 3
+      waves: 1
+      skill_close_position: "phase_close: /VERIFY (full) + /REVIEW + /SECURE (if sec-touching)"
+      canonical_tasks:
+        - id: "V3.1"
+          label: "cargo test --workspace (or pnpm test:run); must 100% pass"
+          skill_close: "task_close: IMPL_COMPLETE attestation on test-pass"
+        - id: "V3.2"
+          label: "cargo clippy -- -D warnings; zero new warnings"
+          skill_close: "task_close: IMPL_COMPLETE attestation"
+        - id: "V3.3"
+          label: "svelte-check --threshold error (frontend builds only)"
+        - id: "V3.4"
+          label: "/VERIFY --scope phase (full test pyramid)"
+          invokes_skill: "verify"
+        - id: "V3.5"
+          label: "/REVIEW --scope phase (quality check)"
+          invokes_skill: "review"
+        - id: "V3.6"
+          label: "/SECURE --scope phase --mode guard (security surface)"
+          invokes_skill: "guard"
+          conditional: "security-touching builds (run as advisory for SMALL)"
+        - id: "V3.7"
+          label: "HITL: Kevin reviews gate output before Ship"
+          tool: "AskUserQuestion or BBEdit review"
+      exit_gate: "[S+Q+T] minimum; [A+S+Q+C+O+P+K+D+T+R] recommended"
+
+    Ship:
+      order: 4
+      waves: 1
+      skill_close_position: "build_close: /SCRUM (abbreviated — SMALL can use /REVIEW as proxy) + /ENRICH sig≥7.0 + IMPL_COMPLETE"
+      canonical_tasks:
+        - id: "S4.1"
+          label: "make deploy-fast (or pnpm build for frontend-only)"
+        - id: "S4.2"
+          label: "Smoke test binary (curl health check + 1 golden-path E2E)"
+        - id: "S4.3"
+          label: "/ENRICH --significance-threshold 7.0 --scope build"
+          invokes_skill: "enrich_build"
+        - id: "S4.4"
+          label: "/SCRUM <codename> (SMALL: abbreviated 1-round squad review; or /REVIEW as proxy)"
+          invokes_skill: "scrum"
+          notes: "SMALL builds may use /REVIEW proxy if /SCRUM overhead is disproportionate; document rationale"
+        - id: "S4.5"
+          label: "Emit build-level IMPLEMENTATION_COMPLETE attestation (all 3 layers)"
+        - id: "S4.6"
+          label: "git commit + push; merge to main; git tag <version>"
+        - id: "S4.7"
+          label: "Close-out: verify no modified files left; update portfolio.md + active.yaml"
+      exit_gate: "merge GATE [V0+Q+S+I+N+D+V]"
+      research_evidence_required: false
+      notes: "Close-out + helix enrichment mandatory; SCRUM output feeds merge GATE"
+
+  # ─── MEDIUM TIER (6 phases) ───────────────────────────────────────────────
+  MEDIUM:
+    phases: 6
+    sequence: [Plan, Research, Implement, Harden, Verify, Ship]
+    description: "Multi-surface change, 2-4 agents, 2-4 weeks. May touch external APIs or new subsystems."
+
+    Plan:
+      order: 1
+      waves: 1
+      skill_close_position: "phase_close: /REVIEW (advisory)"
+      canonical_tasks:
+        - id: "P1.1"
+          label: "Explore codebase (Glob/Grep/Read affected files + callers + tests)"
+          tool: "Explore agent or direct Grep"
+        - id: "P1.2"
+          label: "Context7: resolve all library IDs for this build's deps"
+          tool: "mcp__plugin_context7_context7__resolve-library-id"
+          citation_required: true
+        - id: "P1.3"
+          label: "SOUL helix search: prior decisions, patterns, architectural choices"
+          tool: "mcp__plugin_lightarchitects_lightarchitects__tools sibling:soul action:search"
+          citation_required: true
+        - id: "P1.4"
+          label: "Draft file-function map + assumption_register"
+        - id: "P1.5"
+          label: "Declare architecture_artifacts (C3 minimum; C2+C3 recommended for MEDIUM)"
+        - id: "P1.6"
+          label: "HITL: Kevin approves scope + architecture before Research"
+          tool: "AskUserQuestion"
+      exit_gate: "[A+C] — architecture diagrams present; canon check"
+
+    Research:
+      order: 2
+      waves: 1
+      skill_close_position: "phase_close: /REVIEW (canonical research output)"
+      canonical_tasks:
+        - id: "R2.1"
+          label: "Context7 deep docs: query-docs for each library (topic: impl approach)"
+          tool: "mcp__plugin_context7_context7__query-docs"
+          citation_required: true
+        - id: "R2.2"
+          label: "HuggingFace paper_search (if ML/embedding/academic angle)"
+          tool: "mcp__claude_ai_Hugging_Face__paper_search"
+          citation_required: true   # if papers found; else note 'no applicable papers'
+        - id: "R2.3"
+          label: "Firecrawl: scrape post-cutoff specs, changelogs, RFCs"
+          tool: "Bash: firecrawl scrape <url>"
+          citation_required: true   # if content found; cache to .context/firecrawl/
+        - id: "R2.4"
+          label: "QUANTUM: investigate any prior-art or novel patterns"
+          tool: "mcp__plugin_lightarchitects_lightarchitects__tools sibling:quantum action:research"
+          citation_required: true   # if QUANTUM surface is relevant
+        - id: "R2.5"
+          label: "Consolidate research_evidence into plan's research_evidence[] fields"
+          deliverable: "research_evidence[] with scope_level, tools_used, key_findings, cache_artifacts all populated"
+        - id: "R2.6"
+          label: "SERAPH: identify threat surface for this build's change set (advisory at Research)"
+          tool: "mcp__plugin_lightarchitects_lightarchitects__tools sibling:seraph action:analyze"
+      exit_gate: "[R+K] — research complete; helix prior-decision pull done"
+      research_citations_mandatory: true
+
+    Implement:
+      order: 3
+      waves: 3
+      skill_close_position: "wave_close: /VERIFY + /GUARD (+/SECURE sec-touching); phase_close: /REVIEW + /OBSERVE + IMPL_COMPLETE"
+      canonical_waves:
+        Wave_3_1:
+          label: "Backend foundation (types, traits, models)"
+          canonical_tasks:
+            - id: "W3.1.1"
+              label: "Define Rust types (newtypes, enums, error variants)"
+              skill_close: "task_close: fmt+clippy → IMPL_COMPLETE"
+            - id: "W3.1.2"
+              label: "Unit tests for new types (100% type coverage)"
+              skill_close: "task_close: fmt+clippy → IMPL_COMPLETE"
+            - id: "W3.1.3"
+              label: "Context7 re-check: confirm any library API usage is current"
+              citation_required: true
+          wave_close_skills: ["verify", "guard"]
+          wave_gate: "[Q+S+T]"
+        Wave_3_2:
+          label: "Implementation core (handlers, services, business logic)"
+          canonical_tasks:
+            - id: "W3.2.1"
+              label: "Implement handlers / service functions"
+              skill_close: "task_close: fmt+clippy → IMPL_COMPLETE"
+            - id: "W3.2.2"
+              label: "Write integration tests (real subsystem, no mocks)"
+              skill_close: "task_close: fmt+clippy → IMPL_COMPLETE"
+            - id: "W3.2.3"
+              label: "Firecrawl re-check: any breaking changes in referenced spec since Research?"
+              citation_required: true   # note 'no changes' if unchanged
+          wave_close_skills: ["verify", "guard", "seraph_scan (if auth/LLM/PTY surface)"]
+          wave_gate: "[Q+S+T]"
+        Wave_3_3:
+          label: "Frontend / UI wiring (if applicable)"
+          canonical_tasks:
+            - id: "W3.3.1"
+              label: "Svelte component implementation"
+              skill_close: "task_close: svelte-check → IMPL_COMPLETE"
+            - id: "W3.3.2"
+              label: "Component tests (pnpm test:run)"
+              skill_close: "task_close: svelte-check → IMPL_COMPLETE"
+            - id: "W3.3.3"
+              label: "E2E smoke test (Playwright golden path)"
+          wave_close_skills: ["verify", "guard"]
+          wave_gate: "[Q+T]"
+          skip_if: "backend-only stack_classification"
+      phase_close_skills: ["review", "observe", "enrich_phase (sig≥5.0)"]
+      impl_complete: "phase-level IMPLEMENTATION_COMPLETE"
+      exit_gate: "[A+S+Q+C+O+P+K+D+T+R]"
+
+    Harden:
+      order: 4
+      waves: 1
+      skill_close_position: "phase_close: /SECURE (full) + /REVIEW"
+      canonical_tasks:
+        - id: "H4.1"
+          label: "/SECURE --scope phase --mode seraph (red-team + STRIDE + LLM threats)"
+          invokes_skill: "seraph_scan + secure_phase"
+          citation_required: true   # cite OWASP LLM + MITRE ATT&CK findings
+        - id: "H4.2"
+          label: "cargo-audit + cargo-deny (supply chain check)"
+        - id: "H4.3"
+          label: "Remediate all BLOCKING + HIGH security findings from H4.1"
+          skill_close: "task_close: fmt+clippy → IMPL_COMPLETE per fix"
+        - id: "H4.4"
+          label: "SERAPH re-run to confirm remediation (in-gate security fix per GATE-4 criteria)"
+          citation_required: true
+        - id: "H4.5"
+          label: "Add rustdoc/JSDoc to all new public surfaces"
+      exit_gate: "[S+Q+D] — security hardened; docs present"
+
+    Verify:
+      order: 5
+      waves: 1
+      skill_close_position: "phase_close: /VERIFY (full) + /OBSERVE + /REVIEW"
+      canonical_tasks:
+        - id: "V5.1"
+          label: "cargo test --workspace (all tests must pass, test count ratcheted)"
+        - id: "V5.2"
+          label: "svelte-check + pnpm test:run (frontend builds)"
+        - id: "V5.3"
+          label: "E2E Playwright spec (golden path + 2 edge cases)"
+        - id: "V5.4"
+          label: "/VERIFY --scope phase"
+          invokes_skill: "verify"
+        - id: "V5.5"
+          label: "/OBSERVE --scope phase (AYIN traces; DORA metrics)"
+          invokes_skill: "observe"
+          citation_required: true   # cite OpenTelemetry + DORA thresholds
+        - id: "V5.6"
+          label: "/REVIEW --scope phase"
+          invokes_skill: "review"
+          citation_required: true   # cite ISO 25010 quality characteristic scores
+        - id: "V5.7"
+          label: "HITL: Kevin reviews full gate output"
+      exit_gate: "[S+Q+T+O+P]"
+
+    Ship:
+      order: 6
+      waves: 1
+      skill_close_position: "build_close: /SCRUM (full 3-round) + /ENRICH sig≥7.0 + IMPL_COMPLETE"
+      canonical_tasks:
+        - id: "S6.1"
+          label: "make deploy (or make deploy-fast for CI-gated builds)"
+        - id: "S6.2"
+          label: "Smoke: curl health + golden-path E2E spec"
+        - id: "S6.3"
+          label: "/SCRUM <codename> (full 3-round: R1 parallel → R2 cross-critique → R3 synthesis)"
+          invokes_skill: "scrum"
+          citation_required: true   # SCRUM output cites baselines; record in gate_receipts
+        - id: "S6.4"
+          label: "/ENRICH --significance-threshold 7.0 --scope build"
+          invokes_skill: "enrich_build"
+        - id: "S6.5"
+          label: "Emit build-level IMPLEMENTATION_COMPLETE (all 3 layers)"
+        - id: "S6.6"
+          label: "git commit → push → merge → tag → CHANGELOG entry"
+        - id: "S6.7"
+          label: "Update active.yaml + portfolio.md + roadmap (if applicable)"
+      exit_gate: "merge GATE [V0+Q+S+I+N+D+V]"
+
+  # ─── LARGE TIER (7 phases) ────────────────────────────────────────────────
+  LARGE:
+    phases: 7
+    sequence: [Plan, Research, Implement, Harden, Verify, Ship, Learn]
+    description: "Full-stack multi-agent cross-system build, 3-8 wks, 4+ agents. New subsystems, protocol changes, or security-critical changes."
+
+    Plan:
+      order: 1
+      note: "Same as MEDIUM Plan but adds C1+C2+C3+C4+ERD+sequence diagrams; /PLAN meta-skill; SCRUM at Plan phase recommended for LARGE before Research"
+      extra_tasks:
+        - id: "P1.x"
+          label: "/SCRUM (abbreviated) on the plan before Research phase starts"
+          invokes_skill: "scrum"
+          notes: "LARGE plans benefit from squad review of the plan itself before committing Research spend"
+      exit_gate: "[A+C] — full diagram set present; SCRUM plan review passed"
+
+    Research:
+      order: 2
+      note: "Same as MEDIUM Research but SERAPH threat surface is REQUIRED (not advisory)"
+      extra_tasks:
+        - id: "R2.x"
+          label: "SERAPH adversarial analysis of proposed architecture (REQUIRED for LARGE)"
+          invokes_skill: "seraph_scan"
+          citation_required: true
+
+    Implement:
+      order: 3
+      waves: "4+ (decomposed per workstream; each wave follows MEDIUM Wave pattern)"
+      note: "For LARGE, secure_phase is REQUIRED at phase_close regardless of security surface (scope_calibration LARGE tier rule). Waves decomposed per /BUILD wave_dispatcher."
+
+    Harden:
+      order: 4
+      note: "Same as MEDIUM Harden but external pentest report required for PUBLIC-tier builds (per alpha+public readiness program §T2)"
+
+    Verify:
+      order: 5
+      extra_tasks:
+        - id: "V5.x1"
+          label: "Load test (10× normal traffic scenario)"
+          notes: "LARGE PUBLIC-tier requirement per alpha+public readiness program Tier 2"
+        - id: "V5.x2"
+          label: "Pre-deploy wiring rehearsal (Phase 4.5 pattern) for ≥3 integrated systems"
+          notes: "feedback_pre_deploy_wiring_rehearsal_phase — required when wiring ≥3 systems"
+      exit_gate: "[A+S+Q+C+O+P+K+D+T+R] — all 10 dimensions"
+
+    Ship:
+      order: 6
+      note: "Same as MEDIUM Ship. /SCRUM is REQUIRED (not proxied). Signed release artifact per SLSA L2."
+
+    Learn:
+      order: 7
+      waves: 1
+      skill_close_position: "phase_close: /ENRICH (mandatory at LARGE — capture lessons for next build)"
+      canonical_tasks:
+        - id: "L7.1"
+          label: "Retrospective: what worked, what didn't, what surprised"
+          tool: "Write to <build_root>/retrospective.md"
+        - id: "L7.2"
+          label: "Canon XXXIX sweep: identify promotion candidates from this build's learnings"
+          tool: "mcp__plugin_lightarchitects_lightarchitects__tools sibling:laex0 action:review"
+        - id: "L7.3"
+          label: "/ENRICH --significance-threshold 5.0 --scope learn (lessons + canon candidates)"
+          invokes_skill: "enrich_phase"
+        - id: "L7.4"
+          label: "Update roadmap: close BUILD in active.yaml; update portfolio.md; seed next BUILD"
+        - id: "L7.5"
+          label: "HITL: Kevin stamps completion and any canon promotion decisions"
+      exit_gate: "[K+D+C] — knowledge captured; docs updated; canon candidates queued"
+
+  # ─── DEVIATION PROTOCOL ───────────────────────────────────────────────────
+  # ─── PLAN-SYNC INTERLEAVING (SECTION 1.11 cross-reference) ─────────────
+  plan_sync_interleaving:
+    description: |
+      After every task_close, wave_close, phase_close, and build_close, the executing
+      agent MUST sync build state back to the plan, manifest, active.yaml, and TaskList.
+      Full protocol in Section 1.11. This ensures build state docs never drift from
+      execution reality (Canon XXXIV drift management obligation).
+    pointer: "see skill_interleaving_protocol.plan_sync_interleaving_protocol (Section 1.11)"
+
+  deviation_protocol:
+    description: |
+      When a build's phase/wave/task structure deviates from the canonical hierarchy,
+      declare each deviation explicitly in the plan frontmatter. Undeclared deviations
+      are structural_completeness_rubric violations (Section 9.8).
+    schema:
+      canonical_hierarchy: "<SMALL|MEDIUM|LARGE>"
+      deviations:
+        - phase_id: "<phase name or order>"
+          deviation_type: "<added_phase|removed_phase|added_wave|removed_wave|added_task|removed_task|resequenced>"
+          rationale: "<why this deviation is necessary>"
+          laex_waiver: "<yes|no — BLOCKING skill_close deviations require LÆX waiver>"
+    notes:
+      - "Removing a mandatory skill_close invocation requires LÆX waiver logged in deviation_protocol"
+      - "Adding phases is allowed without waiver; document rationale"
+      - "Resequencing phases that move Harden after Verify requires SERAPH sign-off"
+
+# ============================================================================
+# SECTION 1.11: PLAN-SYNC INTERLEAVING PROTOCOL (NEW v2.8.0)
+# ============================================================================
+# Every execution unit close (task, wave, phase, build) includes a mandatory
+# plan-sync step: the executing agent reads the current build plan, confirms
+# execution matches intent, and updates all build state documents.
+#
+# WHY: Build state drift (manifest out-of-sync, TaskList stale, plan frontmatter
+# not updated, active.yaml undated) is a Canon XXXIV violation. It prevents
+# accurate gate evaluation and makes cross-build coordination impossible.
+#
+# "Trust but verify" — the agent re-reads the plan section for the current
+# wave/phase before implementing, not just at build start. Plans drift as
+# amendments land; agents that don't re-read build to outdated specs.
+#
+# PLAN-SYNC POSITIONS (ascending granularity):
+#   task_close:  Update TaskList (TaskUpdate id completed); note deviation if any
+#   wave_close:  Re-read plan wave spec → confirm alignment → update manifest wave entry
+#   phase_close: Update plan frontmatter phase field + updated date; update active.yaml
+#   build_close: Update plan status → promoted; update portfolio.md; archive manifest
+
+plan_sync_interleaving_protocol:
+  added_in_template_version: "2.8.0"
+  description: |
+    Mandatory build-state synchronization at every execution unit close. The executing
+    agent is responsible for keeping plan, manifest, active.yaml, and TaskList consistent
+    with what was actually implemented. Drift from any of these is a Canon XXXIV violation
+    and will cause the next GATE to find mismatched state.
+  canon_reference: "Canon XXXIV (drift management) · Section 9.5 (drift management protocol) · Agents Playbook §7.2 (Gatekeeper RECORD step)"
+
+  positions:
+
+    task_close:
+      description: |
+        After every task within a wave completes. Lightweight sync: update the task in
+        TaskList and note any deviation from the plan's task description.
+      steps:
+        - id: "TC-SYNC-1"
+          action: "TaskUpdate <task_id> status:completed"
+          blocking: true
+          note: "TaskList is the operator's live view of build progress. Never batch task updates — do them immediately."
+        - id: "TC-SYNC-2"
+          action: |
+            If execution deviated from the plan task description, add a plan note:
+              # In plan.md, under the task:
+              # NOTE: actual implementation differed from plan — <one-line reason>
+          blocking: false
+          note: "Deviation notes prevent future waves from operating on wrong assumptions about what was built."
+        - id: "TC-SYNC-3"
+          action: "Emit IMPLEMENTATION_COMPLETE attestation (Section 1.9 task_close impl_complete_attestation)"
+          blocking: false
+          note: "Advisory until BUILD 15 ships; log to manifest.yaml task_attestations[] as fallback"
+
+    wave_close:
+      description: |
+        After all tasks in a wave complete and wave_close skills (/VERIFY + /GUARD) pass.
+        Re-read the plan's wave spec to confirm the wave was built as designed before
+        committing and advancing to the next wave.
+      steps:
+        - id: "WC-SYNC-1"
+          action: |
+            Re-read plan.md section for this wave:
+              Read ~/.claude/plans/<codename>.md  # offset to current wave section
+            Verify: (a) all planned tasks completed; (b) no planned task skipped without note;
+            (c) file-function map deliverables match what was actually written.
+          blocking: true
+          anti_pattern: "Assuming the wave matches the plan without re-reading. Plans get amended; the re-read is the alignment check."
+        - id: "WC-SYNC-2"
+          action: |
+            Update manifest.yaml wave entry:
+              wave_completions:
+                - wave_id: "<phase-N-wave-M>"
+                  completed_at: "<ISO-8601>"
+                  tasks_completed: [<task_ids>]
+                  deviations: [<optional deviation notes>]
+                  skill_invocations: <from Section 1.9 wave_close manifest entry>
+          blocking: true
+        - id: "WC-SYNC-3"
+          action: "git commit with wave summary message (includes wave_id, task count, test count delta)"
+          blocking: true
+          commit_format: |
+            feat(<codename>): wave <N>.<M> — <wave-purpose-slug>
+            Tasks: <n> completed · Tests: +<delta> · Skills: /VERIFY ✓ /GUARD ✓
+
+    phase_close:
+      description: |
+        After all waves in a phase complete and phase_close skills (/REVIEW + /OBSERVE + IMPL_COMPLETE) pass.
+        Update plan frontmatter + active.yaml + manifest. This is the primary state-persistence
+        step between phases.
+      steps:
+        - id: "PC-SYNC-1"
+          action: |
+            Update plan.md frontmatter:
+              status: in-progress
+              phase: phase-<N+1>-<next-phase-name>   # advance to next phase
+              updated: <today-ISO>
+          blocking: true
+        - id: "PC-SYNC-2"
+          action: |
+            Update manifest.yaml phase_completions[]:
+              - phase_id: "phase-<N>-<name>"
+                completed_at: "<ISO-8601>"
+                gate_result: "<pass|fail>"
+                researched_approach_verified: <true|false>
+                skill_invocations_summary: "<see Section 1.9 phase_close manifest entries>"
+                gate_receipt_artifact: ".gate-evals/phase-<N>-<name>-phase.yaml"
+          blocking: true
+        - id: "PC-SYNC-3"
+          action: |
+            Update active.yaml entry for <codename>:
+              current_phase: <N+1>
+              last_updated: <ISO-8601>
+              phase_gate_passed: true
+              notes: "<any cross-build coordination notes>"
+          blocking: true
+          note: "active.yaml is the cross-build coordination signal (feedback_active_yaml_cross_build_coordination). Always update."
+        - id: "PC-SYNC-4"
+          action: "TaskUpdate phase-<N>-gate status:completed; TaskUpdate phase-<N+1>-impl status:in_progress"
+          blocking: true
+        - id: "PC-SYNC-5"
+          action: |
+            HITL checkpoint (if autonomy_level != autonomous):
+              Present phase summary to operator:
+                - What was built (file list + test delta)
+                - Skill findings summary (one line per skill_invocation)
+                - Gate result
+                - Next phase intent
+              Wait for approval before Phase N+1 starts.
+          blocking: "when autonomy_level = supervised or hitl-gated"
+
+    build_close:
+      description: |
+        After the final phase completes and build_close skills (/SCRUM + /ENRICH + IMPL_COMPLETE) pass.
+        Full close-out: promote plan status, archive manifests, update portfolio.
+      steps:
+        - id: "BC-SYNC-1"
+          action: |
+            Update plan.md frontmatter:
+              status: promoted
+              phase: merged
+              updated: <today-ISO>
+          blocking: true
+        - id: "BC-SYNC-2"
+          action: |
+            Update active.yaml: mark build completed
+              status: completed
+              merged_at: <ISO-8601>
+              merge_sha: <git-sha>
+          blocking: true
+        - id: "BC-SYNC-3"
+          action: "Update portfolio.md: add shipped build entry (codename, date, Pillar impact, Northstar advancement)"
+          blocking: false
+          warning: true
+        - id: "BC-SYNC-4"
+          action: |
+            Archive: manifest.yaml + gate-evals/ → ~/lightarchitects/soul/helix/corso/builds/<codename>/
+          blocking: false
+          warning: true
+        - id: "BC-SYNC-5"
+          action: "TaskUpdate build-close status:completed; verify all tasks resolved (no pending tasks left)"
+          blocking: true
+        - id: "BC-SYNC-6"
+          action: |
+            Close-out verification:
+              git status --short  # must be clean (no untracked/modified files in worktree)
+              git log --oneline -5  # confirm final commit is the merge commit
+          blocking: true
+
+  # ─── PLAN RE-READ DISCIPLINE ──────────────────────────────────────────────
+  plan_reread_discipline:
+    description: |
+      The agent MUST re-read the relevant plan section before implementing each wave.
+      Plans are living documents — amendments land between waves. An agent that reads
+      the plan once at build start and never re-reads it will build to a stale spec.
+    protocol: |
+      Before each wave dispatch:
+        1. Read plan.md — the wave's task list (offset to current wave section)
+        2. Check for amendments since last read (grep for 'AMENDED:' or 'NOTE:' markers)
+        3. If amendment changes the wave's scope: HITL before proceeding
+        4. If plan and implementation are drifting: add plan NOTE, then continue
+    anti_patterns:
+      - "Reading plan once at /BUILD start and not re-reading per wave"
+      - "Implementing tasks not in the plan without a plan NOTE"
+      - "Completing a wave without checking that all planned tasks are done"
+
+  # ─── TASKLIST PROTOCOL ────────────────────────────────────────────────────
+  tasklist_protocol:
+    description: |
+      TaskList is the operator's live view of build progress and the GATE's evidence
+      that phases completed in order. Keeping it current is NOT optional.
+    rules:
+      - "TaskCreate at /BUILD Step 4: one task per substantive phase + one per /GATE phase. Set addBlockedBy so each GATE blocks the next phase."
+      - "TaskUpdate status:in_progress as soon as a phase starts (do not batch updates)"
+      - "TaskUpdate status:completed immediately when a task ends (not at wave_close)"
+      - "Never leave tasks in in_progress state that have actually completed"
+      - "If a task takes more than one wave: split into sub-tasks in the TaskList"
+    schema:
+      canonical_task_ids:
+        - "phase-0-plan"
+        - "gate-0-plan"
+        - "phase-1-research"         # MEDIUM/LARGE only
+        - "gate-1-research"          # MEDIUM/LARGE only
+        - "phase-2-implement"
+        - "wave-2-1-<purpose>"       # one per wave in Implement
+        - "wave-2-2-<purpose>"
+        - "gate-2-implement"
+        - "phase-3-harden"           # MEDIUM/LARGE only
+        - "gate-3-harden"            # MEDIUM/LARGE only
+        - "phase-4-verify"
+        - "gate-4-verify"
+        - "phase-5-ship"
+        - "gate-5-ship"
+        - "phase-6-learn"            # LARGE only
+        - "gate-6-learn"             # LARGE only
+        - "build-close"
+
+  # ─── MANIFEST FIELD ───────────────────────────────────────────────────────
+  manifest_field:
+    description: "Plan-sync state recorded in manifest.yaml per unit close"
+    schema:
+      plan_sync_log:
+        - position: "<task_close|wave_close|phase_close|build_close>"
+          position_id: "<task_id|wave_id|phase_id|build>"
+          synced_artifacts: ["<plan.md|manifest.yaml|active.yaml|portfolio.md|TaskList>"]
+          deviations_noted: "<count of deviations logged; 0 is fine>"
+          synced_at: "<ISO-8601>"
+    added_in_template_version: "2.8.0"
 
 # ============================================================================
 # SECTION 2: EXECUTION PHASES
@@ -7614,6 +8638,258 @@ reference_table_integrity:
 #
 # history_latest_version: "2.5.1"
 # history_latest_summary: "PATCH — Git Orchestration Topology: branch rules, worktree lifecycle, commit/phase/merge gates, agent dispatch (closes git-orchestration-standard build)"
+
+# ============================================================================
+# SECTION 9.8: STRUCTURAL COMPLETENESS RUBRIC (NEW v2.8.0)
+# ============================================================================
+# Validate any LASDLC plan against this rubric before /BUILD starts.
+# Run with: grep + Read against the plan.md (or automate in /PLAN Phase 4 step).
+# A plan FAILS the rubric if ANY BLOCKING item is missing.
+# WARNING items must be documented as deviations per Section 1.10 deviation_protocol.
+#
+# Rubric auto-check command (bash):
+#   plan_file="~/.claude/plans/<codename>.md"
+#   grep -c "research_evidence" $plan_file           # should be ≥ phase_count
+#   grep -c "cache_artifacts" $plan_file             # should be ≥ research phase count
+#   grep -c "context7\|huggingface\|firecrawl" $plan_file  # should be > 0
+#   grep -c "lasdlc_template_version" $plan_file     # should be 1 (in frontmatter)
+#   grep -c "canonical_hierarchy" $plan_file         # should be 1
+#   grep -c "deviation" $plan_file                   # 0 is fine; any non-canonical phases need it
+
+structural_completeness_rubric:
+  added_in_template_version: "2.8.0"
+  description: |
+    Field-by-field checklist for LASDLC plan alignment. Every plan produced by /PLAN
+    or /BUILD must satisfy all BLOCKING items before Phase 1 starts. WARNING items are
+    allowed with documented deviation rationale. Citation items ensure research evidence
+    is traceable to tool calls, not training-data recall.
+  run_at: "End of /PLAN Phase 1 (before Research); end of /BUILD Phase 0 discovery"
+  enforcer: "LÆX (Canon gate [C]); Claude self-check via Implementation SOP"
+
+  # ─── CATEGORY 1: PLAN FRONTMATTER ─────────────────────────────────────────
+  frontmatter:
+    description: "Required YAML frontmatter per CLAUDE.md Plan-to-project frontmatter convention"
+    items:
+      - id: "FM1"
+        field: "project"
+        blocking: true
+        check: "grep -c '^project:' plan.md  # must be 1"
+        failure_action: "Add project frontmatter field (must match manifest.yaml#project_id)"
+      - id: "FM2"
+        field: "codename"
+        blocking: true
+        check: "grep -c '^codename:' plan.md"
+      - id: "FM3"
+        field: "status"
+        blocking: true
+        check: "grep -c '^status:' plan.md  # must be: draft|in-progress|promoted|abandoned"
+      - id: "FM4"
+        field: "lasdlc_template_version"
+        blocking: true
+        check: "grep -c 'lasdlc_template_version:' plan.md"
+        current_required_value: "2.8.0"
+        migration_note: "Plans at <2.8.0 must add post_unit_attestation + canonical_hierarchy + deviations before /BUILD"
+      - id: "FM5"
+        field: "canonical_hierarchy"
+        blocking: true
+        check: "grep -c 'canonical_hierarchy:' plan.md"
+        values: ["SMALL", "MEDIUM", "LARGE"]
+        added_in_template_version: "2.8.0"
+      - id: "FM6"
+        field: "created + updated dates"
+        blocking: false
+        warning: true
+        check: "grep -c '^created:' plan.md && grep -c '^updated:' plan.md"
+
+  # ─── CATEGORY 2: TIER STRUCTURE ───────────────────────────────────────────
+  tier_structure:
+    description: "Phase count and sequence must match declared tier"
+    items:
+      - id: "TS1"
+        check_description: "Phase count matches tier (SMALL=4, MEDIUM=6, LARGE=7)"
+        blocking: true
+        check_method: |
+          Count '## Phase' or 'order:' markers; compare to canonical_hierarchy value.
+          Deviation: declared in deviations[] with rationale.
+      - id: "TS2"
+        check_description: "Phase sequence follows canonical order (Plan before Research before Implement...)"
+        blocking: true
+        failure_action: "Resequence OR add deviation entry with LÆX waiver for BLOCKING skill_close moves"
+      - id: "TS3"
+        check_description: "Wave count per Implement phase ≥ 2 for MEDIUM/LARGE"
+        blocking: false
+        warning: true
+        failure_action: "Document rationale; single-wave Implement phases lose wave-level /VERIFY+/GUARD checkpoint"
+      - id: "TS4"
+        check_description: "Each task has a skill_close declaration (or 'N/A — no code' for non-impl tasks)"
+        blocking: false
+        warning: true
+        check: "grep -c 'skill_close:' plan.md  # compare to task count"
+
+  # ─── CATEGORY 3: RESEARCH EVIDENCE CITATIONS ─────────────────────────────
+  research_citations:
+    description: |
+      Every RESEARCH step must produce traceable evidence. Citations must reference
+      actual cache artifact paths from tool calls in this session — NOT training-data
+      recall assertions. This is Canon XXXV (≥99% confidence) applied to plans.
+    items:
+      - id: "RC1"
+        check_description: "research_evidence[] present for Research phase (MEDIUM/LARGE)"
+        blocking: true
+        applies_to: ["MEDIUM", "LARGE"]
+        check: "grep -c 'research_evidence' plan.md  # ≥1 per Research phase"
+        citation_format: |
+          research_evidence:
+            scope_level: full|standard|light
+            tools_used: [context7, huggingface, firecrawl, soul, codebase]
+            key_findings: "<1-3 sentences with actual findings>"
+            cache_artifacts:
+              - "<build_root>/.context/context7/<slug>-<date>.md"
+              - "<build_root>/.context/firecrawl/<domain>/<slug>-<date>.md"
+            completed_at: "<ISO-8601>"
+      - id: "RC2"
+        check_description: "At least one Context7 citation present in plan (any library touched must be resolved)"
+        blocking: true
+        check: "grep -c 'context7' plan.md"
+        failure_action: |
+          Run: mcp__plugin_context7_context7__resolve-library-id + query-docs for each library.
+          Cache result to .context/context7/<slug>-<date>.md. Cite path in research_evidence.
+        citation_example: |
+          # Correct:
+          research_evidence:
+            tools_used: [context7]
+            cache_artifacts: [".context/context7/axum-router-2026-06-01.md"]
+          # Wrong (training-data recall — NOT a citation):
+          research_evidence:
+            key_findings: "axum uses .route() to add handlers"
+            # No cache_artifact — this is an assertion, not evidence.
+      - id: "RC3"
+        check_description: "HuggingFace citation present if build touches ML/embedding/academic angle"
+        blocking: false
+        warning: true
+        check: "grep -c 'huggingface\|paper_search\|hf_doc' plan.md"
+        note: "If no ML angle: document 'N/A — no ML/academic angle' to satisfy rubric"
+        citation_example: |
+          research_evidence:
+            tools_used: [huggingface]
+            cache_artifacts: [".context/huggingface/bruch-2210.11934-convex-combo-retrieval-2026-06-01.md"]
+      - id: "RC4"
+        check_description: "Firecrawl citation present for any post-cutoff specs or changelogs"
+        blocking: false
+        warning: true
+        check: "grep -c 'firecrawl' plan.md"
+        note: "If all content is pre-cutoff and Context7 covers it: document 'Context7 sufficient; no Firecrawl needed'"
+        citation_example: |
+          research_evidence:
+            tools_used: [firecrawl]
+            cache_artifacts: [".context/firecrawl/mcp-spec-2026-07-28/mcp-stateless-rc-2026-06-01.md"]
+      - id: "RC5"
+        check_description: "SOUL helix search executed for prior decisions on topic"
+        blocking: true
+        check: "grep -c 'soul\|helix.*search\|prior.*decision' plan.md"
+        failure_action: |
+          Run: mcp__plugin_lightarchitects_lightarchitects__tools sibling:soul action:search
+          Even if no results: document 'SOUL search: no prior decisions on <topic>'
+      - id: "RC6"
+        check_description: "No bare assertions where citations are required"
+        blocking: true
+        anti_pattern: |
+          # FAIL — assertion without evidence:
+          "axum's Router::new() handles concurrent requests via Tokio"
+          # PASS — evidence with citation:
+          "axum's Router::new() handles concurrent requests via Tokio (Context7 axum docs, .context/context7/axum-2026-06-01.md §Router)"
+
+  # ─── CATEGORY 4: GATE RECEIPTS ────────────────────────────────────────────
+  gate_receipts:
+    description: "Phase gates must be declared in advance (pre-flight) and filled in post-completion"
+    items:
+      - id: "GR1"
+        check_description: "exit_gate declared for each phase"
+        blocking: true
+        check: "grep -c 'exit_gate:' plan.md  # ≥ phase_count"
+      - id: "GR2"
+        check_description: "gate_receipts[] entries added after each phase completes"
+        blocking: false
+        warning: true
+        note: "Pre-flight: declare gate fields. Post-phase: fill gate_result + completed_at + artifact path"
+      - id: "GR3"
+        check_description: "skill_invocations[] entries added for each wave/phase/build skill_close"
+        blocking: false
+        warning: true
+        check: "grep -c 'skill_invocations' plan.md  # ≥ wave_count + phase_count + 1"
+
+  # ─── CATEGORY 5: SECURITY SURFACE DECLARATION ────────────────────────────
+  security_surface:
+    description: "Security surface must be declared; drives mandatory vs advisory /SECURE skill"
+    items:
+      - id: "SS1"
+        check_description: "security_surface_touches declared per wave/phase"
+        blocking: false
+        warning: true
+        values: ["auth", "llm_output", "pty_shell", "file_system_write", "network_egress", "helix_read", "none"]
+        note: "Without declaration, security sibling cannot correctly scope wave_close seraph_scan"
+      - id: "SS2"
+        check_description: "SERAPH scan scheduled for LARGE Harden phase"
+        blocking: true
+        applies_to: ["LARGE"]
+        check: "grep -c 'seraph\|SERAPH\|SECURE.*full' plan.md"
+
+  # ─── CATEGORY 6: ATTESTATION DECLARATIONS ────────────────────────────────
+  attestation_declarations:
+    description: "IMPLEMENTATION_COMPLETE attestation fields per v2.8.0 post_unit_attestation"
+    items:
+      - id: "AD1"
+        check_description: "post_unit_attestation referenced or task_attestations[] present in plan/manifest"
+        blocking: false
+        warning: true
+        note: "Advisory until BUILD 15 ships; BLOCKING after webshell-impl-complete-attestation merges"
+        check: "grep -c 'attestation\|IMPLEMENTATION_COMPLETE\|impl_complete' plan.md"
+
+  # ─── SECTION 9.8 INDEX ENTRY (for section_numbering_convention) ──────────
+  section_index_entry: "9.8: STRUCTURAL COMPLETENESS RUBRIC (added v2.8.0 — BLOCKING field checklist for all LASDLC plans; citation requirements for Context7/HuggingFace/Firecrawl/SOUL; self-check bash script; FAIL blocks /BUILD; WARN requires deviation documentation)"
+
+  # ─── RUBRIC VERDICTS ──────────────────────────────────────────────────────
+  verdicts:
+    PASS:
+      description: "All BLOCKING items satisfied; WARNING items documented or N/A"
+      action: "Proceed to /BUILD Phase 1"
+    WARN:
+      description: "All BLOCKING satisfied; ≥1 WARNING undocumented"
+      action: "Document WARNING as deviation OR remediate before Phase 1; /BUILD may proceed with operator acknowledgment"
+    FAIL:
+      description: "≥1 BLOCKING item missing"
+      action: "Halt; remediate BLOCKING items; re-run rubric check before /BUILD"
+
+  # ─── RUBRIC SELF-CHECK SCRIPT ─────────────────────────────────────────────
+  self_check_bash: |
+    #!/usr/bin/env bash
+    # Usage: ./rubric-check.sh ~/.claude/plans/<codename>.md
+    PLAN="${1:-plan.md}"
+    PASS=0; FAIL=0; WARN=0
+
+    check() { local label="$1" expected="$2" actual="$3" blocking="$4"
+      if [ "$actual" -ge "$expected" ]; then echo "✓ $label"; ((PASS++))
+      elif [ "$blocking" = "blocking" ]; then echo "✗ BLOCKING: $label (found $actual, need $expected)"; ((FAIL++))
+      else echo "⚠ WARNING: $label (found $actual, need $expected)"; ((WARN++)); fi; }
+
+    check "frontmatter: project"             1 "$(grep -c '^project:' "$PLAN")"           blocking
+    check "frontmatter: codename"            1 "$(grep -c '^codename:' "$PLAN")"          blocking
+    check "frontmatter: lasdlc_version"      1 "$(grep -c 'lasdlc_template_version' "$PLAN")" blocking
+    check "frontmatter: canonical_hierarchy" 1 "$(grep -c 'canonical_hierarchy' "$PLAN")" blocking
+    check "tier structure: exit_gate"        1 "$(grep -c 'exit_gate' "$PLAN")"           blocking
+    check "research: soul search"            1 "$(grep -ic 'soul\|helix.*search' "$PLAN")" blocking
+    check "research: context7 citation"      1 "$(grep -ic 'context7' "$PLAN")"           blocking
+    check "research: research_evidence"      1 "$(grep -c 'research_evidence' "$PLAN")"   blocking
+    check "research: cache_artifacts"        1 "$(grep -c 'cache_artifacts' "$PLAN")"     blocking
+    check "security: seraph/SECURE"          1 "$(grep -ic 'seraph\|SECURE' "$PLAN")"    warn
+    check "attestation: IMPL_COMPLETE ref"   1 "$(grep -ic 'attestation\|IMPL_COMPLETE' "$PLAN")" warn
+    check "research: huggingface citation"   1 "$(grep -ic 'huggingface\|paper_search' "$PLAN")" warn
+    check "research: firecrawl citation"     1 "$(grep -ic 'firecrawl' "$PLAN")"         warn
+
+    echo ""; echo "RESULT: $PASS passed | $FAIL blocking fails | $WARN warnings"
+    [ "$FAIL" -gt 0 ] && echo "STATUS: FAIL — remediate BLOCKING items before /BUILD" && exit 1
+    [ "$WARN" -gt 0 ] && echo "STATUS: WARN — document or remediate warnings" && exit 0
+    echo "STATUS: PASS — proceed to /BUILD"
 
 # ============================================================================
 # AMENDMENT HISTORY — see LASDLC-TEMPLATE-v1.CHANGELOG.md

@@ -2,9 +2,9 @@
 
 ---
 title: "Light Architects Northstar"
-version: "4.1"
+version: "4.2"
 status: ratified
-date: 2026-05-16
+date: 2026-06-01
 author: Kevin Francis Tan (The Light Architect), Claude (Engineer)
 ratified_by: kevin
 ratification_date: "2026-05-16"
@@ -678,6 +678,46 @@ The Northstar is constitutional-tier. Amendments follow the full Canon XXXIX pip
 - P7 (Production-Grade Reliability): EXTENDED via FixAgent bounded at MAX_ITERATIONS=3; HMAC HKDF subkeys; signed manifests
 
 **Source**: ironclaw-architecture.html §2+§7+§10, cross-examined against current stack 2026-05-18; ironclaw-spine plan §22.6 + Task#17 + Task#18.
+
+---
+
+<!-- ──────────────────────────────────────────────────────────────────────────
+     LASDLC v2.8.0 CANON AMENDMENT (2026-06-01)
+     Source plan: ~/.claude/jobs/a6407137/alpha-public-readiness-program.md §16
+     Source template: LASDLC-TEMPLATE-v1.yaml §1.9 + Agents Playbook §3.5
+     Authority: operator-authorized (2026-06-01)
+     ────────────────────────────────────────────────────────────────────────── -->
+
+## §T — Implementation Attestation (Component Northstar, 2026-06-01 ADDITION)
+
+**Component scope**: Pillar 2 (Secure-by-Default Orchestration) + Pillar 7 (Production-Grade Reliability) — build-state integrity during autonomous delivery.
+
+**Statement**: *Every task completion within an autonomous build emits a verifiable three-layer attestation: the Worker's self-report (required), AYIN's span witness (required, stored verbatim pre-BUILD-2.10), and EVA's optional synthesis (fire-and-forget). No wave advances to WAVE_COMPLETE without at least a valid `IMPLEMENTATION_COMPLETE` + `ayin_spans_dropped_total === 0`. The attestation payload, not informal signal text, is the canonical completion marker.*
+
+**Relationship to top-level Pillars**: §T REFINES P2 (build-state trust chain) and P7 (audit completeness). Does NOT replace any top-level Pillar. Builds on §S (Autonomous Delivery Spine) — §S governs ReviewGate correctness; §T governs the completion-signal integrity layer upstream of ReviewGate.
+
+**Mechanical checks** (when a build claims §T contribution):
+
+1. Every `IMPLEMENTATION_COMPLETE` message carries the full three-layer payload per Agents Playbook §3.5
+2. `ayin_spans_dropped_total === 0` in every attestation payload; any `> 0` is a [P] gate warning that blocks WAVE_COMPLETE
+3. `self_report.file_content_span_id` is a UUID reference; no absolute filesystem paths in A2A messages (CWE-200 boundary)
+4. `ayin_witness.trust_boundary === "unverified_pre_2.10"` until BUILD 2.10 (SPIFFE/SVID) ships; after that, `"svid_verified"`
+5. `eva_synthesis.dispatch_mode === "fire_and_forget"` — Governor MUST NOT block on EVA synthesis; non-blocking by contract
+6. AYIN `broadcast_capacity ≥ 1024`; alert on any session where capacity was at or below the default 256
+7. `null_path_contract` declared when `file_content_span_id` is null; relative paths only (no absolute) when AYIN unavailable
+8. Attestation payload logged to `$HELIX/corso/builds/{codename}/attestations/wave-{N}-task-{id}.jsonl`
+
+**Non-regression on top-level Pillars** when §T advances:
+
+- P1 (E2E Engineering Surface): ENHANCED — operator can audit build-state integrity from webshell
+- P2 (Secure-by-Default Orchestration): REINFORCED — structured attestation replaces informal text signals
+- P5 (Persistent Knowledge): ENHANCED — attestation logs feed SOUL helix as build-archaeology
+- P6 (Operator-Legible Arc): REINFORCED — AYIN dashboard surfaces dropped spans + null_path_contract events
+- P7 (Production-Grade Reliability): REINFORCED — zero dropped spans = verifiable coverage of every task close
+
+**LASDLC binding**: Requires `lasdlc_template_version ≥ "2.8.0"` in plan frontmatter. Plans on v2.7.0 or earlier operate on informal IMPLEMENTATION_COMPLETE signal (§7.7 §S only).
+
+**Source**: alpha-public-readiness-program §16, LASDLC-TEMPLATE-v1.yaml v2.8.0, Agents Playbook §3.5 (2026-06-01).
 
 ---
 

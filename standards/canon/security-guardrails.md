@@ -1310,6 +1310,49 @@ When a supervisor session initializes, it MUST verify the SHA256 digest of each 
 
 ---
 
+<!-- ──────────────────────────────────────────────────────────────────────────
+     CANON XXXIX RATIFICATION — LÆX #63 — 2026-06-01
+     Kevin Francis Tan stamp: RATIFIED
+     Source: alpha-public-readiness-program §6.4; SCRUM consensus 2026-06-01
+     Contradiction check: PASS (no canon doc asserts the inverse or contradicts)
+     ────────────────────────────────────────────────────────────────────────── -->
+
+## §MT-1 — Multi-Tenancy Binary Invariant (RATIFIED 2026-06-01, LÆX #63)
+
+**Principle**: Multi-tenancy is binary. A system either provides cryptographically-enforced isolation for ALL tenant resources, or it provides no multi-tenancy guarantee. There is no partial middle state.
+
+**Rule MT-1.1 — All-or-nothing boundary**:
+A system is multi-tenant only when ALL of the following are isolated per tenant with no shared surface:
+
+| Resource | Required isolation |
+|----------|--------------------|
+| Data storage (SQLite, Neo4j, files) | Per-tenant database/schema or scoped read/write permissions |
+| Filesystem paths | No absolute paths shared; per-tenant working directories |
+| Auth tokens | Per-tenant token namespace; no cross-tenant token validity |
+| Session scope | Session IDs scoped to tenant; no cross-session readable state |
+| AYIN / observability spans | Per-tenant span namespace; no cross-tenant span queries |
+| A2A message routing | Messages route only within a tenant; no cross-tenant readable payloads |
+
+A single unguarded crossing point in any row voids the invariant for the entire system.
+
+**Rule MT-1.2 — Partial multi-tenancy is forbidden**:
+Partial isolation is MORE dangerous than explicit single-tenant, because operators assume security guarantees they do not have. A system with isolated auth tokens but shared file paths is not "mostly multi-tenant" — it is a single-tenant system with a false security label. Label the system accurately; do not ship partial isolation as multi-tenant.
+
+**Rule MT-1.3 — Minimum viable isolation unit**:
+The minimum unit that may be declared multi-tenant is the full tenant boundary (all rows in §MT-1.1 satisfied). Feature-by-feature multi-tenancy rollout is not a valid incremental path — only the full invariant may be declared.
+
+**Rule MT-1.4 — Path A vs Path B framing**:
+Systems that cannot yet satisfy all rows in §MT-1.1 MUST operate as single-tenant with explicit operator acknowledgment. A single-tenant system with a documented migration plan to full multi-tenancy is an honest system. A partially-isolated system labeled multi-tenant is a security misrepresentation.
+
+**Source**: alpha-public-readiness-program §6.4 (2026-06-01). SCRUM consensus — all 7 siblings endorsed binary-invariant framing. N=2 trigger: ironclaw-spine program + alpha-public-readiness program both independently arrived at the same constraint.
+
+**Composition**:
+- §MT-1 constrains when §3.5 (RBAC) applies: RBAC enforces access control WITHIN a multi-tenant system. §MT-1 governs WHETHER a system qualifies as multi-tenant at all.
+- §MT-1 feeds LASDLC Guardrail 6.4 (alpha-public-readiness-program §6.4): plan-level enforcement that BUILD phases declaring multi-tenancy satisfy all rows before claiming the invariant.
+- §SG-CRYPTO composition: cryptographic isolation (key derivation per-tenant, HKDF with tenant-scoped salts) is one mechanism satisfying the auth-tokens row.
+
+---
+
 ## Amendment history
 
 Detailed amendment narrative — sections added, source audit findings, CVE/CWE references, cross-canon ties, LÆX candidate IDs — lives in the companion file:
@@ -1320,7 +1363,7 @@ Mechanical history: `git log -- standards/canon/security-guardrails.md`
 
 **Rule** (per separation-of-concerns refactor, 2026-05-18): no tail-changelog tables or orphan changelog rows in this file. Section content lives here; amendment narrative lives in the CHANGELOG companion.
 
-**Current version**: see CHANGELOG for latest. As of 2026-05-19: **v1.3.0** (§SG-CRYPTO Artifact Integrity + Key Lifecycle; ratified by LÆX + Kevin Francis Tan — 2026-05-19, ironclaw-spine Phase 7).
+**Current version**: see CHANGELOG for latest. As of 2026-06-01: **v1.4.0** (§MT-1 Multi-Tenancy Binary Invariant; ratified Canon XXXIX LÆX #63 + Kevin Francis Tan — 2026-06-01).
 
 ---
 

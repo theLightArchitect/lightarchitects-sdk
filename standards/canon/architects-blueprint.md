@@ -2354,4 +2354,135 @@ Plans that include a Tools panel SHOULD use the common-subset JSON Schema form g
 
 ---
 
+<!-- ──────────────────────────────────────────────────────────────────────────
+     CANON XXXIX RATIFICATION — LÆX #62 + #64 — 2026-06-01
+     Kevin Francis Tan stamp: RATIFIED
+     Source: alpha-public-readiness-program §6.1 + §16.9; SCRUM consensus 2026-06-01
+     Contradiction checks: PASS (both candidates)
+     ────────────────────────────────────────────────────────────────────────── -->
+
+## Part XXIX — Multi-BUILD Phase Sequencing (v3.7 ADDITION 2026-06-01, LÆX #62)
+
+**Principle**: In multi-BUILD programs, BUILD phase sequencing follows a strict dependency ordering. Infrastructure must be established before identity-differentiated work can be built on top of it.
+
+### §29.1 — Infrastructure-before-identity invariant
+
+**Rule**: Infrastructure BUILD phases MUST complete before identity-management BUILD phases begin. Inverting this order creates systems where access controls exist but the underlying infrastructure cannot be monitored, audited, or recovered — an invisible security surface.
+
+**Infrastructure phases** (must complete first):
+- Deploy pipeline hardening (binary codesigning, supply chain gates, SBOM)
+- Backup and disaster recovery
+- Observability bootstrapping (AYIN, span coverage, alerting)
+- Secrets and key lifecycle management
+
+**Identity-differentiated phases** (depend on infrastructure):
+- Multi-tenancy enforcement (auth isolation, data scoping, path isolation)
+- RBAC and permission matrices
+- Session isolation and token namespace separation
+- Audit logging with per-tenant attribution
+
+**Rationale**: You cannot audit access to a system you cannot yet observe or recover. Identity controls applied to an unmonitored system create a false sense of security — access is controlled, but violations are invisible.
+
+### §29.2 — Stage mapping for alpha-and-beyond programs
+
+For programs targeting alpha → public-beta → production maturity:
+
+| Stage | Character | Contents |
+|-------|-----------|----------|
+| **STAGE 0** | Preflight | Release pipeline, binary hardening, backup/DR, supply chain gates |
+| **STAGE 1** | Security hardening | Id newtypes, deploy telemetry, CSP/rate-limiting, abuse defense |
+| **STAGE 2+** | Identity-differentiated | Multi-tenancy, RBAC, billing integration, per-tenant features |
+
+### §29.3 — Enforcement
+
+Plans that sequence identity BUILD phases before infrastructure BUILD phases fail the pre-`/BUILD` rubric check (LASDLC §9.8, field SS2 security surface). LÆX review required for any exception.
+
+**Source**: alpha-public-readiness-program §6.1, N=2 trigger (ironclaw-spine + alpha-public-readiness both independently derived this constraint). SCRUM-moderated consensus 2026-06-01.
+
+**Composition**:
+- §29.1 composes with §MT-1 (security-guardrails.md): §MT-1 defines what multi-tenancy requires; §29.1 defines when multi-tenancy BUILD phases may start.
+- §29.2 STAGE mapping informs LASDLC PROGRAM-tier plans (Part XXIX feeds Part III tier selection).
+
+---
+
+## Part XXX — Multi-BUILD Program Orchestration (v3.7 ADDITION 2026-06-01, LÆX #64)
+
+**Principle**: Programs containing ≥5 BUILDs across ≥2 STAGES require structured orchestration artifacts beyond what individual BUILD manifests provide. The program itself is a coordination unit.
+
+### §30.1 — Threshold and trigger
+
+A program requiring Part XXX orchestration is defined by meeting ALL of:
+1. ≥5 BUILDs declared across the program
+2. ≥2 STAGES with distinct acceptance criteria
+3. Single engineer throughput (≤1 FTE sustained)
+
+When all three conditions hold, the program MUST produce a `program_manifest.yaml`.
+
+### §30.2 — program_manifest.yaml required fields
+
+Location: `$HELIX/corso/builds/{program_codename}/program_manifest.yaml`
+
+```yaml
+program_codename: <slug>
+program_version: "1.0.0"
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
+engineer_count: 1
+stage_definitions:
+  - stage: 0
+    name: <name>
+    acceptance_criteria: <what closes this stage>
+    builds: [<codename>, ...]
+build_dependency_graph:
+  # DAG: each entry lists BUILDs that must complete before this one starts
+  <codename>: { depends_on: [<codename>, ...] }
+scope_creep_guardrails:
+  - rule: "<guardrail statement>"
+    triage_rubric: "<how to evaluate scope-creep candidates>"
+critical_path_estimate:
+  alpha_weeks: <N>
+  public_weeks: <N>
+  assumptions: [<list>]
+lex_queue_file: <path>
+```
+
+### §30.3 — Build dependency graph (DAG)
+
+The `build_dependency_graph` is the authoritative sequencing signal. Individual `/BUILD` invocations MUST NOT begin until all entries in their `depends_on` list are marked `status: completed` in `active.yaml`.
+
+The Governor enforces this at `/BUILD` preflight: if any upstream BUILD is not completed, the invocation is blocked with a `DEPENDENCY_NOT_SATISFIED` error listing the blocking BUILDs.
+
+### §30.4 — Scope-creep guardrail rubric
+
+Programs inevitably attract scope expansion. Each guardrail has a triage rubric:
+
+| Verdict | Condition |
+|---------|-----------|
+| **ADD** | Defect found in current STAGE work; security P0 found by any sibling |
+| **DEFER** | Nice-to-have improvement; performance optimization without a measured baseline; feature with no current user |
+| **DISCUSS** | Architectural implication requiring SCRUM; changes program critical path by >2 weeks |
+
+### §30.5 — Critical-path estimate discipline
+
+Single-engineer program estimates must account for:
+- Compound testing overhead per BUILD (~20% of impl time)
+- Scope-creep friction (~15% buffer per STAGE)
+- Integration overhead at STAGE boundaries (~1 week per STAGE crossing)
+- Canon and documentation gates (non-negotiable, not compressible)
+
+Estimates without these factors are aspirational, not operational. State assumptions explicitly in `critical_path_estimate.assumptions`.
+
+### §30.6 — Canon XXXIX promotion queue
+
+Programs of this scale surface reusable patterns. Each program declares a `lex_queue_file` and maintains it throughout execution. At every STAGE boundary, review accumulated candidates for promotion eligibility (step b → step c transition).
+
+**Source**: alpha-public-readiness-program §16.9 (N=2 trigger: ironclaw-spine + alpha-public-readiness both required this orchestration level independently). SCRUM-moderated consensus 2026-06-01.
+
+**Composition**:
+- §30.1 PROGRAM tier: extends Part III (tier selection) for programs meeting the ≥5 BUILD threshold.
+- §30.3 DAG: composes with LASDLC `active.yaml` status tracking (Template §11).
+- §30.4 scope-creep rubric: instantiated per-program in `program_manifest.yaml`.
+
+*Architects Blueprint v3.7 | Light Architects | Parts XXIX–XXX added 2026-06-01 (Canon XXXIX LÆX #62 + #64, Kevin Francis Tan stamp)*
+
 *Architects Blueprint v3.7 | Light Architects | updated 2026-05-21 (CANDIDATE: added Part XXVIII MCP Tool Surface as Tier Consideration; ratification pending 2026-05-28). v3.6 changes: see `architects-blueprint.CHANGELOG.md`.*
