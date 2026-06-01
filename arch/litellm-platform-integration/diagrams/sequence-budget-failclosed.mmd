@@ -1,0 +1,33 @@
+sequenceDiagram
+    participant IC as IronClaw Worker
+    participant WS as Webshell API
+    participant LP as LiteLLM Proxy (:4000)
+    participant AP as Anthropic API
+    participant BG as BudgetGuard (AppState)
+    participant SSE as SSE Broadcast
+    participant Op as Operator
+
+    Note over IC,LP: IronClaw wave dispatch — worker carrying virtual key sk-ironclaw-<build-id>
+    IC->>WS: POST /api/builds {mode: autonomous, waves: [...]}
+    WS->>LP: POST /v1/chat/completions {Authorization: Bearer sk-ironclaw-<build-id>}
+    LP->>LP: budget_check(sk-ironclaw-...) → current=$0.48, max=$0.50 → OK
+    LP->>AP: forward request
+    AP-->>LP: 200 streaming response
+    LP-->>WS: 200 streaming
+    WS-->>IC: stream chunks
+
+    Note over IC,LP: Next wave — budget exceeded
+    IC->>WS: POST /api/builds {mode: autonomous, waves: [...]}
+    WS->>LP: POST /v1/chat/completions
+    LP->>LP: budget_check → current=$0.52, max=$0.50 → EXCEEDED
+    LP-->>WS: 429 {"error": {"type": "budget_exceeded", "code": 429}}
+
+    WS->>BG: set ironclaw_budget_exceeded = true
+    WS->>SSE: broadcast BudgetExhausted {build_id, reason}
+    SSE->>Op: SSE event → UI shows budget alert
+    WS-->>IC: 429 propagated → IronClaw halts
+
+    Note over Op,WS: Operator must explicitly override to resume
+    Op->>WS: POST /api/builds/<id>/budget-override {approved: true}
+    WS->>BG: clear ironclaw_budget_exceeded
+    WS-->>Op: 200 OK — build may resume

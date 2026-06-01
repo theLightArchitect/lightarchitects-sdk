@@ -1,0 +1,34 @@
+sequenceDiagram
+    participant Op as Operator (Browser)
+    participant SW as SetupFlow.svelte
+    participant SS as SourceStep
+    participant PS as ProviderStep
+    participant AS as AuthStep
+    participant API as Webshell API
+    participant KC as macOS Keychain
+    participant DB as SQLite (litellm_config)
+
+    Op->>SW: Opens webshell (first run)
+    SW->>SS: Renders SourceStep (step='source')
+    Op->>SS: Clicks "Bring Your Own Key"
+    SS->>SW: step.set('provider'), tier='byok'
+
+    SW->>PS: Renders ProviderStep
+    Op->>PS: Selects provider (e.g. Anthropic)
+    PS->>SW: step.set('auth'), backend='anthropic', agent='lightarchitects'
+
+    SW->>AS: Renders AuthStep
+    Op->>AS: Enters API key
+    AS->>API: PUT /api/auth/credential/anthropic/key {key}
+    API->>KC: security add-generic-password -s la-anthropic-credential -w <key>
+    KC-->>API: 200 OK
+    API-->>AS: {ok: true}
+
+    AS->>API: POST /api/setup/install_litellm {provider, base_url}
+    Note over API: Phase 3 W3 deliverable
+    API->>DB: session_store.save_litellm_config(base_url, model)
+    DB-->>API: Ok(())
+    API-->>AS: {ok: true, proxy_url: "http://localhost:4000"}
+
+    AS->>SW: step.set('done')
+    SW->>Op: Setup complete — copilot available
