@@ -1,6 +1,7 @@
 //! Turn and cost budget enforcement for agentic loops.
 
 use crate::agent::loops::error::LoopError;
+use crate::agent::loops::profile::BudgetPolicy;
 
 /// Spending limits for a single loop execution.
 ///
@@ -64,6 +65,24 @@ impl Budget {
     pub fn used_usd(&self) -> f64 {
         self.used_usd
     }
+
+    /// Construct a `Budget` from a [`BudgetPolicy`].
+    ///
+    /// This is the canonical conversion used by dispatch callsites that have
+    /// resolved a [`crate::agent::loops::profile::LoopProfile`] for the current
+    /// role and phase.
+    #[must_use]
+    pub fn from_policy(policy: &BudgetPolicy) -> Self {
+        match policy {
+            BudgetPolicy::Unlimited => Self::unlimited(),
+            BudgetPolicy::StepCapped(max_steps) => Self::new(*max_steps, f64::MAX),
+            BudgetPolicy::CostCapped(max_usd) => Self::new(u32::MAX, *max_usd),
+            BudgetPolicy::StepOrCost {
+                max_steps,
+                max_cost_usd,
+            } => Self::new(*max_steps, *max_cost_usd),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -93,5 +112,49 @@ mod tests {
         for _ in 0..1000 {
             b.record_step(99.9).unwrap();
         }
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn from_policy_unlimited() {
+        let b = Budget::from_policy(&BudgetPolicy::Unlimited);
+        assert_eq!(b.max_turns, u32::MAX);
+        assert_eq!(b.max_usd, f64::MAX);
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn from_policy_step_capped() {
+        let b = Budget::from_policy(&BudgetPolicy::StepCapped(50));
+        assert_eq!(b.max_turns, 50);
+        assert_eq!(b.max_usd, f64::MAX);
+    }
+
+    #[test]
+    fn from_policy_cost_capped() {
+        let b = Budget::from_policy(&BudgetPolicy::CostCapped(2.50));
+        assert_eq!(b.max_turns, u32::MAX);
+        assert!((b.max_usd - 2.50).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn from_policy_step_or_cost() {
+        let b = Budget::from_policy(&BudgetPolicy::StepOrCost {
+            max_steps: 10,
+            max_cost_usd: 1.00,
+        });
+        assert_eq!(b.max_turns, 10);
+        assert!((b.max_usd - 1.00).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn from_policy_step_or_cost_halts_on_steps() {
+        let mut b = Budget::from_policy(&BudgetPolicy::StepOrCost {
+            max_steps: 2,
+            max_cost_usd: f64::MAX,
+        });
+        b.record_step(0.0).unwrap();
+        b.record_step(0.0).unwrap();
+        assert!(b.record_step(0.0).is_err());
     }
 }
