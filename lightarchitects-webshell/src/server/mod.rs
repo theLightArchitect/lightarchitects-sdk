@@ -66,6 +66,7 @@ pub mod litellm_chat;
 pub mod litellm_state;
 pub mod mcp_routes;
 pub mod observability_spans;
+pub mod program_routes;
 pub mod question_routes;
 pub mod roadmap;
 pub mod spawn_reaper;
@@ -1382,6 +1383,11 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/git/log", get(git_routes::log_handler))
         // ── Roadmap artifact (webshell-roadmap-rendering) ────────────────────
         .route("/api/roadmap", get(roadmap::roadmap_handler))
+        // ── Alpha program manifest (webshell-program-and-comms-wiring) ────────
+        .route(
+            "/api/program-manifest",
+            get(program_routes::program_manifest_handler),
+        )
         // ── LiteLLM polished chat panel (direct streaming, bypasses subprocess) ─
         .route("/api/litellm/chat", post(litellm_chat::chat_handler))
         // ── HITL inbox — GitHub PR review queue (webshell-hitl-inbox Phase 1) ─

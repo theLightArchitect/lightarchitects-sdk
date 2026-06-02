@@ -21,7 +21,8 @@ export type ScreenKey =
   | 'Tools'           // §O Tool Surface Parity
   | 'AutonomousBuilds' // ironclaw autonomous build panel
   | 'Chat'            // Polished LiteLLM streaming chat panel
-  | 'Security';       // Container spawn policy + isolation controls
+  | 'Security'        // Container spawn policy + isolation controls
+  | 'Program';        // Alpha/public readiness program manifest
 
 export interface RouteMatch {
   screen: ScreenKey;
@@ -100,6 +101,7 @@ const ROUTES: RouteEntry[] = [
   [/^\/arch\/(.+)$/,                                                        'Architecture',  ['project']],
   [/^\/arch$/,                                                              'Architecture',  []],
   [/^\/roadmap$/,                                                           'Roadmap',       []],
+  [/^\/program$/,                                                           'Program',       []],
   [/^\/observability$/,                                                     'Observability', []],
   [/^\/security$/,                                                          'Security',      []],
   [/^\/ayin$/,                                                              'Observability', []],

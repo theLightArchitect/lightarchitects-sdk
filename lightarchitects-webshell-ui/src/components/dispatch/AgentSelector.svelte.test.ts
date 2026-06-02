@@ -29,7 +29,7 @@ describe('AgentSelector (browser)', () => {
 
   it('shows the empty-state warning when no agent is selected and showValidation is true', async () => {
     const { getByText } = render(AgentSelector, { showValidation: true });
-    await expect.element(getByText('↑ Select at least one agent above to dispatch.')).toBeInTheDocument();
+    await expect.element(getByText('Select at least one agent above to dispatch.')).toBeInTheDocument();
   });
 
   it('does not show the validation warning before a dispatch attempt', async () => {

@@ -176,6 +176,9 @@ fn topic_for(event: &WebEvent) -> String {
 
         // ── webshell-agent-comms-display (Agents Playbook §3.5) ─────────────
         WebEvent::ImplComplete(_) => "v1.build.attestation.impl_complete",
+
+        // ── webshell-program-and-comms-wiring ────────────────────────────────
+        WebEvent::GateResolution(_) => "v1.conductor.gate.resolution",
     }
     .to_owned()
 }
@@ -189,6 +192,11 @@ fn severity_for(event: &WebEvent) -> Severity {
         | WebEvent::AyinStatus(AyinStatus::Disconnected | AyinStatus::Reconnecting { .. }) => {
             Severity::Warn
         }
+        WebEvent::GateResolution(e) => match e.verdict {
+            crate::events::types::GateVerdictKind::Failed
+            | crate::events::types::GateVerdictKind::Blocked => Severity::Warn,
+            _ => Severity::Info,
+        },
         _ => Severity::Info,
     }
 }
@@ -436,6 +444,16 @@ mod tests {
                 trust_boundary: "unverified_pre_2.10".into(),
                 spec_compliance_claim: None,
                 confidence: 1.0,
+                timestamp: Utc::now(),
+            }),
+            // webshell-program-and-comms-wiring — gate resolution receiving side
+            WebEvent::GateResolution(crate::events::types::GateEvalEvent {
+                build_id: Uuid::nil(),
+                phase_id: "phase-1-backend-a".into(),
+                gate_dimension: "Q".into(),
+                verdict: crate::events::types::GateVerdictKind::Passed,
+                confidence: 1.0,
+                reasoning: None,
                 timestamp: Utc::now(),
             }),
         ];

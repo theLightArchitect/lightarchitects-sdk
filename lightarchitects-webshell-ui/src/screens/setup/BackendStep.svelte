@@ -12,6 +12,39 @@
 
   const backends = [
     {
+      id: 'la-native',
+      agent: 'lightarchitects_native',
+      label: 'LA Native',
+      description: 'Nemotron / Qwen3 via Ollama Cloud (1M ctx, tool-use)',
+      polytopeType: 'icositetrachoron',
+      authKey: 'claude' as const,
+      authField: 'has_api_key' as const,
+      authBadge: 'OLLAMA_API_KEY ✓',
+      comingSoon: false,
+    },
+    {
+      id: 'ollama-launch',
+      agent: 'lightarchitects',
+      label: 'Ollama Local',
+      description: 'Local LLM via Ollama',
+      polytopeType: 'tesseract',
+      authKey: 'ollama' as const,
+      authField: null,
+      authBadge: null,
+      comingSoon: false,
+    },
+    {
+      id: 'ollama-cloud',
+      agent: 'lightarchitects',
+      label: 'Ollama Cloud',
+      description: '17+ cloud models via Ollama (GLM, DeepSeek, Qwen…)',
+      polytopeType: 'tesseract',
+      authKey: 'ollama' as const,
+      authField: null,
+      authBadge: null,
+      comingSoon: false,
+    },
+    {
       id: 'anthropic',
       agent: 'lightarchitects',
       label: 'Claude Code',
@@ -34,17 +67,6 @@
       comingSoon: false,
     },
     {
-      id: 'ollama-launch',
-      agent: 'lightarchitects',
-      label: 'Ollama Local',
-      description: 'Local LLM via Ollama',
-      polytopeType: 'tesseract',
-      authKey: 'ollama' as const,
-      authField: null,
-      authBadge: null,
-      comingSoon: false,
-    },
-    {
       id: 'mistral-vibe',
       agent: 'mistral_vibe',
       label: 'Mistral Vibe',
@@ -53,28 +75,6 @@
       authKey: 'mistral_vibe' as const,
       authField: null,
       authBadge: null,
-      comingSoon: false,
-    },
-    {
-      id: 'ollama-cloud',
-      agent: 'lightarchitects',
-      label: 'Ollama Cloud',
-      description: '17+ cloud models via Ollama (GLM, DeepSeek, Qwen…)',
-      polytopeType: 'tesseract',
-      authKey: 'ollama' as const,
-      authField: null,
-      authBadge: null,
-      comingSoon: false,
-    },
-    {
-      id: 'la-native',
-      agent: 'lightarchitects_native',
-      label: 'LA Native',
-      description: 'Nemotron / Qwen3 via Ollama Cloud (1M ctx, tool-use)',
-      polytopeType: 'icositetrachoron',
-      authKey: 'claude' as const,
-      authField: 'has_api_key' as const,
-      authBadge: 'OLLAMA_API_KEY ✓',
       comingSoon: false,
     },
     {
@@ -101,7 +101,7 @@
     },
   ] as const;
 
-  let selected = $state<string | null>($selectedBackend);
+  let selected = $state<string | null>($selectedBackend ?? 'la-native');
 
   function pick(id: string, agent: string, comingSoon: boolean) {
     if (comingSoon) return;

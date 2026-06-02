@@ -6,7 +6,7 @@
 import { get } from 'svelte/store';
 import { api } from './api';
 import { authHeaders } from './auth';
-import { drawerHeightPx, memoryDrawerOpen } from './stores';
+import { drawerHeightPx, memoryDrawerOpen, selectedTui } from './stores';
 import { selectedBackend, selectedModel, selectedAgent } from './setup';
 
 /** localStorage key used when the backend API is unreachable. */
@@ -35,6 +35,7 @@ export interface PersistedSettings {
   selectedModel?: string | null;
   selectedAgent?: string | null;
   layoutPreset?: string;  // LayoutPreset — string to avoid circular import
+  selectedTui?: 'la' | 'claude' | 'codex';
 }
 
 // --- Debounce timer handle ---
@@ -49,6 +50,7 @@ export function collectSettings(): PersistedSettings {
     selectedBackend: get(selectedBackend),
     selectedModel: get(selectedModel),
     selectedAgent: get(selectedAgent),
+    selectedTui: get(selectedTui),
   };
 }
 
@@ -125,6 +127,9 @@ export function applySettings(settings: PersistedSettings): void {
   }
   if (typeof settings.selectedAgent === 'string' && settings.selectedAgent && get(selectedAgent) === null) {
     selectedAgent.set(settings.selectedAgent);
+  }
+  if (settings.selectedTui === 'la' || settings.selectedTui === 'claude' || settings.selectedTui === 'codex') {
+    selectedTui.set(settings.selectedTui);
   }
 }
 

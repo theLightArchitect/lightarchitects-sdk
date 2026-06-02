@@ -31,14 +31,17 @@
   import ProviderPill from './litellm/ProviderPill.svelte';
   import ProviderSettings from './litellm/ProviderSettings.svelte';
   
+  import AgentCommsPanel from './AgentCommsPanel.svelte';
   import { settingsOpen, pendingResumeSessionId, serverCwd, persistedConfig, selectedModel } from '$lib/setup';
-  import { strategyHitl, copilotDrawerOpen, copilotSurfaceOpen } from '$lib/stores';
+  import { strategyHitl, copilotDrawerOpen, copilotSurfaceOpen, selectedTui } from '$lib/stores';
   import { drawerWidthPx } from '$lib/stores';
   import { selectedPreset, selectedTarget, PRESET_DISPLAY, quickPickOpen } from '$lib/cockpit/stores';
   import { parseChips } from '$lib/cockpit/copilotChips';
   import { saveSettingsDebounced } from '$lib/settings-persistence';
   import { renderMarkdown } from '$lib/markdown';
-  import type { CopilotMessage, SiblingId, AgentEvent, CopilotContextSnapshot } from '$lib/types';
+  import type { CopilotMessage, SiblingId, AgentEvent, CopilotContextSnapshot, RecentEvent } from '$lib/types';
+  import type { StreamRow } from './EventStream.svelte';
+  import type { Severity } from '$lib/atmosphere';
   import { Terminal } from '@xterm/xterm';
   import { FitAddon } from '@xterm/addon-fit';
 
@@ -83,7 +86,7 @@
   }
 
   // --- Session state ---
-  let mode = $state<'chat' | 'terminal'>('chat');
+  let mode = $state<'chat' | 'terminal' | 'comms'>('chat');
   /** Position mode — 'drawer' renders pinned to bottom; 'overlay' floats freely. */
   let positionMode = $state<'drawer' | 'overlay'>('drawer');
   let terminalEl: HTMLDivElement | undefined = $state();
@@ -452,6 +455,44 @@
       });
     } catch { /* best-effort */ }
   }
+
+  // TUI preference — controls what the "launch / fork" action does.
+  // 'la' (default): open CopilotSurface immersive overlay (LA is the TUI).
+  // 'claude' | 'codex': fork to the respective CLI terminal.
+  const TUI_LABELS: Record<'la' | 'claude' | 'codex', string> = {
+    la: 'LA', claude: 'CC', codex: 'CX',
+  };
+  const TUI_TITLES: Record<'la' | 'claude' | 'codex', string> = {
+    la: 'LA TUI (immersive webshell)',
+    claude: 'Claude Code CLI (text terminal)',
+    codex: 'Codex CLI (text terminal)',
+  };
+  const TUI_CYCLE: Array<'la' | 'claude' | 'codex'> = ['la', 'claude', 'codex'];
+  function cycleTui() {
+    const i = TUI_CYCLE.indexOf($selectedTui);
+    selectedTui.set(TUI_CYCLE[(i + 1) % TUI_CYCLE.length]);
+    saveSettingsDebounced();
+  }
+
+  // COMMS tab — maps recentEventBuffer entries to StreamRow for AgentCommsPanel.
+  const commsRows = $derived<StreamRow[]>(
+    $recentEventBuffer.slice(0, 200).map((ev: RecentEvent) => {
+      const d = new Date(ev.timestamp);
+      const evObj = (ev.event ?? {}) as Record<string, unknown>;
+      const rawSev = (evObj.severity ?? 'info') as string;
+      const severity: Severity = (['info', 'ok', 'warn', 'err'] as const).includes(rawSev as Severity)
+        ? (rawSev as Severity)
+        : 'info';
+      return {
+        ts:       d.getTime(),
+        time:     d.toLocaleTimeString('en-US', { hour12: false }),
+        source:   String(ev.source ?? evObj.agent_id ?? 'sys').slice(0, 10),
+        color:    '#8C92A8',
+        text:     String(evObj.message ?? evObj.text ?? JSON.stringify(evObj)).slice(0, 120),
+        severity,
+      };
+    })
+  );
 
   // Fork-to-terminal state — enabled once at least one chat turn has
   // landed (server-side session_id is populated after turn 1). The button
@@ -947,6 +988,15 @@
       <span class="hdr-tab-icon" aria-hidden="true">&gt;_</span>
       <span>TERM</span>
     </button>
+    <button
+      onclick={() => { mode = 'comms'; if (!open) open = true; }}
+      class="hdr-tab {mode === 'comms' && open ? 'hdr-tab--on' : ''}"
+      title="Agent communications feed"
+      aria-label="Comms mode"
+    >
+      <span class="hdr-tab-icon" aria-hidden="true">◆</span>
+      <span>COMMS</span>
+    </button>
 
     <!-- Spacer — pushes ghost actions and collapse to the right -->
     <div class="hdr-spacer"></div>
@@ -996,13 +1046,31 @@
               aria-label="Stop generation"
             >■</button>
           {/if}
+          <!-- TUI selector chip — cycles LA → CC → CX; always visible in chat mode -->
           <button
-            onclick={forkToTerminal}
-            disabled={!canFork || forking}
-            class="hdr-action {canFork && !forking ? 'hdr-action--gold' : 'hdr-action--disabled'}"
-            title="{canFork ? 'Fork to terminal (claude --resume)' : 'Send a message first'}"
-            aria-label="Fork to terminal"
-          >⎋</button>
+            onclick={cycleTui}
+            class="hdr-tui-pill hdr-tui-pill--{$selectedTui}"
+            title="TUI: {TUI_TITLES[$selectedTui]} — click to switch"
+            aria-label="Selected TUI: {TUI_TITLES[$selectedTui]}"
+          ><span class="tui-dot"></span>{TUI_LABELS[$selectedTui]}</button>
+          <!-- Fork / launch button — behaviour depends on selected TUI -->
+          {#if $selectedTui === 'la'}
+            <button
+              onclick={() => copilotSurfaceOpen.set(true)}
+              disabled={!canFork}
+              class="hdr-action {canFork ? 'hdr-action--surface-launch' : 'hdr-action--disabled'}"
+              title="{canFork ? 'Open in LA immersive surface' : 'Send a message first'}"
+              aria-label="Open immersive surface"
+            >⬡</button>
+          {:else}
+            <button
+              onclick={forkToTerminal}
+              disabled={!canFork || forking}
+              class="hdr-action {canFork && !forking ? 'hdr-action--gold' : 'hdr-action--disabled'}"
+              title="{canFork ? 'Fork to ' + TUI_TITLES[$selectedTui] : 'Send a message first'}"
+              aria-label="Fork to {TUI_TITLES[$selectedTui]}"
+            >⎋</button>
+          {/if}
           <button
             onclick={() => { showSearch = !showSearch; if (!showSearch) searchQuery = ''; }}
             class="hdr-action {showSearch ? 'hdr-action--on' : ''}"
@@ -1089,6 +1157,12 @@
             </div>
           {/if}
           <div bind:this={terminalEl} class="overflow-hidden bg-[var(--la-bg-void)] min-h-0 {$terminalConnected ? 'flex-1' : 'h-0'}" style="font-family: monospace; contain: strict;"></div>
+        </div>
+
+      <!-- ── COMMS MODE — live agent communication feed ── -->
+      {:else if mode === 'comms'}
+        <div class="flex-1 overflow-y-auto p-2" inert={!open}>
+          <AgentCommsPanel rows={commsRows} maxDisplay={80} />
         </div>
 
       <!-- ── CHAT MODE ── -->
@@ -1659,6 +1733,82 @@
     color: #f0c040;
     text-shadow: 0 0 10px #f0c04080;
   }
+  .hdr-action--surface-launch {
+    color: #00d4f5;
+    font-size: 13px;
+    text-shadow: 0 0 8px #00d4f540;
+  }
+  .hdr-action--surface-launch:hover {
+    color: #f0c040;
+    text-shadow: 0 0 10px #f0c04080;
+  }
+
+  /* TUI selector pill */
+  .hdr-tui-pill {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 100%;
+    padding: 0 9px 0 8px;
+    font-family: var(--la-font-mono, monospace);
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    color: var(--la-text-dim, #6b7280);
+    background: transparent;
+    border: none;
+    border-left: 1px solid var(--la-drawer-border, #1c2028);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.1s, background 0.1s;
+  }
+  .hdr-tui-pill:hover {
+    background: var(--la-bg-elev-1, #111214);
+    color: var(--la-text-bright, #f1f5f9);
+  }
+  .tui-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--la-text-dim, #6b7280);
+    transition: background 0.2s;
+  }
+  /* LA TUI — cyan (native platform experience) */
+  .hdr-tui-pill--la {
+    color: #00d4f5;
+  }
+  .hdr-tui-pill--la .tui-dot {
+    background: #00d4f5;
+    box-shadow: 0 0 4px #00d4f5aa;
+  }
+  .hdr-tui-pill--la:hover {
+    color: #00d4f5;
+    background: rgba(0, 212, 245, 0.06);
+  }
+  /* Claude Code TUI — gold */
+  .hdr-tui-pill--claude {
+    color: var(--la-focus-ring, #FFD700);
+  }
+  .hdr-tui-pill--claude .tui-dot {
+    background: var(--la-focus-ring, #FFD700);
+    box-shadow: 0 0 4px #FFD70080;
+  }
+  .hdr-tui-pill--claude:hover {
+    background: rgba(255, 215, 0, 0.06);
+  }
+  /* Codex TUI — green */
+  .hdr-tui-pill--codex {
+    color: #22c55e;
+  }
+  .hdr-tui-pill--codex .tui-dot {
+    background: #22c55e;
+    box-shadow: 0 0 4px #22c55e80;
+  }
+  .hdr-tui-pill--codex:hover {
+    background: rgba(34, 197, 94, 0.06);
+  }
+
   .hdr-action-wrap {
     display: flex;
     align-items: stretch;

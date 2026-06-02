@@ -286,6 +286,12 @@ pub enum WebEvent {
     /// Wire tag: `"impl_complete"`. Trust boundary: `ayin_witness` is stored
     /// verbatim — unverified until SPIFFE/SVID BUILD 2.10.
     ImplComplete(ImplCompleteEvent),
+    /// Gate evaluation result from the conductor.
+    ///
+    /// Wire tag: `"gate_resolution"`. Emitted per gate/phase pair when the
+    /// conductor evaluates a LASDLC gate. The UI renders live gate badges
+    /// as these events arrive on the per-build SSE channel.
+    GateResolution(GateEvalEvent),
 }
 
 /// Northstar evaluation result broadcast after a `WAVE_COMPLETE` event.
@@ -1273,6 +1279,43 @@ pub struct ImplCompleteEvent {
     pub confidence: f32,
     /// UTC timestamp of attestation receipt.
     pub timestamp: chrono::DateTime<chrono::Utc>,
+}
+
+/// Outcome of a single LASDLC gate evaluation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GateVerdictKind {
+    /// Gate passed — all checks satisfied.
+    Passed,
+    /// Gate failed — one or more checks did not satisfy the criterion.
+    Failed,
+    /// Gate blocked by an upstream dependency or HITL escalation.
+    Blocked,
+    /// Gate skipped with operator approval; reason recorded elsewhere.
+    Skipped,
+}
+
+/// A single gate evaluation result emitted by the conductor.
+///
+/// Carried in `WebEvent::GateResolution` and broadcast on the per-build SSE
+/// channel so the UI can render live gate badges without polling.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GateEvalEvent {
+    /// Build this gate evaluation belongs to.
+    pub build_id: Uuid,
+    /// Plan phase identifier (e.g. `"phase-1-backend-a"`).
+    pub phase_id: String,
+    /// Canonical gate dimension — one of `A S Q C O P K D T R`.
+    pub gate_dimension: String,
+    /// Verdict for this gate/phase combination.
+    pub verdict: GateVerdictKind,
+    /// Conductor confidence in its own evaluation (0.0–1.0).
+    pub confidence: f32,
+    /// Optional human-readable reasoning from the conductor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<String>,
+    /// UTC timestamp when the verdict was produced.
+    pub timestamp: DateTime<Utc>,
 }
 
 #[cfg(test)]

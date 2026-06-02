@@ -1200,3 +1200,11 @@ export const devModeEnabled = writable<boolean>(import.meta.env.DEV ?? false);
 
 /** Whether the full-screen CopilotSurface overlay is open. */
 export const copilotSurfaceOpen = writable<boolean>(false);
+
+/**
+ * Preferred TUI for the "launch / fork" action.
+ *   'la'     — LA Webshell is the TUI (default); fork button opens CopilotSurface.
+ *   'claude' — Fork to Claude Code CLI (`claude --resume <id>`).
+ *   'codex'  — Fork to Codex CLI (`codex exec resume <id>`).
+ */
+export const selectedTui = writable<'la' | 'claude' | 'codex'>('la');
