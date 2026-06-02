@@ -395,16 +395,15 @@ async fn spawn_task_slot(
     executor: &Arc<dyn WorkerExecutor>,
     join_set: &mut JoinSet<TaskOutcome>,
 ) -> Result<(), WaveError> {
-    // UUID suffix makes every attempt unique; prevents collision on retry when
-    // the same task.id is re-dispatched (e.g. IronClaw wave retry).
+    // UUID suffix makes every attempt unique across both the git branch name and
+    // the worktree filesystem path; prevents collision on retry when the same
+    // task.id is re-dispatched (e.g. IronClaw wave retry).
     // simple() produces 32 hex chars; [..8] is always in-bounds.
-    let wt_branch = format!(
-        "task/build/{}-{}",
-        task.id,
-        &uuid::Uuid::new_v4().simple().to_string()[..8],
-    );
-    tracing::debug!(wt_branch = %wt_branch, task_id = %task.id, "wave retry branch allocated");
-    let wt_path = worktree_root.join(&task.id);
+    // One suffix shared by branch + path keeps the slot identity coherent.
+    let slot_suffix = uuid::Uuid::new_v4().simple().to_string();
+    let wt_branch = format!("task/build/{}-{}", task.id, &slot_suffix[..8]);
+    let wt_path = worktree_root.join(format!("{}-{}", task.id, &slot_suffix[..8]));
+    tracing::debug!(wt_branch = %wt_branch, task_id = %task.id, "wave retry slot allocated");
 
     let handle = worktree_manager.create(&wt_branch, &wt_path).await?;
     mark_task(&coordinator.state, &task.id, TaskStatus::InProgress).await;
