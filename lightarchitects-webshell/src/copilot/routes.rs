@@ -735,6 +735,7 @@ async fn gather_grounding(
         git_ctx.as_ref(),
         recent_events,
         ui_context,
+        &[],
     );
 
     emit_grounding_spans(
@@ -1145,6 +1146,7 @@ mod integration_tests {
             git_ctx.as_ref(),
             &[],
             None,
+            &[],
         );
 
         // All four blocks present
@@ -1189,6 +1191,7 @@ mod integration_tests {
             git_ctx.as_ref(),
             &[],
             None,
+            &[],
         );
 
         assert!(
@@ -1227,6 +1230,7 @@ mod integration_tests {
             git_ctx.as_ref(),
             &[],
             None,
+            &[],
         );
 
         assert!(
@@ -1264,6 +1268,7 @@ mod integration_tests {
             git_ctx.as_ref(),
             &[],
             None,
+            &[],
         );
 
         assert!(
