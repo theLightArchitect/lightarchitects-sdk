@@ -1197,3 +1197,6 @@ export const cdpError = writable<string | null>(null);
 
 /** Whether dev-mode features (CDP, Playwright) are enabled. Defaults to Vite's DEV flag. */
 export const devModeEnabled = writable<boolean>(import.meta.env.DEV ?? false);
+
+/** Whether the full-screen CopilotSurface overlay is open. */
+export const copilotSurfaceOpen = writable<boolean>(false);

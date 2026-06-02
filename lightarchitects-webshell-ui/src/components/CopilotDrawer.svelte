@@ -31,7 +31,7 @@
   import ProviderSettings from './litellm/ProviderSettings.svelte';
   
   import { settingsOpen, pendingResumeSessionId, serverCwd, persistedConfig, selectedModel } from '$lib/setup';
-  import { strategyHitl, copilotDrawerOpen } from '$lib/stores';
+  import { strategyHitl, copilotDrawerOpen, copilotSurfaceOpen } from '$lib/stores';
   import { drawerWidthPx } from '$lib/stores';
   import { selectedPreset, selectedTarget, PRESET_DISPLAY, quickPickOpen } from '$lib/cockpit/stores';
   import { parseChips } from '$lib/cockpit/copilotChips';
@@ -1069,6 +1069,13 @@
         {/if}
 
         <button
+          onclick={() => copilotSurfaceOpen.set(true)}
+          class="hdr-action hdr-action--surface"
+          title="Open immersive Squad Surface (Three.js topology + signal canvas)"
+          aria-label="Open Squad Surface"
+        >⬡</button>
+
+        <button
           onclick={() => { positionMode = positionMode === 'drawer' ? 'overlay' : 'drawer'; }}
           class="hdr-action {positionMode === 'overlay' ? 'hdr-action--on' : ''}"
           title="Toggle overlay mode"
@@ -1684,6 +1691,15 @@
     color: var(--la-cyan, #1ecbe1);
     font-size: 9px;
     letter-spacing: 0.04em;
+  }
+  .hdr-action--surface {
+    color: #00d4f5;
+    font-size: 13px;
+    text-shadow: 0 0 8px #00d4f580;
+  }
+  .hdr-action--surface:hover {
+    color: #f0c040;
+    text-shadow: 0 0 10px #f0c04080;
   }
   .hdr-action-wrap {
     display: flex;

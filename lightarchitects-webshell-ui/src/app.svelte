@@ -5,6 +5,7 @@
   import CommandPalette from './components/CommandPalette.svelte';
   import SetupFlow from './screens/setup/SetupFlow.svelte';
   import CopilotDrawer from './components/CopilotDrawer.svelte';
+  import CopilotSurface from './components/CopilotSurface.svelte';
   import MemoryDrawer from './components/MemoryDrawer.svelte';
   import PolytopeButton from './components/PolytopeButton.svelte';
   import StreamButton from './components/StreamButton.svelte';
@@ -34,7 +35,7 @@
     expandedFindings, supervisorAlerts, siblingHealth, copilotMessages, strategyHitl,
     intakeFormDirty, authStatus, commandPaletteOpen, eventsOverlayOpen, streamDrawerWidthPx,
     streamDrawerOpen, streamDrawerActiveTabs, type StreamDrawerTab,
-    pendingQuestions,
+    pendingQuestions, copilotSurfaceOpen,
   } from '$lib/stores';
 
   function openStreamTab(tab: StreamDrawerTab) {
@@ -635,6 +636,11 @@
   {#if $settingsOpen}
     <SettingsOverlay />
   {/if}
+  <!-- Full-screen Squad Surface overlay — Three.js topology + signal canvas copilot. -->
+  {#if $copilotSurfaceOpen}
+    <CopilotSurface onclose={() => copilotSurfaceOpen.set(false)} />
+  {/if}
+
   <!-- Question HITL overlay (webshell-hitl-bridge) — rendered above all content.
        Each card maps to one pending gateway `question` tool call identified by tool_use_id. -->
   {#if $pendingQuestions.size > 0}
