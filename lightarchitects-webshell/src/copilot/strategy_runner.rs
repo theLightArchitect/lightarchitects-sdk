@@ -315,7 +315,7 @@ pub async fn dispatch_strategy_initial(
         let profile = StrategyRegistry::profile(&strategy_id);
         let role = profile.and_then(|p| p.optimal_domains.first().copied());
         let phase = profile.map(|p| p.phase_affinity.as_str());
-        let _ = lightarchitects::agent::loops::trace::emit_dispatch(
+        lightarchitects::agent::loops::trace::emit_dispatch(
             "copilot",
             &strategy_id,
             role,

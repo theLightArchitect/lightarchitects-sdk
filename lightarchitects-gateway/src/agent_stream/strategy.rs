@@ -244,7 +244,7 @@ pub async fn run_strategy<T: Transport>(
 
     // Emit MoE dispatch span (Northstar P3 mechanical check #4): expert.selected +
     // expert.selection_rationale + expert.composition_latency_ms.
-    let _ = lightarchitects::agent::loops::trace::emit_dispatch(
+    lightarchitects::agent::loops::trace::emit_dispatch(
         "gateway",
         &req.strategy.to_string(),
         req.role.as_deref(),

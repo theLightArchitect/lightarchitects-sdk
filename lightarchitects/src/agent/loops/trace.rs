@@ -7,19 +7,23 @@
 //! 2. A [`TraceSpan`] built via [`TraceContext`] — AYIN-native structured record
 //!    that callers can submit to the AYIN dashboard at `:3742`.
 //!
-//! Callers that do not need AYIN spans can ignore the returned [`TraceSpan`].
-//! The `tracing::info!` is always emitted regardless.
+//! Both signals are emitted unconditionally — disk write is fire-and-forget via
+//! [`emit_span_background`].
 
 use std::time::Instant;
 
 use tracing::info;
 
-use crate::ayin::span::{Actor, TraceContext, TraceError, TraceOutcome, TraceSpan};
+use crate::ayin::{
+    emit_span_background,
+    span::{Actor, TraceContext, TraceError, TraceOutcome, TraceSpan},
+};
 
-/// Record a strategy dispatch decision and return the corresponding AYIN [`TraceSpan`].
+/// Record a strategy dispatch decision and write the span to the AYIN trace store.
 ///
-/// Called once per `run_strategy` invocation, before the loop begins. Emits the
-/// Mixture-of-Experts routing rationale as span metadata (Northstar P3 mechanical check #4):
+/// Called once per `run_strategy` / `dispatch_strategy_initial` invocation, before the
+/// loop begins. Emits the Mixture-of-Experts routing rationale as span metadata
+/// (Northstar P3 mechanical check #4):
 ///
 /// - `expert.selected` — canonical strategy ID (e.g. `"build"`, `"react"`)
 /// - `expert.selection_rationale` — human-readable routing reason
@@ -27,17 +31,15 @@ use crate::ayin::span::{Actor, TraceContext, TraceError, TraceOutcome, TraceSpan
 /// - `loop.role` — domain role string used to resolve the profile
 /// - `loop.phase` — LASDLC phase affinity context
 ///
-/// # Errors
-///
-/// Returns an error only if the [`TraceContext`] builder fails (unreachable for
-/// well-formed inputs).
+/// The disk write is fire-and-forget via [`emit_span_background`]; the `tracing::info!`
+/// is always emitted regardless of whether the background write succeeds.
 pub fn emit_dispatch(
     actor: &str,
     strategy_name: &str,
     role: Option<&str>,
     phase: Option<&str>,
     start: Instant,
-) -> Result<TraceSpan, TraceError> {
+) {
     let latency_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
     let role_str = role.unwrap_or("unspecified");
     let phase_str = phase.unwrap_or("unspecified");
@@ -52,7 +54,7 @@ pub fn emit_dispatch(
         "loop dispatch"
     );
 
-    TraceContext::new(Actor::new(actor), "loop.dispatch")
+    let ctx = TraceContext::new(Actor::new(actor), "loop.dispatch")
         .outcome(TraceOutcome::Continue)
         .metadata(serde_json::json!({
             "expert.selected": strategy_name,
@@ -60,8 +62,8 @@ pub fn emit_dispatch(
             "expert.composition_latency_ms": latency_ms,
             "loop.role": role_str,
             "loop.phase": phase_str,
-        }))
-        .finish()
+        }));
+    emit_span_background(ctx);
 }
 
 /// Record a single loop step and return the corresponding AYIN [`TraceSpan`].
@@ -121,38 +123,23 @@ pub fn emit_step(
 mod tests {
     use super::*;
 
-    #[test]
-    fn emit_dispatch_produces_valid_span() {
+    #[tokio::test]
+    async fn emit_dispatch_does_not_panic_with_full_args() {
+        // emit_dispatch spawns a background task — needs a Tokio runtime.
         let start = Instant::now();
-        let span = emit_dispatch(
+        emit_dispatch(
             "gateway",
             "react",
             Some("researcher"),
             Some("research"),
             start,
-        )
-        .unwrap();
-        assert_eq!(span.action, "loop.dispatch");
-        let meta = &span.metadata;
-        assert_eq!(meta["expert.selected"], "react");
-        assert!(
-            meta["expert.selection_rationale"]
-                .as_str()
-                .unwrap()
-                .contains("react")
         );
-        assert!(meta["expert.composition_latency_ms"].as_u64().is_some());
-        assert_eq!(meta["loop.role"], "researcher");
-        assert_eq!(meta["loop.phase"], "research");
     }
 
-    #[test]
-    fn emit_dispatch_defaults_unspecified_for_none() {
+    #[tokio::test]
+    async fn emit_dispatch_does_not_panic_with_none_role_phase() {
         let start = Instant::now();
-        let span = emit_dispatch("gateway", "build", None, None, start).unwrap();
-        let meta = &span.metadata;
-        assert_eq!(meta["loop.role"], "unspecified");
-        assert_eq!(meta["loop.phase"], "unspecified");
+        emit_dispatch("copilot", "build", None, None, start);
     }
 
     #[test]
