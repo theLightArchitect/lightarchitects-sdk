@@ -129,6 +129,13 @@ pub struct LoopProfile {
     pub concurrency_class: ConcurrencyClass,
     /// Primary sibling domain responsible for reviewing this strategy's outputs.
     pub review_owner: &'static str,
+    /// Canonical role strings where this strategy is applicable.
+    ///
+    /// Used by `StrategyRegistry::for_domain(role)` to filter profiles. Role
+    /// strings match `AgentRole::as_str()` output: `"engineer"`, `"security"`,
+    /// `"quality"`, `"ops"`, `"researcher"`, `"testing"`, `"knowledge"`,
+    /// `"gateway"`.
+    pub optimal_domains: &'static [&'static str],
 }
 
 // ── DomainScopeConfig ─────────────────────────────────────────────────────────
@@ -207,6 +214,7 @@ mod tests {
             phase_affinity: LasdlcPhase::Implementation,
             concurrency_class: ConcurrencyClass::Singleton,
             review_owner: "CORSO",
+            optimal_domains: &["engineer", "ops"],
         };
         assert_eq!(profile.strategy_name, "build");
         assert_eq!(profile.concurrency_class, ConcurrencyClass::Singleton);

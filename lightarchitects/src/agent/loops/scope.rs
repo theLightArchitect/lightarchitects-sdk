@@ -107,6 +107,7 @@ mod tests {
             phase_affinity: LasdlcPhase::Implementation,
             concurrency_class: ConcurrencyClass::Low,
             review_owner: "CORSO",
+            optimal_domains: &["engineer"],
         }
     }
 
