@@ -308,6 +308,21 @@ pub async fn dispatch_strategy_initial(
     let session_id = build_id.to_string();
     let span_id_for_response = turn_span_id.clone();
 
+    // ── P3 mechanical check #4: emit loop.dispatch span with MoE routing metadata ──
+    // Role and phase are derived from the LoopProfile so callers don't need to supply them.
+    let dispatch_start = Instant::now();
+    {
+        let profile = StrategyRegistry::profile(&strategy_id);
+        let role = profile.and_then(|p| p.optimal_domains.first().copied());
+        let phase = profile.map(|p| p.phase_affinity.as_str());
+        let _ = lightarchitects::agent::loops::trace::emit_dispatch(
+            &strategy_id,
+            role,
+            phase,
+            dispatch_start,
+        );
+    }
+
     // ── AYIN lineage: strategy dispatch span ──
     let strategy_span_id = uuid::Uuid::new_v4().to_string();
     emit_strategy_start_span(
