@@ -20,8 +20,11 @@
 use serde::Deserialize;
 use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
-use tracing::{info, warn};
+#[cfg(feature = "lightsquad")]
+use tracing::info;
+use tracing::warn;
 
+#[cfg(feature = "lightsquad")]
 use crate::lightsquad::light_architects::{GateDimension, Recommendation};
 
 /// Error from [`SquadRegistry::validate_entry`].
@@ -172,6 +175,7 @@ impl SquadRegistry {
 /// follow-on build once the full sibling process management surface is
 /// available. Security (`[S]`) never auto-approves — it always escalates
 /// to user review regardless of context.
+#[cfg(feature = "lightsquad")]
 #[must_use]
 pub fn consult(dimension: GateDimension, description: &str) -> Recommendation {
     let (primary_sibling, rationale) = match dimension {

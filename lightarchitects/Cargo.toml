@@ -76,7 +76,7 @@ container-spawn = ["dep:arc-swap"]
 #
 # Extraction candidate — see ~/.claude/projects/-Users-kft-Projects/memory/
 # project_lightarchitects_sdk_extraction_candidates.md
-lightsquad = ["agent-cli", "http-client", "credentials", "dep:la-lightsquad", "dep:dashmap"]
+lightsquad = ["agent-cli", "http-client", "credentials", "dep:la-lightsquad", "dep:dashmap", "container-spawn"]
 
 # L1 agentic loop substrate — Strategy trait, LoopRunner, compose combinators,
 # CritiqueRefine, phase spans. Does NOT require agent-cli (provider-agnostic).
