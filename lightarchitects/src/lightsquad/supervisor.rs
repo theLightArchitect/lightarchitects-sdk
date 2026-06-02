@@ -67,6 +67,8 @@ pub fn hitl_channel() -> (IronclawHitlTx, IronclawHitlRx) {
 pub struct HitlEscalation {
     /// Task that originated this escalation.
     pub task_id: String,
+    /// Domain role of the escalating agent — role-addressed per A2A bus contract.
+    pub escalating_role: crate::lightsquad::agent_role::AgentRole,
     /// The decision context to be evaluated by the pipeline.
     pub context: DecisionContext,
     /// W3C `traceparent` header value propagated from the worker's span.
@@ -79,6 +81,7 @@ impl std::fmt::Debug for HitlEscalation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HitlEscalation")
             .field("task_id", &self.task_id)
+            .field("escalating_role", &self.escalating_role)
             .field("context_description", &self.context.description)
             .field("traceparent", &self.traceparent)
             .finish_non_exhaustive()
@@ -421,11 +424,13 @@ mod tests {
         let (respond, rx) = oneshot::channel();
         let escalation = HitlEscalation {
             task_id: task_id.to_owned(),
+            escalating_role: crate::lightsquad::agent_role::AgentRole::Engineer,
             context: DecisionContext {
                 task_id: task_id.to_owned(),
                 description: "write src/lib.rs".to_owned(),
                 action_kind: ActionKind::FileWrite,
                 file_paths: vec![PathBuf::from("src/lib.rs")],
+                requesting_role: crate::lightsquad::agent_role::AgentRole::Engineer,
             },
             traceparent: None,
             respond,
@@ -440,6 +445,7 @@ mod tests {
         let (respond, rx) = oneshot::channel();
         let escalation = HitlEscalation {
             task_id: task_id.to_owned(),
+            escalating_role: crate::lightsquad::agent_role::AgentRole::Engineer,
             context: DecisionContext {
                 task_id: task_id.to_owned(),
                 description: "add serde-evil to Cargo.toml".to_owned(),
@@ -447,6 +453,7 @@ mod tests {
                     dep_name: "serde-evil".to_owned(),
                 },
                 file_paths: vec![],
+                requesting_role: crate::lightsquad::agent_role::AgentRole::Engineer,
             },
             traceparent,
             respond,

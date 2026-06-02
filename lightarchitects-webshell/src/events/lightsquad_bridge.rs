@@ -36,6 +36,7 @@ use lightarchitects::{
         spawn_with_span_context,
     },
     lightsquad::{
+        agent_role::AgentRole,
         program::{AttestationConfig, Program, ProgramConfig},
         types::Task,
         wave_dispatcher::WorkerSpec,
@@ -164,6 +165,7 @@ async fn run_build(ctx: BridgeContext) {
                 .map(|spec| Task {
                     branch: format!("task/{codename}/{}", spec.id),
                     depends_on: spec.depends_on,
+                    role: AgentRole::default(),
                     file_ownership: spec.file_ownership,
                     concurrency_safe: spec.concurrency_safe,
                     context_tiers: vec![],
@@ -1358,6 +1360,7 @@ mod tests {
             id: id.to_owned(),
             branch: format!("task/build/{id}"),
             depends_on: deps.iter().map(|d| (*d).to_owned()).collect(),
+            role: AgentRole::default(),
             file_ownership: vec![],
             concurrency_safe: false,
             context_tiers: vec![],

@@ -29,6 +29,9 @@
 //! promotion to standalone workspace crate when sub-module count ≥ 10 or
 //! independent-publish need emerges.
 
+/// Canonical domain roles for the A2A message bus (role-addressed, not name-addressed).
+pub mod agent_role;
+
 /// JSON-schema type definitions for the `lightsquad_plan` copilot tool.
 pub mod plan_schema;
 

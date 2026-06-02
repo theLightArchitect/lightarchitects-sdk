@@ -101,6 +101,12 @@ pub struct DecisionContext {
     pub action_kind: ActionKind,
     /// Absolute file paths involved in the action (may be empty for non-file actions).
     pub file_paths: Vec<PathBuf>,
+    /// Domain role of the requesting agent — role-addressed per A2A bus contract.
+    ///
+    /// Defaults to [`crate::lightsquad::agent_role::AgentRole::Engineer`] so that
+    /// existing workers without explicit role assignment continue to function.
+    #[serde(default)]
+    pub requesting_role: crate::lightsquad::agent_role::AgentRole,
 }
 
 impl DecisionContext {
@@ -484,6 +490,7 @@ mod tests {
             description: "test action".to_owned(),
             action_kind: kind,
             file_paths: paths,
+            requesting_role: crate::lightsquad::agent_role::AgentRole::Engineer,
         }
     }
 
@@ -676,6 +683,7 @@ mod tests {
             description: "test".to_owned(),
             action_kind: ActionKind::FileWrite,
             file_paths: vec![],
+            requesting_role: crate::lightsquad::agent_role::AgentRole::Engineer,
         };
         assert!(ctx.validate().is_err());
     }
@@ -687,6 +695,7 @@ mod tests {
             description: "a".repeat(513),
             action_kind: ActionKind::FileWrite,
             file_paths: vec![],
+            requesting_role: crate::lightsquad::agent_role::AgentRole::Engineer,
         };
         assert!(ctx.validate().is_err());
     }

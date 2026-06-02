@@ -48,6 +48,13 @@ pub struct Task {
     pub branch: String,
     /// IDs of tasks that must reach [`TaskStatus::Complete`] before this one starts.
     pub depends_on: Vec<String>,
+    /// Domain role of the agent executing this task.
+    ///
+    /// Used to populate [`super::supervisor::HitlEscalation::escalating_role`] and
+    /// carried into SSE envelopes so the operator can filter by role.
+    /// Defaults to [`super::agent_role::AgentRole::Engineer`].
+    #[serde(default)]
+    pub role: super::agent_role::AgentRole,
     /// Worktree-relative file paths this task is exclusively allowed to write.
     ///
     /// When empty, ownership enforcement is opt-out (legacy / interactive
@@ -182,6 +189,7 @@ mod tests {
             id: id.to_owned(),
             branch: format!("task/{id}"),
             depends_on: deps.iter().map(|s| (*s).to_owned()).collect(),
+            role: crate::lightsquad::agent_role::AgentRole::Engineer,
             file_ownership: vec![],
             concurrency_safe: false,
             context_tiers: vec![],

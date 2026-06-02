@@ -281,6 +281,7 @@ mod tests {
                 id: "t1".to_owned(),
                 branch: "task/t1".to_owned(),
                 depends_on: vec![],
+                role: crate::lightsquad::agent_role::AgentRole::Engineer,
                 file_ownership: vec![],
                 concurrency_safe: false,
                 context_tiers: vec![],

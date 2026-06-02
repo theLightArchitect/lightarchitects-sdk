@@ -484,6 +484,7 @@ mod tests {
             id: id.to_owned(),
             branch: format!("task/build/{id}"),
             depends_on: vec![],
+            role: crate::lightsquad::agent_role::AgentRole::Engineer,
             file_ownership: files.iter().map(|s| (*s).to_owned()).collect(),
             concurrency_safe: false,
             context_tiers: vec![],

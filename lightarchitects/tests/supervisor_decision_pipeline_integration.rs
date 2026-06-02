@@ -14,6 +14,7 @@ use std::path::PathBuf;
 
 use futures_util::future::join_all;
 use lightarchitects::lightsquad::{
+    agent_role::AgentRole,
     decision_pipeline::{ActionKind, CategoricalExclusion, DecisionContext, DecisionPipeline},
     decisions::hash_chain::HashChain,
     light_architects::{GateDimension, LightArchitectRegistry},
@@ -39,6 +40,7 @@ fn file_write_ctx(task_id: &str, path: &str) -> DecisionContext {
         description: format!("write {path}"),
         action_kind: ActionKind::FileWrite,
         file_paths: vec![PathBuf::from(path)],
+        requesting_role: AgentRole::default(),
     }
 }
 
@@ -50,6 +52,7 @@ fn dep_ctx(task_id: &str, dep: &str) -> DecisionContext {
             dep_name: dep.to_owned(),
         },
         file_paths: vec![],
+        requesting_role: AgentRole::default(),
     }
 }
 
@@ -59,6 +62,7 @@ fn secret_ctx(task_id: &str) -> DecisionContext {
         description: "write API key to .env".to_owned(),
         action_kind: ActionKind::FileWrite,
         file_paths: vec![PathBuf::from("/home/user/.env")],
+        requesting_role: AgentRole::default(),
     }
 }
 
@@ -73,6 +77,7 @@ fn escalation(
     (
         HitlEscalation {
             task_id,
+            escalating_role: AgentRole::default(),
             context: ctx,
             traceparent: None,
             respond,
@@ -249,6 +254,7 @@ fn it_screens_all_categorical_exclusion_variants() {
             description: "test".to_owned(),
             action_kind: kind.clone(),
             file_paths: vec![],
+            requesting_role: AgentRole::default(),
         };
         let excluded = CategoricalExclusion::screen(&ctx).is_some();
         assert_eq!(

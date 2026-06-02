@@ -22,6 +22,7 @@
 use std::path::Path;
 
 use lightarchitects::lightsquad::{
+    agent_role::AgentRole,
     merge_agent::MergeAgent,
     preflight::{check_deps, check_plan, init_build_state},
     types::{BuildStatus, Coordinator, Task, TaskStatus},
@@ -64,6 +65,7 @@ fn make_task(id: &str) -> Task {
         id: id.to_owned(),
         branch: format!("task/build/{id}"),
         depends_on: vec![],
+        role: AgentRole::default(),
         file_ownership: vec![],
         concurrency_safe: false,
         context_tiers: vec![],
@@ -77,6 +79,7 @@ fn make_task_with_dep(id: &str, dep: &str) -> Task {
         id: id.to_owned(),
         branch: format!("task/build/{id}"),
         depends_on: vec![dep.to_owned()],
+        role: AgentRole::default(),
         file_ownership: vec![],
         concurrency_safe: false,
         context_tiers: vec![],

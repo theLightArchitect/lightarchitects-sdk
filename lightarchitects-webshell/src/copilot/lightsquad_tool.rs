@@ -29,6 +29,7 @@ use uuid::Uuid;
 use lightarchitects::agent::tool_executor::{ToolDefinition, ToolError, ToolExecutor, ToolOutput};
 use lightarchitects::ayin::{TraceOutcome, spawn_with_span_context};
 use lightarchitects::lightsquad::{
+    agent_role::AgentRole,
     plan_schema::{PlanInput, lightsquad_plan_tool_definition, validate_plan},
     program::{AttestationConfig, BuildSummary, Program, ProgramConfig},
     types::Task,
@@ -286,6 +287,7 @@ impl LightsquadToolExecutor {
                         id: t.id.clone(),
                         branch: format!("task/{}/{}", plan.codename, t.id),
                         depends_on: t.depends_on.clone(),
+                        role: AgentRole::default(),
                         file_ownership: t.file_ownership.clone(),
                         concurrency_safe: t.concurrency_safe,
                         context_tiers: vec![],
@@ -295,7 +297,6 @@ impl LightsquadToolExecutor {
                     .collect()
             })
             .collect();
-
         let branch_ok = tokio::process::Command::new("git")
             .args(["checkout", "-B", &feat_branch])
             .current_dir(&self.repo_root)
@@ -307,7 +308,6 @@ impl LightsquadToolExecutor {
                 "could not create feat branch '{feat_branch}'"
             )));
         }
-
         let pepper: Vec<u8> = {
             use secrecy::ExposeSecret;
             self.turnlog_pepper.expose_secret().to_vec()
@@ -319,7 +319,6 @@ impl LightsquadToolExecutor {
             &format!("Copilot-initiated build '{}' approved", plan.codename),
             Some("canon://agents-playbook#§15"),
         );
-
         let build_span_id = emit_squad_span(
             "squad.build.started",
             serde_json::json!({ "codename": &plan.codename, "source": "copilot_tool",
@@ -347,7 +346,6 @@ impl LightsquadToolExecutor {
             litellm_model,
             self.app_state.clone(),
         );
-
         let config = ProgramConfig {
             codename: plan.codename.clone(),
             repo_root: self.repo_root.clone(),
@@ -363,12 +361,10 @@ impl LightsquadToolExecutor {
                 feat_branch: plan.feat_branch.clone(),
             }),
         };
-        let program = Program::new(config);
-        let summary = spawn_with_span_context(async move { program.run().await })
+        let summary = spawn_with_span_context(async move { Program::new(config).run().await })
             .await
             .map_err(|e| ToolError::Internal(format!("program task join error: {e}")))?
             .map_err(|e| ToolError::Internal(format!("build error: {e}")))?;
-
         let _ = dw.append(
             "L1",
             &format!(
