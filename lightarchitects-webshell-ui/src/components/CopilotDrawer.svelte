@@ -13,6 +13,7 @@
   import { SIBLING_COLORS, getChatActorPolytope } from '$lib/design-tokens';
   import { api } from '$lib/api';
   import * as sessionMgr from '$lib/copilot/session';
+  import { handleCopilotEvent } from '$lib/copilot/chat';
   import { authHeaders } from '$lib/auth';
   import { parseCommand, SLASH_COMMANDS } from '$lib/commands';
   import { connectSSE, disconnectSSE, reconnectSSE, sseConnected } from '$lib/sse';
@@ -394,57 +395,14 @@
 
   // --- Agent event handler — converts NDJSON bridge events into chat messages ---
   function handleAgentEvent(ev: AgentEvent): void {
-    switch (ev.type) {
-      case 'text':
-        // If a text chunk arrives without loading=true (e.g. server-initiated
-        // or E2E injection), set it so the UI shows the spinner and subsequent
-        // chunks append rather than spawning duplicate bubbles.
-        if (!get(copilotLoading)) copilotLoading.set(true);
-        // Append to the current assistant message if one is in flight,
-        // otherwise start a new one.
-        copilotMessages.update((msgs) => {
-          const updated = [...msgs];
-          const last = updated[updated.length - 1];
-          if (last && last.role === 'assistant' && get(copilotLoading)) {
-            updated[updated.length - 1] = { ...last, content: last.content + ev.chunk };
-          } else {
-            updated.push({ id: crypto.randomUUID(), role: 'assistant', content: ev.chunk, timestamp: new Date().toISOString() });
-          }
-          return updated;
-        });
-        break;
-      case 'thinking':
-        addMessage('system', ev.content, undefined, 'thinking');
-        break;
-      case 'tool_start':
-        addMessage('system', `[${ev.name}] ${JSON.stringify(ev.input)}`);
-        break;
-      case 'tool_complete':
-        addMessage('system', `${ev.success ? '✅' : '❌'} [${ev.id}] ${ev.duration_ms}ms${ev.result ? '\n' + ev.result : ''}`);
-        break;
-      case 'status_update':
-        addMessage('system', ev.text);
-        break;
-      case 'error':
-        addMessage('system', `Error: ${ev.message}`);
-        copilotLoading.set(false);
-        break;
-      case 'complete':
-        copilotLoading.set(false);
-        if (get(voiceEnabled)) {
-          const msgs = get(copilotMessages);
-          const last = msgs.findLast(m => m.role === 'assistant');
-          if (last?.content) playVoice(last.content);
-        }
-        break;
-      case 'token_usage':
-        // Silently ignore — AgentConsole shows token stats if user wants detail
-        break;
-      case 'heartbeat':
-        break;
-      default:
-        break;
-    }
+    handleCopilotEvent(ev, () => {
+      // Voice playback is Drawer-specific — Surface uses particle burst instead.
+      if (get(voiceEnabled)) {
+        const msgs = get(copilotMessages);
+        const last = msgs.findLast(m => m.role === 'assistant');
+        if (last?.content) playVoice(last.content);
+      }
+    });
   }
 
   async function ensureBuild(): Promise<string> {

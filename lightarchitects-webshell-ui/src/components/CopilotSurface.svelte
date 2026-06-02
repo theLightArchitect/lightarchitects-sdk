@@ -4,14 +4,13 @@
   import * as THREE from 'three';
   import {
     copilotMessages, copilotLoading, siblingHealth, activityFeed,
-    copilotGrounding, snapshotContextForCopilot, clearCopilotHistory,
+    clearCopilotHistory,
   } from '$lib/stores';
   import { serverCwd } from '$lib/setup';
-  import * as sessionMgr from '$lib/copilot/session';
-  import { api } from '$lib/api';
+  import { handleCopilotEvent, addCopilotMessage, sendCopilotNative } from '$lib/copilot/chat';
   import { SIBLING_COLORS } from '$lib/design-tokens';
   import { renderMarkdown } from '$lib/markdown';
-  import type { AgentEvent, SiblingId } from '$lib/types';
+  import type { SiblingId } from '$lib/types';
 
   // ── Props ──────────────────────────────────────────────────────────────────
   interface Props {
@@ -369,78 +368,19 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // MESSAGE HANDLING
+  // MESSAGE HANDLING — delegates to $lib/copilot/chat (shared with Drawer)
   // ═══════════════════════════════════════════════════════════════════════════
-
-  function addMsg(role: 'user' | 'assistant' | 'system', content: string, sibling?: SiblingId, kind?: 'thinking') {
-    copilotMessages.update(ms => [...ms, {
-      id: crypto.randomUUID(), role, content, sibling, kind,
-      timestamp: new Date().toISOString(),
-    }]);
-  }
-
-  function handleAgentEvent(ev: AgentEvent): void {
-    switch (ev.type) {
-      case 'text':
-        if (!get(copilotLoading)) copilotLoading.set(true);
-        copilotMessages.update((ms) => {
-          const upd = [...ms];
-          const last = upd[upd.length - 1];
-          if (last?.role === 'assistant' && get(copilotLoading)) {
-            upd[upd.length - 1] = { ...last, content: last.content + ev.chunk };
-          } else {
-            upd.push({ id: crypto.randomUUID(), role: 'assistant', content: ev.chunk, timestamp: new Date().toISOString() });
-          }
-          return upd;
-        });
-        break;
-      case 'thinking':
-        addMsg('system', ev.content, undefined, 'thinking');
-        break;
-      case 'tool_start':
-        addMsg('system', `TOOL:${ev.name}\n${JSON.stringify(ev.input, null, 2)}`);
-        break;
-      case 'tool_complete':
-        addMsg('system', `DONE:${ev.id}\n${ev.success ? 'ok' : 'err'} · ${ev.duration_ms}ms${ev.result ? '\n' + ev.result.slice(0, 400) : ''}`);
-        break;
-      case 'status_update':
-        addMsg('system', `STATUS:${ev.text}`);
-        break;
-      case 'error':
-        addMsg('system', `ERR:${ev.message}`);
-        copilotLoading.set(false);
-        break;
-      case 'complete':
-        copilotLoading.set(false);
-        spawnParticles(24);
-        break;
-      default:
-        break;
-    }
-  }
 
   async function sendMessage() {
     const text = inputText.trim();
     if (!text || sending || loading) return;
     inputText = '';
     sending = true;
-    addMsg('user', text);
     spawnParticles(32);
     const cwd = get(serverCwd) ?? '.';
     try {
-      copilotLoading.set(true);
-      await sessionMgr.withSession(cwd, async (bid) => {
-        const ctx = snapshotContextForCopilot();
-        const { grounding } = await api.copilotChatNative(
-          bid, text,
-          (ev) => handleAgentEvent(ev as AgentEvent),
-          { recentEvents: ctx.recentEvents, uiContext: ctx.uiContext },
-        );
-        if (grounding !== null) copilotGrounding.set(grounding);
-      });
-    } catch (err) {
-      addMsg('system', `ERR:${err instanceof Error ? err.message : 'Send failed'}`);
-      copilotLoading.set(false);
+      // Surface-specific onComplete: particle burst. Voice playback stays in Drawer.
+      await sendCopilotNative(text, cwd, () => spawnParticles(24));
     } finally {
       sending = false;
     }
