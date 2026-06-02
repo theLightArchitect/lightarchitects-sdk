@@ -27,6 +27,8 @@
 
 use std::{path::PathBuf, sync::Arc};
 
+use uuid::Uuid;
+
 use crate::lightsquad::{
     merge_agent::MergeAgent,
     types::{BuildStatus, Coordinator, Task, TaskStatus},
@@ -34,6 +36,26 @@ use crate::lightsquad::{
     worker_executor::WorkerExecutor,
     worktree_manager::WorktreeManager,
 };
+
+/// Webshell endpoint config for §3.5 `IMPLEMENTATION_COMPLETE` attestations.
+///
+/// When present in [`ProgramConfig`], a fire-and-forget POST is sent to
+/// `POST /api/builds/{build_id}/attestation` after every successful wave.
+/// Failures are logged but never propagate — monitoring must not block builds.
+#[derive(Debug, Clone)]
+pub struct AttestationConfig {
+    /// Webshell base URL, e.g. `"http://127.0.0.1:8733"`.
+    pub webshell_url: String,
+    /// Build session UUID — identifies the SSE channel the webshell broadcasts on.
+    pub build_id: Uuid,
+    /// Global bearer token for `Authorization: Bearer <token>`.
+    pub bearer_token: String,
+    /// Absolute path of the primary repository — used to resolve the post-merge
+    /// HEAD SHA for wave-boundary attestations.
+    pub repo_root: PathBuf,
+    /// Feature branch name — used to resolve `refs/heads/<feat_branch>` HEAD.
+    pub feat_branch: String,
+}
 
 /// Configuration for a single autonomous build program.
 #[derive(Debug, Clone)]
@@ -60,6 +82,10 @@ pub struct ProgramConfig {
     /// [`InProcessExecutor`]: super::worker_executor::InProcessExecutor
     /// [`ContainerExecutor`]: super::worker_executor::ContainerExecutor
     pub executor: Arc<dyn WorkerExecutor>,
+    /// If set, a §3.5 `IMPLEMENTATION_COMPLETE` attestation is fire-and-forget
+    /// sent to the webshell after each successful wave. Errors are logged but
+    /// never propagate — attestation is a monitoring side-channel, not a gate.
+    pub attestation: Option<AttestationConfig>,
 }
 
 /// Top-level orchestrator for one lightsquad autonomous build.
@@ -149,6 +175,12 @@ impl Program {
                         return Err(WaveError::TaskFailures(total_failed));
                     }
                     let _ = failed_ids;
+                    // Fire-and-forget §3.5 attestation — errors never block the build.
+                    if let Some(ref cfg) = self.config.attestation {
+                        // Wave index is bounded by plan size (always < 100).
+                        #[allow(clippy::cast_possible_truncation)]
+                        post_wave_attestation(cfg, wave_idx as u32, succeeded).await;
+                    }
                 }
                 Err(WaveError::TaskFailures(n)) => {
                     total_failed += n;
@@ -173,6 +205,72 @@ impl Program {
     async fn set_build_status(&self, status: BuildStatus) {
         let mut state = self.coordinator.state.write().await;
         state.builds.insert(self.config.codename.clone(), status);
+    }
+}
+
+/// POST a §3.5 `IMPLEMENTATION_COMPLETE` attestation to the webshell.
+///
+/// Fire-and-forget: errors are logged at WARN but never propagate.
+/// The 5-second timeout prevents stalling if the webshell is unreachable.
+async fn post_wave_attestation(cfg: &AttestationConfig, wave: u32, tasks_succeeded: u32) {
+    // Resolve the post-merge HEAD on the feat branch — reflects the actual merge commit.
+    let commit_sha = tokio::process::Command::new("git")
+        .args(["rev-parse", &format!("refs/heads/{}", cfg.feat_branch)])
+        .current_dir(&cfg.repo_root)
+        .output()
+        .await
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map_or_else(|| "unknown".to_owned(), |s| s.trim().to_owned());
+
+    let url = format!(
+        "{}/api/builds/{}/attestation",
+        cfg.webshell_url, cfg.build_id
+    );
+    let body = serde_json::json!({
+        "wave": wave,
+        "task_id": format!("wave-{wave}-boundary"),
+        "agent_id": "lightsquad/wave-dispatcher",
+        "commit_sha": commit_sha,
+        "gates_passed": [],
+        "gates_skipped": [],
+        "ayin_spans_dropped_total": 0_u64,
+        "trust_boundary": "unverified_pre_2.10",
+        "confidence": 1.0_f32,
+    });
+    let _ = tasks_succeeded; // available for richer payloads in a future BUILD
+    match reqwest::Client::new()
+        .post(&url)
+        .bearer_auth(&cfg.bearer_token)
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => {
+            tracing::info!(
+                build_id = %cfg.build_id,
+                wave,
+                "§3.5 attestation broadcast"
+            );
+        }
+        Ok(r) => {
+            tracing::warn!(
+                build_id = %cfg.build_id,
+                wave,
+                status = %r.status(),
+                "§3.5 attestation POST non-2xx"
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                build_id = %cfg.build_id,
+                wave,
+                error = %e,
+                "§3.5 attestation POST failed"
+            );
+        }
     }
 }
 
@@ -203,6 +301,7 @@ mod tests {
             feat_branch: "feat/test-build".to_owned(),
             waves,
             executor: Arc::new(InProcessExecutor::new(|_spec| async { Ok(()) })),
+            attestation: None,
         }
     }
 

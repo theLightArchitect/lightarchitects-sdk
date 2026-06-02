@@ -24,7 +24,7 @@ use lightarchitects_webshell::events::types::{
 
 /// Total expected `WebEvent` variant count.  Update alongside the §1.2 table
 /// in `webshell-api-surface-v1.md` whenever variants are added or removed.
-const EXPECTED_VARIANT_COUNT: usize = 31;
+const EXPECTED_VARIANT_COUNT: usize = 32;
 
 /// Exhaustive match acting as a compiler-enforced variant count ratchet.
 ///
@@ -71,6 +71,8 @@ fn all_variants_matched(event: &WebEvent) {
         // ── litellm-platform-integration W3.4 — IronClaw budget events ────────
         WebEvent::BudgetExhausted(_) => {}
         WebEvent::BudgetWarning(_) => {}
+        // ── webshell-agent-comms-display (Agents Playbook §3.5) ───────────────
+        WebEvent::ImplComplete(_) => {}
     }
 }
 
@@ -195,8 +197,8 @@ fn web_event_variant_count_matches_canon_doc() {
     all_variants_matched(&budget_warning);
 
     assert_eq!(
-        EXPECTED_VARIANT_COUNT, 31,
-        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (31)"
+        EXPECTED_VARIANT_COUNT, 32,
+        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (32)"
     );
 }
 

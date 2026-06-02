@@ -1002,6 +1002,7 @@ import type {
   MergeAgentStatusEvent,
   FixAgentIterationEvent,
   IronclawHitlEscalationEvent,
+  ImplCompleteEvent,
 } from './types';
 
 /** Latest worker slot occupancy — null until first gauge event arrives. */
@@ -1015,6 +1016,9 @@ export const mergeAgentEvents = writable<MergeAgentStatusEvent[]>([]);
 
 /** Rolling window of fix agent iteration events (newest first, max 100). */
 export const fixAgentEvents = writable<FixAgentIterationEvent[]>([]);
+
+/** Rolling window of IMPLEMENTATION_COMPLETE attestations (newest first, max 50). */
+export const implCompleteEvents = writable<ImplCompleteEvent[]>([]);
 
 /** Active ironclaw HITL escalation awaiting operator decision. Null when idle. */
 export const ironclawHitlEscalation = writable<IronclawHitlEscalationEvent | null>(null);

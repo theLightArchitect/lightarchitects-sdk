@@ -30,7 +30,7 @@ use lightarchitects::agent::tool_executor::{ToolDefinition, ToolError, ToolExecu
 use lightarchitects::ayin::{TraceOutcome, spawn_with_span_context};
 use lightarchitects::lightsquad::{
     plan_schema::{PlanInput, lightsquad_plan_tool_definition, validate_plan},
-    program::{BuildSummary, Program, ProgramConfig},
+    program::{AttestationConfig, BuildSummary, Program, ProgramConfig},
     types::Task,
     worker_executor::InProcessExecutor,
 };
@@ -355,6 +355,13 @@ impl LightsquadToolExecutor {
             feat_branch,
             waves: ls_waves,
             executor: Arc::new(InProcessExecutor::new(worker_fn)),
+            attestation: Some(AttestationConfig {
+                webshell_url: format!("http://127.0.0.1:{}", self.app_state.config.port),
+                build_id,
+                bearer_token: self.app_state.config.token.clone(),
+                repo_root: self.repo_root.clone(),
+                feat_branch: plan.feat_branch.clone(),
+            }),
         };
         let program = Program::new(config);
         let summary = spawn_with_span_context(async move { program.run().await })

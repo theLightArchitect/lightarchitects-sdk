@@ -10,10 +10,11 @@ Consumed stores: `workerSlots` (slot capacity + active count + wave index),
 `conductorState` (queue depth + heartbeat), `mergeAgentEvents`, `fixAgentEvents`.
 -->
 <script lang="ts">
-  import { workerSlots, conductorState, mergeAgentEvents, fixAgentEvents } from '$lib/stores';
+  import { workerSlots, conductorState, mergeAgentEvents, fixAgentEvents, implCompleteEvents } from '$lib/stores';
   import type { MergeAgentStatusEvent, FixAgentIterationEvent } from '$lib/types';
   import { authHeaders } from '$lib/auth';
   import HitlEscalationModal from '../HitlEscalationModal.svelte';
+  import AttestationCard from '../AttestationCard.svelte';
 
   let { buildId }: { buildId: string } = $props();
 
@@ -81,8 +82,9 @@ Consumed stores: `workerSlots` (slot capacity + active count + wave index),
 
   let slots = $derived($workerSlots);
   let tick  = $derived($conductorState);
-  let merges = $derived($mergeAgentEvents.filter(e => e.build_id === buildId));
-  let fixes  = $derived($fixAgentEvents.filter(e => e.build_id === buildId));
+  let merges      = $derived($mergeAgentEvents.filter(e => e.build_id === buildId));
+  let fixes       = $derived($fixAgentEvents.filter(e => e.build_id === buildId));
+  let attestations = $derived($implCompleteEvents.filter(e => e.build_id === buildId));
 
   let activeSlots  = $derived(slots?.active     ?? 0);
   let capacity     = $derived(slots?.capacity   ?? CAPACITY);
@@ -213,8 +215,22 @@ Consumed stores: `workerSlots` (slot capacity + active count + wave index),
     </div>
   {/if}
 
+  <!-- ── IMPLEMENTATION_COMPLETE attestations (Agents Playbook §3.5) ──────── -->
+  {#if attestations.length > 0}
+    <div class="ar-section">
+      <span class="ar-section-label">ATTESTATIONS</span>
+      <ul class="ar-event-list">
+        {#each attestations.slice(0, 6) as ev (ev.wave + '-' + ev.task_id)}
+          <li class="ar-event-item-bare">
+            <AttestationCard {ev} />
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
+
   <!-- ── Empty state ──────────────────────────────────────────────────────────── -->
-  {#if !slots && !tick && merges.length === 0}
+  {#if !slots && !tick && merges.length === 0 && attestations.length === 0}
     <div class="ar-empty">
       <span>No autonomous run in progress for this build.</span>
       <span class="ar-empty-hint">Start a build in autonomous mode to see live worker activity.</span>
@@ -405,6 +421,11 @@ Consumed stores: `workerSlots` (slot capacity + active count + wave index),
     font-size: 10px;
     background: var(--la-bg-elev-1);
     border-left: 3px solid var(--la-hair-strong);
+  }
+
+  /* Wrapper for AttestationCard — no extra padding; card owns its own layout. */
+  .ar-event-item-bare {
+    list-style: none;
   }
 
   .ar-event-item.merge-merged  { border-left-color: var(--la-strand-sec); }

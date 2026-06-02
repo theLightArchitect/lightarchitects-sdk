@@ -669,6 +669,7 @@ mod tests {
             feat_branch: "feat/my-build".to_owned(),
             waves: vec![],
             executor: Arc::new(InProcessExecutor::new(|_| async { Ok(()) })),
+            attestation: None,
         };
         let sc = SupervisorConfig::from_program(&config, [0u8; 32]);
         assert_eq!(sc.codename, "my-build");

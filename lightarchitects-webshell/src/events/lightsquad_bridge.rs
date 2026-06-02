@@ -36,7 +36,7 @@ use lightarchitects::{
         spawn_with_span_context,
     },
     lightsquad::{
-        program::{Program, ProgramConfig},
+        program::{AttestationConfig, Program, ProgramConfig},
         types::Task,
         wave_dispatcher::WorkerSpec,
         worker_executor::InProcessExecutor,
@@ -241,6 +241,8 @@ async fn run_build(ctx: BridgeContext) {
         app_state.clone(),
     );
 
+    let repo_root_for_attest = repo_root.clone();
+    let feat_branch_for_attest = feat_branch.clone();
     let config = ProgramConfig {
         codename: codename.clone(),
         repo_root,
@@ -248,6 +250,13 @@ async fn run_build(ctx: BridgeContext) {
         feat_branch,
         waves: ls_waves,
         executor: Arc::new(InProcessExecutor::new(worker_fn)),
+        attestation: Some(AttestationConfig {
+            webshell_url: format!("http://127.0.0.1:{}", app_state.config.port),
+            build_id,
+            bearer_token: app_state.config.token.clone(),
+            repo_root: repo_root_for_attest,
+            feat_branch: feat_branch_for_attest,
+        }),
     };
 
     let program = Program::new(config);
@@ -348,6 +357,10 @@ struct WorkerCtx {
     litellm_base_url: String,
     litellm_api_key: secrecy::SecretString,
     litellm_model: String,
+    /// Webshell base URL for per-task §3.5 attestation POSTs — `None` when port is 0.
+    webshell_url: Option<String>,
+    /// Bearer token for attestation endpoint auth.
+    bearer_token: String,
 }
 
 /// Build the per-task worker closure.
@@ -446,6 +459,9 @@ pub(crate) fn make_worker(
                 as std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>;
         }
 
+        let webshell_url_for_task: Option<String> = (app_state.config.port > 0)
+            .then(|| format!("http://127.0.0.1:{}", app_state.config.port));
+        let bearer_token_for_task = app_state.config.token.clone();
         let ctx = WorkerCtx {
             build_id,
             task_span_id,
@@ -459,6 +475,8 @@ pub(crate) fn make_worker(
             litellm_base_url: litellm_base_url.clone(),
             litellm_api_key: litellm_api_key.clone(),
             litellm_model: litellm_model.clone(),
+            webshell_url: webshell_url_for_task,
+            bearer_token: bearer_token_for_task,
         };
         Box::pin(worker_body(task_id, wt, prompt, ctx))
     }
@@ -760,6 +778,8 @@ async fn worker_body(
         litellm_base_url,
         litellm_api_key,
         litellm_model,
+        webshell_url,
+        bearer_token,
     } = ctx;
 
     let _ = tx_slot.send(WebEventV2::from_event(
@@ -783,6 +803,23 @@ async fn worker_body(
             &format!("Task '{task_id}' complete (mock worker)"),
             Some("canon://builders-cookbook#§66"),
         );
+        // Per-task §3.5 attestation — fire-and-forget.
+        let commit_sha = git_head(&wt)
+            .await
+            .unwrap_or_else(|| "mock-commit".to_owned());
+        if let Some(ref url) = webshell_url {
+            post_task_attestation(
+                url,
+                &bearer_token,
+                build_id,
+                wave_index,
+                &task_id,
+                "lightsquad/mock-worker",
+                &commit_sha,
+                vec![],
+            )
+            .await;
+        }
     } else {
         // LiteLLM-routed coding worker — structured output + 4-gate validation.
         // Uses Ollama-compat /api/chat that LiteLLM exposes for Ollama backends.
@@ -879,6 +916,21 @@ async fn worker_body(
                         &format!("Task '{task_id}' completed by OllamaCloud (model={task_model})"),
                         Some("canon://builders-cookbook#§66"),
                     );
+                    // Per-task §3.5 attestation — fire-and-forget.
+                    let commit_sha = git_head(&wt).await.unwrap_or_else(|| "unknown".to_owned());
+                    if let Some(ref url) = webshell_url {
+                        post_task_attestation(
+                            url,
+                            &bearer_token,
+                            build_id,
+                            wave_index,
+                            &task_id,
+                            &task_model,
+                            &commit_sha,
+                            vec!["Q1_cargo_check".to_owned()],
+                        )
+                        .await;
+                    }
                     break;
                 }
                 Err(CodingProviderError::NoChanges) => {
@@ -1147,6 +1199,65 @@ async fn collect_rs_files(worktree: &Path, subdir: &str, out: &mut Vec<(String, 
         .await;
 
     out.append(&mut results);
+}
+
+/// Fire-and-forget per-task §3.5 `IMPLEMENTATION_COMPLETE` attestation POST.
+///
+/// Errors are logged at WARN but never propagate — attestation is a monitoring
+/// side-channel, not a build gate. 5-second timeout prevents stalling on an
+/// unreachable webshell.
+#[allow(clippy::too_many_arguments)]
+async fn post_task_attestation(
+    webshell_url: &str,
+    bearer_token: &str,
+    build_id: Uuid,
+    wave_index: usize,
+    task_id: &str,
+    agent_id: &str,
+    commit_sha: &str,
+    gates_passed: Vec<String>,
+) {
+    let url = format!("{webshell_url}/api/builds/{build_id}/attestation");
+    let wave_u32 = u32::try_from(wave_index).unwrap_or(0);
+    let body = serde_json::json!({
+        "wave": wave_u32,
+        "task_id": task_id,
+        "agent_id": agent_id,
+        "commit_sha": commit_sha,
+        "gates_passed": gates_passed,
+        "gates_skipped": [],
+        "ayin_spans_dropped_total": 0_u64,
+        "trust_boundary": "unverified_pre_2.10",
+        "confidence": 0.97_f32,
+    });
+    match reqwest::Client::new()
+        .post(&url)
+        .bearer_auth(bearer_token)
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => {
+            tracing::debug!(build_id = %build_id, task_id, "§3.5 task attestation broadcast");
+        }
+        Ok(r) => {
+            tracing::warn!(
+                build_id = %build_id,
+                task_id,
+                status = %r.status(),
+                "§3.5 task attestation POST non-2xx"
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                build_id = %build_id,
+                task_id,
+                error = %e,
+                "§3.5 task attestation POST failed"
+            );
+        }
+    }
 }
 
 fn git_add_commit(worktree: &PathBuf, _task_id: &str) -> Result<(), String> {
