@@ -551,4 +551,33 @@ mod tests {
             );
         }
     }
+
+    /// Every Class A strategy reachable via `lookup` MUST have a `LoopProfile`
+    /// with at least one `optimal_domains` entry.  Without this, `emit_dispatch`
+    /// fires with `role="unspecified"` — a silent Northstar P3 check #4 regression.
+    #[test]
+    fn every_class_a_strategy_has_a_profile_with_non_empty_domains() {
+        let class_a_ids = [
+            "build",
+            "secure",
+            "scrum",
+            "enrich",
+            "gate",
+            "scope_governor",
+        ];
+        for id in class_a_ids {
+            let profile = StrategyRegistry::profile(id);
+            assert!(
+                profile.is_some(),
+                "Class A strategy '{id}' has no LoopProfile — emit_dispatch will use \
+                 unspecified metadata. Add an entry to STRATEGY_PROFILES."
+            );
+            let domains = profile.unwrap().optimal_domains;
+            assert!(
+                !domains.is_empty(),
+                "Class A strategy '{id}' has empty optimal_domains — role hint will be \
+                 None. Add at least one domain to the profile."
+            );
+        }
+    }
 }
