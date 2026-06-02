@@ -54,6 +54,7 @@ use crate::{
     setup, static_assets, terminal,
 };
 
+pub mod attestation_routes;
 pub mod cockpit_wave;
 pub mod code_routes;
 pub mod conductor_routes;
@@ -448,6 +449,25 @@ pub struct AppState {
     /// [`crate::session::BuildSession`] copies `budget_usd` into its own
     /// [`crate::session::BudgetState`].
     pub ironclaw_config: IronclawConfig,
+    /// Per-build `IMPLEMENTATION_COMPLETE` attestation ring buffer.
+    ///
+    /// Keyed by build [`Uuid`]; each value is a `VecDeque` capped at
+    /// [`attestation_routes::RING_CAP`] entries. Written by
+    /// `POST /api/builds/:id/attestation`; read by
+    /// `GET /api/builds/:id/attestation` (browser reconnect / initial load).
+    ///
+    /// Uses `std::sync::Mutex` (not tokio) because ring operations are
+    /// non-async and should never hold the lock across an `.await`.
+    pub attestation_log: Arc<
+        DashMap<
+            Uuid,
+            Arc<
+                std::sync::Mutex<
+                    std::collections::VecDeque<crate::events::types::ImplCompleteEvent>,
+                >,
+            >,
+        >,
+    >,
 }
 
 impl AppState {
@@ -762,6 +782,7 @@ impl AppState {
             patch_rate_limiter,
             bridge_cidr_guard: Arc::clone(&bridge_cidr_guard),
             ironclaw_config: IronclawConfig::from_env(),
+            attestation_log: Arc::new(DashMap::new()),
         }
     }
 
@@ -901,6 +922,7 @@ impl AppState {
                 budget_usd: 0.0,
                 warn_threshold: 0.8,
             },
+            attestation_log: Arc::new(DashMap::new()),
         }
     }
 }
@@ -1056,6 +1078,13 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/builds/{id}/notify",
             post(events::notify::notify_handler),
+        )
+        // ── Attestation (webshell-agent-comms-display, Agents Playbook §3.5) ─
+        .route(
+            "/api/builds/{id}/attestation",
+            get(attestation_routes::list_attestations)
+                .post(attestation_routes::post_attestation)
+                .layer(axum::extract::DefaultBodyLimit::max(8 * 1024)),
         )
         .route(
             "/api/builds/{id}/terminal/ws",

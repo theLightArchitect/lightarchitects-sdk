@@ -275,6 +275,17 @@ pub enum WebEvent {
     /// (default 80%). The frontend shows a dismissible warning badge. Does not
     /// halt the build. Wire tag: `"budget_warning"`.
     BudgetWarning(BudgetWarningEvent),
+
+    // ── webshell-agent-comms-display (Agents Playbook §3.5) ─────────────────
+    /// A worker agent has completed a task and posted its three-layer attestation.
+    ///
+    /// Emitted by `POST /api/builds/:id/attestation` after the §3.5 payload is
+    /// parsed and stored in the per-build ring buffer. The frontend renders the
+    /// attestation in `AttestationCard.svelte` within `AutonomousRun.svelte`.
+    ///
+    /// Wire tag: `"impl_complete"`. Trust boundary: `ayin_witness` is stored
+    /// verbatim — unverified until SPIFFE/SVID BUILD 2.10.
+    ImplComplete(ImplCompleteEvent),
 }
 
 /// Northstar evaluation result broadcast after a `WAVE_COMPLETE` event.
@@ -1204,6 +1215,66 @@ pub struct BudgetWarningEvent {
     pub fraction: f64,
 }
 
+// ── webshell-agent-comms-display (Agents Playbook §3.5) ─────────────────────
+
+/// Three-layer `IMPLEMENTATION_COMPLETE` attestation payload.
+///
+/// Emitted via [`WebEvent::ImplComplete`] when a worker agent posts to
+/// `POST /api/builds/:id/attestation`. Stored in an in-memory ring buffer
+/// (cap 100 per build); broadcast on the per-build SSE channel.
+///
+/// # Trust boundary
+///
+/// `ayin_spans_dropped_total` and `trust_boundary` are stored verbatim from
+/// the agent's self-report — not independently verified until SPIFFE/SVID
+/// BUILD 2.10. The frontend MUST render `trust_boundary` as an amber
+/// "unverified" badge; it MUST NOT display the string "signed".
+///
+/// # CWE-200
+///
+/// `file_content_span_id` is a UUID reference only — absolute file paths
+/// are never embedded in this struct. Consumers call
+/// `GET /api/spans/<uuid>/file_paths_abs` with their own auth token.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImplCompleteEvent {
+    /// Build UUID this attestation belongs to.
+    pub build_id: Uuid,
+    /// Zero-based wave index within the build.
+    pub wave: u32,
+    /// Task identifier within the wave (agent-authored).
+    pub task_id: String,
+    /// Agent identifier (e.g. `"claude-code"`, `"lightarchitects-cli"`).
+    pub agent_id: String,
+    /// Git commit SHA produced by this task's implementation.
+    pub commit_sha: String,
+    /// Quality gate dimensions the agent claims to have passed.
+    ///
+    /// Canonical values: `"Q1_fmt"`, `"Q2_clippy"`, `"Q3_test"`, `"Q4_complexity"`.
+    pub gates_passed: Vec<String>,
+    /// Gate dimensions skipped (with reason documented in `spec_compliance_claim`).
+    pub gates_skipped: Vec<String>,
+    /// AYIN span UUID referencing file paths modified (CWE-200 boundary).
+    ///
+    /// `None` when the agent produced no AYIN spans for this task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_content_span_id: Option<String>,
+    /// Total AYIN spans dropped during this task turn.
+    ///
+    /// Non-zero indicates spans were lost — frontend renders a red badge.
+    pub ayin_spans_dropped_total: u64,
+    /// Trust level of the `ayin_witness` layer.
+    ///
+    /// Always `"unverified_pre_2.10"` until SPIFFE/SVID BUILD 2.10 ships.
+    pub trust_boundary: String,
+    /// Agent's natural-language claim about spec compliance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spec_compliance_claim: Option<String>,
+    /// Agent's confidence in its own attestation (0.0–1.0).
+    pub confidence: f32,
+    /// UTC timestamp of attestation receipt.
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -1534,6 +1605,25 @@ mod tests {
                     operator_id: "webshell:operator".to_owned(),
                     decided_at: chrono::Utc::now(),
                     nonce: uuid::Uuid::nil(),
+                }),
+            ),
+            // webshell-agent-comms-display — Agents Playbook §3.5
+            (
+                "impl_complete",
+                WebEvent::ImplComplete(ImplCompleteEvent {
+                    build_id: uuid::Uuid::nil(),
+                    wave: 1,
+                    task_id: "task-001".to_owned(),
+                    agent_id: "claude-code".to_owned(),
+                    commit_sha: "abc1234".to_owned(),
+                    gates_passed: vec!["Q1_fmt".to_owned()],
+                    gates_skipped: vec![],
+                    file_content_span_id: None,
+                    ayin_spans_dropped_total: 0,
+                    trust_boundary: "unverified_pre_2.10".to_owned(),
+                    spec_compliance_claim: None,
+                    confidence: 0.97,
+                    timestamp: chrono::Utc::now(),
                 }),
             ),
         ];

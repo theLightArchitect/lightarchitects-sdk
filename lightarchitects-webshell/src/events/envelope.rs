@@ -173,6 +173,9 @@ fn topic_for(event: &WebEvent) -> String {
         // ── IronClaw budget enforcement (litellm-platform-integration W3.4) ──
         WebEvent::BudgetExhausted(_) => "v1.ironclaw.budget.exhausted",
         WebEvent::BudgetWarning(_) => "v1.ironclaw.budget.warning",
+
+        // ── webshell-agent-comms-display (Agents Playbook §3.5) ─────────────
+        WebEvent::ImplComplete(_) => "v1.build.attestation.impl_complete",
     }
     .to_owned()
 }
@@ -418,6 +421,22 @@ mod tests {
                 spent_usd: 0.8,
                 limit_usd: 1.0,
                 fraction: 0.8,
+            }),
+            // webshell-agent-comms-display (Agents Playbook §3.5)
+            WebEvent::ImplComplete(crate::events::types::ImplCompleteEvent {
+                build_id: Uuid::nil(),
+                wave: 0,
+                task_id: "t".into(),
+                agent_id: "claude-code".into(),
+                commit_sha: "abc1234".into(),
+                gates_passed: vec![],
+                gates_skipped: vec![],
+                file_content_span_id: None,
+                ayin_spans_dropped_total: 0,
+                trust_boundary: "unverified_pre_2.10".into(),
+                spec_compliance_claim: None,
+                confidence: 1.0,
+                timestamp: Utc::now(),
             }),
         ];
 

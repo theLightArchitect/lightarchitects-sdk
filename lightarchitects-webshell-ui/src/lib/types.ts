@@ -321,7 +321,9 @@ export type EventType =
   | 'project_update'
   // ── webshell-hitl-bridge: native question tool (Phase 3) ────────────────
   | 'question_prompt'
-  | 'question_answered';
+  | 'question_answered'
+  // ── webshell-agent-comms-display: Agents Playbook §3.5 attestation ───────
+  | 'impl_complete';
 
 // --- Agent protocol (native agent bridge) ---
 
@@ -1190,6 +1192,34 @@ export interface FixAgentIterationEvent {
   worker_slot:   number;
   iteration:     number;
   issue_summary: string;
+}
+
+/**
+ * IMPLEMENTATION_COMPLETE attestation from a worker agent (Agents Playbook §3.5).
+ *
+ * Three-layer attestation: self_report (gates_passed/skipped, commit_sha, confidence),
+ * ayin_witness (ayin_spans_dropped_total), and trust_boundary tag.
+ *
+ * Security invariants (see backend attestation_routes.rs):
+ * - `trust_boundary` starting with "unverified" → render amber badge, never "signed".
+ * - `ayin_spans_dropped_total > 0` → render red P-gate warning badge.
+ * - `file_content_span_id` is a UUID reference only, never a file path.
+ */
+export interface ImplCompleteEvent {
+  type:                    'impl_complete';
+  build_id:                string;
+  wave:                    number;
+  task_id:                 string;
+  agent_id:                string;
+  commit_sha:              string;
+  gates_passed:            string[];
+  gates_skipped:           string[];
+  file_content_span_id?:   string;
+  ayin_spans_dropped_total: number;
+  trust_boundary:          string;
+  spec_compliance_claim?:  string;
+  confidence:              number;
+  timestamp:               string;
 }
 
 /** Ironclaw HITL escalation — gate threshold crossed; operator approval required. */
