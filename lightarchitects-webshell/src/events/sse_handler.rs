@@ -36,11 +36,38 @@ use tokio::sync::broadcast::{self, error::RecvError};
 use tracing::warn;
 use uuid::Uuid;
 
+use lightarchitects::lightsquad::agent_role::AgentRole;
+
 use crate::{
     auth,
     events::{TopicFilter, WebEventV2},
     server::AppState,
 };
+
+/// State tuple for the multiplexed per-build SSE stream.
+type MultiplexState = (
+    broadcast::Receiver<WebEventV2>,
+    broadcast::Receiver<WebEventV2>,
+    Arc<str>,
+    Option<TopicFilter>,
+    Option<AgentRole>,
+);
+
+/// Parse `?role=<role>` from a raw query string.
+///
+/// Returns `None` when the parameter is absent or the value is not a valid
+/// [`AgentRole`]. Invalid roles are silently ignored — same policy as
+/// `topic_from_raw`: the connection stays open, unfiltered, rather than
+/// returning 400 on a long-lived SSE stream.
+fn role_from_raw(raw: Option<&str>) -> Option<AgentRole> {
+    raw.and_then(|q| {
+        q.split('&').find_map(|pair| {
+            let (k, v) = pair.split_once('=')?;
+            if k == "role" { Some(v) } else { None }
+        })
+    })
+    .and_then(|v| v.parse::<AgentRole>().ok())
+}
 
 /// Parse `?topic=<pattern>` from a raw query string without external deps.
 ///
@@ -84,9 +111,10 @@ pub async fn sse_handler(
 ) -> Response {
     let token: Arc<str> = Arc::from(state.config.token.as_str());
     let filter = topic_from_raw(raw.as_deref());
+    let role = role_from_raw(raw.as_deref());
     let rx = state.event_tx.subscribe();
 
-    let event_stream = stream::unfold((rx, token, filter), drive_stream);
+    let event_stream = stream::unfold((rx, token, filter, role), drive_stream);
 
     Sse::new(event_stream)
         .keep_alive(KeepAlive::default())
@@ -125,11 +153,12 @@ pub async fn sse_build_handler(
     // both channels).
     let token: Arc<str> = Arc::from(state.config.token.as_str());
     let filter = topic_from_raw(raw.as_deref());
+    let role = role_from_raw(raw.as_deref());
     let session_rx = session.event_tx.subscribe();
     let global_rx = state.event_tx.subscribe();
 
     let event_stream = stream::unfold(
-        (session_rx, global_rx, token, filter),
+        (session_rx, global_rx, token, filter, role),
         drive_multiplex_stream,
     );
 
@@ -145,12 +174,14 @@ pub async fn sse_build_handler(
 /// `{"type":"lag","skipped":N}` event and continues.
 ///
 /// When `filter` is `Some`, events whose `topic` does not match are skipped
-/// silently — the loop continues without emitting anything to the client.
+/// silently. When `role` is `Some`, events whose `agent_id` does not match
+/// the role string are skipped silently. Both filters may be active together.
 async fn drive_stream(
     state: (
         broadcast::Receiver<WebEventV2>,
         Arc<str>,
         Option<TopicFilter>,
+        Option<AgentRole>,
     ),
 ) -> Option<(
     Result<Event, Infallible>,
@@ -158,14 +189,20 @@ async fn drive_stream(
         broadcast::Receiver<WebEventV2>,
         Arc<str>,
         Option<TopicFilter>,
+        Option<AgentRole>,
     ),
 )> {
-    let (mut rx, token, filter) = state;
+    let (mut rx, token, filter, role) = state;
     loop {
         match rx.recv().await {
             Ok(event) => {
                 if let Some(f) = &filter {
                     if !f.matches(&event.topic) {
+                        continue;
+                    }
+                }
+                if let Some(r) = &role {
+                    if event.agent_id != r.to_string() {
                         continue;
                     }
                 }
@@ -176,12 +213,15 @@ async fn drive_stream(
                         continue;
                     }
                 };
-                return Some((Ok(Event::default().data(data)), (rx, token, filter)));
+                return Some((Ok(Event::default().data(data)), (rx, token, filter, role)));
             }
             Err(RecvError::Lagged(n)) => {
                 warn!(skipped = n, "SSE subscriber lagged — events dropped");
                 let payload = format!(r#"{{"type":"lag","skipped":{n}}}"#);
-                return Some((Ok(Event::default().data(payload)), (rx, token, filter)));
+                return Some((
+                    Ok(Event::default().data(payload)),
+                    (rx, token, filter, role),
+                ));
             }
             Err(RecvError::Closed) => return None,
         }
@@ -199,25 +239,13 @@ async fn drive_stream(
 /// channel is not — the global channel may outlive any single build.
 ///
 /// When `filter` is `Some`, events whose `topic` does not match are skipped
-/// silently.
+/// silently. When `role` is `Some`, events whose `agent_id` does not match
+/// the role string are skipped silently.
 #[allow(clippy::future_not_send)]
 async fn drive_multiplex_stream(
-    state: (
-        broadcast::Receiver<WebEventV2>,
-        broadcast::Receiver<WebEventV2>,
-        Arc<str>,
-        Option<TopicFilter>,
-    ),
-) -> Option<(
-    Result<Event, Infallible>,
-    (
-        broadcast::Receiver<WebEventV2>,
-        broadcast::Receiver<WebEventV2>,
-        Arc<str>,
-        Option<TopicFilter>,
-    ),
-)> {
-    let (mut session_rx, mut global_rx, token, filter) = state;
+    state: MultiplexState,
+) -> Option<(Result<Event, Infallible>, MultiplexState)> {
+    let (mut session_rx, mut global_rx, token, filter, role) = state;
     loop {
         let event = tokio::select! {
             r = session_rx.recv() => r,
@@ -230,6 +258,11 @@ async fn drive_multiplex_stream(
                         continue;
                     }
                 }
+                if let Some(r) = &role {
+                    if ev.agent_id != r.to_string() {
+                        continue;
+                    }
+                }
                 let data = match serde_json::to_string(&ev) {
                     Ok(s) => redact(&s, &token),
                     Err(e) => {
@@ -239,7 +272,7 @@ async fn drive_multiplex_stream(
                 };
                 return Some((
                     Ok(Event::default().data(data)),
-                    (session_rx, global_rx, token, filter),
+                    (session_rx, global_rx, token, filter, role),
                 ));
             }
             Err(RecvError::Lagged(n)) => {
@@ -247,7 +280,7 @@ async fn drive_multiplex_stream(
                 let payload = format!(r#"{{"type":"lag","skipped":{n}}}"#);
                 return Some((
                     Ok(Event::default().data(payload)),
-                    (session_rx, global_rx, token, filter),
+                    (session_rx, global_rx, token, filter, role),
                 ));
             }
             Err(RecvError::Closed) => return None,

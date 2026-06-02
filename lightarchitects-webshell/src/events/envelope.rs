@@ -33,6 +33,7 @@
 //! ```
 
 use chrono::{DateTime, Utc};
+use lightarchitects::lightsquad::agent_role::AgentRole;
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -70,9 +71,8 @@ pub struct WebEventV2 {
     /// Event timestamp (UTC). Matches A2A §3.2 field name.
     pub timestamp: DateTime<Utc>,
 
-    /// Emitting agent identifier. Always `"gateway"` in Phase 1; Phase 2
-    /// will introduce typed `AgentId` enum with sibling variants.
-    /// Matches A2A §3.2 field name.
+    /// Emitting agent identifier. Always [`AgentRole::Gateway`] for
+    /// gateway-emitted events. Matches A2A §3.2 field name.
     pub agent_id: String,
 
     /// Denormalized build UUID for indexed filtering. `None` for global events
@@ -98,7 +98,7 @@ impl WebEventV2 {
         Self {
             topic,
             timestamp: Utc::now(),
-            agent_id: "gateway".to_owned(),
+            agent_id: AgentRole::Gateway.to_string(),
             build_id,
             severity,
             inner,
