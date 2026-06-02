@@ -83,6 +83,7 @@ pub mod playwright {
 pub mod routes;
 pub mod soul_grounding;
 pub mod strategy_runner;
+pub mod supervisor;
 pub mod voice;
 pub use event_stream::copilot_event_stream_handler;
 pub use routes::{

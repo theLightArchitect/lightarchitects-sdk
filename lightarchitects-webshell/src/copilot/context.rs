@@ -10,6 +10,8 @@ use axum::{Json, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::events::decisions::DecisionEntry;
+
 use super::{UiContext, git_context::GitContext};
 
 /// Server-side hard limit on context events (§P check 2; `northstar.md:491`).
@@ -292,6 +294,9 @@ pub fn validate(
 ///   `[Identity]\n…\n\n` when non-empty (§C session-continuity gate).
 /// * `events` — slice of entries (frontend caps at 50; server validated ≤100).
 /// * `ui` — optional [`UiContext`] snapshot captured at submit time.
+/// * `decisions` — HMAC-chained decision log entries for this build; emitted as
+///   a `<decisions>` block so the copilot can reason over prior L1–L4 entries.
+///   Pass `&[]` when no build context is available (standard chat routes).
 #[must_use]
 pub fn assemble_prompt_prelude(
     identity: &str,
@@ -300,6 +305,7 @@ pub fn assemble_prompt_prelude(
     git: Option<&GitContext>,
     events: &[RecentEventEntry],
     ui: Option<&UiContext>,
+    decisions: &[DecisionEntry],
 ) -> String {
     if identity.is_empty()
         && soul_block.is_empty()
@@ -307,6 +313,7 @@ pub fn assemble_prompt_prelude(
         && git.is_none()
         && events.is_empty()
         && ui.is_none()
+        && decisions.is_empty()
     {
         return String::new();
     }
@@ -319,6 +326,7 @@ pub fn assemble_prompt_prelude(
         + code_block.len()
         + git_size
         + events.len() * OVERHEAD_PER_EVENT
+        + decisions.len() * 128
         + ui.map_or(0, |ctx| ctx.route.len() + 128);
     let mut out = String::with_capacity(estimated.max(256));
 
@@ -378,6 +386,21 @@ pub fn assemble_prompt_prelude(
         out.push_str("</ui_context>\n");
     }
 
+    if !decisions.is_empty() {
+        out.push_str("<decisions>\n");
+        for d in decisions {
+            let _ = writeln!(
+                out,
+                "  [{}] {} {}: {}",
+                d.level,
+                d.timestamp,
+                d.canon_ref.as_deref().unwrap_or(""),
+                d.decision,
+            );
+        }
+        out.push_str("</decisions>\n");
+    }
+
     // Append the LightSquad routing hint so the LLM knows when to call
     // `lightsquad_plan` vs stay with the streaming provider.
     out.push_str(include_str!("lightsquad_routing_prompt.md"));
@@ -424,13 +447,13 @@ mod tests {
 
     #[test]
     fn context_assembly_empty() {
-        assert!(assemble_prompt_prelude("", "", "", None, &[], None).is_empty());
+        assert!(assemble_prompt_prelude("", "", "", None, &[], None, &[]).is_empty());
     }
 
     #[test]
     fn context_assembly_events_only() {
         let events = vec![entry(1, sjson!({"type": "BuildStarted"}))];
-        let out = assemble_prompt_prelude("", "", "", None, &events, None);
+        let out = assemble_prompt_prelude("", "", "", None, &events, None, &[]);
         assert!(out.contains("<recent_events>"));
         assert!(out.contains("seq=1"));
         assert!(out.contains("BuildRunner"));
@@ -447,7 +470,7 @@ mod tests {
             degraded: vec![],
             cockpit: None,
         };
-        let out = assemble_prompt_prelude("", "", "", None, &events, Some(&ctx));
+        let out = assemble_prompt_prelude("", "", "", None, &events, Some(&ctx), &[]);
         assert!(out.contains("<recent_events>"));
         assert!(out.contains("seq=42"));
         assert!(out.contains("<ui_context>"));
@@ -468,7 +491,7 @@ mod tests {
             ],
             cockpit: None,
         };
-        let out = assemble_prompt_prelude("", "", "", None, &[], Some(&ctx));
+        let out = assemble_prompt_prelude("", "", "", None, &[], Some(&ctx), &[]);
         assert!(out.contains("<ui_context>"));
         assert!(out.contains("degraded: stream_disconnected, gitforest_stale"));
     }
@@ -569,10 +592,50 @@ mod tests {
                 }),
             }),
         };
-        let out = assemble_prompt_prelude("", "", "", None, &[], Some(&ctx));
+        let out = assemble_prompt_prelude("", "", "", None, &[], Some(&ctx), &[]);
         assert!(out.contains("cockpit.preset: engineer"));
         assert!(out.contains("cockpit.target: pr"));
         assert!(out.contains("pull/47"));
+    }
+
+    #[test]
+    fn context_assembly_decisions_block_emitted() {
+        use crate::events::decisions::DecisionEntry;
+        let decisions = vec![
+            DecisionEntry {
+                line_n: 0,
+                timestamp: "2026-06-02T10:00:00Z".to_owned(),
+                level: "L1".to_owned(),
+                decision: "build started".to_owned(),
+                canon_ref: Some("canon://agents-playbook#§15".to_owned()),
+                hmac: None,
+                hmac_ok: None,
+            },
+            DecisionEntry {
+                line_n: 1,
+                timestamp: "2026-06-02T10:01:00Z".to_owned(),
+                level: "L3".to_owned(),
+                decision: "gate passed".to_owned(),
+                canon_ref: None,
+                hmac: None,
+                hmac_ok: None,
+            },
+        ];
+        let out = assemble_prompt_prelude("id", "", "", None, &[], None, &decisions);
+        assert!(
+            out.contains("<decisions>"),
+            "must contain <decisions> block"
+        );
+        assert!(out.contains("L1"), "must include L1 entry level");
+        assert!(out.contains("build started"), "must include decision text");
+        assert!(out.contains("L3"), "must include L3 entry level");
+        assert!(out.contains("</decisions>"), "must close <decisions> block");
+    }
+
+    #[test]
+    fn context_assembly_empty_decisions_omits_block() {
+        let out = assemble_prompt_prelude("id", "", "", None, &[], None, &[]);
+        assert!(!out.contains("<decisions>"), "empty slice must omit block");
     }
 
     #[test]

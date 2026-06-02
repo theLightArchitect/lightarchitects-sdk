@@ -85,8 +85,8 @@ use crate::events::{
     builds_handler::TaskSpec,
     decisions::DecisionsWriter,
     types::{
-        BudgetExhaustedEvent, ConductorTickEvent, IronclawHitlEscalationEvent,
-        MergeAgentStatusEvent, WebEvent, WorkerSlotGaugeEvent,
+        BudgetExhaustedEvent, ConductorTickEvent, EventSource, GateEvalEvent, GateVerdictKind,
+        IronclawHitlEscalationEvent, MergeAgentStatusEvent, WebEvent, WorkerSlotGaugeEvent,
     },
 };
 
@@ -229,6 +229,9 @@ async fn run_build(ctx: BridgeContext) {
     let tx_merge = tx.clone();
     let dw_worker = dw.clone();
 
+    // Retain litellm URL for supervisor before make_worker moves it.
+    let supervisor_litellm_url = litellm_base_url.clone();
+
     let worker_fn = make_worker(
         build_id,
         build_span_id,
@@ -270,6 +273,25 @@ async fn run_build(ctx: BridgeContext) {
         Some("canon://agents-playbook#§15"),
     );
 
+    // Spawn the copilot supervisor watcher — observes GateResolution / Escalation
+    // events and calls the copilot autonomously without requiring a human prompt.
+    let supervisor_token = tokio_util::sync::CancellationToken::new();
+    if let Some(session) = app_state.builds.get(build_id) {
+        let sup = crate::copilot::supervisor::CopilotSupervisor::new(
+            crate::copilot::supervisor::CopilotSupervisorConfig {
+                build_id,
+                codename: codename.clone(),
+                decisions_dir: app_state.decisions_dir.clone(),
+                litellm_base_url: supervisor_litellm_url,
+                max_autonomous_calls: 3,
+            },
+            app_state.global_event_store.clone(),
+            session,
+        );
+        let token = supervisor_token.clone();
+        tokio::spawn(async move { sup.run(token).await });
+    }
+
     let outcome = match program.run().await {
         Ok(summary) => {
             let _ = dw.append(
@@ -297,7 +319,9 @@ async fn run_build(ctx: BridgeContext) {
                 Some(build_span_id),
                 build_id,
             );
-            // Final conductor tick — queue_depth=0 signals completion
+            // Final conductor tick — queue_depth=0 signals completion.
+            // Also emitted as GateResolution(Passed) so the supervisor and
+            // the UI see a concrete build-level gate outcome.
             let _ = tx.send(WebEventV2::from_event(
                 WebEvent::ConductorTick(ConductorTickEvent {
                     build_id: build_id.to_string(),
@@ -307,6 +331,23 @@ async fn run_build(ctx: BridgeContext) {
                 }),
                 Some(build_id),
             ));
+            let _ = app_state.global_event_store.push(
+                EventSource::BuildSession {
+                    codename: codename.clone(),
+                },
+                WebEvent::GateResolution(GateEvalEvent {
+                    build_id,
+                    phase_id: "squad-program".to_owned(),
+                    gate_dimension: "T".to_owned(),
+                    verdict: GateVerdictKind::Passed,
+                    confidence: 1.0,
+                    reasoning: Some(format!(
+                        "{} tasks succeeded, {} failed",
+                        summary.succeeded, summary.failed
+                    )),
+                    timestamp: chrono::Utc::now(),
+                }),
+            );
             TraceOutcome::Continue
         }
         Err(e) => {
@@ -323,9 +364,26 @@ async fn run_build(ctx: BridgeContext) {
                 Some(build_span_id),
                 build_id,
             );
+            let _ = app_state.global_event_store.push(
+                EventSource::BuildSession {
+                    codename: codename.clone(),
+                },
+                WebEvent::GateResolution(GateEvalEvent {
+                    build_id,
+                    phase_id: "squad-program".to_owned(),
+                    gate_dimension: "T".to_owned(),
+                    verdict: GateVerdictKind::Failed,
+                    confidence: 1.0,
+                    reasoning: Some(format!("build halted: {e}")),
+                    timestamp: chrono::Utc::now(),
+                }),
+            );
             TraceOutcome::Error(e.to_string())
         }
     };
+
+    // Supervisor has processed the final GateResolution — cancel the watcher.
+    supervisor_token.cancel();
 
     // AYIN Phase 3: assistant.response leaf closes the turn (gold ring at outer
     // radius, paired with the user.message root above).
