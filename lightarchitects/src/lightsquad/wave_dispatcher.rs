@@ -307,6 +307,19 @@ pub async fn dispatch_wave(
                         mark_task(&coordinator.state, &outcome.task_id, TaskStatus::Complete).await;
                         coordinator.notify.notify_waiters();
                         result.succeeded += 1;
+                        // Prune the task branch — non-fatal; a missed delete is cosmetic
+                        // noise, not a correctness failure.
+                        if let Err(e) = merge_agent.delete_branch(&outcome.branch).await {
+                            tracing::warn!(
+                                operation = "branch_cleanup",
+                                branch = %outcome.branch,
+                                task_id = %outcome.task_id,
+                                wave_index = wave_index,
+                                error_kind = "delete_failed",
+                                "task branch delete failed — ref may accumulate; ref-reaper scheduled as follow-on",
+                            );
+                            tracing::debug!(error = %e, "task branch delete raw error");
+                        }
                     }
                     Err(MergeError::Conflict { branch }) => {
                         mark_task(&coordinator.state, &outcome.task_id, TaskStatus::Failed).await;
@@ -382,7 +395,15 @@ async fn spawn_task_slot(
     executor: &Arc<dyn WorkerExecutor>,
     join_set: &mut JoinSet<TaskOutcome>,
 ) -> Result<(), WaveError> {
-    let wt_branch = format!("task/build/{}", task.id);
+    // UUID suffix makes every attempt unique; prevents collision on retry when
+    // the same task.id is re-dispatched (e.g. IronClaw wave retry).
+    // simple() produces 32 hex chars; [..8] is always in-bounds.
+    let wt_branch = format!(
+        "task/build/{}-{}",
+        task.id,
+        &uuid::Uuid::new_v4().simple().to_string()[..8],
+    );
+    tracing::debug!(wt_branch = %wt_branch, task_id = %task.id, "wave retry branch allocated");
     let wt_path = worktree_root.join(&task.id);
 
     let handle = worktree_manager.create(&wt_branch, &wt_path).await?;
@@ -628,5 +649,80 @@ mod tests {
         // Re-serialize: field is included (Serialize derive includes all).
         let json = serde_json::to_string(&parsed).unwrap();
         assert!(json.contains("\"concurrency_safe\":true"));
+    }
+
+    // ── wave-branch-dedup regression guard ───────────────────────────────────
+
+    /// Same task ID must produce distinct `wt_branch` values across attempts.
+    /// Without a UUID suffix, the second attempt hits
+    /// `fatal: a branch named 'task/build/<id>' already exists`.
+    #[test]
+    fn unique_branch_per_attempt() {
+        let task_id = "test-task-abc123";
+        let b1 = format!(
+            "task/build/{}-{}",
+            task_id,
+            &uuid::Uuid::new_v4().simple().to_string()[..8],
+        );
+        let b2 = format!(
+            "task/build/{}-{}",
+            task_id,
+            &uuid::Uuid::new_v4().simple().to_string()[..8],
+        );
+        assert_ne!(
+            b1, b2,
+            "same task_id must produce distinct branches on retry"
+        );
+        assert!(b1.starts_with(&format!("task/build/{task_id}-")));
+        assert!(b2.starts_with(&format!("task/build/{task_id}-")));
+    }
+
+    /// Two consecutive branch creates for the same `task_id` must not collide.
+    /// Validates the invariant broken before the UUID suffix fix at L385.
+    #[tokio::test]
+    async fn no_branch_collision_on_retry_same_task_id() {
+        use tempfile::TempDir;
+        let repo = TempDir::new().unwrap();
+        std::process::Command::new("git")
+            .args(["init", repo.path().to_str().unwrap()])
+            .status()
+            .unwrap();
+        // Seed an initial commit so git branch works.
+        std::process::Command::new("git")
+            .args([
+                "-C",
+                repo.path().to_str().unwrap(),
+                "commit",
+                "--allow-empty",
+                "-m",
+                "init",
+            ])
+            .status()
+            .unwrap();
+        let task_id = "task-abc123";
+        let b1 = format!(
+            "task/build/{}-{}",
+            task_id,
+            &uuid::Uuid::new_v4().simple().to_string()[..8],
+        );
+        let b2 = format!(
+            "task/build/{}-{}",
+            task_id,
+            &uuid::Uuid::new_v4().simple().to_string()[..8],
+        );
+        assert_ne!(b1, b2, "branch names for same task_id on retry must differ");
+        let s1 = std::process::Command::new("git")
+            .args(["-C", repo.path().to_str().unwrap(), "branch", &b1])
+            .status()
+            .unwrap();
+        let s2 = std::process::Command::new("git")
+            .args(["-C", repo.path().to_str().unwrap(), "branch", &b2])
+            .status()
+            .unwrap();
+        assert!(s1.success(), "first branch create must succeed");
+        assert!(
+            s2.success(),
+            "second branch create must succeed (no collision)"
+        );
     }
 }
