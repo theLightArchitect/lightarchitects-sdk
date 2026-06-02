@@ -114,3 +114,12 @@ pub mod chat;
 /// Enable with the `container-spawn` Cargo feature.
 #[cfg(feature = "container-spawn")]
 pub mod container_spawn;
+
+/// Vertex AI Search — enterprise document search over the LA security corpus.
+///
+/// Authenticates via Application Default Credentials (`gcloud auth print-access-token`).
+/// Requires gcloud on PATH. Use [`vertex_search::VertexSearchClient`] for queries.
+///
+/// Enable with the `vertex-search` Cargo feature.
+#[cfg(feature = "vertex-search")]
+pub mod vertex_search;

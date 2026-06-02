@@ -66,6 +66,11 @@ fleet = ["dep:dashmap"]
 # policy store via ArcSwap.  Phase 2 adds NetworkPolicy::Balanced + CredentialStrategy::Proxy.
 container-spawn = ["dep:arc-swap"]
 
+# vertex-search — Vertex AI Search (Discovery Engine) client.
+# Authenticates via ADC (`gcloud auth print-access-token`). Requires gcloud on PATH.
+# Not in default because it depends on an external runtime tool.
+vertex-search = []
+
 # lightsquad — autonomous code-delivery orchestration engine.
 # Phase 1 stub: gates module compilation only. Phase 3+ wires in nearai/ironclaw
 # upstream crates (ironclaw_engine, ironclaw_approvals, ironclaw_capabilities,

@@ -1,5 +1,9 @@
 //! `VertexSearchClient` — HTTP client for the Vertex AI Search (Discovery Engine) API.
 //!
+//! Queries the `quantum-security-standards` data store backed by the
+//! `gs://la-platform-helix/user/standards/industry-baselines/` corpus,
+//! which mirrors the SOUL helix `$HELIX/user/standards/industry-baselines/` layout.
+//!
 //! Auth: Application Default Credentials via `gcloud auth print-access-token`.
 //! No additional Cargo dependencies required beyond `reqwest` (already in the SDK).
 
