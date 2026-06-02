@@ -49,7 +49,7 @@
 # ============================================================================
 
 template_name: "LASDLC-TEMPLATE-v1"
-template_version: "2.8.0"
+template_version: "2.8.2"  # 2.8.2: Canon XLVI Pseudocode-in-Plan added as required block; 2.8.1: Canon XLV Post-Build Guarantees Contract
 # Amendment history → standards/canon/LASDLC-TEMPLATE-v1.CHANGELOG.md
 # Schema file = current state only. Inline `added_in_template_version: "X.Y.Z"`
 # markers throughout this file identify when each field was introduced.
@@ -6785,6 +6785,156 @@ calibration_substrate:
 #
 # Full spec recorded at:
 #   helix://shared/entries/2026-05-04-lasdlc-deliverable-benchmark-v1.0-spec.md
+
+# v2.8.1 — Post-Build Guarantees Contract (Canon XLV, ratified 2026-06-02)
+# Universal plan requirement; complementary to deliverable_benchmark (binary pass/fail
+# per claim vs LDB's quality continuum). Feeds D1 (Request Fidelity) — necessary
+# but not sufficient for D1 ≥ STRONG.
+# v2.8.2 — Pseudocode-in-Plan (Canon XLVI, ratified 2026-06-02)
+# Required for code-producing plans; N/A allowed for docs/research/ops/vault-scaffold plans.
+# Distinct from Cookbook §27 (boilerplate templates A-I at coding start) — Canon XLVI
+# is algorithmic specification at planning start.
+plan_pseudocode_section:
+  required: true
+  applies_when: "plan introduces new types, traits, algorithms, or any code surface"
+  source_canon: "Canon XLVI (Pseudocode-in-Plan Doctrine, ratified 2026-06-02)"
+  source_directive: "Kevin operator directive 2026-06-02 (session 7f6ca17b)"
+  schema_version: "PSEUDOCODE-v1.0"
+  added_in_template_version: "2.8.2"
+  rationale: |
+    Pseudocode pins interfaces and key algorithms BEFORE Phase 1 implementation,
+    lowering cross-context interpretation variance between planner intent and
+    implementer execution. Verifies object-safety + signature compatibility at
+    plan time, not at Phase 1 entry. Bridges plan-to-code gap. Distinct from
+    Builders Cookbook §27 (boilerplate templates A-I) which is about pre-coding
+    file scaffolds, not in-plan algorithmic specification.
+  schema:
+    required_subsections:
+      core_type_signatures:
+        description: "struct/enum/trait declarations with field documentation"
+        object_safety_annotation_required: true
+        pattern_example: |
+          pub trait MyTrait: Send + Sync { /* ... */ }
+          // const _: Option<Arc<dyn MyTrait>> = None;  // object-safety check
+      key_algorithm_bodies:
+        description: "shows loop shape, error paths, sequencing — NOT full implementation"
+        min_count: 1  # per net-new module
+      integration_points:
+        description: "every reference to existing code MUST cite file:line"
+        citation_format: "lightarchitects/src/path/to/file.rs:NNN"
+      verification_snippets:
+        description: "for HARD guarantees needing code-level proof (criterion bench, post-build-verify.sh)"
+        composes_with: "Canon XLV verification_script"
+    code_fence_language_required: true   # ```rust / ```typescript / ```python — not bare ```
+    comment_to_code_ratio_max: 0.3       # narrative belongs in plan prose; pseudocode is signatures + algorithms
+  n_a_escape:
+    allowed_plan_types: ["docs_only", "research_only", "ops_only", "vault_scaffold_only"]
+    rationale_required: true             # plan with "N/A — research only" must say WHY no code surface
+  enforcement:
+    xea_layer_0_check: S0.19
+    cookbook_rule: "§60.12"
+    agents_playbook_step: "§15.5.10 Phase 1 entry cross-check"
+    blocking_when_applicable: true
+  composes_with:
+    - "Cookbook §27 (boilerplate templates A-I) — different lifecycle stage (coding start vs planning start); §27 fills scaffolds, pseudocode provides signatures + algorithms those scaffolds inhabit"
+    - "Canon XLV (Post-Build Guarantees Contract) — verification snippets in pseudocode form the bridge between G-rows and Phase deliverables"
+    - "Canon XLIV (Probe-Before-Assert) — pseudocode citing a function signature IS the probe; object-safety annotation IS the probe for trait design"
+    - "Canon XXXV (Confidence Threshold Gate) — claims about existing code are assertions requiring file:line citation"
+  pressure_tested:
+    first_build: "zany-tinkering-map iteration 4 (2026-06-02) — 8 pseudocode subsections (MemoryStore trait, react_with_memory loop body, sandbox_exec state machine, StrategyRegistry helpers, DomainScopeResolver merge, trace::emit_dispatch, CLI dispatch migration, post-build-verify.sh skeleton); integration points cited file:line for IndirectInjectionShield, HelixStore, trace::emit_step"
+
+post_build_guarantees_contract:
+  required: true
+  source_canon: "Canon XLV (Post-Build Guarantees Contract Doctrine, ratified 2026-06-02)"
+  source_directive: "Kevin operator directive 2026-06-02 (session 7f6ca17b)"
+  schema_version: "PBGC-v1.0"
+  added_in_template_version: "2.8.1"
+  rationale: |
+    Distinct from deliverable_benchmark (LDB §7.7), which grades quality on a 0-100
+    continuum across 8 D-components via cold-context runner judgment + measurement.
+    The Contract grades on binary PASS/FAIL per claim by script execution. Every plan,
+    regardless of tier or domain, MUST declare a Contract. All HARD guarantees passing
+    is necessary-but-not-sufficient for LDB D1 (Request Fidelity) ≥ STRONG.
+
+  tier_minimums:
+    SMALL: { hard_min: 1 }
+    MEDIUM: { hard_min: 5 }
+    LARGE: { hard_min: 10 }
+    rationale: "Even SMALL needs ≥1 verifiable claim; MEDIUM/LARGE warrant proportional coverage"
+
+  schema:
+    tier_1_hard_guarantees:
+      description: "Mechanically verifiable; binary pass/fail by script execution"
+      min_count: "tier_minimums.<tier>.hard_min"
+      item_schema:
+        id: { type: string, pattern: "^G[0-9]+$", required: true }
+        guarantee: { type: string, max_length: 200, required: true }
+        verification_command: { type: string, required: true, rationale: "third-party-executable bash one-liner" }
+        source_phase: { type: integer, range: [1, 7], required: true }
+        cites_canon: { type: list, optional: true }
+    tier_2_soft_guarantees:
+      description: "Operator-observable; judgment required"
+      min_count: 0
+      item_schema:
+        id: { type: string, pattern: "^S[0-9]+$", required: true }
+        guarantee: { type: string, required: true }
+        observation_method: { type: string, required: true }
+    tier_3_type_checked_non_guarantees:
+      description: "Explicitly NOT guaranteed but deferral is compile-time-visible"
+      min_count: 0
+      item_schema:
+        id: { type: string, pattern: "^NG[0-9]+$", required: true }
+        non_guarantee: { type: string, required: true }
+        type_check_enforcement: { type: string, required: true, rationale: "what compile-time check enforces the deferral" }
+    tier_4_true_non_guarantees:
+      description: "Honest disclosure — what is genuinely NOT promised"
+      min_count: 1
+      rationale: "Empty Tier 4 violates Communication Covenant principle #2 (No false witness); every real-world build has scope edges"
+      item_schema:
+        id: { type: string, pattern: "^NG-[A-Za-z]+$", required: true }
+        non_guarantee: { type: string, required: true }
+        why: { type: string, required: true, rationale: "honest disclosure of scope edge" }
+
+    verification_script:
+      path:
+        type: string
+        pattern: "^scripts/post-build-verify-.*\\.sh$"
+        required: true
+      owner:
+        type: string
+        must_equal: "cold-context independent runner (NOT the build's own engineer)"
+        cites_canon: "XXXIII"
+      expected_output:
+        type: string
+        example: "RESULT: N/N HARD guarantees verified"
+      invocation_phase: { value: "Close-Out Step 10.5", cites: "/BUILD skill v2 Step 10.5" }
+
+    rollback_path:
+      type: list
+      min_count: 4
+      required_steps: ["make_rollback", "mcp_reconnect", "git_revert", "feature_flag_fallback"]
+      rationale: "Four-step minimum ensures both binary rollback and source-level reversibility"
+
+  enforcement:
+    xea_layer_0_check: S0.18
+    xea_layer_4_checks: [L4.1, L4.2, L4.3, L4.4, L4.5]
+    build_step: "/BUILD Step 10.5"
+    blocking: true
+
+  composes_with:
+    - "Canon XXXIII (Self-Validation Ceiling) — cold-context runner mandatory"
+    - "Canon XXXV (Confidence Threshold Gate) — verification_command IS the citation"
+    - "Canon XXXVI (Quality-First Compression) — Contract IS the Phase 3 truth-telling surface"
+    - "Cookbook §60.10 (LDB IE-aggregate rule) — does NOT apply to Contract aggregates (binary, not weighted)"
+    - "deliverable_benchmark.D1_request_fidelity — Contract HARD pass is necessary-but-not-sufficient"
+
+  migration:
+    grandfather_clause: "Plans authored before 2026-06-02 (pre-Canon-XLV) grandfathered until next /PLAN invocation"
+    blocking_trigger: "Next XEA on pre-XLV plan surfaces S0.18 BLOCKING; fold required"
+    retroactive_force: false  # no force on already-promoted builds
+
+  pressure_tested:
+    first_build: "zany-tinkering-map (2026-06-02) — P3 MoE loop optimization; 19 HARD guarantees converted prior NON-guarantees (NG1/NG2/NG3/NG4/NG6) to mechanically asserted claims"
 
 deliverable_benchmark:
   description: |

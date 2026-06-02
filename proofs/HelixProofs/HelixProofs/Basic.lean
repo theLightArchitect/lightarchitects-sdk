@@ -20,6 +20,8 @@ import Mathlib.Data.Real.Basic
 import Mathlib.Tactic.Positivity
 import Mathlib.Tactic.NormNum
 import Mathlib.Tactic.Linarith
+import Mathlib.Analysis.SpecialFunctions.Pow.Real
+import Mathlib.Algebra.Order.BigOperators.Group.List
 
 -- ============================================================================
 -- §1. SignalWeights smart-constructor invariant
@@ -315,6 +317,219 @@ theorem ownership_conflict_blocks_dispatch
 end WaveCut
 
 -- ============================================================================
+-- §7. Weighted Beta-Bernoulli conjugacy
+-- ============================================================================
+-- Source: ~/.claude/plans/copilot-routing-fingerprint-v1.md, Phase 3.
+--
+-- Routing policy is Thompson sampling on Beta posteriors maintained per
+-- (model, task-class). Each observation is a Bernoulli outcome xᵢ ∈ {0,1}
+-- with a recency / source weight wᵢ ∈ (0,1].
+--
+-- LOAD-BEARING CLAIM (Walker 2006 power likelihood + Bishop PRML §2.1.1):
+--
+--   Beta(α, β) prior × ∏ᵢ θ^(wᵢxᵢ) (1-θ)^(wᵢ(1-xᵢ))   (un-normalized)
+--     = Beta(α + Σ wᵢxᵢ , β + Σ wᵢ(1-xᵢ))             (un-normalized)
+--
+-- We formalize this at the un-normalized PDF kernel level
+--   K(α,β; θ) := θ^(α-1) (1-θ)^(β-1)
+-- which is the standard textbook proof. The full posterior (normalized) then
+-- follows because:
+--   (a) the result is in the Beta exponential family (this proof), and
+--   (b) Mathlib's `lintegral_betaPDF_eq_one` already establishes that for
+--       any α > 0, β > 0, the Beta(α,β) density integrates to 1, so the
+--       normalizing constant is uniquely determined by (α, β).
+--
+-- Together (a) + (b) give: the normalized posterior is Beta(α + Σwx, β + Σw(1-x)).
+--
+-- We work on θ ∈ (0,1) where both bases are strictly positive — matching the
+-- support of the Beta distribution. Boundary behavior at θ=0/θ=1 is a
+-- measure-zero set and irrelevant to the posterior identity.
+
+namespace BetaBernoulli
+
+open Real
+
+/-- Un-normalized Beta(α,β) PDF kernel evaluated at θ. We use real-valued
+    exponents to support fractional weighted updates. -/
+noncomputable def betaKernel (α β θ : ℝ) : ℝ :=
+  θ ^ (α - 1) * (1 - θ) ^ (β - 1)
+
+/-- Weighted Bernoulli likelihood (Walker 2006 power likelihood) for a single
+    observation x ∈ {0,1} with weight w ∈ (0,1]. We pass x as a real and
+    require x*(1-x) = 0 (i.e. x ∈ {0,1}) in the proof when needed. -/
+noncomputable def weightedBernoulliLik (x w θ : ℝ) : ℝ :=
+  θ ^ (w * x) * (1 - θ) ^ (w * (1 - x))
+
+/-- A single weighted observation: posterior parameter increments.
+
+    For x = 1: α gains w, β gains 0.
+    For x = 0: α gains 0, β gains w.
+    Compactly: α gains w*x, β gains w*(1-x). -/
+def alphaIncrement (x w : ℝ) : ℝ := w * x
+def betaIncrement (x w : ℝ) : ℝ := w * (1 - x)
+
+/-- **§7.1 Single-step conjugacy** — the kernel × likelihood collapses to a
+    new kernel with updated parameters. Pure `rpow` algebra; works for any
+    real x, w (we only need positivity of the bases). -/
+theorem single_step_conjugacy
+    (α β x w θ : ℝ) (hθ_pos : 0 < θ) (hθ_lt : θ < 1) :
+    betaKernel α β θ * weightedBernoulliLik x w θ
+      = betaKernel (α + alphaIncrement x w) (β + betaIncrement x w) θ := by
+  unfold betaKernel weightedBernoulliLik alphaIncrement betaIncrement
+  have h1θ_pos : (0 : ℝ) < 1 - θ := by linarith
+  -- Group the two θ-bases and two (1-θ)-bases.
+  -- θ^(α-1) * (1-θ)^(β-1) * (θ^(w*x) * (1-θ)^(w*(1-x)))
+  --   = (θ^(α-1) * θ^(w*x)) * ((1-θ)^(β-1) * (1-θ)^(w*(1-x)))
+  --   = θ^((α-1) + w*x)    * (1-θ)^((β-1) + w*(1-x))
+  --   = θ^((α + w*x) - 1)  * (1-θ)^((β + w*(1-x)) - 1)
+  rw [show
+      θ ^ (α - 1) * (1 - θ) ^ (β - 1)
+        * (θ ^ (w * x) * (1 - θ) ^ (w * (1 - x)))
+      = (θ ^ (α - 1) * θ ^ (w * x))
+        * ((1 - θ) ^ (β - 1) * (1 - θ) ^ (w * (1 - x))) by ring]
+  rw [← rpow_add hθ_pos, ← rpow_add h1θ_pos]
+  -- Two remaining goals: exponents on θ and (1-θ) must match.
+  -- Goal 1: (α - 1) + w*x = (α + w*x) - 1
+  -- Goal 2: (β - 1) + w*(1 - x) = (β + w*(1 - x)) - 1
+  refine congrArg₂ (· * ·) ?_ ?_ <;> congr 1 <;> ring
+
+/-- **§7.2 Effective-sample-size invariant** — under any sequence of
+    weighted updates, the sum α + β grows exactly by the sum of weights.
+    This is the N_eff = α + β invariant the routing confidence band uses. -/
+theorem effective_sample_size_invariant
+    (α β x w : ℝ) :
+    (α + alphaIncrement x w) + (β + betaIncrement x w) = (α + β) + w := by
+  unfold alphaIncrement betaIncrement; ring
+
+/-- Multi-observation posterior parameters (recursive form), defined over a
+    list of (x, w) observations. -/
+def posteriorAlpha (α₀ : ℝ) : List (ℝ × ℝ) → ℝ
+  | []              => α₀
+  | (x, w) :: rest  => posteriorAlpha (α₀ + alphaIncrement x w) rest
+
+def posteriorBeta (β₀ : ℝ) : List (ℝ × ℝ) → ℝ
+  | []              => β₀
+  | (x, w) :: rest  => posteriorBeta (β₀ + betaIncrement x w) rest
+
+/-- Closed-form posterior alpha: α₀ + Σ wᵢxᵢ over the observation list. -/
+theorem posteriorAlpha_closed_form (α₀ : ℝ) (obs : List (ℝ × ℝ)) :
+    posteriorAlpha α₀ obs = α₀ + (obs.map (fun p => alphaIncrement p.1 p.2)).sum := by
+  induction obs generalizing α₀ with
+  | nil => simp [posteriorAlpha]
+  | cons head rest ih =>
+    obtain ⟨x, w⟩ := head
+    simp [posteriorAlpha, ih, List.sum_cons, List.map_cons]
+    ring
+
+/-- Closed-form posterior beta: β₀ + Σ wᵢ(1-xᵢ) over the observation list. -/
+theorem posteriorBeta_closed_form (β₀ : ℝ) (obs : List (ℝ × ℝ)) :
+    posteriorBeta β₀ obs = β₀ + (obs.map (fun p => betaIncrement p.1 p.2)).sum := by
+  induction obs generalizing β₀ with
+  | nil => simp [posteriorBeta]
+  | cons head rest ih =>
+    obtain ⟨x, w⟩ := head
+    simp [posteriorBeta, ih, List.sum_cons, List.map_cons]
+    ring
+
+/-- Multi-observation likelihood product. -/
+noncomputable def likelihoodProduct (θ : ℝ) : List (ℝ × ℝ) → ℝ
+  | []              => 1
+  | (x, w) :: rest  => weightedBernoulliLik x w θ * likelihoodProduct θ rest
+
+/-- **§7.3 Multi-observation conjugacy** — the LOAD-BEARING THEOREM.
+
+    For any list of weighted Bernoulli observations, the prior kernel times
+    the likelihood product equals the posterior kernel with updated parameters.
+
+    This is the formal statement that the routing policy's posterior is
+    *exactly* Beta(α₀ + Σwx, β₀ + Σw(1-x)) up to the Beta normalizing constant
+    (which is uniquely determined by those parameters per Mathlib's
+    `lintegral_betaPDF_eq_one`).
+-/
+theorem weighted_beta_bernoulli_conjugacy
+    (α₀ β₀ θ : ℝ) (hθ_pos : 0 < θ) (hθ_lt : θ < 1)
+    (obs : List (ℝ × ℝ)) :
+    betaKernel α₀ β₀ θ * likelihoodProduct θ obs
+      = betaKernel (posteriorAlpha α₀ obs) (posteriorBeta β₀ obs) θ := by
+  induction obs generalizing α₀ β₀ with
+  | nil =>
+      simp [likelihoodProduct, posteriorAlpha, posteriorBeta]
+  | cons head rest ih =>
+      obtain ⟨x, w⟩ := head
+      -- LHS: betaKernel α₀ β₀ θ * (weightedBernoulliLik x w θ * likelihoodProduct θ rest)
+      --    = (betaKernel α₀ β₀ θ * weightedBernoulliLik x w θ) * likelihoodProduct θ rest
+      --    = betaKernel (α₀ + w*x) (β₀ + w*(1-x)) θ * likelihoodProduct θ rest      [single_step]
+      --    = betaKernel (posteriorAlpha (α₀ + w*x) rest) (posteriorBeta ... rest) θ [ih]
+      -- which is the RHS by definition of posteriorAlpha/posteriorBeta on cons.
+      simp only [likelihoodProduct, posteriorAlpha, posteriorBeta]
+      rw [← mul_assoc, single_step_conjugacy α₀ β₀ x w θ hθ_pos hθ_lt]
+      exact ih (α₀ + alphaIncrement x w) (β₀ + betaIncrement x w)
+
+/-- **§7.4 N_eff closed form** — α + β after N weighted updates equals
+    (α₀ + β₀) + Σ wᵢ. The Bernoulli outcomes cancel: each observation
+    contributes exactly its full weight to α+β. -/
+theorem n_eff_closed_form (α₀ β₀ : ℝ) (obs : List (ℝ × ℝ)) :
+    posteriorAlpha α₀ obs + posteriorBeta β₀ obs
+      = (α₀ + β₀) + (obs.map Prod.snd).sum := by
+  induction obs generalizing α₀ β₀ with
+  | nil =>
+      simp [posteriorAlpha, posteriorBeta]
+  | cons head rest ih =>
+      obtain ⟨x, w⟩ := head
+      simp only [posteriorAlpha, posteriorBeta, List.map_cons, List.sum_cons]
+      rw [ih (α₀ + alphaIncrement x w) (β₀ + betaIncrement x w)]
+      unfold alphaIncrement betaIncrement
+      ring
+
+/-- **§7.5 Positivity preservation** — if the prior has α₀, β₀ > 0 and all
+    weights are non-negative with all x ∈ [0,1], the posterior parameters
+    remain strictly positive. Required for `Mathlib.beta_pos` to apply. -/
+theorem posterior_alpha_pos (α₀ : ℝ) (h_pos : 0 < α₀) (obs : List (ℝ × ℝ))
+    (h_obs : ∀ p ∈ obs, 0 ≤ p.2 ∧ 0 ≤ p.1) :
+    0 < posteriorAlpha α₀ obs := by
+  rw [posteriorAlpha_closed_form]
+  have h_sum_nn : 0 ≤ (obs.map (fun p => alphaIncrement p.1 p.2)).sum := by
+    apply List.sum_nonneg
+    intro y hy
+    simp only [List.mem_map] at hy
+    obtain ⟨p, hpmem, hpeq⟩ := hy
+    rw [← hpeq]
+    unfold alphaIncrement
+    exact mul_nonneg (h_obs p hpmem).1 (h_obs p hpmem).2
+  linarith
+
+theorem posterior_beta_pos (β₀ : ℝ) (h_pos : 0 < β₀) (obs : List (ℝ × ℝ))
+    (h_obs : ∀ p ∈ obs, 0 ≤ p.2 ∧ p.1 ≤ 1) :
+    0 < posteriorBeta β₀ obs := by
+  rw [posteriorBeta_closed_form]
+  have h_sum_nn : 0 ≤ (obs.map (fun p => betaIncrement p.1 p.2)).sum := by
+    apply List.sum_nonneg
+    intro y hy
+    simp only [List.mem_map] at hy
+    obtain ⟨p, hpmem, hpeq⟩ := hy
+    rw [← hpeq]
+    unfold betaIncrement
+    have h1 : 0 ≤ 1 - p.1 := by linarith [(h_obs p hpmem).2]
+    exact mul_nonneg (h_obs p hpmem).1 h1
+  linarith
+
+-- Concrete sanity checks at literal observation lists (proven via the closed
+-- form theorems above — the recursive `unfold` can't be discharged by norm_num
+-- alone in nested `cons` form).
+
+example :
+    posteriorAlpha (3/2 : ℝ) [(0, 3/10), (1, 7/10)] = 3/2 + 7/10 := by
+  rw [posteriorAlpha_closed_form]
+  simp [alphaIncrement]
+
+example :
+    posteriorBeta (1 : ℝ) [(0, 3/10), (1, 7/10)] = 1 + 3/10 := by
+  rw [posteriorBeta_closed_form]
+  simp [betaIncrement]
+
+end BetaBernoulli
+
+-- ============================================================================
 -- Verification summary — axioms used per theorem
 -- ============================================================================
 
@@ -329,3 +544,11 @@ end WaveCut
 #print axioms WaveCut.well_formed_implies_safe
 #print axioms WaveCut.parent_mismatch_blocks_dispatch
 #print axioms WaveCut.ownership_conflict_blocks_dispatch
+#print axioms BetaBernoulli.single_step_conjugacy
+#print axioms BetaBernoulli.effective_sample_size_invariant
+#print axioms BetaBernoulli.posteriorAlpha_closed_form
+#print axioms BetaBernoulli.posteriorBeta_closed_form
+#print axioms BetaBernoulli.weighted_beta_bernoulli_conjugacy
+#print axioms BetaBernoulli.n_eff_closed_form
+#print axioms BetaBernoulli.posterior_alpha_pos
+#print axioms BetaBernoulli.posterior_beta_pos

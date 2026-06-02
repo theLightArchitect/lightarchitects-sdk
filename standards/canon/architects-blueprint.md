@@ -1363,8 +1363,10 @@ The XEA (Cross-Examine · Analyze · Converge) protocol is the formal verificati
 | S0.15 | Tier 3 canon audit triggered if required (§14.5 trigger conditions) |
 | S0.16 | Reference-table sweep completed after every ≥3-amendment batch (cross-references, Tier integration tables, Blueprint XXI file maps) |
 | S0.17 | `handoff_checklist` in-scope items declared with ownership (Blueprint Part XVII — "can a stranger run this?") |
+| S0.18 | `post_build_guarantees_contract` block declared (Canon XLV, ratified 2026-06-02): Tier 1 HARD count ≥ tier minimum (SMALL ≥1, MEDIUM ≥5, LARGE ≥10); every G-row has `verification_command`; `verification_script` path declared with cold-context owner per Canon XXXIII; Tier 4 true NON-guarantees non-empty (honest disclosure per Communication Covenant principle #2); `rollback_path` enumerated with ≥4 concrete steps — BLOCKING |
+| S0.19 | `plan_pseudocode_section` declared (Canon XLVI, ratified 2026-06-02): core type signatures with object-safety annotations + ≥1 algorithm body per net-new module + integration points cited `file:line` for existing-code side + verification snippets for HARD guarantees needing code-level proof. Language-tagged code fences required (```` ```rust ````, not bare ```` ``` ````). N/A escape allowed for `plan_type ∈ {docs_only, research_only, ops_only, vault_scaffold_only}` with documented rationale — BLOCKING when applicable |
 
-**Pass condition**: All 17 checks PASS. Structural compliance is binary — schema is either present or absent. No partial credit.
+**Pass condition**: All 19 checks PASS. Structural compliance is binary — schema is either present or absent. No partial credit.
 
 ---
 
@@ -1490,6 +1492,26 @@ D1–D8 labels are **anchor-standard contracts**, not author descriptions. The c
 **Composes with**: Canon XXXIII (no self-scoring), Canon XXXV (citation gate — anchor standards ARE the citation), Canon XLII (schema-changelog separation — D-labels are schema; renaming = schema drift), Cookbook §69 (Citation Integrity Doctrine).
 
 **Pressure-tested 2026-05-29**: same incident as §22.4.1.
+
+---
+
+### Layer 4 — Post-Build Guarantees Contract Declaration (Canon XLV)
+
+**Added 2026-06-02** per Canon XLV (Post-Build Guarantees Contract Doctrine, ratified by Kevin + LÆX). Layer 4 verifies the Contract is declared correctly. Like Layer 3 (LDB), the actual G1-Gn pass/fail is computed at close-out by the cold-context runner via `scripts/post-build-verify-<codename>.sh` — XEA only verifies the declaration is correct and complete.
+
+| Check | Requirement | Source |
+|-------|-------------|--------|
+| **L4.1** | Tier 1 HARD guarantees count ≥ tier minimum (SMALL ≥1, MEDIUM ≥5, LARGE ≥10) | LASDLC `post_build_guarantees_contract.tier_minimums` |
+| **L4.2** | Every Tier 1 row has a `verification_command` that a third-party can execute (no judgment required); rows lacking a one-line verification command MUST be promoted to Tier 2 SOFT or split into measurable sub-claims | Canon XLV; Cookbook §60.11 |
+| **L4.3** | `verification_script` path declared at `scripts/post-build-verify-<codename>.sh`; owner is cold-context independent runner (NOT the build's own engineer) | Canon XXXIII (Self-Validation Ceiling) |
+| **L4.4** | Tier 4 (true NON-guarantees) is **non-empty** — honest disclosure required; an empty Tier 4 violates Communication Covenant principle #2 (No false witness) | Canon XLV; Communication Covenant |
+| **L4.5** | `rollback_path` enumerated with ≥4 concrete steps (`make_rollback`, `mcp_reconnect`, `git_revert`, `feature_flag_fallback`) | Canon XLV |
+
+**Pass condition**: All 5 checks PASS. Declaration is binary — Contract is either declared correctly or it isn't. No partial credit.
+
+**Verdict on Layer 4 FAIL**: BLOCKING. /BUILD cannot proceed past Step 0.3 XEA gate until folded.
+
+**Relationship to Layer 3 LDB**: independent surfaces. LDB grades quality on a continuum; the Contract grades claims on binary pass/fail. Both must pass at close-out. All Tier 1 HARD passing is necessary-but-not-sufficient for LDB D1 (Request Fidelity) ≥ STRONG per Canon XLV.
 
 ---
 

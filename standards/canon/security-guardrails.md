@@ -309,6 +309,28 @@ MITRE ATLAS (Adversarial Threat Landscape for AI Systems) extends ATT&CK to ML-s
 
 ---
 
+### §2.8 Agentic Credential Store Access Policy
+
+Agents operating on behalf of a human principal must use targeted credential queries only. Scanning or enumerating the OS credential store is prohibited as unauthorized credential exploration — equivalent to the target allowlist violation in §2.5.
+
+**Required pattern** (macOS keychain):
+```
+security find-generic-password -s "{known-service}" -a "{known-account}" -w
+```
+
+**Prohibited**:
+- `security dump-keychain` — enumerates all items in the store
+- Any credential discovery by pattern-matching across unknown service names
+- Inferring credential existence from scan results
+
+**Fail-closed rule**: if the service/account name is unknown, ask the operator — never scan to discover. Canon XVI: *Safe by Default, Autonomous by Trust*.
+
+**Enforcement**: Claude Code auto-mode classifier blocks `security dump-keychain` as T2 soft enforcement. SERAPH red team tests for credential store enumeration should be included in §8.x suite.
+
+*Promoted from: `memory/feedback_keychain_dump_blocked.md` — pressure-tested 2026-06-02.*
+
+---
+
 ## Part III — Code & Application Security
 
 ### §3.1 OWASP Top 10 Platform Stance (2021)

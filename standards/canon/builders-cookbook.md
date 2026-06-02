@@ -6246,6 +6246,133 @@ Plus filters by `decision_class` for impact-scoped review.
 
 ---
 
+### §60.11 Guarantee Declaration Discipline (Canon XLV)
+
+> **Rule:** Every plan declares N HARD guarantees in the form `G<N>: <claim>` with a `verification_command` a third-party can execute. If the engineer cannot write a one-line command that proves the guarantee, it is not a HARD guarantee — promote to SOFT (operator-observable) or restate it as a measurable sub-claim.
+
+**Source**: Canon XLV (Post-Build Guarantees Contract Doctrine, ratified 2026-06-02). Operator directive in session 7f6ca17b after `zany-tinkering-map` plan iteration surfaced the NON-guarantees pattern as a hidden quality risk — "things we hope happen but cannot prove" silently fail the LDB D1 contract at close-out.
+
+#### §60.11.1 HARD-vs-SOFT-vs-NON taxonomy
+
+| Tier | Predicate | Method | Example PASS | Example FAIL |
+|------|-----------|--------|-------------|-------------|
+| 1 HARD | Mechanically verifiable | Script execution + assertion | "All 19 strategies have a `LoopProfile`" + `cargo test registry::tests::all_strategies_have_profile` | "Performance is good" (no verification_command) |
+| 2 SOFT | Operator-observable | Operator runs + judges | "Security domain hits node cap when stressed" + observation method | "Code is well-written" (no observation method) |
+| 3 Type-checked NON | Compile-time-visible deferral | Type system enforces deferral | `LearningTier::A` declared for all profiles (Tier B/C variants exist but unused) | Silently claiming Tier B without enum entry |
+| 4 True NON | Honest non-promise | Disclosure | "Provably-secure memory poisoning defense (corpus-verified IS guaranteed)" | Empty Tier 4 = false witness violation |
+
+#### §60.11.2 The promote-or-restate rule
+
+When drafting a guarantee, apply this gate:
+
+```
+Can a third party run a one-line command that returns PASS/FAIL on this claim?
+├─ YES → Tier 1 HARD with verification_command
+└─ NO → can an operator observe + judge in <5 minutes?
+        ├─ YES → Tier 2 SOFT with observation_method
+        └─ NO → is this a known-deferred scope edge?
+                ├─ YES (compile-time deferral) → Tier 3 type-checked NON
+                ├─ YES (true scope edge) → Tier 4 true NON with `why`
+                └─ NO → not a real guarantee; remove from contract
+```
+
+#### §60.11.3 Tier minimums by LASDLC tier
+
+| Tier | HARD min | Rationale |
+|------|---------|-----------|
+| SMALL (4 phases) | ≥1 | Even one-phase scope warrants one verifiable claim |
+| MEDIUM (6 phases) | ≥5 | Multi-phase scope produces multiple verifiable surfaces |
+| LARGE (7 phases) | ≥10 | Architecturally-significant scope demands broad coverage |
+
+Tier 4 true NON is REQUIRED ≥1 row regardless of LASDLC tier. An empty Tier 4 implies omniscience and violates Communication Covenant principle #2 (No false witness).
+
+#### §60.11.4 Where this rule fires
+
+- **XEA Layer 0** check S0.18 (Blueprint Part XXII) — declaration BLOCKING at plan time
+- **XEA Layer 4** (Blueprint Part XXII) — 5 sub-checks at every XEA iteration
+- **/BUILD Step 10.5** (Agents Playbook) — verification_script invocation at close-out by cold-context runner
+- **LDB D1 grading** (LASDLC §7.7) — Contract HARD pass is necessary-but-not-sufficient for D1 ≥ STRONG
+
+#### §60.11.5 Composition with prior cookbook sections
+
+- **§60.10** (LDB IE-aggregate rule) — does NOT apply to Contract aggregates (binary PASS/FAIL, not weighted)
+- **§60.9** (IEEE inline citations) — `verification_command` IS the citation per Canon XXXV; no separate citation required
+- **§57** (test pyramid coverage ≥90%) — each Tier 1 HARD typically corresponds to a test in the pyramid; coverage and Contract reinforce
+
+#### §60.11.6 Anti-patterns
+
+| Anti-pattern | Why it fails | Fix |
+|--------------|------------|-----|
+| "Performance is unchanged or improved" as HARD | No verification_command; unmeasurable as stated | Promote to: "Resolver p99 < 100µs" + `cargo bench --bench loop_profile_resolver` |
+| "AYIN spans work correctly" as HARD | "Work correctly" is subjective | Split into: "Span emitted on every dispatch" + curl-based check |
+| Empty Tier 4 | False witness (Communication Covenant principle #2) | Add ≥1 honest scope-edge declaration |
+| Tier 1 verification command requires manual judgment ("operator inspects output") | Not a binary script execution | Promote to Tier 2 SOFT |
+
+#### §60.11.7 Evidence Table
+
+| Rule | Source |
+|------|--------|
+| §60.11.1 taxonomy | LASDLC `post_build_guarantees_contract.schema` (v2.8.1) + Canon XLV |
+| §60.11.2 promote-or-restate | `zany-tinkering-map` plan iteration 2 (2026-06-02) — pressure-tested converting NG1-NG6 to HARD via concrete code paths |
+| §60.11.3 tier minimums | Canon XLV § tier_minimums |
+| §60.11.4 enforcement surfaces | Blueprint Part XXII (Layer 0 S0.18, Layer 4 L4.1-L4.5) + Agents Playbook /BUILD Step 10.5 |
+| §60.11.6 anti-patterns | `zany-tinkering-map` NON-guarantees catalog before iteration 2 conversion (memory link: feedback_post_build_guarantee_pattern) |
+
+---
+
+### §60.12 Pseudocode-in-Plan Discipline (Canon XLVI)
+
+> **Rule:** Plans that introduce code surfaces MUST include a `## Pseudocode` section with: (1) core type signatures with object-safety annotations, (2) ≥1 key algorithm body per net-new module, (3) integration points cited `file:line` for the existing-code side, (4) verification snippets for HARD guarantees. Code fences MUST be language-tagged (` ```rust `, not bare ` ``` `).
+
+**Source**: Canon XLVI (Pseudocode-in-Plan Doctrine, ratified 2026-06-02). Distinct from §27 (boilerplate templates A-I at coding start) — see §60.12.5 composition rule.
+
+#### §60.12.1 Pseudocode vs prose
+
+| Belongs in pseudocode | Belongs in prose |
+|---|---|
+| Type signatures, trait declarations | Why this design over alternatives |
+| Algorithm bodies (≥1 per module) | Tradeoff analysis, risk register entries |
+| Match arms / state machine transitions | Cross-build implications |
+| Integration points (`file:line` for existing code) | Northstar alignment narrative |
+| Verification snippets for HARD guarantees | Operator experience description |
+
+#### §60.12.2 Object-safety annotations
+
+Pseudocode declaring traits MUST include the object-safety check inline (compile-time-adjacent):
+```rust
+pub trait MyTrait: Send + Sync { /* ... */ }
+// const _: Option<Arc<dyn MyTrait>> = None;  // object-safety check
+```
+If the trait is intentionally non-object-safe (associated types, GATs, Self in return position), state the reason in a comment.
+
+#### §60.12.3 Integration points MUST cite file:line
+
+Every place new pseudocode references existing code, the existing side MUST be cited with `file:line`. Example:
+```rust
+let shield = IndirectInjectionShield::new();  // lightarchitects/src/agent/indirect_injection_shield.rs:145
+```
+Citation-less references are §60.12 violations — they bake assumptions about the codebase into the plan that can drift undetected. Composes with Canon XXXV (citation gate) and Canon XLIV (probe-before-assert).
+
+#### §60.12.4 N/A escape
+
+Plans of `plan_type ∈ {docs_only, research_only, ops_only, vault_scaffold_only}` MAY declare `plan_pseudocode_section: N/A` with a rationale sentence. XEA S0.19 enforces the rationale is present.
+
+#### §60.12.5 Composition with §27
+
+Cookbook §27 prescribes boilerplate templates A-I at coding start (Cargo.toml, main.rs, error types, etc.) — file-scaffold layer. Canon XLVI / §60.12 prescribes algorithmic specification at planning start (signatures + algorithms) — design-intent layer. The two compose: §27 fills out the file scaffolds; pseudocode in the plan provides the signatures and algorithms those scaffolds will inhabit. Plan pseudocode is NOT the boilerplate templates; the boilerplate templates ARE NOT plan pseudocode.
+
+#### §60.12.6 Evidence Table
+
+| Rule | Source |
+|------|--------|
+| §60.12.1 pseudocode vs prose | LASDLC `plan_pseudocode_section.schema.required_subsections` (v2.8.2) + Canon XLVI |
+| §60.12.2 object-safety annotations | Composes with Canon XLIV (Probe-Before-Assert) — object-safety check IS the probe for trait design |
+| §60.12.3 integration points cite file:line | Canon XXXV (Confidence Threshold Gate) — claims about existing code are assertions requiring citation |
+| §60.12.4 N/A escape | Operational pragmatism — research/docs/ops/vault-scaffold plans have no code surface |
+| §60.12.5 composition with §27 | Contradiction check 2026-06-02 confirmed §27 (boilerplate templates) and Canon XLVI (in-plan pseudocode) operate at different lifecycle stages |
+
+---
+
 ## §61 Quality-First Compression Sequencing (Canon XXXVI)
 
 > **Rule:** The path from artisanal-rigor to compressed-execution has exactly one ordering that works: **Quality → Calibration Guardrails → Compression**. Skip rigor → fast wrongness. Skip automation → artisanal quality that doesn't compose. Hours→minutes is achievable for the 80% case (familiar territory, cached citations, calibrated agent pairs); hours stay hours for the 20% case (novel architecture, fresh research, contested Northstar, security/compliance).

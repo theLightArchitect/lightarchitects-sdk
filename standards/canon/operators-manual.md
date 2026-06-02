@@ -249,6 +249,11 @@ ALL build plans MUST use `LASDLC-TEMPLATE-v1.yaml`. Before implementing any plan
 5. Pre-flight checks — environment verification before Phase 1
 6. Close-out steps — cleanup, archive, git status after final phase
 7. Exit criteria per phase — specific, checkable conditions
+8. **`deliverable_benchmark` (LDB §7.7)** — D1-D8 components declared with `independent_runner` named (Canon XXXIII)
+9. **`post_build_guarantees_contract` (Canon XLV, added 2026-06-02)** — Tier 1 HARD ≥ tier minimum (SMALL ≥1, MEDIUM ≥5, LARGE ≥10) with `verification_command` per row; Tier 4 true NON-guarantees non-empty (honest scope-edge disclosure); `verification_script` path declared with cold-context owner; `rollback_path` ≥4 concrete steps
+10. **`plan_pseudocode_section` (Canon XLVI, added 2026-06-02)** — core type signatures with object-safety annotations + ≥1 algorithm body per net-new module + integration points cited `file:line` for the existing-code side + verification snippets for HARD guarantees. Language-tagged code fences required (` ```rust `, not bare ` ``` `). N/A allowed for `plan_type ∈ {docs_only, research_only, ops_only, vault_scaffold_only}` with rationale. Distinct from Cookbook §27 (boilerplate templates at coding start) — Canon XLVI is algorithmic specification at planning start.
+
+**#8 + #9 + #10 are all required for build promotion.** LDB grades on a quality continuum (0-100 across 8 D-components by judgment + measurement). The Contract grades on binary PASS/FAIL per claim by script execution. Pseudocode pins design intent before coding. All three are complementary, not redundant — see Canon XLV/XLVI for the full doctrines. All Contract HARD guarantees passing is necessary-but-not-sufficient for LDB D1 (Request Fidelity) ≥ STRONG. Pseudocode divergence at Phase 1 entry triggers re-XEA or operator waiver per Agents Playbook §15.5.10.
 
 ---
 
@@ -602,6 +607,20 @@ Lessons that arose from operations and were promoted to this document. Tracked b
 ### §10.6 Plan Frontmatter Required (2026-05-02)
 
 **Learning**: Plans without `project/codename/status` YAML frontmatter break the webshell `/ops` planned-voxel count. Every new plan gets frontmatter. Backfill only on touch — do not bulk-backfill historical plans.
+
+### §10.7 Browser Automation Session Isolation (2026-06-02)
+
+**Learning**: Playwright MCP spawns a fresh headless browser with no session cookies. It cannot authenticate to GCP Console, Cloudflare dashboard, GitHub, or any SSO/OAuth-protected web app. The tool routing rule "Browser automation → playwright MCP" applies only to unauthenticated or pre-authenticated pages.
+
+**Fallback order for authenticated web tasks**:
+1. CLI tool (gcloud, gh, cf CLI) — if token valid, fastest path
+2. REST API with tokens from keychain — `security find-generic-password -s "{service}" -a "{account}" -w`
+3. Chrome read-only tier (computer-use) — screenshot of user's authenticated session; provide click instructions; verify via follow-up screenshot
+4. Playwright — only for pages that do not require authentication
+
+**Never attempt**: navigating Playwright to a GCP/CF/GitHub SSO login and expecting the session to work — the headless browser has no credentials.
+
+*Promoted from: `memory/feedback_playwright_no_session.md` — pressure-tested 2026-06-02 (GCP Console OAuth client creation blocked Playwright path; gcloud CLI succeeded).*
 
 ---
 

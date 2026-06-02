@@ -2597,4 +2597,95 @@ Solving the wrong problem confidently. The framing discipline is the gate that c
 
 ---
 
-*Agents Playbook v1.10 | Light Architects | updated 2026-05-19 at LÆX soak-close audit ratification (added §15.3 artifact-internal Gn extension + §15.3.14 OD-N Locked-Contract Route-Edit Gate + §15.5.8 Build Closure Protocol CONDITIONALLY_RATIFIED). v1.9 added §7.9 Implementation-Readiness Audit + §7.10 Two-Problems Framing Discipline. v1.7 added §15.3.13 + §7.8 + §Phase-2A.5. v1.8 added §15.3.13.5 28-gate checklist. Full amendment narrative: see `agents-playbook.CHANGELOG.md` companion (created at Phase 7 per Canon XLII Tier-2 threshold).*
+## §15.5.9 — /BUILD Step 10.5 Post-Build Guarantees Verification (2026-06-02 RATIFIED, Canon XLV)
+
+**Source**: Canon XLV (Post-Build Guarantees Contract Doctrine, ratified 2026-06-02). Operator-directed expansion via session 7f6ca17b after `zany-tinkering-map` plan iteration surfaced the NON-guarantees pattern.
+
+**Rule**: After `/BUILD` reaches Close-Out (Step 10), but **before** writing `manifest.yaml.status: shipped`, the orchestrator MUST invoke the plan's declared `verification_script` via the cold-context independent runner (NOT the build's own engineer per Canon XXXIII).
+
+**Step 10.5 protocol**:
+
+1. Read `plan.post_build_guarantees_contract.verification_script.path` (typically `scripts/post-build-verify-<codename>.sh`)
+2. Verify the script exists and is executable (`test -x <path>`)
+3. Dispatch a cold-context Agent (subagent_type: `quality` or `Explore`, NOT the build's own engineer agent)
+4. Cold-context runner executes the script, captures output to `audit/guarantee-verification-<codename>-<date>.log`
+5. Parse output: expected pattern `RESULT: N/N HARD guarantees verified`
+6. Decision tree:
+   - Exit 0 + all PASS → proceed to Step 11 (manifest update + status: shipped)
+   - Any FAIL → emit `BLOCKER` message; do NOT write `status: shipped`; escalate to operator per §HITL-7
+   - Operator MAY waive specific G-row(s) via Canon XV stamp with rationale logged to `audit/guarantee-waivers-<codename>-<date>.log`; the waiver is auditable and never silent
+
+**Composition with §15.5.8 (Build Closure)**:
+- Step 10.5 runs BEFORE the §15.5.8 closure synchronization
+- §15.5.8's `status: shipped` write is gated by Step 10.5 PASS or explicit waiver
+- `manifest.yaml.closure_note` MUST cite which G-rows passed/waived
+
+**Composition with LDB (§7.7)**:
+- Contract HARD pass is necessary-but-not-sufficient for D1 ≥ STRONG
+- LDB cold-context grading occurs separately at close-out (per existing Canon XXXIII discipline)
+- Both must pass independently for promotion
+
+**Audit trail**:
+- `audit/guarantee-verification-<codename>-<date>.log` — script output verbatim
+- `audit/guarantee-waivers-<codename>-<date>.log` — operator waivers if any
+- `manifest.yaml.guarantee_verification_summary` — `{verified: N, total: N, waived: M, ran_at: <ISO>, runner: <agent_id>}`
+
+**Cross-references**:
+- Canon XXXIII (Self-Validation Ceiling — cold-context runner mandatory)
+- Canon XLV (Post-Build Guarantees Contract Doctrine — full doctrine)
+- Architects Blueprint Part XXII Layer 4 (L4.1-L4.5 XEA checks)
+- Cookbook §60.11 (HARD-vs-SOFT discipline)
+- LASDLC-TEMPLATE-v1.yaml `post_build_guarantees_contract` block (v2.8.1+)
+
+**Pressure-tested**: `zany-tinkering-map` build (2026-06-02) — 19 HARD guarantees with `scripts/post-build-verify-zany-tinkering-map.sh` as Phase 6 deliverable. First Canon-XLV-compliant build.
+
+---
+
+## §15.5.10 — /BUILD Phase 1 Entry Pseudocode Cross-Check (2026-06-02 RATIFIED, Canon XLVI)
+
+**Source**: Canon XLVI (Pseudocode-in-Plan Doctrine, ratified 2026-06-02). Operator-directed via session 7f6ca17b.
+
+**Rule**: At /BUILD Phase 1 entry — immediately before the engineer agent begins writing code — the orchestrator MUST cross-check that the planned implementation matches the plan's `plan_pseudocode_section` signatures. Divergence requires plan amendment (re-XEA) OR pseudocode update with rationale logged to `audit/pseudocode-divergence-<codename>-<date>.log`. Implementation that silently diverges from plan pseudocode = Canon XLVI violation.
+
+**Step 11.0.5 protocol** (inserted between Step 11.0 worker initialization and Step 11.1 first task dispatch):
+
+1. Read `plan.plan_pseudocode_section.core_type_signatures` — extract trait/struct/enum declarations
+2. For each declared type, search the worker's planned file path (`plan.file_function_map[N].path`):
+   - If file doesn't yet exist: PASS (will be created in Phase 1)
+   - If file exists with the type: signature-match check (struct fields, trait methods, enum variants match plan)
+   - If file exists WITHOUT the type: ambiguity — emit `HITL` for operator clarification
+3. For each declared integration point (e.g. `IndirectInjectionShield::detect at lightarchitects/src/agent/indirect_injection_shield.rs:145`):
+   - Verify `file:line` claim is still accurate (line drift detection): `rg -n "fn detect" lightarchitects/src/agent/indirect_injection_shield.rs`
+   - If integration point has moved: STALE finding logged to `audit/pseudocode-divergence-<codename>-<date>.log`; plan MUST be re-validated before Phase 1 proceeds
+4. Object-safety annotation check: for traits declared as `Send + Sync`, verify the `const _: Option<Arc<dyn Trait>> = None;` compile-check would pass against the planned signatures (mechanical inspection of associated types, Self in return position, GATs)
+5. Decision:
+   - All checks pass → proceed to Step 11.1
+   - Divergence found → HITL escalation per §HITL-7; operator decides: amend plan + re-XEA, OR amend pseudocode (re-Phase-1 entry), OR waive with rationale to `audit/pseudocode-divergence-*.log`
+
+**Composition with §15.5.9 (Post-Build Guarantees Verification)**:
+- §15.5.10 runs at Phase 1 entry (pre-code-write)
+- §15.5.9 runs at Close-Out Step 10.5 (post-code-write)
+- Both are cold-context-runner gates; same Canon XXXIII discipline applies
+
+**Composition with Canon XXXV / XLIV**:
+- §15.5.10.3 (integration point staleness) IS the probe (Canon XLIV)
+- §15.5.10.3 staleness detection enforces citation freshness (Canon XXXV — assertions about existing code MUST have current evidence)
+
+**Audit trail**:
+- `audit/pseudocode-divergence-<codename>-<date>.log` — every detected divergence with `{type, planned_signature, actual_signature, decision}` records
+- `manifest.yaml.pseudocode_cross_check_summary` — `{checked: N, divergent: M, waived: P, ran_at: <ISO>, runner: <agent_id>}`
+
+**Cross-references**:
+- Canon XLVI (Pseudocode-in-Plan Doctrine — full doctrine)
+- Canon XXXIII (Self-Validation Ceiling — cold-context runner mandatory)
+- Canon XXXV (Confidence Threshold Gate — file:line citations require freshness)
+- Canon XLIV (Probe-Before-Assert — signature checks ARE the probe)
+- Architects Blueprint Part XXII Layer 0 S0.19
+- Cookbook §60.12 (pseudocode-in-plan discipline)
+- LASDLC `plan_pseudocode_section` block (v2.8.2+)
+
+**Pressure-tested**: `zany-tinkering-map` iteration 4 (2026-06-02) — 8 pseudocode subsections + integration points cited file:line for IndirectInjectionShield (`indirect_injection_shield.rs:145`), HelixStore (`helix/store.rs:239`), trace::emit_step (`trace.rs:37-67`). Phase 1 entry will verify these citations are still accurate at /BUILD time.
+
+---
+
+*Agents Playbook v1.12 | Light Architects | updated 2026-06-02 at Canon XLVI ratification (added §15.5.10 /BUILD Phase 1 Entry Pseudocode Cross-Check). v1.11 added §15.5.9 /BUILD Step 10.5 Post-Build Guarantees Verification (Canon XLV). v1.10 added §15.5.8 Build Closure Protocol CONDITIONALLY_RATIFIED. v1.9 added §7.9 Implementation-Readiness Audit + §7.10 Two-Problems Framing Discipline. v1.7 added §15.3.13 + §7.8 + §Phase-2A.5. v1.8 added §15.3.13.5 28-gate checklist. Full amendment narrative: see `agents-playbook.CHANGELOG.md` companion (created at Phase 7 per Canon XLII Tier-2 threshold).*

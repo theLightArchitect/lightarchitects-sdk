@@ -1220,7 +1220,120 @@ This canon applies when asserting:
 
 ---
 
-*Platform Canon v2.5 | updated 2026-05-23 (Canon XLIV — Probe-Before-Assert for Unfamiliar Systems, RATIFIED 2026-05-23); v2.4 updated 2026-05-22 (Canon XLIII — Sibling Substrate Partition, RATIFIED 2026-05-22); v2.3 updated 2026-05-18 (Canon XXXIX Extension); v2.2 added Canon XLII (RATIFIED 2026-05-19); v2.1 added LDB §D5 + Gatekeeper Registry Extension + Vocabulary Canon. Full amendment narrative: see `platform-canon.CHANGELOG.md`.*
+## Canon XLV: Post-Build Guarantees Contract Doctrine
+
+> *"Let your communication be, Yea, yea; Nay, nay: for whatsoever is more than these cometh of evil."* — Matthew 5:37
+
+**Status**: **Ratified by Kevin Francis Tan + LÆX [C] — 2026-06-02** (operator-directed via session 7f6ca17b; complementary-not-redundant relative to LDB §7.7 confirmed via 7-document contradiction check per Canon XXXIX step c).
+
+**Principle**: Every plan, regardless of tier, domain, or feature type, MUST declare a **Post-Build Guarantees Contract** — a structured list of mechanically-verifiable claims (Tier 1 HARD), operator-observable claims (Tier 2 SOFT), type-checked deferrals (Tier 3 NON-type-checked), and honest non-promises (Tier 4 true NON). The build is graded against this contract at close-out by a cold-context independent runner (Canon XXXIII) via a declared verification script.
+
+### Why distinct from LDB §7.7
+
+LDB §7.7 grades deliverables on a quality continuum across 8 D-components by judgment + measurement. The Contract grades on binary pass/fail per claim by script execution.
+
+| Dimension | LDB §7.7 | Post-Build Guarantees Contract |
+|---|---|---|
+| Grading | 0–100 per component (5 bands) | Binary PASS/FAIL per guarantee |
+| Method | Cold-context runner judgment + measurement | Script execution + assertion |
+| Question answered | "How good is this build?" | "Did this build deliver the specific claims it made?" |
+| Output | `aggregate ∈ {EXEMPLARY, STRONG, ACCEPTABLE, DEFICIENT, UNSAFE}` | `N/N HARD guarantees verified` |
+| Subjective component | Yes (D-component judgment) | No (binary script result) |
+| Required | Yes | Yes |
+
+Both are required. Neither subsumes the other. All Contract HARD guarantees passing is **necessary-but-not-sufficient** for LDB D1 (Request Fidelity) ≥ STRONG.
+
+### Why Tier 4 "true NON-guarantees" is REQUIRED non-empty
+
+Under Communication Covenant principle #2 (No false witness), claiming zero non-guarantees is itself a violation — every real-world build has scope edges and the honest plan names them. An empty Tier 4 implies omniscience; a populated Tier 4 implies honest scope disclosure. XEA Layer 4 check L4.4 enforces.
+
+### Tier minimums by LASDLC tier
+
+| LASDLC Tier | Tier 1 HARD min | Rationale |
+|---|---|---|
+| SMALL (4 phases) | ≥1 | Even one-phase scope warrants one verifiable claim |
+| MEDIUM (6 phases) | ≥5 | Multi-phase scope produces multiple verifiable surfaces |
+| LARGE (7 phases) | ≥10 | Architecturally-significant scope demands broad coverage |
+
+Tier 2 SOFT, Tier 3 type-checked NON, and Tier 4 true NON have no minimums but Tier 4 MUST be non-empty (≥1 row).
+
+### Verification script invariants
+
+- Path pattern: `scripts/post-build-verify-<codename>.sh`
+- Owner: cold-context independent runner (NOT the build's own engineer) per Canon XXXIII
+- Invocation at close-out as Step 10.5 of `/BUILD`
+- Output: `RESULT: N/N HARD guarantees verified` and exit 0 only if all PASS
+- Failure mode: any FAIL blocks `status: promoted`; operator MAY waive a specific G-row with rationale logged to `audit/guarantee-waivers-<date>.log`
+
+### Enforcement surfaces
+
+- **XEA Layer 0** check S0.18 — declaration BLOCKING
+- **XEA Layer 4** — 5 sub-checks (L4.1–L4.5) per Architects Blueprint Part XXII
+- **/BUILD Step 10.5** — wires verification_script invocation into Close-Out
+- **LASDLC-TEMPLATE-v1.yaml** — `post_build_guarantees_contract:` top-level block (sibling to `deliverable_benchmark`)
+- **Builders Cookbook §60.11** — operational rule on HARD-vs-SOFT discipline
+- **Northstar §Q #11** — mechanical check at build promotion gate
+
+### Migration
+
+Plans authored before 2026-06-02 (pre-Canon-XLV) are grandfathered until next `/PLAN` invocation. The next time XEA runs on any pre-XLV plan, S0.18 surfaces as a BLOCKING gap, prompting fold. No retroactive forcing on `status: promoted` builds.
+
+### Composition with prior canons
+
+- **Canon XXXIII** (Self-Validation Ceiling) — cold-context runner mandatory; never the build's own engineer
+- **Canon XXXV** (Confidence Threshold Gate) — each HARD guarantee's `verification_command` IS its citation
+- **Canon XXXVI** (Quality-First Compression) — the Contract IS the empirical truth-telling surface for Phase 3 claims
+- **Canon XLII** (Schema-Changelog Separation) — Contract tiers (1–4) are schema; specific G-rows are author content
+- **Cookbook §60.10** (LDB IE-aggregate rule) — composes; Contract is binary not weighted, so §60.10 does not apply to Contract aggregates
+
+### Pressure-tested
+
+2026-06-02 `zany-tinkering-map` plan (P3 MoE loop optimization) — first build to author the Contract from scratch with 19 HARD guarantees converting prior NON-guarantees (NG1/NG2/NG3/NG4/NG6) to mechanically asserted claims via concrete code paths (criterion bench p99 < 100µs assertion, Playwright E2E for AYIN-span Activity-stream surfacing, 30-vector memory-poisoning red-team pack derived from OWASP LLM04/LLM08 + MITRE ATLAS AML.T0080 + reused IndirectInjectionShield catalog). Tier 4 honestly declares NG-Opt (empirical optimality on operator workloads), NG-Provable (provably-secure memory defense), and NG-Cockpit (dedicated bento widget).
+
+---
+
+---
+
+## Canon XLVI: Pseudocode-in-Plan Doctrine
+
+> *"Write the vision, and make it plain upon tables, that he may run that readeth it."* — Habakkuk 2:2
+
+**Status**: **Ratified by Kevin Francis Tan + LÆX [C] — 2026-06-02** (operator-directed; contradiction check 2026-06-02 confirmed Cookbook §27 covers boilerplate templates A-I at coding start, NOT in-plan algorithmic specification at planning start — complementary, not redundant).
+
+**Principle**: Every plan that introduces a code surface (new types, traits, algorithms, modules) MUST include a `## Pseudocode` section pinning core interfaces and key algorithm bodies before Phase 1 implementation begins. Pseudocode is signature + algorithm specification, NOT full implementation. Plans without code surfaces (docs-only, research-only, ops-only, vault-scaffold-only) MAY declare N/A with rationale.
+
+### Why distinct from Cookbook §27
+
+Cookbook §27 (Pseudo Code & Boilerplate Templates) prescribes pre-writing templates A-I (Cargo.toml, main.rs, error types, etc.) — boilerplate scaffolds for the file layer at coding start. Canon XLVI prescribes algorithmic specification in the plan body at planning start — signatures + algorithms before any file exists. The two compose: §27 fills out the file scaffolds Canon XLVI's signatures will inhabit.
+
+### Required subsections
+
+1. **Core type signatures** — struct/enum/trait declarations with object-safety annotations (`Send + Sync` bounds, `const _: Option<Arc<dyn MyTrait>> = None;` compile-check). If intentionally non-object-safe, state reason.
+2. **Key algorithm bodies** — ≥1 per net-new module. Shows loop shape, error paths, sequencing. Not full implementation; enough that a Phase 1 implementer reads the same flow the planner intended.
+3. **Integration points** — for every place new types meet existing code, cite `file:line` for the existing side. Verifies the assumption at plan time, not at Phase 1 entry.
+4. **Verification snippets** — for HARD guarantees that need code-level proof (criterion bench threshold-assertion patterns, post-build-verify.sh skeletons). Composes with Canon XLV.
+
+### Enforcement
+
+- **XEA Layer 0** check S0.19 — BLOCKING when applicable
+- **N/A escape** allowed for `plan_type ∈ {docs_only, research_only, ops_only, vault_scaffold_only}` with documented rationale
+- **Cookbook §60.12** — operational rule on pseudocode-vs-prose discipline
+- **Agents Playbook §15.5.10** — Phase 1 entry cross-check that implementation matches plan pseudocode signatures
+
+### Composition with prior canons
+
+- **Canon XLII** (Schema-Changelog Separation) — pseudocode is plan-author content (changelog), not canon schema; subject to plan iteration
+- **Canon XLV** (Post-Build Guarantees Contract) — verification snippets in pseudocode form the bridge between G-rows and Phase deliverables
+- **Canon XXXV** (Confidence Threshold Gate) — pseudocode signature claims about existing code MUST cite `file:line` (integration points subsection enforces)
+- **Canon XLIV** (Probe-Before-Assert) — pseudocode citing a function/method signature IS the probe; object-safety annotation IS the probe for trait design
+
+### Pressure-tested
+
+2026-06-02 `zany-tinkering-map` plan iteration 4 — 8 pseudocode subsections added: MemoryStore trait (with object-safety check), react_with_memory loop body, sandbox_exec state machine, StrategyRegistry::for_domain + role_to_default_strategy, DomainScopeResolver::resolve 3-way merge, trace::emit_dispatch span emission, CLI dispatch site migration, post-build-verify.sh skeleton. Integration points cited `file:line` (e.g. `indirect_injection_shield.rs:145` for `IndirectInjectionShield::detect`, `helix/store.rs:239` for `HelixStore`, `trace.rs:37-67` for `emit_step` pattern). Verified Phase 1 implementer can begin coding without re-deriving signatures from prose.
+
+---
+
+*Platform Canon v2.7 | updated 2026-06-02 (Canon XLVI — Pseudocode-in-Plan Doctrine, RATIFIED 2026-06-02); v2.6 updated 2026-06-02 (Canon XLV — Post-Build Guarantees Contract Doctrine, RATIFIED 2026-06-02); v2.5 updated 2026-05-23 (Canon XLIV — Probe-Before-Assert for Unfamiliar Systems, RATIFIED 2026-05-23); v2.4 updated 2026-05-22 (Canon XLIII — Sibling Substrate Partition, RATIFIED 2026-05-22); v2.3 updated 2026-05-18 (Canon XXXIX Extension); v2.2 added Canon XLII (RATIFIED 2026-05-19); v2.1 added LDB §D5 + Gatekeeper Registry Extension + Vocabulary Canon. Full amendment narrative: see `platform-canon.CHANGELOG.md`.*
 
 ---
 
