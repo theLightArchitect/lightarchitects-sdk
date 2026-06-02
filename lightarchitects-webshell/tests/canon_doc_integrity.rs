@@ -16,15 +16,15 @@
 use lightarchitects::fleet::FleetSnapshot;
 use lightarchitects_webshell::events::types::{
     AyinStatus, BudgetExhaustedEvent, BudgetWarningEvent, ConductorTickEvent, EscalationEvent,
-    FixAgentIterationEvent, HitlResolution, IronclawHitlEscalationEvent,
-    IronclawHitlResolutionEvent, MergeAgentStatusEvent, ProjectUpdateKind, ProjectUpdatePayload,
-    QuestionAnsweredEvent, QuestionHeadlessPolicy, QuestionItem, QuestionOptionItem,
-    QuestionPromptEvent, WebEvent, WorkerSlotGaugeEvent,
+    FixAgentIterationEvent, GateEvalEvent, GateVerdictKind, HitlResolution,
+    IronclawHitlEscalationEvent, IronclawHitlResolutionEvent, MergeAgentStatusEvent,
+    ProjectUpdateKind, ProjectUpdatePayload, QuestionAnsweredEvent, QuestionHeadlessPolicy,
+    QuestionItem, QuestionOptionItem, QuestionPromptEvent, WebEvent, WorkerSlotGaugeEvent,
 };
 
 /// Total expected `WebEvent` variant count.  Update alongside the §1.2 table
 /// in `webshell-api-surface-v1.md` whenever variants are added or removed.
-const EXPECTED_VARIANT_COUNT: usize = 32;
+const EXPECTED_VARIANT_COUNT: usize = 33;
 
 /// Exhaustive match acting as a compiler-enforced variant count ratchet.
 ///
@@ -73,6 +73,8 @@ fn all_variants_matched(event: &WebEvent) {
         WebEvent::BudgetWarning(_) => {}
         // ── webshell-agent-comms-display (Agents Playbook §3.5) ───────────────
         WebEvent::ImplComplete(_) => {}
+        // ── webshell-program-and-comms-wiring (gate resolution) ──────────────
+        WebEvent::GateResolution(_) => {}
     }
 }
 
@@ -196,9 +198,20 @@ fn web_event_variant_count_matches_canon_doc() {
     });
     all_variants_matched(&budget_warning);
 
+    let gate_resolution = WebEvent::GateResolution(GateEvalEvent {
+        build_id: nil,
+        phase_id: "phase-1-backend-a".to_owned(),
+        gate_dimension: "Q".to_owned(),
+        verdict: GateVerdictKind::Passed,
+        confidence: 1.0,
+        reasoning: None,
+        timestamp: chrono::Utc::now(),
+    });
+    all_variants_matched(&gate_resolution);
+
     assert_eq!(
-        EXPECTED_VARIANT_COUNT, 32,
-        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (32)"
+        EXPECTED_VARIANT_COUNT, 33,
+        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (33)"
     );
 }
 

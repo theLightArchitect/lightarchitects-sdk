@@ -11,10 +11,10 @@
   import CredentialsPanel from './CredentialsPanel.svelte';
 
   const backends = [
-    { id: 'lightarchitects', agent: 'lightarchitects_native', label: 'CLI' },
+    { id: 'lightarchitects', agent: 'lightarchitects_native', label: 'LA Native' },
+    { id: 'ollama-launch', agent: 'lightarchitects', label: 'Ollama' },
     { id: 'anthropic', agent: 'lightarchitects', label: 'Claude Code' },
     { id: 'openai', agent: 'codex', label: 'Codex' },
-    { id: 'ollama-launch', agent: 'lightarchitects', label: 'Ollama' },
     { id: 'mistral-vibe', agent: 'mistral_vibe', label: 'Mistral Vibe' },
   ];
 

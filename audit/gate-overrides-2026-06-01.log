@@ -1,0 +1,10 @@
+G4-WAIVER: wave-branch-dedup @ 2026-06-01T00:00:00Z
+Operator: Kevin
+Gate: G4 (make quality on main)
+Reason: 3 pre-existing hanging integration tests in supervisor_decision_pipeline_integration
+  - it_escalates_dep_addition_to_user
+  - it_escalates_secret_file_access
+  - it_chains_multiple_decisions_with_valid_hmac
+Root cause (suspected): HITL escalation reply-channel regression from agent-runner-policy-store-wiring T7/T8 wiring merge
+Relation to wave-branch-dedup: NONE — change is in wave_dispatcher.rs, unrelated module
+Operator acknowledgement: proceed with /BUILD wave-branch-dedup despite pre-existing G4 regression

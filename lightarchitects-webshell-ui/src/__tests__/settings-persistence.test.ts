@@ -42,6 +42,7 @@ describe('collectSettings', () => {
       selectedBackend: 'anthropic',
       selectedModel: 'claude-sonnet-4-6',
       selectedAgent: 'lightarchitects',
+      selectedTui: 'la',
     });
   });
 

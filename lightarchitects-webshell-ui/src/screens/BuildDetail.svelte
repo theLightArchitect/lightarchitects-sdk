@@ -16,7 +16,9 @@
   import DecisionLog   from '$lib/../components/views/DecisionLog.svelte';
   import FleetPanel    from '$lib/../components/FleetPanel.svelte';
   import type { Phase } from '$lib/WavePipelineView.contract';
-  import type { SupervisorState } from '$lib/types';
+  import type { SupervisorState, MergeAgentStatusEvent } from '$lib/types';
+  import GateStrip from '$lib/../components/GateStrip.svelte';
+  import { conductorState, mergeAgentEvents, implCompleteEvents } from '$lib/stores';
 
   // 'autonomous' + 'decisions' = ironclaw-spine Phase 6 tabs.
   // 'fleet' = agent-teams-fleet live agent tree view.
@@ -87,8 +89,21 @@
     { key: 'fleet',      label: 'FLEET',      desc: 'Live agent tree — spawned agents, status, elapsed time' },
   ];
 
-  // Stub phases for WavePipelineView — populated from manifest in Phase 7.
-  const STUB_PHASES: Phase[] = [];
+  // Live phases derived from MergeAgentStatus events for this build.
+  const livePhases = $derived<Phase[]>((() => {
+    const id = build?.id;
+    if (!id) return [];
+    const events: MergeAgentStatusEvent[] = $mergeAgentEvents.filter(e => e.build_id === id);
+    if (events.length === 0) return [];
+    const latest = events[0];
+    return [{
+      id:          latest.phase,
+      label:       latest.phase,
+      status:      'in_progress' as const,
+      waves:       [],
+      gate_verdict: null,
+    }];
+  })());
 
   // ── Supervisor state ──────────────────────────────────────────────────────
   let supervisorState = $state<SupervisorState | null>(null);
@@ -233,6 +248,24 @@
       {/if}
     {/if}
 
+    <!-- Fleet + gate status bar (webshell-program-and-comms-wiring G11+G12) -->
+    {#if $conductorState && $conductorState.build_id === build.id}
+      <div class="live-status-bar">
+        <span class="fleet-label">WORKERS</span>
+        <span class="fleet-active">{$conductorState.active_workers} active</span>
+        <span class="fleet-queue">{$conductorState.queue_depth} queued</span>
+        {#each $implCompleteEvents.filter(e => e.build_id === build.id).slice(0, 1) as attest}
+          <span class="gate-strip-wrap">
+            <GateStrip
+              passed={attest.gates_passed.length}
+              total={attest.gates_passed.length + attest.gates_skipped.length || 7}
+              labels
+            />
+          </span>
+        {/each}
+      </div>
+    {/if}
+
     <!-- Phase 5: L3 task drill-down — renders instead of turn/build content -->
     <!-- Use {#if} (not visibility) so EventStream SSE cleans up on navigation -->
     {#if taskId && phaseId && waveId && agentKey}
@@ -266,7 +299,7 @@
         <div class="phase-split-right">
           <WavePipelineView
             mode="split"
-            phases={STUB_PHASES}
+            phases={livePhases}
             onTaskClick={(taskId) => navigate('/builds/:buildId/phase/:phaseId/wave/stub/agent/stub/task/:taskId', { buildId: build.id, phaseId: phaseId ?? '', taskId })}
             onGateClick={(pid, wid) => navigate('/builds/:buildId/phase/:phaseId', { buildId: build.id, phaseId: pid })}
           />
@@ -285,7 +318,7 @@
         {:else if viewMode === 'comms'}
           <CommsView />
         {:else if viewMode === 'pipeline'}
-          <WavePipelineView mode="full" phases={STUB_PHASES} />
+          <WavePipelineView mode="full" phases={livePhases} />
         {:else if viewMode === 'autonomous'}
           <AutonomousRun buildId={build.id} />
         {:else if viewMode === 'decisions'}
