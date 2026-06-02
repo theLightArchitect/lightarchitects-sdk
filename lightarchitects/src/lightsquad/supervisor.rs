@@ -339,6 +339,18 @@ impl Supervisor {
 
         match result {
             PipelineResult::UserEscalation { ref reason, .. } => {
+                // Headless / test mode: no operator hook registered — resolve immediately
+                // rather than parking the sender indefinitely with no resolution path.
+                if self.config.on_user_escalation.is_none() {
+                    if escalation.respond.send(result).is_err() {
+                        warn!(
+                            task_id = %escalation.task_id,
+                            "worker dropped receiver before headless UserEscalation verdict"
+                        );
+                    }
+                    return;
+                }
+
                 // Mint a `UUIDv7` nonce (time-ordered, single-use).
                 let nonce = Uuid::now_v7();
                 let task_id = escalation.task_id.clone();
