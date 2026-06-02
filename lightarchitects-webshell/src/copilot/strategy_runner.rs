@@ -25,7 +25,10 @@ use std::{
 use futures_util::StreamExt as _;
 use lightarchitects::agent::{
     ChainContext,
-    loops::{Budget, HitlRequest, LoopRunner, LoopState, Outcome, RegisteredStrategy, Strategy},
+    loops::{
+        Budget, HitlRequest, LoopRunner, LoopState, Outcome, RegisteredStrategy, Strategy,
+        StrategyRegistry,
+    },
 };
 use tokio::sync::mpsc;
 use tracing::{info, warn};
@@ -224,11 +227,14 @@ impl StrategyDispatcher {
         let session_id = session_id.into();
         let strategy_id = strategy.name().to_owned();
 
-        let mut stream = LoopRunner::new(strategy, Budget::unlimited()).run(
-            initial_state,
-            ChainContext::default(),
-            None,
-        );
+        // Resolve budget from the strategy's LoopProfile; fall back to unlimited
+        // for Class B strategies that are not in the registry (defensive only —
+        // copilot exclusively dispatches Class A strategies via RegisteredStrategy).
+        let budget = StrategyRegistry::profile(&strategy_id)
+            .map_or_else(Budget::unlimited, |p| Budget::from_policy(&p.budget_policy));
+
+        let mut stream =
+            LoopRunner::new(strategy, budget).run(initial_state, ChainContext::default(), None);
 
         while let Some(result) = stream.next().await {
             match result {

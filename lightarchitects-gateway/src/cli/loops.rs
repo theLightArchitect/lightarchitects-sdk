@@ -21,6 +21,8 @@
 //! | `--executor <sibling>` | per-strategy default | Override executor sibling |
 //! | `--max-turns <n>` | 20 | Maximum strategy steps |
 //! | `--budget <usd>` | unlimited | USD ceiling |
+//! | `--role <role>` | none | Domain role for profile resolution (`engineer`, `security`, …) |
+//! | `--phase <phase>` | none | LASDLC phase context forwarded to AYIN dispatch span |
 //! | `--ndjson` | off | Emit NDJSON events instead of human text |
 
 use crate::agent_stream::strategy::{ExecutorHint, StrategyKind, StrategyRequest};
@@ -68,6 +70,8 @@ pub async fn execute(config: &GatewayConfig, args: &[String]) -> Result<(), Gate
     let max_turns = find_flag_u32(args, "--max-turns");
     let max_budget_usd = find_flag_f64(args, "--budget");
     let executor = find_flag_str(args, "--executor").and_then(parse_executor_hint);
+    let role = find_flag_str(args, "--role");
+    let phase = find_flag_str(args, "--phase");
     let ndjson = args.iter().any(|a| a == "--ndjson" || a == "--json");
 
     let req = StrategyRequest {
@@ -77,6 +81,8 @@ pub async fn execute(config: &GatewayConfig, args: &[String]) -> Result<(), Gate
         max_turns,
         max_budget_usd,
         session_id: find_flag_str(args, "--session-id"),
+        role,
+        phase,
     };
 
     if ndjson {
@@ -132,7 +138,14 @@ fn find_flag_f64(args: &[String], flag: &str) -> Option<f64> {
 ///
 /// Used to exclude flag values from the goal positional collection.
 fn is_flag_value(args: &[String], candidate: &str) -> bool {
-    const FLAGS: &[&str] = &["--executor", "--max-turns", "--budget", "--session-id"];
+    const FLAGS: &[&str] = &[
+        "--executor",
+        "--max-turns",
+        "--budget",
+        "--session-id",
+        "--role",
+        "--phase",
+    ];
     args.windows(2)
         .any(|w| FLAGS.contains(&w[0].as_str()) && w[1] == candidate)
 }

@@ -93,11 +93,15 @@ pub mod gate;
 pub mod itt;
 pub mod meta_skill;
 pub mod multipass;
+pub mod profile;
 pub mod react;
+pub mod react_with_memory;
 pub mod red_team;
 pub mod reflexion;
 pub mod registry;
 pub mod runner;
+pub mod sandbox_exec;
+pub mod scope;
 pub mod scope_governor;
 pub mod scrum;
 pub mod secure;
@@ -138,8 +142,17 @@ pub use enrich::EnrichStrategy;
 pub use gate::{GatePhase, GateStrategy};
 pub use meta_skill::{LoopOutput, LoopState, MetaSkill};
 pub use multipass::{MultiPassExecutor, MultiPassOutput, MultiPassState, MultiPassVerifyStrategy};
+pub use profile::{
+    BudgetPolicy, ConcurrencyClass, DomainScopeConfig, LasdlcPhase, LoopProfile, PhaseOverride,
+};
+pub use react_with_memory::{MemoryStore, ReactWithMemoryState, ReactWithMemoryStrategy, RwmPhase};
 pub use red_team::{RedTeamExecutor, RedTeamOutput, RedTeamPhase, RedTeamState, RedTeamStrategy};
 pub use registry::{RegisteredStrategy, StrategyRegistry};
+pub use sandbox_exec::{
+    SandboxExecStrategy, SandboxExecutor, SandboxGenerator, SandboxPhase, SandboxPromotionRequest,
+    SandboxState, SandboxTestResult, SandboxVerifier,
+};
+pub use scope::{DomainScopeResolver, ResolvedConfig};
 pub use scope_governor::{ScopeGate, ScopeGovernorStrategy};
 pub use scrum::{ScrumMode, ScrumStrategy};
 pub use secure::SecureStrategy;

@@ -27,7 +27,7 @@
 //! | reflexion | soul            | corso, eva                          |
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_util::StreamExt as _;
 
@@ -125,6 +125,16 @@ pub struct StrategyRequest {
     /// Optional AYIN correlation ID forwarded to span emission.
     #[serde(default)]
     pub session_id: Option<String>,
+    /// Domain role for profile resolution (e.g. `"engineer"`, `"security"`).
+    ///
+    /// When provided, `StrategyRegistry::for_domain(role)` selects budget and
+    /// HITL policy from the resolved [`LoopProfile`]. Absent → unlimited budget
+    /// (current default, preserving backwards compatibility).
+    #[serde(default)]
+    pub role: Option<String>,
+    /// LASDLC phase context forwarded to the dispatch AYIN span.
+    #[serde(default)]
+    pub phase: Option<String>,
 }
 
 /// Errors from strategy dispatch.
@@ -224,12 +234,22 @@ pub async fn run_strategy<T: Transport>(
     config: &GatewayConfig,
     transport: &mut T,
 ) -> Result<(), StrategyError> {
+    let dispatch_start = Instant::now();
     let budget = Budget::new(
         req.max_turns.unwrap_or(20),
         req.max_budget_usd.unwrap_or(f64::MAX),
     );
     let chain = ChainContext::default();
     let session_id = req.session_id.clone();
+
+    // Emit MoE dispatch span (Northstar P3 mechanical check #4): expert.selected +
+    // expert.selection_rationale + expert.composition_latency_ms.
+    let _ = lightarchitects::agent::loops::trace::emit_dispatch(
+        &req.strategy.to_string(),
+        req.role.as_deref(),
+        req.phase.as_deref(),
+        dispatch_start,
+    );
 
     // Build the session-root span synchronously to capture its UUID, then seed the
     // task-local span context so all child spans (llm.call, gateway.tool.dispatch)
@@ -623,6 +643,8 @@ pub fn parse_slash_command(line: &str, default_budget_usd: f64) -> Option<Strate
         max_turns: None,
         max_budget_usd: Some(default_budget_usd),
         session_id: None,
+        role: None,
+        phase: None,
     })
 }
 
