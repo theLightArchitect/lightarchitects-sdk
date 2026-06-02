@@ -40,9 +40,9 @@ impl Default for VertexSearchConfig {
             project_id: std::env::var("VERTEX_PROJECT_ID")
                 .unwrap_or_else(|_| "webshell-497114".to_string()),
             engine_id: std::env::var("VERTEX_ENGINE_ID")
-                .unwrap_or_else(|_| "quantum-search".to_string()),
+                .unwrap_or_else(|_| "la-search".to_string()),
             data_store_id: std::env::var("VERTEX_DATA_STORE_ID")
-                .unwrap_or_else(|_| "quantum-security-standards".to_string()),
+                .unwrap_or_else(|_| "la-security-baselines".to_string()),
         }
     }
 }
@@ -282,12 +282,12 @@ mod tests {
     fn test_serving_config_path() {
         let cfg = VertexSearchConfig {
             project_id: "webshell-497114".to_string(),
-            engine_id: "quantum-search".to_string(),
-            data_store_id: "quantum-security-standards".to_string(),
+            engine_id: "la-search".to_string(),
+            data_store_id: "la-security-baselines".to_string(),
         };
         let path = cfg.serving_config_path();
         assert!(path.contains("webshell-497114"));
-        assert!(path.contains("quantum-search"));
+        assert!(path.contains("la-search"));
         assert!(path.contains("servingConfigs/default_search"));
     }
 
