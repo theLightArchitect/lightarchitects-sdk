@@ -2,7 +2,7 @@
    Latin subset; covers all LA operator surfaces. Weight axis: 100–800. */
 @font-face {
   font-family: 'JetBrains Mono Variable';
-  src: url('/fonts/JetBrainsMono[wght].woff2') format('woff2-variations');
+  src: url('/fonts/JetBrainsMono-variable.woff2') format('woff2-variations');
   font-weight: 100 800;
   font-style: normal;
   font-display: swap;

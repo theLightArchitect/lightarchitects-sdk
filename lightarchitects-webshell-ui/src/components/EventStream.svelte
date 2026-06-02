@@ -81,7 +81,7 @@
       {/if}
     </div>
   {:else}
-    {#each displayed as row (`${row.ts}-${row.source}`)}
+    {#each displayed as row, i (`${row.ts}-${row.source}-${i}`)}
       <div
         class="px-3 py-1 border-b border-[#0f172a] hover:bg-[#0f172a]/50 flex items-start gap-2"
         style="min-height: 26px;"

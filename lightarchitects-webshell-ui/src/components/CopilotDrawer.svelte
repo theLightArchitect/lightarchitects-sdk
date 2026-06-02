@@ -12,6 +12,7 @@
   import { navigate } from '$lib/routes';
   import { SIBLING_COLORS, getChatActorPolytope } from '$lib/design-tokens';
   import { api } from '$lib/api';
+  import * as sessionMgr from '$lib/copilot/session';
   import { authHeaders } from '$lib/auth';
   import { parseCommand, SLASH_COMMANDS } from '$lib/commands';
   import { connectSSE, disconnectSSE, reconnectSSE, sseConnected } from '$lib/sse';
@@ -136,7 +137,13 @@
   $effect(() => {
     const buildId = sharedBuildId;
     const isLaNative = $isNativeAgent || buildAgentKind === 'lightarchitects_native';
-    if (!buildId || isLaNative) {
+    // Stay disconnected when:
+    //  - no session yet
+    //  - native agent (uses HTTP SSE, not WS bridge)
+    //  - agent kind not yet resolved (avoid race during ensureBuild → response window;
+    //    spurious WS connect would emit "Agent connection lost" once the effect
+    //    re-runs with the populated kind and tears down)
+    if (!buildId || isLaNative || !buildAgentKind) {
       agentWs?.disconnect();
       agentWs = null;
       return;
@@ -441,48 +448,10 @@
   }
 
   async function ensureBuild(): Promise<string> {
-    if (sharedBuildId) {
-      // Populate agent kind for restored sessions (page reload path).
-      // buildAgentKind is only set on CREATE; on RESUME it stays undefined,
-      // which causes sendMessage() to fall through to the WS bridge path.
-      if (!buildAgentKind) {
-        try {
-          const r = await api.getBuild(sharedBuildId);
-          if (r?.agent?.kind) buildAgentKind = r.agent.kind;
-        } catch { /* non-fatal — older sessions may not have agent field */ }
-      }
-      return sharedBuildId;
-    }
-    const existing = $currentBuildId;
-    if (existing) { sharedBuildId = existing; return existing; }
-    const profile = $authProfile;
-    const body: Record<string, unknown> = { cwd };
-    if (profile === 'ollama' && $ollamaConfig) {
-      body.ollama_base_url = $ollamaConfig.baseUrl;
-      body.ollama_model = $ollamaConfig.model;
-      body.ollama_auth_token = $ollamaConfig.apiKey;
-    }
-    // If the webshell was launched with --resume-session (typically via
-    // the /webshell plugin slash command from a running Claude Code or
-    // Codex session), forward the UUID on this first build so the next
-    // copilot turn invokes `claude --resume <id>` and continues the
-    // terminal session's conversation. Consume-then-clear so a manual
-    // second build doesn't accidentally re-resume the same thread.
-    const resumeId = $pendingResumeSessionId;
-    if (resumeId) {
-      body.resume_session_id = resumeId;
-      pendingResumeSessionId.set(null);
-    }
-    const resp = await api.createBuild(body) as {
-      build_id: string;
-      agent?: { kind: string; backend?: string };
-    };
-    sharedBuildId = resp.build_id;
-    currentBuildId.set(resp.build_id);
-    if (resp.agent?.kind) {
-      buildAgentKind = resp.agent.kind;
-    }
-    return resp.build_id;
+    const session = await sessionMgr.ensureBuild(cwd);
+    sharedBuildId = session.buildId;
+    if (session.agentKind) buildAgentKind = session.agentKind;
+    return session.buildId;
   }
 
   // ── Native interrupt / clear controls ─────────────────────────────────────
@@ -695,14 +664,19 @@
     const isNative = buildAgentKind === 'lightarchitects_native' || get(isNativeAgent);
     if (isNative) {
       try {
-        const ctx = snapshotContextForCopilot();
-        const { grounding } = await api.copilotChatNative(
-          buildId!,
-          text,
-          (ev) => handleAgentEvent(ev as AgentEvent),
-          { recentEvents: ctx.recentEvents, uiContext: ctx.uiContext },
-        );
-        if (grounding !== null) copilotGrounding.set(grounding);
+        // withSession auto-recovers on 404 (e.g. webshell restart cleared
+        // in-memory session map) — recreates the session and retries once.
+        await sessionMgr.withSession(cwd, async (bid) => {
+          const ctx = snapshotContextForCopilot();
+          const { grounding } = await api.copilotChatNative(
+            bid,
+            text,
+            (ev) => handleAgentEvent(ev as AgentEvent),
+            { recentEvents: ctx.recentEvents, uiContext: ctx.uiContext },
+          );
+          if (grounding !== null) copilotGrounding.set(grounding);
+          sharedBuildId = bid;
+        });
       } catch (err) {
         const detail = err instanceof Error ? err.message : 'Unknown error';
         handleAgentEvent({ type: 'error', message: `Native SSE failed: ${detail}` } as AgentEvent);

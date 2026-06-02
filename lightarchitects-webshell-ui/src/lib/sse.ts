@@ -152,6 +152,15 @@ function _connect(): void {
           ayinStatus.set('offline');
           return;
         }
+        if (response.status === 404) {
+          // Build session gone (server restart). Clear the stale ID and stop
+          // retrying — the next user action (e.g. send copilot message) will
+          // trigger ensureBuild() and create a fresh session.
+          currentBuildId = null;
+          sseConnected.set(false);
+          ayinStatus.set('offline');
+          return;
+        }
         _scheduleReconnect();
         return;
       }
@@ -246,7 +255,7 @@ function eventTypeToSource(type: EventType): string {
 
 /** @internal Exposed for unit testing only */
 export function _handleEvent(event: { type: EventType; data: unknown }): void {
-  pushRecentEvent(eventTypeToSource(event.type), event.data);
+  pushRecentEvent(eventTypeToSource(event.type), event);
   switch (event.type) {
     case 'ayin_status': {
       const status = event.data as string;

@@ -94,7 +94,7 @@
     {#if filtered.length === 0}
       <div class="comms-empty">— no events yet —</div>
     {:else}
-      {#each filtered as row (row.ts + row.text)}
+      {#each filtered as row}
         <div
           class="comm-row"
           class:comm-hitl={row.commType === 'hitl'}

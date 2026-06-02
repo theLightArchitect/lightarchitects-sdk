@@ -1,11 +1,11 @@
-//! Subprocess bridge — spawns `lightarchitects --stream-events` and translates
-//! NDJSON stdout into `AgentEvent` broadcasts.
+//! Subprocess bridge — spawns `lightarchitects run --output-format stream-json`
+//! and translates NDJSON stdout into `AgentEvent` broadcasts.
 //!
 //! ## Lifecycle
 //!
 //! ```text
 //! lazy_init() on first SSE/WS connect
-//!   → spawn lightarchitects --stream-events --cwd <build.cwd>
+//!   → spawn lightarchitects run --output-format stream-json --cwd <build.cwd>
 //!   → stdout task parses NDJSON → AgentEvent → event_tx
 //!   → stdin task reads control_rx → NDJSON → cli stdin
 //!   → on bridge drop: SIGKILL child, close channels
@@ -13,10 +13,9 @@
 //!
 //! ## NDJSON line format (lightarchitects-cli → bridge)
 //!
-//! Each line is a self-contained JSON object matching `AgentEvent`:
-//! ```json
-//! {"type":"tool_start","name":"Read","id":"call_01","input":{"file_path":"/tmp/test.md"}}
-//! ```
+//! The CLI emits its own format; `translate_cli_line` maps it to `AgentEvent`.
+//! Final turn result arrives as `{"type":"result","subtype":"success","result":"..."}`;
+//! this is translated to `AgentEvent::Text { chunk }` + `AgentEvent::Complete`.
 
 use std::process::Stdio;
 use std::sync::Arc;
@@ -81,7 +80,16 @@ pub async fn spawn_bridge(
         // vibe-acp: ACP mode, pure NDJSON stdin/stdout — no CLI path flags.
         cmd.current_dir(&workdir);
     } else {
-        cmd.arg("--stream-events").arg("--cwd").arg(&workdir);
+        // `--stream-events` was the original flag but the CLI uses the subcommand form:
+        // `lightarchitects run --output-format stream-json --cwd <dir> --build-id <uuid>`.
+        // The run-loop reads prompts from stdin and emits NDJSON lines to stdout until EOF.
+        cmd.arg("run")
+            .arg("--output-format")
+            .arg("stream-json")
+            .arg("--cwd")
+            .arg(&workdir)
+            .arg("--build-id")
+            .arg(session.build_id.to_string());
     }
 
     // NOTE: ANTHROPIC_API_KEY is intentionally NOT injected here.
@@ -300,10 +308,81 @@ fn process_line(
             let _ = event_tx.send(ev);
         }
         Err(_) => {
-            let _ = event_tx.send(AgentEvent::Text {
-                chunk: format!("{line}\n"),
-            });
+            // The CLI's `run --output-format stream-json` emits a different wire
+            // format than `AgentEvent`. Translate known CLI event shapes before
+            // falling back to raw text display.
+            match translate_cli_line(line) {
+                Some(CliLineKind::Result { text }) => {
+                    if !text.is_empty() {
+                        let _ = event_tx.send(AgentEvent::Text { chunk: text });
+                    }
+                    *saw_complete = true;
+                    let _ = event_tx.send(AgentEvent::Complete {
+                        reason: super::protocol::TerminationReason::Complete,
+                    });
+                }
+                Some(CliLineKind::Error { message }) => {
+                    let _ = event_tx.send(AgentEvent::Error {
+                        message,
+                        recoverable: Some(false),
+                    });
+                }
+                Some(CliLineKind::Ignore) => {} // mode, context, lifecycle noise
+                None => {
+                    // Unknown format — display raw for operator debugging.
+                    let _ = event_tx.send(AgentEvent::Text {
+                        chunk: format!("{line}\n"),
+                    });
+                }
+            }
         }
+    }
+}
+
+/// Classify a CLI-format NDJSON line that did not parse as `AgentEvent`.
+///
+/// The `lightarchitects` CLI's `run --output-format stream-json` loop emits a
+/// different wire format than the webshell's `AgentEvent` enum.  This function
+/// maps the known CLI event shapes so `process_line` can emit the correct
+/// `AgentEvent` variants rather than displaying raw JSON to the operator.
+enum CliLineKind {
+    Result { text: String },
+    Error { message: String },
+    Ignore,
+}
+
+fn translate_cli_line(line: &str) -> Option<CliLineKind> {
+    let val: serde_json::Value = serde_json::from_str(line).ok()?;
+    match val.get("type")?.as_str()? {
+        "result" => {
+            let subtype = val
+                .get("subtype")
+                .and_then(|s| s.as_str())
+                .unwrap_or("success");
+            if subtype == "error" {
+                Some(CliLineKind::Error {
+                    message: val
+                        .get("error")
+                        .and_then(|e| e.as_str())
+                        .unwrap_or("unknown error")
+                        .to_owned(),
+                })
+            } else {
+                // Prefer "result" field; fall back to "text" for older CLI builds.
+                let text = val
+                    .get("result")
+                    .or_else(|| val.get("text"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+                Some(CliLineKind::Result { text })
+            }
+        }
+        // Lifecycle / context events emitted by the CLI loop — not meaningful to the browser.
+        "mode" | "context" | "strategy_step" | "strategy_halt" | "hitl_request" => {
+            Some(CliLineKind::Ignore)
+        }
+        _ => None,
     }
 }
 
@@ -311,32 +390,40 @@ fn process_line(
 async fn drive_stdin(stdin: ChildStdin, mut control_rx: mpsc::Receiver<ControlMessage>) {
     let mut writer = BufWriter::new(stdin);
     while let Some(msg) = control_rx.recv().await {
-        let json = match msg {
-            ControlMessage::SendMessage { text } => {
-                serde_json::json!({"action":"send_message","text":text})
-            }
+        // `run_stream_json_loop` reads stdin lines raw — plain text passes
+        // directly as the user prompt.  Other control messages remain JSON.
+        let line = match msg {
+            ControlMessage::SendMessage { text } => format!("{text}\n"),
             ControlMessage::ApprovePermission { request_id } => {
                 // CLI reads {"type":"approve","call_id":"..."} per StreamingApprovalGate wire format.
-                serde_json::json!({"type":"approve","call_id":request_id})
+                format!(
+                    "{}\n",
+                    serde_json::json!({"type":"approve","call_id":request_id})
+                )
             }
             ControlMessage::DenyPermission { request_id, .. } => {
-                serde_json::json!({"type":"deny","call_id":request_id})
+                format!(
+                    "{}\n",
+                    serde_json::json!({"type":"deny","call_id":request_id})
+                )
             }
             ControlMessage::Interrupt => {
-                serde_json::json!({"action":"interrupt"})
+                format!("{}\n", serde_json::json!({"action":"interrupt"}))
             }
             ControlMessage::Steer { text } => {
-                serde_json::json!({"action":"steer","text":text})
+                format!("{}\n", serde_json::json!({"action":"steer","text":text}))
             }
             ControlMessage::SetSystemPrompt { text } => {
-                serde_json::json!({"action":"set_system_prompt","text":text})
+                format!(
+                    "{}\n",
+                    serde_json::json!({"action":"set_system_prompt","text":text})
+                )
             }
             ControlMessage::ExecutePlan => {
-                serde_json::json!({"action":"execute_plan"})
+                format!("{}\n", serde_json::json!({"action":"execute_plan"}))
             }
             ControlMessage::Ping => continue,
         };
-        let line = format!("{json}\n");
         if let Err(e) = writer.write_all(line.as_bytes()).await {
             warn!(error = %e, "bridge stdin write failed");
             break;

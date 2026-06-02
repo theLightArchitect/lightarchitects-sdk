@@ -63,6 +63,8 @@ pub struct RecentEventEntry {
     pub source: String,
     /// Full event payload as received from the SSE stream; passed verbatim to
     /// the prompt assembler (no server-side truncation, §P check 2).
+    /// Defaults to `null` when omitted (older clients or events with no payload).
+    #[serde(default)]
     pub event: serde_json::Value,
 }
 

@@ -12,6 +12,9 @@
  */
 import { test as base } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 import { NavPage } from './pages/NavPage';
 import { SquadDispatchPage } from './pages/SquadDispatchPage';
 
@@ -22,8 +25,19 @@ interface E2EFixtures {
   dispatch: SquadDispatchPage;
 }
 
+function resolveWebshellToken(): string {
+  try {
+    return readFileSync(join(homedir(), 'lightarchitects', 'webshell', '.token'), 'utf-8').trim();
+  } catch {
+    return process.env.LA_WEBSHELL_TOKEN ?? '63308ab0-d024-4f7d-a459-936744aa255f';
+  }
+}
+
 /**
  * Extended test with `nav` and `dispatch` page-object fixtures.
+ *
+ * Automatically injects the webshell auth token into sessionStorage and sets a
+ * sensible default backend so tests start authenticated without manual flows.
  *
  * Use in standalone spec files (not in webshell.spec.ts which manages its own
  * browser context):
@@ -32,6 +46,23 @@ interface E2EFixtures {
  *   test('...', async ({ nav, dispatch }) => { ... });
  */
 export const test = base.extend<E2EFixtures>({
+  page: async ({ page }, use) => {
+    const token = resolveWebshellToken();
+    await page.addInitScript((tok: string) => {
+      sessionStorage.setItem('la_webshell_token', tok);
+      try {
+        const raw = localStorage.getItem('la_webshell_settings');
+        const s = raw ? JSON.parse(raw) : {};
+        if (!s.selectedBackend || s.selectedBackend === 'deepseek') {
+          s.selectedBackend = 'lightarchitects_native';
+          localStorage.setItem('la_webshell_settings', JSON.stringify(s));
+        }
+      } catch {
+        // localStorage unavailable (sandboxed context) — skip settings patch
+      }
+    }, token);
+    await use(page);
+  },
   nav:      async ({ page }, use) => { await use(new NavPage(page)); },
   dispatch: async ({ page }, use) => { await use(new SquadDispatchPage(page)); },
 });

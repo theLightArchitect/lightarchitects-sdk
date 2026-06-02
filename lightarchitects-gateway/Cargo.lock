@@ -168,6 +168,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
 
 [[package]]
+name = "arc-swap"
+version = "1.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a3a1fd6f75306b68087b831f025c712524bcb19aad54e557b1129cfa0a2b207"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "arg_enum_proc_macro"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2590,6 +2599,7 @@ name = "lightarchitects"
 version = "0.2.0"
 dependencies = [
  "aes-gcm",
+ "arc-swap",
  "async-trait",
  "axum",
  "chrono",
@@ -6619,3 +6629,11 @@ dependencies = [
  "quote",
  "syn 2.0.117",
 ]
+
+[[patch.unused]]
+name = "corso-server"
+version = "2.0.0"
+
+[[patch.unused]]
+name = "corso-trinity-core"
+version = "2.0.0"
