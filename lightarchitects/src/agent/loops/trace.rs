@@ -32,6 +32,7 @@ use crate::ayin::span::{Actor, TraceContext, TraceError, TraceOutcome, TraceSpan
 /// Returns an error only if the [`TraceContext`] builder fails (unreachable for
 /// well-formed inputs).
 pub fn emit_dispatch(
+    actor: &str,
     strategy_name: &str,
     role: Option<&str>,
     phase: Option<&str>,
@@ -43,6 +44,7 @@ pub fn emit_dispatch(
     let rationale = format!("strategy='{strategy_name}' role='{role_str}' phase='{phase_str}'");
 
     info!(
+        actor,
         strategy = strategy_name,
         role = role_str,
         phase = phase_str,
@@ -50,7 +52,7 @@ pub fn emit_dispatch(
         "loop dispatch"
     );
 
-    TraceContext::new(Actor::claude(), "loop.dispatch")
+    TraceContext::new(Actor::new(actor), "loop.dispatch")
         .outcome(TraceOutcome::Continue)
         .metadata(serde_json::json!({
             "expert.selected": strategy_name,
@@ -122,7 +124,14 @@ mod tests {
     #[test]
     fn emit_dispatch_produces_valid_span() {
         let start = Instant::now();
-        let span = emit_dispatch("react", Some("researcher"), Some("research"), start).unwrap();
+        let span = emit_dispatch(
+            "gateway",
+            "react",
+            Some("researcher"),
+            Some("research"),
+            start,
+        )
+        .unwrap();
         assert_eq!(span.action, "loop.dispatch");
         let meta = &span.metadata;
         assert_eq!(meta["expert.selected"], "react");
@@ -140,7 +149,7 @@ mod tests {
     #[test]
     fn emit_dispatch_defaults_unspecified_for_none() {
         let start = Instant::now();
-        let span = emit_dispatch("build", None, None, start).unwrap();
+        let span = emit_dispatch("gateway", "build", None, None, start).unwrap();
         let meta = &span.metadata;
         assert_eq!(meta["loop.role"], "unspecified");
         assert_eq!(meta["loop.phase"], "unspecified");
