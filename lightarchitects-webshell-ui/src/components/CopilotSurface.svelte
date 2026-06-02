@@ -39,6 +39,24 @@
 
   const SIBLING_LIST = ['soul', 'eva', 'corso', 'quantum', 'seraph', 'ayin', 'laex'] as const;
 
+  const SIBLING_DISPLAY: Record<string, string> = {
+    soul: 'SOUL', eva: 'EVA', corso: 'CORSO', quantum: 'QUANTUM',
+    seraph: 'SERAPH', ayin: 'AYIN', laex: 'LÆX',
+  };
+  const SIBLING_DOMAINS: Record<string, string> = {
+    soul: 'KNOWLEDGE', eva: 'DEVOPS', corso: 'BUILD',
+    quantum: 'RESEARCH', seraph: 'SECURITY', ayin: 'OBSERVE', laex: 'CANON',
+  };
+
+  const LABEL_MODES = ['both', 'codename', 'domain'] as const;
+  type LabelMode = typeof LABEL_MODES[number];
+  let labelMode = $state<LabelMode>('both');
+  const MODE_LABEL: Record<LabelMode, string> = { both: 'ID·ROLE', codename: 'ID', domain: 'ROLE' };
+  function cycleMode() {
+    const i = LABEL_MODES.indexOf(labelMode);
+    labelMode = LABEL_MODES[(i + 1) % LABEL_MODES.length];
+  }
+
   function siblingStatus(id: string): 'online' | 'degraded' | 'offline' | 'unconfigured' {
     return health[id as SiblingId]?.status ?? 'unconfigured';
   }
@@ -569,15 +587,31 @@
             class:focused
             class:online={status === 'online'}
             class:offline={status === 'offline' || status === 'unconfigured'}
+            class:chip-both={labelMode === 'both'}
             style="--sc: {siblingColor(sid)}"
             onclick={() => focusedSiblingId = focused ? null : sid as SiblingId}
-            title="{sid} · {status}"
+            title="{SIBLING_DISPLAY[sid]} · {SIBLING_DOMAINS[sid]} · {status}"
           >
             <span class="sc-dot"></span>
-            <span class="sc-label">{sid.toUpperCase()}</span>
+            <span class="sc-label">
+              {#if labelMode === 'both'}
+                <span class="sc-name">{SIBLING_DISPLAY[sid]}</span>
+                <span class="sc-domain">{SIBLING_DOMAINS[sid]}</span>
+              {:else if labelMode === 'codename'}
+                {SIBLING_DISPLAY[sid]}
+              {:else}
+                {SIBLING_DOMAINS[sid]}
+              {/if}
+            </span>
             <span class="sc-status">{status === 'online' ? '●' : '○'}</span>
           </button>
         {/each}
+        <button
+          class="sibling-chip mode-toggle"
+          onclick={cycleMode}
+          title="Switch label mode — current: {MODE_LABEL[labelMode]}"
+          aria-label="Toggle label mode"
+        >⇄ {MODE_LABEL[labelMode]}</button>
       </div>
     </aside>
 
@@ -965,8 +999,27 @@
   }
   .sibling-chip.offline .sc-dot { background: var(--cs-muted); box-shadow: none; }
 
-  .sc-label { flex: 1; }
+  .sc-label {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    line-height: 1;
+  }
+  .chip-both { align-items: flex-start; padding-top: 4px; padding-bottom: 4px; }
+  .sc-name { font-size: 9px; letter-spacing: 0.12em; }
+  .sc-domain { font-size: 7px; letter-spacing: 0.06em; opacity: 0.5; font-family: var(--cs-font-mono); }
+  .chip-both .sc-dot { margin-top: 3px; }
+  .chip-both .sc-status { margin-top: 1px; }
   .sc-status { font-size: 8px; opacity: 0.5; }
+  .mode-toggle {
+    margin-left: auto;
+    border-style: dashed;
+    opacity: 0.55;
+    letter-spacing: 0.08em;
+    font-size: 8px;
+  }
+  .mode-toggle:hover { opacity: 1; color: var(--cs-gold); border-color: var(--cs-gold); }
 
   /* ── Stream panel ─────────────────────────────────────────────────────────── */
   .stream-panel {
