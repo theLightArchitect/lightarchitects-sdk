@@ -90,7 +90,7 @@ impl DomainScopeResolver {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::collections::HashMap;
 
@@ -243,5 +243,136 @@ mod tests {
         let cfg =
             DomainScopeResolver::resolve(&base_profile(), Some(&domain), LasdlcPhase::Verification);
         assert_eq!(cfg.budget_policy, BudgetPolicy::CostCapped(0.50));
+    }
+
+    // ── Registry integration tests ────────────────────────────────────────────
+
+    #[test]
+    fn resolver_accepts_all_registered_profiles() {
+        use crate::agent::loops::registry::StrategyRegistry;
+
+        // Every registered profile should resolve cleanly with no domain config
+        // (global-only path) for every LASDLC phase.
+        for phase in [
+            LasdlcPhase::Research,
+            LasdlcPhase::Architecture,
+            LasdlcPhase::Implementation,
+            LasdlcPhase::Verification,
+            LasdlcPhase::Security,
+            LasdlcPhase::Operations,
+            LasdlcPhase::CloseOut,
+        ] {
+            for name in [
+                "build",
+                "secure",
+                "scrum",
+                "enrich",
+                "gate",
+                "scope_governor",
+                "react",
+                "bcra",
+                "cove",
+                "itt",
+                "reflexion",
+                "multipass",
+                "red_team",
+                "drain",
+                "ensemble",
+                "ach",
+                "critique_refine",
+                "react_with_memory",
+                "sandbox_exec",
+            ] {
+                let profile = StrategyRegistry::profile(name)
+                    .unwrap_or_else(|| panic!("profile '{name}' not registered"));
+                let cfg = DomainScopeResolver::resolve(profile, None, phase);
+                assert!(
+                    (0.0..=1.0).contains(&cfg.hitl_threshold),
+                    "profile '{name}' phase '{phase:?}' hitl_threshold out of range"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn security_role_default_produces_class_a_profile_resolvable() {
+        use crate::agent::loops::registry::StrategyRegistry;
+
+        let strategy_name = StrategyRegistry::role_to_default_strategy("security")
+            .expect("security role must have a default strategy");
+        let profile =
+            StrategyRegistry::profile(strategy_name).expect("default strategy must have a profile");
+        assert!(profile.auto_dispatchable);
+
+        // Security phase override: max HITL sensitivity
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            LasdlcPhase::Security,
+            PhaseOverride {
+                hitl_threshold: Some(0.0),
+                concurrency_class: Some(ConcurrencyClass::Singleton),
+                ..Default::default()
+            },
+        );
+        let domain = DomainScopeConfig {
+            phase_overrides: overrides,
+            ..Default::default()
+        };
+        let cfg = DomainScopeResolver::resolve(profile, Some(&domain), LasdlcPhase::Security);
+        assert!((cfg.hitl_threshold - 0.0).abs() < f64::EPSILON);
+        assert_eq!(cfg.concurrency_class, ConcurrencyClass::Singleton);
+    }
+
+    #[test]
+    fn all_roles_resolve_to_valid_config_with_strict_security_domain() {
+        use crate::agent::loops::registry::StrategyRegistry;
+
+        // A maximally-strict domain config (Singleton, HITL=0) should resolve
+        // for any role without panicking.
+        let mut overrides = HashMap::new();
+        for phase in [
+            LasdlcPhase::Research,
+            LasdlcPhase::Security,
+            LasdlcPhase::Verification,
+        ] {
+            overrides.insert(
+                phase,
+                PhaseOverride {
+                    concurrency_class: Some(ConcurrencyClass::Singleton),
+                    hitl_threshold: Some(0.0),
+                    budget_policy: Some(BudgetPolicy::StepCapped(5)),
+                },
+            );
+        }
+        let strict_domain = DomainScopeConfig {
+            budget_policy: Some(BudgetPolicy::StepCapped(50)),
+            hitl_threshold: Some(0.1),
+            concurrency_class: Some(ConcurrencyClass::Singleton),
+            phase_overrides: overrides,
+        };
+
+        for role in [
+            "engineer",
+            "quality",
+            "security",
+            "ops",
+            "researcher",
+            "testing",
+            "knowledge",
+            "gateway",
+        ] {
+            let name = StrategyRegistry::role_to_default_strategy(role)
+                .unwrap_or_else(|| panic!("role '{role}' missing default"));
+            let profile = StrategyRegistry::profile(name)
+                .unwrap_or_else(|| panic!("profile '{name}' not registered"));
+            let cfg =
+                DomainScopeResolver::resolve(profile, Some(&strict_domain), LasdlcPhase::Security);
+            assert_eq!(
+                cfg.concurrency_class,
+                ConcurrencyClass::Singleton,
+                "role '{role}': phase override should enforce Singleton"
+            );
+            assert!((cfg.hitl_threshold - 0.0).abs() < f64::EPSILON);
+        }
     }
 }
