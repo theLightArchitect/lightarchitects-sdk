@@ -31,6 +31,8 @@ pub const DOMAIN_KEYWORDS: &[(&str, &str)] = &[
     ("seraph", "exploit"),
     ("seraph", "audit"),
     ("seraph", "cve"),
+    ("seraph", "security"),
+    ("seraph", "scan"),
     // Build — CORSO domain
     ("corso", "build"),
     ("corso", "implement"),
@@ -84,6 +86,21 @@ impl Mode {
     #[must_use]
     pub fn classify(message_text: &str, roster: &ActiveRoster) -> Self {
         let lower = message_text.to_lowercase();
+
+        // Slash-command fast path: /SECURE or /SERAPH prefixes bypass keyword scan.
+        if lower.starts_with("/secure") || lower.starts_with("/seraph") {
+            return Self::Secure;
+        }
+        if lower.starts_with("/build") || lower.starts_with("/corso") {
+            return Self::Build;
+        }
+        if lower.starts_with("/scrum") || lower.starts_with("/review") {
+            return Self::Scrum;
+        }
+        if lower.starts_with("/enrich") || lower.starts_with("/eva") {
+            return Self::Enrich;
+        }
+
         let active = roster.current();
 
         let mut secure_hit = false;
@@ -245,5 +262,50 @@ mod tests {
         assert_eq!(Mode::Secure.strategy_id(), Some("secure"));
         assert_eq!(Mode::Scrum.strategy_id(), Some("scrum"));
         assert_eq!(Mode::Enrich.strategy_id(), Some("enrich"));
+    }
+
+    #[test]
+    fn classifies_secure_on_security_keyword() {
+        let r = empty_roster();
+        assert_eq!(
+            Mode::classify("run a quick security scan", &r),
+            Mode::Secure
+        );
+    }
+
+    #[test]
+    fn classifies_secure_on_scan_keyword() {
+        let r = empty_roster();
+        assert_eq!(
+            Mode::classify("scan the codebase for vulnerabilities", &r),
+            Mode::Secure
+        );
+    }
+
+    #[test]
+    fn slash_secure_prefix_routes_to_secure() {
+        let r = empty_roster();
+        assert_eq!(
+            Mode::classify("/SECURE run security scan", &r),
+            Mode::Secure
+        );
+    }
+
+    #[test]
+    fn slash_build_prefix_routes_to_build() {
+        let r = empty_roster();
+        assert_eq!(Mode::classify("/build the feature", &r), Mode::Build);
+    }
+
+    #[test]
+    fn slash_scrum_prefix_routes_to_scrum() {
+        let r = empty_roster();
+        assert_eq!(Mode::classify("/scrum this diff", &r), Mode::Scrum);
+    }
+
+    #[test]
+    fn slash_enrich_prefix_routes_to_enrich() {
+        let r = empty_roster();
+        assert_eq!(Mode::classify("/enrich today's session", &r), Mode::Enrich);
     }
 }
