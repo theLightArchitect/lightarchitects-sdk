@@ -90,7 +90,9 @@ pub mod enrich;
 pub mod ensemble;
 pub mod error;
 pub mod gate;
+pub mod helix_store;
 pub mod itt;
+pub mod llm_executor;
 pub mod meta_skill;
 pub mod multipass;
 pub mod profile;
@@ -105,6 +107,7 @@ pub mod scope;
 pub mod scope_governor;
 pub mod scrum;
 pub mod secure;
+pub mod strategy_tools;
 pub mod trace;
 
 pub use ach::{
@@ -140,6 +143,10 @@ pub use convergence::{
 pub use drain::{DrainExecutor, DrainOutput, DrainState, DrainStrategy};
 pub use enrich::EnrichStrategy;
 pub use gate::{GatePhase, GateStrategy};
+#[cfg(feature = "agent-cli")]
+pub use helix_store::HelixMemoryStore;
+#[cfg(feature = "loops-core")]
+pub use llm_executor::LlmReActExecutor;
 pub use meta_skill::{LoopOutput, LoopState, MetaSkill};
 pub use multipass::{MultiPassExecutor, MultiPassOutput, MultiPassState, MultiPassVerifyStrategy};
 pub use profile::{
@@ -156,3 +163,4 @@ pub use scope::{DomainScopeResolver, ResolvedConfig};
 pub use scope_governor::{ScopeGate, ScopeGovernorStrategy};
 pub use scrum::{ScrumMode, ScrumStrategy};
 pub use secure::SecureStrategy;
+pub use strategy_tools::{DEFAULT_ALLOWED_STRATEGIES, StrategyToolExecutor};
