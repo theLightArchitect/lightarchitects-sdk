@@ -10,6 +10,7 @@
    */
   import { authStatus } from '$lib/stores';
   import { setupComplete, step } from '$lib/setup';
+  import { authHeaders } from '$lib/auth';
 
   let s = $derived($authStatus);
   let dismissed = $state(false);
@@ -22,18 +23,41 @@
     prev = s;
   });
 
-  function resetAuth() {
-    // Clear local credentials and bounce back to setup. Setup writes a fresh
-    // token + cookie pair on completion.
+  async function resetAuth() {
+    // BUG FIX (2026-06-03): prior implementation cleared `localStorage['la.bearer']`
+    // and `localStorage['la.session']` — NEITHER KEY EXISTS. The real session state is:
+    //   - sessionStorage['la_webshell_token']  (see auth.ts SESSION_KEY)
+    //   - HttpOnly cookie `la_session`        (cleared via DELETE /api/auth/session)
+    // Old code was a no-op for actual session state; cookie persisted; UI ping-ponged.
+
+    // 1. Clear the client-side bearer token (correct key).
+    try { sessionStorage.removeItem('la_webshell_token'); } catch { /* SSR-safe */ }
+
+    // 2. Defensive: clear any stale localStorage keys from older versions.
     try {
       localStorage.removeItem('la.bearer');
       localStorage.removeItem('la.session');
+    } catch { /* localStorage may be disabled */ }
+
+    // 3. Clear the server-side HttpOnly cookie. We pass authHeaders() so this
+    //    works whether we still hold a bearer or only the cookie. The server
+    //    accepts either form per auth_logout handler in server/mod.rs.
+    try {
+      await fetch('/api/auth/session', {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: authHeaders(),
+      });
     } catch {
-      /* localStorage may be disabled — setup will recover regardless */
+      // Server unreachable — proceed with client-side cleanup; reload will
+      // surface the failure as a fresh auth prompt.
     }
+
+    // 4. Route to setup flow + force a full reload so main.ts re-runs the
+    //    bootstrap (nonce-or-token discovery) with a clean slate.
     setupComplete.set(false);
-    // 'auth' is the SetupStep that prompts for backend credentials.
     step.set('auth');
+    window.location.reload();
   }
 </script>
 

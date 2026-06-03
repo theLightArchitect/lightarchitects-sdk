@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { ayinStatus, builds, terminalConnected, authProfile, authStatus, agentTokenUsage } from '$lib/stores';
+  import { ayinStatus, builds, terminalConnected, authProfile, authStatus, agentTokenUsage, connectedProviders } from '$lib/stores';
+  import { authHeaders } from '$lib/auth';
   import { STATUS_COLORS } from '$lib/design-tokens';
   import { api } from '$lib/api';
   import type { OverallStatus } from '$lib/types';
@@ -26,9 +27,44 @@
     status === 'reconnecting' ? 'reconnecting…' :
                                 'AYIN offline'
   );
-  // Auth profile indicator
-  let profileColor = $derived($authProfile === 'anthropic' ? '#F59E0B' : $authProfile === 'lightarchitects' ? '#22C55E' : '#6366F1');
-  let profileLabel = $derived($authProfile === 'anthropic' ? 'Anthropic' : $authProfile === 'lightarchitects' ? 'CLI' : 'Ollama');
+  // Active agent backend chip — mirrors server-side AgentKind enum 1:1.
+  // NULL = unauthenticated/unknown (NEVER guess a backend).
+  // Color palette is canon-aligned (Builders Cookbook design-tokens):
+  //   anthropic           → amber  (Claude brand)
+  //   lightarchitects     → green  (Claude Code CLI default)
+  //   lightarchitects_native → teal (lÆx0 native)
+  //   codex               → magenta (OpenAI)
+  //   mistral_vibe        → orange (Mistral brand)
+  //   ollama              → indigo (legacy model-backend chip)
+  //   null                → gray   (unauthenticated)
+  let profileColor = $derived(
+    $authProfile === null                    ? '#6b7280' :  // gray — unauthenticated
+    $authProfile === 'anthropic'             ? '#F59E0B' :  // amber
+    $authProfile === 'lightarchitects'       ? '#22C55E' :  // green
+    $authProfile === 'lightarchitects_native' ? '#14B8A6' : // teal
+    $authProfile === 'codex'                 ? '#A855F7' :  // magenta
+    $authProfile === 'mistral_vibe'          ? '#FB923C' :  // mistral orange
+                                                '#6366F1'    // ollama (legacy) — indigo
+  );
+  let profileLabel = $derived(
+    $authProfile === null                    ? 'unauthenticated' :
+    $authProfile === 'anthropic'             ? 'Anthropic' :
+    $authProfile === 'lightarchitects'       ? 'Claude Code' :
+    $authProfile === 'lightarchitects_native' ? 'lÆx0 CLI' :
+    $authProfile === 'codex'                 ? 'Codex' :
+    $authProfile === 'mistral_vibe'          ? 'Mistral Vibe' :
+                                                'Ollama'
+  );
+
+  // Connected credential providers (separate from active backend kind).
+  // Source of truth is server-side `state.credential_store`; this chip surfaces
+  // it without requiring the operator to open Settings.
+  let connectedLabel = $derived(
+    $connectedProviders.length === 0
+      ? 'no providers'
+      : `${$connectedProviders.length} provider${$connectedProviders.length === 1 ? '' : 's'}: ${$connectedProviders.map(p => p[0].toUpperCase() + p.slice(1)).join(' · ')}`
+  );
+  let connectedColor = $derived($connectedProviders.length > 0 ? '#22C55E' : '#6b7280');
 
   // AYIN status subscription — live topic events replace polling-only fallback.
   let unsubscribeAyin: (() => void) | null = null;
@@ -66,14 +102,57 @@
     }
   }
 
+  // Poll /api/agent/current — single endpoint returns active backend kind +
+  // list of connected credential providers. Replaces the prior "authProfile
+  // store default = anthropic" lie with server-truth.
+  async function pollAgentCurrent() {
+    try {
+      const r = await fetch('/api/agent/current', {
+        credentials: 'same-origin',
+        headers: authHeaders(),
+      });
+      if (r.status === 401) {
+        // Definitive unauthenticated — reflect honestly. Operator sees
+        // "unauthenticated" chip rather than a stale-but-misleading provider name.
+        authProfile.set(null);
+        connectedProviders.set([]);
+        return;
+      }
+      if (!r.ok) return;  // 5xx / network glitch — keep prior state
+      const ct = r.headers.get('content-type') ?? '';
+      if (!ct.includes('application/json')) return;  // Vite SPA fallback guard
+      const { kind, connected_providers } = await r.json();
+
+      // Map server AgentKind → AuthProfile 1:1 (no collapsing — each kind has
+      // its own chip color + label per the StatusBar palette above).
+      const profile: import('$lib/types').AuthProfile | null =
+        kind === 'lightarchitects'        ? 'lightarchitects' :
+        kind === 'lightarchitects_native' ? 'lightarchitects_native' :
+        kind === 'codex'                  ? 'codex' :
+        kind === 'mistral_vibe'           ? 'mistral_vibe' :
+        kind === 'anthropic'              ? 'anthropic' :
+        kind === 'ollama'                 ? 'ollama' :
+                                            null;   // Unknown kind — stay honest
+      authProfile.set(profile);
+      connectedProviders.set(Array.isArray(connected_providers) ? connected_providers : []);
+    } catch {
+      // Network error — keep previous state; we don't downgrade to null on
+      // transient failures, only on definitive 401 above.
+    }
+  }
+
   let pollInterval: ReturnType<typeof setInterval> | undefined;
+  let agentPollInterval: ReturnType<typeof setInterval> | undefined;
   onMount(() => {
     void pollPreflight();
+    void pollAgentCurrent();
     pollInterval = setInterval(() => { void pollPreflight(); }, 30_000);
+    agentPollInterval = setInterval(() => { void pollAgentCurrent(); }, 30_000);
     unsubscribeAyin = subscribeByTopic('v1.agent.ayin.*', handleAyinEvent);
   });
   onDestroy(() => {
     clearInterval(pollInterval);
+    clearInterval(agentPollInterval);
     unsubscribeAyin?.();
   });
 </script>
@@ -113,12 +192,23 @@
 
   <div class="w-px h-3 bg-[var(--la-hair-strong)] mx-1"></div>
 
-  <!-- Auth profile indicator -->
+  <!-- Auth profile indicator (active backend kind from /api/agent/current) -->
   <div
     class="w-[7px] h-[7px] rounded-full shrink-0"
     style="background-color: {profileColor}; box-shadow: 0 0 4px {profileColor}"
+    title="Active backend: {profileLabel}"
   ></div>
   <span class="text-[11px] text-[var(--la-text-label)] font-mono leading-none">{profileLabel}</span>
+
+  <div class="w-px h-3 bg-[var(--la-hair-strong)] mx-1"></div>
+
+  <!-- Connected credential providers (live from /api/agent/current) -->
+  <div
+    class="w-[7px] h-[7px] rounded-full shrink-0"
+    style="background-color: {connectedColor}; box-shadow: 0 0 4px {connectedColor}"
+    title="{connectedLabel}"
+  ></div>
+  <span class="text-[11px] text-[var(--la-text-label)] font-mono leading-none whitespace-nowrap">{connectedLabel}</span>
 
   <div class="w-px h-3 bg-[var(--la-hair-strong)] mx-1"></div>
 

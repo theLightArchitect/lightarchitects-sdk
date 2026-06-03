@@ -410,8 +410,27 @@ export const commandPaletteOpen = writable(false);
 
 // --- Terminal ---
 export const terminalConnected = writable(false);
-export const authProfile = writable<AuthProfile>('anthropic');
+// Default: NULL means "unauthenticated / unknown" — NEVER pretend a provider
+// is active before /api/agent/current confirms one OR setup.ts hydrates a
+// persisted config. Avoids the bug where StatusBar showed "Anthropic" even
+// when no Anthropic credential was connected (just because the store default
+// happened to be 'anthropic'). Source-of-truth lives server-side; this store
+// is a local cache populated only by:
+//   1. `applyPersistedConfig()` on hydration from `/api/setup/info`
+//   2. `pollAgentCurrent()` in StatusBar (every 30 s after first paint)
+//   3. setup wizard completion via `setup.ts`
+// Components must handle `null` as "unauthenticated" and render appropriately.
+export const authProfile = writable<AuthProfile | null>(null);
 export const ollamaConfig = writable<OllamaConfig | null>(null);
+
+/**
+ * Live list of connected credential providers, populated by StatusBar's
+ * poll of `/api/agent/current`. Empty until first successful fetch.
+ *
+ * Members are the canonical provider IDs (lowercase): `anthropic`, `openai`,
+ * `mistral`, `github`, `ollama`, `google`.
+ */
+export const connectedProviders = writable<string[]>([]);
 
 // --- Mailbox: global inter-agent messages from the platform SSE stream ---
 export interface GlobalMailboxMessage {

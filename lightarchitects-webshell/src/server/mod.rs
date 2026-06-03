@@ -728,7 +728,14 @@ impl AppState {
             session_store,
             auth_nonces: Arc::new(DashMap::new()),
             oauth_states,
-            credential_store: Arc::new(DashMap::new()),
+            credential_store: {
+                // Auto-detect existing credentials from process env + ~/.env + CWD/.env
+                // (2026-06-03 — operator directive: default state is unauthenticated unless
+                // we can detect existing API keys locally).
+                let store = Arc::new(DashMap::new());
+                crate::auth::credential::auto_detect_from_env_and_files(&store);
+                store
+            },
             global_event_store: {
                 let data_dir = std::env::var("HOME").map_or_else(
                     |_| std::path::PathBuf::from("/tmp").join("lightarchitects-webshell"),
@@ -1329,6 +1336,11 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/setup/models", get(setup::setup_models))
         .route("/api/setup/save", post(setup::setup_save))
         .route("/api/setup/reset", axum::routing::delete(setup::setup_reset))
+        // ── Active agent + connected credential aggregate (2026-06-03 webshell-auth-fix) ──
+        // Sibling of /api/setup/info; returns active backend kind + connected providers
+        // in a single request. Replaces frontend pattern of polling 6 individual
+        // /api/auth/credential/{provider}/status endpoints to populate the StatusBar chip.
+        .route("/api/agent/current", get(agent_current_handler))
         // ── Squad Comms (coordination) routes ───────────────────────────────
         .route(
             "/api/coordination/tasks",
@@ -2071,6 +2083,71 @@ async fn auth_nonce_exchange(
         }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+/// `GET /api/agent/current` — returns the active backend kind + list of connected credential providers.
+///
+/// Combines `state.active_agent` (the live `AgentSession` updated by `POST /api/setup/save`)
+/// with `state.credential_store` (the cached `CredentialState` per provider, populated by the
+/// `/api/auth/credential/{provider}/*` flows). Replaces the frontend pattern of polling 6
+/// individual `/{provider}/status` endpoints to render a persistent provider chip.
+///
+/// Authenticated via [`auth::AuthGuard`] (Bearer header **or** `la_session` cookie).
+///
+/// Response shape:
+/// ```json
+/// {
+///   "kind": "lightarchitects" | "codex" | "lightarchitects_native" | "mistral_vibe",
+///   "connected_providers": ["anthropic", "openai", "mistral"]
+/// }
+/// ```
+///
+/// The `model` field is intentionally omitted — `AgentSession` is an enum whose
+/// model identifier lives on the variant-specific config struct and would
+/// require per-variant extraction. The frontend `StatusBar` does not surface it.
+async fn agent_current_handler(
+    _: crate::auth::AuthGuard,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let agent = state.active_agent.read().await.clone();
+    let kind = match agent.kind() {
+        crate::config::AgentKind::Lightarchitects => "lightarchitects",
+        crate::config::AgentKind::Codex => "codex",
+        crate::config::AgentKind::LightarchitectsNative => "lightarchitects_native",
+        crate::config::AgentKind::MistralVibe => "mistral_vibe",
+    };
+
+    // Aggregate connected credential providers from the cache. We deliberately
+    // do NOT fall back to the keychain CLI here — keychain reads are slow
+    // (subprocess + system prompt potential) and this endpoint is polled every
+    // 30 s by the StatusBar. Cache-miss is acceptable: the per-provider
+    // `/api/auth/credential/{provider}/status` route does the slow lookup
+    // and warms the cache, so this aggregate stays fast.
+    let candidate_providers = [
+        "anthropic",
+        "openai",
+        "mistral",
+        "github",
+        "ollama",
+        "google",
+    ];
+    let mut connected: Vec<&str> = Vec::with_capacity(candidate_providers.len());
+    for provider in candidate_providers {
+        if let Some(entry) = state.credential_store.get(provider) {
+            if matches!(
+                *entry.value(),
+                crate::auth::credential::CredentialState::Connected
+            ) {
+                connected.push(provider);
+            }
+        }
+    }
+
+    axum::Json(serde_json::json!({
+        "kind": kind,
+        "connected_providers": connected,
+    }))
+    .into_response()
 }
 
 /// `GET /api/auth/status` — validates the `HttpOnly` session cookie and refreshes its TTL.

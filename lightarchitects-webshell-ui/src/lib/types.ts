@@ -782,7 +782,26 @@ export interface PillarUpdatePayload {
 
 // --- Auth profiles ---
 
-export type AuthProfile = 'anthropic' | 'ollama' | 'lightarchitects';
+/**
+ * Frontend mirror of the server-side `AgentKind` enum
+ * (`lightarchitects-webshell/src/config.rs:41`). One value per backend CLI/SDK.
+ *
+ * Display-only: drives StatusBar chip color + label. Source of truth lives
+ * server-side in `AppState.active_agent: Arc<RwLock<AgentSession>>`; the client
+ * polls `/api/agent/current` to hydrate this.
+ *
+ * The legacy `'ollama'` value is retained for backward compatibility with the
+ * model-backend chip used by older Claude Code CLI sessions configured to route
+ * through Ollama (see `setup.ts::applyPersistedConfig`). Modern setups should
+ * route through one of the four canonical AgentKinds.
+ */
+export type AuthProfile =
+  | 'anthropic'               // Claude API direct
+  | 'lightarchitects'         // Claude Code CLI → lightarchitects gateway
+  | 'lightarchitects_native'  // lÆx0 native CLI (`lightarchitects-cli`)
+  | 'codex'                   // OpenAI Codex CLI
+  | 'mistral_vibe'            // Mistral Vibe CLI (ACP bridge: `vibe-acp`)
+  | 'ollama';                 // Legacy: Ollama-backed chat model
 
 export interface OllamaConfig {
   baseUrl: string;
