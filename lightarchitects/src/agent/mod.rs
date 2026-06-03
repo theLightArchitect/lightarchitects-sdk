@@ -73,9 +73,9 @@ pub use bash_policy::{BashPolicy, BashPolicyDecision};
 pub mod gatekeeper;
 #[cfg(feature = "gatekeepers")]
 pub use gatekeeper::{
-    AssemblerConfig, AssemblyError, BaselineRef, CanonRef, Citation, Criteria, CriteriaAssembler,
-    CriteriaSource, Draft, DraftKind, GateDimension, GateError, Gatekeeper, HelixSnapshotId,
-    PlanRef, PrecedentRef, QualityGatekeeper, Severity, Verdict, VerdictStatus,
+    AssemblerConfig, AssemblyError, BaselineRef, CanonGatekeeper, CanonRef, Citation, Criteria,
+    CriteriaAssembler, CriteriaSource, Draft, DraftKind, GateDimension, GateError, Gatekeeper,
+    HelixSnapshotId, PlanRef, PrecedentRef, QualityGatekeeper, Severity, Verdict, VerdictStatus,
 };
 
 /// L2 conversation session — structured turn management, memory, transport.
@@ -164,6 +164,11 @@ pub use ollama_cloud_provider::{
     CodingProviderError, DEFAULT_CODING_MODEL, OLLAMA_TASK_TIMEOUT_DEFAULT_S,
     OllamaCloudCodingProvider, TaskOutcome,
 };
+
+/// LASDLC plan parser — extracts phase/wave/task structure from validated plans.
+/// Two-path extraction: YAML `phase_set:` in frontmatter, or Markdown `### Phase N` headers.
+pub mod plan_parser;
+pub use plan_parser::{LasdlcPlanParser, ParsedPlan, ParserError, PlanPhase, PlanWave};
 
 /// Skill utilities — SKILL.md parsing, agentskills.io export, registry helpers.
 pub mod skills;

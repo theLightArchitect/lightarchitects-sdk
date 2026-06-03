@@ -40,6 +40,7 @@
 //! - `standards/research/agent-loop-patterns-catalogue.md`
 
 pub mod assembler;
+pub mod canon;
 pub mod quality;
 pub mod trait_def;
 pub mod types;
@@ -52,4 +53,5 @@ pub use types::{
 };
 
 pub use assembler::{AssemblerConfig, AssemblyError, CriteriaAssembler, CriteriaSource};
+pub use canon::CanonGatekeeper;
 pub use quality::QualityGatekeeper;
