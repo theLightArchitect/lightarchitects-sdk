@@ -39,6 +39,7 @@
 //! - Anthropic 2024 "Building Effective Agents" — Evaluator-Optimizer workflow
 //! - `standards/research/agent-loop-patterns-catalogue.md`
 
+pub mod assembler;
 pub mod quality;
 pub mod trait_def;
 pub mod types;
@@ -50,4 +51,5 @@ pub use types::{
     VerdictStatus,
 };
 
+pub use assembler::{AssemblerConfig, AssemblyError, CriteriaAssembler, CriteriaSource};
 pub use quality::QualityGatekeeper;

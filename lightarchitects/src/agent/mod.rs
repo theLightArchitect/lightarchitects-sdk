@@ -73,9 +73,9 @@ pub use bash_policy::{BashPolicy, BashPolicyDecision};
 pub mod gatekeeper;
 #[cfg(feature = "gatekeepers")]
 pub use gatekeeper::{
-    BaselineRef, CanonRef, Citation, Criteria, Draft, DraftKind, GateDimension, GateError,
-    Gatekeeper, HelixSnapshotId, PlanRef, PrecedentRef, QualityGatekeeper, Severity, Verdict,
-    VerdictStatus,
+    AssemblerConfig, AssemblyError, BaselineRef, CanonRef, Citation, Criteria, CriteriaAssembler,
+    CriteriaSource, Draft, DraftKind, GateDimension, GateError, Gatekeeper, HelixSnapshotId,
+    PlanRef, PrecedentRef, QualityGatekeeper, Severity, Verdict, VerdictStatus,
 };
 
 /// L2 conversation session — structured turn management, memory, transport.
