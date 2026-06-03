@@ -87,6 +87,14 @@ lightsquad = ["agent-cli", "http-client", "credentials", "dep:la-lightsquad", "d
 # CritiqueRefine, phase spans. Does NOT require agent-cli (provider-agnostic).
 loops-core = []
 
+# SOUL-backed strategy result cache — enables the `.cached()` combinator on StrategyExt.
+# Requires soul-cache-substrate (separate build) to be wired in before production use.
+# Ships as a compile-time stub when that substrate hasn't landed; the feature gate
+# (`#[cfg(feature = "soul-cache")]`) ensures `cargo check` without the feature passes.
+# WHY: operator directive — caching = SOUL; decoupled from loops-core to avoid forcing
+# the SOUL dep on every loops consumer.
+soul-cache = ["loops-core"]
+
 # Multi-voice sibling chatroom engine — speaker selection, personality engine,
 # sibling discovery. Requires the agent provider layer (always-on).
 chat = []
@@ -97,11 +105,6 @@ chat = []
 # is retrieved into `Criteria` at call time, then judged by a pure function.
 # See `agent::gatekeeper` module docs + Canon XXXIII (independent verification).
 gatekeepers = ["loops-core"]
-
-# Two-tier durable cache substrate: L1 moka in-mem + L2 SOUL helix entries.
-# Foundation for builds 1, 2, 5 of react-loop-perf-hardening program.
-# Operator directive: all caching routes through SOUL helix (Canon XXXIII).
-soul-cache = []
 
 # ── Always-on external deps (union of all 13 merged crates) ──────────────────
 

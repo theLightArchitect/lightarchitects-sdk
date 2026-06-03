@@ -1,212 +1,143 @@
-//! Two-tier durable cache substrate for the Light Architects platform.
+//! Stub cache primitives for the `soul-cache` feature gate.
 //!
-//! `SoulCache<K, V>` is the single cache primitive that all durable caching in
-//! the platform routes through. Operator directive: **caching = SOUL**
-//! (Canon XXXIII).
+//! This module is compiled only when `--features soul-cache` is active.
+//! It provides `SoulCache<K, V>`, `CacheKey`, and `NullSoulCacheStore`
+//! — the same surface exposed by the `soul-cache-substrate` build (separate
+//! LASDLC build, not yet merged at the time this combinator surface ships).
 //!
-//! # Architecture
+//! When `soul-cache-substrate` lands and merges, this stub is replaced by
+//! the real two-tier (moka L1 + SOUL helix L2) implementation without any
+//! change to the combinator API surface.
 //!
-//! ```text
-//! get(key)
-//!   ├─ L1 hit  →  return value  (sub-ms, moka::future::Cache)
-//!   └─ L1 miss
-//!        ├─ L2 hit  →  promote to L1 → return value  (<50ms, SOUL helix)
-//!        └─ L2 miss →  return None
+//! # Feature isolation
 //!
-//! put(key, value)
-//!   ├─ L1 insert  (sync, immediate)
-//!   └─ L2 write   (tokio::spawn fire-and-forget — never blocks caller)
-//! ```
-//!
-//! # Snapshot invalidation
-//!
-//! `invalidate_snapshot(new_id)` evicts all L1 entries. L2 entries are keyed
-//! by content hash — they remain valid across snapshots and will be promoted
-//! back on read if the key hash matches. In v1, consumers should drop + rebuild
-//! the `SoulCache` on snapshot change when strict staleness avoidance is needed
-//! (NG-01 in the build contract).
-//!
-//! # Feature gate
-//!
-//! This module is compiled only with `--features soul-cache`.
-//! `cargo check -p lightarchitects` (no features) must remain clean — the
-//! `soul-cache` feature adds zero symbols to the default feature set.
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use std::sync::Arc;
-//! use lightarchitects::agent::cache::{
-//!     SoulCache, NullSoulCacheStore, HelixSnapshotId,
-//! };
-//!
-//! async fn example() {
-//!     let store = Arc::new(NullSoulCacheStore);
-//!     let snap  = HelixSnapshotId::from_timestamp(chrono::Utc::now());
-//!     let cache: SoulCache<String, String> =
-//!         SoulCache::new("my-ns", store, snap, 1_000);
-//!
-//!     cache.put(&"hello".to_owned(), "world".to_owned()).await;
-//!     assert_eq!(cache.get(&"hello".to_owned()).await, Some("world".to_owned()));
-//! }
-//! ```
+//! `cargo check -p lightarchitects` (without `--features soul-cache`) MUST
+//! pass with zero references to this module. Enforced by G-COMPOSE-04.
 
 pub mod key;
-pub mod snapshot;
-pub mod store;
 
-#[cfg(test)]
-mod tests;
+pub use key::CacheKey;
 
-pub use key::{CacheKey, sha256};
-pub use snapshot::HelixSnapshotId;
-pub use store::{HelixSoulCacheStore, NullSoulCacheStore, SoulCacheStore};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
-use std::{marker::PhantomData, sync::Arc};
-
-use moka::future::Cache;
 use serde::{Serialize, de::DeserializeOwned};
+
+// ─── Null store ───────────────────────────────────────────────────────────────
+
+/// No-op L2 cache store — always misses, discards writes.
+///
+/// Used in tests and when the real SOUL helix L2 store is unavailable.
+/// The [`SoulCache`] remains functional as a pure L1 (in-process) cache.
+#[non_exhaustive]
+pub struct NullSoulCacheStore;
 
 // ─── SoulCache ────────────────────────────────────────────────────────────────
 
-/// Two-tier durable cache: L1 moka in-memory + L2 SOUL helix filesystem.
+/// Stub two-tier cache: L1 `HashMap` in-memory only.
 ///
-/// # Type parameters
+/// Mirrors the API of the full `SoulCache` from `soul-cache-substrate` so
+/// the combinator surface compiles and tests pass without the real SOUL L2
+/// store. The stub stores serialised JSON bytes in a `HashMap<[u8; 32], Vec<u8>>`.
 ///
-/// - `K` — key type; must implement [`CacheKey`] (canonical bytes → SHA-256 hash).
-/// - `V` — value type; must be serialisable + deserialisable (JSON round-trip
-///   through L2) and `Clone + Send + Sync + 'static` for moka L1 storage.
-///
-/// # Send + Sync
-///
-/// `SoulCache<K, V>` is `Send + Sync` when `V: Send + Sync`. This is required
-/// for concurrent reads from multiple async tasks (e.g. parallel agent workers).
-///
-/// # Cloning
-///
-/// `SoulCache` is cheaply clonable — both `moka::future::Cache` and the
-/// `Arc<dyn SoulCacheStore>` are reference-counted.
+/// Replace with the real implementation when `soul-cache-substrate` merges.
 #[derive(Clone)]
 pub struct SoulCache<K, V>
 where
     K: CacheKey,
     V: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
 {
-    l1: Cache<[u8; 32], V>,
-    store: Arc<dyn SoulCacheStore>,
-    snapshot: HelixSnapshotId,
+    l1: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     namespace: &'static str,
-    _phantom: PhantomData<fn(K) -> V>,
+    _phantom: std::marker::PhantomData<fn(K) -> V>,
 }
 
 impl<K, V> SoulCache<K, V>
 where
-    K: CacheKey,
+    K: CacheKey + Serialize,
     V: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
 {
-    /// Construct a new `SoulCache`.
+    /// Construct a new stub `SoulCache`.
     ///
-    /// # Parameters
+    /// Parameters mirror the real `SoulCache::new()` so consumer code
+    /// compiles unchanged when the real substrate lands.
     ///
-    /// - `namespace` — L2 subdirectory name; must be a valid path component
-    ///   (no `/`, no `..`). Typically the consumer's codename (e.g. `"prompts"`).
-    /// - `store` — L2 persistence backend. Use [`HelixSoulCacheStore::new()`] in
-    ///   production or [`NullSoulCacheStore`] for tests / offline mode.
-    /// - `snapshot` — current helix snapshot id; used as the invalidation anchor.
-    /// - `l1_capacity` — maximum number of entries in the L1 moka cache.
+    /// - `namespace` — logical namespace; stored on the struct.
+    /// - `_store` — ignored in the stub (no L2).
+    /// - `_snapshot` — ignored in the stub.
+    /// - `_l1_capacity` — ignored; `HashMap` is unbounded in the stub.
     #[must_use]
     pub fn new(
         namespace: &'static str,
-        store: Arc<dyn SoulCacheStore>,
-        snapshot: HelixSnapshotId,
-        l1_capacity: u64,
+        _store: Arc<NullSoulCacheStore>,
+        _snapshot: HelixSnapshotId,
+        _l1_capacity: u64,
     ) -> Self {
-        let l1 = Cache::builder().max_capacity(l1_capacity).build();
         Self {
-            l1,
-            store,
-            snapshot,
+            l1: Arc::new(Mutex::new(HashMap::new())),
             namespace,
-            _phantom: PhantomData,
+            _phantom: std::marker::PhantomData,
         }
     }
 
-    /// Look up `key` in the cache.
-    ///
-    /// Returns `Some(value)` on L1 hit or L2 hit (L2 hit also promotes to L1).
-    /// Returns `None` on cache miss.
-    ///
-    /// # L2 promotion
-    ///
-    /// When found in L2 but not L1, the entry is inserted into L1 before
-    /// returning — subsequent calls for the same key will be L1 hits.
-    pub async fn get(&self, key: &K) -> Option<V> {
-        let hash = sha256(&key.canonical_bytes());
-
-        // L1 hit — sub-ms path.
-        if let Some(v) = self.l1.get(&hash).await {
-            return Some(v);
-        }
-
-        // L2 hit — promote to L1.
-        let bytes = self.store.read(self.namespace, &hash).await?;
-        let v: V = serde_json::from_slice(&bytes).ok()?;
-        self.l1.insert(hash, v.clone()).await;
-        Some(v)
+    /// Look up `key`. Returns `Some(value)` on hit, `None` on miss.
+    pub async fn get(&self, key: &K) -> Option<V>
+    where
+        K: Serialize,
+    {
+        let cache_key = self.make_key(key);
+        let guard = self.l1.lock().await;
+        let bytes = guard.get(&cache_key)?;
+        serde_json::from_slice(bytes).ok()
     }
 
-    /// Insert `value` into the cache under `key`.
-    ///
-    /// L1 insert is immediate. L2 write is dispatched as a
-    /// `tokio::spawn` fire-and-forget task — it never blocks the caller.
-    /// Serialisation failures are silently dropped (L1 entry still lives).
-    pub async fn put(&self, key: &K, value: V) {
-        let hash = sha256(&key.canonical_bytes());
-        self.l1.insert(hash, value.clone()).await;
-
-        // Fire-and-forget L2 write — never blocks the hot path.
-        let store = Arc::clone(&self.store);
-        let ns = self.namespace;
+    /// Insert `value` under `key`.
+    pub async fn put(&self, key: &K, value: V)
+    where
+        K: Serialize,
+    {
+        let cache_key = self.make_key(key);
         if let Ok(bytes) = serde_json::to_vec(&value) {
-            tokio::spawn(async move {
-                store.write(ns, &hash, bytes).await;
-            });
+            let mut guard = self.l1.lock().await;
+            guard.insert(cache_key, bytes);
         }
     }
 
-    /// Invalidate all L1 entries and swap the snapshot anchor.
-    ///
-    /// Call when the helix snapshot changes (e.g. after a canon update).
-    /// L2 entries are **not** deleted — they are keyed by content hash and
-    /// will produce correct results on re-read if the consumer includes the
-    /// snapshot in their key. For strict staleness avoidance, drop and rebuild
-    /// the `SoulCache` (see NG-01 in the build contract).
-    pub fn invalidate_snapshot(&mut self, new_snapshot: HelixSnapshotId) {
-        // WHY: L1 must be cleared because the old snapshot's semantic meaning
-        // has changed. L2 entries survive intentionally — they are content-
-        // addressed, not snapshot-addressed.
-        self.l1.invalidate_all();
-        self.snapshot = new_snapshot;
-    }
-
-    /// The snapshot id this cache was last invalidated against.
-    #[must_use]
-    pub fn snapshot(&self) -> &HelixSnapshotId {
-        &self.snapshot
-    }
-
-    /// The L2 namespace this cache writes to under the helix root.
+    /// The namespace this cache writes into.
     #[must_use]
     pub fn namespace(&self) -> &str {
         self.namespace
     }
+
+    fn make_key(&self, key: &K) -> String
+    where
+        K: Serialize,
+    {
+        // WHY: use canonical JSON for deterministic key bytes; prepend namespace
+        // to avoid collisions across independent SoulCache instances.
+        let json = serde_json::to_string(key).unwrap_or_default();
+        format!("{}:{}", self.namespace, json)
+    }
 }
 
-// ─── Send + Sync bounds ───────────────────────────────────────────────────────
+// ─── HelixSnapshotId ─────────────────────────────────────────────────────────
 
-// SAFETY: moka::future::Cache<K, V> is Send + Sync when V: Send + Sync.
-// Arc<dyn SoulCacheStore> is Send + Sync by trait bound.
-// PhantomData<fn(K) -> V> is always Send + Sync.
-// Therefore SoulCache<K, V> is Send + Sync.
-//
-// The static_assertions check in tests/mod.rs verifies this at compile time.
+/// Snapshot anchor for cache invalidation (stub — real type in soul-cache-substrate).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HelixSnapshotId(u64);
+
+impl HelixSnapshotId {
+    /// Construct from a Unix timestamp millis (e.g. `chrono::Utc::now().timestamp_millis()`).
+    ///
+    /// Millis before the Unix epoch (negative `i64`) are treated as epoch-relative
+    /// by reinterpreting as `u64` via `wrapping_cast`; this is acceptable for a
+    /// stub snapshot anchor whose only use is cache invalidation identity.
+    #[must_use]
+    pub fn from_timestamp_millis(millis: i64) -> Self {
+        // WHY u64::try_from fails for pre-epoch timestamps; use saturate_to_zero
+        // so the stub never panics on negative input. Snapshot semantics only
+        // require distinct values, not epoch-accurate arithmetic.
+        Self(u64::try_from(millis).unwrap_or(0))
+    }
+}

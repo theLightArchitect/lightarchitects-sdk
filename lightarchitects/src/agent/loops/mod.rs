@@ -115,7 +115,9 @@ pub use ach::{
     HypothesisTest, Prediction, TestResult, TestType,
 };
 pub use budget::Budget;
-pub use compose::{Layered, Parallel, Race, Then};
+#[cfg(feature = "soul-cache")]
+pub use compose::Cached;
+pub use compose::{Layered, Parallel, Race, StrategyExt, Then, ThenState, WithFallback};
 pub use cove::{
     ClaimCategory, CoVeExecutor, CoVePhase, CoVeResult, CoVeState, CoVeStrategy,
     VerificationStatus, VerifiedClaim,
