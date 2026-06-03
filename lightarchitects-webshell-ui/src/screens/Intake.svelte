@@ -688,13 +688,13 @@
 
         <!-- Repository path -->
         <div>
-          <h2 class="text-xs font-medium text-[var(--la-text-label)] mb-3">REPOSITORY</h2>
+          <h2 class="text-xs font-medium text-[var(--la-text-label)] mb-3">PLAN / REPOSITORY NAME</h2>
           <div class="flex gap-2">
             <input
               type="text"
               value={form.repoPath}
               oninput={(e) => { intakeForm.update(f => ({ ...f, repoPath: (e.target as HTMLInputElement).value })); }}
-              placeholder="org/repo or local path"
+              placeholder="e.g. corso-sbom-and-signing  (plan codename)  —or—  TheLightArchitects/lightarchitects-sdk  (org/repo)"
               class="flex-1 bg-[var(--la-bg-elev-1)] border border-[var(--la-hair-strong)] rounded px-3 py-2 text-sm text-[var(--la-text-bright)] placeholder-[var(--la-text-dim)] outline-none focus:border-[var(--la-focus-ring)]"
             />
             <button

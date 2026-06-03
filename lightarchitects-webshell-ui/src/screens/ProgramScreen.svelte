@@ -141,7 +141,7 @@
         method: 'POST',
         headers: { ...authHeaders(), 'content-type': 'application/json' },
         body: JSON.stringify({
-          kind: 'ironclaw_hitl_resolution',
+          command: 'ironclaw_hitl_resolution',
           escalation_nonce: nonce,
           approved,
           operator_reason: null,
