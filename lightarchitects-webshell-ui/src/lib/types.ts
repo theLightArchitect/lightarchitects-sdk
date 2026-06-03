@@ -323,7 +323,9 @@ export type EventType =
   | 'question_prompt'
   | 'question_answered'
   // ── webshell-agent-comms-display: Agents Playbook §3.5 attestation ───────
-  | 'impl_complete';
+  | 'impl_complete'
+  // ── webshell-a2a-supervisor-visibility: A2A envelope events ──────────────
+  | 'a2a_envelope';
 
 // --- Agent protocol (native agent bridge) ---
 
@@ -1517,3 +1519,27 @@ export interface ContainerPolicyPatch {
  */
 export const PHASE_2_DISCLOSURE =
   'Available in Phase 2. This option requires additional configuration and is not yet enabled.';
+
+// ── webshell-a2a-supervisor-visibility ────────────────────────────────────────
+
+/**
+ * Wire representation of A2aEnvelopeType from Rust serde.
+ * Unit variants serialise as plain strings; struct variants as `{name:{fields}}`.
+ */
+export type A2aEnvelopeTypeWire =
+  | 'task_start'
+  | { task_complete: { success: boolean } }
+  | 'task_escalated'
+  | 'wave_complete';
+
+/** SSE event emitted for each A2A envelope crossing the supervisor. */
+export interface A2aEnvelopeEvent {
+  type: 'a2a_envelope';
+  codename: string;
+  task_id: string;
+  phase: number;
+  wave: number;
+  envelope_type: A2aEnvelopeTypeWire;
+  payload_summary: string;
+  timestamp: string;
+}

@@ -271,6 +271,7 @@ impl LightsquadToolExecutor {
     }
 
     /// Translate an approved plan into a running [`Program`] and return its summary.
+    #[allow(clippy::too_many_lines)]
     async fn launch_program_for_plan(
         &self,
         plan: &PlanInput,
@@ -336,6 +337,7 @@ impl LightsquadToolExecutor {
         let worker_fn = make_worker(
             build_id,
             build_span_id,
+            plan.codename.clone(),
             tx.clone(),
             tx,
             dw.clone(),

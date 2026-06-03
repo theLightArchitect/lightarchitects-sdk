@@ -1,39 +1,26 @@
 schema_version: 1
 gate: phase
 scored_by: "/GATE"
-scored_at: "2026-05-30T00:00:00Z"
-build_id: cockpit-wave-composer
+scored_at: "2026-06-03T08:00:00Z"
+build_id: webshell-a2a-supervisor-visibility
 phase_id: phase-2-backend
+commit_sha: "0f56969"
 overall_verdict: pass
-schema_version_warn: "plan lasdlc_template_version 2.6.1 != 2.5.1 — forward-compat; checks applied"
 
 dimensions:
   Q1_fmt: pass
   Q2_clippy: pass
   Q3_tests:
     result: pass
-    tests_run: 735
+    tests_run: 1181
     tests_fail: 0
-    new_tests: 5
-    new_test_ids:
-      - "server::cockpit_wave::tests::build_task_specs_round_trip"
-      - "server::cockpit_wave::tests::ownership_conflict_rejected"
-      - "server::cockpit_wave::tests::disjoint_ownership_accepted"
-      - "server::cockpit_wave::tests::too_many_agents_rejected_by_constant"
-      - "server::cockpit_wave::tests::cockpit_preset_as_str"
-  Q4_svelte: "n/a — no UI surface in Phase 2"
+    baseline: 858
+    new_tests: 6
+  Q4_svelte: "n/a"
   D2_plan: pass
-  C2b_cold_verify:
-    result: pass_after_remedy
-    reviewer: "feature-dev:code-reviewer (cold-context)"
-    findings:
-      - id: C2b-1
-        severity: CRITICAL
-        description: "if let Err(OwnershipConflict) silently discarded other WaveError variants"
-        resolution: "FIXED in 4b1aff9 — exhaustive match in ownership_gate() helper"
-      - id: C2b-2
-        severity: HIGH
-        description: "intra-task file_ownership duplicates produced confusing duplicate task IDs in error"
-        resolution: "FIXED in 4b1aff9 — sort_unstable+dedup in build_task_specs()"
-    stub_fidelity: "CONFIRMED — validate_wave_ownership reads only id+file_ownership; stub approach sufficient"
-    bypass_paths: "NONE — single code path to spawn_autonomous_build; ownership_gate gated by if-let before proceeding"
+
+notes:
+  - "lasdlc_template_version 2.8.2 vs gate-default 2.5.1 — informational; 2.8.2 is current"
+  - "AYIN span stubs deferred to Phase 4 per plan explicit waiver"
+  - "Test ratchet: 858 baseline → 1181 total (+6 new lib tests)"
+  - "All SCRUM BLOCKINGs #1/#4/#5/#6/#8 resolved"

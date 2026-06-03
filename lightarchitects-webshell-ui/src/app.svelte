@@ -84,6 +84,7 @@
     Tools:           () => import('./screens/Tools.svelte'),
     AutonomousBuilds: () => import('./screens/AutonomousBuilds.svelte'),
     Chat:            () => import('./screens/Chat.svelte'),
+    Supervision:     () => import('./screens/ProgramScreen.svelte'),
   };
 
   type ScreenModule = { default: any };

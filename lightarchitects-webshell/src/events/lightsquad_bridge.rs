@@ -51,6 +51,7 @@ use crate::{
             await_worker_exit, reap_worker, scan_staged_diff_for_secrets, spawn_worker_container,
         },
     },
+    copilot::supervisor::sanitize_for_prompt,
     server::AppState,
 };
 
@@ -80,13 +81,43 @@ pub(crate) fn emit_squad_span(
     span_id
 }
 
+/// Emit a `WebEvent::A2aEnvelope` to the SSE broadcast channel.
+///
+/// `payload_summary` is pre-sanitized by the caller via `sanitize_for_prompt`
+/// (Security Guardrails §3.4 + Platform Canon XIV). This function never
+/// receives raw worker output.
+fn emit_a2a_envelope(
+    tx: &broadcast::Sender<WebEventV2>,
+    build_id: Uuid,
+    codename: &str,
+    task_id: &str,
+    wave_index: usize,
+    envelope_type: A2aEnvelopeType,
+    payload_summary: String,
+) {
+    let event = WebEventV2::from_event(
+        WebEvent::A2aEnvelope(A2aEnvelopeEvent {
+            codename: codename.to_owned(),
+            task_id: task_id.to_owned(),
+            phase: 0, // phase not tracked at wave level; BuildSequencer will set this in a later build
+            wave: u32::try_from(wave_index).unwrap_or(0),
+            envelope_type,
+            payload_summary,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        }),
+        Some(build_id),
+    );
+    let _ = tx.send(event);
+}
+
 use crate::events::{
     WebEventV2,
     builds_handler::TaskSpec,
     decisions::DecisionsWriter,
     types::{
-        BudgetExhaustedEvent, ConductorTickEvent, EventSource, GateEvalEvent, GateVerdictKind,
-        IronclawHitlEscalationEvent, MergeAgentStatusEvent, WebEvent, WorkerSlotGaugeEvent,
+        A2aEnvelopeEvent, A2aEnvelopeType, BudgetExhaustedEvent, ConductorTickEvent, EventSource,
+        GateEvalEvent, GateVerdictKind, IronclawHitlEscalationEvent, MergeAgentStatusEvent,
+        WebEvent, WorkerSlotGaugeEvent,
     },
 };
 
@@ -235,6 +266,7 @@ async fn run_build(ctx: BridgeContext) {
     let worker_fn = make_worker(
         build_id,
         build_span_id,
+        codename.clone(),
         tx_slot,
         tx_merge,
         dw_worker,
@@ -402,6 +434,8 @@ async fn run_build(ctx: BridgeContext) {
 /// Captured context for a single worker invocation.
 struct WorkerCtx {
     build_id: Uuid,
+    /// LASDLC build codename — forwarded to A2a envelope events for frontend keying.
+    codename: String,
     /// AYIN disk-file ID of this task's `squad.task.started` span.
     /// Sub-spans (`ollama_call`, `cargo_check`, escalation) set this as parent.
     task_span_id: Uuid,
@@ -432,6 +466,7 @@ struct WorkerCtx {
 pub(crate) fn make_worker(
     build_id: Uuid,
     build_span_id: Uuid,
+    codename: String,
     tx_slot: broadcast::Sender<WebEventV2>,
     tx_merge: broadcast::Sender<WebEventV2>,
     dw: DecisionsWriter,
@@ -455,6 +490,15 @@ pub(crate) fn make_worker(
         let file_ownership = spec.task.file_ownership.clone();
         // AYIN: per-task span; parent = root build span.
         debug!(task_id = %task_id, wave_index, "squad: task started");
+        emit_a2a_envelope(
+            &tx_slot,
+            build_id,
+            &codename,
+            &task_id,
+            wave_index,
+            A2aEnvelopeType::TaskStart,
+            sanitize_for_prompt(&prompt),
+        );
         let task_span_id = emit_squad_span(
             "squad.task.started",
             serde_json::json!({"task_id": &task_id, "wave_index": wave_index}),
@@ -524,6 +568,7 @@ pub(crate) fn make_worker(
         let bearer_token_for_task = app_state.config.token.clone();
         let ctx = WorkerCtx {
             build_id,
+            codename: codename.clone(),
             task_span_id,
             wave_index,
             tx_slot: tx_slot.clone(),
@@ -722,6 +767,7 @@ async fn escalate_to_hitl(
     build_id: Uuid,
     task_span_id: Uuid,
     wave_index: usize,
+    codename: &str,
     hitl_queue: &crate::events::hitl_relay::HitlQueue,
     tx_slot: &broadcast::Sender<WebEventV2>,
     dw: &DecisionsWriter,
@@ -745,6 +791,15 @@ async fn escalate_to_hitl(
 
         PipelineResult::UserEscalation { reason, .. } => {
             warn!(task_id = %task_id, reason = %reason, wave_index, "squad: task escalated to HITL");
+            emit_a2a_envelope(
+                tx_slot,
+                build_id,
+                codename,
+                task_id,
+                wave_index,
+                A2aEnvelopeType::TaskEscalated,
+                sanitize_for_prompt(&reason),
+            );
             emit_squad_span(
                 "squad.task.escalation",
                 serde_json::json!({"task_id": task_id, "reason": &reason}),
@@ -827,6 +882,7 @@ async fn worker_body(
 ) -> Result<(), String> {
     let WorkerCtx {
         build_id,
+        codename,
         task_span_id,
         wave_index,
         tx_slot,
@@ -930,6 +986,7 @@ async fn worker_body(
                                 build_id,
                                 task_span_id,
                                 wave_index,
+                                &codename,
                                 &hitl_queue,
                                 &tx_slot,
                                 &dw,
@@ -962,6 +1019,7 @@ async fn worker_body(
                                 build_id,
                                 task_span_id,
                                 wave_index,
+                                &codename,
                                 &hitl_queue,
                                 &tx_slot,
                                 &dw,
@@ -1017,6 +1075,7 @@ async fn worker_body(
                             build_id,
                             task_span_id,
                             wave_index,
+                            &codename,
                             &hitl_queue,
                             &tx_slot,
                             &dw,
@@ -1060,6 +1119,7 @@ async fn worker_body(
                         build_id,
                         task_span_id,
                         wave_index,
+                        &codename,
                         &hitl_queue,
                         &tx_slot,
                         &dw,
@@ -1071,6 +1131,15 @@ async fn worker_body(
     }
 
     debug!(task_id = %task_id, wave_index, "squad: task completed");
+    emit_a2a_envelope(
+        &tx_slot,
+        build_id,
+        &codename,
+        &task_id,
+        wave_index,
+        A2aEnvelopeType::TaskComplete { success: true },
+        sanitize_for_prompt(&prompt),
+    );
     emit_squad_span(
         "squad.task.completed",
         serde_json::json!({"task_id": &task_id, "wave_index": wave_index}),

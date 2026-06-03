@@ -22,7 +22,8 @@ export type ScreenKey =
   | 'AutonomousBuilds' // ironclaw autonomous build panel
   | 'Chat'            // Polished LiteLLM streaming chat panel
   | 'Security'        // Container spawn policy + isolation controls
-  | 'Program';        // Alpha/public readiness program manifest
+  | 'Program'         // Alpha/public readiness program manifest
+  | 'Supervision';    // A2A supervisor envelope feed (webshell-a2a-supervisor-visibility)
 
 export interface RouteMatch {
   screen: ScreenKey;
@@ -102,6 +103,7 @@ const ROUTES: RouteEntry[] = [
   [/^\/arch$/,                                                              'Architecture',  []],
   [/^\/roadmap$/,                                                           'Roadmap',       []],
   [/^\/program$/,                                                           'Program',       []],
+  [/^\/supervision$/,                                                       'Supervision',   []],
   [/^\/observability$/,                                                     'Observability', []],
   [/^\/security$/,                                                          'Security',      []],
   [/^\/ayin$/,                                                              'Observability', []],

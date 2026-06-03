@@ -15,16 +15,17 @@
 
 use lightarchitects::fleet::FleetSnapshot;
 use lightarchitects_webshell::events::types::{
-    AyinStatus, BudgetExhaustedEvent, BudgetWarningEvent, ConductorTickEvent, EscalationEvent,
-    FixAgentIterationEvent, GateEvalEvent, GateVerdictKind, HitlResolution,
-    IronclawHitlEscalationEvent, IronclawHitlResolutionEvent, MergeAgentStatusEvent,
-    ProjectUpdateKind, ProjectUpdatePayload, QuestionAnsweredEvent, QuestionHeadlessPolicy,
-    QuestionItem, QuestionOptionItem, QuestionPromptEvent, WebEvent, WorkerSlotGaugeEvent,
+    A2aEnvelopeEvent, A2aEnvelopeType, AyinStatus, BudgetExhaustedEvent, BudgetWarningEvent,
+    ConductorTickEvent, EscalationEvent, FixAgentIterationEvent, GateEvalEvent, GateVerdictKind,
+    HitlResolution, IronclawHitlEscalationEvent, IronclawHitlResolutionEvent,
+    MergeAgentStatusEvent, ProjectUpdateKind, ProjectUpdatePayload, QuestionAnsweredEvent,
+    QuestionHeadlessPolicy, QuestionItem, QuestionOptionItem, QuestionPromptEvent, WebEvent,
+    WorkerSlotGaugeEvent,
 };
 
 /// Total expected `WebEvent` variant count.  Update alongside the §1.2 table
 /// in `webshell-api-surface-v1.md` whenever variants are added or removed.
-const EXPECTED_VARIANT_COUNT: usize = 33;
+const EXPECTED_VARIANT_COUNT: usize = 34;
 
 /// Exhaustive match acting as a compiler-enforced variant count ratchet.
 ///
@@ -75,6 +76,8 @@ fn all_variants_matched(event: &WebEvent) {
         WebEvent::ImplComplete(_) => {}
         // ── webshell-program-and-comms-wiring (gate resolution) ──────────────
         WebEvent::GateResolution(_) => {}
+        // ── webshell-a2a-supervisor-visibility ────────────────────────────────
+        WebEvent::A2aEnvelope(_) => {}
     }
 }
 
@@ -209,9 +212,20 @@ fn web_event_variant_count_matches_canon_doc() {
     });
     all_variants_matched(&gate_resolution);
 
+    let a2a_envelope = WebEvent::A2aEnvelope(A2aEnvelopeEvent {
+        codename: "test-build".to_owned(),
+        task_id: "task-1".to_owned(),
+        phase: 0,
+        wave: 0,
+        envelope_type: A2aEnvelopeType::TaskStart,
+        payload_summary: "test task".to_owned(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+    });
+    all_variants_matched(&a2a_envelope);
+
     assert_eq!(
-        EXPECTED_VARIANT_COUNT, 33,
-        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (33)"
+        EXPECTED_VARIANT_COUNT, 34,
+        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (34)"
     );
 }
 
@@ -263,6 +277,18 @@ fn all_ironclaw_variants_have_type_tag() {
                 worker_slot: 2,
                 iteration: 1,
                 issue_summary: "clippy warning".to_owned(),
+            }),
+        ),
+        (
+            "a2a_envelope",
+            WebEvent::A2aEnvelope(A2aEnvelopeEvent {
+                codename: "test-build".to_owned(),
+                task_id: "task-1".to_owned(),
+                phase: 0,
+                wave: 0,
+                envelope_type: A2aEnvelopeType::TaskStart,
+                payload_summary: "starting task".to_owned(),
+                timestamp: "2026-01-01T00:00:00Z".to_owned(),
             }),
         ),
     ];
