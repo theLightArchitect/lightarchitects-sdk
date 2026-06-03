@@ -1227,3 +1227,10 @@ export const copilotSurfaceOpen = writable<boolean>(false);
  *   'codex'  — Fork to Codex CLI (`codex exec resume <id>`).
  */
 export const selectedTui = writable<'la' | 'claude' | 'codex'>('la');
+
+/** Whether Auto Mode is active — autonomous program dispatch without per-step HITL. */
+export const autoModeActive = writable<boolean>(false);
+
+/** Timestamp (ms) when the operator last confirmed Auto Mode intent.
+ *  `null` = not confirmed this session. Re-confirm required after 1 hour of idle. */
+export const autoModeConfirmedAt = writable<number | null>(null);

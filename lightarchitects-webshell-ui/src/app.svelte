@@ -26,6 +26,7 @@
   import ScanLines from './components/atmosphere/ScanLines.svelte';
   import ProjectPicker from './components/ProjectPicker.svelte';
   import ActiveBuildsChip from './components/ActiveBuildsChip.svelte';
+  import AutoModeChip from './components/AutoModeChip.svelte';
   import GlobalEventsOverlay from './components/GlobalEventsOverlay.svelte';
   import StatsTopbar from './components/StatsTopbar.svelte';
   import {
@@ -527,6 +528,7 @@
           {/if}
 
           <ActiveBuildsChip />
+          <AutoModeChip />
 
           <!-- Events → opens StreamDrawer on EVT tab -->
           <Tooltip content="Live events feed — opens in the right stream panel (E)" side="bottom">
