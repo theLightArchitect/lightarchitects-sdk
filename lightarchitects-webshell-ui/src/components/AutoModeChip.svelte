@@ -54,7 +54,7 @@ session and after 1 hour of idle. Keyboard: Alt-A.
   class:chip--active={$autoModeActive}
   onclick={handleToggle}
   title="{$autoModeActive ? 'Auto Mode on — Alt-A or click to disable' : 'Auto Mode off — Alt-A or click to enable'}"
-  aria-pressed={$autoModeActive}
+  aria-pressed={$autoModeActive ? 'true' : 'false'}
   data-testid="auto-mode-chip"
 >
   <span class="chip-dot" class:chip-dot--pulse={$autoModeActive} aria-hidden="true"></span>
@@ -74,7 +74,7 @@ session and after 1 hour of idle. Keyboard: Alt-A.
       </p>
       <div class="confirm-actions">
         <button class="btn-cancel" onclick={handleCancel}>Cancel</button>
-        <button class="btn-confirm" onclick={handleConfirm}>Enable</button>
+        <button class="btn-confirm" onclick={handleConfirm} autofocus>Enable</button>
       </div>
     </div>
   </div>
@@ -124,7 +124,7 @@ session and after 1 hour of idle. Keyboard: Alt-A.
   }
 
   .chip-dot--pulse {
-    box-shadow: 0 0 4px #F59E0B;
+    box-shadow: 0 0 4px currentColor;
     animation: pulse 2s ease-in-out infinite;
   }
 

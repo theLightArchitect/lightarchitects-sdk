@@ -526,20 +526,26 @@ pub async fn program_manifest_handler(
     match tokio::fs::read_to_string(&path).await {
         Ok(yaml) => match serde_yaml::from_str::<Value>(&yaml) {
             Ok(val) => Json(val).into_response(),
-            Err(e) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("program_manifest parse error: {e}"),
-            )
-                .into_response(),
+            Err(e) => {
+                tracing::warn!("program_manifest parse error: {e}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "program manifest parse error",
+                )
+                    .into_response()
+            }
         },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             (StatusCode::NOT_FOUND, "program_manifest.yaml not found").into_response()
         }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("program_manifest read error: {e}"),
-        )
-            .into_response(),
+        Err(e) => {
+            tracing::warn!("program_manifest read error: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "program manifest read error",
+            )
+                .into_response()
+        }
     }
 }
 

@@ -137,8 +137,9 @@ impl PlanToWaves {
                         &shipped_block,
                         task_text,
                     );
-                    // Scan for injection patterns; High hits recorded as gaps.
-                    let hits = shield.detect(&prompt);
+                    // Scan only the untrusted task text, not the structured preamble.
+                    // Scanning the full prompt would false-positive on "system:" in shipped_means.
+                    let hits = shield.detect(task_text);
                     for hit in &hits {
                         if hit.severity == InjectionSeverity::High {
                             gaps.push(format!(
