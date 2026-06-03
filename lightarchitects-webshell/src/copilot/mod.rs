@@ -80,6 +80,7 @@ pub mod playwright {
             .into_response()
     }
 }
+pub mod react_session;
 pub mod routes;
 pub mod soul_grounding;
 pub mod strategy_runner;

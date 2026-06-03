@@ -125,6 +125,23 @@ pub async fn copilot_chat_handler(
 
     let grounding_hdrs = grounding_headers(&identity_text, &soul_block, git_ctx.as_ref());
 
+    // ── React-loop pre-emption ──
+    // `/react <task>` routes to the conversational ReAct loop with strategies-as-tools.
+    // The LLM reasons over available strategies, dispatches them via tool_use, observes
+    // the output, and persists the exchange to HelixSessionMemory. Per SCRUM 2026-06-02:
+    // default tool allowlist excludes `gate` + `scope_governor` (OWASP LLM07).
+    if super::react_session::should_route_to_react(&body.message) {
+        tracing::info!(build_id = %id, "react-loop pre-emption: routing to ReactStrategy via Claude CLI subscription");
+        return super::react_session::dispatch_react_turn(
+            id,
+            &body.message,
+            session.cwd.clone(),
+            turn_span_id,
+            session.event_tx.clone(),
+        )
+        .await;
+    }
+
     // ── Strategy pre-emption ──
     // Slash commands (/BUILD, /SECURE, /ENRICH, /SCRUM) route directly to the
     // strategy engine instead of the LLM.  This prevents the LLM from generating

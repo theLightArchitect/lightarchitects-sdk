@@ -37,7 +37,7 @@ use serde_json::Value;
 use tokio::io::AsyncBufReadExt as _;
 use tracing::{info, warn};
 
-use super::messages_stream_parser::stream_json::parse_ndjson_line;
+use super::messages_stream_parser::stream_json::parse_ndjson_line_multi;
 use super::permissions::{CostGate, PermissionMatrix};
 use super::provider::{
     AgentRequest, AgentResponse, LlmAgentProvider, ProviderCapabilities, ProviderError,
@@ -522,24 +522,36 @@ fn ndjson_stdout_to_stream(
     stdout: tokio::process::ChildStdout,
 ) -> BoxStream<'static, ProviderEvent> {
     let lines = tokio::io::BufReader::new(stdout).lines();
-    Box::pin(stream::unfold(lines, |mut lines| async move {
-        loop {
-            match lines.next_line().await {
-                Ok(Some(line)) => match parse_ndjson_line(&line) {
-                    Ok(Some(event)) => return Some((event, lines)),
-                    Ok(None) => {}
+    // The current Claude CLI emits `assistant` envelopes that contain a
+    // complete message with multiple content blocks; one NDJSON line can fan
+    // out into several `ProviderEvent`s. Buffer the pending fan-out so the
+    // stream emits one event at a time without dropping any.
+    let state = (lines, std::collections::VecDeque::<ProviderEvent>::new());
+    Box::pin(stream::unfold(
+        state,
+        |(mut lines, mut pending)| async move {
+            loop {
+                if let Some(ev) = pending.pop_front() {
+                    return Some((ev, (lines, pending)));
+                }
+                match lines.next_line().await {
+                    Ok(Some(line)) => match parse_ndjson_line_multi(&line) {
+                        Ok(events) => {
+                            pending.extend(events);
+                        }
+                        Err(e) => {
+                            warn!(err = %e, "claude-cli NDJSON parse error; skipping line");
+                        }
+                    },
+                    Ok(None) => return None, // EOF
                     Err(e) => {
-                        warn!(err = %e, "claude-cli NDJSON parse error; skipping line");
+                        warn!(err = %e, "claude-cli stdout read error");
+                        return None;
                     }
-                },
-                Ok(None) => return None, // EOF
-                Err(e) => {
-                    warn!(err = %e, "claude-cli stdout read error");
-                    return None;
                 }
             }
-        }
-    }))
+        },
+    ))
 }
 
 /// Spawn the command and wait for it to complete within `timeout_dur`.
