@@ -1,0 +1,61 @@
+---
+title: C2 Container — auto-mode-wave-dispatch
+description: MEDIUM tier C2 container diagram. Shows the three crate/package boundaries
+             and the HTTP + SSE data flows for Auto-Mode wave dispatch.
+created: 2026-06-03
+build: auto-mode-wave-dispatch
+canon: XLI (diagram_present design input)
+---
+
+```mermaid
+C4Container
+  title Auto-Mode Wave Dispatch — C2 Container View
+
+  Person(operator, "Operator", "Uses webshell browser UI")
+
+  System_Boundary(webshell_ui, "lightarchitects-webshell-ui (Svelte/TS)") {
+    Container(app_svelte, "App.svelte", "Svelte 5", "Global header with Auto-Mode chip (Alt-A)")
+    Container(program_screen, "ProgramScreen.svelte", "Svelte 5", "Start/monitor multi-build programs")
+    Container(auto_mode_confirm, "AutoModeConfirmModal.svelte", "Svelte 5", "Session-bound operator intent gate (G6 PBGC)")
+    Container(wave_draft, "WaveDraft.svelte", "Svelte 5", "Pre-dispatch editable wave composer (draft boundary)")
+    Container(wave_live, "WaveLive.svelte", "Svelte 5", "Read-only post-dispatch wave readout")
+    Container(program_tasks, "programTasks.ts", "TypeScript", "Global task vector store Map<build_id, TaskSpecView[]>")
+    Container(stores, "stores.ts", "TypeScript", "autoMode writable with localStorage round-trip")
+  }
+
+  System_Boundary(webshell, "lightarchitects-webshell (Axum/Rust)") {
+    Container(program_routes, "program_routes.rs", "Rust/Axum", "POST /api/program/plan — reads LASDLC plans, returns ProgramBuildSpec[]")
+    Container(program_supervisor, "program_supervisor.rs", "Rust", "POST /api/program/start — dispatch pipeline (from prior build)")
+    Container(sse, "SSE broadcast", "Rust/tokio", "TaskStart, TaskComplete, ProgramDone events")
+  }
+
+  System_Boundary(la_crate, "lightarchitects crate (Rust)") {
+    Container(plan_parser, "plan_parser.rs", "Rust", "LasdlcPlanParser — two-path YAML+Markdown phase extractor")
+    Container(canon_gk, "gatekeeper/canon.rs", "Rust", "CanonGatekeeper<P> — [C] dimension, min_completeness=2")
+    Container(quality_gk, "gatekeeper/quality.rs", "Rust", "QualityGatekeeper<P> — reference impl (6c6b1f2)")
+    Container(plan_to_waves, "plan_to_waves.rs", "Rust", "PlanToWaves — Draft→CriteriaAssembler→CanonGatekeeper→TaskSpec[][]")
+    Container(shield, "indirect_injection_shield.rs", "Rust", "IndirectInjectionShield — OWASP LLM01 prompt scan")
+    Container(assembler, "gatekeeper/assembler.rs", "Rust", "CriteriaAssembler — retrieves canon + plan excerpts")
+  }
+
+  System_Ext(filesystem, "Local Filesystem", "~/.claude/plans/<codename>.md — LASDLC plan files")
+  System_Ext(helix, "SOUL Helix", "Canon docs + prior gatekeeper criteria")
+
+  Rel(operator, app_svelte, "Toggles Auto-Mode chip", "Alt-A / click")
+  Rel(app_svelte, stores, "Writes autoMode=true", "Svelte store")
+  Rel(operator, program_screen, "Enters codenames, clicks Start", "Browser")
+  Rel(program_screen, auto_mode_confirm, "Requires confirm on first dispatch per session", "Svelte conditional")
+  Rel(auto_mode_confirm, program_routes, "POST /api/program/plan {codenames}", "HTTP")
+  Rel(program_routes, plan_parser, "parse(plan_content)", "Rust function call")
+  Rel(program_routes, plan_to_waves, "PlanToWaves::run(draft, provider)", "Rust function call")
+  Rel(plan_to_waves, assembler, "assemble(criteria_sources)", "Rust")
+  Rel(plan_to_waves, canon_gk, "critique(draft, criteria)", "async Rust")
+  Rel(plan_to_waves, shield, "scan(prompt_segment)", "Rust — per TaskSpec")
+  Rel(plan_parser, filesystem, "reads plan file", "tokio::fs")
+  Rel(assembler, helix, "fetches canon excerpts", "file read")
+  Rel(program_screen, program_supervisor, "POST /api/program/start {builds[]}", "HTTP")
+  Rel(program_supervisor, sse, "broadcast TaskStart envelopes", "tokio broadcast channel")
+  Rel(sse, program_tasks, "SSE event stream", "EventSource / auto-routing")
+  Rel(program_tasks, wave_live, "read-only task chips", "Svelte reactive store")
+  Rel(program_tasks, wave_draft, "commitDraft() transition", "typed store update")
+```

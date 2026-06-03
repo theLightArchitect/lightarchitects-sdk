@@ -73,9 +73,9 @@ pub use bash_policy::{BashPolicy, BashPolicyDecision};
 pub mod gatekeeper;
 #[cfg(feature = "gatekeepers")]
 pub use gatekeeper::{
-    AssemblerConfig, AssemblyError, BaselineRef, CanonRef, Citation, Criteria, CriteriaAssembler,
-    CriteriaSource, Draft, DraftKind, GateDimension, GateError, Gatekeeper, HelixSnapshotId,
-    PlanRef, PrecedentRef, QualityGatekeeper, Severity, Verdict, VerdictStatus,
+    AssemblerConfig, AssemblyError, BaselineRef, CanonGatekeeper, CanonRef, Citation, Criteria,
+    CriteriaAssembler, CriteriaSource, Draft, DraftKind, GateDimension, GateError, Gatekeeper,
+    HelixSnapshotId, PlanRef, PrecedentRef, QualityGatekeeper, Severity, Verdict, VerdictStatus,
 };
 
 /// L2 conversation session — structured turn management, memory, transport.
@@ -164,6 +164,21 @@ pub use ollama_cloud_provider::{
     CodingProviderError, DEFAULT_CODING_MODEL, OLLAMA_TASK_TIMEOUT_DEFAULT_S,
     OllamaCloudCodingProvider, TaskOutcome,
 };
+
+/// LASDLC plan parser — extracts phase/wave/task structure from validated plans.
+/// Two-path extraction: YAML `phase_set:` in frontmatter, or Markdown `### Phase N` headers.
+pub mod plan_parser;
+pub use plan_parser::{LasdlcPlanParser, ParsedPlan, ParserError, PlanPhase, PlanWave};
+
+/// Plan-to-waves orchestrator — converts a VALIDATED LASDLC plan into a
+/// `Vec<Vec<String>>` of operator-legible task prompts via [`CanonGatekeeper`]
+/// critique + preamble injection. Gated on the `gatekeepers` feature.
+///
+/// [`CanonGatekeeper`]: crate::agent::gatekeeper::CanonGatekeeper
+#[cfg(feature = "gatekeepers")]
+pub mod plan_to_waves;
+#[cfg(feature = "gatekeepers")]
+pub use plan_to_waves::{PlanBuildSpec, PlanToWaves, PlanToWavesError, PlanToWavesResult};
 
 /// Skill utilities — SKILL.md parsing, agentskills.io export, registry helpers.
 pub mod skills;

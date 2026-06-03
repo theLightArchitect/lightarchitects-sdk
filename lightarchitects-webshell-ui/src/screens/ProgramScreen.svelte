@@ -4,6 +4,7 @@
   import { a2aFeedStore } from '$lib/a2aFeed';
   import A2aFeedPanel from '$lib/../components/A2aFeedPanel.svelte';
   import type { IronclawHitlEscalationEvent } from '$lib/types';
+  import { autoModeActive } from '$lib/stores';
 
   // ── Program manifest types ────────────────────────────────────────────────
 
@@ -111,7 +112,7 @@
       const r = await fetch('/api/program/start', {
         method: 'POST',
         headers: { ...authHeaders(), 'content-type': 'application/json' },
-        body: JSON.stringify({ codenames }),
+        body: JSON.stringify({ codenames, auto_mode: $autoModeActive }),
       });
       if (!r.ok) { startError = `HTTP ${r.status}`; return; }
       codenameInput = '';

@@ -29,6 +29,7 @@ lightarchitects = { path = "../lightarchitects", features = [
     "lightsquad",
     "loops-core",
     "agent-cli",
+    "gatekeepers",
 ] }
 arc-swap = { workspace = true }
 
