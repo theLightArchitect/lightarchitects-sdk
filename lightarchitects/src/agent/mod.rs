@@ -178,13 +178,15 @@ pub mod skills;
 /// Operator directive: all durable platform caching routes through SOUL helix
 /// (Canon XXXIII — replayability anchor via [`HelixSnapshotId`]).
 ///
+/// This stub ships ahead of `soul-cache-substrate`; when that build merges
+/// it replaces the stub without API change.
+///
 /// [`SoulCache<K, V>`]: cache::SoulCache
 /// [`CacheKey`]: cache::CacheKey
-/// [`SoulCacheStore`]: cache::SoulCacheStore
 /// [`NullSoulCacheStore`]: cache::NullSoulCacheStore
-/// [`HelixSoulCacheStore`]: cache::HelixSoulCacheStore
 /// [`HelixSnapshotId`]: cache::HelixSnapshotId
+// WHY: re-exports omitted — HelixSnapshotId conflicts with gatekeeper's
+// re-export when both features are active. Consumers use
+// `crate::agent::cache::{SoulCache, CacheKey, ...}` directly.
 #[cfg(feature = "soul-cache")]
 pub mod cache;
-#[cfg(feature = "soul-cache")]
-pub use cache::{CacheKey, HelixSoulCacheStore, NullSoulCacheStore, SoulCache, SoulCacheStore};
