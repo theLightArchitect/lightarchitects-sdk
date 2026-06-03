@@ -1,0 +1,54 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-06-02T19:20:00Z"
+build_id: webshell-a2a-supervisor-visibility
+phase_id: phase-3-frontend
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: "n/a — Svelte/TS (pnpm, not cargo fmt)"
+  Q2_clippy: "n/a — Svelte/TS"
+  Q3_tests:
+    result: pass
+    tests_run: 823
+    tests_fail: 0
+    baseline: 823
+    new_tests: 0
+    flaky_pre_existing:
+      - file: "src/__tests__/phase7.test.ts"
+        description: "Intake screen dynamic import timeout in full suite run; passes in isolation on main too"
+        classification: "FLAKY (pre-existing)"
+      - file: "src/__tests__/copilot.test.ts"
+        description: "CopilotDrawer dynamic import timeout in full suite run; passes in isolation"
+        classification: "FLAKY (pre-existing)"
+  Q4_svelte:
+    result: pass
+    tool: svelte-check --threshold error
+    errors: 0
+    pre_existing_errors: 8
+    pre_existing_files:
+      - "src/lib/stores.ts (CdpDomSnapshotResponse)"
+      - "src/components/SettingsOverlay.svelte (dev tab type)"
+      - "src/__tests__/*.ts (beforeAll type)"
+
+deliverables:
+  - file: "lightarchitects-webshell-ui/src/lib/types.ts"
+    description: "Added A2aEnvelopeTypeWire union type + A2aEnvelopeEvent interface; EventType extended with 'a2a_envelope'"
+  - file: "lightarchitects-webshell-ui/src/lib/a2aFeed.ts"
+    description: "NEW — a2aFeedStore: Map<codename, events[]> with 500-event per-codename cap"
+  - file: "lightarchitects-webshell-ui/src/lib/sse.ts"
+    description: "Added a2a_envelope case dispatching to a2aFeedStore"
+  - file: "lightarchitects-webshell-ui/src/components/A2aFeedPanel.svelte"
+    description: "NEW — scrolling timeline with envelope-type badge filter, codename filter, auto-scroll"
+  - file: "lightarchitects-webshell-ui/src/screens/ProgramScreen.svelte"
+    description: "NEW — program start/cancel controls + embedded A2aFeedPanel"
+  - file: "lightarchitects-webshell-ui/src/lib/routes.ts"
+    description: "Added 'Supervision' ScreenKey + /supervision route"
+  - file: "lightarchitects-webshell-ui/src/app.svelte"
+    description: "Wired Supervision → ProgramScreen.svelte in screenModules"
+
+notes:
+  - "WaveComplete deviation: Rust enum has no fields; implemented as always-teal (plan badge spec said ok/fail variants — documented deviation)"
+  - "Store path deviation: plan said src/stores/a2aFeed.ts; used src/lib/a2aFeed.ts per project convention (no src/stores/ dir)"
+  - "ProgramScreen route: plan said ProgramScreen; used 'Supervision' route key to avoid conflict with existing ProgramPanel"

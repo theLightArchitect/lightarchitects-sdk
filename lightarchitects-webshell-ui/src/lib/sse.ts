@@ -32,6 +32,7 @@ import type { PanelId } from './types';
 import { reconstructTopology } from './gitforest';
 import { invalidate as invalidateGitForestCache } from './gitforestCache';
 import { get, writable } from 'svelte/store';
+import { a2aFeedStore } from './a2aFeed';
 import type {
   SiblingId, Build, Finding, ConductorTask, ArenaAgent,
   HelixEntrySsePayload, SoulPromotionPayload, ContextMemo,
@@ -740,6 +741,12 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
     case 'impl_complete': {
       const payload = event as unknown as import('./types').ImplCompleteEvent;
       implCompleteEvents.update(list => [payload, ...list].slice(0, 50));
+      break;
+    }
+    // ── webshell-a2a-supervisor-visibility: A2A envelope events ──────────────
+    case 'a2a_envelope': {
+      const payload = event as unknown as import('./types').A2aEnvelopeEvent;
+      a2aFeedStore.addEvent(payload);
       break;
     }
     case 'ironclaw_hitl_escalation': {
