@@ -7,6 +7,7 @@ session and after 1 hour of idle. Keyboard: Alt-A.
 -->
 <script lang="ts">
   import { autoModeActive, autoModeConfirmedAt } from '$lib/stores';
+  import { focusTrap } from '$lib/actions/focusTrap';
 
   const RECONFIRM_MS = 3_600_000; // 1 hour
 
@@ -66,7 +67,7 @@ session and after 1 hour of idle. Keyboard: Alt-A.
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
     role="presentation"
   >
-    <div class="confirm-card" role="dialog" aria-modal="true" aria-labelledby="auto-mode-dlg-title">
+    <div class="confirm-card" role="dialog" aria-modal="true" aria-labelledby="auto-mode-dlg-title" tabindex="-1" use:focusTrap>
       <p id="auto-mode-dlg-title" class="confirm-title">Enable Auto Mode?</p>
       <p class="confirm-body">
         Autonomous program dispatch will proceed without per-step confirmation.
