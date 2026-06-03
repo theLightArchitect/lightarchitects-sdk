@@ -98,6 +98,11 @@ chat = []
 # See `agent::gatekeeper` module docs + Canon XXXIII (independent verification).
 gatekeepers = ["loops-core"]
 
+# Two-tier durable cache substrate: L1 moka in-mem + L2 SOUL helix entries.
+# Foundation for builds 1, 2, 5 of react-loop-perf-hardening program.
+# Operator directive: all caching routes through SOUL helix (Canon XXXIII).
+soul-cache = []
+
 # ── Always-on external deps (union of all 13 merged crates) ──────────────────
 
 [dependencies]
@@ -200,6 +205,11 @@ secrecy                = { workspace = true }
 # Compile-time assertions for trait bounds + auto-trait absence (used by the
 # gatekeeper module's stateless-by-construction invariant tests).
 static_assertions      = "1.1"
+
+[[bench]]
+name     = "cache_bench"
+harness  = false
+required-features = ["soul-cache"]
 
 [[bench]]
 name    = "retrieval_queries"

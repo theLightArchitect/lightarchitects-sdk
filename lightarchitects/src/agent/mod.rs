@@ -167,3 +167,24 @@ pub use ollama_cloud_provider::{
 
 /// Skill utilities — SKILL.md parsing, agentskills.io export, registry helpers.
 pub mod skills;
+
+/// Two-tier durable cache substrate: L1 moka in-memory + L2 SOUL helix entries.
+///
+/// Provides [`SoulCache<K, V>`], [`CacheKey`], [`SoulCacheStore`],
+/// [`NullSoulCacheStore`], and [`HelixSoulCacheStore`]. Foundation for builds
+/// 1 (prompt-cache), 2 (tool-result-cache), and 5 (verdict-cache) of the
+/// react-loop-perf-hardening program.
+///
+/// Operator directive: all durable platform caching routes through SOUL helix
+/// (Canon XXXIII — replayability anchor via [`HelixSnapshotId`]).
+///
+/// [`SoulCache<K, V>`]: cache::SoulCache
+/// [`CacheKey`]: cache::CacheKey
+/// [`SoulCacheStore`]: cache::SoulCacheStore
+/// [`NullSoulCacheStore`]: cache::NullSoulCacheStore
+/// [`HelixSoulCacheStore`]: cache::HelixSoulCacheStore
+/// [`HelixSnapshotId`]: cache::HelixSnapshotId
+#[cfg(feature = "soul-cache")]
+pub mod cache;
+#[cfg(feature = "soul-cache")]
+pub use cache::{CacheKey, HelixSoulCacheStore, NullSoulCacheStore, SoulCache, SoulCacheStore};
