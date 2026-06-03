@@ -55,3 +55,14 @@ impl<T: CacheKey + ?Sized> CacheKey for &T {
         (**self).canonical_bytes()
     }
 }
+
+/// SHA-256 hash of `bytes`, returning a 32-byte digest.
+///
+/// Converts [`CacheKey::canonical_bytes`] output into the fixed-width key
+/// used by `SoulCache`'s moka L1 store and `HelixSoulCacheStore` L2 paths.
+pub fn sha256(bytes: &[u8]) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(bytes);
+    h.finalize().into()
+}

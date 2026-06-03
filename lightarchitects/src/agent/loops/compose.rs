@@ -893,7 +893,9 @@ mod tests {
         use std::sync::Arc;
 
         let store = Arc::new(NullSoulCacheStore);
-        let snap = HelixSnapshotId::from_timestamp_millis(0);
+        let snap = HelixSnapshotId::from_timestamp(
+            chrono::DateTime::from_timestamp(0, 0).unwrap_or_else(chrono::Utc::now),
+        );
         let cache: SoulCache<u32, u32> = SoulCache::new("test-halt", store, snap, 100);
 
         // Strategy that increments a counter on each call so we can detect
@@ -958,7 +960,9 @@ mod tests {
         use std::sync::Arc;
 
         let store = Arc::new(NullSoulCacheStore);
-        let snap = HelixSnapshotId::from_timestamp_millis(0);
+        let snap = HelixSnapshotId::from_timestamp(
+            chrono::DateTime::from_timestamp(0, 0).unwrap_or_else(chrono::Utc::now),
+        );
         let cache: SoulCache<u32, u32> = SoulCache::new("test-continue", store, snap, 100);
 
         struct AlwaysContinue;
