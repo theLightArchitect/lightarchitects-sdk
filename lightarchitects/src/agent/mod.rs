@@ -170,6 +170,16 @@ pub use ollama_cloud_provider::{
 pub mod plan_parser;
 pub use plan_parser::{LasdlcPlanParser, ParsedPlan, ParserError, PlanPhase, PlanWave};
 
+/// Plan-to-waves orchestrator — converts a VALIDATED LASDLC plan into a
+/// `Vec<Vec<String>>` of operator-legible task prompts via [`CanonGatekeeper`]
+/// critique + preamble injection. Gated on the `gatekeepers` feature.
+///
+/// [`CanonGatekeeper`]: crate::agent::gatekeeper::CanonGatekeeper
+#[cfg(feature = "gatekeepers")]
+pub mod plan_to_waves;
+#[cfg(feature = "gatekeepers")]
+pub use plan_to_waves::{PlanBuildSpec, PlanToWaves, PlanToWavesError, PlanToWavesResult};
+
 /// Skill utilities — SKILL.md parsing, agentskills.io export, registry helpers.
 pub mod skills;
 

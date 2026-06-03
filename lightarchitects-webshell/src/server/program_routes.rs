@@ -28,6 +28,10 @@
 use std::{sync::Arc, time::Duration};
 
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
+use lightarchitects::agent::{
+    ClaudeCliProvider, IndirectInjectionShield,
+    plan_to_waves::{PlanBuildSpec, PlanToWaves, PlanToWavesError},
+};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use tokio::sync::Mutex;
@@ -115,6 +119,40 @@ pub struct ProgramStatus {
 pub struct StartProgramRequest {
     /// Ordered list of build codenames to process (max [`MAX_CODENAMES`]).
     pub codenames: Vec<String>,
+}
+
+/// A single task entry in a [`ProgramBuildSpec`] wave.
+#[derive(Debug, Serialize)]
+pub struct ProgramTaskSpec {
+    /// Unique task id derived from `{codename}-wave{W}-task{T}`.
+    pub id: String,
+    /// Operator-legible task prompt with preamble (from [`PlanToWaves`]).
+    pub prompt: String,
+}
+
+/// Per-codename wave/task matrix returned by `POST /api/program/plan`.
+#[derive(Debug, Serialize)]
+pub struct ProgramBuildSpec {
+    /// Build codename this spec was generated for.
+    pub codename: String,
+    /// Wave list — outer vec = waves, inner vec = tasks per wave.
+    pub waves: Vec<Vec<ProgramTaskSpec>>,
+}
+
+/// Request body for `POST /api/program/plan`.
+#[derive(Debug, Deserialize)]
+pub struct PlanProgramRequest {
+    /// Ordered list of build codenames (max [`MAX_CODENAMES`]).
+    pub codenames: Vec<String>,
+}
+
+/// Response body for `POST /api/program/plan`.
+#[derive(Debug, Serialize)]
+pub struct PlanProgramResponse {
+    /// Wave/task matrix for each requested codename.
+    pub builds: Vec<ProgramBuildSpec>,
+    /// Non-fatal warnings (injection scan hits, empty phases, etc.).
+    pub warnings: Vec<String>,
 }
 
 // ── Handlers ───────────────────────────────────────────────────────────────
@@ -216,6 +254,152 @@ pub async fn cancel_program_handler(
         }
     }
     StatusCode::NO_CONTENT
+}
+
+/// `POST /api/program/plan` — parse LASDLC plan files and emit a wave/task matrix.
+///
+/// Reads `~/.claude/plans/<codename>.md` for each requested codename, runs
+/// [`PlanToWaves`] to produce operator-legible task prompts, and returns the
+/// result without starting a program run.  Callers may use the response to
+/// preview the generated plan or pass the `waves` directly to
+/// `POST /api/program/start`.
+///
+/// * `400` — empty list, invalid codename format, or too many codenames.
+/// * `404` — plan file not found for one of the requested codenames.
+/// * `422` — plan file exists but fails LASDLC structural validation.
+/// * `502` — canon gatekeeper provider error.
+/// * `200` — wave/task matrix plus any non-fatal `warnings`.
+#[allow(clippy::missing_errors_doc)]
+pub async fn plan_program_handler(
+    _: auth::AuthGuard,
+    State(_state): State<AppState>,
+    Json(req): Json<PlanProgramRequest>,
+) -> impl IntoResponse {
+    // Validate request.
+    if req.codenames.is_empty() {
+        return (StatusCode::BAD_REQUEST, "codenames must not be empty").into_response();
+    }
+    if req.codenames.len() > MAX_CODENAMES {
+        return (
+            StatusCode::BAD_REQUEST,
+            format!("at most {MAX_CODENAMES} codenames per program"),
+        )
+            .into_response();
+    }
+    for cn in &req.codenames {
+        if !is_valid_codename(cn) {
+            return (
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "invalid codename '{cn}': only [a-zA-Z0-9-] allowed, max {MAX_CODENAME_LEN} chars"
+                ),
+            )
+                .into_response();
+        }
+    }
+
+    let plans_dir = match dirs_next::home_dir() {
+        Some(h) => h.join(".claude/plans"),
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "home directory unavailable",
+            )
+                .into_response();
+        }
+    };
+
+    let shield = Arc::new(IndirectInjectionShield::new());
+    let mut builds: Vec<ProgramBuildSpec> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
+
+    for codename in &req.codenames {
+        // Security: is_valid_codename() guarantees [a-zA-Z0-9-] only — no
+        // path traversal possible.  The .md extension is hardcoded here.
+        let plan_path = plans_dir.join(format!("{codename}.md"));
+
+        let content = match tokio::fs::read_to_string(&plan_path).await {
+            Ok(c) => c,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    format!("plan not found for codename '{codename}'"),
+                )
+                    .into_response();
+            }
+            Err(_) => {
+                return (StatusCode::BAD_GATEWAY, "plan file read error").into_response();
+            }
+        };
+
+        let result = PlanToWaves::run(
+            &content,
+            codename,
+            ClaudeCliProvider::default(),
+            Arc::clone(&shield),
+        )
+        .await;
+
+        let ptw_result = match result {
+            Ok(r) => r,
+            Err(PlanToWavesError::ParseError(_)) => {
+                return (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    format!("plan '{codename}' failed LASDLC structural validation"),
+                )
+                    .into_response();
+            }
+            Err(PlanToWavesError::GateError(_)) => {
+                return (StatusCode::BAD_GATEWAY, "canon gatekeeper provider error")
+                    .into_response();
+            }
+        };
+
+        // Collect non-fatal gaps as warnings.
+        warnings.extend(ptw_result.gaps);
+
+        // Convert PlanBuildSpec → ProgramBuildSpec.
+        builds.push(plan_build_spec_to_program(
+            ptw_result
+                .builds
+                .into_iter()
+                .next()
+                .unwrap_or(PlanBuildSpec {
+                    codename: codename.clone(),
+                    waves: Vec::new(),
+                }),
+        ));
+    }
+
+    Json(PlanProgramResponse { builds, warnings }).into_response()
+}
+
+/// Convert [`PlanBuildSpec`] (library type) into [`ProgramBuildSpec`] (route type).
+fn plan_build_spec_to_program(spec: PlanBuildSpec) -> ProgramBuildSpec {
+    let waves = spec
+        .waves
+        .into_iter()
+        .enumerate()
+        .map(|(wave_idx, tasks)| {
+            tasks
+                .into_iter()
+                .enumerate()
+                .map(|(task_idx, prompt)| ProgramTaskSpec {
+                    id: format!(
+                        "{}-wave{}-task{}",
+                        spec.codename,
+                        wave_idx + 1,
+                        task_idx + 1
+                    ),
+                    prompt,
+                })
+                .collect()
+        })
+        .collect();
+    ProgramBuildSpec {
+        codename: spec.codename,
+        waves,
+    }
 }
 
 // ── Background task ────────────────────────────────────────────────────────

@@ -1435,6 +1435,10 @@ pub fn build_app(state: AppState) -> Router {
             "/api/program/cancel",
             post(program_routes::cancel_program_handler),
         )
+        .route(
+            "/api/program/plan",
+            post(program_routes::plan_program_handler),
+        )
         // ── LiteLLM polished chat panel (direct streaming, bypasses subprocess) ─
         .route("/api/litellm/chat", post(litellm_chat::chat_handler))
         // ── HITL inbox — GitHub PR review queue (webshell-hitl-inbox Phase 1) ─
