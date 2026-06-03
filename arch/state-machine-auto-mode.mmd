@@ -1,0 +1,63 @@
+---
+title: State Machine — autoMode × ProgramScreen product
+description: Combined state machine for the autoMode store and ProgramScreen.
+             Shows legal transitions, guards, and side-effects.
+created: 2026-06-03
+build: auto-mode-wave-dispatch
+canon: XLI (diagram_present design input)
+---
+
+```mermaid
+stateDiagram-v2
+  [*] --> AutoModeOff : initial (localStorage=false or absent)
+
+  state "autoMode=OFF" as AutoModeOff
+  state "autoMode=ON" as AutoModeOn
+
+  AutoModeOff --> AutoModeOn : Alt-A / chip click\n[guard: none]\neffect: localStorage.setItem('la_auto_mode','true')
+  AutoModeOn --> AutoModeOff : Alt-A / chip click\neffect: localStorage.setItem('la_auto_mode','false')
+
+  state AutoModeOn {
+    [*] --> IdleOn
+
+    state "Idle (autoMode=ON)" as IdleOn
+    state "AwaitingConfirm" as Confirming
+    state "PlanningInFlight" as Planning
+    state "ProgramRunning" as Running
+    state "ConfirmExpired" as Expired
+
+    IdleOn --> Confirming : Start clicked\n[guard: codenames.length > 0]\n[first dispatch OR idle > 1h]
+    IdleOn --> Planning : Start clicked\n[guard: session confirmed within 1h]\neffect: POST /api/program/plan
+
+    Confirming --> Planning : APPROVE\neffect: sessionConfirmed=now; POST /api/program/plan
+    Confirming --> IdleOn : CANCEL (or ESC)
+
+    Planning --> Running : 200 response {builds}\neffect: POST /api/program/start with waves
+    Planning --> IdleOn : 4xx/5xx or all waves=[]\neffect: show warning toast
+
+    Running --> IdleOn : ProgramDone SSE event received
+    Running --> Running : TaskStart SSE → programTasks Map updated\nWaveLive chips render
+
+    IdleOn --> Expired : timer fires (sessionConfirmedAt + 1h < now)
+    Expired --> Confirming : Start clicked\n[guard: codenames.length > 0]
+
+    note right of Confirming
+      AutoModeConfirmModal shows:
+      - list of codenames
+      - estimated wave count
+      APPROVE → sessionConfirmedAt = Date.now()
+      ENTER key NOT bound (G6 PBGC HARD)
+    end note
+
+    note right of Running
+      programScreenActive = true (HitlModal gate)
+      terminal_window_open_count === 0 (P1 PBGC G5)
+      WaveDraft: pre-dispatch editable
+      WaveLive: read-only post-dispatch
+    end note
+  }
+
+  state "autoMode=OFF" as AutoModeOffProg
+  AutoModeOn --> AutoModeOffProg : chip toggled OFF during Running\neffect: does NOT cancel running program\n(program continues; chip is display state only)
+  AutoModeOffProg --> [*]
+```

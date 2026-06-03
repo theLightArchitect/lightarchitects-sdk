@@ -1,0 +1,77 @@
+---
+title: Sequence — Auto-Mode dispatch end-to-end
+description: Full async flow from operator toggling Auto-Mode through to TaskStart
+             SSE events reaching the frontend global task store.
+created: 2026-06-03
+build: auto-mode-wave-dispatch
+canon: XLI (diagram_present design input)
+---
+
+```mermaid
+sequenceDiagram
+  actor Operator
+  participant App as App.svelte
+  participant Confirm as AutoModeConfirmModal
+  participant PS as ProgramScreen
+  participant Backend as program_routes.rs
+  participant PTW as PlanToWaves
+  participant Parser as LasdlcPlanParser
+  participant Assembler as CriteriaAssembler
+  participant CGK as CanonGatekeeper<P>
+  participant Shield as IndirectInjectionShield
+  participant Supervisor as program_supervisor.rs
+  participant SSE as SSE broadcast
+  participant TaskStore as programTasks.ts
+
+  Operator->>App: Alt-A (or click Auto-Mode chip)
+  App->>App: autoMode.set(true) + localStorage persist
+
+  Operator->>PS: Enter codenames + click Start
+  PS->>PS: check $autoMode === true
+  PS->>Confirm: show AutoModeConfirmModal (G6 PBGC HARD)
+  Confirm->>Operator: list codenames + wave count estimate
+  Operator->>Confirm: APPROVE
+
+  Confirm->>Backend: POST /api/program/plan { codenames: ["foo", "bar"] }
+  Note over Backend: AuthGuard → is_valid_codename() each
+  loop per codename
+    Backend->>Backend: resolve ~/.claude/plans/<codename>.md (ancestor-walk CWE-22)
+    Backend->>Backend: tokio::fs::read_to_string
+    Backend->>PTW: PlanToWaves::run(content, codename, provider, shield, cancel_token)
+    PTW->>Parser: LasdlcPlanParser::parse(content)
+    alt parse OK
+      Parser-->>PTW: ParsedPlan { phases, shipped_means, ... }
+      PTW->>Assembler: assemble(CriteriaSource::BuildPlanExcerpts + CanonExcerpts)
+      Assembler-->>PTW: Criteria { entries }
+      PTW->>CGK: critique(Draft{Plan, content}, criteria)
+      CGK->>CGK: build_prompt(draft, criteria)
+      CGK-->>CGK: LLM call (temperature=0)
+      CGK-->>PTW: Verdict { status: Validated, findings }
+      loop per PlanPhase × Wave × Task
+        PTW->>Shield: scan(preamble + task_prompt)
+        alt Clean
+          Shield-->>PTW: ShieldOutcome::Clean
+          PTW->>PTW: emit TaskSpec { prompt: "[codename/Phase/Wave/Task]\nGuarantees:...\n<prompt>" }
+        else Flagged HIGH+
+          Shield-->>PTW: ShieldOutcome::Flagged
+          PTW->>PTW: skip TaskSpec; push gap warning
+        end
+      end
+      PTW-->>Backend: PlanToWavesResult { builds: [ProgramBuildSpec], gaps }
+    else parse Err (NotLasdlcCompliant etc.)
+      Parser-->>PTW: Err(reason)
+      PTW-->>Backend: PlanToWavesResult { builds: [ProgramBuildSpec{waves:[]}], gaps: [reason] }
+    end
+  end
+  Backend-->>Confirm: 200 { builds: [...], warnings: [...] }
+  Confirm->>PS: proceed with populated ProgramBuildSpec[]
+
+  PS->>Supervisor: POST /api/program/start { builds: [...] }
+  loop per build × wave × task
+    Supervisor->>SSE: broadcast TaskStart { build_id, task_id, spec }
+    SSE->>TaskStore: SSE event → programTasks.update(Map<build_id, TaskSpecView[]>)
+    TaskStore->>TaskStore: WaveLive.svelte renders read-only chips
+  end
+  Supervisor-->>PS: 200 { program_id }
+  Note over PS,TaskStore: Terminal never opened (P1 PBGC G5: terminal_window_open_count === 0)
+```

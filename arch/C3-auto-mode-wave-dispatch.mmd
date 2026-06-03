@@ -1,0 +1,114 @@
+---
+title: C3 Component — CanonGatekeeper + PlanToWaves + LasdlcPlanParser
+description: Internal component structure of the three new Rust modules.
+             Maps struct fields, trait impls, and call boundaries.
+created: 2026-06-03
+build: auto-mode-wave-dispatch
+canon: XLI (diagram_present design input)
+---
+
+```mermaid
+classDiagram
+  class LasdlcPlanParser {
+    +parse(content: &str) Result~ParsedPlan, ParserError~
+    -parse_frontmatter(content) Result~Frontmatter~
+    -extract_via_yaml(extra) Option~Vec~PlanPhase~~
+    -extract_via_markdown(content) Option~Vec~PlanPhase~~
+    -validate_version(ver: &str) Result~()~
+    -validate_status(status: &str) Result~()~
+  }
+
+  class ParsedPlan {
+    +codename: Option~String~
+    +validation_status: String
+    +template_version: String
+    +canonical_hierarchy: String
+    +phases: Vec~PlanPhase~
+    +shipped_means: Vec~String~
+    +northstar_text: Option~String~
+  }
+
+  class PlanPhase {
+    +number: u32
+    +name: String
+    +waves: Vec~PlanWave~
+  }
+
+  class PlanWave {
+    +number: u32
+    +tasks: Vec~String~
+  }
+
+  class ParserError {
+    <<enum>>
+    NotLasdlcCompliant(reason: String)
+    FrontmatterMissing
+    VersionTooOld(found: String)
+    ValidationStatusInvalid(found: String)
+    NoPhasesFound
+  }
+
+  class CanonGatekeeper~P~ {
+    -provider: P
+    -shield: Arc~IndirectInjectionShield~
+    +new(provider: P, shield: Arc~IndirectInjectionShield~) Self
+    +dimension() GateDimension
+    +version() &'static str
+    +owner() &'static str
+    +min_criteria_completeness() usize
+    +critique(draft, criteria) async Result~Verdict, GateError~
+    -build_prompt(draft, criteria) String
+    -parse_response(llm_out) Result~Vec~Finding~~
+  }
+
+  class Gatekeeper {
+    <<trait>>
+    +dimension() GateDimension
+    +version() &'static str
+    +owner() &'static str
+    +min_criteria_completeness() usize
+    +critique(draft, criteria) async Result~Verdict, GateError~
+  }
+
+  class PlanToWaves {
+    +run(plan_content, codename, provider, shield, cancel) async PlanToWavesResult
+    -assemble_criteria(parsed, sources) async Criteria
+    -map_to_task_specs(parsed, verdict) Vec~Vec~TaskSpec~~
+    -format_preamble(codename, phase, wave, task, shipped_means) String
+  }
+
+  class PlanToWavesResult {
+    +builds: Vec~ProgramBuildSpec~
+    +verdict: Verdict
+    +gaps: Vec~String~
+  }
+
+  class IndirectInjectionShield {
+    +scan(segment: &str) ShieldOutcome
+    -patterns: &'static [ShieldPattern]
+  }
+
+  class ShieldOutcome {
+    <<enum>>
+    Clean
+    Flagged(severity: Severity, pattern_id: &'static str)
+  }
+
+  LasdlcPlanParser ..> ParsedPlan : produces
+  LasdlcPlanParser ..> ParserError : produces
+  ParsedPlan *-- PlanPhase
+  PlanPhase *-- PlanWave
+
+  CanonGatekeeper~P~ ..|> Gatekeeper : implements
+  CanonGatekeeper~P~ o-- IndirectInjectionShield : Arc shared
+  CanonGatekeeper~P~ ..> GateError : produces
+
+  PlanToWaves ..> LasdlcPlanParser : calls parse()
+  PlanToWaves ..> CanonGatekeeper~P~ : calls critique()
+  PlanToWaves ..> IndirectInjectionShield : calls scan() per TaskSpec
+  PlanToWaves ..> PlanToWavesResult : produces
+
+  note for CanonGatekeeper~P~ "P: LlmAgentProvider + Send + Sync + 'static\nStateless: no &mut self, no Mutex/RwLock/Atomic\nmin_criteria_completeness = 2 (canon + plan excerpts)"
+  note for LasdlcPlanParser "Two-path strategy:\n(a) YAML phase_set in frontmatter.extra\n(b) Markdown ## N. Phase Set regex\nRejects version < 2.8.0 or status != VALIDATED"
+  note for PlanToWaves "Preamble shape:\n[codename / Phase N / wave M / task K]\nGuarantees: <shipped_means line 1>\n<shipped_means line 2>\n\n<task prompt>"
+```
