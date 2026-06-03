@@ -64,6 +64,20 @@ pub use indirect_injection_shield::{
 pub mod bash_policy;
 pub use bash_policy::{BashPolicy, BashPolicyDecision};
 
+/// Stateless gate-evaluator substrate (`[A+S+Q+C+O+P+K+D+T+R]` LASDLC dimensions).
+/// Gatekeepers are pure-function evaluators: `(draft, criteria) → Verdict`.
+/// Memory lives in canon + helix; criteria are assembled at call time; the
+/// gatekeeper instance carries no mutable state. Canon XXXIII independent
+/// verification by construction. See module docs for the full contract.
+#[cfg(feature = "gatekeepers")]
+pub mod gatekeeper;
+#[cfg(feature = "gatekeepers")]
+pub use gatekeeper::{
+    AssemblerConfig, AssemblyError, BaselineRef, CanonRef, Citation, Criteria, CriteriaAssembler,
+    CriteriaSource, Draft, DraftKind, GateDimension, GateError, Gatekeeper, HelixSnapshotId,
+    PlanRef, PrecedentRef, QualityGatekeeper, Severity, Verdict, VerdictStatus,
+};
+
 /// L2 conversation session — structured turn management, memory, transport.
 ///
 /// Promotes the gateway `AgentRunner` pattern into the SDK. Enabled by the

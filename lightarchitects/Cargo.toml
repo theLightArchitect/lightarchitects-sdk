@@ -91,6 +91,13 @@ loops-core = []
 # sibling discovery. Requires the agent provider layer (always-on).
 chat = []
 
+# Stateless gate-evaluator substrate — Gatekeeper trait + concrete impls per
+# LASDLC [A+S+Q+C+O+P+K+D+T+R] dimension. v1 ships QualityGatekeeper (CORSO-owned).
+# Pure-function evaluators: no `&mut self`, no interior mutability; precedent
+# is retrieved into `Criteria` at call time, then judged by a pure function.
+# See `agent::gatekeeper` module docs + Canon XXXIII (independent verification).
+gatekeepers = ["loops-core"]
+
 # ── Always-on external deps (union of all 13 merged crates) ──────────────────
 
 [dependencies]
@@ -190,6 +197,9 @@ futures-util   = { workspace = true }
 serde_json     = { workspace = true }
 testcontainers-modules = { version = "0.9", features = ["neo4j"] }
 secrecy                = { workspace = true }
+# Compile-time assertions for trait bounds + auto-trait absence (used by the
+# gatekeeper module's stateless-by-construction invariant tests).
+static_assertions      = "1.1"
 
 [[bench]]
 name    = "retrieval_queries"
