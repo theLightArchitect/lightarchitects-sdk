@@ -19,11 +19,13 @@
 /// | [`OpenAi`] | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
 /// | [`OpenRouter`] | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
 /// | [`LiteLLM`] | `http://localhost:4000/v1` | `LITELLM_API_KEY` |
+/// | [`Portkey`] | `https://api.portkey.ai/v1` | `PORTKEY_VIRTUAL_KEY` (+ `PORTKEY_API_KEY` account header) |
 /// | [`Generic`] | *(none — caller must supply)* | *(none)* |
 ///
 /// [`OpenAi`]: OpenAIFlavor::OpenAi
 /// [`OpenRouter`]: OpenAIFlavor::OpenRouter
 /// [`LiteLLM`]: OpenAIFlavor::LiteLLM
+/// [`Portkey`]: OpenAIFlavor::Portkey
 /// [`Generic`]: OpenAIFlavor::Generic
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OpenAIFlavor {
@@ -53,6 +55,25 @@ pub enum OpenAIFlavor {
     /// Env var: `LITELLM_API_KEY`.
     LiteLLM,
 
+    /// Portkey AI gateway (`https://api.portkey.ai/v1`).
+    ///
+    /// Portkey is a security and observability layer that sits between the SDK
+    /// and providers. Credentials (Anthropic, OpenRouter, etc.) are stored as
+    /// encrypted virtual keys inside Portkey's vault — raw provider API keys
+    /// never appear in application config or environment variables.
+    ///
+    /// Two credentials are required:
+    /// - **Virtual key** (`PORTKEY_VIRTUAL_KEY`) — the Bearer token; encrypts
+    ///   the underlying provider credential for a specific provider.
+    /// - **Account key** (`PORTKEY_API_KEY`) — authenticates the Portkey
+    ///   account; sent as `x-portkey-api-key`. Supply via
+    ///   [`OpenAICompatProvider::for_portkey`].
+    ///
+    /// Requests to normal production traffic route through `LiteLLM` (which
+    /// itself routes to Portkey). Use this variant only for direct Portkey
+    /// calls that bypass LiteLLM.
+    Portkey,
+
     /// Generic `OpenAI`-compatible endpoint. No default base URL.
     ///
     /// Use for Together AI, Groq, Fireworks, Azure `OpenAI`, Databricks,
@@ -73,6 +94,7 @@ impl OpenAIFlavor {
             Self::OpenAi => "openai",
             Self::OpenRouter => "openrouter",
             Self::LiteLLM => "litellm",
+            Self::Portkey => "portkey",
             Self::Generic => "openai-compat",
         }
     }
@@ -87,11 +109,16 @@ impl OpenAIFlavor {
             Self::OpenAi => "https://api.openai.com/v1",
             Self::OpenRouter => "https://openrouter.ai/api/v1",
             Self::LiteLLM => "http://localhost:4000/v1",
+            Self::Portkey => "https://api.portkey.ai/v1",
             Self::Generic => "",
         }
     }
 
     /// Well-known environment variable for this flavor's API key.
+    ///
+    /// For [`Self::Portkey`] this is the *virtual key* env var — the Bearer
+    /// token that carries the encrypted provider credential. The separate
+    /// Portkey account key is supplied via [`OpenAICompatProvider::for_portkey`].
     ///
     /// Returns an empty string for [`Self::Generic`] — there is no universal
     /// convention for generic endpoint credentials; callers provide the key
@@ -102,8 +129,16 @@ impl OpenAIFlavor {
             Self::OpenAi => "OPENAI_API_KEY",
             Self::OpenRouter => "OPENROUTER_API_KEY",
             Self::LiteLLM => "LITELLM_API_KEY",
+            Self::Portkey => "PORTKEY_VIRTUAL_KEY",
             Self::Generic => "",
         }
+    }
+
+    /// Returns `true` for flavors that require a Portkey account-key header
+    /// (`x-portkey-api-key`) in addition to the Bearer virtual key.
+    #[must_use]
+    pub const fn needs_portkey_headers(self) -> bool {
+        matches!(self, Self::Portkey)
     }
 
     /// Returns `true` for flavors that accept OpenRouter app-attribution

@@ -218,6 +218,7 @@ impl SupervisorProvider {
             "openai" | "openai-native" => Self::openai_compatible_from_env(OpenAIFlavor::OpenAi),
             "openrouter" => Self::openai_compatible_from_env(OpenAIFlavor::OpenRouter),
             "litellm" | "litellm-proxy" => Self::openai_compatible_from_env(OpenAIFlavor::LiteLLM),
+            "portkey" => Self::openai_compatible_from_env(OpenAIFlavor::Portkey),
             "openai-compatible" | "generic" | "vertex" | "vertex-ai" => {
                 // Vertex maps to Generic because the canonical path is via a
                 // LiteLLM/HTTP-compat endpoint; the operator supplies the base
@@ -320,6 +321,7 @@ impl SupervisorProvider {
                     OpenAIFlavor::OpenAi => "OPENAI_BASE_URL",
                     OpenAIFlavor::OpenRouter => "OPENROUTER_BASE_URL",
                     OpenAIFlavor::LiteLLM => "LITELLM_BASE_URL",
+                    OpenAIFlavor::Portkey => "PORTKEY_BASE_URL",
                     OpenAIFlavor::Generic => "LIGHTSQUAD_SUPERVISOR_BASE_URL",
                 };
                 std::env::var(provider_url_env)
@@ -1301,6 +1303,12 @@ mod tests {
                 "litellm",
                 "http://localhost:4000/v1",
                 "gemini-2.5-flash",
+            ),
+            (
+                OpenAIFlavor::Portkey,
+                "portkey",
+                "https://api.portkey.ai/v1",
+                "claude-sonnet-4-6",
             ),
             (
                 OpenAIFlavor::Generic,

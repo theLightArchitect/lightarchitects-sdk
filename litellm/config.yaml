@@ -2,28 +2,48 @@
 # All subprocess traffic routes here via ANTHROPIC_BASE_URL=http://localhost:4000.
 # Real credentials live ONLY in .env — never in this file.
 #
+# Provider routing:
+#   Anthropic (BYOK)  → Portkey AI gateway (virtual key — raw key never in env)
+#   OpenRouter        → direct (wildcard pass-through; Phase 2: migrate to Portkey)
+#   Ollama            → direct (local process, no API key)
+#   RunPod            → direct (Phase 2: add Portkey custom-host virtual key)
+#
 # Usage: docker compose up -d
 # Health: curl http://localhost:4000/health
 
 model_list:
-  # Primary engineering — Anthropic direct
+  # ── Anthropic — via Portkey virtual key ────────────────────────────────────
+  # LiteLLM uses the OpenAI-compat adapter (openai/ prefix) to POST to
+  # Portkey's /v1/chat/completions endpoint. The virtual key (Bearer token)
+  # carries the encrypted Anthropic credential; x-portkey-provider routes it.
   - model_name: claude-sonnet-4-6
     litellm_params:
-      model: anthropic/claude-sonnet-4-6
-      api_key: os.environ/ANTHROPIC_API_KEY
+      model: openai/claude-sonnet-4-6
+      api_base: https://api.portkey.ai/v1
+      api_key: os.environ/PORTKEY_VIRTUAL_KEY_ANTHROPIC
+      extra_headers:
+        x-portkey-api-key: os.environ/PORTKEY_API_KEY
+        x-portkey-provider: anthropic
 
   - model_name: claude-opus-4-7
     litellm_params:
-      model: anthropic/claude-opus-4-7
-      api_key: os.environ/ANTHROPIC_API_KEY
+      model: openai/claude-opus-4-7
+      api_base: https://api.portkey.ai/v1
+      api_key: os.environ/PORTKEY_VIRTUAL_KEY_ANTHROPIC
+      extra_headers:
+        x-portkey-api-key: os.environ/PORTKEY_API_KEY
+        x-portkey-provider: anthropic
 
   - model_name: claude-haiku-4-5
     litellm_params:
-      model: anthropic/claude-haiku-4-5-20251001
-      api_key: os.environ/ANTHROPIC_API_KEY
+      model: openai/claude-haiku-4-5-20251001
+      api_base: https://api.portkey.ai/v1
+      api_key: os.environ/PORTKEY_VIRTUAL_KEY_ANTHROPIC
+      extra_headers:
+        x-portkey-api-key: os.environ/PORTKEY_API_KEY
+        x-portkey-provider: anthropic
 
-  # OpenRouter routing target — 200+ models, cloud-level provider fallback.
-  # upstream_inference_cost field passes through for AYIN cost observability.
+  # ── OpenRouter — direct (Phase 2: migrate to Portkey virtual key) ──────────
   - model_name: openrouter/*
     litellm_params:
       model: openrouter/*
@@ -31,13 +51,13 @@ model_list:
       extra_body:
         route: "fallback"
 
-  # Ollama local inference
+  # ── Ollama local inference — no key, no Portkey ────────────────────────────
   - model_name: ollama/*
     litellm_params:
       model: ollama/*
       api_base: http://localhost:11434
 
-  # RunPod / Nemotron (training proxy — existing litellm.config.yaml pattern)
+  # ── RunPod / Nemotron — direct (Phase 2: Portkey custom-host virtual key) ──
   - model_name: claude-code-runpod
     litellm_params:
       model: openai/nemotron-super-49b-udq4kxl
@@ -50,7 +70,7 @@ model_list:
       supports_function_calling: true
       drop_params: true
 
-  # Vertex AI (enterprise lane — uncomment when GCP credentials configured)
+  # ── Vertex AI (enterprise lane — uncomment when GCP credentials configured) ─
   # - model_name: gemini-2.5-pro
   #   litellm_params:
   #     model: vertex_ai/gemini-2.5-pro

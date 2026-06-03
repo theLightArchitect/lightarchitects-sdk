@@ -2150,21 +2150,42 @@ async fn agent_current_handler(
     .into_response()
 }
 
-/// `GET /api/auth/status` — validates the `HttpOnly` session cookie and refreshes its TTL.
+/// `GET /api/auth/status` — confirms the caller is authenticated.
 ///
-/// Returns 200 with a refreshed `Set-Cookie` on success, 401 on missing or invalid cookie.
-/// Called every 30 minutes by the frontend to implement a sliding TTL.
+/// Accepts either `Authorization: Bearer <token>` **or** a valid `la_session`
+/// cookie — matches [`auth::AuthGuard`] semantics so this status probe never
+/// disagrees with the rest of the API. Returns 200 on success, 401 on
+/// missing or invalid credentials. When the caller authenticated via cookie,
+/// the response refreshes the cookie's sliding TTL via `Set-Cookie`. Bearer
+/// callers receive 200 without a `Set-Cookie` (bearer mode has no TTL to slide).
+///
+/// Called every 30 minutes by the frontend `resyncAuth()` to keep cookie
+/// sessions alive. Returning a 401 here when only a Bearer is present fires
+/// the `AuthBanner` spuriously even though the rest of the API still works.
 async fn auth_status(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let expected = &state.config.token;
+
+    // Bearer first — matches AuthGuard order so the cheap path stays cheap.
+    let bearer_ok = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|s| auth::validate_bearer(s, expected));
+    if bearer_ok {
+        // No Set-Cookie: bearer-mode callers persist via sessionStorage, not cookie.
+        return StatusCode::OK.into_response();
+    }
+
+    // Cookie path — refresh the sliding TTL on success.
     let Some(cookie_hdr) = headers.get(header::COOKIE) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
     let Ok(cookie_str) = cookie_hdr.to_str() else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
-    if !auth::validate_session_cookie(cookie_str, &state.config.token) {
+    if !auth::validate_session_cookie(cookie_str, expected) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    let cookie = auth::session_cookie_header(&state.config.token);
+    let cookie = auth::session_cookie_header(expected);
     match HeaderValue::from_str(&cookie) {
         Ok(cookie_val) => {
             tracing::debug!(target: "webshell", "Cookie session TTL refreshed");

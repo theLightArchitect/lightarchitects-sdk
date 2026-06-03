@@ -78,6 +78,9 @@ pub struct OpenAICompatProvider {
     model: String,
     /// Bearer token — zeroed on drop.
     api_key: Zeroizing<String>,
+    /// Portkey account API key — sent as `x-portkey-api-key` when
+    /// `flavor == Portkey`. Distinct from `api_key` which is the virtual key.
+    portkey_account_key: Option<Zeroizing<String>>,
     tool_executor: Arc<dyn ToolExecutor>,
     input_usd_per_m: f64,
     output_usd_per_m: f64,
@@ -90,6 +93,10 @@ impl fmt::Debug for OpenAICompatProvider {
             .field("base_url", &self.base_url)
             .field("model", &self.model)
             .field("api_key", &"<redacted>")
+            .field(
+                "portkey_account_key",
+                &self.portkey_account_key.as_ref().map(|_| "<redacted>"),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -130,6 +137,7 @@ impl OpenAICompatProvider {
             base_url: resolved_url.trim_end_matches('/').to_owned(),
             model: model.into(),
             api_key: Zeroizing::new(api_key.into()),
+            portkey_account_key: None,
             tool_executor: Arc::new(NullToolExecutor),
             input_usd_per_m: DEFAULT_INPUT_USD_PER_M,
             output_usd_per_m: DEFAULT_OUTPUT_USD_PER_M,
@@ -197,6 +205,32 @@ impl OpenAICompatProvider {
         model: impl Into<String>,
     ) -> Result<Self, String> {
         Self::with_flavor(OpenAIFlavor::LiteLLM, base_url, api_key, model)
+    }
+
+    /// Construct a Portkey-flavored provider for direct Portkey access.
+    ///
+    /// Uses `https://api.portkey.ai/v1` as the base URL. Two credentials are
+    /// required: the *virtual key* (Bearer token — encrypts the underlying
+    /// provider credential) and the *account key* (sent as `x-portkey-api-key`
+    /// to authenticate the Portkey account).
+    ///
+    /// For production traffic that routes via LiteLLM, use
+    /// [`Self::for_litellm`] instead — LiteLLM injects the Portkey headers
+    /// from its own config. This constructor is for direct Portkey calls that
+    /// bypass LiteLLM.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be built.
+    pub fn for_portkey(
+        virtual_key: impl Into<String>,
+        account_key: impl Into<String>,
+        model: impl Into<String>,
+    ) -> Result<Self, String> {
+        let mut provider =
+            Self::with_flavor(OpenAIFlavor::Portkey, None::<String>, virtual_key, model)?;
+        provider.portkey_account_key = Some(Zeroizing::new(account_key.into()));
+        Ok(provider)
     }
 
     /// Construct from environment variables.
@@ -379,6 +413,10 @@ impl LlmAgentProvider for OpenAICompatProvider {
         // Clone key into a local Zeroizing wrapper for the async block.
         let api_key_val = Zeroizing::new(self.api_key.as_str().to_owned());
         let needs_or_headers = self.flavor.needs_openrouter_headers();
+        let portkey_account = self
+            .portkey_account_key
+            .as_deref()
+            .map(|k| Zeroizing::new(k.to_owned()));
 
         let mut request_builder = self
             .client
@@ -393,6 +431,12 @@ impl LlmAgentProvider for OpenAICompatProvider {
             request_builder = request_builder
                 .header("HTTP-Referer", OPENROUTER_REFERER)
                 .header("X-Title", OPENROUTER_TITLE);
+        }
+
+        // Portkey account key — authenticates the Portkey account; distinct
+        // from the virtual key (Bearer token) which carries provider credentials.
+        if let Some(pk_key) = portkey_account {
+            request_builder = request_builder.header("x-portkey-api-key", pk_key.as_str());
         }
 
         let response = request_builder.json(&body).send().await.map_err(|e| {
