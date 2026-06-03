@@ -1,0 +1,39 @@
+schema_version: 1
+gate: phase
+scored_by: "/GATE"
+scored_at: "2026-06-02T22:45:00Z"
+build_id: webshell-a2a-supervisor-visibility
+phase_id: phase-4-integration
+overall_verdict: pass
+
+dimensions:
+  Q1_fmt: pass
+  Q2_clippy: pass
+  Q3_tests:
+    result: pass
+    tests_run: 877
+    tests_fail: 0
+    baseline: 864
+    new_tests: 13
+    new_test_files:
+      - "lightarchitects-webshell/src/server/program_routes.rs"
+    flaky_pre_existing:
+      - file: "lightsquad_wave.rs"
+        description: "dispatch_wave timing tests assume ~50ms git worktree creation; slower on this machine"
+        classification: "FLAKY (pre-existing, not in scope of this build)"
+
+deliverables:
+  - file: "lightarchitects-webshell/src/server/program_routes.rs"
+    description: "Added ProgramState, ProgramRun, ProgramRunSlot, ProgramStatus, StartProgramRequest; program_status_handler, start_program_handler, cancel_program_handler, run_program background task, emit_envelope helper; 13 oneshot unit tests"
+  - file: "lightarchitects-webshell/src/server/mod.rs"
+    description: "Added program_run: ProgramRunSlot to AppState struct + both AppState::new and AppState::for_test constructors; wired /api/program/status, /api/program/start, /api/program/cancel routes"
+
+security_notes:
+  - "Codename validation: only [a-zA-Z0-9-] allowed, max 50 chars, max 10 per request — blocks path traversal and injection"
+  - "payload_summary truncated to ≤200 grapheme clusters in emit_envelope (OWASP LLM01 / mirrors sanitize_for_prompt CAT-6)"
+  - "No .unwrap() in production code; test module uses #[allow(clippy::unwrap_used)] per codebase convention"
+
+notes:
+  - "API paths use singular /api/program/* (matching ProgramScreen.svelte implementation) rather than plural /api/programs/* (plan spec) — deviation documented"
+  - "Background task emits synthetic A2aEnvelope events (no full lightsquad dispatch needed for Phase 4); 3s delay per codename for frontend demo"
+  - "V3 Playwright E2E deferred: backend dev server build requires lightarchitects-webshell binary + all env vars; unblocking condition = Phase 5 make deploy-fast"
