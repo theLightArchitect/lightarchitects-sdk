@@ -144,7 +144,12 @@ async fn main() -> ExitCode {
 fn init_tracing() {
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info,lightarchitects_webshell=debug"));
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    tracing_subscriber::fmt()
+        .json()
+        .with_current_span(true)
+        .with_span_list(true) // AYIN session hierarchy requires span list in every JSON line
+        .with_env_filter(filter)
+        .init();
 }
 
 /// Prints a one-line preflight status banner, plus per-check detail for failures.
