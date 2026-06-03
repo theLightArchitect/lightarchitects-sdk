@@ -1,15 +1,15 @@
-//! Stub cache primitives for the `soul-cache` feature gate.
+//! Two-tier SOUL helix cache — L1 `moka` in-process, L2 SOUL helix filesystem.
 //!
-//! This module is compiled only when `--features soul-cache` is active.
-//! It provides the same public API surface as the `soul-cache-substrate`
-//! build: `SoulCache<K, V>`, `CacheKey`, `SoulCacheStore`,
-//! `NullSoulCacheStore`, `HelixSoulCacheStore`, `HelixSnapshotId`.
+//! Feature-gated behind `soul-cache`. All platform caching routes through SOUL
+//! helix per the operator directive (Canon XXXIII — replayability anchor).
 //!
-//! When `soul-cache-substrate` lands and fully merges, this stub is replaced
-//! by the real two-tier (moka L1 + SOUL helix L2) implementation without any
-//! change to the public API. The stub uses a `HashMap`-backed L1 (no moka
-//! dep) and a simple filesystem L2 (`HelixSoulCacheStore`) so integration
-//! tests can exercise the write-survive-read path without moka.
+//! | Tier | Implementation | Behaviour |
+//! |------|---------------|-----------|
+//! | L1 | `moka::future::Cache<[u8;32], V>` | Bounded async cache; LRU eviction. |
+//! | L2 | [`SoulCacheStore`] (default: [`HelixSoulCacheStore`]) | SOUL helix filesystem. |
+//!
+//! L2 writes are fire-and-forget (`tokio::spawn`): callers never block on
+//! helix I/O. L2 read-misses are silently treated as cache misses.
 //!
 //! # Feature isolation
 //!
@@ -17,128 +17,48 @@
 //! pass with zero references to this module. Enforced by G-COMPOSE-04.
 
 pub mod key;
+pub mod snapshot;
+pub mod store;
 
-pub use key::CacheKey;
+pub use key::{CacheKey, sha256};
+pub use snapshot::HelixSnapshotId;
+pub use store::{HelixSoulCacheStore, NullSoulCacheStore, SoulCacheStore};
 
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::marker::PhantomData;
+use std::sync::Arc;
 
+use moka::future::Cache;
 use serde::{Serialize, de::DeserializeOwned};
-use tokio::sync::Mutex;
 
-// ── HelixSnapshotId ───────────────────────────────────────────────────────────
+// ─── SoulCache ────────────────────────────────────────────────────────────────
 
-/// Snapshot anchor for cache invalidation.
+/// Two-tier cache: L1 [`moka`] in-process + L2 SOUL helix filesystem.
 ///
-/// Mirrors `soul-cache-substrate::agent::cache::HelixSnapshotId`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct HelixSnapshotId(u64);
-
-impl HelixSnapshotId {
-    /// Construct from a `chrono::DateTime<chrono::Utc>`.
-    ///
-    /// Uses milliseconds since epoch as the snapshot discriminant.
-    #[must_use]
-    pub fn from_timestamp(ts: chrono::DateTime<chrono::Utc>) -> Self {
-        // WHY saturating: negative millis (pre-epoch) map to 0, not panic.
-        let ms = ts.timestamp_millis();
-        Self(u64::try_from(ms).unwrap_or(0))
-    }
-
-    /// Construct from raw millis.
-    #[must_use]
-    pub fn from_timestamp_millis(millis: i64) -> Self {
-        Self(u64::try_from(millis).unwrap_or(0))
-    }
-}
-
-// ── SoulCacheStore ─────────────────────────────────────────────────────────────
-
-/// L2 persistence backend trait for `SoulCache`.
+/// # Tiers
 ///
-/// Mirrors `soul-cache-substrate::agent::cache::SoulCacheStore`.
-#[async_trait::async_trait]
-pub trait SoulCacheStore: Send + Sync + 'static {
-    /// Read serialised bytes for `(namespace, hash)`. Returns `None` on miss.
-    async fn read(&self, namespace: &str, hash: &[u8; 32]) -> Option<Vec<u8>>;
-    /// Write serialised bytes under `(namespace, hash)`.
-    async fn write(&self, namespace: &str, hash: &[u8; 32], bytes: Vec<u8>);
-}
-
-// ── NullSoulCacheStore ────────────────────────────────────────────────────────
-
-/// No-op L2 store — always misses; writes discarded.
+/// - **L1** — `moka::future::Cache<[u8;32], V>`, bounded by `l1_capacity`
+///   entries. All reads populate L1 on L2 hit.
+/// - **L2** — [`SoulCacheStore`] (default: [`HelixSoulCacheStore`]). Writes
+///   are fire-and-forget via `tokio::spawn`; errors silently dropped per the
+///   fail-closed contract.
 ///
-/// Use in tests or when SOUL helix is unavailable.
-pub struct NullSoulCacheStore;
-
-#[async_trait::async_trait]
-impl SoulCacheStore for NullSoulCacheStore {
-    async fn read(&self, _: &str, _: &[u8; 32]) -> Option<Vec<u8>> {
-        None
-    }
-
-    async fn write(&self, _: &str, _: &[u8; 32], _: Vec<u8>) {}
-}
-
-// ── HelixSoulCacheStore ───────────────────────────────────────────────────────
-
-/// Filesystem-backed L2 store — writes JSON to `root/{namespace}/{hex(hash)}`.
+/// # Snapshot invalidation
 ///
-/// This is the stub version; the real implementation in `soul-cache-substrate`
-/// uses the SOUL helix graph. The stub allows integration tests to verify the
-/// write-survive-read path without the full SOUL stack.
-pub struct HelixSoulCacheStore {
-    root: PathBuf,
-}
-
-impl HelixSoulCacheStore {
-    /// Construct with a filesystem root for L2 storage.
-    #[must_use]
-    pub fn with_root(root: PathBuf) -> Self {
-        Self { root }
-    }
-}
-
-#[async_trait::async_trait]
-impl SoulCacheStore for HelixSoulCacheStore {
-    async fn read(&self, namespace: &str, hash: &[u8; 32]) -> Option<Vec<u8>> {
-        let path = self.root.join(namespace).join(hex_encode(hash));
-        tokio::fs::read(path).await.ok()
-    }
-
-    async fn write(&self, namespace: &str, hash: &[u8; 32], bytes: Vec<u8>) {
-        let dir = self.root.join(namespace);
-        // Best-effort: ignore errors (L2 write is fire-and-forget).
-        let _ = tokio::fs::create_dir_all(&dir).await;
-        let _ = tokio::fs::write(dir.join(hex_encode(hash)), bytes).await;
-    }
-}
-
-fn hex_encode(hash: &[u8; 32]) -> String {
-    use std::fmt::Write as _;
-    hash.iter().fold(String::with_capacity(64), |mut s, b| {
-        // WHY write! not format!: avoids intermediate allocation per byte.
-        let _ = write!(s, "{b:02x}");
-        s
-    })
-}
-
-// ── SoulCache ─────────────────────────────────────────────────────────────────
-
-/// Two-tier cache: L1 `HashMap` in-memory + L2 `SoulCacheStore` backend.
-///
-/// Stub implementation — `moka` not required. API-compatible with the real
-/// `soul-cache-substrate` `SoulCache` so consumers compile without changes.
+/// Call [`SoulCache::invalidate_snapshot`] when the SOUL helix state advances.
+/// This replaces the internal L1 cache with a fresh empty instance so all
+/// subsequent reads re-hydrate from L2 (or miss).
 #[derive(Clone)]
 pub struct SoulCache<K, V>
 where
     K: CacheKey,
     V: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
 {
-    l1: Arc<Mutex<HashMap<[u8; 32], Vec<u8>>>>,
+    l1: Cache<[u8; 32], V>,
+    l1_capacity: u64,
     store: Arc<dyn SoulCacheStore>,
+    snapshot: HelixSnapshotId,
     namespace: &'static str,
-    _phantom: std::marker::PhantomData<fn(K) -> V>,
+    _phantom: PhantomData<fn(K) -> V>,
 }
 
 impl<K, V> SoulCache<K, V>
@@ -146,75 +66,85 @@ where
     K: CacheKey,
     V: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
 {
-    /// Construct a new `SoulCache`.
+    /// Construct a two-tier `SoulCache`.
     ///
-    /// - `namespace` — logical namespace / L2 subdirectory.
-    /// - `store` — L2 backend; use `NullSoulCacheStore` for tests.
-    /// - `_snapshot` — snapshot anchor (stub ignores invalidation).
-    /// - `_l1_capacity` — stub is unbounded; parameter kept for API compat.
+    /// - `namespace` — logical namespace; occupies its own subdirectory in L2.
+    /// - `store` — L2 persistence impl. Use [`HelixSoulCacheStore`] in
+    ///   production; [`NullSoulCacheStore`] in tests needing only L1 semantics.
+    /// - `snapshot` — current helix snapshot anchor.
+    /// - `l1_capacity` — maximum entries retained by the L1 moka cache.
     #[must_use]
     pub fn new(
         namespace: &'static str,
         store: Arc<dyn SoulCacheStore>,
-        _snapshot: HelixSnapshotId,
-        _l1_capacity: u64,
+        snapshot: HelixSnapshotId,
+        l1_capacity: u64,
     ) -> Self {
         Self {
-            l1: Arc::new(Mutex::new(HashMap::new())),
+            l1: Cache::new(l1_capacity),
+            l1_capacity,
             store,
+            snapshot,
             namespace,
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 
-    /// Look up `key`. Returns `Some(value)` on L1 or L2 hit.
+    /// Look up `key`.
+    ///
+    /// Returns `Some(value)` on L1 or L2 hit; `None` on full miss.
+    /// On L2 hit the value is promoted into L1 before returning.
     pub async fn get(&self, key: &K) -> Option<V> {
-        let hash = sha256_key(key);
-
-        // L1 hit.
-        {
-            let guard = self.l1.lock().await;
-            if let Some(bytes) = guard.get(&hash) {
-                return serde_json::from_slice(bytes).ok();
-            }
+        let hash = sha256(&key.canonical_bytes());
+        if let Some(v) = self.l1.get(&hash).await {
+            return Some(v);
         }
-
-        // L2 hit — promote to L1.
+        // L2 hit — deserialise + promote to L1.
         let bytes = self.store.read(self.namespace, &hash).await?;
-        let v: V = serde_json::from_slice(&bytes).ok()?;
-        {
-            let mut guard = self.l1.lock().await;
-            guard.insert(hash, bytes);
-        }
-        Some(v)
+        let value: V = serde_json::from_slice(&bytes).ok()?;
+        self.l1.insert(hash, value.clone()).await;
+        Some(value)
     }
 
-    /// Insert `value` under `key` into L1 and fire-and-forget to L2.
+    /// Insert `value` under `key`.
+    ///
+    /// L1 insert blocks until moka acknowledges the entry. L2 write is
+    /// fire-and-forget via `tokio::spawn`; failures are silently dropped.
     pub async fn put(&self, key: &K, value: V) {
-        let hash = sha256_key(key);
+        let hash = sha256(&key.canonical_bytes());
+        self.l1.insert(hash, value.clone()).await;
+        let store = Arc::clone(&self.store);
+        let ns = self.namespace;
         if let Ok(bytes) = serde_json::to_vec(&value) {
-            {
-                let mut guard = self.l1.lock().await;
-                guard.insert(hash, bytes.clone());
-            }
-            let store = Arc::clone(&self.store);
-            let ns = self.namespace;
             tokio::spawn(async move {
                 store.write(ns, &hash, bytes).await;
             });
         }
     }
 
-    /// The namespace this cache writes to.
+    /// Invalidate all L1 entries by replacing the internal cache.
+    ///
+    /// Called when the SOUL helix snapshot advances. All subsequent `get()`
+    /// calls start cold and re-hydrate from L2 (or miss if not there yet).
+    pub fn invalidate_snapshot(&mut self, snapshot: HelixSnapshotId) {
+        self.snapshot = snapshot;
+        // WHY new Cache: replace rather than invalidate_all to guarantee
+        // immediate eviction without relying on moka's async task.
+        self.l1 = Cache::new(self.l1_capacity);
+    }
+
+    /// The namespace this cache writes into.
     #[must_use]
     pub fn namespace(&self) -> &str {
         self.namespace
     }
+
+    /// The current snapshot anchor.
+    #[must_use]
+    pub fn snapshot(&self) -> &HelixSnapshotId {
+        &self.snapshot
+    }
 }
 
-fn sha256_key<K: CacheKey>(key: &K) -> [u8; 32] {
-    use sha2::{Digest, Sha256};
-    let mut h = Sha256::new();
-    h.update(key.canonical_bytes());
-    h.finalize().into()
-}
+#[cfg(test)]
+pub mod tests;
