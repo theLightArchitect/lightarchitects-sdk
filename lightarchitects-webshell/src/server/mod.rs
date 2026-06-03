@@ -478,6 +478,15 @@ pub struct AppState {
     ///
     /// [`BuildSequencer`]: crate::server::build_sequencer::BuildSequencer
     pub litellm_supervisor_semaphore: std::sync::Arc<tokio::sync::Semaphore>,
+    /// Singleton program run slot — at most one program runs at a time.
+    ///
+    /// Holds the in-flight [`program_routes::ProgramRun`] (codenames, current
+    /// index, state, cancellation token). `None` until the first
+    /// `POST /api/program/start`; replaced on each new start after the prior
+    /// run has completed or been cancelled.
+    ///
+    /// See `GET /api/program/status` and `POST /api/program/cancel`.
+    pub program_run: program_routes::ProgramRunSlot,
 }
 
 impl AppState {
@@ -794,6 +803,7 @@ impl AppState {
             ironclaw_config: IronclawConfig::from_env(),
             attestation_log: Arc::new(DashMap::new()),
             litellm_supervisor_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+            program_run: program_routes::program_run_slot(),
         }
     }
 
@@ -935,6 +945,7 @@ impl AppState {
             },
             attestation_log: Arc::new(DashMap::new()),
             litellm_supervisor_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+            program_run: program_routes::program_run_slot(),
         }
     }
 }
@@ -1398,6 +1409,19 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/api/program-manifest",
             get(program_routes::program_manifest_handler),
+        )
+        // ── A2A supervisor program routes (webshell-a2a-supervisor-visibility) ──
+        .route(
+            "/api/program/status",
+            get(program_routes::program_status_handler),
+        )
+        .route(
+            "/api/program/start",
+            post(program_routes::start_program_handler),
+        )
+        .route(
+            "/api/program/cancel",
+            post(program_routes::cancel_program_handler),
         )
         // ── LiteLLM polished chat panel (direct streaming, bypasses subprocess) ─
         .route("/api/litellm/chat", post(litellm_chat::chat_handler))
