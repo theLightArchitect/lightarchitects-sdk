@@ -110,6 +110,9 @@ tracing-subscriber.workspace = true
 # Turnlog pepper
 secrecy.workspace = true
 
+unicode-normalization = "0.1"
+unicode-segmentation = "1"
+
 uuid.workspace = true
 
 # Date formatting for helix entry path projection

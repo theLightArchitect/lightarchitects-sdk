@@ -292,6 +292,55 @@ pub enum WebEvent {
     /// conductor evaluates a LASDLC gate. The UI renders live gate badges
     /// as these events arrive on the per-build SSE channel.
     GateResolution(GateEvalEvent),
+    /// A2A supervisor envelope event for a single task lifecycle transition.
+    ///
+    /// Wire tag: `"a2a_envelope"`. Emitted at `TaskStart`, `TaskComplete`, and
+    /// `TaskEscalated` transitions in `lightsquad_bridge`. `payload_summary` is
+    /// pre-sanitized via `sanitize_for_prompt` — never raw worker output.
+    A2aEnvelope(A2aEnvelopeEvent),
+}
+
+/// Single A2A task lifecycle envelope emitted into the `GlobalEventStore`.
+///
+/// Keyed by `codename` in the frontend per-codename bounded queue (cap 500).
+/// `payload_summary` is truncated at 200 grapheme clusters (OWASP LLM01).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct A2aEnvelopeEvent {
+    /// The LASDLC build codename this task belongs to.
+    pub codename: String,
+    /// Unique task identifier from the A2A envelope.
+    pub task_id: String,
+    /// Phase index within the build (0-based).
+    pub phase: u32,
+    /// Wave index within the phase (0-based).
+    pub wave: u32,
+    /// Lifecycle transition type.
+    pub envelope_type: A2aEnvelopeType,
+    /// Sanitized summary of the task payload (≤200 grapheme clusters).
+    pub payload_summary: String,
+    /// ISO-8601 timestamp of this transition.
+    pub timestamp: String,
+}
+
+/// Lifecycle transition types for A2A supervisor task envelopes.
+///
+/// `#[non_exhaustive]` — new variants may be added; all external match arms
+/// must include a `_` catch-all.
+#[non_exhaustive]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum A2aEnvelopeType {
+    /// Task has been dispatched to a worker.
+    TaskStart,
+    /// Task completed; `success` indicates whether it passed all gates.
+    TaskComplete {
+        /// `true` if all gates passed; `false` if the task was rolled back.
+        success: bool,
+    },
+    /// Task was escalated to HITL (operator decision required).
+    TaskEscalated,
+    /// All tasks in a wave have completed.
+    WaveComplete,
 }
 
 /// Northstar evaluation result broadcast after a `WAVE_COMPLETE` event.

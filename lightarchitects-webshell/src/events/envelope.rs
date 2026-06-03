@@ -37,7 +37,7 @@ use lightarchitects::lightsquad::agent_role::AgentRole;
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::events::types::{AyinStatus, WebEvent};
+use crate::events::types::{A2aEnvelopeType, AyinStatus, WebEvent};
 
 /// UI routing classification for alert styling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -179,6 +179,14 @@ fn topic_for(event: &WebEvent) -> String {
 
         // ── webshell-program-and-comms-wiring ────────────────────────────────
         WebEvent::GateResolution(_) => "v1.conductor.gate.resolution",
+
+        // ── A2A supervisor visibility ────────────────────────────────────────
+        WebEvent::A2aEnvelope(e) => match e.envelope_type {
+            A2aEnvelopeType::TaskStart => "v1.supervisor.a2a.task_start",
+            A2aEnvelopeType::TaskComplete { .. } => "v1.supervisor.a2a.task_complete",
+            A2aEnvelopeType::TaskEscalated => "v1.supervisor.a2a.task_escalated",
+            A2aEnvelopeType::WaveComplete => "v1.supervisor.a2a.wave_complete",
+        },
     }
     .to_owned()
 }
@@ -195,6 +203,10 @@ fn severity_for(event: &WebEvent) -> Severity {
         WebEvent::GateResolution(e) => match e.verdict {
             crate::events::types::GateVerdictKind::Failed
             | crate::events::types::GateVerdictKind::Blocked => Severity::Warn,
+            _ => Severity::Info,
+        },
+        WebEvent::A2aEnvelope(e) => match e.envelope_type {
+            A2aEnvelopeType::TaskEscalated => Severity::Warn,
             _ => Severity::Info,
         },
         _ => Severity::Info,

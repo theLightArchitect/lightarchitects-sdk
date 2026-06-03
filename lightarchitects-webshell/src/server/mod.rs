@@ -55,6 +55,7 @@ use crate::{
 };
 
 pub mod attestation_routes;
+pub mod build_sequencer;
 pub mod cockpit_wave;
 pub mod code_routes;
 pub mod conductor_routes;
@@ -469,6 +470,14 @@ pub struct AppState {
             >,
         >,
     >,
+    /// Semaphore bounding concurrent `LiteLLM` supervisor calls.
+    ///
+    /// Permit count = 1: only one autonomous copilot supervisor call runs at a
+    /// time. Guards against runaway LLM parallelism when multiple builds are in
+    /// flight. The [`BuildSequencer`] acquires before each supervisor invocation.
+    ///
+    /// [`BuildSequencer`]: crate::server::build_sequencer::BuildSequencer
+    pub litellm_supervisor_semaphore: std::sync::Arc<tokio::sync::Semaphore>,
 }
 
 impl AppState {
@@ -784,6 +793,7 @@ impl AppState {
             bridge_cidr_guard: Arc::clone(&bridge_cidr_guard),
             ironclaw_config: IronclawConfig::from_env(),
             attestation_log: Arc::new(DashMap::new()),
+            litellm_supervisor_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
         }
     }
 
@@ -924,6 +934,7 @@ impl AppState {
                 warn_threshold: 0.8,
             },
             attestation_log: Arc::new(DashMap::new()),
+            litellm_supervisor_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
         }
     }
 }
