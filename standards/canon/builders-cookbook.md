@@ -7734,9 +7734,94 @@ The distinction: if the *identity* of the constant is the invariant (not its app
 
 ---
 
+## §82 — Contract Canon Integration Pattern (Universal Skill Rule) — RATIFIED 2026-06-04, Canon XV, Kevin Francis Tan
+
+**Rule.** Every slash-invokable skill MUST respect the contracts canon in its operational domain. This is the universal substrate that anchors `/PLAN`, `/BUILD`, `/GATE`, `/VERIFY`, `/SECURE`, `/DEPLOY`, `/REVIEW`, `/SCRUM`, `/XEA`, and every other lifecycle skill to a single machine-enforceable surface.
+
+### §82.1 Three contract-aware obligations per skill
+
+Each skill SKILL.md must declare and enforce:
+
+1. **Read** — the skill must read the contract kinds that govern its domain before acting:
+
+   | Skill domain | Required contract kinds to read |
+   |---|---|
+   | UI / operator-facing | `operator.surface/*` |
+   | LLM dispatch / provider switching | `provider.llm/*` + `code.trait.llm-agent-provider` |
+   | Wave dispatch / agent execution | `code.trait.runner` + `operator.surface.dispatch-*` |
+   | HTTP / route handlers | `wire.http/*` |
+   | MCP server / tool | `wire.mcp/*` + `mcp.capability/*` |
+   | Trait / code architecture | `code.trait/*` |
+   | Agent / squad routing | `agent.identity/*` + `agent.a2a/*` + `strand.activation/*` |
+   | Audit trail / persistence | `hmac_chain.audit_trail/*` |
+   | Skill orchestration itself | `agent.skill/*` |
+
+2. **Enforce** — before any state mutation, the skill must verify `forbidden_behaviors` declared in the touched contracts are not violated by the planned action. Violation = abort with the `forbidden_behavior_violation` error class.
+
+3. **Emit** — the skill must emit the `observability.required_spans` declared in its own `agent.skill` contract. Skipping span emission is a contract violation, not a "minor logging miss."
+
+### §82.2 Skill-as-contract: every slash skill MUST have an `agent.skill` contract
+
+`agent.skill/<slug>.yaml` is non-optional for any slash-invokable skill. The contract declares:
+
+- `agent_skill.slash_command` — the invocation surface (e.g., `/BUILD`)
+- `agent_skill.skill_path` — the SKILL.md location
+- `agent_skill.rejects_flags` — flags that abort with guidance
+- `agent_skill.hitl_required` — whether write-path actions need HITL
+- `agent_skill.delegates_to_agent` — primary sibling executor
+- `agent_skill.sub_skills` — other agent.skill contracts this skill delegates to
+
+A skill with no `agent.skill` contract is invisible to `/CODE-VERIFY` and `/SECURE` cross-references — and downstream skills cannot declare it as a `sub_skills` dependency.
+
+### §82.3 The five integration touchpoints
+
+Every SKILL.md must include a `## Contract Canon Integration` section answering all five:
+
+| Touchpoint | Required content |
+|---|---|
+| **Read** | Which contract kinds the skill scans + at what step |
+| **Touched-contract citation** | How the skill cites contracts it touches (e.g., `contracts_touched:` frontmatter for /PLAN, GATE_REVIEW JSONL payload for /GATE) |
+| **forbidden_behaviors enforcement** | The specific check + the error class returned on violation |
+| **required_spans emission** | The skill's own span name + parent_relationship + metadata fields |
+| **Status_per_provider impact** | Whether running this skill changes any contract's `status_per_provider` verdicts (e.g., /VERIFY conformance runs do; /OBSERVE reads do not) |
+
+### §82.4 The `make contract-gate` hook is non-bypassable
+
+Every skill that mutates the contracts/ tree or that runs as a pre-merge / pre-deploy gate MUST invoke `make contract-gate` and propagate its exit code. Specifically:
+
+- `/GATE --scope merge` → contract-gate is Q5 (BLOCKING)
+- `/BUILD` per-wave Q gate → contract-gate runs after `cargo test`
+- `/DEPLOY` → contract-gate must be clean before any binary is shipped
+- `/VERIFY` → contract-gate included in test pyramid output
+
+Failures from contract-gate are **never** waivable in-skill. A failing contract gate halts the lifecycle stage and routes to the operator. Waivers exist only at the Kevin level via the gatekeeper waiver flow.
+
+### §82.5 Anti-patterns
+
+- **DO NOT** read SKILL.md as the authoritative description of what a skill does — the contract is. SKILL.md is the executable instructions; the contract is the spec.
+- **DO NOT** add a new slash command without authoring its `agent.skill` contract in the same commit.
+- **DO NOT** declare a `sub_skills:` entry pointing at a non-existent contract — dangling refs are caught by Pass 2 symmetric-edge sweep on extension to agent.skill kind.
+- **DO NOT** silently emit a span name that diverges from the contract's `required_spans[N].name`. The contract is authoritative; the source must match.
+- **DO NOT** skip the `make contract-gate` hook on the rationale that "the diff doesn't touch contracts" — it might, transitively, via an inherits_from chain.
+
+### §82.6 Bootstrap precedent
+
+The first full pass of §82 enforcement was the Wave A landing of 24 contracts on 2026-06-04 (`0e0421b`): `code.trait.runner` plus 23 `agent.skill` contracts covering every slash-invokable skill. Total canon corpus moved from 211 → 235 contracts, all validating via the Rust `contract-gate`. This commit established the substrate that §82 requires.
+
+### §82.7 Cross-references
+
+- Memory: `feedback_alpha_provider_agnostic_contract_gate.md` — originating motivation; §82 is the canon promotion of that pattern.
+- Schema: `standards/canon/la-contracts.schema.json` v1.2 — defines all contract kinds enforceable by §82.
+- Tooling: `tools/contract-gate/` — Rust binary that runs the gate; wired into `make quality` + `make contract-gate`.
+- Canon doc: `standards/canon/webshell-operator-contracts-v1.md` — human-readable inventory of operator-surface contracts.
+
+**Witness:** N=2 production. (1) Webshell alpha gate inventory 2026-06-03: 1 operator.surface contract existed; 22 were owed. After §82 enforcement: 7 operator.surface + 23 agent.skill + 1 new code.trait now land via contract-gate-enforced commits, no ad-hoc additions. (2) /PLAN → /BUILD lifecycle 2026-06-04: 0e0421b commit forced 235/235 validation as a precondition of skill wiring — without §82 the skills would have wired against an unanchored canon. **LÆX Queue**: #65, contradiction-check PASS 2026-06-04.
+
+---
+
 **Rule** (per separation-of-concerns refactor, 2026-05-18): no tail-amendment blocks or scattered per-section version-history entries in this file. Section content lives here; amendment narrative lives in the CHANGELOG companion.
 
-**Current version**: see CHANGELOG for latest. As of 2026-06-04: **v3.13.0** (§81 Float Sentinel Assertion Pattern; LÆX #64 + Kevin Francis Tan ratified 2026-06-04).
+**Current version**: see CHANGELOG for latest. As of 2026-06-04: **v3.14.0** (§82 Contract Canon Integration Pattern; LÆX #65 + Kevin Francis Tan ratified 2026-06-04).
 
 *Builders Cookbook · Light Architects · `canon://builders-cookbook`*
 
