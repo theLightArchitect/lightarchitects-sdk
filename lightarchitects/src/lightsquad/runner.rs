@@ -23,8 +23,9 @@
 //! # Phase status
 //!
 //! Phase 1 declares all type signatures. Phase 3 adds `ClaudeCliRunner` impl.
-//! Phase 4 adds `AnthropicHttpRunner`, `OllamaRunner`, `OpenAICompatRunner`
-//! impls + wires `select_runner` into the dispatch executor.
+//! Phase 4 completes the impl: `AnthropicHttpRunner`, `OllamaRunner`,
+//! `OpenAICompatRunner` share `dispatch_run`/`dispatch_stream` helpers;
+//! `select_runner` accepts an explicit `sandbox_root` for operator configuration.
 //!
 //! [`LlmAgentProvider`]: crate::agent::provider::LlmAgentProvider
 
@@ -267,25 +268,30 @@ pub const SUBPROCESS_ENV_ALLOWLIST: &[&str] = &["PATH", "HOME", "TRACEPARENT", "
 
 /// Select a [`Runner`] implementation for the given provider name.
 ///
+/// `sandbox_root` is the filesystem boundary that all artifact directories must
+/// descend from.  Callers should source this from `GatewayConfig` rather than
+/// defaulting to `cwd().join(".tmp")`.
+///
 /// # Errors
 ///
 /// Returns [`RunnerError::UnknownRunner`] for unrecognised provider names.
 /// **Never** falls back silently to a default runner — fail-closed is required
-/// to prevent silent regression to hardcoded `claude` subprocess dispatch.
-///
-/// # Implementation note
-///
-/// Phase 4 wires `AnthropicHttpRunner`, `OllamaRunner`, `OpenAICompatRunner` arms.
+/// to prevent silent regression to hardcoded subprocess dispatch.
 pub fn select_runner(
     provider_name: &str,
     provider: Arc<dyn LlmAgentProvider>,
+    sandbox_root: PathBuf,
 ) -> Result<Arc<dyn Runner>, RunnerError> {
     match provider_name {
-        "claude-cli" | "claude-code" => {
-            let sandbox_root = std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join(".tmp");
-            Ok(Arc::new(ClaudeCliRunner::new(provider, sandbox_root)))
+        "claude-cli" | "claude-code" => Ok(Arc::new(ClaudeCliRunner::new(provider, sandbox_root))),
+        "anthropic-http" | "anthropic" => {
+            Ok(Arc::new(AnthropicHttpRunner::new(provider, sandbox_root)))
+        }
+        "ollama-cloud" | "ollama-local" | "ollama" => {
+            Ok(Arc::new(OllamaRunner::new(provider, sandbox_root)))
+        }
+        "openai-compat" | "openai" | "openrouter" | "litellm" | "portkey" => {
+            Ok(Arc::new(OpenAICompatRunner::new(provider, sandbox_root)))
         }
         other => Err(RunnerError::UnknownRunner(other.to_owned())),
     }
@@ -334,6 +340,131 @@ fn sandbox_check(artifact_dir: &Path, sandbox_root: &Path) -> Result<PathBuf, Ru
     Ok(resolved)
 }
 
+// ── Shared dispatch helpers ───────────────────────────────────────────────────
+
+/// Execute a single agent call: sandbox-check → provider spawn → artifact write → AYIN span.
+///
+/// Used by all four Runner impls to avoid duplicating state machine code.
+async fn dispatch_run(
+    provider: Arc<dyn LlmAgentProvider>,
+    runner_name: &'static str,
+    spec: AgentSpec,
+    sandbox_root: PathBuf,
+) -> Result<AgentArtifact, RunnerError> {
+    let artifact_dir = sandbox_check(&spec.artifact_dir, &sandbox_root)?;
+    let agent_name = spec.agent_name.clone();
+    let start = Instant::now();
+
+    let response = provider.spawn(spec.task).await;
+
+    let span_outcome = match &response {
+        Ok(_) => crate::ayin::span::TraceOutcome::Continue,
+        Err(e) => crate::ayin::span::TraceOutcome::error(e.to_string()),
+    };
+    let _ =
+        crate::ayin::span::TraceContext::new(crate::ayin::span::Actor::claude(), "dispatch.agent")
+            .metadata(serde_json::json!({ "agent_name": agent_name, "provider": runner_name }))
+            .outcome(span_outcome)
+            .finish();
+
+    let response = response?;
+    let artifact_path = artifact_dir.join(format!("{agent_name}.md"));
+    tokio::fs::write(&artifact_path, response.output.to_string().as_bytes())
+        .await
+        .map_err(|e| RunnerError::Io(e.to_string()))?;
+
+    Ok(AgentArtifact {
+        agent_name,
+        artifact_path,
+        tokens_input: response.tokens.input,
+        tokens_output: response.tokens.output,
+        stop_reason: StopReason::EndTurn,
+        duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+    })
+}
+
+/// Stream a single agent call as [`AgentEvent`]s.
+///
+/// Spawns a background task that forwards `ProviderEvent` deltas and writes the
+/// accumulated artifact on `MessageStop`. Used by all four Runner impls.
+async fn dispatch_stream(
+    provider: Arc<dyn LlmAgentProvider>,
+    runner_name: &'static str,
+    spec: AgentSpec,
+    sandbox_root: PathBuf,
+) -> Result<BoxStream<'static, AgentEvent>, RunnerError> {
+    let artifact_dir = sandbox_check(&spec.artifact_dir, &sandbox_root)?;
+    let agent_name = spec.agent_name.clone();
+    let mut pstream = provider.spawn_streaming(spec.task).await?;
+
+    let (tx, mut rx) = mpsc::channel::<AgentEvent>(64);
+    tokio::spawn(async move {
+        let start = Instant::now();
+        let _ = tx
+            .send(AgentEvent::AgentStart {
+                runner: runner_name.to_owned(),
+                agent_name: agent_name.clone(),
+            })
+            .await;
+
+        let mut accumulated_text = String::new();
+        let mut input_tokens: u32 = 0;
+        let mut output_tokens: u32 = 0;
+
+        loop {
+            match pstream.next().await {
+                None | Some(ProviderEvent::MessageStop) => {
+                    let artifact_path = artifact_dir.join(format!("{agent_name}.md"));
+                    match tokio::fs::write(&artifact_path, accumulated_text.as_bytes()).await {
+                        Ok(()) => {
+                            let _ = tx
+                                .send(AgentEvent::AgentComplete {
+                                    artifact: AgentArtifact {
+                                        agent_name: agent_name.clone(),
+                                        artifact_path,
+                                        tokens_input: input_tokens,
+                                        tokens_output: output_tokens,
+                                        stop_reason: StopReason::EndTurn,
+                                        duration_ms: u64::try_from(start.elapsed().as_millis())
+                                            .unwrap_or(u64::MAX),
+                                    },
+                                })
+                                .await;
+                        }
+                        Err(e) => {
+                            let _ = tx
+                                .send(AgentEvent::AgentError {
+                                    error: format!("artifact write: {e}"),
+                                })
+                                .await;
+                        }
+                    }
+                    break;
+                }
+                Some(ProviderEvent::MessageStart {
+                    input_tokens: toks, ..
+                }) => {
+                    input_tokens = toks;
+                }
+                Some(ProviderEvent::TextDelta { text, .. }) => {
+                    accumulated_text.push_str(&text);
+                    let _ = tx.send(AgentEvent::TextDelta { text }).await;
+                }
+                Some(ProviderEvent::MessageDelta {
+                    output_tokens: toks,
+                    ..
+                }) => {
+                    output_tokens = toks;
+                }
+                Some(_) => {}
+            }
+        }
+    });
+
+    let stream = futures_util::stream::poll_fn(move |cx| rx.poll_recv(cx));
+    Ok(Box::pin(stream))
+}
+
 // ── ClaudeCliRunner ───────────────────────────────────────────────────────────
 
 /// Runner wrapping `ClaudeCliProvider` (or any CLI-launched provider).
@@ -379,123 +510,236 @@ impl Runner for ClaudeCliRunner {
     }
 
     async fn run(&self, spec: AgentSpec) -> Result<AgentArtifact, RunnerError> {
-        let artifact_dir = sandbox_check(&spec.artifact_dir, &self.sandbox_root)?;
-        let agent_name = spec.agent_name.clone();
-        let start = Instant::now();
-
-        let response = self.provider.spawn(spec.task).await;
-
-        // Emit AYIN span — metadata MUST NOT contain credentials (BLAKE3 hash only)
-        let span_outcome = match &response {
-            Ok(_) => crate::ayin::span::TraceOutcome::Continue,
-            Err(e) => crate::ayin::span::TraceOutcome::error(e.to_string()),
-        };
-        let _ = crate::ayin::span::TraceContext::new(
-            crate::ayin::span::Actor::claude(),
-            "dispatch.agent",
+        dispatch_run(
+            Arc::clone(&self.provider),
+            "claude_cli",
+            spec,
+            self.sandbox_root.clone(),
         )
-        .metadata(serde_json::json!({
-            "agent_name": agent_name,
-            "provider": "claude_cli",
-        }))
-        .outcome(span_outcome)
-        .finish();
-
-        let response = response?;
-        let artifact_path = artifact_dir.join(format!("{agent_name}.md"));
-        tokio::fs::write(&artifact_path, response.output.to_string().as_bytes())
-            .await
-            .map_err(|e| RunnerError::Io(e.to_string()))?;
-
-        Ok(AgentArtifact {
-            agent_name,
-            artifact_path,
-            tokens_input: response.tokens.input,
-            tokens_output: response.tokens.output,
-            stop_reason: StopReason::EndTurn,
-            duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
-        })
+        .await
     }
 
     async fn stream(&self, spec: AgentSpec) -> Result<BoxStream<'static, AgentEvent>, RunnerError> {
-        let artifact_dir = sandbox_check(&spec.artifact_dir, &self.sandbox_root)?;
-        let agent_name = spec.agent_name.clone();
-        let provider = Arc::clone(&self.provider);
-
-        // Propagate provider errors before spawning the background task
-        let mut pstream = provider.spawn_streaming(spec.task).await?;
-
-        let (tx, mut rx) = mpsc::channel::<AgentEvent>(64);
-        tokio::spawn(async move {
-            let start = Instant::now();
-            let _ = tx
-                .send(AgentEvent::AgentStart {
-                    runner: "claude_cli".to_owned(),
-                    agent_name: agent_name.clone(),
-                })
-                .await;
-
-            let mut accumulated_text = String::new();
-            let mut input_tokens: u32 = 0;
-            let mut output_tokens: u32 = 0;
-
-            loop {
-                match pstream.next().await {
-                    None | Some(ProviderEvent::MessageStop) => {
-                        let artifact_path = artifact_dir.join(format!("{agent_name}.md"));
-                        match tokio::fs::write(&artifact_path, accumulated_text.as_bytes()).await {
-                            Ok(()) => {
-                                let _ = tx
-                                    .send(AgentEvent::AgentComplete {
-                                        artifact: AgentArtifact {
-                                            agent_name: agent_name.clone(),
-                                            artifact_path,
-                                            tokens_input: input_tokens,
-                                            tokens_output: output_tokens,
-                                            stop_reason: StopReason::EndTurn,
-                                            duration_ms: u64::try_from(start.elapsed().as_millis())
-                                                .unwrap_or(u64::MAX),
-                                        },
-                                    })
-                                    .await;
-                            }
-                            Err(e) => {
-                                let _ = tx
-                                    .send(AgentEvent::AgentError {
-                                        error: format!("artifact write: {e}"),
-                                    })
-                                    .await;
-                            }
-                        }
-                        break;
-                    }
-                    Some(ProviderEvent::MessageStart {
-                        input_tokens: toks, ..
-                    }) => {
-                        input_tokens = toks;
-                    }
-                    Some(ProviderEvent::TextDelta { text, .. }) => {
-                        accumulated_text.push_str(&text);
-                        let _ = tx.send(AgentEvent::TextDelta { text }).await;
-                    }
-                    Some(ProviderEvent::MessageDelta {
-                        output_tokens: toks,
-                        ..
-                    }) => {
-                        output_tokens = toks;
-                    }
-                    Some(_) => {} // ContentBlockStart, ContentBlockStop, ToolResult, etc.
-                }
-            }
-        });
-
-        let stream = futures_util::stream::poll_fn(move |cx| rx.poll_recv(cx));
-        Ok(Box::pin(stream))
+        dispatch_stream(
+            Arc::clone(&self.provider),
+            "claude_cli",
+            spec,
+            self.sandbox_root.clone(),
+        )
+        .await
     }
 
     fn estimate_cost(&self, _input_tokens: u32, _max_output_tokens: u32) -> f64 {
         // Subscription-funded — no per-token USD cost
         0.0
+    }
+}
+
+// ── AnthropicHttpRunner ────────────────────────────────────────────────────────
+
+/// Runner wrapping [`AnthropicHttpProvider`] (or any Anthropic-API-compatible provider).
+///
+/// # Security invariants (zero-exception)
+///
+/// - `artifact_dir` verified via `sandbox_check` (§63.P4) before any write.
+/// - HTTP transport MUST enforce HTTPS + TLS 1.2 min (LLM05 SSRF guard).
+///   Enforced at the [`AnthropicHttpProvider`] level via `reqwest::Client`
+///   `https_only(true)` + `min_tls_version(TLS_1_2)` + `tls_built_in_root_certs(true)`.
+/// - AYIN span metadata never includes credential values — fingerprint hash only.
+///
+/// [`AnthropicHttpProvider`]: crate::agent::http::AnthropicHttpProvider
+pub struct AnthropicHttpRunner {
+    provider: Arc<dyn LlmAgentProvider>,
+    sandbox_root: PathBuf,
+}
+
+impl AnthropicHttpRunner {
+    /// Create a new runner wrapping `provider` with the given sandbox boundary.
+    #[must_use]
+    pub fn new(provider: Arc<dyn LlmAgentProvider>, sandbox_root: PathBuf) -> Self {
+        Self {
+            provider,
+            sandbox_root,
+        }
+    }
+}
+
+#[async_trait]
+impl Runner for AnthropicHttpRunner {
+    fn name(&self) -> &'static str {
+        "anthropic_http"
+    }
+
+    fn capabilities(&self) -> RunnerCapabilities {
+        RunnerCapabilities {
+            supported_roles: vec![],
+            max_parallelism: 8,
+            tool_use: true,
+            streaming: true,
+        }
+    }
+
+    async fn run(&self, spec: AgentSpec) -> Result<AgentArtifact, RunnerError> {
+        dispatch_run(
+            Arc::clone(&self.provider),
+            "anthropic_http",
+            spec,
+            self.sandbox_root.clone(),
+        )
+        .await
+    }
+
+    async fn stream(&self, spec: AgentSpec) -> Result<BoxStream<'static, AgentEvent>, RunnerError> {
+        dispatch_stream(
+            Arc::clone(&self.provider),
+            "anthropic_http",
+            spec,
+            self.sandbox_root.clone(),
+        )
+        .await
+    }
+
+    fn estimate_cost(&self, input_tokens: u32, max_output_tokens: u32) -> f64 {
+        self.provider.estimate_cost(input_tokens, max_output_tokens)
+    }
+}
+
+// ── OllamaRunner ──────────────────────────────────────────────────────────────
+
+/// Runner wrapping [`OllamaCliProvider`] (HTTP — despite the "Cli" suffix).
+///
+/// # Security invariants (zero-exception)
+///
+/// - `artifact_dir` verified via `sandbox_check` (§63.P4) before any write.
+/// - AYIN span metadata never includes credential values — fingerprint hash only.
+/// - No subprocess env exposure (this runner uses HTTP, not a subprocess).
+///
+/// [`OllamaCliProvider`]: crate::agent::OllamaCliProvider
+pub struct OllamaRunner {
+    provider: Arc<dyn LlmAgentProvider>,
+    sandbox_root: PathBuf,
+}
+
+impl OllamaRunner {
+    /// Create a new runner wrapping `provider` with the given sandbox boundary.
+    #[must_use]
+    pub fn new(provider: Arc<dyn LlmAgentProvider>, sandbox_root: PathBuf) -> Self {
+        Self {
+            provider,
+            sandbox_root,
+        }
+    }
+}
+
+#[async_trait]
+impl Runner for OllamaRunner {
+    fn name(&self) -> &'static str {
+        "ollama"
+    }
+
+    fn capabilities(&self) -> RunnerCapabilities {
+        RunnerCapabilities {
+            supported_roles: vec![],
+            max_parallelism: 4,
+            tool_use: false,
+            streaming: true,
+        }
+    }
+
+    async fn run(&self, spec: AgentSpec) -> Result<AgentArtifact, RunnerError> {
+        dispatch_run(
+            Arc::clone(&self.provider),
+            "ollama",
+            spec,
+            self.sandbox_root.clone(),
+        )
+        .await
+    }
+
+    async fn stream(&self, spec: AgentSpec) -> Result<BoxStream<'static, AgentEvent>, RunnerError> {
+        dispatch_stream(
+            Arc::clone(&self.provider),
+            "ollama",
+            spec,
+            self.sandbox_root.clone(),
+        )
+        .await
+    }
+
+    fn estimate_cost(&self, _input_tokens: u32, _max_output_tokens: u32) -> f64 {
+        // Local / free-tier — no per-token USD cost
+        0.0
+    }
+}
+
+// ── OpenAICompatRunner ────────────────────────────────────────────────────────
+
+/// Runner wrapping [`OpenAICompatProvider`] or any OpenAI-Chat-Completions backend.
+///
+/// Covers `OpenAI` native, `OpenRouter`, `LiteLLM` proxy, Portkey, Groq, Fireworks, etc.
+///
+/// # Security invariants (zero-exception)
+///
+/// - `artifact_dir` verified via `sandbox_check` (§63.P4) before any write.
+/// - HTTP transport MUST enforce HTTPS + TLS 1.2 min (LLM05 SSRF guard).
+///   Enforced at the provider level; `base_url` MUST be an `https://` URI unless
+///   explicitly configured for a loopback/dev endpoint.
+/// - AYIN span metadata never includes credential values — fingerprint hash only.
+///
+/// [`OpenAICompatProvider`]: crate::agent::openai_compat::OpenAICompatProvider
+pub struct OpenAICompatRunner {
+    provider: Arc<dyn LlmAgentProvider>,
+    sandbox_root: PathBuf,
+}
+
+impl OpenAICompatRunner {
+    /// Create a new runner wrapping `provider` with the given sandbox boundary.
+    #[must_use]
+    pub fn new(provider: Arc<dyn LlmAgentProvider>, sandbox_root: PathBuf) -> Self {
+        Self {
+            provider,
+            sandbox_root,
+        }
+    }
+}
+
+#[async_trait]
+impl Runner for OpenAICompatRunner {
+    fn name(&self) -> &'static str {
+        "openai_compat"
+    }
+
+    fn capabilities(&self) -> RunnerCapabilities {
+        RunnerCapabilities {
+            supported_roles: vec![],
+            max_parallelism: 8,
+            tool_use: true,
+            streaming: true,
+        }
+    }
+
+    async fn run(&self, spec: AgentSpec) -> Result<AgentArtifact, RunnerError> {
+        dispatch_run(
+            Arc::clone(&self.provider),
+            "openai_compat",
+            spec,
+            self.sandbox_root.clone(),
+        )
+        .await
+    }
+
+    async fn stream(&self, spec: AgentSpec) -> Result<BoxStream<'static, AgentEvent>, RunnerError> {
+        dispatch_stream(
+            Arc::clone(&self.provider),
+            "openai_compat",
+            spec,
+            self.sandbox_root.clone(),
+        )
+        .await
+    }
+
+    fn estimate_cost(&self, input_tokens: u32, max_output_tokens: u32) -> f64 {
+        self.provider.estimate_cost(input_tokens, max_output_tokens)
     }
 }
 
@@ -752,23 +996,149 @@ mod tests {
 
     // ── select_runner ─────────────────────────────────────────────────────────
 
+    fn stub_sandbox() -> PathBuf {
+        std::env::temp_dir().join("runner-test-sandbox")
+    }
+
     #[test]
     fn select_runner_returns_claude_cli_runner() {
         let provider: Arc<dyn LlmAgentProvider> = Arc::new(StubProvider::returning(""));
-        let runner = select_runner("claude-cli", provider.clone()).expect("claude-cli known");
-        assert_eq!(runner.name(), "claude_cli");
+        let r = select_runner("claude-cli", provider.clone(), stub_sandbox())
+            .expect("claude-cli known");
+        assert_eq!(r.name(), "claude_cli");
+        let r2 = select_runner("claude-code", provider, stub_sandbox()).expect("claude-code known");
+        assert_eq!(r2.name(), "claude_cli");
+    }
 
-        let runner2 = select_runner("claude-code", provider).expect("claude-code known");
-        assert_eq!(runner2.name(), "claude_cli");
+    #[test]
+    fn select_runner_returns_anthropic_http_runner() {
+        let provider: Arc<dyn LlmAgentProvider> = Arc::new(StubProvider::returning(""));
+        let r = select_runner("anthropic-http", provider.clone(), stub_sandbox())
+            .expect("anthropic-http known");
+        assert_eq!(r.name(), "anthropic_http");
+        let r2 = select_runner("anthropic", provider, stub_sandbox()).expect("anthropic known");
+        assert_eq!(r2.name(), "anthropic_http");
+    }
+
+    #[test]
+    fn select_runner_returns_ollama_runner() {
+        let provider: Arc<dyn LlmAgentProvider> = Arc::new(StubProvider::returning(""));
+        let r = select_runner("ollama", provider.clone(), stub_sandbox()).expect("ollama known");
+        assert_eq!(r.name(), "ollama");
+        let r2 =
+            select_runner("ollama-cloud", provider, stub_sandbox()).expect("ollama-cloud known");
+        assert_eq!(r2.name(), "ollama");
+    }
+
+    #[test]
+    fn select_runner_returns_openai_compat_runner() {
+        let provider: Arc<dyn LlmAgentProvider> = Arc::new(StubProvider::returning(""));
+        let r = select_runner("openai-compat", provider.clone(), stub_sandbox())
+            .expect("openai-compat known");
+        assert_eq!(r.name(), "openai_compat");
+        let r2 = select_runner("litellm", provider, stub_sandbox()).expect("litellm known");
+        assert_eq!(r2.name(), "openai_compat");
     }
 
     #[test]
     fn select_runner_fails_closed_on_unknown() {
         let provider: Arc<dyn LlmAgentProvider> = Arc::new(StubProvider::returning(""));
-        let result = select_runner("ollama", provider);
+        let result = select_runner("xyz-unknown-provider", provider, stub_sandbox());
         assert!(
-            matches!(result, Err(RunnerError::UnknownRunner(ref s)) if s == "ollama"),
-            "expected UnknownRunner(ollama)"
+            matches!(result, Err(RunnerError::UnknownRunner(ref s)) if s == "xyz-unknown-provider"),
+            "expected UnknownRunner(xyz-unknown-provider)"
         );
+    }
+
+    // ── AnthropicHttpRunner ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn run_anthropic_http_writes_artifact() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let sandbox = tmp.path().to_path_buf();
+        let artifact_dir = sandbox.join("dispatch-anthropic");
+        tokio::fs::create_dir_all(&artifact_dir)
+            .await
+            .expect("mkdir");
+
+        let provider: Arc<dyn LlmAgentProvider> =
+            Arc::new(StubProvider::returning("## HTTP result"));
+        let runner = AnthropicHttpRunner::new(provider, sandbox);
+
+        let spec = AgentSpec {
+            agent_name: "engineer".to_owned(),
+            agent_role: AgentRole::Engineer,
+            task: test_req(),
+            artifact_dir,
+            parent_span_id: None,
+            input_tokens_estimate: 100,
+            max_output_tokens: 2048,
+            file_ownership: vec![],
+        };
+
+        let artifact = runner.run(spec).await.expect("run succeeds");
+        assert_eq!(artifact.stop_reason, StopReason::EndTurn);
+        assert!(artifact.artifact_path.exists(), "artifact written");
+    }
+
+    // ── OllamaRunner ─────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn run_ollama_writes_artifact() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let sandbox = tmp.path().to_path_buf();
+        let artifact_dir = sandbox.join("dispatch-ollama");
+        tokio::fs::create_dir_all(&artifact_dir)
+            .await
+            .expect("mkdir");
+
+        let provider: Arc<dyn LlmAgentProvider> = Arc::new(StubProvider::returning("## Ollama"));
+        let runner = OllamaRunner::new(provider, sandbox);
+
+        let spec = AgentSpec {
+            agent_name: "reviewer".to_owned(),
+            agent_role: AgentRole::Quality,
+            task: test_req(),
+            artifact_dir,
+            parent_span_id: None,
+            input_tokens_estimate: 50,
+            max_output_tokens: 512,
+            file_ownership: vec![],
+        };
+
+        let artifact = runner.run(spec).await.expect("run succeeds");
+        assert_eq!(artifact.stop_reason, StopReason::EndTurn);
+        assert!(artifact.artifact_path.exists(), "artifact written");
+    }
+
+    // ── OpenAICompatRunner ────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn run_openai_compat_writes_artifact() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let sandbox = tmp.path().to_path_buf();
+        let artifact_dir = sandbox.join("dispatch-openai");
+        tokio::fs::create_dir_all(&artifact_dir)
+            .await
+            .expect("mkdir");
+
+        let provider: Arc<dyn LlmAgentProvider> =
+            Arc::new(StubProvider::returning("## OpenAI result"));
+        let runner = OpenAICompatRunner::new(provider, sandbox);
+
+        let spec = AgentSpec {
+            agent_name: "researcher".to_owned(),
+            agent_role: AgentRole::Researcher,
+            task: test_req(),
+            artifact_dir,
+            parent_span_id: None,
+            input_tokens_estimate: 200,
+            max_output_tokens: 4096,
+            file_ownership: vec![],
+        };
+
+        let artifact = runner.run(spec).await.expect("run succeeds");
+        assert_eq!(artifact.stop_reason, StopReason::EndTurn);
+        assert!(artifact.artifact_path.exists(), "artifact written");
     }
 }

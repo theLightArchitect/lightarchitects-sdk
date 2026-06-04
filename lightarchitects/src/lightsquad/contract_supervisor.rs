@@ -91,7 +91,6 @@ implies the artifact is unrelated to the task, which is rarely true. If you \
 catch yourself emitting 0.0 across the board, re-read the artifact and look \
 for partial matches.";
 
-const DEFAULT_CLAUDE_BIN: &str = "claude";
 const DEFAULT_CODEX_BIN: &str = "codex";
 const DEFAULT_OLLAMA_BASE_URL: &str = "https://ollama.com";
 const DEFAULT_OLLAMA_MODEL: &str = "kimi-k2.5:cloud";
@@ -236,7 +235,7 @@ impl SupervisorProvider {
         let binary = std::env::var("LIGHTARCHITECTS_CLAUDE_BIN")
             .ok()
             .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| DEFAULT_CLAUDE_BIN.to_owned());
+            .unwrap_or_else(|| crate::agent::CLAUDE_CLI_DEFAULT_BINARY.to_owned());
         let model = std::env::var("LIGHTSQUAD_SUPERVISOR_MODEL")
             .ok()
             .filter(|s| !s.is_empty());
