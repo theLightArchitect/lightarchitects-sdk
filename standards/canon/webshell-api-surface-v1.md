@@ -2,12 +2,13 @@
 
 ---
 title: "Webshell API Surface"
-version: "1.0.23"  # bumped 2026-05-22: §2.38 ADDED (cli-oauth-multi-provider — 8 credential routes, 6-provider OAuth/DeviceFlow/ApiKey/CLI substrate, OA-1..OA-12 security guarantees, CredentialsPanel UI)
+version: "1.1.0"  # bumped 2026-06-03: +67 routes (ac9383e HEAD); CORS PATCH added; AppState 21→58 fields; Config 5→13 fields; ScreenKey 13→21; ROUTES 39→49
 status: amended  # ratification pending Phase 7 LÆX queue
 author: "Kevin Tan, Claude (Engineer)"
 date: "2026-05-19"
-xea_verified: "2026-05-17"  # 1.0.6 ratified; 1.0.8 pending re-XEA at Phase 7
-amended_by: "ironclaw-spine iter-7 (operator-authorized Canon XV override 2026-05-18)"
+updated: "2026-06-03"
+xea_verified: "2026-06-03"  # re-verified at ac9383e HEAD
+amended_by: "webshell-pty-reuse-path (ac9383e 2026-06-03) — session-aware reuse, CORS PATCH, program supervisor, LiteLLM router, container mgmt, conductor HITL, attestation, copilot controls"
 ratified_by: "kevin"
 type: reference
 format: markdown
@@ -28,6 +29,7 @@ canonical_pair: "webshell-api-surface-v1.html"
 
 related:
   - "[[platform-architecture-v2]]"
+  - "[[la-contracts-canon-v1]]"
 
 tags:
   - type/reference
@@ -41,7 +43,7 @@ tags:
 > "Prove all things; hold fast that which is good."
 > — 1 Thessalonians 5:21
 
-**Purpose**: Authoritative catalogue of all backend HTTP endpoints and frontend hash-based routes exposed by the `lightarchitects-webshell` binary and its companion UI. Verified directly from source on 2026-05-16. Every route listed here was read from `src/server/mod.rs`, `src/dispatch/routes.rs`, and `lightarchitects-webshell-ui/src/lib/routes.ts` — not inferred or reported by an agent. This document is the ground truth; the code is the oracle.
+**Purpose**: Authoritative catalogue of all backend HTTP endpoints and frontend hash-based routes exposed by the `lightarchitects-webshell` binary and its companion UI. Verified directly from source on 2026-06-03 at HEAD `ac9383e`. Every route listed here was read from `src/server/mod.rs`, `src/dispatch/routes.rs`, and `lightarchitects-webshell-ui/src/lib/routes.ts` — not inferred or reported by an agent. This document is the ground truth; the code is the oracle.
 
 **Scope**: Webshell local backend (`/api/*`). The platform/gateway API (`/v1/platform/*`, `/v1/admin/*`, `/v1/vault/*`) is a separate API layer documented in helix entries OD-5 and OD-6.
 
@@ -109,47 +111,127 @@ These are separate binaries on separate ports. The webshell UI always targets it
 
 ### §1.2 Router Composition
 
-The Axum router is constructed in `build_app()` at `src/server/mod.rs:402`. It merges a sub-router:
+The Axum router is constructed in `build_app()` at `src/server/mod.rs:987`. It merges a sub-router:
 
 ```
-build_app()                              ← src/server/mod.rs:402
+build_app()                              ← src/server/mod.rs:987
   └── .merge(dispatch::dispatch_router()) ← src/dispatch/routes.rs:103
 ```
 
-Total: **99 `.route()` call sites** (92 in `server/mod.rs` + 7 in `dispatch/routes.rs`). The three `supervisor/events`, `supervisor/acknowledge`, and `supervisor/state` routes added by `copilot-supervised-orchestration` Phase 5 account for the increase from 89 → 92. Several call sites register multiple HTTP methods on one path (e.g., `.get(h1).put(h2)`), yielding more method–path combinations than call sites.
+Total: **166 `.route()` call sites** (159 in `server/mod.rs` + 7 in `dispatch/routes.rs`) as of HEAD `ac9383e` (2026-06-03). Several call sites register multiple HTTP methods on one path (e.g., `.get(h1).patch(h2)`), yielding more method–path combinations than call sites.
 
 ### §1.3 AppState Components
 
-`AppState` (shared via `Arc`, passed to all handlers). Full struct at `src/server/mod.rs:89`.
+`AppState` (shared via `Arc`, passed to all handlers). Full struct at `src/server/mod.rs:146`. **58 total fields: 56 `pub` + 2 private.** Grouped by domain below; order within groups follows source declaration order.
+
+#### Infrastructure
 
 | Field | Type | Purpose |
 |-------|------|---------|
-| `config` | `Arc<Config>` | Resolved config: port, host_cmd, cwd, token |
-| `turnlog_pepper` | `Arc<SecretSlice<u8>>` | HMAC session key loaded at startup |
-| `session_count` | `Arc<AtomicUsize>` | Active PTY session count (max `MAX_SESSIONS`) |
-| `event_tx` | `broadcast::Sender<WebEvent>` | Internal SSE broadcast sender |
-| `browser_state` | `Arc<RwLock<BrowserStateSnapshot>>` | Cached frontend UI state |
-| `builds_cache` | `builds_handler::Cache` | `active.yaml` mtime + JSON bytes |
-| `builds` | `Arc<BuildRegistry>` | Per-build session registry keyed by UUID |
-| `active_agent` | `Arc<RwLock<AgentSession>>` | Active agent config; updated by `POST /api/setup/save` |
-| `soul_store` | `Option<Arc<SoulPersistence>>` | SQLite SOUL vault — `None` on open failure, degrades gracefully |
-| `promotion_policy` | `Option<PolicyHandle>` | Hot-reloadable promotion policy YAML |
-| `embedding_provider` | `Arc<OnceCell<Arc<dyn EmbeddingProvider>>>` | Lazy-init FastEmbed; falls back to `MockEmbeddingProvider` |
-| `dispatch_registry` | `Arc<Mutex<DispatchRegistry>>` | In-flight dispatch handles; short critical section per op (MED M-4) |
+| `config` | `Arc<Config>` | Resolved runtime config (port, host_cmd, cwd, token, agent, etc.) |
+| `turnlog_pepper` | `Arc<SecretSlice<u8>>` | HMAC session key loaded at startup via Keychain |
+| `session_count` | `Arc<AtomicUsize>` | Active PTY session count (capped at `MAX_SESSIONS`) |
 | `docker_capable` | `DockerCapability` | Docker availability detected at startup |
-| `image_manager` | `ImageManager` | Lazy image provisioning for containerized sessions |
-| `telemetry` | `TelemetryHandle` | 1P structured event sink — no PII |
+| `image_manager` | `ImageManager` | Lazy image provisioning for containerised sessions |
+| `telemetry` | `TelemetryHandle` | Structured event sink — no PII |
+| `preflight` | `Arc<RwLock<PreflightReport>>` | Latest preflight check results; refreshed by background task |
+| `decisions_dir` | `PathBuf` | Filesystem path for conductor decision manifests |
+| `mock_workers` | `bool` | Dev mode: substitutes real worker spawns with no-op mocks |
+| `roadmap_html_path` | `PathBuf` | Path to the rendered roadmap HTML file |
+| `ironclaw_config` | `IronclawConfig` | Ironclaw autonomous build budget + thresholds (from `LA_IRONCLAW_*` env vars) |
+
+#### Auth / Session
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `auth_nonces` | `Arc<DashMap<Uuid, std::time::Instant>>` | One-time auth nonces (60-second TTL); consumed on first use |
+| `oauth_states` | `Arc<DashMap<Uuid, OAuthPendingState>>` | In-flight OAuth flows keyed by state UUID |
+| `credential_store` | `Arc<DashMap<String, CredentialState>>` | Cached per-provider credentials (Anthropic, Ollama, etc.) |
 | `session_store` | `Arc<Mutex<SessionStore>>` | SQLite session persistence — survives browser refresh |
-| `auth_nonces` | `Arc<DashMap<Uuid, Instant>>` | One-time auth nonces (60-second TTL); consumed on first use |
-| `global_event_store` | `GlobalEventStore` | Ring buffer (last 1,000 entries) → `~/.lightarchitects/webshell/events.ndjson` |
-| `plan_draft_sessions` | `Arc<DashMap<Uuid, (broadcast::Sender<PlanDraftEvent>, CancellationToken)>>` | In-flight plan draft sessions; removed on Done/Error/TTL expiry |
-| `supervisor_states` | `Arc<DashMap<Uuid, Arc<SupervisorEntry>>>` | Per-build northstar supervisor state (drift counter, proposal gate, last evaluation); populated at `POST /api/builds` when `northstar_text` is present |
+
+#### Events / SSE
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `event_tx` | `broadcast::Sender<WebEventV2>` | Internal SSE broadcast sender (all handlers publish here) |
+| `browser_state` | `Arc<RwLock<BrowserStateSnapshot>>` | Cached frontend viewport state (width/height, panel sizes, active panel) |
+| `global_event_store` | `GlobalEventStore` | Ring buffer (last 1,000 entries) + `~/.lightarchitects/webshell/events.ndjson` append |
+| `plan_draft_sessions` | `Arc<DashMap<Uuid, (Sender<PlanDraftEvent>, CancellationToken)>>` | In-flight plan draft sessions; removed on Done/Error/TTL expiry |
+| `layout_snapshot` | `Arc<RwLock<Option<Value>>>` | Latest frontend layout JSON (written by `POST /api/layout/snapshot`) |
+
+#### Builds / Supervisor
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `builds` | `Arc<BuildRegistry>` | Per-build session registry keyed by build UUID |
+| `builds_cache` | `builds_handler::Cache` | `active.yaml` mtime + serialised JSON bytes (avoid re-reading unchanged files) |
+| `active_agent` | `Arc<RwLock<AgentSession>>` | Active agent config; updated by `POST /api/setup/save` |
+| `supervisor_states` | `Arc<DashMap<Uuid, Arc<SupervisorEntry>>>` | Per-build northstar supervisor state (drift counter, proposal gate, last eval) |
+| `lightsquad_programs` | `Arc<DashMap<Uuid, JoinHandle<()>>>` | Active lightsquad program task handles; join on cancel |
+| `hitl_queue` | `HitlQueue` | Pending HITL escalation queue (build → conductor) |
+| `hitl_resolver` | `IronclawHitlResolver` | Ironclaw HITL resolution dispatcher (nonce-gated) |
+| `dispatch_registry` | `Arc<Mutex<DispatchRegistry>>` | In-flight dispatch handles; short critical section per op |
+| `attestation_log` | `Arc<DashMap<...>>` | Per-build attestation entries (`GET/POST /api/builds/{id}/attestation`) |
+| `program_run` | `ProgramRunSlot` | Singleton in-flight program run; at most one active at a time |
+
+#### Copilot / LLM
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `native_session_pool` | `NativeSessionPool` | Per-build persistent LLM sessions (Anthropic, Ollama Cloud, Claude CLI, OpenRouter) |
+| `playwright_state` | `PlaywrightState` | CDP bridge state for `POST /api/copilot/playwright/*` browser inspection |
+| `litellm_config` | `Arc<RwLock<LitellmConfig>>` | Runtime-switchable LiteLLM provider config (bootstrapped from `LA_LITELLM_*` env vars) |
+| `litellm_supervisor_semaphore` | `Arc<Semaphore>` | Concurrency cap for LiteLLM supervisor tasks |
+| `la_native_api_key` | `Option<SecretString>` | Ollama Cloud API key — loaded once at startup; avoids TOCTOU env reads |
+| `question_registry` | `Arc<DashMap<Uuid, oneshot::Sender<QuestionAnswer>>>` | Resolvers for in-flight HITL questions (`POST /api/question/{id}/answer`) |
+| `question_metadata` | `Arc<DashMap<Uuid, QuestionPending>>` | Question display metadata for browser (text, choices, build context) |
+| `eva_identity` | `Arc<RwLock<EvaIdentityCache>>` | EVA identity grounding for copilot persona |
+| `resume_registry` | `Arc<ResumeRegistry>` | Build session resume state for `lightarchitects_native` restarts |
+| `mcp_host` | `McpHostHandle` | MCP host proxy handle for `GET /api/mcp-servers` and MCP tool routing |
+
+#### Container
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `policy_store` | `Arc<PolicyStore>` | Persisted container spawn policies (SQLite-backed) |
+| `policy` | `Arc<ArcSwap<ContainerPolicy>>` | Live container policy (hot-swapped on `PATCH /api/container/policy`) |
+| `policy_semaphore` | `Arc<Semaphore>` | Concurrency cap for simultaneous container spawns |
+| `active_containers` | `Arc<RwLock<HashMap<String, ActiveContainerEntry>>>` | Live container set; entries removed on exit/timeout |
+| `policy_version` | `Arc<AtomicU64>` | Policy epoch counter; drives `ETag` on `GET /api/container/policy` |
+| `patch_rate_limiter` | `Arc<DashMap<u64, Instant>>` | Per-token rate limiter for `PATCH /api/container/policy` (1 req/sec) |
+| `bridge_cidr_guard` | `Arc<BridgeCidrGuard>` | Docker bridge CIDR guard — blocks policy mutation from container IPs |
+
+#### SOUL / Knowledge
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `soul_store` | `Option<Arc<SoulPersistence>>` | SQLite SOUL vault — `None` on open failure, degrades gracefully |
+| `soul_client` | `Arc<...>` | SOUL MCP client for knowledge graph queries |
+| `embedding_provider` | `Arc<OnceCell<Arc<dyn EmbeddingProvider>>>` | Lazy-init FastEmbed; falls back to `MockEmbeddingProvider` |
+| `promotion_policy` | `Option<PolicyHandle>` | Hot-reloadable promotion policy YAML |
+
+#### GitHub / GitForest
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `gitforest_cache` | `TopologyMokaCache` | GitForest repository topology cache (Moka TTL) |
+| `check_run_cache` | `CheckRunCache` | GitHub check run response cache |
+| `hitl_search_cache` | `HitlSearchCache` | HITL PR search result cache |
+| `pr_metadata_cache` | `PrMetadataCache` | PR metadata cache |
+| `commit_metadata_cache` | `CommitMetadataCache` | Commit metadata cache |
+
+#### Private (not handler-accessible)
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `_policy_watcher` | `Option<Arc<PolicyWatcher>>` | Background file-system watcher for the promotion policy YAML; callers read through `promotion_policy` |
+| `preflight_last_refresh` | `Arc<AtomicU64>` | Unix epoch (seconds) of last preflight refresh; compared by background task to throttle re-runs |
 
 ### §1.4 CORS Constraint
 
-**`build_cors()` at `src/server/mod.rs:707` allows: `GET`, `POST`, `PUT`, `OPTIONS`.**
+**`build_cors()` at `src/server/mod.rs:1533` allows: `GET`, `POST`, `PUT`, `PATCH`, `OPTIONS`.**
 
-All four HTTP methods used by webshell routes are included. Fixed 2026-05-16 — `Method::PUT` was absent in v1.0.0 initial ratification, silently blocking the two PUT routes for cross-origin callers. Resolved in same session.
+All five HTTP methods used by webshell routes are included. History: `Method::PUT` was absent in v1.0.0 initial ratification (fixed 2026-05-16). `Method::PATCH` was added in 1.1.0 (2026-06-03) to support `PATCH /api/container/policy` from cross-origin callers.
 
 ### §1.5 Agent Backend Model
 
@@ -246,8 +328,10 @@ Per-view SSE topic subscriptions verified against `feat/webshell-project-ingesti
 | `POST` | `/api/auth/exchange` | OAuth token exchange |
 | `POST` | `/api/auth/nonce` | Issue HMAC nonce for CLI auth flow |
 | `POST` | `/api/auth/nonce-exchange` | Exchange nonce → session token |
-| `GET` | `/api/auth/status` | Detailed session and auth state |
+| `GET` | `/api/auth/status` | Detailed session and auth state (accepts Bearer OR `la_session` cookie) |
 | `DELETE` | `/api/auth/session` | Logout and revoke session |
+| `GET` | `/api/agent/current` | Current active `AgentSession` config (model, backend, cwd) |
+| `GET` | `/api/session/current` | Current webshell session identity — session UUID, port, startup time; used by gateway's session-aware reuse probe (`ac9383e`) |
 
 ### §2.2 Terminal / WebSocket
 
@@ -265,7 +349,7 @@ Per-view SSE topic subscriptions verified against `feat/webshell-project-ingesti
 | `GET (SSE)` | `/api/builds/{id}/events` | Per-build SSE stream |
 | `POST` | `/api/builds/{id}/notify` | Push a notification to a build's SSE channel |
 | `GET (SSE)` | `/api/events/global` | SSE: replays ring-buffer snapshot (last 1,000 events) then streams live global events; filterable via `EventFilter` query params |
-| `GET (SSE)` | `/api/conductor/events` | (2026-05-18 ADDITION) Conductor queue + heartbeat live events; debounced 250ms |
+| ~~`GET (SSE)`~~ | ~~`/api/conductor/events`~~ | ⚠️ **STALE** — not present in source as of HEAD `ac9383e`; originally specced as a conductor SSE stream (2026-05-18). See §2.25 (stub note) and §2.43 (Conductor HITL, which ships the overlapping surface via `/api/conductor/hitl`). |
 
 #### §2.3.1 WebEvent Variants — 2026-05-18 ADDITIONS
 
@@ -304,10 +388,18 @@ Wire tags use `serde(rename_all = "snake_case")` per the existing enum conventio
 | `GET` | `/api/builds/{id}/gates/{pillar}` | Gate status for a specific pillar |
 | `POST` | `/api/builds/{id}/pillars/{pillar}` | Trigger a pillar |
 | `POST` | `/api/builds/{id}/copilot` | EVA copilot chat (streaming) |
+| `GET (SSE)` | `/api/builds/{id}/copilot/stream` | Copilot SSE event stream for this build |
+| `POST` | `/api/builds/{id}/copilot/interrupt` | Interrupt an in-flight copilot turn |
+| `POST` | `/api/builds/{id}/copilot/clear` | Clear copilot conversation history for this build |
 | `POST` | `/api/builds/{id}/copilot/voice` | EVA voice synthesis |
 | `POST` | `/api/builds/{id}/dispatch` | Dispatch a squad agent from within a build |
 | `GET (SSE)` | `/api/builds/{id}/agent/stream` | Option-E hybrid agent SSE |
 | `GET (WS)` | `/api/builds/{id}/agent/ws` | Option-E hybrid agent WebSocket |
+| `GET` | `/api/builds/{id}/autonomous/status` | Ironclaw autonomous run status for this build |
+| `DELETE` | `/api/builds/{id}/autonomous` | Cancel an in-flight ironclaw autonomous run |
+| `POST` | `/api/builds/{id}/hitl/{call_id}` | Resolve a HITL call for a build (nonce-gated) |
+| `GET` | `/api/builds/{id}/attestation` | Fetch attestation log entries for a build |
+| `POST` | `/api/builds/{id}/attestation` | Append an attestation entry to a build's log |
 
 ### §2.4a POST /api/builds/{id}/copilot — Context Grounding (copilot-omniscience-read)
 
@@ -497,7 +589,9 @@ All ref-mutating ops behind `Arc<Mutex<()>>` per Cookbook §64 (Serialized git-o
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| `GET` | `/api/git/worktrees/{repo}` | dual-path (bearer OR session cookie) | Returns `[{path, branch, head_sha, status, locked, created_at}]` |
+| `POST` | `/api/git/worktrees` | bearer | Body: `{cwd}` — returns `[{path, branch, head_sha, status, locked, created_at}]`; see §2.27 for full spec |
+
+> **Path amendment (§2.27)**: originally specced as `GET /api/git/worktrees/{repo}`; shipped as `POST /api/git/worktrees` with `{cwd}` body, following the `safe_cwd()` convention of all other `/api/git/*` routes (no path-param).
 
 **SHARED ownership** between ironclaw-spine and gitforest-live-ops:
 - gitforest-live-ops week 5: HTTP handler ships in `lightarchitects-webshell/src/routes/git.rs` calling `git worktree list --porcelain` directly via `Command::new("git")` template (matches existing §2.10 pattern)
@@ -511,8 +605,8 @@ For autonomous-mode builds, `.ironclaw/decisions.md` is the HMAC-chained append-
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| `GET` | `/api/builds/{id}/decisions` | bearer | Streams hash-chained JSONL of decisions for a build; supports `?since=<line_n>` cursor |
-| `GET (SSE)` | `/api/builds/{id}/decisions/stream` | bearer | Live SSE feed of new decisions (debounced 250ms) |
+| `GET` | `/api/builds/{id}/decisions` | bearer | Returns hash-chained JSONL of decisions for a build; supports `?since=<line_n>` cursor |
+| ~~`GET (SSE)`~~ | ~~`/api/builds/{id}/decisions/stream`~~ | — | ⚠️ **STUB** — not in source; see §2.26. The SSE live companion is specced but unshipped. |
 
 **No write surface** — decisions.md is supervisor-owned per security-guardrails §SG-CRYPTO.3 (hash-chain + O_APPEND+fsync + atomic-write).
 
@@ -821,13 +915,13 @@ Single-node detail lookup by composite node ID. Used by `BranchTooltip.svelte` f
 
 ---
 
-### §2.20 GitForest HITL Resolve (2026-05-19 ADDITION)
+### §2.20 GitForest HITL Resolve (2026-05-19 ADDITION — **STALE PATH**)
 
-Operator action endpoint — approve or reject a HITL gate from the Monitor view inline drawer. Introduced by the Monitor redesign; backend implementation is a deliverable of ironclaw-spine Phase 3. Until ironclaw-spine ships, the endpoint returns `404` and the UI closes the drawer gracefully.
+> ⚠️ **DRIFT**: The path `/api/gitforest/hitl-resolve` **does not exist in source** as of HEAD `ac9383e`. The resolve surface was split into two distinct paths: **search** (`GET /api/gitforest/hitl-search` — §2.28, ships) and **conductor HITL resolve** (`POST /api/conductor/hitl/{task_id}/resolve` — §2.43, ships). The endpoint documented here was never merged in this form. UI callers were redirected to the conductor HITL resolve path.
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| `POST` | `/api/gitforest/hitl-resolve` | Bearer token | Submit an operator approve/reject decision for a HITL-blocked build node |
+| ~~`POST`~~ | ~~`/api/gitforest/hitl-resolve`~~ | — | ⚠️ **STALE — does not exist in source**; see §2.43 (`/api/conductor/hitl/{task_id}/resolve`) for the shipped surface |
 
 **Request body** (`application/json`):
 
@@ -1655,6 +1749,148 @@ Deletes Keychain entry; updates in-memory cache to `signed_out`. Returns `204 No
 
 ---
 
+### §2.39 LiteLLM Router (litellm-platform-integration — 2026-05-30 ADDITION)
+
+Runtime-switchable LiteLLM provider proxy. Config written at startup from `LA_LITELLM_*` env vars; hot-swappable at runtime. All routes require `AuthGuard` (Bearer token). Source: `lightarchitects-webshell/src/server/litellm_state.rs` + `litellm_chat.rs`.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/litellm/config` | Read current LiteLLM provider config (base URL, model, masked key) |
+| `POST` | `/api/litellm/config` | Update LiteLLM config at runtime (hot-swap, no restart needed) |
+| `POST` | `/api/litellm/chat` | Stream a chat completion through the configured LiteLLM provider (SSE) |
+
+`AppState.litellm_config: Arc<RwLock<LitellmConfig>>` holds the live config; `litellm_supervisor_semaphore` caps concurrent LiteLLM supervisor tasks.
+
+---
+
+### §2.40 Session Identity (webshell-pty-reuse-path — 2026-06-03 ADDITION, `ac9383e`)
+
+Session identity endpoints introduced to support gateway-level session-aware webshell reuse. The gateway scans ports :8733–:8742 using these endpoints to find an existing webshell holding a matching `session_id` before spawning a new one.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/agent/current` | Current active agent config (model, backend variant, cwd) |
+| `GET` | `/api/session/current` | Webshell session identity: `{session_id, port, started_at}` — used by gateway reuse probe |
+
+`GET /api/session/current` is **unauthenticated by design** — the gateway must probe it before any session cookie exists. It returns only non-sensitive metadata (UUID, port, start timestamp). Token or credential data are never included.
+
+---
+
+### §2.41 Program Supervisor (webshell-supervisor-autonomy — 2026-05-30 ADDITION)
+
+Singleton program runner for northstar-anchored autonomous task sequences. At most one program runs at a time; `program_run: ProgramRunSlot` in `AppState` holds the in-flight state. All routes require `AuthGuard`. Source: `lightarchitects-webshell/src/server/program_routes.rs`.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/program/plan` | Submit a program plan (list of codenames + northstar) |
+| `POST` | `/api/program/start` | Start the submitted program plan |
+| `GET` | `/api/program/status` | Current program run status (phase, progress, state) |
+| `POST` | `/api/program/cancel` | Cancel the in-flight program run |
+| `GET` | `/api/program-manifest` | Fetch the signed program manifest |
+
+A program run can only be started after a plan has been submitted via `POST /api/program/plan`. Starting when no plan is submitted returns `409 Conflict`.
+
+---
+
+### §2.42 HITL Question Bridge (2026-05-30 ADDITION)
+
+Gateway-to-browser HITL bridge for operator questions. Gateway inserts questions via `POST /api/question`; browser resolves via `POST /api/question/{id}/answer`. `AppState.question_registry` holds the in-flight resolvers; `question_metadata` holds display data. All routes require `AuthGuard` (Bearer token). Source: `lightarchitects-webshell/src/server/question_routes.rs`.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/question` | Register a new HITL question (gateway inserts; browser sees via SSE) |
+| `POST` | `/api/question/{id}/answer` | Resolve a pending question by ID (browser submits; gateway long-poll returns) |
+
+Questions older than 300 s are evicted by a background task. The gateway's long-poll on `POST /api/question` returns a timeout error if the browser does not answer within the TTL.
+
+---
+
+### §2.43 Conductor HITL (2026-05-30 ADDITION)
+
+Conductor HITL resolution surface for the autonomous build conductor. Distinct from the build-level HITL (`POST /api/builds/{id}/hitl/{call_id}`) — this is the conductor-level queue view and resolution endpoint. All routes require `AuthGuard` (Bearer token). Source: `lightarchitects-webshell/src/server/conductor_routes.rs`.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/conductor/hitl` | List all pending conductor HITL tasks |
+| `POST` | `/api/conductor/hitl/{task_id}/resolve` | Resolve a conductor HITL task (approve/reject) |
+
+This is the shipped form of the surface originally specced as `POST /api/gitforest/hitl-resolve` (§2.20 — stale). The conductor HITL path scopes resolution to the conductor queue rather than gitforest nodes.
+
+---
+
+### §2.44 Copilot Playwright Bridge (2026-05-30 ADDITION)
+
+CDP-based browser inspection surface for copilot. Allows copilot to request screenshots and DOM snapshots via Chrome DevTools Protocol. Requires dev-mode CDP bridge to be initialised first. All routes require `AuthGuard`. `AppState.playwright_state` holds the bridge handle. Source: `lightarchitects-webshell/src/copilot/playwright.rs` + `mod.rs`.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/copilot/playwright/init` | Initialise the CDP bridge (start Chrome DevTools connection) |
+| `POST` | `/api/copilot/playwright/screenshot` | Capture a screenshot via CDP |
+| `POST` | `/api/copilot/playwright/dom-snapshot` | Capture a DOM accessibility snapshot via CDP |
+
+Returns `503` when `playwright_state` is `None` (bridge not initialised or feature disabled at runtime).
+
+---
+
+### §2.45 Copilot HITL Resolve (2026-05-30 ADDITION)
+
+Inline HITL resolution endpoint for copilot-originated HITL calls. Distinct from conductor HITL (§2.43). Requires `AuthGuard`. Source: `lightarchitects-webshell/src/server/mod.rs`.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/copilot/hitl/resolve` | Resolve a copilot-originated HITL call |
+
+---
+
+### §2.46 Cockpit Wave (2026-05-21 ADDITION)
+
+Cockpit wave pulse signal endpoint. Used by the copilot to broadcast a wave completion signal to the Cockpit screen. Source: `lightarchitects-webshell/src/server/cockpit_wave.rs`.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/cockpit/wave` | Broadcast a cockpit wave event to the SSE stream |
+
+---
+
+### §2.47 Layout Snapshot (2026-05-30 ADDITION)
+
+Frontend layout persistence. Allows the browser to persist and restore its panel layout state across reloads. `AppState.layout_snapshot: Arc<RwLock<Option<Value>>>` holds the current layout. All routes require `AuthGuard`. Source: `lightarchitects-webshell/src/server/mod.rs`.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/layout/snapshot` | Fetch the persisted layout JSON |
+| `POST` | `/api/layout/snapshot` | Write the current layout JSON |
+
+---
+
+### §2.48 Container Management (2026-05-30 ADDITION)
+
+Container spawn policy management and active container visibility. Policy is hot-swappable via `PATCH` without restart. `AppState.policy: Arc<ArcSwap<ContainerPolicy>>` holds the live policy. All routes require `AuthGuard`. Source: `lightarchitects-webshell/src/server/mod.rs` + `container/`.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/container/policy` | Fetch the current container spawn policy (includes `ETag` for optimistic concurrency) |
+| `PATCH` | `/api/container/policy` | Update the container spawn policy (requires `If-Match: "<epoch>"`) |
+| `GET` | `/api/container/active` | List all active containers and their status |
+| `GET (WS)` | `/api/terminal/container/{id}` | WebSocket terminal relay for a specific container |
+
+`PATCH /api/container/policy` requires `If-Match: "<policy_version>"` (optimistic concurrency via `policy_version: AtomicU64`). Returns `412 Precondition Failed` on epoch mismatch. Rate-limited to 1 PATCH/sec per token via `patch_rate_limiter`. Requests from Docker bridge CIDRs are rejected with `403` via `bridge_cidr_guard`.
+
+---
+
+### §2.49 Miscellaneous New Routes (2026-05-30 – 2026-06-03 ADDITION)
+
+Remaining routes added since 2026-05-22 that don't warrant a dedicated section:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/sitrep` | System situation report |
+| `GET` | `/api/projects/browse` | Browse all registered projects |
+| `GET` | `/api/mcp-servers` | Bare MCP server list (distinct from `/api/mcp/servers` in §2.33) |
+| `POST` | `/api/arch/kroki` | Kroki diagram render proxy (Mermaid/D2/PlantUML → SVG) |
+
+---
+
 ## Part III — Frontend Route Catalogue
 
 ### §3.1 Router Implementation
@@ -1665,38 +1901,46 @@ Custom hash-based SPA router (not SvelteKit file-based routing). Routes are matc
 
 ### §3.2 ScreenKey Types
 
-**13 keys** (`src/lib/routes.ts:5–18`):
+**21 keys** (`src/lib/routes.ts:5–25`). Note: `Ops` was **renamed to `Dashboard`** in 2026-06-03 source; any reference to `'Ops'` in prior docs or comments is stale.
 
 ```typescript
-type ScreenKey =
-  | 'Ops'           // /  /dashboard  /monitor  /ops (legacy)
-  | 'Dispatch'      // /run  /dispatch (legacy)
-  | 'Builds'        // /builds  /manage (legacy)
-  | 'Intake'        // /intake
-  | 'Helix'         // /knowledge  /knowledge/strand/:s  /knowledge/entry/:e
-                    // /memory  /memory/strand/:s  /memory/entry/:e
-                    // /helix  /helix/strand/:s  /helix/entry/:e (legacy)
-  | 'BuildDetail'   // /builds/:buildId  (+ phase/wave/agent/task drill-down)
-  | 'ProjectDetail' // /project/:projectId
-  | 'Comms'         // /activity  /comms (legacy)
-  | 'Editor'        // /editor  /editor/:filepath
-  | 'Git'           // /git
-  | 'PullRequest'   // /pr/new  /pr/:number
-  | 'Architecture'  // /diagrams  /diagrams/:project  /arch (legacy)
-  | 'Roadmap'       // /roadmap
+export type ScreenKey =
+  | 'Dashboard'        // /  /dashboard  /monitor  /ops (legacy) — renamed from 'Ops'
+  | 'Dispatch'         // /run  /dispatch (legacy)
+  | 'Builds'           // /builds  /manage (legacy)
+  | 'Intake'           // /intake
+  | 'Helix'            // /knowledge  /knowledge/strand/:s  /knowledge/entry/:e
+                       // /memory  /memory/strand/:s  /memory/entry/:e
+                       // /helix  /helix/strand/:s  /helix/entry/:e (legacy)
+  | 'BuildDetail'      // /builds/:buildId  (+ phase/wave/agent/task drill-down)
+  | 'ProjectDetail'    // /project/:projectId
+  | 'Comms'            // /activity  /comms (legacy)
+  | 'Editor'           // /editor  /editor/:filepath
+  | 'Git'              // /git
+  | 'PullRequest'      // /pr/new  /pr/:number
+  | 'Architecture'     // /diagrams  /diagrams/:project  /arch (legacy)
+  | 'DiagramLibrary'   // /diagrams/library  /library  — NEW 2026-05-30
+  | 'Roadmap'          // /roadmap
+  | 'Observability'    // /observability  /ayin  — NEW AYIN integration screen
+  | 'Tools'            // /tools  — NEW §O Tool Surface Parity screen
+  | 'AutonomousBuilds' // /autonomous  — NEW ironclaw autonomous build panel
+  | 'Chat'             // /chat  — NEW LiteLLM streaming chat panel
+  | 'Security'         // /security  — NEW container spawn policy + isolation controls
+  | 'Program'          // /program  — NEW webshell-supervisor-autonomy program panel
+  | 'Supervision'      // /supervision  — NEW supervision panel
 ```
 
 ### §3.3 BuildViewMode Enum
 
-**9 modes** (`src/lib/routes.ts:44`):
+**10 modes** (`src/lib/routes.ts:44`). `'fleet'` added in 2026-05-30 build.
 
 ```typescript
-type BuildViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms' | 'pipeline' | 'autonomous' | 'decisions'
+type BuildViewMode = 'kanban' | 'list' | 'operator' | 'manifest' | 'plan' | 'comms' | 'pipeline' | 'autonomous' | 'decisions' | 'fleet'
 ```
 
 ### §3.4 Route Patterns
 
-Ordered most-specific first — the router short-circuits on first match. **43 entries** in the ROUTES array (`src/lib/routes.ts:50–92`).
+Ordered most-specific first — the router short-circuits on first match. **49 entries** in the ROUTES array as of HEAD `ac9383e` (`src/lib/routes.ts`). 10 new patterns added since 2026-05-22 (marked NEW below).
 
 | # | Pattern | Screen | Params | Notes |
 |---|---------|--------|--------|-------|
@@ -1739,8 +1983,18 @@ Ordered most-specific first — the router short-circuits on first match. **43 e
 | 37 | `/^\/arch\/(.+)$/` | `Architecture` | project | Legacy alias — redirected by REDIRECTS |
 | 38 | `/^\/arch$/` | `Architecture` | — | Legacy alias — redirected by REDIRECTS |
 | 39 | `/^\/roadmap$/` | `Roadmap` | — | Portfolio roadmap |
+| 40 | `/^\/diagrams\/library$/` | `DiagramLibrary` | — | NEW — diagram library screen |
+| 41 | `/^\/library$/` | `DiagramLibrary` | — | NEW — diagram library alias |
+| 42 | `/^\/program$/` | `Program` | — | NEW — program supervisor panel |
+| 43 | `/^\/supervision$/` | `Supervision` | — | NEW — supervision panel |
+| 44 | `/^\/observability$/` | `Observability` | — | NEW — AYIN observability screen |
+| 45 | `/^\/security$/` | `Security` | — | NEW — container spawn policy + isolation controls |
+| 46 | `/^\/ayin$/` | `Observability` | — | NEW — AYIN alias route |
+| 47 | `/^\/tools$/` | `Tools` | — | NEW — §O Tool Surface Parity screen |
+| 48 | `/^\/autonomous$/` | `AutonomousBuilds` | — | NEW — ironclaw autonomous build panel |
+| 49 | `/^\/chat$/` | `Chat` | — | NEW — LiteLLM streaming chat panel |
 
-> **Note on grep counts**: `grep -c '\[/'` returns **38** (misses entry #5 which uses `new RegExp(...)`). True count = 38 + 1 = 39. The ROUTES array was 43 entries per the agent audit; 39 confirmed by direct line-count of routes.ts:50–92.
+> **Note on grep counts**: `grep -c '\[/'` returns **48** (misses entry #5 which uses `new RegExp(...)`). True count = 48 + 1 = 49.
 
 ### §3.5 Legacy Redirects
 
@@ -1761,7 +2015,7 @@ Applied via `history.replaceState` (transparent — no visible route change). So
 
 ### §3.6 Fallback Behaviour
 
-Root path `/` maps to `screen: 'Dispatch'` (entry #12). All other unmatched routes fall through to `screen: 'Ops'` (`matchRoute` line 106).
+Root path `/` maps to `screen: 'Dispatch'` (entry #12). All other unmatched routes fall through to `screen: 'Dashboard'` (`matchRoute` line 106). Note: the ScreenKey was renamed from `'Ops'` to `'Dashboard'` in HEAD `ac9383e`; any surviving `'Ops'` reference in source or comments is stale.
 
 ### §3.7 Screen Component Catalogue
 
@@ -1769,7 +2023,7 @@ Screens are lazy-loaded per `screenModules` in `src/app.svelte:51`. Each entry m
 
 | ScreenKey | Component file | Route(s) | Purpose |
 |-----------|----------------|----------|---------|
-| `Ops` | `src/screens/Ops.svelte` | `/dashboard`, `/monitor` (→ `/dashboard`), `/ops` (→ `/dashboard`) | Monitor HUD — 3-panel layout: Agent Comms (left, 22%) / GitForest2D card view (center, 50%) / Worktrees filepath tree (right, 28%). Conductor queue strip always visible (running tasks blue-pulsing, pending amber). Preset tabs: MONITOR / WORKSPACE / DEBUG / SHIP / AGENT / OBSERVE. Fallback for all unmatched routes. Components: `AgentCommsPanel.svelte`, `GitForest2D.svelte`, `WorktreePanel.svelte`. |
+| `Dashboard` | `src/screens/Ops.svelte` | `/dashboard`, `/monitor` (→ `/dashboard`), `/ops` (→ `/dashboard`) | Monitor HUD — 3-panel layout: Agent Comms (left, 22%) / GitForest2D card view (center, 50%) / Worktrees filepath tree (right, 28%). Conductor queue strip always visible (running tasks blue-pulsing, pending amber). Preset tabs: MONITOR / WORKSPACE / DEBUG / SHIP / AGENT / OBSERVE. Fallback for all unmatched routes. Components: `AgentCommsPanel.svelte`, `GitForest2D.svelte`, `WorktreePanel.svelte`. Note: ScreenKey renamed from `'Ops'` to `'Dashboard'` in HEAD `ac9383e`; component file retains legacy name `Ops.svelte`. |
 | `Dispatch` | `src/screens/Dispatch.svelte` → `src/screens/SquadDispatch.svelte` | `/run`, `/dispatch` (→ `/run`), `/dispatch/run/:runId`, `/dispatch/run/:runId/agent/:agentKey` | Squad dispatch — prompt input, domain-agent selector, live-agent grid, task DAG, dispatch history rail, CLI mode. Primary landing at `/`. `Dispatch.svelte` is a thin route shell; `SquadDispatch.svelte` is the full implementation. |
 | `Builds` | `src/screens/Builds.svelte` → `src/screens/BuildQueue.svelte` | `/builds`, `/manage` (→ `/builds`) | Build portfolio list — all builds (past, in-flight, queued). `Builds.svelte` is a compatibility wrapper; `BuildQueue.svelte` is the actual implementation. |
 | `Intake` | `src/screens/Intake.svelte` | `/intake` | New build creation form — source, repository, plan fields. Guards unsaved state via `beforeunload`; draft auto-persisted to `localStorage`. Tutorial T1 auto-fires on first visit. |
@@ -1782,6 +2036,16 @@ Screens are lazy-loaded per `screenModules` in `src/app.svelte:51`. Each entry m
 | `PullRequest` | `src/screens/PullRequest.svelte` | `/pr/new`, `/pr/:number` | Pull request surface — `PRCreateForm` at `/pr/new`; `PRReviewSurface` at `/pr/:number`. Route param `number` is injected by `app.svelte` as `params.number`. |
 | `Architecture` | `src/screens/Architecture.svelte` | `/diagrams`, `/diagrams/:project`, `/arch` (→ `/diagrams`), `/arch/:project` (→ `/diagrams/:project`) | Architecture intelligence — Mermaid/Likec4 diagram browser; project-scoped diagram extraction via `postArch(op, body)` against `/api/arch/*`. |
 | `Roadmap` | `src/lib/components/RoadmapPanel.svelte` | `/roadmap` | Portfolio-level roadmap — active builds, phases, blockers. SSE-live via `BuildUpdate` events. Renders sanitized HTML from `GET /api/roadmap` (DOMPurify). `roadmapStore.ts` manages fetch + refresh. |
+| `DiagramLibrary` | `src/screens/DiagramLibrary.svelte` | `/diagrams/library`, `/library` | Diagram library browser — catalogue of all authored architecture diagrams (Mermaid/D2/PlantUML). Added 2026-05-30. |
+| `Observability` | `src/screens/Observability.svelte` | `/observability`, `/ayin` | AYIN observability screen — traces, spans, golden signals, latency distribution. `/ayin` is a canonical alias. Added 2026-05-30. |
+| `Tools` | `src/screens/Tools.svelte` | `/tools` | §O Tool Surface Parity screen — inventory of all operator-facing tools across sibling agents. Added 2026-05-30. |
+| `AutonomousBuilds` | `src/screens/AutonomousBuilds.svelte` | `/autonomous` | Ironclaw autonomous build panel — queued and in-flight autonomous build jobs. Backed by `/api/builds/{id}/autonomous` (§2.4). Added 2026-05-30. |
+| `Chat` | `src/screens/Chat.svelte` | `/chat` | LiteLLM streaming chat panel — direct chat interface through the configured LiteLLM provider. Backed by `/api/litellm/chat` (§2.39). Added 2026-05-30. |
+| `Security` | `src/screens/Security.svelte` | `/security` | Container spawn policy and isolation controls — view and hot-swap container policy. Backed by `/api/container/policy` (§2.48). Added 2026-05-30. |
+| `Program` | `src/screens/Program.svelte` | `/program` | Program supervisor panel — submit and monitor northstar-anchored program plans. Backed by `/api/program/*` (§2.41). Added 2026-05-30. |
+| `Supervision` | `src/screens/Supervision.svelte` | `/supervision` | Supervision panel — conductor HITL queue, pending escalations, and resolution controls. Backed by `/api/conductor/hitl` (§2.43). Added 2026-05-30. |
+
+> **Note**: Component file paths for the 8 new screens above follow the ScreenKey→filename convention. Verify against `screenModules` in `src/app.svelte:52–66` (C11) before relying on exact paths.
 
 ### §3.8 Navigation Structure
 
@@ -1801,7 +2065,7 @@ Screens are lazy-loaded per `screenModules` in `src/app.svelte:51`. Each entry m
 
 | Shortcut | Action | Scope |
 |----------|--------|-------|
-| `1` | Navigate to `/ops` (redirects → `/dashboard`) | Global (non-input) |
+| `1` | Navigate to `/ops` (redirects → `/dashboard`, loads `Dashboard` screen) | Global (non-input) |
 | `2` | Navigate to `/dispatch` (redirects → `/run`) | Global (non-input) |
 | `3` | Navigate to `/builds` | Global (non-input) |
 | `4` | Navigate to `/comms` (redirects → `/activity`) | Global (non-input) |
@@ -1849,7 +2113,7 @@ Which backend sections and route prefixes serve each screen. Use this to find re
 
 | ScreenKey | Backend section(s) | Primary route prefixes |
 |-----------|-------------------|------------------------|
-| `Ops` | §2.1 Auth & Health, §2.3 Events, §2.6 Workspaces (conductor tasks), §2.12 Misc, §2.14 Preflight, §2.17-2.20 GitForest | `/api/health`, `/api/events/global`, `/api/conductor/status`, `/api/polytopes`, `/api/preflight`, `/api/gitforest/*` |
+| `Dashboard` | §2.1 Auth & Health, §2.3 Events, §2.6 Workspaces (conductor tasks), §2.12 Misc, §2.14 Preflight, §2.17-2.20 GitForest | `/api/health`, `/api/events/global`, `/api/conductor/status`, `/api/polytopes`, `/api/preflight`, `/api/gitforest/*` |
 | `Dispatch` | §2.7 Dispatch Sub-Router, §2.3 Events | `/api/dispatch/*`, `/api/events` |
 | `Builds` | §2.4 Builds Core | `/api/builds` |
 | `BuildDetail` | §2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor, §2.17-2.20 GitForest, §2.21-2.22 Fleet | `/api/builds/{id}`, `/api/builds/{id}/terminal/ws`, `/api/builds/{id}/events`, `/api/builds/{id}/supervisor/state`, `/api/builds/{id}/supervisor/events`, `/api/builds/{id}/supervisor/acknowledge`, `/api/gitforest/*`, `/api/builds/{id}/fleet`, `/api/builds/{id}/fleet/snapshot` |
@@ -1862,6 +2126,14 @@ Which backend sections and route prefixes serve each screen. Use this to find re
 | `Comms` | §2.11 Coordination / Squad Comms | `/api/coordination/*` |
 | `ProjectDetail` | §2.6 Workspaces | `/api/workspaces/{id}` |
 | `Architecture` | §2.21 Architecture Intelligence Proxy | `/api/arch/*` |
+| `DiagramLibrary` | §2.21 Architecture Intelligence Proxy | `/api/arch/*` |
+| `Observability` | §2.49 Misc (AYIN HTTP-only at `:3742`) | AYIN is HTTP-only — no gateway proxy routes |
+| `Tools` | §2.12 Misc, §2.33 MCP Host Proxy | `/api/meta-skills`, `/api/mcp/*` |
+| `AutonomousBuilds` | §2.4 Builds Core (autonomous sub-routes) | `/api/builds/{id}/autonomous`, `/api/builds/{id}/autonomous/status` |
+| `Chat` | §2.39 LiteLLM Router | `/api/litellm/chat`, `/api/litellm/config` |
+| `Security` | §2.48 Container Management | `/api/container/policy`, `/api/container/active` |
+| `Program` | §2.41 Program Supervisor | `/api/program/*`, `/api/program-manifest` |
+| `Supervision` | §2.43 Conductor HITL, §2.42 HITL Question Bridge | `/api/conductor/hitl`, `/api/conductor/hitl/{task_id}/resolve`, `/api/question`, `/api/question/{id}/answer` |
 
 ---
 
@@ -1873,13 +2145,13 @@ Backend routes that exist but have no dedicated frontend screen or route.
 |----------------|-----------|------------------------|-------------|
 | **Workspaces** | `GET /api/workspaces`, `GET /api/workspaces/{id}` | None — no `/workspaces` screen | High — key HUD surface for vibe-coding engineers |
 | **Processes** | `GET /api/exec/processes` | None — no running-processes list | High — engineers need visibility into spawned processes |
-| **Worktrees** | Zero backend routes | None | Critical — complete gap at both layers |
+| **Worktrees** | `POST /api/git/worktrees` (body: `{cwd}`) — backend partial (corrected in §2.10c) | None — no `/worktrees` screen | High — frontend gap remains; backend now has a create endpoint |
 | **Meta-skills** | `GET /api/meta-skills` | None | Medium — skill inventory not surfaced |
 | **SOUL graph edges** | `GET /api/soul/edges`, `/api/soul/convergences` | Not in Helix screen | Medium — graph topology invisible |
-| **Conductor/Arena control** | `GET /api/conductor/status`, `/api/arena/status` | Ops panel read-only | Low — status visible; no control surface |
+| **Conductor/Arena control** | `GET /api/conductor/status`, `/api/arena/status` | Dashboard panel read-only | Low — status visible; no control surface |
 | **Coordination drilldown** | `GET /api/coordination/tasks/{id}/logs` | Comms screen is flat (no `/comms/task/{id}`) | Medium — task log detail unreachable via deep link |
 | **Dispatch permission gates** | `POST /api/dispatch/{id}/fs-approve/reject` | EEF E5 dispatch detail view | Needs verification — UI wiring not confirmed |
-| **Polytope browse** | `GET /api/polytopes` | Only Ops 3D panel | Low — not a browsable list |
+| **Polytope browse** | `GET /api/polytopes` | Only Dashboard 3D panel | Low — not a browsable list |
 | **Debug parity** | `GET /api/debug/parity` | None | Intentional — dev/debug only |
 
 ---
@@ -1889,9 +2161,11 @@ Backend routes that exist but have no dedicated frontend screen or route.
 ### §5.1 CORS PUT Gap — RESOLVED 2026-05-16
 
 **Severity**: HIGH — was silently blocking cross-origin callers.
-**Status**: Fixed. `Method::PUT` added to `allow_methods` in `build_cors()` (`src/server/mod.rs:707`).
+**Status**: Fixed. `Method::PUT` added to `allow_methods` in `build_cors()` (`src/server/mod.rs:1533`).
 
 Affected routes: `PUT /api/builds/plan/{codename}` and `PUT /api/builds/{id}/notes`. Both now reachable cross-origin.
+
+> **2026-06-03 update**: `Method::PATCH` was also added to `build_cors()` (source confirmed at line 1533) since doc version 1.0.23. The §1.4 CORS table and §6.5 C16 now reflect 5 methods: `GET POST PUT PATCH OPTIONS`.
 
 ### §5.2 Internal Route Name Artefact
 
@@ -1935,16 +2209,19 @@ grep -A3 'allow_methods' lightarchitects-webshell/src/server/mod.rs
 grep -c '\[/' lightarchitects-webshell-ui/src/lib/routes.ts
 ```
 
-Expected after `copilot-supervised-orchestration` Phase 5 (2026-05-17): 92 + 7 = 99 call sites in Rust; **22** route entries in TypeScript ROUTES array (`routes.ts:42–67`). Note: the grep command returns **21** — entry #4 (line 48) uses `new RegExp(...)` and does not start with `[/`, so it is not counted by the grep. True count = grep output + 1.
+Expected at HEAD `ac9383e` (2026-06-03): **159 + 7 = 166** call sites in Rust; **49** route entries in TypeScript ROUTES array (`routes.ts`). Note: `grep -c '\[/'` returns **48** — entry #5 uses `new RegExp(...)` and does not start with `[/`, so it is not counted by the grep. True count = grep output + 1 = **49**.
+
+> Historical note: As of `copilot-supervised-orchestration` Phase 5 (2026-05-17) the counts were 92+7=99 Rust routes and 22 TS entries. Both have grown significantly since then — see audit at HEAD `ac9383e`.
 
 ### §6.4 Source Files
 
 | File | Content | Lines verified |
 |------|---------|----------------|
-| `lightarchitects-webshell/src/server/mod.rs` | `build_app()` — all routes | 402–650 |
+| `lightarchitects-webshell/src/server/mod.rs` | `AppState` struct (58 fields: 56 pub + 2 priv) | 146–490 |
+| `lightarchitects-webshell/src/server/mod.rs` | `build_app()` — all routes (159 call sites) | 987+ |
 | `lightarchitects-webshell/src/dispatch/routes.rs` | `dispatch_router()` — dispatch sub-routes | 103–111 |
 | `lightarchitects-webshell-ui/src/lib/routes.ts` | Hash router — all ScreenKey types and patterns | 1–109 |
-| `lightarchitects-webshell/src/server/mod.rs:707` | CORS allowed methods | Confirmed: GET, POST, PUT, OPTIONS (PUT added 2026-05-16, §5.1) |
+| `lightarchitects-webshell/src/server/mod.rs:1533` | CORS allowed methods | Confirmed: GET, POST, PUT, **PATCH**, OPTIONS (PUT added 2026-05-16 §5.1; PATCH added since 1.0.23) |
 
 ---
 
@@ -1971,22 +2248,22 @@ Expected after `copilot-supervised-orchestration` Phase 5 (2026-05-17): 92 + 7 =
 
 | ID | Spec claim | Source file | Exact location | What to verify | Verify command |
 |----|-----------|-------------|----------------|----------------|----------------|
-| **C1** | §1.3 AppState: 20 public fields, 1 private (`_policy_watcher`) | `src/server/mod.rs` | Line 89–198 | Field count, names, and types match §1.3 table; no new or removed fields | Read lines 89–198; diff against §1.3 table row by row |
+| **C1** | §1.3 AppState: **56 public fields, 2 private** (`_policy_watcher`, `preflight_last_refresh`) | `src/server/mod.rs` | Lines **146–490** | Field count, names, and types match §1.3 domain-grouped table; no new or removed fields | Read lines 146–490; diff against §1.3 table row by row |
 | **C2** | §1.3 Config: `port:u16`, `host_cmd:OsString`, `cwd:PathBuf`, `token:String`, `agent:AgentSession` | `src/config.rs` | Line 360–373 | Field names and types exact | `grep -n 'pub struct Config' -A15 src/config.rs` |
-| **C3** | §1.2 Route count: 99 total (92 in `server/mod.rs` + 7 in `dispatch/routes.rs`) | Both route files | Full file | `.route(` call-site count matches | `grep -c '\.route(' src/server/mod.rs src/dispatch/routes.rs` |
-| **C4** | §2.x All backend route groups present | `src/server/mod.rs`, `src/dispatch/routes.rs` | Lines 402–650 | Every route in §2.x tables exists in source; no routes in source absent from §2.x | Read route registration block; spot-check 3 groups per session |
+| **C3** | §1.2 Route count: **166 total (159 in `server/mod.rs` + 7 in `dispatch/routes.rs`)** | Both route files | Full file | `.route(` call-site count matches | `grep -c '\.route(' src/server/mod.rs src/dispatch/routes.rs` |
+| **C4** | §2.x All backend route groups present | `src/server/mod.rs`, `src/dispatch/routes.rs` | Lines **987+** | Every route in §2.x tables exists in source; no routes in source absent from §2.x | Read route registration block; spot-check 3 groups per session |
 | **C5** | §1.5 `AgentSession`: 4 variants; `#[serde(tag="agent", rename_all="snake_case")]` | `src/config.rs` | Line 242–253 | Variants and serde attrs exact | `grep -n 'enum AgentSession' -B3 -A10 src/config.rs` |
 | **C6** | §1.5 `AgentKind`: 4 variants (Lightarchitects, Codex, LightarchitectsNative, MistralVibe) | `src/config.rs` | Line 39–50 | All 4 variants present, no extras | `grep -n 'enum AgentKind' -A8 src/config.rs` |
 | **C7** | §1.5 Config structs: `ClaudeBackend`, `CodexBackend`, `OllamaLaunchConfig`, `OllamaConfig`, `CodexConfig`, `LightarchitectsNativeConfig`, `MistralVibeConfig` — field names and defaults | `src/config.rs` | Various | Every field name, type, and serde default matches §1.5 | Read each struct definition; compare field-by-field |
 | **C8** | §1.6 `spawn_bridge`: binaries `lightarchitects`/`vibe-acp`; env whitelist (PATH HOME USER SHELL RUST_LOG LLM_BACKEND OLLAMA_BASE_URL OLLAMA_MODEL LA_* LIGHTARCHITECTS_*); MISTRAL_API_KEY vibe-only; non-vibe args `["--stream-events","--cwd",<cwd>]`; vibe: no args | `src/agent/bridge.rs` | Lines 52–161 | Every spawn_bridge claim matches | Read lines 52–161; check binary names, env inject block, arg construction |
-| **C9** | §3.2 `ScreenKey` union: exactly 13 keys (Ops Dispatch Builds Intake Helix BuildDetail ProjectDetail Comms Editor Git PullRequest Architecture Roadmap) | `src/lib/routes.ts` | Lines 5–18 | Count = 13; no keys added or removed | Read lines 5–18 and count union members |
-| **C10** | §3.4 `ROUTES`: exactly 39 entries, ordered most-specific first, fallback = `Ops` | `src/lib/routes.ts` | Lines 50–92 | Count = 39; order preserved; pattern strings match §3.4 table | `grep -c '\[/' src/lib/routes.ts` (returns 38; +1 for `new RegExp(...)` entry = 39); read lines 50–92 |
-| **C11** | §3.7 `screenModules`: 13 entries; ScreenKey → correct `.svelte` import path | `src/app.svelte` | Lines 52–66 | Count = 13; every key maps to the documented component file | `grep -A17 'screenModules' src/app.svelte` |
+| **C9** | §3.2 `ScreenKey` union: exactly **21 keys** (Dashboard Dispatch Builds Intake Helix BuildDetail ProjectDetail Comms Editor Git PullRequest Architecture DiagramLibrary Roadmap Observability Tools AutonomousBuilds Chat Security Program Supervision) | `src/lib/routes.ts` | Lines **5–25** | Count = 21; `Ops` renamed to `Dashboard`; 8 new keys present | Read lines 5–25 and count union members |
+| **C10** | §3.4 `ROUTES`: exactly **49 entries**, ordered most-specific first, fallback = `Dashboard` | `src/lib/routes.ts` | Lines 50–92 | Count = 49; order preserved; pattern strings match §3.4 table | `grep -c '\[/' src/lib/routes.ts` (returns **48**; +1 for `new RegExp(...)` entry = **49**); read route array |
+| **C11** | §3.7 `screenModules`: **21 entries**; ScreenKey → correct `.svelte` import path | `src/app.svelte` | Lines 52–66 | Count = 21; `Dashboard` key (component `Ops.svelte`); 8 new keys present | `grep -A25 'screenModules' src/app.svelte` |
 | **C12** | §3.8 NAV_ITEMS: 7 tabs (Dashboard/Run/Builds/Activity/Knowledge/Diagrams/Roadmap), hash paths `/dashboard` `/run` `/builds` `/activity` `/knowledge` `/diagrams` `/roadmap` | `src/app.svelte` | Lines 158–166 | Tab count = 7; labels and paths exact | `grep -A12 'NAV_ITEMS' src/app.svelte` |
 | **C13** | §3.8 Keyboard shortcuts: 9 registered hotkeys — `1`–`5` (legacy nav routes that redirect), `⌘K` (Open Run via `/dispatch`), `⌘/` (keymap legend), `⌃\`` (Toggle Copilot drawer), `⌘M` (Toggle Memory drawer) | `src/app.svelte` | Lines 251–332 | Count = 9; IDs, labels, and handlers exact | Read lines 251–332; compare label strings |
 | **C14** | §4.1 Session cookie: `la_session=<token>; HttpOnly; SameSite=Strict; Secure; Max-Age=28800` | `src/auth.rs` | ~Line 143 | All 5 cookie attributes present in `session_cookie_header()` | `grep -n 'HttpOnly\|SameSite\|Max-Age\|la_session' src/auth.rs` |
 | **C15** | §1.3 `auth_nonces`: `Arc<DashMap<Uuid, Instant>>`; 60-second TTL; consumed on first use | `src/server/mod.rs` | Lines 162–166 | Field name, key type (`Uuid` not `String`), and TTL comment match | `grep -n 'auth_nonces' src/server/mod.rs` |
-| **C16** | §1.4 CORS: `GET POST PUT OPTIONS` | `src/server/mod.rs` | Line 707 | All 4 methods in `build_cors()` | `grep -A5 'allow_methods' src/server/mod.rs` |
+| **C16** | §1.4 CORS: `GET POST PUT PATCH OPTIONS` | `src/server/mod.rs` | Line **1533** | All **5** methods in `build_cors()` | `grep -A6 'allow_methods' src/server/mod.rs` |
 | **C17** | §3.9 Setup types: `ClaudeAuthStatus` (4 fields: `has_keychain_auth`, `has_api_key`, `login_method`, `login_source`); `SetupInfoResponse` (5 fields: `setup_complete`, `config`, `auth_status`, `resume_session`, `cwd`) | `src/setup/handlers.rs` | Lines 29–97 | Field counts and names exact | Read lines 29–97 |
 
 #### Update procedure (step-by-step for an agent)
@@ -2038,7 +2315,7 @@ Quick definitions for terms used throughout this document. All definitions are a
 | **AgentSession** | Tagged serde enum (`src/config.rs:244`, `#[serde(tag = "agent", rename_all = "snake_case")]`) that carries backend-specific config. The `agent` field in the config file selects the variant: `lightarchitects`, `codex`, `lightarchitects_native`, or `mistral_vibe`. See §1.5. |
 | **vibe-acp** | The MistralVibe agent binary. Communicates over stdin/stdout using the Agent Communication Protocol (ACP). `MISTRAL_API_KEY` is injected by `spawn_bridge` at fork time and is never present in the parent process environment. |
 | **SOUL helix** | The platform's long-term knowledge graph: enriched session memory, architectural decisions, and domain knowledge stored as vector-embedded entries in a Neo4j-backed graph. Browsable via the Knowledge screen (`/knowledge`; legacy `/helix` redirects). Accessed via `/api/soul/*` routes (§2.5). |
-| **ScreenKey** | TypeScript union type (`src/lib/routes.ts:5`) naming the 13 navigable screens. The hash router maps URL hash patterns to a `ScreenKey`; `app.svelte` lazy-loads the matching Svelte component via `screenModules`. |
+| **ScreenKey** | TypeScript union type (`src/lib/routes.ts:5`) naming the **21** navigable screens. The hash router maps URL hash patterns to a `ScreenKey`; `app.svelte` lazy-loads the matching Svelte component via `screenModules`. Note: `'Ops'` was renamed to `'Dashboard'` in HEAD `ac9383e`; 8 new keys added since doc version 1.0.23. |
 | **spawn_bridge** | Rust function (`src/agent/bridge.rs`) that forks the agent process: calls `env_clear()` to strip the parent environment, re-injects a whitelisted set of env vars, builds binary-specific args, and wires PTY I/O. All agent sessions start here. See §1.5 for the binary-per-backend table. |
 | **la_session** | HttpOnly session cookie (`Max-Age=28800`, `SameSite=Strict`, `Secure`, `Path=/`). Issued at `/api/auth/nonce-exchange`; consumed by `AuthGuard` middleware on every browser-facing route. Never readable by browser JavaScript. |
 | **X-LA-Notify-Token** | Convention name for the static bearer token used in machine-to-machine callbacks (agent process → server). The actual value is `Config::token`. Excluded from `BuildResponse` by design. See §1.6 for the security rationale. |

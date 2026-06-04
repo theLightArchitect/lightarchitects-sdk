@@ -1,10 +1,10 @@
 <!-- uuid: f2e8b3d7-6c41-4a9f-b825-1e3d7c9a0f42 -->
 <!--
 title: "Webshell API Surface"
-version: "1.0.23"
+version: "1.1.0"
 status: amended
 author: "Kevin Tan, Claude (Engineer)"
-date: "2026-05-17"
+date: "2026-06-03"
 ratified_by: "kevin"
 type: reference
 format: html
@@ -37,7 +37,7 @@ tags:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Webshell API Surface — Canonical Reference v1.0.11</title>
+<title>Webshell API Surface — Canonical Reference v1.1.0</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <style>
   :root {
@@ -218,7 +218,7 @@ tags:
 <nav class="sidebar">
   <div class="logo">
     <div class="title">Light Architects</div>
-    <div class="sub">Webshell API Surface v1.0.21</div>
+    <div class="sub">Webshell API Surface v1.1.0</div>
     <div class="sub" style="margin-top:4px;color:#FFD700;opacity:0.7;font-size:9px;letter-spacing:0.05em;">canon://webshell-api-surface</div>
   </div>
 
@@ -298,12 +298,12 @@ tags:
       Neither is derived from the other — they are co-authored representations of the same spec.
     </div>
     <div class="meta" style="margin-top:16px;">
-      <div class="meta-item">Version <span>1.0.21</span></div>
-      <div class="meta-item">Status <span>ratified</span></div>
-      <div class="meta-item">Date <span>2026-05-17</span></div>
+      <div class="meta-item">Version <span>1.1.0</span></div>
+      <div class="meta-item">Status <span>amended</span></div>
+      <div class="meta-item">Date <span>2026-06-03</span></div>
       <div class="meta-item">Canon URI <span>canon://webshell-api-surface</span></div>
       <div class="meta-item">Backend port <span>:8733</span></div>
-      <div class="meta-item">Routes <span>99 .route() call sites</span></div>
+      <div class="meta-item">Routes <span>166 .route() call sites</span></div>
       <div class="meta-item">Agents <span>4 supported</span></div>
       <div class="meta-item">Canon pair <span><a href="webshell-api-surface-v1.md">↔ .md</a></span></div>
     </div>
@@ -433,33 +433,51 @@ graph LR
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <section id="arch-state">
   <h3>AppState — Shared Server State</h3>
-  <p>All handlers receive <code>Arc&lt;AppState&gt;</code>. 20 public fields, 1 private (<code>_policy_watcher</code>). Full struct: <code>src/server/mod.rs:89</code>.</p>
+  <p>All handlers receive <code>Arc&lt;AppState&gt;</code>. <strong>56 public fields, 2 private</strong> (<code>_policy_watcher</code>, <code>preflight_last_refresh</code>). Full struct: <code>src/server/mod.rs:146–490</code>. See <a href="webshell-api-surface-v1.md#§1.3">§1.3 domain-grouped table</a> for the complete 58-field listing.</p>
 
   <div class="diagram">
-    <div class="diagram-label">Entity — AppState fields</div>
+    <div class="diagram-label">Entity — AppState domain groups (HEAD ac9383e · 56 pub + 2 priv = 58 total)</div>
     <div class="mermaid">
 erDiagram
   AppState {
-    Arc_Config config
-    Arc_SecretSlice turnlog_pepper
-    Arc_AtomicUsize session_count
-    Sender_WebEvent event_tx
-    Arc_RwLock_BrowserStateSnapshot browser_state
-    BuildsHandlerCache builds_cache
-    Arc_BuildRegistry builds
-    Arc_RwLock_AgentSession active_agent
-    Option_Arc_SoulPersistence soul_store
-    Option_PolicyHandle promotion_policy
-    Arc_OnceCell_EmbeddingProvider embedding_provider
-    Arc_Mutex_DispatchRegistry dispatch_registry
-    DockerCapability docker_capable
-    ImageManager image_manager
-    TelemetryHandle telemetry
-    Arc_Mutex_SessionStore session_store
-    Arc_DashMap_Uuid_Instant auth_nonces
-    GlobalEventStore global_event_store
-    Arc_DashMap_Uuid_PlanDraftSession plan_draft_sessions
-    Arc_DashMap_Uuid_SupervisorEntry supervisor_states
+    Arc_Config config "Infrastructure"
+    Arc_SecretSlice turnlog_pepper "Infrastructure"
+    Arc_AtomicUsize session_count "Infrastructure"
+    Sender_WebEvent event_tx "Infrastructure"
+    TelemetryHandle telemetry "Infrastructure"
+    Arc_DashMap_Uuid_Instant auth_nonces "Auth/Session"
+    Arc_DashMap_Uuid_OAuthPendingState oauth_states "Auth/Session"
+    Arc_DashMap_String_CredentialState credential_store "Auth/Session"
+    Arc_Mutex_SessionStore session_store "Auth/Session"
+    String la_native_api_key "Auth/Session"
+    Arc_RwLock_BrowserStateSnapshot browser_state "Events/SSE"
+    GlobalEventStore global_event_store "Events/SSE"
+    BuildsHandlerCache builds_cache "Builds/Supervisor"
+    Arc_BuildRegistry builds "Builds/Supervisor"
+    Arc_RwLock_AgentSession active_agent "Builds/Supervisor"
+    Arc_DashMap_Uuid_SupervisorEntry supervisor_states "Builds/Supervisor"
+    Arc_AtomicBool attestation_log "Builds/Supervisor"
+    Arc_RwLock_LitellmConfig litellm_config "Copilot/LLM"
+    Option_PlaywrightState playwright_state "Copilot/LLM"
+    Arc_Semaphore litellm_supervisor_semaphore "Copilot/LLM"
+    DockerCapability docker_capable "Container"
+    ImageManager image_manager "Container"
+    Arc_ArcSwap_ContainerPolicy policy "Container"
+    Arc_DashMap_String_ContainerStatus active_containers "Container"
+    AtomicU64 policy_version "Container"
+    Arc_GovernorRateLimiter patch_rate_limiter "Container"
+    CidrGuard bridge_cidr_guard "Container"
+    Option_Arc_SoulPersistence soul_store "SOUL/Knowledge"
+    Option_Arc_SoulClient soul_client "SOUL/Knowledge"
+    Arc_RwLock_Option_EvaIdentity eva_identity "SOUL/Knowledge"
+    Arc_RwLock_Option_Value layout_snapshot "Layout"
+    Arc_QuestionRegistry question_registry "HITL"
+    Arc_DashMap_Uuid_QuestionMeta question_metadata "HITL"
+    Arc_HitlQueue hitl_queue "HITL"
+    Arc_HitlResolver hitl_resolver "HITL"
+    Arc_IronclawConfig ironclaw_config "Autonomous"
+    Arc_RwLock_Option_ProgramRun program_run "Program"
+    Option_Arc_McpHost mcp_host "MCP"
   }
   Config {
     u16 port
@@ -467,6 +485,14 @@ erDiagram
     PathBuf cwd
     String token
     AgentSession agent
+    TokenSource token_source
+    Option_String claude_agent_template
+    ContainerMode container_mode
+    bool dev_mode
+    u32 max_context_prompts
+    LiteLLMConfig litellm
+    HermesMcpConfig hermes_mcp
+    Option_String resume_session_id
   }
     </div>
   </div>
@@ -1021,8 +1047,8 @@ flowchart TD
   D --> E
   C -->|no| E[matchRoute\npath]
   E --> F{match ROUTES\narray in order}
-  F -->|pattern 1..22| G[extract params\ne.g. buildId, view, phaseId]
-  F -->|no match| H[screen: Ops\ndefault fallback]
+  F -->|pattern 1..49| G[extract params\ne.g. buildId, view, phaseId]
+  F -->|no match| H[screen: Dashboard\ndefault fallback]
   G --> I{screenModules[key]}
   H --> I
   I --> J[dynamic import\nlazy code-split bundle]
@@ -1037,33 +1063,61 @@ flowchart TD
 
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <section id="fe-screens">
-  <h3>Screen Map — All 22 Route Patterns</h3>
+  <h3>Screen Map — 49 Route Patterns (HEAD ac9383e)</h3>
+  <p>Note: <code>ScreenKey 'Ops'</code> was renamed to <code>'Dashboard'</code> in HEAD <code>ac9383e</code>. 8 new screens added since v1.0.23.</p>
 
   <table>
     <thead><tr><th>#</th><th>Pattern</th><th>Screen</th><th>Params</th></tr></thead>
     <tbody>
-      <tr><td>1</td><td><code>/builds/:id/phase/:p/wave/:w/agent/:a</code></td><td>BuildDetail</td><td>buildId, phaseId, waveId, agentKey</td></tr>
-      <tr><td>2</td><td><code>/builds/:id/phase/:p/wave/:w</code></td><td>BuildDetail</td><td>buildId, phaseId, waveId</td></tr>
-      <tr><td>3</td><td><code>/builds/:id/phase/:p</code></td><td>BuildDetail</td><td>buildId, phaseId</td></tr>
-      <tr><td>4</td><td><code>/builds/:id/(kanban|list|operator|manifest|plan|comms)</code></td><td>BuildDetail</td><td>buildId, view</td></tr>
-      <tr><td>5</td><td><code>/builds/:id</code></td><td>BuildDetail</td><td>buildId</td></tr>
-      <tr><td>6</td><td><code>/dispatch/run/:id/agent/:a</code></td><td>Dispatch</td><td>runId, agentKey</td></tr>
-      <tr><td>7</td><td><code>/dispatch/run/:id</code></td><td>Dispatch</td><td>runId</td></tr>
-      <tr><td>8</td><td><code>/helix/strand/:key</code></td><td>Helix</td><td>siblingKey</td></tr>
-      <tr><td>9</td><td><code>/helix/entry/:id</code></td><td>Helix</td><td>entryId</td></tr>
-      <tr><td>10</td><td><code>/project/:id</code></td><td>ProjectDetail</td><td>projectId</td></tr>
-      <tr><td>11</td><td><code>/</code> (root)</td><td>Ops</td><td>—</td></tr>
-      <tr><td>12</td><td><code>/ops</code> (+ optional hash)</td><td>Ops</td><td>—</td></tr>
-      <tr><td>13</td><td><code>/dispatch</code></td><td>Dispatch</td><td>—</td></tr>
-      <tr><td>14</td><td><code>/builds</code></td><td>Builds</td><td>—</td></tr>
-      <tr><td>15</td><td><code>/intake</code></td><td>Intake</td><td>—</td></tr>
-      <tr><td>16</td><td><code>/helix</code></td><td>Helix</td><td>—</td></tr>
-      <tr><td>17</td><td><code>/comms</code></td><td>Comms</td><td>—</td></tr>
-      <tr><td>18</td><td><code>/editor/:filepath</code></td><td>Editor</td><td>filepath</td></tr>
-      <tr><td>19</td><td><code>/editor</code></td><td>Editor</td><td>—</td></tr>
-      <tr><td>20</td><td><code>/git</code></td><td>Git</td><td>—</td></tr>
-      <tr><td>21</td><td><code>/pr/new</code></td><td>PullRequest</td><td>—</td></tr>
-      <tr><td>22</td><td><code>/pr/:number</code></td><td>PullRequest</td><td>number</td></tr>
+      <tr><td>1</td><td><code>/builds/:id/phase/:p/wave/:w/agent/:a/task/:t</code></td><td>BuildDetail</td><td>buildId, phaseId, waveId, agentKey, taskId</td></tr>
+      <tr><td>2</td><td><code>/builds/:id/phase/:p/wave/:w/agent/:a</code></td><td>BuildDetail</td><td>buildId, phaseId, waveId, agentKey</td></tr>
+      <tr><td>3</td><td><code>/builds/:id/phase/:p/wave/:w</code></td><td>BuildDetail</td><td>buildId, phaseId, waveId</td></tr>
+      <tr><td>4</td><td><code>/builds/:id/phase/:p</code></td><td>BuildDetail</td><td>buildId, phaseId</td></tr>
+      <tr><td>5</td><td><code>/builds/:id/(kanban|list|…|fleet)</code> — 10-mode enum</td><td>BuildDetail</td><td>buildId, view</td></tr>
+      <tr><td>6</td><td><code>/builds/:id</code></td><td>BuildDetail</td><td>buildId</td></tr>
+      <tr><td>7</td><td><code>/dispatch/run/:id/agent/:a</code></td><td>Dispatch</td><td>runId, agentKey</td></tr>
+      <tr><td>8</td><td><code>/dispatch/run/:id</code></td><td>Dispatch</td><td>runId</td></tr>
+      <tr><td>9</td><td><code>/helix/strand/:key</code></td><td>Helix</td><td>siblingKey</td></tr>
+      <tr><td>10</td><td><code>/helix/entry/:id</code></td><td>Helix</td><td>entryId</td></tr>
+      <tr><td>11</td><td><code>/project/:id</code></td><td>ProjectDetail</td><td>projectId</td></tr>
+      <tr><td>12</td><td><code>/</code> (root)</td><td>Dispatch</td><td>—</td></tr>
+      <tr><td>13</td><td><code>/dashboard</code></td><td><strong>Dashboard</strong></td><td>—</td></tr>
+      <tr><td>14</td><td><code>/monitor</code></td><td>Dashboard</td><td>— (redirected)</td></tr>
+      <tr><td>15</td><td><code>/ops</code></td><td>Dashboard</td><td>— (legacy redirect)</td></tr>
+      <tr><td>16</td><td><code>/run</code></td><td>Dispatch</td><td>—</td></tr>
+      <tr><td>17</td><td><code>/dispatch</code></td><td>Dispatch</td><td>— (legacy redirect)</td></tr>
+      <tr><td>18</td><td><code>/builds</code></td><td>Builds</td><td>—</td></tr>
+      <tr><td>19</td><td><code>/manage</code></td><td>Builds</td><td>— (legacy redirect)</td></tr>
+      <tr><td>20</td><td><code>/intake</code></td><td>Intake</td><td>—</td></tr>
+      <tr><td>21</td><td><code>/knowledge</code></td><td>Helix</td><td>—</td></tr>
+      <tr><td>22</td><td><code>/knowledge/strand/:key</code></td><td>Helix</td><td>siblingKey</td></tr>
+      <tr><td>23</td><td><code>/knowledge/entry/:id</code></td><td>Helix</td><td>entryId</td></tr>
+      <tr><td>24</td><td><code>/memory</code></td><td>Helix</td><td>— (legacy redirect)</td></tr>
+      <tr><td>25</td><td><code>/memory/strand/:key</code></td><td>Helix</td><td>— (legacy redirect)</td></tr>
+      <tr><td>26</td><td><code>/memory/entry/:id</code></td><td>Helix</td><td>— (legacy redirect)</td></tr>
+      <tr><td>27</td><td><code>/helix</code></td><td>Helix</td><td>— (legacy redirect)</td></tr>
+      <tr><td>28</td><td><code>/activity</code></td><td>Comms</td><td>—</td></tr>
+      <tr><td>29</td><td><code>/comms</code></td><td>Comms</td><td>— (legacy redirect)</td></tr>
+      <tr><td>30</td><td><code>/diagrams/:project</code></td><td>Architecture</td><td>project</td></tr>
+      <tr><td>31</td><td><code>/diagrams</code></td><td>Architecture</td><td>—</td></tr>
+      <tr><td>32</td><td><code>/editor/:filepath</code></td><td>Editor</td><td>filepath</td></tr>
+      <tr><td>33</td><td><code>/editor</code></td><td>Editor</td><td>—</td></tr>
+      <tr><td>34</td><td><code>/git</code></td><td>Git</td><td>—</td></tr>
+      <tr><td>35</td><td><code>/pr/new</code></td><td>PullRequest</td><td>—</td></tr>
+      <tr><td>36</td><td><code>/pr/:number</code></td><td>PullRequest</td><td>number</td></tr>
+      <tr><td>37</td><td><code>/arch/:project</code></td><td>Architecture</td><td>— (legacy redirect)</td></tr>
+      <tr><td>38</td><td><code>/arch</code></td><td>Architecture</td><td>— (legacy redirect)</td></tr>
+      <tr><td>39</td><td><code>/roadmap</code></td><td>Roadmap</td><td>—</td></tr>
+      <tr><td>40</td><td><code>/diagrams/library</code></td><td><strong>DiagramLibrary</strong></td><td>— NEW</td></tr>
+      <tr><td>41</td><td><code>/library</code></td><td>DiagramLibrary</td><td>— NEW alias</td></tr>
+      <tr><td>42</td><td><code>/program</code></td><td><strong>Program</strong></td><td>— NEW</td></tr>
+      <tr><td>43</td><td><code>/supervision</code></td><td><strong>Supervision</strong></td><td>— NEW</td></tr>
+      <tr><td>44</td><td><code>/observability</code></td><td><strong>Observability</strong></td><td>— NEW</td></tr>
+      <tr><td>45</td><td><code>/security</code></td><td><strong>Security</strong></td><td>— NEW</td></tr>
+      <tr><td>46</td><td><code>/ayin</code></td><td>Observability</td><td>— NEW alias</td></tr>
+      <tr><td>47</td><td><code>/tools</code></td><td><strong>Tools</strong></td><td>— NEW</td></tr>
+      <tr><td>48</td><td><code>/autonomous</code></td><td><strong>AutonomousBuilds</strong></td><td>— NEW</td></tr>
+      <tr><td>49</td><td><code>/chat</code></td><td><strong>Chat</strong></td><td>— NEW</td></tr>
     </tbody>
   </table>
   </section>
@@ -1087,18 +1141,28 @@ graph TD
     INIT["InitStep"]
   end
 
-  subgraph Screens["Screen layer (lazy-loaded)"]
-    OPS["Ops.svelte\n/  /ops"]
-    DISPATCH["Dispatch.svelte → SquadDispatch.svelte\n/dispatch /dispatch/run/:id..."]
+  subgraph Screens["Screen layer (lazy-loaded · 21 keys)"]
+    OPS["Ops.svelte → ScreenKey 'Dashboard'\n/ /dashboard /ops(→dash)"]
+    DISPATCH["Dispatch.svelte → SquadDispatch.svelte\n/run /dispatch/run/:id..."]
     BUILDS["Builds.svelte → BuildQueue.svelte\n/builds"]
     INTAKE["Intake.svelte\n/intake"]
-    HELIX_S["Helix.svelte\n/helix /helix/strand/:k /helix/entry/:id"]
-    BD["BuildDetail.svelte\n/builds/:id (+ 4 drill-down levels)"]
+    HELIX_S["Helix.svelte\n/knowledge /knowledge/strand/:k..."]
+    BD["BuildDetail.svelte\n/builds/:id (+ 5 drill-down levels, 10 views)"]
     PD["ProjectDetail.svelte\n/project/:id"]
-    COMMS["Comms.svelte\n/comms"]
+    COMMS["Cockpit.svelte\n/activity"]
     EDITOR["Editor.svelte\n/editor /:filepath"]
     GIT["Git.svelte\n/git"]
     PR["PullRequest.svelte\n/pr/new /pr/:number"]
+    ARCH["Architecture.svelte\n/diagrams /diagrams/:project"]
+    ROADMAP["RoadmapPanel.svelte\n/roadmap"]
+    DIAGLIB["DiagramLibrary.svelte\n/diagrams/library  NEW"]
+    OBS["Observability.svelte\n/observability /ayin  NEW"]
+    TOOLS["Tools.svelte\n/tools  NEW"]
+    AUTO["AutonomousBuilds.svelte\n/autonomous  NEW"]
+    CHAT["Chat.svelte\n/chat  NEW"]
+    SEC["Security.svelte\n/security  NEW"]
+    PROG["Program.svelte\n/program  NEW"]
+    SUP["Supervision.svelte\n/supervision  NEW"]
   end
 
   subgraph Global["Global overlays (always mounted)"]
@@ -1122,16 +1186,18 @@ graph TD
 
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <section id="fe-nav">
-  <h3>Primary Navigation — 5 Tabs</h3>
+  <h3>Primary Navigation — 7 Tabs (HEAD ac9383e)</h3>
 
   <table>
     <thead><tr><th>Tab</th><th>Label</th><th>Hash</th><th>Keyboard</th><th>Also reachable via</th></tr></thead>
     <tbody>
-      <tr><td>1</td><td>Monitor</td><td><code>/ops</code></td><td><kbd>1</kbd></td><td>root <code>/</code>, fallback route</td></tr>
-      <tr><td>2</td><td>Run</td><td><code>/dispatch</code></td><td><kbd>2</kbd>, <kbd>⌘K</kbd></td><td><code>/dispatch/run/:id</code></td></tr>
-      <tr><td>3</td><td>BUILDS</td><td><code>/builds</code></td><td><kbd>3</kbd></td><td><code>/builds/:id</code> and all drill-downs</td></tr>
-      <tr><td>4</td><td>Activity</td><td><code>/comms</code></td><td><kbd>4</kbd></td><td>—</td></tr>
-      <tr><td>5</td><td>HELIX</td><td><code>/helix</code></td><td><kbd>5</kbd></td><td><code>/helix/strand/:k</code>, <code>/helix/entry/:id</code></td></tr>
+      <tr><td>1</td><td>Dashboard</td><td><code>/dashboard</code></td><td><kbd>1</kbd> (via <code>/ops</code> → <code>/dashboard</code>)</td><td>fallback for unmatched routes</td></tr>
+      <tr><td>2</td><td>Run</td><td><code>/run</code></td><td><kbd>2</kbd> (via <code>/dispatch</code> → <code>/run</code>), <kbd>⌘K</kbd></td><td><code>/dispatch/run/:id</code></td></tr>
+      <tr><td>3</td><td>Builds</td><td><code>/builds</code></td><td><kbd>3</kbd></td><td><code>/builds/:id</code> and all drill-downs</td></tr>
+      <tr><td>4</td><td>Activity</td><td><code>/activity</code></td><td><kbd>4</kbd> (via <code>/comms</code> → <code>/activity</code>)</td><td>—</td></tr>
+      <tr><td>5</td><td>Knowledge</td><td><code>/knowledge</code></td><td><kbd>5</kbd> (via <code>/helix</code> → <code>/knowledge</code>)</td><td><code>/knowledge/strand/:k</code>, <code>/knowledge/entry/:id</code></td></tr>
+      <tr><td>6</td><td>Diagrams</td><td><code>/diagrams</code></td><td>—</td><td><code>/diagrams/:project</code></td></tr>
+      <tr><td>7</td><td>Roadmap</td><td><code>/roadmap</code></td><td>—</td><td>—</td></tr>
     </tbody>
   </table>
 
@@ -1139,10 +1205,10 @@ graph TD
   <table>
     <thead><tr><th>Shortcut</th><th>Action</th><th>Scope</th></tr></thead>
     <tbody>
-      <tr><td><kbd>1</kbd>–<kbd>5</kbd></td><td>Navigate to Monitor / Run / Manage / Activity / Memory</td><td>Global (non-input elements)</td></tr>
-      <tr><td><kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd></td><td>Navigate to <code>/dispatch</code></td><td>Global</td></tr>
+      <tr><td><kbd>1</kbd>–<kbd>5</kbd></td><td>Navigate to Dashboard / Run / Builds / Activity / Knowledge (via legacy redirect paths)</td><td>Global (non-input elements)</td></tr>
+      <tr><td><kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd></td><td>Navigate to <code>/dispatch</code> (redirects → <code>/run</code>)</td><td>Global</td></tr>
       <tr><td><kbd>⌘/</kbd> / <kbd>Ctrl+/</kbd></td><td>Toggle keymap legend</td><td>Global</td></tr>
-      <tr><td><kbd>Ctrl+`</kbd></td><td>Toggle Copilot drawer (EVA)</td><td>Global</td></tr>
+      <tr><td><kbd>Ctrl+`</kbd></td><td>Toggle Copilot drawer</td><td>Global</td></tr>
       <tr><td><kbd>⌘M</kbd> / <kbd>Ctrl+M</kbd></td><td>Toggle Memory drawer</td><td>Global</td></tr>
     </tbody>
   </table>
@@ -1151,10 +1217,10 @@ graph TD
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <section id="fe-states">
   <h3>Build Detail — View State Machine</h3>
-  <p>BuildDetail has 6 view modes, each mapping to a <code>BuildViewMode</code> tab. The active view is set by the URL pattern <code>/builds/:id/:view</code>.</p>
+  <p>BuildDetail has <strong>10</strong> view modes, each mapping to a <code>BuildViewMode</code> tab. The active view is set by the URL pattern <code>/builds/:id/:view</code>.</p>
 
   <div class="diagram">
-    <div class="diagram-label">State Machine — BuildDetail view modes</div>
+    <div class="diagram-label">State Machine — BuildDetail view modes (HEAD ac9383e · 10 modes)</div>
     <div class="mermaid">
 stateDiagram-v2
   [*] --> kanban : /builds/:id (default)
@@ -1164,22 +1230,29 @@ stateDiagram-v2
   kanban --> manifest : click Manifest tab
   kanban --> plan : click Plan tab
   kanban --> comms : click Comms tab
+  kanban --> decisions : click Decisions tab
+  kanban --> autonomous : click Autonomous tab
+  kanban --> copilot : click Copilot tab
+  kanban --> fleet : click Fleet tab
 
   list --> kanban
-  list --> operator
-  list --> manifest
-  list --> plan
-  list --> comms
-
   operator --> kanban
   manifest --> kanban
   plan --> kanban
   comms --> kanban
+  decisions --> kanban
+  autonomous --> kanban
+  copilot --> kanban
+  fleet --> kanban
 
   note right of operator : Operator console\nper-build PTY + SSE
   note right of manifest : Build manifest\nYAML view
   note right of plan : LASDLC plan doc\nstreaming view
   note right of comms : Squad comms\nfor this build
+  note right of decisions : Conductor decision\nfeed (SSE)
+  note right of autonomous : IronClaw autonomous\nbuild panel
+  note right of copilot : Copilot chat\ndrawer embed
+  note right of fleet : Worker fleet\nlive tracking
     </div>
   </div>
   </section>
@@ -1193,10 +1266,10 @@ stateDiagram-v2
   <table>
     <thead><tr><th>ScreenKey</th><th>Backend section(s)</th><th>Primary route prefixes</th></tr></thead>
     <tbody>
-      <tr><td><code>Ops</code></td><td>§2.1 Auth &amp; Health, §2.3 Events, §2.12 Misc</td><td><code>/api/health</code>, <code>/api/events/global</code>, <code>/api/polytopes</code></td></tr>
+      <tr><td><code>Dashboard</code></td><td>§2.1 Auth &amp; Health, §2.3 Events, §2.6 Workspaces, §2.12 Misc, §2.14 Preflight, §2.17-2.20 GitForest</td><td><code>/api/health</code>, <code>/api/events/global</code>, <code>/api/conductor/status</code>, <code>/api/polytopes</code>, <code>/api/preflight</code>, <code>/api/gitforest/*</code></td></tr>
       <tr><td><code>Dispatch</code></td><td>§2.7 Dispatch Sub-Router, §2.3 Events</td><td><code>/api/dispatch/*</code>, <code>/api/events</code></td></tr>
       <tr><td><code>Builds</code></td><td>§2.4 Builds Core</td><td><code>/api/builds</code></td></tr>
-      <tr><td><code>BuildDetail</code></td><td>§2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor, §2.17-2.19 GitForest</td><td><code>/api/builds/{id}</code>, <code>/api/builds/{id}/terminal/ws</code>, <code>/api/builds/{id}/events</code>, <code>/api/builds/{id}/supervisor/state</code>, <code>/api/builds/{id}/supervisor/events</code>, <code>/api/builds/{id}/supervisor/acknowledge</code>, <code>/api/gitforest/*</code></td></tr>
+      <tr><td><code>BuildDetail</code></td><td>§2.4 Builds Core, §2.2 Terminal, §2.3 Events, §2.13 Northstar Supervisor, §2.17-2.20 GitForest, §2.21-2.22 Fleet</td><td><code>/api/builds/{id}</code>, <code>/api/builds/{id}/terminal/ws</code>, <code>/api/builds/{id}/events</code>, <code>/api/builds/{id}/supervisor/state</code>, <code>/api/builds/{id}/supervisor/events</code>, <code>/api/builds/{id}/supervisor/acknowledge</code>, <code>/api/gitforest/*</code>, <code>/api/builds/{id}/fleet</code></td></tr>
       <tr><td><code>Intake</code></td><td>§2.4 Builds Core, §2.6 Workspaces</td><td><code>/api/builds/plan*</code>, <code>/api/builds</code></td></tr>
       <tr><td><code>Helix</code></td><td>§2.5 SOUL Vault</td><td><code>/api/soul/*</code></td></tr>
       <tr><td><code>Editor</code></td><td>§2.9 Code Editor</td><td><code>/api/code/*</code></td></tr>
@@ -1205,6 +1278,14 @@ stateDiagram-v2
       <tr><td><code>Comms</code></td><td>§2.11 Coordination / Squad Comms</td><td><code>/api/coordination/*</code></td></tr>
       <tr><td><code>ProjectDetail</code></td><td>§2.6 Workspaces</td><td><code>/api/workspaces/{id}</code></td></tr>
       <tr><td><code>Architecture</code></td><td>§2.21 Architecture Intelligence Proxy</td><td><code>/api/arch/*</code></td></tr>
+      <tr><td><code>DiagramLibrary</code></td><td>§2.21 Architecture Intelligence Proxy</td><td><code>/api/arch/*</code></td></tr>
+      <tr><td><code>Observability</code></td><td>AYIN HTTP-only at <code>:3742</code></td><td>No gateway proxy routes</td></tr>
+      <tr><td><code>Tools</code></td><td>§2.12 Misc, §2.33 MCP Host Proxy</td><td><code>/api/meta-skills</code>, <code>/api/mcp/*</code></td></tr>
+      <tr><td><code>AutonomousBuilds</code></td><td>§2.4 Builds Core (autonomous sub-routes)</td><td><code>/api/builds/{id}/autonomous</code>, <code>/api/builds/{id}/autonomous/status</code></td></tr>
+      <tr><td><code>Chat</code></td><td>§2.39 LiteLLM Router</td><td><code>/api/litellm/chat</code>, <code>/api/litellm/config</code></td></tr>
+      <tr><td><code>Security</code></td><td>§2.48 Container Management</td><td><code>/api/container/policy</code>, <code>/api/container/active</code></td></tr>
+      <tr><td><code>Program</code></td><td>§2.41 Program Supervisor</td><td><code>/api/program/*</code>, <code>/api/program-manifest</code></td></tr>
+      <tr><td><code>Supervision</code></td><td>§2.43 Conductor HITL, §2.42 HITL Question Bridge</td><td><code>/api/conductor/hitl</code>, <code>/api/conductor/hitl/{task_id}/resolve</code>, <code>/api/question</code></td></tr>
     </tbody>
   </table>
   </section>
@@ -1553,6 +1634,99 @@ sequenceDiagram
     </tbody>
   </table>
 
+  <h4>§ LiteLLM Proxy Router (§2.39 — litellm-platform-integration 2026-05-30)</h4>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>PUT</code></td><td><code>/api/litellm/config</code></td><td>bearer/cookie</td><td>Update LiteLLM proxy config</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/litellm/config</code></td><td>bearer/cookie</td><td>Fetch current LiteLLM proxy config</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/litellm/chat</code></td><td>bearer/cookie</td><td>Streaming chat through LiteLLM upstream</td></tr>
+    </tbody>
+  </table>
+
+  <h4>§ Session Identity (§2.40 — webshell-pty-reuse-path ac9383e)</h4>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/api/session/current</code></td><td>bearer/cookie</td><td>Session identity probe — used by gateway to detect reuse-eligible sessions</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/agent/current</code></td><td>bearer/cookie</td><td>Active agent identity (kind + session metadata)</td></tr>
+    </tbody>
+  </table>
+
+  <h4>§ Program Supervisor (§2.41 — webshell-supervisor-autonomy 2026-05-30)</h4>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>POST</code></td><td><code>/api/program/plan</code></td><td>bearer/cookie</td><td>Submit program plan for supervisor review</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/program/start</code></td><td>bearer/cookie</td><td>Start autonomous program execution</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/program/status</code></td><td>bearer/cookie</td><td>Current program execution status</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/program/cancel</code></td><td>bearer/cookie</td><td>Cancel running program</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/program-manifest</code></td><td>bearer/cookie</td><td>Active program manifest</td></tr>
+    </tbody>
+  </table>
+
+  <h4>§ HITL Question Bridge (§2.42)</h4>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>POST</code></td><td><code>/api/question</code></td><td>bearer/cookie</td><td>Submit HITL question to inbox</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/question/{id}/answer</code></td><td>bearer/cookie</td><td>Resolve pending HITL question by ID</td></tr>
+    </tbody>
+  </table>
+
+  <h4>§ Conductor HITL (§2.43)</h4>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/api/conductor/hitl</code></td><td>bearer/cookie</td><td>Fetch pending conductor HITL tasks</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/conductor/hitl/{task_id}/resolve</code></td><td>bearer/cookie</td><td>Resolve conductor HITL task by task ID</td></tr>
+    </tbody>
+  </table>
+
+  <h4>§ Copilot Playwright Bridge (§2.44)</h4>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>POST</code></td><td><code>/api/copilot/playwright/init</code></td><td>bearer/cookie</td><td>Initialize Playwright browser session</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/copilot/playwright/screenshot</code></td><td>bearer/cookie</td><td>Capture browser screenshot</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/copilot/playwright/dom-snapshot</code></td><td>bearer/cookie</td><td>Capture DOM accessibility snapshot</td></tr>
+    </tbody>
+  </table>
+
+  <h4>§ Copilot HITL Resolve (§2.45)</h4>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>POST</code></td><td><code>/api/copilot/hitl/resolve</code></td><td>bearer/cookie</td><td>Resolve copilot HITL interrupt — copilot resumes on success</td></tr>
+    </tbody>
+  </table>
+
+  <h4>§ Cockpit Wave (§2.46)</h4>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/api/cockpit/wave</code></td><td>bearer/cookie</td><td>Cockpit ambient wave data</td></tr>
+    </tbody>
+  </table>
+
+  <h4>§ Layout Snapshot (§2.47)</h4>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/api/layout/snapshot</code></td><td>bearer/cookie</td><td>Current layout state snapshot</td></tr>
+    </tbody>
+  </table>
+
+  <h4>§ Container Management (§2.48)</h4>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/api/container/active</code></td><td>bearer/cookie</td><td>Active container state</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/container/policy</code></td><td>bearer/cookie</td><td>Update container spawn policy</td></tr>
+      <tr><td><code>GET (WS)</code></td><td><code>/api/terminal/container/{id}</code></td><td>bearer</td><td>Container PTY WebSocket</td></tr>
+    </tbody>
+  </table>
+
   <h4>§ Builds, Events, SOUL — see <a href="webshell-api-surface-v1.md">webshell-api-surface-v1.md</a> for full tables</h4>
   </section>
 
@@ -1563,22 +1737,32 @@ sequenceDiagram
   <table>
     <thead><tr><th>Screen</th><th>Component</th><th>Root routes</th><th>Nav tab</th></tr></thead>
     <tbody>
-      <tr><td>Ops</td><td><code>src/screens/Ops.svelte</code></td><td><code>/</code> · <code>/ops</code></td><td>1 — Monitor</td></tr>
-      <tr><td>Dispatch</td><td><code>Dispatch.svelte</code> → <code>SquadDispatch.svelte</code></td><td><code>/dispatch</code></td><td>2 — Run</td></tr>
-      <tr><td>Builds</td><td><code>Builds.svelte</code> → <code>BuildQueue.svelte</code></td><td><code>/builds</code></td><td>3 — BUILDS</td></tr>
-      <tr><td>BuildDetail</td><td><code>BuildDetail.svelte</code></td><td><code>/builds/:id</code> + 4 drilldowns</td><td>3 — BUILDS (deep)</td></tr>
+      <tr><td>Dashboard</td><td><code>src/screens/Ops.svelte</code></td><td><code>/</code> · <code>/dashboard</code></td><td>1 — Dashboard</td></tr>
+      <tr><td>Dispatch</td><td><code>Dispatch.svelte</code> → <code>SquadDispatch.svelte</code></td><td><code>/run</code></td><td>2 — Run</td></tr>
+      <tr><td>Builds</td><td><code>Builds.svelte</code> → <code>BuildQueue.svelte</code></td><td><code>/builds</code></td><td>3 — Builds</td></tr>
+      <tr><td>BuildDetail</td><td><code>BuildDetail.svelte</code></td><td><code>/builds/:id</code> + 4 drilldowns</td><td>3 — Builds (deep)</td></tr>
       <tr><td>Intake</td><td><code>Intake.svelte</code></td><td><code>/intake</code></td><td>not in nav bar (linked from Builds)</td></tr>
-      <tr><td>Comms</td><td><code>Comms.svelte</code></td><td><code>/comms</code></td><td>4 — Activity</td></tr>
-      <tr><td>Helix</td><td><code>Helix.svelte</code></td><td><code>/helix</code></td><td>5 — HELIX</td></tr>
-      <tr><td>ProjectDetail</td><td><code>ProjectDetail.svelte</code></td><td><code>/project/:id</code></td><td>linked from Ops 3D panel</td></tr>
+      <tr><td>Comms</td><td><code>Comms.svelte</code></td><td><code>/activity</code></td><td>4 — Activity</td></tr>
+      <tr><td>Helix</td><td><code>Helix.svelte</code></td><td><code>/knowledge</code></td><td>5 — Knowledge</td></tr>
+      <tr><td>ProjectDetail</td><td><code>ProjectDetail.svelte</code></td><td><code>/project/:id</code></td><td>linked from Dashboard 3D panel</td></tr>
       <tr><td>Editor</td><td><code>Editor.svelte</code></td><td><code>/editor</code> · <code>/editor/:filepath</code></td><td>not in nav bar (linked from BuildDetail)</td></tr>
       <tr><td>Git</td><td><code>Git.svelte</code></td><td><code>/git</code></td><td>not in nav bar</td></tr>
       <tr><td>PullRequest</td><td><code>PullRequest.svelte</code></td><td><code>/pr/new</code> · <code>/pr/:number</code></td><td>not in nav bar (linked from Git)</td></tr>
+      <tr><td>Architecture</td><td><code>Architecture.svelte</code></td><td><code>/arch</code></td><td>not in nav bar</td></tr>
+      <tr><td>DiagramLibrary</td><td><code>DiagramLibrary.svelte</code></td><td><code>/diagrams</code> · <code>/library</code></td><td>6 — Diagrams</td></tr>
+      <tr><td>Observability</td><td><code>Observability.svelte</code></td><td><code>/observability</code> · <code>/ayin</code></td><td>not in nav bar</td></tr>
+      <tr><td>Tools</td><td><code>Tools.svelte</code></td><td><code>/tools</code></td><td>not in nav bar</td></tr>
+      <tr><td>AutonomousBuilds</td><td><code>AutonomousBuilds.svelte</code></td><td><code>/autonomous</code></td><td>not in nav bar</td></tr>
+      <tr><td>Chat</td><td><code>Chat.svelte</code></td><td><code>/chat</code></td><td>not in nav bar</td></tr>
+      <tr><td>Security</td><td><code>Security.svelte</code></td><td><code>/security</code></td><td>not in nav bar</td></tr>
+      <tr><td>Program</td><td><code>Program.svelte</code></td><td><code>/program</code></td><td>not in nav bar</td></tr>
+      <tr><td>Supervision</td><td><code>Supervision.svelte</code></td><td><code>/supervision</code></td><td>not in nav bar</td></tr>
+      <tr><td>Cockpit</td><td><code>Cockpit.svelte</code></td><td><code>/cockpit</code></td><td>not in nav bar (launched from header)</td></tr>
     </tbody>
   </table>
 
   <p style="font-size:12px; color: var(--mute); margin-top: 24px;">
-    Canonical source: <a href="webshell-api-surface-v1.md">webshell-api-surface-v1.md</a> · Version 1.0.21 · 2026-05-21 · Derived from <code>src/server/mod.rs</code>, <code>src/dispatch/routes.rs</code>, <code>src/auth.rs</code>, <code>src/config.rs</code>, <code>src/agent/bridge.rs</code>, <code>src/screens/</code>
+    Canonical source: <a href="webshell-api-surface-v1.md">webshell-api-surface-v1.md</a> · Version 1.1.0 · 2026-06-03 · Derived from <code>src/server/mod.rs</code>, <code>src/dispatch/routes.rs</code>, <code>src/auth.rs</code>, <code>src/config.rs</code>, <code>src/agent/bridge.rs</code>, <code>src/screens/</code>
   </p>
   </section>
 
@@ -1632,10 +1816,10 @@ sequenceDiagram
     <tbody>
       <tr>
         <td><span class="badge badge-gold">C1</span></td>
-        <td>§1.3 AppState: <strong>20 public</strong> fields + 1 private</td>
-        <td><code>src/server/mod.rs</code> · lines 89–198</td>
-        <td>Field count, names, and types match §1.3 table row-for-row; no new or removed fields</td>
-        <td><code>Read lines 89–198; diff against §1.3 table</code></td>
+        <td>§1.3 AppState: <strong>56 public</strong> fields + 2 private</td>
+        <td><code>src/server/mod.rs</code> · lines 146–490</td>
+        <td>Field count, names, and types match §1.3 domain-grouped table; no new or removed fields</td>
+        <td><code>Read lines 146–490; diff against §1.3 table</code></td>
       </tr>
       <tr>
         <td><span class="badge badge-gold">C2</span></td>
@@ -1646,15 +1830,15 @@ sequenceDiagram
       </tr>
       <tr>
         <td><span class="badge badge-gold">C3</span></td>
-        <td>§1.2 Route count: <strong>99 total</strong> (92 + 7)</td>
-        <td><code>server/mod.rs</code> 402–650 · <code>dispatch/routes.rs</code> 103–111</td>
+        <td>§1.2 Route count: <strong>166 total</strong> (159 + 7)</td>
+        <td><code>server/mod.rs</code> 987+ · <code>dispatch/routes.rs</code> 103–111</td>
         <td><code>.route(</code> call-site counts match</td>
         <td><code>grep -c '\.route(' src/server/mod.rs src/dispatch/routes.rs</code></td>
       </tr>
       <tr>
         <td><span class="badge badge-blue">C4</span></td>
         <td>§2.x All backend route groups documented</td>
-        <td><code>src/server/mod.rs</code> · lines 402–650</td>
+        <td><code>src/server/mod.rs</code> · lines 987+</td>
         <td>Every §2.x route exists in source; no undocumented routes</td>
         <td>Read route registration block; spot-check 3+ groups per session</td>
       </tr>
@@ -1688,31 +1872,31 @@ sequenceDiagram
       </tr>
       <tr>
         <td><span class="badge badge-green">C9</span></td>
-        <td>§3.2 <code>ScreenKey</code>: exactly <strong>12</strong> keys</td>
-        <td><code>src/lib/routes.ts</code> · lines 5–17</td>
-        <td>Ops Dispatch Builds Intake Helix BuildDetail ProjectDetail Comms Editor Git PullRequest Architecture — no extras, no gaps</td>
-        <td>Read lines 5–16</td>
+        <td>§3.2 <code>ScreenKey</code>: exactly <strong>21</strong> keys</td>
+        <td><code>src/lib/routes.ts</code> · lines 1–28</td>
+        <td>Dashboard Dispatch Builds BuildDetail Intake Comms Helix ProjectDetail Editor Git PullRequest Architecture Cockpit DiagramLibrary Observability Tools AutonomousBuilds Chat Security Program Supervision — no extras, no gaps</td>
+        <td><code>grep -c "'" src/lib/routes.ts | head -1</code> or Read lines 1–28</td>
       </tr>
       <tr>
         <td><span class="badge badge-green">C10</span></td>
-        <td>§3.3 <code>ROUTES</code>: exactly <strong>24</strong> entries, most-specific first, fallback=Ops</td>
-        <td><code>src/lib/routes.ts</code> · lines 42–72</td>
-        <td>Count = 24; pattern strings and ScreenKey targets match §3.4 table; fallback returns Ops</td>
-        <td><code>grep -c '\[/' src/lib/routes.ts</code> → returns 23; +1 for <code>new RegExp()</code> on line 51 = 24</td>
+        <td>§3.3 <code>ROUTES</code>: exactly <strong>49</strong> entries, most-specific first, fallback=Dashboard</td>
+        <td><code>src/lib/routes.ts</code> · lines 42–130</td>
+        <td>Count = 49; pattern strings and ScreenKey targets match §3.4 table; fallback returns Dashboard</td>
+        <td><code>grep -c '\[/' src/lib/routes.ts</code> → returns 48; +1 for <code>new RegExp()</code> = 49</td>
       </tr>
       <tr>
         <td><span class="badge badge-green">C11</span></td>
-        <td>§3.7 <code>screenModules</code>: 11 entries; correct import paths</td>
-        <td><code>src/app.svelte</code> · lines 51–63</td>
-        <td>Count = 11; every ScreenKey maps to the documented <code>.svelte</code> file</td>
-        <td><code>grep -A15 'screenModules' src/app.svelte</code></td>
+        <td>§3.7 <code>screenModules</code>: 21 entries; correct import paths</td>
+        <td><code>src/app.svelte</code> · lines 51–80</td>
+        <td>Count = 21; every ScreenKey maps to the documented <code>.svelte</code> file</td>
+        <td><code>grep -A30 'screenModules' src/app.svelte</code></td>
       </tr>
       <tr>
         <td><span class="badge badge-green">C12</span></td>
-        <td>§3.8 NAV_ITEMS: <strong>5 tabs</strong> with correct labels and hash paths</td>
-        <td><code>src/app.svelte</code> · lines 156–162</td>
-        <td>Monitor→/ops · Run→/dispatch · Manage→/builds · Activity→/comms · Memory→/helix</td>
-        <td><code>grep -A10 'NAV_ITEMS' src/app.svelte</code></td>
+        <td>§3.8 NAV_ITEMS: <strong>7 tabs</strong> with correct labels and hash paths</td>
+        <td><code>src/app.svelte</code> · lines 156–170</td>
+        <td>Dashboard→/dashboard · Run→/run · Builds→/builds · Activity→/activity · Knowledge→/knowledge · Diagrams→/diagrams · Roadmap→/roadmap</td>
+        <td><code>grep -A15 'NAV_ITEMS' src/app.svelte</code></td>
       </tr>
       <tr>
         <td><span class="badge badge-green">C13</span></td>
@@ -1737,9 +1921,9 @@ sequenceDiagram
       </tr>
       <tr>
         <td><span class="badge badge-red">C16</span></td>
-        <td>§1.4 CORS: <code>GET POST PUT OPTIONS</code></td>
-        <td><code>src/server/mod.rs</code> · line 707</td>
-        <td>All 4 methods in <code>build_cors()</code></td>
+        <td>§1.4 CORS: <code>GET POST PUT PATCH OPTIONS</code></td>
+        <td><code>src/server/mod.rs</code> · line 1533</td>
+        <td>All 5 methods in <code>build_cors()</code></td>
         <td><code>grep -A5 'allow_methods' src/server/mod.rs</code></td>
       </tr>
       <tr>
