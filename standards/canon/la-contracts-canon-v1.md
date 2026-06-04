@@ -124,13 +124,13 @@ contract.alpha_gate.verdict == "pass"
 
 `claude_code_cli` is in the local-runtime category because it is a subprocess on the operator's machine using the operator's Claude Code subscription — no per-request fee, no network egress beyond what Claude Code itself makes.
 
-**Credential route coverage (cross-exam 2026-06-04):** the webshell credential substrate (`webshell-api-surface-v1.md` §2.38) currently implements routes for 6 of the 13 named providers: `anthropic_http` (API key), `openai_api` (API key), `mistral_api` (API key), `ollama_local` (connect probe), Google OAuth (`anthropic_http` Google backend), and `claude_code_cli` (GitHub device flow). The 7 remaining (`groq_api`, `openrouter_api`, `vertex_ai`, `azure_openai`, `openai_compat_generic`, `litellm_proxy`, `ollama_cloud`) have no credential routes yet — their per-provider matrix cells will be `UNTESTED` until credential-substrate routes ship. This is an expected Alpha-gate gap, not a doc conflict.
+**Credential route coverage (cross-exam 2026-06-04):** the webshell credential substrate (`webshell-api-surface-v1.md` §2.38) currently implements routes for 6 of the 15 named providers: `anthropic_http` (API key), `openai_api` (API key), `mistral_api` (API key), `ollama_local` (connect probe), Google OAuth (`anthropic_http` Google backend), and `claude_code_cli` (GitHub device flow). The 7 remaining (`groq_api`, `openrouter_api`, `vertex_ai`, `azure_openai`, `openai_compat_generic`, `litellm_proxy`, `ollama_cloud`) have no credential routes yet — their per-provider matrix cells will be `UNTESTED` until credential-substrate routes ship. This is an expected Alpha-gate gap, not a doc conflict.
 
 ---
 
 ## §2 — Kind taxonomy: all contract surfaces
 
-### §2.1 Schema version: 18 kinds shipped, 27 more planned
+### §2.1 Schema version: 18 kinds shipped, 29 more defined in schema (47 total)
 
 ```
 SHIPPED (v1.0 — 100% schema-validated):
@@ -520,7 +520,7 @@ draft → ratified → deprecated
 **Mandatory per-phase step:** every schema extension must be cross-examined against the actual source it claims to model. For example:
 - `provider_enum` MUST match the set of `impl LlmAgentProvider for X` in `lightarchitects/src/agent/`
 - `screen_key` enum MUST match `ScreenKey` enum in `lightarchitects-webshell-ui/src/lib/routes.ts`  
-  _Last verified: 2026-06-04 — 21 members: Dashboard Dispatch Builds BuildDetail Intake Comms Helix ProjectDetail Editor Git PullRequest Architecture Cockpit DiagramLibrary Observability Tools AutonomousBuilds Chat Security Program Supervision. Source: `webshell-api-surface-v1.md` v1.1.0 §3.2. Any `operator.surface` or `ui.component` contract with a `screen_key` field MUST use a value from this set._
+  _Last verified: 2026-06-04 — 22 members: Dashboard Dispatch Builds BuildDetail Intake Comms Helix ProjectDetail Editor Git PullRequest Architecture Cockpit DiagramLibrary Roadmap Observability Tools AutonomousBuilds Chat Security Program Supervision. Source: `webshell-api-surface-v1.md` v1.1.0 §3.2 + routes.ts:19 (cross-exam 2026-06-04). Any `operator.surface` or `ui.component` contract with a `screen_key` field MUST use a value from this set._
 - AYIN span names MUST match emission sites in `lightarchitects/src/ayin/` and `lightarchitects-webshell/src/copilot/mod.rs`
 - WebEvent variants MUST match the `enum WebEvent` in `lightarchitects-webshell/src/events/types.rs`
 

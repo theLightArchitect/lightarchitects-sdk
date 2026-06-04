@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://lightarchitects.io/schemas/la-contracts/v1.json",
   "title": "Light Architects Capability Contract v1",
-  "description": "Fullstack contract for any callable thing in the Light Architects platform. One schema. Nine kinds discriminated by 'kind'. Enforces provider-and-cloud-agnostic guarantees. See canon://webshell-operator-contracts for prose principle.",
+  "description": "Fullstack contract for any callable thing in the Light Architects platform. One schema. Nine kinds discriminated by 'kind'. Enforces provider-and-cloud-agnostic guarantees. See canon://la-contracts-canon-v1 for prose principle.",
   "type": "object",
 
   "required": [
