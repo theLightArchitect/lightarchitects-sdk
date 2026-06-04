@@ -187,6 +187,9 @@ fn topic_for(event: &WebEvent) -> String {
             A2aEnvelopeType::TaskEscalated => "v1.supervisor.a2a.task_escalated",
             A2aEnvelopeType::WaveComplete => "v1.supervisor.a2a.wave_complete",
         },
+
+        // ── PTY hot-respawn (webshell-pty-hot-respawn Phase 3) ───────────────
+        WebEvent::PtyRespawned(_) => "v1.pty.respawned",
     }
     .to_owned()
 }
@@ -467,6 +470,13 @@ mod tests {
                 confidence: 1.0,
                 reasoning: None,
                 timestamp: Utc::now(),
+            }),
+            // webshell-pty-hot-respawn Phase 3 — PTY backend respawn notification
+            WebEvent::PtyRespawned(crate::events::types::PtyRespawnedEvent {
+                agent_kind: crate::config::AgentKind::Lightarchitects,
+                model: None,
+                conversation_continuity: "resumed".into(),
+                old_agent_kind: crate::config::AgentKind::Lightarchitects,
             }),
         ];
 

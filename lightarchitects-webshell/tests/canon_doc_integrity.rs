@@ -18,14 +18,14 @@ use lightarchitects_webshell::events::types::{
     A2aEnvelopeEvent, A2aEnvelopeType, AyinStatus, BudgetExhaustedEvent, BudgetWarningEvent,
     ConductorTickEvent, EscalationEvent, FixAgentIterationEvent, GateEvalEvent, GateVerdictKind,
     HitlResolution, IronclawHitlEscalationEvent, IronclawHitlResolutionEvent,
-    MergeAgentStatusEvent, ProjectUpdateKind, ProjectUpdatePayload, QuestionAnsweredEvent,
-    QuestionHeadlessPolicy, QuestionItem, QuestionOptionItem, QuestionPromptEvent, WebEvent,
-    WorkerSlotGaugeEvent,
+    MergeAgentStatusEvent, ProjectUpdateKind, ProjectUpdatePayload, PtyRespawnedEvent,
+    QuestionAnsweredEvent, QuestionHeadlessPolicy, QuestionItem, QuestionOptionItem,
+    QuestionPromptEvent, WebEvent, WorkerSlotGaugeEvent,
 };
 
 /// Total expected `WebEvent` variant count.  Update alongside the §1.2 table
 /// in `webshell-api-surface-v1.md` whenever variants are added or removed.
-const EXPECTED_VARIANT_COUNT: usize = 34;
+const EXPECTED_VARIANT_COUNT: usize = 35;
 
 /// Exhaustive match acting as a compiler-enforced variant count ratchet.
 ///
@@ -78,6 +78,8 @@ fn all_variants_matched(event: &WebEvent) {
         WebEvent::GateResolution(_) => {}
         // ── webshell-a2a-supervisor-visibility ────────────────────────────────
         WebEvent::A2aEnvelope(_) => {}
+        // ── webshell-pty-hot-respawn ──────────────────────────────────────────
+        WebEvent::PtyRespawned(_) => {}
     }
 }
 
@@ -223,9 +225,17 @@ fn web_event_variant_count_matches_canon_doc() {
     });
     all_variants_matched(&a2a_envelope);
 
+    let pty_respawned = WebEvent::PtyRespawned(PtyRespawnedEvent {
+        agent_kind: lightarchitects_webshell::config::AgentKind::Lightarchitects,
+        model: None,
+        conversation_continuity: "resumed".to_owned(),
+        old_agent_kind: lightarchitects_webshell::config::AgentKind::Lightarchitects,
+    });
+    all_variants_matched(&pty_respawned);
+
     assert_eq!(
-        EXPECTED_VARIANT_COUNT, 34,
-        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (34)"
+        EXPECTED_VARIANT_COUNT, 35,
+        "EXPECTED_VARIANT_COUNT must equal the actual WebEvent variant count (35)"
     );
 }
 
