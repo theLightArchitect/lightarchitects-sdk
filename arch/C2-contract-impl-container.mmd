@@ -1,0 +1,17 @@
+graph LR
+  subgraph Frontend
+    DIS[Dispatch.svelte] -->|new tab| RES[Results tab]
+    DIS -->|existing| STG[Stage tab]
+    DIS -->|existing| COM[Comms tab]
+    PILL[Copilot pill] -->|onClick| PSEL[provider-select drawer]
+    CHAT[Copilot chat input] -->|Send| COP[copilot/send]
+  end
+  subgraph Backend
+    COP -->|HTTP POST| HND[webshell handlers]
+    HND -->|invoke| RNR[Runner trait]
+    RNR -->|impl| CCR[ClaudeCliRunner]
+    RNR -->|impl| AHR[AnthropicHttpRunner]
+    HND -->|emit| SPNS[AYIN spans]
+  end
+  RES -->|GET| MAN["/api/dispatch/{id}/manifest"]
+  RES -->|GET| ART["/api/dispatch/{id}/artifacts/{path}"]

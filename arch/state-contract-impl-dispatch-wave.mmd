@@ -1,0 +1,11 @@
+stateDiagram-v2
+  [*] --> IDLE
+  IDLE --> ARMED: classify
+  ARMED --> LIVE: Dispatch click
+  LIVE --> COMPLETE: all agents OK
+  LIVE --> FAILED: any agent FAIL
+  LIVE --> CANCELLED: operator CANCEL
+  COMPLETE --> RESULTS_VISIBLE: artifacts persisted
+  RESULTS_VISIBLE --> [*]
+  FAILED --> RESULTS_VISIBLE: partial artifacts
+  CANCELLED --> [*]

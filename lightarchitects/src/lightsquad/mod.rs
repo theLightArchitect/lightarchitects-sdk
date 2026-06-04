@@ -100,6 +100,14 @@ pub mod contract_prompt;
 /// and returns a [`contract::Verdict`].
 pub mod contract_supervisor;
 
+/// Per-agent dispatch trait + types (`code.trait.runner` contract).
+///
+/// Declares [`Runner`], [`AgentSpec`], [`AgentArtifact`], [`AgentEvent`],
+/// [`RunnerCapabilities`], [`StopReason`], and [`RunnerError`].
+/// Implementations land in Phase 3 (`ClaudeCliRunner`) and Phase 4
+/// (`AnthropicHttpRunner`, `OllamaRunner`, `OpenAICompatRunner`).
+pub mod runner;
+
 // ── DEPRECATED: orchestration re-exports ─────────────────────────────────────
 //
 // The bounded-concurrency pool and supervisor were lifted to

@@ -1,0 +1,12 @@
+graph TB
+  CS[contract_supervisor.rs<br/>existing] -.before.-> RCC[run_claude_code fn]
+  CS -.before.-> ROL[run_ollama fn]
+  CS -.before.-> ROC[run_openai_compatible fn]
+  CS -.before.-> RCX[run_codex fn]
+  RT[Runner trait<br/>NEW: lightsquad/runner.rs] -->|method| RN["run(AgentSpec) → Result&lt;AgentArtifact&gt;"]
+  RT -->|method| ST["stream(AgentSpec) → BoxStream&lt;AgentEvent&gt;"]
+  CCR[ClaudeCliRunner] -.impl.-> RT
+  AHR[AnthropicHttpRunner] -.impl.-> RT
+  CS -.after.-> RT
+  RNR_DISPATCH[Runner::run] -->|delegates to| LAP[LlmAgentProvider::spawn]
+  LAP -->|already exists| AGT[agent::provider::LlmAgentProvider]
