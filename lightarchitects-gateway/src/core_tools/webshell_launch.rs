@@ -19,20 +19,40 @@
 //!   running webshell keeps whatever session it was launched with.
 //! - `dev_mode`: `bool` — pass `--dev-mode` to the webshell binary so it
 //!   allows the loopback Vite dev server and relaxed HMR CSP.
+//! - `kill_existing`: `bool` — when `true` AND the caller pinned a specific
+//!   port AND that port is already serving a webshell, send SIGTERM to the
+//!   listening PID and wait up to 3 s for the socket to free, then spawn a
+//!   fresh instance. Enables the "always reclaim :8733" pattern without
+//!   port-walking. Has no effect when `port` is left default (auto-scan
+//!   already finds a free slot) or when the port is free. Default `false`.
 //!
 //! Response shape:
 //! ```json
 //! {
-//!   "status": "running" | "started",
+//!   "status": "running" | "started" | "reclaimed" | "reused",
 //!   "port": 8733,
 //!   "host_cmd": "claude",
 //!   "url": "http://localhost:8733/#nonce=<uuid>",
 //!   "token_available": true,
 //!   "resumed_session": true,
 //!   "session_mismatch": false,
-//!   "kill_hint": null
+//!   "kill_hint": null,
+//!   "killed_predecessor": false
 //! }
 //! ```
+//!
+//! Status semantics:
+//! - `started` — fresh spawn, no predecessor on the resolved port.
+//! - `running` — caller hit an already-running webshell (no `session_id`, or
+//!   `session_id` did not match anything we could probe).
+//! - `reclaimed` — `kill_existing: true` successfully SIGTERM-ed a prior
+//!   listener and a fresh instance was spawned in its place.
+//! - `reused` — found a healthy webshell on a probed port whose
+//!   `session_id` matches the caller's; minted a fresh nonce on the existing
+//!   instance and returned its URL. **No new process was spawned.** This is
+//!   the load-bearing path that enforces the "at most one webshell per
+//!   session" invariant — every `/webshell` invocation after the first lands
+//!   here.
 //!
 //! The URL fragment uses a one-time nonce (`#nonce=<uuid>`) exchanged by the
 //! browser via `POST /api/auth/nonce-exchange`. The raw bearer token never
@@ -106,16 +126,88 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
         .get("dev_mode")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let kill_existing = params
+        .get("kill_existing")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
 
     // Resolve (port, already_running):
     //   - explicit port  → use exactly, whatever its state
     //   - no session_id  → default port, whatever its state
     //   - session_id     → scan for free port starting at default, so a
     //                      LaunchAgent on 8733 doesn't block resume
-    let (port, already_running) = if session_id.is_some() && !explicit_port {
+    // Session-aware reuse path. The operator's invariant: at most one webshell
+    // per Claude Code session. Before spawning anything, scan the standard port
+    // range for an existing webshell already bound to this session_id (via
+    // `--resume-session` from a prior `launch_webshell` call). If we find one,
+    // skip the spawn entirely: mint a fresh nonce on the existing instance and
+    // return its URL. This eliminates the port-walking + accumulation pattern.
+    //
+    // Only fires when:
+    // - `session_id` is supplied (anonymous launches can't be reused),
+    // - the gateway resolved a bearer token (otherwise `/api/session/current`
+    //   would 401 and we'd skip every candidate).
+    let pre_resolved_token = resolve_token();
+    if let (Some(sid), Some(tok)) = (session_id.as_deref(), pre_resolved_token.as_deref()) {
+        if let Some(existing_port) = find_existing_webshell_for_session(sid, tok).await {
+            // Mint a fresh nonce on the existing webshell. The browser tab
+            // bound to this session may still be open — reuse means the
+            // operator can refresh it with the new URL and pick up where
+            // they left off without a duplicate spawn.
+            let url = match register_nonce(existing_port, tok).await {
+                Some(nonce) => format!("http://localhost:{existing_port}/#nonce={nonce}"),
+                None => format!("http://localhost:{existing_port}/"),
+            };
+            return Ok(text_result(serde_json::to_string_pretty(&json!({
+                "status": "reused",
+                "port": existing_port,
+                "host_cmd": host_cmd,
+                "url": url,
+                "token_available": true,
+                "resumed_session": true,
+                "session_mismatch": false,
+                "kill_hint": null,
+                "dev_mode": false,
+                "dev_mode_requested": dev_mode,
+                "killed_predecessor": false,
+            }))?));
+        }
+    }
+
+    let (port, mut already_running) = if session_id.is_some() && !explicit_port {
         find_free_port_starting_at(requested_port).await
     } else {
         (requested_port, probe_health(requested_port).await)
+    };
+
+    // `kill_existing` reclaim path: caller pinned a port, something is
+    // already there, and the caller explicitly wants us to take it back.
+    // Only honored when `port` was explicit — auto-scan already finds a
+    // free slot when port is left default, so the kill path stays opt-in
+    // and never fires by accident.
+    let killed_predecessor = if kill_existing && explicit_port && already_running {
+        match kill_listener_on(port).await {
+            Ok(()) => {
+                // Re-probe after kill — listener may have released the socket.
+                already_running = probe_health(port).await;
+                if already_running {
+                    warn!(
+                        port,
+                        "kill_existing requested but listener still present after SIGTERM \
+                         + 3s wait — proceeding with session_mismatch handling"
+                    );
+                    false
+                } else {
+                    true
+                }
+            }
+            Err(e) => {
+                warn!(port, error = %e, "kill_existing: kill attempt failed");
+                false
+            }
+        }
+    } else {
+        false
     };
 
     let status_str = if already_running {
@@ -130,10 +222,16 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
             dev_mode,
         )?;
         wait_for_health(port).await?;
-        "started"
+        if killed_predecessor {
+            "reclaimed"
+        } else {
+            "started"
+        }
     };
 
-    let token = resolve_token();
+    // Reuse the pre-spawn-resolved token if we have it; otherwise resolve
+    // now (the reuse-scan path only resolves when session_id is supplied).
+    let token = pre_resolved_token.or_else(resolve_token);
     let url = match &token {
         Some(t) => {
             if let Some(nonce) = register_nonce(port, t).await {
@@ -175,7 +273,76 @@ pub async fn run(params: Value, config: &GatewayConfig) -> Result<Value, Gateway
         "kill_hint": kill_hint,
         "dev_mode": !already_running && dev_mode,
         "dev_mode_requested": dev_mode,
+        "killed_predecessor": killed_predecessor,
     }))?))
+}
+
+/// Reclaim a port by SIGTERM-ing whatever is listening on it.
+///
+/// Uses `lsof -ti:<port> -sTCP:LISTEN` to find the listening PID, then sends
+/// SIGTERM and waits up to 3 s for the socket to release. Returns `Ok(())`
+/// when the kill was dispatched (even if the process is still draining —
+/// caller re-probes after to determine final state).
+///
+/// Failure modes — all return `Err`:
+/// - `lsof` is missing from `$PATH` (extremely unusual on macOS)
+/// - `lsof` returned non-zero (no listener — caller should not have called
+///   us, but we report it cleanly anyway)
+/// - The PID could not be parsed as a positive integer
+/// - `kill` failed (process already gone, permission denied, etc.)
+///
+/// Why `lsof` instead of `nix::sys::socket` enumeration: `lsof` is available
+/// on every macOS+Linux dev box without adding a dep, and the cost of a
+/// subprocess is negligible compared to the 3 s drain wait we're about to do.
+async fn kill_listener_on(port: u16) -> Result<(), GatewayError> {
+    let out = tokio::process::Command::new("lsof")
+        .args(["-ti", &format!(":{port}"), "-sTCP:LISTEN"])
+        .output()
+        .await
+        .map_err(|e| GatewayError::Internal(format!("lsof spawn failed: {e}")))?;
+    if !out.status.success() {
+        return Err(GatewayError::Internal(format!(
+            "lsof on :{port} returned non-success — no listener?"
+        )));
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // Take only the first PID — there should be exactly one LISTEN socket
+    // per port, but defend against multi-line output (e.g., IPv4 + IPv6).
+    let Some(pid_str) = stdout
+        .lines()
+        .next()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return Err(GatewayError::Internal(format!(
+            "lsof on :{port} returned empty output"
+        )));
+    };
+    let pid: i32 = pid_str
+        .parse()
+        .map_err(|e| GatewayError::Internal(format!("lsof PID parse failed ({pid_str:?}): {e}")))?;
+    let kill_out = tokio::process::Command::new("/bin/kill")
+        .args(["-TERM", &pid.to_string()])
+        .output()
+        .await
+        .map_err(|e| GatewayError::Internal(format!("kill spawn failed: {e}")))?;
+    if !kill_out.status.success() {
+        return Err(GatewayError::Internal(format!(
+            "kill -TERM {pid} failed: {}",
+            String::from_utf8_lossy(&kill_out.stderr).trim()
+        )));
+    }
+    // Wait up to 3 s for the socket to release. Poll every 100 ms so we
+    // return as soon as the predecessor exits — fast path is ~200-400 ms.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+    while tokio::time::Instant::now() < deadline {
+        if !probe_health(port).await {
+            return Ok(());
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    // Timed out — caller re-probes and decides what to do.
+    Ok(())
 }
 
 /// Scan `start..start+PORT_SCAN_WINDOW` for a port whose `/api/health`
@@ -207,6 +374,53 @@ async fn probe_health(port: u16) -> bool {
         .send()
         .await
         .is_ok_and(|r| r.status().is_success())
+}
+
+/// Scan the standard webshell port range for an existing instance bound to
+/// `session_id`. Returns the first matching port, or `None` if no match.
+///
+/// Uses the gateway's resolved bearer token to call
+/// `GET /api/session/current` on every healthy webshell — webshells that
+/// don't expose this endpoint (pre-`resume_session_id` binaries) return 404
+/// and are skipped. The endpoint is auth-gated, so the bearer token is
+/// required to even read the response.
+///
+/// Concurrency: all candidate ports are probed in parallel via `tokio::join!`
+/// fan-out so the worst-case wall-clock cost is one HTTP timeout, not 10.
+async fn find_existing_webshell_for_session(session_id: &str, token: &str) -> Option<u16> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(1))
+        .build()
+        .ok()?;
+
+    // Build the candidate port list — the same range `find_free_port_starting_at`
+    // walks, so we cover every port a prior `launch_webshell` could have used.
+    let candidates: Vec<u16> = (0..PORT_SCAN_WINDOW)
+        .filter_map(|offset| DEFAULT_PORT.checked_add(offset))
+        .collect();
+
+    // Fan-out each probe; return the first port whose session_id matches.
+    let futures = candidates.into_iter().map(|port| {
+        let client = client.clone();
+        let token = token.to_owned();
+        let session_id = session_id.to_owned();
+        async move {
+            let url = format!("http://127.0.0.1:{port}/api/session/current");
+            let resp = client.get(&url).bearer_auth(&token).send().await.ok()?;
+            if !resp.status().is_success() {
+                return None;
+            }
+            let body: serde_json::Value = resp.json().await.ok()?;
+            let remote_sid = body.get("session_id")?.as_str()?;
+            if remote_sid == session_id {
+                Some(port)
+            } else {
+                None
+            }
+        }
+    });
+    let results = futures_util::future::join_all(futures).await;
+    results.into_iter().flatten().next()
 }
 
 /// Register a one-time auth nonce with the running webshell.
@@ -293,9 +507,16 @@ fn spawn_detached(
     if let Some(cwd_path) = cwd {
         proc.arg("--cwd").arg(cwd_path);
     }
-    // `--resume-session` is not yet implemented in the webshell binary — omit
-    // to avoid silent exit-2 during spawn (unsupported arg, stderr=null).
-    let _ = session_id;
+    // Pass `--resume-session <id>` so the spawned webshell stores the session
+    // identifier in its config and exposes it via `GET /api/session/current`.
+    // This is the keystone of the reuse path: subsequent `launch_webshell`
+    // calls probe the standard port range and reuse this instance instead of
+    // spawning a duplicate. Webshell binaries that don't yet recognize this
+    // arg will exit silently — `make deploy` of the matching webshell version
+    // is a prerequisite for the reuse path to work end-to-end.
+    if let Some(sid) = session_id {
+        proc.arg("--resume-session").arg(sid);
+    }
     if dev_mode {
         proc.arg("--dev-mode");
     }

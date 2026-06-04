@@ -93,6 +93,11 @@ deploy: quality ## Quality gates + build + deploy gateway to ~/.lightarchitects/
 	@echo "Migrations → $(GATEWAY_MIGRATIONS_DST)"
 	@echo "MCP config → $(HOME)/.lightarchitects/lightarchitects.mcp.json"
 	@echo "Manifest  → $(HOME)/.lightarchitects/deploy-manifest.json"
+	@echo ""
+	@echo "⚠  Running gateway processes have the OLD code mapped in memory."
+	@echo "   In Claude Code: /mcp → select 'lightarchitects' → Reconnect"
+	@echo "   (Unix doesn't auto-reload binaries on file change — the running"
+	@echo "    subprocess must be restarted for the new code to take effect.)"
 
 deploy-fast: ## Build + deploy gateway without quality gates
 	cargo build --release -p lightarchitects-gateway
@@ -112,6 +117,11 @@ deploy-fast: ## Build + deploy gateway without quality gates
 	@echo "Migrations → $(GATEWAY_MIGRATIONS_DST)"
 	@echo "MCP config → $(HOME)/.lightarchitects/lightarchitects.mcp.json"
 	@echo "Manifest  → $(HOME)/.lightarchitects/deploy-manifest.json"
+	@echo ""
+	@echo "⚠  Running gateway processes have the OLD code mapped in memory."
+	@echo "   In Claude Code: /mcp → select 'lightarchitects' → Reconnect"
+	@echo "   (Unix doesn't auto-reload binaries on file change — the running"
+	@echo "    subprocess must be restarted for the new code to take effect.)"
 
 rollback: ## Restore the previous gateway binary (lightarchitects.prev → lightarchitects)
 	@test -f "$(GATEWAY_PREV_BIN)" || \

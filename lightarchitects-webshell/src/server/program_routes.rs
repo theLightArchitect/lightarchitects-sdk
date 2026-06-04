@@ -809,6 +809,7 @@ mod tests {
             max_context_prompts: 50,
             litellm: crate::config::LiteLLMConfig::default(),
             hermes_mcp: crate::config::HermesMcpConfig::default(),
+            resume_session_id: None,
         };
         AppState::for_test(config, DockerCapability::Unavailable)
     }

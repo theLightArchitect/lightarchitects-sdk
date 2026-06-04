@@ -1341,6 +1341,10 @@ pub fn build_app(state: AppState) -> Router {
         // in a single request. Replaces frontend pattern of polling 6 individual
         // /api/auth/credential/{provider}/status endpoints to populate the StatusBar chip.
         .route("/api/agent/current", get(agent_current_handler))
+        // Session identity probe — the gateway's `launch_webshell` action calls
+        // this to detect an existing webshell bound to a given session_id before
+        // spawning a new one. Eliminates the port-walking accumulation pattern.
+        .route("/api/session/current", get(session_current_handler))
         // ── Squad Comms (coordination) routes ───────────────────────────────
         .route(
             "/api/coordination/tasks",
@@ -2150,6 +2154,49 @@ async fn agent_current_handler(
     axum::Json(serde_json::json!({
         "kind": kind,
         "connected_providers": connected,
+    }))
+    .into_response()
+}
+
+/// `GET /api/session/current` — returns the `session_id` this webshell is bound to.
+///
+/// Sourced from the `--resume-session` CLI arg passed at spawn time (by the
+/// gateway's `launch_webshell` action). When omitted, the webshell was launched
+/// standalone and reports `session_id: null`.
+///
+/// **Primary consumer**: the gateway's `launch_webshell` action probes
+/// :8733–:8742 for healthy webshells, calls this endpoint on each, and reuses
+/// any whose `session_id` matches the caller's — eliminating the
+/// "spawn a new webshell on every `/webshell` invocation" accumulation.
+///
+/// Authenticated via [`auth::AuthGuard`] (Bearer header **or** `la_session`
+/// cookie). The `session_id` itself is not a secret, but probing it without auth
+/// would give a local attacker a free side-channel for fingerprinting which
+/// Claude Code sessions are running on the host.
+///
+/// Response shape:
+/// ```json
+/// {
+///   "session_id": "16d86faa-0e56-4642-bfec-c76f50f74fcb" | null,
+///   "agent_kind": "lightarchitects" | "codex" | "lightarchitects_native" | "mistral_vibe",
+///   "port": 8733
+/// }
+/// ```
+async fn session_current_handler(
+    _: crate::auth::AuthGuard,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let agent = state.active_agent.read().await.clone();
+    let kind = match agent.kind() {
+        crate::config::AgentKind::Lightarchitects => "lightarchitects",
+        crate::config::AgentKind::Codex => "codex",
+        crate::config::AgentKind::LightarchitectsNative => "lightarchitects_native",
+        crate::config::AgentKind::MistralVibe => "mistral_vibe",
+    };
+    axum::Json(serde_json::json!({
+        "session_id": state.config.resume_session_id,
+        "agent_kind": kind,
+        "port": state.config.port,
     }))
     .into_response()
 }

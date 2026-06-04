@@ -450,6 +450,23 @@ pub struct Cli {
     /// operator-local only; release mode remains strict by default.
     #[arg(long)]
     pub dev_mode: bool,
+
+    /// Coding-agent session UUID this webshell is bound to.
+    ///
+    /// When set by the gateway's `launch_webshell` action, the webshell
+    /// stores this identifier and exposes it via `GET /api/session/current`
+    /// so subsequent `launch_webshell` invocations can detect an existing
+    /// webshell for the same session and reuse it (instead of spawning a
+    /// duplicate on the next free port).
+    ///
+    /// The value is also passed through to the PTY host command as
+    /// `--resume <uuid>` so e.g. `claude --resume <uuid>` continues the
+    /// existing on-disk conversation.
+    ///
+    /// Accepts any string — UUID validation is the caller's responsibility.
+    /// Empty / absent values mean "no session bound".
+    #[arg(long)]
+    pub resume_session: Option<String>,
 }
 
 impl Default for Cli {
@@ -470,6 +487,7 @@ impl Default for Cli {
             claude_agent: None,
             lightarchitects_cli_binary: None,
             dev_mode: false,
+            resume_session: None,
         }
     }
 }
@@ -515,6 +533,17 @@ pub struct Config {
     pub litellm: LiteLLMConfig,
     /// Hermes MCP bridge for mobile HITL approvals. Activated by `HERMES_MCP_URL`.
     pub hermes_mcp: HermesMcpConfig,
+    /// Coding-agent session UUID this webshell instance is bound to.
+    ///
+    /// Sourced from the `--resume-session` CLI arg, which the gateway sets
+    /// on `launch_webshell`. Exposed via `GET /api/session/current` so the
+    /// gateway can detect an existing webshell for the same session and
+    /// reuse it before spawning a duplicate (the "session-aware reuse"
+    /// path that eliminates port-walking + accumulation).
+    ///
+    /// `None` when the webshell was launched directly (not via the gateway)
+    /// or with no session pinned.
+    pub resume_session_id: Option<String>,
 }
 
 /// Where the auth token was resolved from.
@@ -962,6 +991,7 @@ impl Config {
             max_context_prompts: 50,
             litellm: LiteLLMConfig::from_env(),
             hermes_mcp: HermesMcpConfig::from_env(),
+            resume_session_id: cli.resume_session.filter(|s| !s.trim().is_empty()),
         })
     }
 
@@ -1051,6 +1081,7 @@ mod tests {
             claude_agent: None,
             lightarchitects_cli_binary: None,
             dev_mode: false,
+            resume_session: None,
         }
     }
 
@@ -1075,6 +1106,7 @@ mod tests {
             claude_agent: None,
             lightarchitects_cli_binary: None,
             dev_mode: true,
+            resume_session: None,
         };
         let cfg = Config::resolve(cli).unwrap();
         assert_eq!(cfg.host_cmd, OsString::from("/custom/lightarchitects-cli"));

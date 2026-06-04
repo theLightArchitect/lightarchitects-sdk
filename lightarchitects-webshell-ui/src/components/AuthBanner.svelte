@@ -1,12 +1,24 @@
 <script lang="ts">
   /**
-   * AuthBanner — top-of-screen affordance that fires when the SSE stream
-   * receives 401 (unauthorized) or 403 (forbidden). #13.
+   * AuthBanner — top-of-screen affordance that fires when the SSE stream or any
+   * polled endpoint receives 401 (unauthorized) or 403 (forbidden). #13.
    *
-   * The banner is the operator's recovery path when the bearer token is
-   * missing, expired, or rejected — without it, the app silently sits in
-   * "reconnecting" forever. Clicking "Reset" routes back to SetupFlow,
-   * which clears localStorage and re-prompts for a token.
+   * Recovery path:
+   *   1. "Relaunch in CLI" — copies the canonical relaunch command so the
+   *      operator can paste it into Claude Code (`/webshell`) or their
+   *      terminal (`~/.lightarchitects/bin/lightarchitects launch-webshell`).
+   *      This is the load-bearing recovery action: once they relaunch, the
+   *      gateway mints a fresh nonce, opens a new URL, and the session
+   *      reconnects cleanly.
+   *   2. "Reset auth" — clears local + server-side auth state and reloads.
+   *      Useful when the session is stale and a fresh handshake is wanted,
+   *      but does NOT re-authenticate by itself — the operator still has
+   *      to relaunch (path #1).
+   *   3. "Dismiss" — hides the banner. Re-fires on next 401/403.
+   *
+   * Until a `/webshell` re-invocation, the only path to a working session is
+   * keeping the existing cookie (refresh the original URL with `#nonce=…`
+   * still in it) or restarting the webshell process.
    */
   import { authStatus } from '$lib/stores';
   import { setupComplete, step } from '$lib/setup';
@@ -14,6 +26,7 @@
 
   let s = $derived($authStatus);
   let dismissed = $state(false);
+  let copyState = $state<'idle' | 'copied' | 'failed'>('idle');
 
   // Re-show the banner whenever a NEW failure arrives, even if the user
   // dismissed a prior one. We watch for transitions ok→unauthorized/forbidden.
@@ -22,6 +35,25 @@
     if (prev === 'ok' && s !== 'ok') dismissed = false;
     prev = s;
   });
+
+  // The canonical relaunch command. In Claude Code / Codex CLI / Cursor the
+  // operator types `/webshell` to invoke the lightarchitects skill which
+  // spawns a fresh webshell with a session-pre-seeded nonce. The bash
+  // fallback is for operators outside an MCP-aware coding agent.
+  const RELAUNCH_SLASH = '/webshell';
+  const RELAUNCH_SHELL = 'lightarchitects launch_webshell';
+
+  async function copyRelaunch() {
+    const cmd = RELAUNCH_SLASH;
+    try {
+      await navigator.clipboard.writeText(cmd);
+      copyState = 'copied';
+      setTimeout(() => { copyState = 'idle'; }, 2000);
+    } catch {
+      copyState = 'failed';
+      setTimeout(() => { copyState = 'idle'; }, 2000);
+    }
+  }
 
   async function resetAuth() {
     // BUG FIX (2026-06-03): prior implementation cleared `localStorage['la.bearer']`
@@ -75,12 +107,22 @@
       </strong>
       <span class="auth-banner-detail">
         {s === 'unauthorized'
-          ? 'The bearer token is missing or no longer valid. Reset to re-authenticate.'
-          : 'Your token is valid but the server rejected this request. Check server logs or reset.'}
+          ? 'Re-launch the webshell to get a fresh nonce — copy the command, then run it in your coding-agent or terminal.'
+          : 'Your token is valid but the server rejected this request. Check server logs, or copy the relaunch command for a fresh handshake.'}
       </span>
+      <code class="auth-banner-cmd">{RELAUNCH_SLASH}</code>
     </div>
     <div class="auth-banner-actions">
-      <button class="auth-banner-btn primary" onclick={resetAuth}>Reset auth</button>
+      <button class="auth-banner-btn primary" onclick={copyRelaunch}>
+        {copyState === 'copied' ? '✓ Copied' : copyState === 'failed' ? '✗ Copy failed' : 'Copy /webshell'}
+      </button>
+      <button
+        class="auth-banner-btn"
+        onclick={resetAuth}
+        title="Clears local + server-side auth state and reloads. You still need to relaunch the webshell to re-authenticate."
+      >
+        Reset auth
+      </button>
       <button class="auth-banner-btn" onclick={() => { dismissed = true; }}>Dismiss</button>
     </div>
   </div>
@@ -122,6 +164,17 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .auth-banner-cmd {
+    font-family: var(--la-font-mono, monospace);
+    font-size: 11px;
+    padding: 2px 6px;
+    background: color-mix(in srgb, var(--la-danger-stroke) 25%, transparent);
+    border: 1px solid color-mix(in srgb, var(--la-danger-stroke) 40%, transparent);
+    border-radius: 2px;
+    color: var(--la-danger-text);
+    white-space: nowrap;
+    flex-shrink: 0;
   }
   .auth-banner-actions {
     display: flex;

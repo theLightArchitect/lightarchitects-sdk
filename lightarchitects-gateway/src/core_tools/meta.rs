@@ -85,7 +85,7 @@ fn list_actions(config: &GatewayConfig) -> Result<Value, GatewayError> {
             "canon_check":    "Validate a decision against the canon registry (decision, verbose?)",
             "canon_evaluate": "Evaluate a canon candidate against 5-criteria framework (candidate)",
             "preset":         "Switch or view the active preset archetype (name?). Changes routing priority.",
-            "launch_webshell": "Launch the Light Architects webshell GUI (session_id?, port?, host_cmd?, cwd?, dev_mode?). Returns {url, status, resumed_session, session_mismatch?, kill_hint?}. Default port 8733; auto-scans free port when session_id supplied to sidestep LaunchAgent collision.",
+            "launch_webshell": "Launch (or reuse) the Light Architects webshell GUI (session_id?, port?, host_cmd?, cwd?, dev_mode?, kill_existing?). Returns {url, status, resumed_session, session_mismatch?, kill_hint?, killed_predecessor}. status: 'started'|'running'|'reclaimed'|'reused'. When session_id is supplied, probes :8733-:8742 for an existing webshell bound to that session and reuses it (status='reused') instead of spawning a duplicate. kill_existing:true with explicit port reclaims via SIGTERM ('reclaimed'). Default port 8733; auto-scans free port to sidestep LaunchAgent collision.",
         },
         "setup": {
             "initialize":     "Interactive gateway setup wizard (step?)",

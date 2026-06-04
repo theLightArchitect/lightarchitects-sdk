@@ -43,6 +43,7 @@ fn test_state() -> AppState {
         max_context_prompts: 50,
         litellm: crate::config::LiteLLMConfig::default(),
         hermes_mcp: crate::config::HermesMcpConfig::default(),
+        resume_session_id: None,
     };
     AppState::for_test(config, DockerCapability::Unavailable)
 }
@@ -510,6 +511,7 @@ async fn concurrency_cap_semaphore_enforces_limit() {
         max_context_prompts: 50,
         litellm: crate::config::LiteLLMConfig::default(),
         hermes_mcp: crate::config::HermesMcpConfig::default(),
+        resume_session_id: None,
     };
     let state = AppState::for_test(config, crate::container::DockerCapability::Unavailable);
 

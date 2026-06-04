@@ -923,6 +923,7 @@ fn config_max_context_prompts_default() {
         max_context_prompts: 50,
         litellm: lightarchitects_webshell::config::LiteLLMConfig::default(),
         hermes_mcp: lightarchitects_webshell::config::HermesMcpConfig::default(),
+        resume_session_id: None,
     };
     assert_eq!(
         config.max_context_prompts, 50,
