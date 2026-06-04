@@ -4,77 +4,82 @@ kind: event.bus
 version: 0.1.0
 status: draft
 northstar_pillars:
-- P1
-- P2
+  - P1
+  - P2
+
 operator_intent: |
   Broadcast notification that the PTY agent has been hot-swapped.
-  Consumers: SSE stream (v1.pty.respawned topic) → sse.ts dispatches
-  la:pty-respawned DOM CustomEvent → BackendPicker + StatusBar update
-  their authProfile store without a page reload.
-producer:
-  component: lightarchitects-webshell/src/server/pty_respawn.rs
-  function: pty_respawn_handler
-  trigger: successful spawn_global_pty() call
-  rust_type: WebEvent::PtyRespawned(PtyRespawnedEvent)
-consumers:
-- component: sse.ts
-  trigger: SSE message with type="pty_respawned"
-  action: authProfile.set(payload.agent_kind); dispatch la:pty-respawned CustomEvent
-- component: StatusBar.svelte
-  trigger: reactive $authProfile store update
-  action: re-derives profileColor + profileLabel
-- component: BackendPicker.svelte
-  trigger: la:pty-respawned window event
-  action: close picker dropdown; show success toast
-event_schema:
-  type: object
-  required:
-  - type
-  - agent_kind
-  - conversation_continuity
-  - old_agent_kind
-  properties:
-    type:
-      type: string
-      enum:
-      - pty_respawned
-    agent_kind:
-      type: string
-      description: newly-spawned AgentKind (snake_case)
-    model:
-      type: string
-      description: model override used, if any (absent if not specified)
-    conversation_continuity:
-      type: string
-      enum:
-      - resumed
-      - clean_slate
-    old_agent_kind:
-      type: string
-      description: agent kind before the swap
-sse_topic: v1.pty.respawned
-delivery_guarantee: best-effort
-ordering_guarantee: none
-replay_policy: no_replay
-at_most_once: true
+  Producer: pty_respawn_handler (lightarchitects-webshell/src/server/pty_respawn.rs) on
+  successful spawn_global_pty() — fires WebEvent::PtyRespawned(PtyRespawnedEvent).
+  Consumers: SSE stream (v1.pty.respawned topic) → sse.ts dispatches la:pty-respawned
+  DOM CustomEvent → BackendPicker + StatusBar update their authProfile store without a
+  page reload.
+
+observable_outputs:
+  - "SSE data frame with type='pty_respawned' delivered to all open /api/events subscribers"
+  - "sse.ts dispatches la:pty-respawned window CustomEvent with matching payload"
+  - "authProfile store updated to new agent_kind without page reload"
+  - "StatusBar profile chip color and label reflect new backend immediately"
+
+errors:
+  - condition: SSE subscriber lagged (broadcast receiver missed frames)
+    code: E_SSE_LAGGED
+    operator_sees: SSE reconnect; latest state reflected on next message
+    forbidden: propagating RecvError::Lagged upstream — drop_and_warn per feedback_broadcast_recv_lagged_security
+    severity: LOW
+
+event_bus:
+  channel: webshell.global
+  event_name: pty-respawned
+  payload_schema:
+    type: object
+    required:
+      - type
+      - agent_kind
+      - conversation_continuity
+      - old_agent_kind
+    properties:
+      type:
+        type: string
+        enum: [pty_respawned]
+      agent_kind:
+        type: string
+        description: newly-spawned AgentKind (snake_case)
+      model:
+        type: string
+        description: model override used, if any (absent if not specified)
+      conversation_continuity:
+        type: string
+        enum: [resumed, clean_slate]
+      old_agent_kind:
+        type: string
+        description: agent kind before the swap
+  fires_after:
+    - "POST /api/pty/respawn returns 200 with spawn_global_pty() successful"
+  delivery_guarantee: at_most_once
+  lagged_policy: drop_and_warn
+  reconnect_replay_seconds: 0
+
 observability:
   required_spans:
-  - name: webshell.sse.emit
-    required_metadata:
-    - topic
-    - event_type
-    parent_relationship: child_of_named
-    parent_span_name: webshell.http.request
+    - name: webshell.sse.emit
+      required_metadata:
+        - topic
+        - event_type
+      parent_relationship: child_of_named
+      parent_span_name: webshell.http.request
+
 conformance_test:
-  given: POST /api/pty/respawn returns 200
-  when: SSE stream is open on /api/events
+  given: POST /api/pty/respawn returns 200; SSE stream open on /api/events
+  when: respawn completes successfully
   then:
-  - assertion: client receives data frame with type="pty_respawned" and matching agent_kind
-    evidence_tier_required: VERIFIED
-  - assertion: sse.ts dispatches la:pty-respawned CustomEvent with identical payload
-    evidence_tier_required: SINGLE_SOURCE
+    - assertion: client receives data frame with type="pty_respawned" and matching agent_kind
+      evidence_tier_required: VERIFIED
+    - assertion: sse.ts dispatches la:pty-respawned CustomEvent with identical payload
+      evidence_tier_required: SINGLE_SOURCE
   fixtures: []
   timeout_seconds: 5
+
 status_per_provider:
   anthropic_api:
     result: N/A
@@ -104,10 +109,12 @@ status_per_provider:
     result: N/A
     evidence_tier: VERIFIED
     na_reason: event.bus message is provider-agnostic
+
 alpha_gate:
   verdict: pass
   reason: >
     SSE topic wired; producer (pty_respawn_handler) + consumer (sse.ts) chain
     declared with schema. Phase 5 E2E test upgrades to runtime-verified.
+
 canon_refs:
-- canon://webshell-api-surface-v1#section-2-50
+  - canon://webshell-api-surface-v1#section-2-50

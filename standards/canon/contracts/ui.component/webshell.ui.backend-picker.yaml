@@ -23,8 +23,8 @@ canon_refs:
   - canon://webshell-api-surface-v1#section-2-50
 
 inputs:
-  - { name: onselect, type: function, description: "called with (kind: string) when operator picks a non-active backend" }
-  - { name: onclose, type: function, description: "called when Escape or overlay click dismisses the picker without selection" }
+  - { name: onselect, type: object, description: "called with (kind: string) when operator picks a non-active backend" }
+  - { name: onclose, type: object, description: "called when Escape or overlay click dismisses the picker without selection" }
 
 observable_outputs:
   - "4 backend options rendered with data-kind attributes"

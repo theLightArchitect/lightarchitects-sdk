@@ -123,25 +123,23 @@ alpha_gate:
 wire_http:
   path: /api/pty/respawn
   method: POST
-  auth_required: cookie
+  auth_required: cookie_session
   idempotency: non_idempotent
   cors_class: same_origin
   sse_streaming: false
   request_schema:
     type: object
     required:
-    - agent_kind
+    - agent
     properties:
-      agent_kind:
+      agent:
         type: string
         description: serde-renamed AgentKind variant (snake_case)
         enum:
         - lightarchitects
         - lightarchitects_native
-        - anthropic
         - codex
         - mistral_vibe
-        - ollama
       model:
         type: string
         description: optional model override; passed to spawn_global_pty

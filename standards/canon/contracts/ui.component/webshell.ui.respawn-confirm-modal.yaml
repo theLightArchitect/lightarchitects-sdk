@@ -28,8 +28,8 @@ inputs:
   - { name: currentKind, type: string, description: "AgentKind snake_case of the running backend" }
   - { name: currentLabel, type: string, description: "Human label for the current backend" }
   - { name: currentColor, type: string, description: "Hex color for the current backend chip" }
-  - { name: onconfirm, type: function, description: "called after successful api.respawnPty() response" }
-  - { name: oncancel, type: function, description: "called when modal is dismissed without confirming" }
+  - { name: onconfirm, type: object, description: "called after successful api.respawnPty() response" }
+  - { name: oncancel, type: object, description: "called when modal is dismissed without confirming" }
 
 observable_outputs:
   - "Current backend + target backend rendered with colored chips"

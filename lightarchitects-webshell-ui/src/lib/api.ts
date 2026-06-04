@@ -746,6 +746,6 @@ export const api = {
       old_agent_kind: string;
     }>('/pty/respawn', {
       method: 'POST',
-      body: JSON.stringify({ agent_kind: agentKind, ...(model != null ? { model } : {}) }),
+      body: JSON.stringify({ agent: agentKind, ...(model != null ? { model } : {}) }),
     }),
 };
