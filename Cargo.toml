@@ -25,6 +25,7 @@ pedantic = { level = "deny", priority = -1 }
 must_use_candidate = "allow"       # SDK builder returns are caller's choice
 module_name_repetitions = "allow"  # SoulClient in lightarchitects_soul is intentional
 needless_pass_by_value = "allow"   # JSON Value args are conventionally taken by value
+large_stack_arrays = "allow"       # async_trait Box::pin futures trigger false-positive (span-less) under --all-features
 # Builders Cookbook mandates — compile-time enforcement (restriction group).
 # Tests override these with #[allow(clippy::unwrap_used, clippy::expect_used)].
 panic       = "deny"
