@@ -1,0 +1,98 @@
+codename: webshell-contract-impl
+phase: phase-2-research
+gate_id: G2
+evaluated_at: "2026-06-04"
+evaluator: claude-sonnet-4-6
+
+research_evidence:
+  prior_art_scan:
+    LlmAgentProvider_trait:
+      file: lightarchitects/src/agent/provider.rs
+      line: 425
+      status: VERIFIED
+      finding: Trait exists with spawn/spawn_streaming/capabilities; uses #[async_trait]
+    ClaudeCliProvider_impl:
+      file: lightarchitects/src/agent/claude.rs
+      line: 216
+      status: VERIFIED
+    OllamaCliProvider_impl:
+      file: lightarchitects/src/agent/ollama.rs
+      line: 157
+      status: VERIFIED
+    OpenAICompatProvider_impl:
+      file: lightarchitects/src/agent/openai_compat.rs
+      line: 385
+      status: VERIFIED
+    AnthropicHttpProvider_impl:
+      file: lightarchitects/src/agent/http/anthropic.rs
+      line: 303
+      status: VERIFIED
+      finding: >
+        PLAN AMENDMENT: AnthropicHttpProvider already exists. Phase 4
+        AnthropicHttpRunner wraps this existing impl (adds dispatch-layer
+        concerns: artifact persistence, sandbox check, AYIN spans) rather
+        than implementing a new LlmAgentProvider from scratch.
+    DEFAULT_CLAUDE_BIN_constant:
+      file: lightarchitects/src/lightsquad/contract_supervisor.rs
+      line: 94
+      value: '"claude"'
+      usage_line: 239
+      status: VERIFIED
+      finding: >
+        Constant used at line 239 as fallback when no bin path configured.
+        Phase 4 removes this constant and routes via select_runner instead.
+    additional_providers_found:
+      - VertexAiGeminiProvider (http/vertex_ai.rs:94)
+      - VertexAiClaudeProvider (http/vertex_ai.rs:183)
+      - GoogleAiStudioProvider (http/google_ai_studio.rs:285)
+      status: NOTE
+      finding: >
+        3 additional providers beyond the 4 planned. Phase 4 adds Runner impls
+        for these as MEDIUM priority (not blocking alpha). No plan amendment needed —
+        plan §4 already says "AnthropicHttpRunner + 3 more Runner impls" which maps to
+        OllamaRunner + OpenAICompatRunner + one more; VertexAI/Google can be deferred.
+
+  dep_audit:
+    phase_1_new_deps: none
+    cargo_deny_result: |
+      advisories ok (1 warning: RUSTSEC-2026-0105 not encountered — expected)
+      bans FAILED — duplicate crates (base64, bitflags, etc.) — PRE-EXISTING
+      licenses FAILED — PRE-EXISTING; no new crates added
+      sources ok
+    pre_existing_confirmed: true
+    new_cves_introduced: none
+
+gate_dimensions:
+  R_research:
+    result: PASS
+    notes: >
+      All 6 code-anchor claims verified against HEAD. No new deps. Key plan amendment:
+      AnthropicHttpProvider already exists — Phase 4 wraps rather than creates.
+
+  C_canon:
+    result: PASS
+    notes: >
+      Q5 make contract-gate: 235/235 (not re-run; no schema changes since wave 1.2)
+      Plan amendment documented in gate eval. No canon violation.
+
+  Q_quality:
+    result: PASS_WITH_NOTE
+    notes: >
+      cargo-deny bans/licenses FAILED — pre-existing state on main, not introduced
+      by this branch. Phase 1 added zero new Cargo dependencies. Phase 3-4 will
+      add none either (wrapping existing providers). This does NOT block advancing.
+
+overall_result: PASS
+advancing_to: phase-2.5-tier3-canon-audit
+blocking_findings: []
+noted_findings:
+  - severity: NOTE
+    description: >
+      AnthropicHttpProvider exists at http/anthropic.rs:303. Phase 4 plan
+      description updated: "wraps existing AnthropicHttpProvider" not "implements
+      new HTTP provider". No plan file amendment needed — the implementation
+      approach doesn't change Phase 4's deliverable scope.
+  - severity: NOTE
+    description: >
+      cargo-deny license/bans failures pre-existing. Not introduced by this branch.
+      Will be re-checked at Phase 7 pre-merge gate (G7 I2).
