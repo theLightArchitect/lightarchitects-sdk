@@ -6,6 +6,8 @@
   import { api } from '$lib/api';
   import type { OverallStatus } from '$lib/types';
   import { subscribeByTopic, type WebEventV2 } from '$lib/sse';
+  import BackendPicker from './BackendPicker.svelte';
+  import RespawnConfirmModal from './RespawnConfirmModal.svelte';
 
   // Auth state takes precedence over connection state — a 401/403 is a more
   // urgent operator signal than "reconnecting" (#13 second-half: AuthBanner
@@ -141,6 +143,44 @@
     }
   }
 
+  // Backend picker state
+  let pickerOpen = $state(false);
+
+  type ConfirmTarget = { kind: string; label: string; color: string } | null;
+  let confirmTarget = $state<ConfirmTarget>(null);
+
+  const AGENT_MAP: Record<string, { label: string; color: string }> = {
+    lightarchitects:         { label: 'Claude Code',   color: '#22C55E' },
+    lightarchitects_native:  { label: 'lÆx0 Native',  color: '#14B8A6' },
+    codex:                   { label: 'Codex',         color: '#A855F7' },
+    mistral_vibe:            { label: 'Mistral Vibe',  color: '#FB923C' },
+    anthropic:               { label: 'Anthropic',     color: '#F59E0B' },
+    ollama:                  { label: 'Ollama',        color: '#6366F1' },
+  };
+
+  function openPicker() { pickerOpen = true; }
+  function closePicker() { pickerOpen = false; }
+
+  function handlePickerSelect(kind: string) {
+    const meta = AGENT_MAP[kind] ?? { label: kind, color: '#6b7280' };
+    confirmTarget = { kind, ...meta };
+    pickerOpen = false;
+  }
+
+  function handleConfirm() {
+    confirmTarget = null;
+    // authProfile is updated via la:pty-respawned SSE event (no extra action needed)
+  }
+
+  function handleCancel() {
+    confirmTarget = null;
+  }
+
+  function handlePtyRespawned() {
+    pickerOpen = false;
+    confirmTarget = null;
+  }
+
   let pollInterval: ReturnType<typeof setInterval> | undefined;
   let agentPollInterval: ReturnType<typeof setInterval> | undefined;
   onMount(() => {
@@ -149,11 +189,13 @@
     pollInterval = setInterval(() => { void pollPreflight(); }, 30_000);
     agentPollInterval = setInterval(() => { void pollAgentCurrent(); }, 30_000);
     unsubscribeAyin = subscribeByTopic('v1.agent.ayin.*', handleAyinEvent);
+    window.addEventListener('la:pty-respawned', handlePtyRespawned);
   });
   onDestroy(() => {
     clearInterval(pollInterval);
     clearInterval(agentPollInterval);
     unsubscribeAyin?.();
+    window.removeEventListener('la:pty-respawned', handlePtyRespawned);
   });
 </script>
 
@@ -192,13 +234,28 @@
 
   <div class="w-px h-3 bg-[var(--la-hair-strong)] mx-1"></div>
 
-  <!-- Auth profile indicator (active backend kind from /api/agent/current) -->
-  <div
-    class="w-[7px] h-[7px] rounded-full shrink-0"
-    style="background-color: {profileColor}; box-shadow: 0 0 4px {profileColor}"
-    title="Active backend: {profileLabel}"
-  ></div>
-  <span class="text-[11px] text-[var(--la-text-label)] font-mono leading-none">{profileLabel}</span>
+  <!-- Auth profile indicator — clickable chip opens BackendPicker -->
+  <div class="relative flex items-center gap-[6px]">
+    <button
+      class="flex items-center gap-[6px] rounded px-1 py-0.5 -mx-1
+             hover:bg-[var(--la-surface-hover)] transition-colors cursor-pointer"
+      title="Active backend: {profileLabel} — click to switch"
+      onclick={openPicker}
+    >
+      <span
+        class="w-[7px] h-[7px] rounded-full shrink-0"
+        style="background-color: {profileColor}; box-shadow: 0 0 4px {profileColor}"
+      ></span>
+      <span class="text-[11px] text-[var(--la-text-label)] font-mono leading-none">{profileLabel}</span>
+    </button>
+
+    {#if pickerOpen}
+      <BackendPicker
+        onselect={handlePickerSelect}
+        onclose={closePicker}
+      />
+    {/if}
+  </div>
 
   <div class="w-px h-3 bg-[var(--la-hair-strong)] mx-1"></div>
 
@@ -226,3 +283,16 @@
     </span>
   {/if}
 </div>
+
+{#if confirmTarget}
+  <RespawnConfirmModal
+    targetKind={confirmTarget.kind}
+    targetLabel={confirmTarget.label}
+    targetColor={confirmTarget.color}
+    currentKind={$authProfile ?? 'lightarchitects'}
+    currentLabel={AGENT_MAP[$authProfile ?? 'lightarchitects']?.label ?? $authProfile ?? 'unknown'}
+    currentColor={profileColor}
+    onconfirm={handleConfirm}
+    oncancel={handleCancel}
+  />
+{/if}

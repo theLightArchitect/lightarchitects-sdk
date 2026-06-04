@@ -1891,6 +1891,55 @@ Remaining routes added since 2026-05-22 that don't warrant a dedicated section:
 
 ---
 
+### §2.50 PTY Hot-Respawn (webshell-pty-hot-respawn — 2026-06-04 ADDITION)
+
+Hot-swap the running PTY agent without closing the browser tab. Implemented in `src/server/pty_respawn.rs`. Auth: `AuthGuard` (cookie). PBGC guarantees G1–G7.
+
+| Method | Path | Auth | Body | Response |
+|--------|------|------|------|----------|
+| `POST` | `/api/pty/respawn` | cookie | `{agent_kind: string, model?: string}` | `{status, agent_kind, model?, conversation_continuity, old_agent_kind}` |
+
+**Request schema** (`RespawnRequest`):
+```json
+{ "agent_kind": "lightarchitects", "model": null }
+```
+
+**Response schema** (`RespawnResponse`, HTTP 200):
+```json
+{
+  "status": "respawned",
+  "agent_kind": "lightarchitects",
+  "model": null,
+  "conversation_continuity": "clean_slate",
+  "old_agent_kind": "anthropic"
+}
+```
+
+**Error codes**:
+
+| HTTP | `error` field | Trigger |
+|------|---------------|---------|
+| 401 | `"unauthorized"` | Missing/invalid `la_session` cookie (G1) |
+| 409 | `"respawn_in_progress"` | `PtyState::Respawning` guard (concurrent double-click) |
+| 412 | `"missing_credential"` | Credential store has no entry for agent_kind (G3) |
+| 404 | `"credential_not_connected"` | Credential entry exists but `CredentialState ≠ Connected` (G3) |
+| 422 | `"unknown_agent"` | Unrecognised `agent_kind` value (G2) |
+| 500 | `"spawn_failed"` | Binary not found or PTY allocation error |
+
+**SSE event** (`WebEvent::PtyRespawned`, topic `v1.pty.respawned`):
+```json
+{
+  "type": "pty_respawned",
+  "agent_kind": "lightarchitects",
+  "conversation_continuity": "clean_slate",
+  "old_agent_kind": "anthropic"
+}
+```
+
+Contracts: `wire.http/webshell.post.api-pty-respawn.yaml`, `event.bus/webshell.event.pty-respawned.yaml`.
+
+---
+
 ## Part III — Frontend Route Catalogue
 
 ### §3.1 Router Implementation

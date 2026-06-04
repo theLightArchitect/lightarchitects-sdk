@@ -733,4 +733,19 @@ export const api = {
       body: JSON.stringify(patch),
     });
   },
+
+  // ── PTY hot-respawn (webshell-pty-hot-respawn §2.50) ──────────────────────
+
+  /** `POST /api/pty/respawn` — hot-swap the running PTY agent. */
+  respawnPty: (agentKind: string, model?: string) =>
+    request<{
+      status: string;
+      agent_kind: string;
+      model?: string;
+      conversation_continuity: string;
+      old_agent_kind: string;
+    }>('/pty/respawn', {
+      method: 'POST',
+      body: JSON.stringify({ agent_kind: agentKind, ...(model != null ? { model } : {}) }),
+    }),
 };

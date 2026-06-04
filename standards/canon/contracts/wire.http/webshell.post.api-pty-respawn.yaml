@@ -1,0 +1,210 @@
+schema_version: la-contracts/v1
+id: wire.http.api-pty-respawn.post
+kind: wire.http
+version: 0.1.0
+status: draft
+northstar_pillars:
+- P1
+- P2
+operator_intent: |
+  Hot-swap the running PTY agent without closing the browser tab.
+  SIGTERM → 3 s grace → SIGKILL the current child, then spawn a new child
+  of the requested AgentKind. Returns immediately once the new process is
+  live; the SSE stream continues without re-auth.
+observable_outputs:
+- Response status 200 with {status, agent_kind, model?, conversation_continuity, old_agent_kind} within duration budget
+- WebEvent::PtyRespawned broadcast on v1.pty.respawned SSE topic
+- AYIN platform.http.request span emitted with {method, path, status, duration_ms}
+errors:
+- http_status: 401
+  condition: missing or invalid auth credential (AuthGuard G1)
+  code: E_UNAUTHORIZED
+  operator_sees: Sign in or refresh credential
+  forbidden: proceeding without valid auth
+  severity: HIGH
+- http_status: 409
+  condition: PtyState is Respawning (concurrent request race, G-dedup)
+  code: E_RESPAWN_IN_PROGRESS
+  operator_sees: PTY respawn already in progress — retry in 1-2 s
+  forbidden: spawning a second child while Respawning state is held
+  severity: HIGH
+- http_status: 412
+  condition: credential store has no entry for the requested agent (G3)
+  code: E_MISSING_CREDENTIAL
+  operator_sees: Configure credential for the requested backend before switching
+  forbidden: spawning without a valid credential
+  severity: HIGH
+- http_status: 404
+  condition: credential store entry exists but state is not Connected (G3)
+  code: E_CREDENTIAL_NOT_CONNECTED
+  operator_sees: Reconnect the credential for the requested backend
+  forbidden: spawning without a connected credential
+  severity: HIGH
+- http_status: 422
+  condition: unknown agent_kind value (G2)
+  code: E_UNKNOWN_AGENT
+  operator_sees: Unknown agent kind — valid values are listed in AgentKind enum
+  forbidden: silent fall-through to a default backend
+  severity: MEDIUM
+- http_status: 500
+  condition: spawn failed (binary not found, PTY alloc error)
+  code: E_SPAWN_FAILED
+  operator_sees: Spawn failed — check backend binary configuration
+  forbidden: returning a stack trace or stderr in the response body
+  severity: HIGH
+observability:
+  required_spans:
+  - name: webshell.http.request
+    required_metadata:
+    - method
+    - path
+    - status
+    - duration_ms
+    parent_relationship: root
+  trace_context_propagation: true
+  duration_budget_ms: 5000
+hitl_boundaries:
+- none
+conformance_test:
+  given: webshell running; valid la_session cookie; requested agent credential connected
+  when: POST /api/pty/respawn with body {agent_kind:"lightarchitects"}
+  then:
+  - assertion: response status 200; body contains status="respawned" and agent_kind="lightarchitects"
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  - assertion: unauthenticated request returns 401 with E_UNAUTHORIZED
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  - assertion: unknown agent_kind returns 422 with E_UNKNOWN_AGENT
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  - assertion: missing credential returns 412 with E_MISSING_CREDENTIAL
+    span_witness: webshell.http.request
+    evidence_tier_required: VERIFIED
+  fixtures:
+  - RespawnRequest.example.json
+  timeout_seconds: 10
+status_per_provider:
+  anthropic_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openai_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_cloud:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  ollama_local:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  mistral_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  groq_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+  openrouter_api:
+    result: N/A
+    evidence_tier: VERIFIED
+    na_reason: wire.http endpoint is below the provider abstraction layer; behaviour is identical regardless of LLM provider
+alpha_gate:
+  verdict: pass
+  reason: >
+    7 PBGC guarantees implemented; G1-G7 covered by unit tests; error envelopes
+    fully declared with HTTP codes and operator-visible messages.
+    Conformance harness wiring upgrades verdict from declared-pass to
+    runtime-verified at Phase 5.
+wire_http:
+  path: /api/pty/respawn
+  method: POST
+  auth_required: cookie
+  idempotency: non_idempotent
+  cors_class: same_origin
+  sse_streaming: false
+  request_schema:
+    type: object
+    required:
+    - agent_kind
+    properties:
+      agent_kind:
+        type: string
+        description: serde-renamed AgentKind variant (snake_case)
+        enum:
+        - lightarchitects
+        - lightarchitects_native
+        - anthropic
+        - codex
+        - mistral_vibe
+        - ollama
+      model:
+        type: string
+        description: optional model override; passed to spawn_global_pty
+    additionalProperties: false
+  response_schemas:
+    '200':
+      type: object
+      required:
+      - status
+      - agent_kind
+      - conversation_continuity
+      - old_agent_kind
+      properties:
+        status:
+          type: string
+          enum:
+          - respawned
+          description: always "respawned" on 200
+        agent_kind:
+          type: string
+          description: the newly-spawned agent kind
+        model:
+          type: string
+          description: model override used, if any
+        conversation_continuity:
+          type: string
+          enum:
+          - resumed
+          - clean_slate
+          description: '"resumed" when same agent as before; "clean_slate" cross-agent'
+        old_agent_kind:
+          type: string
+          description: the agent kind that was running before the swap
+    '401':
+      type: object
+      description: 'error envelope: {error: string}'
+      properties:
+        error: { type: string }
+    '404':
+      type: object
+      description: 'error envelope: {error: string}'
+      properties:
+        error: { type: string }
+    '409':
+      type: object
+      description: 'error envelope: {error: string}'
+      properties:
+        error: { type: string }
+    '412':
+      type: object
+      description: 'error envelope: {error: string, provider: string}'
+      properties:
+        error: { type: string }
+        provider: { type: string }
+    '422':
+      type: object
+      description: 'error envelope: {error: string}'
+      properties:
+        error: { type: string }
+    '500':
+      type: object
+      description: 'error envelope: {error: string}'
+      properties:
+        error: { type: string }
+canon_refs:
+- canon://webshell-api-surface-v1#section-2-50
