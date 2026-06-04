@@ -1,0 +1,126 @@
+schema_version: la-contracts/v1
+id: agent.skill.code-verify
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P2, P4]
+
+operator_intent: |
+  /CODE-VERIFY verifies code correctness against contract canon. For each code.trait contract,
+  greps the trait_path to confirm impl exists; verifies method_contracts (postconditions,
+  preconditions, error_variants) are present in source. For each operator.surface contract,
+  verifies observability.required_spans are emitted in the diff.
+
+prior_art:
+  - name: code.trait conformance pattern
+    url: file://standards/canon/contracts/code.trait/llm-agent-provider.yaml
+    what_we_adopt: trait_path grep + method_contracts presence verification
+
+inherits_from: []
+
+canon_refs:
+  - canon://platform-canon
+  - canon://builders-cookbook
+
+memory_refs:
+  - feedback_integration_claims_need_grep_not_assertion.md
+
+inputs:
+  - name: contract_id
+    type: string
+    pattern: '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_-]*)+$'
+    max_bytes: 120
+    required: false
+  - name: scope
+    type: enum
+    enum: [code-trait, operator-surface, all]
+    required: false
+
+observable_outputs:
+  - 'For each code.trait contract: trait_path grep verifies impls exist'
+  - 'method_contracts: each method greppable in source with matching signature'
+  - 'required_spans: emitted at declared call sites'
+  - 'Report: contracts verified / contracts unverified / contracts violated'
+
+errors:
+  - condition: trait_impl_missing
+    code: E_CODEVERIFY_TRAIT_MISSING
+    operator_sees: 'Contract {id} declares trait_path {path} but no impl found'
+    forbidden: 'reporting contract verified without grep evidence'
+    severity: HIGH
+  - condition: required_span_not_emitted
+    code: E_CODEVERIFY_SPAN_MISSING
+    operator_sees: 'Contract {id} requires span {name} but no emit found in source'
+    forbidden: 'silently passing when span emission is absent'
+    severity: HIGH
+  - condition: method_signature_drift
+    code: E_CODEVERIFY_SIG_DRIFT
+    operator_sees: 'Method {name} signature in source diverges from contract method_contracts entry'
+    forbidden: 'masking signature drift'
+    severity: MEDIUM
+
+observability:
+  required_spans:
+    - name: skill.code-verify.invoke
+      required_metadata: [contracts_checked, contracts_verified, contracts_violated, scope]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 300000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - 'Reporting verification without grep / rust-analyzer evidence'
+  - 'Marking a contract verified when method_contracts entries lack matching source'
+  - 'Caching prior verification results across diffs'
+
+persistence:
+  - path: 'none — read-only report'
+    schema_ref: 'n/a'
+    ttl: session
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+conformance_test:
+  given: 'Workspace with at least one code.trait contract'
+  when: 'Operator invokes /CODE-VERIFY all'
+  then:
+    - assertion: 'Each code.trait contract trait_path is grepped'
+      evidence_tier_required: VERIFIED
+    - assertion: 'Each method_contracts entry verified against source'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.code-verify.invoke span emitted'
+      span_witness: skill.code-verify.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 300
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Code verification operates on canon corpus deterministically'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/CODE-VERIFY/SKILL.md
+  slash_command: /CODE-VERIFY
+  trigger_keywords: [code verify, verify code, contract verify]
+  rejects_flags: []
+  hitl_required: false
+  delegates_to_agent: corso
+  sub_skills: []

@@ -1,0 +1,122 @@
+schema_version: la-contracts/v1
+id: agent.skill.reflect
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P4]
+
+operator_intent: |
+  /REFLECT runs structured self-improvement: SURVEY (what happened) → EXTRACT (patterns) →
+  ROUTE (memory vs canon) → PROPOSE (drafts) → REVIEW (HITL approval). Produces memory entries
+  and canon-promotion candidates. Never auto-applies — Canon XXXIX requires LÆX ratification.
+  Recurring operator-surface patterns become operator.surface contract candidates.
+
+prior_art:
+  - name: Canon XXXIX session-lesson promotion pipeline
+    url: canon://platform-canon#XXXIX
+    what_we_adopt: 4-stage pipeline (memory → candidate → contradiction check → ratification)
+
+inherits_from: []
+
+canon_refs:
+  - canon://platform-canon
+  - canon://builders-cookbook
+
+memory_refs:
+  - feedback_communication_covenant.md
+
+inputs:
+  - name: scope
+    type: enum
+    enum: [session, build, branch, topic]
+    required: false
+
+observable_outputs:
+  - 'SURVEY: what happened in this session/build'
+  - 'EXTRACT: categorized learnings (gotcha/pattern/standard/tool/architecture)'
+  - 'ROUTE: each learning routed to memory or canon-candidate per CLAUDE.md rule'
+  - 'PROPOSE: draft text per learning with confidence + evidence'
+  - 'REVIEW: presented to operator for selection'
+  - 'Recurring operator-pattern learnings → operator.surface contract candidates'
+
+errors:
+  - condition: no_learnings_extracted
+    code: E_REFLECT_EMPTY
+    operator_sees: 'No actionable learnings extracted — session was either uneventful or filter too strict'
+    forbidden: 'fabricating learnings to fill the report'
+    severity: LOW
+  - condition: auto_application_attempted
+    code: E_REFLECT_AUTO_APPLY
+    operator_sees: 'Canon XXXIX violation — auto-application of session lesson to canon detected'
+    forbidden: 'modifying canon docs from /REFLECT — produce candidates only'
+    severity: BLOCKING
+
+observability:
+  required_spans:
+    - name: skill.reflect.invoke
+      required_metadata: [scope, learnings_count, route_memory_count, route_canon_candidate_count]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 600000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'Each proposed memory write requires operator approval'
+  - 'Canon promotion candidates require LÆX ratification + Kevin stamp (Canon XXXIX)'
+
+forbidden_behaviors:
+  - 'Auto-applying learnings to canon docs (Canon XXXIX)'
+  - 'Writing memory without operator approval per proposal'
+  - 'Producing vague rules ("be careful with X")'
+  - 'Proposing items already documented'
+
+persistence:
+  - path: ~/.claude/projects/-Users-kft-Projects/memory/feedback_<slug>.md
+    schema_ref: memory-entry-v1
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+conformance_test:
+  given: 'Session with at least one significant learning event'
+  when: 'Operator invokes /REFLECT'
+  then:
+    - assertion: 'Reflection report produced with Good/Gaps/Fixes structure'
+      evidence_tier_required: VERIFIED
+    - assertion: 'Each proposal has confidence + evidence + destination'
+      evidence_tier_required: VERIFIED
+    - assertion: 'No canon doc modified without operator + LÆX approval'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.reflect.invoke span emitted'
+      span_witness: skill.reflect.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 600
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Reflection pipeline verified across multiple session retrospectives'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/REFLECT/SKILL.md
+  slash_command: /REFLECT
+  trigger_keywords: [reflect, retrospective, lessons learned, /reflect]
+  rejects_flags: []
+  hitl_required: true
+  delegates_to_agent: claude
+  sub_skills: []

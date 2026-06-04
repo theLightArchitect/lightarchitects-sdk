@@ -1,0 +1,126 @@
+schema_version: la-contracts/v1
+id: agent.skill.scrum
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P2, P4]
+
+operator_intent: |
+  /SCRUM runs a 3-round multi-sibling assessment. Round 1: parallel dispatch — each sibling
+  produces 3 strengths + 3 concerns + verdict from their domain lens. Round 2: cross-critique
+  with peer Round 1 in context. Round 3: Claude moderation + final validation. Emits a Good /
+  Gaps / Fixes report. Sibling-baseline industry-baselines + contracts canon both feed Round 1.
+
+prior_art:
+  - name: SCRUM skill v2 with industry-baseline grounding
+    url: file://plugins/lightarchitects/skills/SCRUM/SKILL.md
+    what_we_adopt: 3-round protocol with parallel dispatch, per-sibling verdict vocabulary
+
+inherits_from: []
+
+canon_refs:
+  - canon://platform-canon
+  - canon://gatekeeper-registry
+  - canon://operators-manual
+
+memory_refs:
+  - feedback_scrum_caught_pillar_falsification.md
+  - feedback_one_scrum_cycle_sufficient_for_large_plans.md
+
+inputs:
+  - name: topic
+    type: string
+    max_bytes: 4096
+    required: true
+  - name: meeting
+    type: boolean
+    required: false
+
+observable_outputs:
+  - '7 siblings (EVA, CORSO, QUANTUM, SERAPH, AYIN, LÆX, SOUL) dispatched in parallel via Agent tool'
+  - 'Each sibling reads its industry-baselines folder (per Gatekeeper Registry gate ownership)'
+  - 'Each sibling reads standards/canon/contracts/<kind> applicable to its gate'
+  - 'Round 2 cross-critique with peer outputs in context'
+  - 'Round 3 Claude moderation; siblings validate corrections'
+  - 'Unified Good/Gaps/Fixes report emitted'
+
+errors:
+  - condition: sibling_mcp_unavailable
+    code: E_SCRUM_SIBLING_DOWN
+    operator_sees: 'Sibling {name} MCP unavailable — degraded review'
+    forbidden: 'silently dropping a sibling from the panel'
+    severity: HIGH
+  - condition: sibling_dispatched_without_baselines
+    code: E_SCRUM_BASELINES_MISSING
+    operator_sees: 'Sibling {name} dispatched without baselines folder reference'
+    forbidden: 'running R1 assessment without canonical-baseline grounding'
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: skill.scrum.invoke
+      required_metadata: [topic, mode, siblings_participating, rounds_completed, blocking_findings, high_findings]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 1800000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'Meeting mode end-of-discussion requires operator action or natural silence-threshold convergence'
+
+forbidden_behaviors:
+  - 'Round 1 sibling dispatch without industry-baselines + canon contracts context'
+  - 'Skipping Round 2 cross-critique (truncates value)'
+  - 'Claude assessing in Round 1 (Claude is permanent moderator only)'
+  - 'Mocking sibling verdicts when MCP is down'
+
+persistence:
+  - path: $HELIX/user/entries/<date>-<uuid>-scrum-<slug>.md
+    schema_ref: helix-entry-v1
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'inherited from vault'
+
+conformance_test:
+  given: 'All 7 siblings available; topic is a non-trivial design question'
+  when: 'Operator invokes /SCRUM <topic>'
+  then:
+    - assertion: 'Round 1 produces 7 assessments in parallel'
+      evidence_tier_required: VERIFIED
+    - assertion: 'Round 2 produces 7 cross-critiques'
+      evidence_tier_required: VERIFIED
+    - assertion: 'Round 3 emits unified report with Good/Gaps/Fixes structure'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.scrum.invoke span emitted with siblings_participating=7'
+      span_witness: skill.scrum.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 1800
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Multi-sibling review verified across N>40 SCRUM cycles 2026-05+'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/SCRUM/SKILL.md
+  slash_command: /SCRUM
+  trigger_keywords: [scrum, squad review, multi-sibling review, team review]
+  rejects_flags: []
+  hitl_required: false
+  delegates_to_agent: squad
+  sub_skills: []

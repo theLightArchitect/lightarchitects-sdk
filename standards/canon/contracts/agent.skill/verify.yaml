@@ -1,0 +1,131 @@
+schema_version: la-contracts/v1
+id: agent.skill.verify
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P2, P4]
+
+operator_intent: |
+  /VERIFY runs the test pyramid: cargo test workspace, coverage report, and Canon XXVII 6-suite
+  audit (unit / integration / property / E2E / regression / smoke). Also executes any
+  operator.surface conformance_test blocks defined in canon contracts and runs make contract-gate.
+  Used as a phase-boundary verification gate inside /BUILD and as a standalone pre-deploy check.
+
+prior_art:
+  - name: Canon XXVII 6-suite test pyramid
+    url: file://standards/canon/agents-playbook.md
+    what_we_adopt: explicit suite vocabulary with per-suite coverage targets
+  - name: Cookbook §50 testing pyramid + ≥90% target
+    url: file://standards/canon/builders-cookbook.md
+    what_we_adopt: coverage floor of 90% with ratchet-only-up discipline
+
+inherits_from: []
+
+canon_refs:
+  - canon://agents-playbook
+  - canon://builders-cookbook
+  - canon://platform-canon
+
+memory_refs:
+  - feedback_cargo_dep_before_implementation.md
+  - feedback_axum_oneshot_smoke_pattern.md
+
+inputs:
+  - name: scope
+    type: enum
+    enum: [unit, integration, property, e2e, regression, smoke, all]
+    required: false
+  - name: package
+    type: string
+    max_bytes: 80
+    required: false
+
+observable_outputs:
+  - 'cargo test --workspace --all-features --lib --tests passes (or fails with details)'
+  - 'make contract-gate runs and reports 211+/N validation result'
+  - '6-suite pyramid audit: each suite reports pass/fail with coverage'
+  - 'operator.surface contract conformance_test blocks executed where applicable'
+  - 'Test count delta vs prior verify reported (ratchet check)'
+
+errors:
+  - condition: test_failure
+    code: E_VERIFY_TEST_FAIL
+    operator_sees: 'cargo test failed: {N} failures in {packages}'
+    forbidden: 'masking failures or marking as flaky without evidence'
+    severity: BLOCKING
+  - condition: coverage_regression
+    code: E_VERIFY_COVERAGE_REGRESSION
+    operator_sees: 'Coverage dropped from {prior}% to {current}% — below ratchet floor'
+    forbidden: 'lowering ratchet to make a build pass'
+    severity: HIGH
+  - condition: contract_conformance_test_failed
+    code: E_VERIFY_CONFORMANCE_TEST
+    operator_sees: 'operator.surface.{id} conformance test failed: {assertion_failed}'
+    forbidden: 'silently ignoring contract conformance failures'
+    severity: BLOCKING
+
+observability:
+  required_spans:
+    - name: skill.verify.invoke
+      required_metadata: [scope, tests_run, tests_passed, tests_failed, coverage_pct, contract_gate_clean]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 1800000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'Flaky-test waiver requires explicit operator approval with evidence of pre-existing flakiness'
+
+forbidden_behaviors:
+  - 'Treating pre-existing flakes as license to ignore newly introduced flakes'
+  - 'Marking a contract conformance_test as PASS without running it'
+  - 'Coverage ratchet relaxation to pass the build'
+
+persistence:
+  - path: <project>/target/debug/coverage/lcov.info
+    schema_ref: lcov
+    ttl: until-make-clean
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+conformance_test:
+  given: 'Workspace builds clean'
+  when: 'Operator invokes /VERIFY all'
+  then:
+    - assertion: 'cargo test reports total tests run + passed + failed'
+      evidence_tier_required: VERIFIED
+    - assertion: 'make contract-gate reports N/N contracts validate'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.verify.invoke span emitted'
+      span_witness: skill.verify.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 1800
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Test runner executes cargo + contract-gate deterministically'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/VERIFY/SKILL.md
+  slash_command: /VERIFY
+  trigger_keywords: [verify, test, run tests, /verify]
+  rejects_flags: []
+  hitl_required: false
+  delegates_to_agent: corso
+  sub_skills: []

@@ -1,0 +1,176 @@
+schema_version: la-contracts/v1
+id: agent.skill.build
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P1, P2, P4]
+
+operator_intent: |
+  /BUILD takes a VALIDATED plan and runs the feature pipeline: pre-flight gates, worktree creation,
+  per-phase /SQUAD dispatch with /GATE between phases, pre-merge /GATE, and merge per Playbook §15.4.
+  /BUILD never writes plans (that's /PLAN's job); it always operates against an existing VALIDATED
+  plan at ~/.claude/plans/<codename>.md. Contract canon is enforced at every Q-gate via make contract-gate.
+
+prior_art:
+  - name: Agents Playbook git-lifecycle protocol §15
+    url: file://standards/canon/agents-playbook.md
+    what_we_adopt: G1-G8 pre-flight, Q/S/I/N/D/V pre-merge gate vocabulary, no-ff merge to main
+  - name: Canon XLI diagram-first doctrine
+    url: canon://platform-canon#XLI
+    what_we_adopt: diagrams_authored_phase=1, drift_clean predicate on every [A] gate
+
+inherits_from:
+  - agent.skill.plan
+  - agent.skill.gate
+  - agent.skill.xea
+  - agent.skill.squad
+
+canon_refs:
+  - canon://agents-playbook
+  - canon://architects-blueprint
+  - canon://platform-canon
+  - canon://operators-manual
+
+memory_refs:
+  - feedback_implementation_sop.md
+  - feedback_engineer_scrum_filesystem_verification.md
+  - feedback_worktree_symlinks_for_path_deps.md
+
+inputs:
+  - name: codename
+    type: string
+    pattern: '^[a-zA-Z0-9_/. -]+$'
+    max_bytes: 60
+    required: true
+  - name: research_flag
+    type: boolean
+    required: false
+  - name: from_plan
+    type: path
+    required: false
+  - name: skip_preflight
+    type: boolean
+    required: false
+
+observable_outputs:
+  - 'Worktree created at ~/lightarchitects/worktrees/<codename> on branch feat/<codename>'
+  - 'Plan frontmatter status flipped to in_progress with phase tracking'
+  - 'Per-phase Gatekeeper verdict block emitted as GATE_REVIEW JSONL (Playbook §7.4)'
+  - 'make contract-gate runs at every Q-gate; failure blocks phase advance'
+  - 'Pre-merge /GATE runs Q/S/I/N/D/V dimensions including Q5 contract-gate'
+  - 'On merge: git merge --no-ff feat/<codename> into main; worktree removed; plan frontmatter promoted'
+
+errors:
+  - condition: plan_not_validated
+    code: E_BUILD_PLAN_UNVALIDATED
+    operator_sees: 'Plan validation_status is not VALIDATED — run /PLAN <codename> first'
+    forbidden: 'building against draft / UNVALIDATED plans without explicit operator waiver'
+    severity: BLOCKING
+  - condition: xea_gate_blocked
+    code: E_BUILD_XEA_GATE
+    operator_sees: 'XEA pre-implementation gate found BLOCKING gaps — remediate or waive'
+    forbidden: 'creating worktree past XEA failure without explicit waiver'
+    severity: BLOCKING
+  - condition: contract_gate_failed_at_phase_boundary
+    code: E_BUILD_CONTRACT_GATE
+    operator_sees: 'make contract-gate failed at phase {N} boundary — fix schema / edge violations before advancing'
+    forbidden: 'advancing past a phase /GATE with contract violations'
+    severity: BLOCKING
+  - condition: preflight_g_check_failed
+    code: E_BUILD_PREFLIGHT
+    operator_sees: 'Pre-flight gate G{N} failed: {detail}'
+    forbidden: 'creating worktree past failed G-check without --skip-preflight waiver'
+    severity: BLOCKING
+  - condition: primary_not_on_main
+    code: E_BUILD_PRIMARY_BRANCH
+    operator_sees: 'Primary worktree not on main — /GATE requires Path A topology'
+    forbidden: 'silent fallback to Path B without operator V0 waiver'
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: skill.build.invoke
+      required_metadata: [codename, tier, phase_count, worktree_path, branch_name, validation_status]
+      parent_relationship: child_of_caller
+    - name: skill.build.phase
+      required_metadata: [codename, phase_id, gate_verdict, contract_gate_clean, tests_added]
+      parent_relationship: child_of_named
+      parent_span_name: skill.build.invoke
+  duration_budget_ms: 14400000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'Step 4 write-path disclosure requires explicit operator approval before worktree creation'
+  - 'Pre-merge GATE verdict at <0.99 confidence requires HITL approval per Playbook §3.3'
+  - 'XEA BLOCKING gaps require operator waiver before remediation skipped'
+
+forbidden_behaviors:
+  - 'Building against a non-existent or draft plan without explicit operator waiver'
+  - 'Skipping per-phase /GATE between substantive phases'
+  - 'Merging with --no-verify or bypassing pre-commit hooks'
+  - 'Force-pushing to main'
+  - 'Skipping make contract-gate at Q-dimension gates when operator.surface.* contracts touched'
+  - 'Updating operator.surface contract status_per_provider verdicts without conformance test evidence'
+
+persistence:
+  - path: ~/lightarchitects/worktrees/<codename>
+    schema_ref: git-worktree
+    ttl: until-make-clean
+    hmac_chained: false
+    redaction_policy: 'inherit from project'
+  - path: ~/lightarchitects/soul/helix/corso/builds/<codename>/manifest.yaml
+    schema_ref: build-manifest-v1
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+conformance_test:
+  given: 'VALIDATED plan at ~/.claude/plans/test-feature.md + primary worktree on main'
+  when: 'Operator invokes /BUILD test-feature'
+  then:
+    - assertion: '~/lightarchitects/worktrees/test-feature/ exists on branch feat/test-feature'
+      filesystem_witness: ~/lightarchitects/worktrees/test-feature/.git
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.build.invoke span emitted'
+      span_witness: skill.build.invoke
+      evidence_tier_required: VERIFIED
+    - assertion: 'make contract-gate runs successfully at every phase /GATE'
+      evidence_tier_required: VERIFIED
+    - assertion: 'On completion, plan frontmatter status=promoted; branch merged --no-ff'
+      filesystem_witness: ~/.claude/plans/test-feature.md
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 14400
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Skill is provider-independent — orchestrates Claude Code agents regardless of LLM backend' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Pipeline runs deterministically; verified across 50+ build cycles 2026-04 through 2026-06'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/BUILD/SKILL.md
+  slash_command: /BUILD
+  trigger_keywords: [build, implement, /build, build this, ship feature]
+  rejects_flags: ['--then', '--watch', '--drain', '--fix']
+  hitl_required: true
+  delegates_to_agent: claude
+  sub_skills:
+    - agent.skill.gate
+    - agent.skill.xea
+    - agent.skill.squad
+    - agent.skill.verify

@@ -1,0 +1,120 @@
+schema_version: la-contracts/v1
+id: agent.skill.optimize
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P4]
+
+operator_intent: |
+  /OPTIMIZE runs performance optimization: profile hot paths with criterion, research
+  alternatives via QUANTUM, produce ranked proposals. Respects contract latency budgets
+  (operator.surface.observability.first_token_budget_ms / duration_budget_ms) as floor
+  guarantees — must not optimize past contract minimum without contract amendment.
+
+prior_art:
+  - name: CORSO CHASE performance profiling
+    url: file://plugins/lightarchitects/skills/corso/SKILL.md
+    what_we_adopt: criterion-benchmark-driven optimization with >5% regression alert
+
+inherits_from: []
+
+canon_refs:
+  - canon://builders-cookbook
+  - canon://platform-canon
+
+memory_refs:
+  - feedback_clippy_per_wave.md
+
+inputs:
+  - name: scope
+    type: enum
+    enum: [hot-path, allocation, latency, throughput, memory]
+    required: true
+  - name: target
+    type: string
+    max_bytes: 200
+    required: true
+
+observable_outputs:
+  - 'Baseline benchmark recorded'
+  - 'Ranked optimization proposals with expected delta'
+  - 'Per-proposal contract impact noted (which budgets affected)'
+  - 'No optimization breaks contract latency floor without amendment'
+
+errors:
+  - condition: regression_introduced
+    code: E_OPTIMIZE_REGRESSION
+    operator_sees: 'Proposed change introduces regression of {pct}%'
+    forbidden: 'shipping optimization that regresses unrelated benchmarks'
+    severity: HIGH
+  - condition: contract_budget_violation
+    code: E_OPTIMIZE_BUDGET_VIOLATION
+    operator_sees: 'Optimization violates {contract_id}.observability.duration_budget_ms ({actual} > {budget})'
+    forbidden: 'optimizing past contract floor without amendment'
+    severity: BLOCKING
+
+observability:
+  required_spans:
+    - name: skill.optimize.invoke
+      required_metadata: [scope, target, baseline_ms, proposed_ms, delta_pct, contract_impact_count]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 1800000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'Contract amendment required if optimization changes operator.surface latency budget'
+
+forbidden_behaviors:
+  - 'Shipping optimization without baseline benchmark evidence'
+  - 'Violating contract latency budgets without amendment'
+  - 'Optimizing memory by introducing unsafe code (Cookbook §4.2)'
+
+persistence:
+  - path: <build_root>/.bench/criterion/
+    schema_ref: criterion-report
+    ttl: until-make-clean
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+conformance_test:
+  given: 'Workspace with criterion benchmarks present'
+  when: 'Operator invokes /OPTIMIZE latency <target>'
+  then:
+    - assertion: 'Baseline benchmark captured'
+      evidence_tier_required: VERIFIED
+    - assertion: 'Each proposal includes contract impact analysis'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.optimize.invoke span emitted'
+      span_witness: skill.optimize.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 1800
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Optimization workflow verified across criterion-benchmarked builds'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/OPTIMIZE/SKILL.md
+  slash_command: /OPTIMIZE
+  trigger_keywords: [optimize, performance, /optimize, bench]
+  rejects_flags: []
+  hitl_required: false
+  delegates_to_agent: corso
+  sub_skills: []

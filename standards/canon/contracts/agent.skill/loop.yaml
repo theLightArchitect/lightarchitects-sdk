@@ -1,0 +1,119 @@
+schema_version: la-contracts/v1
+id: agent.skill.loop
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P2, P4]
+
+operator_intent: |
+  /loop runs a dynamic-pacing autonomous loop. Claude schedules its own wakeups via
+  ScheduleWakeup tool — pacing balanced against the prompt-cache 5-minute TTL. Used for
+  polling external state, watching long-running jobs, or autonomous iteration over a
+  prompt while operator is away.
+
+prior_art:
+  - name: ScheduleWakeup tool
+    url: https://docs.anthropic.com/claude-code/tools
+    what_we_adopt: dynamic delay with cache-TTL awareness; sentinel `<<autonomous-loop-dynamic>>`
+
+inherits_from: []
+
+canon_refs:
+  - canon://platform-canon
+  - canon://operators-manual
+
+memory_refs: []
+
+inputs:
+  - name: prompt
+    type: string
+    max_bytes: 8192
+    required: false
+  - name: autonomous
+    type: boolean
+    required: false
+
+observable_outputs:
+  - 'ScheduleWakeup fired with delaySeconds in [60, 3600]'
+  - 'Each wakeup re-enters loop with the same prompt'
+  - 'Loop terminates when ScheduleWakeup omitted (skill exit)'
+  - 'Cache-TTL-aware delay choice (sub-300s or 1200+s, never 300s)'
+
+errors:
+  - condition: cache_wasteful_delay
+    code: E_LOOP_CACHE_WASTE
+    operator_sees: 'delaySeconds=300 selected — burns cache for no gain (use ≤270 or ≥1200)'
+    forbidden: 'choosing delay that pays cache-miss cost without amortization'
+    severity: MEDIUM
+  - condition: poll_when_harness_tracks
+    code: E_LOOP_REDUNDANT_POLL
+    operator_sees: 'Short-interval wakeup scheduled for harness-tracked work — wasted'
+    forbidden: 'scheduling polls for work that triggers re-invocation automatically'
+    severity: MEDIUM
+
+observability:
+  required_spans:
+    - name: skill.loop.invoke
+      required_metadata: [autonomous, delay_seconds, wake_count, reason]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 86400000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'Operator can interrupt loop at any time'
+
+forbidden_behaviors:
+  - 'Scheduling 300s delays (worst-of-both cache window)'
+  - 'Polling external state the harness can notify on'
+  - 'Loop without a clear exit condition'
+  - 'Re-running setup actions on every wakeup'
+
+persistence:
+  - path: 'session state — Claude Code conversation continuation'
+    schema_ref: 'n/a'
+    ttl: session
+    hmac_chained: false
+    redaction_policy: 'inherited from session'
+
+conformance_test:
+  given: 'Operator invokes /loop with a task'
+  when: 'Skill runs through one iteration'
+  then:
+    - assertion: 'ScheduleWakeup called with delay in [60, 3600]'
+      evidence_tier_required: VERIFIED
+    - assertion: 'Same prompt re-fired on wake'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.loop.invoke span emitted'
+      span_witness: skill.loop.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 3600
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Loop uses Claude Code ScheduleWakeup tool' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Loop primitive verified across dynamic-pacing sessions'
+
+agent_skill:
+  skill_path: plugins/claude-code/loop/SKILL.md
+  slash_command: /LOOP
+  trigger_keywords: [loop, autonomous loop, /loop]
+  rejects_flags: []
+  hitl_required: false
+  delegates_to_agent: claude
+  sub_skills: []

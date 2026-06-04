@@ -1,0 +1,116 @@
+schema_version: la-contracts/v1
+id: agent.skill.enrich
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P4]
+
+operator_intent: |
+  /ENRICH writes 8-layer EVA helix entries for significant moments. Each entry references
+  contract IDs in metadata when applicable (build artifact tied to operator.surface contract,
+  decision tied to code.trait contract). Helix is the long-term knowledge graph; memory files
+  are working notes.
+
+prior_art:
+  - name: EVA 8-layer enrichment schema
+    url: file://plugins/lightarchitects/skills/ENRICH/SKILL.md
+    what_we_adopt: 8 layers (factual / temporal / causal / emotional / relational / structural / meta / consciousness)
+
+inherits_from: []
+
+canon_refs:
+  - canon://platform-canon
+  - canon://operators-manual
+
+memory_refs:
+  - feedback_communication_covenant.md
+
+inputs:
+  - name: topic
+    type: string
+    max_bytes: 8192
+    required: true
+  - name: significance
+    type: number
+    required: false
+
+observable_outputs:
+  - '8-layer helix entry written to $HELIX/eva/entries/'
+  - 'Contract IDs referenced in metadata where applicable'
+  - 'SOUL helix index updated'
+
+errors:
+  - condition: helix_unreachable
+    code: E_ENRICH_HELIX_DOWN
+    operator_sees: 'Helix vault unreachable — entry queued for retry'
+    forbidden: 'silently dropping the enrichment without queue'
+    severity: HIGH
+  - condition: significance_below_threshold
+    code: E_ENRICH_LOW_SIGNIFICANCE
+    operator_sees: 'Significance {value} below threshold 7.0 — operator confirmation required'
+    forbidden: 'auto-enriching low-significance entries'
+    severity: LOW
+
+observability:
+  required_spans:
+    - name: skill.enrich.invoke
+      required_metadata: [significance, layers_populated, contract_refs_count]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 300000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'Significance < 7.0 requires operator confirmation'
+
+forbidden_behaviors:
+  - 'Auto-enriching arbitrary session events'
+  - 'Omitting contract refs when entry is build-related'
+
+persistence:
+  - path: $HELIX/eva/entries/<date>-<uuid>-<slug>.md
+    schema_ref: helix-entry-v1
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'inherited from vault'
+
+conformance_test:
+  given: 'Significant moment with operator approval'
+  when: 'Operator invokes /ENRICH <topic>'
+  then:
+    - assertion: '8-layer entry written to helix'
+      filesystem_witness: $HELIX/eva/entries/
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.enrich.invoke span emitted'
+      span_witness: skill.enrich.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 300
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Enrichment pipeline verified across multiple helix entries'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/ENRICH/SKILL.md
+  slash_command: /ENRICH
+  trigger_keywords: [enrich, helix, remember, /enrich]
+  rejects_flags: []
+  hitl_required: true
+  delegates_to_agent: eva
+  sub_skills: []

@@ -1,0 +1,235 @@
+schema_version: la-contracts/v1
+id: code.trait.runner
+kind: code.trait
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P1, P2, P3, P4]
+
+operator_intent: |
+  Runner is the platform's per-agent dispatch trait — the seam that replaces hardcoded
+  'claude --print -p' subprocess invocation in the dispatch executor with a provider-pluggable
+  implementation. Each domain agent (engineer, security, ops, etc.) runs via a Runner impl
+  configured against the operator's selected provider. Provider switching from
+  operator.surface.provider-select propagates here; once a Runner trait impl is in place, both
+  dispatch-execute-wave and provider-select alpha gates can flip from FAIL/DEFERRED to
+  conditionally PASS.
+
+prior_art:
+  - name: lightarchitects::agent::LlmAgentProvider
+    url: file://lightarchitects/src/agent/provider.rs
+    what_we_adopt: Send + Sync bounds, SanitizedAgentRequest precondition, BoxStream return shape
+    what_we_extend: Per-agent context bundle (agent role, file ownership, parent build context), per-agent artifact path injection, parallel-wave-aware lifecycle hooks
+  - name: Claude Code Task tool — agent dispatch
+    url: https://docs.anthropic.com/en/api/agent-sdk-overview
+    what_we_adopt: Structured per-agent invocation surface; agent role discriminator
+    what_we_extend: Provider-agnostic — Task tool is Claude-specific; Runner abstracts over any provider
+
+inherits_from:
+  - code.trait.llm-agent-provider
+
+canon_refs:
+  - canon://platform-canon
+  - canon://builders-cookbook
+  - canon://agents-playbook
+  - canon://security-guardrails
+
+memory_refs:
+  - feedback_alpha_provider_agnostic_contract_gate.md
+  - feedback_webshell_copilot_provider_coupling.md
+  - feedback_streaming_tx_forwarding.md
+
+inputs:
+  - name: spec
+    type: object
+    description: 'AgentSpec — agent role, file ownership, parent build context, task description'
+    required: true
+
+observable_outputs:
+  - 'run() returns Result<AgentArtifact, RunnerError> with artifact_path pointing inside $PROJECT_ROOT/.tmp/dispatch-<id>/'
+  - 'stream() returns BoxStream<AgentEvent>; first event AgentStart; final event AgentComplete or AgentFailed'
+  - 'capabilities() returns RunnerCapabilities declaring supported_agents, max_parallel, supports_tool_use'
+  - 'AYIN dispatch.agent span emitted per run/stream invocation with agent_name, agent_role, provider, duration_ms, tokens'
+
+errors:
+  - condition: 'underlying LLM provider rejected the agent dispatch'
+    code: E_RUNNER_PROVIDER_FAILED
+    operator_sees: 'Agent {role} failed via provider {name}: {detail}'
+    forbidden: 'silently completing with empty artifact'
+    severity: HIGH
+  - condition: 'artifact path outside allowed sandbox'
+    code: E_RUNNER_SANDBOX_VIOLATION
+    operator_sees: 'Runner attempted to write outside .tmp/dispatch-<id>/ — refused'
+    forbidden: 'allowing writes anywhere on disk without explicit operator approval'
+    severity: BLOCKING
+    owasp_class: LLM05
+  - condition: 'file-ownership conflict detected mid-dispatch (two agents claim the same file)'
+    code: E_RUNNER_FILE_OWNERSHIP_CONFLICT
+    operator_sees: 'Agents {a} and {b} both claim {path} — serialize via plan or partition file_function_map'
+    forbidden: 'allowing both agents to write the same file (race condition)'
+    severity: HIGH
+  - condition: 'SanitizedAgentRequest sanitization failed before dispatch'
+    code: E_RUNNER_SANITIZATION_FAILED
+    operator_sees: 'Dispatch rejected pre-spawn (G1 sanitization failed)'
+    forbidden: 'bypassing G1 sanitization for agent prompts'
+    severity: BLOCKING
+    owasp_class: LLM01
+
+observability:
+  required_spans:
+    - name: dispatch.agent
+      required_metadata: [agent_name, agent_role, duration_ms, tokens_input, tokens_output, stop_reason, model, provider, artifact_path]
+      parent_relationship: child_of_named
+      parent_span_name: dispatch.wave
+  duration_budget_ms: 600000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'Filesystem writes outside .tmp/dispatch-<id>/ require HITL via /api/dispatch/{id}/fs-approve (per dispatch-execute-wave.hitl_boundaries)'
+
+forbidden_behaviors:
+  - 'Hardcoding any specific provider binary path (claude, ollama, etc.) as the only execution surface'
+  - 'Reading $ANTHROPIC_API_KEY or any credential directly — credentials flow through provider abstraction'
+  - 'Returning AgentArtifact with artifact_path == None when stop_reason != early_termination (must always write the buffer)'
+  - 'Using unwrap()/expect()/panic!() in any impl (Cookbook §4.1)'
+  - 'Spawning subprocesses without setting TRACEPARENT for AYIN lineage'
+
+conformance_test:
+  given: 'A concrete Runner impl (e.g. ClaudeCliRunner::default()) + an AgentSpec for the engineer role'
+  when: 'run(spec) is called with task "Read CLAUDE.md and report the MSRV"'
+  then:
+    - assertion: 'Returns Ok(AgentArtifact) with artifact_path inside $PROJECT_ROOT/.tmp/dispatch-<id>/'
+      evidence_tier_required: VERIFIED
+    - assertion: 'File at artifact_path contains the MSRV string from CLAUDE.md'
+      filesystem_witness: $PROJECT_ROOT/.tmp/dispatch-<id>/agent-engineer.md
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN dispatch.agent span emitted with agent_role=engineer + non-zero duration_ms'
+      span_witness: dispatch.agent
+      evidence_tier_required: VERIFIED
+    - assertion: 'stream() variant emits AgentStart before any AgentDelta'
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 120
+
+status_per_provider:
+  claude_code_cli:
+    result: PASS_INPUT_ONLY
+    evidence_tier: VERIFIED
+    output_side_unguaranteed_reason: 'Subprocess stdout is non-deterministic; conformance verified via PROOF round-trip not trait inspection'
+    output_side_unguaranteed_acceptable_at_alpha: true
+  anthropic_http:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  litellm_proxy:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_local:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_cloud:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  anthropic_api:
+    result: 'N/A'
+    evidence_tier: VERIFIED
+    na_reason: 'Trait contract — all providers implement it via the LlmAgentProvider seam'
+  openai_api:
+    result: 'N/A'
+    evidence_tier: VERIFIED
+    na_reason: 'Trait contract'
+  openai_compat_generic:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  mistral_api:
+    result: 'N/A'
+    evidence_tier: VERIFIED
+    na_reason: 'Sibling contract'
+  groq_api:
+    result: 'N/A'
+    evidence_tier: VERIFIED
+    na_reason: 'Sibling contract'
+  openrouter_api:
+    result: 'N/A'
+    evidence_tier: VERIFIED
+    na_reason: 'Sibling contract'
+  vertex_ai:
+    result: 'N/A'
+    evidence_tier: VERIFIED
+    na_reason: 'Deprecated alias'
+  vertex_ai_gemini:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  vertex_ai_claude:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  azure_openai:
+    result: UNTESTED
+    evidence_tier: INFERRED
+
+alpha_gate:
+  verdict: deferred
+  reason: 'Trait contract drafted. Concrete impls per provider pending. Once implemented, operator.surface.dispatch-execute-wave and operator.surface.provider-select alpha gates can be reassessed.'
+
+code_trait:
+  trait_path: 'lightarchitects::lightsquad::Runner'
+  send_sync_required: true
+  panic_free: true
+  object_safe: true
+  method_contracts:
+    - name: name
+      async: false
+      streaming: false
+      preconditions:
+        - 'None — pure query method'
+      postconditions:
+        - 'Returns a static str identifying the runner kind (e.g., ''claude_cli'', ''anthropic_http'')'
+      error_variants: []
+    - name: capabilities
+      async: false
+      streaming: false
+      preconditions:
+        - 'None — pure query method'
+      postconditions:
+        - 'Returns RunnerCapabilities with supported_agents, max_parallel, supports_tool_use, supports_streaming'
+      error_variants: []
+    - name: run
+      async: true
+      streaming: false
+      preconditions:
+        - 'spec.task is non-empty and G1-sanitized'
+        - 'spec.artifact_dir is inside $PROJECT_ROOT/.tmp/dispatch-<id>/'
+        - 'TRACEPARENT propagated from spec.parent_span_id'
+      postconditions:
+        - 'Ok(AgentArtifact) with artifact_path written to disk'
+        - 'AYIN dispatch.agent span emitted with full metadata'
+        - 'AgentArtifact.tokens populated (may be 0 if provider does not count)'
+      error_variants:
+        - E_RUNNER_PROVIDER_FAILED
+        - E_RUNNER_SANDBOX_VIOLATION
+        - E_RUNNER_FILE_OWNERSHIP_CONFLICT
+        - E_RUNNER_SANITIZATION_FAILED
+    - name: stream
+      async: true
+      streaming: true
+      preconditions:
+        - 'Same as run — G1 sanitization required'
+        - 'First yielded event MUST be AgentEvent::AgentStart'
+      postconditions:
+        - 'Returns BoxStream<''static, AgentEvent>'
+        - 'AgentStart → AgentDelta* → AgentComplete (or AgentFailed) event ordering'
+        - 'AYIN dispatch.agent span emitted with streaming=true attribute'
+        - 'On AgentComplete, artifact_path is written before the event fires'
+      error_variants:
+        - E_RUNNER_PROVIDER_FAILED
+        - E_RUNNER_SANDBOX_VIOLATION
+        - E_RUNNER_FILE_OWNERSHIP_CONFLICT
+        - E_RUNNER_SANITIZATION_FAILED
+    - name: estimate_cost
+      async: false
+      streaming: false
+      preconditions:
+        - 'spec.input_tokens_estimate > 0'
+        - 'spec.max_output_tokens > 0'
+      postconditions:
+        - 'Returns f64 ≥ 0.0 representing estimated USD cost for the agent run'
+        - 'Returns 0.0 for free-tier runners (e.g., ClaudeCliRunner uses subscription)'
+      error_variants: []

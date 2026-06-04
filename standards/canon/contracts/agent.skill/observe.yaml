@@ -1,0 +1,130 @@
+schema_version: la-contracts/v1
+id: agent.skill.observe
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P4]
+
+operator_intent: |
+  /OBSERVE queries AYIN runtime spans + traces for a build, session, or surface. Audits
+  observability.required_spans declared in operator.surface + code.trait contracts vs spans
+  actually emitted; warns on missing required spans. Used for runtime debugging, span lineage
+  inspection, and post-deploy alpha_gate.verdict validation.
+
+prior_art:
+  - name: AYIN HTTP API on :3742
+    url: http://127.0.0.1:3742/api
+    what_we_adopt: HTTP-only query surface; trace context propagation via TRACEPARENT
+
+inherits_from: []
+
+canon_refs:
+  - canon://platform-canon
+  - canon://operators-manual
+
+memory_refs:
+  - feedback_integration_claims_need_grep_not_assertion.md
+
+inputs:
+  - name: scope
+    type: enum
+    enum: [build, session, surface, trace, contract]
+    required: true
+  - name: target
+    type: string
+    max_bytes: 200
+    required: true
+  - name: since
+    type: string
+    pattern: '^[0-9]+(s|m|h|d)$'
+    required: false
+
+observable_outputs:
+  - 'AYIN HTTP query returns span list with metadata'
+  - 'Span lineage tree rendered (parent / child relationships)'
+  - 'observability.required_spans declared in contracts compared against emitted'
+  - 'Missing required spans flagged as warnings'
+  - 'Latency budgets (first_token_budget_ms / duration_budget_ms) compared against actuals'
+
+errors:
+  - condition: ayin_unreachable
+    code: E_OBSERVE_AYIN_DOWN
+    operator_sees: 'AYIN HTTP :3742 unreachable — check LaunchAgent'
+    forbidden: 'silent fallback to filesystem trace dumps when AYIN is the source of truth'
+    severity: HIGH
+  - condition: required_span_missing
+    code: E_OBSERVE_SPAN_MISSING
+    operator_sees: 'Contract {id} requires span {name} but no instance found'
+    forbidden: 'reporting clean when required spans are absent'
+    severity: HIGH
+  - condition: latency_budget_exceeded
+    code: E_OBSERVE_LATENCY_BUDGET
+    operator_sees: 'Span {name} exceeded contract duration_budget_ms ({actual} > {budget})'
+    forbidden: 'hiding latency overshoots from operator'
+    severity: MEDIUM
+
+observability:
+  required_spans:
+    - name: skill.observe.invoke
+      required_metadata: [scope, target, spans_returned, missing_required, latency_overshoots]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 60000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - 'Caching AYIN responses across operator-initiated queries (must be live)'
+  - 'Synthesizing spans that were never emitted'
+  - 'Reporting required_span coverage as pass without actually checking against contract'
+
+persistence:
+  - path: 'none — read-only query surface'
+    schema_ref: 'n/a'
+    ttl: session
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+conformance_test:
+  given: 'AYIN running on :3742 with at least one historical build span'
+  when: 'Operator invokes /OBSERVE build <codename>'
+  then:
+    - assertion: 'AYIN HTTP call to /api/builds/<codename>/spans returns 200'
+      evidence_tier_required: VERIFIED
+    - assertion: 'Span lineage tree rendered'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.observe.invoke span emitted'
+      span_witness: skill.observe.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 60
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'AYIN query API verified daily across builds'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/OBSERVE/SKILL.md
+  slash_command: /OBSERVE
+  trigger_keywords: [observe, traces, spans, telemetry, ayin]
+  rejects_flags: []
+  hitl_required: false
+  delegates_to_agent: ayin
+  sub_skills: []

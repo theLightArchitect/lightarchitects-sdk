@@ -1,0 +1,144 @@
+schema_version: la-contracts/v1
+id: agent.skill.secure
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P5]
+
+operator_intent: |
+  /SECURE runs the security scan + audit: SERAPH offensive scan + CORSO GUARD defensive review,
+  cargo-deny supply chain, OWASP LLM01-LLM10 cross-reference, and operator.surface contract
+  forbidden_behaviors enforcement check against the diff. Required for any diff touching auth,
+  crypto, provider abstraction, or operator-facing UI surface.
+
+prior_art:
+  - name: OWASP Top 10 for LLM Applications 2025
+    url: https://owasp.org/www-project-top-10-for-large-language-model-applications/
+    what_we_adopt: LLM01-LLM10 vocabulary; cross-reference each finding to a class
+  - name: Security Guardrails canon
+    url: file://standards/canon/security-guardrails.md
+    what_we_adopt: dual-lens review (SERAPH offensive + CORSO defensive)
+
+inherits_from: []
+
+canon_refs:
+  - canon://security-guardrails
+  - canon://platform-canon
+  - canon://operators-manual
+
+memory_refs:
+  - feedback_in_gate_security_fix.md
+  - feedback_indirect_injection_shield_pattern.md
+  - feedback_bash_policy_allowlist_for_llm_tools.md
+
+inputs:
+  - name: scope
+    type: enum
+    enum: [diff, full, dependencies, contracts]
+    required: false
+  - name: branch
+    type: string
+    max_bytes: 200
+    required: false
+
+observable_outputs:
+  - 'SERAPH scan results: vulnerabilities by severity'
+  - 'CORSO GUARD code-level findings with line citations'
+  - 'cargo-deny supply chain audit pass/fail'
+  - 'OWASP LLM01-LLM10 cross-reference for each finding'
+  - 'operator.surface.forbidden_behaviors compliance check on diff'
+  - 'provider.llm SSRF guard verification when base_url config touched'
+  - 'render_safety: monaco_read_only_only + dompurify + iframe_blocked + script_blocked enforced'
+
+errors:
+  - condition: critical_finding
+    code: E_SECURE_CRITICAL
+    operator_sees: 'CRITICAL security finding: {detail}'
+    forbidden: 'merging with unresolved CRITICAL findings'
+    severity: BLOCKING
+  - condition: forbidden_behavior_violation
+    code: E_SECURE_FORBIDDEN
+    operator_sees: 'Diff violates operator.surface.{id}.forbidden_behaviors[{N}]: {behavior}'
+    forbidden: 'merging diffs that violate canon-declared forbidden behaviors'
+    severity: BLOCKING
+  - condition: ssrf_guard_missing
+    code: E_SECURE_SSRF
+    operator_sees: 'provider.llm base_url path lacks SSRF canonicalization'
+    forbidden: 'allowing user-provided URL without ancestor-walk canonicalization (Cookbook §63.P5)'
+    severity: BLOCKING
+    owasp_class: LLM05
+  - condition: cargo_deny_advisory
+    code: E_SECURE_ADVISORY
+    operator_sees: 'cargo-deny found advisory: {RUSTSEC-id}'
+    forbidden: 'merging with active advisories without explicit waiver'
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: skill.secure.invoke
+      required_metadata: [scope, branch, findings_critical, findings_high, findings_medium, owasp_classes_flagged]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 1800000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'CRITICAL findings require operator decision before any merge can proceed'
+  - 'In-gate security fix (3-criteria test) allowed without re-scan'
+
+forbidden_behaviors:
+  - 'Marking CRITICAL findings as MEDIUM to pass the gate'
+  - 'Skipping forbidden_behaviors check on operator.surface diffs'
+  - 'Allowing loopback / private-IP base_url without explicit operator confirmation'
+  - 'Logging credentials anywhere on disk or AYIN spans (fingerprint hash only)'
+
+persistence:
+  - path: <build_root>/audit/security-scan-<timestamp>.yaml
+    schema_ref: security-scan-v1
+    ttl: forever
+    hmac_chained: true
+    redaction_policy: HelixSessionMemory::SECRET_PATTERNS
+
+conformance_test:
+  given: 'Diff with at least one source file modified'
+  when: 'Operator invokes /SECURE diff'
+  then:
+    - assertion: 'SERAPH scan executes and reports'
+      evidence_tier_required: VERIFIED
+    - assertion: 'CORSO GUARD code review executes and reports'
+      evidence_tier_required: VERIFIED
+    - assertion: 'cargo-deny check runs if Cargo.toml modified'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.secure.invoke span emitted'
+      span_witness: skill.secure.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 1800
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'SERAPH + CORSO GUARD pipeline verified across multiple security-touching builds'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/SECURE/SKILL.md
+  slash_command: /SECURE
+  trigger_keywords: [secure, security scan, audit, /secure, pentest]
+  rejects_flags: []
+  hitl_required: true
+  delegates_to_agent: seraph
+  sub_skills: []

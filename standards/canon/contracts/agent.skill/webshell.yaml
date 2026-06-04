@@ -1,0 +1,127 @@
+schema_version: la-contracts/v1
+id: agent.skill.webshell
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P1, P2, P4]
+
+operator_intent: |
+  /webshell hands the current Claude Code session off to the Platform GUI at localhost:8733
+  via the gateway's launch_webshell MCP action. Idempotent: scans :8733-:8742 for an existing
+  webshell with the matching session_id; reuses if found, spawns fresh otherwise. session_id
+  is the conversation UUID — opening the URL resumes the same conversation in the GUI.
+
+prior_art:
+  - name: Webshell launch_webshell MCP action
+    url: file://standards/canon/contracts/wire.mcp/launch-webshell.yaml
+    what_we_adopt: idempotent session-keyed reuse + port-scan fallback
+
+inherits_from:
+  - operator.surface.copilot-send-message
+  - mcp.capability.gateway-server
+
+canon_refs:
+  - canon://operators-manual
+  - canon://platform-canon
+
+memory_refs:
+  - feedback_copilot_session_with_session_pattern.md
+
+inputs:
+  - name: port
+    type: integer
+    required: false
+  - name: cwd
+    type: path
+    required: false
+
+observable_outputs:
+  - 'Gateway launch_webshell MCP action invoked with session_id from current conversation'
+  - 'Response includes status=started|reused|running with URL'
+  - 'URL surfaced to operator as clickable link'
+  - 'No new process spawned when matching session_id already running'
+
+errors:
+  - condition: gateway_unavailable
+    code: E_WEBSHELL_GATEWAY_DOWN
+    operator_sees: 'Gateway MCP unavailable — verify ~/.lightarchitects/bin/lightarchitects exists'
+    forbidden: 'silent failure with no diagnosis'
+    severity: HIGH
+  - condition: session_mismatch
+    code: E_WEBSHELL_SESSION_MISMATCH
+    operator_sees: 'Port held by webshell with different session; reclaim failed'
+    forbidden: 'opening URL without warning operator'
+    severity: HIGH
+  - condition: spawn_failed
+    code: E_WEBSHELL_SPAWN
+    operator_sees: 'Webshell binary missing at expected path — run make deploy'
+    forbidden: 'silent spawn failure'
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: skill.webshell.invoke
+      required_metadata: [session_id, port, status, reused, gateway_response_ms]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 30000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'session_mismatch with reclaim failure requires explicit operator decision'
+
+forbidden_behaviors:
+  - 'Adding kill_existing:true by default (default reuse path handles common case)'
+  - 'Opening session_mismatch URL without warning operator'
+  - 'Launching webshell without resumed_session signal for the current conversation'
+
+persistence:
+  - path: ~/.claude/projects/<project-hash>/<uuid>.jsonl
+    schema_ref: claude-code-session-jsonl
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'inherited from Claude Code'
+
+conformance_test:
+  given: 'Gateway running + no webshell on :8733'
+  when: 'Operator invokes /webshell'
+  then:
+    - assertion: 'launch_webshell MCP action returns status=started with URL'
+      evidence_tier_required: VERIFIED
+    - assertion: 'URL is clickable in Claude Code'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.webshell.invoke span emitted'
+      span_witness: skill.webshell.invoke
+      evidence_tier_required: VERIFIED
+    - assertion: 'Second invocation returns status=reused (idempotent)'
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 30
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Webshell binary is provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Webshell launch verified daily across sessions'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/lightarchitects/webshell/SKILL.md
+  slash_command: /WEBSHELL
+  trigger_keywords: [webshell, launch webshell, gui, /webshell]
+  rejects_flags: []
+  hitl_required: false
+  delegates_to_agent: claude
+  sub_skills: []

@@ -1,0 +1,112 @@
+schema_version: la-contracts/v1
+id: agent.skill.untangle
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P4]
+
+operator_intent: |
+  /UNTANGLE triages heavy WIP state (≥10 modified, ≥5 untracked, or mixed). Workflow per
+  Agents Playbook §15.5.7: inventory → archive (triage/<repo>-wip-archive-<date>) → clean
+  base → feature branches → ls-tree verification. Never destructive without archive proof.
+
+prior_art:
+  - name: Agents Playbook §15.5.7 heavy-WIP triage
+    url: file://standards/canon/agents-playbook.md
+    what_we_adopt: archive-first then clean
+
+inherits_from: []
+
+canon_refs:
+  - canon://agents-playbook
+  - canon://platform-canon
+
+memory_refs:
+  - feedback_post_commit_tree_verification.md
+
+inputs:
+  - name: target_repo
+    type: path
+    required: false
+
+observable_outputs:
+  - 'Modified + untracked inventory printed'
+  - 'Archive branch created (triage/<repo>-wip-archive-<date>) with all WIP committed'
+  - 'ls-tree verification confirms archive contains all WIP'
+  - 'Clean base restored on main'
+  - 'Feature branches created per logical work unit'
+
+errors:
+  - condition: archive_verification_failed
+    code: E_UNTANGLE_ARCHIVE_INCOMPLETE
+    operator_sees: 'Archive branch ls-tree does not contain all WIP — refusing clean'
+    forbidden: 'cleaning before archive verification confirms'
+    severity: BLOCKING
+
+observability:
+  required_spans:
+    - name: skill.untangle.invoke
+      required_metadata: [modified_count, untracked_count, archive_branch, archive_verified]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 600000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'Every destructive operation requires operator confirmation'
+
+forbidden_behaviors:
+  - 'git stash --include-untracked on heavy WIP (rotates loss)'
+  - 'git reset --hard before archive verified'
+  - 'Cleaning .gitignore-tracked files without explicit operator approval'
+
+persistence:
+  - path: 'git refs: triage/<repo>-wip-archive-<date>'
+    schema_ref: git-branch
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+conformance_test:
+  given: 'Repo with heavy WIP state (≥10 modified + ≥5 untracked)'
+  when: 'Operator invokes /UNTANGLE'
+  then:
+    - assertion: 'Inventory listing produced'
+      evidence_tier_required: VERIFIED
+    - assertion: 'Archive branch created with all WIP'
+      evidence_tier_required: VERIFIED
+    - assertion: 'ls-tree verification passes before any clean'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.untangle.invoke span emitted'
+      span_witness: skill.untangle.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 600
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Triage workflow verified across WIP-heavy sessions'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/UNTANGLE/SKILL.md
+  slash_command: /UNTANGLE
+  trigger_keywords: [untangle, wip triage, clean wip, /untangle]
+  rejects_flags: []
+  hitl_required: true
+  delegates_to_agent: claude
+  sub_skills: []

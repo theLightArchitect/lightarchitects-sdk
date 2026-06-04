@@ -1,0 +1,117 @@
+schema_version: la-contracts/v1
+id: agent.skill.research
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P4]
+
+operator_intent: |
+  /RESEARCH runs a multi-source investigation: SOUL helix prior-art search, Context7 library
+  docs, Firecrawl live web, QUANTUM forensic analysis. Adds standards/canon/contracts/ as
+  prior-art corpus before drafting new contracts. Output is a synthesis with evidence tiers
+  (VERIFIED / MULTI-SOURCE / SINGLE-SOURCE / INFERRED).
+
+prior_art:
+  - name: QUANTUM SCAN→SWEEP→TRACE→PROBE→THEORIZE→VERIFY→CLOSE cycle
+    url: file://plugins/lightarchitects/skills/RESEARCH/SKILL.md
+    what_we_adopt: 7-stage investigation with explicit evidence tiers
+
+inherits_from: []
+
+canon_refs:
+  - canon://architects-blueprint
+  - canon://platform-canon
+
+memory_refs:
+  - feedback_research_pipeline_progressive_narrowing.md
+
+inputs:
+  - name: topic
+    type: string
+    max_bytes: 4096
+    required: true
+
+observable_outputs:
+  - 'SOUL helix search executed; prior decisions surfaced'
+  - 'Context7 library docs queried per inferred library IDs'
+  - 'Firecrawl scrape if post-cutoff content'
+  - 'standards/canon/contracts/ scanned for prior-art contracts'
+  - 'Synthesis with evidence tier per claim'
+
+errors:
+  - condition: no_sources_found
+    code: E_RESEARCH_NO_SOURCES
+    operator_sees: 'No authoritative sources found for {topic}'
+    forbidden: 'fabricating sources when none exist'
+    severity: HIGH
+  - condition: contract_prior_art_skipped
+    code: E_RESEARCH_CONTRACT_PRIOR_ART
+    operator_sees: 'New surface drafted without scanning canon contracts for prior art'
+    forbidden: 'drafting new contracts without checking for existing kind precedent'
+    severity: MEDIUM
+
+observability:
+  required_spans:
+    - name: skill.research.invoke
+      required_metadata: [topic, sources_queried, findings_count, helix_hits, contract_prior_art_count]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 1800000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - 'Citing sources without evidence-tier annotation'
+  - 'Fabricating citations or URLs'
+  - 'Skipping the helix prior-work check before launching new investigation'
+
+persistence:
+  - path: $HELIX/user/entries/<date>-<uuid>-research-<slug>.md
+    schema_ref: helix-entry-v1
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'inherited from vault'
+
+conformance_test:
+  given: 'Research topic with at least one prior helix entry'
+  when: 'Operator invokes /RESEARCH <topic>'
+  then:
+    - assertion: 'SOUL helix search executed and returns entries'
+      evidence_tier_required: VERIFIED
+    - assertion: 'Each citation has evidence_tier annotation'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.research.invoke span emitted'
+      span_witness: skill.research.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 1800
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Research pipeline verified across QUANTUM investigations'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/RESEARCH/SKILL.md
+  slash_command: /RESEARCH
+  trigger_keywords: [research, investigate, /research, prior art]
+  rejects_flags: ['--then', '--watch', '--drain', '--fix']
+  hitl_required: false
+  delegates_to_agent: quantum
+  sub_skills: []

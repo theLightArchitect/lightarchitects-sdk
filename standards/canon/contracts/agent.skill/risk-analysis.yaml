@@ -1,0 +1,120 @@
+schema_version: la-contracts/v1
+id: agent.skill.risk-analysis
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P5]
+
+operator_intent: |
+  /RISK-ANALYSIS produces a structured risk register for a build, branch, or surface.
+  Uncontracted surfaces are inherent risks; alpha_gate.verdict=fail entries feed the register
+  automatically. Each risk has likelihood / impact / mitigation / owner.
+
+prior_art:
+  - name: Architects Blueprint Part XV Risks & Mitigations
+    url: file://standards/canon/architects-blueprint.md
+    what_we_adopt: likelihood × impact matrix with mitigation owner
+
+inherits_from: []
+
+canon_refs:
+  - canon://architects-blueprint
+  - canon://security-guardrails
+  - canon://platform-canon
+
+memory_refs:
+  - feedback_alpha_provider_agnostic_contract_gate.md
+
+inputs:
+  - name: scope
+    type: enum
+    enum: [build, branch, surface, dependency, all]
+    required: true
+  - name: target
+    type: string
+    max_bytes: 200
+    required: false
+
+observable_outputs:
+  - 'Risk register table with likelihood / impact / mitigation / owner'
+  - 'Uncontracted surfaces auto-flagged as inherent risks'
+  - 'alpha_gate.verdict=fail contracts auto-fed into register'
+  - 'Cross-build coupling risks identified via active.yaml scan'
+
+errors:
+  - condition: no_risks_found
+    code: E_RISK_EMPTY_REGISTER
+    operator_sees: 'Risk register empty — verify scope is correct (likely false-negative)'
+    forbidden: 'reporting clean register when known alpha-blockers exist'
+    severity: MEDIUM
+  - condition: missing_contract_for_listed_surface
+    code: E_RISK_UNCONTRACTED
+    operator_sees: 'Surface {name} listed but no operator.surface contract — inherent risk'
+    forbidden: 'silently omitting uncontracted surfaces from register'
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: skill.risk-analysis.invoke
+      required_metadata: [scope, target, risks_critical, risks_high, risks_medium, uncontracted_surfaces_flagged]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 600000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - 'Producing register without scanning standards/canon/contracts/ for alpha_gate verdicts'
+  - 'Ignoring active.yaml cross-build coupling signals'
+  - 'Marking BLOCKING risks as MEDIUM to keep register short'
+
+persistence:
+  - path: <build_root>/risk-register-<timestamp>.md
+    schema_ref: risk-register-v1
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+conformance_test:
+  given: 'Build with at least one operator.surface contract at alpha_gate.verdict=fail'
+  when: 'Operator invokes /RISK-ANALYSIS build <codename>'
+  then:
+    - assertion: 'Register includes that alpha_gate=fail entry as HIGH risk'
+      evidence_tier_required: VERIFIED
+    - assertion: 'Uncontracted surfaces flagged as inherent risk'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.risk-analysis.invoke span emitted'
+      span_witness: skill.risk-analysis.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 600
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Risk analysis runs deterministically against canon corpus + active.yaml'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/RISK-ANALYSIS/SKILL.md
+  slash_command: /RISK-ANALYSIS
+  trigger_keywords: [risk, risk analysis, register, /risk]
+  rejects_flags: []
+  hitl_required: false
+  delegates_to_agent: quantum
+  sub_skills: []

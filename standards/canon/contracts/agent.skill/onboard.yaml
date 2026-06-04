@@ -1,0 +1,115 @@
+schema_version: la-contracts/v1
+id: agent.skill.onboard
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P4]
+
+operator_intent: |
+  /ONBOARD orients a new developer / operator to a codebase. Surveys structure, identifies
+  patterns, retrieves project history, presents a structured brief. Tours the contract canon
+  (211+ contracts across 17+ kinds) and alpha_gate dashboard so newcomers see the canonical
+  surface map.
+
+prior_art:
+  - name: SOUL codebase orientation pattern
+    url: file://plugins/lightarchitects/skills/ONBOARD/SKILL.md
+    what_we_adopt: structure survey + helix prior-decision retrieval + pattern recognition
+
+inherits_from: []
+
+canon_refs:
+  - canon://operators-manual
+  - canon://platform-canon
+
+memory_refs:
+  - feedback_communication_covenant.md
+
+inputs:
+  - name: target
+    type: string
+    max_bytes: 200
+    required: true
+  - name: depth
+    type: enum
+    enum: [quick, standard, deep]
+    required: false
+
+observable_outputs:
+  - 'Codebase structure surveyed (top-level dirs, key crates)'
+  - 'Existing patterns identified (Cookbook §X compliance)'
+  - 'Recent commits + active builds summarized'
+  - 'Contract canon tour: kinds present, count per kind, alpha_gate state'
+  - 'Reading list of canon docs ranked by relevance'
+
+errors:
+  - condition: codebase_inaccessible
+    code: E_ONBOARD_NO_CODEBASE
+    operator_sees: 'Target codebase not found at <path>'
+    forbidden: 'orienting against an imaginary codebase'
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: skill.onboard.invoke
+      required_metadata: [target, depth, files_surveyed, helix_entries_retrieved, contracts_toured]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 1800000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - 'Producing orientation without filesystem survey evidence'
+  - 'Omitting contract canon tour for codebases with contracts/ tree'
+
+persistence:
+  - path: 'session output — orientation brief'
+    schema_ref: 'n/a'
+    ttl: session
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+conformance_test:
+  given: 'Target codebase at known path'
+  when: 'Operator invokes /ONBOARD <target>'
+  then:
+    - assertion: 'Structure survey delivered'
+      evidence_tier_required: VERIFIED
+    - assertion: 'Contract canon tour included if contracts/ tree present'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.onboard.invoke span emitted'
+      span_witness: skill.onboard.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 1800
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Onboarding pipeline verified across multiple codebase orientations'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/ONBOARD/SKILL.md
+  slash_command: /ONBOARD
+  trigger_keywords: [onboard, walk me through, orient, /onboard]
+  rejects_flags: []
+  hitl_required: false
+  delegates_to_agent: soul
+  sub_skills: []

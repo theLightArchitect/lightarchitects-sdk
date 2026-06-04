@@ -1,0 +1,156 @@
+schema_version: la-contracts/v1
+id: agent.skill.gate
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P2, P4]
+
+operator_intent: |
+  /GATE runs the quality gate — fmt, clippy, tests, contract-gate, security audit, integration check,
+  northstar mechanical verification, documentation audit, verification (V1/V2/V3). Two modes:
+  --scope merge (full Q/S/I/N/D/V for pre-merge) and --scope phase (Q1-Q4 + D2 only for per-phase
+  gate inside BUILD). Emits structured GATE_REVIEW JSONL for consumption by BUILD Governor.
+
+prior_art:
+  - name: Agents Playbook §15.9 phase-boundary gates
+    url: file://standards/canon/agents-playbook.md
+    what_we_adopt: Q1-Q4 vocabulary, phase vs merge scope distinction
+  - name: Gatekeeper Registry [A+S+Q+C+O+P+K+D+T+R]
+    url: file://standards/canon/gatekeeper-registry.yaml
+    what_we_adopt: finding-to-sibling ownership routing
+
+inherits_from: []
+
+canon_refs:
+  - canon://agents-playbook
+  - canon://gatekeeper-registry
+  - canon://builders-cookbook
+  - canon://security-guardrails
+
+memory_refs:
+  - feedback_gate_eval_smoke_timing.md
+  - feedback_gate_hotfix_plan_requirement.md
+  - feedback_rustembedist_gate_worktree.md
+
+inputs:
+  - name: scope
+    type: enum
+    enum: [merge, phase]
+    required: false
+  - name: phase_id
+    type: string
+    max_bytes: 80
+    required: false
+  - name: codename
+    type: string
+    max_bytes: 60
+    required: false
+
+observable_outputs:
+  - 'V0 primary-on-main check passes before any other gate runs (--scope merge)'
+  - 'Q1 cargo fmt --check, Q2 cargo clippy -D warnings, Q3 cargo test, Q4 svelte-check (if UI)'
+  - 'Q5 make contract-gate runs — fails gate if schema or edge violations'
+  - 'S1-S3 security + supply chain + LÆX canon (--scope merge)'
+  - 'I1-I3 integration checks (--scope merge)'
+  - 'N1-N3 northstar chain concreteness'
+  - 'D1-D3 documentation audit via knowledge agent'
+  - 'V1-V3 verification — test pyramid, binary smoke, Playwright E2E if UI'
+  - 'GATE_REVIEW JSONL emitted per Playbook §7.4'
+  - 'Gate eval YAML written to <build_root>/.gate-evals/<phase_id>-<scope>.yaml'
+
+errors:
+  - condition: primary_not_on_main_merge_scope
+    code: E_GATE_V0_HARD_STOP
+    operator_sees: 'Primary worktree not on main — /GATE cannot proceed'
+    forbidden: 'silent Path B fallback without operator waiver'
+    severity: BLOCKING
+  - condition: contract_gate_failed
+    code: E_GATE_Q5_CONTRACTS
+    operator_sees: 'make contract-gate failed: {N} schema failures, {M} edge violations'
+    forbidden: 'passing the gate verdict with contract violations'
+    severity: BLOCKING
+  - condition: plan_not_found
+    code: E_GATE_NO_PLAN
+    operator_sees: 'No plan found for branch — run /PLAN to author one'
+    forbidden: 'running merge gate without plan context (phase scope acceptable)'
+    severity: HIGH
+  - condition: laex_canon_check_required_unavailable
+    code: E_GATE_LAEX_REQUIRED
+    operator_sees: 'Cryptographic / auth surface changes require LÆX review — MCP unavailable'
+    forbidden: 'waiving LÆX gate when required'
+    severity: BLOCKING
+
+observability:
+  required_spans:
+    - name: skill.gate.invoke
+      required_metadata: [scope, phase_id, codename, overall_verdict, dimensions_passed, dimensions_failed]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 3600000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'draft_residual plan waiver requires explicit operator approval'
+  - 'V0 hard-stop on primary != main requires worktree restoration before continuing'
+  - 'BLOCKING / HIGH findings routed to Kevin for waiver per Gatekeeper Registry'
+
+forbidden_behaviors:
+  - 'Skipping V0 primary-on-main check in --scope merge'
+  - 'Passing gate verdict when contract-gate reports schema or edge violations'
+  - 'Passing gate verdict when northstar_lineage absent (N1 fail)'
+  - 'Passing without emitting GATE_REVIEW JSONL for BUILD Governor consumption'
+  - 'Treating clippy warnings as non-blocking'
+
+persistence:
+  - path: <build_root>/.gate-evals/<phase_id>-<scope>.yaml
+    schema_ref: gate-eval-v1
+    ttl: until-make-clean
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+conformance_test:
+  given: 'Worktree on feat/test-feature with clean diff'
+  when: 'Operator invokes /GATE --scope merge'
+  then:
+    - assertion: 'V0 primary-on-main check passes (or hard-stops with HITL prompt)'
+      evidence_tier_required: VERIFIED
+    - assertion: 'Q1-Q4 + Q5 contract-gate all run and report'
+      evidence_tier_required: VERIFIED
+    - assertion: 'Gate eval YAML written to <build_root>/.gate-evals/'
+      filesystem_witness: .gate-evals/merge-merge.yaml
+      evidence_tier_required: VERIFIED
+    - assertion: 'GATE_REVIEW JSONL emitted to stdout'
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 3600
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Gate enforces deterministically; verified end-to-end across BUILD cycles'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/GATE/SKILL.md
+  slash_command: /GATE
+  trigger_keywords: [gate, quality gate, pre-merge, /gate, run gate]
+  rejects_flags: []
+  hitl_required: true
+  delegates_to_agent: claude
+  sub_skills:
+    - agent.skill.verify
+    - agent.skill.secure
+    - agent.skill.review

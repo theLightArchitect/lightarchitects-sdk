@@ -1,0 +1,143 @@
+schema_version: la-contracts/v1
+id: agent.skill.deploy
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P2]
+
+operator_intent: |
+  /DEPLOY ships a binary or service. For Rust binaries: cargo build --release + codesign + copy
+  to ~/.lightarchitects/bin/ + write deploy-manifest.json + MCP reconnect. For the gateway,
+  also propagates SDK changes to SOUL-DEV via [patch] section. Verifies make contract-gate
+  clean pre-deploy and validates alpha_gate verdicts against runtime probe post-deploy.
+
+prior_art:
+  - name: ~/Projects/CLAUDE.md build commands
+    url: file:///Users/kft/Projects/CLAUDE.md
+    what_we_adopt: per-project Makefile verbs (deploy / deploy-fast / quality / build / test / fix / push)
+
+inherits_from:
+  - agent.skill.gate
+  - agent.skill.verify
+
+canon_refs:
+  - canon://operators-manual
+  - canon://platform-canon
+
+memory_refs:
+  - feedback_gateway_codesign_required.md
+  - feedback_litellm_keychain_provider_deployment.md
+
+inputs:
+  - name: target
+    type: enum
+    enum: [gateway, soul, corso, eva, quantum, seraph, ayin, all]
+    required: true
+  - name: fast
+    type: boolean
+    required: false
+
+observable_outputs:
+  - 'make contract-gate clean before any binary is copied'
+  - 'cargo build --release succeeds for target'
+  - 'codesign --sign - applied to binary (macOS ad-hoc-signed)'
+  - 'Binary copied to ~/.lightarchitects/bin/<name> with prev backup'
+  - 'deploy-manifest.json updated with version + sha + deployed_at'
+  - 'For gateway: ~/.claude/mcp.json updated + /mcp reconnect prompt'
+  - 'Post-deploy: alpha_gate.verdict validated against runtime probe (MCP handshake / HTTP health)'
+
+errors:
+  - condition: contract_gate_failed_pre_deploy
+    code: E_DEPLOY_CONTRACT_GATE
+    operator_sees: 'make contract-gate failed — refusing deploy until contracts are clean'
+    forbidden: 'shipping with contract violations'
+    severity: BLOCKING
+  - condition: codesign_failed
+    code: E_DEPLOY_CODESIGN
+    operator_sees: 'codesign --sign - failed; binary will SIGKILL on first run (exit 137)'
+    forbidden: 'shipping without codesign on macOS'
+    severity: BLOCKING
+  - condition: alpha_gate_runtime_mismatch
+    code: E_DEPLOY_ALPHA_DRIFT
+    operator_sees: 'Runtime probe contradicts alpha_gate.verdict for operator.surface.{id}'
+    forbidden: 'leaving stale alpha_gate verdicts after deploy'
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: skill.deploy.invoke
+      required_metadata: [target, fast, contract_gate_clean, codesign_ok, runtime_probe_outcome]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 1200000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'Production deploy (vs dev) requires explicit operator confirmation'
+  - '/mcp reconnect requires operator action (cannot trigger from skill)'
+
+forbidden_behaviors:
+  - 'Shipping without prior make contract-gate clean'
+  - 'Shipping without codesign on macOS targets'
+  - 'Overwriting prev binary without backup'
+  - 'Pushing alpha_gate.verdict=pass without runtime evidence'
+
+persistence:
+  - path: ~/.lightarchitects/bin/<name>
+    schema_ref: binary
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'n/a'
+  - path: ~/.lightarchitects/deploy-manifest.json
+    schema_ref: deploy-manifest-v1
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+conformance_test:
+  given: 'Workspace builds clean + contract-gate clean'
+  when: 'Operator invokes /DEPLOY gateway'
+  then:
+    - assertion: 'cargo build --release -p lightarchitects-gateway succeeds'
+      evidence_tier_required: VERIFIED
+    - assertion: '~/.lightarchitects/bin/lightarchitects updated with codesign'
+      filesystem_witness: ~/.lightarchitects/bin/lightarchitects
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.deploy.invoke span emitted'
+      span_witness: skill.deploy.invoke
+      evidence_tier_required: VERIFIED
+    - assertion: 'deploy-manifest.json updated with new sha'
+      filesystem_witness: ~/.lightarchitects/deploy-manifest.json
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 1200
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Deploy pipeline verified across 100+ gateway + sibling deploys'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/DEPLOY/SKILL.md
+  slash_command: /DEPLOY
+  trigger_keywords: [deploy, ship, /deploy, release, push to prod]
+  rejects_flags: []
+  hitl_required: true
+  delegates_to_agent: eva
+  sub_skills:
+    - agent.skill.gate
+    - agent.skill.verify

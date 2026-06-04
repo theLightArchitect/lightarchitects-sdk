@@ -1,0 +1,121 @@
+schema_version: la-contracts/v1
+id: agent.skill.squad
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P2, P4]
+
+operator_intent: |
+  /SQUAD is the universal multi-sibling orchestrator with preset modes (research /
+  software_engineering / security / code_review / verify / devops / observability /
+  scrum / solo). Each preset declares which siblings own which gate kinds. Contract canon
+  awareness: each preset declares which contract kinds its siblings consult.
+
+prior_art:
+  - name: SQUAD presets registry
+    url: file://plugins/lightarchitects/skills/SQUAD/references/presets.md
+    what_we_adopt: preset-to-sibling routing with concurrency hints
+
+inherits_from: []
+
+canon_refs:
+  - canon://gatekeeper-registry
+  - canon://platform-canon
+
+memory_refs:
+  - feedback_three_lens_review_convergence.md
+
+inputs:
+  - name: preset
+    type: enum
+    enum: [research, software_engineering, security, code_review, verify, devops, observability, scrum, solo, performance, onboarding]
+    required: true
+  - name: topic
+    type: string
+    max_bytes: 4096
+    required: true
+
+observable_outputs:
+  - 'Preset-mapped siblings dispatched in parallel'
+  - 'Each sibling reads its industry-baselines per Gatekeeper Registry'
+  - 'Each sibling reads applicable contract kinds (operator.surface for EVA, code.trait for CORSO, etc.)'
+  - 'Result synthesis with per-sibling verdict vocabulary'
+  - '--then chain support: /SQUAD A --then B --then C'
+
+errors:
+  - condition: preset_unknown
+    code: E_SQUAD_PRESET
+    operator_sees: 'Preset {name} not registered'
+    forbidden: 'silently substituting a different preset'
+    severity: HIGH
+  - condition: sibling_skipped
+    code: E_SQUAD_SIBLING_DROP
+    operator_sees: 'Preset declares sibling {name} but it was not dispatched'
+    forbidden: 'dropping siblings from preset roster without explicit operator override'
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: skill.squad.invoke
+      required_metadata: [preset, topic, siblings_dispatched, chain_length, success_count, failure_count]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 3600000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'Write-path presets (software_engineering, devops) require operator approval per BUILD/DEPLOY rules'
+
+forbidden_behaviors:
+  - 'Skipping siblings declared in preset without explicit operator override'
+  - 'Mocking sibling output when MCP unavailable'
+  - 'Disregarding contract canon when sibling owns relevant gate kind'
+
+persistence:
+  - path: <build_root>/.squad-evals/<preset>-<timestamp>.yaml
+    schema_ref: squad-eval-v1
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+conformance_test:
+  given: 'All 7 siblings available + valid preset'
+  when: 'Operator invokes /SQUAD software_engineering <topic>'
+  then:
+    - assertion: 'Preset-mapped siblings dispatched in parallel'
+      evidence_tier_required: VERIFIED
+    - assertion: 'Each sibling consults applicable contract kinds'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.squad.invoke span emitted'
+      span_witness: skill.squad.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 3600
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Squad orchestrator verified across all preset modes 2026-04+'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/SQUAD/SKILL.md
+  slash_command: /SQUAD
+  trigger_keywords: [squad, multi-agent, /squad, dispatch siblings]
+  rejects_flags: []
+  hitl_required: false
+  delegates_to_agent: squad
+  sub_skills: []

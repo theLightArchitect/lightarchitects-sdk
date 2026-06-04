@@ -1,0 +1,112 @@
+schema_version: la-contracts/v1
+id: agent.skill.ultrareview
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P2, P4]
+
+operator_intent: |
+  /ultrareview launches a multi-agent cloud review of the current branch (or a GitHub PR).
+  User-triggered + billed; Claude cannot launch it. /ultrareview without args bundles the
+  local branch (works without a GitHub remote); /ultrareview <PR#> reviews a GitHub PR.
+
+prior_art:
+  - name: Ultrareview cloud service
+    url: https://claude.ai/ultrareview
+    what_we_adopt: multi-agent parallel review against branch diff
+
+inherits_from: []
+
+canon_refs:
+  - canon://operators-manual
+  - canon://platform-canon
+
+memory_refs: []
+
+inputs:
+  - name: pr_number
+    type: integer
+    required: false
+
+observable_outputs:
+  - 'Cloud review service invoked with current branch context'
+  - 'Operator notified of review URL'
+  - 'Skill itself does NOT call review API — operator-triggered + billed'
+
+errors:
+  - condition: not_in_git_repo
+    code: E_ULTRAREVIEW_NO_REPO
+    operator_sees: 'Current directory not a git repository — git init or cd into one'
+    forbidden: 'silently invoking review against non-repo'
+    severity: HIGH
+  - condition: claude_attempted_invocation
+    code: E_ULTRAREVIEW_CLAUDE_LAUNCH
+    operator_sees: 'Claude cannot launch /ultrareview — operator-triggered + billed'
+    forbidden: 'Claude invoking ultrareview via Bash or any other tool'
+    severity: BLOCKING
+
+observability:
+  required_spans:
+    - name: skill.ultrareview.invoke
+      required_metadata: [pr_number, branch, review_url, launched_by]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 60000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'Always operator-triggered; Claude cannot launch'
+
+forbidden_behaviors:
+  - 'Claude invoking ultrareview via Bash, /ultrareview slash, or any other channel'
+  - 'Auto-launching without operator action'
+  - 'Charging operator without explicit confirmation'
+
+persistence:
+  - path: 'none — cloud-side state'
+    schema_ref: 'n/a'
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'cloud-side per service ToS'
+
+conformance_test:
+  given: 'Git repo with branch + operator intent to review'
+  when: 'Operator types /ultrareview'
+  then:
+    - assertion: 'Review URL surfaced to operator'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.ultrareview.invoke span emitted by operator-side trigger'
+      span_witness: skill.ultrareview.invoke
+      evidence_tier_required: VERIFIED
+    - assertion: 'No Claude-initiated invocation present in turnlog'
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 60
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Operator-triggered surface; not a Claude-invokable workflow'
+
+agent_skill:
+  skill_path: plugins/claude-code/ultrareview/SKILL.md
+  slash_command: /ULTRAREVIEW
+  trigger_keywords: [ultrareview, cloud review]
+  rejects_flags: []
+  hitl_required: true
+  delegates_to_agent: claude
+  sub_skills: []

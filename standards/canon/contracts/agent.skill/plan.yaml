@@ -1,0 +1,149 @@
+schema_version: la-contracts/v1
+id: agent.skill.plan
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P2, P4]
+
+operator_intent: |
+  /PLAN authors a LASDLC-compliant build plan at ~/.claude/plans/<codename>.md, runs XEA
+  compliance review until validation_status=VALIDATED, then presents a HITL decision gate.
+  Plans NEVER ship code — that's /BUILD's job. /PLAN's deliverable is a single markdown file
+  with frontmatter, phase set, file-function map, northstar lineage, and a review verdict block.
+
+prior_art:
+  - name: LASDLC-TEMPLATE-v1.yaml
+    url: file://standards/canon/LASDLC-TEMPLATE-v1.yaml
+    what_we_adopt: tier-determined phase set, [A+S+Q+C+O+P+K+D+T+R] gate vocabulary, frontmatter schema
+  - name: Architects Blueprint 21 Parts (v3.0)
+    url: file://standards/canon/architects-blueprint.md
+    what_we_adopt: research-first doctrine, C1-C8 scoring rubric, two-tier amendment classification
+
+inherits_from: []
+
+canon_refs:
+  - canon://architects-blueprint
+  - canon://lasdlc-template
+  - canon://platform-canon
+
+memory_refs:
+  - feedback_plan_frontmatter_convention.md
+  - feedback_one_scrum_cycle_sufficient_for_large_plans.md
+
+inputs:
+  - name: target
+    type: string
+    pattern: '^[a-zA-Z0-9_/. -]+$'
+    max_bytes: 200
+    required: true
+  - name: research_flag
+    type: boolean
+    required: false
+  - name: northstar
+    type: string
+    max_bytes: 2048
+    required: false
+  - name: codename
+    type: string
+    pattern: '^[a-z0-9-]+$'
+    max_bytes: 40
+    required: false
+
+observable_outputs:
+  - 'Plan file written to ~/.claude/plans/<codename>.md with validated frontmatter'
+  - 'XEA verdict block appended as ## Review Verdict with iteration count'
+  - 'Northstar elicitation produces a non-empty northstar_lineage block'
+  - 'Stack classification declared (full-stack | frontend-only | backend-only | cli-tooling)'
+  - 'Diagram requirements determined per tier + stack class (Canon XLI)'
+  - 'Contract canon citations: any operator.surface contract whose ui_locator matches the plan target is cited in contracts_touched frontmatter'
+
+errors:
+  - condition: plan_validation_failed_after_max_iterations
+    code: E_PLAN_XEA_CEILING
+    operator_sees: 'XEA exceeded 7 iterations without convergence — operator must choose accept / continue / cancel'
+    forbidden: 'auto-applying validation_status=VALIDATED without iteration loop completing'
+    severity: HIGH
+  - condition: template_unreachable
+    code: E_PLAN_TEMPLATE_MISSING
+    operator_sees: 'LASDLC template not readable at canonical path'
+    forbidden: 'authoring from a remembered template snapshot'
+    severity: BLOCKING
+  - condition: contracts_canon_unaware
+    code: E_PLAN_CONTRACT_BLIND
+    operator_sees: 'Plan target touches surface with operator.surface.* contract but contracts_touched: is empty'
+    forbidden: 'producing VALIDATED plan that ignores contracted surfaces'
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: skill.plan.invoke
+      required_metadata: [target, codename, tier, iterations_used, validation_status, contracts_touched_count]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 600000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'Northstar elicitation (Step 2.3) requires explicit operator selection — no defaulting'
+  - 'Decision gate at end (build / scrum / edit / plan only) requires explicit operator action'
+
+forbidden_behaviors:
+  - 'Writing any code or executing any cargo/git/pnpm commands during /PLAN'
+  - 'Creating worktrees or branches — that is /BUILD territory'
+  - 'Persisting validation_status: VALIDATED without XEA verdict block present'
+  - 'Skipping the LASDLC template snapshot at Step 3.5'
+  - 'Authoring a new operator-facing surface without including operator.surface contract drafting in file_function_map'
+
+persistence:
+  - path: ~/.claude/plans/<codename>.md
+    schema_ref: lasdlc-template-v1
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'n/a — plans contain no credentials'
+
+conformance_test:
+  given: 'Operator invokes /PLAN with target="test-feature" + valid Northstar'
+  when: 'Skill runs through all steps including XEA review loop'
+  then:
+    - assertion: '~/.claude/plans/test-feature.md exists after invocation'
+      filesystem_witness: ~/.claude/plans/test-feature.md
+      evidence_tier_required: VERIFIED
+    - assertion: 'File contains frontmatter with validation_status field'
+      evidence_tier_required: VERIFIED
+    - assertion: 'File contains northstar_lineage block with non-empty northstar_text'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.plan.invoke span emitted with duration_ms'
+      span_witness: skill.plan.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 1800
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Skill runs in Claude Code regardless of LLM backend' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Skill authors plans deterministically regardless of provider; XEA loop verified across multiple sessions 2026-05 / 2026-06'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/PLAN/SKILL.md
+  slash_command: /PLAN
+  trigger_keywords: [plan, draft plan, author plan, /plan, plan this]
+  rejects_flags: ['--then', '--watch', '--drain', '--fix']
+  hitl_required: true
+  delegates_to_agent: claude
+  sub_skills:
+    - agent.skill.xea
+    - agent.skill.research

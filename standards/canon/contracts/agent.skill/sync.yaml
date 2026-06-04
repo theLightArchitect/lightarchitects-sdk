@@ -1,0 +1,109 @@
+schema_version: la-contracts/v1
+id: agent.skill.sync
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P4]
+
+operator_intent: |
+  /SYNC detects drift between source-of-truth artifacts (manifest.yaml, active.yaml,
+  portfolio.md, roadmap.html) and reality (filesystem, git, contract-gate). Reports D-1
+  through D-7 finding classes with severity. Used as pre-/BUILD drift check per LÆX #36.
+
+prior_art:
+  - name: LÆX #36 pre-/BUILD drift check
+    url: file://$HELIX/laex/entries/2026-05-19-pre-build-drift.md
+    what_we_adopt: D-1 through D-6 finding classes; HIGH-severity blocking
+
+inherits_from: []
+
+canon_refs:
+  - canon://platform-canon
+  - canon://operators-manual
+
+memory_refs:
+  - feedback_cross_build_coupling_frontmatter_pattern.md
+
+inputs:
+  - name: scope
+    type: enum
+    enum: [roadmap, portfolio, manifest, active, contracts, all]
+    required: false
+  - name: dry_run
+    type: boolean
+    required: false
+
+observable_outputs:
+  - 'Drift report with D-1 through D-7 finding classes'
+  - 'D-7: contract-gate drift (new findings since last sync)'
+  - 'HIGH-severity drift blocks /BUILD per LÆX #36'
+
+errors:
+  - condition: high_severity_drift
+    code: E_SYNC_HIGH_DRIFT
+    operator_sees: 'HIGH-severity drift detected — resolve before /BUILD'
+    forbidden: 'silently advancing to /BUILD with HIGH drift unresolved'
+    severity: BLOCKING
+
+observability:
+  required_spans:
+    - name: skill.sync.invoke
+      required_metadata: [scope, dry_run, findings_high, findings_medium, findings_low]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 300000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'Non-dry-run sync requires operator approval for each write'
+
+forbidden_behaviors:
+  - 'Auto-fixing HIGH drift without operator review'
+  - 'Skipping D-7 contract-gate drift class'
+
+persistence:
+  - path: <build_root>/.sync/drift-<timestamp>.yaml
+    schema_ref: drift-report-v1
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+conformance_test:
+  given: 'Workspace with at least one tracking artifact drift'
+  when: 'Operator invokes /SYNC --roadmap test-codename --dry-run'
+  then:
+    - assertion: 'Drift report enumerates D-class findings'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.sync.invoke span emitted'
+      span_witness: skill.sync.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 300
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Drift detection verified against tracking artifacts'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/SYNC/SKILL.md
+  slash_command: /SYNC
+  trigger_keywords: [sync, drift, /sync, check drift]
+  rejects_flags: []
+  hitl_required: true
+  delegates_to_agent: claude
+  sub_skills: []

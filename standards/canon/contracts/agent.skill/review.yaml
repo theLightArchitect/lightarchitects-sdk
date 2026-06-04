@@ -1,0 +1,125 @@
+schema_version: la-contracts/v1
+id: agent.skill.review
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P2, P4]
+
+operator_intent: |
+  /REVIEW runs code review on a diff via SQUAD code_review preset. Lens-based: each domain
+  agent reviews from its strand (engineer/security/quality/ops/etc.). Cross-references
+  operator.surface.forbidden_behaviors and provider.llm constraints against the diff; flags
+  violations as findings routed via Gatekeeper Registry.
+
+prior_art:
+  - name: SQUAD code_review preset
+    url: file://plugins/lightarchitects/skills/SQUAD/SKILL.md
+    what_we_adopt: parallel-domain-agent lens with strand-vocabulary verdicts
+
+inherits_from:
+  - agent.skill.squad
+
+canon_refs:
+  - canon://gatekeeper-registry
+  - canon://builders-cookbook
+  - canon://security-guardrails
+
+memory_refs:
+  - feedback_three_lens_review_convergence.md
+  - feedback_post_agent_ground_truth_check.md
+
+inputs:
+  - name: target
+    type: string
+    max_bytes: 200
+    required: true
+  - name: lens
+    type: enum
+    enum: [security, quality, architecture, performance, all]
+    required: false
+
+observable_outputs:
+  - 'Domain agents dispatched per lens with diff in context'
+  - 'Each finding has severity (BLOCKING/HIGH/MEDIUM/LOW) + Gatekeeper Registry owner'
+  - 'operator.surface.forbidden_behaviors cross-check against diff'
+  - 'provider.llm constraint check when provider/auth code modified'
+  - 'New public API surfaces trigger contract-authoring suggestion'
+
+errors:
+  - condition: forbidden_behavior_in_diff
+    code: E_REVIEW_FORBIDDEN
+    operator_sees: 'Diff violates operator.surface.{id}.forbidden_behaviors[{N}]'
+    forbidden: 'allowing the diff to merge'
+    severity: BLOCKING
+  - condition: new_public_api_uncontracted
+    code: E_REVIEW_UNCONTRACTED_SURFACE
+    operator_sees: 'New public surface introduced without operator.surface contract'
+    forbidden: 'merging new contracted-class surface without authoring its contract'
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: skill.review.invoke
+      required_metadata: [target, lens, findings_blocking, findings_high, findings_medium, agents_dispatched]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 1800000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'BLOCKING findings require operator decision before merge'
+
+forbidden_behaviors:
+  - 'Producing review verdict without dispatched-agent evidence'
+  - 'Skipping forbidden_behaviors cross-check'
+  - 'Marking new public surface as reviewed without contract authoring suggestion'
+
+persistence:
+  - path: <build_root>/.review/<reviewer>-<timestamp>.md
+    schema_ref: code-review-v1
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+conformance_test:
+  given: 'Diff with modified Rust + Svelte files'
+  when: 'Operator invokes /REVIEW <branch>'
+  then:
+    - assertion: 'Multiple lens agents dispatched in parallel'
+      evidence_tier_required: VERIFIED
+    - assertion: 'Findings routed via Gatekeeper Registry'
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.review.invoke span emitted'
+      span_witness: skill.review.invoke
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 1800
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Review pipeline verified across multiple PR cycles'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/REVIEW/SKILL.md
+  slash_command: /REVIEW
+  trigger_keywords: [review, code review, pr review, /review]
+  rejects_flags: []
+  hitl_required: false
+  delegates_to_agent: squad
+  sub_skills:
+    - agent.skill.squad

@@ -1,0 +1,152 @@
+schema_version: la-contracts/v1
+id: agent.skill.xea
+kind: agent.skill
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P2, P4]
+
+operator_intent: |
+  /XEA runs the 4-layer LASDLC compliance review: Layer 0 structural schema (S0.1-S0.18),
+  Layer 1 C1-C8 content rubric, Layer 2 northstar mechanical, Layer 3 LDB output contract.
+  Returns a structured verdict block. Used by /PLAN as self-review (Step 5) and by /BUILD as
+  pre-implementation gate (Step 0.3). Contract canon coverage is enforced via S0.18 (new).
+
+prior_art:
+  - name: Architects Blueprint §14 C1-C8 rubric
+    url: file://standards/canon/architects-blueprint.md
+    what_we_adopt: 8-dimension content scoring with weighted aggregation
+  - name: Northstar mechanical checks (Part I+II)
+    url: file://standards/canon/northstar.md
+    what_we_adopt: per-Pillar binary verification rather than aspirational scoring
+
+inherits_from: []
+
+canon_refs:
+  - canon://architects-blueprint
+  - canon://northstar
+  - canon://lasdlc-template
+  - canon://platform-canon
+
+memory_refs:
+  - feedback_one_scrum_cycle_sufficient_for_large_plans.md
+  - feedback_literal_canon_spot_check_at_plan_finalization.md
+  - feedback_plan_size_ratchet_metric.md
+
+inputs:
+  - name: codename
+    type: string
+    pattern: '^[a-zA-Z0-9_/. -]+$'
+    max_bytes: 60
+    required: true
+  - name: sibling
+    type: enum
+    enum: [eva, laex, corso, quantum, seraph, soul, ayin]
+    required: false
+  - name: layer
+    type: integer
+    required: false
+  - name: no_iterate
+    type: boolean
+    required: false
+  - name: from_plan
+    type: path
+    required: false
+
+observable_outputs:
+  - 'Layer 0 mechanical checklist S0.1-S0.18 evaluated; BLOCKING halts iteration'
+  - 'Layer 1 C1-C8 weighted aggregate computed with score honesty enforcement'
+  - 'Layer 2 northstar per-pillar mechanical checks run'
+  - 'Layer 3 LDB declaration verified (D-components, independent_runner, shipped_means)'
+  - 'S0.18 contract coverage: plan touches operator.surface contracts → must cite them in contracts_touched'
+  - 'xea_verdict block emitted as YAML for append to plan'
+  - 'Iteration loop continues until 2 consecutive rounds with 0 BLOCKING + delta < 0.3'
+
+errors:
+  - condition: plan_not_found
+    code: E_XEA_NO_PLAN
+    operator_sees: 'No plan at <path> — run /PLAN <target> first'
+    forbidden: 'reviewing imaginary plans'
+    severity: BLOCKING
+  - condition: max_iterations_exceeded
+    code: E_XEA_ITERATION_CEILING
+    operator_sees: 'XEA exceeded 7 iterations — operator decision required'
+    forbidden: 'auto-applying VALIDATED past iteration ceiling'
+    severity: HIGH
+  - condition: schema_version_mismatch
+    code: E_XEA_SCHEMA_DRIFT
+    operator_sees: 'Plan schema version != current LASDLC template — some checks may not apply'
+    forbidden: 'silent application of wrong-version checks'
+    severity: MEDIUM
+  - condition: contracts_touched_omitted
+    code: E_XEA_CONTRACT_COVERAGE
+    operator_sees: 'Plan target touches operator.surface contract(s) but contracts_touched: is empty in frontmatter'
+    forbidden: 'producing VALIDATED verdict when contract coverage is unaccounted'
+    severity: BLOCKING
+
+observability:
+  required_spans:
+    - name: skill.xea.invoke
+      required_metadata: [codename, iteration_count, layer_0_pass, aggregate_score, validation_status, contracts_coverage_pass]
+      parent_relationship: child_of_caller
+  duration_budget_ms: 1800000
+  trace_context_propagation: true
+
+hitl_boundaries:
+  - 'Max iterations (>7) requires explicit operator decision: accept / continue / cancel'
+
+forbidden_behaviors:
+  - 'Auto-applying VALIDATED status past iteration ceiling'
+  - 'Folding HIGH/MEDIUM/LOW findings into plan body (Blueprint §14.3 — track-in-record only)'
+  - 'Skipping Layer 0 structural checks because Layer 1 looks favorable'
+  - 'Skipping S0.18 contract coverage check when plan touches contracted surfaces'
+
+persistence:
+  - path: ~/.claude/plans/<codename>.md
+    schema_ref: lasdlc-template-v1
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+conformance_test:
+  given: 'Plan at ~/.claude/plans/test-feature.md with structural fields present'
+  when: 'Operator invokes /XEA test-feature'
+  then:
+    - assertion: 'xea_verdict block appended with iteration count + 4-layer results'
+      filesystem_witness: ~/.claude/plans/test-feature.md
+      evidence_tier_required: VERIFIED
+    - assertion: 'AYIN skill.xea.invoke span emitted with validation_status'
+      span_witness: skill.xea.invoke
+      evidence_tier_required: VERIFIED
+    - assertion: 'Iteration stops when convergence detected (Δ<0.3, 0 BLOCKING for 2 rounds)'
+      evidence_tier_required: VERIFIED
+  timeout_seconds: 1800
+
+status_per_provider:
+  claude_code_cli: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_http: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  litellm_proxy: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_local: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  ollama_cloud: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  anthropic_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openai_compat_generic: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  mistral_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  groq_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  openrouter_api: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_gemini: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  vertex_ai_claude: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+  azure_openai: { result: PASS, evidence_tier: VERIFIED, na_reason: 'Provider-independent' }
+
+alpha_gate:
+  verdict: pass
+  reason: 'Compliance review runs deterministically across plan inputs; verified across N>20 plan cycles 2026-05+'
+
+agent_skill:
+  skill_path: plugins/lightarchitects/skills/XEA/SKILL.md
+  slash_command: /XEA
+  trigger_keywords: [xea, cross-examine, compliance review, plan review]
+  rejects_flags: []
+  hitl_required: true
+  delegates_to_agent: claude
+  sub_skills: []
