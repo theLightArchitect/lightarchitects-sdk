@@ -1,0 +1,165 @@
+schema_version: la-contracts/v1
+id: operator.surface.dispatch-artifacts
+kind: operator.surface
+version: 0.1.0
+status: draft
+
+northstar_pillars:
+  - P1
+  - P2
+  - P4
+
+operator_intent: |
+  After a wave completes, browse every file the agents produced — one click per artifact — and
+  open each in an inline read-only viewer. This is the "did the agents actually produce something
+  I can inspect" surface; without it, operators must SSH to the host and ls .tmp/ by hand.
+
+prior_art:
+  - name: GitHub Actions artifact tab
+    url: https://docs.github.com/en/actions/managing-workflow-runs/downloading-workflow-artifacts
+    what_we_adopt: per-step artifact manifest with file size + last-modified attribution
+    what_we_extend: inline preview (Monaco read-only) instead of zip download; retry-superseded flagging
+
+inherits_from:
+  - operator.surface.dispatch-execute-wave
+
+canon_refs:
+  - canon://platform-canon#XIV
+  - canon://operators-manual
+  - canon://architects-blueprint
+
+memory_refs:
+  - feedback_alpha_provider_agnostic_contract_gate.md
+
+inputs:
+  - name: dispatch_id
+    type: string
+    pattern: '^[a-f0-9]{8,32}$'
+    max_bytes: 64
+    required: true
+
+observable_outputs:
+  - 'Results tab lists every file in .tmp/dispatch-<id>/ with size + agent attribution'
+  - "Clicking an artifact opens it in Monaco read-only view inline within 200ms"
+  - "Each artifact has a Copy + Open-in-Editor action"
+  - "Artifacts superseded by a retry are flagged with strikethrough + retry pointer"
+  - "Manifest counts match disk reality — no synthesized rows"
+
+errors:
+  - condition: artifacts_directory_missing
+    code: E_ARTIFACTS_DIR_MISSING
+    operator_sees: "No artifacts written — agent runner did not have file-write capability for this wave"
+    forbidden: "blank tab with no explanation"
+    severity: HIGH
+  - condition: artifact_unreadable
+    code: E_ARTIFACT_READ
+    operator_sees: "Artifact <path> exists but cannot be read: <reason>"
+    forbidden: "skipping the row silently so the count disagrees with disk"
+    severity: MEDIUM
+  - condition: manifest_missing
+    code: E_MANIFEST_MISSING
+    operator_sees: "Wave manifest missing — falling back to directory listing"
+    forbidden: "showing zero artifacts when files exist on disk"
+    severity: MEDIUM
+
+observability:
+  required_spans:
+    - name: dispatch.artifacts.list
+      required_metadata: [dispatch_id, artifact_count, total_bytes, latency_ms]
+      parent_relationship: child_of_named
+      parent_span_name: interactive.session
+    - name: dispatch.artifacts.preview
+      required_metadata: [dispatch_id, artifact_path, bytes, latency_ms]
+      parent_relationship: child_of_named
+      parent_span_name: dispatch.artifacts.list
+  first_token_budget_ms: 200
+  duration_budget_ms: 5000
+  trace_context_propagation: true
+
+persistence:
+  - path: $PROJECT_ROOT/.tmp/dispatch-<id>/manifest.json
+    schema_ref: 'dispatch-manifest-v1'
+    ttl: until-make-clean
+    hmac_chained: false
+    redaction_policy: 'n/a'
+  - path: $PROJECT_ROOT/.tmp/dispatch-<id>/agent-<name>.md
+    schema_ref: 'agent-stdout-buffer'
+    ttl: until-make-clean
+    hmac_chained: false
+    redaction_policy: HelixSessionMemory::SECRET_PATTERNS
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - "Synthesizing artifacts after the fact from chat log (must come from real agent stdout)"
+  - "Copying artifact contents into in-memory state that survives the dispatch (must read from disk on each preview)"
+  - "Allowing edits to artifacts from this surface — Monaco must be read-only"
+  - "Exposing absolute paths outside $PROJECT_ROOT in the UI (privacy + portability)"
+
+conformance_test:
+  given: "A dispatch completed at least 10s ago with engineer + knowledge agents"
+  when: "Operator clicks the Results tab on that dispatch row"
+  then:
+    - assertion: "Tab renders within 200ms with N file rows where N == agents that produced output"
+      span_witness: dispatch.artifacts.list
+      evidence_tier_required: VERIFIED
+    - assertion: "Each row shows agent name, file size, last-modified time"
+      evidence_tier_required: VERIFIED
+    - assertion: "Clicking a row opens Monaco inline preview within 200ms"
+      span_witness: dispatch.artifacts.preview
+      evidence_tier_required: VERIFIED
+    - assertion: "Preview content matches disk content byte-for-byte"
+      filesystem_witness: $PROJECT_ROOT/.tmp/dispatch-<id>/agent-engineer.md
+      evidence_tier_required: VERIFIED
+  fixtures: []
+  timeout_seconds: 30
+
+status_per_provider:
+  anthropic_api:
+    result: FAIL
+    evidence_tier: VERIFIED
+    failure_reason: "Capability does not exist — Results tab not built"
+  openai_api:
+    result: FAIL
+    evidence_tier: VERIFIED
+    failure_reason: "Capability does not exist — Results tab not built"
+  ollama_cloud:
+    result: FAIL
+    evidence_tier: VERIFIED
+    failure_reason: "Capability does not exist — Results tab not built"
+  ollama_local:
+    result: FAIL
+    evidence_tier: VERIFIED
+    failure_reason: "Capability does not exist — Results tab not built"
+  mistral_api:
+    result: FAIL
+    evidence_tier: VERIFIED
+    failure_reason: "Capability does not exist — Results tab not built"
+  groq_api:
+    result: FAIL
+    evidence_tier: VERIFIED
+    failure_reason: "Capability does not exist — Results tab not built"
+  openrouter_api:
+    result: FAIL
+    evidence_tier: VERIFIED
+    failure_reason: "Capability does not exist — Results tab not built"
+
+alpha_gate:
+  verdict: fail
+  reason: "Capability does not exist. Operator cannot inspect deliverables after a wave. Build before alpha."
+  blocker_contract_ids:
+    - operator.surface.dispatch-execute-wave
+
+operator_surface:
+  ui_locator: 'SQD-DISPATCH row — Results tab next to Stage / Comms tabs'
+  screen_key: Dispatch
+  keyboard_shortcut: 'none'
+  test_id: dispatch-artifacts-tab
+  history_continuity_on_provider_switch: n/a
+  render_safety:
+    monaco_read_only_only: true
+    html_injection_blocked: true
+    markdown_renderer_sanitization: dompurify
+    iframe_blocked: true
+    script_blocked: true

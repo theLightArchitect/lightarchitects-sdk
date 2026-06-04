@@ -1,0 +1,148 @@
+schema_version: la-contracts/v1
+id: operator.surface.copilot-slash-command
+kind: operator.surface
+version: 0.1.0
+status: draft
+
+northstar_pillars:
+  - P1
+  - P4
+
+operator_intent: |
+  Trigger a structured operator workflow (research, build, secure, deploy, quality, clear) from
+  inside the copilot chat input by typing a slash command. The palette is the entry point for
+  every top-level skill flow that ships in alpha.
+
+prior_art:
+  - name: Slack slash-command UX
+    url: https://api.slack.com/interactivity/slash-commands
+    what_we_adopt: 'Forward-slash prefix triggers a command palette filtered by typed prefix'
+    what_we_extend: 'Command list is operator-scoped (not workspace-shared); palette closes on Escape; commands are skills from $HELIX/user/skills/'
+
+inherits_from:
+  - operator.surface.copilot-send-message
+
+canon_refs:
+  - canon://platform-canon#XIV
+  - canon://operators-manual
+
+memory_refs:
+  - feedback_alpha_provider_agnostic_contract_gate.md
+  - feedback_webshell_copilot_provider_coupling.md
+
+inputs:
+  - name: command
+    type: enum
+    enum: [build, research, secure, deploy, quality, clear]
+    required: true
+  - name: args
+    type: string
+    max_bytes: 4096
+    required: false
+
+observable_outputs:
+  - "Command palette renders when forward-slash is typed at the start of a line"
+  - "Palette filters as the operator types the prefix (e.g. /re narrows to /research)"
+  - "Submitting the slash command initiates the named workflow with the provided args"
+  - "Chat log displays the command back to the operator as the first turn of the workflow"
+  - "Escape closes the palette without dispatching"
+
+errors:
+  - condition: workflow_handler_missing
+    code: E_SLASH_HANDLER_MISSING
+    operator_sees: "Command /{cmd} not registered — check skill installation"
+    forbidden: "silently treating the slash command as ordinary text"
+    severity: HIGH
+  - condition: workflow_validation_failed
+    code: E_SLASH_VALIDATION
+    operator_sees: "Command /{cmd} rejected args: {reason}"
+    forbidden: "dispatching with invalid args and letting the workflow fail downstream"
+    severity: MEDIUM
+
+observability:
+  required_spans:
+    - name: copilot.slash_dispatch
+      required_metadata: [command, args_len, workflow_id, provider]
+      parent_relationship: child_of_named
+      parent_span_name: interactive.turn
+  first_token_budget_ms: 5000
+  duration_budget_ms: 30000
+  trace_context_propagation: true
+
+persistence:
+  - path: ~/lightarchitects/cli/turnlog/active/<webshell_session>.ndjson
+    schema_ref: state.store.turnlog-ndjson
+    ttl: forever
+    hmac_chained: true
+    redaction_policy: HelixSessionMemory::SECRET_PATTERNS
+
+hitl_boundaries:
+  - "Workflows with side effects (build, deploy) get their own consent gates per operator.surface.automode-enable"
+
+forbidden_behaviors:
+  - "Slash command implementation that requires the host to be running Claude Code"
+  - "Routing slash dispatches to a different provider than the operator selected"
+  - "Auto-completing the command into a free-form prompt (must dispatch as a slash command, not a synthesized chat message)"
+
+conformance_test:
+  given: "Provider <P> configured + auto-mode disabled; webshell open at /"
+  when: |
+    Operator types "/research test query PROOF_<random_hex_8>" then submits
+  then:
+    - assertion: "Palette renders within 100ms of '/' keypress"
+      evidence_tier_required: VERIFIED
+    - assertion: "/research handler receives the query verbatim including PROOF token"
+      span_witness: copilot.slash_dispatch
+      evidence_tier_required: VERIFIED
+    - assertion: "Research started indicator visible within 5s"
+      evidence_tier_required: VERIFIED
+  fixtures:
+    - hex_seed.txt
+  timeout_seconds: 30
+
+status_per_provider:
+  anthropic_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  openai_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_cloud:
+    result: FAIL
+    evidence_tier: VERIFIED
+    evidence_path: helix:webshell-copilot-provider-coupling-2026-06-03
+    failure_reason: "Inherits operator.surface.copilot-send-message bridge coupling"
+  ollama_local:
+    result: FAIL
+    evidence_tier: VERIFIED
+    evidence_path: helix:webshell-copilot-provider-coupling-2026-06-03
+    failure_reason: "Same bridge coupling as ollama_cloud"
+  mistral_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  groq_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  openrouter_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+
+alpha_gate:
+  verdict: fail
+  reason: "Slash surface lives inside copilot chat — inherits operator.surface.copilot-send-message failure until bridge is decoupled"
+  blocker_contract_ids:
+    - operator.surface.copilot-send-message
+    - code.trait.runner
+
+operator_surface:
+  ui_locator: 'Copilot chat input — typed forward-slash opens command palette'
+  screen_key: Dispatch
+  keyboard_shortcut: 'forward_slash'
+  test_id: copilot-slash-palette
+  history_continuity_on_provider_switch: n/a
+  render_safety:
+    monaco_read_only_only: true
+    html_injection_blocked: true
+    markdown_renderer_sanitization: dompurify
+    iframe_blocked: true
+    script_blocked: true

@@ -1,0 +1,145 @@
+schema_version: la-contracts/v1
+id: operator.surface.dispatch-classify
+kind: operator.surface
+version: 0.1.0
+status: draft
+
+northstar_pillars:
+  - P2
+  - P4
+
+operator_intent: |
+  Suggest which domain agents (engineer, security, ops, etc.) should run for a free-form task by
+  pattern-matching task keywords against per-agent strand vocabularies. The AUTO·N badge shows
+  the count of auto-classified agents; chips are advisory until operator hits Dispatch.
+
+prior_art:
+  - name: VS Code symbol-keyword pattern matching
+    url: https://code.visualstudio.com/api/references/icons-in-labels
+    what_we_adopt: keyword → display-chip mapping with deterministic ordering
+    what_we_extend: classifier is purely local (no LLM call) to maintain the sub-500ms latency budget
+
+inherits_from: []
+
+canon_refs:
+  - canon://platform-canon#XIV
+  - canon://platform-canon#agents-playbook-part-xvi
+
+memory_refs:
+  - feedback_alpha_provider_agnostic_contract_gate.md
+
+inputs:
+  - name: task
+    type: string
+    max_bytes: 8192
+    required: true
+
+observable_outputs:
+  - "Within 500ms, 1-8 agent chips light up with 'matched: X (N keyword)' caption"
+  - "AUTO·N badge displays the count of auto-classified agents"
+  - "Operator can clear (CLR), select all (ALL), or override individual chips"
+  - "Classification is deterministic — identical task input yields identical chip set"
+
+errors:
+  - condition: classifier_offline
+    code: E_CLASSIFIER_OFFLINE
+    operator_sees: "Classifier offline — select agents manually"
+    forbidden: "silently selecting Engineer as a default and pretending the classifier ran"
+    severity: MEDIUM
+  - condition: classifier_latency_exceeded
+    code: E_CLASSIFIER_SLOW
+    operator_sees: "Classifier slow — partial chips shown; refresh to retry"
+    forbidden: "blocking the dispatch input while waiting indefinitely"
+    severity: LOW
+
+observability:
+  required_spans:
+    - name: dispatch.classify
+      required_metadata: [task_len, agents_matched, latency_ms, keyword_hits]
+      parent_relationship: child_of_named
+      parent_span_name: interactive.session
+  first_token_budget_ms: 500
+  duration_budget_ms: 1000
+  trace_context_propagation: true
+
+persistence:
+  - path: 'none — classifier is stateless; only the eventual dispatch persists'
+    schema_ref: 'n/a'
+    ttl: session
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+hitl_boundaries:
+  - none
+
+forbidden_behaviors:
+  - "Calling an LLM provider for classification (must be local keyword matching for sub-500ms guarantee)"
+  - "Sending the task text to any remote service before the operator hits Dispatch"
+  - "Auto-selecting Engineer when no keyword matches — must show 'no match' state, not a default"
+
+conformance_test:
+  given: "Webshell is up at /dispatch with no prior task"
+  when: |
+    Operator types "fix the security vulnerability in OAuth flow then deploy" in the task input
+  then:
+    - assertion: "Security agent chip lights up within 500ms (keyword: security/vulnerability)"
+      span_witness: dispatch.classify
+      evidence_tier_required: VERIFIED
+    - assertion: "Ops agent chip lights up within 500ms (keyword: deploy)"
+      span_witness: dispatch.classify
+      evidence_tier_required: VERIFIED
+    - assertion: "AUTO·2 badge appears"
+      evidence_tier_required: VERIFIED
+    - assertion: "No network call to any LLM provider during the classify span"
+      span_witness: dispatch.classify
+      evidence_tier_required: VERIFIED
+  fixtures: []
+  timeout_seconds: 5
+
+status_per_provider:
+  anthropic_api:
+    result: PASS
+    evidence_tier: VERIFIED
+    failure_reason: 'n/a — classifier is local, provider-independent'
+  openai_api:
+    result: PASS
+    evidence_tier: VERIFIED
+    failure_reason: 'n/a — classifier is local, provider-independent'
+  ollama_cloud:
+    result: PASS
+    evidence_tier: VERIFIED
+    failure_reason: 'n/a — classifier is local, provider-independent'
+  ollama_local:
+    result: PASS
+    evidence_tier: VERIFIED
+    failure_reason: 'n/a — classifier is local, provider-independent'
+  mistral_api:
+    result: PASS
+    evidence_tier: VERIFIED
+    failure_reason: 'n/a — classifier is local, provider-independent'
+  groq_api:
+    result: PASS
+    evidence_tier: VERIFIED
+    failure_reason: 'n/a — classifier is local, provider-independent'
+  openrouter_api:
+    result: PASS
+    evidence_tier: VERIFIED
+    failure_reason: 'n/a — classifier is local, provider-independent'
+
+alpha_gate:
+  verdict: pass
+  reason: "Provider-agnostic by construction; verified working in dispatch console test 2026-06-03"
+  blocker_contract_ids: []
+
+operator_surface:
+  ui_locator: 'SQD-DISPATCH panel — agent chip row above the task input'
+  screen_key: Dispatch
+  keyboard_shortcut: 'none'
+  test_id: dispatch-classify-chip-row
+  history_continuity_on_provider_switch: n/a
+  render_safety:
+    monaco_read_only_only: true
+    html_injection_blocked: true
+    markdown_renderer_sanitization: dompurify
+    iframe_blocked: true
+    script_blocked: true

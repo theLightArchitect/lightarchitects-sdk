@@ -1,0 +1,147 @@
+schema_version: la-contracts/v1
+id: operator.surface.automode-enable
+kind: operator.surface
+version: 0.1.0
+status: draft
+
+northstar_pillars:
+  - P2
+  - P4
+
+operator_intent: |
+  Grant per-session consent that subsequent dispatches and autonomous-loop runs proceed without
+  per-step HITL prompts. The AUTO chip is the master consent gate; turning it on is the only
+  place this consent is granted, and it must re-prompt after 1 hour of operator idle.
+
+prior_art:
+  - name: GitHub workflow_dispatch auto-approval
+    url: https://docs.github.com/en/actions/managing-workflow-runs/manually-running-a-workflow
+    what_we_adopt: explicit per-session opt-in for autonomous execution
+    what_we_extend: time-bounded consent (1h idle re-prompt) instead of org-wide policy
+  - name: macOS Touch ID per-session unlock semantics
+    url: https://support.apple.com/guide/security/secure-enclave-sec59b0b31ff/web
+    what_we_adopt: consent decays with inactivity; refresh requires explicit action
+
+inherits_from: []
+
+canon_refs:
+  - canon://platform-canon#XIV
+  - canon://security-guardrails
+  - canon://operators-manual
+
+memory_refs:
+  - feedback_alpha_provider_agnostic_contract_gate.md
+
+inputs:
+  - name: confirm
+    type: boolean
+    required: true
+
+observable_outputs:
+  - "Clicking AUTO chip raises a modal: 'Enable Auto Mode? — Autonomous program dispatch will proceed without per-step confirmation. You will be asked again after 1 hour of idle.'"
+  - "Modal has Cancel + Enable buttons + accessible focus trap"
+  - "On Enable, AUTO chip becomes active (green dot)"
+  - "After 1h of operator idle, the next Dispatch raises the modal again (re-consent)"
+  - "On tab close, consent clears — re-opening the webshell starts with AUTO off"
+
+errors:
+  - condition: consent_required_after_idle
+    code: E_AUTOMODE_IDLE_REPROMPT
+    operator_sees: "Auto Mode consent expired after 1h idle — confirm to continue"
+    forbidden: "silent continuation past the idle threshold"
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: automode.toggle
+      required_metadata: [enabled, source, session_id, idle_seconds_at_toggle]
+      parent_relationship: child_of_named
+      parent_span_name: interactive.session
+  first_token_budget_ms: 100
+  duration_budget_ms: 1000
+  trace_context_propagation: true
+
+persistence:
+  - path: 'sessionStorage.la_webshell_settings.autoMode'
+    schema_ref: 'automode-session-state-v1'
+    ttl: session
+    hmac_chained: false
+    redaction_policy: 'n/a'
+
+hitl_boundaries:
+  - "Modal IS the consent gate — must be unmistakable, focus-trapped, dismissable only by explicit action"
+  - "Must re-prompt after 1h of operator idle (security control)"
+  - "URL parameter cannot bypass the modal (no ?automode=on)"
+
+forbidden_behaviors:
+  - "Persisting auto-mode beyond the session (no localStorage, no IndexedDB, no server-side persist)"
+  - "Auto-enabling because an earlier session enabled it"
+  - "Skipping the modal if the operator previously enabled in another tab"
+  - "Accepting consent via keyboard shortcut alone (must be explicit click on Enable)"
+  - "Treating the chip green-dot as authoritative without checking sessionStorage on every dispatch"
+
+conformance_test:
+  given: "Webshell opened in fresh tab; sessionStorage cleared"
+  when: "Operator clicks AUTO chip"
+  then:
+    - assertion: "Modal appears with exact body text above"
+      evidence_tier_required: VERIFIED
+    - assertion: "Modal has focus trap — Tab/Shift-Tab cycles within modal"
+      evidence_tier_required: VERIFIED
+    - assertion: "Clicking Enable closes modal + activates chip"
+      span_witness: automode.toggle
+      evidence_tier_required: VERIFIED
+    - assertion: "Next Dispatch runs without raising any HITL prompt"
+      evidence_tier_required: VERIFIED
+    - assertion: "After 1h+ inactivity, next Dispatch re-raises the modal"
+      evidence_tier_required: VERIFIED
+  fixtures: []
+  timeout_seconds: 30
+
+status_per_provider:
+  anthropic_api:
+    result: PASS
+    evidence_tier: VERIFIED
+    failure_reason: 'n/a — provider-independent UI state'
+  openai_api:
+    result: PASS
+    evidence_tier: VERIFIED
+    failure_reason: 'n/a — provider-independent UI state'
+  ollama_cloud:
+    result: PASS
+    evidence_tier: VERIFIED
+    failure_reason: 'n/a — provider-independent UI state'
+  ollama_local:
+    result: PASS
+    evidence_tier: VERIFIED
+    failure_reason: 'n/a — provider-independent UI state'
+  mistral_api:
+    result: PASS
+    evidence_tier: VERIFIED
+    failure_reason: 'n/a — provider-independent UI state'
+  groq_api:
+    result: PASS
+    evidence_tier: VERIFIED
+    failure_reason: 'n/a — provider-independent UI state'
+  openrouter_api:
+    result: PASS
+    evidence_tier: VERIFIED
+    failure_reason: 'n/a — provider-independent UI state'
+
+alpha_gate:
+  verdict: pass
+  reason: "Verified working 2026-06-03; chip + modal + per-session re-consent all observed in zany-tinkering-map E2E"
+  blocker_contract_ids: []
+
+operator_surface:
+  ui_locator: 'Navbar — AUTO chip with green/grey dot indicator + confirm modal'
+  screen_key: Dispatch
+  keyboard_shortcut: 'none'
+  test_id: navbar-automode-chip
+  history_continuity_on_provider_switch: n/a
+  render_safety:
+    monaco_read_only_only: true
+    html_injection_blocked: true
+    markdown_renderer_sanitization: dompurify
+    iframe_blocked: true
+    script_blocked: true

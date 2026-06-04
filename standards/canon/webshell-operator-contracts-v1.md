@@ -100,13 +100,13 @@ The inventory is the source of truth for what surfaces exist. Every contract id 
 
 | ID | Surface | Owner | Contract status |
 |---|---|---|---|
-| `webshell.copilot.send-message` | Copilot left-panel chat input + Send | EVA + CORSO | DRAFTED (§3.1) |
-| `webshell.copilot.slash-command` | `/research`, `/build`, `/secure`, `/deploy`, `/quality`, `/clear` | CORSO | DRAFTED (§3.2) |
-| `webshell.dispatch.classify` | SQD-DISPATCH agent keyword classifier (AUTO·N badge) | CORSO | DRAFTED (§3.3) |
-| `webshell.dispatch.execute-wave` | SQD-DISPATCH `Dispatch ▶` button | CORSO | DRAFTED (§3.4) |
-| `webshell.dispatch.artifacts` | Per-agent output persistence (Results tab) | CORSO | DRAFTED (§3.5) — **alpha blocker** |
-| `webshell.automode.enable` | AUTO chip in navbar + confirm modal | EVA | DRAFTED (§3.6) |
-| `webshell.provider.select` | Provider pill + model dropdown in copilot header | CORSO | DRAFTED (§3.7) — **alpha blocker** |
+| `webshell.copilot.send-message` | Copilot left-panel chat input + Send | EVA + CORSO | **EXTRACTED** → `operator.surface.copilot-send-message` (§3.1) |
+| `webshell.copilot.slash-command` | `/research`, `/build`, `/secure`, `/deploy`, `/quality`, `/clear` | CORSO | **EXTRACTED** → `operator.surface.copilot-slash-command` (§3.2) |
+| `webshell.dispatch.classify` | SQD-DISPATCH agent keyword classifier (AUTO·N badge) | CORSO | **EXTRACTED** → `operator.surface.dispatch-classify` (§3.3) |
+| `webshell.dispatch.execute-wave` | SQD-DISPATCH `Dispatch ▶` button | CORSO | **EXTRACTED** → `operator.surface.dispatch-execute-wave` (§3.4) |
+| `webshell.dispatch.artifacts` | Per-agent output persistence (Results tab) | CORSO | **EXTRACTED** → `operator.surface.dispatch-artifacts` (§3.5) — **alpha blocker** |
+| `webshell.automode.enable` | AUTO chip in navbar + confirm modal | EVA | **EXTRACTED** → `operator.surface.automode-enable` (§3.6) |
+| `webshell.provider.select` | Provider pill + model dropdown in copilot header | CORSO | **EXTRACTED** → `operator.surface.provider-select` (§3.7) — **alpha blocker** |
 | `webshell.events.live-stream` | EVENTS panel — global event SSE | AYIN | TODO |
 | `webshell.memory.helix-search` | MEMORY panel — helix query box | SOUL | TODO |
 | `webshell.ayin.lineage-circuit` | AYIN Lineage Circuit drawer | AYIN | TODO |

@@ -1,0 +1,201 @@
+schema_version: la-contracts/v1
+id: operator.surface.provider-select
+kind: operator.surface
+version: 0.1.0
+status: draft
+
+northstar_pillars:
+  - P1
+  - P3
+  - P4
+
+operator_intent: |
+  Switch the active LLM provider and model for the entire copilot + dispatch surface in one
+  action, without restarting the binary or losing session continuity. The provider pill is the
+  authoritative truth surface: if the pill says ollama-cloud, every subsequent request — copilot,
+  dispatch, slash-commands — must route to ollama-cloud or the contract is broken.
+
+prior_art:
+  - name: LiteLLM provider abstraction
+    url: https://docs.litellm.ai/docs/providers
+    what_we_adopt: unified base_url + model + api_key triplet covers OpenAI-compat providers
+    what_we_extend: pill is the operator-facing surface; switching cost dialog shows capability deltas + latency band before Save
+  - name: VS Code Copilot model picker
+    url: https://code.visualstudio.com/docs/copilot/copilot-customization
+    what_we_adopt: dropdown of active models with health indicator
+    what_we_extend: switching cost transparency (operator sees what changes), not just a list
+
+inherits_from:
+  - provider.llm.anthropic-http
+  - provider.llm.ollama-cloud
+  - provider.llm.ollama-local
+  - provider.llm.litellm-proxy
+
+canon_refs:
+  - canon://platform-canon#XIV
+  - canon://builders-cookbook#§78.1
+  - canon://builders-cookbook#§78.2
+  - canon://security-guardrails#LLM02
+  - canon://security-guardrails#LLM06
+
+memory_refs:
+  - feedback_alpha_provider_agnostic_contract_gate.md
+  - feedback_webshell_copilot_provider_coupling.md
+  - feedback_litellm_provider_unifier.md
+  - feedback_litellm_keychain_provider_deployment.md
+
+inputs:
+  - name: base_url
+    type: url
+    max_bytes: 256
+    required: true
+  - name: model
+    type: string
+    pattern: '^[a-zA-Z0-9_/.:-]+$'
+    max_bytes: 256
+    required: true
+  - name: api_key
+    type: secret
+    required: false
+
+observable_outputs:
+  - "Provider pill updates to show the selected model within 1s of clicking Save"
+  - "Next message in copilot uses the new provider"
+  - "Next dispatch wave uses the new provider"
+  - "AYIN trace shows the new model name on assistant.response.metadata.model"
+  - "Switching-cost dialog displays {prior_model, new_model, capability_deltas, latency_band} before Save commits"
+  - "Pill click reveals dropdown with currently-configured providers + their health indicator"
+
+errors:
+  - condition: base_url_unreachable
+    code: E_PROVIDER_UNREACHABLE
+    operator_sees: "Provider at {base_url} unreachable — config saved, but not verified. Click Verify to retry."
+    forbidden: "silently falling back to a previous provider"
+    severity: HIGH
+    owasp_class: LLM02
+  - condition: api_key_invalid
+    code: E_PROVIDER_AUTH
+    http_status: 401
+    operator_sees: "Credential rejected by {provider_name} — open Settings to update"
+    forbidden: "silent retry loop without surfacing rejection"
+    severity: HIGH
+    owasp_class: LLM06
+  - condition: model_not_found
+    code: E_MODEL_UNSUPPORTED
+    operator_sees: "Provider {provider_name} does not list model {model} — pick from dropdown or check spelling"
+    forbidden: "silently downgrading to a different model on Save"
+    severity: HIGH
+  - condition: base_url_ssrf_blocked
+    code: E_PROVIDER_SSRF
+    operator_sees: "Provider base URL rejected: {reason} (loopback / private IP / file scheme blocked)"
+    forbidden: "allowing the request without an SSRF check"
+    severity: BLOCKING
+    owasp_class: LLM05
+
+observability:
+  required_spans:
+    - name: provider.select.save
+      required_metadata: [prior_model, new_model, provider_kind, base_url_host, verification_outcome]
+      parent_relationship: child_of_named
+      parent_span_name: interactive.session
+    - name: provider.select.verify
+      required_metadata: [provider_kind, base_url_host, latency_ms, outcome]
+      parent_relationship: child_of_named
+      parent_span_name: provider.select.save
+  first_token_budget_ms: 1000
+  duration_budget_ms: 10000
+  trace_context_propagation: true
+
+persistence:
+  - path: '~/.lightarchitects/litellm_config.sqlite'
+    schema_ref: 'litellm-config-v1'
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'api_key field NEVER stored in SQLite — keychain only'
+  - path: 'macOS keychain: la-litellm-credential / <provider-name>'
+    schema_ref: 'keychain-generic-password'
+    ttl: forever
+    hmac_chained: false
+    redaction_policy: 'native keychain encryption'
+
+hitl_boundaries:
+  - "Switching-cost dialog IS the consent gate — operator must explicitly click Save after reviewing deltas"
+  - "First-time provider add (no prior config) skips switching-cost dialog (nothing to compare)"
+
+forbidden_behaviors:
+  - "Provider selection that only affects build-scoped copilots (not the global copilot)"
+  - "UI showing the new pill while the actual streaming bridge still hits the old provider"
+  - "Hardcoded routing to 'soul chat inject' / 'claude --resume' for any path"
+  - "Persisting api_key in SQLite or any file other than the OS keychain"
+  - "Logging the api_key value to AYIN spans or any disk log (only fingerprint hash permitted)"
+  - "Skipping the SSRF check on base_url (must canonicalize host + reject loopback / private IPs / file scheme)"
+
+conformance_test:
+  given: "Pill shows 'old-model'; operator opens provider drawer with valid credential available"
+  when: |
+    Operator changes model to "new-model", clicks Save, then sends "Reply PROOF_<random_hex_8>"
+  then:
+    - assertion: "Switching-cost dialog appears before Save commits"
+      span_witness: provider.select.save
+      evidence_tier_required: VERIFIED
+    - assertion: "Pill updates to 'new-model' within 1s of confirming Save"
+      span_witness: provider.select.save
+      evidence_tier_required: VERIFIED
+    - assertion: "Assistant response contains PROOF_<the_exact_hex>"
+      evidence_tier_required: VERIFIED
+    - assertion: "AYIN trace assistant.response has metadata.model == 'new-model'"
+      span_witness: assistant.response
+      evidence_tier_required: VERIFIED
+    - assertion: "AYIN trace assistant.response has metadata.provider equal to new provider kind"
+      span_witness: assistant.response
+      evidence_tier_required: VERIFIED
+  fixtures:
+    - hex_seed.txt
+  timeout_seconds: 30
+
+status_per_provider:
+  anthropic_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  openai_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_cloud:
+    result: FAIL
+    evidence_tier: VERIFIED
+    evidence_path: helix:webshell-copilot-provider-coupling-2026-06-03
+    failure_reason: "Pill updates but agent bridge ignores config — global copilot path hardcoded to claude --resume"
+  ollama_local:
+    result: FAIL
+    evidence_tier: VERIFIED
+    evidence_path: helix:webshell-copilot-provider-coupling-2026-06-03
+    failure_reason: "Same bridge coupling as ollama_cloud"
+  mistral_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  groq_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  openrouter_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+
+alpha_gate:
+  verdict: fail
+  reason: "Pill is cosmetic for the global copilot path. Cannot ship provider switching as a contract until operator.surface.copilot-send-message bridge is replaced with provider-pluggable Runner trait."
+  blocker_contract_ids:
+    - operator.surface.copilot-send-message
+    - code.trait.runner
+
+operator_surface:
+  ui_locator: 'Copilot header — provider pill (left of model badge) + clickable dropdown'
+  screen_key: Dispatch
+  keyboard_shortcut: 'none'
+  test_id: copilot-provider-pill
+  history_continuity_on_provider_switch: replay_to_new_provider
+  render_safety:
+    monaco_read_only_only: true
+    html_injection_blocked: true
+    markdown_renderer_sanitization: dompurify
+    iframe_blocked: true
+    script_blocked: true

@@ -1,0 +1,183 @@
+schema_version: la-contracts/v1
+id: operator.surface.dispatch-execute-wave
+kind: operator.surface
+version: 0.1.0
+status: draft
+
+northstar_pillars:
+  - P2
+  - P3
+  - P4
+
+operator_intent: |
+  Run a wave of selected domain agents in parallel against the task and observe live progress
+  per agent. Operator clicks Dispatch (or Cmd+Enter) once; the executor armors the wave, streams
+  each agent's output, and writes per-agent artifacts to .tmp/dispatch-<id>/. Operator can cancel
+  but does not re-confirm per agent.
+
+prior_art:
+  - name: Claude Code agent dispatch / Task tool fan-out
+    url: https://docs.anthropic.com/en/api/agent-sdk-overview
+    what_we_adopt: parallel agent dispatch with structured per-agent context bundles
+    what_we_extend: provider-pluggable Runner trait; per-agent artifact persistence on disk; AYIN-instrumented spans
+
+inherits_from:
+  - operator.surface.dispatch-classify
+  - code.trait.runner
+
+canon_refs:
+  - canon://platform-canon#XIV
+  - canon://platform-canon#agents-playbook-part-iv
+  - canon://builders-cookbook#§78.3
+
+memory_refs:
+  - feedback_alpha_provider_agnostic_contract_gate.md
+  - feedback_webshell_copilot_provider_coupling.md
+
+inputs:
+  - name: task
+    type: string
+    max_bytes: 8192
+    required: true
+  - name: agents
+    type: array
+    description: 'each element must be one of: engineer, knowledge, quality, security, ops, researcher, testing, squad'
+    required: true
+  - name: dry
+    type: boolean
+    required: true
+  - name: tool_config
+    type: object
+    required: false
+  - name: attachments
+    type: array
+    required: false
+
+observable_outputs:
+  - "DISPATCH transitions: IDLE → ARMED → LIVE → COMPLETE (or FAILED / CANCELLED)"
+  - "Each agent emits state transitions visible per row in the EXECUTION STAGE panel"
+  - "Each agent's mailbox messages stream into its row as the model produces them"
+  - "Total elapsed time is shown (T-Ns)"
+  - "Per-agent token count + cost is shown (TOK + COST columns)"
+  - "Each agent's stdout buffer lands at .tmp/dispatch-<id>/agent-<name>.md on COMPLETE"
+
+errors:
+  - condition: per_agent_subprocess_failed
+    code: E_AGENT_SUBPROCESS
+    operator_sees: "Agent <name> failed: <reason> — open row for full error"
+    forbidden: "silently marking the agent as COMPLETE on failure"
+    severity: HIGH
+  - condition: provider_auth_mid_stream
+    code: E_PROVIDER_AUTH_STREAM
+    http_status: 401
+    operator_sees: "Provider {name} rejected credential for agent <name> mid-stream"
+    forbidden: "generic spinner that never resolves"
+    severity: HIGH
+    owasp_class: LLM06
+  - condition: artifact_directory_unwritable
+    code: E_ARTIFACT_DIR
+    operator_sees: "Cannot write artifacts to .tmp/dispatch-<id>/ — check filesystem permissions"
+    forbidden: "completing the wave without surfacing the persistence failure"
+    severity: BLOCKING
+
+observability:
+  required_spans:
+    - name: dispatch.wave
+      required_metadata: [wave_id, agent_count, task_len, provider, total_duration_ms, total_tokens, total_cost_usd]
+      parent_relationship: child_of_named
+      parent_span_name: interactive.session
+    - name: dispatch.agent
+      required_metadata: [agent_name, agent_role, duration_ms, tokens, stop_reason, model, provider]
+      parent_relationship: child_of_named
+      parent_span_name: dispatch.wave
+  first_token_budget_ms: 10000
+  duration_budget_ms: 120000
+  trace_context_propagation: true
+
+persistence:
+  - path: $PROJECT_ROOT/.tmp/dispatch-<id>/agent-<name>.md
+    schema_ref: 'agent-stdout-buffer'
+    ttl: until-make-clean
+    hmac_chained: false
+    redaction_policy: HelixSessionMemory::SECRET_PATTERNS
+  - path: ~/lightarchitects/cli/turnlog/active/<dispatch_session>.ndjson
+    schema_ref: state.store.turnlog-ndjson
+    ttl: forever
+    hmac_chained: true
+    redaction_policy: HelixSessionMemory::SECRET_PATTERNS
+
+hitl_boundaries:
+  - "Initial Dispatch click is the consent — once armed, the wave runs to completion without per-step HITL"
+  - "Operator can hit CANCEL to abort"
+  - 'Filesystem writes outside .tmp/dispatch-<id>/ require /api/dispatch/{id}/fs-approve (HIGH H-9)'
+
+forbidden_behaviors:
+  - "Hardcoding 'claude --print -p' as the only implementation — the executor must support a provider-pluggable Runner trait"
+  - "Routing wave dispatches to one provider while the operator selected another"
+  - 'Discarding per-agent stdout on COMPLETE without writing the .tmp/dispatch-<id>/agent-<name>.md artifact'
+  - "Running agents serially when they have no declared file-ownership conflict (must parallelize per Cookbook concurrency doctrine)"
+
+conformance_test:
+  given: "Provider <P> configured + .tmp/ does not exist in project root"
+  when: |
+    Operator dispatches "Read CLAUDE.md and list the MSRV" to engineer + knowledge with dry=false
+  then:
+    - assertion: "Within 60s, wave shows COMPLETE in UI"
+      span_witness: dispatch.wave
+      evidence_tier_required: VERIFIED
+    - assertion: "$PROJECT_ROOT/.tmp/dispatch-<id>/agent-engineer.md exists and contains '1.87'"
+      filesystem_witness: $PROJECT_ROOT/.tmp/dispatch-<id>/agent-engineer.md
+      evidence_tier_required: VERIFIED
+    - assertion: "$PROJECT_ROOT/.tmp/dispatch-<id>/agent-knowledge.md exists and contains '1.87'"
+      filesystem_witness: $PROJECT_ROOT/.tmp/dispatch-<id>/agent-knowledge.md
+      evidence_tier_required: VERIFIED
+    - assertion: "AYIN span dispatch.wave has metadata.provider == <P>"
+      span_witness: dispatch.wave
+      evidence_tier_required: VERIFIED
+  fixtures:
+    - CLAUDE.md
+  timeout_seconds: 90
+
+status_per_provider:
+  anthropic_api:
+    result: PASS
+    evidence_tier: VERIFIED
+    evidence_path: '.tmp/dispatch-evidence/capture.sh — verified 2026-06-03 via Claude Code path'
+  openai_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_cloud:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  ollama_local:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  mistral_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  groq_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+  openrouter_api:
+    result: UNTESTED
+    evidence_tier: INFERRED
+
+alpha_gate:
+  verdict: deferred
+  reason: "Implementation hardcodes 'claude --print -p' subprocess; passes via Claude Code path only. Refactor to Runner trait with provider-specific impls before alpha. Per-agent artifact persistence currently provided via external capture script; must move into executor."
+  blocker_contract_ids:
+    - code.trait.runner
+    - operator.surface.dispatch-artifacts
+
+operator_surface:
+  ui_locator: 'SQD-DISPATCH panel — Dispatch button + Cmd+Enter shortcut'
+  screen_key: Dispatch
+  keyboard_shortcut: 'cmd+enter'
+  test_id: dispatch-execute-button
+  history_continuity_on_provider_switch: replay_to_new_provider
+  render_safety:
+    monaco_read_only_only: true
+    html_injection_blocked: true
+    markdown_renderer_sanitization: dompurify
+    iframe_blocked: true
+    script_blocked: true
