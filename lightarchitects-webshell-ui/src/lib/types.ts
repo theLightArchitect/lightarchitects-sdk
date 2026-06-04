@@ -325,7 +325,9 @@ export type EventType =
   // ── webshell-agent-comms-display: Agents Playbook §3.5 attestation ───────
   | 'impl_complete'
   // ── webshell-a2a-supervisor-visibility: A2A envelope events ──────────────
-  | 'a2a_envelope';
+  | 'a2a_envelope'
+  // ── webshell-pty-hot-respawn ───────────────────────────────────────────────
+  | 'pty_respawned';
 
 // --- Agent protocol (native agent bridge) ---
 

@@ -68,6 +68,7 @@ pub mod litellm_state;
 pub mod mcp_routes;
 pub mod observability_spans;
 pub mod program_routes;
+pub mod pty_respawn;
 pub mod question_routes;
 pub mod roadmap;
 pub mod spawn_reaper;
@@ -487,6 +488,17 @@ pub struct AppState {
     ///
     /// See `GET /api/program/status` and `POST /api/program/cancel`.
     pub program_run: program_routes::ProgramRunSlot,
+    /// Global PTY child handle for `GET /api/terminal/ws`.
+    ///
+    /// `None` until the first WS connection spawns the child process.
+    /// The `POST /api/pty/respawn` handler replaces this atomically —
+    /// kill old child, spawn new one, store new handle.
+    pub pty_child: Arc<tokio::sync::Mutex<Option<pty_respawn::GlobalPtyHandle>>>,
+    /// Lifecycle state of the global PTY child.
+    ///
+    /// Guards against concurrent respawns (409) and exposes current state
+    /// to health checks. Defaults to [`pty_respawn::PtyState::Idle`].
+    pub pty_state: Arc<tokio::sync::RwLock<pty_respawn::PtyState>>,
 }
 
 impl AppState {
@@ -811,6 +823,8 @@ impl AppState {
             attestation_log: Arc::new(DashMap::new()),
             litellm_supervisor_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
             program_run: program_routes::program_run_slot(),
+            pty_child: Arc::new(tokio::sync::Mutex::new(None)),
+            pty_state: Arc::new(tokio::sync::RwLock::new(pty_respawn::PtyState::default())),
         }
     }
 
@@ -953,6 +967,8 @@ impl AppState {
             attestation_log: Arc::new(DashMap::new()),
             litellm_supervisor_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
             program_run: program_routes::program_run_slot(),
+            pty_child: Arc::new(tokio::sync::Mutex::new(None)),
+            pty_state: Arc::new(tokio::sync::RwLock::new(pty_respawn::PtyState::default())),
         }
     }
 }
@@ -1053,6 +1069,11 @@ pub fn build_app(state: AppState) -> Router {
         )
         .route("/api/events", get(events::sse_handler::sse_handler))
         .route("/api/control", post(events::control_handler))
+        .route(
+            "/api/pty/respawn",
+            post(pty_respawn::pty_respawn_handler)
+                .layer(axum::extract::DefaultBodyLimit::max(512)),
+        )
         .route(
             "/api/builds",
             get(builds_handler::builds_handler).post(builds_handler::create_build_handler),

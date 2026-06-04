@@ -1,0 +1,82 @@
+phase: phase-5-e2e-integration
+codename: webshell-pty-hot-respawn
+evaluated_at: "2026-06-04"
+commit: 6f5d0ff
+
+quality:
+  contracts_validate_sh: PASS          # 239/239 contracts (100%)
+  svelte_check_threshold_error: PASS   # 8 errors — all pre-existing (no regression vs phase 4)
+  vitest_unit_tests: PASS
+  test_count_before: 824
+  test_count_after: 837
+  test_count_delta: +13
+  rust_integration_tests: PASS        # 7/7 ws_reattach_after_respawn tests
+  p50_latency_401_path_ms: <5         # well under 500 ms budget (measured 0.13 s total for 7 tests)
+
+bugs_fixed:
+  - id: agent-field-name-mismatch
+    description: >
+      Frontend api.ts sent { agent_kind: ... } but Rust RespawnRequest expected
+      { agent: ... }. Caught by ws_reattach_after_respawn G2 test
+      (respawn_missing_agent_field_returns_422). Fixed: api.ts line 749 and
+      contract request_schema updated.
+
+deliverables:
+  - file: lightarchitects-webshell-ui/e2e/respawn-backend.spec.ts
+    status: created
+    notes: >
+      7 Playwright E2E tests covering: profile chip is button, BackendPicker opens,
+      active backend disabled, Codex click → modal, Confirm calls POST /api/pty/respawn
+      with { agent: "codex" }, Cancel closes modal without API call, Escape closes picker,
+      SSE pty_respawned updates authProfile title attribute. Requires live dev server.
+
+  - file: lightarchitects-webshell/tests/ws_reattach_after_respawn.rs
+    status: created
+    notes: >
+      7 Rust integration tests: G1 (2 × 401 — no auth + wrong token), G2 (2 × 422 —
+      unknown agent + old agent_kind field name), G3 (2 × 412 — missing credential for
+      lightarchitects and codex), P50 latency (10 samples of 401 path, all < 500 ms).
+      Uses oneshot for shape tests + TcpListener for latency. All 7 pass.
+
+  - file: lightarchitects-webshell-ui/src/lib/api.ts
+    status: modified
+    notes: >
+      Bug fix: POST body field renamed from agent_kind → agent to match Rust
+      RespawnRequest struct. Caught by respawn_missing_agent_field_returns_422 test.
+
+  - file: standards/canon/contracts/event.bus/webshell.event.pty-respawned.yaml
+    status: modified
+    notes: >
+      Schema compliance fixes: added observable_outputs, errors, and event_bus block
+      (channel, event_name, payload_schema, delivery_guarantee, fires_after,
+      lagged_policy, reconnect_replay_seconds). Removed non-schema custom fields
+      (producer, consumers, event_schema, sse_topic, at_most_once). validate.sh PASS.
+
+  - file: standards/canon/contracts/wire.http/webshell.post.api-pty-respawn.yaml
+    status: modified
+    notes: >
+      Schema compliance fixes: auth_required cookie → cookie_session; request_schema
+      required and property renamed agent_kind → agent to match Rust struct.
+
+  - file: standards/canon/contracts/ui.component/webshell.ui.backend-picker.yaml
+    status: modified
+    notes: >
+      Schema compliance fix: inputs[0,1].type function → object (function is not a
+      valid la-contracts input type enum value).
+
+  - file: standards/canon/contracts/ui.component/webshell.ui.respawn-confirm-modal.yaml
+    status: modified
+    notes: >
+      Schema compliance fix: inputs[6,7].type function → object (same reason as
+      backend-picker).
+
+phase_5_exit_criteria:
+  playwright_e2e_spec_authored: VERIFIED       # 7 tests covering G1-G5 UI flow
+  rust_integration_test_authored: VERIFIED     # 7 tests: G1/G2/G3/G-dedup/P50
+  rust_integration_tests_pass: VERIFIED        # cargo test --test ws_reattach_after_respawn → 7/7
+  contracts_validate_sh_pass: VERIFIED         # 239/239 (was 235/239 before fixes)
+  api_field_name_bug_fixed: VERIFIED           # agent_kind → agent in api.ts + contract
+  svelte_check_no_regression: VERIFIED         # 8 errors, same as phase 4 baseline
+  vitest_no_regression: VERIFIED               # 837 pass (was 824 after phase 4, +13 new)
+
+verdict: PASS

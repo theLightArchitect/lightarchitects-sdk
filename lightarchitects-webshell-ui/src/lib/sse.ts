@@ -25,6 +25,7 @@ import {
   projects,
   strategyHitl,
   pendingQuestions,
+  authProfile,
 } from './stores';
 import { spikeSibling, helixZoomLevel } from './stores';
 import { maximizedPanelId, prunePanel, setLayout, layoutTree, collectPanelIds, splitPanel } from './layout';
@@ -791,6 +792,26 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
         next.delete(payload.tool_use_id);
         return next;
       });
+      break;
+    }
+    // ── webshell-pty-hot-respawn ──────────────────────────────────────────
+    case 'pty_respawned': {
+      const payload = event as unknown as {
+        type: 'pty_respawned';
+        agent_kind: string;
+        model?: string;
+        conversation_continuity: string;
+        old_agent_kind: string;
+      };
+      const VALID_AUTH_PROFILES = new Set<string>([
+        'anthropic', 'lightarchitects', 'lightarchitects_native', 'codex', 'mistral_vibe',
+      ]);
+      if (VALID_AUTH_PROFILES.has(payload.agent_kind)) {
+        authProfile.set(payload.agent_kind as import('./types').AuthProfile);
+      } else {
+        console.warn('[sse] pty_respawned: unknown agent_kind', payload.agent_kind);
+      }
+      window.dispatchEvent(new CustomEvent('la:pty-respawned', { detail: payload }));
       break;
     }
     default:

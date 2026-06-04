@@ -1,0 +1,110 @@
+schema_version: la-contracts/v1
+id: ui.component.webshell.backend-picker
+kind: ui.component
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P1, P2]
+
+operator_intent: |
+  BackendPicker.svelte is a popover dropdown anchored to the StatusBar profile
+  chip. It lists the 4 available PTY agent backends (Claude Code, lÆx0 Native,
+  Codex, Mistral Vibe) with their canonical colors, marks the currently-active
+  backend as disabled, and emits an onselect callback when the operator clicks
+  a non-active option. The picker does NOT call the API directly — it delegates
+  to RespawnConfirmModal for the confirmation + API call.
+
+prior_art:
+  - name: Svelte 5 runes
+    url: https://svelte.dev/docs/svelte/runes
+    what_we_adopt: "$props(), $derived, onclick (not on:click)"
+
+canon_refs:
+  - canon://webshell-api-surface-v1#section-2-50
+
+inputs:
+  - { name: onselect, type: object, description: "called with (kind: string) when operator picks a non-active backend" }
+  - { name: onclose, type: object, description: "called when Escape or overlay click dismisses the picker without selection" }
+
+observable_outputs:
+  - "4 backend options rendered with data-kind attributes"
+  - "Active backend is disabled (cursor-default, opacity-50)"
+  - "Clicking a non-active backend calls onselect(kind)"
+  - "Pressing Escape calls onclose"
+  - "Clicking outside the popover (overlay) calls onclose"
+
+errors:
+  - condition: onselect called with active backend kind
+    code: E_NOOP_PICK
+    operator_sees: nothing — picker closes, no modal shown
+    forbidden: calling API or showing modal for a same-backend pick
+    severity: MEDIUM
+
+observability:
+  required_spans:
+    - name: webshell.ui.interaction
+      required_metadata: [component_path, event_name, target_role]
+      parent_relationship: child_of_named
+      parent_span_name: webshell.ui.render
+  duration_budget_ms: 100
+
+hitl_boundaries:
+  - Picker does NOT own the API call. Selection triggers RespawnConfirmModal; modal owns the call.
+
+forbidden_behaviors:
+  - "Calling api.respawnPty directly (owned by RespawnConfirmModal)"
+  - "Closing without onclose callback (ESC and overlay must always fire onclose)"
+  - "Rendering > 1 'active' badge"
+
+conformance_test:
+  given: "StatusBar profile chip clicked; picker rendered"
+  when: "operator clicks 'Codex' option"
+  then:
+    - assertion: "onselect called with 'codex'"
+      filesystem_witness: lightarchitects-webshell-ui/src/__tests__/backend-picker.test.ts
+      evidence_tier_required: SINGLE_SOURCE
+    - assertion: "active backend option has disabled=true attribute"
+      filesystem_witness: lightarchitects-webshell-ui/src/__tests__/backend-picker.test.ts
+      evidence_tier_required: SINGLE_SOURCE
+  fixtures: []
+  timeout_seconds: 5
+
+status_per_provider:
+  anthropic_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  ollama_cloud: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  ollama_local: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+
+alpha_gate:
+  verdict: pass
+  reason: >
+    Picker renders 4 agents with correct colors; active-state disable guard prevents
+    redundant respawn calls; Phase 5 E2E upgrades to runtime-verified.
+
+ui_component:
+  component_path: lightarchitects-webshell-ui/src/components/BackendPicker.svelte
+  framework: svelte5
+  props_schema:
+    type: object
+    required: [onselect, onclose]
+    properties:
+      onselect: { type: function }
+      onclose: { type: function }
+    additionalProperties: false
+  events_schema: {}
+  slots: []
+  exposed_methods: []
+  lifecycle_obligations:
+    - "Overlay div captures click-outside; no addEventListener cleanup needed (inline handler)"
+  data_test_id: backend-picker-menu
+  a11y_requirements:
+    - "role=menu on container"
+    - "role=menuitem on each agent button"
+    - "aria-label='Switch backend agent' on container"
+    - "Escape key closes picker"
+  store_subscriptions:
+    - ui.store.auth-profile
+  consumes_events: []

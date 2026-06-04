@@ -298,6 +298,12 @@ pub enum WebEvent {
     /// `TaskEscalated` transitions in `lightsquad_bridge`. `payload_summary` is
     /// pre-sanitized via `sanitize_for_prompt` — never raw worker output.
     A2aEnvelope(A2aEnvelopeEvent),
+    /// Global PTY backend respawned via `POST /api/pty/respawn`.
+    ///
+    /// Wire tag: `"pty_respawned"`. Emitted once per successful respawn after
+    /// the new child is installed in `AppState`. Frontend uses this to trigger
+    /// a WS reconnect and update the backend-picker affordance.
+    PtyRespawned(PtyRespawnedEvent),
 }
 
 /// Single A2A task lifecycle envelope emitted into the `GlobalEventStore`.
@@ -341,6 +347,23 @@ pub enum A2aEnvelopeType {
     TaskEscalated,
     /// All tasks in a wave have completed.
     WaveComplete,
+}
+
+/// Global PTY backend respawn notification (webshell-pty-hot-respawn Phase 3).
+///
+/// Emitted by `pty_respawn_handler` after the new child is installed.
+/// Wire tag: `"pty_respawned"`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PtyRespawnedEvent {
+    /// The new agent kind that was spawned.
+    pub agent_kind: crate::config::AgentKind,
+    /// Optional model override (e.g. `"claude-opus-4-5"`) if requested.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// `"resumed"` for same-agent swaps with `--resume`; `"clean_slate"` for cross-agent.
+    pub conversation_continuity: String,
+    /// The agent kind that was running before the respawn.
+    pub old_agent_kind: crate::config::AgentKind,
 }
 
 /// Northstar evaluation result broadcast after a `WAVE_COMPLETE` event.

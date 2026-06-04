@@ -1,0 +1,60 @@
+phase: phase-3-backend-implementation
+codename: webshell-pty-hot-respawn
+evaluated_at: "2026-06-04"
+commit: a8a2aad
+
+quality:
+  cargo_fmt_check: PASS
+  cargo_clippy_warnings_as_errors: PASS
+  cargo_test: PASS
+  test_count_before: 880
+  test_count_after: 886
+  test_count_delta: +6
+
+deliverables:
+  - file: lightarchitects-webshell/src/server/pty_respawn.rs
+    status: created
+    notes: >
+      PtyState (Idle/Running/Respawning/Failed), GlobalPtyHandle, RespawnRequest,
+      RespawnResponse, pty_respawn_handler with G1-G7 PBGC guarantees,
+      resolve_host_cmd, verify_credential_for, kill_existing_child,
+      spawn_global_pty. 6 unit tests cover G1 (401), G2 (422), G3 (412/404),
+      G5 (SSE opt-in), G6/G7 (same/cross-agent continuity).
+
+  - file: lightarchitects-webshell/src/server/mod.rs
+    status: modified
+    notes: >
+      pub mod pty_respawn added. pty_child + pty_state fields in AppState.
+      Both AppState::new() and AppState::for_test() initialize to None/Idle.
+      Route POST /api/pty/respawn registered.
+
+  - file: lightarchitects-webshell/src/events/types.rs
+    status: modified
+    notes: PtyRespawned(PtyRespawnedEvent) variant + PtyRespawnedEvent struct.
+
+  - file: lightarchitects-webshell/src/events/envelope.rs
+    status: modified
+    notes: >
+      topic_for() arm for PtyRespawned -> "v1.pty.respawned".
+      all_variants_produce_v1_topics test extended.
+
+  - file: lightarchitects-webshell/tests/canon_doc_integrity.rs
+    status: modified
+    notes: EXPECTED_VARIANT_COUNT 34→35. Exhaustive match + sample added.
+
+pbgc_guarantees:
+  G1_auth_gate: VERIFIED  # AuthGuard extractor — unauthenticated_returns_401 test
+  G2_enum_validation: VERIFIED  # serde #[serde(rename_all)] — unknown_agent_returns_422 test
+  G3_cred_before_kill: VERIFIED  # credential check before lock acquired — missing_credential_returns_412 test
+  G4_sigterm_grace: IMPLEMENTED  # kill_existing_child: SIGTERM → 3s timeout → Drop
+  G5_sse_broadcast: IMPLEMENTED  # WebEvent::PtyRespawned broadcast; sse_broadcast_on_success opt-in test
+  G6_resume_same_agent: IMPLEMENTED  # resume_id from config.resume_session_id when same agent
+  G7_clean_slate_declared: IMPLEMENTED  # conversation_continuity = "clean_slate" in response + SSE
+
+pending_phase_4:
+  - BackendPicker.svelte (clickable profile chip)
+  - RespawnConfirmModal.svelte
+  - api.ts respawnPty()
+  - sse.ts la:pty-respawned handler
+
+verdict: PASS

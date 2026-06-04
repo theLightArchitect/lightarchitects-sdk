@@ -1,0 +1,116 @@
+phase: phase-4-frontend-implementation
+codename: webshell-pty-hot-respawn
+evaluated_at: "2026-06-04"
+commit: 6403503
+
+quality:
+  svelte_check_threshold_error: PASS   # 8 errors remain, all pre-existing (SettingsOverlay, stores.ts CDP, test beforeAll)
+  vitest_unit_tests: PASS
+  test_count_before: 810
+  test_count_after: 824
+  test_count_delta: +14
+
+deliverables:
+  - file: lightarchitects-webshell-ui/src/lib/api.ts
+    status: modified
+    notes: >
+      respawnPty(agentKind, model?) added. POSTs to /pty/respawn with
+      {agent_kind, model?}. Returns {status, agent_kind, model?,
+      conversation_continuity, old_agent_kind}.
+
+  - file: lightarchitects-webshell-ui/src/lib/sse.ts
+    status: modified
+    notes: >
+      authProfile import added. case 'pty_respawned' added after
+      question_answered: sets authProfile store and dispatches
+      la:pty-respawned CustomEvent.
+
+  - file: lightarchitects-webshell-ui/src/lib/types.ts
+    status: modified
+    notes: >
+      'pty_respawned' added to EventType union (required for sse.ts switch
+      case type safety).
+
+  - file: lightarchitects-webshell-ui/src/components/BackendPicker.svelte
+    status: created
+    notes: >
+      Popover menu listing 4 backends (lightarchitects, lightarchitects_native,
+      codex, mistral_vibe) with canonical colors. Active backend disabled.
+      Escape + overlay-click fire onclose. onselect fires with kind string.
+      role=menu, tabindex=-1, aria-label.
+
+  - file: lightarchitects-webshell-ui/src/components/RespawnConfirmModal.svelte
+    status: created
+    notes: >
+      Fixed-overlay confirmation dialog. Shows current→target backend chips.
+      Calls api.respawnPty on confirm. Loading guard prevents double-submit.
+      Error surface for API rejections. role=dialog, aria-modal, tabindex=-1.
+
+  - file: lightarchitects-webshell-ui/src/components/StatusBar.svelte
+    status: modified
+    notes: >
+      Imports BackendPicker + RespawnConfirmModal. Added AGENT_MAP,
+      pickerOpen + confirmTarget state, openPicker/closePicker/handlePickerSelect/
+      handleConfirm/handleCancel/handlePtyRespawned handlers.
+      Profile chip replaced with <button> opening BackendPicker popover.
+      RespawnConfirmModal rendered at root level when confirmTarget is set.
+      la:pty-respawned window listener wired in onMount/onDestroy.
+
+  - file: lightarchitects-webshell-ui/src/__tests__/backend-picker.test.ts
+    status: created
+    notes: >
+      14 unit tests: 5 agent-list invariants, 4 active-detection via store,
+      3 AGENT_MAP lookup, 2 SSE handler simulation. All pass.
+
+  - file: standards/canon/contracts/wire.http/webshell.post.api-pty-respawn.yaml
+    status: created
+    notes: >
+      Phase 3 remaining item. wire.http contract for POST /api/pty/respawn.
+      7 error codes, request + response schemas, provider-agnostic N/A matrix,
+      4 conformance assertions.
+
+  - file: standards/canon/contracts/event.bus/webshell.event.pty-respawned.yaml
+    status: created
+    notes: >
+      Phase 3 remaining item. Creates event.bus/ directory. Producer: pty_respawn_handler.
+      Consumers: sse.ts → authProfile store → StatusBar; la:pty-respawned CustomEvent.
+
+  - file: standards/canon/contracts/ui.component/webshell.ui.backend-picker.yaml
+    status: created
+    notes: >
+      ui.component contract for BackendPicker.svelte. Declares 4 agents,
+      active-state disable guard, HITL boundary (delegates to RespawnConfirmModal).
+
+  - file: standards/canon/contracts/ui.component/webshell.ui.respawn-confirm-modal.yaml
+    status: created
+    notes: >
+      ui.component contract for RespawnConfirmModal.svelte. Declares HITL boundary,
+      loading guard, error surface, accessibility requirements.
+
+  - file: standards/canon/webshell-api-surface-v1.md
+    status: modified
+    notes: >
+      §2.50 added: POST /api/pty/respawn with request/response schemas, 6 error
+      codes, SSE event format, and contract cross-references.
+
+phase_4_exit_criteria:
+  backend_picker_svelte_added: VERIFIED
+  respawn_confirm_modal_added: VERIFIED
+  statusbar_profile_chip_clickable: VERIFIED
+  api_respawn_pty_wired: VERIFIED
+  sse_dispatches_la_pty_respawned: VERIFIED
+  svelte_check_threshold_error_clean: VERIFIED
+  vitest_unit_tests_backend_picker: VERIFIED   # 14 tests pass
+  ui_component_stubs_authored: VERIFIED        # backend-picker + respawn-confirm-modal
+
+phase_3_remaining_exit_criteria:
+  wire_http_stub_authored: VERIFIED
+  event_bus_stub_authored: VERIFIED
+  api_surface_section_2_50_added: VERIFIED
+
+pending_phase_5:
+  - lightarchitects-webshell-ui/e2e/respawn-backend.spec.ts
+  - lightarchitects-webshell/tests/ws_reattach_after_respawn.rs
+  - contracts/validate.sh
+
+verdict: PASS

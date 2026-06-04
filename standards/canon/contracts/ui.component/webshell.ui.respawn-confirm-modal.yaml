@@ -1,0 +1,131 @@
+schema_version: la-contracts/v1
+id: ui.component.webshell.respawn-confirm-modal
+kind: ui.component
+version: 0.1.0
+status: draft
+
+northstar_pillars: [P1, P2]
+
+operator_intent: |
+  RespawnConfirmModal.svelte confirms the operator's intent to hot-swap the
+  running PTY agent. Displays current → target agent with their canonical colors,
+  explains the SIGTERM grace period, and calls api.respawnPty on confirm.
+  On success, fires onconfirm; on cancel (Escape / overlay / Cancel button),
+  fires oncancel. Loading state disables all controls to prevent double-submit.
+
+prior_art:
+  - name: ApiKeyInputModal.svelte (modal pattern)
+    url: internal
+    what_we_adopt: "fixed overlay, role=dialog, aria-modal=true, onkeydown Escape handler"
+
+canon_refs:
+  - canon://webshell-api-surface-v1#section-2-50
+
+inputs:
+  - { name: targetKind, type: string, description: "AgentKind snake_case of the requested backend" }
+  - { name: targetLabel, type: string, description: "Human label for the target backend" }
+  - { name: targetColor, type: string, description: "Hex color for the target backend chip" }
+  - { name: currentKind, type: string, description: "AgentKind snake_case of the running backend" }
+  - { name: currentLabel, type: string, description: "Human label for the current backend" }
+  - { name: currentColor, type: string, description: "Hex color for the current backend chip" }
+  - { name: onconfirm, type: object, description: "called after successful api.respawnPty() response" }
+  - { name: oncancel, type: object, description: "called when modal is dismissed without confirming" }
+
+observable_outputs:
+  - "Current backend + target backend rendered with colored chips"
+  - "Confirm button calls api.respawnPty(targetKind)"
+  - "Loading spinner shown while API call in-flight; all buttons disabled"
+  - "Error message shown if API call rejects"
+  - "Escape or overlay click calls oncancel (only when not loading)"
+  - "Enter key confirms (only when not loading)"
+
+errors:
+  - condition: api.respawnPty returns non-2xx
+    code: E_RESPAWN_FAILED
+    operator_sees: inline error message beneath the description
+    forbidden: silent failure; must surface error text
+    severity: HIGH
+  - condition: double-click / double-submit while loading
+    code: E_DOUBLE_SUBMIT
+    operator_sees: button is disabled; click has no effect
+    forbidden: calling api.respawnPty a second time while first call is in flight
+    severity: HIGH
+
+observability:
+  required_spans:
+    - name: webshell.ui.interaction
+      required_metadata: [component_path, event_name, target_role]
+      parent_relationship: child_of_named
+      parent_span_name: webshell.ui.render
+  duration_budget_ms: 5000
+
+hitl_boundaries:
+  - This IS the HITL boundary for PTY respawn. Operator must click Confirm.
+  - Cancel dismisses without any state mutation.
+
+forbidden_behaviors:
+  - "Auto-confirming without operator interaction"
+  - "Allowing Escape/overlay while loading=true (could interrupt a mid-spawn sequence)"
+  - "Showing confirmation without current and target backend details"
+
+conformance_test:
+  given: "RespawnConfirmModal rendered; api.respawnPty mocked to resolve"
+  when: "operator clicks Switch button"
+  then:
+    - assertion: "api.respawnPty called with targetKind"
+      filesystem_witness: lightarchitects-webshell-ui/e2e/respawn-backend.spec.ts
+      evidence_tier_required: SINGLE_SOURCE
+    - assertion: "onconfirm called after successful response"
+      filesystem_witness: lightarchitects-webshell-ui/e2e/respawn-backend.spec.ts
+      evidence_tier_required: SINGLE_SOURCE
+    - assertion: "loading spinner visible during in-flight call"
+      filesystem_witness: lightarchitects-webshell-ui/e2e/respawn-backend.spec.ts
+      evidence_tier_required: SINGLE_SOURCE
+  fixtures: []
+  timeout_seconds: 10
+
+status_per_provider:
+  anthropic_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  openai_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  ollama_cloud: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  ollama_local: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  mistral_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  groq_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+  openrouter_api: { result: 'N/A', evidence_tier: VERIFIED, na_reason: "UI component is provider-agnostic." }
+
+alpha_gate:
+  verdict: pass
+  reason: >
+    HITL gate enforced; loading guard prevents double-submit; error surface declared;
+    Phase 5 E2E respawn-backend.spec.ts upgrades to runtime-verified.
+
+ui_component:
+  component_path: lightarchitects-webshell-ui/src/components/RespawnConfirmModal.svelte
+  framework: svelte5
+  props_schema:
+    type: object
+    required: [targetKind, targetLabel, targetColor, currentKind, currentLabel, currentColor, onconfirm, oncancel]
+    properties:
+      targetKind: { type: string }
+      targetLabel: { type: string }
+      targetColor: { type: string }
+      currentKind: { type: string }
+      currentLabel: { type: string }
+      currentColor: { type: string }
+      onconfirm: { type: function }
+      oncancel: { type: function }
+    additionalProperties: false
+  events_schema: {}
+  slots: []
+  exposed_methods: []
+  lifecycle_obligations:
+    - "No store subscriptions — all props passed from parent"
+    - "No window event listeners — keyboard handled via onkeydown on root div"
+  data_test_id: respawn-confirm-modal
+  a11y_requirements:
+    - "role=dialog on root div"
+    - "aria-modal=true on root div"
+    - "aria-label='Confirm backend switch' on root div"
+    - "Cancel button and Switch button keyboard accessible"
+  store_subscriptions: []
+  consumes_events: []
