@@ -19,9 +19,10 @@ use axum::{
     http::{Request, StatusCode},
 };
 use lightarchitects_webshell::{
+    auth::credential::CredentialState,
     config::{Cli, Config},
     container::DockerCapability,
-    server::{AppState, build_app},
+    server::{AppState, build_app, pty_respawn::PtyState},
 };
 use serde_json::json;
 use tokio::net::TcpListener;
@@ -167,6 +168,38 @@ async fn respawn_codex_no_credential_returns_412() {
     assert_eq!(resp.status(), StatusCode::PRECONDITION_FAILED);
 }
 
+// ── G-dedup: concurrent respawn → 409 ────────────────────────────────────────
+
+/// Pre-set `PtyState::Respawning` and send an authenticated request that passes
+/// G1, G3, and G2 — confirming the 409 guard fires before any kill/spawn work.
+#[tokio::test]
+async fn respawn_while_respawning_returns_409() {
+    let state = AppState::for_test(make_config(), DockerCapability::Unavailable);
+
+    // Pre-inject an anthropic credential so G3 (412) does not fire first.
+    state
+        .credential_store
+        .insert("anthropic".to_owned(), CredentialState::Connected);
+
+    // Mark state as already Respawning to simulate a concurrent in-flight request.
+    *state.pty_state.write().await = PtyState::Respawning;
+
+    let resp = build_app(state)
+        .oneshot(
+            Request::post("/api/pty/respawn")
+                .header("Authorization", bearer(TOKEN))
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({ "agent": "lightarchitects" })).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+}
+
 // ── P50 latency: 401 fast path < 500 ms ──────────────────────────────────────
 
 /// Spawns a real HTTP server on a random port and fires 10 unauthenticated
@@ -210,7 +243,8 @@ async fn respawn_401_path_p50_under_500ms() {
     }
 
     durations_ms.sort_unstable();
-    let p50 = durations_ms[5]; // median of 10 samples
+    // Median of 10 samples = midpoint of the 5th and 6th values (0-indexed: [4] and [5]).
+    let p50 = u128::midpoint(durations_ms[4], durations_ms[5]);
     assert!(
         p50 < 500,
         "P50 latency ({p50} ms) exceeds 500 ms budget — server overhead regression"

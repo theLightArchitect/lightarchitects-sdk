@@ -1071,7 +1071,8 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/control", post(events::control_handler))
         .route(
             "/api/pty/respawn",
-            post(pty_respawn::pty_respawn_handler),
+            post(pty_respawn::pty_respawn_handler)
+                .layer(axum::extract::DefaultBodyLimit::max(512)),
         )
         .route(
             "/api/builds",

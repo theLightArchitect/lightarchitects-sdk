@@ -803,7 +803,14 @@ export function _handleEvent(event: { type: EventType; data: unknown }): void {
         conversation_continuity: string;
         old_agent_kind: string;
       };
-      authProfile.set(payload.agent_kind as import('./types').AuthProfile);
+      const VALID_AUTH_PROFILES = new Set<string>([
+        'anthropic', 'lightarchitects', 'lightarchitects_native', 'codex', 'mistral_vibe',
+      ]);
+      if (VALID_AUTH_PROFILES.has(payload.agent_kind)) {
+        authProfile.set(payload.agent_kind as import('./types').AuthProfile);
+      } else {
+        console.warn('[sse] pty_respawned: unknown agent_kind', payload.agent_kind);
+      }
       window.dispatchEvent(new CustomEvent('la:pty-respawned', { detail: payload }));
       break;
     }

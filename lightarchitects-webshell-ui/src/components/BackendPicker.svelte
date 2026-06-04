@@ -44,6 +44,9 @@
 
   let current = $derived($authProfile ?? 'lightarchitects');
 
+  let menuEl: HTMLElement;
+  $effect(() => { menuEl?.focus(); });
+
   function pick(kind: string) {
     if (kind === current) {
       onclose();
@@ -66,6 +69,7 @@
 ></div>
 
 <div
+  bind:this={menuEl}
   class="absolute bottom-8 left-0 z-50 w-52 rounded-lg border border-[var(--la-hair-strong)]
          bg-[var(--la-surface-overlay)] shadow-xl py-1"
   role="menu"

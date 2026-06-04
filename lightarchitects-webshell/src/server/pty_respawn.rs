@@ -121,13 +121,24 @@ pub async fn pty_respawn_handler(
             .into_response();
     }
 
+    // Validate model string before it reaches a CLI arg (prevents flag injection).
+    if let Some(ref m) = req.model {
+        if !validate_model(m) {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({ "error": "invalid_model" })),
+            )
+                .into_response();
+        }
+    }
+
     // Resolve the binary path for the requested agent (G2 already enforced by
     // serde enum deserialization). Binary resolution errors surface at spawn time.
     let new_cmd = resolve_host_cmd(req.agent, &state.config);
 
-    // Guard against concurrent respawns.
+    // Guard against concurrent respawns — single write lock: check + set atomically (no TOCTOU window).
     {
-        let guard = state.pty_state.read().await;
+        let mut guard = state.pty_state.write().await;
         if *guard == PtyState::Respawning {
             return (
                 StatusCode::CONFLICT,
@@ -135,8 +146,8 @@ pub async fn pty_respawn_handler(
             )
                 .into_response();
         }
+        *guard = PtyState::Respawning;
     }
-    *state.pty_state.write().await = PtyState::Respawning;
 
     // Record old agent kind before taking the child.
     let old_agent_kind = {
@@ -177,12 +188,10 @@ pub async fn pty_respawn_handler(
         Ok(c) => c,
         Err(e) => {
             *state.pty_state.write().await = PtyState::Failed;
+            warn!(agent = ?req.agent, "PTY spawn failed: {e}");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "error": "spawn_failed",
-                    "detail": e
-                })),
+                Json(json!({ "error": "spawn_failed" })),
             )
                 .into_response();
         }
@@ -220,6 +229,20 @@ pub async fn pty_respawn_handler(
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Validate a `model` override string before it is used as a CLI argument.
+///
+/// Accepts only ASCII alphanumeric characters plus `.`, `-`, and `_` up to 100
+/// chars. Rejects empty strings and values starting with `-` to prevent flag
+/// injection (e.g. `--config /attacker/path`).
+fn validate_model(model: &str) -> bool {
+    !model.is_empty()
+        && model.len() <= 100
+        && model
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+        && !model.starts_with('-')
+}
 
 /// Resolve the binary path for an agent kind from config.
 ///
@@ -267,7 +290,11 @@ fn verify_credential_for(agent: AgentKind, state: &AppState) -> Result<(), Strin
     }
 }
 
-/// Send SIGTERM, wait up to 3 s, then let Drop handle SIGKILL.
+/// Send SIGTERM, honour the 3 s grace window, then escalate to SIGKILL.
+///
+/// The grace window is implemented as a poll loop inside `spawn_blocking` —
+/// `tokio::time::timeout` only bounds the async wait for the thread to
+/// finish, it does NOT delay the SIGKILL inside the thread.
 async fn kill_existing_child(pty_child: &Arc<Mutex<Option<GlobalPtyHandle>>>) {
     let old = pty_child.lock().await.take();
     let Some(mut old) = old else { return };
@@ -285,13 +312,28 @@ async fn kill_existing_child(pty_child: &Arc<Mutex<Option<GlobalPtyHandle>>>) {
         }
     }
 
-    // Wait for the child to exit voluntarily (up to 3 s).
-    // The timeout is handled by spawning a blocking wait.
-    let timed_out = tokio::time::timeout(Duration::from_secs(3), async {
-        // Blocking wait in a dedicated thread so we don't hold the runtime.
+    // Blocking thread: poll for voluntary exit for 3 s, then escalate to SIGKILL.
+    let timed_out = tokio::time::timeout(Duration::from_secs(4), async {
         tokio::task::spawn_blocking(move || {
-            let _ = old.killer.kill(); // noop on already-dead; no-op on unix means SIGKILL
-            // killer is dropped here — if the process is still alive, Drop may SIGKILL it
+            // On Unix: probe process existence every 100 ms for up to 3 s.
+            // On other platforms: SIGTERM was never sent, so escalate immediately.
+            #[cfg(unix)]
+            if let Some(raw_pid) = old.pid {
+                if let Ok(signed) = i32::try_from(raw_pid) {
+                    use nix::unistd::Pid;
+                    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                    while std::time::Instant::now() < deadline {
+                        // kill(pid, None) = signal 0: probes existence without signalling.
+                        if nix::sys::signal::kill(Pid::from_raw(signed), None).is_err() {
+                            drop(old);
+                            return; // process exited voluntarily within grace window
+                        }
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                }
+            }
+            // Grace period expired — escalate to SIGKILL.
+            let _ = old.killer.kill();
             drop(old);
         })
         .await
@@ -299,7 +341,7 @@ async fn kill_existing_child(pty_child: &Arc<Mutex<Option<GlobalPtyHandle>>>) {
     .await;
 
     if timed_out.is_err() {
-        warn!("old PTY child did not exit within 3 s grace period");
+        warn!("old PTY child did not exit within 4 s kill window");
     }
 }
 

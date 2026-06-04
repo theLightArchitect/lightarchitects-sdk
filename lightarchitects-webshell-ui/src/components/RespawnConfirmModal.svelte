@@ -26,6 +26,9 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
 
+  let dialogEl: HTMLElement;
+  $effect(() => { dialogEl?.focus(); });
+
   async function confirm() {
     if (loading) return;
     loading = true;
@@ -46,6 +49,7 @@
 </script>
 
 <div
+  bind:this={dialogEl}
   class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
   role="dialog"
   aria-modal="true"
