@@ -1,7 +1,7 @@
 phase: phase-4-frontend-implementation
 codename: webshell-pty-hot-respawn
 evaluated_at: "2026-06-04"
-commit: pending
+commit: 6403503
 
 quality:
   svelte_check_threshold_error: PASS   # 8 errors remain, all pre-existing (SettingsOverlay, stores.ts CDP, test beforeAll)
