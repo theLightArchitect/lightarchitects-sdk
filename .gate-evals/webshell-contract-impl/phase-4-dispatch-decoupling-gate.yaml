@@ -1,0 +1,102 @@
+codename: webshell-contract-impl
+phase: phase-4-dispatch-decoupling
+gate_id: G4
+evaluated_at: "2026-06-04"
+evaluator: claude-sonnet-4-6
+
+wave_summary:
+  wave_4_1:
+    commit: "e9193ec"
+    files_changed: 4
+    insertions: 505
+    deletions: 129
+    deliverables:
+      - dispatch_run/dispatch_stream shared helpers (free async fns, sandbox→spawn→AYIN→artifact)
+      - ClaudeCliRunner::run/stream refactored to delegate to shared helpers
+      - AnthropicHttpRunner (max_parallelism:8, tool_use:true, streaming:true)
+      - OllamaRunner (max_parallelism:4, tool_use:false, streaming:true)
+      - OpenAICompatRunner (max_parallelism:8, tool_use:true, streaming:true)
+      - select_runner updated: sandbox_root PathBuf param + 4-provider routing
+      - CLAUDE_CLI_DEFAULT_BINARY moved to agent/claude.rs; re-exported via agent/mod.rs
+      - DEFAULT_CLAUDE_BIN removed from lightsquad/contract_supervisor.rs (exit criterion)
+      - 6 new unit tests: 3 factory (select_runner_returns_*) + 3 behavioral (run_*_writes_artifact)
+      - 13 lightsquad::runner tests total (229 lightsquad total); 235/235 contract-gate
+
+gate_dimensions:
+  A_architecture:
+    result: PASS
+    notes: >
+      dispatch_run/dispatch_stream helpers match the shared-helper pattern declared in
+      arch/C3-contract-impl-runner-trait.mmd Phase 4 annotation.
+      All four Runner impls follow the same struct layout: provider + sandbox_root.
+      select_runner now accepts explicit sandbox_root per provider-select contract note
+      (Phase 3 G3 noted finding: "Phase 4 will route through GatewayConfig").
+      diagram_present ∧ drift_clean ∧ checklist_current = PASS (Canon XLI).
+
+  S_security:
+    result: PASS
+    notes: >
+      Exit criterion met: no "claude" string literal as binary-path default in lightsquad/.
+      CLAUDE_CLI_DEFAULT_BINARY lives in agent/claude.rs (outside lightsquad/ boundary);
+      contract_supervisor.rs now references crate::agent::CLAUDE_CLI_DEFAULT_BINARY.
+      AnthropicHttpRunner + OpenAICompatRunner doc comments explicitly state TLS enforcement
+      requirement (LLM05 SSRF guard) is at provider level (reqwest::Client https_only +
+      min_tls_version + tls_built_in_root_certs — enforced by AnthropicHttpProvider).
+      sandbox_check applied in dispatch_run/dispatch_stream for all four runners (§63.P4).
+      AYIN span metadata: "provider": runner_name (static str literal only, no credentials).
+
+  Q_quality:
+    result: PASS
+    notes: >
+      cargo fmt --check: CLEAN (pre-commit hook confirmed)
+      cargo clippy -p lightarchitects --all-targets --all-features -- -D warnings: CLEAN
+      cargo test lightsquad: 229 passed (6 new runner tests; 13 runner module total)
+      235/235 contract-gate
+
+  C_canon:
+    result: PASS
+    notes: >
+      Q5 make contract-gate: 235/235 (100%).
+      select_runner fail-closed behaviour preserved: "xyz-unknown-provider" → UnknownRunner.
+      Previous test used "ollama" as unknown — now a known provider; test updated correctly.
+      CLAUDE_CLI_DEFAULT_BINARY const placement follows Canon V (no false attribution of
+      the binary name to the lightsquad layer).
+
+  P_performance:
+    result: PASS
+    notes: >
+      dispatch_run/dispatch_stream helpers avoid duplicate tokio::spawn state machines.
+      ClaudeCliRunner now delegates to shared helpers — no behavioral change, one fewer
+      copy of the stream loop. OllamaRunner declares max_parallelism:4 (local compute
+      bound); AnthropicHttpRunner and OpenAICompatRunner both declare 8 (API rate limit).
+
+  T_testing:
+    result: PASS
+    notes: >
+      6 new unit tests added (runner.rs #[cfg(test)] module):
+        select_runner_returns_anthropic_http_runner — factory positive case + alias
+        select_runner_returns_ollama_runner — factory positive case + alias
+        select_runner_returns_openai_compat_runner — factory positive case + alias
+        run_anthropic_http_writes_artifact — happy path artifact write
+        run_ollama_writes_artifact — happy path artifact write
+        run_openai_compat_writes_artifact — happy path artifact write
+      All 13 runner tests passing. Test delta from Phase 3: +6.
+      select_runner_fails_closed_on_unknown: updated to use "xyz-unknown-provider"
+      (correct; "ollama" is now a known provider).
+
+overall_result: PASS
+advancing_to: phase-5-frontend-results-tab
+blocking_findings: []
+noted_findings:
+  - severity: NOTE
+    description: >
+      sandbox_root in select_runner() still defaults to a caller-supplied PathBuf.
+      Full GatewayConfig integration (routing sandbox_root through the operator
+      configuration layer) is deferred to the provider-select contract Phase 5/6 work.
+      The explicit parameter is present; callers must supply a real root — no hidden default.
+  - severity: NOTE
+    description: >
+      OllamaRunner::estimate_cost returns 0.0 (free tier / local).
+      AnthropicHttpRunner and OpenAICompatRunner delegate to provider.estimate_cost().
+      Actual pricing tables live in the provider layer (cloud_models.rs CLOUD_MODEL_REGISTRY);
+      the runner layer correctly does not duplicate them.
