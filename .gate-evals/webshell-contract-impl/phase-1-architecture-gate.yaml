@@ -1,0 +1,57 @@
+codename: webshell-contract-impl
+phase: phase-1-architecture
+gate_id: G1
+evaluated_at: "2026-06-04"
+evaluator: claude-sonnet-4-6
+
+gate_dimensions:
+  A_architecture:
+    result: PASS
+    diagram_present: verified
+    drift_clean: pending   # verified at subsequent [A] gates when impl lands
+    checklist_current: verified
+    notes: |
+      5 Mermaid diagrams authored per Canon XLI (design inputs, not output artifacts):
+        arch/C1-contract-impl-system.mmd
+        arch/C2-contract-impl-container.mmd
+        arch/C3-contract-impl-runner-trait.mmd
+        arch/seq-contract-impl-provider-dispatch.mmd
+        arch/state-contract-impl-dispatch-wave.mmd
+      Runner trait declared in lightarchitects/src/lightsquad/runner.rs:
+        Runner trait + 4 method signatures (run, stream, capabilities, estimate_cost)
+        AgentSpec, AgentArtifact, RunnerCapabilities, StopReason, AgentEvent types
+        RunnerError (5 variants including UnknownRunner fail-closed per SCRUM-H4)
+        select_runner factory stub (Err on unknown — no silent claude fallback)
+        SUBPROCESS_ENV_ALLOWLIST constant (LLM06)
+
+  C_canon:
+    result: PASS
+    notes: |
+      Q5 make contract-gate: 235/235 contracts validate (100%)
+      Symmetric-edge sweep: all mcp.capability <-> wire.mcp edges reciprocated
+      Canon XLI [A] gate predicate: diagram_present ∧ checklist_current = PASS
+      (drift_clean pending until Phase 3 impl exists to diff against)
+
+  Q_quality:
+    result: PASS
+    notes: |
+      cargo check -p lightarchitects --features lightsquad: CLEAN
+      cargo clippy -p lightarchitects --features lightsquad -- -D warnings: CLEAN
+      Pre-commit hook (cargo fmt --check + cargo clippy): CLEAN
+      3 doc_markdown lint violations fixed inline (TraceContext, tool_use, security_compliance)
+      Manual Debug impl for AgentSpec redacts SanitizedAgentRequest (security invariant preserved)
+
+overall_result: PASS
+advancing_to: phase-2-research
+blocking_findings: []
+noted_findings:
+  - severity: NOTE
+    description: >
+      drift_clean predicate deferred to Phase 3/4 [A] gates — no implementation
+      to diff against yet. Canon XLI permits this: diagrams authored in Phase 1
+      are design inputs; drift verification begins when the implementation they
+      describe is committed.
+  - severity: NOTE
+    description: >
+      Cargo.lock was modified (contract-gate binary compilation for Q5 check).
+      Not staged in wave 1.1 commit. Will be included in next substantive commit.
